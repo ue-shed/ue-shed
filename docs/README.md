@@ -62,6 +62,27 @@ there; do not invent a second status source in docs.
 
 ## Research
 
+- [Fresh Catalog scan optimization (2026-09-06)](research/fresh-scan-2026-09-06.md) —
+  current-pipeline profiling, batched observations, staging/posting construction, and rejected parser checkpoint.
+
+- [Full project flow performance (2026-09-06)](research/full-flow-2026-09-06.md) —
+  scan/refresh/query experiments, headless counts, parser replay, actual Electron startup, and parity.
+
+- [Project Index query transport (2026-09-06)](research/query-transport-2026-09-06.md) —
+  dictionary pages, immutable validated results, transport bytes, and separate stage measurements.
+
+- [Parallel project discovery (2026-09-05)](research/discovery-2026-09-05.md) —
+  demand-driven worker startup, fresh/warm timings, query profiling, and Linux oracle checks.
+
+- [Header pipeline speed pass (2026-09-05)](research/header-pipeline-2026-09-05.md) —
+  parser replay, parallel signature validation, and three-size scan measurements.
+
+- [Binary Catalog hardening and production selection (2026-09-05)](research/custom-catalog-hardening-2026-09-05.md) —
+  final before/after timings, recovery, SQLite oracle, platform artifacts, and CI separation.
+
+- [Custom binary Catalog prototype (2026-09-05)](research/custom-catalog-prototype-2026-09-05.md) —
+  SQLite-oracle tests, three-size timings, indexed queries, and refresh regressions.
+
 - [Canonical SQLite and incremental snapshots (2026-09-05)](research/sqlite-canonical-2026-09-05.md) —
   production migration, three-size before/after timings, lifecycle validation, and cache repair.
 

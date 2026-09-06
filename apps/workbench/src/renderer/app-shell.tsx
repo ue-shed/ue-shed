@@ -2,19 +2,18 @@ import * as stylex from "@stylexjs/stylex";
 import { workbenchDarkTheme } from "@ue-shed/ui-theme/themes.stylex.js";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { createEffectAction } from "@ue-shed/ui";
-import { AuthoringRoute } from "@ue-shed/extension-data-authoring";
-import { GameTextRoute } from "@ue-shed/extension-game-text";
-import { InputAtlasRoute } from "@ue-shed/extension-input-atlas";
-import { TextureAuditRoute } from "@ue-shed/extension-asset-audits";
-import { MapCaptureRoute, MapReviewRoute } from "@ue-shed/extension-camera-review";
-import { ContentObservatoryRoute } from "@ue-shed/extension-content-observatory";
-import { ProjectCustodianRoute } from "@ue-shed/extension-project-custodian";
-import { NiagaraPreviewRoute } from "@ue-shed/extension-niagara-preview";
-import { ConfigExplorerShowcase } from "./config-explorer-showcase.js";
-import { BlueprintGraphViewer } from "./blueprint-graph-viewer.js";
-import { ScenarioStudioRoute } from "@ue-shed/extension-scenarios";
 import type { CameraStatus } from "@ue-shed/protocol";
-import { For, Match, Show, Switch, createSignal, onCleanup, onMount } from "solid-js";
+import {
+	For,
+	Match,
+	Show,
+	Switch,
+	createSignal,
+	lazy,
+	Suspense,
+	onCleanup,
+	onMount
+} from "solid-js";
 import type { JSX } from "solid-js";
 import type { ShowcaseContext } from "../main/preload.js";
 import { assetAuditsClient } from "./asset-audits-client.js";
@@ -24,7 +23,6 @@ import { inputAtlasClient } from "./input-atlas-client.js";
 import { mapReviewClient } from "./map-review-client.js";
 import { mapCaptureClient } from "./map-capture-client.js";
 import { contentObservatoryClient } from "./content-observatory-client.js";
-import { CameraLab } from "./camera-lab.js";
 import { workbenchRendererClient } from "./workbench-client.js";
 import { scenarioStudioClient } from "./scenario-studio-client.js";
 import { EditorSessionTransport } from "./editor-session-transport.js";
@@ -47,6 +45,66 @@ import {
 	IconType,
 	IconVideo
 } from "./icons.js";
+
+const AuthoringRoute = lazy(() =>
+	import("@ue-shed/extension-data-authoring").then((module) => ({
+		default: module.AuthoringRoute
+	}))
+);
+const GameTextRoute = lazy(() =>
+	import("@ue-shed/extension-game-text").then((module) => ({ default: module.GameTextRoute }))
+);
+const InputAtlasRoute = lazy(() =>
+	import("@ue-shed/extension-input-atlas").then((module) => ({ default: module.InputAtlasRoute }))
+);
+const TextureAuditRoute = lazy(() =>
+	import("@ue-shed/extension-asset-audits").then((module) => ({
+		default: module.TextureAuditRoute
+	}))
+);
+const MapCaptureRoute = lazy(() =>
+	import("@ue-shed/extension-camera-review").then((module) => ({
+		default: module.MapCaptureRoute
+	}))
+);
+const MapReviewRoute = lazy(() =>
+	import("@ue-shed/extension-camera-review").then((module) => ({
+		default: module.MapReviewRoute
+	}))
+);
+const ContentObservatoryRoute = lazy(() =>
+	import("@ue-shed/extension-content-observatory").then((module) => ({
+		default: module.ContentObservatoryRoute
+	}))
+);
+const ProjectCustodianRoute = lazy(() =>
+	import("@ue-shed/extension-project-custodian").then((module) => ({
+		default: module.ProjectCustodianRoute
+	}))
+);
+const NiagaraPreviewRoute = lazy(() =>
+	import("@ue-shed/extension-niagara-preview").then((module) => ({
+		default: module.NiagaraPreviewRoute
+	}))
+);
+const ConfigExplorerShowcase = lazy(() =>
+	import("./config-explorer-showcase.js").then((module) => ({
+		default: module.ConfigExplorerShowcase
+	}))
+);
+const BlueprintGraphViewer = lazy(() =>
+	import("./blueprint-graph-viewer.js").then((module) => ({
+		default: module.BlueprintGraphViewer
+	}))
+);
+const ScenarioStudioRoute = lazy(() =>
+	import("@ue-shed/extension-scenarios").then((module) => ({
+		default: module.ScenarioStudioRoute
+	}))
+);
+const CameraLab = lazy(() =>
+	import("./camera-lab.js").then((module) => ({ default: module.CameraLab }))
+);
 
 interface NavItem {
 	readonly description?: string;
@@ -415,47 +473,49 @@ export function AppShell() {
 			</aside>
 			<div {...stylex.props(styles.content)}>
 				<Show when={projectRevision()} keyed>
-					<Switch fallback={<ShowcaseHome />}>
-						<Match when={route() === "#/authoring"}>
-							<AuthoringRoute client={authoringClient} />
-						</Match>
-						<Match when={route() === "#/asset-audits/textures"}>
-							<TextureAuditRoute client={assetAuditsClient} />
-						</Match>
-						<Match when={route() === "#/game-text"}>
-							<GameTextRoute client={gameTextClient} />
-						</Match>
-						<Match when={route() === "#/input-atlas"}>
-							<InputAtlasRoute client={inputAtlasClient} />
-						</Match>
-						<Match when={route() === "#/config-explorer"}>
-							<ConfigExplorerShowcase client={workbenchRendererClient} />
-						</Match>
-						<Match when={route() === "#/blueprint-graphs"}>
-							<BlueprintGraphViewer client={workbenchRendererClient} />
-						</Match>
-						<Match when={route() === "#/project-custodian"}>
-							<ProjectCustodianRoute client={projectCustodianClient} />
-						</Match>
-						<Match when={route() === "#/map-review"}>
-							<MapReviewRoute client={mapReviewClient} />
-						</Match>
-						<Match when={route() === "#/map-capture"}>
-							<MapCaptureRoute client={mapCaptureClient} />
-						</Match>
-						<Match when={route() === "#/niagara-preview"}>
-							<NiagaraPreviewRoute client={niagaraPreviewClient} />
-						</Match>
-						<Match when={route() === "#/content-observatory"}>
-							<ContentObservatoryRoute client={contentObservatoryClient} />
-						</Match>
-						<Match when={route() === "#/scenarios"}>
-							<ScenarioStudioRoute client={scenarioStudioClient} showDemoGuide />
-						</Match>
-						<Match when={route() === "#/camera-lab"}>
-							<CameraLab />
-						</Match>
-					</Switch>
+					<Suspense fallback={<p role="status">Opening view…</p>}>
+						<Switch fallback={<ShowcaseHome />}>
+							<Match when={route() === "#/authoring"}>
+								<AuthoringRoute client={authoringClient} />
+							</Match>
+							<Match when={route() === "#/asset-audits/textures"}>
+								<TextureAuditRoute client={assetAuditsClient} />
+							</Match>
+							<Match when={route() === "#/game-text"}>
+								<GameTextRoute client={gameTextClient} />
+							</Match>
+							<Match when={route() === "#/input-atlas"}>
+								<InputAtlasRoute client={inputAtlasClient} />
+							</Match>
+							<Match when={route() === "#/config-explorer"}>
+								<ConfigExplorerShowcase client={workbenchRendererClient} />
+							</Match>
+							<Match when={route() === "#/blueprint-graphs"}>
+								<BlueprintGraphViewer client={workbenchRendererClient} />
+							</Match>
+							<Match when={route() === "#/project-custodian"}>
+								<ProjectCustodianRoute client={projectCustodianClient} />
+							</Match>
+							<Match when={route() === "#/map-review"}>
+								<MapReviewRoute client={mapReviewClient} />
+							</Match>
+							<Match when={route() === "#/map-capture"}>
+								<MapCaptureRoute client={mapCaptureClient} />
+							</Match>
+							<Match when={route() === "#/niagara-preview"}>
+								<NiagaraPreviewRoute client={niagaraPreviewClient} />
+							</Match>
+							<Match when={route() === "#/content-observatory"}>
+								<ContentObservatoryRoute client={contentObservatoryClient} />
+							</Match>
+							<Match when={route() === "#/scenarios"}>
+								<ScenarioStudioRoute client={scenarioStudioClient} showDemoGuide />
+							</Match>
+							<Match when={route() === "#/camera-lab"}>
+								<CameraLab />
+							</Match>
+						</Switch>
+					</Suspense>
 				</Show>
 			</div>
 		</div>

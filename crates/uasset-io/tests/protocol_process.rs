@@ -730,6 +730,21 @@ fn project_index_refresh_emits_bounded_summary_without_inventory() {
     assert!(success, "query failed: {stderr}");
     assert_valid_events(&query_events);
     assert_eq!(query_events[1]["result"]["kind"], "project_index_page");
+    let count_request = project_index_request(serde_json::json!({
+        "kind": "project_index_count", "cacheRoot": cache_root.to_string_lossy(),
+        "request": { "projectId": project_id, "expectedGeneration": warm_summary["result"]["summary"]["generation"], "filters": [{"kind": "maps"}, {"kind": "maps"}] }
+    }));
+    let (success, count_events, stderr) = run_request(count_request.clone());
+    assert!(success, "{stderr}");
+    assert_eq!(
+        count_events[1]["result"]["result"]["count"],
+        warm_summary["result"]["summary"]["mapCount"]
+    );
+    let mut stale_count = count_request;
+    stale_count["operation"]["request"]["expectedGeneration"] = serde_json::json!(99999);
+    let (success, stale_events, _) = run_request(stale_count);
+    assert!(success);
+    assert_eq!(stale_events.last().unwrap()["code"], "stale_generation");
     assert!(
         query_events[1]["result"]["page"]["items"]
             .as_array()
@@ -737,6 +752,35 @@ fn project_index_refresh_emits_bounded_summary_without_inventory() {
             .len()
             <= 16
     );
+
+    let mut dictionary_request = query_request.clone();
+    dictionary_request["contract"]["version"]["minor"] = serde_json::json!(3);
+    dictionary_request["operation"]["pageEncoding"] = serde_json::json!("dictionary");
+    dictionary_request["operation"]["query"]["kind"] = serde_json::json!("serialized_names");
+    dictionary_request["operation"]["query"]["values"] = serde_json::json!(["None"]);
+    dictionary_request["operation"]["query"]["limit"] = serde_json::json!(1);
+    let (success, dictionary_events, stderr) = run_request(dictionary_request.clone());
+    assert!(success, "dictionary query failed: {stderr}");
+    assert_valid_events(&dictionary_events);
+    assert_eq!(
+        dictionary_events[1]["result"]["kind"],
+        "project_index_dictionary_page"
+    );
+    assert_eq!(
+        dictionary_events[1]["result"]["page"]["items"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert!(dictionary_events[1]["result"]["page"]["nextCursor"].is_string());
+    let mut limited = dictionary_request.clone();
+    limited["limits"]["maximumOutputBytes"] = serde_json::json!(512);
+    let (success, limited_events, stderr) = run_request(limited);
+    assert!(success, "bounded dictionary query failed: {stderr}");
+    assert_valid_events(&limited_events);
+    assert_eq!(limited_events.last().unwrap()["kind"], "failed");
+    assert_eq!(limited_events.last().unwrap()["code"], "output_limit");
 
     let stale_request = project_index_request(serde_json::json!({
         "kind": "project_index_query",
@@ -774,6 +818,7 @@ fn project_index_refresh_emits_bounded_summary_without_inventory() {
 
     for (request_id, request, terminal) in [
         ("session-query-one", &query_request, "completed"),
+        ("session-dictionary", &dictionary_request, "completed"),
         ("session-stale", &stale_request, "failed"),
         ("session-query-two", &query_request, "completed"),
     ] {

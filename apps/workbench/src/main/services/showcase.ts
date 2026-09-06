@@ -38,19 +38,19 @@ export const ShowcaseLive = Layer.effect(
 
 			const candidates = yield* Effect.all(
 				[
-					project.candidates("saved_tables"),
-					project.candidates("enhanced_input"),
-					project.candidates("game_text"),
-					project.candidates("texture")
+					project.candidateCount("saved_tables"),
+					project.candidateCount("enhanced_input"),
+					project.candidateCount("game_text"),
+					project.candidateCount("texture")
 				] as const,
 				{ concurrency: 2 }
 			).pipe(
 				Effect.map(([dataTables, enhancedInput, gameText, textures]) => ({
-					dataTablePackages: dataTables.assets.length,
-					enhancedInputPackages: enhancedInput.assets.length,
-					gameTextPackages: gameText.assets.length,
+					dataTablePackages: dataTables,
+					enhancedInputPackages: enhancedInput,
+					gameTextPackages: gameText,
 					status: "ready" as const,
-					texturePackages: textures.assets.length
+					texturePackages: textures
 				})),
 				Effect.catch((error) =>
 					Effect.succeed({

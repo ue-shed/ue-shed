@@ -17,24 +17,6 @@ const stubReader = (source: "configured" | "path"): AssetReaderTestApi => ({
 	source: () => Effect.succeed(source)
 });
 
-const emptyCandidates = {
-	assets: [],
-	failures: [],
-	summary: {
-		cacheHits: 0,
-		depth: "header" as const,
-		diagnostics: [],
-		emittedAssets: 0,
-		failedAssets: 0,
-		partialAssets: 0,
-		projectRoot: "C:/FixtureProject",
-		roots: ["C:/FixtureProject/Content"],
-		scannedAssets: 12,
-		schema_version: 8 as const,
-		skippedAssets: 12
-	}
-};
-
 const readyProject = makeWorkbenchProjectTestLayer({
 	choose: () => Effect.die("not used"),
 	current: () =>
@@ -51,7 +33,7 @@ const readyProject = makeWorkbenchProjectTestLayer({
 	inputAtlas: () => Effect.die("not used"),
 	savedProject: () => Effect.die("not used"),
 	savedTables: () => Effect.die("not used"),
-	candidates: () => Effect.succeed(emptyCandidates)
+	candidateCount: () => Effect.succeed(0)
 });
 
 const unconfiguredProject = makeWorkbenchProjectTestLayer({

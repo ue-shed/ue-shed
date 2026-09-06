@@ -1,0 +1,3737 @@
+{
+	"baselineCommit": "07e73c5039d3143d7bad6a5bcae870e56773ac6f",
+	"executables": {
+		"baseline.exe": {
+			"sha256": "354ef146283554aaab81089559f70bb342cf06fbe3a1ef3189d55635213c77f5",
+			"bytes": 4821504
+		},
+		"dictionary-a.exe": {
+			"sha256": "f6318cfa7cd0d6a88965df17af4ec9788fcc1d64e2f265e866c78c18cfd1407c",
+			"bytes": 4889600
+		},
+		"final.exe": {
+			"sha256": "6c13d2b3110a83747bf408973b6c95c9a8168596b3ac7fc6702fa9c49eedb5f1",
+			"bytes": 4890112
+		}
+	},
+	"summary": {
+		"small": {
+			"before": {
+				"samples": 3,
+				"freshMs": 42.533,
+				"warmMs": 17.806,
+				"queryMs": 18.304,
+				"inputDecodeMs": 24.67,
+				"fullFreshMs": 148.298,
+				"fullWarmMs": 142.623,
+				"cacheMiB": 0.07084274291992188,
+				"nativeMiB": null,
+				"nodeMiB": 144.0625,
+				"warmWireBytes": 81016,
+				"largestFrameBytes": 28022,
+				"querySamplesMs": [18.304, 18.492, 18.001],
+				"nativeMaxMiB": null,
+				"nodeMaxMiB": 159.8359375
+			},
+			"after": {
+				"samples": 3,
+				"freshMs": 38.743,
+				"warmMs": 18.341,
+				"queryMs": 17.488,
+				"inputDecodeMs": 25.197,
+				"fullFreshMs": 151.783,
+				"fullWarmMs": 150.237,
+				"cacheMiB": 0.07084274291992188,
+				"nativeMiB": null,
+				"nodeMiB": 144.16796875,
+				"warmWireBytes": 46094,
+				"largestFrameBytes": 14267,
+				"querySamplesMs": [17.488, 18.512, 16.977],
+				"nativeMaxMiB": null,
+				"nodeMaxMiB": 154.25
+			}
+		},
+		"medium": {
+			"before": {
+				"samples": 3,
+				"freshMs": 251.072,
+				"warmMs": 40.214,
+				"queryMs": 106.332,
+				"inputDecodeMs": 56.427,
+				"fullFreshMs": 495.67,
+				"fullWarmMs": 165.742,
+				"cacheMiB": 8.22961711883545,
+				"nativeMiB": 62.51171875,
+				"nodeMiB": 196.83203125,
+				"warmWireBytes": 3780276,
+				"largestFrameBytes": 1685692,
+				"querySamplesMs": [106.332, 100.462, 147.088],
+				"nativeMaxMiB": 73.37890625,
+				"nodeMaxMiB": 197.59765625
+			},
+			"after": {
+				"samples": 3,
+				"freshMs": 248.102,
+				"warmMs": 43.214,
+				"queryMs": 89.393,
+				"inputDecodeMs": 56.4,
+				"fullFreshMs": 405.432,
+				"fullWarmMs": 156.841,
+				"cacheMiB": 8.22961711883545,
+				"nativeMiB": 50.49609375,
+				"nodeMiB": 176.640625,
+				"warmWireBytes": 1389372,
+				"largestFrameBytes": 594525,
+				"querySamplesMs": [99.013, 89.393, 88.167],
+				"nativeMaxMiB": 68.78515625,
+				"nodeMaxMiB": 176.88671875
+			}
+		},
+		"large": {
+			"before": {
+				"samples": 6,
+				"freshMs": 3769.4845,
+				"warmMs": 751.014,
+				"queryMs": 634.473,
+				"inputDecodeMs": 187.20749999999998,
+				"fullFreshMs": 4743.2474999999995,
+				"fullWarmMs": 1492.1605,
+				"cacheMiB": 130.9970064163208,
+				"nativeMiB": 404.1484375,
+				"nodeMiB": 336.248046875,
+				"warmWireBytes": 24048562.5,
+				"largestFrameBytes": 2384737.5,
+				"querySamplesMs": [626.347, 613.845, 625.499, 642.599, 669.835, 647.976],
+				"nativeMaxMiB": 414.14453125,
+				"nodeMaxMiB": 341.12109375
+			},
+			"after": {
+				"samples": 6,
+				"freshMs": 3690.9905,
+				"warmMs": 730.354,
+				"queryMs": 498.366,
+				"inputDecodeMs": 167.26850000000002,
+				"fullFreshMs": 4510.0,
+				"fullWarmMs": 1295.9745,
+				"cacheMiB": 130.9970064163208,
+				"nativeMiB": 398.5625,
+				"nodeMiB": 252.400390625,
+				"warmWireBytes": 9163475.0,
+				"largestFrameBytes": 763422.0,
+				"querySamplesMs": [517.176, 508.605, 504.37, 485.733, 476.863, 492.362],
+				"nativeMaxMiB": 407.234375,
+				"nodeMaxMiB": 293.3828125
+			}
+		}
+	},
+	"blocks": {
+		"small": {
+			"before": [
+				{
+					"schemaVersion": 4,
+					"generatedAt": "2026-09-05T17:40:46.113Z",
+					"configuration": {
+						"mutationScenarios": "not_requested",
+						"reader": "baseline.exe",
+						"readerBuild": "skipped",
+						"runs": 3,
+						"warmups": 1
+					},
+					"git": {
+						"dirty": true,
+						"revision": "07e73c5039d3143d7bad6a5bcae870e56773ac6f"
+					},
+					"machine": {
+						"architecture": "x64",
+						"cpuCount": 32,
+						"cpuModel": "AMD Ryzen 9 7950X 16-Core Processor            ",
+						"memoryBytes": 67836526592,
+						"nodeVersion": "v26.5.0",
+						"operatingSystem": "win32 10.0.26200",
+						"rustVersion": "rustc 1.94.0 (4a4ef493e 2026-03-02)"
+					},
+					"scenarios": {
+						"project_index.cold_build": {
+							"distribution": {
+								"count": 3,
+								"maxMs": 232.853,
+								"meanMs": 175.208,
+								"minMs": 144.473,
+								"p50Ms": 148.298,
+								"p95Ms": 232.853,
+								"samplesMs": [232.853, 144.473, 148.298]
+							},
+							"failureKinds": [],
+							"notes": "The Catalog is removed before every sample. The sample includes one refresh, bounded candidate queries, TypeScript folding, and targeted Enhanced Input decode.",
+							"samples": [
+								{
+									"cacheBytes": 74284,
+									"durationMs": 232.853,
+									"index": {
+										"changedPackages": 71,
+										"emittedHeaders": 56,
+										"generation": 1,
+										"inputCandidates": 25,
+										"mapCount": 4,
+										"packageCount": 71,
+										"queryPages": 5,
+										"removedPackages": 0
+									},
+									"inputPackages": 25,
+									"largestProtocolFrameBytes": 28021,
+									"nodePeakRssBytes": 151060480,
+									"protocolBytes": 163290,
+									"rustPeakRssBytes": null,
+									"timings": {
+										"foldingMs": 5.479,
+										"inputDecodeMs": 30.817,
+										"native": {
+											"committingMs": 8,
+											"comparingMs": 0,
+											"committedEvidenceRows": 71,
+											"durationMs": 22,
+											"enumeratingMs": 1,
+											"evidenceWriteMs": 7,
+											"headerReads": 71,
+											"headerProcessingExcludingEvidenceWritesMs": 6,
+											"removedEvidenceRows": 0,
+											"readingHeadersMs": 13,
+											"stagedEvidenceRows": 71
+										},
+										"queryMs": 30.387,
+										"refreshMs": 121.569
+									}
+								},
+								{
+									"cacheBytes": 74284,
+									"durationMs": 144.473,
+									"index": {
+										"changedPackages": 71,
+										"emittedHeaders": 56,
+										"generation": 1,
+										"inputCandidates": 25,
+										"mapCount": 4,
+										"packageCount": 71,
+										"queryPages": 5,
+										"removedPackages": 0
+									},
+									"inputPackages": 25,
+									"largestProtocolFrameBytes": 28022,
+									"nodePeakRssBytes": 149348352,
+									"protocolBytes": 163333,
+									"rustPeakRssBytes": null,
+									"timings": {
+										"foldingMs": 0.374,
+										"inputDecodeMs": 22.975,
+										"native": {
+											"committingMs": 6,
+											"comparingMs": 0,
+											"committedEvidenceRows": 71,
+											"durationMs": 20,
+											"enumeratingMs": 0,
+											"evidenceWriteMs": 6,
+											"headerReads": 71,
+											"headerProcessingExcludingEvidenceWritesMs": 6,
+											"removedEvidenceRows": 0,
+											"readingHeadersMs": 12,
+											"stagedEvidenceRows": 71
+										},
+										"queryMs": 25.658,
+										"refreshMs": 35.627
+									}
+								},
+								{
+									"cacheBytes": 74283,
+									"durationMs": 148.298,
+									"index": {
+										"changedPackages": 71,
+										"emittedHeaders": 56,
+										"generation": 1,
+										"inputCandidates": 25,
+										"mapCount": 4,
+										"packageCount": 71,
+										"queryPages": 5,
+										"removedPackages": 0
+									},
+									"inputPackages": 25,
+									"largestProtocolFrameBytes": 28022,
+									"nodePeakRssBytes": 167600128,
+									"protocolBytes": 163346,
+									"rustPeakRssBytes": null,
+									"timings": {
+										"foldingMs": 0.388,
+										"inputDecodeMs": 24.67,
+										"native": {
+											"committingMs": 7,
+											"comparingMs": 0,
+											"committedEvidenceRows": 71,
+											"durationMs": 20,
+											"enumeratingMs": 0,
+											"evidenceWriteMs": 6,
+											"headerReads": 71,
+											"headerProcessingExcludingEvidenceWritesMs": 5,
+											"removedEvidenceRows": 0,
+											"readingHeadersMs": 11,
+											"stagedEvidenceRows": 71
+										},
+										"queryMs": 19.931,
+										"refreshMs": 42.533
+									}
+								}
+							],
+							"status": "completed"
+						},
+						"project_index.warm_noop": {
+							"distribution": {
+								"count": 3,
+								"maxMs": 154.898,
+								"meanMs": 145.484,
+								"minMs": 138.93,
+								"p50Ms": 142.623,
+								"p95Ms": 154.898,
+								"samplesMs": [154.898, 142.623, 138.93]
+							},
+							"failureKinds": [],
+							"notes": "The committed SQLite snapshot is reused. Refresh still enumerates signatures, while unchanged packages should report zero changed packages, zero header reads, and zero evidence writes.",
+							"samples": [
+								{
+									"cacheBytes": 74282,
+									"durationMs": 154.898,
+									"index": {
+										"changedPackages": 0,
+										"emittedHeaders": 56,
+										"generation": 4,
+										"inputCandidates": 25,
+										"mapCount": 4,
+										"packageCount": 71,
+										"queryPages": 5,
+										"removedPackages": 0
+									},
+									"largestProtocolFrameBytes": 28022,
+									"nodePeakRssBytes": 165986304,
+									"protocolBytes": 81016,
+									"rustPeakRssBytes": null,
+									"timings": {
+										"foldingMs": 0.38,
+										"native": {
+											"committingMs": 1,
+											"comparingMs": 0,
+											"committedEvidenceRows": 0,
+											"durationMs": 2,
+											"enumeratingMs": 1,
+											"evidenceWriteMs": 0,
+											"headerReads": 0,
+											"headerProcessingExcludingEvidenceWritesMs": 0,
+											"removedEvidenceRows": 0,
+											"readingHeadersMs": 0,
+											"stagedEvidenceRows": 0
+										},
+										"queryMs": 18.304,
+										"refreshMs": 17.806
+									}
+								},
+								{
+									"cacheBytes": 74282,
+									"durationMs": 142.623,
+									"index": {
+										"changedPackages": 0,
+										"emittedHeaders": 56,
+										"generation": 5,
+										"inputCandidates": 25,
+										"mapCount": 4,
+										"packageCount": 71,
+										"queryPages": 5,
+										"removedPackages": 0
+									},
+									"largestProtocolFrameBytes": 28022,
+									"nodePeakRssBytes": 166055936,
+									"protocolBytes": 81016,
+									"rustPeakRssBytes": null,
+									"timings": {
+										"foldingMs": 0.311,
+										"native": {
+											"committingMs": 1,
+											"comparingMs": 0,
+											"committedEvidenceRows": 0,
+											"durationMs": 2,
+											"enumeratingMs": 1,
+											"evidenceWriteMs": 0,
+											"headerReads": 0,
+											"headerProcessingExcludingEvidenceWritesMs": 0,
+											"removedEvidenceRows": 0,
+											"readingHeadersMs": 0,
+											"stagedEvidenceRows": 0
+										},
+										"queryMs": 18.492,
+										"refreshMs": 18.681
+									}
+								},
+								{
+									"cacheBytes": 74282,
+									"durationMs": 138.93,
+									"index": {
+										"changedPackages": 0,
+										"emittedHeaders": 56,
+										"generation": 6,
+										"inputCandidates": 25,
+										"mapCount": 4,
+										"packageCount": 71,
+										"queryPages": 5,
+										"removedPackages": 0
+									},
+									"largestProtocolFrameBytes": 28022,
+									"nodePeakRssBytes": 167444480,
+									"protocolBytes": 81016,
+									"rustPeakRssBytes": null,
+									"timings": {
+										"foldingMs": 0.306,
+										"native": {
+											"committingMs": 1,
+											"comparingMs": 0,
+											"committedEvidenceRows": 0,
+											"durationMs": 2,
+											"enumeratingMs": 0,
+											"evidenceWriteMs": 0,
+											"headerReads": 0,
+											"headerProcessingExcludingEvidenceWritesMs": 0,
+											"removedEvidenceRows": 0,
+											"readingHeadersMs": 0,
+											"stagedEvidenceRows": 0
+										},
+										"queryMs": 18.001,
+										"refreshMs": 17.43
+									}
+								}
+							],
+							"status": "completed"
+						}
+					}
+				}
+			],
+			"after": [
+				{
+					"schemaVersion": 4,
+					"generatedAt": "2026-09-05T17:57:00.290Z",
+					"configuration": {
+						"mutationScenarios": "not_requested",
+						"reader": "final.exe",
+						"readerBuild": "skipped",
+						"runs": 3,
+						"warmups": 1
+					},
+					"git": {
+						"dirty": true,
+						"revision": "07e73c5039d3143d7bad6a5bcae870e56773ac6f"
+					},
+					"machine": {
+						"architecture": "x64",
+						"cpuCount": 32,
+						"cpuModel": "AMD Ryzen 9 7950X 16-Core Processor            ",
+						"memoryBytes": 67836526592,
+						"nodeVersion": "v26.5.0",
+						"operatingSystem": "win32 10.0.26200",
+						"rustVersion": "rustc 1.94.0 (4a4ef493e 2026-03-02)"
+					},
+					"scenarios": {
+						"project_index.cold_build": {
+							"distribution": {
+								"count": 3,
+								"maxMs": 159.805,
+								"meanMs": 151.984,
+								"minMs": 144.363,
+								"p50Ms": 151.783,
+								"p95Ms": 159.805,
+								"samplesMs": [159.805, 144.363, 151.783]
+							},
+							"failureKinds": [],
+							"notes": "The Catalog is removed before every sample. The sample includes one refresh, bounded candidate queries, TypeScript folding, and targeted Enhanced Input decode.",
+							"samples": [
+								{
+									"cacheBytes": 74284,
+									"durationMs": 159.805,
+									"index": {
+										"changedPackages": 71,
+										"emittedHeaders": 56,
+										"generation": 1,
+										"inputCandidates": 25,
+										"mapCount": 4,
+										"packageCount": 71,
+										"queryPages": 5,
+										"removedPackages": 0
+									},
+									"inputPackages": 25,
+									"largestProtocolFrameBytes": 25056,
+									"nodePeakRssBytes": 151171072,
+									"protocolBytes": 128368,
+									"rustPeakRssBytes": null,
+									"timings": {
+										"foldingMs": 5.366,
+										"inputDecodeMs": 31.458,
+										"native": {
+											"committingMs": 7,
+											"comparingMs": 0,
+											"committedEvidenceRows": 71,
+											"durationMs": 21,
+											"enumeratingMs": 0,
+											"evidenceWriteMs": 6,
+											"headerReads": 71,
+											"headerProcessingExcludingEvidenceWritesMs": 6,
+											"removedEvidenceRows": 0,
+											"readingHeadersMs": 12,
+											"stagedEvidenceRows": 71
+										},
+										"queryMs": 32.732,
+										"refreshMs": 43.787
+									}
+								},
+								{
+									"cacheBytes": 74284,
+									"durationMs": 144.363,
+									"index": {
+										"changedPackages": 71,
+										"emittedHeaders": 56,
+										"generation": 1,
+										"inputCandidates": 25,
+										"mapCount": 4,
+										"packageCount": 71,
+										"queryPages": 5,
+										"removedPackages": 0
+									},
+									"inputPackages": 25,
+									"largestProtocolFrameBytes": 25057,
+									"nodePeakRssBytes": 148787200,
+									"protocolBytes": 128411,
+									"rustPeakRssBytes": null,
+									"timings": {
+										"foldingMs": 0.331,
+										"inputDecodeMs": 22.911,
+										"native": {
+											"committingMs": 8,
+											"comparingMs": 0,
+											"committedEvidenceRows": 71,
+											"durationMs": 22,
+											"enumeratingMs": 0,
+											"evidenceWriteMs": 7,
+											"headerReads": 71,
+											"headerProcessingExcludingEvidenceWritesMs": 6,
+											"removedEvidenceRows": 0,
+											"readingHeadersMs": 13,
+											"stagedEvidenceRows": 71
+										},
+										"queryMs": 20.474,
+										"refreshMs": 38.743
+									}
+								},
+								{
+									"cacheBytes": 74284,
+									"durationMs": 151.783,
+									"index": {
+										"changedPackages": 71,
+										"emittedHeaders": 56,
+										"generation": 1,
+										"inputCandidates": 25,
+										"mapCount": 4,
+										"packageCount": 71,
+										"queryPages": 5,
+										"removedPackages": 0
+									},
+									"inputPackages": 25,
+									"largestProtocolFrameBytes": 25057,
+									"nodePeakRssBytes": 161742848,
+									"protocolBytes": 128424,
+									"rustPeakRssBytes": null,
+									"timings": {
+										"foldingMs": 0.381,
+										"inputDecodeMs": 25.197,
+										"native": {
+											"committingMs": 7,
+											"comparingMs": 0,
+											"committedEvidenceRows": 71,
+											"durationMs": 22,
+											"enumeratingMs": 1,
+											"evidenceWriteMs": 7,
+											"headerReads": 71,
+											"headerProcessingExcludingEvidenceWritesMs": 6,
+											"removedEvidenceRows": 0,
+											"readingHeadersMs": 13,
+											"stagedEvidenceRows": 71
+										},
+										"queryMs": 18.93,
+										"refreshMs": 38.189
+									}
+								}
+							],
+							"status": "completed"
+						},
+						"project_index.warm_noop": {
+							"distribution": {
+								"count": 3,
+								"maxMs": 151.861,
+								"meanMs": 149.225,
+								"minMs": 145.576,
+								"p50Ms": 150.237,
+								"p95Ms": 151.861,
+								"samplesMs": [150.237, 151.861, 145.576]
+							},
+							"failureKinds": [],
+							"notes": "The committed SQLite snapshot is reused. Refresh still enumerates signatures, while unchanged packages should report zero changed packages, zero header reads, and zero evidence writes.",
+							"samples": [
+								{
+									"cacheBytes": 74283,
+									"durationMs": 150.237,
+									"index": {
+										"changedPackages": 0,
+										"emittedHeaders": 56,
+										"generation": 4,
+										"inputCandidates": 25,
+										"mapCount": 4,
+										"packageCount": 71,
+										"queryPages": 5,
+										"removedPackages": 0
+									},
+									"largestProtocolFrameBytes": 14267,
+									"nodePeakRssBytes": 161411072,
+									"protocolBytes": 46094,
+									"rustPeakRssBytes": null,
+									"timings": {
+										"foldingMs": 0.259,
+										"native": {
+											"committingMs": 1,
+											"comparingMs": 0,
+											"committedEvidenceRows": 0,
+											"durationMs": 2,
+											"enumeratingMs": 1,
+											"evidenceWriteMs": 0,
+											"headerReads": 0,
+											"headerProcessingExcludingEvidenceWritesMs": 0,
+											"removedEvidenceRows": 0,
+											"readingHeadersMs": 0,
+											"stagedEvidenceRows": 0
+										},
+										"queryMs": 17.488,
+										"refreshMs": 18.341
+									}
+								},
+								{
+									"cacheBytes": 74283,
+									"durationMs": 151.861,
+									"index": {
+										"changedPackages": 0,
+										"emittedHeaders": 56,
+										"generation": 5,
+										"inputCandidates": 25,
+										"mapCount": 4,
+										"packageCount": 71,
+										"queryPages": 5,
+										"removedPackages": 0
+									},
+									"largestProtocolFrameBytes": 14267,
+									"nodePeakRssBytes": 161460224,
+									"protocolBytes": 46094,
+									"rustPeakRssBytes": null,
+									"timings": {
+										"foldingMs": 0.274,
+										"native": {
+											"committingMs": 2,
+											"comparingMs": 0,
+											"committedEvidenceRows": 0,
+											"durationMs": 3,
+											"enumeratingMs": 0,
+											"evidenceWriteMs": 0,
+											"headerReads": 0,
+											"headerProcessingExcludingEvidenceWritesMs": 0,
+											"removedEvidenceRows": 0,
+											"readingHeadersMs": 0,
+											"stagedEvidenceRows": 0
+										},
+										"queryMs": 18.512,
+										"refreshMs": 19.077
+									}
+								},
+								{
+									"cacheBytes": 74283,
+									"durationMs": 145.576,
+									"index": {
+										"changedPackages": 0,
+										"emittedHeaders": 56,
+										"generation": 6,
+										"inputCandidates": 25,
+										"mapCount": 4,
+										"packageCount": 71,
+										"queryPages": 5,
+										"removedPackages": 0
+									},
+									"largestProtocolFrameBytes": 14267,
+									"nodePeakRssBytes": 161464320,
+									"protocolBytes": 46094,
+									"rustPeakRssBytes": null,
+									"timings": {
+										"foldingMs": 0.255,
+										"native": {
+											"committingMs": 1,
+											"comparingMs": 0,
+											"committedEvidenceRows": 0,
+											"durationMs": 2,
+											"enumeratingMs": 1,
+											"evidenceWriteMs": 0,
+											"headerReads": 0,
+											"headerProcessingExcludingEvidenceWritesMs": 0,
+											"removedEvidenceRows": 0,
+											"readingHeadersMs": 0,
+											"stagedEvidenceRows": 0
+										},
+										"queryMs": 16.977,
+										"refreshMs": 17.644
+									}
+								}
+							],
+							"status": "completed"
+						}
+					}
+				}
+			]
+		},
+		"medium": {
+			"before": [
+				{
+					"schemaVersion": 4,
+					"generatedAt": "2026-09-05T17:40:49.721Z",
+					"configuration": {
+						"mutationScenarios": "not_requested",
+						"reader": "baseline.exe",
+						"readerBuild": "skipped",
+						"runs": 3,
+						"warmups": 1
+					},
+					"git": {
+						"dirty": true,
+						"revision": "07e73c5039d3143d7bad6a5bcae870e56773ac6f"
+					},
+					"machine": {
+						"architecture": "x64",
+						"cpuCount": 32,
+						"cpuModel": "AMD Ryzen 9 7950X 16-Core Processor            ",
+						"memoryBytes": 67836526592,
+						"nodeVersion": "v26.5.0",
+						"operatingSystem": "win32 10.0.26200",
+						"rustVersion": "rustc 1.94.0 (4a4ef493e 2026-03-02)"
+					},
+					"scenarios": {
+						"project_index.cold_build": {
+							"distribution": {
+								"count": 3,
+								"maxMs": 544.507,
+								"meanMs": 509.52,
+								"minMs": 488.382,
+								"p50Ms": 495.67,
+								"p95Ms": 544.507,
+								"samplesMs": [544.507, 488.382, 495.67]
+							},
+							"failureKinds": [],
+							"notes": "The Catalog is removed before every sample. The sample includes one refresh, bounded candidate queries, TypeScript folding, and targeted Enhanced Input decode.",
+							"samples": [
+								{
+									"cacheBytes": 8629379,
+									"durationMs": 544.507,
+									"index": {
+										"changedPackages": 10128,
+										"emittedHeaders": 2425,
+										"generation": 1,
+										"inputCandidates": 38,
+										"mapCount": 59,
+										"packageCount": 10128,
+										"queryPages": 7,
+										"removedPackages": 0
+									},
+									"inputPackages": 38,
+									"largestProtocolFrameBytes": 1685691,
+									"nodePeakRssBytes": 181391360,
+									"protocolBytes": 4256255,
+									"rustPeakRssBytes": 65548288,
+									"timings": {
+										"foldingMs": 17.856,
+										"inputDecodeMs": 66.998,
+										"native": {
+											"committingMs": 49,
+											"comparingMs": 1,
+											"committedEvidenceRows": 10128,
+											"durationMs": 236,
+											"enumeratingMs": 7,
+											"evidenceWriteMs": 120,
+											"headerReads": 10128,
+											"headerProcessingExcludingEvidenceWritesMs": 59,
+											"removedEvidenceRows": 0,
+											"readingHeadersMs": 179,
+											"stagedEvidenceRows": 10128
+										},
+										"queryMs": 140.652,
+										"refreshMs": 259.621
+									}
+								},
+								{
+									"cacheBytes": 8629379,
+									"durationMs": 488.382,
+									"index": {
+										"changedPackages": 10128,
+										"emittedHeaders": 2425,
+										"generation": 1,
+										"inputCandidates": 38,
+										"mapCount": 59,
+										"packageCount": 10128,
+										"queryPages": 7,
+										"removedPackages": 0
+									},
+									"inputPackages": 38,
+									"largestProtocolFrameBytes": 1685692,
+									"nodePeakRssBytes": 207196160,
+									"protocolBytes": 4256348,
+									"rustPeakRssBytes": 50970624,
+									"timings": {
+										"foldingMs": 14.122,
+										"inputDecodeMs": 56.427,
+										"native": {
+											"committingMs": 54,
+											"comparingMs": 0,
+											"committedEvidenceRows": 10128,
+											"durationMs": 234,
+											"enumeratingMs": 6,
+											"evidenceWriteMs": 126,
+											"headerReads": 10128,
+											"headerProcessingExcludingEvidenceWritesMs": 46,
+											"removedEvidenceRows": 0,
+											"readingHeadersMs": 172,
+											"stagedEvidenceRows": 10128
+										},
+										"queryMs": 112.54,
+										"refreshMs": 249.977
+									}
+								},
+								{
+									"cacheBytes": 8629379,
+									"durationMs": 495.67,
+									"index": {
+										"changedPackages": 10128,
+										"emittedHeaders": 2425,
+										"generation": 1,
+										"inputCandidates": 38,
+										"mapCount": 59,
+										"packageCount": 10128,
+										"queryPages": 7,
+										"removedPackages": 0
+									},
+									"inputPackages": 38,
+									"largestProtocolFrameBytes": 1685692,
+									"nodePeakRssBytes": 206393344,
+									"protocolBytes": 4256348,
+									"rustPeakRssBytes": 76943360,
+									"timings": {
+										"foldingMs": 17.157,
+										"inputDecodeMs": 53.132,
+										"native": {
+											"committingMs": 50,
+											"comparingMs": 1,
+											"committedEvidenceRows": 10128,
+											"durationMs": 234,
+											"enumeratingMs": 7,
+											"evidenceWriteMs": 123,
+											"headerReads": 10128,
+											"headerProcessingExcludingEvidenceWritesMs": 51,
+											"removedEvidenceRows": 0,
+											"readingHeadersMs": 174,
+											"stagedEvidenceRows": 10128
+										},
+										"queryMs": 112.667,
+										"refreshMs": 251.072
+									}
+								}
+							],
+							"status": "completed"
+						},
+						"project_index.warm_noop": {
+							"distribution": {
+								"count": 3,
+								"maxMs": 309.36,
+								"meanMs": 210.074,
+								"minMs": 155.119,
+								"p50Ms": 165.742,
+								"p95Ms": 309.36,
+								"samplesMs": [165.742, 155.119, 309.36]
+							},
+							"failureKinds": [],
+							"notes": "The committed SQLite snapshot is reused. Refresh still enumerates signatures, while unchanged packages should report zero changed packages, zero header reads, and zero evidence writes.",
+							"samples": [
+								{
+									"cacheBytes": 8629375,
+									"durationMs": 165.742,
+									"index": {
+										"changedPackages": 0,
+										"emittedHeaders": 2425,
+										"generation": 4,
+										"inputCandidates": 38,
+										"mapCount": 59,
+										"packageCount": 10128,
+										"queryPages": 7,
+										"removedPackages": 0
+									},
+									"largestProtocolFrameBytes": 1685692,
+									"nodePeakRssBytes": 257507328,
+									"protocolBytes": 3780276,
+									"rustPeakRssBytes": null,
+									"timings": {
+										"foldingMs": 15.843,
+										"native": {
+											"committingMs": 6,
+											"comparingMs": 4,
+											"committedEvidenceRows": 0,
+											"durationMs": 19,
+											"enumeratingMs": 7,
+											"evidenceWriteMs": 0,
+											"headerReads": 0,
+											"headerProcessingExcludingEvidenceWritesMs": 0,
+											"removedEvidenceRows": 0,
+											"readingHeadersMs": 0,
+											"stagedEvidenceRows": 0
+										},
+										"queryMs": 106.332,
+										"refreshMs": 41.45
+									}
+								},
+								{
+									"cacheBytes": 8629375,
+									"durationMs": 155.119,
+									"index": {
+										"changedPackages": 0,
+										"emittedHeaders": 2425,
+										"generation": 5,
+										"inputCandidates": 38,
+										"mapCount": 59,
+										"packageCount": 10128,
+										"queryPages": 7,
+										"removedPackages": 0
+									},
+									"largestProtocolFrameBytes": 1685692,
+									"nodePeakRssBytes": 265310208,
+									"protocolBytes": 3780276,
+									"rustPeakRssBytes": null,
+									"timings": {
+										"foldingMs": 13.671,
+										"native": {
+											"committingMs": 5,
+											"comparingMs": 4,
+											"committedEvidenceRows": 0,
+											"durationMs": 17,
+											"enumeratingMs": 7,
+											"evidenceWriteMs": 0,
+											"headerReads": 0,
+											"headerProcessingExcludingEvidenceWritesMs": 0,
+											"removedEvidenceRows": 0,
+											"readingHeadersMs": 0,
+											"stagedEvidenceRows": 0
+										},
+										"queryMs": 100.462,
+										"refreshMs": 39.051
+									}
+								},
+								{
+									"cacheBytes": 8629375,
+									"durationMs": 309.36,
+									"index": {
+										"changedPackages": 0,
+										"emittedHeaders": 2425,
+										"generation": 6,
+										"inputCandidates": 38,
+										"mapCount": 59,
+										"packageCount": 10128,
+										"queryPages": 7,
+										"removedPackages": 0
+									},
+									"largestProtocolFrameBytes": 1685692,
+									"nodePeakRssBytes": 308174848,
+									"protocolBytes": 3780276,
+									"rustPeakRssBytes": null,
+									"timings": {
+										"foldingMs": 14.828,
+										"native": {
+											"committingMs": 6,
+											"comparingMs": 4,
+											"committedEvidenceRows": 0,
+											"durationMs": 18,
+											"enumeratingMs": 7,
+											"evidenceWriteMs": 0,
+											"headerReads": 0,
+											"headerProcessingExcludingEvidenceWritesMs": 0,
+											"removedEvidenceRows": 0,
+											"readingHeadersMs": 0,
+											"stagedEvidenceRows": 0
+										},
+										"queryMs": 147.088,
+										"refreshMs": 40.214
+									}
+								}
+							],
+							"status": "completed"
+						}
+					}
+				}
+			],
+			"after": [
+				{
+					"schemaVersion": 4,
+					"generatedAt": "2026-09-05T17:57:03.275Z",
+					"configuration": {
+						"mutationScenarios": "not_requested",
+						"reader": "final.exe",
+						"readerBuild": "skipped",
+						"runs": 3,
+						"warmups": 1
+					},
+					"git": {
+						"dirty": true,
+						"revision": "07e73c5039d3143d7bad6a5bcae870e56773ac6f"
+					},
+					"machine": {
+						"architecture": "x64",
+						"cpuCount": 32,
+						"cpuModel": "AMD Ryzen 9 7950X 16-Core Processor            ",
+						"memoryBytes": 67836526592,
+						"nodeVersion": "v26.5.0",
+						"operatingSystem": "win32 10.0.26200",
+						"rustVersion": "rustc 1.94.0 (4a4ef493e 2026-03-02)"
+					},
+					"scenarios": {
+						"project_index.cold_build": {
+							"distribution": {
+								"count": 3,
+								"maxMs": 546.542,
+								"meanMs": 451.182,
+								"minMs": 401.573,
+								"p50Ms": 405.432,
+								"p95Ms": 546.542,
+								"samplesMs": [546.542, 401.573, 405.432]
+							},
+							"failureKinds": [],
+							"notes": "The Catalog is removed before every sample. The sample includes one refresh, bounded candidate queries, TypeScript folding, and targeted Enhanced Input decode.",
+							"samples": [
+								{
+									"cacheBytes": 8629379,
+									"durationMs": 546.542,
+									"index": {
+										"changedPackages": 10128,
+										"emittedHeaders": 2425,
+										"generation": 1,
+										"inputCandidates": 38,
+										"mapCount": 59,
+										"packageCount": 10128,
+										"queryPages": 7,
+										"removedPackages": 0
+									},
+									"inputPackages": 38,
+									"largestProtocolFrameBytes": 594524,
+									"nodePeakRssBytes": 174211072,
+									"protocolBytes": 1865405,
+									"rustPeakRssBytes": 72126464,
+									"timings": {
+										"foldingMs": 14.452,
+										"inputDecodeMs": 68.34,
+										"native": {
+											"committingMs": 54,
+											"comparingMs": 0,
+											"committedEvidenceRows": 10128,
+											"durationMs": 242,
+											"enumeratingMs": 6,
+											"evidenceWriteMs": 134,
+											"headerReads": 10128,
+											"headerProcessingExcludingEvidenceWritesMs": 46,
+											"removedEvidenceRows": 0,
+											"readingHeadersMs": 180,
+											"stagedEvidenceRows": 10128
+										},
+										"queryMs": 108.077,
+										"refreshMs": 265.957
+									}
+								},
+								{
+									"cacheBytes": 8629379,
+									"durationMs": 401.573,
+									"index": {
+										"changedPackages": 10128,
+										"emittedHeaders": 2425,
+										"generation": 1,
+										"inputCandidates": 38,
+										"mapCount": 59,
+										"packageCount": 10128,
+										"queryPages": 7,
+										"removedPackages": 0
+									},
+									"inputPackages": 38,
+									"largestProtocolFrameBytes": 594525,
+									"nodePeakRssBytes": 185221120,
+									"protocolBytes": 1865498,
+									"rustPeakRssBytes": 52948992,
+									"timings": {
+										"foldingMs": 9.644,
+										"inputDecodeMs": 56.4,
+										"native": {
+											"committingMs": 54,
+											"comparingMs": 0,
+											"committedEvidenceRows": 10128,
+											"durationMs": 227,
+											"enumeratingMs": 6,
+											"evidenceWriteMs": 131,
+											"headerReads": 10128,
+											"headerProcessingExcludingEvidenceWritesMs": 34,
+											"removedEvidenceRows": 0,
+											"readingHeadersMs": 165,
+											"stagedEvidenceRows": 10128
+										},
+										"queryMs": 88.903,
+										"refreshMs": 243.963
+									}
+								},
+								{
+									"cacheBytes": 8629379,
+									"durationMs": 405.432,
+									"index": {
+										"changedPackages": 10128,
+										"emittedHeaders": 2425,
+										"generation": 1,
+										"inputCandidates": 38,
+										"mapCount": 59,
+										"packageCount": 10128,
+										"queryPages": 7,
+										"removedPackages": 0
+									},
+									"inputPackages": 38,
+									"largestProtocolFrameBytes": 594525,
+									"nodePeakRssBytes": 185479168,
+									"protocolBytes": 1865498,
+									"rustPeakRssBytes": 43024384,
+									"timings": {
+										"foldingMs": 9.494,
+										"inputDecodeMs": 53.693,
+										"native": {
+											"committingMs": 52,
+											"comparingMs": 0,
+											"committedEvidenceRows": 10128,
+											"durationMs": 230,
+											"enumeratingMs": 6,
+											"evidenceWriteMs": 133,
+											"headerReads": 10128,
+											"headerProcessingExcludingEvidenceWritesMs": 37,
+											"removedEvidenceRows": 0,
+											"readingHeadersMs": 170,
+											"stagedEvidenceRows": 10128
+										},
+										"queryMs": 91.602,
+										"refreshMs": 248.102
+									}
+								}
+							],
+							"status": "completed"
+						},
+						"project_index.warm_noop": {
+							"distribution": {
+								"count": 3,
+								"maxMs": 159.91,
+								"meanMs": 156.441,
+								"minMs": 152.571,
+								"p50Ms": 156.841,
+								"p95Ms": 159.91,
+								"samplesMs": [159.91, 152.571, 156.841]
+							},
+							"failureKinds": [],
+							"notes": "The committed SQLite snapshot is reused. Refresh still enumerates signatures, while unchanged packages should report zero changed packages, zero header reads, and zero evidence writes.",
+							"samples": [
+								{
+									"cacheBytes": 8629375,
+									"durationMs": 159.91,
+									"index": {
+										"changedPackages": 0,
+										"emittedHeaders": 2425,
+										"generation": 4,
+										"inputCandidates": 38,
+										"mapCount": 59,
+										"packageCount": 10128,
+										"queryPages": 7,
+										"removedPackages": 0
+									},
+									"largestProtocolFrameBytes": 594525,
+									"nodePeakRssBytes": 216014848,
+									"protocolBytes": 1389372,
+									"rustPeakRssBytes": null,
+									"timings": {
+										"foldingMs": 11.083,
+										"native": {
+											"committingMs": 6,
+											"comparingMs": 4,
+											"committedEvidenceRows": 0,
+											"durationMs": 19,
+											"enumeratingMs": 8,
+											"evidenceWriteMs": 0,
+											"headerReads": 0,
+											"headerProcessingExcludingEvidenceWritesMs": 0,
+											"removedEvidenceRows": 0,
+											"readingHeadersMs": 0,
+											"stagedEvidenceRows": 0
+										},
+										"queryMs": 99.013,
+										"refreshMs": 40.848
+									}
+								},
+								{
+									"cacheBytes": 8629375,
+									"durationMs": 152.571,
+									"index": {
+										"changedPackages": 0,
+										"emittedHeaders": 2425,
+										"generation": 5,
+										"inputCandidates": 38,
+										"mapCount": 59,
+										"packageCount": 10128,
+										"queryPages": 7,
+										"removedPackages": 0
+									},
+									"largestProtocolFrameBytes": 594525,
+									"nodePeakRssBytes": 214966272,
+									"protocolBytes": 1389372,
+									"rustPeakRssBytes": null,
+									"timings": {
+										"foldingMs": 10.126,
+										"native": {
+											"committingMs": 7,
+											"comparingMs": 5,
+											"committedEvidenceRows": 0,
+											"durationMs": 21,
+											"enumeratingMs": 8,
+											"evidenceWriteMs": 0,
+											"headerReads": 0,
+											"headerProcessingExcludingEvidenceWritesMs": 0,
+											"removedEvidenceRows": 0,
+											"readingHeadersMs": 0,
+											"stagedEvidenceRows": 0
+										},
+										"queryMs": 89.393,
+										"refreshMs": 44.434
+									}
+								},
+								{
+									"cacheBytes": 8629375,
+									"durationMs": 156.841,
+									"index": {
+										"changedPackages": 0,
+										"emittedHeaders": 2425,
+										"generation": 6,
+										"inputCandidates": 38,
+										"mapCount": 59,
+										"packageCount": 10128,
+										"queryPages": 7,
+										"removedPackages": 0
+									},
+									"largestProtocolFrameBytes": 594525,
+									"nodePeakRssBytes": 217321472,
+									"protocolBytes": 1389372,
+									"rustPeakRssBytes": null,
+									"timings": {
+										"foldingMs": 9.936,
+										"native": {
+											"committingMs": 7,
+											"comparingMs": 4,
+											"committedEvidenceRows": 0,
+											"durationMs": 20,
+											"enumeratingMs": 8,
+											"evidenceWriteMs": 0,
+											"headerReads": 0,
+											"headerProcessingExcludingEvidenceWritesMs": 0,
+											"removedEvidenceRows": 0,
+											"readingHeadersMs": 0,
+											"stagedEvidenceRows": 0
+										},
+										"queryMs": 88.167,
+										"refreshMs": 43.214
+									}
+								}
+							],
+							"status": "completed"
+						}
+					}
+				}
+			]
+		},
+		"large": {
+			"before": [
+				{
+					"schemaVersion": 4,
+					"generatedAt": "2026-09-05T17:41:12.063Z",
+					"configuration": {
+						"mutationScenarios": "not_requested",
+						"reader": "baseline.exe",
+						"readerBuild": "skipped",
+						"runs": 3,
+						"warmups": 1
+					},
+					"git": {
+						"dirty": true,
+						"revision": "07e73c5039d3143d7bad6a5bcae870e56773ac6f"
+					},
+					"machine": {
+						"architecture": "x64",
+						"cpuCount": 32,
+						"cpuModel": "AMD Ryzen 9 7950X 16-Core Processor            ",
+						"memoryBytes": 67836526592,
+						"nodeVersion": "v26.5.0",
+						"operatingSystem": "win32 10.0.26200",
+						"rustVersion": "rustc 1.94.0 (4a4ef493e 2026-03-02)"
+					},
+					"scenarios": {
+						"project_index.cold_build": {
+							"distribution": {
+								"count": 3,
+								"maxMs": 4789.94,
+								"meanMs": 4756.739,
+								"minMs": 4715.771,
+								"p50Ms": 4764.505,
+								"p95Ms": 4789.94,
+								"samplesMs": [4789.94, 4715.771, 4764.505]
+							},
+							"failureKinds": [],
+							"notes": "The Catalog is removed before every sample. The sample includes one refresh, bounded candidate queries, TypeScript folding, and targeted Enhanced Input decode.",
+							"samples": [
+								{
+									"cacheBytes": 137360317,
+									"durationMs": 4789.94,
+									"index": {
+										"changedPackages": 199539,
+										"emittedHeaders": 14927,
+										"generation": 1,
+										"inputCandidates": 173,
+										"mapCount": 257,
+										"packageCount": 199539,
+										"queryPages": 18,
+										"removedPackages": 0
+									},
+									"inputPackages": 173,
+									"largestProtocolFrameBytes": 2384736,
+									"nodePeakRssBytes": 321130496,
+									"protocolBytes": 25837587,
+									"rustPeakRssBytes": 434262016,
+									"timings": {
+										"foldingMs": 82.216,
+										"inputDecodeMs": 193.507,
+										"native": {
+											"committingMs": 652,
+											"comparingMs": 31,
+											"committedEvidenceRows": 199539,
+											"durationMs": 3750,
+											"enumeratingMs": 370,
+											"evidenceWriteMs": 1907,
+											"headerReads": 199539,
+											"headerProcessingExcludingEvidenceWritesMs": 789,
+											"removedEvidenceRows": 0,
+											"readingHeadersMs": 2696,
+											"stagedEvidenceRows": 199539
+										},
+										"queryMs": 704.34,
+										"refreshMs": 3773.659
+									}
+								},
+								{
+									"cacheBytes": 137360317,
+									"durationMs": 4715.771,
+									"index": {
+										"changedPackages": 199539,
+										"emittedHeaders": 14927,
+										"generation": 1,
+										"inputCandidates": 173,
+										"mapCount": 257,
+										"packageCount": 199539,
+										"queryPages": 18,
+										"removedPackages": 0
+									},
+									"inputPackages": 173,
+									"largestProtocolFrameBytes": 2384736,
+									"nodePeakRssBytes": 357490688,
+									"protocolBytes": 25838009,
+									"rustPeakRssBytes": 414416896,
+									"timings": {
+										"foldingMs": 77.39,
+										"inputDecodeMs": 166.754,
+										"native": {
+											"committingMs": 607,
+											"comparingMs": 31,
+											"committedEvidenceRows": 199539,
+											"durationMs": 3746,
+											"enumeratingMs": 370,
+											"evidenceWriteMs": 1893,
+											"headerReads": 199539,
+											"headerProcessingExcludingEvidenceWritesMs": 843,
+											"removedEvidenceRows": 0,
+											"readingHeadersMs": 2736,
+											"stagedEvidenceRows": 199539
+										},
+										"queryMs": 661.822,
+										"refreshMs": 3765.31
+									}
+								},
+								{
+									"cacheBytes": 137360317,
+									"durationMs": 4764.505,
+									"index": {
+										"changedPackages": 199539,
+										"emittedHeaders": 14927,
+										"generation": 1,
+										"inputCandidates": 173,
+										"mapCount": 257,
+										"packageCount": 199539,
+										"queryPages": 18,
+										"removedPackages": 0
+									},
+									"inputPackages": 173,
+									"largestProtocolFrameBytes": 2384736,
+									"nodePeakRssBytes": 357691392,
+									"protocolBytes": 25838009,
+									"rustPeakRssBytes": 427294720,
+									"timings": {
+										"foldingMs": 85.815,
+										"inputDecodeMs": 170.988,
+										"native": {
+											"committingMs": 642,
+											"comparingMs": 30,
+											"committedEvidenceRows": 199539,
+											"durationMs": 3788,
+											"enumeratingMs": 348,
+											"evidenceWriteMs": 1989,
+											"headerReads": 199539,
+											"headerProcessingExcludingEvidenceWritesMs": 777,
+											"removedEvidenceRows": 0,
+											"readingHeadersMs": 2766,
+											"stagedEvidenceRows": 199539
+										},
+										"queryMs": 652.301,
+										"refreshMs": 3808.214
+									}
+								}
+							],
+							"status": "completed"
+						},
+						"project_index.warm_noop": {
+							"distribution": {
+								"count": 3,
+								"maxMs": 1494.423,
+								"meanMs": 1446.314,
+								"minMs": 1417.65,
+								"p50Ms": 1426.868,
+								"p95Ms": 1494.423,
+								"samplesMs": [1494.423, 1417.65, 1426.868]
+							},
+							"failureKinds": [],
+							"notes": "The committed SQLite snapshot is reused. Refresh still enumerates signatures, while unchanged packages should report zero changed packages, zero header reads, and zero evidence writes.",
+							"samples": [
+								{
+									"cacheBytes": 137360312,
+									"durationMs": 1494.423,
+									"index": {
+										"changedPackages": 0,
+										"emittedHeaders": 14927,
+										"generation": 4,
+										"inputCandidates": 173,
+										"mapCount": 257,
+										"packageCount": 199539,
+										"queryPages": 18,
+										"removedPackages": 0
+									},
+									"largestProtocolFrameBytes": 2384737,
+									"nodePeakRssBytes": 454086656,
+									"protocolBytes": 24048434,
+									"rustPeakRssBytes": 217968640,
+									"timings": {
+										"foldingMs": 76.527,
+										"native": {
+											"committingMs": 82,
+											"comparingMs": 130,
+											"committedEvidenceRows": 0,
+											"durationMs": 643,
+											"enumeratingMs": 430,
+											"evidenceWriteMs": 0,
+											"headerReads": 0,
+											"headerProcessingExcludingEvidenceWritesMs": 0,
+											"removedEvidenceRows": 0,
+											"readingHeadersMs": 0,
+											"stagedEvidenceRows": 0
+										},
+										"queryMs": 626.347,
+										"refreshMs": 747.082
+									}
+								},
+								{
+									"cacheBytes": 137360312,
+									"durationMs": 1417.65,
+									"index": {
+										"changedPackages": 0,
+										"emittedHeaders": 14927,
+										"generation": 5,
+										"inputCandidates": 173,
+										"mapCount": 257,
+										"packageCount": 199539,
+										"queryPages": 18,
+										"removedPackages": 0
+									},
+									"largestProtocolFrameBytes": 2384737,
+									"nodePeakRssBytes": 467677184,
+									"protocolBytes": 24048434,
+									"rustPeakRssBytes": 212226048,
+									"timings": {
+										"foldingMs": 75.075,
+										"native": {
+											"committingMs": 80,
+											"comparingMs": 127,
+											"committedEvidenceRows": 0,
+											"durationMs": 623,
+											"enumeratingMs": 414,
+											"evidenceWriteMs": 0,
+											"headerReads": 0,
+											"headerProcessingExcludingEvidenceWritesMs": 0,
+											"removedEvidenceRows": 0,
+											"readingHeadersMs": 0,
+											"stagedEvidenceRows": 0
+										},
+										"queryMs": 613.845,
+										"refreshMs": 722.456
+									}
+								},
+								{
+									"cacheBytes": 137360312,
+									"durationMs": 1426.868,
+									"index": {
+										"changedPackages": 0,
+										"emittedHeaders": 14927,
+										"generation": 6,
+										"inputCandidates": 173,
+										"mapCount": 257,
+										"packageCount": 199539,
+										"queryPages": 18,
+										"removedPackages": 0
+									},
+									"largestProtocolFrameBytes": 2384737,
+									"nodePeakRssBytes": 499449856,
+									"protocolBytes": 24048434,
+									"rustPeakRssBytes": 210653184,
+									"timings": {
+										"foldingMs": 73.088,
+										"native": {
+											"committingMs": 85,
+											"comparingMs": 130,
+											"committedEvidenceRows": 0,
+											"durationMs": 612,
+											"enumeratingMs": 397,
+											"evidenceWriteMs": 0,
+											"headerReads": 0,
+											"headerProcessingExcludingEvidenceWritesMs": 0,
+											"removedEvidenceRows": 0,
+											"readingHeadersMs": 0,
+											"stagedEvidenceRows": 0
+										},
+										"queryMs": 625.499,
+										"refreshMs": 712.252
+									}
+								}
+							],
+							"status": "completed"
+						}
+					}
+				},
+				{
+					"schemaVersion": 4,
+					"generatedAt": "2026-09-05T17:59:07.477Z",
+					"configuration": {
+						"mutationScenarios": "not_requested",
+						"reader": "baseline.exe",
+						"readerBuild": "skipped",
+						"runs": 3,
+						"warmups": 1
+					},
+					"git": {
+						"dirty": true,
+						"revision": "07e73c5039d3143d7bad6a5bcae870e56773ac6f"
+					},
+					"machine": {
+						"architecture": "x64",
+						"cpuCount": 32,
+						"cpuModel": "AMD Ryzen 9 7950X 16-Core Processor            ",
+						"memoryBytes": 67836526592,
+						"nodeVersion": "v26.5.0",
+						"operatingSystem": "win32 10.0.26200",
+						"rustVersion": "rustc 1.94.0 (4a4ef493e 2026-03-02)"
+					},
+					"scenarios": {
+						"project_index.cold_build": {
+							"distribution": {
+								"count": 3,
+								"maxMs": 5095.391,
+								"meanMs": 4779.748,
+								"minMs": 4521.863,
+								"p50Ms": 4721.99,
+								"p95Ms": 5095.391,
+								"samplesMs": [4521.863, 4721.99, 5095.391]
+							},
+							"failureKinds": [],
+							"notes": "The Catalog is removed before every sample. The sample includes one refresh, bounded candidate queries, TypeScript folding, and targeted Enhanced Input decode.",
+							"samples": [
+								{
+									"cacheBytes": 137360317,
+									"durationMs": 4521.863,
+									"index": {
+										"changedPackages": 199539,
+										"emittedHeaders": 14927,
+										"generation": 1,
+										"inputCandidates": 173,
+										"mapCount": 257,
+										"packageCount": 199539,
+										"queryPages": 18,
+										"removedPackages": 0
+									},
+									"inputPackages": 173,
+									"largestProtocolFrameBytes": 2384737,
+									"nodePeakRssBytes": 321781760,
+									"protocolBytes": 25838224,
+									"rustPeakRssBytes": 424931328,
+									"timings": {
+										"foldingMs": 82.567,
+										"inputDecodeMs": 186.517,
+										"native": {
+											"committingMs": 655,
+											"comparingMs": 30,
+											"committedEvidenceRows": 199539,
+											"durationMs": 3490,
+											"enumeratingMs": 364,
+											"evidenceWriteMs": 1887,
+											"headerReads": 199539,
+											"headerProcessingExcludingEvidenceWritesMs": 553,
+											"removedEvidenceRows": 0,
+											"readingHeadersMs": 2440,
+											"stagedEvidenceRows": 199539
+										},
+										"queryMs": 700.567,
+										"refreshMs": 3515.262
+									}
+								},
+								{
+									"cacheBytes": 137360317,
+									"durationMs": 4721.99,
+									"index": {
+										"changedPackages": 199539,
+										"emittedHeaders": 14927,
+										"generation": 1,
+										"inputCandidates": 173,
+										"mapCount": 257,
+										"packageCount": 199539,
+										"queryPages": 18,
+										"removedPackages": 0
+									},
+									"inputPackages": 173,
+									"largestProtocolFrameBytes": 2384737,
+									"nodePeakRssBytes": 352653312,
+									"protocolBytes": 25838646,
+									"rustPeakRssBytes": 422629376,
+									"timings": {
+										"foldingMs": 81.074,
+										"inputDecodeMs": 187.898,
+										"native": {
+											"committingMs": 672,
+											"comparingMs": 30,
+											"committedEvidenceRows": 199539,
+											"durationMs": 3665,
+											"enumeratingMs": 342,
+											"evidenceWriteMs": 2026,
+											"headerReads": 199539,
+											"headerProcessingExcludingEvidenceWritesMs": 594,
+											"removedEvidenceRows": 0,
+											"readingHeadersMs": 2620,
+											"stagedEvidenceRows": 199539
+										},
+										"queryMs": 715.322,
+										"refreshMs": 3684.177
+									}
+								},
+								{
+									"cacheBytes": 137360317,
+									"durationMs": 5095.391,
+									"index": {
+										"changedPackages": 199539,
+										"emittedHeaders": 14927,
+										"generation": 1,
+										"inputCandidates": 173,
+										"mapCount": 257,
+										"packageCount": 199539,
+										"queryPages": 18,
+										"removedPackages": 0
+									},
+									"inputPackages": 173,
+									"largestProtocolFrameBytes": 2384737,
+									"nodePeakRssBytes": 352509952,
+									"protocolBytes": 25838646,
+									"rustPeakRssBytes": 418926592,
+									"timings": {
+										"foldingMs": 78.951,
+										"inputDecodeMs": 208.562,
+										"native": {
+											"committingMs": 707,
+											"comparingMs": 32,
+											"committedEvidenceRows": 199539,
+											"durationMs": 4115,
+											"enumeratingMs": 382,
+											"evidenceWriteMs": 2342,
+											"headerReads": 199539,
+											"headerProcessingExcludingEvidenceWritesMs": 650,
+											"removedEvidenceRows": 0,
+											"readingHeadersMs": 2992,
+											"stagedEvidenceRows": 199539
+										},
+										"queryMs": 647.718,
+										"refreshMs": 4136.137
+									}
+								}
+							],
+							"status": "completed"
+						},
+						"project_index.warm_noop": {
+							"distribution": {
+								"count": 3,
+								"maxMs": 1541.295,
+								"meanMs": 1509.153,
+								"minMs": 1489.898,
+								"p50Ms": 1496.266,
+								"p95Ms": 1541.295,
+								"samplesMs": [1496.266, 1541.295, 1489.898]
+							},
+							"failureKinds": [],
+							"notes": "The committed SQLite snapshot is reused. Refresh still enumerates signatures, while unchanged packages should report zero changed packages, zero header reads, and zero evidence writes.",
+							"samples": [
+								{
+									"cacheBytes": 137360312,
+									"durationMs": 1496.266,
+									"index": {
+										"changedPackages": 0,
+										"emittedHeaders": 14927,
+										"generation": 4,
+										"inputCandidates": 173,
+										"mapCount": 257,
+										"packageCount": 199539,
+										"queryPages": 18,
+										"removedPackages": 0
+									},
+									"largestProtocolFrameBytes": 2384738,
+									"nodePeakRssBytes": 418631680,
+									"protocolBytes": 24048691,
+									"rustPeakRssBytes": 220729344,
+									"timings": {
+										"foldingMs": 83.591,
+										"native": {
+											"committingMs": 99,
+											"comparingMs": 128,
+											"committedEvidenceRows": 0,
+											"durationMs": 653,
+											"enumeratingMs": 425,
+											"evidenceWriteMs": 0,
+											"headerReads": 0,
+											"headerProcessingExcludingEvidenceWritesMs": 0,
+											"removedEvidenceRows": 0,
+											"readingHeadersMs": 0,
+											"stagedEvidenceRows": 0
+										},
+										"queryMs": 642.599,
+										"refreshMs": 764.246
+									}
+								},
+								{
+									"cacheBytes": 137360312,
+									"durationMs": 1541.295,
+									"index": {
+										"changedPackages": 0,
+										"emittedHeaders": 14927,
+										"generation": 5,
+										"inputCandidates": 173,
+										"mapCount": 257,
+										"packageCount": 199539,
+										"queryPages": 18,
+										"removedPackages": 0
+									},
+									"largestProtocolFrameBytes": 2384738,
+									"nodePeakRssBytes": 419360768,
+									"protocolBytes": 24048691,
+									"rustPeakRssBytes": 217251840,
+									"timings": {
+										"foldingMs": 80.492,
+										"native": {
+											"committingMs": 96,
+											"comparingMs": 139,
+											"committedEvidenceRows": 0,
+											"durationMs": 675,
+											"enumeratingMs": 439,
+											"evidenceWriteMs": 0,
+											"headerReads": 0,
+											"headerProcessingExcludingEvidenceWritesMs": 0,
+											"removedEvidenceRows": 0,
+											"readingHeadersMs": 0,
+											"stagedEvidenceRows": 0
+										},
+										"queryMs": 669.835,
+										"refreshMs": 784.864
+									}
+								},
+								{
+									"cacheBytes": 137360312,
+									"durationMs": 1489.898,
+									"index": {
+										"changedPackages": 0,
+										"emittedHeaders": 14927,
+										"generation": 6,
+										"inputCandidates": 173,
+										"mapCount": 257,
+										"packageCount": 199539,
+										"queryPages": 18,
+										"removedPackages": 0
+									},
+									"largestProtocolFrameBytes": 2384738,
+									"nodePeakRssBytes": 420077568,
+									"protocolBytes": 24048691,
+									"rustPeakRssBytes": 219852800,
+									"timings": {
+										"foldingMs": 80.178,
+										"native": {
+											"committingMs": 88,
+											"comparingMs": 135,
+											"committedEvidenceRows": 0,
+											"durationMs": 654,
+											"enumeratingMs": 429,
+											"evidenceWriteMs": 0,
+											"headerReads": 0,
+											"headerProcessingExcludingEvidenceWritesMs": 0,
+											"removedEvidenceRows": 0,
+											"readingHeadersMs": 0,
+											"stagedEvidenceRows": 0
+										},
+										"queryMs": 647.976,
+										"refreshMs": 754.946
+									}
+								}
+							],
+							"status": "completed"
+						}
+					}
+				}
+			],
+			"after": [
+				{
+					"schemaVersion": 4,
+					"generatedAt": "2026-09-05T17:57:42.021Z",
+					"configuration": {
+						"mutationScenarios": "not_requested",
+						"reader": "final.exe",
+						"readerBuild": "skipped",
+						"runs": 6,
+						"warmups": 1
+					},
+					"git": {
+						"dirty": true,
+						"revision": "07e73c5039d3143d7bad6a5bcae870e56773ac6f"
+					},
+					"machine": {
+						"architecture": "x64",
+						"cpuCount": 32,
+						"cpuModel": "AMD Ryzen 9 7950X 16-Core Processor            ",
+						"memoryBytes": 67836526592,
+						"nodeVersion": "v26.5.0",
+						"operatingSystem": "win32 10.0.26200",
+						"rustVersion": "rustc 1.94.0 (4a4ef493e 2026-03-02)"
+					},
+					"scenarios": {
+						"project_index.cold_build": {
+							"distribution": {
+								"count": 6,
+								"maxMs": 4902.414,
+								"meanMs": 4555.164,
+								"minMs": 4432.094,
+								"p50Ms": 4501.633,
+								"p95Ms": 4902.414,
+								"samplesMs": [
+									4432.094, 4902.414, 4501.633, 4518.367, 4446.392, 4530.086
+								]
+							},
+							"failureKinds": [],
+							"notes": "The Catalog is removed before every sample. The sample includes one refresh, bounded candidate queries, TypeScript folding, and targeted Enhanced Input decode.",
+							"samples": [
+								{
+									"cacheBytes": 137360317,
+									"durationMs": 4432.094,
+									"index": {
+										"changedPackages": 199539,
+										"emittedHeaders": 14927,
+										"generation": 1,
+										"inputCandidates": 173,
+										"mapCount": 257,
+										"packageCount": 199539,
+										"queryPages": 18,
+										"removedPackages": 0
+									},
+									"inputPackages": 173,
+									"largestProtocolFrameBytes": 867843,
+									"nodePeakRssBytes": 263860224,
+									"protocolBytes": 10953008,
+									"rustPeakRssBytes": 427016192,
+									"timings": {
+										"foldingMs": 66.224,
+										"inputDecodeMs": 182.261,
+										"native": {
+											"committingMs": 655,
+											"comparingMs": 31,
+											"committedEvidenceRows": 199539,
+											"durationMs": 3572,
+											"enumeratingMs": 382,
+											"evidenceWriteMs": 1949,
+											"headerReads": 199539,
+											"headerProcessingExcludingEvidenceWritesMs": 554,
+											"removedEvidenceRows": 0,
+											"readingHeadersMs": 2503,
+											"stagedEvidenceRows": 199539
+										},
+										"queryMs": 543.146,
+										"refreshMs": 3598.323
+									}
+								},
+								{
+									"cacheBytes": 137360317,
+									"durationMs": 4902.414,
+									"index": {
+										"changedPackages": 199539,
+										"emittedHeaders": 14927,
+										"generation": 1,
+										"inputCandidates": 173,
+										"mapCount": 257,
+										"packageCount": 199539,
+										"queryPages": 18,
+										"removedPackages": 0
+									},
+									"inputPackages": 173,
+									"largestProtocolFrameBytes": 867843,
+									"nodePeakRssBytes": 264511488,
+									"protocolBytes": 10953430,
+									"rustPeakRssBytes": 414732288,
+									"timings": {
+										"foldingMs": 64.897,
+										"inputDecodeMs": 169.84,
+										"native": {
+											"committingMs": 742,
+											"comparingMs": 32,
+											"committedEvidenceRows": 199539,
+											"durationMs": 4061,
+											"enumeratingMs": 357,
+											"evidenceWriteMs": 2123,
+											"headerReads": 199539,
+											"headerProcessingExcludingEvidenceWritesMs": 805,
+											"removedEvidenceRows": 0,
+											"readingHeadersMs": 2928,
+											"stagedEvidenceRows": 199539
+										},
+										"queryMs": 533.337,
+										"refreshMs": 4087.737
+									}
+								},
+								{
+									"cacheBytes": 137360317,
+									"durationMs": 4501.633,
+									"index": {
+										"changedPackages": 199539,
+										"emittedHeaders": 14927,
+										"generation": 1,
+										"inputCandidates": 173,
+										"mapCount": 257,
+										"packageCount": 199539,
+										"queryPages": 18,
+										"removedPackages": 0
+									},
+									"inputPackages": 173,
+									"largestProtocolFrameBytes": 867843,
+									"nodePeakRssBytes": 264368128,
+									"protocolBytes": 10953430,
+									"rustPeakRssBytes": 416681984,
+									"timings": {
+										"foldingMs": 68.287,
+										"inputDecodeMs": 163.617,
+										"native": {
+											"committingMs": 661,
+											"comparingMs": 30,
+											"committedEvidenceRows": 199539,
+											"durationMs": 3693,
+											"enumeratingMs": 361,
+											"evidenceWriteMs": 2022,
+											"headerReads": 199539,
+											"headerProcessingExcludingEvidenceWritesMs": 618,
+											"removedEvidenceRows": 0,
+											"readingHeadersMs": 2640,
+											"stagedEvidenceRows": 199539
+										},
+										"queryMs": 509.215,
+										"refreshMs": 3712.945
+									}
+								},
+								{
+									"cacheBytes": 137360317,
+									"durationMs": 4518.367,
+									"index": {
+										"changedPackages": 199539,
+										"emittedHeaders": 14927,
+										"generation": 1,
+										"inputCandidates": 173,
+										"mapCount": 257,
+										"packageCount": 199539,
+										"queryPages": 18,
+										"removedPackages": 0
+									},
+									"inputPackages": 173,
+									"largestProtocolFrameBytes": 867843,
+									"nodePeakRssBytes": 264810496,
+									"protocolBytes": 10953430,
+									"rustPeakRssBytes": 419164160,
+									"timings": {
+										"foldingMs": 71.354,
+										"inputDecodeMs": 175.813,
+										"native": {
+											"committingMs": 682,
+											"comparingMs": 30,
+											"committedEvidenceRows": 199539,
+											"durationMs": 3686,
+											"enumeratingMs": 349,
+											"evidenceWriteMs": 2015,
+											"headerReads": 199539,
+											"headerProcessingExcludingEvidenceWritesMs": 607,
+											"removedEvidenceRows": 0,
+											"readingHeadersMs": 2622,
+											"stagedEvidenceRows": 199539
+										},
+										"queryMs": 528.15,
+										"refreshMs": 3705.815
+									}
+								},
+								{
+									"cacheBytes": 137360317,
+									"durationMs": 4446.392,
+									"index": {
+										"changedPackages": 199539,
+										"emittedHeaders": 14927,
+										"generation": 1,
+										"inputCandidates": 173,
+										"mapCount": 257,
+										"packageCount": 199539,
+										"queryPages": 18,
+										"removedPackages": 0
+									},
+									"inputPackages": 173,
+									"largestProtocolFrameBytes": 867844,
+									"nodePeakRssBytes": 307634176,
+									"protocolBytes": 10953627,
+									"rustPeakRssBytes": 409677824,
+									"timings": {
+										"foldingMs": 59.978,
+										"inputDecodeMs": 164.697,
+										"native": {
+											"committingMs": 651,
+											"comparingMs": 30,
+											"committedEvidenceRows": 199539,
+											"durationMs": 3657,
+											"enumeratingMs": 375,
+											"evidenceWriteMs": 1980,
+											"headerReads": 199539,
+											"headerProcessingExcludingEvidenceWritesMs": 620,
+											"removedEvidenceRows": 0,
+											"readingHeadersMs": 2600,
+											"stagedEvidenceRows": 199539
+										},
+										"queryMs": 504.136,
+										"refreshMs": 3676.166
+									}
+								},
+								{
+									"cacheBytes": 137360317,
+									"durationMs": 4530.086,
+									"index": {
+										"changedPackages": 199539,
+										"emittedHeaders": 14927,
+										"generation": 1,
+										"inputCandidates": 173,
+										"mapCount": 257,
+										"packageCount": 199539,
+										"queryPages": 18,
+										"removedPackages": 0
+									},
+									"inputPackages": 173,
+									"largestProtocolFrameBytes": 867844,
+									"nodePeakRssBytes": 286240768,
+									"protocolBytes": 10954067,
+									"rustPeakRssBytes": 426950656,
+									"timings": {
+										"foldingMs": 63.606,
+										"inputDecodeMs": 160.446,
+										"native": {
+											"committingMs": 640,
+											"comparingMs": 31,
+											"committedEvidenceRows": 199539,
+											"durationMs": 3615,
+											"enumeratingMs": 362,
+											"evidenceWriteMs": 1957,
+											"headerReads": 199539,
+											"headerProcessingExcludingEvidenceWritesMs": 624,
+											"removedEvidenceRows": 0,
+											"readingHeadersMs": 2581,
+											"stagedEvidenceRows": 199539
+										},
+										"queryMs": 549.256,
+										"refreshMs": 3636.336
+									}
+								}
+							],
+							"status": "completed"
+						},
+						"project_index.warm_noop": {
+							"distribution": {
+								"count": 6,
+								"maxMs": 1338.471,
+								"meanMs": 1301.567,
+								"minMs": 1270.399,
+								"p50Ms": 1289.423,
+								"p95Ms": 1338.471,
+								"samplesMs": [
+									1338.471, 1302.526, 1323.372, 1285.211, 1270.399, 1289.423
+								]
+							},
+							"failureKinds": [],
+							"notes": "The committed SQLite snapshot is reused. Refresh still enumerates signatures, while unchanged packages should report zero changed packages, zero header reads, and zero evidence writes.",
+							"samples": [
+								{
+									"cacheBytes": 137360312,
+									"durationMs": 1338.471,
+									"index": {
+										"changedPackages": 0,
+										"emittedHeaders": 14927,
+										"generation": 4,
+										"inputCandidates": 173,
+										"mapCount": 257,
+										"packageCount": 199539,
+										"queryPages": 18,
+										"removedPackages": 0
+									},
+									"largestProtocolFrameBytes": 763422,
+									"nodePeakRssBytes": 339111936,
+									"protocolBytes": 9163475,
+									"rustPeakRssBytes": 222564352,
+									"timings": {
+										"foldingMs": 63.377,
+										"native": {
+											"committingMs": 85,
+											"comparingMs": 133,
+											"committedEvidenceRows": 0,
+											"durationMs": 634,
+											"enumeratingMs": 415,
+											"evidenceWriteMs": 0,
+											"headerReads": 0,
+											"headerProcessingExcludingEvidenceWritesMs": 0,
+											"removedEvidenceRows": 0,
+											"readingHeadersMs": 0,
+											"stagedEvidenceRows": 0
+										},
+										"queryMs": 517.176,
+										"refreshMs": 736.923
+									}
+								},
+								{
+									"cacheBytes": 137360312,
+									"durationMs": 1302.526,
+									"index": {
+										"changedPackages": 0,
+										"emittedHeaders": 14927,
+										"generation": 5,
+										"inputCandidates": 173,
+										"mapCount": 257,
+										"packageCount": 199539,
+										"queryPages": 18,
+										"removedPackages": 0
+									},
+									"largestProtocolFrameBytes": 763422,
+									"nodePeakRssBytes": 335515648,
+									"protocolBytes": 9163475,
+									"rustPeakRssBytes": 214147072,
+									"timings": {
+										"foldingMs": 62.198,
+										"native": {
+											"committingMs": 82,
+											"comparingMs": 129,
+											"committedEvidenceRows": 0,
+											"durationMs": 618,
+											"enumeratingMs": 406,
+											"evidenceWriteMs": 0,
+											"headerReads": 0,
+											"headerProcessingExcludingEvidenceWritesMs": 0,
+											"removedEvidenceRows": 0,
+											"readingHeadersMs": 0,
+											"stagedEvidenceRows": 0
+										},
+										"queryMs": 508.605,
+										"refreshMs": 719.544
+									}
+								},
+								{
+									"cacheBytes": 137360312,
+									"durationMs": 1323.372,
+									"index": {
+										"changedPackages": 0,
+										"emittedHeaders": 14927,
+										"generation": 6,
+										"inputCandidates": 173,
+										"mapCount": 257,
+										"packageCount": 199539,
+										"queryPages": 18,
+										"removedPackages": 0
+									},
+									"largestProtocolFrameBytes": 763422,
+									"nodePeakRssBytes": 335564800,
+									"protocolBytes": 9163475,
+									"rustPeakRssBytes": 219136000,
+									"timings": {
+										"foldingMs": 61.554,
+										"native": {
+											"committingMs": 82,
+											"comparingMs": 130,
+											"committedEvidenceRows": 0,
+											"durationMs": 645,
+											"enumeratingMs": 431,
+											"evidenceWriteMs": 0,
+											"headerReads": 0,
+											"headerProcessingExcludingEvidenceWritesMs": 0,
+											"removedEvidenceRows": 0,
+											"readingHeadersMs": 0,
+											"stagedEvidenceRows": 0
+										},
+										"queryMs": 504.37,
+										"refreshMs": 747.826
+									}
+								},
+								{
+									"cacheBytes": 137360312,
+									"durationMs": 1285.211,
+									"index": {
+										"changedPackages": 0,
+										"emittedHeaders": 14927,
+										"generation": 7,
+										"inputCandidates": 173,
+										"mapCount": 257,
+										"packageCount": 199539,
+										"queryPages": 18,
+										"removedPackages": 0
+									},
+									"largestProtocolFrameBytes": 763422,
+									"nodePeakRssBytes": 335495168,
+									"protocolBytes": 9163475,
+									"rustPeakRssBytes": 212123648,
+									"timings": {
+										"foldingMs": 61.734,
+										"native": {
+											"committingMs": 82,
+											"comparingMs": 137,
+											"committedEvidenceRows": 0,
+											"durationMs": 632,
+											"enumeratingMs": 412,
+											"evidenceWriteMs": 0,
+											"headerReads": 0,
+											"headerProcessingExcludingEvidenceWritesMs": 0,
+											"removedEvidenceRows": 0,
+											"readingHeadersMs": 0,
+											"stagedEvidenceRows": 0
+										},
+										"queryMs": 485.733,
+										"refreshMs": 732.559
+									}
+								},
+								{
+									"cacheBytes": 137360312,
+									"durationMs": 1270.399,
+									"index": {
+										"changedPackages": 0,
+										"emittedHeaders": 14927,
+										"generation": 8,
+										"inputCandidates": 173,
+										"mapCount": 257,
+										"packageCount": 199539,
+										"queryPages": 18,
+										"removedPackages": 0
+									},
+									"largestProtocolFrameBytes": 763422,
+									"nodePeakRssBytes": 335650816,
+									"protocolBytes": 9163475,
+									"rustPeakRssBytes": 204193792,
+									"timings": {
+										"foldingMs": 60.026,
+										"native": {
+											"committingMs": 82,
+											"comparingMs": 127,
+											"committedEvidenceRows": 0,
+											"durationMs": 629,
+											"enumeratingMs": 418,
+											"evidenceWriteMs": 0,
+											"headerReads": 0,
+											"headerProcessingExcludingEvidenceWritesMs": 0,
+											"removedEvidenceRows": 0,
+											"readingHeadersMs": 0,
+											"stagedEvidenceRows": 0
+										},
+										"queryMs": 476.863,
+										"refreshMs": 728.149
+									}
+								},
+								{
+									"cacheBytes": 137360312,
+									"durationMs": 1289.423,
+									"index": {
+										"changedPackages": 0,
+										"emittedHeaders": 14927,
+										"generation": 9,
+										"inputCandidates": 173,
+										"mapCount": 257,
+										"packageCount": 199539,
+										"queryPages": 18,
+										"removedPackages": 0
+									},
+									"largestProtocolFrameBytes": 763422,
+									"nodePeakRssBytes": 335769600,
+									"protocolBytes": 9163475,
+									"rustPeakRssBytes": 217104384,
+									"timings": {
+										"foldingMs": 60.333,
+										"native": {
+											"committingMs": 80,
+											"comparingMs": 126,
+											"committedEvidenceRows": 0,
+											"durationMs": 620,
+											"enumeratingMs": 413,
+											"evidenceWriteMs": 0,
+											"headerReads": 0,
+											"headerProcessingExcludingEvidenceWritesMs": 0,
+											"removedEvidenceRows": 0,
+											"readingHeadersMs": 0,
+											"stagedEvidenceRows": 0
+										},
+										"queryMs": 492.362,
+										"refreshMs": 723.929
+									}
+								}
+							],
+							"status": "completed"
+						}
+					}
+				}
+			]
+		}
+	},
+	"experiments": {
+		"large-dictionary-a.json": {
+			"schemaVersion": 4,
+			"generatedAt": "2026-09-05T17:45:57.969Z",
+			"configuration": {
+				"mutationScenarios": "not_requested",
+				"reader": "dictionary-a.exe",
+				"readerBuild": "skipped",
+				"runs": 3,
+				"warmups": 1
+			},
+			"git": {
+				"dirty": true,
+				"revision": "07e73c5039d3143d7bad6a5bcae870e56773ac6f"
+			},
+			"machine": {
+				"architecture": "x64",
+				"cpuCount": 32,
+				"cpuModel": "AMD Ryzen 9 7950X 16-Core Processor            ",
+				"memoryBytes": 67836526592,
+				"nodeVersion": "v26.5.0",
+				"operatingSystem": "win32 10.0.26200",
+				"rustVersion": "rustc 1.94.0 (4a4ef493e 2026-03-02)"
+			},
+			"scenarios": {
+				"project_index.cold_build": {
+					"distribution": {
+						"count": 3,
+						"maxMs": 4651.683,
+						"meanMs": 4516.492,
+						"minMs": 4430.435,
+						"p50Ms": 4467.358,
+						"p95Ms": 4651.683,
+						"samplesMs": [4651.683, 4467.358, 4430.435]
+					},
+					"failureKinds": [],
+					"notes": "The Catalog is removed before every sample. The sample includes one refresh, bounded candidate queries, TypeScript folding, and targeted Enhanced Input decode.",
+					"samples": [
+						{
+							"cacheBytes": 137360317,
+							"durationMs": 4651.683,
+							"index": {
+								"changedPackages": 199539,
+								"emittedHeaders": 14927,
+								"generation": 1,
+								"inputCandidates": 173,
+								"mapCount": 257,
+								"packageCount": 199539,
+								"queryPages": 18,
+								"removedPackages": 0
+							},
+							"inputPackages": 173,
+							"largestProtocolFrameBytes": 867842,
+							"nodePeakRssBytes": 281686016,
+							"protocolBytes": 10952371,
+							"rustPeakRssBytes": 433684480,
+							"timings": {
+								"foldingMs": 60.576,
+								"inputDecodeMs": 185.705,
+								"native": {
+									"committingMs": 676,
+									"comparingMs": 31,
+									"committedEvidenceRows": 199539,
+									"durationMs": 3540,
+									"enumeratingMs": 357,
+									"evidenceWriteMs": 1935,
+									"headerReads": 199539,
+									"headerProcessingExcludingEvidenceWritesMs": 540,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 2475,
+									"stagedEvidenceRows": 199539
+								},
+								"queryMs": 720.399,
+								"refreshMs": 3648.187
+							}
+						},
+						{
+							"cacheBytes": 137360317,
+							"durationMs": 4467.358,
+							"index": {
+								"changedPackages": 199539,
+								"emittedHeaders": 14927,
+								"generation": 1,
+								"inputCandidates": 173,
+								"mapCount": 257,
+								"packageCount": 199539,
+								"queryPages": 18,
+								"removedPackages": 0
+							},
+							"inputPackages": 173,
+							"largestProtocolFrameBytes": 867842,
+							"nodePeakRssBytes": 282488832,
+							"protocolBytes": 10952793,
+							"rustPeakRssBytes": 413310976,
+							"timings": {
+								"foldingMs": 52.767,
+								"inputDecodeMs": 165.254,
+								"native": {
+									"committingMs": 620,
+									"comparingMs": 29,
+									"committedEvidenceRows": 199539,
+									"durationMs": 3545,
+									"enumeratingMs": 355,
+									"evidenceWriteMs": 1888,
+									"headerReads": 199539,
+									"headerProcessingExcludingEvidenceWritesMs": 651,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 2539,
+									"stagedEvidenceRows": 199539
+								},
+								"queryMs": 617.346,
+								"refreshMs": 3588.123
+							}
+						},
+						{
+							"cacheBytes": 137360316,
+							"durationMs": 4430.435,
+							"index": {
+								"changedPackages": 199539,
+								"emittedHeaders": 14927,
+								"generation": 1,
+								"inputCandidates": 173,
+								"mapCount": 257,
+								"packageCount": 199539,
+								"queryPages": 18,
+								"removedPackages": 0
+							},
+							"inputPackages": 173,
+							"largestProtocolFrameBytes": 867842,
+							"nodePeakRssBytes": 285634560,
+							"protocolBytes": 10952793,
+							"rustPeakRssBytes": 423624704,
+							"timings": {
+								"foldingMs": 52.24,
+								"inputDecodeMs": 159.831,
+								"native": {
+									"committingMs": 631,
+									"comparingMs": 30,
+									"committedEvidenceRows": 199539,
+									"durationMs": 3544,
+									"enumeratingMs": 345,
+									"evidenceWriteMs": 1923,
+									"headerReads": 199539,
+									"headerProcessingExcludingEvidenceWritesMs": 614,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 2537,
+									"stagedEvidenceRows": 199539
+								},
+								"queryMs": 611.945,
+								"refreshMs": 3562.963
+							}
+						}
+					],
+					"status": "completed"
+				},
+				"project_index.warm_noop": {
+					"distribution": {
+						"count": 3,
+						"maxMs": 1401.316,
+						"meanMs": 1377.905,
+						"minMs": 1336.698,
+						"p50Ms": 1395.7,
+						"p95Ms": 1401.316,
+						"samplesMs": [1336.698, 1395.7, 1401.316]
+					},
+					"failureKinds": [],
+					"notes": "The committed SQLite snapshot is reused. Refresh still enumerates signatures, while unchanged packages should report zero changed packages, zero header reads, and zero evidence writes.",
+					"samples": [
+						{
+							"cacheBytes": 137360311,
+							"durationMs": 1336.698,
+							"index": {
+								"changedPackages": 0,
+								"emittedHeaders": 14927,
+								"generation": 4,
+								"inputCandidates": 173,
+								"mapCount": 257,
+								"packageCount": 199539,
+								"queryPages": 18,
+								"removedPackages": 0
+							},
+							"largestProtocolFrameBytes": 763421,
+							"nodePeakRssBytes": 406532096,
+							"protocolBytes": 9163218,
+							"rustPeakRssBytes": 216104960,
+							"timings": {
+								"foldingMs": 52.104,
+								"native": {
+									"committingMs": 79,
+									"comparingMs": 133,
+									"committedEvidenceRows": 0,
+									"durationMs": 603,
+									"enumeratingMs": 390,
+									"evidenceWriteMs": 0,
+									"headerReads": 0,
+									"headerProcessingExcludingEvidenceWritesMs": 0,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 0,
+									"stagedEvidenceRows": 0
+								},
+								"queryMs": 578.671,
+								"refreshMs": 700.108
+							}
+						},
+						{
+							"cacheBytes": 137360311,
+							"durationMs": 1395.7,
+							"index": {
+								"changedPackages": 0,
+								"emittedHeaders": 14927,
+								"generation": 5,
+								"inputCandidates": 173,
+								"mapCount": 257,
+								"packageCount": 199539,
+								"queryPages": 18,
+								"removedPackages": 0
+							},
+							"largestProtocolFrameBytes": 763421,
+							"nodePeakRssBytes": 406536192,
+							"protocolBytes": 9163218,
+							"rustPeakRssBytes": 211468288,
+							"timings": {
+								"foldingMs": 55.214,
+								"native": {
+									"committingMs": 81,
+									"comparingMs": 130,
+									"committedEvidenceRows": 0,
+									"durationMs": 624,
+									"enumeratingMs": 412,
+									"evidenceWriteMs": 0,
+									"headerReads": 0,
+									"headerProcessingExcludingEvidenceWritesMs": 0,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 0,
+									"stagedEvidenceRows": 0
+								},
+								"queryMs": 606.219,
+								"refreshMs": 728.666
+							}
+						},
+						{
+							"cacheBytes": 137360311,
+							"durationMs": 1401.316,
+							"index": {
+								"changedPackages": 0,
+								"emittedHeaders": 14927,
+								"generation": 6,
+								"inputCandidates": 173,
+								"mapCount": 257,
+								"packageCount": 199539,
+								"queryPages": 18,
+								"removedPackages": 0
+							},
+							"largestProtocolFrameBytes": 763421,
+							"nodePeakRssBytes": 406708224,
+							"protocolBytes": 9163218,
+							"rustPeakRssBytes": 209219584,
+							"timings": {
+								"foldingMs": 52.7,
+								"native": {
+									"committingMs": 84,
+									"comparingMs": 127,
+									"committedEvidenceRows": 0,
+									"durationMs": 639,
+									"enumeratingMs": 427,
+									"evidenceWriteMs": 0,
+									"headerReads": 0,
+									"headerProcessingExcludingEvidenceWritesMs": 0,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 0,
+									"stagedEvidenceRows": 0
+								},
+								"queryMs": 601.868,
+								"refreshMs": 740.763
+							}
+						}
+					],
+					"status": "completed"
+				}
+			}
+		},
+		"large-dictionary-b.json": {
+			"schemaVersion": 4,
+			"generatedAt": "2026-09-05T17:48:39.573Z",
+			"configuration": {
+				"mutationScenarios": "not_requested",
+				"reader": "dictionary-a.exe",
+				"readerBuild": "skipped",
+				"runs": 3,
+				"warmups": 1
+			},
+			"git": {
+				"dirty": true,
+				"revision": "07e73c5039d3143d7bad6a5bcae870e56773ac6f"
+			},
+			"machine": {
+				"architecture": "x64",
+				"cpuCount": 32,
+				"cpuModel": "AMD Ryzen 9 7950X 16-Core Processor            ",
+				"memoryBytes": 67836526592,
+				"nodeVersion": "v26.5.0",
+				"operatingSystem": "win32 10.0.26200",
+				"rustVersion": "rustc 1.94.0 (4a4ef493e 2026-03-02)"
+			},
+			"scenarios": {
+				"project_index.cold_build": {
+					"distribution": {
+						"count": 3,
+						"maxMs": 4810.414,
+						"meanMs": 4706.059,
+						"minMs": 4567.522,
+						"p50Ms": 4740.242,
+						"p95Ms": 4810.414,
+						"samplesMs": [4810.414, 4567.522, 4740.242]
+					},
+					"failureKinds": [],
+					"notes": "The Catalog is removed before every sample. The sample includes one refresh, bounded candidate queries, TypeScript folding, and targeted Enhanced Input decode.",
+					"samples": [
+						{
+							"cacheBytes": 137360316,
+							"durationMs": 4810.414,
+							"index": {
+								"changedPackages": 199539,
+								"emittedHeaders": 14927,
+								"generation": 1,
+								"inputCandidates": 173,
+								"mapCount": 257,
+								"packageCount": 199539,
+								"queryPages": 18,
+								"removedPackages": 0
+							},
+							"inputPackages": 173,
+							"largestProtocolFrameBytes": 867843,
+							"nodePeakRssBytes": 261844992,
+							"protocolBytes": 10953008,
+							"rustPeakRssBytes": 417988608,
+							"timings": {
+								"foldingMs": 60.601,
+								"inputDecodeMs": 185.133,
+								"native": {
+									"committingMs": 699,
+									"comparingMs": 29,
+									"committedEvidenceRows": 199539,
+									"durationMs": 3773,
+									"enumeratingMs": 367,
+									"evidenceWriteMs": 2017,
+									"headerReads": 199539,
+									"headerProcessingExcludingEvidenceWritesMs": 660,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 2677,
+									"stagedEvidenceRows": 199539
+								},
+								"queryMs": 727.158,
+								"refreshMs": 3801.185
+							}
+						},
+						{
+							"cacheBytes": 137360317,
+							"durationMs": 4567.522,
+							"index": {
+								"changedPackages": 199539,
+								"emittedHeaders": 14927,
+								"generation": 1,
+								"inputCandidates": 173,
+								"mapCount": 257,
+								"packageCount": 199539,
+								"queryPages": 18,
+								"removedPackages": 0
+							},
+							"inputPackages": 173,
+							"largestProtocolFrameBytes": 867843,
+							"nodePeakRssBytes": 302698496,
+							"protocolBytes": 10953430,
+							"rustPeakRssBytes": 429494272,
+							"timings": {
+								"foldingMs": 57.196,
+								"inputDecodeMs": 161.339,
+								"native": {
+									"committingMs": 629,
+									"comparingMs": 30,
+									"committedEvidenceRows": 199539,
+									"durationMs": 3638,
+									"enumeratingMs": 367,
+									"evidenceWriteMs": 1956,
+									"headerReads": 199539,
+									"headerProcessingExcludingEvidenceWritesMs": 655,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 2611,
+									"stagedEvidenceRows": 199539
+								},
+								"queryMs": 685.003,
+								"refreshMs": 3657.332
+							}
+						},
+						{
+							"cacheBytes": 137360317,
+							"durationMs": 4740.242,
+							"index": {
+								"changedPackages": 199539,
+								"emittedHeaders": 14927,
+								"generation": 1,
+								"inputCandidates": 173,
+								"mapCount": 257,
+								"packageCount": 199539,
+								"queryPages": 18,
+								"removedPackages": 0
+							},
+							"inputPackages": 173,
+							"largestProtocolFrameBytes": 867843,
+							"nodePeakRssBytes": 302493696,
+							"protocolBytes": 10953430,
+							"rustPeakRssBytes": 414085120,
+							"timings": {
+								"foldingMs": 65.312,
+								"inputDecodeMs": 188.794,
+								"native": {
+									"committingMs": 672,
+									"comparingMs": 37,
+									"committedEvidenceRows": 199539,
+									"durationMs": 3699,
+									"enumeratingMs": 377,
+									"evidenceWriteMs": 1979,
+									"headerReads": 199539,
+									"headerProcessingExcludingEvidenceWritesMs": 632,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 2611,
+									"stagedEvidenceRows": 199539
+								},
+								"queryMs": 710.479,
+								"refreshMs": 3717.764
+							}
+						}
+					],
+					"status": "completed"
+				},
+				"project_index.warm_noop": {
+					"distribution": {
+						"count": 3,
+						"maxMs": 1445.821,
+						"meanMs": 1385.86,
+						"minMs": 1351.396,
+						"p50Ms": 1360.362,
+						"p95Ms": 1445.821,
+						"samplesMs": [1360.362, 1445.821, 1351.396]
+					},
+					"failureKinds": [],
+					"notes": "The committed SQLite snapshot is reused. Refresh still enumerates signatures, while unchanged packages should report zero changed packages, zero header reads, and zero evidence writes.",
+					"samples": [
+						{
+							"cacheBytes": 137360312,
+							"durationMs": 1360.362,
+							"index": {
+								"changedPackages": 0,
+								"emittedHeaders": 14927,
+								"generation": 4,
+								"inputCandidates": 173,
+								"mapCount": 257,
+								"packageCount": 199539,
+								"queryPages": 18,
+								"removedPackages": 0
+							},
+							"largestProtocolFrameBytes": 763422,
+							"nodePeakRssBytes": 316366848,
+							"protocolBytes": 9163475,
+							"rustPeakRssBytes": 209682432,
+							"timings": {
+								"foldingMs": 51.089,
+								"native": {
+									"committingMs": 80,
+									"comparingMs": 127,
+									"committedEvidenceRows": 0,
+									"durationMs": 614,
+									"enumeratingMs": 406,
+									"evidenceWriteMs": 0,
+									"headerReads": 0,
+									"headerProcessingExcludingEvidenceWritesMs": 0,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 0,
+									"stagedEvidenceRows": 0
+								},
+								"queryMs": 587.194,
+								"refreshMs": 716.211
+							}
+						},
+						{
+							"cacheBytes": 137360312,
+							"durationMs": 1445.821,
+							"index": {
+								"changedPackages": 0,
+								"emittedHeaders": 14927,
+								"generation": 5,
+								"inputCandidates": 173,
+								"mapCount": 257,
+								"packageCount": 199539,
+								"queryPages": 18,
+								"removedPackages": 0
+							},
+							"largestProtocolFrameBytes": 763422,
+							"nodePeakRssBytes": 355729408,
+							"protocolBytes": 9163475,
+							"rustPeakRssBytes": 212193280,
+							"timings": {
+								"foldingMs": 51.051,
+								"native": {
+									"committingMs": 79,
+									"comparingMs": 126,
+									"committedEvidenceRows": 0,
+									"durationMs": 619,
+									"enumeratingMs": 413,
+									"evidenceWriteMs": 0,
+									"headerReads": 0,
+									"headerProcessingExcludingEvidenceWritesMs": 0,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 0,
+									"stagedEvidenceRows": 0
+								},
+								"queryMs": 641.429,
+								"refreshMs": 720.204
+							}
+						},
+						{
+							"cacheBytes": 137360312,
+							"durationMs": 1351.396,
+							"index": {
+								"changedPackages": 0,
+								"emittedHeaders": 14927,
+								"generation": 6,
+								"inputCandidates": 173,
+								"mapCount": 257,
+								"packageCount": 199539,
+								"queryPages": 18,
+								"removedPackages": 0
+							},
+							"largestProtocolFrameBytes": 763422,
+							"nodePeakRssBytes": 370081792,
+							"protocolBytes": 9163475,
+							"rustPeakRssBytes": 214626304,
+							"timings": {
+								"foldingMs": 48.383,
+								"native": {
+									"committingMs": 80,
+									"comparingMs": 125,
+									"committedEvidenceRows": 0,
+									"durationMs": 613,
+									"enumeratingMs": 407,
+									"evidenceWriteMs": 0,
+									"headerReads": 0,
+									"headerProcessingExcludingEvidenceWritesMs": 0,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 0,
+									"stagedEvidenceRows": 0
+								},
+								"queryMs": 582.042,
+								"refreshMs": 714.473
+							}
+						}
+					],
+					"status": "completed"
+				}
+			}
+		},
+		"large-dictionary-c.json": {
+			"schemaVersion": 4,
+			"generatedAt": "2026-09-05T17:50:27.839Z",
+			"configuration": {
+				"mutationScenarios": "not_requested",
+				"reader": "dictionary-a.exe",
+				"readerBuild": "skipped",
+				"runs": 3,
+				"warmups": 1
+			},
+			"git": {
+				"dirty": true,
+				"revision": "07e73c5039d3143d7bad6a5bcae870e56773ac6f"
+			},
+			"machine": {
+				"architecture": "x64",
+				"cpuCount": 32,
+				"cpuModel": "AMD Ryzen 9 7950X 16-Core Processor            ",
+				"memoryBytes": 67836526592,
+				"nodeVersion": "v26.5.0",
+				"operatingSystem": "win32 10.0.26200",
+				"rustVersion": "rustc 1.94.0 (4a4ef493e 2026-03-02)"
+			},
+			"scenarios": {
+				"project_index.cold_build": {
+					"distribution": {
+						"count": 3,
+						"maxMs": 7904.78,
+						"meanMs": 5604.777,
+						"minMs": 4415.205,
+						"p50Ms": 4494.345,
+						"p95Ms": 7904.78,
+						"samplesMs": [7904.78, 4415.205, 4494.345]
+					},
+					"failureKinds": [],
+					"notes": "The Catalog is removed before every sample. The sample includes one refresh, bounded candidate queries, TypeScript folding, and targeted Enhanced Input decode.",
+					"samples": [
+						{
+							"cacheBytes": 137360317,
+							"durationMs": 7904.78,
+							"index": {
+								"changedPackages": 199539,
+								"emittedHeaders": 14927,
+								"generation": 1,
+								"inputCandidates": 173,
+								"mapCount": 257,
+								"packageCount": 199539,
+								"queryPages": 18,
+								"removedPackages": 0
+							},
+							"inputPackages": 173,
+							"largestProtocolFrameBytes": 867843,
+							"nodePeakRssBytes": 237264896,
+							"protocolBytes": 10953009,
+							"rustPeakRssBytes": 422707200,
+							"timings": {
+								"foldingMs": 69.283,
+								"inputDecodeMs": 190.847,
+								"native": {
+									"committingMs": 620,
+									"comparingMs": 30,
+									"committedEvidenceRows": 199539,
+									"durationMs": 7023,
+									"enumeratingMs": 1263,
+									"evidenceWriteMs": 2057,
+									"headerReads": 199539,
+									"headerProcessingExcludingEvidenceWritesMs": 3051,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 5108,
+									"stagedEvidenceRows": 199539
+								},
+								"queryMs": 549.278,
+								"refreshMs": 7051.178
+							}
+						},
+						{
+							"cacheBytes": 137360317,
+							"durationMs": 4415.205,
+							"index": {
+								"changedPackages": 199539,
+								"emittedHeaders": 14927,
+								"generation": 1,
+								"inputCandidates": 173,
+								"mapCount": 257,
+								"packageCount": 199539,
+								"queryPages": 18,
+								"removedPackages": 0
+							},
+							"inputPackages": 173,
+							"largestProtocolFrameBytes": 867843,
+							"nodePeakRssBytes": 270925824,
+							"protocolBytes": 10953430,
+							"rustPeakRssBytes": 426258432,
+							"timings": {
+								"foldingMs": 61.342,
+								"inputDecodeMs": 159.805,
+								"native": {
+									"committingMs": 629,
+									"comparingMs": 31,
+									"committedEvidenceRows": 199539,
+									"durationMs": 3651,
+									"enumeratingMs": 347,
+									"evidenceWriteMs": 1994,
+									"headerReads": 199539,
+									"headerProcessingExcludingEvidenceWritesMs": 649,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 2643,
+									"stagedEvidenceRows": 199539
+								},
+								"queryMs": 517.054,
+								"refreshMs": 3671.641
+							}
+						},
+						{
+							"cacheBytes": 137360317,
+							"durationMs": 4494.345,
+							"index": {
+								"changedPackages": 199539,
+								"emittedHeaders": 14927,
+								"generation": 1,
+								"inputCandidates": 173,
+								"mapCount": 257,
+								"packageCount": 199539,
+								"queryPages": 18,
+								"removedPackages": 0
+							},
+							"inputPackages": 173,
+							"largestProtocolFrameBytes": 867843,
+							"nodePeakRssBytes": 271843328,
+							"protocolBytes": 10953430,
+							"rustPeakRssBytes": 423464960,
+							"timings": {
+								"foldingMs": 62.645,
+								"inputDecodeMs": 165.397,
+								"native": {
+									"committingMs": 639,
+									"comparingMs": 30,
+									"committedEvidenceRows": 199539,
+									"durationMs": 3682,
+									"enumeratingMs": 375,
+									"evidenceWriteMs": 2004,
+									"headerReads": 199539,
+									"headerProcessingExcludingEvidenceWritesMs": 633,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 2637,
+									"stagedEvidenceRows": 199539
+								},
+								"queryMs": 517.988,
+								"refreshMs": 3701.849
+							}
+						}
+					],
+					"status": "completed"
+				},
+				"project_index.warm_noop": {
+					"distribution": {
+						"count": 3,
+						"maxMs": 1315.66,
+						"meanMs": 1296.989,
+						"minMs": 1283.829,
+						"p50Ms": 1291.478,
+						"p95Ms": 1315.66,
+						"samplesMs": [1315.66, 1291.478, 1283.829]
+					},
+					"failureKinds": [],
+					"notes": "The committed SQLite snapshot is reused. Refresh still enumerates signatures, while unchanged packages should report zero changed packages, zero header reads, and zero evidence writes.",
+					"samples": [
+						{
+							"cacheBytes": 137360312,
+							"durationMs": 1315.66,
+							"index": {
+								"changedPackages": 0,
+								"emittedHeaders": 14927,
+								"generation": 4,
+								"inputCandidates": 173,
+								"mapCount": 257,
+								"packageCount": 199539,
+								"queryPages": 18,
+								"removedPackages": 0
+							},
+							"largestProtocolFrameBytes": 763422,
+							"nodePeakRssBytes": 302268416,
+							"protocolBytes": 9163475,
+							"rustPeakRssBytes": 207077376,
+							"timings": {
+								"foldingMs": 59.772,
+								"native": {
+									"committingMs": 84,
+									"comparingMs": 129,
+									"committedEvidenceRows": 0,
+									"durationMs": 643,
+									"enumeratingMs": 429,
+									"evidenceWriteMs": 0,
+									"headerReads": 0,
+									"headerProcessingExcludingEvidenceWritesMs": 0,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 0,
+									"stagedEvidenceRows": 0
+								},
+								"queryMs": 497.68,
+								"refreshMs": 745.346
+							}
+						},
+						{
+							"cacheBytes": 137360312,
+							"durationMs": 1291.478,
+							"index": {
+								"changedPackages": 0,
+								"emittedHeaders": 14927,
+								"generation": 5,
+								"inputCandidates": 173,
+								"mapCount": 257,
+								"packageCount": 199539,
+								"queryPages": 18,
+								"removedPackages": 0
+							},
+							"largestProtocolFrameBytes": 763422,
+							"nodePeakRssBytes": 296509440,
+							"protocolBytes": 9163475,
+							"rustPeakRssBytes": 211480576,
+							"timings": {
+								"foldingMs": 62.078,
+								"native": {
+									"committingMs": 83,
+									"comparingMs": 130,
+									"committedEvidenceRows": 0,
+									"durationMs": 633,
+									"enumeratingMs": 419,
+									"evidenceWriteMs": 0,
+									"headerReads": 0,
+									"headerProcessingExcludingEvidenceWritesMs": 0,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 0,
+									"stagedEvidenceRows": 0
+								},
+								"queryMs": 490.179,
+								"refreshMs": 733.71
+							}
+						},
+						{
+							"cacheBytes": 137360312,
+							"durationMs": 1283.829,
+							"index": {
+								"changedPackages": 0,
+								"emittedHeaders": 14927,
+								"generation": 6,
+								"inputCandidates": 173,
+								"mapCount": 257,
+								"packageCount": 199539,
+								"queryPages": 18,
+								"removedPackages": 0
+							},
+							"largestProtocolFrameBytes": 763422,
+							"nodePeakRssBytes": 296767488,
+							"protocolBytes": 9163475,
+							"rustPeakRssBytes": 207421440,
+							"timings": {
+								"foldingMs": 60.062,
+								"native": {
+									"committingMs": 81,
+									"comparingMs": 132,
+									"committedEvidenceRows": 0,
+									"durationMs": 632,
+									"enumeratingMs": 418,
+									"evidenceWriteMs": 0,
+									"headerReads": 0,
+									"headerProcessingExcludingEvidenceWritesMs": 0,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 0,
+									"stagedEvidenceRows": 0
+								},
+								"queryMs": 482.669,
+								"refreshMs": 736.12
+							}
+						}
+					],
+					"status": "completed"
+				}
+			}
+		},
+		"large-plain-frozen.json": {
+			"schemaVersion": 4,
+			"generatedAt": "2026-09-05T17:52:26.499Z",
+			"configuration": {
+				"mutationScenarios": "not_requested",
+				"reader": "dictionary-a.exe",
+				"readerBuild": "skipped",
+				"runs": 3,
+				"warmups": 1
+			},
+			"git": {
+				"dirty": true,
+				"revision": "07e73c5039d3143d7bad6a5bcae870e56773ac6f"
+			},
+			"machine": {
+				"architecture": "x64",
+				"cpuCount": 32,
+				"cpuModel": "AMD Ryzen 9 7950X 16-Core Processor            ",
+				"memoryBytes": 67836526592,
+				"nodeVersion": "v26.5.0",
+				"operatingSystem": "win32 10.0.26200",
+				"rustVersion": "rustc 1.94.0 (4a4ef493e 2026-03-02)"
+			},
+			"scenarios": {
+				"project_index.cold_build": {
+					"distribution": {
+						"count": 3,
+						"maxMs": 4772.218,
+						"meanMs": 4648.996,
+						"minMs": 4417.934,
+						"p50Ms": 4756.835,
+						"p95Ms": 4772.218,
+						"samplesMs": [4417.934, 4772.218, 4756.835]
+					},
+					"failureKinds": [],
+					"notes": "The Catalog is removed before every sample. The sample includes one refresh, bounded candidate queries, TypeScript folding, and targeted Enhanced Input decode.",
+					"samples": [
+						{
+							"cacheBytes": 137360317,
+							"durationMs": 4417.934,
+							"index": {
+								"changedPackages": 199539,
+								"emittedHeaders": 14927,
+								"generation": 1,
+								"inputCandidates": 173,
+								"mapCount": 257,
+								"packageCount": 199539,
+								"queryPages": 18,
+								"removedPackages": 0
+							},
+							"inputPackages": 173,
+							"largestProtocolFrameBytes": 2384737,
+							"nodePeakRssBytes": 304574464,
+							"protocolBytes": 25838224,
+							"rustPeakRssBytes": 424841216,
+							"timings": {
+								"foldingMs": 93.929,
+								"inputDecodeMs": 208.343,
+								"native": {
+									"committingMs": 690,
+									"comparingMs": 29,
+									"committedEvidenceRows": 199539,
+									"durationMs": 3539,
+									"enumeratingMs": 360,
+									"evidenceWriteMs": 1962,
+									"headerReads": 199539,
+									"headerProcessingExcludingEvidenceWritesMs": 496,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 2458,
+									"stagedEvidenceRows": 199539
+								},
+								"queryMs": 536.047,
+								"refreshMs": 3566.355
+							}
+						},
+						{
+							"cacheBytes": 137360317,
+							"durationMs": 4772.218,
+							"index": {
+								"changedPackages": 199539,
+								"emittedHeaders": 14927,
+								"generation": 1,
+								"inputCandidates": 173,
+								"mapCount": 257,
+								"packageCount": 199539,
+								"queryPages": 18,
+								"removedPackages": 0
+							},
+							"inputPackages": 173,
+							"largestProtocolFrameBytes": 2384737,
+							"nodePeakRssBytes": 313716736,
+							"protocolBytes": 25838646,
+							"rustPeakRssBytes": 421613568,
+							"timings": {
+								"foldingMs": 93.444,
+								"inputDecodeMs": 174.101,
+								"native": {
+									"committingMs": 778,
+									"comparingMs": 31,
+									"committedEvidenceRows": 199539,
+									"durationMs": 3861,
+									"enumeratingMs": 365,
+									"evidenceWriteMs": 2190,
+									"headerReads": 199539,
+									"headerProcessingExcludingEvidenceWritesMs": 496,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 2686,
+									"stagedEvidenceRows": 199539
+								},
+								"queryMs": 573.54,
+								"refreshMs": 3882.219
+							}
+						},
+						{
+							"cacheBytes": 137360317,
+							"durationMs": 4756.835,
+							"index": {
+								"changedPackages": 199539,
+								"emittedHeaders": 14927,
+								"generation": 1,
+								"inputCandidates": 173,
+								"mapCount": 257,
+								"packageCount": 199539,
+								"queryPages": 18,
+								"removedPackages": 0
+							},
+							"inputPackages": 173,
+							"largestProtocolFrameBytes": 2384737,
+							"nodePeakRssBytes": 314523648,
+							"protocolBytes": 25838646,
+							"rustPeakRssBytes": 420691968,
+							"timings": {
+								"foldingMs": 91.541,
+								"inputDecodeMs": 159.43,
+								"native": {
+									"committingMs": 683,
+									"comparingMs": 36,
+									"committedEvidenceRows": 199539,
+									"durationMs": 3916,
+									"enumeratingMs": 414,
+									"evidenceWriteMs": 2143,
+									"headerReads": 199539,
+									"headerProcessingExcludingEvidenceWritesMs": 639,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 2782,
+									"stagedEvidenceRows": 199539
+								},
+								"queryMs": 554.584,
+								"refreshMs": 3935.992
+							}
+						}
+					],
+					"status": "completed"
+				},
+				"project_index.warm_noop": {
+					"distribution": {
+						"count": 3,
+						"maxMs": 1393.325,
+						"meanMs": 1387.641,
+						"minMs": 1383.465,
+						"p50Ms": 1386.133,
+						"p95Ms": 1393.325,
+						"samplesMs": [1393.325, 1383.465, 1386.133]
+					},
+					"failureKinds": [],
+					"notes": "The committed SQLite snapshot is reused. Refresh still enumerates signatures, while unchanged packages should report zero changed packages, zero header reads, and zero evidence writes.",
+					"samples": [
+						{
+							"cacheBytes": 137360312,
+							"durationMs": 1393.325,
+							"index": {
+								"changedPackages": 0,
+								"emittedHeaders": 14927,
+								"generation": 4,
+								"inputCandidates": 173,
+								"mapCount": 257,
+								"packageCount": 199539,
+								"queryPages": 18,
+								"removedPackages": 0
+							},
+							"largestProtocolFrameBytes": 2384738,
+							"nodePeakRssBytes": 402915328,
+							"protocolBytes": 24048691,
+							"rustPeakRssBytes": 206192640,
+							"timings": {
+								"foldingMs": 91.544,
+								"native": {
+									"committingMs": 82,
+									"comparingMs": 128,
+									"committedEvidenceRows": 0,
+									"durationMs": 655,
+									"enumeratingMs": 443,
+									"evidenceWriteMs": 0,
+									"headerReads": 0,
+									"headerProcessingExcludingEvidenceWritesMs": 0,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 0,
+									"stagedEvidenceRows": 0
+								},
+								"queryMs": 519.262,
+								"refreshMs": 776.804
+							}
+						},
+						{
+							"cacheBytes": 137360312,
+							"durationMs": 1383.465,
+							"index": {
+								"changedPackages": 0,
+								"emittedHeaders": 14927,
+								"generation": 5,
+								"inputCandidates": 173,
+								"mapCount": 257,
+								"packageCount": 199539,
+								"queryPages": 18,
+								"removedPackages": 0
+							},
+							"largestProtocolFrameBytes": 2384738,
+							"nodePeakRssBytes": 404787200,
+							"protocolBytes": 24048691,
+							"rustPeakRssBytes": 206794752,
+							"timings": {
+								"foldingMs": 87.102,
+								"native": {
+									"committingMs": 87,
+									"comparingMs": 135,
+									"committedEvidenceRows": 0,
+									"durationMs": 661,
+									"enumeratingMs": 438,
+									"evidenceWriteMs": 0,
+									"headerReads": 0,
+									"headerProcessingExcludingEvidenceWritesMs": 0,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 0,
+									"stagedEvidenceRows": 0
+								},
+								"queryMs": 528.441,
+								"refreshMs": 761.987
+							}
+						},
+						{
+							"cacheBytes": 137360312,
+							"durationMs": 1386.133,
+							"index": {
+								"changedPackages": 0,
+								"emittedHeaders": 14927,
+								"generation": 6,
+								"inputCandidates": 173,
+								"mapCount": 257,
+								"packageCount": 199539,
+								"queryPages": 18,
+								"removedPackages": 0
+							},
+							"largestProtocolFrameBytes": 2384738,
+							"nodePeakRssBytes": 403349504,
+							"protocolBytes": 24048691,
+							"rustPeakRssBytes": 214073344,
+							"timings": {
+								"foldingMs": 98.122,
+								"native": {
+									"committingMs": 83,
+									"comparingMs": 129,
+									"committedEvidenceRows": 0,
+									"durationMs": 654,
+									"enumeratingMs": 441,
+									"evidenceWriteMs": 0,
+									"headerReads": 0,
+									"headerProcessingExcludingEvidenceWritesMs": 0,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 0,
+									"stagedEvidenceRows": 0
+								},
+								"queryMs": 519.212,
+								"refreshMs": 763.498
+							}
+						}
+					],
+					"status": "completed"
+				}
+			}
+		}
+	},
+	"parity": {
+		"small": {
+			"queries": {
+				"before": {
+					"packages": 71,
+					"maps": 4,
+					"completeness": "complete",
+					"queries": [
+						{
+							"kind": "maps",
+							"items": 4,
+							"pages": 1,
+							"sha256": "ecfa3cbbb81a9d2fee34be0d2e0202bb43537ae692c16f652d633a513c6e340c"
+						},
+						{
+							"kind": "exact_classes",
+							"items": 30,
+							"pages": 1,
+							"sha256": "aa896c63e688ecc9dcee6199984b01e8563810f6ef373b29c0601ae51858393b"
+						},
+						{
+							"kind": "class_prefixes",
+							"items": 25,
+							"pages": 1,
+							"sha256": "cf95691e33e5c34b4458be11ce9dc2f554ec7c50cc74c38d39cd2cf89a488ab2"
+						},
+						{
+							"kind": "class_name_suffixes",
+							"items": 25,
+							"pages": 1,
+							"sha256": "cf95691e33e5c34b4458be11ce9dc2f554ec7c50cc74c38d39cd2cf89a488ab2"
+						},
+						{
+							"kind": "serialized_names",
+							"items": 26,
+							"pages": 1,
+							"sha256": "f41a0d53fc4d137943faf15ade5b5c3b52ee9ae67305811cdf6a5a4d0fa917ff"
+						}
+					]
+				},
+				"after": {
+					"packages": 71,
+					"maps": 4,
+					"completeness": "complete",
+					"queries": [
+						{
+							"kind": "maps",
+							"items": 4,
+							"pages": 1,
+							"sha256": "ecfa3cbbb81a9d2fee34be0d2e0202bb43537ae692c16f652d633a513c6e340c"
+						},
+						{
+							"kind": "exact_classes",
+							"items": 30,
+							"pages": 1,
+							"sha256": "aa896c63e688ecc9dcee6199984b01e8563810f6ef373b29c0601ae51858393b"
+						},
+						{
+							"kind": "class_prefixes",
+							"items": 25,
+							"pages": 1,
+							"sha256": "cf95691e33e5c34b4458be11ce9dc2f554ec7c50cc74c38d39cd2cf89a488ab2"
+						},
+						{
+							"kind": "class_name_suffixes",
+							"items": 25,
+							"pages": 1,
+							"sha256": "cf95691e33e5c34b4458be11ce9dc2f554ec7c50cc74c38d39cd2cf89a488ab2"
+						},
+						{
+							"kind": "serialized_names",
+							"items": 26,
+							"pages": 1,
+							"sha256": "f41a0d53fc4d137943faf15ade5b5c3b52ee9ae67305811cdf6a5a4d0fa917ff"
+						}
+					]
+				}
+			},
+			"snapshotSha256": {
+				"before": "fe12853ffcfc7bfde9f867b9a5e12cf720fbfcac7ded26ffd97c4d054d3db07d",
+				"after": "fe12853ffcfc7bfde9f867b9a5e12cf720fbfcac7ded26ffd97c4d054d3db07d"
+			}
+		},
+		"medium": {
+			"queries": {
+				"before": {
+					"packages": 10128,
+					"maps": 59,
+					"completeness": "complete",
+					"queries": [
+						{
+							"kind": "maps",
+							"items": 59,
+							"pages": 1,
+							"sha256": "d61587073d90aaac8028da219a84b86bc91998268104afd9c86eed86050221cd"
+						},
+						{
+							"kind": "exact_classes",
+							"items": 2274,
+							"pages": 3,
+							"sha256": "8b087de5a03e775367c9547b445adcb28807e01724b42f5d66cb373902b1d9cf"
+						},
+						{
+							"kind": "class_prefixes",
+							"items": 35,
+							"pages": 1,
+							"sha256": "866420b1ca6318cdff196454c3a03baabee05366b6188abfeb8cf15ac8f10f98"
+						},
+						{
+							"kind": "class_name_suffixes",
+							"items": 38,
+							"pages": 1,
+							"sha256": "1cdb75b836bf84865bc7579ba4fe4d801de460e0588c0512ac004fe1d3966a1d"
+						},
+						{
+							"kind": "serialized_names",
+							"items": 117,
+							"pages": 1,
+							"sha256": "3952b4871596b81ed15e78a0079da7c6486f1f974237130a33003f0092c11a5c"
+						}
+					]
+				},
+				"after": {
+					"packages": 10128,
+					"maps": 59,
+					"completeness": "complete",
+					"queries": [
+						{
+							"kind": "maps",
+							"items": 59,
+							"pages": 1,
+							"sha256": "d61587073d90aaac8028da219a84b86bc91998268104afd9c86eed86050221cd"
+						},
+						{
+							"kind": "exact_classes",
+							"items": 2274,
+							"pages": 3,
+							"sha256": "8b087de5a03e775367c9547b445adcb28807e01724b42f5d66cb373902b1d9cf"
+						},
+						{
+							"kind": "class_prefixes",
+							"items": 35,
+							"pages": 1,
+							"sha256": "866420b1ca6318cdff196454c3a03baabee05366b6188abfeb8cf15ac8f10f98"
+						},
+						{
+							"kind": "class_name_suffixes",
+							"items": 38,
+							"pages": 1,
+							"sha256": "1cdb75b836bf84865bc7579ba4fe4d801de460e0588c0512ac004fe1d3966a1d"
+						},
+						{
+							"kind": "serialized_names",
+							"items": 117,
+							"pages": 1,
+							"sha256": "3952b4871596b81ed15e78a0079da7c6486f1f974237130a33003f0092c11a5c"
+						}
+					]
+				}
+			},
+			"snapshotSha256": {
+				"before": "453e65843e83696f8edd2a4fa9fd64e662b05eb0aea088b6e5979b2c9ea75db9",
+				"after": "453e65843e83696f8edd2a4fa9fd64e662b05eb0aea088b6e5979b2c9ea75db9"
+			}
+		},
+		"large": {
+			"queries": {
+				"before": {
+					"packages": 199539,
+					"maps": 257,
+					"completeness": "complete",
+					"queries": [
+						{
+							"kind": "maps",
+							"items": 257,
+							"pages": 1,
+							"sha256": "6dec5e95c6957ffabd8a0c51447a30370c743fc0b376e787cb9606213de094f0"
+						},
+						{
+							"kind": "exact_classes",
+							"items": 12862,
+							"pages": 13,
+							"sha256": "d4da0f7eda464767d49c4964761ea49360aebbe6473b576ec3b333f6ed76fe99"
+						},
+						{
+							"kind": "class_prefixes",
+							"items": 135,
+							"pages": 1,
+							"sha256": "70e5ace144b7cc3553518553175e99c2399147317d6c1d28eaa510426d73baac"
+						},
+						{
+							"kind": "class_name_suffixes",
+							"items": 173,
+							"pages": 1,
+							"sha256": "e92dfacbbae3d7337604a673dc36bb510c77fced62ce96270d5cef9e222bc1f7"
+						},
+						{
+							"kind": "serialized_names",
+							"items": 2009,
+							"pages": 2,
+							"sha256": "f96d6ef77b9125e6c205ee5b293b001bdb393d3005c101041432fd9367a719d7"
+						}
+					]
+				},
+				"after": {
+					"packages": 199539,
+					"maps": 257,
+					"completeness": "complete",
+					"queries": [
+						{
+							"kind": "maps",
+							"items": 257,
+							"pages": 1,
+							"sha256": "6dec5e95c6957ffabd8a0c51447a30370c743fc0b376e787cb9606213de094f0"
+						},
+						{
+							"kind": "exact_classes",
+							"items": 12862,
+							"pages": 13,
+							"sha256": "d4da0f7eda464767d49c4964761ea49360aebbe6473b576ec3b333f6ed76fe99"
+						},
+						{
+							"kind": "class_prefixes",
+							"items": 135,
+							"pages": 1,
+							"sha256": "70e5ace144b7cc3553518553175e99c2399147317d6c1d28eaa510426d73baac"
+						},
+						{
+							"kind": "class_name_suffixes",
+							"items": 173,
+							"pages": 1,
+							"sha256": "e92dfacbbae3d7337604a673dc36bb510c77fced62ce96270d5cef9e222bc1f7"
+						},
+						{
+							"kind": "serialized_names",
+							"items": 2009,
+							"pages": 2,
+							"sha256": "f96d6ef77b9125e6c205ee5b293b001bdb393d3005c101041432fd9367a719d7"
+						}
+					]
+				}
+			},
+			"snapshotSha256": {
+				"before": "fd1c4cdac5049ec001d1421531e85082d174d6a67899e0a2602cba18448a8984",
+				"after": "fd1c4cdac5049ec001d1421531e85082d174d6a67899e0a2602cba18448a8984"
+			}
+		}
+	},
+	"sourceSha256": {
+		"crates/uasset-io/src/protocol.rs": "f6859ea697274927ea3ad2b90c13bcfed118419875cda018b8644e004b62d1f0",
+		"crates/uasset-io/src/protocol_adapter.rs": "cca0fdc30db70ab19c12ab8431b8acd3aa1c99869262918220c47cd2732f8d58",
+		"crates/uasset-io/src/protocol_result.rs": "55262705ec6cd9c7bd7ae9634b2930c3e1a80050ec47cd624171cd2fc94f2156",
+		"crates/uasset-io/tests/protocol_process.rs": "b7a6bcef5e8ea51346df3aa841817fe10205f38ef84ce3873d12ca2430c049ca",
+		"packages/protocol/contracts/uasset-io/v1/README.md": "ef3e179255a05b06a9d43cc31e10c485286ebf815f0aefbe8d2be6eefbc39a9c",
+		"packages/protocol/contracts/uasset-io/v1/event.schema.json": "ee04d9930e6a3f9342841df9d24e12392fba1ec4dc1ca8237b9f5eb97d10e41c",
+		"packages/protocol/contracts/uasset-io/v1/request.schema.json": "5b954f79447859a6c219c4c46fabd7e4fd02e030196f14b2ead1e2ef54b6ff2b",
+		"packages/protocol/src/uasset-io.test.ts": "b62009f4e7d55399e1489343053f86fe43c30abcece544d01955cd1d26b70002",
+		"packages/protocol/src/uasset-io.ts": "9d3f381e5a50d33a796fc1d749d80ad2eb07de80735d43d0a383f48fe3ffdd57",
+		"packages/unreal-assets/README.md": "647027d68c95449da910a2877d618b54be8b8a85305c4eee794a086bd20dc4ea",
+		"packages/unreal-assets/src/asset-reader.test.ts": "6929e199ceaeaad2567f15627488c3830701e6b3488fedc17320cdff47e916fa",
+		"packages/unreal-assets/src/project-index-process.ts": "8c0d898332f59e2e72314b78fb908ecb1e5508133b466c1b37860f1be78bbc31",
+		"packages/unreal-assets/src/project-index-protocol.test.ts": "afbfff203c776103601929649a4d83d259f58fb3ddb1cfc4ed514e4b151a8fec",
+		"packages/unreal-assets/src/project-index-protocol.ts": "2ac1807c99e4806b480da56635ea13cf1abf593a20fb4d4b177f7fae95ee470f",
+		"packages/unreal-assets/src/project-index.test.ts": "f012beb1952248c3ec9d111f237829e508b550789f140a147834fb76e0af28b7",
+		"packages/unreal-assets/src/project-index.ts": "f307f43fcd4807166cfeab6b79dc593847d96a3c0502f5ed2b30b08077e25edd",
+		"packages/unreal-assets/src/protocol-transport.ts": "4b2e963e8f73ea10bec0ccc307a601bc8af410282bc97d2ac0ff3ae2e9be0c11",
+		"tools/benchmarks/README.md": "80e77454dd8b5f25aa982b09d39fd670156cdebf418235cb25ad26fb0725e0f6",
+		"tools/benchmarks/compare_project_catalogs.py": "b43fede9880e25b377b04975d1e7cf086785063237f1e588249986fbef184899",
+		"crates/uasset-io/src/protocol_result/project_index_dictionary.rs": "b203fff923c11bf0514e48c09e0485dc9bf880a78c106843a682b7232c293814"
+	},
+	"confirmationClientArtifacts": {
+		"baseline-client\\packages\\unreal-assets\\dist\\project-index-process.js": "e1f7a9fab6493c3f325989798ab15338b63185588439e96b1ce326ab9f45ed41",
+		"baseline-client\\packages\\unreal-assets\\dist\\project-index-protocol.js": "995959b682b6b2d672aa7582e09ace1bb457eea66e0b6ad98b210768218a5df3",
+		"baseline-client\\packages\\unreal-assets\\dist\\project-index.js": "71a8a623c2e6d17073dfe7e83e318c481ecdb6abef39ff57dc1553bc5d7efa1e",
+		"baseline-client\\packages\\unreal-assets\\dist\\protocol-transport.js": "2e80c6890d9ccd0a773f233ade4148021b1fd78248a7756bd3bc27cb458f8615",
+		"baseline-client\\packages\\protocol\\dist\\uasset-io.js": "2f4627b4a514c22147594225ace33d1959281ab99186364004eb3d30e30f1c75",
+		"final-client\\packages\\unreal-assets\\dist\\project-index-process.js": "58d66a522510a61edd9d6f4d22526e3695cbf1dca78e0823e2360d4473276eb8",
+		"final-client\\packages\\unreal-assets\\dist\\project-index-protocol.js": "132b42bcdeab5eb3679fc317ec10dfeaf6c630907fa9380d70a5967b6a47f25a",
+		"final-client\\packages\\unreal-assets\\dist\\project-index.js": "3078c46abd26f8a3bc7490a2c18fc4416f64b4dbd2889b163967b34d68b85673",
+		"final-client\\packages\\unreal-assets\\dist\\protocol-transport.js": "80b46cdf05ede21e2a05e38211073313d79d9a71eaa5c99b9b2e328f3257ea12",
+		"final-client\\packages\\protocol\\dist\\uasset-io.js": "b0ac9a92370778eb7c0b957ee8af72c90319d87891a6c3d1d5687df36de6b537"
+	}
+}

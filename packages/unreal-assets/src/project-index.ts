@@ -1,4 +1,5 @@
 import { Config, Context, Effect, Layer, Option, Schema, Stream } from "effect";
+import { findValidatedPage, retainValidatedPage } from "./project-index-page-validation.js";
 
 export const PROJECT_INDEX_MAX_PAGE_SIZE = 1024;
 export const PROJECT_INDEX_MAX_DIAGNOSTICS = 64;
@@ -92,6 +93,32 @@ export const ProjectIndexQuery = Schema.TaggedUnion({
 });
 export type ProjectIndexQuery = typeof ProjectIndexQuery.Type;
 
+export const ProjectIndexFilter = Schema.TaggedUnion({
+	Maps: {},
+	ExactClasses: { values: QueryValues },
+	ClassPrefixes: { values: QueryValues },
+	ClassNameSuffixes: { values: QueryValues },
+	SerializedNames: { values: QueryValues }
+});
+export type ProjectIndexFilter = typeof ProjectIndexFilter.Type;
+
+/** Count distinct packages matching any filter in one generation. */
+export const ProjectIndexCount = Schema.Struct({
+	projectId: ProjectIdentity,
+	expectedGeneration: ProjectIndexGeneration,
+	filters: Schema.Array(ProjectIndexFilter).check(Schema.isMinLength(1), Schema.isMaxLength(16))
+});
+export interface ProjectIndexCount extends Schema.Schema.Type<typeof ProjectIndexCount> {}
+
+export const ProjectIndexCountResult = Schema.Struct({
+	projectId: ProjectIdentity,
+	generation: ProjectIndexGeneration,
+	count: NonNegativeInt
+});
+export interface ProjectIndexCountResult extends Schema.Schema.Type<
+	typeof ProjectIndexCountResult
+> {}
+
 export const ProjectIndexMap = Schema.Struct({
 	kind: Schema.Literal("map"),
 	mapPath: BoundedPath,
@@ -172,6 +199,9 @@ export interface ProjectIndexConfiguration {
 }
 
 export interface ProjectIndexApi {
+	readonly count: (
+		request: ProjectIndexCount
+	) => Effect.Effect<ProjectIndexCountResult, ProjectIndexError>;
 	readonly rebuild: (
 		target: ProjectIndexTarget
 	) => Stream.Stream<ProjectIndexRefreshEvent, ProjectIndexError>;
@@ -221,6 +251,73 @@ const invalidRequest = (message: string): ProjectIndexInvalidRequest =>
 		retrySafe: false
 	});
 
+export const decodeProjectIndexCount = <Input>(input: Input) =>
+	Schema.decodeUnknownEffect(ProjectIndexCount)(input).pipe(
+		Effect.mapError(() =>
+			invalidRequest("Project Index counts require between 1 and 16 bounded filters.")
+		)
+	);
+
+export const countProjectIndex = Effect.fn("ProjectIndex.count")(function* (
+	request: ProjectIndexCount
+) {
+	const decoded = yield* decodeProjectIndexCount(request);
+	const index = yield* ProjectIndex;
+	const result = yield* index.count(decoded);
+	return yield* Schema.decodeUnknownEffect(ProjectIndexCountResult)(result).pipe(
+		Effect.filterOrFail(
+			(value) =>
+				value.projectId === decoded.projectId &&
+				value.generation === decoded.expectedGeneration,
+			() => invalidRequest("Project Index count returned a different identity or generation.")
+		),
+		Effect.mapError(
+			() =>
+				new ProjectIndexUnavailable({
+					message: "Project Index returned an invalid count result.",
+					recovery: "Refresh the Catalog, then retry the count.",
+					retrySafe: true
+				})
+		)
+	);
+});
+
+/** Portable fallback for adapters whose storage has no aggregate operation. */
+export const countProjectIndexPages = Effect.fn("ProjectIndex.countPages")(function* (
+	query: ProjectIndexApi["query"],
+	request: ProjectIndexCount
+) {
+	const decoded = yield* decodeProjectIndexCount(request);
+	const paths = new Set<string>();
+	for (const filter of decoded.filters) {
+		let cursor: ProjectIndexCursor | undefined;
+		do {
+			const page = yield* query({
+				...filter,
+				projectId: decoded.projectId,
+				expectedGeneration: decoded.expectedGeneration,
+				limit: PROJECT_INDEX_MAX_PAGE_SIZE,
+				...(cursor === undefined ? undefined : { cursor })
+			}).pipe(Effect.flatMap(decodeProjectIndexPage));
+			if (
+				page.projectId !== decoded.projectId ||
+				page.generation !== decoded.expectedGeneration
+			)
+				return yield* invalidRequest(
+					"Count page belongs to a different identity or generation."
+				);
+			for (const item of page.items)
+				paths.add(item.kind === "map" ? item.mapPath : item.packagePath);
+			cursor = page.nextCursor;
+		} while (cursor !== undefined);
+	}
+	return {
+		projectId: decoded.projectId,
+		generation: decoded.expectedGeneration,
+		count: paths.size
+	};
+});
+
 export const decodeProjectIndexTarget = Effect.fn("ProjectIndex.decodeTarget")(
 	<Input>(input: Input) =>
 		Schema.decodeUnknownEffect(ProjectIndexTarget)(input).pipe(
@@ -241,17 +338,26 @@ export const decodeProjectIndexQuery = Effect.fn("ProjectIndex.decodeQuery")(
 		)
 );
 
+const decodePage = Schema.decodeUnknownEffect(ProjectIndexPage);
+
 export const decodeProjectIndexPage = Effect.fn("ProjectIndex.decodePage")(<Input>(input: Input) =>
-	Schema.decodeUnknownEffect(ProjectIndexPage)(input).pipe(
-		Effect.mapError(
-			() =>
-				new ProjectIndexUnavailable({
-					message: "The Project Index adapter returned an unbounded or invalid page.",
-					recovery: "Rebuild the Catalog, then retry with a bounded query.",
-					retrySafe: true
-				})
-		)
-	)
+	Effect.suspend(() => {
+		// Only an already validated, deeply frozen result can cross another library boundary
+		// without walking every name again. Untrusted or mutable pages always run the schema.
+		const validated = findValidatedPage(input);
+		if (validated !== undefined) return Effect.succeed(validated);
+		return decodePage(input).pipe(
+			Effect.map(retainValidatedPage),
+			Effect.mapError(
+				() =>
+					new ProjectIndexUnavailable({
+						message: "The Project Index adapter returned an unbounded or invalid page.",
+						recovery: "Rebuild the Catalog, then retry with a bounded query.",
+						retrySafe: true
+					})
+			)
+		);
+	})
 );
 
 export function foldProjectIndexRefresh(
@@ -323,8 +429,16 @@ export const getProjectIndexCacheRoot = Effect.fn("ProjectIndex.cacheRoot")(() =
 	Effect.map(ProjectIndexConfig, (configuration) => configuration.cacheRoot)
 );
 
-export function makeProjectIndexTestLayer(service: ProjectIndexApi): Layer.Layer<ProjectIndex> {
-	return Layer.succeed(ProjectIndex, ProjectIndex.of(service));
+export function makeProjectIndexTestLayer(
+	service: Omit<ProjectIndexApi, "count"> & Partial<Pick<ProjectIndexApi, "count">>
+): Layer.Layer<ProjectIndex> {
+	return Layer.succeed(
+		ProjectIndex,
+		ProjectIndex.of({
+			...service,
+			count: service.count ?? ((request) => countProjectIndexPages(service.query, request))
+		})
+	);
 }
 
 export function requireProjectIndexCacheRoot(

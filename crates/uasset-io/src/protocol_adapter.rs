@@ -274,6 +274,7 @@ fn operation_kind(operation: &Operation) -> &'static str {
         Operation::ProjectIndexRefresh { .. } => "project_index_refresh",
         Operation::ProjectIndexRebuild { .. } => "project_index_rebuild",
         Operation::ProjectIndexQuery { .. } => "project_index_query",
+        Operation::ProjectIndexCount { .. } => "project_index_count",
     }
 }
 
@@ -290,11 +291,12 @@ fn execute_direct(
                 | Operation::Blueprint { .. }
                 | Operation::Authoring { .. }
                 | Operation::ProjectIndexQuery { .. }
+                | Operation::ProjectIndexCount { .. }
         )
     {
         return Err(Failure::new(
             "unsupported_session_operation",
-            "protocol-session accepts inspect, blueprint, authoring, and project index query operations",
+            "protocol-session accepts inspect, blueprint, authoring, and project index query/count operations",
             false,
         ));
     }
@@ -446,7 +448,21 @@ fn execute_direct(
             cache_root,
             project_root,
         } => execute_project_index_refresh(emitter, cancellation, cache_root, project_root, true),
-        Operation::ProjectIndexQuery { cache_root, query } => {
+        Operation::ProjectIndexCount {
+            cache_root,
+            request,
+        } => {
+            let mut temporary = direct_executor::ProjectIndexQuerySession::default();
+            let session = query_session.unwrap_or(&mut temporary);
+            let result = session.count(cache_root, request)?;
+            emit_typed_result(emitter, &ResultFrame::ProjectIndexCount { result })?;
+            Ok(false)
+        }
+        Operation::ProjectIndexQuery {
+            cache_root,
+            query,
+            page_encoding,
+        } => {
             let page = if let Some(session) = query_session {
                 session.query(cache_root, query)?
             } else {
@@ -456,7 +472,12 @@ fn execute_direct(
                 )?;
                 direct_executor::project_index_query_protocol(&catalog, query)?
             };
-            emit_typed_result(emitter, &ResultFrame::ProjectIndexPage { page })?;
+            let result = if page_encoding.is_some() {
+                ResultFrame::ProjectIndexDictionaryPage { page: page.into() }
+            } else {
+                ResultFrame::ProjectIndexPage { page }
+            };
+            emit_typed_result(emitter, &result)?;
             Ok(false)
         }
     }

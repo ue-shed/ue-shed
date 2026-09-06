@@ -306,6 +306,53 @@ describe("AssetReader protocol boundary validation", () => {
 		);
 	});
 
+	it("validates dictionary frames and retains wire normalization on both decoder paths", () => {
+		const page = {
+			generation: 1,
+			projectId: "fixture",
+			strings: ["Class", "Name"],
+			items: [
+				{
+					kind: "header",
+					packageName: "/Game/A",
+					packagePath: "Content/A.uasset",
+					classes: [0],
+					serializedNames: [1]
+				}
+			]
+		};
+		const event = {
+			contract: protocolContract,
+			kind: "result",
+			requestId: "protocol-test",
+			sequence: 1,
+			result: { kind: "project_index_dictionary_page", page }
+		};
+		for (const characters of [1, 128 * 1024]) {
+			expect(validateProtocolEvent(event, characters)).toEqual(event);
+			const padded = {
+				...event,
+				result: { ...event.result, page: { ...page, strings: [" Class ", "Name"] } }
+			};
+			expect(validateProtocolEvent(padded, characters)).toEqual(event);
+			for (const invalid of [
+				{ ...page, strings: [""] },
+				{ ...page, unexpected: true },
+				{ ...page, strings: Array(131073).fill("Name") },
+				{ ...page, items: [{ ...page.items[0], classes: [-1] }] },
+				{ ...page, items: [{ ...page.items[0], serializedNames: [0.5] }] },
+				{ ...page, items: [{ ...page.items[0], serializedNames: Array(65).fill(0) }] }
+			]) {
+				expect(() =>
+					validateProtocolEvent(
+						{ ...event, result: { ...event.result, page: invalid } },
+						characters
+					)
+				).toThrow();
+			}
+		}
+	});
+
 	it("retains exact schema validation on the large-frame type-side path", () => {
 		const malformedJson = new ProtocolStreamValidator(protocolContract, "protocol-test");
 		expect(() => malformedJson.pushLine("{")).toThrow("Invalid protocol event");

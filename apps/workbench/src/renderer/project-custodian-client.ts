@@ -5,7 +5,7 @@ import {
 	decodeCustodianPrepareRunResult,
 	decodeCustodianRunResult,
 	type CustodianClientApi
-} from "@ue-shed/extension-project-custodian";
+} from "@ue-shed/extension-project-custodian/client";
 import { Effect } from "effect";
 
 function request<A, HostValue, DecodeError>(

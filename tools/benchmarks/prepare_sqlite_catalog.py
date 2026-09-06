@@ -16,7 +16,7 @@ out = args.output.resolve()
 out.mkdir(parents=True, exist_ok=False)
 for name in ["Cargo.toml", "Cargo.lock"]:
     shutil.copy2(root / name, out / name)
-shutil.copytree(root / "crates", out / "crates")
+shutil.copytree(root / "crates", out / "crates", ignore=shutil.ignore_patterns("target", "node_modules", ".git"))
 shutil.copytree(root / "fixtures", out / "fixtures")
 shutil.copytree(root / "packages/protocol/contracts", out / "packages/protocol/contracts")
 source = (root / "tools/benchmarks/catalog-manifest-research.rs").read_text(encoding="utf-8")
@@ -30,7 +30,14 @@ if args.serialized_names == "scan":
 (out / "crates/uasset-io/src/direct_executor/catalog_sqlite.rs").write_text(module, encoding="utf-8")
 manifest = out / "crates/uasset-io/Cargo.toml"
 text = manifest.read_text(encoding="utf-8")
-text, count = re.subn(r'^rusqlite = .*$', 'rusqlite = { version = "=0.37.0", default-features = false, features = ["bundled"] }', text, flags=re.M)
+text = re.sub(r'\n\[features\]\ncatalog-oracle = \["dep:rusqlite"\]\n', '\n', text)
+text, count = re.subn(r'^rusqlite = \{[^}]*\}', 'rusqlite = { version = "=0.37.0", default-features = false, features = ["bundled"] }', text, flags=re.M)
 assert count == 1
 manifest.write_text(text, encoding="utf-8")
+p = out / "crates/uasset-io/src/direct_executor.rs"
+text = p.read_text(encoding="utf-8").replace('mod catalog_binary;\n', '')
+text = text.replace('#[cfg(all(test, feature = "catalog-oracle"))]\n', '')
+p.write_text(text, encoding="utf-8")
+p = out / "crates/uasset-io/src/direct_executor/project_index_io.rs"
+p.write_text(p.read_text(encoding="utf-8").replace('catalog_binary::BinaryCatalog', 'catalog_sqlite::SqliteCatalog').replace('BinaryCatalog', 'SqliteCatalog'), encoding="utf-8")
 print(out)

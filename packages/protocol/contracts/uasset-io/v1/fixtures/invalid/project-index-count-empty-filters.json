@@ -1,0 +1,23 @@
+{
+	"contract": {
+		"name": "uasset-io",
+		"version": {
+			"major": 1,
+			"minor": 4
+		}
+	},
+	"limits": {
+		"maximumOutputBytes": 1048576,
+		"timeoutMs": 30000
+	},
+	"operation": {
+		"kind": "project_index_count",
+		"cacheRoot": "C:/Caches/project-index",
+		"request": {
+			"projectId": "fixture-project",
+			"expectedGeneration": 4,
+			"filters": []
+		}
+	},
+	"requestId": "project-index-query-001"
+}

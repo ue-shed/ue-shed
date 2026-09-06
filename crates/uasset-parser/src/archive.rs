@@ -722,7 +722,16 @@ impl<'a> Reader<'a> {
 
         // Unreal's serialized ANSI form is an 8-bit code-unit string. This
         // one-to-one mapping is lossless for byte values and avoids assuming UTF-8.
-        let to_string = |content: &[u8]| content.iter().map(|byte| char::from(*byte)).collect();
+        let to_string = |content: &[u8]| {
+            if content.is_ascii() {
+                // ASCII is already UTF-8; copy it without encoding each character separately.
+                str::from_utf8(content)
+                    .expect("ASCII is valid UTF-8")
+                    .to_owned()
+            } else {
+                content.iter().map(|byte| char::from(*byte)).collect()
+            }
+        };
 
         if !require_terminator {
             let end = bytes
@@ -1039,6 +1048,24 @@ mod tests {
         let error = Span::new(u64::MAX, 1).unwrap_err();
         assert_eq!(error.kind(), ArchiveErrorKind::IntegerOverflow);
         assert_eq!(error.path(), "span");
+    }
+
+    #[test]
+    fn ansi_strings_preserve_every_byte_including_utf8_looking_sequences() {
+        for content in [
+            (0_u8..=127).collect::<Vec<_>>(),
+            (0_u8..=255).collect::<Vec<_>>(),
+            vec![0xC3, 0xA9],
+        ] {
+            let mut bytes = Vec::new();
+            bytes.extend_from_slice(&i32::try_from(content.len() + 1).unwrap().to_le_bytes());
+            bytes.extend_from_slice(&content);
+            bytes.push(0);
+            let expected: String = content.iter().map(|&byte| char::from(byte)).collect();
+            let mut reader = Reader::new(&bytes);
+            assert_eq!(reader.read_fstring("Text").unwrap(), expected);
+            assert_eq!(reader.remaining(), 0);
+        }
     }
 
     #[test]

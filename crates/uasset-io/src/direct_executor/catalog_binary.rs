@@ -683,8 +683,8 @@ impl Snapshot {
             }
             let mut previous = None;
             let mut selected_count = 0;
-            for raw in bytes.chunks_exact(4) {
-                let id = u32::from_le_bytes(raw.try_into().unwrap()) as usize;
+            for raw in bytes.as_chunks::<4>().0 {
+                let id = u32::from_le_bytes(*raw) as usize;
                 if id >= self.inventory.len() || previous.is_some_and(|old| old >= id) {
                     return Err(corrupt("invalid posting row order"));
                 }
@@ -1293,8 +1293,11 @@ fn write_snapshot(
             let changed = !list.is_empty();
             let start = posting.offset as usize;
             let mut previous = None;
-            for raw in bytes[start..start + posting.len as usize * 4].chunks_exact(4) {
-                let id = u32::from_le_bytes(raw.try_into().unwrap()) as usize;
+            for raw in bytes[start..start + posting.len as usize * 4]
+                .as_chunks::<4>()
+                .0
+            {
+                let id = u32::from_le_bytes(*raw) as usize;
                 if id >= remap.len() || previous.is_some_and(|old| old >= id) {
                     return Err(corrupt("invalid retained posting row order"));
                 }

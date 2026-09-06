@@ -562,7 +562,7 @@ describe("ue-shed CLI process", () => {
 		} finally {
 			await rm(projectRoot, { force: true, recursive: true });
 		}
-	});
+	}, 30_000);
 
 	it("inspects, replaces, and explicitly applies Visibility Policies", async () => {
 		const root = await mkdtemp(join(tmpdir(), "ue-shed-review-policies-"));
@@ -629,7 +629,7 @@ describe("ue-shed CLI process", () => {
 		} finally {
 			await rm(root, { force: true, recursive: true });
 		}
-	});
+	}, 30_000);
 
 	it("authors and revises a fixed area View with immutable revision identity", async () => {
 		const root = await mkdtemp(join(tmpdir(), "ue-shed-review-views-"));

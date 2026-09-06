@@ -1,11 +1,15 @@
 # `@ue-shed/unreal-assets`
 
 Project Index aggregate queries return a count and its committed generation without loading all
-candidate headers. `countProjectIndex` accepts `projectId`, `expectedGeneration`, and four selector
-arrays: `exactClasses`, `classPrefixes`, `classNameSuffixes`, and `serializedNames`. A package matching
-any selector counts once, even when several selectors match. Four empty arrays return zero.
+candidate headers. `countProjectIndex({ projectId, expectedGeneration, filters })` accepts 1–16
+`ProjectIndexFilter` values: `Maps`, `ExactClasses`, `ClassPrefixes`, `ClassNameSuffixes`, or
+`SerializedNames`. Each filter except `Maps` requires a `values` array of 1–64 non-empty strings.
+Empty filter lists are rejected. A package matching any filter counts once, even when several
+filters match. The production binary Catalog reads checked snapshot postings; SQLite is used only
+for explicit oracle tests.
 
-The CLI exposes the same query, with repeatable selector flags:
+The CLI translates repeatable selector flags into these filters. With no selector flags, it
+returns zero for the committed generation without invoking the count API:
 
 ```powershell
 pnpm ue-shed project-index count 'C:/Projects/Game' 'C:/Caches/Game' --exact-class '/Script/Engine.StringTable' --serialized-name 'TextProperty'
@@ -120,7 +124,7 @@ expand to the existing public string arrays. Older workers require an upgrade; c
 native v1.1 query format can still omit `pageEncoding` to receive ordinary pages.
 
 `countProjectIndex({ projectId, expectedGeneration, filters })` counts distinct package paths
-matching any of up to 16 `ProjectIndexFilter` values. Overlapping filters count each package once.
+matching any of 1–16 `ProjectIndexFilter` values. Overlapping filters count each package once.
 The native v1.4 operation reads checked postings without loading header evidence. It shares the
 query session and stale-generation behavior. Use it for badges and summaries that only need a
 count; ordinary queries still return complete evidence. The memory adapter computes the same

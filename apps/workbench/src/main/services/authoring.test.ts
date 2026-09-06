@@ -1,3 +1,4 @@
+import { makeWorkbenchTestConfigurationLayer as makeWorkbenchConfigurationLayer } from "../test-configuration.js";
 import type { AuthoringTableSnapshot, AuthoringTableSnapshotV1 } from "@ue-shed/protocol";
 import {
 	makeAuthoringCatalogTestLayer,
@@ -17,15 +18,8 @@ import { Effect, Layer, Ref, Schema } from "effect";
 import { expect } from "vitest";
 import { makeElectronDialogTestLayer } from "../adapters/electron-dialog.js";
 import { makeWorkbenchWindowTestLayer } from "../adapters/electron-window.js";
-import {
-	makeWorkbenchConfigurationLayer,
-	type WorkbenchConfigurationApi
-} from "../workbench-config.js";
-import {
-	WorkbenchAuthoring,
-	WorkbenchAuthoringLive,
-	WorkbenchAuthoringSessionsLive
-} from "./authoring.js";
+import { type WorkbenchConfigurationApi } from "../workbench-config.js";
+import { WorkbenchAuthoring, WorkbenchAuthoringLive } from "./authoring.js";
 
 function fixtureSnapshot(): AuthoringTableSnapshotV1 {
 	return {
@@ -238,7 +232,7 @@ it.effect(
 								discoverTables: () =>
 									Effect.succeed({
 										diagnostics: [],
-										projectRoot: "",
+										projectRoot: "C:/FixtureProject",
 										scannedAssets: 0,
 										tables: []
 									})
@@ -387,7 +381,6 @@ it.effect("creates a session from a loaded snapshot, edits it, and undoes the ed
 			project: { projectRoot: root, status: "configured" }
 		});
 		const layer = WorkbenchAuthoringLive.pipe(
-			Layer.provide(WorkbenchAuthoringSessionsLive.pipe(Layer.provide(configuration))),
 			Layer.provide(
 				Layer.mergeAll(
 					configuration,
@@ -564,7 +557,6 @@ it.effect("opens the requested authority and restores only matching non-inert dr
 				})
 		};
 		const layer = WorkbenchAuthoringLive.pipe(
-			Layer.provide(WorkbenchAuthoringSessionsLive.pipe(Layer.provide(configuration))),
 			Layer.provide(
 				Layer.mergeAll(
 					configuration,
@@ -646,7 +638,6 @@ it.effect("fails to apply a session when the live connection is unavailable", ()
 			project: { projectRoot: root, status: "configured" }
 		});
 		const layer = WorkbenchAuthoringLive.pipe(
-			Layer.provide(WorkbenchAuthoringSessionsLive.pipe(Layer.provide(configuration))),
 			Layer.provide(
 				Layer.mergeAll(
 					configuration,

@@ -20,7 +20,7 @@ import { ReviewSetLibrary } from "./review-set-library.js";
 import { SavedWorldScout } from "./saved-world-scout.js";
 import { WorldScout } from "./world-scout.js";
 import { VisibilityPolicySettings } from "./visibility-policy-settings.js";
-import type { ObservedActor } from "@ue-shed/observatory";
+import type { ObservedActor } from "@ue-shed/observatory/browser";
 
 type ViewState = { readonly status: "loading" } | MapReviewResult;
 type RunArtifact = NonNullable<MapReviewRunView["capture"]>["artifacts"][number];

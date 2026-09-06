@@ -133,6 +133,27 @@ Package-mode adopters continue to follow `packages/game-text/ADOPTING.md` and it
 may expose quality review only by keeping corpus and rule-file authority in its trusted process and
 transporting bounded schema-validated results to browser code.
 
+## Saved investigations and exports
+
+The public browser entry point exposes version-1 `GameTextInvestigationPreset` and
+`GameTextInvestigationExport` schemas, `exportGameTextInvestigation`, and
+`gameTextInvestigationCsv`. Corpus and quality query models also provide `export` methods that
+retain all matching units or findings and their full evidence. Existing search page limits remain
+unchanged. A capability filter selects units; exported units retain all their occurrences for
+context. Coverage, role counts, rule counts, and diagnostics retain whole-scan scope.
+
+A preset stores the corpus/quality view, search text, capability and review lens, finding-type
+filter, existing domain sort order, and optional quality rules. Quality mode requires a rule
+document, including semantic validation of rule and role identities. Workbench captures the
+current corpus, rules, project, and catalog generation before opening an export dialog. The
+renderer receives only file-operation feedback. Opening a preset uses the selected project's
+corpus, and exposes failures without applying invalid rules.
+
+The CLI command `investigations run <project-root> --preset <file> --format json|csv` uses the
+same public scan and export APIs. Add `--output <file>` to save the result or omit it for stdout.
+It requires an explicit project and rescans its current saved files. See
+[Showcase](../showcase.md#take-an-investigation-away) for CSV layout, replay commands, and limits.
+
 ## Verification contract
 
 The first quality slice must prove:

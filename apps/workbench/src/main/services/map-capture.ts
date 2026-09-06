@@ -1,3 +1,4 @@
+import { WorkbenchUnrealConnection } from "./unreal-connection.js";
 import {
 	CameraFeed,
 	MapCaptureRepository,
@@ -35,7 +36,6 @@ import { readFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { ElectronDialog } from "../adapters/electron-dialog.js";
 import { WorkbenchWindow } from "../adapters/electron-window.js";
-import { WorkbenchConfiguration } from "../workbench-config.js";
 import { WorkbenchProject } from "./project-workspace.js";
 
 const progressEventChannel = "map-capture:progress";
@@ -105,7 +105,7 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 	Effect.gen(function* () {
 		const assetReader = yield* AssetReader;
 		const cameraFeed = yield* CameraFeed;
-		const configuration = yield* WorkbenchConfiguration;
+		const connection = yield* WorkbenchUnrealConnection;
 		const dialog = yield* ElectronDialog;
 		const project = yield* WorkbenchProject;
 		const repository = yield* MapCaptureRepository;
@@ -115,16 +115,24 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 		const reportProgress = (progress: MapCaptureProgressEvent): Effect.Effect<void> =>
 			window.send(progressEventChannel, progress).pipe(Effect.ignore);
 		const clearLivePreview = () =>
-			clearProvisionedCameras(configuration.remoteControlEndpoint).pipe(
-				Effect.provideService(RemoteControlClient, remoteControl),
-				Effect.ignore
-			);
+			connection
+				.endpoint()
+				.pipe(
+					Effect.flatMap((endpoint) =>
+						clearProvisionedCameras(endpoint).pipe(
+							Effect.provideService(RemoteControlClient, remoteControl),
+							Effect.ignore
+						)
+					)
+				);
 
 		const openMap = Effect.fn("Workbench.MapCapture.openMap")(function* (plan: MapCapturePlan) {
+			const endpoint = yield* connection.endpoint();
+
 			yield* clearLivePreview();
 			return yield* worldControl
 				.open({
-					endpoint: configuration.remoteControlEndpoint,
+					endpoint: endpoint,
 					operationId: randomUUID(),
 					targetMapPath: plan.project.mapPath
 				})
@@ -142,11 +150,13 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 		});
 
 		const preview = Effect.fn("Workbench.MapCapture.preview")(function* (plan: MapCapturePlan) {
+			const endpoint = yield* connection.endpoint();
+
 			return yield* Effect.gen(function* () {
 				const inspection = yield* inspectMapCapturePlan(plan);
 				const frame = previewCameraFrame(inspection.grid.snappedBounds);
 				const bindings = yield* ensureProvisionedCameras(
-					configuration.remoteControlEndpoint,
+					endpoint,
 					[
 						{
 							correlation: {
@@ -392,6 +402,8 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 		const capture = Effect.fn("Workbench.MapCapture.capture")(function* (
 			intent: MapCaptureExecuteIntent
 		) {
+			const endpoint = yield* connection.endpoint();
+
 			return yield* Effect.gen(function* () {
 				yield* clearLivePreview();
 				const selectedProject = yield* project.selectedProject();
@@ -412,7 +424,7 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 				}
 				const outcome = yield* runMapCapturePlan({
 					captureBackend: intent.captureBackend,
-					endpoint: configuration.remoteControlEndpoint,
+					endpoint: endpoint,
 					onProgress: (progress) =>
 						reportProgress({ ...progress, operationId: intent.operationId }),
 					plan: intent.plan,

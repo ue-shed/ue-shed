@@ -3,7 +3,7 @@ import { userEvent } from "@testing-library/user-event";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
 import { Deferred, Effect, Layer, ManagedRuntime } from "effect";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
-import type { WorkbenchProjectState } from "../main/project-workspace-contract.js";
+import type { WorkbenchProjectState } from "../shared/project-workspace-contract.js";
 import type { ProjectChooserProps } from "./project-chooser.js";
 import { ProjectChooser } from "./project-chooser.js";
 

@@ -95,6 +95,8 @@ const workbenchRendererApi = {
 			ipcRenderer.invoke("editor-session:execute", command)
 	},
 	scenarios: {
+		openDocument: () => ipcRenderer.invoke("scenario:open-document"),
+		saveDocument: (document) => ipcRenderer.invoke("scenario:save-document", document),
 		cancel: (handle: ScenarioRunHandle): Promise<ScenarioRun> =>
 			ipcRenderer.invoke("scenario:cancel", handle),
 		start: (document, endpoint) => ipcRenderer.invoke("scenario:start", document, endpoint),
@@ -117,7 +119,10 @@ const workbenchRendererApi = {
 	},
 	project: {
 		choose: (): Promise<WorkbenchProjectState> => ipcRenderer.invoke("project:choose"),
+		sample: (): Promise<WorkbenchProjectState> => ipcRenderer.invoke("project:sample"),
 		current: (): Promise<WorkbenchProjectState> => ipcRenderer.invoke("project:current"),
+		refresh: (mode: "refresh" | "rebuild" = "refresh"): Promise<WorkbenchProjectState> =>
+			ipcRenderer.invoke("project:refresh", mode),
 		launch: (mode: ProjectLaunchMode): Promise<ProjectLaunchResult> =>
 			ipcRenderer.invoke("project:launch", mode),
 		openRecent: (projectRoot: string): Promise<WorkbenchProjectState> =>
@@ -127,10 +132,15 @@ const workbenchRendererApi = {
 			ipcRenderer.invoke("project:recent")
 	},
 	assetAudits: {
+		investigationExport: (query, format) =>
+			ipcRenderer.invoke("asset-audits:textures:investigation-export", query, format),
+		investigationSave: (query) =>
+			ipcRenderer.invoke("asset-audits:textures:investigation-save", query),
+		investigationOpen: () => ipcRenderer.invoke("asset-audits:textures:investigation-open"),
 		loadConfiguredProject: () => ipcRenderer.invoke("asset-audits:textures:configured-scan"),
 		chooseProjectAndScan: () => ipcRenderer.invoke("asset-audits:textures:choose-and-scan"),
-		refreshConfiguredProject: () =>
-			ipcRenderer.invoke("asset-audits:textures:configured-refresh"),
+		refreshConfiguredProject: (refresh = true) =>
+			ipcRenderer.invoke("asset-audits:textures:configured-refresh", refresh),
 		chooseProjectAndRefresh: () =>
 			ipcRenderer.invoke("asset-audits:textures:choose-and-refresh"),
 		progress: () => ipcRenderer.invoke("asset-audits:textures:progress"),
@@ -145,9 +155,14 @@ const workbenchRendererApi = {
 			ipcRenderer.invoke("asset-audits:textures:preview-offline-batch", request)
 	},
 	gameText: {
+		investigationExport: (query, format) =>
+			ipcRenderer.invoke("game-text:investigation-export", query, format),
+		investigationSave: (query) => ipcRenderer.invoke("game-text:investigation-save", query),
+		investigationOpen: () => ipcRenderer.invoke("game-text:investigation-open"),
 		loadConfiguredProject: () => ipcRenderer.invoke("game-text:configured-scan"),
 		chooseProjectAndScan: () => ipcRenderer.invoke("game-text:choose-and-scan"),
-		refreshConfiguredProject: () => ipcRenderer.invoke("game-text:configured-refresh"),
+		refreshConfiguredProject: (refresh = true) =>
+			ipcRenderer.invoke("game-text:configured-refresh", refresh),
 		chooseProjectAndRefresh: () => ipcRenderer.invoke("game-text:choose-and-refresh"),
 		progress: () => ipcRenderer.invoke("game-text:progress"),
 		search: (request) => ipcRenderer.invoke("game-text:search", request),

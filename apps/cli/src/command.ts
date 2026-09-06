@@ -1,3 +1,4 @@
+import { investigationsCommand } from "./commands/investigation.js";
 import { NodeServices } from "@effect/platform-node";
 import { CURRENT_PROTOCOL_VERSION } from "@ue-shed/protocol";
 import { CliError, CliOutput, Command } from "effect/unstable/cli";
@@ -37,6 +38,7 @@ export const cliCommand = Command.make("ue-shed").pipe(
 		editorCommand,
 		scenarioCommand,
 		auditCommand,
+		investigationsCommand,
 		authoringCommand,
 		assetsCommand,
 		textCommand,

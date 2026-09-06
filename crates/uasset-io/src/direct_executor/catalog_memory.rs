@@ -234,7 +234,9 @@ impl Catalog for MemoryCatalog {
         let items = collect_items(&state.rows, &request.kind);
         let mut page_items: Vec<QueryItem> = items
             .into_iter()
-            .filter(|item| item_path(item) > after.as_str())
+            .filter(|item| {
+                matches!(item, QueryItem::Count { .. }) || item_path(item) > after.as_str()
+            })
             .collect();
         let has_more = page_items.len() > request.limit;
         page_items.truncate(request.limit);
@@ -278,6 +280,16 @@ impl CatalogSnapshot for MemoryCatalog {
 
 fn collect_items(rows: &BTreeMap<String, CommittedRow>, kind: &QueryKind) -> Vec<QueryItem> {
     match kind {
+        QueryKind::Count { filters } => {
+            let paths = filters
+                .iter()
+                .flat_map(|filter| collect_items(rows, filter))
+                .map(|item| item_path(&item).to_owned())
+                .collect::<std::collections::BTreeSet<_>>();
+            vec![QueryItem::Count {
+                count: paths.len() as u64,
+            }]
+        }
         QueryKind::Maps => rows
             .values()
             .filter(|row| {

@@ -69,6 +69,83 @@
 					"properties": {
 						"kind": {
 							"type": "string",
+							"enum": ["count"]
+						},
+						"cursor": {
+							"not": {}
+						},
+						"expectedGeneration": {
+							"$ref": "#/$defs/UAssetIoPositiveInt"
+						},
+						"limit": {
+							"type": "number",
+							"enum": [1]
+						},
+						"projectId": {
+							"$ref": "#/$defs/UAssetIoNonEmptyString"
+						},
+						"exactClasses": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/UAssetIoNonEmptyString"
+							},
+							"allOf": [
+								{
+									"maxItems": 64
+								}
+							]
+						},
+						"classPrefixes": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/UAssetIoNonEmptyString"
+							},
+							"allOf": [
+								{
+									"maxItems": 64
+								}
+							]
+						},
+						"classNameSuffixes": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/UAssetIoNonEmptyString"
+							},
+							"allOf": [
+								{
+									"maxItems": 64
+								}
+							]
+						},
+						"serializedNames": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/UAssetIoNonEmptyString"
+							},
+							"allOf": [
+								{
+									"maxItems": 64
+								}
+							]
+						}
+					},
+					"required": [
+						"kind",
+						"expectedGeneration",
+						"limit",
+						"projectId",
+						"exactClasses",
+						"classPrefixes",
+						"classNameSuffixes",
+						"serializedNames"
+					],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"kind": {
+							"type": "string",
 							"enum": ["maps"]
 						},
 						"cursor": {

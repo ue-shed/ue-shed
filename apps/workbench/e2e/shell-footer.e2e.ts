@@ -19,10 +19,10 @@ test("keeps sidebar footer controls visible and keyboard accessible", async ({ w
 	await workbench.page.setViewportSize({ width: 1280, height: 800 });
 	await workbench.expectShowcaseReady();
 
-	const sessionSettingsTrigger = workbench.page.getByLabel("Change Unreal session monitor port");
+	const sessionSettingsTrigger = workbench.page.getByLabel("Change Unreal target port");
 	await sessionSettingsTrigger.click();
 	const sessionSettings = workbench.page.getByRole("region", {
-		name: "Session monitor settings"
+		name: "Unreal target settings"
 	});
 	await expectWithinViewport(workbench.page, sessionSettings);
 
@@ -36,6 +36,12 @@ test("keeps sidebar footer controls visible and keyboard accessible", async ({ w
 			return { style: style.outlineStyle, width: style.outlineWidth };
 		})
 	).toEqual({ style: "solid", width: "1px" });
+	await portInput.fill("39992");
+	await sessionSettings.getByRole("button", { name: "Apply", exact: true }).click();
+	await expect(sessionSettingsTrigger).toHaveText(":39992");
+	await expect
+		.poll(() => workbench.page.evaluate("window.ueShed.editorSession.settings()"))
+		.toEqual({ endpoint: "http://127.0.0.1:39992/", port: 39992 });
 	await sessionSettingsTrigger.click();
 
 	await workbench.page.getByText("Launch ▾", { exact: true }).click();

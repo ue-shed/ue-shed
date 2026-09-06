@@ -1,3 +1,5 @@
+import type { GameTextInvestigationPreset, TextQualityFilter } from "@ue-shed/game-text/browser";
+import { InvestigationActions } from "@ue-shed/ui/investigation-actions";
 import * as stylex from "@stylexjs/stylex";
 import type {
 	TextCorpusFocus,
@@ -9,6 +11,7 @@ import type {
 	TextQualityQueryRunResult,
 	TextQualityQuerySummary,
 	TextQualityRuleDocument,
+	TextQualityRuleUpdateResult,
 	TextUnitSearchResult
 } from "@ue-shed/game-text/browser";
 import type { EditorAssetLocateResult } from "@ue-shed/protocol";
@@ -16,9 +19,20 @@ import { createEffectAction, createEffectSubscription } from "@ue-shed/ui";
 import { TaskProgressModal, type TaskProgress } from "@ue-shed/ui/task-progress";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { Effect, Schedule, Stream } from "effect";
-import { For, Match, Show, Switch, createSignal, onMount, type Accessor } from "solid-js";
+import {
+	For,
+	Match,
+	Show,
+	Switch,
+	batch,
+	createSignal,
+	onCleanup,
+	onMount,
+	type Accessor
+} from "solid-js";
 import type { GameTextClientApi } from "./game-text-client.js";
 import { GameTextQualityWorkspace } from "./game-text-quality-workspace.js";
+import { createGameTextRuleState, type RuleEditorState } from "./game-text-rule-state.js";
 import {
 	identityLabel,
 	primaryContext,
@@ -223,7 +237,25 @@ function OccurrenceCard(props: {
 }
 
 /** Bounded query presentation; the renderer never receives the whole corpus. */
-export function GameTextRoute(props: { readonly client: GameTextClientApi }) {
+export interface GameTextPreferences {
+	readonly mode?: "corpus" | "quality";
+	readonly qualityFilter?: TextQualityFilter;
+	readonly qualityDocument?: TextQualityRuleDocument | undefined;
+	readonly qualityEditor?: RuleEditorState | undefined;
+	readonly query: string;
+	readonly capability: CapabilityFilter;
+	readonly lens: TextReviewLens;
+	readonly selectedId: TextUnitSearchResult["id"] | undefined;
+}
+export function GameTextRoute(props: {
+	readonly client: GameTextClientApi;
+	readonly initialPreferences?: GameTextPreferences | undefined;
+	readonly onPreferencesChange?: (preferences: GameTextPreferences) => void;
+}) {
+	const [qualityFilter, setQualityFilter] = createSignal<TextQualityFilter>(
+		props.initialPreferences?.qualityFilter ?? "all"
+	);
+	const [investigationRevision, setInvestigationRevision] = createSignal(0);
 	const refreshAction = createEffectAction();
 	const searchAction = createEffectAction();
 	const focusAction = createEffectAction();
@@ -239,19 +271,49 @@ export function GameTextRoute(props: { readonly client: GameTextClientApi }) {
 	});
 	const [summary, setSummary] = createSignal<TextCorpusQuerySummary>();
 	const [page, setPage] = createSignal<TextCorpusSearchPage>({ total: 0, units: [] });
-	const [query, setQuery] = createSignal("");
-	const [capability, setCapability] = createSignal<CapabilityFilter>("all");
-	const [lens, setLens] = createSignal<TextReviewLens>("all");
-	const [selectedId, setSelectedId] = createSignal<TextUnitSearchResult["id"]>();
+	const [query, setQuery] = createSignal<string>(props.initialPreferences?.query ?? "");
+	const [capability, setCapability] = createSignal<CapabilityFilter>(
+		props.initialPreferences?.capability ?? "all"
+	);
+	const [lens, setLens] = createSignal<TextReviewLens>(props.initialPreferences?.lens ?? "all");
+	const [selectedId, setSelectedId] = createSignal<TextUnitSearchResult["id"] | undefined>(
+		props.initialPreferences?.selectedId ?? undefined
+	);
 	const [focus, setFocus] = createSignal<TextCorpusFocus>();
 	const [locateFeedback, setLocateFeedback] = createSignal<LocateFeedback>({ status: "idle" });
-	const [mode, setMode] = createSignal<"corpus" | "quality">("corpus");
+	const [mode, setMode] = createSignal<"corpus" | "quality">(
+		props.initialPreferences?.mode ?? "corpus"
+	);
 	const [qualitySummary, setQualitySummary] = createSignal<TextQualityQuerySummary>();
-	const [qualityDocument, setQualityDocument] = createSignal<TextQualityRuleDocument>();
+	const [qualityDocument, setQualityDocument] = createSignal<TextQualityRuleDocument | undefined>(
+		props.initialPreferences?.qualityDocument
+	);
 	const [qualityFailure, setQualityFailure] =
-		createSignal<Extract<TextQualityQueryRunResult, { status: "failed" }>["error"]>();
+		createSignal<
+			Extract<
+				TextQualityQueryRunResult | TextQualityRuleUpdateResult,
+				{ status: "failed" }
+			>["error"]
+		>();
 	let searchGeneration = 0;
 	let focusGeneration = 0;
+	const initialQualityDocument = props.initialPreferences?.qualityDocument;
+	const qualityEditor = createGameTextRuleState({
+		client: props.client,
+		initialState:
+			props.initialPreferences?.qualityEditor ??
+			(initialQualityDocument
+				? {
+						draft: initialQualityDocument,
+						savedDocument: initialQualityDocument
+					}
+				: undefined),
+		onReviewed: (result) => {
+			setQualityDocument(result.document);
+			setQualitySummary(result.summary);
+			setInvestigationRevision((value) => value + 1);
+		}
+	});
 
 	const requestFocus = (id: TextUnitSearchResult["id"]) => {
 		const generation = ++focusGeneration;
@@ -322,23 +384,35 @@ export function GameTextRoute(props: { readonly client: GameTextClientApi }) {
 
 	const applyRefresh = (result: TextCorpusQueryRunResult) => {
 		progressSubscription.cancel();
+		setInvestigationRevision((value) => value + 1);
 		if (result.status === "completed") {
 			setSummary(result.summary);
 			setPage({ total: 0, units: [] });
-			setSelectedId(undefined);
+
 			focusGeneration += 1;
 			setFocus(undefined);
 			setState({ status: "ready" });
 			requestPage();
+			const document = qualityDocument();
+			if (document)
+				qualityAction.run(props.client.previewQualityRules(document), {
+					onSuccess: (result) => {
+						if (result.status === "completed") setQualitySummary(result.summary);
+						else if (result.status === "failed") setQualityFailure(result.error);
+					}
+				});
 		} else if (result.status === "failed") {
 			setState({ error: result.error, status: "failed" });
 		} else setState({ status: result.status });
 	};
 
-	const refresh = () => {
-		setMode("corpus");
+	const load = (refresh: boolean) => {
+		if (refresh) {
+			qualityEditor.replace(undefined);
+			setMode("corpus");
+			setQualityDocument(undefined);
+		}
 		setQualitySummary(undefined);
-		setQualityDocument(undefined);
 		setQualityFailure(undefined);
 		setState({ status: "loading" });
 		setProgress({ completed: 0, phase: "idle", stage: "game_text", total: 0 });
@@ -346,7 +420,7 @@ export function GameTextRoute(props: { readonly client: GameTextClientApi }) {
 			Stream.fromEffectSchedule(props.client.progress(), Schedule.spaced("100 millis")),
 			{ onValue: setProgress }
 		);
-		refreshAction.run(props.client.loadConfiguredProject(), {
+		refreshAction.run(props.client.loadConfiguredProject(refresh), {
 			onFailure: (cause) => {
 				progressSubscription.cancel();
 				setState(failure(cause));
@@ -367,15 +441,43 @@ export function GameTextRoute(props: { readonly client: GameTextClientApi }) {
 				}),
 			onSuccess: (result) => {
 				if (result.status === "completed") {
-					setQualitySummary(result.summary);
-					setQualityDocument(result.document);
+					batch(() => {
+						qualityEditor.replace(result.document);
+						setQualitySummary(result.summary);
+						setQualityDocument(result.document);
+					});
 					setMode("quality");
 				} else if (result.status === "failed") setQualityFailure(result.error);
 			}
 		});
 	};
 
-	onMount(refresh);
+	onCleanup(() =>
+		props.onPreferencesChange?.({
+			mode: mode(),
+			qualityDocument: qualityDocument(),
+			qualityEditor: qualityEditor.state(),
+			qualityFilter: qualityFilter(),
+			query: query(),
+			capability: capability(),
+			lens: lens(),
+			selectedId: selectedId()
+		})
+	);
+	const restoreInvestigation = (preset: GameTextInvestigationPreset) => {
+		qualityEditor.replace(undefined);
+		setQuery(preset.query.query);
+		setCapability(preset.query.capability);
+		setLens(preset.query.lens ?? "all");
+		setMode(preset.query.mode);
+		setQualityFilter(preset.query.qualityFilter);
+		setQualityDocument(preset.rules);
+		qualityEditor.replace(preset.rules, false);
+		setSelectedId(undefined);
+		load(false);
+	};
+	const refresh = () => load(true);
+	onMount(() => load(false));
 
 	return (
 		<main {...stylex.props(styles.page)}>
@@ -398,6 +500,23 @@ export function GameTextRoute(props: { readonly client: GameTextClientApi }) {
 					</button>
 				</span>
 			</header>
+			<Show when={props.client.investigations}>
+				{(client) => (
+					<InvestigationActions
+						client={client()}
+						disabled={state().status !== "ready"}
+						revision={[investigationRevision(), qualityDocument()]}
+						query={{
+							mode: mode(),
+							query: query(),
+							capability: capability(),
+							lens: lens(),
+							qualityFilter: qualityFilter()
+						}}
+						onOpen={restoreInvestigation}
+					/>
+				)}
+			</Show>
 			<Switch>
 				<Match when={state().status === "loading"}>
 					<p role="status" {...stylex.props(styles.loadingLine)}>
@@ -553,12 +672,12 @@ export function GameTextRoute(props: { readonly client: GameTextClientApi }) {
 											<Show when={qualityDocument()}>
 												{(document) => (
 													<GameTextQualityWorkspace
+														filter={qualityFilter()}
+														onFilterChange={setQualityFilter}
 														client={props.client}
 														document={document()}
 														onReplaceRules={loadQualityRules}
-														onReviewed={(result) =>
-															setQualitySummary(result.summary)
-														}
+														editor={qualityEditor}
 														summary={quality()}
 													/>
 												)}

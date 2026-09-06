@@ -2,35 +2,152 @@ import * as stylex from "@stylexjs/stylex";
 import { workbenchDarkTheme } from "@ue-shed/ui-theme/themes.stylex.js";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { createEffectAction } from "@ue-shed/ui";
-import { AuthoringRoute } from "@ue-shed/extension-data-authoring";
-import { GameTextRoute } from "@ue-shed/extension-game-text";
-import { InputAtlasRoute } from "@ue-shed/extension-input-atlas";
-import { TextureAuditRoute } from "@ue-shed/extension-asset-audits";
-import { MapCaptureRoute, MapReviewRoute } from "@ue-shed/extension-camera-review";
-import { ContentObservatoryRoute } from "@ue-shed/extension-content-observatory";
-import { ProjectCustodianRoute } from "@ue-shed/extension-project-custodian";
-import { NiagaraPreviewRoute } from "@ue-shed/extension-niagara-preview";
-import { ConfigExplorerShowcase } from "./config-explorer-showcase.js";
-import { BlueprintGraphViewer } from "./blueprint-graph-viewer.js";
-import { ScenarioStudioRoute } from "@ue-shed/extension-scenarios";
+const AuthoringRoute = lazy(async () => {
+	const [route, { authoringClient }] = await Promise.all([
+		import("@ue-shed/extension-data-authoring"),
+		import("./authoring-client.js")
+	]);
+	return {
+		default: (props: Omit<ComponentProps<typeof route.AuthoringRoute>, "client">) => (
+			<route.AuthoringRoute {...props} client={authoringClient} />
+		)
+	};
+});
+import { type GameTextPreferences } from "@ue-shed/extension-game-text";
+const GameTextRoute = lazy(async () => {
+	const [route, { gameTextClient }] = await Promise.all([
+		import("@ue-shed/extension-game-text"),
+		import("./game-text-client.js")
+	]);
+	return {
+		default: (props: Omit<ComponentProps<typeof route.GameTextRoute>, "client">) => (
+			<route.GameTextRoute {...props} client={gameTextClient} />
+		)
+	};
+});
+const InputAtlasRoute = lazy(async () => {
+	const [route, { inputAtlasClient }] = await Promise.all([
+		import("@ue-shed/extension-input-atlas"),
+		import("./input-atlas-client.js")
+	]);
+	return {
+		default: (props: Omit<ComponentProps<typeof route.InputAtlasRoute>, "client">) => (
+			<route.InputAtlasRoute {...props} client={inputAtlasClient} />
+		)
+	};
+});
+import { type TextureAuditPreferences } from "@ue-shed/extension-asset-audits";
+const TextureAuditRoute = lazy(async () => {
+	const [route, { assetAuditsClient }] = await Promise.all([
+		import("@ue-shed/extension-asset-audits"),
+		import("./asset-audits-client.js")
+	]);
+	return {
+		default: (props: Omit<ComponentProps<typeof route.TextureAuditRoute>, "client">) => (
+			<route.TextureAuditRoute {...props} client={assetAuditsClient} />
+		)
+	};
+});
+const MapReviewRoute = lazy(async () => {
+	const [route, { mapReviewClient }] = await Promise.all([
+		import("@ue-shed/extension-camera-review"),
+		import("./map-review-client.js")
+	]);
+	return {
+		default: (props: Omit<ComponentProps<typeof route.MapReviewRoute>, "client">) => (
+			<route.MapReviewRoute {...props} client={mapReviewClient} />
+		)
+	};
+});
+const MapCaptureRoute = lazy(async () => {
+	const [route, { mapCaptureClient }] = await Promise.all([
+		import("@ue-shed/extension-camera-review"),
+		import("./map-capture-client.js")
+	]);
+	return {
+		default: (props: Omit<ComponentProps<typeof route.MapCaptureRoute>, "client">) => (
+			<route.MapCaptureRoute {...props} client={mapCaptureClient} />
+		)
+	};
+});
+const ContentObservatoryRoute = lazy(async () => {
+	const [route, { contentObservatoryClient }] = await Promise.all([
+		import("@ue-shed/extension-content-observatory"),
+		import("./content-observatory-client.js")
+	]);
+	return {
+		default: (props: Omit<ComponentProps<typeof route.ContentObservatoryRoute>, "client">) => (
+			<route.ContentObservatoryRoute {...props} client={contentObservatoryClient} />
+		)
+	};
+});
+const ProjectCustodianRoute = lazy(async () => {
+	const [route, { projectCustodianClient }] = await Promise.all([
+		import("@ue-shed/extension-project-custodian"),
+		import("./project-custodian-client.js")
+	]);
+	return {
+		default: (props: Omit<ComponentProps<typeof route.ProjectCustodianRoute>, "client">) => (
+			<route.ProjectCustodianRoute {...props} client={projectCustodianClient} />
+		)
+	};
+});
+const NiagaraPreviewRoute = lazy(async () => {
+	const [route, { niagaraPreviewClient }] = await Promise.all([
+		import("@ue-shed/extension-niagara-preview"),
+		import("./niagara-preview-client.js")
+	]);
+	return {
+		default: (props: Omit<ComponentProps<typeof route.NiagaraPreviewRoute>, "client">) => (
+			<route.NiagaraPreviewRoute {...props} client={niagaraPreviewClient} />
+		)
+	};
+});
+const ConfigExplorerShowcase = lazy(() =>
+	import("./config-explorer-showcase.js").then((module) => ({
+		default: module.ConfigExplorerShowcase
+	}))
+);
+const BlueprintGraphViewer = lazy(() =>
+	import("./blueprint-graph-viewer.js").then((module) => ({
+		default: module.BlueprintGraphViewer
+	}))
+);
+import { type ScenarioStudioDraft } from "@ue-shed/extension-scenarios";
+const ScenarioStudioRoute = lazy(async () => {
+	const [route, { scenarioStudioClient }] = await Promise.all([
+		import("@ue-shed/extension-scenarios"),
+		import("./scenario-studio-client.js")
+	]);
+	return {
+		default: (props: Omit<ComponentProps<typeof route.ScenarioStudioRoute>, "client">) => (
+			<route.ScenarioStudioRoute {...props} client={scenarioStudioClient} />
+		)
+	};
+});
 import type { CameraStatus } from "@ue-shed/protocol";
-import { For, Match, Show, Switch, createSignal, onCleanup, onMount } from "solid-js";
-import type { JSX } from "solid-js";
-import type { ShowcaseContext } from "../main/preload.js";
-import { assetAuditsClient } from "./asset-audits-client.js";
-import { authoringClient } from "./authoring-client.js";
-import { gameTextClient } from "./game-text-client.js";
-import { inputAtlasClient } from "./input-atlas-client.js";
-import { mapReviewClient } from "./map-review-client.js";
-import { mapCaptureClient } from "./map-capture-client.js";
-import { contentObservatoryClient } from "./content-observatory-client.js";
-import { CameraLab } from "./camera-lab.js";
+import {
+	lazy,
+	Suspense,
+	For,
+	Match,
+	Show,
+	Switch,
+	createSignal,
+	onCleanup,
+	onMount
+} from "solid-js";
+import type { ComponentProps, JSX } from "solid-js";
+import type { ShowcaseContext } from "../shared/ipc-contracts.js";
+
+const CameraLab = lazy(() =>
+	import("./camera-lab.js").then((module) => ({ default: module.CameraLab }))
+);
 import { workbenchRendererClient } from "./workbench-client.js";
-import { scenarioStudioClient } from "./scenario-studio-client.js";
+
 import { EditorSessionTransport } from "./editor-session-transport.js";
 import { ProjectChooser } from "./project-chooser.js";
-import { projectCustodianClient } from "./project-custodian-client.js";
-import { niagaraPreviewClient } from "./niagara-preview-client.js";
+
 import {
 	IconGamepad,
 	IconBlueprint,
@@ -218,13 +335,25 @@ function packageLabel(count: number, subject: string): string {
 	return `${count.toLocaleString()} ${subject} package${count === 1 ? "" : "s"} indexed`;
 }
 
+type CameraEvidence =
+	| { readonly status: "loading" }
+	| { readonly status: "failed" }
+	| { readonly status: "ready"; readonly value: CameraStatus };
+
 function workflowEvidence(
 	item: NavItem,
 	context: ShowcaseContext | undefined,
-	camera: CameraStatus | undefined
+	camera: CameraEvidence,
+	contextFailed = false
 ): WorkflowEvidence {
 	if (item.evidence === "cameras") {
-		if (camera === undefined) {
+		if (camera.status === "failed")
+			return {
+				label: "Camera status unavailable",
+				detail: "Check the selected target and retry",
+				ready: false
+			};
+		if (camera.status === "loading") {
 			return {
 				detail: "Reading camera service",
 				label: "Checking live session…",
@@ -232,9 +361,11 @@ function workflowEvidence(
 			};
 		}
 		return {
-			detail: `${camera.config.activeCameraCount} scheduled · ${camera.config.resolution}`,
-			label: camera.stats.pipeConnected ? "Camera pipe connected" : "Waiting for an editor",
-			ready: camera.stats.pipeConnected
+			detail: `${camera.value.config.activeCameraCount} scheduled · ${camera.value.config.resolution}`,
+			label: camera.value.stats.pipeConnected
+				? "Camera pipe connected"
+				: "Waiting for an editor",
+			ready: camera.value.stats.pipeConnected
 		};
 	}
 	if (item.evidence === "blueprints") {
@@ -244,10 +375,21 @@ function workflowEvidence(
 			ready: true
 		};
 	}
+	if (item.evidence === "config") {
+		return {
+			detail: context?.configSampleAvailable
+				? "Committed fixture ready · platform layers compared"
+				: "Select a project or run the showcase from a source checkout",
+			label: context?.configSampleAvailable
+				? "Sample query available"
+				: "Choose a query source",
+			ready: context?.configSampleAvailable === true
+		};
+	}
 	if (context === undefined) {
 		return {
-			detail: "Reading Project Index",
-			label: "Loading project…",
+			detail: contextFailed ? "Open a project to retry" : "Reading Project Index",
+			label: contextFailed ? "Project status unavailable" : "Loading project…",
 			ready: false
 		};
 	}
@@ -304,13 +446,6 @@ function workflowEvidence(
 		return {
 			detail: "String Tables and serialized FText candidates",
 			label: packageLabel(context.project.candidates.gameTextPackages, "text-bearing"),
-			ready: true
-		};
-	}
-	if (item.evidence === "config") {
-		return {
-			detail: "Committed fixture ready · platform layers compared",
-			label: "Sample query available",
 			ready: true
 		};
 	}
@@ -406,86 +541,202 @@ export function AppShell() {
 				</nav>
 				<footer {...stylex.props(styles.footer)}>
 					<ProjectChooser
+						revision={projectRevision()}
 						client={workbenchRendererClient}
 						onChosen={() => setProjectRevision((revision) => revision + 1)}
 					/>
-					<EditorSessionTransport client={workbenchRendererClient} />
+					<EditorSessionTransport
+						client={workbenchRendererClient}
+						onTargetChanged={() => setProjectRevision((revision) => revision + 1)}
+					/>
 					<span {...stylex.props(styles.version)}>0.0.0</span>
 				</footer>
 			</aside>
 			<div {...stylex.props(styles.content)}>
 				<Show when={projectRevision()} keyed>
-					<Switch fallback={<ShowcaseHome />}>
-						<Match when={route() === "#/authoring"}>
-							<AuthoringRoute client={authoringClient} />
-						</Match>
-						<Match when={route() === "#/asset-audits/textures"}>
-							<TextureAuditRoute client={assetAuditsClient} />
-						</Match>
-						<Match when={route() === "#/game-text"}>
-							<GameTextRoute client={gameTextClient} />
-						</Match>
-						<Match when={route() === "#/input-atlas"}>
-							<InputAtlasRoute client={inputAtlasClient} />
-						</Match>
-						<Match when={route() === "#/config-explorer"}>
-							<ConfigExplorerShowcase client={workbenchRendererClient} />
-						</Match>
-						<Match when={route() === "#/blueprint-graphs"}>
-							<BlueprintGraphViewer client={workbenchRendererClient} />
-						</Match>
-						<Match when={route() === "#/project-custodian"}>
-							<ProjectCustodianRoute client={projectCustodianClient} />
-						</Match>
-						<Match when={route() === "#/map-review"}>
-							<MapReviewRoute client={mapReviewClient} />
-						</Match>
-						<Match when={route() === "#/map-capture"}>
-							<MapCaptureRoute client={mapCaptureClient} />
-						</Match>
-						<Match when={route() === "#/niagara-preview"}>
-							<NiagaraPreviewRoute client={niagaraPreviewClient} />
-						</Match>
-						<Match when={route() === "#/content-observatory"}>
-							<ContentObservatoryRoute client={contentObservatoryClient} />
-						</Match>
-						<Match when={route() === "#/scenarios"}>
-							<ScenarioStudioRoute client={scenarioStudioClient} showDemoGuide />
-						</Match>
-						<Match when={route() === "#/camera-lab"}>
-							<CameraLab />
-						</Match>
-					</Switch>
+					{(_revision) => {
+						const [scenarioDraft, setScenarioDraft] =
+							createSignal<ScenarioStudioDraft>();
+						const [gameTextPreferences, setGameTextPreferences] =
+							createSignal<GameTextPreferences>();
+						const [texturePreferences, setTexturePreferences] =
+							createSignal<TextureAuditPreferences>();
+						return (
+							<Suspense fallback={<p role="status">Loading tool…</p>}>
+								<Switch
+									fallback={
+										<ShowcaseHome
+											onChosen={() =>
+												setProjectRevision((revision) => revision + 1)
+											}
+										/>
+									}
+								>
+									<Match when={route() === "#/authoring"}>
+										<AuthoringRoute />
+									</Match>
+									<Match when={route() === "#/asset-audits/textures"}>
+										<TextureAuditRoute
+											initialPreferences={texturePreferences()}
+											onPreferencesChange={setTexturePreferences}
+										/>
+									</Match>
+									<Match when={route() === "#/game-text"}>
+										<GameTextRoute
+											initialPreferences={gameTextPreferences()}
+											onPreferencesChange={setGameTextPreferences}
+										/>
+									</Match>
+									<Match when={route() === "#/input-atlas"}>
+										<InputAtlasRoute />
+									</Match>
+									<Match when={route() === "#/config-explorer"}>
+										<ConfigExplorerShowcase client={workbenchRendererClient} />
+									</Match>
+									<Match when={route() === "#/blueprint-graphs"}>
+										<BlueprintGraphViewer client={workbenchRendererClient} />
+									</Match>
+									<Match when={route() === "#/project-custodian"}>
+										<ProjectCustodianRoute />
+									</Match>
+									<Match when={route() === "#/map-review"}>
+										<MapReviewRoute />
+									</Match>
+									<Match when={route() === "#/map-capture"}>
+										<MapCaptureRoute />
+									</Match>
+									<Match when={route() === "#/niagara-preview"}>
+										<NiagaraPreviewRoute />
+									</Match>
+									<Match when={route() === "#/content-observatory"}>
+										<ContentObservatoryRoute />
+									</Match>
+									<Match when={route() === "#/scenarios"}>
+										<ScenarioStudioRoute
+											initialDraft={scenarioDraft()}
+											onDraftChange={setScenarioDraft}
+											showDemoGuide
+										/>
+									</Match>
+									<Match when={route() === "#/camera-lab"}>
+										<CameraLab />
+									</Match>
+								</Switch>
+							</Suspense>
+						);
+					}}
 				</Show>
 			</div>
 		</div>
 	);
 }
 
-function ShowcaseHome() {
+function ShowcaseHome(props: { readonly onChosen: () => void }) {
 	const contextAction = createEffectAction();
 	const statusAction = createEffectAction();
 	const [context, setContext] = createSignal<ShowcaseContext>();
-	const [cameraStatus, setCameraStatus] = createSignal<CameraStatus>();
+	const [cameraStatus, setCameraStatus] = createSignal<CameraEvidence>({ status: "loading" });
+	const cameraConnected = () => {
+		const state = cameraStatus();
+		return state.status === "ready" && state.value.stats.pipeConnected;
+	};
+	const cameraLabel = () => {
+		const state = cameraStatus();
+		return state.status === "loading"
+			? "Checking…"
+			: state.status === "failed"
+				? "Unavailable"
+				: cameraConnected()
+					? "Connected"
+					: "Offline";
+	};
+	const selectionAction = createEffectAction();
+	const [opening, setOpening] = createSignal(false);
+	const [notice, setNotice] = createSignal<string>();
+	const [contextFailed, setContextFailed] = createSignal(false);
+	const selectProject = (sample: boolean) => {
+		setOpening(true);
+		setNotice(undefined);
+		selectionAction.run(
+			sample
+				? workbenchRendererClient.sampleProject()
+				: workbenchRendererClient.chooseProject(),
+			{
+				onFailure: () => {
+					setOpening(false);
+					setNotice("Could not open the project. Retry or choose another directory.");
+				},
+				onSuccess: (result) => {
+					setOpening(false);
+					if (result.status === "ready") props.onChosen();
+					else if (result.status === "failed")
+						setNotice(result.error.message + " " + result.error.recovery);
+				}
+			}
+		);
+	};
 	onMount(() => {
 		contextAction.run(workbenchRendererClient.showcaseContext(), {
+			onFailure: () => {
+				setContextFailed(true);
+				setNotice("Project status could not be loaded. Open a project to retry.");
+			},
 			onSuccess: setContext
 		});
 		statusAction.run(workbenchRendererClient.getStatus(), {
-			onFailure: () => setCameraStatus(undefined),
-			onSuccess: setCameraStatus
+			onFailure: () => setCameraStatus({ status: "failed" }),
+			onSuccess: (value) => setCameraStatus({ status: "ready", value })
 		});
 	});
 	return (
 		<main {...stylex.props(styles.home)}>
 			<header {...stylex.props(styles.hero)}>
-				<h1 {...stylex.props(styles.homeTitle)}>What do you want to do?</h1>
+				<h1 {...stylex.props(styles.homeTitle)}>Explore your Unreal project</h1>
 				<p {...stylex.props(styles.homeIntro)}>
 					Workbench reads your saved project directly. Most tools answer questions without
 					opening the editor — live sessions start only when a workflow needs Unreal.
 				</p>
 			</header>
 
+			<section aria-label="Get started" {...stylex.props(styles.workflowSection)}>
+				<div {...stylex.props(styles.cardGrid)}>
+					<button
+						type="button"
+						disabled={opening()}
+						onClick={() => selectProject(true)}
+						{...stylex.props(styles.onboardingAction)}
+					>
+						Try the sample project
+					</button>
+					<button
+						type="button"
+						disabled={opening()}
+						onClick={() => selectProject(false)}
+						{...stylex.props(styles.onboardingAction)}
+					>
+						Open your project
+					</button>
+				</div>
+				<p>
+					Start with{" "}
+					<a href="#/authoring" {...stylex.props(styles.guideLink)}>
+						Data Authoring
+					</a>{" "}
+					to inspect a table, explore{" "}
+					<a href="#/game-text" {...stylex.props(styles.guideLink)}>
+						Game Text
+					</a>
+					, then check{" "}
+					<a href="#/asset-audits/textures" {...stylex.props(styles.guideLink)}>
+						Texture Audit
+					</a>
+					. Live Unreal setup is optional.
+				</p>
+				<Show when={opening()}>
+					<p role="status">Opening and indexing project…</p>
+				</Show>
+				<Show when={notice()}>{(message) => <p role="alert">{message()}</p>}</Show>
+			</section>
 			<section aria-label="Current project" {...stylex.props(styles.projectStrip)}>
 				<ProjectMetric
 					label="Project"
@@ -505,9 +756,9 @@ function ShowcaseHome() {
 					value={readyProjectEvidence(context())?.mapCount.toLocaleString() ?? "—"}
 				/>
 				<ProjectMetric
-					label="Live Unreal"
-					ready={cameraStatus()?.stats.pipeConnected === true}
-					value={cameraStatus()?.stats.pipeConnected ? "Connected" : "Offline"}
+					label="Camera feed"
+					ready={cameraConnected()}
+					value={cameraLabel()}
 				/>
 			</section>
 
@@ -526,7 +777,12 @@ function ShowcaseHome() {
 									item.description === undefined ? null : (
 										<WorkflowCard
 											evidence={() =>
-												workflowEvidence(item, context(), cameraStatus())
+												workflowEvidence(
+													item,
+													context(),
+													cameraStatus(),
+													contextFailed()
+												)
 											}
 											item={item}
 										/>
@@ -539,7 +795,9 @@ function ShowcaseHome() {
 			</For>
 
 			<footer {...stylex.props(styles.homeFooter)}>
-				<span>{context()?.health.status ?? "Loading"}</span>
+				<span>
+					{context()?.health.status ?? (contextFailed() ? "Unavailable" : "Loading")}
+				</span>
 				<p>
 					{readyProjectEvidence(context())?.projectRoot ??
 						"Choose any Unreal project directory to begin."}
@@ -597,6 +855,23 @@ function WorkflowCard(props: {
 }
 
 const styles = stylex.create({
+	onboardingAction: {
+		backgroundColor: tokens.colorSurfaceRaised,
+		color: tokens.colorTextStrong,
+		borderColor: tokens.colorBorderStrong,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		padding: "14px 18px",
+		textAlign: "left",
+		cursor: "pointer",
+		fontSize: 16
+	},
+	guideLink: {
+		color: tokens.colorTextStrong,
+		textDecorationLine: "underline",
+		textUnderlineOffset: 3
+	},
 	app: {
 		display: "flex",
 		minHeight: "100vh",

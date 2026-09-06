@@ -132,6 +132,23 @@ pub enum Operation {
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", deny_unknown_fields)]
 pub enum ProjectIndexQuery {
+    #[serde(rename = "count")]
+    Count {
+        cursor: Option<String>,
+        #[serde(rename = "expectedGeneration")]
+        expected_generation: u64,
+        limit: u32,
+        #[serde(rename = "projectId")]
+        project_id: String,
+        #[serde(rename = "exactClasses")]
+        exact_classes: Vec<String>,
+        #[serde(rename = "classPrefixes")]
+        class_prefixes: Vec<String>,
+        #[serde(rename = "classNameSuffixes")]
+        class_name_suffixes: Vec<String>,
+        #[serde(rename = "serializedNames")]
+        serialized_names: Vec<String>,
+    },
     #[serde(rename = "maps")]
     Maps {
         cursor: Option<String>,
@@ -602,6 +619,38 @@ const PROJECT_INDEX_MAX_PAGE_SIZE: u32 = 1024;
 
 fn validate_project_index_query(query: &ProjectIndexQuery) -> Result<(), ProtocolError> {
     let (project_id, expected_generation, limit, cursor, values) = match query {
+        ProjectIndexQuery::Count {
+            cursor,
+            expected_generation,
+            limit,
+            project_id,
+            exact_classes,
+            class_prefixes,
+            class_name_suffixes,
+            serialized_names,
+        } => {
+            if cursor.is_some() || *limit != 1 {
+                return Err(ProtocolError(
+                    "Count queries require limit 1 and no cursor".into(),
+                ));
+            }
+            for values in [
+                exact_classes,
+                class_prefixes,
+                class_name_suffixes,
+                serialized_names,
+            ] {
+                if values.len() > 64 {
+                    return Err(ProtocolError(
+                        "Count filters allow at most 64 values".into(),
+                    ));
+                }
+                for value in values {
+                    validate_non_empty(value, "count filter")?;
+                }
+            }
+            (project_id, *expected_generation, *limit, cursor, None)
+        }
         ProjectIndexQuery::Maps {
             cursor,
             expected_generation,

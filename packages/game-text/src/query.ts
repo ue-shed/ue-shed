@@ -81,6 +81,7 @@ function filteredOccurrences(
 export interface TextCorpusQuery {
 	readonly focus: (request: TextCorpusFocusRequest) => TextCorpusFocus | undefined;
 	readonly search: (request: TextCorpusSearchRequest) => TextCorpusSearchPage;
+	readonly export: (request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">) => TextCorpus;
 	readonly summary: () => TextCorpusQuerySummary;
 }
 
@@ -143,16 +144,23 @@ export function textCorpusQuery(corpus: TextCorpus): TextCorpusQuery {
 		}
 	};
 
+	const matching = (request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">) => {
+		const terms = normalizedTerms(request.query);
+		return indexed.filter(({ presentation, searchable, unit }) => {
+			if (!hasSearchableSource(unit)) return false;
+			if (filteredOccurrences(unit, request.capability).length === 0) return false;
+			if (!matchesLens(presentation.reviewSignals, request.lens)) return false;
+			return terms.every((term) => searchable.includes(term));
+		});
+	};
+
 	return {
+		export: (request) => {
+			return { ...corpus, units: matching(request).map(({ unit }) => unit) };
+		},
 		summary: () => summary,
 		search: (request) => {
-			const terms = normalizedTerms(request.query);
-			const matched = indexed.filter(({ presentation, searchable, unit }) => {
-				if (!hasSearchableSource(unit)) return false;
-				if (filteredOccurrences(unit, request.capability).length === 0) return false;
-				if (!matchesLens(presentation.reviewSignals, request.lens)) return false;
-				return terms.every((term) => searchable.includes(term));
-			});
+			const matched = matching(request);
 			const afterCursor = request.cursor
 				? matched.findIndex(({ unit }) => unit.id === request.cursor) + 1
 				: 0;

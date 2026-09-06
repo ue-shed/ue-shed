@@ -6758,6 +6758,20 @@
 		"UAssetIoProjectIndexItem": {
 			"anyOf": [
 				{
+					"type": "object",
+					"properties": {
+						"kind": {
+							"type": "string",
+							"enum": ["count"]
+						},
+						"count": {
+							"$ref": "#/$defs/UAssetIoNonNegativeInt"
+						}
+					},
+					"required": ["kind", "count"],
+					"additionalProperties": false
+				},
+				{
 					"$ref": "#/$defs/UAssetIoProjectIndexMap"
 				},
 				{

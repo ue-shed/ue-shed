@@ -6,7 +6,7 @@ import {
 	defaultFramingParameters,
 	FramingCandidateId,
 	type FramingCandidateOverride
-} from "@ue-shed/cameras";
+} from "@ue-shed/cameras/browser";
 import { createSignal } from "solid-js";
 import { afterEach, describe, expect, it } from "vitest";
 import { FramingSettings } from "./framing-settings.js";

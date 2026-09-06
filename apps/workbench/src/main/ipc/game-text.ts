@@ -13,13 +13,22 @@ export const register = Effect.gen(function* () {
 	yield* ipc.register(invokeContracts["game-text:choose-and-scan"], () =>
 		gameText.chooseAndScan().pipe(Effect.orDie)
 	);
-	yield* ipc.register(invokeContracts["game-text:configured-refresh"], () =>
-		gameText.configuredRefresh()
+	yield* ipc.register(invokeContracts["game-text:configured-refresh"], (refresh) =>
+		gameText.configuredRefresh(refresh)
 	);
 	yield* ipc.register(invokeContracts["game-text:choose-and-refresh"], () =>
 		gameText.chooseAndRefresh().pipe(Effect.orDie)
 	);
 	yield* ipc.register(invokeContracts["game-text:progress"], () => gameText.progress());
+	yield* ipc.register(invokeContracts["game-text:investigation-export"], (...args) =>
+		gameText.investigationExport(...args)
+	);
+	yield* ipc.register(invokeContracts["game-text:investigation-save"], (...args) =>
+		gameText.investigationSave(...args)
+	);
+	yield* ipc.register(invokeContracts["game-text:investigation-open"], (...args) =>
+		gameText.investigationOpen(...args)
+	);
 	yield* ipc.register(invokeContracts["game-text:search"], (...args) => {
 		const [request] = args;
 		return gameText.search(request);

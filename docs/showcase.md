@@ -12,7 +12,47 @@ is opened, including indexed candidate-package and map counts. Saved-source work
 Unreal; live texture preview, Live World, Map Capture, and Camera Lab request a separately enabled
 editor only when needed.
 
+## Take an investigation away
+
+Game Text and Texture Audit offer **Export JSON**, **Export CSV**, **Save preset**, and
+**Open preset**. Exports include every match to the current filters, including results beyond the
+visible page. Game Text exports either corpus units or quality findings, according to the active
+view. Full occurrences and source evidence remain available; coverage and distributions describe
+the whole scan, even when the exported result set is filtered or empty.
+
+Presets are versioned JSON containing filters, the domain's existing sort order, and the actual
+rule document when applicable. Opening a preset applies it to the currently selected project.
+Texture Audit retains imported rules for subsequent refreshes in that project. Presets do not
+select projects or modify Unreal assets. **Copy CLI replay** appears after saving a preset and
+requires the saved settings to still match the current investigation.
+
+Run the copied PowerShell command from the repository root, or choose an output file explicitly:
+
+```powershell
+pnpm ue-shed investigations run 'D:/Projects/MyProject' --preset './review.preset.json' --format json --output './review.json'
+pnpm ue-shed investigations run 'D:/Projects/MyProject' --preset './review.preset.json' --format csv --output './review.csv'
+```
+
+Replay rescans current saved project files; it does not recreate a historical scan. JSON exports
+include the source project, saved-file authority, and catalog generation. Direct CLI scans report
+`generation: null` because they do not use a persistent catalog generation. Keep an exported
+result artifact when you need the original evidence.
+
+CSV begins with a header and one `record_type=metadata` row carrying the preset, provenance,
+coverage, and diagnostics as JSON. Subsequent `record_type=record` rows contain matches, with
+nested evidence in JSON columns. Text cells that could be spreadsheet formulas receive a leading
+apostrophe; JSON preserves the original values. Presets are limited to 4 MiB and file exports to
+512 MiB. File errors retain the previous destination and give recovery guidance.
+
 ## Open the Workbench
+
+`pnpm showcase --build-only` builds Workbench and its workspace prerequisites in dependency order;
+prebuilt package `dist` directories are not required. For the focused desktop regression lane, run
+`pnpm test:e2e:showcase`. It builds the same dependency closure and uses an isolated Electron profile
+per test. The lane covers saved-table drafts, project switching and catalog freshness, Config
+Explorer, Blueprint graphs, footer navigation, virtualized actor-list keyboard access, scenario
+files, saved investigations, complete JSON/CSV exports, and retained investigation filters. It requires the native reader and Electron but no live
+Unreal editor. Pass `--no-build` only when those outputs are already current.
 
 Requirements are Node.js 26 or newer, pnpm 11, and Rust 1.88 or newer. Live actions additionally
 require Unreal Engine 5.7 and Visual Studio 2022 with the Unreal Engine C++ workload. The initial
@@ -24,16 +64,25 @@ pnpm showcase
 ```
 
 `showcase` incrementally builds the in-repo `uasset` reader and Workbench, restores the most recently
-opened project on this device, and opens the catalog. On a fresh profile, choose an Unreal project
-from the footer. The adjacent recent-projects menu keeps up to eight successful selections for quick
+opened project on this device, and opens the catalog. On a fresh profile, use **Try the sample
+project** or **Open your project** on the home screen. Start with Data Authoring, Game Text, and
+Texture Audit to explore saved data. The footer's recent-projects menu keeps up to eight successful selections for quick
 switching. Explicit `UE_SHED_PROJECT_ROOT` configuration always wins, which keeps automated fixture
 runs deterministic. Project selection only indexes saved packages; it does not build or launch
 Unreal up front. Texture Audit, Live World in Map Review, and Camera Load Lab each expose a launch
 or connect action when their optional live capability is needed. If an editor is already serving
 Remote Control on the usual local ports, `showcase` attaches to it. Otherwise it reserves the next
-free HTTP/WebSocket pair so a later in-app launch can claim that endpoint. The monitored HTTP port
-is shown beside the editor status in the Workbench header; click it to enter another port. The
-change takes effect immediately and is remembered on that device.
+free HTTP/WebSocket pair so a later in-app launch can claim that endpoint. The selected HTTP port
+is shown beside the editor status in the sidebar footer; click it to enter another port. New live
+operations use that selection, while active operations retain their starting endpoint. Changing
+targets clears live observation and preview caches and reloads the current route. The selection is
+remembered on that device. Scenario Studio initially uses this endpoint and also exposes an explicit
+per-run override; its run handle retains the endpoint for subsequent status and cancellation.
+
+The home screen reports **Camera feed** readiness separately from editor availability. Failed
+status requests resolve to an unavailable state. Config Explorer's committed sample can be used
+without selecting a project. An untouched saved DataTable is labeled **Saved snapshot**; **Applied**
+requires a committed apply receipt.
 
 The source-checkout flow uses `target/debug/uasset.exe` (`target/debug/uasset` on other platforms).
 To exercise another compatible reader build instead, override it before launching:

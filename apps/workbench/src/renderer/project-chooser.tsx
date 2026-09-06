@@ -3,16 +3,17 @@ import { createEffectAction, createEffectSubscription } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { TaskProgressModal, type TaskProgress } from "@ue-shed/ui/task-progress";
 import { Schedule, Stream } from "effect";
-import { For, Show, createSignal, onCleanup, onMount } from "solid-js";
+import { For, Show, createEffect, createSignal, onCleanup, onMount, untrack } from "solid-js";
 import type {
 	ProjectLaunchMode,
 	ProjectLaunchResult,
 	WorkbenchRecentProject,
 	WorkbenchProjectState
-} from "../main/project-workspace-contract.js";
+} from "../shared/project-workspace-contract.js";
 import type { WorkbenchRendererClient } from "./workbench-client.js";
 
 export interface ProjectChooserProps {
+	readonly revision?: number;
 	readonly client: Pick<
 		WorkbenchRendererClient,
 		| "chooseProject"
@@ -77,8 +78,11 @@ export function ProjectChooser(props: ProjectChooserProps) {
 			onSuccess: setRecentProjects
 		});
 
+	createEffect(() => {
+		void props.revision;
+		untrack(() => refresh(false));
+	});
 	onMount(() => {
-		refresh(false);
 		refreshRecent();
 		const onFocus = () => refresh(true);
 		window.addEventListener("focus", onFocus);

@@ -5,7 +5,6 @@ import type {
 	TextQualityFocus,
 	TextQualityQuerySummary,
 	TextQualityRuleDocument,
-	TextQualityRuleUpdateResult,
 	TextQualitySearchPage
 } from "@ue-shed/game-text/browser";
 import { createEffectAction } from "@ue-shed/ui";
@@ -13,6 +12,7 @@ import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { For, Show, createEffect, createSignal, on } from "solid-js";
 import type { GameTextClientApi } from "./game-text-client.js";
 import { GameTextRuleEditor } from "./game-text-rule-editor.js";
+import type { GameTextRuleState } from "./game-text-rule-state.js";
 import { textContext } from "./game-text-view.js";
 
 const filters: readonly { readonly label: string; readonly value: TextQualityFilter }[] = [
@@ -46,16 +46,16 @@ function actual(focus: TextQualityFocus): string {
 
 export function GameTextQualityWorkspace(props: {
 	readonly client: GameTextClientApi;
+	readonly filter?: TextQualityFilter;
+	readonly onFilterChange?: (filter: TextQualityFilter) => void;
 	readonly document: TextQualityRuleDocument;
-	readonly onReviewed: (
-		result: Extract<TextQualityRuleUpdateResult, { status: "completed" }>
-	) => void;
+	readonly editor: GameTextRuleState;
 	readonly onReplaceRules: () => void;
 	readonly summary: TextQualityQuerySummary;
 }) {
 	const searchAction = createEffectAction();
 	const focusAction = createEffectAction();
-	const [filter, setFilter] = createSignal<TextQualityFilter>("all");
+	const [filter, setFilter] = createSignal<TextQualityFilter>(props.filter ?? "all");
 	const [page, setPage] = createSignal<TextQualitySearchPage>({ findings: [], total: 0 });
 	const [selectedId, setSelectedId] = createSignal<TextQualityFindingSummary["id"]>();
 	const [focus, setFocus] = createSignal<TextQualityFocus>();
@@ -106,8 +106,11 @@ export function GameTextQualityWorkspace(props: {
 
 	createEffect(
 		on(
-			() => props.summary,
-			() => requestPage()
+			() => [props.summary, props.filter],
+			() => {
+				if (props.filter !== undefined) setFilter(props.filter);
+				requestPage();
+			}
 		)
 	);
 
@@ -221,12 +224,15 @@ export function GameTextQualityWorkspace(props: {
 			<Show
 				when={surface() === "findings"}
 				fallback={
-					<GameTextRuleEditor
-						client={props.client}
-						document={props.document}
-						onReviewed={props.onReviewed}
-						summary={props.summary}
-					/>
+					<Show when={props.editor.state()}>
+						{(state) => (
+							<GameTextRuleEditor
+								editor={props.editor}
+								state={state()}
+								summary={props.summary}
+							/>
+						)}
+					</Show>
 				}
 			>
 				<div {...stylex.props(styles.grid)}>
@@ -243,6 +249,7 @@ export function GameTextQualityWorkspace(props: {
 										aria-pressed={filter() === item.value}
 										onClick={() => {
 											setFilter(item.value);
+											props.onFilterChange?.(item.value);
 											requestPage(item.value);
 										}}
 										{...stylex.props(

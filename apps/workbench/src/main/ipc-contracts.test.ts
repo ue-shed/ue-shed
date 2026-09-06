@@ -204,6 +204,8 @@ const validArgsByChannel = {
 	"editor-session:set-port": [31001],
 	"editor-session:status": [],
 	"editor-session:execute": ["start_play"],
+	"scenario:open-document": [],
+	"scenario:save-document": [movementGymScenario],
 	"scenario:start": [movementGymScenario, scenarioHandle.endpoint],
 	"scenario:status": [scenarioHandle],
 	"scenario:cancel": [scenarioHandle],
@@ -236,16 +238,21 @@ const validArgsByChannel = {
 	],
 	"project-custodian:cancel": ["proposal-1"],
 	"project:current": [],
+	"project:refresh": ["refresh"],
 	"project:choose": [],
+	"project:sample": [],
 	"project:recent": [],
 	"project:open-recent": ["C:/Projects/Fixture"],
 	"project:progress": [],
 	"project:launch": ["ue_shed"],
 	"asset-audits:textures:configured-scan": [],
 	"asset-audits:textures:choose-and-scan": [],
-	"asset-audits:textures:configured-refresh": [],
+	"asset-audits:textures:configured-refresh": [true],
 	"asset-audits:textures:choose-and-refresh": [],
 	"asset-audits:textures:progress": [],
+	"asset-audits:textures:investigation-export": [{ findingsOnly: false, query: "" }, "json"],
+	"asset-audits:textures:investigation-save": [{ findingsOnly: false, query: "" }],
+	"asset-audits:textures:investigation-open": [],
 	"asset-audits:textures:search": [{ findingsOnly: false, pageSize: 100, query: "" }],
 	"asset-audits:textures:record": ["/Game/Textures/Example"],
 	"asset-audits:textures:preview": ["/Game/Textures/Example"],
@@ -253,9 +260,17 @@ const validArgsByChannel = {
 	"asset-audits:textures:preview-offline-batch": [{ objectPaths: ["/Game/Textures/Example"] }],
 	"game-text:configured-scan": [],
 	"game-text:choose-and-scan": [],
-	"game-text:configured-refresh": [],
+	"game-text:configured-refresh": [true],
 	"game-text:choose-and-refresh": [],
 	"game-text:progress": [],
+	"game-text:investigation-export": [
+		{ mode: "corpus", qualityFilter: "all", query: "", capability: "all", lens: "all" },
+		"json"
+	],
+	"game-text:investigation-save": [
+		{ mode: "corpus", qualityFilter: "all", query: "", capability: "all", lens: "all" }
+	],
+	"game-text:investigation-open": [],
 	"game-text:search": [{ capability: "all", pageSize: 50, query: "" }],
 	"game-text:focus": [{ id: "unreal:UI:Example", pageSize: 50 }],
 	"game-text:quality:choose-rules": [],
@@ -445,6 +460,8 @@ const validResultByChannel = {
 		outcome: "accepted",
 		state: { mode: "play", sessionId: "session-1", status: "starting" }
 	},
+	"scenario:open-document": { status: "cancelled" },
+	"scenario:save-document": { status: "cancelled" },
 	"scenario:start": scenarioHandle,
 	"scenario:status": {
 		_tag: "Terminal",
@@ -503,7 +520,9 @@ const validResultByChannel = {
 		}
 	},
 	"project:current": { status: "not_configured" },
+	"project:refresh": { status: "not_configured" },
 	"project:choose": { status: "cancelled" },
+	"project:sample": { status: "not_configured" },
 	"project:recent": [
 		{
 			projectName: "Fixture",
@@ -529,6 +548,9 @@ const validResultByChannel = {
 		stage: "texture_audit",
 		total: 0
 	},
+	"asset-audits:textures:investigation-export": { status: "cancelled" },
+	"asset-audits:textures:investigation-save": { status: "cancelled" },
+	"asset-audits:textures:investigation-open": { status: "cancelled" },
 	"asset-audits:textures:search": { status: "not_ready" },
 	"asset-audits:textures:record": { status: "not_ready" },
 	"asset-audits:textures:preview": {
@@ -571,6 +593,9 @@ const validResultByChannel = {
 		stage: "game_text",
 		total: 0
 	},
+	"game-text:investigation-export": { status: "cancelled" },
+	"game-text:investigation-save": { status: "cancelled" },
+	"game-text:investigation-open": { status: "cancelled" },
 	"game-text:search": { status: "not_ready" },
 	"game-text:focus": { status: "not_ready" },
 	"game-text:quality:choose-rules": { status: "not_ready" },
@@ -799,9 +824,9 @@ const malformedArgsByChannel = {
 	"map-capture:tile": [{ manifestPath: "", relativePath: "../outside.png" }]
 } satisfies Partial<Record<InvokeChannel, IpcFixtureValue>>;
 
-it("registers exactly 110 invoke channels plus renderer events", () => {
-	expect(invokeChannelNames).toHaveLength(110);
-	expect(new Set(invokeChannelNames).size).toBe(110);
+it("registers exactly 120 invoke channels plus renderer events", () => {
+	expect(invokeChannelNames).toHaveLength(120);
+	expect(new Set(invokeChannelNames).size).toBe(120);
 	expect(cameraFrameEvent.channel).toBe("camera:frame");
 	expect(mapCaptureProgressEvent.channel).toBe("map-capture:progress");
 	expect(worldObservationEvent.channel).toBe("map-review:world-observation");

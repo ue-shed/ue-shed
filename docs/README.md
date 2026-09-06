@@ -62,6 +62,9 @@ there; do not invent a second status source in docs.
 
 ## Research
 
+- [Showcase-first project review (2026-09-06)](research/project-review-2026-09-06.md) —
+  first-run and refresh reproductions, UI/runtime observations, architecture, and prioritized improvements.
+
 - [Canonical SQLite and incremental snapshots (2026-09-05)](research/sqlite-canonical-2026-09-05.md) —
   production migration, three-size before/after timings, lifecycle validation, and cache repair.
 

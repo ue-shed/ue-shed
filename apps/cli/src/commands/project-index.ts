@@ -1,6 +1,7 @@
 import { Argument, Command, Flag } from "effect/unstable/cli";
 import { Option } from "effect";
 import {
+	runProjectIndexCount,
 	runProjectIndexMaps,
 	runProjectIndexQuery,
 	runProjectIndexRebuild,
@@ -82,7 +83,31 @@ const query = Command.make(
 	}
 ).pipe(Command.withDescription("Read one bounded domain-neutral candidate page."));
 
+const count = Command.make(
+	"count",
+	{
+		...target,
+		exactClasses: Flag.string("exact-class").pipe(Flag.atMost(64)),
+		classPrefixes: Flag.string("class-prefix").pipe(Flag.atMost(64)),
+		classNameSuffixes: Flag.string("class-name-suffix").pipe(Flag.atMost(64)),
+		serializedNames: Flag.string("serialized-name").pipe(Flag.atMost(64))
+	},
+	({ exactClasses, classPrefixes, classNameSuffixes, serializedNames, ...value }) =>
+		runProjectIndexCount({
+			_tag: "ProjectIndexCount",
+			...targetFields(value),
+			exactClasses,
+			classPrefixes,
+			classNameSuffixes,
+			serializedNames
+		})
+).pipe(
+	Command.withDescription(
+		"Count distinct packages matching any supplied selector. No selectors returns zero."
+	)
+);
+
 export const projectIndexCommand = Command.make("project-index").pipe(
 	Command.withDescription("Refresh and query the headless Project Index."),
-	Command.withSubcommands([status, refresh, rebuild, maps, query])
+	Command.withSubcommands([status, refresh, rebuild, maps, query, count])
 );

@@ -4,7 +4,7 @@ import {
 	FramingCandidateId,
 	type FramingCandidateOverride,
 	type FramingParameters
-} from "@ue-shed/cameras";
+} from "@ue-shed/cameras/browser";
 import { createEffectAction, createEffectSubscription } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { Cause, Effect, Schedule, Stream } from "effect";
@@ -19,7 +19,7 @@ import type {
 	MapReviewLiveFrame,
 	MapReviewPose
 } from "./map-review-client.js";
-import type { ObservedActor } from "@ue-shed/observatory";
+import type { ObservedActor } from "@ue-shed/observatory/browser";
 import { FramingSettings } from "./framing-settings.js";
 import { ScrubbableNumberField } from "./scrubbable-number-field.js";
 

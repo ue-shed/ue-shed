@@ -1,4 +1,5 @@
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
+import { cp, mkdir, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import {
 	expect,
@@ -11,6 +12,47 @@ const fixturePath = resolve(
 	repositoryRoot,
 	"fixtures/unreal-project/Content/Fixture/Blueprints/BP_GraphFixture.uasset"
 );
+
+test("offers samples without a selected project and finishes failed camera status checks", async ({
+	offlineBlueprint: { application, harness, workbench }
+}) => {
+	const page = workbench.page;
+	const sample = join(harness.checkoutRoot, "fixtures", "unreal-project");
+	await mkdir(join(sample, "Content"), { recursive: true });
+	await writeFile(join(sample, "Sample.uproject"), JSON.stringify({ FileVersion: 3 }));
+	await cp(fixturePath, join(sample, "Content", "BP_GraphFixture.uasset"));
+	await cp(
+		resolve(repositoryRoot, "packages/config-explorer/fixtures/config-source"),
+		join(harness.checkoutRoot, "packages/config-explorer/fixtures/config-source"),
+		{ recursive: true }
+	);
+	await workbench.openRoute("Blueprint Graphs");
+	await workbench.openRoute("Showcase");
+	await expect(page.getByRole("region", { name: "Current project" })).toContainText(
+		"Not selected"
+	);
+	await expect(
+		page.getByRole("main").getByText("Sample query available", { exact: true })
+	).toBeVisible();
+	await expect(page.getByRole("button", { name: "Try the sample project" })).toBeVisible();
+	await application.evaluate(({ ipcMain }) => {
+		ipcMain.removeHandler("camera:status");
+		ipcMain.handle("camera:status", () => {
+			throw new Error("Camera status test failure");
+		});
+	});
+	await workbench.openRoute("Blueprint Graphs");
+	await workbench.openRoute("Showcase");
+	await expect(page.getByRole("region", { name: "Current project" })).toContainText(
+		"Unavailable"
+	);
+	await expect(page.getByText("Checking live session…", { exact: true })).toHaveCount(0);
+	await page.getByRole("button", { name: "Try the sample project" }).click();
+	await expect(page.getByRole("region", { name: "Current project" })).toContainText(
+		"unreal-project"
+	);
+	expect(await harness.launchCount()).toBe(0);
+});
 
 test("opens saved Blueprint evidence without a project or Unreal process", async ({
 	offlineBlueprint: { application, harness, workbench }

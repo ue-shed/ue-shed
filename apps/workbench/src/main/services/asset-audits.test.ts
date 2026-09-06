@@ -1,3 +1,4 @@
+import { makeWorkbenchTestConfigurationLayer as makeWorkbenchConfigurationLayer } from "../test-configuration.js";
 import { it } from "@effect/vitest";
 import {
 	AuditRuleId,
@@ -14,7 +15,6 @@ import { Effect, Layer } from "effect";
 import { expect } from "vitest";
 import { makeElectronDialogTestLayer } from "../adapters/electron-dialog.js";
 import { makeWorkbenchWindowTestLayer } from "../adapters/electron-window.js";
-import { makeWorkbenchConfigurationLayer } from "../workbench-config.js";
 import { WorkbenchAssetAudits, WorkbenchAssetAuditsLive } from "./asset-audits.js";
 import { makeOfflineTexturePreviewTestLayer } from "./offline-texture-preview.js";
 import { makeWorkbenchProjectTestLayer } from "./project-workspace.js";

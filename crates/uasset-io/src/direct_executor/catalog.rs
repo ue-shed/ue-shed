@@ -121,6 +121,7 @@ pub struct CatalogSnapshotEntry {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum QueryKind {
+    Count { filters: Vec<QueryKind> },
     Maps,
     ExactClasses { values: Vec<String> },
     ClassPrefixes { values: Vec<String> },
@@ -139,6 +140,9 @@ pub struct QueryRequest {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum QueryItem {
+    Count {
+        count: u64,
+    },
     Map {
         map_path: String,
         package_name: String,
@@ -326,6 +330,7 @@ pub(crate) fn parse_page_cursor(cursor: Option<&str>) -> Result<String, CatalogE
 /// Every query item is keyed by its project-relative path, which is also the page cursor.
 pub(crate) fn item_path(item: &QueryItem) -> &str {
     match item {
+        QueryItem::Count { .. } => "",
         QueryItem::Map { map_path, .. } => map_path.as_str(),
         QueryItem::Header { package_path, .. } => package_path.as_str(),
     }

@@ -579,7 +579,7 @@ test(`records the ${journey} Workbench journey`, async ({
 				await recordChapter({
 					action: async () => {
 						await workbench.expectShowcaseReady();
-						await workbench.openRoute("Custodian");
+						await workbench.openRoute("Project Custodian");
 						await expect(
 							recordingPage.getByRole("region", { name: "Storage summary" })
 						).toBeVisible();
@@ -659,7 +659,7 @@ test(`records the ${journey} Workbench journey`, async ({
 				await recordChapter({
 					action: async () => {
 						await workbench.expectShowcaseReady();
-						await workbench.openRoute("Config");
+						await workbench.openRoute("Config Explorer");
 						await expect(
 							page!.getByRole("navigation", { name: "Breadcrumb" })
 						).toContainText("Config Explorer");
@@ -922,7 +922,7 @@ test(`records the ${journey} Workbench journey`, async ({
 			chapters.push(
 				await recordChapter({
 					action: async () => {
-						await workbench.openRoute("Config");
+						await workbench.openRoute("Config Explorer");
 						await expect(
 							page!.getByRole("navigation", { name: "Breadcrumb" })
 						).toContainText("Config Explorer");

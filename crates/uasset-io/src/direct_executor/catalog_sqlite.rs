@@ -486,7 +486,9 @@ impl Catalog for SqliteCatalog {
             .map_err(storage_error("prepare bounded query"))?;
         let rows = statement
             .query_map(params_from_iter(args), |row| {
-                if matches!(request.kind, QueryKind::Maps) {
+                if matches!(request.kind, QueryKind::Count { .. }) {
+                    Ok(QueryItem::Count { count: row.get(0)? })
+                } else if matches!(request.kind, QueryKind::Maps) {
                     Ok(QueryItem::Map {
                         map_path: row.get(0)?,
                         package_name: row.get(1)?,
@@ -588,6 +590,22 @@ fn decode_unsigned(value: Vec<u8>) -> rusqlite::Result<u64> {
     Ok(u64::from_be_bytes(*bytes))
 }
 fn query_sql(kind: &QueryKind, cursor: String, limit: usize) -> (String, Vec<Value>) {
+    if let QueryKind::Count { filters } = kind {
+        let mut parts = Vec::new();
+        let mut arguments = Vec::new();
+        for filter in filters {
+            let (sql, args) = query_sql(filter, String::new(), i64::MAX as usize);
+            parts.push(format!("SELECT relative_path FROM ({sql})"));
+            arguments.extend(args);
+        }
+        let union = if parts.is_empty() {
+            "SELECT relative_path FROM entry WHERE 0".to_owned()
+        } else {
+            parts.join(" UNION ")
+        };
+        return (format!("SELECT COUNT(*) FROM ({union})"), arguments);
+    }
+
     let mut args = vec![Value::Text(cursor)];
     if let QueryKind::SerializedNames { values } = kind {
         let predicate = if values.is_empty() {
@@ -613,7 +631,7 @@ fn query_sql(kind: &QueryKind, cursor: String, limit: usize) -> (String, Vec<Val
         QueryKind::SerializedNames { .. } => unreachable!(),
         QueryKind::ClassPrefixes { values } => (0, values, true, false),
         QueryKind::ClassNameSuffixes { values } => (2, values, true, true),
-        QueryKind::Maps => unreachable!(),
+        QueryKind::Maps | QueryKind::Count { .. } => unreachable!(),
     };
     let mut clauses = Vec::new();
     for value in values {

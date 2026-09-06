@@ -1,8 +1,10 @@
-import { Context, Effect, Layer, Ref } from "effect";
+import { Context, Effect, Layer } from "effect";
+import { makeSelectedUnrealTarget, type SelectedUnrealTargetApi } from "@ue-shed/unreal-connection";
 import type { UnrealConnectionSettings } from "../ipc-contracts.js";
 import { WorkbenchConfiguration } from "../workbench-config.js";
 
 export interface WorkbenchUnrealConnectionApi {
+	readonly withCurrent: SelectedUnrealTargetApi["withCurrent"];
 	readonly endpoint: () => Effect.Effect<string>;
 	readonly settings: () => Effect.Effect<UnrealConnectionSettings>;
 	readonly setPort: (port: number) => Effect.Effect<UnrealConnectionSettings>;
@@ -31,22 +33,26 @@ export function makeWorkbenchUnrealConnectionLayer(
 	return Layer.effect(
 		WorkbenchUnrealConnection,
 		Effect.gen(function* () {
-			const currentEndpoint = yield* Ref.make(initialEndpoint);
-			const endpoint = Effect.fn("Workbench.UnrealConnection.endpoint")(() =>
-				Ref.get(currentEndpoint)
-			);
+			const target = yield* makeSelectedUnrealTarget(initialEndpoint);
+			const endpoint = target.endpoint;
 			const settings = Effect.fn("Workbench.UnrealConnection.settings")(function* () {
-				const current = yield* Ref.get(currentEndpoint);
-				return { port: endpointPort(current) };
+				const current = yield* endpoint();
+				return { endpoint: current, port: endpointPort(current) };
 			});
 			const setPort = Effect.fn("Workbench.UnrealConnection.setPort")(function* (
 				port: number
 			) {
-				yield* Ref.update(currentEndpoint, (current) => endpointWithPort(current, port));
-				return yield* settings();
+				const next = endpointWithPort(yield* endpoint(), port);
+				yield* target.select(next);
+				return { endpoint: next, port: endpointPort(next) };
 			});
 
-			return WorkbenchUnrealConnection.of({ endpoint, settings, setPort });
+			return WorkbenchUnrealConnection.of({
+				endpoint,
+				settings,
+				setPort,
+				withCurrent: target.withCurrent
+			});
 		})
 	);
 }

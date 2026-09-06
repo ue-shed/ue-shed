@@ -1,5 +1,6 @@
 import { EditorPlaySession } from "@ue-shed/engine";
-import { Effect } from "effect";
+import { Effect, Option } from "effect";
+import { WorkbenchMapReview } from "../services/map-review.js";
 import { ElectronIpc } from "../adapters/electron-ipc.js";
 import { invokeContracts } from "../ipc-contracts.js";
 import { WorkbenchUnrealConnection } from "../services/unreal-connection.js";
@@ -38,6 +39,12 @@ export const register = Effect.gen(function* () {
 	yield* ipc.register(invokeContracts["editor-session:settings"], () => connection.settings());
 	yield* ipc.register(invokeContracts["editor-session:set-port"], (...args) => {
 		const [port] = args;
-		return connection.setPort(port);
+		return Effect.gen(function* () {
+			if ((yield* connection.settings()).port !== port) {
+				const review = yield* Effect.serviceOption(WorkbenchMapReview);
+				if (Option.isSome(review)) yield* review.value.resetLiveTarget?.() ?? Effect.void;
+			}
+			return yield* connection.setPort(port);
+		});
 	});
 }).pipe(Effect.withSpan("Workbench.Ipc.registerEditorSession"));

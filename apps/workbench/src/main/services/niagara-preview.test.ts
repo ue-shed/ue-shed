@@ -1,3 +1,4 @@
+import { makeWorkbenchTestConfigurationLayer as makeWorkbenchConfigurationLayer } from "../test-configuration.js";
 import {
 	NiagaraPreviewRunManifest,
 	makeNiagaraPreviewTestLayer,
@@ -19,10 +20,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { expect } from "vitest";
-import {
-	makeWorkbenchConfiguration,
-	makeWorkbenchConfigurationLayer
-} from "../workbench-config.js";
+import { makeWorkbenchConfiguration } from "../workbench-config.js";
 import { WorkbenchNiagaraPreview, WorkbenchNiagaraPreviewLive } from "./niagara-preview.js";
 import { WorkbenchProjectUnavailable, makeWorkbenchProjectTestLayer } from "./project-workspace.js";
 

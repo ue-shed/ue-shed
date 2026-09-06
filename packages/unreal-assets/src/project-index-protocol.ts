@@ -59,20 +59,28 @@ export function decodeProjectIndexWireSummary(
 }
 
 export function decodeProjectIndexWirePage(page: UAssetIoProjectIndexPage): ProjectIndexPage {
-	const items = page.items.map((item): ProjectIndexMap | ProjectIndexHeader =>
-		item.kind === "map"
-			? {
-					kind: "map",
-					mapPath: item.mapPath,
-					packageName: item.packageName
-				}
-			: {
-					classes: [...item.classes],
-					kind: "header",
-					packageName: item.packageName,
-					packagePath: item.packagePath,
-					serializedNames: [...item.serializedNames]
-				}
+	const items = page.items.map(
+		(
+			item
+		):
+			| ProjectIndexMap
+			| ProjectIndexHeader
+			| { readonly kind: "count"; readonly count: number } =>
+			item.kind === "count"
+				? { kind: "count", count: item.count }
+				: item.kind === "map"
+					? {
+							kind: "map",
+							mapPath: item.mapPath,
+							packageName: item.packageName
+						}
+					: {
+							classes: [...item.classes],
+							kind: "header",
+							packageName: item.packageName,
+							packagePath: item.packagePath,
+							serializedNames: [...item.serializedNames]
+						}
 	);
 	return {
 		generation: ProjectIndexGeneration.make(page.generation),

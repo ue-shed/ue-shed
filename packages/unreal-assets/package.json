@@ -25,6 +25,14 @@
 		".": {
 			"types": "./dist/index.d.ts",
 			"import": "./dist/index.js"
+		},
+		"./investigation": {
+			"types": "./dist/investigation.d.ts",
+			"import": "./dist/investigation.js"
+		},
+		"./investigation-files": {
+			"types": "./dist/investigation-files.d.ts",
+			"import": "./dist/investigation-files.js"
 		}
 	},
 	"publishConfig": {

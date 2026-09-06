@@ -9,7 +9,7 @@ import {
 	catalogFromSnapshot,
 	connectingState,
 	type WorldObservationState
-} from "@ue-shed/observatory";
+} from "@ue-shed/observatory/browser";
 import { describe, expect, it } from "vitest";
 import { reconcileSparseTransformChanges } from "./map-review-client.js";
 

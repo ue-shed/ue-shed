@@ -5,15 +5,18 @@ import { optionalValue, positiveIntegerFlag } from "./options.js";
 const runCommand = Command.make(
 	"run",
 	{
+		document: Flag.string("document").pipe(Flag.optional),
 		endpoint: Argument.string("endpoint"),
 		evidenceLimit: positiveIntegerFlag(
 			"evidence-limit",
 			"--evidence-limit requires a positive integer"
 		).pipe(Flag.optional)
 	},
-	({ endpoint, evidenceLimit }) => {
+	({ document, endpoint, evidenceLimit }) => {
 		const limit = optionalValue(evidenceLimit);
+		const path = optionalValue(document);
 		return runScenario({
+			...(path === undefined ? undefined : { document: path }),
 			_tag: "ScenarioRun",
 			endpoint,
 			...(limit === undefined ? undefined : { evidenceLimit: limit })
@@ -21,7 +24,7 @@ const runCommand = Command.make(
 	}
 ).pipe(
 	Command.withDescription(
-		"Execute the portable Movement Gym scenario against one compatible UE 5.7 PIE editor."
+		"Execute a saved scenario document, or the Movement Gym example, against a compatible PIE editor."
 	)
 );
 

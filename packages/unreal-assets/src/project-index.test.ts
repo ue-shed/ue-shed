@@ -3,6 +3,7 @@ import { ConfigProvider, Effect, Layer, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import {
 	foldProjectIndexRefresh,
+	countProjectIndex,
 	getProjectIndexCacheRoot,
 	getProjectIndexStatus,
 	PROJECT_INDEX_CACHE_ROOT_ENV,
@@ -117,6 +118,15 @@ effectIt.effect("refreshes and answers bounded queries through the in-memory ada
 			})
 		);
 		expect(tables.items).toEqual([headers[0]]);
+		const count = yield* countProjectIndex({
+			projectId,
+			expectedGeneration: summary.generation,
+			exactClasses: ["/Script/Engine.DataTable"],
+			classPrefixes: ["/Script/EnhancedInput."],
+			classNameSuffixes: ["Table"],
+			serializedNames: ["TextProperty"]
+		});
+		expect(count).toEqual({ count: 1, projectId, generation: summary.generation });
 
 		const prefixes = yield* queryProjectIndex(
 			ProjectIndexQuery.cases.ClassPrefixes.make({

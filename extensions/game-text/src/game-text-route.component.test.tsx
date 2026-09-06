@@ -15,10 +15,10 @@ import {
 	type TextCorpusSearchResult
 } from "@ue-shed/game-text/browser";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
-import { Effect, Layer, ManagedRuntime } from "effect";
+import { Deferred, Effect, Layer, ManagedRuntime } from "effect";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { GameTextClientError, type GameTextClientApi } from "./game-text-client.js";
-import { GameTextRoute } from "./game-text-query-route.js";
+import { GameTextRoute, type GameTextPreferences } from "./game-text-query-route.js";
 
 const corpus: TextCorpus = {
 	coverage: {
@@ -187,6 +187,14 @@ function makeClient(overrides: Partial<GameTextClientApi> = {}): GameTextClientA
 	};
 }
 
+function maximumInput(): HTMLInputElement {
+	const input = screen.getByRole("spinbutton", {
+		name: "Maximum characters for menu.prompt.characters"
+	});
+	if (!(input instanceof HTMLInputElement)) throw new Error("Expected a numeric rule input");
+	return input;
+}
+
 function renderRoute(client = makeClient()) {
 	return render(() => (
 		<EffectRuntimeProvider runtime={runtime}>
@@ -194,6 +202,63 @@ function renderRoute(client = makeClient()) {
 		</EffectRuntimeProvider>
 	));
 }
+
+const qualitySummary = {
+	characterBudgetCount: 1,
+	coverage: {
+		...corpus.coverage,
+		partialPackages: 1,
+		unsupportedTextProperties: 2
+	},
+	diagnosticCount: 1,
+	findingCount: 2,
+	roles: [{ matchedOccurrences: 2, matchedTextUnits: 2, role: TextRoleId.make("menu.prompt") }],
+	ruleDocumentVersion: 1 as const,
+	rules: [
+		{ findingCount: 1, ruleId: TextQualityRuleId.make("menu.prompt.characters") },
+		{ findingCount: 1, ruleId: TextQualityRuleId.make("menu.prompt.terms") }
+	],
+	schemaVersion: 1 as const,
+	status: "partial" as const,
+	terminologyCount: 1
+};
+const roleId = TextRoleId.make("menu.prompt");
+const budgetRuleId = TextQualityRuleId.make("menu.prompt.characters");
+const terminologyRuleId = TextQualityRuleId.make("menu.prompt.terms");
+const qualityDocument = TextQualityRuleDocument.make({
+	roles: [
+		{
+			description: "Player-facing menu prompts",
+			id: roleId,
+			scopes: [
+				{
+					matchers: [
+						{ kind: "location_kind", value: "string_table_entry" },
+						{ kind: "string_table_entry", operator: "prefix", value: "Prompt" }
+					]
+				}
+			]
+		}
+	],
+	rules: [
+		{
+			id: budgetRuleId,
+			kind: "character_budget",
+			maximumCharacters: 32,
+			recovery: "Shorten the prompt while keeping the action clear.",
+			role: roleId
+		},
+		{
+			caseSensitive: false,
+			id: terminologyRuleId,
+			kind: "terminology",
+			recovery: "Use the preferred interaction term.",
+			role: roleId,
+			terms: [{ kind: "preferred", term: "select", alternatives: ["old"] }]
+		}
+	],
+	schemaVersion: 1
+});
 
 describe("GameTextRoute interactions", () => {
 	it("uses the Workbench project selection rather than exposing a second chooser", async () => {
@@ -342,64 +407,7 @@ describe("GameTextRoute interactions", () => {
 
 	it("loads project-authored rules and reviews typed findings in the Workbench", async () => {
 		const user = userEvent.setup();
-		const qualitySummary = {
-			characterBudgetCount: 1,
-			coverage: {
-				...corpus.coverage,
-				partialPackages: 1,
-				unsupportedTextProperties: 2
-			},
-			diagnosticCount: 1,
-			findingCount: 2,
-			roles: [
-				{ matchedOccurrences: 2, matchedTextUnits: 2, role: TextRoleId.make("menu.prompt") }
-			],
-			ruleDocumentVersion: 1 as const,
-			rules: [
-				{ findingCount: 1, ruleId: TextQualityRuleId.make("menu.prompt.characters") },
-				{ findingCount: 1, ruleId: TextQualityRuleId.make("menu.prompt.terms") }
-			],
-			schemaVersion: 1 as const,
-			status: "partial" as const,
-			terminologyCount: 1
-		};
-		const roleId = TextRoleId.make("menu.prompt");
-		const budgetRuleId = TextQualityRuleId.make("menu.prompt.characters");
-		const terminologyRuleId = TextQualityRuleId.make("menu.prompt.terms");
-		const qualityDocument = TextQualityRuleDocument.make({
-			roles: [
-				{
-					description: "Player-facing menu prompts",
-					id: roleId,
-					scopes: [
-						{
-							matchers: [
-								{ kind: "location_kind", value: "string_table_entry" },
-								{ kind: "string_table_entry", operator: "prefix", value: "Prompt" }
-							]
-						}
-					]
-				}
-			],
-			rules: [
-				{
-					id: budgetRuleId,
-					kind: "character_budget",
-					maximumCharacters: 32,
-					recovery: "Shorten the prompt while keeping the action clear.",
-					role: roleId
-				},
-				{
-					caseSensitive: false,
-					id: terminologyRuleId,
-					kind: "terminology",
-					recovery: "Use the preferred interaction term.",
-					role: roleId,
-					terms: [{ kind: "preferred", term: "select", alternatives: ["old"] }]
-				}
-			],
-			schemaVersion: 1
-		});
+
 		let previewedMaximum = 0;
 		let savedMaximum = 0;
 		let qualitySearchAttempts = 0;
@@ -584,13 +592,128 @@ describe("GameTextRoute interactions", () => {
 		});
 		await user.clear(maximum);
 		await user.type(maximum, "64");
+		await user.click(screen.getByRole("tab", { name: /^Findings/ }));
+		await user.click(screen.getByRole("tab", { name: /^Rules/ }));
+		expect(maximumInput().value).toBe("64");
+
+		expect(screen.getByText("Unsaved changes")).toBeDefined();
 		await user.click(screen.getByRole("button", { name: "Preview" }));
 		await waitFor(() => expect(previewedMaximum).toBe(64));
 		expect(screen.getByText(/Changes are not saved yet/)).toBeDefined();
+		await user.click(screen.getByRole("tab", { name: /^Findings/ }));
+		await user.click(screen.getByRole("tab", { name: /^Rules/ }));
+		expect(maximumInput().value).toBe("64");
+
+		expect(screen.getByText("Unsaved changes")).toBeDefined();
 		await user.click(screen.getByRole("button", { name: "Save" }));
 		await waitFor(() => expect(savedMaximum).toBe(64));
 		expect(screen.getByText("Rule file saved.")).toBeDefined();
+		await user.click(screen.getByRole("tab", { name: /^Findings/ }));
+		await user.click(screen.getByRole("tab", { name: /^Rules/ }));
+		expect(maximumInput().value).toBe("64");
+
+		expect(screen.getByRole("button", { name: "Save" }).hasAttribute("disabled")).toBe(true);
 		await user.click(screen.getByRole("tab", { name: "Text" }));
 		expect(screen.queryByRole("button", { name: "Load rules" })).toBeNull();
+	});
+	it("retains an unreviewed draft across route navigation without applying invalid rules", async () => {
+		let preferences: GameTextPreferences | undefined;
+		const reviewed: TextQualityRuleDocument[] = [];
+		const client = makeClient({
+			previewQualityRules: (document) => {
+				reviewed.push(document);
+				return Effect.succeed({ document, status: "completed", summary: qualitySummary });
+			}
+		});
+		const mount = () =>
+			render(() => (
+				<EffectRuntimeProvider runtime={runtime}>
+					<GameTextRoute
+						client={client}
+						initialPreferences={
+							preferences ?? {
+								query: "",
+								capability: "all",
+								lens: "all",
+								selectedId: undefined,
+								mode: "quality",
+								qualityDocument
+							}
+						}
+						onPreferencesChange={(next) => {
+							preferences = next;
+						}}
+					/>
+				</EffectRuntimeProvider>
+			));
+		const view = mount();
+		const user = userEvent.setup();
+		await user.click(await screen.findByRole("tab", { name: /^Rules/ }));
+		let maximum = screen.getByRole("spinbutton", {
+			name: "Maximum characters for menu.prompt.characters"
+		});
+		await user.clear(maximum);
+		await user.type(maximum, "0");
+		await user.click(screen.getByRole("button", { name: "Preview" }));
+		expect(screen.getByText(/needs a whole-number character limit/)).toBeDefined();
+		expect(reviewed).toEqual([qualityDocument]);
+		view.unmount();
+		expect(preferences?.qualityDocument).toEqual(qualityDocument);
+		mount();
+		await user.click(await screen.findByRole("tab", { name: /^Rules/ }));
+		maximum = screen.getByRole("spinbutton", {
+			name: "Maximum characters for menu.prompt.characters"
+		});
+		expect(maximumInput().value).toBe("0");
+		expect(screen.getByText("Unsaved changes")).toBeDefined();
+		expect(reviewed).toEqual([qualityDocument, qualityDocument]);
+	});
+
+	it("keeps later edits unsaved when a save completes while the editor tab is closed", async () => {
+		const releaseSave = await runtime.runPromise(Deferred.make<void>());
+		let submitted: TextQualityRuleDocument | undefined;
+		const client = makeClient({
+			previewQualityRules: (document) =>
+				Effect.succeed({ document, status: "completed", summary: qualitySummary }),
+			saveQualityRules: (document) => {
+				submitted = document;
+				return Deferred.await(releaseSave).pipe(
+					Effect.as({ document, status: "completed" as const, summary: qualitySummary })
+				);
+			}
+		});
+		render(() => (
+			<EffectRuntimeProvider runtime={runtime}>
+				<GameTextRoute
+					client={client}
+					initialPreferences={{
+						query: "",
+						capability: "all",
+						lens: "all",
+						selectedId: undefined,
+						mode: "quality",
+						qualityDocument
+					}}
+				/>
+			</EffectRuntimeProvider>
+		));
+		const user = userEvent.setup();
+		await user.click(await screen.findByRole("tab", { name: /^Rules/ }));
+		const maximum = screen.getByRole("spinbutton", {
+			name: "Maximum characters for menu.prompt.characters"
+		});
+		await user.clear(maximum);
+		await user.type(maximum, "64");
+		await user.click(screen.getByRole("button", { name: "Save" }));
+		expect(submitted?.rules[0]).toMatchObject({ maximumCharacters: 64 });
+		await user.clear(maximum);
+		await user.type(maximum, "96");
+		await user.click(screen.getByRole("tab", { name: /^Findings/ }));
+		await runtime.runPromise(Deferred.succeed(releaseSave, undefined));
+		await runtime.runPromise(Effect.yieldNow);
+		await user.click(screen.getByRole("tab", { name: /^Rules/ }));
+		expect(maximumInput().value).toBe("96");
+		expect(screen.getByText("Unsaved changes")).toBeDefined();
+		expect(screen.getByRole("button", { name: "Save" }).hasAttribute("disabled")).toBe(false);
 	});
 });

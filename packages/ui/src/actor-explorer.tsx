@@ -1,6 +1,16 @@
 import * as stylex from "@stylexjs/stylex";
+import { createVirtualizer } from "@tanstack/solid-virtual";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
-import { For, Show, createEffect, createMemo, createSignal, createUniqueId } from "solid-js";
+import {
+	For,
+	Show,
+	createEffect,
+	createMemo,
+	createSignal,
+	createUniqueId,
+	onCleanup,
+	untrack
+} from "solid-js";
 import type { JSX } from "solid-js";
 import { pointMapColorForClass } from "./point-map-core.js";
 import {
@@ -61,7 +71,8 @@ export function ActorExplorer(props: {
 	readonly title?: string;
 }) {
 	const rowRefs = new Map<string, HTMLButtonElement>();
-	let listRef: HTMLUListElement | undefined;
+	const [keyboardFocus, setKeyboardFocus] = createSignal<string>();
+	let listRef: HTMLDivElement | undefined;
 	const classFiltersId = createUniqueId();
 	const [classMenuOpen, setClassMenuOpen] = createSignal(false);
 	const [collapsedClasses, setCollapsedClasses] = createSignal<ReadonlySet<string>>(new Set());
@@ -118,6 +129,77 @@ export function ActorExplorer(props: {
 		if (props.classMode === "target") return props.selectedClassPath === undefined ? 0 : 1;
 		return props.filters.classPaths?.length ?? classOptions().length;
 	});
+	type Row =
+		| {
+				readonly kind: "group";
+				readonly key: string;
+				readonly group: ReturnType<typeof actorGroups>[number];
+		  }
+		| { readonly kind: "actor"; readonly key: string; readonly item: ActorExplorerItem };
+	const rows = createMemo(() =>
+		actorGroups().flatMap((group): Row[] => [
+			{ kind: "group", key: `group:${group.classPath}`, group },
+			...(collapsedClasses().has(group.classPath)
+				? []
+				: group.items.map(
+						(item): Row => ({ kind: "actor", key: `actor:${item.key}`, item })
+					))
+		])
+	);
+	const virtualizer = createVirtualizer<HTMLDivElement, HTMLLIElement>({
+		get count() {
+			return rows().length;
+		},
+		getScrollElement: () => listRef ?? null,
+		getItemKey: (index) => rows()[index]?.key ?? index,
+		estimateSize: (index) =>
+			rows()[index]?.kind === "group" ? 28 : props.density === "compact" ? 34 : 42,
+		overscan: 6
+	});
+	const focusRequestedActor = (key: string) => {
+		requestAnimationFrame(() => {
+			const row = rowRefs.get(key);
+			if (row?.isConnected && keyboardFocus() === key) {
+				row.focus({ preventScroll: true });
+				if (document.activeElement === row) setKeyboardFocus(undefined);
+			}
+		});
+	};
+	createEffect(() => {
+		const key = keyboardFocus();
+		if (key !== undefined) focusRequestedActor(key);
+	});
+
+	const actorRows = createMemo(() => rows().filter((row) => row.kind === "actor"));
+	const moveActorFocus = (event: KeyboardEvent, key: string) => {
+		if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+		const actors = actorRows();
+		const current = actors.findIndex((row) => row.item.key === key);
+		let target = current;
+		switch (event.key) {
+			case "ArrowDown":
+				target = Math.min(actors.length - 1, current + 1);
+				break;
+			case "ArrowUp":
+				target = Math.max(0, current - 1);
+				break;
+			case "Home":
+				target = 0;
+				break;
+			case "End":
+				target = actors.length - 1;
+				break;
+		}
+		const next = actors[target];
+		if (!next) return;
+		event.preventDefault();
+		event.stopPropagation();
+		setKeyboardFocus(next.item.key);
+		if (next.item.key !== props.selectedKey) props.onSelect(next.item.key);
+		const index = rows().findIndex((row) => row.key === next.key);
+		virtualizer.scrollToIndex(index, { align: "auto" });
+	};
+
 	const classSummary = createMemo(() => {
 		const count = activeClassCount();
 		if (props.classMode === "target") return count === 0 ? "CHOOSE CLASS" : "CLASS TARGET";
@@ -129,13 +211,8 @@ export function ActorExplorer(props: {
 	createEffect(() => {
 		const key = props.selectedKey;
 		if (key === undefined) return;
-		const row = rowRefs.get(key);
-		if (row === undefined || listRef === undefined) return;
-		const rowBounds = row.getBoundingClientRect();
-		const listBounds = listRef.getBoundingClientRect();
-		if (rowBounds.top < listBounds.top) listRef.scrollTop -= listBounds.top - rowBounds.top;
-		else if (rowBounds.bottom > listBounds.bottom)
-			listRef.scrollTop += rowBounds.bottom - listBounds.bottom;
+		const index = rows().findIndex((row) => row.kind === "actor" && row.item.key === key);
+		if (index >= 0) untrack(() => virtualizer.scrollToIndex(index, { align: "auto" }));
 	});
 	createEffect(() => {
 		const selectedKey = props.selectedKey;
@@ -346,96 +423,159 @@ export function ActorExplorer(props: {
 				</div>
 			</Show>
 			<Show when={props.extraControls}>{props.extraControls}</Show>
-			<ul
+			<div
 				ref={(element) => {
 					listRef = element;
 				}}
-				aria-label={props.itemListLabel ?? "Actors"}
 				{...stylex.props(styles.list)}
 			>
-				<For each={actorGroups()}>
-					{(group) => (
-						<li {...stylex.props(styles.classGroup)}>
-							<button
-								type="button"
-								aria-expanded={!collapsedClasses().has(group.classPath)}
-								onClick={() => toggleClassGroup(group.classPath)}
-								{...stylex.props(
-									styles.classGroupHeader,
-									props.density === "compact" && styles.classGroupHeaderCompact
-								)}
+				<ul
+					aria-label={props.itemListLabel ?? "Actors"}
+					{...stylex.props(styles.virtualList)}
+					style={{ height: virtualizer.getTotalSize() + "px" }}
+				>
+					<For each={virtualizer.getVirtualItems()}>
+						{(virtualRow) => (
+							<li
+								data-index={virtualRow.index}
+								aria-posinset={virtualRow.index + 1}
+								aria-setsize={rows().length}
+								ref={(element) => virtualizer.measureElement(element)}
+								{...stylex.props(styles.virtualRow)}
+								style={{ transform: "translateY(" + virtualRow.start + "px)" }}
 							>
-								<span {...stylex.props(styles.classGroupDisclosure)}>
-									{collapsedClasses().has(group.classPath) ? "▸" : "▾"}
-								</span>
-								<strong {...stylex.props(styles.classGroupLabel)}>
-									{group.label}
-								</strong>
-								<small>{group.items.length}</small>
-							</button>
-							<Show when={!collapsedClasses().has(group.classPath)}>
-								<ul {...stylex.props(styles.groupItems)}>
-									<For each={group.items}>
-										{(item) => (
-											<li>
-												<button
-													ref={(element) =>
-														rowRefs.set(item.key, element)
-													}
-													type="button"
-													disabled={props.disabled}
-													aria-pressed={props.selectedKey === item.key}
-													title={item.path ?? item.label}
-													onClick={() => {
-														props.onSelect(item.key);
-														props.onFocus?.(item.key);
-													}}
-													{...stylex.props(
-														styles.row,
-														props.density === "compact" &&
-															styles.rowCompact,
-														props.selectedKey === item.key &&
-															styles.rowSelected
-													)}
-												>
-													<span {...stylex.props(styles.rowGlyph)}>
-														•
-													</span>
-													<span {...stylex.props(styles.rowCopy)}>
-														<strong {...stylex.props(styles.rowLabel)}>
-															{item.label}
-														</strong>
-														<Show when={itemSecondary(item)}>
-															{(secondary) => (
-																<small
+								<Show keyed when={rows()[virtualRow.index]}>
+									{(row) =>
+										row.kind === "group"
+											? (() => {
+													const group = row.group;
+													return (
+														<button
+															type="button"
+															aria-expanded={
+																!collapsedClasses().has(
+																	group.classPath
+																)
+															}
+															onClick={() =>
+																toggleClassGroup(group.classPath)
+															}
+															{...stylex.props(
+																styles.classGroupHeader,
+																props.density === "compact" &&
+																	styles.classGroupHeaderCompact
+															)}
+														>
+															<span
+																{...stylex.props(
+																	styles.classGroupDisclosure
+																)}
+															>
+																{collapsedClasses().has(
+																	group.classPath
+																)
+																	? "▸"
+																	: "▾"}
+															</span>
+															<strong
+																{...stylex.props(
+																	styles.classGroupLabel
+																)}
+															>
+																{group.label}
+															</strong>
+															<small>{group.items.length}</small>
+														</button>
+													);
+												})()
+											: (() => {
+													const item = row.item;
+													return (
+														<button
+															ref={(element) => {
+																rowRefs.set(item.key, element);
+																if (keyboardFocus() === item.key)
+																	focusRequestedActor(item.key);
+																onCleanup(() => {
+																	if (
+																		rowRefs.get(item.key) ===
+																		element
+																	)
+																		rowRefs.delete(item.key);
+																});
+															}}
+															type="button"
+															onKeyDown={(event) =>
+																moveActorFocus(event, item.key)
+															}
+															disabled={props.disabled}
+															aria-pressed={
+																props.selectedKey === item.key
+															}
+															title={item.path ?? item.label}
+															onClick={() => {
+																props.onSelect(item.key);
+																props.onFocus?.(item.key);
+															}}
+															{...stylex.props(
+																styles.row,
+																props.density === "compact" &&
+																	styles.rowCompact,
+																props.selectedKey === item.key &&
+																	styles.rowSelected
+															)}
+														>
+															<span
+																{...stylex.props(styles.rowGlyph)}
+															>
+																•
+															</span>
+															<span {...stylex.props(styles.rowCopy)}>
+																<strong
 																	{...stylex.props(
-																		styles.rowSecondary
+																		styles.rowLabel
 																	)}
 																>
-																	{secondary()}
-																</small>
-															)}
-														</Show>
-													</span>
-													<Show
-														when={item.badges && item.badges.length > 0}
-													>
-														<div {...stylex.props(styles.badges)}>
-															<For each={item.badges}>
-																{(badge) => <em>{badge}</em>}
-															</For>
-														</div>
-													</Show>
-												</button>
-											</li>
-										)}
-									</For>
-								</ul>
-							</Show>
-						</li>
-					)}
-				</For>
-			</ul>
+																	{item.label}
+																</strong>
+																<Show when={itemSecondary(item)}>
+																	{(secondary) => (
+																		<small
+																			{...stylex.props(
+																				styles.rowSecondary
+																			)}
+																		>
+																			{secondary()}
+																		</small>
+																	)}
+																</Show>
+															</span>
+															<Show
+																when={
+																	item.badges &&
+																	item.badges.length > 0
+																}
+															>
+																<div
+																	{...stylex.props(styles.badges)}
+																>
+																	<For each={item.badges}>
+																		{(badge) => (
+																			<em>{badge}</em>
+																		)}
+																	</For>
+																</div>
+															</Show>
+														</button>
+													);
+												})()
+									}
+								</Show>
+							</li>
+						)}
+					</For>
+				</ul>
+			</div>
 			<Show when={visibleItems().length === 0}>
 				<p {...stylex.props(styles.empty)}>
 					{props.emptyLabel ?? "No actors match the current filters."}
@@ -623,7 +763,8 @@ const styles = stylex.create({
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap"
 	},
-	classGroup: { margin: 0, padding: 0 },
+	virtualList: { position: "relative", listStyle: "none", margin: 0, padding: 0 },
+	virtualRow: { position: "absolute", top: 0, left: 0, width: "100%" },
 	classGroupHeader: {
 		width: "100%",
 		display: "grid",
@@ -653,14 +794,6 @@ const styles = stylex.create({
 		overflow: "hidden",
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap"
-	},
-	groupItems: {
-		listStyle: "none",
-		margin: 0,
-		padding: 0,
-		borderBottomColor: tokens.colorBorder,
-		borderBottomStyle: "solid",
-		borderBottomWidth: 1
 	},
 	classOptionActive: {
 		borderColor: "rgba(228, 242, 34, 0.35)",

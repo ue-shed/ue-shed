@@ -1,5 +1,6 @@
 import {
 	AssetReader,
+	countProjectIndex,
 	PROJECT_INDEX_MAX_PAGE_SIZE,
 	ProjectIndex,
 	ProjectIndexCursor,
@@ -18,6 +19,7 @@ type TargetCommand = Command<
 	| "ProjectIndexRebuild"
 	| "ProjectIndexMaps"
 	| "ProjectIndexQuery"
+	| "ProjectIndexCount"
 >;
 
 function projectIndexLayer(command: TargetCommand) {
@@ -61,6 +63,27 @@ export const runProjectIndexStatus = Effect.fn("Cli.workflow.project_index_statu
 				Effect.flatMap(ProjectIndex, (index) =>
 					index.status({ projectRoot: command.projectRoot })
 				)
+			).pipe(Effect.flatMap(printJson))
+		)
+);
+
+export const runProjectIndexCount = Effect.fn("Cli.workflow.project_index_count")(
+	(command: Command<"ProjectIndexCount">) =>
+		observeCliOperation(
+			command._tag,
+			withIndex(
+				command,
+				Effect.gen(function* () {
+					const summary = yield* readySummary(command.projectRoot);
+					return yield* countProjectIndex({
+						projectId: summary.projectId,
+						expectedGeneration: summary.generation,
+						exactClasses: command.exactClasses,
+						classPrefixes: command.classPrefixes,
+						classNameSuffixes: command.classNameSuffixes,
+						serializedNames: command.serializedNames
+					});
+				})
 			).pipe(Effect.flatMap(printJson))
 		)
 );

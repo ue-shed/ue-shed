@@ -49,18 +49,8 @@ export interface RunScenarioOptions {
 	readonly evidenceLimit?: number;
 }
 
-export const ScenarioRunHandle = Schema.Struct({
-	endpoint: Schema.NonEmptyString,
-	evidenceLimit: Schema.Int.check(Schema.isGreaterThan(0)),
-	objectPath: Schema.NonEmptyString,
-	pieSessionId: Schema.NonEmptyString,
-	runId: Schema.NonEmptyString,
-	scenarioId: Schema.NonEmptyString
-});
-export type ScenarioRunHandle = typeof ScenarioRunHandle.Type;
-
-export type ScenarioRunnerStatus = Exclude<ScenarioStatusResponse, { readonly _tag: "Rejected" }>;
-
+import { ScenarioRunHandle, type ScenarioRunnerStatus } from "./runner-contracts.js";
+export { ScenarioRunHandle, type ScenarioRunnerStatus } from "./runner-contracts.js";
 export interface ScenarioRunnerApi {
 	readonly cancel: (
 		endpoint: string,

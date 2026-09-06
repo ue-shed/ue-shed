@@ -3,20 +3,12 @@ import type {
 	TextQualityQuerySummary,
 	TextQualityRule,
 	TextQualityRuleDocument,
-	TextQualityRuleUpdateResult,
 	TextRoleMatcher,
 	TextTerminologyEntry
 } from "@ue-shed/game-text/browser";
-import { createEffectAction } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { For, Match, Show, Switch, createEffect, createSignal, on } from "solid-js";
-import type { GameTextClientApi } from "./game-text-client.js";
-
-type EditorFeedback =
-	| { readonly status: "idle" }
-	| { readonly status: "previewed" }
-	| { readonly status: "saved" }
-	| { readonly message: string; readonly recovery?: string; readonly status: "failed" };
+import type { GameTextRuleState, RuleEditorState } from "./game-text-rule-state.js";
 
 function characterBudgetRule(rule: TextQualityRule | undefined) {
 	return rule?.kind === "character_budget" ? rule : undefined;
@@ -74,118 +66,28 @@ function updateTerm(
 	);
 }
 
-function draftProblem(document: TextQualityRuleDocument): string | undefined {
-	for (const rule of document.rules) {
-		if (rule.recovery.trim().length === 0) {
-			return `${rule.id} needs recovery guidance before it can be previewed or saved.`;
-		}
-		if (
-			rule.kind === "character_budget" &&
-			(!Number.isSafeInteger(rule.maximumCharacters) || rule.maximumCharacters < 1)
-		) {
-			return `${rule.id} needs a whole-number character limit of at least 1.`;
-		}
-		if (rule.kind === "terminology") {
-			if (rule.terms.length === 0) return `${rule.id} needs at least one terminology entry.`;
-			for (const term of rule.terms) {
-				if (term.term.trim().length === 0) return `${rule.id} contains an empty term.`;
-				if (
-					term.kind === "preferred" &&
-					(term.alternatives.length === 0 ||
-						term.alternatives.some((alternative) => alternative.trim().length === 0))
-				) {
-					return `${rule.id} needs at least one non-empty alternative for every preferred term.`;
-				}
-			}
-		}
-	}
-	return undefined;
-}
-
 export function GameTextRuleEditor(props: {
-	readonly client: GameTextClientApi;
-	readonly document: TextQualityRuleDocument;
-	readonly onReviewed: (
-		result: Extract<TextQualityRuleUpdateResult, { status: "completed" }>
-	) => void;
+	readonly editor: GameTextRuleState;
+	readonly state: RuleEditorState;
 	readonly summary: TextQualityQuerySummary;
 }) {
-	const previewAction = createEffectAction();
-	const saveAction = createEffectAction();
-	const [draft, setDraft] = createSignal(props.document);
-	const [selectedRuleId, setSelectedRuleId] = createSignal(props.document.rules[0]?.id);
-	const [dirty, setDirty] = createSignal(false);
-	const [feedback, setFeedback] = createSignal<EditorFeedback>({ status: "idle" });
-
+	const draft = () => props.state.draft;
+	const { dirty, feedback, changeDraft, run } = props.editor;
+	const [selectedRuleId, setSelectedRuleId] = createSignal(draft().rules[0]?.id);
 	createEffect(
 		on(
-			() => props.document,
-			(document) => {
-				setDraft(document);
+			() => draft().rules,
+			(rules) => {
 				setSelectedRuleId((current) =>
-					document.rules.some((rule) => rule.id === current)
-						? current
-						: document.rules[0]?.id
+					rules.some((rule) => rule.id === current) ? current : rules[0]?.id
 				);
-				setDirty(false);
-				setFeedback({ status: "idle" });
-			},
-			{ defer: true }
+			}
 		)
 	);
-
 	const selectedRule = () =>
 		draft().rules.find((rule) => rule.id === selectedRuleId()) ?? draft().rules[0];
 	const selectedBudgetRule = () => characterBudgetRule(selectedRule());
 	const selectedTerminologyRule = () => terminologyRule(selectedRule());
-
-	const changeDraft = (next: TextQualityRuleDocument) => {
-		setDraft(next);
-		setDirty(true);
-		setFeedback({ status: "idle" });
-	};
-
-	const handleResult = (result: TextQualityRuleUpdateResult, success: "previewed" | "saved") => {
-		if (result.status === "completed") {
-			props.onReviewed(result);
-			setFeedback({ status: success });
-			if (success === "saved") {
-				setDraft(result.document);
-				setDirty(false);
-			}
-		} else if (result.status === "failed") {
-			setFeedback({
-				message: result.error.message,
-				recovery: result.error.recovery,
-				status: "failed"
-			});
-		} else {
-			setFeedback({
-				message: "No loaded rule file is available.",
-				recovery: "Load a rule file and retry.",
-				status: "failed"
-			});
-		}
-	};
-
-	const run = (operation: "preview" | "save") => {
-		const problem = draftProblem(draft());
-		if (problem) {
-			setFeedback({ message: problem, status: "failed" });
-			return;
-		}
-		setFeedback({ status: "idle" });
-		const action = operation === "preview" ? previewAction : saveAction;
-		const effect =
-			operation === "preview"
-				? props.client.previewQualityRules(draft())
-				: props.client.saveQualityRules(draft());
-		action.run(effect, {
-			onFailure: (cause) => setFeedback({ message: String(cause), status: "failed" }),
-			onSuccess: (result) =>
-				handleResult(result, operation === "preview" ? "previewed" : "saved")
-		});
-	};
 
 	const findingCount = (ruleId: TextQualityRule["id"]) =>
 		props.summary.rules.find((rule) => rule.ruleId === ruleId)?.findingCount ?? 0;
@@ -481,7 +383,7 @@ export function GameTextRuleEditor(props: {
 					<div {...stylex.props(styles.actionButtons)}>
 						<button
 							type="button"
-							disabled={!dirty()}
+							disabled={!dirty() || props.editor.busy()}
 							onClick={() => run("preview")}
 							{...stylex.props(styles.actionButton)}
 						>
@@ -489,7 +391,7 @@ export function GameTextRuleEditor(props: {
 						</button>
 						<button
 							type="button"
-							disabled={!dirty()}
+							disabled={!dirty() || props.editor.busy()}
 							onClick={() => run("save")}
 							{...stylex.props(styles.actionButton)}
 						>

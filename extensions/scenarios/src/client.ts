@@ -1,9 +1,10 @@
 import type {
 	ScenarioDocument,
+	ScenarioDocumentFileResult,
 	ScenarioRun,
 	ScenarioRunHandle,
 	ScenarioRunnerStatus
-} from "@ue-shed/scenarios";
+} from "@ue-shed/scenarios/browser";
 import { Effect, Schema, Stream } from "effect";
 
 export class ScenarioStudioClientError extends Schema.TaggedErrorClass<ScenarioStudioClientError>()(
@@ -17,6 +18,13 @@ export class ScenarioStudioClientError extends Schema.TaggedErrorClass<ScenarioS
 ) {}
 
 export interface ScenarioStudioClient {
+	readonly openDocument?: () => Effect.Effect<
+		ScenarioDocumentFileResult,
+		ScenarioStudioClientError
+	>;
+	readonly saveDocument?: (
+		document: ScenarioDocument
+	) => Effect.Effect<ScenarioDocumentFileResult, ScenarioStudioClientError>;
 	readonly cancel: (
 		handle: ScenarioRunHandle
 	) => Effect.Effect<ScenarioRun, ScenarioStudioClientError>;

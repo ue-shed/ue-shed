@@ -77,6 +77,16 @@ const UAssetIoProjectIndexQueryBase = {
 
 export const UAssetIoProjectIndexQuery = Schema.Union([
 	Schema.Struct({
+		kind: Schema.Literal("count"),
+		...UAssetIoProjectIndexQueryBase,
+		cursor: Schema.optionalKey(Schema.Never),
+		limit: Schema.Literal(1),
+		exactClasses: Schema.Array(NonEmptyString).check(Schema.isMaxLength(64)),
+		classPrefixes: Schema.Array(NonEmptyString).check(Schema.isMaxLength(64)),
+		classNameSuffixes: Schema.Array(NonEmptyString).check(Schema.isMaxLength(64)),
+		serializedNames: Schema.Array(NonEmptyString).check(Schema.isMaxLength(64))
+	}),
+	Schema.Struct({
 		kind: Schema.Literal("maps"),
 		...UAssetIoProjectIndexQueryBase
 	}),
@@ -155,6 +165,7 @@ export interface UAssetIoProjectIndexHeader extends Schema.Schema.Type<
 > {}
 
 export const UAssetIoProjectIndexItem = Schema.Union([
+	Schema.Struct({ kind: Schema.Literal("count"), count: NonNegativeInt }),
 	UAssetIoProjectIndexMap,
 	UAssetIoProjectIndexHeader
 ]).annotate({ identifier: "UAssetIoProjectIndexItem" });

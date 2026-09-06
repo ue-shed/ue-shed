@@ -4,7 +4,7 @@ import { createEffectAction, createEffectSubscription } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { Cause, Effect, Exit, Schema } from "effect";
 import { For, Show, createEffect, createMemo, createSignal, onMount } from "solid-js";
-import type { RendererCameraFrame, WorkbenchCameraMetrics } from "../main/preload.js";
+import type { RendererCameraFrame, WorkbenchCameraMetrics } from "../shared/ipc-contracts.js";
 import { workbenchRendererClient } from "./workbench-client.js";
 
 interface TileTelemetry {

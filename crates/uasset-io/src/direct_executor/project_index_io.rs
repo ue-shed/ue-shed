@@ -144,7 +144,8 @@ pub(crate) fn catalog_was_quarantined(catalog: &SqliteCatalog) -> bool {
 
 pub(crate) fn query_project_id(query: &ProtocolQuery) -> &str {
     match query {
-        ProtocolQuery::Maps { project_id, .. }
+        ProtocolQuery::Count { project_id, .. }
+        | ProtocolQuery::Maps { project_id, .. }
         | ProtocolQuery::ExactClasses { project_id, .. }
         | ProtocolQuery::ClassPrefixes { project_id, .. }
         | ProtocolQuery::ClassNameSuffixes { project_id, .. }
@@ -154,7 +155,11 @@ pub(crate) fn query_project_id(query: &ProtocolQuery) -> &str {
 
 fn query_expected_generation(query: &ProtocolQuery) -> u64 {
     match query {
-        ProtocolQuery::Maps {
+        ProtocolQuery::Count {
+            expected_generation,
+            ..
+        }
+        | ProtocolQuery::Maps {
             expected_generation,
             ..
         }
@@ -291,6 +296,37 @@ pub(crate) fn progress_phase(phase: RefreshPhase) -> &'static str {
 
 fn to_catalog_query(query: &ProtocolQuery) -> Result<QueryRequest, Failure> {
     let (project_id, expected_generation, limit, cursor, kind) = match query {
+        ProtocolQuery::Count {
+            cursor,
+            expected_generation,
+            limit,
+            project_id,
+            exact_classes,
+            class_prefixes,
+            class_name_suffixes,
+            serialized_names,
+        } => (
+            project_id,
+            *expected_generation,
+            *limit,
+            cursor.clone(),
+            QueryKind::Count {
+                filters: vec![
+                    QueryKind::ExactClasses {
+                        values: exact_classes.clone(),
+                    },
+                    QueryKind::ClassPrefixes {
+                        values: class_prefixes.clone(),
+                    },
+                    QueryKind::ClassNameSuffixes {
+                        values: class_name_suffixes.clone(),
+                    },
+                    QueryKind::SerializedNames {
+                        values: serialized_names.clone(),
+                    },
+                ],
+            },
+        ),
         ProtocolQuery::Maps {
             cursor,
             expected_generation,
@@ -405,6 +441,7 @@ fn to_protocol_diagnostic(
 
 fn to_protocol_item(item: QueryItem) -> ProjectIndexItem {
     match item {
+        QueryItem::Count { count } => ProjectIndexItem::Count { count },
         QueryItem::Map {
             map_path,
             package_name,

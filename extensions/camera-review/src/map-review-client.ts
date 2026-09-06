@@ -23,7 +23,7 @@ import type {
 	WorldScoutFocusResult,
 	WorldScoutRefreshRate,
 	WorldScoutResult
-} from "@ue-shed/observatory";
+} from "@ue-shed/observatory/browser";
 import type {
 	SavedWorld,
 	SavedWorldChoice,

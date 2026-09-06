@@ -1,11 +1,6 @@
 import { RemoteControlClient, RemoteControlClientError } from "@ue-shed/unreal-connection";
 import { Context, Effect, Layer, Schema, type Stream } from "effect";
-import {
-	ActorId,
-	WorldActorSnapshot,
-	type ActorId as ActorIdType,
-	type ObservedActor as ObservedActorType
-} from "./actor-models.js";
+import { WorldActorSnapshot, type ActorId as ActorIdType } from "./actor-models.js";
 import {
 	ActorObservationRecoveryExhaustedError,
 	ActorObservationSessionError,
@@ -17,53 +12,17 @@ import type { WorldObservationState } from "./world-observation.js";
 export * from "./actor-models.js";
 export { actorInstanceKey, remapObservedActorId } from "./actor-identity.js";
 
-export const WorldScoutRefreshRate = Schema.Int.check(
-	Schema.isGreaterThanOrEqualTo(1),
-	Schema.isLessThanOrEqualTo(60)
-).pipe(Schema.brand("WorldScoutRefreshRate"));
-export type WorldScoutRefreshRate = Schema.Schema.Type<typeof WorldScoutRefreshRate>;
-
-const SnapshotResponse = Schema.Union([
-	Schema.Struct({
-		status: Schema.Literal("ready"),
-		snapshot: WorldActorSnapshot
-	}),
-	Schema.Struct({
-		status: Schema.Literal("failed"),
-		message: Schema.String,
-		recovery: Schema.String
-	})
-]);
-
-const FocusResponse = Schema.Union([
-	Schema.Struct({
-		status: Schema.Literal("focused"),
-		actorId: ActorId,
-		authoringSubject: Schema.Literals(["selected", "runtime_only"])
-	}),
-	Schema.Struct({ status: Schema.Literal("not_found"), actorId: ActorId }),
-	Schema.Struct({ status: Schema.Literal("not_supported"), actorId: ActorId }),
-	Schema.Struct({
-		status: Schema.Literal("failed"),
-		actorId: ActorId,
-		message: Schema.String,
-		recovery: Schema.String
-	})
-]);
-
-export const WorldScoutResult = Schema.Union([
-	Schema.Struct({ status: Schema.Literal("ready"), snapshot: WorldActorSnapshot }),
-	Schema.Struct({
-		status: Schema.Literal("unavailable"),
-		message: Schema.String,
-		recovery: Schema.String
-	})
-]);
-export type WorldScoutResult = Schema.Schema.Type<typeof WorldScoutResult>;
-
-export const WorldScoutFocusResult = FocusResponse;
-export type WorldScoutFocusResult = Schema.Schema.Type<typeof WorldScoutFocusResult>;
-
+import {
+	SnapshotResponse,
+	FocusResponse,
+	WorldScoutRefreshRate,
+	WorldScoutFocusResult
+} from "./scout-contracts.js";
+export {
+	WorldScoutRefreshRate,
+	WorldScoutResult,
+	WorldScoutFocusResult
+} from "./scout-contracts.js";
 const ObservationCadenceResponse = Schema.Union([
 	Schema.Struct({ status: Schema.Literal("ready"), cadenceHz: WorldScoutRefreshRate }),
 	Schema.Struct({
@@ -225,55 +184,7 @@ export const ObservatoryLive = Layer.effect(
 	})
 );
 
-export const decodeWorldScoutResult = Schema.decodeUnknownEffect(WorldScoutResult);
-export const decodeWorldScoutFocusResult = Schema.decodeUnknownEffect(WorldScoutFocusResult);
-
-export interface SpatialPoint {
-	readonly actor: ObservedActorType;
-	readonly xPercent: number;
-	readonly yPercent: number;
-}
-
-export interface SpatialProjection {
-	readonly center: { readonly x: number; readonly y: number };
-	readonly height: number;
-	readonly points: ReadonlyArray<SpatialPoint>;
-	readonly width: number;
-}
-
-export function projectActors(
-	actors: ReadonlyArray<ObservedActorType>,
-	paddingRatio = 0.08
-): SpatialProjection {
-	if (actors.length === 0) {
-		return { center: { x: 0, y: 0 }, height: 1, points: [], width: 1 };
-	}
-	const minX = Math.min(...actors.map((actor) => actor.location.x - actor.bounds.extent.x));
-	const maxX = Math.max(...actors.map((actor) => actor.location.x + actor.bounds.extent.x));
-	const minY = Math.min(...actors.map((actor) => actor.location.y - actor.bounds.extent.y));
-	const maxY = Math.max(...actors.map((actor) => actor.location.y + actor.bounds.extent.y));
-	const rawWidth = Math.max(1, maxX - minX);
-	const rawHeight = Math.max(1, maxY - minY);
-	const padX = rawWidth * paddingRatio;
-	const padY = rawHeight * paddingRatio;
-	const width = rawWidth + padX * 2;
-	const height = rawHeight + padY * 2;
-	const size = Math.max(width, height);
-	const center = { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
-	const left = center.x - size / 2;
-	const top = center.y + size / 2;
-	return {
-		center,
-		height,
-		points: actors.map((actor) => ({
-			actor,
-			xPercent: ((actor.location.x - left) / size) * 100,
-			yPercent: ((top - actor.location.y) / size) * 100
-		})),
-		width
-	};
-}
-
+export * from "./spatial.js";
 export {
 	ACTOR_STREAM_FLAG_RESET,
 	ACTOR_STREAM_HEADER_BYTES,

@@ -3,8 +3,10 @@ import {
 	decodeScenarioRun,
 	decodeScenarioStatusResponse,
 	ScenarioRunHandle,
+	ScenarioDocumentFileResult,
+	type ScenarioDocument,
 	type ScenarioRunnerStatus
-} from "@ue-shed/scenarios";
+} from "@ue-shed/scenarios/browser";
 import { Effect, Schedule, Schema, Stream } from "effect";
 
 function clientError(options: {
@@ -56,7 +58,33 @@ const status = (handle: ScenarioRunHandle) =>
 		)
 	);
 
+const fileOperation = (document?: ScenarioDocument) =>
+	Effect.tryPromise({
+		try: () =>
+			document === undefined
+				? window.ueShed.scenarios.openDocument()
+				: window.ueShed.scenarios.saveDocument(document),
+		catch: (cause) =>
+			clientError({
+				cause,
+				message: "Scenario document operation failed.",
+				operation: "scenario.document",
+				recovery: "Retry opening or saving the document."
+			})
+	}).pipe(
+		Effect.flatMap(Schema.decodeUnknownEffect(ScenarioDocumentFileResult)),
+		Effect.mapError((cause) =>
+			clientError({
+				cause,
+				message: "Scenario document operation failed.",
+				operation: "scenario.document",
+				recovery: "Retry with a valid scenario document."
+			})
+		)
+	);
 export const scenarioStudioClient: ScenarioStudioClient = {
+	openDocument: () => fileOperation(),
+	saveDocument: (document) => fileOperation(document),
 	cancel: (handle) =>
 		Effect.tryPromise({
 			try: () => window.ueShed.scenarios.cancel(handle),
@@ -91,7 +119,11 @@ export const scenarioStudioClient: ScenarioStudioClient = {
 					operation: "scenario.settings",
 					recovery: "Reopen Workbench and select the Unreal Remote Control port."
 				})
-		}).pipe(Effect.map(({ port }) => ({ endpoint: `http://127.0.0.1:${port}` }))),
+		}).pipe(
+			Effect.map(({ endpoint, port }) => ({
+				endpoint: endpoint ?? `http://127.0.0.1:${port}`
+			}))
+		),
 	start: ({ document, endpoint }) =>
 		Effect.tryPromise({
 			try: () => window.ueShed.scenarios.start(document, endpoint),

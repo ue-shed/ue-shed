@@ -1,3 +1,5 @@
+import { GameTextInvestigationPresetResult } from "@ue-shed/game-text/browser";
+import { InvestigationFileResult } from "@ue-shed/unreal-assets/investigation";
 import {
 	decodeTextCorpusFocusResult,
 	decodeTextCorpusQueryRunResult,
@@ -23,7 +25,7 @@ import {
 	GameTextClientError,
 	type GameTextClientApi
 } from "@ue-shed/extension-game-text";
-import { WorkbenchTaskProgress } from "../main/project-workspace-contract.js";
+import { WorkbenchTaskProgress } from "../shared/project-workspace-contract.js";
 import { Effect, Schema } from "effect";
 
 const recovery = "Restart Workbench. If the problem persists, verify package versions.";
@@ -43,10 +45,30 @@ function invokeRequest<A, HostValue, DecodeError>(
 }
 
 export const gameTextClient: GameTextClientApi = GameTextClient.of({
-	loadConfiguredProject: Effect.fn("GameTextClient.loadConfiguredProject")(() =>
+	investigations: {
+		export: (query, format) =>
+			invokeRequest(
+				"gameText.investigationExport",
+				() => window.ueShed.gameText.investigationExport(query, format),
+				Schema.decodeUnknownEffect(InvestigationFileResult)
+			),
+		save: (query) =>
+			invokeRequest(
+				"gameText.investigationSave",
+				() => window.ueShed.gameText.investigationSave(query),
+				Schema.decodeUnknownEffect(InvestigationFileResult)
+			),
+		open: () =>
+			invokeRequest(
+				"gameText.investigationOpen",
+				() => window.ueShed.gameText.investigationOpen(),
+				Schema.decodeUnknownEffect(GameTextInvestigationPresetResult)
+			)
+	},
+	loadConfiguredProject: Effect.fn("GameTextClient.loadConfiguredProject")((refresh = true) =>
 		invokeRequest(
 			"gameText.loadConfiguredProject",
-			() => window.ueShed.gameText.refreshConfiguredProject(),
+			() => window.ueShed.gameText.refreshConfiguredProject(refresh),
 			decodeTextCorpusQueryRunResult
 		)
 	),

@@ -87,6 +87,8 @@ pub enum ProjectIndexStatusPayload {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(tag = "kind", deny_unknown_fields)]
 pub enum ProjectIndexItem {
+    #[serde(rename = "count")]
+    Count { count: u64 },
     #[serde(rename = "map")]
     Map {
         #[serde(rename = "mapPath")]

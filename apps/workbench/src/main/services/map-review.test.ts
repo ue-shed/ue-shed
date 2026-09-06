@@ -1,3 +1,4 @@
+import { makeWorkbenchTestConfigurationLayer as makeWorkbenchConfigurationLayer } from "../test-configuration.js";
 import {
 	makeReviewAuthoringTestLayer,
 	makeReviewAuthoringSessionsTestLayer,
@@ -24,10 +25,7 @@ import { join, resolve } from "node:path";
 import { expect } from "vitest";
 import { makeLocalFilesTestLayer } from "../adapters/local-files.js";
 import { makeWorkbenchWindowTestLayer, WorkbenchWindowTest } from "../adapters/electron-window.js";
-import {
-	makeWorkbenchConfigurationLayer,
-	type WorkbenchConfigurationApi
-} from "../workbench-config.js";
+import { type WorkbenchConfigurationApi } from "../workbench-config.js";
 import { WorkbenchMapReview, WorkbenchMapReviewLive } from "./map-review.js";
 import { makeWorkbenchProjectTestLayer } from "./project-workspace.js";
 

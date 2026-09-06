@@ -6,7 +6,11 @@ import { EffectRuntimeProvider } from "@ue-shed/ui";
 import { Effect, Layer, ManagedRuntime, Stream } from "effect";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { ScenarioStudioRoute } from "./scenario-studio-route.js";
-import { movementGymRuns, ScenarioRunHandle, scenarioWireContract } from "@ue-shed/scenarios";
+import {
+	movementGymRuns,
+	ScenarioRunHandle,
+	scenarioWireContract
+} from "@ue-shed/scenarios/browser";
 import { ScenarioStudioClientError, type ScenarioStudioClient } from "./client.js";
 
 afterEach(cleanup);
@@ -73,20 +77,46 @@ describe("ScenarioStudioRoute", () => {
 
 	it("guides the showcase from live lanes to the same headless runner", async () => {
 		const user = userEvent.setup();
-		renderRoute(clientWith(), true);
+		renderRoute(
+			clientWith({
+				saveDocument: (document) =>
+					Effect.succeed({
+						status: "completed",
+						path: "C:/Drafts/movement.json",
+						document
+					})
+			}),
+			true
+		);
 
 		await screen.findByDisplayValue(liveHandle.endpoint);
 		expect(screen.getByRole("region", { name: "Movement Gym demo guide" })).toBeDefined();
 		expect(screen.getAllByText("Runs live")).toHaveLength(2);
 		// Three preview-only lanes plus the current top-level PREVIEW ONLY runtime state.
 		expect(screen.getAllByText("Preview only")).toHaveLength(4);
-		expect(screen.getByText(`pnpm ue-shed scenarios run ${liveHandle.endpoint}`)).toBeDefined();
+		expect(
+			screen.getByText("Save the draft to generate its PowerShell replay command.")
+		).toBeDefined();
+		await user.click(screen.getByRole("button", { name: "Save draft…" }));
+		expect(
+			await screen.findByText(
+				`pnpm ue-shed scenarios run '${liveHandle.endpoint}' --document 'C:/Drafts/movement.json'`
+			)
+		).toBeDefined();
 
 		const input = screen.getByLabelText("Remote Control endpoint");
 		await user.clear(input);
 		await user.type(input, "http://fixture:30123");
 
-		expect(screen.getByText("pnpm ue-shed scenarios run http://fixture:30123")).toBeDefined();
+		expect(
+			screen.getByText(
+				"pnpm ue-shed scenarios run 'http://fixture:30123' --document 'C:/Drafts/movement.json'"
+			)
+		).toBeDefined();
+		await user.click(screen.getByRole("button", { name: "Nudge later" }));
+		expect(
+			screen.getByText("Save the draft to generate its PowerShell replay command.")
+		).toBeDefined();
 	});
 
 	it("replaces preview data with a live result through the host-neutral client", async () => {

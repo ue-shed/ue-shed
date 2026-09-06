@@ -3,7 +3,7 @@
 	"compilerOptions": {
 		"lib": ["ES2023", "DOM"],
 		"outDir": "dist/main",
-		"rootDir": "src/main",
+		"rootDir": "src",
 		"types": ["node", "electron"]
 	},
 	"include": ["src/main/**/*.ts"]

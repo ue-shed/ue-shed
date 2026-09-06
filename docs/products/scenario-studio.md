@@ -19,6 +19,23 @@ timeline lanes remain preview-only until a later focused product contract suppor
 
 ## Supported live slice
 
+### Saving and replaying a draft
+
+Workbench's **Save draft…** and **Open draft…** actions round-trip the versioned scenario JSON,
+including edited timings and seed. Unsaved timeline state also survives route navigation within the
+selected project. Saving records a baseline; editing again hides the replay command until saved.
+
+Use the same saved document from the CLI:
+
+```powershell
+pnpm ue-shed scenarios run 'http://127.0.0.1:30010' --document 'C:/Drafts/movement.json'
+```
+
+The command validates the document before contacting Unreal. Omitting `--document` retains the
+built-in Movement Gym scenario. The headless `@ue-shed/scenarios/files` entry point exposes
+`readScenarioDocumentFile` and `writeScenarioDocumentFile`, with schema validation, a 4 MiB limit,
+and atomic replacement. Document persistence does not expand the supported live lanes below.
+
 ### Environment and selection
 
 - Unreal Engine 5.7 editor Play In Editor only.

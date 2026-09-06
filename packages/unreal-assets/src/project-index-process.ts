@@ -117,6 +117,17 @@ const toWireQuery = (request: ProjectIndexQuery): UAssetIoProjectIndexQuery => {
 		...(request.cursor === undefined ? undefined : { cursor: request.cursor })
 	};
 	switch (request._tag) {
+		case "Count":
+			return {
+				kind: "count",
+				projectId: request.projectId,
+				expectedGeneration: request.expectedGeneration,
+				limit: 1,
+				exactClasses: [...request.exactClasses],
+				classPrefixes: [...request.classPrefixes],
+				classNameSuffixes: [...request.classNameSuffixes],
+				serializedNames: [...request.serializedNames]
+			};
 		case "Maps":
 			return { kind: "maps", ...base };
 		case "ExactClasses":

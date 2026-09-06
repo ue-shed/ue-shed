@@ -19,7 +19,10 @@ const environment = await createWorkbenchEnvironment(
 console.log(`Remote Control endpoint: ${environment.UE_SHED_REMOTE_CONTROL_ENDPOINT}`);
 
 try {
-	runPnpm(["--filter", "@ue-shed/workbench", "build"], environment);
+	runPnpm(
+		["--filter", "@ue-shed/workbench...", "--recursive", "--if-present", "run", "build"],
+		environment
+	);
 	if (!buildOnly) runPnpm(["--filter", "@ue-shed/workbench", "start"], environment);
 } finally {
 	await custodianFixture?.dispose();

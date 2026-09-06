@@ -10,7 +10,9 @@ export const register = Effect.gen(function* () {
 	const project = yield* WorkbenchProject;
 
 	yield* ipc.register(invokeContracts["project:current"], () => project.current());
+	yield* ipc.register(invokeContracts["project:refresh"], (mode) => project.refresh(mode));
 	yield* ipc.register(invokeContracts["project:choose"], () => project.choose());
+	yield* ipc.register(invokeContracts["project:sample"], () => project.sample());
 	yield* ipc.register(invokeContracts["project:recent"], () => project.recent());
 	yield* ipc.register(invokeContracts["project:open-recent"], (...args) => {
 		const [projectRoot] = args;

@@ -1,5 +1,18 @@
 # `@ue-shed/unreal-assets`
 
+Project Index aggregate queries return a count and its committed generation without loading all
+candidate headers. `countProjectIndex` accepts `projectId`, `expectedGeneration`, and four selector
+arrays: `exactClasses`, `classPrefixes`, `classNameSuffixes`, and `serializedNames`. A package matching
+any selector counts once, even when several selectors match. Four empty arrays return zero.
+
+The CLI exposes the same query, with repeatable selector flags:
+
+```powershell
+pnpm ue-shed project-index count 'C:/Projects/Game' 'C:/Caches/Game' --exact-class '/Script/Engine.StringTable' --serialized-name 'TextProperty'
+```
+
+Run `project-index refresh` first if the catalog is absent or needs to discover disk changes.
+
 The process and compatibility boundary for read-only inspection of saved Unreal asset packages. It
 discovers a compatible `uasset` executable, validates its versioned CLI JSON output, and returns
 normalized package evidence with explicit partial and unsupported results.

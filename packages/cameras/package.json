@@ -33,6 +33,10 @@
 		"./map-tiles": {
 			"types": "./dist/map-tiles.d.ts",
 			"import": "./dist/map-tiles.js"
+		},
+		"./browser": {
+			"types": "./dist/browser.d.ts",
+			"import": "./dist/browser.js"
 		}
 	},
 	"publishConfig": {

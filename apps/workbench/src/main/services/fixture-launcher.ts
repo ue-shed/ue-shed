@@ -1,3 +1,4 @@
+import { WorkbenchUnrealConnection } from "./unreal-connection.js";
 import { decodeCompanionCapabilityManifest } from "@ue-shed/protocol";
 import { RemoteControlClient } from "@ue-shed/unreal-connection";
 import { Cache, Context, Duration, Effect, Layer, Result, Schedule, Schema } from "effect";
@@ -48,17 +49,22 @@ export const FixtureHealthLive = Layer.effect(
 	FixtureHealth,
 	Effect.gen(function* () {
 		const configuration = yield* WorkbenchConfiguration;
+		const connection = yield* WorkbenchUnrealConnection;
 		const remoteControl = yield* RemoteControlClient;
 
 		const probe = (functionName: string, objectPath: string, parameters: Schema.JsonObject) =>
-			remoteControl.request({
-				endpoint: configuration.remoteControlEndpoint,
-				functionName,
-				objectPath,
-				operation: `Workbench.FixtureHealth.${functionName}`,
-				parameters,
-				timeout: probeTimeout
-			});
+			connection.endpoint().pipe(
+				Effect.flatMap((endpoint) =>
+					remoteControl.request({
+						endpoint: endpoint,
+						functionName,
+						objectPath,
+						operation: `Workbench.FixtureHealth.${functionName}`,
+						parameters,
+						timeout: probeTimeout
+					})
+				)
+			);
 
 		const check = Effect.fn("Workbench.FixtureHealth.check")(function* (
 			capability?: FixtureHealthCapability

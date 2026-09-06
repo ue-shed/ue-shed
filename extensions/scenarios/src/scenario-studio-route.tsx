@@ -16,11 +16,11 @@ import {
 	type ScenarioSeekPlan,
 	type ScenarioRunnerStatus,
 	type ScenarioTrack
-} from "@ue-shed/scenarios";
+} from "@ue-shed/scenarios/browser";
 import { createEffectAction, createEffectSubscription } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { Cause, Effect, Option, Schedule, Schema } from "effect";
-import { For, Match, Show, Switch, createMemo, createSignal, onMount } from "solid-js";
+import { For, Match, Show, Switch, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import type { ScenarioStudioClient } from "./client.js";
 
 type TransportState = "paused" | "playing" | "recording";
@@ -221,13 +221,37 @@ function firstMovementGymRun(): ScenarioRun {
 	return run;
 }
 
-export function ScenarioStudioRoute(props: ScenarioStudioRouteProps) {
+export interface ScenarioStudioDraft {
+	readonly document: ScenarioDocument;
+	readonly savedPath: string | undefined;
+	readonly savedJson: string | undefined;
+}
+export function ScenarioStudioRoute(
+	props: ScenarioStudioRouteProps & {
+		readonly initialDraft?: ScenarioStudioDraft | undefined;
+		readonly onDraftChange?: (draft: ScenarioStudioDraft) => void;
+	}
+) {
 	const playbackAction = createEffectAction();
 	const settingsAction = createEffectAction();
 	const liveRunAction = createEffectAction();
 	const cancelRunAction = createEffectAction();
 	const liveStatusSubscription = createEffectSubscription();
-	const [document, setDocument] = createSignal<ScenarioDocument>(movementGymScenario);
+	const [document, setDocument] = createSignal<ScenarioDocument>(
+		props.initialDraft?.document ?? movementGymScenario
+	);
+	const fileAction = createEffectAction();
+	const [savedPath, setSavedPath] = createSignal(props.initialDraft?.savedPath);
+	const [savedJson, setSavedJson] = createSignal(props.initialDraft?.savedJson);
+	const [fileMessage, setFileMessage] = createSignal("");
+	const dirty = createMemo(() => savedJson() !== JSON.stringify(document()));
+	onCleanup(() =>
+		props.onDraftChange?.({
+			document: document(),
+			savedPath: savedPath(),
+			savedJson: savedJson()
+		})
+	);
 	const [activeRun, setActiveRun] = createSignal<ScenarioRun>(firstMovementGymRun());
 	const [selectedId, setSelectedId] = createSignal<ScenarioElementId>(
 		makeScenarioElementId("action_jump")
@@ -290,8 +314,14 @@ export function ScenarioStudioRoute(props: ScenarioStudioRouteProps) {
 		if (state.status === "connecting" || state.status === "unavailable") return 1;
 		return 0;
 	});
-	const headlessCommand = createMemo(
-		() => `pnpm ue-shed scenarios run ${endpoint().trim() || "<remote-control-endpoint>"}`
+	const headlessCommand = createMemo(() =>
+		savedPath() && !dirty()
+			? "pnpm ue-shed scenarios run '" +
+				endpoint().trim().replaceAll("'", "''") +
+				"' --document '" +
+				savedPath()?.replaceAll("'", "''") +
+				"'"
+			: "Save the draft to generate its PowerShell replay command."
 	);
 	const formatClientFailure = (cause: Cause.Cause<unknown>): string => {
 		const error = Cause.findErrorOption(cause);
@@ -306,6 +336,43 @@ export function ScenarioStudioRoute(props: ScenarioStudioRouteProps) {
 			}
 		}
 		return Cause.pretty(cause);
+	};
+	const saveDocument = () => {
+		const client = props.client;
+		if (!client?.saveDocument) return;
+		const saving = document();
+		fileAction.run(client.saveDocument(saving), {
+			onFailure: (cause) => setFileMessage(formatClientFailure(cause)),
+			onSuccess: (result) => {
+				if (result.status === "failed")
+					setFileMessage(result.message + " " + result.recovery);
+				if (result.status === "completed") {
+					setSavedPath(result.path);
+					setSavedJson(JSON.stringify(result.document));
+					setFileMessage("Saved " + result.path);
+				}
+			}
+		});
+	};
+	const openDocument = () => {
+		const client = props.client;
+		if (!client?.openDocument) return;
+		fileAction.run(client.openDocument(), {
+			onFailure: (cause) => setFileMessage(formatClientFailure(cause)),
+			onSuccess: (result) => {
+				if (result.status === "failed")
+					setFileMessage(result.message + " " + result.recovery);
+				if (result.status === "completed") {
+					playbackAction.cancel();
+					setTransport("paused");
+					setDocument(result.document);
+					setSavedPath(result.path);
+					setSavedJson(JSON.stringify(result.document));
+					setPlayheadMs(0);
+					setFileMessage("Opened " + result.path);
+				}
+			}
+		});
 	};
 	const acceptTerminalRun = (run: ScenarioRun) => {
 		setActiveRun(run);
@@ -728,10 +795,33 @@ export function ScenarioStudioRoute(props: ScenarioStudioRouteProps) {
 								<strong>Edited draft</strong>
 								<small>not run</small>
 							</span>
-							<span {...stylex.props(styles.runState)}>Unsaved</span>
+							<span {...stylex.props(styles.runState)}>
+								{dirty() ? "Unsaved" : "Saved"}
+							</span>
 						</button>
 					</div>
 
+					<Show when={props.client?.saveDocument}>
+						<div {...stylex.props(styles.documentFacts)}>
+							<button
+								type="button"
+								disabled={liveBusy()}
+								onClick={saveDocument}
+								{...stylex.props(styles.take)}
+							>
+								Save draft…
+							</button>
+							<button
+								type="button"
+								disabled={liveBusy()}
+								onClick={openDocument}
+								{...stylex.props(styles.take)}
+							>
+								Open draft…
+							</button>
+							<span role="status">{fileMessage()}</span>
+						</div>
+					</Show>
 					<div {...stylex.props(styles.documentFacts)}>
 						<div {...stylex.props(styles.fact)}>
 							<span>Map</span>

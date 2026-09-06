@@ -65,6 +65,17 @@ const className = (classPath: string): string => {
 
 const matchesHeader = (request: ProjectIndexQuery, header: ProjectIndexHeader): boolean => {
 	switch (request._tag) {
+		case "Count":
+			return (
+				request.exactClasses.some((value) => header.classes.includes(value)) ||
+				request.classPrefixes.some((prefix) =>
+					header.classes.some((value) => value.startsWith(prefix))
+				) ||
+				request.classNameSuffixes.some((suffix) =>
+					header.classes.some((value) => className(value).endsWith(suffix))
+				) ||
+				request.serializedNames.some((value) => header.serializedNames.includes(value))
+			);
 		case "Maps":
 			return false;
 		case "ExactClasses":
@@ -224,9 +235,20 @@ const makeMemoryService = (state: Ref.Ref<MemoryState>): ProjectIndexApi => {
 			);
 		}
 		const items: readonly ProjectIndexItem[] =
-			decoded._tag === "Maps"
-				? catalog.maps
-				: catalog.headers.filter((header) => matchesHeader(decoded, header));
+			decoded._tag === "Count"
+				? [
+						{
+							kind: "count",
+							count: new Set(
+								catalog.headers
+									.filter((header) => matchesHeader(decoded, header))
+									.map((header) => header.packagePath)
+							).size
+						}
+					]
+				: decoded._tag === "Maps"
+					? catalog.maps
+					: catalog.headers.filter((header) => matchesHeader(decoded, header));
 		return yield* pageItems(
 			items,
 			decoded,

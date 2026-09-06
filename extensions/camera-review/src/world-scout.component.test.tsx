@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import "./actor-explorer-test-layout.js";
 
 import { cleanup, fireEvent, render, screen, within } from "@solidjs/testing-library";
 import { userEvent } from "@testing-library/user-event";
@@ -16,7 +17,7 @@ import {
 	type WorldObservationState,
 	type WorldScoutRefreshRate,
 	type WorldScoutResult
-} from "@ue-shed/observatory";
+} from "@ue-shed/observatory/browser";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
 import { Effect, Layer, ManagedRuntime, Stream } from "effect";
 import { afterAll, afterEach, describe, expect, it } from "vitest";

@@ -84,6 +84,15 @@ const QueryBase = {
 };
 
 export const ProjectIndexQuery = Schema.TaggedUnion({
+	Count: {
+		...QueryBase,
+		cursor: Schema.optionalKey(Schema.Never),
+		limit: Schema.Literal(1),
+		exactClasses: Schema.Array(QueryValue).check(Schema.isMaxLength(64)),
+		classPrefixes: Schema.Array(QueryValue).check(Schema.isMaxLength(64)),
+		classNameSuffixes: Schema.Array(QueryValue).check(Schema.isMaxLength(64)),
+		serializedNames: Schema.Array(QueryValue).check(Schema.isMaxLength(64))
+	},
 	Maps: QueryBase,
 	ExactClasses: { ...QueryBase, values: QueryValues },
 	ClassPrefixes: { ...QueryBase, values: QueryValues },
@@ -108,7 +117,11 @@ export const ProjectIndexHeader = Schema.Struct({
 });
 export interface ProjectIndexHeader extends Schema.Schema.Type<typeof ProjectIndexHeader> {}
 
-export const ProjectIndexItem = Schema.Union([ProjectIndexMap, ProjectIndexHeader]);
+export const ProjectIndexItem = Schema.Union([
+	ProjectIndexMap,
+	ProjectIndexHeader,
+	Schema.Struct({ kind: Schema.Literal("count"), count: NonNegativeInt })
+]);
 export type ProjectIndexItem = typeof ProjectIndexItem.Type;
 
 export const ProjectIndexPage = Schema.Struct({
@@ -308,6 +321,29 @@ export const queryProjectIndex = Effect.fn("ProjectIndex.query")((request: Proje
 		const page = yield* index.query(decoded);
 		return yield* decodeProjectIndexPage(page);
 	})
+);
+
+/** Count the union of matching packages without transferring their headers. */
+export const countProjectIndex = Effect.fn("ProjectIndex.count")(
+	(request: Omit<Extract<ProjectIndexQuery, { _tag: "Count" }>, "_tag" | "limit" | "cursor">) =>
+		Effect.gen(function* () {
+			const page = yield* queryProjectIndex({ ...request, _tag: "Count", limit: 1 });
+			const item = page.items[0];
+			if (
+				page.projectId !== request.projectId ||
+				page.generation !== request.expectedGeneration ||
+				page.items.length !== 1 ||
+				page.nextCursor !== undefined ||
+				item?.kind !== "count"
+			) {
+				return yield* new ProjectIndexUnavailable({
+					message: "The Project Index adapter returned an invalid count.",
+					recovery: "Verify the paired worker version, then retry the count.",
+					retrySafe: true
+				});
+			}
+			return { count: item.count, generation: page.generation, projectId: page.projectId };
+		})
 );
 
 export const getProjectIndexStatus = Effect.fn("ProjectIndex.status")(

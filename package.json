@@ -60,6 +60,7 @@
 		"test:e2e": "pnpm run test:e2e:cli && pnpm run test:e2e:workbench",
 		"test:e2e:cli": "node scripts/test.ts apps/cli/src/index.e2e.test.ts",
 		"test:e2e:workbench": "node scripts/test-workbench-e2e.ts",
+		"test:e2e:showcase": "node scripts/test-workbench-e2e.ts workbench.smoke.e2e.ts config-explorer.e2e.ts shell-footer.e2e.ts blueprint-graphs.e2e.ts showcase-improvements.e2e.ts",
 		"test:e2e:workbench:ui": "node scripts/test-workbench-e2e.ts --ui",
 		"test:perforce-map-history": "node scripts/test-perforce-map-history.ts",
 		"benchmark:observatory": "tsx packages/observatory/scripts/benchmark.ts",

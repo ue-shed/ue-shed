@@ -6,7 +6,7 @@ The production workspace and backend selection are not changed.
 import argparse
 from pathlib import Path
 import re
-import shutil
+from source_snapshot import copy_source_snapshot
 
 parser = argparse.ArgumentParser()
 parser.add_argument("output", type=Path)
@@ -14,11 +14,7 @@ parser.add_argument("--version", choices=["v1", "v2"], default="v1")
 args = parser.parse_args()
 root = Path(__file__).resolve().parents[2]
 out = args.output.resolve()
-out.mkdir(parents=True, exist_ok=False)
-for name in ["Cargo.toml", "Cargo.lock"]:
-    shutil.copy2(root / name, out / name)
-for name in ["crates", "fixtures", "packages/protocol/contracts"]:
-    shutil.copytree(root / name, out / name, ignore=shutil.ignore_patterns("target", "node_modules", ".git", "__pycache__"))
+copy_source_snapshot(root, out)
 
 scaffold = (root / "tools/benchmarks/catalog-manifest-research.rs").read_text(encoding="utf-8")
 types, helpers = scaffold.split("// @HELPERS@")

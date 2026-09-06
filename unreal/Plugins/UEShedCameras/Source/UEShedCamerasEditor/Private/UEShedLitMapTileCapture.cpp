@@ -384,8 +384,8 @@ void BeginUEShedLitMapTileCapture(const TSharedPtr<FJsonObject>& Request, UWorld
 		if (!TickHandle.IsValid())
 		{
 			TickHandle = FSlateApplication::Get().OnPostTick().AddLambda([](float) { if (Run) Run->Tick(); });
-			WorldHandle = FWorldDelegates::OnWorldCleanup.AddLambda([](UWorld* Target, bool, bool) { if (Run && Run->World.Get() == Target) Run.Reset(); });
-			PIEHandle = FEditorDelegates::PreBeginPIE.AddLambda([](bool) { Run.Reset(); });
+			WorldHandle = FWorldDelegates::OnWorldCleanup.AddLambda([](UWorld* Target, bool, bool) { if (Run && !Run->Restored && Run->World.Get() == Target) Run->Finish(TEXT("cancelled"), TEXT("The capture world was unloaded.")); });
+			PIEHandle = FEditorDelegates::PreBeginPIE.AddLambda([](bool) { if (Run && !Run->Restored) Run->Finish(TEXT("cancelled"), TEXT("PIE started during map capture.")); });
 		}
 	}
 	Run->OperationId = OperationId; Run->CorrelationId = CorrelationId; Run->Tiles = MoveTemp(Tiles);
@@ -430,6 +430,12 @@ bool FUEShedLitMapValidationTest::RunTest(const FString& Parameters)
 	// FEngineShowFlags must use a real initial mode; its default constructor fatals outside hot reload.
 	FLitRun State;
 	State.Restored = true;
+	State.OperationId = TEXT("cancelled-operation"); State.CorrelationId = TEXT("cancelled-correlation");
+	State.Finish(TEXT("cancelled"), TEXT("The capture world was unloaded."));
+	TestTrue(TEXT("Cancelled operation remains pollable"), State.Done);
+	TestEqual(TEXT("Cancellation retains operation identity"), State.BatchResponse->GetStringField(TEXT("operationId")), State.OperationId);
+	TestEqual(TEXT("Cancellation retains correlation identity"), State.BatchResponse->GetStringField(TEXT("correlationId")), State.CorrelationId);
+	TestEqual(TEXT("Cancellation has terminal status"), State.BatchResponse->GetStringField(TEXT("status")), FString(TEXT("cancelled")));
 	TSharedPtr<FJsonObject> Request;
 	FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(FString(TEXT(
 		"{\"tilePixelSize\":64,\"gutterPixels\":16,\"capture\":{\"z\":1000},\"tiles\":[{\"key\":{\"zoom\":0,\"row\":0,\"column\":0},\"unitsPerPixel\":1,\"worldBounds\":{\"minX\":-64,\"maxX\":0,\"minY\":0,\"maxY\":64}}]}"))), Request);

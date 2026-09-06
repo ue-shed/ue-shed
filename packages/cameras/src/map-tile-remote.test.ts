@@ -20,6 +20,11 @@ const fixture = Schema.decodeUnknownSync(MapTileCaptureRequest)(
 );
 const request = MapTileCaptureRequest.make({ ...fixture, captureBackend: "lit_camera_tiles" });
 const json = Schema.decodeUnknownSync(Schema.Json);
+const manifest = json({
+	schemaVersion: 1,
+	producerKind: "unreal_editor",
+	capabilities: ["cameras.lit-map-tile-capture.v1"]
+});
 const terminal = json({
 	state: "finished",
 	response: {
@@ -44,6 +49,7 @@ it.effect("starts once, polls with a bounded cadence, and decodes terminal outpu
 			request: (call) =>
 				Effect.gen(function* () {
 					calls.push(call);
+					if (call.functionName === "GetCapabilityManifest") return manifest;
 					if (call.functionName === "EndMapTileCapture") return json({ released: true });
 					if (call.functionName === "PollMapTileCapture") {
 						if (++polls === 2) return terminal;
@@ -63,12 +69,13 @@ it.effect("starts once, polls with a bounded cadence, and decodes terminal outpu
 		expect((yield* Fiber.join(fiber)).status).toBe("completed");
 		yield* port.release?.(request.runId) ?? Effect.void;
 		expect(calls.map((call) => call.functionName)).toEqual([
+			"GetCapabilityManifest",
 			"BeginMapTileCapture",
 			"PollMapTileCapture",
 			"PollMapTileCapture",
 			"EndMapTileCapture"
 		]);
-		expect(calls[1]?.parameters).toEqual({
+		expect(calls[2]?.parameters).toEqual({
 			RunId: request.runId,
 			OperationId: request.operationId
 		});
@@ -79,8 +86,9 @@ it.effect("rejects another operation's running status without polling it", () =>
 	Effect.gen(function* () {
 		let calls = 0;
 		const client: RemoteControlClientApi = {
-			request: () =>
+			request: (call) =>
 				Effect.sync(() => {
+					if (call.functionName === "GetCapabilityManifest") return manifest;
 					calls++;
 					return json({
 						state: "running",
@@ -112,5 +120,31 @@ it.effect("keeps the explicitly selected legacy backend synchronous", () =>
 		};
 		yield* makeMapTileCaptureRemotePort(client, "http://editor").capture(fixture);
 		expect(calls).toEqual(["CaptureMapTiles"]);
+	})
+);
+
+it.effect("rejects a legacy-only plugin before calling the new lifecycle", () =>
+	Effect.gen(function* () {
+		const calls: string[] = [];
+		const client: RemoteControlClientApi = {
+			request: (call) =>
+				Effect.sync(() => {
+					calls.push(call.functionName);
+					return json({
+						schemaVersion: 1,
+						producerKind: "unreal_editor",
+						capabilities: ["cameras.map-tile-capture.v1"]
+					});
+				})
+		};
+		const port = makeMapTileCaptureRemotePort(client, "http://editor");
+		const error = yield* port.capture(request).pipe(Effect.flip);
+		expect(error).toMatchObject({
+			_tag: "MapCaptureRunError",
+			operation: "prepare",
+			recovery: expect.stringContaining("scene_capture_tiles")
+		});
+		yield* port.release?.(request.runId) ?? Effect.void;
+		expect(calls).toEqual(["GetCapabilityManifest"]);
 	})
 );

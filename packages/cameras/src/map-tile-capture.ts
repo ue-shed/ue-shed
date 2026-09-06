@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { resolve } from "node:path";
+import { decodeCompanionCapabilityManifest } from "@ue-shed/protocol";
 import {
 	makeRemoteControlClient,
 	RemoteControlClient,
@@ -75,8 +76,10 @@ export function makeMapTileCaptureRemotePort(
 	client: RemoteControlClientApi,
 	endpoint: string
 ): MapTileCapturePortApi {
+	const startedRuns = new Set<string>();
 	return {
 		release: Effect.fn("MapCapture.remoteRelease")(function* (runId: string) {
+			if (!startedRuns.delete(runId)) return;
 			yield* client
 				.request({
 					endpoint,
@@ -104,6 +107,26 @@ export function makeMapTileCaptureRemotePort(
 					})
 					.pipe(Effect.flatMap(decodeMapTileCaptureResponse));
 			}
+			const manifest = yield* client
+				.request({
+					endpoint,
+					functionName: "GetCapabilityManifest",
+					objectPath: "/Script/UEShedCore.Default__UEShedCoreLibrary",
+					operation: "camera.map_tile.negotiate",
+					parameters: {}
+				})
+				.pipe(Effect.flatMap(decodeCompanionCapabilityManifest));
+			if (!manifest.capabilities.includes("cameras.lit-map-tile-capture.v1")) {
+				return yield* Effect.fail(
+					new MapCaptureRunError({
+						operation: "prepare",
+						runId: request.runId,
+						message: "The connected editor does not support Lit camera tile capture.",
+						recovery:
+							"Update the UE Shed Cameras and Core plugins, or explicitly select scene_capture_tiles with a compatible plan."
+					})
+				);
+			}
 			const decode = (value: Schema.Json) =>
 				Schema.decodeUnknownEffect(MapTileCaptureOperation)(value).pipe(
 					Effect.flatMap((status) => {
@@ -124,6 +147,7 @@ export function makeMapTileCaptureRemotePort(
 								);
 					})
 				);
+			startedRuns.add(request.runId);
 			const start = yield* client
 				.request({
 					endpoint,

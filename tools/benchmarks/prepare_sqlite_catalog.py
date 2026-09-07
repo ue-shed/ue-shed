@@ -5,7 +5,7 @@ No production Cargo files or backend selection are changed. Output must be a new
 import argparse
 from pathlib import Path
 import re
-import shutil
+from source_snapshot import copy_source_snapshot
 
 parser = argparse.ArgumentParser()
 parser.add_argument("output", type=Path)
@@ -13,12 +13,7 @@ parser.add_argument("--serialized-names", choices=["postings", "scan"], default=
 args = parser.parse_args()
 root = Path(__file__).resolve().parents[2]
 out = args.output.resolve()
-out.mkdir(parents=True, exist_ok=False)
-for name in ["Cargo.toml", "Cargo.lock"]:
-    shutil.copy2(root / name, out / name)
-shutil.copytree(root / "crates", out / "crates", ignore=shutil.ignore_patterns("target", "node_modules", ".git"))
-shutil.copytree(root / "fixtures", out / "fixtures")
-shutil.copytree(root / "packages/protocol/contracts", out / "packages/protocol/contracts")
+copy_source_snapshot(root, out)
 source = (root / "tools/benchmarks/catalog-manifest-research.rs").read_text(encoding="utf-8")
 types, helpers = source.split("// @HELPERS@")
 helpers = helpers.replace("duckdb::Error", "rusqlite::Error").replace("AccessMode::ReadOnly", "OpenFlags::SQLITE_OPEN_READ_ONLY").replace("DuckDB", "SQLite").replace(".duckdb", ".sqlite")

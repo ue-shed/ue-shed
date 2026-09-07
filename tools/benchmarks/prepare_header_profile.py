@@ -5,26 +5,14 @@ Use the ordinary project benchmark for uninstrumented before/after measurements.
 """
 import argparse
 from pathlib import Path
-import shutil
-import subprocess
+from source_snapshot import copy_source_snapshot
 
 parser = argparse.ArgumentParser()
 parser.add_argument("output", type=Path)
 args = parser.parse_args()
 root = Path(__file__).resolve().parents[2]
 out = args.output.resolve()
-out.mkdir(parents=True, exist_ok=False)
-for name in ["Cargo.toml", "Cargo.lock"]:
-    shutil.copy2(root / name, out / name)
-for name in ["crates", "packages/protocol/contracts"]:
-    shutil.copytree(root / name, out / name, ignore=shutil.ignore_patterns("target", "node_modules", ".git", "__pycache__"))
-# Unreal-generated Intermediate/Saved files can dwarf the fixture itself. Only tracked fixture
-# inputs belong in a disposable Rust build; read their current worktree contents.
-for name in subprocess.check_output(["git", "ls-files", "-z", "--", "fixtures"], cwd=root).decode().split("\0"):
-    if name and (root / name).is_file():
-        destination = out / name
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(root / name, destination)
+copy_source_snapshot(root, out)
 
 profile = '''
 pub mod header_profile {

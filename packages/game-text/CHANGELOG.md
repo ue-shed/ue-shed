@@ -1,5 +1,25 @@
 # @ue-shed/game-text
 
+## 0.6.0
+
+### Minor Changes
+
+- ff117a0: Add versioned Game Text investigation presets and complete filtered JSON/CSV exports, retaining
+  text identities, all occurrences, quality rules, coverage, and project provenance. Query models
+  can export full matching results independently of paginated UI results.
+
+    Expose browser-safe investigation metadata and CSV helpers, plus a separate Node file adapter
+    with bounded preset reads and atomic output writes. Workbench and the CLI use these APIs for
+    saved investigations and replay against an explicitly selected project.
+
+### Patch Changes
+
+- Updated dependencies [ff117a0]
+- Updated dependencies [efb6898]
+- Updated dependencies
+- Updated dependencies [ff117a0]
+    - @ue-shed/unreal-assets@0.6.0
+
 ## 0.5.1
 
 ### Patch Changes

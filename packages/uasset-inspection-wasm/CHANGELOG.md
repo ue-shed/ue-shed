@@ -1,5 +1,14 @@
 # @ue-shed/uasset-inspection-wasm
 
+## 0.6.0
+
+### Minor Changes
+
+- Inspect saved Blueprint graphs without launching Unreal through `readSavedBlueprint`, native IO,
+  and the WASM inspection API. Return graph/node identities, saved positions, typed pins and defaults,
+  canonical links, tagged node properties, and explicit coverage diagnostics. Inspection is read-only
+  and limited to supported uncooked saved revisions; it does not compile or execute Blueprints.
+
 ## 0.5.1
 
 ### Patch Changes

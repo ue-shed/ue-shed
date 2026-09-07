@@ -1,5 +1,23 @@
 # @ue-shed/uasset-win32-x64
 
+## 0.6.0
+
+### Minor Changes
+
+- Inspect saved Blueprint graphs without launching Unreal through `readSavedBlueprint`, native IO,
+  and the WASM inspection API. Return graph/node identities, saved positions, typed pins and defaults,
+  canonical links, tagged node properties, and explicit coverage diagnostics. Inspection is read-only
+  and limited to supported uncooked saved revisions; it does not compile or execute Blueprints.
+
+    Improve Project Index discovery, header batching, refresh, and query transport. Bound native
+    protocol-worker shutdown and preserve typed reader failures for recovery.
+
+### Patch Changes
+
+- 9d054f5: Use immutable binary Project Index snapshots to improve fresh scans, indexed queries, and cache size.
+  Add writer exclusion and interruption recovery checks. Existing catalog caches rebuild on first use.
+  Native source builds now require Rust 1.89; SQLite is retained only for opt-in comparison tests.
+
 ## 0.5.1
 
 ### Patch Changes

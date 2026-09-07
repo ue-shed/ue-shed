@@ -1,5 +1,33 @@
 # @ue-shed/cameras
 
+## 0.6.0
+
+### Minor Changes
+
+- 2f1137a: Make Lit editor-camera tiles the default Map Capture backend, with shared exposure, disabled
+  vignette, plugin-owned scene freezing, and asynchronous capture with cancellation cleanup. Add
+  optional manual exposure and retain explicit legacy backends. New plans use 16-pixel gutters and
+  disable fog. The default requires an unlocked rendering editor viewport and the updated camera plugin.
+- 2760900: Add capture selection bounds and Lit capture readiness inspection, optional producer identity and plugin versions, actor catalog metadata, and structured Map Capture and Niagara progress. Expose library APIs and CLI workflows while retaining compatibility with producers that omit optional metadata and progress. Updated inspection operations require the advertised Core and Cameras capabilities.
+- ff117a0: Add a headless selected Unreal target service with operation-scoped endpoint capture. Changing
+  selection affects subsequent operations while active operations and their children retain their
+  starting target. Review capture adapters can resolve an endpoint from an Effect at execution time.
+
+    Expose browser-safe camera and world-observation contracts and pure helpers, plus an observability
+    metrics entry point that does not load telemetry exporters. Existing root exports remain available.
+
+### Patch Changes
+
+- Updated dependencies [9bd7735]
+- Updated dependencies [ff117a0]
+- Updated dependencies [2f1137a]
+- Updated dependencies [2760900]
+- Updated dependencies
+- Updated dependencies [ff117a0]
+    - @ue-shed/protocol@0.6.0
+    - @ue-shed/unreal-connection@0.6.0
+    - @ue-shed/observability@0.6.0
+
 ## 0.5.1
 
 ### Patch Changes

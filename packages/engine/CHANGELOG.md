@@ -1,5 +1,20 @@
 # @ue-shed/engine
 
+## 0.6.0
+
+### Patch Changes
+
+- Align this package with the synchronized UE Shed `0.6.0` suite release. There is no direct
+  behavioral change.
+- Updated dependencies [9bd7735]
+- Updated dependencies [ff117a0]
+- Updated dependencies [2f1137a]
+- Updated dependencies [2760900]
+- Updated dependencies
+- Updated dependencies [ff117a0]
+    - @ue-shed/protocol@0.6.0
+    - @ue-shed/unreal-connection@0.6.0
+
 ## 0.5.1
 
 ### Patch Changes

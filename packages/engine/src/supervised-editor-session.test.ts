@@ -392,13 +392,6 @@ describe("owned process trees", () => {
 		const fixturePath = fileURLToPath(
 			new URL("./test-fixtures/owned-process-tree.mjs", import.meta.url)
 		);
-		const evidenceChanged = new Promise<void>((complete) => {
-			const watcher = watch(base, (_event, filename) => {
-				if (filename !== "pids.json") return;
-				watcher.close();
-				complete();
-			});
-		});
 		const handle = await Effect.runPromise(
 			Effect.flatMap(OwnedProcessTree, (processes) =>
 				processes.launch({
@@ -409,11 +402,10 @@ describe("owned process trees", () => {
 				})
 			).pipe(Effect.provide(OwnedProcessTreeLive))
 		);
-		await evidenceChanged;
+		const outcome = await Effect.runPromise(handle.awaitExit);
 		const evidence = Schema.decodeUnknownSync(ProcessTreeEvidence)(
 			JSON.parse(await readFile(evidencePath, "utf8"))
 		);
-		const outcome = await Effect.runPromise(handle.awaitExit);
 
 		expect(outcome).toEqual({ exitCode: 0, kind: "exited", signal: null });
 		expect(await processIsRunning(evidence.parentPid)).toBe(false);

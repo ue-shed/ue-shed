@@ -29,12 +29,15 @@ function executable(name: string) {
 }
 
 function run(command: string, args: readonly string[], cwd: string, options: RunOptions = {}) {
+	// Keep Corepack on the repository's pnpm version for temporary packed consumers too.
+	const isPnpm = command === executable("pnpm");
+	const commandArgs = isPnpm ? ["--dir", cwd, ...args] : args;
 	const isCommandShim = process.platform === "win32" && command.endsWith(".cmd");
 	const result = spawnSync(
 		isCommandShim ? (process.env.ComSpec ?? "cmd.exe") : command,
-		isCommandShim ? ["/d", "/s", "/c", command, ...args] : args,
+		isCommandShim ? ["/d", "/s", "/c", command, ...commandArgs] : commandArgs,
 		{
-			cwd,
+			cwd: isPnpm ? repositoryRoot : cwd,
 			encoding: "utf8",
 			shell: false,
 			env: options.env ?? process.env

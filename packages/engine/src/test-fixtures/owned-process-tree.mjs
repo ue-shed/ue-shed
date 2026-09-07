@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { renameSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const [, , mode, evidencePath] = process.argv;
@@ -12,11 +12,15 @@ if (mode === "child") {
 		stdio: "ignore"
 	});
 	if (child.pid === undefined) throw new Error("child fixture started without a pid");
+	const stagedEvidencePath = `${evidencePath}.tmp`;
 	writeFileSync(
-		evidencePath,
+		stagedEvidencePath,
 		JSON.stringify({ childPid: child.pid, parentPid: process.pid }),
 		"utf8"
 	);
+	// File creation can notify the test before writeFileSync finishes. Publish only closed bytes
+	// so the scope-release test cannot terminate this process halfway through its evidence write.
+	renameSync(stagedEvidencePath, evidencePath);
 	if (mode === "parent") setInterval(() => undefined, 60_000);
 	else child.unref();
 } else {

@@ -2,6 +2,7 @@ node_modules/
 dist/
 out/
 .tmp/
+/.local/
 .wrangler/
 coverage/
 test-results/

@@ -496,6 +496,7 @@ impl Snapshot {
         }
         Ok(bytes)
     }
+    #[cfg(test)]
     fn packed(&self, id: usize) -> Result<PackedRecord, CatalogError> {
         let entry = self
             .inventory
@@ -556,10 +557,6 @@ impl Snapshot {
             profile: entry.profile,
             header,
         })
-    }
-    fn header(&self, id: usize) -> Result<Option<HeaderEvidence>, CatalogError> {
-        let packed = self.packed(id)?;
-        Ok(self.expand_header(packed))
     }
     fn expand_header(&self, packed: PackedRecord) -> Option<HeaderEvidence> {
         packed.header.map(|h| HeaderEvidence {
@@ -913,7 +910,7 @@ impl Catalog for BinaryCatalog {
             .ok()?;
         Some((
             snapshot.inventory[id].signature.clone(),
-            snapshot.header(id).ok()?,
+            snapshot.headers(&[id]).ok()?.pop()?,
         ))
     }
     fn begin_refresh(&mut self) -> Result<StagingToken, CatalogError> {

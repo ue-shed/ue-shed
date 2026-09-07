@@ -207,7 +207,11 @@ async function packWorkspacePackage(workspacePackage: PublicPackage, outputDirec
 			"--pack-destination",
 			outputDirectory
 		];
-		run(executable("pnpm"), packArguments, { cwd: packDirectory });
+		// Resolve Corepack's pinned pnpm from the repository before pnpm enters staging.
+		// A temporary directory can inherit an unrelated package manager from its parent.
+		run(executable("pnpm"), ["--dir", packDirectory, ...packArguments], {
+			cwd: repositoryRoot
+		});
 		const filename = (await readdir(outputDirectory)).find(
 			(entry) => !before.has(entry) && entry.endsWith(".tgz")
 		);

@@ -10,7 +10,16 @@ export const WorldVector = Schema.Struct({
 });
 export interface WorldVector extends Schema.Schema.Type<typeof WorldVector> {}
 
+export const ActorMetadata = Schema.Struct({
+	actorGuid: Schema.optionalKey(Schema.String.check(Schema.isPattern(/^[0-9A-Fa-f]{32}$/))),
+	classPath: Schema.optionalKey(Schema.NonEmptyString),
+	folderPath: Schema.optionalKey(Schema.String),
+	levelPackage: Schema.optionalKey(Schema.NonEmptyString),
+	tags: Schema.optionalKey(Schema.Array(Schema.String).check(Schema.isMaxLength(256))),
+	tagsTruncated: Schema.optionalKey(Schema.Boolean)
+});
 export const ObservedActor = Schema.Struct({
+	...ActorMetadata.fields,
 	bounds: Schema.Struct({
 		center: WorldVector,
 		extent: WorldVector

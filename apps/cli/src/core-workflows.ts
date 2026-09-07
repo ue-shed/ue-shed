@@ -28,3 +28,18 @@ export const runDoctor = Effect.fn("Cli.workflow.doctor")(() =>
 		})
 	)
 );
+
+export const runProducerDoctor = Effect.fn("Cli.workflow.producerDoctor")((endpoint: string) =>
+	observeCliOperation(
+		"ProducerDoctor",
+		Effect.gen(function* () {
+			const { inspectUnrealProducer, RemoteControlClientLive } = yield* Effect.promise(
+				() => import("@ue-shed/unreal-connection")
+			);
+			const manifest = yield* inspectUnrealProducer(endpoint).pipe(
+				Effect.provide(RemoteControlClientLive)
+			);
+			yield* printJson({ endpoint, ...manifest });
+		})
+	)
+);

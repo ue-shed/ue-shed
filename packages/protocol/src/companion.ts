@@ -1,6 +1,20 @@
 import { Schema } from "effect";
 
+export const CompanionProducerIdentity = Schema.Struct({
+	engineVersion: Schema.NonEmptyString,
+	processId: Schema.Int.check(Schema.isGreaterThan(0)),
+	sessionId: Schema.NonEmptyString,
+	plugins: Schema.Array(
+		Schema.Struct({
+			name: Schema.NonEmptyString,
+			version: Schema.String,
+			loadedModules: Schema.Array(Schema.NonEmptyString)
+		})
+	)
+});
+export type CompanionProducerIdentity = Schema.Schema.Type<typeof CompanionProducerIdentity>;
 export const CompanionCapabilityManifest = Schema.Struct({
+	identity: Schema.optionalKey(CompanionProducerIdentity),
 	assetAuditsObjectPath: Schema.optional(Schema.String),
 	assetNavigationObjectPath: Schema.optional(Schema.String),
 	authoringObjectPath: Schema.optional(Schema.String),

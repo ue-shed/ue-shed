@@ -19,3 +19,5 @@ export {
 	decodeMapTilePyramidManifest,
 	type MapTilePyramidManifest as MapTilePyramidManifestValue
 } from "./map-tile-schema.js";
+
+export * from "./map-capture-tools-schema.js";

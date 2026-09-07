@@ -1,3 +1,4 @@
+import { basename } from "node:path";
 import { readFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { Effect, Layer, Schema } from "effect";
@@ -128,7 +129,12 @@ export const runMapCaptureRun = Effect.fn("Cli.workflow.map_capture.run")(
 						);
 					}
 				}
+				const progressRuntime = yield* CliRuntime;
 				const outcome = yield* runMapCapture({
+					onProgress: (progress) =>
+						progressRuntime.printError(
+							`${JSON.stringify({ type: "map_capture_progress", ...progress })}\n`
+						),
 					...(command.captureBackend === undefined
 						? undefined
 						: { captureBackend: command.captureBackend }),
@@ -169,4 +175,74 @@ export const runMapCaptureRuns = Effect.fn("Cli.workflow.map_capture.runs")(
 				}).pipe(Effect.provide(MapCaptureRepositoryLive), Effect.mapError(commandError));
 			})
 		)
+);
+
+export const runMapCaptureSelection = Effect.fn("Cli.mapCapture.selection")(function* (
+	endpoint: string
+) {
+	const { inspectMapCaptureSelection } = yield* Effect.promise(() => import("@ue-shed/cameras"));
+	const { RemoteControlClientLive } = yield* Effect.promise(
+		() => import("@ue-shed/unreal-connection")
+	);
+	const result = yield* inspectMapCaptureSelection(endpoint).pipe(
+		Effect.provide(RemoteControlClientLive),
+		Effect.mapError(commandError)
+	);
+	yield* printJson(result);
+	if (result.status !== "ready") yield* (yield* CliRuntime).setExitCode(3);
+});
+export const runMapCaptureReadiness = Effect.fn("Cli.mapCapture.readiness")(function* (
+	endpoint: string,
+	mapPath: string
+) {
+	const { inspectMapCaptureReadiness } = yield* Effect.promise(() => import("@ue-shed/cameras"));
+	const { RemoteControlClientLive } = yield* Effect.promise(
+		() => import("@ue-shed/unreal-connection")
+	);
+	const result = yield* inspectMapCaptureReadiness(endpoint, mapPath).pipe(
+		Effect.provide(RemoteControlClientLive),
+		Effect.mapError(commandError)
+	);
+	yield* printJson(result);
+	if (!result.ready) yield* (yield* CliRuntime).setExitCode(3);
+});
+export const runMapCapturePlanFromSelection = Effect.fn("Cli.mapCapture.planFromSelection")(
+	function* (projectRoot: string, endpoint: string, output: string) {
+		const api = yield* Effect.promise(() => import("@ue-shed/cameras"));
+		const { RemoteControlClientLive } = yield* Effect.promise(
+			() => import("@ue-shed/unreal-connection")
+		);
+		const root = yield* api
+			.validateMapCaptureProjectRoot(projectRoot)
+			.pipe(Effect.mapError(commandError));
+		const selection = yield* api
+			.inspectMapCaptureSelection(endpoint)
+			.pipe(Effect.provide(RemoteControlClientLive), Effect.mapError(commandError));
+		if (selection.status !== "ready")
+			return yield* Effect.fail(new CliCommandError({ message: selection.message }));
+		const plan = yield* Effect.try({
+			try: () =>
+				api.fitMapCapturePlanToSelection(
+					api.makeDefaultMapCapturePlan({
+						projectId: basename(root),
+						mapPath: selection.mapPath
+					}),
+					selection
+				),
+			catch: commandError
+		});
+		const fitted = {
+			...plan,
+			capture: { ...plan.capture, z: Math.max(plan.capture.z, selection.bounds.maxZ + 1000) }
+		};
+		yield* Effect.gen(function* () {
+			const repository = yield* api.MapCaptureRepository;
+			yield* repository.savePlan(output, fitted);
+		}).pipe(Effect.provide(api.MapCaptureRepositoryLive), Effect.mapError(commandError));
+		yield* printJson({
+			path: output,
+			plan: fitted,
+			skippedActorPaths: selection.skippedActorPaths
+		});
+	}
 );

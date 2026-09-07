@@ -100,3 +100,27 @@ It refuses active PIE, missing maps, and dirty world packages instead of saving 
 
 MIT. Unreal Engine is a trademark of Epic Games, Inc. This project is not affiliated with or
 endorsed by Epic Games.
+
+## Capture inspection and progress
+
+`inspectMapCaptureSelection(endpoint)` returns combined finite component bounds, identities, and
+skipped actor paths for 1–1024 selected editor actors. It does not replace single-actor Review
+inspection or load unselected World Partition regions. `fitMapCapturePlanToSelection` applies XY
+bounds and padding to a plan while retaining the caller's altitude.
+
+`inspectMapCaptureReadiness(endpoint, mapPath)` reports Lit backend blockers without changing editor
+state. The same checks guard Lit capture startup. Readiness is a point-in-time observation, not a
+reservation or a guarantee that lighting or unloaded content is complete. New inspection calls
+negotiate `cameras.capture-selection.v1` and `cameras.capture-readiness.v1` capabilities.
+
+```sh
+ue-shed map-capture selection http://127.0.0.1:30010
+ue-shed map-capture readiness http://127.0.0.1:30010 /Game/Maps/Example
+ue-shed map-capture plan from-selection /projects/example http://127.0.0.1:30010 ./selected-plan.json
+```
+
+The plan command uses ten percent XY padding and places the camera at least 1000 Unreal units above
+the selected bounds. Review the generated plan before capture. Unavailable selection/readiness
+returns CLI exit code 3. Capture progress callbacks optionally include `producer` with the batch's
+phase, elapsed milliseconds, tile count and current tile. Older plugins can omit these fields.
+CLI progress is newline-delimited JSON on stderr; final results remain JSON on stdout.

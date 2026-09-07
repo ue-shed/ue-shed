@@ -1,3 +1,4 @@
+import { NiagaraPreviewProgress } from "../src/progress-schema.js";
 import { deepStrictEqual } from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -14,6 +15,13 @@ const fixtureRoot = fileURLToPath(
 );
 
 const contracts = [
+	{ file: "progress.json", schema: NiagaraPreviewProgress },
+	{ file: "background-request.json", schema: NiagaraPreviewProducerRequest },
+	{ file: "background-receipt.json", schema: NiagaraPreviewProducerReceipt },
+	{ file: "background-manifest.json", schema: NiagaraPreviewRunManifest },
+	{ file: "scene-request.json", schema: NiagaraPreviewProducerRequest },
+	{ file: "scene-receipt.json", schema: NiagaraPreviewProducerReceipt },
+	{ file: "scene-manifest.json", schema: NiagaraPreviewRunManifest },
 	{ file: "request.json", schema: NiagaraPreviewProducerRequest },
 	{ file: "receipt.json", schema: NiagaraPreviewProducerReceipt },
 	{ file: "manifest.json", schema: NiagaraPreviewRunManifest }

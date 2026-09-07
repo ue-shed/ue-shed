@@ -9,6 +9,12 @@ class UESHEDCAMERASEDITOR_API UUEShedCameraReviewLibrary : public UBlueprintFunc
 	GENERATED_BODY()
 
 public:
+ UFUNCTION(BlueprintCallable, Category = "UE Shed|Cameras|Map Capture")
+ static void InspectMapCaptureSelection(FString& ResultJson);
+
+ UFUNCTION(BlueprintCallable, Category = "UE Shed|Cameras|Map Capture")
+ static void InspectMapCaptureReadiness(const FString& ExpectedMapPath, FString& ResultJson);
+
 	UFUNCTION(BlueprintCallable, Category = "UE Shed|Cameras|Review")
 	static void InspectReviewSelection(FString& ResultJson);
 

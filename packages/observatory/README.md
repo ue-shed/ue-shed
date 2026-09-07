@@ -51,3 +51,9 @@ The live command defaults to `http://127.0.0.1:30001`; set `UE_SHED_REMOTE_CONTR
 override it. It validates `L_CameraLoad`, the three fixture class counts, and PIE before measuring
 the Unreal producer, named-pipe host, and a real Electron Workbench World Scout presentation. The
 Workbench phase must sustain at least 10 painted transform sequences per second.
+
+Actor snapshots and stream catalogs optionally include `classPath`, authored `actorGuid`,
+`folderPath`, `levelPackage`, `tags`, and `tagsTruncated`. Tags are bounded to 256 entries. Metadata
+is sampled when reading a snapshot/catalog, not in high-frequency USOT transform packets. Refresh
+or restart observation to rediscover metadata edits. GUID is optional and never synthesized from
+runtime object identity; it does not by itself establish cross-world or cross-project ownership.

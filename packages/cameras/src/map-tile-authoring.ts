@@ -1,3 +1,4 @@
+import type { MapCaptureSelection } from "./map-capture-tools-schema.js";
 import { Schema } from "effect";
 import {
 	MapCapturePlan,
@@ -77,5 +78,29 @@ export function makeDefaultMapCapturePlan(args: {
 		},
 		requestedBounds: { maxX: 1000, maxY: 1000, minX: -1000, minY: -1000 },
 		tilePixelSize: 512
+	});
+}
+
+/** Fit a plan to inspected component bounds; capture altitude stays explicitly caller-owned. */
+export function fitMapCapturePlanToSelection(
+	plan: MapCapturePlanValue,
+	selection: MapCaptureSelection,
+	paddingFraction = 0.1
+): MapCapturePlanValue {
+	if (selection.status !== "ready") throw new RangeError("Selection bounds are unavailable.");
+	if (!Number.isFinite(paddingFraction) || paddingFraction < 0 || paddingFraction > 1)
+		throw new RangeError("Padding must be between zero and one.");
+	const b = selection.bounds;
+	const padX = Math.max(1, (b.maxX - b.minX) * paddingFraction);
+	const padY = Math.max(1, (b.maxY - b.minY) * paddingFraction);
+	return Schema.decodeUnknownSync(MapCapturePlan)({
+		...plan,
+		project: { ...plan.project, mapPath: selection.mapPath },
+		requestedBounds: {
+			minX: b.minX - padX,
+			maxX: b.maxX + padX,
+			minY: b.minY - padY,
+			maxY: b.maxY + padY
+		}
 	});
 }

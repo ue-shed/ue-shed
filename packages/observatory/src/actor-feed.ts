@@ -1,3 +1,4 @@
+import { ActorMetadata } from "./actor-models.js";
 import {
 	recordObservatoryPacket,
 	recordObservatoryReceiverReplacements
@@ -322,6 +323,7 @@ export class ActorObservationRecoveryExhaustedError extends Schema.TaggedErrorCl
 ) {}
 
 const WireCatalogActor = Schema.Struct({
+	...ActorMetadata.fields,
 	bounds: Schema.Struct({ center: WorldVector, extent: WorldVector }),
 	className: Schema.NonEmptyString,
 	displayName: Schema.NonEmptyString,

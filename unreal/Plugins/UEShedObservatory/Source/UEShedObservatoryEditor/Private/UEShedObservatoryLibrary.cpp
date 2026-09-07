@@ -1,4 +1,5 @@
 #include "UEShedObservatoryLibrary.h"
+#include "UEShedActorMetadata.h"
 
 #include "Dom/JsonObject.h"
 #include "Editor.h"
@@ -92,6 +93,7 @@ void UUEShedObservatoryLibrary::GetActorSnapshot(FString& ResultJson)
 		Record->SetStringField(TEXT("path"), Path);
 		Record->SetStringField(TEXT("displayName"), Actor->GetActorLabel());
 		Record->SetStringField(TEXT("className"), Actor->GetClass()->GetName());
+ AddUEShedActorMetadata(Record, Actor);
 		Record->SetObjectField(TEXT("location"), VectorJson(Actor->GetActorLocation()));
 		Record->SetObjectField(TEXT("rotation"), RotationJson(Actor->GetActorRotation()));
 		const TSharedRef<FJsonObject> Bounds = MakeShared<FJsonObject>();

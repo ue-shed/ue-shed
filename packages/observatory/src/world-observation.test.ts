@@ -375,3 +375,23 @@ describe("world observation selection across transform updates", () => {
 		);
 	});
 });
+
+it("retains authored metadata through snapshot, catalog, and materialization", () => {
+	const metadata = {
+		classPath: "/Script/Engine.Actor",
+		actorGuid: "00000001000000020000000300000004",
+		folderPath: "Lighting",
+		levelPackage: "/Game/Fixture/Map",
+		tags: ["Review"],
+		tagsTruncated: false
+	};
+	const source = { ...actor("A", 10, 20), ...metadata };
+	const built = catalogFromSnapshot(
+		snapshot([source]),
+		ObservationSessionId.make("metadata"),
+		CatalogRevision.make(1n)
+	);
+	const entry = built.catalog.entries[0]!;
+	expect(entry).toMatchObject(metadata);
+	expect(materializeObservedActor(entry, built.transforms[0]!.transform)).toMatchObject(metadata);
+});

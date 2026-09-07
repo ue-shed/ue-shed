@@ -492,3 +492,5 @@ export function configureCameras(
 		Effect.mapError((error) => cameraControlError(endpoint, "configure", error))
 	);
 }
+
+export * from "./map-capture-tools.js";

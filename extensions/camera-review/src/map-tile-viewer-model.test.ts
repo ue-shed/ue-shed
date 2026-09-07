@@ -1,6 +1,8 @@
 import { createMapTileGrid, mapTileChildren } from "@ue-shed/cameras/browser";
 import { describe, expect, it } from "vitest";
 import {
+	fitMapTileActors,
+	mapTileWorldPoint,
 	fitMapTileViewport,
 	mapTileScreenRect,
 	mapTileScreenPoint,
@@ -72,5 +74,51 @@ describe("map tile viewer alignment", () => {
 			left: 512,
 			top: 512
 		});
+	});
+});
+
+describe("map navigation utilities", () => {
+	const viewport = {
+		centerX: 1234,
+		centerY: -4567,
+		width: 800,
+		height: 500,
+		pixelsPerWorldUnit: 0.37
+	};
+	it("inverts the tile projection after panning and zooming", () => {
+		const point = { worldX: 1700, worldY: -4100 };
+		const result = mapTileWorldPoint({
+			viewport,
+			...mapTileScreenPoint({ viewport, ...point })
+		});
+		expect(result.worldX).toBeCloseTo(point.worldX);
+		expect(result.worldY).toBeCloseTo(point.worldY);
+	});
+	it("fits every filtered point with padding, including outside capture coverage", () => {
+		const points = [
+			{ worldX: -12000, worldY: 400 },
+			{ worldX: 24000, worldY: 6000 }
+		];
+		const fitted = fitMapTileActors({ viewport, points, maximumScale: 2 });
+		for (const point of points) {
+			const screen = mapTileScreenPoint({ viewport: fitted, ...point });
+			expect(screen.left).toBeGreaterThanOrEqual(32);
+			expect(screen.left).toBeLessThanOrEqual(768);
+			expect(screen.top).toBeGreaterThanOrEqual(32);
+			expect(screen.top).toBeLessThanOrEqual(468);
+		}
+	});
+	it("limits singleton zoom and keeps the view when no valid points match", () => {
+		expect(
+			fitMapTileActors({ viewport, points: [{ worldX: NaN, worldY: 0 }], maximumScale: 2 })
+		).toBe(viewport);
+		const fitted = fitMapTileActors({
+			viewport,
+			points: [{ worldX: 50, worldY: 80 }],
+			maximumScale: 2
+		});
+		expect(fitted.centerX).toBe(50);
+		expect(fitted.centerY).toBe(80);
+		expect(fitted.pixelsPerWorldUnit).toBe(2);
 	});
 });

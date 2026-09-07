@@ -25,6 +25,57 @@ export interface MapTileScreenPoint {
 	readonly top: number;
 }
 
+export function mapTileWorldPoint(args: {
+	readonly viewport: MapTileViewport;
+	readonly left: number;
+	readonly top: number;
+}) {
+	return {
+		worldX:
+			args.viewport.centerX +
+			(args.viewport.height / 2 - args.top) / args.viewport.pixelsPerWorldUnit,
+		worldY:
+			args.viewport.centerY +
+			(args.left - args.viewport.width / 2) / args.viewport.pixelsPerWorldUnit
+	};
+}
+
+export function fitMapTileActors(args: {
+	readonly viewport: MapTileViewport;
+	readonly points: readonly { readonly worldX: number; readonly worldY: number }[];
+	readonly maximumScale: number;
+}): MapTileViewport {
+	const points = args.points.filter(
+		(point) => Number.isFinite(point.worldX) && Number.isFinite(point.worldY)
+	);
+	if (points.length === 0) return args.viewport;
+	let minX = Infinity,
+		minY = Infinity,
+		maxX = -Infinity,
+		maxY = -Infinity;
+	for (const point of points) {
+		minX = Math.min(minX, point.worldX);
+		maxX = Math.max(maxX, point.worldX);
+		minY = Math.min(minY, point.worldY);
+		maxY = Math.max(maxY, point.worldY);
+	}
+	const padding = 32 / args.maximumScale;
+	const fitted = fitMapTileViewport({
+		bounds: {
+			minX: minX - padding,
+			maxX: maxX + padding,
+			minY: minY - padding,
+			maxY: maxY + padding
+		},
+		height: args.viewport.height,
+		width: args.viewport.width
+	});
+	return {
+		...fitted,
+		pixelsPerWorldUnit: Math.min(args.maximumScale, fitted.pixelsPerWorldUnit)
+	};
+}
+
 export function mapTileViewportBounds(viewport: MapTileViewport): MapWorldBounds {
 	const halfWorldWidth = viewport.width / viewport.pixelsPerWorldUnit / 2;
 	const halfWorldHeight = viewport.height / viewport.pixelsPerWorldUnit / 2;

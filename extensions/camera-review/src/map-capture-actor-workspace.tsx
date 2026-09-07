@@ -81,6 +81,9 @@ export function MapCaptureActorWorkspace(props: {
 					...(resolved && !inside ? ["Outside capture"] : [])
 				],
 				classLabel: shortClass(actor.classPath),
+				actorGuid: actor.actorGuid,
+				location:
+					actor.transform.status === "resolved" ? actor.transform.location : undefined,
 				classPath: actor.classPath,
 				key: actorKey(actor),
 				label: actorLabel(actor),
@@ -223,6 +226,7 @@ export function MapCaptureActorWorkspace(props: {
 			>
 				<Show when={enabled() && catalog().status === "ready"}>
 					<ActorExplorer
+						utilities
 						ariaLabel="Captured map saved actor explorer"
 						classOptions={classOptions()}
 						classSelection="multiple"

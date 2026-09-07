@@ -1,3 +1,4 @@
+import { ActorMetadata } from "./actor-models.js";
 import { Schema } from "effect";
 import {
 	ActorId,
@@ -30,6 +31,7 @@ export type PacketSequence = Schema.Schema.Type<typeof PacketSequence>;
 
 /** Static actor metadata retained from catalog discovery; transforms arrive separately. */
 export const WorldActorCatalogEntry = Schema.Struct({
+	...ActorMetadata.fields,
 	bounds: Schema.Struct({
 		center: WorldVector,
 		extent: WorldVector
@@ -205,6 +207,7 @@ export function materializeObservedActor(
 	transform: WorldTransform
 ): ObservedActorType {
 	return ObservedActor.make({
+		...Schema.encodeSync(ActorMetadata)(entry),
 		bounds: entry.bounds,
 		className: entry.className,
 		displayName: entry.displayName,
@@ -229,6 +232,7 @@ export function catalogFromSnapshot(
 		const streamIndex = StreamActorIndex.make(index);
 		entries.push(
 			WorldActorCatalogEntry.make({
+				...Schema.encodeSync(ActorMetadata)(actor),
 				bounds: actor.bounds,
 				className: actor.className,
 				displayName: actor.displayName,
@@ -446,7 +450,7 @@ export function catalogEntryAt(
 	return catalog.entries[streamIndex];
 }
 
-export interface CatalogWireActor {
+export interface CatalogWireActor extends Schema.Schema.Type<typeof ActorMetadata> {
 	readonly bounds: { readonly center: WorldVectorType; readonly extent: WorldVectorType };
 	readonly className: string;
 	readonly displayName: string;
@@ -476,6 +480,7 @@ export function catalogFromWireEntries(args: {
 		const streamIndex = StreamActorIndex.make(actor.streamIndex);
 		entries.push(
 			WorldActorCatalogEntry.make({
+				...Schema.encodeSync(ActorMetadata)(actor),
 				bounds: actor.bounds,
 				className: actor.className,
 				displayName: actor.displayName,

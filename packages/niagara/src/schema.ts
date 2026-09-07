@@ -27,20 +27,52 @@ export const NIAGARA_SYSTEM_CLASS = "/Script/Niagara.NiagaraSystem";
 
 const RequestContract = Schema.Struct({
 	name: Schema.Literal("ue-shed-niagara-preview-request"),
-	version: Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literal(0) })
+	version: Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literals([0, 1, 2]) })
 });
 
 const ReceiptContract = Schema.Struct({
 	name: Schema.Literal("ue-shed-niagara-preview-receipt"),
-	version: Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literal(0) })
+	version: Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literals([0, 1, 2]) })
 });
 
 const RunContract = Schema.Struct({
 	name: Schema.Literal("ue-shed-niagara-preview-run"),
-	version: Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literal(0) })
+	version: Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literals([0, 1, 2]) })
 });
 
+const CameraCoordinate = Schema.Number.check(Schema.isBetween({ minimum: -1e12, maximum: 1e12 }));
+const PresentationSettings = {
+	background: Schema.optionalKey(Schema.Literals(["default", "dark", "light"])),
+	cameraOverride: Schema.optionalKey(
+		Schema.Struct({
+			location: Schema.Struct({
+				x: CameraCoordinate,
+				y: CameraCoordinate,
+				z: CameraCoordinate
+			}),
+			rotation: Schema.Struct({
+				pitch: CameraCoordinate,
+				yaw: CameraCoordinate,
+				roll: CameraCoordinate
+			}),
+			fieldOfViewDegrees: Schema.Number.check(Schema.isBetween({ minimum: 1, maximum: 179 }))
+		})
+	),
+	renderMode: Schema.optionalKey(Schema.Literals(["transparent", "scene"])),
+	cameraMode: Schema.optionalKey(Schema.Literals(["saved", "auto_fit"])),
+	sceneProfile: Schema.optionalKey(
+		Schema.Literals(["ground_impact", "projectile", "aura", "environment"])
+	),
+	exposureCompensation: Schema.optionalKey(
+		Schema.Number.check(Schema.isBetween({ minimum: -8, maximum: 8 }))
+	),
+	cameraPadding: Schema.optionalKey(
+		Schema.Number.check(Schema.isBetween({ minimum: 1.05, maximum: 3 }))
+	)
+};
+
 export const NiagaraPreviewSettings = Schema.Struct({
+	...PresentationSettings,
 	captureMode: Schema.optionalKey(Schema.Literals(["component_only", "full_scene"])),
 	durationSeconds: Schema.optionalKey(DurationSeconds),
 	frameCount: Schema.optionalKey(FrameCount),
@@ -60,6 +92,7 @@ export const NiagaraPreviewProducerRequest = Schema.Struct({
 export type NiagaraPreviewProducerRequest = typeof NiagaraPreviewProducerRequest.Type;
 
 export const NiagaraPreviewEffectiveSettings = Schema.Struct({
+	...PresentationSettings,
 	captureMode: Schema.Literals(["component_only", "full_scene"]),
 	durationSeconds: DurationSeconds,
 	frameCount: FrameCount,
@@ -89,6 +122,8 @@ export type NiagaraPreviewCamera = typeof NiagaraPreviewCamera.Type;
 const FrameRelativePath = Schema.String.check(Schema.isPattern(/^frames\/frame_[0-9]{4}\.png$/u));
 
 export const NiagaraPreviewProducerFrame = Schema.Struct({
+	activityScore: Schema.optionalKey(Fraction),
+	edgePixelFraction: Schema.optionalKey(Fraction),
 	index: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 	maximumRgb: Fraction,
 	nonTransparentPixelFraction: Fraction,
@@ -98,7 +133,8 @@ export const NiagaraPreviewProducerFrame = Schema.Struct({
 export type NiagaraPreviewProducerFrame = typeof NiagaraPreviewProducerFrame.Type;
 
 export const NiagaraPreviewProducerReceipt = Schema.Struct({
-	alphaPolicy: Schema.Literal("scene_opacity_or_emissive_coverage_v1"),
+	missingMaterialCount: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+	alphaPolicy: Schema.Literals(["scene_opacity_or_emissive_coverage_v1", "opaque_scene_v1"]),
 	camera: NiagaraPreviewCamera,
 	colorSpace: Schema.Literal("srgb"),
 	contract: ReceiptContract,
@@ -116,6 +152,8 @@ export type NiagaraPreviewProducerReceipt = typeof NiagaraPreviewProducerReceipt
 const Sha256 = Schema.String.check(Schema.isPattern(/^sha256:[0-9a-f]{64}$/u));
 
 export const NiagaraPreviewArtifact = Schema.Struct({
+	activityScore: Schema.optionalKey(Fraction),
+	edgePixelFraction: Schema.optionalKey(Fraction),
 	bytes: PositiveInt,
 	height: Dimension,
 	index: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
@@ -130,7 +168,7 @@ export const NiagaraPreviewArtifact = Schema.Struct({
 export type NiagaraPreviewArtifact = typeof NiagaraPreviewArtifact.Type;
 
 export const NiagaraPreviewDiagnostic = Schema.Struct({
-	code: Schema.Literals(["nearly_black", "nearly_empty"]),
+	code: Schema.Literals(["nearly_black", "nearly_empty", "missing_material"]),
 	message: Schema.NonEmptyString
 });
 export type NiagaraPreviewDiagnostic = typeof NiagaraPreviewDiagnostic.Type;

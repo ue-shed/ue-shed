@@ -62,6 +62,15 @@ there; do not invent a second status source in docs.
 
 ## Research
 
+- [32×32 moving-camera scale test (2026-09-07)](research/map-capture-grid32-2026-09-07.md) — 1,024
+  captured tiles, a 16K assembly, and a six-level viewer pyramid over expanded world bounds.
+
+- [Moving the lit camera: tile seams (2026-09-07)](research/map-capture-moving-camera-2026-09-07.md) —
+  2×2 and 4×4 viewport-camera captures recover detail; render differences and seam visibility are distinct.
+
+- [Plugin-only map capture freeze (2026-09-07)](research/map-capture-freeze-2026-09-07.md) — verified
+  material clocks and tick restoration; persistent tiled lighting differences.
+
 - [Showcase-first project review (2026-09-06)](research/project-review-2026-09-06.md) —
   first-run and refresh reproductions, UI/runtime observations, architecture, and prioritized improvements.
 
@@ -73,6 +82,9 @@ there; do not invent a second status source in docs.
 
 - [Project Index query transport (2026-09-06)](research/query-transport-2026-09-06.md) —
   dictionary pages, immutable validated results, transport bytes, and separate stage measurements.
+
+- [Map Capture quality audit (2026-09-06)](research/map-capture-quality-2026-09-06.md) — renderer
+  comparisons, exposure and temporal-state failures, viewport correctness fixes, and alternatives.
 
 - [Parallel project discovery (2026-09-05)](research/discovery-2026-09-05.md) —
   demand-driven worker startup, fresh/warm timings, query profiling, and Linux oracle checks.

@@ -1,4 +1,6 @@
 export interface ActorExplorerItem {
+	readonly actorGuid?: string | undefined;
+	readonly location?: { readonly x: number; readonly y: number; readonly z: number } | undefined;
 	readonly badges?: ReadonlyArray<string>;
 	readonly classLabel?: string;
 	readonly classPath: string;

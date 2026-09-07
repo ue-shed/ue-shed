@@ -15,3 +15,9 @@ the browser-safe `@ue-shed/niagara/browser` entry point without loading Node or 
 
 See [`docs/products/niagara-preview.md`](../../docs/products/niagara-preview.md) for the product
 contract and current limitations.
+
+`runNiagaraPreview({ onProgress, ...options })` accepts an Effect callback for optional producer
+progress: initialization, compilation, camera fitting, frame capture, receipt writing and completion.
+Progress carries run identity, frame counts, and elapsed milliseconds. It is optional telemetry;
+completion/publication still requires a validated receipt and frame artifacts. Older producers can
+omit progress. The CLI writes progress JSON lines to stderr and its final result to stdout.

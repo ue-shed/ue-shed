@@ -39,3 +39,21 @@ describe("companion scenario capability manifest", () => {
 		expect(exit._tag).toBe("Failure");
 	});
 });
+
+it("retains optional producer identity without requiring it from older editors", async () => {
+	const identity = {
+		engineVersion: "5.7.4",
+		processId: 123,
+		sessionId: "session",
+		plugins: [{ name: "UEShedCore", version: "0.6.0", loadedModules: ["UEShedCore"] }]
+	};
+	const result = await Effect.runPromise(
+		decodeCompanionCapabilityManifest({
+			schemaVersion: 1,
+			producerKind: "unreal_editor",
+			capabilities: [],
+			identity
+		})
+	);
+	expect(result.identity).toEqual(identity);
+});

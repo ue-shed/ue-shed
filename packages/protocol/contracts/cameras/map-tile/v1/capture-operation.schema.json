@@ -8,9 +8,48 @@
 			"additionalProperties": false,
 			"required": ["state", "operationId", "completedTiles"],
 			"properties": {
-				"state": { "const": "running" },
-				"operationId": { "$ref": "plan.schema.json#/$defs/id" },
-				"completedTiles": { "type": "integer", "minimum": 0, "maximum": 64 }
+				"state": {
+					"const": "running"
+				},
+				"operationId": {
+					"$ref": "plan.schema.json#/$defs/id"
+				},
+				"completedTiles": {
+					"type": "integer",
+					"minimum": 0,
+					"maximum": 64
+				},
+				"phase": {
+					"enum": ["exposure_warmup", "tile_warmup", "capturing"]
+				},
+				"elapsedMs": {
+					"type": "number",
+					"minimum": 0
+				},
+				"totalTiles": {
+					"type": "integer",
+					"minimum": 0,
+					"maximum": 64
+				},
+				"currentTile": {
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["zoom", "row", "column"],
+					"properties": {
+						"zoom": {
+							"type": "integer",
+							"minimum": 0
+						},
+						"row": {
+							"type": "integer",
+							"minimum": 0
+						},
+						"column": {
+							"type": "integer",
+							"minimum": 0
+						}
+					}
+				}
 			}
 		},
 		{
@@ -18,8 +57,12 @@
 			"additionalProperties": false,
 			"required": ["state", "response"],
 			"properties": {
-				"state": { "const": "finished" },
-				"response": { "$ref": "capture-response.schema.json" }
+				"state": {
+					"const": "finished"
+				},
+				"response": {
+					"$ref": "capture-response.schema.json"
+				}
 			}
 		}
 	]

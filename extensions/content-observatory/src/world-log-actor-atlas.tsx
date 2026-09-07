@@ -127,6 +127,11 @@ export function WorldLogScene(props: {
 					: [],
 				classLabel: shortClass(displayActor.classPath),
 				classPath: actor.actor.classPath,
+				actorGuid: displayActor.actorGuid,
+				location:
+					displayActor.transform.status === "resolved"
+						? displayActor.transform.location
+						: undefined,
 				key: actor.key,
 				label: actorTitle(displayActor),
 				packageName: displayActor.packageName,
@@ -374,6 +379,7 @@ export function WorldLogScene(props: {
 			</Show>
 			<div {...stylex.props(styles.actorAtlasWorkspace)}>
 				<ActorExplorer
+					utilities
 					ariaLabel="Saved actor outliner"
 					classOptions={classPaths().map((classPath) => ({
 						classPath,

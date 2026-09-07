@@ -9,6 +9,17 @@ function optionalNumber(value: string | undefined): number | undefined {
 const preview = Command.make(
 	"preview",
 	{
+		background: Flag.choice("background", ["default", "dark", "light"]).pipe(Flag.optional),
+		profile: Flag.choice("profile", [
+			"ground_impact",
+			"projectile",
+			"aura",
+			"environment"
+		]).pipe(Flag.optional),
+		renderMode: Flag.choice("render-mode", ["transparent", "scene"]).pipe(Flag.optional),
+		cameraMode: Flag.choice("camera-mode", ["saved", "auto_fit"]).pipe(Flag.optional),
+		exposureCompensation: optionalFlag("exposure"),
+		cameraPadding: optionalFlag("camera-padding"),
 		projectDescriptor: Argument.string("project"),
 		systemObjectPath: Argument.string("system"),
 		captureMode: Flag.choice("capture-mode", ["component_only", "full_scene"]).pipe(
@@ -35,6 +46,12 @@ const preview = Command.make(
 		)
 	},
 	({
+		background,
+		profile,
+		renderMode,
+		cameraMode,
+		exposureCompensation,
+		cameraPadding,
 		captureMode,
 		durationSeconds,
 		engineRoot,
@@ -49,6 +66,12 @@ const preview = Command.make(
 		systemObjectPath,
 		width
 	}) => {
+		const selectedProfile = optionalValue(profile);
+		const selectedBackground = optionalValue(background);
+		const render = optionalValue(renderMode);
+		const camera = optionalValue(cameraMode);
+		const exposure = optionalNumber(optionalValue(exposureCompensation));
+		const padding = optionalNumber(optionalValue(cameraPadding));
 		const capture = optionalValue(captureMode);
 		const duration = optionalNumber(optionalValue(durationSeconds));
 		const engine = optionalValue(engineRoot);
@@ -62,6 +85,12 @@ const preview = Command.make(
 		const selectedWidth = optionalValue(width);
 		return runNiagaraPreview({
 			_tag: "NiagaraPreview",
+			...(selectedProfile === undefined ? undefined : { profile: selectedProfile }),
+			...(selectedBackground === undefined ? undefined : { background: selectedBackground }),
+			...(render === undefined ? undefined : { renderMode: render }),
+			...(camera === undefined ? undefined : { cameraMode: camera }),
+			...(exposure === undefined ? undefined : { exposureCompensation: exposure }),
+			...(padding === undefined ? undefined : { cameraPadding: padding }),
 			...(capture === undefined ? undefined : { captureMode: capture }),
 			...(duration === undefined ? undefined : { durationSeconds: duration }),
 			...(engine === undefined ? undefined : { engineRoot: engine }),
@@ -81,7 +110,7 @@ const preview = Command.make(
 	}
 ).pipe(
 	Command.withDescription(
-		"Capture one saved Niagara Baker preview and atomically publish a portable PNG run."
+		"Capture a Niagara preview with saved settings or a review profile and publish a portable PNG run."
 	)
 );
 

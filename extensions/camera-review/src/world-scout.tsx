@@ -750,6 +750,8 @@ export function WorldScout(props: {
 
 				<div {...stylex.props(styles.workspace)}>
 					<ActorExplorer
+						utilities
+						selectedDetails={{ location: selected()?.location }}
 						ariaLabel="Live actor outliner"
 						classOptions={classOptions()}
 						filters={actorFilters()}

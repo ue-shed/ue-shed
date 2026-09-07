@@ -1,0 +1,7 @@
+{
+	"schemaVersion": 1,
+	"backend": "lit_camera_tiles",
+	"ready": true,
+	"actualMapPath": "/Game/Fixture/Map",
+	"blockers": []
+}

@@ -1,0 +1,21 @@
+{
+	"schemaVersion": 1,
+	"status": "ready",
+	"mapPath": "/Game/Fixture/Map",
+	"bounds": {
+		"minX": -100,
+		"maxX": 100,
+		"minY": 50,
+		"maxY": 250,
+		"minZ": 0,
+		"maxZ": 400
+	},
+	"actors": [
+		{
+			"path": "/Game/Fixture/Map.A",
+			"label": "A",
+			"actorGuid": "00000001000000020000000300000004"
+		}
+	],
+	"skippedActorPaths": []
+}

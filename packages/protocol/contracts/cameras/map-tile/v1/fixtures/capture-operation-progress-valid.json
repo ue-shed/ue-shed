@@ -1,0 +1,13 @@
+{
+	"state": "running",
+	"operationId": "fixture-operation",
+	"completedTiles": 0,
+	"phase": "tile_warmup",
+	"elapsedMs": 1234,
+	"totalTiles": 4,
+	"currentTile": {
+		"zoom": 0,
+		"row": 0,
+		"column": 0
+	}
+}

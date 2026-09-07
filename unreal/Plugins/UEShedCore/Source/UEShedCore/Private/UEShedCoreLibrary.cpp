@@ -2,6 +2,11 @@
 
 #include "Dom/JsonObject.h"
 #include "Misc/App.h"
+#include "HAL/PlatformProcess.h"
+#include "Misc/EngineVersion.h"
+#include "Interfaces/IPluginManager.h"
+#include "PluginDescriptor.h"
+#include "ModuleDescriptor.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
 #include "Modules/ModuleManager.h"
@@ -10,6 +15,27 @@ void UUEShedCoreLibrary::GetCapabilityManifest(FString& ResultJson)
 {
 	const TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
 	Root->SetNumberField(TEXT("schemaVersion"), 1);
+ static const FString SessionId = FGuid::NewGuid().ToString(EGuidFormats::DigitsWithHyphensLower);
+ auto Identity = MakeShared<FJsonObject>();
+ Identity->SetStringField(TEXT("engineVersion"), FEngineVersion::Current().ToString());
+ Identity->SetNumberField(TEXT("processId"), FPlatformProcess::GetCurrentProcessId());
+ Identity->SetStringField(TEXT("sessionId"), SessionId);
+ TArray<TSharedPtr<FJsonValue>> Plugins;
+ for (const auto& Plugin : IPluginManager::Get().GetEnabledPlugins())
+ {
+  if (!Plugin->GetName().StartsWith(TEXT("UEShed"))) continue;
+  TArray<TSharedPtr<FJsonValue>> Modules;
+  for (const auto& Module : Plugin->GetDescriptor().Modules)
+   if (FModuleManager::Get().IsModuleLoaded(Module.Name)) Modules.Add(MakeShared<FJsonValueString>(Module.Name.ToString()));
+  if (Modules.IsEmpty()) continue;
+  auto Entry = MakeShared<FJsonObject>();
+  Entry->SetStringField(TEXT("name"), Plugin->GetName());
+  Entry->SetStringField(TEXT("version"), Plugin->GetDescriptor().VersionName);
+  Entry->SetArrayField(TEXT("loadedModules"), Modules);
+  Plugins.Add(MakeShared<FJsonValueObject>(Entry));
+ }
+ Identity->SetArrayField(TEXT("plugins"), Plugins);
+ Root->SetObjectField(TEXT("identity"), Identity);
 	Root->SetStringField(TEXT("producerKind"), TEXT("unreal_editor"));
 	Root->SetStringField(TEXT("projectName"), FApp::GetProjectName());
 	TArray<TSharedPtr<FJsonValue>> Capabilities;
@@ -47,6 +73,8 @@ void UUEShedCoreLibrary::GetCapabilityManifest(FString& ResultJson)
 		Root->SetObjectField(TEXT("mapTileCaptureLimits"), Limits);
 		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("cameras.map-tile-capture.v1")));
 		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("cameras.lit-map-tile-capture.v1")));
+ Capabilities.Add(MakeShared<FJsonValueString>(TEXT("cameras.capture-selection.v1")));
+ Capabilities.Add(MakeShared<FJsonValueString>(TEXT("cameras.capture-readiness.v1")));
 	}
 	if (FModuleManager::Get().IsModuleLoaded(TEXT("UEShedObservatoryEditor")))
 	{

@@ -9,3 +9,5 @@ The editor-only `UEShedCoreEditor` companion advertises `editor.play-session.v1`
 session, and it can open one explicit `/Game/` map without player input. World control never saves or
 discards: it rejects an active play session or any dirty world package before switching maps. The
 runtime module remains free of editor dependencies.
+
+The capability manifest optionally includes engine/process/session identity and loaded UE Shed plugin descriptor versions. `ue-shed doctor --endpoint <url>` exposes this evidence; capabilities remain authoritative for compatibility.

@@ -1,4 +1,5 @@
 export * from "./schema.js";
+export * from "./presentation.js";
 export {
 	NiagaraPreview,
 	NiagaraPreviewError,
@@ -11,3 +12,5 @@ export type {
 	NiagaraPreviewRunOutcome,
 	RunNiagaraPreviewOptions
 } from "./preview.js";
+
+export * from "./progress.js";

@@ -1,3 +1,4 @@
+import { readNiagaraPreviewProgress, type NiagaraPreviewProgress } from "./progress.js";
 import { createHash, randomUUID } from "node:crypto";
 import {
 	access,
@@ -36,11 +37,16 @@ import {
 	type NiagaraPreviewSettings
 } from "./schema.js";
 
+import { submitNiagaraSessionRequest } from "./session.js";
+
 const MAXIMUM_TOTAL_PIXELS = 268_435_456;
 const MAXIMUM_RECEIPT_BYTES = 8 * 1024 * 1024;
 const COMMANDLET_TIMEOUT = Duration.minutes(30);
 
 export interface RunNiagaraPreviewOptions {
+	readonly onProgress?: (progress: NiagaraPreviewProgress) => Effect.Effect<void>;
+	/** Private session directory supplied by a process-owning trusted host. */
+	readonly sessionDirectory?: string;
 	readonly explicitEngineRoot?: string;
 	readonly outputRoot?: string;
 	readonly pluginDescriptor?: string;
@@ -95,8 +101,31 @@ function safeIo<A>(
 	return operation.pipe(Effect.mapError(() => error));
 }
 
+function cameraOverridesMatch(
+	left: NiagaraPreviewSettings["cameraOverride"],
+	right: NiagaraPreviewSettings["cameraOverride"]
+): boolean {
+	if (!left || !right) return left === right;
+	return (
+		Math.fround(left.fieldOfViewDegrees) === Math.fround(right.fieldOfViewDegrees) &&
+		left.location.x === right.location.x &&
+		left.location.y === right.location.y &&
+		left.location.z === right.location.z &&
+		left.rotation.pitch === right.rotation.pitch &&
+		left.rotation.yaw === right.rotation.yaw &&
+		left.rotation.roll === right.rotation.roll
+	);
+}
+
 function settingsMatch(left: NiagaraPreviewSettings, right: NiagaraPreviewSettings): boolean {
 	return (
+		left.background === right.background &&
+		cameraOverridesMatch(left.cameraOverride, right.cameraOverride) &&
+		left.renderMode === right.renderMode &&
+		left.cameraMode === right.cameraMode &&
+		left.sceneProfile === right.sceneProfile &&
+		left.exposureCompensation === right.exposureCompensation &&
+		left.cameraPadding === right.cameraPadding &&
 		left.captureMode === right.captureMode &&
 		left.durationSeconds === right.durationSeconds &&
 		left.frameCount === right.frameCount &&
@@ -114,6 +143,22 @@ function requestedSettingsMatchEffective(
 	const producerFloatMatches = (requestedValue: number, effectiveValue: number) =>
 		Math.fround(requestedValue) === Math.fround(effectiveValue);
 	return (
+		(requested.background === undefined || requested.background === effective.background) &&
+		(requested.cameraOverride === undefined ||
+			cameraOverridesMatch(requested.cameraOverride, effective.cameraOverride)) &&
+		(requested.renderMode === undefined || requested.renderMode === effective.renderMode) &&
+		(requested.cameraMode === undefined || requested.cameraMode === effective.cameraMode) &&
+		(requested.sceneProfile === undefined ||
+			requested.sceneProfile === effective.sceneProfile) &&
+		(requested.exposureCompensation === undefined ||
+			(effective.exposureCompensation !== undefined &&
+				producerFloatMatches(
+					requested.exposureCompensation,
+					effective.exposureCompensation
+				))) &&
+		(requested.cameraPadding === undefined ||
+			(effective.cameraPadding !== undefined &&
+				producerFloatMatches(requested.cameraPadding, effective.cameraPadding))) &&
 		(requested.captureMode === undefined || requested.captureMode === effective.captureMode) &&
 		(requested.durationSeconds === undefined ||
 			producerFloatMatches(requested.durationSeconds, effective.durationSeconds)) &&
@@ -239,9 +284,16 @@ function expectedFramePath(index: number): string {
 }
 
 function diagnosticsFor(
-	frames: NiagaraPreviewProducerReceipt["frames"]
+	frames: NiagaraPreviewProducerReceipt["frames"],
+	missingMaterialCount = 0
 ): readonly NiagaraPreviewDiagnostic[] {
 	const diagnostics: NiagaraPreviewDiagnostic[] = [];
+	if (missingMaterialCount > 0) {
+		diagnostics.push({
+			code: "missing_material",
+			message: `${missingMaterialCount} renderer material slots were unbound at initialization. Inspect renderer assignments and user parameters.`
+		});
+	}
 	if (frames.every((frame) => frame.nonTransparentPixelFraction < 0.0001)) {
 		diagnostics.push({
 			code: "nearly_empty",
@@ -281,7 +333,8 @@ function validateRenderBudget(
 	return Effect.void;
 }
 
-function validateReceipt(
+/** @internal Receipt conformance checks shared with focused producer tests. */
+export function validateReceipt(
 	receipt: NiagaraPreviewProducerReceipt,
 	request: NiagaraPreviewProducerRequest
 ): Effect.Effect<void, NiagaraPreviewError> {
@@ -302,7 +355,17 @@ function validateReceipt(
 		);
 	}
 	const effective = receipt.effectiveSettings;
-	if (!requestedSettingsMatchEffective(request.settings, effective)) {
+	const expectedAlpha =
+		effective.renderMode === "scene"
+			? "opaque_scene_v1"
+			: "scene_opacity_or_emissive_coverage_v1";
+	if (
+		!requestedSettingsMatchEffective(request.settings, effective) ||
+		(request.settings.cameraOverride !== undefined &&
+			(receipt.camera.projection !== "perspective" ||
+				!cameraOverridesMatch(request.settings.cameraOverride, receipt.camera))) ||
+		receipt.alphaPolicy !== expectedAlpha
+	) {
 		return Effect.fail(
 			previewError(
 				"receipt_invalid",
@@ -529,6 +592,12 @@ function validateArtifacts(options: {
 						);
 					}
 					return {
+						...(frame.activityScore === undefined
+							? undefined
+							: { activityScore: frame.activityScore }),
+						...(frame.edgePixelFraction === undefined
+							? undefined
+							: { edgePixelFraction: frame.edgePixelFraction }),
 						bytes: details.size,
 						height: dimensions.height,
 						index: frame.index,
@@ -567,9 +636,12 @@ export function publishRun(
 			colorSpace: options.receipt.colorSpace,
 			contract: {
 				name: "ue-shed-niagara-preview-run",
-				version: { major: 1, minor: 0 }
+				version: { major: 1, minor: 2 }
 			},
-			diagnostics: diagnosticsFor(options.receipt.frames),
+			diagnostics: diagnosticsFor(
+				options.receipt.frames,
+				options.receipt.missingMaterialCount
+			),
 			effectiveSettings: options.receipt.effectiveSettings,
 			generatedAtUtc: options.generatedAtUtc,
 			producer: {
@@ -759,7 +831,7 @@ export const NiagaraPreviewLive = Layer.effect(
 			const request = yield* decodeNiagaraPreviewProducerRequest({
 				contract: {
 					name: "ue-shed-niagara-preview-request",
-					version: { major: 1, minor: 0 }
+					version: { major: 1, minor: 2 }
 				},
 				runId,
 				settings: options.settings ?? {},
@@ -864,6 +936,35 @@ export const NiagaraPreviewLive = Layer.effect(
 					request.runId
 				)
 			);
+			if (options.onProgress) {
+				const publish = options.onProgress;
+				let last = "";
+				yield* readNiagaraPreviewProgress(
+					join(
+						projectRoot,
+						"Saved",
+						"UEShed",
+						"NiagaraPreviewStaging",
+						request.runId,
+						"progress.json"
+					),
+					request.runId
+				).pipe(
+					Effect.flatMap((progress) => {
+						if (!progress) return Effect.void;
+						const key = JSON.stringify(progress);
+						if (key === last) return Effect.void;
+						last = key;
+						return publish(progress);
+					}),
+					Effect.catch((error) =>
+						Effect.logWarning("Niagara progress unavailable", error)
+					),
+					Effect.andThen(Effect.sleep("250 millis")),
+					Effect.forever,
+					Effect.forkScoped
+				);
+			}
 			const args = [
 				projectDescriptor,
 				...(pluginDescriptor === undefined ? [] : [`-PLUGIN=${pluginDescriptor}`]),
@@ -876,67 +977,90 @@ export const NiagaraPreviewLive = Layer.effect(
 				"-nop4",
 				"-nosplash"
 			];
-			const process = yield* Effect.acquireRelease(
-				processes
-					.launch({
-						args,
-						cwd: projectRoot,
-						executable,
-						terminationTimeout: Duration.seconds(15)
-					})
-					.pipe(
-						Effect.mapError((cause) =>
-							previewError(
-								"process_failed",
-								"capture",
-								cause.message,
-								cause.recovery,
-								cause.retrySafe,
-								request.runId
-							)
-						)
+			if (options.sessionDirectory !== undefined) {
+				const exitCode = yield* safeIo(
+					Effect.promise((signal) =>
+						submitNiagaraSessionRequest({
+							directory: options.sessionDirectory!,
+							requestPath,
+							runId,
+							signal
+						})
 					),
-				(process) => process.terminate("released").pipe(Effect.ignore)
-			);
-			const exit = yield* process.awaitExit.pipe(
-				Effect.mapError((cause) =>
 					previewError(
 						"process_failed",
 						"capture",
-						cause.message,
-						cause.recovery,
-						cause.retrySafe,
-						request.runId
+						"The shared Niagara session failed or was cancelled.",
+						"Restart the host-owned session and retry the effect.",
+						true,
+						runId
 					)
-				),
-				Effect.timeoutOrElse({
-					duration: COMMANDLET_TIMEOUT,
-					orElse: () =>
-						Effect.fail(
-							previewError(
-								"process_timeout",
-								"capture",
-								"The Niagara preview commandlet exceeded 30 minutes.",
-								"Inspect shader compilation and reduce the render budget before retrying.",
-								true,
-								request.runId
-							)
-						)
-				})
-			);
-			if (exit.kind !== "exited") {
-				return yield* previewError(
-					"process_failed",
-					"capture",
-					"The Niagara preview commandlet was terminated before it completed.",
-					"Inspect the Unreal log and retry when the host can keep the commandlet alive.",
-					true,
-					request.runId
 				);
+				if (exitCode !== 0) return yield* commandletExitError(exitCode, runId);
+			} else {
+				const process = yield* Effect.acquireRelease(
+					processes
+						.launch({
+							args,
+							cwd: projectRoot,
+							executable,
+							terminationTimeout: Duration.seconds(15)
+						})
+						.pipe(
+							Effect.mapError((cause) =>
+								previewError(
+									"process_failed",
+									"capture",
+									cause.message,
+									cause.recovery,
+									cause.retrySafe,
+									request.runId
+								)
+							)
+						),
+					(process) => process.terminate("released").pipe(Effect.ignore)
+				);
+				const exit = yield* process.awaitExit.pipe(
+					Effect.mapError((cause) =>
+						previewError(
+							"process_failed",
+							"capture",
+							cause.message,
+							cause.recovery,
+							cause.retrySafe,
+							request.runId
+						)
+					),
+					Effect.timeoutOrElse({
+						duration: COMMANDLET_TIMEOUT,
+						orElse: () =>
+							Effect.fail(
+								previewError(
+									"process_timeout",
+									"capture",
+									"The Niagara preview commandlet exceeded 30 minutes.",
+									"Inspect shader compilation and reduce the render budget before retrying.",
+									true,
+									request.runId
+								)
+							)
+					})
+				);
+				if (exit.kind !== "exited") {
+					return yield* previewError(
+						"process_failed",
+						"capture",
+						"The Niagara preview commandlet was terminated before it completed.",
+						"Inspect the Unreal log and retry when the host can keep the commandlet alive.",
+						true,
+						request.runId
+					);
+				}
+				if (exit.exitCode !== 0) {
+					return yield* commandletExitError(exit.exitCode, request.runId);
+				}
 			}
-			if (exit.exitCode !== 0) {
-				return yield* commandletExitError(exit.exitCode, request.runId);
-			}
+
 			const stagingRoot = join(
 				projectRoot,
 				"Saved",

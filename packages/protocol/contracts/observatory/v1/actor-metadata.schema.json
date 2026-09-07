@@ -1,0 +1,33 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"type": "object",
+	"additionalProperties": false,
+	"required": [],
+	"properties": {
+		"actorGuid": {
+			"type": "string",
+			"pattern": "^[0-9A-Fa-f]{32}$"
+		},
+		"classPath": {
+			"type": "string",
+			"minLength": 1
+		},
+		"folderPath": {
+			"type": "string"
+		},
+		"levelPackage": {
+			"type": "string",
+			"minLength": 1
+		},
+		"tags": {
+			"type": "array",
+			"items": {
+				"type": "string"
+			},
+			"maxItems": 256
+		},
+		"tagsTruncated": {
+			"type": "boolean"
+		}
+	}
+}

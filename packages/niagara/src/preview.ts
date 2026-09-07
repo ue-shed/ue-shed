@@ -979,14 +979,11 @@ export const NiagaraPreviewLive = Layer.effect(
 			];
 			if (options.sessionDirectory !== undefined) {
 				const exitCode = yield* safeIo(
-					Effect.promise((signal) =>
-						submitNiagaraSessionRequest({
-							directory: options.sessionDirectory!,
-							requestPath,
-							runId,
-							signal
-						})
-					),
+					submitNiagaraSessionRequest({
+						directory: options.sessionDirectory,
+						requestPath,
+						runId
+					}),
 					previewError(
 						"process_failed",
 						"capture",

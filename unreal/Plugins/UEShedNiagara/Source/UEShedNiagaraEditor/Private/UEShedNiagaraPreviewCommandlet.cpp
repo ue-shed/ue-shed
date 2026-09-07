@@ -409,13 +409,6 @@ int32 UUEShedNiagaraPreviewCommandlet::CaptureRequest(const FString& RequestPath
 		return ExitSystemUnavailable;
 	}
 	UNiagaraBakerSettings* BakerSettings = System->GetBakerSettings();
-	if (!BakerSettings || BakerSettings->CameraSettings.IsEmpty())
-	{
-		UE_LOG(LogUEShedNiagaraPreview, Error,
-			   TEXT("Niagara System '%s' has no valid saved Baker camera."),
-			   *Options.SystemObjectPath);
-		return ExitBakerCameraMissing;
-	}
 	System->WaitForCompilationComplete(true, false);
 	if (HasCompilationErrors(*System))
 	{
@@ -424,11 +417,20 @@ int32 UUEShedNiagaraPreviewCommandlet::CaptureRequest(const FString& RequestPath
 			   *Options.SystemObjectPath);
 		return ExitCompilationFailed;
 	}
-	ApplySavedBakerDefaults(*BakerSettings, Options);
+	if (BakerSettings) ApplySavedBakerDefaults(*BakerSettings, Options);
 	if (!ApplyRequestSettings(Options.RequestedSettings, Options, Error))
 	{
 		UE_LOG(LogUEShedNiagaraPreview, Error, TEXT("Invalid settings: %s"), *Error);
 		return ExitInvalidRequest;
+	}
+
+	if (!Options.CameraOverride && Options.CameraMode == TEXT("saved") &&
+		(!BakerSettings || BakerSettings->CameraSettings.IsEmpty()))
+	{
+		UE_LOG(LogUEShedNiagaraPreview, Error,
+			   TEXT("Niagara System '%s' has no valid saved Baker camera."),
+			   *Options.SystemObjectPath);
+		return ExitBakerCameraMissing;
 	}
 
 	Options.OutputDirectory = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("UEShed"),

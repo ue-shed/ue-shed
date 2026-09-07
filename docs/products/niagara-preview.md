@@ -20,7 +20,9 @@ larger runs retain the same controls and load verified frames on demand.
 
 Without a profile, capture uses the system's saved Baker camera and timing, with bounded explicit
 overrides. Reusable profiles select an opaque, lit preview scene and fit one stable camera across
-the requested animation. Capture advances desired age inside an isolated preview scene and records
+the requested animation. Auto-fit and explicit camera overrides work without a saved Baker camera;
+saved-camera mode still reports `baker_camera_missing` when none is available.
+Capture advances desired age inside an isolated preview scene and records
 the effective camera and timing. Deterministic timing does not imply
 pixel-identical output across GPUs, drivers, render settings, or engine builds.
 
@@ -79,7 +81,9 @@ An optional local encoder consumes a completed manifest and an explicitly suppli
 node --import tsx scripts/encode-niagara-preview.ts --manifest /captures/run/manifest.json --ffmpeg /tools/ffmpeg --output /previews/new-preview
 ```
 
-It verifies every input frame hash, encodes H.264/yuv420p, checks the encoded stream with ffprobe,
+It requires even capture dimensions and a complete ordered sequence, verifies every input frame
+hash while copying its bytes into a private snapshot, encodes H.264/yuv420p from that snapshot,
+copies the poster from the same snapshot, and checks the encoded stream with ffprobe,
 copies the selected poster, and publishes a new directory atomically. `presentation.json` records
 the selection, source manifest hash, encoder identity and arguments, and output hashes. The output
 directory must not already exist. FFmpeg is an external prerequisite, not downloaded by capture.

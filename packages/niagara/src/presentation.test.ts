@@ -44,6 +44,10 @@ function sequence(scores: number[], profile: "projectile" | "aura" = "projectile
 }
 
 describe("preview presentation", () => {
+	it("selects a visible poster for a single-frame flash", () => {
+		const selected = selectNiagaraPresentation(sequence([0, 0, 0, 0.3, 0, 0, 0]));
+		expect(selected.posterFrame).toBe(3);
+	});
 	it("rejects ignored backgrounds and a camera that differs from the requested reference", () => {
 		const read = (name: string) =>
 			JSON.parse(

@@ -104,7 +104,11 @@ export function selectNiagaraPresentation(manifest: NiagaraPreviewRunManifest) {
 		const window = scores.slice(Math.max(0, index - 2), index + 3);
 		return window.reduce((sum, score) => sum + score, 0) / window.length;
 	});
-	const posterFrame = smooth.indexOf(Math.max(...smooth));
+	// A smoothing window may peak before a short flash; the poster itself must be active.
+	const posterFrame = active.reduce(
+		(best, index) => (smooth[index]! > smooth[best]! ? index : best),
+		active[0] ?? 0
+	);
 	return {
 		policy: "activity_window_v1" as const,
 		startFrame,

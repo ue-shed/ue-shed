@@ -56,6 +56,24 @@ const actorB = {
 };
 
 describe("world scout canvas store", () => {
+	it("retains authored GUIDs across transforms and clears stale metadata on refresh", () => {
+		const store = new WorldScoutRetainedStore();
+		const actorGuid = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+		store.installSnapshot(snapshot([{ ...actorA, actorGuid }]));
+		store.applyTransforms(
+			[
+				{
+					streamIndex: 0,
+					transform: { location: { x: 5, y: 6, z: 7 }, rotation: actorA.rotation }
+				}
+			],
+			2
+		);
+		expect(store.actorAt(0)?.actorGuid).toBe(actorGuid);
+		expect(store.materialize(0)?.actorGuid).toBe(actorGuid);
+		store.installSnapshot(snapshot([actorA]));
+		expect(store.materialize(0)?.actorGuid).toBeUndefined();
+	});
 	it("installs a snapshot and projects visible actors without per-sample allocations escaping", () => {
 		const store = new WorldScoutRetainedStore();
 		store.installSnapshot(snapshot([actorA, actorB]));
@@ -379,6 +397,7 @@ describe("world scout canvas store", () => {
 							extent: { x: 10, y: 10, z: 10 }
 						},
 						className: "Mover",
+						actorGuid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 						displayName: "Seeded",
 						id: ActorId.make("seeded"),
 						path: "/Game/Fixture.Seeded",
@@ -397,6 +416,7 @@ describe("world scout canvas store", () => {
 			transforms: new Map()
 		});
 		expect(store.locationX[0]).toBe(250);
+		expect(store.materialize(0)?.actorGuid).toBe("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 		expect(store.locationY[0]).toBe(-100);
 	});
 });

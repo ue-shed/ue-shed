@@ -50,6 +50,7 @@ export function formatCoordinate(value: number): string {
 }
 
 export interface WorldScoutActorRecord {
+	readonly actorGuid?: string;
 	readonly bounds: WorldActorCatalogEntry["bounds"];
 	readonly className: string;
 	readonly displayName: string;
@@ -82,6 +83,7 @@ function growArray<T>(source: Array<T | undefined>, capacity: number): Array<T |
  * across frames.
  */
 export class WorldScoutRetainedStore {
+	actorGuids: Array<string | undefined> = [];
 	classNames: Array<string | undefined> = [];
 	displayNames: Array<string | undefined> = [];
 	ids: Array<ActorId | undefined> = [];
@@ -126,6 +128,7 @@ export class WorldScoutRetainedStore {
 		if (next <= this.capacity) return;
 		const grow = Math.max(next, this.capacity === 0 ? 32 : this.capacity * 2);
 		this.classNames = growArray(this.classNames, grow);
+		this.actorGuids = growArray(this.actorGuids, grow);
 		this.displayNames = growArray(this.displayNames, grow);
 		this.ids = growArray(this.ids, grow);
 		this.instanceKeys = growArray(this.instanceKeys, grow);
@@ -173,6 +176,7 @@ export class WorldScoutRetainedStore {
 			const actor = snapshot.actors[index];
 			if (actor === undefined) continue;
 			this.writeMeta(index, {
+				...(actor.actorGuid === undefined ? undefined : { actorGuid: actor.actorGuid }),
 				bounds: actor.bounds,
 				className: actor.className,
 				displayName: actor.displayName,
@@ -264,6 +268,9 @@ export class WorldScoutRetainedStore {
 				}
 			},
 			className,
+			...(this.actorGuids[streamIndex] === undefined
+				? undefined
+				: { actorGuid: this.actorGuids[streamIndex] }),
 			displayName,
 			...(this.ids[streamIndex] === undefined ? undefined : { id: this.ids[streamIndex] }),
 			instanceKey,
@@ -281,6 +288,7 @@ export class WorldScoutRetainedStore {
 		return materializeObservedActor(
 			{
 				bounds: meta.bounds,
+				...(meta.actorGuid === undefined ? undefined : { actorGuid: meta.actorGuid }),
 				className: meta.className,
 				displayName: meta.displayName,
 				id: meta.id,
@@ -322,6 +330,7 @@ export class WorldScoutRetainedStore {
 	private writeMeta(
 		streamIndex: number,
 		entry: {
+			readonly actorGuid?: string;
 			readonly bounds: WorldActorCatalogEntry["bounds"];
 			readonly className: string;
 			readonly displayName: string;
@@ -332,6 +341,7 @@ export class WorldScoutRetainedStore {
 		}
 	): void {
 		this.ids[streamIndex] = entry.id;
+		this.actorGuids[streamIndex] = entry.actorGuid;
 		this.packageNames[streamIndex] = entry.packageName;
 		this.paths[streamIndex] = entry.path;
 		this.displayNames[streamIndex] = entry.displayName;

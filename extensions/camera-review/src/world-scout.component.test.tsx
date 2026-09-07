@@ -25,6 +25,7 @@ import type { MapReviewClientApi } from "./map-review-client.js";
 import { shouldRequestFollowUpdate, WorldScout } from "./world-scout.js";
 
 const observed: ObservedActor = {
+	actorGuid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 	bounds: {
 		center: { x: 120, y: -80, z: 30 },
 		extent: { x: 25, y: 25, z: 30 }
@@ -178,6 +179,8 @@ describe("WorldScout", () => {
 			{ name: /Orbit 07/ }
 		);
 		await user.click(outlinerActor);
+		await user.click(screen.getByRole("button", { name: "Copy GUID" }));
+		expect(await navigator.clipboard.readText()).toBe(observed.actorGuid);
 		expect(outlinerActor.getAttribute("aria-pressed")).toBe("true");
 		await user.click(screen.getByRole("button", { name: "GO TO ACTOR ↗" }));
 		expect(focused).toBe(observed.id);

@@ -66,11 +66,11 @@ class FNeutralPreviewScene : public FAdvancedPreviewScene
 		DirectionalLight->SetVisibility(true);
 		FloorMeshComponent->SetStaticMesh(LoadObject<UStaticMesh>(
 			nullptr, TEXT("/Engine/EditorMeshes/AssetViewer/Floor_Mesh.Floor_Mesh")));
-		FloorMeshComponent->SetMaterial(0,
-			LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/EngineMaterials/M_Grid.M_Grid")));
+		FloorMeshComponent->SetMaterial(
+			0, LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/EngineMaterials/M_Grid.M_Grid")));
+		SetFloorOffset(0);
 		FloorMeshComponent->SetRelativeScale3D(FVector(4, 4, 1));
 		FloorMeshComponent->SetRelativeRotation(FRotator::ZeroRotator);
-		SetFloorOffset(0);
 		FloorMeshComponent->SetVisibility(bShowFloor, true);
 		if (Background != TEXT("default"))
 			FloorMeshComponent->SetStaticMesh(nullptr);
@@ -127,7 +127,8 @@ bool FUEShedNiagaraCapture::Initialize(UNiagaraSystem* InSystem,
 	System = InSystem;
 	Options = InOptions;
 	BakerSettings = System->GetBakerSettings();
-	if (!BakerSettings || BakerSettings->CameraSettings.IsEmpty())
+	if (!Options.CameraOverride && Options.CameraMode == TEXT("saved") &&
+		(!BakerSettings || BakerSettings->CameraSettings.IsEmpty()))
 	{
 		OutError = TEXT("The Niagara System has no valid saved Baker camera.");
 		return false;
@@ -388,13 +389,15 @@ bool FUEShedNiagaraCapture::WriteProducerReceipt(const FString& FilePath,
 {
 	using namespace UEShedNiagaraCapturePrivate;
 
-	if (!System || !BakerSettings || !Options.RequestedSettings.IsValid())
+	if (!System || !SceneCaptureComponent || !Options.RequestedSettings.IsValid())
 	{
 		OutError = TEXT("Cannot write a receipt for an uninitialized capture session.");
 		return false;
 	}
 
-	const FNiagaraBakerCameraSettings& Camera = BakerSettings->GetCurrentCamera();
+	const FNiagaraBakerCameraSettings* Camera =
+		!Options.CameraOverride && Options.CameraMode == TEXT("saved")
+			? &BakerSettings->GetCurrentCamera() : nullptr;
 	const float FrameIntervalSeconds =
 		Options.DurationSeconds / static_cast<float>(Options.FrameCount);
 	const float PlaybackFramesPerSecond =
@@ -409,7 +412,7 @@ bool FUEShedNiagaraCapture::WriteProducerReceipt(const FString& FilePath,
 	CameraJson->SetNumberField(TEXT("aspectRatio"),
 							   (Options.CameraOverride || Options.CameraMode == TEXT("auto_fit"))
 								   ? static_cast<float>(Options.Width) / Options.Height
-								   : Camera.AspectRatio);
+								   : Camera->AspectRatio);
 	CameraJson->SetNumberField(TEXT("fieldOfViewDegrees"), SceneCaptureComponent->FOVAngle);
 	CameraJson->SetObjectField(TEXT("location"), VectorToJson(ResolvedCameraLocation));
 	CameraJson->SetNumberField(TEXT("orthoWidth"), SceneCaptureComponent->OrthoWidth);
@@ -419,8 +422,7 @@ bool FUEShedNiagaraCapture::WriteProducerReceipt(const FString& FilePath,
 													   : TEXT("perspective"));
 	CameraJson->SetObjectField(TEXT("rotation"), RotatorToJson(ResolvedCameraRotation));
 	CameraJson->SetBoolField(TEXT("usesCustomAspectRatio"),
-							 !Options.CameraOverride && Options.CameraMode == TEXT("saved") &&
-								 Camera.bUseAspectRatio);
+							 Camera && Camera->bUseAspectRatio);
 	Root->SetObjectField(TEXT("camera"), CameraJson);
 
 	Root->SetStringField(TEXT("colorSpace"), TEXT("srgb"));
@@ -573,6 +575,16 @@ void FUEShedNiagaraCapture::ConfigureCaptureCamera()
 														   ResolvedCameraRotation);
 		return;
 	}
+	if (Options.CameraMode == TEXT("auto_fit"))
+	{
+		// Independent initial projection for the bounds-sampling pass.
+		SceneCaptureComponent->ProjectionType = ECameraProjectionMode::Perspective;
+		SceneCaptureComponent->FOVAngle = 45;
+		SceneCaptureComponent->bUseCustomProjectionMatrix = false;
+		SceneCaptureComponent->SetWorldLocationAndRotation(ResolvedCameraLocation,
+			ResolvedCameraRotation);
+		return;
+	}
 	check(BakerSettings);
 	check(SceneCaptureComponent);
 
@@ -624,7 +636,7 @@ bool FUEShedNiagaraCapture::FitCaptureCamera(FString& OutError)
 		const float Radius = FMath::Max(10.0f, static_cast<float>(Bounds.GetExtent().Size()));
 		const float Aspect = static_cast<float>(Options.Width) / Options.Height;
 		const float HalfFov =
-			FMath::Atan(FMath::Tan(FMath::DegreesToRadians(22.5f)) * FMath::Min(1.0f, Aspect));
+			FMath::Atan(FMath::Tan(FMath::DegreesToRadians(22.5f)) / FMath::Max(1.0f, Aspect));
 		const float Distance = Radius * Options.CameraPadding / FMath::Sin(HalfFov);
 		ResolvedCameraRotation =
 			FRotator(Options.SceneProfile == TEXT("ground_impact") ? -20.0f : -10.0f, 90, 0);
@@ -688,6 +700,12 @@ bool FUEShedNiagaraCapture::FitCaptureCamera(FString& OutError)
 		}
 		if (Max.X >= Min.X && Max.Y >= Min.Y)
 		{
+			// Edge coverage is incomplete evidence: never tighten an already clipped frame.
+			if (Min.X == 0 || Min.Y == 0 || Max.X == Options.Width - 1 || Max.Y == Options.Height - 1)
+			{
+				OutError = TEXT("Auto-fit coverage reaches the image edge; increase camera padding or use an explicit camera.");
+				return false;
+			}
 			const float Scale = FMath::Max(static_cast<float>(Max.X - Min.X + 1) / Options.Width,
 										   static_cast<float>(Max.Y - Min.Y + 1) / Options.Height);
 			const float HalfWidth = Distance * FMath::Tan(FMath::DegreesToRadians(22.5f));

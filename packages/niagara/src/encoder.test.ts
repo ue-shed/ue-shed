@@ -7,6 +7,37 @@ import { fileURLToPath } from "node:url";
 import { test } from "vitest";
 import { Schema } from "effect";
 import { NiagaraPreviewRunManifest } from "./schema.js";
+import { createHash } from "node:crypto";
+import { snapshotNiagaraFrames } from "./verified-frames.js";
+
+test("verified snapshot retains original frame bytes after source replacement", async () => {
+	const root = await mkdtemp(join(tmpdir(), "niagara-snapshot-test-"));
+	try {
+		const source = join(root, "source");
+		const staging = join(root, "staging");
+		await mkdir(join(source, "frames"), { recursive: true });
+		await mkdir(staging);
+		const original = Buffer.from("verified original frame");
+		const relativePath = "frames/frame_0000.png";
+		await writeFile(join(source, relativePath), original);
+		const artifacts = [
+			{
+				index: 0,
+				timeSeconds: 0,
+				width: 64,
+				height: 64,
+				relativePath,
+				bytes: original.length,
+				sha256: `sha256:${createHash("sha256").update(original).digest("hex")}`
+			}
+		];
+		await snapshotNiagaraFrames(source, staging, artifacts);
+		await writeFile(join(source, relativePath), "replaced after verification");
+		deepStrictEqual(await readFile(join(staging, relativePath)), original);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
 
 test("encoder rejects malformed sequences and corrupted frames before launching FFmpeg", async () => {
 	const root = await mkdtemp(join(tmpdir(), "niagara-encoder-test-"));

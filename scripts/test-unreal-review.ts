@@ -30,10 +30,12 @@ const environment = {
 await loadFixtureEditorMap(endpoint, "/Game/Fixture/Cameras/L_CameraLoad");
 const testFiles = [
 	"packages/cameras/src/review-unreal.integration.test.ts",
+	"packages/cameras/src/map-capture-tools-unreal.integration.test.ts",
 	"packages/cameras/src/map-tile-unreal.integration.test.ts"
 ];
 reportUnrealTestGates(environment, testFiles);
-const result = spawnSync(process.execPath, [vitest, "run", ...testFiles], {
+// These suites share one editor, viewport, and selection state.
+const result = spawnSync(process.execPath, [vitest, "run", "--no-file-parallelism", ...testFiles], {
 	cwd: repositoryRoot,
 	env: environment,
 	stdio: "inherit",

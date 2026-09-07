@@ -264,3 +264,19 @@ export function connectUnrealAuthoring(
 		})
 	);
 }
+
+/** Read producer identity and capabilities without requiring a domain plugin. */
+export const inspectUnrealProducer = Effect.fn("UnrealConnection.inspectProducer")(function* (
+	endpoint: string
+) {
+	const client = yield* RemoteControlClient;
+	return yield* client
+		.request({
+			endpoint,
+			objectPath: coreObjectPath,
+			functionName: "GetCapabilityManifest",
+			operation: "unreal.producer.inspect",
+			parameters: {}
+		})
+		.pipe(Effect.flatMap(decodeCompanionCapabilityManifest));
+});

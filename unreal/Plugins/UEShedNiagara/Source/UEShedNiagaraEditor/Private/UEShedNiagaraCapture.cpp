@@ -134,6 +134,7 @@ bool FUEShedNiagaraCapture::Initialize(UNiagaraSystem* InSystem,
 		return false;
 	}
 
+	if (Options.OnProgress) Options.OnProgress(TEXT("compiling"), 0);
 	System->WaitForCompilationComplete(true, false);
 
 	PreviewComponent = NewObject<UNiagaraComponent>(GetTransientPackage(), NAME_None, RF_Transient);
@@ -615,6 +616,7 @@ void FUEShedNiagaraCapture::ConfigureCaptureCamera()
 
 bool FUEShedNiagaraCapture::FitCaptureCamera(FString& OutError)
 {
+ if (Options.OnProgress) Options.OnProgress(TEXT("camera_fitting"), 0);
 	// Sample the whole requested interval, then lock the camera for the final pass.
 	// GPU emitters can supply fixed/conservative bounds; saved cameras remain an explicit override.
 	FBox Bounds(ForceInit);
@@ -634,7 +636,7 @@ bool FUEShedNiagaraCapture::FitCaptureCamera(FString& OutError)
 		const float Radius = FMath::Max(10.0f, static_cast<float>(Bounds.GetExtent().Size()));
 		const float Aspect = static_cast<float>(Options.Width) / Options.Height;
 		const float HalfFov =
-			FMath::Atan(FMath::Tan(FMath::DegreesToRadians(22.5f)) * FMath::Min(1.0f, Aspect));
+			FMath::Atan(FMath::Tan(FMath::DegreesToRadians(22.5f)) / FMath::Max(1.0f, Aspect));
 		const float Distance = Radius * Options.CameraPadding / FMath::Sin(HalfFov);
 		ResolvedCameraRotation =
 			FRotator(Options.SceneProfile == TEXT("ground_impact") ? -20.0f : -10.0f, 90, 0);
@@ -698,6 +700,12 @@ bool FUEShedNiagaraCapture::FitCaptureCamera(FString& OutError)
 		}
 		if (Max.X >= Min.X && Max.Y >= Min.Y)
 		{
+			// Edge coverage is incomplete evidence: never tighten an already clipped frame.
+			if (Min.X == 0 || Min.Y == 0 || Max.X == Options.Width - 1 || Max.Y == Options.Height - 1)
+			{
+				OutError = TEXT("Auto-fit coverage reaches the image edge; increase camera padding or use an explicit camera.");
+				return false;
+			}
 			const float Scale = FMath::Max(static_cast<float>(Max.X - Min.X + 1) / Options.Width,
 										   static_cast<float>(Max.Y - Min.Y + 1) / Options.Height);
 			const float HalfWidth = Distance * FMath::Tan(FMath::DegreesToRadians(22.5f));

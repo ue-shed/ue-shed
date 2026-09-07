@@ -1,4 +1,5 @@
 #include "UEShedObservatoryStream.h"
+#include "UEShedActorMetadata.h"
 
 #include "Dom/JsonObject.h"
 #include "Editor.h"
@@ -368,6 +369,7 @@ TSharedRef<FJsonObject> FUEShedObservatoryStreamService::BuildCatalogSnapshotJso
 		Record->SetStringField(TEXT("path"), Entry.Path);
 		Record->SetStringField(TEXT("displayName"), Entry.DisplayName);
 		Record->SetStringField(TEXT("className"), Entry.ClassName);
+ AddUEShedActorMetadata(Record, Entry.Actor.Get());
 		Record->SetObjectField(TEXT("location"), VectorJson(Entry.Location));
 		Record->SetObjectField(TEXT("rotation"), RotationJson(Entry.Rotation));
 		const TSharedRef<FJsonObject> Bounds = MakeShared<FJsonObject>();

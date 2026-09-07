@@ -21,9 +21,13 @@ bool FUEShedNiagaraIndependentCameraTest::RunTest(const FString& Parameters)
 	System->GetBakerSettings()->CameraSettings.Empty();
 	FUEShedNiagaraPreviewOptions Options;
 	Options.RequestedSettings = MakeShared<FJsonObject>();
-	Options.Width = Options.Height = 64;
-	Options.FrameCount = 2;
+	Options.Width = 256;
+	Options.Height = 64;
+	Options.FrameCount = 8;
 	Options.DurationSeconds = 1;
+	Options.RenderMode = TEXT("scene");
+	Options.Background = TEXT("dark");
+	Options.bRenderComponentOnly = false;
 	FString Error;
 	{
 		FUEShedNiagaraCapture Capture;
@@ -50,6 +54,29 @@ bool FUEShedNiagaraIndependentCameraTest::RunTest(const FString& Parameters)
 		const FString Receipt = FPaths::Combine(FPaths::ProjectSavedDir(), FGuid::NewGuid().ToString() + TEXT(".json"));
 		TestTrue(TEXT("Receipt does not dereference missing Baker camera"), Capture.WriteProducerReceipt(Receipt, {}, Error));
 		IFileManager::Get().Delete(*Receipt);
+		if (!bOverride)
+		{
+			FUEShedNiagaraCapture Landscape;
+			if (!TestTrue(TEXT("Landscape fixture initializes"), Landscape.Initialize(Template, Options, Error)))
+			{
+				AddError(Error);
+				continue;
+			}
+			float PeakActivity = 0;
+			for (int32 Index = 0; Index < Options.FrameCount; ++Index)
+			{
+				FUEShedNiagaraPreviewFrame Frame;
+				const FString Image = Receipt + TEXT(".png");
+				if (TestTrue(TEXT("Landscape auto-fit captures animation"), Landscape.CaptureFrame(Index,
+					Index * Options.DurationSeconds / Options.FrameCount, Image, Frame, Error)))
+				{
+					PeakActivity = FMath::Max(PeakActivity, Frame.ActivityScore);
+					TestTrue(TEXT("Landscape activity is not clipped at the frame edge"), Frame.EdgePixelFraction < 0.01f);
+				}
+				IFileManager::Get().Delete(*Image);
+			}
+			TestTrue(TEXT("Landscape fixture has visible activity"), PeakActivity > 0);
+		}
 		TestTrue(TEXT("Source camera array remains empty"), System->GetBakerSettings()->CameraSettings.IsEmpty());
 	}
 	return true;

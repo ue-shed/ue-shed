@@ -44,6 +44,7 @@ it.effect("starts once, polls with a bounded cadence, and decodes terminal outpu
 	Effect.gen(function* () {
 		const firstPoll = yield* Deferred.make<void>();
 		const calls: RemoteControlRequest[] = [];
+		const progress: string[] = [];
 		let polls = 0;
 		const client: RemoteControlClientApi = {
 			request: (call) =>
@@ -58,12 +59,21 @@ it.effect("starts once, polls with a bounded cadence, and decodes terminal outpu
 					return json({
 						state: "running",
 						operationId: request.operationId,
-						completedTiles: 0
+						completedTiles: 0,
+						phase: "tile_warmup",
+						elapsedMs: 100,
+						totalTiles: 1
 					});
 				})
 		};
 		const port = makeMapTileCaptureRemotePort(client, "http://editor");
-		const fiber = yield* port.capture(request).pipe(Effect.forkScoped);
+		const fiber = yield* port
+			.capture(request, (value) =>
+				Effect.sync(() => {
+					progress.push(value.phase);
+				})
+			)
+			.pipe(Effect.forkScoped);
 		yield* Deferred.await(firstPoll);
 		yield* TestClock.adjust("200 millis");
 		expect((yield* Fiber.join(fiber)).status).toBe("completed");
@@ -75,6 +85,7 @@ it.effect("starts once, polls with a bounded cadence, and decodes terminal outpu
 			"PollMapTileCapture",
 			"EndMapTileCapture"
 		]);
+		expect(progress).toEqual(["tile_warmup"]);
 		expect(calls[2]?.parameters).toEqual({
 			RunId: request.runId,
 			OperationId: request.operationId

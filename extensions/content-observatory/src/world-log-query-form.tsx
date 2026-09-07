@@ -77,6 +77,8 @@ export function WorldLogQueryForm(props: {
 	const targetItems = createMemo(() =>
 		props.targetActors.map((actor) => ({
 			classPath: actor.classPath,
+			actorGuid: actor.actorGuid,
+			location: actor.transform.status === "resolved" ? actor.transform.location : undefined,
 			key: actorKeyFromSavedActor(actor),
 			label: actorDisplayName(actor),
 			packageName: actor.packageName,
@@ -189,6 +191,7 @@ export function WorldLogQueryForm(props: {
 					</div>
 					<Show when={props.targetActors.length > 0 || props.targetLoading}>
 						<ActorExplorer
+							utilities
 							ariaLabel="Fast history targets"
 							classMode={props.fastTargetKind === "actor_class" ? "target" : "filter"}
 							classOptions={classTargets()}

@@ -7,6 +7,9 @@
 #include "Dom/JsonObject.h"
 #include "Editor.h"
 #include "Engine/World.h"
+#include "Engine/LevelStreaming.h"
+#include "Misc/App.h"
+#include "WorldPartition/WorldPartition.h"
 #include "Framework/Application/SlateApplication.h"
 #include "HAL/FileManager.h"
 #include "HAL/IConsoleManager.h"
@@ -305,6 +308,30 @@ struct FLitRun
 TUniquePtr<FLitRun> Run;
 FDelegateHandle TickHandle, WorldHandle, PIEHandle;
 
+TArray<TSharedPtr<FJsonValue>> Readiness(UWorld* World, const FString& ExpectedMap, const FString& Owner = FString())
+{
+ TArray<TSharedPtr<FJsonValue>> Issues;
+ auto Add = [&](const TCHAR* Code, const TCHAR* Message) { auto Issue = MakeShared<FJsonObject>(); Issue->SetStringField(TEXT("code"), Code); Issue->SetStringField(TEXT("message"), Message); Issues.Add(MakeShared<FJsonValueObject>(Issue)); };
+ if (!FApp::CanEverRender()) Add(TEXT("rendering_unavailable"), TEXT("Use a rendering-capable editor without NullRHI."));
+ if (!World) Add(TEXT("world_unavailable"), TEXT("Open the target map in the editor."));
+ else {
+  for (const auto* Level : World->GetStreamingLevels())
+   if (Level && Level->IsStreamingStatePending()) { Add(TEXT("level_streaming_pending"), TEXT("Wait for level streaming to finish.")); break; }
+  if (World->GetOutermost()->GetName() != ExpectedMap) Add(TEXT("map_mismatch"), TEXT("Open the requested map before capture."));
+  if (const auto* Partition = World->GetWorldPartition(); Partition && !Partition->IsStreamingCompleted(nullptr)) Add(TEXT("streaming_not_ready"), TEXT("Load the required region and wait for streaming to complete."));
+ }
+ if (Run && !Run->Restored && (Owner.IsEmpty() || Run->RunId != Owner || !Run->Done)) Add(TEXT("capture_busy"), TEXT("Wait for or end the active capture."));
+ if (!GEditor || GEditor->PlayWorld) Add(TEXT("editor_required"), TEXT("Stop PIE before capture."));
+ auto* Client = GCurrentLevelEditingViewportClient;
+ if (!FSlateApplication::IsInitialized() || !Client || !Client->Viewport) Add(TEXT("viewport_unavailable"), TEXT("Open a rendering Level Editor viewport."));
+ else if (!Run || Run->Restored || Run->RunId != Owner) {
+  if (Client->IsAnyActorLocked()) Add(TEXT("viewport_locked"), TEXT("Unlock the viewport from its actor or cinematic camera."));
+  if (Client->IsEngineShowFlagsOverrideEnabled()) Add(TEXT("viewport_override"), TEXT("Finish the active viewport show-flag override."));
+ }
+ if (GIsHighResScreenshot || FScreenshotRequest::IsScreenshotRequested()) Add(TEXT("screenshot_busy"), TEXT("Wait for the current screenshot to finish."));
+ return Issues;
+}
+
 FString Status()
 {
 	if (Run->Done) return Finished(Run->BatchResponse);
@@ -312,6 +339,10 @@ FString Status()
 	Value->SetStringField(TEXT("state"), TEXT("running"));
 	Value->SetStringField(TEXT("operationId"), Run->OperationId);
 	Value->SetNumberField(TEXT("completedTiles"), Run->Results.Num());
+ Value->SetNumberField(TEXT("totalTiles"), Run->Tiles.Num());
+ Value->SetNumberField(TEXT("elapsedMs"), (FPlatformTime::Seconds() - Run->BatchStarted) * 1000);
+ Value->SetStringField(TEXT("phase"), Run->Initializing ? TEXT("exposure_warmup") : Run->Pending ? TEXT("capturing") : TEXT("tile_warmup"));
+ if (!Run->Initializing && Run->Tiles.IsValidIndex(Run->TileIndex)) Value->SetObjectField(TEXT("currentTile"), Run->Tiles[Run->TileIndex].Key);
 	return Json(Value);
 }
 }
@@ -326,7 +357,8 @@ void BeginUEShedLitMapTileCapture(const TSharedPtr<FJsonObject>& Request, UWorld
 		ResultJson = Finished(Response(OperationId, CorrelationId, World->GetOutermost()->GetName(), World->GetOutermost()->IsDirty(), Failure(TEXT("invalid_request"), Message)));
 	};
 	if (Run && Run->Restored) Run.Reset();
-	if (Run && (Run->RunId != RunId || !Run->Done)) { Reject(TEXT("Another map capture batch owns the viewport.")); return; }
+	const auto Issues = Readiness(World, Request->GetStringField(TEXT("expectedMapPath")), RunId);
+ if (!Issues.IsEmpty()) { Reject(Issues[0]->AsObject()->GetStringField(TEXT("message"))); return; }
 	const auto Capture = Request->GetObjectField(TEXT("capture"));
 	const auto Render = Capture->GetObjectField(TEXT("render"));
 	if (Render->GetStringField(TEXT("lodPolicy")) != TEXT("natural") || Render->GetStringField(TEXT("profile")) != TEXT("full_fidelity"))
@@ -341,10 +373,6 @@ void BeginUEShedLitMapTileCapture(const TSharedPtr<FJsonObject>& Request, UWorld
 	if (!Run)
 	{
 		auto* Client = GCurrentLevelEditingViewportClient;
-		if (!FSlateApplication::IsInitialized() || GEditor->PlayWorld || !Client || !Client->Viewport
-			|| Client->IsAnyActorLocked() || Client->IsEngineShowFlagsOverrideEnabled()
-			|| GIsHighResScreenshot || FScreenshotRequest::IsScreenshotRequested())
-		{ Reject(TEXT("Lit capture requires an available unlocked editor viewport with no screenshot or show-flag override in progress.")); return; }
 		Run = MakeUnique<FLitRun>();
 		Run->RunId = RunId; Run->World = World; Run->MapPath = World->GetOutermost()->GetName(); Run->Policy = Policy;
 		Run->Client = Client; Run->DirtyBefore = World->GetOutermost()->IsDirty();
@@ -458,3 +486,16 @@ bool FUEShedLitMapValidationTest::RunTest(const FString& Parameters)
 	return true;
 }
 #endif
+
+void UUEShedCameraReviewLibrary::InspectMapCaptureReadiness(const FString& ExpectedMapPath, FString& ResultJson)
+{
+ UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+ auto Value = MakeShared<FJsonObject>();
+ const auto Issues = Readiness(World, ExpectedMapPath);
+ Value->SetNumberField(TEXT("schemaVersion"), 1);
+ Value->SetStringField(TEXT("backend"), TEXT("lit_camera_tiles"));
+ Value->SetBoolField(TEXT("ready"), Issues.IsEmpty());
+ Value->SetArrayField(TEXT("blockers"), Issues);
+ if (World) Value->SetStringField(TEXT("actualMapPath"), World->GetOutermost()->GetName());
+ ResultJson = Json(Value);
+}

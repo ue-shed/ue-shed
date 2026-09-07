@@ -12,6 +12,17 @@ is opened, including indexed candidate-package and map counts. Saved-source work
 Unreal; live texture preview, Live World, Map Capture, and Camera Lab request a separately enabled
 editor only when needed.
 
+The shared actor explorer in Map Review, Live World, Map Capture, and the World Log actor atlas
+supports device-local **Filter presets**. Save, update, or delete a named search and class selection,
+then apply it in another actor explorer or a later session. Select an actor to copy its path,
+authored GUID, or XYZ coordinates when that source provides them. Clipboard failures leave the
+value available for manual copying.
+
+In Map Capture, **Fit filtered actors** frames the matching positioned actors, including matches
+outside the captured image; **Fit capture** returns to the full image. Hover over the capture to
+read world XY, then right-click or use **Copy coordinates**. XY follows Unreal's +X north and +Y
+east orientation and is expressed in Unreal units.
+
 ## Take an investigation away
 
 Game Text and Texture Audit offer **Export JSON**, **Export CSV**, **Save preset**, and

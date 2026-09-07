@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen, waitFor } from "@solidjs/testing-library";
+import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { userEvent } from "@testing-library/user-event";
 import { decodeMapTilePyramidManifest } from "@ue-shed/cameras/map-tiles";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
@@ -86,6 +86,17 @@ describe("MapCaptureActorWorkspace", () => {
 				unobserve() {}
 			}
 		);
+		vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+			x: 0,
+			y: 0,
+			left: 0,
+			top: 0,
+			width: 900,
+			height: 600,
+			right: 900,
+			bottom: 600,
+			toJSON: () => ({})
+		});
 		vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
 		vi.stubGlobal("URL", {
 			createObjectURL: () => "blob:map-capture-tile",
@@ -129,6 +140,20 @@ describe("MapCaptureActorWorkspace", () => {
 		expect(screen.getByText("3 saved")).toBeDefined();
 		expect(screen.getByText("Outside capture")).toBeDefined();
 		expect(screen.getAllByText("Unresolved").length).toBeGreaterThan(0);
+
+		const fit = screen.getByRole("button", { name: "Fit filtered actors" });
+		const search = screen.getByLabelText("Find captured map actor");
+		fireEvent.input(search, { target: { value: "label:Outside" } });
+		await userEvent.click(fit);
+		const surface = screen.getByLabelText("Captured map tile surface");
+		const writeText = vi.fn().mockResolvedValue(undefined);
+		Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+		// The test surface is 900 by 600; its center must match the sole filtered actor.
+		fireEvent.contextMenu(surface, { clientX: 450, clientY: 300 });
+		await waitFor(() => expect(writeText).toHaveBeenCalledWith("X=512.00 Y=512.00"));
+		fireEvent.input(search, { target: { value: "does-not-exist" } });
+		expect(fit.hasAttribute("disabled")).toBe(true);
+		fireEvent.input(search, { target: { value: "" } });
 
 		const inside = screen.getByRole("button", { name: /Inside/ });
 		await userEvent.click(inside);

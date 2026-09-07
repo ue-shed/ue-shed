@@ -24,3 +24,5 @@ Sampling and packet encoding run on the editor game thread; a writer thread hold
 packet.
 
 Non-Windows editors return `not_supported` with guidance to use bounded snapshot polling at ≤10 Hz.
+
+Snapshots and discovery catalogs include optional full class path, authored GUID, folder, owning level and up to 256 actor tags with an explicit truncation flag. Metadata is sampled at discovery; refresh the catalog after edits. USOT transform packet layout and sampling work are unchanged.

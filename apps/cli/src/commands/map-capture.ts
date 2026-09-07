@@ -1,5 +1,8 @@
 import { Argument, Command, Flag } from "effect/unstable/cli";
 import {
+	runMapCaptureSelection,
+	runMapCaptureReadiness,
+	runMapCapturePlanFromSelection,
 	runMapCaptureInspect,
 	runMapCapturePlanValidate,
 	runMapCaptureRun,
@@ -98,8 +101,32 @@ export const mapCaptureCommand = Command.make("map-capture").pipe(
 	Command.withSubcommands([
 		Command.make("plan").pipe(
 			Command.withDescription("Validate external map-capture definitions."),
-			Command.withSubcommands([mapCapturePlanValidateCommand])
+			Command.withSubcommands([
+				mapCapturePlanValidateCommand,
+				Command.make(
+					"from-selection",
+					{
+						projectRoot: Argument.string("project-root"),
+						endpoint: Argument.string("endpoint"),
+						output: Argument.string("output")
+					},
+					({ projectRoot, endpoint, output }) =>
+						runMapCapturePlanFromSelection(projectRoot, endpoint, output)
+				).pipe(
+					Command.withDescription(
+						"Create a plan around selected editor actors with ten percent padding."
+					)
+				)
+			])
 		),
+		Command.make("selection", { endpoint: Argument.string("endpoint") }, ({ endpoint }) =>
+			runMapCaptureSelection(endpoint)
+		).pipe(Command.withDescription("Inspect combined bounds of selected editor actors.")),
+		Command.make(
+			"readiness",
+			{ endpoint: Argument.string("endpoint"), mapPath: Argument.string("map-path") },
+			({ endpoint, mapPath }) => runMapCaptureReadiness(endpoint, mapPath)
+		).pipe(Command.withDescription("Inspect Lit capture blockers without starting capture.")),
 		mapCaptureInspectCommand,
 		mapCaptureRunCommand,
 		mapCaptureRunsCommand

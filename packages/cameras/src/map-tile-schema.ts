@@ -288,8 +288,21 @@ export const MapTileCaptureResponse = Schema.Struct({
 );
 export type MapTileCaptureResponse = typeof MapTileCaptureResponse.Type;
 
+export const MapTileCaptureProgress = Schema.Struct({
+	phase: Schema.Literals(["exposure_warmup", "tile_warmup", "capturing"]),
+	elapsedMs: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)),
+	totalTiles: NonNegativeInteger.check(Schema.isLessThanOrEqualTo(64)),
+	currentTile: Schema.optionalKey(MapTileKeySchema)
+});
+export type MapTileCaptureProgress = typeof MapTileCaptureProgress.Type;
 export const MapTileCaptureOperation = Schema.Union([
 	Schema.Struct({
+		...Schema.Struct({
+			phase: Schema.optionalKey(MapTileCaptureProgress.fields.phase),
+			elapsedMs: Schema.optionalKey(MapTileCaptureProgress.fields.elapsedMs),
+			totalTiles: Schema.optionalKey(MapTileCaptureProgress.fields.totalTiles),
+			currentTile: MapTileCaptureProgress.fields.currentTile
+		}).fields,
 		state: Schema.Literal("running"),
 		operationId: MapCaptureOperationId,
 		completedTiles: NonNegativeInteger.check(Schema.isLessThanOrEqualTo(64))

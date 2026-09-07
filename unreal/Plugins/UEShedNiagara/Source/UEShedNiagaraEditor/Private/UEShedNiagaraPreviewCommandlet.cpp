@@ -2,6 +2,9 @@
 
 #include "Dom/JsonObject.h"
 #include "HAL/FileManager.h"
+#include "HAL/PlatformProcess.h"
+#include "HAL/PlatformTime.h"
+#include "UObject/GarbageCollection.h"
 #include "Misc/FileHelper.h"
 #include "Misc/PackageName.h"
 #include "Misc/Parse.h"
@@ -21,6 +24,7 @@ DEFINE_LOG_CATEGORY_STATIC(LogUEShedNiagaraPreview, Log, All);
 
 namespace UEShedNiagaraPreviewCommandletPrivate
 {
+FString SessionCancelPath;
 constexpr int32 MaximumDimension = 4096;
 constexpr int32 MaximumFrames = 512;
 constexpr int64 MaximumTotalPixels = 268435456;
@@ -371,6 +375,11 @@ int32 UUEShedNiagaraPreviewCommandlet::Main(const FString& Params)
 		return ExitRenderingUnavailable;
 	}
 
+	FString SessionArgument;
+	if (FParse::Value(*Params, TEXT("Session="), SessionArgument))
+	{
+		return RunSession(FPaths::ConvertRelativePathToFull(SessionArgument));
+	}
 	FString RequestArgument;
 	if (!FParse::Value(*Params, TEXT("Request="), RequestArgument) || RequestArgument.IsEmpty())
 	{
@@ -378,7 +387,12 @@ int32 UUEShedNiagaraPreviewCommandlet::Main(const FString& Params)
 			   TEXT("Usage: -run=UEShedNiagaraPreview -Request=<json> -AllowCommandletRendering"));
 		return ExitInvalidRequest;
 	}
-	const FString RequestPath = FPaths::ConvertRelativePathToFull(RequestArgument);
+	return CaptureRequest(FPaths::ConvertRelativePathToFull(RequestArgument));
+}
+
+int32 UUEShedNiagaraPreviewCommandlet::CaptureRequest(const FString& RequestPath)
+{
+	using namespace UEShedNiagaraPreviewCommandletPrivate;
 	FUEShedNiagaraPreviewOptions Options;
 	FString Error;
 	if (!ReadRequest(RequestPath, Options, Error))
@@ -441,7 +455,22 @@ int32 UUEShedNiagaraPreviewCommandlet::Main(const FString& Params)
 		   *System->GetPathName(), Options.Width, Options.Height, Options.FrameCount,
 		   Options.DurationSeconds, Options.SimulationFramesPerSecond);
 
-	FUEShedNiagaraCapture Capture;
+	const double ProgressStarted = FPlatformTime::Seconds();
+ Options.OnProgress = [&](const TCHAR* Phase, int32 Completed) {
+  auto Progress = MakeShared<FJsonObject>();
+  Progress->SetNumberField(TEXT("schemaVersion"), 1);
+  Progress->SetStringField(TEXT("runId"), Options.RunId);
+  Progress->SetStringField(TEXT("phase"), Phase);
+  Progress->SetNumberField(TEXT("completedFrames"), Completed);
+  Progress->SetNumberField(TEXT("totalFrames"), Options.FrameCount);
+  Progress->SetNumberField(TEXT("elapsedMs"), (FPlatformTime::Seconds() - ProgressStarted) * 1000);
+  FString Text; FJsonSerializer::Serialize(Progress, TJsonWriterFactory<>::Create(&Text));
+  const FString Path = FPaths::Combine(Options.OutputDirectory, TEXT("progress.json"));
+  if (FFileHelper::SaveStringToFile(Text, *(Path + TEXT(".tmp")), FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM))
+   IFileManager::Get().Move(*Path, *(Path + TEXT(".tmp")), true, true);
+ };
+ Options.OnProgress(TEXT("initializing"), 0);
+ FUEShedNiagaraCapture Capture;
 	if (!Capture.Initialize(System, Options, Error))
 	{
 		UE_LOG(LogUEShedNiagaraPreview, Error, TEXT("Initialization failed: %s"), *Error);
@@ -454,6 +483,11 @@ int32 UUEShedNiagaraPreviewCommandlet::Main(const FString& Params)
 	Frames.Reserve(Options.FrameCount);
 	for (int32 FrameIndex = 0; FrameIndex < Options.FrameCount; ++FrameIndex)
 	{
+		if (!SessionCancelPath.IsEmpty() && IFileManager::Get().FileExists(*SessionCancelPath))
+		{
+			return ExitCaptureFailed;
+		}
+		Options.OnProgress(TEXT("capturing"), FrameIndex);
 		const float AbsoluteTime = Options.StartSeconds + FrameIndex * FrameIntervalSeconds;
 		FUEShedNiagaraPreviewFrame Frame;
 		Frame.RelativePath = FString::Printf(TEXT("frames/frame_%04d.png"), FrameIndex);
@@ -466,6 +500,7 @@ int32 UUEShedNiagaraPreviewCommandlet::Main(const FString& Params)
 		Frames.Add(MoveTemp(Frame));
 	}
 
+	Options.OnProgress(TEXT("writing_receipt"), Frames.Num());
 	Capture.FlushPendingWork();
 	const FString ReceiptPath =
 		FPaths::Combine(Options.OutputDirectory, TEXT("producer-receipt.json"));
@@ -475,7 +510,57 @@ int32 UUEShedNiagaraPreviewCommandlet::Main(const FString& Params)
 		return ExitCaptureFailed;
 	}
 
+	Options.OnProgress(TEXT("completed"), Frames.Num());
 	UE_LOG(LogUEShedNiagaraPreview, Display, TEXT("Niagara preview staged for run %s"),
 		   *Options.RunId);
 	return 0;
+}
+
+// One host-owned process, sequential requests, isolated capture scenes and bounded lifetime.
+int32 UUEShedNiagaraPreviewCommandlet::RunSession(const FString& Directory)
+{
+    using namespace UEShedNiagaraPreviewCommandletPrivate;
+    if (!IFileManager::Get().DirectoryExists(*Directory)) return ExitInvalidRequest;
+    const FString ReadyPath = FPaths::Combine(Directory, TEXT("ready.json"));
+    const FString ReadyTemporary = ReadyPath + TEXT(".tmp");
+    if (!FFileHelper::SaveStringToFile(TEXT("{\"protocol\":\"ue-shed-niagara-session.v1\"}"), *ReadyTemporary) ||
+        !IFileManager::Get().Move(*ReadyPath, *ReadyTemporary, false, true)) return ExitInvalidRequest;
+    double LastWork = FPlatformTime::Seconds();
+    int32 Completed = 0;
+    while (!IsEngineExitRequested() && Completed < 300 && FPlatformTime::Seconds() - LastWork < 900.0)
+    {
+        if (IFileManager::Get().FileExists(*FPaths::Combine(Directory, TEXT("stop")))) break;
+        TArray<FString> Requests;
+        IFileManager::Get().FindFiles(Requests, *FPaths::Combine(Directory, TEXT("*.request.json")), true, false);
+        Requests.Sort();
+        for (const FString& Filename : Requests)
+        {
+            const FString Id = Filename.LeftChop(13);
+            if (!IsRunId(Id)) continue;
+            const FString ResultPath = FPaths::Combine(Directory, Id + TEXT(".result.json"));
+            if (IFileManager::Get().FileExists(*ResultPath)) continue;
+            const FString RequestPath = FPaths::Combine(Directory, Filename);
+            FUEShedNiagaraPreviewOptions Parsed;
+            FString Error;
+            SessionCancelPath = FPaths::Combine(Directory, Id + TEXT(".cancel"));
+            int32 Code = ExitInvalidRequest;
+            if (ReadRequest(RequestPath, Parsed, Error) && Parsed.RunId == Id &&
+                !IFileManager::Get().FileExists(*SessionCancelPath))
+            {
+                Code = CaptureRequest(RequestPath);
+            }
+            SessionCancelPath.Reset();
+            CollectGarbage(RF_NoFlags);
+            const FString Result = FString::Printf(TEXT("{\"protocol\":\"ue-shed-niagara-session.v1\",\"runId\":\"%s\",\"exitCode\":%d}"), *Id, Code);
+            const FString Temporary = ResultPath + TEXT(".tmp");
+            if (!FFileHelper::SaveStringToFile(Result, *Temporary) ||
+                !IFileManager::Get().Move(*ResultPath, *Temporary, false, true)) return ExitCaptureFailed;
+            ++Completed;
+            LastWork = FPlatformTime::Seconds();
+            if (Completed >= 300) break;
+        }
+        FPlatformProcess::Sleep(0.05f);
+    }
+    IFileManager::Get().Delete(*ReadyPath);
+    return 0;
 }

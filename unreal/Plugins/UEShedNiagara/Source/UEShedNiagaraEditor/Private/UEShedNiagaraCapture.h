@@ -13,6 +13,7 @@ class UTextureRenderTarget2D;
 
 struct FUEShedNiagaraPreviewOptions
 {
+	TFunction<void(const TCHAR*, int32)> OnProgress;
 	FString RunId;
 	FString SystemObjectPath;
 	FString OutputDirectory;

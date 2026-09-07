@@ -30,3 +30,9 @@ This package does not install Unreal plugins, launch Workbench, or own review sc
 
 MIT. Unreal Engine is a trademark of Epic Games, Inc. This project is not affiliated with or
 endorsed by Epic Games.
+
+`inspectUnrealProducer(endpoint)` reads the Core capability manifest without requiring Authoring.
+Optional `identity` includes engine version, process ID, a Core session identifier, and versions
+and loaded modules for enabled UE Shed plugins. Versions describe loaded plugin descriptors;
+capabilities remain authoritative for feature negotiation. `ue-shed doctor --endpoint <url>`
+prints this evidence. Older producers may omit identity.

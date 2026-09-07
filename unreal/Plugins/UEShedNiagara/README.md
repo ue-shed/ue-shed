@@ -28,3 +28,5 @@ The host verifies that the recorded camera matches the override.
 
 See [the product contract](../../../docs/products/niagara-preview.md) for profiles, timing and poster
 selection, video encoding, and the limits of an isolated scene.
+
+A bounded, atomically replaced `progress.json` in the run staging directory reports initialization, compilation, camera fitting, frame capture and receipt-writing phases. It is optional telemetry and is not a publication receipt. Both one-shot commandlets and host-owned sessions use the same producer progress path.

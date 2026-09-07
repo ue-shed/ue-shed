@@ -1,0 +1,11 @@
+{
+	"schemaVersion": 1,
+	"backend": "lit_camera_tiles",
+	"ready": false,
+	"blockers": [
+		{
+			"code": "viewport_locked",
+			"message": "Unlock the viewport."
+		}
+	]
+}

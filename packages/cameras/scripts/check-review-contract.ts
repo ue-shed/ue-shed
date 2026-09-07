@@ -1,3 +1,4 @@
+import { MapCaptureSelection, MapCaptureReadiness } from "../src/map-capture-tools-schema.js";
 import { deepStrictEqual } from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { basename, join } from "node:path";
@@ -147,6 +148,11 @@ const mapTileFixtures: ReadonlyArray<{
 	readonly file: string;
 	readonly schema: WireSchema;
 }> = [
+	{ file: "selection-ready.json", schema: MapCaptureSelection },
+	{ file: "selection-unavailable.json", schema: MapCaptureSelection },
+	{ file: "readiness-ready.json", schema: MapCaptureReadiness },
+	{ file: "readiness-blocked.json", schema: MapCaptureReadiness },
+	{ file: "capture-operation-progress-valid.json", schema: MapTileCaptureOperation },
 	{ file: "plan-valid.json", schema: MapCapturePlan },
 	{ file: "capture-request-valid.json", schema: MapTileCaptureRequest },
 	{ file: "capture-request-lit-valid.json", schema: MapTileCaptureRequest },

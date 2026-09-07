@@ -13,4 +13,8 @@ public:
 	UUEShedNiagaraPreviewCommandlet();
 
 	virtual int32 Main(const FString& Params) override;
+
+private:
+	int32 CaptureRequest(const FString& RequestPath);
+	int32 RunSession(const FString& Directory);
 };

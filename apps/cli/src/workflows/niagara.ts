@@ -12,8 +12,13 @@ export const runNiagaraPreview = Effect.fn("Cli.workflow.niagara_preview")((comm
 			const { runNiagaraPreview, niagaraPreviewProfile } = yield* Effect.promise(
 				() => import("@ue-shed/niagara")
 			);
+			const progressRuntime = yield* CliRuntime;
 			const result = yield* Effect.result(
 				runNiagaraPreview({
+					onProgress: (progress) =>
+						progressRuntime.printError(
+							`${JSON.stringify({ type: "niagara_preview_progress", ...progress })}\n`
+						),
 					...(command.engineRoot === undefined
 						? undefined
 						: { explicitEngineRoot: command.engineRoot }),

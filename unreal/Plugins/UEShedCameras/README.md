@@ -82,3 +82,5 @@ cadence and fairness without issuing renderer work. Every configuration starts a
 measurement revision with elapsed time, scheduler ticks, scheduled/rendered/read-back/delivered
 counts, skips, drops, replacements, bytes, and staging-resource allocations. The two texture
 readbacks per camera persist across frames and are recreated only when their dimensions change.
+
+`InspectMapCaptureSelection` returns combined component bounds for up to 1024 selected editor actors. `InspectMapCaptureReadiness` reports current Lit capture blockers without acquiring the viewport. Both have separately advertised v1 capabilities. Running capture polls additionally report batch elapsed time, phase, total tiles and current tile when known.

@@ -1,4 +1,5 @@
 import * as stylex from "@stylexjs/stylex";
+import { ActorExplorerUtilities } from "./actor-explorer-toolbar.js";
 import { createVirtualizer } from "@tanstack/solid-virtual";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import {
@@ -48,6 +49,10 @@ function itemSecondary(item: ActorExplorerItem): string | undefined {
  */
 export function ActorExplorer(props: {
 	readonly ariaLabel?: string;
+	/** Enables browser clipboard and device-local presets; requires EffectRuntimeProvider. */
+	readonly utilities?: boolean;
+	/** Current selected metadata, without rebuilding the complete actor catalog. */
+	readonly selectedDetails?: Pick<ActorExplorerItem, "location" | "actorGuid">;
 	readonly classMode?: "filter" | "target";
 	readonly classSelection?: "multiple" | "single";
 	readonly classOptions?: ReadonlyArray<ActorExplorerClassOption>;
@@ -277,7 +282,7 @@ export function ActorExplorer(props: {
 			}}
 			{...stylex.props(
 				styles.explorer,
-				props.density === "compact" && styles.explorerCompact
+				props.density === "compact" && !props.utilities && styles.explorerCompact
 			)}
 		>
 			<div
@@ -312,6 +317,22 @@ export function ActorExplorer(props: {
 					{...stylex.props(styles.searchInput)}
 				/>
 			</label>
+			<Show when={props.utilities}>
+				<ActorExplorerUtilities
+					filters={props.filters}
+					onFiltersChange={(filters) => {
+						props.onFiltersChange(filters);
+						props.onClassPathsChange?.(filters.classPaths);
+					}}
+					selected={(() => {
+						const item = props.items.find((item) => item.key === props.selectedKey);
+						return item ? { ...item, ...props.selectedDetails } : undefined;
+					})()}
+					disabled={props.disabled ?? false}
+					presetsEnabled={props.classMode !== "target"}
+					singleClass={props.classSelection === "single"}
+				/>
+			</Show>
 			<Show when={classOptions().length > 0}>
 				<div {...stylex.props(styles.classMenu)}>
 					<div

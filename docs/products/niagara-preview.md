@@ -90,6 +90,22 @@ directory must not already exist. FFmpeg is an external prerequisite, not downlo
 
 ## Capture and publication
 
+### Host-owned capture sessions
+
+Trusted automation hosts may launch the same commandlet with `-Session=<private-directory>`
+instead of `-Request`. `runNiagaraPreview({ sessionDirectory, ...options })` sends requests to
+that process while retaining all normal receipt, frame, camera and publication validation.
+One process serves successive effects and backgrounds; each request creates and destroys its
+own preview scene, followed by garbage collection. No project assets are saved.
+
+The host owns process termination and must stop the session before syncing or changing project
+source. Use a fresh directory for each launch, restricted to the host's user. Never expose it
+as a remote write API. The commandlet retires after 300 requests or 15 minutes idle. A host must
+mark the directory `closed` when its process exits and start a replacement for later requests.
+The session protocol is documented alongside the Niagara preview contracts. Cancellation leaves
+a per-request marker checked before capture and between output frames; a host may terminate
+the owned process to interrupt compilation or initialization immediately.
+
 `UEShedNiagara` is a separately enabled Editor-only plugin with an explicit dependency on Unreal's
 Niagara plugin. Its commandlet accepts one versioned JSON request and stages frames plus a producer
 receipt only beneath `Saved/UEShed/NiagaraPreviewStaging/<run-id>`.

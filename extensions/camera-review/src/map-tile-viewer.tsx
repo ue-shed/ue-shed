@@ -4,7 +4,7 @@ import {
 	pointMapMarkerRadius,
 	pointMapResizeCanvasForDisplay
 } from "@ue-shed/ui/point-map-core";
-import { createEffectAction } from "@ue-shed/ui";
+import { Button, createEffectAction, copyActorText } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import {
 	createMapTileGrid,
@@ -18,6 +18,8 @@ import type { Effect } from "effect";
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import {
 	fitMapTileViewport,
+	fitMapTileActors,
+	mapTileWorldPoint,
 	mapTileScreenPoint,
 	mapTileScreenRect,
 	mapTileViewportBounds,
@@ -73,6 +75,10 @@ function MapTileRequest(props: {
 }
 
 export function MapTilePyramidViewer(props: MapTilePyramidViewerProps) {
+	const copyAction = createEffectAction();
+	const [pointer, setPointer] = createSignal<{ left: number; top: number }>();
+	const [coordinateFeedback, setCoordinateFeedback] = createSignal("");
+	const [lastCoordinate, setLastCoordinate] = createSignal("");
 	let surface: HTMLDivElement | undefined;
 	let actorCanvas: HTMLCanvasElement | undefined;
 	let drag:
@@ -101,6 +107,50 @@ export function MapTilePyramidViewer(props: MapTilePyramidViewerProps) {
 		fitMapTileViewport({ bounds: props.manifest.grid.snappedBounds, height: 600, width: 900 })
 	);
 	const [currentLevel, setCurrentLevel] = createSignal<number>();
+	const cursorWorld = createMemo(() => {
+		const position = pointer();
+		return position === undefined
+			? undefined
+			: mapTileWorldPoint({ viewport: viewport(), ...position });
+	});
+	const coordinateText = () => {
+		const point = cursorWorld();
+		return point
+			? `X=${point.worldX.toFixed(2)} Y=${point.worldY.toFixed(2)}`
+			: lastCoordinate();
+	};
+	function copyCoordinates() {
+		const text = coordinateText();
+		if (!text) return;
+		setLastCoordinate(text);
+		copyAction.run(copyActorText(text), {
+			onSuccess: () => setCoordinateFeedback("Coordinates copied."),
+			onFailure: () =>
+				setCoordinateFeedback(
+					"Clipboard unavailable. Select and copy the coordinates below."
+				)
+		});
+	}
+	function updatePointer(event: PointerEvent) {
+		if (!surface) return;
+		const rect = surface.getBoundingClientRect();
+		setPointer({ left: event.clientX - rect.left, top: event.clientY - rect.top });
+		pan(event);
+	}
+	function leavePointer() {
+		setLastCoordinate(coordinateText());
+		setPointer(undefined);
+	}
+	function fitFilteredActors() {
+		setViewport((current) =>
+			fitMapTileActors({
+				viewport: current,
+				points: props.actorMarkers ?? [],
+				maximumScale:
+					1 / props.manifest.levels[props.manifest.levels.length - 1]!.unitsPerPixel
+			})
+		);
+	}
 	const [tileUrls, setTileUrls] = createSignal<ReadonlyMap<string, string>>(new Map());
 	const [failed, setFailed] = createSignal<ReadonlySet<string>>(new Set());
 	const cacheLimit = () => props.maximumCacheEntries ?? 256;
@@ -385,6 +435,16 @@ export function MapTilePyramidViewer(props: MapTilePyramidViewerProps) {
 					</span>
 				</div>
 				<div {...stylex.props(styles.readout)}>
+					<Button
+						type="button"
+						disabled={(props.actorMarkers?.length ?? 0) === 0}
+						onClick={fitFilteredActors}
+					>
+						Fit filtered actors
+					</Button>
+					<Button type="button" onClick={resetView}>
+						Fit capture
+					</Button>
 					<span>Z{selection().level}</span>
 					<span>{selection().visible.length} visible</span>
 					<span>{loadingCount()} loading</span>
@@ -399,7 +459,10 @@ export function MapTilePyramidViewer(props: MapTilePyramidViewerProps) {
 					surface = element;
 				}}
 				{...stylex.props(styles.surface)}
+				role="region"
+				aria-label="Captured map tile surface"
 				onPointerDown={(event) => {
+					if (event.button !== 0) return;
 					event.currentTarget.setPointerCapture(event.pointerId);
 					const current = viewport();
 					drag = {
@@ -411,8 +474,16 @@ export function MapTilePyramidViewer(props: MapTilePyramidViewerProps) {
 						y: event.clientY
 					};
 				}}
-				onPointerMove={pan}
+				onPointerMove={updatePointer}
+				onPointerLeave={leavePointer}
+				onContextMenu={(event) => {
+					event.preventDefault();
+					const rect = event.currentTarget.getBoundingClientRect();
+					setPointer({ left: event.clientX - rect.left, top: event.clientY - rect.top });
+					copyCoordinates();
+				}}
 				onPointerUp={(event) => {
+					if (event.button !== 0) return;
 					const completed = drag;
 					drag = undefined;
 					if (completed !== undefined && !completed.moved) {
@@ -482,9 +553,21 @@ export function MapTilePyramidViewer(props: MapTilePyramidViewerProps) {
 				<div {...stylex.props(styles.axisEast)}>+Y east</div>
 			</div>
 			<footer {...stylex.props(styles.footer)}>
+				<input
+					{...stylex.props(styles.coordinateInput)}
+					aria-label="Map cursor coordinates"
+					readOnly
+					value={coordinateText()}
+					placeholder="Hover over the map for world XY"
+					onFocus={(event) => event.currentTarget.select()}
+				/>
+				<Button type="button" disabled={!coordinateText()} onClick={copyCoordinates}>
+					Copy coordinates
+				</Button>
+				<span role="status">{coordinateFeedback()}</span>
 				<span>{grid().levels[selection().level]!.unitsPerPixel.toPrecision(5)} UU/PX</span>
 				<span>Cache ≤ {selection().recommendedCacheEntries}</span>
-				<span>Drag to pan · scroll to zoom</span>
+				<span>Drag to pan · scroll to zoom · right-click to copy XY</span>
 			</footer>
 		</section>
 	);
@@ -595,7 +678,20 @@ const styles = stylex.create({
 		color: tokens.colorTextSubtle,
 		fontSize: 11
 	},
+	coordinateInput: {
+		minWidth: 180,
+		padding: "6px 8px",
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorText,
+		borderWidth: 1,
+		borderStyle: "solid",
+		borderColor: tokens.colorBorder,
+		borderRadius: tokens.radiusControl,
+		fontSize: 12
+	},
 	footer: {
+		flexWrap: "wrap",
+		alignItems: "center",
 		display: "flex",
 		justifyContent: "space-between",
 		gap: 16,

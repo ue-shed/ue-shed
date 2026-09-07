@@ -1,0 +1,6 @@
+{
+	"schemaVersion": 1,
+	"status": "unavailable",
+	"code": "selection_limit",
+	"message": "Select between 1 and 1024 actors."
+}

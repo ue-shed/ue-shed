@@ -30,6 +30,7 @@ import {
 import {
 	MapCaptureOperationId,
 	type MapCaptureBackend,
+	type MapTileCaptureProgress,
 	MapCaptureRunId,
 	MapTileCaptureRequest,
 	MapTileCaptureOperation,
@@ -60,7 +61,8 @@ export interface MapTileCapturePortApi {
 	/** Release a run's viewport, camera and scene freeze on completion or interruption. */
 	readonly release?: (runId: string) => Effect.Effect<void, unknown>;
 	readonly capture: (
-		request: MapTileCaptureRequestValue
+		request: MapTileCaptureRequestValue,
+		onProgress?: (progress: MapTileCaptureProgress) => Effect.Effect<void>
 	) => Effect.Effect<MapTileCaptureResponse, unknown>;
 }
 
@@ -95,7 +97,7 @@ export function makeMapTileCaptureRemotePort(
 					)
 				);
 		}),
-		capture: Effect.fn("MapCapture.remoteCapture")(function* (request) {
+		capture: Effect.fn("MapCapture.remoteCapture")(function* (request, onProgress) {
 			if ((request.captureBackend ?? "lit_camera_tiles") !== "lit_camera_tiles") {
 				return yield* client
 					.request({
@@ -169,6 +171,21 @@ export function makeMapTileCaptureRemotePort(
 				})
 				.pipe(
 					Effect.flatMap(decode),
+					Effect.tap((status) =>
+						status.state === "running" &&
+						status.phase !== undefined &&
+						status.elapsedMs !== undefined &&
+						status.totalTiles !== undefined
+							? (onProgress?.({
+									phase: status.phase,
+									elapsedMs: status.elapsedMs,
+									totalTiles: status.totalTiles,
+									...(status.currentTile === undefined
+										? undefined
+										: { currentTile: status.currentTile })
+								}) ?? Effect.void)
+							: Effect.void
+					),
 					Effect.repeat({
 						schedule: Schedule.spaced("200 millis"),
 						while: (status) => status.state === "running"
@@ -265,6 +282,7 @@ export interface MapCaptureRunOutcome {
 }
 
 export interface MapCaptureRunProgress {
+	readonly producer?: MapTileCaptureProgress;
 	readonly failedTiles: number;
 	readonly phase: "capturing" | "publishing";
 	readonly processedTiles: number;
@@ -548,24 +566,36 @@ function runMapCaptureWith(args: {
 					plan,
 					runId
 				});
-				return yield* args.port.capture(request).pipe(
-					Effect.mapError(
-						(cause) =>
-							new MapCaptureRunError({
-								message: String(cause),
-								operation: "capture",
-								recovery:
-									"Reconnect to the expected editor map and retry this run or tile subset.",
-								runId
-							})
-					),
-					Effect.withSpan("camera.map_tile.capture_batch", {
-						attributes: {
-							"camera.map_tile.batch.index": input.batchIndex,
-							"camera.map_tile.batch.tiles": input.batch.length
-						}
-					})
-				);
+				return yield* args.port
+					.capture(
+						request,
+						(producer) =>
+							args.options.onProgress?.({
+								phase: "capturing",
+								failedTiles: failures.length,
+								processedTiles: captured.length + failures.length,
+								totalTiles: keys.length,
+								producer
+							}) ?? Effect.void
+					)
+					.pipe(
+						Effect.mapError(
+							(cause) =>
+								new MapCaptureRunError({
+									message: String(cause),
+									operation: "capture",
+									recovery:
+										"Reconnect to the expected editor map and retry this run or tile subset.",
+									runId
+								})
+						),
+						Effect.withSpan("camera.map_tile.capture_batch", {
+							attributes: {
+								"camera.map_tile.batch.index": input.batchIndex,
+								"camera.map_tile.batch.tiles": input.batch.length
+							}
+						})
+					);
 			});
 			const ingestBatch = Effect.fn("MapCapture.ingestBatch")(
 				(input: {

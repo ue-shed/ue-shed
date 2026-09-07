@@ -12,3 +12,5 @@ export type {
 	NiagaraPreviewRunOutcome,
 	RunNiagaraPreviewOptions
 } from "./preview.js";
+
+export * from "./progress.js";

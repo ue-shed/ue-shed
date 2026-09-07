@@ -66,12 +66,14 @@ export function SavedWorldScout(props: {
 	});
 	const actorItems = createMemo(() => {
 		catalogRevision();
+		const guids = new Map(world()?.actors.map((actor) => [actor.actorPath, actor.actorGuid]));
 		const items = [];
 		for (let index = 0; index < store.count; index += 1) {
 			const actor = store.actorAt(index);
 			if (actor === undefined) continue;
 			items.push({
 				classPath: actor.className,
+				actorGuid: guids.get(actor.path),
 				key: actor.instanceKey,
 				label: actor.displayName,
 				packageName: actor.packageName,
@@ -393,6 +395,8 @@ export function SavedWorldScout(props: {
 
 						<div {...stylex.props(styles.workspace)}>
 							<ActorExplorer
+								utilities
+								selectedDetails={{ location: selected()?.location }}
 								ariaLabel="Saved actor outliner"
 								classOptions={classOptions()}
 								filters={actorFilters()}

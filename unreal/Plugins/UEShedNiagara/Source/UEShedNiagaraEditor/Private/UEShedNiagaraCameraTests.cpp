@@ -56,12 +56,18 @@ bool FUEShedNiagaraIndependentCameraTest::RunTest(const FString& Parameters)
 		IFileManager::Get().Delete(*Receipt);
 		if (!bOverride)
 		{
+			FUEShedNiagaraCapture Landscape;
+			if (!TestTrue(TEXT("Landscape fixture initializes"), Landscape.Initialize(Template, Options, Error)))
+			{
+				AddError(Error);
+				continue;
+			}
 			float PeakActivity = 0;
 			for (int32 Index = 0; Index < Options.FrameCount; ++Index)
 			{
 				FUEShedNiagaraPreviewFrame Frame;
 				const FString Image = Receipt + TEXT(".png");
-				if (TestTrue(TEXT("Landscape auto-fit captures animation"), Capture.CaptureFrame(Index,
+				if (TestTrue(TEXT("Landscape auto-fit captures animation"), Landscape.CaptureFrame(Index,
 					Index * Options.DurationSeconds / Options.FrameCount, Image, Frame, Error)))
 				{
 					PeakActivity = FMath::Max(PeakActivity, Frame.ActivityScore);

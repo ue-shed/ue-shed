@@ -5,6 +5,7 @@ import { isJsonObject, parseJsonObject } from "./json.ts";
 
 const repositoryRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const sourceRoots = ["apps", "packages", "extensions"];
+const testSourcePattern = /\.(?:test|test-support)\.tsx?$/;
 const catalogOwned = new Set([
 	"@effect/opentelemetry",
 	"@effect/vitest",
@@ -286,7 +287,7 @@ export async function checkSourcePolicy(root: string) {
 		await Promise.all(sourceRoots.map((directory) => filesUnder(root, directory)))
 	).flat();
 	for (const absolute of sourceFiles) {
-		if (!/\.tsx?$/.test(absolute) || /\.(?:integration\.)?test\.tsx?$/.test(absolute)) continue;
+		if (!/\.tsx?$/.test(absolute) || testSourcePattern.test(absolute)) continue;
 		const path = relative(root, absolute).replaceAll("\\", "/");
 		const text = await readFile(absolute, "utf8");
 		if (!approvedRuntimeExits.has(path)) {
@@ -403,7 +404,7 @@ export async function checkServiceStrategies(root: string = repositoryRoot) {
 		await Promise.all(sourceRoots.map((directory) => filesUnder(root, directory)))
 	).flat();
 	for (const absolute of sourceFiles) {
-		if (!/\.tsx?$/.test(absolute) || /(?:integration\.)?test\.tsx?$/.test(absolute)) continue;
+		if (!/\.tsx?$/.test(absolute) || testSourcePattern.test(absolute)) continue;
 		const path = relative(root, absolute).replaceAll("\\", "/");
 		const text = await readFile(absolute, "utf8");
 		if (!text.includes("Context.Service")) continue;
@@ -547,7 +548,7 @@ export async function checkWorkbenchBoundaries(root: string = repositoryRoot) {
 	).flat();
 
 	for (const absolute of sourceFiles) {
-		if (!/\.tsx?$/.test(absolute) || /\.(?:integration\.)?test\.tsx?$/.test(absolute)) continue;
+		if (!/\.tsx?$/.test(absolute) || testSourcePattern.test(absolute)) continue;
 		const path = relative(root, absolute).replaceAll("\\", "/");
 		const text = await readFile(absolute, "utf8");
 

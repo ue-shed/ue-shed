@@ -6,6 +6,7 @@ export default defineConfig({
 			exclude: [
 				"**/*.d.ts",
 				"**/*.test.{ts,tsx}",
+				"**/*.test-support.{ts,tsx}",
 				"**/*.integration.test.{ts,tsx}",
 				"**/*.e2e.{ts,tsx}"
 			],

@@ -44,6 +44,17 @@ test("rejects Promise services, environment reads, raw fetch, and unmanaged reso
 	]);
 });
 
+test("keeps test subprocess helpers outside production source policy", async () => {
+	const helper = join(root, "apps/example/src/process.test-support.ts");
+	await writeFile(join(root, "apps/example/src/index.ts"), "export {};\n");
+	await writeFile(helper, "function run(): Promise<void> { return process.env.TEST; }\n");
+	try {
+		assert.deepEqual(await checkSourcePolicy(root), []);
+	} finally {
+		await rm(helper);
+	}
+});
+
 test("requires every Context service to name operations and provide a layer strategy", async () => {
 	await writeFile(
 		join(root, "apps/example/src/index.ts"),

@@ -58,7 +58,17 @@ export function cameraRenderReuseIdentity(args: {
 		);
 	};
 	return `sha256:${createHash("sha256")
-		.update(canonical({ rendererContract: "ue-shed-camera-render/1.0", ...args }))
+		.update(
+			canonical({
+				rendererContract: "ue-shed-camera-render/1.0",
+				...args,
+				frame: {
+					camera: args.frame.camera,
+					size: args.frame.size,
+					region: args.frame.region
+				}
+			})
+		)
 		.digest("hex")}`;
 }
 

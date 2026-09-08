@@ -40,6 +40,62 @@ const terminal = json({
 	}
 });
 
+for (const sharedRenderer of [false, true]) {
+	for (const result of [
+		{ released: true },
+		{ released: false },
+		{ released: true, restoration: "restored" },
+		{ released: true, restoration: "failed" }
+	]) {
+		it.effect(
+			`validates release ${JSON.stringify(result)} with shared renderer ${sharedRenderer}`,
+			() =>
+				Effect.gen(function* () {
+					const client: RemoteControlClientApi = {
+						request: (call) => {
+							if (call.functionName === "BeginMapTileCapture") {
+								const wire = Schema.decodeUnknownSync(MapTileCaptureRequest)(
+									JSON.parse(String(call.parameters?.RequestJson))
+								);
+								expect(wire.contract.version.minor).toBe(sharedRenderer ? 1 : 0);
+							}
+							return Effect.succeed(
+								call.functionName === "GetCapabilityManifest"
+									? json({
+											schemaVersion: 1,
+											producerKind: "unreal_editor",
+											capabilities: [
+												"cameras.lit-map-tile-capture.v1",
+												...(sharedRenderer
+													? ["cameras.render-session.v1"]
+													: [])
+											]
+										})
+									: call.functionName === "EndMapTileCapture"
+										? json(result)
+										: terminal
+							);
+						}
+					};
+					const port = makeMapTileCaptureRemotePort(client, "http://editor");
+					yield* port.capture({
+						...request,
+						contract: { ...request.contract, version: { major: 1, minor: 1 } }
+					});
+					const released = yield* Effect.exit(
+						port.release?.(request.runId) ?? Effect.void
+					);
+					expect(released._tag).toBe(
+						result.restoration === "restored" ||
+							(!sharedRenderer && result.restoration === undefined && result.released)
+							? "Success"
+							: "Failure"
+					);
+				})
+		);
+	}
+}
+
 it.effect("starts once, polls with a bounded cadence, and decodes terminal output", () =>
 	Effect.gen(function* () {
 		const firstPoll = yield* Deferred.make<void>();
@@ -127,11 +183,12 @@ it.effect("keeps the explicitly selected legacy backend synchronous", () =>
 			request: (call) =>
 				Effect.sync(() => {
 					calls.push(call.functionName);
+					if (call.functionName === "GetCapabilityManifest") return manifest;
 					return response;
 				})
 		};
 		yield* makeMapTileCaptureRemotePort(client, "http://editor").capture(fixture);
-		expect(calls).toEqual(["CaptureMapTiles"]);
+		expect(calls).toEqual(["GetCapabilityManifest", "CaptureMapTiles"]);
 	})
 );
 

@@ -197,6 +197,11 @@ four-tile batches, 512 overview warmup frames, 128 settling frames, shared expos
 Map manifest 1.1 includes the actual renderer policy/evidence for each source render. Cropped,
 downsampled and sliced tile dimensions are recorded separately from source frame dimensions.
 
+Map capture responses honor the requested wire minor: 1.0 omits rendering evidence and 1.1 includes
+it. The remote adapter requests 1.1 evidence from plugins advertising `cameras.render-session.v1`
+and downgrades to 1.0 for released plugins. Legacy Lit release results may contain only
+`{ released: true }`; shared-renderer plugins must explicitly report successful restoration.
+
 Electroswag should install the next minor `@ue-shed/cameras`, protocol and connection package set
 and the matching UEShedCore/UEShedCameras plugin bundle (planned **0.7.0** under the fixed release
 group). Released 0.6.0 does not contain `cameras.render-session.v1`. Negotiate that capability and

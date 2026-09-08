@@ -52,13 +52,14 @@ TSharedPtr<FJsonObject> Failure(const FString &Code, const FString &Message)
 }
 
 TSharedPtr<FJsonObject> Response(const FString &Operation, const FString &Correlation, const FString &Map,
-								 bool Dirty, const TSharedPtr<FJsonObject> &Error)
+								 bool Dirty, const TSharedPtr<FJsonObject> &Error,
+								 int32 Minor = 0)
 {
 	auto Value = MakeShared<FJsonObject>();
 	auto Contract = MakeShared<FJsonObject>();
 	auto Version = MakeShared<FJsonObject>();
 	Version->SetNumberField(TEXT("major"), 1);
-	Version->SetNumberField(TEXT("minor"), 1);
+	Version->SetNumberField(TEXT("minor"), Minor);
 	Contract->SetStringField(TEXT("name"), TEXT("ue-shed-map-tile-capture"));
 	Contract->SetObjectField(TEXT("version"), Version);
 	Value->SetObjectField(TEXT("contract"), Contract);
@@ -172,7 +173,7 @@ struct FLitRun
 	TSharedPtr<FUEShedCameraRenderSession> Renderer;
 	bool DirtyBefore = false, Done = false, Restored = false;
 	double BatchStarted = FPlatformTime::Seconds();
-	int32 TileIndex = 0, Pixels = 0, Gutter = 0;
+	int32 TileIndex = 0, Pixels = 0, Gutter = 0, ContractMinor = 0;
 	TArray<FTile> Tiles;
 	TArray<TSharedPtr<FJsonValue>> Results;
 	TSharedPtr<FJsonObject> BatchResponse, FrameStatus;
@@ -197,7 +198,8 @@ struct FLitRun
 			Response(OperationId, CorrelationId, MapPath, DirtyBefore,
 					 Code.IsEmpty() ? nullptr
 									: Failure(Code == TEXT("cancelled") ? Code : TEXT("capture_failed"),
-											  Code + TEXT(": ") + Message));
+											  Code + TEXT(": ") + Message),
+					 ContractMinor);
 		const int32 Succeeded = Results.Num();
 		if (!Code.IsEmpty())
 			for (int32 I = Results.Num(); I < Tiles.Num(); ++I)
@@ -283,7 +285,8 @@ struct FLitRun
 		Result->SetNumberField(TEXT("captureDurationMs"), FrameStatus->GetObjectField(TEXT("evidence"))
 															  ->GetObjectField(TEXT("settling"))
 															  ->GetNumberField(TEXT("elapsedMs")));
-		Result->SetObjectField(TEXT("renderEvidence"), FrameStatus->GetObjectField(TEXT("evidence")));
+		if (ContractMinor >= 1)
+			Result->SetObjectField(TEXT("renderEvidence"), FrameStatus->GetObjectField(TEXT("evidence")));
 		Results.Add(MakeShared<FJsonValueObject>(Result));
 		if (++TileIndex == Tiles.Num())
 			Finish();
@@ -370,10 +373,13 @@ void BeginUEShedLitMapTileCapture(const TSharedPtr<FJsonObject> &Request, UWorld
 	const FString RunId = Request->GetStringField(TEXT("runId"));
 	const FString OperationId = Request->GetStringField(TEXT("operationId"));
 	const FString CorrelationId = Request->GetStringField(TEXT("correlationId"));
+	const int32 ContractMinor = Request->GetObjectField(TEXT("contract"))
+									->GetObjectField(TEXT("version"))
+									->GetIntegerField(TEXT("minor"));
 	auto Reject = [&](const FString &Message) {
 		ResultJson =
 			Finished(Response(OperationId, CorrelationId, World->GetOutermost()->GetName(),
-							  World->GetOutermost()->IsDirty(), Failure(TEXT("invalid_request"), Message)));
+							  World->GetOutermost()->IsDirty(), Failure(TEXT("invalid_request"), Message), ContractMinor));
 	};
 	if (Run && (Run->Restored || Run->Renderer->IsClosed()))
 		Run.Reset();
@@ -481,6 +487,7 @@ void BeginUEShedLitMapTileCapture(const TSharedPtr<FJsonObject> &Request, UWorld
 	Run->FramePrefix = FGuid::NewGuid().ToString(EGuidFormats::Digits);
 	Run->OperationId = OperationId;
 	Run->CorrelationId = CorrelationId;
+	Run->ContractMinor = ContractMinor;
 	Run->Tiles = MoveTemp(Tiles);
 	Run->Pixels = Request->GetIntegerField(TEXT("tilePixelSize"));
 	Run->Gutter = Request->GetIntegerField(TEXT("gutterPixels"));

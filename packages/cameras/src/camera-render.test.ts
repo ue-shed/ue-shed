@@ -230,6 +230,17 @@ describe("shared renderer lifecycle", () => {
 			workflow: "review-natural"
 		};
 		const key = cameraRenderReuseIdentity(base);
+		const anotherFrame = {
+			...frame,
+			sessionId: CameraRenderSessionId.make("another-session"),
+			operationId: CameraFrameOperationId.make("another-operation")
+		};
+		expect(
+			cameraRenderReuseIdentity({
+				...base,
+				frame: anotherFrame
+			})
+		).toBe(key);
 		for (const changed of [
 			{ ...base, sceneRevision: "scene-2" },
 			{ ...base, pluginVersion: "plugin-2" },

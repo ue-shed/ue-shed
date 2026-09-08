@@ -90,7 +90,7 @@ export function makeMapTileCaptureRemotePort(
 	client: RemoteControlClientApi,
 	endpoint: string
 ): MapTileCapturePortApi {
-	const startedRuns = new Set<string>();
+	const startedRuns = new Map<string, boolean>();
 	return {
 		release: Effect.fn("MapCapture.remoteRelease")(function* (runId: string) {
 			if (!startedRuns.has(runId)) return;
@@ -104,9 +104,21 @@ export function makeMapTileCaptureRemotePort(
 					parameters: { RunId: runId }
 				})
 				.pipe(
-					Effect.flatMap(Schema.decodeUnknownEffect(MapTileReleaseResult)),
+					Effect.flatMap(
+						Schema.decodeUnknownEffect(
+							startedRuns.get(runId)
+								? MapTileReleaseResult
+								: Schema.Struct({
+										released: Schema.Boolean,
+										restoration: Schema.optionalKey(
+											MapTileReleaseResult.fields.restoration
+										)
+									})
+						)
+					),
 					Effect.flatMap((result) =>
-						result.restoration === "restored"
+						result.restoration === "restored" ||
+						(result.restoration === undefined && result.released)
 							? Effect.void
 							: Effect.fail(
 									new Error(
@@ -118,17 +130,6 @@ export function makeMapTileCaptureRemotePort(
 			startedRuns.delete(runId);
 		}),
 		capture: Effect.fn("MapCapture.remoteCapture")(function* (request, onProgress) {
-			if ((request.captureBackend ?? "lit_camera_tiles") !== "lit_camera_tiles") {
-				return yield* client
-					.request({
-						endpoint,
-						functionName: "CaptureMapTiles",
-						objectPath: mapTileReviewLibraryPath,
-						operation: "camera.map_tile.capture.remote",
-						parameters: { RequestJson: JSON.stringify(request) }
-					})
-					.pipe(Effect.flatMap(decodeMapTileCaptureResponse));
-			}
 			const manifest = yield* client
 				.request({
 					endpoint,
@@ -138,6 +139,28 @@ export function makeMapTileCaptureRemotePort(
 					parameters: {}
 				})
 				.pipe(Effect.flatMap(decodeCompanionCapabilityManifest));
+			const sharedRenderer = manifest.capabilities.includes("cameras.render-session.v1");
+			const wireRequest = {
+				...request,
+				contract: {
+					...request.contract,
+					version: {
+						major: 1,
+						minor: sharedRenderer ? request.contract.version.minor : 0
+					}
+				}
+			};
+			if ((request.captureBackend ?? "lit_camera_tiles") !== "lit_camera_tiles") {
+				return yield* client
+					.request({
+						endpoint,
+						functionName: "CaptureMapTiles",
+						objectPath: mapTileReviewLibraryPath,
+						operation: "camera.map_tile.capture.remote",
+						parameters: { RequestJson: JSON.stringify(wireRequest) }
+					})
+					.pipe(Effect.flatMap(decodeMapTileCaptureResponse));
+			}
 			if (!manifest.capabilities.includes("cameras.lit-map-tile-capture.v1")) {
 				return yield* Effect.fail(
 					new MapCaptureRunError({
@@ -169,14 +192,14 @@ export function makeMapTileCaptureRemotePort(
 								);
 					})
 				);
-			startedRuns.add(request.runId);
+			startedRuns.set(request.runId, sharedRenderer);
 			const start = yield* client
 				.request({
 					endpoint,
 					functionName: "BeginMapTileCapture",
 					objectPath: mapTileReviewLibraryPath,
 					operation: "camera.map_tile.begin.remote",
-					parameters: { RequestJson: JSON.stringify(request) }
+					parameters: { RequestJson: JSON.stringify(wireRequest) }
 				})
 				.pipe(Effect.flatMap(decode));
 			if (start.state === "finished") return start.response;
@@ -404,7 +427,7 @@ function makeRequest(args: {
 		capture: args.plan.capture,
 		captureBackend: args.captureBackend,
 		overviewBounds: args.grid.snappedBounds,
-		contract: { name: "ue-shed-map-tile-capture", version: { major: 1, minor: 0 } },
+		contract: { name: "ue-shed-map-tile-capture", version: { major: 1, minor: 1 } },
 		correlationId: args.correlationId,
 		expectedMapPath: args.plan.project.mapPath,
 		gutterPixels: args.plan.gutterPixels,

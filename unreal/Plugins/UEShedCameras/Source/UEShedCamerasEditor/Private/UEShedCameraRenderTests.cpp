@@ -4,6 +4,7 @@
 #include "DataLayer/DataLayerEditorSubsystem.h"
 #include "Editor.h"
 #include "FileHelpers.h"
+#include "Framework/Application/SlateApplication.h"
 #include "HAL/FileManager.h"
 #include "HAL/PlatformProcess.h"
 #include "HighResScreenshot.h"
@@ -13,7 +14,9 @@
 #include "Misc/AutomationTest.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
+#include "Misc/ScopeExit.h"
 #include "UEShedCameraRenderSession.h"
+#include "UEShedCameraReviewLibrary.h"
 #include "UnrealClient.h"
 #include "WorldPartition/DataLayer/DataLayerAsset.h"
 #include "WorldPartition/DataLayer/DataLayerInstance.h"
@@ -122,7 +125,8 @@ bool FUEShedCameraRenderLifecycleTest::RunTest(const FString &Parameters)
 				*FPaths::Combine(Directory, Backend + TEXT("-") + Projection + TEXT(".png")), *Raw);
 			if (Viewport)
 			{
-				// Read ordinary editor viewport pixels, independently of the high-resolution screenshot.
+				// Read ordinary editor viewport pixels, independently of the high-resolution
+				// screenshot.
 				for (int32 I = 0; I < 32; ++I)
 					Client->Viewport->Draw(false);
 				TArray<FColor> Pixels;
@@ -209,6 +213,149 @@ bool FUEShedCameraRenderLifecycleTest::RunTest(const FString &Parameters)
 	Evidence->SetStringField(TEXT("qualityStatus"), TEXT("requires_visual_review"));
 	FFileHelper::SaveStringToFile(UEShedCameraJsonText(Evidence),
 								  *FPaths::Combine(Directory, TEXT("comparison.json")));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUEShedCameraScreenshotOwnershipTest,
+								 "UEShed.Cameras.Rendering.ScreenshotOwnership",
+								 EAutomationTestFlags::EditorContext |
+									 EAutomationTestFlags::EngineFilter)
+
+bool FUEShedCameraScreenshotOwnershipTest::RunTest(const FString &Parameters)
+{
+	auto *World = GEditor->GetEditorWorldContext().World();
+	auto *Client = GCurrentLevelEditingViewportClient;
+	const auto BeforeConfig = GetHighResScreenshotConfig();
+	const uint32 BeforeX = GScreenshotResolutionX, BeforeY = GScreenshotResolutionY;
+	ON_SCOPE_EXIT
+	{
+		FScreenshotRequest::Reset();
+		GIsHighResScreenshot = false;
+		GetHighResScreenshotConfig() = BeforeConfig;
+		GScreenshotResolutionX = BeforeX;
+		GScreenshotResolutionY = BeforeY;
+	};
+	for (const FString Stage : {TEXT("warmup"), TEXT("pending"), TEXT("completed")})
+	{
+		auto Request =
+			UEShedLegacyRenderRequest(FGuid::NewGuid().ToString(EGuidFormats::Digits), World, true);
+		TSharedPtr<FJsonObject> Error;
+		auto Session = FUEShedCameraRenderSession::Open(Request, Error);
+		if (!Session)
+		{
+			AddError(UEShedCameraJsonText(Error));
+			return false;
+		}
+		auto Frame = UEShedRenderFrame(
+			Session->Id(), TEXT("ownership"),
+			UEShedCameraPose(FVector(1000, 1000, 900), FRotator(-30, -135, 0), 60, false), 160, 90);
+		Session->Start(Frame);
+		if (Stage == TEXT("pending"))
+		{
+			Session->Tick(true);
+			TestTrue(TEXT("Own screenshot pending before takeover"), GIsHighResScreenshot);
+		}
+		else if (Stage == TEXT("completed"))
+			TestEqual(TEXT("Complete owned frame"),
+					  Session->RenderBlocking(Frame)->GetStringField(TEXT("status")),
+					  FString(TEXT("captured")));
+		auto &Config = GetHighResScreenshotConfig();
+		Config.SetFilename(FPaths::Combine(FPaths::ProjectSavedDir(),
+										   TEXT("UEShed/RenderingValidation/other-tool.png")));
+		Config.SetResolution(128, 128);
+		Config.SetMaskEnabled(true);
+		Config.bDateTimeBasedNaming = true;
+		FScreenshotRequest::RequestScreenshot(Config.FilenameOverride, true, false);
+		const FString OtherFilename = FScreenshotRequest::GetFilename();
+		const FString OtherConfigFilename = Config.FilenameOverride;
+		if (Stage == TEXT("warmup"))
+			Session->Tick(true);
+		const auto Closed = Session->Close();
+		TestEqual(TEXT("Ownership loss is reported"), Closed->GetStringField(TEXT("status")),
+				  FString(Stage == TEXT("pending") ? TEXT("failed") : TEXT("closed")));
+		TestTrue(TEXT("Other screenshot request survives cleanup"),
+				 FScreenshotRequest::IsScreenshotRequested());
+		TestTrue(TEXT("Other high-resolution request survives cleanup"), GIsHighResScreenshot);
+		TestEqual(TEXT("Other request filename preserved"), FScreenshotRequest::GetFilename(),
+				  OtherFilename);
+		TestEqual(TEXT("Other config filename preserved"), Config.FilenameOverride,
+				  OtherConfigFilename);
+		TestEqual(TEXT("Other resolution preserved"), GScreenshotResolutionX, uint32(128));
+		TestTrue(TEXT("Other mask preserved"), Config.bMaskEnabled);
+		TestTrue(TEXT("Other naming preserved"), Config.bDateTimeBasedNaming);
+		// Consume the viewport's queued screenshot only after asserting the external owner's state.
+		if (Stage == TEXT("pending"))
+			Client->Viewport->Draw(false);
+		FScreenshotRequest::Reset();
+		GIsHighResScreenshot = false;
+		Config = BeforeConfig;
+		GScreenshotResolutionX = BeforeX;
+		GScreenshotResolutionY = BeforeY;
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUEShedMapMinorCompatibilityTest,
+								 "UEShed.Cameras.Rendering.MapMinorCompatibility",
+								 EAutomationTestFlags::EditorContext |
+									 EAutomationTestFlags::EngineFilter)
+
+bool FUEShedMapMinorCompatibilityTest::RunTest(const FString &Parameters)
+{
+	auto *World = GEditor->GetEditorWorldContext().World();
+	for (const FString Backend :
+		 {TEXT("scene_capture_tiles"), TEXT("viewport_high_resolution"), TEXT("lit_camera_tiles")})
+		for (int32 Minor : {0, 1})
+		{
+			auto Request = UEShedCameraJson(TEXT(
+				R"({"contract":{"name":"ue-shed-map-tile-capture","version":{"major":1,"minor":0}},"operationId":"compatibility","correlationId":"compatibility","planId":"compatibility","runId":"compatibility","tilePixelSize":64,"gutterPixels":0,"capture":{"z":2000,"orientation":{"pitch":-90,"yaw":0,"roll":0},"dataLayers":{"mode":"unchanged"},"render":{"profile":"full_fidelity","lodPolicy":"natural","effects":{"fog":false,"volumetricFog":false}}},"tiles":[{"key":{"zoom":0,"row":0,"column":0},"unitsPerPixel":32,"worldBounds":{"minX":0,"minY":0,"maxX":2048,"maxY":2048}}]})"));
+			Request->SetStringField(TEXT("runId"), FGuid::NewGuid().ToString(EGuidFormats::Digits));
+			Request->SetStringField(TEXT("expectedMapPath"), World->GetOutermost()->GetName());
+			Request->SetStringField(TEXT("captureBackend"), Backend);
+			Request->GetObjectField(TEXT("contract"))
+				->GetObjectField(TEXT("version"))
+				->SetNumberField(TEXT("minor"), Minor);
+			FString Text;
+			if (Backend == TEXT("lit_camera_tiles"))
+			{
+				UUEShedCameraReviewLibrary::BeginMapTileCapture(UEShedCameraJsonText(Request), Text);
+				const double Deadline = FPlatformTime::Seconds() + 120;
+				while (UEShedCameraJson(Text)->GetStringField(TEXT("state")) == TEXT("running") &&
+					   FPlatformTime::Seconds() < Deadline)
+				{
+					FSlateApplication::Get().Tick();
+					UUEShedCameraReviewLibrary::PollMapTileCapture(
+						Request->GetStringField(TEXT("runId")), TEXT("compatibility"), Text);
+				}
+				Text = UEShedCameraJsonText(UEShedCameraJson(Text)->GetObjectField(TEXT("response")));
+				FString Release;
+				UUEShedCameraReviewLibrary::EndMapTileCapture(Request->GetStringField(TEXT("runId")),
+															  Release);
+				TestEqual(TEXT("Map session restored"),
+						  UEShedCameraJson(Release)->GetStringField(TEXT("restoration")),
+						  FString(TEXT("restored")));
+			}
+			else
+				UUEShedCameraReviewLibrary::CaptureMapTiles(UEShedCameraJsonText(Request), Text);
+			const auto Response = UEShedCameraJson(Text);
+			TestEqual(*Text, Response->GetStringField(TEXT("status")), FString(TEXT("completed")));
+			TestEqual(TEXT("Response honors requested minor"),
+					  Response->GetObjectField(TEXT("contract"))
+						  ->GetObjectField(TEXT("version"))
+						  ->GetIntegerField(TEXT("minor")),
+					  Minor);
+			for (const auto &Tile : Response->GetArrayField(TEXT("results")))
+				TestEqual(TEXT("Evidence is emitted only for minor 1"),
+						  Tile->AsObject()->HasField(TEXT("renderEvidence")), Minor == 1);
+			Request->SetStringField(TEXT("expectedMapPath"), TEXT("/Game/Unavailable"));
+			UUEShedCameraReviewLibrary::CaptureMapTiles(UEShedCameraJsonText(Request), Text);
+			TestEqual(TEXT("Failure honors requested minor"),
+					  UEShedCameraJson(Text)
+						  ->GetObjectField(TEXT("contract"))
+						  ->GetObjectField(TEXT("version"))
+						  ->GetIntegerField(TEXT("minor")),
+					  Minor);
+		}
 	return true;
 }
 

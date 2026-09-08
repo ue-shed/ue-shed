@@ -70,13 +70,13 @@ FString MapTileJsonString(const TSharedRef<FJsonObject> &Object)
 	return Result;
 }
 
-TSharedRef<FJsonObject> MapTileContract()
+TSharedRef<FJsonObject> MapTileContract(int32 Minor)
 {
 	const TSharedRef<FJsonObject> Contract = MakeShared<FJsonObject>();
 	Contract->SetStringField(TEXT("name"), TEXT("ue-shed-map-tile-capture"));
 	const TSharedRef<FJsonObject> Version = MakeShared<FJsonObject>();
 	Version->SetNumberField(TEXT("major"), 1);
-	Version->SetNumberField(TEXT("minor"), 1);
+	Version->SetNumberField(TEXT("minor"), Minor);
 	Contract->SetObjectField(TEXT("version"), Version);
 	return Contract;
 }
@@ -126,10 +126,11 @@ void SetMapTileCounts(const TSharedRef<FJsonObject> &Result, int32 Requested, in
 }
 
 TSharedRef<FJsonObject> MapTileResponseBase(const FString &OperationId, const FString &CorrelationId,
-											bool bDirtyBefore, bool bDirtyAfter, double DurationMs)
+											bool bDirtyBefore, bool bDirtyAfter, double DurationMs,
+											int32 Minor)
 {
 	const TSharedRef<FJsonObject> Result = MakeShared<FJsonObject>();
-	Result->SetObjectField(TEXT("contract"), MapTileContract());
+	Result->SetObjectField(TEXT("contract"), MapTileContract(Minor));
 	Result->SetStringField(TEXT("operationId"), OperationId);
 	Result->SetStringField(TEXT("correlationId"), CorrelationId);
 	const TSharedRef<FJsonObject> DirtyState = MakeShared<FJsonObject>();
@@ -142,10 +143,10 @@ TSharedRef<FJsonObject> MapTileResponseBase(const FString &OperationId, const FS
 
 void MapTileTopFailure(FString &ResultJson, const FString &OperationId, const FString &CorrelationId,
 					   const TCHAR *Code, const TCHAR *Message, const TCHAR *Recovery, bool bRetrySafe,
-					   bool bDirtyBefore = false, bool bDirtyAfter = false)
+					   int32 Minor, bool bDirtyBefore = false, bool bDirtyAfter = false)
 {
 	const TSharedRef<FJsonObject> Result =
-		MapTileResponseBase(OperationId, CorrelationId, bDirtyBefore, bDirtyAfter, 0.0);
+		MapTileResponseBase(OperationId, CorrelationId, bDirtyBefore, bDirtyAfter, 0.0, Minor);
 	Result->SetStringField(TEXT("status"), TEXT("failed"));
 	Result->SetObjectField(TEXT("failure"), MapTileFailure(Code, Message, Recovery, bRetrySafe));
 	Result->SetArrayField(TEXT("results"), {});
@@ -282,7 +283,8 @@ bool CaptureViewportHighResolutionLevel(const TArray<TSharedPtr<FJsonValue>> &Ti
 		{
 			return Fail(
 				TEXT("invalid_request"),
-				TEXT("Viewport High Resolution tile bounds do not form the declared row and column grid."),
+				TEXT("Viewport High Resolution tile bounds do not form the declared row and "
+							 "column grid."),
 				TEXT("Regenerate the request from the deterministic Map Capture grid."));
 		}
 	}
@@ -383,8 +385,10 @@ static void CaptureMapTilesInternal(const FString &RequestJson, FString &ResultJ
 	const double StartedSeconds = FPlatformTime::Seconds();
 	FString OperationId(TEXT("unknown"));
 	FString CorrelationId(TEXT("unknown"));
+	int32 ResponseMinor = 0;
 	auto Fail = [&](const TCHAR *Code, const TCHAR *Message, const TCHAR *Recovery, bool bRetrySafe) {
-		MapTileTopFailure(ResultJson, OperationId, CorrelationId, Code, Message, Recovery, bRetrySafe);
+		MapTileTopFailure(ResultJson, OperationId, CorrelationId, Code, Message, Recovery, bRetrySafe,
+						  ResponseMinor);
 	};
 
 	if (RequestJson.Len() > 256 * 1024)
@@ -437,6 +441,7 @@ static void CaptureMapTilesInternal(const FString &RequestJson, FString &ResultJ
 		return;
 	}
 
+	ResponseMinor = static_cast<int32>(ContractMinor);
 	if (GEditor == nullptr)
 	{
 		Fail(TEXT("capture_failed"), TEXT("The Unreal editor is unavailable."),
@@ -560,7 +565,7 @@ static void CaptureMapTilesInternal(const FString &RequestJson, FString &ResultJ
 						  TEXT("World Partition streaming is not ready for deterministic capture."),
 						  TEXT("Wait for streaming completion or launch a headless session with the required "
 							   "region loaded."),
-						  true, bDirtyBefore, MapPackage->IsDirty());
+						  true, ResponseMinor, bDirtyBefore, MapPackage->IsDirty());
 		return;
 	}
 	TArray<TSharedPtr<FJsonValue>> TileResults;
@@ -595,7 +600,7 @@ static void CaptureMapTilesInternal(const FString &RequestJson, FString &ResultJ
 												Failed, FailureCode, FailureMessage, FailureRecovery))
 		{
 			MapTileTopFailure(ResultJson, OperationId, CorrelationId, *FailureCode, *FailureMessage,
-							  *FailureRecovery, FailureCode != TEXT("invalid_request"), bDirtyBefore,
+							  *FailureRecovery, FailureCode != TEXT("invalid_request"), ResponseMinor, bDirtyBefore,
 							  MapPackage->IsDirty());
 			return;
 		}
@@ -709,8 +714,7 @@ static void CaptureMapTilesInternal(const FString &RequestJson, FString &ResultJ
 				MapTileTopFailure(
 					ResultJson, OperationId, CorrelationId, TEXT("invalid_request"),
 					TEXT("A tile entry is invalid."),
-					TEXT("Validate every key, bounds rectangle, and world-units-per-pixel value."), false,
-					bDirtyBefore, MapPackage->IsDirty());
+					TEXT("Validate every key, bounds rectangle, and world-units-per-pixel value."), false, ResponseMinor, bDirtyBefore, MapPackage->IsDirty());
 				return;
 			}
 
@@ -725,8 +729,9 @@ static void CaptureMapTilesInternal(const FString &RequestJson, FString &ResultJ
 				FinalizeAllEncodes();
 				MapTileTopFailure(
 					ResultJson, OperationId, CorrelationId, TEXT("invalid_request"),
-					TEXT("Tile keys must be unique and bounds must match tile pixels times units-per-pixel."),
-					TEXT("Regenerate the bounded request from the validated Map Capture Plan grid."), false,
+					TEXT("Tile keys must be unique and bounds must match tile pixels times "
+						 "units-per-pixel."),
+					TEXT("Regenerate the bounded request from the validated Map Capture Plan grid."), false, ResponseMinor,
 					bDirtyBefore, MapPackage->IsDirty());
 				return;
 			}
@@ -746,7 +751,8 @@ static void CaptureMapTilesInternal(const FString &RequestJson, FString &ResultJ
 					FinalizeAllEncodes();
 					MapTileTopFailure(ResultJson, OperationId, CorrelationId, TEXT("capture_failed"),
 									  TEXT("Shared renderer restoration failed."),
-									  TEXT("Inspect editor state before capture."), false, bDirtyBefore,
+									  TEXT("Inspect editor state before capture."), false,
+									  ResponseMinor, bDirtyBefore,
 									  MapPackage->IsDirty());
 					return;
 				}
@@ -770,7 +776,7 @@ static void CaptureMapTilesInternal(const FString &RequestJson, FString &ResultJ
 					FinalizeAllEncodes();
 					MapTileTopFailure(ResultJson, OperationId, CorrelationId, TEXT("capture_failed"),
 									  *Error->GetStringField(TEXT("message")),
-									  TEXT("Inspect shared renderer ownership."), true, bDirtyBefore,
+									  TEXT("Inspect shared renderer ownership."), true, ResponseMinor, bDirtyBefore,
 									  MapPackage->IsDirty());
 					return;
 				}
@@ -800,7 +806,7 @@ static void CaptureMapTilesInternal(const FString &RequestJson, FString &ResultJ
 				FinalizeAllEncodes();
 				MapTileTopFailure(ResultJson, OperationId, CorrelationId, TEXT("capture_failed"),
 								  TEXT("Cannot read shared renderer PNG."), TEXT("Inspect native staging."),
-								  true, bDirtyBefore, MapPackage->IsDirty());
+								  true, ResponseMinor, bDirtyBefore, MapPackage->IsDirty());
 				return;
 			}
 			FullImage.ChangeFormat(ERawImageFormat::BGRA8, EGammaSpace::sRGB);
@@ -830,7 +836,8 @@ static void CaptureMapTilesInternal(const FString &RequestJson, FString &ResultJ
 		{
 			MapTileTopFailure(ResultJson, OperationId, CorrelationId, TEXT("capture_failed"),
 							  TEXT("Shared renderer restoration failed."),
-							  TEXT("Inspect editor state before capture."), false, bDirtyBefore,
+							  TEXT("Inspect editor state before capture."), false, ResponseMinor,
+							  bDirtyBefore,
 							  MapPackage->IsDirty());
 			return;
 		}
@@ -862,9 +869,12 @@ static void CaptureMapTilesInternal(const FString &RequestJson, FString &ResultJ
 	}
 
 	const bool bDirtyAfter = MapPackage->IsDirty();
+	if (ResponseMinor == 0)
+		for (const auto &Tile : TileResults)
+			Tile->AsObject()->RemoveField(TEXT("renderEvidence"));
 	const TSharedRef<FJsonObject> Result =
 		MapTileResponseBase(OperationId, CorrelationId, bDirtyBefore, bDirtyAfter,
-							(FPlatformTime::Seconds() - StartedSeconds) * 1000.0);
+							(FPlatformTime::Seconds() - StartedSeconds) * 1000.0, ResponseMinor);
 	Result->SetStringField(TEXT("actualMapPath"), World->GetOutermost()->GetName());
 	Result->SetArrayField(TEXT("results"), TileResults);
 	SetMapTileCounts(Result, Tiles->Num(), Succeeded, Failed);

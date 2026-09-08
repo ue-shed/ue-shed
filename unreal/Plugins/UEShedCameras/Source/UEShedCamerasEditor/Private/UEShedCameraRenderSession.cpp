@@ -184,7 +184,8 @@ void Issue(TArray<TSharedPtr<FJsonValue>> &Issues, const TCHAR *Code, const TCHA
 	Out->SetStringField(TEXT("message"), Message);
 	Out->SetStringField(
 		TEXT("recovery"),
-		TEXT("Correct the specified policy or prepare an unlocked editor world before opening a session."));
+		TEXT("Correct the specified policy or prepare an unlocked "
+											   "editor world before opening a session."));
 	Issues.Add(MakeShared<FJsonValueObject>(Out));
 }
 bool ValidPolicy(const TSharedPtr<FJsonObject> &P)
@@ -358,9 +359,9 @@ TSharedPtr<FJsonObject> UEShedLegacyRenderRequest(const FString &Id, UWorld *Wor
 		Out->GetObjectField(TEXT("policy"))
 			->SetObjectField(
 				TEXT("renderer"),
-				UEShedCameraJson(TEXT(
-					"{\"kind\":\"editor_viewport\",\"strategy\":\"high_resolution_screenshot\",\"profile\":"
-					"\"lit\",\"vignette\":\"disabled\",\"fog\":true,\"volumetricFog\":true}")));
+				UEShedCameraJson(TEXT("{\"kind\":\"editor_viewport\",\"strategy\":\"high_resolution_screenshot\","
+						 "\"profile\":"
+						 "\"lit\",\"vignette\":\"disabled\",\"fog\":true,\"volumetricFog\":true}")));
 	else
 		Out->GetObjectField(TEXT("policy"))
 			->GetObjectField(TEXT("renderer"))
@@ -397,8 +398,10 @@ struct FUEShedCameraRenderSession::FState
 	FRotator ViewRotation;
 	EViewModeIndex PerspectiveMode, OrthoMode;
 	FExposureSettings Exposure;
-	FHighResScreenshotConfig ScreenshotConfig;
+	FHighResScreenshotConfig ScreenshotConfig, AppliedScreenshotConfig;
 	uint32 ResolutionX = 0, ResolutionY = 0;
+	uint32 AppliedResolutionX = 0, AppliedResolutionY = 0;
+	bool ScreenshotApplied = false;
 	bool GameView = false, LockedCamera = false, DisableInput = false, EnableFading = false, DrawAxes = false,
 		 DrawAxesGame = false;
 	bool Closed = false, Restored = true, Pending = false, Frozen = false, Metering = false,
@@ -453,16 +456,59 @@ struct FUEShedCameraRenderSession::FState
 	{
 		return Child(Request, TEXT("policy"));
 	}
+	bool OwnsScreenshot() const
+	{
+		if (!ScreenshotApplied)
+			return false;
+		const auto &C = GetHighResScreenshotConfig(), &A = AppliedScreenshotConfig;
+		return C.FilenameOverride == A.FilenameOverride &&
+			   C.UnscaledCaptureRegion == A.UnscaledCaptureRegion &&
+			   C.CaptureRegion == A.CaptureRegion && C.ResolutionMultiplier == A.ResolutionMultiplier &&
+			   C.ResolutionMultiplierScale == A.ResolutionMultiplierScale &&
+			   C.bMaskEnabled == A.bMaskEnabled && C.bCaptureHDR == A.bCaptureHDR &&
+			   C.bForce128BitRendering == A.bForce128BitRendering &&
+			   C.bDateTimeBasedNaming == A.bDateTimeBasedNaming &&
+			   C.bDumpBufferVisualizationTargets == A.bDumpBufferVisualizationTargets &&
+			   C.TargetViewport == A.TargetViewport &&
+			   C.bDisplayCaptureRegion == A.bDisplayCaptureRegion &&
+			   GScreenshotResolutionX == AppliedResolutionX &&
+			   GScreenshotResolutionY == AppliedResolutionY &&
+			   (!FScreenshotRequest::IsScreenshotRequested() ||
+				FScreenshotRequest::GetFilename() == C.FilenameOverride);
+	}
+	void RestoreScreenshot()
+	{
+		if (!ScreenshotApplied)
+			return;
+		if (OwnsScreenshot())
+		{
+			if (Pending)
+			{
+				FScreenshotRequest::Reset();
+				GIsHighResScreenshot = false;
+			}
+			// Restore only fields this session changed; other config has independent owners.
+			auto &C = GetHighResScreenshotConfig();
+			C.UnscaledCaptureRegion = ScreenshotConfig.UnscaledCaptureRegion;
+			C.CaptureRegion = ScreenshotConfig.CaptureRegion;
+			C.FilenameOverride = ScreenshotConfig.FilenameOverride;
+			C.bMaskEnabled = ScreenshotConfig.bMaskEnabled;
+			C.bCaptureHDR = ScreenshotConfig.bCaptureHDR;
+			C.bDumpBufferVisualizationTargets = ScreenshotConfig.bDumpBufferVisualizationTargets;
+			C.bDateTimeBasedNaming = ScreenshotConfig.bDateTimeBasedNaming;
+			GScreenshotResolutionX = ResolutionX;
+			GScreenshotResolutionY = ResolutionY;
+		}
+		else
+			Restored = false;
+		ScreenshotApplied = false;
+	}
 	bool Restore()
 	{
 		if (Closed)
 			return Restored;
 		Closed = true;
-		if (Pending && Viewport())
-		{
-			FScreenshotRequest::Reset();
-			GIsHighResScreenshot = false;
-		}
+		RestoreScreenshot();
 		// Snapshot/restore extracted from the Lit map renderer. No second viewport manager.
 		if (Client)
 		{
@@ -493,9 +539,6 @@ struct FUEShedCameraRenderSession::FState
 			}
 			else
 				Restored = false;
-			GetHighResScreenshotConfig() = ScreenshotConfig;
-			GScreenshotResolutionX = ResolutionX;
-			GScreenshotResolutionY = ResolutionY;
 		}
 		EndUEShedOwnedMapFreeze(Id);
 		Capture.Reset();
@@ -921,7 +964,8 @@ TSharedPtr<FJsonObject> FUEShedCameraRenderSession::Start(const TSharedPtr<FJson
 	if (S.UsedOperations.Contains(Op))
 		return Failure(
 			S.Id, TEXT("operation_expired"),
-			TEXT("This operation was completed but its result retention expired. Use a new operation ID."));
+			TEXT("This operation was completed but its result retention expired. Use a new "
+							"operation ID."));
 	if (S.CompletedFrames >= S.Request->GetIntegerField(TEXT("maximumFrames")))
 		return Failure(S.Id, TEXT("frame_budget_exceeded"), TEXT("The session frame budget is exhausted."));
 	auto Region = Child(Frame, TEXT("region"));
@@ -997,6 +1041,13 @@ void FUEShedCameraRenderSession::Tick(bool bDrawViewport)
 	}
 	if (!S.Frame || S.Result)
 		return;
+	if (S.Viewport() &&
+		((S.Pending && !S.OwnsScreenshot()) ||
+		 (!S.Pending && (GIsHighResScreenshot || FScreenshotRequest::IsScreenshotRequested()))))
+	{
+		S.Fail(TEXT("editor_busy"), TEXT("Another operation owns the screenshot state."));
+		return;
+	}
 	const auto Settling = Child(S.Policy(), TEXT("settling"));
 	if ((Now - S.Started) * 1000 > Settling->GetNumberField(TEXT("timeoutMs")))
 	{
@@ -1077,7 +1128,17 @@ void FUEShedCameraRenderSession::Tick(bool bDrawViewport)
 	{
 		if (!S.Pending)
 		{
+			// Settling can yield to editor tools. Recheck immediately before mutating global state.
+			if (GIsHighResScreenshot || FScreenshotRequest::IsScreenshotRequested())
+			{
+				S.Fail(TEXT("editor_busy"),
+					   TEXT("Another operation requested a screenshot during settling."));
+				return;
+			}
 			auto &Config = GetHighResScreenshotConfig();
+			S.ScreenshotConfig = Config;
+			S.ResolutionX = GScreenshotResolutionX;
+			S.ResolutionY = GScreenshotResolutionY;
 			if (!Config.SetResolution(Width, Height))
 			{
 				S.Fail(TEXT("unsupported_size"),
@@ -1089,6 +1150,11 @@ void FUEShedCameraRenderSession::Tick(bool bDrawViewport)
 			Config.SetHDRCapture(false);
 			Config.bDumpBufferVisualizationTargets = false;
 			Config.bDateTimeBasedNaming = false;
+			S.AppliedScreenshotConfig = Config;
+			S.AppliedResolutionX = GScreenshotResolutionX;
+			S.AppliedResolutionY = GScreenshotResolutionY;
+			S.ScreenshotApplied = true;
+			S.Pending = true;
 			if (!S.Client->Viewport->TakeHighResScreenShot())
 			{
 				S.Fail(TEXT("capture_failed"), TEXT("The viewport rejected the screenshot."));
@@ -1151,6 +1217,7 @@ void FUEShedCameraRenderSession::Tick(bool bDrawViewport)
 	Evidence->SetStringField(TEXT("pluginVersion"), PluginVersion());
 	Out->SetObjectField(TEXT("evidence"), Evidence);
 	S.Pending = false;
+	S.RestoreScreenshot();
 	S.Result = Out;
 	++S.CompletedFrames;
 	S.Prune(Now);
@@ -1252,11 +1319,13 @@ TSharedPtr<FJsonObject> FUEShedCameraRenderSession::Capabilities()
 	auto Out = UEShedCameraJson(
 		TEXT("{\"renderers\":[{\"kind\":\"editor_viewport\",\"projections\":[\"perspective\","
 			 "\"orthographic\"],\"strategies\":[\"high_resolution_screenshot\"],\"exposure\":[\"project_"
-			 "auto\",\"fixed_ev100\",\"meter_once\"],\"maximumDimension\":16384},{\"kind\":\"scene_capture\","
-			 "\"projections\":[\"perspective\",\"orthographic\"],\"strategies\":[\"render_target\"],"
-			 "\"exposure\":[\"project_auto\",\"fixed_ev100\"],\"maximumDimension\":16384}],\"preparation\":["
-			 "\"preserve_loading\",\"camera_regions\",\"editor_data_layers\"],\"freeze\":[\"freeze_materials_"
-			 "and_ticks\"],\"maximumRetainedOperations\":64,\"retentionMs\":120000}"));
+		"auto\",\"fixed_ev100\",\"meter_once\"],\"maximumDimension\":16384},{\"kind\":\"scene_"
+		"capture\","
+		"\"projections\":[\"perspective\",\"orthographic\"],\"strategies\":[\"render_target\"],"
+		"\"exposure\":[\"project_auto\",\"fixed_ev100\"],\"maximumDimension\":16384}],\"preparation\":["
+		"\"preserve_loading\",\"camera_regions\",\"editor_data_layers\"],\"freeze\":[\"freeze_"
+		"materials_"
+		"and_ticks\"],\"maximumRetainedOperations\":64,\"retentionMs\":120000}"));
 	Out->SetNumberField(TEXT("maximumRetainedSessions"), 9);
 	for (const auto &Value : Out->GetArrayField(TEXT("renderers")))
 	{

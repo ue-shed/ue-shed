@@ -17,6 +17,10 @@
 #include "UObject/SoftObjectPtr.h"
 #include "UObject/UnrealType.h"
 
+#if WITH_DEV_AUTOMATION_TESTS
+#include "Misc/AutomationTest.h"
+#endif
+
 namespace
 {
 uint32 RotateRight(uint32 Value, uint32 Bits)
@@ -533,7 +537,11 @@ FString CanonicalJson(const TSharedPtr<FJsonValue>& Value)
 
 	const TSharedPtr<FJsonObject> Object = Value->AsObject();
 	TArray<FString> Keys;
-	Object->Values.GetKeys(Keys);
+	Keys.Reserve(Object->Values.Num());
+	for (const auto& Field : Object->Values)
+	{
+		Keys.Emplace(Field.Key.Len(), *Field.Key);
+	}
 	Keys.Sort([](const FString& Left, const FString& Right)
 	{
 		return Left.Compare(Right, ESearchCase::CaseSensitive) < 0;
@@ -541,7 +549,7 @@ FString CanonicalJson(const TSharedPtr<FJsonValue>& Value)
 	TArray<FString> Parts;
 	for (const FString& Key : Keys)
 	{
-		TSharedPtr<FJsonValue> Field = Object->Values[Key];
+		TSharedPtr<FJsonValue> Field = Object->TryGetField(Key);
 		if (Key == TEXT("values") && Object->GetStringField(TEXT("kind")) == TEXT("set"))
 		{
 			TArray<FString> Values;
@@ -577,6 +585,25 @@ FString CanonicalJson(const TSharedPtr<FJsonValue>& Value)
 	}
 	return TEXT("{") + FString::Join(Parts, TEXT(",")) + TEXT("}");
 }
+
+#if WITH_DEV_AUTOMATION_TESTS
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUEShedAuthoringCanonicalJsonTest,
+	"UEShed.Authoring.CanonicalJson",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FUEShedAuthoringCanonicalJsonTest::RunTest(const FString& Parameters)
+{
+	TSharedPtr<FJsonObject> Object;
+	const auto Reader = TJsonReaderFactory<>::Create(
+		TEXT("{\"z\":{\"values\":[2,1],\"kind\":\"set\"},\"a\":null,\"B\":\"value\"}"));
+	if (!TestTrue(TEXT("Parse JSON with unordered keys"), FJsonSerializer::Deserialize(Reader, Object)))
+		return false;
+	TestEqual(TEXT("Canonical keys remain case-sensitive and nested sets remain sorted"),
+		CanonicalJson(MakeShared<FJsonValueObject>(Object)),
+		FString(TEXT("{\"B\":\"value\",\"a\":null,\"z\":{\"kind\":\"set\",\"values\":[1,2]}}")));
+	return true;
+}
+#endif
 
 bool AssignPropertyValue(
 	const FProperty* Property, void* Value, const TSharedPtr<FJsonObject>& Input, FString& Error)

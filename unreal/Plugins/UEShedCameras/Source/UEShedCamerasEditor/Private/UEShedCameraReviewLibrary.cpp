@@ -56,9 +56,9 @@ bool HasOnlyFields(const TSharedPtr<FJsonObject> &Object, const TArray<FString> 
 {
 	if (!Object.IsValid())
 		return false;
-	for (const TPair<FString, TSharedPtr<FJsonValue>> &Field : Object->Values)
+	for (const auto &Field : Object->Values)
 	{
-		if (!AllowedFields.Contains(Field.Key))
+		if (!AllowedFields.Contains(FString(Field.Key.Len(), *Field.Key)))
 			return false;
 	}
 	return true;

@@ -67,7 +67,7 @@ bool Fields(const TSharedPtr<FJsonObject> &Value, std::initializer_list<const TC
 	for (auto Key : Optional)
 		Allowed.Add(Key);
 	for (const auto &Entry : Value->Values)
-		if (!Allowed.Contains(Entry.Key))
+		if (!Allowed.Contains(FString(Entry.Key.Len(), *Entry.Key)))
 			return false;
 	return true;
 }

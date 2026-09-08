@@ -5,6 +5,12 @@ precompiled Unreal Editor plugin variants. Discovering an external descriptor wi
 not compile it. An unattended host therefore requests a binary built for its exact engine identity;
 building and acquiring are separate operations.
 
+Starting with 0.7.1, portable plugin sources declare the range Unreal 5.7 through 5.8.2. The explicit
+patch upper bound includes the tested 5.8.2 install; `5.8` alone would mean 5.8.0 in range checks.
+Build a separate native variant for each exact engine identity, including stock versus custom
+builds of the same version.
+Existing 0.7.0 source artifacts remain immutable and retain their original compatibility metadata.
+
 ## Ownership boundary
 
 UE Shed owns portable source releases, versioned artifact contracts, the supervised generic
@@ -86,7 +92,7 @@ ue-shed plugins build `
 ```
 
 The output root is caller-owned and must be outside the engine. On Windows, keep it short enough for
-UBT's action path limit. The builder stages the complete dependency graph, invokes UE 5.7
+UBT's action path limit. The builder stages the complete dependency graph, invokes the selected engine's
 AutomationTool's `BuildPlugin` command, supervises the complete process tree, redistributes validated
 products to the original descriptors, and atomically publishes only after re-extracting the final
 archive. Cancellation or failure removes the private stage and publishes nothing.

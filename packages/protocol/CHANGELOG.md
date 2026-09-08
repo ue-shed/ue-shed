@@ -1,5 +1,9 @@
 # @ue-shed/protocol
 
+## 0.7.1
+
+Align this package with the synchronized UE Shed 0.7.1 suite and exact internal dependency pins. There is no direct behavioral change.
+
 ## 0.7.0
 
 ### Minor Changes

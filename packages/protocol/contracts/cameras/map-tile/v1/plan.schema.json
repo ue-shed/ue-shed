@@ -16,25 +16,44 @@
 		"tilePixelSize"
 	],
 	"properties": {
-		"capture": { "$ref": "#/$defs/capturePolicy" },
+		"capture": {
+			"$ref": "#/$defs/capturePolicy"
+		},
 		"contract": {
 			"type": "object",
 			"additionalProperties": false,
 			"required": ["name", "version"],
 			"properties": {
-				"name": { "const": "ue-shed-map-capture-plan" },
-				"version": { "$ref": "#/$defs/version" }
+				"name": {
+					"const": "ue-shed-map-capture-plan"
+				},
+				"version": {
+					"$ref": "#/$defs/version"
+				}
 			}
 		},
-		"gutterPixels": { "type": "integer", "minimum": 0, "maximum": 32 },
-		"id": { "$ref": "#/$defs/id" },
+		"gutterPixels": {
+			"type": "integer",
+			"minimum": 0,
+			"maximum": 32
+		},
+		"id": {
+			"$ref": "#/$defs/id"
+		},
 		"levels": {
 			"type": "object",
 			"additionalProperties": false,
 			"required": ["coarsestUnitsPerPixel", "count"],
 			"properties": {
-				"coarsestUnitsPerPixel": { "type": "number", "exclusiveMinimum": 0 },
-				"count": { "type": "integer", "minimum": 1, "maximum": 24 }
+				"coarsestUnitsPerPixel": {
+					"type": "number",
+					"exclusiveMinimum": 0
+				},
+				"count": {
+					"type": "integer",
+					"minimum": 1,
+					"maximum": 24
+				}
 			}
 		},
 		"output": {
@@ -42,31 +61,61 @@
 			"additionalProperties": false,
 			"required": ["imageFormat", "publication"],
 			"properties": {
-				"imageFormat": { "const": "png" },
-				"publication": { "const": "local_immutable" }
+				"imageFormat": {
+					"const": "png"
+				},
+				"publication": {
+					"const": "local_immutable"
+				}
 			}
 		},
-		"project": { "$ref": "#/$defs/project" },
-		"requestedBounds": { "$ref": "#/$defs/bounds" },
-		"tilePixelSize": { "type": "integer", "minimum": 64, "maximum": 4096 }
+		"project": {
+			"$ref": "#/$defs/project"
+		},
+		"requestedBounds": {
+			"$ref": "#/$defs/bounds"
+		},
+		"tilePixelSize": {
+			"type": "integer",
+			"minimum": 64,
+			"maximum": 4096
+		}
 	},
 	"$defs": {
-		"id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" },
+		"id": {
+			"type": "string",
+			"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+		},
 		"version": {
 			"type": "object",
 			"additionalProperties": false,
 			"required": ["major", "minor"],
-			"properties": { "major": { "const": 1 }, "minor": { "const": 0 } }
+			"properties": {
+				"major": {
+					"const": 1
+				},
+				"minor": {
+					"enum": [0, 1]
+				}
+			}
 		},
 		"bounds": {
 			"type": "object",
 			"additionalProperties": false,
 			"required": ["minX", "minY", "maxX", "maxY"],
 			"properties": {
-				"minX": { "type": "number" },
-				"minY": { "type": "number" },
-				"maxX": { "type": "number" },
-				"maxY": { "type": "number" }
+				"minX": {
+					"type": "number"
+				},
+				"minY": {
+					"type": "number"
+				},
+				"maxX": {
+					"type": "number"
+				},
+				"maxY": {
+					"type": "number"
+				}
 			}
 		},
 		"project": {
@@ -74,8 +123,13 @@
 			"additionalProperties": false,
 			"required": ["id", "mapPath"],
 			"properties": {
-				"id": { "$ref": "#/$defs/id" },
-				"mapPath": { "type": "string", "pattern": "^/[A-Za-z0-9_./-]+$" }
+				"id": {
+					"$ref": "#/$defs/id"
+				},
+				"mapPath": {
+					"type": "string",
+					"pattern": "^/[A-Za-z0-9_./-]+$"
+				}
 			}
 		},
 		"dataLayers": {
@@ -84,14 +138,20 @@
 					"type": "object",
 					"additionalProperties": false,
 					"required": ["mode"],
-					"properties": { "mode": { "const": "unchanged" } }
+					"properties": {
+						"mode": {
+							"const": "unchanged"
+						}
+					}
 				},
 				{
 					"type": "object",
 					"additionalProperties": false,
 					"required": ["mode", "states"],
 					"properties": {
-						"mode": { "const": "explicit" },
+						"mode": {
+							"const": "explicit"
+						},
 						"states": {
 							"type": "array",
 							"maxItems": 64,
@@ -100,8 +160,14 @@
 								"additionalProperties": false,
 								"required": ["name", "state"],
 								"properties": {
-									"name": { "type": "string", "minLength": 1, "maxLength": 1024 },
-									"state": { "enum": ["unloaded", "loaded", "activated"] }
+									"name": {
+										"type": "string",
+										"minLength": 1,
+										"maxLength": 1024
+									},
+									"state": {
+										"enum": ["unloaded", "loaded", "activated"]
+									}
 								}
 							}
 						}
@@ -114,15 +180,23 @@
 			"additionalProperties": false,
 			"required": ["dataLayers", "orientation", "render", "z"],
 			"properties": {
-				"dataLayers": { "$ref": "#/$defs/dataLayers" },
+				"dataLayers": {
+					"$ref": "#/$defs/dataLayers"
+				},
 				"orientation": {
 					"type": "object",
 					"additionalProperties": false,
 					"required": ["pitch", "roll", "yaw"],
 					"properties": {
-						"pitch": { "const": -90 },
-						"roll": { "const": 0 },
-						"yaw": { "const": 0 }
+						"pitch": {
+							"const": -90
+						},
+						"roll": {
+							"const": 0
+						},
+						"yaw": {
+							"const": 0
+						}
 					}
 				},
 				"render": {
@@ -130,21 +204,33 @@
 					"additionalProperties": false,
 					"required": ["effects", "lodPolicy", "profile"],
 					"properties": {
-						"exposureEV100": { "type": "number", "minimum": -20, "maximum": 30 },
+						"exposureEV100": {
+							"type": "number",
+							"minimum": -20,
+							"maximum": 30
+						},
 						"effects": {
 							"type": "object",
 							"additionalProperties": false,
 							"required": ["fog", "volumetricFog"],
 							"properties": {
-								"fog": { "type": "boolean" },
-								"volumetricFog": { "type": "boolean" }
+								"fog": {
+									"type": "boolean"
+								},
+								"volumetricFog": {
+									"type": "boolean"
+								}
 							}
 						},
 						"lodDistanceScaleByZoom": {
 							"type": "array",
 							"minItems": 1,
 							"maxItems": 24,
-							"items": { "type": "number", "minimum": 0.1, "maximum": 100 }
+							"items": {
+								"type": "number",
+								"minimum": 0.1,
+								"maximum": 100
+							}
 						},
 						"lodPolicy": {
 							"enum": ["natural", "fixed_lod_zero", "per_level_distance_scale"]
@@ -162,15 +248,25 @@
 						{
 							"if": {
 								"properties": {
-									"lodPolicy": { "const": "per_level_distance_scale" }
+									"lodPolicy": {
+										"const": "per_level_distance_scale"
+									}
 								}
 							},
-							"then": { "required": ["lodDistanceScaleByZoom"] },
-							"else": { "not": { "required": ["lodDistanceScaleByZoom"] } }
+							"then": {
+								"required": ["lodDistanceScaleByZoom"]
+							},
+							"else": {
+								"not": {
+									"required": ["lodDistanceScaleByZoom"]
+								}
+							}
 						}
 					]
 				},
-				"z": { "type": "number" }
+				"z": {
+					"type": "number"
+				}
 			}
 		}
 	}

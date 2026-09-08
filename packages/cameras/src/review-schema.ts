@@ -1,4 +1,10 @@
 import { Effect, Schema } from "effect";
+import {
+	CameraRenderPolicy,
+	CameraFrameEvidence,
+	CameraWorldVector,
+	CameraWorldRotation
+} from "./camera-render-schema.js";
 
 const NonEmptyString = Schema.String.check(Schema.isMinLength(1));
 const SafeIdentifier = NonEmptyString.check(Schema.isPattern(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/));
@@ -93,18 +99,10 @@ export type ReviewAuthoringSessionId = Schema.Schema.Type<typeof ReviewAuthoring
 export const ArtifactId = NonEmptyString.pipe(Schema.brand("ArtifactId"));
 export type ArtifactId = Schema.Schema.Type<typeof ArtifactId>;
 
-export const ReviewVector = Schema.Struct({
-	x: Schema.Finite,
-	y: Schema.Finite,
-	z: Schema.Finite
-});
+export const ReviewVector = CameraWorldVector;
 export type ReviewVector = Schema.Schema.Type<typeof ReviewVector>;
 
-export const ReviewRotation = Schema.Struct({
-	pitch: Schema.Finite,
-	roll: Schema.Finite,
-	yaw: Schema.Finite
-});
+export const ReviewRotation = CameraWorldRotation;
 export type ReviewRotation = Schema.Schema.Type<typeof ReviewRotation>;
 
 const NonNegativeReviewVector = Schema.Struct({
@@ -462,6 +460,7 @@ export const ApproveReviewCandidateIntent = Schema.Struct({
 export type ApproveReviewCandidateIntent = Schema.Schema.Type<typeof ApproveReviewCandidateIntent>;
 
 export const CaptureProfile = Schema.Struct({
+	renderPolicy: Schema.optionalKey(CameraRenderPolicy),
 	id: CaptureProfileId,
 	imageFormat: Schema.Literal("png"),
 	renderProfile: Schema.Literal("full_fidelity"),
@@ -860,7 +859,7 @@ const ReviewSetCurrent = Schema.Struct({
 	captureProfiles: Schema.Array(CaptureProfile).check(Schema.isMinLength(1)),
 	contract: Schema.Struct({
 		name: Schema.Literal("ue-shed-review-set"),
-		version: Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literal(2) })
+		version: Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literals([2, 3]) })
 	}),
 	description: Schema.optional(NonEmptyString),
 	displayName: NonEmptyString,
@@ -874,6 +873,14 @@ const ReviewSetCurrent = Schema.Struct({
 }).pipe(
 	Schema.check(
 		Schema.makeFilter((reviewSet) => {
+			if (
+				reviewSet.contract.version.minor < 3 &&
+				reviewSet.captureProfiles.some((profile) => profile.renderPolicy !== undefined)
+			)
+				return {
+					issue: "Explicit rendering policies require Review Set 1.3.",
+					path: ["contract"]
+				};
 			const profileIds = new Set<string>();
 			for (const profile of reviewSet.captureProfiles) {
 				if (profileIds.has(profile.id)) {
@@ -1157,7 +1164,8 @@ const ReviewSetContractHeader = Schema.Struct({
 		version: Schema.Union([
 			Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literal(0) }),
 			Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literal(1) }),
-			Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literal(2) })
+			Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literal(2) }),
+			Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literal(3) })
 		])
 	})
 });
@@ -1169,7 +1177,7 @@ type DecodedReviewSet =
 export function decodeReviewSetWithMigration<Input>(input: Input) {
 	return Schema.decodeUnknownEffect(ReviewSetContractHeader)(input).pipe(
 		Effect.flatMap(({ contract }) => {
-			if (contract.version.minor === 2) {
+			if (contract.version.minor >= 2) {
 				return Schema.decodeUnknownEffect(ReviewSetCurrent)(input).pipe(
 					Effect.map((reviewSet): DecodedReviewSet => ({ migrated: false, reviewSet }))
 				);
@@ -1257,11 +1265,12 @@ const ReviewCaptureRequestLegacy = Schema.Struct({
 });
 
 export const ReviewCaptureRequestCurrent = Schema.Struct({
+	renderPolicy: Schema.optionalKey(CameraRenderPolicy),
 	assessment: VisibilityAssessment,
 	clearCompanion: ReviewClearCompanionRequest,
 	contract: Schema.Struct({
 		name: Schema.Literal("ue-shed-review-capture"),
-		version: Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literal(5) })
+		version: Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literals([5, 6]) })
 	}),
 	expectedMapPath: NonEmptyString,
 	operationId: ReviewCaptureOperationId,
@@ -1274,6 +1283,14 @@ export const ReviewCaptureRequestCurrent = Schema.Struct({
 	viewpoint: Schema.Union([WorldFixedViewpoint, TargetRelativeViewpoint])
 }).pipe(
 	Schema.check(
+		Schema.makeFilter((request) =>
+			(request.contract.version.minor === 6) === (request.renderPolicy !== undefined)
+				? undefined
+				: {
+						issue: "Capture 1.6 requires renderPolicy; older capture versions cannot carry it.",
+						path: ["renderPolicy"]
+					}
+		),
 		Schema.makeFilter((request) =>
 			request.subject.kind === "oriented_bounds"
 				? request.viewpoint.kind === "target_relative"
@@ -1435,6 +1452,11 @@ export type ResolvedActorGuidSubject = Schema.Schema.Type<typeof ResolvedActorGu
 const ResolvedReviewSubjectPrevious = Schema.Union([ResolvedActorSubject, OrientedBoundsSubject]);
 
 export const ResolvedReviewSubject = Schema.Union([
+	Schema.Struct({
+		kind: Schema.Literal("unresolved_actor"),
+		subject: SubjectLocator,
+		reason: NonEmptyString
+	}),
 	ResolvedActorGuidSubject,
 	ResolvedActorSubject,
 	OrientedBoundsSubject
@@ -1537,11 +1559,12 @@ export const ClearCompanionResult = Schema.Union([
 export type ClearCompanionResult = Schema.Schema.Type<typeof ClearCompanionResult>;
 
 const ReviewCaptureSuccessCurrent = Schema.Struct({
+	renderEvidence: Schema.optionalKey(CameraFrameEvidence),
 	captureDurationMs: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)),
 	clearCompanion: ClearCompanionResult,
 	contract: Schema.Struct({
 		name: Schema.Literal("ue-shed-review-capture"),
-		version: Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literal(5) })
+		version: Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literals([5, 6]) })
 	}),
 	effectiveWorldPose: ApprovedPose,
 	height: PositiveInteger,
@@ -1555,13 +1578,28 @@ const ReviewCaptureSuccessCurrent = Schema.Struct({
 		Schema.isMaxLength(2)
 	),
 	status: Schema.Literal("captured"),
-	subjectProjection: ReviewSubjectProjection,
+	subjectProjection: Schema.optionalKey(ReviewSubjectProjection),
 	viewId: ReviewViewId,
 	visibility: VisibilityMeasurement,
 	width: PositiveInteger
 }).pipe(
 	Schema.check(
 		Schema.makeFilter((response) => {
+			if (
+				response.contract.version.minor === 5 &&
+				(response.subjectProjection === undefined ||
+					response.resolvedSubject.kind === "unresolved_actor" ||
+					response.renderEvidence !== undefined)
+			)
+				return {
+					issue: "Capture 1.5 requires resolved subject evidence and cannot contain renderer evidence.",
+					path: []
+				};
+			if (response.contract.version.minor === 6 && response.renderEvidence === undefined)
+				return {
+					issue: "Capture 1.6 requires renderer evidence.",
+					path: ["renderEvidence"]
+				};
 			const issue = stagedArtifactVariantIssue(response);
 			if (issue !== undefined) return issue;
 			const hasClearArtifact = response.stagedArtifacts.some(
@@ -1676,7 +1714,7 @@ const ReviewCaptureFailure = Schema.Struct({
 		name: Schema.Literal("ue-shed-review-capture"),
 		version: Schema.Struct({
 			major: Schema.Literal(1),
-			minor: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 5 }))
+			minor: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 6 }))
 		})
 	}),
 	message: NonEmptyString,
@@ -1698,6 +1736,7 @@ export const ReviewCaptureResponse = Schema.Union([
 export type ReviewCaptureResponse = Schema.Schema.Type<typeof ReviewCaptureResponse>;
 
 export const ReviewCandidateRealization = Schema.Struct({
+	renderEvidence: Schema.optionalKey(CameraFrameEvidence),
 	candidateId: FramingCandidateId,
 	diagnostics: Schema.Array(FramingDiagnostic),
 	projection: ReviewSubjectProjection,
@@ -1843,6 +1882,7 @@ function capturedArtifactVariantIssue(result: {
 }
 
 const CapturedViewResult = Schema.Struct({
+	renderEvidence: Schema.optionalKey(CameraFrameEvidence),
 	artifacts: Schema.Array(CaptureArtifact).check(Schema.isMinLength(1), Schema.isMaxLength(2)),
 	captureDurationMs: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)),
 	clearCompanion: ClearCompanionResult,
@@ -1872,7 +1912,7 @@ const CaptureRunCurrent = Schema.Struct({
 	completedAt: Schema.String,
 	contract: Schema.Struct({
 		name: Schema.Literal("ue-shed-capture-run"),
-		version: Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literal(5) })
+		version: Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literals([5, 6]) })
 	}),
 	id: CaptureRunId,
 	invocation: CaptureInvocation,

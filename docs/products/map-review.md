@@ -1,5 +1,12 @@
 # Map review product
 
+Review previews and final captures use the [shared camera rendering API](camera-rendering.md).
+Review Set 1.3 optionally stores a resolved renderer policy on each capture profile; preview and
+final capture retain that policy and record their distinct resolutions. Capture Run 1.6 retains
+render evidence. A fixed approved camera renders even when its actor provenance is unavailable;
+actor-relative views still require realization. Legacy documents and the saved-position retry are
+preserved, with the compatibility details in the rendering guide.
+
 ## Product promise
 
 UE Shed Map Review gives teams a durable visual memory of important spaces and world features. An
@@ -52,6 +59,15 @@ fixture change, a 37-candidate rig, bounds-change recovery, framing variation, a
 restoration against UE 5.7. The authoring and high-count journeys can record those same asserted
 actions with `pnpm record:flow:map-review`; video, traces, logs, checkpoint screenshots, raw Unreal
 images, and durable JSON are described by a versioned relative-path manifest.
+
+The Review Set capture runner supports saved-position fallback for fixed actor views. A retry-safe
+`subject_not_found` triggers one Natural-only retry at the unchanged Approved Pose and resolution,
+using saved framing bounds (or a zero-extent camera-position marker for manual views) through the
+existing oriented-area capture contract. The immutable Review Set snapshot retains actor provenance;
+the result records the region used and explicitly unassessed actor visibility and scene readiness.
+An optional Clear request retains a typed failure alongside the valid Pure image. Target-relative
+views, initial framing, and authoring previews continue to require live actors. This fallback does
+not load World Partition cells: scene preparation remains the caller's responsibility.
 
 Capture contract v1.5 now realizes all three first target/viewpoint meanings: fixed actor, actor
 relative to its current transform, and fixed oriented area. Unreal resolves relative actor poses

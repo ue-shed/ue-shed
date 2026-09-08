@@ -1,0 +1,39 @@
+{
+	"contract": {
+		"name": "ue-shed-camera-render",
+		"version": {
+			"major": 1,
+			"minor": 0
+		}
+	},
+	"sessionId": "fixture-session",
+	"expectedMapPath": "/Game/Fixture/Cameras/L_CameraLoad",
+	"expectedProjectName": "UEShedFixture",
+	"policy": {
+		"renderer": {
+			"kind": "scene_capture",
+			"profile": "full_fidelity",
+			"lodDistanceScale": 1,
+			"fog": true,
+			"volumetricFog": true
+		},
+		"exposure": {
+			"mode": "fixed_ev100",
+			"ev100": 1,
+			"compensation": "project"
+		},
+		"settling": {
+			"minimumFrames": 4,
+			"timeoutMs": 120000
+		},
+		"time": "live_editor",
+		"preparation": {
+			"geometry": {
+				"mode": "preserve_loading"
+			},
+			"dataLayers": []
+		}
+	},
+	"leaseMs": 120000,
+	"maximumFrames": 8
+}

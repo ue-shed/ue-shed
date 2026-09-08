@@ -1,0 +1,201 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://ue-shed.dev/contracts/cameras/render/v1/capabilities.schema.json",
+	"type": "object",
+	"properties": {
+		"contract": {
+			"type": "object",
+			"properties": {
+				"name": {
+					"type": "string",
+					"enum": ["ue-shed-camera-render"]
+				},
+				"version": {
+					"type": "object",
+					"properties": {
+						"major": {
+							"type": "number",
+							"enum": [1]
+						},
+						"minor": {
+							"type": "number",
+							"enum": [0]
+						}
+					},
+					"required": ["major", "minor"],
+					"additionalProperties": false
+				}
+			},
+			"required": ["name", "version"],
+			"additionalProperties": false
+		},
+		"engineVersion": {
+			"type": "string",
+			"allOf": [
+				{
+					"minLength": 1
+				},
+				{
+					"maxLength": 1024
+				}
+			]
+		},
+		"pluginVersion": {
+			"type": "string",
+			"allOf": [
+				{
+					"minLength": 1
+				},
+				{
+					"maxLength": 1024
+				}
+			]
+		},
+		"projectName": {
+			"type": "string",
+			"allOf": [
+				{
+					"minLength": 1
+				},
+				{
+					"maxLength": 1024
+				}
+			]
+		},
+		"renderers": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"properties": {
+					"profiles": {
+						"type": "array",
+						"items": {
+							"type": "string",
+							"enum": [
+								"lit",
+								"full_fidelity",
+								"seam_stable",
+								"scene_capture_defaults",
+								"observation"
+							]
+						}
+					},
+					"reviewAssessment": {
+						"type": "array",
+						"items": {
+							"type": "string",
+							"enum": ["depth_compare", "ray_samples"]
+						}
+					},
+					"reviewClear": {
+						"type": "array",
+						"items": {
+							"type": "string",
+							"enum": ["isolate_target", "hide_explicit"]
+						}
+					},
+					"kind": {
+						"type": "string",
+						"enum": ["editor_viewport", "scene_capture"]
+					},
+					"projections": {
+						"type": "array",
+						"items": {
+							"type": "string",
+							"enum": ["perspective", "orthographic"]
+						}
+					},
+					"strategies": {
+						"type": "array",
+						"items": {
+							"type": "string",
+							"enum": ["high_resolution_screenshot", "render_target"]
+						}
+					},
+					"exposure": {
+						"type": "array",
+						"items": {
+							"type": "string",
+							"enum": ["project_auto", "fixed_ev100", "meter_once"]
+						}
+					},
+					"maximumDimension": {
+						"type": "integer",
+						"allOf": [
+							{
+								"minimum": 16,
+								"maximum": 16384
+							}
+						]
+					}
+				},
+				"required": [
+					"profiles",
+					"reviewAssessment",
+					"reviewClear",
+					"kind",
+					"projections",
+					"strategies",
+					"exposure",
+					"maximumDimension"
+				],
+				"additionalProperties": false
+			}
+		},
+		"preparation": {
+			"type": "array",
+			"items": {
+				"type": "string",
+				"enum": ["preserve_loading", "camera_regions", "editor_data_layers"]
+			}
+		},
+		"freeze": {
+			"type": "array",
+			"items": {
+				"type": "string",
+				"enum": ["freeze_materials_and_ticks"]
+			}
+		},
+		"maximumRetainedOperations": {
+			"type": "integer",
+			"allOf": [
+				{
+					"minimum": 1,
+					"maximum": 64
+				}
+			]
+		},
+		"maximumRetainedSessions": {
+			"type": "integer",
+			"allOf": [
+				{
+					"minimum": 1,
+					"maximum": 9
+				}
+			]
+		},
+		"retentionMs": {
+			"type": "integer",
+			"allOf": [
+				{
+					"minimum": 1000,
+					"maximum": 120000
+				}
+			]
+		}
+	},
+	"required": [
+		"contract",
+		"engineVersion",
+		"pluginVersion",
+		"projectName",
+		"renderers",
+		"preparation",
+		"freeze",
+		"maximumRetainedOperations",
+		"maximumRetainedSessions",
+		"retentionMs"
+	],
+	"additionalProperties": false,
+	"$defs": {}
+}

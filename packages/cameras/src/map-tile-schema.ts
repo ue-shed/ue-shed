@@ -1,4 +1,5 @@
 import { Schema } from "effect";
+import { CameraFrameEvidence } from "./camera-render-schema.js";
 import {
 	assertMapTileKey,
 	createMapTileGrid,
@@ -28,7 +29,7 @@ export type MapCaptureOperationId = typeof MapCaptureOperationId.Type;
 
 export const MapCaptureContractVersion = Schema.Struct({
 	major: Schema.Literal(1),
-	minor: Schema.Literal(0)
+	minor: Schema.Literals([0, 1])
 });
 
 export const MapCaptureWorldBounds = Schema.Struct({
@@ -239,6 +240,7 @@ const MapTileCaptureFailure = Schema.Struct({
 
 const MapTileCaptureResult = Schema.Union([
 	Schema.Struct({
+		renderEvidence: Schema.optionalKey(CameraFrameEvidence),
 		bytes: PositiveInteger,
 		captureDurationMs: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)),
 		height: PositiveInteger,
@@ -318,7 +320,13 @@ export const MapTilePyramidLevel = Schema.Struct({
 	zoom: NonNegativeInteger
 });
 
+export const MapTileReleaseResult = Schema.Struct({
+	released: Schema.Boolean,
+	restoration: Schema.Literals(["restored", "failed"])
+});
+
 export const MapTileArtifact = Schema.Struct({
+	renderEvidence: Schema.optionalKey(CameraFrameEvidence),
 	bytes: PositiveInteger,
 	hash: Sha256,
 	height: PositiveInteger,

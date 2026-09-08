@@ -1,0 +1,12 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://ue-shed.dev/contracts/cameras/map-tile/v1/release-result.schema.json",
+	"type": "object",
+	"properties": {
+		"released": { "type": "boolean" },
+		"restoration": { "type": "string", "enum": ["restored", "failed"] }
+	},
+	"required": ["released", "restoration"],
+	"additionalProperties": false,
+	"$defs": {}
+}

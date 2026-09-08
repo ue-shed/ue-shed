@@ -569,7 +569,7 @@ describe("durable capture loop", () => {
 		expect(run.results).toHaveLength(1);
 	});
 
-	it("sends target-relative actors and fixed oriented areas through capture contract v1.2", async () => {
+	it("sends target-relative actors and fixed oriented areas through shared render capture v1.6", async () => {
 		const projectRoot = await mkdtemp(join(tmpdir(), "ue-shed-review-targets-"));
 		temporaryDirectories.push(projectRoot);
 		const reviewSetPath = join(projectRoot, "set.json");
@@ -641,12 +641,12 @@ describe("durable capture loop", () => {
 		await runCapture({ projectRoot, reviewSetPath }, port, () => ids.shift()!);
 		expect(requests).toMatchObject([
 			{
-				contract: { version: { major: 1, minor: 5 } },
+				contract: { version: { major: 1, minor: 6 } },
 				subject: { kind: "actor_path" },
 				viewpoint: { kind: "target_relative" }
 			},
 			{
-				contract: { version: { major: 1, minor: 5 } },
+				contract: { version: { major: 1, minor: 6 } },
 				subject: {
 					bounds: { rotation: { yaw: 30 } },
 					kind: "oriented_bounds"
@@ -828,7 +828,7 @@ describe("durable capture loop", () => {
 
 		expect(run.status).toBe("completed");
 		expect(run.id).toBe("run-001");
-		expect(run.contract.version).toEqual({ major: 1, minor: 5 });
+		expect(run.contract.version).toEqual({ major: 1, minor: 6 });
 		const persisted = await Effect.runPromise(
 			loadCaptureRun(captureRunPath(projectRoot, run.id)).pipe(
 				Effect.provide(ReviewRepositoryLive)
@@ -873,6 +873,211 @@ describe("durable capture loop", () => {
 			{ failedViews: 0, id: "run-001", status: "completed", successfulViews: 1 }
 		]);
 	});
+
+	it.each(["manual", "preset", "guid", "clear"] as const)(
+		"captures a missing actor from its saved position with %s provenance",
+		async (mode) => {
+			const projectRoot = await mkdtemp(join(tmpdir(), "ue-shed-review-position-"));
+			temporaryDirectories.push(projectRoot);
+			const reviewSetPath = join(projectRoot, "set.json");
+			const original = fixtureReviewSet();
+			const view = original.views[0]!;
+			const bounds = {
+				center: { x: 100, y: 200, z: 300 },
+				extent: { x: 40, y: 50, z: 60 },
+				rotation: { pitch: 0, roll: 0, yaw: 30 }
+			};
+			const reviewSet = decodeReviewSet({
+				...original,
+				views: [
+					{
+						...view,
+						...(mode === "preset"
+							? {
+									framingRecipe: {
+										kind: "preset",
+										margin: 0.1,
+										preset: "context_three_quarter",
+										subjectBounds: bounds,
+										version: 1
+									}
+								}
+							: undefined),
+						...(mode === "guid"
+							? {
+									target: {
+										kind: "actor",
+										subject: {
+											actorGuid: "11111111-22222222-33333333-44444444",
+											kind: "actor_guid"
+										}
+									}
+								}
+							: undefined)
+					}
+				],
+				visibilityPolicies: original.visibilityPolicies.map((policy) =>
+					mode === "clear"
+						? {
+								...policy,
+								output: {
+									clearStrategy: { type: "isolate_target" },
+									mode: "natural_and_clear"
+								}
+							}
+						: policy
+				)
+			});
+			await Effect.runPromise(
+				saveReviewSet({ path: reviewSetPath, reviewSet }).pipe(
+					Effect.provide(ReviewRepositoryLive)
+				)
+			);
+			const requests: (typeof ReviewCaptureRequestCurrent.Type)[] = [];
+			const png = new Uint8Array([137, 80, 78, 71, 1]);
+			const success = successfulCapturePort({ png, projectRoot });
+			const ids = ["position-run", "position-invocation", operationId(20)];
+			const run = await runCapture(
+				{ projectRoot, reviewSetPath },
+				{
+					capture: (request) => {
+						requests.push(request);
+						return request.subject.kind === "oriented_bounds"
+							? success.capture(request)
+							: Effect.succeed({
+									code: "subject_not_found",
+									contract: request.contract,
+									message: "Actor not loaded",
+									operationId: request.operationId,
+									recovery: "Load the actor",
+									retrySafe: true,
+									status: "failed" as const,
+									viewId: request.viewId
+								});
+					}
+				},
+				() => ids.shift()!
+			);
+			expect(requests).toHaveLength(2);
+			expect(requests[1]).toEqual({
+				...requests[0],
+				clearCompanion: { status: "not_requested" },
+				subject: {
+					kind: "oriented_bounds",
+					bounds:
+						mode === "preset"
+							? bounds
+							: {
+									center: reviewViewApprovedPose(view)!.location,
+									extent: { x: 0, y: 0, z: 0 },
+									rotation: { pitch: 0, roll: 0, yaw: 0 }
+								}
+				}
+			});
+			expect(run.status).toBe(mode === "clear" ? "completed_with_failures" : "completed");
+			expect(run.results[0]).toMatchObject({
+				status: "captured",
+				realization: {
+					effectiveWorldPose: reviewViewApprovedPose(view),
+					resolvedSubject: requests[1]!.subject,
+					viewpoint: view.viewpoint
+				},
+				visibility: {
+					status: "not_assessed",
+					reason: expect.stringContaining("Saved-position fallback")
+				},
+				clearCompanion:
+					mode === "clear"
+						? {
+								status: "failed",
+								failure: { code: "subject_not_found" },
+								interventions: []
+							}
+						: { status: "not_requested" }
+			});
+			expect(
+				await Effect.runPromise(
+					loadReviewSet(reviewSetPath).pipe(Effect.provide(ReviewRepositoryLive))
+				)
+			).toEqual(reviewSet);
+			expect(
+				await Effect.runPromise(
+					loadCaptureRun(captureRunPath(projectRoot, run.id)).pipe(
+						Effect.provide(ReviewRepositoryLive)
+					)
+				)
+			).toEqual(run);
+		}
+	);
+
+	it.each(["target_relative", "map_mismatch", "unsafe", "connection", "fallback_failed"])(
+		"preserves capture failure for %s without an unbounded position retry",
+		async (mode) => {
+			const projectRoot = await mkdtemp(join(tmpdir(), "ue-shed-review-position-failure-"));
+			temporaryDirectories.push(projectRoot);
+			const reviewSetPath = join(projectRoot, "set.json");
+			const original = fixtureReviewSet();
+			const reviewSet = decodeReviewSet({
+				...original,
+				views: original.views.map((view) =>
+					mode === "target_relative"
+						? {
+								...view,
+								viewpoint: {
+									kind: "target_relative",
+									relativePose: reviewViewApprovedPose(view),
+									targetSnapshot: {
+										location: { x: 0, y: 0, z: 0 },
+										rotation: { pitch: 0, roll: 0, yaw: 0 }
+									}
+								}
+							}
+						: view
+				)
+			});
+			await Effect.runPromise(
+				saveReviewSet({ path: reviewSetPath, reviewSet }).pipe(
+					Effect.provide(ReviewRepositoryLive)
+				)
+			);
+			let calls = 0;
+			const ids = ["failure-run", "failure-invocation", operationId(21)];
+			const run = await runCapture(
+				{ projectRoot, reviewSetPath },
+				{
+					capture: (request) => {
+						calls++;
+						return mode === "connection"
+							? Effect.fail(new Error("Disconnected"))
+							: Effect.succeed({
+									code:
+										mode === "map_mismatch"
+											? "map_mismatch"
+											: "subject_not_found",
+									contract: request.contract,
+									message: "Capture unavailable",
+									operationId: request.operationId,
+									recovery: "Check the editor",
+									retrySafe: mode !== "unsafe",
+									status: "failed" as const,
+									viewId: request.viewId
+								});
+					}
+				},
+				() => ids.shift()!
+			);
+			expect(calls).toBe(mode === "fallback_failed" ? 2 : 1);
+			expect(run.results[0]).toMatchObject({
+				status: "failed",
+				code:
+					mode === "connection"
+						? "capture_connection_failed"
+						: mode === "map_mismatch"
+							? "map_mismatch"
+							: "subject_not_found"
+			});
+		}
+	);
 
 	it("publishes beneath an existing caller-owned root without writing a project-local run", async () => {
 		const projectRoot = await mkdtemp(join(tmpdir(), "ue-shed-review-caller-project-"));

@@ -1,3 +1,4 @@
+import { legacyReviewRenderPolicy, type CameraFrameEvidence } from "./camera-render-schema.js";
 import { createHash, randomUUID } from "node:crypto";
 import { readFile, unlink } from "node:fs/promises";
 import {
@@ -82,6 +83,7 @@ function remoteReviewCall(
 }
 
 export interface ReviewCandidatePreview {
+	readonly renderEvidence?: CameraFrameEvidence;
 	readonly bytes: Uint8Array;
 	readonly height: number;
 	readonly projection: ReviewSubjectProjection;
@@ -204,11 +206,12 @@ export const ReviewAuthoringLive = Layer.effect(
 					clearCompanion: { status: "not_requested" },
 					contract: {
 						name: "ue-shed-review-capture",
-						version: { major: 1, minor: 5 }
+						version: { major: 1, minor: 6 }
 					},
 					expectedMapPath: args.mapPath,
 					operationId,
 					resolution: args.profile.resolution,
+					renderPolicy: args.profile.renderPolicy ?? legacyReviewRenderPolicy,
 					subject: args.subject,
 					viewId: previewViewId,
 					viewpoint: {
@@ -243,10 +246,10 @@ export const ReviewAuthoringLive = Layer.effect(
 				return yield* new ReviewAuthoringConnectionError({
 					endpoint: args.endpoint,
 					message:
-						"The editor captured a preview without post-realization framing evidence.",
+						"The preview rendered, but the subject has no available framing bounds in the editor world.",
 					operation: "preview_candidate",
 					recovery:
-						"Update the UEShedCameras editor capability before keeping a Review View.",
+						"Load the subject to assess authoring framing, or capture its independent approved camera without actor assessment.",
 					retrySafe: false
 				});
 			}
@@ -256,6 +259,10 @@ export const ReviewAuthoringLive = Layer.effect(
 				try: async () => {
 					try {
 						return {
+							...("renderEvidence" in response &&
+							response.renderEvidence !== undefined
+								? { renderEvidence: response.renderEvidence }
+								: undefined),
 							bytes: new Uint8Array(await readFile(stagingPath)),
 							height: response.height,
 							projection,

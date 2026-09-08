@@ -1842,12 +1842,18 @@ export const WorkbenchMapReviewLive = Layer.effect(
 							candidateId: candidate.id,
 							projectRoot,
 							projection: preview.projection,
+							...(preview.renderEvidence === undefined
+								? undefined
+								: { renderEvidence: preview.renderEvidence }),
 							sessionId: session.id
 						});
 						const realization = updated.realizations.find(
 							(item) => item.candidateId === candidate.id
 						);
 						return {
+							...(preview.renderEvidence === undefined
+								? undefined
+								: { renderEvidence: preview.renderEvidence }),
 							bytes: preview.bytes,
 							diagnostics: realization?.diagnostics ?? [],
 							height: preview.height,

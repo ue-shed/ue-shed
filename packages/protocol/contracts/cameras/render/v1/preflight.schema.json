@@ -1,0 +1,68 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://ue-shed.dev/contracts/cameras/render/v1/preflight.schema.json",
+	"type": "object",
+	"properties": {
+		"status": {
+			"type": "string",
+			"enum": ["ready", "blocked"]
+		},
+		"issues": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"properties": {
+					"code": {
+						"type": "string",
+						"allOf": [
+							{
+								"minLength": 1
+							},
+							{
+								"maxLength": 1024
+							}
+						]
+					},
+					"path": {
+						"type": "string",
+						"allOf": [
+							{
+								"minLength": 1
+							},
+							{
+								"maxLength": 1024
+							}
+						]
+					},
+					"message": {
+						"type": "string",
+						"allOf": [
+							{
+								"minLength": 1
+							},
+							{
+								"maxLength": 1024
+							}
+						]
+					},
+					"recovery": {
+						"type": "string",
+						"allOf": [
+							{
+								"minLength": 1
+							},
+							{
+								"maxLength": 1024
+							}
+						]
+					}
+				},
+				"required": ["code", "path", "message", "recovery"],
+				"additionalProperties": false
+			}
+		}
+	},
+	"required": ["status", "issues"],
+	"additionalProperties": false,
+	"$defs": {}
+}

@@ -11,14 +11,22 @@
 			"additionalProperties": false,
 			"required": ["name", "version"],
 			"properties": {
-				"name": { "const": "ue-shed-review-capture" },
+				"name": {
+					"const": "ue-shed-review-capture"
+				},
 				"version": {
 					"type": "object",
 					"additionalProperties": false,
 					"required": ["major", "minor"],
 					"properties": {
-						"major": { "const": 1 },
-						"minor": { "type": "integer", "minimum": 0, "maximum": 5 }
+						"major": {
+							"const": 1
+						},
+						"minor": {
+							"type": "integer",
+							"minimum": 0,
+							"maximum": 6
+						}
 					}
 				}
 			}
@@ -27,10 +35,17 @@
 			"type": "string",
 			"format": "uuid",
 			"pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
-			"not": { "const": "00000000-0000-0000-0000-000000000000" }
+			"not": {
+				"const": "00000000-0000-0000-0000-000000000000"
+			}
 		},
-		"viewId": { "$ref": "#/$defs/safeId" },
-		"expectedMapPath": { "type": "string", "minLength": 1 },
+		"viewId": {
+			"$ref": "#/$defs/safeId"
+		},
+		"expectedMapPath": {
+			"type": "string",
+			"minLength": 1
+		},
 		"subject": {
 			"oneOf": [
 				{
@@ -38,11 +53,15 @@
 					"additionalProperties": false,
 					"required": ["kind", "actorGuid"],
 					"properties": {
-						"kind": { "const": "actor_guid" },
+						"kind": {
+							"const": "actor_guid"
+						},
 						"actorGuid": {
 							"type": "string",
 							"pattern": "^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{8}){3}$",
-							"not": { "const": "00000000-00000000-00000000-00000000" }
+							"not": {
+								"const": "00000000-00000000-00000000-00000000"
+							}
 						},
 						"lastKnownActorPath": {
 							"type": "string",
@@ -50,7 +69,10 @@
 							"maxLength": 4096,
 							"pattern": "^/Game/"
 						},
-						"diagnosticLabel": { "type": "string", "minLength": 1 }
+						"diagnosticLabel": {
+							"type": "string",
+							"minLength": 1
+						}
 					}
 				},
 				{
@@ -58,14 +80,19 @@
 					"additionalProperties": false,
 					"required": ["kind", "actorPath"],
 					"properties": {
-						"kind": { "const": "actor_path" },
+						"kind": {
+							"const": "actor_path"
+						},
 						"actorPath": {
 							"type": "string",
 							"minLength": 7,
 							"maxLength": 4096,
 							"pattern": "^/Game/"
 						},
-						"diagnosticLabel": { "type": "string", "minLength": 1 }
+						"diagnosticLabel": {
+							"type": "string",
+							"minLength": 1
+						}
 					}
 				},
 				{
@@ -73,8 +100,12 @@
 					"additionalProperties": false,
 					"required": ["kind", "bounds"],
 					"properties": {
-						"kind": { "const": "oriented_bounds" },
-						"bounds": { "$ref": "#/$defs/bounds" }
+						"kind": {
+							"const": "oriented_bounds"
+						},
+						"bounds": {
+							"$ref": "#/$defs/bounds"
+						}
 					}
 				}
 			]
@@ -84,11 +115,23 @@
 			"additionalProperties": false,
 			"required": ["aspectRatio", "fieldOfViewDegrees", "location", "projection", "rotation"],
 			"properties": {
-				"aspectRatio": { "const": "16:9" },
-				"fieldOfViewDegrees": { "type": "number", "minimum": 5, "maximum": 170 },
-				"projection": { "const": "perspective" },
-				"location": { "$ref": "#/$defs/vector" },
-				"rotation": { "$ref": "#/$defs/rotation" }
+				"aspectRatio": {
+					"const": "16:9"
+				},
+				"fieldOfViewDegrees": {
+					"type": "number",
+					"minimum": 5,
+					"maximum": 170
+				},
+				"projection": {
+					"const": "perspective"
+				},
+				"location": {
+					"$ref": "#/$defs/vector"
+				},
+				"rotation": {
+					"$ref": "#/$defs/rotation"
+				}
 			}
 		},
 		"resolution": {
@@ -96,13 +139,30 @@
 			"additionalProperties": false,
 			"required": ["width", "height"],
 			"properties": {
-				"width": { "type": "integer", "minimum": 160, "maximum": 3840 },
-				"height": { "type": "integer", "minimum": 90, "maximum": 2160 }
+				"width": {
+					"type": "integer",
+					"minimum": 160,
+					"maximum": 3840
+				},
+				"height": {
+					"type": "integer",
+					"minimum": 90,
+					"maximum": 2160
+				}
 			}
 		},
-		"assessment": { "$ref": "#/$defs/assessment" },
-		"clearCompanion": { "$ref": "#/$defs/clearCompanion" },
-		"viewpoint": { "$ref": "#/$defs/viewpoint" }
+		"assessment": {
+			"$ref": "#/$defs/assessment"
+		},
+		"clearCompanion": {
+			"$ref": "#/$defs/clearCompanion"
+		},
+		"viewpoint": {
+			"$ref": "#/$defs/viewpoint"
+		},
+		"renderPolicy": {
+			"$ref": "../../render/v1/policy.schema.json"
+		}
 	},
 	"allOf": [
 		{
@@ -110,33 +170,59 @@
 				"properties": {
 					"contract": {
 						"properties": {
-							"version": { "properties": { "minor": { "enum": [2, 3, 4, 5] } } }
+							"version": {
+								"properties": {
+									"minor": {
+										"enum": [2, 3, 4, 5, 6]
+									}
+								}
+							}
 						}
 					}
 				}
 			},
-			"then": { "required": ["assessment", "viewpoint"] },
-			"else": { "required": ["approvedPose"] }
+			"then": {
+				"required": ["assessment", "viewpoint"]
+			},
+			"else": {
+				"required": ["approvedPose"]
+			}
 		},
 		{
 			"if": {
 				"properties": {
 					"contract": {
 						"properties": {
-							"version": { "properties": { "minor": { "enum": [4, 5] } } }
+							"version": {
+								"properties": {
+									"minor": {
+										"enum": [4, 5, 6]
+									}
+								}
+							}
 						}
 					}
 				}
 			},
-			"then": { "required": ["clearCompanion"] },
-			"else": { "not": { "required": ["clearCompanion"] } }
+			"then": {
+				"required": ["clearCompanion"]
+			},
+			"else": {
+				"not": {
+					"required": ["clearCompanion"]
+				}
+			}
 		},
 		{
 			"if": {
 				"properties": {
 					"subject": {
 						"required": ["kind"],
-						"properties": { "kind": { "const": "actor_guid" } }
+						"properties": {
+							"kind": {
+								"const": "actor_guid"
+							}
+						}
 					}
 				}
 			},
@@ -144,23 +230,63 @@
 				"properties": {
 					"contract": {
 						"properties": {
-							"version": { "properties": { "minor": { "const": 5 } } }
+							"version": {
+								"properties": {
+									"minor": {
+										"enum": [5, 6]
+									}
+								}
+							}
 						}
 					}
+				}
+			}
+		},
+		{
+			"if": {
+				"properties": {
+					"contract": {
+						"properties": {
+							"version": {
+								"properties": {
+									"minor": {
+										"const": 6
+									}
+								}
+							}
+						}
+					}
+				}
+			},
+			"then": {
+				"required": ["renderPolicy"]
+			},
+			"else": {
+				"not": {
+					"required": ["renderPolicy"]
 				}
 			}
 		}
 	],
 	"$defs": {
-		"safeId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" },
+		"safeId": {
+			"type": "string",
+			"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+		},
 		"vector": {
 			"type": "object",
 			"additionalProperties": false,
 			"required": ["x", "y", "z"],
 			"properties": {
-				"x": { "type": "number" },
-				"y": { "type": "number" },
-				"z": { "type": "number" }
+				"x": {
+					"type": "number"
+				},
+				"y": {
+					"type": "number"
+				},
+				"z": {
+					"type": "number"
+				}
 			}
 		},
 		"rotation": {
@@ -168,9 +294,15 @@
 			"additionalProperties": false,
 			"required": ["pitch", "yaw", "roll"],
 			"properties": {
-				"pitch": { "type": "number" },
-				"yaw": { "type": "number" },
-				"roll": { "type": "number" }
+				"pitch": {
+					"type": "number"
+				},
+				"yaw": {
+					"type": "number"
+				},
+				"roll": {
+					"type": "number"
+				}
 			}
 		},
 		"bounds": {
@@ -178,9 +310,15 @@
 			"additionalProperties": false,
 			"required": ["center", "extent", "rotation"],
 			"properties": {
-				"center": { "$ref": "#/$defs/vector" },
-				"extent": { "$ref": "#/$defs/vector" },
-				"rotation": { "$ref": "#/$defs/rotation" }
+				"center": {
+					"$ref": "#/$defs/vector"
+				},
+				"extent": {
+					"$ref": "#/$defs/vector"
+				},
+				"rotation": {
+					"$ref": "#/$defs/rotation"
+				}
 			}
 		},
 		"assessment": {
@@ -189,22 +327,34 @@
 					"type": "object",
 					"additionalProperties": false,
 					"required": ["method"],
-					"properties": { "method": { "const": "automatic" } }
+					"properties": {
+						"method": {
+							"const": "automatic"
+						}
+					}
 				},
 				{
 					"type": "object",
 					"additionalProperties": false,
 					"required": ["method", "samplePreset"],
 					"properties": {
-						"method": { "const": "ray_samples" },
-						"samplePreset": { "enum": ["sparse", "standard", "dense"] }
+						"method": {
+							"const": "ray_samples"
+						},
+						"samplePreset": {
+							"enum": ["sparse", "standard", "dense"]
+						}
 					}
 				},
 				{
 					"type": "object",
 					"additionalProperties": false,
 					"required": ["method"],
-					"properties": { "method": { "enum": ["subject_mask", "depth_compare"] } }
+					"properties": {
+						"method": {
+							"enum": ["subject_mask", "depth_compare"]
+						}
+					}
 				}
 			]
 		},
@@ -214,15 +364,23 @@
 					"type": "object",
 					"additionalProperties": false,
 					"required": ["status"],
-					"properties": { "status": { "const": "not_requested" } }
+					"properties": {
+						"status": {
+							"const": "not_requested"
+						}
+					}
 				},
 				{
 					"type": "object",
 					"additionalProperties": false,
 					"required": ["status", "strategy"],
 					"properties": {
-						"status": { "const": "requested" },
-						"strategy": { "const": "isolate_target" }
+						"status": {
+							"const": "requested"
+						},
+						"strategy": {
+							"const": "isolate_target"
+						}
 					}
 				},
 				{
@@ -242,8 +400,12 @@
 								"pattern": "^/Game/"
 							}
 						},
-						"status": { "const": "requested" },
-						"strategy": { "const": "hide_explicit" }
+						"status": {
+							"const": "requested"
+						},
+						"strategy": {
+							"const": "hide_explicit"
+						}
 					}
 				}
 			]
@@ -255,8 +417,12 @@
 					"additionalProperties": false,
 					"required": ["kind", "approvedPose"],
 					"properties": {
-						"kind": { "const": "world_fixed" },
-						"approvedPose": { "$ref": "#/$defs/pose" }
+						"kind": {
+							"const": "world_fixed"
+						},
+						"approvedPose": {
+							"$ref": "#/$defs/pose"
+						}
 					}
 				},
 				{
@@ -264,15 +430,23 @@
 					"additionalProperties": false,
 					"required": ["kind", "relativePose", "targetSnapshot"],
 					"properties": {
-						"kind": { "const": "target_relative" },
-						"relativePose": { "$ref": "#/$defs/pose" },
+						"kind": {
+							"const": "target_relative"
+						},
+						"relativePose": {
+							"$ref": "#/$defs/pose"
+						},
 						"targetSnapshot": {
 							"type": "object",
 							"additionalProperties": false,
 							"required": ["location", "rotation"],
 							"properties": {
-								"location": { "$ref": "#/$defs/vector" },
-								"rotation": { "$ref": "#/$defs/rotation" }
+								"location": {
+									"$ref": "#/$defs/vector"
+								},
+								"rotation": {
+									"$ref": "#/$defs/rotation"
+								}
 							}
 						}
 					}
@@ -284,11 +458,23 @@
 			"additionalProperties": false,
 			"required": ["aspectRatio", "fieldOfViewDegrees", "location", "projection", "rotation"],
 			"properties": {
-				"aspectRatio": { "const": "16:9" },
-				"fieldOfViewDegrees": { "type": "number", "minimum": 5, "maximum": 170 },
-				"projection": { "const": "perspective" },
-				"location": { "$ref": "#/$defs/vector" },
-				"rotation": { "$ref": "#/$defs/rotation" }
+				"aspectRatio": {
+					"const": "16:9"
+				},
+				"fieldOfViewDegrees": {
+					"type": "number",
+					"minimum": 5,
+					"maximum": 170
+				},
+				"projection": {
+					"const": "perspective"
+				},
+				"location": {
+					"$ref": "#/$defs/vector"
+				},
+				"rotation": {
+					"$ref": "#/$defs/rotation"
+				}
 			}
 		}
 	}

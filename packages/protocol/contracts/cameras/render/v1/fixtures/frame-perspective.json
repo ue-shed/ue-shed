@@ -1,0 +1,31 @@
+{
+	"contract": {
+		"name": "ue-shed-camera-render",
+		"version": {
+			"major": 1,
+			"minor": 0
+		}
+	},
+	"sessionId": "fixture-session",
+	"operationId": "frame",
+	"camera": {
+		"location": {
+			"x": 1000,
+			"y": 1000,
+			"z": 900
+		},
+		"rotation": {
+			"pitch": -30,
+			"roll": 0,
+			"yaw": -135
+		},
+		"projection": {
+			"kind": "perspective",
+			"horizontalFieldOfView": 60
+		}
+	},
+	"size": {
+		"width": 320,
+		"height": 180
+	}
+}

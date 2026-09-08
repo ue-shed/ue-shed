@@ -1,6 +1,8 @@
 import { Effect, Schema } from "effect";
 import { recordReviewAssessment } from "@ue-shed/observability";
 import { RemoteControlClient, RemoteControlClientError } from "@ue-shed/unreal-connection";
+import { captureRenderedReviewView } from "./review-render.js";
+import { ReviewCaptureRequestCurrent } from "./review-schema.js";
 import {
 	decodeReviewAssessmentCapabilities,
 	decodeReviewCaptureResponse,
@@ -47,6 +49,15 @@ export function captureReviewView(args: {
 	readonly endpoint: string;
 	readonly request: ReviewCaptureRequest;
 }): Effect.Effect<ReviewCaptureResponse, ReviewCaptureConnectionError, RemoteControlClient> {
+	if (args.request.contract.version.minor === 6) {
+		return Schema.decodeUnknownEffect(ReviewCaptureRequestCurrent)(args.request).pipe(
+			Effect.flatMap((request) =>
+				captureRenderedReviewView({ endpoint: args.endpoint, request })
+			),
+			Effect.mapError((cause) => connectionError(args.endpoint, cause)),
+			Effect.tap(recordVisibilityMeasurement)
+		);
+	}
 	return Effect.flatMap(RemoteControlClient, (client) =>
 		client
 			.request({

@@ -11,6 +11,12 @@ default backend moves one transient CameraActor through the Lit editor viewport,
 with Unreal's screenshot pipeline, and restores the editor afterward. The implementation lives in
 UEShedCameras; it requires no game-code changes. The perspective review contract is unchanged.
 
+All three map modes now use the [shared camera rendering lifecycle](camera-rendering.md). Lit
+retains ownership and exposure across batches; the whole-level experiment retains capture-and-slice;
+SceneCapture retains profiles and LOD controls. Manifest 1.1 records the complete source render
+policy and evidence alongside each tile's own dimensions and hash. Restoration must succeed before
+publication. The shared implementation does not promise equivalent pixels between modes.
+
 ## Geometry and seams
 
 One requested XY bounds rectangle is snapped outward to the coarsest tile grid. The snapped bounds

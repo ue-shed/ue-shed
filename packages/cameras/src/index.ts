@@ -9,6 +9,8 @@ import { Context, Effect, Layer, PubSub, Schema, Scope, Stream } from "effect";
 import { createServer, type Server, type Socket } from "node:net";
 
 export * from "./review-capture.js";
+export * from "./camera-render-schema.js";
+export * from "./camera-render.js";
 export * from "./map-tile-pyramid.js";
 export * from "./map-tile-authoring.js";
 export * from "./map-tile-schema.js";

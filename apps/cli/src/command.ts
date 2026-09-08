@@ -21,6 +21,7 @@ import { niagaraCommand } from "./commands/niagara.js";
 import { pluginsCommand } from "./commands/plugins.js";
 import { projectIndexCommand } from "./commands/project-index.js";
 import { reviewCommand } from "./commands/review.js";
+import { cameraCommand } from "./commands/camera-render.js";
 import { scenarioCommand } from "./commands/scenario.js";
 
 export const CliCommand = CliCommandSchema;
@@ -48,6 +49,7 @@ export const cliCommand = Command.make("ue-shed").pipe(
 		niagaraCommand,
 		projectIndexCommand,
 		reviewCommand,
+		cameraCommand,
 		pluginsCommand
 	])
 );

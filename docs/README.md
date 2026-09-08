@@ -33,6 +33,9 @@ there; do not invent a second status source in docs.
 
 ## Products
 
+- [Shared camera rendering](products/camera-rendering.md) — public editor-world rendering lifecycle,
+  backend policies, compatibility and downstream adoption.
+
 | Document                                                  | Domain                               |
 | --------------------------------------------------------- | ------------------------------------ |
 | [data-authoring.md](products/data-authoring.md)           | DataTable authoring product          |

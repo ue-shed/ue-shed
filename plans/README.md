@@ -8,6 +8,10 @@ the status row when done.
 
 ## Active
 
+Shared rendering API: [Shared camera rendering](shared-camera-rendering-api.md) — implemented,
+unreleased; Review and all map modes share native ownership and rendering. The plan links the
+public contract, adoption guidance, and live validation report.
+
 | Plan                                                     | Title                                                           | Priority | Effort | Depends on                | Status                           |
 | -------------------------------------------------------- | --------------------------------------------------------------- | -------- | ------ | ------------------------- | -------------------------------- |
 | [007](007-conflicts-rich-types-and-views.md)             | Complete conflicts, rich Unreal types, composites, and views    | P1       | XL     | 006, 015                  | IN PROGRESS — demo cutoff        |

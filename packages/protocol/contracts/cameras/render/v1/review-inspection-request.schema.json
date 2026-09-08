@@ -1,0 +1,342 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://ue-shed.dev/contracts/cameras/render/v1/review-inspection-request.schema.json",
+	"type": "object",
+	"properties": {
+		"contract": {
+			"type": "object",
+			"properties": {
+				"name": {
+					"type": "string",
+					"enum": ["ue-shed-review-render-stages"]
+				},
+				"version": {
+					"type": "object",
+					"properties": {
+						"major": {
+							"type": "number",
+							"enum": [1]
+						},
+						"minor": {
+							"type": "number",
+							"enum": [0]
+						}
+					},
+					"required": ["major", "minor"],
+					"additionalProperties": false
+				}
+			},
+			"required": ["name", "version"],
+			"additionalProperties": false
+		},
+		"subject": {
+			"anyOf": [
+				{
+					"anyOf": [
+						{
+							"type": "object",
+							"properties": {
+								"actorGuid": {
+									"type": "string",
+									"allOf": [
+										{
+											"pattern": "^(?!00000000-00000000-00000000-00000000$)[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{8}){3}$"
+										}
+									]
+								},
+								"diagnosticLabel": {
+									"anyOf": [
+										{
+											"type": "string",
+											"allOf": [
+												{
+													"minLength": 1
+												}
+											]
+										},
+										{
+											"type": "null"
+										}
+									]
+								},
+								"kind": {
+									"type": "string",
+									"enum": ["actor_guid"]
+								},
+								"lastKnownActorPath": {
+									"anyOf": [
+										{
+											"type": "string",
+											"allOf": [
+												{
+													"minLength": 7
+												},
+												{
+													"maxLength": 4096
+												},
+												{
+													"pattern": "^\\/Game\\/"
+												}
+											]
+										},
+										{
+											"type": "null"
+										}
+									]
+								}
+							},
+							"required": ["actorGuid", "kind"],
+							"additionalProperties": false
+						},
+						{
+							"type": "object",
+							"properties": {
+								"actorPath": {
+									"type": "string",
+									"allOf": [
+										{
+											"minLength": 7
+										},
+										{
+											"maxLength": 4096
+										},
+										{
+											"pattern": "^\\/Game\\/"
+										}
+									]
+								},
+								"diagnosticLabel": {
+									"anyOf": [
+										{
+											"type": "string",
+											"allOf": [
+												{
+													"minLength": 1
+												}
+											]
+										},
+										{
+											"type": "null"
+										}
+									]
+								},
+								"kind": {
+									"type": "string",
+									"enum": ["actor_path"]
+								}
+							},
+							"required": ["actorPath", "kind"],
+							"additionalProperties": false
+						}
+					]
+				},
+				{
+					"type": "object",
+					"properties": {
+						"bounds": {
+							"type": "object",
+							"properties": {
+								"center": {
+									"type": "object",
+									"properties": {
+										"x": {
+											"type": "number"
+										},
+										"y": {
+											"type": "number"
+										},
+										"z": {
+											"type": "number"
+										}
+									},
+									"required": ["x", "y", "z"],
+									"additionalProperties": false
+								},
+								"extent": {
+									"type": "object",
+									"properties": {
+										"x": {
+											"type": "number",
+											"allOf": [
+												{
+													"minimum": 0
+												}
+											]
+										},
+										"y": {
+											"type": "number",
+											"allOf": [
+												{
+													"minimum": 0
+												}
+											]
+										},
+										"z": {
+											"type": "number",
+											"allOf": [
+												{
+													"minimum": 0
+												}
+											]
+										}
+									},
+									"required": ["x", "y", "z"],
+									"additionalProperties": false
+								},
+								"rotation": {
+									"type": "object",
+									"properties": {
+										"pitch": {
+											"type": "number"
+										},
+										"roll": {
+											"type": "number"
+										},
+										"yaw": {
+											"type": "number"
+										}
+									},
+									"required": ["pitch", "roll", "yaw"],
+									"additionalProperties": false
+								}
+							},
+							"required": ["center", "extent", "rotation"],
+							"additionalProperties": false
+						},
+						"kind": {
+							"type": "string",
+							"enum": ["oriented_bounds"]
+						}
+					},
+					"required": ["bounds", "kind"],
+					"additionalProperties": false
+				}
+			]
+		},
+		"assessment": {
+			"anyOf": [
+				{
+					"type": "object",
+					"properties": {
+						"method": {
+							"type": "string",
+							"enum": ["automatic"]
+						}
+					},
+					"required": ["method"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"method": {
+							"type": "string",
+							"enum": ["ray_samples"]
+						},
+						"samplePreset": {
+							"type": "string",
+							"enum": ["sparse", "standard", "dense"]
+						}
+					},
+					"required": ["method", "samplePreset"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"method": {
+							"type": "string",
+							"enum": ["subject_mask"]
+						}
+					},
+					"required": ["method"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"method": {
+							"type": "string",
+							"enum": ["depth_compare"]
+						}
+					},
+					"required": ["method"],
+					"additionalProperties": false
+				}
+			]
+		},
+		"clearCompanion": {
+			"anyOf": [
+				{
+					"type": "object",
+					"properties": {
+						"status": {
+							"type": "string",
+							"enum": ["not_requested"]
+						}
+					},
+					"required": ["status"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"status": {
+							"type": "string",
+							"enum": ["requested"]
+						},
+						"strategy": {
+							"type": "string",
+							"enum": ["isolate_target"]
+						}
+					},
+					"required": ["status", "strategy"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"actors": {
+							"type": "array",
+							"items": {
+								"type": "string",
+								"allOf": [
+									{
+										"minLength": 7
+									},
+									{
+										"maxLength": 4096
+									},
+									{
+										"pattern": "^\\/Game\\/"
+									}
+								]
+							},
+							"allOf": [
+								{
+									"minItems": 1
+								},
+								{
+									"maxItems": 32
+								}
+							]
+						},
+						"status": {
+							"type": "string",
+							"enum": ["requested"]
+						},
+						"strategy": {
+							"type": "string",
+							"enum": ["hide_explicit"]
+						}
+					},
+					"required": ["actors", "status", "strategy"],
+					"additionalProperties": false
+				}
+			]
+		}
+	},
+	"required": ["contract", "subject", "assessment", "clearCompanion"],
+	"additionalProperties": false,
+	"$defs": {}
+}

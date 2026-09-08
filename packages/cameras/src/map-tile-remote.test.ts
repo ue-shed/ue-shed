@@ -51,7 +51,8 @@ it.effect("starts once, polls with a bounded cadence, and decodes terminal outpu
 				Effect.gen(function* () {
 					calls.push(call);
 					if (call.functionName === "GetCapabilityManifest") return manifest;
-					if (call.functionName === "EndMapTileCapture") return json({ released: true });
+					if (call.functionName === "EndMapTileCapture")
+						return json({ released: true, restoration: "restored" });
 					if (call.functionName === "PollMapTileCapture") {
 						if (++polls === 2) return terminal;
 						yield* Deferred.succeed(firstPoll, undefined);

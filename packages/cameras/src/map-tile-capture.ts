@@ -6,7 +6,19 @@ import {
 	RemoteControlClient,
 	type RemoteControlClientApi
 } from "@ue-shed/unreal-connection";
-import { Clock, Context, Effect, Layer, Option, Schedule, Schema, Stream } from "effect";
+import {
+	Cause,
+	Clock,
+	Context,
+	Effect,
+	Exit,
+	Layer,
+	Option,
+	Schedule,
+	Schema,
+	Stream
+} from "effect";
+import { MapTileReleaseResult } from "./map-tile-schema.js";
 import {
 	createMapTileGrid,
 	mapTileKeyId,
@@ -81,7 +93,7 @@ export function makeMapTileCaptureRemotePort(
 	const startedRuns = new Set<string>();
 	return {
 		release: Effect.fn("MapCapture.remoteRelease")(function* (runId: string) {
-			if (!startedRuns.delete(runId)) return;
+			if (!startedRuns.has(runId)) return;
 			yield* client
 				.request({
 					endpoint,
@@ -92,10 +104,18 @@ export function makeMapTileCaptureRemotePort(
 					parameters: { RunId: runId }
 				})
 				.pipe(
-					Effect.flatMap(
-						Schema.decodeUnknownEffect(Schema.Struct({ released: Schema.Boolean }))
+					Effect.flatMap(Schema.decodeUnknownEffect(MapTileReleaseResult)),
+					Effect.flatMap((result) =>
+						result.restoration === "restored"
+							? Effect.void
+							: Effect.fail(
+									new Error(
+										"Native map capture could not restore owned editor state."
+									)
+								)
 					)
 				);
+			startedRuns.delete(runId);
 		}),
 		capture: Effect.fn("MapCapture.remoteCapture")(function* (request, onProgress) {
 			if ((request.captureBackend ?? "lit_camera_tiles") !== "lit_camera_tiles") {
@@ -513,16 +533,27 @@ function runMapCaptureWith(args: {
 			const destination =
 				args.options.destination ?? projectLocalMapCaptureDestination(projectRoot);
 			const release = args.port.release;
+			let released = false;
 			if (captureBackend === "lit_camera_tiles" && release !== undefined) {
-				yield* Effect.addFinalizer(() =>
-					release(runId).pipe(
+				yield* Effect.addFinalizer((exit) =>
+					(released ? Effect.void : release(runId)).pipe(
 						Effect.tapError((error) =>
 							Effect.logError(
 								"Map capture release failed; the editor lease will restore state.",
 								error
 							)
 						),
-						Effect.orElseSucceed(() => undefined)
+						Effect.catchCause((cleanup) =>
+							Effect.die(
+								new Error(
+									Cause.pretty(
+										Exit.isFailure(exit)
+											? Cause.combine(exit.cause, cleanup)
+											: cleanup
+									)
+								)
+							)
+						)
 					)
 				);
 			}
@@ -698,6 +729,9 @@ function runMapCaptureWith(args: {
 								continue;
 							}
 							captured.push({
+								...(result.renderEvidence === undefined
+									? undefined
+									: { renderEvidence: result.renderEvidence }),
 								bytes: bytes.byteLength,
 								hash: sha256(bytes),
 								height: dimensions.height,
@@ -751,6 +785,20 @@ function runMapCaptureWith(args: {
 				}) ?? Effect.void
 			);
 
+			if (captureBackend === "lit_camera_tiles" && release)
+				yield* release(runId).pipe(
+					Effect.mapError(
+						(cause) =>
+							new MapCaptureRunError({
+								message: String(cause),
+								operation: "publish",
+								recovery:
+									"Editor restoration failed; artifacts were not published.",
+								runId
+							})
+					)
+				);
+			released = true;
 			const selectedAllTiles = keys.length === inspected.tileCount;
 			const state = cancelled
 				? "cancelled"
@@ -765,7 +813,7 @@ function runMapCaptureWith(args: {
 				},
 				capturePolicy: plan.capture,
 				completedAt: isoNow(yield* Clock.currentTimeMillis),
-				contract: { name: "ue-shed-map-tile-pyramid", version: { major: 1, minor: 0 } },
+				contract: { name: "ue-shed-map-tile-pyramid", version: { major: 1, minor: 1 } },
 				failures,
 				grid: {
 					orientation: {

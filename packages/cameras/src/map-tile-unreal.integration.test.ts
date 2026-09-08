@@ -20,62 +20,98 @@ afterEach(async () => {
 });
 
 describe.skipIf(endpoint === undefined)("map tile capture against Unreal", () => {
-	it("captures three aligned orthographic levels without publishing partial evidence", async () => {
-		const runId = randomUUID();
-		const planId = `fixture-map-${runId}`;
-		const planRoot = await mkdtemp(join(tmpdir(), "ue-shed-map-plan-"));
-		const planPath = join(planRoot, "plan.json");
-		cleanupPaths.push(planRoot);
-		cleanupPaths.push(join(mapCaptureRunsRoot(projectRoot, planId), runId));
-		cleanupPaths.push(join(mapCaptureAttemptsRoot(projectRoot, planId), runId));
-		cleanupPaths.push(join(projectRoot, "Saved", "UEShed", "MapTileStaging", runId));
-		await writeFile(
-			planPath,
-			JSON.stringify({
-				capture: {
-					dataLayers: { mode: "unchanged" },
-					orientation: { pitch: -90, roll: 0, yaw: 0 },
-					render: {
-						effects: { fog: false, volumetricFog: false },
-						lodDistanceScaleByZoom: [4, 2, 1],
-						lodPolicy: "per_level_distance_scale",
-						profile: "full_fidelity"
-					},
-					z: 5000
-				},
-				contract: {
-					name: "ue-shed-map-capture-plan",
-					version: { major: 1, minor: 0 }
-				},
-				gutterPixels: 2,
-				id: planId,
-				levels: { coarsestUnitsPerPixel: 16, count: 3 },
-				output: { imageFormat: "png", publication: "local_immutable" },
-				project: {
-					id: "ue-shed-fixture",
-					mapPath: "/Game/Fixture/Cameras/L_CameraLoad"
-				},
-				requestedBounds: { minX: 0, minY: 0, maxX: 1024, maxY: 1024 },
-				tilePixelSize: 64
-			})
-		);
-
-		const outcome = await Effect.runPromise(
-			runMapCapture({
-				captureBackend: "scene_capture_tiles",
-				endpoint: endpoint!,
+	it.each([
+		"scene_capture_tiles",
+		"lit_camera_tiles",
+		"lit_camera_tiles_fixed",
+		"viewport_high_resolution"
+	] as const)(
+		"captures aligned orthographic levels with %s",
+		async (mode) => {
+			const captureBackend = mode === "lit_camera_tiles_fixed" ? "lit_camera_tiles" : mode;
+			const sceneCapture = captureBackend === "scene_capture_tiles";
+			const runId = randomUUID();
+			const planId = `fixture-map-${runId}`;
+			const planRoot = await mkdtemp(join(tmpdir(), "ue-shed-map-plan-"));
+			const planPath = join(planRoot, "plan.json");
+			cleanupPaths.push(planRoot);
+			cleanupPaths.push(join(mapCaptureRunsRoot(projectRoot, planId), runId));
+			cleanupPaths.push(join(mapCaptureAttemptsRoot(projectRoot, planId), runId));
+			cleanupPaths.push(join(projectRoot, "Saved", "UEShed", "MapTileStaging", runId));
+			await writeFile(
 				planPath,
-				projectRoot,
-				runId
-			})
-		);
-		expect(outcome.published).toBe(true);
-		expect(outcome.manifest.state).toBe("complete");
-		expect(outcome.manifest.levels).toHaveLength(3);
-		expect(outcome.manifest.tiles).toHaveLength(21);
-		expect(outcome.manifest.failures).toEqual([]);
-		expect(
-			outcome.manifest.tiles.every((tile) => tile.width === 64 && tile.height === 64)
-		).toBe(true);
-	}, 120_000);
+				JSON.stringify({
+					capture: {
+						dataLayers: { mode: "unchanged" },
+						orientation: { pitch: -90, roll: 0, yaw: 0 },
+						render: {
+							effects: { fog: false, volumetricFog: false },
+							...(sceneCapture ? { lodDistanceScaleByZoom: [4, 2, 1] } : undefined),
+							lodPolicy: sceneCapture ? "per_level_distance_scale" : "natural",
+							profile: "full_fidelity",
+							...(mode === "lit_camera_tiles_fixed"
+								? { exposureEV100: 1 }
+								: undefined)
+						},
+						z: 5000
+					},
+					contract: {
+						name: "ue-shed-map-capture-plan",
+						version: { major: 1, minor: 0 }
+					},
+					gutterPixels: 2,
+					id: planId,
+					levels: { coarsestUnitsPerPixel: 16, count: sceneCapture ? 3 : 2 },
+					output: { imageFormat: "png", publication: "local_immutable" },
+					project: {
+						id: "ue-shed-fixture",
+						mapPath: "/Game/Fixture/Cameras/L_CameraLoad"
+					},
+					requestedBounds: { minX: 0, minY: 0, maxX: 1024, maxY: 1024 },
+					tilePixelSize: 64
+				})
+			);
+
+			const outcome = await Effect.runPromise(
+				runMapCapture({
+					captureBackend,
+					endpoint: endpoint!,
+					planPath,
+					projectRoot,
+					runId
+				})
+			);
+			expect(outcome.published).toBe(true);
+			expect(outcome.manifest.state).toBe("complete");
+			expect(outcome.manifest.levels).toHaveLength(sceneCapture ? 3 : 2);
+			expect(outcome.manifest.tiles).toHaveLength(sceneCapture ? 21 : 5);
+			for (const tile of outcome.manifest.tiles) {
+				expect(tile.renderEvidence?.policy.renderer.kind).toBe(
+					sceneCapture ? "scene_capture" : "editor_viewport"
+				);
+				expect(tile.hash).toMatch(/^sha256:[a-f0-9]{64}$/);
+			}
+			if (captureBackend === "lit_camera_tiles") {
+				expect(
+					new Set(
+						outcome.manifest.tiles.map((tile) => tile.renderEvidence?.exposureEV100)
+					).size
+				).toBe(1);
+				expect(outcome.manifest.tiles[0]?.renderEvidence?.policy.exposure.mode).toBe(
+					mode === "lit_camera_tiles_fixed" ? "fixed_ev100" : "meter_once"
+				);
+				if (mode === "lit_camera_tiles_fixed")
+					expect(
+						outcome.manifest.tiles[0]?.renderEvidence?.policy.settling.initialView
+							?.minimumFrames
+					).toBe(512);
+				expect(outcome.manifest.tiles[0]?.renderEvidence?.exposureEV100).not.toBeNull();
+			}
+			expect(outcome.manifest.failures).toEqual([]);
+			expect(
+				outcome.manifest.tiles.every((tile) => tile.width === 64 && tile.height === 64)
+			).toBe(true);
+		},
+		300_000
+	);
 });

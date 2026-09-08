@@ -1,4 +1,5 @@
 import { Schema } from "effect";
+import { CameraFrameEvidence } from "./camera-render-schema.js";
 import { ReviewCaptureBlock } from "./review-session-policy.js";
 import {
 	CaptureInvocationCause,
@@ -235,6 +236,7 @@ export type MapReviewAuthoringCandidate = Schema.Schema.Type<typeof MapReviewAut
 
 export const MapReviewCandidatePreviewResult = Schema.Union([
 	Schema.Struct({
+		renderEvidence: Schema.optionalKey(CameraFrameEvidence),
 		status: Schema.Literal("ready"),
 		bytes: Schema.Uint8Array,
 		cameraIndex: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),

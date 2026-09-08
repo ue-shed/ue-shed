@@ -17,7 +17,7 @@ concurrency:
 jobs:
     changes:
         name: Detect UAsset changes
-        runs-on: depot-ubuntu-latest
+        runs-on: blacksmith-2vcpu-ubuntu-2404
         outputs:
             uasset_io: ${{ steps.scope.outputs.uasset_io }}
             uasset_libraries: ${{ steps.scope.outputs.uasset_libraries }}
@@ -54,7 +54,7 @@ jobs:
                   uasset_libraries=false
                   for path in "${changed_files[@]}"; do
                       case "$path" in
-                          .depot/workflows/portable.yml | Cargo.toml | Cargo.lock | \
+                          .github/workflows/portable.yml | Cargo.toml | Cargo.lock | \
                               crates/uasset-parser/* | crates/uasset-inspection/* | \
                               crates/uasset-inspection-wasm/* | \
                               scripts/*uasset* | \
@@ -89,7 +89,7 @@ jobs:
     repository:
         name: Repository checks
         needs: changes
-        runs-on: depot-ubuntu-latest
+        runs-on: blacksmith-4vcpu-ubuntu-2404
         timeout-minutes: 90
         steps:
             - name: Checkout without persisted credentials
@@ -142,9 +142,10 @@ jobs:
         name: UAsset libraries
         needs: changes
         if: needs.changes.outputs.uasset_libraries == 'true'
-        runs-on: depot-ubuntu-latest
+        runs-on: blacksmith-4vcpu-ubuntu-2404
         timeout-minutes: 90
         env:
+            SCCACHE_GHA_ENABLED: "true"
             CARGO_INCREMENTAL: "0"
             RUSTC_WRAPPER: sccache
             SCCACHE_BASEDIRS: ${{ github.workspace }}
@@ -154,8 +155,8 @@ jobs:
               uses: actions/checkout@v6
               with:
                   persist-credentials: false
-            - name: Configure Depot compiler cache
-              uses: mozilla-actions/sccache-action@v0.0.9
+            - name: Configure GitHub Actions compiler cache
+              uses: mozilla-actions/sccache-action@v0.0.11
             - name: Install pnpm
               uses: pnpm/action-setup@v6
             - name: Install Node.js
@@ -200,9 +201,10 @@ jobs:
         name: UAsset IO
         needs: changes
         if: needs.changes.outputs.uasset_io == 'true'
-        runs-on: depot-ubuntu-latest
+        runs-on: blacksmith-4vcpu-ubuntu-2404
         timeout-minutes: 90
         env:
+            SCCACHE_GHA_ENABLED: "true"
             CARGO_INCREMENTAL: "0"
             RUSTC_WRAPPER: sccache
             SCCACHE_BASEDIRS: ${{ github.workspace }}
@@ -212,8 +214,8 @@ jobs:
               uses: actions/checkout@v6
               with:
                   persist-credentials: false
-            - name: Configure Depot compiler cache
-              uses: mozilla-actions/sccache-action@v0.0.9
+            - name: Configure GitHub Actions compiler cache
+              uses: mozilla-actions/sccache-action@v0.0.11
             - name: Install pnpm
               uses: pnpm/action-setup@v6
             - name: Install Node.js
@@ -263,7 +265,7 @@ jobs:
         name: SQLite Catalog oracle
         needs: changes
         if: needs.changes.outputs.uasset_io == 'true'
-        runs-on: depot-ubuntu-latest
+        runs-on: blacksmith-4vcpu-ubuntu-2404
         timeout-minutes: 20
         steps:
             - name: Checkout without persisted credentials
@@ -294,7 +296,7 @@ jobs:
             - uasset_libraries
             - catalog_oracle
         if: always()
-        runs-on: depot-ubuntu-latest
+        runs-on: blacksmith-2vcpu-ubuntu-2404
         steps:
             - name: Verify portable jobs
               shell: bash

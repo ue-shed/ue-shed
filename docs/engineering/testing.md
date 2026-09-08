@@ -34,8 +34,8 @@ codecs, errors, and recovery need deep coverage.
 
 ## Local verification
 
-Depot CI runs the portable repository checks on pull requests and `main`. Separate UAsset library
-and IO lanes are added only when their Rust, WASM, package, contract, script, or fixture inputs
+GitHub Actions on Blacksmith runs the portable repository checks on pull requests and `main`.
+Separate UAsset library and IO lanes are added only when their Rust, WASM, package, contract, script, or fixture inputs
 change. Parser and inspection changes also trigger downstream IO conformance; WASM-package-only
 changes do not. Native-reader CLI and fixture integration tests run in the conditional IO lane, not
 in the always-on repository suite. Run the complete portable gate locally with:
@@ -54,9 +54,19 @@ pnpm run uasset:check:libraries
 pnpm run uasset:check:io
 ```
 
-During local iteration, run the smallest check or test that proves the changed behavior. The full
-gate is useful when reproducing Depot CI, preparing a release, or making cross-cutting changes; it
-is not required after every individual edit.
+Use `pnpm check` for full local verification. During local iteration, targeted checks help verify
+individual changes quickly.
+
+The hosted workflow is `.github/workflows/portable.yml`. Change detection and the aggregate
+`pnpm check` status use 2-vCPU Blacksmith Ubuntu 24.04 runners; repository, UAsset, and Catalog
+oracle jobs use 4-vCPU runners. Changes to the workflow itself enable both conditional UAsset
+lanes. The aggregate status requires the repository job to succeed and accepts only success or
+an intentional skip from the conditional jobs. Rust compilation uses sccache with the GitHub
+Actions cache backend; pnpm uses the setup-node dependency cache. Evidence and failure diagnostics
+remain GitHub Actions artifacts.
+
+The former `.depot/workflows/portable.yml` is removed so pushes after migration do not schedule a
+second portable workflow in Depot. No release or Unreal runner is enabled by this migration.
 
 Run every process-level end-to-end journey with:
 
@@ -85,8 +95,8 @@ traces. Failure artifacts are written under `test-results/workbench`.
 
 Installing dependencies also installs the repository-managed pre-commit hook. It runs
 `pnpm check:precommit` (formatting, linting, type checks, architecture, and contract checks) before
-Git creates a commit. Depot CI owns the longer `pnpm check` gate; local verification should stay
-proportional to the change.
+Git creates a commit. The longer `pnpm check` gate is available for full local verification; the
+hosted workflow runs repository checks and the applicable UAsset lanes described above.
 
 ### Unreal gate reporting
 

@@ -1,10 +1,31 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { delimiter, join, resolve } from "node:path";
 import {
 	assertPublicationConfirmation,
 	publicationConfirmationPhrase,
+	releaseEnvironment,
 	runRelease
 } from "./release.ts";
+
+test("release discovers rustup without replacing PATH or mutating the shell environment", () => {
+	const home = resolve("test-home");
+	const environment = { Path: "existing-tools" };
+	const result = releaseEnvironment(environment, home);
+	assert.ok(result.Path?.split(delimiter).includes("existing-tools"));
+	assert.ok(result.Path?.split(delimiter).includes(join(home, ".cargo", "bin")));
+	assert.equal(result.PATH, undefined);
+	assert.equal(result.CARGO_TARGET_DIR, resolve(import.meta.dirname, "..", "target"));
+	assert.deepEqual(environment, { Path: "existing-tools" });
+});
+
+test("release respects custom Cargo installation and build output", () => {
+	const cargoHome = resolve("custom-cargo");
+	const target = resolve("shared-target");
+	const result = releaseEnvironment({ CARGO_HOME: cargoHome, CARGO_TARGET_DIR: target });
+	assert.ok(result.PATH?.split(delimiter).includes(join(cargoHome, "bin")));
+	assert.equal(result.CARGO_TARGET_DIR, target);
+});
 
 test("requires the exact versioned publication phrase", () => {
 	assert.equal(publicationConfirmationPhrase("0.5.2"), "publish 0.5.2");

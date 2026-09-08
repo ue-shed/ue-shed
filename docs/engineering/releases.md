@@ -85,6 +85,13 @@ pnpm release
 git push --tags
 ```
 
+After `pnpm install`, `pnpm release` needs no per-session toolchain environment setup. The private
+workspace pins Node 26 through `devEngines.runtime`; pnpm installs and selects that runtime for
+scripts. Release reuses the invoking pnpm CLI and discovers Rust in the existing PATH or rustup's
+`CARGO_HOME/bin` (default `~/.cargo/bin`). Rust must already be installed. Build output defaults to
+the current checkout's `target` directory; an explicit `CARGO_TARGET_DIR` remains an optional cache
+override and is resolved consistently for builds and package assembly.
+
 `pnpm release` reruns the complete gate, then pauses indefinitely at an interactive confirmation.
 No npm request or 2FA challenge begins until the operator types the exact versioned phrase shown by
 the prompt, for example `publish 0.5.2`. Blank input, buffered Enter, a different version, and any

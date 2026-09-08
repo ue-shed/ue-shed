@@ -179,14 +179,14 @@ No automation may approve, merge, publish, or silently change the selected downs
 
 ## Post-1.0 hosted release plan
 
-Only the portable Depot CI gate is checked in today. Trusted Unreal and Candidate Release workflows
+Only the portable GitHub Actions gate on Blacksmith is checked in today. Trusted Unreal and Candidate Release workflows
 were removed until their hosted designs are rewritten and exercised; prose describing a future lane
 is not publication authority.
 
 The planned hosted lane consists of:
 
-1. The existing read-only Depot CI portable workflow running `pnpm check` on an ephemeral hosted
-   runner.
+1. The existing read-only GitHub Actions portable workflow running repository checks and conditional
+   UAsset lanes on ephemeral Blacksmith runners, aggregated into the `pnpm check` status.
 2. A separately protected Trusted Unreal workflow on a dedicated non-administrator Windows runner
    with Unreal Engine 5.7, no npm token, and no unrelated editor process.
 3. Candidate construction on GitHub-hosted Windows from an exact protected tag.

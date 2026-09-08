@@ -71,7 +71,7 @@ cargo test --locked -p uasset-io --all-targets --features catalog-oracle
 cargo tree --locked -p uasset-io -e normal
 ```
 
-`catalog-oracle` enables SQLite only for adapter and differential tests. Depot runs it in a separate
+`catalog-oracle` enables SQLite only for adapter and differential tests. GitHub Actions runs it in a separate
 conditional job so normal IO checks and release builds do not inherit the database build. The
 architecture gate verifies the default dependency tree and test-only module boundary.
 
@@ -81,5 +81,5 @@ quarantine, old readers, and process termination at six publication boundaries. 
 do not simulate a machine power failure or establish a long-duration durability soak.
 
 The current published native npm artifact supports Windows x64 only. Its packed consumer is tested
-with the fixture and an empty PATH; Linux native tests also run. macOS execution and hosted Depot
+with the fixture and an empty PATH; Linux native tests also run. macOS execution and hosted runner
 timings are not established by local Windows/WSL results.

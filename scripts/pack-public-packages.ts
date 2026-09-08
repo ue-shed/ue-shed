@@ -1,20 +1,9 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import {
-	cp,
-	copyFile,
-	mkdir,
-	mkdtemp,
-	readFile,
-	readdir,
-	rm,
-	stat,
-	writeFile
-} from "node:fs/promises";
+import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { tmpdir } from "node:os";
 import { isJsonObject, isJsonString, type JsonObject, type JsonValue } from "./json.ts";
 import { assertCleanReleaseSource } from "./release-source.ts";
 
@@ -185,43 +174,22 @@ function listPackedFiles(tarball: string) {
 async function packWorkspacePackage(workspacePackage: PublicPackage, outputDirectory: string) {
 	const packageDirectory = join(repositoryRoot, workspacePackage.directory);
 	const before = new Set(await readdir(outputDirectory));
-	let packDirectory = packageDirectory;
-	let stagedDirectory: string | undefined;
-	if (workspacePackage.name === WASM_PACKAGE_NAME) {
-		stagedDirectory = await mkdtemp(join(tmpdir(), "ue-shed-wasm-package-"));
-		await Promise.all([
-			copyFile(join(packageDirectory, "LICENSE"), join(stagedDirectory, "LICENSE")),
-			copyFile(join(packageDirectory, "README.md"), join(stagedDirectory, "README.md")),
-			copyFile(join(packageDirectory, "package.json"), join(stagedDirectory, "package.json")),
-			cp(join(packageDirectory, "dist"), join(stagedDirectory, "dist"), {
-				recursive: true,
-				filter: (source) => basename(source) !== ".gitignore"
-			})
-		]);
-		packDirectory = stagedDirectory;
-	}
-	try {
-		const packArguments = [
-			...(stagedDirectory === undefined ? [] : ["--config.ignore-scripts=true"]),
-			"pack",
-			"--pack-destination",
-			outputDirectory
-		];
-		// Resolve Corepack's pinned pnpm from the repository before pnpm enters staging.
-		// A temporary directory can inherit an unrelated package manager from its parent.
-		run(executable("pnpm"), ["--dir", packDirectory, ...packArguments], {
-			cwd: repositoryRoot
-		});
-		const filename = (await readdir(outputDirectory)).find(
-			(entry) => !before.has(entry) && entry.endsWith(".tgz")
-		);
-		if (!filename) throw new Error(`${workspacePackage.name} did not produce a tarball.`);
-		return join(outputDirectory, filename);
-	} finally {
-		if (stagedDirectory !== undefined) {
-			await rm(stagedDirectory, { recursive: true, force: true });
-		}
-	}
+	const packArguments = [
+		...(workspacePackage.name === WASM_PACKAGE_NAME ? ["--config.ignore-scripts=true"] : []),
+		"pack",
+		"--pack-destination",
+		outputDirectory
+	];
+	// Pack the already-built WASM package in place with lifecycle scripts disabled. Copying it to a
+	// staging directory changes filesystem traversal order and therefore immutable tarball bytes.
+	run(executable("pnpm"), ["--dir", packageDirectory, ...packArguments], {
+		cwd: repositoryRoot
+	});
+	const filename = (await readdir(outputDirectory)).find(
+		(entry) => !before.has(entry) && entry.endsWith(".tgz")
+	);
+	if (!filename) throw new Error(`${workspacePackage.name} did not produce a tarball.`);
+	return join(outputDirectory, filename);
 }
 
 function collectExportTargets(

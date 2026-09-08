@@ -1,10 +1,53 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import test from "node:test";
+import { delimiter, join, resolve } from "node:path";
 import {
 	assertPublicationConfirmation,
 	publicationConfirmationPhrase,
+	releaseEnvironment,
 	runRelease
 } from "./release.ts";
+
+test("release discovers rustup through a normalized PATH without mutating the shell", (context) => {
+	const directory = mkdtempSync(join(tmpdir(), "ue-shed-release-"));
+	context.after(() => rmSync(directory, { recursive: true, force: true }));
+	const cargoHome = join(directory, "cargo");
+	const cargoBin = join(cargoHome, "bin");
+	mkdirSync(cargoBin, { recursive: true });
+	const executable =
+		process.platform === "win32"
+			? "release-environment-probe.exe"
+			: "release-environment-probe";
+	const executablePath = join(cargoBin, executable);
+	if (process.platform === "win32") {
+		copyFileSync(process.execPath, executablePath);
+	} else {
+		writeFileSync(executablePath, "#!/bin/sh\nexit 0\n");
+		chmodSync(executablePath, 0o755);
+	}
+	const environment = { Path: "existing-tools", CARGO_HOME: cargoHome };
+	const result = releaseEnvironment(environment, directory);
+	assert.deepEqual(
+		Object.keys(result).filter((key) => key.toLowerCase() === "path"),
+		["PATH"]
+	);
+	assert.ok(result.PATH?.split(delimiter).includes("existing-tools"));
+	assert.ok(result.PATH?.split(delimiter).includes(cargoBin));
+	assert.equal(spawnSync(executable, [], { env: result }).status, 0);
+	assert.equal(result.CARGO_TARGET_DIR, resolve(import.meta.dirname, "..", "target"));
+	assert.deepEqual(environment, { Path: "existing-tools", CARGO_HOME: cargoHome });
+});
+
+test("release respects custom Cargo installation and build output", () => {
+	const cargoHome = resolve("custom-cargo");
+	const target = resolve("shared-target");
+	const result = releaseEnvironment({ CARGO_HOME: cargoHome, CARGO_TARGET_DIR: target });
+	assert.ok(result.PATH?.split(delimiter).includes(join(cargoHome, "bin")));
+	assert.equal(result.CARGO_TARGET_DIR, target);
+});
 
 test("requires the exact versioned publication phrase", () => {
 	assert.equal(publicationConfirmationPhrase("0.5.2"), "publish 0.5.2");

@@ -102,6 +102,9 @@ importers:
       jsdom:
         specifier: ^29.1.1
         version: 29.1.1(@noble/hashes@2.2.0)
+      node:
+        specifier: runtime:26.8.1
+        version: runtime:26.8.1
       oxfmt:
         specifier: ^0.49.0
         version: 0.49.0
@@ -350,7 +353,7 @@ importers:
         version: 2.11.12(solid-js@1.9.14)(supports-color@10.2.2)(vite@8.1.4(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.1)(yaml@2.9.0))
     optionalDependencies:
       '@ue-shed/engine-win32-x64':
-        specifier: workspace:0.7.0
+        specifier: workspace:0.7.1
         version: link:../../packages/engine-win32-x64
 
   examples/authoring-headless:
@@ -685,13 +688,13 @@ importers:
   packages/cameras:
     dependencies:
       '@ue-shed/observability':
-        specifier: workspace:0.7.0
+        specifier: workspace:0.7.1
         version: link:../observability
       '@ue-shed/protocol':
-        specifier: workspace:0.7.0
+        specifier: workspace:0.7.1
         version: link:../protocol
       '@ue-shed/unreal-connection':
-        specifier: workspace:0.7.0
+        specifier: workspace:0.7.1
         version: link:../unreal-connection
       effect:
         specifier: 'catalog:'
@@ -700,7 +703,7 @@ importers:
   packages/config-explorer:
     dependencies:
       '@ue-shed/engine':
-        specifier: workspace:0.7.0
+        specifier: workspace:0.7.1
         version: link:../engine
       effect:
         specifier: 'catalog:'
@@ -713,10 +716,10 @@ importers:
   packages/engine:
     dependencies:
       '@ue-shed/protocol':
-        specifier: workspace:0.7.0
+        specifier: workspace:0.7.1
         version: link:../protocol
       '@ue-shed/unreal-connection':
-        specifier: workspace:0.7.0
+        specifier: workspace:0.7.1
         version: link:../unreal-connection
       effect:
         specifier: 'catalog:'
@@ -727,7 +730,7 @@ importers:
         version: 4.0.0-beta.98(effect@4.0.0-beta.98)(vitest@4.1.10)
     optionalDependencies:
       '@ue-shed/engine-win32-x64':
-        specifier: workspace:0.7.0
+        specifier: workspace:0.7.1
         version: link:../engine-win32-x64
 
   packages/engine-win32-x64: {}
@@ -744,7 +747,7 @@ importers:
   packages/game-text:
     dependencies:
       '@ue-shed/unreal-assets':
-        specifier: workspace:0.7.0
+        specifier: workspace:0.7.1
         version: link:../unreal-assets
     devDependencies:
       effect:
@@ -782,10 +785,10 @@ importers:
   packages/map-history:
     dependencies:
       '@ue-shed/protocol':
-        specifier: workspace:0.7.0
+        specifier: workspace:0.7.1
         version: link:../protocol
       '@ue-shed/unreal-assets':
-        specifier: workspace:0.7.0
+        specifier: workspace:0.7.1
         version: link:../unreal-assets
       effect:
         specifier: 'catalog:'
@@ -801,7 +804,7 @@ importers:
   packages/niagara:
     dependencies:
       '@ue-shed/engine':
-        specifier: workspace:0.7.0
+        specifier: workspace:0.7.1
         version: link:../engine
       effect:
         specifier: 'catalog:'
@@ -854,10 +857,10 @@ importers:
   packages/observatory:
     dependencies:
       '@ue-shed/observability':
-        specifier: workspace:0.7.0
+        specifier: workspace:0.7.1
         version: link:../observability
       '@ue-shed/unreal-connection':
-        specifier: workspace:0.7.0
+        specifier: workspace:0.7.1
         version: link:../unreal-connection
       effect:
         specifier: 'catalog:'
@@ -866,7 +869,7 @@ importers:
   packages/plugin-distribution:
     dependencies:
       '@ue-shed/engine':
-        specifier: workspace:0.7.0
+        specifier: workspace:0.7.1
         version: link:../engine
     devDependencies:
       '@effect/vitest':
@@ -917,7 +920,7 @@ importers:
   packages/uasset:
     optionalDependencies:
       '@ue-shed/uasset-win32-x64':
-        specifier: workspace:0.7.0
+        specifier: workspace:0.7.1
         version: link:../uasset-win32-x64
 
   packages/uasset-inspection-wasm: {}
@@ -957,7 +960,7 @@ importers:
   packages/unreal-assets:
     dependencies:
       '@ue-shed/protocol':
-        specifier: workspace:0.7.0
+        specifier: workspace:0.7.1
         version: link:../protocol
       effect:
         specifier: 'catalog:'
@@ -970,7 +973,7 @@ importers:
   packages/unreal-connection:
     dependencies:
       '@ue-shed/protocol':
-        specifier: workspace:0.7.0
+        specifier: workspace:0.7.1
         version: link:../protocol
       effect:
         specifier: 'catalog:'
@@ -3491,6 +3494,138 @@ packages:
   node-releases@2.0.51:
     resolution: {integrity: sha512-wRNIrw4DmVLKQlbgOMdkMx27Wrpzes2hh5Jtbi2bjPd+4wJstWIqP5A+lscnqbm0xxmT5Bpg8Lec5ItEBwx6BQ==}
     engines: {node: '>=18'}
+
+  node@runtime:26.8.1:
+    resolution:
+      type: variations
+      variants:
+        - resolution:
+            archive: tarball
+            bin:
+              node: bin/node
+            integrity: sha256-LU0HWYDdrNqgWeJ+wfHFU6TdQmIr2edB4eTDSBcwFAM=
+            type: binary
+            url: https://nodejs.org/download/release/v26.8.1/node-v26.8.1-aix-ppc64.tar.gz
+          targets:
+            - cpu: ppc64
+              os: aix
+        - resolution:
+            archive: tarball
+            bin:
+              node: bin/node
+            integrity: sha256-bld/0Nnbd224IwZinkQanazkFnAmIq690XHJ36pB9NI=
+            type: binary
+            url: https://nodejs.org/download/release/v26.8.1/node-v26.8.1-darwin-arm64.tar.gz
+          targets:
+            - cpu: arm64
+              os: darwin
+        - resolution:
+            archive: tarball
+            bin:
+              node: bin/node
+            integrity: sha256-/pxtv5yOG0RDgD114qIDZuQg2uZQx0fbsRayKXV1G68=
+            type: binary
+            url: https://nodejs.org/download/release/v26.8.1/node-v26.8.1-darwin-x64.tar.gz
+          targets:
+            - cpu: x64
+              os: darwin
+        - resolution:
+            archive: tarball
+            bin:
+              node: bin/node
+            integrity: sha256-1flzzpdeS9A+bCA4Jg9+kgFhWqjh7ik8cvjcwqbZ/ds=
+            type: binary
+            url: https://nodejs.org/download/release/v26.8.1/node-v26.8.1-linux-arm64.tar.gz
+          targets:
+            - cpu: arm64
+              os: linux
+        - resolution:
+            archive: tarball
+            bin:
+              node: bin/node
+            integrity: sha256-otDRIQjis89WkbFgVLG2xdhH0wbm8I1m/cY2PpmMejk=
+            type: binary
+            url: https://nodejs.org/download/release/v26.8.1/node-v26.8.1-linux-ppc64le.tar.gz
+          targets:
+            - cpu: ppc64le
+              os: linux
+        - resolution:
+            archive: tarball
+            bin:
+              node: bin/node
+            integrity: sha256-72un7U4iqWAp1ppcq5GvjnnlwUPI1jPECYOATcrJgi8=
+            type: binary
+            url: https://nodejs.org/download/release/v26.8.1/node-v26.8.1-linux-s390x.tar.gz
+          targets:
+            - cpu: s390x
+              os: linux
+        - resolution:
+            archive: tarball
+            bin:
+              node: bin/node
+            integrity: sha256-erg+reDp7r2bo1IxuI0iWuXHKrVWlaPXqWEVocRe2Vw=
+            type: binary
+            url: https://nodejs.org/download/release/v26.8.1/node-v26.8.1-linux-x64-musl.tar.gz
+          targets:
+            - cpu: x64
+              os: linux
+              libc: musl
+        - resolution:
+            archive: tarball
+            bin:
+              node: bin/node
+            integrity: sha256-srdmYPpN7U4LKkHuPAxlHNUuqBcOrZHrrB4UesPVVkM=
+            type: binary
+            url: https://nodejs.org/download/release/v26.8.1/node-v26.8.1-linux-x64.tar.gz
+          targets:
+            - cpu: x64
+              os: linux
+        - resolution:
+            archive: zip
+            bin:
+              node: node.exe
+            integrity: sha256-CdYgBaqdyo/Nm9zoGW9ap4Pu44GNWvdAietylxA8AtQ=
+            prefix: node-v26.8.1-win-arm64
+            type: binary
+            url: https://nodejs.org/download/release/v26.8.1/node-v26.8.1-win-arm64.zip
+          targets:
+            - cpu: arm64
+              os: win32
+        - resolution:
+            archive: zip
+            bin:
+              node: node.exe
+            integrity: sha256-V2k9jpPRsE57feRqylPs1j6XVk5z3jamhCjX/wjYNYc=
+            prefix: node-v26.8.1-win-x64
+            type: binary
+            url: https://nodejs.org/download/release/v26.8.1/node-v26.8.1-win-x64.zip
+          targets:
+            - cpu: x64
+              os: win32
+        - resolution:
+            archive: tarball
+            bin:
+              node: bin/node
+            integrity: sha256-D+eK/etKTSc7FKu9S5RsdyiFxYmUydI7HIrgpZovilM=
+            type: binary
+            url: https://unofficial-builds.nodejs.org/download/release/v26.8.1/node-v26.8.1-linux-arm64-musl.tar.gz
+          targets:
+            - cpu: arm64
+              os: linux
+              libc: musl
+        - resolution:
+            archive: tarball
+            bin:
+              node: bin/node
+            integrity: sha256-ExNaaiEG+dER+ptIyIAe0RmtQ+fh0A3hfXepxEiZqto=
+            type: binary
+            url: https://unofficial-builds.nodejs.org/download/release/v26.8.1/node-v26.8.1-linux-x64-musl.tar.gz
+          targets:
+            - cpu: x64
+              os: linux
+              libc: musl
+    version: 26.8.1
+    hasBin: true
 
   npm-run-path@3.1.0:
     resolution: {integrity: sha512-Dbl4A/VfiVGLgQv29URL9xshU8XDY1GeLy+fsaZ1AA8JDSfjvr5P5+pzRbWqRSBxk6/DW7MIh8lTM/PaGnP2kg==}
@@ -6312,6 +6447,8 @@ snapshots:
     optional: true
 
   node-releases@2.0.51: {}
+
+  node@runtime:26.8.1: {}
 
   npm-run-path@3.1.0:
     dependencies:

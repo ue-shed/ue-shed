@@ -1,5 +1,12 @@
 # @ue-shed/plugin-distribution
 
+## 0.7.1
+
+### Patch Changes
+
+- Support native Unreal 5.8 plugin builds alongside 5.7 by adapting JSON field access and widening portable source compatibility.
+- @ue-shed/engine@0.7.1
+
 ## 0.7.0
 
 ### Patch Changes

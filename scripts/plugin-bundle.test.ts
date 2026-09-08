@@ -79,6 +79,32 @@ function archiveEntries(path: string) {
 	return result.stdout.split(/\r?\n/u).filter(Boolean);
 }
 
+test("source bundles support 5.7 and 5.8 while preserving an explicit engine range", async () => {
+	const fixture = await createFixture();
+	try {
+		for (const [name, unreal, expected] of [
+			["default", undefined, { minimum: "5.7", maximum: "5.8.2" }],
+			["explicit", { minimum: "5.7" }, { minimum: "5.7", maximum: "5.7" }]
+		] as const) {
+			const result = await buildPluginBundle({
+				output: join(fixture.root, name),
+				releaseVersion: "0.1.0",
+				pluginRoot: fixture.pluginRoot,
+				licensePath: join(fixture.root, "LICENSE"),
+				unreal
+			});
+			assert.deepEqual(
+				"unreal" in result.manifest
+					? result.manifest.unreal
+					: result.manifest.compatibility.unrealVersionRange,
+				expected
+			);
+		}
+	} finally {
+		await rm(fixture.root, { recursive: true, force: true });
+	}
+});
+
 test("builds deterministic source archive and excludes local Unreal output", async () => {
 	const fixture = await createFixture();
 	const candidatePath = join(fixture.root, "candidate-manifest.json");

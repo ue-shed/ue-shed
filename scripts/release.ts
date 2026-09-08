@@ -1,6 +1,8 @@
 import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { homedir } from "node:os";
 import { createInterface } from "node:readline/promises";
-import { resolve } from "node:path";
+import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PUBLIC_VERSION } from "./pack-public-packages.ts";
 import { assertCleanReleaseSource } from "./release-source.ts";
@@ -40,22 +42,33 @@ export function assertPublicationConfirmation(answer: string, version: string) {
 	}
 }
 
-function executable(name: string) {
-	return process.platform === "win32" ? `${name}.cmd` : name;
+export function releaseEnvironment(environment: NodeJS.ProcessEnv = process.env, home = homedir()) {
+	const env = { ...environment };
+	const path = Object.entries(env).find(([key]) => key.toLowerCase() === "path")?.[1] ?? "";
+	for (const key of Object.keys(env)) {
+		if (key.toLowerCase() === "path") delete env[key];
+	}
+	const cargoBin = join(env.CARGO_HOME ?? join(home, ".cargo"), "bin");
+	env.PATH = [dirname(process.execPath), path, cargoBin].join(delimiter);
+	// Make the build and package assembly agree, including in an independent worktree.
+	env.CARGO_TARGET_DIR = resolve(repositoryRoot, env.CARGO_TARGET_DIR ?? "target");
+	return env;
 }
 
-function run(command: string, args: readonly string[]) {
-	const isCommandShim = process.platform === "win32" && command.endsWith(".cmd");
-	const result = spawnSync(
-		isCommandShim ? (process.env.ComSpec ?? "cmd.exe") : command,
-		isCommandShim ? ["/d", "/s", "/c", command, ...args] : args,
-		{
-			cwd: repositoryRoot,
-			shell: false,
-			stdio: "inherit",
-			windowsHide: true
-		}
-	);
+function runPnpm(args: readonly string[], env: NodeJS.ProcessEnv) {
+	const pnpmCli = env.npm_execpath;
+	if (!pnpmCli || !existsSync(pnpmCli)) {
+		throw new Error("Run the release through pnpm: pnpm release.");
+	}
+	const isJavaScriptCli = /\.(?:c|m)?js$/i.test(pnpmCli);
+	const command = isJavaScriptCli ? process.execPath : pnpmCli;
+	const result = spawnSync(command, isJavaScriptCli ? [pnpmCli, ...args] : args, {
+		cwd: repositoryRoot,
+		env,
+		shell: false,
+		stdio: "inherit",
+		windowsHide: true
+	});
 	if (result.error) throw result.error;
 	if (result.status !== 0) {
 		throw new Error(`${command} ${args.join(" ")} failed with status ${result.status}.`);
@@ -81,11 +94,18 @@ async function confirmPublication() {
 }
 
 async function main() {
+	const env = releaseEnvironment();
+	const cargo = spawnSync("cargo", ["--version"], { env, encoding: "utf8", windowsHide: true });
+	if (cargo.error || cargo.status !== 0) {
+		throw new Error("Release requires Rust. Install it with rustup, then rerun pnpm release.", {
+			cause: cargo.error
+		});
+	}
 	await runRelease({
 		validateSource: () => assertCleanReleaseSource(),
-		check: () => run(executable("pnpm"), ["check"]),
+		check: () => runPnpm(["check"], env),
 		confirm: confirmPublication,
-		publish: () => run(executable("pnpm"), ["exec", "changeset", "publish"])
+		publish: () => runPnpm(["exec", "changeset", "publish"], env)
 	});
 }
 

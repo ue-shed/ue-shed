@@ -340,8 +340,7 @@ export async function createReleaseCandidate({
 		output: pluginOutput,
 		releaseVersion: version,
 		sourceCommit: commit,
-		sourceRef: ref,
-		unreal: { maximum: "5.7", minimum: "5.7" }
+		sourceRef: ref
 	});
 	await validatePublicPluginBundle(pluginBundle);
 	artifacts.push(

@@ -174,7 +174,7 @@ function validateCommit(value: string | null | undefined) {
 
 function validateUnrealRange(unreal?: Partial<UnrealRange>): UnrealRange {
 	const minimum = unreal?.minimum ?? "5.7";
-	const maximum = unreal?.maximum ?? minimum;
+	const maximum = unreal?.maximum ?? unreal?.minimum ?? "5.8.2";
 	if (minimum.length === 0) {
 		throw new Error("Unreal compatibility minimum must be a non-empty version string.");
 	}
@@ -669,7 +669,7 @@ async function main() {
 		licensePath: args.get("license"),
 		unreal: {
 			minimum: args.get("ue-minimum") ?? "5.7",
-			maximum: args.get("ue-maximum") ?? args.get("ue-minimum") ?? "5.7"
+			maximum: args.get("ue-maximum") ?? args.get("ue-minimum") ?? "5.8.2"
 		},
 		requestedPlugins
 	});

@@ -1,5 +1,14 @@
 # @ue-shed/observatory
 
+## 0.7.1
+
+Align this package with the synchronized UE Shed 0.7.1 suite and exact internal dependency pins. There is no direct behavioral change.
+
+### Patch Changes
+
+- @ue-shed/observability@0.7.1
+    - @ue-shed/unreal-connection@0.7.1
+
 ## 0.7.0
 
 ### Patch Changes

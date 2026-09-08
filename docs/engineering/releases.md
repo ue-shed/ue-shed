@@ -85,6 +85,13 @@ pnpm release
 git push --tags
 ```
 
+After `pnpm install`, `pnpm release` needs no per-session toolchain environment setup. The private
+workspace pins Node 26 through `devEngines.runtime`; pnpm installs and selects that runtime for
+scripts. Release reuses the invoking pnpm CLI and discovers Rust in the existing PATH or rustup's
+`CARGO_HOME/bin` (default `~/.cargo/bin`). Rust must already be installed. Build output defaults to
+the current checkout's `target` directory; an explicit `CARGO_TARGET_DIR` remains an optional cache
+override and is resolved consistently for builds and package assembly.
+
 `pnpm release` reruns the complete gate, then pauses indefinitely at an interactive confirmation.
 No npm request or 2FA challenge begins until the operator types the exact versioned phrase shown by
 the prompt, for example `publish 0.5.2`. Blank input, buffered Enter, a different version, and any
@@ -109,6 +116,20 @@ retain suite alignment; its changeset and release notes must say when it has no 
 change.
 
 ## Local plugin artifacts
+
+For each supported engine, run the plugin compatibility gate with an explicit installation and a
+new evidence directory whose parent already exists:
+
+```powershell
+$env:UE_SHED_UNREAL_ENGINE_ROOT = "C:\Engines\UE_5.8"
+pnpm test:unreal-plugins out/plugins-5.8-evidence
+```
+
+This builds all seven plugins and runs Authoring canonical JSON, camera rendering and restoration,
+map minor-version compatibility, screenshot ownership, and Niagara camera automation with real
+rendering in a disposable stock template project. Repeat for Unreal 5.7. The gate retains editor
+logs and the automation report and rejects missing, failed, or incomplete tests. It supplements
+`check:unreal`, whose saved-asset fixture contract remains on 5.7.
 
 Build a portable plugin bundle into an empty directory, verify its manifest, and inspect the exact
 selection before installation:

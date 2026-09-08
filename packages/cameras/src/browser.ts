@@ -1,4 +1,5 @@
 export * from "./review-schema.js";
+export * from "./camera-render-schema.js";
 export * from "./review-framing.js";
 export * from "./review-session-policy.js";
 export * from "./map-tile-schema.js";

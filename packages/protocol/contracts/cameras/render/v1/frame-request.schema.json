@@ -1,0 +1,219 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://ue-shed.dev/contracts/cameras/render/v1/frame-request.schema.json",
+	"type": "object",
+	"properties": {
+		"contract": {
+			"type": "object",
+			"properties": {
+				"name": {
+					"type": "string",
+					"enum": ["ue-shed-camera-render"]
+				},
+				"version": {
+					"type": "object",
+					"properties": {
+						"major": {
+							"type": "number",
+							"enum": [1]
+						},
+						"minor": {
+							"type": "number",
+							"enum": [0]
+						}
+					},
+					"required": ["major", "minor"],
+					"additionalProperties": false
+				}
+			},
+			"required": ["name", "version"],
+			"additionalProperties": false
+		},
+		"sessionId": {
+			"type": "string",
+			"allOf": [
+				{
+					"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+				}
+			]
+		},
+		"operationId": {
+			"type": "string",
+			"allOf": [
+				{
+					"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+				}
+			]
+		},
+		"camera": {
+			"type": "object",
+			"properties": {
+				"location": {
+					"type": "object",
+					"properties": {
+						"x": {
+							"type": "number"
+						},
+						"y": {
+							"type": "number"
+						},
+						"z": {
+							"type": "number"
+						}
+					},
+					"required": ["x", "y", "z"],
+					"additionalProperties": false
+				},
+				"rotation": {
+					"type": "object",
+					"properties": {
+						"pitch": {
+							"type": "number"
+						},
+						"roll": {
+							"type": "number"
+						},
+						"yaw": {
+							"type": "number"
+						}
+					},
+					"required": ["pitch", "roll", "yaw"],
+					"additionalProperties": false
+				},
+				"projection": {
+					"anyOf": [
+						{
+							"type": "object",
+							"properties": {
+								"kind": {
+									"type": "string",
+									"enum": ["perspective"]
+								},
+								"horizontalFieldOfView": {
+									"type": "number",
+									"allOf": [
+										{
+											"minimum": 5,
+											"maximum": 170
+										}
+									]
+								}
+							},
+							"required": ["kind", "horizontalFieldOfView"],
+							"additionalProperties": false
+						},
+						{
+							"type": "object",
+							"properties": {
+								"kind": {
+									"type": "string",
+									"enum": ["orthographic"]
+								},
+								"width": {
+									"type": "number",
+									"allOf": [
+										{
+											"exclusiveMinimum": 0
+										},
+										{
+											"maximum": 1000000000
+										}
+									]
+								}
+							},
+							"required": ["kind", "width"],
+							"additionalProperties": false
+						}
+					]
+				}
+			},
+			"required": ["location", "rotation", "projection"],
+			"additionalProperties": false
+		},
+		"size": {
+			"type": "object",
+			"properties": {
+				"width": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 16,
+							"maximum": 16384
+						}
+					]
+				},
+				"height": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 16,
+							"maximum": 16384
+						}
+					]
+				}
+			},
+			"required": ["width", "height"],
+			"additionalProperties": false
+		},
+		"region": {
+			"type": "object",
+			"properties": {
+				"center": {
+					"type": "object",
+					"properties": {
+						"x": {
+							"type": "number"
+						},
+						"y": {
+							"type": "number"
+						},
+						"z": {
+							"type": "number"
+						}
+					},
+					"required": ["x", "y", "z"],
+					"additionalProperties": false
+				},
+				"extent": {
+					"type": "object",
+					"properties": {
+						"x": {
+							"type": "number",
+							"allOf": [
+								{
+									"minimum": 0,
+									"maximum": 10000000
+								}
+							]
+						},
+						"y": {
+							"type": "number",
+							"allOf": [
+								{
+									"minimum": 0,
+									"maximum": 10000000
+								}
+							]
+						},
+						"z": {
+							"type": "number",
+							"allOf": [
+								{
+									"minimum": 0,
+									"maximum": 10000000
+								}
+							]
+						}
+					},
+					"required": ["x", "y", "z"],
+					"additionalProperties": false
+				}
+			},
+			"required": ["center", "extent"],
+			"additionalProperties": false
+		}
+	},
+	"required": ["contract", "sessionId", "operationId", "camera", "size"],
+	"additionalProperties": false,
+	"$defs": {}
+}

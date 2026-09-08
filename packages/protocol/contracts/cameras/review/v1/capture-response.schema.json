@@ -21,31 +21,242 @@
 				"captureDurationMs",
 				"mapPackageDirtyBefore",
 				"mapPackageDirtyAfter",
-				"subjectProjection",
-				"visibility"
+				"visibility",
+				"renderEvidence"
 			],
 			"properties": {
-				"contract": { "$ref": "#/$defs/currentContract" },
-				"status": { "const": "captured" },
-				"operationId": { "type": "string", "minLength": 1 },
-				"viewId": { "$ref": "#/$defs/safeId" },
-				"resolvedSubject": { "$ref": "#/$defs/resolvedSubject" },
-				"effectiveWorldPose": { "$ref": "#/$defs/pose" },
-				"mapPath": { "type": "string", "minLength": 1 },
+				"contract": {
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["name", "version"],
+					"properties": {
+						"name": {
+							"const": "ue-shed-review-capture"
+						},
+						"version": {
+							"type": "object",
+							"additionalProperties": false,
+							"required": ["major", "minor"],
+							"properties": {
+								"major": {
+									"const": 1
+								},
+								"minor": {
+									"const": 6
+								}
+							}
+						}
+					}
+				},
+				"status": {
+					"const": "captured"
+				},
+				"operationId": {
+					"type": "string",
+					"minLength": 1
+				},
+				"viewId": {
+					"$ref": "#/$defs/safeId"
+				},
+				"resolvedSubject": {
+					"oneOf": [
+						{
+							"$ref": "#/$defs/resolvedSubject"
+						},
+						{
+							"type": "object",
+							"additionalProperties": false,
+							"required": ["kind", "subject", "reason"],
+							"properties": {
+								"kind": {
+									"const": "unresolved_actor"
+								},
+								"reason": {
+									"type": "string",
+									"minLength": 1
+								},
+								"subject": {
+									"oneOf": [
+										{
+											"type": "object",
+											"additionalProperties": false,
+											"required": ["kind", "actorGuid"],
+											"properties": {
+												"kind": {
+													"const": "actor_guid"
+												},
+												"actorGuid": {
+													"type": "string",
+													"pattern": "^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{8}){3}$",
+													"not": {
+														"const": "00000000-00000000-00000000-00000000"
+													}
+												},
+												"lastKnownActorPath": {
+													"type": "string",
+													"minLength": 7,
+													"maxLength": 4096,
+													"pattern": "^/Game/"
+												},
+												"diagnosticLabel": {
+													"type": "string",
+													"minLength": 1
+												}
+											}
+										},
+										{
+											"type": "object",
+											"additionalProperties": false,
+											"required": ["kind", "actorPath"],
+											"properties": {
+												"kind": {
+													"const": "actor_path"
+												},
+												"actorPath": {
+													"type": "string",
+													"minLength": 7,
+													"maxLength": 4096,
+													"pattern": "^/Game/"
+												},
+												"diagnosticLabel": {
+													"type": "string",
+													"minLength": 1
+												}
+											}
+										}
+									]
+								}
+							}
+						}
+					]
+				},
+				"effectiveWorldPose": {
+					"$ref": "#/$defs/pose"
+				},
+				"mapPath": {
+					"type": "string",
+					"minLength": 1
+				},
 				"stagedArtifacts": {
 					"type": "array",
 					"minItems": 1,
 					"maxItems": 2,
-					"items": { "$ref": "#/$defs/stagedArtifact" }
+					"items": {
+						"$ref": "#/$defs/stagedArtifact"
+					}
 				},
-				"clearCompanion": { "$ref": "#/$defs/clearCompanion" },
-				"width": { "type": "integer", "minimum": 1 },
-				"height": { "type": "integer", "minimum": 1 },
-				"captureDurationMs": { "type": "number", "minimum": 0 },
-				"mapPackageDirtyBefore": { "type": "boolean" },
-				"mapPackageDirtyAfter": { "type": "boolean" },
-				"subjectProjection": { "$ref": "#/$defs/subjectProjection" },
-				"visibility": { "$ref": "#/$defs/visibilityMeasurement" }
+				"clearCompanion": {
+					"$ref": "#/$defs/clearCompanion"
+				},
+				"width": {
+					"type": "integer",
+					"minimum": 1
+				},
+				"height": {
+					"type": "integer",
+					"minimum": 1
+				},
+				"captureDurationMs": {
+					"type": "number",
+					"minimum": 0
+				},
+				"mapPackageDirtyBefore": {
+					"type": "boolean"
+				},
+				"mapPackageDirtyAfter": {
+					"type": "boolean"
+				},
+				"subjectProjection": {
+					"$ref": "#/$defs/subjectProjection"
+				},
+				"visibility": {
+					"$ref": "#/$defs/visibilityMeasurement"
+				},
+				"renderEvidence": {
+					"$ref": "../../render/v1/frame-evidence.schema.json"
+				}
+			}
+		},
+		{
+			"type": "object",
+			"additionalProperties": false,
+			"required": [
+				"contract",
+				"status",
+				"operationId",
+				"viewId",
+				"resolvedSubject",
+				"effectiveWorldPose",
+				"mapPath",
+				"stagedArtifacts",
+				"clearCompanion",
+				"width",
+				"height",
+				"captureDurationMs",
+				"mapPackageDirtyBefore",
+				"mapPackageDirtyAfter",
+				"subjectProjection",
+				"visibility"
+			],
+			"properties": {
+				"contract": {
+					"$ref": "#/$defs/currentContract"
+				},
+				"status": {
+					"const": "captured"
+				},
+				"operationId": {
+					"type": "string",
+					"minLength": 1
+				},
+				"viewId": {
+					"$ref": "#/$defs/safeId"
+				},
+				"resolvedSubject": {
+					"$ref": "#/$defs/resolvedSubject"
+				},
+				"effectiveWorldPose": {
+					"$ref": "#/$defs/pose"
+				},
+				"mapPath": {
+					"type": "string",
+					"minLength": 1
+				},
+				"stagedArtifacts": {
+					"type": "array",
+					"minItems": 1,
+					"maxItems": 2,
+					"items": {
+						"$ref": "#/$defs/stagedArtifact"
+					}
+				},
+				"clearCompanion": {
+					"$ref": "#/$defs/clearCompanion"
+				},
+				"width": {
+					"type": "integer",
+					"minimum": 1
+				},
+				"height": {
+					"type": "integer",
+					"minimum": 1
+				},
+				"captureDurationMs": {
+					"type": "number",
+					"minimum": 0
+				},
+				"mapPackageDirtyBefore": {
+					"type": "boolean"
+				},
+				"mapPackageDirtyAfter": {
+					"type": "boolean"
+				},
+				"subjectProjection": {
+					"$ref": "#/$defs/subjectProjection"
+				},
+				"visibility": {
+					"$ref": "#/$defs/visibilityMeasurement"
+				}
 			},
 			"allOf": [
 				{
@@ -53,7 +264,11 @@
 						"properties": {
 							"resolvedSubject": {
 								"required": ["kind"],
-								"properties": { "kind": { "const": "actor_guid" } }
+								"properties": {
+									"kind": {
+										"const": "actor_guid"
+									}
+								}
 							}
 						}
 					},
@@ -61,7 +276,13 @@
 						"properties": {
 							"contract": {
 								"properties": {
-									"version": { "properties": { "minor": { "const": 5 } } }
+									"version": {
+										"properties": {
+											"minor": {
+												"const": 5
+											}
+										}
+									}
 								}
 							}
 						}
@@ -90,21 +311,57 @@
 				"visibility"
 			],
 			"properties": {
-				"contract": { "$ref": "#/$defs/previousCurrentContract" },
-				"status": { "const": "captured" },
-				"operationId": { "type": "string", "minLength": 1 },
-				"viewId": { "$ref": "#/$defs/safeId" },
-				"resolvedSubject": { "$ref": "#/$defs/resolvedSubjectPrevious" },
-				"effectiveWorldPose": { "$ref": "#/$defs/pose" },
-				"mapPath": { "type": "string", "minLength": 1 },
-				"stagingPath": { "type": "string", "minLength": 1 },
-				"width": { "type": "integer", "minimum": 1 },
-				"height": { "type": "integer", "minimum": 1 },
-				"captureDurationMs": { "type": "number", "minimum": 0 },
-				"mapPackageDirtyBefore": { "type": "boolean" },
-				"mapPackageDirtyAfter": { "type": "boolean" },
-				"subjectProjection": { "$ref": "#/$defs/subjectProjection" },
-				"visibility": { "$ref": "#/$defs/visibilityMeasurement" }
+				"contract": {
+					"$ref": "#/$defs/previousCurrentContract"
+				},
+				"status": {
+					"const": "captured"
+				},
+				"operationId": {
+					"type": "string",
+					"minLength": 1
+				},
+				"viewId": {
+					"$ref": "#/$defs/safeId"
+				},
+				"resolvedSubject": {
+					"$ref": "#/$defs/resolvedSubjectPrevious"
+				},
+				"effectiveWorldPose": {
+					"$ref": "#/$defs/pose"
+				},
+				"mapPath": {
+					"type": "string",
+					"minLength": 1
+				},
+				"stagingPath": {
+					"type": "string",
+					"minLength": 1
+				},
+				"width": {
+					"type": "integer",
+					"minimum": 1
+				},
+				"height": {
+					"type": "integer",
+					"minimum": 1
+				},
+				"captureDurationMs": {
+					"type": "number",
+					"minimum": 0
+				},
+				"mapPackageDirtyBefore": {
+					"type": "boolean"
+				},
+				"mapPackageDirtyAfter": {
+					"type": "boolean"
+				},
+				"subjectProjection": {
+					"$ref": "#/$defs/subjectProjection"
+				},
+				"visibility": {
+					"$ref": "#/$defs/visibilityMeasurement"
+				}
 			}
 		},
 		{
@@ -128,21 +385,57 @@
 				"visibility"
 			],
 			"properties": {
-				"contract": { "$ref": "#/$defs/previousContract" },
-				"status": { "const": "captured" },
-				"operationId": { "type": "string", "minLength": 1 },
-				"viewId": { "$ref": "#/$defs/safeId" },
-				"resolvedSubject": { "$ref": "#/$defs/resolvedSubjectPrevious" },
-				"effectiveWorldPose": { "$ref": "#/$defs/pose" },
-				"mapPath": { "type": "string", "minLength": 1 },
-				"stagingPath": { "type": "string", "minLength": 1 },
-				"width": { "type": "integer", "minimum": 1 },
-				"height": { "type": "integer", "minimum": 1 },
-				"captureDurationMs": { "type": "number", "minimum": 0 },
-				"mapPackageDirtyBefore": { "type": "boolean" },
-				"mapPackageDirtyAfter": { "type": "boolean" },
-				"subjectProjection": { "$ref": "#/$defs/subjectProjection" },
-				"visibility": { "$ref": "#/$defs/visibilityV2" }
+				"contract": {
+					"$ref": "#/$defs/previousContract"
+				},
+				"status": {
+					"const": "captured"
+				},
+				"operationId": {
+					"type": "string",
+					"minLength": 1
+				},
+				"viewId": {
+					"$ref": "#/$defs/safeId"
+				},
+				"resolvedSubject": {
+					"$ref": "#/$defs/resolvedSubjectPrevious"
+				},
+				"effectiveWorldPose": {
+					"$ref": "#/$defs/pose"
+				},
+				"mapPath": {
+					"type": "string",
+					"minLength": 1
+				},
+				"stagingPath": {
+					"type": "string",
+					"minLength": 1
+				},
+				"width": {
+					"type": "integer",
+					"minimum": 1
+				},
+				"height": {
+					"type": "integer",
+					"minimum": 1
+				},
+				"captureDurationMs": {
+					"type": "number",
+					"minimum": 0
+				},
+				"mapPackageDirtyBefore": {
+					"type": "boolean"
+				},
+				"mapPackageDirtyAfter": {
+					"type": "boolean"
+				},
+				"subjectProjection": {
+					"$ref": "#/$defs/subjectProjection"
+				},
+				"visibility": {
+					"$ref": "#/$defs/visibilityV2"
+				}
 			}
 		},
 		{
@@ -162,19 +455,52 @@
 				"mapPackageDirtyAfter"
 			],
 			"properties": {
-				"contract": { "$ref": "#/$defs/contract" },
-				"status": { "const": "captured" },
-				"operationId": { "type": "string", "minLength": 1 },
-				"viewId": { "$ref": "#/$defs/safeId" },
-				"actorPath": { "type": "string", "minLength": 1 },
-				"mapPath": { "type": "string", "minLength": 1 },
-				"stagingPath": { "type": "string", "minLength": 1 },
-				"width": { "type": "integer", "minimum": 1 },
-				"height": { "type": "integer", "minimum": 1 },
-				"captureDurationMs": { "type": "number", "minimum": 0 },
-				"mapPackageDirtyBefore": { "type": "boolean" },
-				"mapPackageDirtyAfter": { "type": "boolean" },
-				"subjectProjection": { "$ref": "#/$defs/subjectProjection" }
+				"contract": {
+					"$ref": "#/$defs/contract"
+				},
+				"status": {
+					"const": "captured"
+				},
+				"operationId": {
+					"type": "string",
+					"minLength": 1
+				},
+				"viewId": {
+					"$ref": "#/$defs/safeId"
+				},
+				"actorPath": {
+					"type": "string",
+					"minLength": 1
+				},
+				"mapPath": {
+					"type": "string",
+					"minLength": 1
+				},
+				"stagingPath": {
+					"type": "string",
+					"minLength": 1
+				},
+				"width": {
+					"type": "integer",
+					"minimum": 1
+				},
+				"height": {
+					"type": "integer",
+					"minimum": 1
+				},
+				"captureDurationMs": {
+					"type": "number",
+					"minimum": 0
+				},
+				"mapPackageDirtyBefore": {
+					"type": "boolean"
+				},
+				"mapPackageDirtyAfter": {
+					"type": "boolean"
+				},
+				"subjectProjection": {
+					"$ref": "#/$defs/subjectProjection"
+				}
 			},
 			"allOf": [
 				{
@@ -187,14 +513,18 @@
 									"version": {
 										"required": ["minor"],
 										"properties": {
-											"minor": { "minimum": 1 }
+											"minor": {
+												"minimum": 1
+											}
 										}
 									}
 								}
 							}
 						}
 					},
-					"then": { "required": ["subjectProjection"] }
+					"then": {
+						"required": ["subjectProjection"]
+					}
 				}
 			],
 			"additionalProperties": false
@@ -212,14 +542,33 @@
 				"retrySafe"
 			],
 			"properties": {
-				"contract": { "$ref": "#/$defs/contract" },
-				"status": { "const": "failed" },
-				"operationId": { "type": "string" },
-				"viewId": { "type": "string" },
-				"code": { "type": "string", "minLength": 1 },
-				"message": { "type": "string", "minLength": 1 },
-				"recovery": { "type": "string", "minLength": 1 },
-				"retrySafe": { "type": "boolean" }
+				"contract": {
+					"$ref": "#/$defs/contract"
+				},
+				"status": {
+					"const": "failed"
+				},
+				"operationId": {
+					"type": "string"
+				},
+				"viewId": {
+					"type": "string"
+				},
+				"code": {
+					"type": "string",
+					"minLength": 1
+				},
+				"message": {
+					"type": "string",
+					"minLength": 1
+				},
+				"recovery": {
+					"type": "string",
+					"minLength": 1
+				},
+				"retrySafe": {
+					"type": "boolean"
+				}
 			},
 			"additionalProperties": false
 		}
@@ -230,14 +579,20 @@
 			"additionalProperties": false,
 			"required": ["name", "version"],
 			"properties": {
-				"name": { "const": "ue-shed-review-capture" },
+				"name": {
+					"const": "ue-shed-review-capture"
+				},
 				"version": {
 					"type": "object",
 					"additionalProperties": false,
 					"required": ["major", "minor"],
 					"properties": {
-						"major": { "const": 1 },
-						"minor": { "enum": [4, 5] }
+						"major": {
+							"const": 1
+						},
+						"minor": {
+							"enum": [4, 5]
+						}
 					}
 				}
 			}
@@ -247,14 +602,20 @@
 			"additionalProperties": false,
 			"required": ["name", "version"],
 			"properties": {
-				"name": { "const": "ue-shed-review-capture" },
+				"name": {
+					"const": "ue-shed-review-capture"
+				},
 				"version": {
 					"type": "object",
 					"additionalProperties": false,
 					"required": ["major", "minor"],
 					"properties": {
-						"major": { "const": 1 },
-						"minor": { "const": 3 }
+						"major": {
+							"const": 1
+						},
+						"minor": {
+							"const": 3
+						}
 					}
 				}
 			}
@@ -264,14 +625,20 @@
 			"additionalProperties": false,
 			"required": ["name", "version"],
 			"properties": {
-				"name": { "const": "ue-shed-review-capture" },
+				"name": {
+					"const": "ue-shed-review-capture"
+				},
 				"version": {
 					"type": "object",
 					"additionalProperties": false,
 					"required": ["major", "minor"],
 					"properties": {
-						"major": { "const": 1 },
-						"minor": { "const": 2 }
+						"major": {
+							"const": 1
+						},
+						"minor": {
+							"const": 2
+						}
 					}
 				}
 			}
@@ -281,27 +648,44 @@
 			"additionalProperties": false,
 			"required": ["name", "version"],
 			"properties": {
-				"name": { "const": "ue-shed-review-capture" },
+				"name": {
+					"const": "ue-shed-review-capture"
+				},
 				"version": {
 					"type": "object",
 					"additionalProperties": false,
 					"required": ["major", "minor"],
 					"properties": {
-						"major": { "const": 1 },
-						"minor": { "type": "integer", "minimum": 0, "maximum": 5 }
+						"major": {
+							"const": 1
+						},
+						"minor": {
+							"type": "integer",
+							"minimum": 0,
+							"maximum": 6
+						}
 					}
 				}
 			}
 		},
-		"safeId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" },
+		"safeId": {
+			"type": "string",
+			"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+		},
 		"vector": {
 			"type": "object",
 			"additionalProperties": false,
 			"required": ["x", "y", "z"],
 			"properties": {
-				"x": { "type": "number" },
-				"y": { "type": "number" },
-				"z": { "type": "number" }
+				"x": {
+					"type": "number"
+				},
+				"y": {
+					"type": "number"
+				},
+				"z": {
+					"type": "number"
+				}
 			}
 		},
 		"rotation": {
@@ -309,9 +693,15 @@
 			"additionalProperties": false,
 			"required": ["pitch", "yaw", "roll"],
 			"properties": {
-				"pitch": { "type": "number" },
-				"yaw": { "type": "number" },
-				"roll": { "type": "number" }
+				"pitch": {
+					"type": "number"
+				},
+				"yaw": {
+					"type": "number"
+				},
+				"roll": {
+					"type": "number"
+				}
 			}
 		},
 		"bounds": {
@@ -319,9 +709,15 @@
 			"additionalProperties": false,
 			"required": ["center", "extent", "rotation"],
 			"properties": {
-				"center": { "$ref": "#/$defs/vector" },
-				"extent": { "$ref": "#/$defs/vector" },
-				"rotation": { "$ref": "#/$defs/rotation" }
+				"center": {
+					"$ref": "#/$defs/vector"
+				},
+				"extent": {
+					"$ref": "#/$defs/vector"
+				},
+				"rotation": {
+					"$ref": "#/$defs/rotation"
+				}
 			}
 		},
 		"pose": {
@@ -329,11 +725,23 @@
 			"additionalProperties": false,
 			"required": ["aspectRatio", "fieldOfViewDegrees", "location", "projection", "rotation"],
 			"properties": {
-				"aspectRatio": { "const": "16:9" },
-				"fieldOfViewDegrees": { "type": "number", "minimum": 5, "maximum": 170 },
-				"projection": { "const": "perspective" },
-				"location": { "$ref": "#/$defs/vector" },
-				"rotation": { "$ref": "#/$defs/rotation" }
+				"aspectRatio": {
+					"const": "16:9"
+				},
+				"fieldOfViewDegrees": {
+					"type": "number",
+					"minimum": 5,
+					"maximum": 170
+				},
+				"projection": {
+					"const": "perspective"
+				},
+				"location": {
+					"$ref": "#/$defs/vector"
+				},
+				"rotation": {
+					"$ref": "#/$defs/rotation"
+				}
 			}
 		},
 		"resolvedSubject": {
@@ -343,20 +751,31 @@
 					"additionalProperties": false,
 					"required": ["kind", "actorGuid", "actorPath", "transform"],
 					"properties": {
-						"kind": { "const": "actor_guid" },
+						"kind": {
+							"const": "actor_guid"
+						},
 						"actorGuid": {
 							"type": "string",
 							"pattern": "^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{8}){3}$",
-							"not": { "const": "00000000-00000000-00000000-00000000" }
+							"not": {
+								"const": "00000000-00000000-00000000-00000000"
+							}
 						},
-						"actorPath": { "type": "string", "minLength": 1 },
+						"actorPath": {
+							"type": "string",
+							"minLength": 1
+						},
 						"transform": {
 							"type": "object",
 							"additionalProperties": false,
 							"required": ["location", "rotation"],
 							"properties": {
-								"location": { "$ref": "#/$defs/vector" },
-								"rotation": { "$ref": "#/$defs/rotation" }
+								"location": {
+									"$ref": "#/$defs/vector"
+								},
+								"rotation": {
+									"$ref": "#/$defs/rotation"
+								}
 							}
 						}
 					}
@@ -366,15 +785,24 @@
 					"additionalProperties": false,
 					"required": ["kind", "actorPath", "transform"],
 					"properties": {
-						"kind": { "const": "actor_path" },
-						"actorPath": { "type": "string", "minLength": 1 },
+						"kind": {
+							"const": "actor_path"
+						},
+						"actorPath": {
+							"type": "string",
+							"minLength": 1
+						},
 						"transform": {
 							"type": "object",
 							"additionalProperties": false,
 							"required": ["location", "rotation"],
 							"properties": {
-								"location": { "$ref": "#/$defs/vector" },
-								"rotation": { "$ref": "#/$defs/rotation" }
+								"location": {
+									"$ref": "#/$defs/vector"
+								},
+								"rotation": {
+									"$ref": "#/$defs/rotation"
+								}
 							}
 						}
 					}
@@ -384,8 +812,12 @@
 					"additionalProperties": false,
 					"required": ["kind", "bounds"],
 					"properties": {
-						"kind": { "const": "oriented_bounds" },
-						"bounds": { "$ref": "#/$defs/bounds" }
+						"kind": {
+							"const": "oriented_bounds"
+						},
+						"bounds": {
+							"$ref": "#/$defs/bounds"
+						}
 					}
 				}
 			]
@@ -397,15 +829,24 @@
 					"additionalProperties": false,
 					"required": ["kind", "actorPath", "transform"],
 					"properties": {
-						"kind": { "const": "actor_path" },
-						"actorPath": { "type": "string", "minLength": 1 },
+						"kind": {
+							"const": "actor_path"
+						},
+						"actorPath": {
+							"type": "string",
+							"minLength": 1
+						},
 						"transform": {
 							"type": "object",
 							"additionalProperties": false,
 							"required": ["location", "rotation"],
 							"properties": {
-								"location": { "$ref": "#/$defs/vector" },
-								"rotation": { "$ref": "#/$defs/rotation" }
+								"location": {
+									"$ref": "#/$defs/vector"
+								},
+								"rotation": {
+									"$ref": "#/$defs/rotation"
+								}
 							}
 						}
 					}
@@ -415,8 +856,12 @@
 					"additionalProperties": false,
 					"required": ["kind", "bounds"],
 					"properties": {
-						"kind": { "const": "oriented_bounds" },
-						"bounds": { "$ref": "#/$defs/bounds" }
+						"kind": {
+							"const": "oriented_bounds"
+						},
+						"bounds": {
+							"$ref": "#/$defs/bounds"
+						}
 					}
 				}
 			]
@@ -426,8 +871,13 @@
 			"additionalProperties": false,
 			"required": ["stagingPath", "variant"],
 			"properties": {
-				"stagingPath": { "type": "string", "minLength": 1 },
-				"variant": { "enum": ["pure", "clear"] }
+				"stagingPath": {
+					"type": "string",
+					"minLength": 1
+				},
+				"variant": {
+					"enum": ["pure", "clear"]
+				}
 			}
 		},
 		"objectLocator": {
@@ -435,14 +885,19 @@
 			"additionalProperties": false,
 			"required": ["kind", "actorPath"],
 			"properties": {
-				"kind": { "const": "actor_path" },
+				"kind": {
+					"const": "actor_path"
+				},
 				"actorPath": {
 					"type": "string",
 					"minLength": 7,
 					"maxLength": 4096,
 					"pattern": "^/Game/"
 				},
-				"diagnosticLabel": { "type": "string", "minLength": 1 }
+				"diagnosticLabel": {
+					"type": "string",
+					"minLength": 1
+				}
 			}
 		},
 		"clearIntervention": {
@@ -452,8 +907,12 @@
 					"additionalProperties": false,
 					"required": ["subject", "type"],
 					"properties": {
-						"subject": { "$ref": "#/$defs/objectLocator" },
-						"type": { "const": "show_only_subject_components" }
+						"subject": {
+							"$ref": "#/$defs/objectLocator"
+						},
+						"type": {
+							"const": "show_only_subject_components"
+						}
 					}
 				},
 				{
@@ -461,8 +920,12 @@
 					"additionalProperties": false,
 					"required": ["target", "type"],
 					"properties": {
-						"target": { "$ref": "#/$defs/objectLocator" },
-						"type": { "const": "hide_actor_components" }
+						"target": {
+							"$ref": "#/$defs/objectLocator"
+						},
+						"type": {
+							"const": "hide_actor_components"
+						}
 					}
 				}
 			]
@@ -474,8 +937,12 @@
 					"additionalProperties": false,
 					"required": ["method", "status"],
 					"properties": {
-						"method": { "const": "transient_capture_component_lists" },
-						"status": { "const": "restored" }
+						"method": {
+							"const": "transient_capture_component_lists"
+						},
+						"status": {
+							"const": "restored"
+						}
 					}
 				},
 				{
@@ -483,10 +950,21 @@
 					"additionalProperties": false,
 					"required": ["code", "message", "recovery", "status"],
 					"properties": {
-						"code": { "type": "string", "minLength": 1 },
-						"message": { "type": "string", "minLength": 1 },
-						"recovery": { "type": "string", "minLength": 1 },
-						"status": { "const": "failed" }
+						"code": {
+							"type": "string",
+							"minLength": 1
+						},
+						"message": {
+							"type": "string",
+							"minLength": 1
+						},
+						"recovery": {
+							"type": "string",
+							"minLength": 1
+						},
+						"status": {
+							"const": "failed"
+						}
 					}
 				}
 			]
@@ -497,7 +975,11 @@
 					"type": "object",
 					"additionalProperties": false,
 					"required": ["status"],
-					"properties": { "status": { "const": "not_requested" } }
+					"properties": {
+						"status": {
+							"const": "not_requested"
+						}
+					}
 				},
 				{
 					"type": "object",
@@ -508,19 +990,29 @@
 							"type": "array",
 							"minItems": 1,
 							"maxItems": 32,
-							"items": { "$ref": "#/$defs/clearIntervention" }
+							"items": {
+								"$ref": "#/$defs/clearIntervention"
+							}
 						},
 						"restoration": {
 							"type": "object",
 							"additionalProperties": false,
 							"required": ["method", "status"],
 							"properties": {
-								"method": { "const": "transient_capture_component_lists" },
-								"status": { "const": "restored" }
+								"method": {
+									"const": "transient_capture_component_lists"
+								},
+								"status": {
+									"const": "restored"
+								}
 							}
 						},
-						"status": { "const": "captured" },
-						"strategy": { "enum": ["isolate_target", "hide_explicit"] }
+						"status": {
+							"const": "captured"
+						},
+						"strategy": {
+							"enum": ["isolate_target", "hide_explicit"]
+						}
 					}
 				},
 				{
@@ -533,20 +1025,39 @@
 							"additionalProperties": false,
 							"required": ["code", "message", "recovery", "retrySafe"],
 							"properties": {
-								"code": { "type": "string", "minLength": 1 },
-								"message": { "type": "string", "minLength": 1 },
-								"recovery": { "type": "string", "minLength": 1 },
-								"retrySafe": { "type": "boolean" }
+								"code": {
+									"type": "string",
+									"minLength": 1
+								},
+								"message": {
+									"type": "string",
+									"minLength": 1
+								},
+								"recovery": {
+									"type": "string",
+									"minLength": 1
+								},
+								"retrySafe": {
+									"type": "boolean"
+								}
 							}
 						},
 						"interventions": {
 							"type": "array",
 							"maxItems": 32,
-							"items": { "$ref": "#/$defs/clearIntervention" }
+							"items": {
+								"$ref": "#/$defs/clearIntervention"
+							}
 						},
-						"restoration": { "$ref": "#/$defs/clearRestoration" },
-						"status": { "const": "failed" },
-						"strategy": { "enum": ["isolate_target", "hide_explicit"] }
+						"restoration": {
+							"$ref": "#/$defs/clearRestoration"
+						},
+						"status": {
+							"const": "failed"
+						},
+						"strategy": {
+							"enum": ["isolate_target", "hide_explicit"]
+						}
 					}
 				}
 			]
@@ -558,12 +1069,19 @@
 					"additionalProperties": false,
 					"required": ["status", "reason"],
 					"properties": {
-						"status": { "const": "not_assessed" },
-						"reason": { "type": "string", "minLength": 1 },
+						"status": {
+							"const": "not_assessed"
+						},
+						"reason": {
+							"type": "string",
+							"minLength": 1
+						},
 						"limitations": {
 							"type": "array",
 							"maxItems": 8,
-							"items": { "type": "string" }
+							"items": {
+								"type": "string"
+							}
 						}
 					}
 				},
@@ -580,7 +1098,9 @@
 						"occluders"
 					],
 					"properties": {
-						"status": { "const": "assessed" },
+						"status": {
+							"const": "assessed"
+						},
 						"method": {
 							"type": "object",
 							"additionalProperties": false,
@@ -589,16 +1109,31 @@
 								"method": {
 									"enum": ["ray_samples", "subject_mask", "depth_compare"]
 								},
-								"version": { "type": "integer", "minimum": 1 }
+								"version": {
+									"type": "integer",
+									"minimum": 1
+								}
 							}
 						},
-						"visibleFraction": { "type": "number", "minimum": 0, "maximum": 1 },
-						"sampleCount": { "type": "integer", "minimum": 0 },
-						"assessmentDurationMs": { "type": "number", "minimum": 0 },
+						"visibleFraction": {
+							"type": "number",
+							"minimum": 0,
+							"maximum": 1
+						},
+						"sampleCount": {
+							"type": "integer",
+							"minimum": 0
+						},
+						"assessmentDurationMs": {
+							"type": "number",
+							"minimum": 0
+						},
 						"limitations": {
 							"type": "array",
 							"maxItems": 8,
-							"items": { "type": "string" }
+							"items": {
+								"type": "string"
+							}
 						},
 						"occluders": {
 							"type": "array",
@@ -618,11 +1153,18 @@
 										"additionalProperties": false,
 										"required": ["kind", "actorPath"],
 										"properties": {
-											"kind": { "const": "actor_path" },
-											"actorPath": { "type": "string", "minLength": 1 }
+											"kind": {
+												"const": "actor_path"
+											},
+											"actorPath": {
+												"type": "string",
+												"minLength": 1
+											}
 										}
 									},
-									"reason": { "type": "string" }
+									"reason": {
+										"type": "string"
+									}
 								}
 							}
 						}
@@ -633,16 +1175,29 @@
 					"additionalProperties": false,
 					"required": ["status", "failure"],
 					"properties": {
-						"status": { "const": "assessment_failed" },
+						"status": {
+							"const": "assessment_failed"
+						},
 						"failure": {
 							"type": "object",
 							"additionalProperties": false,
 							"required": ["code", "message", "recovery", "retrySafe"],
 							"properties": {
-								"code": { "type": "string", "minLength": 1 },
-								"message": { "type": "string", "minLength": 1 },
-								"recovery": { "type": "string", "minLength": 1 },
-								"retrySafe": { "type": "boolean" }
+								"code": {
+									"type": "string",
+									"minLength": 1
+								},
+								"message": {
+									"type": "string",
+									"minLength": 1
+								},
+								"recovery": {
+									"type": "string",
+									"minLength": 1
+								},
+								"retrySafe": {
+									"type": "boolean"
+								}
 							}
 						}
 					}
@@ -656,12 +1211,19 @@
 					"additionalProperties": false,
 					"required": ["status", "reason"],
 					"properties": {
-						"status": { "const": "not_assessed" },
-						"reason": { "type": "string", "minLength": 1 },
+						"status": {
+							"const": "not_assessed"
+						},
+						"reason": {
+							"type": "string",
+							"minLength": 1
+						},
 						"limitations": {
 							"type": "array",
 							"maxItems": 8,
-							"items": { "type": "string" }
+							"items": {
+								"type": "string"
+							}
 						}
 					}
 				},
@@ -679,7 +1241,9 @@
 						"occluders"
 					],
 					"properties": {
-						"status": { "const": "assessed" },
+						"status": {
+							"const": "assessed"
+						},
 						"classification": {
 							"enum": ["clear", "partial", "blocked", "not_visible"]
 						},
@@ -691,16 +1255,31 @@
 								"method": {
 									"enum": ["ray_samples", "subject_mask", "depth_compare"]
 								},
-								"version": { "type": "integer", "minimum": 1 }
+								"version": {
+									"type": "integer",
+									"minimum": 1
+								}
 							}
 						},
-						"visibleFraction": { "type": "number", "minimum": 0, "maximum": 1 },
-						"sampleCount": { "type": "integer", "minimum": 0 },
-						"assessmentDurationMs": { "type": "number", "minimum": 0 },
+						"visibleFraction": {
+							"type": "number",
+							"minimum": 0,
+							"maximum": 1
+						},
+						"sampleCount": {
+							"type": "integer",
+							"minimum": 0
+						},
+						"assessmentDurationMs": {
+							"type": "number",
+							"minimum": 0
+						},
 						"limitations": {
 							"type": "array",
 							"maxItems": 8,
-							"items": { "type": "string" }
+							"items": {
+								"type": "string"
+							}
 						},
 						"occluders": {
 							"type": "array",
@@ -720,11 +1299,18 @@
 										"additionalProperties": false,
 										"required": ["kind", "actorPath"],
 										"properties": {
-											"kind": { "const": "actor_path" },
-											"actorPath": { "type": "string", "minLength": 1 }
+											"kind": {
+												"const": "actor_path"
+											},
+											"actorPath": {
+												"type": "string",
+												"minLength": 1
+											}
 										}
 									},
-									"reason": { "type": "string" }
+									"reason": {
+										"type": "string"
+									}
 								}
 							}
 						}
@@ -735,16 +1321,29 @@
 					"additionalProperties": false,
 					"required": ["status", "failure"],
 					"properties": {
-						"status": { "const": "assessment_failed" },
+						"status": {
+							"const": "assessment_failed"
+						},
 						"failure": {
 							"type": "object",
 							"additionalProperties": false,
 							"required": ["code", "message", "recovery", "retrySafe"],
 							"properties": {
-								"code": { "type": "string", "minLength": 1 },
-								"message": { "type": "string", "minLength": 1 },
-								"recovery": { "type": "string", "minLength": 1 },
-								"retrySafe": { "type": "boolean" }
+								"code": {
+									"type": "string",
+									"minLength": 1
+								},
+								"message": {
+									"type": "string",
+									"minLength": 1
+								},
+								"recovery": {
+									"type": "string",
+									"minLength": 1
+								},
+								"retrySafe": {
+									"type": "boolean"
+								}
 							}
 						}
 					}
@@ -756,10 +1355,18 @@
 			"additionalProperties": false,
 			"required": ["minX", "minY", "maxX", "maxY"],
 			"properties": {
-				"minX": { "type": "number" },
-				"minY": { "type": "number" },
-				"maxX": { "type": "number" },
-				"maxY": { "type": "number" }
+				"minX": {
+					"type": "number"
+				},
+				"minY": {
+					"type": "number"
+				},
+				"maxX": {
+					"type": "number"
+				},
+				"maxY": {
+					"type": "number"
+				}
 			}
 		},
 		"projectionMargins": {
@@ -767,10 +1374,18 @@
 			"additionalProperties": false,
 			"required": ["left", "right", "top", "bottom"],
 			"properties": {
-				"left": { "type": "number" },
-				"right": { "type": "number" },
-				"top": { "type": "number" },
-				"bottom": { "type": "number" }
+				"left": {
+					"type": "number"
+				},
+				"right": {
+					"type": "number"
+				},
+				"top": {
+					"type": "number"
+				},
+				"bottom": {
+					"type": "number"
+				}
 			}
 		},
 		"subjectProjection": {
@@ -780,7 +1395,9 @@
 					"additionalProperties": false,
 					"required": ["status", "viewportStatus", "normalizedBounds", "margins"],
 					"properties": {
-						"status": { "const": "projected" },
+						"status": {
+							"const": "projected"
+						},
 						"viewportStatus": {
 							"enum": [
 								"fully_within_viewport",
@@ -788,8 +1405,12 @@
 								"fully_outside_viewport"
 							]
 						},
-						"normalizedBounds": { "$ref": "#/$defs/projectedBounds" },
-						"margins": { "$ref": "#/$defs/projectionMargins" }
+						"normalizedBounds": {
+							"$ref": "#/$defs/projectedBounds"
+						},
+						"margins": {
+							"$ref": "#/$defs/projectionMargins"
+						}
 					}
 				},
 				{
@@ -797,9 +1418,16 @@
 					"additionalProperties": false,
 					"required": ["status", "code", "message"],
 					"properties": {
-						"status": { "const": "unprojectable" },
-						"code": { "enum": ["behind_camera", "near_plane_crossing"] },
-						"message": { "type": "string", "minLength": 1 }
+						"status": {
+							"const": "unprojectable"
+						},
+						"code": {
+							"enum": ["behind_camera", "near_plane_crossing"]
+						},
+						"message": {
+							"type": "string",
+							"minLength": 1
+						}
 					}
 				}
 			]

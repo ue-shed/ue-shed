@@ -6,7 +6,19 @@ import {
 	RemoteControlClient,
 	type RemoteControlClientApi
 } from "@ue-shed/unreal-connection";
-import { Clock, Context, Effect, Layer, Option, Schedule, Schema, Stream } from "effect";
+import {
+	Cause,
+	Clock,
+	Context,
+	Effect,
+	Exit,
+	Layer,
+	Option,
+	Schedule,
+	Schema,
+	Stream
+} from "effect";
+import { MapTileReleaseResult } from "./map-tile-schema.js";
 import {
 	createMapTileGrid,
 	mapTileKeyId,
@@ -78,10 +90,10 @@ export function makeMapTileCaptureRemotePort(
 	client: RemoteControlClientApi,
 	endpoint: string
 ): MapTileCapturePortApi {
-	const startedRuns = new Set<string>();
+	const startedRuns = new Map<string, boolean>();
 	return {
 		release: Effect.fn("MapCapture.remoteRelease")(function* (runId: string) {
-			if (!startedRuns.delete(runId)) return;
+			if (!startedRuns.has(runId)) return;
 			yield* client
 				.request({
 					endpoint,
@@ -93,22 +105,31 @@ export function makeMapTileCaptureRemotePort(
 				})
 				.pipe(
 					Effect.flatMap(
-						Schema.decodeUnknownEffect(Schema.Struct({ released: Schema.Boolean }))
+						Schema.decodeUnknownEffect(
+							startedRuns.get(runId)
+								? MapTileReleaseResult
+								: Schema.Struct({
+										released: Schema.Boolean,
+										restoration: Schema.optionalKey(
+											MapTileReleaseResult.fields.restoration
+										)
+									})
+						)
+					),
+					Effect.flatMap((result) =>
+						result.restoration === "restored" ||
+						(result.restoration === undefined && result.released)
+							? Effect.void
+							: Effect.fail(
+									new Error(
+										"Native map capture could not restore owned editor state."
+									)
+								)
 					)
 				);
+			startedRuns.delete(runId);
 		}),
 		capture: Effect.fn("MapCapture.remoteCapture")(function* (request, onProgress) {
-			if ((request.captureBackend ?? "lit_camera_tiles") !== "lit_camera_tiles") {
-				return yield* client
-					.request({
-						endpoint,
-						functionName: "CaptureMapTiles",
-						objectPath: mapTileReviewLibraryPath,
-						operation: "camera.map_tile.capture.remote",
-						parameters: { RequestJson: JSON.stringify(request) }
-					})
-					.pipe(Effect.flatMap(decodeMapTileCaptureResponse));
-			}
 			const manifest = yield* client
 				.request({
 					endpoint,
@@ -118,6 +139,28 @@ export function makeMapTileCaptureRemotePort(
 					parameters: {}
 				})
 				.pipe(Effect.flatMap(decodeCompanionCapabilityManifest));
+			const sharedRenderer = manifest.capabilities.includes("cameras.render-session.v1");
+			const wireRequest = {
+				...request,
+				contract: {
+					...request.contract,
+					version: {
+						major: 1,
+						minor: sharedRenderer ? request.contract.version.minor : 0
+					}
+				}
+			};
+			if ((request.captureBackend ?? "lit_camera_tiles") !== "lit_camera_tiles") {
+				return yield* client
+					.request({
+						endpoint,
+						functionName: "CaptureMapTiles",
+						objectPath: mapTileReviewLibraryPath,
+						operation: "camera.map_tile.capture.remote",
+						parameters: { RequestJson: JSON.stringify(wireRequest) }
+					})
+					.pipe(Effect.flatMap(decodeMapTileCaptureResponse));
+			}
 			if (!manifest.capabilities.includes("cameras.lit-map-tile-capture.v1")) {
 				return yield* Effect.fail(
 					new MapCaptureRunError({
@@ -149,14 +192,14 @@ export function makeMapTileCaptureRemotePort(
 								);
 					})
 				);
-			startedRuns.add(request.runId);
+			startedRuns.set(request.runId, sharedRenderer);
 			const start = yield* client
 				.request({
 					endpoint,
 					functionName: "BeginMapTileCapture",
 					objectPath: mapTileReviewLibraryPath,
 					operation: "camera.map_tile.begin.remote",
-					parameters: { RequestJson: JSON.stringify(request) }
+					parameters: { RequestJson: JSON.stringify(wireRequest) }
 				})
 				.pipe(Effect.flatMap(decode));
 			if (start.state === "finished") return start.response;
@@ -384,7 +427,7 @@ function makeRequest(args: {
 		capture: args.plan.capture,
 		captureBackend: args.captureBackend,
 		overviewBounds: args.grid.snappedBounds,
-		contract: { name: "ue-shed-map-tile-capture", version: { major: 1, minor: 0 } },
+		contract: { name: "ue-shed-map-tile-capture", version: { major: 1, minor: 1 } },
 		correlationId: args.correlationId,
 		expectedMapPath: args.plan.project.mapPath,
 		gutterPixels: args.plan.gutterPixels,
@@ -513,16 +556,27 @@ function runMapCaptureWith(args: {
 			const destination =
 				args.options.destination ?? projectLocalMapCaptureDestination(projectRoot);
 			const release = args.port.release;
+			let released = false;
 			if (captureBackend === "lit_camera_tiles" && release !== undefined) {
-				yield* Effect.addFinalizer(() =>
-					release(runId).pipe(
+				yield* Effect.addFinalizer((exit) =>
+					(released ? Effect.void : release(runId)).pipe(
 						Effect.tapError((error) =>
 							Effect.logError(
 								"Map capture release failed; the editor lease will restore state.",
 								error
 							)
 						),
-						Effect.orElseSucceed(() => undefined)
+						Effect.catchCause((cleanup) =>
+							Effect.die(
+								new Error(
+									Cause.pretty(
+										Exit.isFailure(exit)
+											? Cause.combine(exit.cause, cleanup)
+											: cleanup
+									)
+								)
+							)
+						)
 					)
 				);
 			}
@@ -698,6 +752,9 @@ function runMapCaptureWith(args: {
 								continue;
 							}
 							captured.push({
+								...(result.renderEvidence === undefined
+									? undefined
+									: { renderEvidence: result.renderEvidence }),
 								bytes: bytes.byteLength,
 								hash: sha256(bytes),
 								height: dimensions.height,
@@ -751,6 +808,20 @@ function runMapCaptureWith(args: {
 				}) ?? Effect.void
 			);
 
+			if (captureBackend === "lit_camera_tiles" && release)
+				yield* release(runId).pipe(
+					Effect.mapError(
+						(cause) =>
+							new MapCaptureRunError({
+								message: String(cause),
+								operation: "publish",
+								recovery:
+									"Editor restoration failed; artifacts were not published.",
+								runId
+							})
+					)
+				);
+			released = true;
 			const selectedAllTiles = keys.length === inspected.tileCount;
 			const state = cancelled
 				? "cancelled"
@@ -765,7 +836,7 @@ function runMapCaptureWith(args: {
 				},
 				capturePolicy: plan.capture,
 				completedAt: isoNow(yield* Clock.currentTimeMillis),
-				contract: { name: "ue-shed-map-tile-pyramid", version: { major: 1, minor: 0 } },
+				contract: { name: "ue-shed-map-tile-pyramid", version: { major: 1, minor: 1 } },
 				failures,
 				grid: {
 					orientation: {

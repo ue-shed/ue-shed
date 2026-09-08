@@ -56,3 +56,10 @@ Control payload rather than giving it hidden editor authority.
 
 Change this contract in authority order: JSON Schema and fixtures, conformant Effect codecs,
 UEShedCameras C++ producer with trusted UE 5.7 evidence, then consumers.
+
+Minor 1 adds source `renderEvidence` to capture responses and immutable manifests. The source
+frame resolution can differ from a published tile after gutter cropping, supersampling or slicing.
+`release-result.schema.json` describes the EndMapTileCapture result for this lifecycle; callers
+must require `restoration: restored` before publication. A false `released` means the specified run
+did not own the map adapter; it never releases another owner. Renderer ownership is shared with
+the camera render 1.0 and Review adapters.

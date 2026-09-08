@@ -1,3 +1,4 @@
+import { legacyReviewRenderPolicy } from "./camera-render-schema.js";
 import { createHash, randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import {
@@ -227,6 +228,81 @@ function durableClearCompanion(
 		: { status: "not_requested" as const };
 }
 
+const captureWithSavedPositionFallback = Effect.fn(
+	"ReviewCapture.captureWithSavedPositionFallback"
+)(function* (args: {
+	readonly capturePort: ReviewCapturePortApi;
+	readonly request: SchemaReviewCaptureRequest;
+	readonly view: ReviewSet["views"][number];
+}) {
+	const { request } = args;
+	const response = yield* args.capturePort.capture(request);
+	if (
+		response.status !== "failed" ||
+		response.code !== "subject_not_found" ||
+		!response.retrySafe ||
+		request.subject.kind === "oriented_bounds" ||
+		request.viewpoint.kind !== "world_fixed"
+	) {
+		return response;
+	}
+
+	// The producer rejects a missing subject before rendering. Only that explicit failure
+	// is safe to retry; a transport failure may have left a capture in progress.
+	const bounds =
+		args.view.framingRecipe.kind === "preset"
+			? args.view.framingRecipe.subjectBounds
+			: {
+					center: request.viewpoint.approvedPose.location,
+					extent: { x: 0, y: 0, z: 0 },
+					rotation: { pitch: 0, roll: 0, yaw: 0 }
+				};
+	yield* Effect.logWarning("Review capture is using the saved camera position.", {
+		code: "subject_not_found",
+		viewId: request.viewId
+	});
+	const fallback = yield* args.capturePort.capture(
+		ReviewCaptureRequestCurrent.make({
+			...request,
+			clearCompanion: { status: "not_requested" },
+			subject: { bounds, kind: "oriented_bounds" }
+		})
+	);
+	if (fallback.status !== "captured" || !("clearCompanion" in fallback)) return fallback;
+	return {
+		...fallback,
+		clearCompanion:
+			request.clearCompanion.status === "requested"
+				? {
+						failure: {
+							code: "subject_not_found",
+							message: "The subject actor is unavailable in the loaded editor world.",
+							recovery: "Load the actor before retrying the Clear companion.",
+							retrySafe: true
+						},
+						interventions: [],
+						restoration: {
+							method: "transient_capture_component_lists" as const,
+							status: "restored" as const
+						},
+						status: "failed" as const,
+						strategy: request.clearCompanion.strategy
+					}
+				: fallback.clearCompanion,
+		visibility: {
+			reason:
+				"Saved-position fallback: the subject actor is unavailable in the loaded editor world " +
+				"and may be unloaded or missing. Captured the currently loaded scene using the approved " +
+				"camera pose. The recorded region is " +
+				(args.view.framingRecipe.kind === "preset"
+					? "the saved framing bounds, not live actor bounds."
+					: "a zero-extent camera-position marker, not actor bounds.") +
+				" Actor visibility and scene streaming readiness were not assessed.",
+			status: "not_assessed" as const
+		}
+	};
+});
+
 function captureOneView(args: {
 	readonly attempt: ReviewCaptureAttempt;
 	readonly capturePort: ReviewCapturePortApi;
@@ -272,11 +348,12 @@ function captureOneView(args: {
 			clearCompanion: clearCompanionRequest({ policy: visibilityPolicy, view: args.view }),
 			contract: {
 				name: "ue-shed-review-capture",
-				version: { major: 1, minor: 5 }
+				version: { major: 1, minor: 6 }
 			},
 			expectedMapPath: args.reviewSet.project.mapPath,
 			operationId,
 			resolution: profile.resolution,
+			renderPolicy: profile.renderPolicy ?? legacyReviewRenderPolicy,
 			subject:
 				args.view.target.kind === "actor"
 					? args.view.target.subject
@@ -284,7 +361,11 @@ function captureOneView(args: {
 			viewId: args.view.id,
 			viewpoint: args.view.viewpoint
 		});
-		const response = yield* args.capturePort.capture(request).pipe(
+		const response = yield* captureWithSavedPositionFallback({
+			capturePort: args.capturePort,
+			request,
+			view: args.view
+		}).pipe(
 			Effect.catch((cause) =>
 				Effect.succeed({
 					code: "capture_connection_failed",
@@ -295,7 +376,7 @@ function captureOneView(args: {
 					retrySafe: true,
 					contract: {
 						name: "ue-shed-review-capture" as const,
-						version: { major: 1 as const, minor: 5 as const }
+						version: { major: 1 as const, minor: 6 as const }
 					},
 					status: "failed" as const,
 					viewId: args.view.id
@@ -363,6 +444,9 @@ function captureOneView(args: {
 			};
 		}
 		const result = {
+			...("renderEvidence" in response && response.renderEvidence !== undefined
+				? { renderEvidence: response.renderEvidence }
+				: undefined),
 			artifacts,
 			captureDurationMs: response.captureDurationMs,
 			clearCompanion: durableClearCompanion(response),
@@ -475,7 +559,7 @@ function captureReviewSetWith(args: {
 					).length;
 					const run = yield* decodeCaptureRun({
 						completedAt: isoNow(yield* Clock.currentTimeMillis),
-						contract: { name: "ue-shed-capture-run", version: { major: 1, minor: 5 } },
+						contract: { name: "ue-shed-capture-run", version: { major: 1, minor: 6 } },
 						id: runId,
 						invocation,
 						project: reviewSet.project,

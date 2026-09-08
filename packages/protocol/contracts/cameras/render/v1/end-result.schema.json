@@ -1,0 +1,185 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://ue-shed.dev/contracts/cameras/render/v1/end-result.schema.json",
+	"anyOf": [
+		{
+			"type": "object",
+			"properties": {
+				"status": {
+					"type": "string",
+					"enum": ["closed"]
+				},
+				"sessionId": {
+					"type": "string",
+					"allOf": [
+						{
+							"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+						}
+					]
+				},
+				"restoration": {
+					"type": "string",
+					"enum": ["restored"]
+				}
+			},
+			"required": ["status", "sessionId", "restoration"],
+			"additionalProperties": false
+		},
+		{
+			"type": "object",
+			"properties": {
+				"status": {
+					"type": "string",
+					"enum": ["failed"]
+				},
+				"code": {
+					"type": "string",
+					"enum": [
+						"invalid_policy",
+						"invalid_frame",
+						"invalid_region",
+						"unsupported_policy",
+						"unsupported_size",
+						"editor_required",
+						"rendering_unavailable",
+						"map_mismatch",
+						"project_mismatch",
+						"editor_busy",
+						"viewport_unavailable",
+						"viewport_locked",
+						"preparation_failed",
+						"preparation_budget_exceeded",
+						"frame_budget_exceeded",
+						"world_changed",
+						"lease_expired",
+						"settling_timeout",
+						"exposure_unavailable",
+						"capture_failed",
+						"artifact_invalid",
+						"restoration_failed",
+						"cancelled",
+						"session_unknown",
+						"session_closed",
+						"session_conflict",
+						"operation_unknown",
+						"operation_expired",
+						"operation_conflict"
+					]
+				},
+				"message": {
+					"type": "string",
+					"allOf": [
+						{
+							"minLength": 1
+						},
+						{
+							"maxLength": 1024
+						}
+					]
+				},
+				"recovery": {
+					"type": "string",
+					"allOf": [
+						{
+							"minLength": 1
+						},
+						{
+							"maxLength": 1024
+						}
+					]
+				},
+				"sessionId": {
+					"type": "string",
+					"allOf": [
+						{
+							"minLength": 1
+						},
+						{
+							"maxLength": 1024
+						}
+					]
+				},
+				"operationId": {
+					"type": "string",
+					"allOf": [
+						{
+							"minLength": 1
+						},
+						{
+							"maxLength": 1024
+						}
+					]
+				},
+				"issues": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"properties": {
+							"code": {
+								"type": "string",
+								"allOf": [
+									{
+										"minLength": 1
+									},
+									{
+										"maxLength": 1024
+									}
+								]
+							},
+							"path": {
+								"type": "string",
+								"allOf": [
+									{
+										"minLength": 1
+									},
+									{
+										"maxLength": 1024
+									}
+								]
+							},
+							"message": {
+								"type": "string",
+								"allOf": [
+									{
+										"minLength": 1
+									},
+									{
+										"maxLength": 1024
+									}
+								]
+							},
+							"recovery": {
+								"type": "string",
+								"allOf": [
+									{
+										"minLength": 1
+									},
+									{
+										"maxLength": 1024
+									}
+								]
+							}
+						},
+						"required": ["code", "path", "message", "recovery"],
+						"additionalProperties": false
+					}
+				},
+				"restoration": {
+					"type": "string",
+					"enum": ["not_acquired", "restored", "failed"]
+				}
+			},
+			"required": [
+				"status",
+				"code",
+				"message",
+				"recovery",
+				"sessionId",
+				"issues",
+				"restoration"
+			],
+			"additionalProperties": false
+		}
+	],
+	"$defs": {}
+}

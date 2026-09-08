@@ -5,6 +5,13 @@ decoder, bounded named-pipe server, latest-frame snapshots, subscriptions, host 
 Control adapters, portable Review Set schemas, filesystem repository, and Capture Run orchestrator.
 Electron is only one consumer; Workbench UI is never required.
 
+The [shared rendering API](../../docs/products/camera-rendering.md) provides Effect-scoped
+`CameraRenderer.open`, one-shot `renderCamera`, capability/preflight queries, bounded progress,
+camera-region/Data Layer preparation, and validated artifact reads. Both perspective and
+orthographic cameras work through explicit editor-viewport or SceneCapture policies. Review
+previews/final captures and all map modes share the extracted native lifecycle and global ownership.
+See the guide for CLI usage, compatibility, visual differences, and downstream adoption.
+
 ```sh
 npm install --save-exact @ue-shed/cameras @ue-shed/unreal-connection @ue-shed/protocol
 ```
@@ -45,6 +52,23 @@ escapes. Unreal still stages only beneath the project's `Saved/UEShed/ReviewStag
 The language-neutral editor wire contract is under
 `packages/protocol/contracts/cameras/review/v1`. Keep it green with
 `pnpm --filter @ue-shed/cameras contract:check`.
+
+For legacy/custom capture ports, `ReviewCapture.captureSet` (and `captureReviewSet`, including CLI capture) retries a fixed-camera
+view once when Unreal returns a retry-safe `subject_not_found`. The retry uses the unchanged
+approved position, rotation, FOV, and resolution with an `oriented_bounds` subject: saved framing
+bounds for preset views, or a zero-extent marker at the camera position for manual views. The
+original actor identity stays in the Review Set snapshot; the run records the region actually used
+and a `visibility.status: "not_assessed"` reason identifying the saved-position fallback. A requested
+Clear companion is recorded as failed while retaining Pure evidence. The compatibility retry was
+designed for capture contract 1.5; it remains preserved. The current first-party path uses capture
+1.6 and directly renders fixed cameras without requiring actor resolution or a retry.
+
+Target-relative views still need their live actor. Initial framing still needs live bounds; a
+shared render of an already-approved fixed pose does not. The compatibility fallback itself does not load
+World Partition cells; shared rendering can apply explicit camera-region and Data Layer policies.
+Transport errors and unrelated failures do not
+trigger a position retry. Direct low-level `captureReviewView` requests retain their exact subject
+semantics; the compatibility retry belongs to the Review Set capture workflow, which owns saved provenance.
 
 This package does not depend on `@ue-shed/observatory` or `@ue-shed/observability`. World Scout's
 USOT transform wire contract ships in `@ue-shed/protocol`; the Observatory host package remains a

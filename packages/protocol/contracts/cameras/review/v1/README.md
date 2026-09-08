@@ -9,6 +9,13 @@ Portable Review Set / Capture Run documents and Workbench IPC remain TypeScript-
 in `@ue-shed/cameras`. They are deliberately outside this JSON authority while Map Review authoring
 recovery, live preview, and World Scout streaming plans remain active.
 
+Minor version 6 requires an explicit shared `renderPolicy` and records `renderEvidence`. Fixed
+world-space cameras can return `unresolved_actor` provenance without a projection when their subject
+is unavailable. Actor-relative requests still require realization. The first-party adapter uses
+the separate realization/render/inspection contracts under `cameras/render/v1`; the legacy native
+CaptureReviewView method also delegates rendering to that lifecycle. Older wire minors retain their
+subject/projection requirements. No renderer fallback is implied by a minor-version upgrade.
+
 Minor versions 0–1 accept the original actor plus approved-world-pose request. Minor version 2 adds
 actor or oriented-bounds subjects, world-fixed or actor-relative viewpoints, and a requested
 visibility-assessment method. Minor version 3 keeps those inputs but makes the editor response a raw

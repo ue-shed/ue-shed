@@ -1,0 +1,417 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://ue-shed.dev/contracts/cameras/render/v1/review-realization-request.schema.json",
+	"type": "object",
+	"properties": {
+		"contract": {
+			"type": "object",
+			"properties": {
+				"name": {
+					"type": "string",
+					"enum": ["ue-shed-review-render-stages"]
+				},
+				"version": {
+					"type": "object",
+					"properties": {
+						"major": {
+							"type": "number",
+							"enum": [1]
+						},
+						"minor": {
+							"type": "number",
+							"enum": [0]
+						}
+					},
+					"required": ["major", "minor"],
+					"additionalProperties": false
+				}
+			},
+			"required": ["name", "version"],
+			"additionalProperties": false
+		},
+		"viewpoint": {
+			"anyOf": [
+				{
+					"type": "object",
+					"properties": {
+						"approvedPose": {
+							"type": "object",
+							"properties": {
+								"aspectRatio": {
+									"type": "string",
+									"enum": ["16:9"]
+								},
+								"fieldOfViewDegrees": {
+									"type": "number",
+									"allOf": [
+										{
+											"minimum": 5,
+											"maximum": 170
+										}
+									]
+								},
+								"location": {
+									"type": "object",
+									"properties": {
+										"x": {
+											"type": "number"
+										},
+										"y": {
+											"type": "number"
+										},
+										"z": {
+											"type": "number"
+										}
+									},
+									"required": ["x", "y", "z"],
+									"additionalProperties": false
+								},
+								"projection": {
+									"type": "string",
+									"enum": ["perspective"]
+								},
+								"rotation": {
+									"type": "object",
+									"properties": {
+										"pitch": {
+											"type": "number"
+										},
+										"roll": {
+											"type": "number"
+										},
+										"yaw": {
+											"type": "number"
+										}
+									},
+									"required": ["pitch", "roll", "yaw"],
+									"additionalProperties": false
+								}
+							},
+							"required": [
+								"aspectRatio",
+								"fieldOfViewDegrees",
+								"location",
+								"projection",
+								"rotation"
+							],
+							"additionalProperties": false
+						},
+						"kind": {
+							"type": "string",
+							"enum": ["world_fixed"]
+						}
+					},
+					"required": ["approvedPose", "kind"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"kind": {
+							"type": "string",
+							"enum": ["target_relative"]
+						},
+						"relativePose": {
+							"type": "object",
+							"properties": {
+								"aspectRatio": {
+									"type": "string",
+									"enum": ["16:9"]
+								},
+								"fieldOfViewDegrees": {
+									"type": "number",
+									"allOf": [
+										{
+											"minimum": 5,
+											"maximum": 170
+										}
+									]
+								},
+								"location": {
+									"type": "object",
+									"properties": {
+										"x": {
+											"type": "number"
+										},
+										"y": {
+											"type": "number"
+										},
+										"z": {
+											"type": "number"
+										}
+									},
+									"required": ["x", "y", "z"],
+									"additionalProperties": false
+								},
+								"projection": {
+									"type": "string",
+									"enum": ["perspective"]
+								},
+								"rotation": {
+									"type": "object",
+									"properties": {
+										"pitch": {
+											"type": "number"
+										},
+										"roll": {
+											"type": "number"
+										},
+										"yaw": {
+											"type": "number"
+										}
+									},
+									"required": ["pitch", "roll", "yaw"],
+									"additionalProperties": false
+								}
+							},
+							"required": [
+								"aspectRatio",
+								"fieldOfViewDegrees",
+								"location",
+								"projection",
+								"rotation"
+							],
+							"additionalProperties": false
+						},
+						"targetSnapshot": {
+							"type": "object",
+							"properties": {
+								"location": {
+									"type": "object",
+									"properties": {
+										"x": {
+											"type": "number"
+										},
+										"y": {
+											"type": "number"
+										},
+										"z": {
+											"type": "number"
+										}
+									},
+									"required": ["x", "y", "z"],
+									"additionalProperties": false
+								},
+								"rotation": {
+									"type": "object",
+									"properties": {
+										"pitch": {
+											"type": "number"
+										},
+										"roll": {
+											"type": "number"
+										},
+										"yaw": {
+											"type": "number"
+										}
+									},
+									"required": ["pitch", "roll", "yaw"],
+									"additionalProperties": false
+								}
+							},
+							"required": ["location", "rotation"],
+							"additionalProperties": false
+						}
+					},
+					"required": ["kind", "relativePose", "targetSnapshot"],
+					"additionalProperties": false
+				}
+			]
+		},
+		"subject": {
+			"anyOf": [
+				{
+					"anyOf": [
+						{
+							"type": "object",
+							"properties": {
+								"actorGuid": {
+									"type": "string",
+									"allOf": [
+										{
+											"pattern": "^(?!00000000-00000000-00000000-00000000$)[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{8}){3}$"
+										}
+									]
+								},
+								"diagnosticLabel": {
+									"anyOf": [
+										{
+											"type": "string",
+											"allOf": [
+												{
+													"minLength": 1
+												}
+											]
+										},
+										{
+											"type": "null"
+										}
+									]
+								},
+								"kind": {
+									"type": "string",
+									"enum": ["actor_guid"]
+								},
+								"lastKnownActorPath": {
+									"anyOf": [
+										{
+											"type": "string",
+											"allOf": [
+												{
+													"minLength": 7
+												},
+												{
+													"maxLength": 4096
+												},
+												{
+													"pattern": "^\\/Game\\/"
+												}
+											]
+										},
+										{
+											"type": "null"
+										}
+									]
+								}
+							},
+							"required": ["actorGuid", "kind"],
+							"additionalProperties": false
+						},
+						{
+							"type": "object",
+							"properties": {
+								"actorPath": {
+									"type": "string",
+									"allOf": [
+										{
+											"minLength": 7
+										},
+										{
+											"maxLength": 4096
+										},
+										{
+											"pattern": "^\\/Game\\/"
+										}
+									]
+								},
+								"diagnosticLabel": {
+									"anyOf": [
+										{
+											"type": "string",
+											"allOf": [
+												{
+													"minLength": 1
+												}
+											]
+										},
+										{
+											"type": "null"
+										}
+									]
+								},
+								"kind": {
+									"type": "string",
+									"enum": ["actor_path"]
+								}
+							},
+							"required": ["actorPath", "kind"],
+							"additionalProperties": false
+						}
+					]
+				},
+				{
+					"type": "object",
+					"properties": {
+						"bounds": {
+							"type": "object",
+							"properties": {
+								"center": {
+									"type": "object",
+									"properties": {
+										"x": {
+											"type": "number"
+										},
+										"y": {
+											"type": "number"
+										},
+										"z": {
+											"type": "number"
+										}
+									},
+									"required": ["x", "y", "z"],
+									"additionalProperties": false
+								},
+								"extent": {
+									"type": "object",
+									"properties": {
+										"x": {
+											"type": "number",
+											"allOf": [
+												{
+													"minimum": 0
+												}
+											]
+										},
+										"y": {
+											"type": "number",
+											"allOf": [
+												{
+													"minimum": 0
+												}
+											]
+										},
+										"z": {
+											"type": "number",
+											"allOf": [
+												{
+													"minimum": 0
+												}
+											]
+										}
+									},
+									"required": ["x", "y", "z"],
+									"additionalProperties": false
+								},
+								"rotation": {
+									"type": "object",
+									"properties": {
+										"pitch": {
+											"type": "number"
+										},
+										"roll": {
+											"type": "number"
+										},
+										"yaw": {
+											"type": "number"
+										}
+									},
+									"required": ["pitch", "roll", "yaw"],
+									"additionalProperties": false
+								}
+							},
+							"required": ["center", "extent", "rotation"],
+							"additionalProperties": false
+						},
+						"kind": {
+							"type": "string",
+							"enum": ["oriented_bounds"]
+						}
+					},
+					"required": ["bounds", "kind"],
+					"additionalProperties": false
+				}
+			]
+		},
+		"expectedMapPath": {
+			"type": "string",
+			"allOf": [
+				{
+					"minLength": 1
+				}
+			]
+		}
+	},
+	"required": ["contract", "viewpoint", "subject", "expectedMapPath"],
+	"additionalProperties": false,
+	"$defs": {}
+}

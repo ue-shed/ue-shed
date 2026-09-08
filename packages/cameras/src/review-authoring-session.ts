@@ -1,3 +1,4 @@
+import type { CameraFrameEvidence } from "./camera-render-schema.js";
 import { randomUUID } from "node:crypto";
 import { mkdir, open, readFile, readdir, rename, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -403,6 +404,7 @@ export interface ReviewAuthoringSessionsApi {
 		readonly candidateId: string;
 		readonly projectRoot: string;
 		readonly projection: ReviewSubjectProjection;
+		readonly renderEvidence?: CameraFrameEvidence;
 		readonly sessionId: string;
 	}) => Effect.Effect<ReviewAuthoringSessionDocument, ReviewAuthoringSessionError>;
 	readonly reframe: (args: {
@@ -767,6 +769,7 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 				readonly candidateId: string;
 				readonly projectRoot: string;
 				readonly projection: ReviewSubjectProjection;
+				readonly renderEvidence?: CameraFrameEvidence;
 				readonly sessionId: string;
 			}) {
 				const session = yield* loadDocument({
@@ -793,6 +796,9 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 					requestedMargin: candidate.recipe.margin
 				});
 				const realization: ReviewCandidateRealization = {
+					...(args.renderEvidence === undefined
+						? undefined
+						: { renderEvidence: args.renderEvidence }),
 					candidateId: candidate.id,
 					diagnostics,
 					projection: args.projection,

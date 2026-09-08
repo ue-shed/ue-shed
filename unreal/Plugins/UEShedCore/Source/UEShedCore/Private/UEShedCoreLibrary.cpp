@@ -10,6 +10,8 @@
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
 #include "Modules/ModuleManager.h"
+#include "UObject/Class.h"
+#include "UObject/UObjectGlobals.h"
 
 void UUEShedCoreLibrary::GetCapabilityManifest(FString& ResultJson)
 {
@@ -73,6 +75,10 @@ void UUEShedCoreLibrary::GetCapabilityManifest(FString& ResultJson)
 		Root->SetObjectField(TEXT("mapTileCaptureLimits"), Limits);
 		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("cameras.map-tile-capture.v1")));
 		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("cameras.lit-map-tile-capture.v1")));
+		const UClass* RenderLibrary = FindObject<UClass>(nullptr,
+			TEXT("/Script/UEShedCamerasEditor.UEShedCameraRenderingLibrary"));
+		if (RenderLibrary && RenderLibrary->FindFunctionByName(TEXT("BeginCameraRender")))
+			Capabilities.Add(MakeShared<FJsonValueString>(TEXT("cameras.render-session.v1")));
  Capabilities.Add(MakeShared<FJsonValueString>(TEXT("cameras.capture-selection.v1")));
  Capabilities.Add(MakeShared<FJsonValueString>(TEXT("cameras.capture-readiness.v1")));
 	}

@@ -1,0 +1,510 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://ue-shed.dev/contracts/cameras/render/v1/policy.schema.json",
+	"type": "object",
+	"properties": {
+		"renderer": {
+			"anyOf": [
+				{
+					"type": "object",
+					"properties": {
+						"kind": {
+							"type": "string",
+							"enum": ["editor_viewport"]
+						},
+						"strategy": {
+							"type": "string",
+							"enum": ["high_resolution_screenshot"]
+						},
+						"profile": {
+							"type": "string",
+							"enum": ["lit", "observation"]
+						},
+						"vignette": {
+							"type": "string",
+							"enum": ["project", "disabled"]
+						},
+						"fog": {
+							"type": "boolean"
+						},
+						"volumetricFog": {
+							"type": "boolean"
+						}
+					},
+					"required": ["kind", "strategy", "profile", "vignette", "fog", "volumetricFog"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"kind": {
+							"type": "string",
+							"enum": ["scene_capture"]
+						},
+						"profile": {
+							"type": "string",
+							"enum": [
+								"full_fidelity",
+								"seam_stable",
+								"scene_capture_defaults",
+								"observation"
+							]
+						},
+						"lodDistanceScale": {
+							"type": "number",
+							"allOf": [
+								{
+									"minimum": 0.1,
+									"maximum": 100
+								}
+							]
+						},
+						"fog": {
+							"type": "boolean"
+						},
+						"volumetricFog": {
+							"type": "boolean"
+						}
+					},
+					"required": ["kind", "profile", "lodDistanceScale", "fog", "volumetricFog"],
+					"additionalProperties": false
+				}
+			]
+		},
+		"exposure": {
+			"anyOf": [
+				{
+					"type": "object",
+					"properties": {
+						"mode": {
+							"type": "string",
+							"enum": ["project_auto"]
+						}
+					},
+					"required": ["mode"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"mode": {
+							"type": "string",
+							"enum": ["fixed_ev100"]
+						},
+						"ev100": {
+							"type": "number",
+							"allOf": [
+								{
+									"minimum": -20,
+									"maximum": 30
+								}
+							]
+						},
+						"compensation": {
+							"type": "string",
+							"enum": ["project"]
+						}
+					},
+					"required": ["mode", "ev100", "compensation"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"mode": {
+							"type": "string",
+							"enum": ["meter_once"]
+						},
+						"referenceCamera": {
+							"type": "object",
+							"properties": {
+								"location": {
+									"type": "object",
+									"properties": {
+										"x": {
+											"type": "number"
+										},
+										"y": {
+											"type": "number"
+										},
+										"z": {
+											"type": "number"
+										}
+									},
+									"required": ["x", "y", "z"],
+									"additionalProperties": false
+								},
+								"rotation": {
+									"type": "object",
+									"properties": {
+										"pitch": {
+											"type": "number"
+										},
+										"roll": {
+											"type": "number"
+										},
+										"yaw": {
+											"type": "number"
+										}
+									},
+									"required": ["pitch", "roll", "yaw"],
+									"additionalProperties": false
+								},
+								"projection": {
+									"anyOf": [
+										{
+											"type": "object",
+											"properties": {
+												"kind": {
+													"type": "string",
+													"enum": ["perspective"]
+												},
+												"horizontalFieldOfView": {
+													"type": "number",
+													"allOf": [
+														{
+															"minimum": 5,
+															"maximum": 170
+														}
+													]
+												}
+											},
+											"required": ["kind", "horizontalFieldOfView"],
+											"additionalProperties": false
+										},
+										{
+											"type": "object",
+											"properties": {
+												"kind": {
+													"type": "string",
+													"enum": ["orthographic"]
+												},
+												"width": {
+													"type": "number",
+													"allOf": [
+														{
+															"exclusiveMinimum": 0
+														},
+														{
+															"maximum": 1000000000
+														}
+													]
+												}
+											},
+											"required": ["kind", "width"],
+											"additionalProperties": false
+										}
+									]
+								}
+							},
+							"required": ["location", "rotation", "projection"],
+							"additionalProperties": false
+						},
+						"referenceSize": {
+							"type": "object",
+							"properties": {
+								"width": {
+									"type": "integer",
+									"allOf": [
+										{
+											"minimum": 16,
+											"maximum": 16384
+										}
+									]
+								},
+								"height": {
+									"type": "integer",
+									"allOf": [
+										{
+											"minimum": 16,
+											"maximum": 16384
+										}
+									]
+								}
+							},
+							"required": ["width", "height"],
+							"additionalProperties": false
+						},
+						"minimumFrames": {
+							"type": "integer",
+							"allOf": [
+								{
+									"minimum": 1,
+									"maximum": 4096
+								}
+							]
+						}
+					},
+					"required": ["mode", "referenceCamera", "referenceSize", "minimumFrames"],
+					"additionalProperties": false
+				}
+			]
+		},
+		"settling": {
+			"type": "object",
+			"properties": {
+				"minimumFrames": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 1,
+							"maximum": 4096
+						}
+					]
+				},
+				"timeoutMs": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 1000,
+							"maximum": 900000
+						}
+					]
+				},
+				"initialView": {
+					"type": "object",
+					"properties": {
+						"camera": {
+							"type": "object",
+							"properties": {
+								"location": {
+									"type": "object",
+									"properties": {
+										"x": {
+											"type": "number"
+										},
+										"y": {
+											"type": "number"
+										},
+										"z": {
+											"type": "number"
+										}
+									},
+									"required": ["x", "y", "z"],
+									"additionalProperties": false
+								},
+								"rotation": {
+									"type": "object",
+									"properties": {
+										"pitch": {
+											"type": "number"
+										},
+										"roll": {
+											"type": "number"
+										},
+										"yaw": {
+											"type": "number"
+										}
+									},
+									"required": ["pitch", "roll", "yaw"],
+									"additionalProperties": false
+								},
+								"projection": {
+									"anyOf": [
+										{
+											"type": "object",
+											"properties": {
+												"kind": {
+													"type": "string",
+													"enum": ["perspective"]
+												},
+												"horizontalFieldOfView": {
+													"type": "number",
+													"allOf": [
+														{
+															"minimum": 5,
+															"maximum": 170
+														}
+													]
+												}
+											},
+											"required": ["kind", "horizontalFieldOfView"],
+											"additionalProperties": false
+										},
+										{
+											"type": "object",
+											"properties": {
+												"kind": {
+													"type": "string",
+													"enum": ["orthographic"]
+												},
+												"width": {
+													"type": "number",
+													"allOf": [
+														{
+															"exclusiveMinimum": 0
+														},
+														{
+															"maximum": 1000000000
+														}
+													]
+												}
+											},
+											"required": ["kind", "width"],
+											"additionalProperties": false
+										}
+									]
+								}
+							},
+							"required": ["location", "rotation", "projection"],
+							"additionalProperties": false
+						},
+						"size": {
+							"type": "object",
+							"properties": {
+								"width": {
+									"type": "integer",
+									"allOf": [
+										{
+											"minimum": 16,
+											"maximum": 16384
+										}
+									]
+								},
+								"height": {
+									"type": "integer",
+									"allOf": [
+										{
+											"minimum": 16,
+											"maximum": 16384
+										}
+									]
+								}
+							},
+							"required": ["width", "height"],
+							"additionalProperties": false
+						},
+						"minimumFrames": {
+							"type": "integer",
+							"allOf": [
+								{
+									"minimum": 1,
+									"maximum": 4096
+								}
+							]
+						}
+					},
+					"required": ["camera", "size", "minimumFrames"],
+					"additionalProperties": false
+				}
+			},
+			"required": ["minimumFrames", "timeoutMs"],
+			"additionalProperties": false
+		},
+		"time": {
+			"type": "string",
+			"enum": ["live_editor", "freeze_materials_and_ticks"]
+		},
+		"preparation": {
+			"type": "object",
+			"properties": {
+				"geometry": {
+					"anyOf": [
+						{
+							"type": "object",
+							"properties": {
+								"mode": {
+									"type": "string",
+									"enum": ["preserve_loading"]
+								}
+							},
+							"required": ["mode"],
+							"additionalProperties": false
+						},
+						{
+							"type": "object",
+							"properties": {
+								"mode": {
+									"type": "string",
+									"enum": ["camera_regions"]
+								},
+								"maximumRegions": {
+									"type": "integer",
+									"allOf": [
+										{
+											"minimum": 1,
+											"maximum": 64
+										}
+									]
+								},
+								"extent": {
+									"type": "object",
+									"properties": {
+										"x": {
+											"type": "number",
+											"allOf": [
+												{
+													"minimum": 0,
+													"maximum": 10000000
+												}
+											]
+										},
+										"y": {
+											"type": "number",
+											"allOf": [
+												{
+													"minimum": 0,
+													"maximum": 10000000
+												}
+											]
+										},
+										"z": {
+											"type": "number",
+											"allOf": [
+												{
+													"minimum": 0,
+													"maximum": 10000000
+												}
+											]
+										}
+									},
+									"required": ["x", "y", "z"],
+									"additionalProperties": false
+								}
+							},
+							"required": ["mode", "maximumRegions", "extent"],
+							"additionalProperties": false
+						}
+					]
+				},
+				"dataLayers": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"properties": {
+							"assetPath": {
+								"type": "string",
+								"allOf": [
+									{
+										"pattern": "^\\/[A-Za-z0-9_./-]+$"
+									},
+									{
+										"maxLength": 1024
+									}
+								]
+							},
+							"loaded": {
+								"type": "boolean"
+							},
+							"visible": {
+								"type": "boolean"
+							}
+						},
+						"required": ["assetPath", "loaded", "visible"],
+						"additionalProperties": false
+					},
+					"allOf": [
+						{
+							"maxItems": 64
+						}
+					]
+				}
+			},
+			"required": ["geometry", "dataLayers"],
+			"additionalProperties": false
+		}
+	},
+	"required": ["renderer", "exposure", "settling", "time", "preparation"],
+	"additionalProperties": false,
+	"$defs": {}
+}

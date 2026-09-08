@@ -374,7 +374,7 @@ describe.skipIf(!endpoint)("real Unreal target and area capture", () => {
 			if (area.status !== "captured" || !("resolvedSubject" in area)) return;
 			stagingPaths.push(pureStagingPath(area));
 			expect(area.resolvedSubject).toEqual({ bounds: areaBounds, kind: "oriented_bounds" });
-			expect(area.subjectProjection.status).toBe("projected");
+			expect(area.subjectProjection?.status).toBe("projected");
 			expect(area.visibility).toMatchObject({
 				status: "not_assessed"
 			});
@@ -547,7 +547,7 @@ describe.skipIf(!endpoint)("real Unreal Map Review capture", () => {
 		);
 		try {
 			expect(run.status).toBe("completed");
-			expect(run.contract.version).toEqual({ major: 1, minor: 5 });
+			expect(run.contract.version).toEqual({ major: 1, minor: 6 });
 			expect(run.results).toHaveLength(1);
 			const result = run.results[0]!;
 			expect(result.status).toBe("captured");
@@ -842,7 +842,7 @@ describe.skipIf(!endpoint)("real Unreal Map Review capture", () => {
 		const unsupported = await rawCaptureCall({
 			contract: {
 				name: "ue-shed-review-capture",
-				version: { major: 1, minor: 6 }
+				version: { major: 1, minor: 7 }
 			},
 			operationId,
 			viewId: "unsupported-future-minor"

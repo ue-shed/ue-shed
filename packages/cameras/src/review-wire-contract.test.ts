@@ -85,8 +85,11 @@ describe("Map Review language-neutral wire contracts", () => {
 				readonly properties: { readonly subjectProjection: { readonly $ref: string } };
 			}[];
 		};
-		const currentSuccess = contract.oneOf[0]!;
-		const legacySuccess = contract.oneOf[3]!;
+		const sharedSuccess = contract.oneOf[0]!;
+		expect(sharedSuccess.required).toContain("renderEvidence");
+		expect(sharedSuccess.required).not.toContain("subjectProjection");
+		const currentSuccess = contract.oneOf[1]!;
+		const legacySuccess = contract.oneOf[4]!;
 		expect(currentSuccess.properties.subjectProjection).toEqual({
 			$ref: "#/$defs/subjectProjection"
 		});

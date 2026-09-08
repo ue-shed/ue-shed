@@ -44,9 +44,12 @@ export function assertPublicationConfirmation(answer: string, version: string) {
 
 export function releaseEnvironment(environment: NodeJS.ProcessEnv = process.env, home = homedir()) {
 	const env = { ...environment };
-	const pathKey = Object.keys(env).find((key) => key.toLowerCase() === "path") ?? "PATH";
+	const path = Object.entries(env).find(([key]) => key.toLowerCase() === "path")?.[1] ?? "";
+	for (const key of Object.keys(env)) {
+		if (key.toLowerCase() === "path") delete env[key];
+	}
 	const cargoBin = join(env.CARGO_HOME ?? join(home, ".cargo"), "bin");
-	env[pathKey] = [dirname(process.execPath), env[pathKey] ?? "", cargoBin].join(delimiter);
+	env.PATH = [dirname(process.execPath), path, cargoBin].join(delimiter);
 	// Make the build and package assembly agree, including in an independent worktree.
 	env.CARGO_TARGET_DIR = resolve(repositoryRoot, env.CARGO_TARGET_DIR ?? "target");
 	return env;

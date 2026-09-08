@@ -202,15 +202,15 @@ it. The remote adapter requests 1.1 evidence from plugins advertising `cameras.r
 and downgrades to 1.0 for released plugins. Legacy Lit release results may contain only
 `{ released: true }`; shared-renderer plugins must explicitly report successful restoration.
 
-Electroswag should install the next minor `@ue-shed/cameras`, protocol and connection package set
-and the matching UEShedCore/UEShedCameras plugin bundle (planned **0.7.0** under the fixed release
-group). Released 0.6.0 does not contain `cameras.render-session.v1`. Negotiate that capability and
-the render contract instead of assuming a descriptor version is sufficient. The development build
-used for validation still reports descriptor 0.6.0; it is an unreleased build of this change.
+Downstream hosts should install the **0.7.0** `@ue-shed/cameras`, protocol and connection package
+set and the matching UEShedCore/UEShedCameras plugin bundle. Released 0.6.0 does not contain
+`cameras.render-session.v1`. Negotiate that capability and the render contract instead of assuming
+a descriptor version is sufficient. The original development validation used an unreleased build
+reporting descriptor 0.6.0; release validation must use the matching 0.7.0 artifacts.
 
-Electroswag can save a 1.3 profile policy, use `previewReviewCandidate` while authoring, and use
+Downstream hosts can save a 1.3 profile policy, use `previewReviewCandidate` while authoring, and use
 `captureReviewSet` for final views. For standalone absolute cameras it can use `renderCamera` or
-`CameraRenderer.open` directly. It should show preparation/settling progress, preserve typed failure
+`CameraRenderer.open` directly. They should show preparation/settling progress, preserve typed failure
 and restoration context, and include the resolved policy in reuse keys. No Workbench integration or
 studio-specific plugin is required. This change does not publish a release.
 

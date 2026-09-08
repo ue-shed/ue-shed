@@ -1,5 +1,11 @@
 # @ue-shed/observability
 
+## 0.7.0
+
+### Minor Changes
+
+- Align this unchanged package with the synchronized UE Shed `0.7.0` release. There is no direct behavioral change.
+
 ## 0.6.0
 
 ### Minor Changes

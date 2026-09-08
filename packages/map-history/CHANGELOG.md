@@ -1,5 +1,13 @@
 # @ue-shed/map-history
 
+## 0.7.0
+
+### Patch Changes
+
+- Updated dependencies [1c03e0f]
+    - @ue-shed/protocol@0.7.0
+    - @ue-shed/unreal-assets@0.7.0
+
 ## 0.6.0
 
 ### Patch Changes

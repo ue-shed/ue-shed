@@ -4,6 +4,11 @@ These documents describe UE Shed product directions. They are vision documents, 
 implement every mechanism exactly as first described. Risky decisions are intentionally earned
 through vertical slices and engine-source verification.
 
+## Shared infrastructure
+
+- [Authoring synchronization layer](authoring-sync-layer.md) — proposed Node coordinator, public
+  sync interfaces, and optional Unreal bridge/menu clients; a general sync library remains future work
+
 ## Running-world products
 
 These directions share discovery, producer/world/session identity, capability negotiation, bounded

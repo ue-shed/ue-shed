@@ -30,6 +30,8 @@ export const ueShedPluginIds = Object.freeze([
 	"UEShedCore",
 	"UEShedAuthoring",
 	"UEShedCameras",
+	"UEShedCameraAuthoringBridge",
+	"UEShedCameraAuthoring",
 	"UEShedObservatory",
 	"UEShedNiagara",
 	"UEShedAssetAudits",

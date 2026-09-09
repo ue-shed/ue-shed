@@ -1,4 +1,5 @@
 #include "UEShedCameraRenderSession.h"
+#include "UEShedCameraEditorOwnership.h"
 #include "Camera/CameraActor.h"
 #include "Camera/CameraComponent.h"
 #include "Components/SceneCaptureComponent2D.h"
@@ -732,7 +733,7 @@ TSharedPtr<FJsonObject> FUEShedCameraRenderSession::Preflight(const TSharedPtr<F
 		if (String(Request, TEXT("expectedProjectName")) != FApp::GetProjectName())
 			Issue(Issues, TEXT("project_mismatch"), TEXT("expectedProjectName"),
 				  TEXT("The connected editor belongs to a different project."));
-		if (IsBusy())
+		if (IsBusy() || FUEShedCameraEditorOwnership::HasAuthoringOwner())
 			Issue(Issues, TEXT("editor_busy"), TEXT("sessionId"),
 				  TEXT("Another render session owns the editor world."));
 		const bool Viewport =

@@ -1,0 +1,12 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "0.7.1",
+	"FriendlyName": "UE Shed Camera Authoring",
+	"Description": "Optional reference menu for the public camera authoring bridge.",
+	"Category": "UE Shed",
+	"EnabledByDefault": false,
+	"CanContainContent": false,
+	"Plugins": [{ "Name": "UEShedCameraAuthoringBridge", "Enabled": true }],
+	"Modules": [{ "Name": "UEShedCameraAuthoring", "Type": "Editor", "LoadingPhase": "Default" }]
+}

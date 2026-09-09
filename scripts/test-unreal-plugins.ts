@@ -29,6 +29,8 @@ writeFileSync(
 );
 const descriptors = prepareUnrealPlugins({ engineRoot, projectPath: project, tools });
 const tests = [
+	"UEShed.Cameras.Authoring.NativeLifecycle",
+	"UEShed.Cameras.Rendering.ViewLocalVisibilityProof",
 	"UEShed.Authoring.CanonicalJson",
 	"UEShed.Cameras.Rendering.LifecycleAndReference",
 	"UEShed.Cameras.Rendering.ScreenshotOwnership",
@@ -81,4 +83,6 @@ if (
 ) {
 	throw new Error(`Unreal plugin automation did not pass all ${tests.length} tests: ${report}`);
 }
-console.log(`Unreal ${version.label}: all seven plugins built and ${tests.length} tests passed.`);
+console.log(
+	`Unreal ${version.label}: all ${ueShedPluginIds.length} plugins built and ${tests.length} tests passed.`
+);

@@ -1,0 +1,2056 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="UE Shed design proposal: native Unreal camera editing, flexible view arrangements, and explicit actor culling."
+		/>
+		<title>Camera Authoring — UE Shed / Plan 049</title>
+		<style>
+			:root {
+				color-scheme: light;
+				--paper: #f3f1ea;
+				--ink: #202c29;
+				--muted: #5a6861;
+				--line: #ced3c9;
+				--green: #215d49;
+				--lime: #d6f28c;
+				--orange: #98421f;
+				--white: #fcfcf7;
+				--mono: "Cascadia Code", Consolas, monospace;
+			}
+			* {
+				box-sizing: border-box;
+			}
+			html {
+				scroll-behavior: smooth;
+				scroll-padding-top: 30px;
+			}
+			body {
+				margin: 0;
+				background: var(--paper);
+				color: var(--ink);
+				font-family: "Segoe UI", Arial, sans-serif;
+				line-height: 1.65;
+			}
+			a {
+				color: var(--green);
+				text-underline-offset: 4px;
+			}
+			button,
+			input {
+				font: inherit;
+			}
+			button {
+				cursor: pointer;
+			}
+			button:focus-visible,
+			a:focus-visible,
+			input:focus-visible,
+			summary:focus-visible {
+				outline: 3px solid var(--orange);
+				outline-offset: 4px;
+			}
+			.skip {
+				position: absolute;
+				top: -100px;
+				left: 20px;
+				padding: 10px;
+				background: white;
+				z-index: 5;
+			}
+			.skip:focus {
+				top: 10px;
+			}
+			.shell {
+				max-width: 1560px;
+				margin: auto;
+				display: grid;
+				grid-template-columns: 232px minmax(0, 1fr);
+			}
+			.rail {
+				position: sticky;
+				top: 0;
+				height: 100vh;
+				padding: 36px 26px;
+				border-right: 1px solid var(--line);
+				display: flex;
+				flex-direction: column;
+			}
+			.brand {
+				font-weight: 850;
+				font-size: 22px;
+				letter-spacing: -0.06em;
+				text-decoration: none;
+				color: var(--ink);
+			}
+			.eyebrow {
+				font: 11px/1.5 var(--mono);
+				text-transform: uppercase;
+				letter-spacing: 0.13em;
+				color: var(--muted);
+			}
+			.rail .eyebrow {
+				margin: 5px 0 40px;
+			}
+			nav {
+				display: grid;
+				gap: 6px;
+			}
+			nav a {
+				padding: 9px 10px;
+				font-size: 13px;
+				text-decoration: none;
+				color: var(--muted);
+				border-left: 2px solid transparent;
+			}
+			nav a:hover,
+			nav a[aria-current="location"] {
+				color: var(--green);
+				background: #e5eadf;
+				border-left-color: var(--green);
+			}
+			nav span {
+				display: inline-block;
+				width: 27px;
+				font: 10px var(--mono);
+				opacity: 0.7;
+			}
+			.rail-foot {
+				margin-top: auto;
+				font-size: 12px;
+				color: var(--muted);
+			}
+			.rail-foot a {
+				display: inline-block;
+				margin-top: 8px;
+			}
+			main {
+				min-width: 0;
+				padding: 44px clamp(24px, 5vw, 80px) 70px;
+			}
+			.topline {
+				display: flex;
+				justify-content: space-between;
+				align-items: center;
+				gap: 15px;
+				flex-wrap: wrap;
+			}
+			.pill {
+				display: inline-flex;
+				align-items: center;
+				padding: 5px 10px;
+				border: 1px solid #a5b49a;
+				border-radius: 30px;
+				font: 11px var(--mono);
+				color: var(--green);
+			}
+			.print {
+				border: 1px solid var(--line);
+				background: transparent;
+				padding: 7px 12px;
+				border-radius: 5px;
+				color: var(--muted);
+				font-size: 12px;
+			}
+			h1 {
+				font-family: Georgia, serif;
+				font-weight: 400;
+				font-size: clamp(44px, 5.8vw, 82px);
+				line-height: 1.06;
+				letter-spacing: -0.055em;
+				max-width: 850px;
+				margin: 38px 0 24px;
+			}
+			h1 em {
+				color: var(--green);
+				font-style: italic;
+			}
+			.lead {
+				font-size: 19px;
+				max-width: 730px;
+				color: var(--muted);
+				line-height: 1.65;
+			}
+			.thesis {
+				display: grid;
+				grid-template-columns: repeat(3, 1fr);
+				margin: 36px 0 0;
+				border-top: 1px solid var(--line);
+				border-bottom: 1px solid var(--line);
+			}
+			.thesis div {
+				padding: 22px 20px 22px 0;
+			}
+			.thesis div + div {
+				border-left: 1px solid var(--line);
+				padding-left: 22px;
+			}
+			.thesis strong {
+				display: block;
+				margin-bottom: 5px;
+			}
+			.thesis p {
+				margin: 0;
+				color: var(--muted);
+				font-size: 13px;
+			}
+			section {
+				margin-top: 68px;
+				scroll-margin-top: 26px;
+			}
+			.section-head {
+				display: flex;
+				align-items: baseline;
+				gap: 14px;
+				border-top: 1px solid var(--line);
+				padding-top: 20px;
+				margin-bottom: 18px;
+			}
+			.section-head > span {
+				font: 12px var(--mono);
+				color: var(--green);
+			}
+			h2 {
+				margin: 0;
+				font:
+					400 clamp(28px, 3vw, 39px)/1.2 Georgia,
+					serif;
+				letter-spacing: -0.035em;
+			}
+			h3 {
+				font-size: 17px;
+				line-height: 1.4;
+				margin: 0 0 10px;
+			}
+			p {
+				margin: 0 0 16px;
+			}
+			.intro {
+				color: var(--muted);
+				max-width: 760px;
+			}
+			.grid {
+				display: grid;
+				grid-template-columns: repeat(2, minmax(0, 1fr));
+				gap: 16px;
+			}
+			.card {
+				padding: 24px;
+				background: var(--white);
+				border: 1px solid var(--line);
+				border-radius: 8px;
+			}
+			.card p {
+				color: var(--muted);
+				font-size: 14px;
+			}
+			.card p:last-child {
+				margin-bottom: 0;
+			}
+			.card .eyebrow {
+				margin-bottom: 12px;
+				display: block;
+			}
+			.callout {
+				border-left: 3px solid var(--green);
+				background: #e6ebdf;
+				padding: 18px 22px;
+				margin: 22px 0;
+				font-size: 14px;
+			}
+			.callout.warn {
+				border-color: var(--orange);
+				background: #f3e7d9;
+			}
+			.steps {
+				counter-reset: journey;
+				padding: 0;
+				list-style: none;
+			}
+			.steps > li {
+				counter-increment: journey;
+				display: grid;
+				grid-template-columns: 42px minmax(0, 1fr);
+				gap: 16px;
+				padding: 22px 0;
+				border-bottom: 1px solid var(--line);
+			}
+			.steps > li::before {
+				content: counter(journey, decimal-leading-zero);
+				font: 13px var(--mono);
+				color: var(--green);
+				padding-top: 4px;
+			}
+			.steps p {
+				color: var(--muted);
+				font-size: 14px;
+				margin-bottom: 8px;
+			}
+			.action {
+				display: inline-block;
+				font: 11px var(--mono);
+				background: #e3e9dc;
+				border: 1px solid #c1ceb5;
+				padding: 4px 7px;
+				margin: 3px 4px 0 0;
+				border-radius: 3px;
+			}
+			.layout-list {
+				display: grid;
+				grid-template-columns: repeat(3, minmax(0, 1fr));
+				gap: 12px;
+				margin-top: 22px;
+			}
+			.layout-list .card {
+				padding: 18px;
+			}
+			.layout-icon {
+				font: 26px var(--mono);
+				color: var(--green);
+				display: block;
+				height: 44px;
+			}
+			.layout-list h3 {
+				font-size: 15px;
+			}
+			.layout-list p {
+				font-size: 12px;
+			}
+			.lab {
+				background: #192b27;
+				color: #e7eee6;
+				border-radius: 10px;
+				overflow: hidden;
+				margin-top: 24px;
+			}
+			.lab-head {
+				display: flex;
+				justify-content: space-between;
+				gap: 16px;
+				align-items: center;
+				flex-wrap: wrap;
+				padding: 18px 22px;
+				border-bottom: 1px solid #3e5148;
+			}
+			.lab-head .eyebrow {
+				color: #b3c8b9;
+			}
+			.lab button {
+				border: 1px solid #758c7d;
+				background: transparent;
+				color: #e7eee6;
+				border-radius: 4px;
+				padding: 5px 11px;
+				font-size: 12px;
+			}
+			.lab-body {
+				display: grid;
+				grid-template-columns: minmax(0, 1fr) 250px;
+			}
+			.diagram {
+				padding: 16px;
+				min-width: 0;
+			}
+			.diagram svg {
+				display: block;
+				width: 100%;
+				height: auto;
+			}
+			.diagram .caption {
+				font-size: 12px;
+				color: #b3c8b9;
+				margin: 0 8px 8px;
+			}
+			.controls {
+				padding: 24px 20px;
+				border-left: 1px solid #3e5148;
+			}
+			.control {
+				display: block;
+				margin-bottom: 23px;
+				font-size: 13px;
+			}
+			.control > span {
+				display: flex;
+				justify-content: space-between;
+				gap: 10px;
+			}
+			.control output {
+				color: var(--lime);
+				font: 12px var(--mono);
+			}
+			input[type="range"] {
+				display: block;
+				width: 100%;
+				margin: 12px 0 0;
+				accent-color: var(--lime);
+			}
+			.check {
+				display: flex;
+				gap: 9px;
+				align-items: flex-start;
+				font-size: 12px;
+				margin: 14px 0;
+			}
+			input[type="checkbox"] {
+				accent-color: var(--lime);
+				margin-top: 4px;
+			}
+			.lab-note {
+				border-top: 1px solid #3e5148;
+				padding: 14px 22px;
+				font-size: 12px;
+				color: #c4d2c8;
+			}
+			.readout {
+				width: 100%;
+				border-collapse: collapse;
+				font-size: 12px;
+			}
+			.readout th,
+			.readout td {
+				padding: 11px 15px;
+				text-align: left;
+				border-bottom: 1px solid #3e5148;
+				white-space: nowrap;
+			}
+			.readout th {
+				color: #b3c8b9;
+				font-weight: 400;
+			}
+			.readout .exception {
+				color: var(--lime);
+			}
+			.table-wrap {
+				overflow-x: auto;
+			}
+			.inheritance {
+				display: flex;
+				align-items: center;
+				justify-content: space-between;
+				gap: 12px;
+				margin: 24px 0;
+				padding: 20px;
+				border: 1px solid var(--line);
+				border-radius: 6px;
+				font: 12px var(--mono);
+				flex-wrap: wrap;
+			}
+			.inheritance b {
+				color: var(--green);
+			}
+			.rule-list {
+				padding-left: 22px;
+				font-size: 14px;
+			}
+			.rule-list li {
+				padding-left: 4px;
+				margin: 11px 0;
+			}
+			.architecture {
+				display: grid;
+				gap: 0;
+				max-width: 760px;
+				margin: 28px auto;
+				text-align: center;
+			}
+			.arch-row {
+				display: grid;
+				grid-template-columns: 1fr 1fr;
+				gap: 14px;
+			}
+			.arch-box {
+				padding: 18px;
+				border: 1px solid var(--line);
+				background: var(--white);
+				border-radius: 6px;
+			}
+			.arch-box strong {
+				display: block;
+				font-size: 14px;
+			}
+			.arch-box small {
+				color: var(--muted);
+				font-size: 12px;
+			}
+			.arch-box.native {
+				background: #e2eadb;
+				border-color: #9eb48e;
+			}
+			.arch-arrow {
+				padding: 10px 0;
+				color: var(--green);
+				font: 11px var(--mono);
+			}
+			.states {
+				display: flex;
+				flex-wrap: wrap;
+				gap: 8px;
+				margin: 18px 0;
+			}
+			.states span {
+				font: 11px var(--mono);
+				border: 1px solid var(--line);
+				padding: 7px 10px;
+				border-radius: 4px;
+			}
+			details {
+				border: 1px solid var(--line);
+				border-radius: 6px;
+				background: var(--white);
+				margin-top: 12px;
+			}
+			summary {
+				cursor: pointer;
+				padding: 17px 20px;
+				font-size: 14px;
+				font-weight: 600;
+			}
+			.detail-body {
+				padding: 0 22px 20px;
+				font-size: 14px;
+				color: var(--muted);
+			}
+			.detail-body p:last-child {
+				margin: 0;
+			}
+			.matrix {
+				border-collapse: collapse;
+				width: 100%;
+				font-size: 13px;
+			}
+			.matrix th,
+			.matrix td {
+				border-bottom: 1px solid var(--line);
+				padding: 14px 12px;
+				text-align: left;
+				vertical-align: top;
+			}
+			.matrix th {
+				font-weight: 600;
+				background: #e6eadf;
+			}
+			.matrix td:first-child {
+				font-weight: 600;
+				min-width: 130px;
+			}
+			.phase {
+				display: grid;
+				grid-template-columns: 40px minmax(0, 1fr);
+				gap: 14px;
+				padding: 23px 0;
+				border-bottom: 1px solid var(--line);
+			}
+			.phase > span {
+				width: 32px;
+				height: 32px;
+				border: 1px solid #a4b899;
+				display: grid;
+				place-items: center;
+				border-radius: 50%;
+				font: 12px var(--mono);
+				color: var(--green);
+			}
+			.phase p {
+				margin: 0;
+				color: var(--muted);
+				font-size: 14px;
+			}
+			.phase small {
+				display: block;
+				color: var(--green);
+				margin-top: 10px;
+				font-size: 12px;
+			}
+			.acceptance {
+				background: var(--green);
+				color: white;
+				padding: 28px;
+				border-radius: 8px;
+			}
+			.acceptance h3 {
+				font:
+					26px/1.3 Georgia,
+					serif;
+			}
+			.acceptance ol {
+				padding-left: 22px;
+				font-size: 14px;
+			}
+			.acceptance li {
+				margin: 12px 0;
+			}
+			.footer {
+				margin-top: 60px;
+				padding-top: 20px;
+				border-top: 1px solid var(--line);
+				color: var(--muted);
+				font-size: 12px;
+			}
+			code {
+				font: 0.88em var(--mono);
+				overflow-wrap: anywhere;
+			}
+			@media (max-width: 1050px) {
+				.shell {
+					grid-template-columns: 180px minmax(0, 1fr);
+				}
+				.rail {
+					padding: 28px 15px;
+				}
+				main {
+					padding-inline: 28px;
+				}
+				.lab-body {
+					grid-template-columns: 1fr;
+				}
+				.controls {
+					border-left: 0;
+					border-top: 1px solid #3e5148;
+					display: grid;
+					grid-template-columns: 1fr 1fr;
+					gap: 0 24px;
+				}
+			}
+			@media (max-width: 700px) {
+				.shell {
+					display: block;
+				}
+				.rail {
+					position: static;
+					height: auto;
+					border-right: 0;
+					border-bottom: 1px solid var(--line);
+					padding: 18px 22px;
+				}
+				.rail .eyebrow,
+				.rail-foot {
+					display: none;
+				}
+				nav {
+					display: flex;
+					overflow-x: auto;
+					margin-top: 14px;
+					gap: 4px;
+				}
+				nav a {
+					flex-shrink: 0;
+					padding: 7px;
+					font-size: 12px;
+				}
+				nav span {
+					display: none;
+				}
+				main {
+					padding: 26px 22px 40px;
+				}
+				h1 {
+					margin-top: 28px;
+				}
+				.lead {
+					font-size: 17px;
+				}
+				.thesis,
+				.grid,
+				.layout-list {
+					grid-template-columns: 1fr;
+				}
+				.thesis div + div {
+					border-left: 0;
+					border-top: 1px solid var(--line);
+					padding-left: 0;
+				}
+				.thesis div {
+					padding: 17px 0;
+				}
+				.layout-list {
+					grid-template-columns: 1fr 1fr;
+				}
+				section {
+					margin-top: 44px;
+				}
+				.controls {
+					grid-template-columns: 1fr;
+				}
+				.arch-row {
+					grid-template-columns: 1fr;
+				}
+				.inheritance {
+					font-size: 11px;
+				}
+			}
+			@media (prefers-reduced-motion: reduce) {
+				html {
+					scroll-behavior: auto;
+				}
+			}
+			@media print {
+				:root {
+					--paper: white;
+					--white: white;
+				}
+				body {
+					font-size: 10pt;
+				}
+				.shell {
+					display: block;
+				}
+				.rail,
+				.print,
+				.controls,
+				.lab-head button,
+				.skip {
+					display: none;
+				}
+				main {
+					padding: 0;
+				}
+				h1 {
+					font-size: 42pt;
+				}
+				h2 {
+					font-size: 24pt;
+				}
+				section {
+					margin-top: 30px;
+				}
+				.card,
+				.phase,
+				.steps > li,
+				.acceptance,
+				details {
+					break-inside: avoid;
+				}
+				.lab {
+					print-color-adjust: exact;
+					-webkit-print-color-adjust: exact;
+				}
+				.lab-body {
+					display: block;
+				}
+				.diagram {
+					max-width: 500px;
+					margin: auto;
+				}
+				.table-wrap {
+					overflow: visible;
+				}
+				.matrix {
+					font-size: 9pt;
+				}
+				.footer {
+					margin-top: 20px;
+				}
+			}
+		</style>
+	</head>
+	<body>
+		<a class="skip" href="#main">Skip to document</a>
+		<div class="shell">
+			<aside class="rail">
+				<a class="brand" href="#main">UE SHED<span aria-hidden="true"> ↗</span></a>
+				<div class="eyebrow">Design notebook / 049</div>
+				<nav aria-label="Document sections">
+					<a href="#intent"><span>01</span>The production gap</a>
+					<a href="#journey"><span>02</span>Author workflow</a>
+					<a href="#arrangements"><span>03</span>Camera arrangements</a>
+					<a href="#culling"><span>04</span>Actor culling</a>
+					<a href="#architecture"><span>05</span>Plugin &amp; sync</a>
+					<a href="#durability"><span>06</span>Save &amp; recovery</a>
+					<a href="#delivery"><span>07</span>Implementation</a>
+					<a href="#acceptance"><span>08</span>Acceptance</a>
+				</nav>
+				<div class="rail-foot">
+					September 9, 2026<br />Source baseline <code>519dac3</code><br /><a
+						href="049-camera-authoring-and-actor-culling.md"
+						>Read the full plan ↗</a
+					><br /><a href="README.md">Implementation status ↗</a>
+				</div>
+			</aside>
+			<main id="main">
+				<header>
+					<div class="topline">
+						<span class="pill">DESIGN PROPOSAL · NOT IMPLEMENTED</span
+						><button class="print" id="print-button" type="button">
+							Print / Save PDF
+						</button>
+					</div>
+					<h1>Frame with intent.<br /><em>Adjust in Unreal.</em></h1>
+					<p class="lead">
+						Start with the cameras you need for an actor. Shape that actor’s camera set.
+						Make exceptions where the scene demands them. Save exactly what the next
+						capture should see.
+					</p>
+					<div class="thesis">
+						<div>
+							<strong>Native interaction</strong>
+							<p>
+								Select, move, and pilot cameras in Unreal. Image streaming follows
+								the edit.
+							</p>
+						</div>
+						<div>
+							<strong>Durable exceptions</strong>
+							<p>
+								Shared framing remains useful after individual cameras are
+								art-directed.
+							</p>
+						</div>
+						<div>
+							<strong>Explicit visibility</strong>
+							<p>
+								Select blockers in the editor and assign them to the intended
+								capture views.
+							</p>
+						</div>
+					</div>
+				</header>
+
+				<section id="intent">
+					<div class="section-head">
+						<span>01</span>
+						<h2>From a demo to an authoring workflow</h2>
+					</div>
+					<p class="intro">
+						The core already knows how to generate arbitrary arc and ring counts, store
+						approved views, and hide explicitly named actors. The missing work is making
+						those capabilities coherent, responsive, and safe to revise.
+					</p>
+					<div class="grid">
+						<article class="card">
+							<span class="eyebrow">Current friction</span>
+							<h3>Useful primitives, awkward composition</h3>
+							<p>
+								The default six candidates combine three presets. Framing
+								regeneration clears the selected manual draft pose. Hidden actors
+								are entered as text paths, and the remote image loop makes fine
+								camera adjustments cumbersome.
+							</p>
+						</article>
+						<article class="card">
+							<span class="eyebrow">Proposed experience</span>
+							<h3>One draft across two surfaces</h3>
+							<p>
+								UE Shed organizes views and portable intent. Unreal supplies direct
+								manipulation and actor selection. Both edit the same revisioned
+								draft through public services.
+							</p>
+						</article>
+					</div>
+					<div class="callout">
+						<strong>Product scope.</strong> Actor-oriented views belong to Map Review.
+						Orthographic Map Capture reuses the visibility primitives at whole-plan
+						scope; its tile geometry stays deterministic.
+					</div>
+				</section>
+
+				<section id="journey">
+					<div class="section-head">
+						<span>02</span>
+						<h2>The author’s path</h2>
+					</div>
+					<ol class="steps">
+						<li>
+							<div>
+								<h3>Choose a subject and a starting layout</h3>
+								<p>
+									Begin from an inspected actor in UE Shed or the selected actor
+									in Unreal. Explicitly choose the Review Set and whether to
+									append or revise. Start with one view, an orbit, an arc, a
+									custom arrangement, or a saved recipe.
+								</p>
+								<span class="action">Add views</span
+								><span class="action">Add views from selection</span>
+							</div>
+						</li>
+						<li>
+							<div>
+								<h3>Tune this actor’s camera set</h3>
+								<p>
+									Adjust FOV, distance, height, aim, and distribution within the
+									active camera set linked to the selected subject actor. Choose
+									the whole set, a group within it, or selected cameras within it.
+									Show the actor name and set name/count above the controls;
+									per-camera values, inheritance, and exceptions remain visible.
+								</p>
+								<span class="action">This actor’s camera set</span
+								><span class="action">Group in this set</span
+								><span class="action">Selected cameras in this set (N)</span>
+							</div>
+						</li>
+						<li>
+							<div>
+								<h3>Move the camera in Unreal</h3>
+								<p>
+									Edit in Unreal selects a transient camera proxy and opens the
+									native panel. Pilot is a separate action. Use the standard
+									gizmo, camera flight, and Details controls; pose updates
+									synchronize while thumbnails catch up.
+								</p>
+								<span class="action">Edit in Unreal</span
+								><span class="action">Pilot</span
+								><span class="action">Stop piloting</span>
+							</div>
+						</li>
+						<li>
+							<div>
+								<h3>Select what this view should hide</h3>
+								<p>
+									Keep the destination view pinned while selecting a column or
+									other blocker. Add the selection to that view, selected views,
+									or a shared preset. Selecting a blocker does not change the
+									capture subject.
+								</p>
+								<span class="action">Hide selected in this view</span
+								><span class="action">Protect selected</span>
+							</div>
+						</li>
+						<li>
+							<div>
+								<h3>Save, reopen, and capture again</h3>
+								<p>
+									Draft changes autosave. Save views explicitly commits reviewed
+									additions, revisions, removals, and visibility changes. Future
+									capture uses the immutable approved snapshot, including after an
+									editor restart.
+								</p>
+								<span class="action">Save views</span
+								><span class="action">Capture approved views</span>
+							</div>
+						</li>
+					</ol>
+				</section>
+
+				<section id="arrangements">
+					<div class="callout">
+						<strong>Shared tuning belongs to one actor’s active camera set.</strong>
+						A Review Set can store views for many actors. These controls affect only the
+						chosen arrangement linked to the current subject. If that actor has several
+						arrangements, choose one explicitly. Reusing a recipe does not link their
+						edits.
+					</div>
+					<div class="section-head">
+						<span>03</span>
+						<h2>Shared intent. Local exceptions.</h2>
+					</div>
+					<p class="intro">
+						“Six cameras, all farther away, a narrower FOV, a little higher. Except this
+						camera. And hide that column in the other one.” These are independent edits
+						with explicit scope.
+					</p>
+					<div class="layout-list">
+						<article class="card">
+							<span class="layout-icon" aria-hidden="true">⊡</span>
+							<h3>Current view</h3>
+							<p>Copy one identified perspective viewport.</p>
+						</article>
+						<article class="card">
+							<span class="layout-icon" aria-hidden="true">↗</span>
+							<h3>Single view</h3>
+							<p>Fit one front or three-quarter view. New interactive default.</p>
+						</article>
+						<article class="card">
+							<span class="layout-icon" aria-hidden="true">◎</span>
+							<h3>Orbit</h3>
+							<p>Exact count, starting angle, orientation, and elevation.</p>
+						</article>
+						<article class="card">
+							<span class="layout-icon" aria-hidden="true">◠</span>
+							<h3>Arc</h3>
+							<p>Exact count distributed across a chosen angular span.</p>
+						</article>
+						<article class="card">
+							<span class="layout-icon" aria-hidden="true">⊞</span>
+							<h3>Custom</h3>
+							<p>Compose groups, duplicate, add, remove, and reorder.</p>
+						</article>
+						<article class="card">
+							<span class="layout-icon" aria-hidden="true">≡</span>
+							<h3>Saved recipe</h3>
+							<p>Versioned starting parameters with portable provenance.</p>
+						</article>
+					</div>
+					<div class="inheritance">
+						<span>Recipe defaults</span><b>→</b><span>Group overrides</span><b>→</b
+						><span>Camera overrides</span>
+					</div>
+					<div class="lab" id="camera-example">
+						<div class="lab-head">
+							<div>
+								<strong>Six views, three kinds of intent</strong><br /><span
+									class="eyebrow"
+									>Interactive explanation · simulated values · no Unreal
+									connection</span
+								>
+							</div>
+							<button id="reset-example" type="button">Reset example</button>
+						</div>
+						<div class="lab-body">
+							<div class="diagram">
+								<svg
+									viewBox="0 0 560 400"
+									role="img"
+									aria-labelledby="rig-title rig-desc"
+								>
+									<title id="rig-title">
+										Six-camera arrangement, top-down schematic
+									</title>
+									<desc id="rig-desc">
+										Cameras surround a subject. Camera B can override FOV,
+										camera D can keep a manual pose, and camera E can exclude a
+										column. Exact effective values are listed below.
+									</desc>
+									<defs>
+										<pattern
+											id="grid"
+											width="28"
+											height="28"
+											patternUnits="userSpaceOnUse"
+										>
+											<path
+												d="M 28 0 L 0 0 0 28"
+												fill="none"
+												stroke="#30463c"
+												stroke-width="0.6"
+											/>
+										</pattern>
+									</defs>
+									<rect width="560" height="400" fill="url(#grid)" />
+									<circle
+										cx="280"
+										cy="200"
+										r="138"
+										fill="none"
+										stroke="#486052"
+										stroke-dasharray="4 6"
+									/>
+									<rect
+										x="247"
+										y="166"
+										width="66"
+										height="68"
+										rx="7"
+										fill="#bfd4b5"
+									/>
+									<text
+										x="280"
+										y="205"
+										fill="#192b27"
+										text-anchor="middle"
+										font-size="12"
+										font-family="Segoe UI, sans-serif"
+									>
+										SUBJECT
+									</text>
+									<rect
+										id="column-shape"
+										x="225"
+										y="225"
+										width="18"
+										height="30"
+										rx="2"
+										fill="#e3b685"
+									/>
+									<text x="184" y="215" fill="#d6b591" font-size="11">
+										Column
+									</text>
+									<g id="rig-cameras"></g>
+									<text
+										x="16"
+										y="25"
+										fill="#b3c8b9"
+										font-size="10"
+										font-family="Consolas, monospace"
+									>
+										TOP VIEW · SCHEMATIC, NOT A FIT SOLVER
+									</text>
+								</svg>
+								<p class="caption">
+									Height is shown in the table. The diagram illustrates
+									inheritance; it does not predict Unreal framing or pixels.
+								</p>
+							</div>
+							<form
+								class="controls"
+								aria-label="Shared settings for the illustrated subject’s six-camera set"
+								onsubmit="return false;"
+							>
+								<label class="control" for="distance"
+									><span
+										>Shared distance
+										<output id="distance-value" for="distance"
+											>1.25×</output
+										></span
+									><input
+										id="distance"
+										type="range"
+										min="1"
+										max="1.8"
+										value="1.25"
+										step="0.05"
+								/></label>
+								<label class="control" for="fov"
+									><span
+										>Shared FOV
+										<output id="fov-value" for="fov">40°</output></span
+									><input
+										id="fov"
+										type="range"
+										min="25"
+										max="80"
+										value="40"
+										step="1"
+								/></label>
+								<label class="control" for="height"
+									><span
+										>Shared height offset
+										<output id="height-value" for="height"
+											>+100 cm</output
+										></span
+									><input
+										id="height"
+										type="range"
+										min="0"
+										max="250"
+										value="100"
+										step="10"
+								/></label>
+								<div>
+									<label class="check"
+										><input id="override-b" type="checkbox" checked /><span
+											>B overrides FOV to 55°</span
+										></label
+									><label class="check"
+										><input id="manual-d" type="checkbox" checked /><span
+											>D keeps a manual pose</span
+										></label
+									><label class="check"
+										><input id="hide-e" type="checkbox" checked /><span
+											>E hides the column</span
+										></label
+									>
+								</div>
+							</form>
+						</div>
+						<div class="table-wrap">
+							<table class="readout">
+								<caption class="lab-note">
+									Effective camera settings in this example
+								</caption>
+								<thead>
+									<tr>
+										<th scope="col">View</th>
+										<th scope="col">Pose</th>
+										<th scope="col">FOV</th>
+										<th scope="col">Distance intent</th>
+										<th scope="col">Height offset</th>
+										<th scope="col">Column</th>
+									</tr>
+								</thead>
+								<tbody id="camera-values"></tbody>
+							</table>
+						</div>
+						<div
+							class="lab-note"
+							id="example-status"
+							role="status"
+							aria-live="polite"
+						></div>
+						<noscript
+							><p class="lab-note">
+								Enable JavaScript to explore the example. Its starting state has
+								1.25× shared distance, 40° shared FOV, and +100 cm height. B uses
+								55°; D retains a manual pose while inheriting FOV; E hides the
+								column.
+							</p></noscript
+						>
+					</div>
+					<div class="grid" style="margin-top: 20px">
+						<article class="card">
+							<h3>A manual pose does not detach the lens</h3>
+							<p>
+								Moving a camera in Unreal pins its pose. FOV keeps inheriting unless
+								that field is overridden. Shared framing changes show which manual
+								poses will be skipped. Including them is a deliberate batch
+								transformation.
+							</p>
+						</article>
+						<article class="card">
+							<h3>Regeneration is a reviewed change</h3>
+							<p>
+								Changing count or layout produces a retained/added/moved/removed
+								diff. A customized camera keeps its identity and can survive as a
+								manual view. Its exceptions never migrate to a different camera by
+								array index.
+							</p>
+						</article>
+					</div>
+					<details>
+						<summary>Parameter meanings and fitting behavior</summary>
+						<div class="detail-body">
+							<p>
+								FOV is horizontal degrees with output aspect shown. Fitted cameras
+								recompute fit distance when FOV changes; manual cameras change the
+								lens at their saved location. Margin must be validated on both image
+								axes.
+							</p>
+							<p>
+								Distance multiplier is relative to generated fit; manual Dolly is a
+								separate explicit movement. Normalized elevation and world-Z offset
+								in cm are distinct. Aim offset declares world or subject
+								coordinates. Follow-target views retain their existing relative-pose
+								semantics and reconcile target drift.
+							</p>
+							<p>
+								The present Review schema is perspective and fixed to 16:9.
+								Aspect-aware fitting requires schema and conformance work.
+								CineCamera filmback, focus, and Sequencer support are outside this
+								proposal.
+							</p>
+						</div>
+					</details>
+				</section>
+
+				<section id="culling">
+					<div class="section-head">
+						<span>04</span>
+						<h2>Visibility the author can explain</h2>
+					</div>
+					<p class="intro">
+						An actor list is part of a view’s intent. Give each entry a destination, a
+						reason it applies, and a resolution state. Heuristics can suggest blockers;
+						the author chooses the exclusions.
+					</p>
+					<div class="grid">
+						<article class="card">
+							<h3>Selection with a pinned destination</h3>
+							<p>
+								Keep “View E” active while selecting the column in the Outliner.
+								Import the selection snapshot into View E’s hidden list. Reveal
+								excluded actors temporarily for picking without changing saved
+								rules.
+							</p>
+							<span class="action">Destination: View E</span
+							><span class="action">Hide selected actors</span>
+						</article>
+						<article class="card">
+							<h3>Readable actor entries</h3>
+							<p>
+								Show label, stable locator, inherited or local origin, and
+								resolved/missing/ambiguous state. Reveal in Outliner, remove a local
+								rule, or override an inherited exclusion from the same list.
+							</p>
+							<span class="action">Column · Local · Resolved</span>
+						</article>
+					</div>
+					<ol class="rule-list">
+						<li>Start with the exact immutable preset’s exclusions.</li>
+						<li>Apply local removal and addition of exclusions by actor identity.</li>
+						<li>Protection wins over exclusions; report suppressed rules.</li>
+						<li>Protect the Review subject by default and reject self-exclusion.</li>
+						<li>
+							Resolve actors to supported renderable components and deduplicate
+							aliases before rendering.
+						</li>
+					</ol>
+					<p class="intro">
+						Protection prevents UE Shed from hiding an actor. It does not load or reveal
+						geometry that the world already hides. GUID identity is map-scoped; names
+						and last-known paths are diagnostic. Missing actors never resolve to a
+						similarly named replacement.
+					</p>
+					<div class="table-wrap">
+						<table class="matrix">
+							<thead>
+								<tr>
+									<th scope="col">Output choice</th>
+									<th scope="col">Meaning</th>
+									<th scope="col">Failure behavior</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td>Original</td>
+									<td>
+										No authored visibility intervention. Preserve the existing
+										Pure/Natural meaning.
+									</td>
+									<td>
+										Normal capture and subject-resolution failures remain
+										explicit.
+									</td>
+								</tr>
+								<tr>
+									<td>Authored</td>
+									<td>
+										Apply saved visibility rules. Permanently label the image
+										and record actual intervention.
+									</td>
+									<td>
+										Missing exclusions block by default; explicit skip-missing
+										policy records each skip.
+									</td>
+								</tr>
+								<tr>
+									<td>Original + Authored</td>
+									<td>
+										Same approved camera, with both outputs and their policy
+										evidence.
+									</td>
+									<td>
+										Keep a valid Original image if Authored fails; return a
+										typed partial result.
+									</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<div class="callout warn">
+						<strong>Renderer work is still required.</strong> SceneCapture has
+						component-local hiding. The current editor viewport renderer reports Clear
+						unsupported. A prototype must prove per-view exclusion in the viewport and
+						screenshot pipeline before advertising support. Global actor hide flags are
+						not an acceptable substitute.
+					</div>
+					<details>
+						<summary>Visibility evidence, limits, and tile capture</summary>
+						<div class="detail-body">
+							<p>
+								Record requested locators, resolution outcomes, affected
+								actors/components, policy revision, renderer, protected/skipped
+								entries, and restoration. Authored-only output is a versioned
+								contract extension; legacy Pure/Clear artifacts remain readable.
+							</p>
+							<p>
+								Negotiate bounded actor/component limits. The existing 32-entry
+								lists cannot be silently expanded or truncated. Child actors,
+								instanced levels, HLOD replacement, partition loading, and newly
+								registered components need honest support and resolution results.
+							</p>
+							<p>
+								For tiles, one immutable visibility definition applies across zooms,
+								batches, warmup, and metering. Save it with the plan snapshot and
+								manifest. Individual tile-camera edits remain outside the geometry
+								contract.
+							</p>
+						</div>
+					</details>
+				</section>
+
+				<section id="architecture">
+					<div class="section-head">
+						<span>05</span>
+						<h2>A native companion, a shared domain</h2>
+					</div>
+					<p class="intro">
+						Add an optional editor-only <code>UEShedCameraAuthoring</code> plugin
+						depending on a separately opt-in <code>UEShedCameraAuthoringBridge</code>.
+						The bridge owns proxies, piloting, editor events, and synchronization with
+						the Node host. It depends on <code>UEShedCameras</code> for rendering and
+						visibility. Existing capture consumers need neither authoring plugin.
+					</p>
+					<div class="callout">
+						<strong>Our menu is optional. The authoring contract is public.</strong>
+						A studio can install UEShedCameraAuthoring or build its own Unreal menu
+						against the same camera package and public native bridge. A custom menu must
+						work with our menu plugin disabled and Workbench absent.
+					</div>
+					<div
+						class="architecture"
+						role="img"
+						aria-label="Workbench, CLI, and UE Shed or studio menus use a public authoring client. The camera package hosts the Node coordinator. A separately enabled CameraAuthoringBridge connects native editing to the host and depends on Cameras for rendering."
+					>
+						<div class="arch-row">
+							<div class="arch-box">
+								<strong>Workbench · CLI · trusted host</strong
+								><small>Arrange, review, approve, capture</small>
+							</div>
+							<div class="arch-box native">
+								<strong>UE Shed menu OR studio menu</strong
+								><small>Select, pilot, tweak, choose actors</small>
+							</div>
+						</div>
+						<div class="arch-arrow">↓ public authoring client ↑</div>
+						<div class="arch-box native">
+							<strong>Replaceable sync adapter</strong>
+							<small
+								>Reactive state · pending edits · acknowledgements ·
+								reconciliation</small
+							>
+						</div>
+						<div class="arch-arrow">↓ domain commands / confirmed change batches ↑</div>
+						<div class="arch-box">
+							<strong>@ue-shed/cameras</strong
+							><small>Framing · revisioned drafts · persistence · approval</small>
+						</div>
+						<div class="arch-arrow">
+							↓ versioned Remote Control commands / bounded change events ↑
+						</div>
+						<div class="arch-box native">
+							<strong>UEShedCameraAuthoringBridge · opt-in</strong
+							><small>Public native API · proxies · piloting · editor events</small>
+						</div>
+						<div class="arch-arrow">↓ public native ownership &amp; rendering seam</div>
+						<div class="arch-box">
+							<strong>UEShedCameras → UEShedCore</strong
+							><small>Capture · scoped visibility · capability discovery</small>
+						</div>
+					</div>
+					<div class="grid">
+						<article class="card">
+							<h3>Local movement stays local</h3>
+							<p>
+								Camera flight and dragging never wait for a host acknowledgement or
+								pixel stream. Coalesce small pose updates at a bounded starting rate
+								of 5–10 Hz, and reliably flush the final gesture. Measure latency
+								separately from polling rate.
+							</p>
+						</article>
+						<article class="card">
+							<h3>One framing implementation</h3>
+							<p>
+								Shared parameter changes use the public TypeScript domain service;
+								the panel shows pending state until the generated result arrives. A
+								CLI-attached host can serve the panel. Unreal does not need Electron
+								or a copy of the generator.
+							</p>
+						</article>
+					</div>
+					<div class="states" aria-label="Explicit synchronization states">
+						<span>Editing locally</span><span>Syncing</span><span>Draft saved</span
+						><span>Conflict</span><span>Disconnected</span>
+					</div>
+					<details>
+						<summary>Studio integration and replaceable menus</summary>
+						<div class="detail-body">
+							<p>
+								The package owns actor-scoped commands, framing, canonical drafts,
+								revisions, persistence, approval, and recovery. Public transport and
+								storage ports allow a studio host to supply its own adapters.
+							</p>
+							<p>
+								A C++ menu exchanges versioned commands, events, and snapshots with
+								an external host running the TypeScript package. It can reuse the
+								public CameraAuthoringBridge without installing our menu plugin, or
+								provide its own adapter implementing the same contract. Expanded
+								panels and hover state stay local; commands describe domain intent.
+							</p>
+							<p>
+								Ship an adoption guide, command/state schemas, native custom-menu
+								example, dependency manifest, and conformance runner. Our menu must
+								use exactly the same public APIs, with no private endpoints or
+								plugin-name checks required for custom clients.
+							</p>
+						</div>
+					</details>
+					<details>
+						<summary>A future sync layer can fit here</summary>
+						<div class="detail-body">
+							<p>
+								<strong
+									>Reserve the interface now; keep a general sync engine out of
+									scope.</strong
+								>
+								Menus observe local state and submit domain commands through a
+								public authoring client. A replaceable adapter handles pending
+								edits, acknowledgements, change delivery, and reconciliation. This
+								feature implements only the small adapter needed for the existing
+								transport.
+							</p>
+							<p>
+								<a href="https://tanstack.com/db/latest/docs/overview"
+									>TanStack DB</a
+								>
+								provides useful precedent: synced collections, a separate optimistic
+								overlay, and reactive queries over local state. The intended
+								direction is a UE Shed-specific synchronization library inspired by
+								that separation. No TanStack DB dependency or full database
+								implementation is proposed. TypeScript and native facades share a
+								neutral protocol; domain authority stays in the camera package.
+							</p>
+							<p>
+								Start with scoped subscriptions, pending commands, confirmed
+								changes, and recovery. General queries, joins, indexing, incremental
+								query execution, and offline multi-writer merging are separate
+								infrastructure projects. Extract a broader library after a second
+								real UE Shed workflow validates the boundary; evaluate third-party
+								internals separately.
+							</p>
+							<ul>
+								<li>
+									<strong>Open:</strong> actor/arrangement-scoped snapshot plus a
+									matching cursor and producer epoch, so subscribing cannot miss
+									intervening edits.
+								</li>
+								<li>
+									<strong>Changes:</strong> ordered atomic batches with stable
+									entity IDs, upserts, deletions, commit identity, and causing
+									operation IDs.
+								</li>
+								<li>
+									<strong>Submit and recover:</strong> explicit commands, expected
+									revisions, idempotency, and pending/rejected/durably committed
+									outcomes.
+								</li>
+								<li>
+									<strong>Observe and close:</strong> reactive confirmed/pending
+									state, honest conflict status, and scoped resource cleanup.
+								</li>
+							</ul>
+							<p>
+								Responses and change-feed echoes share operation/commit identities.
+								Remove an optimistic overlay only when matching committed state is
+								installed. Cursor gaps require reset and reconciliation. An
+								acknowledged draft is still separate from an approved Review Set.
+							</p>
+							<p>
+								Keep live gesture samples, pilot ownership, and image frames outside
+								document replication. A store adapter translates edits into domain
+								commands; it cannot bypass framing or actor scope by writing raw
+								camera rows. Regeneration publishes all affected cameras as one
+								atomic change.
+							</p>
+							<p>
+								Vendor types never appear in the public protocol. Polling can later
+								be replaced by push delivery behind the same port. A shared sync
+								platform, offline multi-writer merging, and a TanStack DB dependency
+								remain deferred.
+							</p>
+						</div>
+					</details>
+					<details>
+						<summary>Synchronization and concurrency contract</summary>
+						<div class="detail-body">
+							<p>
+								Proposed capability: <code>editor.camera-authoring.v1</code>. Open,
+								inspect, patch, select, pilot, read changes since cursor,
+								acknowledge, renew lease, and close all carry explicit identities
+								and revisions.
+							</p>
+							<p>
+								Native actions emit bounded commands/events to the host. Pose
+								samples coalesce; completed gestures, culling commands, and
+								Undo/Redo boundaries remain reliable and ordered. Gaps require
+								snapshot reconciliation. No new image transport or callback server
+								is needed.
+							</p>
+							<p>
+								Mutation IDs make retries idempotent within a declared retention
+								window. Per-camera edit ownership prevents concurrent external batch
+								edits during a gesture. Stale revisions surface conflicts; host
+								snapshots must not echo back as new edits.
+							</p>
+						</div>
+					</details>
+					<details>
+						<summary>Viewport and camera lifetime</summary>
+						<div class="detail-body">
+							<p>
+								Use transient editor-only CameraActor-derived proxies with stable
+								session/camera correlation. Materialize the working set on demand.
+								Verify Outliner visibility, duplication, deletion, save/autosave,
+								PIE, and Undo/Redo without changing map or external actor dirty
+								state.
+							</p>
+							<p>
+								Piloting borrows one explicit viewport and snapshots its owned
+								state. Refuse foreign/cinematic locks. Restore only state still
+								owned by the session. Flush edits and release pilot/visibility
+								ownership before capture; background previews cannot steal the
+								viewport.
+							</p>
+							<p>
+								Map changes, PIE, viewport destruction, module shutdown, and lease
+								expiry release resources and expose resumable or stale state. The
+								new plugin must use a public ownership API, not the existing
+								renderer’s private header.
+							</p>
+						</div>
+					</details>
+				</section>
+
+				<section id="durability">
+					<div class="section-head">
+						<span>06</span>
+						<h2>Keep the intent after the session ends</h2>
+					</div>
+					<div class="grid">
+						<article class="card">
+							<h3>Durable draft</h3>
+							<p>
+								Link each arrangement to one explicit subject actor and validate
+								camera membership on every batch command. Reject requests spanning
+								actors or arrangements. Switching actors cannot retarget pending
+								edits. Extend the existing authoring session with stable camera IDs,
+								per-camera poses, field overrides, visibility rules, recipe
+								provenance, revisions, and a base Review Set digest. Generation
+								slots and display order are not identity.
+							</p>
+						</article>
+						<article class="card">
+							<h3>Approved snapshot</h3>
+							<p>
+								Save freezes effective poses, lenses, policies, and authoring
+								provenance. Revision affected Views when pose or visibility changes.
+								Capture reads the saved snapshot; reopening for editing can recover
+								the recipe and exceptions.
+							</p>
+						</article>
+					</div>
+					<div class="table-wrap" style="margin-top: 20px">
+						<table class="matrix">
+							<thead>
+								<tr>
+									<th scope="col">Condition</th>
+									<th scope="col">Required behavior</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td>Two writers</td>
+									<td>
+										Validate the base digest under a cross-process lock. Atomic
+										rename alone cannot prevent lost updates.
+									</td>
+								</tr>
+								<tr>
+									<td>Crash during approval</td>
+									<td>
+										A recoverable commit record prevents duplicate appended
+										Views after set save but before session status update.
+									</td>
+								</tr>
+								<tr>
+									<td>Disconnect mid-gesture</td>
+									<td>
+										Show pending edits and retain a bounded buffer while the
+										lease is valid. Expose a recovery patch before expiry.
+									</td>
+								</tr>
+								<tr>
+									<td>Editor crash</td>
+									<td>
+										Acknowledged drafts survive in the host. An unacknowledged
+										gesture may be lost and must never have appeared saved.
+									</td>
+								</tr>
+								<tr>
+									<td>Reconnect or world change</td>
+									<td>
+										Reconcile snapshots and revisions. Never replay against
+										another map or a regenerated camera.
+									</td>
+								</tr>
+								<tr>
+									<td>Undo / Redo</td>
+									<td>
+										Produce fresh draft revisions. Prove native transactions
+										preserve unrelated editor history and do not resurrect dead
+										proxies.
+									</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<div class="callout">
+						<strong>Headless capture stays independent.</strong> The Core+Cameras bundle
+						must capture the saved definition without CameraAuthoring enabled. The
+						native panel is an optional authoring surface.
+					</div>
+				</section>
+
+				<section id="delivery">
+					<div class="section-head">
+						<span>07</span>
+						<h2>Earn the difficult part first</h2>
+					</div>
+					<p class="intro">
+						The source inspection identifies plausible Unreal APIs. It does not prove
+						the combined workflow. Start with native editing and scoped visibility
+						before freezing a public authoring protocol.
+					</p>
+					<div class="phase">
+						<span>1</span>
+						<div>
+							<h3>Native interaction and visibility proof</h3>
+							<p>
+								One transient selectable camera. Pilot, gizmo, lens, Undo/Redo,
+								save/reload, and hiding one column. Verify both capture paths and a
+								second unaffected viewport.
+							</p>
+							<small
+								>Gate: correct pixels, restoration, clean maps, and safe
+								transactions.</small
+							>
+						</div>
+					</div>
+					<div class="phase">
+						<span>2</span>
+						<div>
+							<h3>Contracts and pure authoring model</h3>
+							<p>
+								Version the affected contracts. Add stable identities, per-camera
+								drafts, inheritance, aspect-aware fit, count-change proposals,
+								output variants, migrations, and revision-aware approval.
+							</p>
+							<small
+								>Gate: deterministic behavior and migration/recovery
+								conformance.</small
+							>
+						</div>
+					</div>
+					<div class="phase">
+						<span>3</span>
+						<div>
+							<h3>One complete round trip</h3>
+							<p>
+								Attach via CLI, Edit in Unreal, move and change the lens,
+								synchronize, Save, restart, and capture the exact approved camera.
+								Make absent-plugin, busy, stale, and disconnected states useful.
+							</p>
+							<small
+								>Gate: a complete public-service journey without privileged
+								Workbench behavior.</small
+							>
+						</div>
+					</div>
+					<div class="phase">
+						<span>4</span>
+						<div>
+							<h3>Complete arrangement editing</h3>
+							<p>
+								Starting layouts, edit scopes, manual exceptions,
+								duplicate/add/remove, portable recipes, and regeneration review.
+								Include batch revision of existing saved Views within the actor’s
+								active camera set, with the same scope enforced through the CLI and
+								native panel.
+							</p>
+							<small>Gate: shared edits preserve individual art direction.</small>
+						</div>
+					</div>
+					<div class="phase">
+						<span>5</span>
+						<div>
+							<h3>First-class visibility</h3>
+							<p>
+								Native selection commands, actor lists, inherited/local rules,
+								protection, resolution diagnostics, Authored outputs, and renderer
+								evidence. Adopt the policy across whole tile plans.
+							</p>
+							<small
+								>Gate: matching intent across preview, saved definition, and capture
+								evidence.</small
+							>
+						</div>
+					</div>
+					<div class="phase">
+						<span>6</span>
+						<div>
+							<h3>Production recovery and release</h3>
+							<p>
+								Conflicts, crashes, cancellation, large arrangements, accessibility,
+								native evidence, clean-consumer adoption, optional plugin
+								distribution, and Changesets.
+							</p>
+							<small
+								>Gate: portable CI, applicable native checks, and the complete
+								release journey.</small
+							>
+						</div>
+					</div>
+					<details>
+						<summary>Implementation surfaces</summary>
+						<div class="detail-body">
+							<p>
+								<code>packages/cameras</code> owns schemas, framing, sessions,
+								persistence, visibility, render translation, and tile adoption.
+								Language-neutral wire contracts and fixtures live in the existing
+								contract surfaces.
+							</p>
+							<p>
+								<code>unreal/Plugins/UEShedCameraAuthoring</code> adds the native
+								panel, menu actions, Details customizations, and client wiring.
+								<code>UEShedCameraAuthoringBridge</code> owns proxies, editor
+								lifecycle, and native synchronization.
+								<code>UEShedCameras</code> exposes engine ownership primitives and
+								scoped rendering without an authoring dependency.
+							</p>
+							<p>
+								<code>extensions/camera-review</code> supplies the maintained
+								workflow. CLI and Workbench compose public services. Plugin bundle
+								and fixture tooling add an optional authoring dependency closure and
+								exact-engine artifacts.
+							</p>
+						</div>
+					</details>
+					<details>
+						<summary>Unreal source evidence and stop conditions</summary>
+						<div class="detail-body">
+							<p>
+								UE 5.7 source exposes actor locks in
+								<code>LevelEditorViewport.h</code>, movement completion in
+								<code>Actor.h</code>, actor-moved events in <code>Engine.h</code>,
+								property/transaction delegates in <code>UObjectGlobals.h</code>,
+								temporary actor spawn options in <code>World.h</code>, and per-view
+								primitives/hooks in <code>SceneView.h</code> and
+								<code>SceneViewExtension.h</code>.
+							</p>
+							<p>
+								Stop promotion if proxies dirty maps, undo recovery fails, or
+								capture and pilot ownership compete. Stop advertising viewport
+								culling if the correct view and screenshot pipeline cannot be
+								demonstrated. Return unsupported capability rather than hiding
+								globally or switching renderers silently.
+							</p>
+						</div>
+					</details>
+				</section>
+
+				<section id="acceptance">
+					<div class="section-head">
+						<span>08</span>
+						<h2>The production bar</h2>
+					</div>
+					<div class="acceptance">
+						<h3>Prove the exact authoring scenario.</h3>
+						<p>
+							Keep another actor’s camera set and a second arrangement for the same
+							actor in the Review Set throughout this journey. Their definitions and
+							View revisions must remain unchanged by tuning the active set. Also
+							reject mixed-membership batch requests and verify pending edits retain
+							their original actor/set when the author switches context.
+						</p>
+						<ol>
+							<li>
+								Create six orbit views. Set 1.25× distance, 40° FOV, and +100 cm
+								height. Give one camera 55° and manually move another.
+							</li>
+							<li>
+								Pilot cameras in Unreal. Hide a column in one view, add shared
+								exclusions, and protect an actor in another view.
+							</li>
+							<li>
+								Change shared framing again. Generated poses move; the manual pose
+								stays; FOV inheritance and per-view visibility remain correct.
+							</li>
+							<li>
+								Change the camera count. Review the diff and retain a customized
+								camera without reassigning its identity.
+							</li>
+							<li>
+								Save, close both applications, reopen, revise again, and capture
+								through the CLI with only Core+Cameras enabled. Verify saved poses,
+								exclusions, labels, pixels, and unchanged package dirty state.
+							</li>
+						</ol>
+					</div>
+					<div class="grid" style="margin-top: 20px">
+						<article class="card">
+							<h3>Behavior and recovery</h3>
+							<p>
+								Also cover one current-view camera, 37 cameras with previews
+								disabled, simultaneous clients, stale acknowledgements, retry after
+								lost response, disconnects, proxy deletion/undo, missing blockers,
+								map switches, PIE, and cancellation.
+							</p>
+						</article>
+						<article class="card">
+							<h3>Truthful validation</h3>
+							<p>
+								Use pure and contract tests for semantics, native automation for
+								pixels and restoration, and recorded E2E for the full journey.
+								Measure interaction overhead, acknowledgement latency, preview age,
+								memory, and queue bounds.
+							</p>
+						</article>
+					</div>
+					<div class="callout">
+						<strong>Menu replacement is a release gate.</strong> Build a separate
+						minimal Unreal menu against public headers and a clean camera-package
+						consumer. With Workbench absent and UEShedCameraAuthoring disabled, prove
+						create → edit from both clients → cull → sync → save → reopen → capture,
+						including the same actor scope, conflicts, and recovery behavior.
+					</div>
+					<p class="intro" style="margin-top: 22px">
+						Native evidence must delimit support for static meshes, Nanite, instanced
+						geometry, translucency, and partition/loading cases. No responsiveness claim
+						follows merely from a polling rate, and no viewport culling claim follows
+						merely from finding a hook in the engine source.
+					</p>
+				</section>
+
+				<footer class="footer">
+					<p>
+						Visual companion to
+						<a href="049-camera-authoring-and-actor-culling.md"
+							>Plan 049: Camera authoring in Unreal and explicit actor culling</a
+						>. The <a href="README.md">plan index</a> owns implementation status. This
+						document is a design proposal; the interactive example is illustrative.
+					</p>
+					<p>
+						September 9, 2026 · Source baseline <code>519dac3</code> · Standalone
+						document, no external resources.
+					</p>
+				</footer>
+			</main>
+		</div>
+		<script>
+			const byId = (id) => document.getElementById(id);
+			const distance = byId("distance");
+			const fov = byId("fov");
+			const height = byId("height");
+			const overrideB = byId("override-b");
+			const manualD = byId("manual-d");
+			const hideE = byId("hide-e");
+			const svgNS = "http://www.w3.org/2000/svg";
+			function svgElement(name, attributes) {
+				const element = document.createElementNS(svgNS, name);
+				for (const [key, value] of Object.entries(attributes))
+					element.setAttribute(key, String(value));
+				return element;
+			}
+			function renderExample() {
+				const scale = Number(distance.value);
+				const degrees = Number(fov.value);
+				const offset = Number(height.value);
+				byId("distance-value").textContent = `${scale.toFixed(2)}×`;
+				byId("fov-value").textContent = `${degrees}°`;
+				byId("height-value").textContent = `+${offset} cm`;
+				byId("rig-cameras").replaceChildren();
+				byId("camera-values").replaceChildren();
+				for (let index = 0; index < 6; index++) {
+					const name = String.fromCharCode(65 + index);
+					const pinned = index === 3 && manualD.checked;
+					const lensOverride = index === 1 && overrideB.checked;
+					const hidden = index === 4 && hideE.checked;
+					const effectiveFov = lensOverride ? 55 : degrees;
+					const angle = ((index * 60 - 90) * Math.PI) / 180;
+					const radius = pinned ? 145 : 100 + (scale - 1) * 80;
+					const x = 280 + Math.cos(angle) * radius;
+					const y = 200 + Math.sin(angle) * radius;
+					const color = pinned || lensOverride || hidden ? "#d6f28c" : "#b5c7b8";
+					const targetAngle = Math.atan2(200 - y, 280 - x);
+					const halfFov = (effectiveFov * Math.PI) / 360;
+					const length = 43;
+					const x1 = x + Math.cos(targetAngle - halfFov) * length;
+					const y1 = y + Math.sin(targetAngle - halfFov) * length;
+					const x2 = x + Math.cos(targetAngle + halfFov) * length;
+					const y2 = y + Math.sin(targetAngle + halfFov) * length;
+					const group = svgElement("g", {});
+					group.append(
+						svgElement("line", {
+							x1: x,
+							y1: y,
+							x2: 280,
+							y2: 200,
+							stroke: "#536b5c",
+							"stroke-dasharray": "3 5"
+						})
+					);
+					group.append(
+						svgElement("path", {
+							d: `M${x},${y} L${x1},${y1} L${x2},${y2} Z`,
+							fill: color,
+							"fill-opacity": ".10",
+							stroke: color,
+							"stroke-width": 1
+						})
+					);
+					group.append(
+						svgElement("circle", {
+							cx: x,
+							cy: y,
+							r: 13,
+							fill: "#192b27",
+							stroke: color,
+							"stroke-width": pinned ? 2.5 : 1.2
+						})
+					);
+					const label = svgElement("text", {
+						x,
+						y: y + 4,
+						fill: color,
+						"text-anchor": "middle",
+						"font-size": 11,
+						"font-family": "Consolas, monospace"
+					});
+					label.textContent = name;
+					group.append(label);
+					byId("rig-cameras").append(group);
+					const row = document.createElement("tr");
+					const cells = [
+						name,
+						pinned ? "Manual · pinned" : "Generated",
+						`${effectiveFov}°${lensOverride ? " · override" : " · inherited"}`,
+						pinned ? "Saved position" : `${scale.toFixed(2)}× fit`,
+						pinned ? "+100 cm · saved" : `+${offset} cm`,
+						hidden ? "Hidden in E" : "Unchanged"
+					];
+					cells.forEach((value, cellIndex) => {
+						const cell = document.createElement(cellIndex === 0 ? "th" : "td");
+						if (cellIndex === 0) cell.scope = "row";
+						cell.textContent = value;
+						if (
+							(pinned && [1, 3, 4].includes(cellIndex)) ||
+							(lensOverride && cellIndex === 2) ||
+							(hidden && cellIndex === 5)
+						)
+							cell.className = "exception";
+						row.append(cell);
+					});
+					byId("camera-values").append(row);
+				}
+				byId("example-status").textContent =
+					`${manualD.checked ? "Five generated poses follow shared framing; D retains its saved pose and inherits FOV." : "All six poses follow shared framing."} ${overrideB.checked ? "B keeps its 55° lens override." : "B inherits the shared FOV."} ${hideE.checked ? "Only E excludes the column; the world actor remains unchanged." : "No view excludes the column."}`;
+			}
+			for (const control of [distance, fov, height, overrideB, manualD, hideE])
+				control.addEventListener("input", renderExample);
+			byId("reset-example").addEventListener("click", () => {
+				distance.value = "1.25";
+				fov.value = "40";
+				height.value = "100";
+				overrideB.checked = true;
+				manualD.checked = true;
+				hideE.checked = true;
+				renderExample();
+			});
+			byId("print-button").addEventListener("click", () => window.print());
+			let printDetails = [];
+			window.addEventListener("beforeprint", () => {
+				printDetails = Array.from(document.querySelectorAll("details")).map((element) => [
+					element,
+					element.open
+				]);
+				for (const [element] of printDetails) element.open = true;
+			});
+			window.addEventListener("afterprint", () => {
+				for (const [element, open] of printDetails) element.open = open;
+			});
+			let navigationPending = false;
+			function updateNavigation() {
+				let activeId;
+				for (const section of document.querySelectorAll("main section")) {
+					if (section.getBoundingClientRect().top <= window.innerHeight * 0.3)
+						activeId = section.id;
+				}
+				for (const link of document.querySelectorAll("nav a")) {
+					if (link.hash === `#${activeId}`) link.setAttribute("aria-current", "location");
+					else link.removeAttribute("aria-current");
+				}
+				navigationPending = false;
+			}
+			function scheduleNavigation() {
+				if (navigationPending) return;
+				navigationPending = true;
+				requestAnimationFrame(updateNavigation);
+			}
+			window.addEventListener("scroll", scheduleNavigation, { passive: true });
+			window.addEventListener("resize", scheduleNavigation);
+			updateNavigation();
+			renderExample();
+		</script>
+	</body>
+</html>

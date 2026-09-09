@@ -828,6 +828,9 @@ const PreviousReviewView = Schema.Struct({
 );
 
 export const ReviewView = Schema.Struct({
+	authoring: Schema.optionalKey(
+		Schema.Struct({ arrangementId: SafeIdentifier, cameraId: SafeIdentifier })
+	),
 	captureProfileId: CaptureProfileId,
 	displayName: NonEmptyString,
 	framingDiagnostics: Schema.optional(Schema.Array(FramingDiagnostic)),
@@ -859,7 +862,7 @@ const ReviewSetCurrent = Schema.Struct({
 	captureProfiles: Schema.Array(CaptureProfile).check(Schema.isMinLength(1)),
 	contract: Schema.Struct({
 		name: Schema.Literal("ue-shed-review-set"),
-		version: Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literals([2, 3]) })
+		version: Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literals([2, 3, 4]) })
 	}),
 	description: Schema.optional(NonEmptyString),
 	displayName: NonEmptyString,
@@ -873,6 +876,14 @@ const ReviewSetCurrent = Schema.Struct({
 }).pipe(
 	Schema.check(
 		Schema.makeFilter((reviewSet) => {
+			if (
+				reviewSet.contract.version.minor < 4 &&
+				reviewSet.views.some((view) => view.authoring !== undefined)
+			)
+				return {
+					issue: "Camera arrangement ownership requires Review Set 1.4.",
+					path: ["contract"]
+				};
 			if (
 				reviewSet.contract.version.minor < 3 &&
 				reviewSet.captureProfiles.some((profile) => profile.renderPolicy !== undefined)
@@ -1165,7 +1176,8 @@ const ReviewSetContractHeader = Schema.Struct({
 			Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literal(0) }),
 			Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literal(1) }),
 			Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literal(2) }),
-			Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literal(3) })
+			Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literal(3) }),
+			Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literal(4) })
 		])
 	})
 });

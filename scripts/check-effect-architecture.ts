@@ -52,6 +52,8 @@ const approvedRuntimeExits = new Set([
 	"packages/unreal-assets/src/protocol-transport.ts"
 ]);
 const approvedPromiseAdapters = new Set([
+	// Atomic filesystem writes and cross-process file locks stay behind an Effect-only store port.
+	"packages/cameras/src/camera-authoring-store.ts",
 	// The CLI plugin installer owns filesystem/archive promises behind an Effect boundary.
 	"apps/cli/src/plugin-installer.ts",
 	// Plugin distribution isolates Node archive, HTTP, and immutable-cache promises behind typed

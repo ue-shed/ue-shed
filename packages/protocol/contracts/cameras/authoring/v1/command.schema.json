@@ -1,0 +1,531 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://ue-shed.dev/contracts/cameras/authoring/v1/command.schema.json",
+	"anyOf": [
+		{
+			"type": "object",
+			"properties": {
+				"arrangementId": {
+					"type": "string",
+					"allOf": [
+						{
+							"pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$"
+						}
+					]
+				},
+				"expectedRevision": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 0,
+							"maximum": 9007199254740991
+						}
+					]
+				},
+				"operationId": {
+					"type": "string",
+					"allOf": [
+						{
+							"pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$"
+						}
+					]
+				},
+				"kind": {
+					"type": "string",
+					"enum": ["tune"]
+				},
+				"settings": {
+					"type": "object",
+					"properties": {
+						"fieldOfViewDegrees": {
+							"type": "number",
+							"allOf": [
+								{
+									"minimum": 5,
+									"maximum": 170
+								}
+							]
+						},
+						"distanceScale": {
+							"type": "number",
+							"allOf": [
+								{
+									"minimum": 0.01,
+									"maximum": 100
+								}
+							]
+						},
+						"heightOffset": {
+							"type": "number"
+						},
+						"margin": {
+							"type": "number",
+							"allOf": [
+								{
+									"minimum": 0,
+									"maximum": 0.45
+								}
+							]
+						}
+					},
+					"additionalProperties": false
+				}
+			},
+			"required": ["arrangementId", "expectedRevision", "operationId", "kind", "settings"],
+			"additionalProperties": false
+		},
+		{
+			"type": "object",
+			"properties": {
+				"arrangementId": {
+					"type": "string",
+					"allOf": [
+						{
+							"pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$"
+						}
+					]
+				},
+				"expectedRevision": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 0,
+							"maximum": 9007199254740991
+						}
+					]
+				},
+				"operationId": {
+					"type": "string",
+					"allOf": [
+						{
+							"pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$"
+						}
+					]
+				},
+				"kind": {
+					"type": "string",
+					"enum": ["override"]
+				},
+				"cameraId": {
+					"type": "string",
+					"allOf": [
+						{
+							"pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$"
+						}
+					]
+				},
+				"overrides": {
+					"type": "object",
+					"properties": {
+						"fieldOfViewDegrees": {
+							"type": "number",
+							"allOf": [
+								{
+									"minimum": 5,
+									"maximum": 170
+								}
+							]
+						},
+						"distanceScale": {
+							"type": "number",
+							"allOf": [
+								{
+									"minimum": 0.01,
+									"maximum": 100
+								}
+							]
+						},
+						"heightOffset": {
+							"type": "number"
+						},
+						"margin": {
+							"type": "number",
+							"allOf": [
+								{
+									"minimum": 0,
+									"maximum": 0.45
+								}
+							]
+						}
+					},
+					"additionalProperties": false
+				}
+			},
+			"required": [
+				"arrangementId",
+				"expectedRevision",
+				"operationId",
+				"kind",
+				"cameraId",
+				"overrides"
+			],
+			"additionalProperties": false
+		},
+		{
+			"type": "object",
+			"properties": {
+				"arrangementId": {
+					"type": "string",
+					"allOf": [
+						{
+							"pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$"
+						}
+					]
+				},
+				"expectedRevision": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 0,
+							"maximum": 9007199254740991
+						}
+					]
+				},
+				"operationId": {
+					"type": "string",
+					"allOf": [
+						{
+							"pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$"
+						}
+					]
+				},
+				"kind": {
+					"type": "string",
+					"enum": ["pose"]
+				},
+				"cameraId": {
+					"type": "string",
+					"allOf": [
+						{
+							"pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$"
+						}
+					]
+				},
+				"pose": {
+					"type": "object",
+					"properties": {
+						"aspectRatio": {
+							"type": "string",
+							"enum": ["16:9"]
+						},
+						"fieldOfViewDegrees": {
+							"type": "number",
+							"allOf": [
+								{
+									"minimum": 5,
+									"maximum": 170
+								}
+							]
+						},
+						"location": {
+							"type": "object",
+							"properties": {
+								"x": {
+									"type": "number"
+								},
+								"y": {
+									"type": "number"
+								},
+								"z": {
+									"type": "number"
+								}
+							},
+							"required": ["x", "y", "z"],
+							"additionalProperties": false
+						},
+						"projection": {
+							"type": "string",
+							"enum": ["perspective"]
+						},
+						"rotation": {
+							"type": "object",
+							"properties": {
+								"pitch": {
+									"type": "number"
+								},
+								"roll": {
+									"type": "number"
+								},
+								"yaw": {
+									"type": "number"
+								}
+							},
+							"required": ["pitch", "roll", "yaw"],
+							"additionalProperties": false
+						}
+					},
+					"required": [
+						"aspectRatio",
+						"fieldOfViewDegrees",
+						"location",
+						"projection",
+						"rotation"
+					],
+					"additionalProperties": false
+				},
+				"lensChanged": {
+					"type": "boolean"
+				},
+				"poseChanged": {
+					"type": "boolean"
+				}
+			},
+			"required": [
+				"arrangementId",
+				"expectedRevision",
+				"operationId",
+				"kind",
+				"cameraId",
+				"pose",
+				"lensChanged",
+				"poseChanged"
+			],
+			"additionalProperties": false
+		},
+		{
+			"type": "object",
+			"properties": {
+				"arrangementId": {
+					"type": "string",
+					"allOf": [
+						{
+							"pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$"
+						}
+					]
+				},
+				"expectedRevision": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 0,
+							"maximum": 9007199254740991
+						}
+					]
+				},
+				"operationId": {
+					"type": "string",
+					"allOf": [
+						{
+							"pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$"
+						}
+					]
+				},
+				"kind": {
+					"type": "string",
+					"enum": ["unpin"]
+				},
+				"cameraId": {
+					"type": "string",
+					"allOf": [
+						{
+							"pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$"
+						}
+					]
+				}
+			},
+			"required": ["arrangementId", "expectedRevision", "operationId", "kind", "cameraId"],
+			"additionalProperties": false
+		},
+		{
+			"type": "object",
+			"properties": {
+				"arrangementId": {
+					"type": "string",
+					"allOf": [
+						{
+							"pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$"
+						}
+					]
+				},
+				"expectedRevision": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 0,
+							"maximum": 9007199254740991
+						}
+					]
+				},
+				"operationId": {
+					"type": "string",
+					"allOf": [
+						{
+							"pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$"
+						}
+					]
+				},
+				"kind": {
+					"type": "string",
+					"enum": ["regenerate"]
+				},
+				"cameras": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"properties": {
+							"id": {
+								"type": "string",
+								"allOf": [
+									{
+										"pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$"
+									}
+								]
+							},
+							"displayName": {
+								"type": "string",
+								"allOf": [
+									{
+										"minLength": 1
+									}
+								]
+							},
+							"yawDegrees": {
+								"type": "number"
+							},
+							"overrides": {
+								"type": "object",
+								"properties": {
+									"fieldOfViewDegrees": {
+										"type": "number",
+										"allOf": [
+											{
+												"minimum": 5,
+												"maximum": 170
+											}
+										]
+									},
+									"distanceScale": {
+										"type": "number",
+										"allOf": [
+											{
+												"minimum": 0.01,
+												"maximum": 100
+											}
+										]
+									},
+									"heightOffset": {
+										"type": "number"
+									},
+									"margin": {
+										"type": "number",
+										"allOf": [
+											{
+												"minimum": 0,
+												"maximum": 0.45
+											}
+										]
+									}
+								},
+								"additionalProperties": false
+							},
+							"manualPose": {
+								"type": "object",
+								"properties": {
+									"aspectRatio": {
+										"type": "string",
+										"enum": ["16:9"]
+									},
+									"fieldOfViewDegrees": {
+										"type": "number",
+										"allOf": [
+											{
+												"minimum": 5,
+												"maximum": 170
+											}
+										]
+									},
+									"location": {
+										"type": "object",
+										"properties": {
+											"x": {
+												"type": "number"
+											},
+											"y": {
+												"type": "number"
+											},
+											"z": {
+												"type": "number"
+											}
+										},
+										"required": ["x", "y", "z"],
+										"additionalProperties": false
+									},
+									"projection": {
+										"type": "string",
+										"enum": ["perspective"]
+									},
+									"rotation": {
+										"type": "object",
+										"properties": {
+											"pitch": {
+												"type": "number"
+											},
+											"roll": {
+												"type": "number"
+											},
+											"yaw": {
+												"type": "number"
+											}
+										},
+										"required": ["pitch", "roll", "yaw"],
+										"additionalProperties": false
+									}
+								},
+								"required": [
+									"aspectRatio",
+									"fieldOfViewDegrees",
+									"location",
+									"projection",
+									"rotation"
+								],
+								"additionalProperties": false
+							},
+							"viewId": {
+								"type": "string",
+								"allOf": [
+									{
+										"minLength": 1
+									},
+									{
+										"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+									}
+								]
+							}
+						},
+						"required": ["id", "displayName", "yawDegrees", "overrides", "viewId"],
+						"additionalProperties": false
+					},
+					"allOf": [
+						{
+							"minItems": 1
+						},
+						{
+							"maxItems": 256
+						}
+					]
+				},
+				"discardCustomizedIds": {
+					"type": "array",
+					"items": {
+						"type": "string",
+						"allOf": [
+							{
+								"pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$"
+							}
+						]
+					}
+				}
+			},
+			"required": [
+				"arrangementId",
+				"expectedRevision",
+				"operationId",
+				"kind",
+				"cameras",
+				"discardCustomizedIds"
+			],
+			"additionalProperties": false
+		}
+	],
+	"$defs": {}
+}

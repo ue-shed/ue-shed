@@ -23,6 +23,16 @@ const config = {
 } as const;
 
 describe("camera schedule contract", () => {
+	it("makes background ticking opt-in and rejects unknown policies", () => {
+		expect(decodeCameraScheduleConfig(config).editorBackgroundTicking).toBeUndefined();
+		expect(
+			decodeCameraScheduleConfig({ ...config, editorBackgroundTicking: "while_streaming" })
+				.editorBackgroundTicking
+		).toBe("while_streaming");
+		expect(() =>
+			decodeCameraScheduleConfig({ ...config, editorBackgroundTicking: "always" })
+		).toThrow();
+	});
 	it("accepts posed view mode for provisioned camera sets", () => {
 		expect(decodeCameraScheduleConfig({ ...config, viewMode: "posed" }).viewMode).toBe("posed");
 	});

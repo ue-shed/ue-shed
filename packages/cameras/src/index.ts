@@ -491,6 +491,20 @@ export function configureCameras(
 			})
 		),
 		Effect.flatMap(decodeCameraStatus),
+		Effect.flatMap((status) =>
+			config.editorBackgroundTicking === "while_streaming" &&
+			status.config.editorBackgroundTicking !== "while_streaming"
+				? Effect.fail(
+						new CameraControlError({
+							endpoint,
+							operation: "configure",
+							retrySafe: false,
+							message:
+								"This UEShedCameras plugin does not support scoped editor background ticking. Update the plugin before enabling interactive previews."
+						})
+					)
+				: Effect.succeed(status)
+		),
 		Effect.mapError((error) => cameraControlError(endpoint, "configure", error))
 	);
 }

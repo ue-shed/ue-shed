@@ -4,6 +4,7 @@ export const CameraId = Schema.String.pipe(Schema.brand("CameraId"));
 export type CameraId = Schema.Schema.Type<typeof CameraId>;
 
 export const CameraScheduleConfig = Schema.Struct({
+	editorBackgroundTicking: Schema.optional(Schema.Literals(["inherit", "while_streaming"])),
 	activeCameraCount: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 32 })),
 	backgroundFps: Schema.Number.check(Schema.isBetween({ minimum: 0.1, maximum: 30 })),
 	captureBudgetPerTick: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 32 })),

@@ -38,6 +38,7 @@ struct FUEShedCameraScheduleConfig
 	int32 FocusedCameraIndex = 0;
 	double FocusedFps = 8.0;
 	bool bPaused = false;
+	bool bKeepEditorTickingWhileStreaming = false;
 	EUEShedCameraViewMode ViewMode = EUEShedCameraViewMode::Overview;
 	EUEShedCameraPipelineMode PipelineMode = EUEShedCameraPipelineMode::FullPipeline;
 	EUEShedCameraRenderProfile RenderProfile = EUEShedCameraRenderProfile::FullFidelity;
@@ -84,6 +85,7 @@ public:
 		FString& Error);
 	void ClearProvisionedCameras();
 	bool IsProvisionedCameraSessionActive() const;
+	bool ShouldKeepEditorTicking() const;
 
 private:
 	void DiscoverAuthoredCameras();

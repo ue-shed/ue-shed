@@ -1,4 +1,5 @@
 #include "UEShedCameraSubsystem.h"
+#include "UEShedCameraStreamPolicy.h"
 
 #include "Async/Async.h"
 #include "Components/SceneCaptureComponent2D.h"
@@ -177,6 +178,7 @@ public:
 				bConnected.Store(false);
 				continue;
 			}
+			LastDeliveryCycles.Store(FPlatformTime::Cycles64());
 			FramesDelivered++;
 			BytesSent += Packet->Bytes.Num();
 		}
@@ -192,6 +194,7 @@ public:
 	}
 
 	TAtomic<bool> bConnected{ false };
+	TAtomic<uint64> LastDeliveryCycles{ 0 };
 	TAtomic<uint64> BytesSent{ 0 };
 	TAtomic<uint64> FramesDelivered{ 0 };
 	TAtomic<uint64> TransportReplacements{ 0 };
@@ -272,6 +275,21 @@ bool UUEShedCameraSubsystem::ShouldCreateSubsystem(UObject* Outer) const
 	const UWorld* World = Cast<UWorld>(Outer);
 	return World != nullptr && (World->WorldType == EWorldType::Editor
 		|| World->WorldType == EWorldType::PIE || World->WorldType == EWorldType::Game);
+}
+
+bool UUEShedCameraSubsystem::ShouldKeepEditorTicking() const
+{
+    if (!Runtime || !Runtime->Writer) return false;
+    const UWorld* World = GetWorld();
+    const uint64 LastDelivery = Runtime->Writer->LastDeliveryCycles.Load();
+    const double Age = LastDelivery == 0 ? -1.0 : FPlatformTime::ToSeconds64(
+        FPlatformTime::Cycles64() - LastDelivery);
+    return UEShedCameraStreamPolicy::KeepEditorTicking(
+        Runtime->Config.bKeepEditorTickingWhileStreaming,
+        World && World->WorldType == EWorldType::Editor && !HasActiveGameWorld(),
+        Runtime->Config.bPaused, !Runtime->Cameras.IsEmpty(),
+        Runtime->Config.PipelineMode == EUEShedCameraPipelineMode::FullPipeline,
+        Runtime->Writer->bConnected.Load(), Age);
 }
 
 void UUEShedCameraSubsystem::Initialize(FSubsystemCollectionBase& Collection)
@@ -717,10 +735,15 @@ void UUEShedCameraSubsystem::Tick(float DeltaTime)
 	Runtime->SchedulerTicks++;
 	Runtime->ExperimentSchedulerTicks++;
 	int32 Captured = 0;
-	for (int32 Offset = 0; Offset < ActiveCameraCount
+    const int32 StartCursor = Runtime->SchedulerCursor;
+    const int32 Focused = Runtime->Config.FocusedCameraIndex;
+    const bool bHasFocus = Focused >= 0 && Focused < ActiveCameraCount;
+	for (int32 Offset = 0; Offset < ActiveCameraCount + (bHasFocus ? 1 : 0)
 		&& Captured < Runtime->Config.CaptureBudgetPerTick; ++Offset)
 	{
-		const int32 Index = (Runtime->SchedulerCursor + Offset) % ActiveCameraCount;
+		const int32 Index = UEShedCameraStreamPolicy::CandidateIndex(
+            Offset, ActiveCameraCount, StartCursor, Focused);
+        if (Index == INDEX_NONE) continue;
 		FCameraState& Camera = Runtime->Cameras[Index];
 		AUEShedCameraSource* Source = Camera.Source.Get();
 		if (Source == nullptr) continue;
@@ -862,7 +885,15 @@ bool UUEShedCameraSubsystem::ApplyConfigJson(const FString& ConfigJson, FString&
 		Error = TEXT("invalid-json");
 		return false;
 	}
-	double BackgroundFps;
+	FString BackgroundTicking = TEXT("inherit");
+    if (Root->HasField(TEXT("editorBackgroundTicking"))
+        && (!Root->TryGetStringField(TEXT("editorBackgroundTicking"), BackgroundTicking)
+            || (BackgroundTicking != TEXT("inherit") && BackgroundTicking != TEXT("while_streaming"))))
+    {
+        Error = TEXT("invalid-editor-background-ticking");
+        return false;
+    }
+    double BackgroundFps;
 	double FocusedFps;
 	double CaptureBudget;
 	double ActiveCameraCount;
@@ -957,11 +988,13 @@ bool UUEShedCameraSubsystem::ApplyConfigJson(const FString& ConfigJson, FString&
 	Runtime->Config.FocusedFps = FMath::Clamp(FocusedFps, 0.1, 60.0);
 	Runtime->Config.CaptureBudgetPerTick = FMath::Clamp(FMath::RoundToInt(CaptureBudget), 1, 32);
 	Runtime->Config.bPaused = bPaused;
+	Runtime->Config.bKeepEditorTickingWhileStreaming = BackgroundTicking == TEXT("while_streaming");
 	Runtime->Config.ViewMode = DesiredViewMode;
 	Runtime->Config.PipelineMode = DesiredPipelineMode;
 	Runtime->Config.RenderProfile = DesiredRenderProfile;
 	Runtime->Config.CaptureWidth = CaptureWidth;
 	Runtime->Config.CaptureHeight = CaptureHeight;
+	const int32 PreviousFocusedIndex = Runtime->Config.FocusedCameraIndex;
 	Runtime->Config.FocusedCameraIndex = -1;
 	if (const TSharedPtr<FJsonValue>* Focused = Root->Values.Find(TEXT("focusedCameraIndex"));
 		Focused != nullptr && (*Focused)->Type == EJson::Number)
@@ -970,10 +1003,13 @@ bool UUEShedCameraSubsystem::ApplyConfigJson(const FString& ConfigJson, FString&
 			FMath::RoundToInt((*Focused)->AsNumber()), 0,
 			Runtime->Config.ActiveCameraCount - 1);
 	}
-	for (FCameraState& Camera : Runtime->Cameras)
-	{
-		Camera.NextCaptureSeconds = 0;
-	}
+    // Focus changes may request an immediate selected frame, but must not make every
+    // background camera due again on each slider update or focus switch.
+    if (PreviousFocusedIndex != Runtime->Config.FocusedCameraIndex
+        && Runtime->Cameras.IsValidIndex(Runtime->Config.FocusedCameraIndex))
+    {
+        Runtime->Cameras[Runtime->Config.FocusedCameraIndex].NextCaptureSeconds = 0;
+    }
 	Runtime->ExperimentBytesSentBaseline = Runtime->Writer->BytesSent.Load();
 	Runtime->ExperimentCadenceIntervalsSkipped = 0;
 	Runtime->ExperimentFramesDeliveredBaseline = Runtime->Writer->FramesDelivered.Load();
@@ -1025,6 +1061,8 @@ FString UUEShedCameraSubsystem::StatusJson() const
 		Config->SetNumberField(TEXT("focusedCameraIndex"), Runtime->Config.FocusedCameraIndex);
 	else Config->SetField(TEXT("focusedCameraIndex"), MakeShared<FJsonValueNull>());
 	Config->SetNumberField(TEXT("focusedFps"), Runtime->Config.FocusedFps);
+    Config->SetStringField(TEXT("editorBackgroundTicking"), Runtime->Config.bKeepEditorTickingWhileStreaming
+        ? TEXT("while_streaming") : TEXT("inherit"));
 	Config->SetBoolField(TEXT("paused"), Runtime->Config.bPaused);
 	Config->SetStringField(TEXT("pipelineMode"),
 		Runtime->Config.PipelineMode == EUEShedCameraPipelineMode::FullPipeline

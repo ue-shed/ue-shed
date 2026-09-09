@@ -33,6 +33,9 @@ const tests = [
 	"UEShed.Cameras.Rendering.LifecycleAndReference",
 	"UEShed.Cameras.Rendering.ScreenshotOwnership",
 	"UEShed.Cameras.Rendering.MapMinorCompatibility",
+	"UEShed.Cameras.Streaming.BoundedLifecycle",
+	"UEShed.Cameras.Streaming.DeliveryScope",
+	"UEShed.Cameras.Streaming.CadenceUpdates",
 	"UEShed.Niagara.IndependentCamera"
 ];
 const report = join(root, "automation");

@@ -66,13 +66,17 @@ The override applies only to an unpaused full-pipeline editor-world producer wit
 cameras and a connected consumer that has received a frame within two seconds.
 Clearing cameras, pausing, disconnecting, stalled delivery, or a play world's taking
 authority removes eligibility automatically. Before the first delivered frame,
-normal background ticking applies. This is not a persistent preference override.
+normal background ticking applies. Delivery receipts belong to the stream that captured the frame;
+clear, reprovision, and world-authority transitions invalidate them, including late readbacks and
+in-flight writes from an older stream. This is not a persistent preference override.
 
 Hosts must also configure a capture budget. For interactive six-view authoring, a
 conservative starting point is `captureBudgetPerTick: 1`, `focusedFps: 4`, and
 `backgroundFps: 0.5` at 640×360. This limits requested capture cadence; it is not a
 GPU-memory limit and does not cap unrelated editor rendering. Focus selection is
-visited first, then the remaining cameras in stable round-robin order.
+visited first, then the remaining cameras in stable round-robin order. FPS changes reconcile only
+the affected cameras' deadlines against the new interval; unrelated configuration updates preserve
+their existing cadence.
 
 The TypeScript client requires native acknowledgement when `while_streaming` is
 requested. Publish/install matching `@ue-shed/protocol`, `@ue-shed/cameras`, and

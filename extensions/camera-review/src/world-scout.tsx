@@ -15,7 +15,7 @@ import {
 } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { Effect } from "effect";
-import { Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import { Show, createEffect, createMemo, createSignal, onCleanup, onSettled } from "solid-js";
 import type { MapReviewClientApi, MapReviewWorldObservation } from "./map-review-client.js";
 import {
 	contentBounds,
@@ -421,7 +421,7 @@ export function WorldScout(props: {
 		});
 	};
 
-	onMount(() => {
+	onSettled(() => {
 		paintGate = createWorldScoutPaintGate(
 			paint,
 			props.paintScheduler?.schedule,
@@ -436,14 +436,12 @@ export function WorldScout(props: {
 		resizeObserver = undefined;
 	});
 
-	createEffect(() => {
-		actorFilters();
+	createEffect(actorFilters, () => {
 		representativeBoundsDirty = true;
 		requestPaint();
 	});
 
-	createEffect(() => {
-		selectedStreamIndex();
+	createEffect(selectedStreamIndex, () => {
 		requestPaint();
 	});
 
@@ -669,19 +667,19 @@ export function WorldScout(props: {
 	};
 
 	return (
-		<section aria-label="Live top-down actor map" {...stylex.props(styles.scout)}>
-			<header {...stylex.props(styles.header)}>
+		<section aria-label="Live top-down actor map" {...stylex.attrs(styles.scout)}>
+			<header {...stylex.attrs(styles.header)}>
 				<div>
-					<p {...stylex.props(styles.eyebrow)}>WORLD SCOUT</p>
-					<h2 {...stylex.props(styles.title)}>Actors in the open level</h2>
+					<p {...stylex.attrs(styles.eyebrow)}>WORLD SCOUT</p>
+					<h2 {...stylex.attrs(styles.title)}>Actors in the open level</h2>
 				</div>
-				<div {...stylex.props(styles.worldStatus)}>
-					<span {...stylex.props(styles.liveDot)} />
+				<div {...stylex.attrs(styles.worldStatus)}>
+					<span {...stylex.attrs(styles.liveDot)} />
 					<strong>{connectionLabel()}</strong>
-					<code {...stylex.props(styles.worldStatusCode)}>{mapPathLabel()}</code>
+					<code {...stylex.attrs(styles.worldStatusCode)}>{mapPathLabel()}</code>
 					<Show when={sampleAge()}>
 						{(age) => (
-							<small {...stylex.props(styles.sampleAge)}>
+							<small {...stylex.attrs(styles.sampleAge)}>
 								{age() < 1_000
 									? "LIVE SAMPLE"
 									: `${(age() / 1_000).toFixed(1)}s OLD`}
@@ -694,8 +692,8 @@ export function WorldScout(props: {
 			<Show
 				when={hasWorld()}
 				fallback={
-					<div {...stylex.props(styles.offline)}>
-						<div {...stylex.props(styles.offlineReticle)}>＋</div>
+					<div {...stylex.attrs(styles.offline)}>
+						<div {...stylex.attrs(styles.offlineReticle)}>＋</div>
 						<h3>No live world connected</h3>
 						<p>
 							Start the editor with Remote Control, open a map, then connect to list
@@ -704,7 +702,7 @@ export function WorldScout(props: {
 						<button
 							type="button"
 							onClick={connect}
-							{...stylex.props(styles.connectButton)}
+							{...stylex.attrs(styles.connectButton)}
 						>
 							CONNECT LIVE WORLD
 						</button>
@@ -719,15 +717,15 @@ export function WorldScout(props: {
 					</div>
 				}
 			>
-				<div {...stylex.props(styles.tools)}>
+				<div {...stylex.attrs(styles.tools)}>
 					<div
 						aria-label={`${visibleCount()} visible of ${observedCount()} observed actors`}
-						{...stylex.props(styles.sampleMeta)}
+						{...stylex.attrs(styles.sampleMeta)}
 					>
 						<strong>{visibleCount()}</strong>
 						<span>VISIBLE / {observedCount()} OBSERVED</span>
 					</div>
-					<label {...stylex.props(styles.rateControl)}>
+					<label {...stylex.attrs(styles.rateControl)}>
 						<span>REFRESH RATE</span>
 						<input
 							type="range"
@@ -737,7 +735,7 @@ export function WorldScout(props: {
 							step="1"
 							value={Math.min(refreshRate(), rateMax())}
 							onInput={(event) => updateRefreshRate(event.currentTarget.value)}
-							{...stylex.props(styles.rateSlider)}
+							{...stylex.attrs(styles.rateSlider)}
 						/>
 						<strong>
 							{Math.min(refreshRate(), rateMax())} HZ
@@ -748,7 +746,7 @@ export function WorldScout(props: {
 					</label>
 				</div>
 
-				<div {...stylex.props(styles.workspace)}>
+				<div {...stylex.attrs(styles.workspace)}>
 					<ActorExplorer
 						utilities
 						selectedDetails={{
@@ -779,9 +777,9 @@ export function WorldScout(props: {
 						selectedKey={selectedKey()}
 						title="Select an actor to inspect it on the live map"
 					/>
-					<div {...stylex.props(styles.mapFrame)}>
-						<div {...stylex.props(styles.north)}>N ↑</div>
-						<label {...stylex.props(styles.zoomControl)}>
+					<div {...stylex.attrs(styles.mapFrame)}>
+						<div {...stylex.attrs(styles.north)}>N ↑</div>
+						<label {...stylex.attrs(styles.zoomControl)}>
 							<span>ZOOM</span>
 							<input
 								type="range"
@@ -791,22 +789,22 @@ export function WorldScout(props: {
 								step="0.01"
 								value={Math.min(zoomFactor(), maxZoomFactor())}
 								onInput={(event) => setZoomFactor(event.currentTarget.value)}
-								{...stylex.props(styles.zoomSlider)}
+								{...stylex.attrs(styles.zoomSlider)}
 							/>
 							<strong>{zoomFactor().toFixed(1)}×</strong>
 						</label>
-						<div {...stylex.props(styles.extentLabel)}>{extentLabel()}</div>
+						<div {...stylex.attrs(styles.extentLabel)}>{extentLabel()}</div>
 						<button
 							type="button"
 							onClick={resetView}
-							{...stylex.props(styles.resetView)}
+							{...stylex.attrs(styles.resetView)}
 						>
 							RESET VIEW
 						</button>
 						<canvas
 							ref={setCanvasElement}
 							role="application"
-							tabIndex={0}
+							tabindex={0}
 							aria-label="Top-down actor map"
 							aria-describedby="world-scout-live"
 							title="Scroll to zoom, drag to pan, click to select"
@@ -816,24 +814,24 @@ export function WorldScout(props: {
 							onPointerUp={onCanvasPointerUp}
 							onPointerCancel={onCanvasPointerUp}
 							onKeyDown={onCanvasKeyDown}
-							{...stylex.props(styles.map)}
+							{...stylex.attrs(styles.map)}
 						/>
 						<div
 							id="world-scout-live"
 							aria-live="polite"
-							{...stylex.props(styles.liveRegion)}
+							{...stylex.attrs(styles.liveRegion)}
 						>
 							{liveRegion()}
 						</div>
-						<div {...stylex.props(styles.axisX)}>WORLD X →</div>
-						<div {...stylex.props(styles.axisY)}>WORLD Y →</div>
+						<div {...stylex.attrs(styles.axisX)}>WORLD X →</div>
+						<div {...stylex.attrs(styles.axisY)}>WORLD Y →</div>
 					</div>
 
-					<aside {...stylex.props(styles.inspector)}>
+					<aside {...stylex.attrs(styles.inspector)}>
 						<Show
 							when={selected()}
 							fallback={
-								<div {...stylex.props(styles.noSelection)}>
+								<div {...stylex.attrs(styles.noSelection)}>
 									<span>SELECT A POINT</span>
 									<p>
 										Focus an actor in Unreal and generate transient review
@@ -843,13 +841,13 @@ export function WorldScout(props: {
 							}
 						>
 							{(actor) => (
-								<div {...stylex.props(styles.actorDetails)}>
+								<div {...stylex.attrs(styles.actorDetails)}>
 									<p>OBSERVED ACTOR</p>
-									<h3 {...stylex.props(styles.actorDetailsHeading)}>
+									<h3 {...stylex.attrs(styles.actorDetailsHeading)}>
 										{actor().displayName}
 									</h3>
 									<code>{actor().className}</code>
-									<dl {...stylex.props(styles.coordinates)}>
+									<dl {...stylex.attrs(styles.coordinates)}>
 										<div>
 											<dt>X</dt>
 											<dd>{formatCoordinate(actor().location.x)}</dd>
@@ -863,24 +861,24 @@ export function WorldScout(props: {
 											<dd>{formatCoordinate(actor().location.z)}</dd>
 										</div>
 									</dl>
-									<div {...stylex.props(styles.actorActions)}>
+									<div {...stylex.attrs(styles.actorActions)}>
 										<button
 											type="button"
 											onClick={() => goToActor(actor(), false)}
-											{...stylex.props(styles.goToButton)}
+											{...stylex.attrs(styles.goToButton)}
 										>
 											GO TO ACTOR ↗
 										</button>
 										<button
 											type="button"
-											aria-pressed={following()}
+											aria-pressed={following() ? "true" : "false"}
 											onClick={() => {
 												if (following()) {
 													setFollowing(false);
 													setNavigationStatus("FOLLOW STOPPED");
 												} else goToActor(actor(), true);
 											}}
-											{...stylex.props(
+											{...stylex.attrs(
 												styles.followButton,
 												following() && styles.followButtonActive
 											)}
@@ -890,12 +888,12 @@ export function WorldScout(props: {
 										<button
 											type="button"
 											onClick={clearSelection}
-											{...stylex.props(styles.clearSelection)}
+											{...stylex.attrs(styles.clearSelection)}
 										>
 											CLEAR SELECTION
 										</button>
 									</div>
-									<span {...stylex.props(styles.focusedCopy)}>
+									<span {...stylex.attrs(styles.focusedCopy)}>
 										{navigationStatus()}
 									</span>
 								</div>

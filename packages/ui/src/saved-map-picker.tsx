@@ -123,9 +123,9 @@ export function SavedMapPicker(props: {
 	}
 
 	return (
-		<div {...stylex.props(styles.picker)}>
+		<div {...stylex.attrs(styles.picker)}>
 			<label for={pickerId}>
-				<span {...stylex.props(styles.label)}>{props.label ?? "SAVED MAP"}</span>
+				<span {...stylex.attrs(styles.label)}>{props.label ?? "SAVED MAP"}</span>
 			</label>
 			<button
 				ref={(element) => {
@@ -136,7 +136,7 @@ export function SavedMapPicker(props: {
 				role="combobox"
 				aria-label={props.ariaLabel ?? "Saved map"}
 				aria-controls={listboxId}
-				aria-expanded={open()}
+				aria-expanded={open() ? "true" : "false"}
 				aria-haspopup="listbox"
 				disabled={props.disabled || (props.maps.length === 0 && !props.allowCustomPath)}
 				onClick={() => (open() ? closePicker() : openPicker())}
@@ -146,16 +146,16 @@ export function SavedMapPicker(props: {
 						openPicker();
 					}
 				}}
-				{...stylex.props(styles.trigger, open() && styles.triggerOpen)}
+				{...stylex.attrs(styles.trigger, open() && styles.triggerOpen)}
 			>
-				<span {...stylex.props(styles.triggerText)}>
-					<strong {...stylex.props(styles.triggerPrimary)}>
+				<span {...stylex.attrs(styles.triggerText)}>
+					<strong {...stylex.attrs(styles.triggerPrimary)}>
 						{customSelected()
 							? "CUSTOM MAP PATH"
 							: (knownMap()?.label ??
 								(props.maps.length === 0 ? "NO SAVED MAPS" : "SELECT MAP"))}
 					</strong>
-					<small {...stylex.props(styles.triggerSecondary)}>
+					<small {...stylex.attrs(styles.triggerSecondary)}>
 						{customSelected()
 							? props.mapPath || "Enter an explicit path below"
 							: (knownMap()?.mapPath ??
@@ -164,7 +164,7 @@ export function SavedMapPicker(props: {
 				</span>
 				<span
 					aria-hidden="true"
-					{...stylex.props(styles.chevron, open() && styles.chevronOpen)}
+					{...stylex.attrs(styles.chevron, open() && styles.chevronOpen)}
 				>
 					⌄
 				</span>
@@ -174,11 +174,11 @@ export function SavedMapPicker(props: {
 				<div
 					aria-hidden="true"
 					onPointerDown={() => closePicker()}
-					{...stylex.props(styles.backdrop)}
+					{...stylex.attrs(styles.backdrop)}
 				/>
-				<div {...stylex.props(styles.dropdown)}>
-					<div {...stylex.props(styles.searchShell)}>
-						<span aria-hidden="true" {...stylex.props(styles.searchIcon)}>
+				<div {...stylex.attrs(styles.dropdown)}>
+					<div {...stylex.attrs(styles.searchShell)}>
+						<span aria-hidden="true" {...stylex.attrs(styles.searchIcon)}>
 							⌕
 						</span>
 						<input
@@ -197,27 +197,27 @@ export function SavedMapPicker(props: {
 							}}
 							onKeyDown={handleSearchKeyDown}
 							placeholder={`Search ${props.maps.length.toLocaleString()} maps by name or path`}
-							{...stylex.props(styles.searchInput)}
+							{...stylex.attrs(styles.searchInput)}
 						/>
 					</div>
-					<div id={listboxId} role="listbox" {...stylex.props(styles.options)}>
+					<div id={listboxId} role="listbox" {...stylex.attrs(styles.options)}>
 						<For each={filteredMaps()}>
 							{(map, index) => (
 								<div
 									id={`${pickerId}-option-${index()}`}
 									role="option"
-									aria-selected={map.mapPath === props.mapPath}
+									aria-selected={map.mapPath === props.mapPath ? "true" : "false"}
 									onMouseEnter={() => setActiveIndex(index())}
 									onClick={() => selectMap(map)}
-									{...stylex.props(
+									{...stylex.attrs(
 										styles.option,
 										activeIndex() === index() && styles.optionActive,
 										map.mapPath === props.mapPath && styles.optionSelected
 									)}
 								>
-									<span {...stylex.props(styles.optionLabel)}>{map.label}</span>
+									<span {...stylex.attrs(styles.optionLabel)}>{map.label}</span>
 									<code
-										{...stylex.props(
+										{...stylex.attrs(
 											styles.optionPath,
 											map.mapPath === props.mapPath &&
 												styles.optionPathSelected
@@ -229,23 +229,23 @@ export function SavedMapPicker(props: {
 							)}
 						</For>
 						<Show when={filteredMaps().length === 0}>
-							<p {...stylex.props(styles.empty)}>NO SAVED MAPS MATCH “{query()}”</p>
+							<p {...stylex.attrs(styles.empty)}>NO SAVED MAPS MATCH “{query()}”</p>
 						</Show>
 						<Show when={props.allowCustomPath}>
 							<div
 								id={`${pickerId}-option-${filteredMaps().length}`}
 								role="option"
-								aria-selected={customSelected()}
+								aria-selected={customSelected() ? "true" : "false"}
 								onMouseEnter={() => setActiveIndex(filteredMaps().length)}
 								onClick={selectCustomPath}
-								{...stylex.props(
+								{...stylex.attrs(
 									styles.option,
 									styles.customOption,
 									activeIndex() === filteredMaps().length && styles.optionActive
 								)}
 							>
-								<span {...stylex.props(styles.optionLabel)}>CUSTOM MAP PATH…</span>
-								<code {...stylex.props(styles.optionPath)}>
+								<span {...stylex.attrs(styles.optionLabel)}>CUSTOM MAP PATH…</span>
+								<code {...stylex.attrs(styles.optionPath)}>
 									Enter a path not present in the project inventory
 								</code>
 							</div>
@@ -255,7 +255,7 @@ export function SavedMapPicker(props: {
 			</Show>
 
 			<Show when={customSelected()}>
-				<label {...stylex.props(styles.customPath)}>
+				<label {...stylex.attrs(styles.customPath)}>
 					<span>MAP PATH</span>
 					<input
 						ref={(element) => {
@@ -266,7 +266,7 @@ export function SavedMapPicker(props: {
 						value={props.mapPath}
 						onInput={(event) => props.onMapPathChange(event.currentTarget.value)}
 						placeholder={props.customPathPlaceholder ?? "Content/Maps/L_MyMap.umap"}
-						{...stylex.props(styles.customInput)}
+						{...stylex.attrs(styles.customInput)}
 					/>
 				</label>
 			</Show>

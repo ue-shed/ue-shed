@@ -24,7 +24,7 @@ import {
 	createEffect,
 	createMemo,
 	createSignal,
-	onMount
+	onSettled
 } from "solid-js";
 import {
 	fieldInRow,
@@ -232,21 +232,23 @@ function RowReferencePicker(props: {
 		});
 	};
 
-	createEffect(() => {
-		const sourceKey = props.sourceKey;
-		if (activeSourceKey === sourceKey) return;
-		activeSourceKey = sourceKey;
-		const initialTable = props.value.tableObjectPath ?? "";
-		setTableObjectPath(initialTable);
-		setRowName(props.value.rowName);
-		loadTarget(initialTable, sourceKey);
-	});
+	createEffect(
+		() => ({ sourceKey: props.sourceKey, value: props.value }),
+		({ sourceKey, value }) => {
+			if (activeSourceKey === sourceKey) return;
+			activeSourceKey = sourceKey;
+			const initialTable = value.tableObjectPath ?? "";
+			setTableObjectPath(initialTable);
+			setRowName(value.rowName);
+			loadTarget(initialTable, sourceKey);
+		}
+	);
 
 	return (
-		<section aria-label="Row reference picker" {...stylex.props(styles.referencePicker)}>
-			<div {...stylex.props(styles.referenceHeading)}>
-				<span {...stylex.props(styles.detailLabel)}>Relationship target</span>
-				<span {...stylex.props(styles.referenceStatus)}>
+		<section aria-label="Row reference picker" {...stylex.attrs(styles.referencePicker)}>
+			<div {...stylex.attrs(styles.referenceHeading)}>
+				<span {...stylex.attrs(styles.detailLabel)}>Relationship target</span>
+				<span {...stylex.attrs(styles.referenceStatus)}>
 					{lookup().status === "loading"
 						? "Resolving…"
 						: lookup().status === "ready"
@@ -254,7 +256,7 @@ function RowReferencePicker(props: {
 							: "Unresolved"}
 				</span>
 			</div>
-			<label {...stylex.props(styles.referenceField)}>
+			<label {...stylex.attrs(styles.referenceField)}>
 				<span>Target table</span>
 				<select
 					aria-label="Reference target table"
@@ -266,7 +268,7 @@ function RowReferencePicker(props: {
 						setRowName("None");
 						loadTarget(path);
 					}}
-					{...stylex.props(styles.referenceSelect)}
+					{...stylex.attrs(styles.referenceSelect)}
 				>
 					<option value="">No table assigned</option>
 					<For each={tableChoices()}>
@@ -277,10 +279,10 @@ function RowReferencePicker(props: {
 			</label>
 			<Switch>
 				<Match when={lookup().status === "loading"}>
-					<div {...stylex.props(styles.referenceMessage)}>Reading target rows…</div>
+					<div {...stylex.attrs(styles.referenceMessage)}>Reading target rows…</div>
 				</Match>
 				<Match when={lookup().status === "failed"}>
-					<div {...stylex.props(styles.referenceMessage, styles.referenceError)}>
+					<div {...stylex.attrs(styles.referenceMessage, styles.referenceError)}>
 						{(() => {
 							const current = lookup();
 							return current.status === "failed"
@@ -291,21 +293,21 @@ function RowReferencePicker(props: {
 							type="button"
 							disabled={props.disabled}
 							onClick={() => loadTarget(tableObjectPath())}
-							{...stylex.props(styles.referenceRetry)}
+							{...stylex.attrs(styles.referenceRetry)}
 						>
 							Retry
 						</button>
 					</div>
 				</Match>
 				<Match when={lookup().status === "ready"}>
-					<label {...stylex.props(styles.referenceField)}>
+					<label {...stylex.attrs(styles.referenceField)}>
 						<span>Target row</span>
 						<select
 							aria-label="Reference target row"
 							disabled={props.disabled || targetRows().length === 0}
 							value={rowName()}
 							onChange={(event) => setRowName(event.currentTarget.value)}
-							{...stylex.props(styles.referenceSelect)}
+							{...stylex.attrs(styles.referenceSelect)}
 						>
 							<Show when={!selectedTargetExists() && rowName() !== "None"}>
 								<option value={rowName()}>{rowName()} — missing</option>
@@ -334,7 +336,7 @@ function RowReferencePicker(props: {
 						tableObjectPath: tableObjectPath()
 					})
 				}
-				{...stylex.props(styles.referenceStage)}
+				{...stylex.attrs(styles.referenceStage)}
 			>
 				Stage reference
 			</button>
@@ -365,15 +367,15 @@ function CatalogPanel(props: {
 	});
 
 	return (
-		<nav {...stylex.props(styles.catalog)} aria-label="Project DataTables">
-			<div {...stylex.props(styles.catalogHeading)}>
-				<strong {...stylex.props(styles.catalogName)}>Tables</strong>
+		<nav {...stylex.attrs(styles.catalog)} aria-label="Project DataTables">
+			<div {...stylex.attrs(styles.catalogHeading)}>
+				<strong {...stylex.attrs(styles.catalogName)}>Tables</strong>
 				<button
 					type="button"
 					disabled={props.disabled}
 					onClick={props.onRefresh}
 					aria-label="Refresh project DataTables"
-					{...stylex.props(styles.catalogRefresh)}
+					{...stylex.attrs(styles.catalogRefresh)}
 				>
 					Refresh
 				</button>
@@ -383,12 +385,12 @@ function CatalogPanel(props: {
 				placeholder="Filter tables…"
 				value={props.query}
 				onInput={(event) => props.onQueryChange(event.currentTarget.value)}
-				{...stylex.props(styles.catalogSearch)}
+				{...stylex.attrs(styles.catalogSearch)}
 			/>
 			<Switch>
 				<Match when={props.state.status === "loading"}>
-					<div {...stylex.props(styles.catalogProgressBlock)}>
-						<div {...stylex.props(styles.catalogProgressLabel)}>
+					<div {...stylex.attrs(styles.catalogProgressBlock)}>
+						<div {...stylex.attrs(styles.catalogProgressLabel)}>
 							<span>
 								{props.progress.phase === "enumerating"
 									? "Finding packages…"
@@ -406,7 +408,7 @@ function CatalogPanel(props: {
 							aria-label="Project DataTable indexing progress"
 							max={Math.max(1, props.progress.totalAssets)}
 							value={props.progress.processedAssets}
-							{...stylex.props(styles.catalogProgress)}
+							{...stylex.attrs(styles.catalogProgress)}
 						/>
 						<small>
 							{props.progress.cacheHits.toLocaleString()} cached ·{" "}
@@ -415,12 +417,12 @@ function CatalogPanel(props: {
 					</div>
 				</Match>
 				<Match when={props.state.status === "not_configured"}>
-					<div {...stylex.props(styles.catalogStatus)}>
+					<div {...stylex.attrs(styles.catalogStatus)}>
 						Choose a project to list its saved DataTables.
 					</div>
 				</Match>
 				<Match when={props.state.status === "failed"}>
-					<div {...stylex.props(styles.catalogStatus)}>
+					<div {...stylex.attrs(styles.catalogStatus)}>
 						Could not load the table list. The open table is unchanged.
 					</div>
 				</Match>
@@ -428,14 +430,14 @@ function CatalogPanel(props: {
 					<div
 						aria-label="Project DataTable list"
 						role="region"
-						{...stylex.props(styles.catalogList)}
+						{...stylex.attrs(styles.catalogList)}
 					>
 						<Show
 							when={
 								props.state.status === "ready" && props.state.diagnostics.length > 0
 							}
 						>
-							<div {...stylex.props(styles.catalogWarning)}>
+							<div {...stylex.attrs(styles.catalogWarning)}>
 								{props.state.status === "ready"
 									? `${props.state.diagnostics.length} catalog ${props.state.diagnostics.length === 1 ? "warning" : "warnings"}`
 									: ""}
@@ -447,16 +449,16 @@ function CatalogPanel(props: {
 									type="button"
 									disabled={props.disabled}
 									onClick={() => props.onOpen(table.objectPath)}
-									{...stylex.props(
+									{...stylex.attrs(
 										styles.catalogItem,
 										table.objectPath === props.activeObjectPath &&
 											styles.catalogItemActive
 									)}
 								>
-									<span {...stylex.props(styles.catalogItemName)}>
+									<span {...stylex.attrs(styles.catalogItemName)}>
 										{shortObjectName(table.objectPath)}
 									</span>
-									<small {...stylex.props(styles.catalogItemKind)}>
+									<small {...stylex.attrs(styles.catalogItemKind)}>
 										{table.kind === "composite_data_table"
 											? "Composite"
 											: "Data table"}
@@ -464,7 +466,7 @@ function CatalogPanel(props: {
 										{table.authorities.join("+")}
 									</small>
 									<Show when={table.divergence.length > 0}>
-										<small {...stylex.props(styles.catalogDivergence)}>
+										<small {...stylex.attrs(styles.catalogDivergence)}>
 											Diverged · {table.divergence.join(", ")}
 										</small>
 									</Show>
@@ -472,7 +474,7 @@ function CatalogPanel(props: {
 							)}
 						</For>
 						<Show when={tables().length === 0}>
-							<div {...stylex.props(styles.catalogStatus)}>
+							<div {...stylex.attrs(styles.catalogStatus)}>
 								No tables match this filter. Clear the filter or refresh the list.
 							</div>
 						</Show>
@@ -502,12 +504,12 @@ function SessionShelf(props: {
 			: []
 	);
 	const sessionItem = (session: AuthoringSessionSummary, detail: string) => (
-		<div {...stylex.props(styles.draftItem)}>
+		<div {...stylex.attrs(styles.draftItem)}>
 			<button
 				type="button"
 				disabled={props.disabled}
 				onClick={() => props.onOpenSession(session.id)}
-				{...stylex.props(styles.draftOpen)}
+				{...stylex.attrs(styles.draftOpen)}
 			>
 				<strong>{shortObjectName(session.tableObjectPaths[0] ?? session.id)}</strong>
 				<small>{detail}</small>
@@ -517,7 +519,7 @@ function SessionShelf(props: {
 				disabled={props.disabled}
 				aria-label={`Discard draft ${shortObjectName(session.tableObjectPaths[0] ?? session.id)}`}
 				onClick={() => props.onDiscardSession(session)}
-				{...stylex.props(styles.draftDiscard)}
+				{...stylex.attrs(styles.draftDiscard)}
 			>
 				×
 			</button>
@@ -525,17 +527,17 @@ function SessionShelf(props: {
 	);
 
 	return (
-		<section {...stylex.props(styles.sessionShelf)} aria-label="Draft sessions">
-			<div {...stylex.props(styles.draftShelfHeading)}>
+		<section {...stylex.attrs(styles.sessionShelf)} aria-label="Draft sessions">
+			<div {...stylex.attrs(styles.draftShelfHeading)}>
 				<span>Drafts</span>
 				<Show when={props.sessions.status === "ready"}>
-					<small {...stylex.props(styles.draftCount)}>{drafts().length}</small>
+					<small {...stylex.attrs(styles.draftCount)}>{drafts().length}</small>
 				</Show>
 			</div>
 			<Show
 				when={props.sessions.status === "ready"}
 				fallback={
-					<div {...stylex.props(styles.catalogStatus)}>
+					<div {...stylex.attrs(styles.catalogStatus)}>
 						{props.sessions.status === "failed"
 							? "Could not load drafts. The active table is unchanged."
 							: "Loading drafts…"}
@@ -551,13 +553,13 @@ function SessionShelf(props: {
 					}
 				</For>
 				<Show when={pendingSaves().length > 0}>
-					<div {...stylex.props(styles.pendingSaveHeading)}>Unsaved live changes</div>
+					<div {...stylex.attrs(styles.pendingSaveHeading)}>Unsaved live changes</div>
 					<For each={pendingSaves()}>
 						{(session) => sessionItem(session, "Saved to editor · save pending")}
 					</For>
 				</Show>
 				<Show when={drafts().length === 0 && pendingSaves().length === 0}>
-					<div {...stylex.props(styles.catalogStatus)}>
+					<div {...stylex.attrs(styles.catalogStatus)}>
 						No drafts. Changes you stage are kept here until you apply or discard them.
 					</div>
 				</Show>
@@ -841,26 +843,35 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 		openCatalogTable(current.snapshot.table.objectPath, authority);
 	};
 
-	createEffect(() => {
-		const current = state();
-		const catalog = catalogState();
-		if (
-			authorityPreference() !== "automatic" ||
-			isReplacing() ||
-			session()?.dirty ||
-			current.status !== "ready" ||
-			current.snapshot.authority.kind !== "project_files" ||
-			catalog.status !== "ready"
-		)
-			return;
-		const availableLive = catalog.tables
-			.find((table) => table.objectPath === current.snapshot.table.objectPath)
-			?.authorities.includes("live");
-		const attemptKey = `${catalogGeneration()}:${current.snapshot.table.objectPath}`;
-		if (!availableLive || attemptedLiveUpgrade() === attemptKey) return;
-		setAttemptedLiveUpgrade(attemptKey);
-		openCatalogTable(current.snapshot.table.objectPath, "live");
-	});
+	createEffect(
+		() => ({
+			current: state(),
+			catalog: catalogState(),
+			preference: authorityPreference(),
+			replacing: isReplacing(),
+			dirty: session()?.dirty,
+			generation: catalogGeneration(),
+			attempted: attemptedLiveUpgrade()
+		}),
+		({ current, catalog, preference, replacing, dirty, generation, attempted }) => {
+			if (
+				preference !== "automatic" ||
+				replacing ||
+				dirty ||
+				current.status !== "ready" ||
+				current.snapshot.authority.kind !== "project_files" ||
+				catalog.status !== "ready"
+			)
+				return;
+			const availableLive = catalog.tables
+				.find((table) => table.objectPath === current.snapshot.table.objectPath)
+				?.authorities.includes("live");
+			const attemptKey = `${generation}:${current.snapshot.table.objectPath}`;
+			if (!availableLive || attempted === attemptKey) return;
+			setAttemptedLiveUpgrade(attemptKey);
+			openCatalogTable(current.snapshot.table.objectPath, "live");
+		}
+	);
 
 	const runSessionOperation = (effect: Effect.Effect<AuthoringSessionResult, unknown>): void => {
 		if (isPersisting()) return;
@@ -1051,23 +1062,23 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 		);
 	};
 
-	onMount(() => {
+	onSettled(() => {
 		load(false);
 		loadCatalog();
 		refreshSessions();
 	});
 
 	return (
-		<main {...stylex.props(styles.page)}>
-			<header {...stylex.props(styles.routeHeader)}>
-				<div {...stylex.props(styles.routeHeading)}>
-					<h1 {...stylex.props(styles.routeTitle)}>Data authoring</h1>
-					<p {...stylex.props(styles.routeIntro)}>
+		<main {...stylex.attrs(styles.page)}>
+			<header {...stylex.attrs(styles.routeHeader)}>
+				<div {...stylex.attrs(styles.routeHeading)}>
+					<h1 {...stylex.attrs(styles.routeTitle)}>Data authoring</h1>
+					<p {...stylex.attrs(styles.routeIntro)}>
 						Edit DataTable rows with validation, then apply changes through a live
 						session.
 					</p>
 				</div>
-				<div {...stylex.props(styles.routeActions)}>
+				<div {...stylex.attrs(styles.routeActions)}>
 					<Show when={state().status === "ready"}>
 						{(() => {
 							const current = state();
@@ -1077,7 +1088,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 								<div
 									aria-label="Table source"
 									role="group"
-									{...stylex.props(styles.authoritySwitch)}
+									{...stylex.attrs(styles.authoritySwitch)}
 								>
 									<Button
 										type="button"
@@ -1172,12 +1183,12 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 
 			<Switch>
 				<Match when={state().status === "loading"}>
-					<div {...stylex.props(styles.emptyState)}>
-						<span {...stylex.props(styles.pulse)} /> Loading table…
+					<div {...stylex.attrs(styles.emptyState)}>
+						<span {...stylex.attrs(styles.pulse)} /> Loading table…
 					</div>
 				</Match>
 				<Match when={state().status === "not_configured"}>
-					<div {...stylex.props(styles.coldStart)}>
+					<div {...stylex.attrs(styles.coldStart)}>
 						<CatalogPanel
 							disabled={isReplacing()}
 							onOpen={openCatalogTable}
@@ -1187,7 +1198,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 							progress={catalogProgress()}
 							state={catalogState()}
 						/>
-						<div {...stylex.props(styles.emptyState)}>
+						<div {...stylex.attrs(styles.emptyState)}>
 							<strong>No table open.</strong>
 							<span>
 								Choose a DataTable from the list, or open a package outside the
@@ -1199,7 +1210,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 									setAuthorityPreference("saved");
 									void load(true);
 								}}
-								{...stylex.props(styles.inlineButton)}
+								{...stylex.attrs(styles.inlineButton)}
 							>
 								Choose file…
 							</button>
@@ -1207,7 +1218,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 					</div>
 				</Match>
 				<Match when={state().status === "cancelled"}>
-					<div {...stylex.props(styles.emptyState)}>
+					<div {...stylex.attrs(styles.emptyState)}>
 						No table was selected. The current table is unchanged.
 					</div>
 				</Match>
@@ -1217,23 +1228,23 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 						if (current.status !== "failed") return null;
 						const parts = noticeParts(current.error.message);
 						return (
-							<div {...stylex.props(styles.errorState)}>
+							<div {...stylex.attrs(styles.errorState)}>
 								<strong>The table did not load.</strong>
 								<span>{parts.headline}</span>
-								<span {...stylex.props(styles.errorRecovery)}>
+								<span {...stylex.attrs(styles.errorRecovery)}>
 									{current.error.recovery}
 								</span>
 								<Show when={current.error.retrySafe}>
 									<button
 										type="button"
 										onClick={() => void load(false)}
-										{...stylex.props(styles.inlineButton)}
+										{...stylex.attrs(styles.inlineButton)}
 									>
 										Retry
 									</button>
 								</Show>
 								<Show when={parts.technical}>
-									<details {...stylex.props(styles.technicalDetails)}>
+									<details {...stylex.attrs(styles.technicalDetails)}>
 										<summary>Technical details</summary>
 										<code>{parts.technical}</code>
 									</details>
@@ -1273,13 +1284,13 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 								})()
 							);
 							return (
-								<div {...stylex.props(styles.workspace)}>
+								<div {...stylex.attrs(styles.workspace)}>
 									<section
-										{...stylex.props(styles.manifest)}
+										{...stylex.attrs(styles.manifest)}
 										aria-label="Table summary"
 									>
-										<div {...stylex.props(styles.assetIdentity)}>
-											<span {...stylex.props(styles.assetBadge)}>
+										<div {...stylex.attrs(styles.assetIdentity)}>
+											<span {...stylex.attrs(styles.assetBadge)}>
 												{authorityLabel(snapshot())}
 											</span>
 											<strong>
@@ -1287,21 +1298,21 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 											</strong>
 											<small>{snapshot().table.objectPath}</small>
 										</div>
-										<div {...stylex.props(styles.metric)}>
+										<div {...stylex.attrs(styles.metric)}>
 											<strong>{snapshot().table.rows.length}</strong>
 											<span>Rows</span>
 										</div>
-										<div {...stylex.props(styles.metric)}>
+										<div {...stylex.attrs(styles.metric)}>
 											<strong>{columns().length}</strong>
 											<span>Fields</span>
 										</div>
-										<div {...stylex.props(styles.metric)}>
+										<div {...stylex.attrs(styles.metric)}>
 											<strong>{sentenceCase(snapshot().completeness)}</strong>
 											<span>Snapshot</span>
 										</div>
-										<div {...stylex.props(styles.readOnlyFlag)}>
+										<div {...stylex.attrs(styles.readOnlyFlag)}>
 											<span>{session()?.dirty ? "●" : "○"}</span>
-											<div {...stylex.props(styles.draftState)}>
+											<div {...stylex.attrs(styles.draftState)}>
 												<strong>
 													{session()?.dirty
 														? "Draft"
@@ -1310,7 +1321,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 															? "Applied"
 															: "Saved snapshot"}
 												</strong>
-												<small {...stylex.props(styles.draftStateDetail)}>
+												<small {...stylex.attrs(styles.draftStateDetail)}>
 													{session()
 														? `${session()?.commandCount ?? 0} ${session()?.commandCount === 1 ? "change" : "changes"} · ${session()?.review.validation.errorCount ?? 0} ${session()?.review.validation.errorCount === 1 ? "error" : "errors"}`
 														: "Opening session…"}
@@ -1320,7 +1331,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 									</section>
 
 									<Show when={snapshot().diagnostics.length > 0}>
-										<section {...stylex.props(styles.diagnostics)}>
+										<section {...stylex.attrs(styles.diagnostics)}>
 											<strong>Package warnings</strong>
 											<For each={snapshot().diagnostics}>
 												{(diagnostic) => <span>{diagnostic.message}</span>}
@@ -1328,7 +1339,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 										</section>
 									</Show>
 									<Show when={readOnlyTable()}>
-										<section {...stylex.props(styles.diagnostics)}>
+										<section {...stylex.attrs(styles.diagnostics)}>
 											<strong>Read-only table</strong>
 											<span>
 												CompositeDataTable rows come from their parent
@@ -1338,12 +1349,12 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 									</Show>
 
 									<Show when={replacementNotice()}>
-										<div {...stylex.props(styles.replacementNotice)}>
+										<div {...stylex.attrs(styles.replacementNotice)}>
 											<span>{replacementNotice()}</span>
 											<button
 												type="button"
 												onClick={() => setReplacementNotice(undefined)}
-												{...stylex.props(styles.noticeDismiss)}
+												{...stylex.attrs(styles.noticeDismiss)}
 											>
 												Dismiss
 											</button>
@@ -1353,11 +1364,11 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 										{(notice) => {
 											const parts = noticeParts(notice());
 											return (
-												<div {...stylex.props(styles.replacementNotice)}>
+												<div {...stylex.attrs(styles.replacementNotice)}>
 													<span>{parts.headline}</span>
 													<Show when={parts.technical}>
 														<details
-															{...stylex.props(
+															{...stylex.attrs(
 																styles.technicalDetails
 															)}
 														>
@@ -1371,17 +1382,17 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 									</Show>
 									<Show when={rowEditor()}>
 										{(editor) => (
-											<div {...stylex.props(styles.rowEditorBackdrop)}>
+											<div {...stylex.attrs(styles.rowEditorBackdrop)}>
 												<form
 													aria-label="Row name editor"
 													onSubmit={(event) => {
 														event.preventDefault();
 														submitRowEditor();
 													}}
-													{...stylex.props(styles.rowEditor)}
+													{...stylex.attrs(styles.rowEditor)}
 												>
 													<strong
-														{...stylex.props(styles.rowEditorTitle)}
+														{...stylex.attrs(styles.rowEditorTitle)}
 													>
 														{editor().kind === "add_row"
 															? "Add row"
@@ -1389,7 +1400,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 																? "Duplicate row"
 																: "Rename row"}
 													</strong>
-													<label {...stylex.props(styles.rowEditorLabel)}>
+													<label {...stylex.attrs(styles.rowEditorLabel)}>
 														Row name
 														<input
 															autofocus
@@ -1401,20 +1412,20 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 																	value: event.currentTarget.value
 																})
 															}
-															{...stylex.props(styles.rowEditorInput)}
+															{...stylex.attrs(styles.rowEditorInput)}
 														/>
 													</label>
-													<div {...stylex.props(styles.rowEditorActions)}>
+													<div {...stylex.attrs(styles.rowEditorActions)}>
 														<button
 															type="button"
 															onClick={() => setRowEditor(undefined)}
-															{...stylex.props(styles.dialogButton)}
+															{...stylex.attrs(styles.dialogButton)}
 														>
 															Cancel
 														</button>
 														<button
 															type="submit"
-															{...stylex.props(
+															{...stylex.attrs(
 																styles.dialogButton,
 																styles.dialogPrimary
 															)}
@@ -1430,14 +1441,16 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 									<div
 										role="tablist"
 										aria-label="Authoring workspace view"
-										{...stylex.props(styles.viewTabs)}
+										{...stylex.attrs(styles.viewTabs)}
 									>
 										<button
 											type="button"
 											role="tab"
-											aria-selected={workspaceMode() === "table"}
+											aria-selected={
+												workspaceMode() === "table" ? "true" : "false"
+											}
 											onClick={() => setWorkspaceMode("table")}
-											{...stylex.props(
+											{...stylex.attrs(
 												styles.viewTab,
 												workspaceMode() === "table" && styles.viewTabActive
 											)}
@@ -1447,9 +1460,13 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 										<button
 											type="button"
 											role="tab"
-											aria-selected={workspaceMode() === "relationships"}
+											aria-selected={
+												workspaceMode() === "relationships"
+													? "true"
+													: "false"
+											}
 											onClick={() => setWorkspaceMode("relationships")}
-											{...stylex.props(
+											{...stylex.attrs(
 												styles.viewTab,
 												workspaceMode() === "relationships" &&
 													styles.viewTabActive
@@ -1473,7 +1490,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 											/>
 										}
 									>
-										<div {...stylex.props(styles.contentGrid)}>
+										<div {...stylex.attrs(styles.contentGrid)}>
 											<CatalogPanel
 												activeObjectPath={snapshot().table.objectPath}
 												disabled={isReplacing()}
@@ -1486,8 +1503,8 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 												progress={catalogProgress()}
 												state={catalogState()}
 											/>
-											<section {...stylex.props(styles.sheet)}>
-												<div {...stylex.props(styles.sheetTools)}>
+											<section {...stylex.attrs(styles.sheet)}>
+												<div {...stylex.attrs(styles.sheetTools)}>
 													<input
 														aria-label="Filter table rows"
 														value={query()}
@@ -1495,27 +1512,29 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 															setQuery(event.currentTarget.value)
 														}
 														placeholder="Filter rows…"
-														{...stylex.props(styles.search)}
+														{...stylex.attrs(styles.search)}
 													/>
-													<span {...stylex.props(styles.visibleCount)}>
+													<span {...stylex.attrs(styles.visibleCount)}>
 														{visibleRows().length} /{" "}
 														{snapshot().table.rows.length} rows
 													</span>
 													<div
 														role="tablist"
 														aria-label="Table projection"
-														{...stylex.props(styles.viewTabs)}
+														{...stylex.attrs(styles.viewTabs)}
 													>
 														<button
 															type="button"
 															role="tab"
 															aria-selected={
 																tableProjection() === "grid"
+																	? "true"
+																	: "false"
 															}
 															onClick={() =>
 																setTableProjection("grid")
 															}
-															{...stylex.props(
+															{...stylex.attrs(
 																styles.viewTab,
 																tableProjection() === "grid" &&
 																	styles.viewTabActive
@@ -1528,11 +1547,13 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 															role="tab"
 															aria-selected={
 																tableProjection() === "charts"
+																	? "true"
+																	: "false"
 															}
 															onClick={() =>
 																setTableProjection("charts")
 															}
-															{...stylex.props(
+															{...stylex.attrs(
 																styles.viewTab,
 																tableProjection() === "charts" &&
 																	styles.viewTabActive
@@ -1541,13 +1562,13 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 															Charts
 														</button>
 													</div>
-													<span {...stylex.props(styles.rowStruct)}>
+													<span {...stylex.attrs(styles.rowStruct)}>
 														Row struct · {snapshot().table.rowStruct}
 													</span>
 													<Show when={session()}>
 														{(currentSession) => (
 															<div
-																{...stylex.props(styles.rowActions)}
+																{...stylex.attrs(styles.rowActions)}
 															>
 																<button
 																	type="button"
@@ -1566,7 +1587,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 																			)
 																		})
 																	}
-																	{...stylex.props(
+																	{...stylex.attrs(
 																		styles.sheetAction
 																	)}
 																>
@@ -1594,7 +1615,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 																			)
 																		});
 																	}}
-																	{...stylex.props(
+																	{...stylex.attrs(
 																		styles.sheetAction
 																	)}
 																>
@@ -1616,7 +1637,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 																				value: row.name
 																			});
 																	}}
-																	{...stylex.props(
+																	{...stylex.attrs(
 																		styles.sheetAction
 																	)}
 																>
@@ -1633,7 +1654,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 																		const row = selectedRow();
 																		if (row) removeRow(row.id);
 																	}}
-																	{...stylex.props(
+																	{...stylex.attrs(
 																		styles.sheetAction,
 																		styles.dangerAction
 																	)}
@@ -1652,7 +1673,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 																		moveSelectedRow(-1)
 																	}
 																	aria-label="Move selected row up"
-																	{...stylex.props(
+																	{...stylex.attrs(
 																		styles.sheetAction
 																	)}
 																>
@@ -1670,7 +1691,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 																		moveSelectedRow(1)
 																	}
 																	aria-label="Move selected row down"
-																	{...stylex.props(
+																	{...stylex.attrs(
 																		styles.sheetAction
 																	)}
 																>
@@ -1690,7 +1711,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 																			)
 																		)
 																	}
-																	{...stylex.props(
+																	{...stylex.attrs(
 																		styles.sheetAction
 																	)}
 																>
@@ -1710,7 +1731,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 																			)
 																		)
 																	}
-																	{...stylex.props(
+																	{...stylex.attrs(
 																		styles.sheetAction
 																	)}
 																>
@@ -1758,12 +1779,12 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 												</Show>
 											</section>
 
-											<aside {...stylex.props(styles.inspector)}>
-												<div {...stylex.props(styles.inspectorTabs)}>
+											<aside {...stylex.attrs(styles.inspector)}>
+												<div {...stylex.attrs(styles.inspectorTabs)}>
 													<button
 														type="button"
 														onClick={() => setInspectorTab("cell")}
-														{...stylex.props(
+														{...stylex.attrs(
 															styles.inspectorTab,
 															inspectorTab() === "cell" &&
 																styles.inspectorTabActive
@@ -1774,7 +1795,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 													<button
 														type="button"
 														onClick={() => setInspectorTab("review")}
-														{...stylex.props(
+														{...stylex.attrs(
 															styles.inspectorTab,
 															inspectorTab() === "review" &&
 																styles.inspectorTabActive
@@ -1786,7 +1807,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 													<button
 														type="button"
 														onClick={() => setInspectorTab("sessions")}
-														{...stylex.props(
+														{...stylex.attrs(
 															styles.inspectorTab,
 															inspectorTab() === "sessions" &&
 																styles.inspectorTabActive
@@ -1800,7 +1821,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 														when={selected()}
 														fallback={
 															<div
-																{...stylex.props(
+																{...stylex.attrs(
 																	styles.inspectorEmpty
 																)}
 															>
@@ -1811,14 +1832,14 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 														{(target) => (
 															<>
 																<h2
-																	{...stylex.props(
+																	{...stylex.attrs(
 																		styles.inspectorTitle
 																	)}
 																>
 																	{target().field.name}
 																</h2>
 																<p
-																	{...stylex.props(
+																	{...stylex.attrs(
 																		styles.inspectorPath
 																	)}
 																>
@@ -1826,7 +1847,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 																	{target().field.name}
 																</p>
 																<div
-																	{...stylex.props(
+																	{...stylex.attrs(
 																		styles.valueHero
 																	)}
 																>
@@ -1842,17 +1863,17 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 																	</strong>
 																</div>
 																<div
-																	{...stylex.props(
+																	{...stylex.attrs(
 																		styles.detailList
 																	)}
 																>
 																	<div
-																		{...stylex.props(
+																		{...stylex.attrs(
 																			styles.detailItem
 																		)}
 																	>
 																		<span
-																			{...stylex.props(
+																			{...stylex.attrs(
 																				styles.detailLabel
 																			)}
 																		>
@@ -1866,12 +1887,12 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 																		</strong>
 																	</div>
 																	<div
-																		{...stylex.props(
+																		{...stylex.attrs(
 																			styles.detailItem
 																		)}
 																	>
 																		<span
-																			{...stylex.props(
+																			{...stylex.attrs(
 																				styles.detailLabel
 																			)}
 																		>
@@ -1885,12 +1906,12 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 																		</strong>
 																	</div>
 																	<div
-																		{...stylex.props(
+																		{...stylex.attrs(
 																			styles.detailItem
 																		)}
 																	>
 																		<span
-																			{...stylex.props(
+																			{...stylex.attrs(
 																				styles.detailLabel
 																			)}
 																		>
@@ -1937,9 +1958,9 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 													</Show>
 												</Show>
 												<Show when={inspectorTab() === "review"}>
-													<div {...stylex.props(styles.reviewSummary)}>
+													<div {...stylex.attrs(styles.reviewSummary)}>
 														<strong
-															{...stylex.props(styles.reviewTitle)}
+															{...stylex.attrs(styles.reviewTitle)}
 														>
 															{(session()?.review
 																.activeCommandCount ?? 0) === 0
@@ -1969,7 +1990,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 															edits
 														</small>
 													</div>
-													<div {...stylex.props(styles.reviewList)}>
+													<div {...stylex.attrs(styles.reviewList)}>
 														<For
 															each={
 																session()?.review.tables.flatMap(
@@ -1979,7 +2000,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 														>
 															{(change) => (
 																<div
-																	{...stylex.props(
+																	{...stylex.attrs(
 																		styles.reviewChange
 																	)}
 																>
@@ -2001,7 +2022,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 															}
 														>
 															<div
-																{...stylex.props(
+																{...stylex.attrs(
 																	styles.inspectorEmpty
 																)}
 															>
@@ -2017,7 +2038,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 													>
 														{(diagnostic) => (
 															<div
-																{...stylex.props(
+																{...stylex.attrs(
 																	styles.reviewDiagnostic
 																)}
 															>

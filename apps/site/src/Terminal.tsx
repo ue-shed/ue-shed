@@ -41,19 +41,19 @@ function tokenize(line: string): readonly Token[] {
 export function Terminal(props: { readonly spec: TerminalSpec }) {
 	return (
 		<WindowFrame title={props.spec.title}>
-			<pre {...stylex.props(styles.body)}>
+			<pre {...stylex.attrs(styles.body)}>
 				<For each={props.spec.lines}>
 					{(line) => (
 						<span>
 							{line.kind === "command" ? (
 								<>
-									<span {...stylex.props(styles.prompt)}>$ </span>
-									<span {...stylex.props(styles.command)}>{line.text}</span>
+									<span {...stylex.attrs(styles.prompt)}>$ </span>
+									<span {...stylex.attrs(styles.command)}>{line.text}</span>
 								</>
 							) : (
 								<For each={tokenize(line.text)}>
 									{(token) => (
-										<span {...stylex.props(styles[token.kind])}>
+										<span {...stylex.attrs(styles[token.kind])}>
 											{token.text}
 										</span>
 									)}

@@ -12,8 +12,9 @@ import type {
 import { Button, createEffectAction } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { Cause } from "effect";
-import { createMemo, createSignal, For, Match, onMount, Show, Switch } from "solid-js";
-import type { Accessor, JSX } from "solid-js";
+import { createMemo, createSignal, For, Match, onSettled, Show, Switch } from "solid-js";
+import type { Accessor } from "solid-js";
+import type { JSX } from "@solidjs/web";
 import type {
 	CustodianClientApi,
 	CustodianPublicError,
@@ -149,19 +150,19 @@ export function ProjectCustodianRoute(props: { readonly client: CustodianClientA
 		return current.status === "failed" ? current : undefined;
 	});
 
-	onMount(() => run(() => props.client.configuredScan()));
+	onSettled(() => run(() => props.client.configuredScan()));
 
 	return (
-		<main {...stylex.props(styles.page)}>
-			<header {...stylex.props(styles.header)}>
+		<main {...stylex.attrs(styles.page)}>
+			<header {...stylex.attrs(styles.header)}>
 				<div>
-					<h1 {...stylex.props(styles.title)}>Project custodian</h1>
-					<p {...stylex.props(styles.intro)}>
+					<h1 {...stylex.attrs(styles.title)}>Project custodian</h1>
+					<p {...stylex.attrs(styles.intro)}>
 						Find the rebuildable Unreal output eating your disk, and reclaim it through
 						a cleanup you review and approve first.
 					</p>
 				</div>
-				<div {...stylex.props(styles.headerActions)}>
+				<div {...stylex.attrs(styles.headerActions)}>
 					<Button
 						tone="quiet"
 						disabled={state().status === "loading" || report() === undefined}
@@ -179,8 +180,8 @@ export function ProjectCustodianRoute(props: { readonly client: CustodianClientA
 				</div>
 			</header>
 
-			<div {...stylex.props(styles.safetyRail)}>
-				<span {...stylex.props(styles.safetyMark)}>Guarded cleanup</span>
+			<div {...stylex.attrs(styles.safetyRail)}>
+				<span {...stylex.attrs(styles.safetyMark)}>Guarded cleanup</span>
 				<span>
 					Nothing is removed until you approve a written proposal by phrase, and every
 					target is rechecked immediately before it moves.
@@ -188,14 +189,14 @@ export function ProjectCustodianRoute(props: { readonly client: CustodianClientA
 			</div>
 
 			<Show when={state().status === "loading"}>
-				<div {...stylex.props(styles.loading)} role="progressbar" aria-busy="true">
-					<span {...stylex.props(styles.loadingBar)} />
+				<div {...stylex.attrs(styles.loading)} role="progressbar" aria-busy="true">
+					<span {...stylex.attrs(styles.loadingBar)} />
 				</div>
 			</Show>
 
 			<Switch>
 				<Match when={state().status === "loading"}>
-					<p aria-live="polite" {...stylex.props(styles.loadingLine)}>
+					<p aria-live="polite" {...stylex.attrs(styles.loadingLine)}>
 						Reading Unreal output directories under the scan root…
 					</p>
 				</Match>
@@ -203,7 +204,7 @@ export function ProjectCustodianRoute(props: { readonly client: CustodianClientA
 					<EmptyState title="Choose a scan root">
 						Point at a project, an engine directory, or a folder holding several. The
 						scan never looks outside the root you name.
-						<div {...stylex.props(styles.emptyAction)}>
+						<div {...stylex.attrs(styles.emptyAction)}>
 							<Button
 								tone="primary"
 								onClick={() => run(() => props.client.chooseAndScan())}
@@ -217,15 +218,15 @@ export function ProjectCustodianRoute(props: { readonly client: CustodianClientA
 					{(failed) => {
 						const parts = createMemo(() => failureParts(failed().error.message));
 						return (
-							<section role="alert" {...stylex.props(styles.error)}>
-								<strong {...stylex.props(styles.errorTitle)}>
+							<section role="alert" {...stylex.attrs(styles.error)}>
+								<strong {...stylex.attrs(styles.errorTitle)}>
 									Couldn’t scan that root
 								</strong>
-								<p {...stylex.props(styles.errorMessage)}>{parts().summary}</p>
-								<p {...stylex.props(styles.errorRecovery)}>
+								<p {...stylex.attrs(styles.errorMessage)}>{parts().summary}</p>
+								<p {...stylex.attrs(styles.errorRecovery)}>
 									{failed().error.recovery}
 								</p>
-								<div {...stylex.props(styles.errorActions)}>
+								<div {...stylex.attrs(styles.errorActions)}>
 									<Button
 										tone="secondary"
 										onClick={() => run(() => props.client.configuredScan())}
@@ -235,7 +236,7 @@ export function ProjectCustodianRoute(props: { readonly client: CustodianClientA
 								</div>
 								<Show when={parts().technical}>
 									{(technical) => (
-										<details {...stylex.props(styles.errorDetails)}>
+										<details {...stylex.attrs(styles.errorDetails)}>
 											<summary>Technical details</summary>
 											<code>{technical()}</code>
 										</details>
@@ -272,9 +273,9 @@ export function ProjectCustodianRoute(props: { readonly client: CustodianClientA
 
 function EmptyState(props: { readonly title: string; readonly children: JSX.Element }) {
 	return (
-		<section {...stylex.props(styles.empty)}>
+		<section {...stylex.attrs(styles.empty)}>
 			<h1>{props.title}</h1>
-			<div {...stylex.props(styles.emptyCopy)}>{props.children}</div>
+			<div {...stylex.attrs(styles.emptyCopy)}>{props.children}</div>
 		</section>
 	);
 }
@@ -290,11 +291,11 @@ function CustodianLedger(props: {
 	};
 	return (
 		<>
-			<section aria-label="Storage summary" {...stylex.props(styles.summary)}>
-				<div {...stylex.props(styles.heroMetric)}>
-					<span {...stylex.props(styles.metricLabel)}>Rebuildable footprint</span>
+			<section aria-label="Storage summary" {...stylex.attrs(styles.summary)}>
+				<div {...stylex.attrs(styles.heroMetric)}>
+					<span {...stylex.attrs(styles.metricLabel)}>Rebuildable footprint</span>
 					<strong>{humanBytes(props.report.totalReclaimableBytes)}</strong>
-					<span {...stylex.props(styles.metricNote)}>
+					<span {...stylex.attrs(styles.metricNote)}>
 						{props.report.projects.length} projects · {props.report.engines.length}{" "}
 						engines
 					</span>
@@ -310,26 +311,26 @@ function CustodianLedger(props: {
 				/>
 			</section>
 
-			<section aria-label="Disk pressure" {...stylex.props(styles.pressure)}>
-				<div {...stylex.props(styles.pressureHead)}>
+			<section aria-label="Disk pressure" {...stylex.attrs(styles.pressure)}>
+				<div {...stylex.attrs(styles.pressureHead)}>
 					<span>Disk pressure</span>
 					<strong>
 						{humanBytes(props.report.freeBytes)} free /{" "}
 						{humanBytes(props.report.plan.thresholdBytes)} target
 					</strong>
 				</div>
-				<div {...stylex.props(styles.pressureTrack)}>
+				<div {...stylex.attrs(styles.pressureTrack)}>
 					<span
-						{...stylex.props(styles.pressureFill)}
+						{...stylex.attrs(styles.pressureFill)}
 						style={{ width: pressure() + "%" }}
 					/>
-					<i {...stylex.props(styles.threshold)} />
+					<i {...stylex.attrs(styles.threshold)} />
 				</div>
 				<p>{planExplanation(props.report)}</p>
 			</section>
 
-			<div {...stylex.props(styles.columns)}>
-				<section aria-label="Custodian inventory" {...stylex.props(styles.inventory)}>
+			<div {...stylex.attrs(styles.columns)}>
+				<section aria-label="Custodian inventory" {...stylex.attrs(styles.inventory)}>
 					<SectionHeader
 						left="Inventory"
 						right={`${plural(props.inventory.length, "item", "items")} in ${leaf(props.report.root)}`}
@@ -337,7 +338,7 @@ function CustodianLedger(props: {
 					<Show
 						when={props.inventory.length > 0}
 						fallback={
-							<p {...stylex.props(styles.noRows)}>
+							<p {...stylex.attrs(styles.noRows)}>
 								No Unreal projects or engines found.
 							</p>
 						}
@@ -346,7 +347,7 @@ function CustodianLedger(props: {
 					</Show>
 				</section>
 
-				<aside aria-label="Dry-run plan" {...stylex.props(styles.plan)}>
+				<aside aria-label="Dry-run plan" {...stylex.attrs(styles.plan)}>
 					<SectionHeader
 						left="Dry-run queue"
 						right={plural(props.report.plan.items.length, "item", "items")}
@@ -354,15 +355,15 @@ function CustodianLedger(props: {
 					<Show
 						when={props.report.plan.items.length > 0}
 						fallback={
-							<p {...stylex.props(styles.noRows)}>
+							<p {...stylex.attrs(styles.noRows)}>
 								Nothing would be reclaimed under current age and pressure policy.
 							</p>
 						}
 					>
 						<For each={props.report.plan.items}>
 							{(item, index) => (
-								<div {...stylex.props(styles.planItem)}>
-									<span {...stylex.props(styles.planOrder)}>{index() + 1}</span>
+								<div {...stylex.attrs(styles.planItem)}>
+									<span {...stylex.attrs(styles.planOrder)}>{index() + 1}</span>
 									<div>
 										<strong>{item.name}</strong>
 										<small>
@@ -374,7 +375,7 @@ function CustodianLedger(props: {
 							)}
 						</For>
 					</Show>
-					<footer {...stylex.props(styles.planFooter)}>
+					<footer {...stylex.attrs(styles.planFooter)}>
 						<div>
 							<span>Cleanup</span>
 							<strong>
@@ -391,7 +392,7 @@ function CustodianLedger(props: {
 					</footer>
 				</aside>
 			</div>
-			<footer {...stylex.props(styles.provenance)}>
+			<footer {...stylex.attrs(styles.provenance)}>
 				Measured {new Date(props.report.measuredAt).toLocaleString()} under{" "}
 				{props.report.root}. Authored directories are never scanned.
 			</footer>
@@ -409,8 +410,8 @@ function planExplanation(report: CustodianReport): string {
 
 function Metric(props: { readonly label: string; readonly value: string }) {
 	return (
-		<div {...stylex.props(styles.metric)}>
-			<span {...stylex.props(styles.metricLabel)}>{props.label}</span>
+		<div {...stylex.attrs(styles.metric)}>
+			<span {...stylex.attrs(styles.metricLabel)}>{props.label}</span>
 			<strong>{props.value}</strong>
 		</div>
 	);
@@ -418,7 +419,7 @@ function Metric(props: { readonly label: string; readonly value: string }) {
 
 function SectionHeader(props: { readonly left: string; readonly right: string }) {
 	return (
-		<header {...stylex.props(styles.sectionHeader)}>
+		<header {...stylex.attrs(styles.sectionHeader)}>
 			<span>{props.left}</span>
 			<span>{props.right}</span>
 		</header>
@@ -431,28 +432,28 @@ function InventoryRow(props: { readonly item: InventoryItem }) {
 			? eligibilityLabel(props.item)
 			: props.item.buildKind + " build";
 	return (
-		<details {...stylex.props(styles.row)}>
-			<summary {...stylex.props(styles.rowSummary)}>
+		<details {...stylex.attrs(styles.row)}>
+			<summary {...stylex.attrs(styles.rowSummary)}>
 				<span
-					{...stylex.props(
+					{...stylex.attrs(
 						styles.kind,
 						props.item.kind === "engine" && styles.engineKind
 					)}
 				>
 					{props.item.kind === "project" ? "Project" : "Engine"}
 				</span>
-				<span {...stylex.props(styles.identity)}>
+				<span {...stylex.attrs(styles.identity)}>
 					<strong>{props.item.name}</strong>
 					<small>{props.item.root}</small>
 				</span>
-				<span {...stylex.props(styles.rowStatus)}>{status()}</span>
-				<b {...stylex.props(styles.rowBytes)}>{humanBytes(props.item.reclaimableBytes)}</b>
+				<span {...stylex.attrs(styles.rowStatus)}>{status()}</span>
+				<b {...stylex.attrs(styles.rowBytes)}>{humanBytes(props.item.reclaimableBytes)}</b>
 			</summary>
-			<div {...stylex.props(styles.targets)}>
+			<div {...stylex.attrs(styles.targets)}>
 				<For each={props.item.targets}>{(target) => <TargetRow target={target} />}</For>
 				<For each={props.item.refusals}>
 					{(entry) => (
-						<div {...stylex.props(styles.refusal)}>
+						<div {...stylex.attrs(styles.refusal)}>
 							<span>Locked</span>
 							<strong>{entry.relativePath}</strong>
 							<small>{entry.reason}</small>
@@ -470,8 +471,8 @@ function TargetRow(props: { readonly target: CustodianTarget }) {
 			props.target.risk
 		];
 	return (
-		<div {...stylex.props(styles.target)}>
-			<span {...stylex.props(styles.risk, riskStyle())}>{capitalize(props.target.risk)}</span>
+		<div {...stylex.attrs(styles.target)}>
+			<span {...stylex.attrs(styles.risk, riskStyle())}>{capitalize(props.target.risk)}</span>
 			<div>
 				<strong>{props.target.relativePath}</strong>
 				<small>{props.target.rebuildCost}</small>
@@ -576,17 +577,17 @@ function CleanupWorkflow(props: {
 	};
 
 	return (
-		<div {...stylex.props(styles.workflowScrim)}>
+		<div {...stylex.attrs(styles.workflowScrim)}>
 			<section
 				role="dialog"
 				aria-modal="true"
 				aria-labelledby="custodian-cleanup-title"
-				{...stylex.props(styles.workflow)}
+				{...stylex.attrs(styles.workflow)}
 			>
-				<header {...stylex.props(styles.workflowHeader)}>
+				<header {...stylex.attrs(styles.workflowHeader)}>
 					<div>
 						<h2 id="custodian-cleanup-title">Review cleanup</h2>
-						<span {...stylex.props(styles.workflowKicker)}>
+						<span {...stylex.attrs(styles.workflowKicker)}>
 							Nothing moves until you approve the exact phrase.
 						</span>
 					</div>
@@ -595,17 +596,17 @@ function CleanupWorkflow(props: {
 						aria-label="Close cleanup workflow"
 						disabled={state().stage === "executing"}
 						onClick={props.onClose}
-						{...stylex.props(styles.workflowClose)}
+						{...stylex.attrs(styles.workflowClose)}
 					>
 						×
 					</button>
 				</header>
 
-				<ol aria-label="Cleanup workflow progress" {...stylex.props(styles.workflowSteps)}>
+				<ol aria-label="Cleanup workflow progress" {...stylex.attrs(styles.workflowSteps)}>
 					<For each={["Select", "Approve", "Execute"] as const}>
 						{(label, index) => (
 							<li
-								{...stylex.props(
+								{...stylex.attrs(
 									styles.workflowStep,
 									index() <= step() && styles.workflowStepActive
 								)}
@@ -616,21 +617,21 @@ function CleanupWorkflow(props: {
 					</For>
 				</ol>
 
-				<div {...stylex.props(styles.workflowBody)}>
+				<div {...stylex.attrs(styles.workflowBody)}>
 					<Switch>
 						<Match when={state().stage === "select" || state().stage === "preparing"}>
 							<section
 								aria-label="Select cleanup targets"
-								{...stylex.props(styles.workflowStage)}
+								{...stylex.attrs(styles.workflowStage)}
 							>
 								<h3>Choose what to reclaim</h3>
-								<p {...stylex.props(styles.workflowCopy)}>
+								<p {...stylex.attrs(styles.workflowCopy)}>
 									Only rebuildable output can appear here. Content, Source,
 									Config, project roots, and save games are never candidates.
 								</p>
-								<div {...stylex.props(styles.modeGrid)}>
+								<div {...stylex.attrs(styles.modeGrid)}>
 									<label
-										{...stylex.props(
+										{...stylex.attrs(
 											styles.modeChoice,
 											mode() === "trash" && styles.modeSelected
 										)}
@@ -641,7 +642,7 @@ function CleanupWorkflow(props: {
 											checked={mode() === "trash"}
 											onChange={() => setMode("trash")}
 										/>
-										<span {...stylex.props(styles.modeCopy)}>
+										<span {...stylex.attrs(styles.modeCopy)}>
 											<strong>Trash / Recycle Bin</strong>
 											<small>
 												Recoverable. Space returns after the bin is emptied.
@@ -649,7 +650,7 @@ function CleanupWorkflow(props: {
 										</span>
 									</label>
 									<label
-										{...stylex.props(
+										{...stylex.attrs(
 											styles.modeChoice,
 											mode() === "permanent" && styles.modeDanger
 										)}
@@ -660,7 +661,7 @@ function CleanupWorkflow(props: {
 											checked={mode() === "permanent"}
 											onChange={() => setMode("permanent")}
 										/>
-										<span {...stylex.props(styles.modeCopy)}>
+										<span {...stylex.attrs(styles.modeCopy)}>
 											<strong>Permanent deletion</strong>
 											<small>
 												Immediate space. These directories cannot be
@@ -669,18 +670,18 @@ function CleanupWorkflow(props: {
 										</span>
 									</label>
 								</div>
-								<ul {...stylex.props(styles.cleanupTargets)}>
+								<ul {...stylex.attrs(styles.cleanupTargets)}>
 									<For each={targets}>
 										{({ owner, target }) => (
-											<li {...stylex.props(styles.cleanupTarget)}>
-												<label {...stylex.props(styles.cleanupTargetLabel)}>
+											<li {...stylex.attrs(styles.cleanupTarget)}>
+												<label {...stylex.attrs(styles.cleanupTargetLabel)}>
 													<input
 														type="checkbox"
 														checked={selectedIds().includes(target.id)}
 														onChange={() => toggle(target.id)}
 													/>
 													<span
-														{...stylex.props(styles.cleanupTargetCopy)}
+														{...stylex.attrs(styles.cleanupTargetCopy)}
 													>
 														<strong>{target.relativePath}</strong>
 														<small>
@@ -703,49 +704,49 @@ function CleanupWorkflow(props: {
 								return (
 									<section
 										aria-label="Approve cleanup proposal"
-										{...stylex.props(styles.workflowStage)}
+										{...stylex.attrs(styles.workflowStage)}
 									>
 										<h3>Nothing has moved yet</h3>
-										<p {...stylex.props(styles.workflowCopy)}>
+										<p {...stylex.attrs(styles.workflowCopy)}>
 											The cleanup rechecks every target before it runs, stops
 											if anything changed since the scan, and refuses to run
 											while an Unreal Editor is open.
 										</p>
-										<dl {...stylex.props(styles.proposalFacts)}>
-											<div {...stylex.props(styles.proposalFact)}>
-												<dt {...stylex.props(styles.proposalFactLabel)}>
+										<dl {...stylex.attrs(styles.proposalFacts)}>
+											<div {...stylex.attrs(styles.proposalFact)}>
+												<dt {...stylex.attrs(styles.proposalFactLabel)}>
 													Mode
 												</dt>
-												<dd {...stylex.props(styles.proposalFactValue)}>
+												<dd {...stylex.attrs(styles.proposalFactValue)}>
 													{current.proposal.mode}
 												</dd>
 											</div>
-											<div {...stylex.props(styles.proposalFact)}>
-												<dt {...stylex.props(styles.proposalFactLabel)}>
+											<div {...stylex.attrs(styles.proposalFact)}>
+												<dt {...stylex.attrs(styles.proposalFactLabel)}>
 													Targets
 												</dt>
-												<dd {...stylex.props(styles.proposalFactValue)}>
+												<dd {...stylex.attrs(styles.proposalFactValue)}>
 													{current.proposal.targets.length}
 												</dd>
 											</div>
-											<div {...stylex.props(styles.proposalFact)}>
-												<dt {...stylex.props(styles.proposalFactLabel)}>
+											<div {...stylex.attrs(styles.proposalFact)}>
+												<dt {...stylex.attrs(styles.proposalFactLabel)}>
 													Measured
 												</dt>
-												<dd {...stylex.props(styles.proposalFactValue)}>
+												<dd {...stylex.attrs(styles.proposalFactValue)}>
 													{humanBytes(current.proposal.bytes)}
 												</dd>
 											</div>
-											<div {...stylex.props(styles.proposalFact)}>
-												<dt {...stylex.props(styles.proposalFactLabel)}>
+											<div {...stylex.attrs(styles.proposalFact)}>
+												<dt {...stylex.attrs(styles.proposalFactLabel)}>
 													Proposal
 												</dt>
-												<dd {...stylex.props(styles.proposalFactValue)}>
+												<dd {...stylex.attrs(styles.proposalFactValue)}>
 													{leaf(current.proposal.proposalPath)}
 												</dd>
 											</div>
 										</dl>
-										<label {...stylex.props(styles.approvalLabel)}>
+										<label {...stylex.attrs(styles.approvalLabel)}>
 											<span>Type the exact approval phrase</span>
 											<code>{current.proposal.approvalPhrase}</code>
 											<input
@@ -766,9 +767,9 @@ function CleanupWorkflow(props: {
 							<section
 								aria-label="Cleanup in progress"
 								aria-live="polite"
-								{...stylex.props(styles.executing)}
+								{...stylex.attrs(styles.executing)}
 							>
-								<span {...stylex.props(styles.executionPulse)} />
+								<span {...stylex.attrs(styles.executionPulse)} />
 								<h3>
 									{cancelRequested()
 										? "Cancelling the remaining targets…"
@@ -791,15 +792,15 @@ function CleanupWorkflow(props: {
 								const current = state();
 								if (current.stage !== "failed") return null;
 								return (
-									<section role="alert" {...stylex.props(styles.workflowFailure)}>
+									<section role="alert" {...stylex.attrs(styles.workflowFailure)}>
 										<h3>Couldn’t finish the cleanup</h3>
 										<p>{failureParts(current.error.message).summary}</p>
-										<p {...stylex.props(styles.workflowCopy)}>
+										<p {...stylex.attrs(styles.workflowCopy)}>
 											{current.error.recovery}
 										</p>
 										<Show when={failureParts(current.error.message).technical}>
 											{(technical) => (
-												<details {...stylex.props(styles.errorDetails)}>
+												<details {...stylex.attrs(styles.errorDetails)}>
 													<summary>Technical details</summary>
 													<code>{technical()}</code>
 												</details>
@@ -812,16 +813,16 @@ function CleanupWorkflow(props: {
 					</Switch>
 				</div>
 
-				<footer {...stylex.props(styles.workflowFooter)}>
+				<footer {...stylex.attrs(styles.workflowFooter)}>
 					<Show when={state().stage === "select" || state().stage === "preparing"}>
 						<button
 							type="button"
 							onClick={props.onClose}
-							{...stylex.props(styles.secondaryAction)}
+							{...stylex.attrs(styles.secondaryAction)}
 						>
 							Cancel
 						</button>
-						<span {...stylex.props(styles.selectionTotal)}>
+						<span {...stylex.attrs(styles.selectionTotal)}>
 							{plural(selectedIds().length, "target", "targets")} ·{" "}
 							{humanBytes(selectedBytes())}
 						</span>
@@ -829,7 +830,7 @@ function CleanupWorkflow(props: {
 							type="button"
 							disabled={selectedIds().length === 0 || state().stage === "preparing"}
 							onClick={prepare}
-							{...stylex.props(styles.primaryAction)}
+							{...stylex.attrs(styles.primaryAction)}
 						>
 							{state().stage === "preparing" ? "Creating…" : "Create proposal"}
 						</button>
@@ -843,7 +844,7 @@ function CleanupWorkflow(props: {
 									<button
 										type="button"
 										onClick={props.onClose}
-										{...stylex.props(styles.secondaryAction)}
+										{...stylex.attrs(styles.secondaryAction)}
 									>
 										Close
 									</button>
@@ -851,7 +852,7 @@ function CleanupWorkflow(props: {
 										type="button"
 										disabled={approval() !== current.proposal.approvalPhrase}
 										onClick={() => execute(current.proposal)}
-										{...stylex.props(styles.dangerAction)}
+										{...stylex.attrs(styles.dangerAction)}
 									>
 										{current.proposal.mode === "trash"
 											? "Move to Trash"
@@ -870,7 +871,7 @@ function CleanupWorkflow(props: {
 									type="button"
 									disabled={cancelRequested()}
 									onClick={() => cancel(current.proposal)}
-									{...stylex.props(styles.secondaryAction)}
+									{...stylex.attrs(styles.secondaryAction)}
 								>
 									Cancel remaining
 								</button>
@@ -881,7 +882,7 @@ function CleanupWorkflow(props: {
 						<button
 							type="button"
 							onClick={props.onFinished}
-							{...stylex.props(styles.primaryAction)}
+							{...stylex.attrs(styles.primaryAction)}
 						>
 							Rescan
 						</button>
@@ -897,7 +898,7 @@ function CleanupResult(props: { readonly receipt: CustodianReceipt }) {
 		<section
 			aria-label="Cleanup result"
 			aria-live="polite"
-			{...stylex.props(styles.workflowStage)}
+			{...stylex.attrs(styles.workflowStage)}
 		>
 			<h3>
 				{props.receipt.status === "completed"
@@ -910,14 +911,14 @@ function CleanupResult(props: { readonly receipt: CustodianReceipt }) {
 			</h3>
 			<Show when={props.receipt.refusal} keyed>
 				{(refusal) => (
-					<div role="alert" {...stylex.props(styles.receiptRefusal)}>
+					<div role="alert" {...stylex.attrs(styles.receiptRefusal)}>
 						<strong>{refusal.message}</strong>
 						<p>{refusal.recovery}</p>
 					</div>
 				)}
 			</Show>
-			<div {...stylex.props(styles.resultSummary)}>
-				<div {...stylex.props(styles.resultDatum)}>
+			<div {...stylex.attrs(styles.resultSummary)}>
+				<div {...stylex.attrs(styles.resultDatum)}>
 					<strong>
 						{
 							props.receipt.entries.filter(
@@ -927,21 +928,21 @@ function CleanupResult(props: { readonly receipt: CustodianReceipt }) {
 					</strong>
 					<span>Processed</span>
 				</div>
-				<div {...stylex.props(styles.resultDatum)}>
+				<div {...stylex.attrs(styles.resultDatum)}>
 					<strong>{humanBytes(props.receipt.processedBytes)}</strong>
 					<span>{props.receipt.mode === "trash" ? "Moved" : "Deleted"}</span>
 				</div>
-				<div {...stylex.props(styles.resultDatum)}>
+				<div {...stylex.attrs(styles.resultDatum)}>
 					<strong>
 						{props.receipt.entries.filter(({ status }) => status === "failed").length}
 					</strong>
 					<span>Failed</span>
 				</div>
 			</div>
-			<ul {...stylex.props(styles.receiptEntries)}>
+			<ul {...stylex.attrs(styles.receiptEntries)}>
 				<For each={props.receipt.entries}>
 					{(entry) => (
-						<li {...stylex.props(styles.receiptEntry)}>
+						<li {...stylex.attrs(styles.receiptEntry)}>
 							<span>{capitalize(entry.status)}</span>
 							<strong>{entry.relativePath}</strong>
 							<small>{entry.message ?? humanBytes(entry.bytes)}</small>
@@ -949,7 +950,7 @@ function CleanupResult(props: { readonly receipt: CustodianReceipt }) {
 					)}
 				</For>
 			</ul>
-			<p {...stylex.props(styles.receiptPath)}>
+			<p {...stylex.attrs(styles.receiptPath)}>
 				Cleanup record · {props.receipt.receiptPath}
 			</p>
 		</section>

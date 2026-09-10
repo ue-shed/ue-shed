@@ -1,6 +1,6 @@
 import { EffectRuntimeProvider } from "@ue-shed/ui";
 import { Layer, ManagedRuntime } from "effect";
-import { render } from "solid-js/web";
+import { render } from "@solidjs/web";
 import { AppShell } from "./app-shell.js";
 import "./reset.css";
 

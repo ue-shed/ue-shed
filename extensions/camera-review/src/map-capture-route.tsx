@@ -9,7 +9,7 @@ import {
 } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { Cause, Effect, Schema } from "effect";
-import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, onSettled } from "solid-js";
 import type {
 	MapCaptureClientApi,
 	MapCaptureExecuteIntent,
@@ -81,40 +81,41 @@ function MapCaptureLiveCanvas(props: { readonly preview: ReadyLivePreview }) {
 	const [canvas, setCanvas] = createSignal<HTMLCanvasElement>();
 	let rgba = new Uint8ClampedArray(0);
 	let imageData: ImageData | undefined;
-	createEffect(() => {
-		const element = canvas();
-		const current = props.preview;
-		if (
-			element === undefined ||
-			current.bytes.byteLength !== current.width * current.height * 4
-		) {
-			return;
+	createEffect(
+		() => ({ element: canvas(), current: props.preview }),
+		({ element, current }) => {
+			if (
+				element === undefined ||
+				current.bytes.byteLength !== current.width * current.height * 4
+			) {
+				return;
+			}
+			const context = element.getContext("2d", { alpha: false });
+			if (context === null) return;
+			if (
+				element.width !== current.width ||
+				element.height !== current.height ||
+				rgba.byteLength !== current.bytes.byteLength
+			) {
+				element.width = current.width;
+				element.height = current.height;
+				rgba = new Uint8ClampedArray(current.bytes.byteLength);
+				imageData = new ImageData(rgba, current.width, current.height);
+			}
+			for (let offset = 0; offset < current.bytes.byteLength; offset += 4) {
+				rgba[offset] = current.bytes[offset + 2] ?? 0;
+				rgba[offset + 1] = current.bytes[offset + 1] ?? 0;
+				rgba[offset + 2] = current.bytes[offset] ?? 0;
+				rgba[offset + 3] = 255;
+			}
+			if (imageData !== undefined) context.putImageData(imageData, 0, 0);
 		}
-		const context = element.getContext("2d", { alpha: false });
-		if (context === null) return;
-		if (
-			element.width !== current.width ||
-			element.height !== current.height ||
-			rgba.byteLength !== current.bytes.byteLength
-		) {
-			element.width = current.width;
-			element.height = current.height;
-			rgba = new Uint8ClampedArray(current.bytes.byteLength);
-			imageData = new ImageData(rgba, current.width, current.height);
-		}
-		for (let offset = 0; offset < current.bytes.byteLength; offset += 4) {
-			rgba[offset] = current.bytes[offset + 2] ?? 0;
-			rgba[offset + 1] = current.bytes[offset + 1] ?? 0;
-			rgba[offset + 2] = current.bytes[offset] ?? 0;
-			rgba[offset + 3] = 255;
-		}
-		if (imageData !== undefined) context.putImageData(imageData, 0, 0);
-	});
+	);
 	return (
 		<canvas
 			ref={setCanvas}
 			aria-label="Live top-down map framing preview"
-			{...stylex.props(styles.liveCanvas)}
+			{...stylex.attrs(styles.liveCanvas)}
 		/>
 	);
 }
@@ -210,7 +211,7 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 	});
 	let captureSequence = 0;
 
-	onMount(() => {
+	onSettled(() => {
 		progressSubscription.subscribe(props.client.progress, {
 			onValue: (progress) => {
 				if (progress.operationId === activeCaptureOperationId()) {
@@ -238,37 +239,43 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 			}
 		});
 	});
-	createEffect(() => {
-		previewRefresh();
-		const current = plan();
-		if (current === undefined || capture() !== undefined || isCapturing()) {
-			previewAction.cancel();
-			setLivePreview({ status: "idle" });
-			return;
-		}
-		setLivePreview({ status: "loading" });
-		previewAction.run(
-			Effect.sleep("350 millis").pipe(Effect.andThen(props.client.preview(current))),
-			{
-				onFailure: (cause) =>
-					setLivePreview({
-						message: causeMessage(cause),
-						recovery: "Reconnect Unreal and open the target map.",
-						status: "failed"
-					}),
-				onSuccess: (result) =>
-					setLivePreview(
-						result.status === "ready"
-							? result
-							: {
-									message: result.message,
-									recovery: result.recovery,
-									status: "failed"
-								}
-					)
+	createEffect(
+		() => ({
+			refresh: previewRefresh(),
+			current: plan(),
+			captured: capture(),
+			capturing: isCapturing()
+		}),
+		({ current, captured, capturing }) => {
+			if (current === undefined || captured !== undefined || capturing) {
+				previewAction.cancel();
+				setLivePreview({ status: "idle" });
+				return;
 			}
-		);
-	});
+			setLivePreview({ status: "loading" });
+			previewAction.run(
+				Effect.sleep("350 millis").pipe(Effect.andThen(props.client.preview(current))),
+				{
+					onFailure: (cause) =>
+						setLivePreview({
+							message: causeMessage(cause),
+							recovery: "Reconnect Unreal and open the target map.",
+							status: "failed"
+						}),
+					onSuccess: (result) =>
+						setLivePreview(
+							result.status === "ready"
+								? result
+								: {
+										message: result.message,
+										recovery: result.recovery,
+										status: "failed"
+									}
+						)
+				}
+			);
+		}
+	);
 	onCleanup(() => {
 		previewAction.cancel();
 		liveFrameSubscription.cancel();
@@ -551,15 +558,15 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 	}
 
 	return (
-		<main {...stylex.props(styles.page)}>
-			<header {...stylex.props(styles.header)}>
-				<div {...stylex.props(styles.headerCopy)}>
-					<h1 {...stylex.props(styles.title)}>Map capture</h1>
-					<p {...stylex.props(styles.subtitle)}>
+		<main {...stylex.attrs(styles.page)}>
+			<header {...stylex.attrs(styles.header)}>
+				<div {...stylex.attrs(styles.headerCopy)}>
+					<h1 {...stylex.attrs(styles.title)}>Map capture</h1>
+					<p {...stylex.attrs(styles.subtitle)}>
 						Publish multiresolution tiles of a saved map through a versioned plan.
 					</p>
 				</div>
-				<div {...stylex.props(styles.headerActions)}>
+				<div {...stylex.attrs(styles.headerActions)}>
 					<Button type="button" onClick={newPlan} tone="quiet">
 						New plan
 					</Button>
@@ -574,12 +581,12 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 				</div>
 			</header>
 
-			<div {...stylex.props(styles.layout)}>
-				<aside {...stylex.props(styles.controls)}>
+			<div {...stylex.attrs(styles.layout)}>
+				<aside {...stylex.attrs(styles.controls)}>
 					<Show
 						when={draft()}
 						fallback={
-							<p {...stylex.props(styles.controlsEmpty)}>
+							<p {...stylex.attrs(styles.controlsEmpty)}>
 								No plan yet. Use <strong>New plan</strong> above to start one from
 								the connected project.
 							</p>
@@ -587,11 +594,11 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 					>
 						{(current) => (
 							<>
-								<section {...stylex.props(styles.card)}>
-									<div {...stylex.props(styles.cardHeading)}>
-										<h2 {...stylex.props(styles.sectionTitle)}>Plan</h2>
+								<section {...stylex.attrs(styles.card)}>
+									<div {...stylex.attrs(styles.cardHeading)}>
+										<h2 {...stylex.attrs(styles.sectionTitle)}>Plan</h2>
 										<span
-											{...stylex.props(
+											{...stylex.attrs(
 												styles.dirtyFlag,
 												isDirty() && styles.dirtyFlagActive
 											)}
@@ -599,7 +606,7 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 											{isDirty() ? "Unsaved" : "Saved"}
 										</span>
 									</div>
-									<div {...stylex.props(styles.fieldGrid)}>
+									<div {...stylex.attrs(styles.fieldGrid)}>
 										<TextField
 											label="Plan ID"
 											value={current().id}
@@ -632,7 +639,7 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 											}))
 										}
 									/>
-									<div {...stylex.props(styles.planActions)}>
+									<div {...stylex.attrs(styles.planActions)}>
 										<Button
 											type="button"
 											disabled={plan() === undefined || !isDirty()}
@@ -655,11 +662,11 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 									</div>
 								</section>
 
-								<section {...stylex.props(styles.card)}>
-									<div {...stylex.props(styles.cardHeading)}>
-										<h2 {...stylex.props(styles.sectionTitle)}>Tiles</h2>
+								<section {...stylex.attrs(styles.card)}>
+									<div {...stylex.attrs(styles.cardHeading)}>
+										<h2 {...stylex.attrs(styles.sectionTitle)}>Tiles</h2>
 									</div>
-									<div {...stylex.props(styles.fieldGridThree)}>
+									<div {...stylex.attrs(styles.fieldGridThree)}>
 										<NumberField
 											label="Center X"
 											value={captureCenter()?.x ?? 0}
@@ -680,7 +687,7 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 											onInput={updateCaptureSize}
 										/>
 									</div>
-									<div {...stylex.props(styles.readout)}>
+									<div {...stylex.attrs(styles.readout)}>
 										<small>Requested edges</small>
 										<code>
 											S {formatMeasurement(current().requestedBounds.minX)} ·
@@ -694,7 +701,7 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 											const bounds = () => currentGrid().snappedBounds;
 											return (
 												<div
-													{...stylex.props(
+													{...stylex.attrs(
 														styles.readout,
 														styles.readoutAccent
 													)}
@@ -718,7 +725,7 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 											);
 										}}
 									</Show>
-									<div {...stylex.props(styles.metricsGrid)}>
+									<div {...stylex.attrs(styles.metricsGrid)}>
 										<Metric
 											label="Total tiles"
 											value={grid()?.tileCount.toLocaleString() ?? "—"}
@@ -738,7 +745,7 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 											}
 										/>
 									</div>
-									<div {...stylex.props(styles.fieldGridThree)}>
+									<div {...stylex.attrs(styles.fieldGridThree)}>
 										<NumberField
 											commit
 											label="Base grid"
@@ -784,9 +791,9 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 											}
 										/>
 									</div>
-									<div {...stylex.props(styles.readout, styles.readoutAccent)}>
+									<div {...stylex.attrs(styles.readout, styles.readoutAccent)}>
 										<small>Each level 0 tile covers</small>
-										<strong {...stylex.props(styles.readoutStrong)}>
+										<strong {...stylex.attrs(styles.readoutStrong)}>
 											{formatMeasurement(
 												current().tilePixelSize *
 													current().levels.coarsestUnitsPerPixel
@@ -806,7 +813,7 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 											UU/PX
 										</code>
 									</div>
-									<div {...stylex.props(styles.fieldGrid)}>
+									<div {...stylex.attrs(styles.fieldGrid)}>
 										<NumberField
 											label="Seam overdraw · PX"
 											min={0}
@@ -828,10 +835,10 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 											onInput={updateLevelCount}
 										/>
 									</div>
-									<div {...stylex.props(styles.levelLadder)}>
+									<div {...stylex.attrs(styles.levelLadder)}>
 										<For each={grid()?.grid.levels.slice(0, 3) ?? []}>
 											{(level) => (
-												<div {...stylex.props(styles.levelStep)}>
+												<div {...stylex.attrs(styles.levelStep)}>
 													<small>
 														{level.zoom === 0
 															? "Z0 · widest"
@@ -848,16 +855,16 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 											)}
 										</For>
 										<Show when={current().levels.count > 3}>
-											<span {...stylex.props(styles.moreLevels)}>
+											<span {...stylex.attrs(styles.moreLevels)}>
 												+{current().levels.count - 3} finer levels
 											</span>
 										</Show>
 									</div>
 								</section>
 
-								<section {...stylex.props(styles.card)}>
-									<div {...stylex.props(styles.cardHeading)}>
-										<h2 {...stylex.props(styles.sectionTitle)}>Render</h2>
+								<section {...stylex.attrs(styles.card)}>
+									<div {...stylex.attrs(styles.cardHeading)}>
+										<h2 {...stylex.attrs(styles.sectionTitle)}>Render</h2>
 										<select
 											aria-label="Render profile"
 											value={current().capture.render.profile}
@@ -869,7 +876,7 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 													)
 												}))
 											}
-											{...stylex.props(styles.select)}
+											{...stylex.attrs(styles.select)}
 										>
 											<option value="full_fidelity">Full fidelity</option>
 											<option value="seam_stable">Seam stable</option>
@@ -885,13 +892,13 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 											"scene_capture_defaults"
 										}
 									>
-										<p {...stylex.props(styles.note)}>
+										<p {...stylex.attrs(styles.note)}>
 											Comparison baseline using the previous tiled
 											SceneCapture renderer defaults.
 										</p>
 									</Show>
 									<Show when={current().capture.render.profile === "seam_stable"}>
-										<p {...stylex.props(styles.note)}>
+										<p {...stylex.attrs(styles.note)}>
 											Projects lighting with fixed exposure, spatial AA, and
 											view-independent Lumen fallbacks. Renders 2× then
 											downsamples.
@@ -926,7 +933,7 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 									<Show
 										when={current().capture.render.exposureEV100 !== undefined}
 										fallback={
-											<p {...stylex.props(styles.note)}>
+											<p {...stylex.attrs(styles.note)}>
 												Exposure settles on the whole map, then stays fixed
 												across tiles.
 											</p>
@@ -968,7 +975,7 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 									/>
 									<label
 										for="map-capture-backend"
-										{...stylex.props(styles.field, styles.engineField)}
+										{...stylex.attrs(styles.field, styles.engineField)}
 									>
 										<span>Capture engine</span>
 										<select
@@ -980,7 +987,7 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 													decodeCaptureBackend(event.currentTarget.value)
 												)
 											}
-											{...stylex.props(styles.select)}
+											{...stylex.attrs(styles.select)}
 										>
 											<option value="lit_camera_tiles">
 												Lit camera tiles · default
@@ -995,7 +1002,7 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 										<Show
 											when={captureBackend() === "viewport_high_resolution"}
 										>
-											<p {...stylex.props(styles.note)}>
+											<p {...stylex.attrs(styles.note)}>
 												Renders one complete zoom through Unreal&apos;s
 												active editor viewport, then cuts that image into
 												tiles. Unreal forces LOD0. Tested limit: 8 × 8 tiles
@@ -1005,9 +1012,9 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 									</label>
 								</section>
 
-								<section {...stylex.props(styles.card)}>
-									<div {...stylex.props(styles.cardHeading)}>
-										<h2 {...stylex.props(styles.sectionTitle)}>
+								<section {...stylex.attrs(styles.card)}>
+									<div {...stylex.attrs(styles.cardHeading)}>
+										<h2 {...stylex.attrs(styles.sectionTitle)}>
 											Detail levels
 										</h2>
 										<select
@@ -1023,7 +1030,7 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 													decodeLodPolicy(event.currentTarget.value)
 												)
 											}
-											{...stylex.props(styles.select)}
+											{...stylex.attrs(styles.select)}
 										>
 											<option value="natural">Natural</option>
 											<option value="per_level_distance_scale">
@@ -1037,7 +1044,7 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 											"per_level_distance_scale"
 										}
 									>
-										<div {...stylex.props(styles.levelsGrid)}>
+										<div {...stylex.attrs(styles.levelsGrid)}>
 											<For each={grid()?.grid.levels ?? []}>
 												{(level) => (
 													<NumberField
@@ -1062,7 +1069,7 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 								</section>
 
 								<Show when={validation()?.status === "invalid"}>
-									<section role="alert" {...stylex.props(styles.validationPanel)}>
+									<section role="alert" {...stylex.attrs(styles.validationPanel)}>
 										<strong>Plan needs attention</strong>
 										<For each={validationErrors()}>
 											{(error) => <p>{error}</p>}
@@ -1074,7 +1081,7 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 									type="button"
 									onClick={openMap}
 									disabled={plan() === undefined || isCapturing()}
-									{...stylex.props(styles.openMapButton)}
+									{...stylex.attrs(styles.openMapButton)}
 								>
 									Open map
 								</button>
@@ -1083,11 +1090,14 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 					</Show>
 				</aside>
 
-				<section aria-busy={isCapturing()} {...stylex.props(styles.stage)}>
+				<section
+					aria-busy={isCapturing() ? "true" : "false"}
+					{...stylex.attrs(styles.stage)}
+				>
 					<Show
 						when={draft()}
 						fallback={
-							<div {...stylex.props(styles.emptyState)}>
+							<div {...stylex.attrs(styles.emptyState)}>
 								<strong>No plan loaded</strong>
 								<span>
 									A plan records which part of the map to capture and how tiles
@@ -1103,34 +1113,34 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 						<Show
 							when={capture()}
 							fallback={
-								<div {...stylex.props(styles.gridPreview)}>
+								<div {...stylex.attrs(styles.gridPreview)}>
 									<Show when={readyLivePreview()}>
 										{(preview) => <MapCaptureLiveCanvas preview={preview()} />}
 									</Show>
-									<div {...stylex.props(styles.previewShade)} />
-									<div {...stylex.props(styles.north)}>+X north</div>
+									<div {...stylex.attrs(styles.previewShade)} />
+									<div {...stylex.attrs(styles.north)}>+X north</div>
 									<div
 										style={livePreviewBoundary()}
-										{...stylex.props(styles.captureBoundary)}
+										{...stylex.attrs(styles.captureBoundary)}
 									>
 										<div
 											style={requestedPreviewBoundary()}
-											{...stylex.props(styles.requestedBoundary)}
+											{...stylex.attrs(styles.requestedBoundary)}
 										>
-											<span {...stylex.props(styles.requestedBoundaryLabel)}>
+											<span {...stylex.attrs(styles.requestedBoundaryLabel)}>
 												Requested area
 											</span>
 										</div>
 									</div>
-									<div {...stylex.props(styles.previewStatus)}>
+									<div {...stylex.attrs(styles.previewStatus)}>
 										<Show when={livePreview().status === "loading"}>
-											<span {...stylex.props(styles.previewPulse)} />
+											<span {...stylex.attrs(styles.previewPulse)} />
 											<strong>Connecting camera…</strong>
 										</Show>
 										<Show when={readyLivePreview()}>
 											{(preview) => (
 												<>
-													<span {...stylex.props(styles.previewLive)} />
+													<span {...stylex.attrs(styles.previewLive)} />
 													<strong>
 														{preview().previewContext === "editor_live"
 															? "Editor live"
@@ -1145,7 +1155,7 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 										{(failed) => (
 											<div
 												role="alert"
-												{...stylex.props(styles.previewFailure)}
+												{...stylex.attrs(styles.previewFailure)}
 											>
 												<strong>Preview unavailable</strong>
 												<p>{failed().recovery}</p>
@@ -1154,18 +1164,18 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 													onClick={() =>
 														setPreviewRefresh((value) => value + 1)
 													}
-													{...stylex.props(styles.retryButton)}
+													{...stylex.attrs(styles.retryButton)}
 												>
 													Retry
 												</button>
-												<details {...stylex.props(styles.technical)}>
+												<details {...stylex.attrs(styles.technical)}>
 													<summary>Technical details</summary>
 													<code>{failed().message}</code>
 												</details>
 											</div>
 										)}
 									</Show>
-									<div {...stylex.props(styles.gridReadout)}>
+									<div {...stylex.attrs(styles.gridReadout)}>
 										<span>
 											{readyLivePreview()
 												? "Snapped capture extent"
@@ -1220,11 +1230,11 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 							return (
 								<section
 									aria-live="polite"
-									{...stylex.props(styles.captureProgress)}
+									{...stylex.attrs(styles.captureProgress)}
 								>
-									<header {...stylex.props(styles.progressHeader)}>
-										<div {...stylex.props(styles.progressPhase)}>
-											<span {...stylex.props(styles.progressPulse)} />
+									<header {...stylex.attrs(styles.progressHeader)}>
+										<div {...stylex.attrs(styles.progressPhase)}>
+											<span {...stylex.attrs(styles.progressPulse)} />
 											<strong>{capturePhaseLabel(progress().phase)}</strong>
 										</div>
 										<code>{percent()}%</code>
@@ -1236,21 +1246,21 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 										aria-valuemax={progress().totalTiles}
 										aria-valuenow={processed()}
 										aria-valuetext={`${processed()} of ${progress().totalTiles} tiles processed`}
-										{...stylex.props(styles.progressTrack)}
+										{...stylex.attrs(styles.progressTrack)}
 									>
 										<div
 											style={{ width: `${percent()}%` }}
-											{...stylex.props(styles.progressFill)}
+											{...stylex.attrs(styles.progressFill)}
 										/>
 									</div>
-									<footer {...stylex.props(styles.progressMeta)}>
+									<footer {...stylex.attrs(styles.progressMeta)}>
 										<span>
 											{processed().toLocaleString()} /{" "}
 											{progress().totalTiles.toLocaleString()} processed
 										</span>
 										<span>{capturedTiles().toLocaleString()} captured</span>
 										<Show when={progress().failedTiles > 0}>
-											<span {...stylex.props(styles.progressFailures)}>
+											<span {...stylex.attrs(styles.progressFailures)}>
 												{progress().failedTiles.toLocaleString()} failed
 											</span>
 										</Show>
@@ -1259,9 +1269,9 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 							);
 						}}
 					</Show>
-					<footer aria-live="polite" {...stylex.props(styles.statusBar)}>
+					<footer aria-live="polite" {...stylex.attrs(styles.statusBar)}>
 						<span
-							{...stylex.props(
+							{...stylex.attrs(
 								styles.statusDot,
 								notice().tone === "success"
 									? styles.dotSuccess
@@ -1270,18 +1280,18 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 										: styles.dotInfo
 							)}
 						/>
-						<div {...stylex.props(styles.statusCopy)}>
+						<div {...stylex.attrs(styles.statusCopy)}>
 							<p>{notice().text}</p>
 							<Show when={notice().technical}>
 								{(technical) => (
-									<details {...stylex.props(styles.technical)}>
+									<details {...stylex.attrs(styles.technical)}>
 										<summary>Technical details</summary>
 										<code>{technical()}</code>
 									</details>
 								)}
 							</Show>
 						</div>
-						<code {...stylex.props(styles.statusPath)}>
+						<code {...stylex.attrs(styles.statusPath)}>
 							{selection()?.planPath ?? "Not saved yet"}
 						</code>
 					</footer>
@@ -1297,13 +1307,13 @@ function TextField(props: {
 	readonly onInput: (value: string) => void;
 }) {
 	return (
-		<label {...stylex.props(styles.field)}>
+		<label {...stylex.attrs(styles.field)}>
 			<span>{props.label}</span>
 			<input
 				type="text"
 				value={props.value}
 				onInput={(event) => props.onInput(event.currentTarget.value)}
-				{...stylex.props(styles.input)}
+				{...stylex.attrs(styles.input)}
 			/>
 		</label>
 	);
@@ -1320,7 +1330,7 @@ function NumberField(props: {
 	readonly onInput: (value: number) => void;
 }) {
 	return (
-		<label title={props.title} {...stylex.props(styles.field)}>
+		<label title={props.title} {...stylex.attrs(styles.field)}>
 			<span>{props.label}</span>
 			<input
 				type="number"
@@ -1343,7 +1353,7 @@ function NumberField(props: {
 						props.onInput(event.currentTarget.valueAsNumber);
 					}
 				}}
-				{...stylex.props(styles.input, styles.inputMono)}
+				{...stylex.attrs(styles.input, styles.inputMono)}
 			/>
 		</label>
 	);
@@ -1351,9 +1361,9 @@ function NumberField(props: {
 
 function Metric(props: { readonly label: string; readonly value: number | string }) {
 	return (
-		<div {...stylex.props(styles.metric)}>
+		<div {...stylex.attrs(styles.metric)}>
 			<small>{props.label}</small>
-			<strong {...stylex.props(styles.metricValue)}>{props.value}</strong>
+			<strong {...stylex.attrs(styles.metricValue)}>{props.value}</strong>
 		</div>
 	);
 }
@@ -1364,15 +1374,15 @@ function Toggle(props: {
 	readonly onChange: (checked: boolean) => void;
 }) {
 	return (
-		<label {...stylex.props(styles.toggle)}>
+		<label {...stylex.attrs(styles.toggle)}>
 			<span>{props.label}</span>
 			<input
 				type="checkbox"
 				checked={props.checked}
 				onChange={(event) => props.onChange(event.currentTarget.checked)}
-				{...stylex.props(styles.checkbox)}
+				{...stylex.attrs(styles.checkbox)}
 			/>
-			<i {...stylex.props(styles.switchTrack, props.checked && styles.switchOn)} />
+			<i {...stylex.attrs(styles.switchTrack, props.checked && styles.switchOn)} />
 		</label>
 	);
 }

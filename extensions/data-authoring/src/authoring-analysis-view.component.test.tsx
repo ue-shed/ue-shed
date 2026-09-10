@@ -82,5 +82,7 @@ describe("AuthoringAnalysisView", () => {
 		expect(screen.getByRole("heading", { name: "Patterns in DT_Test" })).toBeDefined();
 		expect(screen.getByText("Enabled distribution")).toBeDefined();
 		expect(screen.getByText("Count distribution")).toBeDefined();
+		expect(screen.getByRole("img", { name: "Enabled distribution" })).toBeDefined();
+		expect(screen.getByRole("img", { name: "Count distribution" })).toBeDefined();
 	});
 });

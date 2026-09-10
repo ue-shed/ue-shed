@@ -3,7 +3,7 @@ import { CameraScheduleConfig, type CameraStatus } from "@ue-shed/protocol";
 import { createEffectAction, createEffectSubscription } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { Cause, Effect, Exit, Schema } from "effect";
-import { For, Show, createEffect, createMemo, createSignal, onMount } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal, onSettled } from "solid-js";
 import type { RendererCameraFrame, WorkbenchCameraMetrics } from "../shared/ipc-contracts.js";
 import { workbenchRendererClient } from "./workbench-client.js";
 
@@ -86,43 +86,45 @@ function CameraTile(props: {
 	let lastSequence = 0;
 	let lastFrameAt = 0;
 	let smoothedFps = 0;
-	createEffect(() => {
-		const frame = props.frame;
-		if (!frame || !canvas) return;
-		const started = performance.now();
-		presenter ??= createCanvasPresenter(canvas);
-		if (!presenter) return;
-		presenter.present(frame);
-		const now = performance.now();
-		const instantFps = lastFrameAt > 0 ? 1000 / (now - lastFrameAt) : 0;
-		smoothedFps = smoothedFps === 0 ? instantFps : smoothedFps * 0.75 + instantFps * 0.25;
-		const sequence = Number(frame.sequence);
-		props.onTelemetry({
-			fps: smoothedFps,
-			gap: lastSequence > 0 ? Math.max(0, sequence - lastSequence - 1) : 0,
-			lastFrameAt: now,
-			presentationMs: now - started,
-			readbackMs: frame.readbackLatencyMs,
-			sequence
-		});
-		lastFrameAt = now;
-		lastSequence = sequence;
-	});
+	createEffect(
+		() => props.frame,
+		(frame) => {
+			if (!frame || !canvas) return;
+			const started = performance.now();
+			presenter ??= createCanvasPresenter(canvas);
+			if (!presenter) return;
+			presenter.present(frame);
+			const now = performance.now();
+			const instantFps = lastFrameAt > 0 ? 1000 / (now - lastFrameAt) : 0;
+			smoothedFps = smoothedFps === 0 ? instantFps : smoothedFps * 0.75 + instantFps * 0.25;
+			const sequence = Number(frame.sequence);
+			props.onTelemetry({
+				fps: smoothedFps,
+				gap: lastSequence > 0 ? Math.max(0, sequence - lastSequence - 1) : 0,
+				lastFrameAt: now,
+				presentationMs: now - started,
+				readbackMs: frame.readbackLatencyMs,
+				sequence
+			});
+			lastFrameAt = now;
+			lastSequence = sequence;
+		}
+	);
 	return (
 		<button
 			type="button"
 			onClick={props.onFocus}
-			{...stylex.props(styles.tile, props.focused && styles.tileFocused)}
+			{...stylex.attrs(styles.tile, props.focused && styles.tileFocused)}
 		>
-			<canvas ref={(element) => (canvas = element)} {...stylex.props(styles.canvas)} />
-			<div {...stylex.props(styles.tileTop)}>
+			<canvas ref={(element) => (canvas = element)} {...stylex.attrs(styles.canvas)} />
+			<div {...stylex.attrs(styles.tileTop)}>
 				<span>Cam {String(props.index + 1).padStart(2, "0")}</span>
-				<span {...stylex.props(styles.liveDot)}>
+				<span {...stylex.attrs(styles.liveDot)}>
 					{props.pipelineMode === "full_pipeline" ? "Live" : "Isolated"}
 				</span>
 			</div>
 			<Show when={!props.frame}>
-				<div {...stylex.props(styles.awaiting)}>
+				<div {...stylex.attrs(styles.awaiting)}>
 					<span>
 						{props.pipelineMode === "full_pipeline" ? "No signal" : "Output muted"}
 					</span>
@@ -263,7 +265,7 @@ export function CameraLab() {
 		);
 	};
 
-	onMount(() => {
+	onSettled(() => {
 		frameSubscription.subscribe(workbenchRendererClient.frames, {
 			onValue: (frame) =>
 				setFrames((current) => {
@@ -295,17 +297,17 @@ export function CameraLab() {
 	});
 
 	return (
-		<main {...stylex.props(styles.shell)}>
-			<header {...stylex.props(styles.header)}>
-				<div {...stylex.props(styles.headerTitle)}>
-					<h1 {...stylex.props(styles.title)}>Camera Lab</h1>
-					<p {...stylex.props(styles.titleIntro)}>
+		<main {...stylex.attrs(styles.shell)}>
+			<header {...stylex.attrs(styles.header)}>
+				<div {...stylex.attrs(styles.headerTitle)}>
+					<h1 {...stylex.attrs(styles.title)}>Camera Lab</h1>
+					<p {...stylex.attrs(styles.titleIntro)}>
 						Schedule many live cameras against one editor and watch the delivery budget.
 					</p>
 				</div>
-				<div {...stylex.props(styles.systemActions)}>
-					<div {...stylex.props(styles.systemState)}>
-						<span {...stylex.props(styles.pulse)} />
+				<div {...stylex.attrs(styles.systemActions)}>
+					<div {...stylex.attrs(styles.systemState)}>
+						<span {...stylex.attrs(styles.pulse)} />
 						{activeFeeds()}/{config().activeCameraCount} streaming ·{" "}
 						{visibleCameraIndices().length} shown · {controlState()}
 					</div>
@@ -314,7 +316,7 @@ export function CameraLab() {
 							type="button"
 							disabled={fixtureLaunch().status === "launching"}
 							onClick={() => void launchFixture()}
-							{...stylex.props(styles.launchButton)}
+							{...stylex.attrs(styles.launchButton)}
 						>
 							{fixtureLaunch().status === "launching"
 								? "Launching fixture…"
@@ -322,7 +324,7 @@ export function CameraLab() {
 						</button>
 					</Show>
 					<Show when={fixtureLaunch().status === "failed"}>
-						<small {...stylex.props(styles.launchError)}>
+						<small {...stylex.attrs(styles.launchError)}>
 							{(() => {
 								const current = fixtureLaunch();
 								return current.status === "failed" ? current.message : "";
@@ -332,7 +334,7 @@ export function CameraLab() {
 				</div>
 			</header>
 
-			<section {...stylex.props(styles.instrumentBar)}>
+			<section {...stylex.attrs(styles.instrumentBar)}>
 				<Metric label="Aggregate FPS" value={totalFps().toFixed(1)} />
 				<Metric label="Pipe throughput" value={`${throughput().toFixed(2)} MB/s`} />
 				<Metric
@@ -396,13 +398,13 @@ export function CameraLab() {
 				/>
 			</section>
 
-			<div {...stylex.props(styles.workspace)}>
-				<section {...stylex.props(styles.wall)}>
+			<div {...stylex.attrs(styles.workspace)}>
+				<section {...stylex.attrs(styles.wall)}>
 					<For each={visibleCameraIndices()}>
 						{(index) => {
 							const tileStats = () => telemetry().get(index);
 							return (
-								<div {...stylex.props(styles.tileWrap)}>
+								<div {...stylex.attrs(styles.tileWrap)}>
 									<CameraTile
 										index={index}
 										frame={frames().get(index)}
@@ -420,7 +422,7 @@ export function CameraLab() {
 											);
 										}}
 									/>
-									<div {...stylex.props(styles.tileStats)}>
+									<div {...stylex.attrs(styles.tileStats)}>
 										<span>{tileStats()?.fps.toFixed(1) ?? "—"} fps</span>
 										<span>
 											{tileStats()?.readbackMs.toFixed(1) ?? "—"} ms gpu→cpu
@@ -436,9 +438,9 @@ export function CameraLab() {
 					</For>
 				</section>
 
-				<aside {...stylex.props(styles.controls)}>
-					<p {...stylex.props(styles.panelLabel)}>Controls</p>
-					<h2 {...stylex.props(styles.panelTitle)}>Camera load</h2>
+				<aside {...stylex.attrs(styles.controls)}>
+					<p {...stylex.attrs(styles.panelLabel)}>Controls</p>
+					<h2 {...stylex.attrs(styles.panelTitle)}>Camera load</h2>
 					<Slider
 						label="Active cameras"
 						value={config().activeCameraCount}
@@ -456,7 +458,7 @@ export function CameraLab() {
 							})
 						}
 					/>
-					<div {...stylex.props(styles.viewMode)}>
+					<div {...stylex.attrs(styles.viewMode)}>
 						<span>Pipeline isolation</span>
 						<div>
 							<For
@@ -474,7 +476,7 @@ export function CameraLab() {
 										onClick={() =>
 											void applyConfig({ ...config(), pipelineMode })
 										}
-										{...stylex.props(
+										{...stylex.attrs(
 											styles.pipelineButton,
 											config().pipelineMode === pipelineMode &&
 												styles.modeButtonActive
@@ -527,7 +529,7 @@ export function CameraLab() {
 							});
 						}}
 					/>
-					<div {...stylex.props(styles.resolution)}>
+					<div {...stylex.attrs(styles.resolution)}>
 						<span>Frame size</span>
 						<div>
 							<For each={resolutionOptions}>
@@ -537,7 +539,7 @@ export function CameraLab() {
 										onClick={() =>
 											void applyConfig({ ...config(), resolution })
 										}
-										{...stylex.props(
+										{...stylex.attrs(
 											styles.resolutionButton,
 											config().resolution === resolution &&
 												styles.modeButtonActive
@@ -549,7 +551,7 @@ export function CameraLab() {
 							</For>
 						</div>
 					</div>
-					<div {...stylex.props(styles.viewMode)}>
+					<div {...stylex.attrs(styles.viewMode)}>
 						<span>Render profile</span>
 						<div>
 							<button
@@ -560,7 +562,7 @@ export function CameraLab() {
 										renderProfile: "full_fidelity"
 									})
 								}
-								{...stylex.props(
+								{...stylex.attrs(
 									styles.modeButton,
 									config().renderProfile === "full_fidelity" &&
 										styles.modeButtonActive
@@ -573,7 +575,7 @@ export function CameraLab() {
 								onClick={() =>
 									void applyConfig({ ...config(), renderProfile: "observation" })
 								}
-								{...stylex.props(
+								{...stylex.attrs(
 									styles.modeButton,
 									config().renderProfile === "observation" &&
 										styles.modeButtonActive
@@ -583,7 +585,7 @@ export function CameraLab() {
 							</button>
 						</div>
 					</div>
-					<div {...stylex.props(styles.viewMode)}>
+					<div {...stylex.attrs(styles.viewMode)}>
 						<span>Viewpoint</span>
 						<div>
 							<button
@@ -591,7 +593,7 @@ export function CameraLab() {
 								onClick={() =>
 									void applyConfig({ ...config(), viewMode: "overview" })
 								}
-								{...stylex.props(
+								{...stylex.attrs(
 									styles.modeButton,
 									config().viewMode === "overview" && styles.modeButtonActive
 								)}
@@ -603,7 +605,7 @@ export function CameraLab() {
 								onClick={() =>
 									void applyConfig({ ...config(), viewMode: "actor_pov" })
 								}
-								{...stylex.props(
+								{...stylex.attrs(
 									styles.modeButton,
 									config().viewMode === "actor_pov" && styles.modeButtonActive
 								)}
@@ -615,11 +617,11 @@ export function CameraLab() {
 					<button
 						type="button"
 						onClick={() => void applyConfig({ ...config(), paused: !config().paused })}
-						{...stylex.props(styles.pause)}
+						{...stylex.attrs(styles.pause)}
 					>
 						{config().paused ? "Resume capture" : "Pause capture"}
 					</button>
-					<div {...stylex.props(styles.budgetNote)}>
+					<div {...stylex.attrs(styles.budgetNote)}>
 						<strong>{config().resolution.replace("x", " × ")} · BGRA8</strong>
 						<span>{estimatedRawThroughput().toFixed(2)} MB/s estimated raw</span>
 						<span>{config().renderProfile.replace("_", " ")} render profile</span>
@@ -629,12 +631,12 @@ export function CameraLab() {
 						<span>{metrics()?.presentationReplacements ?? 0} display coalesced</span>
 						<span>2 staging slots / camera</span>
 					</div>
-					<div {...stylex.props(styles.legend)}>
+					<div {...stylex.attrs(styles.legend)}>
 						<span>
-							<i {...stylex.props(styles.legendGood)} /> nominal
+							<i {...stylex.attrs(styles.legendGood)} /> nominal
 						</span>
 						<span>
-							<i {...stylex.props(styles.legendWarn)} /> saturation signal
+							<i {...stylex.attrs(styles.legendWarn)} /> saturation signal
 						</span>
 					</div>
 				</aside>
@@ -649,7 +651,7 @@ function Metric(props: {
 	readonly warn?: boolean;
 }) {
 	return (
-		<div {...stylex.props(styles.metric, props.warn && styles.metricWarn)}>
+		<div {...stylex.attrs(styles.metric, props.warn && styles.metricWarn)}>
 			<span>{props.label}</span>
 			<strong>{props.value}</strong>
 		</div>
@@ -666,7 +668,7 @@ function Slider(props: {
 	readonly value: number;
 }) {
 	return (
-		<label {...stylex.props(styles.slider)}>
+		<label {...stylex.attrs(styles.slider)}>
 			<span>
 				<b>{props.label}</b>
 				<output>

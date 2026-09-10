@@ -8,7 +8,7 @@ import {
 import { createEffectAction, createEffectSubscription } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { Cause, Effect, Schedule, Stream } from "effect";
-import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal, onSettled } from "solid-js";
 import type {
 	MapReviewAuthoringCandidate,
 	MapReviewAuthorFromSelectionIntent,
@@ -67,29 +67,29 @@ function CandidateImage(props: { readonly candidate: MapReviewAuthoringCandidate
 		);
 	});
 
-	createEffect(() => {
-		const current = preview();
-		const canvas = canvasEl();
-		if (current.status !== "ready" || current.pixelFormat !== "bgra8" || !canvas) return;
-		const context = canvas.getContext("2d", { alpha: false });
-		if (!context) return;
-		if (canvas.width !== current.width || canvas.height !== current.height) {
-			canvas.width = current.width;
-			canvas.height = current.height;
-			rgba = new Uint8ClampedArray(current.bytes.byteLength);
-			imageData = new ImageData(rgba, current.width, current.height);
+	createEffect(
+		() => ({ current: preview(), canvas: canvasEl() }),
+		({ current, canvas }) => {
+			if (current.status !== "ready" || current.pixelFormat !== "bgra8" || !canvas) return;
+			const context = canvas.getContext("2d", { alpha: false });
+			if (!context) return;
+			if (canvas.width !== current.width || canvas.height !== current.height) {
+				canvas.width = current.width;
+				canvas.height = current.height;
+				rgba = new Uint8ClampedArray(current.bytes.byteLength);
+				imageData = new ImageData(rgba, current.width, current.height);
+			}
+			for (let offset = 0; offset < current.bytes.byteLength; offset += 4) {
+				rgba[offset] = current.bytes[offset + 2] ?? 0;
+				rgba[offset + 1] = current.bytes[offset + 1] ?? 0;
+				rgba[offset + 2] = current.bytes[offset] ?? 0;
+				rgba[offset + 3] = 255;
+			}
+			if (imageData) context.putImageData(imageData, 0, 0);
 		}
-		for (let offset = 0; offset < current.bytes.byteLength; offset += 4) {
-			rgba[offset] = current.bytes[offset + 2] ?? 0;
-			rgba[offset + 1] = current.bytes[offset + 1] ?? 0;
-			rgba[offset + 2] = current.bytes[offset] ?? 0;
-			rgba[offset + 3] = 255;
-		}
-		if (imageData) context.putImageData(imageData, 0, 0);
-	});
+	);
 
-	createEffect(() => {
-		const current = preview();
+	createEffect(preview, (current) => {
 		if (
 			current.status !== "ready" ||
 			current.pixelFormat === "bgra8" ||
@@ -101,7 +101,7 @@ function CandidateImage(props: { readonly candidate: MapReviewAuthoringCandidate
 		const bytes = Uint8Array.from(current.bytes);
 		const url = URL.createObjectURL(new Blob([bytes.buffer], { type: "image/png" }));
 		setPngUrl(url);
-		onCleanup(() => URL.revokeObjectURL(url));
+		return () => URL.revokeObjectURL(url);
 	});
 
 	return (
@@ -110,7 +110,7 @@ function CandidateImage(props: { readonly candidate: MapReviewAuthoringCandidate
 				<canvas
 					ref={setCanvasEl}
 					aria-label={`${props.candidate.displayName} live preview`}
-					{...stylex.props(styles.candidateImage)}
+					{...stylex.attrs(styles.candidateImage)}
 				/>
 			</Show>
 			<Show when={isPng() ? pngUrl() : undefined}>
@@ -118,7 +118,7 @@ function CandidateImage(props: { readonly candidate: MapReviewAuthoringCandidate
 					<img
 						src={url()}
 						alt={`${props.candidate.displayName} candidate preview`}
-						{...stylex.props(styles.candidateImage)}
+						{...stylex.attrs(styles.candidateImage)}
 					/>
 				)}
 			</Show>
@@ -126,7 +126,7 @@ function CandidateImage(props: { readonly candidate: MapReviewAuthoringCandidate
 				const current = preview();
 				if (current.status === "ready") return null;
 				return (
-					<div {...stylex.props(styles.previewFailure)}>
+					<div {...stylex.attrs(styles.previewFailure)}>
 						<span>
 							{current.status === "pending"
 								? "RENDERING PREVIEW"
@@ -542,48 +542,53 @@ export function MapReviewAuthoring(props: {
 			}
 		);
 	};
-	createEffect(() => {
-		const probe = props.client.livePreviewAvailable;
-		const active = session();
-		const shouldPromote = pngFallback() && !liveStreaming();
-		liveCapabilitySubscription.cancel();
-		if (probe === undefined || active === undefined || !shouldPromote) return;
-		liveCapabilitySubscription.subscribe(
-			Stream.fromEffectSchedule(probe(), Schedule.spaced("2 seconds")).pipe(
-				Stream.filter((available) => available),
-				Stream.take(1)
-			),
-			{
+	createEffect(
+		() => ({
+			probe: props.client.livePreviewAvailable,
+			active: session(),
+			shouldPromote: pngFallback() && !liveStreaming()
+		}),
+		({ probe, active, shouldPromote }) => {
+			liveCapabilitySubscription.cancel();
+			if (probe === undefined || active === undefined || !shouldPromote) return;
+			liveCapabilitySubscription.subscribe(
+				Stream.fromEffectSchedule(probe(), Schedule.spaced("2 seconds")).pipe(
+					Stream.filter((available) => available),
+					Stream.take(1)
+				),
+				{
+					onFailure: () => undefined,
+					onValue: () => hydratePreviews(active)
+				}
+			);
+			return () => liveCapabilitySubscription.cancel();
+		}
+	);
+	createEffect(
+		() => ({ bindings: liveBindings(), fps: liveFps() }),
+		({ bindings, fps }) => {
+			liveFrameSubscription.cancel();
+			if (bindings.size === 0) return;
+			const intervalMs = 1_000 / fps;
+			let lastPaint = 0;
+			const pending = new Map<number, MapReviewLiveFrame>();
+			liveFrameSubscription.subscribe(props.client.liveFrames, {
 				onFailure: () => undefined,
-				onValue: () => hydratePreviews(active)
-			}
-		);
-		onCleanup(() => liveCapabilitySubscription.cancel());
-	});
-	createEffect(() => {
-		const bindings = liveBindings();
-		const fps = liveFps();
-		liveFrameSubscription.cancel();
-		if (bindings.size === 0) return;
-		const intervalMs = 1_000 / fps;
-		let lastPaint = 0;
-		const pending = new Map<number, MapReviewLiveFrame>();
-		liveFrameSubscription.subscribe(props.client.liveFrames, {
-			onFailure: () => undefined,
-			onValue: (frame) => {
-				const bound = [...bindings.values()].includes(frame.cameraIndex);
-				if (!bound) return;
-				pending.set(frame.cameraIndex, frame);
-				const now = performance.now();
-				if (now - lastPaint < intervalMs) return;
-				lastPaint = now;
-				const batch = new Map(pending);
-				pending.clear();
-				applyLiveFrames(batch);
-			}
-		});
-		onCleanup(() => liveFrameSubscription.cancel());
-	});
+				onValue: (frame) => {
+					const bound = [...bindings.values()].includes(frame.cameraIndex);
+					if (!bound) return;
+					pending.set(frame.cameraIndex, frame);
+					const now = performance.now();
+					if (now - lastPaint < intervalMs) return;
+					lastPaint = now;
+					const batch = new Map(pending);
+					pending.clear();
+					applyLiveFrames(batch);
+				}
+			});
+			return () => liveFrameSubscription.cancel();
+		}
+	);
 	const updateLiveFps = (value: number) => {
 		const next = clampPreviewFps(value);
 		setLiveFps(next);
@@ -656,7 +661,7 @@ export function MapReviewAuthoring(props: {
 			}
 		});
 	};
-	onMount(() => {
+	onSettled(() => {
 		resumeAction.run(props.client.authoringResume(), {
 			onFailure: () => undefined,
 			onSuccess: (result) => {
@@ -665,12 +670,14 @@ export function MapReviewAuthoring(props: {
 		});
 	});
 	let handledFocusNonce = 0;
-	createEffect(() => {
-		const request = props.focusRequest;
-		if (request === undefined || request.nonce <= handledFocusNonce) return;
-		handledFocusNonce = request.nonce;
-		generate();
-	});
+	createEffect(
+		() => props.focusRequest,
+		(request) => {
+			if (request === undefined || request.nonce <= handledFocusNonce) return;
+			handledFocusNonce = request.nonce;
+			generate();
+		}
+	);
 	const discard = (candidateId: string) => {
 		const nextDiscarded = new Set([...discarded(), candidateId]);
 		setDiscarded(nextDiscarded);
@@ -777,10 +784,10 @@ export function MapReviewAuthoring(props: {
 	};
 
 	return (
-		<section aria-label="Review View authoring" {...stylex.props(styles.authoringDesk)}>
-			<div {...stylex.props(styles.authoringHeader)}>
-				<div {...stylex.props(styles.headerSubject)}>
-					<span {...stylex.props(styles.headerLabel)}>SUBJECT</span>
+		<section aria-label="Review View authoring" {...stylex.attrs(styles.authoringDesk)}>
+			<div {...stylex.attrs(styles.authoringHeader)}>
+				<div {...stylex.attrs(styles.headerSubject)}>
+					<span {...stylex.attrs(styles.headerLabel)}>SUBJECT</span>
 					<Show
 						when={session()}
 						fallback={<strong>Select an actor, then reframe</strong>}
@@ -788,19 +795,19 @@ export function MapReviewAuthoring(props: {
 						{(active) => (
 							<>
 								<strong>{active().selection.displayName}</strong>
-								<code {...stylex.props(styles.headerPath)}>
+								<code {...stylex.attrs(styles.headerPath)}>
 									{active().selection.actorPath}
 								</code>
 							</>
 						)}
 					</Show>
 				</div>
-				<div {...stylex.props(styles.headerActions)}>
+				<div {...stylex.attrs(styles.headerActions)}>
 					<button
 						type="button"
 						disabled={state().status === "loading" || state().status === "saving"}
 						onClick={() => void generate()}
-						{...stylex.props(styles.generateButton)}
+						{...stylex.attrs(styles.generateButton)}
 					>
 						{state().status === "loading"
 							? "GENERATING…"
@@ -814,7 +821,7 @@ export function MapReviewAuthoring(props: {
 									: "ADD SELECTED ACTOR AS VIEW"}
 					</button>
 					<Show when={liveStreaming()}>
-						<label {...stylex.props(styles.fpsControl)}>
+						<label {...stylex.attrs(styles.fpsControl)}>
 							<span>
 								{liveContextLabel()} {liveFps()} FPS
 							</span>
@@ -834,7 +841,7 @@ export function MapReviewAuthoring(props: {
 					<Show when={pngFallback() && !liveStreaming()}>
 						<span
 							title="These are slower PNG captures. Workbench will switch them to the live camera stream automatically when UEShedCameras connects."
-							{...stylex.props(styles.fallbackMode)}
+							{...stylex.attrs(styles.fallbackMode)}
 						>
 							PNG FALLBACK
 						</span>
@@ -847,7 +854,7 @@ export function MapReviewAuthoring(props: {
 					const current = state();
 					if (current.status !== "failed") return null;
 					return (
-						<div role="alert" {...stylex.props(styles.authoringError)}>
+						<div role="alert" {...stylex.attrs(styles.authoringError)}>
 							<strong>{current.message}</strong>
 							<span>{current.recovery}</span>
 						</div>
@@ -860,49 +867,49 @@ export function MapReviewAuthoring(props: {
 					if (current.status !== "map_mismatch") return null;
 					const mismatch = current.mismatch;
 					return (
-						<div role="alert" {...stylex.props(styles.mapMismatch)}>
-							<div {...stylex.props(styles.mapMismatchHeading)}>
+						<div role="alert" {...stylex.attrs(styles.mapMismatch)}>
+							<div {...stylex.attrs(styles.mapMismatchHeading)}>
 								<strong>REVIEW SET IS FOR ANOTHER MAP</strong>
 								<span>{mismatch.recovery}</span>
 							</div>
-							<div {...stylex.props(styles.mapMismatchComparison)}>
-								<div {...stylex.props(styles.mapMismatchSide)}>
-									<span {...stylex.props(styles.mapMismatchLabel)}>
+							<div {...stylex.attrs(styles.mapMismatchComparison)}>
+								<div {...stylex.attrs(styles.mapMismatchSide)}>
+									<span {...stylex.attrs(styles.mapMismatchLabel)}>
 										OPEN REVIEW SET
 									</span>
-									<strong {...stylex.props(styles.mapMismatchName)}>
+									<strong {...stylex.attrs(styles.mapMismatchName)}>
 										{mismatch.reviewSet.displayName}
 									</strong>
-									<code {...stylex.props(styles.mapMismatchPath)}>
+									<code {...stylex.attrs(styles.mapMismatchPath)}>
 										{mismatch.reviewSet.mapPath}
 									</code>
 								</div>
-								<div {...stylex.props(styles.mapMismatchSide)}>
-									<span {...stylex.props(styles.mapMismatchLabel)}>
+								<div {...stylex.attrs(styles.mapMismatchSide)}>
+									<span {...stylex.attrs(styles.mapMismatchLabel)}>
 										SELECTED ACTOR
 									</span>
-									<strong {...stylex.props(styles.mapMismatchName)}>
+									<strong {...stylex.attrs(styles.mapMismatchName)}>
 										{mismatch.selection.displayName}
 									</strong>
-									<code {...stylex.props(styles.mapMismatchPath)}>
+									<code {...stylex.attrs(styles.mapMismatchPath)}>
 										{mismatch.selection.mapPath}
 									</code>
 								</div>
 							</div>
 							<Show when={mismatch.matchingReviewSet}>
 								{(matching) => (
-									<span {...stylex.props(styles.matchingSetHint)}>
+									<span {...stylex.attrs(styles.matchingSetHint)}>
 										{matching().displayName} already covers this map.
 									</span>
 								)}
 							</Show>
-							<div {...stylex.props(styles.mapMismatchActions)}>
+							<div {...stylex.attrs(styles.mapMismatchActions)}>
 								<Show when={mismatch.matchingReviewSet}>
 									{(matching) => (
 										<button
 											type="button"
 											onClick={() => void openMatchingReviewSet(mismatch)}
-											{...stylex.props(styles.mapMismatchPrimaryButton)}
+											{...stylex.attrs(styles.mapMismatchPrimaryButton)}
 										>
 											OPEN {matching().displayName.toUpperCase()}
 										</button>
@@ -912,7 +919,7 @@ export function MapReviewAuthoring(props: {
 									<button
 										type="button"
 										onClick={() => props.onChooseReviewSet?.()}
-										{...stylex.props(styles.mapMismatchButton)}
+										{...stylex.attrs(styles.mapMismatchButton)}
 									>
 										CHOOSE REVIEW SET
 									</button>
@@ -925,7 +932,7 @@ export function MapReviewAuthoring(props: {
 									<button
 										type="button"
 										onClick={() => void generate("selection_map")}
-										{...stylex.props(styles.mapMismatchButton)}
+										{...stylex.attrs(styles.mapMismatchButton)}
 									>
 										START SET FOR SELECTED MAP
 									</button>
@@ -936,11 +943,11 @@ export function MapReviewAuthoring(props: {
 				})()}
 			</Show>
 			<Show when={session()}>
-				<div {...stylex.props(styles.authoringBody)}>
+				<div {...stylex.attrs(styles.authoringBody)}>
 					<div
 						aria-label="Framing candidates"
 						role="region"
-						{...stylex.props(styles.contactSheet)}
+						{...stylex.attrs(styles.contactSheet)}
 					>
 						<For each={candidates().map((candidate) => candidate.id)}>
 							{(candidateId, index) => {
@@ -951,7 +958,7 @@ export function MapReviewAuthoring(props: {
 									<Show when={candidate()}>
 										{(item) => (
 											<article
-												{...stylex.props(
+												{...stylex.attrs(
 													styles.candidateCard,
 													selected()?.id === candidateId &&
 														styles.candidateSelected
@@ -961,17 +968,17 @@ export function MapReviewAuthoring(props: {
 													type="button"
 													aria-label={`Select ${item().displayName}`}
 													onClick={() => select(item())}
-													{...stylex.props(styles.candidateSelect)}
+													{...stylex.attrs(styles.candidateSelect)}
 												>
 													<CandidateImage candidate={item()} />
-													<div {...stylex.props(styles.candidateMeta)}>
+													<div {...stylex.attrs(styles.candidateMeta)}>
 														<span
-															{...stylex.props(styles.candidateIndex)}
+															{...stylex.attrs(styles.candidateIndex)}
 														>
 															{String(index() + 1).padStart(2, "0")}
 														</span>
 														<div
-															{...stylex.props(styles.candidateCopy)}
+															{...stylex.attrs(styles.candidateCopy)}
 														>
 															<strong>{item().displayName}</strong>
 															<small>
@@ -983,7 +990,7 @@ export function MapReviewAuthoring(props: {
 												<button
 													type="button"
 													onClick={() => discard(candidateId)}
-													{...stylex.props(styles.discardButton)}
+													{...stylex.attrs(styles.discardButton)}
 												>
 													DISCARD
 												</button>
@@ -1017,30 +1024,30 @@ export function MapReviewAuthoring(props: {
 					/>
 					<Show when={selected()}>
 						{(candidate) => (
-							<div {...stylex.props(styles.approvalBench)}>
+							<div {...stylex.attrs(styles.approvalBench)}>
 								<div>
-									<div {...stylex.props(styles.poseHeading)}>
+									<div {...stylex.attrs(styles.poseHeading)}>
 										<p>FINAL POSE / {candidate().displayName.toUpperCase()}</p>
-										<span {...stylex.props(styles.poseScrubHint)}>
+										<span {...stylex.attrs(styles.poseScrubHint)}>
 											↔ DRAG LABELS · SHIFT COARSE · ALT FINE
 										</span>
 									</div>
-									<small {...stylex.props(styles.poseHint)}>
+									<small {...stylex.attrs(styles.poseHint)}>
 										Drag for visual tuning or type an exact value. Changes apply
 										to this selected preview only.
 									</small>
-									<div {...stylex.props(styles.poseGrid)}>
+									<div {...stylex.attrs(styles.poseGrid)}>
 										<section
-											{...stylex.props(
+											{...stylex.attrs(
 												styles.poseGroup,
 												styles.positionGroup
 											)}
 										>
-											<header {...stylex.props(styles.poseGroupHeader)}>
+											<header {...stylex.attrs(styles.poseGroupHeader)}>
 												<strong>POSITION</strong>
 												<span>WORLD UNITS</span>
 											</header>
-											<div {...stylex.props(styles.positionFields)}>
+											<div {...stylex.attrs(styles.positionFields)}>
 												<For each={["x", "y", "z"] as const}>
 													{(field) => (
 														<ScrubbableNumberField
@@ -1075,12 +1082,12 @@ export function MapReviewAuthoring(props: {
 												</For>
 											</div>
 										</section>
-										<section {...stylex.props(styles.poseGroup)}>
-											<header {...stylex.props(styles.poseGroupHeader)}>
+										<section {...stylex.attrs(styles.poseGroup)}>
+											<header {...stylex.attrs(styles.poseGroupHeader)}>
 												<strong>ORIENTATION</strong>
 												<span>LOOK ANGLE</span>
 											</header>
-											<div {...stylex.props(styles.orientationFields)}>
+											<div {...stylex.attrs(styles.orientationFields)}>
 												<For each={["pitch", "yaw"] as const}>
 													{(field) => (
 														<ScrubbableNumberField
@@ -1115,9 +1122,9 @@ export function MapReviewAuthoring(props: {
 											</div>
 										</section>
 										<section
-											{...stylex.props(styles.poseGroup, styles.lensGroup)}
+											{...stylex.attrs(styles.poseGroup, styles.lensGroup)}
 										>
-											<header {...stylex.props(styles.poseGroupHeader)}>
+											<header {...stylex.attrs(styles.poseGroupHeader)}>
 												<strong>LENS</strong>
 												<span>PERSPECTIVE</span>
 											</header>
@@ -1152,11 +1159,11 @@ export function MapReviewAuthoring(props: {
 											/>
 										</section>
 									</div>
-									<label {...stylex.props(styles.reasonField)}>
+									<label {...stylex.attrs(styles.reasonField)}>
 										<span>MANUAL ADJUSTMENT NOTE</span>
 										<input
 											value={manualReason()}
-											{...stylex.props(styles.poseInput)}
+											{...stylex.attrs(styles.poseInput)}
 											onInput={(event) => {
 												const next = event.currentTarget.value;
 												setManualReason(next);
@@ -1172,10 +1179,10 @@ export function MapReviewAuthoring(props: {
 										/>
 									</label>
 								</div>
-								<div {...stylex.props(styles.approveColumn)}>
+								<div {...stylex.attrs(styles.approveColumn)}>
 									<span>{keepSummary()}</span>
 									<Show when={candidate().diagnostics.length > 0}>
-										<div role="status" {...stylex.props(styles.diagnosticList)}>
+										<div role="status" {...stylex.attrs(styles.diagnosticList)}>
 											<For each={candidate().diagnostics}>
 												{(diagnostic) => (
 													<span>
@@ -1187,7 +1194,7 @@ export function MapReviewAuthoring(props: {
 										</div>
 									</Show>
 									<Show when={authoringBlocked()}>
-										<small {...stylex.props(styles.reframeNotice)}>
+										<small {...stylex.attrs(styles.reframeNotice)}>
 											Reframe before keeping this view. The persisted subject
 											no longer matches the live actor.
 										</small>
@@ -1196,7 +1203,7 @@ export function MapReviewAuthoring(props: {
 										type="button"
 										disabled={state().status === "saving" || authoringBlocked()}
 										onClick={() => void approve()}
-										{...stylex.props(styles.keepButton)}
+										{...stylex.attrs(styles.keepButton)}
 									>
 										{state().status === "saving" ? "SAVING…" : keepLabel()}
 									</button>
@@ -1205,7 +1212,7 @@ export function MapReviewAuthoring(props: {
 											const current = state();
 											if (current.status !== "approved") return null;
 											return (
-												<strong {...stylex.props(styles.savedMark)}>
+												<strong {...stylex.attrs(styles.savedMark)}>
 													{current.keptCount === 1
 														? "VIEW SAVED"
 														: `${current.keptCount} VIEWS SAVED`}

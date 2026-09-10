@@ -2,7 +2,7 @@ import * as stylex from "@stylexjs/stylex";
 import { ConfigExplorerRoute } from "@ue-shed/extension-config-explorer";
 import { createEffectAction } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
-import { For, Show, createMemo, createSignal, onMount } from "solid-js";
+import { For, Show, createMemo, createSignal, onSettled } from "solid-js";
 import type { ConfigExplorerQuery, ConfigExplorerQueryResult } from "../shared/ipc-contracts.js";
 import type { WorkbenchRendererClient } from "./workbench-client.js";
 
@@ -111,34 +111,36 @@ export function ConfigExplorerShowcase(props: ConfigExplorerShowcaseProps) {
 		run();
 	};
 
-	onMount(() => run());
+	onSettled(() => run());
 
 	return (
-		<main {...stylex.props(styles.route)}>
-			<header {...stylex.props(styles.header)}>
-				<div {...stylex.props(styles.titleBlock)}>
-					<h1 {...stylex.props(styles.title)}>Trace a config value</h1>
-					<p {...stylex.props(styles.intro)}>
+		<main {...stylex.attrs(styles.route)}>
+			<header {...stylex.attrs(styles.header)}>
+				<div {...stylex.attrs(styles.titleBlock)}>
+					<h1 {...stylex.attrs(styles.title)}>Trace a config value</h1>
+					<p {...stylex.attrs(styles.intro)}>
 						See the final saved value, the exact .ini lines that produced it, and what
 						changes between platforms.
 					</p>
 				</div>
-				<span {...stylex.props(styles.scopeStamp)}>
+				<span {...stylex.attrs(styles.scopeStamp)}>
 					Read-only · runtime overrides excluded
 				</span>
 			</header>
 
-			<section aria-label="Config query workspace" {...stylex.props(styles.workspace)}>
-				<form onSubmit={run} {...stylex.props(styles.queryPanel)}>
-					<div {...stylex.props(styles.queryOptions)}>
-						<fieldset {...stylex.props(styles.segmentField)}>
+			<section aria-label="Config query workspace" {...stylex.attrs(styles.workspace)}>
+				<form onSubmit={run} {...stylex.attrs(styles.queryPanel)}>
+					<div {...stylex.attrs(styles.queryOptions)}>
+						<fieldset {...stylex.attrs(styles.segmentField)}>
 							<legend>Source</legend>
-							<div {...stylex.props(styles.segments)}>
+							<div {...stylex.attrs(styles.segments)}>
 								<button
-									aria-pressed={source() === "selected_project"}
+									aria-pressed={
+										source() === "selected_project" ? "true" : "false"
+									}
 									onClick={() => setSource("selected_project")}
 									type="button"
-									{...stylex.props(
+									{...stylex.attrs(
 										styles.segment,
 										source() === "selected_project" && styles.segmentActive
 									)}
@@ -146,10 +148,10 @@ export function ConfigExplorerShowcase(props: ConfigExplorerShowcaseProps) {
 									Selected project
 								</button>
 								<button
-									aria-pressed={source() === "sample_fixture"}
+									aria-pressed={source() === "sample_fixture" ? "true" : "false"}
 									onClick={() => setSource("sample_fixture")}
 									type="button"
-									{...stylex.props(
+									{...stylex.attrs(
 										styles.segment,
 										source() === "sample_fixture" && styles.segmentActive
 									)}
@@ -159,14 +161,14 @@ export function ConfigExplorerShowcase(props: ConfigExplorerShowcaseProps) {
 							</div>
 						</fieldset>
 
-						<fieldset {...stylex.props(styles.segmentField)}>
+						<fieldset {...stylex.attrs(styles.segmentField)}>
 							<legend>Question</legend>
-							<div {...stylex.props(styles.segments)}>
+							<div {...stylex.attrs(styles.segments)}>
 								<button
-									aria-pressed={mode() === "explain"}
+									aria-pressed={mode() === "explain" ? "true" : "false"}
 									onClick={() => setMode("explain")}
 									type="button"
-									{...stylex.props(
+									{...stylex.attrs(
 										styles.segment,
 										mode() === "explain" && styles.segmentActive
 									)}
@@ -174,10 +176,10 @@ export function ConfigExplorerShowcase(props: ConfigExplorerShowcaseProps) {
 									Why this value?
 								</button>
 								<button
-									aria-pressed={mode() === "compare"}
+									aria-pressed={mode() === "compare" ? "true" : "false"}
 									onClick={() => setMode("compare")}
 									type="button"
-									{...stylex.props(
+									{...stylex.attrs(
 										styles.segment,
 										mode() === "compare" && styles.segmentActive
 									)}
@@ -187,11 +189,11 @@ export function ConfigExplorerShowcase(props: ConfigExplorerShowcaseProps) {
 							</div>
 						</fieldset>
 
-						<span {...stylex.props(styles.readOnly)}>Read-only</span>
+						<span {...stylex.attrs(styles.readOnly)}>Read-only</span>
 					</div>
 
-					<div {...stylex.props(styles.fieldGrid)}>
-						<label {...stylex.props(styles.field)}>
+					<div {...stylex.attrs(styles.fieldGrid)}>
+						<label {...stylex.attrs(styles.field)}>
 							<span>
 								Family <small>optional</small>
 							</span>
@@ -200,10 +202,10 @@ export function ConfigExplorerShowcase(props: ConfigExplorerShowcaseProps) {
 								onInput={(event) => setFamily(event.currentTarget.value)}
 								placeholder="Game"
 								value={family()}
-								{...stylex.props(styles.input)}
+								{...stylex.attrs(styles.input)}
 							/>
 						</label>
-						<label {...stylex.props(styles.field)}>
+						<label {...stylex.attrs(styles.field)}>
 							<span>Section</span>
 							<input
 								aria-label="Config section"
@@ -211,10 +213,10 @@ export function ConfigExplorerShowcase(props: ConfigExplorerShowcaseProps) {
 								placeholder="/Script/Engine.Engine"
 								required
 								value={section()}
-								{...stylex.props(styles.input)}
+								{...stylex.attrs(styles.input)}
 							/>
 						</label>
-						<label {...stylex.props(styles.field)}>
+						<label {...stylex.attrs(styles.field)}>
 							<span>Key</span>
 							<input
 								aria-label="Config key"
@@ -222,10 +224,10 @@ export function ConfigExplorerShowcase(props: ConfigExplorerShowcaseProps) {
 								placeholder="bUseFixedFrameRate"
 								required
 								value={key()}
-								{...stylex.props(styles.input)}
+								{...stylex.attrs(styles.input)}
 							/>
 						</label>
-						<label {...stylex.props(styles.field)}>
+						<label {...stylex.attrs(styles.field)}>
 							<span>{mode() === "compare" ? "Left platform" : "Platform"}</span>
 							<input
 								aria-label={mode() === "compare" ? "Left platform" : "Platform"}
@@ -233,11 +235,11 @@ export function ConfigExplorerShowcase(props: ConfigExplorerShowcaseProps) {
 								onInput={(event) => setPlatform(event.currentTarget.value)}
 								required
 								value={platform()}
-								{...stylex.props(styles.input)}
+								{...stylex.attrs(styles.input)}
 							/>
 						</label>
 						<Show when={mode() === "compare"}>
-							<label {...stylex.props(styles.field)}>
+							<label {...stylex.attrs(styles.field)}>
 								<span>Right platform</span>
 								<input
 									aria-label="Right platform"
@@ -245,7 +247,7 @@ export function ConfigExplorerShowcase(props: ConfigExplorerShowcaseProps) {
 									onInput={(event) => setRightPlatform(event.currentTarget.value)}
 									required
 									value={rightPlatform()}
-									{...stylex.props(styles.input)}
+									{...stylex.attrs(styles.input)}
 								/>
 							</label>
 						</Show>
@@ -257,7 +259,7 @@ export function ConfigExplorerShowcase(props: ConfigExplorerShowcaseProps) {
 							<option value="IOS" />
 						</datalist>
 
-						<button disabled={loading()} type="submit" {...stylex.props(styles.run)}>
+						<button disabled={loading()} type="submit" {...stylex.attrs(styles.run)}>
 							<span>
 								{loading()
 									? "Tracing…"
@@ -273,15 +275,15 @@ export function ConfigExplorerShowcase(props: ConfigExplorerShowcaseProps) {
 						</button>
 					</div>
 
-					<div {...stylex.props(styles.samples)}>
-						<span {...stylex.props(styles.sampleHeading)}>Examples</span>
-						<div {...stylex.props(styles.sampleList)}>
+					<div {...stylex.attrs(styles.samples)}>
+						<span {...stylex.attrs(styles.sampleHeading)}>Examples</span>
+						<div {...stylex.attrs(styles.sampleList)}>
 							<For each={samples}>
 								{(sample) => (
 									<button
 										onClick={() => loadSample(sample)}
 										type="button"
-										{...stylex.props(styles.sampleButton)}
+										{...stylex.attrs(styles.sampleButton)}
 									>
 										<strong>{sample.label}</strong>
 										<span>{sample.note}</span>
@@ -294,8 +296,8 @@ export function ConfigExplorerShowcase(props: ConfigExplorerShowcaseProps) {
 			</section>
 
 			<Show when={loading()}>
-				<section aria-live="polite" {...stylex.props(styles.state)}>
-					<span {...stylex.props(styles.pulse)} />
+				<section aria-live="polite" {...stylex.attrs(styles.state)}>
+					<span {...stylex.attrs(styles.pulse)} />
 					<div>
 						<strong>Tracing saved config layers…</strong>
 						<p>Folding source operations in Unreal load order.</p>
@@ -304,12 +306,12 @@ export function ConfigExplorerShowcase(props: ConfigExplorerShowcaseProps) {
 			</Show>
 
 			<Show when={transportFailure()}>
-				<section role="alert" {...stylex.props(styles.state, styles.failure)}>
+				<section role="alert" {...stylex.attrs(styles.state, styles.failure)}>
 					<div>
 						<strong>Workbench could not validate the query response.</strong>
 						<p>Restart Workbench and verify package versions, then retry.</p>
 					</div>
-					<button onClick={() => run()} {...stylex.props(styles.retry)}>
+					<button onClick={() => run()} {...stylex.attrs(styles.retry)}>
 						RETRY
 					</button>
 				</section>
@@ -317,7 +319,7 @@ export function ConfigExplorerShowcase(props: ConfigExplorerShowcaseProps) {
 
 			<Show when={failed()}>
 				{(failure) => (
-					<section role="alert" {...stylex.props(styles.state, styles.failure)}>
+					<section role="alert" {...stylex.attrs(styles.state, styles.failure)}>
 						<div>
 							<strong>{failure().error.message}</strong>
 							<p>{failure().error.recovery}</p>
@@ -332,12 +334,12 @@ export function ConfigExplorerShowcase(props: ConfigExplorerShowcaseProps) {
 
 			<Show when={ready()} keyed>
 				{(resolved) => (
-					<section {...stylex.props(styles.resultBlock)}>
-						<header {...stylex.props(styles.resultHeader)}>
+					<section {...stylex.attrs(styles.resultBlock)}>
+						<header {...stylex.attrs(styles.resultHeader)}>
 							<div>
 								<strong>{resolved.projectName}</strong>
 							</div>
-							<div {...stylex.props(styles.queryReceipt)}>
+							<div {...stylex.attrs(styles.queryReceipt)}>
 								<span>
 									{resolved.source === "selected_project"
 										? "Selected project"
@@ -357,7 +359,7 @@ export function ConfigExplorerShowcase(props: ConfigExplorerShowcaseProps) {
 						</header>
 						<section
 							aria-label="Config Explorer evidence"
-							{...stylex.props(styles.evidence)}
+							{...stylex.attrs(styles.evidence)}
 						>
 							<ConfigExplorerRoute result={resolved.evidence} />
 						</section>

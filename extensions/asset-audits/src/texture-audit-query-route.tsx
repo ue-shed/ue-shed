@@ -16,7 +16,16 @@ import { Button, createEffectAction, createEffectSubscription } from "@ue-shed/u
 import { TaskProgressModal, type TaskProgress } from "@ue-shed/ui/task-progress";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { Schedule, Stream } from "effect";
-import { For, Match, Show, Switch, createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import {
+	For,
+	Match,
+	Show,
+	Switch,
+	createMemo,
+	createSignal,
+	createEffect,
+	onSettled
+} from "solid-js";
 import type { TextureAuditClientApi } from "./texture-audit-client.js";
 
 type ViewState =
@@ -290,20 +299,28 @@ export function TextureAuditRoute(props: {
 		});
 	};
 
-	const requestPage = (cursor?: TextureRecord["objectPath"]) => {
+	const requestPage = (
+		cursor?: TextureRecord["objectPath"],
+		current = state(),
+		filters: {
+			readonly query?: string;
+			readonly findingsOnly?: boolean;
+			readonly selection?: TextureDistributionSelection | undefined;
+		} = {}
+	) => {
+		const selected = "selection" in filters ? filters.selection : selection();
 		searchAction.run(
 			props.client.search({
 				...(cursor === undefined ? undefined : { cursor }),
-				findingsOnly: findingsOnly(),
+				findingsOnly: filters.findingsOnly ?? findingsOnly(),
 				pageSize: 100,
-				query: query(),
-				...(selection() === undefined ? undefined : { selection: selection()! })
+				query: filters.query ?? query(),
+				...(selected === undefined ? undefined : { selection: selected })
 			}),
 			{
 				onFailure: (cause) => setState(failure(cause)),
 				onSuccess: (result) => {
 					if (result.status !== "ready") return;
-					const current = state();
 					if (current.status !== "ready") return;
 					setState({ ...current, page: result.page });
 					const firstFindingPath = result.page.findings[0]?.objectPath;
@@ -322,12 +339,13 @@ export function TextureAuditRoute(props: {
 		progressSubscription.cancel();
 		setInvestigationRevision((value) => value + 1);
 		if (result.status === "completed") {
-			setState({
+			const next: Extract<ViewState, { status: "ready" }> = {
 				page: { findings: [], records: [], total: 0 },
 				status: "ready",
 				summary: result.summary
-			});
-			requestPage();
+			};
+			setState(next);
+			requestPage(undefined, next);
 		} else if (result.status === "failed") setState({ error: result.error, status: "failed" });
 		else setState({ status: result.status });
 	};
@@ -351,30 +369,33 @@ export function TextureAuditRoute(props: {
 		});
 	};
 
-	onCleanup(() =>
-		props.onPreferencesChange?.({
+	createEffect(
+		() => ({
 			query: query(),
 			selection: selection(),
 			findingsOnly: findingsOnly(),
 			selectedPath: selectedPath(),
 			comparisonKind: comparisonKind()
-		})
+		}),
+		(value) => {
+			props.onPreferencesChange?.(value);
+		}
 	);
 	const refresh = () => load(true);
-	onMount(() => load(false));
+	onSettled(() => load(false));
 
 	return (
-		<main {...stylex.props(styles.page)}>
+		<main {...stylex.attrs(styles.page)}>
 			<TaskProgressModal
 				open={state().status === "loading"}
 				progress={progress()}
 				title="Running the texture audit"
 				detail="Workbench is decoding Texture2D packages and checking them against your rule set."
 			/>
-			<header {...stylex.props(styles.header)}>
-				<div {...stylex.props(styles.heading)}>
-					<h1 {...stylex.props(styles.title)}>Texture audit</h1>
-					<p {...stylex.props(styles.intro)}>
+			<header {...stylex.attrs(styles.header)}>
+				<div {...stylex.attrs(styles.heading)}>
+					<h1 {...stylex.attrs(styles.title)}>Texture audit</h1>
+					<p {...stylex.attrs(styles.intro)}>
 						Check saved textures against your size, group, and compression rules.
 					</p>
 				</div>
@@ -404,19 +425,19 @@ export function TextureAuditRoute(props: {
 			</Show>
 			<Switch>
 				<Match when={state().status === "loading"}>
-					<div {...stylex.props(styles.centerState)}>
-						<span aria-hidden="true" {...stylex.props(styles.spinnerDot)} />
+					<div {...stylex.attrs(styles.centerState)}>
+						<span aria-hidden="true" {...stylex.attrs(styles.spinnerDot)} />
 						Running the texture audit…
 					</div>
 				</Match>
 				<Match when={state().status === "not_configured"}>
-					<div {...stylex.props(styles.noticeCard)}>
+					<div {...stylex.attrs(styles.noticeCard)}>
 						<strong>No project configured.</strong> Choose a project in the Workbench
 						header, then select Retry.
 					</div>
 				</Match>
 				<Match when={state().status === "cancelled"}>
-					<div {...stylex.props(styles.noticeCard)}>
+					<div {...stylex.attrs(styles.noticeCard)}>
 						Project selection was cancelled. No scan was started.
 					</div>
 				</Match>
@@ -425,21 +446,21 @@ export function TextureAuditRoute(props: {
 						const current = state();
 						if (current.status !== "failed") return null;
 						return (
-							<section role="alert" {...stylex.props(styles.failureCard)}>
-								<strong {...stylex.props(styles.failureTitle)}>
+							<section role="alert" {...stylex.attrs(styles.failureCard)}>
+								<strong {...stylex.attrs(styles.failureTitle)}>
 									Couldn&apos;t run the audit
 								</strong>
-								<span {...stylex.props(styles.failureRecovery)}>
+								<span {...stylex.attrs(styles.failureRecovery)}>
 									{current.error.recovery}
 								</span>
 								<Button type="button" onClick={refresh} tone="secondary">
 									Retry
 								</Button>
-								<details {...stylex.props(styles.technicalDetails)}>
-									<summary {...stylex.props(styles.technicalSummary)}>
+								<details {...stylex.attrs(styles.technicalDetails)}>
+									<summary {...stylex.attrs(styles.technicalSummary)}>
 										Technical details
 									</summary>
-									<code {...stylex.props(styles.technicalCode)}>
+									<code {...stylex.attrs(styles.technicalCode)}>
 										{current.error.message}
 									</code>
 								</details>
@@ -449,44 +470,46 @@ export function TextureAuditRoute(props: {
 				</Match>
 				<Match when={readyState()}>
 					{(current) => (
-						<div {...stylex.props(styles.bench)}>
+						<div {...stylex.attrs(styles.bench)}>
 							<ScopeRail
 								summary={current().summary}
 								selection={selection()}
 								findingsOnly={findingsOnly()}
 								onFindingsOnly={(value) => {
 									setFindingsOnly(value);
-									requestPage();
+									requestPage(undefined, state(), { findingsOnly: value });
 								}}
 								onSelect={(next) => {
 									setSelection(next);
-									requestPage();
+									requestPage(undefined, state(), { selection: next });
 								}}
 							/>
-							<section aria-label="Results" {...stylex.props(styles.catalog)}>
-								<header {...stylex.props(styles.catalogHeader)}>
-									<label {...stylex.props(styles.search)}>
+							<section aria-label="Results" {...stylex.attrs(styles.catalog)}>
+								<header {...stylex.attrs(styles.catalogHeader)}>
+									<label {...stylex.attrs(styles.search)}>
 										<span aria-hidden="true">⌕</span>
 										<input
 											aria-label="Search textures"
 											value={query()}
 											onInput={(event) => {
 												setQuery(event.currentTarget.value);
-												requestPage();
+												requestPage(undefined, state(), {
+													query: event.currentTarget.value
+												});
 											}}
 											placeholder="Object path…"
-											{...stylex.props(styles.searchInput)}
+											{...stylex.attrs(styles.searchInput)}
 										/>
 									</label>
-									<span {...stylex.props(styles.resultCount)}>
+									<span {...stylex.attrs(styles.resultCount)}>
 										{current().page.total.toLocaleString()} shown
 									</span>
 								</header>
-								<div {...stylex.props(styles.columnLabels)}>
+								<div {...stylex.attrs(styles.columnLabels)}>
 									<span>Asset</span>
 									<span>Dimensions</span>
 								</div>
-								<div {...stylex.props(styles.assetList)}>
+								<div {...stylex.attrs(styles.assetList)}>
 									<For each={current().page.records}>
 										{(item) => {
 											const findingCount = () =>
@@ -505,15 +528,17 @@ export function TextureAuditRoute(props: {
 													type="button"
 													aria-pressed={
 														selectedPath() === item.objectPath
+															? "true"
+															: "false"
 													}
 													onClick={() => requestRecord(item.objectPath)}
-													{...stylex.props(
+													{...stylex.attrs(
 														styles.assetRow,
 														selectedPath() === item.objectPath &&
 															styles.assetRowActive
 													)}
 												>
-													<span {...stylex.props(styles.rowPreview)}>
+													<span {...stylex.attrs(styles.rowPreview)}>
 														<Show
 															when={cached()}
 															fallback={<span>TX</span>}
@@ -522,39 +547,39 @@ export function TextureAuditRoute(props: {
 																<img
 																	src={`data:${image().mimeType};base64,${image().dataBase64}`}
 																	alt=""
-																	{...stylex.props(
+																	{...stylex.attrs(
 																		styles.rowPreviewImage
 																	)}
 																/>
 															)}
 														</Show>
 													</span>
-													<span {...stylex.props(styles.assetIdentity)}>
-														<strong {...stylex.props(styles.assetName)}>
+													<span {...stylex.attrs(styles.assetIdentity)}>
+														<strong {...stylex.attrs(styles.assetName)}>
 															{shortName(item.objectPath)}
 														</strong>
 														<small
 															title={item.objectPath}
-															{...stylex.props(styles.assetPath)}
+															{...stylex.attrs(styles.assetPath)}
 														>
 															{item.objectPath}
 														</small>
 													</span>
-													<span {...stylex.props(styles.rowEvidence)}>
+													<span {...stylex.attrs(styles.rowEvidence)}>
 														<strong
-															{...stylex.props(styles.rowDimensions)}
+															{...stylex.attrs(styles.rowDimensions)}
 														>
 															{dimensionsLabel(item)}
 														</strong>
 														<small
 															title={evidenceLabel(item.textureGroup)}
-															{...stylex.props(styles.rowGroup)}
+															{...stylex.attrs(styles.rowGroup)}
 														>
 															{evidenceLabel(item.textureGroup)}
 														</small>
 													</span>
 													<span
-														{...stylex.props(
+														{...stylex.attrs(
 															styles.rowStatus,
 															findingCount() > 0
 																? styles.rowWarning
@@ -568,7 +593,7 @@ export function TextureAuditRoute(props: {
 										}}
 									</For>
 									<Show when={current().page.records.length === 0}>
-										<p {...stylex.props(styles.noResults)}>
+										<p {...stylex.attrs(styles.noResults)}>
 											No textures match this view.
 										</p>
 									</Show>
@@ -578,7 +603,7 @@ export function TextureAuditRoute(props: {
 										<button
 											type="button"
 											onClick={() => requestPage(cursor())}
-											{...stylex.props(styles.nextPage)}
+											{...stylex.attrs(styles.nextPage)}
 										>
 											Load more
 										</button>
@@ -631,58 +656,58 @@ function ScopeRail(props: {
 		["Color space", "sRGB", props.summary.distributions.sRGB]
 	];
 	return (
-		<aside aria-label="Facets" {...stylex.props(styles.scopeRail)}>
-			<section {...stylex.props(styles.auditSummary)}>
-				<h2 {...stylex.props(styles.railTitle)}>Overview</h2>
-				<div {...stylex.props(styles.summaryFinding)}>
-					<strong {...stylex.props(styles.summaryCount)}>
+		<aside aria-label="Facets" {...stylex.attrs(styles.scopeRail)}>
+			<section {...stylex.attrs(styles.auditSummary)}>
+				<h2 {...stylex.attrs(styles.railTitle)}>Overview</h2>
+				<div {...stylex.attrs(styles.summaryFinding)}>
+					<strong {...stylex.attrs(styles.summaryCount)}>
 						{props.summary.findingCount.toLocaleString()}
 					</strong>
-					<span {...stylex.props(styles.summaryUnit)}>
+					<span {...stylex.attrs(styles.summaryUnit)}>
 						{props.summary.findingCount === 1 ? "finding" : "findings"}
 					</span>
 				</div>
-				<dl {...stylex.props(styles.summaryFacts)}>
-					<div {...stylex.props(styles.summaryFact)}>
-						<dt {...stylex.props(styles.summaryTerm)}>Textures</dt>
-						<dd {...stylex.props(styles.summaryValue)}>
+				<dl {...stylex.attrs(styles.summaryFacts)}>
+					<div {...stylex.attrs(styles.summaryFact)}>
+						<dt {...stylex.attrs(styles.summaryTerm)}>Textures</dt>
+						<dd {...stylex.attrs(styles.summaryValue)}>
 							{props.summary.coverage.textureAssets.toLocaleString()}
 						</dd>
 					</div>
-					<div {...stylex.props(styles.summaryFact)}>
-						<dt {...stylex.props(styles.summaryTerm)}>Coverage</dt>
-						<dd {...stylex.props(styles.summaryValue)}>
+					<div {...stylex.attrs(styles.summaryFact)}>
+						<dt {...stylex.attrs(styles.summaryTerm)}>Coverage</dt>
+						<dd {...stylex.attrs(styles.summaryValue)}>
 							{props.summary.status === "complete" ? "Complete" : "Partial"}
 						</dd>
 					</div>
-					<div {...stylex.props(styles.summaryFact)}>
-						<dt {...stylex.props(styles.summaryTerm)}>Skipped</dt>
-						<dd {...stylex.props(styles.summaryValue)}>
+					<div {...stylex.attrs(styles.summaryFact)}>
+						<dt {...stylex.attrs(styles.summaryTerm)}>Skipped</dt>
+						<dd {...stylex.attrs(styles.summaryValue)}>
 							{props.summary.diagnosticCount.toLocaleString()}
 						</dd>
 					</div>
 				</dl>
-				<small {...stylex.props(styles.ruleSetName)} title={props.summary.ruleSetName}>
+				<small {...stylex.attrs(styles.ruleSetName)} title={props.summary.ruleSetName}>
 					Rules: {props.summary.ruleSetName}
 				</small>
 			</section>
 			<button
 				type="button"
-				aria-pressed={props.findingsOnly}
+				aria-pressed={props.findingsOnly ? "true" : "false"}
 				onClick={() => props.onFindingsOnly(!props.findingsOnly)}
-				{...stylex.props(styles.findingsFilter, props.findingsOnly && styles.filterActive)}
+				{...stylex.attrs(styles.findingsFilter, props.findingsOnly && styles.filterActive)}
 			>
 				<span>Findings only</span>
-				<b {...stylex.props(styles.findingsCount)}>{props.summary.findingCount}</b>
+				<b {...stylex.attrs(styles.findingsCount)}>{props.summary.findingCount}</b>
 			</button>
-			<h2 {...stylex.props(styles.railTitle)}>Facets</h2>
-			<div {...stylex.props(styles.facetList)}>
+			<h2 {...stylex.attrs(styles.railTitle)}>Facets</h2>
+			<div {...stylex.attrs(styles.facetList)}>
 				<For each={facets}>
 					{([label, kind, buckets]) => {
 						const maximum = Math.max(1, ...buckets.map((bucket) => bucket.count));
 						return (
-							<section {...stylex.props(styles.facet)}>
-								<h2 {...stylex.props(styles.facetTitle)}>{label}</h2>
+							<section {...stylex.attrs(styles.facet)}>
+								<h2 {...stylex.attrs(styles.facetTitle)}>{label}</h2>
 								<For each={buckets.slice(0, 6)}>
 									{(bucket) => {
 										const active = () =>
@@ -691,7 +716,7 @@ function ScopeRail(props: {
 										return (
 											<button
 												type="button"
-												aria-pressed={active()}
+												aria-pressed={active() ? "true" : "false"}
 												onClick={() =>
 													props.onSelect(
 														active()
@@ -699,21 +724,21 @@ function ScopeRail(props: {
 															: { key: bucket.key, kind }
 													)
 												}
-												{...stylex.props(
+												{...stylex.attrs(
 													styles.facetButton,
 													active() && styles.filterActive
 												)}
 											>
-												<span {...stylex.props(styles.facetOptionLabel)}>
+												<span {...stylex.attrs(styles.facetOptionLabel)}>
 													{bucket.label}
 												</span>
-												<b {...stylex.props(styles.facetCount)}>
+												<b {...stylex.attrs(styles.facetCount)}>
 													{bucket.count}
 												</b>
 												<progress
 													max={maximum}
 													value={bucket.count}
-													{...stylex.props(styles.facetBar)}
+													{...stylex.attrs(styles.facetBar)}
 												/>
 											</button>
 										);
@@ -749,11 +774,11 @@ function InvestigationPane(props: {
 		| undefined;
 }) {
 	return (
-		<article aria-label="Asset" {...stylex.props(styles.investigation)}>
+		<article aria-label="Asset" {...stylex.attrs(styles.investigation)}>
 			<Show
 				when={props.record}
 				fallback={
-					<div {...stylex.props(styles.investigationEmpty)}>
+					<div {...stylex.attrs(styles.investigationEmpty)}>
 						<strong>Select a texture</strong>
 						<span>Its rule results and cohort peers will appear here.</span>
 					</div>
@@ -763,14 +788,14 @@ function InvestigationPane(props: {
 					const item = () => current().record;
 					return (
 						<>
-							<header {...stylex.props(styles.investigationHeader)}>
-								<div {...stylex.props(styles.selectedIdentity)}>
-									<h2 {...stylex.props(styles.selectedName)}>
+							<header {...stylex.attrs(styles.investigationHeader)}>
+								<div {...stylex.attrs(styles.selectedIdentity)}>
+									<h2 {...stylex.attrs(styles.selectedName)}>
 										{shortName(item().objectPath)}
 									</h2>
 									<code
 										title={item().objectPath}
-										{...stylex.props(styles.selectedPath)}
+										{...stylex.attrs(styles.selectedPath)}
 									>
 										{item().objectPath}
 									</code>
@@ -780,7 +805,7 @@ function InvestigationPane(props: {
 									aria-label={`Locate ${shortName(item().objectPath)} in Unreal`}
 									disabled={props.locating}
 									onClick={() => props.onLocate(item().objectPath)}
-									{...stylex.props(
+									{...stylex.attrs(
 										styles.secondaryButton,
 										props.locating && styles.buttonBusy
 									)}
@@ -790,17 +815,17 @@ function InvestigationPane(props: {
 							</header>
 							<Show when={props.locateProblem}>
 								{(feedback) => (
-									<p role="status" {...stylex.props(styles.locateMessage)}>
+									<p role="status" {...stylex.attrs(styles.locateMessage)}>
 										{feedback().message} {feedback().recovery}
 									</p>
 								)}
 							</Show>
-							<div {...stylex.props(styles.selectedOverview)}>
-								<div {...stylex.props(styles.previewFrame)}>
+							<div {...stylex.attrs(styles.selectedOverview)}>
+								<div {...stylex.attrs(styles.previewFrame)}>
 									<Show
 										when={props.preview}
 										fallback={
-											<div {...stylex.props(styles.previewUnavailable)}>
+											<div {...stylex.attrs(styles.previewUnavailable)}>
 												<strong>
 													{props.unavailablePreview?.reason ===
 													"offline_unavailable"
@@ -815,7 +840,7 @@ function InvestigationPane(props: {
 													type="button"
 													disabled={props.offlinePreviewLoading}
 													onClick={props.onGeneratePreview}
-													{...stylex.props(
+													{...stylex.attrs(
 														styles.secondaryButton,
 														props.offlinePreviewLoading &&
 															styles.buttonBusy
@@ -834,11 +859,11 @@ function InvestigationPane(props: {
 												<img
 													src={`data:${image().mimeType};base64,${image().dataBase64}`}
 													alt={`${image().authority === "live_editor" ? "Live" : "Saved"} preview of ${shortName(item().objectPath)}`}
-													{...stylex.props(styles.previewImage)}
+													{...stylex.attrs(styles.previewImage)}
 												/>
 												<small
 													aria-label="Preview authority"
-													{...stylex.props(styles.previewAuthority)}
+													{...stylex.attrs(styles.previewAuthority)}
 												>
 													{image().authority === "live_editor"
 														? "Live editor"
@@ -848,17 +873,17 @@ function InvestigationPane(props: {
 										)}
 									</Show>
 								</div>
-								<section aria-label="Findings" {...stylex.props(styles.whyPanel)}>
-									<header {...stylex.props(styles.whyHeader)}>
+								<section aria-label="Findings" {...stylex.attrs(styles.whyPanel)}>
+									<header {...stylex.attrs(styles.whyHeader)}>
 										<span>Findings</span>
-										<b {...stylex.props(styles.whyCount)}>
+										<b {...stylex.attrs(styles.whyCount)}>
 											{current().findings.length}
 										</b>
 									</header>
 									<Show
 										when={current().findings.length > 0}
 										fallback={
-											<div {...stylex.props(styles.noFinding)}>
+											<div {...stylex.attrs(styles.noFinding)}>
 												<strong>No findings.</strong>
 												<span>Every texture passes your rules.</span>
 											</div>
@@ -866,10 +891,10 @@ function InvestigationPane(props: {
 									>
 										<For each={current().findings}>
 											{(finding) => (
-												<article {...stylex.props(styles.finding)}>
-													<div {...stylex.props(styles.findingTitle)}>
+												<article {...stylex.attrs(styles.finding)}>
+													<div {...stylex.attrs(styles.findingTitle)}>
 														<span
-															{...stylex.props(
+															{...stylex.attrs(
 																styles.findingSeverity,
 																finding.severity === "error"
 																	? styles.findingSeverityFail
@@ -878,14 +903,14 @@ function InvestigationPane(props: {
 														>
 															{severityLabel(finding.severity)}
 														</span>
-														<code {...stylex.props(styles.findingRule)}>
+														<code {...stylex.attrs(styles.findingRule)}>
 															{finding.ruleId}
 														</code>
 													</div>
-													<p {...stylex.props(styles.findingExplanation)}>
+													<p {...stylex.attrs(styles.findingExplanation)}>
 														{finding.explanation}
 													</p>
-													<div {...stylex.props(styles.findingValues)}>
+													<div {...stylex.attrs(styles.findingValues)}>
 														<FindingValues
 															label="Expected"
 															values={finding.expected}
@@ -903,23 +928,23 @@ function InvestigationPane(props: {
 							</div>
 							<section
 								aria-label="Peer comparison"
-								{...stylex.props(styles.comparisonPanel)}
+								{...stylex.attrs(styles.comparisonPanel)}
 							>
-								<header {...stylex.props(styles.sectionHeader)}>
-									<div {...stylex.props(styles.comparisonIdentity)}>
-										<h3 {...stylex.props(styles.comparisonTitle)}>
+								<header {...stylex.attrs(styles.sectionHeader)}>
+									<div {...stylex.attrs(styles.comparisonIdentity)}>
+										<h3 {...stylex.attrs(styles.comparisonTitle)}>
 											Comparison
 										</h3>
 										<span
 											title={props.comparison?.label}
-											{...stylex.props(styles.comparisonLabel)}
+											{...stylex.attrs(styles.comparisonLabel)}
 										>
 											{props.comparison?.label ?? "No comparison available"}
 										</span>
 									</div>
 									<nav
 										aria-label="Comparison cohort"
-										{...stylex.props(styles.comparisonTabs)}
+										{...stylex.attrs(styles.comparisonTabs)}
 									>
 										<For each={current().comparisons}>
 											{(comparison) => (
@@ -927,11 +952,13 @@ function InvestigationPane(props: {
 													type="button"
 													aria-pressed={
 														props.comparisonKind === comparison.kind
+															? "true"
+															: "false"
 													}
 													onClick={() =>
 														props.onComparison(comparison.kind)
 													}
-													{...stylex.props(
+													{...stylex.attrs(
 														styles.comparisonTab,
 														props.comparisonKind === comparison.kind &&
 															styles.comparisonTabActive
@@ -946,7 +973,7 @@ function InvestigationPane(props: {
 								<Show when={props.comparison}>
 									{(comparison) => (
 										<>
-											<div {...stylex.props(styles.comparisonMetrics)}>
+											<div {...stylex.attrs(styles.comparisonMetrics)}>
 												<ComparisonMetric
 													label="Maximum dimension"
 													metric={comparison().maximumDimension}
@@ -959,26 +986,26 @@ function InvestigationPane(props: {
 													metric={comparison().packageFileBytes}
 													format={bytesLabel}
 												/>
-												<div {...stylex.props(styles.cohortMetric)}>
-													<small {...stylex.props(styles.metricLabel)}>
+												<div {...stylex.attrs(styles.cohortMetric)}>
+													<small {...stylex.attrs(styles.metricLabel)}>
 														Cohort
 													</small>
-													<strong {...stylex.props(styles.metricValue)}>
+													<strong {...stylex.attrs(styles.metricValue)}>
 														{comparison().memberCount.toLocaleString()}{" "}
 														textures
 													</strong>
-													<span {...stylex.props(styles.metricDetail)}>
+													<span {...stylex.attrs(styles.metricDetail)}>
 														{comparison().findingCount.toLocaleString()}{" "}
 														rule findings
 													</span>
 												</div>
 											</div>
-											<div {...stylex.props(styles.peerList)}>
-												<header {...stylex.props(styles.peerHeader)}>
-													<span {...stylex.props(styles.peerTitle)}>
+											<div {...stylex.attrs(styles.peerList)}>
+												<header {...stylex.attrs(styles.peerHeader)}>
+													<span {...stylex.attrs(styles.peerTitle)}>
 														Peers
 													</span>
-													<small {...stylex.props(styles.peerSubtitle)}>
+													<small {...stylex.attrs(styles.peerSubtitle)}>
 														Closest to the cohort median
 													</small>
 												</header>
@@ -989,15 +1016,15 @@ function InvestigationPane(props: {
 															onClick={() =>
 																props.onSelectPeer(peer.objectPath)
 															}
-															{...stylex.props(styles.peerRow)}
+															{...stylex.attrs(styles.peerRow)}
 														>
 															<span
-																{...stylex.props(
+																{...stylex.attrs(
 																	styles.peerIdentity
 																)}
 															>
 																<strong
-																	{...stylex.props(
+																	{...stylex.attrs(
 																		styles.peerName
 																	)}
 																>
@@ -1005,7 +1032,7 @@ function InvestigationPane(props: {
 																</strong>
 																<small
 																	title={peer.objectPath}
-																	{...stylex.props(
+																	{...stylex.attrs(
 																		styles.peerPath
 																	)}
 																>
@@ -1013,7 +1040,7 @@ function InvestigationPane(props: {
 																</small>
 															</span>
 															<b
-																{...stylex.props(
+																{...stylex.attrs(
 																	styles.peerDimensions
 																)}
 															>
@@ -1023,7 +1050,7 @@ function InvestigationPane(props: {
 																	: "Unavailable"}
 															</b>
 															<em
-																{...stylex.props(styles.peerStatus)}
+																{...stylex.attrs(styles.peerStatus)}
 															>
 																{peer.findingCount > 0
 																	? `${peer.findingCount} finding${peer.findingCount === 1 ? "" : "s"}`
@@ -1033,7 +1060,7 @@ function InvestigationPane(props: {
 													)}
 												</For>
 												<Show when={comparison().peers.length === 0}>
-													<p {...stylex.props(styles.noPeers)}>
+													<p {...stylex.attrs(styles.noPeers)}>
 														No other textures belong to this cohort.
 													</p>
 												</Show>
@@ -1044,7 +1071,7 @@ function InvestigationPane(props: {
 							</section>
 							<section
 								aria-label="Texture properties"
-								{...stylex.props(styles.evidencePanel)}
+								{...stylex.attrs(styles.evidencePanel)}
 							>
 								<EvidenceValue
 									label="Dimensions"
@@ -1091,14 +1118,14 @@ function ComparisonMetric(props: {
 	readonly metric: TextureAuditRecord["comparisons"][number]["maximumDimension"];
 }) {
 	return (
-		<div {...stylex.props(styles.comparisonMetric)}>
-			<small {...stylex.props(styles.metricLabel)}>{props.label}</small>
+		<div {...stylex.attrs(styles.comparisonMetric)}>
+			<small {...stylex.attrs(styles.metricLabel)}>{props.label}</small>
 			<Show
 				when={props.metric.status === "available" ? props.metric : undefined}
 				fallback={
 					<>
-						<strong {...stylex.props(styles.metricValue)}>Unavailable</strong>
-						<span {...stylex.props(styles.metricDetail)}>
+						<strong {...stylex.attrs(styles.metricValue)}>Unavailable</strong>
+						<span {...stylex.attrs(styles.metricDetail)}>
 							{props.metric.availableCount} comparable values
 						</span>
 					</>
@@ -1106,10 +1133,10 @@ function ComparisonMetric(props: {
 			>
 				{(metric) => (
 					<>
-						<strong {...stylex.props(styles.metricValue)}>
+						<strong {...stylex.attrs(styles.metricValue)}>
 							{props.format(metric().selected)}
 						</strong>
-						<span {...stylex.props(styles.metricDetail)}>
+						<span {...stylex.attrs(styles.metricDetail)}>
 							Median {props.format(metric().median)} · {metric().percentile}th
 							percentile
 						</span>
@@ -1126,13 +1153,13 @@ function EvidenceValue(props: {
 	readonly value: string;
 }) {
 	return (
-		<div {...stylex.props(styles.evidenceValue)}>
-			<small {...stylex.props(styles.evidenceLabel)}>{props.label}</small>
-			<strong title={props.value} {...stylex.props(styles.evidenceData)}>
+		<div {...stylex.attrs(styles.evidenceValue)}>
+			<small {...stylex.attrs(styles.evidenceLabel)}>{props.label}</small>
+			<strong title={props.value} {...stylex.attrs(styles.evidenceData)}>
 				{props.value}
 			</strong>
 			<Show when={props.detail}>
-				{(detail) => <span {...stylex.props(styles.evidenceDetail)}>{detail()}</span>}
+				{(detail) => <span {...stylex.attrs(styles.evidenceDetail)}>{detail()}</span>}
 			</Show>
 		</div>
 	);
@@ -1143,7 +1170,7 @@ function FindingValues(props: {
 	readonly values: TextureAuditRecord["findings"][number]["actual"];
 }) {
 	return (
-		<div {...stylex.props(styles.findingValueGroup)}>
+		<div {...stylex.attrs(styles.findingValueGroup)}>
 			<small>{props.label}</small>
 			<For each={props.values}>
 				{(value) => (

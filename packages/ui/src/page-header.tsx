@@ -1,6 +1,7 @@
 import * as stylex from "@stylexjs/stylex";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
-import type { JSX } from "solid-js";
+
+import type { JSX } from "@solidjs/web";
 
 export interface PageHeaderProps {
 	readonly eyebrow: string;
@@ -9,11 +10,11 @@ export interface PageHeaderProps {
 
 export function PageHeader(props: PageHeaderProps) {
 	return (
-		<header {...stylex.props(styles.header)}>
-			<nav aria-label="Breadcrumb" {...stylex.props(styles.eyebrow)}>
+		<header {...stylex.attrs(styles.header)}>
+			<nav aria-label="Breadcrumb" {...stylex.attrs(styles.eyebrow)}>
 				{props.eyebrow}
 			</nav>
-			{props.actions ? <div {...stylex.props(styles.actions)}>{props.actions}</div> : null}
+			{props.actions ? <div {...stylex.attrs(styles.actions)}>{props.actions}</div> : null}
 		</header>
 	);
 }

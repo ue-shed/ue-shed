@@ -76,15 +76,15 @@ export function AuthoringMock() {
 
 	return (
 		<WindowFrame title="Data Authoring — DT_Scalars" badge="draft editor">
-			<div {...stylex.props(styles.toolbar)}>
-				<span {...stylex.props(styles.chip)}>authority: project_files</span>
-				<span {...stylex.props(styles.chip)}>complete</span>
-				<span {...stylex.props(styles.spacer)} />
+			<div {...stylex.attrs(styles.toolbar)}>
+				<span {...stylex.attrs(styles.chip)}>authority: project_files</span>
+				<span {...stylex.attrs(styles.chip)}>complete</span>
+				<span {...stylex.attrs(styles.spacer)} />
 				<Show
 					when={draftCount() > 0}
-					fallback={<span {...stylex.props(styles.chipQuiet)}>no local edits</span>}
+					fallback={<span {...stylex.attrs(styles.chipQuiet)}>no local edits</span>}
 				>
-					<span {...stylex.props(styles.chipDraft)}>
+					<span {...stylex.attrs(styles.chipDraft)}>
 						{draftCount()} draft {draftCount() === 1 ? "cell" : "cells"}
 					</span>
 				</Show>
@@ -92,7 +92,7 @@ export function AuthoringMock() {
 					type="button"
 					disabled={past().length === 0}
 					onClick={undo}
-					{...stylex.props(styles.toolButton)}
+					{...stylex.attrs(styles.toolButton)}
 				>
 					Undo
 				</button>
@@ -100,32 +100,32 @@ export function AuthoringMock() {
 					type="button"
 					disabled={future().length === 0}
 					onClick={redo}
-					{...stylex.props(styles.toolButton)}
+					{...stylex.attrs(styles.toolButton)}
 				>
 					Redo
 				</button>
 			</div>
-			<div {...stylex.props(styles.gridScroll)}>
-				<div {...stylex.props(styles.grid)}>
-					<div {...stylex.props(styles.headerCell)}>Row</div>
+			<div {...stylex.attrs(styles.gridScroll)}>
+				<div {...stylex.attrs(styles.grid)}>
+					<div {...stylex.attrs(styles.headerCell)}>Row</div>
 					<For each={authoringFields}>
 						{(field) => (
-							<div {...stylex.props(styles.headerCell)}>
+							<div {...stylex.attrs(styles.headerCell)}>
 								{field.name}
-								<span {...stylex.props(styles.headerType)}>{field.type}</span>
+								<span {...stylex.attrs(styles.headerType)}>{field.type}</span>
 							</div>
 						)}
 					</For>
 					<For each={authoringRows}>
 						{(row) => (
 							<>
-								<div {...stylex.props(styles.rowName)}>{row.name}</div>
+								<div {...stylex.attrs(styles.rowName)}>{row.name}</div>
 								<For each={authoringFields}>
 									{(field) => {
 										const key = cellKey(row, field);
 										return (
 											<div
-												{...stylex.props(
+												{...stylex.attrs(
 													styles.cell,
 													isDraft(row, field) && styles.cellDraft
 												)}
@@ -141,7 +141,7 @@ export function AuthoringMock() {
 																currentValue(row, field) !== true
 															)
 														}
-														{...stylex.props(
+														{...stylex.attrs(
 															styles.boolToggle,
 															currentValue(row, field) === true &&
 																styles.boolOn
@@ -178,13 +178,13 @@ export function AuthoringMock() {
 															);
 															setEditingKey(null);
 														}}
-														{...stylex.props(styles.cellInput)}
+														{...stylex.attrs(styles.cellInput)}
 													/>
 												) : (
 													<button
 														type="button"
 														onClick={() => setEditingKey(key)}
-														{...stylex.props(styles.cellButton)}
+														{...stylex.attrs(styles.cellButton)}
 													>
 														{String(currentValue(row, field))}
 													</button>
@@ -198,7 +198,7 @@ export function AuthoringMock() {
 					</For>
 				</div>
 			</div>
-			<div {...stylex.props(styles.footer)}>Click a cell to draft an edit.</div>
+			<div {...stylex.attrs(styles.footer)}>Click a cell to draft an edit.</div>
 		</WindowFrame>
 	);
 }

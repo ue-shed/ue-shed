@@ -1,6 +1,6 @@
 import * as stylex from "@stylexjs/stylex";
 import { ActorExplorerUtilities } from "./actor-explorer-toolbar.js";
-import { createVirtualizer } from "@tanstack/solid-virtual";
+import { createVirtualizer } from "./virtualizer.js";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import {
 	For,
@@ -12,7 +12,8 @@ import {
 	onCleanup,
 	untrack
 } from "solid-js";
-import type { JSX } from "solid-js";
+
+import type { JSX } from "@solidjs/web";
 import { pointMapColorForClass } from "./point-map-core.js";
 import {
 	actorExplorerMatches,
@@ -170,8 +171,7 @@ export function ActorExplorer(props: {
 			}
 		});
 	};
-	createEffect(() => {
-		const key = keyboardFocus();
+	createEffect(keyboardFocus, (key) => {
 		if (key !== undefined) focusRequestedActor(key);
 	});
 
@@ -213,24 +213,28 @@ export function ActorExplorer(props: {
 			: `${count} CLASS${count === 1 ? "" : "ES"}`;
 	});
 
-	createEffect(() => {
-		const key = props.selectedKey;
-		if (key === undefined) return;
-		const index = rows().findIndex((row) => row.kind === "actor" && row.item.key === key);
-		if (index >= 0) untrack(() => virtualizer.scrollToIndex(index, { align: "auto" }));
-	});
-	createEffect(() => {
-		const selectedKey = props.selectedKey;
-		if (selectedKey === undefined) return;
-		const selected = props.items.find((item) => item.key === selectedKey);
-		if (selected === undefined) return;
-		setCollapsedClasses((current) => {
-			if (!current.has(selected.classPath)) return current;
-			const next = new Set(current);
-			next.delete(selected.classPath);
-			return next;
-		});
-	});
+	createEffect(
+		() => ({ key: props.selectedKey, currentRows: rows() }),
+		({ key, currentRows }) => {
+			if (key === undefined) return;
+			const index = currentRows.findIndex(
+				(row) => row.kind === "actor" && row.item.key === key
+			);
+			if (index >= 0) untrack(() => virtualizer.scrollToIndex(index, { align: "auto" }));
+		}
+	);
+	createEffect(
+		() => props.items.find((item) => item.key === props.selectedKey),
+		(selected) => {
+			if (selected === undefined) return;
+			setCollapsedClasses((current) => {
+				if (!current.has(selected.classPath)) return current;
+				const next = new Set(current);
+				next.delete(selected.classPath);
+				return next;
+			});
+		}
+	);
 
 	const setQuery = (query: string) => props.onFiltersChange({ ...props.filters, query });
 	const toggleClass = (classPath: string) => {
@@ -280,29 +284,29 @@ export function ActorExplorer(props: {
 			onKeyDown={(event) => {
 				if (event.key === "Escape") setClassMenuOpen(false);
 			}}
-			{...stylex.props(
+			{...stylex.attrs(
 				styles.explorer,
 				props.density === "compact" && !props.utilities && styles.explorerCompact
 			)}
 		>
 			<div
-				{...stylex.props(
+				{...stylex.attrs(
 					styles.header,
 					props.density === "compact" && styles.headerCompact
 				)}
 			>
 				<div>
-					<span {...stylex.props(styles.kicker)}>{props.label ?? "ACTOR EXPLORER"}</span>
+					<span {...stylex.attrs(styles.kicker)}>{props.label ?? "ACTOR EXPLORER"}</span>
 					<Show when={props.title}>
-						{(title) => <strong {...stylex.props(styles.title)}>{title()}</strong>}
+						{(title) => <strong {...stylex.attrs(styles.title)}>{title()}</strong>}
 					</Show>
 				</div>
-				<span {...stylex.props(styles.count)}>
+				<span {...stylex.attrs(styles.count)}>
 					{visibleItems().length} / {props.items.length}
 				</span>
 			</div>
 			<label
-				{...stylex.props(
+				{...stylex.attrs(
 					styles.search,
 					props.density === "compact" && styles.searchCompact
 				)}
@@ -314,7 +318,7 @@ export function ActorExplorer(props: {
 					value={props.filters.query}
 					onInput={(event) => setQuery(event.currentTarget.value)}
 					placeholder="label: class: path: package: guid:"
-					{...stylex.props(styles.searchInput)}
+					{...stylex.attrs(styles.searchInput)}
 				/>
 			</label>
 			<Show when={props.utilities}>
@@ -334,22 +338,22 @@ export function ActorExplorer(props: {
 				/>
 			</Show>
 			<Show when={classOptions().length > 0}>
-				<div {...stylex.props(styles.classMenu)}>
+				<div {...stylex.attrs(styles.classMenu)}>
 					<div
-						{...stylex.props(
+						{...stylex.attrs(
 							styles.classToolbar,
 							props.density === "compact" && styles.classToolbarCompact
 						)}
 					>
-						<span {...stylex.props(styles.classToolbarLabel)}>CLASS FILTER</span>
+						<span {...stylex.attrs(styles.classToolbarLabel)}>CLASS FILTER</span>
 						<button
 							type="button"
 							disabled={props.disabled}
-							aria-expanded={classMenuOpen()}
+							aria-expanded={classMenuOpen() ? "true" : "false"}
 							aria-controls={classFiltersId}
 							aria-label="Toggle actor class filters"
 							onClick={() => setClassMenuOpen((open) => !open)}
-							{...stylex.props(styles.classSummary)}
+							{...stylex.attrs(styles.classSummary)}
 						>
 							{classSummary()}{" "}
 							<b>
@@ -362,12 +366,12 @@ export function ActorExplorer(props: {
 						<div
 							id={classFiltersId}
 							aria-label="Actor class filters"
-							{...stylex.props(
+							{...stylex.attrs(
 								styles.classFilters,
 								props.density === "compact" && styles.classFiltersCompact
 							)}
 						>
-							<div {...stylex.props(styles.classFiltersHeader)}>
+							<div {...stylex.attrs(styles.classFiltersHeader)}>
 								<div>
 									<strong>FILTER CLASSES</strong>
 									<span>
@@ -375,7 +379,7 @@ export function ActorExplorer(props: {
 										shown
 									</span>
 								</div>
-								<div {...stylex.props(styles.classFilterActions)}>
+								<div {...stylex.attrs(styles.classFilterActions)}>
 									<Show
 										when={
 											props.classMode !== "target" &&
@@ -387,7 +391,7 @@ export function ActorExplorer(props: {
 											disabled={props.disabled}
 											title="Invert which actor classes are selected"
 											onClick={invertClasses}
-											{...stylex.props(styles.classAction)}
+											{...stylex.attrs(styles.classAction)}
 										>
 											INVERT
 										</button>
@@ -395,13 +399,13 @@ export function ActorExplorer(props: {
 									<button
 										type="button"
 										onClick={() => setClassMenuOpen(false)}
-										{...stylex.props(styles.classAction)}
+										{...stylex.attrs(styles.classAction)}
 									>
 										CLOSE
 									</button>
 								</div>
 							</div>
-							<div {...stylex.props(styles.classOptionGrid)}>
+							<div {...stylex.attrs(styles.classOptionGrid)}>
 								<For each={filteredClassOptions()}>
 									{(option) => {
 										const active = () =>
@@ -415,22 +419,22 @@ export function ActorExplorer(props: {
 											<button
 												type="button"
 												disabled={props.disabled}
-												aria-pressed={active()}
+												aria-pressed={active() ? "true" : "false"}
 												onClick={() => toggleClass(option.classPath)}
-												{...stylex.props(
+												{...stylex.attrs(
 													styles.classOption,
 													active() && styles.classOptionActive
 												)}
 											>
 												<i
-													{...stylex.props(styles.swatch)}
+													{...stylex.attrs(styles.swatch)}
 													style={{
 														"background-color": pointMapColorForClass(
 															option.classPath
 														)
 													}}
 												/>
-												<span {...stylex.props(styles.classOptionLabel)}>
+												<span {...stylex.attrs(styles.classOptionLabel)}>
 													{classLabel(option)}
 												</span>
 												<b>{option.count}</b>
@@ -448,11 +452,11 @@ export function ActorExplorer(props: {
 				ref={(element) => {
 					listRef = element;
 				}}
-				{...stylex.props(styles.list)}
+				{...stylex.attrs(styles.list)}
 			>
 				<ul
 					aria-label={props.itemListLabel ?? "Actors"}
-					{...stylex.props(styles.virtualList)}
+					{...stylex.attrs(styles.virtualList)}
 					style={{ height: virtualizer.getTotalSize() + "px" }}
 				>
 					<For each={virtualizer.getVirtualItems()}>
@@ -462,7 +466,7 @@ export function ActorExplorer(props: {
 								aria-posinset={virtualRow.index + 1}
 								aria-setsize={rows().length}
 								ref={(element) => virtualizer.measureElement(element)}
-								{...stylex.props(styles.virtualRow)}
+								{...stylex.attrs(styles.virtualRow)}
 								style={{ transform: "translateY(" + virtualRow.start + "px)" }}
 							>
 								<Show keyed when={rows()[virtualRow.index]}>
@@ -477,18 +481,20 @@ export function ActorExplorer(props: {
 																!collapsedClasses().has(
 																	group.classPath
 																)
+																	? "true"
+																	: "false"
 															}
 															onClick={() =>
 																toggleClassGroup(group.classPath)
 															}
-															{...stylex.props(
+															{...stylex.attrs(
 																styles.classGroupHeader,
 																props.density === "compact" &&
 																	styles.classGroupHeaderCompact
 															)}
 														>
 															<span
-																{...stylex.props(
+																{...stylex.attrs(
 																	styles.classGroupDisclosure
 																)}
 															>
@@ -499,7 +505,7 @@ export function ActorExplorer(props: {
 																	: "▾"}
 															</span>
 															<strong
-																{...stylex.props(
+																{...stylex.attrs(
 																	styles.classGroupLabel
 																)}
 															>
@@ -511,19 +517,13 @@ export function ActorExplorer(props: {
 												})()
 											: (() => {
 													const item = row.item;
+													onCleanup(() => rowRefs.delete(item.key));
 													return (
 														<button
 															ref={(element) => {
 																rowRefs.set(item.key, element);
 																if (keyboardFocus() === item.key)
 																	focusRequestedActor(item.key);
-																onCleanup(() => {
-																	if (
-																		rowRefs.get(item.key) ===
-																		element
-																	)
-																		rowRefs.delete(item.key);
-																});
 															}}
 															type="button"
 															onKeyDown={(event) =>
@@ -532,13 +532,15 @@ export function ActorExplorer(props: {
 															disabled={props.disabled}
 															aria-pressed={
 																props.selectedKey === item.key
+																	? "true"
+																	: "false"
 															}
 															title={item.path ?? item.label}
 															onClick={() => {
 																props.onSelect(item.key);
 																props.onFocus?.(item.key);
 															}}
-															{...stylex.props(
+															{...stylex.attrs(
 																styles.row,
 																props.density === "compact" &&
 																	styles.rowCompact,
@@ -547,13 +549,13 @@ export function ActorExplorer(props: {
 															)}
 														>
 															<span
-																{...stylex.props(styles.rowGlyph)}
+																{...stylex.attrs(styles.rowGlyph)}
 															>
 																•
 															</span>
-															<span {...stylex.props(styles.rowCopy)}>
+															<span {...stylex.attrs(styles.rowCopy)}>
 																<strong
-																	{...stylex.props(
+																	{...stylex.attrs(
 																		styles.rowLabel
 																	)}
 																>
@@ -562,7 +564,7 @@ export function ActorExplorer(props: {
 																<Show when={itemSecondary(item)}>
 																	{(secondary) => (
 																		<small
-																			{...stylex.props(
+																			{...stylex.attrs(
 																				styles.rowSecondary
 																			)}
 																		>
@@ -578,7 +580,7 @@ export function ActorExplorer(props: {
 																}
 															>
 																<div
-																	{...stylex.props(styles.badges)}
+																	{...stylex.attrs(styles.badges)}
 																>
 																	<For each={item.badges}>
 																		{(badge) => (
@@ -598,7 +600,7 @@ export function ActorExplorer(props: {
 				</ul>
 			</div>
 			<Show when={visibleItems().length === 0}>
-				<p {...stylex.props(styles.empty)}>
+				<p {...stylex.attrs(styles.empty)}>
 					{props.emptyLabel ?? "No actors match the current filters."}
 				</p>
 			</Show>

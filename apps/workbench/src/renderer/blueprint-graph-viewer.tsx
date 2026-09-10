@@ -9,7 +9,7 @@ import type {
 } from "@ue-shed/protocol";
 import { createEffectAction } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
-import { For, Show, createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import { For, Show, createMemo, createSignal, onCleanup, onSettled } from "solid-js";
 import type {
 	BlueprintAssetCandidate,
 	BlueprintAssetSearchResult,
@@ -184,7 +184,7 @@ function PinDot(props: { readonly pin: BlueprintPin }) {
 	return (
 		<i
 			style={"border-color:" + pinToneColor(pinTone(props.pin))}
-			{...stylex.props(styles.pinDot)}
+			{...stylex.attrs(styles.pinDot)}
 		/>
 	);
 }
@@ -461,51 +461,54 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 		setZoomLevel(zoom() + (event.deltaY < 0 ? 0.1 : -0.1));
 	};
 
-	onMount(() => requestBlueprints(""));
+	onSettled(() => requestBlueprints(""));
 	onCleanup(() => {
 		if (searchTimer !== undefined) clearTimeout(searchTimer);
 	});
 
 	return (
-		<main aria-busy={loading() || indexBusy()} {...stylex.props(styles.route)}>
-			<header {...stylex.props(styles.header)}>
+		<main
+			aria-busy={loading() || indexBusy() ? "true" : "false"}
+			{...stylex.attrs(styles.route)}
+		>
+			<header {...stylex.attrs(styles.header)}>
 				<div>
-					<p {...stylex.props(styles.eyebrow)}>
+					<p {...stylex.attrs(styles.eyebrow)}>
 						Saved package evidence / Blueprint graphs
 					</p>
-					<h1 {...stylex.props(styles.title)}>Blueprint Graphs</h1>
-					<p {...stylex.props(styles.intro)}>
+					<h1 {...stylex.attrs(styles.title)}>Blueprint Graphs</h1>
+					<p {...stylex.attrs(styles.intro)}>
 						Inspect the graph exactly as it was saved in an uncooked .uasset. The local
 						reader opens package bytes directly—without an editor process, asset load,
 						compile, or selected Unreal project.
 					</p>
 				</div>
-				<div {...stylex.props(styles.authorityBadges)}>
-					<span {...stylex.props(styles.offlineBadge)}>LOCAL FILE · NO UNREAL</span>
-					<span {...stylex.props(styles.readOnlyStamp)}>
+				<div {...stylex.attrs(styles.authorityBadges)}>
+					<span {...stylex.attrs(styles.offlineBadge)}>LOCAL FILE · NO UNREAL</span>
+					<span {...stylex.attrs(styles.readOnlyStamp)}>
 						READ ONLY · SAVED PACKAGE · SCHEMA 1
 					</span>
 				</div>
 			</header>
 
 			<section
-				aria-busy={indexBusy()}
+				aria-busy={indexBusy() ? "true" : "false"}
 				aria-label="Indexed Blueprints"
-				{...stylex.props(styles.indexPanel)}
+				{...stylex.attrs(styles.indexPanel)}
 			>
-				<div {...stylex.props(styles.indexPanelHeader)}>
-					<div {...stylex.props(styles.indexIdentity)}>
-						<span {...stylex.props(styles.indexMark)}>⌕</span>
-						<span {...stylex.props(styles.indexIdentityCopy)}>
-							<small {...stylex.props(styles.indexEyebrow)}>PROJECT INDEX</small>
-							<strong {...stylex.props(styles.indexTitle)}>
+				<div {...stylex.attrs(styles.indexPanelHeader)}>
+					<div {...stylex.attrs(styles.indexIdentity)}>
+						<span {...stylex.attrs(styles.indexMark)}>⌕</span>
+						<span {...stylex.attrs(styles.indexIdentityCopy)}>
+							<small {...stylex.attrs(styles.indexEyebrow)}>PROJECT INDEX</small>
+							<strong {...stylex.attrs(styles.indexTitle)}>
 								Find a saved Blueprint
 							</strong>
 						</span>
 					</div>
 					<Show when={indexedResult()}>
 						{(catalog) => (
-							<span {...stylex.props(styles.indexProject)}>
+							<span {...stylex.attrs(styles.indexProject)}>
 								{indexedBlueprints().status === "updating"
 									? "SEARCHING"
 									: catalog().projectName.toUpperCase()}
@@ -515,9 +518,9 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 				</div>
 
 				<Show when={indexedBlueprints().status === "loading"}>
-					<div aria-live="polite" role="status" {...stylex.props(styles.indexStatus)}>
-						<span {...stylex.props(styles.loadingSpinner)} />
-						<span {...stylex.props(styles.indexStatusCopy)}>
+					<div aria-live="polite" role="status" {...stylex.attrs(styles.indexStatus)}>
+						<span {...stylex.attrs(styles.loadingSpinner)} />
+						<span {...stylex.attrs(styles.indexStatusCopy)}>
 							<strong>Loading the saved package index</strong>
 							<small>No package graph is decoded until you open a result.</small>
 						</span>
@@ -525,8 +528,8 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 				</Show>
 
 				<Show when={indexedBlueprints().status === "not_configured"}>
-					<div {...stylex.props(styles.indexCallout)}>
-						<span {...stylex.props(styles.indexStatusCopy)}>
+					<div {...stylex.attrs(styles.indexCallout)}>
+						<span {...stylex.attrs(styles.indexStatusCopy)}>
 							<strong>No Workbench project is selected</strong>
 							<small>
 								Choose a project to search its cached .uasset inventory, or open any
@@ -536,7 +539,7 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 						<button
 							onClick={chooseProject}
 							type="button"
-							{...stylex.props(styles.indexAction)}
+							{...stylex.attrs(styles.indexAction)}
 						>
 							Choose project
 						</button>
@@ -545,15 +548,15 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 
 				<Show when={indexFailure()}>
 					{(failure) => (
-						<div role="alert" {...stylex.props(styles.indexCallout, styles.indexError)}>
-							<span {...stylex.props(styles.indexStatusCopy)}>
+						<div role="alert" {...stylex.attrs(styles.indexCallout, styles.indexError)}>
+							<span {...stylex.attrs(styles.indexStatusCopy)}>
 								<strong>{failure().message}</strong>
 								<small>{failure().recovery}</small>
 							</span>
 							<button
 								onClick={() => requestBlueprints(assetQuery())}
 								type="button"
-								{...stylex.props(styles.indexAction)}
+								{...stylex.attrs(styles.indexAction)}
 							>
 								Retry index
 							</button>
@@ -562,8 +565,8 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 				</Show>
 
 				<Show when={indexedBlueprints().status === "transport_failed"}>
-					<div role="alert" {...stylex.props(styles.indexCallout, styles.indexError)}>
-						<span {...stylex.props(styles.indexStatusCopy)}>
+					<div role="alert" {...stylex.attrs(styles.indexCallout, styles.indexError)}>
+						<span {...stylex.attrs(styles.indexStatusCopy)}>
 							<strong>The project index request could not be completed</strong>
 							<small>
 								Retry the local request. Direct path entry remains available and
@@ -573,7 +576,7 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 						<button
 							onClick={() => requestBlueprints(assetQuery())}
 							type="button"
-							{...stylex.props(styles.indexAction)}
+							{...stylex.attrs(styles.indexAction)}
 						>
 							Retry index
 						</button>
@@ -582,11 +585,11 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 
 				<Show when={indexedResult()}>
 					{(catalog) => (
-						<div {...stylex.props(styles.indexBody)}>
-							<label {...stylex.props(styles.indexSearchField)}>
+						<div {...stylex.attrs(styles.indexBody)}>
+							<label {...stylex.attrs(styles.indexSearchField)}>
 								<span>Search asset name, package, path, or Blueprint class</span>
-								<span {...stylex.props(styles.indexSearchControl)}>
-									<span aria-hidden="true" {...stylex.props(styles.searchGlyph)}>
+								<span {...stylex.attrs(styles.indexSearchControl)}>
+									<span aria-hidden="true" {...stylex.attrs(styles.searchGlyph)}>
 										⌕
 									</span>
 									<input
@@ -599,16 +602,16 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 										placeholder="Try BP_Player, /Game/UI, or WidgetBlueprint"
 										spellcheck={false}
 										value={assetQuery()}
-										{...stylex.props(styles.indexSearchInput)}
+										{...stylex.attrs(styles.indexSearchInput)}
 									/>
-									<kbd {...stylex.props(styles.enterHint)}>ENTER TO OPEN</kbd>
+									<kbd {...stylex.attrs(styles.enterHint)}>ENTER TO OPEN</kbd>
 								</span>
 							</label>
 
 							<Show
 								when={catalog().assets.length > 0}
 								fallback={
-									<div {...stylex.props(styles.noIndexResults)}>
+									<div {...stylex.attrs(styles.noIndexResults)}>
 										<strong>
 											No indexed Blueprints match “{assetQuery()}”
 										</strong>
@@ -621,7 +624,7 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 							>
 								<div
 									aria-label="Blueprint search results"
-									{...stylex.props(styles.indexResults)}
+									{...stylex.attrs(styles.indexResults)}
 								>
 									<For each={catalog().assets}>
 										{(asset) => (
@@ -629,31 +632,31 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 												aria-label={`Open ${asset.assetName} from project index`}
 												onClick={() => openIndexedBlueprint(asset)}
 												type="button"
-												{...stylex.props(styles.indexResult)}
+												{...stylex.attrs(styles.indexResult)}
 											>
-												<span {...stylex.props(styles.assetMonogram)}>
+												<span {...stylex.attrs(styles.assetMonogram)}>
 													{asset.assetName.slice(0, 2).toUpperCase()}
 												</span>
-												<span {...stylex.props(styles.assetIdentity)}>
+												<span {...stylex.attrs(styles.assetIdentity)}>
 													<strong
 														title={asset.assetName}
-														{...stylex.props(styles.assetName)}
+														{...stylex.attrs(styles.assetName)}
 													>
 														{asset.assetName}
 													</strong>
 													<small
 														title={asset.packageName}
-														{...stylex.props(styles.assetPackage)}
+														{...stylex.attrs(styles.assetPackage)}
 													>
 														{asset.packageName}
 													</small>
 												</span>
-												<span {...stylex.props(styles.assetClass)}>
+												<span {...stylex.attrs(styles.assetClass)}>
 													{asset.className}
 												</span>
 												<span
 													aria-hidden="true"
-													{...stylex.props(styles.openArrow)}
+													{...stylex.attrs(styles.openArrow)}
 												>
 													→
 												</span>
@@ -662,7 +665,7 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 									</For>
 								</div>
 							</Show>
-							<div aria-live="polite" {...stylex.props(styles.indexFooter)}>
+							<div aria-live="polite" {...stylex.attrs(styles.indexFooter)}>
 								<span>
 									{catalog().matchCount === catalog().assets.length
 										? `${catalog().matchCount} indexed Blueprint${catalog().matchCount === 1 ? "" : "s"}`
@@ -675,8 +678,8 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 				</Show>
 			</section>
 
-			<form onSubmit={readPath} {...stylex.props(styles.pathBar)}>
-				<label {...stylex.props(styles.pathField)}>
+			<form onSubmit={readPath} {...stylex.attrs(styles.pathBar)}>
+				<label {...stylex.attrs(styles.pathField)}>
 					<span>Direct package path</span>
 					<input
 						aria-label="Blueprint package path"
@@ -684,17 +687,17 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 						placeholder="C:\\Project\\Content\\Blueprints\\BP_Example.uasset"
 						spellcheck={false}
 						value={assetPath()}
-						{...stylex.props(styles.pathInput)}
+						{...stylex.attrs(styles.pathInput)}
 					/>
 				</label>
-				<button disabled={loading()} type="submit" {...stylex.props(styles.openButton)}>
+				<button disabled={loading()} type="submit" {...stylex.attrs(styles.openButton)}>
 					{loading() ? "Decoding…" : "Open graph"}
 				</button>
 				<button
 					disabled={loading()}
 					onClick={choose}
 					type="button"
-					{...stylex.props(styles.browseButton)}
+					{...stylex.attrs(styles.browseButton)}
 				>
 					Browse…
 				</button>
@@ -709,16 +712,16 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 			</Show>
 			<Show when={failure()}>{(value) => <FailureNotice failure={value()} />}</Show>
 			<Show when={loading()}>
-				<div aria-live="polite" role="status" {...stylex.props(styles.loadingNotice)}>
-					<span {...stylex.props(styles.loadingSpinner)} />
-					<span {...stylex.props(styles.loadingCopy)}>
+				<div aria-live="polite" role="status" {...stylex.attrs(styles.loadingNotice)}>
+					<span {...stylex.attrs(styles.loadingSpinner)} />
+					<span {...stylex.attrs(styles.loadingCopy)}>
 						<strong>Reading saved package</strong>
 						<small>Decoding locally. No editor session will be started.</small>
 					</span>
 				</div>
 			</Show>
 			<Show when={cancelled()}>
-				<div aria-live="polite" role="status" {...stylex.props(styles.cancelNotice)}>
+				<div aria-live="polite" role="status" {...stylex.attrs(styles.cancelNotice)}>
 					File selection cancelled. No package was opened or changed.
 				</div>
 			</Show>
@@ -726,20 +729,20 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 			<Show
 				when={blueprint()}
 				fallback={
-					<section {...stylex.props(styles.emptyState)}>
-						<div {...stylex.props(styles.emptyGlyph)}>
-							<span {...stylex.props(styles.emptyDot)} />
-							<span {...stylex.props(styles.emptyDot, styles.emptyDotAccent)} />
-							<span {...stylex.props(styles.emptyDot)} />
+					<section {...stylex.attrs(styles.emptyState)}>
+						<div {...stylex.attrs(styles.emptyGlyph)}>
+							<span {...stylex.attrs(styles.emptyDot)} />
+							<span {...stylex.attrs(styles.emptyDot, styles.emptyDotAccent)} />
+							<span {...stylex.attrs(styles.emptyDot)} />
 						</div>
-						<p {...stylex.props(styles.emptyKicker)}>DIRECT FROM DISK</p>
+						<p {...stylex.attrs(styles.emptyKicker)}>DIRECT FROM DISK</p>
 						<h2>Open saved Blueprint evidence</h2>
 						<p>
 							Search the selected project's saved package index, paste an absolute
 							path, or choose a .uasset from anywhere on disk. No running Unreal
 							Editor is required.
 						</p>
-						<div {...stylex.props(styles.emptyFacts)}>
+						<div {...stylex.attrs(styles.emptyFacts)}>
 							<span>Positions preserved</span>
 							<span>Pins + defaults</span>
 							<span>Links + coverage</span>
@@ -749,8 +752,8 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 			>
 				{(projection) => (
 					<>
-						<section aria-label="Blueprint summary" {...stylex.props(styles.summary)}>
-							<div {...stylex.props(styles.identity)}>
+						<section aria-label="Blueprint summary" {...stylex.attrs(styles.summary)}>
+							<div {...stylex.attrs(styles.identity)}>
 								<span>OBJECT</span>
 								<strong title={projection().object_path}>
 									{projection().object_path.split(".").at(-1)}
@@ -766,9 +769,9 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 							/>
 							<Metric label="pins" value={pinCount()} />
 							<Metric label="links" value={linkCount()} />
-							<div {...stylex.props(styles.coverage)}>
+							<div {...stylex.attrs(styles.coverage)}>
 								<span
-									{...stylex.props(
+									{...stylex.attrs(
 										topologyGaps().length === 0
 											? styles.coverageDotReady
 											: styles.coverageDotGap
@@ -801,18 +804,18 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 						<Show when={ready()?.outcome === "partial"}>
 							<section
 								aria-label="Blueprint decode diagnostics"
-								{...stylex.props(styles.diagnostics)}
+								{...stylex.attrs(styles.diagnostics)}
 							>
 								<strong>Partial Blueprint decode</strong>
 								<span>
 									The graph remains inspectable, but some saved evidence could not
 									be projected completely.
 								</span>
-								<ul {...stylex.props(styles.diagnosticList)}>
+								<ul {...stylex.attrs(styles.diagnosticList)}>
 									<For each={ready()?.diagnostics}>
 										{(diagnostic) => (
 											<li>
-												<code {...stylex.props(styles.diagnosticCode)}>
+												<code {...stylex.attrs(styles.diagnosticCode)}>
 													{diagnostic.code}
 												</code>{" "}
 												{diagnostic.message}
@@ -830,23 +833,25 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 							<div
 								aria-label="Saved graphs"
 								role="tablist"
-								{...stylex.props(styles.graphTabs)}
+								{...stylex.attrs(styles.graphTabs)}
 							>
 								<For each={projection().graphs}>
 									{(item, index) => (
 										<button
 											aria-label={`${item.name}, ${item.nodes.length} nodes`}
-											aria-pressed={graphIndex() === index()}
+											aria-pressed={
+												graphIndex() === index() ? "true" : "false"
+											}
 											onClick={() => chooseGraph(index())}
 											type="button"
-											{...stylex.props(
+											{...stylex.attrs(
 												styles.graphTab,
 												graphIndex() === index() && styles.graphTabActive
 											)}
 										>
 											<span
 												title={item.name}
-												{...stylex.props(styles.graphTabName)}
+												{...stylex.attrs(styles.graphTabName)}
 											>
 												{item.name}
 											</span>
@@ -854,21 +859,21 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 										</button>
 									)}
 								</For>
-								<div {...stylex.props(styles.zoomControls)}>
-									<span {...stylex.props(styles.panHint)}>
+								<div {...stylex.attrs(styles.zoomControls)}>
+									<span {...stylex.attrs(styles.panHint)}>
 										Drag to pan · Ctrl+wheel to zoom
 									</span>
 									<button
 										aria-label="Zoom out"
 										onClick={() => setZoomLevel(zoom() - 0.1)}
 										type="button"
-										{...stylex.props(styles.zoomButton)}
+										{...stylex.attrs(styles.zoomButton)}
 									>
 										−
 									</button>
 									<output
 										aria-label="Graph zoom"
-										{...stylex.props(styles.zoomOutput)}
+										{...stylex.attrs(styles.zoomOutput)}
 									>
 										{Math.round(zoom() * 100)}%
 									</output>
@@ -876,21 +881,21 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 										aria-label="Zoom in"
 										onClick={() => setZoomLevel(zoom() + 0.1)}
 										type="button"
-										{...stylex.props(styles.zoomButton)}
+										{...stylex.attrs(styles.zoomButton)}
 									>
 										+
 									</button>
 									<button
 										onClick={fitGraph}
 										type="button"
-										{...stylex.props(styles.zoomButton, styles.zoomReset)}
+										{...stylex.attrs(styles.zoomButton, styles.zoomReset)}
 									>
 										Fit
 									</button>
 									<button
 										onClick={resetView}
 										type="button"
-										{...stylex.props(styles.zoomButton, styles.zoomReset)}
+										{...stylex.attrs(styles.zoomButton, styles.zoomReset)}
 									>
 										1:1
 									</button>
@@ -899,7 +904,7 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 
 							<section
 								aria-label="Saved Blueprint graph"
-								{...stylex.props(styles.workspace)}
+								{...stylex.attrs(styles.workspace)}
 							>
 								<div
 									aria-label="Graph viewport"
@@ -912,7 +917,7 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 										viewport = element;
 									}}
 									tabindex={0}
-									{...stylex.props(
+									{...stylex.attrs(
 										styles.viewport,
 										panning() && styles.viewportPanning
 									)}
@@ -936,13 +941,13 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 												zoom() +
 												")"
 											}
-											{...stylex.props(styles.canvas)}
+											{...stylex.attrs(styles.canvas)}
 										>
 											<svg
 												aria-hidden="true"
 												height={layout().height}
 												width={layout().width}
-												{...stylex.props(styles.wires)}
+												{...stylex.attrs(styles.wires)}
 											>
 												<For each={graph()?.links}>
 													{(link) => (
@@ -984,7 +989,7 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 																			? "3"
 																			: "2")
 																	}
-																	{...stylex.props(styles.wire)}
+																	{...stylex.attrs(styles.wire)}
 																/>
 															)}
 														</Show>
@@ -992,7 +997,7 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 												</For>
 											</svg>
 											<Show when={(graph()?.nodes.length ?? 0) === 0}>
-												<div {...stylex.props(styles.emptyGraphCanvas)}>
+												<div {...stylex.attrs(styles.emptyGraphCanvas)}>
 													<strong>No nodes saved in this graph</strong>
 													<span>
 														The graph export exists, but its saved Nodes
@@ -1025,7 +1030,7 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 																"px"
 															}
 															type="button"
-															{...stylex.props(
+															{...stylex.attrs(
 																styles.node,
 																node.kind === "event" &&
 																	styles.nodeEvent,
@@ -1040,11 +1045,11 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 															)}
 														>
 															<span
-																{...stylex.props(styles.nodeHeader)}
+																{...stylex.attrs(styles.nodeHeader)}
 															>
 																<span
 																	title={node.title}
-																	{...stylex.props(
+																	{...stylex.attrs(
 																		styles.nodeTitle
 																	)}
 																>
@@ -1054,16 +1059,16 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 																	{shortClass(node.class_path)}
 																</small>
 															</span>
-															<span {...stylex.props(styles.pinList)}>
+															<span {...stylex.attrs(styles.pinList)}>
 																<For each={node.pins}>
 																	{(pin) => (
 																		<span
-																			{...stylex.props(
+																			{...stylex.attrs(
 																				styles.pinRow
 																			)}
 																		>
 																			<span
-																				{...stylex.props(
+																				{...stylex.attrs(
 																					styles.pinSide,
 																					styles.pinInput
 																				)}
@@ -1085,7 +1090,7 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 																				</Show>
 																			</span>
 																			<span
-																				{...stylex.props(
+																				{...stylex.attrs(
 																					styles.pinSide,
 																					styles.pinOutput
 																				)}
@@ -1117,7 +1122,7 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 										</div>
 									</div>
 								</div>
-								<aside {...stylex.props(styles.inspector)}>
+								<aside {...stylex.attrs(styles.inspector)}>
 									<Show
 										when={selectedNode()}
 										fallback={
@@ -1138,7 +1143,7 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 
 function Metric(props: { readonly label: string; readonly value: number }) {
 	return (
-		<div {...stylex.props(styles.metric)}>
+		<div {...stylex.attrs(styles.metric)}>
 			<strong>{props.value.toLocaleString()}</strong>
 			<span>{props.label}</span>
 		</div>
@@ -1165,15 +1170,15 @@ function FailureNotice(
 	const message = () => (props.failure === undefined ? props.message : props.failure.message);
 	const recovery = () => (props.failure === undefined ? props.recovery : props.failure.recovery);
 	return (
-		<section aria-label={title()} role="alert" {...stylex.props(styles.failure)}>
-			<div {...stylex.props(styles.failureHeader)}>
+		<section aria-label={title()} role="alert" {...stylex.attrs(styles.failure)}>
+			<div {...stylex.attrs(styles.failureHeader)}>
 				<span>READ FAILED</span>
 				<strong>{title()}</strong>
 			</div>
 			<p>{message()}</p>
-			<p {...stylex.props(styles.failureRecovery)}>{recovery()}</p>
+			<p {...stylex.attrs(styles.failureRecovery)}>{recovery()}</p>
 			<Show when={props.failure?.assetPath}>
-				{(path) => <code {...stylex.props(styles.failurePath)}>{path()}</code>}
+				{(path) => <code {...stylex.attrs(styles.failurePath)}>{path()}</code>}
 			</Show>
 		</section>
 	);
@@ -1194,21 +1199,21 @@ function ProjectionCoverage(props: {
 	return (
 		<section
 			aria-label="Projection coverage"
-			{...stylex.props(
+			{...stylex.attrs(
 				styles.coveragePanel,
 				complete() ? styles.coveragePanelComplete : styles.coveragePanelPartial
 			)}
 		>
 			<span
-				{...stylex.props(
+				{...stylex.attrs(
 					styles.coverageMark,
 					complete() ? styles.coverageMarkComplete : styles.coverageMarkPartial
 				)}
 			>
 				{complete() ? "✓" : "!"}
 			</span>
-			<div {...stylex.props(styles.coverageCopy)}>
-				<strong {...stylex.props(styles.coverageHeadline)}>
+			<div {...stylex.attrs(styles.coverageCopy)}>
+				<strong {...stylex.attrs(styles.coverageHeadline)}>
 					{complete()
 						? "Complete saved-graph projection"
 						: metadataOnly()
@@ -1217,7 +1222,7 @@ function ProjectionCoverage(props: {
 								? "Topology complete; projection partial"
 								: "Partial saved-graph projection"}
 				</strong>
-				<p {...stylex.props(styles.coverageText)}>
+				<p {...stylex.attrs(styles.coverageText)}>
 					{complete()
 						? "Graph membership, nodes, pins, and links were projected without a recorded coverage gap."
 						: metadataOnly()
@@ -1228,17 +1233,17 @@ function ProjectionCoverage(props: {
 				</p>
 			</div>
 			<Show when={props.gaps.length > 0}>
-				<details {...stylex.props(styles.coverageDetails)}>
-					<summary {...stylex.props(styles.coverageSummary)}>
+				<details {...stylex.attrs(styles.coverageDetails)}>
+					<summary {...stylex.attrs(styles.coverageSummary)}>
 						{props.gaps.length} coverage gaps
 					</summary>
-					<ul {...stylex.props(styles.gapList)}>
+					<ul {...stylex.attrs(styles.gapList)}>
 						<For each={props.gaps}>
 							{(gap) => (
-								<li {...stylex.props(styles.gapItem)}>
+								<li {...stylex.attrs(styles.gapItem)}>
 									<strong>{gapLabel(gap.reason)}</strong>
 									<span>{gap.detail}</span>
-									<code {...stylex.props(styles.gapCode)}>{gap.object_path}</code>
+									<code {...stylex.attrs(styles.gapCode)}>{gap.object_path}</code>
 								</li>
 							)}
 						</For>
@@ -1251,15 +1256,15 @@ function ProjectionCoverage(props: {
 
 function GraphlessBlueprint(props: { readonly objectPath: string }) {
 	return (
-		<section aria-label="Graphless Blueprint" {...stylex.props(styles.graphless)}>
-			<span {...stylex.props(styles.graphlessMark)}>0</span>
-			<p {...stylex.props(styles.emptyKicker)}>VALID BLUEPRINT PACKAGE</p>
+		<section aria-label="Graphless Blueprint" {...stylex.attrs(styles.graphless)}>
+			<span {...stylex.attrs(styles.graphlessMark)}>0</span>
+			<p {...stylex.attrs(styles.emptyKicker)}>VALID BLUEPRINT PACKAGE</p>
 			<h2>No saved editor graphs</h2>
 			<p>
 				The package was read successfully, but its Blueprint saved no editor graph exports.
 				This is a valid graphless result, not a reader failure.
 			</p>
-			<code {...stylex.props(styles.graphlessPath)}>{props.objectPath}</code>
+			<code {...stylex.attrs(styles.graphlessPath)}>{props.objectPath}</code>
 		</section>
 	);
 }
@@ -1267,17 +1272,17 @@ function GraphlessBlueprint(props: { readonly objectPath: string }) {
 function PinEvidence(props: { readonly pin: BlueprintPin }) {
 	const defaults = () => pinDefaults(props.pin);
 	return (
-		<article {...stylex.props(styles.pinEvidence)}>
-			<div {...stylex.props(styles.pinEvidenceHeader)}>
+		<article {...stylex.attrs(styles.pinEvidence)}>
+			<div {...stylex.attrs(styles.pinEvidenceHeader)}>
 				<i
 					style={`border-color:${pinToneColor(pinTone(props.pin))}`}
-					{...stylex.props(styles.pinEvidenceDot)}
+					{...stylex.attrs(styles.pinEvidenceDot)}
 				/>
 				<strong title={pinLabel(props.pin)}>{pinLabel(props.pin)}</strong>
 				<span>{props.pin.direction}</span>
 			</div>
-			<code {...stylex.props(styles.pinType)}>{pinTypeLabel(props.pin)}</code>
-			<div {...stylex.props(styles.pinMeta)}>
+			<code {...stylex.attrs(styles.pinType)}>{pinTypeLabel(props.pin)}</code>
+			<div {...stylex.attrs(styles.pinMeta)}>
 				<span>{props.pin.linked_to.length} links</span>
 				<Show when={props.pin.sub_pins.length > 0}>
 					<span>{props.pin.sub_pins.length} sub-pins</span>
@@ -1288,14 +1293,14 @@ function PinEvidence(props: { readonly pin: BlueprintPin }) {
 			</div>
 			<Show
 				when={defaults().length > 0}
-				fallback={<small {...stylex.props(styles.noDefault)}>No serialized default</small>}
+				fallback={<small {...stylex.attrs(styles.noDefault)}>No serialized default</small>}
 			>
-				<dl {...stylex.props(styles.pinDefaults)}>
+				<dl {...stylex.attrs(styles.pinDefaults)}>
 					<For each={defaults()}>
 						{(value) => (
-							<div {...stylex.props(styles.pinDefaultRow)}>
-								<dt {...stylex.props(styles.pinDefaultLabel)}>{value.label}</dt>
-								<dd title={value.value} {...stylex.props(styles.pinDefaultValue)}>
+							<div {...stylex.attrs(styles.pinDefaultRow)}>
+								<dt {...stylex.attrs(styles.pinDefaultLabel)}>{value.label}</dt>
+								<dd title={value.value} {...stylex.attrs(styles.pinDefaultValue)}>
 									{value.value}
 								</dd>
 							</div>
@@ -1304,7 +1309,7 @@ function PinEvidence(props: { readonly pin: BlueprintPin }) {
 				</dl>
 			</Show>
 			<Show when={props.pin.tooltip !== ""}>
-				<p {...stylex.props(styles.pinTooltip)}>{props.pin.tooltip}</p>
+				<p {...stylex.attrs(styles.pinTooltip)}>{props.pin.tooltip}</p>
 			</Show>
 		</article>
 	);
@@ -1312,28 +1317,28 @@ function PinEvidence(props: { readonly pin: BlueprintPin }) {
 
 function NodeInspector(props: { readonly node: BlueprintNode }) {
 	return (
-		<div {...stylex.props(styles.inspectorContent)}>
-			<p {...stylex.props(styles.inspectorLabel)}>SELECTED NODE</p>
-			<h2 title={props.node.title} {...stylex.props(styles.inspectorTitle)}>
+		<div {...stylex.attrs(styles.inspectorContent)}>
+			<p {...stylex.attrs(styles.inspectorLabel)}>SELECTED NODE</p>
+			<h2 title={props.node.title} {...stylex.attrs(styles.inspectorTitle)}>
 				{props.node.title}
 			</h2>
-			<span {...stylex.props(styles.kindBadge)}>{props.node.kind.replaceAll("_", " ")}</span>
-			<dl {...stylex.props(styles.evidenceList)}>
-				<div {...stylex.props(styles.evidenceRow)}>
+			<span {...stylex.attrs(styles.kindBadge)}>{props.node.kind.replaceAll("_", " ")}</span>
+			<dl {...stylex.attrs(styles.evidenceList)}>
+				<div {...stylex.attrs(styles.evidenceRow)}>
 					<dt>Class</dt>
 					<dd>{props.node.class_path}</dd>
 				</div>
-				<div {...stylex.props(styles.evidenceRow)}>
+				<div {...stylex.attrs(styles.evidenceRow)}>
 					<dt>Position</dt>
 					<dd>
 						{props.node.position.x}, {props.node.position.y}
 					</dd>
 				</div>
-				<div {...stylex.props(styles.evidenceRow)}>
+				<div {...stylex.attrs(styles.evidenceRow)}>
 					<dt>GUID</dt>
 					<dd>{props.node.guid ?? "not serialized"}</dd>
 				</div>
-				<div {...stylex.props(styles.evidenceRow)}>
+				<div {...stylex.attrs(styles.evidenceRow)}>
 					<dt>Native tail</dt>
 					<dd>
 						{props.node.subclass_tail_bytes === 0
@@ -1343,37 +1348,37 @@ function NodeInspector(props: { readonly node: BlueprintNode }) {
 				</div>
 			</dl>
 
-			<div {...stylex.props(styles.propertyHeading)}>
+			<div {...stylex.attrs(styles.propertyHeading)}>
 				<span>Saved pin evidence</span>
 				<small>{props.node.pins.length}</small>
 			</div>
-			<div aria-label="Saved pin evidence" {...stylex.props(styles.pinEvidenceList)}>
+			<div aria-label="Saved pin evidence" {...stylex.attrs(styles.pinEvidenceList)}>
 				<For
 					each={props.node.pins}
 					fallback={
-						<p {...stylex.props(styles.inspectorEmpty)}>No pins were serialized.</p>
+						<p {...stylex.attrs(styles.inspectorEmpty)}>No pins were serialized.</p>
 					}
 				>
 					{(pin) => <PinEvidence pin={pin} />}
 				</For>
 			</div>
 
-			<div {...stylex.props(styles.propertyHeading)}>
+			<div {...stylex.attrs(styles.propertyHeading)}>
 				<span>Tagged properties</span>
 				<small>{props.node.properties.length}</small>
 			</div>
-			<div {...stylex.props(styles.properties)}>
+			<div {...stylex.attrs(styles.properties)}>
 				<For
 					each={props.node.properties}
-					fallback={<p {...stylex.props(styles.inspectorEmpty)}>No tagged properties.</p>}
+					fallback={<p {...stylex.attrs(styles.inspectorEmpty)}>No tagged properties.</p>}
 				>
 					{(property) => (
-						<details {...stylex.props(styles.property)}>
-							<summary {...stylex.props(styles.propertySummary)}>
+						<details {...stylex.attrs(styles.property)}>
+							<summary {...stylex.attrs(styles.propertySummary)}>
 								<span title={property.name}>{property.name}</span>
 								<small>{property.type}</small>
 							</summary>
-							<code {...stylex.props(styles.propertyValue)}>
+							<code {...stylex.attrs(styles.propertyValue)}>
 								{JSON.stringify(property)}
 							</code>
 						</details>

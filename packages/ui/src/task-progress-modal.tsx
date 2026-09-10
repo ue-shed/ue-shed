@@ -38,20 +38,20 @@ export function TaskProgressModal(props: TaskProgressModalProps) {
 
 	return (
 		<Show when={props.open}>
-			<div {...stylex.props(styles.backdrop)}>
+			<div {...stylex.attrs(styles.backdrop)}>
 				<section
 					role="dialog"
 					aria-modal="true"
 					aria-labelledby="task-progress-title"
 					aria-describedby="task-progress-detail"
 					aria-busy="true"
-					{...stylex.props(styles.modal)}
+					{...stylex.attrs(styles.modal)}
 				>
-					<p {...stylex.props(styles.kicker)}>{stageLabel(props.progress)}</p>
-					<h2 id="task-progress-title" {...stylex.props(styles.title)}>
+					<p {...stylex.attrs(styles.kicker)}>{stageLabel(props.progress)}</p>
+					<h2 id="task-progress-title" {...stylex.attrs(styles.title)}>
 						{props.title}
 					</h2>
-					<p id="task-progress-detail" {...stylex.props(styles.detail)}>
+					<p id="task-progress-detail" {...stylex.attrs(styles.detail)}>
 						{props.detail}
 					</p>
 					<div
@@ -60,27 +60,27 @@ export function TaskProgressModal(props: TaskProgressModalProps) {
 						aria-valuemin={determinate() ? 0 : undefined}
 						aria-valuemax={determinate() ? props.progress.total : undefined}
 						aria-valuenow={determinate() ? props.progress.completed : undefined}
-						{...stylex.props(styles.track)}
+						{...stylex.attrs(styles.track)}
 					>
 						<span
 							{...(determinate()
-								? stylex.props(styles.fill)
-								: stylex.props(styles.fill, styles.fillIndeterminate))}
+								? stylex.attrs(styles.fill)
+								: stylex.attrs(styles.fill, styles.fillIndeterminate))}
 							style={determinate() ? { width: `${percent()}%` } : undefined}
 						/>
 					</div>
-					<div {...stylex.props(styles.readout)}>
-						<strong {...stylex.props(styles.readoutValue)}>
+					<div {...stylex.attrs(styles.readout)}>
+						<strong {...stylex.attrs(styles.readoutValue)}>
 							{determinate() ? `${percent()}%` : "SCANNING"}
 						</strong>
 						<span>{determinate() ? `${count()} packages` : count()}</span>
 						<Show when={(props.progress.cacheHits ?? 0) > 0}>
-							<small {...stylex.props(styles.cacheHits)}>
+							<small {...stylex.attrs(styles.cacheHits)}>
 								{props.progress.cacheHits} cache hits
 							</small>
 						</Show>
 					</div>
-					<p {...stylex.props(styles.locked)}>
+					<p {...stylex.attrs(styles.locked)}>
 						Workbench controls are paused until this operation finishes.
 					</p>
 				</section>

@@ -35,8 +35,9 @@
 	"dependencies": {
 		"@deck.gl/core": "9.3.11",
 		"@deck.gl/layers": "9.3.11",
+		"@solidjs/web": "catalog:",
 		"@stylexjs/stylex": "catalog:",
-		"@tanstack/solid-virtual": "3.13.37",
+		"@tanstack/virtual-core": "3.17.8",
 		"@ue-shed/ui-theme": "workspace:*",
 		"effect": "catalog:",
 		"solid-js": "catalog:"

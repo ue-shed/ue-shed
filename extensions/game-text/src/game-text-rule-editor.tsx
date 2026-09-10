@@ -7,7 +7,7 @@ import type {
 	TextTerminologyEntry
 } from "@ue-shed/game-text/browser";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
-import { For, Match, Show, Switch, createEffect, createSignal, on } from "solid-js";
+import { For, Match, Show, Switch, createEffect, createSignal } from "solid-js";
 import type { GameTextRuleState, RuleEditorState } from "./game-text-rule-state.js";
 
 function characterBudgetRule(rule: TextQualityRule | undefined) {
@@ -75,14 +75,12 @@ export function GameTextRuleEditor(props: {
 	const { dirty, feedback, changeDraft, run } = props.editor;
 	const [selectedRuleId, setSelectedRuleId] = createSignal(draft().rules[0]?.id);
 	createEffect(
-		on(
-			() => draft().rules,
-			(rules) => {
-				setSelectedRuleId((current) =>
-					rules.some((rule) => rule.id === current) ? current : rules[0]?.id
-				);
-			}
-		)
+		() => draft().rules,
+		(rules) => {
+			setSelectedRuleId((current) =>
+				rules.some((rule) => rule.id === current) ? current : rules[0]?.id
+			);
+		}
 	);
 	const selectedRule = () =>
 		draft().rules.find((rule) => rule.id === selectedRuleId()) ?? draft().rules[0];
@@ -93,11 +91,11 @@ export function GameTextRuleEditor(props: {
 		props.summary.rules.find((rule) => rule.ruleId === ruleId)?.findingCount ?? 0;
 
 	return (
-		<div {...stylex.props(styles.editor)}>
-			<aside aria-label="Quality rule list" {...stylex.props(styles.ruleList)}>
-				<header {...stylex.props(styles.panelHeader)}>
+		<div {...stylex.attrs(styles.editor)}>
+			<aside aria-label="Quality rule list" {...stylex.attrs(styles.ruleList)}>
+				<header {...stylex.attrs(styles.panelHeader)}>
 					<span>Rules</span>
-					<b {...stylex.props(styles.panelCount)}>{draft().rules.length}</b>
+					<b {...stylex.attrs(styles.panelCount)}>{draft().rules.length}</b>
 				</header>
 				<For each={draft().rules}>
 					{(rule) => (
@@ -105,14 +103,14 @@ export function GameTextRuleEditor(props: {
 							type="button"
 							aria-current={selectedRuleId() === rule.id ? "true" : undefined}
 							onClick={() => setSelectedRuleId(rule.id)}
-							{...stylex.props(
+							{...stylex.attrs(
 								styles.ruleChoice,
 								selectedRuleId() === rule.id && styles.ruleChoiceActive
 							)}
 						>
-							<span {...stylex.props(styles.ruleChoiceMeta)}>
+							<span {...stylex.attrs(styles.ruleChoiceMeta)}>
 								<b>{rule.kind === "character_budget" ? "Budget" : "Terms"}</b>
-								<em {...stylex.props(styles.panelCount)}>
+								<em {...stylex.attrs(styles.panelCount)}>
 									{findingCount(rule.id)}
 								</em>
 							</span>
@@ -123,25 +121,25 @@ export function GameTextRuleEditor(props: {
 				</For>
 			</aside>
 
-			<section aria-label="Selected quality rule" {...stylex.props(styles.ruleForm)}>
+			<section aria-label="Selected quality rule" {...stylex.attrs(styles.ruleForm)}>
 				<Show when={selectedRule()}>
 					{(rule) => (
 						<>
-							<header {...stylex.props(styles.formHeader)}>
-								<h3 {...stylex.props(styles.formTitle)}>{rule().id}</h3>
-								<span {...stylex.props(styles.dirtyState)}>
+							<header {...stylex.attrs(styles.formHeader)}>
+								<h3 {...stylex.attrs(styles.formTitle)}>{rule().id}</h3>
+								<span {...stylex.attrs(styles.dirtyState)}>
 									{dirty() ? "Unsaved changes" : "Saved"}
 								</span>
 							</header>
 							<Show when={selectedBudgetRule()}>
-								<label {...stylex.props(styles.field)}>
+								<label {...stylex.attrs(styles.field)}>
 									<span>Maximum characters</span>
 									<input
 										type="number"
 										min="1"
 										step="1"
 										aria-label={`Maximum characters for ${rule().id}`}
-										{...stylex.props(styles.input)}
+										{...stylex.attrs(styles.input)}
 										value={selectedBudgetRule()?.maximumCharacters ?? ""}
 										onInput={(event) => {
 											const value = Number(event.currentTarget.value);
@@ -154,14 +152,14 @@ export function GameTextRuleEditor(props: {
 											);
 										}}
 									/>
-									<small {...stylex.props(styles.fieldHint)}>
+									<small {...stylex.attrs(styles.fieldHint)}>
 										Counts Unicode characters in the saved source text.
 									</small>
 								</label>
 							</Show>
 							<Show when={selectedTerminologyRule()}>
-								<div {...stylex.props(styles.termsHeader)}>
-									<label {...stylex.props(styles.checkbox)}>
+								<div {...stylex.attrs(styles.termsHeader)}>
+									<label {...stylex.attrs(styles.checkbox)}>
 										<input
 											type="checkbox"
 											checked={
@@ -184,18 +182,18 @@ export function GameTextRuleEditor(props: {
 										Case-sensitive matching
 									</label>
 								</div>
-								<div {...stylex.props(styles.termList)}>
+								<div {...stylex.attrs(styles.termList)}>
 									<For each={selectedTerminologyRule()?.terms ?? []}>
 										{(term, index) => (
-											<div {...stylex.props(styles.termRow)}>
-												<b {...stylex.props(styles.termKind)}>
+											<div {...stylex.attrs(styles.termRow)}>
+												<b {...stylex.attrs(styles.termKind)}>
 													{term.kind === "forbidden"
 														? "Forbidden"
 														: "Preferred"}
 												</b>
 												<input
 													aria-label={`${term.kind === "forbidden" ? "Forbidden" : "Preferred"} term ${index() + 1}`}
-													{...stylex.props(styles.inputCompact)}
+													{...stylex.attrs(styles.inputCompact)}
 													value={term.term}
 													onInput={(event) =>
 														changeDraft(
@@ -219,7 +217,7 @@ export function GameTextRuleEditor(props: {
 													{(preferred) => (
 														<input
 															aria-label={`Alternatives for preferred term ${index() + 1}`}
-															{...stylex.props(styles.inputCompact)}
+															{...stylex.attrs(styles.inputCompact)}
 															value={preferred().alternatives.join(
 																", "
 															)}
@@ -282,7 +280,7 @@ export function GameTextRuleEditor(props: {
 															)
 														)
 													}
-													{...stylex.props(styles.removeTerm)}
+													{...stylex.attrs(styles.removeTerm)}
 												>
 													×
 												</button>
@@ -290,10 +288,10 @@ export function GameTextRuleEditor(props: {
 										)}
 									</For>
 								</div>
-								<div {...stylex.props(styles.addTerms)}>
+								<div {...stylex.attrs(styles.addTerms)}>
 									<button
 										type="button"
-										{...stylex.props(styles.smallButton)}
+										{...stylex.attrs(styles.smallButton)}
 										onClick={() =>
 											changeDraft(
 												replaceRule(draft(), rule().id, (current) =>
@@ -314,7 +312,7 @@ export function GameTextRuleEditor(props: {
 									</button>
 									<button
 										type="button"
-										{...stylex.props(styles.smallButton)}
+										{...stylex.attrs(styles.smallButton)}
 										onClick={() =>
 											changeDraft(
 												replaceRule(draft(), rule().id, (current) =>
@@ -339,11 +337,11 @@ export function GameTextRuleEditor(props: {
 									</button>
 								</div>
 							</Show>
-							<label {...stylex.props(styles.field)}>
+							<label {...stylex.attrs(styles.field)}>
 								<span>Recovery guidance</span>
 								<textarea
 									aria-label={`Recovery guidance for ${rule().id}`}
-									{...stylex.props(styles.textarea)}
+									{...stylex.attrs(styles.textarea)}
 									value={rule().recovery}
 									onInput={(event) =>
 										changeDraft(
@@ -358,7 +356,7 @@ export function GameTextRuleEditor(props: {
 						</>
 					)}
 				</Show>
-				<footer {...stylex.props(styles.actions)}>
+				<footer {...stylex.attrs(styles.actions)}>
 					<Switch>
 						<Match when={feedback().status === "previewed"}>
 							<span role="status">Preview updated. Changes are not saved yet.</span>
@@ -370,7 +368,7 @@ export function GameTextRuleEditor(props: {
 							{(() => {
 								const current = feedback();
 								return current.status === "failed" ? (
-									<span role="alert" {...stylex.props(styles.failedFeedback)}>
+									<span role="alert" {...stylex.attrs(styles.failedFeedback)}>
 										{current.message} {current.recovery}
 									</span>
 								) : null;
@@ -380,12 +378,12 @@ export function GameTextRuleEditor(props: {
 							<span>Preview uses the saved text already loaded in Workbench.</span>
 						</Match>
 					</Switch>
-					<div {...stylex.props(styles.actionButtons)}>
+					<div {...stylex.attrs(styles.actionButtons)}>
 						<button
 							type="button"
 							disabled={!dirty() || props.editor.busy()}
 							onClick={() => run("preview")}
-							{...stylex.props(styles.actionButton)}
+							{...stylex.attrs(styles.actionButton)}
 						>
 							Preview
 						</button>
@@ -393,7 +391,7 @@ export function GameTextRuleEditor(props: {
 							type="button"
 							disabled={!dirty() || props.editor.busy()}
 							onClick={() => run("save")}
-							{...stylex.props(styles.actionButton)}
+							{...stylex.attrs(styles.actionButton)}
 						>
 							Save
 						</button>
@@ -401,17 +399,17 @@ export function GameTextRuleEditor(props: {
 				</footer>
 			</section>
 
-			<aside aria-label="Quality role scopes" {...stylex.props(styles.roles)}>
-				<header {...stylex.props(styles.panelHeader)}>
+			<aside aria-label="Quality role scopes" {...stylex.attrs(styles.roles)}>
+				<header {...stylex.attrs(styles.panelHeader)}>
 					<span>Roles</span>
-					<b {...stylex.props(styles.panelCount)}>{draft().roles.length}</b>
+					<b {...stylex.attrs(styles.panelCount)}>{draft().roles.length}</b>
 				</header>
 				<For each={draft().roles}>
 					{(role) => (
-						<article {...stylex.props(styles.roleCard)}>
-							<header {...stylex.props(styles.roleHeader)}>
-								<strong {...stylex.props(styles.roleTitle)}>{role.id}</strong>
-								<b {...stylex.props(styles.roleCount)}>
+						<article {...stylex.attrs(styles.roleCard)}>
+							<header {...stylex.attrs(styles.roleHeader)}>
+								<strong {...stylex.attrs(styles.roleTitle)}>{role.id}</strong>
+								<b {...stylex.attrs(styles.roleCount)}>
 									{props.summary.roles.find((item) => item.role === role.id)
 										?.matchedTextUnits ?? 0}{" "}
 									text entries
@@ -419,18 +417,18 @@ export function GameTextRuleEditor(props: {
 							</header>
 							<Show when={role.description}>
 								{(description) => (
-									<p {...stylex.props(styles.roleDescription)}>{description()}</p>
+									<p {...stylex.attrs(styles.roleDescription)}>{description()}</p>
 								)}
 							</Show>
 							<For each={role.scopes}>
 								{(scope, scopeIndex) => (
-									<section {...stylex.props(styles.scope)}>
-										<small {...stylex.props(styles.scopeLabel)}>
+									<section {...stylex.attrs(styles.scope)}>
+										<small {...stylex.attrs(styles.scopeLabel)}>
 											Scope {scopeIndex() + 1} · all must match
 										</small>
 										<For each={scope.matchers}>
 											{(matcher) => (
-												<span {...stylex.props(styles.scopeMatcher)}>
+												<span {...stylex.attrs(styles.scopeMatcher)}>
 													{matcherLabel(matcher)}
 												</span>
 											)}

@@ -91,8 +91,8 @@ export function InvestigationActions<Query, Preset, Error>(props: {
 		);
 	};
 	return (
-		<section aria-label="Investigation files" {...stylex.props(styles.panel)}>
-			<div {...stylex.props(styles.actions)}>
+		<section aria-label="Investigation files" {...stylex.attrs(styles.panel)}>
+			<div {...stylex.attrs(styles.actions)}>
 				<Button
 					type="button"
 					disabled={pending() || props.disabled}
@@ -133,7 +133,7 @@ export function InvestigationActions<Query, Preset, Error>(props: {
 				{(command) => (
 					<details>
 						<summary>Replay in PowerShell</summary>
-						<code {...stylex.props(styles.command)}>{command()}</code>
+						<code {...stylex.attrs(styles.command)}>{command()}</code>
 					</details>
 				)}
 			</Show>

@@ -10,6 +10,7 @@
 		"typecheck": "tsc --noEmit && tsc -p tsconfig.main.json --noEmit && tsc -p scripts/tsconfig.json --noEmit && tsc -p e2e/tsconfig.json --noEmit"
 	},
 	"dependencies": {
+		"@solidjs/web": "catalog:",
 		"@stylexjs/stylex": "catalog:",
 		"@ue-shed/asset-audits": "workspace:*",
 		"@ue-shed/authoring": "workspace:*",

@@ -17,6 +17,7 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
+		"@solidjs/web": "catalog:",
 		"@stylexjs/stylex": "catalog:",
 		"@ue-shed/map-history": "workspace:*",
 		"@ue-shed/protocol": "workspace:*",

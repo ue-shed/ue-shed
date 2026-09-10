@@ -3,7 +3,7 @@
 import { cleanup, render } from "@solidjs/testing-library";
 import { Deferred, Effect, Layer, ManagedRuntime, Ref, Stream } from "effect";
 import { afterEach, describe, expect, it } from "vitest";
-import { createSignal, onMount } from "solid-js";
+import { createSignal, onSettled } from "solid-js";
 import {
 	EffectRuntimeProvider,
 	createEffectAction,
@@ -18,7 +18,7 @@ function TestAction(props: {
 	readonly onValue: (value: string) => void;
 }) {
 	const action = createEffectAction();
-	onMount(() => {
+	onSettled(() => {
 		action.run(props.first, { onSuccess: props.onValue });
 		if (props.second !== undefined) {
 			action.run(props.second, { onSuccess: props.onValue });
@@ -29,7 +29,7 @@ function TestAction(props: {
 
 function TestSubscription(props: { readonly stream: Stream.Stream<string> }) {
 	const subscription = createEffectSubscription();
-	onMount(() => subscription.subscribe(props.stream, { onValue: () => undefined }));
+	onSettled(() => subscription.subscribe(props.stream, { onValue: () => undefined }));
 	return <span>subscriber</span>;
 }
 
@@ -40,7 +40,7 @@ function TestIndependentActions(props: {
 }) {
 	const firstAction = createEffectAction();
 	const secondAction = createEffectAction();
-	onMount(() => {
+	onSettled(() => {
 		firstAction.run(props.first, { onSuccess: props.onValue });
 		secondAction.run(props.second, { onSuccess: props.onValue });
 	});

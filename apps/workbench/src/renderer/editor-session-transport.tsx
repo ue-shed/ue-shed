@@ -3,7 +3,7 @@ import type { EditorPlaySessionCommand } from "@ue-shed/protocol";
 import { createEffectAction, createEffectSubscription } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { Exit } from "effect";
-import { For, Show, createMemo, createSignal, onMount } from "solid-js";
+import { For, Show, createMemo, createSignal, onSettled } from "solid-js";
 import type { WorkbenchRendererClient } from "./workbench-client.js";
 import {
 	editorSessionTransportActions,
@@ -71,7 +71,7 @@ export function EditorSessionTransport(props: {
 		});
 	};
 
-	onMount(() => {
+	onSettled(() => {
 		subscribeStatus();
 		settingsAction.run(props.client.unrealConnectionSettings(), {
 			onSuccess: (settings) => {
@@ -121,35 +121,35 @@ export function EditorSessionTransport(props: {
 		<section
 			aria-label="Editor play session"
 			title={message()}
-			{...stylex.props(styles.transport)}
+			{...stylex.attrs(styles.transport)}
 		>
 			<span
 				aria-hidden="true"
-				{...stylex.props(
+				{...stylex.attrs(
 					styles.lamp,
 					state().status === "running" && styles.live,
 					state().status === "paused" && styles.paused
 				)}
 			/>
-			<span {...stylex.props(styles.label)}>{editorSessionTransportLabel(state())}</span>
-			<details {...stylex.props(styles.settings)}>
+			<span {...stylex.attrs(styles.label)}>{editorSessionTransportLabel(state())}</span>
+			<details {...stylex.attrs(styles.settings)}>
 				<summary
 					aria-label="Change Unreal target port"
 					title="Unreal target port"
-					{...stylex.props(styles.settingsSummary)}
+					{...stylex.attrs(styles.settingsSummary)}
 				>
 					:{port() ?? "—"}
 				</summary>
 				<section
 					aria-label="Unreal target settings"
-					{...stylex.props(styles.settingsPanel)}
+					{...stylex.attrs(styles.settingsPanel)}
 				>
-					<strong {...stylex.props(styles.settingsTitle)}>Unreal target port</strong>
-					<p {...stylex.props(styles.settingsDetail)}>
+					<strong {...stylex.attrs(styles.settingsTitle)}>Unreal target port</strong>
+					<p {...stylex.attrs(styles.settingsDetail)}>
 						New live operations use this target. Active operations keep their starting
 						target.
 					</p>
-					<form onSubmit={submitPort} {...stylex.props(styles.portForm)}>
+					<form onSubmit={submitPort} {...stylex.attrs(styles.portForm)}>
 						<input
 							type="number"
 							aria-label="Remote Control port"
@@ -158,34 +158,34 @@ export function EditorSessionTransport(props: {
 							step="1"
 							value={portDraft()}
 							onInput={(event) => setPortDraft(event.currentTarget.value)}
-							{...stylex.props(styles.portInput)}
+							{...stylex.attrs(styles.portInput)}
 						/>
 						<button
 							type="submit"
 							disabled={settingsPending()}
-							{...stylex.props(styles.applyButton)}
+							{...stylex.attrs(styles.applyButton)}
 						>
 							{settingsPending() ? "Applying…" : "Apply"}
 						</button>
 					</form>
 					<Show when={portMessage()} keyed>
 						{(detail) => (
-							<span role="alert" {...stylex.props(styles.portMessage)}>
+							<span role="alert" {...stylex.attrs(styles.portMessage)}>
 								{detail}
 							</span>
 						)}
 					</Show>
-					<small {...stylex.props(styles.storageNote)}>Saved on this device.</small>
+					<small {...stylex.attrs(styles.storageNote)}>Saved on this device.</small>
 				</section>
 			</details>
-			<div {...stylex.props(styles.actions)}>
+			<div {...stylex.attrs(styles.actions)}>
 				<For each={actions()}>
 					{(item) => (
 						<button
 							type="button"
 							disabled={pending()}
 							onClick={() => execute(item.command)}
-							{...stylex.props(styles.button, item.primary && styles.primary)}
+							{...stylex.attrs(styles.button, item.primary && styles.primary)}
 						>
 							{item.label}
 						</button>

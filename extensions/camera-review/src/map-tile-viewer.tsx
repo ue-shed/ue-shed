@@ -15,7 +15,7 @@ import {
 	type MapTilePyramidManifestValue
 } from "@ue-shed/cameras/map-tiles";
 import type { Effect } from "effect";
-import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, onSettled } from "solid-js";
 import {
 	fitMapTileViewport,
 	fitMapTileActors,
@@ -54,9 +54,6 @@ export interface MapTilePyramidViewerProps {
 	readonly maximumCacheEntries?: number;
 }
 
-/** Reads a Solid input solely to register it as a paint dependency. */
-function observeMapTileInput<Value>(_value: Value): void {}
-
 function MapTileRequest(props: {
 	readonly keyValue: MapTileKey;
 	readonly load: () => Effect.Effect<Uint8Array, unknown>;
@@ -64,7 +61,7 @@ function MapTileRequest(props: {
 	readonly onLoaded: (key: MapTileKey, bytes: Uint8Array) => void;
 }) {
 	const action = createEffectAction();
-	onMount(() => {
+	onSettled(() => {
 		action.run(props.load(), {
 			onFailure: () => props.onFailed(props.keyValue),
 			onSuccess: (bytes) => props.onLoaded(props.keyValue, bytes)
@@ -119,8 +116,7 @@ export function MapTilePyramidViewer(props: MapTilePyramidViewerProps) {
 			? `X=${point.worldX.toFixed(2)} Y=${point.worldY.toFixed(2)}`
 			: lastCoordinate();
 	};
-	function copyCoordinates() {
-		const text = coordinateText();
+	function copyCoordinates(text = coordinateText()) {
 		if (!text) return;
 		setLastCoordinate(text);
 		copyAction.run(copyActorText(text), {
@@ -168,7 +164,12 @@ export function MapTilePyramidViewer(props: MapTilePyramidViewerProps) {
 		});
 		return selected;
 	});
-	createEffect(() => setCurrentLevel(selection().level));
+	createEffect(
+		() => selection().level,
+		(level) => {
+			setCurrentLevel(level);
+		}
+	);
 	const requests = createMemo<ReadonlyArray<MapTileKey>>((previous = []) => {
 		const selected = selection();
 		const previousById = new Map(previous.map((key) => [mapTileKeyId(key), key]));
@@ -180,7 +181,7 @@ export function MapTilePyramidViewer(props: MapTilePyramidViewerProps) {
 				])
 			).values()
 		];
-	}, []);
+	});
 	const renderTiles = createMemo(() =>
 		resolveAvailableMapTiles({
 			available: new Set(tileUrls().keys()),
@@ -329,22 +330,22 @@ export function MapTilePyramidViewer(props: MapTilePyramidViewerProps) {
 		props.onActorSelect(closestKey);
 	}
 
-	onMount(() => {
+	onSettled(() => {
 		resize();
 		const observer = new ResizeObserver(resize);
 		if (surface) observer.observe(surface);
 		props.onController?.({ focusActor, resetView });
-		onCleanup(() => {
+		return () => {
 			observer.disconnect();
 			props.onController?.(undefined);
-		});
+		};
 	});
-	createEffect(() => {
-		observeMapTileInput(viewport());
-		observeMapTileInput(props.actorMarkers);
-		observeMapTileInput(props.selectedActorKey);
-		paintActorOverlay();
-	});
+	createEffect(
+		() => [viewport(), props.actorMarkers, props.selectedActorKey],
+		() => {
+			paintActorOverlay();
+		}
+	);
 
 	function markLoaded(key: MapTileKey, bytes: Uint8Array) {
 		const identity = mapTileKeyId(key);
@@ -424,17 +425,17 @@ export function MapTilePyramidViewer(props: MapTilePyramidViewerProps) {
 	}
 
 	return (
-		<section {...stylex.props(styles.frame)} aria-label="Map tile pyramid viewer">
-			<header {...stylex.props(styles.header)}>
-				<div {...stylex.props(styles.headerCopy)}>
-					<h2 {...stylex.props(styles.title)}>{props.manifest.planId}</h2>
-					<span {...stylex.props(styles.state)}>
+		<section {...stylex.attrs(styles.frame)} aria-label="Map tile pyramid viewer">
+			<header {...stylex.attrs(styles.header)}>
+				<div {...stylex.attrs(styles.headerCopy)}>
+					<h2 {...stylex.attrs(styles.title)}>{props.manifest.planId}</h2>
+					<span {...stylex.attrs(styles.state)}>
 						{props.manifest.state === "complete"
 							? "Published capture"
 							: "Unpublished attempt"}
 					</span>
 				</div>
-				<div {...stylex.props(styles.readout)}>
+				<div {...stylex.attrs(styles.readout)}>
 					<Button
 						type="button"
 						disabled={(props.actorMarkers?.length ?? 0) === 0}
@@ -458,7 +459,7 @@ export function MapTilePyramidViewer(props: MapTilePyramidViewerProps) {
 				ref={(element) => {
 					surface = element;
 				}}
-				{...stylex.props(styles.surface)}
+				{...stylex.attrs(styles.surface)}
 				role="region"
 				aria-label="Captured map tile surface"
 				onPointerDown={(event) => {
@@ -479,8 +480,13 @@ export function MapTilePyramidViewer(props: MapTilePyramidViewerProps) {
 				onContextMenu={(event) => {
 					event.preventDefault();
 					const rect = event.currentTarget.getBoundingClientRect();
-					setPointer({ left: event.clientX - rect.left, top: event.clientY - rect.top });
-					copyCoordinates();
+					const position = {
+						left: event.clientX - rect.left,
+						top: event.clientY - rect.top
+					};
+					setPointer(position);
+					const point = mapTileWorldPoint({ viewport: viewport(), ...position });
+					copyCoordinates(`X=${point.worldX.toFixed(2)} Y=${point.worldY.toFixed(2)}`);
 				}}
 				onPointerUp={(event) => {
 					if (event.button !== 0) return;
@@ -493,7 +499,7 @@ export function MapTilePyramidViewer(props: MapTilePyramidViewerProps) {
 				onPointerCancel={() => (drag = undefined)}
 				onWheel={zoom}
 			>
-				<div {...stylex.props(styles.grid)} />
+				<div {...stylex.attrs(styles.grid)} />
 				<For each={renderTiles()}>
 					{(key) => {
 						const rect = () =>
@@ -502,7 +508,7 @@ export function MapTilePyramidViewer(props: MapTilePyramidViewerProps) {
 						return (
 							<Show when={path()}>
 								<img
-									{...stylex.props(styles.tile)}
+									{...stylex.attrs(styles.tile)}
 									alt={`Map tile z${key.zoom} row ${key.row} column ${key.column}`}
 									draggable={false}
 									src={tileUrls().get(mapTileKeyId(key))}
@@ -525,9 +531,9 @@ export function MapTilePyramidViewer(props: MapTilePyramidViewerProps) {
 						paintActorOverlay();
 					}}
 					aria-hidden="true"
-					{...stylex.props(styles.actorOverlay)}
+					{...stylex.attrs(styles.actorOverlay)}
 				/>
-				<div {...stylex.props(styles.preload)} aria-hidden="true">
+				<div {...stylex.attrs(styles.preload)} aria-hidden="true">
 					<For each={pendingRequests()}>
 						{(key) => {
 							const path = artifactPaths().get(mapTileKeyId(key));
@@ -543,25 +549,29 @@ export function MapTilePyramidViewer(props: MapTilePyramidViewerProps) {
 					</For>
 				</div>
 				<Show when={renderTiles().length === 0}>
-					<div {...stylex.props(styles.loading)}>
+					<div {...stylex.attrs(styles.loading)}>
 						{captureCoverageVisible()
 							? "Loading coarse coverage…"
 							: "Outside capture area"}
 					</div>
 				</Show>
-				<div {...stylex.props(styles.axisNorth)}>+X north</div>
-				<div {...stylex.props(styles.axisEast)}>+Y east</div>
+				<div {...stylex.attrs(styles.axisNorth)}>+X north</div>
+				<div {...stylex.attrs(styles.axisEast)}>+Y east</div>
 			</div>
-			<footer {...stylex.props(styles.footer)}>
+			<footer {...stylex.attrs(styles.footer)}>
 				<input
-					{...stylex.props(styles.coordinateInput)}
+					{...stylex.attrs(styles.coordinateInput)}
 					aria-label="Map cursor coordinates"
-					readOnly
+					readonly
 					value={coordinateText()}
 					placeholder="Hover over the map for world XY"
 					onFocus={(event) => event.currentTarget.select()}
 				/>
-				<Button type="button" disabled={!coordinateText()} onClick={copyCoordinates}>
+				<Button
+					type="button"
+					disabled={!coordinateText()}
+					onClick={() => copyCoordinates()}
+				>
 					Copy coordinates
 				</Button>
 				<span role="status">{coordinateFeedback()}</span>

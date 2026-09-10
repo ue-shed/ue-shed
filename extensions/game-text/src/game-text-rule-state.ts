@@ -3,7 +3,7 @@ import type {
 	TextQualityRuleUpdateResult
 } from "@ue-shed/game-text/browser";
 import { createEffectAction } from "@ue-shed/ui";
-import { batch, createMemo, createSignal } from "solid-js";
+import { createMemo, createSignal } from "solid-js";
 import type { GameTextClientApi } from "./game-text-client.js";
 
 export interface RuleEditorState {
@@ -38,15 +38,13 @@ export function createGameTextRuleState(options: {
 	});
 	const replace = (document: TextQualityRuleDocument | undefined, persisted = true) => {
 		action.cancel();
-		batch(() => {
-			setState(
-				document
-					? { draft: document, savedDocument: persisted ? document : undefined }
-					: undefined
-			);
-			setBusy(false);
-			setFeedback({ status: "idle" });
-		});
+		setState(
+			document
+				? { draft: document, savedDocument: persisted ? document : undefined }
+				: undefined
+		);
+		setBusy(false);
+		setFeedback({ status: "idle" });
 	};
 	const changeDraft = (draft: TextQualityRuleDocument) => {
 		setState((current) => ({ draft, savedDocument: current?.savedDocument }));
@@ -71,34 +69,33 @@ export function createGameTextRuleState(options: {
 					setBusy(false);
 					setFeedback({ message: String(cause), status: "failed" });
 				},
-				onSuccess: (result) =>
-					batch(() => {
-						setBusy(false);
-						if (result.status === "completed") {
-							setState((current) => ({
-								draft:
-									current?.draft === submitted
-										? result.document
-										: (current?.draft ?? result.document),
-								savedDocument:
-									operation === "save" ? result.document : current?.savedDocument
-							}));
-							options.onReviewed(result);
-							setFeedback({ status: operation === "save" ? "saved" : "previewed" });
-						} else if (result.status === "failed") {
-							setFeedback({
-								message: result.error.message,
-								recovery: result.error.recovery,
-								status: "failed"
-							});
-						} else {
-							setFeedback({
-								message: "No loaded rule file is available.",
-								recovery: "Load a rule file and retry.",
-								status: "failed"
-							});
-						}
-					})
+				onSuccess: (result) => {
+					setBusy(false);
+					if (result.status === "completed") {
+						setState((current) => ({
+							draft:
+								current?.draft === submitted
+									? result.document
+									: (current?.draft ?? result.document),
+							savedDocument:
+								operation === "save" ? result.document : current?.savedDocument
+						}));
+						options.onReviewed(result);
+						setFeedback({ status: operation === "save" ? "saved" : "previewed" });
+					} else if (result.status === "failed") {
+						setFeedback({
+							message: result.error.message,
+							recovery: result.error.recovery,
+							status: "failed"
+						});
+					} else {
+						setFeedback({
+							message: "No loaded rule file is available.",
+							recovery: "Load a rule file and retry.",
+							status: "failed"
+						});
+					}
+				}
 			}
 		);
 	};

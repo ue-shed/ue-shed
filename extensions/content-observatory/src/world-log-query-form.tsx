@@ -59,12 +59,14 @@ export function WorldLogQueryForm(props: {
 	const [targetFilters, setTargetFilters] =
 		createSignal<ActorExplorerFilters>(noActorExplorerFilters);
 	let targetResetKey = "";
-	createEffect(() => {
-		const nextKey = `${props.mapPath}:${props.fastTargetKind}`;
-		if (nextKey === targetResetKey) return;
-		targetResetKey = nextKey;
-		setTargetFilters(noActorExplorerFilters);
-	});
+	createEffect(
+		() => `${props.mapPath}:${props.fastTargetKind}`,
+		(nextKey) => {
+			if (nextKey === targetResetKey) return;
+			targetResetKey = nextKey;
+			setTargetFilters(noActorExplorerFilters);
+		}
+	);
 	const classTargets = createMemo(() => {
 		const counts = new Map<string, number>();
 		for (const actor of props.targetActors) {
@@ -102,7 +104,7 @@ export function WorldLogQueryForm(props: {
 	};
 
 	return (
-		<section aria-label="Map history query" {...stylex.props(styles.queryPanel)}>
+		<section aria-label="Map history query" {...stylex.attrs(styles.queryPanel)}>
 			<SavedMapPicker
 				maps={props.maps}
 				mapPath={props.mapPath}
@@ -110,13 +112,13 @@ export function WorldLogQueryForm(props: {
 				disabled={props.disabled}
 				allowCustomPath
 			/>
-			<div role="group" aria-label="History mode" {...stylex.props(styles.historyModes)}>
+			<div role="group" aria-label="History mode" {...stylex.attrs(styles.historyModes)}>
 				<button
 					type="button"
 					disabled={props.disabled}
-					aria-pressed={props.mode === "deep"}
+					aria-pressed={props.mode === "deep" ? "true" : "false"}
 					onClick={() => props.onModeChange("deep")}
-					{...stylex.props(
+					{...stylex.attrs(
 						styles.historyModeButton,
 						props.mode === "deep" && styles.historyModeButtonActive
 					)}
@@ -126,9 +128,9 @@ export function WorldLogQueryForm(props: {
 				<button
 					type="button"
 					disabled={props.disabled}
-					aria-pressed={props.mode === "fast"}
+					aria-pressed={props.mode === "fast" ? "true" : "false"}
 					onClick={() => props.onModeChange("fast")}
-					{...stylex.props(
+					{...stylex.attrs(
 						styles.historyModeButton,
 						props.mode === "fast" && styles.historyModeButtonActive
 					)}
@@ -137,8 +139,8 @@ export function WorldLogQueryForm(props: {
 				</button>
 			</div>
 			<Show when={props.mode === "fast"}>
-				<section aria-label="Fast history target" {...stylex.props(styles.fastTargetPanel)}>
-					<div {...stylex.props(styles.fastTargetIntro)}>
+				<section aria-label="Fast history target" {...stylex.attrs(styles.fastTargetPanel)}>
+					<div {...stylex.attrs(styles.fastTargetIntro)}>
 						<strong>Target one current actor or class.</strong>
 						<p>The list is local. Perforce is read only when you run the scan.</p>
 					</div>
@@ -150,7 +152,7 @@ export function WorldLogQueryForm(props: {
 							props.targetLoading
 						}
 						onClick={props.onLoadTargets}
-						{...stylex.props(styles.loadTargetsButton)}
+						{...stylex.attrs(styles.loadTargetsButton)}
 					>
 						{props.targetLoading
 							? "Loading…"
@@ -161,14 +163,14 @@ export function WorldLogQueryForm(props: {
 					<div
 						role="group"
 						aria-label="Fast history target kind"
-						{...stylex.props(styles.fastTargetModes)}
+						{...stylex.attrs(styles.fastTargetModes)}
 					>
 						<button
 							type="button"
 							disabled={props.disabled}
-							aria-pressed={props.fastTargetKind === "actor"}
+							aria-pressed={props.fastTargetKind === "actor" ? "true" : "false"}
 							onClick={() => props.onFastTargetKindChange("actor")}
-							{...stylex.props(
+							{...stylex.attrs(
 								styles.fastTargetMode,
 								props.fastTargetKind === "actor" && styles.fastTargetModeActive
 							)}
@@ -178,9 +180,9 @@ export function WorldLogQueryForm(props: {
 						<button
 							type="button"
 							disabled={props.disabled}
-							aria-pressed={props.fastTargetKind === "actor_class"}
+							aria-pressed={props.fastTargetKind === "actor_class" ? "true" : "false"}
 							onClick={() => props.onFastTargetKindChange("actor_class")}
-							{...stylex.props(
+							{...stylex.attrs(
 								styles.fastTargetMode,
 								props.fastTargetKind === "actor_class" &&
 									styles.fastTargetModeActive
@@ -239,28 +241,28 @@ export function WorldLogQueryForm(props: {
 									}).length === 0)
 						}
 					>
-						<p {...stylex.props(styles.targetEmpty)}>
+						<p {...stylex.attrs(styles.targetEmpty)}>
 							No {props.fastTargetKind === "actor" ? "actors" : "actor classes"} match
 							that search.
 						</p>
 					</Show>
 					<Show when={props.targetError !== undefined}>
-						<p role="alert" {...stylex.props(styles.targetError)}>
+						<p role="alert" {...stylex.attrs(styles.targetError)}>
 							{props.targetError}
 						</p>
 					</Show>
 				</section>
 			</Show>
-			<div {...stylex.props(styles.rangeControls)}>
+			<div {...stylex.attrs(styles.rangeControls)}>
 				<span>Range</span>
 				<For each={[1, 7, 30]}>
 					{(days) => (
 						<button
 							type="button"
 							disabled={props.disabled}
-							aria-pressed={days === props.rangeDays}
+							aria-pressed={days === props.rangeDays ? "true" : "false"}
 							onClick={() => props.setRangeDays(days)}
-							{...stylex.props(
+							{...stylex.attrs(
 								styles.rangeButton,
 								days === props.rangeDays && styles.rangeButtonActive
 							)}
@@ -273,9 +275,9 @@ export function WorldLogQueryForm(props: {
 					type="button"
 					disabled={props.disabled}
 					aria-controls="world-log-scan-limits"
-					aria-expanded={advancedOpen()}
+					aria-expanded={advancedOpen() ? "true" : "false"}
 					onClick={() => setAdvancedOpen((current) => !current)}
-					{...stylex.props(styles.advancedButton)}
+					{...stylex.attrs(styles.advancedButton)}
 				>
 					Advanced limits
 				</button>
@@ -285,10 +287,10 @@ export function WorldLogQueryForm(props: {
 					id="world-log-scan-limits"
 					aria-label="Advanced limits"
 					disabled={props.disabled}
-					{...stylex.props(styles.scanLimits)}
+					{...stylex.attrs(styles.scanLimits)}
 				>
 					<legend>Limits</legend>
-					<label {...stylex.props(styles.scanLimitLabel)}>
+					<label {...stylex.attrs(styles.scanLimitLabel)}>
 						<span>Max changelists</span>
 						<input
 							type="number"
@@ -297,20 +299,20 @@ export function WorldLogQueryForm(props: {
 							onInput={(event) =>
 								setLimit("maxChangelists", event.currentTarget.value)
 							}
-							{...stylex.props(styles.scanLimitInput)}
+							{...stylex.attrs(styles.scanLimitInput)}
 						/>
 					</label>
-					<label {...stylex.props(styles.scanLimitLabel)}>
+					<label {...stylex.attrs(styles.scanLimitLabel)}>
 						<span>Packages</span>
 						<input
 							type="number"
 							min="1"
 							value={props.limits.maxPackages}
 							onInput={(event) => setLimit("maxPackages", event.currentTarget.value)}
-							{...stylex.props(styles.scanLimitInput)}
+							{...stylex.attrs(styles.scanLimitInput)}
 						/>
 					</label>
-					<label {...stylex.props(styles.scanLimitLabel)}>
+					<label {...stylex.attrs(styles.scanLimitLabel)}>
 						<span>Materialized files</span>
 						<input
 							type="number"
@@ -319,10 +321,10 @@ export function WorldLogQueryForm(props: {
 							onInput={(event) =>
 								setLimit("maxMaterializedFiles", event.currentTarget.value)
 							}
-							{...stylex.props(styles.scanLimitInput)}
+							{...stylex.attrs(styles.scanLimitInput)}
 						/>
 					</label>
-					<label {...stylex.props(styles.scanLimitLabel)}>
+					<label {...stylex.attrs(styles.scanLimitLabel)}>
 						<span>Concurrency</span>
 						<input
 							type="number"
@@ -331,10 +333,10 @@ export function WorldLogQueryForm(props: {
 							onInput={(event) =>
 								setLimit("maxConcurrency", event.currentTarget.value)
 							}
-							{...stylex.props(styles.scanLimitInput)}
+							{...stylex.attrs(styles.scanLimitInput)}
 						/>
 					</label>
-					<label {...stylex.props(styles.scanLimitLabel)}>
+					<label {...stylex.attrs(styles.scanLimitLabel)}>
 						<span>Max duration (ms)</span>
 						<input
 							type="number"
@@ -343,7 +345,7 @@ export function WorldLogQueryForm(props: {
 							onInput={(event) =>
 								setLimit("maxDurationMs", event.currentTarget.value)
 							}
-							{...stylex.props(styles.scanLimitInput)}
+							{...stylex.attrs(styles.scanLimitInput)}
 						/>
 					</label>
 				</fieldset>

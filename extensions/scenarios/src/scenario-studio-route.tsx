@@ -24,11 +24,10 @@ import {
 	Match,
 	Show,
 	Switch,
-	batch,
 	createMemo,
 	createSignal,
-	onCleanup,
-	onMount
+	createEffect,
+	onSettled
 } from "solid-js";
 import type { ScenarioStudioClient } from "./client.js";
 
@@ -254,12 +253,15 @@ export function ScenarioStudioRoute(
 	const [savedJson, setSavedJson] = createSignal(props.initialDraft?.savedJson);
 	const [fileMessage, setFileMessage] = createSignal("");
 	const dirty = createMemo(() => savedJson() !== JSON.stringify(document()));
-	onCleanup(() =>
-		props.onDraftChange?.({
+	createEffect(
+		() => ({
 			document: document(),
 			savedPath: savedPath(),
 			savedJson: savedJson()
-		})
+		}),
+		(value) => {
+			props.onDraftChange?.(value);
+		}
 	);
 	const [runs, setRuns] = createSignal<readonly ScenarioRun[]>(
 		demoPreview ? movementGymRuns : []
@@ -385,16 +387,14 @@ export function ScenarioStudioRoute(
 					cancelRunAction.cancel();
 					liveStatusSubscription.cancel();
 					setTransport("paused");
-					batch(() => {
-						setDocument(result.document);
-						setSelectedId(clipsInScenario(result.document)[0]?.id);
-						setPlayheadMs(0);
-						setDragState(undefined);
-						setTimelineScale(1);
-						setRuns([]);
-						setActiveRun(undefined);
-						setLiveRunState({ status: "preview" });
-					});
+					setDocument(result.document);
+					setSelectedId(clipsInScenario(result.document)[0]?.id);
+					setPlayheadMs(0);
+					setDragState(undefined);
+					setTimelineScale(1);
+					setRuns([]);
+					setActiveRun(undefined);
+					setLiveRunState({ status: "preview" });
 					setSavedPath(result.path);
 					setSavedJson(JSON.stringify(result.document));
 					setFileMessage("Opened " + result.path);
@@ -409,7 +409,7 @@ export function ScenarioStudioRoute(
 		setLiveRunState({ run, status: "terminal" });
 	};
 
-	onMount(() => {
+	onSettled(() => {
 		if (props.client === undefined) return;
 		settingsAction.run(props.client.settings(), {
 			onFailure: (cause) =>
@@ -562,44 +562,44 @@ export function ScenarioStudioRoute(
 	};
 
 	return (
-		<main {...stylex.props(styles.route)}>
-			<header {...stylex.props(styles.commandBar)}>
-				<div {...stylex.props(styles.documentIdentity)}>
-					<span {...stylex.props(styles.scenarioGlyph)}>SCN</span>
+		<main {...stylex.attrs(styles.route)}>
+			<header {...stylex.attrs(styles.commandBar)}>
+				<div {...stylex.attrs(styles.documentIdentity)}>
+					<span {...stylex.attrs(styles.scenarioGlyph)}>SCN</span>
 					<div>
-						<h1 {...stylex.props(styles.title)}>Scenario Studio</h1>
-						<div {...stylex.props(styles.documentName)}>{document().title}</div>
+						<h1 {...stylex.attrs(styles.title)}>Scenario Studio</h1>
+						<div {...stylex.attrs(styles.documentName)}>{document().title}</div>
 					</div>
 				</div>
-				<div {...stylex.props(styles.transport)}>
+				<div {...stylex.attrs(styles.transport)}>
 					<button
 						aria-label="Restart preview"
 						onClick={restart}
-						{...stylex.props(styles.iconButton)}
+						{...stylex.attrs(styles.iconButton)}
 					>
 						↶
 					</button>
 					<button
 						aria-label={transport() === "playing" ? "Pause preview" : "Play preview"}
 						onClick={play}
-						{...stylex.props(
+						{...stylex.attrs(
 							styles.playButton,
 							transport() === "playing" && styles.playing
 						)}
 					>
 						{transport() === "playing" ? "Ⅱ" : "▶"}
 					</button>
-					<span {...stylex.props(styles.timecode)}>{formatTime(playheadMs())}</span>
-					<span {...stylex.props(styles.duration)}>
+					<span {...stylex.attrs(styles.timecode)}>{formatTime(playheadMs())}</span>
+					<span {...stylex.attrs(styles.duration)}>
 						{" "}
 						/ {formatTime(document().durationMs)}
 					</span>
 				</div>
-				<div {...stylex.props(styles.runtimeStatus)}>
+				<div {...stylex.attrs(styles.runtimeStatus)}>
 					<button
-						aria-expanded={demoGuideOpen()}
+						aria-expanded={demoGuideOpen() ? "true" : "false"}
 						onClick={() => setDemoGuideOpen((open) => !open)}
-						{...stylex.props(
+						{...stylex.attrs(
 							styles.demoGuideToggle,
 							demoGuideOpen() && styles.demoGuideToggleActive
 						)}
@@ -607,7 +607,7 @@ export function ScenarioStudioRoute(
 						Demo guide
 					</button>
 					<span
-						{...stylex.props(
+						{...stylex.attrs(
 							styles.offlineDot,
 							liveBusy() && styles.liveDot,
 							liveRunState().status === "terminal" && styles.terminalDot
@@ -648,8 +648,8 @@ export function ScenarioStudioRoute(
 				</div>
 			</header>
 
-			<section aria-label="Live execution controls" {...stylex.props(styles.runConsole)}>
-				<label {...stylex.props(styles.endpointField)}>
+			<section aria-label="Live execution controls" {...stylex.attrs(styles.runConsole)}>
+				<label {...stylex.attrs(styles.endpointField)}>
 					<span>Remote Control endpoint</span>
 					<input
 						aria-label="Remote Control endpoint"
@@ -658,14 +658,14 @@ export function ScenarioStudioRoute(
 						placeholder="http://127.0.0.1:30010"
 						spellcheck={false}
 						value={endpoint()}
-						{...stylex.props(styles.endpointInput)}
+						{...stylex.attrs(styles.endpointInput)}
 					/>
 				</label>
-				<div aria-label="Live run lifecycle" {...stylex.props(styles.lifecycle)}>
+				<div aria-label="Live run lifecycle" {...stylex.attrs(styles.lifecycle)}>
 					<For each={["Connect", "Isolate", "Run", "Wait", "Result"]}>
 						{(phase) => (
 							<span
-								{...stylex.props(
+								{...stylex.attrs(
 									styles.lifecyclePhase,
 									((phase === "Connect" &&
 										liveRunState().status === "connecting") ||
@@ -686,14 +686,14 @@ export function ScenarioStudioRoute(
 										styles.lifecycleCurrent
 								)}
 							>
-								<i {...stylex.props(styles.phaseDot)} /> {phase}
+								<i {...stylex.attrs(styles.phaseDot)} /> {phase}
 							</span>
 						)}
 					</For>
 				</div>
-				<div {...stylex.props(styles.runActions)}>
+				<div {...stylex.attrs(styles.runActions)}>
 					<Show when={liveRunState().status === "active"}>
-						<button onClick={cancelLive} {...stylex.props(styles.cancelRunButton)}>
+						<button onClick={cancelLive} {...stylex.attrs(styles.cancelRunButton)}>
 							Cancel run
 						</button>
 					</Show>
@@ -702,7 +702,7 @@ export function ScenarioStudioRoute(
 							props.client === undefined || liveBusy() || endpoint().trim() === ""
 						}
 						onClick={runLive}
-						{...stylex.props(styles.liveRunButton)}
+						{...stylex.attrs(styles.liveRunButton)}
 					>
 						{liveRunState().status === "connecting"
 							? "Starting…"
@@ -719,14 +719,14 @@ export function ScenarioStudioRoute(
 				{(message) => {
 					const parts = createMemo(() => failureParts(message()));
 					return (
-						<section role="alert" {...stylex.props(styles.runFailure)}>
-							<strong {...stylex.props(styles.runFailureTitle)}>
+						<section role="alert" {...stylex.attrs(styles.runFailure)}>
+							<strong {...stylex.attrs(styles.runFailureTitle)}>
 								Couldn’t run this scenario in Unreal
 							</strong>
-							<p {...stylex.props(styles.runFailureMessage)}>{parts().summary}</p>
+							<p {...stylex.attrs(styles.runFailureMessage)}>{parts().summary}</p>
 							<Show when={parts().technical}>
 								{(technical) => (
-									<details {...stylex.props(styles.runFailureDetails)}>
+									<details {...stylex.attrs(styles.runFailureDetails)}>
 										<summary>Technical details</summary>
 										<code>{technical()}</code>
 									</details>
@@ -738,72 +738,72 @@ export function ScenarioStudioRoute(
 			</Show>
 
 			<Show when={demoGuideOpen()}>
-				<section aria-label="Movement Gym demo guide" {...stylex.props(styles.demoGuide)}>
-					<header {...stylex.props(styles.demoGuideHeading)}>
+				<section aria-label="Movement Gym demo guide" {...stylex.attrs(styles.demoGuide)}>
+					<header {...stylex.attrs(styles.demoGuideHeading)}>
 						<strong>Movement Gym</strong>
 						<small>One scenario, run from the Workbench or the CLI</small>
 					</header>
-					<ol {...stylex.props(styles.demoSteps)}>
+					<ol {...stylex.attrs(styles.demoSteps)}>
 						<For each={DEMO_STEPS}>
 							{(step, index) => (
 								<li
 									aria-current={index() === demoStepIndex() ? "step" : undefined}
-									{...stylex.props(
+									{...stylex.attrs(
 										styles.demoStep,
 										index() < demoStepIndex() && styles.demoStepComplete,
 										index() === demoStepIndex() && styles.demoStepCurrent
 									)}
 								>
-									<span {...stylex.props(styles.demoStepNumber)}>
+									<span {...stylex.attrs(styles.demoStepNumber)}>
 										{index() + 1}
 									</span>
-									<div {...stylex.props(styles.demoStepBody)}>
-										<small {...stylex.props(styles.demoStepLabel)}>
+									<div {...stylex.attrs(styles.demoStepBody)}>
+										<small {...stylex.attrs(styles.demoStepLabel)}>
 											{step.label}
 										</small>
-										<strong {...stylex.props(styles.demoStepTitle)}>
+										<strong {...stylex.attrs(styles.demoStepTitle)}>
 											{step.title}
 										</strong>
-										<p {...stylex.props(styles.demoStepCopy)}>{step.copy}</p>
+										<p {...stylex.attrs(styles.demoStepCopy)}>{step.copy}</p>
 									</div>
 								</li>
 							)}
 						</For>
 					</ol>
-					<div {...stylex.props(styles.headlessHandoff)}>
+					<div {...stylex.attrs(styles.headlessHandoff)}>
 						<span>Same runner, headless</span>
-						<code {...stylex.props(styles.headlessCommand)}>{headlessCommand()}</code>
+						<code {...stylex.attrs(styles.headlessCommand)}>{headlessCommand()}</code>
 					</div>
 				</section>
 			</Show>
 
-			<section {...stylex.props(styles.workspace)}>
-				<aside aria-label="Scenario takes" {...stylex.props(styles.takeRail)}>
-					<div {...stylex.props(styles.railHeading)}>
+			<section {...stylex.attrs(styles.workspace)}>
+				<aside aria-label="Scenario takes" {...stylex.attrs(styles.takeRail)}>
+					<div {...stylex.attrs(styles.railHeading)}>
 						<span>Takes</span>
-						<button aria-label="Add take" {...stylex.props(styles.addButton)}>
+						<button aria-label="Add take" {...stylex.attrs(styles.addButton)}>
 							+
 						</button>
 					</div>
-					<div {...stylex.props(styles.takeList)}>
+					<div {...stylex.attrs(styles.takeList)}>
 						<For each={runs()}>
 							{(run, index) => (
 								<button
 									onClick={() => setActiveRun(run)}
-									{...stylex.props(
+									{...stylex.attrs(
 										styles.take,
 										activeRun()?.id === run.id && styles.takeActive
 									)}
 								>
-									<span {...stylex.props(styles.takeNumber)}>
+									<span {...stylex.attrs(styles.takeNumber)}>
 										{String(runs().length - index()).padStart(2, "0")}
 									</span>
-									<span {...stylex.props(styles.takeCopy)}>
+									<span {...stylex.attrs(styles.takeCopy)}>
 										<strong>{run.label.split(" · ")[1] ?? run.label}</strong>
 										<small>{formatTime(run.durationMs)}</small>
 									</span>
 									<span
-										{...stylex.props(
+										{...stylex.attrs(
 											styles.runState,
 											run.divergences.length > 0 && styles.runStateWarning
 										)}
@@ -815,25 +815,25 @@ export function ScenarioStudioRoute(
 								</button>
 							)}
 						</For>
-						<button {...stylex.props(styles.take, styles.draftTake)}>
-							<span {...stylex.props(styles.takeNumber)}>04</span>
-							<span {...stylex.props(styles.takeCopy)}>
+						<button {...stylex.attrs(styles.take, styles.draftTake)}>
+							<span {...stylex.attrs(styles.takeNumber)}>04</span>
+							<span {...stylex.attrs(styles.takeCopy)}>
 								<strong>Edited draft</strong>
 								<small>not run</small>
 							</span>
-							<span {...stylex.props(styles.runState)}>
+							<span {...stylex.attrs(styles.runState)}>
 								{dirty() ? "Unsaved" : "Saved"}
 							</span>
 						</button>
 					</div>
 
 					<Show when={props.client?.saveDocument}>
-						<div {...stylex.props(styles.documentFacts)}>
+						<div {...stylex.attrs(styles.documentFacts)}>
 							<button
 								type="button"
 								disabled={liveBusy()}
 								onClick={saveDocument}
-								{...stylex.props(styles.take)}
+								{...stylex.attrs(styles.take)}
 							>
 								Save draft…
 							</button>
@@ -841,28 +841,28 @@ export function ScenarioStudioRoute(
 								type="button"
 								disabled={liveBusy()}
 								onClick={openDocument}
-								{...stylex.props(styles.take)}
+								{...stylex.attrs(styles.take)}
 							>
 								Open draft…
 							</button>
 							<span role="status">{fileMessage()}</span>
 						</div>
 					</Show>
-					<div {...stylex.props(styles.documentFacts)}>
-						<div {...stylex.props(styles.fact)}>
+					<div {...stylex.attrs(styles.documentFacts)}>
+						<div {...stylex.attrs(styles.fact)}>
 							<span>Map</span>
 							<strong>{document().mapPath.split("/").at(-1)}</strong>
 						</div>
-						<div {...stylex.props(styles.fact)}>
+						<div {...stylex.attrs(styles.fact)}>
 							<span>Clock</span>
 							<strong>Game time</strong>
 						</div>
-						<div {...stylex.props(styles.fact)}>
+						<div {...stylex.attrs(styles.fact)}>
 							<span>Seed</span>
 							<strong>{document().seed}</strong>
 						</div>
-						<div {...stylex.props(styles.isolationFact)}>
-							<span {...stylex.props(styles.lockMark)}>◆</span>
+						<div {...stylex.attrs(styles.isolationFact)}>
+							<span {...stylex.attrs(styles.lockMark)}>◆</span>
 							<div>
 								<strong>
 									{liveRunState().status === "terminal" &&
@@ -890,13 +890,13 @@ export function ScenarioStudioRoute(
 					</div>
 				</aside>
 
-				<section aria-label="Scenario timeline" {...stylex.props(styles.timelinePanel)}>
-					<header {...stylex.props(styles.timelineHeader)}>
+				<section aria-label="Scenario timeline" {...stylex.attrs(styles.timelinePanel)}>
+					<header {...stylex.attrs(styles.timelineHeader)}>
 						<div>
-							<h2 {...stylex.props(styles.sectionTitle)}>Timeline</h2>
+							<h2 {...stylex.attrs(styles.sectionTitle)}>Timeline</h2>
 							<p>{document().description}</p>
 						</div>
-						<div {...stylex.props(styles.timelineTools)}>
+						<div {...stylex.attrs(styles.timelineTools)}>
 							<button
 								aria-label="Zoom timeline out"
 								onClick={() =>
@@ -917,18 +917,18 @@ export function ScenarioStudioRoute(
 						</div>
 					</header>
 
-					<div {...stylex.props(styles.timelineScroller)}>
+					<div {...stylex.attrs(styles.timelineScroller)}>
 						<div style={{ width: `${timelineScale() * 100}%`, "min-width": "900px" }}>
-							<div {...stylex.props(styles.rulerRow)}>
-								<div {...stylex.props(styles.rulerLabel)}>Game time</div>
-								<div {...stylex.props(styles.ruler)}>
+							<div {...stylex.attrs(styles.rulerRow)}>
+								<div {...stylex.attrs(styles.rulerLabel)}>Game time</div>
+								<div {...stylex.attrs(styles.ruler)}>
 									<For each={TIME_TICKS}>
 										{(tick) => (
 											<span
 												style={{
 													left: `${(tick / document().durationMs) * 100}%`
 												}}
-												{...stylex.props(styles.tick)}
+												{...stylex.attrs(styles.tick)}
 											>
 												{(tick / 1000).toFixed(0)}s
 											</span>
@@ -941,7 +941,7 @@ export function ScenarioStudioRoute(
 												style={{
 													left: `${(checkpoint.atMs / document().durationMs) * 100}%`
 												}}
-												{...stylex.props(styles.checkpoint)}
+												{...stylex.attrs(styles.checkpoint)}
 											>
 												◆
 											</span>
@@ -950,17 +950,17 @@ export function ScenarioStudioRoute(
 								</div>
 							</div>
 
-							<div {...stylex.props(styles.trackStack)}>
+							<div {...stylex.attrs(styles.trackStack)}>
 								<For each={document().tracks}>
 									{(track) => (
-										<div {...stylex.props(styles.trackRow)}>
-											<div {...stylex.props(styles.trackLabel)}>
-												<div {...stylex.props(styles.trackMeta)}>
-													<span {...stylex.props(styles.trackKind)}>
+										<div {...stylex.attrs(styles.trackRow)}>
+											<div {...stylex.attrs(styles.trackLabel)}>
+												<div {...stylex.attrs(styles.trackMeta)}>
+													<span {...stylex.attrs(styles.trackKind)}>
 														{trackKindLabel(track)}
 													</span>
 													<span
-														{...stylex.props(
+														{...stylex.attrs(
 															styles.trackSupport,
 															trackLiveSupport(track) ===
 																"Runs live" &&
@@ -975,9 +975,9 @@ export function ScenarioStudioRoute(
 											</div>
 											<div
 												onClick={seekFromPointer}
-												{...stylex.props(styles.trackBody)}
+												{...stylex.attrs(styles.trackBody)}
 											>
-												<div {...stylex.props(styles.gridLines)} />
+												<div {...stylex.attrs(styles.gridLines)} />
 												<For each={track.clips}>
 													{(clip) => (
 														<button
@@ -1007,7 +1007,7 @@ export function ScenarioStudioRoute(
 																	document().durationMs
 																)
 															}}
-															{...stylex.props(
+															{...stylex.attrs(
 																styles.clip,
 																styles[clip.kind],
 																selectedId() === clip.id &&
@@ -1023,7 +1023,7 @@ export function ScenarioStudioRoute(
 																	clip.keyframes.length > 2
 																}
 															>
-																<i {...stylex.props(styles.curve)}>
+																<i {...stylex.attrs(styles.curve)}>
 																	⌁
 																</i>
 															</Show>
@@ -1034,7 +1034,7 @@ export function ScenarioStudioRoute(
 													style={{
 														left: `${(playheadMs() / document().durationMs) * 100}%`
 													}}
-													{...stylex.props(styles.playhead)}
+													{...stylex.attrs(styles.playhead)}
 												/>
 											</div>
 										</div>
@@ -1044,8 +1044,8 @@ export function ScenarioStudioRoute(
 						</div>
 					</div>
 
-					<footer {...stylex.props(styles.seekReadout)}>
-						<span {...stylex.props(styles.seekIcon)}>↳</span>
+					<footer {...stylex.attrs(styles.seekReadout)}>
+						<span {...stylex.attrs(styles.seekIcon)}>↳</span>
 						<Switch>
 							<Match when={restorePlan()} keyed>
 								{(plan) => (
@@ -1081,21 +1081,21 @@ export function ScenarioStudioRoute(
 					</footer>
 				</section>
 
-				<aside aria-label="Clip inspector" {...stylex.props(styles.inspector)}>
+				<aside aria-label="Clip inspector" {...stylex.attrs(styles.inspector)}>
 					<Show when={selectedClip()} keyed>
 						{(clip) => (
 							<>
-								<header {...stylex.props(styles.inspectorHeader)}>
-									<span {...stylex.props(styles.clipType)}>
+								<header {...stylex.attrs(styles.inspectorHeader)}>
+									<span {...stylex.attrs(styles.clipType)}>
 										{clipKindLabel(clip)}
 									</span>
 									<h2>{clip.label}</h2>
 									<code>{operationName(clip)}</code>
 								</header>
 
-								<section {...stylex.props(styles.inspectorSection)}>
+								<section {...stylex.attrs(styles.inspectorSection)}>
 									<h3>Timing</h3>
-									<div {...stylex.props(styles.timingControl)}>
+									<div {...stylex.attrs(styles.timingControl)}>
 										<button
 											aria-label="Nudge earlier"
 											onClick={() => moveSelected(-100)}
@@ -1113,9 +1113,9 @@ export function ScenarioStudioRoute(
 									<small>100 ms nudge · drag the block for coarse timing</small>
 								</section>
 
-								<section {...stylex.props(styles.inspectorSection)}>
+								<section {...stylex.attrs(styles.inspectorSection)}>
 									<h3>Input handling</h3>
-									<div {...stylex.props(styles.layerFlow)}>
+									<div {...stylex.attrs(styles.layerFlow)}>
 										<span>{sourceLayer(clip)}</span>
 										<b>→</b>
 										<span>
@@ -1136,12 +1136,12 @@ export function ScenarioStudioRoute(
 									keyed
 								>
 									{(action) => (
-										<section {...stylex.props(styles.inspectorSection)}>
+										<section {...stylex.attrs(styles.inspectorSection)}>
 											<h3>Input values</h3>
-											<div {...stylex.props(styles.keyframeList)}>
+											<div {...stylex.attrs(styles.keyframeList)}>
 												<For each={action.keyframes}>
 													{(keyframe) => (
-														<div {...stylex.props(styles.keyframe)}>
+														<div {...stylex.attrs(styles.keyframe)}>
 															<span>
 																{formatTime(keyframe.offsetMs)}
 															</span>
@@ -1164,12 +1164,12 @@ export function ScenarioStudioRoute(
 				</aside>
 			</section>
 
-			<section aria-label="Run results" {...stylex.props(styles.evidenceDesk)}>
-				<div {...stylex.props(styles.evidenceHeading)}>
-					<h2 {...stylex.props(styles.sectionTitle)}>Run results</h2>
+			<section aria-label="Run results" {...stylex.attrs(styles.evidenceDesk)}>
+				<div {...stylex.attrs(styles.evidenceHeading)}>
+					<h2 {...stylex.attrs(styles.sectionTitle)}>Run results</h2>
 					<p>Captures and game checks from this run, at {formatTime(playheadMs())}.</p>
 					<Show when={liveRunState().status === "terminal"}>
-						<div {...stylex.props(styles.runReceiptSummary)}>
+						<div {...stylex.attrs(styles.runReceiptSummary)}>
 							<span>
 								{capitalize(activeRun()?.status.replaceAll("_", " ") ?? "Not run")}
 							</span>
@@ -1182,11 +1182,11 @@ export function ScenarioStudioRoute(
 						</div>
 					</Show>
 				</div>
-				<div {...stylex.props(styles.frameCard)}>
+				<div {...stylex.attrs(styles.frameCard)}>
 					<Show
 						when={presentedEvidence()}
 						fallback={
-							<div {...stylex.props(styles.emptyEvidence)}>
+							<div {...stylex.attrs(styles.emptyEvidence)}>
 								<strong>No capture here</strong>
 								<p>
 									This run recorded nothing at the selected point. Move the
@@ -1200,8 +1200,8 @@ export function ScenarioStudioRoute(
 							<Show
 								when={evidence.type === "screenshot"}
 								fallback={
-									<div {...stylex.props(styles.structuredEvidence)}>
-										<div {...stylex.props(styles.structuredEvidenceTopline)}>
+									<div {...stylex.attrs(styles.structuredEvidence)}>
+										<div {...stylex.attrs(styles.structuredEvidenceTopline)}>
 											<span>
 												{capitalize(evidence.type.replaceAll("_", " "))}
 											</span>
@@ -1215,16 +1215,16 @@ export function ScenarioStudioRoute(
 									</div>
 								}
 							>
-								<div {...stylex.props(styles.frame)}>
-									<div {...stylex.props(styles.frameHorizon)} />
-									<div {...stylex.props(styles.frameBridge)} />
-									<div {...stylex.props(styles.framePawn)}>↑</div>
-									<span {...stylex.props(styles.frameBadge)}>Player camera</span>
-									<span {...stylex.props(styles.frameTime)}>
+								<div {...stylex.attrs(styles.frame)}>
+									<div {...stylex.attrs(styles.frameHorizon)} />
+									<div {...stylex.attrs(styles.frameBridge)} />
+									<div {...stylex.attrs(styles.framePawn)}>↑</div>
+									<span {...stylex.attrs(styles.frameBadge)}>Player camera</span>
+									<span {...stylex.attrs(styles.frameTime)}>
 										{formatTime(evidence.atMs)}
 									</span>
 								</div>
-								<div {...stylex.props(styles.frameCaption)}>
+								<div {...stylex.attrs(styles.frameCaption)}>
 									<strong>{evidence.label}</strong>
 									<p>{evidence.summary}</p>
 								</div>
@@ -1232,7 +1232,7 @@ export function ScenarioStudioRoute(
 						)}
 					</Show>
 				</div>
-				<div {...stylex.props(styles.observationList)}>
+				<div {...stylex.attrs(styles.observationList)}>
 					<header>
 						<span>Captures</span>
 						<small>{activeRun()?.evidence.length ?? 0} saved</small>
@@ -1244,9 +1244,9 @@ export function ScenarioStudioRoute(
 									setSelectedId(evidence.markerId);
 									setPlayheadMs(evidence.atMs);
 								}}
-								{...stylex.props(styles.observation)}
+								{...stylex.attrs(styles.observation)}
 							>
-								<span {...stylex.props(styles.observationType)}>
+								<span {...stylex.attrs(styles.observationType)}>
 									{evidence.type.slice(0, 3)}
 								</span>
 								<div>
@@ -1258,7 +1258,7 @@ export function ScenarioStudioRoute(
 						)}
 					</For>
 				</div>
-				<div {...stylex.props(styles.divergenceLedger)}>
+				<div {...stylex.attrs(styles.divergenceLedger)}>
 					<header>
 						<span>Differences</span>
 						<small>{activeRun()?.divergences.length ?? 0} found</small>
@@ -1266,7 +1266,7 @@ export function ScenarioStudioRoute(
 					<Show
 						when={(activeRun()?.divergences.length ?? 0) > 0}
 						fallback={
-							<p {...stylex.props(styles.cleanRun)}>
+							<p {...stylex.attrs(styles.cleanRun)}>
 								{activeRun()
 									? "No differences found in this take."
 									: "Run this scenario to collect results."}
@@ -1277,9 +1277,9 @@ export function ScenarioStudioRoute(
 							{(divergence) => (
 								<button
 									onClick={() => setPlayheadMs(divergence.atMs)}
-									{...stylex.props(styles.divergence)}
+									{...stylex.attrs(styles.divergence)}
 								>
-									<span {...stylex.props(styles.delta)}>Δ</span>
+									<span {...stylex.attrs(styles.delta)}>Δ</span>
 									<div>
 										<strong>{divergence.observed}</strong>
 										<small>{divergence.explanation}</small>
@@ -1292,7 +1292,7 @@ export function ScenarioStudioRoute(
 				</div>
 			</section>
 
-			<footer {...stylex.props(styles.statusBar)}>
+			<footer {...stylex.attrs(styles.statusBar)}>
 				<span>Schema v{document().schemaVersion}</span>
 				<span>{clipsInScenario(document()).length} timeline items</span>
 				<span>{document().checkpoints.length} saved restart points</span>

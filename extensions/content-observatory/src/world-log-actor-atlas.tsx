@@ -250,12 +250,12 @@ export function WorldLogScene(props: {
 	const setResolution = (resolution: "all" | "resolved" | "unresolved") =>
 		setViewFilters((current) => ({ ...current, resolution }));
 	const extraFilters = (
-		<div aria-label="Historical actor filters" {...stylex.props(styles.actorFilterBar)}>
+		<div aria-label="Historical actor filters" {...stylex.attrs(styles.actorFilterBar)}>
 			<button
 				type="button"
-				aria-pressed={viewFilters().changedOnly}
+				aria-pressed={viewFilters().changedOnly ? "true" : "false"}
 				onClick={setChangedOnly}
-				{...stylex.props(
+				{...stylex.attrs(
 					styles.actorFilterButton,
 					viewFilters().changedOnly && styles.actorFilterButtonActive
 				)}
@@ -266,9 +266,9 @@ export function WorldLogScene(props: {
 				{(presence) => (
 					<button
 						type="button"
-						aria-pressed={viewFilters().presence === presence}
+						aria-pressed={viewFilters().presence === presence ? "true" : "false"}
 						onClick={() => setPresence(presence)}
-						{...stylex.props(
+						{...stylex.attrs(
 							styles.actorFilterButton,
 							viewFilters().presence === presence && styles.actorFilterButtonActive
 						)}
@@ -281,9 +281,9 @@ export function WorldLogScene(props: {
 				{(resolution) => (
 					<button
 						type="button"
-						aria-pressed={viewFilters().resolution === resolution}
+						aria-pressed={viewFilters().resolution === resolution ? "true" : "false"}
 						onClick={() => setResolution(resolution)}
-						{...stylex.props(
+						{...stylex.attrs(
 							styles.actorFilterButton,
 							viewFilters().resolution === resolution &&
 								styles.actorFilterButtonActive
@@ -297,13 +297,13 @@ export function WorldLogScene(props: {
 	);
 
 	return (
-		<section aria-label="Saved actor point map" {...stylex.props(styles.actorAtlas)}>
-			<header {...stylex.props(styles.actorAtlasHeader)}>
+		<section aria-label="Saved actor point map" {...stylex.attrs(styles.actorAtlas)}>
+			<header {...stylex.attrs(styles.actorAtlasHeader)}>
 				<div>
-					<h2 {...stylex.props(styles.atlasTitle)}>{frameTitle()}</h2>
-					<code {...stylex.props(styles.actorAtlasPath)}>{mapPath()}</code>
+					<h2 {...stylex.attrs(styles.atlasTitle)}>{frameTitle()}</h2>
+					<code {...stylex.attrs(styles.actorAtlasPath)}>{mapPath()}</code>
 				</div>
-				<div {...stylex.props(styles.snapshotSummary)}>
+				<div {...stylex.attrs(styles.snapshotSummary)}>
 					<span>
 						<b>{frameResolvedActorCount().toLocaleString()}</b> resolved actors
 					</span>
@@ -315,15 +315,15 @@ export function WorldLogScene(props: {
 				</div>
 			</header>
 			<Show when={historyView()}>
-				<nav aria-label="Frames" {...stylex.props(styles.playbackFrames)}>
+				<nav aria-label="Frames" {...stylex.attrs(styles.playbackFrames)}>
 					<button
 						type="button"
 						aria-label="Show state at range start"
-						aria-pressed={historyFrame()?.kind === "range_start"}
+						aria-pressed={historyFrame()?.kind === "range_start" ? "true" : "false"}
 						onClick={() =>
 							props.onEvent({ revisionIndex: undefined, type: "frame_selected" })
 						}
-						{...stylex.props(
+						{...stylex.attrs(
 							styles.playbackFrameButton,
 							historyFrame()?.kind === "range_start" &&
 								styles.playbackFrameButtonActive
@@ -339,6 +339,8 @@ export function WorldLogScene(props: {
 								aria-pressed={
 									historyFrame()?.kind === "revision" &&
 									historyRevisionIndex() === revisionIndex()
+										? "true"
+										: "false"
 								}
 								onClick={() =>
 									props.onEvent({
@@ -346,7 +348,7 @@ export function WorldLogScene(props: {
 										type: "frame_selected"
 									})
 								}
-								{...stylex.props(
+								{...stylex.attrs(
 									styles.playbackFrameButton,
 									historyFrame()?.kind === "revision" &&
 										historyRevisionIndex() === revisionIndex() &&
@@ -360,24 +362,24 @@ export function WorldLogScene(props: {
 				</nav>
 			</Show>
 			<Show when={frameHasNoMap()}>
-				<div {...stylex.props(styles.frameNotice)}>
+				<div {...stylex.attrs(styles.frameNotice)}>
 					This range begins before the map existed. There is no saved state to show at
 					this frame.
 				</div>
 			</Show>
 			<Show when={frameCompleteness() === "partial"}>
-				<div {...stylex.props(styles.frameNotice, styles.frameNoticePartial)}>
+				<div {...stylex.attrs(styles.frameNotice, styles.frameNoticePartial)}>
 					Partial coverage at this frame. Actor state is limited to the packages that
 					could be read.
 				</div>
 			</Show>
 			<Show when={unclassifiedPackageChangeCount() > 0}>
-				<div {...stylex.props(styles.frameNotice, styles.frameNoticeUnclassified)}>
+				<div {...stylex.attrs(styles.frameNotice, styles.frameNoticeUnclassified)}>
 					{unclassifiedPackageChangeCount()} unclassified package change
 					{unclassifiedPackageChangeCount() === 1 ? "" : "s"} at this frame.
 				</div>
 			</Show>
-			<div {...stylex.props(styles.actorAtlasWorkspace)}>
+			<div {...stylex.attrs(styles.actorAtlasWorkspace)}>
 				<ActorExplorer
 					utilities
 					ariaLabel="Saved actor outliner"
@@ -410,14 +412,14 @@ export function WorldLogScene(props: {
 					selectedKey={props.selectedActorKey}
 					title={isHistory() ? "Actors in this range" : "Actors in the current map"}
 				/>
-				<div {...stylex.props(styles.pointMapFrame)}>
-					<div {...stylex.props(styles.northMarker)}>N ↑</div>
-					<div {...stylex.props(styles.pointMapLegend)}>
+				<div {...stylex.attrs(styles.pointMapFrame)}>
+					<div {...stylex.attrs(styles.northMarker)}>N ↑</div>
+					<div {...stylex.attrs(styles.pointMapLegend)}>
 						<For each={pointClasses()}>
 							{([className, count]) => (
 								<span title={className}>
 									<i
-										{...stylex.props(styles.pointMapClassDot)}
+										{...stylex.attrs(styles.pointMapClassDot)}
 										style={{
 											"background-color": pointMapColorForClass(className)
 										}}
@@ -433,14 +435,14 @@ export function WorldLogScene(props: {
 							return (
 								<div
 									aria-label="Selected changelist map overlay"
-									{...stylex.props(styles.pointMapOverlayLegend)}
+									{...stylex.attrs(styles.pointMapOverlayLegend)}
 								>
 									<strong>CL {revision().change} diff</strong>
 									<For each={changelistTones}>
 										{(tone) => (
 											<span>
 												<i
-													{...stylex.props(styles.pointMapClassDot)}
+													{...stylex.attrs(styles.pointMapClassDot)}
 													style={{
 														"background-color":
 															worldLogChangelistToneColor(tone)
@@ -457,14 +459,14 @@ export function WorldLogScene(props: {
 					<Show
 						when={plottedPoints().length > 0}
 						fallback={
-							<div {...stylex.props(styles.noResolvedActors)}>
+							<div {...stylex.attrs(styles.noResolvedActors)}>
 								No actors with resolved positions match these filters at this frame.
 							</div>
 						}
 					>
 						<PointMapCanvas
 							ariaLabel="Top-down saved actor points map"
-							class={stylex.props(styles.pointMap).className}
+							class={stylex.attrs(styles.pointMap).class}
 							connections={selectedOverlay()?.connections}
 							onController={(controller) => {
 								pointMap = controller;
@@ -479,16 +481,16 @@ export function WorldLogScene(props: {
 					<button
 						type="button"
 						onClick={() => pointMap?.resetView()}
-						{...stylex.props(styles.pointMapReset)}
+						{...stylex.attrs(styles.pointMapReset)}
 					>
 						Reset view
 					</button>
 				</div>
-				<aside aria-label="Selected saved actor" {...stylex.props(styles.actorInspector)}>
+				<aside aria-label="Selected saved actor" {...stylex.attrs(styles.actorInspector)}>
 					<Show
 						when={selectedActor()}
 						fallback={
-							<div {...stylex.props(styles.actorInspectorEmpty)}>
+							<div {...stylex.attrs(styles.actorInspectorEmpty)}>
 								<strong>No actor selected</strong>
 								<p>
 									Choose a point on the map or a row in the outliner to inspect
@@ -501,7 +503,7 @@ export function WorldLogScene(props: {
 							<>
 								<h3>{actorTitle(selectedActorAtFrame() ?? actor().actor)}</h3>
 								<code>{(selectedActorAtFrame() ?? actor().actor).classPath}</code>
-								<dl {...stylex.props(styles.actorFacts)}>
+								<dl {...stylex.attrs(styles.actorFacts)}>
 									<div>
 										<dt>Events</dt>
 										<dd>{actor().changeCount}</dd>
@@ -553,9 +555,9 @@ export function WorldLogScene(props: {
 									</Show>
 								</dl>
 								<Show when={selectedActorMovements().length > 0}>
-									<section {...stylex.props(styles.actorEventSection)}>
-										<span {...stylex.props(styles.sectionLabel)}>Movement</span>
-										<ol {...stylex.props(styles.actorEventList)}>
+									<section {...stylex.attrs(styles.actorEventSection)}>
+										<span {...stylex.attrs(styles.sectionLabel)}>Movement</span>
+										<ol {...stylex.attrs(styles.actorEventList)}>
 											<For each={selectedActorMovements()}>
 												{(event) => (
 													<li>
@@ -570,7 +572,7 @@ export function WorldLogScene(props: {
 								<Show
 									when={isHistory()}
 									fallback={
-										<section {...stylex.props(styles.actorEventSection)}>
+										<section {...stylex.attrs(styles.actorEventSection)}>
 											<p>
 												This is the actor's state read from the current
 												saved map.
@@ -578,9 +580,9 @@ export function WorldLogScene(props: {
 										</section>
 									}
 								>
-									<section {...stylex.props(styles.actorEventSection)}>
-										<span {...stylex.props(styles.sectionLabel)}>Events</span>
-										<ol {...stylex.props(styles.actorEventList)}>
+									<section {...stylex.attrs(styles.actorEventSection)}>
+										<span {...stylex.attrs(styles.sectionLabel)}>Events</span>
+										<ol {...stylex.attrs(styles.actorEventList)}>
 											<For each={selectedActorEvents()}>
 												{(event) => (
 													<li>
@@ -594,7 +596,7 @@ export function WorldLogScene(props: {
 																	type: "actor_event_selected"
 																})
 															}
-															{...stylex.props(
+															{...stylex.attrs(
 																styles.actorEventButton
 															)}
 														>
@@ -621,7 +623,7 @@ export function WorldLogScene(props: {
 											type: "actor_selected"
 										})
 									}
-									{...stylex.props(styles.clearActorSelection)}
+									{...stylex.attrs(styles.clearActorSelection)}
 								>
 									Clear selection
 								</button>

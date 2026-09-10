@@ -126,18 +126,9 @@ const ScenarioStudioRoute = lazy(async () => {
 	};
 });
 import type { CameraStatus } from "@ue-shed/protocol";
-import {
-	lazy,
-	Suspense,
-	For,
-	Match,
-	Show,
-	Switch,
-	createSignal,
-	onCleanup,
-	onMount
-} from "solid-js";
-import type { ComponentProps, JSX } from "solid-js";
+import { lazy, Loading, For, Match, Show, Switch, createSignal, onSettled } from "solid-js";
+
+import type { ComponentProps, JSX } from "@solidjs/web";
 import type { ShowcaseContext } from "../shared/ipc-contracts.js";
 
 const CameraLab = lazy(() =>
@@ -496,26 +487,26 @@ export function AppShell() {
 	const [route, setRoute] = createSignal<Route>(routeFromLocation());
 	const [projectRevision, setProjectRevision] = createSignal(1);
 	const [targetRevision, setTargetRevision] = createSignal(1);
-	onMount(() => {
+	onSettled(() => {
 		document.title = "UE Shed Workbench";
 		if (!window.location.hash) window.location.hash = "/";
 		const onHashChange = () => setRoute(routeFromLocation());
 		window.addEventListener("hashchange", onHashChange);
-		onCleanup(() => window.removeEventListener("hashchange", onHashChange));
+		return () => window.removeEventListener("hashchange", onHashChange);
 	});
 	return (
-		<div {...stylex.props(workbenchDarkTheme, styles.app)}>
-			<aside aria-label="Workbench" {...stylex.props(styles.sidebar)}>
-				<a href="#/" {...stylex.props(styles.brand)}>
-					<span {...stylex.props(styles.brandMark)}>UE</span>
+		<div {...stylex.attrs(workbenchDarkTheme, styles.app)}>
+			<aside aria-label="Workbench" {...stylex.attrs(styles.sidebar)}>
+				<a href="#/" {...stylex.attrs(styles.brand)}>
+					<span {...stylex.attrs(styles.brandMark)}>UE</span>
 					<span>Shed Workbench</span>
 				</a>
-				<nav {...stylex.props(styles.nav)}>
+				<nav {...stylex.attrs(styles.nav)}>
 					<For each={navSections}>
 						{(section) => (
-							<div {...stylex.props(styles.section)}>
-								<p {...stylex.props(styles.sectionLabel)}>{section.label}</p>
-								<div {...stylex.props(styles.sectionItems)}>
+							<div {...stylex.attrs(styles.section)}>
+								<p {...stylex.attrs(styles.sectionLabel)}>{section.label}</p>
+								<div {...stylex.attrs(styles.sectionItems)}>
 									<For each={section.items}>
 										{(item) => (
 											<a
@@ -523,12 +514,12 @@ export function AppShell() {
 												aria-current={
 													route() === item.route ? "page" : undefined
 												}
-												{...stylex.props(
+												{...stylex.attrs(
 													styles.item,
 													route() === item.route && styles.itemActive
 												)}
 											>
-												<span {...stylex.props(styles.itemIcon)}>
+												<span {...stylex.attrs(styles.itemIcon)}>
 													{item.icon()}
 												</span>
 												{item.label}
@@ -540,7 +531,7 @@ export function AppShell() {
 						)}
 					</For>
 				</nav>
-				<footer {...stylex.props(styles.footer)}>
+				<footer {...stylex.attrs(styles.footer)}>
 					<ProjectChooser
 						revision={projectRevision()}
 						client={workbenchRendererClient}
@@ -550,10 +541,10 @@ export function AppShell() {
 						client={workbenchRendererClient}
 						onTargetChanged={() => setTargetRevision((revision) => revision + 1)}
 					/>
-					<span {...stylex.props(styles.version)}>0.0.0</span>
+					<span {...stylex.attrs(styles.version)}>0.0.0</span>
 				</footer>
 			</aside>
-			<div {...stylex.props(styles.content)}>
+			<div {...stylex.attrs(styles.content)}>
 				<Show when={projectRevision()} keyed>
 					{(_revision) => {
 						// Retained project state outlives routes remounted for a new Unreal target.
@@ -566,7 +557,7 @@ export function AppShell() {
 						return (
 							<Show when={targetRevision()} keyed>
 								{(_target) => (
-									<Suspense fallback={<p role="status">Loading tool…</p>}>
+									<Loading fallback={<p role="status">Loading tool…</p>}>
 										<Switch
 											fallback={
 												<ShowcaseHome
@@ -632,7 +623,7 @@ export function AppShell() {
 												<CameraLab />
 											</Match>
 										</Switch>
-									</Suspense>
+									</Loading>
 								)}
 							</Show>
 						);
@@ -687,7 +678,7 @@ function ShowcaseHome(props: { readonly onChosen: () => void }) {
 			}
 		);
 	};
-	onMount(() => {
+	onSettled(() => {
 		contextAction.run(workbenchRendererClient.showcaseContext(), {
 			onFailure: () => {
 				setContextFailed(true);
@@ -701,22 +692,22 @@ function ShowcaseHome(props: { readonly onChosen: () => void }) {
 		});
 	});
 	return (
-		<main {...stylex.props(styles.home)}>
-			<header {...stylex.props(styles.hero)}>
-				<h1 {...stylex.props(styles.homeTitle)}>Explore your Unreal project</h1>
-				<p {...stylex.props(styles.homeIntro)}>
+		<main {...stylex.attrs(styles.home)}>
+			<header {...stylex.attrs(styles.hero)}>
+				<h1 {...stylex.attrs(styles.homeTitle)}>Explore your Unreal project</h1>
+				<p {...stylex.attrs(styles.homeIntro)}>
 					Workbench reads your saved project directly. Most tools answer questions without
 					opening the editor — live sessions start only when a workflow needs Unreal.
 				</p>
 			</header>
 
-			<section aria-label="Get started" {...stylex.props(styles.workflowSection)}>
-				<div {...stylex.props(styles.cardGrid)}>
+			<section aria-label="Get started" {...stylex.attrs(styles.workflowSection)}>
+				<div {...stylex.attrs(styles.cardGrid)}>
 					<button
 						type="button"
 						disabled={opening()}
 						onClick={() => selectProject(true)}
-						{...stylex.props(styles.onboardingAction)}
+						{...stylex.attrs(styles.onboardingAction)}
 					>
 						Try the sample project
 					</button>
@@ -724,22 +715,22 @@ function ShowcaseHome(props: { readonly onChosen: () => void }) {
 						type="button"
 						disabled={opening()}
 						onClick={() => selectProject(false)}
-						{...stylex.props(styles.onboardingAction)}
+						{...stylex.attrs(styles.onboardingAction)}
 					>
 						Open your project
 					</button>
 				</div>
 				<p>
 					Start with{" "}
-					<a href="#/authoring" {...stylex.props(styles.guideLink)}>
+					<a href="#/authoring" {...stylex.attrs(styles.guideLink)}>
 						Data Authoring
 					</a>{" "}
 					to inspect a table, explore{" "}
-					<a href="#/game-text" {...stylex.props(styles.guideLink)}>
+					<a href="#/game-text" {...stylex.attrs(styles.guideLink)}>
 						Game Text
 					</a>
 					, then check{" "}
-					<a href="#/asset-audits/textures" {...stylex.props(styles.guideLink)}>
+					<a href="#/asset-audits/textures" {...stylex.attrs(styles.guideLink)}>
 						Texture Audit
 					</a>
 					. Live Unreal setup is optional.
@@ -749,7 +740,7 @@ function ShowcaseHome(props: { readonly onChosen: () => void }) {
 				</Show>
 				<Show when={notice()}>{(message) => <p role="alert">{message()}</p>}</Show>
 			</section>
-			<section aria-label="Current project" {...stylex.props(styles.projectStrip)}>
+			<section aria-label="Current project" {...stylex.attrs(styles.projectStrip)}>
 				<ProjectMetric
 					label="Project"
 					value={
@@ -776,14 +767,14 @@ function ShowcaseHome(props: { readonly onChosen: () => void }) {
 
 			<For each={navSections.filter((section) => section.id !== "overview")}>
 				{(section) => (
-					<section aria-label={section.label} {...stylex.props(styles.workflowSection)}>
-						<header {...stylex.props(styles.sectionHeader)}>
-							<h2 {...stylex.props(styles.sectionTitle)}>{section.label}</h2>
+					<section aria-label={section.label} {...stylex.attrs(styles.workflowSection)}>
+						<header {...stylex.attrs(styles.sectionHeader)}>
+							<h2 {...stylex.attrs(styles.sectionTitle)}>{section.label}</h2>
 							{section.note === undefined ? null : (
-								<span {...stylex.props(styles.sectionNote)}>{section.note}</span>
+								<span {...stylex.attrs(styles.sectionNote)}>{section.note}</span>
 							)}
 						</header>
-						<div {...stylex.props(styles.cardGrid)}>
+						<div {...stylex.attrs(styles.cardGrid)}>
 							<For each={section.items}>
 								{(item) =>
 									item.description === undefined ? null : (
@@ -806,7 +797,7 @@ function ShowcaseHome(props: { readonly onChosen: () => void }) {
 				)}
 			</For>
 
-			<footer {...stylex.props(styles.homeFooter)}>
+			<footer {...stylex.attrs(styles.homeFooter)}>
 				<span>
 					{context()?.health.status ?? (contextFailed() ? "Unavailable" : "Loading")}
 				</span>
@@ -826,9 +817,9 @@ function ProjectMetric(props: {
 	readonly value: string;
 }) {
 	return (
-		<div {...stylex.props(styles.projectMetric)}>
-			<small {...stylex.props(styles.metricLabel)}>{props.label}</small>
-			<strong {...stylex.props(styles.metricValue, props.ready && styles.connectedValue)}>
+		<div {...stylex.attrs(styles.projectMetric)}>
+			<small {...stylex.attrs(styles.metricLabel)}>{props.label}</small>
+			<strong {...stylex.attrs(styles.metricValue, props.ready && styles.connectedValue)}>
 				{props.value}
 			</strong>
 		</div>
@@ -840,25 +831,25 @@ function WorkflowCard(props: {
 	readonly item: NavItem;
 }) {
 	return (
-		<a href={props.item.route} {...stylex.props(styles.card)}>
-			<h3 {...stylex.props(styles.cardTitle)}>{props.item.label}</h3>
-			<p {...stylex.props(styles.cardDescription)}>{props.item.description}</p>
-			<div {...stylex.props(styles.cardFoot)}>
+		<a href={props.item.route} {...stylex.attrs(styles.card)}>
+			<h3 {...stylex.attrs(styles.cardTitle)}>{props.item.label}</h3>
+			<p {...stylex.attrs(styles.cardDescription)}>{props.item.description}</p>
+			<div {...stylex.attrs(styles.cardFoot)}>
 				<span
-					{...stylex.props(
+					{...stylex.attrs(
 						styles.statusDot,
 						props.evidence().ready ? styles.readyDot : styles.pendingDot
 					)}
 				/>
-				<div {...stylex.props(styles.cardEvidence)}>
-					<strong {...stylex.props(styles.evidenceLabel)}>
+				<div {...stylex.attrs(styles.cardEvidence)}>
+					<strong {...stylex.attrs(styles.evidenceLabel)}>
 						{props.evidence().label}
 					</strong>
-					<small {...stylex.props(styles.evidenceDetail)}>
+					<small {...stylex.attrs(styles.evidenceDetail)}>
 						{props.evidence().detail}
 					</small>
 				</div>
-				<span aria-hidden="true" {...stylex.props(styles.cardArrow)}>
+				<span aria-hidden="true" {...stylex.attrs(styles.cardArrow)}>
 					→
 				</span>
 			</div>

@@ -5,6 +5,9 @@ decoder, bounded named-pipe server, latest-frame snapshots, subscriptions, host 
 Control adapters, portable Review Set schemas, filesystem repository, and Capture Run orchestrator.
 Electron is only one consumer; Workbench UI is never required.
 
+The [camera authoring guide](../../docs/products/camera-authoring.md) covers actor-scoped arrangements,
+revision-aware drafts, optional native camera editing, and approval into capture-only Review Sets.
+
 The [shared rendering API](../../docs/products/camera-rendering.md) provides Effect-scoped
 `CameraRenderer.open`, one-shot `renderCamera`, capability/preflight queries, bounded progress,
 camera-region/Data Layer preparation, and validated artifact reads. Both perspective and

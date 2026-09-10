@@ -12,10 +12,17 @@ import {
 	resolveArrangementCamera,
 	previewArrangementRegeneration,
 	arrangementFitDistance,
-	approveArrangementCamera
+	approveArrangementCamera,
+	migrateLegacyCameraArrangement
 } from "./camera-arrangement.js";
 import { makeCameraAuthoringStore } from "./camera-authoring-store.js";
-import { decodeReviewSet, ReviewSet, ReviewSubjectActorPath } from "./review-schema.js";
+import {
+	decodeReviewSet,
+	ReviewSet,
+	ReviewSubjectActorPath,
+	ReviewAuthoringSession
+} from "./review-schema.js";
+import { generateFramingCandidates } from "./review-framing.js";
 
 import { fixtureArrangement, fixtureSet } from "./camera-arrangement.test-support.js";
 const decodeCommand = Schema.decodeUnknownSync(CameraArrangementCommand);
@@ -37,6 +44,52 @@ async function paths() {
 }
 
 describe("actor-scoped camera arrangements", () => {
+	it("migrates retained legacy candidates and the selected draft without changing framing", () => {
+		const a = fixtureArrangement();
+		const subject = {
+			actorPath: "/Game/Fixture.Fixture:PersistentLevel.Subject",
+			mapPath: a.mapPath,
+			displayName: "Subject",
+			bounds: a.bounds
+		};
+		const candidates = generateFramingCandidates(subject);
+		const draftPose = { ...candidates[0]!.approvedPose, fieldOfViewDegrees: 43 };
+		const session = Schema.decodeUnknownSync(ReviewAuthoringSession)({
+			contract: { name: "ue-shed-review-authoring-session", version: { major: 1, minor: 0 } },
+			id: "legacy",
+			viewId: "legacy-view",
+			lifecycle: "active",
+			createdAt: "2026-09-10T00:00:00Z",
+			updatedAt: "2026-09-10T00:00:00Z",
+			subject,
+			candidates,
+			selectedCandidateId: candidates[0]!.id,
+			discardedCandidateIds: [candidates.at(-1)!.id],
+			draftPose,
+			diagnostics: [],
+			realizations: [],
+			reviewSet: { id: "fixture", mapPath: a.mapPath, path: "fixture.json" }
+		});
+		const args = {
+			session,
+			id: a.id,
+			projectName: a.projectName,
+			captureProfileId: a.captureProfileId,
+			visibilityPolicyId: a.visibilityPolicyId,
+			identities: candidates.slice(0, -1).map((candidate, index) => ({
+				candidateId: candidate.id,
+				cameraId: a.cameras[index]!.id,
+				viewId: a.cameras[index]!.viewId
+			}))
+		};
+		const migrated = migrateLegacyCameraArrangement(args);
+		expect(migrated.cameras).toHaveLength(candidates.length - 1);
+		expect(resolveArrangementCamera(migrated, "camera-0")).toEqual(draftPose);
+		expect(resolveArrangementCamera(migrated, "camera-1")).toEqual(candidates[1]!.approvedPose);
+		expect(() => migrateLegacyCameraArrangement({ ...args, identities: [] })).toThrow(
+			"identity"
+		);
+	});
 	it("tunes six cameras while retaining independent pose and lens exceptions", () => {
 		let a = fixtureArrangement();
 		a = applyCameraArrangementCommand(

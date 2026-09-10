@@ -1,0 +1,195 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://ue-shed.dev/contracts/cameras/authoring/v1/bridge-response.schema.json",
+	"anyOf": [
+		{
+			"type": "object",
+			"properties": {
+				"version": {
+					"type": "number",
+					"enum": [1]
+				},
+				"status": {
+					"type": "string",
+					"enum": ["ready"]
+				},
+				"message": {
+					"type": "string"
+				},
+				"sessionId": {
+					"type": "string",
+					"allOf": [
+						{
+							"pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$"
+						}
+					]
+				},
+				"cameraId": {
+					"type": "string",
+					"allOf": [
+						{
+							"pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$"
+						}
+					]
+				},
+				"producerId": {
+					"type": "string",
+					"allOf": [
+						{
+							"minLength": 1
+						}
+					]
+				},
+				"revision": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 0,
+							"maximum": 9007199254740991
+						}
+					]
+				},
+				"sequence": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 0,
+							"maximum": 9007199254740991
+						}
+					]
+				},
+				"pending": {
+					"type": "boolean"
+				},
+				"piloting": {
+					"type": "boolean"
+				},
+				"saveRequested": {
+					"type": "boolean"
+				},
+				"pose": {
+					"type": "object",
+					"properties": {
+						"aspectRatio": {
+							"type": "string",
+							"enum": ["16:9"]
+						},
+						"fieldOfViewDegrees": {
+							"type": "number",
+							"allOf": [
+								{
+									"minimum": 5,
+									"maximum": 170
+								}
+							]
+						},
+						"location": {
+							"type": "object",
+							"properties": {
+								"x": {
+									"type": "number"
+								},
+								"y": {
+									"type": "number"
+								},
+								"z": {
+									"type": "number"
+								}
+							},
+							"required": ["x", "y", "z"],
+							"additionalProperties": false
+						},
+						"projection": {
+							"type": "string",
+							"enum": ["perspective"]
+						},
+						"rotation": {
+							"type": "object",
+							"properties": {
+								"pitch": {
+									"type": "number"
+								},
+								"roll": {
+									"type": "number"
+								},
+								"yaw": {
+									"type": "number"
+								}
+							},
+							"required": ["pitch", "roll", "yaw"],
+							"additionalProperties": false
+						}
+					},
+					"required": [
+						"aspectRatio",
+						"fieldOfViewDegrees",
+						"location",
+						"projection",
+						"rotation"
+					],
+					"additionalProperties": false
+				}
+			},
+			"required": [
+				"version",
+				"status",
+				"message",
+				"sessionId",
+				"cameraId",
+				"producerId",
+				"revision",
+				"sequence",
+				"pending",
+				"piloting",
+				"saveRequested",
+				"pose"
+			],
+			"additionalProperties": false
+		},
+		{
+			"type": "object",
+			"properties": {
+				"version": {
+					"type": "number",
+					"enum": [1]
+				},
+				"status": {
+					"type": "string",
+					"enum": ["available"]
+				},
+				"message": {
+					"type": "string"
+				},
+				"leaseSeconds": {
+					"type": "number",
+					"enum": [30]
+				},
+				"viewportCulling": {
+					"type": "boolean",
+					"enum": [false]
+				}
+			},
+			"required": ["version", "status", "message", "leaseSeconds", "viewportCulling"],
+			"additionalProperties": false
+		},
+		{
+			"type": "object",
+			"properties": {
+				"version": {
+					"type": "number",
+					"enum": [1]
+				},
+				"status": {
+					"type": "string",
+					"enum": ["busy", "stale", "unavailable", "invalid", "detached"]
+				},
+				"message": {
+					"type": "string"
+				}
+			},
+			"required": ["version", "status", "message"],
+			"additionalProperties": false
+		}
+	],
+	"$defs": {}
+}

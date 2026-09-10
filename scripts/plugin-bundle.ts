@@ -108,6 +108,8 @@ export async function validatePublicPluginBundle({
 
 /** Exact Unreal plugin graph for Plan 028's first Map Review vertical. */
 export const MAP_REVIEW_PLUGIN_IDS = Object.freeze(["UEShedCore", "UEShedCameras"]);
+/** Optional reference authoring menu with its bridge and capture dependencies resolved transitively. */
+export const CAMERA_AUTHORING_PLUGIN_IDS = Object.freeze(["UEShedCameraAuthoring"]);
 /** Exact Unreal plugin graph for the headless Observatory host. */
 export const OBSERVATORY_PLUGIN_IDS = Object.freeze(["UEShedObservatory"]);
 /** Exact Unreal plugin graph for the headless Niagara preview capability. */

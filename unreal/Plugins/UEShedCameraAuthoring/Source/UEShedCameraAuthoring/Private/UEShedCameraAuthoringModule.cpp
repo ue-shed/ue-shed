@@ -39,7 +39,7 @@ class FUEShedCameraAuthoringMenuModule final : public IModuleInterface
 					const auto Active = FUEShedCameraAuthoringBridge::InspectActive();
 					if (Active->GetStringField(TEXT("status")) != TEXT("ready")) return FText::FromString(Active->GetStringField(TEXT("message")));
 					return FText::FromString(Active->GetStringField(TEXT("sessionId")) + TEXT(" / ") + Active->GetStringField(TEXT("cameraId")) +
-						(Active->GetBoolField(TEXT("saveRequested")) ? TEXT("\nSave pending — waiting for host") : Active->GetBoolField(TEXT("pending")) ? TEXT("\nLocal edits pending") : TEXT("\nSynchronized")) + TEXT("\n") + LastMessage);
+						(Active->GetBoolField(TEXT("saveRequested")) ? TEXT("\nSave pending — waiting for host") : Active->GetBoolField(TEXT("pending")) ? TEXT("\nLocal edits pending") : TEXT("\nSynchronized")) + TEXT("\n") + Active->GetStringField(TEXT("message")) + TEXT("\n") + LastMessage);
 				})]
 				+ SVerticalBox::Slot().AutoHeight()[Button(TEXT("Select camera (edit Transform and FOV in Details)"), TEXT("select"))]
 				+ SVerticalBox::Slot().AutoHeight()[Button(TEXT("Pilot camera in this viewport"), TEXT("pilot"))]

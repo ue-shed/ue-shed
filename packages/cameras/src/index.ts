@@ -512,3 +512,4 @@ export function configureCameras(
 export * from "./map-capture-tools.js";
 export * from "./camera-arrangement.js";
 export * from "./camera-authoring-store.js";
+export * from "./camera-authoring-bridge.js";

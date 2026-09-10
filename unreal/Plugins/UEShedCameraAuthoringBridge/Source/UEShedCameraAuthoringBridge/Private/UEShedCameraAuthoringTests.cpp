@@ -6,6 +6,7 @@
 #include "EngineUtils.h"
 #include "FileHelpers.h"
 #include "Misc/Paths.h"
+#include "Misc/FileHelper.h"
 #include "LevelEditorViewport.h"
 #include "Misc/App.h"
 #include "Misc/AutomationTest.h"
@@ -60,7 +61,20 @@ bool FUEShedCameraAuthoringTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Stale acknowledgement rejected"), FUEShedCameraAuthoringBridge::Execute(Q)->GetStringField(TEXT("status")), FString(TEXT("stale")));
 	Q->SetNumberField(TEXT("sequence"), R->GetNumberField(TEXT("sequence"))); Q->SetObjectField(TEXT("pose"), R->GetObjectField(TEXT("pose")));
 	R = FUEShedCameraAuthoringBridge::Execute(Q); TestFalse(TEXT("Confirmed state does not echo"), R->GetBoolField(TEXT("pending")));
+	Q->SetStringField(TEXT("operation"), TEXT("save")); R = FUEShedCameraAuthoringBridge::Execute(Q);
+	TestTrue(TEXT("Save requested for reviewed pose"), R->GetBoolField(TEXT("saveRequested")));
+	C->SetActorLocation(C->GetActorLocation() + FVector(1, 0, 0));
+	Q->SetStringField(TEXT("operation"), TEXT("inspect")); R = FUEShedCameraAuthoringBridge::Execute(Q);
+	TestFalse(TEXT("Later movement cancels deferred Save"), R->GetBoolField(TEXT("saveRequested")));
+	TestFalse(TEXT("Canceled Save explains recovery"), R->GetStringField(TEXT("message")).IsEmpty());
+	Q->SetStringField(TEXT("operation"), TEXT("save")); R = FUEShedCameraAuthoringBridge::Execute(Q);
+	TestTrue(TEXT("New pose can be explicitly saved"), R->GetBoolField(TEXT("saveRequested")));
+	const FString RecoveryPath = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("UEShed/CameraAuthoringRecovery"), R->GetStringField(TEXT("producerId")) + TEXT(".json"));
 	FUEShedCameraAuthoringBridge::Shutdown();
+	FString RecoveryJson; TestTrue(TEXT("Pending edits survive proxy cleanup"), FFileHelper::LoadFileToString(RecoveryJson, *RecoveryPath));
+	TSharedPtr<FJsonObject> Recovery;
+	TestTrue(TEXT("Recovery is structured JSON"), FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(RecoveryJson), Recovery));
+	if (Recovery) TestTrue(TEXT("Recovery records unacknowledged state"), Recovery->GetBoolField(TEXT("pending")));
 	TestFalse(TEXT("Ownership released"), FUEShedCameraEditorOwnership::HasAuthoringOwner());
 	TestFalse(TEXT("Pilot lock released"), V->IsAnyActorLocked());
 	TestEqual(TEXT("Viewport position restored"), V->GetViewLocation(), Location);

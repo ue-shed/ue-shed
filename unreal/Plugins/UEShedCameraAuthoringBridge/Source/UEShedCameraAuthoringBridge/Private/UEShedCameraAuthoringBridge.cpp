@@ -11,6 +11,9 @@
 #include "Serialization/JsonSerializer.h"
 #include "UEShedCameraEditorOwnership.h"
 #include "ScopedTransaction.h"
+#include "HAL/FileManager.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
 
 namespace
 {
@@ -26,15 +29,27 @@ struct FAuthoringState
 	float ViewFOV = 90, ObservedFOV = 60;
 	bool LockedCamera = false;
 	bool SaveRequested = false;
+	FString Notice;
 	int64 Revision = 0, Sequence = 0, Acknowledged = 0;
 	double Deadline = 0;
 };
 TUniquePtr<FAuthoringState> AuthoringState;
+FString LastRecoveryMessage;
 TSharedPtr<FJsonObject> Obj() { return MakeShared<FJsonObject>(); }
 FString Str(const TSharedPtr<FJsonObject>& O, const TCHAR* Key)
 { FString V; if (O) O->TryGetStringField(Key, V); return V; }
 bool Number(const TSharedPtr<FJsonObject>& O, const TCHAR* Key, double& V)
 { return O && O->TryGetNumberField(Key, V) && FMath::IsFinite(V); }
+bool Identifier(const FString& Value)
+{
+	if (Value.IsEmpty() || Value.Len() > 128) return false;
+	for (int32 I = 0; I < Value.Len(); ++I)
+	{
+		const TCHAR C = Value[I]; const bool Alnum = (C >= 'a' && C <= 'z') || (C >= 'A' && C <= 'Z') || (C >= '0' && C <= '9');
+		if (!Alnum && (I == 0 || (C != '.' && C != '_' && C != '-'))) return false;
+	}
+	return true;
+}
 TSharedPtr<FJsonObject> Child(const TSharedPtr<FJsonObject>& O, const TCHAR* Key)
 { const TSharedPtr<FJsonObject>* V; return O && O->TryGetObjectField(Key, V) ? *V : nullptr; }
 TSharedPtr<FJsonObject> Result(const TCHAR* Status, const TCHAR* Message = TEXT(""))
@@ -59,18 +74,19 @@ void Observe()
 	if (!L.Equals(AuthoringState->ObservedLocation, 0.0001) || !R.Equals(AuthoringState->ObservedRotation, 0.0001) ||
 		!FMath::IsNearlyEqual(F, AuthoringState->ObservedFOV, 0.0001f))
 	{
+		if (AuthoringState->SaveRequested) { AuthoringState->SaveRequested = false; AuthoringState->Notice = TEXT("Camera changed after Save; review and Save again."); }
 		AuthoringState->ObservedLocation = L; AuthoringState->ObservedRotation = R; AuthoringState->ObservedFOV = F; ++AuthoringState->Sequence;
 	}
 }
 TSharedPtr<FJsonObject> Snapshot()
 {
-	Observe(); auto R = Result(TEXT("ready"));
+	Observe(); auto R = Result(TEXT("ready"), *AuthoringState->Notice);
 	R->SetStringField(TEXT("sessionId"), AuthoringState->Session); R->SetStringField(TEXT("cameraId"), AuthoringState->CameraId);
 	R->SetStringField(TEXT("producerId"), AuthoringState->Producer);
 	R->SetNumberField(TEXT("revision"), AuthoringState->Revision); R->SetNumberField(TEXT("sequence"), AuthoringState->Sequence);
 	R->SetBoolField(TEXT("pending"), AuthoringState->Sequence != AuthoringState->Acknowledged);
 	R->SetBoolField(TEXT("saveRequested"), AuthoringState->SaveRequested);
-	R->SetBoolField(TEXT("piloting"), AuthoringState->Viewport && GEditor->GetLevelViewportClients().Contains(AuthoringState->Viewport) &&
+	R->SetBoolField(TEXT("piloting"), GEditor && AuthoringState->Viewport && GEditor->GetLevelViewportClients().Contains(AuthoringState->Viewport) &&
 		AuthoringState->Viewport->GetActorLock().GetLockedActor() == AuthoringState->Proxy.Get());
 	auto P = Obj(), L = Obj(), A = Obj();
 	L->SetNumberField(TEXT("x"), AuthoringState->ObservedLocation.X); L->SetNumberField(TEXT("y"), AuthoringState->ObservedLocation.Y);
@@ -104,10 +120,22 @@ AUEShedAuthoringCamera::AUEShedAuthoringCamera()
 }
 AUEShedAuthoringCamera* FUEShedCameraAuthoringBridge::Camera() { return AuthoringState ? AuthoringState->Proxy.Get() : nullptr; }
 TSharedPtr<FJsonObject> FUEShedCameraAuthoringBridge::InspectActive()
-{ Tick(0); return AuthoringState ? Snapshot() : Result(TEXT("unavailable"), TEXT("Attach an arrangement camera from UE Shed or the CLI.")); }
+{ Tick(0); return AuthoringState ? Snapshot() : Result(TEXT("unavailable"), LastRecoveryMessage.IsEmpty() ? TEXT("Attach an arrangement camera from UE Shed or the CLI.") : *LastRecoveryMessage); }
 void FUEShedCameraAuthoringBridge::Shutdown()
 {
 	if (!AuthoringState) return;
+	Observe();
+	if (AuthoringState->Sequence != AuthoringState->Acknowledged)
+	{
+		const auto Recovery = Snapshot();
+		Recovery->SetStringField(TEXT("projectName"), FApp::GetProjectName());
+		Recovery->SetStringField(TEXT("mapPath"), AuthoringState->World.IsValid() ? AuthoringState->World->GetOutermost()->GetName() : TEXT(""));
+		const FString Directory = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("UEShed/CameraAuthoringRecovery"));
+		const FString Path = FPaths::Combine(Directory, AuthoringState->Producer + TEXT(".json"));
+		IFileManager::Get().MakeDirectory(*Directory, true);
+		FString Json; FJsonSerializer::Serialize(Recovery.ToSharedRef(), TJsonWriterFactory<>::Create(&Json));
+		LastRecoveryMessage = FFileHelper::SaveStringToFile(Json, *Path) ? TEXT("Pending native edits preserved at ") + Path : TEXT("Could not write pending native camera recovery at ") + Path;
+	}
 	Eject();
 	if (GEditor && AuthoringState->Proxy.IsValid())
 	{
@@ -140,17 +168,17 @@ TSharedPtr<FJsonObject> FUEShedCameraAuthoringBridge::Execute(const TSharedPtr<F
 		auto R = Result(TEXT("available")); R->SetNumberField(TEXT("leaseSeconds"), 30);
 		R->SetBoolField(TEXT("viewportCulling"), false); return R;
 	}
-	if (Session.IsEmpty() || Session.Len() > 128) return Result(TEXT("invalid"), TEXT("A bounded session ID is required."));
+	if (!Identifier(Session)) return Result(TEXT("invalid"), TEXT("A bounded ASCII session identifier is required."));
 	if (Op == TEXT("attach"))
 	{
-		if (AuthoringState) return AuthoringState->Session == Session && AuthoringState->CameraId == Str(Q, TEXT("cameraId")) ? Snapshot() : Result(TEXT("busy"), TEXT("Detach the active camera first."));
 		UWorld* W = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
 		if (!W || GEditor->PlayWorld) return Result(TEXT("unavailable"), TEXT("Open an editor map outside Play or Simulate."));
 		if (Str(Q, TEXT("mapPath")) != W->GetOutermost()->GetName() || Str(Q, TEXT("projectName")) != FApp::GetProjectName())
 			return Result(TEXT("stale"), TEXT("The editor project or map differs from the requested scope."));
+		if (AuthoringState) return AuthoringState->Session == Session && AuthoringState->CameraId == Str(Q, TEXT("cameraId")) ? Snapshot() : Result(TEXT("busy"), TEXT("Detach the active camera first."));
 		FVector L; FRotator R; double FOV, Revision;
-		if (Str(Q, TEXT("cameraId")).IsEmpty() || Str(Q, TEXT("cameraId")).Len() > 128 ||
-			!ReadPose(Child(Q, TEXT("pose")), L, R, FOV) || !Number(Q, TEXT("revision"), Revision) || Revision < 0 || Revision != FMath::FloorToDouble(Revision))
+		if (!Identifier(Str(Q, TEXT("cameraId"))) ||
+			!ReadPose(Child(Q, TEXT("pose")), L, R, FOV) || !Number(Q, TEXT("revision"), Revision) || Revision < 0 || Revision > 9007199254740991.0 || Revision != FMath::FloorToDouble(Revision))
 			return Result(TEXT("invalid"), TEXT("A camera ID, revision, and finite perspective pose are required."));
 		if (!FUEShedCameraEditorOwnership::TryAcquire(Session)) return Result(TEXT("busy"), TEXT("Capture or another tool owns the editor."));
 		AuthoringState = MakeUnique<FAuthoringState>(); AuthoringState->Session = Session; AuthoringState->World = W;
@@ -165,12 +193,12 @@ TSharedPtr<FJsonObject> FUEShedCameraAuthoringBridge::Execute(const TSharedPtr<F
 		for (FSelectionIterator It(*GEditor->GetSelectedActors()); It; ++It) if (auto* A = Cast<AActor>(*It)) AuthoringState->Selection.Add(A);
 		AuthoringState->Deadline = FPlatformTime::Seconds() + 30; return Snapshot();
 	}
-	if (!AuthoringState) return Result(TEXT("unavailable"), TEXT("Attach a camera; the previous lease may have expired."));
+	if (!AuthoringState) return Result(TEXT("unavailable"), LastRecoveryMessage.IsEmpty() ? TEXT("Attach a camera; the previous lease may have expired.") : *LastRecoveryMessage);
 	if (AuthoringState->Session != Session || AuthoringState->Producer != Str(Q, TEXT("producerId")))
 		return Result(TEXT("stale"), TEXT("The session or editor producer changed. Inspect and reconnect."));
 	AuthoringState->Deadline = FPlatformTime::Seconds() + 30;
 	if (Op == TEXT("inspect")) return Snapshot();
-	if (Op == TEXT("save")) { Observe(); AuthoringState->SaveRequested = true; ++AuthoringState->Sequence; return Snapshot(); }
+	if (Op == TEXT("save")) { Observe(); AuthoringState->Notice.Reset(); AuthoringState->SaveRequested = true; ++AuthoringState->Sequence; return Snapshot(); }
 	if (Op == TEXT("detach")) { Shutdown(); return Result(TEXT("detached")); }
 	if (Op == TEXT("eject")) { Eject(); return Snapshot(); }
 	if (Op == TEXT("select") || Op == TEXT("pilot"))
@@ -189,7 +217,7 @@ TSharedPtr<FJsonObject> FUEShedCameraAuthoringBridge::Execute(const TSharedPtr<F
 	{
 		double Expected, Sequence, Revision, FOV; FVector L; FRotator R;
 		if (!Number(Q, TEXT("expectedRevision"), Expected) || !Number(Q, TEXT("sequence"), Sequence) ||
-			!Number(Q, TEXT("revision"), Revision) || Revision < Expected || Revision != FMath::FloorToDouble(Revision) ||
+			!Number(Q, TEXT("revision"), Revision) || Revision < Expected || Revision > 9007199254740991.0 || Revision != FMath::FloorToDouble(Revision) ||
 			!ReadPose(Child(Q, TEXT("pose")), L, R, FOV)) return Result(TEXT("invalid"), TEXT("Expected revision, observed sequence, and valid pose are required."));
 		Observe();
 		if (Expected != AuthoringState->Revision || Sequence != AuthoringState->Sequence) return Result(TEXT("stale"), TEXT("A newer native edit or host revision exists; reconcile before applying."));

@@ -2,6 +2,7 @@ import { join } from "node:path";
 import {
 	buildPluginBundle,
 	MAP_REVIEW_PLUGIN_IDS,
+	CAMERA_AUTHORING_PLUGIN_IDS,
 	NIAGARA_PLUGIN_IDS,
 	OBSERVATORY_PLUGIN_IDS
 } from "./plugin-bundle.ts";
@@ -24,6 +25,11 @@ const presets = {
 		plugins: MAP_REVIEW_PLUGIN_IDS,
 		stem: `ue-shed-plugins-map-review-${PUBLIC_VERSION}`
 	},
+	"camera-authoring": {
+		directory: "plugins-camera-authoring",
+		plugins: CAMERA_AUTHORING_PLUGIN_IDS,
+		stem: `ue-shed-plugins-camera-authoring-${PUBLIC_VERSION}`
+	},
 	niagara: {
 		directory: "plugins-niagara",
 		plugins: NIAGARA_PLUGIN_IDS,
@@ -39,11 +45,12 @@ const presets = {
 if (
 	preset !== "full" &&
 	preset !== "map-review" &&
+	preset !== "camera-authoring" &&
 	preset !== "niagara" &&
 	preset !== "observatory"
 ) {
 	throw new Error(
-		"Usage: node scripts/release-plugin-bundle.ts <full|map-review|niagara|observatory>"
+		"Usage: node scripts/release-plugin-bundle.ts <full|map-review|camera-authoring|niagara|observatory>"
 	);
 }
 

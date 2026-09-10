@@ -27,6 +27,8 @@ const pluginDescriptorPaths = [
 	"unreal/Plugins/UEShedAssetAudits/UEShedAssetAudits.uplugin",
 	"unreal/Plugins/UEShedAuthoring/UEShedAuthoring.uplugin",
 	"unreal/Plugins/UEShedCameras/UEShedCameras.uplugin",
+	"unreal/Plugins/UEShedCameraAuthoringBridge/UEShedCameraAuthoringBridge.uplugin",
+	"unreal/Plugins/UEShedCameraAuthoring/UEShedCameraAuthoring.uplugin",
 	"unreal/Plugins/UEShedCore/UEShedCore.uplugin",
 	"unreal/Plugins/UEShedNiagara/UEShedNiagara.uplugin",
 	"unreal/Plugins/UEShedObservatory/UEShedObservatory.uplugin",

@@ -3,7 +3,7 @@ import { createEffectAction, createEffectSubscription } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { TaskProgressModal, type TaskProgress } from "@ue-shed/ui/task-progress";
 import { Schedule, Stream } from "effect";
-import { For, Show, createEffect, createSignal, onCleanup, onMount, untrack } from "solid-js";
+import { For, Show, createEffect, createSignal, onSettled, untrack } from "solid-js";
 import type {
 	ProjectLaunchMode,
 	ProjectLaunchResult,
@@ -78,15 +78,17 @@ export function ProjectChooser(props: ProjectChooserProps) {
 			onSuccess: setRecentProjects
 		});
 
-	createEffect(() => {
-		void props.revision;
-		untrack(() => refresh(false));
-	});
-	onMount(() => {
+	createEffect(
+		() => props.revision,
+		() => {
+			untrack(() => refresh(false));
+		}
+	);
+	onSettled(() => {
 		refreshRecent();
 		const onFocus = () => refresh(true);
 		window.addEventListener("focus", onFocus);
-		onCleanup(() => window.removeEventListener("focus", onFocus));
+		return () => window.removeEventListener("focus", onFocus);
 	});
 
 	const selectProject = (
@@ -174,31 +176,31 @@ export function ProjectChooser(props: ProjectChooserProps) {
 	};
 
 	return (
-		<div {...stylex.props(styles.control)}>
-			<div {...stylex.props(styles.projectSwitchRow)}>
+		<div {...stylex.attrs(styles.control)}>
+			<div {...stylex.attrs(styles.projectSwitchRow)}>
 				<button
 					type="button"
 					title={title()}
 					disabled={pending()}
 					onClick={choose}
-					{...stylex.props(styles.chooser)}
+					{...stylex.attrs(styles.chooser)}
 				>
 					{label()}
 				</button>
 				<Show when={recentProjects().length > 0}>
-					<details ref={setRecentMenu} {...stylex.props(styles.recentControl)}>
+					<details ref={setRecentMenu} {...stylex.attrs(styles.recentControl)}>
 						<summary
 							aria-label="Recent projects"
 							title="Recent projects"
-							{...stylex.props(styles.recentSummary)}
+							{...stylex.attrs(styles.recentSummary)}
 						>
 							⌃
 						</summary>
 						<section
 							aria-label="Recently opened projects"
-							{...stylex.props(styles.recentMenu)}
+							{...stylex.attrs(styles.recentMenu)}
 						>
-							<header {...stylex.props(styles.recentHeader)}>
+							<header {...stylex.attrs(styles.recentHeader)}>
 								<strong>Recent projects</strong>
 								<span>Stored only on this device</span>
 							</header>
@@ -211,15 +213,15 @@ export function ProjectChooser(props: ProjectChooserProps) {
 											disabled={pending() || current()}
 											onClick={() => openRecent(recent.projectRoot)}
 											type="button"
-											{...stylex.props(styles.recentProject)}
+											{...stylex.attrs(styles.recentProject)}
 										>
-											<span {...stylex.props(styles.recentProjectCopy)}>
+											<span {...stylex.attrs(styles.recentProjectCopy)}>
 												<strong>{recent.projectName}</strong>
 												<small title={recent.projectRoot}>
 													{recent.projectRoot}
 												</small>
 											</span>
-											<span {...stylex.props(styles.recentProjectState)}>
+											<span {...stylex.attrs(styles.recentProjectState)}>
 												{current() ? "CURRENT" : "OPEN"}
 											</span>
 										</button>
@@ -231,19 +233,19 @@ export function ProjectChooser(props: ProjectChooserProps) {
 				</Show>
 			</div>
 			<Show when={project()?.status === "ready"}>
-				<div {...stylex.props(styles.launchRow)}>
-					<span {...stylex.props(styles.offline)}>Offline</span>
-					<details ref={setLaunchMenu} {...stylex.props(styles.launchControl)}>
-						<summary {...stylex.props(styles.launchSummary)}>Launch ▾</summary>
+				<div {...stylex.attrs(styles.launchRow)}>
+					<span {...stylex.attrs(styles.offline)}>Offline</span>
+					<details ref={setLaunchMenu} {...stylex.attrs(styles.launchControl)}>
+						<summary {...stylex.attrs(styles.launchSummary)}>Launch ▾</summary>
 						<section
 							aria-label="Launch project options"
-							{...stylex.props(styles.launchMenu)}
+							{...stylex.attrs(styles.launchMenu)}
 						>
 							<button
 								type="button"
 								disabled={launching() !== undefined}
 								onClick={() => launch("ue_shed")}
-								{...stylex.props(styles.launchOption, styles.launchOptionPrimary)}
+								{...stylex.attrs(styles.launchOption, styles.launchOptionPrimary)}
 							>
 								<strong>
 									{launching() === "ue_shed"
@@ -259,7 +261,7 @@ export function ProjectChooser(props: ProjectChooserProps) {
 								type="button"
 								disabled={launching() !== undefined}
 								onClick={() => launch("normal")}
-								{...stylex.props(styles.launchOption)}
+								{...stylex.attrs(styles.launchOption)}
 							>
 								<strong>
 									{launching() === "normal" ? "Opening…" : "Plain editor"}
@@ -272,7 +274,7 @@ export function ProjectChooser(props: ProjectChooserProps) {
 			</Show>
 			<Show when={failure()} keyed>
 				{(error) => (
-					<div role="alert" {...stylex.props(styles.failure)}>
+					<div role="alert" {...stylex.attrs(styles.failure)}>
 						<strong>{error.message}</strong>
 						<span>{error.recovery}</span>
 					</div>
@@ -283,7 +285,7 @@ export function ProjectChooser(props: ProjectChooserProps) {
 					result.status === "failed" ? (
 						<div
 							role="alert"
-							{...stylex.props(styles.launchNotice, styles.launchFailure)}
+							{...stylex.attrs(styles.launchNotice, styles.launchFailure)}
 						>
 							<strong>{result.message}</strong>
 							<span>{result.recovery}</span>
@@ -293,7 +295,7 @@ export function ProjectChooser(props: ProjectChooserProps) {
 			</Show>
 			<Show when={launchStatus()} keyed>
 				{(message) => (
-					<div role="status" {...stylex.props(styles.launchNotice)}>
+					<div role="status" {...stylex.attrs(styles.launchNotice)}>
 						{message}
 					</div>
 				)}

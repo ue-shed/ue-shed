@@ -1,21 +1,21 @@
 import * as stylex from "@stylexjs/stylex";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
-import { Show, type JSXElement } from "solid-js";
+import { Show, type Element } from "solid-js";
 
 export function WindowFrame(props: {
 	readonly title: string;
 	readonly badge?: string;
-	readonly children: JSXElement;
+	readonly children: Element;
 }) {
 	return (
-		<div {...stylex.props(styles.frame)}>
-			<div {...stylex.props(styles.bar)}>
-				<span {...stylex.props(styles.dot)} />
-				<span {...stylex.props(styles.dot)} />
-				<span {...stylex.props(styles.dot)} />
-				<span {...stylex.props(styles.title)}>{props.title}</span>
+		<div {...stylex.attrs(styles.frame)}>
+			<div {...stylex.attrs(styles.bar)}>
+				<span {...stylex.attrs(styles.dot)} />
+				<span {...stylex.attrs(styles.dot)} />
+				<span {...stylex.attrs(styles.dot)} />
+				<span {...stylex.attrs(styles.title)}>{props.title}</span>
 				<Show when={props.badge}>
-					<span {...stylex.props(styles.badge)}>{props.badge}</span>
+					<span {...stylex.attrs(styles.badge)}>{props.badge}</span>
 				</Show>
 			</div>
 			{props.children}

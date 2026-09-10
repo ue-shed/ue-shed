@@ -79,14 +79,14 @@ export function ScrubbableNumberField(props: {
 
 	return (
 		<label
-			{...stylex.props(
+			{...stylex.attrs(
 				styles.field,
 				toneStyle(),
 				props.wide && styles.wide,
 				scrubbing() && styles.scrubbing
 			)}
 		>
-			<span {...stylex.props(styles.fieldHeader)}>
+			<span {...stylex.attrs(styles.fieldHeader)}>
 				<button
 					type="button"
 					aria-label={`Drag ${props.label} to adjust`}
@@ -135,15 +135,15 @@ export function ScrubbableNumberField(props: {
 						setScrubbing(false);
 						if (value !== undefined) commit(value);
 					}}
-					{...stylex.props(styles.scrubHandle)}
+					{...stylex.attrs(styles.scrubHandle)}
 				>
 					<span>{props.label}</span>
-					<span aria-hidden="true" {...stylex.props(styles.dragGlyph)}>
+					<span aria-hidden="true" {...stylex.attrs(styles.dragGlyph)}>
 						↔
 					</span>
 				</button>
 				{props.unit === undefined ? null : (
-					<span {...stylex.props(styles.unit)}>{props.unit}</span>
+					<span {...stylex.attrs(styles.unit)}>{props.unit}</span>
 				)}
 			</span>
 			<input
@@ -172,7 +172,7 @@ export function ScrubbableNumberField(props: {
 					const value = Number(event.currentTarget.value);
 					if (Number.isFinite(value)) commit(value);
 				}}
-				{...stylex.props(styles.input)}
+				{...stylex.attrs(styles.input)}
 			/>
 		</label>
 	);

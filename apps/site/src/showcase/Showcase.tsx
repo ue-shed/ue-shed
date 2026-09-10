@@ -12,15 +12,15 @@ export function Showcase() {
 
 	return (
 		<div>
-			<div {...stylex.props(styles.tabBar)} role="tablist" aria-label="Workbench captures">
+			<div {...stylex.attrs(styles.tabBar)} role="tablist" aria-label="Workbench captures">
 				<For each={showcaseTabs}>
 					{(tab) => (
 						<button
 							type="button"
 							role="tab"
-							aria-selected={active() === tab.id}
+							aria-selected={active() === tab.id ? "true" : "false"}
 							onClick={() => setActive(tab.id)}
-							{...stylex.props(styles.tab, active() === tab.id && styles.tabActive)}
+							{...stylex.attrs(styles.tab, active() === tab.id && styles.tabActive)}
 						>
 							{tab.label}
 						</button>
@@ -37,7 +37,7 @@ export function Showcase() {
 									<img
 										src={`/media/${capture.file}`}
 										alt={tab.alt}
-										{...stylex.props(styles.capture)}
+										{...stylex.attrs(styles.capture)}
 									/>
 								</WindowFrame>
 							</div>
@@ -47,11 +47,11 @@ export function Showcase() {
 			</For>
 			<Show when={activeTab()}>
 				{(tab) => (
-					<div {...stylex.props(styles.caption)}>
-						<p {...stylex.props(styles.note)}>{tab().note}</p>
-						<div {...stylex.props(styles.chips)}>
+					<div {...stylex.attrs(styles.caption)}>
+						<p {...stylex.attrs(styles.note)}>{tab().note}</p>
+						<div {...stylex.attrs(styles.chips)}>
 							<For each={tab().chips}>
-								{(chip) => <span {...stylex.props(styles.chip)}>{chip}</span>}
+								{(chip) => <span {...stylex.attrs(styles.chip)}>{chip}</span>}
 							</For>
 						</div>
 					</div>

@@ -9,7 +9,7 @@ import type {
 } from "@ue-shed/game-text/browser";
 import { createEffectAction } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
-import { For, Show, createEffect, createSignal, on } from "solid-js";
+import { For, Show, createEffect, createSignal } from "solid-js";
 import type { GameTextClientApi } from "./game-text-client.js";
 import { GameTextRuleEditor } from "./game-text-rule-editor.js";
 import type { GameTextRuleState } from "./game-text-rule-state.js";
@@ -105,21 +105,19 @@ export function GameTextQualityWorkspace(props: {
 	};
 
 	createEffect(
-		on(
-			() => [props.summary, props.filter],
-			() => {
-				if (props.filter !== undefined) setFilter(props.filter);
-				requestPage();
-			}
-		)
+		() => ({ summary: props.summary, nextFilter: props.filter }),
+		({ nextFilter }) => {
+			if (nextFilter !== undefined) setFilter(nextFilter);
+			requestPage(nextFilter);
+		}
 	);
 
 	const coverage = () => props.summary.coverage;
 	return (
-		<div {...stylex.props(styles.workspace)}>
-			<section aria-label="Quality summary" {...stylex.props(styles.summaryStrip)}>
-				<div {...stylex.props(styles.summaryLead)}>
-					<strong {...stylex.props(styles.summaryValue)}>
+		<div {...stylex.attrs(styles.workspace)}>
+			<section aria-label="Quality summary" {...stylex.attrs(styles.summaryStrip)}>
+				<div {...stylex.attrs(styles.summaryLead)}>
+					<strong {...stylex.attrs(styles.summaryValue)}>
 						{props.summary.findingCount.toLocaleString()}{" "}
 						{props.summary.findingCount === 1 ? "finding" : "findings"}
 					</strong>
@@ -127,36 +125,36 @@ export function GameTextQualityWorkspace(props: {
 					<button
 						type="button"
 						onClick={props.onReplaceRules}
-						{...stylex.props(styles.replaceRules)}
+						{...stylex.attrs(styles.replaceRules)}
 					>
 						Load rules
 					</button>
 				</div>
-				<div {...stylex.props(styles.metric)}>
+				<div {...stylex.attrs(styles.metric)}>
 					<small>Character budgets</small>
-					<strong {...stylex.props(styles.metricValue)}>
+					<strong {...stylex.attrs(styles.metricValue)}>
 						{props.summary.characterBudgetCount}
 					</strong>
 					<span>{props.summary.rules.length} rules total</span>
 				</div>
-				<div {...stylex.props(styles.metric)}>
+				<div {...stylex.attrs(styles.metric)}>
 					<small>Terminology</small>
-					<strong {...stylex.props(styles.metricValue)}>
+					<strong {...stylex.attrs(styles.metricValue)}>
 						{props.summary.terminologyCount}
 					</strong>
 					<span>forbidden and preferred terms</span>
 				</div>
-				<div {...stylex.props(styles.metric)}>
+				<div {...stylex.attrs(styles.metric)}>
 					<small>Roles</small>
-					<strong {...stylex.props(styles.metricValue)}>
+					<strong {...stylex.attrs(styles.metricValue)}>
 						{props.summary.roles.length}
 					</strong>
 					<span>scoped to this project</span>
 				</div>
-				<div {...stylex.props(styles.metric)}>
+				<div {...stylex.attrs(styles.metric)}>
 					<small>Saved text</small>
 					<strong
-						{...stylex.props(
+						{...stylex.attrs(
 							styles.metricValue,
 							props.summary.status === "complete" && styles.complete
 						)}
@@ -169,36 +167,36 @@ export function GameTextQualityWorkspace(props: {
 			<div
 				role="tablist"
 				aria-label="Quality review workspace"
-				{...stylex.props(styles.tabs)}
+				{...stylex.attrs(styles.tabs)}
 			>
 				<button
 					type="button"
 					role="tab"
-					aria-selected={surface() === "findings"}
+					aria-selected={surface() === "findings" ? "true" : "false"}
 					onClick={() => setSurface("findings")}
-					{...stylex.props(styles.tab, surface() === "findings" && styles.tabActive)}
+					{...stylex.attrs(styles.tab, surface() === "findings" && styles.tabActive)}
 				>
-					Findings <b {...stylex.props(styles.tabCount)}>{props.summary.findingCount}</b>
+					Findings <b {...stylex.attrs(styles.tabCount)}>{props.summary.findingCount}</b>
 				</button>
 				<button
 					type="button"
 					role="tab"
-					aria-selected={surface() === "rules"}
+					aria-selected={surface() === "rules" ? "true" : "false"}
 					onClick={() => setSurface("rules")}
-					{...stylex.props(styles.tab, surface() === "rules" && styles.tabActive)}
+					{...stylex.attrs(styles.tab, surface() === "rules" && styles.tabActive)}
 				>
-					Rules <b {...stylex.props(styles.tabCount)}>{props.document.rules.length}</b>
+					Rules <b {...stylex.attrs(styles.tabCount)}>{props.document.rules.length}</b>
 				</button>
 			</div>
 			<Show when={failure()}>
 				{(issue) => (
-					<section role="alert" {...stylex.props(styles.errorCard)}>
-						<strong {...stylex.props(styles.errorTitle)}>
+					<section role="alert" {...stylex.attrs(styles.errorCard)}>
+						<strong {...stylex.attrs(styles.errorTitle)}>
 							{issue().operation === "search"
 								? "Couldn’t load findings."
 								: "Couldn’t load finding details."}
 						</strong>
-						<p {...stylex.props(styles.errorCopy)}>
+						<p {...stylex.attrs(styles.errorCopy)}>
 							Try again. If it keeps failing, restart Workbench.
 						</p>
 						<button
@@ -208,15 +206,15 @@ export function GameTextQualityWorkspace(props: {
 								if (current.operation === "search") requestPage();
 								else requestFocus(current.findingId);
 							}}
-							{...stylex.props(styles.retryButton)}
+							{...stylex.attrs(styles.retryButton)}
 						>
 							Retry
 						</button>
-						<details {...stylex.props(styles.errorDetails)}>
-							<summary {...stylex.props(styles.techSummary)}>
+						<details {...stylex.attrs(styles.errorDetails)}>
+							<summary {...stylex.attrs(styles.techSummary)}>
 								Technical details
 							</summary>
-							<pre {...stylex.props(styles.techPre)}>{issue().cause}</pre>
+							<pre {...stylex.attrs(styles.techPre)}>{issue().cause}</pre>
 						</details>
 					</section>
 				)}
@@ -235,9 +233,9 @@ export function GameTextQualityWorkspace(props: {
 					</Show>
 				}
 			>
-				<div {...stylex.props(styles.grid)}>
-					<aside aria-label="Quality filters" {...stylex.props(styles.rail)}>
-						<header {...stylex.props(styles.railHeader)}>
+				<div {...stylex.attrs(styles.grid)}>
+					<aside aria-label="Quality filters" {...stylex.attrs(styles.rail)}>
+						<header {...stylex.attrs(styles.railHeader)}>
 							<span>Filters</span>
 							<b>{props.summary.findingCount}</b>
 						</header>
@@ -246,19 +244,19 @@ export function GameTextQualityWorkspace(props: {
 								{(item) => (
 									<button
 										type="button"
-										aria-pressed={filter() === item.value}
+										aria-pressed={filter() === item.value ? "true" : "false"}
 										onClick={() => {
 											setFilter(item.value);
 											props.onFilterChange?.(item.value);
 											requestPage(item.value);
 										}}
-										{...stylex.props(
+										{...stylex.attrs(
 											styles.filter,
 											filter() === item.value && styles.filterActive
 										)}
 									>
 										<span>{item.label}</span>
-										<b {...stylex.props(styles.filterCount)}>
+										<b {...stylex.attrs(styles.filterCount)}>
 											{item.value === "all"
 												? props.summary.findingCount
 												: item.value === "character_budget"
@@ -269,23 +267,23 @@ export function GameTextQualityWorkspace(props: {
 								)}
 							</For>
 						</div>
-						<section {...stylex.props(styles.railSection)}>
-							<header {...stylex.props(styles.railSectionTitle)}>Role matches</header>
+						<section {...stylex.attrs(styles.railSection)}>
+							<header {...stylex.attrs(styles.railSectionTitle)}>Role matches</header>
 							<For each={props.summary.roles}>
 								{(role) => (
-									<span {...stylex.props(styles.roleRow)}>
-										<code {...stylex.props(styles.roleRowCode)}>
+									<span {...stylex.attrs(styles.roleRow)}>
+										<code {...stylex.attrs(styles.roleRowCode)}>
 											{role.role}
 										</code>
-										<b {...stylex.props(styles.filterCount)}>
+										<b {...stylex.attrs(styles.filterCount)}>
 											{role.matchedTextUnits}
 										</b>
 									</span>
 								)}
 							</For>
 						</section>
-						<section {...stylex.props(styles.coverage)}>
-							<strong {...stylex.props(styles.coverageTitle)}>
+						<section {...stylex.attrs(styles.coverage)}>
+							<strong {...stylex.attrs(styles.coverageTitle)}>
 								{props.summary.status === "complete"
 									? "All saved text checked."
 									: "Only part of the saved text was checked."}
@@ -298,7 +296,7 @@ export function GameTextQualityWorkspace(props: {
 									coverage().partialPackages > 0
 								}
 							>
-								<p {...stylex.props(styles.coverageDetail)}>
+								<p {...stylex.attrs(styles.coverageDetail)}>
 									{coverage().unsupportedTextProperties} unsupported properties ·{" "}
 									{coverage().partialPackages} partial ·{" "}
 									{coverage().failedPackages} failed
@@ -306,15 +304,15 @@ export function GameTextQualityWorkspace(props: {
 							</Show>
 						</section>
 					</aside>
-					<section aria-label="Findings" {...stylex.props(styles.findings)}>
-						<header {...stylex.props(styles.listHeader)}>
+					<section aria-label="Findings" {...stylex.attrs(styles.findings)}>
+						<header {...stylex.attrs(styles.listHeader)}>
 							<span>Findings</span>
-							<b {...stylex.props(styles.count)}>{page().total}</b>
+							<b {...stylex.attrs(styles.count)}>{page().total}</b>
 						</header>
 						<Show
 							when={page().findings.length > 0}
 							fallback={
-								<p {...stylex.props(styles.empty)}>
+								<p {...stylex.attrs(styles.empty)}>
 									No findings here. Widen the filter or fix the flagged text.
 								</p>
 							}
@@ -330,13 +328,13 @@ export function GameTextQualityWorkspace(props: {
 										aria-current={
 											selectedId() === finding.id ? "true" : undefined
 										}
-										{...stylex.props(
+										{...stylex.attrs(
 											styles.finding,
 											selectedId() === finding.id && styles.findingActive
 										)}
 									>
-										<span {...stylex.props(styles.findingMeta)}>
-											<b {...stylex.props(styles.kind)}>
+										<span {...stylex.attrs(styles.findingMeta)}>
+											<b {...stylex.attrs(styles.kind)}>
 												{finding.kind === "character_budget"
 													? "Budget"
 													: "Term"}
@@ -344,13 +342,13 @@ export function GameTextQualityWorkspace(props: {
 											<code>{finding.role}</code>
 											<span>{finding.ruleId}</span>
 										</span>
-										<strong {...stylex.props(styles.source)}>
+										<strong {...stylex.attrs(styles.source)}>
 											{finding.sourceExcerpt}
 										</strong>
-										<span {...stylex.props(styles.actual)}>
+										<span {...stylex.attrs(styles.actual)}>
 											{finding.actual}
 										</span>
-										<span {...stylex.props(styles.expected)}>
+										<span {...stylex.attrs(styles.expected)}>
 											{finding.expectation}
 										</span>
 									</button>
@@ -358,60 +356,60 @@ export function GameTextQualityWorkspace(props: {
 							</For>
 						</Show>
 					</section>
-					<aside aria-label="Finding detail" {...stylex.props(styles.detail)}>
+					<aside aria-label="Finding detail" {...stylex.attrs(styles.detail)}>
 						<Show
 							when={focus()}
 							fallback={
-								<p {...stylex.props(styles.empty)}>
+								<p {...stylex.attrs(styles.empty)}>
 									Select a finding to see what was flagged and where it appears.
 								</p>
 							}
 						>
 							{(finding) => (
 								<>
-									<header {...stylex.props(styles.detailHeader)}>
-										<span {...stylex.props(styles.detailKind)}>
+									<header {...stylex.attrs(styles.detailHeader)}>
+										<span {...stylex.attrs(styles.detailKind)}>
 											{finding().kind === "character_budget"
 												? "Character budget"
 												: "Terminology"}
 										</span>
-										<blockquote {...stylex.props(styles.detailQuote)}>
+										<blockquote {...stylex.attrs(styles.detailQuote)}>
 											“{finding().sourceExcerpt}”
 										</blockquote>
-										<code {...stylex.props(styles.detailId)}>
+										<code {...stylex.attrs(styles.detailId)}>
 											{finding().textUnitId}
 										</code>
 									</header>
-									<section {...stylex.props(styles.explanation)}>
-										<div {...stylex.props(styles.explanationCell)}>
-											<small {...stylex.props(styles.explanationLabel)}>
+									<section {...stylex.attrs(styles.explanation)}>
+										<div {...stylex.attrs(styles.explanationCell)}>
+											<small {...stylex.attrs(styles.explanationLabel)}>
 												Observed
 											</small>
-											<strong {...stylex.props(styles.explanationValue)}>
+											<strong {...stylex.attrs(styles.explanationValue)}>
 												{actual(finding())}
 											</strong>
 										</div>
-										<div {...stylex.props(styles.explanationCell)}>
-											<small {...stylex.props(styles.explanationLabel)}>
+										<div {...stylex.attrs(styles.explanationCell)}>
+											<small {...stylex.attrs(styles.explanationLabel)}>
 												Expected
 											</small>
-											<strong {...stylex.props(styles.explanationValue)}>
+											<strong {...stylex.attrs(styles.explanationValue)}>
 												{expectation(finding())}
 											</strong>
 										</div>
-										<div {...stylex.props(styles.explanationCell)}>
-											<small {...stylex.props(styles.explanationLabel)}>
+										<div {...stylex.attrs(styles.explanationCell)}>
+											<small {...stylex.attrs(styles.explanationLabel)}>
 												How to fix
 											</small>
-											<strong {...stylex.props(styles.explanationValue)}>
+											<strong {...stylex.attrs(styles.explanationValue)}>
 												{finding().recovery}
 											</strong>
 										</div>
 									</section>
-									<section {...stylex.props(styles.evidence)}>
-										<header {...stylex.props(styles.evidenceHeader)}>
+									<section {...stylex.attrs(styles.evidence)}>
+										<header {...stylex.attrs(styles.evidenceHeader)}>
 											<span>Occurrences</span>
-											<b {...stylex.props(styles.count)}>
+											<b {...stylex.attrs(styles.count)}>
 												{finding().totalOccurrences}
 											</b>
 										</header>
@@ -419,24 +417,24 @@ export function GameTextQualityWorkspace(props: {
 											{(occurrence) => {
 												const context = textContext(occurrence.location);
 												return (
-													<article {...stylex.props(styles.evidenceRow)}>
+													<article {...stylex.attrs(styles.evidenceRow)}>
 														<strong
-															{...stylex.props(styles.evidenceTitle)}
+															{...stylex.attrs(styles.evidenceTitle)}
 														>
 															{context.title}
 														</strong>
 														<span
-															{...stylex.props(styles.evidenceDetail)}
+															{...stylex.attrs(styles.evidenceDetail)}
 														>
 															{context.detail}
 														</span>
 														<code
-															{...stylex.props(styles.evidencePath)}
+															{...stylex.attrs(styles.evidencePath)}
 														>
 															{occurrence.location.objectPath}
 														</code>
 														<small
-															{...stylex.props(
+															{...stylex.attrs(
 																styles.evidencePackage
 															)}
 														>

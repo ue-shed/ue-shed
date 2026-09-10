@@ -1,13 +1,13 @@
 import { barX, barY, defineChart, dot } from "@tanstack/charts";
 import { scaleBand } from "@tanstack/charts/scales/band";
 import { scaleLinear } from "@tanstack/charts/scales/linear";
-import { Chart } from "@tanstack/charts/solid";
 import { tooltip } from "@tanstack/charts/tooltip";
 import * as stylex from "@stylexjs/stylex";
 import { type AnalysisChartPlan, buildAnalysisPlan } from "@ue-shed/authoring/analysis";
 import type { AuthoringRow, AuthoringTableSnapshot } from "@ue-shed/protocol";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { For, Show, createMemo } from "solid-js";
+import { Chart } from "./chart-host.js";
 
 const chartFill = "#e4f222";
 const chartStroke = "#08090a";
@@ -158,17 +158,17 @@ function ChartBody(props: { readonly plan: AnalysisChartPlan }) {
 
 function ChartCard(props: { readonly plan: AnalysisChartPlan }) {
 	return (
-		<article {...stylex.props(styles.card)}>
-			<header {...stylex.props(styles.cardHeader)}>
+		<article {...stylex.attrs(styles.card)}>
+			<header {...stylex.attrs(styles.cardHeader)}>
 				<div>
-					<h3 {...stylex.props(styles.cardTitle)}>{props.plan.title}</h3>
-					<p {...stylex.props(styles.cardDescription)}>{props.plan.description}</p>
+					<h3 {...stylex.attrs(styles.cardTitle)}>{props.plan.title}</h3>
+					<p {...stylex.attrs(styles.cardDescription)}>{props.plan.description}</p>
 				</div>
 				<Show when={props.plan.source === "specified"}>
-					<span {...stylex.props(styles.badge)}>Requested</span>
+					<span {...stylex.attrs(styles.badge)}>Requested</span>
 				</Show>
 			</header>
-			<div {...stylex.props(styles.surface)}>
+			<div {...stylex.attrs(styles.surface)}>
 				<ChartBody plan={props.plan} />
 			</div>
 		</article>
@@ -181,16 +181,16 @@ export function AuthoringAnalysisView(props: AuthoringAnalysisViewProps) {
 	);
 
 	return (
-		<section aria-label="Table charts" {...stylex.props(styles.canvas)}>
-			<header {...stylex.props(styles.header)}>
+		<section aria-label="Table charts" {...stylex.attrs(styles.canvas)}>
+			<header {...stylex.attrs(styles.header)}>
 				<div>
-					<h2 {...stylex.props(styles.title)}>
+					<h2 {...stylex.attrs(styles.title)}>
 						Patterns in {shortObjectName(props.snapshot.table.objectPath)}
 					</h2>
 				</div>
-				<div {...stylex.props(styles.stats)}>
-					<span {...stylex.props(styles.stat)}>{plan().rowCount} rows</span>
-					<span {...stylex.props(styles.stat)}>
+				<div {...stylex.attrs(styles.stats)}>
+					<span {...stylex.attrs(styles.stat)}>{plan().rowCount} rows</span>
+					<span {...stylex.attrs(styles.stat)}>
 						{plan().profiledColumnCount} chartable fields
 					</span>
 				</div>
@@ -199,22 +199,22 @@ export function AuthoringAnalysisView(props: AuthoringAnalysisViewProps) {
 			<Show
 				when={plan().charts.length > 0}
 				fallback={
-					<div {...stylex.props(styles.empty)}>
-						<strong {...stylex.props(styles.emptyTitle)}>Nothing chartable yet</strong>
-						<p {...stylex.props(styles.emptyDescription)}>
+					<div {...stylex.attrs(styles.empty)}>
+						<strong {...stylex.attrs(styles.emptyTitle)}>Nothing chartable yet</strong>
+						<p {...stylex.attrs(styles.emptyDescription)}>
 							Charts appear for boolean, enum, and numeric fields in the current
 							filter.
 						</p>
 					</div>
 				}
 			>
-				<div {...stylex.props(styles.gallery)}>
+				<div {...stylex.attrs(styles.gallery)}>
 					<For each={plan().charts}>{(chart) => <ChartCard plan={chart} />}</For>
 				</div>
 			</Show>
 
 			<Show when={plan().issues.length > 0}>
-				<div {...stylex.props(styles.issues)}>
+				<div {...stylex.attrs(styles.issues)}>
 					<strong>Some requested charts could not be rendered.</strong>
 					<For each={plan().issues}>{(issue) => <span>{issue}</span>}</For>
 				</div>

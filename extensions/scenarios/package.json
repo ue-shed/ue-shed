@@ -20,6 +20,7 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
+		"@solidjs/web": "catalog:",
 		"@stylexjs/stylex": "catalog:",
 		"@ue-shed/scenarios": "workspace:*",
 		"@ue-shed/ui": "workspace:*",

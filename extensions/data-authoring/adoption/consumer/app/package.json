@@ -6,6 +6,7 @@
 		"build": "tsc --noEmit && vite build"
 	},
 	"dependencies": {
+		"@solidjs/web": "catalog:",
 		"@stylexjs/stylex": "catalog:",
 		"@ue-shed/authoring-sdk": "workspace:*",
 		"@ue-shed/extension-data-authoring": "workspace:*",

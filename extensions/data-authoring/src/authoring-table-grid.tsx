@@ -58,7 +58,7 @@ export function AuthoringTableGrid(props: AuthoringTableGridProps) {
 	};
 
 	return (
-		<div {...stylex.props(styles.frame)}>
+		<div {...stylex.attrs(styles.frame)}>
 			<Sheet
 				columns={model().columns}
 				customization={{

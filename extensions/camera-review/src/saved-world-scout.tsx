@@ -16,7 +16,7 @@ import { PointMapDeckCanvas } from "@ue-shed/ui/point-map-deck";
 import type { SavedWorld, SavedWorldMap, SavedWorldProgress } from "@ue-shed/protocol";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { Cause, Schedule, Stream } from "effect";
-import { Show, createMemo, createSignal, onMount } from "solid-js";
+import { Show, createMemo, createSignal, onSettled } from "solid-js";
 import type { MapReviewClientApi } from "./map-review-client.js";
 import { formatCoordinate, WorldScoutRetainedStore } from "./world-scout-canvas.js";
 
@@ -262,32 +262,32 @@ export function SavedWorldScout(props: {
 	};
 	const focusActor = (key: string) => pointMap?.focusKey(key);
 
-	onMount(() => {
+	onSettled(() => {
 		loadMaps();
 	});
 
 	return (
-		<section aria-label="Saved top-down actor map" {...stylex.props(styles.scout)}>
-			<header {...stylex.props(styles.header)}>
+		<section aria-label="Saved top-down actor map" {...stylex.attrs(styles.scout)}>
+			<header {...stylex.attrs(styles.header)}>
 				<div>
-					<h2 {...stylex.props(styles.title)}>Actors from project files</h2>
+					<h2 {...stylex.attrs(styles.title)}>Actors from project files</h2>
 					<Show when={projectLabel()}>
 						{(label) => (
-							<p {...stylex.props(styles.projectLabel)}>Project · {label()}</p>
+							<p {...stylex.attrs(styles.projectLabel)}>Project · {label()}</p>
 						)}
 					</Show>
 				</div>
-				<div {...stylex.props(styles.headerActions)}>
+				<div {...stylex.attrs(styles.headerActions)}>
 					<button
 						type="button"
 						onClick={chooseProject}
 						disabled={props.client.chooseProjectAndMaps === undefined}
-						{...stylex.props(styles.chooseButton)}
+						{...stylex.attrs(styles.chooseButton)}
 					>
 						Choose project
 					</button>
-					<div {...stylex.props(styles.source)}>
-						<span {...stylex.props(styles.sourceDot)} />
+					<div {...stylex.attrs(styles.source)}>
+						<span {...stylex.attrs(styles.sourceDot)} />
 						<strong>Project files</strong>
 						<code>{world()?.authority.mapPackage ?? "not loaded"}</code>
 					</div>
@@ -297,7 +297,7 @@ export function SavedWorldScout(props: {
 			<Show
 				when={world()}
 				fallback={
-					<div {...stylex.props(styles.message)}>
+					<div {...stylex.attrs(styles.message)}>
 						<h3>
 							{error() === undefined
 								? "Reading saved map…"
@@ -309,13 +309,13 @@ export function SavedWorldScout(props: {
 								: "Pick a different project or map, then retry."}
 						</p>
 						<Show when={error() === undefined}>
-							<div {...stylex.props(styles.progressBlock)}>
+							<div {...stylex.attrs(styles.progressBlock)}>
 								<Show
 									when={progress().totalPackages > 0}
 									fallback={
 										<progress
 											aria-label="Saved map load progress"
-											{...stylex.props(styles.progress)}
+											{...stylex.attrs(styles.progress)}
 										/>
 									}
 								>
@@ -323,7 +323,7 @@ export function SavedWorldScout(props: {
 										aria-label="Saved map load progress"
 										max={progress().totalPackages}
 										value={progress().processedPackages}
-										{...stylex.props(styles.progress)}
+										{...stylex.attrs(styles.progress)}
 									/>
 								</Show>
 								<Show when={progress().totalPackages > 0}>
@@ -336,18 +336,18 @@ export function SavedWorldScout(props: {
 						</Show>
 						<Show when={error()}>
 							{(message) => (
-								<details {...stylex.props(styles.technical)}>
+								<details {...stylex.attrs(styles.technical)}>
 									<summary>Technical details</summary>
 									<code>{message()}</code>
 								</details>
 							)}
 						</Show>
-						<div {...stylex.props(styles.fallbackActions)}>
+						<div {...stylex.attrs(styles.fallbackActions)}>
 							<Show when={error()}>
 								<button
 									type="button"
 									onClick={loadMaps}
-									{...stylex.props(styles.retry)}
+									{...stylex.attrs(styles.retry)}
 								>
 									Retry
 								</button>
@@ -356,7 +356,7 @@ export function SavedWorldScout(props: {
 								<button
 									type="button"
 									onClick={chooseProject}
-									{...stylex.props(styles.retry)}
+									{...stylex.attrs(styles.retry)}
 								>
 									Choose project
 								</button>
@@ -367,14 +367,14 @@ export function SavedWorldScout(props: {
 			>
 				{(current) => (
 					<>
-						<div {...stylex.props(styles.tools)}>
+						<div {...stylex.attrs(styles.tools)}>
 							<SavedMapPicker
 								label="Map"
 								maps={maps()}
 								mapPath={selectedMapPath() ?? ""}
 								onMapPathChange={selectMap}
 							/>
-							<div {...stylex.props(styles.summary)}>
+							<div {...stylex.attrs(styles.summary)}>
 								<strong>
 									{visibleCount()} of {store.count.toLocaleString()} actors
 								</strong>
@@ -384,7 +384,7 @@ export function SavedWorldScout(props: {
 								</small>
 							</div>
 							<div
-								{...stylex.props(
+								{...stylex.attrs(
 									styles.completeness,
 									current().completeness === "partial" && styles.partial
 								)}
@@ -393,7 +393,7 @@ export function SavedWorldScout(props: {
 							</div>
 						</div>
 
-						<div {...stylex.props(styles.workspace)}>
+						<div {...stylex.attrs(styles.workspace)}>
 							<ActorExplorer
 								utilities
 								selectedDetails={{ location: selected()?.location }}
@@ -420,9 +420,9 @@ export function SavedWorldScout(props: {
 								selectedClassPath={undefined}
 								selectedKey={selected()?.instanceKey}
 							/>
-							<div {...stylex.props(styles.mapFrame)}>
-								<div {...stylex.props(styles.north)}>N ↑</div>
-								<label {...stylex.props(styles.zoomControl)}>
+							<div {...stylex.attrs(styles.mapFrame)}>
+								<div {...stylex.attrs(styles.north)}>N ↑</div>
+								<label {...stylex.attrs(styles.zoomControl)}>
 									<span>Zoom</span>
 									<input
 										type="range"
@@ -434,22 +434,22 @@ export function SavedWorldScout(props: {
 										onInput={(event) =>
 											setZoomFactor(event.currentTarget.value)
 										}
-										{...stylex.props(styles.zoomSlider)}
+										{...stylex.attrs(styles.zoomSlider)}
 									/>
 									<strong>{zoomFactor().toFixed(1)}×</strong>
 								</label>
-								<div {...stylex.props(styles.extentLabel)}>{extentLabel()}</div>
+								<div {...stylex.attrs(styles.extentLabel)}>{extentLabel()}</div>
 								<button
 									type="button"
 									onClick={() => pointMap?.resetView()}
-									{...stylex.props(styles.reset)}
+									{...stylex.attrs(styles.reset)}
 								>
 									Reset view
 								</button>
 								<PointMapDeckCanvas
 									ariaDescribedBy="saved-world-scout-live"
 									ariaLabel="Top-down saved actor map"
-									class={stylex.props(styles.map).className}
+									class={stylex.attrs(styles.map).class}
 									onController={(controller) => {
 										// SAFETY: Deck controller matches Canvas controller shape (focusKey/resetView/setZoomFactor).
 										pointMap = controller as PointMapController;
@@ -464,33 +464,33 @@ export function SavedWorldScout(props: {
 								<div
 									id="saved-world-scout-live"
 									aria-live="polite"
-									{...stylex.props(styles.liveRegion)}
+									{...stylex.attrs(styles.liveRegion)}
 								>
 									{liveRegion()}
 								</div>
-								<div {...stylex.props(styles.axisX)}>World X →</div>
-								<div {...stylex.props(styles.axisY)}>World Y →</div>
+								<div {...stylex.attrs(styles.axisX)}>World X →</div>
+								<div {...stylex.attrs(styles.axisY)}>World Y →</div>
 							</div>
 
-							<aside {...stylex.props(styles.inspector)}>
+							<aside {...stylex.attrs(styles.inspector)}>
 								<Show
 									when={selected()}
 									fallback={
-										<div {...stylex.props(styles.noSelection)}>
+										<div {...stylex.attrs(styles.noSelection)}>
 											Select an actor to see its details.
 										</div>
 									}
 								>
 									{(actor) => (
-										<div {...stylex.props(styles.actorDetails)}>
-											<p {...stylex.props(styles.inspectorLabel)}>
+										<div {...stylex.attrs(styles.actorDetails)}>
+											<p {...stylex.attrs(styles.inspectorLabel)}>
 												Saved actor
 											</p>
-											<h3 {...stylex.props(styles.actorName)}>
+											<h3 {...stylex.attrs(styles.actorName)}>
 												{actor().displayName}
 											</h3>
 											<code>{actor().className}</code>
-											<dl {...stylex.props(styles.coordinates)}>
+											<dl {...stylex.attrs(styles.coordinates)}>
 												<div>
 													<dt>X</dt>
 													<dd>{formatCoordinate(actor().location.x)}</dd>
@@ -504,7 +504,7 @@ export function SavedWorldScout(props: {
 													<dd>{formatCoordinate(actor().location.z)}</dd>
 												</div>
 											</dl>
-											<dl {...stylex.props(styles.identity)}>
+											<dl {...stylex.attrs(styles.identity)}>
 												<div>
 													<dt>Package</dt>
 													<dd>
@@ -521,11 +521,11 @@ export function SavedWorldScout(props: {
 											<button
 												type="button"
 												onClick={clearSelection}
-												{...stylex.props(styles.clearSelection)}
+												{...stylex.attrs(styles.clearSelection)}
 											>
 												Clear selection
 											</button>
-											<p {...stylex.props(styles.offlineCopy)}>
+											<p {...stylex.attrs(styles.offlineCopy)}>
 												Read from saved project files. Open Unreal and
 												switch to Live session to focus actors or author
 												views.

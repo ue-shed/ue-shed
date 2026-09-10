@@ -161,13 +161,13 @@ export function MapCaptureActorWorkspace(props: {
 	}
 
 	return (
-		<section aria-label="Captured map actor workspace" {...stylex.props(styles.workspace)}>
-			<header {...stylex.props(styles.toolbar)}>
-				<div {...stylex.props(styles.toolbarCopy)}>
+		<section aria-label="Captured map actor workspace" {...stylex.attrs(styles.workspace)}>
+			<header {...stylex.attrs(styles.toolbar)}>
+				<div {...stylex.attrs(styles.toolbarCopy)}>
 					<strong>Saved actors</strong>
 					<span>Overlay the saved world on the captured tiles.</span>
 				</div>
-				<div {...stylex.props(styles.coverage)}>
+				<div {...stylex.attrs(styles.coverage)}>
 					<Show
 						when={catalog().status === "ready"}
 						fallback={<span>Loads on demand</span>}
@@ -179,26 +179,26 @@ export function MapCaptureActorWorkspace(props: {
 				</div>
 				<button
 					type="button"
-					aria-pressed={enabled()}
+					aria-pressed={enabled() ? "true" : "false"}
 					onClick={toggleActors}
-					{...stylex.props(styles.toggle, enabled() && styles.toggleEnabled)}
+					{...stylex.attrs(styles.toggle, enabled() && styles.toggleEnabled)}
 				>
-					<i {...stylex.props(styles.toggleDot)} />
+					<i {...stylex.attrs(styles.toggleDot)} />
 					Saved actors {enabled() ? "on" : "off"}
 				</button>
 			</header>
 			<Show when={enabled() && catalog().status === "loading"}>
-				<div role="status" {...stylex.props(styles.catalogLoading)}>
+				<div role="status" {...stylex.attrs(styles.catalogLoading)}>
 					Indexing saved actors…
 				</div>
 			</Show>
 			<Show when={enabled() ? failedCatalog() : undefined}>
 				{(failed) => (
-					<div role="alert" {...stylex.props(styles.catalogFailure)}>
-						<div {...stylex.props(styles.failureCopy)}>
+					<div role="alert" {...stylex.attrs(styles.catalogFailure)}>
+						<div {...stylex.attrs(styles.failureCopy)}>
 							<strong>Couldn&apos;t load saved actors</strong>
 							<p>{failed().recovery}</p>
-							<details {...stylex.props(styles.technical)}>
+							<details {...stylex.attrs(styles.technical)}>
 								<summary>Technical details</summary>
 								<code>{failed().message}</code>
 							</details>
@@ -206,7 +206,7 @@ export function MapCaptureActorWorkspace(props: {
 						<button
 							type="button"
 							onClick={loadCatalog}
-							{...stylex.props(styles.retryButton)}
+							{...stylex.attrs(styles.retryButton)}
 						>
 							Retry
 						</button>
@@ -214,12 +214,12 @@ export function MapCaptureActorWorkspace(props: {
 				)}
 			</Show>
 			<Show when={enabled() && readyWorld()?.completeness === "partial"}>
-				<div {...stylex.props(styles.catalogPartial)}>
+				<div {...stylex.attrs(styles.catalogPartial)}>
 					Some actor packages could not be read, so this list may be incomplete.
 				</div>
 			</Show>
 			<div
-				{...stylex.props(
+				{...stylex.attrs(
 					styles.mapRow,
 					enabled() && catalog().status === "ready" && styles.mapRowWithExplorer
 				)}

@@ -10,8 +10,7 @@ import {
 	createEffect,
 	createMemo,
 	createSignal,
-	onCleanup,
-	onMount
+	onSettled
 } from "solid-js";
 import type { MapReviewClientApi, MapReviewResult, MapReviewRunView } from "./map-review-client.js";
 import { MapReviewAuthoring } from "./map-review-authoring.js";
@@ -69,15 +68,18 @@ function captureExplanations(capture: RunCapture): ReadonlyArray<string> {
 
 function ArtifactImage(props: { readonly artifact: RunArtifact; readonly alt: string }) {
 	const [source, setSource] = createSignal<string>();
-	createEffect(() => {
-		const bytes = Uint8Array.from(props.artifact.bytes);
-		const url = URL.createObjectURL(new Blob([bytes.buffer], { type: "image/png" }));
-		setSource(url);
-		onCleanup(() => URL.revokeObjectURL(url));
-	});
+	createEffect(
+		() => props.artifact.bytes,
+		(artifactBytes) => {
+			const bytes = Uint8Array.from(artifactBytes);
+			const url = URL.createObjectURL(new Blob([bytes.buffer], { type: "image/png" }));
+			setSource(url);
+			return () => URL.revokeObjectURL(url);
+		}
+	);
 	return (
 		<Show when={source()}>
-			{(url) => <img src={url()} alt={props.alt} {...stylex.props(styles.previewImage)} />}
+			{(url) => <img src={url()} alt={props.alt} {...stylex.attrs(styles.previewImage)} />}
 		</Show>
 	);
 }
@@ -187,10 +189,10 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 			onFailure: (cause) => apply(clientFailure(cause)),
 			onSuccess: apply
 		});
-	onMount(load);
+	onSettled(load);
 
 	return (
-		<main {...stylex.props(styles.page)}>
+		<main {...stylex.attrs(styles.page)}>
 			<Show when={setLibraryOpen()}>
 				<ReviewSetLibrary
 					canCreate={ready() !== undefined}
@@ -209,15 +211,15 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 					/>
 				)}
 			</Show>
-			<header {...stylex.props(styles.header)}>
-				<div {...stylex.props(styles.headerCopy)}>
-					<h1 {...stylex.props(styles.title)}>Map review</h1>
-					<p {...stylex.props(styles.subtitle)}>
+			<header {...stylex.attrs(styles.header)}>
+				<div {...stylex.attrs(styles.headerCopy)}>
+					<h1 {...stylex.attrs(styles.title)}>Map review</h1>
+					<p {...stylex.attrs(styles.subtitle)}>
 						Browse captured views of your map, compare runs side by side, and keep the
 						framings worth reusing.
 					</p>
 				</div>
-				<div {...stylex.props(styles.headerActions)}>
+				<div {...stylex.attrs(styles.headerActions)}>
 					<Button
 						type="button"
 						disabled={
@@ -238,22 +240,22 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 					</Button>
 				</div>
 			</header>
-			<div {...stylex.props(styles.toolbar)}>
+			<div {...stylex.attrs(styles.toolbar)}>
 				<div
 					role="tablist"
 					aria-label="Map data source"
-					{...stylex.props(styles.sourceTabs)}
+					{...stylex.attrs(styles.sourceTabs)}
 				>
 					<button
 						type="button"
 						role="tab"
-						aria-selected={worldSource() === "saved"}
+						aria-selected={worldSource() === "saved" ? "true" : "false"}
 						disabled={
 							props.client.readSavedWorld === undefined ||
 							props.client.savedWorldMaps === undefined
 						}
 						onClick={() => setWorldSource("saved")}
-						{...stylex.props(
+						{...stylex.attrs(
 							styles.sourceTab,
 							worldSource() === "saved" && styles.sourceTabActive
 						)}
@@ -263,9 +265,9 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 					<button
 						type="button"
 						role="tab"
-						aria-selected={worldSource() === "live"}
+						aria-selected={worldSource() === "live" ? "true" : "false"}
 						onClick={() => setWorldSource("live")}
-						{...stylex.props(
+						{...stylex.attrs(
 							styles.sourceTab,
 							worldSource() === "live" && styles.sourceTabActive
 						)}
@@ -277,13 +279,13 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 					<div
 						role="group"
 						aria-label="Authoring mode"
-						{...stylex.props(styles.modeGroup)}
+						{...stylex.attrs(styles.modeGroup)}
 					>
 						<button
 							type="button"
-							aria-pressed={authoringMode() === "append"}
+							aria-pressed={authoringMode() === "append" ? "true" : "false"}
 							onClick={() => setAuthoringMode("append")}
-							{...stylex.props(
+							{...stylex.attrs(
 								styles.modeButton,
 								authoringMode() === "append" && styles.modeButtonActive
 							)}
@@ -293,9 +295,9 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 						<button
 							type="button"
 							disabled={selectedView() === undefined}
-							aria-pressed={authoringMode() === "revise"}
+							aria-pressed={authoringMode() === "revise" ? "true" : "false"}
 							onClick={() => setAuthoringMode("revise")}
-							{...stylex.props(
+							{...stylex.attrs(
 								styles.modeButton,
 								authoringMode() === "revise" && styles.modeButtonActive
 							)}
@@ -324,10 +326,10 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 
 			<Switch>
 				<Match when={state().status === "loading"}>
-					<div {...stylex.props(styles.centerState)}>Opening local review history…</div>
+					<div {...stylex.attrs(styles.centerState)}>Opening local review history…</div>
 				</Match>
 				<Match when={state().status === "not_configured"}>
-					<div {...stylex.props(styles.centerState)}>
+					<div {...stylex.attrs(styles.centerState)}>
 						<strong>No review project is configured.</strong>
 						<span>
 							Set UE_SHED_PROJECT_ROOT to a project folder, then return here to create
@@ -336,11 +338,11 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 					</div>
 				</Match>
 				<Match when={state().status === "setup_required"}>
-					<div {...stylex.props(styles.setupWorkspace)}>
+					<div {...stylex.attrs(styles.setupWorkspace)}>
 						<Show
 							when={worldSource() === "live"}
 							fallback={
-								<div {...stylex.props(styles.offlineNote)}>
+								<div {...stylex.attrs(styles.offlineNote)}>
 									Saved map review is ready. Switch to Live session to author or
 									capture views.
 								</div>
@@ -360,15 +362,15 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 						const current = state();
 						if (current.status !== "failed") return null;
 						return (
-							<div role="alert" {...stylex.props(styles.stateCard)}>
-								<strong {...stylex.props(styles.stateTitle)}>
+							<div role="alert" {...stylex.attrs(styles.stateCard)}>
+								<strong {...stylex.attrs(styles.stateTitle)}>
 									Couldn't load review data
 								</strong>
 								<span>{current.error.recovery}</span>
 								<Button type="button" onClick={() => void load()} tone="quiet">
 									Retry
 								</Button>
-								<details {...stylex.props(styles.technical)}>
+								<details {...stylex.attrs(styles.technical)}>
 									<summary>Technical details</summary>
 									<code>{current.error.message}</code>
 								</details>
@@ -381,8 +383,8 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 						const current = state();
 						if (current.status !== "blocked") return null;
 						return (
-							<div role="alert" {...stylex.props(styles.stateCard)}>
-								<strong {...stylex.props(styles.stateTitle)}>
+							<div role="alert" {...stylex.attrs(styles.stateCard)}>
+								<strong {...stylex.attrs(styles.stateTitle)}>
 									{current.policy.message}
 								</strong>
 								<span>{current.policy.recovery}</span>
@@ -395,22 +397,22 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 				</Match>
 				<Match when={ready()}>
 					{(current) => (
-						<div {...stylex.props(styles.workspace)}>
+						<div {...stylex.attrs(styles.workspace)}>
 							<section
 								aria-label="Review set status"
-								{...stylex.props(styles.statusStrip)}
+								{...stylex.attrs(styles.statusStrip)}
 							>
-								<div {...stylex.props(styles.setIdentity)}>
+								<div {...stylex.attrs(styles.setIdentity)}>
 									<strong>{current().reviewSet.displayName}</strong>
 									<code>{current().reviewSet.mapPath}</code>
 								</div>
-								<div {...stylex.props(styles.stat)}>
+								<div {...stylex.attrs(styles.stat)}>
 									<strong>{current().reviewSet.viewCount}</strong>
 									<span>
 										{current().reviewSet.viewCount === 1 ? "view" : "views"}
 									</span>
 								</div>
-								<div {...stylex.props(styles.stat)}>
+								<div {...stylex.attrs(styles.stat)}>
 									<strong>{current().runs.length}</strong>
 									<span>{current().runs.length === 1 ? "run" : "runs"}</span>
 								</div>
@@ -435,19 +437,19 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 
 							<section
 								aria-label="Review views"
-								{...stylex.props(styles.viewNavigator)}
+								{...stylex.attrs(styles.viewNavigator)}
 							>
-								<div {...stylex.props(styles.sectionHeading)}>
+								<div {...stylex.attrs(styles.sectionHeading)}>
 									<span>Views · {current().reviewSet.views.length}</span>
 								</div>
 								<For each={subjectGroups()}>
 									{([subject, views]) => (
 										<section
 											aria-label={`${views[0]?.subjectLabel ?? views[0]?.displayName ?? "Review subject"} views`}
-											{...stylex.props(styles.subjectGroup)}
+											{...stylex.attrs(styles.subjectGroup)}
 										>
-											<div {...stylex.props(styles.subjectIdentity)}>
-												<span {...stylex.props(styles.subjectCount)}>
+											<div {...stylex.attrs(styles.subjectIdentity)}>
+												<span {...stylex.attrs(styles.subjectCount)}>
 													{views.length}{" "}
 													{views.length === 1 ? "view" : "views"}
 												</span>
@@ -461,13 +463,15 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 														: subject}
 												</code>
 											</div>
-											<div {...stylex.props(styles.viewRail)}>
+											<div {...stylex.attrs(styles.viewRail)}>
 												<For each={views}>
 													{(view) => (
 														<button
 															type="button"
 															aria-pressed={
 																selectedViewId() === view.id
+																	? "true"
+																	: "false"
 															}
 															onClick={() => {
 																setSelectedViewId(view.id);
@@ -482,7 +486,7 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 																	)?.id ?? current().runs[0]?.id
 																);
 															}}
-															{...stylex.props(
+															{...stylex.attrs(
 																styles.viewCard,
 																selectedViewId() === view.id &&
 																	styles.viewCardActive
@@ -515,7 +519,7 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 								fallback={
 									<section
 										aria-label="Captures"
-										{...stylex.props(styles.emptyState)}
+										{...stylex.attrs(styles.emptyState)}
 									>
 										<p>
 											No captures yet. Capture this set to save PNG stills of
@@ -527,20 +531,24 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 								{(run) => (
 									<section
 										aria-label="Selected capture"
-										{...stylex.props(styles.stage)}
+										{...stylex.attrs(styles.stage)}
 									>
 										<div>
 											<Show when={selectedCapture()}>
 												<div
 													role="group"
 													aria-label="Compare captures"
-													{...stylex.props(styles.comparisonControls)}
+													{...stylex.attrs(styles.comparisonControls)}
 												>
 													<button
 														type="button"
-														aria-pressed={comparisonMode() === "pure"}
+														aria-pressed={
+															comparisonMode() === "pure"
+																? "true"
+																: "false"
+														}
 														onClick={() => setComparisonMode("pure")}
-														{...stylex.props(
+														{...stylex.attrs(
 															styles.comparisonButton,
 															comparisonMode() === "pure" &&
 																styles.comparisonButtonActive
@@ -551,9 +559,13 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 													<button
 														type="button"
 														disabled={clearArtifact() === undefined}
-														aria-pressed={comparisonMode() === "clear"}
+														aria-pressed={
+															comparisonMode() === "clear"
+																? "true"
+																: "false"
+														}
 														onClick={() => setComparisonMode("clear")}
-														{...stylex.props(
+														{...stylex.attrs(
 															styles.comparisonButton,
 															comparisonMode() === "clear" &&
 																styles.comparisonButtonActive
@@ -566,11 +578,13 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 														disabled={clearArtifact() === undefined}
 														aria-pressed={
 															comparisonMode() === "side_by_side"
+																? "true"
+																: "false"
 														}
 														onClick={() =>
 															setComparisonMode("side_by_side")
 														}
-														{...stylex.props(
+														{...stylex.attrs(
 															styles.comparisonButton,
 															comparisonMode() === "side_by_side" &&
 																styles.comparisonButtonActive
@@ -583,11 +597,13 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 														disabled={previousEvidence() === undefined}
 														aria-pressed={
 															comparisonMode() === "previous"
+																? "true"
+																: "false"
 														}
 														onClick={() =>
 															setComparisonMode("previous")
 														}
-														{...stylex.props(
+														{...stylex.attrs(
 															styles.comparisonButton,
 															comparisonMode() === "previous" &&
 																styles.comparisonButtonActive
@@ -598,7 +614,7 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 												</div>
 											</Show>
 											<div
-												{...stylex.props(
+												{...stylex.attrs(
 													styles.comparisonStage,
 													(comparisonMode() === "side_by_side" ||
 														comparisonMode() === "previous") &&
@@ -608,9 +624,9 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 												<Show
 													when={pureArtifact()}
 													fallback={
-														<div {...stylex.props(styles.imageFrame)}>
+														<div {...stylex.attrs(styles.imageFrame)}>
 															<div
-																{...stylex.props(
+																{...stylex.attrs(
 																	styles.missingPreview
 																)}
 															>
@@ -625,7 +641,7 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 																</small>
 															</div>
 															<div
-																{...stylex.props(
+																{...stylex.attrs(
 																	styles.imageChrome
 																)}
 															>
@@ -638,14 +654,14 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 													{(pure) => (
 														<Show when={comparisonMode() !== "clear"}>
 															<div
-																{...stylex.props(styles.imageFrame)}
+																{...stylex.attrs(styles.imageFrame)}
 															>
 																<ArtifactImage
 																	artifact={pure()}
 																	alt={`Natural capture of ${selectedCapture()?.viewName ?? "Review view"}`}
 																/>
 																<div
-																	{...stylex.props(
+																	{...stylex.attrs(
 																		styles.imageChrome
 																	)}
 																>
@@ -666,7 +682,7 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 												>
 													{(clear) => (
 														<div
-															{...stylex.props(
+															{...stylex.attrs(
 																styles.imageFrame,
 																styles.clearFrame
 															)}
@@ -676,7 +692,7 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 																alt={`Clear capture with modified visibility of ${selectedCapture()?.viewName ?? "Review view"}`}
 															/>
 															<div
-																{...stylex.props(
+																{...stylex.attrs(
 																	styles.imageChrome,
 																	styles.clearChrome
 																)}
@@ -697,13 +713,13 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 													}
 												>
 													{(previous) => (
-														<div {...stylex.props(styles.imageFrame)}>
+														<div {...stylex.attrs(styles.imageFrame)}>
 															<ArtifactImage
 																artifact={previous().artifact}
 																alt={`Previous run capture of ${previous().capture.viewName}`}
 															/>
 															<div
-																{...stylex.props(
+																{...stylex.attrs(
 																	styles.imageChrome
 																)}
 															>
@@ -715,8 +731,8 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 												</Show>
 											</div>
 										</div>
-										<aside {...stylex.props(styles.runInspector)}>
-											<p {...stylex.props(styles.inspectorLabel)}>Run</p>
+										<aside {...stylex.attrs(styles.runInspector)}>
+											<p {...stylex.attrs(styles.inspectorLabel)}>Run</p>
 											<h2>{new Date(run().completedAt).toLocaleString()}</h2>
 											<dl>
 												<Show when={selectedCapture()}>
@@ -787,7 +803,7 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 																}
 															>
 																<details
-																	{...stylex.props(styles.notes)}
+																	{...stylex.attrs(styles.notes)}
 																>
 																	<summary>Notes</summary>
 																	<ul>
@@ -837,22 +853,24 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 								)}
 							</Show>
 
-							<section aria-label="Runs" {...stylex.props(styles.history)}>
-								<div {...stylex.props(styles.sectionHeading)}>
+							<section aria-label="Runs" {...stylex.attrs(styles.history)}>
+								<div {...stylex.attrs(styles.sectionHeading)}>
 									<span>Runs</span>
 									<small>Newest first</small>
 								</div>
-								<div {...stylex.props(styles.runRail)}>
+								<div {...stylex.attrs(styles.runRail)}>
 									<For each={current().runs}>
 										{(run, index) => (
 											<button
 												type="button"
-												aria-pressed={selected()?.id === run.id}
+												aria-pressed={
+													selected()?.id === run.id ? "true" : "false"
+												}
 												onClick={() => {
 													setSelectedRunId(run.id);
 													setComparisonMode("pure");
 												}}
-												{...stylex.props(
+												{...stylex.attrs(
 													styles.runCard,
 													selected()?.id === run.id &&
 														styles.runCardActive

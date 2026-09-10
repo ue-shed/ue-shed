@@ -8,112 +8,112 @@ import { approach, diagram, facts, inspectTerminal, repositoryUrl, tools } from 
 
 export function App() {
 	return (
-		<div {...stylex.props(styles.page)}>
-			<div {...stylex.props(styles.container)}>
-				<header {...stylex.props(styles.nav)}>
-					<span {...stylex.props(styles.wordmark)}>ue-shed</span>
-					<nav {...stylex.props(styles.navLinks)}>
-						<a href="#showcase" {...stylex.props(styles.navLink)}>
+		<div {...stylex.attrs(styles.page)}>
+			<div {...stylex.attrs(styles.container)}>
+				<header {...stylex.attrs(styles.nav)}>
+					<span {...stylex.attrs(styles.wordmark)}>ue-shed</span>
+					<nav {...stylex.attrs(styles.navLinks)}>
+						<a href="#showcase" {...stylex.attrs(styles.navLink)}>
 							Showcase
 						</a>
-						<a href="#tools" {...stylex.props(styles.navLink)}>
+						<a href="#tools" {...stylex.attrs(styles.navLink)}>
 							Tools
 						</a>
-						<a href="#approach" {...stylex.props(styles.navLink)}>
+						<a href="#approach" {...stylex.attrs(styles.navLink)}>
 							Headless-first
 						</a>
-						<a href={repositoryUrl} {...stylex.props(styles.navLink)}>
+						<a href={repositoryUrl} {...stylex.attrs(styles.navLink)}>
 							GitHub ↗
 						</a>
 					</nav>
 				</header>
 
 				<main>
-					<section {...stylex.props(styles.hero)}>
-						<p {...stylex.props(styles.eyebrow)}>Open source · headless-first</p>
-						<h1 {...stylex.props(styles.h1)}>
+					<section {...stylex.attrs(styles.hero)}>
+						<p {...stylex.attrs(styles.eyebrow)}>Open source · headless-first</p>
+						<h1 {...stylex.attrs(styles.h1)}>
 							Unreal tooling that runs without Unreal.
 						</h1>
-						<p {...stylex.props(styles.heroSub)}>
+						<p {...stylex.attrs(styles.heroSub)}>
 							Headless-first libraries and a CLI for inspecting, auditing, and
 							authoring Unreal content from outside the editor. Live plugins and a
 							desktop showcase app included — separately enabled, never required.
 						</p>
-						<div {...stylex.props(styles.ctaRow)}>
-							<a href={repositoryUrl} {...stylex.props(styles.buttonPrimary)}>
+						<div {...stylex.attrs(styles.ctaRow)}>
+							<a href={repositoryUrl} {...stylex.attrs(styles.buttonPrimary)}>
 								View on GitHub ↗
 							</a>
-							<a href="#approach" {...stylex.props(styles.buttonGhost)}>
+							<a href="#approach" {...stylex.attrs(styles.buttonGhost)}>
 								How it's put together
 							</a>
 						</div>
-						<div {...stylex.props(styles.heroTrial)}>
+						<div {...stylex.attrs(styles.heroTrial)}>
 							<AuthoringMock />
 						</div>
 					</section>
 
-					<section id="showcase" {...stylex.props(styles.showcaseSection)}>
+					<section id="showcase" {...stylex.attrs(styles.showcaseSection)}>
 						<Showcase />
 					</section>
 
-					<section {...stylex.props(styles.facts)}>
+					<section {...stylex.attrs(styles.facts)}>
 						<For each={facts}>
 							{(fact) => (
 								<div>
-									<p {...stylex.props(styles.factLabel)}>{fact.label}</p>
-									<p {...stylex.props(styles.factText)}>{fact.text}</p>
+									<p {...stylex.attrs(styles.factLabel)}>{fact.label}</p>
+									<p {...stylex.attrs(styles.factText)}>{fact.text}</p>
 								</div>
 							)}
 						</For>
 					</section>
 
-					<section id="tools" {...stylex.props(styles.section)}>
-						<header {...stylex.props(styles.sectionHead)}>
-							<p {...stylex.props(styles.eyebrow)}>The suite</p>
-							<h2 {...stylex.props(styles.h2)}>In the shed</h2>
-							<p {...stylex.props(styles.sectionSub)}>
+					<section id="tools" {...stylex.attrs(styles.section)}>
+						<header {...stylex.attrs(styles.sectionHead)}>
+							<p {...stylex.attrs(styles.eyebrow)}>The suite</p>
+							<h2 {...stylex.attrs(styles.h2)}>In the shed</h2>
+							<p {...stylex.attrs(styles.sectionSub)}>
 								Each tool stands alone. Take one, leave the rest.
 							</p>
 						</header>
-						<div {...stylex.props(styles.toolsGrid)}>
+						<div {...stylex.attrs(styles.toolsGrid)}>
 							<For each={tools}>
 								{(tool) => (
-									<article {...stylex.props(styles.toolCard)}>
-										<h3 {...stylex.props(styles.toolName)}>{tool.name}</h3>
-										<p {...stylex.props(styles.toolLine)}>{tool.line}</p>
-										<span {...stylex.props(styles.toolTag)}>{tool.tag}</span>
+									<article {...stylex.attrs(styles.toolCard)}>
+										<h3 {...stylex.attrs(styles.toolName)}>{tool.name}</h3>
+										<p {...stylex.attrs(styles.toolLine)}>{tool.line}</p>
+										<span {...stylex.attrs(styles.toolTag)}>{tool.tag}</span>
 									</article>
 								)}
 							</For>
 						</div>
 					</section>
 
-					<section id="approach" {...stylex.props(styles.section)}>
-						<header {...stylex.props(styles.sectionHead)}>
-							<p {...stylex.props(styles.eyebrow)}>Headless-first</p>
-							<h2 {...stylex.props(styles.h2)}>Decoupled from Unreal</h2>
-							<p {...stylex.props(styles.sectionSub)}>
+					<section id="approach" {...stylex.attrs(styles.section)}>
+						<header {...stylex.attrs(styles.sectionHead)}>
+							<p {...stylex.attrs(styles.eyebrow)}>Headless-first</p>
+							<h2 {...stylex.attrs(styles.h2)}>Decoupled from Unreal</h2>
+							<p {...stylex.attrs(styles.sectionSub)}>
 								The libraries lead; the CLI and the Workbench follow. Everything
 								below works from a shell — the app is optional.
 							</p>
 						</header>
 						<Terminal spec={inspectTerminal} />
-						<p {...stylex.props(styles.caption)}>
+						<p {...stylex.attrs(styles.caption)}>
 							A saved DataTable read straight from its .uasset package. No editor
 							running.
 						</p>
-						<div {...stylex.props(styles.approachList)}>
+						<div {...stylex.attrs(styles.approachList)}>
 							<For each={approach}>
 								{(point, index) => (
-									<div {...stylex.props(styles.approachItem)}>
-										<span {...stylex.props(styles.approachNum)}>
+									<div {...stylex.attrs(styles.approachItem)}>
+										<span {...stylex.attrs(styles.approachNum)}>
 											{String(index() + 1).padStart(2, "0")}
 										</span>
 										<div>
-											<h3 {...stylex.props(styles.approachTitle)}>
+											<h3 {...stylex.attrs(styles.approachTitle)}>
 												{point.title}
 											</h3>
-											<p {...stylex.props(styles.approachText)}>
+											<p {...stylex.attrs(styles.approachText)}>
 												{point.text}
 											</p>
 										</div>
@@ -121,22 +121,22 @@ export function App() {
 								)}
 							</For>
 						</div>
-						<pre {...stylex.props(styles.diagram)}>{diagram.trim()}</pre>
+						<pre {...stylex.attrs(styles.diagram)}>{diagram.trim()}</pre>
 					</section>
 
-					<section id="open-source" {...stylex.props(styles.section)}>
-						<div {...stylex.props(styles.ossBand)}>
-							<p {...stylex.props(styles.eyebrow)}>Open source</p>
-							<h2 {...stylex.props(styles.h2)}>Open source, end to end.</h2>
-							<p {...stylex.props(styles.ossText)}>
+					<section id="open-source" {...stylex.attrs(styles.section)}>
+						<div {...stylex.attrs(styles.ossBand)}>
+							<p {...stylex.attrs(styles.eyebrow)}>Open source</p>
+							<h2 {...stylex.attrs(styles.h2)}>Open source, end to end.</h2>
+							<p {...stylex.attrs(styles.ossText)}>
 								The tools, the Unreal plugins, the fixture project they test
 								against, and this site. Take what's useful — the parts you leave
 								behind don't come along.
 							</p>
-							<a href={repositoryUrl} {...stylex.props(styles.buttonPrimary)}>
+							<a href={repositoryUrl} {...stylex.attrs(styles.buttonPrimary)}>
 								ue-shed/ue-shed on GitHub ↗
 							</a>
-							<p {...stylex.props(styles.ossNote)}>
+							<p {...stylex.attrs(styles.ossNote)}>
 								Early stage: some tools are finished workflows, others are proving
 								slices. The repo says which is which.
 							</p>
@@ -144,7 +144,7 @@ export function App() {
 					</section>
 				</main>
 
-				<footer {...stylex.props(styles.footer)}>
+				<footer {...stylex.attrs(styles.footer)}>
 					<span>ue-shed — external tools for Unreal Engine development</span>
 					<span>
 						Not affiliated with Epic Games. Unreal® is a trademark of Epic Games, Inc.

@@ -71,8 +71,7 @@ export function VisibilityPolicySettings(props: {
 	const [confirmBulk, setConfirmBulk] = createSignal(false);
 	const [message, setMessage] = createSignal<PolicyNotice>();
 
-	createEffect(() => {
-		const view = selectedView();
+	createEffect(selectedView, (view) => {
 		const policy = view?.visibilityPolicy;
 		if (!view || !policy) return;
 		setAssessment(policy.assessment.method);
@@ -167,17 +166,17 @@ export function VisibilityPolicySettings(props: {
 	};
 
 	return (
-		<section aria-label="Capture and visibility settings" {...stylex.props(styles.panel)}>
-			<div {...stylex.props(styles.summary)}>
-				<div {...stylex.props(styles.fact)}>
+		<section aria-label="Capture and visibility settings" {...stylex.attrs(styles.panel)}>
+			<div {...stylex.attrs(styles.summary)}>
+				<div {...stylex.attrs(styles.fact)}>
 					<span>Profile</span>
 					<strong>{selectedView()?.captureProfileId ?? "Project default"}</strong>
 				</div>
-				<div {...stylex.props(styles.fact)}>
+				<div {...stylex.attrs(styles.fact)}>
 					<span>Policy</span>
 					<strong>{selectedView()?.visibilityPolicy?.name ?? "Project default"}</strong>
 				</div>
-				<label {...stylex.props(styles.viewPicker)}>
+				<label {...stylex.attrs(styles.viewPicker)}>
 					<span>View</span>
 					<select
 						aria-label="View to configure"
@@ -190,10 +189,10 @@ export function VisibilityPolicySettings(props: {
 					</select>
 				</label>
 			</div>
-			<details {...stylex.props(styles.advanced)}>
+			<details {...stylex.attrs(styles.advanced)}>
 				<summary>Visibility settings</summary>
-				<div {...stylex.props(styles.form)}>
-					<label {...stylex.props(styles.field)}>
+				<div {...stylex.attrs(styles.form)}>
+					<label {...stylex.attrs(styles.field)}>
 						Assessment method
 						<select
 							value={assessment()}
@@ -207,7 +206,7 @@ export function VisibilityPolicySettings(props: {
 							<option value="subject_mask">Subject mask</option>
 						</select>
 					</label>
-					<label {...stylex.props(styles.field)}>
+					<label {...stylex.attrs(styles.field)}>
 						Low visibility action
 						<select
 							value={lowAction()}
@@ -220,7 +219,7 @@ export function VisibilityPolicySettings(props: {
 							<option value="fail">Fail the view</option>
 						</select>
 					</label>
-					<label {...stylex.props(styles.field)}>
+					<label {...stylex.attrs(styles.field)}>
 						Threshold (0–1)
 						<input
 							type="number"
@@ -232,7 +231,7 @@ export function VisibilityPolicySettings(props: {
 							onInput={(event) => setThreshold(event.currentTarget.value)}
 						/>
 					</label>
-					<label {...stylex.props(styles.field)}>
+					<label {...stylex.attrs(styles.field)}>
 						Output
 						<select
 							value={outputMode()}
@@ -245,7 +244,7 @@ export function VisibilityPolicySettings(props: {
 						</select>
 					</label>
 					<Show when={outputMode() === "natural_and_clear"}>
-						<label {...stylex.props(styles.field)}>
+						<label {...stylex.attrs(styles.field)}>
 							Clear strategy
 							<select
 								value={strategy()}
@@ -259,14 +258,14 @@ export function VisibilityPolicySettings(props: {
 							</select>
 						</label>
 					</Show>
-					<label {...stylex.props(styles.field, styles.wide)}>
+					<label {...stylex.attrs(styles.field, styles.wide)}>
 						Hide in clear — actor paths, one per line
 						<textarea
 							value={hideInClear()}
 							onInput={(event) => setHideInClear(event.currentTarget.value)}
 						/>
 					</label>
-					<label {...stylex.props(styles.field, styles.wide)}>
+					<label {...stylex.attrs(styles.field, styles.wide)}>
 						Never hide — actor paths, one per line
 						<textarea
 							value={neverHide()}
@@ -274,19 +273,19 @@ export function VisibilityPolicySettings(props: {
 						/>
 					</label>
 				</div>
-				<p {...stylex.props(styles.note)}>
+				<p {...stylex.attrs(styles.note)}>
 					Hiding detected occluders is not supported: depth evidence cannot safely
 					identify which actor to change. Listed object paths stay reviewable and
 					reversible.
 				</p>
-				<button type="button" onClick={saveReplacement} {...stylex.props(styles.primary)}>
+				<button type="button" onClick={saveReplacement} {...stylex.attrs(styles.primary)}>
 					Save preset for this view
 				</button>
-				<fieldset {...stylex.props(styles.bulk)}>
+				<fieldset {...stylex.attrs(styles.bulk)}>
 					<legend>Apply current preset to other views</legend>
 					<For each={props.review.reviewSet.views.filter((view) => view.id !== viewId())}>
 						{(view) => (
-							<label {...stylex.props(styles.bulkChoice)}>
+							<label {...stylex.attrs(styles.bulkChoice)}>
 								<input
 									type="checkbox"
 									checked={bulkIds().includes(view.id)}
@@ -309,26 +308,26 @@ export function VisibilityPolicySettings(props: {
 								type="button"
 								disabled={bulkIds().length === 0}
 								onClick={() => setConfirmBulk(true)}
-								{...stylex.props(styles.quietButton)}
+								{...stylex.attrs(styles.quietButton)}
 							>
 								Review changes
 							</button>
 						}
 					>
-						<p {...stylex.props(styles.bulkTargets)}>
+						<p {...stylex.attrs(styles.bulkTargets)}>
 							Apply to: {bulkIds().join(", ")}
 						</p>
 						<button
 							type="button"
 							onClick={applyBulk}
-							{...stylex.props(styles.quietButton)}
+							{...stylex.attrs(styles.quietButton)}
 						>
 							Apply
 						</button>
 						<button
 							type="button"
 							onClick={() => setConfirmBulk(false)}
-							{...stylex.props(styles.quietButton)}
+							{...stylex.attrs(styles.quietButton)}
 						>
 							Cancel
 						</button>
@@ -338,7 +337,7 @@ export function VisibilityPolicySettings(props: {
 					{(value) => (
 						<p
 							role={value().tone === "error" ? "alert" : "status"}
-							{...stylex.props(
+							{...stylex.attrs(
 								styles.message,
 								value().tone === "success" && styles.messageSuccess
 							)}
@@ -346,7 +345,7 @@ export function VisibilityPolicySettings(props: {
 							{value().text}
 							<Show when={value().technical}>
 								{(technical) => (
-									<details {...stylex.props(styles.technical)}>
+									<details {...stylex.attrs(styles.technical)}>
 										<summary>Technical details</summary>
 										<code>{technical()}</code>
 									</details>

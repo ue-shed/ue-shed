@@ -1,4 +1,4 @@
-import { createEffect, onCleanup, onMount } from "solid-js";
+import { createEffect, onCleanup, onSettled } from "solid-js";
 import {
 	pointMapBoundsOf,
 	pointMapCanvasAspect,
@@ -78,9 +78,6 @@ function growProjection(values: Float64Array<ArrayBufferLike>, length: number) {
 	next.set(values);
 	return next;
 }
-
-/** Reads a prop in a Solid effect solely to register it as a reactive dependency. */
-function observePointMapInput<Value>(_value: Value): void {}
 
 function pointMapOpacity(value: number | undefined): number {
 	return Math.min(1, Math.max(0, value ?? 1));
@@ -438,20 +435,22 @@ export function PointMapCanvas(props: {
 		requestPaint();
 	};
 
-	createEffect(() => {
-		observePointMapInput(props.resetKey);
-		viewport = undefined;
-		viewLocked = false;
-		lastViewState = undefined;
-		requestPaint();
-	});
-	createEffect(() => {
-		observePointMapInput(props.points);
-		observePointMapInput(props.connections);
-		observePointMapInput(props.selectedKey);
-		requestPaint();
-	});
-	onMount(() => props.onController?.({ focusKey, resetView, setZoomFactor }));
+	createEffect(
+		() => props.resetKey,
+		() => {
+			viewport = undefined;
+			viewLocked = false;
+			lastViewState = undefined;
+			requestPaint();
+		}
+	);
+	createEffect(
+		() => [props.points, props.connections, props.selectedKey],
+		() => {
+			requestPaint();
+		}
+	);
+	onSettled(() => props.onController?.({ focusKey, resetView, setZoomFactor }));
 	onCleanup(() => {
 		if (paintHandle !== undefined) {
 			if (globalThis.cancelAnimationFrame === undefined) clearTimeout(paintHandle);
@@ -465,7 +464,7 @@ export function PointMapCanvas(props: {
 		<canvas
 			ref={setCanvas}
 			role="application"
-			tabIndex={0}
+			tabindex={0}
 			aria-label={props.ariaLabel}
 			aria-describedby={props.ariaDescribedBy}
 			title={props.title ?? "Scroll to zoom, drag to pan, click a point to inspect it"}

@@ -24,10 +24,9 @@ import {
 	Match,
 	Show,
 	Switch,
-	batch,
 	createSignal,
-	onCleanup,
-	onMount,
+	createEffect,
+	onSettled,
 	type Accessor
 } from "solid-js";
 import type { GameTextClientApi } from "./game-text-client.js";
@@ -144,19 +143,19 @@ function FailureCard(props: {
 	readonly onRetry: () => void;
 }) {
 	return (
-		<section role="alert" {...stylex.props(styles.failureCard)}>
-			<strong {...stylex.props(styles.failureTitle)}>{props.title}</strong>
-			<p {...stylex.props(styles.failureCopy)}>
+		<section role="alert" {...stylex.attrs(styles.failureCard)}>
+			<strong {...stylex.attrs(styles.failureTitle)}>{props.title}</strong>
+			<p {...stylex.attrs(styles.failureCopy)}>
 				Try again. If it keeps failing, restart Workbench and verify package versions.
 			</p>
-			<button type="button" onClick={props.onRetry} {...stylex.props(styles.button)}>
+			<button type="button" onClick={props.onRetry} {...stylex.attrs(styles.button)}>
 				Retry
 			</button>
 			<Show when={props.detail}>
 				{(detail) => (
-					<details {...stylex.props(styles.technicalDetails)}>
-						<summary {...stylex.props(styles.techSummary)}>Technical details</summary>
-						<pre {...stylex.props(styles.techPre)}>{detail()}</pre>
+					<details {...stylex.attrs(styles.technicalDetails)}>
+						<summary {...stylex.attrs(styles.techSummary)}>Technical details</summary>
+						<pre {...stylex.attrs(styles.techPre)}>{detail()}</pre>
 					</details>
 				)}
 			</Show>
@@ -174,16 +173,16 @@ function OccurrenceCard(props: {
 		props.locateFeedback.status !== "idle" &&
 		props.locateFeedback.objectPath === props.occurrence.location.objectPath;
 	return (
-		<article {...stylex.props(styles.occurrence)}>
-			<header {...stylex.props(styles.occurrenceHeader)}>
-				<div {...stylex.props(styles.contextIdentity)}>
-					<small {...stylex.props(styles.contextKind)}>{context.kind}</small>
-					<strong {...stylex.props(styles.contextTitle)}>{context.title}</strong>
-					<span {...stylex.props(styles.contextDetail)}>{context.detail}</span>
+		<article {...stylex.attrs(styles.occurrence)}>
+			<header {...stylex.attrs(styles.occurrenceHeader)}>
+				<div {...stylex.attrs(styles.contextIdentity)}>
+					<small {...stylex.attrs(styles.contextKind)}>{context.kind}</small>
+					<strong {...stylex.attrs(styles.contextTitle)}>{context.title}</strong>
+					<span {...stylex.attrs(styles.contextDetail)}>{context.detail}</span>
 				</div>
-				<span {...stylex.props(styles.occurrenceActions)}>
+				<span {...stylex.attrs(styles.occurrenceActions)}>
 					<span
-						{...stylex.props(
+						{...stylex.attrs(
 							styles.authority,
 							props.occurrence.editCapability === "source_editable"
 								? styles.editable
@@ -199,7 +198,7 @@ function OccurrenceCard(props: {
 						disabled={isCurrentLocate() && props.locateFeedback.status === "locating"}
 						onClick={() => props.onLocate(props.occurrence.location.objectPath)}
 						aria-label={`Open package for ${context.title}`}
-						{...stylex.props(styles.locateButton)}
+						{...stylex.attrs(styles.locateButton)}
 					>
 						{locateLabel(
 							props.locateFeedback,
@@ -219,18 +218,18 @@ function OccurrenceCard(props: {
 				}
 			>
 				{(feedback) => (
-					<p role="status" {...stylex.props(styles.locateMessage)}>
+					<p role="status" {...stylex.attrs(styles.locateMessage)}>
 						<strong>Couldn’t open the package.</strong> {feedback().message}{" "}
 						{feedback().recovery}
 					</p>
 				)}
 			</Show>
-			<details {...stylex.props(styles.sourceDetails)}>
-				<summary {...stylex.props(styles.detailsSummary)}>Technical details</summary>
-				<code {...stylex.props(styles.objectPath)}>
+			<details {...stylex.attrs(styles.sourceDetails)}>
+				<summary {...stylex.attrs(styles.detailsSummary)}>Technical details</summary>
+				<code {...stylex.attrs(styles.objectPath)}>
 					{props.occurrence.location.objectPath}
 				</code>
-				<span {...stylex.props(styles.packageFile)}>{props.occurrence.packageFile}</span>
+				<span {...stylex.attrs(styles.packageFile)}>{props.occurrence.packageFile}</span>
 			</details>
 		</article>
 	);
@@ -366,7 +365,6 @@ export function GameTextRoute(props: {
 				},
 				onSuccess: (result) => {
 					if (generation !== searchGeneration || result.status !== "ready") return;
-					if (state().status !== "ready") return;
 					setPage(result.page);
 					const next =
 						result.page.units.find((unit) => unit.id === selectedId()) ??
@@ -407,6 +405,10 @@ export function GameTextRoute(props: {
 	};
 
 	const load = (refresh: boolean) => {
+		searchGeneration += 1;
+		focusGeneration += 1;
+		searchAction.cancel();
+		focusAction.cancel();
 		if (refresh) {
 			qualityEditor.replace(undefined);
 			setMode("corpus");
@@ -441,19 +443,17 @@ export function GameTextRoute(props: {
 				}),
 			onSuccess: (result) => {
 				if (result.status === "completed") {
-					batch(() => {
-						qualityEditor.replace(result.document);
-						setQualitySummary(result.summary);
-						setQualityDocument(result.document);
-					});
+					qualityEditor.replace(result.document);
+					setQualitySummary(result.summary);
+					setQualityDocument(result.document);
 					setMode("quality");
 				} else if (result.status === "failed") setQualityFailure(result.error);
 			}
 		});
 	};
 
-	onCleanup(() =>
-		props.onPreferencesChange?.({
+	createEffect(
+		() => ({
 			mode: mode(),
 			qualityDocument: qualityDocument(),
 			qualityEditor: qualityEditor.state(),
@@ -462,7 +462,10 @@ export function GameTextRoute(props: {
 			capability: capability(),
 			lens: lens(),
 			selectedId: selectedId()
-		})
+		}),
+		(value) => {
+			props.onPreferencesChange?.(value);
+		}
 	);
 	const restoreInvestigation = (preset: GameTextInvestigationPreset) => {
 		qualityEditor.replace(undefined);
@@ -477,25 +480,25 @@ export function GameTextRoute(props: {
 		load(false);
 	};
 	const refresh = () => load(true);
-	onMount(() => load(false));
+	onSettled(() => load(false));
 
 	return (
-		<main {...stylex.props(styles.page)}>
+		<main {...stylex.attrs(styles.page)}>
 			<TaskProgressModal
 				open={state().status === "loading"}
 				progress={progress()}
 				title="Loading saved game text"
 				detail="Workbench is decoding the packages selected by the project index and preserving every text identity and occurrence."
 			/>
-			<header {...stylex.props(styles.header)}>
-				<div {...stylex.props(styles.headerLead)}>
-					<h1 {...stylex.props(styles.title)}>Game text</h1>
-					<p {...stylex.props(styles.subtitle)}>
+			<header {...stylex.attrs(styles.header)}>
+				<div {...stylex.attrs(styles.headerLead)}>
+					<h1 {...stylex.attrs(styles.title)}>Game text</h1>
+					<p {...stylex.attrs(styles.subtitle)}>
 						Find player-facing text and jump straight back to its package and property.
 					</p>
 				</div>
-				<span {...stylex.props(styles.headerActions)}>
-					<button type="button" onClick={refresh} {...stylex.props(styles.button)}>
+				<span {...stylex.attrs(styles.headerActions)}>
+					<button type="button" onClick={refresh} {...stylex.attrs(styles.button)}>
 						Rescan
 					</button>
 				</span>
@@ -519,32 +522,32 @@ export function GameTextRoute(props: {
 			</Show>
 			<Switch>
 				<Match when={state().status === "loading"}>
-					<p role="status" {...stylex.props(styles.loadingLine)}>
+					<p role="status" {...stylex.attrs(styles.loadingLine)}>
 						Loading saved game text…
 					</p>
 				</Match>
 				<Match when={state().status === "not_configured"}>
-					<section {...stylex.props(styles.noticeCard)}>
-						<strong {...stylex.props(styles.noticeTitle)}>
+					<section {...stylex.attrs(styles.noticeCard)}>
+						<strong {...stylex.attrs(styles.noticeTitle)}>
 							No project is configured.
 						</strong>
-						<p {...stylex.props(styles.noticeCopy)}>
+						<p {...stylex.attrs(styles.noticeCopy)}>
 							Choose an Unreal project in the Workbench header, then rescan.
 						</p>
-						<button type="button" onClick={refresh} {...stylex.props(styles.button)}>
+						<button type="button" onClick={refresh} {...stylex.attrs(styles.button)}>
 							Retry
 						</button>
 					</section>
 				</Match>
 				<Match when={state().status === "cancelled"}>
-					<section {...stylex.props(styles.noticeCard)}>
-						<strong {...stylex.props(styles.noticeTitle)}>
+					<section {...stylex.attrs(styles.noticeCard)}>
+						<strong {...stylex.attrs(styles.noticeTitle)}>
 							Project selection was cancelled.
 						</strong>
-						<p {...stylex.props(styles.noticeCopy)}>
+						<p {...stylex.attrs(styles.noticeCopy)}>
 							Pick a project to load its saved game text.
 						</p>
-						<button type="button" onClick={refresh} {...stylex.props(styles.button)}>
+						<button type="button" onClick={refresh} {...stylex.attrs(styles.button)}>
 							Retry
 						</button>
 					</section>
@@ -568,14 +571,14 @@ export function GameTextRoute(props: {
 								<div
 									role="tablist"
 									aria-label="Game Text view"
-									{...stylex.props(styles.modeTabs)}
+									{...stylex.attrs(styles.modeTabs)}
 								>
 									<button
 										type="button"
 										role="tab"
-										aria-selected={mode() === "corpus"}
+										aria-selected={mode() === "corpus" ? "true" : "false"}
 										onClick={() => setMode("corpus")}
-										{...stylex.props(
+										{...stylex.attrs(
 											styles.modeTab,
 											mode() === "corpus" && styles.modeTabActive
 										)}
@@ -585,9 +588,9 @@ export function GameTextRoute(props: {
 									<button
 										type="button"
 										role="tab"
-										aria-selected={mode() === "quality"}
+										aria-selected={mode() === "quality" ? "true" : "false"}
 										onClick={() => setMode("quality")}
-										{...stylex.props(
+										{...stylex.attrs(
 											styles.modeTab,
 											mode() === "quality" && styles.modeTabActive
 										)}
@@ -595,7 +598,7 @@ export function GameTextRoute(props: {
 										Quality
 										<Show when={qualitySummary()}>
 											{(quality) => (
-												<b {...stylex.props(styles.tabCount)}>
+												<b {...stylex.attrs(styles.tabCount)}>
 													{quality().findingCount}
 												</b>
 											)}
@@ -649,19 +652,19 @@ export function GameTextRoute(props: {
 										fallback={
 											<section
 												aria-label="Quality rules setup"
-												{...stylex.props(styles.qualitySetup)}
+												{...stylex.attrs(styles.qualitySetup)}
 											>
-												<h2 {...stylex.props(styles.qualitySetupTitle)}>
+												<h2 {...stylex.attrs(styles.qualitySetupTitle)}>
 													Quality
 												</h2>
-												<p {...stylex.props(styles.qualitySetupCopy)}>
+												<p {...stylex.attrs(styles.qualitySetupCopy)}>
 													Load a rule file to check character limits and
 													terminology across the saved text.
 												</p>
 												<button
 													type="button"
 													onClick={loadQualityRules}
-													{...stylex.props(styles.qualityButton)}
+													{...stylex.attrs(styles.qualityButton)}
 												>
 													Load rules
 												</button>
@@ -740,14 +743,14 @@ function TextCorpusWorkspace(props: {
 
 	const coverage = props.summary.coverage;
 	return (
-		<div {...stylex.props(styles.workspace)}>
+		<div {...stylex.attrs(styles.workspace)}>
 			<form
 				aria-label="Search game text"
 				onSubmit={(event) => {
 					event.preventDefault();
 					props.onQuery(props.query());
 				}}
-				{...stylex.props(styles.queryBar)}
+				{...stylex.attrs(styles.queryBar)}
 			>
 				<input
 					autofocus
@@ -756,20 +759,22 @@ function TextCorpusWorkspace(props: {
 					onInput={(event) => props.onQuery(event.currentTarget.value)}
 					placeholder="Search source text…"
 					aria-label="Search game text"
-					{...stylex.props(styles.searchInput)}
+					{...stylex.attrs(styles.searchInput)}
 				/>
 				<div
 					aria-label="Filter by source support"
 					role="group"
-					{...stylex.props(styles.filters)}
+					{...stylex.attrs(styles.filters)}
 				>
 					<For each={filters}>
 						{(filter) => (
 							<button
 								type="button"
-								aria-pressed={props.capability() === filter.value}
+								aria-pressed={
+									props.capability() === filter.value ? "true" : "false"
+								}
 								onClick={() => props.onCapability(filter.value)}
-								{...stylex.props(
+								{...stylex.attrs(
 									styles.filterButton,
 									props.capability() === filter.value && styles.filterActive
 								)}
@@ -788,24 +793,24 @@ function TextCorpusWorkspace(props: {
 						);
 						if (chosen !== undefined) props.onLens(chosen.value);
 					}}
-					{...stylex.props(styles.lensSelect)}
+					{...stylex.attrs(styles.lensSelect)}
 				>
 					<For each={reviewLenses}>
 						{(item) => <option value={item.value}>{item.label}</option>}
 					</For>
 				</select>
-				<button type="submit" {...stylex.props(styles.button)}>
+				<button type="submit" {...stylex.attrs(styles.button)}>
 					Search
 				</button>
 			</form>
-			<p {...stylex.props(styles.statsLine)}>
+			<p {...stylex.attrs(styles.statsLine)}>
 				<span>{coverage.textUnits.toLocaleString()} identities</span>
 				<span>{coverage.textOccurrences.toLocaleString()} occurrences</span>
 				<span>
 					{coverage.inspectedPackages}/{coverage.discoveredPackages} packages read
 				</span>
 				<span
-					{...stylex.props(
+					{...stylex.attrs(
 						styles.statsState,
 						props.summary.status === "complete" ? styles.complete : styles.partial
 					)}
@@ -813,21 +818,21 @@ function TextCorpusWorkspace(props: {
 					{props.summary.status === "complete" ? "Complete" : "Partial"}
 				</span>
 				<Show when={coverage.unsupportedTextProperties > 0}>
-					<span {...stylex.props(styles.statsWarning)}>
+					<span {...stylex.attrs(styles.statsWarning)}>
 						{coverage.unsupportedTextProperties} properties not decoded
 					</span>
 				</Show>
 			</p>
-			<div {...stylex.props(styles.grid)}>
-				<section aria-label="Results" {...stylex.props(styles.results)}>
-					<header {...stylex.props(styles.resultsHeader)}>
-						<span {...stylex.props(styles.resultsTitle)}>Results</span>
-						<b {...stylex.props(styles.headerCount)}>{props.page().total}</b>
+			<div {...stylex.attrs(styles.grid)}>
+				<section aria-label="Results" {...stylex.attrs(styles.results)}>
+					<header {...stylex.attrs(styles.resultsHeader)}>
+						<span {...stylex.attrs(styles.resultsTitle)}>Results</span>
+						<b {...stylex.attrs(styles.headerCount)}>{props.page().total}</b>
 					</header>
 					<Show
 						when={props.page().units.length > 0}
 						fallback={
-							<p {...stylex.props(styles.noMatches)}>
+							<p {...stylex.attrs(styles.noMatches)}>
 								No matches. Widen the search or clear filters.
 							</p>
 						}
@@ -860,19 +865,19 @@ function TextCorpusWorkspace(props: {
 											props.selectedId() === unit.id ? "true" : undefined
 										}
 										onClick={() => props.onSelect(unit.id)}
-										{...stylex.props(
+										{...stylex.attrs(
 											styles.resultRow,
 											props.selectedId() === unit.id && styles.resultActive
 										)}
 									>
-										<div {...stylex.props(styles.resultLead)}>
+										<div {...stylex.attrs(styles.resultLead)}>
 											<strong
 												title={text}
-												{...stylex.props(styles.resultText)}
+												{...stylex.attrs(styles.resultText)}
 											>
 												{text}
 											</strong>
-											<span {...stylex.props(styles.rowCounts)}>
+											<span {...stylex.attrs(styles.rowCounts)}>
 												{unit.wordCount} words · {unit.characterCount}{" "}
 												characters · {unit.occurrenceCount}{" "}
 												{unit.occurrenceCount === 1 ? "use" : "uses"}
@@ -884,7 +889,7 @@ function TextCorpusWorkspace(props: {
 													? `${context.title} — ${context.detail}`
 													: "Context unavailable"
 											}
-											{...stylex.props(styles.resultContext)}
+											{...stylex.attrs(styles.resultContext)}
 										>
 											<strong>
 												{context?.title ?? "No authored context found"}
@@ -899,17 +904,17 @@ function TextCorpusWorkspace(props: {
 													: ""}
 											</small>
 										</span>
-										<div {...stylex.props(styles.resultMeta)}>
+										<div {...stylex.attrs(styles.resultMeta)}>
 											<code
 												title={identity}
-												{...stylex.props(styles.resultIdentity)}
+												{...stylex.attrs(styles.resultIdentity)}
 											>
 												{identity}
 											</code>
-											<span {...stylex.props(styles.resultSource)}>
+											<span {...stylex.attrs(styles.resultSource)}>
 												{sourceKind(unit)}
 												<small
-													{...stylex.props(
+													{...stylex.attrs(
 														styles.sourceAuthority,
 														preview.context?.editCapability ===
 															"source_editable"
@@ -925,17 +930,17 @@ function TextCorpusWorkspace(props: {
 											</span>
 										</div>
 										<Show when={unit.reviewSignals.length > 0}>
-											<div {...stylex.props(styles.signalRow)}>
+											<div {...stylex.attrs(styles.signalRow)}>
 												<For each={unit.reviewSignals}>
 													{(signal) => (
-														<span {...stylex.props(styles.signal)}>
+														<span {...stylex.attrs(styles.signal)}>
 															{signalLabel(signal)}
 														</span>
 													)}
 												</For>
 											</div>
 										</Show>
-										<span {...stylex.props(styles.rowActions)}>
+										<span {...stylex.attrs(styles.rowActions)}>
 											<button
 												type="button"
 												onClick={(event) => {
@@ -953,7 +958,7 @@ function TextCorpusWorkspace(props: {
 														? `Open package for ${text}`
 														: `Show ${unit.occurrenceCount} uses of ${text}`
 												}
-												{...stylex.props(styles.rowAction)}
+												{...stylex.attrs(styles.rowAction)}
 											>
 												{rowLocatePath
 													? locateLabel(
@@ -970,7 +975,7 @@ function TextCorpusWorkspace(props: {
 													copyValue(textCopyTarget, text);
 												}}
 												aria-label={`Copy source text ${text}`}
-												{...stylex.props(
+												{...stylex.attrs(
 													styles.rowAction,
 													copyStatus(textCopyTarget) === "copied" &&
 														styles.rowActionSuccess,
@@ -987,7 +992,7 @@ function TextCorpusWorkspace(props: {
 													copyValue(identityCopyTarget, identity);
 												}}
 												aria-label={`Copy Unreal identity ${identity}`}
-												{...stylex.props(
+												{...stylex.attrs(
 													styles.rowAction,
 													copyStatus(identityCopyTarget) === "copied" &&
 														styles.rowActionSuccess,
@@ -1008,13 +1013,13 @@ function TextCorpusWorkspace(props: {
 							<button
 								type="button"
 								onClick={() => props.onNextPage(cursor())}
-								{...stylex.props(styles.nextPage)}
+								{...stylex.attrs(styles.nextPage)}
 							>
 								Next page
 							</button>
 						)}
 					</Show>
-					<footer {...stylex.props(styles.resultsFooter)}>
+					<footer {...stylex.attrs(styles.resultsFooter)}>
 						<span>
 							Showing {props.page().units.length} of {props.page().total} matches
 						</span>
@@ -1037,11 +1042,11 @@ function FocusPanel(props: {
 	readonly onLocate: (objectPath: string) => void;
 }) {
 	return (
-		<aside aria-label="Text focus" {...stylex.props(styles.focus)}>
+		<aside aria-label="Text focus" {...stylex.attrs(styles.focus)}>
 			<Show
 				when={props.focus}
 				fallback={
-					<p {...stylex.props(styles.focusEmpty)}>
+					<p {...stylex.attrs(styles.focusEmpty)}>
 						Select a result to see its identity, authored context, and every place it
 						appears.
 					</p>
@@ -1049,11 +1054,11 @@ function FocusPanel(props: {
 			>
 				{(result) => (
 					<>
-						<header {...stylex.props(styles.focusHeader)}>
-							<blockquote {...stylex.props(styles.focusQuote)}>
+						<header {...stylex.attrs(styles.focusHeader)}>
+							<blockquote {...stylex.attrs(styles.focusQuote)}>
 								“{sourceText(result().unit)}”
 							</blockquote>
-							<div {...stylex.props(styles.focusMeta)}>
+							<div {...stylex.attrs(styles.focusMeta)}>
 								<span>{result().unit.wordCount} words</span>
 								<span>{result().unit.characterCount} characters</span>
 								<span>
@@ -1061,19 +1066,19 @@ function FocusPanel(props: {
 									{result().totalOccurrences === 1 ? "use" : "uses"}
 								</span>
 							</div>
-							<div {...stylex.props(styles.focusIdentity)}>
-								<small {...stylex.props(styles.focusIdentityLabel)}>
+							<div {...stylex.attrs(styles.focusIdentity)}>
+								<small {...stylex.attrs(styles.focusIdentityLabel)}>
 									Unreal identity
 								</small>
-								<code {...stylex.props(styles.focusIdentityValue)}>
+								<code {...stylex.attrs(styles.focusIdentityValue)}>
 									{identityLabel(result().unit)}
 								</code>
 							</div>
 							<Show when={result().unit.reviewSignals.length > 0}>
-								<div {...stylex.props(styles.focusSignals)}>
+								<div {...stylex.attrs(styles.focusSignals)}>
 									<For each={result().unit.reviewSignals}>
 										{(signal) => (
-											<span {...stylex.props(styles.signal)}>
+											<span {...stylex.attrs(styles.signal)}>
 												{signalLabel(signal)}
 											</span>
 										)}
@@ -1081,10 +1086,10 @@ function FocusPanel(props: {
 								</div>
 							</Show>
 						</header>
-						<section aria-label="Occurrences" {...stylex.props(styles.occurrences)}>
-							<header {...stylex.props(styles.sectionHeader)}>
+						<section aria-label="Occurrences" {...stylex.attrs(styles.occurrences)}>
+							<header {...stylex.attrs(styles.sectionHeader)}>
 								<span>Where it appears</span>
-								<b {...stylex.props(styles.headerCount)}>
+								<b {...stylex.attrs(styles.headerCount)}>
 									{result().totalOccurrences}
 								</b>
 							</header>
@@ -1101,22 +1106,22 @@ function FocusPanel(props: {
 						<Show when={result().diagnostics.length > 0}>
 							<section
 								aria-label="Coverage notes"
-								{...stylex.props(styles.diagnostics)}
+								{...stylex.attrs(styles.diagnostics)}
 							>
-								<header {...stylex.props(styles.sectionHeader)}>
+								<header {...stylex.attrs(styles.sectionHeader)}>
 									<span>Coverage notes</span>
 									<b>{result().diagnostics.length}</b>
 								</header>
 								<For each={result().diagnostics}>
 									{(diagnostic) => (
-										<article {...stylex.props(styles.diagnostic)}>
-											<strong {...stylex.props(styles.diagnosticTitle)}>
+										<article {...stylex.attrs(styles.diagnostic)}>
+											<strong {...stylex.attrs(styles.diagnosticTitle)}>
 												{diagnostic.code.replaceAll("_", " ")}
 											</strong>
-											<p {...stylex.props(styles.diagnosticMessage)}>
+											<p {...stylex.attrs(styles.diagnosticMessage)}>
 												{diagnostic.message}
 											</p>
-											<code {...stylex.props(styles.diagnosticPackage)}>
+											<code {...stylex.attrs(styles.diagnosticPackage)}>
 												{diagnostic.packageFile}
 											</code>
 										</article>

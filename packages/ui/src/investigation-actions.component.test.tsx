@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, waitFor } from "@solidjs/testing-library";
 import { Effect, Layer, ManagedRuntime } from "effect";
-import { createSignal } from "solid-js";
+import { createSignal, flush } from "solid-js";
 import { afterEach, expect, it, vi } from "vitest";
 import { EffectRuntimeProvider } from "./effect-solid.js";
 import { InvestigationActions } from "./investigation-actions.js";
@@ -54,6 +54,7 @@ it("restores presets, reports file failures and cancellation, and hides stale re
 			expect(view.getByRole("button", { name: "Copy CLI replay" })).toBeDefined()
 		);
 		setQuery("changed");
+		flush();
 		expect(view.queryByRole("button", { name: "Copy CLI replay" })).toBeNull();
 		fireEvent.click(view.getByRole("button", { name: "Open preset" }));
 		await waitFor(() => expect(opened).toHaveBeenCalledWith("restored"));

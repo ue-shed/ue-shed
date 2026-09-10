@@ -1,7 +1,7 @@
 import * as stylex from "@stylexjs/stylex";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { Effect } from "effect";
-import { For, Show, on, createEffect, createMemo, createSignal } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal } from "solid-js";
 import type { ActorExplorerFilters, ActorExplorerItem } from "./actor-explorer-core.js";
 import { Button } from "./button.js";
 import { createEffectAction } from "./effect-solid.js";
@@ -31,13 +31,11 @@ export function ActorExplorerUtilities(props: {
 	const [pending, setPending] = createSignal(false);
 	const details = createMemo(() => (props.selected ? actorCopyDetails(props.selected) : []));
 	createEffect(
-		on(
-			() => props.selected?.key,
-			() => {
-				copyAction.cancel();
-				setCopyValue("");
-			}
-		)
+		() => props.selected?.key,
+		() => {
+			copyAction.cancel();
+			setCopyValue("");
+		}
 	);
 	const exists = () => presets().some((preset) => preset.name === name().trim());
 	function load() {
@@ -72,18 +70,18 @@ export function ActorExplorerUtilities(props: {
 		);
 	}
 	return (
-		<div {...stylex.props(styles.tools)}>
+		<div {...stylex.attrs(styles.tools)}>
 			<Show when={props.presetsEnabled}>
 				<details
-					{...stylex.props(styles.presetMenu)}
+					{...stylex.attrs(styles.presetMenu)}
 					onToggle={(event) => {
 						if (event.currentTarget.open && !pending()) load();
 					}}
 				>
 					<summary>Filter presets</summary>
-					<div {...stylex.props(styles.controls, styles.presetPanel)}>
+					<div {...stylex.attrs(styles.controls, styles.presetPanel)}>
 						<select
-							{...stylex.props(styles.input)}
+							{...stylex.attrs(styles.input)}
 							aria-label="Saved actor filter preset"
 							disabled={props.disabled || pending()}
 							value=""
@@ -118,10 +116,10 @@ export function ActorExplorerUtilities(props: {
 							</For>
 						</select>
 						<input
-							{...stylex.props(styles.input)}
+							{...stylex.attrs(styles.input)}
 							aria-label="Actor filter preset name"
 							placeholder="Preset name"
-							maxLength={80}
+							maxlength={80}
 							value={name()}
 							disabled={props.disabled || pending()}
 							onInput={(event) => setName(event.currentTarget.value)}
@@ -145,7 +143,7 @@ export function ActorExplorerUtilities(props: {
 				</details>
 			</Show>
 			<Show when={details().length > 0}>
-				<div {...stylex.props(styles.controls)} aria-label="Selected actor details">
+				<div {...stylex.attrs(styles.controls)} aria-label="Selected actor details">
 					<span>{props.selected?.label}</span>
 					<For each={details()}>
 						{(detail) => (
@@ -175,9 +173,9 @@ export function ActorExplorerUtilities(props: {
 			</Show>
 			<Show when={copyValue()}>
 				<input
-					{...stylex.props(styles.input)}
+					{...stylex.attrs(styles.input)}
 					aria-label="Actor detail to copy"
-					readOnly
+					readonly
 					value={copyValue()}
 					onFocus={(event) => event.currentTarget.select()}
 				/>

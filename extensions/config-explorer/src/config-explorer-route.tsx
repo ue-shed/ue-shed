@@ -56,18 +56,18 @@ function EvidencePanel(props: { readonly result: ConfigExplanation; readonly com
 		props.result.contributions.filter(({ remainsEffective }) => remainsEffective).length;
 
 	return (
-		<article {...stylex.props(styles.panel)}>
+		<article {...stylex.attrs(styles.panel)}>
 			<header
-				{...stylex.props(styles.panelHeader, props.compact && styles.panelHeaderCompact)}
+				{...stylex.attrs(styles.panelHeader, props.compact && styles.panelHeaderCompact)}
 			>
-				<div {...stylex.props(styles.platformIdentity)}>
-					<h2 {...stylex.props(styles.platform)}>{props.result.platform}</h2>
-					<span {...stylex.props(styles.coordinate)}>
+				<div {...stylex.attrs(styles.platformIdentity)}>
+					<h2 {...stylex.attrs(styles.platform)}>{props.result.platform}</h2>
+					<span {...stylex.attrs(styles.coordinate)}>
 						{props.result.family}.ini · [{props.result.section}] · {props.result.key}
 					</span>
 				</div>
 				<span
-					{...stylex.props(
+					{...stylex.attrs(
 						styles.coverage,
 						props.result.status === "partial" && styles.coveragePartial
 					)}
@@ -78,31 +78,31 @@ function EvidencePanel(props: { readonly result: ConfigExplanation; readonly com
 
 			<section
 				aria-label={`${props.result.platform} effective saved value`}
-				{...stylex.props(styles.valuePlate, props.compact && styles.valuePlateCompact)}
+				{...stylex.attrs(styles.valuePlate, props.compact && styles.valuePlateCompact)}
 			>
-				<span {...stylex.props(styles.valueLabel)}>Final saved value</span>
-				<code {...stylex.props(styles.value)}>
+				<span {...stylex.attrs(styles.valueLabel)}>Final saved value</span>
+				<code {...stylex.attrs(styles.value)}>
 					{valueText(props.result.effectiveValue)}
 				</code>
 			</section>
 
-			<div {...stylex.props(styles.stats)}>
-				<span {...stylex.props(styles.stat)}>
-					<strong {...stylex.props(styles.statNumber)}>{effectiveCount()}</strong>{" "}
+			<div {...stylex.attrs(styles.stats)}>
+				<span {...stylex.attrs(styles.stat)}>
+					<strong {...stylex.attrs(styles.statNumber)}>{effectiveCount()}</strong>{" "}
 					affecting final
 				</span>
-				<span {...stylex.props(styles.stat)}>
-					<strong {...stylex.props(styles.statNumber)}>
+				<span {...stylex.attrs(styles.stat)}>
+					<strong {...stylex.attrs(styles.statNumber)}>
 						{props.result.contributions.length}
 					</strong>{" "}
 					operations traced
 				</span>
-				<span {...stylex.props(styles.stat)}>
-					<strong {...stylex.props(styles.statNumber)}>{readCount()}</strong> layers read
+				<span {...stylex.attrs(styles.stat)}>
+					<strong {...stylex.attrs(styles.statNumber)}>{readCount()}</strong> layers read
 				</span>
 				<Show when={exceptionalLayers().length > 0}>
-					<span {...stylex.props(styles.stat)}>
-						<strong {...stylex.props(styles.statNumber, styles.statNumberIssue)}>
+					<span {...stylex.attrs(styles.stat)}>
+						<strong {...stylex.attrs(styles.statNumber, styles.statNumberIssue)}>
 							{exceptionalLayers().length}
 						</strong>{" "}
 						coverage issues
@@ -113,64 +113,64 @@ function EvidencePanel(props: { readonly result: ConfigExplanation; readonly com
 			<Show when={exceptionalLayers().length > 0}>
 				<section
 					aria-label={`${props.result.platform} coverage exceptions`}
-					{...stylex.props(styles.exceptions)}
+					{...stylex.attrs(styles.exceptions)}
 				>
-					<header {...stylex.props(styles.exceptionsHeader)}>
-						<h3 {...stylex.props(styles.sectionTitle)}>Exceptions</h3>
-						<span {...stylex.props(styles.countChip)}>
+					<header {...stylex.attrs(styles.exceptionsHeader)}>
+						<h3 {...stylex.attrs(styles.sectionTitle)}>Exceptions</h3>
+						<span {...stylex.attrs(styles.countChip)}>
 							{exceptionalLayers().length}
 						</span>
 					</header>
 					<For each={exceptionalLayers()}>
 						{(layer) => (
-							<div {...stylex.props(styles.exceptionRow)}>
-								<span {...stylex.props(styles.exceptionStatus)}>
+							<div {...stylex.attrs(styles.exceptionRow)}>
+								<span {...stylex.attrs(styles.exceptionStatus)}>
 									{layer.status}
 								</span>
-								<code {...stylex.props(styles.monoPath)}>{layer.source.path}</code>
+								<code {...stylex.attrs(styles.monoPath)}>{layer.source.path}</code>
 							</div>
 						)}
 					</For>
 				</section>
 			</Show>
 
-			<section {...stylex.props(styles.trace)}>
-				<header {...stylex.props(styles.traceHeader)}>
-					<h3 {...stylex.props(styles.sectionTitle)}>Source operations, in load order</h3>
-					<span {...stylex.props(styles.traceLegend)}>
+			<section {...stylex.attrs(styles.trace)}>
+				<header {...stylex.attrs(styles.traceHeader)}>
+					<h3 {...stylex.attrs(styles.sectionTitle)}>Source operations, in load order</h3>
+					<span {...stylex.attrs(styles.traceLegend)}>
 						Highlighted rows survive into the final value
 					</span>
 				</header>
 				<ol
 					aria-label={`${props.result.platform} ordered contributions`}
-					{...stylex.props(styles.timeline)}
+					{...stylex.attrs(styles.timeline)}
 				>
 					<For each={props.result.contributions}>
 						{(contribution, index) => (
-							<li {...stylex.props(styles.contribution)}>
-								<div aria-hidden="true" {...stylex.props(styles.timelineRail)}>
-									<span {...stylex.props(styles.sequence)}>
+							<li {...stylex.attrs(styles.contribution)}>
+								<div aria-hidden="true" {...stylex.attrs(styles.timelineRail)}>
+									<span {...stylex.attrs(styles.sequence)}>
 										{String(contribution.sequence + 1).padStart(2, "0")}
 									</span>
 									<Show when={index() < props.result.contributions.length - 1}>
-										<span {...stylex.props(styles.timelineConnector)} />
+										<span {...stylex.attrs(styles.timelineConnector)} />
 									</Show>
 								</div>
 								<div
-									{...stylex.props(
+									{...stylex.attrs(
 										styles.contributionBody,
 										contribution.remainsEffective &&
 											styles.contributionBodyEffective
 									)}
 								>
-									<div {...stylex.props(styles.contributionHead)}>
-										<code {...stylex.props(styles.sourcePath)}>
+									<div {...stylex.attrs(styles.contributionHead)}>
+										<code {...stylex.attrs(styles.sourcePath)}>
 											{contribution.source.path}
 										</code>
-										<span {...stylex.props(styles.sourceLine)}>
+										<span {...stylex.attrs(styles.sourceLine)}>
 											L{contribution.location.line}
 										</span>
-										<span {...stylex.props(styles.operation)}>
+										<span {...stylex.attrs(styles.operation)}>
 											{operationText(contribution.operation)}
 										</span>
 										<span
@@ -179,7 +179,7 @@ function EvidencePanel(props: { readonly result: ConfigExplanation; readonly com
 													? "effect survives"
 													: "effect superseded"
 											}
-											{...stylex.props(
+											{...stylex.attrs(
 												styles.survival,
 												contribution.remainsEffective &&
 													styles.survivalActive
@@ -190,11 +190,11 @@ function EvidencePanel(props: { readonly result: ConfigExplanation; readonly com
 												: "Superseded"}
 										</span>
 									</div>
-									<div {...stylex.props(styles.contributionDetail)}>
-										<code {...stylex.props(styles.inputValue)}>
+									<div {...stylex.attrs(styles.contributionDetail)}>
+										<code {...stylex.attrs(styles.inputValue)}>
 											{contribution.inputValue ?? "∅"}
 										</code>
-										<span {...stylex.props(styles.effectNote)}>
+										<span {...stylex.attrs(styles.effectNote)}>
 											{effectText(contribution)}
 										</span>
 									</div>
@@ -205,20 +205,20 @@ function EvidencePanel(props: { readonly result: ConfigExplanation; readonly com
 				</ol>
 			</section>
 
-			<div {...stylex.props(styles.disclosures)}>
-				<details {...stylex.props(styles.ledger)}>
-					<summary {...stylex.props(styles.ledgerSummary)}>
+			<div {...stylex.attrs(styles.disclosures)}>
+				<details {...stylex.attrs(styles.ledger)}>
+					<summary {...stylex.attrs(styles.ledgerSummary)}>
 						Coverage · {missingCount()} optional layers absent ·{" "}
 						{unresolvedLayers().length} unresolved total
 					</summary>
-					<div {...stylex.props(styles.ledgerBody)}>
+					<div {...stylex.attrs(styles.ledgerBody)}>
 						<For each={unresolvedLayers()}>
 							{(layer) => (
-								<div {...stylex.props(styles.ledgerRow)}>
-									<span {...stylex.props(styles.exceptionStatus)}>
+								<div {...stylex.attrs(styles.ledgerRow)}>
+									<span {...stylex.attrs(styles.exceptionStatus)}>
 										{layer.status}
 									</span>
-									<code {...stylex.props(styles.monoPath)}>
+									<code {...stylex.attrs(styles.monoPath)}>
 										{layer.source.path}
 									</code>
 								</div>
@@ -227,18 +227,18 @@ function EvidencePanel(props: { readonly result: ConfigExplanation; readonly com
 					</div>
 				</details>
 
-				<details {...stylex.props(styles.ledger)}>
-					<summary {...stylex.props(styles.ledgerSummary)}>
+				<details {...stylex.attrs(styles.ledger)}>
+					<summary {...stylex.attrs(styles.ledgerSummary)}>
 						Excluded runtime authorities · {props.result.authorities.length}
 					</summary>
-					<div {...stylex.props(styles.ledgerBody)}>
+					<div {...stylex.attrs(styles.ledgerBody)}>
 						<For each={props.result.authorities}>
 							{(authority) => (
-								<div {...stylex.props(styles.authorityRow)}>
-									<strong {...stylex.props(styles.authorityName)}>
+								<div {...stylex.attrs(styles.authorityRow)}>
+									<strong {...stylex.attrs(styles.authorityName)}>
 										{authority.authority.replaceAll("_", " ")}
 									</strong>
-									<span {...stylex.props(styles.authorityDetail)}>
+									<span {...stylex.attrs(styles.authorityDetail)}>
 										{authority.detail}
 									</span>
 								</div>
@@ -257,15 +257,15 @@ function isComparison(result: ConfigExplorerSuppliedResult): result is ConfigCom
 
 export function ConfigExplorerRoute(props: { readonly result: ConfigExplorerSuppliedResult }) {
 	return (
-		<main {...stylex.props(styles.page)}>
-			<header {...stylex.props(styles.scopeBar)}>
-				<div {...stylex.props(styles.scopeIdentity)}>
-					<strong {...stylex.props(styles.scopeTitle)}>Saved config evidence</strong>
-					<span {...stylex.props(styles.scopeSubtitle)}>
+		<main {...stylex.attrs(styles.page)}>
+			<header {...stylex.attrs(styles.scopeBar)}>
+				<div {...stylex.attrs(styles.scopeIdentity)}>
+					<strong {...stylex.attrs(styles.scopeTitle)}>Saved config evidence</strong>
+					<span {...stylex.attrs(styles.scopeSubtitle)}>
 						Exact source lines; read-only
 					</span>
 				</div>
-				<span {...stylex.props(styles.scopeNote)}>Saved source · no runtime authority</span>
+				<span {...stylex.attrs(styles.scopeNote)}>Saved source · no runtime authority</span>
 			</header>
 
 			<Show
@@ -276,9 +276,9 @@ export function ConfigExplorerRoute(props: { readonly result: ConfigExplorerSupp
 			>
 				{(comparison) => (
 					<>
-						<div role="status" {...stylex.props(styles.compareStrip)}>
+						<div role="status" {...stylex.attrs(styles.compareStrip)}>
 							<span
-								{...stylex.props(
+								{...stylex.attrs(
 									styles.diffChip,
 									comparison().valueChanged
 										? styles.diffChipDiverges
@@ -287,26 +287,26 @@ export function ConfigExplorerRoute(props: { readonly result: ConfigExplorerSupp
 							>
 								{comparison().valueChanged ? "Value diverges" : "Values match"}
 							</span>
-							<div {...stylex.props(styles.comparePair)}>
-								<span {...stylex.props(styles.compareSide)}>
-									<span {...stylex.props(styles.comparePlatform)}>
+							<div {...stylex.attrs(styles.comparePair)}>
+								<span {...stylex.attrs(styles.compareSide)}>
+									<span {...stylex.attrs(styles.comparePlatform)}>
 										{comparison().left.platform}
 									</span>
-									<code {...stylex.props(styles.compareValue)}>
+									<code {...stylex.attrs(styles.compareValue)}>
 										{valueText(comparison().left.effectiveValue)}
 									</code>
 								</span>
-								<span {...stylex.props(styles.compareVersus)}>vs</span>
-								<span {...stylex.props(styles.compareSide)}>
-									<span {...stylex.props(styles.comparePlatform)}>
+								<span {...stylex.attrs(styles.compareVersus)}>vs</span>
+								<span {...stylex.attrs(styles.compareSide)}>
+									<span {...stylex.attrs(styles.comparePlatform)}>
 										{comparison().right.platform}
 									</span>
-									<code {...stylex.props(styles.compareValue)}>
+									<code {...stylex.attrs(styles.compareValue)}>
 										{valueText(comparison().right.effectiveValue)}
 									</code>
 								</span>
 							</div>
-							<span {...stylex.props(styles.coverageComparison)}>
+							<span {...stylex.attrs(styles.coverageComparison)}>
 								{comparison().coverageChanged
 									? "Coverage also differs"
 									: "Coverage aligned"}
@@ -314,7 +314,7 @@ export function ConfigExplorerRoute(props: { readonly result: ConfigExplorerSupp
 						</div>
 						<section
 							aria-label="Platform config comparison"
-							{...stylex.props(styles.columns)}
+							{...stylex.attrs(styles.columns)}
 						>
 							<EvidencePanel result={comparison().left} compact />
 							<EvidencePanel result={comparison().right} compact />

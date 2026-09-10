@@ -1,7 +1,7 @@
 import { COORDINATE_SYSTEM, Deck, OrthographicView, type Color } from "@deck.gl/core";
 import { LineLayer, ScatterplotLayer } from "@deck.gl/layers";
 import * as stylex from "@stylexjs/stylex";
-import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, onCleanup, onSettled, Show } from "solid-js";
 import { PointMapCanvas } from "./point-map.js";
 import {
 	pointMapBoundsOf,
@@ -266,70 +266,77 @@ export function PointMapDeckCanvas(props: PointMapDeckProps) {
 	});
 
 	// Keep viewport stable across data changes; reset when resetKey changes
-	createEffect(() => {
-		void props.resetKey;
-		viewport = undefined;
-		viewLocked = false;
-	});
+	createEffect(
+		() => props.resetKey,
+		() => {
+			viewport = undefined;
+			viewLocked = false;
+		}
+	);
 
-	createEffect(() => {
-		// react to points change
-		void props.points;
-		const bounds = currentBounds();
-		if (lastPointsRef !== props.points) {
-			lastPointsRef = props.points;
-			if (!viewLocked) viewport = stabilize(viewport, bounds);
-			else if (viewport !== undefined) {
-				const fit = currentFitSize();
-				if (viewport.size > fit) viewport = { ...viewport, size: fit };
-			} else viewport = stabilize(undefined, bounds);
+	createEffect(
+		() => ({
+			points: props.points,
+			bounds: currentBounds(),
+			fit: currentFitSize(),
+			dims: dimensions()
+		}),
+		({ points, bounds, fit, dims }) => {
+			if (lastPointsRef !== points) {
+				lastPointsRef = points;
+				if (!viewLocked) viewport = stabilize(viewport, bounds);
+				else if (viewport !== undefined) {
+					if (viewport.size > fit) viewport = { ...viewport, size: fit };
+				} else viewport = stabilize(undefined, bounds);
+				syncDeckView();
+				if (viewport) {
+					const fitSizeState = fit;
+					const { width, height } = dims;
+					props.onViewChange?.({
+						fitSize: fitSizeState,
+						viewport,
+						worldHeight: viewport.size / pointMapCanvasAspect(width, height),
+						zoomFactor: fitSizeState / Math.max(viewport.size, 1)
+					});
+				}
+			}
+		}
+	);
+
+	createEffect(
+		() => ({ d: deck(), currentLayers: layers() }),
+		({ d, currentLayers }) => {
+			if (d === undefined) return;
+			// SAFETY: deck.gl layers are invariant; our Scatterplot/LineLayer array is the expected layer union.
+			d.setProps({ layers: currentLayers as never[] });
+		}
+	);
+
+	createEffect(
+		() => ({ dims: dimensions(), bounds: currentBounds(), fitSizeState: currentFitSize() }),
+		({ dims, bounds, fitSizeState }) => {
+			if (viewport === undefined) return;
+			if (!viewLocked) {
+				const next = stabilize(viewport, bounds);
+				if (
+					next.centerX !== viewport.centerX ||
+					next.centerY !== viewport.centerY ||
+					next.size !== viewport.size
+				) {
+					viewport = next;
+					props.onViewChange?.({
+						fitSize: fitSizeState,
+						viewport: next,
+						worldHeight: next.size / pointMapCanvasAspect(dims.width, dims.height),
+						zoomFactor: fitSizeState / Math.max(next.size, 1)
+					});
+				}
+			}
 			syncDeckView();
-			if (viewport) {
-				const fitSizeState = currentFitSize();
-				const { width, height } = dimensions();
-				props.onViewChange?.({
-					fitSize: fitSizeState,
-					viewport,
-					worldHeight: viewport.size / pointMapCanvasAspect(width, height),
-					zoomFactor: fitSizeState / Math.max(viewport.size, 1)
-				});
-			}
 		}
-	});
+	);
 
-	createEffect(() => {
-		const d = deck();
-		if (d === undefined) return;
-		// SAFETY: deck.gl layers are invariant; our Scatterplot/LineLayer array is the expected layer union.
-		d.setProps({ layers: layers() as never[] });
-	});
-
-	createEffect(() => {
-		const dims = dimensions();
-		void dims.width;
-		void dims.height;
-		if (viewport === undefined) return;
-		if (!viewLocked) {
-			const next = stabilize(viewport, currentBounds());
-			if (
-				next.centerX !== viewport.centerX ||
-				next.centerY !== viewport.centerY ||
-				next.size !== viewport.size
-			) {
-				viewport = next;
-				const fitSizeState = currentFitSize();
-				props.onViewChange?.({
-					fitSize: fitSizeState,
-					viewport: next,
-					worldHeight: next.size / pointMapCanvasAspect(dims.width, dims.height),
-					zoomFactor: fitSizeState / Math.max(next.size, 1)
-				});
-			}
-		}
-		syncDeckView();
-	});
-
-	onMount(() => {
+	onSettled(() => {
 		if (canvasElement === undefined) return;
 		const rect = canvasElement.getBoundingClientRect();
 		const dims = { height: Math.max(1, rect.height), width: Math.max(1, rect.width) };
@@ -472,10 +479,13 @@ export function PointMapDeckCanvas(props: PointMapDeckProps) {
 		}
 	};
 
-	createEffect(() => {
-		props.onController?.(controller);
-		onCleanup(() => props.onController?.(undefined));
-	});
+	createEffect(
+		() => props.onController,
+		(onController) => {
+			onController?.(controller);
+			return () => onController?.(undefined);
+		}
+	);
 
 	const handleWheel = (event: WheelEvent & { readonly currentTarget: HTMLCanvasElement }) => {
 		// Manual wheel zoom ensures scroll works even if Deck controller is misconfigured; mirrors PointMapCanvas.
@@ -519,11 +529,11 @@ export function PointMapDeckCanvas(props: PointMapDeckProps) {
 			<Show
 				when={rendererError() === undefined}
 				fallback={
-					<div {...stylex.props(fallbackStyles.fallbackFill)}>
+					<div {...stylex.attrs(fallbackStyles.fallbackFill)}>
 						<PointMapCanvas
 							ariaDescribedBy={props.ariaDescribedBy}
 							ariaLabel={props.ariaLabel}
-							class={stylex.props(fallbackStyles.fallbackCanvas).className}
+							class={stylex.attrs(fallbackStyles.fallbackCanvas).class}
 							connections={props.connections}
 							// SAFETY: Deck and Canvas controllers are structurally compatible (focusKey/resetView/setZoomFactor).
 							onController={props.onController as never}
@@ -545,7 +555,7 @@ export function PointMapDeckCanvas(props: PointMapDeckProps) {
 					aria-label={props.ariaLabel}
 					role="application"
 					style={{ display: "block", height: "100%", width: "100%" }}
-					tabIndex={0}
+					tabindex={0}
 					title={
 						props.title ?? "Scroll to zoom, drag to pan, click a point to inspect it"
 					}

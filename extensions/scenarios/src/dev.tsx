@@ -3,7 +3,7 @@ import { EffectRuntimeProvider } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { workbenchDarkTheme } from "@ue-shed/ui-theme/themes.stylex.js";
 import { Layer, ManagedRuntime } from "effect";
-import { render } from "solid-js/web";
+import { render } from "@solidjs/web";
 import { ScenarioStudioRoute } from "./scenario-studio-route.js";
 import "./reset.css";
 
@@ -15,12 +15,12 @@ const mountPreview = () =>
 	render(
 		() => (
 			<EffectRuntimeProvider runtime={runtime}>
-				<div {...stylex.props(workbenchDarkTheme, styles.shell)}>
-					<nav aria-label="Preview host" {...stylex.props(styles.nav)}>
-						<span {...stylex.props(styles.brandMark)}>UE</span>
-						<strong {...stylex.props(styles.brand)}>SHED</strong>
-						<span {...stylex.props(styles.navItem)}>Scenario Studio</span>
-						<span {...stylex.props(styles.previewLabel)}>STANDALONE PROTOTYPE</span>
+				<div {...stylex.attrs(workbenchDarkTheme, styles.shell)}>
+					<nav aria-label="Preview host" {...stylex.attrs(styles.nav)}>
+						<span {...stylex.attrs(styles.brandMark)}>UE</span>
+						<strong {...stylex.attrs(styles.brand)}>SHED</strong>
+						<span {...stylex.attrs(styles.navItem)}>Scenario Studio</span>
+						<span {...stylex.attrs(styles.previewLabel)}>STANDALONE PROTOTYPE</span>
 					</nav>
 					<ScenarioStudioRoute showDemoGuide />
 				</div>

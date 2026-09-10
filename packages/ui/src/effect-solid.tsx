@@ -1,5 +1,6 @@
 import { Cause, Effect, Exit, Fiber, type ManagedRuntime, Stream } from "effect";
-import { createContext, onCleanup, useContext, type JSX, type ParentProps } from "solid-js";
+import { createContext, onCleanup, useContext, type ParentProps } from "solid-js";
+import { type JSX } from "@solidjs/web";
 
 export type SolidEffectRuntime = ManagedRuntime.ManagedRuntime<never, never>;
 
@@ -8,9 +9,7 @@ const RuntimeContext = createContext<SolidEffectRuntime>();
 export function EffectRuntimeProvider(
 	props: ParentProps<{ readonly runtime: SolidEffectRuntime }>
 ): JSX.Element {
-	return (
-		<RuntimeContext.Provider value={props.runtime}>{props.children}</RuntimeContext.Provider>
-	);
+	return <RuntimeContext value={props.runtime}>{props.children}</RuntimeContext>;
 }
 
 function useRuntime(): SolidEffectRuntime {

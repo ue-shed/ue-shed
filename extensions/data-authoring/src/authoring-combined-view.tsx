@@ -165,51 +165,51 @@ export function AuthoringCombinedView(props: CombinedViewProps) {
 		);
 	};
 
-	createEffect(() => {
-		const source = sourceSnapshot();
-		const fieldName = referenceFieldName();
-		const paths = targetPaths();
-		const nextKey = `${source.table.objectPath}\u0000${fieldName}`;
-		if (nextKey === relationshipKey) return;
-		relationshipKey = nextKey;
-		targetAction.cancel();
-		setTargetSnapshots([]);
-		setVisiblePaths(new Set([source.table.objectPath, ...paths]));
-		if (fieldName.length === 0 || paths.length === 0) {
-			setLoadState({ status: "ready" });
-			return;
-		}
-		setLoadState({ status: "loading" });
-		targetAction.run(
-			Effect.forEach(
-				paths.filter((path) => path !== source.table.objectPath),
-				(path) => props.client.openCatalogTable(path, authorityForSnapshot(source)),
-				{ concurrency: 4 }
-			),
-			{
-				onFailure: (cause) =>
-					setLoadState({ message: Cause.pretty(cause), status: "failed" }),
-				onSuccess: (results) => {
-					setTargetSnapshots(
-						results.flatMap((result) =>
-							result.status === "ready" ? [result.snapshot] : []
-						)
-					);
-					const unavailable = results.filter(
-						(result) => result.status !== "ready"
-					).length;
-					setLoadState(
-						unavailable === 0
-							? { status: "ready" }
-							: {
-									message: `${unavailable} referenced table${unavailable === 1 ? " is" : "s are"} unavailable.`,
-									status: "failed"
-								}
-					);
-				}
+	createEffect(
+		() => ({ source: sourceSnapshot(), fieldName: referenceFieldName(), paths: targetPaths() }),
+		({ source, fieldName, paths }) => {
+			const nextKey = `${source.table.objectPath}\u0000${fieldName}`;
+			if (nextKey === relationshipKey) return;
+			relationshipKey = nextKey;
+			targetAction.cancel();
+			setTargetSnapshots([]);
+			setVisiblePaths(new Set([source.table.objectPath, ...paths]));
+			if (fieldName.length === 0 || paths.length === 0) {
+				setLoadState({ status: "ready" });
+				return;
 			}
-		);
-	});
+			setLoadState({ status: "loading" });
+			targetAction.run(
+				Effect.forEach(
+					paths.filter((path) => path !== source.table.objectPath),
+					(path) => props.client.openCatalogTable(path, authorityForSnapshot(source)),
+					{ concurrency: 4 }
+				),
+				{
+					onFailure: (cause) =>
+						setLoadState({ message: Cause.pretty(cause), status: "failed" }),
+					onSuccess: (results) => {
+						setTargetSnapshots(
+							results.flatMap((result) =>
+								result.status === "ready" ? [result.snapshot] : []
+							)
+						);
+						const unavailable = results.filter(
+							(result) => result.status !== "ready"
+						).length;
+						setLoadState(
+							unavailable === 0
+								? { status: "ready" }
+								: {
+										message: `${unavailable} referenced table${unavailable === 1 ? " is" : "s are"} unavailable.`,
+										status: "failed"
+									}
+						);
+					}
+				}
+			);
+		}
+	);
 
 	const setTableVisible = (objectPath: string, visible: boolean) => {
 		const next = new Set(visiblePaths());
@@ -219,29 +219,29 @@ export function AuthoringCombinedView(props: CombinedViewProps) {
 	};
 
 	return (
-		<section aria-label="Relationship view" {...stylex.props(styles.shell)}>
-			<header {...stylex.props(styles.heading)}>
+		<section aria-label="Relationship view" {...stylex.attrs(styles.shell)}>
+			<header {...stylex.attrs(styles.heading)}>
 				<div>
-					<h2 {...stylex.props(styles.title)}>Related tables</h2>
-					<p {...stylex.props(styles.description)}>
+					<h2 {...stylex.attrs(styles.title)}>Related tables</h2>
+					<p {...stylex.attrs(styles.description)}>
 						Each column stays with its own table. The toggles below only change what you
 						see here.
 					</p>
 				</div>
-				<div {...stylex.props(styles.readOnlyStamp)}>
+				<div {...stylex.attrs(styles.readOnlyStamp)}>
 					<strong>Read-only</strong>
 					<small>edit rows in the table view</small>
 				</div>
 			</header>
 
-			<div {...stylex.props(styles.controls)}>
-				<label {...stylex.props(styles.control)}>
+			<div {...stylex.attrs(styles.controls)}>
+				<label {...stylex.attrs(styles.control)}>
 					<span>Source table</span>
 					<select
 						aria-label="Combined view source table"
 						value={sourceSnapshot().table.objectPath}
 						onChange={(event) => loadSource(event.currentTarget.value)}
-						{...stylex.props(styles.select)}
+						{...stylex.attrs(styles.select)}
 					>
 						<For each={catalogPaths()}>
 							{(path) => <option value={path}>{shortObjectName(path)}</option>}
@@ -249,14 +249,14 @@ export function AuthoringCombinedView(props: CombinedViewProps) {
 					</select>
 					<small>{sourceSnapshot().table.objectPath}</small>
 				</label>
-				<label {...stylex.props(styles.control)}>
+				<label {...stylex.attrs(styles.control)}>
 					<span>Relationship field</span>
 					<select
 						aria-label="Combined view relationship field"
 						disabled={referenceFields().length === 0}
 						value={referenceFieldName()}
 						onChange={(event) => setReferenceFieldName(event.currentTarget.value)}
-						{...stylex.props(styles.select)}
+						{...stylex.attrs(styles.select)}
 					>
 						<Show when={referenceFields().length === 0}>
 							<option value="">No row-reference fields</option>
@@ -268,45 +268,45 @@ export function AuthoringCombinedView(props: CombinedViewProps) {
 				<button
 					type="button"
 					onClick={() => props.onOpenForEditing(sourceSnapshot().table.objectPath)}
-					{...stylex.props(styles.editButton)}
+					{...stylex.attrs(styles.editButton)}
 				>
 					Open source editor
 				</button>
 			</div>
 
-			<div {...stylex.props(styles.switchboard)}>
-				<div {...stylex.props(styles.switchboardHeading)}>
-					<span {...stylex.props(styles.switchboardLabel)}>Visible tables</span>
-					<strong {...stylex.props(styles.switchboardCount)}>
+			<div {...stylex.attrs(styles.switchboard)}>
+				<div {...stylex.attrs(styles.switchboardHeading)}>
+					<span {...stylex.attrs(styles.switchboardLabel)}>Visible tables</span>
+					<strong {...stylex.attrs(styles.switchboardCount)}>
 						{visiblePaths().size} / {participantPaths().length}
 					</strong>
-					<div {...stylex.props(styles.switchboardActions)}>
+					<div {...stylex.attrs(styles.switchboardActions)}>
 						<button
 							type="button"
 							onClick={() => setVisiblePaths(new Set(participantPaths()))}
-							{...stylex.props(styles.minorButton)}
+							{...stylex.attrs(styles.minorButton)}
 						>
 							Show all
 						</button>
 						<button
 							type="button"
 							onClick={() => setVisiblePaths(new Set())}
-							{...stylex.props(styles.minorButton)}
+							{...stylex.attrs(styles.minorButton)}
 						>
 							Hide all
 						</button>
 					</div>
 				</div>
-				<div {...stylex.props(styles.tableToggles)}>
+				<div {...stylex.attrs(styles.tableToggles)}>
 					<For each={participantPaths()}>
 						{(path, index) => (
 							<div
-								{...stylex.props(
+								{...stylex.attrs(
 									styles.tableToggle,
 									visiblePaths().has(path) && styles.tableToggleVisible
 								)}
 							>
-								<label {...stylex.props(styles.toggleLabel)}>
+								<label {...stylex.attrs(styles.toggleLabel)}>
 									<input
 										type="checkbox"
 										checked={visiblePaths().has(path)}
@@ -323,7 +323,7 @@ export function AuthoringCombinedView(props: CombinedViewProps) {
 									type="button"
 									aria-label={`Isolate ${shortObjectName(path)}`}
 									onClick={() => setVisiblePaths(new Set([path]))}
-									{...stylex.props(styles.isolateButton)}
+									{...stylex.attrs(styles.isolateButton)}
 								>
 									Isolate
 								</button>
@@ -334,7 +334,7 @@ export function AuthoringCombinedView(props: CombinedViewProps) {
 			</div>
 
 			<Show when={loadState().status === "loading"}>
-				<div {...stylex.props(styles.loadingLine)}>Loading referenced tables…</div>
+				<div {...stylex.attrs(styles.loadingLine)}>Loading referenced tables…</div>
 			</Show>
 			<Show when={loadState().status === "failed"}>
 				{(() => {
@@ -345,10 +345,10 @@ export function AuthoringCombinedView(props: CombinedViewProps) {
 							: "Referenced tables could not be loaded.";
 					const [firstLine] = message.split("\n");
 					return (
-						<div {...stylex.props(styles.noticeError)}>
+						<div {...stylex.attrs(styles.noticeError)}>
 							<strong>Some tables did not load.</strong>
 							<span>{firstLine?.slice(0, 160) ?? message}</span>
-							<details {...stylex.props(styles.technicalDetails)}>
+							<details {...stylex.attrs(styles.technicalDetails)}>
 								<summary>Technical details</summary>
 								<code>{message}</code>
 							</details>
@@ -360,7 +360,7 @@ export function AuthoringCombinedView(props: CombinedViewProps) {
 			<Show
 				when={referenceFields().length > 0}
 				fallback={
-					<div {...stylex.props(styles.empty)}>
+					<div {...stylex.attrs(styles.empty)}>
 						<strong>No row-reference field on this table.</strong>
 						<span>Pick another source table to follow its relationships.</span>
 					</div>
@@ -369,24 +369,24 @@ export function AuthoringCombinedView(props: CombinedViewProps) {
 				<Show
 					when={groups().length > 0}
 					fallback={
-						<div {...stylex.props(styles.empty)}>
+						<div {...stylex.attrs(styles.empty)}>
 							<strong>All tables are hidden.</strong>
 							<span>Show all, or turn one table back on above.</span>
 						</div>
 					}
 				>
-					<div {...stylex.props(styles.matrixWrap)}>
-						<table {...stylex.props(styles.matrix)}>
+					<div {...stylex.attrs(styles.matrixWrap)}>
+						<table {...stylex.attrs(styles.matrix)}>
 							<thead>
 								<tr>
-									<th rowSpan={2} {...stylex.props(styles.linkHeading)}>
+									<th rowspan={2} {...stylex.attrs(styles.linkHeading)}>
 										Link
 									</th>
 									<For each={groups()}>
 										{(group) => (
 											<th
-												colSpan={Math.max(1, group.columns.length + 1)}
-												{...stylex.props(
+												colspan={Math.max(1, group.columns.length + 1)}
+												{...stylex.attrs(
 													styles.groupHeading,
 													group.role === "source"
 														? styles.sourceHeading
@@ -403,11 +403,11 @@ export function AuthoringCombinedView(props: CombinedViewProps) {
 									<For each={groups()}>
 										{(group) => (
 											<>
-												<th {...stylex.props(styles.columnHeading)}>Row</th>
+												<th {...stylex.attrs(styles.columnHeading)}>Row</th>
 												<Show
 													when={group.snapshot}
 													fallback={
-														<th {...stylex.props(styles.columnHeading)}>
+														<th {...stylex.attrs(styles.columnHeading)}>
 															Status
 														</th>
 													}
@@ -415,7 +415,7 @@ export function AuthoringCombinedView(props: CombinedViewProps) {
 													<For each={group.columns}>
 														{(column) => (
 															<th
-																{...stylex.props(
+																{...stylex.attrs(
 																	styles.columnHeading
 																)}
 															>
@@ -433,7 +433,7 @@ export function AuthoringCombinedView(props: CombinedViewProps) {
 								<For each={rows()}>
 									{(row) => (
 										<tr>
-											<th {...stylex.props(styles.linkCell)}>
+											<th {...stylex.attrs(styles.linkCell)}>
 												<strong>{row.source.rowName}</strong>
 												<small data-status={row.status}>
 													{row.status === "resolved"
@@ -453,7 +453,7 @@ export function AuthoringCombinedView(props: CombinedViewProps) {
 																: undefined;
 													return (
 														<>
-															<td {...stylex.props(styles.rowName)}>
+															<td {...stylex.attrs(styles.rowName)}>
 																{projectedRow?.name ?? "—"}
 															</td>
 															<Show

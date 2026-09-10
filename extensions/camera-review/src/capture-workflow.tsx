@@ -95,15 +95,15 @@ export function CaptureWorkflow(props: {
 	};
 
 	return (
-		<div {...stylex.props(styles.scrim)}>
+		<div {...stylex.attrs(styles.scrim)}>
 			<section
 				role="dialog"
 				aria-modal="true"
 				aria-labelledby="capture-workflow-title"
-				{...stylex.props(styles.drawer)}
+				{...stylex.attrs(styles.drawer)}
 			>
-				<header {...stylex.props(styles.header)}>
-					<h2 id="capture-workflow-title" {...stylex.props(styles.title)}>
+				<header {...stylex.attrs(styles.header)}>
+					<h2 id="capture-workflow-title" {...stylex.attrs(styles.title)}>
 						Capture review set
 					</h2>
 					<button
@@ -111,17 +111,17 @@ export function CaptureWorkflow(props: {
 						aria-label="Close capture workflow"
 						disabled={state().stage === "capturing"}
 						onClick={props.onClose}
-						{...stylex.props(styles.close)}
+						{...stylex.attrs(styles.close)}
 					>
 						×
 					</button>
 				</header>
 
-				<ol aria-label="Capture workflow progress" {...stylex.props(styles.steps)}>
+				<ol aria-label="Capture workflow progress" {...stylex.attrs(styles.steps)}>
 					<For each={stageOrder}>
 						{(label, index) => (
 							<li
-								{...stylex.props(
+								{...stylex.attrs(
 									styles.step,
 									index() <= activeStep() && styles.stepActive
 								)}
@@ -133,43 +133,43 @@ export function CaptureWorkflow(props: {
 					</For>
 				</ol>
 
-				<div {...stylex.props(styles.body)}>
+				<div {...stylex.attrs(styles.body)}>
 					<Switch>
 						<Match when={state().stage === "prepare"}>
-							<section aria-label="Prepare capture" {...stylex.props(styles.stage)}>
-								<h3 {...stylex.props(styles.stageTitle)}>Confirm what will run</h3>
-								<p {...stylex.props(styles.copy)}>
+							<section aria-label="Prepare capture" {...stylex.attrs(styles.stage)}>
+								<h3 {...stylex.attrs(styles.stageTitle)}>Confirm what will run</h3>
+								<p {...stylex.attrs(styles.copy)}>
 									Captures the approved views to PNG files on disk. The Unreal map
 									is not saved or modified.
 								</p>
-								<dl {...stylex.props(styles.facts)}>
-									<div {...stylex.props(styles.fact)}>
-										<dt {...stylex.props(styles.factLabel)}>Runs in</dt>
-										<dd {...stylex.props(styles.factValue)}>
-											<span {...stylex.props(styles.contextDot)} />
+								<dl {...stylex.attrs(styles.facts)}>
+									<div {...stylex.attrs(styles.fact)}>
+										<dt {...stylex.attrs(styles.factLabel)}>Runs in</dt>
+										<dd {...stylex.attrs(styles.factValue)}>
+											<span {...stylex.attrs(styles.contextDot)} />
 											Editor world
 										</dd>
 									</div>
-									<div {...stylex.props(styles.fact)}>
-										<dt {...stylex.props(styles.factLabel)}>Review set</dt>
-										<dd {...stylex.props(styles.factValue)}>
+									<div {...stylex.attrs(styles.fact)}>
+										<dt {...stylex.attrs(styles.factLabel)}>Review set</dt>
+										<dd {...stylex.attrs(styles.factValue)}>
 											{props.review.reviewSet.displayName}
 										</dd>
 									</div>
-									<div {...stylex.props(styles.fact)}>
-										<dt {...stylex.props(styles.factLabel)}>Map</dt>
-										<dd {...stylex.props(styles.factValue)}>
+									<div {...stylex.attrs(styles.fact)}>
+										<dt {...stylex.attrs(styles.factLabel)}>Map</dt>
+										<dd {...stylex.attrs(styles.factValue)}>
 											<code>{props.review.reviewSet.mapPath}</code>
 										</dd>
 									</div>
-									<div {...stylex.props(styles.fact)}>
-										<dt {...stylex.props(styles.factLabel)}>Views</dt>
-										<dd {...stylex.props(styles.factValue)}>
+									<div {...stylex.attrs(styles.fact)}>
+										<dt {...stylex.attrs(styles.factLabel)}>Views</dt>
+										<dd {...stylex.attrs(styles.factValue)}>
 											{props.review.reviewSet.viewCount}
 										</dd>
 									</div>
 								</dl>
-								<div {...stylex.props(styles.distinction)}>
+								<div {...stylex.attrs(styles.distinction)}>
 									<p>
 										Preview picks which views to include; nothing is written
 										yet.
@@ -184,41 +184,41 @@ export function CaptureWorkflow(props: {
 						<Match when={state().stage === "preview"}>
 							<section
 								aria-label="Preview capture plan"
-								{...stylex.props(styles.stage)}
+								{...stylex.attrs(styles.stage)}
 							>
-								<h3 {...stylex.props(styles.stageTitle)}>
+								<h3 {...stylex.attrs(styles.stageTitle)}>
 									Review the capture plan
 								</h3>
-								<p {...stylex.props(styles.copy)}>
+								<p {...stylex.attrs(styles.copy)}>
 									Check coverage and resolution before Unreal renders. Deselecting
 									a view changes only this run, not the review set.
 								</p>
-								<div {...stylex.props(styles.planSummary)}>
+								<div {...stylex.attrs(styles.planSummary)}>
 									<strong>{selectedViews().length}</strong>
 									<span>
 										of {props.review.reviewSet.viewCount} views selected
 									</span>
 								</div>
-								<ul {...stylex.props(styles.viewList)}>
+								<ul {...stylex.attrs(styles.viewList)}>
 									<For each={props.review.reviewSet.views}>
 										{(view, index) => (
 											<li
-												{...stylex.props(
+												{...stylex.attrs(
 													styles.view,
 													selectedIds().includes(view.id) &&
 														styles.viewSelected
 												)}
 											>
-												<label {...stylex.props(styles.viewLabel)}>
+												<label {...stylex.attrs(styles.viewLabel)}>
 													<input
 														type="checkbox"
 														checked={selectedIds().includes(view.id)}
 														onChange={() => toggleView(view.id)}
 													/>
-													<span {...stylex.props(styles.viewIndex)}>
+													<span {...stylex.attrs(styles.viewIndex)}>
 														{String(index() + 1).padStart(2, "0")}
 													</span>
-													<span {...stylex.props(styles.viewCopy)}>
+													<span {...stylex.attrs(styles.viewCopy)}>
 														<strong>{view.displayName}</strong>
 														<small>
 															{view.resolution.width} ×{" "}
@@ -239,7 +239,7 @@ export function CaptureWorkflow(props: {
 									</For>
 								</ul>
 								<Show when={selectedIds().length === 0}>
-									<p role="alert" {...stylex.props(styles.warning)}>
+									<p role="alert" {...stylex.attrs(styles.warning)}>
 										Select at least one view to continue.
 									</p>
 								</Show>
@@ -250,16 +250,16 @@ export function CaptureWorkflow(props: {
 							<section
 								aria-label="Capture in progress"
 								aria-live="polite"
-								{...stylex.props(styles.captureStage)}
+								{...stylex.attrs(styles.captureStage)}
 							>
-								<div {...stylex.props(styles.aperture)} />
-								<h3 {...stylex.props(styles.stageTitle)}>Capturing in Unreal</h3>
+								<div {...stylex.attrs(styles.aperture)} />
+								<h3 {...stylex.attrs(styles.stageTitle)}>Capturing in Unreal</h3>
 								<p>
 									{selectedIds().length}{" "}
 									{selectedIds().length === 1 ? "view" : "views"} in this run.
 								</p>
-								<div {...stylex.props(styles.progressTrack)}>
-									<span {...stylex.props(styles.progressFill)} />
+								<div {...stylex.attrs(styles.progressTrack)}>
+									<span {...stylex.attrs(styles.progressFill)} />
 								</div>
 								<small>
 									Capture runs synchronously. Keep Workbench and Unreal open until
@@ -276,25 +276,25 @@ export function CaptureWorkflow(props: {
 									<section
 										aria-label="Capture complete"
 										aria-live="polite"
-										{...stylex.props(styles.stage)}
+										{...stylex.attrs(styles.stage)}
 									>
-										<h3 {...stylex.props(styles.stageTitle)}>
+										<h3 {...stylex.attrs(styles.stageTitle)}>
 											Capture finished
 										</h3>
-										<p {...stylex.props(styles.copy)}>
+										<p {...stylex.attrs(styles.copy)}>
 											The new run is listed in the capture history for this
 											review set.
 										</p>
-										<div {...stylex.props(styles.resultGrid)}>
-											<div {...stylex.props(styles.result)}>
+										<div {...stylex.attrs(styles.resultGrid)}>
+											<div {...stylex.attrs(styles.result)}>
 												<strong>{current.job.successfulViews}</strong>
 												<span>Captured</span>
 											</div>
-											<div {...stylex.props(styles.result)}>
+											<div {...stylex.attrs(styles.result)}>
 												<strong>{current.job.failedViews}</strong>
 												<span>Failed</span>
 											</div>
-											<div {...stylex.props(styles.result)}>
+											<div {...stylex.attrs(styles.result)}>
 												<strong>
 													{current.job.progress.completedViews}/
 													{current.job.progress.totalViews}
@@ -302,7 +302,7 @@ export function CaptureWorkflow(props: {
 												<span>Processed</span>
 											</div>
 										</div>
-										<code {...stylex.props(styles.runId)}>
+										<code {...stylex.attrs(styles.runId)}>
 											{current.job.runId}
 										</code>
 									</section>
@@ -316,17 +316,17 @@ export function CaptureWorkflow(props: {
 								if (current.stage !== "blocked" && current.stage !== "failed")
 									return null;
 								return (
-									<section role="alert" {...stylex.props(styles.failure)}>
-										<h3 {...stylex.props(styles.failureTitle)}>
+									<section role="alert" {...stylex.attrs(styles.failure)}>
+										<h3 {...stylex.attrs(styles.failureTitle)}>
 											{current.stage === "blocked"
 												? "Capture blocked"
 												: "Capture failed"}
 										</h3>
-										<p {...stylex.props(styles.copy)}>{current.message}</p>
-										<p {...stylex.props(styles.recovery)}>{current.recovery}</p>
+										<p {...stylex.attrs(styles.copy)}>{current.message}</p>
+										<p {...stylex.attrs(styles.recovery)}>{current.recovery}</p>
 										<Show when={current.technical}>
 											{(technical) => (
-												<details {...stylex.props(styles.technical)}>
+												<details {...stylex.attrs(styles.technical)}>
 													<summary>Technical details</summary>
 													<code>{technical()}</code>
 												</details>
@@ -339,19 +339,19 @@ export function CaptureWorkflow(props: {
 					</Switch>
 				</div>
 
-				<footer {...stylex.props(styles.footer)}>
+				<footer {...stylex.attrs(styles.footer)}>
 					<Show when={state().stage === "prepare"}>
 						<button
 							type="button"
 							onClick={props.onClose}
-							{...stylex.props(styles.secondary)}
+							{...stylex.attrs(styles.secondary)}
 						>
 							Cancel
 						</button>
 						<button
 							type="button"
 							onClick={() => setState({ stage: "preview" })}
-							{...stylex.props(styles.primary)}
+							{...stylex.attrs(styles.primary)}
 						>
 							REVIEW CAPTURE PLAN →
 						</button>
@@ -360,7 +360,7 @@ export function CaptureWorkflow(props: {
 						<button
 							type="button"
 							onClick={() => setState({ stage: "prepare" })}
-							{...stylex.props(styles.secondary)}
+							{...stylex.attrs(styles.secondary)}
 						>
 							← Back
 						</button>
@@ -368,7 +368,7 @@ export function CaptureWorkflow(props: {
 							type="button"
 							disabled={selectedIds().length === 0}
 							onClick={capture}
-							{...stylex.props(styles.primary)}
+							{...stylex.attrs(styles.primary)}
 						>
 							CAPTURE {selectedIds().length}{" "}
 							{selectedIds().length === 1 ? "VIEW" : "VIEWS"}
@@ -378,7 +378,7 @@ export function CaptureWorkflow(props: {
 						<button
 							type="button"
 							onClick={props.onClose}
-							{...stylex.props(styles.primary)}
+							{...stylex.attrs(styles.primary)}
 						>
 							DONE
 						</button>
@@ -387,14 +387,14 @@ export function CaptureWorkflow(props: {
 						<button
 							type="button"
 							onClick={() => setState({ stage: "prepare" })}
-							{...stylex.props(styles.secondary)}
+							{...stylex.attrs(styles.secondary)}
 						>
 							Review setup
 						</button>
 						<button
 							type="button"
 							onClick={props.onClose}
-							{...stylex.props(styles.primary)}
+							{...stylex.attrs(styles.primary)}
 						>
 							Close
 						</button>

@@ -23,6 +23,7 @@
 	"dependencies": {
 		"@deck.gl/core": "9.3.11",
 		"@deck.gl/layers": "9.3.11",
+		"@solidjs/web": "catalog:",
 		"@stylexjs/stylex": "catalog:",
 		"@ue-shed/cameras": "workspace:*",
 		"@ue-shed/observability": "workspace:*",

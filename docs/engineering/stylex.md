@@ -23,7 +23,9 @@ host              -> theme selection
 - Keep global CSS to a small reset and document boundary.
 - Prove StyleX compilation in every app and extension build.
 
-If Solid needs a StyleX props adapter, keep one tested adapter in `@ue-shed/ui`.
+Spread `stylex.attrs(...)` onto Solid DOM elements. It emits HTML `class` and serialized inline
+styles, which work with Solid 2 on both HTML and SVG. `stylex.props(...)` emits React's `className`
+and must not be spread onto Solid 2 elements.
 
 ## Checks
 

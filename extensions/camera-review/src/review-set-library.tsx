@@ -2,7 +2,7 @@ import * as stylex from "@stylexjs/stylex";
 import { createEffectAction } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { Cause } from "effect";
-import { For, Match, Show, Switch, createSignal, onMount } from "solid-js";
+import { For, Match, Show, Switch, createSignal, onSettled } from "solid-js";
 import type {
 	MapReviewClientApi,
 	MapReviewResult,
@@ -42,7 +42,7 @@ export function ReviewSetLibrary(props: {
 		});
 	};
 
-	onMount(load);
+	onSettled(load);
 
 	const finishMutation = (result: MapReviewResult) => {
 		setWorkingId(undefined);
@@ -87,19 +87,19 @@ export function ReviewSetLibrary(props: {
 	};
 
 	return (
-		<div {...stylex.props(styles.scrim)}>
+		<div {...stylex.attrs(styles.scrim)}>
 			<section
 				role="dialog"
 				aria-modal="true"
 				aria-labelledby="review-set-library-title"
-				{...stylex.props(styles.drawer)}
+				{...stylex.attrs(styles.drawer)}
 			>
-				<header {...stylex.props(styles.header)}>
+				<header {...stylex.attrs(styles.header)}>
 					<div>
-						<h2 id="review-set-library-title" {...stylex.props(styles.title)}>
+						<h2 id="review-set-library-title" {...stylex.attrs(styles.title)}>
 							Review sets
 						</h2>
-						<p {...stylex.props(styles.subtitle)}>
+						<p {...stylex.attrs(styles.subtitle)}>
 							Move between focused collections without changing the Unreal map.
 						</p>
 					</div>
@@ -107,19 +107,19 @@ export function ReviewSetLibrary(props: {
 						type="button"
 						aria-label="Close review sets"
 						onClick={props.onClose}
-						{...stylex.props(styles.close)}
+						{...stylex.attrs(styles.close)}
 					>
 						×
 					</button>
 				</header>
 
-				<div {...stylex.props(styles.body)}>
+				<div {...stylex.attrs(styles.body)}>
 					<Switch>
 						<Match when={state().status === "loading"}>
-							<div {...stylex.props(styles.centerState)}>Loading review sets…</div>
+							<div {...stylex.attrs(styles.centerState)}>Loading review sets…</div>
 						</Match>
 						<Match when={state().status === "not_configured"}>
-							<div {...stylex.props(styles.centerState)}>
+							<div {...stylex.attrs(styles.centerState)}>
 								<strong>No project selected</strong>
 								<span>Choose a project before opening its review sets.</span>
 							</div>
@@ -129,19 +129,19 @@ export function ReviewSetLibrary(props: {
 								const current = state();
 								if (current.status !== "failed") return null;
 								return (
-									<div role="alert" {...stylex.props(styles.failure)}>
-										<strong {...stylex.props(styles.failureTitle)}>
+									<div role="alert" {...stylex.attrs(styles.failure)}>
+										<strong {...stylex.attrs(styles.failureTitle)}>
 											Couldn't load review sets
 										</strong>
 										<span>{current.error.recovery}</span>
 										<button
 											type="button"
 											onClick={load}
-											{...stylex.props(styles.retry)}
+											{...stylex.attrs(styles.retry)}
 										>
 											Retry
 										</button>
-										<details {...stylex.props(styles.technical)}>
+										<details {...stylex.attrs(styles.technical)}>
 											<summary>Technical details</summary>
 											<code>{current.error.message}</code>
 										</details>
@@ -156,19 +156,19 @@ export function ReviewSetLibrary(props: {
 								return (
 									<>
 										<section aria-label="Available sets">
-											<div {...stylex.props(styles.sectionHeading)}>
+											<div {...stylex.attrs(styles.sectionHeading)}>
 												<span>Sets · {current.sets.length}</span>
 											</div>
 											<Show
 												when={current.sets.length > 0}
 												fallback={
-													<div {...stylex.props(styles.empty)}>
+													<div {...stylex.attrs(styles.empty)}>
 														No review sets have been saved for this
 														project yet.
 													</div>
 												}
 											>
-												<div {...stylex.props(styles.setList)}>
+												<div {...stylex.attrs(styles.setList)}>
 													<For each={current.sets}>
 														{(reviewSet, index) => {
 															const active = () =>
@@ -176,14 +176,14 @@ export function ReviewSetLibrary(props: {
 																reviewSet.id;
 															return (
 																<article
-																	{...stylex.props(
+																	{...stylex.attrs(
 																		styles.setCard,
 																		active() &&
 																			styles.setCardActive
 																	)}
 																>
 																	<span
-																		{...stylex.props(
+																		{...stylex.attrs(
 																			styles.setIndex
 																		)}
 																	>
@@ -192,12 +192,12 @@ export function ReviewSetLibrary(props: {
 																		).padStart(2, "0")}
 																	</span>
 																	<div
-																		{...stylex.props(
+																		{...stylex.attrs(
 																			styles.setCopy
 																		)}
 																	>
 																		<div
-																			{...stylex.props(
+																			{...stylex.attrs(
 																				styles.setTitle
 																			)}
 																		>
@@ -208,7 +208,7 @@ export function ReviewSetLibrary(props: {
 																			</strong>
 																			<Show when={active()}>
 																				<span
-																					{...stylex.props(
+																					{...stylex.attrs(
 																						styles.activeBadge
 																					)}
 																				>
@@ -237,7 +237,7 @@ export function ReviewSetLibrary(props: {
 																		onClick={() =>
 																			select(reviewSet.id)
 																		}
-																		{...stylex.props(
+																		{...stylex.attrs(
 																			styles.openButton
 																		)}
 																	>
@@ -258,10 +258,10 @@ export function ReviewSetLibrary(props: {
 
 										<section
 											aria-label="Create a set"
-											{...stylex.props(styles.createPanel)}
+											{...stylex.attrs(styles.createPanel)}
 										>
 											<div>
-												<strong {...stylex.props(styles.createTitle)}>
+												<strong {...stylex.attrs(styles.createTitle)}>
 													Create an empty set
 												</strong>
 												<p>
@@ -274,13 +274,13 @@ export function ReviewSetLibrary(props: {
 													event.preventDefault();
 													create();
 												}}
-												{...stylex.props(styles.createForm)}
+												{...stylex.attrs(styles.createForm)}
 											>
 												<label>
 													<span>Name</span>
 													<input
 														aria-label="New review set name"
-														maxLength={80}
+														maxlength={80}
 														placeholder="Lighting review"
 														value={displayName()}
 														disabled={
@@ -308,7 +308,7 @@ export function ReviewSetLibrary(props: {
 												</button>
 											</form>
 											<Show when={!props.canCreate}>
-												<small {...stylex.props(styles.createHint)}>
+												<small {...stylex.attrs(styles.createHint)}>
 													Open an existing set or add a first view before
 													creating a sibling.
 												</small>
@@ -322,12 +322,12 @@ export function ReviewSetLibrary(props: {
 
 					<Show when={operationFailure()}>
 						{(failure) => (
-							<div role="alert" {...stylex.props(styles.operationFailure)}>
-								<strong {...stylex.props(styles.failureTitle)}>
+							<div role="alert" {...stylex.attrs(styles.operationFailure)}>
+								<strong {...stylex.attrs(styles.failureTitle)}>
 									Couldn't finish that operation
 								</strong>
 								<span>{failure().recovery}</span>
-								<details {...stylex.props(styles.technical)}>
+								<details {...stylex.attrs(styles.technical)}>
 									<summary>Technical details</summary>
 									<code>{failure().message}</code>
 								</details>

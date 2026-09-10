@@ -58,7 +58,8 @@ Do not hand-copy files unless the materializer cannot run. If it cannot, preserv
 
 The materialized template already provides the required baseline:
 
-1. Vite runs Solid first and `@stylexjs/rollup-plugin` second.
+1. Vite runs Solid first and `@stylexjs/rollup-plugin` second. Peculiar Sheets runs directly on
+   Solid 2, and TanStack Charts uses its framework-neutral DOM host inside the Solid lifecycle.
 2. StyleX uses runtime injection while serving and extracts `stylex.css` for production.
 3. A browser `AuthoringClientShape` uses the SDK's schema-validated HTTP transport. The copied Node
    server runs `ShedHostLive`, saved-project discovery, sessions, and optional Unreal connectivity.

@@ -59,8 +59,8 @@ function CountField(props: {
 	readonly onInput: (value: number) => void;
 }) {
 	return (
-		<div {...stylex.props(styles.countField)}>
-			<label {...stylex.props(styles.sliderLabel)}>
+		<div {...stylex.attrs(styles.countField)}>
+			<label {...stylex.attrs(styles.sliderLabel)}>
 				<span>Count</span>
 				<input
 					type="range"
@@ -84,7 +84,7 @@ function CountField(props: {
 						props.onInput(value);
 					}
 				}}
-				{...stylex.props(styles.countInput)}
+				{...stylex.attrs(styles.countInput)}
 			/>
 		</div>
 	);
@@ -148,22 +148,22 @@ export function FramingSettings(props: {
 	};
 
 	return (
-		<section {...stylex.props(styles.settings)}>
+		<section {...stylex.attrs(styles.settings)}>
 			<details>
-				<summary {...stylex.props(styles.summary)}>
+				<summary {...stylex.attrs(styles.summary)}>
 					<span>VIEW PRESETS + RIG</span>
 					<small>{requestedCount()} views generated</small>
 				</summary>
-				<div {...stylex.props(styles.settingsBody)}>
-					<div {...stylex.props(styles.settingsIntro)}>
-						<p {...stylex.props(styles.sectionHint)}>
+				<div {...stylex.attrs(styles.settingsBody)}>
+					<div {...stylex.attrs(styles.settingsIntro)}>
+						<p {...stylex.attrs(styles.sectionHint)}>
 							Each enabled group adds a ring or arc of views to the sheet.
 						</p>
-						<span {...stylex.props(styles.scrubHint)}>
+						<span {...stylex.attrs(styles.scrubHint)}>
 							↔ drag labels · Shift coarse · Alt fine
 						</span>
 					</div>
-					<div {...stylex.props(styles.globalGrid)}>
+					<div {...stylex.attrs(styles.globalGrid)}>
 						<ParameterField
 							label="Field of view"
 							min={5}
@@ -192,12 +192,12 @@ export function FramingSettings(props: {
 						/>
 					</div>
 
-					<div {...stylex.props(styles.groupList)}>
+					<div {...stylex.attrs(styles.groupList)}>
 						<For each={props.parameters.groups}>
 							{(group) => (
-								<section {...stylex.props(styles.group)}>
-									<header {...stylex.props(styles.groupHeader)}>
-										<label {...stylex.props(styles.enableLabel)}>
+								<section {...stylex.attrs(styles.group)}>
+									<header {...stylex.attrs(styles.groupHeader)}>
+										<label {...stylex.attrs(styles.enableLabel)}>
 											<input
 												type="checkbox"
 												checked={group.enabled}
@@ -218,7 +218,7 @@ export function FramingSettings(props: {
 										</label>
 										<code>{group.pattern.kind}</code>
 									</header>
-									<div {...stylex.props(styles.groupGrid)}>
+									<div {...stylex.attrs(styles.groupGrid)}>
 										<CountField
 											count={group.pattern.count}
 											groupName={group.displayName}
@@ -377,7 +377,7 @@ export function FramingSettings(props: {
 					</div>
 
 					<Show when={requestedCount() > showcaseSliderMaximum}>
-						<p role="status" {...stylex.props(styles.performanceHint)}>
+						<p role="status" {...stylex.attrs(styles.performanceHint)}>
 							Large rigs are valid. Live preview may take longer or fall back to
 							individual captures; saved parameters are unchanged.
 						</p>
@@ -385,19 +385,19 @@ export function FramingSettings(props: {
 				</div>
 			</details>
 
-			<div {...stylex.props(styles.overridePanel)}>
+			<div {...stylex.attrs(styles.overridePanel)}>
 				<Show
 					when={props.selectedCandidate}
 					fallback={
-						<p {...stylex.props(styles.sectionHint)}>
+						<p {...stylex.attrs(styles.sectionHint)}>
 							Select a preview to tune only that view.
 						</p>
 					}
 				>
 					{(candidate) => (
 						<>
-							<header {...stylex.props(styles.overrideHeader)}>
-								<div {...stylex.props(styles.overrideIdentity)}>
+							<header {...stylex.attrs(styles.overrideHeader)}>
+								<div {...stylex.attrs(styles.overrideIdentity)}>
 									<small>Per-view offsets</small>
 									<strong>{candidate().displayName}</strong>
 									<code>{candidate().preset.replaceAll("_", " ")}</code>
@@ -406,24 +406,24 @@ export function FramingSettings(props: {
 									type="button"
 									disabled={selectedOverride() === undefined}
 									onClick={() => setSelectedOverride(undefined)}
-									{...stylex.props(styles.resetButton)}
+									{...stylex.attrs(styles.resetButton)}
 								>
 									Reset view
 								</button>
 							</header>
-							<div {...stylex.props(styles.settingsIntro)}>
-								<p {...stylex.props(styles.sectionHint)}>
+							<div {...stylex.attrs(styles.settingsIntro)}>
+								<p {...stylex.attrs(styles.sectionHint)}>
 									Blank values inherit the preset. Drag a label to tune this view
 									without regenerating the rest of the sheet.
 								</p>
-								<span {...stylex.props(styles.scrubHint)}>
+								<span {...stylex.attrs(styles.scrubHint)}>
 									↔ drag labels · Shift coarse · Alt fine
 								</span>
 							</div>
-							<div {...stylex.props(styles.overrideGrid)}>
-								<section {...stylex.props(styles.overrideGroup)}>
+							<div {...stylex.attrs(styles.overrideGrid)}>
+								<section {...stylex.attrs(styles.overrideGroup)}>
 									<header>COMPOSITION</header>
-									<div {...stylex.props(styles.compositionFields)}>
+									<div {...stylex.attrs(styles.compositionFields)}>
 										<ScrubbableNumberField
 											label="DISTANCE SCALE"
 											wide
@@ -468,9 +468,9 @@ export function FramingSettings(props: {
 										/>
 									</div>
 								</section>
-								<section {...stylex.props(styles.overrideGroup)}>
+								<section {...stylex.attrs(styles.overrideGroup)}>
 									<header>OPTICS</header>
-									<div {...stylex.props(styles.opticsFields)}>
+									<div {...stylex.attrs(styles.opticsFields)}>
 										<ScrubbableNumberField
 											label="FOV OVERRIDE"
 											value={selectedOverride()?.fieldOfViewDegrees}

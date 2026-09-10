@@ -11,7 +11,7 @@ import {
 import { Button, createEffectAction } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { Cause } from "effect";
-import { createMemo, createSignal, For, Match, onMount, Show, Switch } from "solid-js";
+import { createMemo, createSignal, For, Match, onSettled, Show, Switch } from "solid-js";
 import type { InputAtlasClientApi } from "./input-atlas-client.js";
 import {
 	capLabel,
@@ -175,7 +175,7 @@ export function InputAtlasRoute(props: { readonly client: InputAtlasClientApi })
 		});
 	};
 
-	onMount(() => run(() => props.client.loadConfiguredProject()));
+	onSettled(() => run(() => props.client.loadConfiguredProject()));
 
 	const atlasKey = (key: string) => {
 		const current = atlas();
@@ -191,7 +191,7 @@ export function InputAtlasRoute(props: { readonly client: InputAtlasClientApi })
 				type="button"
 				title={props.cap.key}
 				onClick={() => setSelectedKey(props.cap.key)}
-				{...stylex.props(
+				{...stylex.attrs(
 					styles.cap,
 					isBound(props.cap.key) && styles.capBound,
 					isContested(props.cap.key) && styles.capContested,
@@ -210,23 +210,23 @@ export function InputAtlasRoute(props: { readonly client: InputAtlasClientApi })
 		) : (
 			<span
 				aria-hidden="true"
-				{...stylex.props(styles.keyGap)}
+				{...stylex.attrs(styles.keyGap)}
 				style={{ width: `${props.cell.gap * 26 + 6}px` }}
 			/>
 		);
 	}
 
 	return (
-		<section {...stylex.props(styles.page)}>
-			<header {...stylex.props(styles.header)}>
+		<section {...stylex.attrs(styles.page)}>
+			<header {...stylex.attrs(styles.header)}>
 				<div>
-					<h1 {...stylex.props(styles.title)}>Input atlas</h1>
-					<p {...stylex.props(styles.intro)}>
+					<h1 {...stylex.attrs(styles.title)}>Input atlas</h1>
+					<p {...stylex.attrs(styles.intro)}>
 						See every key your saved Enhanced Input packages claim, and which mapping
 						contexts fight over the same one.
 					</p>
 				</div>
-				<div {...stylex.props(styles.headerActions)}>
+				<div {...stylex.attrs(styles.headerActions)}>
 					<Button
 						tone="quiet"
 						disabled={state().status === "loading"}
@@ -246,48 +246,48 @@ export function InputAtlasRoute(props: { readonly client: InputAtlasClientApi })
 
 			<Show when={activeProject()}>
 				{(project) => (
-					<div {...stylex.props(styles.projectBanner)}>
-						<span {...stylex.props(styles.projectDot)} />
-						<span {...stylex.props(styles.projectName)}>{projectName(project())}</span>
-						<span {...stylex.props(styles.projectPath)}>{project()}</span>
+					<div {...stylex.attrs(styles.projectBanner)}>
+						<span {...stylex.attrs(styles.projectDot)} />
+						<span {...stylex.attrs(styles.projectName)}>{projectName(project())}</span>
+						<span {...stylex.attrs(styles.projectPath)}>{project()}</span>
 					</div>
 				)}
 			</Show>
 
 			<Show when={state().status === "loading"}>
-				<div {...stylex.props(styles.progressTrack)} role="progressbar" aria-busy="true">
-					<span {...stylex.props(styles.progressBar)} />
+				<div {...stylex.attrs(styles.progressTrack)} role="progressbar" aria-busy="true">
+					<span {...stylex.attrs(styles.progressBar)} />
 				</div>
 			</Show>
 
 			<Switch>
 				<Match when={state().status === "loading"}>
-					<p {...stylex.props(styles.notice)}>
+					<p {...stylex.attrs(styles.notice)}>
 						{activeProject() === undefined
 							? "Scanning saved packages…"
 							: `Rescanning ${projectName(activeProject()!)}…`}
 					</p>
 				</Match>
 				<Match when={state().status === "not_configured"}>
-					<p {...stylex.props(styles.notice)}>
+					<p {...stylex.attrs(styles.notice)}>
 						No project configured. Choose an Unreal project to scan its mapping
 						contexts.
 					</p>
 				</Match>
 				<Match when={state().status === "cancelled"}>
-					<p {...stylex.props(styles.notice)}>Scan cancelled.</p>
+					<p {...stylex.attrs(styles.notice)}>Scan cancelled.</p>
 				</Match>
 				<Match when={failedState()}>
 					{(failed) => {
 						const parts = createMemo(() => failureParts(failed().error.message));
 						return (
-							<div role="alert" {...stylex.props(styles.error)}>
-								<strong {...stylex.props(styles.errorTitle)}>
+							<div role="alert" {...stylex.attrs(styles.error)}>
+								<strong {...stylex.attrs(styles.errorTitle)}>
 									Couldn’t scan this project
 								</strong>
 								<p>{parts().summary}</p>
-								<p {...stylex.props(styles.recovery)}>{failed().error.recovery}</p>
-								<div {...stylex.props(styles.errorActions)}>
+								<p {...stylex.attrs(styles.recovery)}>{failed().error.recovery}</p>
+								<div {...stylex.attrs(styles.errorActions)}>
 									<Button
 										tone="secondary"
 										onClick={() =>
@@ -299,7 +299,7 @@ export function InputAtlasRoute(props: { readonly client: InputAtlasClientApi })
 								</div>
 								<Show when={parts().technical}>
 									{(technical) => (
-										<details {...stylex.props(styles.errorDetails)}>
+										<details {...stylex.attrs(styles.errorDetails)}>
 											<summary>Technical details</summary>
 											<code>{technical()}</code>
 										</details>
@@ -312,22 +312,26 @@ export function InputAtlasRoute(props: { readonly client: InputAtlasClientApi })
 				<Match when={atlas()}>
 					{(current) => (
 						<>
-							<div {...stylex.props(styles.toolbar)}>
+							<div {...stylex.attrs(styles.toolbar)}>
 								<For each={fullAtlas()?.contexts ?? []}>
 									{(context) => (
 										<button
 											type="button"
-											aria-pressed={isContextSelected(context.objectPath)}
+											aria-pressed={
+												isContextSelected(context.objectPath)
+													? "true"
+													: "false"
+											}
 											title={context.description ?? context.objectPath}
 											onClick={() => toggleContext(context.objectPath)}
-											{...stylex.props(
+											{...stylex.attrs(
 												styles.contextChip,
 												isContextSelected(context.objectPath) &&
 													styles.contextChipOn
 											)}
 										>
 											{context.name}
-											<span {...stylex.props(styles.chipCount)}>
+											<span {...stylex.attrs(styles.chipCount)}>
 												{context.mappings}
 											</span>
 										</button>
@@ -337,47 +341,47 @@ export function InputAtlasRoute(props: { readonly client: InputAtlasClientApi })
 									type="button"
 									title="Invert which mapping contexts are selected"
 									onClick={invertContexts}
-									{...stylex.props(styles.contextChip)}
+									{...stylex.attrs(styles.contextChip)}
 								>
 									Invert
 								</button>
-								<span {...stylex.props(styles.spacer)} />
+								<span {...stylex.attrs(styles.spacer)} />
 								<Show
 									when={current().contestedKeys.length > 0}
 									fallback={
-										<span {...stylex.props(styles.chipQuiet)}>
+										<span {...stylex.attrs(styles.chipQuiet)}>
 											No contested keys
 										</span>
 									}
 								>
-									<span {...stylex.props(styles.chipContested)}>
+									<span {...stylex.attrs(styles.chipContested)}>
 										{current().contestedKeys.length} contested
 									</span>
 								</Show>
 								<Show when={current().unreadableMappings > 0}>
-									<span {...stylex.props(styles.chipQuiet)}>
+									<span {...stylex.attrs(styles.chipQuiet)}>
 										{plural(current().unreadableMappings, "key", "keys")} not
 										serialized
 									</span>
 								</Show>
 							</div>
 
-							<div {...stylex.props(styles.devices)}>
-								<div {...stylex.props(styles.device)}>
+							<div {...stylex.attrs(styles.devices)}>
+								<div {...stylex.attrs(styles.device)}>
 									<svg
 										viewBox={GAMEPAD_VIEWBOX}
 										role="img"
-										{...stylex.props(styles.pad)}
+										{...stylex.attrs(styles.pad)}
 									>
 										<title>Gamepad keys claimed by the enabled contexts</title>
-										<path d={GAMEPAD_BODY} {...stylex.props(styles.padBody)} />
+										<path d={GAMEPAD_BODY} {...stylex.attrs(styles.padBody)} />
 										<For each={gamepadControls}>
 											{(control) => (
 												<g
 													role="button"
 													aria-label={control.key}
 													onClick={() => setSelectedKey(control.key)}
-													{...stylex.props(styles.hit)}
+													{...stylex.attrs(styles.hit)}
 												>
 													{control.kind === "pad" ? (
 														<rect
@@ -386,7 +390,7 @@ export function InputAtlasRoute(props: { readonly client: InputAtlasClientApi })
 															width={control.width}
 															height={control.height}
 															rx={4}
-															{...stylex.props(
+															{...stylex.attrs(
 																styles.control,
 																isBound(control.key) &&
 																	styles.controlBound,
@@ -405,7 +409,7 @@ export function InputAtlasRoute(props: { readonly client: InputAtlasClientApi })
 																	? STICK_RADIUS
 																	: FACE_RADIUS
 															}
-															{...stylex.props(
+															{...stylex.attrs(
 																styles.control,
 																isBound(control.key) &&
 																	styles.controlBound,
@@ -427,7 +431,7 @@ export function InputAtlasRoute(props: { readonly client: InputAtlasClientApi })
 																? control.y + control.height / 2
 																: control.cy
 														}
-														{...stylex.props(
+														{...stylex.attrs(
 															styles.controlLabel,
 															isBound(control.key) &&
 																styles.controlLabelBound
@@ -441,25 +445,25 @@ export function InputAtlasRoute(props: { readonly client: InputAtlasClientApi })
 									</svg>
 								</div>
 
-								<div {...stylex.props(styles.device, styles.keyboardDevice)}>
+								<div {...stylex.attrs(styles.device, styles.keyboardDevice)}>
 									<For each={keyboardRows}>
 										{(row) => (
-											<div {...stylex.props(styles.keyboardRow)}>
+											<div {...stylex.attrs(styles.keyboardRow)}>
 												<For each={row}>
 													{(cell) => <KeyboardCell cell={cell} />}
 												</For>
 											</div>
 										)}
 									</For>
-									<div {...stylex.props(styles.keyRow)}>
+									<div {...stylex.attrs(styles.keyRow)}>
 										<For each={mouseCaps}>{(cap) => <Cap cap={cap} />}</For>
 									</div>
 									<Show when={unplacedKeys(current()).length > 0}>
-										<div {...stylex.props(styles.otherKeys)}>
-											<span {...stylex.props(styles.otherLabel)}>
+										<div {...stylex.attrs(styles.otherKeys)}>
+											<span {...stylex.attrs(styles.otherLabel)}>
 												Bound, not on the diagram
 											</span>
-											<div {...stylex.props(styles.keyRow)}>
+											<div {...stylex.attrs(styles.keyRow)}>
 												<For each={unplacedKeys(current())}>
 													{(entry) => <Cap cap={{ key: entry.key }} />}
 												</For>
@@ -471,7 +475,7 @@ export function InputAtlasRoute(props: { readonly client: InputAtlasClientApi })
 
 							<KeyDetail selected={selected()} selectedKey={selectedKey()} />
 
-							<p {...stylex.props(styles.footer)}>
+							<p {...stylex.attrs(styles.footer)}>
 								{plural(
 									report()?.coverage.mappingContexts ?? 0,
 									"mapping context",
@@ -503,24 +507,24 @@ function KeyDetail(props: {
 	// selected name: "nothing binds this" is an answer, not an empty panel.
 	const claims = () => props.selected?.claims ?? [];
 	return (
-		<div {...stylex.props(styles.detail)}>
+		<div {...stylex.attrs(styles.detail)}>
 			<Show
 				when={props.selectedKey}
 				fallback={
-					<p {...stylex.props(styles.detailEmpty)}>
+					<p {...stylex.attrs(styles.detailEmpty)}>
 						Pick a key to see every context that claims it.
 					</p>
 				}
 			>
 				{(key) => (
 					<>
-						<div {...stylex.props(styles.detailHead)}>
-							<span {...stylex.props(styles.detailKey)}>{key()}</span>
-							<span {...stylex.props(styles.detailDevice)}>
+						<div {...stylex.attrs(styles.detailHead)}>
+							<span {...stylex.attrs(styles.detailKey)}>{key()}</span>
+							<span {...stylex.attrs(styles.detailDevice)}>
 								{props.selected?.device ?? deviceOf(key())}
 							</span>
 							<Show when={props.selected?.contested === true}>
-								<span {...stylex.props(styles.chipContested)}>
+								<span {...stylex.attrs(styles.chipContested)}>
 									Claimed by {claims().length} contexts
 								</span>
 							</Show>
@@ -528,24 +532,24 @@ function KeyDetail(props: {
 						<Show
 							when={claims().length > 0}
 							fallback={
-								<p {...stylex.props(styles.detailEmpty)}>
+								<p {...stylex.attrs(styles.detailEmpty)}>
 									Unbound in every enabled context.
 								</p>
 							}
 						>
 							<For each={claims()}>
 								{(claim) => (
-									<div {...stylex.props(styles.claim)}>
-										<span {...stylex.props(styles.claimContext)}>
+									<div {...stylex.attrs(styles.claim)}>
+										<span {...stylex.attrs(styles.claimContext)}>
 											{claim.contextName}
 										</span>
-										<span {...stylex.props(styles.claimAction)}>
+										<span {...stylex.attrs(styles.claimAction)}>
 											{claim.actionName ?? "No action"}
 										</span>
-										<span {...stylex.props(styles.claimTags)}>
+										<span {...stylex.attrs(styles.claimTags)}>
 											<For each={claim.triggers}>
 												{(trigger) => (
-													<span {...stylex.props(styles.tag)}>
+													<span {...stylex.attrs(styles.tag)}>
 														{trigger}
 													</span>
 												)}
@@ -555,20 +559,20 @@ function KeyDetail(props: {
 												    but nothing said so in the package. */}
 												<span
 													title="No trigger serialized on this mapping"
-													{...stylex.props(styles.tagQuiet)}
+													{...stylex.attrs(styles.tagQuiet)}
 												>
 													No trigger
 												</span>
 											</Show>
 											<For each={claim.modifiers}>
 												{(modifier) => (
-													<span {...stylex.props(styles.tagQuiet)}>
+													<span {...stylex.attrs(styles.tagQuiet)}>
 														{modifier}
 													</span>
 												)}
 											</For>
 										</span>
-										<span {...stylex.props(styles.claimText)}>
+										<span {...stylex.attrs(styles.claimText)}>
 											{claim.actionDescription ?? ""}
 										</span>
 									</div>

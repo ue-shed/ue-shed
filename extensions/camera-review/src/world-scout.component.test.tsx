@@ -20,6 +20,7 @@ import {
 } from "@ue-shed/observatory/browser";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
 import { Effect, Layer, ManagedRuntime, Stream } from "effect";
+import { flush } from "solid-js";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import type { MapReviewClientApi } from "./map-review-client.js";
 import { shouldRequestFollowUpdate, WorldScout } from "./world-scout.js";
@@ -320,6 +321,7 @@ describe("WorldScout", () => {
 		const user = userEvent.setup();
 		await user.click(screen.getByRole("button", { name: /Orbit 07/ }));
 		paint.flush();
+		flush();
 
 		expect(Number(zoom.value)).toBeGreaterThan(initialZoom);
 		expect(await screen.findByRole("heading", { name: "Orbit 07" })).toBeDefined();

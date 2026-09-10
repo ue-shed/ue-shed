@@ -14,7 +14,7 @@ import {
 	For,
 	Match,
 	onCleanup,
-	onMount,
+	onSettled,
 	Show,
 	Switch
 } from "solid-js";
@@ -260,7 +260,7 @@ export function NiagaraPreviewRoute(props: { readonly client: NiagaraPreviewClie
 		setSystemObjectPath(value);
 	};
 
-	onMount(refreshCatalogue);
+	onSettled(refreshCatalogue);
 
 	const clearFrameCache = () => {
 		for (const frame of frameCache.values()) URL.revokeObjectURL(frame.url);
@@ -377,32 +377,38 @@ export function NiagaraPreviewRoute(props: { readonly client: NiagaraPreviewClie
 		);
 	};
 
-	createEffect(() => {
-		const currentRun = readyRun();
-		const currentFrame = frameState();
-		if (
-			currentRun === undefined ||
-			currentFrame.status !== "ready" ||
-			!isPlaying() ||
-			bufferingFrameIndex() !== undefined ||
-			currentRun.manifest.artifacts.length < 2
-		) {
-			return;
+	createEffect(
+		() => ({
+			currentRun: readyRun(),
+			currentFrame: frameState(),
+			playing: isPlaying(),
+			buffering: bufferingFrameIndex()
+		}),
+		({ currentRun, currentFrame, playing, buffering }) => {
+			if (
+				currentRun === undefined ||
+				currentFrame.status !== "ready" ||
+				!playing ||
+				buffering !== undefined ||
+				currentRun.manifest.artifacts.length < 2
+			) {
+				return;
+			}
+			const artifacts = currentRun.manifest.artifacts;
+			const position = artifacts.findIndex(({ index }) => index === currentFrame.index);
+			const next = artifacts[(position + 1) % artifacts.length];
+			if (next === undefined) return;
+			const interval = Math.max(
+				minimumPlaybackIntervalMilliseconds,
+				1000 / currentRun.manifest.effectiveSettings.playbackFramesPerSecond
+			);
+			const timeout = window.setTimeout(
+				() => loadFrame(currentRun.manifestPath, next, true),
+				interval
+			);
+			return () => window.clearTimeout(timeout);
 		}
-		const artifacts = currentRun.manifest.artifacts;
-		const position = artifacts.findIndex(({ index }) => index === currentFrame.index);
-		const next = artifacts[(position + 1) % artifacts.length];
-		if (next === undefined) return;
-		const interval = Math.max(
-			minimumPlaybackIntervalMilliseconds,
-			1000 / currentRun.manifest.effectiveSettings.playbackFramesPerSecond
-		);
-		const timeout = window.setTimeout(
-			() => loadFrame(currentRun.manifestPath, next, true),
-			interval
-		);
-		onCleanup(() => window.clearTimeout(timeout));
-	});
+	);
 
 	const run = () => {
 		const decoded = candidateIntent();
@@ -438,16 +444,16 @@ export function NiagaraPreviewRoute(props: { readonly client: NiagaraPreviewClie
 	};
 
 	return (
-		<main {...stylex.props(styles.page)}>
-			<header {...stylex.props(styles.header)}>
+		<main {...stylex.attrs(styles.page)}>
+			<header {...stylex.attrs(styles.header)}>
 				<div>
-					<h1 {...stylex.props(styles.title)}>Niagara preview</h1>
-					<p {...stylex.props(styles.intro)}>
+					<h1 {...stylex.attrs(styles.title)}>Niagara preview</h1>
+					<p {...stylex.attrs(styles.intro)}>
 						Bake a saved Baker view into a hashed PNG sequence you can scrub and share
 						without opening the editor.
 					</p>
 				</div>
-				<div {...stylex.props(styles.headerActions)}>
+				<div {...stylex.attrs(styles.headerActions)}>
 					<Button
 						tone="primary"
 						disabled={Option.isNone(candidateIntent()) || state().status === "running"}
@@ -458,12 +464,12 @@ export function NiagaraPreviewRoute(props: { readonly client: NiagaraPreviewClie
 				</div>
 			</header>
 
-			<div {...stylex.props(styles.workspace)}>
-				<aside aria-label="Niagara capture settings" {...stylex.props(styles.controls)}>
-					<header {...stylex.props(styles.panelHeader)}>
-						<h2 {...stylex.props(styles.panelTitle)}>Capture settings</h2>
+			<div {...stylex.attrs(styles.workspace)}>
+				<aside aria-label="Niagara capture settings" {...stylex.attrs(styles.controls)}>
+					<header {...stylex.attrs(styles.panelHeader)}>
+						<h2 {...stylex.attrs(styles.panelTitle)}>Capture settings</h2>
 						<span
-							{...stylex.props(
+							{...stylex.attrs(
 								styles.panelStatus,
 								Option.isNone(candidateIntent()) && styles.panelStatusCheck
 							)}
@@ -481,7 +487,7 @@ export function NiagaraPreviewRoute(props: { readonly client: NiagaraPreviewClie
 						onSelect={selectSystem}
 						onTypePath={typeSystemPath}
 					/>
-					<div {...stylex.props(styles.fieldGrid)}>
+					<div {...stylex.attrs(styles.fieldGrid)}>
 						<NumberField label="Width" value={width()} onInput={setWidth} />
 						<NumberField label="Height" value={height()} onInput={setHeight} />
 						<NumberField label="Frames" value={frameCount()} onInput={setFrameCount} />
@@ -501,10 +507,10 @@ export function NiagaraPreviewRoute(props: { readonly client: NiagaraPreviewClie
 							onInput={setStartSeconds}
 						/>
 					</div>
-					<label {...stylex.props(styles.field)}>
+					<label {...stylex.attrs(styles.field)}>
 						<span>Scene policy</span>
 						<select
-							{...stylex.props(styles.input)}
+							{...stylex.attrs(styles.input)}
 							value={captureMode()}
 							onChange={(event) =>
 								setCaptureMode(
@@ -518,31 +524,31 @@ export function NiagaraPreviewRoute(props: { readonly client: NiagaraPreviewClie
 							<option value="full_scene">Full preview scene</option>
 						</select>
 					</label>
-					<div {...stylex.props(styles.boundaryNote)}>
-						<strong {...stylex.props(styles.boundaryTitle)}>Plugin required</strong>
+					<div {...stylex.attrs(styles.boundaryNote)}>
+						<strong {...stylex.attrs(styles.boundaryTitle)}>Plugin required</strong>
 						<span>
 							The selected project must expose the UEShedNiagara editor plugin and a
 							render-capable Unreal install.
 						</span>
 					</div>
-					<p {...stylex.props(styles.contractNote)}>
+					<p {...stylex.attrs(styles.contractNote)}>
 						Frames come out straight-alpha sRGB, rendered in an isolated preview scene
 						at a deterministic age. The source system is never modified.
 					</p>
 				</aside>
 
-				<section aria-label="Niagara preview frames" {...stylex.props(styles.stage)}>
+				<section aria-label="Niagara preview frames" {...stylex.attrs(styles.stage)}>
 					<Switch>
 						<Match when={state().status === "idle"}>
 							<EmptyStage />
 						</Match>
 						<Match when={state().status === "running"}>
-							<div role="status" aria-live="polite" {...stylex.props(styles.running)}>
-								<span {...stylex.props(styles.renderOrb)} />
-								<strong {...stylex.props(styles.runningTitle)}>
+							<div role="status" aria-live="polite" {...stylex.attrs(styles.running)}>
+								<span {...stylex.attrs(styles.renderOrb)} />
+								<strong {...stylex.attrs(styles.runningTitle)}>
 									Rendering frames
 								</strong>
-								<p {...stylex.props(styles.runningDetail)}>
+								<p {...stylex.attrs(styles.runningDetail)}>
 									Unreal is capturing offscreen. Frames appear once every one of
 									them validates.
 								</p>
@@ -592,10 +598,10 @@ function NumberField(props: {
 	readonly onInput: (value: string) => void;
 }) {
 	return (
-		<label {...stylex.props(styles.field)}>
+		<label {...stylex.attrs(styles.field)}>
 			<span>{props.label}</span>
 			<input
-				{...stylex.props(styles.input)}
+				{...stylex.attrs(styles.input)}
 				type="number"
 				value={props.value}
 				onInput={(event) => props.onInput(event.currentTarget.value)}
@@ -606,13 +612,13 @@ function NumberField(props: {
 
 function EmptyStage() {
 	return (
-		<div {...stylex.props(styles.emptyStage)}>
-			<div {...stylex.props(styles.reticle)}>
+		<div {...stylex.attrs(styles.emptyStage)}>
+			<div {...stylex.attrs(styles.reticle)}>
 				<i />
 				<i />
 			</div>
-			<h2 {...stylex.props(styles.emptyTitle)}>No frames yet</h2>
-			<p {...stylex.props(styles.emptyDetail)}>
+			<h2 {...stylex.attrs(styles.emptyTitle)}>No frames yet</h2>
+			<p {...stylex.attrs(styles.emptyDetail)}>
 				Pick a Niagara System from the catalogue, choose how many frames you want, and
 				capture a preview.
 			</p>
@@ -631,24 +637,24 @@ function SystemCatalogue(props: {
 	readonly onTypePath: (value: string) => void;
 }) {
 	return (
-		<section aria-label="Niagara system catalogue" {...stylex.props(styles.systemCatalogue)}>
-			<header {...stylex.props(styles.catalogueHeader)}>
-				<h2 {...stylex.props(styles.catalogueTitle)}>Niagara system</h2>
+		<section aria-label="Niagara system catalogue" {...stylex.attrs(styles.systemCatalogue)}>
+			<header {...stylex.attrs(styles.catalogueHeader)}>
+				<h2 {...stylex.attrs(styles.catalogueTitle)}>Niagara system</h2>
 				<button
 					type="button"
 					disabled={props.catalogue.status === "loading"}
 					onClick={props.onRefresh}
-					{...stylex.props(styles.catalogueRefresh)}
+					{...stylex.attrs(styles.catalogueRefresh)}
 				>
 					{props.catalogue.status === "loading" ? "Listing…" : "Refresh"}
 				</button>
 			</header>
 			<Switch>
 				<Match when={props.catalogue.status === "loading"}>
-					<p {...stylex.props(styles.catalogueStatus)}>Listing saved Niagara Systems…</p>
+					<p {...stylex.attrs(styles.catalogueStatus)}>Listing saved Niagara Systems…</p>
 				</Match>
 				<Match when={props.catalogue.status === "not_configured"}>
-					<p {...stylex.props(styles.catalogueStatus)}>
+					<p {...stylex.attrs(styles.catalogueStatus)}>
 						Choose a Workbench project to list its Niagara Systems, or type a path
 						below.
 					</p>
@@ -658,16 +664,16 @@ function SystemCatalogue(props: {
 						const current = props.catalogue;
 						if (current.status !== "failed") return null;
 						return (
-							<div role="alert" {...stylex.props(styles.catalogueFailure)}>
-								<p {...stylex.props(styles.catalogueStatus)}>
+							<div role="alert" {...stylex.attrs(styles.catalogueFailure)}>
+								<p {...stylex.attrs(styles.catalogueStatus)}>
 									{current.error.message}
 								</p>
-								<p {...stylex.props(styles.catalogueRecovery)}>
+								<p {...stylex.attrs(styles.catalogueRecovery)}>
 									{current.error.recovery}
 								</p>
 								<Show when={current.error.technical}>
 									{(technical) => (
-										<details {...stylex.props(styles.catalogueTechnical)}>
+										<details {...stylex.attrs(styles.catalogueTechnical)}>
 											<summary>Technical details</summary>
 											<code>{technical()}</code>
 										</details>
@@ -681,12 +687,12 @@ function SystemCatalogue(props: {
 					<Show
 						when={props.entries.length > 0 || props.query.trim().length === 0}
 						fallback={
-							<p {...stylex.props(styles.catalogueStatus)}>
+							<p {...stylex.attrs(styles.catalogueStatus)}>
 								No Niagara Systems match “{props.query.trim()}”.
 							</p>
 						}
 					>
-						<label {...stylex.props(styles.catalogueSearch)}>
+						<label {...stylex.attrs(styles.catalogueSearch)}>
 							<span aria-hidden="true">⌕</span>
 							<input
 								aria-label="Filter Niagara Systems"
@@ -694,14 +700,14 @@ function SystemCatalogue(props: {
 								onInput={(event) => props.onQuery(event.currentTarget.value)}
 								placeholder="Filter by object path…"
 								spellcheck={false}
-								{...stylex.props(styles.input, styles.catalogueSearchInput)}
+								{...stylex.attrs(styles.input, styles.catalogueSearchInput)}
 							/>
 						</label>
-						<div {...stylex.props(styles.catalogueList)}>
+						<div {...stylex.attrs(styles.catalogueList)}>
 							<Show
 								when={props.entries.length > 0}
 								fallback={
-									<p {...stylex.props(styles.catalogueStatus)}>
+									<p {...stylex.attrs(styles.catalogueStatus)}>
 										No saved Niagara Systems in this project yet.
 									</p>
 								}
@@ -710,20 +716,24 @@ function SystemCatalogue(props: {
 									{(entry) => (
 										<button
 											type="button"
-											aria-pressed={props.selectedPath === entry.objectPath}
+											aria-pressed={
+												props.selectedPath === entry.objectPath
+													? "true"
+													: "false"
+											}
 											onClick={() => props.onSelect(entry.objectPath)}
-											{...stylex.props(
+											{...stylex.attrs(
 												styles.catalogueRow,
 												props.selectedPath === entry.objectPath &&
 													styles.catalogueRowActive
 											)}
 										>
-											<strong {...stylex.props(styles.catalogueName)}>
+											<strong {...stylex.attrs(styles.catalogueName)}>
 												{systemName(entry.objectPath)}
 											</strong>
 											<small
 												title={entry.objectPath}
-												{...stylex.props(styles.cataloguePath)}
+												{...stylex.attrs(styles.cataloguePath)}
 											>
 												{entry.objectPath}
 											</small>
@@ -736,18 +746,18 @@ function SystemCatalogue(props: {
 				</Match>
 			</Switch>
 			<Show when={props.selectedPath.length > 0}>
-				<code title={props.selectedPath} {...stylex.props(styles.selectedSystemPath)}>
+				<code title={props.selectedPath} {...stylex.attrs(styles.selectedSystemPath)}>
 					{props.selectedPath}
 				</code>
 			</Show>
-			<details {...stylex.props(styles.manualEntry)}>
-				<summary {...stylex.props(styles.manualSummary)}>
+			<details {...stylex.attrs(styles.manualEntry)}>
+				<summary {...stylex.attrs(styles.manualSummary)}>
 					Use a path outside the project
 				</summary>
-				<label {...stylex.props(styles.manualField)}>
+				<label {...stylex.attrs(styles.manualField)}>
 					<span>Niagara System object path</span>
 					<input
-						{...stylex.props(styles.input)}
+						{...stylex.attrs(styles.input)}
 						value={props.selectedPath}
 						onInput={(event) => props.onTypePath(event.currentTarget.value)}
 						spellcheck={false}
@@ -766,25 +776,25 @@ function FailurePanel(props: {
 	const parts = createMemo(() => failureParts(props.error.message));
 	const technical = () => props.technical ?? parts().technical;
 	return (
-		<div role="alert" {...stylex.props(styles.failure)}>
-			<strong {...stylex.props(styles.failureTitle)}>Couldn’t capture this preview</strong>
-			<p {...stylex.props(styles.failureMessage)}>{parts().summary}</p>
-			<p {...stylex.props(styles.failureRecovery)}>{props.error.recovery}</p>
+		<div role="alert" {...stylex.attrs(styles.failure)}>
+			<strong {...stylex.attrs(styles.failureTitle)}>Couldn’t capture this preview</strong>
+			<p {...stylex.attrs(styles.failureMessage)}>{parts().summary}</p>
+			<p {...stylex.attrs(styles.failureRecovery)}>{props.error.recovery}</p>
 			<Show
 				when={props.error.retrySafe}
 				fallback={
-					<p {...stylex.props(styles.failureRecovery)}>
+					<p {...stylex.attrs(styles.failureRecovery)}>
 						Check the cause below before capturing again.
 					</p>
 				}
 			>
-				<div {...stylex.props(styles.failureActions)}>
+				<div {...stylex.attrs(styles.failureActions)}>
 					<Button tone="secondary" onClick={props.onRetry}>
 						Retry
 					</Button>
 				</div>
 			</Show>
-			<details {...stylex.props(styles.failureDetails)}>
+			<details {...stylex.attrs(styles.failureDetails)}>
 				<summary>Technical details</summary>
 				<code>
 					{props.error.stage} · {props.error.code}
@@ -807,26 +817,26 @@ function RunEvidence(props: {
 }) {
 	const settings = () => props.run.manifest.effectiveSettings;
 	return (
-		<div {...stylex.props(styles.evidence)}>
-			<header {...stylex.props(styles.evidenceHeader)}>
-				<div {...stylex.props(styles.evidenceIdentity)}>
-					<strong {...stylex.props(styles.evidenceSystem)}>
+		<div {...stylex.attrs(styles.evidence)}>
+			<header {...stylex.attrs(styles.evidenceHeader)}>
+				<div {...stylex.attrs(styles.evidenceIdentity)}>
+					<strong {...stylex.attrs(styles.evidenceSystem)}>
 						{props.run.manifest.systemObjectPath}
 					</strong>
-					<code {...stylex.props(styles.evidenceRunId)}>
+					<code {...stylex.attrs(styles.evidenceRunId)}>
 						Run {props.run.manifest.runId.slice(0, 8)}
 					</code>
 				</div>
-				<span {...stylex.props(styles.verified)}>Verified</span>
+				<span {...stylex.attrs(styles.verified)}>Verified</span>
 			</header>
-			<div {...stylex.props(styles.viewer)}>
-				<div {...stylex.props(styles.playbackControls)}>
+			<div {...stylex.attrs(styles.viewer)}>
+				<div {...stylex.attrs(styles.playbackControls)}>
 					<button
 						type="button"
 						aria-label={props.isPlaying ? "Pause preview" : "Play preview"}
-						aria-pressed={props.isPlaying}
+						aria-pressed={props.isPlaying ? "true" : "false"}
 						onClick={props.onTogglePlayback}
-						{...stylex.props(
+						{...stylex.attrs(
 							styles.transportButton,
 							props.isPlaying && styles.transportActive
 						)}
@@ -837,12 +847,12 @@ function RunEvidence(props: {
 						type="button"
 						aria-label="Restart preview"
 						onClick={props.onRestart}
-						{...stylex.props(styles.transportButton)}
+						{...stylex.attrs(styles.transportButton)}
 					>
 						Restart
 					</button>
 					<Show when={props.bufferingFrameIndex !== undefined}>
-						<span {...stylex.props(styles.bufferingReadout)}>
+						<span {...stylex.attrs(styles.bufferingReadout)}>
 							Buffering{" "}
 							{String((props.bufferingFrameIndex ?? 0) + 1).padStart(2, "0")}
 						</span>
@@ -850,7 +860,7 @@ function RunEvidence(props: {
 				</div>
 				<Switch>
 					<Match when={props.frameState.status === "loading"}>
-						<div role="status" {...stylex.props(styles.frameLoading)}>
+						<div role="status" {...stylex.attrs(styles.frameLoading)}>
 							Reading frame…
 						</div>
 					</Match>
@@ -859,9 +869,9 @@ function RunEvidence(props: {
 							const current = props.frameState;
 							if (current.status !== "failed") return null;
 							return (
-								<div role="alert" {...stylex.props(styles.frameFailure)}>
+								<div role="alert" {...stylex.attrs(styles.frameFailure)}>
 									<strong>{current.error.message}</strong>
-									<span {...stylex.props(styles.frameFailureRecovery)}>
+									<span {...stylex.attrs(styles.frameFailureRecovery)}>
 										{current.error.recovery}
 									</span>
 								</div>
@@ -873,7 +883,7 @@ function RunEvidence(props: {
 							const current = props.frameState;
 							return current.status === "ready" ? (
 								<img
-									{...stylex.props(styles.previewImage)}
+									{...stylex.attrs(styles.previewImage)}
 									src={current.url}
 									alt={`Niagara preview frame ${current.index}`}
 								/>
@@ -881,26 +891,26 @@ function RunEvidence(props: {
 						})()}
 					</Match>
 				</Switch>
-				<div {...stylex.props(styles.viewerReadout)}>
+				<div {...stylex.attrs(styles.viewerReadout)}>
 					<span>
 						Frame{" "}
-						<code {...stylex.props(styles.readoutValue)}>
+						<code {...stylex.attrs(styles.readoutValue)}>
 							{String(props.selectedArtifact?.index ?? 0).padStart(4, "0")}
 						</code>
 					</span>
-					<code {...stylex.props(styles.readoutValue)}>
+					<code {...stylex.attrs(styles.readoutValue)}>
 						{formatSeconds(props.selectedArtifact?.timeSeconds ?? 0)}
 					</code>
 				</div>
 			</div>
-			<div aria-label="Frame sequence" {...stylex.props(styles.timeline)}>
+			<div aria-label="Frame sequence" {...stylex.attrs(styles.timeline)}>
 				<For each={props.run.manifest.artifacts}>
 					{(artifact) => (
 						<button
 							type="button"
 							aria-label={`Show frame ${artifact.index}`}
 							onClick={() => props.onSelect(artifact)}
-							{...stylex.props(
+							{...stylex.attrs(
 								styles.frameTick,
 								props.selectedArtifact?.index === artifact.index &&
 									styles.frameTickActive
@@ -916,7 +926,7 @@ function RunEvidence(props: {
 					)}
 				</For>
 			</div>
-			<div {...stylex.props(styles.facts)}>
+			<div {...stylex.attrs(styles.facts)}>
 				<Fact label="Dimensions" value={`${settings().width} × ${settings().height}`} />
 				<Fact label="Frames" value={String(settings().frameCount)} />
 				<Fact
@@ -931,11 +941,11 @@ function RunEvidence(props: {
 				/>
 			</div>
 			<Show when={props.run.manifest.diagnostics.length > 0}>
-				<div {...stylex.props(styles.diagnostics)}>
+				<div {...stylex.attrs(styles.diagnostics)}>
 					<For each={props.run.manifest.diagnostics}>
 						{(diagnostic) => (
 							<p>
-								<code {...stylex.props(styles.diagnosticCode)}>
+								<code {...stylex.attrs(styles.diagnosticCode)}>
 									{diagnostic.code}
 								</code>{" "}
 								{diagnostic.message}
@@ -944,7 +954,7 @@ function RunEvidence(props: {
 					</For>
 				</div>
 			</Show>
-			<footer {...stylex.props(styles.manifestPath)}>
+			<footer {...stylex.attrs(styles.manifestPath)}>
 				<span>Manifest</span>
 				<code>{props.run.manifestPath}</code>
 			</footer>
@@ -954,9 +964,9 @@ function RunEvidence(props: {
 
 function Fact(props: { readonly label: string; readonly value: string }) {
 	return (
-		<div {...stylex.props(styles.fact)}>
+		<div {...stylex.attrs(styles.fact)}>
 			<span>{props.label}</span>
-			<strong {...stylex.props(styles.factValue)}>{props.value}</strong>
+			<strong {...stylex.attrs(styles.factValue)}>{props.value}</strong>
 		</div>
 	);
 }

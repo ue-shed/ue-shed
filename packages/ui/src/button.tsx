@@ -1,28 +1,29 @@
 import * as stylex from "@stylexjs/stylex";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
-import { splitProps, type ComponentProps, type ParentProps } from "solid-js";
+import { omit, type ParentProps } from "solid-js";
+import { type ComponentProps } from "@solidjs/web";
 
 export type ButtonProps = ParentProps<
-	Omit<ComponentProps<"button">, "class" | "classList" | "style"> & {
+	Omit<ComponentProps<"button">, "class" | "style"> & {
 		readonly tone?: "primary" | "secondary" | "quiet";
 	}
 >;
 
 export function Button(props: ButtonProps) {
-	const [local, buttonProps] = splitProps(props, ["children", "tone"]);
+	const buttonProps = omit(props, "children", "tone");
 	return (
 		<button
 			{...buttonProps}
-			{...stylex.props(
+			{...stylex.attrs(
 				styles.base,
-				local.tone === "primary"
+				props.tone === "primary"
 					? styles.primary
-					: local.tone === "quiet"
+					: props.tone === "quiet"
 						? styles.quiet
 						: styles.secondary
 			)}
 		>
-			{local.children}
+			{props.children}
 		</button>
 	);
 }

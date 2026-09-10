@@ -35,6 +35,12 @@ export function createVirtualizer<ScrollElement extends Element, ItemElement ext
 		instance._willUpdate();
 		return cleanup;
 	});
+	const measureElement = (element: ItemElement | null) => {
+		if (element === null) return;
+		queueMicrotask(() => {
+			if (element.isConnected) instance.measureElement(element);
+		});
+	};
 	return {
 		getVirtualItems: () => {
 			revision();
@@ -44,7 +50,7 @@ export function createVirtualizer<ScrollElement extends Element, ItemElement ext
 			revision();
 			return instance.getTotalSize();
 		},
-		measureElement: instance.measureElement,
+		measureElement,
 		scrollToIndex: instance.scrollToIndex
 	};
 }

@@ -17,12 +17,14 @@ class SCameraArrangementPanel : public SCompoundWidget
   private:
     using FObject = TSharedPtr<FJsonObject>;
     FObject Active, Panel, Arrangement;
-    TSharedPtr<SVerticalBox> CameraRows, GroupRows, ActorRows, ProposalRows;
+    TSharedPtr<SVerticalBox> CameraRows, GroupRows, ActorRows, ProposalRows, ActiveActions;
     TSet<FString> Selected;
     FString Scope = TEXT("arrangement"), GroupId, Message, RowKey, ActorKey, ProposalKey;
     FString VisibilityPath, VisibilityName = TEXT("Visibility preset");
     FString LayoutKind = TEXT("single"), RecipePath, RecipeName = TEXT("Camera recipe"), GroupName = TEXT("Group"),
             CameraName = TEXT("Camera");
+    int32 InspectorPage = 0;
+    bool CommittingNumber = false;
     double ExposureEV = 10;
     double Count = 6, Start = 0, Span = 180, Dolly = 100, Height = 0, AimX = 0, AimY = 0, AimZ = 0;
     bool Retain = true, SubjectOrientation = false, RemoveRetired = false, Preview = false;

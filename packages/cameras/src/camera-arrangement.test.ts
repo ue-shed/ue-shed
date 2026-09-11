@@ -193,6 +193,45 @@ describe("actor-scoped camera arrangements", () => {
 });
 
 describe("durable camera coordination", () => {
+	it("preserves approvals from another actor set and rejects concurrent edits to its own view", async () => {
+		const p = await paths();
+		const first = makeCameraAuthoringStore(p.draft);
+		const second = makeCameraAuthoringStore(`${p.draft}.second`);
+		const a = fixtureArrangement();
+		const b = CameraArrangement.make({
+			...a,
+			id: CameraArrangement.fields.id.make("arrangement-b"),
+			cameras: a.cameras.map((camera) => ({
+				...camera,
+				viewId: ReviewSet.fields.views.value.fields.id.make(`b-${camera.viewId}`)
+			}))
+		});
+		await Effect.runPromise(first.create(a, fixtureSet()));
+		await Effect.runPromise(second.create(b, fixtureSet()));
+		const approve = (operation: string) => ({
+			operationId: CameraOperationId.make(operation),
+			expectedRevision: 0,
+			cameraId: ArrangementCameraId.make("camera-0"),
+			destination: p.destination
+		});
+		await Effect.runPromise(first.approve(approve("first")));
+		const both = await Effect.runPromise(second.approve(approve("second")));
+		expect(both.reviewSet.views.map((view) => view.id)).toEqual(["view-0", "b-view-0"]);
+		const revised = await Effect.runPromise(first.approve(approve("first-again")));
+		expect(revised.reviewSet.views.map((view) => view.id)).toEqual(["view-0", "b-view-0"]);
+		await writeFile(
+			p.destination,
+			JSON.stringify({
+				...revised.reviewSet,
+				views: revised.reviewSet.views.map((view) =>
+					view.id === "view-0" ? { ...view, displayName: "Edited elsewhere" } : view
+				)
+			})
+		);
+		await expect(Effect.runPromise(first.approve(approve("conflict")))).rejects.toThrow(
+			"saved cameras"
+		);
+	});
 	it("repairs an approval interrupted after the durable commit and before its export", async () => {
 		const p = await paths(),
 			store = makeCameraAuthoringStore(p.draft),

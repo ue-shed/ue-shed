@@ -49,6 +49,47 @@ export const CameraApproval = Schema.Union([
 ]);
 export type CameraApproval = typeof CameraApproval.Type;
 const digest = (text: string) => createHash("sha256").update(text).digest("hex");
+/** Rebase disjoint set approvals while retaining conflict detection for this set's saved cameras. */
+export function cameraApprovalBase(
+	document: CameraAuthoringDocument,
+	current: ReviewSet
+): ReviewSet {
+	const previous = document.reviewSet;
+	const {
+		views: _oldViews,
+		captureProfiles: _oldProfiles,
+		contract: _oldContract,
+		...oldHeader
+	} = previous;
+	const {
+		views: _newViews,
+		captureProfiles: _newProfiles,
+		contract: _newContract,
+		...newHeader
+	} = current;
+	const ownedIds = new Set([
+		...document.arrangement.cameras.map((camera) => camera.viewId),
+		...previous.views
+			.filter((view) => view.authoring?.arrangementId === document.arrangement.id)
+			.map((view) => view.id)
+	]);
+	const unchangedOwned = [...ownedIds].every(
+		(id) =>
+			canonical(previous.views.find((view) => view.id === id) ?? null) ===
+			canonical(current.views.find((view) => view.id === id) ?? null)
+	);
+	const unchangedProfiles = previous.captureProfiles.every(
+		(profile) =>
+			canonical(profile) ===
+			canonical(current.captureProfiles.find((entry) => entry.id === profile.id) ?? null)
+	);
+	if (canonical(oldHeader) !== canonical(newHeader) || !unchangedOwned || !unchangedProfiles)
+		throw arrangementFailure(
+			"stale",
+			"This set's saved cameras or capture configuration changed. Reload before saving."
+		);
+	return current;
+}
 const json = <Value>(value: Value) => `${JSON.stringify(value, null, "\t")}\n`;
 function canonical<Value>(input: Value): string {
 	const value = Schema.decodeUnknownSync(Schema.Json)(JSON.parse(JSON.stringify(input)));
@@ -245,18 +286,23 @@ export function makeCameraAuthoringStore(documentPath: string): CameraAuthoringS
 						"The capture Review Set must have its own path."
 					);
 				const current = await optionalRead(destination);
-				if (
-					current !== null &&
-					canonical(JSON.parse(current)) !== canonical(document.reviewSet)
-				)
-					throw arrangementFailure(
-						"stale",
-						"The destination differs from the draft's Review Set. Import its changes before approving."
-					);
+				let base = document.reviewSet;
+				if (current !== null) {
+					let decoded: ReviewSet;
+					try {
+						decoded = Schema.decodeUnknownSync(ReviewSet)(JSON.parse(current));
+					} catch {
+						throw arrangementFailure(
+							"stale",
+							"The destination differs from a valid Review Set. Reload before saving."
+						);
+					}
+					base = cameraApprovalBase(document, decoded);
+				}
 				const ids = "cameraId" in approval ? [approval.cameraId] : approval.cameraIds;
 				if (new Set(ids).size !== ids.length)
 					throw arrangementFailure("invalid", "Approval camera IDs must be unique.");
-				let reviewSet = document.reviewSet;
+				let reviewSet = base;
 				for (const cameraId of ids)
 					reviewSet = approveArrangementCamera(document.arrangement, cameraId, reviewSet);
 				if ("removeRetiredViewIds" in approval) {

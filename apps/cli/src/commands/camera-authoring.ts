@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import { Effect, Ref, Schedule, Schema } from "effect";
 import { Argument, Command, Flag } from "effect/unstable/cli";
@@ -34,6 +35,45 @@ const create = Command.make(
 				);
 			})
 		)
+);
+const fromSelection = Command.make(
+	"from-selection",
+	{ ...draft, endpoint: Flag.string("endpoint") },
+	(args) =>
+		observeCliOperation(
+			"CameraAuthoringFromSelection",
+			Effect.gen(function* () {
+				const cameras = yield* Effect.promise(() => import("@ue-shed/cameras"));
+				const connection = yield* Effect.promise(
+					() => import("@ue-shed/unreal-connection")
+				);
+				yield* Effect.gen(function* () {
+					const client = yield* connection.RemoteControlClient;
+					const selection = yield* cameras.inspectReviewSelection(args.endpoint);
+					if (selection.status !== "selected")
+						return yield* Effect.fail(
+							new Error(`${selection.message} ${selection.recovery}`)
+						);
+					const capabilities = yield* cameras
+						.makeCameraRenderer(client, args.endpoint)
+						.capabilities();
+					const input = cameras.createCameraArrangementFromSelection({
+						id: cameras.CameraArrangementId.make(randomUUID()),
+						projectName: capabilities.projectName,
+						selection
+					});
+					yield* printJson(
+						yield* cameras
+							.makeCameraAuthoringStore(args.draftPath)
+							.create(input.arrangement, input.reviewSet)
+					);
+				}).pipe(Effect.provide(connection.RemoteControlClientLive));
+			})
+		)
+).pipe(
+	Command.withDescription(
+		"Create a single fitted camera for the selected Unreal actor. Attach camera-1 to tune its arrangement."
+	)
 );
 const show = Command.make("show", draft, (args) =>
 	observeCliOperation(
@@ -125,12 +165,30 @@ const attach = Command.make(
 					const client = yield* connection.RemoteControlClient;
 					const port = cameras.makeCameraAuthoringBridge(client, args.endpoint),
 						store = cameras.makeCameraAuthoringStore(args.draftPath);
+					const capability = yield* port.call({ version: 1, operation: "discover" });
+					if (capability.status !== "available" || !capability.arrangementPanel)
+						return yield* Effect.fail(
+							new cameras.CameraBridgeError({
+								code: "unavailable",
+								message:
+									"The installed authoring bridge lacks arrangement panel support.",
+								recovery:
+									"Install a matching CameraAuthoringBridge plugin before attaching this arrangement."
+							})
+						);
 					const attachment = yield* cameras.attachArrangementCamera(
 						store,
 						port,
 						cameras.ArrangementCameraId.make(args.cameraId)
 					);
 					const latest = yield* Ref.make(attachment);
+					const panel = yield* cameras.makeCameraAuthoringPanelSession({
+						store,
+						bridge: port,
+						attachment,
+						draftPath: args.draftPath,
+						approvalPath: args.output
+					});
 					yield* Effect.addFinalizer(() =>
 						Effect.gen(function* () {
 							const snapshot = yield* port
@@ -178,19 +236,10 @@ const attach = Command.make(
 					);
 					const previousOutput = yield* Ref.make("");
 					yield* Effect.gen(function* () {
-						const result = yield* cameras
-							.synchronizeArrangementCamera({
-								store,
-								bridge: port,
-								attachment,
-								approvalDestination: args.output
-							})
-							.pipe(
-								Effect.tap((snapshot) => Ref.set(latest, snapshot)),
-								Effect.catch((error) =>
-									Effect.succeed({ status: "blocked", error })
-								)
-							);
+						const result = yield* panel.tick().pipe(
+							Effect.tap((snapshot) => Ref.set(latest, snapshot)),
+							Effect.catch((error) => Effect.succeed({ status: "blocked", error }))
+						);
 						const text = JSON.stringify(result);
 						if (text !== (yield* Ref.get(previousOutput))) {
 							yield* printJson(result);
@@ -214,5 +263,5 @@ export const cameraArrangementCommand = Command.make("arrangement").pipe(
 	Command.withDescription(
 		"Author an actor-scoped camera arrangement through public headless services."
 	),
-	Command.withSubcommands([create, show, patch, approve, bridge, attach])
+	Command.withSubcommands([create, fromSelection, show, patch, approve, bridge, attach])
 );

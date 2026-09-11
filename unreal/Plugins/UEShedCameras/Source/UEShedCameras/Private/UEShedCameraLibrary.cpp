@@ -9,6 +9,8 @@
 #include "UObject/Package.h"
 #include "UEShedCameraSubsystem.h"
 
+FUEShedResolvePreviewVisibility& UEShedPreviewVisibilityResolver() { static FUEShedResolvePreviewVisibility Resolver; return Resolver; }
+
 namespace
 {
 UUEShedCameraSubsystem* FindCameraSubsystem()
@@ -150,6 +152,18 @@ void UUEShedCameraLibrary::EnsureProvisionedCameras(
 			return;
 		}
 		FUEShedProvisionedCameraSpec Spec;
+        if (Object->HasField(TEXT("visibility")))
+        {
+            const TSharedPtr<FJsonObject>* Visibility = nullptr;
+            double Version = 0;
+            FString VisibilityError;
+            auto& Resolver = UEShedPreviewVisibilityResolver();
+            if (!Root->TryGetNumberField(TEXT("schemaVersion"), Version) || Version != 4 || !Object->TryGetObjectField(TEXT("visibility"), Visibility) || !Resolver.IsBound() || !Resolver.Execute(Subsystem->GetWorld(), *Visibility, Spec.HiddenActors, VisibilityError))
+            {
+                ResultJson = ErrorJson(VisibilityError.IsEmpty() ? TEXT("authored-preview-unavailable") : *VisibilityError);
+                return;
+            }
+        }
 		const TSharedPtr<FJsonObject>* CorrelationObject = nullptr;
 		if (Object->TryGetObjectField(TEXT("correlation"), CorrelationObject))
 		{
@@ -291,6 +305,15 @@ void UUEShedCameraLibrary::EnsureProvisionedCameras(
 		return;
 	}
 	ResultJson = Subsystem->StatusJson();
+    double RequestedVersion = 0;
+    if (Root->TryGetNumberField(TEXT("schemaVersion"), RequestedVersion) && RequestedVersion == 4) {
+        TSharedPtr<FJsonObject> Status;
+        if (FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(ResultJson), Status) && Status) {
+            Status->SetNumberField(TEXT("schemaVersion"), 4);
+            ResultJson.Reset();
+            FJsonSerializer::Serialize(Status.ToSharedRef(), TJsonWriterFactory<>::Create(&ResultJson));
+        }
+    }
 }
 
 void UUEShedCameraLibrary::ClearProvisionedCameras(FString& ResultJson)

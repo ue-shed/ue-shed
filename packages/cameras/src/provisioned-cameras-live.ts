@@ -1,3 +1,4 @@
+import { CameraVisibilityList } from "./camera-visibility.js";
 import { RemoteControlClient, RemoteControlClientError } from "@ue-shed/unreal-connection";
 import { Clock, Duration, Effect, Schema } from "effect";
 import {
@@ -34,6 +35,7 @@ export const ProvisionedCameraCorrelation = Schema.Union([
 export type ProvisionedCameraCorrelation = Schema.Schema.Type<typeof ProvisionedCameraCorrelation>;
 
 const ProvisionedCameraFields = {
+	visibility: Schema.optionalKey(CameraVisibilityList),
 	correlation: ProvisionedCameraCorrelation,
 	height: positiveHeight,
 	location: ReviewVector,
@@ -70,8 +72,15 @@ export const ProvisionedCameraRequest = Schema.Struct({
 		Schema.isPattern(/^\/[A-Za-z0-9_./-]+$/)
 	),
 	previewFps: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 10 })),
-	schemaVersion: Schema.Literal(3)
-});
+	schemaVersion: Schema.Literals([3, 4])
+}).check(
+	Schema.makeFilter((request) =>
+		request.schemaVersion === 4 ||
+		request.cameras.every((camera) => camera.visibility === undefined)
+			? undefined
+			: "Visibility requires provisioning version 4."
+	)
+);
 export type ProvisionedCameraRequest = Schema.Schema.Type<typeof ProvisionedCameraRequest>;
 
 const PreviousProvisionedCameraRequest = Schema.Struct({
@@ -154,7 +163,7 @@ const ProvisionedCameraStatus = Schema.Struct({
 		)
 	),
 	error: Schema.optional(Schema.String),
-	schemaVersion: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 3 }))),
+	schemaVersion: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 4 }))),
 	status: Schema.optional(Schema.String),
 	worldContext: Schema.optional(Schema.Literals(["editor", "play"]))
 });
@@ -205,7 +214,7 @@ export function ensureProvisionedCameras(
 			cameras,
 			expectedMapPath: options.expectedMapPath,
 			previewFps: Math.min(10, Math.max(1, Math.round(options.previewFps ?? 5))),
-			schemaVersion: 3
+			schemaVersion: cameras.some((camera) => camera.visibility !== undefined) ? 4 : 3
 		}).pipe(
 			Effect.mapError((cause) =>
 				provisionedCameraError(
@@ -243,6 +252,16 @@ export function ensureProvisionedCameras(
 				)
 			)
 		);
+		if (request.schemaVersion === 4 && status.schemaVersion !== 4)
+			return yield* Effect.fail(
+				new ProvisionedCameraError({
+					operation: "ensure_cameras",
+					message: "The connected plugin cannot confirm authored preview visibility.",
+					recovery:
+						"Install a matching Cameras plugin before previewing authored output.",
+					retrySafe: false
+				})
+			);
 		const statusCameras = status.cameras ?? [];
 		if (status.error !== undefined || statusCameras.length === 0) {
 			return yield* Effect.fail(

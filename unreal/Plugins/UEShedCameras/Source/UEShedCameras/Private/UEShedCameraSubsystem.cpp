@@ -92,6 +92,8 @@ bool MatchesProvisionedProjection(
 	const FUEShedProvisionedCameraSpec& Spec)
 {
 	if (Capture == nullptr) return false;
+	if (Capture->HiddenActors.Num() != Spec.HiddenActors.Num()) return false;
+	for (const auto& Actor : Spec.HiddenActors) if (!Capture->HiddenActors.Contains(Actor.Get())) return false;
 	const ECameraProjectionMode::Type ExpectedProjection = Spec.bOrthographic
 		? ECameraProjectionMode::Orthographic : ECameraProjectionMode::Perspective;
 	if (Capture->ProjectionType != ExpectedProjection) return false;
@@ -105,6 +107,8 @@ void ApplyProvisionedProjection(
 	const FUEShedProvisionedCameraSpec& Spec)
 {
 	if (Capture == nullptr) return;
+	Capture->HiddenActors.Reset();
+	for (const auto& Actor : Spec.HiddenActors) if (Actor.IsValid()) Capture->HiddenActors.Add(Actor.Get());
 	Capture->ProjectionType = Spec.bOrthographic
 		? ECameraProjectionMode::Orthographic : ECameraProjectionMode::Perspective;
 	if (Spec.bOrthographic)

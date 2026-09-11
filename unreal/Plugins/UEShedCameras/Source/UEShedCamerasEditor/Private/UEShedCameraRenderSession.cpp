@@ -1,4 +1,5 @@
 #include "UEShedCameraRenderSession.h"
+#include "UEShedCameraVisibility.h"
 #include "UEShedCameraEditorOwnership.h"
 #include "Camera/CameraActor.h"
 #include "Camera/CameraComponent.h"
@@ -191,8 +192,9 @@ void Issue(TArray<TSharedPtr<FJsonValue>> &Issues, const TCHAR *Code, const TCHA
 }
 bool ValidPolicy(const TSharedPtr<FJsonObject> &P)
 {
-	if (!Fields(P, {TEXT("renderer"), TEXT("exposure"), TEXT("settling"), TEXT("time"), TEXT("preparation")}))
+	if (!Fields(P, {TEXT("renderer"), TEXT("exposure"), TEXT("settling"), TEXT("time"), TEXT("preparation")}, {TEXT("visibility")}))
 		return false;
+	if (P->HasField(TEXT("visibility")) && !Child(P, TEXT("visibility"))) return false;
 	const auto R = Child(P, TEXT("renderer")), E = Child(P, TEXT("exposure")), S = Child(P, TEXT("settling")),
 			   Prep = Child(P, TEXT("preparation"));
 	const FString Kind = String(R, TEXT("kind")), Mode = String(E, TEXT("mode"));
@@ -410,6 +412,8 @@ struct FUEShedCameraRenderSession::FState
 	double LastPoll = FPlatformTime::Seconds(), Started = LastPoll;
 	int32 Frames = 0, CompletedFrames = 0;
 	TOptional<double> EV;
+	TSharedPtr<FUEShedCameraVisibility, ESPMode::ThreadSafe> Visibility;
+	FUEShedResolvedVisibility ResolvedVisibility;
 	struct FLayer
 	{
 		TWeakObjectPtr<UDataLayerInstance> Layer;
@@ -509,6 +513,7 @@ struct FUEShedCameraRenderSession::FState
 		if (Closed)
 			return Restored;
 		Closed = true;
+		if (Visibility) Visibility->Enabled = false;
 		RestoreScreenshot();
 		// Snapshot/restore extracted from the Lit map renderer. No second viewport manager.
 		if (Client)
@@ -598,6 +603,12 @@ struct FUEShedCameraRenderSession::FState
 	}
 	bool Configure(const TSharedPtr<FJsonObject> &C, const TSharedPtr<FJsonObject> &Size)
 	{
+		ResolvedVisibility = UEShedResolveCameraVisibility(World.Get(), Child(Policy(), TEXT("visibility")));
+		if (!ResolvedVisibility.Valid) return false;
+		if (Viewport()) {
+			if (!Visibility) Visibility = FSceneViewExtensions::NewExtension<FUEShedCameraVisibility>();
+			Visibility->Target = Client->ViewState.GetReference(); Visibility->Components = ResolvedVisibility.Components; Visibility->Enabled = true;
+		}
 		const auto R = Child(C, TEXT("rotation")), P = Child(C, TEXT("projection")),
 				   Render = Child(Policy(), TEXT("renderer"));
 		const FVector L = ReadVector(Child(C, TEXT("location")));
@@ -649,6 +660,7 @@ struct FUEShedCameraRenderSession::FState
 			if (Profile != TEXT("scene_capture_defaults"))
 				Capture->BeginPersistentCameraCut();
 			ApplyExposure(Capture->Component()->PostProcessSettings);
+			for (const auto& Actor : ResolvedVisibility.Hidden) if (Actor.IsValid()) Capture->Component()->HiddenActors.Add(Actor.Get());
 			if (EV.IsSet())
 				Capture->Component()->PostProcessBlendWeight = 1;
 		}
@@ -721,6 +733,8 @@ TSharedPtr<FJsonObject> FUEShedCameraRenderSession::Preflight(const TSharedPtr<F
 	{
 		const auto Policy = Child(Request, TEXT("policy"));
 		UWorld *World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+		const auto Visibility = UEShedResolveCameraVisibility(World, Child(Policy, TEXT("visibility")));
+		if (!Visibility.Valid) Issue(Issues, TEXT("invalid_policy"), TEXT("visibility"), *Visibility.Message);
 		if (!GEditor || GEditor->PlayWorld || !World)
 			Issue(Issues, TEXT("editor_required"), TEXT("world"),
 				  TEXT("Use an editor world with Play and Simulate stopped."));
@@ -1069,7 +1083,7 @@ void FUEShedCameraRenderSession::Tick(bool bDrawViewport)
 						 : S.Metering	 ? Child(E, TEXT("referenceSize"))
 										 : Child(S.Frame, TEXT("size"))))
 		{
-			S.Fail(TEXT("capture_failed"), TEXT("Could not realize the requested camera."));
+			S.Fail(TEXT("capture_failed"), S.ResolvedVisibility.Valid ? TEXT("Could not realize the requested camera.") : S.ResolvedVisibility.Message);
 			return;
 		}
 		S.FrameConfigured = true;
@@ -1197,6 +1211,7 @@ void FUEShedCameraRenderSession::Tick(bool bDrawViewport)
 	Evidence->SetObjectField(TEXT("camera"), Child(S.Frame, TEXT("camera")));
 	Evidence->SetObjectField(TEXT("size"), Size);
 	Evidence->SetObjectField(TEXT("policy"), S.Policy());
+	if (S.Policy()->HasField(TEXT("visibility"))) Evidence->SetArrayField(TEXT("visibilityDiagnostics"), S.ResolvedVisibility.Diagnostics);
 	if (S.EV.IsSet())
 		Evidence->SetNumberField(TEXT("exposureEV100"), S.EV.GetValue());
 	else
@@ -1328,6 +1343,7 @@ TSharedPtr<FJsonObject> FUEShedCameraRenderSession::Capabilities()
 		"materials_"
 		"and_ticks\"],\"maximumRetainedOperations\":64,\"retentionMs\":120000}"));
 	Out->SetNumberField(TEXT("maximumRetainedSessions"), 9);
+	Out->SetObjectField(TEXT("authoredVisibility"), UEShedCameraVisibilityCapabilities());
 	for (const auto &Value : Out->GetArrayField(TEXT("renderers")))
 	{
 		auto R = Value->AsObject();

@@ -6,6 +6,9 @@
 
 struct FUEShedCameraRuntime;
 class AUEShedCameraSource;
+class FJsonObject;
+DECLARE_DELEGATE_RetVal_FourParams(bool, FUEShedResolvePreviewVisibility, UWorld*, const TSharedPtr<FJsonObject>&, TArray<TWeakObjectPtr<AActor>>&, FString&);
+UESHEDCAMERAS_API FUEShedResolvePreviewVisibility& UEShedPreviewVisibilityResolver();
 
 enum class EUEShedCameraRenderProfile : uint8
 {
@@ -51,6 +54,7 @@ struct FUEShedProvisionedCameraSpec
 {
 	GENERATED_BODY()
 
+	TArray<TWeakObjectPtr<AActor>> HiddenActors;
 	FString CorrelationId;
 	FString CorrelationType;
 	FVector Location = FVector::ZeroVector;

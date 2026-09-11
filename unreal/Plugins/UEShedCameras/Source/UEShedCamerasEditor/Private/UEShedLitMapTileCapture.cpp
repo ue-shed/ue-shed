@@ -422,6 +422,7 @@ void BeginUEShedLitMapTileCapture(const TSharedPtr<FJsonObject> &Request, UWorld
 	{
 		auto RequestRender = UEShedLegacyRenderRequest(RunId, World, true);
 		auto RenderPolicy = RequestRender->GetObjectField(TEXT("policy"));
+		if (Capture->HasField(TEXT("visibility"))) RenderPolicy->SetObjectField(TEXT("visibility"), Capture->GetObjectField(TEXT("visibility")));
 		auto RendererPolicy = RenderPolicy->GetObjectField(TEXT("renderer"));
 		RendererPolicy->SetBoolField(TEXT("fog"),
 									 Render->GetObjectField(TEXT("effects"))->GetBoolField(TEXT("fog")));

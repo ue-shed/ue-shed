@@ -1,0 +1,19 @@
+{
+	"version": 1,
+	"name": "Raise camera 120 cm",
+	"settings": {
+		"fieldOfViewDegrees": 60,
+		"distanceScale": 1.15,
+		"heightOffset": 120,
+		"margin": 0.1,
+		"elevationDegrees": 15
+	},
+	"groups": [],
+	"cameras": [
+		{
+			"displayName": "Raise camera 120 cm 1",
+			"yawDegrees": 0,
+			"overrides": {}
+		}
+	]
+}

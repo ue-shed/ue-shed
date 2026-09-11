@@ -1,0 +1,274 @@
+{
+	"recordedLocalDate": "2026-09-12",
+	"engine": "Unreal 5.7.4",
+	"capture": "Native UI: OBS 32.2.1 Window Capture via local obs-websocket. Gallery: UE Shed editor_viewport / lit / fixed EV100 0 / 16 settling frames / 960x540.",
+	"imageTreatment": "Original PNG and MP4 bytes copied unchanged. No compositing, retouching, speed changes, or simulated UI.",
+	"nativeBuilds": "Initial tour used the staged 2026-09-11 17:29 local authoring binary. The reloaded screenshot and Enter regression used the restaged final 17:40 binary; final source already has the compact exposure summary.",
+	"galleryPolicy": "The gallery explicitly renders the recorded/synthesized poses and saved visibility with its stated viewport policy. It does not claim to use the SceneCapture EV100 10 profile saved during the earlier UI tour.",
+	"scope": "Reference Unreal menu and Node CLI host. No Electroswag integration is demonstrated.",
+	"numericCommitReproduction": {
+		"initial": 45,
+		"entered": 40,
+		"afterEnterInDurableDraft": 40,
+		"afterFocusMovedInDurableDraft": 45,
+		"status": "unfixed; reproduced on latest staged authoring binary"
+	},
+	"files": [
+		{
+			"file": "01-propose-cardinals.png",
+			"source": "out/camera-visual-01/01-propose-cardinals.png",
+			"sha256": "521ce9222550bf409bdb68dedc10acbcf79c2f12677224188a9888cae1ab32c5"
+		},
+		{
+			"file": "02-four-cameras.png",
+			"source": "out/camera-visual-01/02-four-cameras.png",
+			"sha256": "5821778240b28f8136fc778fe53d0e52b4d048adc95946743c90c38812224b5c"
+		},
+		{
+			"file": "03-side-camera.png",
+			"source": "out/camera-visual-01/03-side-camera.png",
+			"sha256": "20b2266a3a4c84ff2e4894f4e1313598f6c0436420dae68c0d660bd89b76e480"
+		},
+		{
+			"file": "04-back-camera.png",
+			"source": "out/camera-visual-01/04-back-camera.png",
+			"sha256": "1c8c99485e343528134c597adb36e49e9eb8e58ff72b15499cdcf31a45c748be"
+		},
+		{
+			"file": "05-other-side.png",
+			"source": "out/camera-visual-01/05-other-side.png",
+			"sha256": "2e5a2f9db41be32d8fe54dd1d5c5f38c933ff092f62bdd3f66964ff54f1fa607"
+		},
+		{
+			"file": "08-tab-commit.png",
+			"source": "out/camera-visual-01/08-tab-commit.png",
+			"sha256": "126341a61e72dedc347396b1ed37cf4695f61ff1159bc276860a171684cf0d4f"
+		},
+		{
+			"file": "09-native-exception.png",
+			"source": "out/camera-visual-01/09-native-exception.png",
+			"sha256": "07d5b923afd8df3d469d6f294cecd38af0fd2a4914795787fd57c3b4b2ebe3be"
+		},
+		{
+			"file": "10-visibility-controls.png",
+			"source": "out/camera-visual-01/10-visibility-controls.png",
+			"sha256": "d8fb1b78956f9cfb2b8bdbad9e3ec1e3c5484ed9508d69eb26ffada6d9de94a9"
+		},
+		{
+			"file": "11-hidden-entry.png",
+			"source": "out/camera-visual-01/11-hidden-entry.png",
+			"sha256": "2e16b4c0ff4b713ee767628bd6b372376f2d9a21046a2dc284ac6b769792ba45"
+		},
+		{
+			"file": "12-native-culling.png",
+			"source": "out/camera-visual-01/12-native-culling.png",
+			"sha256": "7908f3789b705826413df8a6cffb5bf9e109734a2ea798356d38f81e731491a1"
+		},
+		{
+			"file": "16-approved.png",
+			"source": "out/camera-visual-01/16-approved.png",
+			"sha256": "7dfddec5f009110d3f55e369b93f01c3a2ce3c46e7e1a944afe9e565ed802f74"
+		},
+		{
+			"file": "17-reloaded.png",
+			"source": "out/camera-visual-01/17-reloaded.png",
+			"sha256": "3120b1e5f55070551dc791372f686d97cb675f1dda4b7a7479ff1d4e76b38b18"
+		},
+		{
+			"file": "bug-enter.png",
+			"source": "out/camera-visual-01/bug-enter.png",
+			"sha256": "ed506d9959be59d78c853ae8e7b50c15f91d5aaa4d7372472ff95948ad4d0088"
+		},
+		{
+			"file": "bug-blur.png",
+			"source": "out/camera-visual-01/bug-blur.png",
+			"sha256": "b8b0aee9b7c59b00c004bb5c2eb0f5ef614199d855790eb0fcc785f5090c5083"
+		},
+		{
+			"file": "cardinals-1.png",
+			"source": "out/camera-visual-01/examples-viewport-ev0/cardinals-1.png",
+			"sha256": "8ed6af2653526605e32a9bfb5d6e796ee7596c1f03937c17c0ac4de816aa7853"
+		},
+		{
+			"file": "cardinals-2.png",
+			"source": "out/camera-visual-01/examples-viewport-ev0/cardinals-2.png",
+			"sha256": "b368dcd101a94bdaf55fed3436538a4ad03f1726b910cf8f5fc80f48c6f07dc7"
+		},
+		{
+			"file": "cardinals-3.png",
+			"source": "out/camera-visual-01/examples-viewport-ev0/cardinals-3.png",
+			"sha256": "3d031c49d734d4841d2c297002ea47bedd6d790c119ee6aa2cf683f182215e57"
+		},
+		{
+			"file": "cardinals-4.png",
+			"source": "out/camera-visual-01/examples-viewport-ev0/cardinals-4.png",
+			"sha256": "11952ee4e804bfd3847c7d4ba0f8fee7d0f8f7dd43c431bfeaff553355eff247"
+		},
+		{
+			"file": "distance-1.png",
+			"source": "out/camera-visual-01/examples-viewport-ev0/distance-1.png",
+			"sha256": "4ecca4d547382976d3bd5838af3505ec6183a28da874dd3870a4cda03128f427"
+		},
+		{
+			"file": "elevation-1.png",
+			"source": "out/camera-visual-01/examples-viewport-ev0/elevation-1.png",
+			"sha256": "726b025925966b663c263c280ac09649ab42107ffe35e866daa9173c161c0ecb"
+		},
+		{
+			"file": "front-arc-1.png",
+			"source": "out/camera-visual-01/examples-viewport-ev0/front-arc-1.png",
+			"sha256": "2b3f211b27e18602881fecae73ced647a33abcd7cbc044c46e3d5d1f188f1b50"
+		},
+		{
+			"file": "front-arc-2.png",
+			"source": "out/camera-visual-01/examples-viewport-ev0/front-arc-2.png",
+			"sha256": "72a97a1ec23c742824555212548cf4e1e6464577e1a6a509aa020806049dbf8d"
+		},
+		{
+			"file": "front-arc-3.png",
+			"source": "out/camera-visual-01/examples-viewport-ev0/front-arc-3.png",
+			"sha256": "b7270c98b82827cd0f8e0aa155a95aab72d6e76cae9e23bfaca6f590aed33658"
+		},
+		{
+			"file": "height-1.png",
+			"source": "out/camera-visual-01/examples-viewport-ev0/height-1.png",
+			"sha256": "1ba2c1ccdf0220fe70a5480114773acd0b85232f43d6faba3ba3787140ae710e"
+		},
+		{
+			"file": "hero-1.png",
+			"source": "out/camera-visual-01/examples-viewport-ev0/hero-1.png",
+			"sha256": "05a15a817a87772380f768db82827a001cb342bfce2a4f5006ca6239d9b0c581"
+		},
+		{
+			"file": "lens-1.png",
+			"source": "out/camera-visual-01/examples-viewport-ev0/lens-1.png",
+			"sha256": "9cdf9f1a1dc8280b9c83d4b4d08f4fbcf5102151e6c52c81c6cc81a991c63027"
+		},
+		{
+			"file": "orbit-eight-1.png",
+			"source": "out/camera-visual-01/examples-viewport-ev0/orbit-eight-1.png",
+			"sha256": "e2d48225154b961efcb67375e11ebcf6fd3eb6c51c6f024ac7abbaf1f6b70d7c"
+		},
+		{
+			"file": "orbit-eight-2.png",
+			"source": "out/camera-visual-01/examples-viewport-ev0/orbit-eight-2.png",
+			"sha256": "060bdc157a8d70bc0fdb45a04cc4b9ba2643c483e0c5667e14bd4d55a3b88580"
+		},
+		{
+			"file": "orbit-eight-3.png",
+			"source": "out/camera-visual-01/examples-viewport-ev0/orbit-eight-3.png",
+			"sha256": "a1f1b7c2f922d4295cf98a24d232c25649b53c4d3a0d79667d99f77b54fdc6bb"
+		},
+		{
+			"file": "orbit-eight-4.png",
+			"source": "out/camera-visual-01/examples-viewport-ev0/orbit-eight-4.png",
+			"sha256": "e50fac7b9f4c4be0c2f1ae94b030942e71f2c0f5b60a701450af37b4e2913acb"
+		},
+		{
+			"file": "orbit-eight-5.png",
+			"source": "out/camera-visual-01/examples-viewport-ev0/orbit-eight-5.png",
+			"sha256": "973ad5c1f1c07f383157b139daea7a9ca79624a3ad2f01aa4df5d55f4fa749f8"
+		},
+		{
+			"file": "orbit-eight-6.png",
+			"source": "out/camera-visual-01/examples-viewport-ev0/orbit-eight-6.png",
+			"sha256": "97b9d971b8f812326aaa4908f6e17e035f8349a81e78bd8c40b3727dce19bbea"
+		},
+		{
+			"file": "orbit-eight-7.png",
+			"source": "out/camera-visual-01/examples-viewport-ev0/orbit-eight-7.png",
+			"sha256": "8aa53dae7bfd6780733604a56d9b507433f199a4e76a6e369e4491fbaaf60bf6"
+		},
+		{
+			"file": "orbit-eight-8.png",
+			"source": "out/camera-visual-01/examples-viewport-ev0/orbit-eight-8.png",
+			"sha256": "e46bfb0292e60daab7539eb97e110c44cdd646803b65375076c49d2c1035aeeb"
+		},
+		{
+			"file": "saved-authored.png",
+			"source": "out/camera-visual-01/examples-viewport-ev0/saved-authored.png",
+			"sha256": "91ecc5ad2c81fe4926b4ecfdd5118e4059beda510e601ce32099fdcb520c8c6f"
+		},
+		{
+			"file": "saved-pure.png",
+			"source": "out/camera-visual-01/examples-viewport-ev0/saved-pure.png",
+			"sha256": "e3fe0162a612f7e333b4734cfe33c5d1693f11ff3bdc81d2e16fd9ee9d0fa872"
+		},
+		{
+			"file": "cardinals.recipe.json",
+			"source": "out/camera-visual-01/examples-viewport-ev0/cardinals.recipe.json",
+			"sha256": "5bbf16441c3890ae3da58e384ff88ab88dd318af141168d7f98fe619a07ac47a"
+		},
+		{
+			"file": "distance.recipe.json",
+			"source": "out/camera-visual-01/examples-viewport-ev0/distance.recipe.json",
+			"sha256": "9bb1e924594a7982cf479cf456b124f8ea7e0e5295d4974b4e9053065f5c888e"
+		},
+		{
+			"file": "elevation.recipe.json",
+			"source": "out/camera-visual-01/examples-viewport-ev0/elevation.recipe.json",
+			"sha256": "d126c61d8e73b3003074f9899263e8c4d475078a74dbf6d06cf12bed1cf8d939"
+		},
+		{
+			"file": "front-arc.recipe.json",
+			"source": "out/camera-visual-01/examples-viewport-ev0/front-arc.recipe.json",
+			"sha256": "351db58887cf37d4d2134be3de37374d0aed0e922fe5a17a0c75b7a93027ae70"
+		},
+		{
+			"file": "height.recipe.json",
+			"source": "out/camera-visual-01/examples-viewport-ev0/height.recipe.json",
+			"sha256": "9e12a6a4d85d54f4fbd029f60a4fad288d6f202f2a36c020e56e4089a27db91f"
+		},
+		{
+			"file": "hero.recipe.json",
+			"source": "out/camera-visual-01/examples-viewport-ev0/hero.recipe.json",
+			"sha256": "68dc0ac879e3f7ddcd3d8dd66d3578ce0ae310b66220e0158ba6de1e04596ffa"
+		},
+		{
+			"file": "lens.recipe.json",
+			"source": "out/camera-visual-01/examples-viewport-ev0/lens.recipe.json",
+			"sha256": "ca692ff5fbbb2e2575eb3ac087daffa0eafc2cb9d6593a283c5fea88f97d1bfc"
+		},
+		{
+			"file": "orbit-eight.recipe.json",
+			"source": "out/camera-visual-01/examples-viewport-ev0/orbit-eight.recipe.json",
+			"sha256": "f7fbafcffadaddff0d2d00a6254294794ffa8a9a63e6528cb575948fd2b2ce6d"
+		},
+		{
+			"file": "exposure-ev10.png",
+			"source": "out/camera-visual-01/examples-viewport/cardinals-1.png",
+			"sha256": "3390e176a6f5da0e4bde7640c674628a35731a1f0e3439c94c806f1c8d116307"
+		},
+		{
+			"file": "scene-capture-fidelity.png",
+			"source": "out/camera-visual-01/examples-fidelity-ev0/cardinals-1.png",
+			"sha256": "96969d744b0583d900794bad1eadaacefaa44cfe15cfcec3a42af8d38043bfca"
+		},
+		{
+			"file": "layout-and-tuning.mp4",
+			"source": "out/camera-visual-01/2026-09-12 01-03-23.mp4",
+			"sha256": "fa5c25dd15df16a8803bb4b444c93149f67c2ee394f196b946c525718b3d7ad7"
+		},
+		{
+			"file": "native-edit-and-culling.mp4",
+			"source": "out/camera-visual-01/2026-09-12 01-06-29.mp4",
+			"sha256": "8b42326ea05183c9d50fff612c61cc52473b22b9757049177ba9af213309f7fb"
+		},
+		{
+			"file": "enter-focus-regression.mp4",
+			"source": "out/camera-visual-01/2026-09-12 01-12-54.mp4",
+			"sha256": "928e9d77215282934ae8624cdb3d5010a49a58852db75e2ebbf6c1822666078d"
+		},
+		{
+			"file": "approved-views.json",
+			"source": "out/camera-visual-01/approved.json",
+			"sha256": "8ef7daf7ecc32d06b574c66c2c20fa31c436d081009313d220371d5848abcbc7"
+		},
+		{
+			"file": "render-evidence.json",
+			"source": "out/camera-visual-01/examples-viewport-ev0/render-evidence.json",
+			"sha256": "a355468ee813c3ffed990eb1b0546e81a7cd01ffe2213fbbb8921034d91fd09c"
+		}
+	],
+	"hashScope": "SHA-256 of the bundled bytes. JSON artifacts are formatted for the repository; PNG and MP4 bytes are unchanged from their recorded sources."
+}

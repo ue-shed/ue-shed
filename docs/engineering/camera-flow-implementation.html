@@ -5,9 +5,9 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta
 			name="description"
-			content="UE Shed camera flow implementation walkthrough: native editing, actor-scoped arrangements, authored culling, persistence, and real Unreal render comparisons."
+			content="Actual Unreal menus and recordings, camera starting layouts, before/after adjustments, culling, persistence, and integration gaps."
 		/>
-		<title>Camera flow — implementation field guide · UE Shed</title>
+		<title>Camera authoring, shown in Unreal · UE Shed</title>
 		<style>
 			:root {
 				color-scheme: light;
@@ -592,1339 +592,1148 @@
 					break-inside: avoid;
 				}
 			}
+
+			.wrap {
+				max-width: 1420px;
+				margin: auto;
+				padding: 32px 48px;
+			}
+			.top {
+				display: flex;
+				justify-content: space-between;
+				gap: 22px;
+				align-items: center;
+				padding-bottom: 20px;
+				border-bottom: 1px solid var(--line);
+			}
+			.top nav {
+				display: flex;
+				flex-wrap: wrap;
+				gap: 18px;
+				font-size: 13px;
+			}
+			.brand {
+				font-weight: 800;
+			}
+			.intro {
+				padding: 45px 0 24px;
+			}
+			.status {
+				display: grid;
+				grid-template-columns: repeat(4, 1fr);
+				gap: 12px;
+				margin: 25px 0;
+			}
+			.status strong {
+				display: block;
+				margin-bottom: 10px;
+				font-size: 19px;
+			}
+			.status .card {
+				padding: 20px;
+			}
+			.status p {
+				font-size: 13px;
+				color: var(--muted);
+			}
+			.yes {
+				color: var(--green);
+			}
+			.gap {
+				color: var(--orange);
+			}
+			.shots {
+				display: grid;
+				grid-template-columns: repeat(2, minmax(0, 1fr));
+				gap: 22px;
+				margin: 22px 0;
+			}
+			.shots img {
+				border: 1px solid var(--line);
+			}
+			.preset {
+				margin: 32px 0 44px;
+			}
+			.recipe {
+				display: inline-block;
+				padding: 7px 12px;
+				border-radius: 6px;
+				background: var(--lime);
+				font-size: 13px;
+				font-weight: 650;
+				margin-bottom: 16px;
+			}
+			.buttons {
+				display: flex;
+				flex-wrap: wrap;
+				gap: 9px;
+				margin: 20px 0;
+			}
+			.buttons button {
+				background: var(--card);
+				border: 1px solid var(--line);
+				color: var(--green);
+				padding: 9px 13px;
+				border-radius: 6px;
+			}
+			.buttons button[aria-pressed="true"] {
+				background: var(--green);
+				color: white;
+			}
+			.wide-note {
+				max-width: 950px;
+			}
+			video {
+				width: 100%;
+				display: block;
+				aspect-ratio: 8/5;
+				background: #101411;
+				border-radius: 9px;
+			}
+			.video-grid {
+				display: grid;
+				grid-template-columns: repeat(2, minmax(0, 1fr));
+				gap: 24px;
+			}
+			.full-image {
+				margin: 24px 0;
+			}
+			header h1 {
+				max-width: 1000px;
+			}
+			h3.space {
+				margin-top: 30px;
+			}
+			.status .card p {
+				margin: 0;
+			}
+			figure {
+				min-width: 0;
+			}
+			#journey-image {
+				border: 1px solid var(--line);
+			}
+			.compare img {
+				border: 0;
+			}
+			.label {
+				color: white;
+			}
+			.print-button {
+				margin: 0;
+			}
+			@media (max-width: 850px) {
+				.wrap {
+					padding: 24px;
+				}
+				.top {
+					display: block;
+				}
+				.top nav {
+					margin-top: 16px;
+				}
+				.status {
+					grid-template-columns: repeat(2, 1fr);
+				}
+				.video-grid {
+					grid-template-columns: 1fr;
+				}
+			}
+			@media (max-width: 550px) {
+				.wrap {
+					padding: 18px;
+				}
+				.shots {
+					grid-template-columns: 1fr;
+				}
+				.status .card {
+					padding: 14px;
+				}
+				.status strong {
+					font-size: 16px;
+				}
+				.buttons button {
+					font-size: 13px;
+					padding: 7px 9px;
+				}
+			}
+			@media print {
+				.wrap {
+					padding: 0;
+				}
+				.top nav,
+				.buttons,
+				video {
+					display: none;
+				}
+				.intro {
+					padding: 20px 0;
+				}
+				.shots {
+					gap: 12px;
+				}
+				.shots figure {
+					break-inside: avoid;
+				}
+			}
 		</style>
 	</head>
 	<body>
-		<a class="skip" href="#content">Skip to report</a>
-		<div class="shell">
-			<aside>
-				<div class="brand">UE SHED <span aria-hidden="true">↗</span></div>
-				<div class="fine">Camera flow / field guide</div>
-				<nav aria-label="Report sections">
-					<a href="#experience">01 · The author experience</a>
-					<a href="#scope">02 · Scope &amp; exceptions</a>
-					<a href="#renders">03 · Render comparisons</a>
-					<a href="#journey">04 · Saved-camera journey</a>
-					<a href="#visibility">05 · Choosing what to hide</a>
-					<a href="#persistence">06 · Save, load &amp; reuse</a>
-					<a href="#outputs">07 · Outputs &amp; exposure</a>
-					<a href="#architecture">08 · Integration boundaries</a>
-					<a href="#run">09 · Try the workflow</a>
-					<a href="#evidence">10 · Evidence &amp; next iteration</a>
+		<a class="skip" href="#content">Skip to examples</a>
+		<div class="wrap">
+			<div class="top">
+				<div class="brand">
+					UE SHED ↗ <span class="fine">Camera flow / visual walkthrough</span>
+				</div>
+				<nav aria-label="Sections">
+					<a href="#native">Unreal menus</a><a href="#presets">Starting layouts</a
+					><a href="#adjust">Adjustments</a><a href="#culling">Culling</a
+					><a href="#save">Save &amp; reload</a><a href="#integration">Electroswag</a
+					><a href="#findings">What needs work</a>
 				</nav>
-				<small
-					>Implementation snapshot<br />11 September 2026<br /><code
-						>40332fa · feat/camera-flow</code
-					></small
-				>
-				<button class="print-button" type="button" id="print">Print / save PDF</button>
-			</aside>
+			</div>
 			<main id="content">
-				<header class="hero">
-					<div class="eyebrow">Plan 049 · implementation steps 4 + 5</div>
-					<h1>Frame the actor.<br />Keep the exceptions.<br />Save the result.</h1>
+				<header class="intro">
+					<div class="eyebrow">Observed in Unreal · 12 September 2026</div>
+					<h1>Here are the cameras.<br />Here are the controls.</h1>
 					<p class="lead">
-						Native Unreal camera editing, an arrangement scoped to one actor, and
-						explicit visibility choices that travel with the saved View.
+						Full Unreal-window screenshots, actual screen recordings, and rendered
+						examples of layouts, adjustments, and per-camera exclusions.
 					</p>
-					<div>
-						<span class="tag good">Implemented through step 5</span
-						><span class="tag">Optional Unreal menu</span
-						><span class="tag">Headless capture preserved</span
-						><span class="tag">Real render evidence</span>
-					</div>
-					<p class="muted">
-						This is a walkthrough of the implemented flow and its recorded automated
-						results. The original
-						<a href="../../plans/049-camera-authoring-and-actor-culling.html"
-							>design proposal</a
-						>
-						explains the intent; the
-						<a href="../products/camera-authoring.md">product contract</a> owns current
-						behavior. Plan status remains in
-						<a href="../../plans/README.md">the plan index</a>.
-					</p>
-					<div class="grid three">
+					<div class="status">
 						<div class="card">
-							<span class="stat">1–256</span>Perspective cameras per actor-linked
-							arrangement. Single, orbit, or arc starting layouts.
+							<strong class="yes">Native menu: yes</strong>
+							<p>Select, pilot, adjust, hide actors, and approve Views.</p>
 						</div>
 						<div class="card">
-							<span class="stat">2 renderers</span>Recorded visible → excluded →
-							restored comparisons through shared renderer sessions.
+							<strong class="yes">Package sync: yes</strong>
+							<p>Native edits reach the Node/CLI host and its durable draft.</p>
 						</div>
 						<div class="card">
-							<span class="stat">Core + Cameras</span>The saved-camera journey renders
-							again with both authoring plugins disabled.
+							<strong class="gap">Electroswag sync: no</strong>
+							<p>The new arrangement interface has not been adopted there.</p>
+						</div>
+						<div class="card">
+							<strong class="gap">Polished: not yet</strong>
+							<p>The visual journey exposed a numeric-input reversion bug.</p>
 						</div>
 					</div>
+					<figure>
+						<a href="media/camera-flow/visual/17-reloaded.png"
+							><img
+								src="media/camera-flow/visual/17-reloaded.png"
+								alt="Actual Unreal window after restarting and reattaching. Left: arrangement menu. Center: piloted camera view. Right: native Details. Four cameras, shared settings, and a manual exception survive in the draft."
+								width="1600"
+								height="1000"
+								loading="lazy"
+						/></a>
+						<figcaption>
+							<strong>Actual Unreal window after restarting and reattaching.</strong>
+							Left: arrangement menu. Center: piloted camera view. Right: native
+							Details. Four cameras, shared settings, and a manual exception survive
+							in the draft.
+						</figcaption>
+					</figure>
+					<p class="fine" style="margin-top: 14px">
+						Click any screenshot for the original. The generated fixture has an
+						asymmetric inspection unit, a column, wall, crate, and railing. All images
+						are genuine captures; no menu mockups or composited application screens.
+					</p>
 				</header>
-
-				<section id="experience">
-					<div class="eyebrow">01 / From a demo to an authoring loop</div>
-					<h2>Arrange once. Fine-tune where the scene lives.</h2>
+				<section id="native">
+					<div class="eyebrow">01 / See the interaction</div>
+					<h2>The reference menu, inside Unreal</h2>
 					<p>
-						The author starts with an actor selected in Unreal. The package creates one
-						fitted camera and a durable draft; the attached native panel becomes the
-						control surface for that arrangement. For precise framing, the author
-						selects or pilots the transient camera and uses Unreal’s viewport and
-						Details panel.
+						Open <strong>Window → UE Shed Camera Authoring</strong> after attaching a
+						draft. These recordings use actual mouse and keyboard input, with the CLI
+						host running in the background. OBS captures only Unreal; both audio inputs
+						are muted.
 					</p>
-					<div class="table-wrap">
-						<table>
-							<thead>
-								<tr>
-									<th>Author’s need</th>
-									<th>Earlier demo limitation / motivation</th>
-									<th>Implemented flow</th>
-								</tr>
-							</thead>
-							<tbody>
-								<tr>
-									<td>“This actor needs one view.”</td>
-									<td>Cardinal starting views were too prescriptive.</td>
-									<td>
-										Start with one fitted camera. Add, duplicate, remove,
-										rename, and reorder without rebuilding the set.
-									</td>
-								</tr>
-								<tr>
-									<td>“I need many angles.”</td>
-									<td>
-										A fixed demo arrangement did not express the desired
-										coverage.
-									</td>
-									<td>
-										Propose a single, orbit, or arc layout with an explicit
-										count. Review identity changes before applying.
-									</td>
-								</tr>
-								<tr>
-									<td>“All these views need more space.”</td>
-									<td>Repeated manual edits made global intent tedious.</td>
-									<td>
-										Tune distance, lens, height, elevation, yaw, aim, and margin
-										at this arrangement’s scope.
-									</td>
-								</tr>
-								<tr>
-									<td>“Except this carefully framed shot.”</td>
-									<td>Regeneration could lose one-off work.</td>
-									<td>
-										Camera overrides and pinned manual placement survive
-										retained identities. Clearing an override resumes
-										inheritance.
-									</td>
-								</tr>
-								<tr>
-									<td>“That column blocks this view.”</td>
-									<td>Heuristics could not express author intent reliably.</td>
-									<td>
-										Select the column in Unreal; add it to this camera’s Hide
-										list. Inspect effective lists and resolution diagnostics.
-									</td>
-								</tr>
-								<tr>
-									<td>“Come back tomorrow, then capture unattended.”</td>
-									<td>Live interaction alone was not a durable deliverable.</td>
-									<td>
-										Resume the draft for editing. Render the approved Review Set
-										without the authoring plugins.
-									</td>
-								</tr>
-							</tbody>
-						</table>
-					</div>
-					<p class="fine">
-						The earlier-flow column summarizes the design motivation, not a measured
-						performance baseline. No interaction-latency benchmark is claimed here.
-					</p>
-					<ol class="steps">
-						<li>
-							<strong>Select the subject and attach its draft.</strong>
-							<p>
-								The panel identifies the actor, active camera, draft revision, and
-								file destinations. Separate arrangements—even for the same
-								actor—remain independent.
-							</p>
-						</li>
-						<li>
-							<strong>Choose coverage, then refine the arrangement.</strong>
-							<p>
-								Generate a starting layout, organize groups, and adjust shared
-								defaults. Use checked cameras for a deliberate subset.
-							</p>
-						</li>
-						<li>
-							<strong>Select or pilot one camera in Unreal.</strong>
-							<p>
-								Transform editing pins its placement. Lens editing creates an
-								independent FOV override. Native Undo/Redo participates in the
-								editing flow.
-							</p>
-						</li>
-						<li>
-							<strong>Choose blockers and preview the authored view.</strong>
-							<p>
-								Unreal actor selection supplies Hide/Protect entries. Preview
-								exclusions apply to the piloted viewport only.
-							</p>
-						</li>
-						<li>
-							<strong>Save views in the displayed scope.</strong>
-							<p>
-								Approval publishes immutable pose, effective visibility, and
-								capture-profile snapshots. Draft autosave and capture approval are
-								separate actions.
-							</p>
-						</li>
-					</ol>
-					<div class="callout">
-						<strong>What the menu currently covers.</strong> Camera list and active
-						selection; arrangement/group/checked-camera scope; inherited fields and
-						Mixed values; layout proposals; visibility lists and diagnostics; fixed
-						exposure; recipe and preset paths; save/sync state. The screenshots below
-						are genuine Unreal render outputs. The scope diagrams in this report are
-						explanatory illustrations, not screenshots of the native panel.
-					</div>
-				</section>
-
-				<section id="scope">
-					<div class="eyebrow">02 / Tune only the intended set</div>
-					<h2>“The whole arrangement” means this actor’s set.</h2>
-					<p>
-						Scope is explicit: the attached arrangement, one named group, or checked
-						cameras within it. There is no operation here that tunes every actor’s
-						cameras. Shared settings flow from arrangement → group → camera,
-						independently for each field.
-					</p>
-					<div class="grid">
-						<div class="scope">
-							<strong>Actor A · arrangement A</strong
-							><small>Shared defaults: FOV, fitting distance, height, aim…</small>
-							<div class="scope">
-								<strong>Group · detail views</strong
-								><small>Overrides only the fields this group needs.</small>
-								<div class="scope">
-									<strong>Camera · close-up</strong
-									><small
-										>Local lens / visibility overrides; optional pinned
-										placement.</small
-									>
-								</div>
-							</div>
-						</div>
-						<div class="card">
-							<h3>Actor B · arrangement B</h3>
-							<p>
-								Its defaults, groups, cameras, and approved Views are unaffected by
-								edits to arrangement A.
-							</p>
-							<h3>Three kinds of intentional exception</h3>
-							<p>
-								<strong>Field override:</strong> keep one camera at 40° while its
-								siblings inherit 50°.
-							</p>
-							<p>
-								<strong>Pinned placement:</strong> keep the native Transform while
-								generated siblings refit.
-							</p>
-							<p>
-								<strong>Visibility exception:</strong> hide a blocker only for the
-								close-up; protect a required actor even when a broader scope hides
-								it.
-							</p>
-						</div>
-					</div>
-					<div class="card" style="margin-top: 24px">
-						<h3>Try the inheritance rule</h3>
-						<p class="fine">
-							Interactive illustration, initialized from the recorded journey’s
-							settings. This changes only the report; it does not communicate with
-							Unreal. No camera fitting is simulated.
-						</p>
-						<div class="controls">
-							<label for="fov">Arrangement FOV</label
-							><input id="fov" type="range" min="25" max="90" value="50" /><output
-								id="fov-value"
-								for="fov"
-								>50°</output
-							><button type="button" id="inherit">Camera A: inherit FOV</button
-							><button type="button" id="reset">Reset example</button>
-						</div>
-						<div class="camera-row">
-							<strong>Camera</strong><strong>Effective lens</strong
-							><strong>Placement</strong>
-						</div>
-						<div class="camera-row">
-							<span>A · native exception</span
-							><span id="camera-a">40° · override</span><span>Pinned Transform</span>
-						</div>
-						<div class="camera-row">
-							<span>B · generated</span
-							><span class="inherited-fov">50° · inherited</span
-							><span>Generated fitting</span>
-						</div>
-						<div class="camera-row">
-							<span>C · generated</span
-							><span class="inherited-fov">50° · inherited</span
-							><span>Generated fitting</span>
-						</div>
-						<p
-							class="fine"
-							style="margin-top: 16px"
-							id="inherit-note"
-							aria-live="polite"
-						>
-							Changing the shared lens preserves A’s 40° override and pinned
-							placement.
-						</p>
-						<noscript
-							><p>
-								The example requires JavaScript; the table shows its initial state.
-								Camera A stays at 40° while B and C inherit 50°.
-							</p></noscript
-						>
-					</div>
-					<div class="table-wrap">
-						<table>
-							<thead>
-								<tr>
-									<th>Action</th>
-									<th>What changes</th>
-									<th>What the author should expect</th>
-								</tr>
-							</thead>
-							<tbody>
-								<tr>
-									<td>Shared or group tuning</td>
-									<td>Inheriting fields; generated fitting</td>
-									<td>
-										Manual placement remains pinned. FOV inheritance is separate
-										from placement.
-									</td>
-								</tr>
-								<tr>
-									<td>Inherit one field</td>
-									<td>Only that field’s local override</td>
-									<td>
-										Other exceptions remain. Clearing lens inheritance does not
-										unpin the camera.
-									</td>
-								</tr>
-								<tr>
-									<td>Unpin</td>
-									<td>Placement returns to generated fitting</td>
-									<td>
-										Use deliberately: the generated framing replaces the manual
-										Transform.
-									</td>
-								</tr>
-								<tr>
-									<td>Dolly / world-Z move</td>
-									<td>A deliberate movement of affected cameras</td>
-									<td>
-										The affected placements become pinned rather than being
-										silently refitted later.
-									</td>
-								</tr>
-								<tr>
-									<td>Change layout / import recipe</td>
-									<td>A reviewed proposal of identity changes</td>
-									<td>
-										Retained identities keep exceptions. Removing customized
-										cameras requires acknowledgement; stale proposals must be
-										recreated.
-									</td>
-								</tr>
-							</tbody>
-						</table>
-					</div>
-				</section>
-
-				<section id="renders">
-					<div class="eyebrow">03 / Actual Unreal screenshots</div>
-					<h2>A blocker disappears. The original view returns.</h2>
-					<p>
-						The native fixture creates a temporary opaque engine-cube column, then
-						renders three passes with the same camera: visible, excluded by the shared
-						visibility policy, and restored with that policy removed. Both backends go
-						through the shared render-session implementation.
-					</p>
-					<p class="fine">
-						Original 320 × 180 PNGs, displayed larger for inspection. Drag each divider
-						or use the focused slider’s arrow keys. These are renderer-path proofs, not
-						an exposure-matched Pure/Authored review pair; background brightness can
-						change between passes.
-					</p>
-					<div class="compare-set card">
-						<h3>Viewport renderer</h3>
+					<div class="video-grid">
 						<figure>
-							<div class="compare" id="viewport-comparison">
-								<img
-									src="media/camera-flow/viewport-excluded.png"
-									width="320"
-									height="180"
-									alt="Unreal viewport capture with the central column excluded; sky and horizon remain."
-								/><img
-									class="before"
-									src="media/camera-flow/viewport-visible.png"
-									width="320"
-									height="180"
-									alt="Unreal viewport reference showing the opaque column in the center."
-								/><span class="seam" aria-hidden="true"></span
-								><span class="label left">Visible reference</span
-								><span class="label right">Excluded</span>
-							</div>
+							<video
+								controls
+								preload="metadata"
+								poster="media/camera-flow/visual/02-four-cameras.png"
+							>
+								<source
+									src="media/camera-flow/visual/layout-and-tuning.mp4"
+									type="video/mp4"
+								/>
+							</video>
 							<figcaption>
-								Viewport screenshot pipeline · exclusion is applied to the target
-								view’s hidden primitives.
+								<strong>Layout and tuning, real time.</strong> Propose four cameras,
+								accept, switch views, then edit settings. Includes the Enter/focus
+								bug isolated below; this is not a polished success demo.
+								<a href="media/camera-flow/visual/layout-and-tuning.mp4"
+									>Open recording</a
+								>.
 							</figcaption>
 						</figure>
-						<label class="slider" for="viewport-slider"
-							><span>Reveal reference</span
-							><input
-								id="viewport-slider"
-								type="range"
-								min="0"
-								max="100"
-								value="50"
-								data-compare="viewport-comparison"
-							/><output for="viewport-slider">50%</output></label
-						>
-						<figure class="restored">
-							<a href="media/camera-flow/viewport-restored.png"
-								><img
-									src="media/camera-flow/viewport-restored.png"
-									width="320"
-									height="180"
-									alt="Restored viewport capture, with the column visible again."
-									loading="lazy"
-							/></a>
-							<figcaption>
-								<strong>Restored pass.</strong> 138,324 channel samples changed when
-								excluded. Zero channel samples exceeded the restoration threshold.
-								<a href="media/camera-flow/viewport-visible.png">Reference PNG</a> ·
-								<a href="media/camera-flow/viewport-excluded.png">Excluded PNG</a>.
-							</figcaption>
-						</figure>
-					</div>
-					<div class="compare-set card">
-						<h3>SceneCapture renderer</h3>
 						<figure>
-							<div class="compare" id="scene-comparison">
-								<img
-									src="media/camera-flow/scene-capture-excluded.png"
-									width="320"
-									height="180"
-									alt="SceneCapture output with the column excluded."
-									loading="lazy"
-								/><img
-									class="before"
-									src="media/camera-flow/scene-capture-visible.png"
-									width="320"
-									height="180"
-									alt="SceneCapture reference with the column visible in the center."
-									loading="lazy"
-								/><span class="seam" aria-hidden="true"></span
-								><span class="label left">Visible reference</span
-								><span class="label right">Excluded</span>
-							</div>
+							<video
+								controls
+								preload="metadata"
+								poster="media/camera-flow/visual/12-native-culling.png"
+							>
+								<source
+									src="media/camera-flow/visual/native-edit-and-culling.mp4"
+									type="video/mp4"
+								/>
+							</video>
 							<figcaption>
-								SceneCapture pipeline · exclusions use the capture component’s own
-								HiddenActors list.
-							</figcaption>
-						</figure>
-						<label class="slider" for="scene-slider"
-							><span>Reveal reference</span
-							><input
-								id="scene-slider"
-								type="range"
-								min="0"
-								max="100"
-								value="50"
-								data-compare="scene-comparison"
-							/><output for="scene-slider">50%</output></label
-						>
-						<figure class="restored">
-							<a href="media/camera-flow/scene-capture-restored.png"
-								><img
-									src="media/camera-flow/scene-capture-restored.png"
-									width="320"
-									height="180"
-									alt="Restored SceneCapture output with the column visible again."
-									loading="lazy"
-							/></a>
-							<figcaption>
-								<strong>Restored pass.</strong> 156,691 channel samples changed when
-								excluded. Zero channel samples exceeded the restoration threshold.
-								<a href="media/camera-flow/scene-capture-visible.png"
-									>Reference PNG</a
-								>
-								·
-								<a href="media/camera-flow/scene-capture-excluded.png"
-									>Excluded PNG</a
+								<strong>Native Transform and camera-local hiding.</strong> Change Y
+								in Details, choose a camera scope, select the column, add Hide, and
+								enable preview.
+								<a href="media/camera-flow/visual/native-edit-and-culling.mp4"
+									>Open recording</a
 								>.
 							</figcaption>
 						</figure>
 					</div>
+					<h3 class="space">Step through the full-window screenshots</h3>
+					<div
+						class="buttons"
+						id="journey-buttons"
+						aria-label="Native screenshot steps"
+					></div>
+					<figure>
+						<a
+							id="journey-link"
+							href="media/camera-flow/visual/01-propose-cardinals.png"
+							><img
+								id="journey-image"
+								src="media/camera-flow/visual/01-propose-cardinals.png"
+								width="1600"
+								height="1000"
+								alt="Actual Unreal layout proposal: three cameras added to the initial camera."
+						/></a>
+						<figcaption id="journey-caption" aria-live="polite">
+							Orbit, count 4, start 0°. The proposal reports three additions and no
+							removals.
+						</figcaption>
+					</figure>
+					<noscript
+						><p>
+							The recordings work without this screenshot selector. Individual image
+							filenames are in the artifact manifest below.
+						</p></noscript
+					>
 					<div class="callout">
-						<strong>Read the measurements correctly.</strong> The native test counts
-						BGRA8 channel samples with absolute differences greater than 20, not unique
-						pixels. “Zero restored difference” means none exceeded that threshold; it is
-						not a claim of byte-identical PNG files. Actor editor-visibility flags
-						remain unchanged, and the map’s dirty state is preserved.
+						<strong>Scope stays inside this actor’s arrangement.</strong> Checked
+						cameras determine where edits apply. Unreal actor selection determines which
+						blocker to hide; selecting a blocker does not redefine the camera scope.
 					</div>
-					<p class="fine">
-						Source: <code>out/camera-native-45-02/</code>,
-						<code>UEShed.Cameras.Rendering.ViewLocalVisibilityProof</code>. Camera:
-						location (800, 0, 50000), yaw 180°, FOV 60°. Column: engine cube scaled (2,
-						2, 8), at (0, 0, 50000). The generic fixture establishes loaded, opaque,
-						non-Nanite static-mesh behavior; it does not establish the broader studio
-						geometry matrix.
-					</p>
 				</section>
-
-				<section id="journey">
-					<div class="eyebrow">04 / Automated roundtrip</div>
-					<h2>The camera survives the authoring session.</h2>
-					<div class="grid">
+				<section id="presets">
+					<div class="eyebrow">02 / Starting points you can see</div>
+					<h2>One shot, four cardinals, a front arc, or eight angles</h2>
+					<p>
+						<strong
+							>These downloadable recipes were created for this walkthrough.</strong
+						>
+						The current menu exposes single/orbit/arc parameters and recipe import. It
+						does not ship a curated visual preset gallery.
+					</p>
+					<p class="fine">
+						Gallery: editor viewport · Lit · fixed EV100 0 · 960 × 540 · 16 settling
+						frames. Angles describe camera positions around the subject: 0° on +X, 90°
+						on +Y, looking back toward the actor.
+					</p>
+					<div class="preset">
+						<h3>A. One three-quarter view</h3>
+						<p>
+							One camera at −35°. FOV 45° · distance 0.85 · elevation 20°. A readable
+							overview when exhaustive coverage is unnecessary.
+						</p>
+						<a class="recipe" href="media/camera-flow/visual/hero.recipe.json" download
+							>Download this example recipe</a
+						>
 						<figure>
-							<a href="media/camera-flow/approved-camera.png"
+							<a href="media/camera-flow/visual/hero-1.png"
 								><img
-									src="media/camera-flow/approved-camera.png"
-									width="640"
-									height="360"
-									alt="Saved camera rendered after capture-only restart: a close angled view across the generic fixture's checkerboard floor."
+									src="media/camera-flow/visual/hero-1.png"
+									alt="The front display, side tank, and roof make the angle readable. The column remains; framing recipes do not hide scene actors."
+									width="960"
+									height="540"
 									loading="lazy"
 							/></a>
 							<figcaption>
-								Actual 640 × 360 capture after restarting with Core+Cameras only.
-								The authoring capability was confirmed absent. This exact-pose
-								capture used project-auto exposure; the paired protection test below
-								used fixed EV100 10.
+								The front display, side tank, and roof make the angle readable. The
+								column remains; framing recipes do not hide scene actors.
 							</figcaption>
 						</figure>
+					</div>
+					<div class="preset">
+						<h3>B. Four horizontal cardinals</h3>
+						<p>Orbit · count 4 · start 0°. FOV 60° · distance 1.15 · elevation 15°.</p>
+						<a
+							class="recipe"
+							href="media/camera-flow/visual/cardinals.recipe.json"
+							download
+							>Download this example recipe</a
+						>
+						<div class="shots">
+							<figure>
+								<a href="media/camera-flow/visual/cardinals-1.png"
+									><img
+										src="media/camera-flow/visual/cardinals-1.png"
+										alt="0° · +X. The column blocks part of the front."
+										width="960"
+										height="540"
+										loading="lazy"
+								/></a>
+								<figcaption>
+									<strong>0° · +X.</strong> The column blocks part of the front.
+								</figcaption>
+							</figure>
+							<figure>
+								<a href="media/camera-flow/visual/cardinals-2.png"
+									><img
+										src="media/camera-flow/visual/cardinals-2.png"
+										alt="90° · +Y. Side view, with the crate in the foreground."
+										width="960"
+										height="540"
+										loading="lazy"
+								/></a>
+								<figcaption>
+									<strong>90° · +Y.</strong> Side view, with the crate in the
+									foreground.
+								</figcaption>
+							</figure>
+							<figure>
+								<a href="media/camera-flow/visual/cardinals-3.png"
+									><img
+										src="media/camera-flow/visual/cardinals-3.png"
+										alt="180° · −X. The wall blocks the subject. Generated does not mean useful."
+										width="960"
+										height="540"
+										loading="lazy"
+								/></a>
+								<figcaption>
+									<strong>180° · −X.</strong> The wall blocks the subject.
+									Generated does not mean useful.
+								</figcaption>
+							</figure>
+							<figure>
+								<a href="media/camera-flow/visual/cardinals-4.png"
+									><img
+										src="media/camera-flow/visual/cardinals-4.png"
+										alt="270° · −Y. The side tank and railing are visible."
+										width="960"
+										height="540"
+										loading="lazy"
+								/></a>
+								<figcaption>
+									<strong>270° · −Y.</strong> The side tank and railing are
+									visible.
+								</figcaption>
+							</figure>
+						</div>
+						<div class="callout caution">
+							<strong>Six around is not six axes.</strong> Count 6 makes six angles
+							around the orbit. There is no dedicated ±X/±Y/±Z “six-axis cardinals”
+							preset in the new menu. Top/bottom coverage requires deliberate
+							additional camera setup.
+						</div>
+					</div>
+					<div class="preset">
+						<h3>C. Three-camera front arc</h3>
+						<p>
+							Arc · count 3 · start −45° · span 90°. Keep coverage on the useful side
+							instead of placing a camera behind the wall.
+						</p>
+						<a
+							class="recipe"
+							href="media/camera-flow/visual/front-arc.recipe.json"
+							download
+							>Download this example recipe</a
+						>
+						<div class="shots">
+							<figure>
+								<a href="media/camera-flow/visual/front-arc-1.png"
+									><img
+										src="media/camera-flow/visual/front-arc-1.png"
+										alt="−45°. Front and tank side."
+										width="960"
+										height="540"
+										loading="lazy"
+								/></a>
+								<figcaption><strong>−45°.</strong> Front and tank side.</figcaption>
+							</figure>
+							<figure>
+								<a href="media/camera-flow/visual/front-arc-2.png"
+									><img
+										src="media/camera-flow/visual/front-arc-2.png"
+										alt="0°. Straight on; the column still needs a visibility decision."
+										width="960"
+										height="540"
+										loading="lazy"
+								/></a>
+								<figcaption>
+									<strong>0°.</strong> Straight on; the column still needs a
+									visibility decision.
+								</figcaption>
+							</figure>
+							<figure>
+								<a href="media/camera-flow/visual/front-arc-3.png"
+									><img
+										src="media/camera-flow/visual/front-arc-3.png"
+										alt="+45°. Front and opposite side."
+										width="960"
+										height="540"
+										loading="lazy"
+								/></a>
+								<figcaption>
+									<strong>+45°.</strong> Front and opposite side.
+								</figcaption>
+							</figure>
+						</div>
+					</div>
+					<div class="preset">
+						<h3>D. Eight-angle coverage</h3>
+						<p>
+							Orbit · count 8 · 45° spacing. More samples reveal useful obliques, but
+							also more obstructed views. Inspect and prune the set.
+						</p>
+						<a
+							class="recipe"
+							href="media/camera-flow/visual/orbit-eight.recipe.json"
+							download
+							>Download this example recipe</a
+						>
+						<div class="shots">
+							<figure>
+								<a href="media/camera-flow/visual/orbit-eight-1.png"
+									><img
+										src="media/camera-flow/visual/orbit-eight-1.png"
+										alt="0°. Camera 1 of eight."
+										width="960"
+										height="540"
+										loading="lazy"
+								/></a>
+								<figcaption><strong>0°.</strong> Camera 1 of eight.</figcaption>
+							</figure>
+							<figure>
+								<a href="media/camera-flow/visual/orbit-eight-2.png"
+									><img
+										src="media/camera-flow/visual/orbit-eight-2.png"
+										alt="45°. Camera 2 of eight."
+										width="960"
+										height="540"
+										loading="lazy"
+								/></a>
+								<figcaption><strong>45°.</strong> Camera 2 of eight.</figcaption>
+							</figure>
+							<figure>
+								<a href="media/camera-flow/visual/orbit-eight-3.png"
+									><img
+										src="media/camera-flow/visual/orbit-eight-3.png"
+										alt="90°. Camera 3 of eight."
+										width="960"
+										height="540"
+										loading="lazy"
+								/></a>
+								<figcaption><strong>90°.</strong> Camera 3 of eight.</figcaption>
+							</figure>
+							<figure>
+								<a href="media/camera-flow/visual/orbit-eight-4.png"
+									><img
+										src="media/camera-flow/visual/orbit-eight-4.png"
+										alt="135°. Camera 4 of eight."
+										width="960"
+										height="540"
+										loading="lazy"
+								/></a>
+								<figcaption><strong>135°.</strong> Camera 4 of eight.</figcaption>
+							</figure>
+							<figure>
+								<a href="media/camera-flow/visual/orbit-eight-5.png"
+									><img
+										src="media/camera-flow/visual/orbit-eight-5.png"
+										alt="180°. Camera 5 of eight."
+										width="960"
+										height="540"
+										loading="lazy"
+								/></a>
+								<figcaption><strong>180°.</strong> Camera 5 of eight.</figcaption>
+							</figure>
+							<figure>
+								<a href="media/camera-flow/visual/orbit-eight-6.png"
+									><img
+										src="media/camera-flow/visual/orbit-eight-6.png"
+										alt="225°. Camera 6 of eight."
+										width="960"
+										height="540"
+										loading="lazy"
+								/></a>
+								<figcaption><strong>225°.</strong> Camera 6 of eight.</figcaption>
+							</figure>
+							<figure>
+								<a href="media/camera-flow/visual/orbit-eight-7.png"
+									><img
+										src="media/camera-flow/visual/orbit-eight-7.png"
+										alt="270°. Camera 7 of eight."
+										width="960"
+										height="540"
+										loading="lazy"
+								/></a>
+								<figcaption><strong>270°.</strong> Camera 7 of eight.</figcaption>
+							</figure>
+							<figure>
+								<a href="media/camera-flow/visual/orbit-eight-8.png"
+									><img
+										src="media/camera-flow/visual/orbit-eight-8.png"
+										alt="315°. Camera 8 of eight."
+										width="960"
+										height="540"
+										loading="lazy"
+								/></a>
+								<figcaption><strong>315°.</strong> Camera 8 of eight.</figcaption>
+							</figure>
+						</div>
+					</div>
+					<p>
+						<strong>Current default from actor selection:</strong> one fitted camera,
+						FOV 60°, distance 1.15, margin 0.1, elevation 15°. This is a geometric
+						starting point. The wall and column show why authors still need to inspect
+						it.
+					</p>
+				</section>
+				<section id="adjust">
+					<div class="eyebrow">03 / What each adjustment does</div>
+					<h2>The same camera, one setting changed</h2>
+					<p>
+						Choose a comparison. The left stays at the default; the right is a new
+						render from the changed setting. These are generated cameras, so fitting
+						participates in lens changes.
+					</p>
+					<div class="buttons" id="adjust-buttons" aria-label="Camera adjustments"></div>
+					<div class="grid">
+						<figure>
+							<a href="media/camera-flow/visual/cardinals-1.png"
+								><img
+									src="media/camera-flow/visual/cardinals-1.png"
+									alt="Baseline. FOV 60° · distance 1.15 · height 0 · elevation 15°."
+									width="960"
+									height="540"
+									loading="lazy"
+							/></a>
+							<figcaption>
+								<strong>Baseline.</strong> FOV 60° · distance 1.15 · height 0 ·
+								elevation 15°.
+							</figcaption>
+						</figure>
+						<figure>
+							<a id="adjust-link" href="media/camera-flow/visual/distance-1.png"
+								><img
+									id="adjust-image"
+									src="media/camera-flow/visual/distance-1.png"
+									width="960"
+									height="540"
+									alt="Generated camera with distance multiplier 1.5."
+									loading="lazy"
+							/></a>
+							<figcaption id="adjust-caption" aria-live="polite">
+								Distance 1.5: more surroundings; the actor becomes smaller.
+							</figcaption>
+						</figure>
+					</div>
+					<div class="grid" style="margin: 24px 0">
 						<div class="card">
-							<h3>Recorded camera A</h3>
+							<h3>Generated camera</h3>
 							<p>
-								<strong>Position:</strong> X 950 · Y −750 · Z 650<br /><strong
-									>Rotation:</strong
-								>
-								pitch −25° · yaw 140° · roll ≈ 0°<br /><strong>Lens:</strong>
-								horizontal FOV 40° · 16:9
+								A narrower FOV triggers fitting, changing perspective and background
+								coverage while retaining room for the actor. Distance scale controls
+								how loose the fit is.
 							</p>
+						</div>
+						<div class="card">
+							<h3>Manual exception</h3>
 							<p>
-								The journey expanded to a three-camera arc, then set shared FOV 50°,
-								distance scale 1.4, and height offset 160. Camera A retained its
-								manual placement and 40° exception.
-							</p>
-							<p>
-								It switched away and back, exported a recipe, approved three Views,
-								detached, and restarted Unreal with authoring disabled before
-								rendering the saved pose.
+								Changing Transform in Unreal pins placement. Shared fitting no
+								longer moves it. Lens inheritance remains independent; explicit
+								dolly/world-Z moves deliberately move and pin affected cameras.
 							</p>
 						</div>
 					</div>
-					<h3 style="margin-top: 30px">
-						Protection wins—even across different actor locators.
-					</h3>
-					<p>
-						The second comparison intentionally targets the subject itself: the Hide
-						entry uses the floor’s GUID, while protection uses its actor path. Both
-						resolve to the same actor, so the floor stays visible. Similar-looking
-						outputs are the expected result here.
-					</p>
-					<div class="grid">
-						<figure>
-							<img
-								src="media/camera-flow/protected-pure.png"
-								width="640"
-								height="360"
-								alt="Pure capture of the checkerboard floor at fixed exposure."
+					<figure>
+						<a href="media/camera-flow/visual/09-native-exception.png"
+							><img
+								src="media/camera-flow/visual/09-native-exception.png"
+								alt="Actual Details edit. Y changes from −12 to −350 cm. This camera changes from fitted to manual; the package draft records the Transform. Its siblings stay generated."
+								width="1600"
+								height="1000"
 								loading="lazy"
-							/>
-							<figcaption>
-								<strong>Pure.</strong> Natural scene, without authored exclusions.
-							</figcaption>
-						</figure>
-						<figure>
-							<img
-								src="media/camera-flow/protected-authored.png"
-								width="640"
-								height="360"
-								alt="Authored capture retaining the checkerboard floor because subject protection overrides the hide entry."
-								loading="lazy"
-							/>
-							<figcaption>
-								<strong>Authored.</strong> Hide GUID + protect path → protected
-								subject remains. Fixed EV100 10 is shared by the pair.
-							</figcaption>
-						</figure>
-					</div>
-					<div class="callout caution">
-						<strong
-							>This proves persistence and policy handling, not good
-							composition.</strong
-						>
-						The floor fixture’s recorded subject bounds are unprojectable in this
-						manually placed camera: at least one corner is behind it. The capture
-						reports natural visibility as <code>not_assessed</code>, with no valid
-						image-space denominator. It does not certify successful subject coverage or
-						invent a visibility score.
-					</div>
+						/></a>
+						<figcaption>
+							<strong>Actual Details edit.</strong> Y changes from −12 to −350 cm.
+							This camera changes from fitted to manual; the package draft records the
+							Transform. Its siblings stay generated.
+						</figcaption>
+					</figure>
 					<details>
-						<summary>
-							Exact evidence excerpt: capture-only restart and assessment
-						</summary>
-						<pre><code>{
-  "status": "passed",
-  "captureOnlyRestart": true,
-  "authoringCapabilityAbsent": true,
-  "mapPackageDirtyBefore": false,
-  "mapPackageDirtyAfter": false,
-  "subjectProjection": {
-    "code": "behind_camera",
-    "status": "unprojectable"
-  },
-  "visibility": { "status": "not_assessed" }
-}</code></pre>
-						<p class="fine">
-							Selected fields combined from the journey’s
-							<code>evidence.json</code> and <code>authored-capture.json</code>; not a
-							complete wire response.
-							<a href="media/camera-flow/evidence.json"
-								>Bundled provenance and diagnostic excerpts</a
-							>
-							retain source paths and image hashes.
+						<summary>Exposure is also a starting-point decision</summary>
+						<div class="grid">
+							<figure>
+								<a href="media/camera-flow/visual/exposure-ev10.png"
+									><img
+										src="media/camera-flow/visual/exposure-ev10.png"
+										alt="EV100 10. Almost black in this fixture’s lit viewport."
+										width="960"
+										height="540"
+										loading="lazy"
+								/></a>
+								<figcaption>
+									<strong>EV100 10.</strong> Almost black in this fixture’s lit
+									viewport.
+								</figcaption>
+							</figure>
+							<figure>
+								<a href="media/camera-flow/visual/cardinals-1.png"
+									><img
+										src="media/camera-flow/visual/cardinals-1.png"
+										alt="EV100 0. The same camera, with exposure suited to this fixture."
+										width="960"
+										height="540"
+										loading="lazy"
+								/></a>
+								<figcaption>
+									<strong>EV100 0.</strong> The same camera, with exposure suited
+									to this fixture.
+								</figcaption>
+							</figure>
+						</div>
+						<p class="fine" style="margin-top: 14px">
+							These are scene-specific examples. The gallery explicitly uses
+							viewport/EV100 0. The earlier UI recording saved SceneCapture/EV100 10.
+							Preview and review of the effective render policy need clearer
+							integration.
 						</p>
 					</details>
 				</section>
-
-				<section id="visibility">
-					<div class="eyebrow">05 / Explicit actor intent</div>
-					<h2>Hide blockers. Protect what matters.</h2>
-					<p>
-						The camera selection and the Unreal actor selection serve different
-						purposes. Check cameras in the panel to choose where an edit applies; select
-						world actors to choose what belongs in a visibility list. Selecting a
-						blocker does not redefine the camera edit scope.
-					</p>
+				<section id="culling">
+					<div class="eyebrow">04 / One camera, one blocker</div>
+					<h2>Hide this column only for this view</h2>
 					<div class="grid">
-						<div class="card">
-							<h3>One column, one close-up</h3>
-							<p>
-								Select the close-up camera’s scope. Select the column in Unreal.
-								Choose <strong>Hide selected actors in scope</strong>, inspect the
-								resolved entry, then pilot the camera and enable authored preview.
-							</p>
-							<p>
-								Save that camera’s View when satisfied. Its effective visibility
-								becomes a snapshot; sibling Views keep their own saved policies.
-							</p>
-						</div>
-						<div class="card">
-							<h3>A common blocker, with one exception</h3>
-							<p>
-								Add a blocker to the arrangement’s Hide list. For the camera that
-								must retain it, add the actor to Protect at that camera’s scope.
-							</p>
-							<p>
-								Shared, group, and camera lists compose. Protection wins across the
-								effective lists, including GUID/path aliases resolving to the same
-								live actor. The subject is protected automatically.
-							</p>
-						</div>
+						<figure>
+							<a href="media/camera-flow/visual/11-hidden-entry.png"
+								><img
+									src="media/camera-flow/visual/11-hidden-entry.png"
+									alt="Before preview. The selected column appears as a local Hide entry, but remains in the viewport."
+									width="1600"
+									height="1000"
+									loading="lazy"
+							/></a>
+							<figcaption>
+								<strong>Before preview.</strong> The selected column appears as a
+								local Hide entry, but remains in the viewport.
+							</figcaption>
+						</figure>
+						<figure>
+							<a href="media/camera-flow/visual/12-native-culling.png"
+								><img
+									src="media/camera-flow/visual/12-native-culling.png"
+									alt="Preview enabled. The column disappears. Its actor remains in the Outliner and its selection gizmo remains visible."
+									width="1600"
+									height="1000"
+									loading="lazy"
+							/></a>
+							<figcaption>
+								<strong>Preview enabled.</strong> The column disappears. Its actor
+								remains in the Outliner and its selection gizmo remains visible.
+							</figcaption>
+						</figure>
 					</div>
-					<div class="table-wrap">
-						<table>
-							<thead>
-								<tr>
-									<th>Actor reference / geometry</th>
-									<th>Behavior</th>
-									<th>Author’s next step</th>
-								</tr>
-							</thead>
-							<tbody>
-								<tr>
-									<td>Loaded opaque non-Nanite static mesh</td>
-									<td>Supported exclusion surface.</td>
-									<td>Inspect the effective list and preview, then approve.</td>
-								</tr>
-								<tr>
-									<td>Missing, unloaded, ambiguous reference</td>
-									<td>
-										Explicit resolution diagnostic; draft may retain the entry.
-									</td>
-									<td>
-										Load or repair the intended reference. Native Save views
-										validates authored references.
-									</td>
-								</tr>
-								<tr>
-									<td>GUID no longer resolves</td>
-									<td>No fallback to a possibly reassigned actor path.</td>
-									<td>
-										Resolve the identity deliberately; a familiar path is not
-										sufficient proof.
-									</td>
-								</tr>
-								<tr>
-									<td>Instanced mesh / foliage / Nanite / translucency</td>
-									<td>Outside the established supported surface.</td>
-									<td>
-										Treat as unsupported; do not rely on this fixture as
-										evidence of correct exclusion.
-									</td>
-								</tr>
-								<tr>
-									<td>World Partition unloaded geometry</td>
-									<td>No silent promise of complete scene realization.</td>
-									<td>
-										Prepare loading explicitly; broader loading coverage remains
-										future verification.
-									</td>
-								</tr>
-							</tbody>
-						</table>
-					</div>
+					<p style="margin-top: 22px">
+						The approved Review Set contains four Views. The first has one hidden actor;
+						the other three have none. This is camera-local culling.
+					</p>
+					<figure>
+						<div class="compare" id="culling-compare">
+							<img
+								src="media/camera-flow/visual/saved-authored.png"
+								alt="Authored render: column excluded."
+								width="960"
+								height="540"
+								loading="lazy"
+							/><img
+								class="before"
+								src="media/camera-flow/visual/saved-pure.png"
+								alt="Pure render: column present."
+								width="960"
+								height="540"
+								loading="lazy"
+							/><span class="seam" aria-hidden="true"></span
+							><span class="label left">Pure · column present</span
+							><span class="label right">Authored · column excluded</span>
+						</div>
+						<figcaption>
+							Actual renders of the saved camera’s pose and visibility, using the
+							gallery’s explicit viewport/EV100 0 policy. No global actor visibility
+							flags are changed.
+						</figcaption>
+					</figure>
+					<label class="slider" for="culling-slider"
+						>Reveal Pure<input
+							id="culling-slider"
+							type="range"
+							min="0"
+							max="100"
+							value="50"
+						/><output for="culling-slider">50%</output></label
+					>
 					<p>
-						Preview affects the piloted viewport; SceneCapture has its own exclusion
-						list. The flow does not toggle actors’ global editor visibility or serialize
-						hidden flags into the map. This makes the authored capture policy an
-						inspectable artifact rather than a side effect left in the scene.
+						<strong>Protect means “keep it visible if a Hide rule includes it.”</strong>
+						It can preserve an actor for one camera when a broader scope hides it. The
+						subject is protected automatically. Supported exclusions remain loaded,
+						opaque, non-Nanite static-mesh actors.
 					</p>
 				</section>
-
-				<section id="persistence">
-					<div class="eyebrow">06 / Resume, approve, or reuse</div>
-					<h2>Four files with different jobs.</h2>
-					<p>
-						The distinction matters when an author asks “did I save it?” Draft autosave
-						preserves ongoing work. <strong>Save views</strong> publishes the reviewed
-						capture definition. A recipe transfers framing intent to another actor. A
-						visibility preset transfers an explicit actor list within its project/map.
-					</p>
+				<section id="save">
+					<div class="eyebrow">05 / What survives</div>
+					<h2>Close the editor. Reattach the draft.</h2>
+					<figure>
+						<a href="media/camera-flow/visual/17-reloaded.png"
+							><img
+								src="media/camera-flow/visual/17-reloaded.png"
+								alt="Actual reload with the latest staged build. Four cameras, saved View markers, shared FOV 45° / distance 1.35 / height +120 cm, and the first camera’s Y = −350 cm exception return."
+								width="1600"
+								height="1000"
+								loading="lazy"
+						/></a>
+						<figcaption>
+							<strong>Actual reload with the latest staged build.</strong> Four
+							cameras, saved View markers, shared FOV 45° / distance 1.35 / height
+							+120 cm, and the first camera’s Y = −350 cm exception return.
+						</figcaption>
+					</figure>
 					<div class="table-wrap">
 						<table>
 							<thead>
 								<tr>
-									<th>Artifact</th>
-									<th>Contains</th>
-									<th>Load / reuse semantics</th>
+									<th>Intent</th>
+									<th>Keep / load</th>
+									<th>Example</th>
 								</tr>
 							</thead>
 							<tbody>
 								<tr>
-									<td><code>draft.json</code><br />Exact working setup</td>
+									<td>Resume this actor</td>
+									<td>Durable draft</td>
 									<td>
-										Subject identity, arrangement settings, groups, cameras,
-										overrides, pins, visibility lists, approved Review Set, and
-										durable operation/recovery state.
-									</td>
-									<td>
-										Reattach to continue the same actor’s work. Mutations
-										autosave atomically. The draft is not the capture approval
-										boundary.
+										Reattach draft.json to continue the exact working setup.
 									</td>
 								</tr>
 								<tr>
-									<td><code>approved.json</code><br />Capture deliverable</td>
+									<td>Render approved work</td>
+									<td>Approved Review Set</td>
 									<td>
-										Review Set with saved world-fixed poses, effective authored
-										visibility, authoring ownership IDs, and capture-profile
+										<a href="media/camera-flow/visual/approved-views.json"
+											>Inspect the four saved Views</a
+										>. Hidden-actor counts: 1, 0, 0, 0.
+									</td>
+								</tr>
+								<tr>
+									<td>Reuse framing</td>
+									<td>Recipe</td>
+									<td>
+										Import an example above through a reviewed proposal. New
+										identities; no actor-specific culling.
+									</td>
+								</tr>
+								<tr>
+									<td>Reuse blockers in this map</td>
+									<td>Visibility preset</td>
+									<td>
+										Separate immutable file checked against project/map.
+										Adoption copies a list; old saved Views keep their
 										snapshots.
 									</td>
-									<td>
-										Capture without authoring plugins. Later draft edits do not
-										silently rewrite an approved View. Reapproval deliberately
-										publishes a new revision.
-									</td>
-								</tr>
-								<tr>
-									<td><code>recipe.json</code><br />Portable framing</td>
-									<td>
-										Shared settings, groups, field overrides, and actor-relative
-										manual positions.
-									</td>
-									<td>
-										Import through a reviewed proposal with fresh camera/View
-										IDs. Actor locators, culling lists, and saved View ownership
-										are excluded.
-									</td>
-								</tr>
-								<tr>
-									<td>Visibility preset JSON<br />Map-specific list</td>
-									<td>
-										Version, identity, name, project/map scope, and a local
-										Hide/Protect list exported from the arrangement, group, or
-										one camera.
-									</td>
-									<td>
-										Export to a new immutable path. Explicit adoption replaces
-										the chosen scoped list after project/map validation.
-										Previously saved Views retain their snapshots.
-									</td>
 								</tr>
 							</tbody>
 						</table>
 					</div>
-					<div class="flow" aria-label="Persistence flow">
-						<div class="node">
-							<strong>Native edits</strong><small>Pending until acknowledged</small>
-						</div>
-						<span class="arrow" aria-hidden="true">→</span>
-						<div class="node">
-							<strong>Durable draft</strong><small>Autosaved working state</small>
-						</div>
-						<span class="arrow" aria-hidden="true">→</span>
-						<div class="node">
-							<strong>Save views</strong><small>Explicit scoped approval</small>
-						</div>
-						<span class="arrow" aria-hidden="true">→</span>
-						<div class="node">
-							<strong>Approved Review Set</strong
-							><small>Capture-ready snapshots</small>
-						</div>
-					</div>
-					<div class="grid">
-						<div class="card">
-							<h3>Delete a camera without losing history accidentally</h3>
-							<p>
-								Removing a draft camera does not silently delete its saved View.
-								Retired saved Views remain listed. Removing those saved definitions
-								requires the explicit approval checkbox at arrangement scope; it
-								cannot reach another arrangement’s Views.
-							</p>
-						</div>
-						<div class="card">
-							<h3>Know which machine owns the path</h3>
-							<p>
-								Draft, approved output, recipe, and preset paths refer to the host
-								running the package. If Unreal runs on another machine, a path
-								entered in its panel is still a Node-host destination.
-							</p>
-						</div>
-					</div>
+					<p>
+						<strong>Autosave is not approval.</strong> Save views in current scope
+						publishes the capture definition. Removing a draft camera does not silently
+						delete its saved View.
+					</p>
 					<details>
-						<summary>What survives recipe export? Actual journey excerpt</summary>
-						<pre><code>{
-  "version": 1,
-  "name": "Studio starting arc",
-  "settings": {
-    "fieldOfViewDegrees": 50,
-    "distanceScale": 1.4,
-    "heightOffset": 160,
-    "margin": 0.1
-  },
-  "groups": [],
-  "cameras": [
-    {
-      "displayName": "Fixture camera",
-      "yawDegrees": 0,
-      "overrides": { "fieldOfViewDegrees": 40 },
-      "relativePose": { "…": "actor-relative manual pose retained" }
-    },
-    { "displayName": "arc 2", "yawDegrees": 80, "overrides": {} },
-    { "displayName": "arc 3", "yawDegrees": 160, "overrides": {} }
-  ]
-}</code></pre>
-						<p class="fine">
-							Abbreviated for reading; the ellipsis is explanatory, not valid recipe
-							input. The generic fixture’s subject origin is zero, so its relative
-							position numerically matches the recorded world position. No real studio
-							assets or paths are included.
-						</p>
-					</details>
-					<h3>When saving meets a disconnect or concurrent edit</h3>
-					<p>
-						Each mutation carries arrangement identity, expected revision, and operation
-						ID. Stale revisions fail explicitly. The file store retains 256 operation
-						outcomes, uses a cross-process writer lock, and records approval export
-						intent together with the resulting Review Set. Retrying the same operation
-						can repair an interrupted export without issuing another View revision.
-					</p>
-					<p>
-						If a camera moves again after Save but before the host observes the request,
-						that Save is canceled so the author can review and save again. Pending
-						native state is retained for explicit recovery when ownership is released;
-						an old acknowledgement cannot silently overwrite a newer native gesture.
-					</p>
-					<div class="callout caution">
-						<strong>Recovery is still an expert workflow.</strong> A full
-						conflict-resolution UI and automatic stale-lock reclamation belong to step
-						6. Inspect retained native and host states, choose the intended change
-						against the current revision, then detach and reattach. The implementation
-						does not claim a completed general-purpose synchronization system.
-					</div>
-				</section>
-
-				<section id="outputs">
-					<div class="eyebrow">07 / Capture semantics</div>
-					<h2>Pure and Authored answer different questions.</h2>
-					<div class="table-wrap">
-						<table>
-							<thead>
-								<tr>
-									<th>Output choice</th>
-									<th>Artifact meaning</th>
-									<th>Assessment / exposure</th>
-								</tr>
-							</thead>
-							<tbody>
-								<tr>
-									<td>Pure only</td>
-									<td>The scene without authored exclusions.</td>
-									<td>
-										Natural-scene assessment belongs here when valid evidence
-										permits it.
-									</td>
-								</tr>
-								<tr>
-									<td>Authored only</td>
-									<td>
-										The scene with the approved effective visibility policy.
-									</td>
-									<td>
-										No fabricated natural-scene visibility score. Viewer labels
-										the artifact Authored.
-									</td>
-								</tr>
-								<tr>
-									<td>Pure + Authored</td>
-									<td>Both variants with separately named artifact evidence.</td>
-									<td>
-										SceneCapture requires fixed EV100. Viewport pairs may meter
-										Pure once and hold exposure for Authored.
-									</td>
-								</tr>
-								<tr>
-									<td>Legacy Clear</td>
-									<td>The pre-existing heuristic/isolation workflow.</td>
-									<td>
-										Separate from explicit author-selected culling. Explicit
-										authored output replaces the companion request for that
-										View.
-									</td>
-								</tr>
-							</tbody>
-						</table>
-					</div>
-					<p>
-						Removing a bright wall can otherwise change automatic exposure and make the
-						entire image look different. Shared exposure is part of the paired-output
-						contract, not an incidental UI preference. The native panel exposes fixed
-						EV100; library and CLI commands can set the full existing render policy.
-						Approval creates a profile snapshot without mutating profiles used by other
-						Views.
-					</p>
-					<div class="grid">
-						<div class="card">
-							<h3>Map tiles use the same visibility policy</h3>
-							<p>
-								Map Capture accepts <code>capture.visibility</code>, resolves it
-								before metering and each batch, and keeps its deterministic
-								orthographic grid. Live map previews provision the same policy.
-							</p>
-							<p>
-								<code>mapCaptureVisibilityVariants</code> produces ordinary
-								Pure/Authored plans with fixed shared exposure for a pair. Each
-								returned plan publishes its own immutable run.
-							</p>
-						</div>
-						<div class="card">
-							<h3>Explicit backend, explicit evidence</h3>
-							<p>
-								The renderer does not silently switch backends to produce an image.
-								Authored evidence must match the saved policy and retain resolution
-								diagnostics.
-							</p>
-							<p>
-								Review Set 1.5 carries authored output; Capture/Run 1.7 names the
-								evidence. Map Capture 1.2 accepts visibility; live preview
-								provisioning uses version 4.
-							</p>
-						</div>
-					</div>
-				</section>
-
-				<section id="architecture">
-					<div class="eyebrow">08 / UE Shed boundaries</div>
-					<h2>The menu is replaceable. The package owns the workflow.</h2>
-					<div class="flow" aria-label="Authoring communication architecture">
-						<div class="node">
-							<strong>CLI / studio host</strong
-							><small>Runs @ue-shed/cameras<br />Durable draft coordinator</small>
-						</div>
-						<span class="arrow" aria-hidden="true">↔</span>
-						<div class="node">
-							<strong>unreal-rc</strong
-							><small>Owned transport<br />Versioned JSON events/state</small>
-						</div>
-						<span class="arrow" aria-hidden="true">↔</span>
-						<div class="node">
-							<strong>C++ bridge</strong
-							><small>Transient editor objects<br />Native events and state</small>
-						</div>
-						<span class="arrow" aria-hidden="true">↔</span>
-						<div class="node">
-							<strong>Optional native menu</strong
-							><small>Reference authoring UI<br />Or a studio replacement</small>
-						</div>
-					</div>
-					<div class="table-wrap">
-						<table>
-							<thead>
-								<tr>
-									<th>Layer</th>
-									<th>Owns</th>
-									<th>Adoption choice</th>
-								</tr>
-							</thead>
-							<tbody>
-								<tr>
-									<td><code>@ue-shed/cameras</code></td>
-									<td>
-										Domain transformations, draft store ports, revision-scoped
-										commands, panel session, reconciliation, approval.
-									</td>
-									<td>
-										Use from a library or CLI. A studio may provide another host
-										or store.
-									</td>
-								</tr>
-								<tr>
-									<td><code>UEShedCameraAuthoring</code></td>
-									<td>The reference Unreal menu and its controls.</td>
-									<td>
-										Opt in; replace it with a studio menu using the public
-										contracts.
-									</td>
-								</tr>
-								<tr>
-									<td><code>UEShedCameraAuthoringBridge</code></td>
-									<td>
-										Native selection, activation, pose/lens readback, events,
-										visibility resolution, published panel state.
-									</td>
-									<td>
-										Opt in independently of the reference menu. Depends on
-										Cameras.
-									</td>
-								</tr>
-								<tr>
-									<td><code>UEShedCameras</code> + Core</td>
-									<td>Shared rendering and editor ownership primitives.</td>
-									<td>
-										Sufficient for approved camera capture; authoring plugins
-										are not required.
-									</td>
-								</tr>
-								<tr>
-									<td>Workbench</td>
-									<td>Showcase/review client; Authored output display.</td>
-									<td>
-										No privileged domain ownership. Arrangement controls in
-										Workbench are later work.
-									</td>
-								</tr>
-							</tbody>
-						</table>
-					</div>
-					<p>
-						Public integration surfaces include <code>CameraPanelAction</code>,
-						<code>CameraPanelEvent</code>, <code>CameraPanelState</code>, and
-						<code>makeCameraAuthoringPanelSession</code>. The host acknowledges durable
-						mutations; the bridge checks native sequences to prevent echo loops and
-						stale acknowledgements. A studio can adopt the menu, the bridge alone, or
-						the headless package as appropriate.
-					</p>
-					<p>
-						The durable coordinator in this implementation runs in the package host,
-						typically Node. The C++ bridge owns native editor state. The separate
-						<a href="../ideas/authoring-sync-layer.md">sync-layer concept</a> remains
-						future work: neither TanStack DB nor a new generic distributed database is
-						introduced by this change. Existing ports leave room to insert that layer
-						later.
-					</p>
-				</section>
-
-				<section id="run">
-					<div class="eyebrow">09 / Practical walkthrough</div>
-					<h2>Start from an actor selected in Unreal.</h2>
-					<p>
-						Enable the optional authoring capability and its dependencies in your
-						configured project. Open the map, select one subject actor, and use your
-						Unreal RC endpoint. The commands below use a local example endpoint; change
-						it to your configured address.
-					</p>
-					<pre><code>pnpm exec tsx scripts/ue-shed.ts review authoring arrangement from-selection draft.json --endpoint http://localhost:30010
+						<summary>Commands used for native authoring</summary>
+						<pre><code>pnpm exec tsx scripts/ue-shed.ts review authoring arrangement from-selection draft.json --endpoint http://localhost:30010
 
 pnpm exec tsx scripts/ue-shed.ts review authoring arrangement attach draft.json camera-1 --endpoint http://localhost:30010 --output approved.json</code></pre>
+						<p class="fine">
+							Select your actor first; use your configured Unreal RC endpoint. Keep
+							attach running while editing. File paths belong to the package host. See
+							the <a href="../products/camera-authoring.md">product guide</a> for
+							prerequisites and recovery.
+						</p>
+					</details>
+				</section>
+				<section id="integration">
+					<div class="eyebrow">06 / Where sync stops</div>
+					<h2>Unreal ↔ package works. Electroswag is not wired in.</h2>
+					<div class="flow">
+						<div class="node">
+							<strong>Unreal reference menu</strong
+							><small>Controls and actor selection</small>
+						</div>
+						<span aria-hidden="true">↔</span>
+						<div class="node">
+							<strong>Optional C++ bridge</strong
+							><small>Transient cameras and native events</small>
+						</div>
+						<span aria-hidden="true">↔</span>
+						<div class="node">
+							<strong>unreal-rc → Node host</strong
+							><small>Durable draft and approval</small>
+						</div>
+					</div>
+					<div class="callout caution">
+						<strong>No Electroswag synchronization is demonstrated here.</strong> Its
+						checked consuming code has not adopted the new arrangement/panel session
+						APIs. The existing cameras dependency and older capture tools do not
+						automatically provide this authoring integration.
+					</div>
 					<p>
-						Keep the attach command running; it reconciles at 200 ms intervals and
-						reports state changes. Open
-						<strong>Window → UE Shed Camera Authoring</strong>. Begin with the single
-						fitted camera, then use the native controls to change coverage and refine
-						the views.
-					</p>
-					<ol class="steps">
-						<li>
-							<strong>Set the scope before entering values.</strong>
-							<p>
-								For “zoom this actor’s set out a little,” choose the arrangement and
-								increase distance scale. For a subset, use a group or checked
-								cameras.
-							</p>
-						</li>
-						<li>
-							<strong>Make one deliberate manual exception.</strong>
-							<p>
-								Pilot a camera and frame it in Unreal. Confirm that its pose is
-								pinned, and inspect lens overrides separately.
-							</p>
-						</li>
-						<li>
-							<strong>Review exclusions with the intended output mode.</strong>
-							<p>
-								Select blockers in the world, choose Hide or Protect at the desired
-								scope, inspect diagnostics, and enable authored preview. For a
-								SceneCapture pair, set fixed EV100.
-							</p>
-						</li>
-						<li>
-							<strong>Approve the scope you actually reviewed.</strong>
-							<p>
-								Choose Save views in current scope. Confirm synchronization and the
-								approved destination before detaching.
-							</p>
-						</li>
-						<li>
-							<strong>Resume or capture.</strong>
-							<p>
-								Reattach the draft to edit again, or use the approved Review Set
-								with the existing Review capture commands. Detach the authoring
-								lease before batch capture.
-							</p>
-						</li>
-					</ol>
-					<pre><code># Inspect the durable draft after restarting the host.
-pnpm exec tsx scripts/ue-shed.ts review authoring arrangement show draft.json</code></pre>
-					<p class="fine">
-						The <a href="../products/camera-authoring.md">product guide</a> documents
-						lower-level create/patch/approve/bridge commands and recovery paths.
-						Authoring currently supports perspective cameras with the existing 16:9
-						approved-pose contract; additional projections and aspect contracts are
-						later work.
+						A studio can adopt the reference menu, replace it through public
+						bridge/package contracts, or use the CLI. Electroswag still needs to host
+						the arrangement session, display revision/pending state, and expose the
+						saved View library. The broader sync-layer concept remains separate work.
 					</p>
 				</section>
-
-				<section id="evidence">
-					<div class="eyebrow">10 / What has been checked</div>
-					<h2>Concrete evidence, bounded claims.</h2>
+				<section id="findings">
+					<div class="eyebrow">07 / What the visual journey found</div>
+					<h2>Working primitives; unfinished author experience</h2>
+					<div class="grid">
+						<div>
+							<h3>Enter can undo the entered value</h3>
+							<p>
+								Latest staged binary: FOV 45° → type 40° → Enter. The durable draft
+								becomes 40°. Move focus: the draft returns to 45°. Committing with
+								Tab worked in this journey.
+							</p>
+							<p>
+								<strong>This remains unfixed.</strong> The earlier backend/protocol
+								tests did not exercise the actual keyboard/focus sequence.
+							</p>
+						</div>
+						<figure>
+							<video
+								controls
+								preload="metadata"
+								poster="media/camera-flow/visual/bug-enter.png"
+							>
+								<source
+									src="media/camera-flow/visual/enter-focus-regression.mp4"
+									type="video/mp4"
+								/>
+							</video>
+							<figcaption>
+								Short, real-time reproduction on the restaged latest binary.
+								<a href="media/camera-flow/visual/enter-focus-regression.mp4"
+									>Open recording</a
+								>.
+							</figcaption>
+						</figure>
+					</div>
 					<div class="table-wrap">
 						<table>
 							<thead>
 								<tr>
-									<th>Check</th>
-									<th>Recorded result</th>
-									<th>Evidence / limit</th>
+									<th>Observed</th>
+									<th>Impact</th>
+									<th>Next work</th>
 								</tr>
 							</thead>
 							<tbody>
 								<tr>
-									<td>Full local <code>pnpm check</code></td>
-									<td>Passed; final test summary: 1,183 passed, 48 skipped.</td>
+									<td>Long scrolling form</td>
+									<td>Scope and Save are far apart; camera names truncate.</td>
 									<td>
-										<code>out/camera-45-final-check.log</code>. Local gate, not
-										a hosted CI claim. Environment-gated tests remain skipped.
+										Keep actor, scope, active camera, and save/sync state
+										readable.
 									</td>
 								</tr>
 								<tr>
-									<td>Final focused checks</td>
-									<td>12 tests across 3 files passed; precommit gate passed.</td>
+									<td>No visual preset picker</td>
+									<td>“Cardinals” requires count/start/span knowledge.</td>
 									<td>
-										<code>out/camera-45-final-focused.log</code> and
-										<code>out/camera-45-precommit.log</code>, after the final
-										capture-profile identity edge fix.
+										Named presets with thumbnails and explicit axis/angle
+										semantics.
 									</td>
 								</tr>
 								<tr>
-									<td>Native build and automation</td>
+									<td>Geometric fit ignores blockers</td>
+									<td>A rear camera sees a wall.</td>
+									<td>Review coverage and obstructions before approval.</td>
+								</tr>
+								<tr>
+									<td>Enter/focus reversion</td>
+									<td>An applied gesture can revert.</td>
+									<td>Fix numeric input; add a real Slate focus regression.</td>
+								</tr>
+								<tr>
+									<td>Capture-policy preview gap</td>
 									<td>
-										9 plugins built; 10 native tests passed. Final native
-										compile succeeded.
+										Usable native framing can still produce a poorly exposed
+										saved capture.
 									</td>
 									<td>
-										<code>out/camera-native-45-02-run.log</code> and
-										<code>out/camera-45-native-build.log</code>. Unreal 5.7 on
-										Windows.
+										Preview the effective backend and exposure before approval.
 									</td>
 								</tr>
 								<tr>
-									<td>Actor exclusion / restoration</td>
+									<td>No Electroswag adoption</td>
+									<td>The requested two-client product journey is incomplete.</td>
 									<td>
-										Actual images through both shared render backends; unchanged
-										map dirt and actor editor-visibility flags.
-									</td>
-									<td>
-										Six bundled PNGs from the opaque-column proof. No broad
-										geometry claim.
-									</td>
-								</tr>
-								<tr>
-									<td>Authoring → saved Views → capture-only restart</td>
-									<td>
-										Passed: native pose and lens, scoped arc tuning, saved
-										exceptions, recipe export, approval, and capture.
-									</td>
-									<td>
-										<code>out/camera-journey-45-05-run.log</code>. Exact framing
-										persistence; subject coverage was not validly assessable.
-									</td>
-								</tr>
-								<tr>
-									<td>Native panel visual polish</td>
-									<td>
-										Implemented controls; no native-menu screenshot or visual
-										regression baseline in this report.
-									</td>
-									<td>
-										The automation exercises the underlying journey. It does not
-										certify discoverability, layout at every size, or
-										interaction latency.
+										Integrate through public ports, then record both apps
+										together.
 									</td>
 								</tr>
 							</tbody>
 						</table>
 					</div>
-					<p class="fine">
-						An earlier concurrent gate attempt had two CLI timeouts. The isolated CLI
-						tests and a clean full rerun passed. The full gate preceded a final narrow
-						profile-identity fix, which received focused tests and the precommit gate.
-						This report’s new documentation checks are separate from those
-						implementation results.
-					</p>
-					<h3>What to review in the next iteration</h3>
-					<div class="grid">
-						<div class="card">
-							<h3>Authoring usability</h3>
-							<p>
-								Observe real authors choosing scope, noticing pins and inherited
-								values, distinguishing draft autosave from approval, and repairing
-								unresolved actors. Validate the native panel visually at practical
-								window sizes and with large camera lists.
-							</p>
-							<p>
-								Measure interaction and reconciliation behavior under latency; the
-								200 ms host schedule is not an end-to-end responsiveness guarantee.
-							</p>
-						</div>
-						<div class="card">
-							<h3>Production recovery and geometry</h3>
-							<p>
-								Complete the step 6 matrix: concurrent changes, disconnects,
-								recovery ergonomics, large arrangements, and performance under real
-								scene complexity.
-							</p>
-							<p>
-								Expand only from explicit evidence for Nanite, instancing/foliage,
-								translucency, and World Partition loading. The present static-mesh
-								proof is intentionally narrower.
-							</p>
-						</div>
-					</div>
 					<details>
-						<summary>Source map, reproduction, and screenshot provenance</summary>
-						<ul>
-							<li>
-								<a href="../products/camera-authoring.md"
-									>Camera arrangement authoring</a
-								>
-								— behavior, CLI, persistence, and adoption ports.
-							</li>
-							<li>
-								<a href="../products/camera-rendering.md">Shared camera rendering</a
-								>, <a href="../products/map-review.md">Map Review</a>, and
-								<a href="../products/map-capture.md">Map Capture</a> — downstream
-								contracts.
-							</li>
-							<li>
-								<a href="camera-authoring-native-proof.md">Native proof guide</a> —
-								test and fixture context.
-							</li>
-							<li>
-								<a href="../../scripts/test-camera-authoring.ts"
-									>Automated journey script</a
-								>
-								and
-								<a
-									href="../../unreal/Plugins/UEShedCameras/Source/UEShedCamerasEditor/Private/UEShedCameraVisibilityProofTests.cpp"
-									>native visibility proof source</a
-								>.
-							</li>
-							<li>
-								<a href="media/camera-flow/evidence.json">Bundled image manifest</a>
-								— original artifact paths, SHA-256 hashes, measurement units, and
-								diagnostic excerpts. PNG bytes were copied unchanged.
-							</li>
-						</ul>
-						<pre><code># Configure UE_SHED_UNREAL_ENGINE_ROOT using your discovered engine install.
-# Use a new output directory for each run.
-pnpm test:unreal-plugins out/camera-native-new
-pnpm exec tsx scripts/test-camera-authoring.ts out/camera-journey-new</code></pre>
+						<summary>Evidence and exact limits</summary>
+						<p>
+							OBS 32.2.1 recorded the real Unreal window through its local WebSocket
+							interface. MP4s are silent and continuous, with no cuts or speed
+							changes. PNG bytes are copied unchanged.
+						</p>
+						<p>
+							The initial tour used the previously staged authoring binary. After
+							noticing its older exposure text, I restaged the final build, reattached
+							the draft, and reproduced the numeric bug again. The reload image and
+							short regression clip use that final build; final source already has the
+							compact exposure summary.
+						</p>
+						<p>
+							The gallery uses package fitting and the shared viewport renderer.
+							Checks verified pose, policy, dimensions, and preserved map dirt,
+							followed by visual inspection. Example recipes are new starting
+							configurations; this run did not verify every recipe-import UI path,
+							visibility-preset adoption path, or the full production geometry matrix.
+						</p>
+						<p>
+							<a href="media/camera-flow/visual/manifest.json"
+								>Artifact manifest and hashes</a
+							>
+							·
+							<a href="media/camera-flow/visual/render-evidence.json"
+								>Gallery render evidence</a
+							>
+							· <a href="camera-authoring-native-proof.md">Earlier native proof</a> ·
+							<a href="../products/camera-authoring.md">Product contract</a> ·
+							<a href="../../plans/README.md">Plan status</a>
+						</p>
 						<p class="fine">
-							The source <code>out/</code> directories are local generated evidence
-							and are not committed. This report bundles selected screenshots and a
-							provenance manifest so the comparisons survive cleanup. The neighboring
-							<code>media/camera-flow/</code> folder must travel with this HTML when
-							sharing it. No external fonts, scripts, or network resources are needed.
+							Keep the neighboring media folder with this HTML when sharing.
+							Everything loads offline. The earlier text-heavy report remains in Git
+							history.
 						</p>
 					</details>
 				</section>
-				<footer>
-					UE Shed · Camera flow implementation field guide · 11 September 2026<br />Implementation
-					commits: <code>4a79c46</code> domain &amp; snapshots ·
-					<code>64095a6</code> native controls &amp; culling ·
-					<code>40332fa</code> persistence &amp; rendered outputs.
-				</footer>
 			</main>
+			<footer>
+				UE Shed · Camera flow visual walkthrough · 12 September 2026
+				<button class="print-button" type="button" id="print">Print / save PDF</button>
+			</footer>
 		</div>
 		<script>
-			document.querySelectorAll("[data-compare]").forEach((slider) => {
-				slider.addEventListener("input", () => {
-					document
-						.getElementById(slider.dataset.compare)
-						.style.setProperty("--split", `${slider.value}%`);
-					slider.parentElement.querySelector("output").value = `${slider.value}%`;
+			const base = "media/camera-flow/visual/";
+			const journey = [
+				[
+					"1 · Propose",
+					"01-propose-cardinals",
+					"Orbit, count 4, start 0°. Three additions and no removals."
+				],
+				[
+					"2 · Four cameras",
+					"02-four-cameras",
+					"Four cameras after acceptance. The active front view has a column in the way."
+				],
+				[
+					"3 · Side view",
+					"03-side-camera",
+					"Select orbit 2: Unreal pilots the +Y camera; list, viewport, and Details follow."
+				],
+				[
+					"4 · Blocked rear",
+					"04-back-camera",
+					"The rear cardinal is behind the wall. A preset is only a starting point."
+				],
+				[
+					"5 · Tune set",
+					"08-tab-commit",
+					"Commit with Tab: FOV 45°, distance 1.35, height +120 cm. These values persisted."
+				],
+				[
+					"6 · Native edit",
+					"09-native-exception",
+					"Edit Y to −350 cm in Details. The active camera becomes manual; siblings stay generated."
+				],
+				[
+					"7 · Hide column",
+					"12-native-culling",
+					"Camera-local Hide excludes the column from the piloted preview. Its actor remains in the Outliner."
+				],
+				[
+					"8 · Reopen",
+					"17-reloaded",
+					"Restart and reattach: four cameras, saved markers, shared settings, and native pose return."
+				]
+			];
+			const adjustments = [
+				[
+					"Distance → 1.5",
+					"distance-1",
+					"Distance 1.5: more surroundings; the actor becomes smaller. Other settings stay at defaults."
+				],
+				[
+					"FOV → 35°",
+					"lens-1",
+					"FOV 35°: fitting moves the generated camera back to retain framing. Perspective and background coverage change."
+				],
+				[
+					"Height → +120 cm",
+					"height-1",
+					"Height +120 cm: the camera moves above its generated position and aims toward the actor."
+				],
+				[
+					"Elevation → 35°",
+					"elevation-1",
+					"Elevation 35°: a higher position around the actor reveals more of the roof."
+				]
+			];
+			function selector(prefix, items) {
+				items.forEach(([label, name, caption], index) => {
+					const b = document.createElement("button");
+					b.type = "button";
+					b.textContent = label;
+					b.setAttribute("aria-pressed", String(index === 0));
+					b.addEventListener("click", () => {
+						document
+							.querySelectorAll(`#${prefix}-buttons button`)
+							.forEach((x) => x.setAttribute("aria-pressed", "false"));
+						b.setAttribute("aria-pressed", "true");
+						const image = document.getElementById(prefix + "-image");
+						image.src = base + name + ".png";
+						image.alt = caption;
+						document.getElementById(prefix + "-link").href = image.src;
+						document.getElementById(prefix + "-caption").textContent = caption;
+					});
+					document.getElementById(prefix + "-buttons").append(b);
 				});
-			});
-			const fov = document.getElementById("fov");
-			let overridden = true;
-			function updateExample() {
-				document.getElementById("fov-value").value = `${fov.value}°`;
-				document.querySelectorAll(".inherited-fov").forEach((element) => {
-					element.textContent = `${fov.value}° · inherited`;
-				});
-				document.getElementById("camera-a").textContent = overridden
-					? "40° · override"
-					: `${fov.value}° · inherited`;
-				document.getElementById("inherit").textContent = overridden
-					? "Camera A: inherit FOV"
-					: "Camera A: restore 40° override";
-				document.getElementById("inherit-note").textContent = overridden
-					? "Changing the shared lens preserves A’s 40° override and pinned placement."
-					: "A now inherits the shared lens. Its Transform remains pinned; lens inheritance does not unpin placement.";
 			}
-			fov.addEventListener("input", updateExample);
-			document.getElementById("inherit").addEventListener("click", () => {
-				overridden = !overridden;
-				updateExample();
-			});
-			document.getElementById("reset").addEventListener("click", () => {
-				overridden = true;
-				fov.value = "50";
-				updateExample();
+			selector("journey", journey);
+			selector("adjust", adjustments);
+			document.getElementById("culling-slider").addEventListener("input", (e) => {
+				const v = e.target.value;
+				document.getElementById("culling-compare").style.setProperty("--split", v + "%");
+				e.target.parentElement.querySelector("output").value = v + "%";
 			});
 			document.getElementById("print").addEventListener("click", () => window.print());
 		</script>

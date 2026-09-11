@@ -1,0 +1,421 @@
+{
+	"captureProfiles": [
+		{
+			"id": "capture",
+			"imageFormat": "png",
+			"renderProfile": "full_fidelity",
+			"resolution": {
+				"height": 720,
+				"width": 1280
+			}
+		},
+		{
+			"renderPolicy": {
+				"renderer": {
+					"kind": "scene_capture",
+					"profile": "scene_capture_defaults",
+					"lodDistanceScale": 1,
+					"fog": true,
+					"volumetricFog": true
+				},
+				"exposure": {
+					"mode": "fixed_ev100",
+					"ev100": 10,
+					"compensation": "project"
+				},
+				"settling": {
+					"minimumFrames": 1,
+					"timeoutMs": 120000
+				},
+				"time": "live_editor",
+				"preparation": {
+					"geometry": {
+						"mode": "preserve_loading"
+					},
+					"dataLayers": []
+				}
+			},
+			"id": "464d0dcc-c454-4755-8d90-15e4670605aa-capture-r2",
+			"imageFormat": "png",
+			"renderProfile": "full_fidelity",
+			"resolution": {
+				"height": 720,
+				"width": 1280
+			}
+		},
+		{
+			"renderPolicy": {
+				"renderer": {
+					"kind": "scene_capture",
+					"profile": "scene_capture_defaults",
+					"lodDistanceScale": 1,
+					"fog": true,
+					"volumetricFog": true
+				},
+				"exposure": {
+					"mode": "fixed_ev100",
+					"ev100": 10,
+					"compensation": "project"
+				},
+				"settling": {
+					"minimumFrames": 1,
+					"timeoutMs": 120000
+				},
+				"time": "live_editor",
+				"preparation": {
+					"geometry": {
+						"mode": "preserve_loading"
+					},
+					"dataLayers": []
+				}
+			},
+			"id": "v-panel-D2993FF6-42F2-4BEA-B862-4A81F94C694F-1-1-capture-r1",
+			"imageFormat": "png",
+			"renderProfile": "full_fidelity",
+			"resolution": {
+				"height": 720,
+				"width": 1280
+			}
+		},
+		{
+			"renderPolicy": {
+				"renderer": {
+					"kind": "scene_capture",
+					"profile": "scene_capture_defaults",
+					"lodDistanceScale": 1,
+					"fog": true,
+					"volumetricFog": true
+				},
+				"exposure": {
+					"mode": "fixed_ev100",
+					"ev100": 10,
+					"compensation": "project"
+				},
+				"settling": {
+					"minimumFrames": 1,
+					"timeoutMs": 120000
+				},
+				"time": "live_editor",
+				"preparation": {
+					"geometry": {
+						"mode": "preserve_loading"
+					},
+					"dataLayers": []
+				}
+			},
+			"id": "v-panel-D2993FF6-42F2-4BEA-B862-4A81F94C694F-1-2-capture-r1",
+			"imageFormat": "png",
+			"renderProfile": "full_fidelity",
+			"resolution": {
+				"height": 720,
+				"width": 1280
+			}
+		},
+		{
+			"renderPolicy": {
+				"renderer": {
+					"kind": "scene_capture",
+					"profile": "scene_capture_defaults",
+					"lodDistanceScale": 1,
+					"fog": true,
+					"volumetricFog": true
+				},
+				"exposure": {
+					"mode": "fixed_ev100",
+					"ev100": 10,
+					"compensation": "project"
+				},
+				"settling": {
+					"minimumFrames": 1,
+					"timeoutMs": 120000
+				},
+				"time": "live_editor",
+				"preparation": {
+					"geometry": {
+						"mode": "preserve_loading"
+					},
+					"dataLayers": []
+				}
+			},
+			"id": "v-panel-D2993FF6-42F2-4BEA-B862-4A81F94C694F-1-3-capture-r1",
+			"imageFormat": "png",
+			"renderProfile": "full_fidelity",
+			"resolution": {
+				"height": 720,
+				"width": 1280
+			}
+		}
+	],
+	"contract": {
+		"name": "ue-shed-review-set",
+		"version": {
+			"major": 1,
+			"minor": 5
+		}
+	},
+	"displayName": "Inspection Unit",
+	"id": "464d0dcc-c454-4755-8d90-15e4670605aa",
+	"project": {
+		"id": "CameraVisual",
+		"mapPath": "/Game/Fixture"
+	},
+	"views": [
+		{
+			"authoredVisibility": {
+				"version": 1,
+				"output": "natural_and_authored",
+				"actors": {
+					"hide": [
+						{
+							"locator": {
+								"kind": "actor_guid",
+								"actorGuid": "0C971B77-4B8302FC-63C25BB0-FEAB95E4",
+								"lastKnownActorPath": "/Game/Fixture.Fixture:PersistentLevel.StaticMeshActor_12"
+							},
+							"label": "Foreground column"
+						}
+					],
+					"protect": [
+						{
+							"locator": {
+								"kind": "actor_guid",
+								"actorGuid": "f084973d-4577c05c-5ad92592-a9c77c46",
+								"lastKnownActorPath": "/Game/Fixture.Fixture:PersistentLevel.StaticMeshActor_11"
+							},
+							"label": "Capture subject"
+						}
+					]
+				}
+			},
+			"authoring": {
+				"arrangementId": "464d0dcc-c454-4755-8d90-15e4670605aa",
+				"cameraId": "camera-1"
+			},
+			"captureProfileId": "464d0dcc-c454-4755-8d90-15e4670605aa-capture-r2",
+			"displayName": "Inspection Unit",
+			"framingRecipe": {
+				"kind": "manual",
+				"version": 1
+			},
+			"id": "464d0dcc-c454-4755-8d90-15e4670605aa",
+			"purpose": "Authored camera",
+			"revision": {
+				"id": "464d0dcc-c454-4755-8d90-15e4670605aa-r2",
+				"number": 2,
+				"status": "numbered"
+			},
+			"tags": [],
+			"target": {
+				"kind": "actor",
+				"subject": {
+					"actorGuid": "f084973d-4577c05c-5ad92592-a9c77c46",
+					"diagnosticLabel": "Inspection Unit",
+					"kind": "actor_guid",
+					"lastKnownActorPath": "/Game/Fixture.Fixture:PersistentLevel.StaticMeshActor_11"
+				}
+			},
+			"viewpoint": {
+				"approvedPose": {
+					"aspectRatio": "16:9",
+					"fieldOfViewDegrees": 45,
+					"location": {
+						"x": 2386.564367282551,
+						"y": -350,
+						"z": 939.4779948982527
+					},
+					"projection": "perspective",
+					"rotation": {
+						"pitch": -17.652666244966206,
+						"roll": 0,
+						"yaw": 180
+					}
+				},
+				"kind": "world_fixed"
+			},
+			"visibilityPolicyId": "default-natural-only"
+		},
+		{
+			"authoredVisibility": {
+				"version": 1,
+				"output": "natural_and_authored",
+				"actors": {
+					"hide": [],
+					"protect": []
+				}
+			},
+			"authoring": {
+				"arrangementId": "464d0dcc-c454-4755-8d90-15e4670605aa",
+				"cameraId": "c-panel-D2993FF6-42F2-4BEA-B862-4A81F94C694F-1-1"
+			},
+			"captureProfileId": "v-panel-D2993FF6-42F2-4BEA-B862-4A81F94C694F-1-1-capture-r1",
+			"displayName": "orbit 2",
+			"framingRecipe": {
+				"kind": "manual",
+				"version": 1
+			},
+			"id": "v-panel-D2993FF6-42F2-4BEA-B862-4A81F94C694F-1-1",
+			"purpose": "Authored camera",
+			"revision": {
+				"id": "v-panel-D2993FF6-42F2-4BEA-B862-4A81F94C694F-1-1-r1",
+				"number": 1,
+				"status": "numbered"
+			},
+			"tags": [],
+			"target": {
+				"kind": "actor",
+				"subject": {
+					"actorGuid": "f084973d-4577c05c-5ad92592-a9c77c46",
+					"diagnosticLabel": "Inspection Unit",
+					"kind": "actor_guid",
+					"lastKnownActorPath": "/Game/Fixture.Fixture:PersistentLevel.StaticMeshActor_11"
+				}
+			},
+			"viewpoint": {
+				"approvedPose": {
+					"aspectRatio": "16:9",
+					"fieldOfViewDegrees": 45,
+					"location": {
+						"x": 1.4613492066758522e-13,
+						"y": 2374.564367282551,
+						"z": 939.4779948982527
+					},
+					"projection": "perspective",
+					"rotation": {
+						"pitch": -17.65266624496623,
+						"roll": 0,
+						"yaw": 270
+					}
+				},
+				"kind": "world_fixed"
+			},
+			"visibilityPolicyId": "default-natural-only"
+		},
+		{
+			"authoredVisibility": {
+				"version": 1,
+				"output": "natural_and_authored",
+				"actors": {
+					"hide": [],
+					"protect": []
+				}
+			},
+			"authoring": {
+				"arrangementId": "464d0dcc-c454-4755-8d90-15e4670605aa",
+				"cameraId": "c-panel-D2993FF6-42F2-4BEA-B862-4A81F94C694F-1-2"
+			},
+			"captureProfileId": "v-panel-D2993FF6-42F2-4BEA-B862-4A81F94C694F-1-2-capture-r1",
+			"displayName": "orbit 3",
+			"framingRecipe": {
+				"kind": "manual",
+				"version": 1
+			},
+			"id": "v-panel-D2993FF6-42F2-4BEA-B862-4A81F94C694F-1-2",
+			"purpose": "Authored camera",
+			"revision": {
+				"id": "v-panel-D2993FF6-42F2-4BEA-B862-4A81F94C694F-1-2-r1",
+				"number": 1,
+				"status": "numbered"
+			},
+			"tags": [],
+			"target": {
+				"kind": "actor",
+				"subject": {
+					"actorGuid": "f084973d-4577c05c-5ad92592-a9c77c46",
+					"diagnosticLabel": "Inspection Unit",
+					"kind": "actor_guid",
+					"lastKnownActorPath": "/Game/Fixture.Fixture:PersistentLevel.StaticMeshActor_11"
+				}
+			},
+			"viewpoint": {
+				"approvedPose": {
+					"aspectRatio": "16:9",
+					"fieldOfViewDegrees": 45,
+					"location": {
+						"x": -2386.564367282551,
+						"y": -11.999999999999707,
+						"z": 939.4779948982527
+					},
+					"projection": "perspective",
+					"rotation": {
+						"pitch": -17.65266624496623,
+						"roll": 0,
+						"yaw": 360
+					}
+				},
+				"kind": "world_fixed"
+			},
+			"visibilityPolicyId": "default-natural-only"
+		},
+		{
+			"authoredVisibility": {
+				"version": 1,
+				"output": "natural_and_authored",
+				"actors": {
+					"hide": [],
+					"protect": []
+				}
+			},
+			"authoring": {
+				"arrangementId": "464d0dcc-c454-4755-8d90-15e4670605aa",
+				"cameraId": "c-panel-D2993FF6-42F2-4BEA-B862-4A81F94C694F-1-3"
+			},
+			"captureProfileId": "v-panel-D2993FF6-42F2-4BEA-B862-4A81F94C694F-1-3-capture-r1",
+			"displayName": "orbit 4",
+			"framingRecipe": {
+				"kind": "manual",
+				"version": 1
+			},
+			"id": "v-panel-D2993FF6-42F2-4BEA-B862-4A81F94C694F-1-3",
+			"purpose": "Authored camera",
+			"revision": {
+				"id": "v-panel-D2993FF6-42F2-4BEA-B862-4A81F94C694F-1-3-r1",
+				"number": 1,
+				"status": "numbered"
+			},
+			"tags": [],
+			"target": {
+				"kind": "actor",
+				"subject": {
+					"actorGuid": "f084973d-4577c05c-5ad92592-a9c77c46",
+					"diagnosticLabel": "Inspection Unit",
+					"kind": "actor_guid",
+					"lastKnownActorPath": "/Game/Fixture.Fixture:PersistentLevel.StaticMeshActor_11"
+				}
+			},
+			"viewpoint": {
+				"approvedPose": {
+					"aspectRatio": "16:9",
+					"fieldOfViewDegrees": 45,
+					"location": {
+						"x": -4.384047620027556e-13,
+						"y": -2398.564367282551,
+						"z": 939.4779948982527
+					},
+					"projection": "perspective",
+					"rotation": {
+						"pitch": -17.65266624496623,
+						"roll": 0,
+						"yaw": 450
+					}
+				},
+				"kind": "world_fixed"
+			},
+			"visibilityPolicyId": "default-natural-only"
+		}
+	],
+	"visibilityPolicies": [
+		{
+			"assessment": {
+				"method": "automatic"
+			},
+			"id": "default-natural-only",
+			"name": "Default Natural-only",
+			"onLowVisibility": {
+				"action": "record"
+			},
+			"output": {
+				"mode": "natural_only"
+			}
+		}
+	]
+}

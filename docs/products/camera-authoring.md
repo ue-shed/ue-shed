@@ -4,8 +4,13 @@ Camera-flow steps 1–5 provide scoped arrangements, native editing, culling, sy
 a capture-only Review Set. The public owner is `@ue-shed/cameras`. The CLI and optional Unreal menu
 use the same ports; Workbench is not required.
 
-See the [illustrated implementation walkthrough](../engineering/camera-flow-implementation.html)
-for recorded Unreal render comparisons, the authoring journey, and save/load examples through step 5.
+See the [visual implementation walkthrough](../engineering/camera-flow-implementation.html)
+for full Unreal-window screenshots, recordings, downloadable framing recipes, rendered comparisons,
+and save/load examples through step 5. The new arrangement flow is not yet integrated into Electroswag.
+
+The native walkthrough exposed an unresolved numeric-input bug: committing a shared FOV with Enter
+can initially update the durable draft, then revert when focus moves. Tab commits persisted in the
+recorded journey. Check the synchronized value after moving focus before approving Views.
 
 ## Plugin boundary
 

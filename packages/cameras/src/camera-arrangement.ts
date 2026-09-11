@@ -943,9 +943,13 @@ export function approveArrangementCamera(
 		(profile) => profile.id === arrangement.captureProfileId
 	);
 	if (!sourceProfile) throw arrangementFailure("invalid", "Capture profile is missing.");
-	const captureProfileId = arrangement.renderPolicy
-		? CaptureProfileId.make(`${camera.viewId}-capture-r${(existing?.revision.number ?? 0) + 1}`)
-		: arrangement.captureProfileId;
+	let captureProfileId = arrangement.captureProfileId;
+	if (arrangement.renderPolicy) {
+		let serial = set.captureProfiles.length + 1;
+		while (set.captureProfiles.some((profile) => profile.id === `authored-capture-${serial}`))
+			serial++;
+		captureProfileId = CaptureProfileId.make(`authored-capture-${serial}`);
+	}
 	const view = ReviewView.make({
 		...existing,
 		...(arrangement.output !== undefined

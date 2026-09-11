@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
 import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";
@@ -5,7 +6,10 @@ import { readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { basename, dirname, join, resolve } from "node:path";
 import { Effect, Schedule, Schema } from "effect";
-import { makeRemoteControlClient } from "../packages/unreal-connection/dist/index.js";
+import {
+	makeRemoteControlClient,
+	RemoteControlClient
+} from "../packages/unreal-connection/dist/index.js";
 import * as Cameras from "../packages/cameras/dist/index.js";
 import {
 	prepareUnrealPlugins,
@@ -106,6 +110,34 @@ try {
 	const { actualMapPath: mapPath } = Schema.decodeUnknownSync(
 		Schema.Struct({ actualMapPath: Schema.String })
 	)(readiness);
+	// Select a real fixture actor instead of assuming an editor label is its object path.
+	await Effect.runPromise(
+		client
+			.request({
+				endpoint,
+				objectPath: "/Script/UnrealEd.Default__EditorActorSubsystem",
+				functionName: "SelectAll",
+				parameters: { InWorld: `${mapPath}.Fixture` }
+			})
+			.pipe(
+				Effect.catch((error) =>
+					error.message.startsWith(
+						"Invalid Remote Control envelope: SchemaError(Missing key"
+					)
+						? Effect.void
+						: Effect.fail(error)
+				)
+			)
+	);
+	const selectedMap = await Effect.runPromise(
+		Cameras.inspectMapCaptureSelection(endpoint).pipe(
+			Effect.provideService(RemoteControlClient, client)
+		)
+	);
+	assert.equal(selectedMap.status, "ready");
+	const subjectPath =
+		selectedMap.actors.find((actor) => actor.label === "Floor")?.path ??
+		selectedMap.actors[0]!.path;
 	const arrangement = Schema.decodeUnknownSync(Cameras.CameraArrangement)({
 		version: 1,
 		id: "fixture-arrangement",
@@ -114,7 +146,7 @@ try {
 		mapPath,
 		subject: {
 			kind: "actor_path",
-			actorPath: `${mapPath}.${mapPath.split("/").at(-1)}:PersistentLevel.Floor`
+			actorPath: subjectPath
 		},
 		bounds: {
 			center: { x: 0, y: 0, z: 0 },
@@ -198,6 +230,128 @@ try {
 		})
 	);
 	assert.equal(synced.pending, false);
+	const panel = await Effect.runPromise(
+		Cameras.makeCameraAuthoringPanelSession({
+			store,
+			bridge,
+			attachment: synced,
+			draftPath,
+			approvalPath: destination
+		})
+	);
+	await Effect.runPromise(panel.tick());
+	const action = async (event: Cameras.CameraPanelAction) => {
+		const queued = await Effect.runPromise(
+			bridge
+				.call({ ...scope, operation: "enqueue", action: event })
+				.pipe(Effect.flatMap(Cameras.readyCameraBridge))
+		);
+		assert.ok(queued.panelEvent);
+		const result = await Effect.runPromise(panel.tick());
+		assert.equal(result.panelEvent, undefined);
+		return result;
+	};
+	await action({
+		kind: "layout",
+		layout: { kind: "arc", count: 3, startDegrees: 0, spanDegrees: 160, orientation: "world" },
+		retainExisting: true
+	});
+	assert.equal((await Effect.runPromise(store.load())).arrangement.cameras.length, 1);
+	await action({ kind: "accept_proposal" });
+	const command = async (fields: Schema.JsonObject) => {
+		const doc = await Effect.runPromise(store.load());
+		return action({
+			kind: "command",
+			command: Schema.decodeUnknownSync(Cameras.CameraArrangementCommand)({
+				arrangementId: doc.arrangement.id,
+				expectedRevision: doc.arrangement.revision,
+				operationId: `journey-${doc.arrangement.revision}`,
+				...fields
+			})
+		});
+	};
+	await command({
+		kind: "batch",
+		scope: { kind: "arrangement" },
+		settings: { fieldOfViewDegrees: 50, distanceScale: 1.4, heightOffset: 160 },
+		resetFields: []
+	});
+	const editedDraft = await Effect.runPromise(store.load());
+	assert.deepEqual(
+		Cameras.resolveArrangementCamera(editedDraft.arrangement, "camera-a"),
+		edited.pose
+	);
+	await action({ kind: "activate", cameraId: editedDraft.arrangement.cameras[1]!.id });
+	await action({ kind: "activate", cameraId: Cameras.ArrangementCameraId.make("camera-a") });
+	await action({
+		kind: "export_recipe",
+		path: join(root, "recipe.json"),
+		name: "Studio starting arc"
+	});
+	await Effect.runPromise(
+		client
+			.request({
+				endpoint,
+				objectPath: "/Script/UnrealEd.Default__EditorActorSubsystem",
+				functionName: "SetSelectedLevelActors",
+				parameters: {
+					ActorsToSelect: [
+						arrangement.subject.kind === "actor_path"
+							? arrangement.subject.actorPath
+							: ""
+					]
+				}
+			})
+			.pipe(
+				Effect.catch((error) => {
+					// Unreal's built-in selection setter returns void, unlike UE Shed's ResultJson calls.
+					// The following bridge selection assertion confirms the actual editor-side effect.
+					return error.message.startsWith(
+						"Invalid Remote Control envelope: SchemaError(Missing key"
+					)
+						? Effect.void
+						: Effect.fail(error);
+				})
+			)
+	);
+	assert.ok(arrangement.subject.kind === "actor_path");
+	const selection = await Effect.runPromise(bridge.call({ ...scope, operation: "selection" }));
+	assert.equal(selection.status, "selection");
+	if (selection.status === "selection") {
+		assert.equal(selection.actors.length, 1);
+		await command({
+			kind: "edit_visibility",
+			scope: { kind: "arrangement" },
+			list: "hide",
+			operation: "add",
+			entries: selection.actors
+		});
+		const resolution = await Effect.runPromise(
+			bridge.call({
+				...scope,
+				operation: "resolve_visibility",
+				actors: {
+					hide: selection.actors,
+					protect: [{ label: "Subject path alias", locator: arrangement.subject }]
+				}
+			})
+		);
+		assert.equal(resolution.status, "visibility");
+		if (resolution.status === "visibility") assert.equal(resolution.valid, true);
+	}
+	await command({ kind: "output", output: "natural_and_authored" });
+	await command({
+		kind: "render_policy",
+		policy: {
+			...Cameras.legacyReviewRenderPolicy,
+			exposure: { mode: "fixed_ev100", ev100: 10, compensation: "project" }
+		}
+	});
+	await action({
+		kind: "approve",
+		cameraIds: editedDraft.arrangement.cameras.map((camera) => camera.id),
+		removeRetiredViewIds: []
+	});
 	const saved = await Effect.runPromise(Cameras.makeCameraAuthoringStore(draftPath).load());
 	const view = saved.reviewSet.views[0];
 	assert.ok(view && view.viewpoint.kind === "world_fixed");
@@ -214,6 +368,36 @@ try {
 		Cameras.decodeReviewSet(JSON.parse(await readFile(destination, "utf8")))
 	);
 	assert.deepEqual(persisted, saved.reviewSet);
+	assert.ok(view.authoredVisibility);
+	const profile = persisted.captureProfiles.find((entry) => entry.id === view.captureProfileId)!;
+	const authoredCapture = await Effect.runPromise(
+		Cameras.captureReviewView({
+			endpoint,
+			request: Schema.decodeUnknownSync(Cameras.ReviewCaptureRequestCurrent)({
+				contract: { name: "ue-shed-review-capture", version: { major: 1, minor: 7 } },
+				operationId: randomUUID(),
+				viewId: view.id,
+				expectedMapPath: mapPath,
+				viewpoint: view.viewpoint,
+				subject: arrangement.subject,
+				resolution: { width: 640, height: 360 },
+				assessment: { method: "automatic" },
+				clearCompanion: { status: "not_requested" },
+				renderPolicy: profile.renderPolicy,
+				authoredVisibility: view.authoredVisibility
+			})
+		}).pipe(Effect.provideService(RemoteControlClient, client))
+	);
+	assert.equal(authoredCapture.status, "captured");
+	if (authoredCapture.status === "captured" && "stagedArtifacts" in authoredCapture)
+		assert.deepEqual(
+			authoredCapture.stagedArtifacts.map((entry) => entry.variant),
+			["pure", "authored"]
+		);
+	await writeFile(
+		join(root, "authored-capture.json"),
+		JSON.stringify(authoredCapture, null, "\t")
+	);
 	const pose = view.viewpoint.approvedPose;
 	const sessionId = Cameras.CameraRenderSessionId.make("approved-camera");
 	const frame = await Effect.runPromise(

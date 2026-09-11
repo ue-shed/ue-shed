@@ -6,7 +6,10 @@ They are a sibling to, and do not change, `ue-shed-review-capture` v1.
 `plan.schema.json` describes an external Map Capture Plan. `capture-request.schema.json` and
 `capture-response.schema.json` describe a bounded editor operation named
 `ue-shed-map-tile-capture`. `manifest.schema.json` describes neutral host-published
-`ue-shed-map-tile-pyramid` evidence. All are major 1, minor 0.
+`ue-shed-map-tile-pyramid` evidence. All are major 1; legacy minor 0 remains readable. Minor 1 adds renderer evidence and minor 2 adds
+optional `capture.visibility` / `capturePolicy.visibility` hide/protect lists. Visibility requires
+minor 2 and the matching Cameras renderer. It applies before metering and to every batch, including
+the live preview; it never changes tile framing.
 
 Rows progress from world max-X toward min-X. Columns progress from world min-Y toward max-Y. The
 orientation is explicit and versioned. A level halves units-per-pixel and doubles rows and columns;

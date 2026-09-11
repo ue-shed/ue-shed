@@ -1,3 +1,4 @@
+import { legacyReviewRenderPolicy } from "./camera-render-schema.js";
 import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -5,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
 	ArrangementCameraId,
+	approveArrangementCamera,
 	createCameraArrangementFromSelection,
 	CameraArrangementCommand,
 	applyCameraArrangementCommand,
@@ -42,6 +44,35 @@ const actor = (name: string) => ({
 	}
 });
 describe("complete camera arrangement editing", () => {
+	it("snapshots profiles without overflowing valid long View IDs or rewriting prior profiles", () => {
+		const source = fixtureArrangement();
+		const camera = { ...source.cameras[0]!, viewId: ReviewViewId.make("v".repeat(128)) };
+		const arrangement = {
+			...source,
+			cameras: [camera],
+			renderPolicy: legacyReviewRenderPolicy
+		};
+		const first = approveArrangementCamera(arrangement, camera.id, fixtureSet());
+		const second = approveArrangementCamera(
+			{
+				...arrangement,
+				renderPolicy: {
+					...legacyReviewRenderPolicy,
+					exposure: {
+						mode: "fixed_ev100" as const,
+						ev100: 10,
+						compensation: "project" as const
+					}
+				}
+			},
+			camera.id,
+			first
+		);
+		expect(second.captureProfiles.slice(0, first.captureProfiles.length)).toEqual(
+			first.captureProfiles
+		);
+		expect(second.views[0]!.captureProfileId).not.toBe(first.views[0]!.captureProfileId);
+	});
 	it("starts a selected actor with one fitted camera and independent durable identities", () => {
 		const original = fixtureArrangement();
 		const created = createCameraArrangementFromSelection({

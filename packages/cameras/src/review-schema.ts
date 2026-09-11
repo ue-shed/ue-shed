@@ -1660,6 +1660,26 @@ const ReviewCaptureSuccessCurrent = Schema.Struct({
 					issue: "Authored artifacts require their own renderer evidence.",
 					path: ["authoredEvidence"]
 				};
+			if (
+				response.authoredEvidence &&
+				(JSON.stringify(response.authoredEvidence.policy.visibility) !==
+					JSON.stringify(response.authoredVisibility?.actors) ||
+					response.authoredEvidence.visibilityDiagnostics?.some(
+						(entry) => entry.status !== "resolved"
+					))
+			)
+				return {
+					issue: "Authored renderer evidence must confirm the saved visibility policy without unresolved exclusions.",
+					path: ["authoredEvidence"]
+				};
+			if (
+				response.stagedArtifacts.some((artifact) => artifact.variant === "pure") &&
+				response.renderEvidence?.policy.visibility !== undefined
+			)
+				return {
+					issue: "Pure evidence cannot contain authored exclusions.",
+					path: ["renderEvidence"]
+				};
 			const issue = stagedArtifactVariantIssue(response);
 			if (issue !== undefined) return issue;
 			const hasClearArtifact = response.stagedArtifacts.some(
@@ -1923,7 +1943,19 @@ const CaptureRealizationPrevious = Schema.Union([
 function capturedArtifactVariantIssue(result: {
 	readonly artifacts: ReadonlyArray<CaptureArtifact>;
 	readonly authoredVisibility?: typeof CameraAuthoredVisibility.Type;
+	readonly authoredEvidence?: typeof CameraFrameEvidence.Type;
 }) {
+	if (
+		result.authoredVisibility &&
+		result.artifacts.some((artifact) => artifact.variant === "authored") &&
+		(!result.authoredEvidence ||
+			JSON.stringify(result.authoredEvidence.policy.visibility) !==
+				JSON.stringify(result.authoredVisibility.actors))
+	)
+		return {
+			issue: "Saved Authored artifacts require matching renderer visibility evidence.",
+			path: ["authoredEvidence"]
+		};
 	if (result.authoredVisibility)
 		return stagedArtifactVariantIssue({
 			stagedArtifacts: result.artifacts.map((artifact) => ({

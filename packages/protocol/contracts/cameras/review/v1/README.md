@@ -81,3 +81,9 @@ Change a wire shape in this order:
 4. Switch consumers only after both producers pass.
 
 Do not generate these files from TypeScript. That would reverse the authority established by ADR 0002.
+
+Capture 1.7 adds `authoredVisibility` and separately named `authored` artifacts with `authoredEvidence`.
+Natural-only, authored-only and paired output require exactly their requested variants. Paired output
+retains natural assessment and shared exposure; authored-only does not fabricate a natural score.
+Semantic validation requires evidence to match the saved policy and forbids exclusions on Pure.
+Legacy 1.0-1.6 and Clear remain readable. Review Set 1.5 and Capture Run 1.7 persist the new state.

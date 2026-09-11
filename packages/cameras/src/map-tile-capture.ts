@@ -427,7 +427,10 @@ function makeRequest(args: {
 		capture: args.plan.capture,
 		captureBackend: args.captureBackend,
 		overviewBounds: args.grid.snappedBounds,
-		contract: { name: "ue-shed-map-tile-capture", version: { major: 1, minor: 1 } },
+		contract: {
+			name: "ue-shed-map-tile-capture",
+			version: { major: 1, minor: args.plan.capture.visibility ? 2 : 1 }
+		},
 		correlationId: args.correlationId,
 		expectedMapPath: args.plan.project.mapPath,
 		gutterPixels: args.plan.gutterPixels,
@@ -836,7 +839,10 @@ function runMapCaptureWith(args: {
 				},
 				capturePolicy: plan.capture,
 				completedAt: isoNow(yield* Clock.currentTimeMillis),
-				contract: { name: "ue-shed-map-tile-pyramid", version: { major: 1, minor: 1 } },
+				contract: {
+					name: "ue-shed-map-tile-pyramid",
+					version: { major: 1, minor: plan.capture.visibility ? 2 : 1 }
+				},
 				failures,
 				grid: {
 					orientation: {

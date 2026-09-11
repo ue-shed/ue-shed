@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { decodeReviewCaptureResponse, ReviewCaptureRequestCurrent } from "./review-schema.js";
 import { mapCaptureVisibilityVariants } from "./map-capture-visibility.js";
 import { MapCapturePlan } from "./map-tile-schema.js";
-import { legacyReviewRenderPolicy } from "./camera-render-schema.js";
+import { CameraFrameEvidence, legacyReviewRenderPolicy } from "./camera-render-schema.js";
 const response = () =>
 	Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Json))(
 		JSON.parse(
@@ -21,6 +21,34 @@ describe("authored capture wire and persistence boundaries", () => {
 	it("accepts actual native paired evidence and rejects missing authored evidence or policy", () => {
 		const input = response();
 		expect(Effect.runSync(decodeReviewCaptureResponse(input)).status).toBe("captured");
+		const evidence = Schema.decodeUnknownSync(
+			Schema.Struct({ authoredEvidence: CameraFrameEvidence })
+		)(input).authoredEvidence;
+		expect(() =>
+			Effect.runSync(
+				decodeReviewCaptureResponse({
+					...input,
+					authoredEvidence: {
+						...evidence,
+						policy: {
+							...evidence.policy,
+							visibility: {
+								hide: [
+									{
+										label: "Different actor",
+										locator: {
+											kind: "actor_path",
+											actorPath: "/Game/Fixture.Fixture:PersistentLevel.Other"
+										}
+									}
+								],
+								protect: []
+							}
+						}
+					}
+				})
+			)
+		).toThrow();
 		const { authoredEvidence: _evidence, ...missingEvidence } = input;
 		const { authoredVisibility: _policy, ...missingPolicy } = input;
 		expect(() => Effect.runSync(decodeReviewCaptureResponse(missingEvidence))).toThrow();

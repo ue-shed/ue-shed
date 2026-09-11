@@ -1,6 +1,6 @@
 # Camera arrangement authoring
 
-Camera-flow steps 1–3 provide an actor-scoped draft, native editing, synchronization, and approval into
+Camera-flow steps 1–5 provide scoped arrangements, native editing, culling, synchronization, and approval into
 a capture-only Review Set. The public owner is `@ue-shed/cameras`. The CLI and optional Unreal menu
 use the same ports; Workbench is not required.
 
@@ -17,7 +17,7 @@ flowchart LR
 Enable `UEShedCameraAuthoring` for the reference menu, or enable only
 `UEShedCameraAuthoringBridge` for a studio's own native menu. Both are editor-only. Open **Window → UE
 Shed Camera Authoring** after attaching a camera. The panel selects/pilots the active camera, displays
-pending/synchronized state, requests Save for that camera, and detaches it. Transform and FOV editing
+pending/synchronized state, edits arrangements and actor exclusions, saves scoped Views, and detaches. Transform and FOV editing
 use Unreal's own viewport and Details panel, with native Undo/Redo.
 
 Capture-only projects continue to enable Core+Cameras. The new `camera-authoring` source bundle preset
@@ -42,15 +42,14 @@ and separate arrangements on the same actor remain independent.
   camera IDs outside the arrangement fail explicitly. Recent committed operation IDs are replayable;
   changing their input is an error. The store retains 256 operation outcomes.
 
-The first vertical supports 1–256 perspective cameras and the existing 16:9 approved-pose contract.
-The fit calculation accounts for both horizontal and vertical FOV. Layout galleries, additional
-projection/aspect contracts, complete batch menus, and Workbench arrangement controls are later work.
+Authoring supports 1–256 perspective cameras and the existing 16:9 approved-pose contract.
+The fit calculation accounts for both horizontal and vertical FOV. Additional projection/aspect contracts and Workbench arrangement controls are later work.
 
 `migrateLegacyCameraArrangement` explicitly imports an existing authoring session. Callers supply a
 camera/View identity for every retained candidate. Imported poses are pinned so migration preserves
 the existing approved/draft framing. Legacy Review Set 1.0–1.3 reading remains supported.
 
-Approval emits Review Set **1.4**, with `view.authoring = { arrangementId, cameraId }`. This prevents
+Approval emits Review Set **1.4** for legacy drafts or **1.5** for explicit visibility output, with `view.authoring = { arrangementId, cameraId }`. This prevents
 another arrangement from replacing an owned View. Other Views and their revisions are preserved.
 Capture still consumes immutable approved poses; it never regenerates them from arrangement settings.
 
@@ -87,6 +86,16 @@ separate [generic authoring synchronization concept](../ideas/authoring-sync-lay
 The commands live under `ue-shed review authoring arrangement`. In this repository, prefix them with
 `pnpm exec tsx scripts/ue-shed.ts`.
 
+For a new actor, select it in Unreal, then run:
+
+```sh
+review authoring arrangement from-selection draft.json --endpoint http://localhost:30010
+review authoring arrangement attach draft.json camera-1 --endpoint http://localhost:30010 --output approved.json
+```
+
+This starts with one fitted camera. Open the native panel to choose another layout or tune it.
+The lower-level path for existing inputs is:
+
 1. Write an input file containing `{ "arrangement": <CameraArrangement>, "reviewSet": <ReviewSet> }`.
    Use explicit project/map/actor locators and camera/View IDs. The checked-in
    [schemas](../../packages/protocol/contracts/cameras/authoring/v1/) describe every required field.
@@ -94,7 +103,7 @@ The commands live under `ue-shed review authoring arrangement`. In this reposito
 3. `review authoring arrangement attach draft.json camera-a --endpoint http://localhost:30010 --output approved.json`
 4. Edit the selected camera in Unreal, or use **Pilot camera** in the optional menu. Keep the CLI
    running; it reconciles every 200 ms and reports state changes.
-5. Choose **Save this view** in Unreal. The host approves the reviewed camera into `approved.json`.
+5. Choose **Save views in current scope** in Unreal. The host approves the reviewed camera into `approved.json`.
 6. Interrupt the attach command to release the proxy. Restart either client and inspect with
    `review authoring arrangement show draft.json`. Existing Review capture commands accept the
    approved Review Set with Core+Cameras only.
@@ -150,8 +159,71 @@ an explicitly configured engine root. It exercises piloting, native pose/lens ed
 Save, disk restart, editor restart with the authoring plugins disabled, and capture of the exact saved
 camera. It records JSON evidence and a PNG. Set `UE_SHED_UNREAL_ENGINE_ROOT` before running it.
 
-The [native proof](../engineering/camera-authoring-native-proof.md) also covers Undo/Redo, clean-map
-save/reload, ownership/restoration, and view-local pixel exclusion. **Viewport culling remains
-unadvertised** until phase 5 integrates the policy and proves the additional geometry cases. The
-broader arrangement UI, actor-selection culling workflow, and production recovery/performance matrix
-remain phases 4–6 of [Plan 049](../../plans/049-camera-authoring-and-actor-culling.md).
+The native proof now routes exclusions through real shared renderer sessions for both viewport and
+SceneCapture. The supported scope is loaded, opaque, non-Nanite static-mesh actors. Instanced meshes,
+translucency, and unloaded actors produce diagnostics instead of silently omitting an exclusion.
+The broader geometry and production recovery/performance matrix remains step 6 of Plan 049.
+
+## Arrangement editing and persistence
+
+The optional Unreal panel shows the attached actor, camera count, active camera, draft revision,
+draft file and approved Review Set path. Select a camera to edit its Transform and FOV in Details,
+or pilot it in the Level Editor viewport. Camera selection in the panel is independent of the
+Unreal actor selection used to choose blockers.
+
+Choose an explicit editing scope: this actor's whole arrangement, a named group, or checked cameras.
+Fields inherit from arrangement to group to camera. FOV, distance, height, elevation, yaw, margin,
+and aim offsets are independently editable. Mixed selections show mixed scalar values; Inherit
+removes only the chosen override. Native pose edits pin placement, while lens inheritance remains
+independent. Dolly/world-Z moves deliberately pin affected cameras. Unpin resumes generated fitting.
+
+Single, orbit, and arc layouts support 1-256 cameras. Layout and recipe imports first show added,
+removed, and customized identities; accepting is a revision-checked operation. Retained identities
+keep exceptions. Removing a draft camera does not delete its saved View: retired Views are listed,
+and removing those saved definitions requires the explicit checkbox at arrangement scope.
+Duplicate, reorder, rename, and add-from-current-viewport work without regenerating the set.
+
+Draft changes autosave to the durable authoring document. **Save views** atomically publishes all
+cameras in the displayed scope; other actors' Views cannot be included. Saved pose and effective
+visibility lists are snapshots, so later group edits do not rewrite previous captures. Fixed exposure
+can be set in the panel; saving creates a capture-profile snapshot without changing other Views'
+profiles. Library/CLI `render_policy` commands accept the complete existing renderer policy.
+
+Portable recipe JSON contains framing, group overrides and actor-relative manual positions, with
+fresh camera/View identities allocated on import. It excludes actor locators, culling lists and saved
+View ownership. Keep the draft to resume the exact actor setup; use a recipe to start another actor.
+Recipe paths refer to the host running the package, not necessarily Unreal's machine.
+
+Map-specific visibility presets are separate JSON files with their own identity and project/map scope.
+Export the arrangement, a group, or one camera's local list to a new path. Presets cannot be overwritten;
+export a replacement and explicitly adopt it in the selected scope. Adoption copies the list into
+the draft, and previously saved Views retain their own snapshots.
+
+## Explicit actor visibility
+
+Select actors in Unreal, then **Hide selected actors in scope** or **Protect selected actors in scope**.
+Shared, group and camera lists compose; protection wins, including GUID/path aliases resolved to the
+same live actor. The capture subject is protected automatically. The panel displays effective lists
+and resolution diagnostics. A GUID never falls back to a potentially reassigned path. Save views
+validates authored references; drafts may retain unresolved entries for repair.
+
+Choose Pure only, Authored only, or Pure + Authored. The native preview toggle applies only to the
+piloted viewport, and capture applies the same lists through the shared renderer. Actor visibility
+flags and map packages are not changed. Paired SceneCapture requires fixed EV100; viewport pairs may
+meter the natural scene once and hold its exposure for Authored. Natural assessment belongs to Pure;
+Authored-only has no natural-scene visibility score. Legacy Clear remains a separate workflow;
+explicit authored output replaces its companion request for that View.
+
+Review Set 1.5 and Capture/Run 1.7 carry authored policy and separately named artifact evidence.
+Map Capture 1.2 accepts the same `capture.visibility`; live map previews use provisioning version 4.
+`mapCaptureVisibilityVariants(plan, policy)` produces ordinary Pure/Authored plans, requiring fixed
+exposure for a pair. Publish each returned plan as its own immutable run. Tile framing remains fixed.
+
+## Replaceable menu integration
+
+`CameraPanelAction`, `CameraPanelEvent`, `CameraPanelState` and `makeCameraAuthoringPanelSession` are
+public package contracts. The reference menu submits revision-scoped events over unreal-rc; the host
+owns durable mutations and acknowledges their outcomes. The bridge owns transient editor objects
+and exposes selection, visibility resolution, camera activation, and published panel state. Studios
+can replace the menu or store through those ports. Neither the Workbench nor the menu owns domain
+policy, and no general distributed synchronization service is introduced here.

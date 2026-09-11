@@ -41,10 +41,11 @@ that view's `HiddenPrimitives`. SceneCapture uses its own `HiddenActors` list.
 | Opaque engine cube used as a column                                             | Viewport screenshot exclusion and restoration; SceneCapture exclusion and restoration | Proof only                 |
 | Other view isolation                                                            | Independent SceneCapture pixels remain unaffected by the viewport hook                | Proof only                 |
 | Nanite-specific assets, instanced meshes, translucency, World Partition loading | Not established by this fixture                                                       | Unsupported / unadvertised |
-| Full authored viewport culling policy                                           | Policy integration is phase 5                                                         | `viewportCulling: false`   |
+| Full authored viewport culling policy                                           | Shared policy integrated in phase 5                                                   | `viewportCulling: true`    |
 
-This is sufficient to choose the hook and ownership boundary. It does not promote the complete culling
-feature or claim the later geometry matrix has passed.
+The phase-5 fixture uses actual shared render sessions for visible, excluded, and restored frames in
+both backends. It also checks protection and missing-reference failure. This advertises only the
+bounded loaded, opaque, non-Nanite static-mesh scope, not the untested geometry matrix.
 
 ## Engine source checked
 
@@ -59,3 +60,12 @@ feature or claim the later geometry matrix has passed.
 The bridge and renderer share a public game-thread ownership guard. A connected authoring camera
 holds it until detach, map/PIE transition, plugin shutdown, proxy deletion, or expiry of its 30-second
 host lease. Capture must detach authoring first. No rendering code imports the authoring plugins.
+
+## Phase 4-5 verification
+
+The isolated round trip now covers reviewed arc regeneration, preservation of a pinned camera during
+shared tuning, switching cameras, portable recipe export, native actor selection, GUID/path protection,
+batch approval, and disk/editor restart. It then renders Pure + Authored with only Core+Cameras enabled.
+The native suite uses actual shared renderer sessions for visible/excluded/restored pixel comparisons
+on both backends and checks clean-map restoration. The broader geometry and performance matrix remains
+phase 6; these results do not establish Nanite, instances, translucency or World Partition streaming.

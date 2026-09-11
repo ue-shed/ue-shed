@@ -163,6 +163,9 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 								mapCapturePlanId: plan.id,
 								type: "map_capture_plan" as const
 							},
+							...(plan.capture.visibility
+								? { visibility: plan.capture.visibility }
+								: undefined),
 							height: frame.height,
 							location: { ...frame.location, z: plan.capture.z },
 							projection: {

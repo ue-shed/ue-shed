@@ -1090,3 +1090,8 @@ anti-goal defers the larger durable cartography product, not spatial navigation 
 - A pixel-difference score making human review decisions.
 - Coupling definitions to the live-frame transport.
 - Prescribing the centralized system each studio should operate.
+
+Actor-linked camera arrangements and explicit culling are described in [camera authoring](camera-authoring.md).
+Review Set 1.5 snapshots effective hide/protect lists; Capture and Run 1.7 distinguish Pure and Authored
+artifacts. Authored-only results do not require a Pure image. Pairs share exposure, and natural visibility
+assessment is attached only to Pure. Existing Clear policies remain supported as their own workflow.

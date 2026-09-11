@@ -359,7 +359,7 @@ try {
 			"if (typeof cameras.ReviewCapture !== 'function') {",
 			"  throw new Error('bad cameras ReviewCapture');",
 			"}",
-			"for (const name of ['makeCameraAuthoringStore', 'makeCameraAuthoringBridge', 'attachArrangementCamera', 'synchronizeArrangementCamera', 'resolveArrangementCamera']) {",
+			"for (const name of ['makeCameraAuthoringStore', 'makeCameraAuthoringBridge', 'attachArrangementCamera', 'synchronizeArrangementCamera', 'resolveArrangementCamera', 'makeCameraAuthoringPanelSession', 'proposeCameraLayout', 'exportCameraArrangementRecipe', 'importCameraArrangementRecipe', 'mapCaptureVisibilityVariants']) {",
 			"  if (typeof cameras[name] !== 'function') throw new Error('bad camera authoring export ' + name);",
 			"}",
 			"if (typeof NiagaraPreview !== 'function' || typeof runNiagaraPreview !== 'function') {",

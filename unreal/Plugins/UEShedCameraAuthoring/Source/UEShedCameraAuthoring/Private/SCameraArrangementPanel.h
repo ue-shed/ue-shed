@@ -27,7 +27,7 @@ class SCameraArrangementPanel : public SCompoundWidget
     bool CommittingNumber = false;
     double ExposureEV = 10;
     double Count = 6, Start = 0, Span = 180, Dolly = 100, Height = 0, AimX = 0, AimY = 0, AimZ = 0;
-    bool Retain = true, SubjectOrientation = false, RemoveRetired = false, Preview = false;
+    bool Retain = true, SubjectOrientation = false, RemoveRetired = false, Preview = true;
     bool Ready() const;
     FObject Request(const TCHAR *Operation) const;
     FObject Call(const FObject &Request);

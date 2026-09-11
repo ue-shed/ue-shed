@@ -108,7 +108,7 @@ export const makeCameraAuthoringPanelSession = Effect.fn("CameraAuthoringPanel.m
 		const initial: PanelSessionState = {
 			attachment: args.attachment,
 			proposal: undefined,
-			notice: "Draft changes autosave. Save views publishes capture definitions."
+			notice: ""
 		};
 		const state = yield* Ref.make(initial);
 		const attempt = <A>(operation: () => A) =>
@@ -170,7 +170,7 @@ export const makeCameraAuthoringPanelSession = Effect.fn("CameraAuthoringPanel.m
 					...previewArrangementRegeneration(document.arrangement, cameras),
 					expectedRevision: document.arrangement.revision
 				};
-				notice = "Review removed cameras and customizations before accepting.";
+				notice = "Layout ready.";
 			} else if (action.kind === "command") {
 				if (
 					action.command.arrangementId !== scope.arrangementId ||
@@ -235,7 +235,7 @@ export const makeCameraAuthoringPanelSession = Effect.fn("CameraAuthoringPanel.m
 					removeRetiredViewIds: action.removeRetiredViewIds,
 					destination: args.approvalPath
 				});
-				notice = `Saved ${action.cameraIds.length} view(s) to ${args.approvalPath}.`;
+				notice = `Saved ${action.cameraIds.length} ${action.cameraIds.length === 1 ? "view" : "views"}.`;
 			} else if (action.kind === "layout") {
 				const count = action.layout.kind === "single" ? 1 : action.layout.count,
 					fresh = identities(count);
@@ -253,8 +253,7 @@ export const makeCameraAuthoringPanelSession = Effect.fn("CameraAuthoringPanel.m
 					)),
 					expectedRevision: document.arrangement.revision
 				};
-				notice =
-					"Review the proposed camera changes before accepting. Retained cameras keep their exceptions.";
+				notice = "Layout ready.";
 			} else if (action.kind === "add_viewport") {
 				const identity = identities(1)[0]!;
 				document = yield* args.store.mutate({
@@ -365,7 +364,7 @@ export const makeCameraAuthoringPanelSession = Effect.fn("CameraAuthoringPanel.m
 				proposal = undefined;
 			} else {
 				proposal = undefined;
-				notice = "Proposal canceled; the draft is unchanged.";
+				notice = "Layout canceled.";
 			}
 			if (!document.arrangement.cameras.some((camera) => camera.id === active))
 				active = document.arrangement.cameras[0]!.id;

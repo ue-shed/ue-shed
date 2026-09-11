@@ -238,7 +238,8 @@ void SCameraArrangementPanel::Construct(const FArguments &Args)
     ChildSlot[SNew(SBox).Padding(12).MinDesiredWidth(340)[Root]];
     Root->AddSlot().AutoHeight().Padding(0, 0, 0, 8)[SNew(STextBlock).Font(FCoreStyle::GetDefaultFontStyle("Bold", 14)).Text_Lambda([this] {
         const auto Subject = Child(Arrangement, TEXT("subject"));
-        FString Name = Str(Subject, TEXT("diagnosticLabel"));
+        FString Name = Str(Arrangement, TEXT("displayName"));
+        if (Name.IsEmpty()) Name = Str(Subject, TEXT("diagnosticLabel"));
         if (Name.IsEmpty() && !Items(Arrangement, TEXT("cameras")).IsEmpty())
             Name = Str(Items(Arrangement, TEXT("cameras"))[0]->AsObject(), TEXT("displayName"));
         return FText::FromString(Name.IsEmpty() ? TEXT("Camera sets") : Name);
@@ -249,12 +250,16 @@ void SCameraArrangementPanel::Construct(const FArguments &Args)
     })];
     Root->AddSlot().AutoHeight()[SNew(SBox).MaxDesiredHeight(190)[SNew(SScrollBox) + SScrollBox::Slot()[SAssignNew(CameraRows, SVerticalBox)]]];
     Root->AddSlot().AutoHeight().Padding(0, 6)[SNew(SHorizontalBox) +
-        SHorizontalBox::Slot().FillWidth(1)[Button(TEXT("Whole set"), [this] { Scope = TEXT("arrangement"); ActorKey.Reset(); })] +
-        SHorizontalBox::Slot().FillWidth(1)[Button(TEXT("Selected cameras"), [this] {
+        SHorizontalBox::Slot().FillWidth(1)[SNew(SCheckBox).Style(FCoreStyle::Get(), "ToggleButtonCheckbox")
+            .IsChecked_Lambda([this] { return Scope == TEXT("arrangement") ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; })
+            .OnCheckStateChanged_Lambda([this](ECheckBoxState) { Scope = TEXT("arrangement"); ActorKey.Reset(); })[Text(TEXT("Whole set"))]] +
+        SHorizontalBox::Slot().FillWidth(1)[SNew(SCheckBox).Style(FCoreStyle::Get(), "ToggleButtonCheckbox")
+            .IsChecked_Lambda([this] { return Scope == TEXT("cameras") ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; })
+            .OnCheckStateChanged_Lambda([this](ECheckBoxState) {
             Scope = TEXT("cameras");
             if (Selected.IsEmpty()) Selected.Add(Str(Active, TEXT("cameraId")));
             ActorKey.Reset();
-        })]];
+        })[Text(TEXT("Selected cameras"))]]];
     Root->AddSlot().AutoHeight().Padding(0, 4)[SNew(STextBlock).Font(FCoreStyle::GetDefaultFontStyle("Bold", 10)).Text_Lambda([this] {
         return FText::FromString(Scope == TEXT("arrangement") ? TEXT("Whole set") :
             Scope == TEXT("group") ? Str(Group(), TEXT("name")) : FString::Printf(TEXT("%d selected"), Selected.Num()));
@@ -375,8 +380,15 @@ void SCameraArrangementPanel::Construct(const FArguments &Args)
         Submit(C);
     }));
     Page(TEXT("Layout"));
-    for (const FString Kind : {TEXT("single"), TEXT("orbit"), TEXT("arc")})
-        Add(Button(Kind, [this, Kind] { LayoutKind = Kind; }));
+    auto Presets = SNew(SHorizontalBox);
+    auto Preset = [this, &Presets](const TCHAR* Label, const TCHAR* Kind, double N, double Angle, double Sweep) {
+        Presets->AddSlot().FillWidth(1)[Button(Label, [this, Kind, N, Angle, Sweep] { LayoutKind = Kind; Count = N; Start = Angle; Span = Sweep; })];
+    };
+    Preset(TEXT("Single"), TEXT("single"), 1, -35, 0);
+    Preset(TEXT("Cardinals"), TEXT("orbit"), 4, 0, 360);
+    Preset(TEXT("Front arc"), TEXT("arc"), 3, -45, 90);
+    Preset(TEXT("Orbit"), TEXT("orbit"), 8, 0, 360);
+    Add(Presets);
     Add(SNew(STextBlock).Text_Lambda([this] { return FText::FromString(TEXT("Layout: ") + LayoutKind); }));
     Add(Number(TEXT("Count (1–256)"), Count));
     Add(Number(TEXT("Start angle (degrees)"), Start));
@@ -413,7 +425,7 @@ void SCameraArrangementPanel::Construct(const FArguments &Args)
     Add(Button(TEXT("Hide selection"), [this] { CaptureSelection(TEXT("hide")); }));
     Add(Button(TEXT("Protect selection"), [this] { CaptureSelection(TEXT("protect")); }));
     Add(SAssignNew(ActorRows, SVerticalBox));
-    Add(SNew(SCheckBox).OnCheckStateChanged_Lambda([this](ECheckBoxState S) {
+    Add(SNew(SCheckBox).IsChecked_Lambda([this] { return Preview ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; }).OnCheckStateChanged_Lambda([this](ECheckBoxState S) {
         Preview = S == ECheckBoxState::Checked;
         PreviewVisibility();
     })[Text(TEXT("Preview hidden actors"))]);
@@ -494,7 +506,7 @@ void SCameraArrangementPanel::Construct(const FArguments &Args)
     Add(Button(TEXT("Export recipe"), [this] { RecipeAction(true); }));
     Add(Button(TEXT("Load recipe"), [this] { RecipeAction(false); }));
     SectionBody = Root;
-    Add(SNew(STextBlock).AutoWrapText(true).Text_Lambda([this] { return FText::FromString(Message); }));
+    Add(SNew(STextBlock).AutoWrapText(true).Text_Lambda([this] { return FText::FromString(Message.IsEmpty() ? Str(Panel, TEXT("notice")) : Message); }));
     Add(SNew(SHorizontalBox) +
         SHorizontalBox::Slot().FillWidth(1)[Button(TEXT("Save set"), [this] {
             const auto Previous = Scope; Scope = TEXT("arrangement"); SaveScope(); Scope = Previous;
@@ -533,7 +545,7 @@ void SCameraArrangementPanel::PreviewVisibility()
         {
             auto Q = Request(TEXT("preview_visibility"));
             Q->SetObjectField(TEXT("actors"), Child(V->AsObject(), TEXT("visibility")));
-            Q->SetBoolField(TEXT("enabled"), Preview);
+            Q->SetBoolField(TEXT("enabled"), Preview && Str(Arrangement, TEXT("output")) != TEXT("natural_only"));
             Call(Q);
         }
 }
@@ -544,7 +556,7 @@ void SCameraArrangementPanel::CaptureSelection(const TCHAR *List)
         return;
     if (Items(R, TEXT("actors")).IsEmpty())
     {
-        Message = TEXT("Select blocker actors in the Outliner or viewport; the authoring camera is excluded.");
+        Message = TEXT("Select actors in Unreal first.");
         return;
     }
     auto C = Command(TEXT("edit_visibility"));
@@ -557,12 +569,18 @@ void SCameraArrangementPanel::CaptureSelection(const TCHAR *List)
 
 EActiveTimerReturnType SCameraArrangementPanel::Refresh(double Time, float Delta)
 {
+    const FString PreviousProducer = Str(Active, TEXT("producerId"));
     Active = FUEShedCameraAuthoringBridge::InspectActive();
+    if (PreviousProducer != Str(Active, TEXT("producerId"))) { Selected.Reset(); Scope = TEXT("arrangement"); RowKey.Reset(); ActorKey.Reset(); }
     Panel = Child(Active, TEXT("panel"));
     Arrangement = Child(Panel, TEXT("arrangement"));
-    if (!Arrangement->HasField(TEXT("cameras")))
+    if (!Arrangement->HasField(TEXT("cameras"))) {
+        if (!RowKey.IsEmpty()) { CameraRows->ClearChildren(); GroupRows->ClearChildren(); ActorRows->ClearChildren(); ActiveActions->ClearChildren(); ProposalRows->ClearChildren(); RowKey.Reset(); }
         return EActiveTimerReturnType::Continue;
-    const FString Key = Str(Active, TEXT("cameraId")) + LexToString(Arrangement->GetNumberField(TEXT("revision")));
+    }
+    FString Key = Str(Active, TEXT("producerId")) + LexToString(Flag(Active, TEXT("piloting"))) + Str(Arrangement, TEXT("id")) + Str(Active, TEXT("cameraId")) + LexToString(Arrangement->GetNumberField(TEXT("revision")));
+    for (const auto& Camera : Items(Panel, TEXT("cameras")))
+        Key += Flag(Camera->AsObject(), TEXT("approved")) ? TEXT("1") : TEXT("0");
     if (Key != RowKey)
     {
         RowKey = Key;
@@ -723,7 +741,7 @@ void SCameraArrangementPanel::RebuildActors()
         {
             const auto Lists = Child(V->AsObject(), TEXT("visibility"));
             ActorRows->AddSlot().AutoHeight()[Text(
-                TEXT("ACTIVE CAMERA · Effective exclusions, including inheritance; protection wins"))];
+                TEXT("Effective visibility"))];
             for (const TCHAR *F : {TEXT("hide"), TEXT("protect")})
                 for (const auto &E : Items(Lists, F))
                     ActorRows->AddSlot()

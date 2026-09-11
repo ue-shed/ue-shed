@@ -1,15 +1,23 @@
+import { CameraVisibilityPreset } from "../src/camera-visibility.js";
 import { deepStrictEqual } from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { Schema } from "effect";
 import { CameraBridgeRequest, CameraBridgeResponse } from "../src/camera-authoring-bridge.js";
 import { CameraArrangement, CameraArrangementCommand } from "../src/camera-arrangement.js";
-import { CameraAuthoringDocument } from "../src/camera-authoring-store.js";
+import { CameraArrangementRecipe } from "../src/camera-arrangement.js";
+import { CameraPanelState, CameraPanelEvent } from "../src/camera-authoring-panel-schema.js";
+import { CameraApproval, CameraAuthoringDocument } from "../src/camera-authoring-store.js";
 
 const contracts = {
+	"visibility-preset": CameraVisibilityPreset,
 	"bridge-request": CameraBridgeRequest,
 	"bridge-response": CameraBridgeResponse,
 	arrangement: CameraArrangement,
 	command: CameraArrangementCommand,
+	recipe: CameraArrangementRecipe,
+	"panel-event": CameraPanelEvent,
+	"panel-state": CameraPanelState,
+	approval: CameraApproval,
 	document: CameraAuthoringDocument
 };
 for (const [name, schema] of Object.entries(contracts)) {

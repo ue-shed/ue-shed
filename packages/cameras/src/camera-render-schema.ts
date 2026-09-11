@@ -1,4 +1,5 @@
 import { Schema } from "effect";
+import { CameraVisibilityList, CameraVisibilityDiagnostic } from "./camera-visibility.js";
 
 const Text = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(1024));
 const Id = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/));
@@ -105,6 +106,7 @@ export const CameraPreparationPolicy = Schema.Struct({
 	).check(Schema.isMaxLength(64))
 });
 export const CameraRenderPolicy = Schema.Struct({
+	visibility: Schema.optionalKey(CameraVisibilityList),
 	renderer: CameraRendererPolicy,
 	exposure: CameraExposurePolicy,
 	settling: Schema.Struct({
@@ -200,6 +202,15 @@ export const CameraRenderPreflight = Schema.Struct({
 });
 export type CameraRenderPreflight = typeof CameraRenderPreflight.Type;
 export const CameraRenderCapabilities = Schema.Struct({
+	authoredVisibility: Schema.optionalKey(
+		Schema.Struct({
+			version: Schema.Literal(1),
+			maximumActorsPerList: Schema.Literal(256),
+			geometry: Schema.Literal("loaded_non_nanite_opaque_static_mesh_actors"),
+			viewport: Schema.Boolean,
+			sceneCapture: Schema.Boolean
+		})
+	),
 	contract: CameraRenderContract,
 	engineVersion: Text,
 	pluginVersion: Text,
@@ -245,6 +256,7 @@ export const CameraRenderProgress = Schema.Struct({
 });
 export type CameraRenderProgress = typeof CameraRenderProgress.Type;
 export const CameraFrameEvidence = Schema.Struct({
+	visibilityDiagnostics: Schema.optionalKey(Schema.Array(CameraVisibilityDiagnostic)),
 	editorState: Schema.Struct({
 		mapPackageDirtyBefore: Schema.Boolean,
 		mapPackageDirtyAfter: Schema.Boolean

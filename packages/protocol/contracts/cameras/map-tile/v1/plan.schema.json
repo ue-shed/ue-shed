@@ -1,108 +1,429 @@
 {
 	"$schema": "https://json-schema.org/draft/2020-12/schema",
 	"$id": "https://ue-shed.dev/contracts/cameras/map-tile/v1/plan.schema.json",
-	"title": "UE Shed Map Capture Plan v1.0",
 	"type": "object",
-	"additionalProperties": false,
-	"required": [
-		"capture",
-		"contract",
-		"gutterPixels",
-		"id",
-		"levels",
-		"output",
-		"project",
-		"requestedBounds",
-		"tilePixelSize"
-	],
 	"properties": {
 		"capture": {
-			"$ref": "#/$defs/capturePolicy"
+			"type": "object",
+			"properties": {
+				"visibility": {
+					"type": "object",
+					"properties": {
+						"hide": {
+							"type": "array",
+							"items": {
+								"type": "object",
+								"properties": {
+									"locator": {
+										"anyOf": [
+											{
+												"type": "object",
+												"properties": {
+													"kind": {
+														"type": "string",
+														"enum": ["actor_path"]
+													},
+													"actorPath": {
+														"type": "string",
+														"allOf": [
+															{
+																"pattern": "^\\/Game\\/"
+															},
+															{
+																"maxLength": 4096
+															}
+														]
+													}
+												},
+												"required": ["kind", "actorPath"],
+												"additionalProperties": false
+											},
+											{
+												"type": "object",
+												"properties": {
+													"kind": {
+														"type": "string",
+														"enum": ["actor_guid"]
+													},
+													"actorGuid": {
+														"type": "string",
+														"allOf": [
+															{
+																"pattern": "^(?!00000000-00000000-00000000-00000000$)[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{8}){3}$"
+															}
+														]
+													},
+													"lastKnownActorPath": {
+														"type": "string",
+														"allOf": [
+															{
+																"maxLength": 4096
+															}
+														]
+													}
+												},
+												"required": [
+													"kind",
+													"actorGuid",
+													"lastKnownActorPath"
+												],
+												"additionalProperties": false
+											}
+										]
+									},
+									"label": {
+										"type": "string",
+										"allOf": [
+											{
+												"maxLength": 256
+											}
+										]
+									}
+								},
+								"required": ["locator", "label"],
+								"additionalProperties": false
+							},
+							"allOf": [
+								{
+									"maxItems": 256
+								}
+							]
+						},
+						"protect": {
+							"type": "array",
+							"items": {
+								"type": "object",
+								"properties": {
+									"locator": {
+										"anyOf": [
+											{
+												"type": "object",
+												"properties": {
+													"kind": {
+														"type": "string",
+														"enum": ["actor_path"]
+													},
+													"actorPath": {
+														"type": "string",
+														"allOf": [
+															{
+																"pattern": "^\\/Game\\/"
+															},
+															{
+																"maxLength": 4096
+															}
+														]
+													}
+												},
+												"required": ["kind", "actorPath"],
+												"additionalProperties": false
+											},
+											{
+												"type": "object",
+												"properties": {
+													"kind": {
+														"type": "string",
+														"enum": ["actor_guid"]
+													},
+													"actorGuid": {
+														"type": "string",
+														"allOf": [
+															{
+																"pattern": "^(?!00000000-00000000-00000000-00000000$)[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{8}){3}$"
+															}
+														]
+													},
+													"lastKnownActorPath": {
+														"type": "string",
+														"allOf": [
+															{
+																"maxLength": 4096
+															}
+														]
+													}
+												},
+												"required": [
+													"kind",
+													"actorGuid",
+													"lastKnownActorPath"
+												],
+												"additionalProperties": false
+											}
+										]
+									},
+									"label": {
+										"type": "string",
+										"allOf": [
+											{
+												"maxLength": 256
+											}
+										]
+									}
+								},
+								"required": ["locator", "label"],
+								"additionalProperties": false
+							},
+							"allOf": [
+								{
+									"maxItems": 256
+								}
+							]
+						}
+					},
+					"required": ["hide", "protect"],
+					"additionalProperties": false
+				},
+				"dataLayers": {
+					"anyOf": [
+						{
+							"type": "object",
+							"properties": {
+								"mode": {
+									"type": "string",
+									"enum": ["unchanged"]
+								}
+							},
+							"required": ["mode"],
+							"additionalProperties": false
+						},
+						{
+							"type": "object",
+							"properties": {
+								"mode": {
+									"type": "string",
+									"enum": ["explicit"]
+								},
+								"states": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"properties": {
+											"name": {
+												"type": "string",
+												"allOf": [
+													{
+														"minLength": 1
+													},
+													{
+														"maxLength": 1024
+													}
+												]
+											},
+											"state": {
+												"type": "string",
+												"enum": ["unloaded", "loaded", "activated"]
+											}
+										},
+										"required": ["name", "state"],
+										"additionalProperties": false
+									},
+									"allOf": [
+										{
+											"maxItems": 64
+										}
+									]
+								}
+							},
+							"required": ["mode", "states"],
+							"additionalProperties": false
+						}
+					]
+				},
+				"orientation": {
+					"type": "object",
+					"properties": {
+						"pitch": {
+							"type": "number",
+							"enum": [-90]
+						},
+						"roll": {
+							"type": "number",
+							"enum": [0]
+						},
+						"yaw": {
+							"type": "number",
+							"enum": [0]
+						}
+					},
+					"required": ["pitch", "roll", "yaw"],
+					"additionalProperties": false
+				},
+				"render": {
+					"type": "object",
+					"properties": {
+						"exposureEV100": {
+							"type": "number",
+							"allOf": [
+								{
+									"minimum": -20,
+									"maximum": 30
+								}
+							]
+						},
+						"effects": {
+							"type": "object",
+							"properties": {
+								"fog": {
+									"type": "boolean"
+								},
+								"volumetricFog": {
+									"type": "boolean"
+								}
+							},
+							"required": ["fog", "volumetricFog"],
+							"additionalProperties": false
+						},
+						"lodDistanceScaleByZoom": {
+							"type": "array",
+							"items": {
+								"type": "number",
+								"allOf": [
+									{
+										"minimum": 0.1,
+										"maximum": 100
+									}
+								]
+							},
+							"allOf": [
+								{
+									"minItems": 1
+								},
+								{
+									"maxItems": 24
+								}
+							]
+						},
+						"lodPolicy": {
+							"type": "string",
+							"enum": ["natural", "fixed_lod_zero", "per_level_distance_scale"]
+						},
+						"profile": {
+							"type": "string",
+							"enum": [
+								"full_fidelity",
+								"seam_stable",
+								"scene_capture_defaults",
+								"observation"
+							]
+						}
+					},
+					"required": ["effects", "lodPolicy", "profile"],
+					"additionalProperties": false
+				},
+				"z": {
+					"type": "number"
+				}
+			},
+			"required": ["dataLayers", "orientation", "render", "z"],
+			"additionalProperties": false
 		},
 		"contract": {
 			"type": "object",
-			"additionalProperties": false,
-			"required": ["name", "version"],
 			"properties": {
 				"name": {
-					"const": "ue-shed-map-capture-plan"
+					"type": "string",
+					"enum": ["ue-shed-map-capture-plan"]
 				},
 				"version": {
-					"$ref": "#/$defs/version"
+					"type": "object",
+					"properties": {
+						"major": {
+							"type": "number",
+							"enum": [1]
+						},
+						"minor": {
+							"type": "number",
+							"enum": [0, 1, 2]
+						}
+					},
+					"required": ["major", "minor"],
+					"additionalProperties": false
 				}
-			}
+			},
+			"required": ["name", "version"],
+			"additionalProperties": false
 		},
 		"gutterPixels": {
 			"type": "integer",
-			"minimum": 0,
-			"maximum": 32
+			"allOf": [
+				{
+					"minimum": 0,
+					"maximum": 32
+				}
+			]
 		},
 		"id": {
-			"$ref": "#/$defs/id"
+			"type": "string",
+			"allOf": [
+				{
+					"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+				}
+			]
 		},
 		"levels": {
 			"type": "object",
-			"additionalProperties": false,
-			"required": ["coarsestUnitsPerPixel", "count"],
 			"properties": {
 				"coarsestUnitsPerPixel": {
 					"type": "number",
-					"exclusiveMinimum": 0
+					"allOf": [
+						{
+							"exclusiveMinimum": 0
+						}
+					]
 				},
 				"count": {
 					"type": "integer",
-					"minimum": 1,
-					"maximum": 24
+					"allOf": [
+						{
+							"minimum": 1,
+							"maximum": 24
+						}
+					]
 				}
-			}
+			},
+			"required": ["coarsestUnitsPerPixel", "count"],
+			"additionalProperties": false
 		},
 		"output": {
 			"type": "object",
-			"additionalProperties": false,
-			"required": ["imageFormat", "publication"],
 			"properties": {
 				"imageFormat": {
-					"const": "png"
+					"type": "string",
+					"enum": ["png"]
 				},
 				"publication": {
-					"const": "local_immutable"
+					"type": "string",
+					"enum": ["local_immutable"]
 				}
-			}
+			},
+			"required": ["imageFormat", "publication"],
+			"additionalProperties": false
 		},
 		"project": {
-			"$ref": "#/$defs/project"
+			"type": "object",
+			"properties": {
+				"id": {
+					"type": "string",
+					"allOf": [
+						{
+							"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+						}
+					]
+				},
+				"mapPath": {
+					"type": "string",
+					"allOf": [
+						{
+							"pattern": "^\\/[A-Za-z0-9_./-]+$"
+						}
+					]
+				}
+			},
+			"required": ["id", "mapPath"],
+			"additionalProperties": false
 		},
 		"requestedBounds": {
-			"$ref": "#/$defs/bounds"
-		},
-		"tilePixelSize": {
-			"type": "integer",
-			"minimum": 64,
-			"maximum": 4096
-		}
-	},
-	"$defs": {
-		"id": {
-			"type": "string",
-			"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
-		},
-		"version": {
 			"type": "object",
-			"additionalProperties": false,
-			"required": ["major", "minor"],
-			"properties": {
-				"major": {
-					"const": 1
-				},
-				"minor": {
-					"enum": [0, 1]
-				}
-			}
-		},
-		"bounds": {
-			"type": "object",
-			"additionalProperties": false,
-			"required": ["minX", "minY", "maxX", "maxY"],
 			"properties": {
 				"minX": {
 					"type": "number"
@@ -116,158 +437,31 @@
 				"maxY": {
 					"type": "number"
 				}
-			}
+			},
+			"required": ["minX", "minY", "maxX", "maxY"],
+			"additionalProperties": false
 		},
-		"project": {
-			"type": "object",
-			"additionalProperties": false,
-			"required": ["id", "mapPath"],
-			"properties": {
-				"id": {
-					"$ref": "#/$defs/id"
-				},
-				"mapPath": {
-					"type": "string",
-					"pattern": "^/[A-Za-z0-9_./-]+$"
-				}
-			}
-		},
-		"dataLayers": {
-			"oneOf": [
+		"tilePixelSize": {
+			"type": "integer",
+			"allOf": [
 				{
-					"type": "object",
-					"additionalProperties": false,
-					"required": ["mode"],
-					"properties": {
-						"mode": {
-							"const": "unchanged"
-						}
-					}
-				},
-				{
-					"type": "object",
-					"additionalProperties": false,
-					"required": ["mode", "states"],
-					"properties": {
-						"mode": {
-							"const": "explicit"
-						},
-						"states": {
-							"type": "array",
-							"maxItems": 64,
-							"items": {
-								"type": "object",
-								"additionalProperties": false,
-								"required": ["name", "state"],
-								"properties": {
-									"name": {
-										"type": "string",
-										"minLength": 1,
-										"maxLength": 1024
-									},
-									"state": {
-										"enum": ["unloaded", "loaded", "activated"]
-									}
-								}
-							}
-						}
-					}
+					"minimum": 64,
+					"maximum": 4096
 				}
 			]
-		},
-		"capturePolicy": {
-			"type": "object",
-			"additionalProperties": false,
-			"required": ["dataLayers", "orientation", "render", "z"],
-			"properties": {
-				"dataLayers": {
-					"$ref": "#/$defs/dataLayers"
-				},
-				"orientation": {
-					"type": "object",
-					"additionalProperties": false,
-					"required": ["pitch", "roll", "yaw"],
-					"properties": {
-						"pitch": {
-							"const": -90
-						},
-						"roll": {
-							"const": 0
-						},
-						"yaw": {
-							"const": 0
-						}
-					}
-				},
-				"render": {
-					"type": "object",
-					"additionalProperties": false,
-					"required": ["effects", "lodPolicy", "profile"],
-					"properties": {
-						"exposureEV100": {
-							"type": "number",
-							"minimum": -20,
-							"maximum": 30
-						},
-						"effects": {
-							"type": "object",
-							"additionalProperties": false,
-							"required": ["fog", "volumetricFog"],
-							"properties": {
-								"fog": {
-									"type": "boolean"
-								},
-								"volumetricFog": {
-									"type": "boolean"
-								}
-							}
-						},
-						"lodDistanceScaleByZoom": {
-							"type": "array",
-							"minItems": 1,
-							"maxItems": 24,
-							"items": {
-								"type": "number",
-								"minimum": 0.1,
-								"maximum": 100
-							}
-						},
-						"lodPolicy": {
-							"enum": ["natural", "fixed_lod_zero", "per_level_distance_scale"]
-						},
-						"profile": {
-							"enum": [
-								"full_fidelity",
-								"seam_stable",
-								"scene_capture_defaults",
-								"observation"
-							]
-						}
-					},
-					"allOf": [
-						{
-							"if": {
-								"properties": {
-									"lodPolicy": {
-										"const": "per_level_distance_scale"
-									}
-								}
-							},
-							"then": {
-								"required": ["lodDistanceScaleByZoom"]
-							},
-							"else": {
-								"not": {
-									"required": ["lodDistanceScaleByZoom"]
-								}
-							}
-						}
-					]
-				},
-				"z": {
-					"type": "number"
-				}
-			}
 		}
-	}
+	},
+	"required": [
+		"capture",
+		"contract",
+		"gutterPixels",
+		"id",
+		"levels",
+		"output",
+		"project",
+		"requestedBounds",
+		"tilePixelSize"
+	],
+	"additionalProperties": false,
+	"$defs": {}
 }

@@ -248,6 +248,34 @@
 									"maximum": 0.45
 								}
 							]
+						},
+						"elevationDegrees": {
+							"type": "number",
+							"allOf": [
+								{
+									"minimum": -89,
+									"maximum": 89
+								}
+							]
+						},
+						"yawOffset": {
+							"type": "number"
+						},
+						"aimOffset": {
+							"type": "object",
+							"properties": {
+								"x": {
+									"type": "number"
+								},
+								"y": {
+									"type": "number"
+								},
+								"z": {
+									"type": "number"
+								}
+							},
+							"required": ["x", "y", "z"],
+							"additionalProperties": false
 						}
 					},
 					"required": ["fieldOfViewDegrees", "distanceScale", "heightOffset", "margin"],
@@ -309,6 +337,34 @@
 												"maximum": 0.45
 											}
 										]
+									},
+									"elevationDegrees": {
+										"type": "number",
+										"allOf": [
+											{
+												"minimum": -89,
+												"maximum": 89
+											}
+										]
+									},
+									"yawOffset": {
+										"type": "number"
+									},
+									"aimOffset": {
+										"type": "object",
+										"properties": {
+											"x": {
+												"type": "number"
+											},
+											"y": {
+												"type": "number"
+											},
+											"z": {
+												"type": "number"
+											}
+										},
+										"required": ["x", "y", "z"],
+										"additionalProperties": false
 									}
 								},
 								"additionalProperties": false
@@ -385,6 +441,181 @@
 										"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
 									}
 								]
+							},
+							"groupId": {
+								"type": "string",
+								"allOf": [
+									{
+										"pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$"
+									}
+								]
+							},
+							"visibility": {
+								"type": "object",
+								"properties": {
+									"hide": {
+										"type": "array",
+										"items": {
+											"type": "object",
+											"properties": {
+												"locator": {
+													"anyOf": [
+														{
+															"type": "object",
+															"properties": {
+																"kind": {
+																	"type": "string",
+																	"enum": ["actor_path"]
+																},
+																"actorPath": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"pattern": "^\\/Game\\/"
+																		},
+																		{
+																			"maxLength": 4096
+																		}
+																	]
+																}
+															},
+															"required": ["kind", "actorPath"],
+															"additionalProperties": false
+														},
+														{
+															"type": "object",
+															"properties": {
+																"kind": {
+																	"type": "string",
+																	"enum": ["actor_guid"]
+																},
+																"actorGuid": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"pattern": "^(?!00000000-00000000-00000000-00000000$)[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{8}){3}$"
+																		}
+																	]
+																},
+																"lastKnownActorPath": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"maxLength": 4096
+																		}
+																	]
+																}
+															},
+															"required": [
+																"kind",
+																"actorGuid",
+																"lastKnownActorPath"
+															],
+															"additionalProperties": false
+														}
+													]
+												},
+												"label": {
+													"type": "string",
+													"allOf": [
+														{
+															"maxLength": 256
+														}
+													]
+												}
+											},
+											"required": ["locator", "label"],
+											"additionalProperties": false
+										},
+										"allOf": [
+											{
+												"maxItems": 256
+											}
+										]
+									},
+									"protect": {
+										"type": "array",
+										"items": {
+											"type": "object",
+											"properties": {
+												"locator": {
+													"anyOf": [
+														{
+															"type": "object",
+															"properties": {
+																"kind": {
+																	"type": "string",
+																	"enum": ["actor_path"]
+																},
+																"actorPath": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"pattern": "^\\/Game\\/"
+																		},
+																		{
+																			"maxLength": 4096
+																		}
+																	]
+																}
+															},
+															"required": ["kind", "actorPath"],
+															"additionalProperties": false
+														},
+														{
+															"type": "object",
+															"properties": {
+																"kind": {
+																	"type": "string",
+																	"enum": ["actor_guid"]
+																},
+																"actorGuid": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"pattern": "^(?!00000000-00000000-00000000-00000000$)[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{8}){3}$"
+																		}
+																	]
+																},
+																"lastKnownActorPath": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"maxLength": 4096
+																		}
+																	]
+																}
+															},
+															"required": [
+																"kind",
+																"actorGuid",
+																"lastKnownActorPath"
+															],
+															"additionalProperties": false
+														}
+													]
+												},
+												"label": {
+													"type": "string",
+													"allOf": [
+														{
+															"maxLength": 256
+														}
+													]
+												}
+											},
+											"required": ["locator", "label"],
+											"additionalProperties": false
+										},
+										"allOf": [
+											{
+												"maxItems": 256
+											}
+										]
+									}
+								},
+								"required": ["hide", "protect"],
+								"additionalProperties": false
 							}
 						},
 						"required": ["id", "displayName", "yawDegrees", "overrides", "viewId"],
@@ -431,6 +662,1145 @@
 							"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
 						}
 					]
+				},
+				"displayName": {
+					"type": "string",
+					"allOf": [
+						{
+							"minLength": 1
+						}
+					]
+				},
+				"groups": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"properties": {
+							"id": {
+								"type": "string",
+								"allOf": [
+									{
+										"pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$"
+									}
+								]
+							},
+							"name": {
+								"type": "string",
+								"allOf": [
+									{
+										"minLength": 1
+									}
+								]
+							},
+							"overrides": {
+								"type": "object",
+								"properties": {
+									"fieldOfViewDegrees": {
+										"type": "number",
+										"allOf": [
+											{
+												"minimum": 5,
+												"maximum": 170
+											}
+										]
+									},
+									"distanceScale": {
+										"type": "number",
+										"allOf": [
+											{
+												"minimum": 0.01,
+												"maximum": 100
+											}
+										]
+									},
+									"heightOffset": {
+										"type": "number"
+									},
+									"margin": {
+										"type": "number",
+										"allOf": [
+											{
+												"minimum": 0,
+												"maximum": 0.45
+											}
+										]
+									},
+									"elevationDegrees": {
+										"type": "number",
+										"allOf": [
+											{
+												"minimum": -89,
+												"maximum": 89
+											}
+										]
+									},
+									"yawOffset": {
+										"type": "number"
+									},
+									"aimOffset": {
+										"type": "object",
+										"properties": {
+											"x": {
+												"type": "number"
+											},
+											"y": {
+												"type": "number"
+											},
+											"z": {
+												"type": "number"
+											}
+										},
+										"required": ["x", "y", "z"],
+										"additionalProperties": false
+									}
+								},
+								"additionalProperties": false
+							},
+							"visibility": {
+								"type": "object",
+								"properties": {
+									"hide": {
+										"type": "array",
+										"items": {
+											"type": "object",
+											"properties": {
+												"locator": {
+													"anyOf": [
+														{
+															"type": "object",
+															"properties": {
+																"kind": {
+																	"type": "string",
+																	"enum": ["actor_path"]
+																},
+																"actorPath": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"pattern": "^\\/Game\\/"
+																		},
+																		{
+																			"maxLength": 4096
+																		}
+																	]
+																}
+															},
+															"required": ["kind", "actorPath"],
+															"additionalProperties": false
+														},
+														{
+															"type": "object",
+															"properties": {
+																"kind": {
+																	"type": "string",
+																	"enum": ["actor_guid"]
+																},
+																"actorGuid": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"pattern": "^(?!00000000-00000000-00000000-00000000$)[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{8}){3}$"
+																		}
+																	]
+																},
+																"lastKnownActorPath": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"maxLength": 4096
+																		}
+																	]
+																}
+															},
+															"required": [
+																"kind",
+																"actorGuid",
+																"lastKnownActorPath"
+															],
+															"additionalProperties": false
+														}
+													]
+												},
+												"label": {
+													"type": "string",
+													"allOf": [
+														{
+															"maxLength": 256
+														}
+													]
+												}
+											},
+											"required": ["locator", "label"],
+											"additionalProperties": false
+										},
+										"allOf": [
+											{
+												"maxItems": 256
+											}
+										]
+									},
+									"protect": {
+										"type": "array",
+										"items": {
+											"type": "object",
+											"properties": {
+												"locator": {
+													"anyOf": [
+														{
+															"type": "object",
+															"properties": {
+																"kind": {
+																	"type": "string",
+																	"enum": ["actor_path"]
+																},
+																"actorPath": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"pattern": "^\\/Game\\/"
+																		},
+																		{
+																			"maxLength": 4096
+																		}
+																	]
+																}
+															},
+															"required": ["kind", "actorPath"],
+															"additionalProperties": false
+														},
+														{
+															"type": "object",
+															"properties": {
+																"kind": {
+																	"type": "string",
+																	"enum": ["actor_guid"]
+																},
+																"actorGuid": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"pattern": "^(?!00000000-00000000-00000000-00000000$)[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{8}){3}$"
+																		}
+																	]
+																},
+																"lastKnownActorPath": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"maxLength": 4096
+																		}
+																	]
+																}
+															},
+															"required": [
+																"kind",
+																"actorGuid",
+																"lastKnownActorPath"
+															],
+															"additionalProperties": false
+														}
+													]
+												},
+												"label": {
+													"type": "string",
+													"allOf": [
+														{
+															"maxLength": 256
+														}
+													]
+												}
+											},
+											"required": ["locator", "label"],
+											"additionalProperties": false
+										},
+										"allOf": [
+											{
+												"maxItems": 256
+											}
+										]
+									}
+								},
+								"required": ["hide", "protect"],
+								"additionalProperties": false
+							}
+						},
+						"required": ["id", "name", "overrides"],
+						"additionalProperties": false
+					},
+					"allOf": [
+						{
+							"maxItems": 64
+						}
+					]
+				},
+				"visibility": {
+					"type": "object",
+					"properties": {
+						"hide": {
+							"type": "array",
+							"items": {
+								"type": "object",
+								"properties": {
+									"locator": {
+										"anyOf": [
+											{
+												"type": "object",
+												"properties": {
+													"kind": {
+														"type": "string",
+														"enum": ["actor_path"]
+													},
+													"actorPath": {
+														"type": "string",
+														"allOf": [
+															{
+																"pattern": "^\\/Game\\/"
+															},
+															{
+																"maxLength": 4096
+															}
+														]
+													}
+												},
+												"required": ["kind", "actorPath"],
+												"additionalProperties": false
+											},
+											{
+												"type": "object",
+												"properties": {
+													"kind": {
+														"type": "string",
+														"enum": ["actor_guid"]
+													},
+													"actorGuid": {
+														"type": "string",
+														"allOf": [
+															{
+																"pattern": "^(?!00000000-00000000-00000000-00000000$)[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{8}){3}$"
+															}
+														]
+													},
+													"lastKnownActorPath": {
+														"type": "string",
+														"allOf": [
+															{
+																"maxLength": 4096
+															}
+														]
+													}
+												},
+												"required": [
+													"kind",
+													"actorGuid",
+													"lastKnownActorPath"
+												],
+												"additionalProperties": false
+											}
+										]
+									},
+									"label": {
+										"type": "string",
+										"allOf": [
+											{
+												"maxLength": 256
+											}
+										]
+									}
+								},
+								"required": ["locator", "label"],
+								"additionalProperties": false
+							},
+							"allOf": [
+								{
+									"maxItems": 256
+								}
+							]
+						},
+						"protect": {
+							"type": "array",
+							"items": {
+								"type": "object",
+								"properties": {
+									"locator": {
+										"anyOf": [
+											{
+												"type": "object",
+												"properties": {
+													"kind": {
+														"type": "string",
+														"enum": ["actor_path"]
+													},
+													"actorPath": {
+														"type": "string",
+														"allOf": [
+															{
+																"pattern": "^\\/Game\\/"
+															},
+															{
+																"maxLength": 4096
+															}
+														]
+													}
+												},
+												"required": ["kind", "actorPath"],
+												"additionalProperties": false
+											},
+											{
+												"type": "object",
+												"properties": {
+													"kind": {
+														"type": "string",
+														"enum": ["actor_guid"]
+													},
+													"actorGuid": {
+														"type": "string",
+														"allOf": [
+															{
+																"pattern": "^(?!00000000-00000000-00000000-00000000$)[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{8}){3}$"
+															}
+														]
+													},
+													"lastKnownActorPath": {
+														"type": "string",
+														"allOf": [
+															{
+																"maxLength": 4096
+															}
+														]
+													}
+												},
+												"required": [
+													"kind",
+													"actorGuid",
+													"lastKnownActorPath"
+												],
+												"additionalProperties": false
+											}
+										]
+									},
+									"label": {
+										"type": "string",
+										"allOf": [
+											{
+												"maxLength": 256
+											}
+										]
+									}
+								},
+								"required": ["locator", "label"],
+								"additionalProperties": false
+							},
+							"allOf": [
+								{
+									"maxItems": 256
+								}
+							]
+						}
+					},
+					"required": ["hide", "protect"],
+					"additionalProperties": false
+				},
+				"output": {
+					"type": "string",
+					"enum": ["natural_only", "authored_only", "natural_and_authored"]
+				},
+				"renderPolicy": {
+					"type": "object",
+					"properties": {
+						"visibility": {
+							"type": "object",
+							"properties": {
+								"hide": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"properties": {
+											"locator": {
+												"anyOf": [
+													{
+														"type": "object",
+														"properties": {
+															"kind": {
+																"type": "string",
+																"enum": ["actor_path"]
+															},
+															"actorPath": {
+																"type": "string",
+																"allOf": [
+																	{
+																		"pattern": "^\\/Game\\/"
+																	},
+																	{
+																		"maxLength": 4096
+																	}
+																]
+															}
+														},
+														"required": ["kind", "actorPath"],
+														"additionalProperties": false
+													},
+													{
+														"type": "object",
+														"properties": {
+															"kind": {
+																"type": "string",
+																"enum": ["actor_guid"]
+															},
+															"actorGuid": {
+																"type": "string",
+																"allOf": [
+																	{
+																		"pattern": "^(?!00000000-00000000-00000000-00000000$)[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{8}){3}$"
+																	}
+																]
+															},
+															"lastKnownActorPath": {
+																"type": "string",
+																"allOf": [
+																	{
+																		"maxLength": 4096
+																	}
+																]
+															}
+														},
+														"required": [
+															"kind",
+															"actorGuid",
+															"lastKnownActorPath"
+														],
+														"additionalProperties": false
+													}
+												]
+											},
+											"label": {
+												"type": "string",
+												"allOf": [
+													{
+														"maxLength": 256
+													}
+												]
+											}
+										},
+										"required": ["locator", "label"],
+										"additionalProperties": false
+									},
+									"allOf": [
+										{
+											"maxItems": 256
+										}
+									]
+								},
+								"protect": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"properties": {
+											"locator": {
+												"anyOf": [
+													{
+														"type": "object",
+														"properties": {
+															"kind": {
+																"type": "string",
+																"enum": ["actor_path"]
+															},
+															"actorPath": {
+																"type": "string",
+																"allOf": [
+																	{
+																		"pattern": "^\\/Game\\/"
+																	},
+																	{
+																		"maxLength": 4096
+																	}
+																]
+															}
+														},
+														"required": ["kind", "actorPath"],
+														"additionalProperties": false
+													},
+													{
+														"type": "object",
+														"properties": {
+															"kind": {
+																"type": "string",
+																"enum": ["actor_guid"]
+															},
+															"actorGuid": {
+																"type": "string",
+																"allOf": [
+																	{
+																		"pattern": "^(?!00000000-00000000-00000000-00000000$)[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{8}){3}$"
+																	}
+																]
+															},
+															"lastKnownActorPath": {
+																"type": "string",
+																"allOf": [
+																	{
+																		"maxLength": 4096
+																	}
+																]
+															}
+														},
+														"required": [
+															"kind",
+															"actorGuid",
+															"lastKnownActorPath"
+														],
+														"additionalProperties": false
+													}
+												]
+											},
+											"label": {
+												"type": "string",
+												"allOf": [
+													{
+														"maxLength": 256
+													}
+												]
+											}
+										},
+										"required": ["locator", "label"],
+										"additionalProperties": false
+									},
+									"allOf": [
+										{
+											"maxItems": 256
+										}
+									]
+								}
+							},
+							"required": ["hide", "protect"],
+							"additionalProperties": false
+						},
+						"renderer": {
+							"anyOf": [
+								{
+									"type": "object",
+									"properties": {
+										"kind": {
+											"type": "string",
+											"enum": ["editor_viewport"]
+										},
+										"strategy": {
+											"type": "string",
+											"enum": ["high_resolution_screenshot"]
+										},
+										"profile": {
+											"type": "string",
+											"enum": ["lit", "observation"]
+										},
+										"vignette": {
+											"type": "string",
+											"enum": ["project", "disabled"]
+										},
+										"fog": {
+											"type": "boolean"
+										},
+										"volumetricFog": {
+											"type": "boolean"
+										}
+									},
+									"required": [
+										"kind",
+										"strategy",
+										"profile",
+										"vignette",
+										"fog",
+										"volumetricFog"
+									],
+									"additionalProperties": false
+								},
+								{
+									"type": "object",
+									"properties": {
+										"kind": {
+											"type": "string",
+											"enum": ["scene_capture"]
+										},
+										"profile": {
+											"type": "string",
+											"enum": [
+												"full_fidelity",
+												"seam_stable",
+												"scene_capture_defaults",
+												"observation"
+											]
+										},
+										"lodDistanceScale": {
+											"type": "number",
+											"allOf": [
+												{
+													"minimum": 0.1,
+													"maximum": 100
+												}
+											]
+										},
+										"fog": {
+											"type": "boolean"
+										},
+										"volumetricFog": {
+											"type": "boolean"
+										}
+									},
+									"required": [
+										"kind",
+										"profile",
+										"lodDistanceScale",
+										"fog",
+										"volumetricFog"
+									],
+									"additionalProperties": false
+								}
+							]
+						},
+						"exposure": {
+							"anyOf": [
+								{
+									"type": "object",
+									"properties": {
+										"mode": {
+											"type": "string",
+											"enum": ["project_auto"]
+										}
+									},
+									"required": ["mode"],
+									"additionalProperties": false
+								},
+								{
+									"type": "object",
+									"properties": {
+										"mode": {
+											"type": "string",
+											"enum": ["fixed_ev100"]
+										},
+										"ev100": {
+											"type": "number",
+											"allOf": [
+												{
+													"minimum": -20,
+													"maximum": 30
+												}
+											]
+										},
+										"compensation": {
+											"type": "string",
+											"enum": ["project"]
+										}
+									},
+									"required": ["mode", "ev100", "compensation"],
+									"additionalProperties": false
+								},
+								{
+									"type": "object",
+									"properties": {
+										"mode": {
+											"type": "string",
+											"enum": ["meter_once"]
+										},
+										"referenceCamera": {
+											"type": "object",
+											"properties": {
+												"location": {
+													"type": "object",
+													"properties": {
+														"x": {
+															"type": "number"
+														},
+														"y": {
+															"type": "number"
+														},
+														"z": {
+															"type": "number"
+														}
+													},
+													"required": ["x", "y", "z"],
+													"additionalProperties": false
+												},
+												"rotation": {
+													"type": "object",
+													"properties": {
+														"pitch": {
+															"type": "number"
+														},
+														"roll": {
+															"type": "number"
+														},
+														"yaw": {
+															"type": "number"
+														}
+													},
+													"required": ["pitch", "roll", "yaw"],
+													"additionalProperties": false
+												},
+												"projection": {
+													"anyOf": [
+														{
+															"type": "object",
+															"properties": {
+																"kind": {
+																	"type": "string",
+																	"enum": ["perspective"]
+																},
+																"horizontalFieldOfView": {
+																	"type": "number",
+																	"allOf": [
+																		{
+																			"minimum": 5,
+																			"maximum": 170
+																		}
+																	]
+																}
+															},
+															"required": [
+																"kind",
+																"horizontalFieldOfView"
+															],
+															"additionalProperties": false
+														},
+														{
+															"type": "object",
+															"properties": {
+																"kind": {
+																	"type": "string",
+																	"enum": ["orthographic"]
+																},
+																"width": {
+																	"type": "number",
+																	"allOf": [
+																		{
+																			"exclusiveMinimum": 0
+																		},
+																		{
+																			"maximum": 1000000000
+																		}
+																	]
+																}
+															},
+															"required": ["kind", "width"],
+															"additionalProperties": false
+														}
+													]
+												}
+											},
+											"required": ["location", "rotation", "projection"],
+											"additionalProperties": false
+										},
+										"referenceSize": {
+											"type": "object",
+											"properties": {
+												"width": {
+													"type": "integer",
+													"allOf": [
+														{
+															"minimum": 16,
+															"maximum": 16384
+														}
+													]
+												},
+												"height": {
+													"type": "integer",
+													"allOf": [
+														{
+															"minimum": 16,
+															"maximum": 16384
+														}
+													]
+												}
+											},
+											"required": ["width", "height"],
+											"additionalProperties": false
+										},
+										"minimumFrames": {
+											"type": "integer",
+											"allOf": [
+												{
+													"minimum": 1,
+													"maximum": 4096
+												}
+											]
+										}
+									},
+									"required": [
+										"mode",
+										"referenceCamera",
+										"referenceSize",
+										"minimumFrames"
+									],
+									"additionalProperties": false
+								}
+							]
+						},
+						"settling": {
+							"type": "object",
+							"properties": {
+								"minimumFrames": {
+									"type": "integer",
+									"allOf": [
+										{
+											"minimum": 1,
+											"maximum": 4096
+										}
+									]
+								},
+								"timeoutMs": {
+									"type": "integer",
+									"allOf": [
+										{
+											"minimum": 1000,
+											"maximum": 900000
+										}
+									]
+								},
+								"initialView": {
+									"type": "object",
+									"properties": {
+										"camera": {
+											"type": "object",
+											"properties": {
+												"location": {
+													"type": "object",
+													"properties": {
+														"x": {
+															"type": "number"
+														},
+														"y": {
+															"type": "number"
+														},
+														"z": {
+															"type": "number"
+														}
+													},
+													"required": ["x", "y", "z"],
+													"additionalProperties": false
+												},
+												"rotation": {
+													"type": "object",
+													"properties": {
+														"pitch": {
+															"type": "number"
+														},
+														"roll": {
+															"type": "number"
+														},
+														"yaw": {
+															"type": "number"
+														}
+													},
+													"required": ["pitch", "roll", "yaw"],
+													"additionalProperties": false
+												},
+												"projection": {
+													"anyOf": [
+														{
+															"type": "object",
+															"properties": {
+																"kind": {
+																	"type": "string",
+																	"enum": ["perspective"]
+																},
+																"horizontalFieldOfView": {
+																	"type": "number",
+																	"allOf": [
+																		{
+																			"minimum": 5,
+																			"maximum": 170
+																		}
+																	]
+																}
+															},
+															"required": [
+																"kind",
+																"horizontalFieldOfView"
+															],
+															"additionalProperties": false
+														},
+														{
+															"type": "object",
+															"properties": {
+																"kind": {
+																	"type": "string",
+																	"enum": ["orthographic"]
+																},
+																"width": {
+																	"type": "number",
+																	"allOf": [
+																		{
+																			"exclusiveMinimum": 0
+																		},
+																		{
+																			"maximum": 1000000000
+																		}
+																	]
+																}
+															},
+															"required": ["kind", "width"],
+															"additionalProperties": false
+														}
+													]
+												}
+											},
+											"required": ["location", "rotation", "projection"],
+											"additionalProperties": false
+										},
+										"size": {
+											"type": "object",
+											"properties": {
+												"width": {
+													"type": "integer",
+													"allOf": [
+														{
+															"minimum": 16,
+															"maximum": 16384
+														}
+													]
+												},
+												"height": {
+													"type": "integer",
+													"allOf": [
+														{
+															"minimum": 16,
+															"maximum": 16384
+														}
+													]
+												}
+											},
+											"required": ["width", "height"],
+											"additionalProperties": false
+										},
+										"minimumFrames": {
+											"type": "integer",
+											"allOf": [
+												{
+													"minimum": 1,
+													"maximum": 4096
+												}
+											]
+										}
+									},
+									"required": ["camera", "size", "minimumFrames"],
+									"additionalProperties": false
+								}
+							},
+							"required": ["minimumFrames", "timeoutMs"],
+							"additionalProperties": false
+						},
+						"time": {
+							"type": "string",
+							"enum": ["live_editor", "freeze_materials_and_ticks"]
+						},
+						"preparation": {
+							"type": "object",
+							"properties": {
+								"geometry": {
+									"anyOf": [
+										{
+											"type": "object",
+											"properties": {
+												"mode": {
+													"type": "string",
+													"enum": ["preserve_loading"]
+												}
+											},
+											"required": ["mode"],
+											"additionalProperties": false
+										},
+										{
+											"type": "object",
+											"properties": {
+												"mode": {
+													"type": "string",
+													"enum": ["camera_regions"]
+												},
+												"maximumRegions": {
+													"type": "integer",
+													"allOf": [
+														{
+															"minimum": 1,
+															"maximum": 64
+														}
+													]
+												},
+												"extent": {
+													"type": "object",
+													"properties": {
+														"x": {
+															"type": "number",
+															"allOf": [
+																{
+																	"minimum": 0,
+																	"maximum": 10000000
+																}
+															]
+														},
+														"y": {
+															"type": "number",
+															"allOf": [
+																{
+																	"minimum": 0,
+																	"maximum": 10000000
+																}
+															]
+														},
+														"z": {
+															"type": "number",
+															"allOf": [
+																{
+																	"minimum": 0,
+																	"maximum": 10000000
+																}
+															]
+														}
+													},
+													"required": ["x", "y", "z"],
+													"additionalProperties": false
+												}
+											},
+											"required": ["mode", "maximumRegions", "extent"],
+											"additionalProperties": false
+										}
+									]
+								},
+								"dataLayers": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"properties": {
+											"assetPath": {
+												"type": "string",
+												"allOf": [
+													{
+														"pattern": "^\\/[A-Za-z0-9_./-]+$"
+													},
+													{
+														"maxLength": 1024
+													}
+												]
+											},
+											"loaded": {
+												"type": "boolean"
+											},
+											"visible": {
+												"type": "boolean"
+											}
+										},
+										"required": ["assetPath", "loaded", "visible"],
+										"additionalProperties": false
+									},
+									"allOf": [
+										{
+											"maxItems": 64
+										}
+									]
+								}
+							},
+							"required": ["geometry", "dataLayers"],
+							"additionalProperties": false
+						}
+					},
+					"required": ["renderer", "exposure", "settling", "time", "preparation"],
+					"additionalProperties": false
 				}
 			},
 			"required": [
@@ -460,6 +1830,179 @@
 							"renderPolicy": {
 								"type": "object",
 								"properties": {
+									"visibility": {
+										"type": "object",
+										"properties": {
+											"hide": {
+												"type": "array",
+												"items": {
+													"type": "object",
+													"properties": {
+														"locator": {
+															"anyOf": [
+																{
+																	"type": "object",
+																	"properties": {
+																		"kind": {
+																			"type": "string",
+																			"enum": ["actor_path"]
+																		},
+																		"actorPath": {
+																			"type": "string",
+																			"allOf": [
+																				{
+																					"pattern": "^\\/Game\\/"
+																				},
+																				{
+																					"maxLength": 4096
+																				}
+																			]
+																		}
+																	},
+																	"required": [
+																		"kind",
+																		"actorPath"
+																	],
+																	"additionalProperties": false
+																},
+																{
+																	"type": "object",
+																	"properties": {
+																		"kind": {
+																			"type": "string",
+																			"enum": ["actor_guid"]
+																		},
+																		"actorGuid": {
+																			"type": "string",
+																			"allOf": [
+																				{
+																					"pattern": "^(?!00000000-00000000-00000000-00000000$)[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{8}){3}$"
+																				}
+																			]
+																		},
+																		"lastKnownActorPath": {
+																			"type": "string",
+																			"allOf": [
+																				{
+																					"maxLength": 4096
+																				}
+																			]
+																		}
+																	},
+																	"required": [
+																		"kind",
+																		"actorGuid",
+																		"lastKnownActorPath"
+																	],
+																	"additionalProperties": false
+																}
+															]
+														},
+														"label": {
+															"type": "string",
+															"allOf": [
+																{
+																	"maxLength": 256
+																}
+															]
+														}
+													},
+													"required": ["locator", "label"],
+													"additionalProperties": false
+												},
+												"allOf": [
+													{
+														"maxItems": 256
+													}
+												]
+											},
+											"protect": {
+												"type": "array",
+												"items": {
+													"type": "object",
+													"properties": {
+														"locator": {
+															"anyOf": [
+																{
+																	"type": "object",
+																	"properties": {
+																		"kind": {
+																			"type": "string",
+																			"enum": ["actor_path"]
+																		},
+																		"actorPath": {
+																			"type": "string",
+																			"allOf": [
+																				{
+																					"pattern": "^\\/Game\\/"
+																				},
+																				{
+																					"maxLength": 4096
+																				}
+																			]
+																		}
+																	},
+																	"required": [
+																		"kind",
+																		"actorPath"
+																	],
+																	"additionalProperties": false
+																},
+																{
+																	"type": "object",
+																	"properties": {
+																		"kind": {
+																			"type": "string",
+																			"enum": ["actor_guid"]
+																		},
+																		"actorGuid": {
+																			"type": "string",
+																			"allOf": [
+																				{
+																					"pattern": "^(?!00000000-00000000-00000000-00000000$)[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{8}){3}$"
+																				}
+																			]
+																		},
+																		"lastKnownActorPath": {
+																			"type": "string",
+																			"allOf": [
+																				{
+																					"maxLength": 4096
+																				}
+																			]
+																		}
+																	},
+																	"required": [
+																		"kind",
+																		"actorGuid",
+																		"lastKnownActorPath"
+																	],
+																	"additionalProperties": false
+																}
+															]
+														},
+														"label": {
+															"type": "string",
+															"allOf": [
+																{
+																	"maxLength": 256
+																}
+															]
+														}
+													},
+													"required": ["locator", "label"],
+													"additionalProperties": false
+												},
+												"allOf": [
+													{
+														"maxItems": 256
+													}
+												]
+											}
+										},
+										"required": ["hide", "protect"],
+										"additionalProperties": false
+									},
 									"renderer": {
 										"anyOf": [
 											{
@@ -1098,7 +2641,7 @@
 								},
 								"minor": {
 									"type": "number",
-									"enum": [2, 3, 4]
+									"enum": [2, 3, 4, 5]
 								}
 							},
 							"required": ["major", "minor"],
@@ -1170,6 +2713,198 @@
 					"items": {
 						"type": "object",
 						"properties": {
+							"authoredVisibility": {
+								"type": "object",
+								"properties": {
+									"version": {
+										"type": "number",
+										"enum": [1]
+									},
+									"output": {
+										"type": "string",
+										"enum": [
+											"natural_only",
+											"authored_only",
+											"natural_and_authored"
+										]
+									},
+									"actors": {
+										"type": "object",
+										"properties": {
+											"hide": {
+												"type": "array",
+												"items": {
+													"type": "object",
+													"properties": {
+														"locator": {
+															"anyOf": [
+																{
+																	"type": "object",
+																	"properties": {
+																		"kind": {
+																			"type": "string",
+																			"enum": ["actor_path"]
+																		},
+																		"actorPath": {
+																			"type": "string",
+																			"allOf": [
+																				{
+																					"pattern": "^\\/Game\\/"
+																				},
+																				{
+																					"maxLength": 4096
+																				}
+																			]
+																		}
+																	},
+																	"required": [
+																		"kind",
+																		"actorPath"
+																	],
+																	"additionalProperties": false
+																},
+																{
+																	"type": "object",
+																	"properties": {
+																		"kind": {
+																			"type": "string",
+																			"enum": ["actor_guid"]
+																		},
+																		"actorGuid": {
+																			"type": "string",
+																			"allOf": [
+																				{
+																					"pattern": "^(?!00000000-00000000-00000000-00000000$)[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{8}){3}$"
+																				}
+																			]
+																		},
+																		"lastKnownActorPath": {
+																			"type": "string",
+																			"allOf": [
+																				{
+																					"maxLength": 4096
+																				}
+																			]
+																		}
+																	},
+																	"required": [
+																		"kind",
+																		"actorGuid",
+																		"lastKnownActorPath"
+																	],
+																	"additionalProperties": false
+																}
+															]
+														},
+														"label": {
+															"type": "string",
+															"allOf": [
+																{
+																	"maxLength": 256
+																}
+															]
+														}
+													},
+													"required": ["locator", "label"],
+													"additionalProperties": false
+												},
+												"allOf": [
+													{
+														"maxItems": 256
+													}
+												]
+											},
+											"protect": {
+												"type": "array",
+												"items": {
+													"type": "object",
+													"properties": {
+														"locator": {
+															"anyOf": [
+																{
+																	"type": "object",
+																	"properties": {
+																		"kind": {
+																			"type": "string",
+																			"enum": ["actor_path"]
+																		},
+																		"actorPath": {
+																			"type": "string",
+																			"allOf": [
+																				{
+																					"pattern": "^\\/Game\\/"
+																				},
+																				{
+																					"maxLength": 4096
+																				}
+																			]
+																		}
+																	},
+																	"required": [
+																		"kind",
+																		"actorPath"
+																	],
+																	"additionalProperties": false
+																},
+																{
+																	"type": "object",
+																	"properties": {
+																		"kind": {
+																			"type": "string",
+																			"enum": ["actor_guid"]
+																		},
+																		"actorGuid": {
+																			"type": "string",
+																			"allOf": [
+																				{
+																					"pattern": "^(?!00000000-00000000-00000000-00000000$)[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{8}){3}$"
+																				}
+																			]
+																		},
+																		"lastKnownActorPath": {
+																			"type": "string",
+																			"allOf": [
+																				{
+																					"maxLength": 4096
+																				}
+																			]
+																		}
+																	},
+																	"required": [
+																		"kind",
+																		"actorGuid",
+																		"lastKnownActorPath"
+																	],
+																	"additionalProperties": false
+																}
+															]
+														},
+														"label": {
+															"type": "string",
+															"allOf": [
+																{
+																	"maxLength": 256
+																}
+															]
+														}
+													},
+													"required": ["locator", "label"],
+													"additionalProperties": false
+												},
+												"allOf": [
+													{
+														"maxItems": 256
+													}
+												]
+											}
+										},
+										"required": ["hide", "protect"],
+										"additionalProperties": false
+									}
+								},
+								"required": ["version", "output", "actors"],
+								"additionalProperties": false
+							},
 							"authoring": {
 								"type": "object",
 								"properties": {

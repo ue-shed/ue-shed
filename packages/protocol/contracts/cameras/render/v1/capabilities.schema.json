@@ -3,6 +3,31 @@
 	"$id": "https://ue-shed.dev/contracts/cameras/render/v1/capabilities.schema.json",
 	"type": "object",
 	"properties": {
+		"authoredVisibility": {
+			"type": "object",
+			"properties": {
+				"version": {
+					"type": "number",
+					"enum": [1]
+				},
+				"maximumActorsPerList": {
+					"type": "number",
+					"enum": [256]
+				},
+				"geometry": {
+					"type": "string",
+					"enum": ["loaded_non_nanite_opaque_static_mesh_actors"]
+				},
+				"viewport": {
+					"type": "boolean"
+				},
+				"sceneCapture": {
+					"type": "boolean"
+				}
+			},
+			"required": ["version", "maximumActorsPerList", "geometry", "viewport", "sceneCapture"],
+			"additionalProperties": false
+		},
 		"contract": {
 			"type": "object",
 			"properties": {

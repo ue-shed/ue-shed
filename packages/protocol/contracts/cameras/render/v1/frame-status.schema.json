@@ -124,6 +124,88 @@
 				"evidence": {
 					"type": "object",
 					"properties": {
+						"visibilityDiagnostics": {
+							"type": "array",
+							"items": {
+								"type": "object",
+								"properties": {
+									"locator": {
+										"anyOf": [
+											{
+												"type": "object",
+												"properties": {
+													"kind": {
+														"type": "string",
+														"enum": ["actor_path"]
+													},
+													"actorPath": {
+														"type": "string",
+														"allOf": [
+															{
+																"pattern": "^\\/Game\\/"
+															},
+															{
+																"maxLength": 4096
+															}
+														]
+													}
+												},
+												"required": ["kind", "actorPath"],
+												"additionalProperties": false
+											},
+											{
+												"type": "object",
+												"properties": {
+													"kind": {
+														"type": "string",
+														"enum": ["actor_guid"]
+													},
+													"actorGuid": {
+														"type": "string",
+														"allOf": [
+															{
+																"pattern": "^(?!00000000-00000000-00000000-00000000$)[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{8}){3}$"
+															}
+														]
+													},
+													"lastKnownActorPath": {
+														"type": "string",
+														"allOf": [
+															{
+																"maxLength": 4096
+															}
+														]
+													}
+												},
+												"required": [
+													"kind",
+													"actorGuid",
+													"lastKnownActorPath"
+												],
+												"additionalProperties": false
+											}
+										]
+									},
+									"status": {
+										"type": "string",
+										"enum": [
+											"resolved",
+											"missing_or_unloaded",
+											"ambiguous",
+											"unsupported"
+										]
+									},
+									"actorPath": {
+										"type": "string"
+									},
+									"message": {
+										"type": "string"
+									}
+								},
+								"required": ["locator", "status", "actorPath", "message"],
+								"additionalProperties": false
+							}
+						},
 						"editorState": {
 							"type": "object",
 							"properties": {
@@ -250,6 +332,173 @@
 						"policy": {
 							"type": "object",
 							"properties": {
+								"visibility": {
+									"type": "object",
+									"properties": {
+										"hide": {
+											"type": "array",
+											"items": {
+												"type": "object",
+												"properties": {
+													"locator": {
+														"anyOf": [
+															{
+																"type": "object",
+																"properties": {
+																	"kind": {
+																		"type": "string",
+																		"enum": ["actor_path"]
+																	},
+																	"actorPath": {
+																		"type": "string",
+																		"allOf": [
+																			{
+																				"pattern": "^\\/Game\\/"
+																			},
+																			{
+																				"maxLength": 4096
+																			}
+																		]
+																	}
+																},
+																"required": ["kind", "actorPath"],
+																"additionalProperties": false
+															},
+															{
+																"type": "object",
+																"properties": {
+																	"kind": {
+																		"type": "string",
+																		"enum": ["actor_guid"]
+																	},
+																	"actorGuid": {
+																		"type": "string",
+																		"allOf": [
+																			{
+																				"pattern": "^(?!00000000-00000000-00000000-00000000$)[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{8}){3}$"
+																			}
+																		]
+																	},
+																	"lastKnownActorPath": {
+																		"type": "string",
+																		"allOf": [
+																			{
+																				"maxLength": 4096
+																			}
+																		]
+																	}
+																},
+																"required": [
+																	"kind",
+																	"actorGuid",
+																	"lastKnownActorPath"
+																],
+																"additionalProperties": false
+															}
+														]
+													},
+													"label": {
+														"type": "string",
+														"allOf": [
+															{
+																"maxLength": 256
+															}
+														]
+													}
+												},
+												"required": ["locator", "label"],
+												"additionalProperties": false
+											},
+											"allOf": [
+												{
+													"maxItems": 256
+												}
+											]
+										},
+										"protect": {
+											"type": "array",
+											"items": {
+												"type": "object",
+												"properties": {
+													"locator": {
+														"anyOf": [
+															{
+																"type": "object",
+																"properties": {
+																	"kind": {
+																		"type": "string",
+																		"enum": ["actor_path"]
+																	},
+																	"actorPath": {
+																		"type": "string",
+																		"allOf": [
+																			{
+																				"pattern": "^\\/Game\\/"
+																			},
+																			{
+																				"maxLength": 4096
+																			}
+																		]
+																	}
+																},
+																"required": ["kind", "actorPath"],
+																"additionalProperties": false
+															},
+															{
+																"type": "object",
+																"properties": {
+																	"kind": {
+																		"type": "string",
+																		"enum": ["actor_guid"]
+																	},
+																	"actorGuid": {
+																		"type": "string",
+																		"allOf": [
+																			{
+																				"pattern": "^(?!00000000-00000000-00000000-00000000$)[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{8}){3}$"
+																			}
+																		]
+																	},
+																	"lastKnownActorPath": {
+																		"type": "string",
+																		"allOf": [
+																			{
+																				"maxLength": 4096
+																			}
+																		]
+																	}
+																},
+																"required": [
+																	"kind",
+																	"actorGuid",
+																	"lastKnownActorPath"
+																],
+																"additionalProperties": false
+															}
+														]
+													},
+													"label": {
+														"type": "string",
+														"allOf": [
+															{
+																"maxLength": 256
+															}
+														]
+													}
+												},
+												"required": ["locator", "label"],
+												"additionalProperties": false
+											},
+											"allOf": [
+												{
+													"maxItems": 256
+												}
+											]
+										}
+									},
+									"required": ["hide", "protect"],
+									"additionalProperties": false
+								},
 								"renderer": {
 									"anyOf": [
 										{

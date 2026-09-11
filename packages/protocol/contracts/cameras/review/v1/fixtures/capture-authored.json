@@ -1,0 +1,205 @@
+{
+	"authoredVisibility": {
+		"version": 1,
+		"output": "natural_and_authored",
+		"actors": {
+			"hide": [],
+			"protect": []
+		}
+	},
+	"authoredEvidence": {
+		"visibilityDiagnostics": [],
+		"editorState": {
+			"mapPackageDirtyBefore": false,
+			"mapPackageDirtyAfter": false
+		},
+		"camera": {
+			"location": {
+				"x": 950,
+				"y": -750,
+				"z": 650
+			},
+			"rotation": {
+				"pitch": -25.000000000000007,
+				"roll": -1.754676902789813e-15,
+				"yaw": 140
+			},
+			"projection": {
+				"kind": "perspective",
+				"horizontalFieldOfView": 40
+			}
+		},
+		"size": {
+			"width": 640,
+			"height": 360
+		},
+		"policy": {
+			"visibility": {
+				"hide": [],
+				"protect": []
+			},
+			"renderer": {
+				"kind": "scene_capture",
+				"profile": "scene_capture_defaults",
+				"lodDistanceScale": 1,
+				"fog": true,
+				"volumetricFog": true
+			},
+			"exposure": {
+				"mode": "fixed_ev100",
+				"ev100": 10,
+				"compensation": "project"
+			},
+			"settling": {
+				"minimumFrames": 1,
+				"timeoutMs": 120000
+			},
+			"time": "live_editor",
+			"preparation": {
+				"geometry": {
+					"mode": "preserve_loading"
+				},
+				"dataLayers": []
+			}
+		},
+		"exposureEV100": 10,
+		"preparation": {
+			"status": "preserved",
+			"regionsHeld": 0,
+			"dataLayersApplied": 0,
+			"limitations": [
+				"Explicit editor loading does not certify frustum completeness, shader convergence, or gameplay initialization."
+			]
+		},
+		"settling": {
+			"renderedFrames": 1,
+			"elapsedMs": 36.709997802972794,
+			"convergence": "not_assessed"
+		},
+		"engineVersion": "5.7.4-51494982+++UE5+Release-5.7",
+		"pluginVersion": "0.7.1"
+	},
+	"renderEvidence": {
+		"editorState": {
+			"mapPackageDirtyBefore": false,
+			"mapPackageDirtyAfter": false
+		},
+		"camera": {
+			"location": {
+				"x": 950,
+				"y": -750,
+				"z": 650
+			},
+			"rotation": {
+				"pitch": -25.000000000000007,
+				"roll": -1.754676902789813e-15,
+				"yaw": 140
+			},
+			"projection": {
+				"kind": "perspective",
+				"horizontalFieldOfView": 40
+			}
+		},
+		"size": {
+			"width": 640,
+			"height": 360
+		},
+		"policy": {
+			"renderer": {
+				"kind": "scene_capture",
+				"profile": "scene_capture_defaults",
+				"lodDistanceScale": 1,
+				"fog": true,
+				"volumetricFog": true
+			},
+			"exposure": {
+				"mode": "fixed_ev100",
+				"ev100": 10,
+				"compensation": "project"
+			},
+			"settling": {
+				"minimumFrames": 1,
+				"timeoutMs": 120000
+			},
+			"time": "live_editor",
+			"preparation": {
+				"geometry": {
+					"mode": "preserve_loading"
+				},
+				"dataLayers": []
+			}
+		},
+		"exposureEV100": 10,
+		"preparation": {
+			"status": "preserved",
+			"regionsHeld": 0,
+			"dataLayersApplied": 0,
+			"limitations": [
+				"Explicit editor loading does not certify frustum completeness, shader convergence, or gameplay initialization."
+			]
+		},
+		"settling": {
+			"renderedFrames": 1,
+			"elapsedMs": 47.80590161681175,
+			"convergence": "not_assessed"
+		},
+		"engineVersion": "5.7.4-51494982+++UE5+Release-5.7",
+		"pluginVersion": "0.7.1"
+	},
+	"captureDurationMs": 84.51589941978455,
+	"clearCompanion": {
+		"status": "not_requested"
+	},
+	"contract": {
+		"name": "ue-shed-review-capture",
+		"version": {
+			"major": 1,
+			"minor": 7
+		}
+	},
+	"effectiveWorldPose": {
+		"aspectRatio": "16:9",
+		"fieldOfViewDegrees": 40,
+		"location": {
+			"x": 950,
+			"y": -750,
+			"z": 650
+		},
+		"projection": "perspective",
+		"rotation": {
+			"pitch": -25.000000000000007,
+			"roll": -1.754676902789813e-15,
+			"yaw": 140
+		}
+	},
+	"height": 360,
+	"mapPackageDirtyAfter": false,
+	"mapPackageDirtyBefore": false,
+	"mapPath": "/Game/Fixture",
+	"operationId": "49cebd79-1a5a-460d-aab8-17a89c29644e",
+	"resolvedSubject": {
+		"kind": "unresolved_actor",
+		"subject": {
+			"actorPath": "/Game/Fixture.Fixture:PersistentLevel.Floor",
+			"kind": "actor_path"
+		},
+		"reason": "World-fixed capture does not require subject realization."
+	},
+	"stagedArtifacts": [
+		{
+			"stagingPath": "Saved/UEShed/CameraRenderStaging/fc6528fe-c1e9-4bcf-bff5-c8e06c98bfa2/pure.png",
+			"variant": "pure"
+		},
+		{
+			"stagingPath": "Saved/UEShed/CameraRenderStaging/a50b0ff7-e587-43a9-bc68-da84deb947b7/authored.png",
+			"variant": "authored"
+		}
+	],
+	"status": "captured",
+	"viewId": "view-a",
+	"visibility": {
+		"reason": "Actor unavailable in the loaded editor world; the independent camera was rendered.",
+		"status": "not_assessed"
+	},
+	"width": 640
+}

@@ -3,6 +3,14 @@ import { decodeCompanionCapabilityManifest } from "@ue-shed/protocol";
 import type { RemoteControlClientApi } from "@ue-shed/unreal-connection";
 import { ApprovedPose } from "./review-schema.js";
 import {
+	CameraPanelState,
+	CameraPanelEvent,
+	CameraPanelAction,
+	CameraActorSelectionResult,
+	CameraVisibilityResolutionResult
+} from "./camera-authoring-panel-schema.js";
+import { CameraVisibilityList } from "./camera-visibility.js";
+import {
 	ArrangementCameraId,
 	CameraArrangementId,
 	CameraOperationId,
@@ -21,6 +29,36 @@ const Scope = {
 	producerId: Schema.NonEmptyString
 };
 export const CameraBridgeRequest = Schema.Union([
+	Schema.Struct({
+		...Scope,
+		operation: Schema.Literal("panel"),
+		state: CameraPanelState,
+		acknowledgeEvent: Schema.optionalKey(Schema.String)
+	}),
+	Schema.Struct({ ...Scope, operation: Schema.Literal("enqueue"), action: CameraPanelAction }),
+	Schema.Struct({
+		...Scope,
+		operation: Schema.Literals(["selection", "viewport_pose", "cancel_event"])
+	}),
+	Schema.Struct({
+		...Scope,
+		operation: Schema.Literal("resolve_visibility"),
+		actors: CameraVisibilityList
+	}),
+	Schema.Struct({
+		...Scope,
+		operation: Schema.Literal("preview_visibility"),
+		actors: CameraVisibilityList,
+		enabled: Schema.Boolean
+	}),
+	Schema.Struct({
+		...Scope,
+		operation: Schema.Literal("activate"),
+		cameraId: ArrangementCameraId,
+		pose: ApprovedPose,
+		expectedRevision: Counter,
+		sequence: Counter
+	}),
 	Schema.Struct({ version: Version, operation: Schema.Literal("discover") }),
 	Schema.Struct({
 		version: Version,
@@ -54,6 +92,8 @@ export const CameraBridgeRequest = Schema.Union([
 ]);
 export type CameraBridgeRequest = typeof CameraBridgeRequest.Type;
 export const CameraBridgeSnapshot = Schema.Struct({
+	panelEvent: Schema.optionalKey(CameraPanelEvent),
+	panel: Schema.optionalKey(CameraPanelState),
 	version: Version,
 	status: Schema.Literal("ready"),
 	message: Schema.String,
@@ -69,13 +109,22 @@ export const CameraBridgeSnapshot = Schema.Struct({
 });
 export type CameraBridgeSnapshot = typeof CameraBridgeSnapshot.Type;
 export const CameraBridgeResponse = Schema.Union([
+	CameraActorSelectionResult,
+	CameraVisibilityResolutionResult,
+	Schema.Struct({
+		version: Version,
+		status: Schema.Literal("viewport_pose"),
+		pose: ApprovedPose,
+		message: Schema.String
+	}),
 	CameraBridgeSnapshot,
 	Schema.Struct({
 		version: Version,
 		status: Schema.Literal("available"),
 		message: Schema.String,
 		leaseSeconds: Schema.Literal(30),
-		viewportCulling: Schema.Literal(false)
+		viewportCulling: Schema.Boolean,
+		arrangementPanel: Schema.optionalKey(Schema.Literal(true))
 	}),
 	Schema.Struct({
 		version: Version,
@@ -209,9 +258,11 @@ export function readyCameraBridge(
 	return Effect.fail(
 		new CameraBridgeError({
 			code:
-				response.status === "available" || response.status === "detached"
-					? "unavailable"
-					: response.status,
+				response.status === "busy" ||
+				response.status === "stale" ||
+				response.status === "invalid"
+					? response.status
+					: "unavailable",
 			message: response.message,
 			recovery:
 				"Inspect the camera session. Resolve ownership or revision conflicts before retrying."

@@ -1,0 +1,106 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://ue-shed.dev/contracts/cameras/authoring/v1/approval.schema.json",
+	"anyOf": [
+		{
+			"type": "object",
+			"properties": {
+				"operationId": {
+					"type": "string",
+					"allOf": [
+						{
+							"pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$"
+						}
+					]
+				},
+				"expectedRevision": {
+					"type": "integer"
+				},
+				"destination": {
+					"type": "string",
+					"allOf": [
+						{
+							"minLength": 1
+						}
+					]
+				},
+				"cameraId": {
+					"type": "string",
+					"allOf": [
+						{
+							"pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$"
+						}
+					]
+				}
+			},
+			"required": ["operationId", "expectedRevision", "destination", "cameraId"],
+			"additionalProperties": false
+		},
+		{
+			"type": "object",
+			"properties": {
+				"operationId": {
+					"type": "string",
+					"allOf": [
+						{
+							"pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$"
+						}
+					]
+				},
+				"expectedRevision": {
+					"type": "integer"
+				},
+				"destination": {
+					"type": "string",
+					"allOf": [
+						{
+							"minLength": 1
+						}
+					]
+				},
+				"cameraIds": {
+					"type": "array",
+					"items": {
+						"type": "string",
+						"allOf": [
+							{
+								"pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$"
+							}
+						]
+					},
+					"allOf": [
+						{
+							"minItems": 1
+						},
+						{
+							"maxItems": 256
+						}
+					]
+				},
+				"removeRetiredViewIds": {
+					"type": "array",
+					"items": {
+						"type": "string",
+						"allOf": [
+							{
+								"minLength": 1
+							},
+							{
+								"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+							}
+						]
+					}
+				}
+			},
+			"required": [
+				"operationId",
+				"expectedRevision",
+				"destination",
+				"cameraIds",
+				"removeRetiredViewIds"
+			],
+			"additionalProperties": false
+		}
+	],
+	"$defs": {}
+}

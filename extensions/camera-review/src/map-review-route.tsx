@@ -142,8 +142,14 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 		selectedCapture()?.artifacts.find((artifact) => artifact.variant === "pure")
 	);
 	const clearArtifact = createMemo(() =>
-		selectedCapture()?.artifacts.find((artifact) => artifact.variant === "clear")
+		selectedCapture()?.artifacts.find(
+			(artifact) => artifact.variant === "clear" || artifact.variant === "authored"
+		)
 	);
+	createEffect(() => {
+		if (!pureArtifact() && clearArtifact()) setComparisonMode("clear");
+	});
+	const alteredLabel = () => (clearArtifact()?.variant === "authored" ? "Authored" : "Clear");
 	const previousEvidence = createMemo(() => {
 		const current = ready();
 		const run = selected();
@@ -542,11 +548,10 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 												>
 													<button
 														type="button"
-														aria-pressed={
-															comparisonMode() === "pure"
-																? "true"
-																: "false"
-														}
+													disabled={pureArtifact() === undefined}
+													aria-pressed={
+														comparisonMode() === "pure" ? "true" : "false"
+													}
 														onClick={() => setComparisonMode("pure")}
 														{...stylex.attrs(
 															styles.comparisonButton,
@@ -571,11 +576,14 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 																styles.comparisonButtonActive
 														)}
 													>
-														Clear
+														{alteredLabel()}
 													</button>
 													<button
 														type="button"
-														disabled={clearArtifact() === undefined}
+														disabled={
+															clearArtifact() === undefined ||
+															pureArtifact() === undefined
+														}
 														aria-pressed={
 															comparisonMode() === "side_by_side"
 																? "true"
@@ -689,7 +697,7 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 														>
 															<ArtifactImage
 																artifact={clear()}
-																alt={`Clear capture with modified visibility of ${selectedCapture()?.viewName ?? "Review view"}`}
+																alt={`${alteredLabel()} capture with modified visibility of ${selectedCapture()?.viewName ?? "Review view"}`}
 															/>
 															<div
 																{...stylex.attrs(

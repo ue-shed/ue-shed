@@ -1,8 +1,9 @@
+import { CameraVisibilityPreset } from "./camera-visibility.js";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, open, readFile, rename, rm } from "node:fs/promises";
+import { mkdir, open, readFile, rename, rm, stat } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { Effect, Schema } from "effect";
-import { ReviewSet } from "./review-schema.js";
+import { ReviewSet, ReviewViewId } from "./review-schema.js";
 import {
 	CameraArrangement,
 	CameraArrangementCommand,
@@ -13,6 +14,7 @@ import {
 	approveArrangementCamera,
 	arrangementFailure
 } from "./camera-arrangement.js";
+import { CameraArrangementRecipe } from "./camera-arrangement.js";
 
 const Outcome = Schema.Struct({
 	operationId: CameraOperationId,
@@ -29,12 +31,22 @@ export const CameraAuthoringDocument = Schema.Struct({
 	)
 });
 export type CameraAuthoringDocument = typeof CameraAuthoringDocument.Type;
-export const CameraApproval = Schema.Struct({
+const ApprovalScope = {
 	operationId: CameraOperationId,
 	expectedRevision: Schema.Int,
-	cameraId: ArrangementCameraId,
 	destination: Schema.NonEmptyString
-});
+};
+export const CameraApproval = Schema.Union([
+	Schema.Struct({ ...ApprovalScope, cameraId: ArrangementCameraId }),
+	Schema.Struct({
+		...ApprovalScope,
+		cameraIds: Schema.Array(ArrangementCameraId).check(
+			Schema.isMinLength(1),
+			Schema.isMaxLength(256)
+		),
+		removeRetiredViewIds: Schema.Array(ReviewViewId)
+	})
+]);
 export type CameraApproval = typeof CameraApproval.Type;
 const digest = (text: string) => createHash("sha256").update(text).digest("hex");
 const json = <Value>(value: Value) => `${JSON.stringify(value, null, "\t")}\n`;
@@ -101,6 +113,28 @@ function storageError(cause: unknown) {
 					"Check the authoring document and directory permissions. Retry the same operation ID to recover a committed result."
 			});
 }
+
+export const readCameraArrangementRecipe = Effect.fn("CameraAuthoringStore.readRecipe")(
+	(path: string) =>
+		Effect.tryPromise({
+			try: async () => {
+				if ((await stat(path)).size > 4 * 1024 * 1024)
+					throw arrangementFailure("invalid", "Recipe exceeds the 4 MiB input limit.");
+				return Schema.decodeUnknownSync(CameraArrangementRecipe)(
+					JSON.parse(await readFile(path, "utf8")),
+					{ onExcessProperty: "error" }
+				);
+			},
+			catch: storageError
+		})
+);
+export const writeCameraArrangementRecipe = Effect.fn("CameraAuthoringStore.writeRecipe")(
+	(path: string, recipe: CameraArrangementRecipe) =>
+		Effect.tryPromise({
+			try: () => writeAtomic(resolve(path), json(CameraArrangementRecipe.make(recipe))),
+			catch: storageError
+		})
+);
 
 /** File-backed coordinator state. A studio can implement this port over another durable store. */
 export interface CameraAuthoringStore {
@@ -219,11 +253,34 @@ export function makeCameraAuthoringStore(documentPath: string): CameraAuthoringS
 						"stale",
 						"The destination differs from the draft's Review Set. Import its changes before approving."
 					);
-				const reviewSet = approveArrangementCamera(
-					document.arrangement,
-					approval.cameraId,
-					document.reviewSet
-				);
+				const ids = "cameraId" in approval ? [approval.cameraId] : approval.cameraIds;
+				if (new Set(ids).size !== ids.length)
+					throw arrangementFailure("invalid", "Approval camera IDs must be unique.");
+				let reviewSet = document.reviewSet;
+				for (const cameraId of ids)
+					reviewSet = approveArrangementCamera(document.arrangement, cameraId, reviewSet);
+				if ("removeRetiredViewIds" in approval) {
+					for (const viewId of approval.removeRetiredViewIds) {
+						const view = reviewSet.views.find((entry) => entry.id === viewId);
+						if (
+							!view?.authoring ||
+							view.authoring.arrangementId !== document.arrangement.id ||
+							!document.arrangement.retiredCameraIds.some(
+								(id) => id === view.authoring?.cameraId
+							)
+						)
+							throw arrangementFailure(
+								"scope_mismatch",
+								"Only explicitly retired Views owned by this arrangement can be removed."
+							);
+					}
+					reviewSet = ReviewSet.make({
+						...reviewSet,
+						views: reviewSet.views.filter(
+							(view) => !approval.removeRetiredViewIds.includes(view.id)
+						)
+					});
+				}
 				// Commit the approval and its projection intent together. Repeating the operation repairs a lost export.
 				const committed = await persist({
 					...document,
@@ -246,3 +303,39 @@ export function makeCameraAuthoringStore(documentPath: string): CameraAuthoringS
 		)
 	};
 }
+
+export const readCameraVisibilityPreset = Effect.fn("CameraAuthoringStore.readVisibilityPreset")(
+	(path: string) =>
+		Effect.tryPromise({
+			try: async () => {
+				if ((await stat(path)).size > 4 * 1024 * 1024)
+					throw arrangementFailure(
+						"invalid",
+						"Visibility preset exceeds the 4 MiB input limit."
+					);
+				return Schema.decodeUnknownSync(CameraVisibilityPreset)(
+					JSON.parse(await readFile(path, "utf8")),
+					{ onExcessProperty: "error" }
+				);
+			},
+			catch: storageError
+		})
+);
+export const writeCameraVisibilityPreset = Effect.fn("CameraAuthoringStore.writeVisibilityPreset")(
+	(path: string, preset: CameraVisibilityPreset) =>
+		Effect.tryPromise({
+			try: () =>
+				exclusive(resolve(path), async () => {
+					const expected = json(CameraVisibilityPreset.make(preset)),
+						previous = await optionalRead(resolve(path));
+					if (previous === expected) return;
+					if (previous !== null)
+						throw arrangementFailure(
+							"stale",
+							"Visibility presets are immutable. Export a new replacement path and explicitly adopt it."
+						);
+					await writeAtomic(resolve(path), expected);
+				}),
+			catch: storageError
+		})
+);

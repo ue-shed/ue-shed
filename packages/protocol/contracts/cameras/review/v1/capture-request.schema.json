@@ -25,7 +25,7 @@
 						"minor": {
 							"type": "integer",
 							"minimum": 0,
-							"maximum": 6
+							"maximum": 7
 						}
 					}
 				}
@@ -161,7 +161,198 @@
 			"$ref": "#/$defs/viewpoint"
 		},
 		"renderPolicy": {
-			"$ref": "../../render/v1/policy.schema.json"
+			"allOf": [
+				{
+					"$ref": "../../render/v1/policy.schema.json"
+				},
+				{
+					"not": {
+						"required": ["visibility"]
+					}
+				}
+			]
+		},
+		"authoredVisibility": {
+			"type": "object",
+			"properties": {
+				"version": {
+					"type": "number",
+					"enum": [1]
+				},
+				"output": {
+					"type": "string",
+					"enum": ["natural_only", "authored_only", "natural_and_authored"]
+				},
+				"actors": {
+					"type": "object",
+					"properties": {
+						"hide": {
+							"type": "array",
+							"items": {
+								"type": "object",
+								"properties": {
+									"locator": {
+										"anyOf": [
+											{
+												"type": "object",
+												"properties": {
+													"kind": {
+														"type": "string",
+														"enum": ["actor_path"]
+													},
+													"actorPath": {
+														"type": "string",
+														"allOf": [
+															{
+																"pattern": "^\\/Game\\/"
+															},
+															{
+																"maxLength": 4096
+															}
+														]
+													}
+												},
+												"required": ["kind", "actorPath"],
+												"additionalProperties": false
+											},
+											{
+												"type": "object",
+												"properties": {
+													"kind": {
+														"type": "string",
+														"enum": ["actor_guid"]
+													},
+													"actorGuid": {
+														"type": "string",
+														"allOf": [
+															{
+																"pattern": "^(?!00000000-00000000-00000000-00000000$)[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{8}){3}$"
+															}
+														]
+													},
+													"lastKnownActorPath": {
+														"type": "string",
+														"allOf": [
+															{
+																"maxLength": 4096
+															}
+														]
+													}
+												},
+												"required": [
+													"kind",
+													"actorGuid",
+													"lastKnownActorPath"
+												],
+												"additionalProperties": false
+											}
+										]
+									},
+									"label": {
+										"type": "string",
+										"allOf": [
+											{
+												"maxLength": 256
+											}
+										]
+									}
+								},
+								"required": ["locator", "label"],
+								"additionalProperties": false
+							},
+							"allOf": [
+								{
+									"maxItems": 256
+								}
+							]
+						},
+						"protect": {
+							"type": "array",
+							"items": {
+								"type": "object",
+								"properties": {
+									"locator": {
+										"anyOf": [
+											{
+												"type": "object",
+												"properties": {
+													"kind": {
+														"type": "string",
+														"enum": ["actor_path"]
+													},
+													"actorPath": {
+														"type": "string",
+														"allOf": [
+															{
+																"pattern": "^\\/Game\\/"
+															},
+															{
+																"maxLength": 4096
+															}
+														]
+													}
+												},
+												"required": ["kind", "actorPath"],
+												"additionalProperties": false
+											},
+											{
+												"type": "object",
+												"properties": {
+													"kind": {
+														"type": "string",
+														"enum": ["actor_guid"]
+													},
+													"actorGuid": {
+														"type": "string",
+														"allOf": [
+															{
+																"pattern": "^(?!00000000-00000000-00000000-00000000$)[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{8}){3}$"
+															}
+														]
+													},
+													"lastKnownActorPath": {
+														"type": "string",
+														"allOf": [
+															{
+																"maxLength": 4096
+															}
+														]
+													}
+												},
+												"required": [
+													"kind",
+													"actorGuid",
+													"lastKnownActorPath"
+												],
+												"additionalProperties": false
+											}
+										]
+									},
+									"label": {
+										"type": "string",
+										"allOf": [
+											{
+												"maxLength": 256
+											}
+										]
+									}
+								},
+								"required": ["locator", "label"],
+								"additionalProperties": false
+							},
+							"allOf": [
+								{
+									"maxItems": 256
+								}
+							]
+						}
+					},
+					"required": ["hide", "protect"],
+					"additionalProperties": false
+				}
+			},
+			"required": ["version", "output", "actors"],
+			"additionalProperties": false
 		}
 	},
 	"allOf": [
@@ -250,7 +441,7 @@
 							"version": {
 								"properties": {
 									"minor": {
-										"const": 6
+										"enum": [6, 7]
 									}
 								}
 							}
@@ -264,6 +455,33 @@
 			"else": {
 				"not": {
 					"required": ["renderPolicy"]
+				}
+			}
+		},
+		{
+			"if": {
+				"required": ["authoredVisibility"]
+			},
+			"then": {
+				"properties": {
+					"contract": {
+						"properties": {
+							"version": {
+								"properties": {
+									"minor": {
+										"const": 7
+									}
+								}
+							}
+						}
+					},
+					"clearCompanion": {
+						"properties": {
+							"status": {
+								"const": "not_requested"
+							}
+						}
+					}
 				}
 			}
 		}

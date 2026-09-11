@@ -38,6 +38,7 @@ const validFixtures: ReadonlyArray<{
 	readonly file: string;
 	readonly schema: WireSchema;
 }> = [
+	{ file: "capture-authored.json", schema: ReviewCaptureResponse },
 	{ file: "capture-request-area-valid.json", schema: ReviewCaptureRequest },
 	{ file: "capture-request-relative-valid.json", schema: ReviewCaptureRequest },
 	{ file: "capture-request-clear-valid.json", schema: ReviewCaptureRequest },

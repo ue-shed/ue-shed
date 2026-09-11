@@ -30,7 +30,7 @@ export const MapReviewRunCapture = Schema.Struct({
 		Schema.Struct({
 			bytes: Schema.Uint8Array,
 			height: Schema.Int.check(Schema.isGreaterThan(0)),
-			variant: Schema.Literals(["pure", "clear"]),
+			variant: Schema.Literals(["pure", "clear", "authored"]),
 			width: Schema.Int.check(Schema.isGreaterThan(0))
 		})
 	),

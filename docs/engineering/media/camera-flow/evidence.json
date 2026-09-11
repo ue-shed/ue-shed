@@ -1,0 +1,101 @@
+{
+	"recorded": "2026-09-11",
+	"implementationCommit": "40332fa",
+	"imageTreatment": "Original PNG bytes copied unchanged. Backend order follows the native proof loop (viewport first), confirmed by write timestamps.",
+	"images": [
+		{
+			"file": "viewport-visible.png",
+			"source": "out/camera-native-45-02/Saved/UEShed/CameraRenderStaging/15CF11D440177B383524F1BACC302C7A/proof-0.png",
+			"sha256": "ddff248919c3cd2f745e431b5dd62022a86af15760bd32fd6f19270d439b26f1"
+		},
+		{
+			"file": "viewport-excluded.png",
+			"source": "out/camera-native-45-02/Saved/UEShed/CameraRenderStaging/5AB36C0F49C764CDE6C4BB86D27C2C4C/proof-1.png",
+			"sha256": "35cab8899e27002088dac63ddc4d64e4c8233ee3b76a269e6b3dabcb98ecaa5a"
+		},
+		{
+			"file": "viewport-restored.png",
+			"source": "out/camera-native-45-02/Saved/UEShed/CameraRenderStaging/D2B3899E4E8FF686F892469CB58096B4/proof-2.png",
+			"sha256": "a5ffacce57198f9768f745fb828ba7537e4331facacab8b7ff9c7b851e5a56df"
+		},
+		{
+			"file": "scene-capture-visible.png",
+			"source": "out/camera-native-45-02/Saved/UEShed/CameraRenderStaging/DA02820D4DD02ED9A14962AEA23FC2C8/proof-0.png",
+			"sha256": "21c01c969ca48c1bebbcc873ace1ed3a5de2dbd274bba9b7eae8acb18ae2188d"
+		},
+		{
+			"file": "scene-capture-excluded.png",
+			"source": "out/camera-native-45-02/Saved/UEShed/CameraRenderStaging/90B919F64EC6A461F82E1E80A49C3EF3/proof-1.png",
+			"sha256": "f5e35b3309d336a948052945e480a00732b8c49c1ec190ca8c867a497740e2cf"
+		},
+		{
+			"file": "scene-capture-restored.png",
+			"source": "out/camera-native-45-02/Saved/UEShed/CameraRenderStaging/A9B927C64E580C83EC49B79D5BE73C02/proof-2.png",
+			"sha256": "21c01c969ca48c1bebbcc873ace1ed3a5de2dbd274bba9b7eae8acb18ae2188d"
+		},
+		{
+			"file": "approved-camera.png",
+			"source": "out/camera-journey-45-05/approved-camera.png",
+			"sha256": "74b1283cbc9ee328e8b22ce584379d512975d8e03fcc15efc3acb6a6ede17100"
+		},
+		{
+			"file": "protected-pure.png",
+			"source": "out/camera-journey-45-05/Saved/UEShed/CameraRenderStaging/1ae0902d-f08e-4c98-a35a-047a5c616b74/pure.png",
+			"sha256": "48dc20c05bcd1492bf842d654d4a8aa31c9d765570657b28b91f1d514f162b3f"
+		},
+		{
+			"file": "protected-authored.png",
+			"source": "out/camera-journey-45-05/Saved/UEShed/CameraRenderStaging/30c3f653-1992-48a4-8bd7-81fbc051d93b/authored.png",
+			"sha256": "48dc20c05bcd1492bf842d654d4a8aa31c9d765570657b28b91f1d514f162b3f"
+		}
+	],
+	"nativeMetrics": {
+		"unit": "BGRA8 channel samples with absolute difference >20, not pixels",
+		"viewport": {
+			"changed": 138324,
+			"restoredDifference": 0
+		},
+		"sceneCapture": {
+			"changed": 156691,
+			"restoredDifference": 0
+		}
+	},
+	"journey": {
+		"status": "passed",
+		"captureOnlyRestart": true,
+		"authoringCapabilityAbsent": true,
+		"subjectProjection": {
+			"code": "behind_camera",
+			"message": "At least one subject-bounds corner is behind the transient capture camera.",
+			"status": "unprojectable"
+		},
+		"visibility": {
+			"limitations": [
+				"Inspect subjectProjection for behind-camera, near-plane, or viewport-clipping evidence."
+			],
+			"reason": "The subject is outside the effective capture projection, so visibility has no valid image-space denominator.",
+			"status": "not_assessed"
+		},
+		"visibilityDiagnostics": [
+			{
+				"locator": {
+					"kind": "actor_guid",
+					"actorGuid": "8DF7FA85-4ABC9DBA-1FE42ABE-10701DE8",
+					"lastKnownActorPath": "/Game/Fixture.Fixture:PersistentLevel.Floor_0"
+				},
+				"status": "resolved",
+				"actorPath": "/Game/Fixture.Fixture:PersistentLevel.Floor_0",
+				"message": ""
+			},
+			{
+				"locator": {
+					"kind": "actor_path",
+					"actorPath": "/Game/Fixture.Fixture:PersistentLevel.Floor_0"
+				},
+				"status": "resolved",
+				"actorPath": "/Game/Fixture.Fixture:PersistentLevel.Floor_0",
+				"message": ""
+			}
+		]
+	}
+}

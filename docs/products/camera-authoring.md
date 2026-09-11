@@ -4,6 +4,9 @@ Camera-flow steps 1–5 provide scoped arrangements, native editing, culling, sy
 a capture-only Review Set. The public owner is `@ue-shed/cameras`. The CLI and optional Unreal menu
 use the same ports; Workbench is not required.
 
+See the [illustrated implementation walkthrough](../engineering/camera-flow-implementation.html)
+for recorded Unreal render comparisons, the authoring journey, and save/load examples through step 5.
+
 ## Plugin boundary
 
 ```mermaid

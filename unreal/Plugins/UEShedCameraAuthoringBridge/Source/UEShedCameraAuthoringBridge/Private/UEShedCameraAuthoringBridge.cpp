@@ -175,6 +175,12 @@ AUEShedAuthoringCamera *FUEShedCameraAuthoringBridge::Camera()
 {
     return AuthoringState ? AuthoringState->Proxy.Get() : nullptr;
 }
+FSimpleMulticastDelegate& FUEShedCameraAuthoringBridge::OnEditorFocusRequested()
+{
+    static FSimpleMulticastDelegate FocusRequested;
+    return FocusRequested;
+}
+
 TSharedPtr<FJsonObject> FUEShedCameraAuthoringBridge::InspectActive()
 {
     Tick(0);
@@ -482,6 +488,7 @@ TSharedPtr<FJsonObject> FUEShedCameraAuthoringBridge::Execute(const TSharedPtr<F
         }
         GEditor->SelectNone(false, true, false);
         GEditor->SelectActor(AuthoringState->Proxy.Get(), true, true);
+        OnEditorFocusRequested().Broadcast();
         return Snapshot();
     }
     if (Op == TEXT("apply"))

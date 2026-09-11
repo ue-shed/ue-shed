@@ -1,11 +1,13 @@
 #include "Framework/Docking/TabManager.h"
 #include "Modules/ModuleManager.h"
 #include "SCameraArrangementPanel.h"
+#include "UEShedCameraAuthoringBridge.h"
 #include "ToolMenus.h"
 #include "Widgets/Docking/SDockTab.h"
 
 class FUEShedCameraAuthoringMenuModule final : public IModuleInterface
 {
+    FDelegateHandle FocusHandle;
     static FName TabId()
     {
         return TEXT("UEShedCameraAuthoring");
@@ -32,11 +34,13 @@ class FUEShedCameraAuthoringMenuModule final : public IModuleInterface
             ->RegisterNomadTabSpawner(TabId(), FOnSpawnTab::CreateRaw(this, &FUEShedCameraAuthoringMenuModule::Spawn))
             .SetDisplayName(FText::FromString(TEXT("UE Shed Camera Authoring")))
             .SetMenuType(ETabSpawnerMenuType::Hidden);
+        FocusHandle = FUEShedCameraAuthoringBridge::OnEditorFocusRequested().AddLambda([] { FGlobalTabmanager::Get()->TryInvokeTab(TabId()); });
         UToolMenus::RegisterStartupCallback(
             FSimpleMulticastDelegate::FDelegate::CreateRaw(this, &FUEShedCameraAuthoringMenuModule::RegisterMenu));
     }
     void ShutdownModule() override
     {
+        FUEShedCameraAuthoringBridge::OnEditorFocusRequested().Remove(FocusHandle);
         UToolMenus::UnRegisterStartupCallback(this);
         UToolMenus::UnregisterOwner(this);
         if (auto Tab = FGlobalTabmanager::Get()->FindExistingLiveTab(TabId()))

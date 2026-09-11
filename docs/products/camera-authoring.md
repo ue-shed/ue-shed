@@ -235,3 +235,13 @@ owns durable mutations and acknowledges their outcomes. The bridge owns transien
 and exposes selection, visibility resolution, camera activation, and published panel state. Studios
 can replace the menu or store through those ports. Neither the Workbench nor the menu owns domain
 policy, and no general distributed synchronization service is introduced here.
+
+## Native workspace handoff
+
+The optional menu groups its controls into Framing, Layout, Visibility, and Capture.
+Shared framing applies only to the open actor set; individual cameras retain explicit
+exceptions and manual poses. Selection and save status track the host panel snapshot.
+
+A bridge `pilot` or `select` request emits `OnEditorFocusRequested`. The first-party
+menu reveals its tab on that event. Replacement menus may subscribe to the same public
+delegate; the bridge does not depend on the first-party menu.

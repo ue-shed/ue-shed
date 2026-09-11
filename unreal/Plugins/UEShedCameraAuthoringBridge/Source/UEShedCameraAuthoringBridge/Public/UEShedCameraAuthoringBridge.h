@@ -21,6 +21,8 @@ public:
 	static TSharedPtr<FJsonObject> Execute(const TSharedPtr<FJsonObject>& Request);
 	static AUEShedAuthoringCamera* Camera();
 	static TSharedPtr<FJsonObject> InspectActive();
+	// Optional presentation adapters can reveal their camera tools on editor handoff.
+	static FSimpleMulticastDelegate& OnEditorFocusRequested();
 	static void Shutdown();
 	static bool Tick(float DeltaSeconds);
 };

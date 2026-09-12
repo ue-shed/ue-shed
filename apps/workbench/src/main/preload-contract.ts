@@ -120,6 +120,7 @@ export const workbenchInvokeChannels = {
 		focusActor: "map-review:focus-actor",
 		approveCandidate: "map-review:approve-candidate",
 		authorFromSelection: "map-review:author-from-selection",
+		cameraWorkspace: "map-review:camera-workspace",
 		authoringResume: "map-review:authoring-resume",
 		authoringPatch: "map-review:authoring-patch",
 		authoringReframe: "map-review:authoring-reframe",

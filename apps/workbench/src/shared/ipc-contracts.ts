@@ -1,3 +1,4 @@
+import { CameraWorkspaceRequest, CameraWorkspaceResult } from "@ue-shed/cameras/review-contracts";
 import {
 	TextureInvestigationQuery,
 	TextureInvestigationPresetResult
@@ -1063,6 +1064,11 @@ export const invokeContracts = {
 		channel: "map-review:author-from-selection",
 		args: Schema.Tuple([MapReviewAuthorFromSelectionIntent]),
 		result: MapReviewAuthoringResult
+	}),
+	"map-review:camera-workspace": invoke({
+		channel: "map-review:camera-workspace",
+		args: Schema.Tuple([CameraWorkspaceRequest]),
+		result: CameraWorkspaceResult
 	}),
 	"map-review:authoring-resume": invoke({
 		channel: "map-review:authoring-resume",

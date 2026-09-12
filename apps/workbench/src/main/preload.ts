@@ -241,6 +241,7 @@ const workbenchRendererApi = {
 			intent: MapReviewAuthorFromSelectionIntent
 		): Promise<MapReviewAuthoringResult> =>
 			ipcRenderer.invoke("map-review:author-from-selection", intent),
+		cameraWorkspace: (intent) => ipcRenderer.invoke("map-review:camera-workspace", intent),
 		authoringResume: (): Promise<MapReviewAuthoringResult> =>
 			ipcRenderer.invoke("map-review:authoring-resume"),
 		authoringPatch: (intent) => ipcRenderer.invoke("map-review:authoring-patch", intent),

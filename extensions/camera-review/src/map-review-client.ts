@@ -1,4 +1,8 @@
 import type {
+	CameraWorkspaceRequest,
+	CameraWorkspaceResult
+} from "@ue-shed/cameras/review-contracts";
+import type {
 	MapReviewApprovalResult,
 	MapReviewApproveCandidateIntent,
 	MapReviewAuthorFromSelectionIntent,
@@ -73,6 +77,9 @@ export class MapReviewClientError extends Schema.TaggedErrorClass<MapReviewClien
 ) {}
 
 export interface MapReviewClientApi {
+	readonly cameraWorkspace?: (
+		request: CameraWorkspaceRequest
+	) => Effect.Effect<CameraWorkspaceResult, MapReviewClientError>;
 	/** Optional while older hosts adopt saved-map support. This source is never an editor session. */
 	readonly readSavedWorld?: (mapPath: string) => Effect.Effect<SavedWorld, MapReviewClientError>;
 	readonly savedWorldMaps?: () => Effect.Effect<readonly SavedWorldMap[], MapReviewClientError>;

@@ -6,6 +6,15 @@ import { WorkbenchMapReview } from "../services/map-review.js";
 export const register = Effect.gen(function* () {
 	const ipc = yield* ElectronIpc;
 	const mapReview = yield* WorkbenchMapReview;
+	yield* ipc.register(invokeContracts["map-review:camera-workspace"], (intent) =>
+		mapReview.cameraWorkspace
+			? mapReview.cameraWorkspace(intent)
+			: Effect.succeed({
+					panel: null,
+					sets: [],
+					error: "Camera sets are unavailable in this host."
+				})
+	);
 
 	yield* ipc.register(invokeContracts["map-review:load"], () => mapReview.load());
 	yield* ipc.register(invokeContracts["map-review:review-sets"], () =>

@@ -1,3 +1,8 @@
+import { makeCameraWorkspace } from "./camera-workspace.js";
+import type {
+	CameraWorkspaceRequest,
+	CameraWorkspaceResult
+} from "@ue-shed/cameras/review-contracts";
 import { WorkbenchUnrealConnection } from "./unreal-connection.js";
 import {
 	approveFramingCandidate,
@@ -217,6 +222,9 @@ export class SavedWorldUnavailable extends Schema.TaggedErrorClass<SavedWorldUna
 ) {}
 
 export interface WorkbenchMapReviewApi {
+	readonly cameraWorkspace?: (
+		request: CameraWorkspaceRequest
+	) => Effect.Effect<CameraWorkspaceResult>;
 	readonly resetLiveTarget?: () => Effect.Effect<void>;
 	/** Chooses the global Workbench project, then returns its cached saved-map inventory. */
 	readonly chooseProjectAndMaps: () => Effect.Effect<SavedWorldChoice, WorkbenchWindowError>;
@@ -365,6 +373,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 		const window = yield* WorkbenchWindow;
 		const layerScope = yield* Effect.scope;
 		const coordinator = yield* makeUnrealOperationCoordinator;
+		const cameraWorkspace = yield* makeCameraWorkspace();
 		const lastWorldSnapshot = yield* Ref.make<
 			Option.Option<{ endpoint: string; result: WorldScoutResult }>
 		>(Option.none());
@@ -1060,7 +1069,9 @@ export const WorkbenchMapReviewLive = Layer.effect(
 				{ concurrency: 2 }
 			);
 			const firstCapture = captures[0];
-			const pure = firstCapture?.artifacts.find((artifact) => artifact.variant === "pure");
+			const pure =
+				firstCapture?.artifacts.find((artifact) => artifact.variant === "authored") ??
+				firstCapture?.artifacts.find((artifact) => artifact.variant === "pure");
 			return {
 				...summary,
 				...(firstCapture === undefined ? undefined : { capture: firstCapture }),
@@ -1329,6 +1340,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 				return { policy: block, status: "blocked" as const };
 			}
 			const { projectRoot } = reviewProject;
+			yield* cameraWorkspace.close().pipe(Effect.orDie);
 			return yield* runExclusive(
 				capture
 					.captureSet({
@@ -2057,7 +2069,33 @@ export const WorkbenchMapReviewLive = Layer.effect(
 		);
 
 		return WorkbenchMapReview.of({
+			cameraWorkspace: (intent) =>
+				Effect.gen(function* () {
+					const selected = yield* resolveReviewProject();
+					const reviewSetPath = yield* selectedReviewSetPath();
+					if (!selected || !reviewSetPath)
+						return { panel: null, sets: [], error: "Choose a Review Set first." };
+					return yield* cameraWorkspace.request(
+						{
+							projectRoot: selected.projectRoot,
+							reviewSetPath,
+							endpoint: yield* connection.endpoint()
+						},
+						intent
+					);
+				}).pipe(
+					Effect.catch((cause) =>
+						Effect.succeed({ panel: null, sets: [], error: String(cause) })
+					)
+				),
 			resetLiveTarget: Effect.fn("Workbench.MapReview.resetLiveTarget")(function* () {
+				yield* cameraWorkspace
+					.close()
+					.pipe(
+						Effect.catch((cause) =>
+							Effect.logWarning("Camera workspace close failed", cause)
+						)
+					);
 				yield* stopObservationFiber();
 				yield* Ref.update(observationSubscription, (current) => ({
 					...current,

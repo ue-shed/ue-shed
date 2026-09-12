@@ -394,6 +394,7 @@ const validArgsByChannel = {
 		}
 	],
 	"map-review:author-from-selection": [{ destination: { kind: "append_view" } }],
+	"map-review:camera-workspace": [{ kind: "list" }],
 	"map-review:authoring-resume": [],
 	"map-review:authoring-patch": [
 		{
@@ -749,6 +750,7 @@ const validResultByChannel = {
 		status: "failed",
 		error: { message: "missing", recovery: "select an actor" }
 	},
+	"map-review:camera-workspace": { panel: null, sets: [], error: null },
 	"map-review:authoring-resume": {
 		status: "failed",
 		error: { message: "missing", recovery: "select an actor" }
@@ -824,9 +826,9 @@ const malformedArgsByChannel = {
 	"map-capture:tile": [{ manifestPath: "", relativePath: "../outside.png" }]
 } satisfies Partial<Record<InvokeChannel, IpcFixtureValue>>;
 
-it("registers exactly 120 invoke channels plus renderer events", () => {
-	expect(invokeChannelNames).toHaveLength(120);
-	expect(new Set(invokeChannelNames).size).toBe(120);
+it("registers exactly 121 invoke channels plus renderer events", () => {
+	expect(invokeChannelNames).toHaveLength(121);
+	expect(new Set(invokeChannelNames).size).toBe(121);
 	expect(cameraFrameEvent.channel).toBe("camera:frame");
 	expect(mapCaptureProgressEvent.channel).toBe("map-capture:progress");
 	expect(worldObservationEvent.channel).toBe("map-review:world-observation");

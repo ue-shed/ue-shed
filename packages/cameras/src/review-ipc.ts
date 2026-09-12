@@ -1,3 +1,5 @@
+import { CameraPanelAction, CameraPanelState } from "./camera-authoring-panel-schema.js";
+import { CameraArrangementId, CameraEditScope } from "./camera-arrangement.js";
 import { Schema } from "effect";
 import { CameraFrameEvidence } from "./camera-render-schema.js";
 import { ReviewCaptureBlock } from "./review-session-policy.js";
@@ -359,3 +361,49 @@ export const decodeMapReviewApprovalResult = Schema.decodeUnknownEffect(MapRevie
 export const decodeMapReviewApproveCandidateIntent = Schema.decodeUnknownEffect(
 	MapReviewApproveCandidateIntent
 );
+
+/** Host-facing camera workspace protocol; transport and presentation are replaceable. */
+export const CameraWorkspaceRequest = Schema.Union([
+	Schema.Struct({ kind: Schema.Literals(["list", "state", "close"]) }),
+	Schema.Struct({
+		kind: Schema.Literal("open"),
+		id: Schema.optionalKey(CameraArrangementId),
+		actorPath: Schema.optionalKey(Schema.NonEmptyString),
+		name: Schema.optionalKey(Schema.NonEmptyString)
+	}),
+	Schema.Struct({
+		kind: Schema.Literal("action"),
+		id: CameraArrangementId,
+		expectedRevision: Schema.Int,
+		action: CameraPanelAction
+	}),
+	Schema.Struct({
+		kind: Schema.Literal("native"),
+		id: CameraArrangementId,
+		operation: Schema.Literals([
+			"pilot",
+			"eject",
+			"select",
+			"hide_selection",
+			"protect_selection"
+		]),
+		scope: CameraEditScope
+	})
+]);
+export type CameraWorkspaceRequest = typeof CameraWorkspaceRequest.Type;
+export const CameraWorkspaceResult = Schema.Struct({
+	savedViews: Schema.optionalKey(
+		Schema.Array(Schema.Struct({ id: Schema.String, revision: Schema.Int }))
+	),
+	panel: Schema.NullOr(CameraPanelState),
+	sets: Schema.Array(
+		Schema.Struct({
+			id: CameraArrangementId,
+			name: Schema.String,
+			actorPath: Schema.String,
+			cameras: Schema.Int
+		})
+	),
+	error: Schema.NullOr(Schema.String)
+});
+export type CameraWorkspaceResult = typeof CameraWorkspaceResult.Type;

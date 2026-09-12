@@ -1,3 +1,4 @@
+import { CameraWorkspace } from "./camera-workspace.js";
 import * as stylex from "@stylexjs/stylex";
 import { Button, createEffectAction } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
@@ -238,7 +239,10 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 					</Button>
 					<Button
 						type="button"
-						disabled={ready() === undefined || worldSource() !== "live"}
+						disabled={
+							ready() === undefined ||
+							(worldSource() !== "live" && !props.client.cameraWorkspace)
+						}
 						onClick={() => setCaptureOpen(true)}
 						tone="primary"
 					>
@@ -281,7 +285,13 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 						Live session
 					</button>
 				</div>
-				<Show when={ready() !== undefined && worldSource() === "live"}>
+				<Show
+					when={
+						ready() !== undefined &&
+						worldSource() === "live" &&
+						!props.client.cameraWorkspace
+					}
+				>
 					<div
 						role="group"
 						aria-label="Authoring mode"
@@ -317,6 +327,16 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 				when={worldSource() === "saved"}
 				fallback={
 					<WorldScout
+						onActorSelected={
+							props.client.cameraWorkspace
+								? (actor) =>
+										setFocusRequest((current) =>
+											actor
+												? { actor, nonce: (current?.nonce ?? 0) + 1 }
+												: undefined
+										)
+								: undefined
+						}
 						client={props.client}
 						onActorFocused={(actor) => {
 							setFocusRequest((current) => ({
@@ -423,22 +443,41 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 									<span>{current().runs.length === 1 ? "run" : "runs"}</span>
 								</div>
 							</section>
-							<Show when={worldSource() === "live" && current().reviewSet.id} keyed>
-								<MapReviewAuthoring
-									client={props.client}
-									destination={
-										authoringMode() === "revise" &&
-										selectedViewId() !== undefined
-											? {
-													kind: "revise_view",
-													viewId: selectedViewId()!
-												}
-											: { kind: "append_view" }
+							<Show
+								when={
+									(worldSource() === "live" || props.client.cameraWorkspace) &&
+									current().reviewSet.id
+								}
+								keyed
+							>
+								<Show
+									when={props.client.cameraWorkspace}
+									fallback={
+										<MapReviewAuthoring
+											client={props.client}
+											destination={
+												authoringMode() === "revise" &&
+												selectedViewId() !== undefined
+													? {
+															kind: "revise_view",
+															viewId: selectedViewId()!
+														}
+													: { kind: "append_view" }
+											}
+											focusRequest={focusRequest()}
+											onApproved={load}
+											onChooseReviewSet={() => setSetLibraryOpen(true)}
+										/>
 									}
-									focusRequest={focusRequest()}
-									onApproved={load}
-									onChooseReviewSet={() => setSetLibraryOpen(true)}
-								/>
+								>
+									<CameraWorkspace
+										onCapture={() => setCaptureOpen(true)}
+										client={props.client}
+										focusRequest={focusRequest()}
+										onApproved={load}
+										onChooseReviewSet={() => setSetLibraryOpen(true)}
+									/>
+								</Show>
 							</Show>
 
 							<section

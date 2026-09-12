@@ -85,6 +85,7 @@ export function WorldScout(props: {
 		"connectWorld" | "focusActor" | "setWorldObservationRate" | "worldObservations"
 	>;
 	readonly onActorFocused: (actor: ObservedActor) => void;
+	readonly onActorSelected?: ((actor: ObservedActor | undefined) => void) | undefined;
 	/** Test seam: override paint scheduling to assert animation-frame coalescing. */
 	readonly paintScheduler?: {
 		readonly schedule: (callback: () => void) => number;
@@ -471,6 +472,7 @@ export function WorldScout(props: {
 			`${meta.displayName}, ${meta.className}, X ${formatCoordinate(store.locationX[streamIndex] ?? 0)}, Y ${formatCoordinate(store.locationY[streamIndex] ?? 0)}, Z ${formatCoordinate(store.locationZ[streamIndex] ?? 0)}`
 		);
 		focusActorOnMap(meta.instanceKey);
+		props.onActorSelected?.(selected());
 	};
 	const focusActorOnMap = (key: string) => {
 		const index = store.findByInstanceKey(key);
@@ -585,6 +587,7 @@ export function WorldScout(props: {
 		requestPaint();
 	};
 	const clearSelection = () => {
+		props.onActorSelected?.(undefined);
 		setSelectedKey(undefined);
 		setSelectedStreamIndex(undefined);
 		setFollowing(false);

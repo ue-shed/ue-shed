@@ -1,0 +1,920 @@
+import * as stylex from "@stylexjs/stylex";
+import {
+	ArrangementCameraId,
+	ReviewViewId,
+	cameraActorIdentity,
+	CameraOperationId,
+	effectiveCameraArrangementSettings,
+	type CameraPanelAction,
+	type CameraArrangementCommand,
+	type CameraEditScope,
+	type CameraLayout
+} from "@ue-shed/cameras/browser";
+import type {
+	CameraWorkspaceRequest,
+	CameraWorkspaceResult
+} from "@ue-shed/cameras/review-contracts";
+import { createEffectAction, createEffectSubscription } from "@ue-shed/ui";
+import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
+import { Cause, Effect, Schedule, Stream } from "effect";
+import { For, Show, createMemo, createSignal, createEffect, on, onMount } from "solid-js";
+import { createStore, reconcile, unwrap } from "solid-js/store";
+import type { ObservedActor } from "@ue-shed/observatory/browser";
+import type { MapReviewClientApi } from "./map-review-client.js";
+
+const fields = [
+	{ key: "fieldOfViewDegrees", label: "FOV", unit: "°", min: 5, max: 170, step: 1 },
+	{ key: "distanceScale", label: "Distance", unit: "×", min: 0.01, max: 100, step: 0.01 },
+	{ key: "heightOffset", label: "Height", unit: "cm", min: -100000, max: 100000, step: 1 },
+	{ key: "elevationDegrees", label: "Elevation", unit: "°", min: -89, max: 89, step: 1 },
+	{ key: "yawOffset", label: "Yaw", unit: "°", min: -360, max: 360, step: 1 },
+	{ key: "margin", label: "Margin", unit: "", min: 0, max: 0.45, step: 0.01 }
+] as const;
+const presets: readonly { name: string; layout: CameraLayout }[] = [
+	{
+		name: "Single",
+		layout: { kind: "single", count: 1, startDegrees: 0, spanDegrees: 0, orientation: "world" }
+	},
+	{
+		name: "Cardinals",
+		layout: { kind: "orbit", count: 4, startDegrees: 0, spanDegrees: 360, orientation: "world" }
+	},
+	{
+		name: "Front arc",
+		layout: { kind: "arc", count: 3, startDegrees: -45, spanDegrees: 90, orientation: "world" }
+	},
+	{
+		name: "Orbit",
+		layout: { kind: "orbit", count: 8, startDegrees: 0, spanDegrees: 360, orientation: "world" }
+	}
+];
+
+export function CameraWorkspace(props: {
+	readonly client: Pick<MapReviewClientApi, "cameraWorkspace" | "liveFrames">;
+	readonly focusRequest?: { readonly actor: ObservedActor; readonly nonce: number } | undefined;
+	readonly onApproved: () => void;
+	readonly onCapture?: (() => void) | undefined;
+	readonly onChooseReviewSet: () => void;
+}) {
+	const [state, setState] = createStore<CameraWorkspaceResult>({
+		panel: null,
+		sets: [],
+		error: null
+	});
+	const action = createEffectAction();
+	const polling = createEffectSubscription();
+	const frames = createEffectSubscription();
+	const [busy, setBusy] = createSignal(false);
+	const [library, setLibrary] = createSignal(true);
+	const [creating, setCreating] = createSignal(false);
+	const [name, setName] = createSignal("");
+	const [wholeSet, setWholeSet] = createSignal(true);
+	const [tab, setTab] = createSignal<"Framing" | "Layout" | "Visibility" | "Capture">("Framing");
+	const [layout, setLayout] = createSignal<CameraLayout>(presets[1]!.layout);
+	const [hasFrame, setHasFrame] = createSignal(false);
+	let generation = 0;
+	const [canvas, setCanvas] = createSignal<HTMLCanvasElement>();
+	const camera = createMemo(() =>
+		state.panel?.arrangement.cameras.find((item) => item.id === state.panel?.activeCameraId)
+	);
+	const effective = createMemo(() => {
+		const c = camera();
+		return c && state.panel
+			? effectiveCameraArrangementSettings(state.panel.arrangement, c)
+			: undefined;
+	});
+	const scope = (): CameraEditScope =>
+		wholeSet()
+			? { kind: "arrangement" }
+			: { kind: "cameras", cameraIds: [state.panel!.activeCameraId] };
+	const needsFixedExposure = () =>
+		state.panel?.arrangement.output === "natural_and_authored" &&
+		state.panel.renderPolicy.renderer.kind === "scene_capture" &&
+		state.panel.renderPolicy.exposure.mode !== "fixed_ev100";
+	let savedSignature: string | undefined;
+	const receive = (result: CameraWorkspaceResult, refresh = true) => {
+		const signature = result.savedViews ? JSON.stringify(result.savedViews) : undefined;
+		const changed =
+			savedSignature !== undefined &&
+			signature !== undefined &&
+			signature !== savedSignature &&
+			result.savedViews!.length > 0;
+		savedSignature = signature;
+		setState(reconcile(result));
+		if (refresh && changed) props.onApproved();
+	};
+	const run = (request: CameraWorkspaceRequest, saved = false) => {
+		const invoke = props.client.cameraWorkspace;
+		if (!invoke || busy()) return;
+		generation++;
+		setBusy(true);
+		action.run(invoke(unwrap(request)), {
+			onSuccess: (result) => {
+				receive(result, !saved);
+				setBusy(false);
+				if (result.panel && request.kind === "open") {
+					setLibrary(false);
+					setCreating(false);
+					setWholeSet(true);
+					setHasFrame(false);
+				}
+				if (request.kind === "close" && !result.error) setLibrary(true);
+				if (saved && !result.error) props.onApproved();
+			},
+			onFailure: (cause) => {
+				setState(reconcile({ ...state, error: Cause.pretty(cause) }));
+				setBusy(false);
+			}
+		});
+	};
+	const send = (value: CameraPanelAction, saved = false) => {
+		const panel = state.panel;
+		if (panel)
+			run(
+				{
+					kind: "action",
+					id: panel.arrangement.id,
+					expectedRevision: panel.arrangement.revision,
+					action: value
+				},
+				saved
+			);
+	};
+	const base = () => ({
+		arrangementId: state.panel!.arrangement.id,
+		expectedRevision: state.panel!.arrangement.revision,
+		operationId: CameraOperationId.make(crypto.randomUUID())
+	});
+	const command = (value: CameraArrangementCommand) => send({ kind: "command", command: value });
+	const native = (
+		operation: Extract<CameraWorkspaceRequest, { kind: "native" }>["operation"]
+	) => {
+		if (state.panel)
+			run({ kind: "native", id: state.panel.arrangement.id, operation, scope: scope() });
+	};
+	const tune = (key: (typeof fields)[number]["key"], value: number | undefined) => {
+		const c = camera();
+		if (!c || !state.panel) return;
+		if (wholeSet()) {
+			if (value !== undefined)
+				command({ ...base(), kind: "tune", settings: { [key]: value } });
+		} else {
+			const overrides = { ...c.overrides };
+			if (value === undefined) delete overrides[key];
+			else overrides[key] = value;
+			command({ ...base(), kind: "override", cameraId: c.id, overrides });
+		}
+	};
+	createEffect(
+		on(
+			() => props.focusRequest,
+			(request) => {
+				if (!request) return;
+				const subject = state.panel?.arrangement.subject;
+				const actorPath =
+					subject?.kind === "actor_path"
+						? subject.actorPath
+						: subject?.lastKnownActorPath;
+				if (state.panel && actorPath !== request.actor.path) run({ kind: "close" });
+				setLibrary(true);
+				setName(request.actor.displayName);
+			}
+		)
+	);
+	onMount(() => {
+		run({ kind: "list" });
+		polling.subscribe(
+			Stream.fromEffect(
+				Effect.suspend(() => {
+					const invoke = props.client.cameraWorkspace;
+					const current = generation;
+					return !invoke || busy()
+						? Effect.void
+						: invoke({ kind: "state" }).pipe(
+								Effect.tap((result) =>
+									Effect.sync(() => {
+										if (current === generation && !busy())
+											receive({
+												...result,
+												error: state.error ?? result.error
+											});
+									})
+								)
+							);
+				})
+			).pipe(Stream.repeat(Schedule.spaced("750 millis"))),
+			{
+				onValue: () => undefined,
+				onFailure: (cause) => setState(reconcile({ ...state, error: Cause.pretty(cause) }))
+			}
+		);
+		frames.subscribe(props.client.liveFrames, {
+			onFailure: (cause) => setState(reconcile({ ...state, error: Cause.pretty(cause) })),
+			onValue: (frame) => {
+				const element = canvas();
+				if (!element || !state.panel || frame.cameraIndex !== 0) return;
+				const context = element.getContext("2d");
+				if (!context) return;
+				element.width = frame.width;
+				element.height = frame.height;
+				const rgba = new Uint8ClampedArray(frame.pixels.length);
+				for (let i = 0; i < rgba.length; i += 4) {
+					rgba[i] = frame.pixels[i + 2]!;
+					rgba[i + 1] = frame.pixels[i + 1]!;
+					rgba[i + 2] = frame.pixels[i]!;
+					rgba[i + 3] = 255;
+				}
+				context.putImageData(new ImageData(rgba, frame.width, frame.height), 0, 0);
+				setHasFrame(true);
+			}
+		});
+	});
+	return (
+		<section aria-label="Camera workspace" {...stylex.props(styles.workspace)}>
+			<header {...stylex.props(styles.row)}>
+				<div {...stylex.props(styles.heading)}>
+					<strong>{state.panel?.arrangement.displayName ?? "Camera sets"}</strong>
+					<small>
+						{busy()
+							? "Updating…"
+							: state.panel
+								? state.panel.cameras.every((camera) => camera.approved)
+									? "Views saved"
+									: "Draft saved"
+								: ""}
+					</small>
+				</div>
+				<button
+					{...stylex.props(styles.button)}
+					onClick={() => setLibrary(!library())}
+					aria-pressed={library()}
+				>
+					Load views
+				</button>
+				<button {...stylex.props(styles.button)} onClick={() => setCreating(!creating())}>
+					New set
+				</button>
+				<Show when={state.panel}>
+					<button
+						{...stylex.props(styles.primary)}
+						disabled={busy() || needsFixedExposure()}
+						onClick={() =>
+							send(
+								{
+									kind: "approve",
+									cameraIds: state.panel!.cameras.map((c) => c.id),
+									removeRetiredViewIds: state.panel!.retiredViews.map((v) => v.id)
+								},
+								true
+							)
+						}
+					>
+						Save views
+					</button>
+					<Show when={props.onCapture}>
+						<button
+							{...stylex.props(styles.button)}
+							disabled={
+								busy() || !state.panel?.cameras.every((camera) => camera.approved)
+							}
+							onClick={props.onCapture}
+						>
+							Capture…
+						</button>
+					</Show>
+					<button
+						{...stylex.props(styles.button)}
+						disabled={busy()}
+						onClick={() => run({ kind: "close" })}
+					>
+						Close
+					</button>
+				</Show>
+			</header>
+			<Show when={needsFixedExposure()}>
+				<div role="alert">Pure + Authored requires fixed exposure with SceneCapture.</div>
+			</Show>
+			<Show when={state.error}>
+				<div role="alert">
+					{state.error}
+					<button {...stylex.props(styles.button)} onClick={props.onChooseReviewSet}>
+						Review Sets
+					</button>
+				</div>
+			</Show>
+			<Show when={creating()}>
+				<form
+					{...stylex.props(styles.row)}
+					onSubmit={(event) => {
+						event.preventDefault();
+						run({
+							kind: "open",
+							...(name().trim() ? { name: name().trim() } : undefined),
+							...(props.focusRequest
+								? { actorPath: props.focusRequest.actor.path }
+								: undefined)
+						});
+					}}
+				>
+					<input
+						aria-label="Set name"
+						placeholder="Set name"
+						value={name()}
+						onInput={(event) => setName(event.currentTarget.value)}
+						{...stylex.props(styles.input)}
+					/>
+					<button disabled={busy()} {...stylex.props(styles.primary)}>
+						Create from {props.focusRequest?.actor.displayName ?? "Unreal selection"}
+					</button>
+				</form>
+			</Show>
+			<Show when={library()}>
+				<div {...stylex.props(styles.rail)}>
+					<For each={state.sets} fallback={<span>No saved camera sets</span>}>
+						{(set) => (
+							<button
+								{...stylex.props(styles.card)}
+								disabled={busy()}
+								onClick={() => run({ kind: "open", id: set.id })}
+							>
+								<strong>{set.name}</strong>
+								<span>{set.cameras} cameras</span>
+								<small>{set.actorPath.split(".").at(-1)}</small>
+							</button>
+						)}
+					</For>
+				</div>
+			</Show>
+			<Show when={state.panel}>
+				<div {...stylex.props(styles.rail)}>
+					<For each={state.panel?.arrangement.cameras}>
+						{(c) => (
+							<button
+								{...stylex.props(
+									styles.card,
+									c.id === state.panel?.activeCameraId && styles.selected
+								)}
+								disabled={busy()}
+								aria-pressed={c.id === state.panel?.activeCameraId}
+								onClick={() => {
+									setHasFrame(false);
+									send({ kind: "activate", cameraId: c.id });
+								}}
+							>
+								<strong>{c.displayName}</strong>
+								<small>
+									{c.manualPose ? "Manual" : "Fitted"} ·{" "}
+									{state.panel?.cameras.find((item) => item.id === c.id)?.approved
+										? "Saved"
+										: "Draft"}
+								</small>
+							</button>
+						)}
+					</For>
+				</div>
+				<div {...stylex.props(styles.editor)}>
+					<div {...stylex.props(styles.preview)}>
+						<canvas
+							ref={setCanvas}
+							aria-label="Active camera preview"
+							{...stylex.props(styles.canvas)}
+						/>
+						<span>{hasFrame() ? "Live" : "Connecting preview…"}</span>
+						<div {...stylex.props(styles.row)}>
+							<button
+								{...stylex.props(styles.primary)}
+								disabled={busy()}
+								onClick={() => native("pilot")}
+							>
+								Edit in Unreal ↗
+							</button>
+							<button
+								{...stylex.props(styles.button)}
+								disabled={busy()}
+								onClick={() => native("eject")}
+							>
+								Stop piloting
+							</button>
+						</div>
+					</div>
+					<div {...stylex.props(styles.inspector)}>
+						<div {...stylex.props(styles.row)}>
+							<button
+								{...stylex.props(styles.button, wholeSet() && styles.selected)}
+								aria-pressed={wholeSet()}
+								onClick={() => setWholeSet(true)}
+							>
+								Whole set
+							</button>
+							<button
+								{...stylex.props(styles.button, !wholeSet() && styles.selected)}
+								aria-pressed={!wholeSet()}
+								disabled={tab() === "Layout" || tab() === "Capture"}
+								onClick={() => setWholeSet(false)}
+							>
+								This camera
+							</button>
+						</div>
+						<nav {...stylex.props(styles.row)}>
+							<For each={["Framing", "Layout", "Visibility", "Capture"] as const}>
+								{(item) => (
+									<button
+										{...stylex.props(
+											styles.tab,
+											tab() === item && styles.selected
+										)}
+										aria-pressed={tab() === item}
+										onClick={() => {
+											setTab(item);
+											if (item === "Layout" || item === "Capture")
+												setWholeSet(true);
+										}}
+									>
+										{item}
+									</button>
+								)}
+							</For>
+						</nav>
+						<Show when={tab() === "Framing"}>
+							<Show when={!wholeSet()}>
+								<label {...stylex.props(styles.field)}>
+									Name
+									<input
+										aria-label="Camera name"
+										{...stylex.props(styles.input)}
+										value={camera()?.displayName ?? ""}
+										disabled={busy()}
+										onChange={(event) => {
+											const displayName = event.currentTarget.value.trim();
+											if (displayName)
+												command({
+													...base(),
+													kind: "rename",
+													cameraId: state.panel!.activeCameraId,
+													displayName
+												});
+										}}
+									/>
+								</label>
+							</Show>
+							<For each={fields}>
+								{(field) => (
+									<label {...stylex.props(styles.field)}>
+										<span>{field.label}</span>
+										<input
+											{...stylex.props(styles.input)}
+											type="number"
+											aria-label={field.label}
+											min={field.min}
+											max={field.max}
+											step={field.step}
+											disabled={
+												busy() ||
+												(!wholeSet() &&
+													!!camera()?.manualPose &&
+													field.key !== "fieldOfViewDegrees")
+											}
+											value={
+												(wholeSet()
+													? state.panel?.arrangement.settings[field.key]
+													: effective()?.[field.key]) ?? 0
+											}
+											onChange={(event) => {
+												if (event.currentTarget.validity.valid)
+													tune(
+														field.key,
+														event.currentTarget.valueAsNumber
+													);
+											}}
+										/>
+										<small>{field.unit}</small>
+										<Show
+											when={
+												!wholeSet() &&
+												camera()?.overrides[field.key] !== undefined
+											}
+										>
+											<button
+												aria-label={`Reset ${field.label}`}
+												{...stylex.props(styles.tab)}
+												onClick={() => tune(field.key, undefined)}
+											>
+												↺
+											</button>
+										</Show>
+									</label>
+								)}
+							</For>
+							<Show when={!wholeSet()}>
+								<details>
+									<summary>Camera actions</summary>
+									<div {...stylex.props(styles.row)}>
+										<button
+											{...stylex.props(styles.button)}
+											disabled={busy()}
+											onClick={() =>
+												command({
+													...base(),
+													kind: "duplicate",
+													cameraId: state.panel!.activeCameraId,
+													newCameraId: ArrangementCameraId.make(
+														crypto.randomUUID()
+													),
+													newViewId: ReviewViewId.make(
+														crypto.randomUUID()
+													)
+												})
+											}
+										>
+											Duplicate
+										</button>
+										<button
+											{...stylex.props(styles.button)}
+											disabled={busy() || state.panel!.cameras.length === 1}
+											onClick={() =>
+												send({
+													kind: "remove",
+													cameraIds: [state.panel!.activeCameraId]
+												})
+											}
+										>
+											Remove
+										</button>
+									</div>
+								</details>
+							</Show>
+							<Show when={!wholeSet() && camera()?.manualPose}>
+								<button
+									{...stylex.props(styles.button)}
+									disabled={busy()}
+									onClick={() =>
+										command({
+											...base(),
+											kind: "unpin",
+											cameraId: state.panel!.activeCameraId
+										})
+									}
+								>
+									Reset to fitted
+								</button>
+							</Show>
+						</Show>
+						<Show when={tab() === "Layout"}>
+							<div {...stylex.props(styles.row)}>
+								<For each={presets}>
+									{(preset) => (
+										<button
+											{...stylex.props(styles.button)}
+											onClick={() => setLayout(preset.layout)}
+										>
+											{preset.name}
+										</button>
+									)}
+								</For>
+							</div>
+							<label {...stylex.props(styles.field)}>
+								Cameras
+								<input
+									{...stylex.props(styles.input)}
+									type="number"
+									min="1"
+									max="256"
+									value={layout().count}
+									onChange={(e) => {
+										if (e.currentTarget.validity.valid)
+											setLayout({
+												...layout(),
+												count: e.currentTarget.valueAsNumber
+											});
+									}}
+								/>
+							</label>
+							<label {...stylex.props(styles.field)}>
+								Start °
+								<input
+									{...stylex.props(styles.input)}
+									type="number"
+									value={layout().startDegrees}
+									onChange={(e) =>
+										setLayout({
+											...layout(),
+											startDegrees: e.currentTarget.valueAsNumber
+										})
+									}
+								/>
+							</label>
+							<button
+								{...stylex.props(styles.primary)}
+								disabled={busy()}
+								onClick={() =>
+									send({
+										kind: "layout",
+										layout: layout(),
+										retainExisting: false
+									})
+								}
+							>
+								Preview layout
+							</button>
+						</Show>
+						<Show when={tab() === "Visibility"}>
+							<div {...stylex.props(styles.row)}>
+								<button
+									{...stylex.props(styles.button)}
+									disabled={busy()}
+									onClick={() => native("hide_selection")}
+								>
+									Hide Unreal selection
+								</button>
+								<button
+									{...stylex.props(styles.button)}
+									disabled={busy()}
+									onClick={() => native("protect_selection")}
+								>
+									Protect Unreal selection
+								</button>
+							</div>
+							<For each={["hide", "protect"] as const}>
+								{(list) => (
+									<div>
+										<strong>{list === "hide" ? "Hidden" : "Protected"}</strong>
+										<For
+											each={
+												(wholeSet()
+													? state.panel?.arrangement.visibility
+													: state.panel?.cameras.find(
+															(item) =>
+																item.id ===
+																state.panel?.activeCameraId
+														)?.visibility)?.[list] ?? []
+											}
+										>
+											{(entry) => (
+												<div {...stylex.props(styles.row)}>
+													<span>{entry.label}</span>
+													<Show
+														when={
+															wholeSet() ||
+															camera()?.visibility?.[list].some(
+																(local) =>
+																	cameraActorIdentity(
+																		local.locator
+																	) ===
+																	cameraActorIdentity(
+																		entry.locator
+																	)
+															)
+														}
+														fallback={<small>Inherited</small>}
+													>
+														<button
+															{...stylex.props(styles.tab)}
+															aria-label={`Remove ${entry.label}`}
+															disabled={busy()}
+															onClick={() =>
+																command({
+																	...base(),
+																	kind: "edit_visibility",
+																	scope: scope(),
+																	list,
+																	operation: "remove",
+																	entries: [entry]
+																})
+															}
+														>
+															×
+														</button>
+													</Show>
+												</div>
+											)}
+										</For>
+									</div>
+								)}
+							</For>
+						</Show>
+						<Show when={tab() === "Capture"}>
+							<label {...stylex.props(styles.field)}>
+								Exposure
+								<select
+									aria-label="Exposure"
+									{...stylex.props(styles.input)}
+									disabled={busy()}
+									value={state.panel?.renderPolicy.exposure.mode}
+									onChange={(event) => {
+										const panel = state.panel;
+										if (panel)
+											command({
+												...base(),
+												kind: "render_policy",
+												policy: {
+													...panel.renderPolicy,
+													exposure:
+														event.currentTarget.value === "fixed_ev100"
+															? {
+																	mode: "fixed_ev100",
+																	ev100: 10,
+																	compensation: "project"
+																}
+															: { mode: "project_auto" }
+												}
+											});
+									}}
+								>
+									<option value="project_auto">Auto</option>
+									<option value="fixed_ev100">Fixed EV100</option>
+								</select>
+							</label>
+							<Show when={state.panel?.renderPolicy.exposure.mode === "fixed_ev100"}>
+								<label {...stylex.props(styles.field)}>
+									EV100
+									<input
+										aria-label="EV100"
+										{...stylex.props(styles.input)}
+										type="number"
+										min="-20"
+										max="30"
+										step="0.1"
+										disabled={busy()}
+										value={
+											state.panel?.renderPolicy.exposure.mode ===
+											"fixed_ev100"
+												? state.panel.renderPolicy.exposure.ev100
+												: 10
+										}
+										onChange={(event) => {
+											const panel = state.panel;
+											if (panel && event.currentTarget.validity.valid)
+												command({
+													...base(),
+													kind: "render_policy",
+													policy: {
+														...panel.renderPolicy,
+														exposure: {
+															mode: "fixed_ev100",
+															ev100: event.currentTarget
+																.valueAsNumber,
+															compensation: "project"
+														}
+													}
+												});
+										}}
+									/>
+								</label>
+							</Show>
+							<label {...stylex.props(styles.field)}>
+								Output
+								<select
+									{...stylex.props(styles.input)}
+									value={state.panel?.arrangement.output ?? "natural_only"}
+									disabled={busy()}
+									onChange={(event) => {
+										const output = event.currentTarget.value;
+										if (
+											output === "natural_only" ||
+											output === "authored_only" ||
+											output === "natural_and_authored"
+										)
+											command({ ...base(), kind: "output", output });
+									}}
+								>
+									<option value="natural_only">Pure</option>
+									<option value="authored_only">Authored</option>
+									<option value="natural_and_authored">Pure + Authored</option>
+								</select>
+							</label>
+						</Show>
+						<Show when={state.panel?.proposal}>
+							<div role="dialog" aria-label="Replace camera layout">
+								<strong>
+									{state.panel?.proposal?.added.length} added ·{" "}
+									{state.panel?.proposal?.removed.length} removed
+								</strong>
+								<p>
+									{state.panel?.proposal?.customized.length} customized cameras
+									affected
+								</p>
+								<button
+									{...stylex.props(styles.primary)}
+									disabled={busy()}
+									onClick={() => send({ kind: "accept_proposal" })}
+								>
+									Apply layout
+								</button>
+								<button
+									{...stylex.props(styles.button)}
+									onClick={() => send({ kind: "cancel_proposal" })}
+								>
+									Cancel
+								</button>
+							</div>
+						</Show>
+						<Show when={state.panel?.notice}>
+							<small role="status">{state.panel?.notice}</small>
+						</Show>
+					</div>
+				</div>
+			</Show>
+		</section>
+	);
+}
+const styles = stylex.create({
+	workspace: {
+		display: "flex",
+		flexDirection: "column",
+		gap: 16,
+		padding: 20,
+		backgroundColor: tokens.colorSurface,
+		borderRadius: tokens.radiusPanel,
+		marginBottom: 24
+	},
+	row: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" },
+	heading: {
+		display: "flex",
+		flexDirection: "column",
+		gap: 4,
+		marginRight: "auto",
+		fontSize: 16
+	},
+	button: {
+		backgroundColor: tokens.colorSurfaceRaised,
+		color: tokens.colorText,
+		borderWidth: 1,
+		borderStyle: "solid",
+		borderColor: tokens.colorBorderInteractive,
+		borderRadius: 6,
+		padding: "8px 12px",
+		cursor: "pointer",
+		opacity: { default: 1, ":disabled": 0.5 }
+	},
+	primary: {
+		backgroundColor: tokens.colorAccent,
+		color: tokens.colorAccentText,
+		borderWidth: 1,
+		borderStyle: "solid",
+		borderColor: "transparent",
+		borderRadius: 6,
+		padding: "8px 12px",
+		cursor: "pointer",
+		opacity: { default: 1, ":disabled": 0.5 }
+	},
+	tab: {
+		backgroundColor: "transparent",
+		color: tokens.colorTextMuted,
+		borderWidth: 1,
+		borderStyle: "solid",
+		borderColor: "transparent",
+		borderRadius: 4,
+		padding: "6px 8px",
+		cursor: "pointer"
+	},
+	selected: {
+		borderColor: tokens.colorAccent,
+		color: tokens.colorAccent,
+		backgroundColor: tokens.colorAccentWash
+	},
+	rail: { display: "flex", gap: 8, overflowX: "auto", paddingBottom: 8 },
+	card: {
+		display: "flex",
+		flexDirection: "column",
+		gap: 8,
+		minWidth: 140,
+		textAlign: "left",
+		padding: 14,
+		backgroundColor: tokens.colorSurfaceRaised,
+		borderWidth: 1,
+		borderStyle: "solid",
+		borderColor: tokens.colorBorder,
+		borderRadius: 8,
+		color: tokens.colorText,
+		cursor: "pointer"
+	},
+	editor: {
+		display: "grid",
+		gridTemplateColumns: {
+			default: "minmax(0, 1fr) 350px",
+			"@media (max-width: 1050px)": "1fr"
+		},
+		gap: 20
+	},
+	preview: { display: "flex", flexDirection: "column", gap: 12, minWidth: 0 },
+	canvas: {
+		width: "100%",
+		aspectRatio: "16 / 9",
+		backgroundColor: "#000",
+		objectFit: "contain",
+		borderRadius: 8
+	},
+	inspector: { display: "flex", flexDirection: "column", gap: 16 },
+	field: { display: "flex", alignItems: "center", gap: 8, justifyContent: "space-between" },
+	input: {
+		minWidth: 0,
+		width: 120,
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorText,
+		borderWidth: 1,
+		borderStyle: "solid",
+		borderColor: tokens.colorBorderInteractive,
+		borderRadius: 4,
+		padding: 8
+	}
+});

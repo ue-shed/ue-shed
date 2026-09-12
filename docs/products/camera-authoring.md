@@ -4,13 +4,15 @@ Camera-flow steps 1–5 provide scoped arrangements, native editing, culling, sy
 a capture-only Review Set. The public owner is `@ue-shed/cameras`. The CLI and optional Unreal menu
 use the same ports; Workbench is not required.
 
-See the [visual implementation walkthrough](../engineering/camera-flow-implementation.html)
-for full Unreal-window screenshots, recordings, downloadable framing recipes, rendered comparisons,
-and save/load examples through step 5. The new arrangement flow is not yet integrated into Electroswag.
+Workbench's Map Review uses the same public camera ports. Open a Review Set, choose **New set**
+from an actor or Unreal selection, or **Load views** to reopen an arrangement. The camera strip,
+preview, and Framing/Layout/Visibility/Capture inspector expose set defaults and camera exceptions.
+**Edit in Unreal** pilots the camera and opens the optional menu. **Save views** publishes the set
+into the existing Review Set and capture workflow. Drafts persist under the project `.ue-shed/camera-sets`.
+This uses the existing camera coordinator; the proposed standalone sync primitive is not required.
+The Workbench authoring workspace currently requires the optional authoring bridge capability.
 
-The native walkthrough exposed an unresolved numeric-input bug: committing a shared FOV with Enter
-can initially update the durable draft, then revert when focus moves. Tab commits persisted in the
-recorded journey. Check the synchronized value after moving focus before approving Views.
+The native FOV Enter/focus regression from the baseline walkthrough has been fixed.
 
 ## Plugin boundary
 
@@ -51,7 +53,7 @@ and separate arrangements on the same actor remain independent.
   changing their input is an error. The store retains 256 operation outcomes.
 
 Authoring supports 1–256 perspective cameras and the existing 16:9 approved-pose contract.
-The fit calculation accounts for both horizontal and vertical FOV. Additional projection/aspect contracts and Workbench arrangement controls are later work.
+The fit calculation accounts for both horizontal and vertical FOV. Additional projection/aspect contracts are later work.
 
 `migrateLegacyCameraArrangement` explicitly imports an existing authoring session. Callers supply a
 camera/View identity for every retained candidate. Imported poses are pinned so migration preserves

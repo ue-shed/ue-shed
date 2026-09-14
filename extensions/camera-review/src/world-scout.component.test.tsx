@@ -19,7 +19,7 @@ import {
 	type WorldScoutResult
 } from "@ue-shed/observatory/browser";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
-import { Effect, Layer, ManagedRuntime, Stream } from "effect";
+import { Effect, Layer, ManagedRuntime, Queue, Stream } from "effect";
 import { flush } from "solid-js";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import type { MapReviewClientApi } from "./map-review-client.js";
@@ -174,6 +174,7 @@ describe("WorldScout", () => {
 		fireEvent.pointerDown(canvas, { button: 0, clientX: 200, clientY: 200, pointerId: 1 });
 		fireEvent.pointerUp(canvas, { button: 0, clientX: 200, clientY: 200, pointerId: 1 });
 		paint.flush();
+		flush();
 		expect(await screen.findByRole("heading", { name: "Orbit 07" })).toBeDefined();
 		const outlinerActor = within(screen.getByRole("list", { name: "Live actors" })).getByRole(
 			"button",
@@ -276,12 +277,13 @@ describe("WorldScout", () => {
 		canvas.focus();
 		fireEvent.keyDown(canvas, { key: "ArrowRight" });
 		paint.flush();
+		flush();
 		expect(await screen.findByRole("heading", { name: /Orbit 0[78]/ })).toBeDefined();
 		fireEvent.keyDown(canvas, { key: "Enter" });
 		expect(await screen.findByText("FOCUSED RUNTIME ACTOR")).toBeDefined();
 	});
 
-	it("zooms into an actor selected from the outliner", async () => {
+	it("preserves zoom through actor selection, filtering, and snapshot refresh", async () => {
 		const distant: ObservedActor = {
 			...observed,
 			displayName: "Distant marker",
@@ -297,11 +299,13 @@ describe("WorldScout", () => {
 			worldKind: "editor" as const,
 			worldSeconds: 14
 		};
+		const updates = await Effect.runPromise(Queue.make<WorldObservationState>());
+		await Effect.runPromise(Queue.offer(updates, fallbackObservation(snapshot)));
 		const paint = syncPaintScheduler();
 		const client = {
 			connectWorld: () => Effect.succeed(readyResult(snapshot)),
 			focusActor: (actorId) => Effect.succeed({ actorId, status: "not_supported" as const }),
-			worldObservations: () => Stream.make(fallbackObservation(snapshot))
+			worldObservations: () => Stream.fromQueue(updates)
 		} satisfies Pick<MapReviewClientApi, "connectWorld" | "focusActor" | "worldObservations">;
 
 		render(() => (
@@ -323,7 +327,22 @@ describe("WorldScout", () => {
 		paint.flush();
 		flush();
 
-		expect(Number(zoom.value)).toBeGreaterThan(initialZoom);
+		expect(Number(zoom.value)).toBe(initialZoom);
+		const selectedZoom = zoom.value;
+		await user.type(screen.getByRole("textbox", { name: "Find live actor" }), "Orbit");
+		paint.flush();
+		flush();
+		expect(zoom.value).toBe(selectedZoom);
+		await user.clear(screen.getByRole("textbox", { name: "Find live actor" }));
+		paint.flush();
+		flush();
+		expect(zoom.value).toBe(selectedZoom);
+		await Effect.runPromise(
+			Queue.offer(updates, fallbackObservation({ ...snapshot, sequence: 7 }))
+		);
+		paint.flush();
+		flush();
+		expect(zoom.value).toBe(selectedZoom);
 		expect(await screen.findByRole("heading", { name: "Orbit 07" })).toBeDefined();
 	});
 
@@ -362,6 +381,7 @@ describe("WorldScout", () => {
 		canvas.focus();
 		fireEvent.keyDown(canvas, { key: "ArrowRight" });
 		paint.flush();
+		flush();
 		expect(await screen.findByRole("heading", { name: "Orbit 07" })).toBeDefined();
 		fireEvent.keyDown(canvas, { key: "Enter" });
 		expect(await screen.findByText("FOCUS UNAVAILABLE")).toBeDefined();
@@ -442,6 +462,7 @@ describe("WorldScout", () => {
 		fireEvent.pointerDown(canvas, { button: 0, clientX: 200, clientY: 200, pointerId: 1 });
 		fireEvent.pointerUp(canvas, { button: 0, clientX: 200, clientY: 200, pointerId: 1 });
 		paint.flush();
+		flush();
 		expect(screen.getByText("SELECTED FOR REVIEW")).toBeDefined();
 		expect(screen.getByRole("heading", { name: "Orbit 07" })).toBeDefined();
 		expect(scheduled).toBeLessThan(frames.length);

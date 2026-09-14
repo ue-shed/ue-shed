@@ -22,7 +22,6 @@ import {
 	clampViewportSize,
 	createWorldScoutPaintGate,
 	fitViewportSize,
-	focusViewportOnActor,
 	formatCoordinate,
 	hitTestVisibleActors,
 	nearestVisibleActor,
@@ -104,7 +103,6 @@ export function WorldScout(props: {
 	let paintGate: WorldScoutPaintGate | undefined;
 	let cssWidth = 0;
 	let cssHeight = 0;
-	let viewLocked = false;
 	let representativeBoundsDirty = true;
 	let representativeBounds: ReturnType<typeof representativeContentBounds>;
 	let lastFollowRequestMs = Number.NEGATIVE_INFINITY;
@@ -207,11 +205,7 @@ export function WorldScout(props: {
 		const height = viewport.size / aspect;
 		return `${Math.round(viewport.size).toLocaleString()} × ${Math.round(height).toLocaleString()} UU`;
 	});
-	const fitSize = createMemo(() => {
-		presentationRevision();
-		const aspect = cssWidth > 0 && cssHeight > 0 ? cssWidth / cssHeight : 2;
-		return fitViewportSize(contentBounds(store, store.visibleIndices), aspect);
-	});
+	const [fitSize, setFitSize] = createSignal(1);
 	const zoomLimits = createMemo(() => viewportSizeLimits(fitSize()));
 	const zoomFactor = createMemo(() => {
 		presentationRevision();
@@ -266,17 +260,9 @@ export function WorldScout(props: {
 			representativeBoundsDirty = false;
 		}
 		const aspect = cssWidth > 0 && cssHeight > 0 ? cssWidth / cssHeight : 2;
-		const fit = fitViewportSize(bounds, aspect);
-		if (!viewLocked) {
-			store.viewport = stabilizeViewport(
-				store.viewport,
-				representativeBounds ?? bounds,
-				aspect
-			);
-		} else if (store.viewport === undefined) {
-			store.viewport = stabilizeViewport(undefined, bounds, aspect);
-		} else if (store.viewport.size > fit) {
-			store.viewport = resizeViewportToSize(store.viewport, fit);
+		if (store.viewport === undefined && store.count > 0) {
+			store.viewport = stabilizeViewport(undefined, representativeBounds ?? bounds, aspect);
+			setFitSize(fitViewportSize(bounds, aspect));
 		}
 		if (cssWidth > 0 && cssHeight > 0 && store.viewport !== undefined) {
 			projectVisibleActors(store, store.viewport, cssWidth, cssHeight, store.visibleIndices);
@@ -326,6 +312,9 @@ export function WorldScout(props: {
 	let lastPaintActorsChanged = 0;
 	let lastPaintSequence = "0";
 	const acceptObservation = (current: MapReviewWorldObservation) => {
+		const previousViewport = store.viewport;
+		const previousMap = store.mapPath;
+		const previousKind = store.worldKind;
 		setLatest(current);
 		if (current.status === "live" || current.status === "stale") {
 			const identity = `${current.sample.catalog.sessionId}:${current.sample.catalog.revision}`;
@@ -333,7 +322,6 @@ export function WorldScout(props: {
 			if (identity !== lastCatalogIdentity) {
 				store.installCatalog(current.sample);
 				lastCatalogIdentity = identity;
-				viewLocked = false;
 				representativeBoundsDirty = true;
 				lastPaintActorsChanged = store.count;
 				setCatalogRevision((value) => value + 1);
@@ -366,6 +354,9 @@ export function WorldScout(props: {
 			lastPaintSequence = current.sample.lastSequence.toString();
 			setCatalogRevision((value) => value + 1);
 			setHasWorld(true);
+		}
+		if (store.mapPath === previousMap && store.worldKind === previousKind) {
+			store.viewport = previousViewport;
 		}
 		syncSelectionFromKey();
 		setSelectionRevision((value) => value + 1);
@@ -471,33 +462,7 @@ export function WorldScout(props: {
 		setLiveRegion(
 			`${meta.displayName}, ${meta.className}, X ${formatCoordinate(store.locationX[streamIndex] ?? 0)}, Y ${formatCoordinate(store.locationY[streamIndex] ?? 0)}, Z ${formatCoordinate(store.locationZ[streamIndex] ?? 0)}`
 		);
-		focusActorOnMap(meta.instanceKey);
 		props.onActorSelected?.(selected());
-	};
-	const focusActorOnMap = (key: string) => {
-		const index = store.findByInstanceKey(key);
-		if (index === undefined) return;
-		prepareVisibleProjection();
-		const aspect = cssWidth > 0 && cssHeight > 0 ? cssWidth / cssHeight : 2;
-		const fit = fitViewportSize(contentBounds(store, store.visibleIndices), aspect);
-		const usefulFit = fitViewportSize(
-			representativeBounds ?? contentBounds(store, store.visibleIndices),
-			aspect
-		);
-		const actorExtent = Math.max(
-			store.boundExtentX[index] ?? 0,
-			store.boundExtentY[index] ?? 0
-		);
-		store.viewport = focusViewportOnActor({
-			actorExtent,
-			centerX: store.locationX[index] ?? 0,
-			centerY: store.locationY[index] ?? 0,
-			currentSize: store.viewport?.size,
-			fullFitSize: fit,
-			usefulFitSize: usefulFit
-		});
-		viewLocked = true;
-		requestPaint();
 	};
 	const pickNearestActor = (cssX: number, cssY: number) => {
 		prepareVisibleProjection();
@@ -527,9 +492,7 @@ export function WorldScout(props: {
 		const rect = event.currentTarget.getBoundingClientRect();
 		cssWidth = Math.max(1, rect.width);
 		cssHeight = Math.max(1, rect.height);
-		const aspect = cssWidth / cssHeight;
-		const fit = fitViewportSize(contentBounds(store, store.visibleIndices), aspect);
-		const { min, max } = viewportSizeLimits(fit);
+		const { min, max } = viewportSizeLimits(fitSize());
 		const factor = event.deltaY < 0 ? 1.15 : 1 / 1.15;
 		store.viewport = zoomViewportAt(
 			viewport,
@@ -541,7 +504,6 @@ export function WorldScout(props: {
 			min,
 			max
 		);
-		viewLocked = store.viewport.size < max - 1e-6;
 		requestPaint();
 	};
 	const onCanvasPointerDown = (event: PointerEvent & { currentTarget: HTMLCanvasElement }) => {
@@ -568,7 +530,6 @@ export function WorldScout(props: {
 		pointerDrag.startX = event.clientX;
 		pointerDrag.startY = event.clientY;
 		store.viewport = panViewportBy(viewport, cssWidth, cssHeight, dx, dy);
-		viewLocked = true;
 		requestPaint();
 	};
 	const onCanvasPointerUp = (event: PointerEvent & { currentTarget: HTMLCanvasElement }) => {
@@ -581,7 +542,6 @@ export function WorldScout(props: {
 		pickNearestActor(event.clientX - rect.left, event.clientY - rect.top);
 	};
 	const resetView = () => {
-		viewLocked = false;
 		representativeBoundsDirty = true;
 		store.viewport = undefined;
 		requestPaint();
@@ -604,7 +564,6 @@ export function WorldScout(props: {
 		const fit = fitSize();
 		const nextSize = clampViewportSize(fit / parsed, fit);
 		store.viewport = resizeViewportToSize(viewport, nextSize);
-		viewLocked = nextSize < fit - 1e-6;
 		requestPaint();
 	};
 	const onCanvasKeyDown = (event: KeyboardEvent) => {
@@ -766,7 +725,6 @@ export function WorldScout(props: {
 							setActorFilters((current) => ({ ...current, classPaths }))
 						}
 						onFiltersChange={setActorFilters}
-						onFocus={focusActorOnMap}
 						onSelect={(key) => {
 							if (key === undefined) {
 								clearSelection();

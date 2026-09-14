@@ -1,3 +1,5 @@
+import "../../../test-support/actor-explorer-layout.js";
+import { ActorId } from "@ue-shed/observatory/browser";
 // @vitest-environment jsdom
 
 import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
@@ -15,7 +17,7 @@ import {
 	ReviewViewRevisionId
 } from "@ue-shed/cameras";
 import { Effect, Layer, ManagedRuntime, Stream } from "effect";
-import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import type {
 	MapReviewCaptureResult,
 	MapReviewAuthoringResult,
@@ -157,6 +159,67 @@ function renderRoute(client: MapReviewClientApi) {
 }
 
 describe("MapReviewRoute", () => {
+	it("keeps first-run actor selection local without regenerating cameras or reconnecting", async () => {
+		const context = vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
+		const generate = vi.fn(() => Effect.die("Selection must not generate cameras"));
+		const observe = vi.fn(() =>
+			Stream.make({
+				status: "polling_fallback" as const,
+				cadenceHz: 5,
+				message: "Connected",
+				snapshot: {
+					actors: [
+						{
+							id: ActorId.make("/Game/Fixture.Map:PersistentLevel.Subject"),
+							path: "/Game/Fixture.Map:PersistentLevel.Subject",
+							displayName: "Test subject",
+							bounds: {
+								center: { x: 10, y: 20, z: 0 },
+								extent: { x: 5, y: 5, z: 5 }
+							},
+							className: "StaticMeshActor",
+							location: { x: 10, y: 20, z: 0 },
+							rotation: { x: 0, y: 0, z: 0 }
+						}
+					],
+					capturedAt: new Date().toISOString(),
+					mapPath: "/Game/Fixture",
+					worldSeconds: 0,
+					sequence: 1,
+					worldKind: "editor" as const
+				}
+			})
+		);
+		const workspace = vi.fn(() => Effect.succeed({ panel: null, sets: [], error: null }));
+		try {
+			renderRoute({
+				...offlineScout,
+				...unavailableDurableAuthoring,
+				worldObservations: observe,
+				cameraWorkspace: workspace,
+				authorFromSelection: generate,
+				approveCandidate: () => Effect.die("not used"),
+				capture: () => Effect.die("not used"),
+				previewCandidate: () => Effect.die("not used"),
+				load: () => Effect.succeed({ status: "setup_required" })
+			});
+			await screen.findByRole("button", { name: "New set" });
+			const canvas = await screen.findByRole("application", { name: "Top-down actor map" });
+			await userEvent.setup().click(screen.getByRole("button", { name: /Test subject/ }));
+			await userEvent.setup().click(screen.getByRole("button", { name: "New set" }));
+			expect(
+				await screen.findByRole("button", { name: "Create from Test subject" })
+			).toBeDefined();
+			expect(generate).not.toHaveBeenCalled();
+			expect(observe).toHaveBeenCalledTimes(1);
+			expect(screen.getByRole("application", { name: "Top-down actor map" })).toBe(canvas);
+			expect(screen.queryByText("CONNECTING")).toBeNull();
+		} finally {
+			cleanup();
+			context.mockRestore();
+		}
+	});
+
 	it("debounces framing edits into one durable regeneration patch", async () => {
 		const parameters = defaultFramingParameters();
 		const selection = {

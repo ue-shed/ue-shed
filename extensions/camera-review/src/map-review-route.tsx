@@ -99,6 +99,10 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 		readonly actor: ObservedActor;
 		readonly nonce: number;
 	}>();
+	const [selectedActorRequest, setSelectedActorRequest] = createSignal<{
+		readonly actor: ObservedActor;
+		readonly nonce: number;
+	}>();
 	const [captureOpen, setCaptureOpen] = createSignal(false);
 	const [setLibraryOpen, setSetLibraryOpen] = createSignal(false);
 	const [worldSource, setWorldSource] = createSignal<"saved" | "live">(
@@ -331,14 +335,17 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 						<Show when={props.client.savedWorldMaps && props.client.openMapInUnreal}>
 							<LiveReviewMapPicker
 								client={props.client}
-								onOpened={() => setFocusRequest(undefined)}
+								onOpened={() => {
+									setFocusRequest(undefined);
+									setSelectedActorRequest(undefined);
+								}}
 							/>
 						</Show>
 						<WorldScout
 							onActorSelected={
 								props.client.cameraWorkspace
 									? (actor) =>
-											setFocusRequest((current) =>
+											setSelectedActorRequest((current) =>
 												actor
 													? { actor, nonce: (current?.nonce ?? 0) + 1 }
 													: undefined
@@ -347,6 +354,10 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 							}
 							client={props.client}
 							onActorFocused={(actor) => {
+								setSelectedActorRequest((current) => ({
+									actor,
+									nonce: (current?.nonce ?? 0) + 1
+								}));
 								setFocusRequest((current) => ({
 									actor,
 									nonce: (current?.nonce ?? 0) + 1
@@ -383,12 +394,25 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 								</div>
 							}
 						>
-							<MapReviewAuthoring
-								client={props.client}
-								focusRequest={focusRequest()}
-								onApproved={load}
-								onChooseReviewSet={() => setSetLibraryOpen(true)}
-							/>
+							<Show
+								when={props.client.cameraWorkspace}
+								fallback={
+									<MapReviewAuthoring
+										client={props.client}
+										focusRequest={focusRequest()}
+										onApproved={load}
+										onChooseReviewSet={() => setSetLibraryOpen(true)}
+									/>
+								}
+							>
+								<CameraWorkspace
+									client={props.client}
+									focusRequest={selectedActorRequest()}
+									onApproved={load}
+									onCapture={() => setCaptureOpen(true)}
+									onChooseReviewSet={() => setSetLibraryOpen(true)}
+								/>
+							</Show>
 						</Show>
 					</div>
 				</Match>
@@ -482,7 +506,7 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 									<CameraWorkspace
 										onCapture={() => setCaptureOpen(true)}
 										client={props.client}
-										focusRequest={focusRequest()}
+										focusRequest={selectedActorRequest()}
 										onApproved={load}
 										onChooseReviewSet={() => setSetLibraryOpen(true)}
 									/>

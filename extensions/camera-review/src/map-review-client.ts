@@ -28,6 +28,7 @@ import type {
 	WorldScoutRefreshRate,
 	WorldScoutResult
 } from "@ue-shed/observatory/browser";
+import { EditorWorldOpenResponse } from "@ue-shed/protocol";
 import type {
 	SavedWorld,
 	SavedWorldChoice,
@@ -76,7 +77,20 @@ export class MapReviewClientError extends Schema.TaggedErrorClass<MapReviewClien
 	}
 ) {}
 
+export const MapReviewMapOpenResult = Schema.Union([
+	EditorWorldOpenResponse,
+	Schema.Struct({
+		outcome: Schema.Literal("failed"),
+		message: Schema.String,
+		recovery: Schema.String
+	})
+]);
+export type MapReviewMapOpenResult = typeof MapReviewMapOpenResult.Type;
+
 export interface MapReviewClientApi {
+	readonly openMapInUnreal?: (
+		mapPath: string
+	) => Effect.Effect<MapReviewMapOpenResult, MapReviewClientError>;
 	readonly cameraWorkspace?: (
 		request: CameraWorkspaceRequest
 	) => Effect.Effect<CameraWorkspaceResult, MapReviewClientError>;

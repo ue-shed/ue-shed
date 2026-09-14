@@ -1,3 +1,4 @@
+import { MapReviewMapOpenResult } from "@ue-shed/extension-camera-review/client";
 import { CameraWorkspaceResult } from "@ue-shed/cameras/review-contracts";
 import {
 	decodeMapReviewApprovalResult,
@@ -485,6 +486,12 @@ export const mapReviewClient: MapReviewClientApi = MapReviewClient.of({
 				operation: "mapReview.replaceVisibilityPolicy"
 			})
 	),
+	openMapInUnreal: (mapPath) =>
+		request({
+			decode: Schema.decodeUnknownEffect(MapReviewMapOpenResult),
+			invoke: () => window.ueShed.mapReview.openMapInUnreal(mapPath),
+			operation: "mapReview.openMapInUnreal"
+		}),
 	cameraWorkspace: (intent) =>
 		request({
 			decode: Schema.decodeUnknownEffect(CameraWorkspaceResult),

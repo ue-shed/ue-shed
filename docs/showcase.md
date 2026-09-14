@@ -234,6 +234,13 @@ The same scan, prepare, and apply lifecycle is available under `pnpm ue-shed cus
 
 ## Demo 6: Map Review
 
+The shared map selector includes **Open in Unreal** in Saved Map and Live Session. Select a map,
+then use that action to switch the connected editor; selecting alone only changes the browsing
+target. Map Capture exposes the same action beside its target selector. The editor must advertise
+UE Shed Core world control. Unsaved world changes and active play sessions block switching, with
+the recovery shown beside the selector. After a successful switch, live actor observation restarts
+against the new world. This does not change the active Review Set or approve camera views.
+
 Map Review does not require fixture content or a pre-authored Review Set. Point Workbench or the CLI
 at the project root. In Workbench, choose **Launch → With UE Shed** to load the required plugins for
 that editor process without editing the project descriptor. The generic fixture follows that same

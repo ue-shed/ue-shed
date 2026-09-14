@@ -372,8 +372,8 @@ describe("MapCaptureRoute", () => {
 		expect(screen.getByRole<HTMLButtonElement>("button", { name: "Capture" }).disabled).toBe(
 			true
 		);
-		expect(screen.getByRole<HTMLButtonElement>("button", { name: "Open map" }).disabled).toBe(
-			true
-		);
+		expect(
+			screen.getByRole<HTMLButtonElement>("button", { name: "Open in Unreal ↗" }).disabled
+		).toBe(true);
 	});
 });

@@ -16,6 +16,15 @@ export const register = Effect.gen(function* () {
 				})
 	);
 
+	yield* ipc.register(invokeContracts["map-review:open-map"], (mapPath) =>
+		mapReview.openMapInUnreal
+			? mapReview.openMapInUnreal(mapPath)
+			: Effect.succeed({
+					outcome: "failed",
+					message: "Map opening is unavailable.",
+					recovery: "Update this host."
+				})
+	);
 	yield* ipc.register(invokeContracts["map-review:load"], () => mapReview.load());
 	yield* ipc.register(invokeContracts["map-review:review-sets"], () =>
 		mapReview.reviewSetLibrary()

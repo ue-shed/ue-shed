@@ -113,6 +113,7 @@ export const workbenchInvokeChannels = {
 		createReviewSet: "map-review:create-review-set",
 		applyVisibilityPolicy: "map-review:apply-visibility-policy",
 		worldSnapshot: "map-review:world-snapshot",
+		openMapInUnreal: "map-review:open-map",
 		savedWorld: "map-review:saved-world",
 		savedWorldMaps: "map-review:saved-world-maps",
 		savedWorldProgress: "map-review:saved-world-progress",

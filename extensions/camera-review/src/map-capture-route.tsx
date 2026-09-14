@@ -125,6 +125,7 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 	const chooseAction = createEffectAction();
 	const saveAction = createEffectAction();
 	const openAction = createEffectAction();
+	const [openingMap, setOpeningMap] = createSignal(false);
 	const captureAction = createEffectAction();
 	const previewAction = createEffectAction();
 	const progressSubscription = createEffectSubscription();
@@ -457,39 +458,45 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 
 	function openMap() {
 		const current = plan();
-		if (current === undefined) return;
+		if (current === undefined || openingMap()) return;
+		setOpeningMap(true);
 		setNotice({ tone: "info", text: `Asking Unreal to open ${current.project.mapPath}…` });
-		openAction.run(props.client.openMap(current), {
-			onFailure: (cause) =>
-				setNotice({
-					text: "Couldn't open the target map.",
-					technical: causeMessage(cause),
-					tone: "error"
-				}),
-			onSuccess: (result) => {
-				if (result.status === "failed") {
-					setNotice({ tone: "error", text: `${result.message} ${result.recovery}` });
-					return;
-				}
-				setNotice(
-					result.response.outcome === "rejected"
-						? {
-								tone: "error",
-								text: `${result.response.message} ${result.response.recovery}`
-							}
-						: {
-								tone: "success",
-								text:
-									result.response.outcome === "opened"
-										? "Target map opened without player input."
-										: "The target map was already open."
-							}
-				);
-				if (result.response.outcome !== "rejected") {
-					setPreviewRefresh((value) => value + 1);
+		openAction.run(
+			props.client
+				.openMap(current)
+				.pipe(Effect.ensuring(Effect.sync(() => setOpeningMap(false)))),
+			{
+				onFailure: (cause) =>
+					setNotice({
+						text: "Couldn't open the target map.",
+						technical: causeMessage(cause),
+						tone: "error"
+					}),
+				onSuccess: (result) => {
+					if (result.status === "failed") {
+						setNotice({ tone: "error", text: `${result.message} ${result.recovery}` });
+						return;
+					}
+					setNotice(
+						result.response.outcome === "rejected"
+							? {
+									tone: "error",
+									text: `${result.response.message} ${result.response.recovery}`
+								}
+							: {
+									tone: "success",
+									text:
+										result.response.outcome === "opened"
+											? "Target map opened without player input."
+											: "The target map was already open."
+								}
+					);
+					if (result.response.outcome !== "rejected") {
+						setPreviewRefresh((value) => value + 1);
+					}
 				}
 			}
-		});
+		);
 	}
 
 	function runCapture(openMapFirst: boolean) {
@@ -626,6 +633,10 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 										/>
 									</div>
 									<SavedMapPicker
+										onOpenInUnreal={openMap}
+										disabled={openingMap()}
+										openingInUnreal={openingMap()}
+										openInUnrealDisabled={plan() === undefined || isCapturing()}
 										allowCustomPath
 										ariaLabel="Map capture target map"
 										customPathPlaceholder="/Game/Maps/L_MyMap"
@@ -1076,15 +1087,6 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 										</For>
 									</section>
 								</Show>
-
-								<button
-									type="button"
-									onClick={openMap}
-									disabled={plan() === undefined || isCapturing()}
-									{...stylex.attrs(styles.openMapButton)}
-								>
-									Open map
-								</button>
 							</>
 						)}
 					</Show>
@@ -1619,18 +1621,6 @@ const styles = stylex.create({
 		lineHeight: 1.5
 	},
 	planActions: { display: "flex", gap: tokens.space2 },
-	openMapButton: {
-		borderColor: tokens.colorBorder,
-		borderStyle: "solid",
-		borderWidth: 1,
-		borderRadius: tokens.radiusControl,
-		backgroundColor: { default: "transparent", ":hover": tokens.colorSurfaceHover },
-		color: tokens.colorText,
-		padding: "7px 12px",
-		fontSize: 13,
-		cursor: { default: "pointer", ":disabled": "not-allowed" },
-		opacity: { default: 1, ":disabled": 0.5 }
-	},
 	retryButton: {
 		borderColor: tokens.colorBorder,
 		borderStyle: "solid",

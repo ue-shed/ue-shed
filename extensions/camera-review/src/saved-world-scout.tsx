@@ -1,10 +1,10 @@
+import { ReviewMapPicker } from "./review-map-picker.js";
 import * as stylex from "@stylexjs/stylex";
 import {
 	ActorExplorer,
 	actorExplorerMatches,
 	createEffectAction,
 	createEffectSubscription,
-	SavedMapPicker,
 	type ActorExplorerFilters
 } from "@ue-shed/ui";
 import {
@@ -34,7 +34,11 @@ const idleSavedWorldProgress = (): SavedWorldProgress => ({
 export function SavedWorldScout(props: {
 	readonly client: Pick<
 		MapReviewClientApi,
-		"readSavedWorld" | "savedWorldMaps" | "savedWorldProgress" | "chooseProjectAndMaps"
+		| "readSavedWorld"
+		| "savedWorldMaps"
+		| "savedWorldProgress"
+		| "chooseProjectAndMaps"
+		| "openMapInUnreal"
 	>;
 }) {
 	const mapsAction = createEffectAction();
@@ -368,8 +372,8 @@ export function SavedWorldScout(props: {
 				{(current) => (
 					<>
 						<div {...stylex.attrs(styles.tools)}>
-							<SavedMapPicker
-								label="Map"
+							<ReviewMapPicker
+								client={props.client}
 								maps={maps()}
 								mapPath={selectedMapPath() ?? ""}
 								onMapPathChange={selectMap}

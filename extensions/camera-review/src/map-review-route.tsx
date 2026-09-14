@@ -1,3 +1,4 @@
+import { LiveReviewMapPicker } from "./review-map-picker.js";
 import { CameraWorkspace } from "./camera-workspace.js";
 import * as stylex from "@stylexjs/stylex";
 import { Button, createEffectAction } from "@ue-shed/ui";
@@ -326,25 +327,33 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 			<Show
 				when={worldSource() === "saved"}
 				fallback={
-					<WorldScout
-						onActorSelected={
-							props.client.cameraWorkspace
-								? (actor) =>
-										setFocusRequest((current) =>
-											actor
-												? { actor, nonce: (current?.nonce ?? 0) + 1 }
-												: undefined
-										)
-								: undefined
-						}
-						client={props.client}
-						onActorFocused={(actor) => {
-							setFocusRequest((current) => ({
-								actor,
-								nonce: (current?.nonce ?? 0) + 1
-							}));
-						}}
-					/>
+					<>
+						<Show when={props.client.savedWorldMaps && props.client.openMapInUnreal}>
+							<LiveReviewMapPicker
+								client={props.client}
+								onOpened={() => setFocusRequest(undefined)}
+							/>
+						</Show>
+						<WorldScout
+							onActorSelected={
+								props.client.cameraWorkspace
+									? (actor) =>
+											setFocusRequest((current) =>
+												actor
+													? { actor, nonce: (current?.nonce ?? 0) + 1 }
+													: undefined
+											)
+									: undefined
+							}
+							client={props.client}
+							onActorFocused={(actor) => {
+								setFocusRequest((current) => ({
+									actor,
+									nonce: (current?.nonce ?? 0) + 1
+								}));
+							}}
+						/>
+					</>
 				}
 			>
 				<SavedWorldScout client={props.client} />

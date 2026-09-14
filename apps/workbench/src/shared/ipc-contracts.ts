@@ -1,3 +1,4 @@
+import { MapReviewMapOpenResult } from "@ue-shed/extension-camera-review/client";
 import { CameraWorkspaceRequest, CameraWorkspaceResult } from "@ue-shed/cameras/review-contracts";
 import {
 	TextureInvestigationQuery,
@@ -1019,6 +1020,11 @@ export const invokeContracts = {
 		channel: "map-review:world-snapshot",
 		args: EmptyArgs,
 		result: WorldScoutResult
+	}),
+	"map-review:open-map": invoke({
+		channel: "map-review:open-map",
+		args: Schema.Tuple([Schema.NonEmptyString]),
+		result: MapReviewMapOpenResult
 	}),
 	"map-review:saved-world": invoke({
 		channel: "map-review:saved-world",

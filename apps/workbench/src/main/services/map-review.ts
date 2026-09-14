@@ -1,3 +1,6 @@
+import { savedMapPathToGameMapPath } from "@ue-shed/cameras/map-tiles";
+import { randomUUID } from "node:crypto";
+import type { MapReviewMapOpenResult } from "@ue-shed/extension-camera-review/client";
 import { makeCameraWorkspace } from "./camera-workspace.js";
 import type {
 	CameraWorkspaceRequest,
@@ -28,7 +31,7 @@ import {
 	type CaptureRunSummary,
 	type ReviewSet
 } from "@ue-shed/cameras";
-import { EditorPlaySession } from "@ue-shed/engine";
+import { EditorWorldControl, EditorWorldControlLive, EditorPlaySession } from "@ue-shed/engine";
 import { recordObservatoryIpcReplacements } from "@ue-shed/observability";
 import type {
 	MapReviewApprovalResult,
@@ -222,6 +225,7 @@ export class SavedWorldUnavailable extends Schema.TaggedErrorClass<SavedWorldUna
 ) {}
 
 export interface WorkbenchMapReviewApi {
+	readonly openMapInUnreal?: (mapPath: string) => Effect.Effect<MapReviewMapOpenResult>;
 	readonly cameraWorkspace?: (
 		request: CameraWorkspaceRequest
 	) => Effect.Effect<CameraWorkspaceResult>;
@@ -370,6 +374,13 @@ export const WorkbenchMapReviewLive = Layer.effect(
 		const editorSession = yield* EditorPlaySession;
 		const cameraFeed = yield* CameraFeed;
 		const remoteControl = yield* RemoteControlClient;
+		const worldControl = yield* EditorWorldControl.pipe(
+			Effect.provide(
+				EditorWorldControlLive.pipe(
+					Layer.provide(Layer.succeed(RemoteControlClient, remoteControl))
+				)
+			)
+		);
 		const window = yield* WorkbenchWindow;
 		const layerScope = yield* Effect.scope;
 		const coordinator = yield* makeUnrealOperationCoordinator;
@@ -2069,6 +2080,48 @@ export const WorkbenchMapReviewLive = Layer.effect(
 		);
 
 		return WorkbenchMapReview.of({
+			openMapInUnreal: Effect.fn("Workbench.MapReview.openMapInUnreal")(function* (
+				mapPath: string
+			) {
+				return yield* runExclusive(
+					Effect.gen(function* () {
+						const savedProject = yield* resolveSavedProject();
+						const targetMapPath = savedMapPathToGameMapPath(mapPath);
+						if (
+							!targetMapPath ||
+							!savedProject.maps.some((map) => map.mapPath === mapPath)
+						) {
+							return {
+								outcome: "failed" as const,
+								message: "The selected map is not available in this project.",
+								recovery: "Refresh the map inventory and select a project map."
+							};
+						}
+						const endpoint = yield* connection.endpoint();
+						yield* cameraWorkspace.close();
+						const response = yield* worldControl.open({
+							endpoint,
+							operationId: randomUUID(),
+							targetMapPath
+						});
+						if (response.outcome !== "rejected") {
+							yield* Ref.set(lastWorldSnapshot, Option.none());
+							yield* Ref.set(lastObservationSample, Option.none());
+							yield* Ref.set(lastPresentedCatalogKey, undefined);
+						}
+						return response;
+					})
+				).pipe(
+					Effect.catch((cause) =>
+						Effect.succeed({
+							outcome: "failed" as const,
+							message: String(cause),
+							recovery:
+								"Check the editor connection and enable UE Shed Core world control."
+						})
+					)
+				);
+			}),
 			cameraWorkspace: (intent) =>
 				Effect.gen(function* () {
 					const selected = yield* resolveReviewProject();

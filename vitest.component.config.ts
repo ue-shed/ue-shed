@@ -21,12 +21,12 @@ export default defineProject({
 	ssr: { noExternal: ["@tanstack/charts", "peculiar-sheets"] },
 	test: {
 		environment: "jsdom",
+		setupFiles: ["./scripts/setup-solid-tests.ts", "./scripts/component-test-setup.ts"],
 		include: [
 			"apps/workbench/**/*.component.test.tsx",
 			"extensions/**/*.component.test.tsx",
 			"packages/ui/**/*.component.test.tsx"
 		],
-		name: "component",
-		setupFiles: ["./scripts/setup-solid-tests.ts"]
+		name: "component"
 	}
 });

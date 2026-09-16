@@ -3,6 +3,11 @@
 The separately enabled editor capability for bounded actor discovery, spatial snapshots, editor focus,
 and demand-driven actor transform streaming.
 
+The plugin depends on UE Shed Core. `FocusActor` reuses Core window activation when
+`BringToFront` is requested and returns its outcome separately from actor selection.
+The `@ue-shed/observatory` client supplies the local OS permission handoff through
+`@ue-shed/engine`; background follow requests leave window activation disabled.
+
 ## Remote Control surface
 
 - `GetActorSnapshot` — bounded JSON snapshot of filtered world actors (compatibility/fallback path).

@@ -44,7 +44,9 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
+		"@ue-shed/engine": "workspace:0.7.1",
 		"@ue-shed/observability": "workspace:0.7.1",
+		"@ue-shed/protocol": "workspace:0.7.1",
 		"@ue-shed/unreal-connection": "workspace:0.7.1",
 		"effect": "catalog:"
 	},

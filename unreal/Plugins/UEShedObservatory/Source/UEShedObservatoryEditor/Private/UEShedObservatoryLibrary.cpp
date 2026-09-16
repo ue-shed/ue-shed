@@ -4,13 +4,13 @@
 #include "Dom/JsonObject.h"
 #include "Editor.h"
 #include "EngineUtils.h"
-#include "Framework/Application/SlateApplication.h"
 #include "GameFramework/Actor.h"
+#include "HAL/PlatformProcess.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
 #include "Subsystems/EditorActorSubsystem.h"
+#include "UEShedEditorWindowLibrary.h"
 #include "UEShedObservatoryStream.h"
-#include "Widgets/SWindow.h"
 
 namespace
 {
@@ -186,12 +186,20 @@ void UUEShedObservatoryLibrary::FocusActor(
 		}
 	}
 	GEditor->MoveViewportCamerasToActor(*Match, false);
-	if (BringToFront && FSlateApplication::IsInitialized())
+	FString ActivationJson;
+	if (BringToFront)
 	{
-		if (const TSharedPtr<SWindow> Window =
-			FSlateApplication::Get().GetActiveTopLevelWindow())
+		UUEShedEditorWindowLibrary::ActivateEditorWindow(
+			FString::Printf(TEXT("{\"expectedProcessId\":%u}"), FPlatformProcess::GetCurrentProcessId()),
+			ActivationJson);
+	}
+
+	if (!ActivationJson.IsEmpty())
+	{
+		TSharedPtr<FJsonObject> Activation;
+		if (FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(ActivationJson), Activation))
 		{
-			Window->BringToFront(true);
+			Root->SetObjectField(TEXT("windowActivation"), Activation);
 		}
 	}
 	Root->SetStringField(TEXT("authoringSubject"),

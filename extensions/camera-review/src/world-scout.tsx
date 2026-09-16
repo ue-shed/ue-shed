@@ -599,11 +599,13 @@ export function WorldScout(props: {
 					lastFollowRequestMs = performance.now();
 					setFollowing(follow);
 					setNavigationStatus(
-						follow
-							? "FOLLOWING IN UNREAL"
-							: focus.authoringSubject === "selected"
-								? "FOCUSED IN UNREAL"
-								: "FOCUSED RUNTIME ACTOR"
+						focus.windowActivation && focus.windowActivation.status !== "activated"
+							? `ACTOR SELECTED · ${focus.windowActivation.message} ${focus.windowActivation.recovery}`
+							: follow
+								? "FOLLOWING IN UNREAL"
+								: focus.authoringSubject === "selected"
+									? "FOCUSED IN UNREAL"
+									: "FOCUSED RUNTIME ACTOR"
 					);
 					if (focus.authoringSubject === "selected") props.onActorFocused(actor);
 				} else {

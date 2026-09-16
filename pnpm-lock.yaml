@@ -895,9 +895,15 @@ importers:
 
   packages/observatory:
     dependencies:
+      '@ue-shed/engine':
+        specifier: workspace:0.7.1
+        version: link:../engine
       '@ue-shed/observability':
         specifier: workspace:0.7.1
         version: link:../observability
+      '@ue-shed/protocol':
+        specifier: workspace:0.7.1
+        version: link:../protocol
       '@ue-shed/unreal-connection':
         specifier: workspace:0.7.1
         version: link:../unreal-connection

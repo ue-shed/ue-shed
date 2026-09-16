@@ -1,3 +1,4 @@
+import { EditorHandoffNotice } from "./editor-handoff.js";
 import { MapReviewMapOpenResult } from "@ue-shed/extension-camera-review/client";
 import { CameraWorkspaceRequest, CameraWorkspaceResult } from "@ue-shed/cameras/review-contracts";
 import {
@@ -526,6 +527,11 @@ const invoke = <
 });
 
 export const invokeContracts = {
+	"editor-window:activate": invoke({
+		channel: "editor-window:activate",
+		args: EmptyArgs,
+		result: EditorHandoffNotice
+	}),
 	"editor-session:settings": invoke({
 		channel: "editor-session:settings",
 		args: EmptyArgs,
@@ -1150,6 +1156,12 @@ export const cameraFrameEvent = {
 	kind: "event",
 	channel: "camera:frame",
 	payload: RendererCameraFrame
+} as const;
+
+export const editorHandoffEvent = {
+	kind: "event",
+	channel: "editor-window:handoff",
+	payload: EditorHandoffNotice
 } as const;
 
 export const worldObservationEvent = {

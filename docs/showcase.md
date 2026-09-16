@@ -553,3 +553,41 @@ media cannot drift from a real recording.
 Review exported frames before deploying. Captures show the real Workbench, including whatever
 diagnostics it surfaces; withhold a capture in `scripts/site-media.ts` rather than publish an
 embarrassing frame.
+
+## Editor handoffs
+
+Workbench uses the shared UE Shed Core window-activation capability through
+`@ue-shed/engine`. The connected endpoint selects the editor; another editor window is never
+chosen by title or process order. **Show Unreal ↗** is available beside the session controls.
+
+| Showcase interaction                                                             | Foreground behavior                                                                                  |
+| -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Show Unreal                                                                      | Activate the connected editor without changing the scene.                                            |
+| Map Review: Go to actor / initial Follow                                         | Select and frame the actor, then activate. Subsequent follow ticks stay in the background.           |
+| Map Review: Open in Unreal, from either map picker                               | Activate after the map opens or is already open. Rejected map switches stay in Workbench.            |
+| Map Capture: Open in Unreal                                                      | Activate after opening. Opening the same map as capture preparation does not activate.               |
+| Camera workspace: Edit in Unreal / explicit camera selection                     | Activate after the native pilot/select operation succeeds.                                           |
+| Game Text: locate an occurrence's asset                                          | Locate in the Content Browser, then activate.                                                        |
+| Texture Audit: Locate in Unreal                                                  | Locate in the Content Browser, then activate.                                                        |
+| Session controls: Play / Sim                                                     | Activate after the start request is accepted or already satisfied.                                   |
+| Session controls: Pause / Resume / Stop                                          | Stay in Workbench so transport controls remain usable.                                               |
+| Camera sets: load, generate, adjust, save, stop piloting, hide/protect selection | Stay in Workbench; these actions update the workspace or import editor state.                        |
+| Map Review / Map Capture: capture, preview, compare, filter, ordinary selection  | Stay in Workbench.                                                                                   |
+| Scenario Studio: Run in Unreal                                                   | Stay with the run's status, evidence, and cancellation controls. Show Unreal is an explicit handoff. |
+| Niagara Preview / Camera Lab                                                     | Stay with captured frames and delivery controls, including fixture preparation.                      |
+| Blueprint Graphs / Config Explorer / Input Atlas / World Log                     | Stay with the inspector or historical comparison.                                                    |
+| Data Authoring / Project Custodian                                               | Stay with the draft, apply result, or cleanup report.                                                |
+| Project chooser / Launch                                                         | Retain the existing process-launch behavior; do not add a delayed foreground request after startup.  |
+
+The Workbench handoff adapter only composes the shared activation service and reports feedback.
+It adds no native focus implementation. A failed handoff is shown beside **Show Unreal** and does
+not turn a successful map switch, asset location, or camera operation into a failed mutation.
+Feedback remains visible across status polls, clears after a successful handoff or target change,
+and ignores notifications from a previously selected endpoint. Actor navigation also retains its
+separate activation result in the public Observatory response.
+
+To validate this flow, keep two editors open and connect Workbench to one. Try Show Unreal,
+locating an asset, opening a map, and editing a camera, including with the connected editor
+minimized. The other editor must remain untouched. Then capture, adjust cameras, load views,
+and run a scenario: these must not request foreground activation. Core's Windows foreground
+verification remains authoritative; unsupported platforms report that limitation explicitly.

@@ -1,3 +1,4 @@
+import { makeWorkbenchEditorHandoffTestLayer } from "./editor-handoff.js";
 import { makeWorkbenchTestConfigurationLayer as makeWorkbenchConfigurationLayer } from "../test-configuration.js";
 import { it } from "@effect/vitest";
 import { makeRemoteControlClientTestLayer } from "@ue-shed/unreal-connection";
@@ -11,6 +12,7 @@ import {
 
 it.effect("keeps negotiation and navigation on one target during a port change", () =>
 	Effect.gen(function* () {
+		const handoffs: string[] = [];
 		const started = yield* Deferred.make<void>();
 		const resume = yield* Deferred.make<void>();
 		const requests: string[] = [];
@@ -40,7 +42,13 @@ it.effect("keeps negotiation and navigation on one target during a port change",
 						};
 			})
 		);
-		const dependencies = Layer.merge(
+		const dependencies = Layer.mergeAll(
+			makeWorkbenchEditorHandoffTestLayer((endpoint) =>
+				Effect.sync(() => {
+					handoffs.push(endpoint);
+					return { endpoint, message: null };
+				})
+			),
 			remote,
 			makeWorkbenchUnrealConnectionLayer("http://editor:30001/")
 		);
@@ -57,6 +65,10 @@ it.effect("keeps negotiation and navigation on one target during a port change",
 			expect((yield* navigation.locate("/Game/Textures/T_Rock.T_Rock")).status).toBe(
 				"located"
 			);
+			expect(handoffs.map((endpoint) => endpoint.replace(/\/$/, ""))).toEqual([
+				"http://editor:30001",
+				"http://editor:31001"
+			]);
 			expect(requests).toEqual([
 				"http://editor:30001",
 				"http://editor:30001",
@@ -82,7 +94,11 @@ const configuration = makeWorkbenchConfigurationLayer({
 function navigationLayer(
 	handle: Parameters<typeof makeRemoteControlClientTestLayer>[0]
 ): Layer.Layer<WorkbenchAssetNavigation> {
-	const dependencies = Layer.mergeAll(configuration, makeRemoteControlClientTestLayer(handle));
+	const dependencies = Layer.mergeAll(
+		configuration,
+		makeRemoteControlClientTestLayer(handle),
+		makeWorkbenchEditorHandoffTestLayer()
+	);
 	return WorkbenchAssetNavigationLive.pipe(Layer.provide(dependencies));
 }
 

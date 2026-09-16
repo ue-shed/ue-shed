@@ -6,6 +6,7 @@ import type {
 	CameraWorkspaceRequest,
 	CameraWorkspaceResult
 } from "@ue-shed/cameras/review-contracts";
+import { WorkbenchEditorHandoff } from "./editor-handoff.js";
 import { WorkbenchUnrealConnection } from "./unreal-connection.js";
 import {
 	approveFramingCandidate,
@@ -363,6 +364,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 	Effect.gen(function* () {
 		const configuration = yield* WorkbenchConfiguration;
 		const connection = yield* WorkbenchUnrealConnection;
+		const editorHandoff = yield* WorkbenchEditorHandoff;
 		const project = yield* WorkbenchProject;
 		const assetReader = yield* AssetReader;
 		const localFiles = yield* LocalFiles;
@@ -2105,6 +2107,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 							targetMapPath
 						});
 						if (response.outcome !== "rejected") {
+							yield* editorHandoff.activate(endpoint);
 							yield* Ref.set(lastWorldSnapshot, Option.none());
 							yield* Ref.set(lastObservationSample, Option.none());
 							yield* Ref.set(lastPresentedCatalogKey, undefined);

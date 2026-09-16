@@ -23,6 +23,7 @@ import {
 	CameraWorkspaceRequest,
 	type CameraWorkspaceResult
 } from "@ue-shed/cameras/review-contracts";
+import { WorkbenchEditorHandoff } from "./editor-handoff.js";
 import { RemoteControlClient } from "@ue-shed/unreal-connection";
 
 export class CameraWorkspaceError extends Schema.TaggedErrorClass<CameraWorkspaceError>()(
@@ -37,6 +38,7 @@ export const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(f
 	const authoring = yield* ReviewAuthoring;
 	const repository = yield* ReviewRepository;
 	const client = yield* RemoteControlClient;
+	const editorHandoff = yield* WorkbenchEditorHandoff;
 	const gate = yield* Semaphore.make(1);
 	type Panel = Effect.Success<ReturnType<typeof makeCameraAuthoringPanelSession>>;
 	let active:
@@ -259,10 +261,13 @@ export const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(f
 							}
 						})
 						.pipe(Effect.flatMap(readyCameraBridge));
-				} else
+				} else {
 					yield* current.bridge
 						.call({ ...scope, operation: intent.operation })
 						.pipe(Effect.flatMap(readyCameraBridge));
+					if (intent.operation === "pilot" || intent.operation === "select")
+						yield* editorHandoff.activate(context.endpoint);
+				}
 			}
 			if (active) yield* tick();
 			const document = active ? yield* active.store.load() : undefined;

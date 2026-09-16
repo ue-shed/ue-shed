@@ -1,3 +1,4 @@
+import { makeWorkbenchEditorHandoffTestLayer } from "./editor-handoff.js";
 import { makeWorkbenchTestConfigurationLayer as makeWorkbenchConfigurationLayer } from "../test-configuration.js";
 import {
 	makeReviewAuthoringTestLayer,
@@ -230,6 +231,7 @@ const makeMapReviewDeps = (
 	authoringSessions: ReviewAuthoringSessionsApi = dyingAuthoringSessions
 ) =>
 	Layer.mergeAll(
+		makeWorkbenchEditorHandoffTestLayer(),
 		assetReaderTestLayer,
 		makeCameraFeedTestLayer(),
 		makeWorkbenchWindowTestLayer(),
@@ -897,6 +899,7 @@ it.effect(
 				MapReviewLiveWithDialog.pipe(
 					Layer.provide(
 						Layer.mergeAll(
+							makeWorkbenchEditorHandoffTestLayer(),
 							assetReaderTestLayer,
 							makeCameraFeedTestLayer(),
 							makeWorkbenchWindowTestLayer(),
@@ -1249,6 +1252,7 @@ it.effect("resumes the latest persisted authoring session after a fresh service 
 			MapReviewLiveWithDialog.pipe(
 				Layer.provide(
 					Layer.mergeAll(
+						makeWorkbenchEditorHandoffTestLayer(),
 						assetReaderTestLayer,
 						makeCameraFeedTestLayer(),
 						makeWorkbenchWindowTestLayer(),
@@ -1338,6 +1342,7 @@ it.effect("surfaces stale bounds recovery and refuses Keep View approval", () =>
 			MapReviewLiveWithDialog.pipe(
 				Layer.provide(
 					Layer.mergeAll(
+						makeWorkbenchEditorHandoffTestLayer(),
 						assetReaderTestLayer,
 						makeCameraFeedTestLayer(),
 						makeWorkbenchWindowTestLayer(),
@@ -1463,6 +1468,7 @@ it.effect("subscribes to world observations, coalesces transform bursts, and cle
 		const serviceLayer = MapReviewLiveWithDialog.pipe(
 			Layer.provide(
 				Layer.mergeAll(
+					makeWorkbenchEditorHandoffTestLayer(),
 					assetReaderTestLayer,
 					makeCameraFeedTestLayer(),
 					clearOnlyRemoteControl,
@@ -1647,6 +1653,7 @@ it.effect("keeps observation live while focusing an actor and retuning cadence",
 		const serviceLayer = MapReviewLiveWithDialog.pipe(
 			Layer.provide(
 				Layer.mergeAll(
+					makeWorkbenchEditorHandoffTestLayer(),
 					assetReaderTestLayer,
 					makeCameraFeedTestLayer(),
 					clearOnlyRemoteControl,
@@ -1836,6 +1843,7 @@ function makeLivePreviewServiceLayer(worldContext: "editor" | "play") {
 	return MapReviewLiveWithDialog.pipe(
 		Layer.provide(
 			Layer.mergeAll(
+				makeWorkbenchEditorHandoffTestLayer(),
 				assetReaderTestLayer,
 				makeCameraFeedTestLayer({
 					latestFrames: Effect.succeed(
@@ -1996,6 +2004,7 @@ it.effect("blocks Capture Set while PIE is running", () =>
 			MapReviewLiveWithDialog.pipe(
 				Layer.provide(
 					Layer.mergeAll(
+						makeWorkbenchEditorHandoffTestLayer(),
 						assetReaderTestLayer,
 						makeCameraFeedTestLayer(),
 						makeWorkbenchWindowTestLayer(),

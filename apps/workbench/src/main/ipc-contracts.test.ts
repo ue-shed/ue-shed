@@ -200,6 +200,7 @@ type ValidResultByChannel = {
 };
 
 const validArgsByChannel = {
+	"editor-window:activate": [],
 	"editor-session:settings": [],
 	"editor-session:set-port": [31001],
 	"editor-session:status": [],
@@ -447,6 +448,7 @@ const validArgsByChannel = {
 } satisfies ValidArgsByChannel;
 
 const validResultByChannel = {
+	"editor-window:activate": { endpoint: "http://127.0.0.1:30001", message: null },
 	"editor-session:settings": { port: 30001 },
 	"editor-session:set-port": { port: 31001 },
 	"editor-session:status": {
@@ -832,9 +834,9 @@ const malformedArgsByChannel = {
 	"map-capture:tile": [{ manifestPath: "", relativePath: "../outside.png" }]
 } satisfies Partial<Record<InvokeChannel, IpcFixtureValue>>;
 
-it("registers exactly 122 invoke channels plus renderer events", () => {
-	expect(invokeChannelNames).toHaveLength(122);
-	expect(new Set(invokeChannelNames).size).toBe(122);
+it("registers exactly 123 invoke channels plus renderer events", () => {
+	expect(invokeChannelNames).toHaveLength(123);
+	expect(new Set(invokeChannelNames).size).toBe(123);
 	expect(cameraFrameEvent.channel).toBe("camera:frame");
 	expect(mapCaptureProgressEvent.channel).toBe("map-capture:progress");
 	expect(worldObservationEvent.channel).toBe("map-review:world-observation");
@@ -853,7 +855,12 @@ it.effect("decodes map-capture progress events", () =>
 it("keeps contract channels in exact preload parity", () => {
 	expect([...preloadInvokeChannels].sort()).toEqual([...invokeChannelNames].sort());
 	expect(preloadEventChannels.toSorted()).toEqual(
-		["camera:frame", "map-capture:progress", "map-review:world-observation"].toSorted()
+		[
+			"camera:frame",
+			"editor-window:handoff",
+			"map-capture:progress",
+			"map-review:world-observation"
+		].toSorted()
 	);
 });
 

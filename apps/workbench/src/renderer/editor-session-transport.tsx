@@ -19,11 +19,24 @@ import {
 const remoteControlPortStorageKey = "ue-shed.remote-control-port";
 
 export function EditorSessionTransport(props: {
-	readonly client: WorkbenchRendererClient;
+	readonly client: Pick<
+		WorkbenchRendererClient,
+		| "editorSessionStatuses"
+		| "setUnrealConnectionPort"
+		| "unrealConnectionSettings"
+		| "executeEditorSessionCommand"
+		| "editorHandoffs"
+		| "activateEditorWindow"
+	>;
 	readonly onTargetChanged?: () => void;
 }) {
 	const action = createEffectAction();
 	const settingsAction = createEffectAction();
+	const handoffAction = createEffectAction();
+	const handoffSubscription = createEffectSubscription();
+	const [handoffPending, setHandoffPending] = createSignal(false);
+	const [handoffMessage, setHandoffMessage] = createSignal<string | null>(null);
+	const [endpoint, setEndpoint] = createSignal<string>();
 	const subscription = createEffectSubscription();
 	const [state, setState] = createSignal<EditorSessionTransportState>({ status: "offline" });
 	const [pending, setPending] = createSignal(false);
@@ -59,6 +72,8 @@ export function EditorSessionTransport(props: {
 				if (port() !== settings.port) props.onTargetChanged?.();
 				setSettingsPending(false);
 				setPort(settings.port);
+				setEndpoint(settings.endpoint);
+				setHandoffMessage(null);
 				setPortDraft(String(settings.port));
 				setState({ status: "offline" });
 				subscribeStatus();
@@ -77,10 +92,17 @@ export function EditorSessionTransport(props: {
 	};
 
 	onSettled(() => {
+		handoffSubscription.subscribe(props.client.editorHandoffs, {
+			onValue: (notice) => {
+				if (notice.endpoint.replace(/\/$/, "") === endpoint()?.replace(/\/$/, ""))
+					setHandoffMessage(notice.message);
+			}
+		});
 		subscribeStatus();
 		settingsAction.run(props.client.unrealConnectionSettings(), {
 			onSuccess: (settings) => {
 				setPort(settings.port);
+				setEndpoint(settings.endpoint);
 				setPortDraft(String(settings.port));
 				try {
 					const storedPort = parseRemoteControlPort(
@@ -118,6 +140,21 @@ export function EditorSessionTransport(props: {
 				setPending(false);
 				setState(result.state);
 				setMessage(result.outcome === "rejected" ? result.message : undefined);
+			}
+		});
+	};
+	const showEditor = () => {
+		setHandoffPending(true);
+		setHandoffMessage(null);
+		handoffAction.run(props.client.activateEditorWindow(), {
+			onSuccess: (notice) => {
+				setHandoffPending(false);
+				if (notice.endpoint.replace(/\/$/, "") === endpoint()?.replace(/\/$/, ""))
+					setHandoffMessage(notice.message);
+			},
+			onFailure: () => {
+				setHandoffPending(false);
+				setHandoffMessage("Could not reach Unreal.");
 			}
 		});
 	};
@@ -184,6 +221,19 @@ export function EditorSessionTransport(props: {
 				</section>
 			</details>
 			<div {...stylex.attrs(styles.actions)}>
+				<button
+					type="button"
+					{...stylex.attrs(styles.button)}
+					disabled={
+						!endpoint() ||
+						state().status === "offline" ||
+						handoffPending() ||
+						settingsPending()
+					}
+					onClick={showEditor}
+				>
+					Show Unreal ↗
+				</button>
 				<For each={actions()}>
 					{(item) => (
 						<button
@@ -197,11 +247,19 @@ export function EditorSessionTransport(props: {
 					)}
 				</For>
 			</div>
+			<Show when={handoffMessage()}>
+				{(text) => (
+					<p role="status" {...stylex.attrs(styles.handoffMessage)}>
+						{text()}
+					</p>
+				)}
+			</Show>
 		</section>
 	);
 }
 
 const styles = stylex.create({
+	handoffMessage: { margin: 0, width: "100%", fontSize: 11, color: tokens.colorWarning },
 	transport: {
 		display: "flex",
 		flexWrap: "wrap",

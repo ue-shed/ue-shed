@@ -15,6 +15,7 @@ import type {
 	MapReviewSetLibraryResult,
 	MapReviewSetSelectIntent
 } from "@ue-shed/extension-camera-review/client";
+import type { EditorHandoffNotice } from "../shared/editor-handoff.js";
 import type { MapCaptureProgressEvent } from "@ue-shed/extension-camera-review/map-capture-client";
 import type { ContentObservatoryHistoryRequestWire } from "@ue-shed/extension-content-observatory/client";
 import type {
@@ -85,6 +86,7 @@ const workbenchRendererApi = {
 			ipcRenderer.invoke("blueprint-graphs:search", request)
 	},
 	editorSession: {
+		activate: () => ipcRenderer.invoke("editor-window:activate"),
 		settings: (): Promise<UnrealConnectionSettings> =>
 			ipcRenderer.invoke("editor-session:settings"),
 		setPort: (port: number): Promise<UnrealConnectionSettings> =>
@@ -311,6 +313,12 @@ const workbenchRendererApi = {
 	getStatus: (): Promise<CameraStatusResult> => ipcRenderer.invoke("camera:status"),
 	setPresentationBudget: (megabytesPerSecond: number): Promise<number> =>
 		ipcRenderer.invoke("camera:presentation-budget", megabytesPerSecond),
+	onEditorHandoff: (listener: (notice: EditorHandoffNotice) => void) => {
+		const handler = (_event: Electron.IpcRendererEvent, notice: EditorHandoffNotice) =>
+			listener(notice);
+		ipcRenderer.on("editor-window:handoff", handler);
+		return () => ipcRenderer.removeListener("editor-window:handoff", handler);
+	},
 	onFrame: (listener: (frame: RendererCameraFrame) => void) => {
 		const handler = (_event: Electron.IpcRendererEvent, frame: RendererCameraFrame) =>
 			listener(frame);

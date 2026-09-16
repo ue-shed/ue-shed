@@ -14,10 +14,16 @@ async function expectWithinViewport(page: Page, locator: Locator): Promise<void>
 	expect(bounds.y + bounds.height).toBeLessThanOrEqual(viewport.height);
 }
 
-test("keeps sidebar footer controls visible and keyboard accessible", async ({ workbench }) => {
+test("keeps sidebar footer controls visible and keyboard accessible", async ({
+	workbench
+}, testInfo) => {
 	test.setTimeout(90_000);
 	await workbench.page.setViewportSize({ width: 1280, height: 800 });
 	await workbench.expectShowcaseReady();
+	await expectWithinViewport(
+		workbench.page,
+		workbench.page.getByRole("button", { name: "Show Unreal ↗" })
+	);
 
 	const sessionSettingsTrigger = workbench.page.getByLabel("Change Unreal target port");
 	await sessionSettingsTrigger.click();
@@ -54,6 +60,7 @@ test("keeps sidebar footer controls visible and keyboard accessible", async ({ w
 	const launchMenu = workbench.page.getByRole("region", { name: "Launch project options" });
 	await launchTrigger.click();
 	await expectWithinViewport(workbench.page, launchMenu);
+	await workbench.page.screenshot({ path: testInfo.outputPath("editor-handoff-footer.png") });
 	await workbench.page.getByRole("main").click();
 	await expect(launchMenu).toBeHidden();
 	await launchTrigger.click();

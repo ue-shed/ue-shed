@@ -15,6 +15,8 @@ import { AuthoringCatalogLive } from "@ue-shed/authoring-catalog";
 import { EnhancedInputServiceLive } from "@ue-shed/enhanced-input";
 import { TextCorpusServiceLive } from "@ue-shed/game-text";
 import {
+	EditorWindowActivationLive,
+	EditorForegroundPermissionLive,
 	EditorPlaySessionLive,
 	EditorWorldControlLive,
 	EngineInstallationDiscoveryLive,
@@ -44,6 +46,7 @@ import { LocalFilesLive } from "./adapters/local-files.js";
 import { offlineTexturePreviewHostLayer } from "./adapters/offline-texture-preview-host.js";
 import { register as registerWorkbenchIpc } from "./ipc/register.js";
 import { WorkbenchAssetAuditsLive } from "./services/asset-audits.js";
+import { WorkbenchEditorHandoffLive } from "./services/editor-handoff.js";
 import { WorkbenchAssetNavigationLive } from "./services/asset-navigation.js";
 import { WorkbenchAuthoringLive } from "./services/authoring.js";
 import { CameraPresentationLive } from "./services/camera-presentation.js";
@@ -97,6 +100,10 @@ function baseLayer(hosts: WorkbenchHosts) {
 		)
 	);
 	const editorPlaySession = EditorPlaySessionLive.pipe(Layer.provide(remoteControl));
+	const editorWindowActivation = EditorWindowActivationLive.pipe(
+		Layer.provide(EditorForegroundPermissionLive),
+		Layer.provide(remoteControl)
+	);
 	const editorWorldControl = EditorWorldControlLive.pipe(Layer.provide(remoteControl));
 	const scenarioRunner = ScenarioRunnerLive.pipe(
 		Layer.provide(Layer.merge(remoteControl, editorPlaySession))
@@ -112,6 +119,7 @@ function baseLayer(hosts: WorkbenchHosts) {
 		AssetReaderLive,
 		remoteControl,
 		editorPlaySession,
+		editorWindowActivation,
 		scenarioRunner,
 		ReviewRepositoryLive,
 		MapCaptureRepositoryLive,
@@ -154,6 +162,7 @@ function domainCatalogLayer(hosts: WorkbenchHosts) {
 	);
 	return Layer.mergeAll(
 		ElectronDialogLive,
+		WorkbenchEditorHandoffLive,
 		TextureAuditLive,
 		TextCorpusServiceLive,
 		EnhancedInputServiceLive,

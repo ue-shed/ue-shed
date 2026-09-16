@@ -1,3 +1,4 @@
+import { makeWorkbenchEditorHandoffTestLayer } from "../services/editor-handoff.js";
 import { makeWorkbenchTestConfigurationLayer as makeWorkbenchConfigurationLayer } from "../test-configuration.js";
 import { makeWorkbenchUnrealConnectionLayer } from "../services/unreal-connection.js";
 import { it } from "@effect/vitest";
@@ -720,6 +721,7 @@ function buildRegistrationLayer(recorder: Recorder, options: RegistrationOptions
 	});
 
 	return Layer.mergeAll(
+		makeWorkbenchEditorHandoffTestLayer(),
 		assetReader,
 		dialog,
 		showcase,

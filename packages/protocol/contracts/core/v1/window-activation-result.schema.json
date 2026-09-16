@@ -1,0 +1,49 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$defs": {},
+	"type": "object",
+	"properties": {
+		"schemaVersion": {
+			"type": "number",
+			"enum": [1]
+		},
+		"processId": {
+			"type": "integer",
+			"allOf": [
+				{
+					"exclusiveMinimum": 0
+				},
+				{
+					"exclusiveMaximum": 4294967295
+				}
+			]
+		},
+		"status": {
+			"type": "string",
+			"enum": ["activated", "blocked", "unavailable", "unsupported", "target_changed"]
+		},
+		"target": {
+			"type": "string",
+			"enum": ["main_editor", "modal", "none"]
+		},
+		"restored": {
+			"type": "boolean"
+		},
+		"message": {
+			"type": "string"
+		},
+		"recovery": {
+			"type": "string"
+		}
+	},
+	"required": [
+		"schemaVersion",
+		"processId",
+		"status",
+		"target",
+		"restored",
+		"message",
+		"recovery"
+	],
+	"additionalProperties": false
+}

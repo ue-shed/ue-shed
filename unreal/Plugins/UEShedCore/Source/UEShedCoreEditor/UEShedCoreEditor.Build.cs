@@ -12,6 +12,8 @@ public class UEShedCoreEditor : ModuleRules
 			"ContentBrowser",
 			"Json",
 			"LevelEditor",
+			"MainFrame",
+			"ApplicationCore",
 			"Slate",
 			"SlateCore",
 			"UnrealEd"

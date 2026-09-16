@@ -17,7 +17,29 @@ build associations on Windows; non-Windows and unregistered custom installs use
 
 `EditorConnection` probes or waits for a compatible `UEShedCore` capability manifest.
 `EditorPlaySession` controls PIE/Simulate, and `EditorWorldControl` safely opens an editor map.
+`EditorWindowActivation` activates the connected editor's main window through UE Shed Core,
+restores it when minimized, and reports whether foreground activation actually succeeded.
 Arbitrary OS-process-to-endpoint correlation is not claimed in this release.
+
+```ts
+const activationLayer = EditorWindowActivationLive.pipe(
+	Layer.provide(EditorForegroundPermissionLive),
+	Layer.provide(RemoteControlClientLive)
+);
+const result = await Effect.runPromise(
+	Effect.flatMap(EditorWindowActivation, (window) => window.activate(endpoint)).pipe(
+		Effect.provide(activationLayer)
+	)
+);
+```
+
+Invoke this from an explicit user action. The Windows adapter uses the matching optional
+`@ue-shed/engine-win32-x64` helper to grant foreground permission to the connected local process.
+Other hosts can supply `EditorForegroundPermission` themselves. The endpoint's advertised Core
+process identity selects the target; no window-title or first-Unreal-process heuristic is used.
+`activated` is verified, `blocked` preserves OS refusal, and modal dialogs remain in control.
+No editor launch or map/camera mutation is implied. See the shared
+[Core window contract](../protocol/contracts/core/v1/WINDOW-ACTIVATION.md).
 
 `SupervisedEditorSession` is a separate caller-owned launch path for bounded one-shot work. It
 validates explicit project and plugin descriptors before launch, owns a process tree inside

@@ -152,9 +152,12 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 			(artifact) => artifact.variant === "clear" || artifact.variant === "authored"
 		)
 	);
-	createEffect(() => {
-		if (!pureArtifact() && clearArtifact()) setComparisonMode("clear");
-	});
+	createEffect(
+		() => !pureArtifact() && !!clearArtifact(),
+		(showClear) => {
+			if (showClear) setComparisonMode("clear");
+		}
+	);
 	const alteredLabel = () => (clearArtifact()?.variant === "authored" ? "Authored" : "Clear");
 	const previousEvidence = createMemo(() => {
 		const current = ready();
@@ -620,10 +623,12 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 												>
 													<button
 														type="button"
-													disabled={pureArtifact() === undefined}
-													aria-pressed={
-														comparisonMode() === "pure" ? "true" : "false"
-													}
+														disabled={pureArtifact() === undefined}
+														aria-pressed={
+															comparisonMode() === "pure"
+																? "true"
+																: "false"
+														}
 														onClick={() => setComparisonMode("pure")}
 														{...stylex.attrs(
 															styles.comparisonButton,

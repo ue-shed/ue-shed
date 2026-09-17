@@ -284,7 +284,7 @@ export function SavedMapPicker(props: {
 						!props.mapPath.trim()
 					}
 					onClick={() => props.onOpenInUnreal?.(props.mapPath)}
-					{...stylex.props(styles.openAction)}
+					{...stylex.attrs(styles.openAction)}
 				>
 					{props.openingInUnreal ? "Opening in Unreal…" : "Open in Unreal ↗"}
 				</button>

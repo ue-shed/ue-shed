@@ -2,7 +2,7 @@ import * as stylex from "@stylexjs/stylex";
 import { createEffectAction, SavedMapPicker } from "@ue-shed/ui";
 import type { SavedWorldMap } from "@ue-shed/protocol";
 import { Cause } from "effect";
-import { createSignal, onMount } from "solid-js";
+import { createSignal, onSettled } from "solid-js";
 import type { MapReviewClientApi } from "./map-review-client.js";
 
 export function ReviewMapPicker(props: {
@@ -59,7 +59,7 @@ export function LiveReviewMapPicker(props: {
 	const [maps, setMaps] = createSignal<readonly SavedWorldMap[]>([]);
 	const [path, setPath] = createSignal("");
 	const [error, setError] = createSignal<string>();
-	onMount(() => {
+	onSettled(() => {
 		if (props.client.savedWorldMaps)
 			action.run(props.client.savedWorldMaps(), {
 				onSuccess: setMaps,
@@ -67,7 +67,7 @@ export function LiveReviewMapPicker(props: {
 			});
 	});
 	return (
-		<div {...stylex.props(styles.livePicker)}>
+		<div {...stylex.attrs(styles.livePicker)}>
 			<ReviewMapPicker
 				client={props.client}
 				maps={maps()}

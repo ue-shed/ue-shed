@@ -27,7 +27,11 @@ function stageLabel(progress: TaskProgress): string {
 }
 
 export function TaskProgressModal(props: TaskProgressModalProps) {
-	return <Show when={props.open}>{() => <OpenTaskProgressModal {...props} />}</Show>;
+	return (
+		<Show when={props.open}>
+			<OpenTaskProgressModal {...props} />
+		</Show>
+	);
 }
 
 function OpenTaskProgressModal(props: TaskProgressModalProps) {
@@ -61,7 +65,7 @@ function OpenTaskProgressModal(props: TaskProgressModalProps) {
 				aria-busy="true"
 				{...stylex.attrs(styles.backdrop)}
 			>
-				<section tabIndex={-1} {...stylex.attrs(styles.modal)}>
+				<section tabindex={-1} {...stylex.attrs(styles.modal)}>
 					<p {...stylex.attrs(styles.kicker)}>{stageLabel(props.progress)}</p>
 					<h2 id={titleId} {...stylex.attrs(styles.title)}>
 						{props.title}

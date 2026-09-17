@@ -462,7 +462,7 @@ export function WorldScout(props: {
 		setLiveRegion(
 			`${meta.displayName}, ${meta.className}, X ${formatCoordinate(store.locationX[streamIndex] ?? 0)}, Y ${formatCoordinate(store.locationY[streamIndex] ?? 0)}, Z ${formatCoordinate(store.locationZ[streamIndex] ?? 0)}`
 		);
-		props.onActorSelected?.(selected());
+		props.onActorSelected?.(store.materialize(streamIndex));
 	};
 	const pickNearestActor = (cssX: number, cssY: number) => {
 		prepareVisibleProjection();

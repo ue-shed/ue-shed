@@ -17,8 +17,8 @@ import type {
 import { createEffectAction, createEffectSubscription } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { Cause, Effect, Schedule, Stream } from "effect";
-import { For, Show, createMemo, createSignal, createEffect, on, onMount } from "solid-js";
-import { createStore, reconcile, unwrap } from "solid-js/store";
+import { For, Show, createMemo, createSignal, createEffect, onSettled } from "solid-js";
+import { createStore, reconcile, snapshot } from "solid-js";
 import type { ObservedActor } from "@ue-shed/observatory/browser";
 import type { MapReviewClientApi } from "./map-review-client.js";
 
@@ -108,7 +108,7 @@ export function CameraWorkspace(props: {
 		if (!invoke || busy()) return;
 		generation++;
 		setBusy(true);
-		action.run(invoke(unwrap(request)), {
+		action.run(invoke(snapshot(request)), {
 			onSuccess: (result) => {
 				receive(result, !saved);
 				setBusy(false);
@@ -166,22 +166,18 @@ export function CameraWorkspace(props: {
 		}
 	};
 	createEffect(
-		on(
-			() => props.focusRequest,
-			(request) => {
-				if (!request) return;
-				const subject = state.panel?.arrangement.subject;
-				const actorPath =
-					subject?.kind === "actor_path"
-						? subject.actorPath
-						: subject?.lastKnownActorPath;
-				if (state.panel && actorPath !== request.actor.path) run({ kind: "close" });
-				setLibrary(true);
-				setName(request.actor.displayName);
-			}
-		)
+		() => props.focusRequest,
+		(request) => {
+			if (!request) return;
+			const subject = state.panel?.arrangement.subject;
+			const actorPath =
+				subject?.kind === "actor_path" ? subject.actorPath : subject?.lastKnownActorPath;
+			if (state.panel && actorPath !== request.actor.path) run({ kind: "close" });
+			setLibrary(true);
+			setName(request.actor.displayName);
+		}
 	);
-	onMount(() => {
+	onSettled(() => {
 		run({ kind: "list" });
 		polling.subscribe(
 			Stream.fromEffect(
@@ -230,9 +226,9 @@ export function CameraWorkspace(props: {
 		});
 	});
 	return (
-		<section aria-label="Camera workspace" {...stylex.props(styles.workspace)}>
-			<header {...stylex.props(styles.row)}>
-				<div {...stylex.props(styles.heading)}>
+		<section aria-label="Camera workspace" {...stylex.attrs(styles.workspace)}>
+			<header {...stylex.attrs(styles.row)}>
+				<div {...stylex.attrs(styles.heading)}>
 					<strong>{state.panel?.arrangement.displayName ?? "Camera sets"}</strong>
 					<small>
 						{busy()
@@ -245,18 +241,18 @@ export function CameraWorkspace(props: {
 					</small>
 				</div>
 				<button
-					{...stylex.props(styles.button)}
+					{...stylex.attrs(styles.button)}
 					onClick={() => setLibrary(!library())}
-					aria-pressed={library()}
+					aria-pressed={library() ? "true" : "false"}
 				>
 					Load views
 				</button>
-				<button {...stylex.props(styles.button)} onClick={() => setCreating(!creating())}>
+				<button {...stylex.attrs(styles.button)} onClick={() => setCreating(!creating())}>
 					New set
 				</button>
 				<Show when={state.panel}>
 					<button
-						{...stylex.props(styles.primary)}
+						{...stylex.attrs(styles.primary)}
 						disabled={busy() || needsFixedExposure()}
 						onClick={() =>
 							send(
@@ -273,7 +269,7 @@ export function CameraWorkspace(props: {
 					</button>
 					<Show when={props.onCapture}>
 						<button
-							{...stylex.props(styles.button)}
+							{...stylex.attrs(styles.button)}
 							disabled={
 								busy() || !state.panel?.cameras.every((camera) => camera.approved)
 							}
@@ -283,7 +279,7 @@ export function CameraWorkspace(props: {
 						</button>
 					</Show>
 					<button
-						{...stylex.props(styles.button)}
+						{...stylex.attrs(styles.button)}
 						disabled={busy()}
 						onClick={() => run({ kind: "close" })}
 					>
@@ -297,14 +293,14 @@ export function CameraWorkspace(props: {
 			<Show when={state.error}>
 				<div role="alert">
 					{state.error}
-					<button {...stylex.props(styles.button)} onClick={props.onChooseReviewSet}>
+					<button {...stylex.attrs(styles.button)} onClick={props.onChooseReviewSet}>
 						Review Sets
 					</button>
 				</div>
 			</Show>
 			<Show when={creating()}>
 				<form
-					{...stylex.props(styles.row)}
+					{...stylex.attrs(styles.row)}
 					onSubmit={(event) => {
 						event.preventDefault();
 						run({
@@ -321,19 +317,19 @@ export function CameraWorkspace(props: {
 						placeholder="Set name"
 						value={name()}
 						onInput={(event) => setName(event.currentTarget.value)}
-						{...stylex.props(styles.input)}
+						{...stylex.attrs(styles.input)}
 					/>
-					<button disabled={busy()} {...stylex.props(styles.primary)}>
+					<button disabled={busy()} {...stylex.attrs(styles.primary)}>
 						Create from {props.focusRequest?.actor.displayName ?? "Unreal selection"}
 					</button>
 				</form>
 			</Show>
 			<Show when={library()}>
-				<div {...stylex.props(styles.rail)}>
+				<div {...stylex.attrs(styles.rail)}>
 					<For each={state.sets} fallback={<span>No saved camera sets</span>}>
 						{(set) => (
 							<button
-								{...stylex.props(styles.card)}
+								{...stylex.attrs(styles.card)}
 								disabled={busy()}
 								onClick={() => run({ kind: "open", id: set.id })}
 							>
@@ -346,16 +342,18 @@ export function CameraWorkspace(props: {
 				</div>
 			</Show>
 			<Show when={state.panel}>
-				<div {...stylex.props(styles.rail)}>
+				<div {...stylex.attrs(styles.rail)}>
 					<For each={state.panel?.arrangement.cameras}>
 						{(c) => (
 							<button
-								{...stylex.props(
+								{...stylex.attrs(
 									styles.card,
 									c.id === state.panel?.activeCameraId && styles.selected
 								)}
 								disabled={busy()}
-								aria-pressed={c.id === state.panel?.activeCameraId}
+								aria-pressed={
+									c.id === state.panel?.activeCameraId ? "true" : "false"
+								}
 								onClick={() => {
 									setHasFrame(false);
 									send({ kind: "activate", cameraId: c.id });
@@ -372,24 +370,24 @@ export function CameraWorkspace(props: {
 						)}
 					</For>
 				</div>
-				<div {...stylex.props(styles.editor)}>
-					<div {...stylex.props(styles.preview)}>
+				<div {...stylex.attrs(styles.editor)}>
+					<div {...stylex.attrs(styles.preview)}>
 						<canvas
 							ref={setCanvas}
 							aria-label="Active camera preview"
-							{...stylex.props(styles.canvas)}
+							{...stylex.attrs(styles.canvas)}
 						/>
 						<span>{hasFrame() ? "Live" : "Connecting preview…"}</span>
-						<div {...stylex.props(styles.row)}>
+						<div {...stylex.attrs(styles.row)}>
 							<button
-								{...stylex.props(styles.primary)}
+								{...stylex.attrs(styles.primary)}
 								disabled={busy()}
 								onClick={() => native("pilot")}
 							>
 								Edit in Unreal ↗
 							</button>
 							<button
-								{...stylex.props(styles.button)}
+								{...stylex.attrs(styles.button)}
 								disabled={busy()}
 								onClick={() => native("eject")}
 							>
@@ -397,33 +395,33 @@ export function CameraWorkspace(props: {
 							</button>
 						</div>
 					</div>
-					<div {...stylex.props(styles.inspector)}>
-						<div {...stylex.props(styles.row)}>
+					<div {...stylex.attrs(styles.inspector)}>
+						<div {...stylex.attrs(styles.row)}>
 							<button
-								{...stylex.props(styles.button, wholeSet() && styles.selected)}
-								aria-pressed={wholeSet()}
+								{...stylex.attrs(styles.button, wholeSet() && styles.selected)}
+								aria-pressed={wholeSet() ? "true" : "false"}
 								onClick={() => setWholeSet(true)}
 							>
 								Whole set
 							</button>
 							<button
-								{...stylex.props(styles.button, !wholeSet() && styles.selected)}
-								aria-pressed={!wholeSet()}
+								{...stylex.attrs(styles.button, !wholeSet() && styles.selected)}
+								aria-pressed={!wholeSet() ? "true" : "false"}
 								disabled={tab() === "Layout" || tab() === "Capture"}
 								onClick={() => setWholeSet(false)}
 							>
 								This camera
 							</button>
 						</div>
-						<nav {...stylex.props(styles.row)}>
+						<nav {...stylex.attrs(styles.row)}>
 							<For each={["Framing", "Layout", "Visibility", "Capture"] as const}>
 								{(item) => (
 									<button
-										{...stylex.props(
+										{...stylex.attrs(
 											styles.tab,
 											tab() === item && styles.selected
 										)}
-										aria-pressed={tab() === item}
+										aria-pressed={tab() === item ? "true" : "false"}
 										onClick={() => {
 											setTab(item);
 											if (item === "Layout" || item === "Capture")
@@ -437,11 +435,11 @@ export function CameraWorkspace(props: {
 						</nav>
 						<Show when={tab() === "Framing"}>
 							<Show when={!wholeSet()}>
-								<label {...stylex.props(styles.field)}>
+								<label {...stylex.attrs(styles.field)}>
 									Name
 									<input
 										aria-label="Camera name"
-										{...stylex.props(styles.input)}
+										{...stylex.attrs(styles.input)}
 										value={camera()?.displayName ?? ""}
 										disabled={busy()}
 										onChange={(event) => {
@@ -459,10 +457,10 @@ export function CameraWorkspace(props: {
 							</Show>
 							<For each={fields}>
 								{(field) => (
-									<label {...stylex.props(styles.field)}>
+									<label {...stylex.attrs(styles.field)}>
 										<span>{field.label}</span>
 										<input
-											{...stylex.props(styles.input)}
+											{...stylex.attrs(styles.input)}
 											type="number"
 											aria-label={field.label}
 											min={field.min}
@@ -496,7 +494,7 @@ export function CameraWorkspace(props: {
 										>
 											<button
 												aria-label={`Reset ${field.label}`}
-												{...stylex.props(styles.tab)}
+												{...stylex.attrs(styles.tab)}
 												onClick={() => tune(field.key, undefined)}
 											>
 												↺
@@ -508,9 +506,9 @@ export function CameraWorkspace(props: {
 							<Show when={!wholeSet()}>
 								<details>
 									<summary>Camera actions</summary>
-									<div {...stylex.props(styles.row)}>
+									<div {...stylex.attrs(styles.row)}>
 										<button
-											{...stylex.props(styles.button)}
+											{...stylex.attrs(styles.button)}
 											disabled={busy()}
 											onClick={() =>
 												command({
@@ -529,7 +527,7 @@ export function CameraWorkspace(props: {
 											Duplicate
 										</button>
 										<button
-											{...stylex.props(styles.button)}
+											{...stylex.attrs(styles.button)}
 											disabled={busy() || state.panel!.cameras.length === 1}
 											onClick={() =>
 												send({
@@ -545,7 +543,7 @@ export function CameraWorkspace(props: {
 							</Show>
 							<Show when={!wholeSet() && camera()?.manualPose}>
 								<button
-									{...stylex.props(styles.button)}
+									{...stylex.attrs(styles.button)}
 									disabled={busy()}
 									onClick={() =>
 										command({
@@ -560,11 +558,11 @@ export function CameraWorkspace(props: {
 							</Show>
 						</Show>
 						<Show when={tab() === "Layout"}>
-							<div {...stylex.props(styles.row)}>
+							<div {...stylex.attrs(styles.row)}>
 								<For each={presets}>
 									{(preset) => (
 										<button
-											{...stylex.props(styles.button)}
+											{...stylex.attrs(styles.button)}
 											onClick={() => setLayout(preset.layout)}
 										>
 											{preset.name}
@@ -572,10 +570,10 @@ export function CameraWorkspace(props: {
 									)}
 								</For>
 							</div>
-							<label {...stylex.props(styles.field)}>
+							<label {...stylex.attrs(styles.field)}>
 								Cameras
 								<input
-									{...stylex.props(styles.input)}
+									{...stylex.attrs(styles.input)}
 									type="number"
 									min="1"
 									max="256"
@@ -589,10 +587,10 @@ export function CameraWorkspace(props: {
 									}}
 								/>
 							</label>
-							<label {...stylex.props(styles.field)}>
+							<label {...stylex.attrs(styles.field)}>
 								Start °
 								<input
-									{...stylex.props(styles.input)}
+									{...stylex.attrs(styles.input)}
 									type="number"
 									value={layout().startDegrees}
 									onChange={(e) =>
@@ -604,7 +602,7 @@ export function CameraWorkspace(props: {
 								/>
 							</label>
 							<button
-								{...stylex.props(styles.primary)}
+								{...stylex.attrs(styles.primary)}
 								disabled={busy()}
 								onClick={() =>
 									send({
@@ -618,16 +616,16 @@ export function CameraWorkspace(props: {
 							</button>
 						</Show>
 						<Show when={tab() === "Visibility"}>
-							<div {...stylex.props(styles.row)}>
+							<div {...stylex.attrs(styles.row)}>
 								<button
-									{...stylex.props(styles.button)}
+									{...stylex.attrs(styles.button)}
 									disabled={busy()}
 									onClick={() => native("hide_selection")}
 								>
 									Hide Unreal selection
 								</button>
 								<button
-									{...stylex.props(styles.button)}
+									{...stylex.attrs(styles.button)}
 									disabled={busy()}
 									onClick={() => native("protect_selection")}
 								>
@@ -650,7 +648,7 @@ export function CameraWorkspace(props: {
 											}
 										>
 											{(entry) => (
-												<div {...stylex.props(styles.row)}>
+												<div {...stylex.attrs(styles.row)}>
 													<span>{entry.label}</span>
 													<Show
 														when={
@@ -668,7 +666,7 @@ export function CameraWorkspace(props: {
 														fallback={<small>Inherited</small>}
 													>
 														<button
-															{...stylex.props(styles.tab)}
+															{...stylex.attrs(styles.tab)}
 															aria-label={`Remove ${entry.label}`}
 															disabled={busy()}
 															onClick={() =>
@@ -693,11 +691,11 @@ export function CameraWorkspace(props: {
 							</For>
 						</Show>
 						<Show when={tab() === "Capture"}>
-							<label {...stylex.props(styles.field)}>
+							<label {...stylex.attrs(styles.field)}>
 								Exposure
 								<select
 									aria-label="Exposure"
-									{...stylex.props(styles.input)}
+									{...stylex.attrs(styles.input)}
 									disabled={busy()}
 									value={state.panel?.renderPolicy.exposure.mode}
 									onChange={(event) => {
@@ -725,11 +723,11 @@ export function CameraWorkspace(props: {
 								</select>
 							</label>
 							<Show when={state.panel?.renderPolicy.exposure.mode === "fixed_ev100"}>
-								<label {...stylex.props(styles.field)}>
+								<label {...stylex.attrs(styles.field)}>
 									EV100
 									<input
 										aria-label="EV100"
-										{...stylex.props(styles.input)}
+										{...stylex.attrs(styles.input)}
 										type="number"
 										min="-20"
 										max="30"
@@ -761,10 +759,10 @@ export function CameraWorkspace(props: {
 									/>
 								</label>
 							</Show>
-							<label {...stylex.props(styles.field)}>
+							<label {...stylex.attrs(styles.field)}>
 								Output
 								<select
-									{...stylex.props(styles.input)}
+									{...stylex.attrs(styles.input)}
 									value={state.panel?.arrangement.output ?? "natural_only"}
 									disabled={busy()}
 									onChange={(event) => {
@@ -794,14 +792,14 @@ export function CameraWorkspace(props: {
 									affected
 								</p>
 								<button
-									{...stylex.props(styles.primary)}
+									{...stylex.attrs(styles.primary)}
 									disabled={busy()}
 									onClick={() => send({ kind: "accept_proposal" })}
 								>
 									Apply layout
 								</button>
 								<button
-									{...stylex.props(styles.button)}
+									{...stylex.attrs(styles.button)}
 									onClick={() => send({ kind: "cancel_proposal" })}
 								>
 									Cancel

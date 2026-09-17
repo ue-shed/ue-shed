@@ -67,6 +67,13 @@ test("camera sets survive Workbench restart and capture their saved revisions", 
 		UE_SHED_REVIEW_SET: reviewPath,
 		UE_SHED_REMEMBER_PROJECTS: "false"
 	});
+	const cameraRoot = resolve(projectRoot, ".ue-shed/camera-sets");
+	const draftRoot = resolve(
+		cameraRoot,
+		createHash("sha256").update(id).digest("hex").slice(0, 20)
+	);
+	if (!draftRoot.startsWith(cameraRoot + "/") && !draftRoot.startsWith(cameraRoot + "\\"))
+		throw new Error("Unexpected camera test path");
 	let app: ElectronApplication | undefined;
 	const launch = async () => {
 		app = await electron.launch({
@@ -150,13 +157,7 @@ test("camera sets survive Workbench restart and capture their saved revisions", 
 		await expect(completed).toContainText(/0\s*Failed/);
 	} finally {
 		await app?.close().catch(() => undefined);
-		const cameraRoot = resolve(projectRoot, ".ue-shed/camera-sets");
-		const draftRoot = resolve(
-			cameraRoot,
-			createHash("sha256").update(id).digest("hex").slice(0, 20)
-		);
-		if (!draftRoot.startsWith(cameraRoot + "/") && !draftRoot.startsWith(cameraRoot + "\\"))
-			throw new Error("Unexpected camera test path");
+
 		await rm(draftRoot, { recursive: true, force: true });
 		await rm(root, { recursive: true, force: true });
 	}

@@ -42,11 +42,22 @@ test("keeps sidebar footer controls visible and keyboard accessible", async ({ w
 	await expect
 		.poll(() => workbench.page.evaluate("window.ueShed.editorSession.settings()"))
 		.toEqual({ endpoint: "http://127.0.0.1:39992/", port: 39992 });
+	await workbench.page.getByRole("main").click();
+	await expect(sessionSettings).toBeHidden();
 	await sessionSettingsTrigger.click();
+	await expect(sessionSettings).toBeVisible();
+	await workbench.page.keyboard.press("Escape");
+	await expect(sessionSettings).toBeHidden();
+	await expect(sessionSettingsTrigger).toBeFocused();
 
-	await workbench.page.getByText("Launch ▾", { exact: true }).click();
-	await expectWithinViewport(
-		workbench.page,
-		workbench.page.getByRole("region", { name: "Launch project options" })
-	);
+	const launchTrigger = workbench.page.getByText("Launch ▾", { exact: true });
+	const launchMenu = workbench.page.getByRole("region", { name: "Launch project options" });
+	await launchTrigger.click();
+	await expectWithinViewport(workbench.page, launchMenu);
+	await workbench.page.getByRole("main").click();
+	await expect(launchMenu).toBeHidden();
+	await launchTrigger.click();
+	await workbench.page.keyboard.press("Escape");
+	await expect(launchMenu).toBeHidden();
+	await expect(launchTrigger).toBeFocused();
 });

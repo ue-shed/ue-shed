@@ -86,6 +86,18 @@ it("copies selected details and offers selectable fallback when clipboard fails"
 	expect(input.value).toBe("X=1 Y=2 Z=3");
 });
 
+it("dismisses the preset panel when focus moves outside it", async () => {
+	mount();
+	const summary = screen.getByText("Filter presets");
+	const details = summary.closest("details");
+	if (!(details instanceof HTMLDetailsElement)) throw new Error("Expected preset details");
+
+	fireEvent.click(summary);
+	expect(details.open).toBe(true);
+	fireEvent.focusIn(screen.getByRole("button", { name: "Copy GUID" }));
+	expect(details.open).toBe(false);
+});
+
 it("applies presets through both search and class callbacks in the shared explorer", async () => {
 	await Effect.runPromise(writeActorFilterPreset(localStorage, "Lighting", filters));
 	const query = vi.fn();

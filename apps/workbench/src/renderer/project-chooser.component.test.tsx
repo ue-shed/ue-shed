@@ -143,9 +143,19 @@ describe("ProjectChooser", () => {
 		renderChooser({ choose: () => Effect.succeed(ready), current: ready });
 
 		expect(await screen.findByText("Offline")).toBeDefined();
-		await userEvent.setup().click(screen.getByText("Launch ▾"));
+		const user = userEvent.setup();
+		const summary = screen.getByText("Launch ▾");
+		const details = summary.closest("details");
+		if (!(details instanceof HTMLDetailsElement)) throw new Error("Expected launch details");
+		await user.click(summary);
 		expect(screen.getByRole("button", { name: /With plugin suite/ })).toBeDefined();
 		expect(screen.getByRole("button", { name: /Plain editor/ })).toBeDefined();
+		await user.click(screen.getByText("Offline"));
+		expect(details.open).toBe(false);
+		await user.click(summary);
+		await user.keyboard("{Escape}");
+		expect(details.open).toBe(false);
+		expect(document.activeElement).toBe(summary);
 	});
 
 	it("offers recent projects and switches without reopening the directory picker", async () => {
@@ -169,16 +179,23 @@ describe("ProjectChooser", () => {
 			recent: [ready.project, otherProject.project]
 		});
 
-		await userEvent.setup().click(await screen.findByLabelText("Recent projects"));
+		const user = userEvent.setup();
+		const recentSummary = await screen.findByLabelText("Recent projects");
+		const recentDetails = recentSummary.closest("details");
+		if (!(recentDetails instanceof HTMLDetailsElement)) {
+			throw new Error("Expected recent-project details");
+		}
+		await user.click(recentSummary);
 		expect(screen.getByText("Stored only on this device")).toBeDefined();
 		expect(
 			screen.getByRole<HTMLButtonElement>("button", {
 				name: "Open recent project Fixture"
 			}).disabled
 		).toBe(true);
-		await userEvent
-			.setup()
-			.click(screen.getByRole("button", { name: "Open recent project OtherProject" }));
+		await user.click(screen.getByText("Offline"));
+		expect(recentDetails.open).toBe(false);
+		await user.click(recentSummary);
+		await user.click(screen.getByRole("button", { name: "Open recent project OtherProject" }));
 
 		await waitFor(() => expect(openRecent).toHaveBeenCalledWith("D:/Projects/OtherProject"));
 		expect(await screen.findByRole("button", { name: "OtherProject" })).toBeDefined();

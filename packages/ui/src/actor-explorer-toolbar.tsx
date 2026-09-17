@@ -4,6 +4,7 @@ import { Effect } from "effect";
 import { For, Show, createEffect, createMemo, createSignal } from "solid-js";
 import type { ActorExplorerFilters, ActorExplorerItem } from "./actor-explorer-core.js";
 import { Button } from "./button.js";
+import { createDismissibleDetails } from "./dismissible-details.js";
 import { createEffectAction } from "./effect-solid.js";
 import {
 	actorPresetStorage,
@@ -29,6 +30,7 @@ export function ActorExplorerUtilities(props: {
 	const [message, setMessage] = createSignal("");
 	const [copyValue, setCopyValue] = createSignal("");
 	const [pending, setPending] = createSignal(false);
+	const presetMenu = createDismissibleDetails();
 	const details = createMemo(() => (props.selected ? actorCopyDetails(props.selected) : []));
 	createEffect(
 		() => props.selected?.key,
@@ -73,6 +75,7 @@ export function ActorExplorerUtilities(props: {
 		<div {...stylex.attrs(styles.tools)}>
 			<Show when={props.presetsEnabled}>
 				<details
+					ref={(element) => presetMenu.ref(element)}
 					{...stylex.attrs(styles.presetMenu)}
 					onToggle={(event) => {
 						if (event.currentTarget.open && !pending()) load();

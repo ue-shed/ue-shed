@@ -1,5 +1,9 @@
 import * as stylex from "@stylexjs/stylex";
-import { createEffectAction, createEffectSubscription } from "@ue-shed/ui";
+import {
+	createDismissibleDetails,
+	createEffectAction,
+	createEffectSubscription
+} from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { TaskProgressModal, type TaskProgress } from "@ue-shed/ui/task-progress";
 import { Schedule, Stream } from "effect";
@@ -45,8 +49,8 @@ export function ProjectChooser(props: ProjectChooserProps) {
 	const [recentProjects, setRecentProjects] = createSignal<readonly WorkbenchRecentProject[]>([]);
 	const [launching, setLaunching] = createSignal<ProjectLaunchMode>();
 	const [launchResult, setLaunchResult] = createSignal<ProjectLaunchResult>();
-	const [launchMenu, setLaunchMenu] = createSignal<HTMLDetailsElement>();
-	const [recentMenu, setRecentMenu] = createSignal<HTMLDetailsElement>();
+	const launchMenu = createDismissibleDetails();
+	const recentMenu = createDismissibleDetails();
 	const applyProject = (
 		next: WorkbenchProjectState,
 		notifyRoutes: boolean,
@@ -121,7 +125,7 @@ export function ProjectChooser(props: ProjectChooserProps) {
 				setPending(false);
 				applyProject(next, true, true);
 				if (next.status === "ready") {
-					if (recentMenu()) recentMenu()!.open = false;
+					recentMenu.close();
 					refreshRecent();
 				}
 			}
@@ -161,7 +165,7 @@ export function ProjectChooser(props: ProjectChooserProps) {
 			onSuccess: (result) => {
 				setLaunching(undefined);
 				setLaunchResult(result);
-				if (result.status === "launched" && launchMenu()) launchMenu()!.open = false;
+				if (result.status === "launched") launchMenu.close();
 			}
 		});
 	};
@@ -188,7 +192,10 @@ export function ProjectChooser(props: ProjectChooserProps) {
 					{label()}
 				</button>
 				<Show when={recentProjects().length > 0}>
-					<details ref={setRecentMenu} {...stylex.attrs(styles.recentControl)}>
+					<details
+						ref={(element) => recentMenu.ref(element)}
+						{...stylex.attrs(styles.recentControl)}
+					>
 						<summary
 							aria-label="Recent projects"
 							title="Recent projects"
@@ -235,7 +242,10 @@ export function ProjectChooser(props: ProjectChooserProps) {
 			<Show when={project()?.status === "ready"}>
 				<div {...stylex.attrs(styles.launchRow)}>
 					<span {...stylex.attrs(styles.offline)}>Offline</span>
-					<details ref={setLaunchMenu} {...stylex.attrs(styles.launchControl)}>
+					<details
+						ref={(element) => launchMenu.ref(element)}
+						{...stylex.attrs(styles.launchControl)}
+					>
 						<summary {...stylex.attrs(styles.launchSummary)}>Launch ▾</summary>
 						<section
 							aria-label="Launch project options"

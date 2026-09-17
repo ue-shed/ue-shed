@@ -1,6 +1,10 @@
 import * as stylex from "@stylexjs/stylex";
 import type { EditorPlaySessionCommand } from "@ue-shed/protocol";
-import { createEffectAction, createEffectSubscription } from "@ue-shed/ui";
+import {
+	createDismissibleDetails,
+	createEffectAction,
+	createEffectSubscription
+} from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { Exit } from "effect";
 import { For, Show, createMemo, createSignal, onSettled } from "solid-js";
@@ -28,6 +32,7 @@ export function EditorSessionTransport(props: {
 	const [port, setPort] = createSignal<number>();
 	const [portDraft, setPortDraft] = createSignal("");
 	const [portMessage, setPortMessage] = createSignal<string>();
+	const settings = createDismissibleDetails();
 	const actions = createMemo(() => editorSessionTransportActions(state()));
 	const subscribeStatus = () =>
 		subscription.subscribe(props.client.editorSessionStatuses, {
@@ -132,7 +137,7 @@ export function EditorSessionTransport(props: {
 				)}
 			/>
 			<span {...stylex.attrs(styles.label)}>{editorSessionTransportLabel(state())}</span>
-			<details {...stylex.attrs(styles.settings)}>
+			<details ref={(element) => settings.ref(element)} {...stylex.attrs(styles.settings)}>
 				<summary
 					aria-label="Change Unreal target port"
 					title="Unreal target port"

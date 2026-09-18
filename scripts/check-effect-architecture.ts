@@ -52,6 +52,9 @@ const approvedRuntimeExits = new Set([
 	"packages/unreal-assets/src/protocol-transport.ts"
 ]);
 const approvedPromiseAdapters = new Set([
+	// Native foreground permission adapts Node execFile once behind an Effect-only service;
+	// the request AbortSignal and a bounded timeout own the short-lived helper process.
+	"packages/engine/src/editor-window-activation.ts",
 	// Atomic filesystem writes and cross-process file locks stay behind an Effect-only store port.
 	"packages/cameras/src/camera-authoring-store.ts",
 	// The CLI plugin installer owns filesystem/archive promises behind an Effect boundary.
@@ -122,6 +125,12 @@ const approvedRawFetchAdapters = new Set([
 	"packages/unreal-connection/src/remote-control-client.ts"
 ]);
 const approvedResourceAdapters = new Set([
+	// Popover DOM listeners and animation frames are released by Solid effect/onSettled cleanup;
+	// anchored-popover.component.test.tsx verifies close and unmount teardown.
+	"packages/ui/src/anchored-popover.tsx",
+	// Native details light-dismiss listeners belong to the Solid owner and are removed on unmount;
+	// dismissible-details.component.test.tsx pins the document-listener cleanup.
+	"packages/ui/src/dismissible-details.ts",
 	// CLI signal listeners are installed through Effect.callback and removed by its scope.
 	"apps/cli/src/signal.ts",
 	"apps/workbench/src/main/adapters/electron-app.ts",

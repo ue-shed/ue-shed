@@ -1,9 +1,12 @@
-import { cleanup, render, screen } from "@solidjs/testing-library";
+import { cleanup, fireEvent, render, screen } from "@solidjs/testing-library";
 import { userEvent } from "@testing-library/user-event";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { AnchoredPopover } from "./anchored-popover.js";
 
-afterEach(cleanup);
+afterEach(() => {
+	cleanup();
+	vi.restoreAllMocks();
+});
 
 function PopoverFixture() {
 	return (
@@ -48,4 +51,37 @@ it("light-dismisses and returns focus after Escape", async () => {
 	expect(screen.queryByRole("dialog", { name: "Actions" })).toBeNull();
 	expect(trigger.getAttribute("aria-expanded")).toBe("false");
 	expect(document.activeElement).toBe(trigger);
+});
+
+it("releases positioning resources on close and document listeners on unmount", () => {
+	const documentAdds = vi.spyOn(document, "addEventListener");
+	const documentRemoves = vi.spyOn(document, "removeEventListener");
+	const windowAdds = vi.spyOn(window, "addEventListener");
+	const windowRemoves = vi.spyOn(window, "removeEventListener");
+	const frames = vi.spyOn(window, "requestAnimationFrame").mockReturnValue(41);
+	const cancelFrame = vi.spyOn(window, "cancelAnimationFrame");
+	const view = render(() => <PopoverFixture />);
+	const trigger = screen.getByRole("button", { name: "Open actions" });
+	const listeners = documentAdds.mock.calls.filter(
+		([type, , capture]) =>
+			capture === true && ["pointerdown", "focusin", "keydown"].includes(type)
+	);
+	expect(listeners).toHaveLength(3);
+
+	fireEvent.click(trigger);
+	expect(frames).toHaveBeenCalledTimes(1);
+	const positioning = windowAdds.mock.calls.filter(([type]) =>
+		["resize", "scroll"].includes(type)
+	);
+	expect(positioning).toHaveLength(2);
+	fireEvent.click(trigger);
+	expect(cancelFrame).toHaveBeenCalledWith(41);
+	for (const listener of positioning) expect(windowRemoves).toHaveBeenCalledWith(...listener);
+
+	fireEvent.click(trigger);
+	view.unmount();
+	expect(cancelFrame).toHaveBeenCalledTimes(2);
+	for (const listener of listeners) expect(documentRemoves).toHaveBeenCalledWith(...listener);
+	for (const listener of positioning) expect(windowRemoves).toHaveBeenCalledWith(...listener);
+	expect(screen.queryByRole("dialog", { name: "Actions" })).toBeNull();
 });

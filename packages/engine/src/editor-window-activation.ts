@@ -36,7 +36,7 @@ export const EditorForegroundPermissionLive = Layer.succeed(EditorForegroundPerm
 			expectedProcessId: processId
 		}).pipe(Effect.mapError((cause) => failure("grant.validate", cause)));
 		const result = yield* Effect.tryPromise({
-			try: () =>
+			try: (signal) =>
 				new Promise<string>((resolve, reject) => {
 					const require = createRequire(import.meta.url);
 					const manifest = require.resolve("@ue-shed/engine-win32-x64/package.json");
@@ -48,7 +48,7 @@ export const EditorForegroundPermissionLive = Layer.succeed(EditorForegroundPerm
 					execFile(
 						executable,
 						["--allow-foreground", String(processId)],
-						{ windowsHide: true, timeout: 3000, maxBuffer: 4096 },
+						{ windowsHide: true, timeout: 3000, maxBuffer: 4096, signal },
 						(error, stdout) => (error ? reject(error) : resolve(stdout.trim()))
 					);
 				}),

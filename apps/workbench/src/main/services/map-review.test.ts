@@ -360,6 +360,17 @@ it.effect("enters first-run Map Review setup when a project has no configured Re
 	Effect.gen(function* () {
 		const service = yield* WorkbenchMapReview;
 		expect(yield* service.load()).toEqual({ status: "setup_required" });
+		if (!service.cameraWorkspace) throw new Error("Camera workspace service missing");
+		expect(yield* service.cameraWorkspace({ kind: "list" })).toEqual({
+			panel: null,
+			sets: [],
+			error: null
+		});
+		expect(yield* service.cameraWorkspace({ kind: "state" })).toEqual({
+			panel: null,
+			sets: [],
+			error: null
+		});
 	}).pipe(
 		Effect.provide(
 			WorkbenchMapReviewTestLive.pipe(

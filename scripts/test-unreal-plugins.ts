@@ -30,6 +30,9 @@ writeFileSync(
 const descriptors = prepareUnrealPlugins({ engineRoot, projectPath: project, tools });
 const tests = [
 	"UEShed.Cameras.Authoring.NativeLifecycle",
+	"UEShed.Cameras.Authoring.FullSetEditing",
+	"UEShed.Cameras.Authoring.MultiCameraPreviews",
+	"UEShed.Cameras.Authoring.PreviewPanel",
 	"UEShed.Cameras.Rendering.ViewLocalVisibilityProof",
 	"UEShed.Authoring.CanonicalJson",
 	"UEShed.Cameras.Rendering.LifecycleAndReference",
@@ -56,8 +59,8 @@ const result = spawnSync(
 		"-nop4",
 		"-nosplash",
 		"-RenderOffscreen",
-		"-ResX=640",
-		"-ResY=480",
+		"-ResX=1280",
+		"-ResY=800",
 		"-NoSound"
 	],
 	{ stdio: "inherit", windowsHide: true, timeout: 900_000 }

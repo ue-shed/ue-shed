@@ -105,6 +105,7 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 	}>();
 	const [captureOpen, setCaptureOpen] = createSignal(false);
 	const [setLibraryOpen, setSetLibraryOpen] = createSignal(false);
+	const [createCameraRequest, setCreateCameraRequest] = createSignal(0);
 	const [worldSource, setWorldSource] = createSignal<"saved" | "live">(
 		props.client.readSavedWorld === undefined || props.client.savedWorldMaps === undefined
 			? "live"
@@ -204,6 +205,10 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 			onFailure: (cause) => apply(clientFailure(cause)),
 			onSuccess: apply
 		});
+	const cameraSetOpened = () => {
+		setCreateCameraRequest(0);
+		load();
+	};
 	onSettled(load);
 
 	return (
@@ -211,6 +216,14 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 			<Show when={setLibraryOpen()}>
 				<ReviewSetLibrary
 					canCreate={ready() !== undefined}
+					onNewCameraSet={
+						props.client.cameraWorkspace
+							? () => {
+									setSetLibraryOpen(false);
+									setCreateCameraRequest((value) => value + 1);
+								}
+							: undefined
+					}
 					client={props.client}
 					onChanged={apply}
 					onClose={() => setSetLibraryOpen(false)}
@@ -409,6 +422,9 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 								}
 							>
 								<CameraWorkspace
+									createRequest={createCameraRequest()}
+									onOpened={cameraSetOpened}
+									reviewSetName={ready()?.reviewSet.displayName}
 									client={props.client}
 									focusRequest={selectedActorRequest()}
 									onApproved={load}
@@ -507,6 +523,9 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 									}
 								>
 									<CameraWorkspace
+										createRequest={createCameraRequest()}
+										onOpened={cameraSetOpened}
+										reviewSetName={ready()?.reviewSet.displayName}
 										onCapture={() => setCaptureOpen(true)}
 										client={props.client}
 										focusRequest={selectedActorRequest()}
@@ -534,11 +553,18 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 													{views.length}{" "}
 													{views.length === 1 ? "view" : "views"}
 												</span>
-												<strong>
+												<strong {...stylex.attrs(styles.subjectLabel)}>
 													{views[0]?.subjectLabel ??
 														views[0]?.displayName}
 												</strong>
-												<code>
+												<code
+													title={
+														subject.startsWith("area:")
+															? "oriented area"
+															: subject
+													}
+													{...stylex.attrs(styles.subjectPath)}
+												>
 													{subject.startsWith("area:")
 														? "oriented area"
 														: subject}
@@ -1288,7 +1314,21 @@ const styles = stylex.create({
 		borderBottomStyle: "solid",
 		borderBottomWidth: 1
 	},
-	subjectIdentity: { display: "grid", alignContent: "start", gap: 4 },
+	subjectIdentity: { display: "grid", alignContent: "start", gap: 4, minWidth: 0 },
+	subjectLabel: {
+		display: "block",
+		minWidth: 0,
+		overflow: "hidden",
+		textOverflow: "ellipsis",
+		whiteSpace: "nowrap"
+	},
+	subjectPath: {
+		display: "block",
+		minWidth: 0,
+		overflow: "hidden",
+		textOverflow: "ellipsis",
+		whiteSpace: "nowrap"
+	},
 	subjectCount: {
 		width: "fit-content",
 		padding: "1px 6px",
@@ -1300,7 +1340,7 @@ const styles = stylex.create({
 		fontSize: 11,
 		fontWeight: 500
 	},
-	viewRail: { display: "flex", gap: tokens.space2, overflowX: "auto" },
+	viewRail: { display: "flex", gap: tokens.space2, minWidth: 0, overflowX: "auto" },
 	viewCard: {
 		minWidth: 170,
 		display: "flex",

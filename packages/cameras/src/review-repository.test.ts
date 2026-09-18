@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Effect, Schema } from "effect";
 import { expect } from "vitest";
-import { bootstrapMapReviewSet } from "./review-bootstrap.js";
+import { bootstrapMapReviewSet, createMapReviewSet } from "./review-bootstrap.js";
 import {
 	createReviewSetFromTemplate,
 	listReviewSets,
@@ -57,6 +57,30 @@ it.effect("discovers portable Review Sets beneath the project review root", () =
 			]);
 		}).pipe(Effect.provide(ReviewRepositoryLive))
 	)
+);
+
+it.effect(
+	"creates a first Review Set directly from a selection without overwriting existing sets",
+	() =>
+		withProject((projectRoot) =>
+			Effect.gen(function* () {
+				if (selection.status !== "selected") return;
+				const repository = yield* ReviewRepository;
+				const first = yield* createMapReviewSet({ projectRoot, selection });
+				const second = yield* createMapReviewSet({
+					projectRoot,
+					selection,
+					displayName: "Another review"
+				});
+				expect(first.reviewSet.id).not.toBe(second.reviewSet.id);
+				expect(yield* repository.loadSet(first.reviewSetPath)).toMatchObject({
+					project: { mapPath: selection.mapPath },
+					views: [],
+					captureProfiles: [expect.objectContaining({ id: "default-png-720p" })]
+				});
+				expect(yield* repository.listSets(projectRoot)).toHaveLength(2);
+			}).pipe(Effect.provide(ReviewRepositoryLive))
+		)
 );
 
 it.effect("creates an empty sibling set from durable capture settings", () =>

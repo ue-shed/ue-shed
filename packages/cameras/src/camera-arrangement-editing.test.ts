@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
 	ArrangementCameraId,
+	CameraArrangementId,
 	approveArrangementCamera,
 	createCameraArrangementFromSelection,
 	CameraArrangementCommand,
@@ -96,6 +97,63 @@ describe("complete camera arrangement editing", () => {
 		expect(
 			resolveArrangementCamera(created.arrangement, "camera-1").location.z
 		).toBeGreaterThan(original.bounds.center.z);
+	});
+	it("creates every preset camera before attachment with distinct capture identities", () => {
+		const original = fixtureArrangement();
+		for (const count of [1, 3, 4, 8, 16]) {
+			const created = createCameraArrangementFromSelection({
+				id: original.id,
+				projectName: original.projectName,
+				layout: {
+					kind: "orbit",
+					count,
+					startDegrees: 0,
+					spanDegrees: 360,
+					orientation: "world"
+				},
+				selection: {
+					contract: { name: "ue-shed-review-selection", version: { major: 1, minor: 1 } },
+					status: "selected",
+					displayName: "Subject",
+					actorPath: "/Game/Fixture.Fixture:PersistentLevel.Subject",
+					bounds: original.bounds,
+					mapPath: original.mapPath
+				}
+			});
+			expect(created.arrangement.cameras).toHaveLength(count);
+			expect(new Set(created.arrangement.cameras.map((camera) => camera.viewId)).size).toBe(
+				count
+			);
+			expect(created.arrangement.cameras.map((camera) => camera.yawDegrees)).toEqual(
+				Array.from({ length: count }, (_, i) => (i * 360) / count)
+			);
+			expect(created.arrangement.cameras.every((camera) => !camera.manualPose)).toBe(true);
+			expect(created.reviewSet.views).toHaveLength(0);
+		}
+	});
+	it("never silently truncates arrangement IDs when allocating preset Views", () => {
+		const original = fixtureArrangement();
+		expect(() =>
+			createCameraArrangementFromSelection({
+				id: CameraArrangementId.make("a".repeat(128)),
+				projectName: original.projectName,
+				layout: {
+					kind: "orbit",
+					count: 4,
+					startDegrees: 0,
+					spanDegrees: 360,
+					orientation: "world"
+				},
+				selection: {
+					contract: { name: "ue-shed-review-selection", version: { major: 1, minor: 1 } },
+					status: "selected",
+					displayName: "Subject",
+					actorPath: "/Game/Fixture.Fixture:PersistentLevel.Subject",
+					bounds: original.bounds,
+					mapPath: original.mapPath
+				}
+			})
+		).toThrow("shorter arrangement ID");
 	});
 	it("keeps map-specific visibility presets immutable and allows retrying the same export", async () => {
 		const root = await mkdtemp(join(tmpdir(), "ue-shed-preset-"));

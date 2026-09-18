@@ -1,5 +1,5 @@
 import { CameraPanelAction, CameraPanelState } from "./camera-authoring-panel-schema.js";
-import { CameraArrangementId, CameraEditScope } from "./camera-arrangement.js";
+import { CameraArrangementId, CameraEditScope, CameraLayout } from "./camera-arrangement.js";
 import { Schema } from "effect";
 import { CameraFrameEvidence } from "./camera-render-schema.js";
 import { ReviewCaptureBlock } from "./review-session-policy.js";
@@ -369,6 +369,8 @@ export const CameraWorkspaceRequest = Schema.Union([
 		kind: Schema.Literal("open"),
 		id: Schema.optionalKey(CameraArrangementId),
 		actorPath: Schema.optionalKey(Schema.NonEmptyString),
+		layout: Schema.optionalKey(CameraLayout),
+		livePreview: Schema.optionalKey(Schema.Boolean),
 		name: Schema.optionalKey(Schema.NonEmptyString)
 	}),
 	Schema.Struct({

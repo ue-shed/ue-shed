@@ -57,9 +57,22 @@ test("keeps sidebar footer controls visible and keyboard accessible", async ({
 	await expect(sessionSettingsTrigger).toBeFocused();
 
 	const launchTrigger = workbench.page.getByText("Launch ▾", { exact: true });
-	const launchMenu = workbench.page.getByRole("region", { name: "Launch project options" });
+	const launchMenu = workbench.page.getByRole("dialog", { name: "Launch project options" });
 	await launchTrigger.click();
 	await expectWithinViewport(workbench.page, launchMenu);
+	expect(
+		await launchMenu.evaluate((element) => {
+			const style = element.ownerDocument.defaultView?.getComputedStyle(element);
+			if (!style) throw new Error("Expected computed launch-menu styles");
+			return style.fontFamily;
+		})
+	).toBe(
+		await launchTrigger.evaluate((element) => {
+			const style = element.ownerDocument.defaultView?.getComputedStyle(element);
+			if (!style) throw new Error("Expected computed launch-trigger styles");
+			return style.fontFamily;
+		})
+	);
 	await workbench.page.screenshot({ path: testInfo.outputPath("editor-handoff-footer.png") });
 	await workbench.page.getByRole("main").click();
 	await expect(launchMenu).toBeHidden();

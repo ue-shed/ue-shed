@@ -1,4 +1,5 @@
 #include "UEShedCameraAuthoringBridge.h"
+#include "UEShedCameraSetup.h"
 #include "Camera/CameraComponent.h"
 #include "Containers/Ticker.h"
 #include "Editor.h"
@@ -18,10 +19,24 @@
 
 namespace
 {
+struct FAuthoringCamera
+{
+    TWeakObjectPtr<AUEShedAuthoringCamera> Actor;
+    FString Label;
+    FVector Location = FVector::ZeroVector;
+    FRotator Rotation = FRotator::ZeroRotator;
+    float FOV = 60;
+    bool Changed = false;
+    bool HostPresent = true;
+    TSharedPtr<FJsonObject> Definition;
+};
 struct FAuthoringState
 {
     FString Session, CameraId, Producer = FGuid::NewGuid().ToString(EGuidFormats::DigitsWithHyphens);
     TWeakObjectPtr<AUEShedAuthoringCamera> Proxy;
+    TMap<FString, FAuthoringCamera> Cameras;
+    TMap<FString, FAuthoringCamera> Deleted;
+    bool MultiCamera = false;
     TWeakObjectPtr<UWorld> World;
     TArray<TWeakObjectPtr<AActor>> Selection;
     FLevelEditorViewportClient *Viewport = nullptr;
@@ -39,6 +54,19 @@ struct FAuthoringState
 };
 TUniquePtr<FAuthoringState> AuthoringState;
 FString LastRecoveryMessage;
+TArray<TWeakObjectPtr<AUEShedAuthoringCamera>> ImportedCameras;
+TArray<TWeakObjectPtr<AUEShedAuthoringCamera>> UndoCameras;
+const FString CameraTagPrefix = TEXT("UEShed.Camera.");
+const FString ProducerTagPrefix = TEXT("UEShed.Producer.");
+void Eject();
+void TagCamera(AUEShedAuthoringCamera *Actor, const FString &Id)
+{
+    Actor->Tags.RemoveAll([](const FName &Tag) {
+        return Tag.ToString().StartsWith(CameraTagPrefix) || Tag.ToString().StartsWith(ProducerTagPrefix);
+    });
+    Actor->Tags.Add(FName(CameraTagPrefix + Id));
+    Actor->Tags.Add(FName(ProducerTagPrefix + AuthoringState->Producer));
+}
 TSharedPtr<FJsonObject> Obj()
 {
     return MakeShared<FJsonObject>();
@@ -88,25 +116,185 @@ bool ReadPose(const TSharedPtr<FJsonObject> &P, FVector &L, FRotator &R, double 
            Number(Rot, TEXT("pitch"), R.Pitch) && Number(Rot, TEXT("yaw"), R.Yaw) &&
            Number(Rot, TEXT("roll"), R.Roll) && Number(P, TEXT("fieldOfViewDegrees"), FOV) && FOV >= 5 && FOV <= 170;
 }
+TSharedPtr<FJsonObject> Pose(const FVector &Location, const FRotator &Rotation, float FOV)
+{
+    auto P = Obj(), L = Obj(), R = Obj();
+    L->SetNumberField(TEXT("x"), Location.X);
+    L->SetNumberField(TEXT("y"), Location.Y);
+    L->SetNumberField(TEXT("z"), Location.Z);
+    R->SetNumberField(TEXT("pitch"), Rotation.Pitch);
+    R->SetNumberField(TEXT("yaw"), Rotation.Yaw);
+    R->SetNumberField(TEXT("roll"), Rotation.Roll);
+    P->SetObjectField(TEXT("location"), L);
+    P->SetObjectField(TEXT("rotation"), R);
+    P->SetNumberField(TEXT("fieldOfViewDegrees"), FOV);
+    P->SetStringField(TEXT("projection"), TEXT("perspective"));
+    P->SetStringField(TEXT("aspectRatio"), TEXT("16:9"));
+    return P;
+}
+void ActiveObservation()
+{
+    if (const auto *Entry = AuthoringState->Cameras.Find(AuthoringState->CameraId))
+    {
+        AuthoringState->Proxy = Entry->Actor;
+        AuthoringState->ObservedLocation = Entry->Location;
+        AuthoringState->ObservedRotation = Entry->Rotation;
+        AuthoringState->ObservedFOV = Entry->FOV;
+    }
+}
+bool Owned(const AActor *Actor)
+{
+    if (Actor && AuthoringState)
+        for (const auto &Pair : AuthoringState->Cameras)
+            if (Pair.Value.Actor.Get() == Actor)
+                return true;
+    return false;
+}
+bool ReadCameras(const TSharedPtr<FJsonObject> &Q, TMap<FString, FAuthoringCamera> &Entries)
+{
+    const TArray<TSharedPtr<FJsonValue>> *Values;
+    if (!Q->TryGetArrayField(TEXT("cameras"), Values) || Values->IsEmpty() || Values->Num() > 256)
+        return false;
+    for (const auto &Value : *Values)
+    {
+        if (!Value || Value->Type != EJson::Object)
+            return false;
+        const auto C = Value->AsObject();
+        const FString Id = Str(C, TEXT("id")), Label = Str(C, TEXT("displayName"));
+        FAuthoringCamera Entry;
+        double FOV = 0;
+        if (!Identifier(Id) || Label.IsEmpty() || Entries.Contains(Id) ||
+            !ReadPose(Child(C, TEXT("pose")), Entry.Location, Entry.Rotation, FOV))
+            return false;
+        Entry.Label = Label;
+        Entry.FOV = FOV;
+        Entry.Definition = Child(C, TEXT("definition"));
+        if (Entry.Definition &&
+            (Str(Entry.Definition, TEXT("id")) != Id || !Identifier(Str(Entry.Definition, TEXT("viewId")))))
+            return false;
+        Entries.Add(Id, Entry);
+    }
+    return true;
+}
+bool Materialize(TMap<FString, FAuthoringCamera> Entries)
+{
+    // Reuse native actor identities: selection, Details and Unreal transactions keep working.
+    TArray<AUEShedAuthoringCamera *> Created;
+    for (auto &Pair : Entries)
+    {
+        auto *Existing = AuthoringState->Cameras.Find(Pair.Key);
+        Pair.Value.Actor = Existing ? Existing->Actor : nullptr;
+        if (!Pair.Value.Actor.IsValid())
+        {
+            FActorSpawnParameters Params;
+            Params.ObjectFlags = RF_Transient | RF_Transactional;
+            Params.bTemporaryEditorActor = true;
+            Params.bCreateActorPackage = false;
+            Pair.Value.Actor = AuthoringState->World->SpawnActor<AUEShedAuthoringCamera>(Pair.Value.Location,
+                                                                                         Pair.Value.Rotation, Params);
+            if (!Pair.Value.Actor.IsValid())
+            {
+                for (auto *Actor : Created)
+                    AuthoringState->World->DestroyActor(Actor, false, false);
+                return false;
+            }
+            Created.Add(Pair.Value.Actor.Get());
+        }
+    }
+    for (auto &Pair : Entries)
+    {
+        auto *Actor = Pair.Value.Actor.Get();
+        TagCamera(Actor, Pair.Key);
+        Actor->SetActorLabel(TEXT("UE Shed — ") + Pair.Value.Label, false);
+        Actor->SetActorLocationAndRotation(Pair.Value.Location, Pair.Value.Rotation);
+        Actor->GetCameraComponent()->SetFieldOfView(Pair.Value.FOV);
+        Pair.Value.Location = Actor->GetActorLocation();
+        Pair.Value.Rotation = Actor->GetActorRotation();
+        Pair.Value.FOV = Actor->GetCameraComponent()->FieldOfView;
+    }
+    for (const auto &Pair : AuthoringState->Cameras)
+        if (!Entries.Contains(Pair.Key) && Pair.Value.Actor.IsValid())
+        {
+            GEditor->SelectActor(Pair.Value.Actor.Get(), false, false);
+            AuthoringState->World->DestroyActor(Pair.Value.Actor.Get(), false, false);
+        }
+    AuthoringState->Cameras = MoveTemp(Entries);
+    for (auto &Pair : AuthoringState->Deleted)
+        Pair.Value.HostPresent = false;
+    ActiveObservation();
+    return true;
+}
 void Observe()
 {
-    if (!AuthoringState || !AuthoringState->Proxy.IsValid())
+    if (!AuthoringState || !GEditor)
         return;
-    auto *C = AuthoringState->Proxy.Get();
-    const auto L = C->GetActorLocation();
-    const auto R = C->GetActorRotation();
-    const float F = C->GetCameraComponent()->FieldOfView;
-    if (!L.Equals(AuthoringState->ObservedLocation, 0.0001) || !R.Equals(AuthoringState->ObservedRotation, 0.0001) ||
-        !FMath::IsNearlyEqual(F, AuthoringState->ObservedFOV, 0.0001f))
+    bool Changed = false;
+    FString SelectedId;
+    // Native Undo revives the same transaction-owned actor; retain its camera and View identities.
+    for (auto It = AuthoringState->Deleted.CreateIterator(); It; ++It)
+        if (It.Value().Actor.IsValid())
+        {
+            AuthoringState->Cameras.Add(It.Key(), It.Value());
+            It.RemoveCurrent();
+            Changed = true;
+        }
+    TArray<FString> Removed;
+    for (auto &Pair : AuthoringState->Cameras)
+    {
+        auto &Entry = Pair.Value;
+        auto *C = Entry.Actor.Get();
+        if (!C)
+        {
+            if (AuthoringState->MultiCamera && Entry.Definition)
+                Removed.Add(Pair.Key);
+            continue;
+        }
+        const auto L = C->GetActorLocation();
+        const auto R = C->GetActorRotation();
+        const float F = C->GetCameraComponent()->FieldOfView;
+        if (!L.Equals(Entry.Location, 0.0001) || !R.Equals(Entry.Rotation, 0.0001) ||
+            !FMath::IsNearlyEqual(F, Entry.FOV, 0.0001f))
+        {
+            Entry.Location = L;
+            Entry.Rotation = R;
+            Entry.FOV = F;
+            Entry.Changed = true;
+            Changed = true;
+        }
+        if (C->IsSelected() && GEditor->GetSelectedActorCount() == 1)
+            SelectedId = Pair.Key;
+    }
+    for (const auto &Id : Removed)
+    {
+        if (AuthoringState->Deleted.Num() >= 256)
+            for (auto It = AuthoringState->Deleted.CreateIterator(); It; ++It)
+                if (!It.Value().HostPresent)
+                {
+                    It.RemoveCurrent();
+                    break;
+                }
+        AuthoringState->Deleted.Add(Id, AuthoringState->Cameras.FindChecked(Id));
+        AuthoringState->Cameras.Remove(Id);
+        Changed = true;
+    }
+    if (!AuthoringState->Cameras.Contains(AuthoringState->CameraId) && AuthoringState->Cameras.Num())
+    {
+        Eject();
+        AuthoringState->CameraId = AuthoringState->Cameras.CreateConstIterator().Key();
+    }
+    if (!SelectedId.IsEmpty() && SelectedId != AuthoringState->CameraId && !AuthoringState->Viewport)
+    {
+        AuthoringState->CameraId = SelectedId;
+        Changed = true;
+    }
+    ActiveObservation();
+    if (Changed)
     {
         if (AuthoringState->SaveRequested)
         {
             AuthoringState->SaveRequested = false;
             AuthoringState->Notice = TEXT("Camera changed after Save; review and Save again.");
         }
-        AuthoringState->ObservedLocation = L;
-        AuthoringState->ObservedRotation = R;
-        AuthoringState->ObservedFOV = F;
         ++AuthoringState->Sequence;
     }
 }
@@ -138,6 +326,48 @@ TSharedPtr<FJsonObject> Snapshot()
     P->SetStringField(TEXT("projection"), TEXT("perspective"));
     P->SetStringField(TEXT("aspectRatio"), TEXT("16:9"));
     R->SetObjectField(TEXT("pose"), P);
+    if (AuthoringState->MultiCamera)
+    {
+        TArray<TSharedPtr<FJsonValue>> Cameras, Edits, Selected, Added, Removed;
+        for (const auto &Pair : AuthoringState->Cameras)
+        {
+            auto C = Obj();
+            C->SetStringField(TEXT("id"), Pair.Key);
+            C->SetStringField(TEXT("displayName"), Pair.Value.Label);
+            if (Pair.Value.Definition)
+                C->SetObjectField(TEXT("definition"), Pair.Value.Definition);
+            const auto NativePose = Pose(Pair.Value.Location, Pair.Value.Rotation, Pair.Value.FOV);
+            C->SetObjectField(TEXT("pose"), NativePose);
+            Cameras.Add(MakeShared<FJsonValueObject>(C));
+            if (!Pair.Value.HostPresent && Pair.Value.Definition)
+            {
+                auto Definition = MakeShared<FJsonObject>(*Pair.Value.Definition);
+                Definition->SetObjectField(TEXT("manualPose"), NativePose);
+                auto Overrides = Child(Definition, TEXT("overrides"));
+                Overrides = Overrides ? MakeShared<FJsonObject>(*Overrides) : Obj();
+                Overrides->SetNumberField(TEXT("fieldOfViewDegrees"), Pair.Value.FOV);
+                Definition->SetObjectField(TEXT("overrides"), Overrides);
+                Added.Add(MakeShared<FJsonValueObject>(Definition));
+            }
+            else if (Pair.Value.Changed)
+            {
+                auto Edit = Obj();
+                Edit->SetStringField(TEXT("cameraId"), Pair.Key);
+                Edit->SetObjectField(TEXT("pose"), NativePose);
+                Edits.Add(MakeShared<FJsonValueObject>(Edit));
+            }
+            if (Pair.Value.Actor.IsValid() && Pair.Value.Actor->IsSelected())
+                Selected.Add(MakeShared<FJsonValueString>(Pair.Key));
+        }
+        for (const auto &Pair : AuthoringState->Deleted)
+            if (Pair.Value.HostPresent)
+                Removed.Add(MakeShared<FJsonValueString>(Pair.Key));
+        R->SetArrayField(TEXT("added"), Added);
+        R->SetArrayField(TEXT("removed"), Removed);
+        R->SetArrayField(TEXT("cameras"), Cameras);
+        R->SetArrayField(TEXT("edits"), Edits);
+        R->SetArrayField(TEXT("selectedCameraIds"), Selected);
+    }
     if (AuthoringState->Panel)
         R->SetObjectField(TEXT("panel"), AuthoringState->Panel);
     if (AuthoringState->Event)
@@ -152,7 +382,7 @@ void Eject()
         !GEditor->GetLevelViewportClients().Contains(AuthoringState->Viewport))
         return;
     auto *V = AuthoringState->Viewport;
-    if (V->GetActorLock().GetLockedActor() == AuthoringState->Proxy.Get())
+    if (Owned(V->GetActorLock().GetLockedActor()) || !V->GetActorLock().GetLockedActor())
     {
         V->SetActorLock(nullptr);
         V->bLockedCameraView = AuthoringState->LockedCamera;
@@ -168,14 +398,62 @@ void Eject()
 AUEShedAuthoringCamera::AUEShedAuthoringCamera()
 {
     SetFlags(RF_Transient | RF_Transactional);
+    bIsEditorOnlyActor = true;
     GetCameraComponent()->SetFlags(RF_Transient | RF_Transactional);
     GetCameraComponent()->SetAspectRatio(16.f / 9.f);
+}
+void AUEShedAuthoringCamera::PostEditImport()
+{
+    Super::PostEditImport();
+    SetFlags(RF_Transient | RF_Transactional);
+    TInlineComponentArray<UActorComponent *> Components(this);
+    for (auto *Component : Components)
+        Component->SetFlags(RF_Transient | RF_Transactional);
+    FUEShedCameraAuthoringBridge::RegisterImportedCamera(this);
+}
+void AUEShedAuthoringCamera::PostEditUndo()
+{
+    Super::PostEditUndo();
+    UndoCameras.AddUnique(this);
+}
+bool AUEShedAuthoringCamera::CanDeleteSelectedActor(FText &OutReason) const
+{
+    if (!AuthoringState || !AuthoringState->MultiCamera)
+        return Super::CanDeleteSelectedActor(OutReason);
+    int32 Remaining = 0;
+    for (const auto &Pair : AuthoringState->Cameras)
+        if (Pair.Value.Actor.IsValid() && Pair.Value.Actor.Get() != this && !Pair.Value.Actor->IsSelected())
+            ++Remaining;
+    if (Remaining > 0)
+        return Super::CanDeleteSelectedActor(OutReason);
+    OutReason = FText::FromString(
+        TEXT("Keep at least one camera in the set. Close Camera Authoring to remove the whole transient set."));
+    return false;
+}
+void FUEShedCameraAuthoringBridge::RegisterImportedCamera(AUEShedAuthoringCamera *Actor)
+{
+    // Import finishes positioning the actor after PostEditImport. Adopt it on the next bridge tick.
+    ImportedCameras.AddUnique(Actor);
 }
 AUEShedAuthoringCamera *FUEShedCameraAuthoringBridge::Camera()
 {
     return AuthoringState ? AuthoringState->Proxy.Get() : nullptr;
 }
-FSimpleMulticastDelegate& FUEShedCameraAuthoringBridge::OnEditorFocusRequested()
+AUEShedAuthoringCamera *FUEShedCameraAuthoringBridge::Camera(const FString &CameraId)
+{
+    const auto *Entry = AuthoringState ? AuthoringState->Cameras.Find(CameraId) : nullptr;
+    return Entry ? Entry->Actor.Get() : nullptr;
+}
+TArray<AUEShedAuthoringCamera *> FUEShedCameraAuthoringBridge::Cameras()
+{
+    TArray<AUEShedAuthoringCamera *> Result;
+    if (AuthoringState)
+        for (const auto &Pair : AuthoringState->Cameras)
+            if (Pair.Value.Actor.IsValid())
+                Result.Add(Pair.Value.Actor.Get());
+    return Result;
+}
+FSimpleMulticastDelegate &FUEShedCameraAuthoringBridge::OnEditorFocusRequested()
 {
     static FSimpleMulticastDelegate FocusRequested;
     return FocusRequested;
@@ -212,9 +490,11 @@ void FUEShedCameraAuthoringBridge::Shutdown()
                                   : TEXT("Could not write pending native camera recovery at ") + Path;
     }
     Eject();
-    if (GEditor && AuthoringState->Proxy.IsValid())
+    if (GEditor)
     {
-        const bool Selected = AuthoringState->Proxy->IsSelected();
+        bool Selected = false;
+        for (const auto &Pair : AuthoringState->Cameras)
+            Selected |= Pair.Value.Actor.IsValid() && Pair.Value.Actor->IsSelected();
         if (Selected)
         {
             GEditor->SelectNone(false, true, false);
@@ -224,19 +504,69 @@ void FUEShedCameraAuthoringBridge::Shutdown()
             GEditor->NoteSelectionChange();
         }
         if (AuthoringState->World.IsValid())
-            AuthoringState->World->DestroyActor(AuthoringState->Proxy.Get(), false, false);
+            for (const auto &Pair : AuthoringState->Cameras)
+                if (Pair.Value.Actor.IsValid())
+                    AuthoringState->World->DestroyActor(Pair.Value.Actor.Get(), false, false);
     }
     FUEShedCameraEditorOwnership::Release(AuthoringState->Session);
     AuthoringState.Reset();
 }
 bool FUEShedCameraAuthoringBridge::Tick(float DeltaSeconds)
 {
-    if (AuthoringState && (!GEditor || GEditor->PlayWorld || !AuthoringState->Proxy.IsValid() ||
-                           AuthoringState->World.Get() != GEditor->GetEditorWorldContext().World() ||
-                           FPlatformTime::Seconds() > AuthoringState->Deadline))
+    for (const auto &WeakActor : UndoCameras)
+        if (auto *Actor = WeakActor.Get())
+            if (!AuthoringState || !Actor->Tags.Contains(FName(ProducerTagPrefix + AuthoringState->Producer)))
+                Actor->GetWorld()->DestroyActor(Actor, false, false);
+    UndoCameras.Reset();
+    for (const auto &WeakActor : ImportedCameras)
+    {
+        auto *Actor = WeakActor.Get();
+        if (!Actor || Owned(Actor))
+            continue;
+        const FAuthoringCamera *Source = nullptr;
+        if (AuthoringState && AuthoringState->MultiCamera && Actor->GetWorld() == AuthoringState->World.Get() &&
+            Actor->Tags.Contains(FName(ProducerTagPrefix + AuthoringState->Producer)))
+            for (const auto &Tag : Actor->Tags)
+                if (Tag.ToString().StartsWith(CameraTagPrefix))
+                    Source = AuthoringState->Cameras.Find(Tag.ToString().RightChop(CameraTagPrefix.Len()));
+        if (!Source || !Source->Definition || AuthoringState->Cameras.Num() >= 256)
+        {
+            Actor->GetWorld()->DestroyActor(Actor, false, false);
+            if (AuthoringState)
+                AuthoringState->Notice =
+                    TEXT("Cannot duplicate this camera: a synced set with fewer than 256 cameras is required.");
+            continue;
+        }
+        FAuthoringCamera Entry = *Source;
+        const FString Id = TEXT("camera-") + FGuid::NewGuid().ToString(EGuidFormats::Digits);
+        Entry.Actor = Actor;
+        Entry.Label += TEXT(" copy");
+        Entry.HostPresent = false;
+        Entry.Changed = true;
+        Entry.Definition = MakeShared<FJsonObject>(*Source->Definition);
+        Entry.Definition->SetStringField(TEXT("id"), Id);
+        Entry.Definition->SetStringField(TEXT("viewId"),
+                                         TEXT("view-") + FGuid::NewGuid().ToString(EGuidFormats::Digits));
+        Entry.Definition->SetStringField(TEXT("displayName"), Entry.Label);
+        TagCamera(Actor, Id);
+        Actor->SetActorLabel(TEXT("UE Shed — ") + Entry.Label, false);
+        AuthoringState->Cameras.Add(Id, MoveTemp(Entry));
+        ++AuthoringState->Sequence;
+        AuthoringState->SaveRequested = false;
+    }
+    ImportedCameras.Reset();
+    Observe();
+    if (AuthoringState &&
+        (!GEditor || GEditor->PlayWorld || !AuthoringState->Proxy.IsValid() || AuthoringState->Cameras.IsEmpty() ||
+         AuthoringState->World.Get() != GEditor->GetEditorWorldContext().World() ||
+         FPlatformTime::Seconds() > AuthoringState->Deadline))
         Shutdown();
     Observe();
     return true;
+}
+TSharedPtr<FJsonObject> FUEShedCameraAuthoringBridge::InspectSetup()
+{
+    return FUEShedCameraSetup::Inspect();
 }
 TSharedPtr<FJsonObject> FUEShedCameraAuthoringBridge::Execute(const TSharedPtr<FJsonObject> &Q)
 {
@@ -246,12 +576,16 @@ TSharedPtr<FJsonObject> FUEShedCameraAuthoringBridge::Execute(const TSharedPtr<F
     if (!Number(Q, TEXT("version"), Version) || Version != 1)
         return Result(TEXT("invalid"), TEXT("Expected camera authoring version 1."));
     const FString Op = Str(Q, TEXT("operation")), Session = Str(Q, TEXT("sessionId"));
+    if (Op == TEXT("setup_status")) return FUEShedCameraSetup::Inspect();
+    if (Op == TEXT("setup_poll") || Op == TEXT("setup_create") || Op == TEXT("setup_release")) return FUEShedCameraSetup::Execute(Q);
     if (Op == TEXT("discover"))
     {
         auto R = Result(TEXT("available"));
         R->SetNumberField(TEXT("leaseSeconds"), 30);
         R->SetBoolField(TEXT("viewportCulling"), true);
         R->SetBoolField(TEXT("arrangementPanel"), true);
+        R->SetBoolField(TEXT("multiCameraEditing"), true);
+        R->SetBoolField(TEXT("nativeSetup"), true);
         return R;
     }
     if (!Identifier(Session))
@@ -275,6 +609,22 @@ TSharedPtr<FJsonObject> FUEShedCameraAuthoringBridge::Execute(const TSharedPtr<F
             !Number(Q, TEXT("revision"), Revision) || Revision < 0 || Revision > 9007199254740991.0 ||
             Revision != FMath::FloorToDouble(Revision))
             return Result(TEXT("invalid"), TEXT("A camera ID, revision, and finite perspective pose are required."));
+        TMap<FString, FAuthoringCamera> Entries;
+        if (Q->HasField(TEXT("cameras")))
+        {
+            if (!ReadCameras(Q, Entries) || !Entries.Contains(Str(Q, TEXT("cameraId"))))
+                return Result(TEXT("invalid"),
+                              TEXT("Provide 1–256 unique camera IDs, names and poses, including the active camera."));
+        }
+        else
+        {
+            FAuthoringCamera Entry;
+            Entry.Label = Str(Q, TEXT("cameraId"));
+            Entry.Location = L;
+            Entry.Rotation = R;
+            Entry.FOV = FOV;
+            Entries.Add(Str(Q, TEXT("cameraId")), Entry);
+        }
         if (!FUEShedCameraEditorOwnership::TryAcquire(Session))
             return Result(TEXT("busy"), TEXT("Capture or another tool owns the editor."));
         AuthoringState = MakeUnique<FAuthoringState>();
@@ -282,19 +632,12 @@ TSharedPtr<FJsonObject> FUEShedCameraAuthoringBridge::Execute(const TSharedPtr<F
         AuthoringState->World = W;
         AuthoringState->CameraId = Str(Q, TEXT("cameraId"));
         AuthoringState->Revision = static_cast<int64>(Revision);
-        FActorSpawnParameters Params;
-        Params.ObjectFlags = RF_Transient | RF_Transactional;
-        Params.bTemporaryEditorActor = true;
-        Params.bCreateActorPackage = false;
-        auto *C = W->SpawnActor<AUEShedAuthoringCamera>(L, R, Params);
-        if (!C)
+        AuthoringState->MultiCamera = Q->HasField(TEXT("cameras"));
+        if (!Materialize(MoveTemp(Entries)))
         {
             Shutdown();
             return Result(TEXT("unavailable"), TEXT("Could not create the temporary camera."));
         }
-        AuthoringState->Proxy = C;
-        C->SetActorLabel(TEXT("UE Shed — ") + AuthoringState->CameraId, false);
-        C->GetCameraComponent()->SetFieldOfView(FOV);
         AuthoringState->ObservedLocation = AuthoringState->Proxy->GetActorLocation();
         AuthoringState->ObservedRotation = AuthoringState->Proxy->GetActorRotation();
         AuthoringState->ObservedFOV = AuthoringState->Proxy->GetCameraComponent()->FieldOfView;
@@ -354,7 +697,7 @@ TSharedPtr<FJsonObject> FUEShedCameraAuthoringBridge::Execute(const TSharedPtr<F
         for (FSelectionIterator It(*GEditor->GetSelectedActors()); It; ++It)
             if (auto *Actor = Cast<AActor>(*It))
             {
-                if (Actor == AuthoringState->Proxy.Get())
+                if (Owned(Actor))
                     continue;
                 if (Actor->GetWorld() != AuthoringState->World.Get() ||
                     !Actor->GetPathName().StartsWith(TEXT("/Game/")))
@@ -433,17 +776,29 @@ TSharedPtr<FJsonObject> FUEShedCameraAuthoringBridge::Execute(const TSharedPtr<F
             return Result(TEXT("stale"), TEXT("Synchronize the active camera before switching."));
         if (!Identifier(Str(Q, TEXT("cameraId"))) || !ReadPose(Child(Q, TEXT("pose")), L, R, FOV))
             return Result(TEXT("invalid"), TEXT("A valid camera identity and pose are required."));
+        if (AuthoringState->MultiCamera && !Camera(Str(Q, TEXT("cameraId"))))
+            return Result(TEXT("invalid"), TEXT("The camera is outside this arrangement."));
         if (AuthoringState->Visibility)
             AuthoringState->Visibility->Enabled = false;
+        if (!AuthoringState->MultiCamera)
+        {
+            auto Entry = AuthoringState->Cameras.FindChecked(AuthoringState->CameraId);
+            Entry.Label = Str(Q, TEXT("cameraId"));
+            Entry.Location = L;
+            Entry.Rotation = R;
+            Entry.FOV = FOV;
+            Entry.Actor->SetActorLocationAndRotation(L, R);
+            Entry.Actor->GetCameraComponent()->SetFieldOfView(FOV);
+            AuthoringState->Cameras.Reset();
+            AuthoringState->Cameras.Add(Entry.Label, Entry);
+        }
         AuthoringState->CameraId = Str(Q, TEXT("cameraId"));
-        AuthoringState->Proxy->SetActorLabel(TEXT("UE Shed — ") + AuthoringState->CameraId, false);
-        AuthoringState->Proxy->SetActorLocationAndRotation(L, R);
-        AuthoringState->Proxy->GetCameraComponent()->SetFieldOfView(FOV);
-        AuthoringState->ObservedLocation = AuthoringState->Proxy->GetActorLocation();
-        AuthoringState->ObservedRotation = AuthoringState->Proxy->GetActorRotation();
-        AuthoringState->ObservedFOV = AuthoringState->Proxy->GetCameraComponent()->FieldOfView;
+        ActiveObservation();
+        GEditor->SelectNone(false, true, false);
+        GEditor->SelectActor(AuthoringState->Proxy.Get(), true, true);
         if (AuthoringState->Viewport && GEditor->GetLevelViewportClients().Contains(AuthoringState->Viewport))
         {
+            AuthoringState->Viewport->SetActorLock(AuthoringState->Proxy.Get());
             AuthoringState->Viewport->UpdateViewForLockedActor();
             AuthoringState->Viewport->Invalidate();
         }
@@ -469,9 +824,33 @@ TSharedPtr<FJsonObject> FUEShedCameraAuthoringBridge::Execute(const TSharedPtr<F
         Eject();
         return Snapshot();
     }
-    if (Op == TEXT("select") || Op == TEXT("pilot"))
+    if (Op == TEXT("select_cameras"))
     {
-        if (Op == TEXT("pilot") && !AuthoringState->Viewport)
+        const TArray<TSharedPtr<FJsonValue>> *Ids;
+        if (!Q->TryGetArrayField(TEXT("cameraIds"), Ids) || Ids->Num() > 256)
+            return Result(TEXT("invalid"), TEXT("Select up to 256 cameras in this arrangement."));
+        TSet<FString> Unique;
+        for (const auto &Id : *Ids)
+        {
+            FString Value;
+            if (!Id->TryGetString(Value) || !Camera(Value) || Unique.Contains(Value))
+                return Result(TEXT("invalid"), TEXT("Select unique cameras in this arrangement."));
+            Unique.Add(Value);
+        }
+        Eject();
+        GEditor->SelectNone(false, true, false);
+        for (const auto &Id : Unique)
+            GEditor->SelectActor(Camera(Id), true, false);
+        GEditor->NoteSelectionChange();
+        OnEditorFocusRequested().Broadcast();
+        return Snapshot();
+    }
+    if (Op == TEXT("select") || Op == TEXT("pilot") || Op == TEXT("pilot_camera"))
+    {
+        const FString TargetId = Op == TEXT("pilot_camera") ? Str(Q, TEXT("cameraId")) : AuthoringState->CameraId;
+        if (!Camera(TargetId))
+            return Result(TEXT("invalid"), TEXT("The camera is outside this arrangement."));
+        if ((Op == TEXT("pilot") || Op == TEXT("pilot_camera")) && !AuthoringState->Viewport)
         {
             auto *V = GCurrentLevelEditingViewportClient;
             if (!V || !V->Viewport || !V->IsPerspective() || V->IsAnyActorLocked())
@@ -481,10 +860,27 @@ TSharedPtr<FJsonObject> FUEShedCameraAuthoringBridge::Execute(const TSharedPtr<F
             AuthoringState->ViewRotation = V->GetViewRotation();
             AuthoringState->ViewFOV = V->ViewFOV;
             AuthoringState->LockedCamera = V->bLockedCameraView;
-            V->SetActorLock(AuthoringState->Proxy.Get());
+            V->SetActorLock(Camera(TargetId));
             V->bLockedCameraView = true;
             V->MoveCameraToLockedActor();
             V->Invalidate();
+        }
+        if (Op == TEXT("pilot_camera"))
+        {
+            if (AuthoringState->CameraId != TargetId)
+                ++AuthoringState->Sequence;
+            AuthoringState->CameraId = TargetId;
+            ActiveObservation();
+            if (AuthoringState->Visibility)
+                AuthoringState->Visibility->Enabled = false;
+            auto *V = AuthoringState->Viewport;
+            if (V && GEditor->GetLevelViewportClients().Contains(V))
+            {
+                V->SetActorLock(Camera(TargetId));
+                V->bLockedCameraView = true;
+                V->MoveCameraToLockedActor();
+                V->Invalidate();
+            }
         }
         GEditor->SelectNone(false, true, false);
         GEditor->SelectActor(AuthoringState->Proxy.Get(), true, true);
@@ -504,16 +900,45 @@ TSharedPtr<FJsonObject> FUEShedCameraAuthoringBridge::Execute(const TSharedPtr<F
         if (Expected != AuthoringState->Revision || Sequence != AuthoringState->Sequence)
             return Result(TEXT("stale"),
                           TEXT("A newer native edit or host revision exists; reconcile before applying."));
-        AuthoringState->Proxy->SetActorLocationAndRotation(L, R);
-        AuthoringState->Proxy->GetCameraComponent()->SetFieldOfView(FOV);
-        AuthoringState->ObservedLocation = AuthoringState->Proxy->GetActorLocation();
-        AuthoringState->ObservedRotation = AuthoringState->Proxy->GetActorRotation();
-        AuthoringState->ObservedFOV = AuthoringState->Proxy->GetCameraComponent()->FieldOfView;
+        TMap<FString, FAuthoringCamera> Entries;
+        const FString ActiveId = Q->HasField(TEXT("cameraId")) ? Str(Q, TEXT("cameraId")) : AuthoringState->CameraId;
+        if (AuthoringState->MultiCamera)
+        {
+            if (!ReadCameras(Q, Entries) || !Entries.Contains(ActiveId))
+                return Result(TEXT("invalid"),
+                              TEXT("Apply must contain the complete camera set and its active camera."));
+        }
+        else
+        {
+            auto Entry = AuthoringState->Cameras.FindChecked(AuthoringState->CameraId);
+            Entry.Location = L;
+            Entry.Rotation = R;
+            Entry.FOV = FOV;
+            Entry.Changed = false;
+            Entries.Add(AuthoringState->CameraId, Entry);
+        }
+        const FString PreviousId = AuthoringState->CameraId;
+        AuthoringState->CameraId = ActiveId;
+        if (!Materialize(MoveTemp(Entries)))
+        {
+            AuthoringState->CameraId = PreviousId;
+            return Result(TEXT("unavailable"),
+                          TEXT("Could not materialize the camera set. Native changes remain pending."));
+        }
         AuthoringState->Revision = static_cast<int64>(Revision);
         AuthoringState->Acknowledged = AuthoringState->Sequence;
         AuthoringState->SaveRequested = false;
+        if (PreviousId != ActiveId)
+        {
+            GEditor->SelectNone(false, true, false);
+            GEditor->SelectActor(AuthoringState->Proxy.Get(), true, true);
+        }
         if (AuthoringState->Viewport && GEditor->GetLevelViewportClients().Contains(AuthoringState->Viewport))
+        {
+            AuthoringState->Viewport->SetActorLock(AuthoringState->Proxy.Get());
+            AuthoringState->Viewport->UpdateViewForLockedActor();
             AuthoringState->Viewport->Invalidate();
+        }
         return Snapshot();
     }
     if (Op == TEXT("edit"))

@@ -1,4 +1,5 @@
 import { Effect, Schema } from "effect";
+import { CameraSetupRequest, CameraSetupState } from "./camera-setup-schema.js";
 import { decodeCompanionCapabilityManifest } from "@ue-shed/protocol";
 import type { RemoteControlClientApi } from "@ue-shed/unreal-connection";
 import { ApprovedPose } from "./review-schema.js";
@@ -14,6 +15,9 @@ import {
 	ArrangementCameraId,
 	CameraArrangementId,
 	CameraOperationId,
+	CameraArrangementError,
+	ArrangementCamera,
+	type CameraArrangement,
 	resolveArrangementCamera,
 	arrangementFailure
 } from "./camera-arrangement.js";
@@ -28,7 +32,41 @@ const Scope = {
 	sessionId: CameraArrangementId,
 	producerId: Schema.NonEmptyString
 };
+export const CameraBridgeCamera = Schema.Struct({
+	id: ArrangementCameraId,
+	displayName: Schema.NonEmptyString,
+	pose: ApprovedPose,
+	definition: Schema.optionalKey(ArrangementCamera)
+});
+const CameraBridgeCameras = Schema.Array(CameraBridgeCamera).check(
+	Schema.isMinLength(1),
+	Schema.isMaxLength(256),
+	Schema.makeFilter(
+		(cameras) =>
+			new Set(cameras.map((camera) => camera.id)).size === cameras.length ||
+			"Camera IDs must be unique."
+	)
+);
+export function arrangementBridgeCameras(arrangement: CameraArrangement) {
+	return arrangement.cameras.map((camera) => ({
+		id: camera.id,
+		displayName: camera.displayName,
+		definition: camera,
+		pose: resolveArrangementCamera(arrangement, camera.id)
+	}));
+}
 export const CameraBridgeRequest = Schema.Union([
+	CameraSetupRequest,
+	Schema.Struct({
+		...Scope,
+		operation: Schema.Literal("select_cameras"),
+		cameraIds: Schema.Array(ArrangementCameraId).check(Schema.isMaxLength(256))
+	}),
+	Schema.Struct({
+		...Scope,
+		operation: Schema.Literal("pilot_camera"),
+		cameraId: ArrangementCameraId
+	}),
 	Schema.Struct({
 		...Scope,
 		operation: Schema.Literal("panel"),
@@ -68,6 +106,7 @@ export const CameraBridgeRequest = Schema.Union([
 		revision: Counter,
 		projectName: Schema.NonEmptyString,
 		mapPath: Schema.NonEmptyString,
+		cameras: Schema.optionalKey(CameraBridgeCameras),
 		pose: ApprovedPose
 	}),
 	Schema.Struct({
@@ -84,6 +123,8 @@ export const CameraBridgeRequest = Schema.Union([
 	Schema.Struct({
 		...Scope,
 		operation: Schema.Literal("apply"),
+		cameras: Schema.optionalKey(CameraBridgeCameras),
+		cameraId: Schema.optionalKey(ArrangementCameraId),
 		expectedRevision: Counter,
 		revision: Counter,
 		sequence: Counter,
@@ -92,6 +133,17 @@ export const CameraBridgeRequest = Schema.Union([
 ]);
 export type CameraBridgeRequest = typeof CameraBridgeRequest.Type;
 export const CameraBridgeSnapshot = Schema.Struct({
+	added: Schema.optionalKey(Schema.Array(ArrangementCamera).check(Schema.isMaxLength(256))),
+	removed: Schema.optionalKey(Schema.Array(ArrangementCameraId).check(Schema.isMaxLength(256))),
+	cameras: Schema.optionalKey(CameraBridgeCameras),
+	edits: Schema.optionalKey(
+		Schema.Array(Schema.Struct({ cameraId: ArrangementCameraId, pose: ApprovedPose })).check(
+			Schema.isMaxLength(256)
+		)
+	),
+	selectedCameraIds: Schema.optionalKey(
+		Schema.Array(ArrangementCameraId).check(Schema.isMaxLength(256))
+	),
 	panelEvent: Schema.optionalKey(CameraPanelEvent),
 	panel: Schema.optionalKey(CameraPanelState),
 	version: Version,
@@ -109,6 +161,7 @@ export const CameraBridgeSnapshot = Schema.Struct({
 });
 export type CameraBridgeSnapshot = typeof CameraBridgeSnapshot.Type;
 export const CameraBridgeResponse = Schema.Union([
+	CameraSetupState,
 	CameraActorSelectionResult,
 	CameraVisibilityResolutionResult,
 	Schema.Struct({
@@ -124,7 +177,9 @@ export const CameraBridgeResponse = Schema.Union([
 		message: Schema.String,
 		leaseSeconds: Schema.Literal(30),
 		viewportCulling: Schema.Boolean,
-		arrangementPanel: Schema.optionalKey(Schema.Literal(true))
+		arrangementPanel: Schema.optionalKey(Schema.Literal(true)),
+		multiCameraEditing: Schema.optionalKey(Schema.Literal(true)),
+		nativeSetup: Schema.optionalKey(Schema.Literal(true))
 	}),
 	Schema.Struct({
 		version: Version,
@@ -284,6 +339,7 @@ export const attachArrangementCamera = Effect.fn("CameraAuthoring.attach")(funct
 			revision: arrangement.revision,
 			projectName: arrangement.projectName,
 			mapPath: arrangement.mapPath,
+			cameras: arrangementBridgeCameras(arrangement),
 			pose: resolveArrangementCamera(arrangement, cameraId)
 		})
 		.pipe(Effect.flatMap(readyCameraBridge));
@@ -309,7 +365,7 @@ export const synchronizeArrangementCamera = Effect.fn("CameraAuthoring.synchroni
 		let document = yield* store.load();
 		if (
 			native.sessionId !== document.arrangement.id ||
-			native.cameraId !== attachment.cameraId ||
+			(native.cameras === undefined && native.cameraId !== attachment.cameraId) ||
 			native.producerId !== attachment.producerId
 		)
 			return yield* Effect.fail(
@@ -342,21 +398,75 @@ export const synchronizeArrangementCamera = Effect.fn("CameraAuthoring.synchroni
 						"Native and host edits overlap. The native pose remains pending; explicitly resolve the conflict."
 					)
 				);
-			const prior = resolveArrangementCamera(document.arrangement, native.cameraId);
-			const poseChanged =
-				JSON.stringify(prior.location) !== JSON.stringify(native.pose.location) ||
-				JSON.stringify(prior.rotation) !== JSON.stringify(native.pose.rotation);
-			document = yield* store.mutate({
-				kind: "pose",
-				arrangementId: native.sessionId,
-				expectedRevision: document.arrangement.revision,
-				operationId,
-				cameraId: native.cameraId,
-				pose: native.pose,
-				poseChanged,
-				lensChanged:
-					Math.abs(prior.fieldOfViewDegrees - native.pose.fieldOfViewDegrees) > 0.0001
+			const present = new Set(document.arrangement.cameras.map((camera) => camera.id));
+			// Undo can reverse a membership change after disk commit but before its native ack.
+			// Only our verified predecessor chain allows the full native set to reconcile that race.
+			const rebaseSet = revisionGap > 0 ? native.cameras : undefined;
+			const additions = new Map((native.added ?? []).map((camera) => [camera.id, camera]));
+			for (const camera of rebaseSet ?? []) {
+				if (!present.has(camera.id) && camera.definition)
+					additions.set(camera.id, {
+						...camera.definition,
+						manualPose: camera.pose,
+						overrides: {
+							...camera.definition.overrides,
+							fieldOfViewDegrees: camera.pose.fieldOfViewDegrees
+						}
+					});
+			}
+			const added = [...additions.values()].filter((camera) => !present.has(camera.id));
+			const addedIds = new Set(added.map((camera) => camera.id));
+			const nativeIds = new Set(rebaseSet?.map((camera) => camera.id));
+			const removed = [
+				...new Set([
+					...(native.removed ?? []),
+					...(rebaseSet ? [...present].filter((id) => !nativeIds.has(id)) : [])
+				])
+			].filter((id) => present.has(id));
+			const edits = [
+				...(native.edits ?? [{ cameraId: native.cameraId, pose: native.pose }]).filter(
+					(edit) => !addedIds.has(edit.cameraId)
+				),
+				...(native.added ?? [])
+					.filter((camera) => present.has(camera.id))
+					.map((camera) => ({
+						cameraId: camera.id,
+						pose:
+							camera.manualPose ??
+							resolveArrangementCamera(document.arrangement, camera.id)
+					}))
+			];
+			const cameras = yield* Effect.try({
+				try: () =>
+					edits.map((edit) => {
+						const prior = resolveArrangementCamera(document.arrangement, edit.cameraId);
+						return {
+							...edit,
+							poseChanged:
+								JSON.stringify(prior.location) !==
+									JSON.stringify(edit.pose.location) ||
+								JSON.stringify(prior.rotation) !==
+									JSON.stringify(edit.pose.rotation),
+							lensChanged:
+								Math.abs(prior.fieldOfViewDegrees - edit.pose.fieldOfViewDegrees) >
+								0.0001
+						};
+					}),
+				catch: (cause) =>
+					cause instanceof CameraArrangementError
+						? cause
+						: arrangementFailure("invalid", String(cause))
 			});
+			if (cameras.length || added.length || removed.length)
+				document = yield* store.mutate({
+					kind: "poses",
+					arrangementId: native.sessionId,
+					expectedRevision: document.arrangement.revision,
+					operationId,
+					cameras,
+					...(added.length ? { added } : undefined),
+					...(removed.length ? { removed } : undefined)
+				});
 		}
 		if (native.saveRequested) {
 			if (committed && committed.revision !== document.arrangement.revision)
@@ -382,6 +492,12 @@ export const synchronizeArrangementCamera = Effect.fn("CameraAuthoring.synchroni
 				expectedRevision: native.revision,
 				revision: document.arrangement.revision,
 				sequence: native.sequence,
+				...(native.cameras
+					? {
+							cameras: arrangementBridgeCameras(document.arrangement),
+							cameraId: native.cameraId
+						}
+					: undefined),
 				pose: resolveArrangementCamera(document.arrangement, native.cameraId)
 			})
 			.pipe(Effect.flatMap(readyCameraBridge));

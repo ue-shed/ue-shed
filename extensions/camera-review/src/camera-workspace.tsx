@@ -53,8 +53,11 @@ export function CameraWorkspace(props: {
 	readonly client: Pick<MapReviewClientApi, "cameraWorkspace" | "liveFrames">;
 	readonly focusRequest?: { readonly actor: ObservedActor; readonly nonce: number } | undefined;
 	readonly onApproved: () => void;
+	readonly onOpened?: (() => void) | undefined;
 	readonly onCapture?: (() => void) | undefined;
 	readonly onChooseReviewSet: () => void;
+	readonly createRequest?: number;
+	readonly reviewSetName?: string | undefined;
 }) {
 	const [state, setState] = createStore<CameraWorkspaceResult>({
 		panel: null,
@@ -65,9 +68,11 @@ export function CameraWorkspace(props: {
 	const polling = createEffectSubscription();
 	const frames = createEffectSubscription();
 	const [busy, setBusy] = createSignal(false);
+	const [operationError, setOperationError] = createSignal<string | null>(null);
 	const [library, setLibrary] = createSignal(true);
 	const [creating, setCreating] = createSignal(false);
 	const [name, setName] = createSignal("");
+	const [createPreset, setCreatePreset] = createSignal(presets[1]!);
 	const [wholeSet, setWholeSet] = createSignal(true);
 	const [tab, setTab] = createSignal<"Framing" | "Layout" | "Visibility" | "Capture">("Framing");
 	const [layout, setLayout] = createSignal<CameraLayout>(presets[1]!.layout);
@@ -107,22 +112,25 @@ export function CameraWorkspace(props: {
 		const invoke = props.client.cameraWorkspace;
 		if (!invoke || busy()) return;
 		generation++;
+		setOperationError(null);
 		setBusy(true);
 		action.run(invoke(snapshot(request)), {
 			onSuccess: (result) => {
 				receive(result, !saved);
+				setOperationError(result.error);
 				setBusy(false);
 				if (result.panel && request.kind === "open") {
 					setLibrary(false);
 					setCreating(false);
 					setWholeSet(true);
 					setHasFrame(false);
+					props.onOpened?.();
 				}
 				if (request.kind === "close" && !result.error) setLibrary(true);
 				if (saved && !result.error) props.onApproved();
 			},
 			onFailure: (cause) => {
-				setState(reconcile({ ...state, error: Cause.pretty(cause) }));
+				setOperationError(Cause.pretty(cause));
 				setBusy(false);
 			}
 		});
@@ -166,6 +174,15 @@ export function CameraWorkspace(props: {
 		}
 	};
 	createEffect(
+		() => props.createRequest,
+		(request) => {
+			if (request) {
+				setCreating(true);
+				setLibrary(false);
+			}
+		}
+	);
+	createEffect(
 		() => props.focusRequest,
 		(request) => {
 			if (!request) return;
@@ -189,11 +206,7 @@ export function CameraWorkspace(props: {
 						: invoke({ kind: "state" }).pipe(
 								Effect.tap((result) =>
 									Effect.sync(() => {
-										if (current === generation && !busy())
-											receive({
-												...result,
-												error: state.error ?? result.error
-											});
+										if (current === generation && !busy()) receive(result);
 									})
 								)
 							);
@@ -245,10 +258,10 @@ export function CameraWorkspace(props: {
 					onClick={() => setLibrary(!library())}
 					aria-pressed={library() ? "true" : "false"}
 				>
-					Load views
+					Open camera set
 				</button>
 				<button {...stylex.attrs(styles.button)} onClick={() => setCreating(!creating())}>
-					New set
+					New camera set
 				</button>
 				<Show when={state.panel}>
 					<button
@@ -290,21 +303,30 @@ export function CameraWorkspace(props: {
 			<Show when={needsFixedExposure()}>
 				<div role="alert">Pure + Authored requires fixed exposure with SceneCapture.</div>
 			</Show>
-			<Show when={state.error}>
-				<div role="alert">
-					{state.error}
-					<button {...stylex.attrs(styles.button)} onClick={props.onChooseReviewSet}>
-						Review Sets
-					</button>
+			<div {...stylex.attrs(styles.row)}>
+				<span {...stylex.attrs(styles.hint)}>
+					{props.reviewSetName
+						? `Save views publishes these cameras to ${props.reviewSetName}.`
+						: "Create cameras from an actor. A Review Set for its map will be created automatically."}
+				</span>
+				<button {...stylex.attrs(styles.button)} onClick={props.onChooseReviewSet}>
+					Review sets…
+				</button>
+			</div>
+			<Show when={operationError() ?? state.error}>
+				<div role="alert" {...stylex.attrs(styles.error)}>
+					{operationError() ?? state.error}
 				</div>
 			</Show>
 			<Show when={creating()}>
 				<form
+					aria-label="Create camera set"
 					{...stylex.attrs(styles.row)}
 					onSubmit={(event) => {
 						event.preventDefault();
 						run({
 							kind: "open",
+							layout: createPreset().layout,
 							...(name().trim() ? { name: name().trim() } : undefined),
 							...(props.focusRequest
 								? { actorPath: props.focusRequest.actor.path }
@@ -312,21 +334,54 @@ export function CameraWorkspace(props: {
 						});
 					}}
 				>
+					<label {...stylex.attrs(styles.row)}>
+						Camera preset
+						<select
+							aria-label="Camera preset"
+							value={createPreset().name}
+							onChange={(event) => {
+								const preset = presets.find(
+									(item) => item.name === event.currentTarget.value
+								);
+								if (preset) setCreatePreset(preset);
+							}}
+							{...stylex.attrs(styles.input)}
+						>
+							<For each={presets}>
+								{(preset) => (
+									<option value={preset.name}>
+										{preset.name} · {preset.layout.count} cameras
+									</option>
+								)}
+							</For>
+						</select>
+					</label>
 					<input
 						aria-label="Set name"
 						placeholder="Set name"
 						value={name()}
 						onInput={(event) => setName(event.currentTarget.value)}
-						{...stylex.attrs(styles.input)}
+						{...stylex.attrs(styles.input, styles.nameInput)}
 					/>
 					<button disabled={busy()} {...stylex.attrs(styles.primary)}>
-						Create from {props.focusRequest?.actor.displayName ?? "Unreal selection"}
+						{busy()
+							? "Creating camera set…"
+							: `Create from ${props.focusRequest?.actor.displayName ?? "Unreal selection"}`}
 					</button>
 				</form>
 			</Show>
 			<Show when={library()}>
 				<div {...stylex.attrs(styles.rail)}>
-					<For each={state.sets} fallback={<span>No saved camera sets</span>}>
+					<For
+						each={state.sets}
+						fallback={
+							<span {...stylex.attrs(styles.hint)}>
+								No editable camera sets here yet. Choose New camera set to start
+								from an actor. Review sets contain published views, not necessarily
+								editable camera drafts.
+							</span>
+						}
+					>
 						{(set) => (
 							<button
 								{...stylex.attrs(styles.card)}
@@ -816,6 +871,9 @@ export function CameraWorkspace(props: {
 	);
 }
 const styles = stylex.create({
+	hint: { color: tokens.colorTextMuted, fontSize: 12 },
+	error: { color: tokens.colorDanger, fontSize: 13 },
+	nameInput: { width: "min(320px, 100%)" },
 	workspace: {
 		display: "flex",
 		flexDirection: "column",

@@ -46,6 +46,7 @@ export const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(f
 				owner: string;
 				endpoint: string;
 				previewKey?: string;
+				livePreview: boolean;
 				bridge: ReturnType<typeof makeCameraAuthoringBridge>;
 				snapshot: CameraBridgeSnapshot;
 				panel: Panel;
@@ -66,14 +67,14 @@ export const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(f
 		if (detached.status !== "detached" && detached.status !== "unavailable")
 			return yield* Effect.fail(failure(detached.message));
 		active = undefined;
-		yield* clearProvisionedCameras(current.endpoint).pipe(
-			Effect.provideService(RemoteControlClient, client)
-		);
-		active = undefined;
+		if (current.livePreview)
+			yield* clearProvisionedCameras(current.endpoint).pipe(
+				Effect.provideService(RemoteControlClient, client)
+			);
 	});
 	const tick = Effect.fn("Workbench.CameraWorkspace.tick")(function* () {
 		if (active) active.snapshot = yield* active.panel.tick();
-		if (active?.snapshot.panel) {
+		if (active?.snapshot.panel && active.livePreview) {
 			const panel = active.snapshot.panel;
 			const camera = panel.cameras.find((item) => item.id === panel.activeCameraId)!;
 			const key = JSON.stringify(camera);
@@ -162,6 +163,7 @@ export const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(f
 					const created = createCameraArrangementFromSelection({
 						id,
 						projectName: basename(projectFile, ".uproject"),
+						...(intent.layout ? { layout: intent.layout } : undefined),
 						selection: { ...inspected, status: "selected" }
 					});
 					const profile = set.captureProfiles[0];
@@ -200,7 +202,15 @@ export const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(f
 					draftPath: path,
 					approvalPath: context.reviewSetPath
 				});
-				active = { owner, endpoint: context.endpoint, bridge, snapshot, panel, store };
+				active = {
+					owner,
+					endpoint: context.endpoint,
+					bridge,
+					snapshot,
+					panel,
+					store,
+					livePreview: intent.livePreview ?? true
+				};
 			}
 			if (intent.kind === "action" || intent.kind === "native") {
 				if (!active || active.snapshot.sessionId !== intent.id)

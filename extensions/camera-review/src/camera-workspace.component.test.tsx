@@ -11,7 +11,8 @@ import type {
 	CameraWorkspaceResult
 } from "@ue-shed/cameras/review-contracts";
 import { Effect, Layer, ManagedRuntime, Stream } from "effect";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { userEvent } from "@testing-library/user-event";
 import {
 	fixtureArrangement,
 	fixtureSet
@@ -20,6 +21,76 @@ import { CameraWorkspace } from "./camera-workspace.js";
 
 afterEach(cleanup);
 describe("camera workspace", () => {
+	it("submits first-set creation and keeps a failed create visible across background refreshes", async () => {
+		const runtime = ManagedRuntime.make(Layer.empty);
+		const requests: CameraWorkspaceRequest[] = [];
+		const opened = vi.fn();
+		let failCreate = true;
+		let polls = 0;
+		render(() => (
+			<EffectRuntimeProvider runtime={runtime}>
+				<CameraWorkspace
+					onApproved={() => undefined}
+					onOpened={opened}
+					onChooseReviewSet={() => undefined}
+					client={{
+						liveFrames: Stream.empty,
+						cameraWorkspace: (request) =>
+							Effect.sync(() => {
+								requests.push(request);
+								if (request.kind === "state") polls++;
+								return {
+									sets: [],
+									error:
+										request.kind === "open" && failCreate
+											? "Select one actor in Unreal first."
+											: null,
+									panel:
+										request.kind === "open" && !failCreate
+											? cameraAuthoringPanelState(
+													{
+														arrangement: fixtureArrangement(),
+														reviewSet: fixtureSet(),
+														version: 1,
+														outcomes: []
+													},
+													ArrangementCameraId.make("camera-0"),
+													{ draftPath: "draft", approvalPath: "views" }
+												)
+											: null
+								};
+							})
+					}}
+				/>
+			</EffectRuntimeProvider>
+		));
+		const user = userEvent.setup();
+		await user.click(await screen.findByRole("button", { name: "New camera set" }));
+		await user.type(screen.getByRole("textbox", { name: "Set name" }), "First cameras");
+		await user.selectOptions(screen.getByRole("combobox", { name: "Camera preset" }), "Orbit");
+		await user.click(screen.getByRole("button", { name: "Create from Unreal selection" }));
+		await screen.findByRole("alert");
+		expect(requests).toContainEqual({
+			kind: "open",
+			name: "First cameras",
+			layout: {
+				kind: "orbit",
+				count: 8,
+				startDegrees: 0,
+				spanDegrees: 360,
+				orientation: "world"
+			}
+		});
+		const priorPolls = polls;
+		await waitFor(() => expect(polls).toBeGreaterThan(priorPolls), { timeout: 2500 });
+		expect(screen.getByRole("alert").textContent).toContain("Select one actor");
+		failCreate = false;
+		await user.click(screen.getByRole("button", { name: "Create from Unreal selection" }));
+		await waitFor(() => expect(opened).toHaveBeenCalledOnce());
+		expect(screen.queryByRole("alert")).toBeNull();
+		cleanup();
+		await runtime.dispose();
+	});
 	it("loads one set, scopes edits, preserves the canvas, and saves all its views", async () => {
 		const runtime = ManagedRuntime.make(Layer.empty);
 		let arrangement = fixtureArrangement();

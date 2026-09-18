@@ -21,6 +21,7 @@ import {
 } from "./camera-authoring-panel-schema.js";
 import {
 	readyCameraBridge,
+	arrangementBridgeCameras,
 	synchronizeArrangementCamera,
 	type CameraAuthoringBridge,
 	type CameraBridgeSnapshot
@@ -397,6 +398,7 @@ export const makeCameraAuthoringPanelSession = Effect.fn("CameraAuthoringPanel.m
 			document = yield* args.store.load();
 			let active = native.cameraId;
 			const event = native.panelEvent;
+			yield* Ref.update(state, (value) => ({ ...value, attachment: native }));
 			let acknowledgeEvent: string | undefined;
 			if (event) {
 				acknowledgeEvent = event.id;
@@ -435,6 +437,12 @@ export const makeCameraAuthoringPanelSession = Effect.fn("CameraAuthoringPanel.m
 						expectedRevision: native.revision,
 						revision: document.arrangement.revision,
 						sequence: native.sequence,
+						...(native.cameras
+							? {
+									cameras: arrangementBridgeCameras(document.arrangement),
+									cameraId: active
+								}
+							: undefined),
 						pose: resolveArrangementCamera(document.arrangement, active)
 					})
 					.pipe(Effect.flatMap(readyCameraBridge));

@@ -145,16 +145,15 @@ describe("ProjectChooser", () => {
 		expect(await screen.findByText("Offline")).toBeDefined();
 		const user = userEvent.setup();
 		const summary = screen.getByText("Launch ▾");
-		const details = summary.closest("details");
-		if (!(details instanceof HTMLDetailsElement)) throw new Error("Expected launch details");
 		await user.click(summary);
+		expect(summary.getAttribute("aria-expanded")).toBe("true");
 		expect(screen.getByRole("button", { name: /With plugin suite/ })).toBeDefined();
 		expect(screen.getByRole("button", { name: /Plain editor/ })).toBeDefined();
 		await user.click(screen.getByText("Offline"));
-		expect(details.open).toBe(false);
+		expect(summary.getAttribute("aria-expanded")).toBe("false");
 		await user.click(summary);
 		await user.keyboard("{Escape}");
-		expect(details.open).toBe(false);
+		expect(summary.getAttribute("aria-expanded")).toBe("false");
 		expect(document.activeElement).toBe(summary);
 	});
 
@@ -181,11 +180,8 @@ describe("ProjectChooser", () => {
 
 		const user = userEvent.setup();
 		const recentSummary = await screen.findByLabelText("Recent projects");
-		const recentDetails = recentSummary.closest("details");
-		if (!(recentDetails instanceof HTMLDetailsElement)) {
-			throw new Error("Expected recent-project details");
-		}
 		await user.click(recentSummary);
+		expect(recentSummary.getAttribute("aria-expanded")).toBe("true");
 		expect(screen.getByText("Stored only on this device")).toBeDefined();
 		expect(
 			screen.getByRole<HTMLButtonElement>("button", {
@@ -193,7 +189,7 @@ describe("ProjectChooser", () => {
 			}).disabled
 		).toBe(true);
 		await user.click(screen.getByText("Offline"));
-		expect(recentDetails.open).toBe(false);
+		expect(recentSummary.getAttribute("aria-expanded")).toBe("false");
 		await user.click(recentSummary);
 		await user.click(screen.getByRole("button", { name: "Open recent project OtherProject" }));
 
@@ -260,6 +256,10 @@ describe("ProjectChooser", () => {
 
 		await waitFor(() => expect(launchProject).toHaveBeenCalledWith("ue_shed"));
 		expect((await screen.findByRole("status")).textContent).toContain("UE Shed plugin suite");
+		await userEvent
+			.setup()
+			.click(screen.getByRole("button", { name: "Dismiss launch notice" }));
+		expect(screen.queryByRole("status")).toBeNull();
 		expect(screen.getByRole("button", { name: "Fixture" })).toBeDefined();
 	});
 });

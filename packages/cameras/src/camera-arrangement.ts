@@ -599,6 +599,22 @@ export type CameraEditScope = typeof CameraEditScope.Type;
 export const CameraArrangementCommand = Schema.Union([
 	Schema.Struct({
 		...Scope,
+		kind: Schema.Literal("poses"),
+		added: Schema.optionalKey(Schema.Array(ArrangementCamera).check(Schema.isMaxLength(256))),
+		removed: Schema.optionalKey(
+			Schema.Array(ArrangementCameraId).check(Schema.isMaxLength(256))
+		),
+		cameras: Schema.Array(
+			Schema.Struct({
+				cameraId: ArrangementCameraId,
+				pose: ApprovedPose,
+				lensChanged: Schema.Boolean,
+				poseChanged: Schema.Boolean
+			})
+		).check(Schema.isMaxLength(256))
+	}),
+	Schema.Struct({
+		...Scope,
 		kind: Schema.Literal("edit_visibility"),
 		scope: CameraEditScope,
 		list: Schema.Literals(["hide", "protect"]),
@@ -840,6 +856,62 @@ export function applyCameraArrangementCommand(
 		);
 	if ("cameraId" in command && !current.cameras.some((camera) => camera.id === command.cameraId))
 		throw arrangementFailure("camera_missing", "The camera is outside this arrangement.");
+	if (command.kind === "poses") {
+		const added = command.added ?? [],
+			removed = command.removed ?? [];
+		const addedIds = new Set(added.map((camera) => camera.id));
+		if (
+			addedIds.size !== added.length ||
+			new Set(removed).size !== removed.length ||
+			added.some((camera) => current.cameras.some((existing) => existing.id === camera.id)) ||
+			removed.some((id) => !current.cameras.some((camera) => camera.id === id)) ||
+			(!added.length && !removed.length && !command.cameras.length)
+		)
+			throw arrangementFailure(
+				"scope_mismatch",
+				"Native membership changes must match this arrangement."
+			);
+		const changes = new Map(command.cameras.map((camera) => [camera.cameraId, camera]));
+		if (
+			changes.size !== command.cameras.length ||
+			command.cameras.some(
+				(edit) => !current.cameras.some((camera) => camera.id === edit.cameraId)
+			)
+		)
+			throw arrangementFailure(
+				"scope_mismatch",
+				"Native edits must name unique cameras in this arrangement."
+			);
+		return CameraArrangement.make({
+			...current,
+			revision: current.revision + 1,
+			// Native Undo may restore an explicitly deleted camera's original identity and View ownership.
+			retiredCameraIds: [
+				...current.retiredCameraIds.filter((id) => !addedIds.has(id)),
+				...removed
+			],
+			cameras: [
+				...current.cameras
+					.filter((camera) => !removed.includes(camera.id))
+					.map((camera) => {
+						const edit = changes.get(camera.id);
+						return edit
+							? {
+									...camera,
+									...(edit.poseChanged ? { manualPose: edit.pose } : undefined),
+									overrides: edit.lensChanged
+										? {
+												...camera.overrides,
+												fieldOfViewDegrees: edit.pose.fieldOfViewDegrees
+											}
+										: camera.overrides
+								}
+							: camera;
+					}),
+				...added
+			]
+		});
+	}
 	if (
 		command.kind === "batch" ||
 		command.kind === "visibility" ||
@@ -1003,11 +1075,12 @@ export function approveArrangementCamera(
 	});
 }
 
-/** A useful single-camera starting point; hosts can present layouts after the actor is attached. */
+/** Create the chosen layout before attaching any native cameras. Omitted layout keeps CLI compatibility. */
 export function createCameraArrangementFromSelection(args: {
 	id: typeof CameraArrangementId.Type;
 	projectName: string;
 	selection: Extract<ReviewSelectionResponse, { status: "selected" }>;
+	layout?: CameraLayout;
 }) {
 	const selected = args.selection,
 		policy = defaultNaturalOnlyVisibilityPolicy();
@@ -1058,5 +1131,21 @@ export function createCameraArrangementFromSelection(args: {
 		visibilityPolicies: [policy],
 		views: []
 	});
-	return { arrangement, reviewSet };
+	if (!args.layout) return { arrangement, reviewSet };
+	const layout = CameraLayout.make(args.layout);
+	const count = layout.kind === "single" ? 1 : layout.count;
+	if (`${args.id}-${count}`.length > 128)
+		throw arrangementFailure(
+			"invalid",
+			"Use a shorter arrangement ID to allocate preset View IDs."
+		);
+	const cameras = proposeCameraLayout(
+		arrangement,
+		layout,
+		Array.from({ length: count }, (_, index) => ({
+			id: ArrangementCameraId.make(`camera-${index + 1}`),
+			viewId: ReviewViewId.make(`${args.id}-${index + 1}`)
+		}))
+	).cameras;
+	return { arrangement: CameraArrangement.make({ ...arrangement, cameras }), reviewSet };
 }

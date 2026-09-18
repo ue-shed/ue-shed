@@ -1,5 +1,5 @@
 import { createRequire } from "node:module";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -8,6 +8,10 @@ import { _electron as electron, expect, test, type ElectronApplication } from "@
 import { Schema } from "effect";
 import {
 	ReviewSet,
+	CameraBridgeResponse,
+	CameraArrangementId,
+	CameraAuthoringDocument,
+	type CameraBridgeRequest,
 	ReviewSetId,
 	CaptureProfileId,
 	defaultNaturalOnlyVisibilityPolicy
@@ -33,6 +37,171 @@ test.skip(
 	"Requires the fixture editor with Camera Authoring plugins and UE_SHED_MAP_REVIEW_AUTHORING_E2E=1"
 );
 test.setTimeout(180_000);
+
+test("first camera set creates its destination and can be reopened through the Review Set library", async ({
+	browserName: _browserName
+}, testInfo) => {
+	const root = await mkdtemp(join(tmpdir(), "ue-shed-first-camera-set-"));
+	const descriptor = (await readdir(projectRoot)).find((name) => name.endsWith(".uproject"));
+	if (!descriptor) throw new Error("Fixture project descriptor missing");
+	await copyFile(join(projectRoot, descriptor), join(root, descriptor));
+	await mkdir(join(root, "Content"));
+	const env: Record<string, string> = {};
+	for (const [key, value] of Object.entries(process.env))
+		if (value !== undefined && key !== "ELECTRON_RUN_AS_NODE" && key !== "UE_SHED_REVIEW_SET")
+			env[key] = value;
+	Object.assign(env, {
+		UE_SHED_PROJECT_ROOT: root,
+		UE_SHED_REMEMBER_PROJECTS: "false",
+		// This journey verifies authoring persistence, not frames; leave any user's feed alone.
+		UE_SHED_CAMERA_PIPE_NAME: `\\\\.\\pipe\\ue-shed-first-set-${randomUUID()}`
+	});
+	let app: ElectronApplication | undefined;
+	const launch = async () => {
+		app = await electron.launch({
+			executablePath: electronPath,
+			args: [workbenchRoot, `--user-data-dir=${join(root, "profile")}`],
+			cwd: workbenchRoot,
+			env
+		});
+		const page = await app.firstWindow();
+		await page.waitForURL("file://**");
+		await page.goto(page.url().split("#")[0] + "#/map-review");
+		await page.getByRole("tab", { name: "Live session", exact: true }).click();
+		return page;
+	};
+	try {
+		const selected = await fetch(`${endpoint}/remote/object/call`, {
+			method: "PUT",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({
+				objectPath: "/Script/UnrealEd.Default__EditorActorSubsystem",
+				functionName: "SetSelectedLevelActors",
+				parameters: { ActorsToSelect: [subjectPath] },
+				generateTransaction: false
+			})
+		});
+		expect(selected.ok).toBe(true);
+		let page = await launch();
+		let workspace = page.getByRole("region", { name: "Camera workspace" });
+		await expect(workspace.getByText("Choose a Review Set first.")).toHaveCount(0);
+		await workspace.getByRole("button", { name: "Review sets…", exact: true }).click();
+		let library = page.getByRole("dialog", { name: "Review sets" });
+		await expect(library.getByRole("textbox", { name: "New review set name" })).toHaveCount(0);
+		await library.getByRole("button", { name: "New camera set", exact: true }).click();
+		await workspace.getByLabel("Set name", { exact: true }).fill("First camera setup");
+		await workspace.getByLabel("Camera preset", { exact: true }).selectOption("Single");
+		await workspace
+			.getByRole("button", { name: "Create from Unreal selection", exact: true })
+			.click();
+		await expect(
+			workspace.getByRole("button", { name: "Edit in Unreal ↗", exact: true })
+		).toBeVisible({ timeout: 30_000 });
+		await expect(workspace.getByRole("alert")).toHaveCount(0);
+		const setsRoot = join(root, ".ue-shed/review/sets");
+		expect(await readdir(setsRoot)).toHaveLength(1);
+		await workspace.screenshot({ path: testInfo.outputPath("first-camera-set.png") });
+		await workspace.getByRole("button", { name: "Close", exact: true }).click();
+		await app!.close();
+		app = undefined;
+		page = await launch();
+		workspace = page.getByRole("region", { name: "Camera workspace" });
+		await workspace.getByRole("button", { name: "Review sets…", exact: true }).click();
+		library = page.getByRole("dialog", { name: "Review sets" });
+		await library.getByRole("button", { name: "Open set", exact: true }).click();
+		await expect(library).toBeHidden();
+		await workspace.getByRole("button", { name: /First camera setup.*1 cameras/ }).click();
+		await expect(
+			workspace.getByRole("button", { name: "Edit in Unreal ↗", exact: true })
+		).toBeVisible();
+		await workspace.getByRole("button", { name: "Close", exact: true }).click();
+		await workspace.getByRole("button", { name: "Review sets…", exact: true }).click();
+		await expect(library.getByRole("textbox", { name: "New review set name" })).toBeEnabled();
+		await library.screenshot({ path: testInfo.outputPath("review-set-library.png") });
+		await library.getByRole("button", { name: "Return to set", exact: true }).click();
+		await expect(library).toBeHidden();
+		await page.goto(page.url().split("#")[0] + "#/showcase");
+		// The Unreal menu submits this same public request: no Workbench Create/Layout clicks.
+		const bridge = async (request: CameraBridgeRequest) => {
+			const response = await fetch(`${endpoint}/remote/object/call`, {
+				method: "PUT",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({
+					objectPath:
+						"/Script/UEShedCameraAuthoringBridge.Default__UEShedCameraAuthoringBridgeLibrary",
+					functionName: "ExecuteCameraAuthoring",
+					parameters: { RequestJson: JSON.stringify(request) },
+					generateTransaction: false
+				})
+			});
+			expect(response.ok).toBe(true);
+			const wire = Schema.decodeUnknownSync(Schema.Struct({ ResultJson: Schema.String }))(
+				await response.json()
+			);
+			return Schema.decodeUnknownSync(CameraBridgeResponse)(JSON.parse(wire.ResultJson));
+		};
+		await expect
+			.poll(async () => {
+				const state = await bridge({ version: 1, operation: "setup_status" });
+				return state.status === "setup" && state.connected;
+			})
+			.toBe(true);
+		const queued = await bridge({
+			version: 1,
+			operation: "setup_create",
+			intent: {
+				id: CameraArrangementId.make(randomUUID()),
+				actorPath: subjectPath,
+				mapPath,
+				name: "Native preset setup",
+				layout: {
+					kind: "orbit",
+					count: 4,
+					startDegrees: 0,
+					spanDegrees: 360,
+					orientation: "world"
+				}
+			}
+		});
+		expect(queued.status).toBe("setup");
+		await expect
+			.poll(async () => {
+				const state = await bridge({ version: 1, operation: "setup_status" });
+				return state.status !== "setup" || Boolean(state.request);
+			})
+			.toBe(false);
+		await page.goto(page.url().split("#")[0] + "#/map-review");
+		await page.getByRole("tab", { name: "Live session", exact: true }).click();
+		await expect(
+			workspace.getByText("Native preset setup", { exact: true }).first()
+		).toBeVisible();
+		const reviewDocument = Schema.decodeUnknownSync(Schema.Struct({ id: ReviewSetId }))(
+			JSON.parse(await readFile(join(setsRoot, (await readdir(setsRoot))[0]!), "utf8"))
+		);
+		const cameraDirectory = join(
+			root,
+			".ue-shed/camera-sets",
+			createHash("sha256").update(reviewDocument.id).digest("hex").slice(0, 20)
+		);
+		const documents = await Promise.all(
+			(await readdir(cameraDirectory))
+				.filter((name) => name.endsWith(".json"))
+				.map(async (name) =>
+					Schema.decodeUnknownSync(CameraAuthoringDocument)(
+						JSON.parse(await readFile(join(cameraDirectory, name), "utf8"))
+					)
+				)
+		);
+		expect(
+			documents.find((document) => document.arrangement.displayName === "Native preset setup")
+				?.arrangement.cameras
+		).toHaveLength(4);
+		await workspace.getByRole("button", { name: "Close", exact: true }).click();
+	} finally {
+		await app?.close().catch(() => undefined);
+		await rm(root, { recursive: true, force: true });
+	}
+});
 
 test("camera sets survive Workbench restart and capture their saved revisions", async () => {
 	const root = await mkdtemp(join(tmpdir(), "ue-shed-camera-workspace-"));
@@ -106,7 +275,7 @@ test("camera sets survive Workbench restart and capture their saved revisions", 
 		}
 		let page = await launch();
 		let workspace = page.getByRole("region", { name: "Camera workspace" });
-		await workspace.getByRole("button", { name: "New set", exact: true }).click();
+		await workspace.getByRole("button", { name: "New camera set", exact: true }).click();
 		await workspace.getByLabel("Set name").fill("Assembly cameras");
 		await workspace
 			.getByRole("button", { name: "Create from Unreal selection", exact: true })

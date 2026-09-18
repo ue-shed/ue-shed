@@ -1,4 +1,6 @@
 #include "SCameraArrangementPanel.h"
+#include "Styling/AppStyle.h"
+#include "Styling/StyleColors.h"
 #include "Serialization/JsonSerializer.h"
 #include "Widgets/Layout/SWidgetSwitcher.h"
 #include "Framework/Application/SlateApplication.h"
@@ -7,9 +9,14 @@
 #include "Widgets/Input/SCheckBox.h"
 #include "Widgets/Input/SEditableTextBox.h"
 #include "Widgets/Input/SNumericEntryBox.h"
+#include "Widgets/Input/SSegmentedControl.h"
 #include "Widgets/Layout/SBox.h"
+#include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SExpandableArea.h"
 #include "Widgets/Layout/SScrollBox.h"
+#include "Widgets/Layout/SUniformGridPanel.h"
+#include "Widgets/Layout/SSplitter.h"
+#include "Widgets/Layout/SWrapBox.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/Text/STextBlock.h"
 
@@ -87,6 +94,21 @@ void SCameraArrangementPanel::SimpleAction(const TCHAR *Kind)
     auto A = Obj();
     A->SetStringField(TEXT("kind"), Kind);
     Action(A);
+}
+void SCameraArrangementPanel::SelectCameras(const TArray<TSharedPtr<FJsonValue>>& Ids)
+{
+    auto Q = Request(TEXT("select_cameras"));
+    Q->SetArrayField(TEXT("cameraIds"), Ids);
+    const auto Result = Call(Q);
+    if (Str(Result, TEXT("status")) == TEXT("ready")) Active = Result;
+}
+void SCameraArrangementPanel::PilotCamera(const FString& Id)
+{
+    auto Q = Request(TEXT("pilot_camera"));
+    Q->SetStringField(TEXT("cameraId"), Id);
+    const auto Result = Call(Q);
+    if (Str(Result, TEXT("status")) == TEXT("ready")) Active = Result;
+    PreviewVisibility();
 }
 SCameraArrangementPanel::FObject SCameraArrangementPanel::Command(const TCHAR *Kind) const
 {
@@ -168,9 +190,11 @@ TOptional<double> SCameraArrangementPanel::Effective(const TCHAR *Field) const
     }
     return Common;
 }
-TSharedRef<SWidget> SCameraArrangementPanel::Button(const FString &Label, TFunction<void()> Fn, bool NeedsReady)
+TSharedRef<SWidget> SCameraArrangementPanel::Button(const FString &Label, TFunction<void()> Fn, bool NeedsReady, bool Compact)
 {
     return SNew(SButton)
+        .ButtonStyle(FAppStyle::Get(), "Button")
+        .ContentPadding(Compact ? FMargin(6, 3) : FMargin(10, 6))
         .Text(FText::FromString(Label))
         .IsEnabled_Lambda([this, NeedsReady] { return !NeedsReady || Ready(); })
         .OnClicked_Lambda([Fn] {
@@ -180,10 +204,11 @@ TSharedRef<SWidget> SCameraArrangementPanel::Button(const FString &Label, TFunct
 }
 TSharedRef<SWidget> SCameraArrangementPanel::Number(const TCHAR *Label, double &Value)
 {
-    return SNew(SHorizontalBox) + SHorizontalBox::Slot().FillWidth(1)[Text(Label)] +
-           SHorizontalBox::Slot().FillWidth(
-               1)[SNew(SNumericEntryBox<double>)
+    return SNew(SVerticalBox) + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 3)[Text(Label)] +
+           SVerticalBox::Slot().AutoHeight()[SNew(SNumericEntryBox<double>)
+                      .AllowSpin(true).Delta(.1).LinearDeltaSensitivity(5)
                       .Value_Lambda([&Value] { return Value; })
+                      .OnValueChanged_Lambda([&Value](double V) { Value = V; })
                       .OnValueCommitted_Lambda([&Value](double V, ETextCommit::Type) { Value = V; })];
 }
 TSharedRef<SWidget> SCameraArrangementPanel::Input(const TCHAR *Label, FString &Value)
@@ -195,27 +220,39 @@ TSharedRef<SWidget> SCameraArrangementPanel::Input(const TCHAR *Label, FString &
 }
 TSharedRef<SWidget> SCameraArrangementPanel::Setting(const TCHAR *Label, const TCHAR *Field)
 {
-    return SNew(SHorizontalBox) + SHorizontalBox::Slot().FillWidth(1)[Text(Label)] +
-           SHorizontalBox::Slot().FillWidth(
-               1)[SNew(SNumericEntryBox<double>)
-                      .AllowSpin(false)
+    const FString Name(Field);
+    const TOptional<double> Minimum = Name == TEXT("fieldOfViewDegrees") ? TOptional<double>(5) :
+        Name == TEXT("distanceScale") ? TOptional<double>(.01) : Name == TEXT("margin") ? TOptional<double>(0) :
+        Name == TEXT("elevationDegrees") ? TOptional<double>(-89) : TOptional<double>();
+    const TOptional<double> Maximum = Name == TEXT("fieldOfViewDegrees") ? TOptional<double>(170) :
+        Name == TEXT("distanceScale") ? TOptional<double>(100) : Name == TEXT("margin") ? TOptional<double>(.45) :
+        Name == TEXT("elevationDegrees") ? TOptional<double>(89) : TOptional<double>();
+    auto ValueRow = SNew(SHorizontalBox);
+    ValueRow->AddSlot().FillWidth(1)[SNew(SNumericEntryBox<double>)
+                      .AllowSpin(true).MinValue(Minimum).MaxValue(Maximum)
+                      .MinSliderValue(TOptional<double>()).MaxSliderValue(TOptional<double>())
+                      .Delta(Name == TEXT("distanceScale") || Name == TEXT("margin") ? .01 : .5)
+                      .LinearDeltaSensitivity(5).MinFractionalDigits(1).MaxFractionalDigits(3)
+                      .ToolTipText(FText::FromString(TEXT("Drag left/right to adjust. Click to type an exact value.")))
                       .UndeterminedString(FText::FromString(TEXT("Mixed")))
-                      .IsEnabled_Lambda([this] { return Ready() && !ScopedCameras().IsEmpty(); })
-                      .Value_Lambda([this, Field] { return Effective(Field); })
+                      .IsEnabled_Lambda([this, Name] { return (Ready() || (SettingEdit && SettingEdit->Field == Name)) && !ScopedCameras().IsEmpty(); })
+                      .Value_Lambda([this, Field] { return DisplaySetting(Field); })
+                      .OnBeginSliderMovement_Lambda([this, Name] { BeginSettingDrag(Name); })
+                      .OnValueChanged_Lambda([this, Name](double V) {
+                          if (SettingEdit && SettingEdit->Dragging && SettingEdit->Field == Name) ChangeSetting(Name, V, false);
+                      })
+                      .OnEndSliderMovement_Lambda([this, Name](double V) {
+                          if (SettingEdit && SettingEdit->Dragging && SettingEdit->Field == Name) ChangeSetting(Name, V, true);
+                      })
                       .OnValueCommitted_Lambda([this, Field](double V, ETextCommit::Type T) {
-                          if (T == ETextCommit::OnCleared || CommittingNumber || !Ready())
+                          if (T == ETextCommit::OnCleared || CommittingNumber || (SettingEdit && SettingEdit->Dragging))
                               return;
                           TGuardValue<bool> CommitGuard(CommittingNumber, true);
                           if (T == ETextCommit::OnEnter)
                               FSlateApplication::Get().ClearKeyboardFocus(EFocusCause::Cleared);
-                          auto C = Command(TEXT("batch")), S = Obj();
-                          S->SetNumberField(Field, V);
-                          C->SetObjectField(TEXT("scope"), EditScope());
-                          C->SetObjectField(TEXT("settings"), S);
-                          C->SetArrayField(TEXT("resetFields"), {});
-                          Submit(C);
-                      })] +
-           SHorizontalBox::Slot().AutoWidth()[SNew(SBox).Visibility_Lambda([this] { return Scope == TEXT("arrangement") ? EVisibility::Collapsed : EVisibility::Visible; })[Button(TEXT("Reset"), [this, Field] {
+                          ChangeSetting(Field, V, true);
+                      })];
+    ValueRow->AddSlot().AutoWidth()[SNew(SBox).ToolTipText(FText::FromString(TEXT("Reset to inherited value"))).Visibility_Lambda([this] { return Scope == TEXT("arrangement") ? EVisibility::Collapsed : EVisibility::Visible; })[Button(TEXT("↶"), [this, Field] {
                if (Scope == TEXT("arrangement"))
                {
                    Message = TEXT("Arrangement defaults have no parent. Choose a group or cameras.");
@@ -227,6 +264,58 @@ TSharedRef<SWidget> SCameraArrangementPanel::Setting(const TCHAR *Label, const T
                C->SetArrayField(TEXT("resetFields"), {MakeShared<FJsonValueString>(Field)});
                Submit(C);
            })]];
+    return SNew(SVerticalBox) + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 3)[Text(Label)] +
+        SVerticalBox::Slot().AutoHeight()[ValueRow];
+}
+
+TOptional<double> SCameraArrangementPanel::DisplaySetting(const TCHAR* Field) const
+{
+    return SettingEdit && SettingEdit->Field == Field ? TOptional<double>(SettingEdit->Value) : Effective(Field);
+}
+void SCameraArrangementPanel::BeginSettingDrag(const FString& Field)
+{
+    if (!Ready() || ScopedCameras().IsEmpty()) return;
+    SettingEdit = FSettingEdit{Field, Str(Active, TEXT("producerId")), EditScope(), Effective(*Field).Get(0), true, false};
+}
+void SCameraArrangementPanel::ChangeSetting(const FString& Field, double Value, bool Final)
+{
+    if (!FMath::IsFinite(Value)) return;
+    if (!SettingEdit)
+    {
+        if (!Ready() || ScopedCameras().IsEmpty()) return;
+        SettingEdit = FSettingEdit{Field, Str(Active, TEXT("producerId")), EditScope(), Value, false, false};
+    }
+    if (SettingEdit->Field != Field) return;
+    SettingEdit->Value = Value;
+    SettingEdit->Dirty = true;
+    if (Final) { SettingEdit->Dragging = false; FlushSetting(); }
+}
+void SCameraArrangementPanel::FlushSetting()
+{
+    if (!SettingEdit) return;
+    if (SettingEdit->Producer != Str(Active, TEXT("producerId")) || Json(SettingEdit->Scope) != Json(EditScope()))
+    {
+        SettingEdit.Reset();
+        Message = TEXT("Value adjustment stopped because the camera selection or session changed.");
+        return;
+    }
+    if (!Ready()) return;
+    if (!SettingEdit->Dirty)
+    {
+        if (!SettingEdit->Dragging) SettingEdit.Reset();
+        return;
+    }
+    auto C = Command(TEXT("batch")), S = Obj(), A = Obj(), Q = Request(TEXT("enqueue"));
+    S->SetNumberField(SettingEdit->Field, SettingEdit->Value);
+    C->SetObjectField(TEXT("scope"), SettingEdit->Scope);
+    C->SetObjectField(TEXT("settings"), S);
+    C->SetArrayField(TEXT("resetFields"), {});
+    A->SetStringField(TEXT("kind"), TEXT("command"));
+    A->SetObjectField(TEXT("command"), C);
+    Q->SetObjectField(TEXT("action"), A);
+    const auto Result = Call(Q);
+    if (Str(Result, TEXT("status")) == TEXT("ready")) { Active = Result; SettingEdit->Dirty = false; }
+    else SettingEdit.Reset();
 }
 
 void SCameraArrangementPanel::Construct(const FArguments &Args)
@@ -234,53 +323,82 @@ void SCameraArrangementPanel::Construct(const FArguments &Args)
     Active = Obj();
     Panel = Obj();
     Arrangement = Obj();
-    auto Root = SNew(SVerticalBox);
-    ChildSlot[SNew(SBox).Padding(12).MinDesiredWidth(340)[Root]];
-    Root->AddSlot().AutoHeight().Padding(0, 0, 0, 8)[SNew(STextBlock).Font(FCoreStyle::GetDefaultFontStyle("Bold", 14)).Text_Lambda([this] {
-        const auto Subject = Child(Arrangement, TEXT("subject"));
-        FString Name = Str(Arrangement, TEXT("displayName"));
-        if (Name.IsEmpty()) Name = Str(Subject, TEXT("diagnosticLabel"));
-        if (Name.IsEmpty() && !Items(Arrangement, TEXT("cameras")).IsEmpty())
-            Name = Str(Items(Arrangement, TEXT("cameras"))[0]->AsObject(), TEXT("displayName"));
-        return FText::FromString(Name.IsEmpty() ? TEXT("Camera sets") : Name);
+    Setup = FUEShedCameraAuthoringBridge::InspectSetup();
+    SeePreviews = Args._OnSeePreviews;
+    auto Shell = SNew(SVerticalBox);
+    ChildSlot[SNew(SBox).Padding(12).MinDesiredWidth(560)[Shell]];
+    auto Header = SNew(SHorizontalBox);
+    Header->AddSlot().FillWidth(1)[SNew(STextBlock)
+        .Font(FAppStyle::GetFontStyle("NormalFontBold")).AutoWrapText(true)
+        .Text_Lambda([this] {
+            const FString Name = Str(Arrangement, TEXT("displayName"));
+            return FText::FromString(Name.IsEmpty() ? TEXT("Camera sets") : Name);
+        })];
+    Header->AddSlot().AutoWidth().Padding(8, 0)[SNew(SBox)
+        .Visibility_Lambda([this] { return Panel->HasField(TEXT("arrangement")) && !SetupOpen ? EVisibility::Visible : EVisibility::Collapsed; })
+        [Button(TEXT("New set…"), [this] { StartSetup(true); }, false)]];
+    Header->AddSlot().AutoWidth()[SNew(SBox)
+        .Visibility_Lambda([this] { return Panel->HasField(TEXT("arrangement")) && !SetupOpen ? EVisibility::Visible : EVisibility::Collapsed; })
+        [Button(TEXT("Change preset…"), [this] { StartSetup(false); })]];
+    Shell->AddSlot().AutoHeight().Padding(0, 0, 0, 6)[Header];
+    Shell->AddSlot().AutoHeight().Padding(0, 0, 0, 12)[SNew(STextBlock).AutoWrapText(true)
+        .Text_Lambda([this] {
+            if (!Panel->HasField(TEXT("arrangement"))) return FText::FromString(TEXT("Choose an actor and a preset to begin."));
+            const int32 N = Items(Arrangement, TEXT("cameras")).Num();
+            return FText::FromString(FString::Printf(TEXT("%d camera%s  ·  %s"), N, N == 1 ? TEXT("") : TEXT("s"),
+                Ready() ? TEXT("Changes saved automatically") : TEXT("Syncing changes…")));
+        })];
+    auto Root = SNew(SWidgetSwitcher).WidgetIndex_Lambda([this] { return SetupOpen || !Panel->HasField(TEXT("arrangement")) ? 0 : 1; });
+    Shell->AddSlot().FillHeight(1)[Root];
+    Root->AddSlot()[SNew(SScrollBox) + SScrollBox::Slot()[BuildSetup()]];
+    auto Editing = SNew(SVerticalBox);
+    auto Inspector = SNew(SVerticalBox);
+    Root->AddSlot()[SNew(SSplitter).PhysicalSplitterHandleSize(6)
+        + SSplitter::Slot().Value(.34f).MinSize(180)[SNew(SBox).Padding(0, 0, 8, 0)[Editing]]
+        + SSplitter::Slot().Value(.66f).MinSize(320)[Inspector]];
+    auto Toolbar = SNew(SWrapBox).UseAllottedSize(true).InnerSlotPadding(FVector2D(4, 4));
+    Toolbar->AddSlot()[Button(TEXT("Select all"), [this] {
+        TArray<TSharedPtr<FJsonValue>> Ids;
+        for (const auto& Camera : Items(Arrangement, TEXT("cameras")))
+            Ids.Add(MakeShared<FJsonValueString>(Str(Camera->AsObject(), TEXT("id"))));
+        SelectCameras(Ids);
+    }, false)];
+    Toolbar->AddSlot()[SNew(SBox).Visibility_Lambda([this] { return Flag(Active, TEXT("piloting")) ? EVisibility::Visible : EVisibility::Collapsed; })
+        [Button(TEXT("Stop piloting"), [this] { Call(Request(TEXT("eject"))); }, false)]];
+    Editing->AddSlot().AutoHeight().Padding(0, 0, 0, 8)[Toolbar];
+    Editing->AddSlot().FillHeight(1)[SNew(SScrollBox) + SScrollBox::Slot()[SAssignNew(CameraRows, SVerticalBox)]];
+    Editing->AddSlot().AutoHeight().Padding(0, 8, 0, 0)[SNew(STextBlock).AutoWrapText(true)
+        .Text(FText::FromString(TEXT("Select to edit in the viewport or Details. Pilot to compose.")))];
+    auto Tools = SNew(SVerticalBox);
+    Inspector->AddSlot().AutoHeight().Padding(0, 0, 0, 6)[SNew(SSegmentedControl<FString>)
+        .Value_Lambda([this] { return Scope; })
+        .OnValueChanged_Lambda([this](FString Value) { Scope = Value; ActorKey.Reset(); })
+        + SSegmentedControl<FString>::Slot(TEXT("arrangement")).Text(FText::FromString(TEXT("Whole set")))
+        + SSegmentedControl<FString>::Slot(TEXT("cameras")).Text(FText::FromString(TEXT("Selected cameras")))];
+    Inspector->AddSlot().AutoHeight().Padding(0, 0, 0, 8)[SNew(STextBlock).Text_Lambda([this] {
+        return FText::FromString(Scope == TEXT("arrangement") ? TEXT("Editing the whole set") :
+            Scope == TEXT("group") ? TEXT("Editing group: ") + Str(Group(), TEXT("name")) : FString::Printf(TEXT("Editing %d selected cameras"), Selected.Num()));
     })];
-    Root->AddSlot().AutoHeight().Padding(0, 0, 0, 6)[SNew(STextBlock).Text_Lambda([this] {
-        return FText::FromString(!Panel->HasField(TEXT("arrangement")) ? TEXT("No set open") :
-            FString::Printf(TEXT("%d cameras  ·  %s"), Items(Arrangement, TEXT("cameras")).Num(), Ready() ? TEXT("Synced") : TEXT("Syncing…")));
-    })];
-    Root->AddSlot().AutoHeight()[SNew(SBox).MaxDesiredHeight(190)[SNew(SScrollBox) + SScrollBox::Slot()[SAssignNew(CameraRows, SVerticalBox)]]];
-    Root->AddSlot().AutoHeight().Padding(0, 6)[SNew(SHorizontalBox) +
-        SHorizontalBox::Slot().FillWidth(1)[SNew(SCheckBox).Style(FCoreStyle::Get(), "ToggleButtonCheckbox")
-            .IsChecked_Lambda([this] { return Scope == TEXT("arrangement") ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; })
-            .OnCheckStateChanged_Lambda([this](ECheckBoxState) { Scope = TEXT("arrangement"); ActorKey.Reset(); })[Text(TEXT("Whole set"))]] +
-        SHorizontalBox::Slot().FillWidth(1)[SNew(SCheckBox).Style(FCoreStyle::Get(), "ToggleButtonCheckbox")
-            .IsChecked_Lambda([this] { return Scope == TEXT("cameras") ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; })
-            .OnCheckStateChanged_Lambda([this](ECheckBoxState) {
-            Scope = TEXT("cameras");
-            if (Selected.IsEmpty()) Selected.Add(Str(Active, TEXT("cameraId")));
-            ActorKey.Reset();
-        })[Text(TEXT("Selected cameras"))]]];
-    Root->AddSlot().AutoHeight().Padding(0, 4)[SNew(STextBlock).Font(FCoreStyle::GetDefaultFontStyle("Bold", 10)).Text_Lambda([this] {
-        return FText::FromString(Scope == TEXT("arrangement") ? TEXT("Whole set") :
-            Scope == TEXT("group") ? Str(Group(), TEXT("name")) : FString::Printf(TEXT("%d selected"), Selected.Num()));
-    })];
-    Root->AddSlot().AutoHeight().Padding(0, 4)[SNew(SHorizontalBox) +
-        SHorizontalBox::Slot().FillWidth(1)[Button(TEXT("Pilot"), [this] { Call(Request(TEXT("pilot"))); PreviewVisibility(); })] +
-        SHorizontalBox::Slot().FillWidth(1)[Button(TEXT("Details"), [this] { Call(Request(TEXT("select"))); })] +
-        SHorizontalBox::Slot().FillWidth(1)[Button(TEXT("Stop piloting"), [this] { Call(Request(TEXT("eject"))); })]];
     auto Tabs = SNew(SHorizontalBox);
     auto Pages = SNew(SWidgetSwitcher).WidgetIndex_Lambda([this] { return InspectorPage; });
-    Root->AddSlot().AutoHeight().Padding(0, 8)[Tabs];
-    Root->AddSlot().FillHeight(1)[Pages];
-    TSharedRef<SVerticalBox> SectionBody = Root;
+    Inspector->AddSlot().AutoHeight()[Tabs];
+    Inspector->AddSlot().FillHeight(1)[SNew(SBorder).BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder")).Padding(10)
+        [SNew(SScrollBox) + SScrollBox::Slot()[Pages]]];
+    TSharedRef<SVerticalBox> SectionBody = Tools;
     int32 PageIndex = 0;
     auto Page = [&Tabs, &Pages, &SectionBody, &PageIndex, this](const TCHAR* Title) {
         const int32 Index = PageIndex++;
-        Tabs->AddSlot().FillWidth(1)[SNew(SCheckBox).Style(FCoreStyle::Get(), "ToggleButtonCheckbox")
+        Tabs->AddSlot().AutoWidth().Padding(0, 0, 2, 0)[SNew(SCheckBox)
+            .Style(FAppStyle::Get(), "ToolPalette.DockingTab").Padding(FMargin(0))
             .IsChecked_Lambda([this, Index] { return InspectorPage == Index ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; })
-            .OnCheckStateChanged_Lambda([this, Index](ECheckBoxState) { InspectorPage = Index; })[Text(Title)]];
+            .OnCheckStateChanged_Lambda([this, Index](ECheckBoxState State) { if (State == ECheckBoxState::Checked) InspectorPage = Index; })
+            [SNew(SVerticalBox)
+                + SVerticalBox::Slot().AutoHeight().Padding(12, 8)[Text(Title)]
+                + SVerticalBox::Slot().AutoHeight()[SNew(SBox).HeightOverride(2)
+                    [SNew(SBorder).Padding(0).BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+                        .BorderBackgroundColor_Lambda([this, Index] { return InspectorPage == Index ? FStyleColors::Primary : FSlateColor(FLinearColor::Transparent); })]]]];
         SectionBody = SNew(SVerticalBox);
-        Pages->AddSlot()[SNew(SScrollBox) + SScrollBox::Slot()[SectionBody]];
+        Pages->AddSlot()[SectionBody];
     };
     auto Add = [&SectionBody](TSharedRef<SWidget> W) { SectionBody->AddSlot().AutoHeight().Padding(0, 4)[W]; };
     auto Section = [&SectionBody](const TCHAR *Title, bool Expanded = false) {
@@ -290,6 +408,10 @@ void SCameraArrangementPanel::Construct(const FArguments &Args)
     };
     Page(TEXT("Framing"));
     auto Framing = SectionBody;
+    auto Fields = SNew(SUniformGridPanel).SlotPadding(FMargin(4, 4));
+    Add(Fields);
+    Add(SNew(STextBlock).ColorAndOpacity(FSlateColor::UseSubduedForeground()).AutoWrapText(true)
+        .Text(FText::FromString(TEXT("Drag values to adjust · click to type"))));
     Section(TEXT("Groups"));
     Add(SAssignNew(GroupRows, SVerticalBox));
     Add(Button(TEXT("Add selection to group"), [this] {
@@ -314,6 +436,7 @@ void SCameraArrangementPanel::Construct(const FArguments &Args)
         Submit(C);
     }));
     SectionBody = Framing;
+    int32 FieldIndex = 0;
     for (const auto &P : TArray<TPair<FString, FString>>{{TEXT("FOV (°)"), TEXT("fieldOfViewDegrees")},
                                                          {TEXT("Distance"), TEXT("distanceScale")},
                                                          {TEXT("Height (cm)"), TEXT("heightOffset")},
@@ -328,16 +451,29 @@ void SCameraArrangementPanel::Construct(const FArguments &Args)
                              : P.Value == TEXT("elevationDegrees") ? TEXT("elevationDegrees")
                              : P.Value == TEXT("yawOffset")        ? TEXT("yawOffset")
                                                                    : TEXT("margin");
-        Add(Setting(*P.Key, Field));
+        Fields->AddSlot(FieldIndex % 2, FieldIndex / 2)[Setting(*P.Key, Field)];
+        ++FieldIndex;
     }
     Section(TEXT("Camera actions"));
+    Add(Button(TEXT("Add camera from viewport"), [this] {
+        const auto R = Call(Request(TEXT("viewport_pose")));
+        if (Str(R, TEXT("status")) != TEXT("viewport_pose")) return;
+        auto A = Obj();
+        A->SetStringField(TEXT("kind"), TEXT("add_viewport"));
+        A->SetObjectField(TEXT("pose"), Child(R, TEXT("pose")));
+        Action(A);
+    }));
     Add(SAssignNew(ActiveActions, SVerticalBox));
     SectionBody = Framing;
     Section(TEXT("Aim and placement"));
-    Add(Number(TEXT("Aim offset X (cm)"), AimX));
-    Add(Number(TEXT("Aim offset Y (cm)"), AimY));
-    Add(Number(TEXT("Aim offset Z (cm)"), AimZ));
-    Add(Button(TEXT("Apply aim offset"), [this] {
+    auto AimFields = SNew(SUniformGridPanel).SlotPadding(FMargin(4, 4));
+    AimFields->AddSlot(0, 0)[Number(TEXT("Aim X (cm)"), AimX)];
+    AimFields->AddSlot(1, 0)[Number(TEXT("Aim Y (cm)"), AimY)];
+    AimFields->AddSlot(0, 1)[Number(TEXT("Aim Z (cm)"), AimZ)];
+    Add(AimFields);
+    auto AimActions = SNew(SWrapBox).UseAllottedSize(true).InnerSlotPadding(FVector2D(4, 4));
+    Add(AimActions);
+    AimActions->AddSlot()[Button(TEXT("Apply aim offset"), [this] {
         auto C = Command(TEXT("batch")), S = Obj(), V = Obj();
         V->SetNumberField(TEXT("x"), AimX);
         V->SetNumberField(TEXT("y"), AimY);
@@ -347,8 +483,8 @@ void SCameraArrangementPanel::Construct(const FArguments &Args)
         C->SetObjectField(TEXT("scope"), EditScope());
         C->SetArrayField(TEXT("resetFields"), {});
         Submit(C);
-    }));
-    Add(Button(TEXT("Reset aim offset"), [this] {
+    })];
+    AimActions->AddSlot()[Button(TEXT("Reset"), [this] {
         if (Scope == TEXT("arrangement"))
         {
             Message = TEXT("Arrangement defaults have no parent. Set an explicit aim offset.");
@@ -359,9 +495,11 @@ void SCameraArrangementPanel::Construct(const FArguments &Args)
         C->SetObjectField(TEXT("scope"), EditScope());
         C->SetArrayField(TEXT("resetFields"), {MakeShared<FJsonValueString>(TEXT("aimOffset"))});
         Submit(C);
-    }));
-    Add(Number(TEXT("Dolly forward (cm)"), Dolly));
-    Add(Number(TEXT("World Z move (cm)"), Height));
+    })];
+    auto Moves = SNew(SUniformGridPanel).SlotPadding(FMargin(4, 4));
+    Moves->AddSlot(0, 0)[Number(TEXT("Dolly (cm)"), Dolly)];
+    Moves->AddSlot(1, 0)[Number(TEXT("World Z (cm)"), Height)];
+    Add(Moves);
     Add(Button(TEXT("Move cameras"), [this] {
         auto C = Command(TEXT("nudge")), V = Obj();
         V->SetNumberField(TEXT("x"), 0);
@@ -379,51 +517,10 @@ void SCameraArrangementPanel::Construct(const FArguments &Args)
         C->SetStringField(TEXT("displayName"), CameraName);
         Submit(C);
     }));
-    Page(TEXT("Layout"));
-    auto Presets = SNew(SHorizontalBox);
-    auto Preset = [this, &Presets](const TCHAR* Label, const TCHAR* Kind, double N, double Angle, double Sweep) {
-        Presets->AddSlot().FillWidth(1)[Button(Label, [this, Kind, N, Angle, Sweep] { LayoutKind = Kind; Count = N; Start = Angle; Span = Sweep; })];
-    };
-    Preset(TEXT("Single"), TEXT("single"), 1, -35, 0);
-    Preset(TEXT("Cardinals"), TEXT("orbit"), 4, 0, 360);
-    Preset(TEXT("Front arc"), TEXT("arc"), 3, -45, 90);
-    Preset(TEXT("Orbit"), TEXT("orbit"), 8, 0, 360);
-    Add(Presets);
-    Add(SNew(STextBlock).Text_Lambda([this] { return FText::FromString(TEXT("Layout: ") + LayoutKind); }));
-    Add(Number(TEXT("Count (1–256)"), Count));
-    Add(Number(TEXT("Start angle (degrees)"), Start));
-    Add(Number(TEXT("Arc span (degrees)"), Span));
-    Add(SNew(SCheckBox).OnCheckStateChanged_Lambda([this](ECheckBoxState S) {
-        SubjectOrientation = S == ECheckBoxState::Checked;
-    })[Text(TEXT("Use subject orientation"))]);
-    Add(SNew(SCheckBox).IsChecked(ECheckBoxState::Checked).OnCheckStateChanged_Lambda([this](ECheckBoxState S) {
-        Retain = S == ECheckBoxState::Checked;
-    })[Text(TEXT("Keep existing adjustments"))]);
-    Add(Button(TEXT("Review layout"), [this] {
-        auto A = Obj(), L = Obj();
-        A->SetStringField(TEXT("kind"), TEXT("layout"));
-        L->SetStringField(TEXT("kind"), LayoutKind);
-        L->SetNumberField(TEXT("count"), Count);
-        L->SetNumberField(TEXT("startDegrees"), Start);
-        L->SetNumberField(TEXT("spanDegrees"), Span);
-        L->SetStringField(TEXT("orientation"), SubjectOrientation ? TEXT("subject") : TEXT("world"));
-        A->SetObjectField(TEXT("layout"), L);
-        A->SetBoolField(TEXT("retainExisting"), Retain);
-        Action(A);
-    }));
-    Add(Button(TEXT("Add from viewport"), [this] {
-        const auto R = Call(Request(TEXT("viewport_pose")));
-        if (Str(R, TEXT("status")) != TEXT("viewport_pose"))
-            return;
-        auto A = Obj();
-        A->SetStringField(TEXT("kind"), TEXT("add_viewport"));
-        A->SetObjectField(TEXT("pose"), Child(R, TEXT("pose")));
-        Action(A);
-    }));
-    Add(SAssignNew(ProposalRows, SVerticalBox));
     Page(TEXT("Visibility"));
-    Add(Button(TEXT("Hide selection"), [this] { CaptureSelection(TEXT("hide")); }));
-    Add(Button(TEXT("Protect selection"), [this] { CaptureSelection(TEXT("protect")); }));
+    Add(SNew(SWrapBox).UseAllottedSize(true).InnerSlotPadding(FVector2D(4, 4))
+        + SWrapBox::Slot()[Button(TEXT("Hide selection"), [this] { CaptureSelection(TEXT("hide")); })]
+        + SWrapBox::Slot()[Button(TEXT("Protect selection"), [this] { CaptureSelection(TEXT("protect")); })]);
     Add(SAssignNew(ActorRows, SVerticalBox));
     Add(SNew(SCheckBox).IsChecked_Lambda([this] { return Preview ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; }).OnCheckStateChanged_Lambda([this](ECheckBoxState S) {
         Preview = S == ECheckBoxState::Checked;
@@ -434,14 +531,16 @@ void SCameraArrangementPanel::Construct(const FArguments &Args)
                                                                ? TEXT("natural_only")
                                                                : Str(Arrangement, TEXT("output"))));
     }));
+    auto Outputs = SNew(SWrapBox).UseAllottedSize(true).InnerSlotPadding(FVector2D(4, 4));
+    Add(Outputs);
     for (const auto &P : TArray<TPair<FString, FString>>{{TEXT("Pure only"), TEXT("natural_only")},
                                                          {TEXT("Authored only"), TEXT("authored_only")},
                                                          {TEXT("Pure + Authored"), TEXT("natural_and_authored")}})
-        Add(Button(P.Key, [this, Mode = P.Value] {
+        Outputs->AddSlot()[Button(P.Key, [this, Mode = P.Value] {
             auto C = Command(TEXT("output"));
             C->SetStringField(TEXT("output"), Mode);
             Submit(C);
-        }));
+        })];
     Section(TEXT("Visibility presets"));
     Add(Input(TEXT("Preset file"), VisibilityPath));
     Add(Input(TEXT("Visibility preset name"), VisibilityName));
@@ -458,8 +557,10 @@ void SCameraArrangementPanel::Construct(const FArguments &Args)
                        Action(A);
                    }));
     Page(TEXT("Capture"));
-    Add(Number(TEXT("Fixed EV100 (-20 to 30)"), ExposureEV));
-    Add(Button(TEXT("Apply exposure"), [this] {
+    auto ExposureRow = SNew(SHorizontalBox);
+    Add(ExposureRow);
+    ExposureRow->AddSlot().FillWidth(1)[Number(TEXT("Exposure (EV100)"), ExposureEV)];
+    ExposureRow->AddSlot().AutoWidth().VAlign(VAlign_Bottom).Padding(6, 0)[Button(TEXT("Apply"), [this] {
         if (ExposureEV < -20 || ExposureEV > 30)
         {
             Message = TEXT("EV100 must be between -20 and 30.");
@@ -486,7 +587,7 @@ void SCameraArrangementPanel::Construct(const FArguments &Args)
         auto C = Command(TEXT("render_policy"));
         C->SetObjectField(TEXT("policy"), Policy);
         Submit(C);
-    }));
+    })];
     Add(SNew(STextBlock).AutoWrapText(true).Text_Lambda([this] {
         auto Policy = Child(Panel, TEXT("renderPolicy"));
         const auto Renderer = Child(Policy, TEXT("renderer")), Exposure = Child(Policy, TEXT("exposure"));
@@ -505,13 +606,22 @@ void SCameraArrangementPanel::Construct(const FArguments &Args)
     Add(Input(TEXT("Recipe name"), RecipeName));
     Add(Button(TEXT("Export recipe"), [this] { RecipeAction(true); }));
     Add(Button(TEXT("Load recipe"), [this] { RecipeAction(false); }));
-    SectionBody = Root;
-    Add(SNew(STextBlock).AutoWrapText(true).Text_Lambda([this] { return FText::FromString(Message.IsEmpty() ? Str(Panel, TEXT("notice")) : Message); }));
-    Add(SNew(SHorizontalBox) +
-        SHorizontalBox::Slot().FillWidth(1)[Button(TEXT("Save set"), [this] {
-            const auto Previous = Scope; Scope = TEXT("arrangement"); SaveScope(); Scope = Previous;
-        })] +
-        SHorizontalBox::Slot().AutoWidth()[Button(TEXT("Close"), [this] { Call(Request(TEXT("detach"))); }, false)]);
+    Shell->AddSlot().AutoHeight().Padding(0, 8)[SNew(STextBlock).AutoWrapText(true)
+        .ColorAndOpacity(FLinearColor(1.f, .65f, .3f))
+        .Text_Lambda([this] { return FText::FromString(Message.IsEmpty() ? Str(Panel, TEXT("notice")) : Message); })];
+    auto Review = SNew(SHorizontalBox);
+    Review->AddSlot().AutoWidth()[SNew(SButton).ButtonStyle(FAppStyle::Get(), "PrimaryButton")
+        .ContentPadding(FMargin(12, 8)).Text(FText::FromString(TEXT("See Previews")))
+        .IsEnabled_Lambda([this] { return Ready(); })
+        .OnClicked_Lambda([this] { SeePreviews.ExecuteIfBound(); return FReply::Handled(); })];
+    Review->AddSlot().FillWidth(1)[SNew(SBox)];
+    Review->AddSlot().AutoWidth().Padding(6, 0)[Button(TEXT("Publish views"), [this] {
+        const auto Previous = Scope; Scope = TEXT("arrangement"); SaveScope(); Scope = Previous;
+    })];
+    Review->AddSlot().AutoWidth()[Button(TEXT("Close set"), [this] { Call(Request(TEXT("detach"))); }, false)];
+    Shell->AddSlot().AutoHeight()[SNew(SBox).Visibility_Lambda([this] {
+        return Panel->HasField(TEXT("arrangement")) && !SetupOpen ? EVisibility::Visible : EVisibility::Collapsed;
+    })[Review]];
     RegisterActiveTimer(.2f, FWidgetActiveTimerDelegate::CreateSP(this, &SCameraArrangementPanel::Refresh));
 }
 
@@ -574,8 +684,23 @@ EActiveTimerReturnType SCameraArrangementPanel::Refresh(double Time, float Delta
     if (PreviousProducer != Str(Active, TEXT("producerId"))) { Selected.Reset(); Scope = TEXT("arrangement"); RowKey.Reset(); ActorKey.Reset(); }
     Panel = Child(Active, TEXT("panel"));
     Arrangement = Child(Panel, TEXT("arrangement"));
+    Setup = FUEShedCameraAuthoringBridge::InspectSetup();
+    if (!Panel->HasField(TEXT("arrangement"))) NewSetup = true;
+    if (!CreatingId.IsEmpty() && !Setup->HasField(TEXT("request")))
+    {
+        Message = Str(Setup, TEXT("message"));
+        if (Message.IsEmpty() && Panel->HasField(TEXT("arrangement"))) SetupOpen = false;
+        CreatingId.Reset();
+    }
+    if (Active->HasField(TEXT("selectedCameraIds")))
+    {
+        Selected.Reset();
+        for (const auto& Id : Items(Active, TEXT("selectedCameraIds"))) Selected.Add(Id->AsString());
+    }
+    FlushSetting();
     if (!Arrangement->HasField(TEXT("cameras"))) {
-        if (!RowKey.IsEmpty()) { CameraRows->ClearChildren(); GroupRows->ClearChildren(); ActorRows->ClearChildren(); ActiveActions->ClearChildren(); ProposalRows->ClearChildren(); RowKey.Reset(); }
+        CameraRows->ClearChildren();
+        if (!RowKey.IsEmpty()) { GroupRows->ClearChildren(); ActorRows->ClearChildren(); ActiveActions->ClearChildren(); ProposalRows->ClearChildren(); RowKey.Reset(); }
         return EActiveTimerReturnType::Continue;
     }
     FString Key = Str(Active, TEXT("producerId")) + LexToString(Flag(Active, TEXT("piloting"))) + Str(Arrangement, TEXT("id")) + Str(Active, TEXT("cameraId")) + LexToString(Arrangement->GetNumberField(TEXT("revision")));
@@ -602,7 +727,7 @@ EActiveTimerReturnType SCameraArrangementPanel::Refresh(double Time, float Delta
             for (const auto &Id : Items(P, TEXT("customized")))
                 ProposalRows->AddSlot().AutoHeight()[Text(TEXT("Discard customization: ") + Id->AsString())];
             ProposalRows->AddSlot().AutoHeight()[Button(TEXT("Apply changes"),
-                                                        [this] { SimpleAction(TEXT("accept_proposal")); })];
+                                                        [this] { SimpleAction(TEXT("accept_proposal")); if (Message.IsEmpty()) SetupOpen = false; })];
             ProposalRows->AddSlot()
                 .AutoHeight()[Button(TEXT("Cancel"), [this] { SimpleAction(TEXT("cancel_proposal")); })];
         }
@@ -628,13 +753,7 @@ void SCameraArrangementPanel::RebuildCameras()
         const auto C = V->AsObject();
         const FString Id = Str(C, TEXT("id"));
         Existing.Add(Id);
-        FString Label = (Id == Str(Active, TEXT("cameraId")) ? TEXT("▶ ") : TEXT("")) + Str(C, TEXT("displayName"));
-        Label += C->HasField(TEXT("manualPose")) ? TEXT(" · manual") : TEXT(" · fitted");
-        if (Child(C, TEXT("overrides"))->Values.Num())
-            Label += TEXT(" · overrides");
-        for (const auto &Effective : Items(Panel, TEXT("cameras")))
-            if (Str(Effective->AsObject(), TEXT("id")) == Id)
-                Label += Flag(Effective->AsObject(), TEXT("approved")) ? TEXT(" · saved") : TEXT(" · draft");
+        const FString Label = Str(C, TEXT("displayName"));
         auto Row = SNew(SHorizontalBox);
         Row->AddSlot().AutoWidth()[SNew(SCheckBox)
                                        .IsChecked_Lambda([this, Id] {
@@ -647,35 +766,38 @@ void SCameraArrangementPanel::RebuildCameras()
                                            else
                                                Selected.Remove(Id);
                                            ActorKey.Reset();
+                                           SelectCameras(SelectedIds());
                                        })];
-        Row->AddSlot().FillWidth(1)[Button(Label, [this, Id] {
+        Row->AddSlot().FillWidth(1).VAlign(VAlign_Center).Padding(8, 0)[SNew(STextBlock).AutoWrapText(true).Text(FText::FromString(Label))];
+        auto CameraButtons = SNew(SHorizontalBox);
+        CameraButtons->AddSlot().AutoWidth()[Button(TEXT("Select"), [this, Id] {
             Selected.Reset(); Selected.Add(Id); Scope = TEXT("cameras"); ActorKey.Reset();
-            auto A = Obj();
-            A->SetStringField(TEXT("kind"), TEXT("activate"));
-            A->SetStringField(TEXT("cameraId"), Id);
-            Action(A);
-        })];
+            SelectCameras({MakeShared<FJsonValueString>(Id)});
+        }, false, true)];
+        CameraButtons->AddSlot().AutoWidth().Padding(4, 0)[Button(Id == Str(Active, TEXT("cameraId")) && Flag(Active, TEXT("piloting")) ? TEXT("Piloting") : TEXT("Pilot"), [this, Id] { PilotCamera(Id); }, false, true)];
         if (Id == Str(Active, TEXT("cameraId"))) {
-        ActiveActions->AddSlot().AutoHeight().Padding(0, 3)[Button(TEXT("Duplicate"), [this, Id] {
+        auto Actions = SNew(SWrapBox).UseAllottedSize(true).InnerSlotPadding(FVector2D(4, 4));
+        ActiveActions->AddSlot().AutoHeight()[Actions];
+        Actions->AddSlot()[Button(TEXT("Duplicate"), [this, Id] {
             auto C = Command(TEXT("duplicate"));
             C->SetStringField(TEXT("cameraId"), Id);
             C->SetStringField(TEXT("newCameraId"), TEXT("camera-") + FGuid::NewGuid().ToString(EGuidFormats::Digits));
             C->SetStringField(TEXT("newViewId"), TEXT("view-") + FGuid::NewGuid().ToString(EGuidFormats::Digits));
             Submit(C);
         })];
-        ActiveActions->AddSlot().AutoHeight().Padding(0, 3)[Button(TEXT("Unpin"), [this, Id] {
+        Actions->AddSlot()[Button(TEXT("Unpin"), [this, Id] {
             auto C = Command(TEXT("unpin"));
             C->SetStringField(TEXT("cameraId"), Id);
             Submit(C);
         })];
-        ActiveActions->AddSlot().AutoHeight().Padding(0, 3)[Button(TEXT("Remove…"), [this, Id] {
+        Actions->AddSlot()[Button(TEXT("Remove…"), [this, Id] {
             auto A = Obj();
             A->SetStringField(TEXT("kind"), TEXT("remove"));
             A->SetArrayField(TEXT("cameraIds"), {MakeShared<FJsonValueString>(Id)});
             Action(A);
         })];
         for (int32 Direction : {-1, 1})
-            ActiveActions->AddSlot().AutoHeight().Padding(0, 3)[Button(Direction < 0 ? TEXT("↑") : TEXT("↓"), [this, Id, Direction] {
+            Actions->AddSlot()[Button(Direction < 0 ? TEXT("Move up") : TEXT("Move down"), [this, Id, Direction] {
                 auto Values = Items(Arrangement, TEXT("cameras"));
                 const int32 Index =
                     Values.IndexOfByPredicate([&Id](const auto &V) { return Str(V->AsObject(), TEXT("id")) == Id; });
@@ -690,7 +812,10 @@ void SCameraArrangementPanel::RebuildCameras()
                 Submit(C);
             })];
         }
-        CameraRows->AddSlot().AutoHeight().Padding(0, 2)[Row];
+        CameraRows->AddSlot().AutoHeight().Padding(0, 2)[SNew(SBorder)
+            .BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder")).Padding(FMargin(8, 6))
+            [SNew(SVerticalBox) + SVerticalBox::Slot().AutoHeight()[Row]
+                + SVerticalBox::Slot().AutoHeight().Padding(0, 5, 0, 0)[CameraButtons]]];
     }
     for (auto It = Selected.CreateIterator(); It; ++It)
         if (!Existing.Contains(*It))

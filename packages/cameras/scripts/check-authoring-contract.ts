@@ -1,6 +1,6 @@
 import { CameraVisibilityPreset } from "../src/camera-visibility.js";
 import { deepStrictEqual } from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { Schema } from "effect";
 import { CameraBridgeRequest, CameraBridgeResponse } from "../src/camera-authoring-bridge.js";
 import { CameraArrangement, CameraArrangementCommand } from "../src/camera-arrangement.js";
@@ -22,6 +22,20 @@ const contracts = {
 };
 for (const [name, schema] of Object.entries(contracts)) {
 	const document = Schema.toJsonSchemaDocument(schema);
+	const generated = {
+		$schema: "https://json-schema.org/draft/2020-12/schema",
+		$id: `https://ue-shed.dev/contracts/cameras/authoring/v1/${name}.schema.json`,
+		...document.schema,
+		$defs: document.definitions
+	};
+	if (process.argv.includes("--write"))
+		writeFileSync(
+			new URL(
+				`../../protocol/contracts/cameras/authoring/v1/${name}.schema.json`,
+				import.meta.url
+			),
+			`${JSON.stringify(generated, null, "\t")}\n`
+		);
 	deepStrictEqual(
 		JSON.parse(
 			readFileSync(

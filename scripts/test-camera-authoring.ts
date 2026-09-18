@@ -72,6 +72,11 @@ async function launch(ids: readonly string[], label: string) {
 				.filter((path) => ids.includes(basename(dirname(path))))
 				.map((path) => `-PLUGIN=${path}`),
 			...unrealRemoteControlLaunchArguments(ids, port),
+			// Fixture setup only; production launch never grants this editor subsystem access.
+			...(["SelectAll", "SetSelectedLevelActors"] as const).map(
+				(name) =>
+					`-ini:RemoteControl:[/Script/RemoteControlCommon.RemoteControlSettings]:+CustomAllowedRemoteFunctionCalls=(ClassPath=/Script/UnrealEd.EditorActorSubsystem,FunctionName=${name},bAllowChildClasses=False)`
+			),
 			`-abslog=${join(root, `${label}.log`)}`,
 			"-unattended",
 			"-nop4",

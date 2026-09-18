@@ -15,6 +15,8 @@
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 #include "UEShedCameraEditorOwnership.h"
+#include "UEShedCameraPreviewPool.h"
+#include "Engine/SceneCapture2D.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUEShedCameraAuthoringTest, "UEShed.Cameras.Authoring.NativeLifecycle",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -85,9 +87,19 @@ bool FUEShedCameraAuthoringTest::RunTest(const FString& Parameters)
 	const FString SavedMap = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("CameraAuthoringCleanMap.umap"));
 	Q->SetStringField(TEXT("operation"), TEXT("attach"));
 	TestEqual(TEXT("Reattach before save"), FUEShedCameraAuthoringBridge::Execute(Q)->GetStringField(TEXT("status")), FString(TEXT("ready")));
+	FUEShedCameraPreviewPool Previews;
+	FUEShedCameraPreviewView Preview;
+	Preview.Id = TEXT("map-clean-preview");
+	FString PreviewError;
+	TestTrue(TEXT("Preview present during save"), Previews.SetViews(W, {Preview}, PreviewError));
 	TestTrue(TEXT("Save map with a live transient camera"), FEditorFileUtils::SaveMap(W, SavedMap));
 	TestTrue(TEXT("Reload saved map"), FEditorFileUtils::LoadMap(SavedMap, false, false));
 	TestNull(TEXT("Map load detached the bridge"), FUEShedCameraAuthoringBridge::Camera());
+	TestEqual(TEXT("World cleanup released preview targets"), Previews.Num(), 0);
+	int32 SavedPreviews = 0;
+	for (TActorIterator<ASceneCapture2D> It(GEditor->GetEditorWorldContext().World()); It; ++It)
+		if (It->GetName().StartsWith(TEXT("UEShedCameraPreview"))) ++SavedPreviews;
+	TestEqual(TEXT("No preview camera serialized into the map"), SavedPreviews, 0);
 	int32 SavedProxies = 0;
 	for (TActorIterator<AUEShedAuthoringCamera> It(GEditor->GetEditorWorldContext().World()); It; ++It) ++SavedProxies;
 	TestEqual(TEXT("No authoring camera serialized into the map"), SavedProxies, 0);

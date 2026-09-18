@@ -349,7 +349,7 @@ test("separates Niagara's stock engine dependency from the bundle graph", async 
 	}
 });
 
-test("selects the headless Observatory plugin without UI packages", async () => {
+test("selects headless Observatory with its Core dependency and without UI packages", async () => {
 	const output = await mkdtemp(join(tmpdir(), "ue-shed-observatory-plugin-"));
 	try {
 		const result = await buildPluginBundle({
@@ -359,10 +359,14 @@ test("selects the headless Observatory plugin without UI packages", async () => 
 			unreal: { minimum: "5.7", maximum: "5.7" }
 		});
 		assert.deepEqual(
-			result.manifest.plugins.map(({ id }) => id),
-			["UEShedObservatory"]
+			result.manifest.plugins.map(({ id, dependencies }) => ({ id, dependencies })),
+			[
+				{ id: "UEShedCore", dependencies: [] },
+				{ id: "UEShedObservatory", dependencies: ["UEShedCore"] }
+			]
 		);
 		const entries = archiveEntries(result.archivePath);
+		assert.ok(entries.some((entry) => entry.includes("UEShedCore/")));
 		assert.ok(entries.some((entry) => entry.includes("UEShedObservatory/")));
 		assert.ok(!entries.some((entry) => /workbench|camera-review/iu.test(entry)));
 	} finally {

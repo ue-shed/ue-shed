@@ -1,0 +1,761 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$defs": {
+		"EditorWorldOpenResponse": {
+			"anyOf": [
+				{
+					"type": "object",
+					"properties": {
+						"outcome": {
+							"type": "string",
+							"enum": ["opened"]
+						},
+						"after": {
+							"type": "object",
+							"properties": {
+								"dirtyWorldPackages": {
+									"type": "array",
+									"items": {
+										"type": "string",
+										"allOf": [
+											{
+												"minLength": 1
+											},
+											{
+												"maxLength": 1024
+											},
+											{
+												"pattern": "^\\/[A-Za-z0-9_./-]+$"
+											}
+										]
+									},
+									"allOf": [
+										{
+											"maxItems": 256
+										}
+									]
+								},
+								"mapPath": {
+									"type": "string",
+									"allOf": [
+										{
+											"minLength": 1
+										},
+										{
+											"maxLength": 1024
+										},
+										{
+											"pattern": "^\\/[A-Za-z0-9_./-]+$"
+										}
+									]
+								},
+								"playSessionActive": {
+									"type": "boolean"
+								}
+							},
+							"required": ["dirtyWorldPackages", "playSessionActive"],
+							"additionalProperties": false
+						},
+						"before": {
+							"type": "object",
+							"properties": {
+								"dirtyWorldPackages": {
+									"type": "array",
+									"items": {
+										"type": "string",
+										"allOf": [
+											{
+												"minLength": 1
+											},
+											{
+												"maxLength": 1024
+											},
+											{
+												"pattern": "^\\/[A-Za-z0-9_./-]+$"
+											}
+										]
+									},
+									"allOf": [
+										{
+											"maxItems": 256
+										}
+									]
+								},
+								"mapPath": {
+									"type": "string",
+									"allOf": [
+										{
+											"minLength": 1
+										},
+										{
+											"maxLength": 1024
+										},
+										{
+											"pattern": "^\\/[A-Za-z0-9_./-]+$"
+										}
+									]
+								},
+								"playSessionActive": {
+									"type": "boolean"
+								}
+							},
+							"required": ["dirtyWorldPackages", "playSessionActive"],
+							"additionalProperties": false
+						},
+						"contract": {
+							"type": "object",
+							"properties": {
+								"name": {
+									"type": "string",
+									"enum": ["unreal-editor-world-control"]
+								},
+								"version": {
+									"type": "object",
+									"properties": {
+										"major": {
+											"type": "number",
+											"enum": [1]
+										},
+										"minor": {
+											"type": "number",
+											"enum": [0]
+										}
+									},
+									"required": ["major", "minor"],
+									"additionalProperties": false
+								}
+							},
+							"required": ["name", "version"],
+							"additionalProperties": false
+						},
+						"operationId": {
+							"type": "string",
+							"allOf": [
+								{
+									"minLength": 1
+								},
+								{
+									"maxLength": 128
+								},
+								{
+									"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+								}
+							]
+						},
+						"targetMapPath": {
+							"type": "string",
+							"allOf": [
+								{
+									"minLength": 1
+								},
+								{
+									"maxLength": 1024
+								},
+								{
+									"pattern": "^\\/[A-Za-z0-9_./-]+$"
+								},
+								{
+									"pattern": "^\\/Game\\/[A-Za-z0-9_./-]+$"
+								}
+							]
+						}
+					},
+					"required": [
+						"outcome",
+						"after",
+						"before",
+						"contract",
+						"operationId",
+						"targetMapPath"
+					],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"outcome": {
+							"type": "string",
+							"enum": ["already_open"]
+						},
+						"after": {
+							"type": "object",
+							"properties": {
+								"dirtyWorldPackages": {
+									"type": "array",
+									"items": {
+										"type": "string",
+										"allOf": [
+											{
+												"minLength": 1
+											},
+											{
+												"maxLength": 1024
+											},
+											{
+												"pattern": "^\\/[A-Za-z0-9_./-]+$"
+											}
+										]
+									},
+									"allOf": [
+										{
+											"maxItems": 256
+										}
+									]
+								},
+								"mapPath": {
+									"type": "string",
+									"allOf": [
+										{
+											"minLength": 1
+										},
+										{
+											"maxLength": 1024
+										},
+										{
+											"pattern": "^\\/[A-Za-z0-9_./-]+$"
+										}
+									]
+								},
+								"playSessionActive": {
+									"type": "boolean"
+								}
+							},
+							"required": ["dirtyWorldPackages", "playSessionActive"],
+							"additionalProperties": false
+						},
+						"before": {
+							"type": "object",
+							"properties": {
+								"dirtyWorldPackages": {
+									"type": "array",
+									"items": {
+										"type": "string",
+										"allOf": [
+											{
+												"minLength": 1
+											},
+											{
+												"maxLength": 1024
+											},
+											{
+												"pattern": "^\\/[A-Za-z0-9_./-]+$"
+											}
+										]
+									},
+									"allOf": [
+										{
+											"maxItems": 256
+										}
+									]
+								},
+								"mapPath": {
+									"type": "string",
+									"allOf": [
+										{
+											"minLength": 1
+										},
+										{
+											"maxLength": 1024
+										},
+										{
+											"pattern": "^\\/[A-Za-z0-9_./-]+$"
+										}
+									]
+								},
+								"playSessionActive": {
+									"type": "boolean"
+								}
+							},
+							"required": ["dirtyWorldPackages", "playSessionActive"],
+							"additionalProperties": false
+						},
+						"contract": {
+							"type": "object",
+							"properties": {
+								"name": {
+									"type": "string",
+									"enum": ["unreal-editor-world-control"]
+								},
+								"version": {
+									"type": "object",
+									"properties": {
+										"major": {
+											"type": "number",
+											"enum": [1]
+										},
+										"minor": {
+											"type": "number",
+											"enum": [0]
+										}
+									},
+									"required": ["major", "minor"],
+									"additionalProperties": false
+								}
+							},
+							"required": ["name", "version"],
+							"additionalProperties": false
+						},
+						"operationId": {
+							"type": "string",
+							"allOf": [
+								{
+									"minLength": 1
+								},
+								{
+									"maxLength": 128
+								},
+								{
+									"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+								}
+							]
+						},
+						"targetMapPath": {
+							"type": "string",
+							"allOf": [
+								{
+									"minLength": 1
+								},
+								{
+									"maxLength": 1024
+								},
+								{
+									"pattern": "^\\/[A-Za-z0-9_./-]+$"
+								},
+								{
+									"pattern": "^\\/Game\\/[A-Za-z0-9_./-]+$"
+								}
+							]
+						}
+					},
+					"required": [
+						"outcome",
+						"after",
+						"before",
+						"contract",
+						"operationId",
+						"targetMapPath"
+					],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"outcome": {
+							"type": "string",
+							"enum": ["rejected"]
+						},
+						"after": {
+							"type": "object",
+							"properties": {
+								"dirtyWorldPackages": {
+									"type": "array",
+									"items": {
+										"type": "string",
+										"allOf": [
+											{
+												"minLength": 1
+											},
+											{
+												"maxLength": 1024
+											},
+											{
+												"pattern": "^\\/[A-Za-z0-9_./-]+$"
+											}
+										]
+									},
+									"allOf": [
+										{
+											"maxItems": 256
+										}
+									]
+								},
+								"mapPath": {
+									"type": "string",
+									"allOf": [
+										{
+											"minLength": 1
+										},
+										{
+											"maxLength": 1024
+										},
+										{
+											"pattern": "^\\/[A-Za-z0-9_./-]+$"
+										}
+									]
+								},
+								"playSessionActive": {
+									"type": "boolean"
+								}
+							},
+							"required": ["dirtyWorldPackages", "playSessionActive"],
+							"additionalProperties": false
+						},
+						"before": {
+							"type": "object",
+							"properties": {
+								"dirtyWorldPackages": {
+									"type": "array",
+									"items": {
+										"type": "string",
+										"allOf": [
+											{
+												"minLength": 1
+											},
+											{
+												"maxLength": 1024
+											},
+											{
+												"pattern": "^\\/[A-Za-z0-9_./-]+$"
+											}
+										]
+									},
+									"allOf": [
+										{
+											"maxItems": 256
+										}
+									]
+								},
+								"mapPath": {
+									"type": "string",
+									"allOf": [
+										{
+											"minLength": 1
+										},
+										{
+											"maxLength": 1024
+										},
+										{
+											"pattern": "^\\/[A-Za-z0-9_./-]+$"
+										}
+									]
+								},
+								"playSessionActive": {
+									"type": "boolean"
+								}
+							},
+							"required": ["dirtyWorldPackages", "playSessionActive"],
+							"additionalProperties": false
+						},
+						"contract": {
+							"type": "object",
+							"properties": {
+								"name": {
+									"type": "string",
+									"enum": ["unreal-editor-world-control"]
+								},
+								"version": {
+									"type": "object",
+									"properties": {
+										"major": {
+											"type": "number",
+											"enum": [1]
+										},
+										"minor": {
+											"type": "number",
+											"enum": [0]
+										}
+									},
+									"required": ["major", "minor"],
+									"additionalProperties": false
+								}
+							},
+							"required": ["name", "version"],
+							"additionalProperties": false
+						},
+						"operationId": {
+							"type": "string",
+							"allOf": [
+								{
+									"minLength": 1
+								},
+								{
+									"maxLength": 128
+								},
+								{
+									"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+								}
+							]
+						},
+						"targetMapPath": {
+							"type": "string",
+							"allOf": [
+								{
+									"minLength": 1
+								},
+								{
+									"maxLength": 1024
+								},
+								{
+									"pattern": "^\\/[A-Za-z0-9_./-]+$"
+								},
+								{
+									"pattern": "^\\/Game\\/[A-Za-z0-9_./-]+$"
+								}
+							]
+						},
+						"code": {
+							"type": "string",
+							"enum": [
+								"dirty_world",
+								"invalid_request",
+								"map_not_found",
+								"open_failed",
+								"play_session_active",
+								"unavailable"
+							]
+						},
+						"message": {
+							"type": "string"
+						},
+						"recovery": {
+							"type": "string"
+						},
+						"retrySafe": {
+							"type": "boolean"
+						}
+					},
+					"required": [
+						"outcome",
+						"after",
+						"before",
+						"contract",
+						"operationId",
+						"targetMapPath",
+						"code",
+						"message",
+						"recovery",
+						"retrySafe"
+					],
+					"additionalProperties": false
+				}
+			]
+		}
+	},
+	"anyOf": [
+		{
+			"type": "object",
+			"properties": {
+				"contract": {
+					"type": "object",
+					"properties": {
+						"name": {
+							"type": "string",
+							"enum": ["unreal-editor-world-control"]
+						},
+						"version": {
+							"type": "object",
+							"properties": {
+								"major": {
+									"type": "number",
+									"enum": [1]
+								},
+								"minor": {
+									"type": "number",
+									"enum": [0]
+								}
+							},
+							"required": ["major", "minor"],
+							"additionalProperties": false
+						}
+					},
+					"required": ["name", "version"],
+					"additionalProperties": false
+				},
+				"operationId": {
+					"type": "string",
+					"allOf": [
+						{
+							"minLength": 1
+						},
+						{
+							"maxLength": 128
+						},
+						{
+							"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+						}
+					]
+				},
+				"targetMapPath": {
+					"type": "string",
+					"allOf": [
+						{
+							"minLength": 1
+						},
+						{
+							"maxLength": 1024
+						},
+						{
+							"pattern": "^\\/[A-Za-z0-9_./-]+$"
+						},
+						{
+							"pattern": "^\\/Game\\/[A-Za-z0-9_./-]+$"
+						}
+					]
+				},
+				"status": {
+					"type": "string",
+					"enum": ["pending", "running"]
+				}
+			},
+			"required": ["contract", "operationId", "targetMapPath", "status"],
+			"additionalProperties": false
+		},
+		{
+			"type": "object",
+			"properties": {
+				"contract": {
+					"type": "object",
+					"properties": {
+						"name": {
+							"type": "string",
+							"enum": ["unreal-editor-world-control"]
+						},
+						"version": {
+							"type": "object",
+							"properties": {
+								"major": {
+									"type": "number",
+									"enum": [1]
+								},
+								"minor": {
+									"type": "number",
+									"enum": [0]
+								}
+							},
+							"required": ["major", "minor"],
+							"additionalProperties": false
+						}
+					},
+					"required": ["name", "version"],
+					"additionalProperties": false
+				},
+				"operationId": {
+					"type": "string",
+					"allOf": [
+						{
+							"minLength": 1
+						},
+						{
+							"maxLength": 128
+						},
+						{
+							"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+						}
+					]
+				},
+				"targetMapPath": {
+					"type": "string",
+					"allOf": [
+						{
+							"minLength": 1
+						},
+						{
+							"maxLength": 1024
+						},
+						{
+							"pattern": "^\\/[A-Za-z0-9_./-]+$"
+						},
+						{
+							"pattern": "^\\/Game\\/[A-Za-z0-9_./-]+$"
+						}
+					]
+				},
+				"status": {
+					"type": "string",
+					"enum": ["completed"]
+				},
+				"result": {
+					"$ref": "#/$defs/EditorWorldOpenResponse"
+				}
+			},
+			"required": ["contract", "operationId", "targetMapPath", "status", "result"],
+			"additionalProperties": false
+		},
+		{
+			"type": "object",
+			"properties": {
+				"contract": {
+					"type": "object",
+					"properties": {
+						"name": {
+							"type": "string",
+							"enum": ["unreal-editor-world-control"]
+						},
+						"version": {
+							"type": "object",
+							"properties": {
+								"major": {
+									"type": "number",
+									"enum": [1]
+								},
+								"minor": {
+									"type": "number",
+									"enum": [0]
+								}
+							},
+							"required": ["major", "minor"],
+							"additionalProperties": false
+						}
+					},
+					"required": ["name", "version"],
+					"additionalProperties": false
+				},
+				"operationId": {
+					"type": "string",
+					"allOf": [
+						{
+							"minLength": 1
+						},
+						{
+							"maxLength": 128
+						},
+						{
+							"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+						}
+					]
+				},
+				"targetMapPath": {
+					"type": "string",
+					"allOf": [
+						{
+							"minLength": 1
+						},
+						{
+							"maxLength": 1024
+						},
+						{
+							"pattern": "^\\/[A-Za-z0-9_./-]+$"
+						},
+						{
+							"pattern": "^\\/Game\\/[A-Za-z0-9_./-]+$"
+						}
+					]
+				},
+				"status": {
+					"type": "string",
+					"enum": ["unavailable"]
+				},
+				"code": {
+					"type": "string",
+					"enum": ["invalid_request", "busy", "conflict", "unknown_operation"]
+				},
+				"message": {
+					"type": "string"
+				},
+				"recovery": {
+					"type": "string"
+				}
+			},
+			"required": [
+				"contract",
+				"operationId",
+				"targetMapPath",
+				"status",
+				"code",
+				"message",
+				"recovery"
+			],
+			"additionalProperties": false
+		}
+	]
+}

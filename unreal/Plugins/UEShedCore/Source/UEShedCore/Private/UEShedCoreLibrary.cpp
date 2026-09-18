@@ -108,6 +108,8 @@ void UUEShedCoreLibrary::GetCapabilityManifest(FString& ResultJson)
 		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("editor.asset-navigation.v1")));
 		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("editor.play-session.v1")));
 		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("editor.world-control.v1")));
+		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("editor.world-control.async.v1")));
+		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("editor.world-state.v1")));
 		Root->SetStringField(TEXT("windowActivationObjectPath"),
 			TEXT("/Script/UEShedCoreEditor.Default__UEShedEditorWindowLibrary"));
 		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("editor.window-activation.v1")));

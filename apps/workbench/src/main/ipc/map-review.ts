@@ -6,6 +6,15 @@ import { WorkbenchMapReview } from "../services/map-review.js";
 export const register = Effect.gen(function* () {
 	const ipc = yield* ElectronIpc;
 	const mapReview = yield* WorkbenchMapReview;
+	yield* ipc.register(invokeContracts["map-review:editor-world"], () =>
+		mapReview.editorWorld
+			? mapReview.editorWorld()
+			: Effect.succeed({
+					status: "unavailable",
+					message: "Live map state is unavailable.",
+					recovery: "Update this host."
+				})
+	);
 	yield* ipc.register(invokeContracts["map-review:camera-workspace"], (intent) =>
 		mapReview.cameraWorkspace
 			? mapReview.cameraWorkspace(intent)

@@ -67,3 +67,31 @@ export type EditorWorldOpenResponse = typeof EditorWorldOpenResponse.Type;
 
 export const decodeEditorWorldOpenRequest = Schema.decodeUnknownEffect(EditorWorldOpenRequest);
 export const decodeEditorWorldOpenResponse = Schema.decodeUnknownEffect(EditorWorldOpenResponse);
+
+/** Acknowledgement/status of an asynchronous open; transport silence is not failure to load. */
+export const EditorWorldOperation = Schema.Union([
+	Schema.Struct({
+		...EditorWorldOpenRequest.fields,
+		status: Schema.Literals(["pending", "running"])
+	}),
+	Schema.Struct({
+		...EditorWorldOpenRequest.fields,
+		status: Schema.Literal("completed"),
+		result: EditorWorldOpenResponse
+	}),
+	Schema.Struct({
+		...EditorWorldOpenRequest.fields,
+		status: Schema.Literal("unavailable"),
+		code: Schema.Literals(["invalid_request", "busy", "conflict", "unknown_operation"]),
+		message: Schema.String,
+		recovery: Schema.String
+	})
+]);
+export type EditorWorldOperation = typeof EditorWorldOperation.Type;
+
+export const EditorWorldState = Schema.Struct({
+	contract: EditorWorldControlContract,
+	projectName: Schema.String,
+	snapshot: EditorWorldSnapshot
+});
+export interface EditorWorldState extends Schema.Schema.Type<typeof EditorWorldState> {}

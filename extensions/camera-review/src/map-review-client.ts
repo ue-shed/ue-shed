@@ -28,7 +28,7 @@ import type {
 	WorldScoutRefreshRate,
 	WorldScoutResult
 } from "@ue-shed/observatory/browser";
-import { EditorWorldOpenResponse } from "@ue-shed/protocol";
+import { EditorWorldOpenResponse, EditorWorldState } from "@ue-shed/protocol";
 import type {
 	SavedWorld,
 	SavedWorldChoice,
@@ -87,7 +87,19 @@ export const MapReviewMapOpenResult = Schema.Union([
 ]);
 export type MapReviewMapOpenResult = typeof MapReviewMapOpenResult.Type;
 
+export const MapReviewEditorState = Schema.Union([
+	Schema.Struct({ status: Schema.Literal("ready"), world: EditorWorldState }),
+	Schema.Struct({ status: Schema.Literal("opening"), targetMapPath: Schema.String }),
+	Schema.Struct({
+		status: Schema.Literal("unavailable"),
+		message: Schema.String,
+		recovery: Schema.String
+	})
+]);
+export type MapReviewEditorState = typeof MapReviewEditorState.Type;
+
 export interface MapReviewClientApi {
+	readonly editorWorld?: () => Effect.Effect<MapReviewEditorState, MapReviewClientError>;
 	readonly openMapInUnreal?: (
 		mapPath: string
 	) => Effect.Effect<MapReviewMapOpenResult, MapReviewClientError>;

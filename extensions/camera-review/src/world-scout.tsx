@@ -84,6 +84,8 @@ export function WorldScout(props: {
 		"connectWorld" | "focusActor" | "setWorldObservationRate" | "worldObservations"
 	>;
 	readonly onActorFocused: (actor: ObservedActor) => void;
+	/** A confirmed editor map invalidates retained actors from the previous editor world. */
+	readonly editorMapPath?: string | undefined;
 	readonly onActorSelected?: ((actor: ObservedActor | undefined) => void) | undefined;
 	/** Test seam: override paint scheduling to assert animation-frame coalescing. */
 	readonly paintScheduler?: {
@@ -137,11 +139,14 @@ export function WorldScout(props: {
 		if (label === "OFFLINE" && hasWorld()) return "RECONNECTING";
 		return label;
 	});
-	const sampleAge = createMemo(() => {
+	const freshnessLabel = createMemo(() => {
+		const current = latest();
+		if (current?.status === "live") return "LIVE STREAM";
+		if (current?.status !== "polling_fallback")
+			return hasWorld() ? "LAST KNOWN ACTORS" : undefined;
 		presentationRevision();
-		const capturedAt = store.capturedAt;
-		if (capturedAt === undefined) return undefined;
-		return Math.max(0, Date.now() - Date.parse(capturedAt));
+		const age = Math.max(0, Date.now() - Date.parse(current.snapshot.capturedAt));
+		return age < 1_000 ? "LIVE SAMPLE" : `${(age / 1_000).toFixed(1)}s OLD`;
 	});
 	const classes = createMemo(() => {
 		catalogRevision();
@@ -311,7 +316,44 @@ export function WorldScout(props: {
 	let lastCatalogIdentity: string | undefined;
 	let lastPaintActorsChanged = 0;
 	let lastPaintSequence = "0";
+	const clearPreviousEditorWorld = () => {
+		store.clear();
+		lastCatalogIdentity = undefined;
+		representativeBoundsDirty = true;
+		setHasWorld(false);
+		setSelectedKey(undefined);
+		setSelectedStreamIndex(undefined);
+		setFollowing(false);
+		setLatest({ status: "connecting" });
+		setCatalogRevision((value) => value + 1);
+		setSelectionRevision((value) => value + 1);
+		props.onActorSelected?.(undefined);
+		requestPaint();
+	};
+	createEffect(
+		() => props.editorMapPath,
+		(mapPath) => {
+			if (mapPath && store.worldKind === "editor" && store.mapPath !== mapPath)
+				clearPreviousEditorWorld();
+		}
+	);
 	const acceptObservation = (current: MapReviewWorldObservation) => {
+		const world =
+			current.status === "polling_fallback"
+				? current.snapshot
+				: current.status === "live" ||
+					  current.status === "stale" ||
+					  current.status === "unavailable"
+					? current.sample?.catalog
+					: undefined;
+		if (
+			world?.worldKind === "editor" &&
+			props.editorMapPath &&
+			world.mapPath !== props.editorMapPath
+		) {
+			if (store.mapPath !== props.editorMapPath) clearPreviousEditorWorld();
+			return;
+		}
 		const previousViewport = store.viewport;
 		const previousMap = store.mapPath;
 		const previousKind = store.worldKind;
@@ -640,15 +682,11 @@ export function WorldScout(props: {
 				<div {...stylex.attrs(styles.worldStatus)}>
 					<span {...stylex.attrs(styles.liveDot)} />
 					<strong>{connectionLabel()}</strong>
-					<code {...stylex.attrs(styles.worldStatusCode)}>{mapPathLabel()}</code>
-					<Show when={sampleAge()}>
-						{(age) => (
-							<small {...stylex.attrs(styles.sampleAge)}>
-								{age() < 1_000
-									? "LIVE SAMPLE"
-									: `${(age() / 1_000).toFixed(1)}s OLD`}
-							</small>
-						)}
+					<code title={mapPathLabel()} {...stylex.attrs(styles.worldStatusCode)}>
+						{mapPathLabel()}
+					</code>
+					<Show when={freshnessLabel()}>
+						{(label) => <small {...stylex.attrs(styles.sampleAge)}>{label()}</small>}
 					</Show>
 				</div>
 			</header>
@@ -658,10 +696,15 @@ export function WorldScout(props: {
 				fallback={
 					<div {...stylex.attrs(styles.offline)}>
 						<div {...stylex.attrs(styles.offlineReticle)}>＋</div>
-						<h3>No live world connected</h3>
+						<h3>
+							{latest()?.status === "connecting" && props.editorMapPath
+								? "Waiting for actors in the new map"
+								: "No live world connected"}
+						</h3>
 						<p>
-							Start the editor with Remote Control, open a map, then connect to list
-							actors and jump the viewport to a selection.
+							{latest()?.status === "connecting" && props.editorMapPath
+								? `Unreal is open to ${props.editorMapPath}. Waiting for its actor stream.`
+								: "Start the editor with Remote Control, open a map, then connect to list actors and jump the viewport to a selection."}
 						</p>
 						<button
 							type="button"
@@ -914,6 +957,7 @@ const styles = stylex.create({
 		boxShadow: "0 0 8px rgba(76, 183, 130, 0.35)"
 	},
 	worldStatusCode: {
+		gridColumn: "1 / -1",
 		color: tokens.colorTextSubtle,
 		overflow: "hidden",
 		textOverflow: "ellipsis",

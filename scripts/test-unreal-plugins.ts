@@ -41,7 +41,8 @@ const tests = [
 	"UEShed.Cameras.Streaming.BoundedLifecycle",
 	"UEShed.Cameras.Streaming.DeliveryScope",
 	"UEShed.Cameras.Streaming.CadenceUpdates",
-	"UEShed.Niagara.IndependentCamera"
+	"UEShed.Niagara.IndependentCamera",
+	"UEShed.Core.EditorWorld.AsyncOpen"
 ];
 const report = join(root, "automation");
 const result = spawnSync(

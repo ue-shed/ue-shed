@@ -1,4 +1,6 @@
 import { LiveReviewMapPicker } from "./review-map-picker.js";
+import { EditorMapSync } from "./editor-map-sync.js";
+import type { MapReviewEditorState } from "./map-review-client.js";
 import { CameraWorkspace } from "./camera-workspace.js";
 import * as stylex from "@stylexjs/stylex";
 import { Button, createEffectAction } from "@ue-shed/ui";
@@ -106,6 +108,12 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 	const [captureOpen, setCaptureOpen] = createSignal(false);
 	const [setLibraryOpen, setSetLibraryOpen] = createSignal(false);
 	const [createCameraRequest, setCreateCameraRequest] = createSignal(0);
+	const [workspaceMap, setWorkspaceMap] = createSignal<string>();
+	const [editorState, setEditorState] = createSignal<MapReviewEditorState>();
+	const editorMap = createMemo(() => {
+		const current = editorState();
+		return current?.status === "ready" ? current.world.snapshot.mapPath : undefined;
+	});
 	const [worldSource, setWorldSource] = createSignal<"saved" | "live">(
 		props.client.readSavedWorld === undefined || props.client.savedWorldMaps === undefined
 			? "live"
@@ -120,6 +128,10 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 		const current = ready();
 		return current?.runs.find((run) => run.id === selectedRunId()) ?? current?.runs[0];
 	});
+	const canEditReviewMap = () =>
+		!props.client.editorWorld ||
+		(editorState()?.status === "ready" &&
+			(!ready() || ready()?.reviewSet.mapPath === editorMap()));
 	const selectedView = createMemo(() =>
 		ready()?.reviewSet.views.find((view) => view.id === selectedViewId())
 	);
@@ -179,6 +191,8 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 	const apply = (result: MapReviewResult) => {
 		setState(result);
 		if (result.status === "ready") {
+			if (!workspaceMap() || ready()?.reviewSet.id !== result.reviewSet.id)
+				setWorkspaceMap(result.reviewSet.mapPath);
 			const nextViewId = result.reviewSet.views.some((view) => view.id === selectedViewId())
 				? selectedViewId()
 				: result.reviewSet.views[0]?.id;
@@ -225,7 +239,10 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 							: undefined
 					}
 					client={props.client}
-					onChanged={apply}
+					onChanged={(result) => {
+						if (result.status === "ready") setWorkspaceMap(result.reviewSet.mapPath);
+						apply(result);
+					}}
 					onClose={() => setSetLibraryOpen(false)}
 				/>
 			</Show>
@@ -262,6 +279,7 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 						type="button"
 						disabled={
 							ready() === undefined ||
+							!canEditReviewMap() ||
 							(worldSource() !== "live" && !props.client.cameraWorkspace)
 						}
 						onClick={() => setCaptureOpen(true)}
@@ -271,6 +289,42 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 					</Button>
 				</div>
 			</header>
+			<EditorMapSync
+				client={props.client}
+				mapPath={worldSource() === "live" ? editorMap() : workspaceMap()}
+				onFollow={(mapPath) => {
+					setWorkspaceMap(mapPath);
+					setWorldSource("live");
+					setFocusRequest(undefined);
+					setSelectedActorRequest(undefined);
+				}}
+				onState={(next) => {
+					const previous = editorMap();
+					setEditorState(next);
+					if (
+						next.status === "ready" &&
+						previous &&
+						previous !== next.world.snapshot.mapPath
+					) {
+						setFocusRequest(undefined);
+						setSelectedActorRequest(undefined);
+					}
+				}}
+			/>
+			<Show when={ready() && editorMap() && ready()?.reviewSet.mapPath !== editorMap()}>
+				<section aria-label="Review map mismatch" {...stylex.attrs(styles.mapMismatch)}>
+					<div>
+						<strong>Camera editing and capture are paused.</strong>
+						<div>
+							The active review is for <code>{ready()?.reviewSet.mapPath}</code>.
+							Saved captures remain available.
+						</div>
+					</div>
+					<Button onClick={() => setSetLibraryOpen(true)}>
+						Choose a review set for this map
+					</Button>
+				</section>
+			</Show>
 			<div {...stylex.attrs(styles.toolbar)}>
 				<div
 					role="tablist"
@@ -351,6 +405,8 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 						<Show when={props.client.savedWorldMaps && props.client.openMapInUnreal}>
 							<LiveReviewMapPicker
 								client={props.client}
+								editorMapPath={editorMap()}
+								onMapPathChange={setWorkspaceMap}
 								onOpened={() => {
 									setFocusRequest(undefined);
 									setSelectedActorRequest(undefined);
@@ -358,6 +414,7 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 							/>
 						</Show>
 						<WorldScout
+							editorMapPath={editorMap()}
 							onActorSelected={
 								props.client.cameraWorkspace
 									? (actor) =>
@@ -383,7 +440,11 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 					</>
 				}
 			>
-				<SavedWorldScout client={props.client} />
+				<SavedWorldScout
+					client={props.client}
+					mapPath={workspaceMap()}
+					onMapPathChange={setWorkspaceMap}
+				/>
 			</Show>
 
 			<Switch>
@@ -498,6 +559,7 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 							<Show
 								when={
 									(worldSource() === "live" || props.client.cameraWorkspace) &&
+									canEditReviewMap() &&
 									current().reviewSet.id
 								}
 								keyed
@@ -1024,6 +1086,22 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 }
 
 const styles = stylex.create({
+	mapMismatch: {
+		display: "flex",
+		alignItems: "center",
+		justifyContent: "space-between",
+		flexWrap: "wrap",
+		gap: 16,
+		padding: 16,
+		marginBottom: 16,
+		backgroundColor: tokens.colorSurface,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		fontSize: 13,
+		overflowWrap: "anywhere"
+	},
 	page: {
 		minHeight: "calc(100vh - 52px)",
 		width: "100%",

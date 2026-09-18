@@ -256,9 +256,9 @@ export function CameraWorkspace(props: {
 				<button
 					{...stylex.attrs(styles.button)}
 					onClick={() => setLibrary(!library())}
-					aria-pressed={library() ? "true" : "false"}
+					aria-expanded={library() ? "true" : "false"}
 				>
-					Open camera set
+					{library() ? "Hide camera sets" : "Browse camera sets"}
 				</button>
 				<button {...stylex.attrs(styles.button)} onClick={() => setCreating(!creating())}>
 					New camera set
@@ -371,6 +371,10 @@ export function CameraWorkspace(props: {
 				</form>
 			</Show>
 			<Show when={library()}>
+				<p {...stylex.attrs(styles.hint)}>
+					Saved camera drafts for this review. Select a set below to load its cameras for
+					editing; this does not open a map.
+				</p>
 				<div {...stylex.attrs(styles.rail)}>
 					<For
 						each={state.sets}
@@ -391,6 +395,7 @@ export function CameraWorkspace(props: {
 								<strong>{set.name}</strong>
 								<span>{set.cameras} cameras</span>
 								<small>{set.actorPath.split(".").at(-1)}</small>
+								<span>Edit camera set →</span>
 							</button>
 						)}
 					</For>

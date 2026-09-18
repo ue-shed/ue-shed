@@ -1,5 +1,8 @@
 import { EditorHandoffNotice } from "./editor-handoff.js";
-import { MapReviewMapOpenResult } from "@ue-shed/extension-camera-review/client";
+import {
+	MapReviewMapOpenResult,
+	MapReviewEditorState
+} from "@ue-shed/extension-camera-review/client";
 import { CameraWorkspaceRequest, CameraWorkspaceResult } from "@ue-shed/cameras/review-contracts";
 import {
 	TextureInvestigationQuery,
@@ -1031,6 +1034,11 @@ export const invokeContracts = {
 		channel: "map-review:open-map",
 		args: Schema.Tuple([Schema.NonEmptyString]),
 		result: MapReviewMapOpenResult
+	}),
+	"map-review:editor-world": invoke({
+		channel: "map-review:editor-world",
+		args: EmptyArgs,
+		result: MapReviewEditorState
 	}),
 	"map-review:saved-world": invoke({
 		channel: "map-review:saved-world",

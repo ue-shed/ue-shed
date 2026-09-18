@@ -5,6 +5,8 @@
 #include "Engine/World.h"
 #include "FileHelpers.h"
 #include "Misc/PackageName.h"
+#include "Misc/App.h"
+#include "Containers/Ticker.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
@@ -94,6 +96,150 @@ void SerializeResponse(
 	const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&ResultJson);
 	FJsonSerializer::Serialize(Root, Writer);
 }
+
+struct FMapOpenJob
+{
+	FString OperationId, TargetMapPath, RequestJson, ResultJson;
+	FString Status = TEXT("pending");
+};
+TArray<FMapOpenJob> MapOpenJobs;
+FTSTicker::FDelegateHandle MapOpenTicker;
+
+TSharedRef<FJsonObject> JobEnvelope(const FString& OperationId, const FString& TargetMapPath)
+{
+	auto Root = MakeShared<FJsonObject>();
+	Root->SetObjectField(TEXT("contract"), ContractJson());
+	Root->SetStringField(TEXT("operationId"), OperationId);
+	Root->SetStringField(TEXT("targetMapPath"), TargetMapPath);
+	return Root;
+}
+
+void WriteJson(const TSharedRef<FJsonObject>& Root, FString& ResultJson)
+{
+	ResultJson.Reset();
+	FJsonSerializer::Serialize(Root, TJsonWriterFactory<>::Create(&ResultJson));
+}
+
+void UnavailableJob(const FString& Id, const FString& Map, const TCHAR* Code,
+	const TCHAR* Message, const TCHAR* Recovery, FString& ResultJson)
+{
+	auto Root = JobEnvelope(Id, Map);
+	Root->SetStringField(TEXT("status"), TEXT("unavailable"));
+	Root->SetStringField(TEXT("code"), Code);
+	Root->SetStringField(TEXT("message"), Message);
+	Root->SetStringField(TEXT("recovery"), Recovery);
+	WriteJson(Root, ResultJson);
+}
+
+bool ReadJobRequest(const FString& RequestJson, FString& Id, FString& Map, FString& ResultJson)
+{
+	TSharedPtr<FJsonObject> Request;
+	const TSharedPtr<FJsonObject>* Contract = nullptr;
+	const TSharedPtr<FJsonObject>* Version = nullptr;
+	FString Name;
+	double Major = -1, Minor = -1;
+	if (RequestJson.Len() <= 16 * 1024
+		&& FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(RequestJson), Request)
+		&& Request.IsValid() && Request->TryGetStringField(TEXT("operationId"), Id)
+		&& IsSafeIdentifier(Id) && Request->TryGetStringField(TEXT("targetMapPath"), Map)
+		&& Map.Len() <= 1024 && Map.StartsWith(TEXT("/Game/"))
+		&& FPackageName::IsValidLongPackageName(Map)
+		&& Request->TryGetObjectField(TEXT("contract"), Contract)
+		&& (*Contract)->TryGetStringField(TEXT("name"), Name)
+		&& Name == TEXT("unreal-editor-world-control")
+		&& (*Contract)->TryGetObjectField(TEXT("version"), Version)
+		&& (*Version)->TryGetNumberField(TEXT("major"), Major) && Major == 1
+		&& (*Version)->TryGetNumberField(TEXT("minor"), Minor) && Minor == 0) return true;
+	UnavailableJob(TEXT("invalid"), TEXT("/Game/Invalid"), TEXT("invalid_request"),
+		TEXT("Invalid map-open operation request."), TEXT("Send a version 1.0 request with a safe ID and /Game/ map path."), ResultJson);
+	return false;
+}
+
+void WriteJob(const FMapOpenJob& Job, FString& ResultJson)
+{
+	auto Root = JobEnvelope(Job.OperationId, Job.TargetMapPath);
+	Root->SetStringField(TEXT("status"), Job.Status);
+	if (Job.Status == TEXT("completed"))
+	{
+		TSharedPtr<FJsonObject> Result;
+		FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Job.ResultJson), Result);
+		Root->SetObjectField(TEXT("result"), Result);
+	}
+	WriteJson(Root, ResultJson);
+}
+}
+
+void UUEShedEditorWorldControlLibrary::GetWorldState(FString& ResultJson)
+{
+	auto Root = MakeShared<FJsonObject>();
+	Root->SetObjectField(TEXT("contract"), ContractJson());
+	Root->SetStringField(TEXT("projectName"), FApp::GetProjectName());
+	Root->SetObjectField(TEXT("snapshot"), Snapshot());
+	WriteJson(Root, ResultJson);
+}
+
+void UUEShedEditorWorldControlLibrary::GetOpenMapStatus(const FString& RequestJson, FString& ResultJson)
+{
+	FString Id, Map;
+	if (!ReadJobRequest(RequestJson, Id, Map, ResultJson)) return;
+	const auto* Job = MapOpenJobs.FindByPredicate([&](const auto& Item) { return Item.OperationId == Id; });
+	if (!Job)
+		UnavailableJob(Id, Map, TEXT("unknown_operation"), TEXT("This editor no longer knows that map-open operation."),
+			TEXT("Check the current editor map before issuing a new open; the original command is not replayed."), ResultJson);
+	else if (Job->TargetMapPath != Map)
+		UnavailableJob(Id, Map, TEXT("conflict"), TEXT("This operation ID belongs to another map."),
+			TEXT("Use the original target when querying this operation."), ResultJson);
+	else WriteJob(*Job, ResultJson);
+}
+
+void UUEShedEditorWorldControlLibrary::BeginOpenMap(const FString& RequestJson, FString& ResultJson)
+{
+	FString Id, Map;
+	if (!ReadJobRequest(RequestJson, Id, Map, ResultJson)) return;
+	if (MapOpenJobs.ContainsByPredicate([&](const auto& Item) { return Item.OperationId == Id; }))
+	{
+		GetOpenMapStatus(RequestJson, ResultJson);
+		return;
+	}
+	if (MapOpenJobs.ContainsByPredicate([](const auto& Item) { return Item.Status != TEXT("completed"); }))
+	{
+		UnavailableJob(Id, Map, TEXT("busy"), TEXT("An editor map-open operation is already in progress."),
+			TEXT("Wait for that map to finish loading before requesting another switch."), ResultJson);
+		return;
+	}
+	// Retain bounded terminal results for lost acknowledgements and repeat status queries.
+	if (MapOpenJobs.Num() >= 32) MapOpenJobs.RemoveAt(0);
+	FMapOpenJob Job;
+	Job.OperationId = Id;
+	Job.TargetMapPath = Map;
+	Job.RequestJson = RequestJson;
+	MapOpenJobs.Add(Job);
+	WriteJob(MapOpenJobs.Last(), ResultJson);
+	// Return the acknowledgement before entering Unreal's blocking game-thread map loader.
+	MapOpenTicker = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([Id](float)
+	{
+		auto* Pending = MapOpenJobs.FindByPredicate([&](const auto& Item) { return Item.OperationId == Id; });
+		if (!Pending) return false;
+		Pending->Status = TEXT("running");
+		const FString Request = Pending->RequestJson;
+		FString Response;
+		UUEShedEditorWorldControlLibrary::OpenMap(Request, Response);
+		Pending = MapOpenJobs.FindByPredicate([&](const auto& Item) { return Item.OperationId == Id; });
+		if (Pending)
+		{
+			Pending->ResultJson = MoveTemp(Response);
+			Pending->Status = TEXT("completed");
+		}
+		MapOpenTicker.Reset();
+		return false;
+	}), 0.1f);
+}
+
+void UUEShedEditorWorldControlLibrary::ShutdownWorldControl()
+{
+	FTSTicker::RemoveTicker(MapOpenTicker);
+	MapOpenTicker.Reset();
+	MapOpenJobs.Reset();
 }
 
 void UUEShedEditorWorldControlLibrary::OpenMap(

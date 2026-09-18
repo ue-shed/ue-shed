@@ -60,6 +60,7 @@ it.effect("focuses explicit map opening but never the map opened as capture prep
 						})
 					),
 					worldControl: makeEditorWorldControlTestLayer({
+						snapshot: () => Effect.die("not used"),
 						open: (request) =>
 							Effect.sync(() => {
 								calls.push("open");
@@ -149,7 +150,10 @@ function mapCaptureLayer(
 	);
 	const worldControl =
 		options.worldControl ??
-		makeEditorWorldControlTestLayer({ open: () => Effect.die("not used") });
+		makeEditorWorldControlTestLayer({
+			open: () => Effect.die("not used"),
+			snapshot: () => Effect.die("not used")
+		});
 	const assetReader =
 		options.assetReader ??
 		makeAssetReaderTestLayer({

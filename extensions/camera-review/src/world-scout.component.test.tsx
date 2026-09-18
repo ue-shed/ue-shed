@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import "../../../test-support/actor-explorer-layout.js";
 
-import { cleanup, fireEvent, render, screen, within } from "@solidjs/testing-library";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library";
 import { userEvent } from "@testing-library/user-event";
 import {
 	ActorId,
@@ -20,7 +20,7 @@ import {
 } from "@ue-shed/observatory/browser";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
 import { Effect, Layer, ManagedRuntime, Queue, Stream } from "effect";
-import { flush } from "solid-js";
+import { createSignal, flush } from "solid-js";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import type { MapReviewClientApi } from "./map-review-client.js";
 import { shouldRequestFollowUpdate, WorldScout } from "./world-scout.js";
@@ -230,6 +230,7 @@ describe("WorldScout", () => {
 		paint.flush();
 
 		expect(await screen.findByText("RECONNECTING")).toBeDefined();
+		expect(screen.getByText("LAST KNOWN ACTORS")).toBeDefined();
 		expect(screen.getByText("/Game/Fixture/Observatory")).toBeDefined();
 		expect(screen.getByRole("application", { name: "Top-down actor map" })).toBeDefined();
 	});
@@ -479,7 +480,7 @@ describe("WorldScout", () => {
 		};
 		const snapshot: WorldActorSnapshot = {
 			actors: [observed, second],
-			capturedAt: new Date().toISOString(),
+			capturedAt: "2000-01-01T00:00:00.000Z",
 			mapPath: "/Game/Fixture/Observatory",
 			sequence: 1,
 			worldKind: "pie",
@@ -551,6 +552,71 @@ describe("WorldScout", () => {
 		paint.flush();
 		await screen.findByRole("button", { name: /Orbit 07/ });
 		expect(appliedCounts).toEqual([1]);
+		expect(screen.getByText("LIVE STREAM")).toBeDefined();
+		expect(screen.queryByText(/s OLD$/)).toBeNull();
+	});
+
+	it("clears previous-map actors and ignores late packets after a confirmed editor map change", async () => {
+		const snapshot: WorldActorSnapshot = {
+			actors: [observed],
+			capturedAt: new Date().toISOString(),
+			mapPath: "/Game/Fixture/Alpha",
+			sequence: 1,
+			worldKind: "editor",
+			worldSeconds: 1
+		};
+		const [map, setMap] = createSignal(snapshot.mapPath);
+		const updates = await Effect.runPromise(Queue.make<WorldObservationState>());
+		let received = 0;
+		const selected: Array<ObservedActor | undefined> = [];
+		const client = {
+			connectWorld: () => Effect.succeed(readyResult(snapshot)),
+			focusActor: (actorId) => Effect.succeed({ actorId, status: "not_supported" as const }),
+			worldObservations: () =>
+				Stream.fromQueue(updates).pipe(
+					Stream.map((state) => {
+						received++;
+						return state;
+					})
+				)
+		} satisfies Pick<MapReviewClientApi, "connectWorld" | "focusActor" | "worldObservations">;
+		render(() => (
+			<EffectRuntimeProvider runtime={runtime}>
+				<WorldScout
+					client={client}
+					editorMapPath={map()}
+					onActorFocused={() => undefined}
+					onActorSelected={(actor) => selected.push(actor)}
+					paintScheduler={syncPaintScheduler()}
+				/>
+			</EffectRuntimeProvider>
+		));
+		await Effect.runPromise(Queue.offer(updates, fallbackObservation(snapshot)));
+		await userEvent.setup().click(await screen.findByRole("button", { name: /Orbit 07/ }));
+		expect(selected.at(-1)?.id).toBe(observed.id);
+		setMap("/Game/Fixture/Beta");
+		flush();
+		expect(screen.queryByRole("button", { name: /Orbit 07/ })).toBeNull();
+		expect(
+			screen.getByRole("heading", { name: "Waiting for actors in the new map" })
+		).toBeDefined();
+		expect(selected.at(-1)).toBeUndefined();
+		await Effect.runPromise(Queue.offer(updates, fallbackObservation(snapshot)));
+		await waitFor(() => expect(received).toBe(2));
+		flush();
+		expect(screen.queryByRole("button", { name: /Orbit 07/ })).toBeNull();
+		await Effect.runPromise(
+			Queue.offer(
+				updates,
+				fallbackObservation({
+					...snapshot,
+					mapPath: "/Game/Fixture/Beta",
+					actors: [{ ...observed, displayName: "Beta actor" }]
+				})
+			)
+		);
+		expect(await screen.findByRole("button", { name: /Beta actor/ })).toBeDefined();
+		expect(screen.getByTitle("/Game/Fixture/Beta")).toBeDefined();
 	});
 
 	it("reports polling fallback cadence instead of offering the stream max", async () => {

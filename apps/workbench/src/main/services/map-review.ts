@@ -1,7 +1,10 @@
 import { savedMapPathToGameMapPath } from "@ue-shed/cameras/map-tiles";
 import { randomUUID } from "node:crypto";
 import { readdir } from "node:fs/promises";
-import type { MapReviewMapOpenResult } from "@ue-shed/extension-camera-review/client";
+import type {
+	MapReviewMapOpenResult,
+	MapReviewEditorState
+} from "@ue-shed/extension-camera-review/client";
 import { makeCameraWorkspace } from "./camera-workspace.js";
 import type {
 	CameraWorkspaceRequest,
@@ -232,6 +235,7 @@ export class SavedWorldUnavailable extends Schema.TaggedErrorClass<SavedWorldUna
 ) {}
 
 export interface WorkbenchMapReviewApi {
+	readonly editorWorld?: () => Effect.Effect<MapReviewEditorState>;
 	readonly openMapInUnreal?: (mapPath: string) => Effect.Effect<MapReviewMapOpenResult>;
 	readonly cameraWorkspace?: (
 		request: CameraWorkspaceRequest
@@ -393,6 +397,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 		const layerScope = yield* Effect.scope;
 		const coordinator = yield* makeUnrealOperationCoordinator;
 		const cameraWorkspace = yield* makeCameraWorkspace();
+		const openingMap = yield* Ref.make<string | undefined>(undefined);
 		const lastWorldSnapshot = yield* Ref.make<
 			Option.Option<{ endpoint: string; result: WorldScoutResult }>
 		>(Option.none());
@@ -2089,16 +2094,55 @@ export const WorkbenchMapReviewLive = Layer.effect(
 		);
 
 		const service = WorkbenchMapReview.of({
+			editorWorld: Effect.fn("Workbench.MapReview.editorWorld")(function* () {
+				const pending = yield* Ref.get(openingMap);
+				if (pending) return { status: "opening" as const, targetMapPath: pending };
+				const endpoint = yield* connection.endpoint();
+				const result = yield* worldControl.snapshot(endpoint).pipe(
+					Effect.match({
+						onSuccess: (world) => ({ status: "ready" as const, world }),
+						onFailure: (error) => ({
+							status: "unavailable" as const,
+							message: error.message,
+							recovery: error.recovery
+						})
+					})
+				);
+				const startedWhileReading = yield* Ref.get(openingMap);
+				if (startedWhileReading)
+					return { status: "opening" as const, targetMapPath: startedWhileReading };
+				if ((yield* connection.endpoint()) !== endpoint)
+					return {
+						status: "unavailable" as const,
+						message: "The editor connection changed while reading its map.",
+						recovery: "Waiting for the selected editor's next state update."
+					};
+				return result;
+			}),
 			openMapInUnreal: Effect.fn("Workbench.MapReview.openMapInUnreal")(function* (
 				mapPath: string
 			) {
+				const acquired = yield* Ref.modify(openingMap, (pending) => [
+					!pending,
+					pending ?? mapPath
+				]);
+				if (!acquired)
+					return {
+						outcome: "failed" as const,
+						message: "Unreal is already opening a map.",
+						recovery: "Wait for the current load to finish before switching again."
+					};
 				return yield* runExclusive(
 					Effect.gen(function* () {
 						const savedProject = yield* resolveSavedProject();
-						const targetMapPath = savedMapPathToGameMapPath(mapPath);
+						const targetMapPath = mapPath.startsWith("/Game/")
+							? mapPath
+							: savedMapPathToGameMapPath(mapPath);
 						if (
 							!targetMapPath ||
-							!savedProject.maps.some((map) => map.mapPath === mapPath)
+							!savedProject.maps.some(
+								(map) => savedMapPathToGameMapPath(map.mapPath) === targetMapPath
+							)
 						) {
 							return {
 								outcome: "failed" as const,
@@ -2107,6 +2151,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 							};
 						}
 						const endpoint = yield* connection.endpoint();
+						yield* Ref.set(openingMap, targetMapPath);
 						yield* cameraWorkspace.close();
 						const response = yield* worldControl.open({
 							endpoint,
@@ -2127,9 +2172,12 @@ export const WorkbenchMapReviewLive = Layer.effect(
 							outcome: "failed" as const,
 							message: String(cause),
 							recovery:
-								"Check the editor connection and enable UE Shed Core world control."
+								"recovery" in cause
+									? String(cause.recovery)
+									: "Check the editor connection and enable UE Shed Core world control."
 						})
-					)
+					),
+					Effect.ensuring(Ref.set(openingMap, undefined))
 				);
 			}),
 			cameraWorkspace: Effect.fn("Workbench.MapReview.cameraWorkspace")((intent) =>

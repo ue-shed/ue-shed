@@ -1,4 +1,5 @@
 import { ReviewMapPicker } from "./review-map-picker.js";
+import { savedMapPathToGameMapPath } from "@ue-shed/cameras/browser";
 import * as stylex from "@stylexjs/stylex";
 import {
 	ActorExplorer,
@@ -16,7 +17,7 @@ import { PointMapDeckCanvas } from "@ue-shed/ui/point-map-deck";
 import type { SavedWorld, SavedWorldMap, SavedWorldProgress } from "@ue-shed/protocol";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { Cause, Schedule, Stream } from "effect";
-import { Show, createMemo, createSignal, onSettled } from "solid-js";
+import { Show, createEffect, createMemo, createSignal, onSettled } from "solid-js";
 import type { MapReviewClientApi } from "./map-review-client.js";
 import { formatCoordinate, WorldScoutRetainedStore } from "./world-scout-canvas.js";
 
@@ -32,6 +33,8 @@ const idleSavedWorldProgress = (): SavedWorldProgress => ({
  * with World Scout, but never materializes an actor as a live identity or offers editor actions.
  */
 export function SavedWorldScout(props: {
+	readonly mapPath?: string | undefined;
+	readonly onMapPathChange?: ((path: string) => void) | undefined;
 	readonly client: Pick<
 		MapReviewClientApi,
 		| "readSavedWorld"
@@ -195,20 +198,36 @@ export function SavedWorldScout(props: {
 			onFailure: (cause) => setError(Cause.pretty(cause)),
 			onSuccess: (nextMaps) => {
 				setMaps(nextMaps);
-				const initialMap = nextMaps[0];
+				const initialMap =
+					nextMaps.find(
+						(map) =>
+							map.mapPath === props.mapPath ||
+							savedMapPathToGameMapPath(map.mapPath) === props.mapPath
+					) ?? nextMaps[0];
 				if (initialMap === undefined) {
 					setError("No saved maps are configured for offline review.");
 					return;
 				}
 				setSelectedMapPath(initialMap.mapPath);
+				props.onMapPathChange?.(initialMap.mapPath);
 				load(initialMap.mapPath);
 			}
 		});
 	};
 	const selectMap = (mapPath: string) => {
 		setSelectedMapPath(mapPath);
+		props.onMapPathChange?.(mapPath);
 		load(mapPath);
 	};
+	createEffect(
+		() => props.mapPath,
+		(path) => {
+			const choice = maps().find(
+				(map) => map.mapPath === path || savedMapPathToGameMapPath(map.mapPath) === path
+			);
+			if (choice && choice.mapPath !== selectedMapPath()) selectMap(choice.mapPath);
+		}
+	);
 	const chooseProject = () => {
 		const choose = props.client.chooseProjectAndMaps;
 		if (choose === undefined) {

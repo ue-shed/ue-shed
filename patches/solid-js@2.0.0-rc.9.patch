@@ -1,0 +1,56 @@
+diff --git a/types/client/core.d.ts b/types/client/core.d.ts
+index 9c747e6e44f55880816d28f52ed1e947a7292167..10f6e879001cf08d223e5ead27c0ce7ef20c8993 100644
+--- a/types/client/core.d.ts
++++ b/types/client/core.d.ts
+@@ -1,6 +1,7 @@
+ import type { Accessor, EffectOptions } from "@solidjs/signals";
+ import type { ArrayElement, Element as SolidElement } from "../types.js";
+ import { FlowComponent } from "./component.js";
++export declare const $DEVCOMP: unique symbol;
+ export declare const IS_DEV: string | boolean;
+ export declare const IS_OBSERVE: string | boolean;
+ export type NoInfer<T extends any> = [T][T extends any ? 0 : never];
+diff --git a/types/client/hydration.d.ts b/types/client/hydration.d.ts
+index 253adc74e8714286ffb2d29e427df5c29160f4a4..b9c9593bb55ef64fadfd82dacacdac1c5465b67e 100644
+--- a/types/client/hydration.d.ts
++++ b/types/client/hydration.d.ts
+@@ -1,5 +1,39 @@
+ import { createRenderEffect as coreRenderEffect, createEffect as coreEffect, type ComputeFunction, type MemoOptions, type NoInfer, type ProjectionOptions, type Refreshable, type Signal, type SignalOptions, type SourceAccessor, type Store, type StoreOptions, type StoreSetter, createRoot as coreRoot } from "@solidjs/signals";
+ import type { Element as SolidElement } from "../types.js";
++import type { Accessor, RevealOrder } from "@solidjs/signals";
++export declare const sharedConfig: {
++    hydrating: boolean;
++    resources?: { [key: string]: any };
++    load?: (id: string) => Promise<any> | any;
++    has?: (id: string) => boolean;
++    gather?: (key: string) => void;
++    boundaryScopes?: Map<string, { registry?: Map<string, object>; gather?: (key: string) => void }>;
++    captureBoundaryScope?: (id: string) => void;
++    cleanupFragment?: (id: string) => void;
++    loadModuleAssets?: (mapping: Record<string, string>) => Promise<void> | undefined;
++    registry?: Map<string, object>;
++    completed?: WeakSet<object> | null;
++    events?: any[] | null;
++    verifyHydration?: () => void;
++    done: boolean;
++    getNextContextId?: () => string;
++    isHydrationInProgress?: () => boolean;
++    onHydrationEnd?: (callback: () => void) => void;
++    isClaiming?: () => boolean;
++};
++export declare const createErrorBoundary: <T, U>(
++    fn: () => T,
++    fallback: (error: Accessor<unknown>, reset: () => void) => U
++) => Accessor<T | U>;
++export declare function createRevealOrder<T>(
++    fn: () => T,
++    options?: { order?: () => RevealOrder; collapsed?: () => boolean }
++): T;
++export declare const createLoadingBoundary: <T, U>(
++    fn: () => T,
++    fallback: () => U,
++    options?: { on?: () => any }
++) => Accessor<T | U>;
+ type HydrationSsrFields = {
+     /**
+      * Defer the SSR stream flush until this primitive's first value is

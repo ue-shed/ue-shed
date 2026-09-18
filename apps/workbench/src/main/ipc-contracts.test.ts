@@ -376,6 +376,7 @@ const validArgsByChannel = {
 	"map-review:select-review-set": [{ reviewSetId: "lighting-review" }],
 	"map-review:world-snapshot": [],
 	"map-review:open-map": ["Content/Fixture/Offline/L_OfflineWorld.umap"],
+	"map-review:editor-world": [],
 	"map-review:saved-world": ["Content/Fixture/Offline/L_OfflineWorld.umap"],
 	"map-review:saved-world-maps": [],
 	"map-review:saved-world-progress": [],
@@ -721,6 +722,11 @@ const validResultByChannel = {
 		message: "Editor disconnected.",
 		recovery: "Reconnect Unreal."
 	},
+	"map-review:editor-world": {
+		status: "unavailable",
+		message: "Offline",
+		recovery: "Connect Unreal."
+	},
 	"map-review:saved-world": {
 		authority: { kind: "project_files", mapPackage: "/Game/Fixture/Offline/L_OfflineWorld" },
 		completeness: "complete",
@@ -834,9 +840,9 @@ const malformedArgsByChannel = {
 	"map-capture:tile": [{ manifestPath: "", relativePath: "../outside.png" }]
 } satisfies Partial<Record<InvokeChannel, IpcFixtureValue>>;
 
-it("registers exactly 123 invoke channels plus renderer events", () => {
-	expect(invokeChannelNames).toHaveLength(123);
-	expect(new Set(invokeChannelNames).size).toBe(123);
+it("registers exactly 124 invoke channels plus renderer events", () => {
+	expect(invokeChannelNames).toHaveLength(124);
+	expect(new Set(invokeChannelNames).size).toBe(124);
 	expect(cameraFrameEvent.channel).toBe("camera:frame");
 	expect(mapCaptureProgressEvent.channel).toBe("map-capture:progress");
 	expect(worldObservationEvent.channel).toBe("map-review:world-observation");

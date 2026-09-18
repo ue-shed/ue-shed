@@ -244,6 +244,7 @@ const workbenchRendererApi = {
 		): Promise<MapReviewAuthoringResult> =>
 			ipcRenderer.invoke("map-review:author-from-selection", intent),
 		openMapInUnreal: (mapPath) => ipcRenderer.invoke("map-review:open-map", mapPath),
+		editorWorld: () => ipcRenderer.invoke("map-review:editor-world"),
 		cameraWorkspace: (intent) => ipcRenderer.invoke("map-review:camera-workspace", intent),
 		authoringResume: (): Promise<MapReviewAuthoringResult> =>
 			ipcRenderer.invoke("map-review:authoring-resume"),

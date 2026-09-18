@@ -1,0 +1,12 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "0.7.1",
+	"FriendlyName": "UE Shed Camera Authoring Bridge",
+	"Description": "Optional editor camera proxies and synchronization, independent of menus.",
+	"Category": "UE Shed",
+	"EnabledByDefault": false,
+	"CanContainContent": false,
+	"Plugins": [{ "Name": "UEShedCameras", "Enabled": true }],
+	"Modules": [{ "Name": "UEShedCameraAuthoringBridge", "Type": "Editor", "LoadingPhase": "Default" }]
+}

@@ -82,6 +82,11 @@ void UUEShedCoreLibrary::GetCapabilityManifest(FString& ResultJson)
  Capabilities.Add(MakeShared<FJsonValueString>(TEXT("cameras.capture-selection.v1")));
  Capabilities.Add(MakeShared<FJsonValueString>(TEXT("cameras.capture-readiness.v1")));
 	}
+	if (FModuleManager::Get().IsModuleLoaded(TEXT("UEShedCameraAuthoringBridge")))
+	{
+		Root->SetStringField(TEXT("cameraAuthoringObjectPath"), TEXT("/Script/UEShedCameraAuthoringBridge.Default__UEShedCameraAuthoringBridgeLibrary"));
+		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("cameras.authoring.v1")));
+	}
 	if (FModuleManager::Get().IsModuleLoaded(TEXT("UEShedObservatoryEditor")))
 	{
 		Root->SetStringField(TEXT("observatoryObjectPath"),
@@ -103,6 +108,11 @@ void UUEShedCoreLibrary::GetCapabilityManifest(FString& ResultJson)
 		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("editor.asset-navigation.v1")));
 		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("editor.play-session.v1")));
 		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("editor.world-control.v1")));
+		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("editor.world-control.async.v1")));
+		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("editor.world-state.v1")));
+		Root->SetStringField(TEXT("windowActivationObjectPath"),
+			TEXT("/Script/UEShedCoreEditor.Default__UEShedEditorWindowLibrary"));
+		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("editor.window-activation.v1")));
 	}
 	if (FModuleManager::Get().IsModuleLoaded(TEXT("UEShedScenariosEditor")))
 	{

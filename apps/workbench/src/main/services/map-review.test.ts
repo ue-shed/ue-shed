@@ -1,3 +1,4 @@
+import { makeWorkbenchEditorHandoffTestLayer } from "./editor-handoff.js";
 import { makeWorkbenchTestConfigurationLayer as makeWorkbenchConfigurationLayer } from "../test-configuration.js";
 import {
 	makeReviewAuthoringTestLayer,
@@ -16,7 +17,7 @@ import {
 import { it } from "@effect/vitest";
 import { Observatory, ActorId, WorldScoutRefreshRate } from "@ue-shed/observatory";
 import { makeEditorPlaySessionTestLayer } from "@ue-shed/engine";
-import { EditorPlaySessionId } from "@ue-shed/protocol";
+import { EditorPlaySessionId, decodeEditorWorldOpenRequest } from "@ue-shed/protocol";
 import { makeAssetReaderTestLayer } from "@ue-shed/unreal-assets";
 import { makeRemoteControlClientTestLayer } from "@ue-shed/unreal-connection";
 import { Effect, Layer, Queue, Ref, Stream } from "effect";
@@ -128,6 +129,28 @@ const dyingAuthoring: ReviewAuthoringApi = {
 	previewCandidate: () => Effect.die("not used")
 };
 const clearOnlyRemoteControl = makeRemoteControlClientTestLayer((request) => {
+	if (request.functionName === "GetCapabilityManifest") {
+		return Effect.succeed({
+			capabilities: ["editor.world-control.v1"],
+			producerKind: "unreal_editor",
+			schemaVersion: 1,
+			worldControlObjectPath: "/Script/Fixture.WorldControl"
+		});
+	}
+	if (request.functionName === "OpenMap") {
+		return Effect.gen(function* () {
+			const intent = yield* decodeEditorWorldOpenRequest(
+				JSON.parse(String(request.parameters.RequestJson))
+			).pipe(Effect.orDie);
+			expect(intent.targetMapPath).toBe("/Game/Maps/L_Alpha");
+			const snapshot = {
+				dirtyWorldPackages: [],
+				mapPath: intent.targetMapPath,
+				playSessionActive: false
+			};
+			return { ...intent, outcome: "opened", before: snapshot, after: snapshot };
+		});
+	}
 	if (request.functionName === "EnsureProvisionedCameras") {
 		return Effect.succeed({
 			cameras: [],
@@ -208,6 +231,7 @@ const makeMapReviewDeps = (
 	authoringSessions: ReviewAuthoringSessionsApi = dyingAuthoringSessions
 ) =>
 	Layer.mergeAll(
+		makeWorkbenchEditorHandoffTestLayer(),
 		assetReaderTestLayer,
 		makeCameraFeedTestLayer(),
 		makeWorkbenchWindowTestLayer(),
@@ -247,6 +271,10 @@ it.effect("uses the global project's cached .umap inventory for saved map review
 	Effect.gen(function* () {
 		const service = yield* WorkbenchMapReview;
 		const choice = yield* service.chooseProjectAndMaps();
+		const invalidOpen = yield* service.openMapInUnreal!("Content/Maps/NotInProject.umap");
+		expect(invalidOpen.outcome).toBe("failed");
+		const opened = yield* service.openMapInUnreal!("Content/Maps/L_Alpha.umap");
+		expect(opened.outcome).toBe("opened");
 		expect(choice.status).toBe("configured");
 		if (choice.status !== "configured") return;
 		expect(choice.projectName).toBe("MyProj");
@@ -332,6 +360,17 @@ it.effect("enters first-run Map Review setup when a project has no configured Re
 	Effect.gen(function* () {
 		const service = yield* WorkbenchMapReview;
 		expect(yield* service.load()).toEqual({ status: "setup_required" });
+		if (!service.cameraWorkspace) throw new Error("Camera workspace service missing");
+		expect(yield* service.cameraWorkspace({ kind: "list" })).toEqual({
+			panel: null,
+			sets: [],
+			error: null
+		});
+		expect(yield* service.cameraWorkspace({ kind: "state" })).toEqual({
+			panel: null,
+			sets: [],
+			error: null
+		});
 	}).pipe(
 		Effect.provide(
 			WorkbenchMapReviewTestLive.pipe(
@@ -871,6 +910,7 @@ it.effect(
 				MapReviewLiveWithDialog.pipe(
 					Layer.provide(
 						Layer.mergeAll(
+							makeWorkbenchEditorHandoffTestLayer(),
 							assetReaderTestLayer,
 							makeCameraFeedTestLayer(),
 							makeWorkbenchWindowTestLayer(),
@@ -1223,6 +1263,7 @@ it.effect("resumes the latest persisted authoring session after a fresh service 
 			MapReviewLiveWithDialog.pipe(
 				Layer.provide(
 					Layer.mergeAll(
+						makeWorkbenchEditorHandoffTestLayer(),
 						assetReaderTestLayer,
 						makeCameraFeedTestLayer(),
 						makeWorkbenchWindowTestLayer(),
@@ -1312,6 +1353,7 @@ it.effect("surfaces stale bounds recovery and refuses Keep View approval", () =>
 			MapReviewLiveWithDialog.pipe(
 				Layer.provide(
 					Layer.mergeAll(
+						makeWorkbenchEditorHandoffTestLayer(),
 						assetReaderTestLayer,
 						makeCameraFeedTestLayer(),
 						makeWorkbenchWindowTestLayer(),
@@ -1437,6 +1479,7 @@ it.effect("subscribes to world observations, coalesces transform bursts, and cle
 		const serviceLayer = MapReviewLiveWithDialog.pipe(
 			Layer.provide(
 				Layer.mergeAll(
+					makeWorkbenchEditorHandoffTestLayer(),
 					assetReaderTestLayer,
 					makeCameraFeedTestLayer(),
 					clearOnlyRemoteControl,
@@ -1621,6 +1664,7 @@ it.effect("keeps observation live while focusing an actor and retuning cadence",
 		const serviceLayer = MapReviewLiveWithDialog.pipe(
 			Layer.provide(
 				Layer.mergeAll(
+					makeWorkbenchEditorHandoffTestLayer(),
 					assetReaderTestLayer,
 					makeCameraFeedTestLayer(),
 					clearOnlyRemoteControl,
@@ -1810,6 +1854,7 @@ function makeLivePreviewServiceLayer(worldContext: "editor" | "play") {
 	return MapReviewLiveWithDialog.pipe(
 		Layer.provide(
 			Layer.mergeAll(
+				makeWorkbenchEditorHandoffTestLayer(),
 				assetReaderTestLayer,
 				makeCameraFeedTestLayer({
 					latestFrames: Effect.succeed(
@@ -1970,6 +2015,7 @@ it.effect("blocks Capture Set while PIE is running", () =>
 			MapReviewLiveWithDialog.pipe(
 				Layer.provide(
 					Layer.mergeAll(
+						makeWorkbenchEditorHandoffTestLayer(),
 						assetReaderTestLayer,
 						makeCameraFeedTestLayer(),
 						makeWorkbenchWindowTestLayer(),

@@ -1,0 +1,1741 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="Actual Unreal menus and recordings, camera starting layouts, before/after adjustments, culling, persistence, and integration gaps."
+		/>
+		<title>Camera authoring, shown in Unreal · UE Shed</title>
+		<style>
+			:root {
+				color-scheme: light;
+				--paper: #f3f1e9;
+				--card: #fffef9;
+				--ink: #20332e;
+				--muted: #52665e;
+				--line: #cbd3c7;
+				--green: #215c46;
+				--lime: #d7ef9c;
+				--orange: #884518;
+				--mono: "Cascadia Code", Consolas, monospace;
+			}
+			* {
+				box-sizing: border-box;
+			}
+			html {
+				scroll-behavior: smooth;
+				scroll-padding-top: 30px;
+			}
+			body {
+				margin: 0;
+				background: var(--paper);
+				color: var(--ink);
+				font:
+					16px/1.65 "Segoe UI",
+					Arial,
+					sans-serif;
+			}
+			a {
+				color: var(--green);
+				text-underline-offset: 3px;
+			}
+			a:hover {
+				text-decoration-thickness: 2px;
+			}
+			button,
+			input {
+				font: inherit;
+			}
+			button {
+				cursor: pointer;
+			}
+			a:focus-visible,
+			button:focus-visible,
+			input:focus-visible,
+			summary:focus-visible {
+				outline: 3px solid var(--orange);
+				outline-offset: 4px;
+			}
+			.shell {
+				max-width: 1440px;
+				margin: auto;
+				display: grid;
+				grid-template-columns: 240px minmax(0, 1fr);
+				gap: 54px;
+				padding: 42px 48px;
+			}
+			aside {
+				position: sticky;
+				top: 30px;
+				align-self: start;
+			}
+			aside .brand {
+				font-size: 20px;
+				font-weight: 800;
+				letter-spacing: -0.6px;
+			}
+			aside nav {
+				display: grid;
+				gap: 10px;
+				margin: 35px 0;
+			}
+			aside nav a {
+				font-size: 14px;
+				text-decoration: none;
+			}
+			aside small {
+				display: block;
+				color: var(--muted);
+				font-size: 12px;
+			}
+			main {
+				min-width: 0;
+			}
+			.eyebrow {
+				font: 700 12px/1.5 var(--mono);
+				letter-spacing: 1.5px;
+				text-transform: uppercase;
+				color: var(--green);
+			}
+			h1 {
+				font-size: clamp(40px, 5vw, 68px);
+				line-height: 1.04;
+				letter-spacing: -3px;
+				margin: 20px 0 26px;
+				max-width: 850px;
+			}
+			h2 {
+				font-size: 32px;
+				line-height: 1.2;
+				letter-spacing: -1px;
+				margin: 10px 0 20px;
+			}
+			h3 {
+				font-size: 20px;
+				line-height: 1.35;
+				margin: 0 0 12px;
+			}
+			p {
+				margin: 0 0 18px;
+			}
+			.lead {
+				font-size: 21px;
+				max-width: 790px;
+			}
+			.muted,
+			figcaption {
+				color: var(--muted);
+			}
+			.tag {
+				display: inline-block;
+				padding: 4px 11px;
+				border: 1px solid var(--line);
+				border-radius: 30px;
+				font-size: 12px;
+				font-weight: 650;
+				margin: 0 5px 8px 0;
+			}
+			.tag.good {
+				background: var(--lime);
+				border-color: var(--lime);
+			}
+			section {
+				padding: 48px 0;
+				border-top: 1px solid var(--line);
+				margin-top: 24px;
+			}
+			.hero {
+				padding-bottom: 28px;
+			}
+			.grid {
+				display: grid;
+				grid-template-columns: repeat(2, minmax(0, 1fr));
+				gap: 20px;
+			}
+			.three {
+				grid-template-columns: repeat(3, minmax(0, 1fr));
+			}
+			.card {
+				background: var(--card);
+				border: 1px solid var(--line);
+				border-radius: 14px;
+				padding: 24px;
+			}
+			.card p:last-child {
+				margin-bottom: 0;
+			}
+			.callout {
+				border-left: 4px solid var(--green);
+				padding: 18px 22px;
+				background: #e8efde;
+				margin: 24px 0;
+			}
+			.caution {
+				border-color: var(--orange);
+				background: #f6e9d7;
+			}
+			.stat {
+				font-size: 30px;
+				letter-spacing: -1px;
+				font-weight: 700;
+				display: block;
+			}
+			.table-wrap {
+				overflow-x: auto;
+				border: 1px solid var(--line);
+				border-radius: 12px;
+				margin: 22px 0;
+			}
+			table {
+				width: 100%;
+				border-collapse: collapse;
+				font-size: 14px;
+				text-align: left;
+			}
+			th {
+				background: #e3e9db;
+				font-size: 12px;
+				letter-spacing: 0.4px;
+			}
+			th,
+			td {
+				padding: 15px 18px;
+				vertical-align: top;
+				border-bottom: 1px solid var(--line);
+			}
+			tr:last-child td {
+				border: 0;
+			}
+			td:first-child {
+				font-weight: 650;
+				min-width: 150px;
+			}
+			code {
+				font-family: var(--mono);
+				font-size: 0.85em;
+				overflow-wrap: anywhere;
+			}
+			pre {
+				background: #20332e;
+				color: #eef3e5;
+				padding: 22px;
+				border-radius: 10px;
+				overflow: auto;
+				line-height: 1.5;
+				font-size: 13px;
+				white-space: pre-wrap;
+				overflow-wrap: anywhere;
+			}
+			pre code {
+				font-size: inherit;
+			}
+			figure {
+				margin: 0;
+			}
+			figure img {
+				display: block;
+				width: 100%;
+				height: auto;
+				background: #d9e0df;
+				border-radius: 8px;
+			}
+			figcaption {
+				font-size: 13px;
+				margin: 10px 0 0;
+			}
+			.compare {
+				position: relative;
+				aspect-ratio: 16/9;
+				overflow: hidden;
+				border-radius: 10px;
+				background: #cdd6d8;
+				--split: 50%;
+			}
+			.compare img {
+				position: absolute;
+				inset: 0;
+				width: 100%;
+				height: 100%;
+				border-radius: 0;
+			}
+			.compare .before {
+				clip-path: inset(0 calc(100% - var(--split)) 0 0);
+			}
+			.compare .seam {
+				position: absolute;
+				top: 0;
+				bottom: 0;
+				left: var(--split);
+				width: 2px;
+				background: white;
+				box-shadow: 0 0 0 1px #20332e55;
+			}
+			.compare .label {
+				position: absolute;
+				top: 12px;
+				background: #20332ee8;
+				color: white;
+				padding: 4px 10px;
+				border-radius: 5px;
+				font-size: 12px;
+				z-index: 1;
+			}
+			.compare .left {
+				left: 12px;
+			}
+			.compare .right {
+				right: 12px;
+			}
+			.slider {
+				display: flex;
+				align-items: center;
+				gap: 14px;
+				margin-top: 14px;
+				font-size: 13px;
+			}
+			.slider input {
+				width: 100%;
+				accent-color: var(--green);
+				min-width: 60px;
+			}
+			.slider output {
+				min-width: 40px;
+			}
+			.compare-set {
+				margin-bottom: 30px;
+			}
+			.restored {
+				display: grid;
+				grid-template-columns: 160px 1fr;
+				gap: 20px;
+				margin-top: 18px;
+				align-items: center;
+			}
+			.restored img {
+				width: 160px;
+			}
+			.restored p {
+				font-size: 13px;
+				margin: 0;
+			}
+			.steps {
+				counter-reset: step;
+				list-style: none;
+				padding: 0;
+				margin: 24px 0;
+			}
+			.steps li {
+				counter-increment: step;
+				position: relative;
+				padding: 0 0 26px 54px;
+				border-left: 1px solid var(--line);
+				margin-left: 17px;
+			}
+			.steps li:last-child {
+				border: 0;
+			}
+			.steps li::before {
+				content: counter(step);
+				position: absolute;
+				left: -18px;
+				top: 0;
+				width: 35px;
+				height: 35px;
+				border-radius: 50%;
+				background: var(--green);
+				color: white;
+				text-align: center;
+				line-height: 35px;
+				font-weight: 700;
+			}
+			.steps strong {
+				display: block;
+				margin-bottom: 5px;
+			}
+			.steps p {
+				margin: 0;
+			}
+			.scope {
+				padding: 24px;
+				border: 1px dashed var(--green);
+				border-radius: 12px;
+				background: #e8efde;
+			}
+			.scope .scope {
+				background: #f5f7ef;
+				margin-top: 15px;
+			}
+			.scope small {
+				display: block;
+				color: var(--muted);
+			}
+			.camera-row {
+				display: grid;
+				grid-template-columns: 1.4fr 1fr 1fr;
+				gap: 12px;
+				border-bottom: 1px solid var(--line);
+				padding: 13px 0;
+				font-size: 14px;
+			}
+			.camera-row:last-child {
+				border: 0;
+			}
+			.controls {
+				display: flex;
+				flex-wrap: wrap;
+				align-items: center;
+				gap: 12px;
+				margin: 18px 0;
+			}
+			.controls button {
+				border: 1px solid var(--green);
+				background: var(--card);
+				color: var(--green);
+				padding: 7px 14px;
+				border-radius: 6px;
+			}
+			.controls input {
+				accent-color: var(--green);
+			}
+			.flow {
+				display: flex;
+				flex-wrap: wrap;
+				gap: 12px;
+				align-items: stretch;
+				margin: 25px 0;
+			}
+			.flow .node {
+				flex: 1;
+				min-width: 170px;
+				background: var(--card);
+				border: 1px solid var(--line);
+				border-radius: 10px;
+				padding: 18px;
+			}
+			.flow .arrow {
+				align-self: center;
+				font-size: 25px;
+				color: var(--green);
+			}
+			.node small {
+				display: block;
+				color: var(--muted);
+				font-size: 13px;
+			}
+			details {
+				border: 1px solid var(--line);
+				border-radius: 10px;
+				margin: 16px 0;
+				padding: 16px 20px;
+				background: var(--card);
+			}
+			summary {
+				cursor: pointer;
+				font-weight: 650;
+			}
+			details[open] summary {
+				margin-bottom: 18px;
+			}
+			.fine {
+				font-size: 13px;
+				color: var(--muted);
+			}
+			footer {
+				border-top: 1px solid var(--line);
+				padding: 30px 0;
+				font-size: 13px;
+				color: var(--muted);
+			}
+			.print-button {
+				background: transparent;
+				border: 1px solid var(--line);
+				border-radius: 6px;
+				color: var(--green);
+				padding: 7px 12px;
+				margin-top: 22px;
+			}
+			.skip {
+				position: fixed;
+				top: -100px;
+				left: 15px;
+				background: white;
+				padding: 12px;
+				z-index: 10;
+			}
+			.skip:focus {
+				top: 10px;
+			}
+			ul {
+				padding-left: 22px;
+			}
+			li {
+				margin-bottom: 8px;
+			}
+			@media (max-width: 1050px) {
+				.shell {
+					grid-template-columns: 180px minmax(0, 1fr);
+					padding: 30px;
+					gap: 30px;
+				}
+				.three {
+					grid-template-columns: 1fr;
+				}
+				.lead {
+					font-size: 19px;
+				}
+			}
+			@media (max-width: 760px) {
+				.shell {
+					display: block;
+					padding: 22px;
+				}
+				aside {
+					position: static;
+					border-bottom: 1px solid var(--line);
+					padding-bottom: 22px;
+					margin-bottom: 32px;
+				}
+				aside nav {
+					display: flex;
+					flex-wrap: wrap;
+					gap: 10px 18px;
+					margin: 18px 0;
+				}
+				aside small,
+				.print-button {
+					display: none;
+				}
+				.grid {
+					grid-template-columns: 1fr;
+				}
+				h1 {
+					letter-spacing: -2px;
+				}
+				h2 {
+					font-size: 28px;
+				}
+				.card {
+					padding: 18px;
+				}
+				section {
+					padding: 32px 0;
+				}
+				.restored {
+					grid-template-columns: 110px 1fr;
+				}
+				.restored img {
+					width: 110px;
+				}
+				.camera-row {
+					font-size: 12px;
+					gap: 7px;
+				}
+				.flow .arrow {
+					display: none;
+				}
+			}
+			@media (prefers-reduced-motion: reduce) {
+				html {
+					scroll-behavior: auto;
+				}
+			}
+			@media print {
+				body {
+					background: white;
+					font-size: 11px;
+				}
+				.shell {
+					display: block;
+					padding: 0;
+				}
+				aside,
+				.controls,
+				.slider,
+				.skip {
+					display: none;
+				}
+				h1 {
+					font-size: 38px;
+				}
+				h2 {
+					font-size: 24px;
+				}
+				section {
+					padding: 22px 0;
+					margin-top: 10px;
+				}
+				.card,
+				figure,
+				table,
+				.callout {
+					break-inside: avoid;
+				}
+				a {
+					color: inherit;
+				}
+				.compare {
+					max-width: 550px;
+				}
+				.grid {
+					gap: 14px;
+				}
+				pre {
+					background: #f1f1f1;
+					color: black;
+				}
+				.hero {
+					padding: 0;
+				}
+				details {
+					break-inside: avoid;
+				}
+			}
+
+			.wrap {
+				max-width: 1420px;
+				margin: auto;
+				padding: 32px 48px;
+			}
+			.top {
+				display: flex;
+				justify-content: space-between;
+				gap: 22px;
+				align-items: center;
+				padding-bottom: 20px;
+				border-bottom: 1px solid var(--line);
+			}
+			.top nav {
+				display: flex;
+				flex-wrap: wrap;
+				gap: 18px;
+				font-size: 13px;
+			}
+			.brand {
+				font-weight: 800;
+			}
+			.intro {
+				padding: 45px 0 24px;
+			}
+			.status {
+				display: grid;
+				grid-template-columns: repeat(4, 1fr);
+				gap: 12px;
+				margin: 25px 0;
+			}
+			.status strong {
+				display: block;
+				margin-bottom: 10px;
+				font-size: 19px;
+			}
+			.status .card {
+				padding: 20px;
+			}
+			.status p {
+				font-size: 13px;
+				color: var(--muted);
+			}
+			.yes {
+				color: var(--green);
+			}
+			.gap {
+				color: var(--orange);
+			}
+			.shots {
+				display: grid;
+				grid-template-columns: repeat(2, minmax(0, 1fr));
+				gap: 22px;
+				margin: 22px 0;
+			}
+			.shots img {
+				border: 1px solid var(--line);
+			}
+			.preset {
+				margin: 32px 0 44px;
+			}
+			.recipe {
+				display: inline-block;
+				padding: 7px 12px;
+				border-radius: 6px;
+				background: var(--lime);
+				font-size: 13px;
+				font-weight: 650;
+				margin-bottom: 16px;
+			}
+			.buttons {
+				display: flex;
+				flex-wrap: wrap;
+				gap: 9px;
+				margin: 20px 0;
+			}
+			.buttons button {
+				background: var(--card);
+				border: 1px solid var(--line);
+				color: var(--green);
+				padding: 9px 13px;
+				border-radius: 6px;
+			}
+			.buttons button[aria-pressed="true"] {
+				background: var(--green);
+				color: white;
+			}
+			.wide-note {
+				max-width: 950px;
+			}
+			video {
+				width: 100%;
+				display: block;
+				aspect-ratio: 8/5;
+				background: #101411;
+				border-radius: 9px;
+			}
+			.video-grid {
+				display: grid;
+				grid-template-columns: repeat(2, minmax(0, 1fr));
+				gap: 24px;
+			}
+			.full-image {
+				margin: 24px 0;
+			}
+			header h1 {
+				max-width: 1000px;
+			}
+			h3.space {
+				margin-top: 30px;
+			}
+			.status .card p {
+				margin: 0;
+			}
+			figure {
+				min-width: 0;
+			}
+			#journey-image {
+				border: 1px solid var(--line);
+			}
+			.compare img {
+				border: 0;
+			}
+			.label {
+				color: white;
+			}
+			.print-button {
+				margin: 0;
+			}
+			@media (max-width: 850px) {
+				.wrap {
+					padding: 24px;
+				}
+				.top {
+					display: block;
+				}
+				.top nav {
+					margin-top: 16px;
+				}
+				.status {
+					grid-template-columns: repeat(2, 1fr);
+				}
+				.video-grid {
+					grid-template-columns: 1fr;
+				}
+			}
+			@media (max-width: 550px) {
+				.wrap {
+					padding: 18px;
+				}
+				.shots {
+					grid-template-columns: 1fr;
+				}
+				.status .card {
+					padding: 14px;
+				}
+				.status strong {
+					font-size: 16px;
+				}
+				.buttons button {
+					font-size: 13px;
+					padding: 7px 9px;
+				}
+			}
+			@media print {
+				.wrap {
+					padding: 0;
+				}
+				.top nav,
+				.buttons,
+				video {
+					display: none;
+				}
+				.intro {
+					padding: 20px 0;
+				}
+				.shots {
+					gap: 12px;
+				}
+				.shots figure {
+					break-inside: avoid;
+				}
+			}
+		</style>
+	</head>
+	<body>
+		<a class="skip" href="#content">Skip to examples</a>
+		<div class="wrap">
+			<div class="top">
+				<div class="brand">
+					UE SHED ↗ <span class="fine">Camera flow / visual walkthrough</span>
+				</div>
+				<nav aria-label="Sections">
+					<a href="#native">Unreal menus</a><a href="#presets">Starting layouts</a
+					><a href="#adjust">Adjustments</a><a href="#culling">Culling</a
+					><a href="#save">Save &amp; reload</a><a href="#integration">Electroswag</a
+					><a href="#findings">What needs work</a>
+				</nav>
+			</div>
+			<main id="content">
+				<header class="intro">
+					<div class="eyebrow">Observed in Unreal · 12 September 2026</div>
+					<h1>Here are the cameras.<br />Here are the controls.</h1>
+					<p class="lead">
+						Full Unreal-window screenshots, actual screen recordings, and rendered
+						examples of layouts, adjustments, and per-camera exclusions.
+					</p>
+					<div class="status">
+						<div class="card">
+							<strong class="yes">Native menu: yes</strong>
+							<p>Select, pilot, adjust, hide actors, and approve Views.</p>
+						</div>
+						<div class="card">
+							<strong class="yes">Package sync: yes</strong>
+							<p>Native edits reach the Node/CLI host and its durable draft.</p>
+						</div>
+						<div class="card">
+							<strong class="gap">Electroswag sync: no</strong>
+							<p>The new arrangement interface has not been adopted there.</p>
+						</div>
+						<div class="card">
+							<strong class="gap">Polished: not yet</strong>
+							<p>The visual journey exposed a numeric-input reversion bug.</p>
+						</div>
+					</div>
+					<figure>
+						<a href="media/camera-flow/visual/17-reloaded.png"
+							><img
+								src="media/camera-flow/visual/17-reloaded.png"
+								alt="Actual Unreal window after restarting and reattaching. Left: arrangement menu. Center: piloted camera view. Right: native Details. Four cameras, shared settings, and a manual exception survive in the draft."
+								width="1600"
+								height="1000"
+								loading="lazy"
+						/></a>
+						<figcaption>
+							<strong>Actual Unreal window after restarting and reattaching.</strong>
+							Left: arrangement menu. Center: piloted camera view. Right: native
+							Details. Four cameras, shared settings, and a manual exception survive
+							in the draft.
+						</figcaption>
+					</figure>
+					<p class="fine" style="margin-top: 14px">
+						Click any screenshot for the original. The generated fixture has an
+						asymmetric inspection unit, a column, wall, crate, and railing. All images
+						are genuine captures; no menu mockups or composited application screens.
+					</p>
+				</header>
+				<section id="native">
+					<div class="eyebrow">01 / See the interaction</div>
+					<h2>The reference menu, inside Unreal</h2>
+					<p>
+						Open <strong>Window → UE Shed Camera Authoring</strong> after attaching a
+						draft. These recordings use actual mouse and keyboard input, with the CLI
+						host running in the background. OBS captures only Unreal; both audio inputs
+						are muted.
+					</p>
+					<div class="video-grid">
+						<figure>
+							<video
+								controls
+								preload="metadata"
+								poster="media/camera-flow/visual/02-four-cameras.png"
+							>
+								<source
+									src="media/camera-flow/visual/layout-and-tuning.mp4"
+									type="video/mp4"
+								/>
+							</video>
+							<figcaption>
+								<strong>Layout and tuning, real time.</strong> Propose four cameras,
+								accept, switch views, then edit settings. Includes the Enter/focus
+								bug isolated below; this is not a polished success demo.
+								<a href="media/camera-flow/visual/layout-and-tuning.mp4"
+									>Open recording</a
+								>.
+							</figcaption>
+						</figure>
+						<figure>
+							<video
+								controls
+								preload="metadata"
+								poster="media/camera-flow/visual/12-native-culling.png"
+							>
+								<source
+									src="media/camera-flow/visual/native-edit-and-culling.mp4"
+									type="video/mp4"
+								/>
+							</video>
+							<figcaption>
+								<strong>Native Transform and camera-local hiding.</strong> Change Y
+								in Details, choose a camera scope, select the column, add Hide, and
+								enable preview.
+								<a href="media/camera-flow/visual/native-edit-and-culling.mp4"
+									>Open recording</a
+								>.
+							</figcaption>
+						</figure>
+					</div>
+					<h3 class="space">Step through the full-window screenshots</h3>
+					<div
+						class="buttons"
+						id="journey-buttons"
+						aria-label="Native screenshot steps"
+					></div>
+					<figure>
+						<a
+							id="journey-link"
+							href="media/camera-flow/visual/01-propose-cardinals.png"
+							><img
+								id="journey-image"
+								src="media/camera-flow/visual/01-propose-cardinals.png"
+								width="1600"
+								height="1000"
+								alt="Actual Unreal layout proposal: three cameras added to the initial camera."
+						/></a>
+						<figcaption id="journey-caption" aria-live="polite">
+							Orbit, count 4, start 0°. The proposal reports three additions and no
+							removals.
+						</figcaption>
+					</figure>
+					<noscript
+						><p>
+							The recordings work without this screenshot selector. Individual image
+							filenames are in the artifact manifest below.
+						</p></noscript
+					>
+					<div class="callout">
+						<strong>Scope stays inside this actor’s arrangement.</strong> Checked
+						cameras determine where edits apply. Unreal actor selection determines which
+						blocker to hide; selecting a blocker does not redefine the camera scope.
+					</div>
+				</section>
+				<section id="presets">
+					<div class="eyebrow">02 / Starting points you can see</div>
+					<h2>One shot, four cardinals, a front arc, or eight angles</h2>
+					<p>
+						<strong
+							>These downloadable recipes were created for this walkthrough.</strong
+						>
+						The current menu exposes single/orbit/arc parameters and recipe import. It
+						does not ship a curated visual preset gallery.
+					</p>
+					<p class="fine">
+						Gallery: editor viewport · Lit · fixed EV100 0 · 960 × 540 · 16 settling
+						frames. Angles describe camera positions around the subject: 0° on +X, 90°
+						on +Y, looking back toward the actor.
+					</p>
+					<div class="preset">
+						<h3>A. One three-quarter view</h3>
+						<p>
+							One camera at −35°. FOV 45° · distance 0.85 · elevation 20°. A readable
+							overview when exhaustive coverage is unnecessary.
+						</p>
+						<a class="recipe" href="media/camera-flow/visual/hero.recipe.json" download
+							>Download this example recipe</a
+						>
+						<figure>
+							<a href="media/camera-flow/visual/hero-1.png"
+								><img
+									src="media/camera-flow/visual/hero-1.png"
+									alt="The front display, side tank, and roof make the angle readable. The column remains; framing recipes do not hide scene actors."
+									width="960"
+									height="540"
+									loading="lazy"
+							/></a>
+							<figcaption>
+								The front display, side tank, and roof make the angle readable. The
+								column remains; framing recipes do not hide scene actors.
+							</figcaption>
+						</figure>
+					</div>
+					<div class="preset">
+						<h3>B. Four horizontal cardinals</h3>
+						<p>Orbit · count 4 · start 0°. FOV 60° · distance 1.15 · elevation 15°.</p>
+						<a
+							class="recipe"
+							href="media/camera-flow/visual/cardinals.recipe.json"
+							download
+							>Download this example recipe</a
+						>
+						<div class="shots">
+							<figure>
+								<a href="media/camera-flow/visual/cardinals-1.png"
+									><img
+										src="media/camera-flow/visual/cardinals-1.png"
+										alt="0° · +X. The column blocks part of the front."
+										width="960"
+										height="540"
+										loading="lazy"
+								/></a>
+								<figcaption>
+									<strong>0° · +X.</strong> The column blocks part of the front.
+								</figcaption>
+							</figure>
+							<figure>
+								<a href="media/camera-flow/visual/cardinals-2.png"
+									><img
+										src="media/camera-flow/visual/cardinals-2.png"
+										alt="90° · +Y. Side view, with the crate in the foreground."
+										width="960"
+										height="540"
+										loading="lazy"
+								/></a>
+								<figcaption>
+									<strong>90° · +Y.</strong> Side view, with the crate in the
+									foreground.
+								</figcaption>
+							</figure>
+							<figure>
+								<a href="media/camera-flow/visual/cardinals-3.png"
+									><img
+										src="media/camera-flow/visual/cardinals-3.png"
+										alt="180° · −X. The wall blocks the subject. Generated does not mean useful."
+										width="960"
+										height="540"
+										loading="lazy"
+								/></a>
+								<figcaption>
+									<strong>180° · −X.</strong> The wall blocks the subject.
+									Generated does not mean useful.
+								</figcaption>
+							</figure>
+							<figure>
+								<a href="media/camera-flow/visual/cardinals-4.png"
+									><img
+										src="media/camera-flow/visual/cardinals-4.png"
+										alt="270° · −Y. The side tank and railing are visible."
+										width="960"
+										height="540"
+										loading="lazy"
+								/></a>
+								<figcaption>
+									<strong>270° · −Y.</strong> The side tank and railing are
+									visible.
+								</figcaption>
+							</figure>
+						</div>
+						<div class="callout caution">
+							<strong>Six around is not six axes.</strong> Count 6 makes six angles
+							around the orbit. There is no dedicated ±X/±Y/±Z “six-axis cardinals”
+							preset in the new menu. Top/bottom coverage requires deliberate
+							additional camera setup.
+						</div>
+					</div>
+					<div class="preset">
+						<h3>C. Three-camera front arc</h3>
+						<p>
+							Arc · count 3 · start −45° · span 90°. Keep coverage on the useful side
+							instead of placing a camera behind the wall.
+						</p>
+						<a
+							class="recipe"
+							href="media/camera-flow/visual/front-arc.recipe.json"
+							download
+							>Download this example recipe</a
+						>
+						<div class="shots">
+							<figure>
+								<a href="media/camera-flow/visual/front-arc-1.png"
+									><img
+										src="media/camera-flow/visual/front-arc-1.png"
+										alt="−45°. Front and tank side."
+										width="960"
+										height="540"
+										loading="lazy"
+								/></a>
+								<figcaption><strong>−45°.</strong> Front and tank side.</figcaption>
+							</figure>
+							<figure>
+								<a href="media/camera-flow/visual/front-arc-2.png"
+									><img
+										src="media/camera-flow/visual/front-arc-2.png"
+										alt="0°. Straight on; the column still needs a visibility decision."
+										width="960"
+										height="540"
+										loading="lazy"
+								/></a>
+								<figcaption>
+									<strong>0°.</strong> Straight on; the column still needs a
+									visibility decision.
+								</figcaption>
+							</figure>
+							<figure>
+								<a href="media/camera-flow/visual/front-arc-3.png"
+									><img
+										src="media/camera-flow/visual/front-arc-3.png"
+										alt="+45°. Front and opposite side."
+										width="960"
+										height="540"
+										loading="lazy"
+								/></a>
+								<figcaption>
+									<strong>+45°.</strong> Front and opposite side.
+								</figcaption>
+							</figure>
+						</div>
+					</div>
+					<div class="preset">
+						<h3>D. Eight-angle coverage</h3>
+						<p>
+							Orbit · count 8 · 45° spacing. More samples reveal useful obliques, but
+							also more obstructed views. Inspect and prune the set.
+						</p>
+						<a
+							class="recipe"
+							href="media/camera-flow/visual/orbit-eight.recipe.json"
+							download
+							>Download this example recipe</a
+						>
+						<div class="shots">
+							<figure>
+								<a href="media/camera-flow/visual/orbit-eight-1.png"
+									><img
+										src="media/camera-flow/visual/orbit-eight-1.png"
+										alt="0°. Camera 1 of eight."
+										width="960"
+										height="540"
+										loading="lazy"
+								/></a>
+								<figcaption><strong>0°.</strong> Camera 1 of eight.</figcaption>
+							</figure>
+							<figure>
+								<a href="media/camera-flow/visual/orbit-eight-2.png"
+									><img
+										src="media/camera-flow/visual/orbit-eight-2.png"
+										alt="45°. Camera 2 of eight."
+										width="960"
+										height="540"
+										loading="lazy"
+								/></a>
+								<figcaption><strong>45°.</strong> Camera 2 of eight.</figcaption>
+							</figure>
+							<figure>
+								<a href="media/camera-flow/visual/orbit-eight-3.png"
+									><img
+										src="media/camera-flow/visual/orbit-eight-3.png"
+										alt="90°. Camera 3 of eight."
+										width="960"
+										height="540"
+										loading="lazy"
+								/></a>
+								<figcaption><strong>90°.</strong> Camera 3 of eight.</figcaption>
+							</figure>
+							<figure>
+								<a href="media/camera-flow/visual/orbit-eight-4.png"
+									><img
+										src="media/camera-flow/visual/orbit-eight-4.png"
+										alt="135°. Camera 4 of eight."
+										width="960"
+										height="540"
+										loading="lazy"
+								/></a>
+								<figcaption><strong>135°.</strong> Camera 4 of eight.</figcaption>
+							</figure>
+							<figure>
+								<a href="media/camera-flow/visual/orbit-eight-5.png"
+									><img
+										src="media/camera-flow/visual/orbit-eight-5.png"
+										alt="180°. Camera 5 of eight."
+										width="960"
+										height="540"
+										loading="lazy"
+								/></a>
+								<figcaption><strong>180°.</strong> Camera 5 of eight.</figcaption>
+							</figure>
+							<figure>
+								<a href="media/camera-flow/visual/orbit-eight-6.png"
+									><img
+										src="media/camera-flow/visual/orbit-eight-6.png"
+										alt="225°. Camera 6 of eight."
+										width="960"
+										height="540"
+										loading="lazy"
+								/></a>
+								<figcaption><strong>225°.</strong> Camera 6 of eight.</figcaption>
+							</figure>
+							<figure>
+								<a href="media/camera-flow/visual/orbit-eight-7.png"
+									><img
+										src="media/camera-flow/visual/orbit-eight-7.png"
+										alt="270°. Camera 7 of eight."
+										width="960"
+										height="540"
+										loading="lazy"
+								/></a>
+								<figcaption><strong>270°.</strong> Camera 7 of eight.</figcaption>
+							</figure>
+							<figure>
+								<a href="media/camera-flow/visual/orbit-eight-8.png"
+									><img
+										src="media/camera-flow/visual/orbit-eight-8.png"
+										alt="315°. Camera 8 of eight."
+										width="960"
+										height="540"
+										loading="lazy"
+								/></a>
+								<figcaption><strong>315°.</strong> Camera 8 of eight.</figcaption>
+							</figure>
+						</div>
+					</div>
+					<p>
+						<strong>Current default from actor selection:</strong> one fitted camera,
+						FOV 60°, distance 1.15, margin 0.1, elevation 15°. This is a geometric
+						starting point. The wall and column show why authors still need to inspect
+						it.
+					</p>
+				</section>
+				<section id="adjust">
+					<div class="eyebrow">03 / What each adjustment does</div>
+					<h2>The same camera, one setting changed</h2>
+					<p>
+						Choose a comparison. The left stays at the default; the right is a new
+						render from the changed setting. These are generated cameras, so fitting
+						participates in lens changes.
+					</p>
+					<div class="buttons" id="adjust-buttons" aria-label="Camera adjustments"></div>
+					<div class="grid">
+						<figure>
+							<a href="media/camera-flow/visual/cardinals-1.png"
+								><img
+									src="media/camera-flow/visual/cardinals-1.png"
+									alt="Baseline. FOV 60° · distance 1.15 · height 0 · elevation 15°."
+									width="960"
+									height="540"
+									loading="lazy"
+							/></a>
+							<figcaption>
+								<strong>Baseline.</strong> FOV 60° · distance 1.15 · height 0 ·
+								elevation 15°.
+							</figcaption>
+						</figure>
+						<figure>
+							<a id="adjust-link" href="media/camera-flow/visual/distance-1.png"
+								><img
+									id="adjust-image"
+									src="media/camera-flow/visual/distance-1.png"
+									width="960"
+									height="540"
+									alt="Generated camera with distance multiplier 1.5."
+									loading="lazy"
+							/></a>
+							<figcaption id="adjust-caption" aria-live="polite">
+								Distance 1.5: more surroundings; the actor becomes smaller.
+							</figcaption>
+						</figure>
+					</div>
+					<div class="grid" style="margin: 24px 0">
+						<div class="card">
+							<h3>Generated camera</h3>
+							<p>
+								A narrower FOV triggers fitting, changing perspective and background
+								coverage while retaining room for the actor. Distance scale controls
+								how loose the fit is.
+							</p>
+						</div>
+						<div class="card">
+							<h3>Manual exception</h3>
+							<p>
+								Changing Transform in Unreal pins placement. Shared fitting no
+								longer moves it. Lens inheritance remains independent; explicit
+								dolly/world-Z moves deliberately move and pin affected cameras.
+							</p>
+						</div>
+					</div>
+					<figure>
+						<a href="media/camera-flow/visual/09-native-exception.png"
+							><img
+								src="media/camera-flow/visual/09-native-exception.png"
+								alt="Actual Details edit. Y changes from −12 to −350 cm. This camera changes from fitted to manual; the package draft records the Transform. Its siblings stay generated."
+								width="1600"
+								height="1000"
+								loading="lazy"
+						/></a>
+						<figcaption>
+							<strong>Actual Details edit.</strong> Y changes from −12 to −350 cm.
+							This camera changes from fitted to manual; the package draft records the
+							Transform. Its siblings stay generated.
+						</figcaption>
+					</figure>
+					<details>
+						<summary>Exposure is also a starting-point decision</summary>
+						<div class="grid">
+							<figure>
+								<a href="media/camera-flow/visual/exposure-ev10.png"
+									><img
+										src="media/camera-flow/visual/exposure-ev10.png"
+										alt="EV100 10. Almost black in this fixture’s lit viewport."
+										width="960"
+										height="540"
+										loading="lazy"
+								/></a>
+								<figcaption>
+									<strong>EV100 10.</strong> Almost black in this fixture’s lit
+									viewport.
+								</figcaption>
+							</figure>
+							<figure>
+								<a href="media/camera-flow/visual/cardinals-1.png"
+									><img
+										src="media/camera-flow/visual/cardinals-1.png"
+										alt="EV100 0. The same camera, with exposure suited to this fixture."
+										width="960"
+										height="540"
+										loading="lazy"
+								/></a>
+								<figcaption>
+									<strong>EV100 0.</strong> The same camera, with exposure suited
+									to this fixture.
+								</figcaption>
+							</figure>
+						</div>
+						<p class="fine" style="margin-top: 14px">
+							These are scene-specific examples. The gallery explicitly uses
+							viewport/EV100 0. The earlier UI recording saved SceneCapture/EV100 10.
+							Preview and review of the effective render policy need clearer
+							integration.
+						</p>
+					</details>
+				</section>
+				<section id="culling">
+					<div class="eyebrow">04 / One camera, one blocker</div>
+					<h2>Hide this column only for this view</h2>
+					<div class="grid">
+						<figure>
+							<a href="media/camera-flow/visual/11-hidden-entry.png"
+								><img
+									src="media/camera-flow/visual/11-hidden-entry.png"
+									alt="Before preview. The selected column appears as a local Hide entry, but remains in the viewport."
+									width="1600"
+									height="1000"
+									loading="lazy"
+							/></a>
+							<figcaption>
+								<strong>Before preview.</strong> The selected column appears as a
+								local Hide entry, but remains in the viewport.
+							</figcaption>
+						</figure>
+						<figure>
+							<a href="media/camera-flow/visual/12-native-culling.png"
+								><img
+									src="media/camera-flow/visual/12-native-culling.png"
+									alt="Preview enabled. The column disappears. Its actor remains in the Outliner and its selection gizmo remains visible."
+									width="1600"
+									height="1000"
+									loading="lazy"
+							/></a>
+							<figcaption>
+								<strong>Preview enabled.</strong> The column disappears. Its actor
+								remains in the Outliner and its selection gizmo remains visible.
+							</figcaption>
+						</figure>
+					</div>
+					<p style="margin-top: 22px">
+						The approved Review Set contains four Views. The first has one hidden actor;
+						the other three have none. This is camera-local culling.
+					</p>
+					<figure>
+						<div class="compare" id="culling-compare">
+							<img
+								src="media/camera-flow/visual/saved-authored.png"
+								alt="Authored render: column excluded."
+								width="960"
+								height="540"
+								loading="lazy"
+							/><img
+								class="before"
+								src="media/camera-flow/visual/saved-pure.png"
+								alt="Pure render: column present."
+								width="960"
+								height="540"
+								loading="lazy"
+							/><span class="seam" aria-hidden="true"></span
+							><span class="label left">Pure · column present</span
+							><span class="label right">Authored · column excluded</span>
+						</div>
+						<figcaption>
+							Actual renders of the saved camera’s pose and visibility, using the
+							gallery’s explicit viewport/EV100 0 policy. No global actor visibility
+							flags are changed.
+						</figcaption>
+					</figure>
+					<label class="slider" for="culling-slider"
+						>Reveal Pure<input
+							id="culling-slider"
+							type="range"
+							min="0"
+							max="100"
+							value="50"
+						/><output for="culling-slider">50%</output></label
+					>
+					<p>
+						<strong>Protect means “keep it visible if a Hide rule includes it.”</strong>
+						It can preserve an actor for one camera when a broader scope hides it. The
+						subject is protected automatically. Supported exclusions remain loaded,
+						opaque, non-Nanite static-mesh actors.
+					</p>
+				</section>
+				<section id="save">
+					<div class="eyebrow">05 / What survives</div>
+					<h2>Close the editor. Reattach the draft.</h2>
+					<figure>
+						<a href="media/camera-flow/visual/17-reloaded.png"
+							><img
+								src="media/camera-flow/visual/17-reloaded.png"
+								alt="Actual reload with the latest staged build. Four cameras, saved View markers, shared FOV 45° / distance 1.35 / height +120 cm, and the first camera’s Y = −350 cm exception return."
+								width="1600"
+								height="1000"
+								loading="lazy"
+						/></a>
+						<figcaption>
+							<strong>Actual reload with the latest staged build.</strong> Four
+							cameras, saved View markers, shared FOV 45° / distance 1.35 / height
+							+120 cm, and the first camera’s Y = −350 cm exception return.
+						</figcaption>
+					</figure>
+					<div class="table-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th>Intent</th>
+									<th>Keep / load</th>
+									<th>Example</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td>Resume this actor</td>
+									<td>Durable draft</td>
+									<td>
+										Reattach draft.json to continue the exact working setup.
+									</td>
+								</tr>
+								<tr>
+									<td>Render approved work</td>
+									<td>Approved Review Set</td>
+									<td>
+										<a href="media/camera-flow/visual/approved-views.json"
+											>Inspect the four saved Views</a
+										>. Hidden-actor counts: 1, 0, 0, 0.
+									</td>
+								</tr>
+								<tr>
+									<td>Reuse framing</td>
+									<td>Recipe</td>
+									<td>
+										Import an example above through a reviewed proposal. New
+										identities; no actor-specific culling.
+									</td>
+								</tr>
+								<tr>
+									<td>Reuse blockers in this map</td>
+									<td>Visibility preset</td>
+									<td>
+										Separate immutable file checked against project/map.
+										Adoption copies a list; old saved Views keep their
+										snapshots.
+									</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<p>
+						<strong>Autosave is not approval.</strong> Save views in current scope
+						publishes the capture definition. Removing a draft camera does not silently
+						delete its saved View.
+					</p>
+					<details>
+						<summary>Commands used for native authoring</summary>
+						<pre><code>pnpm exec tsx scripts/ue-shed.ts review authoring arrangement from-selection draft.json --endpoint http://localhost:30010
+
+pnpm exec tsx scripts/ue-shed.ts review authoring arrangement attach draft.json camera-1 --endpoint http://localhost:30010 --output approved.json</code></pre>
+						<p class="fine">
+							Select your actor first; use your configured Unreal RC endpoint. Keep
+							attach running while editing. File paths belong to the package host. See
+							the <a href="../products/camera-authoring.md">product guide</a> for
+							prerequisites and recovery.
+						</p>
+					</details>
+				</section>
+				<section id="integration">
+					<div class="eyebrow">06 / Where sync stops</div>
+					<h2>Unreal ↔ package works. Electroswag is not wired in.</h2>
+					<div class="flow">
+						<div class="node">
+							<strong>Unreal reference menu</strong
+							><small>Controls and actor selection</small>
+						</div>
+						<span aria-hidden="true">↔</span>
+						<div class="node">
+							<strong>Optional C++ bridge</strong
+							><small>Transient cameras and native events</small>
+						</div>
+						<span aria-hidden="true">↔</span>
+						<div class="node">
+							<strong>unreal-rc → Node host</strong
+							><small>Durable draft and approval</small>
+						</div>
+					</div>
+					<div class="callout caution">
+						<strong>No Electroswag synchronization is demonstrated here.</strong> Its
+						checked consuming code has not adopted the new arrangement/panel session
+						APIs. The existing cameras dependency and older capture tools do not
+						automatically provide this authoring integration.
+					</div>
+					<p>
+						A studio can adopt the reference menu, replace it through public
+						bridge/package contracts, or use the CLI. Electroswag still needs to host
+						the arrangement session, display revision/pending state, and expose the
+						saved View library. The broader sync-layer concept remains separate work.
+					</p>
+				</section>
+				<section id="findings">
+					<div class="eyebrow">07 / What the visual journey found</div>
+					<h2>Working primitives; unfinished author experience</h2>
+					<div class="grid">
+						<div>
+							<h3>Enter can undo the entered value</h3>
+							<p>
+								Latest staged binary: FOV 45° → type 40° → Enter. The durable draft
+								becomes 40°. Move focus: the draft returns to 45°. Committing with
+								Tab worked in this journey.
+							</p>
+							<p>
+								<strong>This remains unfixed.</strong> The earlier backend/protocol
+								tests did not exercise the actual keyboard/focus sequence.
+							</p>
+						</div>
+						<figure>
+							<video
+								controls
+								preload="metadata"
+								poster="media/camera-flow/visual/bug-enter.png"
+							>
+								<source
+									src="media/camera-flow/visual/enter-focus-regression.mp4"
+									type="video/mp4"
+								/>
+							</video>
+							<figcaption>
+								Short, real-time reproduction on the restaged latest binary.
+								<a href="media/camera-flow/visual/enter-focus-regression.mp4"
+									>Open recording</a
+								>.
+							</figcaption>
+						</figure>
+					</div>
+					<div class="table-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th>Observed</th>
+									<th>Impact</th>
+									<th>Next work</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td>Long scrolling form</td>
+									<td>Scope and Save are far apart; camera names truncate.</td>
+									<td>
+										Keep actor, scope, active camera, and save/sync state
+										readable.
+									</td>
+								</tr>
+								<tr>
+									<td>No visual preset picker</td>
+									<td>“Cardinals” requires count/start/span knowledge.</td>
+									<td>
+										Named presets with thumbnails and explicit axis/angle
+										semantics.
+									</td>
+								</tr>
+								<tr>
+									<td>Geometric fit ignores blockers</td>
+									<td>A rear camera sees a wall.</td>
+									<td>Review coverage and obstructions before approval.</td>
+								</tr>
+								<tr>
+									<td>Enter/focus reversion</td>
+									<td>An applied gesture can revert.</td>
+									<td>Fix numeric input; add a real Slate focus regression.</td>
+								</tr>
+								<tr>
+									<td>Capture-policy preview gap</td>
+									<td>
+										Usable native framing can still produce a poorly exposed
+										saved capture.
+									</td>
+									<td>
+										Preview the effective backend and exposure before approval.
+									</td>
+								</tr>
+								<tr>
+									<td>No Electroswag adoption</td>
+									<td>The requested two-client product journey is incomplete.</td>
+									<td>
+										Integrate through public ports, then record both apps
+										together.
+									</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<details>
+						<summary>Evidence and exact limits</summary>
+						<p>
+							OBS 32.2.1 recorded the real Unreal window through its local WebSocket
+							interface. MP4s are silent and continuous, with no cuts or speed
+							changes. PNG bytes are copied unchanged.
+						</p>
+						<p>
+							The initial tour used the previously staged authoring binary. After
+							noticing its older exposure text, I restaged the final build, reattached
+							the draft, and reproduced the numeric bug again. The reload image and
+							short regression clip use that final build; final source already has the
+							compact exposure summary.
+						</p>
+						<p>
+							The gallery uses package fitting and the shared viewport renderer.
+							Checks verified pose, policy, dimensions, and preserved map dirt,
+							followed by visual inspection. Example recipes are new starting
+							configurations; this run did not verify every recipe-import UI path,
+							visibility-preset adoption path, or the full production geometry matrix.
+						</p>
+						<p>
+							<a href="media/camera-flow/visual/manifest.json"
+								>Artifact manifest and hashes</a
+							>
+							·
+							<a href="media/camera-flow/visual/render-evidence.json"
+								>Gallery render evidence</a
+							>
+							· <a href="camera-authoring-native-proof.md">Earlier native proof</a> ·
+							<a href="../products/camera-authoring.md">Product contract</a> ·
+							<a href="../../plans/README.md">Plan status</a>
+						</p>
+						<p class="fine">
+							Keep the neighboring media folder with this HTML when sharing.
+							Everything loads offline. The earlier text-heavy report remains in Git
+							history.
+						</p>
+					</details>
+				</section>
+			</main>
+			<footer>
+				UE Shed · Camera flow visual walkthrough · 12 September 2026
+				<button class="print-button" type="button" id="print">Print / save PDF</button>
+			</footer>
+		</div>
+		<script>
+			const base = "media/camera-flow/visual/";
+			const journey = [
+				[
+					"1 · Propose",
+					"01-propose-cardinals",
+					"Orbit, count 4, start 0°. Three additions and no removals."
+				],
+				[
+					"2 · Four cameras",
+					"02-four-cameras",
+					"Four cameras after acceptance. The active front view has a column in the way."
+				],
+				[
+					"3 · Side view",
+					"03-side-camera",
+					"Select orbit 2: Unreal pilots the +Y camera; list, viewport, and Details follow."
+				],
+				[
+					"4 · Blocked rear",
+					"04-back-camera",
+					"The rear cardinal is behind the wall. A preset is only a starting point."
+				],
+				[
+					"5 · Tune set",
+					"08-tab-commit",
+					"Commit with Tab: FOV 45°, distance 1.35, height +120 cm. These values persisted."
+				],
+				[
+					"6 · Native edit",
+					"09-native-exception",
+					"Edit Y to −350 cm in Details. The active camera becomes manual; siblings stay generated."
+				],
+				[
+					"7 · Hide column",
+					"12-native-culling",
+					"Camera-local Hide excludes the column from the piloted preview. Its actor remains in the Outliner."
+				],
+				[
+					"8 · Reopen",
+					"17-reloaded",
+					"Restart and reattach: four cameras, saved markers, shared settings, and native pose return."
+				]
+			];
+			const adjustments = [
+				[
+					"Distance → 1.5",
+					"distance-1",
+					"Distance 1.5: more surroundings; the actor becomes smaller. Other settings stay at defaults."
+				],
+				[
+					"FOV → 35°",
+					"lens-1",
+					"FOV 35°: fitting moves the generated camera back to retain framing. Perspective and background coverage change."
+				],
+				[
+					"Height → +120 cm",
+					"height-1",
+					"Height +120 cm: the camera moves above its generated position and aims toward the actor."
+				],
+				[
+					"Elevation → 35°",
+					"elevation-1",
+					"Elevation 35°: a higher position around the actor reveals more of the roof."
+				]
+			];
+			function selector(prefix, items) {
+				items.forEach(([label, name, caption], index) => {
+					const b = document.createElement("button");
+					b.type = "button";
+					b.textContent = label;
+					b.setAttribute("aria-pressed", String(index === 0));
+					b.addEventListener("click", () => {
+						document
+							.querySelectorAll(`#${prefix}-buttons button`)
+							.forEach((x) => x.setAttribute("aria-pressed", "false"));
+						b.setAttribute("aria-pressed", "true");
+						const image = document.getElementById(prefix + "-image");
+						image.src = base + name + ".png";
+						image.alt = caption;
+						document.getElementById(prefix + "-link").href = image.src;
+						document.getElementById(prefix + "-caption").textContent = caption;
+					});
+					document.getElementById(prefix + "-buttons").append(b);
+				});
+			}
+			selector("journey", journey);
+			selector("adjust", adjustments);
+			document.getElementById("culling-slider").addEventListener("input", (e) => {
+				const v = e.target.value;
+				document.getElementById("culling-compare").style.setProperty("--split", v + "%");
+				e.target.parentElement.querySelector("output").value = v + "%";
+			});
+			document.getElementById("print").addEventListener("click", () => window.print());
+		</script>
+	</body>
+</html>

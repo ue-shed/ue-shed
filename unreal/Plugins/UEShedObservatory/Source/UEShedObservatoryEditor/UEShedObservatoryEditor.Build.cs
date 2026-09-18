@@ -6,6 +6,6 @@ public class UEShedObservatoryEditor : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 		PublicDependencyModuleNames.AddRange(new[] { "Core", "CoreUObject", "Engine" });
-		PrivateDependencyModuleNames.AddRange(new[] { "Json", "Slate", "SlateCore", "UnrealEd" });
+		PrivateDependencyModuleNames.AddRange(new[] { "UEShedCoreEditor", "Json", "Slate", "SlateCore", "UnrealEd" });
 	}
 }

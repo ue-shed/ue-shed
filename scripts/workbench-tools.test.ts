@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { unrealRemoteControlPermissions } from "../packages/engine/src/remote-control-permissions.ts";
 import {
 	createWorkbenchEnvironment,
 	resolveRemoteControlEndpoint,
@@ -13,6 +14,7 @@ test("enables every discovered plugin with Unreal's plural plugin switch", () =>
 		"-ini:RemoteControl:[/Script/RemoteControlCommon.RemoteControlSettings]:RemoteControlHttpServerPort=30001",
 		"-ini:RemoteControl:[/Script/RemoteControlCommon.RemoteControlSettings]:RemoteControlWebSocketServerPort=30002",
 		"-ini:RemoteControl:[/Script/RemoteControlCommon.RemoteControlSettings]:bAutoStartWebServer=True",
+		...unrealRemoteControlPermissions(["UEShedCore", "UEShedCameras"]),
 		"-NoLiveCoding"
 	]);
 });

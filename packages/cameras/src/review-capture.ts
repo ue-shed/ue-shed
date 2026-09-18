@@ -344,11 +344,16 @@ function captureOneView(args: {
 		}
 		const operationId = yield* args.ids.generate();
 		const request = ReviewCaptureRequestCurrent.make({
+			...(args.view.authoredVisibility
+				? { authoredVisibility: args.view.authoredVisibility }
+				: undefined),
 			assessment: visibilityPolicy.assessment,
-			clearCompanion: clearCompanionRequest({ policy: visibilityPolicy, view: args.view }),
+			clearCompanion: args.view.authoredVisibility
+				? { status: "not_requested" }
+				: clearCompanionRequest({ policy: visibilityPolicy, view: args.view }),
 			contract: {
 				name: "ue-shed-review-capture",
-				version: { major: 1, minor: 6 }
+				version: { major: 1, minor: args.view.authoredVisibility ? 7 : 6 }
 			},
 			expectedMapPath: args.reviewSet.project.mapPath,
 			operationId,
@@ -412,8 +417,12 @@ function captureOneView(args: {
 				.storeArtifact({
 					relativePath,
 					sourceAuthorizationRoot: args.projectRoot,
-					sourcePath: artifact.stagingPath,
-					sourceRoot: args.unrealStagingRoot
+					sourcePath: request.authoredVisibility
+						? resolve(args.projectRoot, artifact.stagingPath)
+						: artifact.stagingPath,
+					sourceRoot: request.authoredVisibility
+						? resolve(args.projectRoot, "Saved", "UEShed", "CameraRenderStaging")
+						: args.unrealStagingRoot
 				})
 				.pipe(
 					Effect.map((stored) => ({
@@ -444,6 +453,12 @@ function captureOneView(args: {
 			};
 		}
 		const result = {
+			...("authoredVisibility" in response && response.authoredVisibility
+				? { authoredVisibility: response.authoredVisibility }
+				: undefined),
+			...("authoredEvidence" in response && response.authoredEvidence
+				? { authoredEvidence: response.authoredEvidence }
+				: undefined),
 			...("renderEvidence" in response && response.renderEvidence !== undefined
 				? { renderEvidence: response.renderEvidence }
 				: undefined),
@@ -559,7 +574,15 @@ function captureReviewSetWith(args: {
 					).length;
 					const run = yield* decodeCaptureRun({
 						completedAt: isoNow(yield* Clock.currentTimeMillis),
-						contract: { name: "ue-shed-capture-run", version: { major: 1, minor: 6 } },
+						contract: {
+							name: "ue-shed-capture-run",
+							version: {
+								major: 1,
+								minor: reviewSet.views.some((view) => view.authoredVisibility)
+									? 7
+									: 6
+							}
+						},
 						id: runId,
 						invocation,
 						project: reviewSet.project,

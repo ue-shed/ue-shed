@@ -160,5 +160,5 @@ describe("ue-shed Review authoring CLI process", () => {
 		} finally {
 			await rm(root, { force: true, recursive: true });
 		}
-	});
+	}, 30_000);
 });

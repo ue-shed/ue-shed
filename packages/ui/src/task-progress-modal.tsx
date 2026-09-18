@@ -1,6 +1,7 @@
 import * as stylex from "@stylexjs/stylex";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
-import { Show } from "solid-js";
+import { createUniqueId, onSettled, Show } from "solid-js";
+import { Portal } from "@solidjs/web";
 
 export interface TaskProgress {
 	readonly cacheHits?: number;
@@ -26,6 +27,22 @@ function stageLabel(progress: TaskProgress): string {
 }
 
 export function TaskProgressModal(props: TaskProgressModalProps) {
+	return (
+		<Show when={props.open}>
+			<OpenTaskProgressModal {...props} />
+		</Show>
+	);
+}
+
+function OpenTaskProgressModal(props: TaskProgressModalProps) {
+	let dialogElement: HTMLDialogElement | undefined;
+	onSettled(() => {
+		const dialog = dialogElement;
+		dialog?.showModal();
+		return () => dialog?.close();
+	});
+	const titleId = createUniqueId();
+	const detailId = createUniqueId();
 	const determinate = () => props.progress.total > 0;
 	const percent = () =>
 		determinate()
@@ -37,21 +54,23 @@ export function TaskProgressModal(props: TaskProgressModalProps) {
 			: "Preparing…";
 
 	return (
-		<Show when={props.open}>
-			<div {...stylex.attrs(styles.backdrop)}>
-				<section
-					role="dialog"
-					aria-modal="true"
-					aria-labelledby="task-progress-title"
-					aria-describedby="task-progress-detail"
-					aria-busy="true"
-					{...stylex.attrs(styles.modal)}
-				>
+		<Portal>
+			<dialog
+				ref={(dialog) => {
+					dialogElement = dialog;
+				}}
+				onCancel={(event) => event.preventDefault()}
+				aria-labelledby={titleId}
+				aria-describedby={detailId}
+				aria-busy="true"
+				{...stylex.attrs(styles.backdrop)}
+			>
+				<section tabindex={-1} {...stylex.attrs(styles.modal)}>
 					<p {...stylex.attrs(styles.kicker)}>{stageLabel(props.progress)}</p>
-					<h2 id="task-progress-title" {...stylex.attrs(styles.title)}>
+					<h2 id={titleId} {...stylex.attrs(styles.title)}>
 						{props.title}
 					</h2>
-					<p id="task-progress-detail" {...stylex.attrs(styles.detail)}>
+					<p id={detailId} {...stylex.attrs(styles.detail)}>
 						{props.detail}
 					</p>
 					<div
@@ -84,8 +103,8 @@ export function TaskProgressModal(props: TaskProgressModalProps) {
 						Workbench controls are paused until this operation finishes.
 					</p>
 				</section>
-			</div>
-		</Show>
+			</dialog>
+		</Portal>
 	);
 }
 
@@ -93,7 +112,14 @@ const styles = stylex.create({
 	backdrop: {
 		position: "fixed",
 		inset: 0,
-		zIndex: 1000,
+		margin: 0,
+		borderWidth: 0,
+		width: "100%",
+		height: "100%",
+		maxWidth: "none",
+		maxHeight: "none",
+		boxSizing: "border-box",
+		overflowY: "auto",
 		display: "grid",
 		placeItems: "center",
 		padding: tokens.space5,

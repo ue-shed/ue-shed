@@ -215,3 +215,12 @@ and restoration context, and include the resolved policy in reuse keys. No Workb
 studio-specific plugin is required. This change does not publish a release.
 
 See [live validation and visual differences](../research/shared-camera-rendering-2026-09-08.md).
+
+## Authored actor visibility
+
+An optional `policy.visibility` contains loaded-actor hide/protect lists. Check the `authoredVisibility`
+capability first. The initial supported geometry is opaque non-Nanite static-mesh actors; unsupported,
+missing, unloaded or ambiguous references fail explicitly. Protection overrides hiding, including
+GUID/path aliases that resolve to the same actor. Exclusions are per view or SceneCapture component;
+actor visibility flags and map packages are not changed. Frame evidence includes the exact policy
+and resolution diagnostics. Review labels these outputs Authored; Pure cannot carry exclusions.

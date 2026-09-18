@@ -1,0 +1,34 @@
+{
+	"version": 1,
+	"name": "Four horizontal cardinals",
+	"settings": {
+		"fieldOfViewDegrees": 60,
+		"distanceScale": 1.15,
+		"heightOffset": 0,
+		"margin": 0.1,
+		"elevationDegrees": 15
+	},
+	"groups": [],
+	"cameras": [
+		{
+			"displayName": "Four horizontal cardinals 1",
+			"yawDegrees": 0,
+			"overrides": {}
+		},
+		{
+			"displayName": "Four horizontal cardinals 2",
+			"yawDegrees": 90,
+			"overrides": {}
+		},
+		{
+			"displayName": "Four horizontal cardinals 3",
+			"yawDegrees": 180,
+			"overrides": {}
+		},
+		{
+			"displayName": "Four horizontal cardinals 4",
+			"yawDegrees": 270,
+			"overrides": {}
+		}
+	]
+}

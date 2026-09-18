@@ -7,3 +7,6 @@ export * from "./map-tile-pyramid.js";
 export * from "./map-tile-authoring.js";
 
 export * from "./map-capture-tools-schema.js";
+export * from "./camera-arrangement.js";
+export * from "./camera-authoring-panel-schema.js";
+export * from "./camera-visibility.js";

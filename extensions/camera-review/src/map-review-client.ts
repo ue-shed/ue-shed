@@ -1,4 +1,8 @@
 import type {
+	CameraWorkspaceRequest,
+	CameraWorkspaceResult
+} from "@ue-shed/cameras/review-contracts";
+import type {
 	MapReviewApprovalResult,
 	MapReviewApproveCandidateIntent,
 	MapReviewAuthorFromSelectionIntent,
@@ -24,6 +28,7 @@ import type {
 	WorldScoutRefreshRate,
 	WorldScoutResult
 } from "@ue-shed/observatory/browser";
+import { EditorWorldOpenResponse, EditorWorldState } from "@ue-shed/protocol";
 import type {
 	SavedWorld,
 	SavedWorldChoice,
@@ -72,7 +77,35 @@ export class MapReviewClientError extends Schema.TaggedErrorClass<MapReviewClien
 	}
 ) {}
 
+export const MapReviewMapOpenResult = Schema.Union([
+	EditorWorldOpenResponse,
+	Schema.Struct({
+		outcome: Schema.Literal("failed"),
+		message: Schema.String,
+		recovery: Schema.String
+	})
+]);
+export type MapReviewMapOpenResult = typeof MapReviewMapOpenResult.Type;
+
+export const MapReviewEditorState = Schema.Union([
+	Schema.Struct({ status: Schema.Literal("ready"), world: EditorWorldState }),
+	Schema.Struct({ status: Schema.Literal("opening"), targetMapPath: Schema.String }),
+	Schema.Struct({
+		status: Schema.Literal("unavailable"),
+		message: Schema.String,
+		recovery: Schema.String
+	})
+]);
+export type MapReviewEditorState = typeof MapReviewEditorState.Type;
+
 export interface MapReviewClientApi {
+	readonly editorWorld?: () => Effect.Effect<MapReviewEditorState, MapReviewClientError>;
+	readonly openMapInUnreal?: (
+		mapPath: string
+	) => Effect.Effect<MapReviewMapOpenResult, MapReviewClientError>;
+	readonly cameraWorkspace?: (
+		request: CameraWorkspaceRequest
+	) => Effect.Effect<CameraWorkspaceResult, MapReviewClientError>;
 	/** Optional while older hosts adopt saved-map support. This source is never an editor session. */
 	readonly readSavedWorld?: (mapPath: string) => Effect.Effect<SavedWorld, MapReviewClientError>;
 	readonly savedWorldMaps?: () => Effect.Effect<readonly SavedWorldMap[], MapReviewClientError>;

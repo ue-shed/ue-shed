@@ -1,4 +1,5 @@
 export * from "./button.js";
+export * from "./anchored-popover.js";
 export * from "./actor-explorer.js";
 export * from "./actor-explorer-utilities.js";
 export * from "./dismissible-details.js";

@@ -1,4 +1,5 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { Effect } from "effect";
 import { basename, join } from "node:path";
 import {
 	CaptureProfile,
@@ -9,7 +10,7 @@ import {
 	defaultNaturalOnlyVisibilityPolicy,
 	type ReviewSelectionResponse
 } from "./review-schema.js";
-import { DEFAULT_REVIEW_ROOT } from "./review-repository.js";
+import { DEFAULT_REVIEW_ROOT, ReviewRepository } from "./review-repository.js";
 
 const defaultCaptureProfileId = "default-png-720p";
 const initialReviewViewId = "initial-view";
@@ -68,3 +69,22 @@ export function bootstrapMapReviewSet(args: {
 		viewId: ReviewViewId.make(initialReviewViewId)
 	};
 }
+
+/** Explicit first-set creation. A fresh identity never overwrites a previously published set. */
+export const createMapReviewSet = Effect.fn("CameraReview.createMapReviewSet")(function* (args: {
+	readonly projectRoot: string;
+	readonly selection: Extract<ReviewSelectionResponse, { readonly status: "selected" }>;
+	readonly displayName?: string;
+}) {
+	const repository = yield* ReviewRepository;
+	const bootstrap = bootstrapMapReviewSet(args);
+	const id = ReviewSetId.make(`review-${randomUUID()}`);
+	const reviewSet = ReviewSet.make({
+		...bootstrap.reviewSet,
+		id,
+		displayName: args.displayName?.trim() || bootstrap.reviewSet.displayName
+	});
+	const reviewSetPath = join(args.projectRoot, DEFAULT_REVIEW_ROOT, "sets", `${id}.json`);
+	yield* repository.saveSet({ path: reviewSetPath, reviewSet });
+	return { ...bootstrap, reviewSet, reviewSetPath };
+});

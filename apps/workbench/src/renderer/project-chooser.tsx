@@ -1,9 +1,5 @@
 import * as stylex from "@stylexjs/stylex";
-import {
-	createDismissibleDetails,
-	createEffectAction,
-	createEffectSubscription
-} from "@ue-shed/ui";
+import { AnchoredPopover, createEffectAction, createEffectSubscription } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { TaskProgressModal, type TaskProgress } from "@ue-shed/ui/task-progress";
 import { Schedule, Stream } from "effect";
@@ -49,8 +45,8 @@ export function ProjectChooser(props: ProjectChooserProps) {
 	const [recentProjects, setRecentProjects] = createSignal<readonly WorkbenchRecentProject[]>([]);
 	const [launching, setLaunching] = createSignal<ProjectLaunchMode>();
 	const [launchResult, setLaunchResult] = createSignal<ProjectLaunchResult>();
-	const launchMenu = createDismissibleDetails();
-	const recentMenu = createDismissibleDetails();
+	const [launchMenuOpen, setLaunchMenuOpen] = createSignal(false);
+	const [recentMenuOpen, setRecentMenuOpen] = createSignal(false);
 	const applyProject = (
 		next: WorkbenchProjectState,
 		notifyRoutes: boolean,
@@ -125,7 +121,7 @@ export function ProjectChooser(props: ProjectChooserProps) {
 				setPending(false);
 				applyProject(next, true, true);
 				if (next.status === "ready") {
-					recentMenu.close();
+					setRecentMenuOpen(false);
 					refreshRecent();
 				}
 			}
@@ -165,7 +161,7 @@ export function ProjectChooser(props: ProjectChooserProps) {
 			onSuccess: (result) => {
 				setLaunching(undefined);
 				setLaunchResult(result);
-				if (result.status === "launched") launchMenu.close();
+				if (result.status === "launched") setLaunchMenuOpen(false);
 			}
 		});
 	};
@@ -178,6 +174,14 @@ export function ProjectChooser(props: ProjectChooserProps) {
 		}
 		return undefined;
 	};
+	createEffect(
+		() => launchResult(),
+		(result) => {
+			if (result?.status !== "launched") return;
+			const timeout = window.setTimeout(() => setLaunchResult(undefined), 5_000);
+			return () => window.clearTimeout(timeout);
+		}
+	);
 
 	return (
 		<div {...stylex.attrs(styles.control)}>
@@ -192,20 +196,25 @@ export function ProjectChooser(props: ProjectChooserProps) {
 					{label()}
 				</button>
 				<Show when={recentProjects().length > 0}>
-					<details
-						ref={(element) => recentMenu.ref(element)}
-						{...stylex.attrs(styles.recentControl)}
-					>
-						<summary
-							aria-label="Recent projects"
-							title="Recent projects"
-							{...stylex.attrs(styles.recentSummary)}
-						>
-							⌃
-						</summary>
-						<section
-							aria-label="Recently opened projects"
-							{...stylex.attrs(styles.recentMenu)}
+					<div {...stylex.attrs(styles.recentControl)}>
+						<AnchoredPopover
+							ariaLabel="Recently opened projects"
+							id="recent-projects-popover"
+							onOpenChange={setRecentMenuOpen}
+							open={recentMenuOpen()}
+							placement="top-end"
+							style={styles.recentMenu}
+							trigger={(triggerProps) => (
+								<button
+									{...triggerProps}
+									aria-label="Recent projects"
+									title="Recent projects"
+									type="button"
+									{...stylex.attrs(styles.recentSummary)}
+								>
+									⌃
+								</button>
+							)}
 						>
 							<header {...stylex.attrs(styles.recentHeader)}>
 								<strong>Recent projects</strong>
@@ -235,21 +244,30 @@ export function ProjectChooser(props: ProjectChooserProps) {
 									);
 								}}
 							</For>
-						</section>
-					</details>
+						</AnchoredPopover>
+					</div>
 				</Show>
 			</div>
 			<Show when={project()?.status === "ready"}>
 				<div {...stylex.attrs(styles.launchRow)}>
 					<span {...stylex.attrs(styles.offline)}>Offline</span>
-					<details
-						ref={(element) => launchMenu.ref(element)}
-						{...stylex.attrs(styles.launchControl)}
-					>
-						<summary {...stylex.attrs(styles.launchSummary)}>Launch ▾</summary>
-						<section
-							aria-label="Launch project options"
-							{...stylex.attrs(styles.launchMenu)}
+					<div {...stylex.attrs(styles.launchControl)}>
+						<AnchoredPopover
+							ariaLabel="Launch project options"
+							id="launch-project-popover"
+							onOpenChange={setLaunchMenuOpen}
+							open={launchMenuOpen()}
+							placement="top-end"
+							style={styles.launchMenu}
+							trigger={(triggerProps) => (
+								<button
+									{...triggerProps}
+									type="button"
+									{...stylex.attrs(styles.launchSummary)}
+								>
+									Launch ▾
+								</button>
+							)}
 						>
 							<button
 								type="button"
@@ -278,8 +296,8 @@ export function ProjectChooser(props: ProjectChooserProps) {
 								</strong>
 								<span>No injected plugins or project changes</span>
 							</button>
-						</section>
-					</details>
+						</AnchoredPopover>
+					</div>
 				</div>
 			</Show>
 			<Show when={failure()} keyed>
@@ -297,6 +315,14 @@ export function ProjectChooser(props: ProjectChooserProps) {
 							role="alert"
 							{...stylex.attrs(styles.launchNotice, styles.launchFailure)}
 						>
+							<button
+								aria-label="Dismiss launch notice"
+								onClick={() => setLaunchResult(undefined)}
+								type="button"
+								{...stylex.attrs(styles.noticeDismiss)}
+							>
+								×
+							</button>
 							<strong>{result.message}</strong>
 							<span>{result.recovery}</span>
 						</div>
@@ -306,6 +332,14 @@ export function ProjectChooser(props: ProjectChooserProps) {
 			<Show when={launchStatus()} keyed>
 				{(message) => (
 					<div role="status" {...stylex.attrs(styles.launchNotice)}>
+						<button
+							aria-label="Dismiss launch notice"
+							onClick={() => setLaunchResult(undefined)}
+							type="button"
+							{...stylex.attrs(styles.noticeDismiss)}
+						>
+							×
+						</button>
 						{message}
 					</div>
 				)}
@@ -364,6 +398,8 @@ const styles = stylex.create({
 		borderStyle: "solid",
 		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
+		boxSizing: "border-box",
+		fontFamily: "inherit",
 		backgroundColor: {
 			default: "rgba(255, 255, 255, 0.03)",
 			":hover": "rgba(255, 255, 255, 0.08)"
@@ -372,6 +408,7 @@ const styles = stylex.create({
 		cursor: "pointer",
 		fontSize: 12,
 		listStyle: "none",
+		padding: 0,
 		transitionDuration: tokens.motionFast,
 		transitionProperty: "background-color, border-color, color, transform",
 		transitionTimingFunction: tokens.motionEaseOut,
@@ -386,13 +423,11 @@ const styles = stylex.create({
 		boxShadow: tokens.shadowOverlay,
 		display: "grid",
 		gap: 2,
-		width: 340,
+		width: "min(340px, calc(100vw - 16px))",
+		boxSizing: "border-box",
 		maxHeight: 360,
 		overflowY: "auto",
 		padding: 4,
-		position: "absolute",
-		bottom: "calc(100% + 7px)",
-		left: 0,
 		zIndex: 33
 	},
 	recentHeader: {
@@ -459,7 +494,9 @@ const styles = stylex.create({
 		display: "flex",
 		fontSize: 12,
 		fontWeight: 500,
+		fontFamily: "inherit",
 		listStyle: "none",
+		borderWidth: 0,
 		borderRadius: tokens.radiusControl,
 		padding: "4px 8px",
 		transitionDuration: tokens.motionFast,
@@ -477,11 +514,9 @@ const styles = stylex.create({
 		boxShadow: tokens.shadowOverlay,
 		display: "grid",
 		gap: 2,
-		minWidth: 310,
+		width: "min(310px, calc(100vw - 16px))",
+		boxSizing: "border-box",
 		padding: 4,
-		position: "absolute",
-		bottom: "calc(100% + 7px)",
-		left: 0,
 		zIndex: 32
 	},
 	launchOption: {
@@ -526,13 +561,33 @@ const styles = stylex.create({
 		fontSize: 12,
 		gap: 5,
 		lineHeight: 1.5,
-		maxWidth: 420,
-		minWidth: 280,
-		padding: "10px 12px",
+		boxSizing: "border-box",
+		minWidth: 0,
+		padding: "10px 34px 10px 12px",
 		position: "absolute",
 		right: 0,
 		top: "calc(100% + 8px)",
+		width: "100%",
 		zIndex: 31
+	},
+	noticeDismiss: {
+		alignItems: "center",
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.08)" },
+		borderStyle: "none",
+		borderWidth: 0,
+		borderRadius: tokens.radiusBadge,
+		color: { default: tokens.colorTextMuted, ":hover": tokens.colorTextStrong },
+		cursor: "pointer",
+		display: "flex",
+		fontFamily: tokens.fontBody,
+		fontSize: 16,
+		height: 24,
+		justifyContent: "center",
+		padding: 0,
+		position: "absolute",
+		right: 5,
+		top: 5,
+		width: 24
 	},
 	launchFailure: {
 		backgroundColor: "rgba(235, 87, 87, 0.08)",
@@ -553,11 +608,12 @@ const styles = stylex.create({
 		gap: 5,
 		right: 0,
 		lineHeight: 1.5,
-		maxWidth: 420,
-		minWidth: 280,
+		boxSizing: "border-box",
+		minWidth: 0,
 		padding: "10px 12px",
 		position: "absolute",
 		top: "calc(100% + 8px)",
+		width: "100%",
 		zIndex: 30
 	}
 });

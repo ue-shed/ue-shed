@@ -1,3 +1,4 @@
+import { WorkbenchEditorHandoff } from "./editor-handoff.js";
 import { WorkbenchUnrealConnection } from "./unreal-connection.js";
 import {
 	CameraFeed,
@@ -106,6 +107,7 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 		const assetReader = yield* AssetReader;
 		const cameraFeed = yield* CameraFeed;
 		const connection = yield* WorkbenchUnrealConnection;
+		const editorHandoff = yield* WorkbenchEditorHandoff;
 		const dialog = yield* ElectronDialog;
 		const project = yield* WorkbenchProject;
 		const repository = yield* MapCaptureRepository;
@@ -126,7 +128,10 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 					)
 				);
 
-		const openMap = Effect.fn("Workbench.MapCapture.openMap")(function* (plan: MapCapturePlan) {
+		const openMap = Effect.fn("Workbench.MapCapture.openMap")(function* (
+			plan: MapCapturePlan,
+			handoff: boolean
+		) {
 			const endpoint = yield* connection.endpoint();
 
 			yield* clearLivePreview();
@@ -137,6 +142,11 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 					targetMapPath: plan.project.mapPath
 				})
 				.pipe(
+					Effect.tap((response) =>
+						handoff && response.outcome !== "rejected"
+							? editorHandoff.activate(endpoint)
+							: Effect.void
+					),
 					Effect.map((response) => ({ response, status: "completed" as const })),
 					Effect.catch((cause) =>
 						Effect.succeed(
@@ -163,6 +173,9 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 								mapCapturePlanId: plan.id,
 								type: "map_capture_plan" as const
 							},
+							...(plan.capture.visibility
+								? { visibility: plan.capture.visibility }
+								: undefined),
 							height: frame.height,
 							location: { ...frame.location, z: plan.capture.z },
 							projection: {
@@ -416,7 +429,7 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 						processedTiles: 0,
 						totalTiles: inspection.tileCount
 					});
-					const opened = yield* openMap(intent.plan);
+					const opened = yield* openMap(intent.plan, false);
 					if (opened.status === "failed") return opened;
 					if (opened.response.outcome === "rejected") {
 						return failure(opened.response.message, opened.response.recovery);
@@ -451,7 +464,7 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 			capture,
 			choosePlan,
 			newPlan,
-			openMap,
+			openMap: (plan) => openMap(plan, true),
 			preview,
 			savePlan,
 			tile

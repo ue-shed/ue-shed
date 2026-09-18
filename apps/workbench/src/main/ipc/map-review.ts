@@ -6,7 +6,34 @@ import { WorkbenchMapReview } from "../services/map-review.js";
 export const register = Effect.gen(function* () {
 	const ipc = yield* ElectronIpc;
 	const mapReview = yield* WorkbenchMapReview;
+	yield* ipc.register(invokeContracts["map-review:editor-world"], () =>
+		mapReview.editorWorld
+			? mapReview.editorWorld()
+			: Effect.succeed({
+					status: "unavailable",
+					message: "Live map state is unavailable.",
+					recovery: "Update this host."
+				})
+	);
+	yield* ipc.register(invokeContracts["map-review:camera-workspace"], (intent) =>
+		mapReview.cameraWorkspace
+			? mapReview.cameraWorkspace(intent)
+			: Effect.succeed({
+					panel: null,
+					sets: [],
+					error: "Camera sets are unavailable in this host."
+				})
+	);
 
+	yield* ipc.register(invokeContracts["map-review:open-map"], (mapPath) =>
+		mapReview.openMapInUnreal
+			? mapReview.openMapInUnreal(mapPath)
+			: Effect.succeed({
+					outcome: "failed",
+					message: "Map opening is unavailable.",
+					recovery: "Update this host."
+				})
+	);
 	yield* ipc.register(invokeContracts["map-review:load"], () => mapReview.load());
 	yield* ipc.register(invokeContracts["map-review:review-sets"], () =>
 		mapReview.reviewSetLibrary()

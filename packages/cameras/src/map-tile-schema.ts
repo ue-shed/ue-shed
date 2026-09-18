@@ -1,4 +1,5 @@
 import { Schema } from "effect";
+import { CameraVisibilityList } from "./camera-visibility.js";
 import { CameraFrameEvidence } from "./camera-render-schema.js";
 import {
 	assertMapTileKey,
@@ -29,7 +30,7 @@ export type MapCaptureOperationId = typeof MapCaptureOperationId.Type;
 
 export const MapCaptureContractVersion = Schema.Struct({
 	major: Schema.Literal(1),
-	minor: Schema.Literals([0, 1])
+	minor: Schema.Literals([0, 1, 2])
 });
 
 export const MapCaptureWorldBounds = Schema.Struct({
@@ -104,6 +105,7 @@ export const MapCaptureRenderPolicy = Schema.Struct({
 
 export const MapCapturePlan = Schema.Struct({
 	capture: Schema.Struct({
+		visibility: Schema.optionalKey(CameraVisibilityList),
 		dataLayers: MapCaptureDataLayerPolicy,
 		orientation: Schema.Struct({
 			pitch: Schema.Literal(-90),
@@ -132,6 +134,11 @@ export const MapCapturePlan = Schema.Struct({
 	tilePixelSize: Schema.Int.check(Schema.isBetween({ minimum: 64, maximum: 4_096 }))
 }).pipe(
 	Schema.check(
+		Schema.makeFilter((plan) =>
+			plan.capture.visibility && plan.contract.version.minor < 2
+				? "Authored visibility requires map capture 1.2."
+				: undefined
+		),
 		Schema.makeFilter((plan) =>
 			plan.capture.render.lodPolicy !== "per_level_distance_scale" ||
 			plan.capture.render.lodDistanceScaleByZoom?.length === plan.levels.count
@@ -167,6 +174,7 @@ export type MapCaptureBackend = typeof MapCaptureBackend.Type;
 
 export const MapTileCaptureRequest = Schema.Struct({
 	capture: Schema.Struct({
+		visibility: Schema.optionalKey(CameraVisibilityList),
 		dataLayers: MapCaptureDataLayerPolicy,
 		orientation: Schema.Struct({
 			pitch: Schema.Literal(-90),
@@ -196,6 +204,11 @@ export const MapTileCaptureRequest = Schema.Struct({
 }).pipe(
 	Schema.check(
 		Schema.makeFilter((request) => {
+			if (request.capture.visibility && request.contract.version.minor < 2)
+				return {
+					issue: "Authored visibility requires map capture 1.2.",
+					path: ["contract"]
+				};
 			const identities = request.tiles.map((tile) => mapTileKeyId(tile.key));
 			if (new Set(identities).size !== identities.length) {
 				return {
@@ -348,6 +361,7 @@ export const MapTilePyramidManifest = Schema.Struct({
 		path: Schema.Literal("Z{zoom:02}/R{row:03}_C{column:03}.png")
 	}),
 	capturePolicy: Schema.Struct({
+		visibility: Schema.optionalKey(CameraVisibilityList),
 		dataLayers: MapCaptureDataLayerPolicy,
 		orientation: Schema.Struct({
 			pitch: Schema.Literal(-90),
@@ -393,6 +407,11 @@ export const MapTilePyramidManifest = Schema.Struct({
 }).pipe(
 	Schema.check(
 		Schema.makeFilter((manifest) => {
+			if (manifest.capturePolicy.visibility && manifest.contract.version.minor < 2)
+				return {
+					issue: "Authored visibility requires map capture 1.2.",
+					path: ["contract"]
+				};
 			const expectedGrid = createMapTileGrid({
 				coarsestUnitsPerPixel: manifest.levels[0]!.unitsPerPixel,
 				levelCount: manifest.levels.length,

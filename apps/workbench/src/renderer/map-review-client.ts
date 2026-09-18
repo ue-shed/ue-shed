@@ -1,4 +1,9 @@
 import {
+	MapReviewMapOpenResult,
+	MapReviewEditorState
+} from "@ue-shed/extension-camera-review/client";
+import { CameraWorkspaceResult } from "@ue-shed/cameras/review-contracts";
+import {
 	decodeMapReviewApprovalResult,
 	decodeMapReviewAuthoringResult,
 	decodeMapReviewCandidatePreviewResult,
@@ -484,6 +489,25 @@ export const mapReviewClient: MapReviewClientApi = MapReviewClient.of({
 				operation: "mapReview.replaceVisibilityPolicy"
 			})
 	),
+	openMapInUnreal: (mapPath) =>
+		request({
+			decode: Schema.decodeUnknownEffect(MapReviewMapOpenResult),
+			invoke: () => window.ueShed.mapReview.openMapInUnreal(mapPath),
+			operation: "mapReview.openMapInUnreal"
+		}),
+	editorWorld: Effect.fn("MapReviewClient.editorWorld")(() =>
+		request({
+			decode: Schema.decodeUnknownEffect(MapReviewEditorState),
+			invoke: () => window.ueShed.mapReview.editorWorld(),
+			operation: "mapReview.editorWorld"
+		})
+	),
+	cameraWorkspace: (intent) =>
+		request({
+			decode: Schema.decodeUnknownEffect(CameraWorkspaceResult),
+			invoke: () => window.ueShed.mapReview.cameraWorkspace(intent),
+			operation: "mapReview.cameraWorkspace"
+		}),
 	selectReviewSet: Effect.fn("MapReviewClient.selectReviewSet")(
 		(intent: MapReviewSetSelectIntent) =>
 			request({

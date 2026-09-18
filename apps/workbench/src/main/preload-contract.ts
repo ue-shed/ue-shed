@@ -5,6 +5,7 @@ import type {
 	RendererCameraFrame,
 	RendererWorldObservationEvent
 } from "./ipc-contracts.js";
+import type { EditorHandoffNotice } from "../shared/editor-handoff.js";
 import type { MapCaptureProgressEvent } from "@ue-shed/extension-camera-review/map-capture-client";
 
 export const workbenchInvokeChannels = {
@@ -15,6 +16,7 @@ export const workbenchInvokeChannels = {
 		search: "blueprint-graphs:search"
 	},
 	editorSession: {
+		activate: "editor-window:activate",
 		settings: "editor-session:settings",
 		setPort: "editor-session:set-port",
 		status: "editor-session:status",
@@ -113,6 +115,8 @@ export const workbenchInvokeChannels = {
 		createReviewSet: "map-review:create-review-set",
 		applyVisibilityPolicy: "map-review:apply-visibility-policy",
 		worldSnapshot: "map-review:world-snapshot",
+		openMapInUnreal: "map-review:open-map",
+		editorWorld: "map-review:editor-world",
 		savedWorld: "map-review:saved-world",
 		savedWorldMaps: "map-review:saved-world-maps",
 		savedWorldProgress: "map-review:saved-world-progress",
@@ -120,6 +124,7 @@ export const workbenchInvokeChannels = {
 		focusActor: "map-review:focus-actor",
 		approveCandidate: "map-review:approve-candidate",
 		authorFromSelection: "map-review:author-from-selection",
+		cameraWorkspace: "map-review:camera-workspace",
 		authoringResume: "map-review:authoring-resume",
 		authoringPatch: "map-review:authoring-patch",
 		authoringReframe: "map-review:authoring-reframe",
@@ -180,6 +185,7 @@ export type WorkbenchRendererApi = Omit<Invokes, "mapCapture"> & {
 	readonly mapCapture: Invokes["mapCapture"] & {
 		readonly onProgress: (listener: (progress: MapCaptureProgressEvent) => void) => () => void;
 	};
+	readonly onEditorHandoff: (listener: (notice: EditorHandoffNotice) => void) => () => void;
 	readonly onFrame: (listener: (frame: RendererCameraFrame) => void) => () => void;
 	readonly onWorldObservation: (
 		listener: (event: RendererWorldObservationEvent) => void

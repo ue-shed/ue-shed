@@ -22,7 +22,6 @@ import {
 	clampViewportSize,
 	createWorldScoutPaintGate,
 	fitViewportSize,
-	focusViewportOnActor,
 	formatCoordinate,
 	hitTestVisibleActors,
 	nearestVisibleActor,
@@ -85,6 +84,9 @@ export function WorldScout(props: {
 		"connectWorld" | "focusActor" | "setWorldObservationRate" | "worldObservations"
 	>;
 	readonly onActorFocused: (actor: ObservedActor) => void;
+	/** A confirmed editor map invalidates retained actors from the previous editor world. */
+	readonly editorMapPath?: string | undefined;
+	readonly onActorSelected?: ((actor: ObservedActor | undefined) => void) | undefined;
 	/** Test seam: override paint scheduling to assert animation-frame coalescing. */
 	readonly paintScheduler?: {
 		readonly schedule: (callback: () => void) => number;
@@ -103,7 +105,6 @@ export function WorldScout(props: {
 	let paintGate: WorldScoutPaintGate | undefined;
 	let cssWidth = 0;
 	let cssHeight = 0;
-	let viewLocked = false;
 	let representativeBoundsDirty = true;
 	let representativeBounds: ReturnType<typeof representativeContentBounds>;
 	let lastFollowRequestMs = Number.NEGATIVE_INFINITY;
@@ -138,11 +139,14 @@ export function WorldScout(props: {
 		if (label === "OFFLINE" && hasWorld()) return "RECONNECTING";
 		return label;
 	});
-	const sampleAge = createMemo(() => {
+	const freshnessLabel = createMemo(() => {
+		const current = latest();
+		if (current?.status === "live") return "LIVE STREAM";
+		if (current?.status !== "polling_fallback")
+			return hasWorld() ? "LAST KNOWN ACTORS" : undefined;
 		presentationRevision();
-		const capturedAt = store.capturedAt;
-		if (capturedAt === undefined) return undefined;
-		return Math.max(0, Date.now() - Date.parse(capturedAt));
+		const age = Math.max(0, Date.now() - Date.parse(current.snapshot.capturedAt));
+		return age < 1_000 ? "LIVE SAMPLE" : `${(age / 1_000).toFixed(1)}s OLD`;
 	});
 	const classes = createMemo(() => {
 		catalogRevision();
@@ -206,11 +210,7 @@ export function WorldScout(props: {
 		const height = viewport.size / aspect;
 		return `${Math.round(viewport.size).toLocaleString()} × ${Math.round(height).toLocaleString()} UU`;
 	});
-	const fitSize = createMemo(() => {
-		presentationRevision();
-		const aspect = cssWidth > 0 && cssHeight > 0 ? cssWidth / cssHeight : 2;
-		return fitViewportSize(contentBounds(store, store.visibleIndices), aspect);
-	});
+	const [fitSize, setFitSize] = createSignal(1);
 	const zoomLimits = createMemo(() => viewportSizeLimits(fitSize()));
 	const zoomFactor = createMemo(() => {
 		presentationRevision();
@@ -265,17 +265,9 @@ export function WorldScout(props: {
 			representativeBoundsDirty = false;
 		}
 		const aspect = cssWidth > 0 && cssHeight > 0 ? cssWidth / cssHeight : 2;
-		const fit = fitViewportSize(bounds, aspect);
-		if (!viewLocked) {
-			store.viewport = stabilizeViewport(
-				store.viewport,
-				representativeBounds ?? bounds,
-				aspect
-			);
-		} else if (store.viewport === undefined) {
-			store.viewport = stabilizeViewport(undefined, bounds, aspect);
-		} else if (store.viewport.size > fit) {
-			store.viewport = resizeViewportToSize(store.viewport, fit);
+		if (store.viewport === undefined && store.count > 0) {
+			store.viewport = stabilizeViewport(undefined, representativeBounds ?? bounds, aspect);
+			setFitSize(fitViewportSize(bounds, aspect));
 		}
 		if (cssWidth > 0 && cssHeight > 0 && store.viewport !== undefined) {
 			projectVisibleActors(store, store.viewport, cssWidth, cssHeight, store.visibleIndices);
@@ -324,7 +316,47 @@ export function WorldScout(props: {
 	let lastCatalogIdentity: string | undefined;
 	let lastPaintActorsChanged = 0;
 	let lastPaintSequence = "0";
+	const clearPreviousEditorWorld = () => {
+		store.clear();
+		lastCatalogIdentity = undefined;
+		representativeBoundsDirty = true;
+		setHasWorld(false);
+		setSelectedKey(undefined);
+		setSelectedStreamIndex(undefined);
+		setFollowing(false);
+		setLatest({ status: "connecting" });
+		setCatalogRevision((value) => value + 1);
+		setSelectionRevision((value) => value + 1);
+		props.onActorSelected?.(undefined);
+		requestPaint();
+	};
+	createEffect(
+		() => props.editorMapPath,
+		(mapPath) => {
+			if (mapPath && store.worldKind === "editor" && store.mapPath !== mapPath)
+				clearPreviousEditorWorld();
+		}
+	);
 	const acceptObservation = (current: MapReviewWorldObservation) => {
+		const world =
+			current.status === "polling_fallback"
+				? current.snapshot
+				: current.status === "live" ||
+					  current.status === "stale" ||
+					  current.status === "unavailable"
+					? current.sample?.catalog
+					: undefined;
+		if (
+			world?.worldKind === "editor" &&
+			props.editorMapPath &&
+			world.mapPath !== props.editorMapPath
+		) {
+			if (store.mapPath !== props.editorMapPath) clearPreviousEditorWorld();
+			return;
+		}
+		const previousViewport = store.viewport;
+		const previousMap = store.mapPath;
+		const previousKind = store.worldKind;
 		setLatest(current);
 		if (current.status === "live" || current.status === "stale") {
 			const identity = `${current.sample.catalog.sessionId}:${current.sample.catalog.revision}`;
@@ -332,7 +364,6 @@ export function WorldScout(props: {
 			if (identity !== lastCatalogIdentity) {
 				store.installCatalog(current.sample);
 				lastCatalogIdentity = identity;
-				viewLocked = false;
 				representativeBoundsDirty = true;
 				lastPaintActorsChanged = store.count;
 				setCatalogRevision((value) => value + 1);
@@ -365,6 +396,9 @@ export function WorldScout(props: {
 			lastPaintSequence = current.sample.lastSequence.toString();
 			setCatalogRevision((value) => value + 1);
 			setHasWorld(true);
+		}
+		if (store.mapPath === previousMap && store.worldKind === previousKind) {
+			store.viewport = previousViewport;
 		}
 		syncSelectionFromKey();
 		setSelectionRevision((value) => value + 1);
@@ -470,32 +504,7 @@ export function WorldScout(props: {
 		setLiveRegion(
 			`${meta.displayName}, ${meta.className}, X ${formatCoordinate(store.locationX[streamIndex] ?? 0)}, Y ${formatCoordinate(store.locationY[streamIndex] ?? 0)}, Z ${formatCoordinate(store.locationZ[streamIndex] ?? 0)}`
 		);
-		focusActorOnMap(meta.instanceKey);
-	};
-	const focusActorOnMap = (key: string) => {
-		const index = store.findByInstanceKey(key);
-		if (index === undefined) return;
-		prepareVisibleProjection();
-		const aspect = cssWidth > 0 && cssHeight > 0 ? cssWidth / cssHeight : 2;
-		const fit = fitViewportSize(contentBounds(store, store.visibleIndices), aspect);
-		const usefulFit = fitViewportSize(
-			representativeBounds ?? contentBounds(store, store.visibleIndices),
-			aspect
-		);
-		const actorExtent = Math.max(
-			store.boundExtentX[index] ?? 0,
-			store.boundExtentY[index] ?? 0
-		);
-		store.viewport = focusViewportOnActor({
-			actorExtent,
-			centerX: store.locationX[index] ?? 0,
-			centerY: store.locationY[index] ?? 0,
-			currentSize: store.viewport?.size,
-			fullFitSize: fit,
-			usefulFitSize: usefulFit
-		});
-		viewLocked = true;
-		requestPaint();
+		props.onActorSelected?.(store.materialize(streamIndex));
 	};
 	const pickNearestActor = (cssX: number, cssY: number) => {
 		prepareVisibleProjection();
@@ -525,9 +534,7 @@ export function WorldScout(props: {
 		const rect = event.currentTarget.getBoundingClientRect();
 		cssWidth = Math.max(1, rect.width);
 		cssHeight = Math.max(1, rect.height);
-		const aspect = cssWidth / cssHeight;
-		const fit = fitViewportSize(contentBounds(store, store.visibleIndices), aspect);
-		const { min, max } = viewportSizeLimits(fit);
+		const { min, max } = viewportSizeLimits(fitSize());
 		const factor = event.deltaY < 0 ? 1.15 : 1 / 1.15;
 		store.viewport = zoomViewportAt(
 			viewport,
@@ -539,7 +546,6 @@ export function WorldScout(props: {
 			min,
 			max
 		);
-		viewLocked = store.viewport.size < max - 1e-6;
 		requestPaint();
 	};
 	const onCanvasPointerDown = (event: PointerEvent & { currentTarget: HTMLCanvasElement }) => {
@@ -566,7 +572,6 @@ export function WorldScout(props: {
 		pointerDrag.startX = event.clientX;
 		pointerDrag.startY = event.clientY;
 		store.viewport = panViewportBy(viewport, cssWidth, cssHeight, dx, dy);
-		viewLocked = true;
 		requestPaint();
 	};
 	const onCanvasPointerUp = (event: PointerEvent & { currentTarget: HTMLCanvasElement }) => {
@@ -579,12 +584,12 @@ export function WorldScout(props: {
 		pickNearestActor(event.clientX - rect.left, event.clientY - rect.top);
 	};
 	const resetView = () => {
-		viewLocked = false;
 		representativeBoundsDirty = true;
 		store.viewport = undefined;
 		requestPaint();
 	};
 	const clearSelection = () => {
+		props.onActorSelected?.(undefined);
 		setSelectedKey(undefined);
 		setSelectedStreamIndex(undefined);
 		setFollowing(false);
@@ -601,7 +606,6 @@ export function WorldScout(props: {
 		const fit = fitSize();
 		const nextSize = clampViewportSize(fit / parsed, fit);
 		store.viewport = resizeViewportToSize(viewport, nextSize);
-		viewLocked = nextSize < fit - 1e-6;
 		requestPaint();
 	};
 	const onCanvasKeyDown = (event: KeyboardEvent) => {
@@ -637,11 +641,13 @@ export function WorldScout(props: {
 					lastFollowRequestMs = performance.now();
 					setFollowing(follow);
 					setNavigationStatus(
-						follow
-							? "FOLLOWING IN UNREAL"
-							: focus.authoringSubject === "selected"
-								? "FOCUSED IN UNREAL"
-								: "FOCUSED RUNTIME ACTOR"
+						focus.windowActivation && focus.windowActivation.status !== "activated"
+							? `ACTOR SELECTED · ${focus.windowActivation.message} ${focus.windowActivation.recovery}`
+							: follow
+								? "FOLLOWING IN UNREAL"
+								: focus.authoringSubject === "selected"
+									? "FOCUSED IN UNREAL"
+									: "FOCUSED RUNTIME ACTOR"
 					);
 					if (focus.authoringSubject === "selected") props.onActorFocused(actor);
 				} else {
@@ -676,15 +682,11 @@ export function WorldScout(props: {
 				<div {...stylex.attrs(styles.worldStatus)}>
 					<span {...stylex.attrs(styles.liveDot)} />
 					<strong>{connectionLabel()}</strong>
-					<code {...stylex.attrs(styles.worldStatusCode)}>{mapPathLabel()}</code>
-					<Show when={sampleAge()}>
-						{(age) => (
-							<small {...stylex.attrs(styles.sampleAge)}>
-								{age() < 1_000
-									? "LIVE SAMPLE"
-									: `${(age() / 1_000).toFixed(1)}s OLD`}
-							</small>
-						)}
+					<code title={mapPathLabel()} {...stylex.attrs(styles.worldStatusCode)}>
+						{mapPathLabel()}
+					</code>
+					<Show when={freshnessLabel()}>
+						{(label) => <small {...stylex.attrs(styles.sampleAge)}>{label()}</small>}
 					</Show>
 				</div>
 			</header>
@@ -694,10 +696,15 @@ export function WorldScout(props: {
 				fallback={
 					<div {...stylex.attrs(styles.offline)}>
 						<div {...stylex.attrs(styles.offlineReticle)}>＋</div>
-						<h3>No live world connected</h3>
+						<h3>
+							{latest()?.status === "connecting" && props.editorMapPath
+								? "Waiting for actors in the new map"
+								: "No live world connected"}
+						</h3>
 						<p>
-							Start the editor with Remote Control, open a map, then connect to list
-							actors and jump the viewport to a selection.
+							{latest()?.status === "connecting" && props.editorMapPath
+								? `Unreal is open to ${props.editorMapPath}. Waiting for its actor stream.`
+								: "Start the editor with Remote Control, open a map, then connect to list actors and jump the viewport to a selection."}
 						</p>
 						<button
 							type="button"
@@ -763,7 +770,6 @@ export function WorldScout(props: {
 							setActorFilters((current) => ({ ...current, classPaths }))
 						}
 						onFiltersChange={setActorFilters}
-						onFocus={focusActorOnMap}
 						onSelect={(key) => {
 							if (key === undefined) {
 								clearSelection();
@@ -951,6 +957,7 @@ const styles = stylex.create({
 		boxShadow: "0 0 8px rgba(76, 183, 130, 0.35)"
 	},
 	worldStatusCode: {
+		gridColumn: "1 / -1",
 		color: tokens.colorTextSubtle,
 		overflow: "hidden",
 		textOverflow: "ellipsis",

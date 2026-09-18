@@ -1,3 +1,4 @@
+import { WorkbenchEditorHandoff } from "../services/editor-handoff.js";
 import { EditorPlaySession } from "@ue-shed/engine";
 import { Effect, Option } from "effect";
 import { WorkbenchMapReview } from "../services/map-review.js";
@@ -9,6 +10,10 @@ export const register = Effect.gen(function* () {
 	const ipc = yield* ElectronIpc;
 	const editorSession = yield* EditorPlaySession;
 	const connection = yield* WorkbenchUnrealConnection;
+	const handoff = yield* WorkbenchEditorHandoff;
+	yield* ipc.register(invokeContracts["editor-window:activate"], () =>
+		connection.endpoint().pipe(Effect.flatMap(handoff.activate))
+	);
 
 	yield* ipc.register(invokeContracts["editor-session:status"], () =>
 		connection.endpoint().pipe(
@@ -32,7 +37,18 @@ export const register = Effect.gen(function* () {
 	yield* ipc.register(invokeContracts["editor-session:execute"], (...args) => {
 		const [command] = args;
 		return connection.endpoint().pipe(
-			Effect.flatMap((endpoint) => editorSession.execute(endpoint, command)),
+			Effect.flatMap((endpoint) =>
+				editorSession
+					.execute(endpoint, command)
+					.pipe(
+						Effect.tap((result) =>
+							result.outcome !== "rejected" &&
+							(command === "start_play" || command === "start_simulate")
+								? handoff.activate(endpoint)
+								: Effect.void
+						)
+					)
+			),
 			Effect.orDie
 		);
 	});

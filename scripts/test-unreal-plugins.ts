@@ -29,6 +29,11 @@ writeFileSync(
 );
 const descriptors = prepareUnrealPlugins({ engineRoot, projectPath: project, tools });
 const tests = [
+	"UEShed.Cameras.Authoring.NativeLifecycle",
+	"UEShed.Cameras.Authoring.FullSetEditing",
+	"UEShed.Cameras.Authoring.MultiCameraPreviews",
+	"UEShed.Cameras.Authoring.PreviewPanel",
+	"UEShed.Cameras.Rendering.ViewLocalVisibilityProof",
 	"UEShed.Authoring.CanonicalJson",
 	"UEShed.Cameras.Rendering.LifecycleAndReference",
 	"UEShed.Cameras.Rendering.ScreenshotOwnership",
@@ -36,7 +41,8 @@ const tests = [
 	"UEShed.Cameras.Streaming.BoundedLifecycle",
 	"UEShed.Cameras.Streaming.DeliveryScope",
 	"UEShed.Cameras.Streaming.CadenceUpdates",
-	"UEShed.Niagara.IndependentCamera"
+	"UEShed.Niagara.IndependentCamera",
+	"UEShed.Core.EditorWorld.AsyncOpen"
 ];
 const report = join(root, "automation");
 const result = spawnSync(
@@ -54,8 +60,8 @@ const result = spawnSync(
 		"-nop4",
 		"-nosplash",
 		"-RenderOffscreen",
-		"-ResX=640",
-		"-ResY=480",
+		"-ResX=1280",
+		"-ResY=800",
 		"-NoSound"
 	],
 	{ stdio: "inherit", windowsHide: true, timeout: 900_000 }
@@ -81,4 +87,6 @@ if (
 ) {
 	throw new Error(`Unreal plugin automation did not pass all ${tests.length} tests: ${report}`);
 }
-console.log(`Unreal ${version.label}: all seven plugins built and ${tests.length} tests passed.`);
+console.log(
+	`Unreal ${version.label}: all ${ueShedPluginIds.length} plugins built and ${tests.length} tests passed.`
+);

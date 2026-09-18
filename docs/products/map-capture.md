@@ -221,3 +221,12 @@ a disposable content host; its images and machine-specific receipts remain local
 - Language-neutral authority: `packages/protocol/contracts/cameras/map-tile/v1`.
 - Portable parity: `pnpm --filter @ue-shed/cameras contract:check`.
 - Trusted editor evidence: `pnpm check:unreal` with the UE 5.7 fixture endpoint available.
+
+## Authored visibility
+
+Map Capture 1.2 optionally stores `capture.visibility` as explicit hide/protect actor lists. The shared
+renderer resolves them before metering and applies them to every tile batch. Live map previews use
+the same list through provisioning version 4. This does not alter orthographic framing or the grid.
+`mapCaptureVisibilityVariants` creates separate Pure/Authored plans with fixed shared exposure for
+pairs. Each plan publishes its own immutable run. See [camera authoring](camera-authoring.md) for the
+loaded opaque non-Nanite static-mesh capability boundary and immutable visibility presets.

@@ -14,10 +14,16 @@ async function expectWithinViewport(page: Page, locator: Locator): Promise<void>
 	expect(bounds.y + bounds.height).toBeLessThanOrEqual(viewport.height);
 }
 
-test("keeps sidebar footer controls visible and keyboard accessible", async ({ workbench }) => {
+test("keeps sidebar footer controls visible and keyboard accessible", async ({
+	workbench
+}, testInfo) => {
 	test.setTimeout(90_000);
 	await workbench.page.setViewportSize({ width: 1280, height: 800 });
 	await workbench.expectShowcaseReady();
+	await expectWithinViewport(
+		workbench.page,
+		workbench.page.getByRole("button", { name: "Show Unreal ↗" })
+	);
 
 	const sessionSettingsTrigger = workbench.page.getByLabel("Change Unreal target port");
 	await sessionSettingsTrigger.click();
@@ -51,9 +57,23 @@ test("keeps sidebar footer controls visible and keyboard accessible", async ({ w
 	await expect(sessionSettingsTrigger).toBeFocused();
 
 	const launchTrigger = workbench.page.getByText("Launch ▾", { exact: true });
-	const launchMenu = workbench.page.getByRole("region", { name: "Launch project options" });
+	const launchMenu = workbench.page.getByRole("dialog", { name: "Launch project options" });
 	await launchTrigger.click();
 	await expectWithinViewport(workbench.page, launchMenu);
+	expect(
+		await launchMenu.evaluate((element) => {
+			const style = element.ownerDocument.defaultView?.getComputedStyle(element);
+			if (!style) throw new Error("Expected computed launch-menu styles");
+			return style.fontFamily;
+		})
+	).toBe(
+		await launchTrigger.evaluate((element) => {
+			const style = element.ownerDocument.defaultView?.getComputedStyle(element);
+			if (!style) throw new Error("Expected computed launch-trigger styles");
+			return style.fontFamily;
+		})
+	);
+	await workbench.page.screenshot({ path: testInfo.outputPath("editor-handoff-footer.png") });
 	await workbench.page.getByRole("main").click();
 	await expect(launchMenu).toBeHidden();
 	await launchTrigger.click();

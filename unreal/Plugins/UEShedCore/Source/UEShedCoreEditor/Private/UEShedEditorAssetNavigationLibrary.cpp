@@ -3,13 +3,13 @@
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "ContentBrowserModule.h"
 #include "Dom/JsonObject.h"
-#include "Framework/Application/SlateApplication.h"
+#include "HAL/PlatformProcess.h"
 #include "IContentBrowserSingleton.h"
 #include "Misc/PackageName.h"
 #include "Modules/ModuleManager.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
-#include "Widgets/SWindow.h"
+#include "UEShedEditorWindowLibrary.h"
 
 namespace
 {
@@ -88,18 +88,25 @@ void UUEShedEditorAssetNavigationLibrary::LocateAsset(
 	FContentBrowserModule& ContentBrowserModule =
 		FModuleManager::LoadModuleChecked<FContentBrowserModule>(TEXT("ContentBrowser"));
 	ContentBrowserModule.Get().SyncBrowserToAssets({Asset}, false, true);
-	if (BringToFront && FSlateApplication::IsInitialized())
+	FString ActivationJson;
+	if (BringToFront)
 	{
-		if (const TSharedPtr<SWindow> Window =
-			FSlateApplication::Get().GetActiveTopLevelWindow())
-		{
-			Window->BringToFront(true);
-		}
+		UUEShedEditorWindowLibrary::ActivateEditorWindow(
+			FString::Printf(TEXT("{\"expectedProcessId\":%u}"), FPlatformProcess::GetCurrentProcessId()),
+			ActivationJson);
 	}
 
 	const TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
 	Root->SetObjectField(TEXT("contract"), ContractJson());
 	Root->SetStringField(TEXT("objectPath"), ObjectPath);
+	if (!ActivationJson.IsEmpty())
+	{
+		TSharedPtr<FJsonObject> Activation;
+		if (FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(ActivationJson), Activation))
+		{
+			Root->SetObjectField(TEXT("windowActivation"), Activation);
+		}
+	}
 	Root->SetStringField(TEXT("status"), TEXT("located"));
 	SerializeResult(Root, ResultJson);
 }

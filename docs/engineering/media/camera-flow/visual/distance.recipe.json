@@ -1,0 +1,19 @@
+{
+	"version": 1,
+	"name": "More surroundings",
+	"settings": {
+		"fieldOfViewDegrees": 60,
+		"distanceScale": 1.5,
+		"heightOffset": 0,
+		"margin": 0.1,
+		"elevationDegrees": 15
+	},
+	"groups": [],
+	"cameras": [
+		{
+			"displayName": "More surroundings 1",
+			"yawDegrees": 0,
+			"overrides": {}
+		}
+	]
+}

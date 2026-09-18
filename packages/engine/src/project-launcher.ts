@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { access } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { Context, Effect, Layer, Schema } from "effect";
+import { unrealRemoteControlPermissions } from "./remote-control-permissions.js";
 import {
 	EngineInstallationDiscovery,
 	type EngineInstallationError
@@ -132,6 +133,7 @@ export function unrealRemoteControlArguments(
 		`-ini:RemoteControl:[/Script/RemoteControlCommon.RemoteControlSettings]:RemoteControlHttpServerPort=${httpPort}`,
 		`-ini:RemoteControl:[/Script/RemoteControlCommon.RemoteControlSettings]:RemoteControlWebSocketServerPort=${httpPort + 1}`,
 		"-ini:RemoteControl:[/Script/RemoteControlCommon.RemoteControlSettings]:bAutoStartWebServer=True",
+		...unrealRemoteControlPermissions(enabledPlugins),
 		"-NoLiveCoding"
 	];
 }

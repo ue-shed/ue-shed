@@ -1,0 +1,19 @@
+{
+	"version": 1,
+	"name": "Look down from 35 degrees",
+	"settings": {
+		"fieldOfViewDegrees": 60,
+		"distanceScale": 1.15,
+		"heightOffset": 0,
+		"margin": 0.1,
+		"elevationDegrees": 35
+	},
+	"groups": [],
+	"cameras": [
+		{
+			"displayName": "Look down from 35 degrees 1",
+			"yawDegrees": 0,
+			"overrides": {}
+		}
+	]
+}

@@ -22,6 +22,10 @@ export function SavedMapPicker(props: {
 	readonly mapPath: string;
 	readonly maps: ReadonlyArray<SavedMapPickerOption>;
 	readonly onMapPathChange: (mapPath: string) => void;
+	readonly onOpenInUnreal?: ((mapPath: string) => void) | undefined;
+	readonly openingInUnreal?: boolean;
+	readonly openInUnrealDisabled?: boolean;
+	readonly openInUnrealError?: string | undefined;
 }) {
 	const pickerId = createUniqueId();
 	const listboxId = `${pickerId}-options`;
@@ -270,11 +274,39 @@ export function SavedMapPicker(props: {
 					/>
 				</label>
 			</Show>
+			<Show when={props.onOpenInUnreal}>
+				<button
+					type="button"
+					disabled={
+						props.disabled ||
+						props.openingInUnreal ||
+						props.openInUnrealDisabled ||
+						!props.mapPath.trim()
+					}
+					onClick={() => props.onOpenInUnreal?.(props.mapPath)}
+					{...stylex.attrs(styles.openAction)}
+				>
+					{props.openingInUnreal ? "Opening in Unreal…" : "Open in Unreal ↗"}
+				</button>
+				<Show when={props.openInUnrealError}>
+					<span role="alert">{props.openInUnrealError}</span>
+				</Show>
+			</Show>
 		</div>
 	);
 }
 
 const styles = stylex.create({
+	openAction: {
+		justifySelf: "start",
+		borderWidth: 0,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: { default: "transparent", ":hover": tokens.colorSurfaceRaised },
+		color: { default: tokens.colorAccent, ":disabled": tokens.colorTextSubtle },
+		cursor: { default: "pointer", ":disabled": "default" },
+		fontSize: 12,
+		padding: "6px 8px"
+	},
 	picker: {
 		position: "relative",
 		display: "grid",

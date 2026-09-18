@@ -20,9 +20,16 @@ catalog:
     "@stylexjs/rollup-plugin": "^0.19.0"
     "@stylexjs/stylex": "^0.19.0"
     "effect": "4.0.0-beta.98"
-    "@solidjs/web": "2.0.0-rc.7"
-    "solid-js": "2.0.0-rc.7"
+    "@solidjs/web": "2.0.0-rc.9"
+    "solid-js": "2.0.0-rc.9"
     "vite-plugin-solid": "3.0.0-next.27"
+
+# Peculiar Sheets' published peers still pin rc.7; validate this bounded exception
+# with the component suite and Data Authoring adoption gate when upgrading Solid.
+peerDependencyRules:
+    allowedVersions:
+        "peculiar-sheets@0.13.0>@solidjs/web": "2.0.0-rc.9"
+        "peculiar-sheets@0.13.0>solid-js": "2.0.0-rc.9"
 
 allowBuilds:
     electron: true
@@ -39,6 +46,15 @@ overrides:
     "undici@>=7.0.0 <7.29.0": 7.29.0
 
 minimumReleaseAgeExclude:
+    - "@solidjs/vite-plugin@3.0.0-next.44"
+    - "@solidjs/babel-plugin@2.0.0-rc.9"
+    - "@solidjs/compiler@2.0.0-rc.9"
+    - "@solidjs/compiler-darwin-arm64@2.0.0-rc.9"
+    - "@solidjs/compiler-darwin-x64@2.0.0-rc.9"
+    - "@solidjs/compiler-linux-arm64-gnu@2.0.0-rc.9"
+    - "@solidjs/compiler-linux-x64-gnu@2.0.0-rc.9"
+    - "@solidjs/compiler-wasm32-wasi@2.0.0-rc.9"
+    - "@solidjs/compiler-win32-x64-msvc@2.0.0-rc.9"
     - p4client-ts@0.7.1
     - peculiar-sheets@0.13.0
     - "@cloudflare/vite-plugin@1.51.0"
@@ -59,3 +75,9 @@ minimumReleaseAgeExclude:
     - "@changesets/types@7.0.0"
     - "@changesets/write@1.0.0"
     - "@tanstack/charts@0.18.0"
+    - "@solidjs/signals@2.0.0-rc.9"
+    - "@solidjs/web@2.0.0-rc.9"
+    - solid-js@2.0.0-rc.9
+
+patchedDependencies:
+    solid-js@2.0.0-rc.9: patches/solid-js@2.0.0-rc.9.patch

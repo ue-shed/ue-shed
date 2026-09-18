@@ -1,4 +1,5 @@
 import { Effect, Schema } from "effect";
+import { CameraAuthoredVisibility } from "./camera-visibility.js";
 import {
 	CameraRenderPolicy,
 	CameraFrameEvidence,
@@ -828,6 +829,10 @@ const PreviousReviewView = Schema.Struct({
 );
 
 export const ReviewView = Schema.Struct({
+	authoredVisibility: Schema.optionalKey(CameraAuthoredVisibility),
+	authoring: Schema.optionalKey(
+		Schema.Struct({ arrangementId: SafeIdentifier, cameraId: SafeIdentifier })
+	),
 	captureProfileId: CaptureProfileId,
 	displayName: NonEmptyString,
 	framingDiagnostics: Schema.optional(Schema.Array(FramingDiagnostic)),
@@ -859,7 +864,7 @@ const ReviewSetCurrent = Schema.Struct({
 	captureProfiles: Schema.Array(CaptureProfile).check(Schema.isMinLength(1)),
 	contract: Schema.Struct({
 		name: Schema.Literal("ue-shed-review-set"),
-		version: Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literals([2, 3]) })
+		version: Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literals([2, 3, 4, 5]) })
 	}),
 	description: Schema.optional(NonEmptyString),
 	displayName: NonEmptyString,
@@ -873,6 +878,22 @@ const ReviewSetCurrent = Schema.Struct({
 }).pipe(
 	Schema.check(
 		Schema.makeFilter((reviewSet) => {
+			if (
+				reviewSet.contract.version.minor < 5 &&
+				reviewSet.views.some((view) => view.authoredVisibility !== undefined)
+			)
+				return {
+					issue: "Authored visibility requires Review Set 1.5.",
+					path: ["contract"]
+				};
+			if (
+				reviewSet.contract.version.minor < 4 &&
+				reviewSet.views.some((view) => view.authoring !== undefined)
+			)
+				return {
+					issue: "Camera arrangement ownership requires Review Set 1.4.",
+					path: ["contract"]
+				};
 			if (
 				reviewSet.contract.version.minor < 3 &&
 				reviewSet.captureProfiles.some((profile) => profile.renderPolicy !== undefined)
@@ -1165,7 +1186,9 @@ const ReviewSetContractHeader = Schema.Struct({
 			Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literal(0) }),
 			Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literal(1) }),
 			Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literal(2) }),
-			Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literal(3) })
+			Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literal(3) }),
+			Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literal(4) }),
+			Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literal(5) })
 		])
 	})
 });
@@ -1265,12 +1288,13 @@ const ReviewCaptureRequestLegacy = Schema.Struct({
 });
 
 export const ReviewCaptureRequestCurrent = Schema.Struct({
+	authoredVisibility: Schema.optionalKey(CameraAuthoredVisibility),
 	renderPolicy: Schema.optionalKey(CameraRenderPolicy),
 	assessment: VisibilityAssessment,
 	clearCompanion: ReviewClearCompanionRequest,
 	contract: Schema.Struct({
 		name: Schema.Literal("ue-shed-review-capture"),
-		version: Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literals([5, 6]) })
+		version: Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literals([5, 6, 7]) })
 	}),
 	expectedMapPath: NonEmptyString,
 	operationId: ReviewCaptureOperationId,
@@ -1284,7 +1308,10 @@ export const ReviewCaptureRequestCurrent = Schema.Struct({
 }).pipe(
 	Schema.check(
 		Schema.makeFilter((request) =>
-			(request.contract.version.minor === 6) === (request.renderPolicy !== undefined)
+			request.contract.version.minor >= 6 === (request.renderPolicy !== undefined) &&
+			(request.authoredVisibility === undefined || request.contract.version.minor === 7) &&
+			request.renderPolicy?.visibility === undefined &&
+			(!request.authoredVisibility || request.clearCompanion.status === "not_requested")
 				? undefined
 				: {
 						issue: "Capture 1.6 requires renderPolicy; older capture versions cannot carry it.",
@@ -1465,11 +1492,12 @@ export type ResolvedReviewSubject = Schema.Schema.Type<typeof ResolvedReviewSubj
 
 const StagedCaptureArtifact = Schema.Struct({
 	stagingPath: NonEmptyString,
-	variant: Schema.Literals(["pure", "clear"])
+	variant: Schema.Literals(["pure", "clear", "authored"])
 });
 
 function stagedArtifactVariantIssue(response: {
 	readonly stagedArtifacts: ReadonlyArray<Schema.Schema.Type<typeof StagedCaptureArtifact>>;
+	readonly authoredVisibility?: typeof CameraAuthoredVisibility.Type;
 }) {
 	const variants = new Set<string>();
 	for (const artifact of response.stagedArtifacts) {
@@ -1481,7 +1509,23 @@ function stagedArtifactVariantIssue(response: {
 		}
 		variants.add(artifact.variant);
 	}
-	return variants.has("pure")
+	if (response.authoredVisibility) {
+		const output = response.authoredVisibility.output;
+		const expected =
+			output === "natural_only"
+				? ["pure"]
+				: output === "authored_only"
+					? ["authored"]
+					: ["pure", "authored"];
+		return expected.length === variants.size &&
+			expected.every((variant) => variants.has(variant))
+			? undefined
+			: {
+					issue: "Artifacts must exactly match authored visibility output.",
+					path: ["stagedArtifacts"]
+				};
+	}
+	return variants.has("pure") && !variants.has("authored")
 		? undefined
 		: {
 				issue: "A capture response must retain its staged Pure artifact.",
@@ -1559,12 +1603,14 @@ export const ClearCompanionResult = Schema.Union([
 export type ClearCompanionResult = Schema.Schema.Type<typeof ClearCompanionResult>;
 
 const ReviewCaptureSuccessCurrent = Schema.Struct({
+	authoredVisibility: Schema.optionalKey(CameraAuthoredVisibility),
+	authoredEvidence: Schema.optionalKey(CameraFrameEvidence),
 	renderEvidence: Schema.optionalKey(CameraFrameEvidence),
 	captureDurationMs: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)),
 	clearCompanion: ClearCompanionResult,
 	contract: Schema.Struct({
 		name: Schema.Literal("ue-shed-review-capture"),
-		version: Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literals([5, 6]) })
+		version: Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literals([5, 6, 7]) })
 	}),
 	effectiveWorldPose: ApprovedPose,
 	height: PositiveInteger,
@@ -1595,9 +1641,43 @@ const ReviewCaptureSuccessCurrent = Schema.Struct({
 					issue: "Capture 1.5 requires resolved subject evidence and cannot contain renderer evidence.",
 					path: []
 				};
-			if (response.contract.version.minor === 6 && response.renderEvidence === undefined)
+			if (
+				(response.authoredVisibility !== undefined ||
+					response.authoredEvidence !== undefined) &&
+				response.contract.version.minor < 7
+			)
+				return { issue: "Authored output requires Capture 1.7.", path: ["contract"] };
+			if (response.contract.version.minor >= 6 && response.renderEvidence === undefined)
 				return {
 					issue: "Capture 1.6 requires renderer evidence.",
+					path: ["renderEvidence"]
+				};
+			if (
+				response.stagedArtifacts.some((artifact) => artifact.variant === "authored") !==
+				(response.authoredEvidence !== undefined)
+			)
+				return {
+					issue: "Authored artifacts require their own renderer evidence.",
+					path: ["authoredEvidence"]
+				};
+			if (
+				response.authoredEvidence &&
+				(JSON.stringify(response.authoredEvidence.policy.visibility) !==
+					JSON.stringify(response.authoredVisibility?.actors) ||
+					response.authoredEvidence.visibilityDiagnostics?.some(
+						(entry) => entry.status !== "resolved"
+					))
+			)
+				return {
+					issue: "Authored renderer evidence must confirm the saved visibility policy without unresolved exclusions.",
+					path: ["authoredEvidence"]
+				};
+			if (
+				response.stagedArtifacts.some((artifact) => artifact.variant === "pure") &&
+				response.renderEvidence?.policy.visibility !== undefined
+			)
+				return {
+					issue: "Pure evidence cannot contain authored exclusions.",
 					path: ["renderEvidence"]
 				};
 			const issue = stagedArtifactVariantIssue(response);
@@ -1714,7 +1794,7 @@ const ReviewCaptureFailure = Schema.Struct({
 		name: Schema.Literal("ue-shed-review-capture"),
 		version: Schema.Struct({
 			major: Schema.Literal(1),
-			minor: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 6 }))
+			minor: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 7 }))
 		})
 	}),
 	message: NonEmptyString,
@@ -1828,7 +1908,7 @@ export const CaptureArtifact = Schema.Struct({
 	id: ArtifactId,
 	mediaType: Schema.Literal("image/png"),
 	relativePath: SafeRelativePath,
-	variant: Schema.Literals(["pure", "clear"]),
+	variant: Schema.Literals(["pure", "clear", "authored"]),
 	width: PositiveInteger
 });
 export type CaptureArtifact = Schema.Schema.Type<typeof CaptureArtifact>;
@@ -1862,7 +1942,28 @@ const CaptureRealizationPrevious = Schema.Union([
 
 function capturedArtifactVariantIssue(result: {
 	readonly artifacts: ReadonlyArray<CaptureArtifact>;
+	readonly authoredVisibility?: typeof CameraAuthoredVisibility.Type;
+	readonly authoredEvidence?: typeof CameraFrameEvidence.Type;
 }) {
+	if (
+		result.authoredVisibility &&
+		result.artifacts.some((artifact) => artifact.variant === "authored") &&
+		(!result.authoredEvidence ||
+			JSON.stringify(result.authoredEvidence.policy.visibility) !==
+				JSON.stringify(result.authoredVisibility.actors))
+	)
+		return {
+			issue: "Saved Authored artifacts require matching renderer visibility evidence.",
+			path: ["authoredEvidence"]
+		};
+	if (result.authoredVisibility)
+		return stagedArtifactVariantIssue({
+			stagedArtifacts: result.artifacts.map((artifact) => ({
+				variant: artifact.variant,
+				stagingPath: artifact.relativePath
+			})),
+			authoredVisibility: result.authoredVisibility
+		});
 	const variants = new Set<string>();
 	for (const artifact of result.artifacts) {
 		if (variants.has(artifact.variant)) {
@@ -1873,7 +1974,7 @@ function capturedArtifactVariantIssue(result: {
 		}
 		variants.add(artifact.variant);
 	}
-	return variants.has("pure")
+	return variants.has("pure") && !variants.has("authored")
 		? undefined
 		: {
 				issue: "A captured View Result must retain its Pure artifact.",
@@ -1882,6 +1983,8 @@ function capturedArtifactVariantIssue(result: {
 }
 
 const CapturedViewResult = Schema.Struct({
+	authoredVisibility: Schema.optionalKey(CameraAuthoredVisibility),
+	authoredEvidence: Schema.optionalKey(CameraFrameEvidence),
 	renderEvidence: Schema.optionalKey(CameraFrameEvidence),
 	artifacts: Schema.Array(CaptureArtifact).check(Schema.isMinLength(1), Schema.isMaxLength(2)),
 	captureDurationMs: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)),
@@ -1912,7 +2015,7 @@ const CaptureRunCurrent = Schema.Struct({
 	completedAt: Schema.String,
 	contract: Schema.Struct({
 		name: Schema.Literal("ue-shed-capture-run"),
-		version: Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literals([5, 6]) })
+		version: Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literals([5, 6, 7]) })
 	}),
 	id: CaptureRunId,
 	invocation: CaptureInvocation,
@@ -1921,7 +2024,16 @@ const CaptureRunCurrent = Schema.Struct({
 	reviewSetId: ReviewSetId,
 	startedAt: Schema.String,
 	status: Schema.Literals(["completed", "completed_with_failures", "failed"])
-});
+}).check(
+	Schema.makeFilter((run) =>
+		run.contract.version.minor < 7 &&
+		run.results.some(
+			(result) => result.status === "captured" && result.authoredVisibility !== undefined
+		)
+			? "Authored results require Capture Run 1.7."
+			: undefined
+	)
+);
 
 const PreviousClearCapturedViewResult = Schema.Struct({
 	artifacts: Schema.Array(CaptureArtifact).check(Schema.isMinLength(1), Schema.isMaxLength(2)),

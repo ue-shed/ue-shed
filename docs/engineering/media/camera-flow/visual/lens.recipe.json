@@ -1,0 +1,19 @@
+{
+	"version": 1,
+	"name": "Narrower lens with fitting",
+	"settings": {
+		"fieldOfViewDegrees": 35,
+		"distanceScale": 1.15,
+		"heightOffset": 0,
+		"margin": 0.1,
+		"elevationDegrees": 15
+	},
+	"groups": [],
+	"cameras": [
+		{
+			"displayName": "Narrower lens with fitting 1",
+			"yawDegrees": 0,
+			"overrides": {}
+		}
+	]
+}

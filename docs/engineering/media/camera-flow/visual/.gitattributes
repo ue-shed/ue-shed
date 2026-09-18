@@ -1,0 +1,4 @@
+# Preserve the bytes recorded in manifest.json across platform checkouts.
+*.json text eol=lf
+*.png binary
+*.mp4 binary

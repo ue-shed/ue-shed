@@ -1,0 +1,2281 @@
+{
+	"recordedAt": "2026-09-11T18:16:10.303Z",
+	"sets": [
+		{
+			"id": "cardinals",
+			"name": "Four horizontal cardinals",
+			"settings": {
+				"fieldOfViewDegrees": 60,
+				"distanceScale": 1.15,
+				"heightOffset": 0,
+				"margin": 0.1,
+				"elevationDegrees": 15
+			},
+			"angles": [0, 90, 180, 270]
+		},
+		{
+			"id": "front-arc",
+			"name": "Front three-quarter arc",
+			"settings": {
+				"fieldOfViewDegrees": 60,
+				"distanceScale": 1.15,
+				"heightOffset": 0,
+				"margin": 0.1,
+				"elevationDegrees": 15
+			},
+			"angles": [-45, 0, 45]
+		},
+		{
+			"id": "orbit-eight",
+			"name": "Eight-angle orbit",
+			"settings": {
+				"fieldOfViewDegrees": 60,
+				"distanceScale": 1.15,
+				"heightOffset": 0,
+				"margin": 0.1,
+				"elevationDegrees": 15
+			},
+			"angles": [0, 45, 90, 135, 180, 225, 270, 315]
+		},
+		{
+			"id": "hero",
+			"name": "Three-quarter starting view",
+			"settings": {
+				"fieldOfViewDegrees": 45,
+				"distanceScale": 0.85,
+				"heightOffset": 0,
+				"margin": 0.1,
+				"elevationDegrees": 20
+			},
+			"angles": [-35]
+		},
+		{
+			"id": "distance",
+			"name": "More surroundings",
+			"settings": {
+				"fieldOfViewDegrees": 60,
+				"distanceScale": 1.5,
+				"heightOffset": 0,
+				"margin": 0.1,
+				"elevationDegrees": 15
+			},
+			"angles": [0]
+		},
+		{
+			"id": "lens",
+			"name": "Narrower lens with fitting",
+			"settings": {
+				"fieldOfViewDegrees": 35,
+				"distanceScale": 1.15,
+				"heightOffset": 0,
+				"margin": 0.1,
+				"elevationDegrees": 15
+			},
+			"angles": [0]
+		},
+		{
+			"id": "height",
+			"name": "Raise camera 120 cm",
+			"settings": {
+				"fieldOfViewDegrees": 60,
+				"distanceScale": 1.15,
+				"heightOffset": 120,
+				"margin": 0.1,
+				"elevationDegrees": 15
+			},
+			"angles": [0]
+		},
+		{
+			"id": "elevation",
+			"name": "Look down from 35 degrees",
+			"settings": {
+				"fieldOfViewDegrees": 60,
+				"distanceScale": 1.15,
+				"heightOffset": 0,
+				"margin": 0.1,
+				"elevationDegrees": 35
+			},
+			"angles": [0]
+		}
+	],
+	"frames": [
+		{
+			"name": "cardinals-1",
+			"pose": {
+				"aspectRatio": "16:9",
+				"fieldOfViewDegrees": 60,
+				"location": {
+					"x": 1493.5371544827842,
+					"y": -12,
+					"z": 580.1920744095389
+				},
+				"projection": "perspective",
+				"rotation": {
+					"pitch": -14.999999999999998,
+					"roll": 0,
+					"yaw": 180
+				}
+			},
+			"result": {
+				"status": "captured",
+				"sessionId": "visual-b09e1981-06df-4493-a134-e0b99c63a05d",
+				"operationId": "cardinals-1",
+				"artifact": {
+					"relativePath": "visual-b09e1981-06df-4493-a134-e0b99c63a05d/cardinals-1.png",
+					"bytes": 484589,
+					"width": 960,
+					"height": 540
+				},
+				"evidence": {
+					"editorState": {
+						"mapPackageDirtyBefore": false,
+						"mapPackageDirtyAfter": false
+					},
+					"camera": {
+						"location": {
+							"x": 1493.5371544827842,
+							"y": -12,
+							"z": 580.1920744095389
+						},
+						"rotation": {
+							"pitch": -14.999999999999998,
+							"roll": 0,
+							"yaw": 180
+						},
+						"projection": {
+							"kind": "perspective",
+							"horizontalFieldOfView": 60
+						}
+					},
+					"size": {
+						"width": 960,
+						"height": 540
+					},
+					"policy": {
+						"renderer": {
+							"kind": "editor_viewport",
+							"strategy": "high_resolution_screenshot",
+							"profile": "lit",
+							"vignette": "disabled",
+							"fog": true,
+							"volumetricFog": true
+						},
+						"exposure": {
+							"mode": "fixed_ev100",
+							"ev100": 0,
+							"compensation": "project"
+						},
+						"settling": {
+							"minimumFrames": 16,
+							"timeoutMs": 120000
+						},
+						"time": "live_editor",
+						"preparation": {
+							"geometry": {
+								"mode": "preserve_loading"
+							},
+							"dataLayers": []
+						}
+					},
+					"exposureEV100": 0,
+					"preparation": {
+						"status": "preserved",
+						"regionsHeld": 0,
+						"dataLayersApplied": 0,
+						"limitations": [
+							"Explicit editor loading does not certify frustum completeness, shader convergence, or gameplay initialization."
+						]
+					},
+					"settling": {
+						"renderedFrames": 17,
+						"elapsedMs": 256.3260979950428,
+						"convergence": "not_assessed"
+					},
+					"engineVersion": "5.7.4-51494982+++UE5+Release-5.7",
+					"pluginVersion": "0.7.1"
+				}
+			}
+		},
+		{
+			"name": "cardinals-2",
+			"pose": {
+				"aspectRatio": "16:9",
+				"fieldOfViewDegrees": 60,
+				"location": {
+					"x": 9.145277478224939e-14,
+					"y": 1481.5371544827842,
+					"z": 580.1920744095389
+				},
+				"projection": "perspective",
+				"rotation": {
+					"pitch": -14.999999999999998,
+					"roll": 0,
+					"yaw": 270
+				}
+			},
+			"result": {
+				"status": "captured",
+				"sessionId": "visual-b09e1981-06df-4493-a134-e0b99c63a05d",
+				"operationId": "cardinals-2",
+				"artifact": {
+					"relativePath": "visual-b09e1981-06df-4493-a134-e0b99c63a05d/cardinals-2.png",
+					"bytes": 479496,
+					"width": 960,
+					"height": 540
+				},
+				"evidence": {
+					"editorState": {
+						"mapPackageDirtyBefore": false,
+						"mapPackageDirtyAfter": false
+					},
+					"camera": {
+						"location": {
+							"x": 9.145277478224939e-14,
+							"y": 1481.5371544827842,
+							"z": 580.1920744095389
+						},
+						"rotation": {
+							"pitch": -14.999999999999998,
+							"roll": 0,
+							"yaw": 270
+						},
+						"projection": {
+							"kind": "perspective",
+							"horizontalFieldOfView": 60
+						}
+					},
+					"size": {
+						"width": 960,
+						"height": 540
+					},
+					"policy": {
+						"renderer": {
+							"kind": "editor_viewport",
+							"strategy": "high_resolution_screenshot",
+							"profile": "lit",
+							"vignette": "disabled",
+							"fog": true,
+							"volumetricFog": true
+						},
+						"exposure": {
+							"mode": "fixed_ev100",
+							"ev100": 0,
+							"compensation": "project"
+						},
+						"settling": {
+							"minimumFrames": 16,
+							"timeoutMs": 120000
+						},
+						"time": "live_editor",
+						"preparation": {
+							"geometry": {
+								"mode": "preserve_loading"
+							},
+							"dataLayers": []
+						}
+					},
+					"exposureEV100": 0,
+					"preparation": {
+						"status": "preserved",
+						"regionsHeld": 0,
+						"dataLayersApplied": 0,
+						"limitations": [
+							"Explicit editor loading does not certify frustum completeness, shader convergence, or gameplay initialization."
+						]
+					},
+					"settling": {
+						"renderedFrames": 17,
+						"elapsedMs": 592.5641991198063,
+						"convergence": "not_assessed"
+					},
+					"engineVersion": "5.7.4-51494982+++UE5+Release-5.7",
+					"pluginVersion": "0.7.1"
+				}
+			}
+		},
+		{
+			"name": "cardinals-3",
+			"pose": {
+				"aspectRatio": "16:9",
+				"fieldOfViewDegrees": 60,
+				"location": {
+					"x": -1493.5371544827842,
+					"y": -11.999999999999817,
+					"z": 580.1920744095389
+				},
+				"projection": "perspective",
+				"rotation": {
+					"pitch": -14.999999999999998,
+					"roll": 0,
+					"yaw": 360
+				}
+			},
+			"result": {
+				"status": "captured",
+				"sessionId": "visual-b09e1981-06df-4493-a134-e0b99c63a05d",
+				"operationId": "cardinals-3",
+				"artifact": {
+					"relativePath": "visual-b09e1981-06df-4493-a134-e0b99c63a05d/cardinals-3.png",
+					"bytes": 354571,
+					"width": 960,
+					"height": 540
+				},
+				"evidence": {
+					"editorState": {
+						"mapPackageDirtyBefore": false,
+						"mapPackageDirtyAfter": false
+					},
+					"camera": {
+						"location": {
+							"x": -1493.5371544827842,
+							"y": -11.999999999999817,
+							"z": 580.1920744095389
+						},
+						"rotation": {
+							"pitch": -14.999999999999998,
+							"roll": 0,
+							"yaw": 360
+						},
+						"projection": {
+							"kind": "perspective",
+							"horizontalFieldOfView": 60
+						}
+					},
+					"size": {
+						"width": 960,
+						"height": 540
+					},
+					"policy": {
+						"renderer": {
+							"kind": "editor_viewport",
+							"strategy": "high_resolution_screenshot",
+							"profile": "lit",
+							"vignette": "disabled",
+							"fog": true,
+							"volumetricFog": true
+						},
+						"exposure": {
+							"mode": "fixed_ev100",
+							"ev100": 0,
+							"compensation": "project"
+						},
+						"settling": {
+							"minimumFrames": 16,
+							"timeoutMs": 120000
+						},
+						"time": "live_editor",
+						"preparation": {
+							"geometry": {
+								"mode": "preserve_loading"
+							},
+							"dataLayers": []
+						}
+					},
+					"exposureEV100": 0,
+					"preparation": {
+						"status": "preserved",
+						"regionsHeld": 0,
+						"dataLayersApplied": 0,
+						"limitations": [
+							"Explicit editor loading does not certify frustum completeness, shader convergence, or gameplay initialization."
+						]
+					},
+					"settling": {
+						"renderedFrames": 17,
+						"elapsedMs": 573.0259008705616,
+						"convergence": "not_assessed"
+					},
+					"engineVersion": "5.7.4-51494982+++UE5+Release-5.7",
+					"pluginVersion": "0.7.1"
+				}
+			}
+		},
+		{
+			"name": "cardinals-4",
+			"pose": {
+				"aspectRatio": "16:9",
+				"fieldOfViewDegrees": 60,
+				"location": {
+					"x": -2.7435832434674814e-13,
+					"y": -1505.5371544827842,
+					"z": 580.1920744095389
+				},
+				"projection": "perspective",
+				"rotation": {
+					"pitch": -14.999999999999998,
+					"roll": 0,
+					"yaw": 450
+				}
+			},
+			"result": {
+				"status": "captured",
+				"sessionId": "visual-b09e1981-06df-4493-a134-e0b99c63a05d",
+				"operationId": "cardinals-4",
+				"artifact": {
+					"relativePath": "visual-b09e1981-06df-4493-a134-e0b99c63a05d/cardinals-4.png",
+					"bytes": 491952,
+					"width": 960,
+					"height": 540
+				},
+				"evidence": {
+					"editorState": {
+						"mapPackageDirtyBefore": false,
+						"mapPackageDirtyAfter": false
+					},
+					"camera": {
+						"location": {
+							"x": -2.7435832434674814e-13,
+							"y": -1505.5371544827842,
+							"z": 580.1920744095389
+						},
+						"rotation": {
+							"pitch": -14.999999999999998,
+							"roll": 0,
+							"yaw": 450
+						},
+						"projection": {
+							"kind": "perspective",
+							"horizontalFieldOfView": 60
+						}
+					},
+					"size": {
+						"width": 960,
+						"height": 540
+					},
+					"policy": {
+						"renderer": {
+							"kind": "editor_viewport",
+							"strategy": "high_resolution_screenshot",
+							"profile": "lit",
+							"vignette": "disabled",
+							"fog": true,
+							"volumetricFog": true
+						},
+						"exposure": {
+							"mode": "fixed_ev100",
+							"ev100": 0,
+							"compensation": "project"
+						},
+						"settling": {
+							"minimumFrames": 16,
+							"timeoutMs": 120000
+						},
+						"time": "live_editor",
+						"preparation": {
+							"geometry": {
+								"mode": "preserve_loading"
+							},
+							"dataLayers": []
+						}
+					},
+					"exposureEV100": 0,
+					"preparation": {
+						"status": "preserved",
+						"regionsHeld": 0,
+						"dataLayersApplied": 0,
+						"limitations": [
+							"Explicit editor loading does not certify frustum completeness, shader convergence, or gameplay initialization."
+						]
+					},
+					"settling": {
+						"renderedFrames": 17,
+						"elapsedMs": 541.3953997194767,
+						"convergence": "not_assessed"
+					},
+					"engineVersion": "5.7.4-51494982+++UE5+Release-5.7",
+					"pluginVersion": "0.7.1"
+				}
+			}
+		},
+		{
+			"name": "front-arc-1",
+			"pose": {
+				"aspectRatio": "16:9",
+				"fieldOfViewDegrees": 60,
+				"location": {
+					"x": 1056.090249888837,
+					"y": -1068.0902498888368,
+					"z": 580.1920744095389
+				},
+				"projection": "perspective",
+				"rotation": {
+					"pitch": -14.999999999999998,
+					"roll": 0,
+					"yaw": 135
+				}
+			},
+			"result": {
+				"status": "captured",
+				"sessionId": "visual-b09e1981-06df-4493-a134-e0b99c63a05d",
+				"operationId": "front-arc-1",
+				"artifact": {
+					"relativePath": "visual-b09e1981-06df-4493-a134-e0b99c63a05d/front-arc-1.png",
+					"bytes": 523149,
+					"width": 960,
+					"height": 540
+				},
+				"evidence": {
+					"editorState": {
+						"mapPackageDirtyBefore": false,
+						"mapPackageDirtyAfter": false
+					},
+					"camera": {
+						"location": {
+							"x": 1056.090249888837,
+							"y": -1068.0902498888368,
+							"z": 580.1920744095389
+						},
+						"rotation": {
+							"pitch": -14.999999999999998,
+							"roll": 0,
+							"yaw": 135
+						},
+						"projection": {
+							"kind": "perspective",
+							"horizontalFieldOfView": 60
+						}
+					},
+					"size": {
+						"width": 960,
+						"height": 540
+					},
+					"policy": {
+						"renderer": {
+							"kind": "editor_viewport",
+							"strategy": "high_resolution_screenshot",
+							"profile": "lit",
+							"vignette": "disabled",
+							"fog": true,
+							"volumetricFog": true
+						},
+						"exposure": {
+							"mode": "fixed_ev100",
+							"ev100": 0,
+							"compensation": "project"
+						},
+						"settling": {
+							"minimumFrames": 16,
+							"timeoutMs": 120000
+						},
+						"time": "live_editor",
+						"preparation": {
+							"geometry": {
+								"mode": "preserve_loading"
+							},
+							"dataLayers": []
+						}
+					},
+					"exposureEV100": 0,
+					"preparation": {
+						"status": "preserved",
+						"regionsHeld": 0,
+						"dataLayersApplied": 0,
+						"limitations": [
+							"Explicit editor loading does not certify frustum completeness, shader convergence, or gameplay initialization."
+						]
+					},
+					"settling": {
+						"renderedFrames": 17,
+						"elapsedMs": 609.2036999762058,
+						"convergence": "not_assessed"
+					},
+					"engineVersion": "5.7.4-51494982+++UE5+Release-5.7",
+					"pluginVersion": "0.7.1"
+				}
+			}
+		},
+		{
+			"name": "front-arc-2",
+			"pose": {
+				"aspectRatio": "16:9",
+				"fieldOfViewDegrees": 60,
+				"location": {
+					"x": 1493.5371544827842,
+					"y": -12,
+					"z": 580.1920744095389
+				},
+				"projection": "perspective",
+				"rotation": {
+					"pitch": -14.999999999999998,
+					"roll": 0,
+					"yaw": 180
+				}
+			},
+			"result": {
+				"status": "captured",
+				"sessionId": "visual-b09e1981-06df-4493-a134-e0b99c63a05d",
+				"operationId": "front-arc-2",
+				"artifact": {
+					"relativePath": "visual-b09e1981-06df-4493-a134-e0b99c63a05d/front-arc-2.png",
+					"bytes": 482851,
+					"width": 960,
+					"height": 540
+				},
+				"evidence": {
+					"editorState": {
+						"mapPackageDirtyBefore": false,
+						"mapPackageDirtyAfter": false
+					},
+					"camera": {
+						"location": {
+							"x": 1493.5371544827842,
+							"y": -12,
+							"z": 580.1920744095389
+						},
+						"rotation": {
+							"pitch": -14.999999999999998,
+							"roll": 0,
+							"yaw": 180
+						},
+						"projection": {
+							"kind": "perspective",
+							"horizontalFieldOfView": 60
+						}
+					},
+					"size": {
+						"width": 960,
+						"height": 540
+					},
+					"policy": {
+						"renderer": {
+							"kind": "editor_viewport",
+							"strategy": "high_resolution_screenshot",
+							"profile": "lit",
+							"vignette": "disabled",
+							"fog": true,
+							"volumetricFog": true
+						},
+						"exposure": {
+							"mode": "fixed_ev100",
+							"ev100": 0,
+							"compensation": "project"
+						},
+						"settling": {
+							"minimumFrames": 16,
+							"timeoutMs": 120000
+						},
+						"time": "live_editor",
+						"preparation": {
+							"geometry": {
+								"mode": "preserve_loading"
+							},
+							"dataLayers": []
+						}
+					},
+					"exposureEV100": 0,
+					"preparation": {
+						"status": "preserved",
+						"regionsHeld": 0,
+						"dataLayersApplied": 0,
+						"limitations": [
+							"Explicit editor loading does not certify frustum completeness, shader convergence, or gameplay initialization."
+						]
+					},
+					"settling": {
+						"renderedFrames": 17,
+						"elapsedMs": 591.0347998142242,
+						"convergence": "not_assessed"
+					},
+					"engineVersion": "5.7.4-51494982+++UE5+Release-5.7",
+					"pluginVersion": "0.7.1"
+				}
+			}
+		},
+		{
+			"name": "front-arc-3",
+			"pose": {
+				"aspectRatio": "16:9",
+				"fieldOfViewDegrees": 60,
+				"location": {
+					"x": 1056.090249888837,
+					"y": 1044.0902498888368,
+					"z": 580.1920744095389
+				},
+				"projection": "perspective",
+				"rotation": {
+					"pitch": -14.999999999999998,
+					"roll": 0,
+					"yaw": 225
+				}
+			},
+			"result": {
+				"status": "captured",
+				"sessionId": "visual-b09e1981-06df-4493-a134-e0b99c63a05d",
+				"operationId": "front-arc-3",
+				"artifact": {
+					"relativePath": "visual-b09e1981-06df-4493-a134-e0b99c63a05d/front-arc-3.png",
+					"bytes": 516893,
+					"width": 960,
+					"height": 540
+				},
+				"evidence": {
+					"editorState": {
+						"mapPackageDirtyBefore": false,
+						"mapPackageDirtyAfter": false
+					},
+					"camera": {
+						"location": {
+							"x": 1056.090249888837,
+							"y": 1044.0902498888368,
+							"z": 580.1920744095389
+						},
+						"rotation": {
+							"pitch": -14.999999999999998,
+							"roll": 0,
+							"yaw": 225
+						},
+						"projection": {
+							"kind": "perspective",
+							"horizontalFieldOfView": 60
+						}
+					},
+					"size": {
+						"width": 960,
+						"height": 540
+					},
+					"policy": {
+						"renderer": {
+							"kind": "editor_viewport",
+							"strategy": "high_resolution_screenshot",
+							"profile": "lit",
+							"vignette": "disabled",
+							"fog": true,
+							"volumetricFog": true
+						},
+						"exposure": {
+							"mode": "fixed_ev100",
+							"ev100": 0,
+							"compensation": "project"
+						},
+						"settling": {
+							"minimumFrames": 16,
+							"timeoutMs": 120000
+						},
+						"time": "live_editor",
+						"preparation": {
+							"geometry": {
+								"mode": "preserve_loading"
+							},
+							"dataLayers": []
+						}
+					},
+					"exposureEV100": 0,
+					"preparation": {
+						"status": "preserved",
+						"regionsHeld": 0,
+						"dataLayersApplied": 0,
+						"limitations": [
+							"Explicit editor loading does not certify frustum completeness, shader convergence, or gameplay initialization."
+						]
+					},
+					"settling": {
+						"renderedFrames": 17,
+						"elapsedMs": 575.6519995629787,
+						"convergence": "not_assessed"
+					},
+					"engineVersion": "5.7.4-51494982+++UE5+Release-5.7",
+					"pluginVersion": "0.7.1"
+				}
+			}
+		},
+		{
+			"name": "orbit-eight-1",
+			"pose": {
+				"aspectRatio": "16:9",
+				"fieldOfViewDegrees": 60,
+				"location": {
+					"x": 1493.5371544827842,
+					"y": -12,
+					"z": 580.1920744095389
+				},
+				"projection": "perspective",
+				"rotation": {
+					"pitch": -14.999999999999998,
+					"roll": 0,
+					"yaw": 180
+				}
+			},
+			"result": {
+				"status": "captured",
+				"sessionId": "visual-b09e1981-06df-4493-a134-e0b99c63a05d",
+				"operationId": "orbit-eight-1",
+				"artifact": {
+					"relativePath": "visual-b09e1981-06df-4493-a134-e0b99c63a05d/orbit-eight-1.png",
+					"bytes": 481480,
+					"width": 960,
+					"height": 540
+				},
+				"evidence": {
+					"editorState": {
+						"mapPackageDirtyBefore": false,
+						"mapPackageDirtyAfter": false
+					},
+					"camera": {
+						"location": {
+							"x": 1493.5371544827842,
+							"y": -12,
+							"z": 580.1920744095389
+						},
+						"rotation": {
+							"pitch": -14.999999999999998,
+							"roll": 0,
+							"yaw": 180
+						},
+						"projection": {
+							"kind": "perspective",
+							"horizontalFieldOfView": 60
+						}
+					},
+					"size": {
+						"width": 960,
+						"height": 540
+					},
+					"policy": {
+						"renderer": {
+							"kind": "editor_viewport",
+							"strategy": "high_resolution_screenshot",
+							"profile": "lit",
+							"vignette": "disabled",
+							"fog": true,
+							"volumetricFog": true
+						},
+						"exposure": {
+							"mode": "fixed_ev100",
+							"ev100": 0,
+							"compensation": "project"
+						},
+						"settling": {
+							"minimumFrames": 16,
+							"timeoutMs": 120000
+						},
+						"time": "live_editor",
+						"preparation": {
+							"geometry": {
+								"mode": "preserve_loading"
+							},
+							"dataLayers": []
+						}
+					},
+					"exposureEV100": 0,
+					"preparation": {
+						"status": "preserved",
+						"regionsHeld": 0,
+						"dataLayersApplied": 0,
+						"limitations": [
+							"Explicit editor loading does not certify frustum completeness, shader convergence, or gameplay initialization."
+						]
+					},
+					"settling": {
+						"renderedFrames": 17,
+						"elapsedMs": 575.8771002292633,
+						"convergence": "not_assessed"
+					},
+					"engineVersion": "5.7.4-51494982+++UE5+Release-5.7",
+					"pluginVersion": "0.7.1"
+				}
+			}
+		},
+		{
+			"name": "orbit-eight-2",
+			"pose": {
+				"aspectRatio": "16:9",
+				"fieldOfViewDegrees": 60,
+				"location": {
+					"x": 1056.090249888837,
+					"y": 1044.0902498888368,
+					"z": 580.1920744095389
+				},
+				"projection": "perspective",
+				"rotation": {
+					"pitch": -14.999999999999998,
+					"roll": 0,
+					"yaw": 225
+				}
+			},
+			"result": {
+				"status": "captured",
+				"sessionId": "visual-b09e1981-06df-4493-a134-e0b99c63a05d",
+				"operationId": "orbit-eight-2",
+				"artifact": {
+					"relativePath": "visual-b09e1981-06df-4493-a134-e0b99c63a05d/orbit-eight-2.png",
+					"bytes": 517782,
+					"width": 960,
+					"height": 540
+				},
+				"evidence": {
+					"editorState": {
+						"mapPackageDirtyBefore": false,
+						"mapPackageDirtyAfter": false
+					},
+					"camera": {
+						"location": {
+							"x": 1056.090249888837,
+							"y": 1044.0902498888368,
+							"z": 580.1920744095389
+						},
+						"rotation": {
+							"pitch": -14.999999999999998,
+							"roll": 0,
+							"yaw": 225
+						},
+						"projection": {
+							"kind": "perspective",
+							"horizontalFieldOfView": 60
+						}
+					},
+					"size": {
+						"width": 960,
+						"height": 540
+					},
+					"policy": {
+						"renderer": {
+							"kind": "editor_viewport",
+							"strategy": "high_resolution_screenshot",
+							"profile": "lit",
+							"vignette": "disabled",
+							"fog": true,
+							"volumetricFog": true
+						},
+						"exposure": {
+							"mode": "fixed_ev100",
+							"ev100": 0,
+							"compensation": "project"
+						},
+						"settling": {
+							"minimumFrames": 16,
+							"timeoutMs": 120000
+						},
+						"time": "live_editor",
+						"preparation": {
+							"geometry": {
+								"mode": "preserve_loading"
+							},
+							"dataLayers": []
+						}
+					},
+					"exposureEV100": 0,
+					"preparation": {
+						"status": "preserved",
+						"regionsHeld": 0,
+						"dataLayersApplied": 0,
+						"limitations": [
+							"Explicit editor loading does not certify frustum completeness, shader convergence, or gameplay initialization."
+						]
+					},
+					"settling": {
+						"renderedFrames": 17,
+						"elapsedMs": 609.8347008228302,
+						"convergence": "not_assessed"
+					},
+					"engineVersion": "5.7.4-51494982+++UE5+Release-5.7",
+					"pluginVersion": "0.7.1"
+				}
+			}
+		},
+		{
+			"name": "orbit-eight-3",
+			"pose": {
+				"aspectRatio": "16:9",
+				"fieldOfViewDegrees": 60,
+				"location": {
+					"x": 9.145277478224939e-14,
+					"y": 1481.5371544827842,
+					"z": 580.1920744095389
+				},
+				"projection": "perspective",
+				"rotation": {
+					"pitch": -14.999999999999998,
+					"roll": 0,
+					"yaw": 270
+				}
+			},
+			"result": {
+				"status": "captured",
+				"sessionId": "visual-b09e1981-06df-4493-a134-e0b99c63a05d",
+				"operationId": "orbit-eight-3",
+				"artifact": {
+					"relativePath": "visual-b09e1981-06df-4493-a134-e0b99c63a05d/orbit-eight-3.png",
+					"bytes": 488605,
+					"width": 960,
+					"height": 540
+				},
+				"evidence": {
+					"editorState": {
+						"mapPackageDirtyBefore": false,
+						"mapPackageDirtyAfter": false
+					},
+					"camera": {
+						"location": {
+							"x": 9.145277478224939e-14,
+							"y": 1481.5371544827842,
+							"z": 580.1920744095389
+						},
+						"rotation": {
+							"pitch": -14.999999999999998,
+							"roll": 0,
+							"yaw": 270
+						},
+						"projection": {
+							"kind": "perspective",
+							"horizontalFieldOfView": 60
+						}
+					},
+					"size": {
+						"width": 960,
+						"height": 540
+					},
+					"policy": {
+						"renderer": {
+							"kind": "editor_viewport",
+							"strategy": "high_resolution_screenshot",
+							"profile": "lit",
+							"vignette": "disabled",
+							"fog": true,
+							"volumetricFog": true
+						},
+						"exposure": {
+							"mode": "fixed_ev100",
+							"ev100": 0,
+							"compensation": "project"
+						},
+						"settling": {
+							"minimumFrames": 16,
+							"timeoutMs": 120000
+						},
+						"time": "live_editor",
+						"preparation": {
+							"geometry": {
+								"mode": "preserve_loading"
+							},
+							"dataLayers": []
+						}
+					},
+					"exposureEV100": 0,
+					"preparation": {
+						"status": "preserved",
+						"regionsHeld": 0,
+						"dataLayersApplied": 0,
+						"limitations": [
+							"Explicit editor loading does not certify frustum completeness, shader convergence, or gameplay initialization."
+						]
+					},
+					"settling": {
+						"renderedFrames": 17,
+						"elapsedMs": 576.536301523447,
+						"convergence": "not_assessed"
+					},
+					"engineVersion": "5.7.4-51494982+++UE5+Release-5.7",
+					"pluginVersion": "0.7.1"
+				}
+			}
+		},
+		{
+			"name": "orbit-eight-4",
+			"pose": {
+				"aspectRatio": "16:9",
+				"fieldOfViewDegrees": 60,
+				"location": {
+					"x": -1056.0902498888368,
+					"y": 1044.090249888837,
+					"z": 580.1920744095389
+				},
+				"projection": "perspective",
+				"rotation": {
+					"pitch": -14.999999999999998,
+					"roll": 0,
+					"yaw": 315
+				}
+			},
+			"result": {
+				"status": "captured",
+				"sessionId": "visual-b09e1981-06df-4493-a134-e0b99c63a05d",
+				"operationId": "orbit-eight-4",
+				"artifact": {
+					"relativePath": "visual-b09e1981-06df-4493-a134-e0b99c63a05d/orbit-eight-4.png",
+					"bytes": 443044,
+					"width": 960,
+					"height": 540
+				},
+				"evidence": {
+					"editorState": {
+						"mapPackageDirtyBefore": false,
+						"mapPackageDirtyAfter": false
+					},
+					"camera": {
+						"location": {
+							"x": -1056.0902498888368,
+							"y": 1044.090249888837,
+							"z": 580.1920744095389
+						},
+						"rotation": {
+							"pitch": -14.999999999999998,
+							"roll": 0,
+							"yaw": 315
+						},
+						"projection": {
+							"kind": "perspective",
+							"horizontalFieldOfView": 60
+						}
+					},
+					"size": {
+						"width": 960,
+						"height": 540
+					},
+					"policy": {
+						"renderer": {
+							"kind": "editor_viewport",
+							"strategy": "high_resolution_screenshot",
+							"profile": "lit",
+							"vignette": "disabled",
+							"fog": true,
+							"volumetricFog": true
+						},
+						"exposure": {
+							"mode": "fixed_ev100",
+							"ev100": 0,
+							"compensation": "project"
+						},
+						"settling": {
+							"minimumFrames": 16,
+							"timeoutMs": 120000
+						},
+						"time": "live_editor",
+						"preparation": {
+							"geometry": {
+								"mode": "preserve_loading"
+							},
+							"dataLayers": []
+						}
+					},
+					"exposureEV100": 0,
+					"preparation": {
+						"status": "preserved",
+						"regionsHeld": 0,
+						"dataLayersApplied": 0,
+						"limitations": [
+							"Explicit editor loading does not certify frustum completeness, shader convergence, or gameplay initialization."
+						]
+					},
+					"settling": {
+						"renderedFrames": 17,
+						"elapsedMs": 593.8994996249676,
+						"convergence": "not_assessed"
+					},
+					"engineVersion": "5.7.4-51494982+++UE5+Release-5.7",
+					"pluginVersion": "0.7.1"
+				}
+			}
+		},
+		{
+			"name": "orbit-eight-5",
+			"pose": {
+				"aspectRatio": "16:9",
+				"fieldOfViewDegrees": 60,
+				"location": {
+					"x": -1493.5371544827842,
+					"y": -11.999999999999817,
+					"z": 580.1920744095389
+				},
+				"projection": "perspective",
+				"rotation": {
+					"pitch": -14.999999999999998,
+					"roll": 0,
+					"yaw": 360
+				}
+			},
+			"result": {
+				"status": "captured",
+				"sessionId": "visual-b09e1981-06df-4493-a134-e0b99c63a05d",
+				"operationId": "orbit-eight-5",
+				"artifact": {
+					"relativePath": "visual-b09e1981-06df-4493-a134-e0b99c63a05d/orbit-eight-5.png",
+					"bytes": 350356,
+					"width": 960,
+					"height": 540
+				},
+				"evidence": {
+					"editorState": {
+						"mapPackageDirtyBefore": false,
+						"mapPackageDirtyAfter": false
+					},
+					"camera": {
+						"location": {
+							"x": -1493.5371544827842,
+							"y": -11.999999999999817,
+							"z": 580.1920744095389
+						},
+						"rotation": {
+							"pitch": -14.999999999999998,
+							"roll": 0,
+							"yaw": 360
+						},
+						"projection": {
+							"kind": "perspective",
+							"horizontalFieldOfView": 60
+						}
+					},
+					"size": {
+						"width": 960,
+						"height": 540
+					},
+					"policy": {
+						"renderer": {
+							"kind": "editor_viewport",
+							"strategy": "high_resolution_screenshot",
+							"profile": "lit",
+							"vignette": "disabled",
+							"fog": true,
+							"volumetricFog": true
+						},
+						"exposure": {
+							"mode": "fixed_ev100",
+							"ev100": 0,
+							"compensation": "project"
+						},
+						"settling": {
+							"minimumFrames": 16,
+							"timeoutMs": 120000
+						},
+						"time": "live_editor",
+						"preparation": {
+							"geometry": {
+								"mode": "preserve_loading"
+							},
+							"dataLayers": []
+						}
+					},
+					"exposureEV100": 0,
+					"preparation": {
+						"status": "preserved",
+						"regionsHeld": 0,
+						"dataLayersApplied": 0,
+						"limitations": [
+							"Explicit editor loading does not certify frustum completeness, shader convergence, or gameplay initialization."
+						]
+					},
+					"settling": {
+						"renderedFrames": 17,
+						"elapsedMs": 541.8980978429317,
+						"convergence": "not_assessed"
+					},
+					"engineVersion": "5.7.4-51494982+++UE5+Release-5.7",
+					"pluginVersion": "0.7.1"
+				}
+			}
+		},
+		{
+			"name": "orbit-eight-6",
+			"pose": {
+				"aspectRatio": "16:9",
+				"fieldOfViewDegrees": 60,
+				"location": {
+					"x": -1056.0902498888372,
+					"y": -1068.0902498888368,
+					"z": 580.1920744095389
+				},
+				"projection": "perspective",
+				"rotation": {
+					"pitch": -14.999999999999998,
+					"roll": 0,
+					"yaw": 405
+				}
+			},
+			"result": {
+				"status": "captured",
+				"sessionId": "visual-b09e1981-06df-4493-a134-e0b99c63a05d",
+				"operationId": "orbit-eight-6",
+				"artifact": {
+					"relativePath": "visual-b09e1981-06df-4493-a134-e0b99c63a05d/orbit-eight-6.png",
+					"bytes": 442391,
+					"width": 960,
+					"height": 540
+				},
+				"evidence": {
+					"editorState": {
+						"mapPackageDirtyBefore": false,
+						"mapPackageDirtyAfter": false
+					},
+					"camera": {
+						"location": {
+							"x": -1056.0902498888372,
+							"y": -1068.0902498888368,
+							"z": 580.1920744095389
+						},
+						"rotation": {
+							"pitch": -14.999999999999998,
+							"roll": 0,
+							"yaw": 405
+						},
+						"projection": {
+							"kind": "perspective",
+							"horizontalFieldOfView": 60
+						}
+					},
+					"size": {
+						"width": 960,
+						"height": 540
+					},
+					"policy": {
+						"renderer": {
+							"kind": "editor_viewport",
+							"strategy": "high_resolution_screenshot",
+							"profile": "lit",
+							"vignette": "disabled",
+							"fog": true,
+							"volumetricFog": true
+						},
+						"exposure": {
+							"mode": "fixed_ev100",
+							"ev100": 0,
+							"compensation": "project"
+						},
+						"settling": {
+							"minimumFrames": 16,
+							"timeoutMs": 120000
+						},
+						"time": "live_editor",
+						"preparation": {
+							"geometry": {
+								"mode": "preserve_loading"
+							},
+							"dataLayers": []
+						}
+					},
+					"exposureEV100": 0,
+					"preparation": {
+						"status": "preserved",
+						"regionsHeld": 0,
+						"dataLayersApplied": 0,
+						"limitations": [
+							"Explicit editor loading does not certify frustum completeness, shader convergence, or gameplay initialization."
+						]
+					},
+					"settling": {
+						"renderedFrames": 17,
+						"elapsedMs": 592.5875976681709,
+						"convergence": "not_assessed"
+					},
+					"engineVersion": "5.7.4-51494982+++UE5+Release-5.7",
+					"pluginVersion": "0.7.1"
+				}
+			}
+		},
+		{
+			"name": "orbit-eight-7",
+			"pose": {
+				"aspectRatio": "16:9",
+				"fieldOfViewDegrees": 60,
+				"location": {
+					"x": -2.7435832434674814e-13,
+					"y": -1505.5371544827842,
+					"z": 580.1920744095389
+				},
+				"projection": "perspective",
+				"rotation": {
+					"pitch": -14.999999999999998,
+					"roll": 0,
+					"yaw": 450
+				}
+			},
+			"result": {
+				"status": "captured",
+				"sessionId": "visual-b09e1981-06df-4493-a134-e0b99c63a05d",
+				"operationId": "orbit-eight-7",
+				"artifact": {
+					"relativePath": "visual-b09e1981-06df-4493-a134-e0b99c63a05d/orbit-eight-7.png",
+					"bytes": 488302,
+					"width": 960,
+					"height": 540
+				},
+				"evidence": {
+					"editorState": {
+						"mapPackageDirtyBefore": false,
+						"mapPackageDirtyAfter": false
+					},
+					"camera": {
+						"location": {
+							"x": -2.7435832434674814e-13,
+							"y": -1505.5371544827842,
+							"z": 580.1920744095389
+						},
+						"rotation": {
+							"pitch": -14.999999999999998,
+							"roll": 0,
+							"yaw": 450
+						},
+						"projection": {
+							"kind": "perspective",
+							"horizontalFieldOfView": 60
+						}
+					},
+					"size": {
+						"width": 960,
+						"height": 540
+					},
+					"policy": {
+						"renderer": {
+							"kind": "editor_viewport",
+							"strategy": "high_resolution_screenshot",
+							"profile": "lit",
+							"vignette": "disabled",
+							"fog": true,
+							"volumetricFog": true
+						},
+						"exposure": {
+							"mode": "fixed_ev100",
+							"ev100": 0,
+							"compensation": "project"
+						},
+						"settling": {
+							"minimumFrames": 16,
+							"timeoutMs": 120000
+						},
+						"time": "live_editor",
+						"preparation": {
+							"geometry": {
+								"mode": "preserve_loading"
+							},
+							"dataLayers": []
+						}
+					},
+					"exposureEV100": 0,
+					"preparation": {
+						"status": "preserved",
+						"regionsHeld": 0,
+						"dataLayersApplied": 0,
+						"limitations": [
+							"Explicit editor loading does not certify frustum completeness, shader convergence, or gameplay initialization."
+						]
+					},
+					"settling": {
+						"renderedFrames": 17,
+						"elapsedMs": 610.164400190115,
+						"convergence": "not_assessed"
+					},
+					"engineVersion": "5.7.4-51494982+++UE5+Release-5.7",
+					"pluginVersion": "0.7.1"
+				}
+			}
+		},
+		{
+			"name": "orbit-eight-8",
+			"pose": {
+				"aspectRatio": "16:9",
+				"fieldOfViewDegrees": 60,
+				"location": {
+					"x": 1056.0902498888368,
+					"y": -1068.0902498888372,
+					"z": 580.1920744095389
+				},
+				"projection": "perspective",
+				"rotation": {
+					"pitch": -14.999999999999998,
+					"roll": 0,
+					"yaw": 495
+				}
+			},
+			"result": {
+				"status": "captured",
+				"sessionId": "visual-b09e1981-06df-4493-a134-e0b99c63a05d",
+				"operationId": "orbit-eight-8",
+				"artifact": {
+					"relativePath": "visual-b09e1981-06df-4493-a134-e0b99c63a05d/orbit-eight-8.png",
+					"bytes": 520737,
+					"width": 960,
+					"height": 540
+				},
+				"evidence": {
+					"editorState": {
+						"mapPackageDirtyBefore": false,
+						"mapPackageDirtyAfter": false
+					},
+					"camera": {
+						"location": {
+							"x": 1056.0902498888368,
+							"y": -1068.0902498888372,
+							"z": 580.1920744095389
+						},
+						"rotation": {
+							"pitch": -14.999999999999998,
+							"roll": 0,
+							"yaw": 495
+						},
+						"projection": {
+							"kind": "perspective",
+							"horizontalFieldOfView": 60
+						}
+					},
+					"size": {
+						"width": 960,
+						"height": 540
+					},
+					"policy": {
+						"renderer": {
+							"kind": "editor_viewport",
+							"strategy": "high_resolution_screenshot",
+							"profile": "lit",
+							"vignette": "disabled",
+							"fog": true,
+							"volumetricFog": true
+						},
+						"exposure": {
+							"mode": "fixed_ev100",
+							"ev100": 0,
+							"compensation": "project"
+						},
+						"settling": {
+							"minimumFrames": 16,
+							"timeoutMs": 120000
+						},
+						"time": "live_editor",
+						"preparation": {
+							"geometry": {
+								"mode": "preserve_loading"
+							},
+							"dataLayers": []
+						}
+					},
+					"exposureEV100": 0,
+					"preparation": {
+						"status": "preserved",
+						"regionsHeld": 0,
+						"dataLayersApplied": 0,
+						"limitations": [
+							"Explicit editor loading does not certify frustum completeness, shader convergence, or gameplay initialization."
+						]
+					},
+					"settling": {
+						"renderedFrames": 17,
+						"elapsedMs": 560.351200401783,
+						"convergence": "not_assessed"
+					},
+					"engineVersion": "5.7.4-51494982+++UE5+Release-5.7",
+					"pluginVersion": "0.7.1"
+				}
+			}
+		},
+		{
+			"name": "hero-1",
+			"pose": {
+				"aspectRatio": "16:9",
+				"fieldOfViewDegrees": 45,
+				"location": {
+					"x": 1197.4706207843412,
+					"y": -850.4779554578564,
+					"z": 712.0668676986277
+				},
+				"projection": "perspective",
+				"rotation": {
+					"pitch": -19.999999999999996,
+					"roll": 0,
+					"yaw": 145
+				}
+			},
+			"result": {
+				"status": "captured",
+				"sessionId": "visual-b09e1981-06df-4493-a134-e0b99c63a05d",
+				"operationId": "hero-1",
+				"artifact": {
+					"relativePath": "visual-b09e1981-06df-4493-a134-e0b99c63a05d/hero-1.png",
+					"bytes": 582679,
+					"width": 960,
+					"height": 540
+				},
+				"evidence": {
+					"editorState": {
+						"mapPackageDirtyBefore": false,
+						"mapPackageDirtyAfter": false
+					},
+					"camera": {
+						"location": {
+							"x": 1197.4706207843412,
+							"y": -850.4779554578564,
+							"z": 712.0668676986277
+						},
+						"rotation": {
+							"pitch": -19.999999999999996,
+							"roll": 0,
+							"yaw": 145
+						},
+						"projection": {
+							"kind": "perspective",
+							"horizontalFieldOfView": 45
+						}
+					},
+					"size": {
+						"width": 960,
+						"height": 540
+					},
+					"policy": {
+						"renderer": {
+							"kind": "editor_viewport",
+							"strategy": "high_resolution_screenshot",
+							"profile": "lit",
+							"vignette": "disabled",
+							"fog": true,
+							"volumetricFog": true
+						},
+						"exposure": {
+							"mode": "fixed_ev100",
+							"ev100": 0,
+							"compensation": "project"
+						},
+						"settling": {
+							"minimumFrames": 16,
+							"timeoutMs": 120000
+						},
+						"time": "live_editor",
+						"preparation": {
+							"geometry": {
+								"mode": "preserve_loading"
+							},
+							"dataLayers": []
+						}
+					},
+					"exposureEV100": 0,
+					"preparation": {
+						"status": "preserved",
+						"regionsHeld": 0,
+						"dataLayersApplied": 0,
+						"limitations": [
+							"Explicit editor loading does not certify frustum completeness, shader convergence, or gameplay initialization."
+						]
+					},
+					"settling": {
+						"renderedFrames": 17,
+						"elapsedMs": 578.0339017510414,
+						"convergence": "not_assessed"
+					},
+					"engineVersion": "5.7.4-51494982+++UE5+Release-5.7",
+					"pluginVersion": "0.7.1"
+				}
+			}
+		},
+		{
+			"name": "distance-1",
+			"pose": {
+				"aspectRatio": "16:9",
+				"fieldOfViewDegrees": 60,
+				"location": {
+					"x": 1948.0919406297187,
+					"y": -12,
+					"z": 701.9896622733116
+				},
+				"projection": "perspective",
+				"rotation": {
+					"pitch": -14.999999999999996,
+					"roll": 0,
+					"yaw": 180
+				}
+			},
+			"result": {
+				"status": "captured",
+				"sessionId": "visual-b09e1981-06df-4493-a134-e0b99c63a05d",
+				"operationId": "distance-1",
+				"artifact": {
+					"relativePath": "visual-b09e1981-06df-4493-a134-e0b99c63a05d/distance-1.png",
+					"bytes": 466594,
+					"width": 960,
+					"height": 540
+				},
+				"evidence": {
+					"editorState": {
+						"mapPackageDirtyBefore": false,
+						"mapPackageDirtyAfter": false
+					},
+					"camera": {
+						"location": {
+							"x": 1948.0919406297187,
+							"y": -12,
+							"z": 701.9896622733116
+						},
+						"rotation": {
+							"pitch": -14.999999999999996,
+							"roll": 0,
+							"yaw": 180
+						},
+						"projection": {
+							"kind": "perspective",
+							"horizontalFieldOfView": 60
+						}
+					},
+					"size": {
+						"width": 960,
+						"height": 540
+					},
+					"policy": {
+						"renderer": {
+							"kind": "editor_viewport",
+							"strategy": "high_resolution_screenshot",
+							"profile": "lit",
+							"vignette": "disabled",
+							"fog": true,
+							"volumetricFog": true
+						},
+						"exposure": {
+							"mode": "fixed_ev100",
+							"ev100": 0,
+							"compensation": "project"
+						},
+						"settling": {
+							"minimumFrames": 16,
+							"timeoutMs": 120000
+						},
+						"time": "live_editor",
+						"preparation": {
+							"geometry": {
+								"mode": "preserve_loading"
+							},
+							"dataLayers": []
+						}
+					},
+					"exposureEV100": 0,
+					"preparation": {
+						"status": "preserved",
+						"regionsHeld": 0,
+						"dataLayersApplied": 0,
+						"limitations": [
+							"Explicit editor loading does not certify frustum completeness, shader convergence, or gameplay initialization."
+						]
+					},
+					"settling": {
+						"renderedFrames": 17,
+						"elapsedMs": 560.1527020335197,
+						"convergence": "not_assessed"
+					},
+					"engineVersion": "5.7.4-51494982+++UE5+Release-5.7",
+					"pluginVersion": "0.7.1"
+				}
+			}
+		},
+		{
+			"name": "lens-1",
+			"pose": {
+				"aspectRatio": "16:9",
+				"fieldOfViewDegrees": 35,
+				"location": {
+					"x": 2641.709197132206,
+					"y": -12,
+					"z": 887.8438460094441
+				},
+				"projection": "perspective",
+				"rotation": {
+					"pitch": -14.999999999999998,
+					"roll": 0,
+					"yaw": 180
+				}
+			},
+			"result": {
+				"status": "captured",
+				"sessionId": "visual-b09e1981-06df-4493-a134-e0b99c63a05d",
+				"operationId": "lens-1",
+				"artifact": {
+					"relativePath": "visual-b09e1981-06df-4493-a134-e0b99c63a05d/lens-1.png",
+					"bytes": 484427,
+					"width": 960,
+					"height": 540
+				},
+				"evidence": {
+					"editorState": {
+						"mapPackageDirtyBefore": false,
+						"mapPackageDirtyAfter": false
+					},
+					"camera": {
+						"location": {
+							"x": 2641.709197132206,
+							"y": -12,
+							"z": 887.8438460094441
+						},
+						"rotation": {
+							"pitch": -14.999999999999998,
+							"roll": 0,
+							"yaw": 180
+						},
+						"projection": {
+							"kind": "perspective",
+							"horizontalFieldOfView": 35
+						}
+					},
+					"size": {
+						"width": 960,
+						"height": 540
+					},
+					"policy": {
+						"renderer": {
+							"kind": "editor_viewport",
+							"strategy": "high_resolution_screenshot",
+							"profile": "lit",
+							"vignette": "disabled",
+							"fog": true,
+							"volumetricFog": true
+						},
+						"exposure": {
+							"mode": "fixed_ev100",
+							"ev100": 0,
+							"compensation": "project"
+						},
+						"settling": {
+							"minimumFrames": 16,
+							"timeoutMs": 120000
+						},
+						"time": "live_editor",
+						"preparation": {
+							"geometry": {
+								"mode": "preserve_loading"
+							},
+							"dataLayers": []
+						}
+					},
+					"exposureEV100": 0,
+					"preparation": {
+						"status": "preserved",
+						"regionsHeld": 0,
+						"dataLayersApplied": 0,
+						"limitations": [
+							"Explicit editor loading does not certify frustum completeness, shader convergence, or gameplay initialization."
+						]
+					},
+					"settling": {
+						"renderedFrames": 17,
+						"elapsedMs": 576.496098190546,
+						"convergence": "not_assessed"
+					},
+					"engineVersion": "5.7.4-51494982+++UE5+Release-5.7",
+					"pluginVersion": "0.7.1"
+				}
+			}
+		},
+		{
+			"name": "height-1",
+			"pose": {
+				"aspectRatio": "16:9",
+				"fieldOfViewDegrees": 60,
+				"location": {
+					"x": 1493.5371544827842,
+					"y": -12,
+					"z": 700.1920744095389
+				},
+				"projection": "perspective",
+				"rotation": {
+					"pitch": -19.202990519248228,
+					"roll": 0,
+					"yaw": 180
+				}
+			},
+			"result": {
+				"status": "captured",
+				"sessionId": "visual-b09e1981-06df-4493-a134-e0b99c63a05d",
+				"operationId": "height-1",
+				"artifact": {
+					"relativePath": "visual-b09e1981-06df-4493-a134-e0b99c63a05d/height-1.png",
+					"bytes": 487273,
+					"width": 960,
+					"height": 540
+				},
+				"evidence": {
+					"editorState": {
+						"mapPackageDirtyBefore": false,
+						"mapPackageDirtyAfter": false
+					},
+					"camera": {
+						"location": {
+							"x": 1493.5371544827842,
+							"y": -12,
+							"z": 700.1920744095389
+						},
+						"rotation": {
+							"pitch": -19.202990519248228,
+							"roll": 0,
+							"yaw": 180
+						},
+						"projection": {
+							"kind": "perspective",
+							"horizontalFieldOfView": 60
+						}
+					},
+					"size": {
+						"width": 960,
+						"height": 540
+					},
+					"policy": {
+						"renderer": {
+							"kind": "editor_viewport",
+							"strategy": "high_resolution_screenshot",
+							"profile": "lit",
+							"vignette": "disabled",
+							"fog": true,
+							"volumetricFog": true
+						},
+						"exposure": {
+							"mode": "fixed_ev100",
+							"ev100": 0,
+							"compensation": "project"
+						},
+						"settling": {
+							"minimumFrames": 16,
+							"timeoutMs": 120000
+						},
+						"time": "live_editor",
+						"preparation": {
+							"geometry": {
+								"mode": "preserve_loading"
+							},
+							"dataLayers": []
+						}
+					},
+					"exposureEV100": 0,
+					"preparation": {
+						"status": "preserved",
+						"regionsHeld": 0,
+						"dataLayersApplied": 0,
+						"limitations": [
+							"Explicit editor loading does not certify frustum completeness, shader convergence, or gameplay initialization."
+						]
+					},
+					"settling": {
+						"renderedFrames": 17,
+						"elapsedMs": 559.6341006457806,
+						"convergence": "not_assessed"
+					},
+					"engineVersion": "5.7.4-51494982+++UE5+Release-5.7",
+					"pluginVersion": "0.7.1"
+				}
+			}
+		},
+		{
+			"name": "elevation-1",
+			"pose": {
+				"aspectRatio": "16:9",
+				"fieldOfViewDegrees": 60,
+				"location": {
+					"x": 1266.5920922897085,
+					"y": -12,
+					"z": 1066.8773308580621
+				},
+				"projection": "perspective",
+				"rotation": {
+					"pitch": -34.99999999999999,
+					"roll": 0,
+					"yaw": 180
+				}
+			},
+			"result": {
+				"status": "captured",
+				"sessionId": "visual-b09e1981-06df-4493-a134-e0b99c63a05d",
+				"operationId": "elevation-1",
+				"artifact": {
+					"relativePath": "visual-b09e1981-06df-4493-a134-e0b99c63a05d/elevation-1.png",
+					"bytes": 513586,
+					"width": 960,
+					"height": 540
+				},
+				"evidence": {
+					"editorState": {
+						"mapPackageDirtyBefore": false,
+						"mapPackageDirtyAfter": false
+					},
+					"camera": {
+						"location": {
+							"x": 1266.5920922897085,
+							"y": -12,
+							"z": 1066.8773308580621
+						},
+						"rotation": {
+							"pitch": -34.99999999999999,
+							"roll": 0,
+							"yaw": 180
+						},
+						"projection": {
+							"kind": "perspective",
+							"horizontalFieldOfView": 60
+						}
+					},
+					"size": {
+						"width": 960,
+						"height": 540
+					},
+					"policy": {
+						"renderer": {
+							"kind": "editor_viewport",
+							"strategy": "high_resolution_screenshot",
+							"profile": "lit",
+							"vignette": "disabled",
+							"fog": true,
+							"volumetricFog": true
+						},
+						"exposure": {
+							"mode": "fixed_ev100",
+							"ev100": 0,
+							"compensation": "project"
+						},
+						"settling": {
+							"minimumFrames": 16,
+							"timeoutMs": 120000
+						},
+						"time": "live_editor",
+						"preparation": {
+							"geometry": {
+								"mode": "preserve_loading"
+							},
+							"dataLayers": []
+						}
+					},
+					"exposureEV100": 0,
+					"preparation": {
+						"status": "preserved",
+						"regionsHeld": 0,
+						"dataLayersApplied": 0,
+						"limitations": [
+							"Explicit editor loading does not certify frustum completeness, shader convergence, or gameplay initialization."
+						]
+					},
+					"settling": {
+						"renderedFrames": 17,
+						"elapsedMs": 560.4483000934124,
+						"convergence": "not_assessed"
+					},
+					"engineVersion": "5.7.4-51494982+++UE5+Release-5.7",
+					"pluginVersion": "0.7.1"
+				}
+			}
+		},
+		{
+			"name": "saved-pure",
+			"pose": {
+				"aspectRatio": "16:9",
+				"fieldOfViewDegrees": 45,
+				"location": {
+					"x": 2386.564367282551,
+					"y": -350,
+					"z": 939.4779948982527
+				},
+				"projection": "perspective",
+				"rotation": {
+					"pitch": -17.652666244966206,
+					"roll": 0,
+					"yaw": 180
+				}
+			},
+			"result": {
+				"status": "captured",
+				"sessionId": "visual-b09e1981-06df-4493-a134-e0b99c63a05d",
+				"operationId": "saved-pure",
+				"artifact": {
+					"relativePath": "visual-b09e1981-06df-4493-a134-e0b99c63a05d/saved-pure.png",
+					"bytes": 472484,
+					"width": 960,
+					"height": 540
+				},
+				"evidence": {
+					"editorState": {
+						"mapPackageDirtyBefore": false,
+						"mapPackageDirtyAfter": false
+					},
+					"camera": {
+						"location": {
+							"x": 2386.564367282551,
+							"y": -350,
+							"z": 939.4779948982527
+						},
+						"rotation": {
+							"pitch": -17.652666244966206,
+							"roll": 0,
+							"yaw": 180
+						},
+						"projection": {
+							"kind": "perspective",
+							"horizontalFieldOfView": 45
+						}
+					},
+					"size": {
+						"width": 960,
+						"height": 540
+					},
+					"policy": {
+						"renderer": {
+							"kind": "editor_viewport",
+							"strategy": "high_resolution_screenshot",
+							"profile": "lit",
+							"vignette": "disabled",
+							"fog": true,
+							"volumetricFog": true
+						},
+						"exposure": {
+							"mode": "fixed_ev100",
+							"ev100": 0,
+							"compensation": "project"
+						},
+						"settling": {
+							"minimumFrames": 16,
+							"timeoutMs": 120000
+						},
+						"time": "live_editor",
+						"preparation": {
+							"geometry": {
+								"mode": "preserve_loading"
+							},
+							"dataLayers": []
+						}
+					},
+					"exposureEV100": 0,
+					"preparation": {
+						"status": "preserved",
+						"regionsHeld": 0,
+						"dataLayersApplied": 0,
+						"limitations": [
+							"Explicit editor loading does not certify frustum completeness, shader convergence, or gameplay initialization."
+						]
+					},
+					"settling": {
+						"renderedFrames": 17,
+						"elapsedMs": 560.9641000628471,
+						"convergence": "not_assessed"
+					},
+					"engineVersion": "5.7.4-51494982+++UE5+Release-5.7",
+					"pluginVersion": "0.7.1"
+				}
+			}
+		},
+		{
+			"name": "saved-authored",
+			"pose": {
+				"aspectRatio": "16:9",
+				"fieldOfViewDegrees": 45,
+				"location": {
+					"x": 2386.564367282551,
+					"y": -350,
+					"z": 939.4779948982527
+				},
+				"projection": "perspective",
+				"rotation": {
+					"pitch": -17.652666244966206,
+					"roll": 0,
+					"yaw": 180
+				}
+			},
+			"result": {
+				"status": "captured",
+				"sessionId": "authored-ff04e1b6-72cb-418c-b1d8-1eedd7ab80d2",
+				"operationId": "saved-authored",
+				"artifact": {
+					"relativePath": "authored-ff04e1b6-72cb-418c-b1d8-1eedd7ab80d2/saved-authored.png",
+					"bytes": 463846,
+					"width": 960,
+					"height": 540
+				},
+				"evidence": {
+					"editorState": {
+						"mapPackageDirtyBefore": false,
+						"mapPackageDirtyAfter": false
+					},
+					"camera": {
+						"location": {
+							"x": 2386.564367282551,
+							"y": -350,
+							"z": 939.4779948982527
+						},
+						"rotation": {
+							"pitch": -17.652666244966206,
+							"roll": 0,
+							"yaw": 180
+						},
+						"projection": {
+							"kind": "perspective",
+							"horizontalFieldOfView": 45
+						}
+					},
+					"size": {
+						"width": 960,
+						"height": 540
+					},
+					"policy": {
+						"renderer": {
+							"kind": "editor_viewport",
+							"strategy": "high_resolution_screenshot",
+							"profile": "lit",
+							"vignette": "disabled",
+							"fog": true,
+							"volumetricFog": true
+						},
+						"exposure": {
+							"mode": "fixed_ev100",
+							"ev100": 0,
+							"compensation": "project"
+						},
+						"settling": {
+							"minimumFrames": 16,
+							"timeoutMs": 120000
+						},
+						"time": "live_editor",
+						"preparation": {
+							"geometry": {
+								"mode": "preserve_loading"
+							},
+							"dataLayers": []
+						},
+						"visibility": {
+							"hide": [
+								{
+									"locator": {
+										"kind": "actor_guid",
+										"actorGuid": "0C971B77-4B8302FC-63C25BB0-FEAB95E4",
+										"lastKnownActorPath": "/Game/Fixture.Fixture:PersistentLevel.StaticMeshActor_12"
+									},
+									"label": "Foreground column"
+								}
+							],
+							"protect": [
+								{
+									"locator": {
+										"kind": "actor_guid",
+										"actorGuid": "f084973d-4577c05c-5ad92592-a9c77c46",
+										"lastKnownActorPath": "/Game/Fixture.Fixture:PersistentLevel.StaticMeshActor_11"
+									},
+									"label": "Capture subject"
+								}
+							]
+						}
+					},
+					"visibilityDiagnostics": [
+						{
+							"locator": {
+								"kind": "actor_guid",
+								"actorGuid": "0C971B77-4B8302FC-63C25BB0-FEAB95E4",
+								"lastKnownActorPath": "/Game/Fixture.Fixture:PersistentLevel.StaticMeshActor_12"
+							},
+							"actorPath": "/Game/Fixture.Fixture:PersistentLevel.StaticMeshActor_12",
+							"status": "resolved",
+							"message": ""
+						},
+						{
+							"locator": {
+								"kind": "actor_guid",
+								"actorGuid": "f084973d-4577c05c-5ad92592-a9c77c46",
+								"lastKnownActorPath": "/Game/Fixture.Fixture:PersistentLevel.StaticMeshActor_11"
+							},
+							"actorPath": "/Game/Fixture.Fixture:PersistentLevel.StaticMeshActor_11",
+							"status": "resolved",
+							"message": ""
+						}
+					],
+					"exposureEV100": 0,
+					"preparation": {
+						"status": "preserved",
+						"regionsHeld": 0,
+						"dataLayersApplied": 0,
+						"limitations": [
+							"Explicit editor loading does not certify frustum completeness, shader convergence, or gameplay initialization."
+						]
+					},
+					"settling": {
+						"renderedFrames": 17,
+						"elapsedMs": 525.9696021676064,
+						"convergence": "not_assessed"
+					},
+					"engineVersion": "5.7.4-51494982+++UE5+Release-5.7",
+					"pluginVersion": "0.7.1"
+				}
+			}
+		}
+	]
+}

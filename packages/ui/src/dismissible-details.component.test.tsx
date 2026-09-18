@@ -1,9 +1,12 @@
 import { cleanup, render, screen } from "@solidjs/testing-library";
 import { userEvent } from "@testing-library/user-event";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { createDismissibleDetails } from "./dismissible-details.js";
 
-afterEach(cleanup);
+afterEach(() => {
+	cleanup();
+	vi.restoreAllMocks();
+});
 
 function DismissibleDetailsFixture() {
 	const first = createDismissibleDetails();
@@ -83,4 +86,17 @@ it("closes when keyboard focus leaves the panel", async () => {
 	await user.tab();
 
 	expect(details.open).toBe(false);
+});
+
+it("removes every light-dismiss listener when its owner unmounts", () => {
+	const added = vi.spyOn(document, "addEventListener");
+	const removed = vi.spyOn(document, "removeEventListener");
+	const view = render(() => <DismissibleDetailsFixture />);
+	const listeners = added.mock.calls.filter(
+		([type, , capture]) =>
+			capture === true && ["pointerdown", "focusin", "keydown"].includes(type)
+	);
+	expect(listeners).toHaveLength(6);
+	view.unmount();
+	for (const listener of listeners) expect(removed).toHaveBeenCalledWith(...listener);
 });

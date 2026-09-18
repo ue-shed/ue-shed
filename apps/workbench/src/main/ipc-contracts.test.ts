@@ -200,6 +200,7 @@ type ValidResultByChannel = {
 };
 
 const validArgsByChannel = {
+	"editor-window:activate": [],
 	"editor-session:settings": [],
 	"editor-session:set-port": [31001],
 	"editor-session:status": [],
@@ -374,6 +375,8 @@ const validArgsByChannel = {
 	"map-review:create-review-set": [{ displayName: "Lighting review" }],
 	"map-review:select-review-set": [{ reviewSetId: "lighting-review" }],
 	"map-review:world-snapshot": [],
+	"map-review:open-map": ["Content/Fixture/Offline/L_OfflineWorld.umap"],
+	"map-review:editor-world": [],
 	"map-review:saved-world": ["Content/Fixture/Offline/L_OfflineWorld.umap"],
 	"map-review:saved-world-maps": [],
 	"map-review:saved-world-progress": [],
@@ -394,6 +397,7 @@ const validArgsByChannel = {
 		}
 	],
 	"map-review:author-from-selection": [{ destination: { kind: "append_view" } }],
+	"map-review:camera-workspace": [{ kind: "list" }],
 	"map-review:authoring-resume": [],
 	"map-review:authoring-patch": [
 		{
@@ -445,6 +449,7 @@ const validArgsByChannel = {
 } satisfies ValidArgsByChannel;
 
 const validResultByChannel = {
+	"editor-window:activate": { endpoint: "http://127.0.0.1:30001", message: null },
 	"editor-session:settings": { port: 30001 },
 	"editor-session:set-port": { port: 31001 },
 	"editor-session:status": {
@@ -712,6 +717,16 @@ const validResultByChannel = {
 		recovery: "open Unreal",
 		status: "unavailable"
 	},
+	"map-review:open-map": {
+		outcome: "failed",
+		message: "Editor disconnected.",
+		recovery: "Reconnect Unreal."
+	},
+	"map-review:editor-world": {
+		status: "unavailable",
+		message: "Offline",
+		recovery: "Connect Unreal."
+	},
 	"map-review:saved-world": {
 		authority: { kind: "project_files", mapPackage: "/Game/Fixture/Offline/L_OfflineWorld" },
 		completeness: "complete",
@@ -749,6 +764,7 @@ const validResultByChannel = {
 		status: "failed",
 		error: { message: "missing", recovery: "select an actor" }
 	},
+	"map-review:camera-workspace": { panel: null, sets: [], error: null },
 	"map-review:authoring-resume": {
 		status: "failed",
 		error: { message: "missing", recovery: "select an actor" }
@@ -824,9 +840,9 @@ const malformedArgsByChannel = {
 	"map-capture:tile": [{ manifestPath: "", relativePath: "../outside.png" }]
 } satisfies Partial<Record<InvokeChannel, IpcFixtureValue>>;
 
-it("registers exactly 120 invoke channels plus renderer events", () => {
-	expect(invokeChannelNames).toHaveLength(120);
-	expect(new Set(invokeChannelNames).size).toBe(120);
+it("registers exactly 124 invoke channels plus renderer events", () => {
+	expect(invokeChannelNames).toHaveLength(124);
+	expect(new Set(invokeChannelNames).size).toBe(124);
 	expect(cameraFrameEvent.channel).toBe("camera:frame");
 	expect(mapCaptureProgressEvent.channel).toBe("map-capture:progress");
 	expect(worldObservationEvent.channel).toBe("map-review:world-observation");
@@ -845,7 +861,12 @@ it.effect("decodes map-capture progress events", () =>
 it("keeps contract channels in exact preload parity", () => {
 	expect([...preloadInvokeChannels].sort()).toEqual([...invokeChannelNames].sort());
 	expect(preloadEventChannels.toSorted()).toEqual(
-		["camera:frame", "map-capture:progress", "map-review:world-observation"].toSorted()
+		[
+			"camera:frame",
+			"editor-window:handoff",
+			"map-capture:progress",
+			"map-review:world-observation"
+		].toSorted()
 	);
 });
 

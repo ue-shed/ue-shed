@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { it } from "@effect/vitest";
 import { Effect, Layer, Ref } from "effect";
 import { expect } from "vitest";
+import { unrealRemoteControlPermissions } from "./remote-control-permissions.js";
 import { makeEngineInstallationDiscoveryTestLayer } from "./engine-installation.js";
 import {
 	UnrealProjectLauncher,
@@ -21,6 +22,19 @@ it("resolves platform commandlet executable paths", () => {
 	expect(unrealEditorCommandletExecutable("/UE", "linux")).toBe(
 		join("/UE", "Engine", "Binaries", "Linux", "UnrealEditor-Cmd")
 	);
+});
+
+it("allows only enabled UE Shed API classes without opening arbitrary remote calls", () => {
+	const rules = unrealRemoteControlPermissions([
+		"UEShedCameraAuthoringBridge",
+		"UEShedCameraAuthoringBridge",
+		"Unknown",
+		"__proto__"
+	]);
+	expect(rules).toEqual([
+		"-ini:RemoteControl:[/Script/RemoteControlCommon.RemoteControlSettings]:+CustomAllowedRemoteFunctionCalls=(ClassPath=/Script/UEShedCameraAuthoringBridge.UEShedCameraAuthoringBridgeLibrary,bAllowChildClasses=False)"
+	]);
+	expect(unrealRemoteControlPermissions([])).toEqual([]);
 });
 
 it("builds normal and plugin launch arguments without a shell", () => {

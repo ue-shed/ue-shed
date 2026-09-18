@@ -1,0 +1,29 @@
+{
+	"version": 1,
+	"name": "Front three-quarter arc",
+	"settings": {
+		"fieldOfViewDegrees": 60,
+		"distanceScale": 1.15,
+		"heightOffset": 0,
+		"margin": 0.1,
+		"elevationDegrees": 15
+	},
+	"groups": [],
+	"cameras": [
+		{
+			"displayName": "Front three-quarter arc 1",
+			"yawDegrees": -45,
+			"overrides": {}
+		},
+		{
+			"displayName": "Front three-quarter arc 2",
+			"yawDegrees": 0,
+			"overrides": {}
+		},
+		{
+			"displayName": "Front three-quarter arc 3",
+			"yawDegrees": 45,
+			"overrides": {}
+		}
+	]
+}

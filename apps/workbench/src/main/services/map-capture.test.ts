@@ -1,6 +1,8 @@
+import { makeWorkbenchEditorHandoffTestLayer } from "./editor-handoff.js";
 import { makeWorkbenchTestConfigurationLayer as makeWorkbenchConfigurationLayer } from "../test-configuration.js";
 import {
 	MapCaptureRepositoryLive,
+	makeDefaultMapCapturePlan,
 	decodeMapTilePyramidManifest,
 	makeCameraFeedTestLayer,
 	mapCapturePlansRoot,
@@ -8,6 +10,7 @@ import {
 } from "@ue-shed/cameras";
 import { it } from "@effect/vitest";
 import { makeEditorWorldControlTestLayer } from "@ue-shed/engine";
+import { EditorWorldOpenRequest } from "@ue-shed/protocol";
 import { Effect, Layer, Schema } from "effect";
 import { makeRemoteControlClientTestLayer } from "@ue-shed/unreal-connection";
 import { makeAssetReaderTestLayer } from "@ue-shed/unreal-assets";
@@ -23,6 +26,80 @@ import { WorkbenchMapCapture, WorkbenchMapCaptureLive } from "./map-capture.js";
 import { makeWorkbenchProjectTestLayer } from "./project-workspace.js";
 
 const roots: string[] = [];
+
+it.effect("focuses explicit map opening but never the map opened as capture preparation", () =>
+	Effect.gen(function* () {
+		const projectRoot = yield* Effect.promise(() =>
+			mkdtemp(join(tmpdir(), "ue-shed-handoff-"))
+		);
+		roots.push(projectRoot);
+		const calls: string[] = [];
+		const plan = makeDefaultMapCapturePlan({ projectId: "fixture" });
+		yield* Effect.gen(function* () {
+			const service = yield* WorkbenchMapCapture;
+			expect((yield* service.openMap(plan)).status).toBe("completed");
+			expect(calls).toEqual(["open", "focus"]);
+			calls.length = 0;
+			// Capture fails at capability negotiation after opening; foreground must stay unchanged.
+			expect(
+				(yield* service.capture({
+					plan,
+					operationId: "capture",
+					openMap: true,
+					captureBackend: "scene_capture_tiles"
+				})).status
+			).toBe("failed");
+			expect(calls).toEqual(["open"]);
+		}).pipe(
+			Effect.provide(
+				mapCaptureLayer(projectRoot, {
+					handoff: makeWorkbenchEditorHandoffTestLayer((endpoint) =>
+						Effect.sync(() => {
+							calls.push("focus");
+							return { endpoint, message: "Windows refused" };
+						})
+					),
+					worldControl: makeEditorWorldControlTestLayer({
+						snapshot: () => Effect.die("not used"),
+						open: (request) =>
+							Effect.sync(() => {
+								calls.push("open");
+								const snapshot = {
+									mapPath: plan.project.mapPath,
+									playSessionActive: false,
+									dirtyWorldPackages: []
+								};
+								return {
+									...request,
+									operationId: EditorWorldOpenRequest.fields.operationId.make(
+										request.operationId
+									),
+									contract: {
+										name: "unreal-editor-world-control",
+										version: { major: 1, minor: 0 }
+									},
+									outcome: "opened",
+									before: snapshot,
+									after: snapshot
+								};
+							})
+					}),
+					remoteControl: makeRemoteControlClientTestLayer((request) =>
+						Effect.succeed(
+							request.functionName === "ClearProvisionedCameras"
+								? { cameras: [], schemaVersion: 1 }
+								: {
+										capabilities: [],
+										producerKind: "unreal_editor",
+										schemaVersion: 1
+									}
+						)
+					)
+				})
+			)
+		);
+	})
+);
 
 afterEach(async () => {
 	await Promise.all(roots.splice(0).map((root) => rm(root, { force: true, recursive: true })));
@@ -43,6 +120,8 @@ const configuration: WorkbenchConfigurationApi = {
 function mapCaptureLayer(
 	projectRoot: string,
 	options: {
+		readonly worldControl?: ReturnType<typeof makeEditorWorldControlTestLayer>;
+		readonly handoff?: ReturnType<typeof makeWorkbenchEditorHandoffTestLayer>;
 		readonly assetReader?: ReturnType<typeof makeAssetReaderTestLayer>;
 		readonly cameraFeed?: ReturnType<typeof makeCameraFeedTestLayer>;
 		readonly remoteControl?: ReturnType<typeof makeRemoteControlClientTestLayer>;
@@ -69,7 +148,12 @@ function mapCaptureLayer(
 			chooseSaveFile: () => Effect.die("not used")
 		})
 	);
-	const worldControl = makeEditorWorldControlTestLayer({ open: () => Effect.die("not used") });
+	const worldControl =
+		options.worldControl ??
+		makeEditorWorldControlTestLayer({
+			open: () => Effect.die("not used"),
+			snapshot: () => Effect.die("not used")
+		});
 	const assetReader =
 		options.assetReader ??
 		makeAssetReaderTestLayer({
@@ -82,6 +166,7 @@ function mapCaptureLayer(
 	return WorkbenchMapCaptureLive.pipe(
 		Layer.provide(
 			Layer.mergeAll(
+				options.handoff ?? makeWorkbenchEditorHandoffTestLayer(),
 				MapCaptureRepositoryLive,
 				assetReader,
 				options.cameraFeed ?? makeCameraFeedTestLayer(),

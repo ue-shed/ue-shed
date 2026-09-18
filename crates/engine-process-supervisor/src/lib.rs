@@ -3,6 +3,26 @@ use std::path::PathBuf;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// A foreground grant is always scoped to one concrete process, never ASFW_ANY.
+pub fn parse_foreground_pid(value: &str) -> Result<u32, String> {
+    value
+        .parse::<u32>()
+        .ok()
+        .filter(|pid| *pid > 0 && *pid < u32::MAX)
+        .ok_or_else(|| "--allow-foreground requires a positive process ID (not ASFW_ANY)".into())
+}
+
+#[cfg(test)]
+mod foreground_tests {
+    #[test]
+    fn grant_requires_one_concrete_process() {
+        assert_eq!(super::parse_foreground_pid("42"), Ok(42));
+        for value in ["0", "-1", "4294967295", "4294967296", "", "all", "1;2"] {
+            assert!(super::parse_foreground_pid(value).is_err());
+        }
+    }
+}
+
 #[derive(Debug, Eq, PartialEq)]
 pub struct LaunchRequest {
     pub arguments: Vec<OsString>,

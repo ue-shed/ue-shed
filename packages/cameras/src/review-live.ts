@@ -49,7 +49,7 @@ export function captureReviewView(args: {
 	readonly endpoint: string;
 	readonly request: ReviewCaptureRequest;
 }): Effect.Effect<ReviewCaptureResponse, ReviewCaptureConnectionError, RemoteControlClient> {
-	if (args.request.contract.version.minor === 6) {
+	if (args.request.contract.version.minor >= 6) {
 		return Schema.decodeUnknownEffect(ReviewCaptureRequestCurrent)(args.request).pipe(
 			Effect.flatMap((request) =>
 				captureRenderedReviewView({ endpoint: args.endpoint, request })

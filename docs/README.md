@@ -36,6 +36,9 @@ there; do not invent a second status source in docs.
 - [Shared camera rendering](products/camera-rendering.md) — public editor-world rendering lifecycle,
   backend policies, compatibility and downstream adoption.
 
+- [Camera arrangement authoring](products/camera-authoring.md) — actor-scoped drafts, optional native
+  editing, Unreal RC synchronization, and recoverable approval.
+
 | Document                                                  | Domain                               |
 | --------------------------------------------------------- | ------------------------------------ |
 | [data-authoring.md](products/data-authoring.md)           | DataTable authoring product          |

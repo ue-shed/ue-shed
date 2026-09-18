@@ -4,9 +4,19 @@ Use SolidJS for maintained first-party UI.
 
 Solid is a view layer. Headless packages own domain state and changes.
 
-The maintained UI uses Solid `2.0.0-rc.7` with the matching `@solidjs/web` renderer. Import DOM
+The maintained UI uses Solid `2.0.0-rc.9` with the matching `@solidjs/web` renderer. Import DOM
 rendering and JSX types from `@solidjs/web`; use it as `jsxImportSource`. Keep the compiler and
 Testing Library on their Solid 2 prerelease versions from the workspace lockfile.
+
+The `vite-plugin-solid` compatibility package delegates to `@solidjs/vite-plugin`; the lockfile
+uses `3.0.0-next.44` with the rc.9 compiler and Babel plugin. Solid's runtime is ESM-only as of
+rc.8, supported by the repository's Node 26 baseline.
+
+The rc.9 tarball's declaration entrypoint re-exports five internal symbols stripped from its
+client declarations. `patches/solid-js@2.0.0-rc.9.patch` restores their declarations from the
+[rc.9 source](https://github.com/solidjs/solid/tree/solid-js%402.0.0-rc.9/packages/solid/src/client),
+without changing runtime code or disabling dependency type-checking. The adoption manifest copies
+the same patch. Remove it once an upstream release provides consistent declarations.
 
 Signal writes are batched until the next microtask. Pass new values directly to operations that
 run in the same event handler, and publish retained route state as it changes rather than waiting
@@ -16,6 +26,10 @@ are unowned; register their lifetime cleanup during component setup.
 
 Peculiar Sheets runs directly on Solid 2. Data Authoring mounts TanStack Charts through its
 framework-neutral DOM host, with updates and disposal owned by the surrounding Solid 2 component.
+Peculiar Sheets `0.13.0` still declares exact rc.7 peers. The workspace and adoption template allow
+only rc.9 as an additional peer version for that package; keep this exception bounded and rerun
+the component suite and Data Authoring adoption gate when changing it. All consumers must resolve
+the same Solid runtime, not a separate rc.7 copy for the spreadsheet.
 
 ## Rules
 

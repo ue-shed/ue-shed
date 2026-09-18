@@ -3,6 +3,7 @@ import { createServer } from "node:net";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { unrealRemoteControlPermissions } from "../packages/engine/src/remote-control-permissions.ts";
 import { ensureUassetExecutable } from "./native-tools.ts";
 import { isJsonString, parseJsonObject, type JsonObject } from "./json.ts";
 
@@ -100,6 +101,7 @@ export function unrealRemoteControlLaunchArguments(pluginIds: readonly string[],
 		`-ini:RemoteControl:[/Script/RemoteControlCommon.RemoteControlSettings]:RemoteControlHttpServerPort=${httpPort}`,
 		`-ini:RemoteControl:[/Script/RemoteControlCommon.RemoteControlSettings]:RemoteControlWebSocketServerPort=${httpPort + 1}`,
 		"-ini:RemoteControl:[/Script/RemoteControlCommon.RemoteControlSettings]:bAutoStartWebServer=True",
+		...unrealRemoteControlPermissions(enabledPlugins),
 		"-NoLiveCoding"
 	];
 }

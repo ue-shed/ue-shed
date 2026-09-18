@@ -273,6 +273,7 @@ export const reviewCommand = Command.make("review").pipe(
 			Command.withDescription("Manage Review authoring sessions."),
 			Command.withSubcommands([
 				reviewAuthoringAppendCommand,
+				cameraArrangementCommand,
 				reviewAuthoringStartCommand,
 				reviewAuthoringBootstrapCommand,
 				reviewAuthoringTuneCommand,
@@ -285,3 +286,4 @@ export const reviewCommand = Command.make("review").pipe(
 		reviewShowCommand
 	])
 );
+import { cameraArrangementCommand } from "./camera-authoring.js";

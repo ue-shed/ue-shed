@@ -183,7 +183,7 @@ bool CaptureViewportHighResolutionLevel(const TArray<TSharedPtr<FJsonValue>> &Ti
 										const FString &RenderProfile, const FString &RunId,
 										TArray<TSharedPtr<FJsonValue>> &OutTileResults, int32 &OutSucceeded,
 										int32 &OutFailed, FString &OutFailureCode, FString &OutFailureMessage,
-										FString &OutFailureRecovery)
+										FString &OutFailureRecovery, const TSharedPtr<FJsonObject>& Visibility)
 {
 	auto Fail = [&](const TCHAR *Code, const TCHAR *Message, const TCHAR *Recovery) {
 		OutFailureCode = Code;
@@ -295,6 +295,7 @@ bool CaptureViewportHighResolutionLevel(const TArray<TSharedPtr<FJsonValue>> &Ti
 	auto SessionRequest =
 		UEShedLegacyRenderRequest(SessionId, GEditor->GetEditorWorldContext().World(), true);
 	auto RendererPolicy = SessionRequest->GetObjectField(TEXT("policy"))->GetObjectField(TEXT("renderer"));
+	if (Visibility) SessionRequest->GetObjectField(TEXT("policy"))->SetObjectField(TEXT("visibility"), Visibility);
 	RendererPolicy->SetBoolField(TEXT("fog"), bFog);
 	RendererPolicy->SetBoolField(TEXT("volumetricFog"), bVolumetricFog);
 	RendererPolicy->SetStringField(TEXT("vignette"), TEXT("project"));
@@ -434,7 +435,7 @@ static void CaptureMapTilesInternal(const FString &RequestJson, FString &ResultJ
 		!(*Contract)->TryGetObjectField(TEXT("version"), Version) ||
 		!(*Version)->TryGetNumberField(TEXT("major"), ContractMajor) ||
 		!(*Version)->TryGetNumberField(TEXT("minor"), ContractMinor) || ContractMajor != 1 ||
-		(ContractMinor != 0 && ContractMinor != 1))
+		(ContractMinor != 0 && ContractMinor != 1 && ContractMinor != 2))
 	{
 		Fail(TEXT("invalid_request"), TEXT("Map tile capture contract 1.0 is required."),
 			 TEXT("Negotiate a supported UEShedCamerasEditor capability."), false);
@@ -490,6 +491,7 @@ static void CaptureMapTilesInternal(const FString &RequestJson, FString &ResultJ
 	double Yaw;
 	double Roll;
 	if (!Request->TryGetObjectField(TEXT("capture"), CapturePolicy) ||
+        ((*CapturePolicy)->HasField(TEXT("visibility")) && (ContractMinor < 2 || !(*CapturePolicy)->HasTypedField<EJson::Object>(TEXT("visibility")))) ||
 		!(*CapturePolicy)->TryGetObjectField(TEXT("dataLayers"), DataLayers) ||
 		!(*DataLayers)->TryGetStringField(TEXT("mode"), DataLayerMode) ||
 		!(*CapturePolicy)->TryGetObjectField(TEXT("orientation"), Orientation) ||
@@ -597,7 +599,7 @@ static void CaptureMapTilesInternal(const FString &RequestJson, FString &ResultJ
 		FString FailureRecovery;
 		if (!CaptureViewportHighResolutionLevel(*Tiles, TilePixelSize, GutterPixels, CaptureZ, bFog,
 												bVolumetricFog, RenderProfile, RunId, TileResults, Succeeded,
-												Failed, FailureCode, FailureMessage, FailureRecovery))
+												Failed, FailureCode, FailureMessage, FailureRecovery, (*CapturePolicy)->HasField(TEXT("visibility")) ? (*CapturePolicy)->GetObjectField(TEXT("visibility")) : nullptr))
 		{
 			MapTileTopFailure(ResultJson, OperationId, CorrelationId, *FailureCode, *FailureMessage,
 							  *FailureRecovery, FailureCode != TEXT("invalid_request"), ResponseMinor, bDirtyBefore,
@@ -760,6 +762,7 @@ static void CaptureMapTilesInternal(const FString &RequestJson, FString &ResultJ
 					FGuid::NewGuid().ToString(EGuidFormats::DigitsWithHyphens), World, false, RenderProfile);
 				auto P = SessionRequest->GetObjectField(TEXT("policy")),
 					 R = P->GetObjectField(TEXT("renderer"));
+				if ((*CapturePolicy)->HasField(TEXT("visibility"))) P->SetObjectField(TEXT("visibility"), (*CapturePolicy)->GetObjectField(TEXT("visibility")));
 				R->SetBoolField(TEXT("fog"), bFog);
 				R->SetBoolField(TEXT("volumetricFog"), bVolumetricFog);
 				R->SetNumberField(TEXT("lodDistanceScale"), LodDistanceScale);

@@ -1,0 +1,84 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$defs": {},
+	"type": "object",
+	"properties": {
+		"contract": {
+			"type": "object",
+			"properties": {
+				"name": {
+					"type": "string",
+					"enum": ["unreal-editor-world-control"]
+				},
+				"version": {
+					"type": "object",
+					"properties": {
+						"major": {
+							"type": "number",
+							"enum": [1]
+						},
+						"minor": {
+							"type": "number",
+							"enum": [0]
+						}
+					},
+					"required": ["major", "minor"],
+					"additionalProperties": false
+				}
+			},
+			"required": ["name", "version"],
+			"additionalProperties": false
+		},
+		"projectName": {
+			"type": "string"
+		},
+		"snapshot": {
+			"type": "object",
+			"properties": {
+				"dirtyWorldPackages": {
+					"type": "array",
+					"items": {
+						"type": "string",
+						"allOf": [
+							{
+								"minLength": 1
+							},
+							{
+								"maxLength": 1024
+							},
+							{
+								"pattern": "^\\/[A-Za-z0-9_./-]+$"
+							}
+						]
+					},
+					"allOf": [
+						{
+							"maxItems": 256
+						}
+					]
+				},
+				"mapPath": {
+					"type": "string",
+					"allOf": [
+						{
+							"minLength": 1
+						},
+						{
+							"maxLength": 1024
+						},
+						{
+							"pattern": "^\\/[A-Za-z0-9_./-]+$"
+						}
+					]
+				},
+				"playSessionActive": {
+					"type": "boolean"
+				}
+			},
+			"required": ["dirtyWorldPackages", "playSessionActive"],
+			"additionalProperties": false
+		}
+	},
+	"required": ["contract", "projectName", "snapshot"],
+	"additionalProperties": false
+}

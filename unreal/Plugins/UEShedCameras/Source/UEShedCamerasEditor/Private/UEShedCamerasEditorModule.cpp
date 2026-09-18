@@ -1,3 +1,4 @@
+#include "UEShedCameraVisibility.h"
 #include "Editor.h"
 #include "Misc/CoreDelegates.h"
 #include "Engine/World.h"
@@ -12,6 +13,13 @@ class FUEShedCamerasEditorModule final : public IModuleInterface
 public:
 	virtual void StartupModule() override
     {
+        UEShedPreviewVisibilityResolver().BindLambda([](UWorld* World, const TSharedPtr<FJsonObject>& Policy, TArray<TWeakObjectPtr<AActor>>& Hidden, FString& Error) {
+            if (!World || World->WorldType != EWorldType::Editor || !GEditor || GEditor->PlayWorld) { Error = TEXT("Authored preview requires the editor world outside Play."); return false; }
+            const auto Result = UEShedResolveCameraVisibility(World, Policy);
+            Error = Result.Message;
+            Hidden = Result.Hidden;
+            return Result.Valid;
+        });
         RegisterUEShedMapCaptureFreeze();
         if (GEditor) RegisterThrottleDelegate();
         else PostEngineInitHandle = FCoreDelegates::OnPostEngineInit.AddRaw(
@@ -19,6 +27,7 @@ public:
     }
 	virtual void ShutdownModule() override
 	{
+        UEShedPreviewVisibilityResolver().Unbind();
         FCoreDelegates::OnPostEngineInit.Remove(PostEngineInitHandle);
 		if (GEditor)
         {

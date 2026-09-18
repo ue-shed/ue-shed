@@ -166,11 +166,11 @@ contract, immutable variant naming, and hosting boundary. A public compiled arti
 fully pinned source manifest; output derived from `ref: "local"` or an all-zero candidate digest is
 local evidence only and cannot pass the release gate.
 
-For a headless Observatory host, select only Observatory:
+For a headless Observatory host, select Observatory and its headless Core dependency:
 
 ```powershell
 node scripts/plugin-bundle.ts bundle --version <version> `
-  --output out/plugins-observatory --plugins UEShedObservatory
+  --output out/plugins-observatory --plugins UEShedCore,UEShedObservatory
 pnpm ue-shed plugins verify out/plugins-observatory/plugins.manifest.json
 ```
 

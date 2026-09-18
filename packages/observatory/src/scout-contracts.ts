@@ -1,3 +1,4 @@
+import { EditorWindowActivationResult } from "@ue-shed/protocol";
 import { Schema } from "effect";
 import { ActorId, WorldActorSnapshot } from "./actor-models.js";
 export const WorldScoutRefreshRate = Schema.Int.check(
@@ -21,6 +22,16 @@ export const SnapshotResponse = Schema.Union([
 export const FocusResponse = Schema.Union([
 	Schema.Struct({
 		status: Schema.Literal("focused"),
+		windowActivation: Schema.optionalKey(
+			Schema.Union([
+				EditorWindowActivationResult,
+				Schema.Struct({
+					status: Schema.Literal("unavailable"),
+					message: Schema.String,
+					recovery: Schema.String
+				})
+			])
+		),
 		actorId: ActorId,
 		authoringSubject: Schema.Literals(["selected", "runtime_only"])
 	}),

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { captureAuthoredReviewView } from "./review-authored-render.js";
 import { Cause, Effect, Exit, Schema } from "effect";
 import { RemoteControlClient } from "@ue-shed/unreal-connection";
 import { makeCameraRenderer, CameraRenderError } from "./camera-render.js";
@@ -80,6 +81,8 @@ export const captureRenderedReviewView = Effect.fn("ReviewRenderer.capture")(fun
 	const request = yield* Schema.decodeUnknownEffect(ReviewCaptureRequestCurrent)(args.request, {
 		onExcessProperty: "error"
 	});
+	if (request.authoredVisibility)
+		return yield* captureAuthoredReviewView({ endpoint: args.endpoint, request });
 	const renderer = makeCameraRenderer(client, args.endpoint);
 	const remote = (functionName: string, parameters: Record<string, string>) =>
 		client.request({

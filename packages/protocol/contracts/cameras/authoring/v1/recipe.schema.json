@@ -1,0 +1,340 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://ue-shed.dev/contracts/cameras/authoring/v1/recipe.schema.json",
+	"type": "object",
+	"properties": {
+		"version": {
+			"type": "number",
+			"enum": [1]
+		},
+		"name": {
+			"type": "string",
+			"allOf": [
+				{
+					"minLength": 1
+				}
+			]
+		},
+		"settings": {
+			"type": "object",
+			"properties": {
+				"fieldOfViewDegrees": {
+					"type": "number",
+					"allOf": [
+						{
+							"minimum": 5,
+							"maximum": 170
+						}
+					]
+				},
+				"distanceScale": {
+					"type": "number",
+					"allOf": [
+						{
+							"minimum": 0.01,
+							"maximum": 100
+						}
+					]
+				},
+				"heightOffset": {
+					"type": "number"
+				},
+				"margin": {
+					"type": "number",
+					"allOf": [
+						{
+							"minimum": 0,
+							"maximum": 0.45
+						}
+					]
+				},
+				"elevationDegrees": {
+					"type": "number",
+					"allOf": [
+						{
+							"minimum": -89,
+							"maximum": 89
+						}
+					]
+				},
+				"yawOffset": {
+					"type": "number"
+				},
+				"aimOffset": {
+					"type": "object",
+					"properties": {
+						"x": {
+							"type": "number"
+						},
+						"y": {
+							"type": "number"
+						},
+						"z": {
+							"type": "number"
+						}
+					},
+					"required": ["x", "y", "z"],
+					"additionalProperties": false
+				}
+			},
+			"required": ["fieldOfViewDegrees", "distanceScale", "heightOffset", "margin"],
+			"additionalProperties": false
+		},
+		"groups": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"properties": {
+					"id": {
+						"type": "string",
+						"allOf": [
+							{
+								"pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$"
+							}
+						]
+					},
+					"name": {
+						"type": "string",
+						"allOf": [
+							{
+								"minLength": 1
+							}
+						]
+					},
+					"overrides": {
+						"type": "object",
+						"properties": {
+							"fieldOfViewDegrees": {
+								"type": "number",
+								"allOf": [
+									{
+										"minimum": 5,
+										"maximum": 170
+									}
+								]
+							},
+							"distanceScale": {
+								"type": "number",
+								"allOf": [
+									{
+										"minimum": 0.01,
+										"maximum": 100
+									}
+								]
+							},
+							"heightOffset": {
+								"type": "number"
+							},
+							"margin": {
+								"type": "number",
+								"allOf": [
+									{
+										"minimum": 0,
+										"maximum": 0.45
+									}
+								]
+							},
+							"elevationDegrees": {
+								"type": "number",
+								"allOf": [
+									{
+										"minimum": -89,
+										"maximum": 89
+									}
+								]
+							},
+							"yawOffset": {
+								"type": "number"
+							},
+							"aimOffset": {
+								"type": "object",
+								"properties": {
+									"x": {
+										"type": "number"
+									},
+									"y": {
+										"type": "number"
+									},
+									"z": {
+										"type": "number"
+									}
+								},
+								"required": ["x", "y", "z"],
+								"additionalProperties": false
+							}
+						},
+						"additionalProperties": false
+					}
+				},
+				"required": ["id", "name", "overrides"],
+				"additionalProperties": false
+			}
+		},
+		"cameras": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"properties": {
+					"displayName": {
+						"type": "string",
+						"allOf": [
+							{
+								"minLength": 1
+							}
+						]
+					},
+					"yawDegrees": {
+						"type": "number"
+					},
+					"overrides": {
+						"type": "object",
+						"properties": {
+							"fieldOfViewDegrees": {
+								"type": "number",
+								"allOf": [
+									{
+										"minimum": 5,
+										"maximum": 170
+									}
+								]
+							},
+							"distanceScale": {
+								"type": "number",
+								"allOf": [
+									{
+										"minimum": 0.01,
+										"maximum": 100
+									}
+								]
+							},
+							"heightOffset": {
+								"type": "number"
+							},
+							"margin": {
+								"type": "number",
+								"allOf": [
+									{
+										"minimum": 0,
+										"maximum": 0.45
+									}
+								]
+							},
+							"elevationDegrees": {
+								"type": "number",
+								"allOf": [
+									{
+										"minimum": -89,
+										"maximum": 89
+									}
+								]
+							},
+							"yawOffset": {
+								"type": "number"
+							},
+							"aimOffset": {
+								"type": "object",
+								"properties": {
+									"x": {
+										"type": "number"
+									},
+									"y": {
+										"type": "number"
+									},
+									"z": {
+										"type": "number"
+									}
+								},
+								"required": ["x", "y", "z"],
+								"additionalProperties": false
+							}
+						},
+						"additionalProperties": false
+					},
+					"groupId": {
+						"type": "string",
+						"allOf": [
+							{
+								"pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$"
+							}
+						]
+					},
+					"relativePose": {
+						"type": "object",
+						"properties": {
+							"aspectRatio": {
+								"type": "string",
+								"enum": ["16:9"]
+							},
+							"fieldOfViewDegrees": {
+								"type": "number",
+								"allOf": [
+									{
+										"minimum": 5,
+										"maximum": 170
+									}
+								]
+							},
+							"location": {
+								"type": "object",
+								"properties": {
+									"x": {
+										"type": "number"
+									},
+									"y": {
+										"type": "number"
+									},
+									"z": {
+										"type": "number"
+									}
+								},
+								"required": ["x", "y", "z"],
+								"additionalProperties": false
+							},
+							"projection": {
+								"type": "string",
+								"enum": ["perspective"]
+							},
+							"rotation": {
+								"type": "object",
+								"properties": {
+									"pitch": {
+										"type": "number"
+									},
+									"roll": {
+										"type": "number"
+									},
+									"yaw": {
+										"type": "number"
+									}
+								},
+								"required": ["pitch", "roll", "yaw"],
+								"additionalProperties": false
+							}
+						},
+						"required": [
+							"aspectRatio",
+							"fieldOfViewDegrees",
+							"location",
+							"projection",
+							"rotation"
+						],
+						"additionalProperties": false
+					}
+				},
+				"required": ["displayName", "yawDegrees", "overrides"],
+				"additionalProperties": false
+			},
+			"allOf": [
+				{
+					"minItems": 1
+				},
+				{
+					"maxItems": 256
+				}
+			]
+		}
+	},
+	"required": ["version", "name", "settings", "groups", "cameras"],
+	"additionalProperties": false,
+	"$defs": {}
+}

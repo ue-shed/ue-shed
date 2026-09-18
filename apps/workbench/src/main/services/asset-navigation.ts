@@ -1,3 +1,4 @@
+import { WorkbenchEditorHandoff } from "./editor-handoff.js";
 import { WorkbenchUnrealConnection } from "./unreal-connection.js";
 import type {
 	EditorAssetLocateResult,
@@ -41,6 +42,7 @@ export const WorkbenchAssetNavigationLive = Layer.effect(
 	WorkbenchAssetNavigation,
 	Effect.gen(function* () {
 		const connection = yield* WorkbenchUnrealConnection;
+		const editorHandoff = yield* WorkbenchEditorHandoff;
 		const remoteControl = yield* RemoteControlClient;
 		const locate = Effect.fn("Workbench.WorkbenchAssetNavigation.locate")(function* (
 			objectPath: string
@@ -48,11 +50,14 @@ export const WorkbenchAssetNavigationLive = Layer.effect(
 			const endpoint = yield* connection.endpoint();
 
 			return yield* locateUnrealAsset({
-				bringToFront: true,
+				bringToFront: false,
 				endpoint: endpoint,
 				objectPath
 			}).pipe(
 				Effect.provideService(RemoteControlClient, remoteControl),
+				Effect.tap((result) =>
+					result.status === "located" ? editorHandoff.activate(endpoint) : Effect.void
+				),
 				Effect.catch((error) =>
 					Effect.succeed(
 						unavailableAssetLocation({

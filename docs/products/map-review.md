@@ -34,9 +34,34 @@ the same repository and orchestration services.
 
 Workbench exposes a project Review Set library in both first-run and ready states. It discovers
 portable sets under `.ue-shed/review/sets`, includes an explicitly configured set, and switches by
-stable Review Set ID without modifying the Unreal map. Authors can also create an empty sibling set:
+stable Review Set ID. When its map differs from the connected editor, Workbench asks before switching
+Unreal and offers a saved-review-only option. It never saves or discards dirty editor packages.
+Authors can also create an empty sibling set:
 the new definition inherits the active set's map, Capture Profiles, and Visibility Policies, but no
 Views. Opening the earlier set restores its approved cameras and angles for another capture.
+
+Workbench polls the public editor world-state capability every two seconds while Map Review is open.
+Live session follows the confirmed editor map; a hidden Saved map selection never produces a live-map
+mismatch warning. Its separate map picker requests an explicit editor switch. On the Saved map tab,
+a mismatch identifies both maps and offers **Follow editor map** or **Open saved map in Unreal**.
+Neither action changes the editor without an explicit open request. Following
+changes the browsing map, not the active Review Set's saved map or definitions. If that Review Set
+belongs elsewhere, its saved captures remain readable while live editing/capture is disabled until
+the author selects a matching set or switches Unreal back. Unreachable/busy state is visibly unconfirmed.
+
+When the confirmed editor map changes, retained actors and selections from the previous editor world
+are cleared, and late packets for that world are ignored. Stream freshness reflects the live/stale
+observation state, not the age of its reusable actor catalogue.
+
+Opening a large map is an operation with an acknowledgement and read-only completion polling, not
+a ten-second HTTP success/failure assumption. While waiting, Workbench keeps an explicit loading
+state and suppresses duplicate opens. The plugin still loads on Unreal's game thread; unavailable
+status replies during loading do not cause it to resubmit the mutation. The engine API owns deadline,
+interruption and indeterminate-outcome policy; see the [world-control contract](../../packages/protocol/contracts/editor-world/v1/README.md).
+
+**Browse camera sets** (or **Hide camera sets** while expanded) reveals saved editable camera drafts
+for the active review. Each **Edit camera set** card loads that draft's cameras for editing. Browsing
+does not open a map and is separate from selecting a published Review Set.
 
 Plan 032 is complete. It established the compatibility foundation for visibility policy and caller
 provenance, then closed public service, CLI, Workbench dogfood, recovery, and UE 5.7 evidence.
@@ -1090,3 +1115,8 @@ anti-goal defers the larger durable cartography product, not spatial navigation 
 - A pixel-difference score making human review decisions.
 - Coupling definitions to the live-frame transport.
 - Prescribing the centralized system each studio should operate.
+
+Actor-linked camera arrangements and explicit culling are described in [camera authoring](camera-authoring.md).
+Review Set 1.5 snapshots effective hide/protect lists; Capture and Run 1.7 distinguish Pure and Authored
+artifacts. Authored-only results do not require a Pure image. Pairs share exposure, and natural visibility
+assessment is attached only to Pure. Existing Clear policies remain supported as their own workflow.

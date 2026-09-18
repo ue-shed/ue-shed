@@ -1,3 +1,5 @@
+import "../../../test-support/actor-explorer-layout.js";
+import { ActorId } from "@ue-shed/observatory/browser";
 // @vitest-environment jsdom
 
 import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
@@ -15,7 +17,7 @@ import {
 	ReviewViewRevisionId
 } from "@ue-shed/cameras";
 import { Effect, Layer, ManagedRuntime, Stream } from "effect";
-import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import type {
 	MapReviewCaptureResult,
 	MapReviewAuthoringResult,
@@ -157,6 +159,67 @@ function renderRoute(client: MapReviewClientApi) {
 }
 
 describe("MapReviewRoute", () => {
+	it("keeps first-run actor selection local without regenerating cameras or reconnecting", async () => {
+		const context = vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
+		const generate = vi.fn(() => Effect.die("Selection must not generate cameras"));
+		const observe = vi.fn(() =>
+			Stream.make({
+				status: "polling_fallback" as const,
+				cadenceHz: 5,
+				message: "Connected",
+				snapshot: {
+					actors: [
+						{
+							id: ActorId.make("/Game/Fixture.Map:PersistentLevel.Subject"),
+							path: "/Game/Fixture.Map:PersistentLevel.Subject",
+							displayName: "Test subject",
+							bounds: {
+								center: { x: 10, y: 20, z: 0 },
+								extent: { x: 5, y: 5, z: 5 }
+							},
+							className: "StaticMeshActor",
+							location: { x: 10, y: 20, z: 0 },
+							rotation: { x: 0, y: 0, z: 0 }
+						}
+					],
+					capturedAt: new Date().toISOString(),
+					mapPath: "/Game/Fixture",
+					worldSeconds: 0,
+					sequence: 1,
+					worldKind: "editor" as const
+				}
+			})
+		);
+		const workspace = vi.fn(() => Effect.succeed({ panel: null, sets: [], error: null }));
+		try {
+			renderRoute({
+				...offlineScout,
+				...unavailableDurableAuthoring,
+				worldObservations: observe,
+				cameraWorkspace: workspace,
+				authorFromSelection: generate,
+				approveCandidate: () => Effect.die("not used"),
+				capture: () => Effect.die("not used"),
+				previewCandidate: () => Effect.die("not used"),
+				load: () => Effect.succeed({ status: "setup_required" })
+			});
+			await screen.findByRole("button", { name: "New camera set" });
+			const canvas = await screen.findByRole("application", { name: "Top-down actor map" });
+			await userEvent.setup().click(screen.getByRole("button", { name: /Test subject/ }));
+			await userEvent.setup().click(screen.getByRole("button", { name: "New camera set" }));
+			expect(
+				await screen.findByRole("button", { name: "Create from Test subject" })
+			).toBeDefined();
+			expect(generate).not.toHaveBeenCalled();
+			expect(observe).toHaveBeenCalledTimes(1);
+			expect(screen.getByRole("application", { name: "Top-down actor map" })).toBe(canvas);
+			expect(screen.queryByText("CONNECTING")).toBeNull();
+		} finally {
+			cleanup();
+			context.mockRestore();
+		}
+	});
+
 	it("debounces framing edits into one durable regeneration patch", async () => {
 		const parameters = defaultFramingParameters();
 		const selection = {
@@ -269,8 +332,9 @@ describe("MapReviewRoute", () => {
 		);
 	});
 
-	it("offers first-run authoring and can reopen a discovered Review Set", async () => {
+	it("keeps failed Review Set opens visible and allows retry from first-run authoring", async () => {
 		let selectedReviewSetId: string | undefined;
+		let attempts = 0;
 		const client: MapReviewClientApi = {
 			...offlineScout,
 			...unavailableDurableAuthoring,
@@ -294,6 +358,16 @@ describe("MapReviewRoute", () => {
 			selectReviewSet: ({ reviewSetId }) =>
 				Effect.sync(() => {
 					selectedReviewSetId = reviewSetId;
+					attempts++;
+					if (attempts === 1) return { status: "setup_required" as const };
+					if (attempts === 2)
+						return {
+							status: "failed" as const,
+							error: {
+								message: "Review Set could not be read.",
+								recovery: "Retry opening it."
+							}
+						};
 					return empty;
 				})
 		};
@@ -307,8 +381,17 @@ describe("MapReviewRoute", () => {
 		const user = userEvent.setup();
 		await user.click(screen.getByRole("button", { name: "Review sets" }));
 		await user.click(await screen.findByRole("button", { name: "Open set" }));
+		expect((await screen.findByRole("alert")).textContent).toContain(
+			"The Review Set was not opened."
+		);
+		expect(screen.getByRole("dialog", { name: "Review sets" })).toBeDefined();
+		await user.click(screen.getByRole("button", { name: "Open set" }));
+		expect(await screen.findByText("Retry opening it.")).toBeDefined();
+		expect(screen.getByRole("alert").textContent).toContain("Review Set could not be read.");
+		await user.click(screen.getByRole("button", { name: "Open set" }));
 		expect(selectedReviewSetId).toBe("fixture-review-set");
 		expect(await screen.findByText("Fixture Structure")).toBeDefined();
+		expect(screen.queryByRole("dialog", { name: "Review sets" })).toBeNull();
 	});
 
 	it("switches between saved Review Sets by stable identity", async () => {
@@ -362,6 +445,10 @@ describe("MapReviewRoute", () => {
 		await screen.findByText("Fixture Structure");
 		await user.click(screen.getByRole("button", { name: "Review sets" }));
 		expect(await screen.findByRole("dialog", { name: "Review sets" })).toBeDefined();
+		await user.click(screen.getByRole("button", { name: "Return to set" }));
+		expect(screen.queryByRole("dialog", { name: "Review sets" })).toBeNull();
+		expect(selectedReviewSetId).toBeUndefined();
+		await user.click(screen.getByRole("button", { name: "Review sets" }));
 		await user.click(screen.getByRole("button", { name: "Open set" }));
 
 		expect(selectedReviewSetId).toBe("lighting-review");
@@ -673,6 +760,7 @@ describe("MapReviewRoute", () => {
 		const views = await screen.findByRole("region", { name: "Review views" });
 		expect(views.textContent).toContain("Views · 2");
 		expect(views.textContent).toContain("Fixture subject");
+		expect(screen.getByTitle("/Game/Fixture.Subject")).toBeDefined();
 		expect(screen.getByRole("region", { name: "Fixture subject views" }).textContent).toContain(
 			"2 views"
 		);

@@ -1,0 +1,19 @@
+{
+	"version": 1,
+	"name": "Three-quarter starting view",
+	"settings": {
+		"fieldOfViewDegrees": 45,
+		"distanceScale": 0.85,
+		"heightOffset": 0,
+		"margin": 0.1,
+		"elevationDegrees": 20
+	},
+	"groups": [],
+	"cameras": [
+		{
+			"displayName": "Three-quarter starting view 1",
+			"yawDegrees": -35,
+			"overrides": {}
+		}
+	]
+}

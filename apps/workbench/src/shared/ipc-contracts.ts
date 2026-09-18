@@ -1,3 +1,9 @@
+import { EditorHandoffNotice } from "./editor-handoff.js";
+import {
+	MapReviewMapOpenResult,
+	MapReviewEditorState
+} from "@ue-shed/extension-camera-review/client";
+import { CameraWorkspaceRequest, CameraWorkspaceResult } from "@ue-shed/cameras/review-contracts";
 import {
 	TextureInvestigationQuery,
 	TextureInvestigationPresetResult
@@ -524,6 +530,11 @@ const invoke = <
 });
 
 export const invokeContracts = {
+	"editor-window:activate": invoke({
+		channel: "editor-window:activate",
+		args: EmptyArgs,
+		result: EditorHandoffNotice
+	}),
 	"editor-session:settings": invoke({
 		channel: "editor-session:settings",
 		args: EmptyArgs,
@@ -1019,6 +1030,16 @@ export const invokeContracts = {
 		args: EmptyArgs,
 		result: WorldScoutResult
 	}),
+	"map-review:open-map": invoke({
+		channel: "map-review:open-map",
+		args: Schema.Tuple([Schema.NonEmptyString]),
+		result: MapReviewMapOpenResult
+	}),
+	"map-review:editor-world": invoke({
+		channel: "map-review:editor-world",
+		args: EmptyArgs,
+		result: MapReviewEditorState
+	}),
 	"map-review:saved-world": invoke({
 		channel: "map-review:saved-world",
 		args: Schema.Tuple([Schema.NonEmptyString]),
@@ -1063,6 +1084,11 @@ export const invokeContracts = {
 		channel: "map-review:author-from-selection",
 		args: Schema.Tuple([MapReviewAuthorFromSelectionIntent]),
 		result: MapReviewAuthoringResult
+	}),
+	"map-review:camera-workspace": invoke({
+		channel: "map-review:camera-workspace",
+		args: Schema.Tuple([CameraWorkspaceRequest]),
+		result: CameraWorkspaceResult
 	}),
 	"map-review:authoring-resume": invoke({
 		channel: "map-review:authoring-resume",
@@ -1138,6 +1164,12 @@ export const cameraFrameEvent = {
 	kind: "event",
 	channel: "camera:frame",
 	payload: RendererCameraFrame
+} as const;
+
+export const editorHandoffEvent = {
+	kind: "event",
+	channel: "editor-window:handoff",
+	payload: EditorHandoffNotice
 } as const;
 
 export const worldObservationEvent = {

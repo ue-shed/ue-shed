@@ -1,7 +1,8 @@
 import * as stylex from "@stylexjs/stylex";
-import { createEffectAction } from "@ue-shed/ui";
+import { Button, createEffectAction } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
-import { Cause } from "effect";
+import { Cause, Effect } from "effect";
+import { MapSwitchDialog } from "./map-switch-dialog.js";
 import { For, Match, Show, Switch, createSignal, onSettled } from "solid-js";
 import type {
 	MapReviewClientApi,
@@ -13,15 +14,29 @@ type LibraryState = { readonly status: "loading" } | MapReviewSetLibraryResult;
 
 export function ReviewSetLibrary(props: {
 	readonly canCreate: boolean;
-	readonly client: MapReviewClientApi;
+	readonly client: Pick<
+		MapReviewClientApi,
+		| "reviewSetLibrary"
+		| "selectReviewSet"
+		| "createReviewSet"
+		| "editorWorld"
+		| "openMapInUnreal"
+	>;
 	readonly onChanged: (review: MapReviewResult) => void;
 	readonly onClose: () => void;
+	readonly onNewCameraSet?: (() => void) | undefined;
 }) {
 	const loadAction = createEffectAction();
 	const mutationAction = createEffectAction();
 	const [state, setState] = createSignal<LibraryState>({ status: "loading" });
 	const [displayName, setDisplayName] = createSignal("");
 	const [workingId, setWorkingId] = createSignal<string>();
+	const [switchTarget, setSwitchTarget] = createSignal<{
+		id: string;
+		mapPath: string;
+		currentMap?: string | undefined;
+	}>();
+	const [switchError, setSwitchError] = createSignal<string>();
 	const [operationFailure, setOperationFailure] = createSignal<{
 		readonly message: string;
 		readonly recovery: string;
@@ -46,15 +61,27 @@ export function ReviewSetLibrary(props: {
 
 	const finishMutation = (result: MapReviewResult) => {
 		setWorkingId(undefined);
-		if (result.status === "failed") {
-			setOperationFailure(result.error);
+		if (result.status !== "ready") {
+			setOperationFailure(
+				result.status === "failed"
+					? result.error
+					: {
+							message: "The Review Set was not opened.",
+							recovery: "Choose a project and reopen the library."
+						}
+			);
 			return;
 		}
 		props.onChanged(result);
 		props.onClose();
 	};
 
-	const select = (reviewSetId: string) => {
+	const openSavedSet = (reviewSetId: string) => {
+		const current = state();
+		if (current.status === "ready" && current.activeReviewSetId === reviewSetId) {
+			props.onClose();
+			return;
+		}
 		setOperationFailure(undefined);
 		setWorkingId(reviewSetId);
 		mutationAction.run(props.client.selectReviewSet({ reviewSetId }), {
@@ -67,6 +94,85 @@ export function ReviewSetLibrary(props: {
 			},
 			onSuccess: finishMutation
 		});
+	};
+	const select = (reviewSetId: string, mapPath: string) => {
+		if (workingId()) return;
+		const inspect = props.client.editorWorld;
+		if (!inspect) {
+			openSavedSet(reviewSetId);
+			return;
+		}
+		setWorkingId(reviewSetId);
+		setOperationFailure(undefined);
+		mutationAction.run(inspect(), {
+			onFailure: (cause) => {
+				setWorkingId(undefined);
+				setOperationFailure({
+					message: Cause.pretty(cause),
+					recovery: "Check the editor connection and try again."
+				});
+			},
+			onSuccess: (editor) => {
+				setWorkingId(undefined);
+				if (editor.status === "opening") {
+					setOperationFailure({
+						message: "Unreal is loading a map.",
+						recovery: "Wait for it to finish before opening another review set."
+					});
+				} else if (editor.status === "ready" && editor.world.snapshot.mapPath !== mapPath) {
+					setSwitchError(undefined);
+					setSwitchTarget({
+						id: reviewSetId,
+						mapPath,
+						currentMap: editor.world.snapshot.mapPath
+					});
+				} else openSavedSet(reviewSetId);
+			}
+		});
+	};
+	const confirmSwitch = () => {
+		const target = switchTarget();
+		const open = props.client.openMapInUnreal;
+		if (!target || workingId()) return;
+		if (!open) {
+			setSwitchError(
+				"This host cannot switch maps. Open the map in Unreal, or browse the saved review only."
+			);
+			return;
+		}
+		setWorkingId(target.id);
+		setSwitchError(undefined);
+		mutationAction.run(
+			open(target.mapPath).pipe(
+				Effect.flatMap((result) =>
+					result.outcome === "opened" || result.outcome === "already_open"
+						? props.client.selectReviewSet({ reviewSetId: target.id })
+						: Effect.succeed({
+								status: "failed" as const,
+								error: { message: result.message, recovery: result.recovery }
+							})
+				)
+			),
+			{
+				onFailure: (cause) => {
+					setWorkingId(undefined);
+					setSwitchError(Cause.pretty(cause));
+				},
+				onSuccess: (result) => {
+					if (result.status === "ready") {
+						setSwitchTarget(undefined);
+						finishMutation(result);
+					} else {
+						setWorkingId(undefined);
+						setSwitchError(
+							result.status === "failed"
+								? `${result.error.message} ${result.error.recovery}`
+								: "The review set is not available."
+						);
+					}
+				}
+			}
+		);
 	};
 
 	const create = () => {
@@ -88,6 +194,23 @@ export function ReviewSetLibrary(props: {
 
 	return (
 		<div {...stylex.attrs(styles.scrim)}>
+			<Show when={switchTarget()}>
+				{(target) => (
+					<MapSwitchDialog
+						currentMap={target().currentMap}
+						targetMap={target().mapPath}
+						busy={workingId() !== undefined}
+						error={switchError()}
+						onConfirm={confirmSwitch}
+						onCancel={() => setSwitchTarget(undefined)}
+						onBrowseOnly={() => {
+							const id = target().id;
+							setSwitchTarget(undefined);
+							openSavedSet(id);
+						}}
+					/>
+				)}
+			</Show>
 			<section
 				role="dialog"
 				aria-modal="true"
@@ -100,7 +223,9 @@ export function ReviewSetLibrary(props: {
 							Review sets
 						</h2>
 						<p {...stylex.attrs(styles.subtitle)}>
-							Move between focused collections without changing the Unreal map.
+							Review Sets collect published camera views and captures. Open one to
+							choose where Save views publishes. If its map differs from Unreal's, you
+							can switch maps or browse saved captures only.
 						</p>
 					</div>
 					<button
@@ -230,12 +355,14 @@ export function ReviewSetLibrary(props: {
 																	<button
 																		type="button"
 																		disabled={
-																			active() ||
 																			workingId() !==
-																				undefined
+																			undefined
 																		}
 																		onClick={() =>
-																			select(reviewSet.id)
+																			select(
+																				reviewSet.id,
+																				reviewSet.mapPath
+																			)
 																		}
 																		{...stylex.attrs(
 																			styles.openButton
@@ -245,7 +372,7 @@ export function ReviewSetLibrary(props: {
 																		reviewSet.id
 																			? "Opening…"
 																			: active()
-																				? "Open"
+																				? "Return to set"
 																				: "Open set"}
 																	</button>
 																</article>
@@ -260,58 +387,81 @@ export function ReviewSetLibrary(props: {
 											aria-label="Create a set"
 											{...stylex.attrs(styles.createPanel)}
 										>
-											<div>
-												<strong {...stylex.attrs(styles.createTitle)}>
-													Create an empty set
-												</strong>
-												<p>
-													Reuses the active set's map, capture profiles,
-													and visibility policies—never its views.
-												</p>
-											</div>
-											<form
-												onSubmit={(event) => {
-													event.preventDefault();
-													create();
-												}}
-												{...stylex.attrs(styles.createForm)}
+											<Show
+												when={props.canCreate}
+												fallback={
+													<div>
+														<strong
+															{...stylex.attrs(styles.createTitle)}
+														>
+															Starting a new camera setup?
+														</strong>
+														<p>
+															Create a camera set from an actor. Its
+															Review Set is created automatically—you
+															don't need an existing set first.
+														</p>
+														<Show when={props.onNewCameraSet}>
+															<Button
+																tone="primary"
+																onClick={props.onNewCameraSet}
+															>
+																New camera set
+															</Button>
+														</Show>
+													</div>
+												}
 											>
-												<label>
-													<span>Name</span>
-													<input
-														aria-label="New review set name"
-														maxlength={80}
-														placeholder="Lighting review"
-														value={displayName()}
+												<div>
+													<strong {...stylex.attrs(styles.createTitle)}>
+														Create another Review Set
+													</strong>
+													<p>
+														Reuses the active set's map, capture
+														profiles, and visibility policies—never its
+														views.
+													</p>
+												</div>
+												<form
+													onSubmit={(event) => {
+														event.preventDefault();
+														create();
+													}}
+													{...stylex.attrs(styles.createForm)}
+												>
+													<label {...stylex.attrs(styles.nameField)}>
+														<span>Name</span>
+														<input
+															{...stylex.attrs(styles.nameInput)}
+															aria-label="New review set name"
+															maxlength={80}
+															placeholder="Lighting review"
+															value={displayName()}
+															disabled={
+																!props.canCreate ||
+																workingId() !== undefined
+															}
+															onInput={(event) =>
+																setDisplayName(
+																	event.currentTarget.value
+																)
+															}
+														/>
+													</label>
+													<Button
+														tone="primary"
+														type="submit"
 														disabled={
 															!props.canCreate ||
+															displayName().trim().length === 0 ||
 															workingId() !== undefined
 														}
-														onInput={(event) =>
-															setDisplayName(
-																event.currentTarget.value
-															)
-														}
-													/>
-												</label>
-												<button
-													type="submit"
-													disabled={
-														!props.canCreate ||
-														displayName().trim().length === 0 ||
-														workingId() !== undefined
-													}
-												>
-													{workingId() === "create"
-														? "Creating…"
-														: "Create and open"}
-												</button>
-											</form>
-											<Show when={!props.canCreate}>
-												<small {...stylex.attrs(styles.createHint)}>
-													Open an existing set or add a first view before
-													creating a sibling.
-												</small>
+													>
+														{workingId() === "create"
+															? "Creating…"
+															: "Create and open"}
+													</Button>
+												</form>
 											</Show>
 										</section>
 									</>
@@ -324,7 +474,7 @@ export function ReviewSetLibrary(props: {
 						{(failure) => (
 							<div role="alert" {...stylex.attrs(styles.operationFailure)}>
 								<strong {...stylex.attrs(styles.failureTitle)}>
-									Couldn't finish that operation
+									{failure().message}
 								</strong>
 								<span>{failure().recovery}</span>
 								<details {...stylex.attrs(styles.technical)}>
@@ -488,7 +638,7 @@ const styles = stylex.create({
 		borderLeftWidth: 3,
 		backgroundColor: tokens.colorSurface,
 		display: "grid",
-		gridTemplateColumns: "minmax(0, 1fr) minmax(260px, .85fr)",
+		gridTemplateColumns: "minmax(0, 1fr)",
 		gap: 24,
 		fontSize: 12,
 		color: tokens.colorTextMuted
@@ -498,8 +648,21 @@ const styles = stylex.create({
 		marginBottom: 6,
 		color: tokens.colorTextStrong
 	},
-	createForm: { display: "flex", alignItems: "flex-end", gap: 8 },
-	createHint: { gridColumn: "1 / -1", color: tokens.colorWarning },
+	createForm: { display: "flex", alignItems: "flex-end", flexWrap: "wrap", gap: 8 },
+	nameField: { display: "flex", flexDirection: "column", flex: "1 1 200px", gap: 6 },
+	nameInput: {
+		minWidth: 0,
+		width: "100%",
+		boxSizing: "border-box",
+		padding: "10px 12px",
+		fontFamily: tokens.fontBody,
+		color: tokens.colorText,
+		backgroundColor: tokens.colorSurfaceInset,
+		borderColor: tokens.colorBorderInteractive,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl
+	},
 	retry: {
 		borderColor: tokens.colorBorderStrong,
 		borderStyle: "solid",

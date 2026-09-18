@@ -1,3 +1,8 @@
+import {
+	EditorWindowActivation,
+	EditorWindowActivationLive,
+	EditorForegroundPermissionLive
+} from "@ue-shed/engine";
 import { RemoteControlClient, RemoteControlClientError } from "@ue-shed/unreal-connection";
 import { Context, Effect, Layer, Schema, type Stream } from "effect";
 import { WorldActorSnapshot, type ActorId as ActorIdType } from "./actor-models.js";
@@ -96,6 +101,14 @@ export const ObservatoryLive = Layer.effect(
 	Observatory,
 	Effect.gen(function* () {
 		const remote = yield* RemoteControlClient;
+		const windowActivation = yield* EditorWindowActivation.pipe(
+			Effect.provide(
+				EditorWindowActivationLive.pipe(
+					Layer.provide(EditorForegroundPermissionLive),
+					Layer.provide(Layer.succeed(RemoteControlClient, remote))
+				)
+			)
+		);
 
 		const snapshot = Effect.fn("Observatory.snapshot")(function* (endpoint: string) {
 			const value = yield* remote
@@ -134,12 +147,23 @@ export const ObservatoryLive = Layer.effect(
 					functionName: "FocusActor",
 					objectPath,
 					operation: "observatory.focus_actor",
-					parameters: { ActorId: actorId, BringToFront: bringToFront }
+					parameters: { ActorId: actorId, BringToFront: false }
 				})
 				.pipe(Effect.mapError((cause) => connectionError("focus_actor", cause)));
-			return yield* Schema.decodeUnknownEffect(FocusResponse)(value).pipe(
+			const focused = yield* Schema.decodeUnknownEffect(FocusResponse)(value).pipe(
 				Effect.mapError((cause) => connectionError("focus_actor.decode", cause))
 			);
+			if (focused.status !== "focused" || !bringToFront) return focused;
+			const activation = yield* windowActivation.activate(endpoint).pipe(
+				Effect.catch((cause) =>
+					Effect.succeed({
+						status: "unavailable" as const,
+						message: cause.message,
+						recovery: cause.recovery
+					})
+				)
+			);
+			return { ...focused, windowActivation: activation };
 		});
 
 		const setObservationCadence = Effect.fn("Observatory.setObservationCadence")(function* (

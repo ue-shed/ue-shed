@@ -157,3 +157,4 @@ export * from "./editor-asset-navigation.js";
 export * from "./saved-world.js";
 export * from "./uasset-io.js";
 export * from "./uasset-inspection.js";
+export * from "./editor-window-activation.js";

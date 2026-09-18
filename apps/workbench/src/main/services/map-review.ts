@@ -1,3 +1,16 @@
+import { savedMapPathToGameMapPath } from "@ue-shed/cameras/map-tiles";
+import { randomUUID } from "node:crypto";
+import { readdir } from "node:fs/promises";
+import type {
+	MapReviewMapOpenResult,
+	MapReviewEditorState
+} from "@ue-shed/extension-camera-review/client";
+import { makeCameraWorkspace } from "./camera-workspace.js";
+import type {
+	CameraWorkspaceRequest,
+	CameraWorkspaceResult
+} from "@ue-shed/cameras/review-contracts";
+import { WorkbenchEditorHandoff } from "./editor-handoff.js";
 import { WorkbenchUnrealConnection } from "./unreal-connection.js";
 import {
 	approveFramingCandidate,
@@ -6,6 +19,10 @@ import {
 	clearProvisionedCameras,
 	configureCameras,
 	createReviewSetFromTemplate,
+	createMapReviewSet,
+	makeCameraSetupHost,
+	makeCameraAuthoringBridge,
+	CameraBridgeError,
 	ensureProvisionedCameras,
 	generateFramingCandidates,
 	ProvisionedCameraError,
@@ -23,7 +40,7 @@ import {
 	type CaptureRunSummary,
 	type ReviewSet
 } from "@ue-shed/cameras";
-import { EditorPlaySession } from "@ue-shed/engine";
+import { EditorWorldControl, EditorWorldControlLive, EditorPlaySession } from "@ue-shed/engine";
 import { recordObservatoryIpcReplacements } from "@ue-shed/observability";
 import type {
 	MapReviewApprovalResult,
@@ -75,9 +92,10 @@ import {
 	Clock,
 	Semaphore,
 	Schema,
+	Schedule,
 	Stream
 } from "effect";
-import { dirname } from "node:path";
+import { basename, dirname } from "node:path";
 import { LocalFiles } from "../adapters/local-files.js";
 import { WorkbenchWindow, type WorkbenchWindowError } from "../adapters/electron-window.js";
 import type { RendererWorldObservationEvent } from "../ipc-contracts.js";
@@ -217,6 +235,11 @@ export class SavedWorldUnavailable extends Schema.TaggedErrorClass<SavedWorldUna
 ) {}
 
 export interface WorkbenchMapReviewApi {
+	readonly editorWorld?: () => Effect.Effect<MapReviewEditorState>;
+	readonly openMapInUnreal?: (mapPath: string) => Effect.Effect<MapReviewMapOpenResult>;
+	readonly cameraWorkspace?: (
+		request: CameraWorkspaceRequest
+	) => Effect.Effect<CameraWorkspaceResult>;
 	readonly resetLiveTarget?: () => Effect.Effect<void>;
 	/** Chooses the global Workbench project, then returns its cached saved-map inventory. */
 	readonly chooseProjectAndMaps: () => Effect.Effect<SavedWorldChoice, WorkbenchWindowError>;
@@ -351,6 +374,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 	Effect.gen(function* () {
 		const configuration = yield* WorkbenchConfiguration;
 		const connection = yield* WorkbenchUnrealConnection;
+		const editorHandoff = yield* WorkbenchEditorHandoff;
 		const project = yield* WorkbenchProject;
 		const assetReader = yield* AssetReader;
 		const localFiles = yield* LocalFiles;
@@ -362,9 +386,18 @@ export const WorkbenchMapReviewLive = Layer.effect(
 		const editorSession = yield* EditorPlaySession;
 		const cameraFeed = yield* CameraFeed;
 		const remoteControl = yield* RemoteControlClient;
+		const worldControl = yield* EditorWorldControl.pipe(
+			Effect.provide(
+				EditorWorldControlLive.pipe(
+					Layer.provide(Layer.succeed(RemoteControlClient, remoteControl))
+				)
+			)
+		);
 		const window = yield* WorkbenchWindow;
 		const layerScope = yield* Effect.scope;
 		const coordinator = yield* makeUnrealOperationCoordinator;
+		const cameraWorkspace = yield* makeCameraWorkspace();
+		const openingMap = yield* Ref.make<string | undefined>(undefined);
 		const lastWorldSnapshot = yield* Ref.make<
 			Option.Option<{ endpoint: string; result: WorldScoutResult }>
 		>(Option.none());
@@ -781,9 +814,10 @@ export const WorkbenchMapReviewLive = Layer.effect(
 		const invalidateProvisionedCameras = Effect.fn(
 			"Workbench.WorkbenchMapReview.invalidateProvisionedCameras"
 		)(function* () {
+			const bindings = yield* Ref.getAndSet(provisionedCameraBindings, Option.none());
+			if (Option.isNone(bindings)) return;
 			const endpoint = yield* connection.endpoint();
 
-			yield* Ref.set(provisionedCameraBindings, Option.none());
 			yield* clearProvisionedCameras(endpoint).pipe(
 				Effect.provideService(RemoteControlClient, remoteControl),
 				Effect.ignore
@@ -1060,7 +1094,9 @@ export const WorkbenchMapReviewLive = Layer.effect(
 				{ concurrency: 2 }
 			);
 			const firstCapture = captures[0];
-			const pure = firstCapture?.artifacts.find((artifact) => artifact.variant === "pure");
+			const pure =
+				firstCapture?.artifacts.find((artifact) => artifact.variant === "authored") ??
+				firstCapture?.artifacts.find((artifact) => artifact.variant === "pure");
 			return {
 				...summary,
 				...(firstCapture === undefined ? undefined : { capture: firstCapture }),
@@ -1329,6 +1365,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 				return { policy: block, status: "blocked" as const };
 			}
 			const { projectRoot } = reviewProject;
+			yield* cameraWorkspace.close().pipe(Effect.orDie);
 			return yield* runExclusive(
 				capture
 					.captureSet({
@@ -2056,8 +2093,160 @@ export const WorkbenchMapReviewLive = Layer.effect(
 			}
 		);
 
-		return WorkbenchMapReview.of({
+		const service = WorkbenchMapReview.of({
+			editorWorld: Effect.fn("Workbench.MapReview.editorWorld")(function* () {
+				const pending = yield* Ref.get(openingMap);
+				if (pending) return { status: "opening" as const, targetMapPath: pending };
+				const endpoint = yield* connection.endpoint();
+				const result = yield* worldControl.snapshot(endpoint).pipe(
+					Effect.match({
+						onSuccess: (world) => ({ status: "ready" as const, world }),
+						onFailure: (error) => ({
+							status: "unavailable" as const,
+							message: error.message,
+							recovery: error.recovery
+						})
+					})
+				);
+				const startedWhileReading = yield* Ref.get(openingMap);
+				if (startedWhileReading)
+					return { status: "opening" as const, targetMapPath: startedWhileReading };
+				if ((yield* connection.endpoint()) !== endpoint)
+					return {
+						status: "unavailable" as const,
+						message: "The editor connection changed while reading its map.",
+						recovery: "Waiting for the selected editor's next state update."
+					};
+				return result;
+			}),
+			openMapInUnreal: Effect.fn("Workbench.MapReview.openMapInUnreal")(function* (
+				mapPath: string
+			) {
+				const acquired = yield* Ref.modify(openingMap, (pending) => [
+					!pending,
+					pending ?? mapPath
+				]);
+				if (!acquired)
+					return {
+						outcome: "failed" as const,
+						message: "Unreal is already opening a map.",
+						recovery: "Wait for the current load to finish before switching again."
+					};
+				return yield* runExclusive(
+					Effect.gen(function* () {
+						const savedProject = yield* resolveSavedProject();
+						const targetMapPath = mapPath.startsWith("/Game/")
+							? mapPath
+							: savedMapPathToGameMapPath(mapPath);
+						if (
+							!targetMapPath ||
+							!savedProject.maps.some(
+								(map) => savedMapPathToGameMapPath(map.mapPath) === targetMapPath
+							)
+						) {
+							return {
+								outcome: "failed" as const,
+								message: "The selected map is not available in this project.",
+								recovery: "Refresh the map inventory and select a project map."
+							};
+						}
+						const endpoint = yield* connection.endpoint();
+						yield* Ref.set(openingMap, targetMapPath);
+						yield* cameraWorkspace.close();
+						const response = yield* worldControl.open({
+							endpoint,
+							operationId: randomUUID(),
+							targetMapPath
+						});
+						if (response.outcome !== "rejected") {
+							yield* editorHandoff.activate(endpoint);
+							yield* Ref.set(lastWorldSnapshot, Option.none());
+							yield* Ref.set(lastObservationSample, Option.none());
+							yield* Ref.set(lastPresentedCatalogKey, undefined);
+						}
+						return response;
+					})
+				).pipe(
+					Effect.catch((cause) =>
+						Effect.succeed({
+							outcome: "failed" as const,
+							message: String(cause),
+							recovery:
+								"recovery" in cause
+									? String(cause.recovery)
+									: "Check the editor connection and enable UE Shed Core world control."
+						})
+					),
+					Effect.ensuring(Ref.set(openingMap, undefined))
+				);
+			}),
+			cameraWorkspace: Effect.fn("Workbench.MapReview.cameraWorkspace")((intent) =>
+				Effect.gen(function* () {
+					const selected = yield* resolveReviewProject();
+					if (!selected)
+						return {
+							panel: null,
+							sets: [],
+							error: "Choose a project before creating cameras."
+						};
+					let reviewSetPath = yield* selectedReviewSetPath();
+					if (!reviewSetPath && intent.kind === "open" && !intent.id) {
+						const endpoint = yield* connection.endpoint();
+						const selection = intent.actorPath
+							? yield* authoring.inspectSubject({
+									endpoint,
+									subject: { kind: "actor_path", actorPath: intent.actorPath }
+								})
+							: yield* authoring.inspectSelection(endpoint);
+						if (selection.status !== "selected")
+							return {
+								panel: null,
+								sets: [],
+								error: "Select one actor in Unreal or on the actor map, then create a camera set."
+							};
+						const created = yield* createMapReviewSet({
+							projectRoot: selected.projectRoot,
+							selection
+						}).pipe(Effect.provideService(ReviewRepository, repository));
+						reviewSetPath = created.reviewSetPath;
+						yield* Ref.set(
+							activeReviewSetPath,
+							Option.some({ path: reviewSetPath, projectRoot: selected.projectRoot })
+						);
+					}
+					if (!reviewSetPath)
+						return {
+							panel: null,
+							sets: [],
+							error:
+								intent.kind === "list" ||
+								intent.kind === "state" ||
+								intent.kind === "close"
+									? null
+									: "Open the Review Set containing this saved camera set."
+						};
+					return yield* cameraWorkspace.request(
+						{
+							projectRoot: selected.projectRoot,
+							reviewSetPath,
+							endpoint: yield* connection.endpoint()
+						},
+						intent
+					);
+				}).pipe(
+					Effect.catch((cause) =>
+						Effect.succeed({ panel: null, sets: [], error: String(cause) })
+					)
+				)
+			),
 			resetLiveTarget: Effect.fn("Workbench.MapReview.resetLiveTarget")(function* () {
+				yield* cameraWorkspace
+					.close()
+					.pipe(
+						Effect.catch((cause) =>
+							Effect.logWarning("Camera workspace close failed", cause)
+						)
+					);
 				yield* stopObservationFiber();
 				yield* Ref.update(observationSubscription, (current) => ({
 					...current,
@@ -2099,6 +2288,80 @@ export const WorkbenchMapReviewLive = Layer.effect(
 			worldObservationPresentationReplacements,
 			worldSnapshot
 		});
+		const setupHost = yield* makeCameraSetupHost({
+			create: Effect.fn("Workbench.MapReview.createFromNativePreset")(function* (intent) {
+				const endpoint = yield* connection.endpoint();
+				const subject = yield* authoring.inspectSubject({
+					endpoint,
+					subject: { kind: "actor_path", actorPath: intent.actorPath }
+				});
+				if (subject.status !== "selected" || subject.mapPath !== intent.mapPath)
+					return yield* Effect.fail(
+						new CameraBridgeError({
+							code: "stale",
+							message: "The selected actor or map changed. Choose the subject again.",
+							recovery: "Retry from the current editor selection."
+						})
+					);
+				if (!service.cameraWorkspace)
+					return yield* Effect.fail(
+						new CameraBridgeError({
+							code: "unavailable",
+							message: "Camera authoring is unavailable.",
+							recovery: "Enable the camera workspace."
+						})
+					);
+				const result = yield* service.cameraWorkspace({
+					kind: "open",
+					actorPath: intent.actorPath,
+					name: intent.name,
+					layout: intent.layout,
+					livePreview: false
+				});
+				if (result.error || !result.panel)
+					return yield* Effect.fail(
+						new CameraBridgeError({
+							code: "unavailable",
+							message: result.error ?? "The camera set could not be opened.",
+							recovery: "Correct the error and retry."
+						})
+					);
+			})
+		});
+		yield* Effect.addFinalizer(() =>
+			setupHost
+				.close()
+				.pipe(
+					Effect.catch((cause) =>
+						Effect.logDebug("Native camera setup release failed", cause)
+					)
+				)
+		);
+		yield* Effect.fn("Workbench.MapReview.nativeSetupPoll")(function* () {
+			const selected = yield* resolveReviewProject();
+			if (!selected) return;
+			const files = yield* Effect.tryPromise({
+				try: () => readdir(selected.projectRoot),
+				catch: (cause) =>
+					new CameraBridgeError({
+						code: "unavailable",
+						message: String(cause),
+						recovery: "Choose a readable Unreal project."
+					})
+			});
+			const descriptor = files.find((name) => name.endsWith(".uproject"));
+			if (!descriptor) return;
+			const endpoint = yield* connection.endpoint();
+			yield* setupHost.poll(
+				makeCameraAuthoringBridge(remoteControl, endpoint),
+				basename(descriptor, ".uproject")
+			);
+		})().pipe(
+			Effect.catch((cause) => Effect.logDebug("Native camera setup host unavailable", cause)),
+			Effect.repeat(Schedule.spaced("1 second")),
+			Effect.forkScoped
+		);
+		return service;
 	})
 );
 

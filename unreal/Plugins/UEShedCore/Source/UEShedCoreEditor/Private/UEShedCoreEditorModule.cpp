@@ -1,3 +1,11 @@
 #include "Modules/ModuleManager.h"
+#include "UEShedEditorWorldControlLibrary.h"
 
-IMPLEMENT_MODULE(FDefaultModuleImpl, UEShedCoreEditor)
+class FUEShedCoreEditorModule : public IModuleInterface
+{
+	virtual void ShutdownModule() override
+	{
+		UUEShedEditorWorldControlLibrary::ShutdownWorldControl();
+	}
+};
+IMPLEMENT_MODULE(FUEShedCoreEditorModule, UEShedCoreEditor)

@@ -27,6 +27,8 @@ const pluginDescriptorPaths = [
 	"unreal/Plugins/UEShedAssetAudits/UEShedAssetAudits.uplugin",
 	"unreal/Plugins/UEShedAuthoring/UEShedAuthoring.uplugin",
 	"unreal/Plugins/UEShedCameras/UEShedCameras.uplugin",
+	"unreal/Plugins/UEShedCameraAuthoringBridge/UEShedCameraAuthoringBridge.uplugin",
+	"unreal/Plugins/UEShedCameraAuthoring/UEShedCameraAuthoring.uplugin",
 	"unreal/Plugins/UEShedCore/UEShedCore.uplugin",
 	"unreal/Plugins/UEShedNiagara/UEShedNiagara.uplugin",
 	"unreal/Plugins/UEShedObservatory/UEShedObservatory.uplugin",
@@ -39,7 +41,8 @@ async function read(path: string) {
 
 async function replace(path: string, transform: (source: string) => string) {
 	const absolutePath = join(repositoryRoot, path);
-	const before = await readFile(absolutePath, "utf8");
+	// A Windows checkout may use CRLF; line endings are not suite-version drift.
+	const before = (await readFile(absolutePath, "utf8")).replaceAll("\r\n", "\n");
 	const after = transform(before).replaceAll("\r\n", "\n");
 	if (after === before) return;
 	if (checkOnly) {

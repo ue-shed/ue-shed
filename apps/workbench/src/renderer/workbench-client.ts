@@ -1,3 +1,4 @@
+import { EditorHandoffNotice } from "../shared/editor-handoff.js";
 import {
 	CameraStatus,
 	decodeCameraStatus,
@@ -8,7 +9,7 @@ import {
 	type EditorPlaySessionStateResponse
 } from "@ue-shed/protocol";
 
-import { Effect, Exit, Queue, Schedule, Schema, Stream } from "effect";
+import { Effect, Exit, Option, Queue, Schedule, Schema, Stream } from "effect";
 import type {
 	BlueprintGraphReadResult,
 	BlueprintAssetSearchRequest,
@@ -157,6 +158,8 @@ const getMetrics = Effect.fn("WorkbenchRenderer.getMetrics")(
 );
 
 export interface WorkbenchRendererClient {
+	readonly activateEditorWindow: () => Effect.Effect<EditorHandoffNotice, WorkbenchRendererError>;
+	readonly editorHandoffs: Stream.Stream<EditorHandoffNotice>;
 	readonly chooseBlueprint: () => Effect.Effect<BlueprintGraphReadResult, WorkbenchRendererError>;
 	readonly searchBlueprints: (
 		request: BlueprintAssetSearchRequest
@@ -220,6 +223,23 @@ export interface WorkbenchRendererClient {
 }
 
 export const workbenchRendererClient: WorkbenchRendererClient = {
+	activateEditorWindow: () =>
+		request({
+			decode: Schema.decodeUnknownEffect(EditorHandoffNotice),
+			invoke: () => window.ueShed.editorSession.activate(),
+			operation: "editorWindow.activate"
+		}),
+	editorHandoffs: Stream.callback<EditorHandoffNotice>((queue) =>
+		Effect.acquireRelease(
+			Effect.sync(() =>
+				window.ueShed.onEditorHandoff((notice) => {
+					const decoded = Schema.decodeUnknownOption(EditorHandoffNotice)(notice);
+					if (Option.isSome(decoded)) Queue.offerUnsafe(queue, decoded.value);
+				})
+			),
+			(unsubscribe) => Effect.sync(unsubscribe)
+		)
+	),
 	sampleProject: Effect.fn("WorkbenchRenderer.sampleProject")(() =>
 		request({
 			decode: decodeWorkbenchProjectState,

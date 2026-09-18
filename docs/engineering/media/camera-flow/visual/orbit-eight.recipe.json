@@ -1,0 +1,54 @@
+{
+	"version": 1,
+	"name": "Eight-angle orbit",
+	"settings": {
+		"fieldOfViewDegrees": 60,
+		"distanceScale": 1.15,
+		"heightOffset": 0,
+		"margin": 0.1,
+		"elevationDegrees": 15
+	},
+	"groups": [],
+	"cameras": [
+		{
+			"displayName": "Eight-angle orbit 1",
+			"yawDegrees": 0,
+			"overrides": {}
+		},
+		{
+			"displayName": "Eight-angle orbit 2",
+			"yawDegrees": 45,
+			"overrides": {}
+		},
+		{
+			"displayName": "Eight-angle orbit 3",
+			"yawDegrees": 90,
+			"overrides": {}
+		},
+		{
+			"displayName": "Eight-angle orbit 4",
+			"yawDegrees": 135,
+			"overrides": {}
+		},
+		{
+			"displayName": "Eight-angle orbit 5",
+			"yawDegrees": 180,
+			"overrides": {}
+		},
+		{
+			"displayName": "Eight-angle orbit 6",
+			"yawDegrees": 225,
+			"overrides": {}
+		},
+		{
+			"displayName": "Eight-angle orbit 7",
+			"yawDegrees": 270,
+			"overrides": {}
+		},
+		{
+			"displayName": "Eight-angle orbit 8",
+			"yawDegrees": 315,
+			"overrides": {}
+		}
+	]
+}

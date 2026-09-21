@@ -765,6 +765,7 @@ pub(crate) fn adapt_inspection(
         .map(adapt_decode_error)
         .collect::<Result<Vec<_>, _>>()?;
     Ok(SavedAssetInspection {
+        metadata: output.metadata,
         schema_version: output.schema_version,
         status,
         path: output.path,
@@ -810,6 +811,7 @@ fn adapt_decode_error(
 fn adapt_asset(asset: uasset_inspection::generic::AssetOutput) -> Result<SavedAsset, String> {
     match asset.kind {
         "StringTable" => Ok(SavedAsset::StringTable {
+            string_table_metadata: asset.string_table_metadata,
             object_path: asset.object_path,
             string_table_namespace: required_string(
                 asset.string_table_namespace,
@@ -885,6 +887,11 @@ fn adapt_asset(asset: uasset_inspection::generic::AssetOutput) -> Result<SavedAs
                 .collect(),
         }),
         "Skeleton" => Ok(SavedAsset::Skeleton {
+            reference_pose: asset
+                .reference_pose
+                .map(|value| adapt_property_value(*value))
+                .transpose()?,
+            tail_bytes: (asset.tail_bytes > 0).then_some(asset.tail_bytes),
             object_path: asset.object_path,
             class_path: required_string(asset.class_path, "skeleton class path")?,
             object_guid: asset.object_guid,
@@ -1018,11 +1025,13 @@ fn adapt_property_value(
             value,
             history,
             namespace,
+            table_id,
             key,
         } => SavedPropertyValue::Text {
             value,
             history: adapt_text_history(&history)?,
             namespace,
+            table_id,
             key,
         },
         Value::Vector { x, y, z } => SavedPropertyValue::Vector {
@@ -1084,6 +1093,28 @@ fn adapt_property_value(
                 })
                 .collect::<Result<Vec<_>, String>>()?,
         },
+        Value::NativeStruct { fields } => SavedPropertyValue::NativeStruct {
+            fields: fields
+                .into_iter()
+                .map(|field| {
+                    Ok(crate::protocol_result::SavedNativeField {
+                        name: field.name,
+                        value: adapt_property_value(field.value)?,
+                    })
+                })
+                .collect::<Result<_, String>>()?,
+        },
+        Value::InstancedStruct {
+            struct_type,
+            size,
+            value,
+        } => SavedPropertyValue::InstancedStruct {
+            struct_type,
+            size,
+            value: value
+                .map(|value| adapt_property_value(*value).map(Box::new))
+                .transpose()?,
+        },
         Value::Struct { properties } => SavedPropertyValue::Struct {
             properties: properties
                 .into_iter()
@@ -1099,6 +1130,7 @@ fn adapt_text_history(history: &str) -> Result<TextHistory, String> {
     match history {
         "none" => Ok(TextHistory::None),
         "base" => Ok(TextHistory::Base),
+        "string_table" => Ok(TextHistory::StringTableEntry),
         history => Err(format!("unknown text history {history}")),
     }
 }

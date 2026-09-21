@@ -1,0 +1,571 @@
+{
+	"producer": "Unreal 5.7 loaded asset APIs",
+	"curves": {
+		"float": {
+			"default": 0.25,
+			"pre": 0,
+			"post": 3,
+			"keys": [
+				{
+					"time": -1,
+					"value": 2,
+					"interp": 0,
+					"tangent_mode": 0,
+					"weight_mode": 0,
+					"arrive": 0,
+					"leave": 0,
+					"arrive_weight": 0,
+					"leave_weight": 0
+				},
+				{
+					"time": 0.5,
+					"value": -3,
+					"interp": 2,
+					"tangent_mode": 2,
+					"weight_mode": 3,
+					"arrive": 1.25,
+					"leave": -2.5,
+					"arrive_weight": 0.375,
+					"leave_weight": 0.75
+				},
+				{
+					"time": 2,
+					"value": 7,
+					"interp": 0,
+					"tangent_mode": 0,
+					"weight_mode": 0,
+					"arrive": 0,
+					"leave": 0,
+					"arrive_weight": 0,
+					"leave_weight": 0
+				}
+			]
+		},
+		"vector": [
+			{
+				"default": 0.25,
+				"pre": 0,
+				"post": 3,
+				"keys": [
+					{
+						"time": -1,
+						"value": 2,
+						"interp": 0,
+						"tangent_mode": 0,
+						"weight_mode": 0,
+						"arrive": 0,
+						"leave": 0,
+						"arrive_weight": 0,
+						"leave_weight": 0
+					},
+					{
+						"time": 0.5,
+						"value": -3,
+						"interp": 2,
+						"tangent_mode": 2,
+						"weight_mode": 3,
+						"arrive": 1.25,
+						"leave": -2.5,
+						"arrive_weight": 0.375,
+						"leave_weight": 0.75
+					},
+					{
+						"time": 2,
+						"value": 7,
+						"interp": 0,
+						"tangent_mode": 0,
+						"weight_mode": 0,
+						"arrive": 0,
+						"leave": 0,
+						"arrive_weight": 0,
+						"leave_weight": 0
+					}
+				]
+			},
+			{
+				"default": 10.25,
+				"pre": 0,
+				"post": 3,
+				"keys": [
+					{
+						"time": -1,
+						"value": 12,
+						"interp": 0,
+						"tangent_mode": 0,
+						"weight_mode": 0,
+						"arrive": 0,
+						"leave": 0,
+						"arrive_weight": 0,
+						"leave_weight": 0
+					},
+					{
+						"time": 0.5,
+						"value": 7,
+						"interp": 2,
+						"tangent_mode": 2,
+						"weight_mode": 3,
+						"arrive": 1.25,
+						"leave": -2.5,
+						"arrive_weight": 0.375,
+						"leave_weight": 0.75
+					},
+					{
+						"time": 2,
+						"value": 17,
+						"interp": 0,
+						"tangent_mode": 0,
+						"weight_mode": 0,
+						"arrive": 0,
+						"leave": 0,
+						"arrive_weight": 0,
+						"leave_weight": 0
+					}
+				]
+			},
+			{
+				"default": 20.25,
+				"pre": 0,
+				"post": 3,
+				"keys": [
+					{
+						"time": -1,
+						"value": 22,
+						"interp": 0,
+						"tangent_mode": 0,
+						"weight_mode": 0,
+						"arrive": 0,
+						"leave": 0,
+						"arrive_weight": 0,
+						"leave_weight": 0
+					},
+					{
+						"time": 0.5,
+						"value": 17,
+						"interp": 2,
+						"tangent_mode": 2,
+						"weight_mode": 3,
+						"arrive": 1.25,
+						"leave": -2.5,
+						"arrive_weight": 0.375,
+						"leave_weight": 0.75
+					},
+					{
+						"time": 2,
+						"value": 27,
+						"interp": 0,
+						"tangent_mode": 0,
+						"weight_mode": 0,
+						"arrive": 0,
+						"leave": 0,
+						"arrive_weight": 0,
+						"leave_weight": 0
+					}
+				]
+			}
+		],
+		"color": [
+			{
+				"default": 0.25,
+				"pre": 0,
+				"post": 3,
+				"keys": [
+					{
+						"time": -1,
+						"value": 2,
+						"interp": 0,
+						"tangent_mode": 0,
+						"weight_mode": 0,
+						"arrive": 0,
+						"leave": 0,
+						"arrive_weight": 0,
+						"leave_weight": 0
+					},
+					{
+						"time": 0.5,
+						"value": -3,
+						"interp": 2,
+						"tangent_mode": 2,
+						"weight_mode": 3,
+						"arrive": 1.25,
+						"leave": -2.5,
+						"arrive_weight": 0.375,
+						"leave_weight": 0.75
+					},
+					{
+						"time": 2,
+						"value": 7,
+						"interp": 0,
+						"tangent_mode": 0,
+						"weight_mode": 0,
+						"arrive": 0,
+						"leave": 0,
+						"arrive_weight": 0,
+						"leave_weight": 0
+					}
+				]
+			},
+			{
+				"default": 0.5,
+				"pre": 0,
+				"post": 3,
+				"keys": [
+					{
+						"time": -1,
+						"value": 2.25,
+						"interp": 0,
+						"tangent_mode": 0,
+						"weight_mode": 0,
+						"arrive": 0,
+						"leave": 0,
+						"arrive_weight": 0,
+						"leave_weight": 0
+					},
+					{
+						"time": 0.5,
+						"value": -2.75,
+						"interp": 2,
+						"tangent_mode": 2,
+						"weight_mode": 3,
+						"arrive": 1.25,
+						"leave": -2.5,
+						"arrive_weight": 0.375,
+						"leave_weight": 0.75
+					},
+					{
+						"time": 2,
+						"value": 7.25,
+						"interp": 0,
+						"tangent_mode": 0,
+						"weight_mode": 0,
+						"arrive": 0,
+						"leave": 0,
+						"arrive_weight": 0,
+						"leave_weight": 0
+					}
+				]
+			},
+			{
+				"default": 0.75,
+				"pre": 0,
+				"post": 3,
+				"keys": [
+					{
+						"time": -1,
+						"value": 2.5,
+						"interp": 0,
+						"tangent_mode": 0,
+						"weight_mode": 0,
+						"arrive": 0,
+						"leave": 0,
+						"arrive_weight": 0,
+						"leave_weight": 0
+					},
+					{
+						"time": 0.5,
+						"value": -2.5,
+						"interp": 2,
+						"tangent_mode": 2,
+						"weight_mode": 3,
+						"arrive": 1.25,
+						"leave": -2.5,
+						"arrive_weight": 0.375,
+						"leave_weight": 0.75
+					},
+					{
+						"time": 2,
+						"value": 7.5,
+						"interp": 0,
+						"tangent_mode": 0,
+						"weight_mode": 0,
+						"arrive": 0,
+						"leave": 0,
+						"arrive_weight": 0,
+						"leave_weight": 0
+					}
+				]
+			},
+			{
+				"default": 1,
+				"pre": 0,
+				"post": 3,
+				"keys": [
+					{
+						"time": -1,
+						"value": 2.75,
+						"interp": 0,
+						"tangent_mode": 0,
+						"weight_mode": 0,
+						"arrive": 0,
+						"leave": 0,
+						"arrive_weight": 0,
+						"leave_weight": 0
+					},
+					{
+						"time": 0.5,
+						"value": -2.25,
+						"interp": 2,
+						"tangent_mode": 2,
+						"weight_mode": 3,
+						"arrive": 1.25,
+						"leave": -2.5,
+						"arrive_weight": 0.375,
+						"leave_weight": 0.75
+					},
+					{
+						"time": 2,
+						"value": 7.75,
+						"interp": 0,
+						"tangent_mode": 0,
+						"weight_mode": 0,
+						"arrive": 0,
+						"leave": 0,
+						"arrive_weight": 0,
+						"leave_weight": 0
+					}
+				]
+			}
+		]
+	},
+	"bones": [
+		{
+			"name": "root",
+			"parent": -1,
+			"rotation": [0, 0, 0, 1],
+			"translation": [1.25, -2.5, 3.75],
+			"scale": [1, 1, 1]
+		},
+		{
+			"name": "joint",
+			"parent": 0,
+			"rotation": [0, 0, 0.50000001261839133, 0.86602539649920685],
+			"translation": [10, 20, 30],
+			"scale": [0.5, 1.5, 2]
+		}
+	],
+	"bone_indices": {
+		"root": 0,
+		"joint": 1
+	},
+	"float_channel": {
+		"default": 0.125,
+		"pre": 1,
+		"post": 2,
+		"numerator": 24000,
+		"denominator": 1001,
+		"keys": [
+			{
+				"frame": -12,
+				"value": 2.5,
+				"interp": 1,
+				"tangent_mode": 0,
+				"weight_mode": 0,
+				"arrive": 0,
+				"leave": 0,
+				"arrive_weight": 0,
+				"leave_weight": 0
+			},
+			{
+				"frame": 18,
+				"value": -4.25,
+				"interp": 0,
+				"tangent_mode": 0,
+				"weight_mode": 0,
+				"arrive": -0.22499999403953552,
+				"leave": 0.55729168653488159,
+				"arrive_weight": 0,
+				"leave_weight": 0
+			},
+			{
+				"frame": 42,
+				"value": 9.125,
+				"interp": 2,
+				"tangent_mode": 2,
+				"weight_mode": 3,
+				"arrive": 1.5,
+				"leave": -2.25,
+				"arrive_weight": 0.125,
+				"leave_weight": 0.875
+			}
+		]
+	},
+	"double_channel": {
+		"default": 0.125,
+		"pre": 1,
+		"post": 2,
+		"numerator": 24000,
+		"denominator": 1001,
+		"keys": [
+			{
+				"frame": -12,
+				"value": 2.5,
+				"interp": 1,
+				"tangent_mode": 0,
+				"weight_mode": 0,
+				"arrive": 0,
+				"leave": 0,
+				"arrive_weight": 0,
+				"leave_weight": 0
+			},
+			{
+				"frame": 18,
+				"value": -4.25,
+				"interp": 0,
+				"tangent_mode": 0,
+				"weight_mode": 0,
+				"arrive": -0.22499999403953552,
+				"leave": 0.55729168653488159,
+				"arrive_weight": 0,
+				"leave_weight": 0
+			},
+			{
+				"frame": 42,
+				"value": 9.125,
+				"interp": 2,
+				"tangent_mode": 2,
+				"weight_mode": 3,
+				"arrive": 1.5,
+				"leave": -2.25,
+				"arrive_weight": 0.125,
+				"leave_weight": 0.875
+			},
+			{
+				"frame": 100,
+				"value": 123456789.12345679,
+				"interp": 0,
+				"tangent_mode": 0,
+				"weight_mode": 0,
+				"arrive": 2128565.25,
+				"leave": 0,
+				"arrive_weight": 0,
+				"leave_weight": 0
+			}
+		]
+	},
+	"empty_channel": {
+		"default": null,
+		"pre": 4,
+		"post": 4,
+		"numerator": 30,
+		"denominator": 1,
+		"keys": []
+	},
+	"instance": {
+		"type": "/Script/UEShedFixture.UEShedNativeInner",
+		"count": -37,
+		"label": "café / 保存",
+		"reference": "/Game/Fixture/ParserNative/CF_Native.CF_Native",
+		"offset": [1.25, -2.5, 3.75]
+	},
+	"native_instance": [4.5, -6.25, 8.125],
+	"empty_instance": true,
+	"metadata": {
+		"root": {
+			"FixturePurpose": "Shared native layouts",
+			"EmptyRoot": "",
+			"PackageLocalizationNamespace": "865D067AFD702F5010F718F623BEBA24"
+		},
+		"objects": {
+			"/Game/Fixture/ParserNative/DA_Native.DA_Native": {
+				"Comment": "café / 保存",
+				"Empty": ""
+			}
+		}
+	},
+	"sequence_channels": [
+		{
+			"default": 0.125,
+			"pre": 1,
+			"post": 2,
+			"numerator": 24000,
+			"denominator": 1001,
+			"keys": [
+				{
+					"frame": -12,
+					"value": 2.5,
+					"interp": 1,
+					"tangent_mode": 0,
+					"weight_mode": 0,
+					"arrive": 0,
+					"leave": 0,
+					"arrive_weight": 0,
+					"leave_weight": 0
+				},
+				{
+					"frame": 18,
+					"value": -4.25,
+					"interp": 0,
+					"tangent_mode": 0,
+					"weight_mode": 0,
+					"arrive": -0.22499999403953552,
+					"leave": 0.55729168653488159,
+					"arrive_weight": 0,
+					"leave_weight": 0
+				},
+				{
+					"frame": 42,
+					"value": 9.125,
+					"interp": 2,
+					"tangent_mode": 2,
+					"weight_mode": 3,
+					"arrive": 1.5,
+					"leave": -2.25,
+					"arrive_weight": 0.125,
+					"leave_weight": 0.875
+				}
+			]
+		},
+		{
+			"default": 0.125,
+			"pre": 1,
+			"post": 2,
+			"numerator": 24000,
+			"denominator": 1001,
+			"keys": [
+				{
+					"frame": -12,
+					"value": 2.5,
+					"interp": 1,
+					"tangent_mode": 0,
+					"weight_mode": 0,
+					"arrive": 0,
+					"leave": 0,
+					"arrive_weight": 0,
+					"leave_weight": 0
+				},
+				{
+					"frame": 18,
+					"value": -4.25,
+					"interp": 0,
+					"tangent_mode": 0,
+					"weight_mode": 0,
+					"arrive": -0.22499999403953552,
+					"leave": 0.55729168653488159,
+					"arrive_weight": 0,
+					"leave_weight": 0
+				},
+				{
+					"frame": 42,
+					"value": 9.125,
+					"interp": 2,
+					"tangent_mode": 2,
+					"weight_mode": 3,
+					"arrive": 1.5,
+					"leave": -2.25,
+					"arrive_weight": 0.125,
+					"leave_weight": 0.875
+				},
+				{
+					"frame": 100,
+					"value": 123456789.12345679,
+					"interp": 0,
+					"tangent_mode": 0,
+					"weight_mode": 0,
+					"arrive": 2128565.25,
+					"leave": 0,
+					"arrive_weight": 0,
+					"leave_weight": 0
+				}
+			]
+		}
+	]
+}

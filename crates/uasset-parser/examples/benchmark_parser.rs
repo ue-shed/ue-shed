@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 
 use uasset_parser::Package;
 use uasset_parser::asset::{AssetDecodeContext, decode_export};
+use uasset_parser::schema::embedded_source_model;
 
 const DEFAULT_RUNS: usize = 50;
 const DEFAULT_WARMUPS: usize = 5;
@@ -92,7 +93,11 @@ fn parse_count(
 }
 
 fn decode_package(source: &[u8], package: &Package) -> DecodeCounts {
-    let context = AssetDecodeContext { source, package };
+    let context = AssetDecodeContext {
+        source,
+        package,
+        schemas: embedded_source_model(),
+    };
     let mut counts = DecodeCounts {
         decoded: 0,
         errors: 0,

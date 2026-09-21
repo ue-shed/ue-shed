@@ -12,6 +12,8 @@
 
 use std::fmt;
 
+mod native_data;
+
 use crate::archive::{ArchiveError, ArchiveErrorKind, Guid, NameRef, Span};
 use crate::codec::decode_property_stream_values;
 use crate::package::{Export, ObjectPath, Package, PackageError, PackageIndex};
@@ -20,10 +22,12 @@ use crate::property::{
     TextFormatArgumentValue, TextHistory, TextValue, read_tagged_property_stream,
     read_uobject_tagged_property_stream,
 };
+use crate::schema::{SchemaProvider, SerializationOperation};
 
 pub struct AssetDecodeContext<'a> {
     pub source: &'a [u8],
     pub package: &'a Package,
+    pub schemas: &'a dyn SchemaProvider,
 }
 
 pub const DATATABLE_CLASS: &str = "/Script/Engine.DataTable";
@@ -232,6 +236,8 @@ pub struct DecodedSkeleton {
     pub object_guid: Option<Guid>,
     pub properties: PropertyStream,
     pub bones: Vec<SkeletonBone>,
+    pub reference_pose: Option<PropertyValue>,
+    pub tail: Span,
 }
 
 /// One bone from a `USkeleton`'s `FReferenceSkeleton` (`FMeshBoneInfo`).
@@ -267,6 +273,7 @@ pub struct DecodedUObject {
 pub struct DecodedDataTable {
     pub kind: DataTableKind,
     pub object_path: ObjectPath,
+    pub object_guid: Option<Guid>,
     pub row_struct: Option<ObjectPath>,
     pub parent_tables: Vec<ObjectPath>,
     pub properties: PropertyStream,
@@ -343,11 +350,15 @@ pub enum EnumCppForm {
     EnumClass,
 }
 
+pub type StringTableMetadata =
+    std::collections::BTreeMap<String, std::collections::BTreeMap<String, String>>;
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct DecodedStringTable {
     pub object_path: ObjectPath,
     pub namespace: String,
     pub entries: Vec<StringTableEntry>,
+    pub metadata: StringTableMetadata,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -367,6 +378,11 @@ pub enum CurveTableMode {
 pub struct CurveTableRow {
     pub name: NameRef,
     pub keys: Vec<CurveKey>,
+}
+
+struct SourceCurveTableData {
+    mode: CurveTableMode,
+    rows: Vec<CurveTableRow>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -507,6 +523,7 @@ impl From<ArchiveError> for AssetError {
             ArchiveErrorKind::OutOfBounds
             | ArchiveErrorKind::InvalidSeek
             | ArchiveErrorKind::InvalidCount
+            | ArchiveErrorKind::InvalidBoolean
             | ArchiveErrorKind::MissingNullTerminator
             | ArchiveErrorKind::InvalidString
             | ArchiveErrorKind::InvalidNameReference
@@ -550,61 +567,31 @@ impl AssetDecoder for DataTableDecoder {
                 format!("export {} has no resolved class", export.object_path),
             ));
         };
-        let kind = match class_path.as_str() {
-            DATATABLE_CLASS => DataTableKind::Plain,
-            COMPOSITE_DATATABLE_CLASS => DataTableKind::Composite,
-            _ => {
-                return Err(AssetError::new(
-                    AssetErrorKind::UnsupportedFormat,
-                    format!("unsupported asset class {class_path}"),
-                ));
-            }
+        let kind = if class_path.as_str() == COMPOSITE_DATATABLE_CLASS
+            || context
+                .schemas
+                .class_is_a(class_path, COMPOSITE_DATATABLE_CLASS)
+        {
+            DataTableKind::Composite
+        } else if class_path.as_str() == DATATABLE_CLASS
+            || context.schemas.class_is_a(class_path, DATATABLE_CLASS)
+        {
+            DataTableKind::Plain
+        } else {
+            return Err(AssetError::new(
+                AssetErrorKind::UnsupportedFormat,
+                format!("unsupported asset class {class_path}"),
+            ));
         };
+        validate_source_serialization(context.schemas, class_path, SourcePlanKind::DataTable)?;
 
         let (properties, mut reader) = decode_uobject_properties(export, context)?;
         let row_struct = row_struct_path(context.package, &properties);
         let parent_tables = parent_tables_paths(context.package, &properties);
 
-        let data_marker_offset = reader.tell();
-        let data_marker = reader.read_i32(&format!("{}.Data.Marker", export.object_path))?;
-        if data_marker != 0 {
-            return Err(AssetError::new(
-                AssetErrorKind::MalformedData,
-                format!(
-                    "expected DataTable data marker 0 at byte {data_marker_offset}, got {data_marker}"
-                ),
-            ));
-        }
+        let object_guid = consume_inline_object_guid_footer(&mut reader, &export.object_path)?;
 
-        let row_count_offset = reader.tell();
-        let row_count = reader.read_i32(&format!("{}.Rows.Count", export.object_path))?;
-        if row_count < 0 {
-            return Err(AssetError::new(
-                AssetErrorKind::MalformedData,
-                format!("negative DataTable row count {row_count} at byte {row_count_offset}"),
-            ));
-        }
-        let capacity = reader.checked_vec_capacity::<DataTableRow>(
-            usize::try_from(row_count).expect("i32 fits in usize"),
-            8,
-            &format!("{}.Rows.Count", export.object_path),
-        )?;
-        let mut rows = Vec::with_capacity(capacity);
-        for index in 0..row_count {
-            let row_path = format!("{}.Rows[{index}]", export.object_path);
-            let name = reader.read_name_ref(&format!("{row_path}.Name"))?;
-            let mut row_properties = read_tagged_property_stream(
-                &mut reader,
-                &context.package.summary.versions,
-                &context.package.names,
-                &format!("{row_path}.Value"),
-            )?;
-            decode_property_stream_values(context.source, &mut row_properties, context.package)?;
-            rows.push(DataTableRow {
-                name,
-                properties: row_properties,
-            });
-        }
+        let rows = decode_data_table_rows(&mut reader, context, &export.object_path)?;
 
         if reader.remaining() != 0 {
             return Err(AssetError::new(
@@ -620,6 +607,7 @@ impl AssetDecoder for DataTableDecoder {
         Ok(DecodedAsset::DataTable(DecodedDataTable {
             kind,
             object_path: export.object_path.clone(),
+            object_guid,
             row_struct,
             parent_tables,
             properties,
@@ -632,6 +620,43 @@ impl DataTableDecoder {
     fn supports_class(class_path: &str) -> bool {
         matches!(class_path, DATATABLE_CLASS | COMPOSITE_DATATABLE_CLASS)
     }
+}
+
+fn decode_data_table_rows(
+    reader: &mut crate::archive::Reader<'_>,
+    context: &AssetDecodeContext<'_>,
+    object_path: &ObjectPath,
+) -> Result<Vec<DataTableRow>, AssetError> {
+    let row_count_offset = reader.tell();
+    let row_count = reader.read_i32(&format!("{object_path}.Rows.Count"))?;
+    if row_count < 0 {
+        return Err(AssetError::new(
+            AssetErrorKind::MalformedData,
+            format!("negative DataTable row count {row_count} at byte {row_count_offset}"),
+        ));
+    }
+    let capacity = reader.checked_vec_capacity::<DataTableRow>(
+        usize::try_from(row_count).expect("i32 fits in usize"),
+        8,
+        &format!("{object_path}.Rows.Count"),
+    )?;
+    let mut rows = Vec::with_capacity(capacity);
+    for index in 0..row_count {
+        let row_path = format!("{object_path}.Rows[{index}]");
+        let name = reader.read_name_ref(&format!("{row_path}.Name"))?;
+        let mut row_properties = read_tagged_property_stream(
+            reader,
+            &context.package.summary.versions,
+            &context.package.names,
+            &format!("{row_path}.Value"),
+        )?;
+        decode_property_stream_values(context.source, &mut row_properties, context.package)?;
+        rows.push(DataTableRow {
+            name,
+            properties: row_properties,
+        });
+    }
+    Ok(rows)
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -659,6 +684,7 @@ impl AssetDecoder for CurveTableDecoder {
                 format!("unsupported asset class {class_path}"),
             ));
         }
+        validate_source_serialization(context.schemas, class_path, SourcePlanKind::CurveTable)?;
 
         let (properties, mut reader) = decode_uobject_properties(export, context)?;
         let footer_offset = reader.tell();
@@ -672,53 +698,7 @@ impl AssetDecoder for CurveTableDecoder {
             ));
         }
 
-        let row_count_offset = reader.tell();
-        let row_count = reader.read_i32(&format!("{}.Rows.Count", export.object_path))?;
-        if row_count < 0 {
-            return Err(AssetError::new(
-                AssetErrorKind::MalformedData,
-                format!("negative CurveTable row count {row_count} at byte {row_count_offset}"),
-            ));
-        }
-
-        let raw_mode = reader.read_u8(&format!("{}.Mode", export.object_path))?;
-        let mode = match raw_mode {
-            0 => CurveTableMode::Empty,
-            1 => CurveTableMode::SimpleCurves,
-            2 => CurveTableMode::RichCurves,
-            value => {
-                return Err(AssetError::new(
-                    AssetErrorKind::MalformedData,
-                    format!("unsupported CurveTable mode {value}"),
-                ));
-            }
-        };
-        let capacity = reader.checked_vec_capacity::<CurveTableRow>(
-            usize::try_from(row_count).expect("i32 fits in usize"),
-            16,
-            &format!("{}.Rows.Count", export.object_path),
-        )?;
-        let mut rows = Vec::with_capacity(capacity);
-        for index in 0..row_count {
-            let row_path = format!("{}.Rows[{index}]", export.object_path);
-            let name = reader.read_name_ref(&format!("{row_path}.Name"))?;
-            let stream = read_tagged_property_stream(
-                &mut reader,
-                &context.package.summary.versions,
-                &context.package.names,
-                &format!("{row_path}.Curve"),
-            )?;
-            let keys = match mode {
-                CurveTableMode::Empty => Vec::new(),
-                CurveTableMode::SimpleCurves => {
-                    decode_simple_curve_keys(context.source, context.package, &stream, &row_path)?
-                }
-                CurveTableMode::RichCurves => {
-                    decode_rich_curve_keys(context.source, context.package, &stream, &row_path)?
-                }
-            };
-            rows.push(CurveTableRow { name, keys });
-        }
+        let curve_table = decode_curve_table_data(&mut reader, context, &export.object_path)?;
 
         if reader.remaining() != 0 {
             return Err(AssetError::new(
@@ -733,11 +713,66 @@ impl AssetDecoder for CurveTableDecoder {
 
         Ok(DecodedAsset::CurveTable(DecodedCurveTable {
             object_path: export.object_path.clone(),
-            mode,
+            mode: curve_table.mode,
             properties,
-            rows,
+            rows: curve_table.rows,
         }))
     }
+}
+
+fn decode_curve_table_data(
+    reader: &mut crate::archive::Reader<'_>,
+    context: &AssetDecodeContext<'_>,
+    object_path: &ObjectPath,
+) -> Result<SourceCurveTableData, AssetError> {
+    let row_count_offset = reader.tell();
+    let row_count = reader.read_i32(&format!("{object_path}.Rows.Count"))?;
+    if row_count < 0 {
+        return Err(AssetError::new(
+            AssetErrorKind::MalformedData,
+            format!("negative CurveTable row count {row_count} at byte {row_count_offset}"),
+        ));
+    }
+
+    let raw_mode = reader.read_u8(&format!("{object_path}.Mode"))?;
+    let mode = match raw_mode {
+        0 => CurveTableMode::Empty,
+        1 => CurveTableMode::SimpleCurves,
+        2 => CurveTableMode::RichCurves,
+        value => {
+            return Err(AssetError::new(
+                AssetErrorKind::MalformedData,
+                format!("unsupported CurveTable mode {value}"),
+            ));
+        }
+    };
+    let capacity = reader.checked_vec_capacity::<CurveTableRow>(
+        usize::try_from(row_count).expect("i32 fits in usize"),
+        16,
+        &format!("{object_path}.Rows.Count"),
+    )?;
+    let mut rows = Vec::with_capacity(capacity);
+    for index in 0..row_count {
+        let row_path = format!("{object_path}.Rows[{index}]");
+        let name = reader.read_name_ref(&format!("{row_path}.Name"))?;
+        let stream = read_tagged_property_stream(
+            reader,
+            &context.package.summary.versions,
+            &context.package.names,
+            &format!("{row_path}.Curve"),
+        )?;
+        let keys = match mode {
+            CurveTableMode::Empty => Vec::new(),
+            CurveTableMode::SimpleCurves => {
+                decode_simple_curve_keys(context.source, context.package, &stream, &row_path)?
+            }
+            CurveTableMode::RichCurves => {
+                decode_rich_curve_keys(context.source, context.package, &stream, &row_path)?
+            }
+        };
+        rows.push(CurveTableRow { name, keys });
+    }
+    Ok(SourceCurveTableData { mode, rows })
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -759,12 +794,15 @@ impl AssetDecoder for DataAssetDecoder {
                 format!("export {} has no resolved class", export.object_path),
             ));
         };
-        if !is_data_asset_class(class_path.as_str()) {
+        if !is_data_asset_class(class_path.as_str())
+            && !context.schemas.class_is_a(class_path, DATA_ASSET_CLASS)
+        {
             return Err(AssetError::new(
                 AssetErrorKind::UnsupportedFormat,
                 format!("unsupported asset class {class_path}"),
             ));
         }
+        validate_source_serialization(context.schemas, class_path, SourcePlanKind::DataAsset)?;
 
         let (properties, class_path, object_guid) =
             decode_uobject_asset_properties(export, context)?;
@@ -803,6 +841,7 @@ impl AssetDecoder for StringTableDecoder {
                 format!("unsupported asset class {class_path}"),
             ));
         }
+        validate_source_serialization(context.schemas, class_path, SourcePlanKind::StringTable)?;
 
         let (_properties, mut reader) = decode_uobject_properties(export, context)?;
         let footer_offset = reader.tell();
@@ -816,39 +855,7 @@ impl AssetDecoder for StringTableDecoder {
             ));
         }
 
-        let namespace = reader.read_fstring(&format!("{}.Namespace", export.object_path))?;
-        let entry_count_offset = reader.tell();
-        let entry_count = reader.read_i32(&format!("{}.Entries.Count", export.object_path))?;
-        if entry_count < 0 {
-            return Err(AssetError::new(
-                AssetErrorKind::MalformedData,
-                format!(
-                    "negative StringTable entry count {entry_count} at byte {entry_count_offset}"
-                ),
-            ));
-        }
-        let capacity = reader.checked_vec_capacity::<StringTableEntry>(
-            usize::try_from(entry_count).expect("i32 fits in usize"),
-            8,
-            &format!("{}.Entries.Count", export.object_path),
-        )?;
-        let mut entries = Vec::with_capacity(capacity);
-        for index in 0..entry_count {
-            let entry_path = format!("{}.Entries[{index}]", export.object_path);
-            let key = reader.read_fstring(&format!("{entry_path}.Key"))?;
-            let source = reader.read_fstring(&format!("{entry_path}.SourceString"))?;
-            entries.push(StringTableEntry { key, source });
-        }
-
-        let metadata_count = reader.read_i32(&format!("{}.MetaData.Count", export.object_path))?;
-        if metadata_count != 0 {
-            return Err(AssetError::new(
-                AssetErrorKind::UnsupportedCapability,
-                format!(
-                    "StringTable metadata map with {metadata_count} entries is not supported yet"
-                ),
-            ));
-        }
+        let data = decode_string_table_data(&mut reader, context.package, &export.object_path)?;
 
         if reader.remaining() != 0 {
             return Err(AssetError::new(
@@ -863,14 +870,146 @@ impl AssetDecoder for StringTableDecoder {
 
         Ok(DecodedAsset::StringTable(DecodedStringTable {
             object_path: export.object_path.clone(),
-            namespace,
-            entries,
+            namespace: data.namespace,
+            entries: data.entries,
+            metadata: data.metadata,
         }))
     }
 }
 
+struct SourceStringTableData {
+    namespace: String,
+    entries: Vec<StringTableEntry>,
+    metadata: StringTableMetadata,
+}
+
+fn decode_string_table_data(
+    reader: &mut crate::archive::Reader<'_>,
+    package: &Package,
+    object_path: &ObjectPath,
+) -> Result<SourceStringTableData, AssetError> {
+    let namespace = reader.read_fstring(&format!("{object_path}.Namespace"))?;
+    let entry_count_offset = reader.tell();
+    let entry_count = reader.read_i32(&format!("{object_path}.Entries.Count"))?;
+    if entry_count < 0 {
+        return Err(AssetError::new(
+            AssetErrorKind::MalformedData,
+            format!("negative StringTable entry count {entry_count} at byte {entry_count_offset}"),
+        ));
+    }
+    let capacity = reader.checked_vec_capacity::<StringTableEntry>(
+        usize::try_from(entry_count).expect("i32 fits in usize"),
+        8,
+        &format!("{object_path}.Entries.Count"),
+    )?;
+    let mut entries = Vec::with_capacity(capacity);
+    for index in 0..entry_count {
+        let entry_path = format!("{object_path}.Entries[{index}]");
+        let key = reader.read_fstring(&format!("{entry_path}.Key"))?;
+        let source = reader.read_fstring(&format!("{entry_path}.SourceString"))?;
+        entries.push(StringTableEntry { key, source });
+    }
+
+    let raw_metadata =
+        reader.read_tarray(&format!("{object_path}.MetaData"), 8, |reader, index| {
+            let path = format!("{object_path}.MetaData[{index}]");
+            let key = reader.read_fstring(&format!("{path}.Key"))?;
+            let fields = reader.read_tarray(&format!("{path}.Value"), 12, |reader, index| {
+                let name = reader.read_name_ref(&format!("{path}.Value[{index}].Key"))?;
+                let value = reader.read_fstring(&format!("{path}.Value[{index}].Value"))?;
+                Ok((name, value))
+            })?;
+            Ok((key, fields))
+        })?;
+    let mut metadata = StringTableMetadata::new();
+    for (key, fields) in raw_metadata {
+        let mut resolved = std::collections::BTreeMap::new();
+        for (name, value) in fields {
+            resolved.insert(
+                native_data::metadata_name(package, name, object_path)?,
+                value,
+            );
+        }
+        metadata.insert(key, resolved);
+    }
+    Ok(SourceStringTableData {
+        namespace,
+        entries,
+        metadata,
+    })
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct EnumDecoder;
+
+struct SourceEnumData {
+    cpp_form: EnumCppForm,
+    entries: Vec<EnumEntry>,
+}
+
+fn decode_enum_data(
+    reader: &mut crate::archive::Reader<'_>,
+    context: &AssetDecodeContext<'_>,
+    properties: &PropertyStream,
+    object_path: &ObjectPath,
+) -> Result<SourceEnumData, AssetError> {
+    // `UEnum::Serialize` writes the names as `int32 Num` followed by
+    // `Num` × (`FName`, `int64`) pairs, then a `uint8 CppForm`.
+    let count_offset = reader.tell();
+    let count = reader.read_i32(&format!("{object_path}.Names.Count"))?;
+    if count < 0 {
+        return Err(AssetError::new(
+            AssetErrorKind::MalformedData,
+            format!("negative Enum name count {count} at byte {count_offset}"),
+        ));
+    }
+    let capacity = reader.checked_vec_capacity::<(NameRef, i64)>(
+        usize::try_from(count).expect("i32 fits in usize"),
+        16,
+        &format!("{object_path}.Names.Count"),
+    )?;
+    let mut raw_entries = Vec::with_capacity(capacity);
+    for index in 0..count {
+        let entry_path = format!("{object_path}.Names[{index}]");
+        let name = reader.read_name_ref(&format!("{entry_path}.Name"))?;
+        let value = reader.read_i64(&format!("{entry_path}.Value"))?;
+        raw_entries.push((name, value));
+    }
+
+    let cpp_form_offset = reader.tell();
+    let raw_form = reader.read_u8(&format!("{object_path}.CppForm"))?;
+    let cpp_form = enum_cpp_form(raw_form, cpp_form_offset)?;
+
+    let display_names = display_name_map(context.package, properties);
+    let entries = raw_entries
+        .into_iter()
+        .map(|(name, value)| EnumEntry {
+            name,
+            value,
+            display_name: display_names
+                .iter()
+                .find(|(key, _)| *key == name)
+                .map(|(_, source)| source.clone()),
+        })
+        .collect();
+
+    Ok(SourceEnumData { cpp_form, entries })
+}
+
+fn enum_cpp_form(raw_form: u8, cpp_form_offset: u64) -> Result<EnumCppForm, AssetError> {
+    let cpp_form = match raw_form {
+        0 => EnumCppForm::Regular,
+        1 => EnumCppForm::Namespaced,
+        2 => EnumCppForm::EnumClass,
+        value => {
+            return Err(AssetError::new(
+                AssetErrorKind::MalformedData,
+                format!("unsupported Enum CppForm {value} at byte {cpp_form_offset}"),
+            ));
+        }
+    };
+    Ok(cpp_form)
+}
 
 impl AssetDecoder for EnumDecoder {
     fn supports(&self, class_path: &ObjectPath) -> bool {
@@ -905,42 +1044,7 @@ impl AssetDecoder for EnumDecoder {
             ));
         }
 
-        // `UEnum::Serialize` writes the names as `int32 Num` followed by
-        // `Num` × (`FName`, `int64`) pairs, then a `uint8 CppForm`.
-        let count_offset = reader.tell();
-        let count = reader.read_i32(&format!("{}.Names.Count", export.object_path))?;
-        if count < 0 {
-            return Err(AssetError::new(
-                AssetErrorKind::MalformedData,
-                format!("negative Enum name count {count} at byte {count_offset}"),
-            ));
-        }
-        let capacity = reader.checked_vec_capacity::<(NameRef, i64)>(
-            usize::try_from(count).expect("i32 fits in usize"),
-            16,
-            &format!("{}.Names.Count", export.object_path),
-        )?;
-        let mut raw_entries = Vec::with_capacity(capacity);
-        for index in 0..count {
-            let entry_path = format!("{}.Names[{index}]", export.object_path);
-            let name = reader.read_name_ref(&format!("{entry_path}.Name"))?;
-            let value = reader.read_i64(&format!("{entry_path}.Value"))?;
-            raw_entries.push((name, value));
-        }
-
-        let cpp_form_offset = reader.tell();
-        let raw_form = reader.read_u8(&format!("{}.CppForm", export.object_path))?;
-        let cpp_form = match raw_form {
-            0 => EnumCppForm::Regular,
-            1 => EnumCppForm::Namespaced,
-            2 => EnumCppForm::EnumClass,
-            value => {
-                return Err(AssetError::new(
-                    AssetErrorKind::MalformedData,
-                    format!("unsupported Enum CppForm {value} at byte {cpp_form_offset}"),
-                ));
-            }
-        };
+        let data = decode_enum_data(&mut reader, context, &properties, &export.object_path)?;
 
         if reader.remaining() != 0 {
             return Err(AssetError::new(
@@ -953,24 +1057,11 @@ impl AssetDecoder for EnumDecoder {
             ));
         }
 
-        let display_names = display_name_map(context.package, &properties);
-        let entries = raw_entries
-            .into_iter()
-            .map(|(name, value)| EnumEntry {
-                name,
-                value,
-                display_name: display_names
-                    .iter()
-                    .find(|(key, _)| *key == name)
-                    .map(|(_, source)| source.clone()),
-            })
-            .collect();
-
         Ok(DecodedAsset::Enum(DecodedEnum {
             object_path: export.object_path.clone(),
-            cpp_form,
+            cpp_form: data.cpp_form,
             properties,
-            entries,
+            entries: data.entries,
         }))
     }
 }
@@ -1042,63 +1133,10 @@ impl AssetDecoder for StructDecoder {
             ));
         }
 
-        // UStruct::Serialize tail. SuperStruct is an FPackageIndex; user structs
-        // have no super, so it is null (0). Children is a TArray<UField*>; user
-        // structs carry their members as ChildProperties (FFields), not UFields.
-        let _super_struct = reader.read_i32(&format!("{}.SuperStruct", export.object_path))?;
-        let child_count = reader.read_i32(&format!("{}.Children.Count", export.object_path))?;
-        for index in 0..child_count.max(0) {
-            reader.read_i32(&format!("{}.Children[{index}]", export.object_path))?;
-        }
-
-        let field_count_offset = reader.tell();
-        let field_count =
-            reader.read_i32(&format!("{}.ChildProperties.Count", export.object_path))?;
-        if field_count < 0 {
-            return Err(AssetError::new(
-                AssetErrorKind::MalformedData,
-                format!("negative struct field count {field_count} at byte {field_count_offset}"),
-            ));
-        }
-        let capacity = reader.checked_vec_capacity::<StructField>(
-            usize::try_from(field_count).expect("fits in usize"),
-            1,
-            &format!("{}.ChildProperties.Count", export.object_path),
-        )?;
-        let mut fields = Vec::with_capacity(capacity);
-        for index in 0..field_count {
-            let field_path = format!("{}.ChildProperties[{index}]", export.object_path);
-            if let Some(field) = read_field(&mut reader, context, &field_path)? {
-                fields.push(field);
-            }
-        }
-
-        // UStruct script bytecode: a user struct has none, but honor the markers.
-        let bytecode_size =
-            reader.read_i32(&format!("{}.ScriptBytecodeSize", export.object_path))?;
-        let storage_size = reader.read_i32(&format!("{}.ScriptStorageSize", export.object_path))?;
-        if bytecode_size != 0 || storage_size != 0 {
-            return Err(AssetError::new(
-                AssetErrorKind::UnsupportedCapability,
-                format!(
-                    "struct {} carries {storage_size} bytes of script bytecode (unsupported)",
-                    export.object_path
-                ),
-            ));
-        }
-
-        // UScriptStruct::Serialize: the non-computed StructFlags.
-        let struct_flags = reader.read_u32(&format!("{}.StructFlags", export.object_path))?;
-
-        // UUserDefinedStruct::Serialize: the default struct instance, serialized
-        // as a tagged-property stream.
-        let mut default_values = read_tagged_property_stream(
-            &mut reader,
-            &context.package.summary.versions,
-            &context.package.names,
-            &format!("{}.DefaultInstance", export.object_path),
-        )?;
-        decode_property_stream_values(context.source, &mut default_values, context.package)?;
+        let fields = decode_struct_definition(&mut reader, context, &export.object_path)?;
+        let struct_flags = decode_struct_flags(&mut reader, &export.object_path)?;
+        let default_values =
+            decode_struct_default_instance(&mut reader, context, &export.object_path)?;
 
         if reader.remaining() != 0 {
             return Err(AssetError::new(
@@ -1119,6 +1157,81 @@ impl AssetDecoder for StructDecoder {
             default_values,
         }))
     }
+}
+
+fn decode_struct_definition(
+    reader: &mut crate::archive::Reader<'_>,
+    context: &AssetDecodeContext<'_>,
+    object_path: &ObjectPath,
+) -> Result<Vec<StructField>, AssetError> {
+    // UStruct::Serialize tail. SuperStruct is an FPackageIndex; user structs
+    // have no super, so it is null (0). Children is a TArray<UField*>; user
+    // structs carry their members as ChildProperties (FFields), not UFields.
+    let _super_struct = reader.read_i32(&format!("{object_path}.SuperStruct"))?;
+    let child_count = reader.read_i32(&format!("{object_path}.Children.Count"))?;
+    for index in 0..child_count.max(0) {
+        reader.read_i32(&format!("{object_path}.Children[{index}]"))?;
+    }
+
+    let field_count_offset = reader.tell();
+    let field_count = reader.read_i32(&format!("{object_path}.ChildProperties.Count"))?;
+    if field_count < 0 {
+        return Err(AssetError::new(
+            AssetErrorKind::MalformedData,
+            format!("negative struct field count {field_count} at byte {field_count_offset}"),
+        ));
+    }
+    let capacity = reader.checked_vec_capacity::<StructField>(
+        usize::try_from(field_count).expect("fits in usize"),
+        1,
+        &format!("{object_path}.ChildProperties.Count"),
+    )?;
+    let mut fields = Vec::with_capacity(capacity);
+    for index in 0..field_count {
+        let field_path = format!("{object_path}.ChildProperties[{index}]");
+        if let Some(field) = read_field(reader, context, &field_path)? {
+            fields.push(field);
+        }
+    }
+
+    // FStructScriptLoader reads the bytecode and serialized-storage sizes.
+    // User-defined structs should not carry script, but preserve the legacy
+    // rejection boundary if malformed input claims that they do.
+    let bytecode_size = reader.read_i32(&format!("{object_path}.ScriptBytecodeSize"))?;
+    let storage_size = reader.read_i32(&format!("{object_path}.ScriptStorageSize"))?;
+    if bytecode_size != 0 || storage_size != 0 {
+        return Err(AssetError::new(
+            AssetErrorKind::UnsupportedCapability,
+            format!(
+                "struct {object_path} carries {storage_size} bytes of script bytecode (unsupported)"
+            ),
+        ));
+    }
+    Ok(fields)
+}
+
+fn decode_struct_flags(
+    reader: &mut crate::archive::Reader<'_>,
+    object_path: &ObjectPath,
+) -> Result<u32, AssetError> {
+    reader
+        .read_u32(&format!("{object_path}.StructFlags"))
+        .map_err(Into::into)
+}
+
+fn decode_struct_default_instance(
+    reader: &mut crate::archive::Reader<'_>,
+    context: &AssetDecodeContext<'_>,
+    object_path: &ObjectPath,
+) -> Result<PropertyStream, AssetError> {
+    let mut default_values = read_tagged_property_stream(
+        reader,
+        &context.package.summary.versions,
+        &context.package.names,
+        &format!("{object_path}.DefaultInstance"),
+    )?;
+    decode_property_stream_values(context.source, &mut default_values, context.package)?;
+    Ok(default_values)
 }
 
 /// Reads one `FField`/`FProperty` as written by `UStruct::SerializeProperties`
@@ -1303,46 +1416,112 @@ impl AssetDecoder for SkeletonDecoder {
         // footer) then `Ar << ReferenceSkeleton`.
         let object_guid = consume_inline_object_guid_footer(&mut reader, &export.object_path)?;
 
-        // `FReferenceSkeleton`: `TArray<FMeshBoneInfo>` (FName Name, i32 ParentIndex,
-        // and an editor-only FString ExportName) — the bone pose array and the rest
-        // of the tail are left unparsed.
-        let editor_data_present = !context
-            .package
-            .summary
-            .versions
-            .package_flags
-            .contains(crate::version::PackageFlags::FILTER_EDITOR_ONLY);
-        let count_offset = reader.tell();
-        let count = reader.read_i32(&format!("{}.ReferenceSkeleton.Num", export.object_path))?;
-        if count < 0 {
-            return Err(AssetError::new(
-                AssetErrorKind::MalformedData,
-                format!("negative reference-skeleton bone count {count} at byte {count_offset}"),
-            ));
-        }
-        let capacity = reader.checked_vec_capacity::<SkeletonBone>(
-            usize::try_from(count).expect("i32 fits in usize"),
-            if editor_data_present { 16 } else { 12 },
-            &format!("{}.ReferenceSkeleton.Num", export.object_path),
-        )?;
-        let mut bones = Vec::with_capacity(capacity);
-        for index in 0..count {
-            let path = format!("{}.ReferenceSkeleton.Bones[{index}]", export.object_path);
-            let name = reader.read_name_ref(&format!("{path}.Name"))?;
-            let parent_index = reader.read_i32(&format!("{path}.ParentIndex"))?;
-            if editor_data_present {
-                reader.read_fstring(&format!("{path}.ExportName"))?;
-            }
-            bones.push(SkeletonBone { name, parent_index });
-        }
+        let bones = decode_skeleton_reference_bones(&mut reader, context, &export.object_path)?;
+        let reference_pose =
+            decode_skeleton_reference_pose(&mut reader, context, &bones, &export.object_path)?;
+        let tail = Span::new(reader.tell(), reader.remaining())?;
 
         Ok(DecodedAsset::Skeleton(DecodedSkeleton {
             object_path: export.object_path.clone(),
             object_guid,
             properties,
             bones,
+            reference_pose,
+            tail,
         }))
     }
+}
+
+fn decode_skeleton_reference_pose(
+    reader: &mut crate::archive::Reader<'_>,
+    context: &AssetDecodeContext<'_>,
+    bones: &[SkeletonBone],
+    path: &ObjectPath,
+) -> Result<Option<PropertyValue>, AssetError> {
+    // Older revisions retain the pre-existing opaque native boundary.
+    if context.package.summary.versions.ue5 != crate::version::VersionContext::LATEST_SUPPORTED_UE5
+    {
+        return Ok(None);
+    }
+    let value = crate::codec::native_values::property(crate::codec::native_values::read_layout(
+        reader,
+        "FReferenceSkeletonPose",
+        path.as_str(),
+    )?);
+    let PropertyValue::NativeStruct { fields } = &value else {
+        unreachable!()
+    };
+    let PropertyValue::Array(poses) = &fields[0].value else {
+        unreachable!()
+    };
+    let PropertyValue::Map(indices) = &fields[1].value else {
+        unreachable!()
+    };
+    if poses.len() != bones.len() || indices.len() != bones.len() {
+        return Err(AssetError::new(
+            AssetErrorKind::MalformedData,
+            format!("{path}: reference pose, bone and lookup counts disagree"),
+        ));
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    for entry in indices {
+        let (PropertyValue::Name(name), PropertyValue::Int(index)) = (&entry.key, &entry.value)
+        else {
+            unreachable!()
+        };
+        if *index < 0
+            || bones
+                .get(*index as usize)
+                .is_none_or(|bone| bone.name != *name)
+            || !seen.insert(*index)
+        {
+            return Err(AssetError::new(
+                AssetErrorKind::MalformedData,
+                format!("{path}: invalid reference skeleton name-to-index map"),
+            ));
+        }
+    }
+    Ok(Some(value))
+}
+
+fn decode_skeleton_reference_bones(
+    reader: &mut crate::archive::Reader<'_>,
+    context: &AssetDecodeContext<'_>,
+    object_path: &ObjectPath,
+) -> Result<Vec<SkeletonBone>, AssetError> {
+    // `FReferenceSkeleton` begins with `TArray<FMeshBoneInfo>` (FName Name,
+    // i32 ParentIndex, and an editor-only FString ExportName). The legacy
+    // contract intentionally stops before RawRefBonePose and later Skeleton data.
+    let editor_data_present = !context
+        .package
+        .summary
+        .versions
+        .package_flags
+        .contains(crate::version::PackageFlags::FILTER_EDITOR_ONLY);
+    let count_offset = reader.tell();
+    let count = reader.read_i32(&format!("{object_path}.ReferenceSkeleton.Num"))?;
+    if count < 0 {
+        return Err(AssetError::new(
+            AssetErrorKind::MalformedData,
+            format!("negative reference-skeleton bone count {count} at byte {count_offset}"),
+        ));
+    }
+    let capacity = reader.checked_vec_capacity::<SkeletonBone>(
+        usize::try_from(count).expect("i32 fits in usize"),
+        if editor_data_present { 16 } else { 12 },
+        &format!("{object_path}.ReferenceSkeleton.Num"),
+    )?;
+    let mut bones = Vec::with_capacity(capacity);
+    for index in 0..count {
+        let path = format!("{object_path}.ReferenceSkeleton.Bones[{index}]");
+        let name = reader.read_name_ref(&format!("{path}.Name"))?;
+        let parent_index = reader.read_i32(&format!("{path}.ParentIndex"))?;
+        if editor_data_present {
+            reader.read_fstring(&format!("{path}.ExportName"))?;
+        }
+        bones.push(SkeletonBone { name, parent_index });
+    }
+    Ok(bones)
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -1370,30 +1549,7 @@ impl AssetDecoder for AnimSequenceDecoder {
                 format!("unsupported asset class {class_path}"),
             ));
         }
-        let versions = &context.package.summary.versions;
-        if versions.ue4 != crate::version::VersionContext::LATEST_SUPPORTED_UE4
-            || versions.ue5 != crate::version::VersionContext::LATEST_SUPPORTED_UE5
-        {
-            return Err(AssetError::new(
-                AssetErrorKind::UnsupportedVersion,
-                format!(
-                    "AnimSequence native serialization is verified only for UE 5.7 package versions (ue4={}, ue5={})",
-                    versions.ue4, versions.ue5
-                ),
-            ));
-        }
-        if versions
-            .package_flags
-            .contains(crate::version::PackageFlags::COOKED)
-            || versions
-                .package_flags
-                .contains(crate::version::PackageFlags::FILTER_EDITOR_ONLY)
-        {
-            return Err(AssetError::new(
-                AssetErrorKind::UnsupportedCapability,
-                "cooked or editor-data-stripped AnimSequence packages are outside the supported boundary",
-            ));
-        }
+        validate_anim_sequence_boundary(context.package)?;
 
         let (properties, mut reader) = decode_uobject_properties(export, context)?;
 
@@ -1401,58 +1557,8 @@ impl AssetDecoder for AnimSequenceDecoder {
         // UObject's optional object-guid footer, UAnimationAsset::SkeletonGuid, FStripDataFlags,
         // the deprecated RawAnimationData array, then bSerializeCompressedData.
         let object_guid = consume_inline_object_guid_footer(&mut reader, &export.object_path)?;
-        let skeleton_guid = reader
-            .read_guid(&format!("{}.SkeletonGuid", export.object_path))
-            .map_err(AssetError::from)?;
-        let global_strip_flags = reader
-            .read_u8(&format!("{}.StripFlags.Global", export.object_path))
-            .map_err(AssetError::from)?;
-        let class_strip_flags = reader
-            .read_u8(&format!("{}.StripFlags.Class", export.object_path))
-            .map_err(AssetError::from)?;
-
-        let legacy_raw_track_count = if global_strip_flags & STRIP_EDITOR_ONLY == 0 {
-            let count = reader
-                .read_i32(&format!("{}.RawAnimationData.Num", export.object_path))
-                .map_err(AssetError::from)?;
-            if count < 0 {
-                return Err(AssetError::new(
-                    AssetErrorKind::MalformedData,
-                    format!("negative legacy animation track count {count}"),
-                ));
-            }
-            u32::try_from(count).expect("non-negative i32 fits in u32")
-        } else {
-            0
-        };
-        if legacy_raw_track_count != 0 {
-            return Err(AssetError::new(
-                AssetErrorKind::UnsupportedCapability,
-                format!(
-                    "legacy raw animation tracks are not supported yet (found {legacy_raw_track_count})"
-                ),
-            ));
-        }
-
-        let serialize_compressed_data = reader
-            .read_u32(&format!("{}.SerializeCompressedData", export.object_path))
-            .map_err(AssetError::from)?;
-        let serialized_compressed_data = match serialize_compressed_data {
-            0 => false,
-            1 => true,
-            other => {
-                return Err(AssetError::new(
-                    AssetErrorKind::MalformedData,
-                    format!("invalid archive bool for compressed animation data: {other}"),
-                ));
-            }
-        };
-        if serialized_compressed_data {
-            return Err(AssetError::new(
-                AssetErrorKind::UnsupportedCapability,
-                "serialized compressed animation data is outside the uncooked editor-package boundary",
-            ));
-        }
+        let skeleton_guid = decode_animation_skeleton_guid(&mut reader, &export.object_path)?;
+        let animation_data = decode_anim_sequence_uncooked_data(&mut reader, &export.object_path)?;
 
         if reader.remaining() != 0 {
             return Err(AssetError::new(
@@ -1469,12 +1575,118 @@ impl AssetDecoder for AnimSequenceDecoder {
             object_guid,
             properties,
             skeleton_guid,
-            global_strip_flags,
-            class_strip_flags,
-            legacy_raw_track_count,
-            serialized_compressed_data,
+            global_strip_flags: animation_data.global_strip_flags,
+            class_strip_flags: animation_data.class_strip_flags,
+            legacy_raw_track_count: animation_data.legacy_raw_track_count,
+            serialized_compressed_data: animation_data.serialized_compressed_data,
         }))
     }
+}
+
+fn validate_anim_sequence_boundary(package: &Package) -> Result<(), AssetError> {
+    let versions = &package.summary.versions;
+    if versions.ue4 != crate::version::VersionContext::LATEST_SUPPORTED_UE4
+        || versions.ue5 != crate::version::VersionContext::LATEST_SUPPORTED_UE5
+    {
+        return Err(AssetError::new(
+            AssetErrorKind::UnsupportedVersion,
+            format!(
+                "AnimSequence native serialization is verified only for UE 5.7 package versions (ue4={}, ue5={})",
+                versions.ue4, versions.ue5
+            ),
+        ));
+    }
+    if versions
+        .package_flags
+        .contains(crate::version::PackageFlags::COOKED)
+        || versions
+            .package_flags
+            .contains(crate::version::PackageFlags::FILTER_EDITOR_ONLY)
+    {
+        return Err(AssetError::new(
+            AssetErrorKind::UnsupportedCapability,
+            "cooked or editor-data-stripped AnimSequence packages are outside the supported boundary",
+        ));
+    }
+    Ok(())
+}
+
+fn decode_animation_skeleton_guid(
+    reader: &mut crate::archive::Reader<'_>,
+    object_path: &ObjectPath,
+) -> Result<Guid, AssetError> {
+    reader
+        .read_guid(&format!("{object_path}.SkeletonGuid"))
+        .map_err(AssetError::from)
+}
+
+struct SourceAnimSequenceData {
+    global_strip_flags: u8,
+    class_strip_flags: u8,
+    legacy_raw_track_count: u32,
+    serialized_compressed_data: bool,
+}
+
+fn decode_anim_sequence_uncooked_data(
+    reader: &mut crate::archive::Reader<'_>,
+    object_path: &ObjectPath,
+) -> Result<SourceAnimSequenceData, AssetError> {
+    let global_strip_flags = reader
+        .read_u8(&format!("{object_path}.StripFlags.Global"))
+        .map_err(AssetError::from)?;
+    let class_strip_flags = reader
+        .read_u8(&format!("{object_path}.StripFlags.Class"))
+        .map_err(AssetError::from)?;
+
+    let legacy_raw_track_count = if global_strip_flags & STRIP_EDITOR_ONLY == 0 {
+        let count = reader
+            .read_i32(&format!("{object_path}.RawAnimationData.Num"))
+            .map_err(AssetError::from)?;
+        if count < 0 {
+            return Err(AssetError::new(
+                AssetErrorKind::MalformedData,
+                format!("negative legacy animation track count {count}"),
+            ));
+        }
+        u32::try_from(count).expect("non-negative i32 fits in u32")
+    } else {
+        0
+    };
+    if legacy_raw_track_count != 0 {
+        return Err(AssetError::new(
+            AssetErrorKind::UnsupportedCapability,
+            format!(
+                "legacy raw animation tracks are not supported yet (found {legacy_raw_track_count})"
+            ),
+        ));
+    }
+
+    let serialize_compressed_data = reader
+        .read_u32(&format!("{object_path}.SerializeCompressedData"))
+        .map_err(AssetError::from)?;
+    let serialized_compressed_data = match serialize_compressed_data {
+        0 => false,
+        1 => true,
+        other => {
+            return Err(AssetError::new(
+                AssetErrorKind::MalformedData,
+                format!("invalid archive bool for compressed animation data: {other}"),
+            ));
+        }
+    };
+    if serialized_compressed_data {
+        return Err(AssetError::new(
+            AssetErrorKind::UnsupportedCapability,
+            "serialized compressed animation data is outside the uncooked editor-package boundary",
+        ));
+    }
+
+    Ok(SourceAnimSequenceData {
+        global_strip_flags,
+        class_strip_flags,
+        legacy_raw_track_count,
+        serialized_compressed_data,
+    })
 }
 
 /// Consumes a UObject object-guid footer that is followed by more class-specific
@@ -2052,6 +2264,10 @@ pub fn decode_export(
         return Ok(None);
     };
 
+    if let Some(decoded) = decode_modeled_export(export, context)? {
+        return Ok(Some(decoded));
+    }
+
     if DataTableDecoder.supports(class_path) {
         return DataTableDecoder.decode(export, context).map(Some);
     }
@@ -2085,6 +2301,539 @@ pub fn decode_export(
         return UObjectDecoder.decode(export, context).map(Some);
     }
     Ok(None)
+}
+
+/// Decodes a supported asset only when the supplied source model owns its class hierarchy and
+/// serialization plan.
+///
+/// Returning `Ok(None)` is deliberate: callers can use this as a strict equivalence lane with no
+/// handwritten class-name fallback, while [`decode_export`] retains compatibility for projects
+/// that have not generated models for their native subclasses.
+pub fn decode_modeled_export(
+    export: &Export,
+    context: &AssetDecodeContext<'_>,
+) -> Result<Option<DecodedAsset>, AssetError> {
+    if export.serial_size == 0 {
+        return Ok(None);
+    }
+    let Some(class_path) = export.class_path.as_ref() else {
+        return Ok(None);
+    };
+    if context.schemas.find_class(class_path).is_none() {
+        return Ok(None);
+    }
+
+    if context.schemas.class_is_a(class_path, DATATABLE_CLASS) {
+        validate_source_serialization(context.schemas, class_path, SourcePlanKind::DataTable)?;
+        let source = execute_source_serialization(export, context)?;
+        let kind = if context
+            .schemas
+            .class_is_a(class_path, COMPOSITE_DATATABLE_CLASS)
+        {
+            DataTableKind::Composite
+        } else {
+            DataTableKind::Plain
+        };
+        let row_struct = row_struct_path(context.package, &source.properties);
+        let parent_tables = parent_tables_paths(context.package, &source.properties);
+        let rows = source.rows.ok_or_else(|| {
+            AssetError::new(
+                AssetErrorKind::UnsupportedCapability,
+                format!("generated serialization layout for {class_path} did not produce rows"),
+            )
+        })?;
+        return Ok(Some(DecodedAsset::DataTable(DecodedDataTable {
+            kind,
+            object_path: export.object_path.clone(),
+            object_guid: source.object_guid,
+            row_struct,
+            parent_tables,
+            properties: source.properties,
+            rows,
+        })));
+    }
+    if context.schemas.class_is_a(class_path, CURVETABLE_CLASS) {
+        validate_source_serialization(context.schemas, class_path, SourcePlanKind::CurveTable)?;
+        let mut source = execute_source_serialization(export, context)?;
+        let curve_table = source.curve_table.take().ok_or_else(|| {
+            AssetError::new(
+                AssetErrorKind::UnsupportedCapability,
+                format!(
+                    "generated serialization layout for {class_path} did not produce CurveTable rows"
+                ),
+            )
+        })?;
+        return Ok(Some(DecodedAsset::CurveTable(DecodedCurveTable {
+            object_path: export.object_path.clone(),
+            mode: curve_table.mode,
+            properties: source.properties,
+            rows: curve_table.rows,
+        })));
+    }
+    if context.schemas.class_is_a(class_path, STRINGTABLE_CLASS) {
+        validate_source_serialization(context.schemas, class_path, SourcePlanKind::StringTable)?;
+        let mut source = execute_source_serialization(export, context)?;
+        let string_table = source.string_table.take().ok_or_else(|| {
+            AssetError::new(
+                AssetErrorKind::UnsupportedCapability,
+                format!(
+                    "generated serialization layout for {class_path} did not produce StringTable data"
+                ),
+            )
+        })?;
+        return Ok(Some(DecodedAsset::StringTable(DecodedStringTable {
+            object_path: export.object_path.clone(),
+            namespace: string_table.namespace,
+            entries: string_table.entries,
+            metadata: string_table.metadata,
+        })));
+    }
+    if context
+        .schemas
+        .class_is_a(class_path, USERDEFINEDENUM_CLASS)
+    {
+        validate_source_serialization(context.schemas, class_path, SourcePlanKind::Enum)?;
+        let mut source = execute_source_serialization(export, context)?;
+        let enum_data = source.enum_data.take().ok_or_else(|| {
+            AssetError::new(
+                AssetErrorKind::UnsupportedCapability,
+                format!(
+                    "generated serialization layout for {class_path} did not produce Enum data"
+                ),
+            )
+        })?;
+        return Ok(Some(DecodedAsset::Enum(DecodedEnum {
+            object_path: export.object_path.clone(),
+            cpp_form: enum_data.cpp_form,
+            properties: source.properties,
+            entries: enum_data.entries,
+        })));
+    }
+    if context
+        .schemas
+        .class_is_a(class_path, USERDEFINEDSTRUCT_CLASS)
+    {
+        validate_source_serialization(context.schemas, class_path, SourcePlanKind::Struct)?;
+        let mut source = execute_source_serialization(export, context)?;
+        let fields = source.struct_fields.take().ok_or_else(|| {
+            AssetError::new(
+                AssetErrorKind::UnsupportedCapability,
+                format!(
+                    "generated serialization layout for {class_path} did not produce Struct fields"
+                ),
+            )
+        })?;
+        let struct_flags = source.struct_flags.ok_or_else(|| {
+            AssetError::new(
+                AssetErrorKind::UnsupportedCapability,
+                format!(
+                    "generated serialization layout for {class_path} did not produce StructFlags"
+                ),
+            )
+        })?;
+        let default_values = source.struct_default_values.take().ok_or_else(|| {
+            AssetError::new(
+                AssetErrorKind::UnsupportedCapability,
+                format!(
+                    "generated serialization layout for {class_path} did not produce a default instance"
+                ),
+            )
+        })?;
+        return Ok(Some(DecodedAsset::Struct(DecodedStruct {
+            object_path: export.object_path.clone(),
+            struct_flags,
+            properties: source.properties,
+            fields,
+            default_values,
+        })));
+    }
+    if context.schemas.class_is_a(class_path, SKELETON_CLASS) {
+        validate_source_serialization(context.schemas, class_path, SourcePlanKind::Skeleton)?;
+        let mut source = execute_source_serialization(export, context)?;
+        let bones = source.skeleton_bones.take().ok_or_else(|| {
+            AssetError::new(
+                AssetErrorKind::UnsupportedCapability,
+                format!(
+                    "generated serialization layout for {class_path} did not produce reference-skeleton bones"
+                ),
+            )
+        })?;
+        return Ok(Some(DecodedAsset::Skeleton(DecodedSkeleton {
+            object_path: export.object_path.clone(),
+            object_guid: source.object_guid,
+            properties: source.properties,
+            bones,
+            reference_pose: source.skeleton_reference_pose,
+            tail: source.skeleton_tail,
+        })));
+    }
+    if context.schemas.class_is_a(class_path, ANIM_SEQUENCE_CLASS) {
+        validate_anim_sequence_boundary(context.package)?;
+        validate_source_serialization(context.schemas, class_path, SourcePlanKind::AnimSequence)?;
+        let mut source = execute_source_serialization(export, context)?;
+        let skeleton_guid = source.animation_skeleton_guid.ok_or_else(|| {
+            AssetError::new(
+                AssetErrorKind::UnsupportedCapability,
+                format!(
+                    "generated serialization layout for {class_path} did not produce SkeletonGuid"
+                ),
+            )
+        })?;
+        let animation_data = source.anim_sequence_data.take().ok_or_else(|| {
+            AssetError::new(
+                AssetErrorKind::UnsupportedCapability,
+                format!(
+                    "generated serialization layout for {class_path} did not produce uncooked animation data"
+                ),
+            )
+        })?;
+        return Ok(Some(DecodedAsset::AnimSequence(DecodedAnimSequence {
+            object_path: export.object_path.clone(),
+            object_guid: source.object_guid,
+            properties: source.properties,
+            skeleton_guid,
+            global_strip_flags: animation_data.global_strip_flags,
+            class_strip_flags: animation_data.class_strip_flags,
+            legacy_raw_track_count: animation_data.legacy_raw_track_count,
+            serialized_compressed_data: animation_data.serialized_compressed_data,
+        })));
+    }
+    if context.schemas.class_is_a(class_path, DATA_ASSET_CLASS) {
+        validate_source_serialization(context.schemas, class_path, SourcePlanKind::DataAsset)?;
+        let source = execute_source_serialization(export, context)?;
+        return Ok(Some(DecodedAsset::DataAsset(DecodedDataAsset {
+            object_path: export.object_path.clone(),
+            class_path: class_path.clone(),
+            object_guid: source.object_guid,
+            properties: source.properties,
+        })));
+    }
+    if is_generic_uobject_class(class_path.as_str()) {
+        validate_source_serialization(context.schemas, class_path, SourcePlanKind::UObject)?;
+        let (properties, mut reader) = decode_uobject_properties(export, context)?;
+        let (object_guid, tail) =
+            consume_uobject_export_footer_lenient(&mut reader, &export.object_path)?;
+        return Ok(Some(DecodedAsset::UObject(DecodedUObject {
+            object_path: export.object_path.clone(),
+            class_path: class_path.clone(),
+            object_guid,
+            properties,
+            tail,
+        })));
+    }
+    Ok(None)
+}
+
+struct SourceSerializationOutput {
+    properties: PropertyStream,
+    object_guid: Option<Guid>,
+    rows: Option<Vec<DataTableRow>>,
+    curve_table: Option<SourceCurveTableData>,
+    enum_data: Option<SourceEnumData>,
+    struct_fields: Option<Vec<StructField>>,
+    struct_flags: Option<u32>,
+    struct_default_values: Option<PropertyStream>,
+    skeleton_bones: Option<Vec<SkeletonBone>>,
+    skeleton_reference_pose: Option<PropertyValue>,
+    skeleton_tail: Span,
+    animation_skeleton_guid: Option<Guid>,
+    anim_sequence_data: Option<SourceAnimSequenceData>,
+    string_table: Option<SourceStringTableData>,
+}
+
+fn execute_source_serialization(
+    export: &Export,
+    context: &AssetDecodeContext<'_>,
+) -> Result<SourceSerializationOutput, AssetError> {
+    let class_path = export.class_path.as_ref().ok_or_else(|| {
+        AssetError::new(
+            AssetErrorKind::UnsupportedFormat,
+            format!("export {} has no resolved class", export.object_path),
+        )
+    })?;
+    let schema = context.schemas.find_class(class_path).ok_or_else(|| {
+        AssetError::new(
+            AssetErrorKind::UnsupportedCapability,
+            format!("no generated source model owns {class_path}"),
+        )
+    })?;
+    let Some(SerializationOperation::TaggedProperties) = schema.serialization.first() else {
+        return Err(unsupported_source_plan(class_path, &schema.serialization));
+    };
+
+    let (properties, mut reader) = decode_uobject_properties(export, context)?;
+    let mut object_guid = None;
+    let mut rows = None;
+    let mut curve_table = None;
+    let mut enum_data = None;
+    let mut struct_fields = None;
+    let mut struct_flags = None;
+    let mut struct_default_values = None;
+    let mut skeleton_bones = None;
+    let mut skeleton_reference_pose = None;
+    let mut skeleton_tail = Span::default();
+    let mut animation_skeleton_guid = None;
+    let mut anim_sequence_data = None;
+    let mut string_table = None;
+    for (index, operation) in schema.serialization.iter().enumerate().skip(1) {
+        match operation {
+            SerializationOperation::ObjectGuid => {
+                let followed_by_native_data = schema.serialization.get(index + 1).is_some();
+                object_guid = if followed_by_native_data {
+                    consume_inline_object_guid_footer(&mut reader, &export.object_path)?
+                } else {
+                    consume_uobject_export_footer(&mut reader, &export.object_path)?
+                };
+            }
+            SerializationOperation::DataTableRows {
+                row_struct_property,
+            } if row_struct_property == "RowStruct" && rows.is_none() => {
+                rows = Some(decode_data_table_rows(
+                    &mut reader,
+                    context,
+                    &export.object_path,
+                )?);
+            }
+            SerializationOperation::CurveTableRows if curve_table.is_none() => {
+                curve_table = Some(decode_curve_table_data(
+                    &mut reader,
+                    context,
+                    &export.object_path,
+                )?);
+            }
+            SerializationOperation::EnumData if enum_data.is_none() => {
+                enum_data = Some(native_data::enumeration(
+                    &mut reader,
+                    context,
+                    &properties,
+                    &export.object_path,
+                )?);
+            }
+            SerializationOperation::StructDefinition if struct_fields.is_none() => {
+                struct_fields = Some(decode_struct_definition(
+                    &mut reader,
+                    context,
+                    &export.object_path,
+                )?);
+            }
+            SerializationOperation::StructFlags if struct_flags.is_none() => {
+                struct_flags = Some(decode_struct_flags(&mut reader, &export.object_path)?);
+            }
+            SerializationOperation::StructDefaultInstance if struct_default_values.is_none() => {
+                struct_default_values = Some(decode_struct_default_instance(
+                    &mut reader,
+                    context,
+                    &export.object_path,
+                )?);
+            }
+            SerializationOperation::SkeletonReferenceBones if skeleton_bones.is_none() => {
+                let bones =
+                    decode_skeleton_reference_bones(&mut reader, context, &export.object_path)?;
+                skeleton_reference_pose = decode_skeleton_reference_pose(
+                    &mut reader,
+                    context,
+                    &bones,
+                    &export.object_path,
+                )?;
+                skeleton_tail = Span::new(reader.tell(), reader.remaining())?;
+                skeleton_bones = Some(bones);
+            }
+            SerializationOperation::AnimationSkeletonGuid if animation_skeleton_guid.is_none() => {
+                animation_skeleton_guid = Some(decode_animation_skeleton_guid(
+                    &mut reader,
+                    &export.object_path,
+                )?);
+            }
+            SerializationOperation::AnimSequenceUncookedData if anim_sequence_data.is_none() => {
+                anim_sequence_data = Some(decode_anim_sequence_uncooked_data(
+                    &mut reader,
+                    &export.object_path,
+                )?);
+            }
+            SerializationOperation::StringTableData if string_table.is_none() => {
+                string_table = Some(native_data::string_table(
+                    &mut reader,
+                    context,
+                    &export.object_path,
+                )?);
+            }
+            SerializationOperation::TaggedProperties
+            | SerializationOperation::DataTableRows { .. }
+            | SerializationOperation::CurveTableRows
+            | SerializationOperation::EnumData
+            | SerializationOperation::StructDefinition
+            | SerializationOperation::StructFlags
+            | SerializationOperation::StructDefaultInstance
+            | SerializationOperation::SkeletonReferenceBones
+            | SerializationOperation::AnimationSkeletonGuid
+            | SerializationOperation::AnimSequenceUncookedData
+            | SerializationOperation::StringTableData => {
+                return Err(unsupported_source_plan(class_path, &schema.serialization));
+            }
+        }
+    }
+    let preserves_legacy_opaque_tail = schema
+        .serialization
+        .contains(&SerializationOperation::SkeletonReferenceBones);
+    if reader.remaining() != 0 && !preserves_legacy_opaque_tail {
+        if schema
+            .serialization
+            .contains(&SerializationOperation::AnimSequenceUncookedData)
+        {
+            return Err(AssetError::new(
+                AssetErrorKind::MalformedData,
+                format!(
+                    "AnimSequence export {} left {} trailing bytes",
+                    export.object_path,
+                    reader.remaining()
+                ),
+            ));
+        }
+        return Err(AssetError::new(
+            AssetErrorKind::MalformedData,
+            format!(
+                "source-modeled export {} left {} trailing bytes",
+                export.object_path,
+                reader.remaining()
+            ),
+        ));
+    }
+
+    Ok(SourceSerializationOutput {
+        properties,
+        object_guid,
+        rows,
+        curve_table,
+        enum_data,
+        struct_fields,
+        struct_flags,
+        struct_default_values,
+        skeleton_bones,
+        skeleton_reference_pose,
+        skeleton_tail,
+        animation_skeleton_guid,
+        anim_sequence_data,
+        string_table,
+    })
+}
+
+fn unsupported_source_plan(
+    class_path: &ObjectPath,
+    operations: &[SerializationOperation],
+) -> AssetError {
+    AssetError::new(
+        AssetErrorKind::UnsupportedCapability,
+        format!("generated serialization layout for {class_path} is not supported: {operations:?}"),
+    )
+}
+
+#[derive(Clone, Copy)]
+enum SourcePlanKind {
+    AnimSequence,
+    CurveTable,
+    DataAsset,
+    DataTable,
+    Enum,
+    Skeleton,
+    Struct,
+    StringTable,
+    UObject,
+}
+
+fn validate_source_serialization(
+    schemas: &dyn SchemaProvider,
+    class_path: &ObjectPath,
+    expected: SourcePlanKind,
+) -> Result<(), AssetError> {
+    let Some(schema) = schemas.find_class(class_path) else {
+        return Ok(());
+    };
+    let operations = &schema.serialization;
+    let supported = match expected {
+        SourcePlanKind::AnimSequence => matches!(
+            operations.as_slice(),
+            [
+                SerializationOperation::TaggedProperties,
+                SerializationOperation::ObjectGuid,
+                SerializationOperation::AnimationSkeletonGuid,
+                SerializationOperation::AnimSequenceUncookedData
+            ]
+        ),
+        SourcePlanKind::CurveTable => matches!(
+            operations.as_slice(),
+            [
+                SerializationOperation::TaggedProperties,
+                SerializationOperation::ObjectGuid,
+                SerializationOperation::CurveTableRows
+            ]
+        ),
+        SourcePlanKind::DataAsset => matches!(
+            operations.as_slice(),
+            [
+                SerializationOperation::TaggedProperties,
+                SerializationOperation::ObjectGuid
+            ]
+        ),
+        SourcePlanKind::DataTable => matches!(
+            operations.as_slice(),
+            [
+                SerializationOperation::TaggedProperties,
+                SerializationOperation::ObjectGuid,
+                SerializationOperation::DataTableRows { row_struct_property }
+            ] if row_struct_property == "RowStruct"
+        ),
+        SourcePlanKind::Enum => matches!(
+            operations.as_slice(),
+            [
+                SerializationOperation::TaggedProperties,
+                SerializationOperation::ObjectGuid,
+                SerializationOperation::EnumData
+            ]
+        ),
+        SourcePlanKind::Struct => matches!(
+            operations.as_slice(),
+            [
+                SerializationOperation::TaggedProperties,
+                SerializationOperation::ObjectGuid,
+                SerializationOperation::StructDefinition,
+                SerializationOperation::StructFlags,
+                SerializationOperation::StructDefaultInstance
+            ]
+        ),
+        SourcePlanKind::Skeleton => matches!(
+            operations.as_slice(),
+            [
+                SerializationOperation::TaggedProperties,
+                SerializationOperation::ObjectGuid,
+                SerializationOperation::SkeletonReferenceBones
+            ]
+        ),
+        SourcePlanKind::StringTable => matches!(
+            operations.as_slice(),
+            [
+                SerializationOperation::TaggedProperties,
+                SerializationOperation::ObjectGuid,
+                SerializationOperation::StringTableData
+            ]
+        ),
+        SourcePlanKind::UObject => matches!(
+            operations.as_slice(),
+            [
+                SerializationOperation::TaggedProperties,
+                SerializationOperation::ObjectGuid,
+                ..
+            ]
+        ),
+    };
+    if !supported {
+        return Err(AssetError::new(
+            AssetErrorKind::UnsupportedCapability,
+            format!(
+                "generated serialization layout for {class_path} is not supported: {operations:?}"
+            ),
+        ));
+    }
+    Ok(())
 }
 
 fn decode_uobject_asset_properties(
@@ -2404,11 +3153,25 @@ mod tests {
     use crate::archive::{ArchiveErrorKind, ArchiveLimits, Reader};
     use crate::package::{test_export, test_import, test_package};
     use crate::property::PropertyValue;
+    use crate::schema::{
+        ClassSchema, SchemaProvider, SerializationOperation, SourceModel, StructSchema,
+        embedded_source_model,
+    };
     use crate::test_support::{
         TypeParam, name_ref, push_f32, push_fstring, push_i32, write_datatable_export,
         write_int_property_tag, write_object_array_property_tag, write_object_property_tag,
         write_property_tag, write_property_terminator, write_uobject_export,
     };
+
+    struct EmptySchemas;
+    impl SchemaProvider for EmptySchemas {
+        fn find_struct(&self, _path: &ObjectPath) -> Option<&StructSchema> {
+            None
+        }
+        fn find_class(&self, _path: &ObjectPath) -> Option<&ClassSchema> {
+            None
+        }
+    }
 
     fn names() -> Vec<String> {
         vec![
@@ -2580,6 +3343,7 @@ mod tests {
         let context = AssetDecodeContext {
             source: &export_bytes,
             package: &package,
+            schemas: &EmptySchemas,
         };
 
         let error = DataTableDecoder
@@ -2589,6 +3353,16 @@ mod tests {
         assert_eq!(error.kind(), AssetErrorKind::MalformedData);
         assert!(error.message().contains("Rows.Count"));
         assert!(error.message().contains("exceeds element limit"));
+
+        let generated_context = AssetDecodeContext {
+            source: &export_bytes,
+            package: &package,
+            schemas: embedded_source_model(),
+        };
+        let generated_error = decode_modeled_export(&export, &generated_context)
+            .expect_err("generated path rejects absurd row count");
+        assert_eq!(generated_error.kind(), error.kind());
+        assert_eq!(generated_error.message(), error.message());
     }
 
     fn decode_datatable(
@@ -2599,6 +3373,7 @@ mod tests {
         let context = AssetDecodeContext {
             source: &export_bytes,
             package: &package,
+            schemas: &EmptySchemas,
         };
         let DecodedAsset::DataTable(datatable) = DataTableDecoder
             .decode(&export, &context)
@@ -2632,16 +3407,18 @@ mod tests {
     }
 
     fn decode_curve_table(
-        export_bytes: Vec<u8>,
-        package: Package,
-        export: Export,
+        export_bytes: &[u8],
+        package: &Package,
+        export: &Export,
+        schemas: &dyn SchemaProvider,
     ) -> DecodedCurveTable {
         let context = AssetDecodeContext {
-            source: &export_bytes,
-            package: &package,
+            source: export_bytes,
+            package,
+            schemas,
         };
         let DecodedAsset::CurveTable(curve_table) = CurveTableDecoder
-            .decode(&export, &context)
+            .decode(export, &context)
             .expect("decode curve table")
         else {
             panic!("expected CurveTable decode");
@@ -2680,6 +3457,7 @@ mod tests {
         let context = AssetDecodeContext {
             source: &export_bytes,
             package: &package,
+            schemas: &EmptySchemas,
         };
         let DecodedAsset::StringTable(string_table) = StringTableDecoder
             .decode(&export, &context)
@@ -2763,13 +3541,19 @@ mod tests {
         bytes
     }
 
-    fn decode_enum(export_bytes: Vec<u8>, package: Package, export: Export) -> DecodedEnum {
+    fn decode_enum(
+        export_bytes: &[u8],
+        package: &Package,
+        export: &Export,
+        schemas: &dyn SchemaProvider,
+    ) -> DecodedEnum {
         let context = AssetDecodeContext {
-            source: &export_bytes,
-            package: &package,
+            source: export_bytes,
+            package,
+            schemas,
         };
-        let DecodedAsset::Enum(decoded_enum) =
-            EnumDecoder.decode(&export, &context).expect("decode enum")
+        let Some(DecodedAsset::Enum(decoded_enum)) =
+            decode_export(export, &context).expect("decode enum")
         else {
             panic!("expected Enum decode");
         };
@@ -2820,6 +3604,7 @@ mod tests {
         let context = AssetDecodeContext {
             source: &export_bytes,
             package: &package,
+            schemas: &EmptySchemas,
         };
 
         let Some(DecodedAsset::UObject(object)) =
@@ -2846,6 +3631,7 @@ mod tests {
         let context = AssetDecodeContext {
             source: &export_bytes,
             package: &package,
+            schemas: &EmptySchemas,
         };
 
         let Some(DecodedAsset::UObject(object)) =
@@ -2883,6 +3669,7 @@ mod tests {
         let context = AssetDecodeContext {
             source: &export_bytes,
             package: &package,
+            schemas: &EmptySchemas,
         };
 
         let Some(DecodedAsset::AnimSequence(sequence)) =
@@ -2890,6 +3677,18 @@ mod tests {
         else {
             panic!("expected an AnimSequence decode");
         };
+        let generated_context = AssetDecodeContext {
+            source: &export_bytes,
+            package: &package,
+            schemas: embedded_source_model(),
+        };
+        let Some(DecodedAsset::AnimSequence(generated)) =
+            decode_modeled_export(&export, &generated_context)
+                .expect("source-modeled AnimSequence should decode")
+        else {
+            panic!("expected a source-modeled AnimSequence decode");
+        };
+        assert_eq!(generated, sequence);
 
         assert_eq!(sequence.object_path.as_str(), "/Game/Test/A_Test.A_Test");
         assert_eq!(sequence.skeleton_guid.a, 0x1122_3344);
@@ -2913,11 +3712,61 @@ mod tests {
         let context = AssetDecodeContext {
             source: &export_bytes,
             package: &package,
+            schemas: &EmptySchemas,
         };
 
         let error = decode_export(&export, &context).expect_err("compressed data is unsupported");
         assert_eq!(error.kind(), AssetErrorKind::UnsupportedCapability);
         assert!(error.message().contains("compressed animation data"));
+
+        let generated_context = AssetDecodeContext {
+            source: &export_bytes,
+            package: &package,
+            schemas: embedded_source_model(),
+        };
+        let generated = decode_modeled_export(&export, &generated_context)
+            .expect_err("source-modeled compressed data is unsupported");
+        assert_eq!(generated.kind(), error.kind());
+        assert_eq!(generated.message(), error.message());
+    }
+
+    #[test]
+    fn source_modeled_anim_sequence_preserves_supported_error_boundaries() {
+        let mut trailing = write_anim_sequence_export(0, 0);
+        trailing.push(0xff);
+        let cases = [
+            write_anim_sequence_export(-1, 0),
+            write_anim_sequence_export(1, 0),
+            write_anim_sequence_export(0, 2),
+            trailing,
+        ];
+        for export_bytes in cases {
+            let package = test_package(vec!["None".into()]);
+            let export = test_export(
+                export_bytes.len() as u64,
+                "/Game/Test/A_Test.A_Test",
+                ANIM_SEQUENCE_CLASS,
+            );
+            let legacy_schemas = EmptySchemas;
+            let legacy_context = AssetDecodeContext {
+                source: &export_bytes,
+                package: &package,
+                schemas: &legacy_schemas,
+            };
+            let generated_context = AssetDecodeContext {
+                source: &export_bytes,
+                package: &package,
+                schemas: embedded_source_model(),
+            };
+
+            let legacy = AnimSequenceDecoder
+                .decode(&export, &legacy_context)
+                .expect_err("legacy path rejects unsupported animation data");
+            let generated = decode_modeled_export(&export, &generated_context)
+                .expect_err("source-modeled path rejects unsupported animation data");
+            assert_eq!(generated.kind(), legacy.kind());
+            assert_eq!(generated.message(), legacy.message());
+        }
     }
 
     #[test]
@@ -2936,6 +3785,7 @@ mod tests {
         let context = AssetDecodeContext {
             source: bytes,
             package: &package,
+            schemas: &EmptySchemas,
         };
 
         let Some(DecodedAsset::AnimSequence(sequence)) =
@@ -2943,6 +3793,18 @@ mod tests {
         else {
             panic!("expected an AnimSequence decode");
         };
+        let generated_context = AssetDecodeContext {
+            source: bytes,
+            package: &package,
+            schemas: embedded_source_model(),
+        };
+        let Some(DecodedAsset::AnimSequence(generated)) =
+            decode_modeled_export(export, &generated_context)
+                .expect("source-modeled real AnimSequence decode")
+        else {
+            panic!("expected a source-modeled AnimSequence decode");
+        };
+        assert_eq!(generated, sequence);
 
         assert!(!sequence.skeleton_guid.is_zero());
         assert_eq!(sequence.global_strip_flags, 0);
@@ -2972,6 +3834,20 @@ mod tests {
         push_i32(&mut export_bytes, 0);
         push_i32(&mut export_bytes, 0); // bone[1].ParentIndex -> root
         push_fstring(&mut export_bytes, "child");
+        let pose_offset = export_bytes.len();
+        push_i32(&mut export_bytes, 2); // reference pose count
+        for _ in 0..2 {
+            for component in [0_f64, 0., 0., 1., 0., 0., 0., 1., 1., 1.] {
+                export_bytes.extend_from_slice(&component.to_le_bytes());
+            }
+        }
+        push_i32(&mut export_bytes, 2); // raw name-to-index map
+        for (name, index) in [(1, 0), (2, 1)] {
+            push_i32(&mut export_bytes, name);
+            push_i32(&mut export_bytes, 0);
+            push_i32(&mut export_bytes, index);
+        }
+        export_bytes.extend_from_slice(&[1, 2, 3, 4]); // later native tail
 
         let package = test_package(bone_names);
         let export = test_export(
@@ -2982,6 +3858,7 @@ mod tests {
         let context = AssetDecodeContext {
             source: &export_bytes,
             package: &package,
+            schemas: &EmptySchemas,
         };
 
         let Some(DecodedAsset::Skeleton(skeleton)) =
@@ -2989,6 +3866,40 @@ mod tests {
         else {
             panic!("expected a Skeleton decode");
         };
+        let generated_context = AssetDecodeContext {
+            source: &export_bytes,
+            package: &package,
+            schemas: embedded_source_model(),
+        };
+        let Some(DecodedAsset::Skeleton(generated)) =
+            decode_modeled_export(&export, &generated_context)
+                .expect("generated Skeleton should decode")
+        else {
+            panic!("expected a generated Skeleton decode");
+        };
+        assert_eq!(generated, skeleton);
+        assert!(skeleton.reference_pose.is_some());
+        assert_eq!(skeleton.tail.len(), 4);
+        for (offset, value) in [(pose_offset, 1_i32), (export_bytes.len() - 8, 99)] {
+            let mut malformed = export_bytes.clone();
+            malformed[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+            let context = AssetDecodeContext {
+                source: &malformed,
+                package: &package,
+                schemas: embedded_source_model(),
+            };
+            assert!(decode_export(&export, &context).is_err());
+        }
+        for end in [pose_offset, pose_offset + 4, pose_offset + 80] {
+            let mut truncated_export = export.clone();
+            truncated_export.serial_size = end as u64;
+            let context = AssetDecodeContext {
+                source: &export_bytes[..end],
+                package: &package,
+                schemas: embedded_source_model(),
+            };
+            assert!(decode_export(&truncated_export, &context).is_err());
+        }
         assert_eq!(skeleton.bones.len(), 2);
         assert_eq!(skeleton.bones[0].parent_index, -1);
         assert_eq!(skeleton.bones[1].parent_index, 0);
@@ -3000,6 +3911,77 @@ mod tests {
             package.resolve_name(skeleton.bones[1].name).as_deref(),
             Some("child")
         );
+    }
+
+    #[test]
+    fn generated_and_legacy_real_skeleton_semantics_are_identical() {
+        let bytes = include_bytes!(
+            "../../../fixtures/unreal-project/Content/Fixture/Animation/SK_Fixture.uasset"
+        );
+        let package = Package::parse(bytes).expect("parse skeleton fixture package");
+        let export = package
+            .exports
+            .iter()
+            .find(|export| {
+                export.class_path.as_ref().map(ObjectPath::as_str) == Some(SKELETON_CLASS)
+            })
+            .expect("Skeleton export");
+        let legacy_schemas = EmptySchemas;
+        let legacy_context = AssetDecodeContext {
+            source: bytes,
+            package: &package,
+            schemas: &legacy_schemas,
+        };
+        let Some(DecodedAsset::Skeleton(legacy)) =
+            decode_export(export, &legacy_context).expect("legacy Skeleton decode")
+        else {
+            panic!("expected legacy Skeleton decode");
+        };
+        let generated_context = AssetDecodeContext {
+            source: bytes,
+            package: &package,
+            schemas: embedded_source_model(),
+        };
+        let Some(DecodedAsset::Skeleton(generated)) =
+            decode_modeled_export(export, &generated_context)
+                .expect("source-modeled Skeleton decode")
+        else {
+            panic!("expected source-modeled Skeleton decode");
+        };
+
+        assert_eq!(generated, legacy);
+        assert!(!generated.bones.is_empty());
+    }
+
+    #[test]
+    fn source_modeled_skeleton_preserves_negative_bone_count_error() {
+        let mut export_bytes = write_uobject_export(0, &[]);
+        push_i32(&mut export_bytes, 0); // object-guid footer
+        push_i32(&mut export_bytes, -1); // invalid bone count
+        let package = test_package(vec!["None".into()]);
+        let export = test_export(
+            export_bytes.len() as u64,
+            "/Game/Test/SKEL_Test.SKEL_Test",
+            SKELETON_CLASS,
+        );
+        let legacy_schemas = EmptySchemas;
+        let legacy_context = AssetDecodeContext {
+            source: &export_bytes,
+            package: &package,
+            schemas: &legacy_schemas,
+        };
+        let legacy = SkeletonDecoder
+            .decode(&export, &legacy_context)
+            .expect_err("legacy path rejects negative bone count");
+        let generated_context = AssetDecodeContext {
+            source: &export_bytes,
+            package: &package,
+            schemas: embedded_source_model(),
+        };
+        let generated = decode_modeled_export(&export, &generated_context)
+            .expect_err("generated path rejects negative bone count");
+        assert_eq!(generated.kind(), legacy.kind());
+        assert_eq!(generated.message(), legacy.message());
     }
 
     #[test]
@@ -3021,6 +4003,7 @@ mod tests {
         let context = AssetDecodeContext {
             source: &export_bytes,
             package: &package,
+            schemas: &EmptySchemas,
         };
 
         let Some(DecodedAsset::UObject(object)) = decode_export(&export, &context)
@@ -3049,6 +4032,7 @@ mod tests {
         let context = AssetDecodeContext {
             source: &export_bytes,
             package: &package,
+            schemas: &EmptySchemas,
         };
 
         let Some(DecodedAsset::UObject(object)) = decode_export(&export, &context).expect("decode")
@@ -3090,11 +4074,11 @@ mod tests {
     }
 
     #[test]
-    fn rejects_nonzero_datatable_data_marker() {
+    fn rejects_invalid_datatable_object_guid_marker() {
         let mut export_bytes = write_datatable_export(0, &[], &[]);
-        // Layout: u8 extensions, None terminator (8 bytes), then i32 data marker.
+        // Layout: u8 extensions, None terminator (8 bytes), then i32 object-guid marker.
         let marker_offset = 1 + 8;
-        export_bytes[marker_offset] = 1;
+        export_bytes[marker_offset] = 2;
 
         let package = test_package(names());
         let export = test_export(
@@ -3105,13 +4089,34 @@ mod tests {
         let context = AssetDecodeContext {
             source: &export_bytes,
             package: &package,
+            schemas: &EmptySchemas,
         };
 
         let error = DataTableDecoder
             .decode(&export, &context)
-            .expect_err("nonzero marker");
+            .expect_err("invalid marker");
         assert_eq!(error.kind(), AssetErrorKind::MalformedData);
-        assert!(error.message().contains("data marker"));
+        assert!(error.message().contains("object-guid footer marker"));
+    }
+
+    #[test]
+    fn decodes_datatable_object_guid_before_rows() {
+        let mut export_bytes = write_datatable_export(0, &[], &[]);
+        let marker_offset = 1 + 8;
+        export_bytes[marker_offset] = 1;
+        export_bytes.splice(marker_offset + 4..marker_offset + 4, 1_u8..=16);
+
+        let package = test_package(names());
+        let export = test_export(
+            export_bytes.len() as u64,
+            "/Game/Test/DT_Test.DT_Test",
+            "/Script/Engine.DataTable",
+        );
+
+        let datatable = decode_datatable(export_bytes, package, export);
+
+        assert!(datatable.object_guid.is_some());
+        assert!(datatable.rows.is_empty());
     }
 
     #[test]
@@ -3128,6 +4133,7 @@ mod tests {
         let context = AssetDecodeContext {
             source: &export_bytes,
             package: &package,
+            schemas: &EmptySchemas,
         };
 
         let error = DataTableDecoder
@@ -3226,7 +4232,12 @@ mod tests {
             CURVETABLE_CLASS,
         );
 
-        let curve_table = decode_curve_table(export_bytes, package, export);
+        let empty_schemas = EmptySchemas;
+        let legacy = decode_curve_table(&export_bytes, &package, &export, &empty_schemas);
+        let generated =
+            decode_curve_table(&export_bytes, &package, &export, embedded_source_model());
+        assert_eq!(generated, legacy);
+        let curve_table = generated;
 
         assert_eq!(curve_table.mode, CurveTableMode::RichCurves);
         assert_eq!(curve_table.rows.len(), 1);
@@ -3245,6 +4256,38 @@ mod tests {
                 leave_tangent_weight: 0.5,
             })]
         );
+    }
+
+    #[test]
+    fn source_modeled_curve_table_preserves_malformed_row_checks() {
+        let mut export_bytes = write_curvetable_export(0, &[], 0, &[]);
+        const ROW_COUNT_OFFSET: usize = 1 + 8 + 4;
+        export_bytes[ROW_COUNT_OFFSET..ROW_COUNT_OFFSET + 4]
+            .copy_from_slice(&(-1_i32).to_le_bytes());
+        let package = test_package(names());
+        let export = test_export(
+            export_bytes.len() as u64,
+            "/Game/Test/CT_Bad.CT_Bad",
+            CURVETABLE_CLASS,
+        );
+        let legacy_context = AssetDecodeContext {
+            source: &export_bytes,
+            package: &package,
+            schemas: &EmptySchemas,
+        };
+        let legacy = CurveTableDecoder
+            .decode(&export, &legacy_context)
+            .expect_err("legacy path rejects negative rows");
+        let generated_context = AssetDecodeContext {
+            source: &export_bytes,
+            package: &package,
+            schemas: embedded_source_model(),
+        };
+        let generated = decode_modeled_export(&export, &generated_context)
+            .expect_err("generated path rejects negative rows");
+
+        assert_eq!(generated.kind(), legacy.kind());
+        assert_eq!(generated.message(), legacy.message());
     }
 
     #[test]
@@ -3288,7 +4331,105 @@ mod tests {
     }
 
     #[test]
-    fn rejects_string_table_metadata_until_supported() {
+    fn embedded_and_legacy_string_table_semantics_are_identical() {
+        let export_bytes =
+            write_stringtable_export(0, "ST_Simple", &[("HELLO", "Hello from string table")], 0);
+        let package = test_package(vec!["None".into()]);
+        let export = test_export(
+            export_bytes.len() as u64,
+            "/Game/Test/ST_Simple.ST_Simple",
+            STRINGTABLE_CLASS,
+        );
+        let generated_context = AssetDecodeContext {
+            source: &export_bytes,
+            package: &package,
+            schemas: embedded_source_model(),
+        };
+        let legacy_schemas = EmptySchemas;
+        let legacy_context = AssetDecodeContext {
+            source: &export_bytes,
+            package: &package,
+            schemas: &legacy_schemas,
+        };
+
+        let Some(DecodedAsset::StringTable(generated)) =
+            decode_modeled_export(&export, &generated_context).expect("generated decode")
+        else {
+            panic!("expected generated StringTable");
+        };
+        let Some(DecodedAsset::StringTable(legacy)) =
+            decode_export(&export, &legacy_context).expect("legacy decode")
+        else {
+            panic!("expected legacy StringTable");
+        };
+        assert_eq!(generated, legacy);
+    }
+
+    #[test]
+    fn metadata_maps_preserve_names_empty_values_and_unattached_keys() {
+        let mut bytes = write_stringtable_export(0, "Test", &[], 2);
+        push_fstring(&mut bytes, "OnlyMetadata");
+        push_i32(&mut bytes, 1);
+        push_i32(&mut bytes, 1);
+        push_i32(&mut bytes, 0);
+        push_fstring(&mut bytes, "");
+        push_fstring(&mut bytes, "EmptyMap");
+        push_i32(&mut bytes, 0);
+        let package = test_package(vec!["None".into(), "Comment".into()]);
+        let export = test_export(
+            bytes.len() as u64,
+            "/Game/Test/ST_Test.ST_Test",
+            STRINGTABLE_CLASS,
+        );
+        let decode = |schemas: &dyn SchemaProvider| {
+            let context = AssetDecodeContext {
+                source: &bytes,
+                package: &package,
+                schemas,
+            };
+            let Some(DecodedAsset::StringTable(table)) = decode_export(&export, &context).unwrap()
+            else {
+                panic!("StringTable");
+            };
+            table
+        };
+        let generated = decode(embedded_source_model());
+        assert_eq!(generated, decode(&EmptySchemas));
+        assert_eq!(generated.metadata["OnlyMetadata"]["Comment"], "");
+        assert!(generated.metadata["EmptyMap"].is_empty());
+        assert!(generated.entries.is_empty());
+
+        for end in 0..bytes.len() {
+            let export = test_export(end as u64, "/Game/Test/ST_Test.ST_Test", STRINGTABLE_CLASS);
+            for schemas in [
+                &EmptySchemas as &dyn SchemaProvider,
+                embedded_source_model(),
+            ] {
+                let context = AssetDecodeContext {
+                    source: &bytes[..end],
+                    package: &package,
+                    schemas,
+                };
+                assert!(
+                    !matches!(decode_export(&export, &context), Ok(Some(_))),
+                    "decoded a truncated export at {end}"
+                );
+            }
+        }
+        let no_metadata_name = test_package(vec!["None".into()]);
+        let context = AssetDecodeContext {
+            source: &bytes,
+            package: &no_metadata_name,
+            schemas: embedded_source_model(),
+        };
+        assert_eq!(
+            decode_export(&export, &context).unwrap_err().kind(),
+            AssetErrorKind::MalformedData
+        );
+    }
+
+    #[test]
+    fn rejects_truncated_string_table_metadata() {
         let export_bytes = write_stringtable_export(0, "ST_Simple", &[], 1);
         let package = test_package(vec!["None".into()]);
         let export = test_export(
@@ -3296,16 +4437,26 @@ mod tests {
             "/Game/Test/ST_Simple.ST_Simple",
             STRINGTABLE_CLASS,
         );
-        let context = AssetDecodeContext {
+        let legacy_schemas = EmptySchemas;
+        let legacy_context = AssetDecodeContext {
             source: &export_bytes,
             package: &package,
+            schemas: &legacy_schemas,
+        };
+        let generated_context = AssetDecodeContext {
+            source: &export_bytes,
+            package: &package,
+            schemas: embedded_source_model(),
         };
 
-        let error = StringTableDecoder
-            .decode(&export, &context)
-            .expect_err("metadata unsupported");
-        assert_eq!(error.kind(), AssetErrorKind::UnsupportedCapability);
-        assert!(error.message().contains("metadata"));
+        let legacy = StringTableDecoder
+            .decode(&export, &legacy_context)
+            .expect_err("truncated metadata");
+        let generated = decode_modeled_export(&export, &generated_context)
+            .expect_err("generated truncated metadata");
+        assert_eq!(legacy.kind(), AssetErrorKind::MalformedData);
+        assert!(legacy.message().contains("MetaData"));
+        assert_eq!(generated.kind(), legacy.kind());
     }
 
     fn enum_names() -> Vec<String> {
@@ -3322,6 +4473,38 @@ mod tests {
     }
 
     #[test]
+    fn source_modeled_enum_obeys_record_layout_order() {
+        use crate::native::NativeLayout;
+        let mut model = embedded_source_model().clone();
+        let NativeLayout::Record { fields } = model.native_layouts.get_mut("UEnum").unwrap() else {
+            panic!("enum record");
+        };
+        let NativeLayout::Array { element } = &mut fields[0].layout else {
+            panic!("names array");
+        };
+        let NativeLayout::Record { fields } = element.as_mut() else {
+            panic!("name/value record");
+        };
+        fields.swap(0, 1);
+        let mut bytes = write_uobject_export(0, &[]);
+        push_i32(&mut bytes, 0);
+        push_i32(&mut bytes, 1);
+        bytes.extend_from_slice(&42_i64.to_le_bytes());
+        push_i32(&mut bytes, 1);
+        push_i32(&mut bytes, 0);
+        bytes.push(2);
+        let package = test_package(enum_names());
+        let export = test_export(
+            bytes.len() as u64,
+            "/Game/Test/E_Color.E_Color",
+            USERDEFINEDENUM_CLASS,
+        );
+        let decoded = decode_enum(&bytes, &package, &export, &model);
+        assert_eq!(decoded.entries[0].name, name_ref(1, 0));
+        assert_eq!(decoded.entries[0].value, 42);
+    }
+
+    #[test]
     fn decodes_user_defined_enum_entries() {
         let export_bytes = write_userdefinedenum_export(0, &[], &[(1, 0), (2, 1), (3, 2)], 2);
         let package = test_package(enum_names());
@@ -3331,7 +4514,10 @@ mod tests {
             USERDEFINEDENUM_CLASS,
         );
 
-        let decoded = decode_enum(export_bytes, package, export);
+        let legacy_schemas = EmptySchemas;
+        let legacy = decode_enum(&export_bytes, &package, &export, &legacy_schemas);
+        let decoded = decode_enum(&export_bytes, &package, &export, embedded_source_model());
+        assert_eq!(decoded, legacy);
 
         assert_eq!(decoded.object_path.as_str(), "/Game/Test/E_Color.E_Color");
         assert_eq!(decoded.cpp_form, EnumCppForm::EnumClass);
@@ -3370,7 +4556,10 @@ mod tests {
             USERDEFINEDENUM_CLASS,
         );
 
-        let decoded = decode_enum(export_bytes, package, export);
+        let legacy_schemas = EmptySchemas;
+        let legacy = decode_enum(&export_bytes, &package, &export, &legacy_schemas);
+        let decoded = decode_enum(&export_bytes, &package, &export, embedded_source_model());
+        assert_eq!(decoded, legacy);
 
         assert_eq!(
             decoded
@@ -3391,16 +4580,27 @@ mod tests {
             "/Game/Test/E_Color.E_Color",
             USERDEFINEDENUM_CLASS,
         );
-        let context = AssetDecodeContext {
+        let legacy_schemas = EmptySchemas;
+        let legacy_context = AssetDecodeContext {
             source: &export_bytes,
             package: &package,
+            schemas: &legacy_schemas,
+        };
+        let generated_context = AssetDecodeContext {
+            source: &export_bytes,
+            package: &package,
+            schemas: embedded_source_model(),
         };
 
-        let error = EnumDecoder
-            .decode(&export, &context)
+        let legacy = EnumDecoder
+            .decode(&export, &legacy_context)
             .expect_err("unsupported cpp form");
-        assert_eq!(error.kind(), AssetErrorKind::MalformedData);
-        assert!(error.message().contains("CppForm"));
+        let generated = decode_modeled_export(&export, &generated_context)
+            .expect_err("generated unsupported cpp form");
+        assert_eq!(legacy.kind(), AssetErrorKind::MalformedData);
+        assert!(legacy.message().contains("CppForm"));
+        assert_eq!(generated.kind(), legacy.kind());
+        assert_eq!(generated.message(), legacy.message());
     }
 
     /// Writes one `FProperty` as `UStruct::SerializeProperties` does: type FName,
@@ -3455,6 +4655,7 @@ mod tests {
         let context = AssetDecodeContext {
             source: &export_bytes,
             package: &package,
+            schemas: &EmptySchemas,
         };
         let DecodedAsset::Struct(decoded) = StructDecoder
             .decode(&export, &context)
@@ -3486,7 +4687,18 @@ mod tests {
             USERDEFINEDSTRUCT_CLASS,
         );
 
-        let decoded = decode_struct(export_bytes, package, export);
+        let decoded = decode_struct(export_bytes.clone(), package.clone(), export.clone());
+        let generated_context = AssetDecodeContext {
+            source: &export_bytes,
+            package: &package,
+            schemas: embedded_source_model(),
+        };
+        let Some(DecodedAsset::Struct(generated)) =
+            decode_modeled_export(&export, &generated_context).expect("generated Struct decode")
+        else {
+            panic!("expected generated Struct decode");
+        };
+        assert_eq!(generated, decoded);
 
         assert_eq!(decoded.object_path.as_str(), "/Game/Test/S_Test.S_Test");
         assert_eq!(decoded.struct_flags, 0);
@@ -3516,12 +4728,22 @@ mod tests {
         let context = AssetDecodeContext {
             source: &export_bytes,
             package: &package,
+            schemas: &EmptySchemas,
         };
 
         let error = StructDecoder
             .decode(&export, &context)
             .expect_err("unsupported field type");
         assert_eq!(error.kind(), AssetErrorKind::UnsupportedCapability);
+        let generated_context = AssetDecodeContext {
+            source: &export_bytes,
+            package: &package,
+            schemas: embedded_source_model(),
+        };
+        let generated = decode_modeled_export(&export, &generated_context)
+            .expect_err("generated path rejects unsupported field type");
+        assert_eq!(generated.kind(), error.kind());
+        assert_eq!(generated.message(), error.message());
     }
 
     #[test]
@@ -3554,6 +4776,7 @@ mod tests {
         let context = AssetDecodeContext {
             source: &export_bytes,
             package: &package,
+            schemas: &EmptySchemas,
         };
 
         let error = StructDecoder
@@ -3562,6 +4785,15 @@ mod tests {
 
         assert_eq!(error.kind(), AssetErrorKind::MalformedData);
         assert!(error.message().contains("depth limit"));
+        let generated_context = AssetDecodeContext {
+            source: &export_bytes,
+            package: &package,
+            schemas: embedded_source_model(),
+        };
+        let generated = decode_modeled_export(&export, &generated_context)
+            .expect_err("generated path rejects excessive field nesting");
+        assert_eq!(generated.kind(), error.kind());
+        assert_eq!(generated.message(), error.message());
     }
 
     #[test]
@@ -3576,6 +4808,7 @@ mod tests {
         let context = AssetDecodeContext {
             source: &export_bytes,
             package: &package,
+            schemas: &EmptySchemas,
         };
 
         let error = DataTableDecoder
@@ -3615,6 +4848,7 @@ mod tests {
         let context = AssetDecodeContext {
             source: &export_bytes,
             package: &package,
+            schemas: &EmptySchemas,
         };
         let DecodedAsset::UObject(object) = UObjectDecoder
             .decode(&export, &context)
@@ -3623,6 +4857,38 @@ mod tests {
             panic!("expected UObject decode");
         };
         object
+    }
+
+    fn assert_source_modeled_uobject_parity(
+        export_bytes: &[u8],
+        package: &Package,
+        export: &Export,
+    ) -> DecodedUObject {
+        let legacy_schemas = EmptySchemas;
+        let legacy_context = AssetDecodeContext {
+            source: export_bytes,
+            package,
+            schemas: &legacy_schemas,
+        };
+        let DecodedAsset::UObject(legacy) = UObjectDecoder
+            .decode(export, &legacy_context)
+            .expect("legacy UObject decode")
+        else {
+            panic!("expected legacy UObject decode");
+        };
+        let generated_context = AssetDecodeContext {
+            source: export_bytes,
+            package,
+            schemas: embedded_source_model(),
+        };
+        let Some(DecodedAsset::UObject(generated)) =
+            decode_modeled_export(export, &generated_context)
+                .expect("source-modeled UObject decode")
+        else {
+            panic!("expected source-modeled UObject decode");
+        };
+        assert_eq!(generated, legacy);
+        generated
     }
 
     #[test]
@@ -3652,6 +4918,61 @@ mod tests {
     }
 
     #[test]
+    fn source_modeled_uobject_matches_properties_guid_and_opaque_tail() {
+        let mut properties = Vec::new();
+        write_int_property_tag(&mut properties, 2, 1, 4243);
+        let package = test_package(vec!["None".into(), "IntProperty".into(), "IntValue".into()]);
+
+        let mut guid_bytes = write_uobject_export(0, &properties);
+        push_i32(&mut guid_bytes, 1);
+        for word in [0x1122_3344_u32, 0x5566_7788, 0x99aa_bbcc, 0xddee_ff00] {
+            guid_bytes.extend_from_slice(&word.to_le_bytes());
+        }
+        let guid_export = test_export(
+            guid_bytes.len() as u64,
+            "/Game/Test/O_Guid.O_Guid",
+            "/Script/CoreUObject.Object",
+        );
+        let guid_object = assert_source_modeled_uobject_parity(&guid_bytes, &package, &guid_export);
+        assert_eq!(guid_object.object_guid.expect("object guid").a, 0x1122_3344);
+        assert_eq!(guid_object.tail.len(), 0);
+        assert_eq!(
+            guid_object.properties.records[0].value,
+            PropertyValue::Int(4243)
+        );
+
+        let mut tail_bytes = write_uobject_export(0, &properties);
+        tail_bytes.extend_from_slice(&[0xab; 94]);
+        let tail_export = test_export(
+            tail_bytes.len() as u64,
+            "/Game/Test/O_Tail.O_Tail",
+            "/Script/CoreUObject.Object",
+        );
+        let tail_object = assert_source_modeled_uobject_parity(&tail_bytes, &package, &tail_export);
+        assert!(tail_object.object_guid.is_none());
+        assert_eq!(tail_object.tail.len(), 94);
+    }
+
+    #[test]
+    fn source_modeled_uobject_keeps_recognized_subclass_native_data_opaque() {
+        let package = test_package(vec!["None".into()]);
+        let mut export_bytes = write_uobject_export(0, &[]);
+        push_i32(&mut export_bytes, 0); // UObject footer before UAnimationAsset native data
+        for word in [1_u32, 2, 3, 4] {
+            export_bytes.extend_from_slice(&word.to_le_bytes()); // SkeletonGuid remains opaque
+        }
+        let export = test_export(
+            export_bytes.len() as u64,
+            "/Game/Test/A_Base.A_Base",
+            "/Script/Engine.AnimationAsset",
+        );
+
+        let object = assert_source_modeled_uobject_parity(&export_bytes, &package, &export);
+        assert!(object.object_guid.is_none());
+        assert_eq!(object.tail.len(), 20);
+    }
+
+    #[test]
     fn decode_export_prefers_datatable_over_uobject() {
         let export_bytes = write_datatable_export(0, &[], &[]);
         let package = test_package(names());
@@ -3663,12 +4984,144 @@ mod tests {
         let context = AssetDecodeContext {
             source: &export_bytes,
             package: &package,
+            schemas: &EmptySchemas,
         };
 
         let decoded = decode_export(&export, &context)
             .expect("decode export")
             .expect("matched decoder");
         assert!(matches!(decoded, DecodedAsset::DataTable(_)));
+    }
+
+    #[test]
+    fn embedded_source_model_strictly_decodes_datatable_and_primary_data_asset() {
+        let table_bytes = write_datatable_export(0, &[], &[]);
+        let table_package = test_package(names());
+        let table_export = test_export(
+            table_bytes.len() as u64,
+            "/Game/Test/DT_Test.DT_Test",
+            DATATABLE_CLASS,
+        );
+        let table_context = AssetDecodeContext {
+            source: &table_bytes,
+            package: &table_package,
+            schemas: embedded_source_model(),
+        };
+        assert!(matches!(
+            decode_modeled_export(&table_export, &table_context).expect("generated DataTable"),
+            Some(DecodedAsset::DataTable(_))
+        ));
+
+        let data_asset_bytes = write_uobject_export(0, &[]);
+        let data_asset_package = test_package(vec!["None".into()]);
+        let data_asset_export = test_export(
+            data_asset_bytes.len() as u64,
+            "/Game/Test/PDA_Test.PDA_Test",
+            PRIMARY_DATA_ASSET_CLASS,
+        );
+        let data_asset_context = AssetDecodeContext {
+            source: &data_asset_bytes,
+            package: &data_asset_package,
+            schemas: embedded_source_model(),
+        };
+        assert!(matches!(
+            decode_modeled_export(&data_asset_export, &data_asset_context)
+                .expect("generated PrimaryDataAsset"),
+            Some(DecodedAsset::DataAsset(_))
+        ));
+    }
+
+    #[test]
+    fn embedded_and_legacy_primary_data_asset_semantics_are_identical() {
+        let mut properties = Vec::new();
+        write_int_property_tag(&mut properties, 2, 1, 4243);
+        let export_bytes = write_uobject_export(0, &properties);
+        let package = test_package(vec!["None".into(), "IntProperty".into(), "IntValue".into()]);
+        let export = test_export(
+            export_bytes.len() as u64,
+            "/Game/Test/PDA_Test.PDA_Test",
+            PRIMARY_DATA_ASSET_CLASS,
+        );
+        let generated_context = AssetDecodeContext {
+            source: &export_bytes,
+            package: &package,
+            schemas: embedded_source_model(),
+        };
+        let legacy_schemas = EmptySchemas;
+        let legacy_context = AssetDecodeContext {
+            source: &export_bytes,
+            package: &package,
+            schemas: &legacy_schemas,
+        };
+
+        let Some(DecodedAsset::DataAsset(generated)) =
+            decode_modeled_export(&export, &generated_context).expect("generated decode")
+        else {
+            panic!("expected generated DataAsset");
+        };
+        let Some(DecodedAsset::DataAsset(legacy)) =
+            decode_export(&export, &legacy_context).expect("legacy decode")
+        else {
+            panic!("expected legacy DataAsset");
+        };
+        assert_eq!(generated, legacy);
+    }
+
+    #[test]
+    fn source_modeled_datatable_preserves_malformed_input_checks() {
+        let mut export_bytes = write_datatable_export(0, &[], &[]);
+        export_bytes[1 + 8] = 2;
+        let package = test_package(names());
+        let export = test_export(
+            export_bytes.len() as u64,
+            "/Game/Test/DT_Test.DT_Test",
+            DATATABLE_CLASS,
+        );
+        let context = AssetDecodeContext {
+            source: &export_bytes,
+            package: &package,
+            schemas: embedded_source_model(),
+        };
+
+        let error = decode_modeled_export(&export, &context).expect_err("invalid GUID marker");
+        assert_eq!(error.kind(), AssetErrorKind::MalformedData);
+        assert!(error.message().contains("object-guid footer marker"));
+    }
+
+    #[test]
+    fn source_modeled_dispatch_rejects_an_unrecognized_serialization_plan() {
+        let export_bytes = write_datatable_export(0, &[], &[]);
+        let package = test_package(names());
+        let export = test_export(
+            export_bytes.len() as u64,
+            "/Game/Test/DT_Test.DT_Test",
+            DATATABLE_CLASS,
+        );
+        let model = SourceModel {
+            schema_version: crate::schema::SOURCE_MODEL_SCHEMA_VERSION,
+            engine_version: "test".to_owned(),
+            classes: vec![ClassSchema {
+                path: ObjectPath::new(DATATABLE_CLASS),
+                cpp_name: "UDataTable".to_owned(),
+                super_path: Some(ObjectPath::new("/Script/CoreUObject.Object")),
+                fields: Vec::new(),
+                serialization: vec![
+                    SerializationOperation::TaggedProperties,
+                    SerializationOperation::ObjectGuid,
+                ],
+            }],
+            structs: Vec::new(),
+            native_layouts: std::collections::BTreeMap::new(),
+        };
+        let context = AssetDecodeContext {
+            source: &export_bytes,
+            package: &package,
+            schemas: &model,
+        };
+
+        let error = decode_modeled_export(&export, &context).expect_err("unsupported plan");
+        assert_eq!(error.kind(), AssetErrorKind::UnsupportedCapability);
+        assert!(error.message().contains("generated serialization layout"));
     }
 
     fn decode_data_asset(
@@ -3679,6 +5132,7 @@ mod tests {
         let context = AssetDecodeContext {
             source: &export_bytes,
             package: &package,
+            schemas: &EmptySchemas,
         };
         let DecodedAsset::DataAsset(data_asset) = DataAssetDecoder
             .decode(&export, &context)
@@ -3732,6 +5186,7 @@ mod tests {
         let context = AssetDecodeContext {
             source: &export_bytes,
             package: &package,
+            schemas: &EmptySchemas,
         };
 
         let error = DataAssetDecoder
@@ -3739,5 +5194,15 @@ mod tests {
             .expect_err("trailing bytes");
         assert_eq!(error.kind(), AssetErrorKind::MalformedData);
         assert!(error.message().contains("trailing bytes"));
+
+        let generated_context = AssetDecodeContext {
+            source: &export_bytes,
+            package: &package,
+            schemas: embedded_source_model(),
+        };
+        let generated_error = decode_modeled_export(&export, &generated_context)
+            .expect_err("generated path rejects trailing bytes");
+        assert_eq!(generated_error.kind(), error.kind());
+        assert_eq!(generated_error.message(), error.message());
     }
 }

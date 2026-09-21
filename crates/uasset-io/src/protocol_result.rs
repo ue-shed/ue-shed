@@ -161,6 +161,8 @@ pub struct SavedAssetInspection {
     pub path: String,
     pub package: SavedPackageSummary,
     pub assets: Vec<SavedAsset>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<uasset_parser::metadata::PackageMetadata>,
     #[serde(default)]
     pub decode_errors: Vec<SavedAssetDecodeError>,
 }
@@ -200,6 +202,9 @@ pub enum SavedAsset {
         object_path: String,
         string_table_namespace: String,
         string_table_entries: Vec<SavedStringTableEntry>,
+        #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+        string_table_metadata:
+            std::collections::BTreeMap<String, std::collections::BTreeMap<String, String>>,
     },
     #[serde(rename = "UObject")]
     UObject {
@@ -246,6 +251,10 @@ pub enum SavedAsset {
         #[serde(default)]
         properties: Vec<SavedProperty>,
         bones: Vec<SavedBone>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reference_pose: Option<SavedPropertyValue>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tail_bytes: Option<u64>,
     },
     #[serde(rename = "Enum")]
     Enum {
@@ -343,6 +352,14 @@ pub struct SavedTableRow {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(tag = "value_kind", deny_unknown_fields)]
 pub enum SavedPropertyValue {
+    #[serde(rename = "native_struct")]
+    NativeStruct { fields: Vec<SavedNativeField> },
+    #[serde(rename = "instanced_struct")]
+    InstancedStruct {
+        struct_type: Option<String>,
+        size: u64,
+        value: Option<Box<SavedPropertyValue>>,
+    },
     #[serde(rename = "bool")]
     Bool { value: bool },
     #[serde(rename = "int")]
@@ -369,6 +386,8 @@ pub enum SavedPropertyValue {
         history: TextHistory,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         namespace: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        table_id: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         key: Option<String>,
     },
@@ -414,11 +433,20 @@ pub enum SavedPropertyValue {
     Raw { reason: String, size: u64 },
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct SavedNativeField {
+    pub name: String,
+    pub value: SavedPropertyValue,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum TextHistory {
     None,
     Base,
+    #[serde(rename = "string_table")]
+    StringTableEntry,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
@@ -619,6 +647,8 @@ pub struct SavedAssetTextOccurrence {
 pub enum TextExtractionIdentity {
     #[serde(rename = "resolved")]
     Resolved { namespace: String, key: String },
+    #[serde(rename = "string_table")]
+    StringTable { table_id: String, key: String },
     #[serde(rename = "unresolved")]
     Unresolved { reason: TextUnresolvedReason },
 }
@@ -1435,6 +1465,7 @@ mod tests {
                 SavedPropertyValue::Text {
                     value: "Generic label".to_owned(),
                     history: TextHistory::None,
+                    table_id: None,
                     namespace: None,
                     key: None,
                 },
@@ -1446,6 +1477,7 @@ mod tests {
                 SavedPropertyValue::Text {
                     value: "Generic label".to_owned(),
                     history: TextHistory::Base,
+                    table_id: None,
                     namespace: Some("Fixture".to_owned()),
                     key: Some("Label".to_owned()),
                 },

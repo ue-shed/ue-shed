@@ -14,6 +14,19 @@ export const SavedAssetManifestEntry = Schema.Struct({
 export type SavedAssetManifestEntry = Schema.Schema.Type<typeof SavedAssetManifestEntry>;
 
 export type SavedPropertyValue =
+	| {
+			readonly value_kind: "native_struct";
+			readonly fields: readonly {
+				readonly name: string;
+				readonly value: SavedPropertyValue;
+			}[];
+	  }
+	| {
+			readonly value_kind: "instanced_struct";
+			readonly struct_type: string | null;
+			readonly size: number;
+			readonly value: SavedPropertyValue | null;
+	  }
 	| { readonly value_kind: "bool"; readonly value: boolean }
 	| { readonly value_kind: "int" | "uint"; readonly value: number }
 	| { readonly value_kind: "float" | "double"; readonly value: number | null }
@@ -27,6 +40,13 @@ export type SavedPropertyValue =
 			readonly value: string;
 			readonly history: "base";
 			readonly namespace: string;
+			readonly key: string;
+	  }
+	| {
+			readonly value_kind: "text";
+			readonly value: string;
+			readonly history: "string_table";
+			readonly table_id: string;
 			readonly key: string;
 	  }
 	| { readonly value_kind: "object_ref"; readonly value: string | null }
@@ -87,6 +107,16 @@ export const SavedProperty: Schema.Codec<SavedProperty> = Schema.suspend(() =>
 	)
 ).annotate({ identifier: "SavedProperty" });
 const SavedPropertyValueUnion = Schema.Union([
+	Schema.Struct({
+		value_kind: Schema.Literal("native_struct"),
+		fields: Schema.Array(Schema.Struct({ name: Schema.String, value: SavedPropertyValue }))
+	}),
+	Schema.Struct({
+		value_kind: Schema.Literal("instanced_struct"),
+		struct_type: Schema.NullOr(Schema.String),
+		size: NonNegativeInt,
+		value: Schema.NullOr(SavedPropertyValue)
+	}),
 	Schema.Struct({ value_kind: Schema.Literal("bool"), value: Schema.Boolean }),
 	Schema.Struct({ value_kind: Schema.Literals(["int", "uint"]), value: Schema.Number }),
 	Schema.Struct({ value_kind: Schema.Literals(["float", "double"]), value: SavedFloatingPoint }),
@@ -104,6 +134,13 @@ const SavedPropertyValueUnion = Schema.Union([
 		value: Schema.String,
 		history: Schema.Literal("base"),
 		namespace: Schema.String,
+		key: Schema.String
+	}),
+	Schema.Struct({
+		value_kind: Schema.Literal("text"),
+		value: Schema.String,
+		history: Schema.Literal("string_table"),
+		table_id: Schema.String,
 		key: Schema.String
 	}),
 	Schema.Struct({
@@ -176,6 +213,12 @@ export const SavedAssetDecodeError = Schema.Struct({
 export type SavedAssetDecodeError = Schema.Schema.Type<typeof SavedAssetDecodeError>;
 
 export const SavedAssetInspection = Schema.Struct({
+	metadata: Schema.optionalKey(
+		Schema.Struct({
+			root: Schema.Record(Schema.String, Schema.String),
+			objects: Schema.Record(Schema.String, Schema.Record(Schema.String, Schema.String))
+		})
+	),
 	schema_version: Schema.Literal(8),
 	status: Schema.Literals(["ok", "partial"]),
 	path: Schema.String,
@@ -198,6 +241,9 @@ export const SavedAssetInspection = Schema.Struct({
 				kind: Schema.Literal("StringTable"),
 				object_path: Schema.String,
 				string_table_namespace: Schema.String,
+				string_table_metadata: Schema.optionalKey(
+					Schema.Record(Schema.String, Schema.Record(Schema.String, Schema.String))
+				),
 				string_table_entries: Schema.Array(
 					Schema.Struct({ key: Schema.String, source: Schema.String })
 				)
@@ -239,6 +285,8 @@ export const SavedAssetInspection = Schema.Struct({
 			}),
 			Schema.Struct({
 				kind: Schema.Literal("Skeleton"),
+				reference_pose: Schema.optionalKey(SavedPropertyValue),
+				tail_bytes: Schema.optionalKey(NonNegativeInt),
 				object_path: Schema.String,
 				class_path: Schema.String,
 				object_guid: Schema.optional(Schema.String),
@@ -453,6 +501,11 @@ const TextExtractionIdentity = Schema.Union([
 	Schema.Struct({
 		status: Schema.Literal("resolved"),
 		namespace: Schema.String,
+		key: Schema.String
+	}),
+	Schema.Struct({
+		status: Schema.Literal("string_table"),
+		table_id: Schema.String,
 		key: Schema.String
 	}),
 	Schema.Struct({

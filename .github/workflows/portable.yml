@@ -58,7 +58,7 @@ jobs:
                   for path in "${changed_files[@]}"; do
                       case "$path" in
                           .github/workflows/portable.yml | Cargo.toml | Cargo.lock | \
-                              crates/uasset-parser/* | crates/uasset-inspection/* | \
+                              crates/uasset-parser/* | crates/uasset-source-gen/* | crates/uasset-inspection/* | \
                               crates/uasset-inspection-wasm/* | \
                               scripts/*uasset* | \
                               fixtures/unreal-project/*.uasset | \

@@ -4,6 +4,8 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt;
 
+use serde::{Deserialize, Serialize};
+
 use crate::archive::{ArchiveError, ArchiveErrorKind, Guid, IoHash, Reader, Span};
 use crate::version::{PackageFlags, VersionContext};
 
@@ -61,7 +63,7 @@ pub struct PackageError {
 }
 
 impl PackageError {
-    fn new(
+    pub(crate) fn new(
         kind: PackageErrorKind,
         offset: Option<u64>,
         path: impl fmt::Display,
@@ -128,6 +130,7 @@ impl From<ArchiveError> for PackageError {
             ArchiveErrorKind::OutOfBounds
             | ArchiveErrorKind::InvalidSeek
             | ArchiveErrorKind::InvalidCount
+            | ArchiveErrorKind::InvalidBoolean
             | ArchiveErrorKind::MissingNullTerminator
             | ArchiveErrorKind::InvalidString
             | ArchiveErrorKind::InvalidNameReference
@@ -250,7 +253,8 @@ impl PackageIndex {
     }
 }
 
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(transparent)]
 pub struct ObjectPath(String);
 
 impl ObjectPath {

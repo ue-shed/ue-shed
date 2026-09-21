@@ -16,6 +16,7 @@ fn decoded_assets(path: &str) -> (Vec<u8>, Package, Vec<DecodedAsset>) {
     let context = AssetDecodeContext {
         source: &bytes,
         package: &package,
+        schemas: uasset_parser::schema::embedded_source_model(),
     };
     let assets = package
         .exports
@@ -192,6 +193,7 @@ fn blueprint_projection(path: &str) -> BlueprintGraphProjection {
     let context = AssetDecodeContext {
         source: &bytes,
         package: &package,
+        schemas: uasset_parser::schema::embedded_source_model(),
     };
     let assets: Vec<_> = package
         .exports

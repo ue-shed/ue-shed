@@ -1,0 +1,97 @@
+{
+	"contract": {
+		"name": "uasset-io",
+		"version": {
+			"major": 1,
+			"minor": 0
+		}
+	},
+	"kind": "result",
+	"requestId": "request-001",
+	"sequence": 1,
+	"result": {
+		"kind": "inspect",
+		"inspection": {
+			"assets": [
+				{
+					"kind": "UObject",
+					"object_path": "/Game/Example.Example",
+					"class_path": "/Script/Engine.DataAsset",
+					"properties": [
+						{
+							"name": "Value",
+							"type": "StructProperty",
+							"value_kind": "instanced_struct",
+							"struct_type": "/Script/Example.Inner",
+							"size": 8,
+							"value": {
+								"value_kind": "native_struct",
+								"fields": [
+									{
+										"name": "Time",
+										"value": {
+											"value_kind": "unknown",
+											"value": 123456789.12345679
+										}
+									}
+								]
+							}
+						}
+					]
+				},
+				{
+					"kind": "Skeleton",
+					"object_path": "/Game/Example.Skeleton",
+					"class_path": "/Script/Engine.Skeleton",
+					"bones": [
+						{
+							"name": "root",
+							"parent_index": -1
+						}
+					],
+					"reference_pose": {
+						"value_kind": "native_struct",
+						"fields": [
+							{
+								"name": "Time",
+								"value": {
+									"value_kind": "double",
+									"value": 123456789.12345679
+								}
+							}
+						]
+					},
+					"tail_bytes": 4
+				}
+			],
+			"decode_errors": [],
+			"package": {
+				"name": "/Game/Example",
+				"package_flags": 0,
+				"summary_size": 64,
+				"total_header_size": 128,
+				"version": {
+					"legacy_file": 0,
+					"legacy_ue3": 0,
+					"ue4": 1,
+					"ue5": 0,
+					"licensee": 0
+				}
+			},
+			"path": "Content/Example.uasset",
+			"schema_version": 8,
+			"status": "ok",
+			"metadata": {
+				"root": {
+					"Empty": "",
+					"Purpose": "Native coverage"
+				},
+				"objects": {
+					"/Game/Example.Example": {
+						"Comment": "saved"
+					}
+				}
+			}
+		}
+	}
+}

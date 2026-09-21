@@ -1,9 +1,9 @@
 import { copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { Effect, Stream } from "effect";
 import { describe, expect, it } from "vitest";
+import { useSavedFixtureProject } from "../../../fixtures/unreal-project/saved-project.test-support.js";
 import {
 	AssetReader,
 	assetReaderLayer,
@@ -22,13 +22,13 @@ import {
 } from "./index.js";
 
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
-const fixtureRoot = fileURLToPath(new URL("../../../fixtures/unreal-project", import.meta.url));
+const fixture = useSavedFixtureProject();
 const runReader = <A, E>(effect: Effect.Effect<A, E, AssetReader>) =>
 	Effect.runPromise(effect.pipe(Effect.provide(assetReaderLayer({ executable: executable! }))));
 
 describe.skipIf(!executable)("batched project scan", () => {
 	it("reuses one scoped worker and serializes concurrent single-package reads", async () => {
-		const assetPath = join(fixtureRoot, "Content/Fixture/Input/IMC_Fixture.uasset");
+		const assetPath = join(fixture.root, "Content/Fixture/Input/IMC_Fixture.uasset");
 		const workerPids: number[] = [];
 		const layer = assetReaderLayer({
 			executable: executable!,
@@ -54,23 +54,24 @@ describe.skipIf(!executable)("batched project scan", () => {
 	});
 
 	it("inspects every fixture package in one reader process", async () => {
-		const scan = await runReader(scanSavedProject({ projectRoot: fixtureRoot }));
-		// 67 `.uasset` packages (including six World Partition external actors, one Blueprint, two
-		// animation fixtures, two Level Sequences, and the 25-asset Enhanced Input surface) plus four maps,
+		const scan = await runReader(scanSavedProject({ projectRoot: fixture.root }));
+		// 73 `.uasset` packages (including six World Partition external actors, one Blueprint, two
+		// animation fixtures, two Level Sequences, the 25-asset Enhanced Input surface and six native
+		// coverage assets) plus four maps,
 		// including Movement Gym. Levels use the same classic package
 		// container, so enumeration selects them too.
-		expect(scan.summary.scannedAssets).toBe(71);
-		expect(scan.summary.emittedAssets).toBe(71);
+		expect(scan.summary.scannedAssets).toBe(77);
+		expect(scan.summary.emittedAssets).toBe(77);
 		expect(scan.summary.skippedAssets).toBe(0);
 		expect(scan.failures).toEqual([]);
-		expect(scan.assets).toHaveLength(71);
+		expect(scan.assets).toHaveLength(77);
 		expect(scan.assets.every((entry) => entry.fileBytes > 0)).toBe(true);
 	}, 15_000);
 
 	it("emits the same payload as a single-package inspect", async () => {
-		const assetPath = join(fixtureRoot, "Content/Fixture/Input/IMC_Fixture.uasset");
+		const assetPath = join(fixture.root, "Content/Fixture/Input/IMC_Fixture.uasset");
 		const [scan, direct] = await Promise.all([
-			runReader(scanSavedProject({ paths: [assetPath], projectRoot: fixtureRoot })),
+			runReader(scanSavedProject({ paths: [assetPath], projectRoot: fixture.root })),
 			runReader(readSavedAsset({ assetPath }))
 		]);
 		expect(scan.assets).toHaveLength(1);
@@ -79,7 +80,7 @@ describe.skipIf(!executable)("batched project scan", () => {
 	});
 
 	it("reads the UE 5.7 animation fixture without an undecoded AnimSequence tail", async () => {
-		const assetPath = join(fixtureRoot, "Content/Fixture/Animation/A_FixtureMotion.uasset");
+		const assetPath = join(fixture.root, "Content/Fixture/Animation/A_FixtureMotion.uasset");
 		const inspection = await runReader(readSavedAsset({ assetPath }));
 		const sequence = inspection.assets.find(
 			(asset) =>
@@ -101,7 +102,7 @@ describe.skipIf(!executable)("batched project scan", () => {
 	});
 
 	it("reads the UE 5.7 Blueprint fixture through the versioned process boundary", async () => {
-		const assetPath = join(fixtureRoot, "Content/Fixture/Blueprints/BP_GraphFixture.uasset");
+		const assetPath = join(fixture.root, "Content/Fixture/Blueprints/BP_GraphFixture.uasset");
 		const read = await runReader(readSavedBlueprint({ assetPath }));
 		const blueprint = read.blueprint;
 		const nodes = blueprint.graphs.flatMap((graph) => graph.nodes);
@@ -120,13 +121,13 @@ describe.skipIf(!executable)("batched project scan", () => {
 
 	it("decodes only packages a header filter selects", async () => {
 		const scan = await runReader(
-			scanSavedProject({ classes: ["Texture2D"], projectRoot: fixtureRoot })
+			scanSavedProject({ classes: ["Texture2D"], projectRoot: fixture.root })
 		);
-		expect(scan.summary.scannedAssets).toBe(71);
+		expect(scan.summary.scannedAssets).toBe(77);
 		expect(scan.summary.emittedAssets).toBe(17);
 		// The levels, Level Sequences, saved World Partition actor packages, and every Enhanced Input
 		// asset carry no Texture2D export, so they are ruled out before any decode.
-		expect(scan.summary.skippedAssets).toBe(54);
+		expect(scan.summary.skippedAssets).toBe(60);
 		expect(
 			scan.assets
 				.filter(isFullScanEntry)
@@ -145,7 +146,7 @@ describe.skipIf(!executable)("batched project scan", () => {
 			scanSavedProject({
 				classes: ["/Script/Engine.StringTable"],
 				names: ["TextProperty"],
-				projectRoot: fixtureRoot
+				projectRoot: fixture.root
 			})
 		);
 		// Every InputAction and InputMappingContext names TextProperty for its description; the
@@ -162,7 +163,7 @@ describe.skipIf(!executable)("batched project scan", () => {
 
 	it("streams compact text occurrences rather than generic inspections", async () => {
 		const events = Array.from(
-			await runReader(Stream.runCollect(extractProjectText({ projectRoot: fixtureRoot })))
+			await runReader(Stream.runCollect(extractProjectText({ projectRoot: fixture.root })))
 		);
 		const occurrences = events.filter((event) => event.event === "text_occurrence");
 		expect(occurrences.length).toBeGreaterThan(0);
@@ -172,13 +173,13 @@ describe.skipIf(!executable)("batched project scan", () => {
 
 	it("streams compact Texture2D records for explicit index candidates", async () => {
 		const assetPath = join(
-			fixtureRoot,
+			fixture.root,
 			"Content/Fixture/Audits/Textures/T_Audit_NonPowerOfTwo_300x180.uasset"
 		);
 		const events = Array.from(
 			await runReader(
 				Stream.runCollect(
-					extractProjectTextures({ paths: [assetPath], projectRoot: fixtureRoot })
+					extractProjectTextures({ paths: [assetPath], projectRoot: fixture.root })
 				)
 			)
 		);
@@ -191,7 +192,7 @@ describe.skipIf(!executable)("batched project scan", () => {
 	it("does not fall back to Content for an explicit empty compact candidate list", async () => {
 		const events = Array.from(
 			await runReader(
-				Stream.runCollect(extractProjectText({ paths: [], projectRoot: fixtureRoot }))
+				Stream.runCollect(extractProjectText({ paths: [], projectRoot: fixture.root }))
 			)
 		);
 		expect(events).toEqual([]);
@@ -199,7 +200,7 @@ describe.skipIf(!executable)("batched project scan", () => {
 
 	it("narrows enumeration to a requested subdirectory", async () => {
 		const scan = await runReader(
-			scanSavedProject({ paths: ["Content/Fixture/Input"], projectRoot: fixtureRoot })
+			scanSavedProject({ paths: ["Content/Fixture/Input"], projectRoot: fixture.root })
 		);
 		expect(scan.summary.scannedAssets).toBe(25);
 		expect(
@@ -210,10 +211,10 @@ describe.skipIf(!executable)("batched project scan", () => {
 	});
 
 	it("passes a large explicit package list without expanding the process command line", async () => {
-		const assetPath = join(fixtureRoot, "Content/Fixture/Input/IMC_Fixture.uasset");
+		const assetPath = join(fixture.root, "Content/Fixture/Input/IMC_Fixture.uasset");
 		const paths = Array.from({ length: 512 }, () => assetPath);
 		const scan = await runReader(
-			scanSavedProject({ maximumAssets: 1, paths, projectRoot: fixtureRoot })
+			scanSavedProject({ maximumAssets: 1, paths, projectRoot: fixture.root })
 		);
 		// Repeated roots are deduplicated after the path list is read, so one package is decoded.
 		expect(scan.summary.scannedAssets).toBe(1);
@@ -222,7 +223,7 @@ describe.skipIf(!executable)("batched project scan", () => {
 
 	it("refuses a scan above the requested asset limit before decoding", async () => {
 		const error = await Effect.runPromise(
-			scanSavedProject({ maximumAssets: 2, projectRoot: fixtureRoot }).pipe(
+			scanSavedProject({ maximumAssets: 2, projectRoot: fixture.root }).pipe(
 				Effect.flip,
 				Effect.provide(assetReaderLayer({ executable: executable! }))
 			)
@@ -233,7 +234,7 @@ describe.skipIf(!executable)("batched project scan", () => {
 
 	it("reports a missing project root as a discovery failure", async () => {
 		const error = await Effect.runPromise(
-			scanSavedProject({ projectRoot: join(fixtureRoot, "Missing") }).pipe(
+			scanSavedProject({ projectRoot: join(fixture.root, "Missing") }).pipe(
 				Effect.flip,
 				Effect.provide(assetReaderLayer({ executable: executable! }))
 			)
@@ -247,11 +248,11 @@ describe.skipIf(!executable)("batched project scan", () => {
 			scanSavedProject({
 				classes: ["/Script/Engine.DataTable", "/Script/Engine.CompositeDataTable"],
 				depth: "header",
-				projectRoot: fixtureRoot
+				projectRoot: fixture.root
 			})
 		);
 		expect(scan.summary.depth).toBe("header");
-		expect(scan.summary.scannedAssets).toBe(71);
+		expect(scan.summary.scannedAssets).toBe(77);
 		// The twelve authoring packages, each exporting exactly one table.
 		expect(scan.summary.emittedAssets).toBe(12);
 		const headers = scan.assets.filter(isHeaderScanEntry);
@@ -276,7 +277,7 @@ describe.skipIf(!executable)("batched project scan", () => {
 			const content = join(projectRoot, "Content");
 			await mkdir(content);
 			await copyFile(
-				join(fixtureRoot, "Content/Fixture/Authoring/DT_Scalars.uasset"),
+				join(fixture.root, "Content/Fixture/Authoring/DT_Scalars.uasset"),
 				join(content, "DT_Scalars.uasset")
 			);
 			await writeFile(join(content, "DT_Scalars.UEXP"), "sidecar evidence");
@@ -310,7 +311,7 @@ describe.skipIf(!executable)("batched project scan", () => {
 				classes: ["/Script/Engine.DataTable"],
 				cachePath,
 				depth: "header" as const,
-				projectRoot: fixtureRoot
+				projectRoot: fixture.root
 			};
 
 			// Workers emit concurrently, so line order is unspecified; compare by path.
@@ -341,7 +342,7 @@ describe.skipIf(!executable)("batched project scan", () => {
 					classes: ["/Script/Engine.DataTable"],
 					cachePath,
 					depth: "header",
-					projectRoot: fixtureRoot
+					projectRoot: fixture.root
 				})
 			);
 			// A cache holds only the exports its filters selected, so reusing it for wider filters
@@ -351,7 +352,7 @@ describe.skipIf(!executable)("batched project scan", () => {
 					classes: ["/Script/Engine.DataTable", "/Script/Engine.CompositeDataTable"],
 					cachePath,
 					depth: "header",
-					projectRoot: fixtureRoot
+					projectRoot: fixture.root
 				})
 			);
 			expect(wider.summary.cacheHits).toBe(0);
@@ -370,14 +371,14 @@ describe.skipIf(!executable)("batched project scan", () => {
 				)
 			);
 		expect(
-			(await usage(scanSavedProject({ cachePath: "index.json", projectRoot: fixtureRoot })))
+			(await usage(scanSavedProject({ cachePath: "index.json", projectRoot: fixture.root })))
 				.kind
 		).toBe("process");
 		const header = await runReader(
 			scanSavedProject({
 				depth: "header",
 				names: ["TextProperty"],
-				projectRoot: fixtureRoot
+				projectRoot: fixture.root
 			})
 		);
 		expect(header.summary.depth).toBe("header");
@@ -391,7 +392,7 @@ describe.skipIf(!executable)("batched project scan", () => {
 
 describe.skipIf(!executable)("saved authoring fixture", () => {
 	it("discovers DataTables without requiring their paths in advance", async () => {
-		const catalog = await runReader(discoverSavedTables({ projectRoot: fixtureRoot }));
+		const catalog = await runReader(discoverSavedTables({ projectRoot: fixture.root }));
 		expect(catalog.tables).toHaveLength(12);
 		expect(catalog.tables[0]?.objectPath).toBe(
 			"/Game/Fixture/Authoring/CDT_Scalars.CDT_Scalars"
@@ -402,7 +403,7 @@ describe.skipIf(!executable)("saved authoring fixture", () => {
 	});
 
 	it("reads every fixture DataTable through the shared contract", async () => {
-		const assets = await runReader(discoverSavedAssets(fixtureRoot));
+		const assets = await runReader(discoverSavedAssets(fixture.root));
 		const tableAssets = assets.filter((assetPath) => assetPath.includes("Authoring"));
 		const snapshots = await Promise.all(
 			tableAssets.map((assetPath) => runReader(readSavedTable({ assetPath })))
@@ -547,7 +548,7 @@ describe.skipIf(!executable)("saved authoring fixture", () => {
 	});
 
 	it("inspects all fixture textures with serialized source dimensions", async () => {
-		const assets = (await runReader(discoverSavedAssets(fixtureRoot))).filter(
+		const assets = (await runReader(discoverSavedAssets(fixture.root))).filter(
 			(path) => path.includes("Audits\\Textures") || path.includes("Audits/Textures")
 		);
 		const inspections = await Promise.all(

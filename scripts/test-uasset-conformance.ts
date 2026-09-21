@@ -36,9 +36,22 @@ const result = spawnSync(process.execPath, [vitest, "run", testFile], {
 	windowsHide: true
 });
 if (result.error) throw result.error;
-if (result.status === 0) {
+const nativeResult =
+	result.status === 0
+		? spawnSync("cargo", ["test", "-p", "uasset-inspection", "--test", "native_coverage"], {
+				cwd: repositoryRoot,
+				env: {
+					...environment,
+					UE_SHED_NATIVE_EVIDENCE_DIR: join(evidenceDirectory, "parser-targets")
+				},
+				stdio: "inherit",
+				windowsHide: true
+			})
+		: result;
+if (nativeResult.error) throw nativeResult.error;
+if (nativeResult.status === 0) {
 	rmSync(evidenceDirectory, { force: true, recursive: true });
 } else {
 	process.stderr.write(`Unreal evidence retained at ${evidenceDirectory}\n`);
 }
-process.exit(result.status ?? 1);
+process.exit(nativeResult.status ?? 1);

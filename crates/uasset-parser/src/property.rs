@@ -62,6 +62,10 @@ pub enum RawReason {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum TextHistory {
+    StringTableEntry {
+        table_id: String,
+        key: String,
+    },
     None,
     Base {
         namespace: String,
@@ -165,6 +169,13 @@ pub struct MapEntry {
     pub value: PropertyValue,
 }
 
+/// A named field from native serialization, without a fabricated property tag.
+#[derive(Clone, Debug, PartialEq)]
+pub struct NativeProperty {
+    pub name: String,
+    pub value: PropertyValue,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum PropertyValue {
     Bool(bool),
@@ -192,6 +203,14 @@ pub enum PropertyValue {
     Set(Vec<PropertyValue>),
     Map(Vec<MapEntry>),
     Struct(PropertyStream),
+    NativeStruct {
+        fields: Vec<NativeProperty>,
+    },
+    InstancedStruct {
+        struct_type: PackageIndex,
+        payload: Span,
+        value: Option<Box<PropertyValue>>,
+    },
     Raw {
         reason: RawReason,
     },
@@ -314,6 +333,7 @@ impl From<ArchiveError> for PropertyError {
             ArchiveErrorKind::OutOfBounds
             | ArchiveErrorKind::InvalidSeek
             | ArchiveErrorKind::InvalidCount
+            | ArchiveErrorKind::InvalidBoolean
             | ArchiveErrorKind::MissingNullTerminator
             | ArchiveErrorKind::InvalidString
             | ArchiveErrorKind::InvalidNameReference

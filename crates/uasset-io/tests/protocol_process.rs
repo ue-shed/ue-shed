@@ -880,3 +880,29 @@ fn header_paths(events: &[Value]) -> Vec<String> {
         })
         .collect()
 }
+
+#[test]
+fn protocol_process_emits_native_values_with_the_public_discriminators() {
+    let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/unreal-project/Content/Fixture/ParserNative/DA_Native.uasset");
+    let request = base_request(
+        serde_json::json!({ "kind": "inspect", "assetPath": fixture.to_string_lossy() }),
+    );
+    let (success, events, stderr) = run_request(request);
+    assert!(success, "{stderr}");
+    assert_valid_events(&events);
+    let inspection = &events[1]["result"]["inspection"];
+    assert_eq!(inspection["status"], "ok");
+    let properties = inspection["assets"][0]["properties"].as_array().unwrap();
+    let property = |name: &str| {
+        properties
+            .iter()
+            .find(|value| value["name"] == name)
+            .unwrap()
+    };
+    assert_eq!(property("FloatChannel")["value_kind"], "native_struct");
+    assert_eq!(property("Value")["value_kind"], "instanced_struct");
+    assert_eq!(property("OpaqueValue")["value"]["value_kind"], "raw");
+    assert_eq!(property("OpaqueValue")["value"]["size"], 32);
+    assert_eq!(inspection["metadata"]["root"]["EmptyRoot"], "");
+}

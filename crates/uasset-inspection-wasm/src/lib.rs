@@ -18,6 +18,7 @@ use uasset_parser::asset::{
     AssetDecodeContext, AssetErrorKind, DecodedAsset, decode_export,
     decode_saved_blueprint_graph_node, supports_blueprint_graph_package_version,
 };
+use uasset_parser::schema::embedded_source_model;
 use uasset_parser::{Package, PackageError, PackageErrorKind, PackageSummary};
 use wasm_bindgen::prelude::*;
 
@@ -79,6 +80,7 @@ fn extract_text_from_package(path: &str, bytes: &[u8], package: &Package) -> Str
     let context = AssetDecodeContext {
         source: bytes,
         package,
+        schemas: uasset_parser::schema::embedded_source_model(),
     };
     let mut occurrences = Vec::new();
     let mut coverage_gaps = Vec::new();
@@ -137,6 +139,7 @@ pub fn extract_textures(path: &str, bytes: &[u8]) -> String {
             let context = AssetDecodeContext {
                 source: bytes,
                 package: &package,
+                schemas: embedded_source_model(),
             };
             let mut records = Vec::new();
             let mut diagnostics = Vec::new();
@@ -202,6 +205,7 @@ pub fn extract_level_sequences(path: &str, bytes: &[u8]) -> String {
             let context = AssetDecodeContext {
                 source: bytes,
                 package: &package,
+                schemas: embedded_source_model(),
             };
             let mut assets = Vec::new();
             let mut diagnostics = Vec::new();
@@ -283,6 +287,7 @@ fn extract_blueprints_from_package(path: &str, bytes: &[u8], package: &Package) 
     let context = AssetDecodeContext {
         source: bytes,
         package,
+        schemas: uasset_parser::schema::embedded_source_model(),
     };
     let mut assets = Vec::new();
     let mut pending_errors = Vec::new();

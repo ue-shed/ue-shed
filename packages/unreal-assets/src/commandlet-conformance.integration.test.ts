@@ -47,6 +47,29 @@ type LevelDecodeGaps = {
 	readonly postLoadMutatedByClass: Record<string, readonly string[]>;
 };
 
+type TextDataAssetEvidence = {
+	readonly objectPath: string;
+	readonly classPath: string;
+	readonly properties: readonly {
+		readonly name: string;
+		readonly typeName: string;
+		readonly value: {
+			readonly sourceString: string;
+			readonly identity:
+				| { readonly kind: "localized"; readonly namespace: string; readonly key: string }
+				| { readonly kind: "string_table"; readonly tableId: string; readonly key: string };
+		};
+	}[];
+};
+
+type StringTableEvidence = {
+	readonly objectPath: string;
+	readonly classPath: string;
+	readonly namespace: string;
+	readonly entries: readonly { readonly key: string; readonly source: string }[];
+	readonly metadata: Readonly<Record<string, Readonly<Record<string, string>>>>;
+};
+
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
 const evidenceDirectory = process.env.UE_SHED_UNREAL_EVIDENCE_DIR;
 const fixtureRoot = fileURLToPath(new URL("../../../fixtures/unreal-project", import.meta.url));
@@ -87,6 +110,87 @@ describe.skipIf(!executable || !evidenceDirectory)("Unreal commandlet UAsset con
 			);
 		}
 		expect(kinds).toEqual(new Set(["data_table", "composite_data_table"]));
+	});
+
+	it("matches DataAsset FText identity emitted by Unreal reflection", async () => {
+		// SAFETY: the fixture commandlet owns this versioned evidence shape.
+		const unreal = (await json(
+			join(evidenceDirectory!, "parser-targets", "text-data-asset.json")
+		)) as TextDataAssetEvidence;
+		const inspection = await runReader(
+			readSavedAsset({
+				assetPath: join(fixtureRoot, "Content/Fixture/Text/DA_TextOccurrences.uasset")
+			})
+		);
+		const asset = inspection.assets.find(
+			(candidate) => candidate.object_path === unreal.objectPath
+		);
+		expect(asset).toBeDefined();
+		expect(asset && "class_path" in asset ? asset.class_path : undefined).toBe(
+			unreal.classPath
+		);
+		if (asset === undefined || !("properties" in asset)) {
+			throw new Error("Expected the saved DataAsset export to expose tagged properties.");
+		}
+		const savedByName = new Map(asset.properties.map((property) => [property.name, property]));
+
+		for (const property of unreal.properties) {
+			const saved = savedByName.get(property.name);
+			expect(saved, property.name).toBeDefined();
+			expect(saved?.type, property.name).toBe(property.typeName);
+			if (saved?.value_kind !== "text") {
+				throw new Error(`${property.name} did not decode as FText.`);
+			}
+			if (property.value.identity.kind === "localized") {
+				expect(saved, property.name).toEqual({
+					history: "base",
+					key: property.value.identity.key,
+					name: property.name,
+					namespace: property.value.identity.namespace,
+					type: property.typeName,
+					value: property.value.sourceString,
+					value_kind: "text"
+				});
+			} else {
+				// A string-table reference serializes identity only; its display/source string belongs
+				// to the separately decoded StringTable asset and is unavailable in this payload.
+				expect(saved, property.name).toEqual({
+					history: "string_table",
+					key: property.value.identity.key,
+					name: property.name,
+					table_id: property.value.identity.tableId,
+					type: property.typeName,
+					value: "",
+					value_kind: "text"
+				});
+			}
+		}
+	});
+
+	it("matches StringTable namespace and entries emitted by Unreal", async () => {
+		// SAFETY: the fixture commandlet owns this versioned evidence shape.
+		const unreal = (await json(
+			join(evidenceDirectory!, "parser-targets", "string-table.json")
+		)) as StringTableEvidence;
+		const inspection = await runReader(
+			readSavedAsset({
+				assetPath: join(fixtureRoot, "Content/Fixture/Text/ST_Game.uasset")
+			})
+		);
+		const asset = inspection.assets.find(
+			(candidate) => candidate.object_path === unreal.objectPath
+		);
+		expect(asset).toBeDefined();
+		if (asset?.kind !== "StringTable") {
+			throw new Error("Expected the saved StringTable export to decode as a StringTable.");
+		}
+
+		expect(unreal.classPath).toBe("/Script/Engine.StringTable");
+		expect(asset.string_table_namespace).toBe(unreal.namespace);
+		expect(asset.string_table_metadata).toEqual(unreal.metadata);
+		const byKey = (left: { readonly key: string }, right: { readonly key: string }) =>
+			left.key.localeCompare(right.key);
+		expect(asset.string_table_entries.toSorted(byKey)).toEqual(unreal.entries.toSorted(byKey));
 	});
 
 	it("decodes every level property tag that is on disk", async () => {

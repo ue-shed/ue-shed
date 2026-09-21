@@ -393,6 +393,42 @@ fn inventory_property_value(
         PropertyValue::Struct(stream) => {
             inventory_property_stream(package, owner, stream, property_path, references, gaps)
         }
+        PropertyValue::NativeStruct { fields } => {
+            for field in fields {
+                inventory_property_value(
+                    package,
+                    owner,
+                    &join_property_path(property_path, &field.name),
+                    &field.value,
+                    references,
+                    gaps,
+                );
+            }
+        }
+        PropertyValue::InstancedStruct {
+            struct_type, value, ..
+        } => {
+            inventory_index_reference(
+                package,
+                owner,
+                &join_property_path(property_path, "StructType"),
+                *struct_type,
+                SequenceReferenceKind::Object,
+                None,
+                references,
+                gaps,
+            );
+            if let Some(value) = value {
+                inventory_property_value(
+                    package,
+                    owner,
+                    &join_property_path(property_path, "Value"),
+                    value,
+                    references,
+                    gaps,
+                );
+            }
+        }
         PropertyValue::Raw { .. } => gaps.push(SequenceReferenceCoverageGap {
             owner_path: owner.object_path.to_string(),
             property_path: property_path.to_owned(),
@@ -912,6 +948,7 @@ mod tests {
         let context = AssetDecodeContext {
             source: &bytes,
             package: &package,
+            schemas: uasset_parser::schema::embedded_source_model(),
         };
         let assets: Vec<_> = package
             .exports

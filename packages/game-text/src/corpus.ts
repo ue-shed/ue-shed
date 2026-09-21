@@ -99,6 +99,9 @@ function identityForText(
 	if (value.history === "base" && value.key.length > 0) {
 		return { status: "resolved", namespace: value.namespace, key: value.key };
 	}
+	if (value.history === "string_table" && value.key.length > 0) {
+		return { status: "string_table", tableId: value.table_id, key: value.key };
+	}
 	return {
 		status: "unresolved",
 		reason: value.history === "none" ? "culture_invariant" : "missing_key"
@@ -136,21 +139,27 @@ function textOccurrenceFromExtraction(options: {
 	readonly occurrence: SavedAssetTextOccurrence;
 	readonly packageFile: string;
 }): TextOccurrence {
+	const extractedIdentity = options.occurrence.identity;
 	const identity: TextIdentity =
-		options.occurrence.identity.status === "resolved" &&
-		options.occurrence.identity.key.length > 0
+		extractedIdentity.status === "resolved" && extractedIdentity.key.length > 0
 			? {
 					status: "resolved",
-					namespace: options.occurrence.identity.namespace,
-					key: options.occurrence.identity.key
+					namespace: extractedIdentity.namespace,
+					key: extractedIdentity.key
 				}
-			: {
-					status: "unresolved",
-					reason:
-						options.occurrence.identity.status === "unresolved"
-							? options.occurrence.identity.reason
-							: "missing_key"
-				};
+			: extractedIdentity.status === "string_table" && extractedIdentity.key.length > 0
+				? {
+						status: "string_table",
+						tableId: extractedIdentity.table_id,
+						key: extractedIdentity.key
+					}
+				: {
+						status: "unresolved",
+						reason:
+							extractedIdentity.status === "unresolved"
+								? extractedIdentity.reason
+								: "missing_key"
+					};
 	const location: TextLocation =
 		options.occurrence.location.kind === "string_table_entry"
 			? {
@@ -216,6 +225,24 @@ function visitValue(options: {
 	if (value.value_kind === "struct") {
 		visitProperties({ ...options, properties: value.properties });
 	}
+	if (value.value_kind === "native_struct") {
+		for (const field of value.fields) {
+			visitValue({
+				...options,
+				value: field.value,
+				path: `${options.path}.${field.name}`,
+				editCapability: "read_only"
+			});
+		}
+	}
+	if (value.value_kind === "instanced_struct" && value.value !== null) {
+		visitValue({
+			...options,
+			value: value.value,
+			path: `${options.path}.Value`,
+			editCapability: "read_only"
+		});
+	}
 }
 
 function visitProperties(options: {
@@ -246,9 +273,28 @@ function unsupportedTextProperties(
 			if (property.type === "TextProperty" && property.value_kind === "raw") {
 				gaps.push({ objectPath, propertyPath });
 			}
-			if (property.value_kind === "struct") {
-				visit(objectPath, property.properties, propertyPath);
-			}
+			visitNested(objectPath, property, propertyPath);
+		}
+	};
+	const visitNested = (objectPath: string, value: SavedPropertyValue, path: string): void => {
+		if (value.value_kind === "struct") visit(objectPath, value.properties, path);
+		if (value.value_kind === "instanced_struct" && value.value !== null) {
+			visitNested(objectPath, value.value, `${path}.Value`);
+		}
+		if (value.value_kind === "native_struct") {
+			for (const field of value.fields)
+				visitNested(objectPath, field.value, `${path}.${field.name}`);
+		}
+		if (value.value_kind === "array" || value.value_kind === "set") {
+			value.values.forEach((item, index) =>
+				visitNested(objectPath, item, `${path}[${index}]`)
+			);
+		}
+		if (value.value_kind === "map") {
+			value.entries.forEach((entry, index) => {
+				visitNested(objectPath, entry.key, `${path}{${index}}.key`);
+				visitNested(objectPath, entry.value, `${path}{${index}}.value`);
+			});
 		}
 	};
 	for (const asset of inspection.assets) {
@@ -372,9 +418,13 @@ export function textPackagePathsFromProjectIndex(index: SavedAssetScan): readonl
 }
 
 function unitKey(occurrence: TextOccurrence): string {
-	return occurrence.identity.status === "resolved"
-		? `unreal:${encodeURIComponent(occurrence.identity.namespace)}:${encodeURIComponent(occurrence.identity.key)}`
-		: occurrence.id;
+	if (occurrence.identity.status === "resolved") {
+		return `unreal:${encodeURIComponent(occurrence.identity.namespace)}:${encodeURIComponent(occurrence.identity.key)}`;
+	}
+	if (occurrence.identity.status === "string_table") {
+		return `string-table:${encodeURIComponent(occurrence.identity.tableId)}:${encodeURIComponent(occurrence.identity.key)}`;
+	}
+	return occurrence.id;
 }
 
 /**
@@ -466,7 +516,7 @@ export function buildTextCorpus(
 		}))
 	);
 	const resolvedOccurrences = occurrences.filter(
-		(occurrence) => occurrence.identity.status === "resolved"
+		(occurrence) => occurrence.identity.status !== "unresolved"
 	).length;
 	return {
 		schemaVersion: 1,
@@ -605,7 +655,7 @@ function buildTextCorpusFromExtraction(options: {
 		)
 	];
 	const resolvedOccurrences = accumulator.occurrences.filter(
-		(occurrence) => occurrence.identity.status === "resolved"
+		(occurrence) => occurrence.identity.status !== "unresolved"
 	).length;
 	const summary = accumulator.summary;
 	const inspectedPackages =

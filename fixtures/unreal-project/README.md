@@ -3,6 +3,10 @@
 This is the reproducible Unreal Engine project used by UE Shed integration and conformance tests. Its
 first content slice exercises generic DataTable authoring under `/Game/Fixture/Authoring`.
 
+Saved-package inventory and CLI tests copy fixture files listed in Git's index into temporary
+projects. Ignored, locally generated content does not participate in portable fixture counts. Stage
+new fixture files before running these tests; existing files use their current working contents.
+
 ## Requirements
 
 - Unreal Engine 5.7 installed through the Epic Games Launcher, or an explicit engine root supplied
@@ -40,7 +44,7 @@ observation setting, not a UE Shed runtime requirement.
 `fixture:evidence` loads the saved fixtures in a fresh commandlet and writes three independent evidence
 sets: shared authoring snapshots under `authoring/`, parser implementation targets under
 `parser-targets/`, and the level property view under `levels/`. The checked-in target shapes in
-`FixtureExpected/parser-targets` cover StringTable,
+`FixtureExpected/parser-targets` cover StringTable namespace, entries, and nested metadata,
 localized-text DataAsset, Texture2D, and Enhanced Input semantics. Regenerate and compare all evidence through
 `test:uasset-conformance`; do not hand-edit the expected shapes.
 
@@ -111,3 +115,18 @@ transform. It needs no editor, Remote Control endpoint, or fixture plugin capabi
 `pnpm showcase` exposes this map and the ordinary `L_CameraLoad` level in Map Review through
 `UE_SHED_SAVED_WORLD_MAPS`. This keeps the World Partition sample visible while also proving that
 offline review accepts a conventional level package.
+
+## Native parser coverage
+
+`Content/Fixture/ParserNative` contains three curve assets, a two-bone Skeleton, a DataAsset with
+float/double/empty channels and tagged/native/null/unsupported InstancedStruct values, and a real
+Level Sequence with float and double tracks. Source inputs are in `UEShedNativeParserTypes.h` and
+`UEShedNativeParserFixture.cpp`. Package annotations cover root/object maps, empty values and Unicode.
+
+Build `UEShedFixtureEditor`, run the fixture commandlet with `-NativeParserOnly`, then run a new
+process with `-NativeParserOnly -VerifyOnly -NativeParserEvidence=<directory>`. Only accept the
+second process's `native-coverage.json`; commit it under `FixtureExpected/parser-targets` with the
+saved assets. Set `UE_SHED_NATIVE_EVIDENCE_DIR` to that directory and run
+`cargo test -p uasset-inspection --test native_coverage` to compare with the fresh evidence.
+Full fixture and conformance commands include this coverage; ordinary Rust and WASM tests need
+no installed engine.

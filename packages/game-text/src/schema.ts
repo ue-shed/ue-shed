@@ -19,7 +19,17 @@ export const UnresolvedTextIdentity = Schema.Struct({
 	reason: Schema.Literals(["culture_invariant", "missing_key"])
 });
 
-export const TextIdentity = Schema.Union([UnrealTextIdentity, UnresolvedTextIdentity]);
+export const StringTableTextIdentity = Schema.Struct({
+	status: Schema.Literal("string_table"),
+	tableId: Schema.String,
+	key: Schema.NonEmptyString
+});
+
+export const TextIdentity = Schema.Union([
+	UnrealTextIdentity,
+	StringTableTextIdentity,
+	UnresolvedTextIdentity
+]);
 export type TextIdentity = Schema.Schema.Type<typeof TextIdentity>;
 
 export const TextLocation = Schema.Union([

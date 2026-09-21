@@ -21,6 +21,15 @@ TypeScript process boundary. Priorities are ordered by impact divided by impleme
 | 14       | Resolve decode-path names by borrow instead of per-property alloc | High   | Small        | Complete                |
 | 15       | Decide the WASM table-read boundary and value representation      | High   | Medium/large | Planned                 |
 
+## Source-model native coverage
+
+The source-model experiment adds UE 5.7 rich curve keys, Skeleton reference poses and bone lookup,
+Sequencer float/double channels, bounded InstancedStruct values, and package/object annotations.
+The library, generic inspection, native IO, and WASM share these values. Unreal-generated fixtures
+and fresh-process API evidence cover all five; unsupported inner structs and later native tails
+remain explicit. The compact Sequencer product projection keeps numeric tracks structural for now.
+See the [coverage and boundary matrix](../../crates/uasset-source-gen/README.md#expanded-native-coverage).
+
 ## Dependency order
 
 Precision and diagnostic correctness come first. Real-fixture conformance and the shared wire

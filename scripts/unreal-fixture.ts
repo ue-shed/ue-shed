@@ -271,6 +271,11 @@ if (action === "evidence" || action === "conformance") {
 		throw new Error(`${action} requires an output directory`);
 	}
 	runCommandlet(tools, pluginDescriptors, [`-ConformanceDirectory=${resolve(output)}`]);
+	runCommandlet(tools, pluginDescriptors, [
+		"-NativeParserOnly",
+		"-VerifyOnly",
+		`-NativeParserEvidence=${join(resolve(output), "parser-targets")}`
+	]);
 }
 if (action === "snapshot") {
 	const output = process.argv[3];

@@ -12,6 +12,7 @@ use uasset_parser::package::{ObjectPath, Package, PackageIndex, TableLocation};
 use uasset_parser::property::{
     MapEntry, PropertyRecord, PropertyStream, PropertyValue, RawReason, TextHistory,
 };
+use uasset_parser::schema::{SchemaProvider, embedded_source_model};
 
 use super::{
     DecodeErrorOutput, ErrorOutput, SCHEMA_VERSION, asset_error_kind_name, data_asset_kind,
@@ -69,10 +70,20 @@ pub fn write_inspection_json(
     bytes: &[u8],
     writer: impl io::Write,
 ) -> Result<InspectionJsonStatus, InspectionJsonError> {
+    write_inspection_json_with_schemas(path, bytes, embedded_source_model(), writer)
+}
+
+/// Streaming equivalent of `inspect_bytes_with_schemas` for callers with project-native models.
+pub fn write_inspection_json_with_schemas(
+    path: &str,
+    bytes: &[u8],
+    schemas: &dyn SchemaProvider,
+    writer: impl io::Write,
+) -> Result<InspectionJsonStatus, InspectionJsonError> {
     let package = Package::parse(bytes).map_err(|error| {
         InspectionJsonError::Inspection(Box::new(ErrorOutput::package(path.to_owned(), &error)))
     })?;
-    let inspection = StreamingInspection::new(path, bytes, package);
+    let inspection = StreamingInspection::new(path, bytes, package, schemas);
     serde_json::to_writer(writer, &inspection)
         .map_err(|error| InspectionJsonError::Serialization(error.to_string()))?;
     Ok(inspection.status())
@@ -103,19 +114,43 @@ fn internal_error_json(path: &str, message: String) -> String {
 }
 
 struct StreamingInspection<'a> {
+    metadata: Option<uasset_parser::metadata::PackageMetadata>,
     path: &'a str,
     source: &'a [u8],
     package: Package,
+    schemas: &'a dyn SchemaProvider,
     decode_errors: RefCell<Vec<DecodeErrorOutput>>,
 }
 
 impl<'a> StreamingInspection<'a> {
-    fn new(path: &'a str, source: &'a [u8], package: Package) -> Self {
+    fn new(
+        path: &'a str,
+        source: &'a [u8],
+        package: Package,
+        schemas: &'a dyn SchemaProvider,
+    ) -> Self {
+        let mut decode_errors = Vec::new();
+        let metadata = match package.read_metadata(source) {
+            Ok(metadata) => {
+                metadata.filter(|data| !data.root.is_empty() || !data.objects.is_empty())
+            }
+            Err(error) => {
+                decode_errors.push(DecodeErrorOutput {
+                    object_path: package.summary.package_name.clone(),
+                    class_path: None,
+                    kind: ErrorOutput::package(String::new(), &error).kind,
+                    message: error.to_string(),
+                });
+                None
+            }
+        };
         Self {
             path,
             source,
             package,
-            decode_errors: RefCell::new(Vec::new()),
+            schemas,
+            metadata,
+            decode_errors: RefCell::new(decode_errors),
         }
     }
 
@@ -133,8 +168,12 @@ impl Serialize for StreamingInspection<'_> {
     where
         S: Serializer,
     {
-        let mut output = serializer.serialize_struct("InspectOutput", 6)?;
+        let mut output = serializer
+            .serialize_struct("InspectOutput", 6 + usize::from(self.metadata.is_some()))?;
         output.serialize_field("schema_version", &SCHEMA_VERSION)?;
+        if let Some(metadata) = &self.metadata {
+            output.serialize_field("metadata", metadata)?;
+        }
         output.serialize_field("path", self.path)?;
         output.serialize_field("package", &PackageView(&self.package))?;
         output.serialize_field(
@@ -142,6 +181,7 @@ impl Serialize for StreamingInspection<'_> {
             &StreamingAssetsView {
                 package: &self.package,
                 source: self.source,
+                schemas: self.schemas,
                 decode_errors: &self.decode_errors,
             },
         )?;
@@ -242,6 +282,7 @@ struct SoftObjectPathsView {
 struct StreamingAssetsView<'a> {
     package: &'a Package,
     source: &'a [u8],
+    schemas: &'a dyn SchemaProvider,
     decode_errors: &'a RefCell<Vec<DecodeErrorOutput>>,
 }
 
@@ -253,6 +294,7 @@ impl Serialize for StreamingAssetsView<'_> {
         let context = AssetDecodeContext {
             source: self.source,
             package: self.package,
+            schemas: self.schemas,
         };
         let mut sequence = serializer.serialize_seq(None)?;
         for export in &self.package.exports {
@@ -293,11 +335,12 @@ impl Serialize for AssetView<'_> {
                 },
                 object_path: table.object_path.as_str(),
                 class_path: None,
-                object_guid: None,
+                object_guid: table.object_guid.as_ref().map(GuidView),
                 row_struct: table.row_struct.as_ref().map(ObjectPath::as_str),
                 parent_tables: ObjectPathsView(&table.parent_tables),
                 string_table_namespace: None,
                 string_table_entries: StringTableEntriesView(&[]),
+                string_table_metadata: None,
                 enum_cpp_form: None,
                 enum_entries: EnumEntriesView {
                     package,
@@ -310,6 +353,7 @@ impl Serialize for AssetView<'_> {
                 },
                 properties: PropertiesView::empty(package),
                 tail_bytes: 0,
+                reference_pose: None,
                 bones: BonesView {
                     package,
                     bones: &[],
@@ -330,6 +374,7 @@ impl Serialize for AssetView<'_> {
                 parent_tables: ObjectPathsView(&[]),
                 string_table_namespace: None,
                 string_table_entries: StringTableEntriesView(&[]),
+                string_table_metadata: None,
                 enum_cpp_form: None,
                 enum_entries: EnumEntriesView {
                     package,
@@ -342,6 +387,7 @@ impl Serialize for AssetView<'_> {
                 },
                 properties: PropertiesView::new(package, &table.properties),
                 tail_bytes: 0,
+                reference_pose: None,
                 bones: BonesView {
                     package,
                     bones: &[],
@@ -362,6 +408,7 @@ impl Serialize for AssetView<'_> {
                 parent_tables: ObjectPathsView(&[]),
                 string_table_namespace: Some(table.namespace.as_str()),
                 string_table_entries: StringTableEntriesView(&table.entries),
+                string_table_metadata: (!table.metadata.is_empty()).then_some(&table.metadata),
                 enum_cpp_form: None,
                 enum_entries: EnumEntriesView {
                     package,
@@ -374,6 +421,7 @@ impl Serialize for AssetView<'_> {
                 },
                 properties: PropertiesView::empty(package),
                 tail_bytes: 0,
+                reference_pose: None,
                 bones: BonesView {
                     package,
                     bones: &[],
@@ -391,6 +439,7 @@ impl Serialize for AssetView<'_> {
                 parent_tables: ObjectPathsView(&[]),
                 string_table_namespace: None,
                 string_table_entries: StringTableEntriesView(&[]),
+                string_table_metadata: None,
                 enum_cpp_form: None,
                 enum_entries: EnumEntriesView {
                     package,
@@ -403,6 +452,7 @@ impl Serialize for AssetView<'_> {
                 },
                 properties: PropertiesView::new(package, &asset.properties),
                 tail_bytes: 0,
+                reference_pose: None,
                 bones: BonesView {
                     package,
                     bones: &[],
@@ -420,6 +470,7 @@ impl Serialize for AssetView<'_> {
                 parent_tables: ObjectPathsView(&[]),
                 string_table_namespace: None,
                 string_table_entries: StringTableEntriesView(&[]),
+                string_table_metadata: None,
                 enum_cpp_form: None,
                 enum_entries: EnumEntriesView {
                     package,
@@ -432,6 +483,7 @@ impl Serialize for AssetView<'_> {
                 },
                 properties: PropertiesView::new(package, &object.properties),
                 tail_bytes: object.tail.len(),
+                reference_pose: None,
                 bones: BonesView {
                     package,
                     bones: &[],
@@ -449,6 +501,7 @@ impl Serialize for AssetView<'_> {
                 parent_tables: ObjectPathsView(&[]),
                 string_table_namespace: None,
                 string_table_entries: StringTableEntriesView(&[]),
+                string_table_metadata: None,
                 enum_cpp_form: None,
                 enum_entries: EnumEntriesView {
                     package,
@@ -461,6 +514,7 @@ impl Serialize for AssetView<'_> {
                 },
                 properties: PropertiesView::new(package, &node.properties),
                 tail_bytes: node.tail.len(),
+                reference_pose: None,
                 bones: BonesView {
                     package,
                     bones: &[],
@@ -478,6 +532,7 @@ impl Serialize for AssetView<'_> {
                 parent_tables: ObjectPathsView(&[]),
                 string_table_namespace: None,
                 string_table_entries: StringTableEntriesView(&[]),
+                string_table_metadata: None,
                 enum_cpp_form: None,
                 enum_entries: EnumEntriesView {
                     package,
@@ -490,6 +545,7 @@ impl Serialize for AssetView<'_> {
                 },
                 properties: PropertiesView::new(package, &sequence.properties),
                 tail_bytes: 0,
+                reference_pose: None,
                 bones: BonesView {
                     package,
                     bones: &[],
@@ -507,6 +563,7 @@ impl Serialize for AssetView<'_> {
                 parent_tables: ObjectPathsView(&[]),
                 string_table_namespace: None,
                 string_table_entries: StringTableEntriesView(&[]),
+                string_table_metadata: None,
                 enum_cpp_form: None,
                 enum_entries: EnumEntriesView {
                     package,
@@ -518,7 +575,11 @@ impl Serialize for AssetView<'_> {
                     fields: &[],
                 },
                 properties: PropertiesView::new(package, &skeleton.properties),
-                tail_bytes: 0,
+                tail_bytes: skeleton.tail.len(),
+                reference_pose: skeleton
+                    .reference_pose
+                    .as_ref()
+                    .map(|value| PropertyValueView::new(package, value, 0)),
                 bones: BonesView {
                     package,
                     bones: &skeleton.bones,
@@ -536,6 +597,7 @@ impl Serialize for AssetView<'_> {
                 parent_tables: ObjectPathsView(&[]),
                 string_table_namespace: None,
                 string_table_entries: StringTableEntriesView(&[]),
+                string_table_metadata: None,
                 enum_cpp_form: Some(enum_cpp_form_name(decoded.cpp_form)),
                 enum_entries: EnumEntriesView {
                     package,
@@ -548,6 +610,7 @@ impl Serialize for AssetView<'_> {
                 },
                 properties: PropertiesView::empty(package),
                 tail_bytes: 0,
+                reference_pose: None,
                 bones: BonesView {
                     package,
                     bones: &[],
@@ -565,6 +628,7 @@ impl Serialize for AssetView<'_> {
                 parent_tables: ObjectPathsView(&[]),
                 string_table_namespace: None,
                 string_table_entries: StringTableEntriesView(&[]),
+                string_table_metadata: None,
                 enum_cpp_form: None,
                 enum_entries: EnumEntriesView {
                     package,
@@ -577,6 +641,7 @@ impl Serialize for AssetView<'_> {
                 },
                 properties: PropertiesView::new(package, &decoded.default_values),
                 tail_bytes: 0,
+                reference_pose: None,
                 bones: BonesView {
                     package,
                     bones: &[],
@@ -607,6 +672,8 @@ struct AssetFields<'a> {
     #[serde(skip_serializing_if = "StringTableEntriesView::is_empty")]
     string_table_entries: StringTableEntriesView<'a>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    string_table_metadata: Option<&'a uasset_parser::asset::StringTableMetadata>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     enum_cpp_form: Option<&'static str>,
     #[serde(skip_serializing_if = "EnumEntriesView::is_empty")]
     enum_entries: EnumEntriesView<'a>,
@@ -619,6 +686,8 @@ struct AssetFields<'a> {
     tail_bytes: u64,
     #[serde(skip_serializing_if = "BonesView::is_empty")]
     bones: BonesView<'a>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reference_pose: Option<PropertyValueView<'a>>,
     row_count: usize,
     #[serde(skip_serializing_if = "CurveRowsView::is_empty")]
     curve_rows: CurveRowsView<'a>,
@@ -943,6 +1012,14 @@ impl<'a> PropertyView<'a> {
 #[derive(Serialize)]
 #[serde(tag = "value_kind", rename_all = "snake_case")]
 enum PropertyValueView<'a> {
+    NativeStruct {
+        fields: NativeFieldsView<'a>,
+    },
+    InstancedStruct {
+        struct_type: ObjectReferenceView<'a>,
+        size: u64,
+        value: Option<Box<PropertyValueView<'a>>>,
+    },
     Bool {
         value: bool,
     },
@@ -973,6 +1050,8 @@ enum PropertyValueView<'a> {
         history: &'static str,
         #[serde(skip_serializing_if = "Option::is_none")]
         namespace: Option<&'a str>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        table_id: Option<&'a str>,
         #[serde(skip_serializing_if = "Option::is_none")]
         key: Option<&'a str>,
     },
@@ -1045,6 +1124,23 @@ enum PropertyValueView<'a> {
 impl<'a> PropertyValueView<'a> {
     fn new(package: &'a Package, value: &'a PropertyValue, raw_size: u64) -> Self {
         match value {
+            PropertyValue::NativeStruct { fields } => Self::NativeStruct {
+                fields: NativeFieldsView { package, fields },
+            },
+            PropertyValue::InstancedStruct {
+                struct_type,
+                payload,
+                value,
+            } => Self::InstancedStruct {
+                struct_type: ObjectReferenceView {
+                    package,
+                    index: *struct_type,
+                },
+                size: payload.len(),
+                value: value
+                    .as_ref()
+                    .map(|value| Box::new(Self::new(package, value, payload.len()))),
+            },
             PropertyValue::Bool(value) => Self::Bool { value: *value },
             PropertyValue::Int(value) => Self::Int { value: *value },
             PropertyValue::UInt(value) => Self::Uint { value: *value },
@@ -1062,20 +1158,30 @@ impl<'a> PropertyValueView<'a> {
                     value: &text.source,
                     history: "none",
                     namespace: None,
+                    table_id: None,
                     key: None,
                 },
                 TextHistory::Base { namespace, key } => Self::Text {
                     value: &text.source,
                     history: "base",
                     namespace: Some(namespace),
+                    table_id: None,
+                    key: Some(key),
+                },
+                TextHistory::StringTableEntry { table_id, key } => Self::Text {
+                    value: &text.source,
+                    history: "string_table",
+                    namespace: None,
+                    table_id: Some(table_id),
                     key: Some(key),
                 },
                 TextHistory::NamedFormat { format, .. } => {
-                    let (history, namespace, key) = text_identity_parts(format);
+                    let (history, namespace, table_id, key) = text_identity_parts(format);
                     Self::Text {
                         value: &text.source,
                         history,
                         namespace,
+                        table_id,
                         key,
                     }
                 }
@@ -1145,12 +1251,37 @@ impl<'a> PropertyValueView<'a> {
     }
 }
 
+struct NativeFieldsView<'a> {
+    package: &'a Package,
+    fields: &'a [uasset_parser::property::NativeProperty],
+}
+impl Serialize for NativeFieldsView<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Field<'a> {
+            name: &'a str,
+            value: PropertyValueView<'a>,
+        }
+        let mut sequence = serializer.serialize_seq(Some(self.fields.len()))?;
+        for field in self.fields {
+            sequence.serialize_element(&Field {
+                name: &field.name,
+                value: PropertyValueView::new(self.package, &field.value, 0),
+            })?;
+        }
+        sequence.end()
+    }
+}
+
 fn text_identity_parts(
     text: &uasset_parser::property::TextValue,
-) -> (&'static str, Option<&str>, Option<&str>) {
+) -> (&'static str, Option<&str>, Option<&str>, Option<&str>) {
     match &text.history {
-        TextHistory::None => ("none", None, None),
-        TextHistory::Base { namespace, key } => ("base", Some(namespace), Some(key)),
+        TextHistory::None => ("none", None, None, None),
+        TextHistory::StringTableEntry { table_id, key } => {
+            ("string_table", None, Some(table_id), Some(key))
+        }
+        TextHistory::Base { namespace, key } => ("base", Some(namespace), None, Some(key)),
         TextHistory::NamedFormat { format, .. } => text_identity_parts(format),
     }
 }

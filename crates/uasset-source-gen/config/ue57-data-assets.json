@@ -1,0 +1,149 @@
+{
+	"schema_version": 9,
+	"engine_version": "5.7",
+	"modules": [
+		{
+			"name": "CoreUObject",
+			"root": "engine_source",
+			"headers": ["Runtime/CoreUObject/Public/UObject/Object.h"],
+			"sources": ["Runtime/CoreUObject/Private/UObject/Obj.cpp"]
+		},
+		{
+			"name": "CoreUObject",
+			"root": "engine_source",
+			"headers": ["Runtime/CoreUObject/Public/UObject/Class.h"],
+			"sources": [
+				"Runtime/CoreUObject/Private/UObject/Class.cpp",
+				"Runtime/CoreUObject/Private/UObject/Enum.cpp",
+				"Runtime/CoreUObject/Private/UObject/StructScriptLoader.cpp"
+			],
+			"include_types": ["UField", "UEnum", "UStruct", "UScriptStruct"]
+		},
+		{
+			"name": "CoreUObject",
+			"root": "engine_source",
+			"headers": ["Runtime/CoreUObject/Public/StructUtils/UserDefinedStruct.h"],
+			"sources": ["Runtime/CoreUObject/Private/StructUtils/UserDefinedStruct.cpp"],
+			"include_types": ["EUserDefinedStructureStatus", "UUserDefinedStruct"]
+		},
+		{
+			"name": "Core",
+			"root": "engine_source",
+			"headers": ["Runtime/Core/Public/Internationalization/StringTableCore.h"],
+			"sources": ["Runtime/Core/Private/Internationalization/StringTableCore.cpp"]
+		},
+		{
+			"name": "Engine",
+			"root": "engine_source",
+			"headers": [
+				"Runtime/Engine/Classes/Engine/CurveTable.h",
+				"Runtime/Engine/Classes/Engine/DataAsset.h",
+				"Runtime/Engine/Classes/Engine/DataTable.h",
+				"Runtime/Engine/Classes/Engine/CompositeDataTable.h",
+				"Runtime/Engine/Public/Internationalization/StringTable.h"
+			],
+			"sources": [
+				"Runtime/Engine/Private/CurveTable.cpp",
+				"Runtime/Engine/Private/DataAsset.cpp",
+				"Runtime/Engine/Private/DataTable.cpp",
+				"Runtime/Engine/Private/CompositeDataTable.cpp",
+				"Runtime/Engine/Private/Internationalization/StringTable.cpp"
+			]
+		},
+		{
+			"name": "Engine",
+			"root": "engine_source",
+			"headers": ["Runtime/Engine/Classes/Engine/UserDefinedEnum.h"],
+			"sources": ["Runtime/Engine/Private/UserDefinedEnum.cpp"],
+			"include_types": ["UUserDefinedEnum"]
+		},
+		{
+			"name": "Engine",
+			"root": "engine_source",
+			"headers": ["Runtime/Engine/Classes/Animation/Skeleton.h"],
+			"sources": [
+				"Runtime/Engine/Private/Animation/ReferenceSkeleton.cpp",
+				"Runtime/Engine/Private/Animation/Skeleton.cpp"
+			],
+			"include_types": ["USkeleton"]
+		},
+		{
+			"name": "Engine",
+			"root": "engine_source",
+			"headers": [
+				"Runtime/Engine/Classes/Engine/StreamableRenderAsset.h",
+				"Runtime/Engine/Classes/Engine/Texture.h",
+				"Runtime/Engine/Classes/Engine/Texture2D.h",
+				"Runtime/Engine/Classes/Engine/TextureDefines.h"
+			],
+			"sources": [
+				"Runtime/Engine/Private/Texture.cpp",
+				"Runtime/Engine/Private/Texture2D.cpp"
+			],
+			"include_types": [
+				"ETextureAvailability",
+				"ETextureDownscaleOptions",
+				"ETextureMipLoadOptions",
+				"UStreamableRenderAsset",
+				"UTexture",
+				"UTexture2D"
+			]
+		},
+		{
+			"name": "RenderCore",
+			"root": "engine_source",
+			"headers": ["Runtime/RenderCore/Public/VirtualTextureEnum.h"],
+			"sources": [],
+			"include_types": ["EVTProducerPriority"]
+		},
+		{
+			"name": "Engine",
+			"root": "engine_source",
+			"headers": [
+				"Runtime/Engine/Classes/Animation/AnimationAsset.h",
+				"Runtime/Engine/Classes/Animation/AnimSequenceBase.h",
+				"Runtime/Engine/Classes/Animation/AnimSequence.h",
+				"Runtime/Engine/Public/Animation/AnimTypes.h"
+			],
+			"sources": [
+				"Runtime/Engine/Private/AnimationAsset.cpp",
+				"Runtime/Engine/Private/Animation/AnimSequenceBase.cpp",
+				"Runtime/Engine/Private/Animation/AnimSequence.cpp"
+			],
+			"include_types": [
+				"EAnimInterpolationType",
+				"EStripAnimDataOnDedicatedServerSettings",
+				"UAnimationAsset",
+				"UAnimSequenceBase",
+				"UAnimSequence"
+			]
+		},
+		{
+			"name": "UEShedFixture",
+			"root": "workspace",
+			"headers": ["fixtures/unreal-project/Source/UEShedFixture/Public/UEShedFixtureTypes.h"],
+			"sources": []
+		},
+		{
+			"name": "Engine",
+			"root": "engine_source",
+			"headers": [],
+			"sources": ["Runtime/Engine/Private/Curves/RichCurve.cpp"]
+		},
+		{
+			"name": "MovieScene",
+			"root": "engine_source",
+			"headers": [],
+			"sources": ["Runtime/MovieScene/Private/Channels/MovieSceneCurveChannelImpl.cpp"]
+		},
+		{
+			"name": "CoreUObject",
+			"root": "engine_source",
+			"headers": [],
+			"sources": [
+				"Runtime/CoreUObject/Private/StructUtils/InstancedStruct.cpp",
+				"Runtime/CoreUObject/Private/UObject/SavePackage/SavePackageUtilities.cpp"
+			]
+		}
+	]
+}

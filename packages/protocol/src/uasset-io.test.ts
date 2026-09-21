@@ -52,6 +52,7 @@ describe("uasset IO protocol v1", () => {
 					"valid/blueprint-request.json",
 					"valid/accepted-event.json",
 					"valid/inspect-result-event.json",
+					"valid/inspect-native-result-event.json",
 					"valid/blueprint-result-event.json",
 					"valid/authoring-result-event.json",
 					"valid/scan-asset-result-event.json",
@@ -92,6 +93,9 @@ describe("uasset IO protocol v1", () => {
 				for (const name of [
 					"invalid/request-wrong-major.json",
 					"invalid/event-unknown-kind.json",
+					"invalid/negative-instanced-size.json",
+					"invalid/non-string-metadata.json",
+					"invalid/unknown-native-value.json",
 					"invalid/event-result-unknown-kind.json",
 					"invalid/project-index-query-oversize-limit.json",
 					"invalid/project-index-page-unbounded.json",

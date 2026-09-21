@@ -5,9 +5,9 @@ import { decodeAuthoringTableSnapshot as decodeAuthoringTableSnapshotEffect } fr
 import { decodeTextQualityReport as decodeTextQualityReportEffect } from "@ue-shed/game-text";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
+import { useSavedFixtureProject } from "../../../fixtures/unreal-project/saved-project.test-support.js";
 import {
 	repositoryRoot,
-	fixtureProject,
 	runCli,
 	runSuccessfulCli,
 	runSuccessfulHeadlessCli,
@@ -23,6 +23,8 @@ const decodeTextQualityReport = <Input>(input: Input) =>
 const uassetTestsEnabled = process.env.UE_SHED_UASSET_AUTO_BUILD !== "0";
 // Native-reader scenarios belong to the conditional UAsset lane.
 const nativeIt = it.skipIf(!uassetTestsEnabled);
+
+const fixture = useSavedFixtureProject();
 
 const scalarAsset = join(
 	repositoryRoot,
@@ -143,7 +145,7 @@ describe("ue-shed CLI process", () => {
 				runSuccessfulCli([
 					"text",
 					"review",
-					fixtureProject,
+					fixture.root,
 					"--rules",
 					fixtureTextQualityRules
 				])
@@ -152,8 +154,8 @@ describe("ue-shed CLI process", () => {
 
 			expect(report.schemaVersion).toBe(1);
 			expect(report.ruleDocumentVersion).toBe(1);
-			expect(report.status).toBe("partial");
-			expect(report.coverage.unsupportedTextProperties).toBe(1);
+			expect(report.status).toBe("complete");
+			expect(report.coverage.unsupportedTextProperties).toBe(0);
 			expect(report.findings.length).toBeGreaterThan(0);
 			expect(report.findings.every((finding) => finding.role === "ui.prompt")).toBe(true);
 		},
@@ -161,9 +163,7 @@ describe("ue-shed CLI process", () => {
 	);
 
 	nativeIt("resolves fixture row references through the public headless command", () => {
-		const report = parseRecord(
-			runSuccessfulCli(["authoring", "relationships", fixtureProject])
-		);
+		const report = parseRecord(runSuccessfulCli(["authoring", "relationships", fixture.root]));
 		expect(report.contract).toEqual({
 			name: "unreal-authoring-row-references",
 			version: { major: 1, minor: 0 }
@@ -193,7 +193,7 @@ describe("ue-shed CLI process", () => {
 			runSuccessfulCli([
 				"authoring",
 				"join",
-				fixtureProject,
+				fixture.root,
 				"/Game/Fixture/Authoring/DT_LeftReferences.DT_LeftReferences",
 				"Target"
 			])
@@ -239,7 +239,7 @@ describe("ue-shed CLI process", () => {
 		"profiles a saved DataTable into suggested charts",
 		() => {
 			const plan = parseRecord(
-				runSuccessfulCli(["authoring", "analyze", fixtureProject, scalarTable])
+				runSuccessfulCli(["authoring", "analyze", fixture.root, scalarTable])
 			);
 			expect(plan.contract).toEqual({
 				name: "unreal-authoring-analysis",

@@ -16,9 +16,13 @@ export function sourceText(unit: TextUnitPresentation): string {
 }
 
 export function identityLabel(unit: TextUnitPresentation): string {
-	return unit.identity.status === "resolved"
-		? `${unit.identity.namespace} · ${unit.identity.key}`
-		: `Identity unresolved · ${unit.identity.reason.replaceAll("_", " ")}`;
+	if (unit.identity.status === "resolved") {
+		return `${unit.identity.namespace} · ${unit.identity.key}`;
+	}
+	if (unit.identity.status === "string_table") {
+		return `${unit.identity.tableId} · ${unit.identity.key}`;
+	}
+	return `Identity unresolved · ${unit.identity.reason.replaceAll("_", " ")}`;
 }
 
 function leafName(objectPath: string): string {

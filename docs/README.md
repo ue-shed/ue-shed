@@ -65,6 +65,15 @@ there; do not invent a second status source in docs.
 
 ## Research
 
+- [UAsset source-derived parser model](../crates/uasset-source-gen/README.md) — source-derived class
+  metadata, composable native serialization layouts, and Unreal-backed parser conformance.
+
+- [Source-model parser optimization (2026-09-19)](research/uasset-source-model-performance-2026-09-19.md) —
+  allocation reductions, before/after timings and memory, and unchanged fixture output.
+
+- [UE Shed core parser swap (2026-09-19)](research/uasset-core-swap-2026-09-19.md) — replacement native
+  and WASM parsers against current main's consumers, required contract updates, and integration tests.
+
 - [32×32 moving-camera scale test (2026-09-07)](research/map-capture-grid32-2026-09-07.md) — 1,024
   captured tiles, a 16K assembly, and a six-level viewer pyramid over expanded world bounds.
 

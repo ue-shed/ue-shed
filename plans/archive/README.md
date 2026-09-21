@@ -4,6 +4,12 @@ Completed implementation plans. Kept as execution history (intent, STOP conditio
 paths). They are not living guidance — prefer product docs, ADRs, and active plans under
 [`../`](../README.md).
 
+- [UAsset source-model rollout](uasset-source-model-rollout.md) — DONE; default native and WASM
+  integration, optimized embedded model, full local gate, and fresh Unreal conformance.
+
+- [Expanded native UAsset coverage](uasset-native-coverage.md) — DONE; curves, skeleton poses,
+  numeric channels, InstancedStruct, and package metadata through shared native layouts.
+
 | Plan                                                          | Title                                                                | Status                                      |
 | ------------------------------------------------------------- | -------------------------------------------------------------------- | ------------------------------------------- |
 | [048](048-fresh-scan-performance.md)                          | Optimize fresh Catalog scans from the current baseline               | DONE — measured and validated               |

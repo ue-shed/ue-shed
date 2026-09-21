@@ -2,6 +2,8 @@
 
 use std::fmt;
 
+pub(crate) mod native_values;
+
 use crate::archive::Reader;
 use crate::package::{Package, PackageIndex};
 use crate::property::{
@@ -15,8 +17,6 @@ use crate::property::{
 const INDEX_NONE: i32 = -1;
 const MAX_PROPERTY_DECODE_DEPTH: usize = 64;
 const RICH_CURVE_KEY_SERIALIZED_BYTES: u64 = 27;
-const RICH_CURVE_KEY_RAW_REASON: &str =
-    "native FRichCurveKey fields are preserved but not projected";
 
 #[derive(Clone, Copy)]
 struct TypeSpec<'a> {
@@ -105,6 +105,8 @@ fn decode_property_record(
 
     let decoded = if record.flags.is_binary_or_native() {
         match decode_binary_or_native_value(
+            source,
+            depth,
             type_name.as_ref(),
             &record.type_name,
             &mut payload,
@@ -251,7 +253,7 @@ fn decode_typed_value(
         ))),
         "TextProperty" => {
             let path = path.to_string();
-            decode_text_value(payload, &path).map(|text| text.map(PropertyValue::Text))
+            decode_text_value(payload, package, &path).map(|text| text.map(PropertyValue::Text))
         }
         "ObjectProperty" | "ClassProperty" | "WeakObjectProperty" | "InterfaceProperty" => {
             Ok(Some(PropertyValue::ObjectRef(PackageIndex::from_raw(
@@ -309,7 +311,7 @@ fn decode_soft_object_path(
                 ),
             ));
         }
-        let index = payload.read_i32(&format!("{path}.SoftObjectPathIndex"))?;
+        let index = payload.read_i32(&format_args!("{path}.SoftObjectPathIndex"))?;
         if index < 0 {
             return Err(PropertyError::new(
                 crate::property::PropertyErrorKind::MalformedData,
@@ -349,6 +351,8 @@ fn decode_soft_object_path(
 }
 
 fn decode_binary_or_native_value(
+    source: &[u8],
+    depth: usize,
     type_name: &str,
     type_tree: &PropertyTypeName,
     payload: &mut Reader<'_>,
@@ -360,7 +364,14 @@ fn decode_binary_or_native_value(
         // wants an owned `&str`; materialize the breadcrumb once here rather
         // than per read.
         let path = path.to_string();
-        match resolve_struct_type_name(package, type_tree).as_deref() {
+        let struct_name = resolve_struct_type_name(package, type_tree);
+        if let Some(name) = &struct_name
+            && let Some(value) =
+                native_values::known_struct(source, name, payload, package, &path, depth)?
+        {
+            return Ok(Some(value));
+        }
+        match struct_name.as_deref() {
             Some("Vector") => {
                 return Ok(Some(PropertyValue::Vector(decode_vector_value(
                     payload, &path,
@@ -401,9 +412,6 @@ fn decode_binary_or_native_value(
                     payload, &path,
                 )?)));
             }
-            Some("RichCurveKey") => {
-                return decode_rich_curve_key_as_raw(payload, &path).map(Some);
-            }
             _ => {}
         }
     }
@@ -421,7 +429,7 @@ fn decode_date_time_value(payload: &mut Reader<'_>, path: &str) -> Result<i64, P
         ));
     }
     payload
-        .read_i64(&format!("{path}.Ticks"))
+        .read_i64(&format_args!("{path}.Ticks"))
         .map_err(PropertyError::from)
 }
 
@@ -439,8 +447,8 @@ fn decode_int_point_value(
     }
 
     Ok(IntPointValue {
-        x: payload.read_i32(&format!("{path}.X"))?,
-        y: payload.read_i32(&format!("{path}.Y"))?,
+        x: payload.read_i32(&format_args!("{path}.X"))?,
+        y: payload.read_i32(&format_args!("{path}.Y"))?,
     })
 }
 
@@ -454,7 +462,7 @@ fn decode_array_value(
 ) -> Result<PropertyValue, PropertyError> {
     let (inner_type, inner_name) = resolve_inner_type(package, type_tree, path, "ArrayProperty")?;
 
-    let count = payload.read_count(&format!("{path}.Count"))?;
+    let count = payload.read_count(&format_args!("{path}.Count"))?;
     let capacity = payload.checked_vec_capacity::<PropertyValue>(
         count,
         minimum_serialized_size(&inner_name, inner_type),
@@ -493,7 +501,7 @@ fn decode_set_value(
 ) -> Result<PropertyValue, PropertyError> {
     let (element_type, element_name) = resolve_inner_type(package, type_tree, path, "SetProperty")?;
 
-    let remove_count = payload.read_i32(&format!("{path}.ElementsToRemove.Count"))?;
+    let remove_count = payload.read_i32(&format_args!("{path}.ElementsToRemove.Count"))?;
     if remove_count < 0 {
         return Err(PropertyError::new(
             crate::property::PropertyErrorKind::MalformedData,
@@ -525,7 +533,7 @@ fn decode_set_value(
         })?;
     }
 
-    let count = payload.read_count(&format!("{path}.Elements.Count"))?;
+    let count = payload.read_count(&format_args!("{path}.Elements.Count"))?;
     let capacity = payload.checked_vec_capacity::<PropertyValue>(
         count,
         minimum_serialized_size(&element_name, element_type),
@@ -565,7 +573,7 @@ fn decode_map_value(
     let (key_type, key_name) = resolve_map_key_type(package, type_tree, path)?;
     let (value_type, value_name) = resolve_map_value_type(package, type_tree, path)?;
 
-    let keys_to_remove = payload.read_i32(&format!("{path}.KeysToRemove.Count"))?;
+    let keys_to_remove = payload.read_i32(&format_args!("{path}.KeysToRemove.Count"))?;
     if keys_to_remove > 0 {
         payload.checked_vec_capacity::<PropertyValue>(
             usize::try_from(keys_to_remove).expect("positive i32 fits in usize"),
@@ -596,7 +604,7 @@ fn decode_map_value(
         ));
     }
 
-    let count = payload.read_count(&format!("{path}.Entries.Count"))?;
+    let count = payload.read_count(&format_args!("{path}.Entries.Count"))?;
     let entry_minimum = minimum_serialized_size(&key_name, key_type)
         .saturating_add(minimum_serialized_size(&value_name, value_type));
     let capacity = payload.checked_vec_capacity::<MapEntry>(
@@ -652,7 +660,14 @@ fn decode_container_element(
         && resolve_struct_type_name(package, type_spec.tree).as_deref() == Some("RichCurveKey")
     {
         let mut element = payload.take_bounded(RICH_CURVE_KEY_SERIALIZED_BYTES, path)?;
-        return decode_rich_curve_key_as_raw(&mut element, path).map(Some);
+        return native_values::known_struct(
+            source,
+            "RichCurveKey",
+            &mut element,
+            package,
+            path,
+            depth,
+        );
     }
 
     if type_spec.name == "StructProperty"
@@ -660,7 +675,7 @@ fn decode_container_element(
     {
         let mut element_payload = payload.take_bounded(16, path)?;
         return Ok(Some(PropertyValue::Guid(
-            element_payload.read_guid(&format!("{path}.Value"))?,
+            element_payload.read_guid(&format_args!("{path}.Value"))?,
         )));
     }
 
@@ -670,7 +685,7 @@ fn decode_container_element(
     {
         let mut element_payload = payload.take_bounded(4, path)?;
         return Ok(Some(PropertyValue::Int(i64::from(
-            element_payload.read_i32(&format!("{path}.Value"))?,
+            element_payload.read_i32(&format_args!("{path}.Value"))?,
         ))));
     }
 
@@ -712,39 +727,6 @@ fn decode_container_element(
         path,
         depth,
     )
-}
-
-/// `FRichCurveKey::Serialize` writes three enum bytes followed by six floats without property
-/// tags. Consume that engine-defined framing so an enclosing reflected object remains decodable;
-/// the semantic fields stay explicitly raw until the generic property schema owns a curve-key
-/// representation.
-fn decode_rich_curve_key_as_raw(
-    payload: &mut Reader<'_>,
-    path: &str,
-) -> Result<PropertyValue, PropertyError> {
-    payload.read_u8(&format!("{path}.InterpMode"))?;
-    payload.read_u8(&format!("{path}.TangentMode"))?;
-    payload.read_u8(&format!("{path}.TangentWeightMode"))?;
-    payload.read_f32(&format!("{path}.Time"))?;
-    payload.read_f32(&format!("{path}.Value"))?;
-    payload.read_f32(&format!("{path}.ArriveTangent"))?;
-    payload.read_f32(&format!("{path}.ArriveTangentWeight"))?;
-    payload.read_f32(&format!("{path}.LeaveTangent"))?;
-    payload.read_f32(&format!("{path}.LeaveTangentWeight"))?;
-    if payload.remaining() != 0 {
-        return Err(PropertyError::new(
-            crate::property::PropertyErrorKind::MalformedData,
-            Some(payload.tell()),
-            path,
-            format!(
-                "FRichCurveKey left {} trailing bytes after native decode",
-                payload.remaining()
-            ),
-        ));
-    }
-    Ok(PropertyValue::Raw {
-        reason: RawReason::DecoderRejected(RICH_CURVE_KEY_RAW_REASON.to_owned()),
-    })
 }
 
 fn unsupported_container_type(
@@ -873,10 +855,17 @@ fn decode_struct_value(
             format!("property value nesting exceeds depth limit {MAX_PROPERTY_DECODE_DEPTH}"),
         ));
     }
+    let struct_name = resolve_struct_type_name(package, type_tree);
+    if let Some(name) = &struct_name
+        && let Some(value) =
+            native_values::known_struct(source, name, payload, package, path, depth)?
+    {
+        return Ok(value);
+    }
     let mut stream =
         read_tagged_property_stream(payload, &package.summary.versions, &package.names, path)?;
     decode_property_stream_values_at_depth(source, &mut stream, package, depth + 1)?;
-    if resolve_struct_type_name(package, type_tree).as_deref() == Some("DataTableRowHandle") {
+    if struct_name.as_deref() == Some("DataTableRowHandle") {
         return decode_data_table_row_handle(&stream, package, path);
     }
     Ok(PropertyValue::Struct(stream))
@@ -940,16 +929,17 @@ fn decode_data_table_row_handle(
 
 fn decode_text_value(
     payload: &mut Reader<'_>,
+    package: &Package,
     path: &str,
 ) -> Result<Option<TextValue>, PropertyError> {
-    let _flags = payload.read_i32(&format!("{path}.Flags"))?;
-    let history_type = payload.read_i8(&format!("{path}.HistoryType"))?;
+    let _flags = payload.read_i32(&format_args!("{path}.Flags"))?;
+    let history_type = payload.read_i8(&format_args!("{path}.HistoryType"))?;
 
     if history_type == -1 {
         let has_culture_invariant =
             read_archive_bool(payload, &format!("{path}.CultureInvariant"))?;
         let source = if has_culture_invariant {
-            payload.read_fstring(&format!("{path}.CultureInvariantString"))?
+            payload.read_fstring(&format_args!("{path}.CultureInvariantString"))?
         } else {
             String::new()
         };
@@ -960,12 +950,33 @@ fn decode_text_value(
     }
 
     if history_type == 0 {
-        let namespace = payload.read_fstring(&format!("{path}.Namespace"))?;
-        let key = payload.read_fstring(&format!("{path}.Key"))?;
-        let source = payload.read_fstring(&format!("{path}.SourceString"))?;
+        let namespace = payload.read_fstring(&format_args!("{path}.Namespace"))?;
+        let key = payload.read_fstring(&format_args!("{path}.Key"))?;
+        let source = payload.read_fstring(&format_args!("{path}.SourceString"))?;
         return Ok(Some(TextValue {
             source,
             history: TextHistory::Base { namespace, key },
+        }));
+    }
+
+    // `ETextHistoryType::StringTableEntry` is index 11 in UE 5.7. Its
+    // serializer writes an FName table ID followed by an FString-backed
+    // FTextKey. The source/display string belongs to the referenced table and
+    // is intentionally not present in this property payload.
+    if history_type == 11 {
+        let table_id_ref = payload.read_name_ref(&format_args!("{path}.TableId"))?;
+        let table_id = package.resolve_name(table_id_ref).ok_or_else(|| {
+            PropertyError::new(
+                crate::property::PropertyErrorKind::MalformedData,
+                Some(payload.tell().saturating_sub(8)),
+                path,
+                "string-table text has an unresolved table ID",
+            )
+        })?;
+        let key = payload.read_fstring(&format_args!("{path}.Key"))?;
+        return Ok(Some(TextValue {
+            source: String::new(),
+            history: TextHistory::StringTableEntry { table_id, key },
         }));
     }
 
@@ -975,14 +986,14 @@ fn decode_text_value(
 fn decode_vector_value(payload: &mut Reader<'_>, path: &str) -> Result<VectorValue, PropertyError> {
     match payload.remaining() {
         12 => Ok(VectorValue {
-            x: f64::from(payload.read_f32(&format!("{path}.X"))?),
-            y: f64::from(payload.read_f32(&format!("{path}.Y"))?),
-            z: f64::from(payload.read_f32(&format!("{path}.Z"))?),
+            x: f64::from(payload.read_f32(&format_args!("{path}.X"))?),
+            y: f64::from(payload.read_f32(&format_args!("{path}.Y"))?),
+            z: f64::from(payload.read_f32(&format_args!("{path}.Z"))?),
         }),
         24 => Ok(VectorValue {
-            x: payload.read_f64(&format!("{path}.X"))?,
-            y: payload.read_f64(&format!("{path}.Y"))?,
-            z: payload.read_f64(&format!("{path}.Z"))?,
+            x: payload.read_f64(&format_args!("{path}.X"))?,
+            y: payload.read_f64(&format_args!("{path}.Y"))?,
+            z: payload.read_f64(&format_args!("{path}.Z"))?,
         }),
         remaining => Err(PropertyError::new(
             crate::property::PropertyErrorKind::MalformedData,
@@ -999,14 +1010,14 @@ fn decode_rotator_value(
 ) -> Result<RotatorValue, PropertyError> {
     match payload.remaining() {
         12 => Ok(RotatorValue {
-            pitch: f64::from(payload.read_f32(&format!("{path}.Pitch"))?),
-            yaw: f64::from(payload.read_f32(&format!("{path}.Yaw"))?),
-            roll: f64::from(payload.read_f32(&format!("{path}.Roll"))?),
+            pitch: f64::from(payload.read_f32(&format_args!("{path}.Pitch"))?),
+            yaw: f64::from(payload.read_f32(&format_args!("{path}.Yaw"))?),
+            roll: f64::from(payload.read_f32(&format_args!("{path}.Roll"))?),
         }),
         24 => Ok(RotatorValue {
-            pitch: payload.read_f64(&format!("{path}.Pitch"))?,
-            yaw: payload.read_f64(&format!("{path}.Yaw"))?,
-            roll: payload.read_f64(&format!("{path}.Roll"))?,
+            pitch: payload.read_f64(&format_args!("{path}.Pitch"))?,
+            yaw: payload.read_f64(&format_args!("{path}.Yaw"))?,
+            roll: payload.read_f64(&format_args!("{path}.Roll"))?,
         }),
         remaining => Err(PropertyError::new(
             crate::property::PropertyErrorKind::MalformedData,
@@ -1059,7 +1070,7 @@ fn decode_frame_range_bound(
     path: &str,
 ) -> Result<FrameRangeBound, PropertyError> {
     let offset = payload.tell();
-    let kind = match payload.read_u8(&format!("{path}.Type"))? {
+    let kind = match payload.read_u8(&format_args!("{path}.Type"))? {
         0 => RangeBoundKind::Exclusive,
         1 => RangeBoundKind::Inclusive,
         2 => RangeBoundKind::Open,
@@ -1072,7 +1083,7 @@ fn decode_frame_range_bound(
             ));
         }
     };
-    let value = payload.read_i32(&format!("{path}.Value"))?;
+    let value = payload.read_i32(&format_args!("{path}.Value"))?;
     Ok(FrameRangeBound { kind, value })
 }
 
@@ -1086,10 +1097,10 @@ fn decode_color_value(payload: &mut Reader<'_>, path: &str) -> Result<ColorValue
             format!("unsupported FColor payload size {}", payload.remaining()),
         ));
     }
-    let b = payload.read_u8(&format!("{path}.B"))?;
-    let g = payload.read_u8(&format!("{path}.G"))?;
-    let r = payload.read_u8(&format!("{path}.R"))?;
-    let a = payload.read_u8(&format!("{path}.A"))?;
+    let b = payload.read_u8(&format_args!("{path}.B"))?;
+    let g = payload.read_u8(&format_args!("{path}.G"))?;
+    let r = payload.read_u8(&format_args!("{path}.R"))?;
+    let a = payload.read_u8(&format_args!("{path}.A"))?;
     Ok(ColorValue { r, g, b, a })
 }
 
@@ -1110,15 +1121,18 @@ fn decode_linear_color_value(
         ));
     }
     Ok(LinearColorValue {
-        r: payload.read_f32(&format!("{path}.R"))?,
-        g: payload.read_f32(&format!("{path}.G"))?,
-        b: payload.read_f32(&format!("{path}.B"))?,
-        a: payload.read_f32(&format!("{path}.A"))?,
+        r: payload.read_f32(&format_args!("{path}.R"))?,
+        g: payload.read_f32(&format_args!("{path}.G"))?,
+        b: payload.read_f32(&format_args!("{path}.B"))?,
+        a: payload.read_f32(&format_args!("{path}.A"))?,
     })
 }
 
-fn resolve_struct_type_name(package: &Package, type_tree: &PropertyTypeName) -> Option<String> {
-    package.resolve_name(type_tree.parameters.first()?.name)
+fn resolve_struct_type_name<'a>(
+    package: &'a Package,
+    type_tree: &PropertyTypeName,
+) -> Option<std::borrow::Cow<'a, str>> {
+    package.resolve_name_cow(type_tree.parameters.first()?.name)
 }
 
 fn read_archive_bool(reader: &mut Reader<'_>, path: &str) -> Result<bool, PropertyError> {
@@ -1419,6 +1433,32 @@ mod tests {
     }
 
     #[test]
+    fn decodes_string_table_text_payload() {
+        let names = vec![
+            "TextProperty".into(),
+            "/Game/Fixture/Text/ST_Game.ST_Game".into(),
+        ];
+        let mut payload = Vec::new();
+        push_i32(&mut payload, 0); // flags
+        payload.push(11); // StringTableEntry history
+        push_i32(&mut payload, 1); // table ID name index
+        push_i32(&mut payload, 0); // table ID name number
+        push_fstring(&mut payload, "PromptContinue");
+
+        let value = decode_record(names, 0, Vec::new(), PropertyTagFlags(0), &payload);
+        assert_eq!(
+            value,
+            PropertyValue::Text(TextValue {
+                source: String::new(),
+                history: TextHistory::StringTableEntry {
+                    table_id: "/Game/Fixture/Text/ST_Game.ST_Game".to_owned(),
+                    key: "PromptContinue".to_owned(),
+                },
+            })
+        );
+    }
+
+    #[test]
     fn decodes_name_array_payload() {
         let names = vec![
             "ArrayProperty".into(),
@@ -1514,12 +1554,16 @@ mod tests {
             &payload,
         );
 
-        assert_eq!(
-            value,
-            PropertyValue::Array(vec![PropertyValue::Raw {
-                reason: RawReason::DecoderRejected(RICH_CURVE_KEY_RAW_REASON.to_owned()),
-            }])
-        );
+        let PropertyValue::Array(values) = value else {
+            panic!("array");
+        };
+        let PropertyValue::NativeStruct { fields } = &values[0] else {
+            panic!("native key");
+        };
+        assert_eq!(fields.len(), 9);
+        assert_eq!(fields[3].name, "Time");
+        assert_eq!(fields[3].value, PropertyValue::Float(4.0));
+        assert_eq!(fields[8].value, PropertyValue::Float(9.0));
     }
 
     #[test]

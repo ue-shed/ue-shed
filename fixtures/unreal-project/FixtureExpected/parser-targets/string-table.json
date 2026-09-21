@@ -23,5 +23,15 @@
 			"key": "StatusSaving",
 			"source": "Saving progress…"
 		}
-	]
+	],
+	"metadata": {
+		"PromptContinue": {
+			"Comment": "Continue from the pause menu",
+			"Context": "Menu"
+		},
+		"StatusSaving": {
+			"Comment": "Progress: café / 保存",
+			"Empty": ""
+		}
+	}
 }

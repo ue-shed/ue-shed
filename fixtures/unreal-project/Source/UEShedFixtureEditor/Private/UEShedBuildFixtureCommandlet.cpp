@@ -72,6 +72,7 @@
 #include "UEShedFixtureTypes.h"
 #include "UEShedFixtureMover.h"
 #include "UEShedMovementGym.h"
+#include "UEShedNativeParserFixture.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(UEShedBuildFixtureCommandlet)
 
@@ -1104,10 +1105,15 @@ bool GenerateGameTextCorpus()
 	}
 	FStringTableRef MutableTable = StringTable->GetMutableStringTable();
 	MutableTable->ClearSourceStrings();
+	MutableTable->ClearMetaData();
 	MutableTable->SetNamespace(FTextKey(TEXT("Fixture.StringTable")));
 	MutableTable->SetSourceString(FTextKey(TEXT("PromptContinue")), TEXT("Continue"));
 	MutableTable->SetSourceString(FTextKey(TEXT("StatusSaving")), TEXT("Saving progress…"));
 	MutableTable->SetSourceString(FTextKey(TEXT("PromptHold")), TEXT("Hold to skip"));
+	MutableTable->SetMetaData(FTextKey(TEXT("PromptContinue")), TEXT("Comment"), TEXT("Continue from the pause menu"));
+	MutableTable->SetMetaData(FTextKey(TEXT("PromptContinue")), TEXT("Context"), TEXT("Menu"));
+	MutableTable->SetMetaData(FTextKey(TEXT("StatusSaving")), TEXT("Comment"), TEXT("Progress: caf\u00e9 / \u4fdd\u5b58"));
+	MutableTable->SetMetaData(FTextKey(TEXT("StatusSaving")), TEXT("Empty"), TEXT(""));
 	if (bStringTableCreated) FAssetRegistryModule::AssetCreated(StringTable);
 	StringTablePackage->MarkPackageDirty();
 	if (!SaveAsset(StringTablePackage, StringTable)) return false;
@@ -1214,6 +1220,7 @@ bool WriteStringTableEvidence(const FString& OutputDirectory)
 
 	const TSharedRef<FJsonObject> Root = EvidenceRoot(TEXT("string_table"), StringTable);
 	Root->SetStringField(TEXT("namespace"), StringTable->GetStringTable()->GetNamespace());
+	const TSharedRef<FJsonObject> Metadata = MakeShared<FJsonObject>();
 	TArray<TSharedPtr<FJsonValue>> Entries;
 	for (const TPair<FString, FString>& SourceString : SourceStrings)
 	{
@@ -1221,8 +1228,17 @@ bool WriteStringTableEvidence(const FString& OutputDirectory)
 		Entry->SetStringField(TEXT("key"), SourceString.Key);
 		Entry->SetStringField(TEXT("source"), SourceString.Value);
 		Entries.Add(MakeShared<FJsonValueObject>(Entry));
+		const TSharedRef<FJsonObject> Fields = MakeShared<FJsonObject>();
+		StringTable->GetStringTable()->EnumerateMetaData(FTextKey(SourceString.Key),
+			[&Fields](FName Name, const FString& Value)
+			{
+				Fields->SetStringField(Name.ToString(), Value);
+				return true;
+			});
+		if (!Fields->Values.IsEmpty()) Metadata->SetObjectField(SourceString.Key, Fields);
 	}
 	Root->SetArrayField(TEXT("entries"), Entries);
+	Root->SetObjectField(TEXT("metadata"), Metadata);
 	return WriteJsonEvidence(
 		FPaths::Combine(OutputDirectory, TEXT("parser-targets/string-table.json")), Root);
 }
@@ -3427,6 +3443,24 @@ int32 UUEShedBuildFixtureCommandlet::Main(const FString& Params)
 	}
 
 	const bool VerifyOnly = FParse::Param(*Params, TEXT("VerifyOnly"));
+	if (FParse::Param(*Params, TEXT("NativeParserOnly")))
+	{
+		if (!VerifyOnly && !GenerateNativeParserFixtures()) return 1;
+		FString Directory;
+		if (!FParse::Value(*Params, TEXT("NativeParserEvidence="), Directory))
+			Directory = FPaths::ProjectSavedDir() / TEXT("NativeParserEvidence");
+		return WriteNativeParserEvidence(Directory) ? 0 : 1;
+	}
+	if (FParse::Param(*Params, TEXT("TextOnly")))
+	{
+		if (!(VerifyOnly ? VerifyGameTextCorpus() : GenerateGameTextCorpus())) return 1;
+		FString TextEvidenceDirectory;
+		if (FParse::Value(*Params, TEXT("TextEvidence="), TextEvidenceDirectory))
+		{
+			return WriteStringTableEvidence(TextEvidenceDirectory) ? 0 : 1;
+		}
+		return 0;
+	}
 	if (FParse::Param(*Params, TEXT("ScenarioOnly")))
 	{
 		return (VerifyOnly ? VerifyMovementGym() : GenerateMovementGym()) ? 0 : 1;
@@ -3460,6 +3494,7 @@ int32 UUEShedBuildFixtureCommandlet::Main(const FString& Params)
 		Succeeded = GenerateNestedLevelSequenceFixture() && Succeeded;
 		Succeeded = GenerateEnhancedInputFixtures() && Succeeded;
 		Succeeded = GenerateMovementGym() && Succeeded;
+		Succeeded = GenerateNativeParserFixtures() && Succeeded;
 	}
 	else
 	{
@@ -3479,6 +3514,11 @@ int32 UUEShedBuildFixtureCommandlet::Main(const FString& Params)
 		Succeeded = VerifyEnhancedInputFixtures() && Succeeded;
 		Succeeded = VerifyMovementGym() && Succeeded;
 	}
+
+	FString NativeEvidenceDirectory;
+	if (!FParse::Value(*Params, TEXT("NativeParserEvidence="), NativeEvidenceDirectory))
+		NativeEvidenceDirectory = FPaths::ProjectSavedDir() / TEXT("NativeParserEvidence");
+	Succeeded = WriteNativeParserEvidence(NativeEvidenceDirectory) && Succeeded;
 
 	UE_LOG(LogTemp, Display, TEXT("UE Shed fixture %s %s"),
 		VerifyOnly ? TEXT("verification") : TEXT("generation"),

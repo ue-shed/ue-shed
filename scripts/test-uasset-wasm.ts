@@ -16,6 +16,13 @@ const packageNodeEntry = join(
 const nativeExecutable = ensureUassetExecutable();
 const fixtureRoot = join(repositoryRoot, "fixtures", "unreal-project");
 const fixtures = [
+	"Content/Fixture/ParserNative/CF_Native.uasset",
+	"Content/Fixture/ParserNative/CV_Native.uasset",
+	"Content/Fixture/ParserNative/CC_Native.uasset",
+	"Content/Fixture/ParserNative/SK_Native.uasset",
+	"Content/Fixture/ParserNative/DA_Native.uasset",
+	"Content/Fixture/ParserNative/LS_Numeric.uasset",
+
 	"Content/Fixture/Authoring/DT_Scalars.uasset",
 	"Content/Fixture/Authoring/DT_LargeScalars.uasset",
 	"Content/Fixture/Input/IMC_Fixture.uasset",

@@ -71,6 +71,7 @@ fn blueprint_bytes_with_cancellation(
     let context = AssetDecodeContext {
         source: bytes,
         package: &package,
+        schemas: uasset_parser::schema::embedded_source_model(),
     };
     let mut assets = Vec::new();
     let mut pending_errors = Vec::new();

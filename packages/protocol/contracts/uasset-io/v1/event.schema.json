@@ -75,6 +75,54 @@
 					"properties": {
 						"value_kind": {
 							"type": "string",
+							"enum": ["native_struct"]
+						},
+						"fields": {
+							"$ref": "#/$defs/Arrays_"
+						}
+					},
+					"required": ["value_kind", "fields"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["instanced_struct"]
+						},
+						"struct_type": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"size": {
+							"$ref": "#/$defs/UAssetInspectionNonNegativeInt"
+						},
+						"value": {
+							"anyOf": [
+								{
+									"$ref": "#/$defs/SavedPropertyValue"
+								},
+								{
+									"type": "null"
+								}
+							]
+						}
+					},
+					"required": ["value_kind", "struct_type", "size", "value"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
 							"enum": ["bool"]
 						},
 						"value": {
@@ -205,6 +253,30 @@
 						}
 					},
 					"required": ["value_kind", "value", "history", "namespace", "key"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["text"]
+						},
+						"value": {
+							"type": "string"
+						},
+						"history": {
+							"type": "string",
+							"enum": ["string_table"]
+						},
+						"table_id": {
+							"type": "string"
+						},
+						"key": {
+							"type": "string"
+						}
+					},
+					"required": ["value_kind", "value", "history", "table_id", "key"],
 					"additionalProperties": false
 				},
 				{
@@ -689,7 +761,10 @@
 							"enum": ["array", "set"]
 						},
 						"values": {
-							"$ref": "#/$defs/Arrays_"
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/SavedPropertyValue"
+							}
 						}
 					},
 					"required": ["value_kind", "values"],
@@ -761,11 +836,81 @@
 		"Arrays_": {
 			"type": "array",
 			"items": {
-				"$ref": "#/$defs/SavedPropertyValue"
+				"type": "object",
+				"properties": {
+					"name": {
+						"type": "string"
+					},
+					"value": {
+						"$ref": "#/$defs/SavedPropertyValue"
+					}
+				},
+				"required": ["name", "value"],
+				"additionalProperties": false
 			}
 		},
 		"SavedProperty": {
 			"anyOf": [
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["native_struct"]
+						},
+						"fields": {
+							"$ref": "#/$defs/Arrays_"
+						},
+						"name": {
+							"type": "string"
+						},
+						"type": {
+							"type": "string"
+						}
+					},
+					"required": ["value_kind", "fields", "name", "type"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["instanced_struct"]
+						},
+						"struct_type": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"size": {
+							"$ref": "#/$defs/UAssetInspectionNonNegativeInt"
+						},
+						"value": {
+							"anyOf": [
+								{
+									"$ref": "#/$defs/SavedPropertyValue"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"name": {
+							"type": "string"
+						},
+						"type": {
+							"type": "string"
+						}
+					},
+					"required": ["value_kind", "struct_type", "size", "value", "name", "type"],
+					"additionalProperties": false
+				},
 				{
 					"type": "object",
 					"properties": {
@@ -941,6 +1086,44 @@
 						"value",
 						"history",
 						"namespace",
+						"key",
+						"name",
+						"type"
+					],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["text"]
+						},
+						"value": {
+							"type": "string"
+						},
+						"history": {
+							"type": "string",
+							"enum": ["string_table"]
+						},
+						"table_id": {
+							"type": "string"
+						},
+						"key": {
+							"type": "string"
+						},
+						"name": {
+							"type": "string"
+						},
+						"type": {
+							"type": "string"
+						}
+					},
+					"required": [
+						"value_kind",
+						"value",
+						"history",
+						"table_id",
 						"key",
 						"name",
 						"type"
@@ -1471,7 +1654,10 @@
 							"enum": ["array", "set"]
 						},
 						"values": {
-							"$ref": "#/$defs/Arrays_"
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/SavedPropertyValue"
+							}
 						},
 						"name": {
 							"type": "string"
@@ -1564,8 +1750,989 @@
 				}
 			]
 		},
-		"SavedPropertyValue1": {
+		"SavedPropertyValue2": {
+			"$ref": "#/$defs/Union_"
+		},
+		"SavedProperty1": {
 			"anyOf": [
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["native_struct"]
+						},
+						"fields": {
+							"type": "array",
+							"items": {
+								"type": "object",
+								"properties": {
+									"name": {
+										"type": "string"
+									},
+									"value": {
+										"$ref": "#/$defs/SavedPropertyValue2"
+									}
+								},
+								"required": ["name", "value"],
+								"additionalProperties": false
+							}
+						},
+						"name": {
+							"type": "string"
+						},
+						"type": {
+							"type": "string"
+						}
+					},
+					"required": ["value_kind", "fields", "name", "type"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["instanced_struct"]
+						},
+						"struct_type": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"size": {
+							"$ref": "#/$defs/UAssetInspectionNonNegativeInt"
+						},
+						"value": {
+							"anyOf": [
+								{
+									"$ref": "#/$defs/SavedPropertyValue2"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"name": {
+							"type": "string"
+						},
+						"type": {
+							"type": "string"
+						}
+					},
+					"required": ["value_kind", "struct_type", "size", "value", "name", "type"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["bool"]
+						},
+						"value": {
+							"type": "boolean"
+						},
+						"name": {
+							"type": "string"
+						},
+						"type": {
+							"type": "string"
+						}
+					},
+					"required": ["value_kind", "value", "name", "type"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["int", "uint"]
+						},
+						"value": {
+							"anyOf": [
+								{
+									"type": "number"
+								},
+								{
+									"type": "string",
+									"enum": ["NaN"]
+								},
+								{
+									"type": "string",
+									"enum": ["Infinity"]
+								},
+								{
+									"type": "string",
+									"enum": ["-Infinity"]
+								}
+							]
+						},
+						"name": {
+							"type": "string"
+						},
+						"type": {
+							"type": "string"
+						}
+					},
+					"required": ["value_kind", "value", "name", "type"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["float", "double"]
+						},
+						"value": {
+							"anyOf": [
+								{
+									"anyOf": [
+										{
+											"type": "number"
+										},
+										{
+											"type": "string",
+											"enum": ["NaN"]
+										},
+										{
+											"type": "string",
+											"enum": ["Infinity"]
+										},
+										{
+											"type": "string",
+											"enum": ["-Infinity"]
+										}
+									]
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"name": {
+							"type": "string"
+						},
+						"type": {
+							"type": "string"
+						}
+					},
+					"required": ["value_kind", "value", "name", "type"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["name", "enum", "string", "guid", "soft_object_path"]
+						},
+						"value": {
+							"type": "string"
+						},
+						"name": {
+							"type": "string"
+						},
+						"type": {
+							"type": "string"
+						}
+					},
+					"required": ["value_kind", "value", "name", "type"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["text"]
+						},
+						"value": {
+							"type": "string"
+						},
+						"history": {
+							"type": "string",
+							"enum": ["none"]
+						},
+						"name": {
+							"type": "string"
+						},
+						"type": {
+							"type": "string"
+						}
+					},
+					"required": ["value_kind", "value", "history", "name", "type"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["text"]
+						},
+						"value": {
+							"type": "string"
+						},
+						"history": {
+							"type": "string",
+							"enum": ["base"]
+						},
+						"namespace": {
+							"type": "string"
+						},
+						"key": {
+							"type": "string"
+						},
+						"name": {
+							"type": "string"
+						},
+						"type": {
+							"type": "string"
+						}
+					},
+					"required": [
+						"value_kind",
+						"value",
+						"history",
+						"namespace",
+						"key",
+						"name",
+						"type"
+					],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["text"]
+						},
+						"value": {
+							"type": "string"
+						},
+						"history": {
+							"type": "string",
+							"enum": ["string_table"]
+						},
+						"table_id": {
+							"type": "string"
+						},
+						"key": {
+							"type": "string"
+						},
+						"name": {
+							"type": "string"
+						},
+						"type": {
+							"type": "string"
+						}
+					},
+					"required": [
+						"value_kind",
+						"value",
+						"history",
+						"table_id",
+						"key",
+						"name",
+						"type"
+					],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["object_ref"]
+						},
+						"value": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"name": {
+							"type": "string"
+						},
+						"type": {
+							"type": "string"
+						}
+					},
+					"required": ["value_kind", "value", "name", "type"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"row_name": {
+							"type": "string"
+						},
+						"table_object_path": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"value_kind": {
+							"type": "string",
+							"enum": ["data_table_row_handle"]
+						},
+						"name": {
+							"type": "string"
+						},
+						"type": {
+							"type": "string"
+						}
+					},
+					"required": ["row_name", "table_object_path", "value_kind", "name", "type"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["vector"]
+						},
+						"x": {
+							"anyOf": [
+								{
+									"anyOf": [
+										{
+											"type": "number"
+										},
+										{
+											"type": "string",
+											"enum": ["NaN"]
+										},
+										{
+											"type": "string",
+											"enum": ["Infinity"]
+										},
+										{
+											"type": "string",
+											"enum": ["-Infinity"]
+										}
+									]
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"y": {
+							"anyOf": [
+								{
+									"anyOf": [
+										{
+											"type": "number"
+										},
+										{
+											"type": "string",
+											"enum": ["NaN"]
+										},
+										{
+											"type": "string",
+											"enum": ["Infinity"]
+										},
+										{
+											"type": "string",
+											"enum": ["-Infinity"]
+										}
+									]
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"z": {
+							"anyOf": [
+								{
+									"anyOf": [
+										{
+											"type": "number"
+										},
+										{
+											"type": "string",
+											"enum": ["NaN"]
+										},
+										{
+											"type": "string",
+											"enum": ["Infinity"]
+										},
+										{
+											"type": "string",
+											"enum": ["-Infinity"]
+										}
+									]
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"name": {
+							"type": "string"
+						},
+						"type": {
+							"type": "string"
+						}
+					},
+					"required": ["value_kind", "x", "y", "z", "name", "type"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["int_point"]
+						},
+						"x": {
+							"anyOf": [
+								{
+									"type": "number"
+								},
+								{
+									"type": "string",
+									"enum": ["NaN"]
+								},
+								{
+									"type": "string",
+									"enum": ["Infinity"]
+								},
+								{
+									"type": "string",
+									"enum": ["-Infinity"]
+								}
+							]
+						},
+						"y": {
+							"anyOf": [
+								{
+									"type": "number"
+								},
+								{
+									"type": "string",
+									"enum": ["NaN"]
+								},
+								{
+									"type": "string",
+									"enum": ["Infinity"]
+								},
+								{
+									"type": "string",
+									"enum": ["-Infinity"]
+								}
+							]
+						},
+						"name": {
+							"type": "string"
+						},
+						"type": {
+							"type": "string"
+						}
+					},
+					"required": ["value_kind", "x", "y", "name", "type"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["rotator"]
+						},
+						"pitch": {
+							"anyOf": [
+								{
+									"anyOf": [
+										{
+											"type": "number"
+										},
+										{
+											"type": "string",
+											"enum": ["NaN"]
+										},
+										{
+											"type": "string",
+											"enum": ["Infinity"]
+										},
+										{
+											"type": "string",
+											"enum": ["-Infinity"]
+										}
+									]
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"yaw": {
+							"anyOf": [
+								{
+									"anyOf": [
+										{
+											"type": "number"
+										},
+										{
+											"type": "string",
+											"enum": ["NaN"]
+										},
+										{
+											"type": "string",
+											"enum": ["Infinity"]
+										},
+										{
+											"type": "string",
+											"enum": ["-Infinity"]
+										}
+									]
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"roll": {
+							"anyOf": [
+								{
+									"anyOf": [
+										{
+											"type": "number"
+										},
+										{
+											"type": "string",
+											"enum": ["NaN"]
+										},
+										{
+											"type": "string",
+											"enum": ["Infinity"]
+										},
+										{
+											"type": "string",
+											"enum": ["-Infinity"]
+										}
+									]
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"name": {
+							"type": "string"
+						},
+						"type": {
+							"type": "string"
+						}
+					},
+					"required": ["value_kind", "pitch", "yaw", "roll", "name", "type"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["color"]
+						},
+						"r": {
+							"anyOf": [
+								{
+									"type": "number"
+								},
+								{
+									"type": "string",
+									"enum": ["NaN"]
+								},
+								{
+									"type": "string",
+									"enum": ["Infinity"]
+								},
+								{
+									"type": "string",
+									"enum": ["-Infinity"]
+								}
+							]
+						},
+						"g": {
+							"anyOf": [
+								{
+									"type": "number"
+								},
+								{
+									"type": "string",
+									"enum": ["NaN"]
+								},
+								{
+									"type": "string",
+									"enum": ["Infinity"]
+								},
+								{
+									"type": "string",
+									"enum": ["-Infinity"]
+								}
+							]
+						},
+						"b": {
+							"anyOf": [
+								{
+									"type": "number"
+								},
+								{
+									"type": "string",
+									"enum": ["NaN"]
+								},
+								{
+									"type": "string",
+									"enum": ["Infinity"]
+								},
+								{
+									"type": "string",
+									"enum": ["-Infinity"]
+								}
+							]
+						},
+						"a": {
+							"anyOf": [
+								{
+									"type": "number"
+								},
+								{
+									"type": "string",
+									"enum": ["NaN"]
+								},
+								{
+									"type": "string",
+									"enum": ["Infinity"]
+								},
+								{
+									"type": "string",
+									"enum": ["-Infinity"]
+								}
+							]
+						},
+						"name": {
+							"type": "string"
+						},
+						"type": {
+							"type": "string"
+						}
+					},
+					"required": ["value_kind", "r", "g", "b", "a", "name", "type"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["linear_color"]
+						},
+						"r": {
+							"anyOf": [
+								{
+									"anyOf": [
+										{
+											"type": "number"
+										},
+										{
+											"type": "string",
+											"enum": ["NaN"]
+										},
+										{
+											"type": "string",
+											"enum": ["Infinity"]
+										},
+										{
+											"type": "string",
+											"enum": ["-Infinity"]
+										}
+									]
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"g": {
+							"anyOf": [
+								{
+									"anyOf": [
+										{
+											"type": "number"
+										},
+										{
+											"type": "string",
+											"enum": ["NaN"]
+										},
+										{
+											"type": "string",
+											"enum": ["Infinity"]
+										},
+										{
+											"type": "string",
+											"enum": ["-Infinity"]
+										}
+									]
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"b": {
+							"anyOf": [
+								{
+									"anyOf": [
+										{
+											"type": "number"
+										},
+										{
+											"type": "string",
+											"enum": ["NaN"]
+										},
+										{
+											"type": "string",
+											"enum": ["Infinity"]
+										},
+										{
+											"type": "string",
+											"enum": ["-Infinity"]
+										}
+									]
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"a": {
+							"anyOf": [
+								{
+									"anyOf": [
+										{
+											"type": "number"
+										},
+										{
+											"type": "string",
+											"enum": ["NaN"]
+										},
+										{
+											"type": "string",
+											"enum": ["Infinity"]
+										},
+										{
+											"type": "string",
+											"enum": ["-Infinity"]
+										}
+									]
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"name": {
+							"type": "string"
+						},
+						"type": {
+							"type": "string"
+						}
+					},
+					"required": ["value_kind", "r", "g", "b", "a", "name", "type"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["array", "set"]
+						},
+						"values": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/SavedPropertyValue2"
+							}
+						},
+						"name": {
+							"type": "string"
+						},
+						"type": {
+							"type": "string"
+						}
+					},
+					"required": ["value_kind", "values", "name", "type"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["map"]
+						},
+						"entries": {
+							"type": "array",
+							"items": {
+								"type": "object",
+								"properties": {
+									"key": {
+										"$ref": "#/$defs/SavedPropertyValue2"
+									},
+									"value": {
+										"$ref": "#/$defs/SavedPropertyValue2"
+									}
+								},
+								"required": ["key", "value"],
+								"additionalProperties": false
+							}
+						},
+						"name": {
+							"type": "string"
+						},
+						"type": {
+							"type": "string"
+						}
+					},
+					"required": ["value_kind", "entries", "name", "type"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["struct"]
+						},
+						"properties": {
+							"$ref": "#/$defs/Arrays_1"
+						},
+						"name": {
+							"type": "string"
+						},
+						"type": {
+							"type": "string"
+						}
+					},
+					"required": ["value_kind", "properties", "name", "type"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["raw"]
+						},
+						"reason": {
+							"type": "string"
+						},
+						"size": {
+							"$ref": "#/$defs/UAssetInspectionNonNegativeInt"
+						},
+						"name": {
+							"type": "string"
+						},
+						"type": {
+							"type": "string"
+						}
+					},
+					"required": ["value_kind", "reason", "size", "name", "type"],
+					"additionalProperties": false
+				}
+			]
+		},
+		"Arrays_1": {
+			"type": "array",
+			"items": {
+				"$ref": "#/$defs/SavedProperty1"
+			}
+		},
+		"Union_": {
+			"anyOf": [
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["native_struct"]
+						},
+						"fields": {
+							"type": "array",
+							"items": {
+								"type": "object",
+								"properties": {
+									"name": {
+										"type": "string"
+									},
+									"value": {
+										"$ref": "#/$defs/SavedPropertyValue2"
+									}
+								},
+								"required": ["name", "value"],
+								"additionalProperties": false
+							}
+						}
+					},
+					"required": ["value_kind", "fields"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["instanced_struct"]
+						},
+						"struct_type": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"size": {
+							"$ref": "#/$defs/UAssetInspectionNonNegativeInt"
+						},
+						"value": {
+							"anyOf": [
+								{
+									"$ref": "#/$defs/SavedPropertyValue2"
+								},
+								{
+									"type": "null"
+								}
+							]
+						}
+					},
+					"required": ["value_kind", "struct_type", "size", "value"],
+					"additionalProperties": false
+				},
 				{
 					"type": "object",
 					"properties": {
@@ -1701,6 +2868,30 @@
 						}
 					},
 					"required": ["value_kind", "value", "history", "namespace", "key"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["text"]
+						},
+						"value": {
+							"type": "string"
+						},
+						"history": {
+							"type": "string",
+							"enum": ["string_table"]
+						},
+						"table_id": {
+							"type": "string"
+						},
+						"key": {
+							"type": "string"
+						}
+					},
+					"required": ["value_kind", "value", "history", "table_id", "key"],
 					"additionalProperties": false
 				},
 				{
@@ -2185,7 +3376,10 @@
 							"enum": ["array", "set"]
 						},
 						"values": {
-							"$ref": "#/$defs/Arrays_1"
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/SavedPropertyValue2"
+							}
 						}
 					},
 					"required": ["value_kind", "values"],
@@ -2204,10 +3398,10 @@
 								"type": "object",
 								"properties": {
 									"key": {
-										"$ref": "#/$defs/SavedPropertyValue1"
+										"$ref": "#/$defs/SavedPropertyValue2"
 									},
 									"value": {
-										"$ref": "#/$defs/SavedPropertyValue1"
+										"$ref": "#/$defs/SavedPropertyValue2"
 									}
 								},
 								"required": ["key", "value"],
@@ -2226,10 +3420,7 @@
 							"enum": ["struct"]
 						},
 						"properties": {
-							"type": "array",
-							"items": {
-								"$ref": "#/$defs/SavedProperty1"
-							}
+							"$ref": "#/$defs/Arrays_1"
 						}
 					},
 					"required": ["value_kind", "properties"],
@@ -2254,811 +3445,8 @@
 				}
 			]
 		},
-		"Arrays_1": {
-			"type": "array",
-			"items": {
-				"$ref": "#/$defs/SavedPropertyValue1"
-			}
-		},
-		"SavedProperty1": {
-			"anyOf": [
-				{
-					"type": "object",
-					"properties": {
-						"value_kind": {
-							"type": "string",
-							"enum": ["bool"]
-						},
-						"value": {
-							"type": "boolean"
-						},
-						"name": {
-							"type": "string"
-						},
-						"type": {
-							"type": "string"
-						}
-					},
-					"required": ["value_kind", "value", "name", "type"],
-					"additionalProperties": false
-				},
-				{
-					"type": "object",
-					"properties": {
-						"value_kind": {
-							"type": "string",
-							"enum": ["int", "uint"]
-						},
-						"value": {
-							"anyOf": [
-								{
-									"type": "number"
-								},
-								{
-									"type": "string",
-									"enum": ["NaN"]
-								},
-								{
-									"type": "string",
-									"enum": ["Infinity"]
-								},
-								{
-									"type": "string",
-									"enum": ["-Infinity"]
-								}
-							]
-						},
-						"name": {
-							"type": "string"
-						},
-						"type": {
-							"type": "string"
-						}
-					},
-					"required": ["value_kind", "value", "name", "type"],
-					"additionalProperties": false
-				},
-				{
-					"type": "object",
-					"properties": {
-						"value_kind": {
-							"type": "string",
-							"enum": ["float", "double"]
-						},
-						"value": {
-							"anyOf": [
-								{
-									"anyOf": [
-										{
-											"type": "number"
-										},
-										{
-											"type": "string",
-											"enum": ["NaN"]
-										},
-										{
-											"type": "string",
-											"enum": ["Infinity"]
-										},
-										{
-											"type": "string",
-											"enum": ["-Infinity"]
-										}
-									]
-								},
-								{
-									"type": "null"
-								}
-							]
-						},
-						"name": {
-							"type": "string"
-						},
-						"type": {
-							"type": "string"
-						}
-					},
-					"required": ["value_kind", "value", "name", "type"],
-					"additionalProperties": false
-				},
-				{
-					"type": "object",
-					"properties": {
-						"value_kind": {
-							"type": "string",
-							"enum": ["name", "enum", "string", "guid", "soft_object_path"]
-						},
-						"value": {
-							"type": "string"
-						},
-						"name": {
-							"type": "string"
-						},
-						"type": {
-							"type": "string"
-						}
-					},
-					"required": ["value_kind", "value", "name", "type"],
-					"additionalProperties": false
-				},
-				{
-					"type": "object",
-					"properties": {
-						"value_kind": {
-							"type": "string",
-							"enum": ["text"]
-						},
-						"value": {
-							"type": "string"
-						},
-						"history": {
-							"type": "string",
-							"enum": ["none"]
-						},
-						"name": {
-							"type": "string"
-						},
-						"type": {
-							"type": "string"
-						}
-					},
-					"required": ["value_kind", "value", "history", "name", "type"],
-					"additionalProperties": false
-				},
-				{
-					"type": "object",
-					"properties": {
-						"value_kind": {
-							"type": "string",
-							"enum": ["text"]
-						},
-						"value": {
-							"type": "string"
-						},
-						"history": {
-							"type": "string",
-							"enum": ["base"]
-						},
-						"namespace": {
-							"type": "string"
-						},
-						"key": {
-							"type": "string"
-						},
-						"name": {
-							"type": "string"
-						},
-						"type": {
-							"type": "string"
-						}
-					},
-					"required": [
-						"value_kind",
-						"value",
-						"history",
-						"namespace",
-						"key",
-						"name",
-						"type"
-					],
-					"additionalProperties": false
-				},
-				{
-					"type": "object",
-					"properties": {
-						"value_kind": {
-							"type": "string",
-							"enum": ["object_ref"]
-						},
-						"value": {
-							"anyOf": [
-								{
-									"type": "string"
-								},
-								{
-									"type": "null"
-								}
-							]
-						},
-						"name": {
-							"type": "string"
-						},
-						"type": {
-							"type": "string"
-						}
-					},
-					"required": ["value_kind", "value", "name", "type"],
-					"additionalProperties": false
-				},
-				{
-					"type": "object",
-					"properties": {
-						"row_name": {
-							"type": "string"
-						},
-						"table_object_path": {
-							"anyOf": [
-								{
-									"type": "string"
-								},
-								{
-									"type": "null"
-								}
-							]
-						},
-						"value_kind": {
-							"type": "string",
-							"enum": ["data_table_row_handle"]
-						},
-						"name": {
-							"type": "string"
-						},
-						"type": {
-							"type": "string"
-						}
-					},
-					"required": ["row_name", "table_object_path", "value_kind", "name", "type"],
-					"additionalProperties": false
-				},
-				{
-					"type": "object",
-					"properties": {
-						"value_kind": {
-							"type": "string",
-							"enum": ["vector"]
-						},
-						"x": {
-							"anyOf": [
-								{
-									"anyOf": [
-										{
-											"type": "number"
-										},
-										{
-											"type": "string",
-											"enum": ["NaN"]
-										},
-										{
-											"type": "string",
-											"enum": ["Infinity"]
-										},
-										{
-											"type": "string",
-											"enum": ["-Infinity"]
-										}
-									]
-								},
-								{
-									"type": "null"
-								}
-							]
-						},
-						"y": {
-							"anyOf": [
-								{
-									"anyOf": [
-										{
-											"type": "number"
-										},
-										{
-											"type": "string",
-											"enum": ["NaN"]
-										},
-										{
-											"type": "string",
-											"enum": ["Infinity"]
-										},
-										{
-											"type": "string",
-											"enum": ["-Infinity"]
-										}
-									]
-								},
-								{
-									"type": "null"
-								}
-							]
-						},
-						"z": {
-							"anyOf": [
-								{
-									"anyOf": [
-										{
-											"type": "number"
-										},
-										{
-											"type": "string",
-											"enum": ["NaN"]
-										},
-										{
-											"type": "string",
-											"enum": ["Infinity"]
-										},
-										{
-											"type": "string",
-											"enum": ["-Infinity"]
-										}
-									]
-								},
-								{
-									"type": "null"
-								}
-							]
-						},
-						"name": {
-							"type": "string"
-						},
-						"type": {
-							"type": "string"
-						}
-					},
-					"required": ["value_kind", "x", "y", "z", "name", "type"],
-					"additionalProperties": false
-				},
-				{
-					"type": "object",
-					"properties": {
-						"value_kind": {
-							"type": "string",
-							"enum": ["int_point"]
-						},
-						"x": {
-							"anyOf": [
-								{
-									"type": "number"
-								},
-								{
-									"type": "string",
-									"enum": ["NaN"]
-								},
-								{
-									"type": "string",
-									"enum": ["Infinity"]
-								},
-								{
-									"type": "string",
-									"enum": ["-Infinity"]
-								}
-							]
-						},
-						"y": {
-							"anyOf": [
-								{
-									"type": "number"
-								},
-								{
-									"type": "string",
-									"enum": ["NaN"]
-								},
-								{
-									"type": "string",
-									"enum": ["Infinity"]
-								},
-								{
-									"type": "string",
-									"enum": ["-Infinity"]
-								}
-							]
-						},
-						"name": {
-							"type": "string"
-						},
-						"type": {
-							"type": "string"
-						}
-					},
-					"required": ["value_kind", "x", "y", "name", "type"],
-					"additionalProperties": false
-				},
-				{
-					"type": "object",
-					"properties": {
-						"value_kind": {
-							"type": "string",
-							"enum": ["rotator"]
-						},
-						"pitch": {
-							"anyOf": [
-								{
-									"anyOf": [
-										{
-											"type": "number"
-										},
-										{
-											"type": "string",
-											"enum": ["NaN"]
-										},
-										{
-											"type": "string",
-											"enum": ["Infinity"]
-										},
-										{
-											"type": "string",
-											"enum": ["-Infinity"]
-										}
-									]
-								},
-								{
-									"type": "null"
-								}
-							]
-						},
-						"yaw": {
-							"anyOf": [
-								{
-									"anyOf": [
-										{
-											"type": "number"
-										},
-										{
-											"type": "string",
-											"enum": ["NaN"]
-										},
-										{
-											"type": "string",
-											"enum": ["Infinity"]
-										},
-										{
-											"type": "string",
-											"enum": ["-Infinity"]
-										}
-									]
-								},
-								{
-									"type": "null"
-								}
-							]
-						},
-						"roll": {
-							"anyOf": [
-								{
-									"anyOf": [
-										{
-											"type": "number"
-										},
-										{
-											"type": "string",
-											"enum": ["NaN"]
-										},
-										{
-											"type": "string",
-											"enum": ["Infinity"]
-										},
-										{
-											"type": "string",
-											"enum": ["-Infinity"]
-										}
-									]
-								},
-								{
-									"type": "null"
-								}
-							]
-						},
-						"name": {
-							"type": "string"
-						},
-						"type": {
-							"type": "string"
-						}
-					},
-					"required": ["value_kind", "pitch", "yaw", "roll", "name", "type"],
-					"additionalProperties": false
-				},
-				{
-					"type": "object",
-					"properties": {
-						"value_kind": {
-							"type": "string",
-							"enum": ["color"]
-						},
-						"r": {
-							"anyOf": [
-								{
-									"type": "number"
-								},
-								{
-									"type": "string",
-									"enum": ["NaN"]
-								},
-								{
-									"type": "string",
-									"enum": ["Infinity"]
-								},
-								{
-									"type": "string",
-									"enum": ["-Infinity"]
-								}
-							]
-						},
-						"g": {
-							"anyOf": [
-								{
-									"type": "number"
-								},
-								{
-									"type": "string",
-									"enum": ["NaN"]
-								},
-								{
-									"type": "string",
-									"enum": ["Infinity"]
-								},
-								{
-									"type": "string",
-									"enum": ["-Infinity"]
-								}
-							]
-						},
-						"b": {
-							"anyOf": [
-								{
-									"type": "number"
-								},
-								{
-									"type": "string",
-									"enum": ["NaN"]
-								},
-								{
-									"type": "string",
-									"enum": ["Infinity"]
-								},
-								{
-									"type": "string",
-									"enum": ["-Infinity"]
-								}
-							]
-						},
-						"a": {
-							"anyOf": [
-								{
-									"type": "number"
-								},
-								{
-									"type": "string",
-									"enum": ["NaN"]
-								},
-								{
-									"type": "string",
-									"enum": ["Infinity"]
-								},
-								{
-									"type": "string",
-									"enum": ["-Infinity"]
-								}
-							]
-						},
-						"name": {
-							"type": "string"
-						},
-						"type": {
-							"type": "string"
-						}
-					},
-					"required": ["value_kind", "r", "g", "b", "a", "name", "type"],
-					"additionalProperties": false
-				},
-				{
-					"type": "object",
-					"properties": {
-						"value_kind": {
-							"type": "string",
-							"enum": ["linear_color"]
-						},
-						"r": {
-							"anyOf": [
-								{
-									"anyOf": [
-										{
-											"type": "number"
-										},
-										{
-											"type": "string",
-											"enum": ["NaN"]
-										},
-										{
-											"type": "string",
-											"enum": ["Infinity"]
-										},
-										{
-											"type": "string",
-											"enum": ["-Infinity"]
-										}
-									]
-								},
-								{
-									"type": "null"
-								}
-							]
-						},
-						"g": {
-							"anyOf": [
-								{
-									"anyOf": [
-										{
-											"type": "number"
-										},
-										{
-											"type": "string",
-											"enum": ["NaN"]
-										},
-										{
-											"type": "string",
-											"enum": ["Infinity"]
-										},
-										{
-											"type": "string",
-											"enum": ["-Infinity"]
-										}
-									]
-								},
-								{
-									"type": "null"
-								}
-							]
-						},
-						"b": {
-							"anyOf": [
-								{
-									"anyOf": [
-										{
-											"type": "number"
-										},
-										{
-											"type": "string",
-											"enum": ["NaN"]
-										},
-										{
-											"type": "string",
-											"enum": ["Infinity"]
-										},
-										{
-											"type": "string",
-											"enum": ["-Infinity"]
-										}
-									]
-								},
-								{
-									"type": "null"
-								}
-							]
-						},
-						"a": {
-							"anyOf": [
-								{
-									"anyOf": [
-										{
-											"type": "number"
-										},
-										{
-											"type": "string",
-											"enum": ["NaN"]
-										},
-										{
-											"type": "string",
-											"enum": ["Infinity"]
-										},
-										{
-											"type": "string",
-											"enum": ["-Infinity"]
-										}
-									]
-								},
-								{
-									"type": "null"
-								}
-							]
-						},
-						"name": {
-							"type": "string"
-						},
-						"type": {
-							"type": "string"
-						}
-					},
-					"required": ["value_kind", "r", "g", "b", "a", "name", "type"],
-					"additionalProperties": false
-				},
-				{
-					"type": "object",
-					"properties": {
-						"value_kind": {
-							"type": "string",
-							"enum": ["array", "set"]
-						},
-						"values": {
-							"$ref": "#/$defs/Arrays_1"
-						},
-						"name": {
-							"type": "string"
-						},
-						"type": {
-							"type": "string"
-						}
-					},
-					"required": ["value_kind", "values", "name", "type"],
-					"additionalProperties": false
-				},
-				{
-					"type": "object",
-					"properties": {
-						"value_kind": {
-							"type": "string",
-							"enum": ["map"]
-						},
-						"entries": {
-							"type": "array",
-							"items": {
-								"type": "object",
-								"properties": {
-									"key": {
-										"$ref": "#/$defs/SavedPropertyValue1"
-									},
-									"value": {
-										"$ref": "#/$defs/SavedPropertyValue1"
-									}
-								},
-								"required": ["key", "value"],
-								"additionalProperties": false
-							}
-						},
-						"name": {
-							"type": "string"
-						},
-						"type": {
-							"type": "string"
-						}
-					},
-					"required": ["value_kind", "entries", "name", "type"],
-					"additionalProperties": false
-				},
-				{
-					"type": "object",
-					"properties": {
-						"value_kind": {
-							"type": "string",
-							"enum": ["struct"]
-						},
-						"properties": {
-							"type": "array",
-							"items": {
-								"$ref": "#/$defs/SavedProperty1"
-							}
-						},
-						"name": {
-							"type": "string"
-						},
-						"type": {
-							"type": "string"
-						}
-					},
-					"required": ["value_kind", "properties", "name", "type"],
-					"additionalProperties": false
-				},
-				{
-					"type": "object",
-					"properties": {
-						"value_kind": {
-							"type": "string",
-							"enum": ["raw"]
-						},
-						"reason": {
-							"type": "string"
-						},
-						"size": {
-							"$ref": "#/$defs/UAssetInspectionNonNegativeInt"
-						},
-						"name": {
-							"type": "string"
-						},
-						"type": {
-							"type": "string"
-						}
-					},
-					"required": ["value_kind", "reason", "size", "name", "type"],
-					"additionalProperties": false
-				}
-			]
+		"SavedPropertyValue1": {
+			"$ref": "#/$defs/Union_"
 		},
 		"SavedAssetDecodeError": {
 			"type": "object",
@@ -3096,6 +3484,28 @@
 		"SavedAssetInspection": {
 			"type": "object",
 			"properties": {
+				"metadata": {
+					"type": "object",
+					"properties": {
+						"root": {
+							"type": "object",
+							"additionalProperties": {
+								"type": "string"
+							}
+						},
+						"objects": {
+							"type": "object",
+							"additionalProperties": {
+								"type": "object",
+								"additionalProperties": {
+									"type": "string"
+								}
+							}
+						}
+					},
+					"required": ["root", "objects"],
+					"additionalProperties": false
+				},
 				"schema_version": {
 					"type": "number",
 					"enum": [8]
@@ -3255,6 +3665,15 @@
 									},
 									"string_table_namespace": {
 										"type": "string"
+									},
+									"string_table_metadata": {
+										"type": "object",
+										"additionalProperties": {
+											"type": "object",
+											"additionalProperties": {
+												"type": "string"
+											}
+										}
 									},
 									"string_table_entries": {
 										"type": "array",
@@ -3464,6 +3883,12 @@
 									"kind": {
 										"type": "string",
 										"enum": ["Skeleton"]
+									},
+									"reference_pose": {
+										"$ref": "#/$defs/SavedPropertyValue1"
+									},
+									"tail_bytes": {
+										"$ref": "#/$defs/UAssetInspectionNonNegativeInt"
 									},
 									"object_path": {
 										"type": "string"
@@ -5409,6 +5834,23 @@
 								}
 							},
 							"required": ["status", "namespace", "key"],
+							"additionalProperties": false
+						},
+						{
+							"type": "object",
+							"properties": {
+								"status": {
+									"type": "string",
+									"enum": ["string_table"]
+								},
+								"table_id": {
+									"type": "string"
+								},
+								"key": {
+									"type": "string"
+								}
+							},
+							"required": ["status", "table_id", "key"],
 							"additionalProperties": false
 						},
 						{

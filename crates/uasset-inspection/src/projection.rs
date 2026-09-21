@@ -36,6 +36,7 @@ pub struct TextOccurrence {
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum TextIdentity {
     Resolved { namespace: String, key: String },
+    StringTable { table_id: String, key: String },
     Unresolved { reason: TextIdentityReason },
 }
 
@@ -312,6 +313,30 @@ fn visit_text_value<F>(
         PropertyValue::Struct(stream) => {
             visit_text_stream(package, stream, path, location, edit_capability, output)
         }
+        PropertyValue::NativeStruct { fields } => {
+            for field in fields {
+                visit_text_value(
+                    package,
+                    &field.value,
+                    &append_property_path(path, &field.name),
+                    location,
+                    TextEditCapability::ReadOnly,
+                    output,
+                );
+            }
+        }
+        PropertyValue::InstancedStruct {
+            value: Some(value), ..
+        } => {
+            visit_text_value(
+                package,
+                value,
+                &append_property_path(path, "Value"),
+                location,
+                TextEditCapability::ReadOnly,
+                output,
+            );
+        }
         _ => {}
     }
 }
@@ -329,6 +354,10 @@ fn identity_for_text(text: &TextValue) -> TextIdentity {
             key: key.clone(),
         },
         TextHistory::NamedFormat { format, .. } => identity_for_text(format),
+        TextHistory::StringTableEntry { table_id, key } => TextIdentity::StringTable {
+            table_id: table_id.clone(),
+            key: key.clone(),
+        },
     }
 }
 

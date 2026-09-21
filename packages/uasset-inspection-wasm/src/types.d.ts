@@ -13,6 +13,16 @@ export interface InspectionDecodeError {
 }
 
 export type InspectionValue =
+	| {
+			readonly value_kind: "native_struct";
+			readonly fields: readonly { readonly name: string; readonly value: InspectionValue }[];
+	  }
+	| {
+			readonly value_kind: "instanced_struct";
+			readonly struct_type: string | null;
+			readonly size: number;
+			readonly value: InspectionValue | null;
+	  }
 	| { readonly value_kind: "bool"; readonly value: boolean }
 	| { readonly value_kind: "int"; readonly value: number }
 	| { readonly value_kind: "uint"; readonly value: number }
@@ -25,8 +35,9 @@ export type InspectionValue =
 	| {
 			readonly value_kind: "text";
 			readonly value: string;
-			readonly history: "none" | "base";
+			readonly history: "none" | "base" | "string_table";
 			readonly namespace?: string;
+			readonly table_id?: string;
 			readonly key?: string;
 	  }
 	| { readonly value_kind: "vector"; readonly x: number; readonly y: number; readonly z: number }
@@ -74,6 +85,7 @@ export type InspectionProperty = InspectionValue & {
 };
 
 export interface InspectionAsset {
+	readonly reference_pose?: InspectionValue;
 	readonly kind: string;
 	readonly object_path: string;
 	readonly class_path?: string;
@@ -81,6 +93,7 @@ export interface InspectionAsset {
 	readonly row_struct?: string;
 	readonly parent_tables?: readonly string[];
 	readonly string_table_namespace?: string;
+	readonly string_table_metadata?: Readonly<Record<string, Readonly<Record<string, string>>>>;
 	readonly string_table_entries?: readonly { readonly key: string; readonly source: string }[];
 	readonly enum_cpp_form?: string;
 	readonly enum_entries?: readonly {
@@ -132,6 +145,10 @@ export interface InspectionPackage {
 }
 
 export interface InspectionSuccess {
+	readonly metadata?: {
+		readonly root: Readonly<Record<string, string>>;
+		readonly objects: Readonly<Record<string, Readonly<Record<string, string>>>>;
+	};
 	readonly schema_version: 8;
 	readonly status: "ok" | "partial";
 	readonly path: string;
@@ -156,6 +173,7 @@ export interface TextOccurrence {
 	readonly source: string;
 	readonly identity:
 		| { readonly status: "resolved"; readonly namespace: string; readonly key: string }
+		| { readonly status: "string_table"; readonly table_id: string; readonly key: string }
 		| { readonly status: "unresolved"; readonly reason: "culture_invariant" | "missing_key" };
 	readonly location:
 		| {

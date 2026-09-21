@@ -67,6 +67,7 @@ pub enum ArchiveErrorKind {
     OutOfBounds,
     InvalidSeek,
     InvalidCount,
+    InvalidBoolean,
     AllocationLimit,
     MissingNullTerminator,
     InvalidString,
@@ -403,6 +404,20 @@ impl<'a> Reader<'a> {
     #[inline]
     pub fn read_u32(&mut self, path: &(impl fmt::Display + ?Sized)) -> Result<u32, ArchiveError> {
         Ok(u32::from_le_bytes(self.read_array(path)?))
+    }
+
+    pub fn read_bool(&mut self, path: &(impl fmt::Display + ?Sized)) -> Result<bool, ArchiveError> {
+        let offset = self.tell();
+        match self.read_u32(path)? {
+            0 => Ok(false),
+            1 => Ok(true),
+            value => Err(ArchiveError::new(
+                ArchiveErrorKind::InvalidBoolean,
+                offset,
+                path,
+                format!("archive bool must be 0 or 1, got {value}"),
+            )),
+        }
     }
 
     pub fn read_i32(&mut self, path: &(impl fmt::Display + ?Sized)) -> Result<i32, ArchiveError> {

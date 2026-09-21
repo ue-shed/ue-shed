@@ -6,8 +6,11 @@
 pub mod archive;
 pub mod asset;
 pub mod codec;
+pub mod metadata;
+pub mod native;
 pub mod package;
 pub mod property;
+pub mod schema;
 pub mod version;
 
 #[cfg(test)]

@@ -708,7 +708,7 @@ fn project_text(text: &TextValue) -> Option<BlueprintText> {
         return None;
     }
     let (namespace, key) = match &text.history {
-        TextHistory::None => (None, None),
+        TextHistory::None | TextHistory::StringTableEntry { .. } => (None, None),
         TextHistory::Base { namespace, key } => (
             Some(namespace.clone()),
             (!key.is_empty()).then(|| key.clone()),
@@ -724,7 +724,7 @@ fn project_text(text: &TextValue) -> Option<BlueprintText> {
 
 fn text_identity_parts(text: &TextValue) -> (Option<String>, Option<String>) {
     match &text.history {
-        TextHistory::None => (None, None),
+        TextHistory::None | TextHistory::StringTableEntry { .. } => (None, None),
         TextHistory::Base { namespace, key } => (
             Some(namespace.clone()),
             (!key.is_empty()).then(|| key.clone()),

@@ -1,0 +1,2577 @@
+{
+	"schema_version": 9,
+	"engine_version": "5.7",
+	"classes": [
+		{
+			"path": "/Script/CoreUObject.Enum",
+			"cpp_name": "UEnum",
+			"super_path": "/Script/CoreUObject.Field",
+			"fields": [],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				},
+				{
+					"kind": "enum_data"
+				}
+			]
+		},
+		{
+			"path": "/Script/CoreUObject.Field",
+			"cpp_name": "UField",
+			"super_path": "/Script/CoreUObject.Object",
+			"fields": [
+				{
+					"name": "Next",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/CoreUObject.Field"
+					}
+				}
+			],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				}
+			]
+		},
+		{
+			"path": "/Script/CoreUObject.Object",
+			"cpp_name": "UObject",
+			"super_path": null,
+			"fields": [],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				}
+			]
+		},
+		{
+			"path": "/Script/CoreUObject.ScriptStruct",
+			"cpp_name": "UScriptStruct",
+			"super_path": "/Script/CoreUObject.Struct",
+			"fields": [],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				},
+				{
+					"kind": "struct_definition"
+				},
+				{
+					"kind": "struct_flags"
+				}
+			]
+		},
+		{
+			"path": "/Script/CoreUObject.Struct",
+			"cpp_name": "UStruct",
+			"super_path": "/Script/CoreUObject.Field",
+			"fields": [
+				{
+					"name": "SuperStruct",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/CoreUObject.Struct"
+					}
+				},
+				{
+					"name": "Children",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/CoreUObject.Field"
+					}
+				},
+				{
+					"name": "ScriptAndPropertyObjectReferences",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "object",
+							"class_path": "/Script/CoreUObject.Object"
+						}
+					}
+				},
+				{
+					"name": "PropertyWrappers",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "object",
+							"class_path": "/Script/CoreUObject.PropertyWrapper"
+						}
+					}
+				}
+			],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				},
+				{
+					"kind": "struct_definition"
+				}
+			]
+		},
+		{
+			"path": "/Script/CoreUObject.UserDefinedStruct",
+			"cpp_name": "UUserDefinedStruct",
+			"super_path": "/Script/CoreUObject.ScriptStruct",
+			"fields": [
+				{
+					"name": "PrimaryStruct",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/CoreUObject.UserDefinedStruct"
+					}
+				},
+				{
+					"name": "ErrorMessage",
+					"type": {
+						"kind": "string"
+					}
+				},
+				{
+					"name": "EditorData",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/CoreUObject.Object"
+					}
+				},
+				{
+					"name": "Status",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/CoreUObject.UserDefinedStructureStatus"
+					}
+				},
+				{
+					"name": "Guid",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/CoreUObject.Guid"
+					}
+				},
+				{
+					"name": "CachedCookedMetaDataPtr",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/CoreUObject.StructCookedMetaData"
+					}
+				}
+			],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				},
+				{
+					"kind": "struct_definition"
+				},
+				{
+					"kind": "struct_flags"
+				},
+				{
+					"kind": "struct_default_instance"
+				}
+			]
+		},
+		{
+			"path": "/Script/Engine.AnimSequence",
+			"cpp_name": "UAnimSequence",
+			"super_path": "/Script/Engine.AnimSequenceBase",
+			"fields": [
+				{
+					"name": "ImportFileFramerate",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "ImportResampleFramerate",
+					"type": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "NumFrames",
+					"type": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "NumberOfKeys",
+					"type": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "SamplingFrameRate",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.FrameRate"
+					}
+				},
+				{
+					"name": "RawDataGuid",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/CoreUObject.Guid"
+					}
+				},
+				{
+					"name": "AnimationTrackNames",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "name"
+						}
+					}
+				},
+				{
+					"name": "bAllowFrameStripping",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "CompressionErrorThresholdScale",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "BoneCompressionSettings",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.AnimBoneCompressionSettings"
+					}
+				},
+				{
+					"name": "CurveCompressionSettings",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.AnimCurveCompressionSettings"
+					}
+				},
+				{
+					"name": "VariableFrameStrippingSettings",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.VariableFrameStrippingSettings"
+					}
+				},
+				{
+					"name": "AdditiveAnimType",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/Engine.AdditiveAnimationType"
+					}
+				},
+				{
+					"name": "RefPoseType",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/Engine.AdditiveBasePoseType"
+					}
+				},
+				{
+					"name": "RefFrameIndex",
+					"type": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "RefPoseSeq",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.AnimSequence"
+					}
+				},
+				{
+					"name": "RetargetSource",
+					"type": {
+						"kind": "name"
+					}
+				},
+				{
+					"name": "RetargetSourceAsset",
+					"type": {
+						"kind": "soft_object",
+						"class_path": "/Script/Engine.SkeletalMesh"
+					}
+				},
+				{
+					"name": "RetargetSourceAssetReferencePose",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "struct",
+							"path": "/Script/CoreUObject.Transform"
+						}
+					}
+				},
+				{
+					"name": "Interpolation",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/Engine.AnimInterpolationType"
+					}
+				},
+				{
+					"name": "bEnableRootMotion",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "RootMotionRootLock",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/Engine.RootMotionRootLock::Type"
+					}
+				},
+				{
+					"name": "bForceRootLock",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bUseNormalizedRootMotionScale",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bRootMotionSettingsCopiedFromMontage",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "CompressCommandletVersion",
+					"type": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "bDoNotOverrideCompression",
+					"type": {
+						"kind": "uint32"
+					}
+				},
+				{
+					"name": "AssetImportData",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.AssetImportData"
+					}
+				},
+				{
+					"name": "SourceFilePath_DEPRECATED",
+					"type": {
+						"kind": "string"
+					}
+				},
+				{
+					"name": "SourceFileTimestamp_DEPRECATED",
+					"type": {
+						"kind": "string"
+					}
+				},
+				{
+					"name": "StripAnimDataOnDedicatedServer",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/Engine.StripAnimDataOnDedicatedServerSettings"
+					}
+				},
+				{
+					"name": "AuthoredSyncMarkers",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "struct",
+							"path": "/Script/Engine.AnimSyncMarker"
+						}
+					}
+				},
+				{
+					"name": "PlatformTargetFrameRate",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.PerPlatformFrameRate"
+					}
+				},
+				{
+					"name": "TargetFrameRate",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.FrameRate"
+					}
+				},
+				{
+					"name": "NumberOfSampledKeys",
+					"type": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "NumberOfSampledFrames",
+					"type": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "PerBoneCustomAttributeData",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "struct",
+							"path": "/Script/Engine.CustomAttributePerBoneData"
+						}
+					}
+				},
+				{
+					"name": "AttributeCurves",
+					"type": {
+						"kind": "map",
+						"key": {
+							"kind": "struct",
+							"path": "/Script/Engine.AnimationAttributeIdentifier"
+						},
+						"value": {
+							"kind": "struct",
+							"path": "/Script/Engine.AttributeCurve"
+						}
+					}
+				}
+			],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				},
+				{
+					"kind": "animation_skeleton_guid"
+				},
+				{
+					"kind": "anim_sequence_uncooked_data"
+				}
+			]
+		},
+		{
+			"path": "/Script/Engine.AnimSequenceBase",
+			"cpp_name": "UAnimSequenceBase",
+			"super_path": "/Script/Engine.AnimationAsset",
+			"fields": [
+				{
+					"name": "Notifies",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "struct",
+							"path": "/Script/Engine.AnimNotifyEvent"
+						}
+					}
+				},
+				{
+					"name": "SequenceLength",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "RawCurveData",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.RawCurveTracks"
+					}
+				},
+				{
+					"name": "RateScale",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "bLoop",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "AnimNotifyTracks",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "struct",
+							"path": "/Script/Engine.AnimNotifyTrack"
+						}
+					}
+				},
+				{
+					"name": "DataModel",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.AnimDataModel"
+					}
+				},
+				{
+					"name": "DataModelInterface",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.AnimationDataModel"
+					}
+				},
+				{
+					"name": "Controller",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.AnimationDataController"
+					}
+				}
+			],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				},
+				{
+					"kind": "animation_skeleton_guid"
+				}
+			]
+		},
+		{
+			"path": "/Script/Engine.AnimationAsset",
+			"cpp_name": "UAnimationAsset",
+			"super_path": "/Script/CoreUObject.Object",
+			"fields": [
+				{
+					"name": "Skeleton",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.Skeleton"
+					}
+				},
+				{
+					"name": "MetaData",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "object",
+							"class_path": "/Script/Engine.AnimMetaData"
+						}
+					}
+				},
+				{
+					"name": "ParentAsset",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.AnimationAsset"
+					}
+				},
+				{
+					"name": "ChildrenAssets",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "object",
+							"class_path": "/Script/Engine.AnimationAsset"
+						}
+					}
+				},
+				{
+					"name": "AssetMappingTable",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.AssetMappingTable"
+					}
+				},
+				{
+					"name": "AssetUserData",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "object",
+							"class_path": "/Script/Engine.AssetUserData"
+						}
+					}
+				},
+				{
+					"name": "ThumbnailInfo",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.ThumbnailInfo"
+					}
+				},
+				{
+					"name": "PreviewPoseAsset",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.PoseAsset"
+					}
+				},
+				{
+					"name": "PreviewSkeletalMesh",
+					"type": {
+						"kind": "soft_object",
+						"class_path": "/Script/Engine.SkeletalMesh"
+					}
+				}
+			],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				},
+				{
+					"kind": "animation_skeleton_guid"
+				}
+			]
+		},
+		{
+			"path": "/Script/Engine.CompositeDataTable",
+			"cpp_name": "UCompositeDataTable",
+			"super_path": "/Script/Engine.DataTable",
+			"fields": [
+				{
+					"name": "ParentTables",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "object",
+							"class_path": "/Script/Engine.DataTable"
+						}
+					}
+				},
+				{
+					"name": "OldParentTables",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "object",
+							"class_path": "/Script/Engine.DataTable"
+						}
+					}
+				}
+			],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				},
+				{
+					"kind": "data_table_rows",
+					"row_struct_property": "RowStruct"
+				}
+			]
+		},
+		{
+			"path": "/Script/Engine.CurveTable",
+			"cpp_name": "UCurveTable",
+			"super_path": "/Script/CoreUObject.Object",
+			"fields": [
+				{
+					"name": "AssetImportData",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.AssetImportData"
+					}
+				},
+				{
+					"name": "ImportPath_DEPRECATED",
+					"type": {
+						"kind": "string"
+					}
+				}
+			],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				},
+				{
+					"kind": "curve_table_rows"
+				}
+			]
+		},
+		{
+			"path": "/Script/Engine.DataAsset",
+			"cpp_name": "UDataAsset",
+			"super_path": "/Script/CoreUObject.Object",
+			"fields": [
+				{
+					"name": "NativeClass",
+					"type": {
+						"kind": "class",
+						"class_path": "/Script/Engine.DataAsset"
+					}
+				}
+			],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				}
+			]
+		},
+		{
+			"path": "/Script/Engine.DataTable",
+			"cpp_name": "UDataTable",
+			"super_path": "/Script/CoreUObject.Object",
+			"fields": [
+				{
+					"name": "RowStruct",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/CoreUObject.ScriptStruct"
+					}
+				},
+				{
+					"name": "bStripFromClientBuilds",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bIgnoreExtraFields",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bIgnoreMissingFields",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bPreserveExistingValues",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "ImportKeyField",
+					"type": {
+						"kind": "string"
+					}
+				},
+				{
+					"name": "AssetImportData",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.AssetImportData"
+					}
+				},
+				{
+					"name": "ImportPath_DEPRECATED",
+					"type": {
+						"kind": "string"
+					}
+				},
+				{
+					"name": "RowStructName_DEPRECATED",
+					"type": {
+						"kind": "name"
+					}
+				},
+				{
+					"name": "RowStructPathName",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/CoreUObject.TopLevelAssetPath"
+					}
+				},
+				{
+					"name": "RowsSerializedWithTags",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "uint8"
+						}
+					}
+				},
+				{
+					"name": "TemporarilyReferencedObjects",
+					"type": {
+						"kind": "set",
+						"inner": {
+							"kind": "object",
+							"class_path": "/Script/CoreUObject.Object"
+						}
+					}
+				}
+			],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				},
+				{
+					"kind": "data_table_rows",
+					"row_struct_property": "RowStruct"
+				}
+			]
+		},
+		{
+			"path": "/Script/Engine.PrimaryDataAsset",
+			"cpp_name": "UPrimaryDataAsset",
+			"super_path": "/Script/Engine.DataAsset",
+			"fields": [
+				{
+					"name": "AssetBundleData",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.AssetBundleData"
+					}
+				}
+			],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				}
+			]
+		},
+		{
+			"path": "/Script/Engine.Skeleton",
+			"cpp_name": "USkeleton",
+			"super_path": "/Script/CoreUObject.Object",
+			"fields": [
+				{
+					"name": "BoneTree",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "struct",
+							"path": "/Script/Engine.BoneNode"
+						}
+					}
+				},
+				{
+					"name": "RefLocalPoses_DEPRECATED",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "struct",
+							"path": "/Script/CoreUObject.Transform"
+						}
+					}
+				},
+				{
+					"name": "PreviewForwardAxis",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/CoreUObject.EAxis"
+					}
+				},
+				{
+					"name": "VirtualBoneGuid",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/CoreUObject.Guid"
+					}
+				},
+				{
+					"name": "VirtualBones",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "struct",
+							"path": "/Script/Engine.VirtualBone"
+						}
+					}
+				},
+				{
+					"name": "CompatibleSkeletons",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "soft_object",
+							"class_path": "/Script/Engine.Skeleton"
+						}
+					}
+				},
+				{
+					"name": "bUseRetargetModesFromCompatibleSkeleton",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "Sockets",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "object",
+							"class_path": "/Script/Engine.SkeletalMeshSocket"
+						}
+					}
+				},
+				{
+					"name": "SmartNames_DEPRECATED",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.SmartNameContainer"
+					}
+				},
+				{
+					"name": "BlendProfiles",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "object",
+							"class_path": "/Script/Engine.BlendProfile"
+						}
+					}
+				},
+				{
+					"name": "SlotGroups",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "struct",
+							"path": "/Script/Engine.AnimSlotGroup"
+						}
+					}
+				},
+				{
+					"name": "PreviewSkeletalMesh",
+					"type": {
+						"kind": "soft_object",
+						"class_path": "/Script/Engine.SkeletalMesh"
+					}
+				},
+				{
+					"name": "AdditionalPreviewSkeletalMeshes",
+					"type": {
+						"kind": "soft_object",
+						"class_path": "/Script/Engine.DataAsset"
+					}
+				},
+				{
+					"name": "AnimationNotifies",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "name"
+						}
+					}
+				},
+				{
+					"name": "PreviewAttachedAssetContainer",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.PreviewAssetAttachContainer"
+					}
+				},
+				{
+					"name": "AssetUserData",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "object",
+							"class_path": "/Script/Engine.AssetUserData"
+						}
+					}
+				},
+				{
+					"name": "AssetUserDataEditorOnly",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "object",
+							"class_path": "/Script/Engine.AssetUserData"
+						}
+					}
+				}
+			],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				},
+				{
+					"kind": "skeleton_reference_bones"
+				}
+			]
+		},
+		{
+			"path": "/Script/Engine.StreamableRenderAsset",
+			"cpp_name": "UStreamableRenderAsset",
+			"super_path": "/Script/CoreUObject.Object",
+			"fields": [
+				{
+					"name": "ForceMipLevelsToBeResidentTimestamp",
+					"type": {
+						"kind": "double"
+					}
+				},
+				{
+					"name": "NumCinematicMipLevels",
+					"type": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "NoRefStreamingLODBias",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.PerQualityLevelInt"
+					}
+				},
+				{
+					"name": "StreamingIndex",
+					"type": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "NeverStream",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bGlobalForceMipLevelsToBeResident",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bHasStreamingUpdatePending",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bForceMiplevelsToBeResident",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bIgnoreStreamingMipBias",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bMarkAsEditorStreamingPool",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bUseCinematicMipLevels",
+					"type": {
+						"kind": "bool"
+					}
+				}
+			],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				}
+			]
+		},
+		{
+			"path": "/Script/Engine.StringTable",
+			"cpp_name": "UStringTable",
+			"super_path": "/Script/CoreUObject.Object",
+			"fields": [],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				},
+				{
+					"kind": "string_table_data"
+				}
+			]
+		},
+		{
+			"path": "/Script/Engine.Texture",
+			"cpp_name": "UTexture",
+			"super_path": "/Script/Engine.StreamableRenderAsset",
+			"fields": [
+				{
+					"name": "Source",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.TextureSource"
+					}
+				},
+				{
+					"name": "LightingGuid",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/CoreUObject.Guid"
+					}
+				},
+				{
+					"name": "SourceFilePath_DEPRECATED",
+					"type": {
+						"kind": "string"
+					}
+				},
+				{
+					"name": "AssetImportData",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.AssetImportData"
+					}
+				},
+				{
+					"name": "AdjustBrightness",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "AdjustBrightnessCurve",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "AdjustVibrance",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "AdjustSaturation",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "AdjustRGBCurve",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "AdjustHue",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "AdjustMinAlpha",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "AdjustMaxAlpha",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "CompressionNoAlpha",
+					"type": {
+						"kind": "uint32"
+					}
+				},
+				{
+					"name": "CompressionForceAlpha",
+					"type": {
+						"kind": "uint32"
+					}
+				},
+				{
+					"name": "CompressionNone",
+					"type": {
+						"kind": "uint32"
+					}
+				},
+				{
+					"name": "CompressFinal",
+					"type": {
+						"kind": "uint32"
+					}
+				},
+				{
+					"name": "DeferCompression",
+					"type": {
+						"kind": "uint32"
+					}
+				},
+				{
+					"name": "LossyCompressionAmount",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/Engine.TextureLossyCompressionAmount"
+					}
+				},
+				{
+					"name": "OodleTextureSdkVersion",
+					"type": {
+						"kind": "name"
+					}
+				},
+				{
+					"name": "MaxTextureSize",
+					"type": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "CompressionQuality",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/Engine.TextureCompressionQuality"
+					}
+				},
+				{
+					"name": "CompressionCacheId",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/CoreUObject.Guid"
+					}
+				},
+				{
+					"name": "bDitherMipMapAlpha_DEPRECATED",
+					"type": {
+						"kind": "uint32"
+					}
+				},
+				{
+					"name": "bDoScaleMipsForAlphaCoverage",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "AlphaCoverageThresholds",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.Vector4"
+					}
+				},
+				{
+					"name": "bUseNewMipFilter",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bPreserveBorder",
+					"type": {
+						"kind": "uint32"
+					}
+				},
+				{
+					"name": "bFlipGreenChannel",
+					"type": {
+						"kind": "uint32"
+					}
+				},
+				{
+					"name": "PowerOfTwoMode",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/Engine.TexturePowerOfTwoSetting::Type"
+					}
+				},
+				{
+					"name": "PaddingColor",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.Color"
+					}
+				},
+				{
+					"name": "bPadWithBorderColor",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "ResizeDuringBuildX",
+					"type": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "ResizeDuringBuildY",
+					"type": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "bChromaKeyTexture",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "ChromaKeyThreshold",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "ChromaKeyColor",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.Color"
+					}
+				},
+				{
+					"name": "MipGenSettings",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/Engine.TextureMipGenSettings"
+					}
+				},
+				{
+					"name": "CompositeTexture",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.Texture"
+					}
+				},
+				{
+					"name": "CompositeTextureMode",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/Engine.CompositeTextureMode"
+					}
+				},
+				{
+					"name": "CompositePower",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "LayerFormatSettings",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "struct",
+							"path": "/Script/Engine.TextureFormatSettings"
+						}
+					}
+				},
+				{
+					"name": "LevelIndex",
+					"type": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "LODBias",
+					"type": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "CompressionSettings",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/Engine.TextureCompressionSettings"
+					}
+				},
+				{
+					"name": "Filter",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/Engine.TextureFilter"
+					}
+				},
+				{
+					"name": "MipLoadOptions",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/Engine.TextureMipLoadOptions"
+					}
+				},
+				{
+					"name": "VirtualTextureStreamingPriority",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/RenderCore.VTProducerPriority"
+					}
+				},
+				{
+					"name": "VirtualTexturePrefetchMips",
+					"type": {
+						"kind": "uint8"
+					}
+				},
+				{
+					"name": "CookPlatformTilingSettings",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/Engine.TextureCookPlatformTilingSettings"
+					}
+				},
+				{
+					"name": "bOodlePreserveExtremes",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "LODGroup",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/Engine.TextureGroup"
+					}
+				},
+				{
+					"name": "Downscale",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.PerPlatformFloat"
+					}
+				},
+				{
+					"name": "DownscaleOptions",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/Engine.TextureDownscaleOptions"
+					}
+				},
+				{
+					"name": "Availability",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/Engine.TextureAvailability"
+					}
+				},
+				{
+					"name": "SRGB",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bNormalizeNormals",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bUseLegacyGamma",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "SourceColorSettings",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.TextureSourceColorSettings"
+					}
+				},
+				{
+					"name": "bNoTiling",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "VirtualTextureStreaming",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bUseVirtualTextureStreamingPriority",
+					"type": {
+						"kind": "uint32"
+					}
+				},
+				{
+					"name": "CompressionYCoCg",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bNotOfflineProcessed",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bAsyncResourceReleaseHasBeenStarted",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "AssetUserData",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "object",
+							"class_path": "/Script/Engine.AssetUserData"
+						}
+					}
+				}
+			],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				}
+			]
+		},
+		{
+			"path": "/Script/Engine.Texture2D",
+			"cpp_name": "UTexture2D",
+			"super_path": "/Script/Engine.Texture",
+			"fields": [
+				{
+					"name": "FirstResourceMemMip",
+					"type": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "bTemporarilyDisableStreaming",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bHasBeenPaintedInEditor",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "AddressX",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/Engine.TextureAddress"
+					}
+				},
+				{
+					"name": "AddressY",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/Engine.TextureAddress"
+					}
+				},
+				{
+					"name": "ImportedSize",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/CoreUObject.IntPoint"
+					}
+				}
+			],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				}
+			]
+		},
+		{
+			"path": "/Script/Engine.UserDefinedEnum",
+			"cpp_name": "UUserDefinedEnum",
+			"super_path": "/Script/CoreUObject.Enum",
+			"fields": [
+				{
+					"name": "UniqueNameIndex",
+					"type": {
+						"kind": "uint32"
+					}
+				},
+				{
+					"name": "EnumDescription",
+					"type": {
+						"kind": "text"
+					}
+				},
+				{
+					"name": "DisplayNameMap",
+					"type": {
+						"kind": "map",
+						"key": {
+							"kind": "name"
+						},
+						"value": {
+							"kind": "text"
+						}
+					}
+				},
+				{
+					"name": "CachedCookedMetaDataPtr",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.EnumCookedMetaData"
+					}
+				}
+			],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				},
+				{
+					"kind": "enum_data"
+				}
+			]
+		},
+		{
+			"path": "/Script/UEShedFixture.UEShedFixtureTextAsset",
+			"cpp_name": "UUEShedFixtureTextAsset",
+			"super_path": "/Script/Engine.DataAsset",
+			"fields": [
+				{
+					"name": "SharedPrimary",
+					"type": {
+						"kind": "text"
+					}
+				},
+				{
+					"name": "SharedSecondary",
+					"type": {
+						"kind": "text"
+					}
+				},
+				{
+					"name": "EqualSourceFirst",
+					"type": {
+						"kind": "text"
+					}
+				},
+				{
+					"name": "EqualSourceSecond",
+					"type": {
+						"kind": "text"
+					}
+				},
+				{
+					"name": "StringTableReference",
+					"type": {
+						"kind": "text"
+					}
+				}
+			],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				}
+			]
+		}
+	],
+	"structs": [
+		{
+			"path": "/Script/Engine.CurveTableRowHandle",
+			"cpp_name": "FCurveTableRowHandle",
+			"super_path": null,
+			"fields": [
+				{
+					"name": "CurveTable",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.CurveTable"
+					}
+				},
+				{
+					"name": "RowName",
+					"type": {
+						"kind": "name"
+					}
+				}
+			]
+		},
+		{
+			"path": "/Script/Engine.DataTableCategoryHandle",
+			"cpp_name": "FDataTableCategoryHandle",
+			"super_path": null,
+			"fields": [
+				{
+					"name": "DataTable",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.DataTable"
+					}
+				},
+				{
+					"name": "ColumnName",
+					"type": {
+						"kind": "name"
+					}
+				},
+				{
+					"name": "RowContents",
+					"type": {
+						"kind": "name"
+					}
+				}
+			]
+		},
+		{
+			"path": "/Script/Engine.DataTableRowHandle",
+			"cpp_name": "FDataTableRowHandle",
+			"super_path": null,
+			"fields": [
+				{
+					"name": "DataTable",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.DataTable"
+					}
+				},
+				{
+					"name": "RowName",
+					"type": {
+						"kind": "name"
+					}
+				}
+			]
+		},
+		{
+			"path": "/Script/Engine.TableRowBase",
+			"cpp_name": "FTableRowBase",
+			"super_path": null,
+			"fields": []
+		},
+		{
+			"path": "/Script/UEShedFixture.UEShedFixtureAssetReferenceRow",
+			"cpp_name": "FUEShedFixtureAssetReferenceRow",
+			"super_path": "/Script/Engine.TableRowBase",
+			"fields": [
+				{
+					"name": "Asset",
+					"type": {
+						"kind": "soft_object",
+						"class_path": "/Script/CoreUObject.Object"
+					}
+				}
+			]
+		},
+		{
+			"path": "/Script/UEShedFixture.UEShedFixtureContainerRow",
+			"cpp_name": "FUEShedFixtureContainerRow",
+			"super_path": "/Script/Engine.TableRowBase",
+			"fields": [
+				{
+					"name": "Sequence",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "int32"
+						}
+					}
+				},
+				{
+					"name": "Labels",
+					"type": {
+						"kind": "set",
+						"inner": {
+							"kind": "name"
+						}
+					}
+				},
+				{
+					"name": "Weights",
+					"type": {
+						"kind": "map",
+						"key": {
+							"kind": "name"
+						},
+						"value": {
+							"kind": "int32"
+						}
+					}
+				}
+			]
+		},
+		{
+			"path": "/Script/UEShedFixture.UEShedFixtureEnumRow",
+			"cpp_name": "FUEShedFixtureEnumRow",
+			"super_path": "/Script/Engine.TableRowBase",
+			"fields": [
+				{
+					"name": "Rarity",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/UEShedFixture.UEShedFixtureRarity"
+					}
+				}
+			]
+		},
+		{
+			"path": "/Script/UEShedFixture.UEShedFixtureLeftReferenceRow",
+			"cpp_name": "FUEShedFixtureLeftReferenceRow",
+			"super_path": "/Script/Engine.TableRowBase",
+			"fields": [
+				{
+					"name": "Target",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.DataTableRowHandle"
+					}
+				}
+			]
+		},
+		{
+			"path": "/Script/UEShedFixture.UEShedFixtureNestedValue",
+			"cpp_name": "FUEShedFixtureNestedValue",
+			"super_path": null,
+			"fields": [
+				{
+					"name": "Count",
+					"type": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "Label",
+					"type": {
+						"kind": "string"
+					}
+				},
+				{
+					"name": "Offset",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/CoreUObject.Vector"
+					}
+				}
+			]
+		},
+		{
+			"path": "/Script/UEShedFixture.UEShedFixtureOpaqueRow",
+			"cpp_name": "FUEShedFixtureOpaqueRow",
+			"super_path": "/Script/Engine.TableRowBase",
+			"fields": [
+				{
+					"name": "OpaqueValue",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/CoreUObject.IntPoint"
+					}
+				}
+			]
+		},
+		{
+			"path": "/Script/UEShedFixture.UEShedFixtureRightReferenceRow",
+			"cpp_name": "FUEShedFixtureRightReferenceRow",
+			"super_path": "/Script/Engine.TableRowBase",
+			"fields": [
+				{
+					"name": "Description",
+					"type": {
+						"kind": "string"
+					}
+				}
+			]
+		},
+		{
+			"path": "/Script/UEShedFixture.UEShedFixtureScalarsRow",
+			"cpp_name": "FUEShedFixtureScalarsRow",
+			"super_path": "/Script/Engine.TableRowBase",
+			"fields": [
+				{
+					"name": "Enabled",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "Count",
+					"type": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "Ratio",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "Key",
+					"type": {
+						"kind": "name"
+					}
+				},
+				{
+					"name": "Notes",
+					"type": {
+						"kind": "string"
+					}
+				}
+			]
+		},
+		{
+			"path": "/Script/UEShedFixture.UEShedFixtureStructRow",
+			"cpp_name": "FUEShedFixtureStructRow",
+			"super_path": "/Script/Engine.TableRowBase",
+			"fields": [
+				{
+					"name": "Nested",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/UEShedFixture.UEShedFixtureNestedValue"
+					}
+				},
+				{
+					"name": "Label",
+					"type": {
+						"kind": "string"
+					}
+				}
+			]
+		},
+		{
+			"path": "/Script/UEShedFixture.UEShedFixtureTextRow",
+			"cpp_name": "FUEShedFixtureTextRow",
+			"super_path": "/Script/Engine.TableRowBase",
+			"fields": [
+				{
+					"name": "DisplayName",
+					"type": {
+						"kind": "text"
+					}
+				}
+			]
+		}
+	],
+	"native_layouts": {
+		"FInstancedStructHeader": {
+			"kind": "record",
+			"fields": [
+				{
+					"name": "StructType",
+					"layout": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "SerialSize",
+					"layout": {
+						"kind": "int32"
+					}
+				}
+			]
+		},
+		"FMovieSceneDoubleChannel": {
+			"kind": "record",
+			"fields": [
+				{
+					"name": "PreInfinityExtrap",
+					"layout": {
+						"kind": "u_int8"
+					}
+				},
+				{
+					"name": "PostInfinityExtrap",
+					"layout": {
+						"kind": "u_int8"
+					}
+				},
+				{
+					"name": "Times",
+					"layout": {
+						"kind": "sized_array",
+						"stride": 4,
+						"element": {
+							"kind": "int32"
+						}
+					}
+				},
+				{
+					"name": "Values",
+					"layout": {
+						"kind": "sized_array",
+						"stride": 32,
+						"element": {
+							"kind": "record",
+							"fields": [
+								{
+									"name": "Value",
+									"layout": {
+										"kind": "double"
+									}
+								},
+								{
+									"name": "ArriveTangent",
+									"layout": {
+										"kind": "float"
+									}
+								},
+								{
+									"name": "LeaveTangent",
+									"layout": {
+										"kind": "float"
+									}
+								},
+								{
+									"name": "ArriveTangentWeight",
+									"layout": {
+										"kind": "float"
+									}
+								},
+								{
+									"name": "LeaveTangentWeight",
+									"layout": {
+										"kind": "float"
+									}
+								},
+								{
+									"name": "TangentWeightMode",
+									"layout": {
+										"kind": "u_int8"
+									}
+								},
+								{
+									"name": "TangentPadding",
+									"layout": {
+										"kind": "padding",
+										"bytes": 3
+									}
+								},
+								{
+									"name": "InterpMode",
+									"layout": {
+										"kind": "u_int8"
+									}
+								},
+								{
+									"name": "TangentMode",
+									"layout": {
+										"kind": "u_int8"
+									}
+								},
+								{
+									"name": "ValuePadding",
+									"layout": {
+										"kind": "padding",
+										"bytes": 2
+									}
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "DefaultValue",
+					"layout": {
+						"kind": "double"
+					}
+				},
+				{
+					"name": "HasDefaultValue",
+					"layout": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "TickNumerator",
+					"layout": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "TickDenominator",
+					"layout": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "ShowCurve",
+					"layout": {
+						"kind": "bool"
+					}
+				}
+			]
+		},
+		"FMovieSceneFloatChannel": {
+			"kind": "record",
+			"fields": [
+				{
+					"name": "PreInfinityExtrap",
+					"layout": {
+						"kind": "u_int8"
+					}
+				},
+				{
+					"name": "PostInfinityExtrap",
+					"layout": {
+						"kind": "u_int8"
+					}
+				},
+				{
+					"name": "Times",
+					"layout": {
+						"kind": "sized_array",
+						"stride": 4,
+						"element": {
+							"kind": "int32"
+						}
+					}
+				},
+				{
+					"name": "Values",
+					"layout": {
+						"kind": "sized_array",
+						"stride": 28,
+						"element": {
+							"kind": "record",
+							"fields": [
+								{
+									"name": "Value",
+									"layout": {
+										"kind": "float"
+									}
+								},
+								{
+									"name": "ArriveTangent",
+									"layout": {
+										"kind": "float"
+									}
+								},
+								{
+									"name": "LeaveTangent",
+									"layout": {
+										"kind": "float"
+									}
+								},
+								{
+									"name": "ArriveTangentWeight",
+									"layout": {
+										"kind": "float"
+									}
+								},
+								{
+									"name": "LeaveTangentWeight",
+									"layout": {
+										"kind": "float"
+									}
+								},
+								{
+									"name": "TangentWeightMode",
+									"layout": {
+										"kind": "u_int8"
+									}
+								},
+								{
+									"name": "TangentPadding",
+									"layout": {
+										"kind": "padding",
+										"bytes": 3
+									}
+								},
+								{
+									"name": "InterpMode",
+									"layout": {
+										"kind": "u_int8"
+									}
+								},
+								{
+									"name": "TangentMode",
+									"layout": {
+										"kind": "u_int8"
+									}
+								},
+								{
+									"name": "ValuePadding",
+									"layout": {
+										"kind": "padding",
+										"bytes": 2
+									}
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "DefaultValue",
+					"layout": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "HasDefaultValue",
+					"layout": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "TickNumerator",
+					"layout": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "TickDenominator",
+					"layout": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "ShowCurve",
+					"layout": {
+						"kind": "bool"
+					}
+				}
+			]
+		},
+		"FNameStringMap": {
+			"kind": "map",
+			"key": {
+				"kind": "name"
+			},
+			"value": {
+				"kind": "string"
+			}
+		},
+		"FNameStringPair": {
+			"kind": "record",
+			"fields": [
+				{
+					"name": "Name",
+					"layout": {
+						"kind": "name"
+					}
+				},
+				{
+					"name": "Value",
+					"layout": {
+						"kind": "string"
+					}
+				}
+			]
+		},
+		"FPackageMetaDataHeader": {
+			"kind": "record",
+			"fields": [
+				{
+					"name": "ObjectCount",
+					"layout": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "RootCount",
+					"layout": {
+						"kind": "int32"
+					}
+				}
+			]
+		},
+		"FReferenceSkeletonPose": {
+			"kind": "record",
+			"fields": [
+				{
+					"name": "Poses",
+					"layout": {
+						"kind": "array",
+						"element": {
+							"kind": "record",
+							"fields": [
+								{
+									"name": "Rotation",
+									"layout": {
+										"kind": "record",
+										"fields": [
+											{
+												"name": "X",
+												"layout": {
+													"kind": "double"
+												}
+											},
+											{
+												"name": "Y",
+												"layout": {
+													"kind": "double"
+												}
+											},
+											{
+												"name": "Z",
+												"layout": {
+													"kind": "double"
+												}
+											},
+											{
+												"name": "W",
+												"layout": {
+													"kind": "double"
+												}
+											}
+										]
+									}
+								},
+								{
+									"name": "Translation",
+									"layout": {
+										"kind": "record",
+										"fields": [
+											{
+												"name": "X",
+												"layout": {
+													"kind": "double"
+												}
+											},
+											{
+												"name": "Y",
+												"layout": {
+													"kind": "double"
+												}
+											},
+											{
+												"name": "Z",
+												"layout": {
+													"kind": "double"
+												}
+											}
+										]
+									}
+								},
+								{
+									"name": "Scale3D",
+									"layout": {
+										"kind": "record",
+										"fields": [
+											{
+												"name": "X",
+												"layout": {
+													"kind": "double"
+												}
+											},
+											{
+												"name": "Y",
+												"layout": {
+													"kind": "double"
+												}
+											},
+											{
+												"name": "Z",
+												"layout": {
+													"kind": "double"
+												}
+											}
+										]
+									}
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "NameToIndex",
+					"layout": {
+						"kind": "map",
+						"key": {
+							"kind": "name"
+						},
+						"value": {
+							"kind": "int32"
+						}
+					}
+				}
+			]
+		},
+		"FRichCurveKey": {
+			"kind": "record",
+			"fields": [
+				{
+					"name": "InterpMode",
+					"layout": {
+						"kind": "u_int8"
+					}
+				},
+				{
+					"name": "TangentMode",
+					"layout": {
+						"kind": "u_int8"
+					}
+				},
+				{
+					"name": "TangentWeightMode",
+					"layout": {
+						"kind": "u_int8"
+					}
+				},
+				{
+					"name": "Time",
+					"layout": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "Value",
+					"layout": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "ArriveTangent",
+					"layout": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "ArriveTangentWeight",
+					"layout": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "LeaveTangent",
+					"layout": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "LeaveTangentWeight",
+					"layout": {
+						"kind": "float"
+					}
+				}
+			]
+		},
+		"FStringTable": {
+			"kind": "record",
+			"fields": [
+				{
+					"name": "Namespace",
+					"layout": {
+						"kind": "string"
+					}
+				},
+				{
+					"name": "Entries",
+					"layout": {
+						"kind": "array",
+						"element": {
+							"kind": "record",
+							"fields": [
+								{
+									"name": "Key",
+									"layout": {
+										"kind": "string"
+									}
+								},
+								{
+									"name": "SourceString",
+									"layout": {
+										"kind": "string"
+									}
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "MetaData",
+					"layout": {
+						"kind": "map",
+						"key": {
+							"kind": "string"
+						},
+						"value": {
+							"kind": "map",
+							"key": {
+								"kind": "name"
+							},
+							"value": {
+								"kind": "string"
+							}
+						}
+					}
+				}
+			]
+		},
+		"UEnum": {
+			"kind": "record",
+			"fields": [
+				{
+					"name": "Names",
+					"layout": {
+						"kind": "array",
+						"element": {
+							"kind": "record",
+							"fields": [
+								{
+									"name": "Name",
+									"layout": {
+										"kind": "name"
+									}
+								},
+								{
+									"name": "Value",
+									"layout": {
+										"kind": "int64"
+									}
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "CppForm",
+					"layout": {
+						"kind": "u_int8"
+					}
+				}
+			]
+		}
+	}
+}

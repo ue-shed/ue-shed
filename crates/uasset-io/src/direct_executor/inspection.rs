@@ -10,6 +10,7 @@ use uasset_parser::package::{ObjectPath, PackageErrorKind, PackageIndex};
 use uasset_parser::property::{
     PropertyRecord, PropertyStream, PropertyValue, RawReason, TextHistory as ParserTextHistory,
 };
+use uasset_parser::schema::embedded_source_model;
 
 use super::{Failure, checkpoint};
 use crate::cancellation::CancellationToken;
@@ -47,6 +48,7 @@ pub(super) fn inspect_bytes(
     let context = AssetDecodeContext {
         source: bytes,
         package: &package,
+        schemas: embedded_source_model(),
     };
     for export in &package.exports {
         match decode_export(export, &context) {
@@ -62,6 +64,26 @@ pub(super) fn inspect_bytes(
     }
     checkpoint(cancellation, "inspection")?;
 
+    let metadata = match package.read_metadata(bytes) {
+        Ok(metadata) => metadata.filter(|data| !data.root.is_empty() || !data.objects.is_empty()),
+        Err(error) => {
+            decode_errors.push(SavedAssetDecodeError {
+                object_path: package.summary.package_name.clone(),
+                class_path: None,
+                kind: asset_error_kind(match error.kind() {
+                    uasset_parser::package::PackageErrorKind::ResourceLimit => {
+                        uasset_parser::asset::AssetErrorKind::ResourceLimit
+                    }
+                    uasset_parser::package::PackageErrorKind::MalformedData => {
+                        uasset_parser::asset::AssetErrorKind::MalformedData
+                    }
+                    _ => uasset_parser::asset::AssetErrorKind::UnsupportedCapability,
+                }),
+                message: error.to_string(),
+            });
+            None
+        }
+    };
     let partial = !decode_errors.is_empty();
     Ok((
         SavedAssetInspection {
@@ -86,6 +108,7 @@ pub(super) fn inspect_bytes(
                 total_header_size: u64::from(package.summary.total_header_size),
             },
             assets,
+            metadata,
             decode_errors,
         },
         partial,
@@ -159,6 +182,7 @@ fn saved_asset(package: &Package, decoded: DecodedAsset) -> SavedAsset {
         DecodedAsset::StringTable(table) => SavedAsset::StringTable {
             object_path: table.object_path.into_string(),
             string_table_namespace: table.namespace,
+            string_table_metadata: table.metadata,
             string_table_entries: table
                 .entries
                 .into_iter()
@@ -216,6 +240,10 @@ fn saved_asset(package: &Package, decoded: DecodedAsset) -> SavedAsset {
             class_path: SKELETON_CLASS.to_owned(),
             object_guid: skeleton.object_guid.map(|guid| guid.to_string()),
             properties: saved_properties(package, skeleton.properties),
+            reference_pose: skeleton
+                .reference_pose
+                .map(|value| saved_value(package, value)),
+            tail_bytes: (!skeleton.tail.is_empty()).then_some(skeleton.tail.len()),
             bones: skeleton
                 .bones
                 .into_iter()
@@ -308,20 +336,30 @@ fn saved_value(package: &Package, value: PropertyValue) -> SavedPropertyValue {
                 value: text.source,
                 history: TextHistory::None,
                 namespace: None,
+                table_id: None,
                 key: None,
             },
             ParserTextHistory::Base { namespace, key } => SavedPropertyValue::Text {
                 value: text.source,
                 history: TextHistory::Base,
                 namespace: Some(namespace),
+                table_id: None,
+                key: Some(key),
+            },
+            ParserTextHistory::StringTableEntry { table_id, key } => SavedPropertyValue::Text {
+                value: text.source,
+                history: TextHistory::StringTableEntry,
+                namespace: None,
+                table_id: Some(table_id),
                 key: Some(key),
             },
             ParserTextHistory::NamedFormat { format, .. } => {
-                let (history, namespace, key) = text_identity_parts(*format);
+                let (history, namespace, table_id, key) = text_identity_parts(*format);
                 SavedPropertyValue::Text {
                     value: text.source,
                     history,
                     namespace,
+                    table_id,
                     key,
                 }
             }
@@ -392,6 +430,30 @@ fn saved_value(package: &Package, value: PropertyValue) -> SavedPropertyValue {
                 })
                 .collect(),
         },
+        PropertyValue::NativeStruct { fields } => SavedPropertyValue::NativeStruct {
+            fields: fields
+                .into_iter()
+                .map(|field| crate::protocol_result::SavedNativeField {
+                    name: field.name,
+                    value: saved_value(package, field.value),
+                })
+                .collect(),
+        },
+        PropertyValue::InstancedStruct {
+            struct_type,
+            payload,
+            value,
+        } => SavedPropertyValue::InstancedStruct {
+            struct_type: resolve_object(package, struct_type),
+            size: payload.len(),
+            value: value.map(|value| {
+                let mut output = saved_value(package, *value);
+                if let SavedPropertyValue::Raw { size, .. } = &mut output {
+                    *size = payload.len();
+                }
+                Box::new(output)
+            }),
+        },
         PropertyValue::Struct(properties) => SavedPropertyValue::Struct {
             properties: saved_properties(package, properties),
         },
@@ -407,11 +469,17 @@ fn saved_value(package: &Package, value: PropertyValue) -> SavedPropertyValue {
 
 fn text_identity_parts(
     text: uasset_parser::property::TextValue,
-) -> (TextHistory, Option<String>, Option<String>) {
+) -> (TextHistory, Option<String>, Option<String>, Option<String>) {
     match text.history {
-        ParserTextHistory::None => (TextHistory::None, None, None),
+        ParserTextHistory::None => (TextHistory::None, None, None, None),
+        ParserTextHistory::StringTableEntry { table_id, key } => (
+            TextHistory::StringTableEntry,
+            None,
+            Some(table_id),
+            Some(key),
+        ),
         ParserTextHistory::Base { namespace, key } => {
-            (TextHistory::Base, Some(namespace), Some(key))
+            (TextHistory::Base, Some(namespace), None, Some(key))
         }
         ParserTextHistory::NamedFormat { format, .. } => text_identity_parts(*format),
     }
@@ -488,6 +556,42 @@ mod tests {
     use crate::protocol_adapter::adapt_inspection;
 
     const PARITY_FIXTURES: &[(&str, &[u8])] = &[
+        (
+            "Content/Fixture/ParserNative/CF_Native.uasset",
+            include_bytes!(
+                "../../../../fixtures/unreal-project/Content/Fixture/ParserNative/CF_Native.uasset"
+            ),
+        ),
+        (
+            "Content/Fixture/ParserNative/CV_Native.uasset",
+            include_bytes!(
+                "../../../../fixtures/unreal-project/Content/Fixture/ParserNative/CV_Native.uasset"
+            ),
+        ),
+        (
+            "Content/Fixture/ParserNative/CC_Native.uasset",
+            include_bytes!(
+                "../../../../fixtures/unreal-project/Content/Fixture/ParserNative/CC_Native.uasset"
+            ),
+        ),
+        (
+            "Content/Fixture/ParserNative/SK_Native.uasset",
+            include_bytes!(
+                "../../../../fixtures/unreal-project/Content/Fixture/ParserNative/SK_Native.uasset"
+            ),
+        ),
+        (
+            "Content/Fixture/ParserNative/DA_Native.uasset",
+            include_bytes!(
+                "../../../../fixtures/unreal-project/Content/Fixture/ParserNative/DA_Native.uasset"
+            ),
+        ),
+        (
+            "Content/Fixture/ParserNative/LS_Numeric.uasset",
+            include_bytes!(
+                "../../../../fixtures/unreal-project/Content/Fixture/ParserNative/LS_Numeric.uasset"
+            ),
+        ),
         (
             "Content/Fixture/Authoring/DT_Scalars.uasset",
             include_bytes!(

@@ -532,6 +532,9 @@ fn authoring_value(value: &SavedPropertyValue) -> (AuthoringValue, bool) {
                 r_partial || g_partial || b_partial || a_partial,
             )
         }
+        SavedPropertyValue::NativeStruct { .. } | SavedPropertyValue::InstancedStruct { .. } => (
+            AuthoringValue::Unsupported { reason: "saved native value is available in inspection; authoring projection is not defined".into(), byte_size: 0 }, true
+        ),
         SavedPropertyValue::Raw { reason, size } => (
             AuthoringValue::Unsupported {
                 reason: reason.clone(),

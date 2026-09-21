@@ -153,7 +153,7 @@ async function verifyFunctionalHost(remoteControlEndpoint: string) {
 
 	try {
 		let catalog: HostResponse | undefined;
-		for (let attempt = 0; attempt < 100; attempt += 1) {
+		for (let attempt = 0; attempt < 300; attempt += 1) {
 			try {
 				catalog = await post({ operation: "load_configured_catalog" });
 				break;

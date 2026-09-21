@@ -57,6 +57,93 @@ const inspection: SavedAssetInspection = {
 };
 
 describe("game text corpus", () => {
+	it("retains unsupported text coverage inside an instanced value", () => {
+		const nested: SavedAssetInspection = {
+			...inspection,
+			assets: [
+				{
+					kind: "UObject",
+					object_path: "/Game/Text.Asset",
+					class_path: "/Script/Test.Asset",
+					properties: [
+						{
+							name: "Nested",
+							type: "StructProperty",
+							value_kind: "instanced_struct",
+							struct_type: "/Script/Test.Inner",
+							size: 32,
+							value: {
+								value_kind: "struct",
+								properties: [
+									{
+										name: "Label",
+										type: "TextProperty",
+										value_kind: "raw",
+										reason: "unsupported text history",
+										size: 8
+									}
+								]
+							}
+						}
+					]
+				}
+			]
+		};
+		const corpus = buildTextCorpus([
+			{ status: "inspected", packageFile: nested.path, inspection: nested }
+		]);
+		expect(corpus.coverage.unsupportedTextProperties).toBe(1);
+	});
+	it("finds text inside native and instanced values without offering unsupported edits", () => {
+		const nested: SavedAssetInspection = {
+			...inspection,
+			assets: [
+				{
+					kind: "DataTable",
+					object_path: "/Game/Text.DT_Text",
+					row_struct: "/Script/Test.Row",
+					row_count: 1,
+					rows: [
+						{
+							name: "Row",
+							properties: [
+								{
+									name: "Nested",
+									type: "StructProperty",
+									value_kind: "instanced_struct",
+									struct_type: "/Script/Test.Inner",
+									size: 64,
+									value: {
+										value_kind: "native_struct",
+										fields: [
+											{
+												name: "Label",
+												value: {
+													value_kind: "text",
+													history: "base",
+													value: "Nested text",
+													namespace: "Test",
+													key: "Nested"
+												}
+											}
+										]
+									}
+								}
+							]
+						}
+					]
+				}
+			]
+		};
+		const occurrences = textOccurrencesFromInspection({
+			inspection: nested,
+			packageFile: nested.path
+		});
+		expect(occurrences).toHaveLength(1);
+		expect(occurrences[0]?.source).toBe("Nested text");
+		expect(occurrences[0]?.editCapability).toBe("read_only");
+		expect(occurrences[0]?.location).toMatchObject({ propertyPath: "Nested.Value.Label" });
+	});
 	it("groups occurrences by Unreal identity rather than source string", () => {
 		const occurrences = textOccurrencesFromInspection({
 			inspection,

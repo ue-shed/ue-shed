@@ -11,12 +11,14 @@ use uasset_parser::package::{
     ObjectPath, PackageError, PackageErrorKind, PackageIndex, TableLocation,
 };
 use uasset_parser::property::{PropertyRecord, PropertyValue, RawReason};
+use uasset_parser::schema::{SchemaProvider, embedded_source_model};
 use uasset_parser::{Package, PackageSummary};
 
 mod json;
 
 pub use json::{
     InspectionJsonError, InspectionJsonStatus, inspect_bytes_json, write_inspection_json,
+    write_inspection_json_with_schemas,
 };
 
 pub const SCHEMA_VERSION: u8 = 8;
@@ -34,11 +36,25 @@ where
 /// [`inspect_bytes_json`] and [`inspect_bytes_value`] for the WASM and compatibility adapters;
 /// callers that already have a Rust protocol boundary should consume this result directly.
 pub fn inspect_bytes(path: &str, bytes: &[u8]) -> Result<InspectOutput, Box<ErrorOutput>> {
+    inspect_bytes_with_schemas(path, bytes, embedded_source_model())
+}
+
+/// Decodes one package with an explicit generated source model.
+///
+/// Hosts that generate project-native class metadata can use this without changing package bytes
+/// or relying on parser-global state. Ordinary callers use [`inspect_bytes`]'s embedded engine-only
+/// model.
+pub fn inspect_bytes_with_schemas(
+    path: &str,
+    bytes: &[u8],
+    schemas: &dyn SchemaProvider,
+) -> Result<InspectOutput, Box<ErrorOutput>> {
     match Package::parse(bytes) {
         Ok(package) => Ok(InspectOutput::from_package(
             path.to_owned(),
             bytes,
             &package,
+            schemas,
         )),
         Err(error) => Err(Box::new(ErrorOutput::package(path.to_owned(), &error))),
     }
@@ -70,6 +86,8 @@ pub struct InspectOutput {
     pub path: String,
     pub package: PackageOutput,
     pub assets: Vec<AssetOutput>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<uasset_parser::metadata::PackageMetadata>,
     /// Exports that failed to decode. Non-empty implies `status: "partial"`.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub decode_errors: Vec<DecodeErrorOutput>,
@@ -114,6 +132,7 @@ impl InspectOutput {
                 exports: TableOutput::from(summary.exports),
             },
             assets: Vec::new(),
+            metadata: None,
             decode_errors: Vec::new(),
         }
     }
@@ -121,12 +140,35 @@ impl InspectOutput {
     /// Decodes every export, collecting per-export failures instead of aborting.
     /// A single unsupported or malformed export no longer blanks the whole file;
     /// callers report `status: "partial"` when `decode_errors` is non-empty.
-    fn from_package(path: String, source: &[u8], package: &Package) -> Self {
+    fn from_package(
+        path: String,
+        source: &[u8],
+        package: &Package,
+        schemas: &dyn SchemaProvider,
+    ) -> Self {
         let mut output = Self::from_summary(path, &package.summary);
         if let Some(table) = &mut output.package.soft_object_paths {
             table.parsed_count = package.soft_object_paths.len();
         }
-        let context = AssetDecodeContext { source, package };
+        output.metadata = match package.read_metadata(source) {
+            Ok(metadata) => {
+                metadata.filter(|data| !data.root.is_empty() || !data.objects.is_empty())
+            }
+            Err(error) => {
+                output.decode_errors.push(DecodeErrorOutput {
+                    object_path: package.summary.package_name.clone(),
+                    class_path: None,
+                    kind: ErrorOutput::package(String::new(), &error).kind,
+                    message: error.to_string(),
+                });
+                None
+            }
+        };
+        let context = AssetDecodeContext {
+            source,
+            package,
+            schemas,
+        };
         for export in &package.exports {
             match decode_export(export, &context) {
                 Ok(Some(decoded)) => {
@@ -169,13 +211,14 @@ fn asset_output_from_decoded(package: &Package, decoded: DecodedAsset) -> AssetO
             AssetOutput {
                 tail_bytes: 0,
                 bones: Vec::new(),
+                reference_pose: None,
                 kind: match datatable.kind {
                     uasset_parser::asset::DataTableKind::Plain => "DataTable",
                     uasset_parser::asset::DataTableKind::Composite => "CompositeDataTable",
                 },
                 object_path: datatable.object_path.into_string(),
                 class_path: None,
-                object_guid: None,
+                object_guid: datatable.object_guid.map(|guid| guid.to_string()),
                 row_struct: datatable.row_struct.map(ObjectPath::into_string),
                 parent_tables: datatable
                     .parent_tables
@@ -184,6 +227,7 @@ fn asset_output_from_decoded(package: &Package, decoded: DecodedAsset) -> AssetO
                     .collect(),
                 string_table_namespace: None,
                 string_table_entries: Vec::new(),
+                string_table_metadata: Default::default(),
                 enum_cpp_form: None,
                 enum_entries: Vec::new(),
                 struct_flags: None,
@@ -206,6 +250,7 @@ fn asset_output_from_decoded(package: &Package, decoded: DecodedAsset) -> AssetO
             AssetOutput {
                 tail_bytes: 0,
                 bones: Vec::new(),
+                reference_pose: None,
                 kind: "CurveTable",
                 object_path: curve_table.object_path.into_string(),
                 class_path: Some(uasset_parser::asset::CURVETABLE_CLASS.to_owned()),
@@ -214,6 +259,7 @@ fn asset_output_from_decoded(package: &Package, decoded: DecodedAsset) -> AssetO
                 parent_tables: Vec::new(),
                 string_table_namespace: None,
                 string_table_entries: Vec::new(),
+                string_table_metadata: Default::default(),
                 enum_cpp_form: None,
                 enum_entries: Vec::new(),
                 struct_flags: None,
@@ -241,6 +287,7 @@ fn asset_output_from_decoded(package: &Package, decoded: DecodedAsset) -> AssetO
         DecodedAsset::StringTable(string_table) => AssetOutput {
             tail_bytes: 0,
             bones: Vec::new(),
+            reference_pose: None,
             kind: "StringTable",
             object_path: string_table.object_path.into_string(),
             class_path: Some(uasset_parser::asset::STRINGTABLE_CLASS.to_owned()),
@@ -248,6 +295,7 @@ fn asset_output_from_decoded(package: &Package, decoded: DecodedAsset) -> AssetO
             row_struct: None,
             parent_tables: Vec::new(),
             string_table_namespace: Some(string_table.namespace),
+            string_table_metadata: string_table.metadata,
             string_table_entries: string_table
                 .entries
                 .into_iter()
@@ -270,6 +318,7 @@ fn asset_output_from_decoded(package: &Package, decoded: DecodedAsset) -> AssetO
             AssetOutput {
                 tail_bytes: 0,
                 bones: Vec::new(),
+                reference_pose: None,
                 kind,
                 object_path: data_asset.object_path.into_string(),
                 class_path: Some(data_asset.class_path.into_string()),
@@ -278,6 +327,7 @@ fn asset_output_from_decoded(package: &Package, decoded: DecodedAsset) -> AssetO
                 parent_tables: Vec::new(),
                 string_table_namespace: None,
                 string_table_entries: Vec::new(),
+                string_table_metadata: Default::default(),
                 enum_cpp_form: None,
                 enum_entries: Vec::new(),
                 struct_flags: None,
@@ -297,6 +347,7 @@ fn asset_output_from_decoded(package: &Package, decoded: DecodedAsset) -> AssetO
             parent_tables: Vec::new(),
             string_table_namespace: None,
             string_table_entries: Vec::new(),
+            string_table_metadata: Default::default(),
             enum_cpp_form: None,
             enum_entries: Vec::new(),
             struct_flags: None,
@@ -304,6 +355,7 @@ fn asset_output_from_decoded(package: &Package, decoded: DecodedAsset) -> AssetO
             properties: property_outputs(package, object.properties),
             tail_bytes: object.tail.len(),
             bones: Vec::new(),
+            reference_pose: None,
             row_count: 0,
             curve_rows: Vec::new(),
             rows: Vec::new(),
@@ -317,6 +369,7 @@ fn asset_output_from_decoded(package: &Package, decoded: DecodedAsset) -> AssetO
             parent_tables: Vec::new(),
             string_table_namespace: None,
             string_table_entries: Vec::new(),
+            string_table_metadata: Default::default(),
             enum_cpp_form: None,
             enum_entries: Vec::new(),
             struct_flags: None,
@@ -324,6 +377,7 @@ fn asset_output_from_decoded(package: &Package, decoded: DecodedAsset) -> AssetO
             properties: property_outputs(package, node.properties),
             tail_bytes: node.tail.len(),
             bones: Vec::new(),
+            reference_pose: None,
             row_count: 0,
             curve_rows: Vec::new(),
             rows: Vec::new(),
@@ -337,6 +391,7 @@ fn asset_output_from_decoded(package: &Package, decoded: DecodedAsset) -> AssetO
             parent_tables: Vec::new(),
             string_table_namespace: None,
             string_table_entries: Vec::new(),
+            string_table_metadata: Default::default(),
             enum_cpp_form: None,
             enum_entries: Vec::new(),
             struct_flags: None,
@@ -344,6 +399,7 @@ fn asset_output_from_decoded(package: &Package, decoded: DecodedAsset) -> AssetO
             properties: property_outputs(package, sequence.properties),
             tail_bytes: 0,
             bones: Vec::new(),
+            reference_pose: None,
             row_count: 0,
             curve_rows: Vec::new(),
             rows: Vec::new(),
@@ -357,12 +413,16 @@ fn asset_output_from_decoded(package: &Package, decoded: DecodedAsset) -> AssetO
             parent_tables: Vec::new(),
             string_table_namespace: None,
             string_table_entries: Vec::new(),
+            string_table_metadata: Default::default(),
             enum_cpp_form: None,
             enum_entries: Vec::new(),
             struct_flags: None,
             struct_fields: Vec::new(),
             properties: property_outputs(package, skeleton.properties),
-            tail_bytes: 0,
+            tail_bytes: skeleton.tail.len(),
+            reference_pose: skeleton
+                .reference_pose
+                .map(|value| Box::new(value_output(package, value))),
             bones: skeleton
                 .bones
                 .into_iter()
@@ -380,6 +440,7 @@ fn asset_output_from_decoded(package: &Package, decoded: DecodedAsset) -> AssetO
             AssetOutput {
                 tail_bytes: 0,
                 bones: Vec::new(),
+                reference_pose: None,
                 kind: "Enum",
                 object_path: decoded_enum.object_path.into_string(),
                 class_path: Some(USERDEFINEDENUM_CLASS.to_owned()),
@@ -388,6 +449,7 @@ fn asset_output_from_decoded(package: &Package, decoded: DecodedAsset) -> AssetO
                 parent_tables: Vec::new(),
                 string_table_namespace: None,
                 string_table_entries: Vec::new(),
+                string_table_metadata: Default::default(),
                 enum_cpp_form: Some(enum_cpp_form_name(decoded_enum.cpp_form)),
                 enum_entries: decoded_enum
                     .entries
@@ -411,6 +473,7 @@ fn asset_output_from_decoded(package: &Package, decoded: DecodedAsset) -> AssetO
             AssetOutput {
                 tail_bytes: 0,
                 bones: Vec::new(),
+                reference_pose: None,
                 kind: "Struct",
                 object_path: decoded_struct.object_path.into_string(),
                 class_path: Some(USERDEFINEDSTRUCT_CLASS.to_owned()),
@@ -419,6 +482,7 @@ fn asset_output_from_decoded(package: &Package, decoded: DecodedAsset) -> AssetO
                 parent_tables: Vec::new(),
                 string_table_namespace: None,
                 string_table_entries: Vec::new(),
+                string_table_metadata: Default::default(),
                 enum_cpp_form: None,
                 enum_entries: Vec::new(),
                 struct_flags: Some(decoded_struct.struct_flags),
@@ -505,6 +569,8 @@ pub struct AssetOutput {
     pub string_table_namespace: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub string_table_entries: Vec<StringTableEntryOutput>,
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub string_table_metadata: uasset_parser::asset::StringTableMetadata,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub enum_cpp_form: Option<&'static str>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -520,6 +586,9 @@ pub struct AssetOutput {
     pub tail_bytes: u64,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub bones: Vec<BoneOutput>,
+    /// Box the optional pose so assets without a Skeleton do not reserve a full value.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reference_pose: Option<Box<PropertyValueOutput>>,
     pub row_count: usize,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub curve_rows: Vec<CurveRowOutput>,
@@ -618,6 +687,14 @@ pub struct MapEntryOutput {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "value_kind", rename_all = "snake_case")]
 pub enum PropertyValueOutput {
+    NativeStruct {
+        fields: Vec<NativeFieldOutput>,
+    },
+    InstancedStruct {
+        struct_type: Option<String>,
+        size: u64,
+        value: Option<Box<PropertyValueOutput>>,
+    },
     Bool {
         value: bool,
     },
@@ -648,6 +725,8 @@ pub enum PropertyValueOutput {
         history: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         namespace: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        table_id: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         key: Option<String>,
     },
@@ -714,6 +793,30 @@ pub enum PropertyValueOutput {
 
 fn value_output(package: &Package, value: PropertyValue) -> PropertyValueOutput {
     match value {
+        PropertyValue::NativeStruct { fields } => PropertyValueOutput::NativeStruct {
+            fields: fields
+                .into_iter()
+                .map(|field| NativeFieldOutput {
+                    name: field.name,
+                    value: value_output(package, field.value),
+                })
+                .collect(),
+        },
+        PropertyValue::InstancedStruct {
+            struct_type,
+            payload,
+            value,
+        } => PropertyValueOutput::InstancedStruct {
+            struct_type: resolve_object_ref(package, struct_type),
+            size: payload.len(),
+            value: value.map(|value| {
+                let mut output = value_output(package, *value);
+                if let PropertyValueOutput::Raw { size, .. } = &mut output {
+                    *size = payload.len();
+                }
+                Box::new(output)
+            }),
+        },
         PropertyValue::Bool(value) => PropertyValueOutput::Bool { value },
         PropertyValue::Int(value) => PropertyValueOutput::Int { value },
         PropertyValue::UInt(value) => PropertyValueOutput::Uint { value },
@@ -803,6 +906,12 @@ fn value_output(package: &Package, value: PropertyValue) -> PropertyValueOutput 
     }
 }
 
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct NativeFieldOutput {
+    pub name: String,
+    pub value: PropertyValueOutput,
+}
+
 fn text_value_output(text: uasset_parser::property::TextValue) -> PropertyValueOutput {
     use uasset_parser::property::TextHistory;
 
@@ -811,20 +920,30 @@ fn text_value_output(text: uasset_parser::property::TextValue) -> PropertyValueO
             value: text.source,
             history: "none".to_owned(),
             namespace: None,
+            table_id: None,
             key: None,
         },
         TextHistory::Base { namespace, key } => PropertyValueOutput::Text {
             value: text.source,
             history: "base".to_owned(),
             namespace: Some(namespace),
+            table_id: None,
+            key: Some(key),
+        },
+        TextHistory::StringTableEntry { table_id, key } => PropertyValueOutput::Text {
+            value: text.source,
+            history: "string_table".to_owned(),
+            namespace: None,
+            table_id: Some(table_id),
             key: Some(key),
         },
         TextHistory::NamedFormat { format, .. } => {
-            let (history, namespace, key) = text_identity_parts(&format);
+            let (history, namespace, table_id, key) = text_identity_parts(&format);
             PropertyValueOutput::Text {
                 value: text.source,
                 history: history.to_owned(),
                 namespace,
+                table_id,
                 key,
             }
         }
@@ -833,15 +952,21 @@ fn text_value_output(text: uasset_parser::property::TextValue) -> PropertyValueO
 
 fn text_identity_parts(
     text: &uasset_parser::property::TextValue,
-) -> (&'static str, Option<String>, Option<String>) {
+) -> (&'static str, Option<String>, Option<String>, Option<String>) {
     use uasset_parser::property::TextHistory;
 
     match &text.history {
         TextHistory::Base { namespace, key } => {
-            ("base", Some(namespace.clone()), Some(key.clone()))
+            ("base", Some(namespace.clone()), None, Some(key.clone()))
         }
         TextHistory::NamedFormat { format, .. } => text_identity_parts(format),
-        TextHistory::None => ("none", None, None),
+        TextHistory::None => ("none", None, None, None),
+        TextHistory::StringTableEntry { table_id, key } => (
+            "string_table",
+            None,
+            Some(table_id.clone()),
+            Some(key.clone()),
+        ),
     }
 }
 

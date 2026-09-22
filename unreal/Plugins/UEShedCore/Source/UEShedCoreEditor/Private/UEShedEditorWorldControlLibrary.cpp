@@ -6,6 +6,7 @@
 #include "FileHelpers.h"
 #include "Misc/PackageName.h"
 #include "Misc/App.h"
+#include "Misc/Paths.h"
 #include "Containers/Ticker.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
@@ -174,6 +175,7 @@ void UUEShedEditorWorldControlLibrary::GetWorldState(FString& ResultJson)
 	auto Root = MakeShared<FJsonObject>();
 	Root->SetObjectField(TEXT("contract"), ContractJson());
 	Root->SetStringField(TEXT("projectName"), FApp::GetProjectName());
+	Root->SetStringField(TEXT("projectRoot"), FPaths::ConvertRelativePathToFull(FPaths::ProjectDir()));
 	Root->SetObjectField(TEXT("snapshot"), Snapshot());
 	WriteJson(Root, ResultJson);
 }

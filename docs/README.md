@@ -33,6 +33,9 @@ there; do not invent a second status source in docs.
 
 ## Products
 
+- [Shared world preparation](products/world-preparation.md) — actor context, selective editor loading,
+  scoped ownership, readiness evidence and capture composition.
+
 - [Shared camera rendering](products/camera-rendering.md) — public editor-world rendering lifecycle,
   backend policies, compatibility and downstream adoption.
 
@@ -76,6 +79,10 @@ there; do not invent a second status source in docs.
 
 - [UE Shed core parser swap (2026-09-19)](research/uasset-core-swap-2026-09-19.md) — replacement native
   and WASM parsers against current main's consumers, required contract updates, and integration tests.
+
+- [World Partition: data, APIs, and preparation (2026-09-10)](research/world-partition-2026-09-10.md) —
+  saved descriptor evidence, editor/runtime loading differences, current capture gaps, and a shared
+  scoped preparation service.
 
 - [32×32 moving-camera scale test (2026-09-07)](research/map-capture-grid32-2026-09-07.md) — 1,024
   captured tiles, a 16K assembly, and a six-level viewer pyramid over expanded world bounds.

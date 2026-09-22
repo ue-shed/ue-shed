@@ -38,6 +38,7 @@ export const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "
 export const ueShedPluginRoot = join(repositoryRoot, "unreal", "Plugins");
 export const ueShedPluginIds = Object.freeze([
 	"UEShedCore",
+	"UEShedWorld",
 	"UEShedAuthoring",
 	"UEShedCameras",
 	"UEShedCameraAuthoringBridge",

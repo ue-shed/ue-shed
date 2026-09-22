@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -271,12 +271,28 @@ test("rejects local, unpinned, inconsistent, corrupt, or missing public plugin a
 	}
 });
 
-test("selects the exact Map Review Core+Cameras graph without Observatory or UI plugins", async () => {
+test("selects the Map Review Core+World+Cameras graph without Observatory or UI plugins", async () => {
 	const output = await mkdtemp(join(tmpdir(), "ue-shed-map-review-plugins-"));
 	try {
+		const pluginRoot = join(output, "Plugins");
+		const repository = join(import.meta.dirname, "..");
+		for (const id of MAP_REVIEW_PLUGIN_IDS) {
+			await writeFixtureFile(
+				pluginRoot,
+				`${id}/${id}.uplugin`,
+				await readFile(join(repository, "unreal/Plugins", id, `${id}.uplugin`), "utf8")
+			);
+			await cp(
+				join(repository, "unreal/Plugins", id, "Source"),
+				join(pluginRoot, id, "Source"),
+				{ recursive: true }
+			);
+		}
 		const releaseAssetStem = "ue-shed-plugins-map-review-0.1.0-rc.2";
 		const result = await buildPluginBundle({
-			output,
+			output: join(output, "bundle"),
+			pluginRoot,
+			licensePath: join(repository, "LICENSE"),
 			releaseAssetStem,
 			releaseVersion: "0.1.0-rc.2",
 			requestedPlugins: [...MAP_REVIEW_PLUGIN_IDS],
@@ -285,8 +301,9 @@ test("selects the exact Map Review Core+Cameras graph without Observatory or UI 
 		assert.deepEqual(
 			result.manifest.plugins.map(({ id, dependencies }) => ({ id, dependencies })),
 			[
-				{ id: "UEShedCameras", dependencies: ["UEShedCore"] },
-				{ id: "UEShedCore", dependencies: [] }
+				{ id: "UEShedCameras", dependencies: ["UEShedCore", "UEShedWorld"] },
+				{ id: "UEShedCore", dependencies: [] },
+				{ id: "UEShedWorld", dependencies: ["UEShedCore"] }
 			]
 		);
 		assert.equal(basename(result.archivePath), `${releaseAssetStem}.tar.gz`);

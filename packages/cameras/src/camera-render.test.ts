@@ -1,4 +1,12 @@
-import { Cause, Deferred, Effect, Exit, Fiber, Schema } from "effect";
+import { Cause, Deferred, Effect, Exit, Fiber, Schema, Stream } from "effect";
+import {
+	WorldPreparation,
+	WorldId,
+	WorldLeaseId,
+	type WorldRequirements,
+	type WorldSnapshot
+} from "@ue-shed/world";
+import { renderPreparedCamera } from "./prepared-camera.js";
 import { describe, expect, it } from "vitest";
 import { RemoteControlClientError, type RemoteControlClientApi } from "@ue-shed/unreal-connection";
 import {
@@ -129,6 +137,90 @@ function harness(
 }
 
 describe("shared renderer lifecycle", () => {
+	it("keeps actor context through capture and restores camera before world ownership", async () => {
+		const events: string[] = [];
+		const h = harness((name) => {
+			if (name === "StartCameraFrame") events.push("capture");
+			if (name === "EndCameraRender") events.push("camera.release");
+			return undefined;
+		});
+		const preparation: WorldRequirements = {
+			world: {
+				worldId: WorldId.make("world"),
+				mapPath: request.expectedMapPath,
+				projectName: request.expectedProjectName,
+				partitioned: true,
+				streamingEnabled: true
+			},
+			targets: [
+				{
+					kind: "actor",
+					actor: {
+						actorGuid: "00000000-0000-0000-0000-000000000001",
+						containerId: "container"
+					},
+					contextExtent: { x: 5000, y: 5000, z: 2000 }
+				}
+			],
+			dataLayers: [],
+			maximumActors: 500
+		};
+		const snapshot: WorldSnapshot = {
+			status: "ready",
+			world: preparation.world,
+			leaseId: WorldLeaseId.make("lease"),
+			revision: 0,
+			regions: [],
+			actors: [],
+			issues: [],
+			renderReadiness: "not_assessed"
+		};
+		const service = WorldPreparation.of({
+			describe: () => Effect.succeed(preparation.world),
+			plan: () => Effect.succeed(snapshot),
+			execute: () => Effect.succeed(snapshot),
+			acquire: (requirements) =>
+				Effect.gen(function* () {
+					expect(requirements.targets).toEqual(preparation.targets);
+					events.push("world.acquire");
+					yield* Effect.addFinalizer(() =>
+						Effect.sync(() => {
+							events.push("world.release");
+						})
+					);
+					return {
+						id: snapshot.leaseId,
+						progress: Stream.empty,
+						inspect: () => Effect.succeed(snapshot),
+						checkReady: () => Effect.succeed(snapshot),
+						replace: () => Effect.succeed(snapshot),
+						guard: (work) => work
+					};
+				})
+		});
+		const result = await Effect.runPromise(
+			renderPreparedCamera({ preparation, session: request, frame }).pipe(
+				Effect.provideService(CameraRenderer, h.renderer),
+				Effect.provideService(WorldPreparation, service)
+			)
+		);
+		expect(result.preparation).toEqual(snapshot);
+		expect(result.frame).toEqual(captured);
+		expect(events).toEqual(["world.acquire", "capture", "camera.release", "world.release"]);
+		const rejected = await Effect.runPromise(
+			renderPreparedCamera({
+				preparation,
+				session: { ...request, expectedMapPath: "/Game/Other" },
+				frame
+			}).pipe(
+				Effect.provideService(CameraRenderer, h.renderer),
+				Effect.provideService(WorldPreparation, service),
+				Effect.result
+			)
+		);
+		expect(rejected._tag).toBe("Failure");
+		expect(events).toHaveLength(4);
+	});
 	it("rejects invalid policy before contacting Unreal", async () => {
 		const h = harness();
 		const result = await Effect.runPromise(

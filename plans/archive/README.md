@@ -10,6 +10,9 @@ paths). They are not living guidance — prefer product docs, ADRs, and active p
 - [Expanded native UAsset coverage](uasset-native-coverage.md) — DONE; curves, skeleton poses,
   numeric channels, InstancedStruct, and package metadata through shared native layouts.
 
+- [Shared world preparation](world-preparation.md) — DONE; scoped actor context, region loading,
+  readiness evidence, camera composition and headless CLI.
+
 | Plan                                                          | Title                                                                | Status                                      |
 | ------------------------------------------------------------- | -------------------------------------------------------------------- | ------------------------------------------- |
 | [048](048-fresh-scan-performance.md)                          | Optimize fresh Catalog scans from the current baseline               | DONE — measured and validated               |

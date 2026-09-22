@@ -28,7 +28,7 @@
 #include "WorldPartition/DataLayer/DataLayerAsset.h"
 #include "WorldPartition/DataLayer/DataLayerInstance.h"
 #include "WorldPartition/DataLayer/DataLayerManager.h"
-#include "WorldPartition/LoaderAdapter/LoaderAdapterShape.h"
+#include "UEShedWorldPreparation.h"
 #include "WorldPartition/WorldPartition.h"
 
 namespace
@@ -414,14 +414,21 @@ struct FUEShedCameraRenderSession::FState
 	TOptional<double> EV;
 	TSharedPtr<FUEShedCameraVisibility, ESPMode::ThreadSafe> Visibility;
 	FUEShedResolvedVisibility ResolvedVisibility;
-	struct FLayer
-	{
-		TWeakObjectPtr<UDataLayerInstance> Layer;
-		bool Loaded, Visible, AppliedLoaded, AppliedVisible;
-	};
-	TArray<FLayer> Layers;
-	TArray<TUniquePtr<FLoaderAdapterShape>> Regions;
+	FString WorldLeaseId;
+	TSharedPtr<FJsonObject> PreparedWorld;
+	int32 WorldRevision = 0, LayerCount = 0;
+	TArray<TSharedPtr<FJsonValue>> WorldTargets;
 	TArray<FString> RegionInputs;
+	double LastWorldPoll = 0;
+	TSharedPtr<FJsonObject> WorldRequest(const TCHAR* Action) const
+	{
+		auto O = Object(), Contract = Object(), Version = Object();
+		Version->SetNumberField(TEXT("major"), 1); Version->SetNumberField(TEXT("minor"), 0);
+		Contract->SetStringField(TEXT("name"), TEXT("ue-shed-world-preparation"));
+		Contract->SetObjectField(TEXT("version"), Version); O->SetObjectField(TEXT("contract"), Contract);
+		O->SetStringField(TEXT("action"), Action); O->SetStringField(TEXT("leaseId"), WorldLeaseId);
+		O->SetStringField(TEXT("worldId"), String(PreparedWorld, TEXT("worldId"))); return O;
+	}
 	struct FRetained
 	{
 		FString Input;
@@ -508,7 +515,7 @@ struct FUEShedCameraRenderSession::FState
 			Restored = false;
 		ScreenshotApplied = false;
 	}
-	bool Restore()
+	bool Restore(bool WorldCleanup = false)
 	{
 		if (Closed)
 			return Restored;
@@ -518,7 +525,14 @@ struct FUEShedCameraRenderSession::FState
 		// Snapshot/restore extracted from the Lit map renderer. No second viewport manager.
 		if (Client)
 		{
-			if (ClientAlive() && Client->GetActorLock().GetLockedActor() == CameraActor.Get())
+			// UE 5.8 clears the pilot lock during map teardown before OnWorldCleanup.
+			// Only that cleanup callback may restore an unlocked viewport; never take
+			// ownership back from another actor or from a normal user unlock.
+			if (ClientAlive() &&
+				(Client->GetActorLock().GetLockedActor() == CameraActor.Get() ||
+				 (WorldCleanup && Client->GetWorld() == World.Get() &&
+				  !Client->GetActorLock().GetLockedActor() &&
+				  !Client->GetCinematicActorLock().GetLockedActor())))
 			{
 				Client->SetActorLock(nullptr);
 				Client->bLockedCameraView = LockedCamera;
@@ -544,43 +558,28 @@ struct FUEShedCameraRenderSession::FState
 				Client->RemoveRealtimeOverride(RealtimeOwner, false);
 			}
 			else
+			{
 				Restored = false;
+			}
 		}
 		EndUEShedOwnedMapFreeze(Id);
 		Capture.Reset();
 		if (CameraActor.IsValid())
 			CameraActor->Destroy();
-		Regions.Reset();
-		auto *Subsystem = GEditor ? GEditor->GetEditorSubsystem<UDataLayerEditorSubsystem>() : nullptr;
-		for (int32 I = Layers.Num() - 1; I >= 0; --I)
+		if (!WorldLeaseId.IsEmpty())
 		{
-			auto &Saved = Layers[I];
-			if (!Saved.Layer.IsValid())
-				continue;
-			if (!Subsystem)
-			{
-				Restored = false;
-				continue;
-			}
-			if (Saved.Layer->IsLoadedInEditor() == Saved.AppliedLoaded &&
-				Saved.Layer->IsVisible() == Saved.AppliedVisible)
-			{
-				Subsystem->SetDataLayerIsLoadedInEditor(Saved.Layer.Get(), Saved.Loaded, false);
-				Subsystem->SetDataLayerVisibility(Saved.Layer.Get(), Saved.Visible);
-				if (Saved.Layer->IsLoadedInEditor() != Saved.Loaded ||
-					Saved.Layer->IsVisible() != Saved.Visible)
-					Restored = false;
-			}
-			else
-				Restored = false;
+			const auto Released = FUEShedWorldPreparation::Execute(WorldRequest(TEXT("release")));
+			if (String(Released, TEXT("status")) != TEXT("released")) Restored = false;
 		}
 		if (World.IsValid() && World->GetOutermost()->IsDirty() != DirtyBefore)
+		{
 			Restored = false;
+		}
 		return Restored;
 	}
-	void Fail(const FString &Code, const FString &Message)
+	void Fail(const FString &Code, const FString &Message, bool WorldCleanup = false)
 	{
-		const bool Clean = Restore();
+		const bool Clean = Restore(WorldCleanup);
 		Result = Failure(Id, Code, Message, Clean ? TEXT("restored") : TEXT("failed"), Operation);
 		if (Frame)
 			Retained.Add(Operation, {UEShedCameraJsonText(Frame), Result, FPlatformTime::Seconds()});
@@ -817,26 +816,24 @@ TSharedPtr<FUEShedCameraRenderSession> FUEShedCameraRenderSession::Open(
 	}
 	Owner = Session;
 	const auto Prep = Child(S.Policy(), TEXT("preparation"));
-	auto *Subsystem = GEditor->GetEditorSubsystem<UDataLayerEditorSubsystem>();
-	const auto *Manager = UDataLayerManager::GetDataLayerManager(S.World.Get());
-	for (const auto &V : Prep->GetArrayField(TEXT("dataLayers")))
+	S.LayerCount = Prep->GetArrayField(TEXT("dataLayers")).Num();
+	if (S.LayerCount || String(Child(Prep, TEXT("geometry")), TEXT("mode")) == TEXT("camera_regions"))
 	{
-		const auto L = V->AsObject();
-		auto *Layer = FindLayer(Manager, String(L, TEXT("assetPath")));
-		S.Layers.Add({Layer, Layer->IsLoadedInEditor(), Layer->IsVisible(), L->GetBoolField(TEXT("loaded")),
-					  L->GetBoolField(TEXT("visible"))});
-		Subsystem->SetDataLayerIsLoadedInEditor(Layer, L->GetBoolField(TEXT("loaded")), false);
-		Subsystem->SetDataLayerVisibility(Layer, L->GetBoolField(TEXT("visible")));
-	}
-	for (const auto &L : S.Layers)
-	{
-		if (L.Layer->IsEffectiveLoadedInEditor() != L.AppliedLoaded ||
-			L.Layer->IsEffectiveVisible() != L.AppliedVisible)
+		S.WorldLeaseId = FGuid::NewGuid().ToString(EGuidFormats::DigitsWithHyphensLower);
+		S.PreparedWorld = FUEShedWorldPreparation::Describe();
+		auto Acquire = S.WorldRequest(TEXT("acquire")), Requirements = Object();
+		Acquire->RemoveField(TEXT("worldId")); Acquire->SetNumberField(TEXT("leaseMs"), 120000);
+		Requirements->SetObjectField(TEXT("world"), S.PreparedWorld);
+		Requirements->SetArrayField(TEXT("targets"), {});
+		Requirements->SetArrayField(TEXT("dataLayers"), Prep->GetArrayField(TEXT("dataLayers")));
+		Requirements->SetNumberField(TEXT("maximumActors"), 100000);
+		Acquire->SetObjectField(TEXT("requirements"), Requirements);
+		const auto Prepared = FUEShedWorldPreparation::Execute(Acquire);
+		if (String(Prepared, TEXT("status")) != TEXT("ready"))
 		{
-			S.Fail(TEXT("preparation_failed"), TEXT("Data Layer hierarchy prevents the required effective "
-													"state. Specify the required parent layers explicitly."));
-			Error = S.Result;
-			return nullptr;
+			if (String(Prepared, TEXT("status")) == TEXT("failed")) S.WorldLeaseId.Empty();
+			S.Fail(TEXT("preparation_failed"), TEXT("Shared world preparation could not establish the required Data Layer state."));
+			Error = S.Result; return nullptr;
 		}
 	}
 	if (S.Viewport())
@@ -932,7 +929,7 @@ TSharedPtr<FUEShedCameraRenderSession> FUEShedCameraRenderSession::Open(
 		});
 		WorldHandle = FWorldDelegates::OnWorldCleanup.AddLambda([](UWorld *World, bool, bool) {
 			if (Owner && Owner->State->World.Get() == World && !Owner->IsClosed())
-				Owner->State->Fail(TEXT("world_changed"), TEXT("The render world was unloaded."));
+				Owner->State->Fail(TEXT("world_changed"), TEXT("The render world was unloaded."), true);
 		});
 		PIEHandle = FEditorDelegates::PreBeginPIE.AddLambda([](bool) {
 			if (Owner && !Owner->IsClosed())
@@ -940,6 +937,8 @@ TSharedPtr<FUEShedCameraRenderSession> FUEShedCameraRenderSession::Open(
 								   TEXT("Play or Simulate started during rendering."));
 		});
 	}
+	// Synchronous world preparation consumes no client heartbeat budget.
+	Session->Touch();
 	return Session;
 }
 
@@ -1003,17 +1002,23 @@ TSharedPtr<FJsonObject> FUEShedCameraRenderSession::Start(const TSharedPtr<FJson
 		if (S.RegionInputs.Num() >= Geometry->GetIntegerField(TEXT("maximumRegions")))
 			return Failure(S.Id, TEXT("preparation_budget_exceeded"),
 						   TEXT("The session region budget is exhausted."));
-		S.RegionInputs.Add(UEShedCameraJsonText(Region));
-		if (S.World->GetWorldPartition())
+		auto Target = Object(); Target->SetStringField(TEXT("kind"), TEXT("region"));
+		Target->SetObjectField(TEXT("region"), Region);
+		auto Targets = S.WorldTargets; Targets.Add(MakeShared<FJsonValueObject>(Target));
+		auto Replace = S.WorldRequest(TEXT("replace"));
+		Replace->SetNumberField(TEXT("revision"), S.WorldRevision + 1); Replace->SetArrayField(TEXT("targets"), Targets);
+		const auto Prepared = FUEShedWorldPreparation::Execute(Replace);
+		if (String(Prepared, TEXT("status")) != TEXT("ready"))
 		{
-			const FVector Center = ReadVector(Child(Region, TEXT("center"))),
-						  Extent = ReadVector(Child(Region, TEXT("extent")));
-			auto Loader = MakeUnique<FLoaderAdapterShape>(
-				S.World.Get(), FBox(Center - Extent, Center + Extent), TEXT("UE Shed Camera Region"));
-			Loader->Load();
-			S.Regions.Add(MoveTemp(Loader));
+			S.Operation = Op;
+			S.Frame = Frame;
+			S.Fail(TEXT("preparation_failed"), TEXT("Shared world preparation reports missing actors, dependencies or layers in the requested region."));
+			return S.Result;
 		}
+		S.WorldRevision++; S.WorldTargets = MoveTemp(Targets);
+		S.RegionInputs.Add(UEShedCameraJsonText(Region));
 	}
+
 	S.UsedOperations.Add(Op);
 	S.Frame = Frame;
 	S.Operation = Op;
@@ -1048,6 +1053,14 @@ void FUEShedCameraRenderSession::Tick(bool bDrawViewport)
 	{
 		S.Fail(TEXT("lease_expired"), TEXT("The render client stopped renewing its lease."));
 		return;
+	}
+	if (!S.WorldLeaseId.IsEmpty() && Now - S.LastWorldPoll >= 1)
+	{
+		S.LastWorldPoll = Now;
+		if (String(FUEShedWorldPreparation::Execute(S.WorldRequest(TEXT("poll"))), TEXT("status")) != TEXT("ready"))
+		{
+			S.Fail(TEXT("preparation_failed"), TEXT("The shared world preparation lease is no longer ready.")); return;
+		}
 	}
 	if (S.Frozen && !RenewUEShedOwnedMapFreeze(S.Id))
 	{
@@ -1217,9 +1230,9 @@ void FUEShedCameraRenderSession::Tick(bool bDrawViewport)
 	else
 		Evidence->SetField(TEXT("exposureEV100"), MakeShared<FJsonValueNull>());
 	Preparation->SetStringField(
-		TEXT("status"), S.RegionInputs.IsEmpty() && S.Layers.IsEmpty() ? TEXT("preserved") : TEXT("partial"));
+		TEXT("status"), S.RegionInputs.IsEmpty() && S.LayerCount == 0 ? TEXT("preserved") : TEXT("partial"));
 	Preparation->SetNumberField(TEXT("regionsHeld"), S.RegionInputs.Num());
-	Preparation->SetNumberField(TEXT("dataLayersApplied"), S.Layers.Num());
+	Preparation->SetNumberField(TEXT("dataLayersApplied"), S.LayerCount);
 	Preparation->SetArrayField(
 		TEXT("limitations"),
 		{MakeShared<FJsonValueString>(TEXT("Explicit editor loading does not certify frustum completeness, "

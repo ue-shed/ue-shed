@@ -54,6 +54,7 @@
 		"@ue-shed/observability": "workspace:0.7.1",
 		"@ue-shed/protocol": "workspace:0.7.1",
 		"@ue-shed/unreal-connection": "workspace:0.7.1",
+		"@ue-shed/world": "workspace:0.7.1",
 		"effect": "catalog:"
 	},
 	"engines": {

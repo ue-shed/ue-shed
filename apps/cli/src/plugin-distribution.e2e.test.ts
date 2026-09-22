@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtemp, rename, rm } from "node:fs/promises";
+import { cp, copyFile, mkdir, mkdtemp, rename, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -44,6 +44,19 @@ beforeAll(async () => {
 	root = await mkdtemp(join(tmpdir(), "ue-shed-plugin-cli-"));
 	source = join(root, "source");
 	cache = join(root, "cache");
+	const pluginRoot = join(root, "Plugins");
+	for (const id of ["UEShedCore", "UEShedWorld", "UEShedCameras"]) {
+		await mkdir(join(pluginRoot, id), { recursive: true });
+		await copyFile(
+			join(repositoryRoot, "unreal/Plugins", id, `${id}.uplugin`),
+			join(pluginRoot, id, `${id}.uplugin`)
+		);
+		await cp(
+			join(repositoryRoot, "unreal/Plugins", id, "Source"),
+			join(pluginRoot, id, "Source"),
+			{ recursive: true }
+		);
+	}
 	run(process.execPath, [
 		join(repositoryRoot, "scripts", "plugin-bundle.ts"),
 		"bundle",
@@ -52,7 +65,11 @@ beforeAll(async () => {
 		"--output",
 		source,
 		"--plugins",
-		"UEShedCore,UEShedCameras"
+		"UEShedCore,UEShedWorld,UEShedCameras",
+		"--source-root",
+		pluginRoot,
+		"--license",
+		join(repositoryRoot, "LICENSE")
 	]);
 	await rename(
 		join(source, "plugins.manifest.json"),
@@ -82,7 +99,7 @@ describe("plugin distribution CLI process", () => {
 			"5.7"
 		]);
 		expect(installed.cacheHit).toBe(false);
-		expect(installed.resolvedPluginIds).toEqual(["UEShedCore", "UEShedCameras"]);
+		expect(installed.resolvedPluginIds).toEqual(["UEShedCore", "UEShedWorld", "UEShedCameras"]);
 
 		const cached = runCli(["plugins", "cache", "list", "--cache", cache]);
 		expect(cached).toEqual([

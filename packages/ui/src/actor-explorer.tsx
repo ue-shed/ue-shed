@@ -459,17 +459,17 @@ export function ActorExplorer(props: {
 					{...stylex.attrs(styles.virtualList)}
 					style={{ height: virtualizer.getTotalSize() + "px" }}
 				>
-					<For each={virtualizer.getVirtualItems()}>
+					<For each={virtualizer.getVirtualItems()} keyed={(row) => row.key}>
 						{(virtualRow) => (
 							<li
-								data-index={virtualRow.index}
-								aria-posinset={virtualRow.index + 1}
+								data-index={virtualRow().index}
+								aria-posinset={virtualRow().index + 1}
 								aria-setsize={rows().length}
 								ref={(element) => virtualizer.measureElement(element)}
 								{...stylex.attrs(styles.virtualRow)}
-								style={{ transform: "translateY(" + virtualRow.start + "px)" }}
+								style={{ transform: "translateY(" + virtualRow().start + "px)" }}
 							>
-								<Show keyed when={rows()[virtualRow.index]}>
+								<Show keyed when={rows()[virtualRow().index]}>
 									{(row) =>
 										row.kind === "group"
 											? (() => {

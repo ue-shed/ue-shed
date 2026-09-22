@@ -1,4 +1,5 @@
 #include "UEShedBuildFixtureCommandlet.h"
+#include "UEShedWorldPartitionFixture.h"
 
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Algo/AnyOf.h"
@@ -3317,6 +3318,8 @@ UUEShedBuildFixtureCommandlet::UUEShedBuildFixtureCommandlet()
 
 int32 UUEShedBuildFixtureCommandlet::Main(const FString& Params)
 {
+	if (FParse::Param(*Params, TEXT("WorldPartitionOnly")))
+		return BuildWorldPartitionStressFixture(FParse::Param(*Params, TEXT("VerifyOnly"))) ? 0 : 1;
 	const TArray<FFixtureTableDefinition> Definitions = GetTableDefinitions();
 	FString MapHistoryFixtureDirectory;
 	if (FParse::Value(*Params, TEXT("MapHistoryFixtureDirectory="), MapHistoryFixtureDirectory))

@@ -96,7 +96,7 @@ import {
 	Schedule,
 	Stream
 } from "effect";
-import { basename, dirname } from "node:path";
+import { basename, dirname, resolve } from "node:path";
 import { LocalFiles } from "../adapters/local-files.js";
 import { WorkbenchWindow, type WorkbenchWindowError } from "../adapters/electron-window.js";
 import type { RendererWorldObservationEvent } from "../ipc-contracts.js";
@@ -952,6 +952,26 @@ export const WorkbenchMapReviewLive = Layer.effect(
 				);
 			}
 		);
+
+		const matchingEditorWorld = Effect.fn("Workbench.MapReview.matchingEditorWorld")(function* (
+			endpoint: string,
+			projectRoot: string
+		) {
+			const world = yield* worldControl.snapshot(endpoint);
+			const normalize = (path: string) => {
+				const normalized = resolve(path);
+				return process.platform === "win32" ? normalized.toLowerCase() : normalized;
+			};
+			if (!world.projectRoot || normalize(world.projectRoot) !== normalize(projectRoot))
+				return yield* new SavedWorldUnavailable({
+					message: world.projectRoot
+						? "The connected Unreal editor belongs to a different project."
+						: "The editor cannot confirm its project identity.",
+					recovery:
+						"Connect the selected project's editor with an updated UE Shed Core plugin."
+				});
+			return world;
+		});
 
 		const savedWorldMaps = Effect.fn("Workbench.WorkbenchMapReview.savedWorldMaps")(
 			function* () {
@@ -2103,7 +2123,10 @@ export const WorkbenchMapReviewLive = Layer.effect(
 				const pending = yield* Ref.get(openingMap);
 				if (pending) return { status: "opening" as const, targetMapPath: pending };
 				const endpoint = yield* connection.endpoint();
-				const result = yield* worldControl.snapshot(endpoint).pipe(
+				const result = yield* project.selectedProject().pipe(
+					Effect.flatMap((selected) =>
+						matchingEditorWorld(endpoint, selected.projectRoot)
+					),
 					Effect.match({
 						onSuccess: (world) => ({ status: "ready" as const, world }),
 						onFailure: (error) => ({
@@ -2156,6 +2179,13 @@ export const WorkbenchMapReviewLive = Layer.effect(
 							};
 						}
 						const endpoint = yield* connection.endpoint();
+						yield* matchingEditorWorld(endpoint, savedProject.projectRoot);
+						if ((yield* connection.endpoint()) !== endpoint)
+							return {
+								outcome: "failed" as const,
+								message: "The editor connection changed.",
+								recovery: "Check the selected editor and retry."
+							};
 						yield* Ref.set(openingMap, targetMapPath);
 						yield* cameraWorkspace.close();
 						const response = yield* worldControl.open({

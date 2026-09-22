@@ -59,7 +59,12 @@ test("confirms cross-map review, waits for a slow editor and follows external ma
 						worldControlObjectPath: "/Script/Fixture.WorldControl"
 					};
 				if (input.functionName === "GetWorldState")
-					return { contract, projectName: "UEShedFixture", snapshot: snapshot() };
+					return {
+						contract,
+						projectName: "UEShedFixture",
+						projectRoot: root,
+						snapshot: snapshot()
+					};
 				if (input.functionName === "BeginOpenMap") {
 					operation = Schema.decodeUnknownSync(EditorWorldOpenRequest)(
 						JSON.parse(input.parameters?.RequestJson ?? "{}")

@@ -14,6 +14,7 @@ public class UEShedFixtureEditor : ModuleRules
 				"BlueprintGraph",
 				"Core",
 				"CoreUObject",
+				"DataLayerEditor",
 				"Engine",
 				"EnhancedInput",
 				"InputCore",

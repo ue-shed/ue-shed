@@ -1,3 +1,4 @@
+import { ProvisionedCameraBinding } from "./provisioned-cameras-live.js";
 import { CameraPanelAction, CameraPanelState } from "./camera-authoring-panel-schema.js";
 import { CameraRecoveryChoice, CameraRecoveryProposal } from "./camera-authoring-recovery.js";
 import { CameraArrangementId, CameraEditScope, CameraLayout } from "./camera-arrangement.js";
@@ -407,6 +408,7 @@ export const CameraWorkspaceRequest = Schema.Union([
 ]);
 export type CameraWorkspaceRequest = typeof CameraWorkspaceRequest.Type;
 export const CameraWorkspaceResult = Schema.Struct({
+	preview: Schema.optionalKey(Schema.NullOr(ProvisionedCameraBinding)),
 	recovery: Schema.optionalKey(Schema.NullOr(CameraRecoveryProposal)),
 	savedViews: Schema.optionalKey(
 		Schema.Array(Schema.Struct({ id: Schema.String, revision: Schema.Int }))

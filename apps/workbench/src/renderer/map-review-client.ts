@@ -358,6 +358,9 @@ export const mapReviewClient: MapReviewClientApi = MapReviewClient.of({
 				Effect.sync(() =>
 					window.ueShed.onFrame((frame) =>
 						Queue.offerUnsafe(queue, {
+							cameraId: frame.cameraId,
+							producerId: frame.producerId,
+							sessionId: frame.sessionId,
 							cameraIndex: frame.cameraIndex,
 							height: frame.height,
 							pixels: frame.pixels,

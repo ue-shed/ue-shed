@@ -24,6 +24,7 @@ export const CompanionCapabilityManifest = Schema.Struct({
 	playSessionObjectPath: Schema.optional(Schema.String),
 	worldControlObjectPath: Schema.optional(Schema.String),
 	windowActivationObjectPath: Schema.optional(Schema.String),
+	worldPreparationObjectPath: Schema.optionalKey(Schema.String),
 	scenariosObjectPath: Schema.optional(Schema.String),
 	capabilities: Schema.Array(Schema.String),
 	authoringLimits: Schema.optional(

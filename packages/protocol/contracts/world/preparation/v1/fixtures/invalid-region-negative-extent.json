@@ -1,0 +1,40 @@
+{
+	"contract": {
+		"name": "ue-shed-world-preparation",
+		"version": {
+			"major": 1,
+			"minor": 0
+		}
+	},
+	"action": "acquire",
+	"leaseId": "lease",
+	"leaseMs": 120000,
+	"requirements": {
+		"world": {
+			"worldId": "world",
+			"projectName": "Fixture",
+			"mapPath": "/Game/Fixture",
+			"partitioned": true,
+			"streamingEnabled": true
+		},
+		"targets": [
+			{
+				"kind": "region",
+				"region": {
+					"center": {
+						"x": 0,
+						"y": 0,
+						"z": 0
+					},
+					"extent": {
+						"x": -1,
+						"y": 1,
+						"z": 1
+					}
+				}
+			}
+		],
+		"dataLayers": [],
+		"maximumActors": 500
+	}
+}

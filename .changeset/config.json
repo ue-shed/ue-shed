@@ -20,7 +20,8 @@
 			"@ue-shed/game-text",
 			"@ue-shed/config-explorer",
 			"@ue-shed/project-custodian",
-			"@ue-shed/niagara"
+			"@ue-shed/niagara",
+			"@ue-shed/world"
 		]
 	],
 	"linked": [],

@@ -18,6 +18,7 @@ import {
 	ReviewSet,
 	ReviewView,
 	ReviewViewId,
+	CaptureProfile,
 	CaptureProfileId,
 	VisibilityPolicyId,
 	type ReviewAuthoringSession,
@@ -979,6 +980,8 @@ export function applyCameraArrangementCommand(
 }
 
 /** Materialize exact approved poses into the existing capture-only Review Set contract. */
+const sameCaptureProfile = Schema.toEquivalence(CaptureProfile);
+
 export function approveArrangementCamera(
 	arrangement: CameraArrangement,
 	cameraId: string,
@@ -1015,8 +1018,18 @@ export function approveArrangementCamera(
 		(profile) => profile.id === arrangement.captureProfileId
 	);
 	if (!sourceProfile) throw arrangementFailure("invalid", "Capture profile is missing.");
-	let captureProfileId = arrangement.captureProfileId;
-	if (arrangement.renderPolicy) {
+	const renderPolicy = arrangement.renderPolicy;
+	const matchingProfile = renderPolicy
+		? set.captureProfiles.find((profile) =>
+				sameCaptureProfile(profile, {
+					...sourceProfile,
+					id: profile.id,
+					renderPolicy
+				})
+			)
+		: sourceProfile;
+	let captureProfileId = matchingProfile?.id ?? arrangement.captureProfileId;
+	if (arrangement.renderPolicy && !matchingProfile) {
 		let serial = set.captureProfiles.length + 1;
 		while (set.captureProfiles.some((profile) => profile.id === `authored-capture-${serial}`))
 			serial++;
@@ -1052,16 +1065,17 @@ export function approveArrangementCamera(
 	});
 	return ReviewSet.make({
 		...set,
-		captureProfiles: arrangement.renderPolicy
-			? [
-					...set.captureProfiles,
-					{
-						...sourceProfile,
-						id: captureProfileId,
-						renderPolicy: arrangement.renderPolicy
-					}
-				]
-			: set.captureProfiles,
+		captureProfiles:
+			arrangement.renderPolicy && !matchingProfile
+				? [
+						...set.captureProfiles,
+						{
+							...sourceProfile,
+							id: captureProfileId,
+							renderPolicy: arrangement.renderPolicy
+						}
+					]
+				: set.captureProfiles,
 		contract: {
 			name: "ue-shed-review-set",
 			version: {

@@ -1,5 +1,5 @@
 import { createRequire } from "node:module";
-import { copyFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -42,16 +42,22 @@ test("first camera set creates its destination and can be reopened through the R
 	browserName: _browserName
 }, testInfo) => {
 	const root = await mkdtemp(join(tmpdir(), "ue-shed-first-camera-set-"));
-	const descriptor = (await readdir(projectRoot)).find((name) => name.endsWith(".uproject"));
-	if (!descriptor) throw new Error("Fixture project descriptor missing");
-	await copyFile(join(projectRoot, descriptor), join(root, descriptor));
-	await mkdir(join(root, "Content"));
+	// Saved authoring and the connected editor must refer to the same project.
+	const setsRoot = join(projectRoot, ".ue-shed/review/sets");
+	const existingSets = new Set(
+		await readdir(setsRoot).catch((cause: NodeJS.ErrnoException) => {
+			if (cause.code === "ENOENT") return [];
+			throw cause;
+		})
+	);
+	let createdFile: string | undefined;
+	const collectionName = `First capture collection ${randomUUID()}`;
 	const env: Record<string, string> = {};
 	for (const [key, value] of Object.entries(process.env))
 		if (value !== undefined && key !== "ELECTRON_RUN_AS_NODE" && key !== "UE_SHED_REVIEW_SET")
 			env[key] = value;
 	Object.assign(env, {
-		UE_SHED_PROJECT_ROOT: root,
+		UE_SHED_PROJECT_ROOT: projectRoot,
 		UE_SHED_REMEMBER_PROJECTS: "false",
 		// This journey verifies authoring persistence, not frames; leave any user's feed alone.
 		UE_SHED_CAMERA_PIPE_NAME: `\\\\.\\pipe\\ue-shed-first-set-${randomUUID()}`
@@ -100,19 +106,32 @@ test("first camera set creates its destination and can be reopened through the R
 			workspace.getByRole("button", { name: "Edit in Unreal ↗", exact: true })
 		).toBeVisible({ timeout: 30_000 });
 		await expect(workspace.getByRole("alert")).toHaveCount(0);
-		const setsRoot = join(root, ".ue-shed/review/sets");
-		expect(await readdir(setsRoot)).toHaveLength(1);
+		const created = (await readdir(setsRoot)).filter((name) => !existingSets.has(name));
+		createdFile = created[0];
+		expect(created).toHaveLength(1);
 		await workspace.screenshot({ path: testInfo.outputPath("first-camera-set.png") });
 		await workspace.getByRole("button", { name: "Close", exact: true }).click();
 		await app!.close();
 		app = undefined;
+		const collectionPath = join(setsRoot, createdFile!);
+		const collection = Schema.decodeUnknownSync(ReviewSet)(
+			JSON.parse(await readFile(collectionPath, "utf8"))
+		);
+		await writeFile(
+			collectionPath,
+			JSON.stringify({ ...collection, displayName: collectionName })
+		);
 		page = await launch();
 		workspace = page.getByRole("region", { name: "Camera workspace" });
 		await workspace
 			.getByRole("button", { name: "Choose capture collection…", exact: true })
 			.click();
 		library = page.getByRole("dialog", { name: "Saved views & captures" });
-		await library.getByRole("button", { name: "Open set", exact: true }).click();
+		await library
+			.getByRole("article")
+			.filter({ hasText: collectionName })
+			.getByRole("button", { name: "Open set", exact: true })
+			.click();
 		await expect(library).toBeHidden();
 		await workspace.getByRole("button", { name: /First camera setup.*1 cameras/ }).click();
 		await expect(
@@ -182,10 +201,10 @@ test("first camera set creates its destination and can be reopened through the R
 			workspace.getByText("Native preset setup", { exact: true }).first()
 		).toBeVisible();
 		const reviewDocument = Schema.decodeUnknownSync(Schema.Struct({ id: ReviewSetId }))(
-			JSON.parse(await readFile(join(setsRoot, (await readdir(setsRoot))[0]!), "utf8"))
+			JSON.parse(await readFile(join(setsRoot, createdFile!), "utf8"))
 		);
 		const cameraDirectory = join(
-			root,
+			projectRoot,
 			".ue-shed/camera-sets",
 			createHash("sha256").update(reviewDocument.id).digest("hex").slice(0, 20)
 		);
@@ -205,6 +224,16 @@ test("first camera set creates its destination and can be reopened through the R
 		await workspace.getByRole("button", { name: "Close", exact: true }).click();
 	} finally {
 		await app?.close().catch(() => undefined);
+		if (createdFile && /^review-[a-f0-9-]+\.json$/u.test(createdFile)) {
+			const id = createdFile.slice(0, -5);
+			const cameraDirectory = join(
+				projectRoot,
+				".ue-shed/camera-sets",
+				createHash("sha256").update(id).digest("hex").slice(0, 20)
+			);
+			await rm(cameraDirectory, { recursive: true, force: true });
+			await rm(join(setsRoot, createdFile), { force: true });
+		}
 		await rm(root, { recursive: true, force: true });
 	}
 });

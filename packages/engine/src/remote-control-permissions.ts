@@ -7,6 +7,7 @@ const remoteClasses = {
 		"UEShedCoreEditor.UEShedEditorPlaySessionLibrary",
 		"UEShedCoreEditor.UEShedEditorAssetNavigationLibrary"
 	],
+	UEShedWorld: ["UEShedWorldEditor.UEShedWorldLibrary"],
 	UEShedCameras: [
 		"UEShedCameras.UEShedCameraLibrary",
 		"UEShedCamerasEditor.UEShedCameraReviewLibrary",

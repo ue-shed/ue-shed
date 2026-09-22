@@ -141,7 +141,28 @@ export const restoreCameraRecovery = Effect.fn("CameraAuthoring.restoreRecovery"
 			)
 		);
 	const edits = native.edits ?? [{ cameraId: native.cameraId, pose: native.pose }];
-	const operationId = CameraOperationId.make(`native-${native.producerId}-${native.sequence}`);
+	let operationId = CameraOperationId.make(`native-${native.producerId}-${native.sequence}`);
+	const recoveryOperationId = CameraOperationId.make(
+		`recover-native-${native.producerId}-${native.sequence}-${proposal.expectedRevision}`
+	);
+	if (document.arrangement.revision !== proposal.expectedRevision) {
+		const completed = document.outcomes.find(
+			(entry) =>
+				entry.operationId ===
+				(choice === "native"
+					? proposal.nativeCommitRevision === undefined
+						? operationId
+						: recoveryOperationId
+					: `recover-saved-${native.producerId}-${native.sequence}`)
+		);
+		if (completed?.revision === document.arrangement.revision) return document;
+		return yield* Effect.fail(
+			arrangementFailure(
+				"stale",
+				"The saved draft changed. Inspect recovery again before choosing."
+			)
+		);
+	}
 	if (choice === "native" && proposal.nativeCommitRevision !== undefined) {
 		if (
 			!document.outcomes.some(
@@ -156,10 +177,15 @@ export const restoreCameraRecovery = Effect.fn("CameraAuthoring.restoreRecovery"
 					"The retained native commit changed. Inspect recovery again."
 				)
 			);
-		return document;
+		if (document.arrangement.revision === proposal.nativeCommitRevision) return document;
+		operationId = recoveryOperationId;
 	}
 	if (choice === "native") {
-		const added = native.added ?? [],
+		const added = (native.added ?? []).filter(
+				(camera) =>
+					proposal.nativeCommitRevision === undefined ||
+					!document.arrangement.cameras.some((saved) => saved.id === camera.id)
+			),
 			addedIds = new Set(added.map((camera) => camera.id));
 		const cameras = yield* Effect.try({
 			try: () =>
@@ -198,7 +224,11 @@ export const restoreCameraRecovery = Effect.fn("CameraAuthoring.restoreRecovery"
 			operationId,
 			cameras,
 			added,
-			removed: native.removed ?? []
+			removed: (native.removed ?? []).filter(
+				(id) =>
+					proposal.nativeCommitRevision === undefined ||
+					document.arrangement.cameras.some((camera) => camera.id === id)
+			)
 		});
 	} else {
 		// Commit a revision even for "keep saved", fencing concurrent writers and recording the decision.

@@ -125,7 +125,8 @@ $env:UE_SHED_UNREAL_ENGINE_ROOT = "C:\Engines\UE_5.8"
 pnpm test:unreal-plugins out/plugins-5.8-evidence
 ```
 
-This builds all seven plugins and runs Authoring canonical JSON, camera rendering and restoration,
+This builds all ten plugins and runs Authoring canonical JSON, world preparation, camera authoring,
+rendering and restoration,
 map minor-version compatibility, screenshot ownership, and Niagara camera automation with real
 rendering in a disposable stock template project. Repeat for Unreal 5.7. The gate retains editor
 logs and the automation report and rejects missing, failed, or incomplete tests. It supplements
@@ -142,11 +143,11 @@ pnpm ue-shed plugins install --project fixtures/unreal-project/UEShedFixture.upr
   --manifest out/plugins/plugins.manifest.json
 ```
 
-For Map Review, select only Core and Cameras:
+For Map Review, select Core, World and Cameras:
 
 ```powershell
 node scripts/plugin-bundle.ts bundle --version <version> `
-  --output out/plugins-map-review --plugins UEShedCore,UEShedCameras
+  --output out/plugins-map-review --plugins UEShedCore,UEShedWorld,UEShedCameras
 pnpm ue-shed plugins verify out/plugins-map-review/plugins.manifest.json
 ```
 

@@ -239,3 +239,11 @@ it("validates Remote Control dependencies, identities and DLLs before launch", a
 		await rm(root, { recursive: true, force: true });
 	}
 });
+
+it("allows the public World API only when World is enabled", () => {
+	const enabled = unrealRemoteControlPermissions(["UEShedWorld"]);
+	expect(enabled).toEqual([
+		"-ini:RemoteControl:[/Script/RemoteControlCommon.RemoteControlSettings]:+CustomAllowedRemoteFunctionCalls=(ClassPath=/Script/UEShedWorldEditor.UEShedWorldLibrary,bAllowChildClasses=False)"
+	]);
+	expect(unrealRemoteControlPermissions(["UEShedCore"])).not.toContain(enabled[0]);
+});

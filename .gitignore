@@ -30,6 +30,9 @@ fixtures/unreal-project/Binaries/
 fixtures/unreal-project/DerivedDataCache/
 fixtures/unreal-project/Intermediate/
 fixtures/unreal-project/Saved/
+fixtures/unreal-project/Content/Fixture/WorldPartition/
+fixtures/unreal-project/Content/__ExternalActors__/Fixture/WorldPartition/
+fixtures/unreal-project/Content/__ExternalObjects__/Fixture/WorldPartition/
 fixtures/unreal-project/.vs/
 fixtures/unreal-project/*.sln
 unreal/Plugins/*/Binaries/

@@ -7,6 +7,42 @@ Saved-package inventory and CLI tests copy fixture files listed in Git's index i
 projects. Ignored, locally generated content does not participate in portable fixture counts. Stage
 new fixture files before running these tests; existing files use their current working contents.
 
+## Large World Partition map
+
+Run `pnpm fixture:generate-world-partition` to build, generate, and verify
+`/Game/Fixture/WorldPartition/L_WorldPartitionStress` in a fresh Unreal commandlet process.
+This opt-in fixture contains 5,120 spatially loaded mesh actors across 4 km × 4 km:
+1,024 rolling-height ground tiles, 2,048 buildings, 1,024 cone trees, and 1,024 sphere props.
+Buildings, vegetation, and props have separate editor Data Layer assets; ground stays outside them.
+One non-spatial directional light illuminates the map. Geometry uses stock engine meshes.
+The terrain is stepped mesh terrain, not Landscape; this does not cover Landscape streaming,
+HLOD generation, runtime streaming, or pixel-level capture completeness.
+
+The generator and capture presets are checked in; generated map, Data Layer assets, and external
+actor packages are ignored. Existing maps are verified without overwriting local edits. Use a clean
+fixture checkout to regenerate a modified or incomplete map. Normal `fixture:generate` and
+`fixture:verify` retain their small-fixture scope.
+
+Verification checks the saved descriptor population and Data Layer assignments, then loads and
+unloads three distant 400 m × 400 m areas independently. Each area must register exactly 61
+actors while the remaining thousands stay unregistered. Releasing each loader must unregister
+its actors without dirtying the map. This tests editor selective loading; it does not imply that
+Unreal immediately garbage-collects the released objects.
+
+Capture presets are in [world-partition-capture-areas.json](FixtureSource/world-partition-capture-areas.json).
+Coordinates are centimeters; region extents are half sizes. Resolve an actor by its stable label
+from a fresh world plan before constructing an actor-context request: regenerated actor GUIDs are
+not stable. Use `world.describe` identity and `@ue-shed/world` preparation with the chosen region,
+then `renderPreparedCamera` with `preserve_loading`. These regions include surrounding ground and
+neighboring geometry, not just the subject actor. Data Layer asset paths are listed in the presets.
+
+To open it with the companions enabled:
+
+```powershell
+$env:UE_SHED_FIXTURE_AUTHORING_MAP = "/Game/Fixture/WorldPartition/L_WorldPartitionStress"
+pnpm fixture:launch-authoring
+```
+
 ## Requirements
 
 - Unreal Engine 5.7 installed through the Epic Games Launcher, or an explicit engine root supplied

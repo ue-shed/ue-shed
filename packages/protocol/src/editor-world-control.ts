@@ -92,6 +92,7 @@ export type EditorWorldOperation = typeof EditorWorldOperation.Type;
 export const EditorWorldState = Schema.Struct({
 	contract: EditorWorldControlContract,
 	projectName: Schema.String,
+	projectRoot: Schema.optionalKey(Schema.NonEmptyString),
 	snapshot: EditorWorldSnapshot
 });
 export interface EditorWorldState extends Schema.Schema.Type<typeof EditorWorldState> {}

@@ -22,6 +22,7 @@ import { pluginsCommand } from "./commands/plugins.js";
 import { projectIndexCommand } from "./commands/project-index.js";
 import { reviewCommand } from "./commands/review.js";
 import { cameraCommand } from "./commands/camera-render.js";
+import { worldCommand } from "./commands/world.js";
 import { scenarioCommand } from "./commands/scenario.js";
 
 export const CliCommand = CliCommandSchema;
@@ -50,6 +51,7 @@ export const cliCommand = Command.make("ue-shed").pipe(
 		projectIndexCommand,
 		reviewCommand,
 		cameraCommand,
+		worldCommand,
 		pluginsCommand
 	])
 );

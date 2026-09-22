@@ -49,6 +49,7 @@ export const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(f
 				owner: string;
 				endpoint: string;
 				previewKey?: string;
+				preview?: CameraWorkspaceResult["preview"];
 				livePreview: boolean;
 				bridge: ReturnType<typeof makeCameraAuthoringBridge>;
 				snapshot: CameraBridgeSnapshot;
@@ -84,7 +85,8 @@ export const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(f
 			const camera = panel.cameras.find((item) => item.id === panel.activeCameraId)!;
 			const key = JSON.stringify(camera);
 			if (active.previewKey !== key) {
-				yield* ensureProvisionedCameras(
+				active.preview = undefined;
+				const bindings = yield* ensureProvisionedCameras(
 					active.endpoint,
 					[
 						{
@@ -105,6 +107,7 @@ export const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(f
 					],
 					{ expectedMapPath: panel.arrangement.mapPath, previewFps: 5 }
 				).pipe(Effect.provideService(RemoteControlClient, client));
+				active.preview = bindings[0];
 				active.previewKey = key;
 			}
 		}
@@ -330,6 +333,7 @@ export const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(f
 					.map((view) => ({ id: view.id, revision: view.revision.number })) ?? [];
 			if (intent.kind === "state")
 				return {
+					preview: active?.preview ?? null,
 					panel: active?.snapshot.panel ?? null,
 					sets: savedSets,
 					recovery,
@@ -368,6 +372,7 @@ export const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(f
 			);
 			savedSets = sets;
 			return {
+				preview: active?.preview ?? null,
 				panel: active?.snapshot.panel ?? null,
 				sets,
 				recovery,
@@ -378,6 +383,7 @@ export const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(f
 		gate.withPermits(1),
 		Effect.catch((cause) =>
 			Effect.succeed({
+				preview: active?.preview ?? null,
 				panel: active?.snapshot.panel ?? null,
 				sets: savedSets,
 				recovery,

@@ -311,23 +311,28 @@ export function makeCameraAuthoringStore(documentPath: string): CameraAuthoringS
 		await writeAtomic(path, json(CameraAuthoringDocument.make(document)));
 		return document;
 	};
-	const recoverProjection = async (document: CameraAuthoringDocument) => {
+	const projectLocked = async (document: CameraAuthoringDocument) => {
 		if (!document.projection) return document;
 		const projection = document.projection;
-		await exclusive(projection.path, async () => {
+		{
 			const current = await optionalRead(projection.path),
 				expected = json(document.reviewSet);
-			if (current === expected) return;
-			if ((current === null ? null : digest(current)) !== projection.previousDigest)
-				throw arrangementFailure(
-					"stale",
-					"The approval destination changed. The approved state remains recoverable in the authoring document."
-				);
-			await writeAtomic(projection.path, expected);
-		});
+			if (current !== expected) {
+				if ((current === null ? null : digest(current)) !== projection.previousDigest)
+					throw arrangementFailure(
+						"stale",
+						"The approval destination changed. The approved state remains recoverable in the authoring document."
+					);
+				await writeAtomic(projection.path, expected);
+			}
+		}
 		const { projection: _completed, ...completed } = document;
 		return persist(completed);
 	};
+	const recoverProjection = (document: CameraAuthoringDocument) =>
+		document.projection
+			? exclusive(document.projection.path, () => projectLocked(document))
+			: Promise.resolve(document);
 	const transact = <A>(operation: () => Promise<A>) =>
 		Effect.tryPromise({ try: () => exclusive(path, operation), catch: storageError }).pipe(
 			Effect.uninterruptible
@@ -399,66 +404,72 @@ export function makeCameraAuthoringStore(documentPath: string): CameraAuthoringS
 						"invalid",
 						"The capture Review Set must have its own path."
 					);
-				const current = await optionalRead(destination);
-				let base = document.reviewSet;
-				if (current !== null) {
-					let decoded: ReviewSet;
-					try {
-						decoded = Schema.decodeUnknownSync(ReviewSet)(JSON.parse(current));
-					} catch {
-						throw arrangementFailure(
-							"stale",
-							"The destination differs from a valid Review Set. Reload before saving."
-						);
-					}
-					base = cameraApprovalBase(document, decoded);
-				}
-				const ids = "cameraId" in approval ? [approval.cameraId] : approval.cameraIds;
-				if (new Set(ids).size !== ids.length)
-					throw arrangementFailure("invalid", "Approval camera IDs must be unique.");
-				let reviewSet = base;
-				for (const cameraId of ids)
-					reviewSet = approveArrangementCamera(document.arrangement, cameraId, reviewSet);
-				if ("removeRetiredViewIds" in approval) {
-					for (const viewId of approval.removeRetiredViewIds) {
-						const view = reviewSet.views.find((entry) => entry.id === viewId);
-						if (
-							!view?.authoring ||
-							view.authoring.arrangementId !== document.arrangement.id ||
-							!document.arrangement.retiredCameraIds.some(
-								(id) => id === view.authoring?.cameraId
-							)
-						)
+				return exclusive(destination, async () => {
+					const current = await optionalRead(destination);
+					let base = document.reviewSet;
+					if (current !== null) {
+						let decoded: ReviewSet;
+						try {
+							decoded = Schema.decodeUnknownSync(ReviewSet)(JSON.parse(current));
+						} catch {
 							throw arrangementFailure(
-								"scope_mismatch",
-								"Only explicitly retired Views owned by this arrangement can be removed."
+								"stale",
+								"The destination differs from a valid Review Set. Reload before saving."
 							);
-					}
-					reviewSet = ReviewSet.make({
-						...reviewSet,
-						views: reviewSet.views.filter(
-							(view) => !approval.removeRetiredViewIds.includes(view.id)
-						)
-					});
-				}
-				// Commit the approval and its projection intent together. Repeating the operation repairs a lost export.
-				const committed = await persist({
-					...document,
-					reviewSet,
-					outcomes: [
-						...document.outcomes.slice(-255),
-						{
-							operationId: approval.operationId,
-							fingerprint,
-							revision: approval.expectedRevision
 						}
-					],
-					projection: {
-						path: destination,
-						previousDigest: current === null ? null : digest(current)
+						base = cameraApprovalBase(document, decoded);
 					}
+					const ids = "cameraId" in approval ? [approval.cameraId] : approval.cameraIds;
+					if (new Set(ids).size !== ids.length)
+						throw arrangementFailure("invalid", "Approval camera IDs must be unique.");
+					let reviewSet = base;
+					for (const cameraId of ids)
+						reviewSet = approveArrangementCamera(
+							document.arrangement,
+							cameraId,
+							reviewSet
+						);
+					if ("removeRetiredViewIds" in approval) {
+						for (const viewId of approval.removeRetiredViewIds) {
+							const view = reviewSet.views.find((entry) => entry.id === viewId);
+							if (
+								!view?.authoring ||
+								view.authoring.arrangementId !== document.arrangement.id ||
+								!document.arrangement.retiredCameraIds.some(
+									(id) => id === view.authoring?.cameraId
+								)
+							)
+								throw arrangementFailure(
+									"scope_mismatch",
+									"Only explicitly retired Views owned by this arrangement can be removed."
+								);
+						}
+						reviewSet = ReviewSet.make({
+							...reviewSet,
+							views: reviewSet.views.filter(
+								(view) => !approval.removeRetiredViewIds.includes(view.id)
+							)
+						});
+					}
+					// Commit the approval and its projection intent together. Repeating the operation repairs a lost export.
+					const committed = await persist({
+						...document,
+						reviewSet,
+						outcomes: [
+							...document.outcomes.slice(-255),
+							{
+								operationId: approval.operationId,
+								fingerprint,
+								revision: approval.expectedRevision
+							}
+						],
+						projection: {
+							path: destination,
+							previousDigest: current === null ? null : digest(current)
+						}
+					});
+					return projectLocked(committed);
 				});
-				return recoverProjection(committed);
 			})
 		)
 	};

@@ -521,3 +521,4 @@ export * from "./camera-authoring-panel-schema.js";
 export * from "./camera-visibility.js";
 
 export * from "./map-capture-visibility.js";
+export { renderPreparedCamera } from "./prepared-camera.js";

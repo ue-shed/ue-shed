@@ -1,0 +1,36 @@
+{
+	"mapPath": "/Game/Fixture/WorldPartition/L_WorldPartitionStress",
+	"units": "centimeters",
+	"maximumActors": 200,
+	"dataLayers": [
+		"/Game/Fixture/WorldPartition/DL_Buildings.DL_Buildings",
+		"/Game/Fixture/WorldPartition/DL_Vegetation.DL_Vegetation",
+		"/Game/Fixture/WorldPartition/DL_Props.DL_Props"
+	],
+	"areas": [
+		{
+			"name": "Central",
+			"subjectLabel": "WP_16_16_BuildingA",
+			"region": {
+				"center": { "x": 0, "y": 0, "z": 0 },
+				"extent": { "x": 20000, "y": 20000, "z": 10000 }
+			}
+		},
+		{
+			"name": "Northeast",
+			"subjectLabel": "WP_28_28_BuildingA",
+			"region": {
+				"center": { "x": 150000, "y": 150000, "z": 0 },
+				"extent": { "x": 20000, "y": 20000, "z": 10000 }
+			}
+		},
+		{
+			"name": "Southwest",
+			"subjectLabel": "WP_04_04_BuildingA",
+			"region": {
+				"center": { "x": -150000, "y": -150000, "z": 0 },
+				"extent": { "x": 20000, "y": 20000, "z": 10000 }
+			}
+		}
+	]
+}

@@ -1,0 +1,449 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://ue-shed.dev/contracts/world/preparation/v1/response.schema.json",
+	"anyOf": [
+		{
+			"type": "object",
+			"properties": {
+				"status": {
+					"type": "string",
+					"enum": ["described"]
+				},
+				"world": {
+					"type": "object",
+					"properties": {
+						"worldId": {
+							"type": "string",
+							"allOf": [
+								{
+									"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+								}
+							]
+						},
+						"mapPath": {
+							"type": "string",
+							"allOf": [
+								{
+									"minLength": 1
+								},
+								{
+									"maxLength": 1024
+								}
+							]
+						},
+						"projectName": {
+							"type": "string",
+							"allOf": [
+								{
+									"minLength": 1
+								},
+								{
+									"maxLength": 1024
+								}
+							]
+						},
+						"partitioned": {
+							"type": "boolean"
+						},
+						"streamingEnabled": {
+							"type": "boolean"
+						}
+					},
+					"required": [
+						"worldId",
+						"mapPath",
+						"projectName",
+						"partitioned",
+						"streamingEnabled"
+					],
+					"additionalProperties": false
+				}
+			},
+			"required": ["status", "world"],
+			"additionalProperties": false
+		},
+		{
+			"type": "object",
+			"properties": {
+				"status": {
+					"type": "string",
+					"enum": ["planned", "ready", "blocked", "released"]
+				},
+				"world": {
+					"type": "object",
+					"properties": {
+						"worldId": {
+							"type": "string",
+							"allOf": [
+								{
+									"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+								}
+							]
+						},
+						"mapPath": {
+							"type": "string",
+							"allOf": [
+								{
+									"minLength": 1
+								},
+								{
+									"maxLength": 1024
+								}
+							]
+						},
+						"projectName": {
+							"type": "string",
+							"allOf": [
+								{
+									"minLength": 1
+								},
+								{
+									"maxLength": 1024
+								}
+							]
+						},
+						"partitioned": {
+							"type": "boolean"
+						},
+						"streamingEnabled": {
+							"type": "boolean"
+						}
+					},
+					"required": [
+						"worldId",
+						"mapPath",
+						"projectName",
+						"partitioned",
+						"streamingEnabled"
+					],
+					"additionalProperties": false
+				},
+				"leaseId": {
+					"type": "string",
+					"allOf": [
+						{
+							"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+						}
+					]
+				},
+				"revision": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 0,
+							"maximum": 1000000
+						}
+					]
+				},
+				"regions": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"properties": {
+							"center": {
+								"type": "object",
+								"properties": {
+									"x": {
+										"type": "number"
+									},
+									"y": {
+										"type": "number"
+									},
+									"z": {
+										"type": "number"
+									}
+								},
+								"required": ["x", "y", "z"],
+								"additionalProperties": false
+							},
+							"extent": {
+								"type": "object",
+								"properties": {
+									"x": {
+										"type": "number",
+										"allOf": [
+											{
+												"minimum": 0,
+												"maximum": 10000000
+											}
+										]
+									},
+									"y": {
+										"type": "number",
+										"allOf": [
+											{
+												"minimum": 0,
+												"maximum": 10000000
+											}
+										]
+									},
+									"z": {
+										"type": "number",
+										"allOf": [
+											{
+												"minimum": 0,
+												"maximum": 10000000
+											}
+										]
+									}
+								},
+								"required": ["x", "y", "z"],
+								"additionalProperties": false
+							}
+						},
+						"required": ["center", "extent"],
+						"additionalProperties": false
+					},
+					"allOf": [
+						{
+							"maxItems": 64
+						}
+					]
+				},
+				"actors": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"properties": {
+							"actorGuid": {
+								"type": "string",
+								"allOf": [
+									{
+										"pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+									}
+								]
+							},
+							"containerId": {
+								"type": "string",
+								"allOf": [
+									{
+										"minLength": 1
+									},
+									{
+										"maxLength": 1024
+									}
+								]
+							},
+							"label": {
+								"type": "string"
+							},
+							"classPath": {
+								"type": "string",
+								"allOf": [
+									{
+										"minLength": 1
+									},
+									{
+										"maxLength": 1024
+									}
+								]
+							},
+							"region": {
+								"anyOf": [
+									{
+										"type": "object",
+										"properties": {
+											"center": {
+												"type": "object",
+												"properties": {
+													"x": {
+														"type": "number"
+													},
+													"y": {
+														"type": "number"
+													},
+													"z": {
+														"type": "number"
+													}
+												},
+												"required": ["x", "y", "z"],
+												"additionalProperties": false
+											},
+											"extent": {
+												"type": "object",
+												"properties": {
+													"x": {
+														"type": "number",
+														"allOf": [
+															{
+																"minimum": 0
+															}
+														]
+													},
+													"y": {
+														"type": "number",
+														"allOf": [
+															{
+																"minimum": 0
+															}
+														]
+													},
+													"z": {
+														"type": "number",
+														"allOf": [
+															{
+																"minimum": 0
+															}
+														]
+													}
+												},
+												"required": ["x", "y", "z"],
+												"additionalProperties": false
+											}
+										},
+										"required": ["center", "extent"],
+										"additionalProperties": false
+									},
+									{
+										"type": "null"
+									}
+								]
+							},
+							"spatiallyLoaded": {
+								"type": "boolean"
+							},
+							"loaded": {
+								"type": "boolean"
+							},
+							"registered": {
+								"type": "boolean"
+							},
+							"visible": {
+								"type": "boolean"
+							},
+							"dependency": {
+								"type": "boolean"
+							}
+						},
+						"required": [
+							"actorGuid",
+							"containerId",
+							"label",
+							"classPath",
+							"region",
+							"spatiallyLoaded",
+							"loaded",
+							"registered",
+							"visible",
+							"dependency"
+						],
+						"additionalProperties": false
+					},
+					"allOf": [
+						{
+							"maxItems": 100000
+						}
+					]
+				},
+				"issues": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"properties": {
+							"code": {
+								"type": "string",
+								"allOf": [
+									{
+										"minLength": 1
+									},
+									{
+										"maxLength": 1024
+									}
+								]
+							},
+							"subject": {
+								"type": "string",
+								"allOf": [
+									{
+										"minLength": 1
+									},
+									{
+										"maxLength": 1024
+									}
+								]
+							},
+							"message": {
+								"type": "string",
+								"allOf": [
+									{
+										"minLength": 1
+									},
+									{
+										"maxLength": 1024
+									}
+								]
+							}
+						},
+						"required": ["code", "subject", "message"],
+						"additionalProperties": false
+					},
+					"allOf": [
+						{
+							"maxItems": 128
+						}
+					]
+				},
+				"renderReadiness": {
+					"type": "string",
+					"enum": ["not_assessed"]
+				}
+			},
+			"required": [
+				"status",
+				"world",
+				"leaseId",
+				"revision",
+				"regions",
+				"actors",
+				"issues",
+				"renderReadiness"
+			],
+			"additionalProperties": false
+		},
+		{
+			"type": "object",
+			"properties": {
+				"status": {
+					"type": "string",
+					"enum": ["failed"]
+				},
+				"code": {
+					"type": "string",
+					"allOf": [
+						{
+							"minLength": 1
+						},
+						{
+							"maxLength": 1024
+						}
+					]
+				},
+				"message": {
+					"type": "string",
+					"allOf": [
+						{
+							"minLength": 1
+						},
+						{
+							"maxLength": 1024
+						}
+					]
+				},
+				"recovery": {
+					"type": "string",
+					"allOf": [
+						{
+							"minLength": 1
+						},
+						{
+							"maxLength": 1024
+						}
+					]
+				}
+			},
+			"required": ["status", "code", "message", "recovery"],
+			"additionalProperties": false
+		}
+	],
+	"$defs": {}
+}

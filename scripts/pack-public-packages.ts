@@ -69,6 +69,7 @@ export const PUBLIC_PACKAGES: readonly PublicPackage[] = [
 	{ name: ENGINE_PACKAGE_NAME, directory: "packages/engine" },
 	{ name: ENGINE_WINDOWS_PACKAGE_NAME, directory: "packages/engine-win32-x64" },
 	{ name: "@ue-shed/cameras", directory: "packages/cameras" },
+	{ name: "@ue-shed/world", directory: "packages/world" },
 	{ name: "@ue-shed/observatory", directory: "packages/observatory" },
 	{ name: WASM_PACKAGE_NAME, directory: "packages/uasset-inspection-wasm" },
 	{ name: "@ue-shed/uasset-win32-x64", directory: "packages/uasset-win32-x64" },

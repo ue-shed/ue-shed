@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gzipSync } from "node:zlib";
@@ -76,6 +76,19 @@ describe("compiled plugin CLI boundary", () => {
 		const root = await mkdtemp(join(tmpdir(), "ue-shed-plugin-cli-"));
 		roots.push(root);
 		const sourceRoot = join(root, "source");
+		const pluginRoot = join(root, "Plugins");
+		for (const id of ["UEShedCore", "UEShedWorld", "UEShedCameras"]) {
+			await mkdir(join(pluginRoot, id), { recursive: true });
+			await copyFile(
+				join(repositoryRoot, "unreal/Plugins", id, `${id}.uplugin`),
+				join(pluginRoot, id, `${id}.uplugin`)
+			);
+			await cp(
+				join(repositoryRoot, "unreal/Plugins", id, "Source"),
+				join(pluginRoot, id, "Source"),
+				{ recursive: true }
+			);
+		}
 		const bundle = spawnSync(
 			process.execPath,
 			[
@@ -86,7 +99,11 @@ describe("compiled plugin CLI boundary", () => {
 				"--output",
 				sourceRoot,
 				"--plugins",
-				"UEShedCore,UEShedCameras"
+				"UEShedCore,UEShedWorld,UEShedCameras",
+				"--source-root",
+				pluginRoot,
+				"--license",
+				join(repositoryRoot, "LICENSE")
 			],
 			{ cwd: repositoryRoot, encoding: "utf8", timeout: 30_000, windowsHide: true }
 		);
@@ -125,7 +142,7 @@ describe("compiled plugin CLI boundary", () => {
 			readonly variantIdentity: string;
 		};
 		expect(installed.artifactKind).toBe("source");
-		expect(installed.resolvedPluginIds).toEqual(["UEShedCore", "UEShedCameras"]);
+		expect(installed.resolvedPluginIds).toEqual(["UEShedCore", "UEShedWorld", "UEShedCameras"]);
 		expect(installed.variantIdentity).toMatch(/^pv2-[a-f0-9]{64}$/u);
 	}, 30_000);
 

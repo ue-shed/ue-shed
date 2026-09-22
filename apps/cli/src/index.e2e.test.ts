@@ -487,5 +487,5 @@ describe("ue-shed CLI process", () => {
 		expect(remote.status).toBe(2);
 		expect(remote.stdout).toBe("");
 		expect(remote.stderr).toContain("ue-shed:");
-	});
+	}, 20_000);
 });

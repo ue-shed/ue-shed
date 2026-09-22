@@ -46,6 +46,7 @@ const mapReviewProject = {
 	}
 };
 const projectTestLayer = makeWorkbenchProjectTestLayer({
+	selectedProject: () => Effect.succeed(mapReviewProject.project),
 	choose: () => Effect.succeed({ project: mapReviewProject.project, status: "ready" as const }),
 	current: () => Effect.succeed({ status: "not_configured" as const }),
 	inputAtlas: () => Effect.die("not used"),
@@ -129,43 +130,58 @@ const dyingAuthoring: ReviewAuthoringApi = {
 	inspectSubject: () => Effect.die("not used"),
 	previewCandidate: () => Effect.die("not used")
 };
-const clearOnlyRemoteControl = makeRemoteControlClientTestLayer((request) => {
-	if (request.functionName === "GetCapabilityManifest") {
-		return Effect.succeed({
-			capabilities: ["editor.world-control.v1"],
-			producerKind: "unreal_editor",
-			schemaVersion: 1,
-			worldControlObjectPath: "/Script/Fixture.WorldControl"
-		});
-	}
-	if (request.functionName === "OpenMap") {
-		return Effect.gen(function* () {
-			const intent = yield* decodeEditorWorldOpenRequest(
-				JSON.parse(String(request.parameters.RequestJson))
-			).pipe(Effect.orDie);
-			expect(intent.targetMapPath).toBe("/Game/Maps/L_Alpha");
-			const snapshot = {
-				dirtyWorldPackages: [],
-				mapPath: intent.targetMapPath,
-				playSessionActive: false
-			};
-			return { ...intent, outcome: "opened", before: snapshot, after: snapshot };
-		});
-	}
-	if (request.functionName === "EnsureProvisionedCameras") {
-		return Effect.succeed({
-			cameras: [],
-			error: "editor-live-unavailable",
-			schemaVersion: 2,
-			status: "failed",
-			worldContext: "editor"
-		});
-	}
-	if (request.functionName === "ClearProvisionedCameras") {
-		return Effect.succeed({ cameras: [], schemaVersion: 1 });
-	}
-	return Effect.die(`unexpected remote call ${request.functionName}`);
-});
+const mapReviewRemoteControl = (editorProjectRoot: string | undefined) =>
+	makeRemoteControlClientTestLayer((request) => {
+		if (request.functionName === "GetCapabilityManifest") {
+			return Effect.succeed({
+				capabilities: ["editor.world-control.v1", "editor.world-state.v1"],
+				producerKind: "unreal_editor",
+				schemaVersion: 1,
+				worldControlObjectPath: "/Script/Fixture.WorldControl"
+			});
+		}
+		if (request.functionName === "GetWorldState") {
+			return Effect.succeed({
+				contract: { name: "unreal-editor-world-control", version: { major: 1, minor: 0 } },
+				projectName: "MyProj",
+				...(editorProjectRoot === undefined
+					? undefined
+					: { projectRoot: editorProjectRoot }),
+				snapshot: {
+					dirtyWorldPackages: [],
+					mapPath: "/Game/Maps/L_Alpha",
+					playSessionActive: false
+				}
+			});
+		}
+		if (request.functionName === "OpenMap") {
+			return Effect.gen(function* () {
+				const intent = yield* decodeEditorWorldOpenRequest(
+					JSON.parse(String(request.parameters.RequestJson))
+				).pipe(Effect.orDie);
+				expect(intent.targetMapPath).toBe("/Game/Maps/L_Alpha");
+				const snapshot = {
+					dirtyWorldPackages: [],
+					mapPath: intent.targetMapPath,
+					playSessionActive: false
+				};
+				return { ...intent, outcome: "opened", before: snapshot, after: snapshot };
+			});
+		}
+		if (request.functionName === "EnsureProvisionedCameras") {
+			return Effect.succeed({
+				cameras: [],
+				error: "editor-live-unavailable",
+				schemaVersion: 2,
+				status: "failed",
+				worldContext: "editor"
+			});
+		}
+		if (request.functionName === "ClearProvisionedCameras") {
+			return Effect.succeed({ cameras: [], schemaVersion: 1 });
+		}
+		return Effect.die(`unexpected remote call ${request.functionName}`);
+	});
 const dyingAuthoringSessions: ReviewAuthoringSessionsApi = {
 	approve: () => Effect.die("not used"),
 	create: (args) =>
@@ -228,15 +244,18 @@ const assetReaderTestLayer = makeAssetReaderTestLayer({
 	source: () => Effect.succeed("configured" as const)
 });
 
+const clearOnlyRemoteControl = mapReviewRemoteControl(mapReviewProject.project.projectRoot);
+
 const makeMapReviewDeps = (
-	authoringSessions: ReviewAuthoringSessionsApi = dyingAuthoringSessions
+	authoringSessions: ReviewAuthoringSessionsApi = dyingAuthoringSessions,
+	remoteControl = clearOnlyRemoteControl
 ) =>
 	Layer.mergeAll(
 		makeWorkbenchEditorHandoffTestLayer(),
 		assetReaderTestLayer,
 		makeCameraFeedTestLayer(),
 		makeWorkbenchWindowTestLayer(),
-		clearOnlyRemoteControl,
+		remoteControl,
 		makeReviewAuthoringSessionsTestLayer(authoringSessions),
 		Layer.succeed(
 			Observatory,
@@ -268,61 +287,75 @@ const baseMapReviewDeps = makeMapReviewDeps();
 
 const WorkbenchMapReviewTestLive = MapReviewLiveWithDialog.pipe(Layer.provide(baseMapReviewDeps));
 
-it.effect("uses the global project's cached .umap inventory for saved map review", () =>
-	Effect.gen(function* () {
-		const service = yield* WorkbenchMapReview;
-		const choice = yield* service.chooseProjectAndMaps();
-		const invalidOpen = yield* service.openMapInUnreal!("Content/Maps/NotInProject.umap");
-		expect(invalidOpen.outcome).toBe("failed");
-		const opened = yield* service.openMapInUnreal!("Content/Maps/L_Alpha.umap");
-		expect(opened.outcome).toBe("opened");
-		expect(choice.status).toBe("configured");
-		if (choice.status !== "configured") return;
-		expect(choice.projectName).toBe("MyProj");
-		// The selected project exposes its discovered maps as project-relative paths.
-		expect(choice.maps.map((map) => map.mapPath)).toEqual([
-			"Content/Maps/L_Alpha.umap",
-			"Content/Maps/L_Beta.umap"
-		]);
-		// That same cached inventory backs savedWorldMaps without a second native map picker.
-		const maps = yield* service.savedWorldMaps();
-		expect(maps.map((map) => map.mapPath)).toEqual([
-			"Content/Maps/L_Alpha.umap",
-			"Content/Maps/L_Beta.umap"
-		]);
-		expect(yield* service.savedWorldProgress()).toEqual({
-			actorsFound: 0,
-			phase: "idle",
-			processedPackages: 0,
-			totalPackages: 0
-		});
-	}).pipe(
-		Effect.provide(
-			WorkbenchMapReviewTestLive.pipe(
-				Layer.provide(
-					Layer.mergeAll(
-						makeWorkbenchConfigurationLayer(notConfigured),
-						makeLocalFilesTestLayer(),
-						makeReviewRepositoryTestLayer({
-							discardStaging: () => Effect.die("not used"),
-							findSet: () => Effect.die("not used"),
-							finalizeRun: () => Effect.die("not used"),
-							listRuns: () => Effect.die("not used"),
-							loadRun: () => Effect.die("not used"),
-							loadSet: () => Effect.die("not used"),
-							prepareRun: () => Effect.die("not used"),
-							saveSet: () => Effect.die("not used"),
-							storeArtifact: () => Effect.die("not used"),
-							writeRunDocument: () => Effect.die("not used")
-						}),
-						makeReviewCaptureTestLayer(dyingCapture),
-						makeReviewAuthoringTestLayer(dyingAuthoring)
+for (const editorProjectRoot of [
+	mapReviewProject.project.projectRoot,
+	"D:/Other/MyProj",
+	undefined
+]) {
+	it.effect(`fences saved map review to the selected project (${editorProjectRoot})`, () =>
+		Effect.gen(function* () {
+			const service = yield* WorkbenchMapReview;
+			const choice = yield* service.chooseProjectAndMaps();
+			const invalidOpen = yield* service.openMapInUnreal!("Content/Maps/NotInProject.umap");
+			expect(invalidOpen.outcome).toBe("failed");
+			const opened = yield* service.openMapInUnreal!("Content/Maps/L_Alpha.umap");
+			const matches = editorProjectRoot === mapReviewProject.project.projectRoot;
+			expect(opened.outcome).toBe(matches ? "opened" : "failed");
+			expect((yield* service.editorWorld!()).status).toBe(matches ? "ready" : "unavailable");
+			expect(choice.status).toBe("configured");
+			if (choice.status !== "configured") return;
+			expect(choice.projectName).toBe("MyProj");
+			// The selected project exposes its discovered maps as project-relative paths.
+			expect(choice.maps.map((map) => map.mapPath)).toEqual([
+				"Content/Maps/L_Alpha.umap",
+				"Content/Maps/L_Beta.umap"
+			]);
+			// That same cached inventory backs savedWorldMaps without a second native map picker.
+			const maps = yield* service.savedWorldMaps();
+			expect(maps.map((map) => map.mapPath)).toEqual([
+				"Content/Maps/L_Alpha.umap",
+				"Content/Maps/L_Beta.umap"
+			]);
+			expect(yield* service.savedWorldProgress()).toEqual({
+				actorsFound: 0,
+				phase: "idle",
+				processedPackages: 0,
+				totalPackages: 0
+			});
+		}).pipe(
+			Effect.provide(
+				MapReviewLiveWithDialog.pipe(
+					Layer.provide(
+						makeMapReviewDeps(
+							dyingAuthoringSessions,
+							mapReviewRemoteControl(editorProjectRoot)
+						)
+					),
+					Layer.provide(
+						Layer.mergeAll(
+							makeWorkbenchConfigurationLayer(notConfigured),
+							makeLocalFilesTestLayer(),
+							makeReviewRepositoryTestLayer({
+								discardStaging: () => Effect.die("not used"),
+								findSet: () => Effect.die("not used"),
+								finalizeRun: () => Effect.die("not used"),
+								listRuns: () => Effect.die("not used"),
+								loadRun: () => Effect.die("not used"),
+								loadSet: () => Effect.die("not used"),
+								prepareRun: () => Effect.die("not used"),
+								saveSet: () => Effect.die("not used"),
+								storeArtifact: () => Effect.die("not used"),
+								writeRunDocument: () => Effect.die("not used")
+							}),
+							makeReviewCaptureTestLayer(dyingCapture),
+							makeReviewAuthoringTestLayer(dyingAuthoring)
+						)
 					)
 				)
 			)
 		)
-	)
-);
+	);
+}
 
 it.effect("returns not_configured when no review project is configured", () =>
 	Effect.gen(function* () {

@@ -105,6 +105,7 @@ export function CameraWorkspace(props: {
 			signature !== savedSignature &&
 			result.savedViews!.length > 0;
 		savedSignature = signature;
+		if (result.preview?.cameraId !== state.preview?.cameraId) setHasFrame(false);
 		setState(reconcile(result));
 		if (refresh && changed) props.onApproved();
 	};
@@ -221,7 +222,17 @@ export function CameraWorkspace(props: {
 			onFailure: (cause) => setState(reconcile({ ...state, error: Cause.pretty(cause) })),
 			onValue: (frame) => {
 				const element = canvas();
-				if (!element || !state.panel || frame.cameraIndex !== 0) return;
+				const preview = state.preview;
+				if (
+					!element ||
+					!state.panel ||
+					!preview ||
+					preview.correlation.type !== "framing_candidate" ||
+					String(preview.correlation.candidateId) !== state.panel.activeCameraId ||
+					frame.cameraId !== preview.cameraId ||
+					frame.cameraIndex !== preview.index
+				)
+					return;
 				const context = element.getContext("2d");
 				if (!context) return;
 				element.width = frame.width;

@@ -8,7 +8,8 @@
 	"EnabledByDefault": false,
 	"CanContainContent": false,
 	"Plugins": [
-		{ "Name": "UEShedCore", "Enabled": true }
+		{ "Name": "UEShedCore", "Enabled": true },
+		{ "Name": "UEShedWorld", "Enabled": true }
 	],
 	"Modules": [
 		{

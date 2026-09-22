@@ -5,6 +5,10 @@
 restoration lifecycle as Review previews, final Review captures, and map captures. Play and Simulate
 must be stopped. Workbench is optional.
 
+For actor context or bounded map areas, use `renderPreparedCamera` with
+[`@ue-shed/world`](world-preparation.md). Native `camera_regions` and Data Layer preparation also use
+the shared `UEShedWorld` manager. Install matching Core, World and Cameras plugins.
+
 ## Public API
 
 Open the map separately, discover `cameras.render-session.v1`, and call `capabilities()` and

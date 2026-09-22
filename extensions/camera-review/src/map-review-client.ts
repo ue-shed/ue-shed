@@ -172,6 +172,9 @@ export interface MapReviewClientApi {
 }
 
 export interface MapReviewLiveFrame {
+	readonly cameraId?: string;
+	readonly producerId?: string;
+	readonly sessionId?: string;
 	readonly cameraIndex: number;
 	readonly height: number;
 	readonly pixels: Uint8Array;

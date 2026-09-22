@@ -29,6 +29,37 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUEShedHighResolutionCaptureTest,
     "UEShed.Cameras.Rendering.HighResolutionCapture",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUEShedCameraRenderOpeningLeaseTest,
+    "UEShed.Cameras.Rendering.OpeningLease",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FUEShedCameraRenderOpeningLeaseTest::RunTest(const FString& Parameters)
+{
+    UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+    if (!World || !GCurrentLevelEditingViewportClient) return false;
+    bool bDelayed = false;
+    const auto Handle = World->AddOnActorSpawnedHandler(FOnActorSpawned::FDelegate::CreateLambda(
+        [&bDelayed](AActor* Actor) {
+            if (!bDelayed && Actor->IsA<ACameraActor>() && Actor->HasAnyFlags(RF_Transient))
+            {
+                bDelayed = true;
+                // Model synchronous preparation that exceeds the client's shortest valid lease.
+                FPlatformProcess::Sleep(1.1f);
+            }
+        }));
+    ON_SCOPE_EXIT { World->RemoveOnActorSpawnedHandler(Handle); };
+    auto Request = UEShedLegacyRenderRequest(FGuid::NewGuid().ToString(EGuidFormats::Digits), World, true);
+    Request->SetNumberField(TEXT("leaseMs"), 1000);
+    TSharedPtr<FJsonObject> Error;
+    auto Session = FUEShedCameraRenderSession::Open(Request, Error);
+    if (!Session) { AddError(UEShedCameraJsonText(Error)); return false; }
+    ON_SCOPE_EXIT { Session->Close(); };
+    TestTrue(TEXT("Opening includes slow preparation"), bDelayed);
+    Session->Tick();
+    TestFalse(TEXT("Opening grants a fresh client lease after preparation"), Session->IsClosed());
+    return true;
+}
+
 bool FUEShedHighResolutionCaptureTest::RunTest(const FString& Parameters)
 {
     UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
@@ -399,7 +430,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUEShedCameraRenderPreparationTest,
 bool FUEShedCameraRenderPreparationTest::RunTest(const FString &Parameters)
 {
 	// This test intentionally changes maps in the disposable, generic fixture editor.
-	if (FString(FApp::GetProjectName()) != TEXT("UEShedFixture"))
+	if (FString(FApp::GetProjectName()) != TEXT("UEShedFixture") && FString(FApp::GetProjectName()) != TEXT("UEShedPluginCompatibility"))
 	{
 		AddError(TEXT("Run preparation validation in UEShedFixture."));
 		return false;
@@ -414,8 +445,7 @@ bool FUEShedCameraRenderPreparationTest::RunTest(const FString &Parameters)
 		AddError(UEShedCameraJsonText(Error));
 		return false;
 	}
-	TestTrue(TEXT("Open partitioned generic fixture"),
-			 FEditorFileUtils::LoadMap(TEXT("/Game/Fixture/Offline/L_OfflineWorld"), false, false));
+	TestTrue(TEXT("Create partitioned generic fixture"), GEditor->NewMap(true) != nullptr);
 	TestTrue(TEXT("World change closes render owner"), Session->IsClosed());
 	TestEqual(TEXT("World change restores ownership"), Session->Close()->GetStringField(TEXT("status")),
 			  FString(TEXT("closed")));

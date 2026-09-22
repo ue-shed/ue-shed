@@ -215,6 +215,7 @@ if (
 		"launch",
 		"launch-authoring",
 		"map-history",
+		"world-partition",
 		"save",
 		"scenario",
 		"verify",
@@ -222,7 +223,7 @@ if (
 	]).has(action)
 ) {
 	throw new Error(
-		"Usage: node scripts/unreal-fixture.ts <apply|build|conformance|evidence|generate|launch|launch-authoring|map-history|save|scenario|verify|snapshot> [input] [output]"
+		"Usage: node scripts/unreal-fixture.ts <apply|build|conformance|evidence|generate|launch|launch-authoring|map-history|world-partition|save|scenario|verify|snapshot> [input] [output]"
 	);
 }
 
@@ -254,6 +255,10 @@ if (action === "generate" || action === "verify" || action === "conformance") {
 if (action === "scenario") {
 	runCommandlet(tools, pluginDescriptors, ["-ScenarioOnly"]);
 	runCommandlet(tools, pluginDescriptors, ["-ScenarioOnly", "-VerifyOnly"]);
+}
+if (action === "world-partition") {
+	runCommandlet(tools, pluginDescriptors, ["-WorldPartitionOnly"]);
+	runCommandlet(tools, pluginDescriptors, ["-WorldPartitionOnly", "-VerifyOnly"]);
 }
 if (action === "map-history") {
 	runCommandlet(tools, pluginDescriptors, [

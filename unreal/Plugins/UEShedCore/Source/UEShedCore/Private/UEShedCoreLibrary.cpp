@@ -41,6 +41,12 @@ void UUEShedCoreLibrary::GetCapabilityManifest(FString& ResultJson)
 	Root->SetStringField(TEXT("producerKind"), TEXT("unreal_editor"));
 	Root->SetStringField(TEXT("projectName"), FApp::GetProjectName());
 	TArray<TSharedPtr<FJsonValue>> Capabilities;
+	if (FModuleManager::Get().IsModuleLoaded(TEXT("UEShedWorldEditor")))
+	{
+		Root->SetStringField(TEXT("worldPreparationObjectPath"),
+			TEXT("/Script/UEShedWorldEditor.Default__UEShedWorldLibrary"));
+		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("world.preparation.v1")));
+	}
 	if (FModuleManager::Get().IsModuleLoaded(TEXT("UEShedAuthoring")))
 	{
 		Root->SetStringField(

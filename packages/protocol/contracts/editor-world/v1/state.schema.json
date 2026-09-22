@@ -77,6 +77,14 @@
 			},
 			"required": ["dirtyWorldPackages", "playSessionActive"],
 			"additionalProperties": false
+		},
+		"projectRoot": {
+			"type": "string",
+			"allOf": [
+				{
+					"minLength": 1
+				}
+			]
 		}
 	},
 	"required": ["contract", "projectName", "snapshot"],

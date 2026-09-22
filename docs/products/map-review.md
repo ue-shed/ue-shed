@@ -53,6 +53,10 @@ When the confirmed editor map changes, retained actors and selections from the p
 are cleared, and late packets for that world are ignored. Stream freshness reflects the live/stale
 observation state, not the age of its reusable actor catalogue.
 
+Workbench verifies the editor's reported project root against the selected local project before
+following its map or opening a saved map. A different project, or an older Core plugin that cannot
+report its project root, leaves map synchronization unavailable with reconnection guidance.
+
 Opening a large map is an operation with an acknowledgement and read-only completion polling, not
 a ten-second HTTP success/failure assumption. While waiting, Workbench keeps an explicit loading
 state and suppresses duplicate opens. The plugin still loads on Unreal's game thread; unavailable
@@ -580,8 +584,8 @@ authoring-session behavior, capture orchestration, repository ports, and typed d
 
 The public npm surface for Plan 028's first vertical is `@ue-shed/cameras` plus its required
 dependency closure `@ue-shed/unreal-connection` and `@ue-shed/protocol`, all at the exact candidate
-version. Install matching Unreal plugins with the Core+Cameras graph only
-(`UEShedCore,UEShedCameras`); Workbench and `extensions/camera-review` are optional clients, not
+version. Install matching Unreal plugins with the Core+World+Cameras graph
+(`UEShedCore,UEShedWorld,UEShedCameras`); Workbench and `extensions/camera-review` are optional clients, not
 release dependencies.
 
 `@ue-shed/observatory` and `@ue-shed/observability` remain outside the first Map Review vertical.

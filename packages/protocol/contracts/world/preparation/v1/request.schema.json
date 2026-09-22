@@ -1,0 +1,897 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://ue-shed.dev/contracts/world/preparation/v1/request.schema.json",
+	"anyOf": [
+		{
+			"type": "object",
+			"properties": {
+				"contract": {
+					"type": "object",
+					"properties": {
+						"name": {
+							"type": "string",
+							"enum": ["ue-shed-world-preparation"]
+						},
+						"version": {
+							"type": "object",
+							"properties": {
+								"major": {
+									"type": "number",
+									"enum": [1]
+								},
+								"minor": {
+									"type": "number",
+									"enum": [0]
+								}
+							},
+							"required": ["major", "minor"],
+							"additionalProperties": false
+						}
+					},
+					"required": ["name", "version"],
+					"additionalProperties": false
+				},
+				"action": {
+					"type": "string",
+					"enum": ["describe"]
+				}
+			},
+			"required": ["contract", "action"],
+			"additionalProperties": false
+		},
+		{
+			"type": "object",
+			"properties": {
+				"contract": {
+					"type": "object",
+					"properties": {
+						"name": {
+							"type": "string",
+							"enum": ["ue-shed-world-preparation"]
+						},
+						"version": {
+							"type": "object",
+							"properties": {
+								"major": {
+									"type": "number",
+									"enum": [1]
+								},
+								"minor": {
+									"type": "number",
+									"enum": [0]
+								}
+							},
+							"required": ["major", "minor"],
+							"additionalProperties": false
+						}
+					},
+					"required": ["name", "version"],
+					"additionalProperties": false
+				},
+				"action": {
+					"type": "string",
+					"enum": ["plan"]
+				},
+				"requirements": {
+					"type": "object",
+					"properties": {
+						"world": {
+							"type": "object",
+							"properties": {
+								"worldId": {
+									"type": "string",
+									"allOf": [
+										{
+											"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+										}
+									]
+								},
+								"mapPath": {
+									"type": "string",
+									"allOf": [
+										{
+											"minLength": 1
+										},
+										{
+											"maxLength": 1024
+										}
+									]
+								},
+								"projectName": {
+									"type": "string",
+									"allOf": [
+										{
+											"minLength": 1
+										},
+										{
+											"maxLength": 1024
+										}
+									]
+								},
+								"partitioned": {
+									"type": "boolean"
+								},
+								"streamingEnabled": {
+									"type": "boolean"
+								}
+							},
+							"required": [
+								"worldId",
+								"mapPath",
+								"projectName",
+								"partitioned",
+								"streamingEnabled"
+							],
+							"additionalProperties": false
+						},
+						"targets": {
+							"type": "array",
+							"items": {
+								"anyOf": [
+									{
+										"type": "object",
+										"properties": {
+											"kind": {
+												"type": "string",
+												"enum": ["region"]
+											},
+											"region": {
+												"type": "object",
+												"properties": {
+													"center": {
+														"type": "object",
+														"properties": {
+															"x": {
+																"type": "number"
+															},
+															"y": {
+																"type": "number"
+															},
+															"z": {
+																"type": "number"
+															}
+														},
+														"required": ["x", "y", "z"],
+														"additionalProperties": false
+													},
+													"extent": {
+														"type": "object",
+														"properties": {
+															"x": {
+																"type": "number",
+																"allOf": [
+																	{
+																		"minimum": 0,
+																		"maximum": 10000000
+																	}
+																]
+															},
+															"y": {
+																"type": "number",
+																"allOf": [
+																	{
+																		"minimum": 0,
+																		"maximum": 10000000
+																	}
+																]
+															},
+															"z": {
+																"type": "number",
+																"allOf": [
+																	{
+																		"minimum": 0,
+																		"maximum": 10000000
+																	}
+																]
+															}
+														},
+														"required": ["x", "y", "z"],
+														"additionalProperties": false
+													}
+												},
+												"required": ["center", "extent"],
+												"additionalProperties": false
+											}
+										},
+										"required": ["kind", "region"],
+										"additionalProperties": false
+									},
+									{
+										"type": "object",
+										"properties": {
+											"kind": {
+												"type": "string",
+												"enum": ["actor"]
+											},
+											"actor": {
+												"type": "object",
+												"properties": {
+													"actorGuid": {
+														"type": "string",
+														"allOf": [
+															{
+																"pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+															}
+														]
+													},
+													"containerId": {
+														"type": "string",
+														"allOf": [
+															{
+																"minLength": 1
+															},
+															{
+																"maxLength": 1024
+															}
+														]
+													}
+												},
+												"required": ["actorGuid", "containerId"],
+												"additionalProperties": false
+											},
+											"contextExtent": {
+												"type": "object",
+												"properties": {
+													"x": {
+														"type": "number",
+														"allOf": [
+															{
+																"minimum": 0,
+																"maximum": 10000000
+															}
+														]
+													},
+													"y": {
+														"type": "number",
+														"allOf": [
+															{
+																"minimum": 0,
+																"maximum": 10000000
+															}
+														]
+													},
+													"z": {
+														"type": "number",
+														"allOf": [
+															{
+																"minimum": 0,
+																"maximum": 10000000
+															}
+														]
+													}
+												},
+												"required": ["x", "y", "z"],
+												"additionalProperties": false
+											}
+										},
+										"required": ["kind", "actor", "contextExtent"],
+										"additionalProperties": false
+									}
+								]
+							},
+							"allOf": [
+								{
+									"maxItems": 64
+								}
+							]
+						},
+						"dataLayers": {
+							"type": "array",
+							"items": {
+								"type": "object",
+								"properties": {
+									"assetPath": {
+										"type": "string",
+										"allOf": [
+											{
+												"minLength": 1
+											},
+											{
+												"maxLength": 1024
+											}
+										]
+									},
+									"loaded": {
+										"type": "boolean"
+									},
+									"visible": {
+										"type": "boolean"
+									}
+								},
+								"required": ["assetPath", "loaded", "visible"],
+								"additionalProperties": false
+							},
+							"allOf": [
+								{
+									"maxItems": 64
+								}
+							]
+						},
+						"maximumActors": {
+							"type": "integer",
+							"allOf": [
+								{
+									"minimum": 1,
+									"maximum": 100000
+								}
+							]
+						}
+					},
+					"required": ["world", "targets", "dataLayers", "maximumActors"],
+					"additionalProperties": false
+				}
+			},
+			"required": ["contract", "action", "requirements"],
+			"additionalProperties": false
+		},
+		{
+			"type": "object",
+			"properties": {
+				"contract": {
+					"type": "object",
+					"properties": {
+						"name": {
+							"type": "string",
+							"enum": ["ue-shed-world-preparation"]
+						},
+						"version": {
+							"type": "object",
+							"properties": {
+								"major": {
+									"type": "number",
+									"enum": [1]
+								},
+								"minor": {
+									"type": "number",
+									"enum": [0]
+								}
+							},
+							"required": ["major", "minor"],
+							"additionalProperties": false
+						}
+					},
+					"required": ["name", "version"],
+					"additionalProperties": false
+				},
+				"action": {
+					"type": "string",
+					"enum": ["acquire"]
+				},
+				"leaseId": {
+					"type": "string",
+					"allOf": [
+						{
+							"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+						}
+					]
+				},
+				"leaseMs": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 1000,
+							"maximum": 120000
+						}
+					]
+				},
+				"requirements": {
+					"type": "object",
+					"properties": {
+						"world": {
+							"type": "object",
+							"properties": {
+								"worldId": {
+									"type": "string",
+									"allOf": [
+										{
+											"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+										}
+									]
+								},
+								"mapPath": {
+									"type": "string",
+									"allOf": [
+										{
+											"minLength": 1
+										},
+										{
+											"maxLength": 1024
+										}
+									]
+								},
+								"projectName": {
+									"type": "string",
+									"allOf": [
+										{
+											"minLength": 1
+										},
+										{
+											"maxLength": 1024
+										}
+									]
+								},
+								"partitioned": {
+									"type": "boolean"
+								},
+								"streamingEnabled": {
+									"type": "boolean"
+								}
+							},
+							"required": [
+								"worldId",
+								"mapPath",
+								"projectName",
+								"partitioned",
+								"streamingEnabled"
+							],
+							"additionalProperties": false
+						},
+						"targets": {
+							"type": "array",
+							"items": {
+								"anyOf": [
+									{
+										"type": "object",
+										"properties": {
+											"kind": {
+												"type": "string",
+												"enum": ["region"]
+											},
+											"region": {
+												"type": "object",
+												"properties": {
+													"center": {
+														"type": "object",
+														"properties": {
+															"x": {
+																"type": "number"
+															},
+															"y": {
+																"type": "number"
+															},
+															"z": {
+																"type": "number"
+															}
+														},
+														"required": ["x", "y", "z"],
+														"additionalProperties": false
+													},
+													"extent": {
+														"type": "object",
+														"properties": {
+															"x": {
+																"type": "number",
+																"allOf": [
+																	{
+																		"minimum": 0,
+																		"maximum": 10000000
+																	}
+																]
+															},
+															"y": {
+																"type": "number",
+																"allOf": [
+																	{
+																		"minimum": 0,
+																		"maximum": 10000000
+																	}
+																]
+															},
+															"z": {
+																"type": "number",
+																"allOf": [
+																	{
+																		"minimum": 0,
+																		"maximum": 10000000
+																	}
+																]
+															}
+														},
+														"required": ["x", "y", "z"],
+														"additionalProperties": false
+													}
+												},
+												"required": ["center", "extent"],
+												"additionalProperties": false
+											}
+										},
+										"required": ["kind", "region"],
+										"additionalProperties": false
+									},
+									{
+										"type": "object",
+										"properties": {
+											"kind": {
+												"type": "string",
+												"enum": ["actor"]
+											},
+											"actor": {
+												"type": "object",
+												"properties": {
+													"actorGuid": {
+														"type": "string",
+														"allOf": [
+															{
+																"pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+															}
+														]
+													},
+													"containerId": {
+														"type": "string",
+														"allOf": [
+															{
+																"minLength": 1
+															},
+															{
+																"maxLength": 1024
+															}
+														]
+													}
+												},
+												"required": ["actorGuid", "containerId"],
+												"additionalProperties": false
+											},
+											"contextExtent": {
+												"type": "object",
+												"properties": {
+													"x": {
+														"type": "number",
+														"allOf": [
+															{
+																"minimum": 0,
+																"maximum": 10000000
+															}
+														]
+													},
+													"y": {
+														"type": "number",
+														"allOf": [
+															{
+																"minimum": 0,
+																"maximum": 10000000
+															}
+														]
+													},
+													"z": {
+														"type": "number",
+														"allOf": [
+															{
+																"minimum": 0,
+																"maximum": 10000000
+															}
+														]
+													}
+												},
+												"required": ["x", "y", "z"],
+												"additionalProperties": false
+											}
+										},
+										"required": ["kind", "actor", "contextExtent"],
+										"additionalProperties": false
+									}
+								]
+							},
+							"allOf": [
+								{
+									"maxItems": 64
+								}
+							]
+						},
+						"dataLayers": {
+							"type": "array",
+							"items": {
+								"type": "object",
+								"properties": {
+									"assetPath": {
+										"type": "string",
+										"allOf": [
+											{
+												"minLength": 1
+											},
+											{
+												"maxLength": 1024
+											}
+										]
+									},
+									"loaded": {
+										"type": "boolean"
+									},
+									"visible": {
+										"type": "boolean"
+									}
+								},
+								"required": ["assetPath", "loaded", "visible"],
+								"additionalProperties": false
+							},
+							"allOf": [
+								{
+									"maxItems": 64
+								}
+							]
+						},
+						"maximumActors": {
+							"type": "integer",
+							"allOf": [
+								{
+									"minimum": 1,
+									"maximum": 100000
+								}
+							]
+						}
+					},
+					"required": ["world", "targets", "dataLayers", "maximumActors"],
+					"additionalProperties": false
+				}
+			},
+			"required": ["contract", "action", "leaseId", "leaseMs", "requirements"],
+			"additionalProperties": false
+		},
+		{
+			"type": "object",
+			"properties": {
+				"contract": {
+					"type": "object",
+					"properties": {
+						"name": {
+							"type": "string",
+							"enum": ["ue-shed-world-preparation"]
+						},
+						"version": {
+							"type": "object",
+							"properties": {
+								"major": {
+									"type": "number",
+									"enum": [1]
+								},
+								"minor": {
+									"type": "number",
+									"enum": [0]
+								}
+							},
+							"required": ["major", "minor"],
+							"additionalProperties": false
+						}
+					},
+					"required": ["name", "version"],
+					"additionalProperties": false
+				},
+				"leaseId": {
+					"type": "string",
+					"allOf": [
+						{
+							"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+						}
+					]
+				},
+				"worldId": {
+					"type": "string",
+					"allOf": [
+						{
+							"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+						}
+					]
+				},
+				"action": {
+					"type": "string",
+					"enum": ["replace"]
+				},
+				"revision": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 1,
+							"maximum": 1000000
+						}
+					]
+				},
+				"targets": {
+					"type": "array",
+					"items": {
+						"anyOf": [
+							{
+								"type": "object",
+								"properties": {
+									"kind": {
+										"type": "string",
+										"enum": ["region"]
+									},
+									"region": {
+										"type": "object",
+										"properties": {
+											"center": {
+												"type": "object",
+												"properties": {
+													"x": {
+														"type": "number"
+													},
+													"y": {
+														"type": "number"
+													},
+													"z": {
+														"type": "number"
+													}
+												},
+												"required": ["x", "y", "z"],
+												"additionalProperties": false
+											},
+											"extent": {
+												"type": "object",
+												"properties": {
+													"x": {
+														"type": "number",
+														"allOf": [
+															{
+																"minimum": 0,
+																"maximum": 10000000
+															}
+														]
+													},
+													"y": {
+														"type": "number",
+														"allOf": [
+															{
+																"minimum": 0,
+																"maximum": 10000000
+															}
+														]
+													},
+													"z": {
+														"type": "number",
+														"allOf": [
+															{
+																"minimum": 0,
+																"maximum": 10000000
+															}
+														]
+													}
+												},
+												"required": ["x", "y", "z"],
+												"additionalProperties": false
+											}
+										},
+										"required": ["center", "extent"],
+										"additionalProperties": false
+									}
+								},
+								"required": ["kind", "region"],
+								"additionalProperties": false
+							},
+							{
+								"type": "object",
+								"properties": {
+									"kind": {
+										"type": "string",
+										"enum": ["actor"]
+									},
+									"actor": {
+										"type": "object",
+										"properties": {
+											"actorGuid": {
+												"type": "string",
+												"allOf": [
+													{
+														"pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+													}
+												]
+											},
+											"containerId": {
+												"type": "string",
+												"allOf": [
+													{
+														"minLength": 1
+													},
+													{
+														"maxLength": 1024
+													}
+												]
+											}
+										},
+										"required": ["actorGuid", "containerId"],
+										"additionalProperties": false
+									},
+									"contextExtent": {
+										"type": "object",
+										"properties": {
+											"x": {
+												"type": "number",
+												"allOf": [
+													{
+														"minimum": 0,
+														"maximum": 10000000
+													}
+												]
+											},
+											"y": {
+												"type": "number",
+												"allOf": [
+													{
+														"minimum": 0,
+														"maximum": 10000000
+													}
+												]
+											},
+											"z": {
+												"type": "number",
+												"allOf": [
+													{
+														"minimum": 0,
+														"maximum": 10000000
+													}
+												]
+											}
+										},
+										"required": ["x", "y", "z"],
+										"additionalProperties": false
+									}
+								},
+								"required": ["kind", "actor", "contextExtent"],
+								"additionalProperties": false
+							}
+						]
+					},
+					"allOf": [
+						{
+							"maxItems": 64
+						}
+					]
+				}
+			},
+			"required": ["contract", "leaseId", "worldId", "action", "revision", "targets"],
+			"additionalProperties": false
+		},
+		{
+			"type": "object",
+			"properties": {
+				"contract": {
+					"type": "object",
+					"properties": {
+						"name": {
+							"type": "string",
+							"enum": ["ue-shed-world-preparation"]
+						},
+						"version": {
+							"type": "object",
+							"properties": {
+								"major": {
+									"type": "number",
+									"enum": [1]
+								},
+								"minor": {
+									"type": "number",
+									"enum": [0]
+								}
+							},
+							"required": ["major", "minor"],
+							"additionalProperties": false
+						}
+					},
+					"required": ["name", "version"],
+					"additionalProperties": false
+				},
+				"leaseId": {
+					"type": "string",
+					"allOf": [
+						{
+							"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+						}
+					]
+				},
+				"worldId": {
+					"type": "string",
+					"allOf": [
+						{
+							"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+						}
+					]
+				},
+				"action": {
+					"type": "string",
+					"enum": ["poll", "release"]
+				}
+			},
+			"required": ["contract", "leaseId", "worldId", "action"],
+			"additionalProperties": false
+		}
+	],
+	"$defs": {}
+}

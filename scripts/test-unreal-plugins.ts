@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { isJsonObject, parseJsonObject } from "./json.ts";
 import {
 	prepareUnrealPlugins,
+	repositoryRoot,
 	ueShedPluginIds,
 	unrealEngineTools,
 	unrealEngineVersion
@@ -35,10 +36,14 @@ const tests = [
 	"UEShed.Cameras.Authoring.MultiCameraPreviews",
 	"UEShed.Cameras.Authoring.PreviewPanel",
 	"UEShed.Cameras.Rendering.ViewLocalVisibilityProof",
+	"UEShed.World.Preparation",
+	"UEShed.World.LeaseLifecycle",
 	"UEShed.Authoring.CanonicalJson",
 	"UEShed.Cameras.Rendering.LifecycleAndReference",
+	"UEShed.Cameras.Rendering.OpeningLease",
 	"UEShed.Cameras.Rendering.ScreenshotOwnership",
 	"UEShed.Cameras.Rendering.MapMinorCompatibility",
+	"UEShed.Cameras.Rendering.PreparationAndWorldChange",
 	"UEShed.Cameras.Streaming.BoundedLifecycle",
 	"UEShed.Cameras.Streaming.DeliveryScope",
 	"UEShed.Cameras.Streaming.CadenceUpdates",
@@ -56,6 +61,7 @@ const result = spawnSync(
 		`-ExecCmds=Automation RunTests ${tests.join("+")}`,
 		"-TestExit=Automation Test Queue Empty",
 		`-ReportExportPath=${report}`,
+		`-UEShedWorldContractFixtures=${join(repositoryRoot, "packages/protocol/contracts/world/preparation/v1/fixtures")}`,
 		`-abslog=${join(root, "editor.log")}`,
 		"-unattended",
 		"-nop4",

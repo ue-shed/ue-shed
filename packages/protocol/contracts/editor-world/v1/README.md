@@ -30,5 +30,8 @@ Interrupting a client wait stops its polling, not Unreal's already accepted oper
 retain the synchronous API with a longer request budget and no automatic retry.
 
 `editor.world-state.v1` advertises `GetWorldState`, returning `state.schema.json`: the current editor
-map, dirty world packages, project name and whether Play/Simulate is active. Clients can poll this
-independently of camera or actor streams. No editor-event subscription is claimed by this version.
+map, dirty world packages, project name and whether Play/Simulate is active. Updated companions also
+return `projectRoot`, the absolute project directory. It is optional for wire compatibility; clients
+that require a matching local project must reject missing or mismatched identity rather than infer
+it from a map path or display name. Clients can poll state independently of camera or actor streams.
+No editor-event subscription is claimed by this version.

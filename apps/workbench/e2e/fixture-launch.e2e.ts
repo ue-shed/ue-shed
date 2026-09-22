@@ -32,9 +32,7 @@ test("closing during an in-flight launch exits cleanly", async ({ demandLaunch }
 	const launch = workbench.page.getByRole("button", { name: "LAUNCH CAMERA FIXTURE" });
 	await expect(launch).toBeVisible();
 	await launch.click();
-	await expect(
-		workbench.page.getByRole("button", { name: "BUILDING + LAUNCHING…" })
-	).toBeVisible();
+	await expect(workbench.page.getByRole("button", { name: "Launching fixture…" })).toBeVisible();
 
 	await application.close();
 	await expect

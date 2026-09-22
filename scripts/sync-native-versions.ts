@@ -24,6 +24,7 @@ const cargoLocks = [
 	}
 ];
 const pluginDescriptorPaths = [
+	"unreal/Plugins/UEShedWorld/UEShedWorld.uplugin",
 	"unreal/Plugins/UEShedAssetAudits/UEShedAssetAudits.uplugin",
 	"unreal/Plugins/UEShedAuthoring/UEShedAuthoring.uplugin",
 	"unreal/Plugins/UEShedCameras/UEShedCameras.uplugin",

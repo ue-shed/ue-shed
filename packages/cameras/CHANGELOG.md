@@ -1,5 +1,97 @@
 # @ue-shed/cameras
 
+## 0.8.0
+
+### Minor Changes
+
+- 1a60713: Add scoped camera arrangement editing, reviewed layouts and recipe import/export, a replaceable native
+  Unreal menu, and atomic batch View approval. Persist effective actor hide/protect lists and produce
+  Pure, Authored, or paired Review output through the shared renderer. Apply the same visibility policy
+  to map-tile capture and live previews. Initial exclusions support loaded opaque non-Nanite static meshes;
+  unsupported geometry and unresolved references fail explicitly. Capture requires no authoring UI.
+- 23d243a: Add actor-scoped camera arrangement drafts, revision-aware durable commands and approval recovery,
+  stable camera ownership in Review Set 1.4, and a replaceable Unreal RC authoring bridge. Provide
+  independently optional native camera authoring bridge and reference menu plugins; saved cameras still
+  capture with Core+World+Cameras only.
+- 2104cb1: Add scoped editor world preparation with unloaded actor planning, actor context regions, bounded renewable leases, Data Layer ownership and explicit readiness evidence. Share native preparation with camera rendering and expose headless prepared capture and CLI recovery operations.
+
+    Start lease renewal windows after synchronous loading, reserve cleanup capacity separately from active ownership, and preserve caller defects and interruption when restoration fails. Expose single-poll readiness as `checkReady`.
+
+    Restore camera viewport state during UE 5.8 map teardown when the engine has already cleared the pilot lock, while preserving normal ownership checks.
+
+- 12b93d1: Edit whole camera sets as transient Unreal camera actors with multi-selection, pilot switching,
+  automatic draft synchronization, native duplication/deletion and Undo/Redo. Keep whole-set review
+  in a separate on-demand See Previews panel. Enable the exact UE Shed Remote Control APIs required
+  by UE 5.8 without changing project configuration or allowing arbitrary remote calls.
+
+    Allow first-camera creation without a preselected Review Set, using the public createMapReviewSet
+    workflow to persist a fresh destination. Distinguish editable camera sets from published Review Sets,
+    surface create/open failures, and avoid unnecessary Unreal calls when opening saved collections.
+
+    Redesign native camera authoring around actor selection and visible preset cards before creation,
+    compact Select/Pilot rows, collapsed advanced settings, automatic-save status and a separate review
+    footer. Add the public Effect setup host and bounded native setup queue so connected hosts can persist
+    and attach a complete preset directly from Unreal without opening a Workbench page. Keep creation
+    failures visible, avoid replay after lost acknowledgements, and skip hidden Workbench live rendering
+    for native-created sets.
+
+    Use a resizable camera-list/inspector split, two-column framing fields, compact action rows and native
+    dock-style tabs. Enable numeric scrubbing with bounded live updates and retention of the final value
+    through host acknowledgement; cancel unsent adjustments if their editing scope or session changes.
+
+### Patch Changes
+
+- b476292: Expose a consumer-neutral camera workspace request/result contract for hosts composing actor-scoped authoring through the existing camera ports.
+- 42efd74: Expose camera panel contracts for studio hosts and preserve disjoint actor-set approvals in shared Review Sets.
+- aa83787: Recover abandoned local camera writer locks without stealing live ownership. Add explicit,
+  revision-checked recovery of saved versus pending native edits through public APIs, CLI and
+  Workbench, including preserved snapshots after host loss. Prove process-crash recovery, packed
+  consumer adoption and optional native-menu integration; record 1/6/37-camera scale evidence.
+- aa83787: Allow an explicit per-run renderer in the public Review capture API. Default Workbench capture
+  to Unreal's high-resolution viewport screenshot backend, with a saved-profile renderer option,
+  matching capture-plan policy, and no silent renderer fallback or saved-profile mutation.
+- aa83787: Bound native exposure input and scrubbing to the supported EV100 range, add a restore-default
+  automatic exposure action, synchronize the field with saved settings, and apply the same fixed
+  exposure overrides to native authoring cameras and snapshot previews.
+- aa83787: Use smaller native camera drag ranges with exact typed values and explicit units. Disable
+  fitted framing and aim controls when the scope includes manually positioned cameras, keep FOV
+  available, and expose Restore fitted position next to the disabled controls.
+
+    Scale height, aim, dolly, and world-Z dragging to the subject's size so large scenes get useful
+    movement while small props retain precision, including when an existing offset is large.
+
+    Replace fitted controls with live world position, rotation, and FOV for manually positioned
+    cameras. Read native observations while draft saves are pending, and clarify the publication
+    action as Save views to Review Set with an explanation of its capture-ready snapshot behavior.
+
+    Keep fitted controls available in mixed manual/fitted scopes and switch checkbox selection to
+    Selected cameras, so manually positioning one camera cannot block editing the others.
+
+- aa83787: Expose the effective render policy in capture plans and show the renderer, exposure mode, and
+  settling frames before capture. Distinguish editable camera drafts from saved-view collections
+  and capture history in Workbench navigation.
+- b0d2955: Add opt-in editor background ticking for connected live camera streams without changing editor preferences. Release the override on pause, clear, loss of world authority, disconnect, or stalled delivery. Correct round-robin iteration and prioritize the focused camera. Hosts must publish/install matching protocol, cameras, and native plugin versions.
+- aa83787: Build only the requested plugin modules against source-engine installations, preserving existing
+  engine binaries and metadata. Stage freshly built plugin modules with the unchanged engine build
+  identity. Retain stdout and stderr build diagnostics in Workbench launch failures.
+- 2104cb1: Serialize camera approvals against their destination before committing recovery intent, honor explicitly reviewed native recovery after later host edits, and reuse equivalent capture profiles. Renew camera render leases after synchronous opening preparation.
+
+    Allow the World preparation API through UE 5.8 Remote Control permissions. Expose the editor project root so Workbench can reject map synchronization and switching against a different project. Correlate camera workspace previews with their provisioned camera identity and preserve keyboard focus across virtualized outliner updates.
+
+- Updated dependencies [1a60713]
+- Updated dependencies [8c0d895]
+- Updated dependencies [64ca9bf]
+- Updated dependencies [33d9c5f]
+- Updated dependencies [23d243a]
+- Updated dependencies [2104cb1]
+- Updated dependencies [b0d2955]
+- Updated dependencies [64ca9bf]
+- Updated dependencies [2104cb1]
+    - @ue-shed/protocol@0.8.0
+    - @ue-shed/world@0.8.0
+    - @ue-shed/unreal-connection@0.8.0
+    - @ue-shed/observability@0.8.0
+
 ## 0.7.1
 
 ### Patch Changes

@@ -1,5 +1,7 @@
 # @ue-shed/uasset-win32-x64
 
+## 0.8.0
+
 ## 0.7.1
 
 Align this package with the synchronized UE Shed 0.7.1 suite and exact internal dependency pins. There is no direct behavioral change.

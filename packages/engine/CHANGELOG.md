@@ -1,5 +1,63 @@
 # @ue-shed/engine
 
+## 0.8.0
+
+### Minor Changes
+
+- 8c0d895: Add verified editor-window activation through UE Shed Core and the engine library, with a Windows foreground permission handoff scoped to the connected process. Restore minimized windows and report actual activation, OS refusal, unavailable windows, and unsupported platforms.
+- 33d9c5f: Add capability-negotiated asynchronous editor map opens with operation identities, bounded retained
+  results and read-only completion polling. Lost acknowledgements never replay the map-open command;
+  long loads remain pending and expired waits report an indeterminate outcome. Expose current editor
+  map state separately, retaining compatibility with older synchronous companions.
+
+    Workbench confirms cross-map Review Set opens, offers saved-review-only browsing, reports editor/map
+    differences, and lets users explicitly follow the editor or switch it to their chosen map. Clarify
+    that browsing saved camera sets only reveals drafts; selecting a draft opens it for editing.
+
+### Patch Changes
+
+- aa83787: Reject mismatched project and engine module build IDs before spawning Unreal Editor, with recovery
+  guidance for custom engine builds whose major/minor versions match but whose binaries differ.
+- aa83787: Validate Remote Control and its required engine-plugin dependencies before launching a live
+  editor connection. Report missing DLLs, missing module manifests and mismatched build identities
+  with recovery guidance before Unreal opens its missing-modules dialog. Plain editor launches
+  do not require Remote Control.
+- 2104cb1: Serialize camera approvals against their destination before committing recovery intent, honor explicitly reviewed native recovery after later host edits, and reuse equivalent capture profiles. Renew camera render leases after synchronous opening preparation.
+
+    Allow the World preparation API through UE 5.8 Remote Control permissions. Expose the editor project root so Workbench can reject map synchronization and switching against a different project. Correlate camera workspace previews with their provisioned camera identity and preserve keyboard focus across virtualized outliner updates.
+
+- 12b93d1: Edit whole camera sets as transient Unreal camera actors with multi-selection, pilot switching,
+  automatic draft synchronization, native duplication/deletion and Undo/Redo. Keep whole-set review
+  in a separate on-demand See Previews panel. Enable the exact UE Shed Remote Control APIs required
+  by UE 5.8 without changing project configuration or allowing arbitrary remote calls.
+
+    Allow first-camera creation without a preselected Review Set, using the public createMapReviewSet
+    workflow to persist a fresh destination. Distinguish editable camera sets from published Review Sets,
+    surface create/open failures, and avoid unnecessary Unreal calls when opening saved collections.
+
+    Redesign native camera authoring around actor selection and visible preset cards before creation,
+    compact Select/Pilot rows, collapsed advanced settings, automatic-save status and a separate review
+    footer. Add the public Effect setup host and bounded native setup queue so connected hosts can persist
+    and attach a complete preset directly from Unreal without opening a Workbench page. Keep creation
+    failures visible, avoid replay after lost acknowledgements, and skip hidden Workbench live rendering
+    for native-created sets.
+
+    Use a resizable camera-list/inspector split, two-column framing fields, compact action rows and native
+    dock-style tabs. Enable numeric scrubbing with bounded live updates and retention of the final value
+    through host acknowledgement; cancel unsent adjustments if their editing scope or session changes.
+
+- Updated dependencies [1a60713]
+- Updated dependencies [8c0d895]
+- Updated dependencies [64ca9bf]
+- Updated dependencies [33d9c5f]
+- Updated dependencies [23d243a]
+- Updated dependencies [2104cb1]
+- Updated dependencies [b0d2955]
+- Updated dependencies [64ca9bf]
+- Updated dependencies [2104cb1]
+    - @ue-shed/protocol@0.8.0
+    - @ue-shed/unreal-connection@0.8.0
+
 ## 0.7.1
 
 Align this package with the synchronized UE Shed 0.7.1 suite and exact internal dependency pins. There is no direct behavioral change.

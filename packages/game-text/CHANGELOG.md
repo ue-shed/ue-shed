@@ -1,5 +1,20 @@
 # @ue-shed/game-text
 
+## 0.8.0
+
+### Patch Changes
+
+- 64ca9bf: Inspect rich curve keys, Skeleton reference poses and bone indices, Sequencer float/double channels,
+  bounded InstancedStruct values, and package/object metadata in UE 5.7 saved packages. Share the
+  source-derived native layouts across native and WASM readers and preserve unsupported inner payloads.
+- 64ca9bf: Use source-derived Unreal class and serialization models for supported saved assets. Share bounded
+  native layout decoding between StringTables and enums, expose StringTable metadata in native and
+  WASM inspection, and preserve saved string-table text identities.
+- Updated dependencies [64ca9bf]
+- Updated dependencies [64ca9bf]
+- Updated dependencies [64ca9bf]
+    - @ue-shed/unreal-assets@0.8.0
+
 ## 0.7.1
 
 Align this package with the synchronized UE Shed 0.7.1 suite and exact internal dependency pins. There is no direct behavioral change.

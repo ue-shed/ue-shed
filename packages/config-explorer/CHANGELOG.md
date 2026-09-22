@@ -1,5 +1,17 @@
 # @ue-shed/config-explorer
 
+## 0.8.0
+
+### Patch Changes
+
+- Updated dependencies [aa83787]
+- Updated dependencies [8c0d895]
+- Updated dependencies [33d9c5f]
+- Updated dependencies [aa83787]
+- Updated dependencies [2104cb1]
+- Updated dependencies [12b93d1]
+    - @ue-shed/engine@0.8.0
+
 ## 0.7.1
 
 Align this package with the synchronized UE Shed 0.7.1 suite and exact internal dependency pins. There is no direct behavioral change.

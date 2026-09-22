@@ -1,5 +1,27 @@
 # @ue-shed/observatory
 
+## 0.8.0
+
+### Patch Changes
+
+- a1205bd: Use shared Core window activation for explicit actor navigation. Report window activation separately from actor selection, and leave foreground ownership unchanged during background follow updates.
+- Updated dependencies [1a60713]
+- Updated dependencies [aa83787]
+- Updated dependencies [8c0d895]
+- Updated dependencies [64ca9bf]
+- Updated dependencies [33d9c5f]
+- Updated dependencies [23d243a]
+- Updated dependencies [2104cb1]
+- Updated dependencies [aa83787]
+- Updated dependencies [b0d2955]
+- Updated dependencies [64ca9bf]
+- Updated dependencies [2104cb1]
+- Updated dependencies [12b93d1]
+    - @ue-shed/protocol@0.8.0
+    - @ue-shed/engine@0.8.0
+    - @ue-shed/unreal-connection@0.8.0
+    - @ue-shed/observability@0.8.0
+
 ## 0.7.1
 
 Align this package with the synchronized UE Shed 0.7.1 suite and exact internal dependency pins. There is no direct behavioral change.

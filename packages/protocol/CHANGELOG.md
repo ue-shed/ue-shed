@@ -1,5 +1,48 @@
 # @ue-shed/protocol
 
+## 0.8.0
+
+### Minor Changes
+
+- 1a60713: Add scoped camera arrangement editing, reviewed layouts and recipe import/export, a replaceable native
+  Unreal menu, and atomic batch View approval. Persist effective actor hide/protect lists and produce
+  Pure, Authored, or paired Review output through the shared renderer. Apply the same visibility policy
+  to map-tile capture and live previews. Initial exclusions support loaded opaque non-Nanite static meshes;
+  unsupported geometry and unresolved references fail explicitly. Capture requires no authoring UI.
+- 8c0d895: Add verified editor-window activation through UE Shed Core and the engine library, with a Windows foreground permission handoff scoped to the connected process. Restore minimized windows and report actual activation, OS refusal, unavailable windows, and unsupported platforms.
+- 64ca9bf: Inspect rich curve keys, Skeleton reference poses and bone indices, Sequencer float/double channels,
+  bounded InstancedStruct values, and package/object metadata in UE 5.7 saved packages. Share the
+  source-derived native layouts across native and WASM readers and preserve unsupported inner payloads.
+- 33d9c5f: Add capability-negotiated asynchronous editor map opens with operation identities, bounded retained
+  results and read-only completion polling. Lost acknowledgements never replay the map-open command;
+  long loads remain pending and expired waits report an indeterminate outcome. Expose current editor
+  map state separately, retaining compatibility with older synchronous companions.
+
+    Workbench confirms cross-map Review Set opens, offers saved-review-only browsing, reports editor/map
+    differences, and lets users explicitly follow the editor or switch it to their chosen map. Clarify
+    that browsing saved camera sets only reveals drafts; selecting a draft opens it for editing.
+
+- 23d243a: Add actor-scoped camera arrangement drafts, revision-aware durable commands and approval recovery,
+  stable camera ownership in Review Set 1.4, and a replaceable Unreal RC authoring bridge. Provide
+  independently optional native camera authoring bridge and reference menu plugins; saved cameras still
+  capture with Core+World+Cameras only.
+- 2104cb1: Add scoped editor world preparation with unloaded actor planning, actor context regions, bounded renewable leases, Data Layer ownership and explicit readiness evidence. Share native preparation with camera rendering and expose headless prepared capture and CLI recovery operations.
+
+    Start lease renewal windows after synchronous loading, reserve cleanup capacity separately from active ownership, and preserve caller defects and interruption when restoration fails. Expose single-poll readiness as `checkReady`.
+
+    Restore camera viewport state during UE 5.8 map teardown when the engine has already cleared the pilot lock, while preserving normal ownership checks.
+
+- 64ca9bf: Use source-derived Unreal class and serialization models for supported saved assets. Share bounded
+  native layout decoding between StringTables and enums, expose StringTable metadata in native and
+  WASM inspection, and preserve saved string-table text identities.
+
+### Patch Changes
+
+- b0d2955: Add opt-in editor background ticking for connected live camera streams without changing editor preferences. Release the override on pause, clear, loss of world authority, disconnect, or stalled delivery. Correct round-robin iteration and prioritize the focused camera. Hosts must publish/install matching protocol, cameras, and native plugin versions.
+- 2104cb1: Serialize camera approvals against their destination before committing recovery intent, honor explicitly reviewed native recovery after later host edits, and reuse equivalent capture profiles. Renew camera render leases after synchronous opening preparation.
+
+    Allow the World preparation API through UE 5.8 Remote Control permissions. Expose the editor project root so Workbench can reject map synchronization and switching against a different project. Correlate camera workspace previews with their provisioned camera identity and preserve keyboard focus across virtualized outliner updates.
+
 ## 0.7.1
 
 Align this package with the synchronized UE Shed 0.7.1 suite and exact internal dependency pins. There is no direct behavioral change.

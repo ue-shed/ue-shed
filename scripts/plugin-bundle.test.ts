@@ -7,6 +7,7 @@ import { spawnSync } from "node:child_process";
 import test from "node:test";
 import {
 	buildPluginBundle,
+	CAMERA_AUTHORING_PLUGIN_IDS,
 	MAP_REVIEW_PLUGIN_IDS,
 	NIAGARA_PLUGIN_IDS,
 	OBSERVATORY_PLUGIN_IDS,
@@ -266,6 +267,25 @@ test("rejects local, unpinned, inconsistent, corrupt, or missing public plugin a
 			}),
 			/local.*full lowercase Git SHA.*all zeroes.*descriptor version.*declared archive path.*missing.*digest/s
 		);
+	} finally {
+		await rm(output, { recursive: true, force: true });
+	}
+});
+
+test("camera authoring preset includes the complete native dependency graph", async () => {
+	const output = await mkdtemp(join(tmpdir(), "ue-shed-camera-authoring-plugins-"));
+	try {
+		const result = await buildPluginBundle({
+			output,
+			releaseVersion: "0.8.0",
+			requestedPlugins: [...CAMERA_AUTHORING_PLUGIN_IDS]
+		});
+		const ids = new Set(result.manifest.plugins.map(({ id }) => id));
+		assert.ok(ids.has("UEShedCameraAuthoring"));
+		assert.equal(ids.size, 5);
+		for (const plugin of result.manifest.plugins) {
+			for (const dependency of plugin.dependencies) assert.ok(ids.has(dependency));
+		}
 	} finally {
 		await rm(output, { recursive: true, force: true });
 	}

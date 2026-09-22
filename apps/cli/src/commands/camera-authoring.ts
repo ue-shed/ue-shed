@@ -259,9 +259,103 @@ const attach = Command.make(
 	)
 );
 
+const recovery = Command.make(
+	"recovery",
+	{
+		...draft,
+		inputPath: Argument.string("proposal-or-snapshot-json"),
+		endpoint: Flag.string("endpoint"),
+		choice: Flag.choice("choice", ["inspect", "saved", "native"]).pipe(
+			Flag.withDefault("inspect")
+		)
+	},
+	(args) =>
+		observeCliOperation(
+			"CameraAuthoringRecovery",
+			Effect.gen(function* () {
+				const cameras = yield* Effect.promise(() => import("@ue-shed/cameras"));
+				const connection = yield* Effect.promise(
+					() => import("@ue-shed/unreal-connection")
+				);
+				const input = yield* readInput(args.inputPath);
+				yield* Effect.gen(function* () {
+					const client = yield* connection.RemoteControlClient;
+					const port = cameras.makeCameraAuthoringBridge(client, args.endpoint);
+					const store = cameras.makeCameraAuthoringStore(args.draftPath);
+					if (args.choice === "inspect") {
+						const snapshot = yield* Schema.decodeUnknownEffect(
+							cameras.CameraBridgeSnapshot
+						)(input);
+						yield* printJson(
+							yield* cameras.inspectCameraRecovery(store, port, snapshot)
+						);
+					} else {
+						const proposal = yield* Schema.decodeUnknownEffect(
+							cameras.CameraRecoveryProposal
+						)(input);
+						yield* printJson(
+							yield* cameras.resolveCameraRecovery(store, port, proposal, args.choice)
+						);
+					}
+				}).pipe(Effect.provide(connection.RemoteControlClientLive));
+			})
+		)
+).pipe(
+	Command.withDescription(
+		"Inspect saved and pending native edits, then resolve the exact reviewed proposal with --choice saved or native."
+	)
+);
+
+const recoveryFile = Command.make(
+	"recovery-file",
+	{
+		...draft,
+		inputPath: Argument.string("proposal-or-snapshot-json"),
+		choice: Flag.choice("choice", ["inspect", "saved", "native"]).pipe(
+			Flag.withDefault("inspect")
+		)
+	},
+	(args) =>
+		observeCliOperation(
+			"CameraAuthoringRecoveryFile",
+			Effect.gen(function* () {
+				const cameras = yield* Effect.promise(() => import("@ue-shed/cameras"));
+				const store = cameras.makeCameraAuthoringStore(args.draftPath);
+				const input = yield* readInput(args.inputPath);
+				if (args.choice === "inspect") {
+					const snapshot = yield* Schema.decodeUnknownEffect(
+						cameras.CameraBridgeSnapshot
+					)(input);
+					yield* printJson(yield* cameras.prepareCameraRecovery(store, snapshot));
+				} else {
+					const proposal = yield* Schema.decodeUnknownEffect(
+						cameras.CameraRecoveryProposal
+					)(input);
+					yield* printJson(
+						yield* cameras.restoreCameraRecovery(store, proposal, args.choice)
+					);
+				}
+			})
+		)
+).pipe(
+	Command.withDescription(
+		"Review a preserved native snapshot, then explicitly restore its edits to a draft while detached."
+	)
+);
+
 export const cameraArrangementCommand = Command.make("arrangement").pipe(
 	Command.withDescription(
 		"Author an actor-scoped camera arrangement through public headless services."
 	),
-	Command.withSubcommands([create, fromSelection, show, patch, approve, bridge, attach])
+	Command.withSubcommands([
+		create,
+		fromSelection,
+		show,
+		patch,
+		approve,
+		bridge,
+		attach,
+		recovery,
+		recoveryFile
+	])
 );

@@ -1,5 +1,6 @@
 #include "UEShedCameraAuthoringBridge.h"
 #include "UEShedCameraSetup.h"
+#include "UEShedCameraExposure.h"
 #include "Camera/CameraComponent.h"
 #include "Containers/Ticker.h"
 #include "Editor.h"
@@ -663,6 +664,21 @@ TSharedPtr<FJsonObject> FUEShedCameraAuthoringBridge::Execute(const TSharedPtr<F
             !Number(Arrangement, TEXT("revision"), Revision) || Revision != AuthoringState->Revision ||
             Str(Panel, TEXT("activeCameraId")) != AuthoringState->CameraId)
             return Result(TEXT("stale"), TEXT("Panel state must match this arrangement, revision, and active camera."));
+        const auto Policy = Child(Panel, TEXT("renderPolicy")), Exposure = Child(Policy, TEXT("exposure"));
+        TOptional<float> FixedEV;
+        if (Str(Exposure, TEXT("mode")) == TEXT("fixed_ev100"))
+        {
+            double EV = 0;
+            if (!Number(Exposure, TEXT("ev100"), EV) || EV < -20 || EV > 30)
+                return Result(TEXT("invalid"), TEXT("EV100 must be between -20 and 30."));
+            FixedEV = EV;
+        }
+        for (auto *Camera : Cameras())
+        {
+            auto *Component = Camera->GetCameraComponent();
+            UEShedApplyCameraExposure(Component->PostProcessSettings, FixedEV);
+            Component->PostProcessBlendWeight = FixedEV.IsSet() ? 1.f : 0.f;
+        }
         AuthoringState->Panel = Panel;
         if (AuthoringState->Event && Str(Q, TEXT("acknowledgeEvent")) == Str(AuthoringState->Event, TEXT("id")))
             AuthoringState->Event.Reset();

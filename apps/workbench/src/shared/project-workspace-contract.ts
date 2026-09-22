@@ -52,12 +52,14 @@ export type WorkbenchProjectState = Schema.Schema.Type<typeof WorkbenchProjectSt
 export const ProjectLaunchMode = Schema.Literals(["ue_shed", "normal"]);
 export type ProjectLaunchMode = Schema.Schema.Type<typeof ProjectLaunchMode>;
 
+export const ProjectLaunchFailure = Schema.Struct({
+	message: Schema.NonEmptyString,
+	recovery: Schema.NonEmptyString,
+	details: Schema.optionalKey(Schema.String),
+	status: Schema.Literal("failed")
+});
 export const ProjectLaunchResult = Schema.Union([
 	Schema.Struct({ mode: ProjectLaunchMode, status: Schema.Literal("launched") }),
-	Schema.Struct({
-		message: Schema.NonEmptyString,
-		recovery: Schema.NonEmptyString,
-		status: Schema.Literal("failed")
-	})
+	ProjectLaunchFailure
 ]);
 export type ProjectLaunchResult = Schema.Schema.Type<typeof ProjectLaunchResult>;

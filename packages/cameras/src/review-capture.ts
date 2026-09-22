@@ -1,4 +1,4 @@
-import { legacyReviewRenderPolicy } from "./camera-render-schema.js";
+import { CameraRendererPolicy, reviewCaptureRenderPolicy } from "./camera-render-schema.js";
 import { createHash, randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import {
@@ -97,6 +97,8 @@ export function reviewIdGeneratorLayer(makeId: () => string): Layer.Layer<Review
 }
 
 export interface CaptureReviewSetOptions {
+	/** Explicit renderer for this run; no silent fallback or saved-profile mutation. */
+	readonly renderer?: CameraRendererPolicy;
 	readonly concurrency?: ReviewCaptureConcurrency;
 	/**
 	 * Final Capture Run storage. Omit this to publish beneath
@@ -304,6 +306,7 @@ const captureWithSavedPositionFallback = Effect.fn(
 });
 
 function captureOneView(args: {
+	readonly renderer?: CameraRendererPolicy;
 	readonly attempt: ReviewCaptureAttempt;
 	readonly capturePort: ReviewCapturePortApi;
 	readonly ids: ReviewIdGeneratorApi;
@@ -358,7 +361,7 @@ function captureOneView(args: {
 			expectedMapPath: args.reviewSet.project.mapPath,
 			operationId,
 			resolution: profile.resolution,
-			renderPolicy: profile.renderPolicy ?? legacyReviewRenderPolicy,
+			renderPolicy: reviewCaptureRenderPolicy(profile.renderPolicy, args.renderer),
 			subject:
 				args.view.target.kind === "actor"
 					? args.view.target.subject
@@ -504,6 +507,22 @@ function captureReviewSetWith(args: {
 	return Effect.gen(function* () {
 		const reviewSet = yield* args.repository.loadSet(args.options.reviewSetPath);
 		const runId = CaptureRunId.make(yield* args.ids.generate());
+		const renderer =
+			args.options.renderer === undefined
+				? undefined
+				: yield* Schema.decodeUnknownEffect(CameraRendererPolicy)(
+						args.options.renderer
+					).pipe(
+						Effect.mapError(
+							(cause) =>
+								new ReviewCaptureRunError({
+									message: String(cause),
+									operation: "prepare",
+									runId,
+									recovery: "Choose a supported camera renderer and retry."
+								})
+						)
+					);
 		const invocation =
 			args.options.invocation ??
 			manualCaptureInvocation({
@@ -552,6 +571,7 @@ function captureReviewSetWith(args: {
 						views,
 						(view) =>
 							captureOneView({
+								...(renderer === undefined ? undefined : { renderer }),
 								attempt,
 								capturePort: args.capturePort,
 								ids: args.ids,

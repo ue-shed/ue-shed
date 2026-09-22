@@ -102,6 +102,45 @@ describe("camera arrangement CLI process", () => {
 				authoring: { arrangementId: "cli-arrangement", cameraId: "camera-a" },
 				viewpoint: { approvedPose: { fieldOfViewDegrees: 40, location: { z: 200 } } }
 			});
+			const savedView = saved.views.at(-1);
+			if (!savedView || savedView.viewpoint.kind !== "world_fixed")
+				throw new Error("Missing approved camera");
+			const snapshotPath = join(root, "native.json"),
+				proposalPath = join(root, "recovery.json");
+			await writeFile(
+				snapshotPath,
+				JSON.stringify({
+					version: 1,
+					status: "ready",
+					message: "",
+					sessionId: "cli-arrangement",
+					cameraId: "camera-a",
+					producerId: "cli-native",
+					revision: 1,
+					sequence: 1,
+					pending: true,
+					piloting: false,
+					saveRequested: false,
+					pose: { ...savedView.viewpoint.approvedPose, fieldOfViewDegrees: 55 }
+				})
+			);
+			const proposal = run("recovery-file", draft, snapshotPath);
+			expect(proposal).toMatchObject({
+				expectedRevision: 1,
+				native: { pose: { fieldOfViewDegrees: 55 } }
+			});
+			await writeFile(proposalPath, JSON.stringify(proposal));
+			expect(run("recovery-file", draft, proposalPath, "--choice", "native")).toMatchObject({
+				arrangement: { revision: 2 }
+			});
+			expect(run("recovery-file", draft, proposalPath, "--choice", "native")).toMatchObject({
+				arrangement: { revision: 2 }
+			});
+			expect(
+				await Effect.runPromise(
+					decodeReviewSet(JSON.parse(await readFile(destination, "utf8")))
+				)
+			).toEqual(saved);
 		} finally {
 			await rm(root, { recursive: true, force: true });
 		}

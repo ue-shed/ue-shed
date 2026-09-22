@@ -258,7 +258,7 @@ export function CameraWorkspace(props: {
 					onClick={() => setLibrary(!library())}
 					aria-expanded={library() ? "true" : "false"}
 				>
-					{library() ? "Hide camera sets" : "Browse camera sets"}
+					{library() ? "Hide camera drafts" : "Open camera draft"}
 				</button>
 				<button {...stylex.attrs(styles.button)} onClick={() => setCreating(!creating())}>
 					New camera set
@@ -306,17 +306,106 @@ export function CameraWorkspace(props: {
 			<div {...stylex.attrs(styles.row)}>
 				<span {...stylex.attrs(styles.hint)}>
 					{props.reviewSetName
-						? `Save views publishes these cameras to ${props.reviewSetName}.`
+						? `Drafts autosave. Save views copies the current cameras into ${props.reviewSetName} for capture.`
 						: "Create cameras from an actor. A Review Set for its map will be created automatically."}
 				</span>
 				<button {...stylex.attrs(styles.button)} onClick={props.onChooseReviewSet}>
-					Review sets…
+					Choose capture collection…
 				</button>
 			</div>
 			<Show when={operationError() ?? state.error}>
 				<div role="alert" {...stylex.attrs(styles.error)}>
 					{operationError() ?? state.error}
+					<Show when={state.panel}>
+						<button
+							{...stylex.attrs(styles.button)}
+							disabled={busy()}
+							onClick={() =>
+								run({ kind: "inspect_recovery", id: state.panel!.arrangement.id })
+							}
+						>
+							Inspect pending camera edits
+						</button>
+					</Show>
 				</div>
+			</Show>
+			<Show when={state.recovery}>
+				{(proposal) => (
+					<section aria-label="Camera edit recovery">
+						<Show when={proposal().nativeCommitRevision !== undefined}>
+							<p>
+								These Unreal edits are already in saved revision{" "}
+								{proposal().nativeCommitRevision}. Using them again will only
+								acknowledge that commit.
+							</p>
+						</Show>
+						<p>
+							Review saved draft revision {proposal().expectedRevision} and pending
+							Unreal edits. Choosing a version updates the draft; it does not publish
+							views.
+						</p>
+						<For each={proposal().saved}>
+							{(saved) => {
+								const native = () =>
+									proposal().native.cameras?.find(
+										(camera) => camera.id === saved.id
+									)?.pose ??
+									(proposal().native.cameraId === saved.id
+										? proposal().native.pose
+										: undefined);
+								return (
+									<details>
+										<summary>
+											{saved.id}: saved FOV {saved.pose.fieldOfViewDegrees}°,
+											Unreal FOV{" "}
+											{native()?.fieldOfViewDegrees ?? "unavailable"}
+										</summary>
+										<pre>
+											{JSON.stringify(
+												{ saved: saved.pose, native: native() },
+												null,
+												2
+											)}
+										</pre>
+									</details>
+								);
+							}}
+						</For>
+						<p>
+							Added cameras:{" "}
+							{proposal()
+								.native.added?.map((camera) => camera.id)
+								.join(", ") || "None"}
+							. Removed cameras: {proposal().native.removed?.join(", ") || "None"}.
+						</p>
+						<button
+							{...stylex.attrs(styles.button)}
+							disabled={busy() || !proposal().native.pending}
+							onClick={() =>
+								run({
+									kind: "resolve_recovery",
+									proposal: proposal(),
+									choice: "saved"
+								})
+							}
+						>
+							Keep saved draft
+						</button>
+						<button
+							{...stylex.attrs(styles.button)}
+							disabled={busy() || !proposal().native.pending}
+							onClick={() =>
+								run({
+									kind: "resolve_recovery",
+									proposal: proposal(),
+									choice: "native"
+								})
+							}
+						>
+							Use pending Unreal edits
+						</button>
+					</section>
+				)}
 			</Show>
 			<Show when={creating()}>
 				<form

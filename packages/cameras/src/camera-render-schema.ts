@@ -74,6 +74,7 @@ export const CameraRendererPolicy = Schema.Union([
 		volumetricFog: Schema.Boolean
 	})
 ]);
+export type CameraRendererPolicy = Schema.Schema.Type<typeof CameraRendererPolicy>;
 export const CameraExposurePolicy = Schema.Union([
 	Schema.Struct({ mode: Schema.Literal("project_auto") }),
 	Schema.Struct({
@@ -339,3 +340,33 @@ export const legacyReviewRenderPolicy: CameraRenderPolicy = {
 	time: "live_editor",
 	preparation: { geometry: { mode: "preserve_loading" }, dataLayers: [] }
 };
+
+export const highResolutionReviewRenderer = {
+	kind: "editor_viewport",
+	strategy: "high_resolution_screenshot",
+	profile: "lit",
+	vignette: "project",
+	fog: true,
+	volumetricFog: true
+} as const satisfies CameraRendererPolicy;
+
+/** Explicit per-run choice; saved exposure, loading, time, and profile documents remain intact. */
+export function reviewCaptureRenderPolicy(
+	saved: CameraRenderPolicy | undefined,
+	renderer?: CameraRendererPolicy
+): CameraRenderPolicy {
+	const policy = saved ?? legacyReviewRenderPolicy;
+	return renderer === undefined
+		? policy
+		: {
+				...policy,
+				renderer,
+				settling: {
+					...policy.settling,
+					minimumFrames:
+						renderer.kind === "editor_viewport"
+							? Math.max(8, policy.settling.minimumFrames)
+							: policy.settling.minimumFrames
+				}
+			};
+}

@@ -115,13 +115,13 @@ TSharedRef<SWidget> SCameraArrangementPanel::BuildSetup()
     Options->AddSlot().AutoHeight().Padding(0, 4)[SNew(SHorizontalBox)
         + SHorizontalBox::Slot().FillWidth(1)[SNew(STextBlock).Text(FText::FromString(TEXT("Camera count")))]
         + SHorizontalBox::Slot().FillWidth(1)[SNew(SNumericEntryBox<int32>).MinValue(1).MaxValue(256)
-            .AllowSpin(true).Delta(1)
+            .AllowSpin(true).Delta(1).MinSliderValue(1).MaxSliderValue(16)
             .IsEnabled_Lambda([this] { return LayoutKind != TEXT("single"); })
             .Value_Lambda([this] { return static_cast<int32>(Count); })
             .OnValueChanged_Lambda([this](int32 N) { Count = FMath::Clamp(N, 1, 256); })
             .OnValueCommitted_Lambda([this](int32 N, ETextCommit::Type) { Count = FMath::Clamp(N, 1, 256); })]];
     Options->AddSlot().AutoHeight().Padding(0, 4)[Number(TEXT("Start angle (degrees)"), Start)];
-    Options->AddSlot().AutoHeight().Padding(0, 4)[Number(TEXT("Arc span (degrees)"), Span)];
+    Options->AddSlot().AutoHeight().Padding(0, 4)[Number(TEXT("Arc span (degrees)"), Span, true)];
     Options->AddSlot().AutoHeight().Padding(0, 4)[SNew(SCheckBox).OnCheckStateChanged_Lambda([this](ECheckBoxState S) { SubjectOrientation = S == ECheckBoxState::Checked; })
         [SNew(STextBlock).Text(FText::FromString(TEXT("Orient with the subject")))]];
     Body->AddSlot().AutoHeight().Padding(0, 8)[SNew(SExpandableArea).InitiallyCollapsed(true)

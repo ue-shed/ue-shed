@@ -167,3 +167,109 @@ The fixture deselects its restored subject before destruction, releasing the edi
 that otherwise caused a UE 5.7 shutdown assertion. Cross-engine rebuilds required forced header
 generation to replace incompatible generated UHT files. Repository formatting, lint, and script
 type checks passed.
+
+## Production hardening, 2026-09-21
+
+The file-store process tests terminate real child writers before the draft rename, after the draft
+rename, and before the approved-set export. Retrying restores the committed document/export without
+duplicate revisions. Eight concurrent retries exercise stale-owner reclamation; a live owner is
+never removed. Cancellation of an active transaction waits for its commit and lock cleanup.
+Legacy or unreadable ownership remains an explicit refusal, not a guessed stale lock.
+
+Public recovery operations compare the reviewed saved revision and native gesture. Tests cover both
+choices, intervening host/native edits, preserved-file replay, and already-committed edits whose
+acknowledgement was lost. A keyboard-driven component test reviews the values and submits a choice;
+the CLI process test performs offline inspection and explicit restore. Recovery never publishes Views.
+
+The real round trip now measures RC edit through durable/native acknowledgement at 1, 6 and 37
+cameras, waits for the actual 30-second native lease to expire with pending edits, restores its
+recovery file twice, and proves only one draft revision was added. It also resolves a live host/native
+conflict, uses the independent `CameraMenuExample` plugin for editing/culling/approval, restarts, and
+captures with Core+Cameras only. The reference menu and Workbench are absent from that journey.
+
+`ScaleAndCleanup` measures transform callbacks against an unattached camera in the same stock scene,
+verifies per-camera coalescing and one live preview capture, completes 1/6/37-view batches, and checks
+cache release, PIE cleanup, unchanged viewport and map dirt. The existing visibility proof now also
+refuses Nanite-configured meshes, instances and translucency explicitly. This delimits support; it
+does not claim rendered exclusion support for those geometries.
+
+Initial measurements on this machine:
+
+| Fixture measurement, 37 cameras                        | UE 5.7   | UE 5.8   |
+| ------------------------------------------------------ | -------- | -------- |
+| Attach native set                                      | 8.1 ms   | 8.2 ms   |
+| Mean native transform callback                         | 0.040 ms | 0.043 ms |
+| Matching unattached baseline                           | 0.045 ms | 0.043 ms |
+| Preview batch render work                              | 954 ms   | 903 ms   |
+| Direct RC edit through durable acknowledgement, median | 28 ms    | 34 ms    |
+| Retained image pixels, BGRA8                           | 32.5 MiB | 32.5 MiB |
+
+Rendering measurements use automation-driven ticks and render-thread flushes; they exclude normal
+interactive tick pacing. RC measurements exclude the host's polling interval. These are measured
+fixture costs, not input-to-display latency guarantees or production-map budgets. Process physical
+memory grew by roughly 214/266 MiB during the 37-image runs, including renderer allocations; the
+pixel-cache size alone is not total memory. The tests enforce resource/count bounds, not machine-
+dependent millisecond thresholds. Performance above 37 cameras remains unproven.
+
+Generated evidence used for this table is in `out/camera-hardening-native-57-03/`,
+`out/camera-hardening-native-58-02/`, `out/camera-hardening-roundtrip-57-01/` and
+`out/camera-hardening-roundtrip-58-02/`. Final gate results are recorded with the hardening change;
+older sections above describe historical runs, including failures subsequently repaired.
+
+`pnpm test:release:packages` now executes the camera creation/tuning/retry/reopen/approval and file-
+recovery journey from exact tarballs in a clean consumer. The package ships an adoption guide and
+host-integration manifest. This is package adoption; the small example native menu is not a complete
+replacement editor UI.
+
+Final native verification: all 15 tests across nine plugins passed on UE 5.7
+(`out/camera-hardening-native-57-03/`) and UE 5.8 (`out/camera-hardening-native-58-final/`).
+The final independent-menu round trips passed on both engines in
+`out/camera-hardening-roundtrip-57-final/` and `out/camera-hardening-roundtrip-58-final/`,
+including rejection of a mismatched menu scope. The final focused crash/recovery/component run
+passed 25 tests (`out/camera-hardening-targeted-last.log`).
+
+The Workbench flow gate now targets Camera Sets: first-camera destination creation plus 4- and
+37-camera tuning, explicit Save Views, application restart and capture, followed by the existing
+gallery framing/occlusion checks. All five passed against UE 5.7 in
+`out/camera-hardening-flow-current-03.log`. Host settings tests eject the viewport before editing;
+native pilot and competing-gesture semantics are covered separately. The older candidate-UI
+recording driver is not migrated by this change, and its bounds-change/recording journey is not
+claimed as current Camera Sets evidence.
+
+The full local `pnpm check` passed (`out/camera-hardening-verified.log`): 213 test files,
+1,252 tests, with 48 explicitly environment-gated skips, plus Rust/UAsset, packed consumers,
+adoption and repository gates. Final `check:precommit` passed after the flow migration. The
+complete `pnpm check:unreal` rerun also passed on UE 5.7
+(`out/camera-hardening-unreal-final.log`), including UAsset conformance, real authoring mutations,
+Niagara, 22 review/capture integration tests and all five current Workbench journeys. This supersedes
+the earlier aggregate failure at the obsolete candidate-UI flow. Publication and CI on the eventual
+release commit remain separate steps.
+
+## Parser rewrite integration, 2026-09-21
+
+The camera-flow worktree is based on `6c355a9`, the source-derived parser merge into `main`.
+The merged protocol schemas and Game Text consumers accompany the rewritten native/WASM parser;
+the native executable was rebuilt from this checkout. Map Review continues to consume the public
+saved-world actor/transform projection, whose native producer uses the embedded source model.
+Camera arrangements do not depend on the parser's internal decoded representation, so no additional
+camera-model adaptation was necessary.
+
+Full `pnpm check` passed after the rebase (`out/parser-rebase-full-check.log`), including Rust/UAsset
+checks, native/WASM parity, 17 packed packages, copied Data Authoring adoption, repository checks and
+1,255 application tests. Fifty environment-gated tests were skipped. This run does not replace the
+separate real-Unreal evidence above or claim a fresh live-editor/Perforce run after the parser merge.
+
+## Native exposure controls (2026-09-22)
+
+The focused `UEShed.Cameras.Authoring.PreviewPanel` regression passes on UE 5.7 and 5.8:
+`out/exposure-focused-57-01/automation/index.json` and
+`out/exposure-focused-58-01/automation/index.json`. It verifies typed and slider bounds of
+EV100 -20 through 30, an out-of-range commit, fixed-exposure submission, saved-value synchronization,
+and restoring automatic exposure across the native cameras. The generated
+`Saved/UEShed/PreviewValidation/capture.png` shows the reset action and range/direction guidance.
+Snapshot and native camera exposure overrides now use one shared implementation.
+
+Repository architecture and formatting checks also pass. The broader native suite was interrupted
+while waiting for GPU draw buffers; these focused results do not establish a new full-suite pass.
+The proprietary-map black-preview report still needs the automatic-exposure comparison; this
+regression verifies the controls and exposure propagation, not that map's rendered output.

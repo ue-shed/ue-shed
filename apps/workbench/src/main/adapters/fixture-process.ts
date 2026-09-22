@@ -70,7 +70,7 @@ export const fixtureProcessLayer = (
 									...options.env,
 									ELECTRON_RUN_AS_NODE: "1"
 								},
-								stdio: ["ignore", "ignore", "pipe"],
+								stdio: ["ignore", "pipe", "pipe"],
 								windowsHide: true
 							}),
 						catch: (cause) =>
@@ -102,11 +102,13 @@ export const fixtureProcessLayer = (
 				).pipe(
 					Effect.flatMap((child) =>
 						Effect.callback<FixtureProcessExit, FixtureProcessError>((resume) => {
-							let stderr = "";
-							child.stderr?.setEncoding("utf8");
-							child.stderr?.on("data", (chunk: string) => {
-								stderr = (stderr + chunk).slice(-16_384);
-							});
+							let output = "";
+							for (const stream of [child.stdout, child.stderr]) {
+								stream?.setEncoding("utf8");
+								stream?.on("data", (chunk: string) => {
+									output = (output + chunk).slice(-65_536);
+								});
+							}
 							child.once("error", (cause) =>
 								resume(
 									Effect.succeed({
@@ -117,14 +119,14 @@ export const fixtureProcessLayer = (
 									})
 								)
 							);
-							child.once("exit", (code) => {
+							child.once("close", (code) => {
 								if (code === 0) resume(Effect.succeed({ status: "ready" }));
 								else {
 									resume(
 										Effect.succeed({
 											status: "failed",
 											message:
-												stderr.trim() ||
+												output.trim() ||
 												`Fixture launcher exited with code ${code ?? "unknown"}.`,
 											recovery:
 												"Check the Unreal build output and Saved/Logs/UEShedFixture.log."

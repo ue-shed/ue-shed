@@ -1,7 +1,17 @@
 import { spawnSync } from "node:child_process";
-import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import {
+	copyFileSync,
+	cpSync,
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	realpathSync,
+	writeFileSync
+} from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isJsonString, parseJsonObject } from "./json.ts";
 
 export interface UnrealEngineVersion {
 	readonly major: number;
@@ -103,14 +113,20 @@ function writeFileIfChanged(path: string, content: string) {
 	writeFileSync(path, content);
 }
 
-export function stagePluginRuntime(hostRoot: string) {
+export function stagePluginRuntime(
+	hostRoot: string,
+	descriptors = ueShedPluginDescriptors(),
+	builtModules?: UnrealModuleManifest
+) {
 	const binariesRoot = join(hostRoot, "Binaries", "Win64");
 	// SAFETY: UnrealBuildTool generated this module manifest for the staged engine build.
-	const moduleManifest = JSON.parse(
-		readFileSync(join(binariesRoot, "UnrealEditor.modules"), "utf8")
-	) as UnrealModuleManifest;
+	const moduleManifest =
+		builtModules ??
+		(JSON.parse(
+			readFileSync(join(binariesRoot, "UnrealEditor.modules"), "utf8")
+		) as UnrealModuleManifest);
 	const runtimePluginRoot = join(hostRoot, "RuntimePlugins");
-	return ueShedPluginDescriptors().map((descriptor) => {
+	return descriptors.map((descriptor) => {
 		const pluginId = basename(descriptor, ".uplugin");
 		// SAFETY: descriptors are UE Shed-owned .uplugin files selected by ueShedPluginDescriptors.
 		const plugin = JSON.parse(readFileSync(descriptor, "utf8")) as UnrealPluginDescriptor;
@@ -153,17 +169,32 @@ export function stagePluginRuntime(hostRoot: string) {
 export function prepareUnrealPlugins({
 	engineRoot,
 	projectPath,
-	tools
+	tools,
+	additionalPluginDescriptors = []
 }: {
 	readonly engineRoot: string;
 	readonly projectPath: string;
 	readonly tools: UnrealEngineTools;
+	readonly additionalPluginDescriptors?: readonly string[];
 }) {
 	const version = unrealEngineVersion(engineRoot);
 	if (!version) throw new Error(`Could not read the Unreal version under ${engineRoot}.`);
 	const hostRoot = process.env.UE_SHED_PLUGIN_HOST_ROOT
 		? resolve(process.env.UE_SHED_PLUGIN_HOST_ROOT)
-		: join(repositoryRoot, "out", "workbench-plugin-host", version.label);
+		: join(
+				repositoryRoot,
+				"out",
+				"workbench-plugin-host",
+				version.label,
+				createHash("sha256")
+					.update(
+						process.platform === "win32"
+							? realpathSync(engineRoot).toLowerCase()
+							: realpathSync(engineRoot)
+					)
+					.digest("hex")
+					.slice(0, 16)
+			);
 	const hostProject = join(hostRoot, "UEShedPluginHost.uproject");
 	mkdirSync(hostRoot, { recursive: true });
 	writeFileSync(
@@ -174,21 +205,67 @@ export function prepareUnrealPlugins({
 				EngineAssociation: version.label,
 				Category: "Development",
 				Description: `Disposable UE Shed plugin host for ${basename(projectPath)}.`,
-				AdditionalPluginDirectories: [relative(hostRoot, ueShedPluginRoot)]
+				AdditionalPluginDirectories: [
+					relative(hostRoot, ueShedPluginRoot),
+					...additionalPluginDescriptors.map((descriptor) =>
+						relative(hostRoot, dirname(dirname(descriptor)))
+					)
+				]
 			},
 			null,
 			"\t"
 		)}\n`
 	);
+	const descriptors = [...ueShedPluginDescriptors(), ...additionalPluginDescriptors];
+	const sourceEngine = !existsSync(join(engineRoot, "Engine", "Build", "InstalledBuild.txt"));
+	const modules = descriptors.flatMap((descriptor) => {
+		// SAFETY: these are the same plugin descriptors consumed by UnrealBuildTool.
+		const plugin = JSON.parse(readFileSync(descriptor, "utf8")) as UnrealPluginDescriptor;
+		return plugin.Modules.map(({ Name }) => Name);
+	});
+	const engineManifestPath = join(
+		engineRoot,
+		"Engine",
+		"Binaries",
+		"Win64",
+		"UnrealEditor.modules"
+	);
+	const engineManifestBefore = sourceEngine
+		? readFileSync(engineManifestPath, "utf8")
+		: undefined;
 	runProcess(tools.build, [
 		"UnrealEditor",
 		"Win64",
 		"Development",
 		`-Project=${hostProject}`,
-		`-AdditionalPlugins=${ueShedPluginIds.join("+")}`,
+		`-AdditionalPlugins=${[...ueShedPluginIds, ...additionalPluginDescriptors.map((descriptor) => basename(descriptor, ".uplugin"))].join("+")}`,
+		...(sourceEngine ? [`-Module=${modules.join("+")}`] : []),
 		"-NoUBTMakefiles",
+		"-ForceHeaderGeneration",
+		"-NoEngineChanges",
 		"-NoHotReload",
 		"-WaitMutex"
 	]);
-	return stagePluginRuntime(hostRoot);
+	if (engineManifestBefore !== undefined) {
+		if (readFileSync(engineManifestPath, "utf8") !== engineManifestBefore) {
+			throw new Error(
+				"The engine build changed during plugin compilation. Retry after the engine build finishes."
+			);
+		}
+		// Module-only builds deliberately omit target-wide metadata generation. These newly
+		// built Win64 Development DLLs link against the existing engine, protected by
+		// -NoEngineChanges. Stage their manifest with that engine's identity, never a stale
+		// disposable-host manifest or another installation's build ID.
+		const engineManifest = parseJsonObject(engineManifestBefore);
+		if (!isJsonString(engineManifest.BuildId) || !engineManifest.BuildId) {
+			throw new Error(
+				"The selected engine has no module build ID. Build its Editor target first."
+			);
+		}
+		return stagePluginRuntime(hostRoot, descriptors, {
+			BuildId: engineManifest.BuildId,
+			Modules: Object.fromEntries(modules.map((name) => [name, `UnrealEditor-${name}.dll`]))
+		});
+	}
+	return stagePluginRuntime(hostRoot, descriptors);
 }

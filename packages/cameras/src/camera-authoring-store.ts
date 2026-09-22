@@ -1,7 +1,20 @@
 import { CameraVisibilityPreset } from "./camera-visibility.js";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, open, readFile, rename, rm, stat } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import {
+	lstat,
+	mkdir,
+	open,
+	readFile,
+	readdir,
+	rename,
+	rm,
+	rmdir,
+	stat,
+	unlink,
+	writeFile
+} from "node:fs/promises";
+import { hostname } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { Effect, Schema } from "effect";
 import { ReviewSet, ReviewViewId } from "./review-schema.js";
 import {
@@ -125,23 +138,122 @@ async function writeAtomic(path: string, text: string) {
 		await rm(temporary, { force: true });
 	}
 }
+const LockOwner = Schema.Struct({
+	version: Schema.Literal(1),
+	pid: Schema.Int.check(Schema.isGreaterThan(0)),
+	host: Schema.NonEmptyString,
+	token: Schema.NonEmptyString
+});
+function hasCode(cause: unknown, code: string) {
+	return cause instanceof Error && "code" in cause && cause.code === code;
+}
+function locked(path: string) {
+	return new CameraArrangementError({
+		code: "busy",
+		message: `Authoring writer lock: ${path}`,
+		recovery:
+			"Retry after the writer exits. Dead local owners recover automatically; foreign, legacy or unreadable locks require ownership inspection."
+	});
+}
+async function removeEmptyLock(path: string) {
+	try {
+		await rmdir(path);
+	} catch (cause) {
+		// A replacement owner may already have installed its nonempty directory.
+		if (!hasCode(cause, "ENOENT") && !hasCode(cause, "ENOTEMPTY") && !hasCode(cause, "EEXIST"))
+			throw cause;
+	}
+}
+async function recoverDeadOwner(path: string) {
+	let info;
+	try {
+		info = await lstat(path);
+	} catch (cause) {
+		if (hasCode(cause, "ENOENT")) return;
+		throw cause;
+	}
+	if (!info.isDirectory() || info.isSymbolicLink()) throw locked(path);
+	const entries = await readdir(path);
+	if (!entries.length) {
+		await removeEmptyLock(path);
+		return;
+	}
+	if (entries.length !== 1) throw locked(path);
+	const name = entries[0]!;
+	if (!/^owner-[a-f0-9-]+\.json$/u.test(name)) throw locked(path);
+	const ownerPath = join(path, name);
+	let owner;
+	try {
+		if ((await lstat(ownerPath)).isSymbolicLink() || (await stat(ownerPath)).size > 4096)
+			throw locked(path);
+		owner = Schema.decodeUnknownSync(LockOwner)(JSON.parse(await readFile(ownerPath, "utf8")));
+	} catch (cause) {
+		if (hasCode(cause, "ENOENT")) return;
+		throw locked(path);
+	}
+	if (name !== `owner-${owner.token}.json` || owner.host !== hostname()) throw locked(path);
+	try {
+		process.kill(owner.pid, 0);
+		throw locked(path);
+	} catch (cause) {
+		if (!hasCode(cause, "ESRCH")) throw locked(path);
+	}
+	// Remove only the observed, unique owner. Never recursively delete a lock directory:
+	// another reclaimer or writer can replace it between any two filesystem operations.
+	try {
+		await unlink(ownerPath);
+	} catch (cause) {
+		if (hasCode(cause, "ENOENT")) return;
+		throw cause;
+	}
+	await removeEmptyLock(path);
+}
 async function exclusive<A>(path: string, operation: () => Promise<A>): Promise<A> {
 	await mkdir(dirname(path), { recursive: true });
-	const lock = `${path}.lock`;
-	const handle = await open(lock, "wx").catch(() => {
-		throw new CameraArrangementError({
-			code: "busy",
-			message: `Authoring writer lock: ${lock}`,
-			recovery:
-				"Wait for the writer. After a crash, verify its recorded PID is no longer running before removing this lock."
-		});
-	});
+	// Keep the pre-release file lock separate: Windows can replace a file with a directory.
 	try {
-		await handle.writeFile(json({ pid: process.pid, createdAt: new Date().toISOString() }));
+		await lstat(`${path}.lock`);
+		throw locked(`${path}.lock`);
+	} catch (cause) {
+		if (!hasCode(cause, "ENOENT")) throw cause;
+	}
+	const lock = `${path}.lock-v2`,
+		token = randomUUID();
+	const candidate = `${lock}.${token}.candidate`,
+		name = `owner-${token}.json`;
+	await mkdir(candidate);
+	let acquired = false;
+	try {
+		await writeFile(
+			join(candidate, name),
+			json({ version: 1, pid: process.pid, host: hostname(), token }),
+			{ flag: "wx" }
+		);
+		for (let attempt = 0; attempt < 3 && !acquired; attempt++) {
+			await recoverDeadOwner(lock);
+			try {
+				await rename(candidate, lock);
+				acquired = true;
+			} catch (cause) {
+				if (
+					!hasCode(cause, "EEXIST") &&
+					!hasCode(cause, "ENOTEMPTY") &&
+					!hasCode(cause, "EPERM")
+				)
+					throw cause;
+				await recoverDeadOwner(lock);
+			}
+		}
+		if (!acquired) throw locked(lock);
 		return await operation();
 	} finally {
-		await handle.close();
-		await rm(lock, { force: true });
+		if (acquired) {
+			await unlink(join(lock, name));
+			await removeEmptyLock(lock);
+		} else {
+			await rm(join(candidate, name), { force: true });
+			await removeEmptyLock(candidate);
+		}
 	}
 }
 function storageError(cause: unknown) {
@@ -217,7 +329,9 @@ export function makeCameraAuthoringStore(documentPath: string): CameraAuthoringS
 		return persist(completed);
 	};
 	const transact = <A>(operation: () => Promise<A>) =>
-		Effect.tryPromise({ try: () => exclusive(path, operation), catch: storageError });
+		Effect.tryPromise({ try: () => exclusive(path, operation), catch: storageError }).pipe(
+			Effect.uninterruptible
+		);
 	const prior = (document: CameraAuthoringDocument, operationId: string, fingerprint: string) => {
 		const outcome = document.outcomes.find((entry) => entry.operationId === operationId);
 		if (outcome && outcome.fingerprint !== fingerprint)

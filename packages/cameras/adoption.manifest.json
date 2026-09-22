@@ -1,0 +1,23 @@
+{
+	"version": 1,
+	"mode": "package",
+	"package": "@ue-shed/cameras",
+	"guide": "ADOPTING.md",
+	"hostOwns": [
+		"project-selection",
+		"storage",
+		"remote-control-client",
+		"polling-lifetime",
+		"presentation"
+	],
+	"forbiddenDependencies": ["@ue-shed/workbench", "native-private-headers"],
+	"plugins": {
+		"capture": ["UEShedCore", "UEShedCameras"],
+		"nativeEditing": ["UEShedCameraAuthoringBridge"],
+		"referenceMenu": ["UEShedCameraAuthoring"]
+	},
+	"verification": {
+		"packed": "pnpm test:release:packages",
+		"native": "node scripts/test-camera-authoring.ts <new-evidence-directory>"
+	}
+}

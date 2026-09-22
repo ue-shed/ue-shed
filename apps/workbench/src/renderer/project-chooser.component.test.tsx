@@ -42,13 +42,15 @@ function renderChooser(args: {
 	readonly onChosen?: () => void;
 	readonly project?: ProjectChooserProps["client"]["project"];
 	readonly recent?: readonly { readonly projectName: string; readonly projectRoot: string }[];
+	readonly launch?: ProjectChooserProps["client"]["launchProject"];
 }) {
 	render(() => (
 		<EffectRuntimeProvider runtime={runtime}>
 			<ProjectChooser
 				client={{
 					chooseProject: args.choose,
-					launchProject: (mode) => Effect.succeed({ mode, status: "launched" }),
+					launchProject:
+						args.launch ?? ((mode) => Effect.succeed({ mode, status: "launched" })),
 					openRecentProject:
 						args.openRecent ?? (() => Effect.succeed({ status: "cancelled" })),
 					project: args.project ?? (() => Effect.succeed(args.current)),
@@ -62,6 +64,36 @@ function renderChooser(args: {
 }
 
 describe("ProjectChooser", () => {
+	it("shows launch recovery outside the footer and closes the launch menu", async () => {
+		const user = userEvent.setup();
+		renderChooser({
+			current: ready,
+			choose: () => Effect.succeed(ready),
+			launch: () =>
+				Effect.succeed({
+					status: "failed",
+					message:
+						"Your project's compiled modules don't match the selected Unreal engine.",
+					recovery:
+						"Close Unreal and build the project's Editor target, then launch again.",
+					details: "Engine build ID: technical-only"
+				})
+		});
+		await user.click(await screen.findByText("Launch ▾"));
+		await user.click(screen.getByRole("button", { name: /With plugin suite/ }));
+		const dialog = await screen.findByRole("dialog", { name: "Unreal couldn’t start" });
+		expect(dialog.textContent).toContain("What to do next");
+		expect(dialog.textContent).toContain("build the project's Editor target");
+		expect(dialog.closest("aside")).toBeNull();
+		expect(screen.queryByRole("button", { name: /With plugin suite/ })).toBeNull();
+		const details = dialog.querySelector("details")!;
+		expect(details.open).toBe(false);
+		await user.click(screen.getByText("Technical details"));
+		expect(details.open).toBe(true);
+		dialog.dispatchEvent(new Event("cancel", { cancelable: true }));
+		await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+		expect(screen.getByText("Launch ▾")).toBeDefined();
+	});
 	it("keeps a failed selection visible after indexing closes", async () => {
 		renderChooser({
 			choose: () => Effect.succeed(failed),

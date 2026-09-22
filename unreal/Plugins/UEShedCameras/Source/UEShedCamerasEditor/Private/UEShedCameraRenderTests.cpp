@@ -25,6 +25,39 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUEShedCameraRenderLifecycleTest,
 								 "UEShed.Cameras.Rendering.LifecycleAndReference",
 								 EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUEShedHighResolutionCaptureTest,
+    "UEShed.Cameras.Rendering.HighResolutionCapture",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FUEShedHighResolutionCaptureTest::RunTest(const FString& Parameters)
+{
+    UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+    if (!World || !GCurrentLevelEditingViewportClient) return false;
+    auto Request = UEShedLegacyRenderRequest(FGuid::NewGuid().ToString(EGuidFormats::Digits), World, true);
+    Request->GetObjectField(TEXT("policy"))->GetObjectField(TEXT("settling"))->SetNumberField(TEXT("minimumFrames"), 8);
+    TSharedPtr<FJsonObject> Error;
+    auto Session = FUEShedCameraRenderSession::Open(Request, Error);
+    if (!Session) { AddError(UEShedCameraJsonText(Error)); return false; }
+    ON_SCOPE_EXIT { Session->Close(); };
+    const auto Camera = UEShedCameraPose(FVector(1000, 1000, 900), FRotator(-30, -135, 0), 60, false);
+    const auto Result = Session->RenderBlocking(UEShedRenderFrame(Session->Id(), TEXT("high-resolution"), Camera, 640, 360));
+    if (!TestEqual(TEXT("High-resolution capture completes"), Result->GetStringField(TEXT("status")), FString(TEXT("captured"))))
+    { AddError(UEShedCameraJsonText(Result)); return false; }
+    const auto Renderer = Result->GetObjectField(TEXT("evidence"))->GetObjectField(TEXT("policy"))->GetObjectField(TEXT("renderer"));
+    TestEqual(TEXT("Actual backend is editor viewport"), Renderer->GetStringField(TEXT("kind")), FString(TEXT("editor_viewport")));
+    TestEqual(TEXT("Actual strategy is Unreal high-resolution screenshot"), Renderer->GetStringField(TEXT("strategy")), FString(TEXT("high_resolution_screenshot")));
+    const FString Artifact = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("UEShed/CameraRenderStaging"), Result->GetObjectField(TEXT("artifact"))->GetStringField(TEXT("relativePath")));
+    FImage Pixels;
+    TestTrue(TEXT("High-resolution PNG is readable"), FImageUtils::LoadImage(*Artifact, Pixels));
+    TestEqual(TEXT("Requested screenshot width"), Pixels.SizeX, 640);
+    TestEqual(TEXT("Requested screenshot height"), Pixels.SizeY, 360);
+    const FString Directory = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("UEShed/HighResolutionValidation"));
+    IFileManager::Get().MakeDirectory(*Directory, true);
+    IFileManager::Get().Copy(*FPaths::Combine(Directory, TEXT("capture.png")), *Artifact);
+    FFileHelper::SaveStringToFile(UEShedCameraJsonText(Result), *FPaths::Combine(Directory, TEXT("result.json")));
+    return true;
+}
+
 bool FUEShedCameraRenderLifecycleTest::RunTest(const FString &Parameters)
 {
 	UWorld *World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;

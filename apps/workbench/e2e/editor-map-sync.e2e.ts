@@ -166,7 +166,7 @@ test("confirms cross-map review, waits for a slow editor and follows external ma
 		await expect(page.getByRole("region", { name: "Editor map connection" })).toContainText(
 			alpha
 		);
-		await page.getByRole("button", { name: "Review sets", exact: true }).click();
+		await page.getByRole("button", { name: "Saved views & captures", exact: true }).click();
 		await page.getByRole("button", { name: "Open set", exact: true }).click();
 		const dialog = page.getByRole("dialog", { name: "Switch the map in Unreal?" });
 		await expect(dialog).toBeVisible();

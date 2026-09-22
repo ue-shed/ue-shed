@@ -6,7 +6,9 @@ import {
 	EngineInstallationDiscoveryLive,
 	UnrealProjectLauncher,
 	UnrealProjectLauncherLive,
-	UnrealProjectProcessLive
+	UnrealProjectProcessLive,
+	validateUnrealProjectBuildId,
+	validateUnrealRemoteControlBuild
 } from "../packages/engine/src/index.ts";
 import { prepareUnrealPlugins, unrealEngineTools } from "./unreal-plugin-host.ts";
 
@@ -61,6 +63,28 @@ const engineRoot = await Effect.runPromise(
 	)
 );
 const engineTools = unrealEngineTools(engineRoot);
+console.log(`Selected Unreal engine: ${engineRoot}`);
+await Effect.runPromise(
+	Effect.gen(function* () {
+		yield* validateUnrealProjectBuildId(engineRoot, selectedProject);
+		if (mode === "ue_shed") yield* validateUnrealRemoteControlBuild(engineRoot);
+	}).pipe(
+		Effect.catch((error) =>
+			Effect.sync(() => {
+				console.error(
+					"UE_SHED_LAUNCH_FAILURE_V1 " +
+						JSON.stringify({
+							status: "failed",
+							message: error.message,
+							recovery: error.recovery,
+							details: error.details
+						})
+				);
+				process.exit(1);
+			})
+		)
+	)
+);
 let preparedPluginDescriptors: readonly string[] = [];
 if (action === "prepare" || mode === "ue_shed") {
 	preparedPluginDescriptors = prepareUnrealPlugins({

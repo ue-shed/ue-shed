@@ -1,8 +1,9 @@
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, Layer, Schema } from "effect";
 import { join } from "node:path";
 import { FixtureProcess } from "../adapters/fixture-process.js";
 import { LocalFiles } from "../adapters/local-files.js";
 import type { ProjectLaunchMode, ProjectLaunchResult } from "../project-workspace-contract.js";
+import { ProjectLaunchFailure } from "../project-workspace-contract.js";
 import { typescriptCheckoutArgs } from "../typescript-checkout.js";
 import { WorkbenchConfiguration } from "../workbench-config.js";
 import { WorkbenchProject } from "./project-workspace.js";
@@ -26,6 +27,36 @@ const noLauncher: ProjectLaunchResult = {
 	message: "This Workbench build has no selected-project launcher.",
 	recovery: "Start Workbench from a UE Shed source checkout."
 };
+
+export function projectLaunchFailure(stderr: string): typeof ProjectLaunchFailure.Type {
+	const prefix = "UE_SHED_LAUNCH_FAILURE_V1 ";
+	const line = stderr.split(/\r?\n/u).find((value) => value.startsWith(prefix));
+	if (line) {
+		try {
+			return Schema.decodeUnknownSync(ProjectLaunchFailure)(
+				JSON.parse(line.slice(prefix.length))
+			);
+		} catch {
+			/* Retain malformed diagnostics for troubleshooting. */
+		}
+	}
+	if (stderr.includes("FailedDueToEngineChange")) {
+		return {
+			status: "failed",
+			message: "Plugin compilation would modify your existing Unreal engine build.",
+			recovery:
+				"UE Shed stopped the build to preserve your engine. Review the affected files in the build output before rebuilding the engine.",
+			details: stderr
+		};
+	}
+	return {
+		status: "failed",
+		message: "Unreal could not be launched.",
+		recovery:
+			"Review the technical details below for the build or startup failure, then retry.",
+		details: stderr
+	};
+}
 
 export const ProjectLauncherLive = Layer.effect(
 	ProjectLauncher,
@@ -72,14 +103,7 @@ export const ProjectLauncherLive = Layer.effect(
 							(result): ProjectLaunchResult =>
 								result.status === "ready"
 									? { mode, status: "launched" }
-									: {
-											status: "failed",
-											message: result.message,
-											recovery:
-												mode === "ue_shed"
-													? "Review the launcher error. If Unreal Build Tool ran, check its log, then retry or launch normally."
-													: "Verify the selected project's Unreal installation, then retry."
-										}
+									: projectLaunchFailure(result.message)
 						),
 						Effect.catch((error) =>
 							Effect.succeed({

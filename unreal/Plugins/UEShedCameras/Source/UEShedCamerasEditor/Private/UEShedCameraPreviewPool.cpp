@@ -1,4 +1,5 @@
 #include "UEShedCameraPreviewPool.h"
+#include "UEShedCameraExposure.h"
 
 #include "Components/SceneCaptureComponent2D.h"
 #include "Editor.h"
@@ -89,20 +90,7 @@ bool FUEShedCameraPreviewPool::SetViews(UWorld *InWorld, const TArray<FUEShedCam
         for (const auto &Actor : View.HiddenActors)
             if (Actor.IsValid())
                 Component->HiddenActors.Add(Actor.Get());
-        auto &Exposure = Component->PostProcessSettings;
-        Exposure.bOverride_AutoExposureMinBrightness = View.FixedEV100.IsSet();
-        Exposure.bOverride_AutoExposureMaxBrightness = View.FixedEV100.IsSet();
-        if (View.FixedEV100.IsSet())
-        {
-            const auto *Extended = IConsoleManager::Get().FindConsoleVariable(
-                TEXT("r.DefaultFeature.AutoExposure.ExtendDefaultLuminanceRange"));
-            const auto *Lens = IConsoleManager::Get().FindConsoleVariable(TEXT("r.EyeAdaptation.LensAttenuation"));
-            const float EV = View.FixedEV100.GetValue();
-            Exposure.AutoExposureMinBrightness = Exposure.AutoExposureMaxBrightness =
-                Extended && Extended->GetInt()
-                    ? EV
-                    : .78f / FMath::Max(.01f, Lens ? Lens->GetFloat() : .78f) * FMath::Pow(2.f, EV);
-        }
+        UEShedApplyCameraExposure(Component->PostProcessSettings, View.FixedEV100);
         Component->PostProcessBlendWeight = ReviewQuality || View.FixedEV100.IsSet() ? 1.f : 0.f;
         Entry.Pending = ReviewQuality ? 8 : 2;
     }

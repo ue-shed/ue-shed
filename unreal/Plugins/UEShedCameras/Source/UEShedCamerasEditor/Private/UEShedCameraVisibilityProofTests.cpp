@@ -1,6 +1,9 @@
 #if WITH_DEV_AUTOMATION_TESTS
 #include "Components/SceneCaptureComponent2D.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/InstancedStaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
+#include "Materials/Material.h"
 #include "Editor.h"
 #include "Engine/StaticMeshActor.h"
 #include "Engine/World.h"
@@ -110,6 +113,30 @@ bool FUEShedCameraVisibilityProofTest::RunTest(const FString &Parameters)
     Missing->SetStringField(TEXT("label"), TEXT("Unloaded"));
     Visibility->SetArrayField(TEXT("hide"), {MakeShared<FJsonValueObject>(Missing)});
     TestFalse(TEXT("Missing actors are explicit failures"), UEShedResolveCameraVisibility(W, Visibility).Valid);
+    Visibility->SetArrayField(TEXT("protect"), {});
+    Visibility->SetArrayField(TEXT("hide"), {MakeShared<FJsonValueObject>(UEShedCameraActorEntry(Column))});
+    UStaticMesh *OriginalMesh = Column->GetStaticMeshComponent()->GetStaticMesh();
+    auto *NaniteMesh = DuplicateObject<UStaticMesh>(OriginalMesh, GetTransientPackage());
+    NaniteMesh->SetFlags(RF_Transient);
+    NaniteMesh->GetNaniteSettings().bEnabled = true;
+    Column->GetStaticMeshComponent()->SetStaticMesh(NaniteMesh);
+    auto Unsupported = UEShedResolveCameraVisibility(W, Visibility);
+    TestFalse(TEXT("Nanite-configured geometry is refused"), Unsupported.Valid);
+    TestFalse(TEXT("Unsupported geometry explains its limitation"), Unsupported.Message.IsEmpty());
+    Column->GetStaticMeshComponent()->SetStaticMesh(OriginalMesh);
+    auto *Material = NewObject<UMaterial>(GetTransientPackage(), NAME_None, RF_Transient);
+    Material->BlendMode = BLEND_Translucent;
+    auto *OriginalMaterial = Column->GetStaticMeshComponent()->GetMaterial(0);
+    Column->GetStaticMeshComponent()->SetMaterial(0, Material);
+    TestFalse(TEXT("Translucency is refused"), UEShedResolveCameraVisibility(W, Visibility).Valid);
+    Column->GetStaticMeshComponent()->SetMaterial(0, OriginalMaterial);
+    auto *Instances = NewObject<UInstancedStaticMeshComponent>(Column, NAME_None, RF_Transient);
+    Column->AddInstanceComponent(Instances);
+    Instances->SetStaticMesh(OriginalMesh);
+    Instances->RegisterComponent();
+    Instances->AddInstance(FTransform::Identity);
+    TestFalse(TEXT("Instanced geometry is refused"), UEShedResolveCameraVisibility(W, Visibility).Valid);
+    Instances->DestroyComponent();
     TestEqual(TEXT("Map dirt unchanged"), W->GetOutermost()->IsDirty(), Dirty);
     return true;
 }

@@ -1,5 +1,8 @@
 #if WITH_DEV_AUTOMATION_TESTS
 #include "Engine/Engine.h"
+#include "Camera/CameraComponent.h"
+#include "Widgets/Input/SSpinBox.h"
+#include "Types/SlateAttributeMetaData.h"
 #include "Editor.h"
 #include "HAL/FileManager.h"
 #include "Engine/World.h"
@@ -190,6 +193,38 @@ bool FUEShedCameraPreviewPanelTest::RunTest(const FString &Parameters)
     Panel->InspectorPage = 1;
     FSlateApplication::Get().Tick();
     Screenshot(Panel, TEXT("visibility.png"));
+    auto ExposureSpin = StaticCastSharedPtr<SSpinBox<double>>(Panel->ExposureInput->GetSpinBox());
+    TestEqual(TEXT("Exposure typed minimum"), ExposureSpin->GetMinValue(), -20.);
+    TestEqual(TEXT("Exposure typed maximum"), ExposureSpin->GetMaxValue(), 30.);
+    TestEqual(TEXT("Exposure slider minimum"), ExposureSpin->GetMinSliderValue(), -20.);
+    TestEqual(TEXT("Exposure slider maximum"), ExposureSpin->GetMaxSliderValue(), 30.);
+    ExposureSpin->SetValue(86.3, true);
+    TestEqual(TEXT("Committed exposure is bounded"), Panel->ExposureEV, 30.);
+    // SetValue replaces the spinbox attribute; restore its live binding after this simulated commit.
+    ExposureSpin->SetValue(TAttribute<double>::CreateLambda([PanelPtr = Panel.operator->()] { return PanelPtr->ExposureEV; }));
+    Panel->ExposureEV = -2;
+    Panel->ApplyExposure(false);
+    auto ExposureEvent = FUEShedCameraAuthoringBridge::InspectActive()->GetObjectField(TEXT("panelEvent"));
+    auto FixedPolicy = ExposureEvent->GetObjectField(TEXT("action"))->GetObjectField(TEXT("command"))->GetObjectField(TEXT("policy"));
+    TestEqual(TEXT("Apply uses entered EV"), FixedPolicy->GetObjectField(TEXT("exposure"))->GetNumberField(TEXT("ev100")), -2.);
+    State->SetObjectField(TEXT("renderPolicy"), FixedPolicy);
+    Request->SetStringField(TEXT("acknowledgeEvent"), ExposureEvent->GetStringField(TEXT("id")));
+    FUEShedCameraAuthoringBridge::Execute(Request);
+    Panel->Refresh(1.1, .1f);
+    for (auto *Camera : FUEShedCameraAuthoringBridge::Cameras())
+        TestTrue(TEXT("Fixed exposure reaches all native camera previews"), Camera->GetCameraComponent()->PostProcessSettings.bOverride_AutoExposureMinBrightness != 0);
+    TestEqual(TEXT("Field follows acknowledged exposure"), Panel->ExposureEV, -2.);
+    Panel->ApplyExposure(true);
+    ExposureEvent = FUEShedCameraAuthoringBridge::InspectActive()->GetObjectField(TEXT("panelEvent"));
+    auto DefaultPolicy = ExposureEvent->GetObjectField(TEXT("action"))->GetObjectField(TEXT("command"))->GetObjectField(TEXT("policy"));
+    TestEqual(TEXT("Restore default selects automatic exposure"), DefaultPolicy->GetObjectField(TEXT("exposure"))->GetStringField(TEXT("mode")), FString(TEXT("project_auto")));
+    TestTrue(TEXT("Restoring exposure preserves renderer policy"), DefaultPolicy->HasField(TEXT("renderer")));
+    State->SetObjectField(TEXT("renderPolicy"), DefaultPolicy);
+    Request->SetStringField(TEXT("acknowledgeEvent"), ExposureEvent->GetStringField(TEXT("id")));
+    FUEShedCameraAuthoringBridge::Execute(Request);
+    Panel->Refresh(1.2, .1f);
+    for (auto *Camera : FUEShedCameraAuthoringBridge::Cameras())
+        TestFalse(TEXT("Restore removes native exposure overrides"), Camera->GetCameraComponent()->PostProcessSettings.bOverride_AutoExposureMinBrightness != 0);
     Panel->InspectorPage = 2;
     FSlateApplication::Get().Tick();
     Screenshot(Panel, TEXT("capture.png"));
@@ -230,8 +265,24 @@ bool FUEShedCameraPreviewPanelTest::RunTest(const FString &Parameters)
     TestFalse(TEXT("Scrubbing never retargets another camera scope"), FUEShedCameraAuthoringBridge::InspectActive()->HasField(TEXT("panelEvent")));
     Panel->Scope = TEXT("arrangement");
     Panel->Message.Reset();
+    auto Bounds = MakeShared<FJsonObject>(), Extent = MakeShared<FJsonObject>();
+    Extent->SetNumberField(TEXT("x"), 1000);
+    Extent->SetNumberField(TEXT("y"), 100);
+    Extent->SetNumberField(TEXT("z"), 100);
+    Bounds->SetObjectField(TEXT("extent"), Extent);
+    Arrangement->SetObjectField(TEXT("bounds"), Bounds);
+    double LargeHeightMove = 0;
+    int32 HeightPass = 0;
+    for (const TCHAR* FieldName : {TEXT("fieldOfViewDegrees"), TEXT("distanceScale"), TEXT("heightOffset"), TEXT("heightOffset")})
     {
-        auto Field = Panel->Setting(TEXT("FOV (degrees)"), TEXT("fieldOfViewDegrees"));
+        if (FString(FieldName) == TEXT("heightOffset") && HeightPass++ == 1)
+        {
+            Extent->SetNumberField(TEXT("x"), 10);
+            Extent->SetNumberField(TEXT("y"), 1);
+            Extent->SetNumberField(TEXT("z"), 1);
+        }
+        const double Before = Panel->Effective(FieldName).GetValue();
+        auto Field = Panel->Setting(FieldName, FieldName);
         auto Numeric = StaticCastSharedRef<SNumericEntryBox<double>>(Field->GetChildren()->GetChildAt(1)->GetChildren()->GetChildAt(0));
         TestTrue(TEXT("Framing fields use native draggable spin controls"), Numeric->GetSpinBox().IsValid());
         auto DragWindow = SNew(SWindow).Title(FText::FromString(TEXT("Numeric interaction"))).ClientSize(FVector2D(320, 100))[Field];
@@ -249,14 +300,109 @@ bool FUEShedCameraPreviewPanelTest::RunTest(const FString &Parameters)
         if (TestTrue(TEXT("Real mouse dragging submits a numeric edit"), Snapshot->HasField(TEXT("panelEvent"))))
         {
             const auto Event = Snapshot->GetObjectField(TEXT("panelEvent"));
-            const double Value = Event->GetObjectField(TEXT("action"))->GetObjectField(TEXT("command"))->GetObjectField(TEXT("settings"))->GetNumberField(TEXT("fieldOfViewDegrees"));
-            TestTrue(TEXT("Dragging right increases the field value"), Value > 75);
-            Settings->SetNumberField(TEXT("fieldOfViewDegrees"), Value);
+            const double Value = Event->GetObjectField(TEXT("action"))->GetObjectField(TEXT("command"))->GetObjectField(TEXT("settings"))->GetNumberField(FieldName);
+            TestTrue(TEXT("Dragging right increases the field value"), Value > Before);
+            if (FString(FieldName) == TEXT("distanceScale"))
+                TestTrue(TEXT("A short distance drag changes less than one multiplier unit"), Value - Before < 1);
+            if (FString(FieldName) == TEXT("heightOffset"))
+            {
+                if (HeightPass == 1)
+                {
+                    LargeHeightMove = Value - Before;
+                    TestTrue(TEXT("A short height drag moves meters for a 20m subject"), LargeHeightMove > 100 && LargeHeightMove < 1000);
+                }
+                else
+                    TestTrue(TEXT("The same drag scales down for a 20cm prop without snapping the existing offset"), FMath::IsNearlyEqual((Value - Before) * 100, LargeHeightMove, 2.));
+            }
+            Settings->SetNumberField(FieldName, Value);
             Request->SetStringField(TEXT("acknowledgeEvent"), Event->GetStringField(TEXT("id")));
             FUEShedCameraAuthoringBridge::Execute(Request);
             Panel->Refresh(1.6, .2f);
         }
         DragWindow->RequestDestroyWindow();
+    }
+    {
+        // Test the host-owned placement mode, including mixed whole-set selections.
+        const auto Camera = Panel->ScopedCameras()[0];
+        Camera->SetObjectField(TEXT("manualPose"), MakeShared<FJsonObject>());
+        Panel->InspectorPage = 0;
+        Panel->Refresh(1.65, .2f);
+        FSlateApplication::Get().Tick();
+        TestEqual(TEXT("Mixed whole set retains fitted controls"), Panel->FittedFields->GetVisibility(), EVisibility::Visible);
+        TestTrue(TEXT("Mixed whole set can adjust aim"), Panel->CanAdjust(TEXT("aimOffset")));
+        Screenshot(Panel, TEXT("framing-mixed.png"));
+        Panel->Selected.Reset();
+        Panel->SetCameraSelected(TEXT("camera-1"), true);
+        TestEqual(TEXT("Checkbox selection switches away from whole set"), Panel->Scope, FString(TEXT("cameras")));
+        TestFalse(TEXT("Selecting a fitted camera excludes the unrelated manual camera"), Panel->HasManualCamera());
+        const auto ObservedSelection = FUEShedCameraAuthoringBridge::InspectActive();
+        auto SelectionAck = MakeShared<FJsonObject>(*Request);
+        SelectionAck->SetStringField(TEXT("operation"), TEXT("apply"));
+        SelectionAck->SetStringField(TEXT("cameraId"), ObservedSelection->GetStringField(TEXT("cameraId")));
+        SelectionAck->SetNumberField(TEXT("expectedRevision"), ObservedSelection->GetNumberField(TEXT("revision")));
+        SelectionAck->SetNumberField(TEXT("revision"), ObservedSelection->GetNumberField(TEXT("revision")));
+        SelectionAck->SetNumberField(TEXT("sequence"), ObservedSelection->GetNumberField(TEXT("sequence")));
+        SelectionAck->SetObjectField(TEXT("pose"), ObservedSelection->GetObjectField(TEXT("pose")));
+        SelectionAck->SetArrayField(TEXT("cameras"), ObservedSelection->GetArrayField(TEXT("cameras")));
+        FUEShedCameraAuthoringBridge::Execute(SelectionAck);
+        Panel->Refresh(1.655, .2f);
+        TestTrue(TEXT("Checked fitted camera is adjustable"), Panel->CanAdjust(TEXT("heightOffset")));
+        TestTrue(TEXT("Checked fitted camera is ready: ") + Panel->Message, Panel->Ready());
+        Panel->ChangeSetting(TEXT("heightOffset"), 250, true);
+        if (!TestTrue(TEXT("Fitted selection queues a height edit: ") + Panel->Message, FUEShedCameraAuthoringBridge::InspectActive()->HasField(TEXT("panelEvent")))) return false;
+        const auto FittedEvent = FUEShedCameraAuthoringBridge::InspectActive()->GetObjectField(TEXT("panelEvent"));
+        const auto FittedCommand = FittedEvent->GetObjectField(TEXT("action"))->GetObjectField(TEXT("command"));
+        const auto FittedIds = FittedCommand->GetObjectField(TEXT("scope"))->GetArrayField(TEXT("cameraIds"));
+        if (!TestEqual(TEXT("Fitted edit contains one checked camera"), FittedIds.Num(), 1)) return false;
+        TestEqual(TEXT("Fitted edit targets the checked camera"), FittedIds[0]->AsString(), FString(TEXT("camera-1")));
+        TestEqual(TEXT("Fitted camera height remains editable"), FittedCommand->GetObjectField(TEXT("settings"))->GetNumberField(TEXT("heightOffset")), 250.);
+        Request->SetStringField(TEXT("acknowledgeEvent"), FittedEvent->GetStringField(TEXT("id")));
+        Request->RemoveField(TEXT("cameraId"));
+        State->SetStringField(TEXT("activeCameraId"), FUEShedCameraAuthoringBridge::InspectActive()->GetStringField(TEXT("cameraId")));
+        FUEShedCameraAuthoringBridge::Execute(Request);
+        Panel->Refresh(1.66, .2f);
+        Panel->SetCameraSelected(TEXT("camera-1"), false);
+        Panel->SetCameraSelected(Camera->GetStringField(TEXT("id")), true);
+        State->SetStringField(TEXT("activeCameraId"), FUEShedCameraAuthoringBridge::InspectActive()->GetStringField(TEXT("cameraId")));
+        for (const TCHAR* Name : {TEXT("distanceScale"), TEXT("heightOffset"), TEXT("elevationDegrees"), TEXT("yawOffset"), TEXT("margin")})
+        {
+            auto Field = Panel->Setting(Name, Name);
+            auto Numeric = StaticCastSharedRef<SNumericEntryBox<double>>(Field->GetChildren()->GetChildAt(1)->GetChildren()->GetChildAt(0));
+            FSlateAttributeMetaData::UpdateAllAttributes(*Numeric, FSlateAttributeMetaData::EInvalidationPermission::AllowInvalidation);
+            TestFalse(TEXT("Manual-only selection disables fitted input"), Numeric->IsEnabled());
+            Panel->ChangeSetting(Name, 2, true);
+            TestFalse(TEXT("Manual framing cannot enqueue an ineffective edit"), FUEShedCameraAuthoringBridge::InspectActive()->HasField(TEXT("panelEvent")));
+        }
+        TestTrue(TEXT("FOV remains editable with a manual pose"), Panel->CanAdjust(TEXT("fieldOfViewDegrees")));
+        TestFalse(TEXT("Aim offset disables for manual poses"), Panel->CanAdjust(TEXT("aimOffset")));
+        Panel->Scope = TEXT("cameras");
+        Panel->Selected = {Camera->GetStringField(TEXT("id"))};
+        Panel->SelectCameras({MakeShared<FJsonValueString>(Camera->GetStringField(TEXT("id")))});
+        const auto ManualSelection = FUEShedCameraAuthoringBridge::InspectActive();
+        SelectionAck->SetStringField(TEXT("cameraId"), ManualSelection->GetStringField(TEXT("cameraId")));
+        SelectionAck->SetNumberField(TEXT("sequence"), ManualSelection->GetNumberField(TEXT("sequence")));
+        SelectionAck->SetObjectField(TEXT("pose"), ManualSelection->GetObjectField(TEXT("pose")));
+        SelectionAck->SetArrayField(TEXT("cameras"), ManualSelection->GetArrayField(TEXT("cameras")));
+        FUEShedCameraAuthoringBridge::Execute(SelectionAck);
+        State->SetStringField(TEXT("activeCameraId"), ManualSelection->GetStringField(TEXT("cameraId")));
+        Panel->InspectorPage = 0;
+        Panel->Refresh(1.7, .2f);
+        FSlateApplication::Get().Tick();
+        TestEqual(TEXT("Manual selection replaces fitted fields"), Panel->FittedFields->GetVisibility(), EVisibility::Collapsed);
+        TestTrue(TEXT("Manual selection shows pose data"), Panel->ManualRows->GetChildren()->Num() > 0);
+        Screenshot(Panel, TEXT("framing-manual.png"));
+        Panel->RestoreFittedCamera();
+        const auto Event = FUEShedCameraAuthoringBridge::InspectActive()->GetObjectField(TEXT("panelEvent"));
+        const auto Command = Event->GetObjectField(TEXT("action"))->GetObjectField(TEXT("command"));
+        TestEqual(TEXT("Restore uses the public unpin command"), Command->GetStringField(TEXT("kind")), FString(TEXT("unpin")));
+        TestEqual(TEXT("Restore targets the selected camera"), Command->GetStringField(TEXT("cameraId")), Camera->GetStringField(TEXT("id")));
+        Camera->RemoveField(TEXT("manualPose"));
+        Request->SetStringField(TEXT("acknowledgeEvent"), Event->GetStringField(TEXT("id")));
+        FUEShedCameraAuthoringBridge::Execute(Request);
+        Panel->Refresh(1.8, .2f);
+        TestTrue(TEXT("Fitted controls re-enable after restoring placement"), Panel->CanAdjust(TEXT("distanceScale")));
+        Panel->Scope = TEXT("arrangement");
+        Panel->Selected.Reset();
     }
     TestEqual(TEXT("Editing panel lists the entire set"), Panel->CameraRows->GetChildren()->Num(), 16);
     TArray<TSharedPtr<FJsonValue>> SelectIds;
@@ -329,6 +475,28 @@ bool FUEShedCameraPreviewPanelTest::RunTest(const FString &Parameters)
               FUEShedCameraAuthoringBridge::InspectActive()->GetStringField(TEXT("status")), FString(TEXT("ready")));
     auto Reopened = SNew(SCameraSetPreviews).PreviewVisible(false);
     TestEqual(TEXT("Reopening queues a fresh whole-set review"), Reopened->Review.Num(), 16);
+    // Observe the actual camera while the host's saved manual pose stays unchanged.
+    Cameras[0]->AsObject()->SetObjectField(TEXT("manualPose"), Effective[0]->AsObject()->GetObjectField(TEXT("pose")));
+    FUEShedCameraAuthoringBridge::Execute(Request);
+    Panel->Scope = TEXT("cameras");
+    Panel->SelectCameras({MakeShared<FJsonValueString>(TEXT("camera-0"))});
+    auto* LiveCamera = FUEShedCameraAuthoringBridge::Camera(TEXT("camera-0"));
+    const FVector Moved(1234.5, -678.25, 901.75);
+    LiveCamera->SetActorLocation(Moved);
+    LiveCamera->SetActorRotation(FRotator(-12, 34, 5));
+    LiveCamera->GetCameraComponent()->SetFieldOfView(52);
+    Panel->Refresh(Start + 6.2, .2f);
+    TestTrue(TEXT("Native pose edits are still awaiting host save"), Panel->Active->GetBoolField(TEXT("pending")));
+    const auto LivePose = Panel->LivePose(TEXT("camera-0"));
+    TestEqual(TEXT("Manual UI reads live X before host acknowledgement"), LivePose->GetObjectField(TEXT("location"))->GetNumberField(TEXT("x")), Moved.X);
+    TestTrue(TEXT("Manual UI reads live pitch before host acknowledgement"), FMath::IsNearlyEqual(LivePose->GetObjectField(TEXT("rotation"))->GetNumberField(TEXT("pitch")), -12., .01));
+    TestEqual(TEXT("Manual UI reads live FOV before host acknowledgement"), Panel->DisplaySetting(TEXT("fieldOfViewDegrees")).GetValue(), 52.);
+    Window->Resize(FVector2D(620, 640));
+    FSlateApplication::Get().Tick();
+    Screenshot(Panel, TEXT("manual-live.png"));
+    LiveCamera->SetActorLocation(FVector(2345.5, -678.25, 901.75));
+    Panel->Refresh(Start + 6.4, .2f);
+    TestEqual(TEXT("Manual UI follows subsequent camera movement"), Panel->LivePose(TEXT("camera-0"))->GetObjectField(TEXT("location"))->GetNumberField(TEXT("x")), 2345.5);
     FUEShedCameraAuthoringBridge::Shutdown();
     Panel->Refresh(Start + 7, .2f);
     Reopened->Poll(Start + 7, .2f);

@@ -9,6 +9,8 @@ import {
 	bootstrapMapReviewSet,
 	defaultFramingParameters,
 	generateFramingCandidates,
+	legacyReviewRenderPolicy,
+	highResolutionReviewRenderer,
 	ReviewAuthoringSession,
 	ReviewAuthoringSessionId,
 	ReviewSetId,
@@ -36,6 +38,7 @@ const empty = {
 			{
 				displayName: "Structure context",
 				id: "structure-context",
+				renderPolicy: legacyReviewRenderPolicy,
 				resolution: { height: 720, width: 1280 }
 			}
 		]
@@ -379,19 +382,19 @@ describe("MapReviewRoute", () => {
 		expect(screen.getByText("Select an actor, then reframe")).toBeDefined();
 
 		const user = userEvent.setup();
-		await user.click(screen.getByRole("button", { name: "Review sets" }));
+		await user.click(screen.getByRole("button", { name: "Saved views & captures" }));
 		await user.click(await screen.findByRole("button", { name: "Open set" }));
 		expect((await screen.findByRole("alert")).textContent).toContain(
 			"The Review Set was not opened."
 		);
-		expect(screen.getByRole("dialog", { name: "Review sets" })).toBeDefined();
+		expect(screen.getByRole("dialog", { name: "Saved views & captures" })).toBeDefined();
 		await user.click(screen.getByRole("button", { name: "Open set" }));
 		expect(await screen.findByText("Retry opening it.")).toBeDefined();
 		expect(screen.getByRole("alert").textContent).toContain("Review Set could not be read.");
 		await user.click(screen.getByRole("button", { name: "Open set" }));
 		expect(selectedReviewSetId).toBe("fixture-review-set");
 		expect(await screen.findByText("Fixture Structure")).toBeDefined();
-		expect(screen.queryByRole("dialog", { name: "Review sets" })).toBeNull();
+		expect(screen.queryByRole("dialog", { name: "Saved views & captures" })).toBeNull();
 	});
 
 	it("switches between saved Review Sets by stable identity", async () => {
@@ -443,17 +446,17 @@ describe("MapReviewRoute", () => {
 		const user = userEvent.setup();
 		renderRoute(client);
 		await screen.findByText("Fixture Structure");
-		await user.click(screen.getByRole("button", { name: "Review sets" }));
-		expect(await screen.findByRole("dialog", { name: "Review sets" })).toBeDefined();
+		await user.click(screen.getByRole("button", { name: "Saved views & captures" }));
+		expect(await screen.findByRole("dialog", { name: "Saved views & captures" })).toBeDefined();
 		await user.click(screen.getByRole("button", { name: "Return to set" }));
-		expect(screen.queryByRole("dialog", { name: "Review sets" })).toBeNull();
+		expect(screen.queryByRole("dialog", { name: "Saved views & captures" })).toBeNull();
 		expect(selectedReviewSetId).toBeUndefined();
-		await user.click(screen.getByRole("button", { name: "Review sets" }));
+		await user.click(screen.getByRole("button", { name: "Saved views & captures" }));
 		await user.click(screen.getByRole("button", { name: "Open set" }));
 
 		expect(selectedReviewSetId).toBe("lighting-review");
 		expect(await screen.findByText("Lighting review")).toBeDefined();
-		expect(screen.queryByRole("dialog", { name: "Review sets" })).toBeNull();
+		expect(screen.queryByRole("dialog", { name: "Saved views & captures" })).toBeNull();
 	});
 
 	it("creates and opens an empty sibling Review Set", async () => {
@@ -486,7 +489,7 @@ describe("MapReviewRoute", () => {
 		const user = userEvent.setup();
 		renderRoute(client);
 		await screen.findByText("Fixture Structure");
-		await user.click(screen.getByRole("button", { name: "Review sets" }));
+		await user.click(screen.getByRole("button", { name: "Saved views & captures" }));
 		await user.type(
 			await screen.findByRole("textbox", { name: "New review set name" }),
 			"Facade pass"
@@ -495,71 +498,99 @@ describe("MapReviewRoute", () => {
 
 		expect(createdName).toBe("Facade pass");
 		expect(await screen.findByText("Facade pass")).toBeDefined();
-		expect(screen.queryByRole("dialog", { name: "Review sets" })).toBeNull();
+		expect(screen.queryByRole("dialog", { name: "Saved views & captures" })).toBeNull();
 	});
 
-	it("establishes the first durable capture and exposes it in history", async () => {
-		const captured = {
-			...empty,
-			runs: [
-				{
-					completedAt: "2026-07-15T08:00:00.000Z",
-					failedViews: 0,
-					id: "run-001",
-					status: "completed" as const,
-					successfulViews: 1
-				}
-			]
-		};
-		let captures = 0;
-		let captureViewIds: ReadonlyArray<string> = [];
-		const client: MapReviewClientApi = {
-			...offlineScout,
-			...unavailableDurableAuthoring,
-			approveCandidate: () => Effect.succeed({ candidateId: "context", status: "approved" }),
-			authorFromSelection: () =>
-				Effect.succeed({
-					candidates: [],
-					selection: {
-						actorPath: "/Game/Fixture.Subject",
-						displayName: "Subject",
-						mapPath: "/Game/Fixture/Cameras/L_CameraLoad"
-					},
-					status: "ready",
-					viewId: "structure-context"
-				}),
-			capture: (intent) =>
-				Effect.sync(() => {
-					captures += 1;
-					captureViewIds = intent.viewIds;
-					return completedCapture(captured);
-				}),
-			load: () => Effect.succeed(empty),
-			previewCandidate: () =>
-				Effect.succeed({
-					error: { message: "not used", recovery: "not used" },
-					status: "failed"
-				})
-		};
-		const user = userEvent.setup();
-		renderRoute(client);
-		expect(
-			await screen.findByText(
-				"No captures yet. Capture this set to save PNG stills of every view."
-			)
-		).toBeDefined();
-		await user.click(screen.getByRole("button", { name: "Capture set" }));
-		expect(screen.getByRole("dialog", { name: "Capture review set" })).toBeDefined();
-		await user.click(screen.getByRole("button", { name: "REVIEW CAPTURE PLAN →" }));
-		expect(screen.getAllByText("Structure context").length).toBeGreaterThan(0);
-		await user.click(screen.getByRole("button", { name: "CAPTURE 1 VIEW" }));
-		expect(await screen.findByText("Capture finished")).toBeDefined();
-		await user.click(screen.getByRole("button", { name: "DONE" }));
-		expect((await screen.findAllByText("Natural")).length).toBeGreaterThan(0);
-		expect(screen.getByRole("region", { name: "Runs" }).textContent).toContain("completed");
-		expect(captures).toBe(1);
-		expect(captureViewIds).toEqual(["structure-context"]);
-	});
+	it.each(["high_resolution", "saved"] as const)(
+		"captures with %s and exposes it in history",
+		async (rendererChoice) => {
+			const captured = {
+				...empty,
+				runs: [
+					{
+						completedAt: "2026-07-15T08:00:00.000Z",
+						failedViews: 0,
+						id: "run-001",
+						status: "completed" as const,
+						successfulViews: 1
+					}
+				]
+			};
+			let captures = 0;
+			let captureViewIds: ReadonlyArray<string> = [];
+			let captureRenderer: unknown;
+			const client: MapReviewClientApi = {
+				...offlineScout,
+				...unavailableDurableAuthoring,
+				approveCandidate: () =>
+					Effect.succeed({ candidateId: "context", status: "approved" }),
+				authorFromSelection: () =>
+					Effect.succeed({
+						candidates: [],
+						selection: {
+							actorPath: "/Game/Fixture.Subject",
+							displayName: "Subject",
+							mapPath: "/Game/Fixture/Cameras/L_CameraLoad"
+						},
+						status: "ready",
+						viewId: "structure-context"
+					}),
+				capture: (intent) =>
+					Effect.sync(() => {
+						captures += 1;
+						captureViewIds = intent.viewIds;
+						captureRenderer = intent.renderer;
+						return completedCapture(captured);
+					}),
+				load: () => Effect.succeed(empty),
+				previewCandidate: () =>
+					Effect.succeed({
+						error: { message: "not used", recovery: "not used" },
+						status: "failed"
+					})
+			};
+			const user = userEvent.setup();
+			renderRoute(client);
+			expect(
+				await screen.findByText(
+					"No captures yet. Capture this set to save PNG stills of every view."
+				)
+			).toBeDefined();
+			await user.click(screen.getByRole("button", { name: "Capture set" }));
+			expect(screen.getByRole("dialog", { name: "Capture review set" })).toBeDefined();
+			if (rendererChoice === "saved")
+				await user.selectOptions(
+					screen.getByRole("combobox", { name: "Renderer" }),
+					"saved"
+				);
+			await user.click(screen.getByRole("button", { name: "REVIEW CAPTURE PLAN →" }));
+			expect(
+				screen.getByText(
+					rendererChoice === "saved"
+						? "SceneCapture2D render"
+						: "Unreal high-resolution screenshot"
+				)
+			).toBeDefined();
+			expect(
+				screen.getByText(
+					rendererChoice === "saved"
+						? /Project automatic exposure.*1 settling frame/
+						: /Project automatic exposure.*8 settling frames/
+				)
+			).toBeDefined();
+			expect(screen.getAllByText("Structure context").length).toBeGreaterThan(0);
+			await user.click(screen.getByRole("button", { name: "CAPTURE 1 VIEW" }));
+			expect(await screen.findByText("Capture finished")).toBeDefined();
+			await user.click(screen.getByRole("button", { name: "DONE" }));
+			expect((await screen.findAllByText("Natural")).length).toBeGreaterThan(0);
+			expect(screen.getByRole("region", { name: "Runs" }).textContent).toContain("completed");
+			expect(captures).toBe(1);
+			expect(captureViewIds).toEqual(["structure-context"]);
+			expect(captureRenderer).toEqual(
+				rendererChoice === "saved" ? undefined : highResolutionReviewRenderer
+			);
+		}
+	);
 
 	it("keeps Natural primary and exposes matched Clear evidence with a permanent label", async () => {
 		Object.defineProperty(URL, "createObjectURL", {

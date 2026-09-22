@@ -220,12 +220,12 @@ export function ReviewSetLibrary(props: {
 				<header {...stylex.attrs(styles.header)}>
 					<div>
 						<h2 id="review-set-library-title" {...stylex.attrs(styles.title)}>
-							Review sets
+							Saved views & captures
 						</h2>
 						<p {...stylex.attrs(styles.subtitle)}>
-							Review Sets collect published camera views and captures. Open one to
-							choose where Save views publishes. If its map differs from Unreal's, you
-							can switch maps or browse saved captures only.
+							Open a collection to view its saved cameras and capture history, or to
+							choose where Save views stores your current cameras. To continue editing
+							a camera setup, use Open camera draft in the camera workspace.
 						</p>
 					</div>
 					<button

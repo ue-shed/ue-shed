@@ -16,6 +16,9 @@ import {
 	makeCameraAuthoringBridge,
 	makeCameraAuthoringPanelSession,
 	makeCameraAuthoringStore,
+	inspectCameraRecovery,
+	resolveCameraRecovery,
+	type CameraRecoveryProposal,
 	readyCameraBridge,
 	type CameraBridgeSnapshot
 } from "@ue-shed/cameras";
@@ -54,6 +57,7 @@ export const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(f
 		  }
 		| undefined;
 	let error: string | null = null;
+	let recovery: CameraRecoveryProposal | null = null;
 	let savedSets: CameraWorkspaceResult["sets"] = [];
 	const close = Effect.fn("Workbench.CameraWorkspace.close")(function* () {
 		if (!active) return;
@@ -67,6 +71,7 @@ export const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(f
 		if (detached.status !== "detached" && detached.status !== "unavailable")
 			return yield* Effect.fail(failure(detached.message));
 		active = undefined;
+		recovery = null;
 		if (current.livePreview)
 			yield* clearProvisionedCameras(current.endpoint).pipe(
 				Effect.provideService(RemoteControlClient, client)
@@ -136,6 +141,37 @@ export const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(f
 				createHash("sha256").update(set.id).digest("hex").slice(0, 20)
 			);
 			if (intent.kind === "close") yield* close();
+			if (intent.kind === "inspect_recovery" || intent.kind === "resolve_recovery") {
+				const id =
+					intent.kind === "inspect_recovery"
+						? intent.id
+						: intent.proposal.native.sessionId;
+				if (!active || active.snapshot.sessionId !== id)
+					return yield* Effect.fail(
+						failure("Open the matching camera set before recovery.")
+					);
+				if (intent.kind === "inspect_recovery") {
+					recovery = yield* inspectCameraRecovery(
+						active.store,
+						active.bridge,
+						active.snapshot
+					);
+					return {
+						panel: active.snapshot.panel ?? null,
+						sets: savedSets,
+						error,
+						recovery
+					};
+				}
+				active.snapshot = yield* resolveCameraRecovery(
+					active.store,
+					active.bridge,
+					intent.proposal,
+					intent.choice
+				);
+				recovery = null;
+				error = null;
+			}
 			if (intent.kind === "open") {
 				const id = intent.id ?? CameraArrangementId.make(randomUUID());
 				const path = join(root, `${id}.json`);
@@ -279,7 +315,14 @@ export const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(f
 						yield* editorHandoff.activate(context.endpoint);
 				}
 			}
-			if (active) yield* tick();
+			if (active)
+				yield* tick().pipe(
+					Effect.catch((cause) =>
+						Effect.sync(() => {
+							error = cause.message;
+						})
+					)
+				);
 			const document = active ? yield* active.store.load() : undefined;
 			const savedViews =
 				document?.reviewSet.views
@@ -289,6 +332,7 @@ export const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(f
 				return {
 					panel: active?.snapshot.panel ?? null,
 					sets: savedSets,
+					recovery,
 					savedViews,
 					error
 				};
@@ -326,6 +370,7 @@ export const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(f
 			return {
 				panel: active?.snapshot.panel ?? null,
 				sets,
+				recovery,
 				savedViews,
 				error
 			} satisfies CameraWorkspaceResult;
@@ -335,6 +380,7 @@ export const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(f
 			Effect.succeed({
 				panel: active?.snapshot.panel ?? null,
 				sets: savedSets,
+				recovery,
 				error: failure(cause).message
 			})
 		)

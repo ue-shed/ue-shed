@@ -311,6 +311,12 @@ try {
 	);
 	await writeFile(join(custodianTarget, "cache.bin"), "before", "utf8");
 	const consumerScript = join(consumerDirectory, "verify-map-review.mjs");
+	const cameraConsumer = join(consumerDirectory, "verify-camera-authoring.mjs");
+	await copyFile(join(repositoryRoot, "examples/camera-authoring/verify.mjs"), cameraConsumer);
+	assert.equal(
+		run(process.execPath, [cameraConsumer], consumerDirectory, { env: consumerEnvironment }),
+		"camera-adoption-ok"
+	);
 	await writeFile(
 		consumerScript,
 		`${[

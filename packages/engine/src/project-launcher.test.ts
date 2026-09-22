@@ -12,8 +12,51 @@ import {
 	makeUnrealProjectProcessTestLayer,
 	unrealEditorCommandletExecutable,
 	unrealProjectLaunchArguments,
+	validateUnrealProjectBuildId,
+	validateUnrealRemoteControlBuild,
 	type UnrealProjectProcessLaunchOptions
 } from "./project-launcher.js";
+
+it("rejects different builds of the same engine before launch and accepts matching identities", async () => {
+	const root = await mkdtemp(join(tmpdir(), "ue-shed-build-identity-"));
+	try {
+		const engine = join(root, "engine");
+		const project = join(root, "project", "Fixture.uproject");
+		const engineBin = join(engine, "Engine", "Binaries", "Win64");
+		const projectBin = join(root, "project", "Binaries", "Win64");
+		await mkdir(engineBin, { recursive: true });
+		await mkdir(projectBin, { recursive: true });
+		await writeFile(
+			join(engineBin, "UnrealEditor.modules"),
+			JSON.stringify({ BuildId: "custom-build-a" })
+		);
+		await writeFile(
+			join(projectBin, "UnrealEditor.modules"),
+			JSON.stringify({ BuildId: "custom-build-b" })
+		);
+		const result = await Effect.runPromise(
+			Effect.result(validateUnrealProjectBuildId(engine, project, "win32"))
+		);
+		expect(result).toMatchObject({ _tag: "Failure", failure: { code: "build_mismatch" } });
+		await writeFile(
+			join(projectBin, "UnrealEditor.modules"),
+			JSON.stringify({ BuildId: "custom-build-a" })
+		);
+		await Effect.runPromise(validateUnrealProjectBuildId(engine, project, "win32"));
+		await rm(join(projectBin, "UnrealEditor.modules"));
+		await Effect.runPromise(validateUnrealProjectBuildId(engine, project, "win32"));
+		await writeFile(join(projectBin, "UnrealEditor.modules"), "not-json");
+		const invalid = await Effect.runPromise(
+			Effect.result(validateUnrealProjectBuildId(engine, project, "win32"))
+		);
+		expect(invalid).toMatchObject({
+			_tag: "Failure",
+			failure: { code: "invalid_module_manifest" }
+		});
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
 
 it("resolves platform commandlet executable paths", () => {
 	expect(unrealEditorCommandletExecutable("C:/UE", "win32")).toBe(
@@ -95,6 +138,104 @@ it.effect("resolves the engine and launches through the supplied process adapter
 		expect(yield* Ref.get(launches)).toEqual([
 			{ args: [projectDescriptor], cwd: root, executable }
 		]);
+		const projectBinaries = join(
+			root,
+			"Binaries",
+			process.platform === "win32" ? "Win64" : process.platform === "darwin" ? "Mac" : "Linux"
+		);
+		yield* Effect.promise(async () => {
+			await mkdir(projectBinaries, { recursive: true });
+			await writeFile(
+				join(executable, "..", "UnrealEditor.modules"),
+				JSON.stringify({ BuildId: "engine-build" })
+			);
+			await writeFile(
+				join(projectBinaries, "UnrealEditor.modules"),
+				JSON.stringify({ BuildId: "project-build" })
+			);
+		});
+		const refused = yield* Effect.flatMap(UnrealProjectLauncher, (launcher) =>
+			launcher.launch({ mode: { kind: "normal" }, projectDescriptor })
+		).pipe(Effect.provide(layer), Effect.result);
+		expect(refused).toMatchObject({ _tag: "Failure", failure: { code: "build_mismatch" } });
+		expect(yield* Ref.get(launches)).toHaveLength(1);
 		yield* Effect.promise(() => rm(root, { force: true, recursive: true }));
 	})
 );
+
+it("validates Remote Control dependencies, identities and DLLs before launch", async () => {
+	const root = await mkdtemp(join(tmpdir(), "ue-shed-remote-build-"));
+	try {
+		const engineBin = join(root, "Engine", "Binaries", "Win64");
+		await mkdir(engineBin, { recursive: true });
+		await writeFile(
+			join(engineBin, "UnrealEditor.modules"),
+			JSON.stringify({ BuildId: "current" })
+		);
+		for (const id of ["RemoteControl", "TransportDependency"]) {
+			const plugin = join(root, "Engine", "Plugins", "Category", id);
+			const bin = join(plugin, "Binaries", "Win64");
+			await mkdir(bin, { recursive: true });
+			await writeFile(
+				join(plugin, `${id}.uplugin`),
+				JSON.stringify({
+					Modules: [{ Name: id }],
+					Plugins:
+						id === "RemoteControl"
+							? [
+									{ Name: "TransportDependency", Enabled: true },
+									{ Name: "OptionalAbsent", Enabled: true, Optional: true },
+									{ Name: "DisabledAbsent", Enabled: false }
+								]
+							: []
+				})
+			);
+			await writeFile(
+				join(bin, "UnrealEditor.modules"),
+				JSON.stringify({
+					BuildId: id === "RemoteControl" ? "current" : "previous",
+					Modules: { [id]: `${id}.dll` }
+				})
+			);
+			await writeFile(join(bin, `${id}.dll`), "fixture");
+		}
+		const check = () =>
+			Effect.runPromise(Effect.result(validateUnrealRemoteControlBuild(root, "win32")));
+		expect(await check()).toMatchObject({
+			_tag: "Failure",
+			failure: {
+				code: "plugin_unavailable",
+				details: expect.stringContaining("TransportDependency: plugin build previous")
+			}
+		});
+		const dependencyBin = join(
+			root,
+			"Engine",
+			"Plugins",
+			"Category",
+			"TransportDependency",
+			"Binaries",
+			"Win64"
+		);
+		await writeFile(
+			join(dependencyBin, "UnrealEditor.modules"),
+			JSON.stringify({
+				BuildId: "current",
+				Modules: { TransportDependency: "TransportDependency.dll" }
+			})
+		);
+		expect(await check()).toMatchObject({ _tag: "Success" });
+		await rm(join(dependencyBin, "TransportDependency.dll"));
+		expect(await check()).toMatchObject({
+			_tag: "Failure",
+			failure: { details: expect.stringContaining("missing binary") }
+		});
+		await rm(join(dependencyBin, "UnrealEditor.modules"));
+		expect(await check()).toMatchObject({
+			_tag: "Failure",
+			failure: { details: expect.stringContaining("missing or invalid module manifest") }
+		});
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});

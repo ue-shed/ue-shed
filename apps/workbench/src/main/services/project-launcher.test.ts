@@ -6,11 +6,28 @@ import { FixtureProcessTest, makeFixtureProcessTestLayer } from "../adapters/fix
 import { makeLocalFilesTestLayer } from "../adapters/local-files.js";
 import { typescriptLoader } from "../typescript-checkout.js";
 import { workbenchConfigurationFromUnknown } from "../workbench-config.js";
-import { ProjectLauncher, ProjectLauncherLive } from "./project-launcher.js";
+import { ProjectLauncher, ProjectLauncherLive, projectLaunchFailure } from "./project-launcher.js";
 import { makeWorkbenchProjectTestLayer } from "./project-workspace.js";
 
 const repositoryRoot = "C:/ue-shed";
 const script = join(repositoryRoot, "scripts", "unreal-project.ts");
+
+it("preserves actionable launch failures and keeps raw stderr in details", () => {
+	const failure = {
+		status: "failed",
+		message: "Project modules need rebuilding.",
+		recovery: "Build the Editor target.",
+		details: "Engine: C:/UE\nBuild ID: custom"
+	};
+	expect(
+		projectLaunchFailure("warning\nUE_SHED_LAUNCH_FAILURE_V1 " + JSON.stringify(failure) + "\n")
+	).toEqual(failure);
+	const fallback = projectLaunchFailure(
+		"Unhandled stack trace\nUE_SHED_LAUNCH_FAILURE_V1 invalid"
+	);
+	expect(fallback.message).toBe("Unreal could not be launched.");
+	expect(fallback.details).toContain("Unhandled stack trace");
+});
 const selected = {
 	project: {
 		inputAtlas: "ready" as const,
@@ -83,3 +100,10 @@ it.effect("does not launch anything before a project is selected", () =>
 		expect(yield* processHost.launches()).toEqual([]);
 	}).pipe(Effect.provide(launcherLayer({ status: "not_configured" })))
 );
+
+it("explains engine-change refusal without hiding the build output", () => {
+	const output = "Building would modify engine files.\nResult: Failed (FailedDueToEngineChange)";
+	const failure = projectLaunchFailure(output);
+	expect(failure.message).toContain("existing Unreal engine build");
+	expect(failure.details).toBe(output);
+});

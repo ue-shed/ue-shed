@@ -1,6 +1,45 @@
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "./fixtures/workbench-test.js";
 
+test("launch errors stay readable outside the footer at small window sizes", async ({
+	application,
+	workbench
+}, testInfo) => {
+	await workbench.expectShowcaseReady();
+	await application.evaluate(({ ipcMain }) => {
+		ipcMain.removeHandler("project:launch");
+		ipcMain.handle("project:launch", () => ({
+			status: "failed",
+			message: "Your project's compiled modules don't match the selected Unreal engine.",
+			recovery:
+				"Close Unreal, build this project's Editor target using its associated engine, then launch again. Rebuild the project first; a full engine rebuild may not be necessary.",
+			details:
+				"Project: D:/Projects/Fixture/Fixture.uproject\nEngine: D:/Engines/Custom\nProject build ID: previous-build\nEngine build ID: current-build"
+		}));
+	});
+	for (const viewport of [
+		{ width: 1280, height: 800 },
+		{ width: 640, height: 480 }
+	]) {
+		await workbench.page.setViewportSize(viewport);
+		const trigger = workbench.page.getByText("Launch ▾", { exact: true });
+		await trigger.click();
+		await workbench.page.getByRole("button", { name: /With plugin suite/ }).click();
+		const dialog = workbench.page.getByRole("dialog", { name: "Unreal couldn’t start" });
+		await expectWithinViewport(workbench.page, dialog);
+		await expect(dialog).toContainText("What to do next");
+		await expect(dialog.locator("pre")).toBeHidden();
+		await workbench.page.screenshot({
+			path: testInfo.outputPath(`launch-error-${viewport.width}.png`)
+		});
+		await dialog.getByText("Technical details").click();
+		await expect(dialog.locator("pre")).toBeVisible();
+		await expectWithinViewport(workbench.page, dialog);
+		await workbench.page.keyboard.press("Escape");
+		await expect(dialog).toBeHidden();
+	}
+});
+
 async function expectWithinViewport(page: Page, locator: Locator): Promise<void> {
 	await expect(locator).toBeVisible();
 	const [bounds, viewport] = await Promise.all([

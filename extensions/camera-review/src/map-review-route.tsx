@@ -273,7 +273,7 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 						onClick={() => setSetLibraryOpen(true)}
 						tone="quiet"
 					>
-						Review sets
+						Saved views & captures
 					</Button>
 					<Button
 						type="button"

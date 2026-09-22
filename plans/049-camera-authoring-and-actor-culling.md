@@ -3,6 +3,31 @@
 Design proposal, 2026-09-09. Implementation status is tracked in [the plan index](README.md).
 This document proposes behavior; it does not change the shipped product contract.
 
+## Step 6 hardening record (2026-09-21)
+
+- Implemented automatic dead-local-writer recovery with atomic directory ownership and conservative
+  refusal of live, foreign, malformed and legacy locks. Process tests kill writers before/after draft
+  commit and before approval export, race eight recovery attempts, and interrupt an active commit.
+- Added explicit saved/native conflict review in the public API, CLI and Workbench, with revision and
+  gesture checks. Preserved-file recovery is available without Unreal and does not publish Views.
+- Added a clean packed camera consumer and a separate native menu example built against public
+  headers. The real round trip runs with the reference menu and Workbench absent, then captures
+  after restart with both authoring plugins disabled.
+- Added native 1/6/37-camera movement/render-work measurements, one-live-capture bounds, cleanup and
+  PIE transition assertions, plus host RC-to-durable-ack measurements. The runner exercises actual
+  30-second lease expiry, recovery-file replay, and live conflict resolution.
+- Added explicit refusal tests for Nanite-configured meshes, instanced meshes and translucency.
+  Loaded opaque non-Nanite meshes remain the supported exclusion scope.
+- Verification and measurements are recorded in
+  [native proof](../docs/engineering/camera-authoring-native-proof.md). Full local `pnpm check`,
+  `check:precommit` and `check:unreal` passed, along with native automation and independent-menu
+  round trips on UE 5.7 and 5.8. Versioning, release-commit CI and publication are separate work.
+
+Production-map responsiveness, the 256-camera upper limit's performance, broader geometry support,
+network-shared draft storage and a complete replacement UI are not promoted by the stock-fixture proof.
+The old candidate-UI recording driver still needs migration; the maintained release gate now covers
+Camera Sets creation, 4/37-camera save/restart/capture and gallery rendering.
+
 [Open the visual HTML companion](049-camera-authoring-and-actor-culling.html) for the author journey,
 interactive camera-inheritance example, architecture, and implementation gates.
 

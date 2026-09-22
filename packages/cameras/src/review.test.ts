@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { highResolutionReviewRenderer, type CameraRendererPolicy } from "./camera-render-schema.js";
 import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -102,6 +103,7 @@ function fixtureReviewSet(): ReviewSet {
 
 function runCapture(
 	options: {
+		readonly renderer?: CameraRendererPolicy;
 		readonly destination?: ReviewCaptureDestination;
 		readonly invocation?: CaptureInvocation;
 		readonly projectRoot: string;
@@ -114,6 +116,7 @@ function runCapture(
 	return Effect.runPromise(
 		Effect.flatMap(ReviewCapture, (service) =>
 			service.captureSet({
+				...(options.renderer === undefined ? undefined : { renderer: options.renderer }),
 				endpoint: "http://127.0.0.1:30001",
 				projectRoot: options.projectRoot,
 				reviewSetPath: options.reviewSetPath,
@@ -208,6 +211,45 @@ function successfulCapturePort(args: {
 }
 
 describe("Map Review contracts", () => {
+	it("routes an explicit high-resolution choice to Unreal without changing saved profiles", async () => {
+		const projectRoot = await mkdtemp(join(tmpdir(), "ue-shed-high-resolution-"));
+		temporaryDirectories.push(projectRoot);
+		const reviewSetPath = join(projectRoot, "set.json");
+		await Effect.runPromise(
+			saveReviewSet({ path: reviewSetPath, reviewSet: fixtureReviewSet() }).pipe(
+				Effect.provide(ReviewRepositoryLive)
+			)
+		);
+		const before = await readFile(reviewSetPath, "utf8");
+		const requests: Parameters<ReviewCapturePortApi["capture"]>[0][] = [];
+		const ids = ["run-high-resolution", "invocation-high-resolution", operationId(1)];
+		await runCapture(
+			{ projectRoot, reviewSetPath, renderer: highResolutionReviewRenderer },
+			{
+				capture: (request) => {
+					requests.push(request);
+					return Effect.succeed({
+						code: "fixture_stop",
+						contract: request.contract,
+						message: "Recorded request",
+						operationId: request.operationId,
+						recovery: "None",
+						retrySafe: false,
+						status: "failed",
+						viewId: request.viewId
+					});
+				}
+			},
+			() => ids.shift()!
+		);
+		expect(requests).toHaveLength(1);
+		expect(requests[0]?.renderPolicy).toMatchObject({
+			renderer: highResolutionReviewRenderer,
+			exposure: { mode: "project_auto" },
+			settling: { minimumFrames: 8 }
+		});
+		expect(await readFile(reviewSetPath, "utf8")).toBe(before);
+	});
 	it("keeps domain identities branded and validates a complete Review Set", () => {
 		const reviewSet = fixtureReviewSet();
 		expect(ReviewSetId.make(reviewSet.id)).toBe("fixture-structure");

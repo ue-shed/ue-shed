@@ -25,6 +25,7 @@ import {
 	CameraBridgeError,
 	ensureProvisionedCameras,
 	generateFramingCandidates,
+	legacyReviewRenderPolicy,
 	ProvisionedCameraError,
 	ReviewAuthoring,
 	ReviewAuthoringSessions,
@@ -1207,6 +1208,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 										}
 									: undefined),
 								captureProfileId: profile.id,
+								renderPolicy: profile.renderPolicy ?? legacyReviewRenderPolicy,
 								displayName: view.displayName,
 								id: view.id,
 								revision: view.revision,
@@ -1369,6 +1371,9 @@ export const WorkbenchMapReviewLive = Layer.effect(
 			return yield* runExclusive(
 				capture
 					.captureSet({
+						...(intent.renderer === undefined
+							? undefined
+							: { renderer: intent.renderer }),
 						endpoint: endpoint,
 						projectRoot,
 						reviewSetPath,

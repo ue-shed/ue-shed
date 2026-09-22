@@ -17,7 +17,8 @@ into the existing Review Set and capture workflow. Drafts persist under the proj
 This uses the existing camera coordinator; the proposed standalone sync primitive is not required.
 The Workbench authoring workspace currently requires the optional authoring bridge capability.
 
-**Review sets** opens the library of published-view collections, not the editable-camera library.
+**Saved views & captures** opens the library of saved-view collections. **Open camera draft**
+opens editable camera setups; **Choose capture collection** changes the saved-view destination.
 Opening one selects the publication destination and makes its saved camera drafts available; older
 published Views do not imply that an editable draft exists. The library offers **Return to set** for
 the already active collection. When no collection is active it offers **New camera set** instead of
@@ -25,6 +26,37 @@ a disabled sibling-creation form. Create/open failures are visible inline, and b
 neither erase operation failures nor preserve obsolete prerequisite errors.
 
 The native FOV Enter/focus regression from the baseline walkthrough has been fixed.
+
+Native numeric fields support exact typing and Ctrl-drag for finer adjustments. Distance is a
+multiplier of the fitted distance (1× fits the subject; 2× moves twice as far away). Its normal
+drag range is 0.25–3×; exact typed values retain the supported 0.01–100× range. Margin is a
+fraction (0.15 means 15%). Position offsets are centimeters and angles are degrees.
+Height, aim offsets, dolly, and world-Z dragging scale with the subject's longest dimension:
+a field-width drag moves about one subject length. Ctrl reduces movement to one tenth, Shift
+increases it tenfold, and exact typed offsets remain available. The drag range follows the
+current offset so large existing values do not jump back into a fixed range.
+Moving a camera manually preserves its pose. When only manual cameras are in scope, live
+world-space X/Y/Z and pitch/yaw/roll replace fitted framing controls; aim controls are hidden.
+Mixed scopes retain framing and aim for the fitted cameras alongside manual-pose readouts.
+Checking cameras switches to Selected cameras, so an unrelated manual camera does not prevent
+editing the checked fitted cameras. Whole set remains an explicit choice for shared defaults.
+These values and FOV follow native observations every 200 ms, including while a host save is pending.
+FOV remains editable when synchronized.
+Select one manual camera and choose **Restore fitted position** to move it back to its computed
+placement and restore those controls. Dolly and world-Z moves still work for manual cameras.
+
+**Save views to Review Set** saves every camera in the current set as a capture-ready view,
+including its pose, visibility, and capture policy. It updates existing views with the same IDs.
+It does not render images or publish online. Drafts continue to autosave independently; later draft
+changes require saving the views again to update the Review Set.
+
+The capture dialog defaults to **Unreal high-resolution screenshot**, using the public cameras
+API's editor-viewport renderer and Unreal's `TakeHighResScreenShot` at the saved resolution.
+The capture plan shows the effective renderer, exposure mode, and settling frames. The explicit
+per-run choice preserves saved exposure/loading settings and uses at least eight settling frames.
+**Use saved profile renderer** retains the profile's renderer, including historical SceneCapture2D
+defaults for profiles without an explicit policy. No renderer fallback occurs on failure, and the
+per-run choice does not rewrite saved profiles. Quick native preview tiles remain SceneCapture snapshots.
 
 ## Plugin boundary
 
@@ -50,6 +82,11 @@ with a separately scrolling inspector on the right. Scope is a segmented Whole s
 control. Framing, Visibility, and Capture use native dock-tab styling with an active-tab indicator.
 Framing values occupy a two-column grid; camera actions and visibility actions use compact rows.
 Groups and advanced aim/placement controls remain collapsed until needed.
+The native Capture tab bounds fixed exposure to EV100 −20 through 30 for typing and scrubbing.
+Lower EV brightens the image. **Apply fixed** applies the value to the whole set;
+**Restore default (automatic exposure)** returns to project automatic exposure while preserving
+the other render settings. Native camera previews and review snapshots share fixed-exposure
+overrides; restoring automatic exposure removes those overrides from the native cameras.
 Numeric values support Unreal's click-drag scrubbing as well as typed input. Live framing edits
 coalesce behind the host's single pending command; releasing the mouse retains the latest value
 until it can be sent. A selection/scope/session change cancels unsent values rather than retargeting them.
@@ -205,12 +242,32 @@ the review panel leaves editing active. Transient cameras are not saved into map
 Overlapping native/host edits report a conflict and retain both states. The CLI preserves a native
 snapshot at `draft.json.native-recovery.json` when it exits. The bridge also preserves pending native
 state under the project's `Saved/UEShed/CameraAuthoringRecovery/` when releasing an unacknowledged
-camera. Recovery is explicit: inspect both poses, submit the chosen change with the current host
-revision, detach, and reattach. Do not automatically replay a stale native patch.
+camera. Recovery is explicit through the reviewed live-conflict or preserved-file operations below.
+Do not automatically replay a stale native patch.
 
-The file store reports an occupied lock as `busy`. After a process crash, verify the lock's recorded
-PID is no longer running before removing its `.lock` file. Automatic stale-lock reclamation and a full
-conflict-resolution UI belong to the later production recovery phase.
+The file store reports a live writer as `busy`. Retrying automatically reclaims a confirmed dead
+local owner. Ownership is installed atomically in a `.lock-v2` directory; concurrent recovery never
+recursively removes another writer's lock. Foreign-machine, malformed, and legacy `.lock` records
+fail closed. Use local storage and matching writer versions; network-shared authoring storage is
+outside this contract. File transactions finish their commit and cleanup before Effect cancellation.
+
+Workbench offers **Inspect pending camera edits**, with saved and native poses and an explicit
+**Keep saved draft** / **Use pending Unreal edits** choice. The choice is guarded by the reviewed
+host revision and native producer/gesture sequence. Moving a camera or changing the draft after
+inspection requires another review. Neither choice publishes Views.
+
+The same live operations are `inspectCameraRecovery` and `resolveCameraRecovery`. For a preserved
+snapshot after lease expiry or shutdown, use `prepareCameraRecovery` and `restoreCameraRecovery`
+while detached, then reattach. Recovery keeps the source snapshot and never automatically replays it.
+The CLI exposes both journeys:
+
+```sh
+review authoring arrangement recovery-file draft.json native-recovery.json > proposal.json
+review authoring arrangement recovery-file draft.json proposal.json --choice native
+```
+
+Inspect `proposal.json` before choosing `native` or `saved`. For a live session, use `recovery`
+instead of `recovery-file` and supply `--endpoint`; it inspects the identified native session afresh.
 
 ## Verification and remaining scope
 
@@ -222,7 +279,9 @@ camera. It records JSON evidence and a PNG. Set `UE_SHED_UNREAL_ENGINE_ROOT` bef
 The native proof now routes exclusions through real shared renderer sessions for both viewport and
 SceneCapture. The supported scope is loaded, opaque, non-Nanite static-mesh actors. Instanced meshes,
 translucency, and unloaded actors produce diagnostics instead of silently omitting an exclusion.
-The broader geometry and production recovery/performance matrix remains step 6 of Plan 049.
+Crash, explicit conflict/file recovery, lease expiry, replacement-menu adoption and 1/6/37-camera
+fixture measurements are covered by the hardening runners. Larger production maps and broader
+geometry remain unclaimed; see the [native evidence](../engineering/camera-authoring-native-proof.md).
 
 ## Arrangement editing and persistence
 

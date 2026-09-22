@@ -74,6 +74,17 @@ pnpm install
 pnpm showcase
 ```
 
+The project launcher resolves the `.uproject` engine association, including Windows-registered
+custom builds. `UE_SHED_UNREAL_ENGINE_ROOT` is an explicit override. A matching `5.x` label alone
+does not make binaries compatible: the launcher checks the engine and project module build IDs
+before preparing plugins or opening the editor. If they differ, build the project's Editor target
+with its associated engine, or restore the matching engine build. The launcher reports the selected
+engine path and does not rewrite module IDs to bypass Unreal's compatibility check.
+
+Plugin preparation uses a separate cache for each engine installation and asks Unreal Build Tool
+to reject changes to existing engine files. Source engines that require rebuilding must be prepared
+through their own build workflow before launching with UE Shed plugins.
+
 `showcase` incrementally builds the in-repo `uasset` reader and Workbench, restores the most recently
 opened project on this device, and opens the catalog. On a fresh profile, use **Try the sample
 project** or **Open your project** on the home screen. Start with Data Authoring, Game Text, and

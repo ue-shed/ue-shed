@@ -1,4 +1,5 @@
 import * as stylex from "@stylexjs/stylex";
+import { highResolutionReviewRenderer, reviewCaptureRenderPolicy } from "@ue-shed/cameras/browser";
 import { createEffectAction } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { Cause } from "effect";
@@ -32,6 +33,12 @@ export function CaptureWorkflow(props: {
 }) {
 	const action = createEffectAction();
 	const [state, setState] = createSignal<WorkflowState>({ stage: "prepare" });
+	const [useHighResolution, setUseHighResolution] = createSignal(true);
+	const capturePolicy = (view: ReadyReview["reviewSet"]["views"][number]) =>
+		reviewCaptureRenderPolicy(
+			view.renderPolicy,
+			useHighResolution() ? highResolutionReviewRenderer : undefined
+		);
 	const [selectedIds, setSelectedIds] = createSignal<ReadonlyArray<string>>(
 		props.review.reviewSet.views.map((view) => view.id)
 	);
@@ -55,43 +62,50 @@ export function CaptureWorkflow(props: {
 		const viewIds = selectedIds();
 		if (viewIds.length === 0) return;
 		setState({ stage: "capturing" });
-		action.run(props.client.capture({ viewIds }), {
-			onFailure: (cause) =>
-				setState({
-					message: "Capture did not run.",
-					recovery: "Check the Workbench connection to Unreal, then retry.",
-					stage: "failed",
-					technical: Cause.pretty(cause)
-				}),
-			onSuccess: (result) => {
-				switch (result.status) {
-					case "completed":
-						props.onCaptured(result.review);
-						setState({ job: result.job, stage: "completed" });
-						break;
-					case "blocked":
-						setState({
-							message: result.policy.message,
-							recovery: result.policy.recovery,
-							stage: "blocked"
-						});
-						break;
-					case "failed":
-						setState({
-							message: result.error.message,
-							recovery: result.error.recovery,
-							stage: "failed"
-						});
-						break;
-					case "not_configured":
-						setState({
-							message: "No Review Set is configured.",
-							recovery: "Configure a Review Set, then reopen this capture workflow.",
-							stage: "failed"
-						});
+		action.run(
+			props.client.capture({
+				viewIds,
+				...(useHighResolution() ? { renderer: highResolutionReviewRenderer } : undefined)
+			}),
+			{
+				onFailure: (cause) =>
+					setState({
+						message: "Capture did not run.",
+						recovery: "Check the Workbench connection to Unreal, then retry.",
+						stage: "failed",
+						technical: Cause.pretty(cause)
+					}),
+				onSuccess: (result) => {
+					switch (result.status) {
+						case "completed":
+							props.onCaptured(result.review);
+							setState({ job: result.job, stage: "completed" });
+							break;
+						case "blocked":
+							setState({
+								message: result.policy.message,
+								recovery: result.policy.recovery,
+								stage: "blocked"
+							});
+							break;
+						case "failed":
+							setState({
+								message: result.error.message,
+								recovery: result.error.recovery,
+								stage: "failed"
+							});
+							break;
+						case "not_configured":
+							setState({
+								message: "No Review Set is configured.",
+								recovery:
+									"Configure a Review Set, then reopen this capture workflow.",
+								stage: "failed"
+							});
+					}
 				}
 			}
-		});
+		);
 	};
 
 	return (
@@ -143,6 +157,32 @@ export function CaptureWorkflow(props: {
 									is not saved or modified.
 								</p>
 								<dl {...stylex.attrs(styles.facts)}>
+									<div {...stylex.attrs(styles.fact)}>
+										<label
+											for="review-capture-renderer"
+											{...stylex.attrs(styles.factLabel)}
+										>
+											Renderer
+										</label>
+										<select
+											id="review-capture-renderer"
+											value={
+												useHighResolution() ? "high_resolution" : "saved"
+											}
+											onChange={(event) =>
+												setUseHighResolution(
+													event.currentTarget.value === "high_resolution"
+												)
+											}
+										>
+											<option value="high_resolution">
+												Unreal high-resolution screenshot
+											</option>
+											<option value="saved">
+												Use saved profile renderer
+											</option>
+										</select>
+									</div>
 									<div {...stylex.attrs(styles.fact)}>
 										<dt {...stylex.attrs(styles.factLabel)}>Runs in</dt>
 										<dd {...stylex.attrs(styles.factValue)}>
@@ -220,6 +260,36 @@ export function CaptureWorkflow(props: {
 													</span>
 													<span {...stylex.attrs(styles.viewCopy)}>
 														<strong>{view.displayName}</strong>
+														<small>
+															{capturePolicy(view)
+																? capturePolicy(view).renderer
+																		.kind === "editor_viewport"
+																	? "Unreal high-resolution screenshot"
+																	: "SceneCapture2D render"
+																: "Renderer information unavailable"}
+														</small>
+														<Show when={capturePolicy(view)}>
+															{(policy) => (
+																<small>
+																	{policy().exposure.mode ===
+																	"project_auto"
+																		? "Project automatic exposure"
+																		: policy().exposure.mode ===
+																			  "meter_once"
+																			? "Metered once"
+																			: "Fixed exposure"}
+																	{" · "}
+																	{
+																		policy().settling
+																			.minimumFrames
+																	}{" "}
+																	{policy().settling
+																		.minimumFrames === 1
+																		? "settling frame"
+																		: "settling frames"}
+																</small>
+															)}
+														</Show>
 														<small>
 															{view.resolution.width} ×{" "}
 															{view.resolution.height} · approved pose

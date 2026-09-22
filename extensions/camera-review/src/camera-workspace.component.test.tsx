@@ -4,7 +4,9 @@ import { EffectRuntimeProvider } from "@ue-shed/ui";
 import {
 	cameraAuthoringPanelState,
 	applyCameraArrangementCommand,
-	ArrangementCameraId
+	ArrangementCameraId,
+	CameraBridgeSnapshot,
+	resolveArrangementCamera
 } from "@ue-shed/cameras";
 import type {
 	CameraWorkspaceRequest,
@@ -21,6 +23,76 @@ import { CameraWorkspace } from "./camera-workspace.js";
 
 afterEach(cleanup);
 describe("camera workspace", () => {
+	it("reviews a conflict and submits an explicit recovery choice by keyboard", async () => {
+		const runtime = ManagedRuntime.make(Layer.empty);
+		const arrangement = fixtureArrangement();
+		const panel = cameraAuthoringPanelState(
+			{ version: 1, arrangement, reviewSet: fixtureSet(), outcomes: [] },
+			ArrangementCameraId.make("camera-0"),
+			{ draftPath: "draft", approvalPath: "views" }
+		);
+		const native = CameraBridgeSnapshot.make({
+			version: 1,
+			status: "ready",
+			message: "",
+			sessionId: arrangement.id,
+			cameraId: ArrangementCameraId.make("camera-0"),
+			producerId: "fixture",
+			revision: 0,
+			sequence: 1,
+			pending: true,
+			piloting: false,
+			saveRequested: false,
+			pose: { ...resolveArrangementCamera(arrangement, "camera-0"), fieldOfViewDegrees: 55 }
+		});
+		const proposal = {
+			version: 1 as const,
+			expectedRevision: 0,
+			native,
+			saved: [
+				{ id: native.cameraId, pose: resolveArrangementCamera(arrangement, "camera-0") }
+			]
+		};
+		const requests: CameraWorkspaceRequest[] = [];
+		let reviewed = false;
+		const approved = vi.fn();
+		render(() => (
+			<EffectRuntimeProvider runtime={runtime}>
+				<CameraWorkspace
+					onApproved={approved}
+					onChooseReviewSet={() => undefined}
+					client={{
+						liveFrames: Stream.empty,
+						cameraWorkspace: (request) =>
+							Effect.sync(() => {
+								requests.push(request);
+								if (request.kind === "inspect_recovery") reviewed = true;
+								return {
+									panel,
+									sets: [],
+									error: "Native and host edits overlap.",
+									recovery: reviewed ? proposal : null
+								};
+							})
+					}}
+				/>
+			</EffectRuntimeProvider>
+		));
+		const user = userEvent.setup();
+		await user.click(
+			await screen.findByRole("button", { name: "Inspect pending camera edits" })
+		);
+		const keep = await screen.findByRole("button", { name: "Keep saved draft" });
+		expect(screen.getByText(/saved FOV 60°/).textContent).toContain("Unreal FOV 55");
+		expect(requests.some((request) => request.kind === "resolve_recovery")).toBe(false);
+		keep.focus();
+		await user.keyboard("{Enter}");
+		await waitFor(() =>
+			expect(requests).toContainEqual({ kind: "resolve_recovery", proposal, choice: "saved" })
+		);
+		expect(approved).not.toHaveBeenCalled();
+		await runtime.dispose();
+	});
 	it("submits first-set creation and keeps a failed create visible across background refreshes", async () => {
 		const runtime = ManagedRuntime.make(Layer.empty);
 		const requests: CameraWorkspaceRequest[] = [];

@@ -7,6 +7,7 @@ import {
 	makeReviewRepositoryTestLayer,
 	makeCameraFeedTestLayer,
 	decodeReviewSet,
+	legacyReviewRenderPolicy,
 	type ReviewAuthoringApi,
 	ReviewAuthoringSessionError,
 	VisibilityPolicyId,
@@ -414,6 +415,7 @@ it.effect("loads the review set and reads captured artifacts with bounded concur
 				{
 					actorPath: "/Game/Maps/Fixture.Fixture:PersistentLevel.Subject_0",
 					captureProfileId: "profile-1",
+					renderPolicy: legacyReviewRenderPolicy,
 					displayName: "Front view",
 					id: "view-1",
 					resolution: { height: 1080, width: 1920 },

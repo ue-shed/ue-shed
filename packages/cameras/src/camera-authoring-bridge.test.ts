@@ -19,6 +19,12 @@ import {
 	type CameraAuthoringBridge
 } from "./camera-authoring-bridge.js";
 import { makeCameraAuthoringStore } from "./camera-authoring-store.js";
+import {
+	inspectCameraRecovery,
+	resolveCameraRecovery,
+	prepareCameraRecovery,
+	restoreCameraRecovery
+} from "./camera-authoring-recovery.js";
 import { fixtureArrangement, fixtureSet } from "./camera-arrangement.test-support.js";
 
 async function fixture(multiCamera = false) {
@@ -130,6 +136,105 @@ async function fixture(multiCamera = false) {
 	};
 }
 describe("replaceable camera bridge coordinator", () => {
+	it("restores a preserved native snapshot once without a bridge or published-view changes", async () => {
+		const f = await fixture();
+		try {
+			f.edit({ pose: { ...f.inspect().pose, fieldOfViewDegrees: 55 } });
+			const proposal = await Effect.runPromise(prepareCameraRecovery(f.store, f.inspect()));
+			await Effect.runPromise(restoreCameraRecovery(f.store, proposal, "native"));
+			const document = await Effect.runPromise(
+				restoreCameraRecovery(f.store, proposal, "native")
+			);
+			expect(document.arrangement.revision).toBe(1);
+			expect(
+				resolveArrangementCamera(document.arrangement, "camera-0").fieldOfViewDegrees
+			).toBe(55);
+			expect(document.reviewSet.views).toHaveLength(0);
+			const repeated = await Effect.runPromise(prepareCameraRecovery(f.store, f.inspect()));
+			expect(repeated.nativeCommitRevision).toBe(1);
+			expect(
+				(await Effect.runPromise(restoreCameraRecovery(f.store, repeated, "native")))
+					.arrangement.revision
+			).toBe(1);
+		} finally {
+			await rm(f.root, { recursive: true, force: true });
+		}
+	});
+	it("does not overwrite a host edit made after recovery inspection", async () => {
+		const f = await fixture();
+		try {
+			f.edit({ pose: { ...f.inspect().pose, fieldOfViewDegrees: 55 } });
+			const proposal = await Effect.runPromise(prepareCameraRecovery(f.store, f.inspect()));
+			await Effect.runPromise(
+				f.store.mutate(
+					Schema.decodeUnknownSync(CameraArrangementCommand)({
+						kind: "tune",
+						arrangementId: f.attachment.sessionId,
+						expectedRevision: 0,
+						operationId: "newer-host",
+						settings: { heightOffset: 200 }
+					})
+				)
+			);
+			await expect(
+				Effect.runPromise(restoreCameraRecovery(f.store, proposal, "native"))
+			).rejects.toThrow("changed");
+			expect(
+				(await Effect.runPromise(f.store.load())).arrangement.settings.heightOffset
+			).toBe(200);
+		} finally {
+			await rm(f.root, { recursive: true, force: true });
+		}
+	});
+	for (const choice of ["saved", "native"] as const) {
+		it(`resolves a reviewed conflict using ${choice} without publishing Views`, async () => {
+			const f = await fixture();
+			try {
+				f.edit({ pose: { ...f.inspect().pose, fieldOfViewDegrees: 55 } });
+				await Effect.runPromise(
+					f.store.mutate(
+						Schema.decodeUnknownSync(CameraArrangementCommand)({
+							kind: "tune",
+							arrangementId: f.attachment.sessionId,
+							expectedRevision: 0,
+							operationId: "host",
+							settings: { fieldOfViewDegrees: 40 }
+						})
+					)
+				);
+				await expect(f.sync()).rejects.toThrow("overlap");
+				const proposal = await Effect.runPromise(
+					inspectCameraRecovery(f.store, f.bridge, f.attachment)
+				);
+				expect(proposal.saved[0]?.pose.fieldOfViewDegrees).toBe(40);
+				expect(proposal.native.pose.fieldOfViewDegrees).toBe(55);
+				await Effect.runPromise(resolveCameraRecovery(f.store, f.bridge, proposal, choice));
+				expect(f.inspect().pending).toBe(false);
+				expect(f.inspect().pose.fieldOfViewDegrees).toBe(choice === "saved" ? 40 : 55);
+				expect((await Effect.runPromise(f.store.load())).reviewSet.views).toHaveLength(0);
+				await f.sync();
+			} finally {
+				await rm(f.root, { recursive: true, force: true });
+			}
+		});
+	}
+	it("rejects a recovery decision after another native gesture", async () => {
+		const f = await fixture();
+		try {
+			f.edit({ pose: { ...f.inspect().pose, fieldOfViewDegrees: 55 } });
+			const proposal = await Effect.runPromise(
+				inspectCameraRecovery(f.store, f.bridge, f.attachment)
+			);
+			f.edit({ pose: { ...f.inspect().pose, fieldOfViewDegrees: 65 } });
+			await expect(
+				Effect.runPromise(resolveCameraRecovery(f.store, f.bridge, proposal, "saved"))
+			).rejects.toThrow("changed");
+			expect((await Effect.runPromise(f.store.load())).arrangement.revision).toBe(0);
+			expect(f.inspect().pose.fieldOfViewDegrees).toBe(65);
+		} finally {
+			await rm(f.root, { recursive: true, force: true });
+		}
+	});
 	it("persists native delete and undo without losing original View identity", async () => {
 		const f = await fixture(true);
 		try {

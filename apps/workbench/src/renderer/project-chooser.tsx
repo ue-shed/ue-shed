@@ -11,6 +11,7 @@ import type {
 	WorkbenchProjectState
 } from "../shared/project-workspace-contract.js";
 import type { WorkbenchRendererClient } from "./workbench-client.js";
+import { ProjectLaunchError } from "./project-launch-error.js";
 
 export interface ProjectChooserProps {
 	readonly revision?: number;
@@ -152,6 +153,7 @@ export function ProjectChooser(props: ProjectChooserProps) {
 		launchAction.run(props.client.launchProject(mode), {
 			onFailure: () => {
 				setLaunching(undefined);
+				setLaunchMenuOpen(false);
 				setLaunchResult({
 					status: "failed",
 					message: "Workbench could not start the project launcher.",
@@ -161,7 +163,7 @@ export function ProjectChooser(props: ProjectChooserProps) {
 			onSuccess: (result) => {
 				setLaunching(undefined);
 				setLaunchResult(result);
-				if (result.status === "launched") setLaunchMenuOpen(false);
+				setLaunchMenuOpen(false);
 			}
 		});
 	};
@@ -311,21 +313,10 @@ export function ProjectChooser(props: ProjectChooserProps) {
 			<Show when={launchResult()?.status === "failed" ? launchResult() : undefined} keyed>
 				{(result) =>
 					result.status === "failed" ? (
-						<div
-							role="alert"
-							{...stylex.attrs(styles.launchNotice, styles.launchFailure)}
-						>
-							<button
-								aria-label="Dismiss launch notice"
-								onClick={() => setLaunchResult(undefined)}
-								type="button"
-								{...stylex.attrs(styles.noticeDismiss)}
-							>
-								×
-							</button>
-							<strong>{result.message}</strong>
-							<span>{result.recovery}</span>
-						</div>
+						<ProjectLaunchError
+							failure={result}
+							onClose={() => setLaunchResult(undefined)}
+						/>
 					) : null
 				}
 			</Show>

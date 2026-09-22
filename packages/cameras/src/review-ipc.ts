@@ -1,7 +1,12 @@
 import { CameraPanelAction, CameraPanelState } from "./camera-authoring-panel-schema.js";
+import { CameraRecoveryChoice, CameraRecoveryProposal } from "./camera-authoring-recovery.js";
 import { CameraArrangementId, CameraEditScope, CameraLayout } from "./camera-arrangement.js";
 import { Schema } from "effect";
-import { CameraFrameEvidence } from "./camera-render-schema.js";
+import {
+	CameraFrameEvidence,
+	CameraRenderPolicy,
+	CameraRendererPolicy
+} from "./camera-render-schema.js";
 import { ReviewCaptureBlock } from "./review-session-policy.js";
 import {
 	CaptureInvocationCause,
@@ -76,6 +81,7 @@ export const MapReviewRunView = Schema.Struct({
 export type MapReviewRunView = Schema.Schema.Type<typeof MapReviewRunView>;
 
 export const MapReviewCapturePlanView = Schema.Struct({
+	renderPolicy: Schema.optionalKey(CameraRenderPolicy),
 	actorPath: Schema.optional(Schema.String),
 	captureProfileId: Schema.optional(Schema.NonEmptyString),
 	displayName: Schema.NonEmptyString,
@@ -141,6 +147,7 @@ export const MapReviewSetSelectIntent = Schema.Struct({ reviewSetId: Schema.NonE
 export type MapReviewSetSelectIntent = Schema.Schema.Type<typeof MapReviewSetSelectIntent>;
 
 export const MapReviewCaptureIntent = Schema.Struct({
+	renderer: Schema.optionalKey(CameraRendererPolicy),
 	viewIds: Schema.Array(Schema.NonEmptyString).check(Schema.isMinLength(1))
 });
 export type MapReviewCaptureIntent = Schema.Schema.Type<typeof MapReviewCaptureIntent>;
@@ -364,6 +371,12 @@ export const decodeMapReviewApproveCandidateIntent = Schema.decodeUnknownEffect(
 
 /** Host-facing camera workspace protocol; transport and presentation are replaceable. */
 export const CameraWorkspaceRequest = Schema.Union([
+	Schema.Struct({ kind: Schema.Literal("inspect_recovery"), id: CameraArrangementId }),
+	Schema.Struct({
+		kind: Schema.Literal("resolve_recovery"),
+		proposal: CameraRecoveryProposal,
+		choice: CameraRecoveryChoice
+	}),
 	Schema.Struct({ kind: Schema.Literals(["list", "state", "close"]) }),
 	Schema.Struct({
 		kind: Schema.Literal("open"),
@@ -394,6 +407,7 @@ export const CameraWorkspaceRequest = Schema.Union([
 ]);
 export type CameraWorkspaceRequest = typeof CameraWorkspaceRequest.Type;
 export const CameraWorkspaceResult = Schema.Struct({
+	recovery: Schema.optionalKey(Schema.NullOr(CameraRecoveryProposal)),
 	savedViews: Schema.optionalKey(
 		Schema.Array(Schema.Struct({ id: Schema.String, revision: Schema.Int }))
 	),

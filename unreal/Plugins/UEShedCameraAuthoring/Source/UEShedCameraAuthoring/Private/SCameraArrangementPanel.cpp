@@ -102,12 +102,27 @@ void SCameraArrangementPanel::SelectCameras(const TArray<TSharedPtr<FJsonValue>>
     const auto Result = Call(Q);
     if (Str(Result, TEXT("status")) == TEXT("ready")) Active = Result;
 }
+void SCameraArrangementPanel::SetCameraSelected(const FString& Id, bool Checked)
+{
+    SettingEdit.Reset();
+    Scope = TEXT("cameras");
+    if (Checked) Selected.Add(Id);
+    else Selected.Remove(Id);
+    ActorKey.Reset();
+    SelectCameras(SelectedIds());
+}
 void SCameraArrangementPanel::PilotCamera(const FString& Id)
 {
     auto Q = Request(TEXT("pilot_camera"));
     Q->SetStringField(TEXT("cameraId"), Id);
     const auto Result = Call(Q);
-    if (Str(Result, TEXT("status")) == TEXT("ready")) Active = Result;
+    if (Str(Result, TEXT("status")) == TEXT("ready"))
+    {
+        Active = Result;
+        Selected.Reset();
+        Selected.Add(Id);
+        Scope = TEXT("cameras");
+    }
     PreviewVisibility();
 }
 SCameraArrangementPanel::FObject SCameraArrangementPanel::Command(const TCHAR *Kind) const
@@ -156,6 +171,84 @@ TArray<SCameraArrangementPanel::FObject> SCameraArrangementPanel::ScopedCameras(
     }
     return R;
 }
+double SCameraArrangementPanel::PositionDragSpan() const
+{
+    const auto Extent = Child(Child(Arrangement, TEXT("bounds")), TEXT("extent"));
+    double Size = 0;
+    for (const TCHAR* Axis : {TEXT("x"), TEXT("y"), TEXT("z")})
+    {
+        double Value = 0;
+        if (Extent->TryGetNumberField(Axis, Value) && FMath::IsFinite(Value))
+            Size = FMath::Max(Size, FMath::Abs(Value));
+    }
+    // One field-width drag covers the subject's longest dimension, at any existing offset.
+    return Size > 0 && Size < DBL_MAX / 2 ? Size * 2 : 100.;
+}
+bool SCameraArrangementPanel::HasManualCamera() const
+{
+    for (const auto& Camera : ScopedCameras())
+        if (Camera->HasField(TEXT("manualPose"))) return true;
+    return false;
+}
+SCameraArrangementPanel::FObject SCameraArrangementPanel::LivePose(const FString& Id) const
+{
+    // Native observations remain current even while the host is saving the draft.
+    for (const auto& Value : Items(Active, TEXT("cameras")))
+        if (Str(Value->AsObject(), TEXT("id")) == Id)
+            return Child(Value->AsObject(), TEXT("pose"));
+    for (const auto& Value : Items(Arrangement, TEXT("cameras")))
+        if (Str(Value->AsObject(), TEXT("id")) == Id)
+            return Child(Value->AsObject(), TEXT("manualPose"));
+    return Obj();
+}
+void SCameraArrangementPanel::RebuildManualRows()
+{
+    FString Key = Json(EditScope());
+    for (const auto& Camera : ScopedCameras())
+        if (Camera->HasField(TEXT("manualPose"))) Key += Str(Camera, TEXT("id")) + TEXT(":") + Str(Camera, TEXT("displayName")) + TEXT(";");
+    if (Key == ManualRowsKey) return;
+    ManualRowsKey = Key;
+    ManualRows->ClearChildren();
+    for (const auto& Camera : ScopedCameras())
+    {
+        if (!Camera->HasField(TEXT("manualPose"))) continue;
+        const FString Id = Str(Camera, TEXT("id"));
+        auto Grid = SNew(SUniformGridPanel).SlotPadding(FMargin(4));
+        ManualRows->AddSlot().AutoHeight().Padding(0, 8, 0, 2)[Text(Str(Camera, TEXT("displayName")) + TEXT(" · Manual position"))];
+        ManualRows->AddSlot().AutoHeight()[Text(TEXT("World position (cm)"))];
+        ManualRows->AddSlot().AutoHeight()[Grid];
+        for (int32 Index = 0; Index < 6; ++Index)
+        {
+            const FString Field = Index == 0 ? TEXT("x") : Index == 1 ? TEXT("y") : Index == 2 ? TEXT("z") :
+                Index == 3 ? TEXT("pitch") : Index == 4 ? TEXT("yaw") : TEXT("roll");
+            const FString Group = Index < 3 ? TEXT("location") : TEXT("rotation");
+            Grid->AddSlot(Index % 3, Index / 3)[SNew(SVerticalBox)
+                + SVerticalBox::Slot().AutoHeight()[Text(Index < 3 ? Field.ToUpper() : Field + TEXT(" (°)"))]
+                + SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text_Lambda([this, Id, Field, Group] {
+                    double Value = 0;
+                    if (!Child(LivePose(Id), *Group)->TryGetNumberField(Field, Value)) return FText::FromString(TEXT("—"));
+                    return FText::FromString(FString::Printf(TEXT("%.2f"), Value));
+                })]];
+        }
+    }
+}
+bool SCameraArrangementPanel::CanAdjust(const FString& Field) const
+{
+    const auto Cameras = ScopedCameras();
+    if (Cameras.IsEmpty()) return false;
+    if (Field == TEXT("fieldOfViewDegrees")) return true;
+    for (const auto& Camera : Cameras)
+        if (!Camera->HasField(TEXT("manualPose"))) return true;
+    return false;
+}
+void SCameraArrangementPanel::RestoreFittedCamera()
+{
+    const auto Cameras = ScopedCameras();
+    if (!Ready() || Cameras.Num() != 1 || !Cameras[0]->HasField(TEXT("manualPose"))) return;
+    auto C = Command(TEXT("unpin"));
+    C->SetStringField(TEXT("cameraId"), Str(Cameras[0], TEXT("id")));
+    Submit(C);
+}
 SCameraArrangementPanel::FObject SCameraArrangementPanel::Group() const
 {
     for (const auto &V : Items(Arrangement, TEXT("groups")))
@@ -176,6 +269,7 @@ TOptional<double> SCameraArrangementPanel::Effective(const TCHAR *Field) const
     TOptional<double> Common;
     for (const auto &C : ScopedCameras())
     {
+        if (FString(Field) != TEXT("fieldOfViewDegrees") && C->HasField(TEXT("manualPose"))) continue;
         double V = 0;
         Child(Arrangement, TEXT("settings"))->TryGetNumberField(Field, V);
         if (Scope != TEXT("arrangement"))
@@ -202,14 +296,20 @@ TSharedRef<SWidget> SCameraArrangementPanel::Button(const FString &Label, TFunct
             return FReply::Handled();
         });
 }
-TSharedRef<SWidget> SCameraArrangementPanel::Number(const TCHAR *Label, double &Value)
+TSharedRef<SWidget> SCameraArrangementPanel::Number(const TCHAR *Label, double &Value, bool ArcSpan, bool Position)
 {
     return SNew(SVerticalBox) + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 3)[Text(Label)] +
            SVerticalBox::Slot().AutoHeight()[SNew(SNumericEntryBox<double>)
-                      .AllowSpin(true).Delta(.1).LinearDeltaSensitivity(5)
+                      .AllowSpin(true).Delta(Position ? .01 : 1).LinearDeltaSensitivity(5)
+                      .MinValue(ArcSpan ? TOptional<double>(0) : TOptional<double>())
+                      .MaxValue(ArcSpan ? TOptional<double>(360) : TOptional<double>())
+                      .MinSliderValue_Lambda([this, &Value, ArcSpan, Position] { return Position ? TOptional<double>(Value - PositionDragSpan() / 2) : ArcSpan ? TOptional<double>(0) : TOptional<double>(); })
+                      .MaxSliderValue_Lambda([this, &Value, ArcSpan, Position] { return Position ? TOptional<double>(Value + PositionDragSpan() / 2) : ArcSpan ? TOptional<double>(360) : TOptional<double>(); })
+                      .MaxFractionalDigits(2)
+                      .ToolTipText(FText::FromString(TEXT("Drag to adjust; Ctrl for finer steps, Shift for larger steps. Click to type an exact value.")))
                       .Value_Lambda([&Value] { return Value; })
-                      .OnValueChanged_Lambda([&Value](double V) { Value = V; })
-                      .OnValueCommitted_Lambda([&Value](double V, ETextCommit::Type) { Value = V; })];
+                      .OnValueChanged_Lambda([&Value, ArcSpan](double V) { if (FMath::IsFinite(V)) Value = ArcSpan ? FMath::Clamp(V, 0., 360.) : V; })
+                      .OnValueCommitted_Lambda([&Value, ArcSpan](double V, ETextCommit::Type) { if (FMath::IsFinite(V)) Value = ArcSpan ? FMath::Clamp(V, 0., 360.) : V; })];
 }
 TSharedRef<SWidget> SCameraArrangementPanel::Input(const TCHAR *Label, FString &Value)
 {
@@ -230,12 +330,17 @@ TSharedRef<SWidget> SCameraArrangementPanel::Setting(const TCHAR *Label, const T
     auto ValueRow = SNew(SHorizontalBox);
     ValueRow->AddSlot().FillWidth(1)[SNew(SNumericEntryBox<double>)
                       .AllowSpin(true).MinValue(Minimum).MaxValue(Maximum)
-                      .MinSliderValue(TOptional<double>()).MaxSliderValue(TOptional<double>())
-                      .Delta(Name == TEXT("distanceScale") || Name == TEXT("margin") ? .01 : .5)
+                      .MinSliderValue_Lambda([this, Field, Name, Minimum] { return Name == TEXT("heightOffset") ? TOptional<double>(DisplaySetting(Field).Get(0) - PositionDragSpan() / 2) : Name == TEXT("distanceScale") ? TOptional<double>(.25) : Name == TEXT("fieldOfViewDegrees") ? TOptional<double>(30) : Name == TEXT("elevationDegrees") ? TOptional<double>(-45) : Minimum; })
+                      .MaxSliderValue_Lambda([this, Field, Name, Maximum] { return Name == TEXT("heightOffset") ? TOptional<double>(DisplaySetting(Field).Get(0) + PositionDragSpan() / 2) : Name == TEXT("distanceScale") ? TOptional<double>(3) : Name == TEXT("fieldOfViewDegrees") ? TOptional<double>(100) : Name == TEXT("elevationDegrees") ? TOptional<double>(45) : Maximum; })
+                      .Delta(Name == TEXT("distanceScale") || Name == TEXT("heightOffset") ? .01 : Name == TEXT("margin") ? .005 : .1)
                       .LinearDeltaSensitivity(5).MinFractionalDigits(1).MaxFractionalDigits(3)
-                      .ToolTipText(FText::FromString(TEXT("Drag left/right to adjust. Click to type an exact value.")))
+                      .ToolTipText(FText::FromString(Name == TEXT("distanceScale")
+                          ? TEXT("Multiplier of the distance needed to fit the subject: 1 fits, 2 is twice as far. Drag 0.25–3; type 0.01–100. Ctrl for finer steps.")
+                          : Name == TEXT("heightOffset") ? TEXT("Vertical offset in centimeters. A field-width drag covers about one subject length. Ctrl for finer steps; Shift for larger moves. Click to type exactly.")
+                          : Name == TEXT("margin") ? TEXT("Fraction reserved around the subject: 0.15 = 15%. Range 0–0.45. Ctrl for finer steps.")
+                          : TEXT("Drag to adjust; Ctrl for finer steps, Shift for larger steps. Click to type an exact value.")))
                       .UndeterminedString(FText::FromString(TEXT("Mixed")))
-                      .IsEnabled_Lambda([this, Name] { return (Ready() || (SettingEdit && SettingEdit->Field == Name)) && !ScopedCameras().IsEmpty(); })
+                      .IsEnabled_Lambda([this, Name] { return (Ready() || (SettingEdit && SettingEdit->Field == Name)) && CanAdjust(Name); })
                       .Value_Lambda([this, Field] { return DisplaySetting(Field); })
                       .OnBeginSliderMovement_Lambda([this, Name] { BeginSettingDrag(Name); })
                       .OnValueChanged_Lambda([this, Name](double V) {
@@ -252,7 +357,8 @@ TSharedRef<SWidget> SCameraArrangementPanel::Setting(const TCHAR *Label, const T
                               FSlateApplication::Get().ClearKeyboardFocus(EFocusCause::Cleared);
                           ChangeSetting(Field, V, true);
                       })];
-    ValueRow->AddSlot().AutoWidth()[SNew(SBox).ToolTipText(FText::FromString(TEXT("Reset to inherited value"))).Visibility_Lambda([this] { return Scope == TEXT("arrangement") ? EVisibility::Collapsed : EVisibility::Visible; })[Button(TEXT("↶"), [this, Field] {
+    ValueRow->AddSlot().AutoWidth()[SNew(SBox).IsEnabled_Lambda([this, Name] { return CanAdjust(Name); }).ToolTipText(FText::FromString(TEXT("Reset to inherited value"))).Visibility_Lambda([this] { return Scope == TEXT("arrangement") ? EVisibility::Collapsed : EVisibility::Visible; })[Button(TEXT("↶"), [this, Field] {
+               if (!CanAdjust(Field)) return;
                if (Scope == TEXT("arrangement"))
                {
                    Message = TEXT("Arrangement defaults have no parent. Choose a group or cameras.");
@@ -270,16 +376,32 @@ TSharedRef<SWidget> SCameraArrangementPanel::Setting(const TCHAR *Label, const T
 
 TOptional<double> SCameraArrangementPanel::DisplaySetting(const TCHAR* Field) const
 {
+    if (!SettingEdit && FString(Field) == TEXT("fieldOfViewDegrees") && HasManualCamera())
+    {
+        TOptional<double> Common;
+        for (const auto& Camera : ScopedCameras())
+        {
+            double Value = 0;
+            if (!LivePose(Str(Camera, TEXT("id")))->TryGetNumberField(Field, Value)) return Effective(Field);
+            if (Common.IsSet() && !FMath::IsNearlyEqual(Common.GetValue(), Value)) return {};
+            Common = Value;
+        }
+        return Common;
+    }
     return SettingEdit && SettingEdit->Field == Field ? TOptional<double>(SettingEdit->Value) : Effective(Field);
 }
 void SCameraArrangementPanel::BeginSettingDrag(const FString& Field)
 {
-    if (!Ready() || ScopedCameras().IsEmpty()) return;
+    if (!Ready() || !CanAdjust(Field)) return;
     SettingEdit = FSettingEdit{Field, Str(Active, TEXT("producerId")), EditScope(), Effective(*Field).Get(0), true, false};
 }
 void SCameraArrangementPanel::ChangeSetting(const FString& Field, double Value, bool Final)
 {
-    if (!FMath::IsFinite(Value)) return;
+    if (!FMath::IsFinite(Value) || !CanAdjust(Field)) return;
+    if (Field == TEXT("fieldOfViewDegrees")) Value = FMath::Clamp(Value, 5., 170.);
+    if (Field == TEXT("distanceScale")) Value = FMath::Clamp(Value, .01, 100.);
+    if (Field == TEXT("margin")) Value = FMath::Clamp(Value, 0., .45);
+    if (Field == TEXT("elevationDegrees")) Value = FMath::Clamp(Value, -89., 89.);
     if (!SettingEdit)
     {
         if (!Ready() || ScopedCameras().IsEmpty()) return;
@@ -293,10 +415,10 @@ void SCameraArrangementPanel::ChangeSetting(const FString& Field, double Value, 
 void SCameraArrangementPanel::FlushSetting()
 {
     if (!SettingEdit) return;
-    if (SettingEdit->Producer != Str(Active, TEXT("producerId")) || Json(SettingEdit->Scope) != Json(EditScope()))
+    if (!CanAdjust(SettingEdit->Field) || SettingEdit->Producer != Str(Active, TEXT("producerId")) || Json(SettingEdit->Scope) != Json(EditScope()))
     {
         SettingEdit.Reset();
-        Message = TEXT("Value adjustment stopped because the camera selection or session changed.");
+        Message = TEXT("Value adjustment stopped because the camera placement, selection or session changed.");
         return;
     }
     if (!Ready()) return;
@@ -358,6 +480,7 @@ void SCameraArrangementPanel::Construct(const FArguments &Args)
         + SSplitter::Slot().Value(.66f).MinSize(320)[Inspector]];
     auto Toolbar = SNew(SWrapBox).UseAllottedSize(true).InnerSlotPadding(FVector2D(4, 4));
     Toolbar->AddSlot()[Button(TEXT("Select all"), [this] {
+        Scope = TEXT("cameras");
         TArray<TSharedPtr<FJsonValue>> Ids;
         for (const auto& Camera : Items(Arrangement, TEXT("cameras")))
             Ids.Add(MakeShared<FJsonValueString>(Str(Camera->AsObject(), TEXT("id"))));
@@ -409,9 +532,25 @@ void SCameraArrangementPanel::Construct(const FArguments &Args)
     Page(TEXT("Framing"));
     auto Framing = SectionBody;
     auto Fields = SNew(SUniformGridPanel).SlotPadding(FMargin(4, 4));
+    FittedFields = Fields;
+    Fields->SetVisibility(TAttribute<EVisibility>::CreateLambda([this] { return CanAdjust(TEXT("distanceScale")) ? EVisibility::Visible : EVisibility::Collapsed; }));
     Add(Fields);
     Add(SNew(STextBlock).ColorAndOpacity(FSlateColor::UseSubduedForeground()).AutoWrapText(true)
-        .Text(FText::FromString(TEXT("Drag values to adjust · click to type"))));
+        .Visibility_Lambda([this] { return CanAdjust(TEXT("distanceScale")) ? EVisibility::Visible : EVisibility::Collapsed; })
+        .Text(FText::FromString(TEXT("Drag to adjust · Ctrl for precision · click to type"))));
+    auto Manual = SNew(SVerticalBox).Visibility_Lambda([this] { return HasManualCamera() ? EVisibility::Visible : EVisibility::Collapsed; });
+    Manual->AddSlot().AutoHeight()[SAssignNew(ManualRows, SVerticalBox)];
+    Manual->AddSlot().AutoHeight().Padding(0, 8)[SNew(SBox)
+        .Visibility_Lambda([this] { return CanAdjust(TEXT("distanceScale")) ? EVisibility::Collapsed : EVisibility::Visible; })
+        [Setting(TEXT("FOV (°)"), TEXT("fieldOfViewDegrees"))]];
+    Manual->AddSlot().AutoHeight()[Text(TEXT("Live from Unreal · Pilot or use the viewport / Details to change the pose."))];
+    Add(Manual);
+    Add(SNew(STextBlock).AutoWrapText(true)
+        .Visibility_Lambda([this] { return ScopedCameras().Num() > 1 && HasManualCamera() ? EVisibility::Visible : EVisibility::Collapsed; })
+        .Text(FText::FromString(TEXT("Framing and aim adjust fitted cameras; manual cameras keep their poses. FOV applies to the whole scope. Select one manual camera to restore fitted placement."))));
+    Add(SNew(SBox).Visibility_Lambda([this] { return ScopedCameras().Num() == 1 && !CanAdjust(TEXT("distanceScale")) ? EVisibility::Visible : EVisibility::Collapsed; })
+        .ToolTipText(FText::FromString(TEXT("Moves this camera back to its fitted position around the subject and enables framing controls.")))
+        [Button(TEXT("Restore fitted position"), [this] { RestoreFittedCamera(); })]);
     Section(TEXT("Groups"));
     Add(SAssignNew(GroupRows, SVerticalBox));
     Add(Button(TEXT("Add selection to group"), [this] {
@@ -438,11 +577,11 @@ void SCameraArrangementPanel::Construct(const FArguments &Args)
     SectionBody = Framing;
     int32 FieldIndex = 0;
     for (const auto &P : TArray<TPair<FString, FString>>{{TEXT("FOV (°)"), TEXT("fieldOfViewDegrees")},
-                                                         {TEXT("Distance"), TEXT("distanceScale")},
+                                                         {TEXT("Distance (×)"), TEXT("distanceScale")},
                                                          {TEXT("Height (cm)"), TEXT("heightOffset")},
                                                          {TEXT("Elevation (°)"), TEXT("elevationDegrees")},
                                                          {TEXT("Yaw (°)"), TEXT("yawOffset")},
-                                                         {TEXT("Margin"), TEXT("margin")}})
+                                                         {TEXT("Margin (fraction)"), TEXT("margin")}})
     {
         // Stable literal storage: Setting callbacks retain field strings via static interned names below.
         const TCHAR *Field = P.Value == TEXT("fieldOfViewDegrees") ? TEXT("fieldOfViewDegrees")
@@ -467,13 +606,18 @@ void SCameraArrangementPanel::Construct(const FArguments &Args)
     SectionBody = Framing;
     Section(TEXT("Aim and placement"));
     auto AimFields = SNew(SUniformGridPanel).SlotPadding(FMargin(4, 4));
-    AimFields->AddSlot(0, 0)[Number(TEXT("Aim X (cm)"), AimX)];
-    AimFields->AddSlot(1, 0)[Number(TEXT("Aim Y (cm)"), AimY)];
-    AimFields->AddSlot(0, 1)[Number(TEXT("Aim Z (cm)"), AimZ)];
+    AimFields->SetVisibility(TAttribute<EVisibility>::CreateLambda([this] { return CanAdjust(TEXT("aimOffset")) ? EVisibility::Visible : EVisibility::Collapsed; }));
+    AimFields->SetEnabled(TAttribute<bool>::CreateLambda([this] { return Ready() && CanAdjust(TEXT("aimOffset")); }));
+    AimFields->AddSlot(0, 0)[Number(TEXT("Aim X (cm)"), AimX, false, true)];
+    AimFields->AddSlot(1, 0)[Number(TEXT("Aim Y (cm)"), AimY, false, true)];
+    AimFields->AddSlot(0, 1)[Number(TEXT("Aim Z (cm)"), AimZ, false, true)];
     Add(AimFields);
     auto AimActions = SNew(SWrapBox).UseAllottedSize(true).InnerSlotPadding(FVector2D(4, 4));
+    AimActions->SetVisibility(TAttribute<EVisibility>::CreateLambda([this] { return CanAdjust(TEXT("aimOffset")) ? EVisibility::Visible : EVisibility::Collapsed; }));
+    AimActions->SetEnabled(TAttribute<bool>::CreateLambda([this] { return Ready() && CanAdjust(TEXT("aimOffset")); }));
     Add(AimActions);
     AimActions->AddSlot()[Button(TEXT("Apply aim offset"), [this] {
+        if (!CanAdjust(TEXT("aimOffset"))) return;
         auto C = Command(TEXT("batch")), S = Obj(), V = Obj();
         V->SetNumberField(TEXT("x"), AimX);
         V->SetNumberField(TEXT("y"), AimY);
@@ -485,6 +629,7 @@ void SCameraArrangementPanel::Construct(const FArguments &Args)
         Submit(C);
     })];
     AimActions->AddSlot()[Button(TEXT("Reset"), [this] {
+        if (!CanAdjust(TEXT("aimOffset"))) return;
         if (Scope == TEXT("arrangement"))
         {
             Message = TEXT("Arrangement defaults have no parent. Set an explicit aim offset.");
@@ -497,8 +642,8 @@ void SCameraArrangementPanel::Construct(const FArguments &Args)
         Submit(C);
     })];
     auto Moves = SNew(SUniformGridPanel).SlotPadding(FMargin(4, 4));
-    Moves->AddSlot(0, 0)[Number(TEXT("Dolly (cm)"), Dolly)];
-    Moves->AddSlot(1, 0)[Number(TEXT("World Z (cm)"), Height)];
+    Moves->AddSlot(0, 0)[Number(TEXT("Dolly (cm)"), Dolly, false, true)];
+    Moves->AddSlot(1, 0)[Number(TEXT("World Z (cm)"), Height, false, true)];
     Add(Moves);
     Add(Button(TEXT("Move cameras"), [this] {
         auto C = Command(TEXT("nudge")), V = Obj();
@@ -559,35 +704,18 @@ void SCameraArrangementPanel::Construct(const FArguments &Args)
     Page(TEXT("Capture"));
     auto ExposureRow = SNew(SHorizontalBox);
     Add(ExposureRow);
-    ExposureRow->AddSlot().FillWidth(1)[Number(TEXT("Exposure (EV100)"), ExposureEV)];
-    ExposureRow->AddSlot().AutoWidth().VAlign(VAlign_Bottom).Padding(6, 0)[Button(TEXT("Apply"), [this] {
-        if (ExposureEV < -20 || ExposureEV > 30)
-        {
-            Message = TEXT("EV100 must be between -20 and 30.");
-            return;
-        }
-        auto Policy = Child(Panel, TEXT("renderPolicy"));
-        if (!Policy)
-        {
-            const FString Default = TEXT(
-                R"({"renderer":{"kind":"scene_capture","profile":"scene_capture_defaults","lodDistanceScale":1,"fog":true,"volumetricFog":true},"exposure":{"mode":"project_auto"},"settling":{"minimumFrames":1,"timeoutMs":120000},"time":"live_editor","preparation":{"geometry":{"mode":"preserve_loading"},"dataLayers":[]}})");
-            FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Default), Policy);
-        }
-        else
-        {
-            TSharedPtr<FJsonObject> Copy;
-            FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Json(Policy)), Copy);
-            Policy = Copy;
-        }
-        auto Exposure = Obj();
-        Exposure->SetStringField(TEXT("mode"), TEXT("fixed_ev100"));
-        Exposure->SetNumberField(TEXT("ev100"), ExposureEV);
-        Exposure->SetStringField(TEXT("compensation"), TEXT("project"));
-        Policy->SetObjectField(TEXT("exposure"), Exposure);
-        auto C = Command(TEXT("render_policy"));
-        C->SetObjectField(TEXT("policy"), Policy);
-        Submit(C);
-    })];
+    ExposureRow->AddSlot().FillWidth(1)[SNew(SVerticalBox)
+        + SVerticalBox::Slot().AutoHeight()[Text(TEXT("Fixed exposure (EV100)"))]
+        + SVerticalBox::Slot().AutoHeight()[SAssignNew(ExposureInput, SNumericEntryBox<double>)
+            .AllowSpin(true).Delta(.1).LinearDeltaSensitivity(5)
+            .MinValue(-20).MaxValue(30).MinSliderValue(-20).MaxSliderValue(30)
+            .Value_Lambda([this] { return ExposureEV; })
+            .OnValueChanged_Lambda([this](double V) { if (FMath::IsFinite(V)) ExposureEV = FMath::Clamp(V, -20., 30.); })
+            .OnValueCommitted_Lambda([this](double V, ETextCommit::Type) { if (FMath::IsFinite(V)) ExposureEV = FMath::Clamp(V, -20., 30.); })]];
+    ExposureRow->AddSlot().AutoWidth().VAlign(VAlign_Bottom).Padding(6, 0)
+        [Button(TEXT("Apply fixed"), [this] { ApplyExposure(false); })];
+    Add(Text(TEXT("Lower EV brightens the image. Range: -20 to 30. Exposure applies to the whole set.")));
+    Add(Button(TEXT("Restore default (automatic exposure)"), [this] { ApplyExposure(true); }));
     Add(SNew(STextBlock).AutoWrapText(true).Text_Lambda([this] {
         auto Policy = Child(Panel, TEXT("renderPolicy"));
         const auto Renderer = Child(Policy, TEXT("renderer")), Exposure = Child(Policy, TEXT("exposure"));
@@ -615,9 +743,11 @@ void SCameraArrangementPanel::Construct(const FArguments &Args)
         .IsEnabled_Lambda([this] { return Ready(); })
         .OnClicked_Lambda([this] { SeePreviews.ExecuteIfBound(); return FReply::Handled(); })];
     Review->AddSlot().FillWidth(1)[SNew(SBox)];
-    Review->AddSlot().AutoWidth().Padding(6, 0)[Button(TEXT("Publish views"), [this] {
+    Review->AddSlot().AutoWidth().Padding(6, 0)[SNew(SBox)
+        .ToolTipText(FText::FromString(TEXT("Save all cameras in this set to the associated Review Set for later capture and comparison. Updates existing saved views. Does not render images.")))
+        [Button(TEXT("Save views to Review Set"), [this] {
         const auto Previous = Scope; Scope = TEXT("arrangement"); SaveScope(); Scope = Previous;
-    })];
+    })]];
     Review->AddSlot().AutoWidth()[Button(TEXT("Close set"), [this] { Call(Request(TEXT("detach"))); }, false)];
     Shell->AddSlot().AutoHeight()[SNew(SBox).Visibility_Lambda([this] {
         return Panel->HasField(TEXT("arrangement")) && !SetupOpen ? EVisibility::Visible : EVisibility::Collapsed;
@@ -677,6 +807,35 @@ void SCameraArrangementPanel::CaptureSelection(const TCHAR *List)
     Submit(C);
 }
 
+void SCameraArrangementPanel::ApplyExposure(bool Automatic)
+{
+    if (!Automatic && (!FMath::IsFinite(ExposureEV) || ExposureEV < -20 || ExposureEV > 30)) return;
+    auto Policy = Child(Panel, TEXT("renderPolicy"));
+    if (!Policy->HasField(TEXT("renderer")))
+    {
+        const FString Default = TEXT(
+            R"({"renderer":{"kind":"scene_capture","profile":"scene_capture_defaults","lodDistanceScale":1,"fog":true,"volumetricFog":true},"exposure":{"mode":"project_auto"},"settling":{"minimumFrames":1,"timeoutMs":120000},"time":"live_editor","preparation":{"geometry":{"mode":"preserve_loading"},"dataLayers":[]}})");
+        FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Default), Policy);
+    }
+    else
+    {
+        TSharedPtr<FJsonObject> Copy;
+        FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Json(Policy)), Copy);
+        Policy = Copy;
+    }
+    auto Exposure = Obj();
+    Exposure->SetStringField(TEXT("mode"), Automatic ? TEXT("project_auto") : TEXT("fixed_ev100"));
+    if (!Automatic)
+    {
+        Exposure->SetNumberField(TEXT("ev100"), ExposureEV);
+        Exposure->SetStringField(TEXT("compensation"), TEXT("project"));
+    }
+    Policy->SetObjectField(TEXT("exposure"), Exposure);
+    auto C = Command(TEXT("render_policy"));
+    C->SetObjectField(TEXT("policy"), Policy);
+    Submit(C);
+}
+
 EActiveTimerReturnType SCameraArrangementPanel::Refresh(double Time, float Delta)
 {
     const FString PreviousProducer = Str(Active, TEXT("producerId"));
@@ -684,6 +843,15 @@ EActiveTimerReturnType SCameraArrangementPanel::Refresh(double Time, float Delta
     if (PreviousProducer != Str(Active, TEXT("producerId"))) { Selected.Reset(); Scope = TEXT("arrangement"); RowKey.Reset(); ActorKey.Reset(); }
     Panel = Child(Active, TEXT("panel"));
     Arrangement = Child(Panel, TEXT("arrangement"));
+    const auto Exposure = Child(Child(Panel, TEXT("renderPolicy")), TEXT("exposure"));
+    const FString NextExposureKey = Str(Active, TEXT("producerId")) + Json(Exposure);
+    if (NextExposureKey != ExposureKey)
+    {
+        ExposureKey = NextExposureKey;
+        double EV = 10;
+        Exposure->TryGetNumberField(TEXT("ev100"), EV);
+        ExposureEV = FMath::Clamp(EV, -20., 30.);
+    }
     Setup = FUEShedCameraAuthoringBridge::InspectSetup();
     if (!Panel->HasField(TEXT("arrangement"))) NewSetup = true;
     if (!CreatingId.IsEmpty() && !Setup->HasField(TEXT("request")))
@@ -698,6 +866,7 @@ EActiveTimerReturnType SCameraArrangementPanel::Refresh(double Time, float Delta
         for (const auto& Id : Items(Active, TEXT("selectedCameraIds"))) Selected.Add(Id->AsString());
     }
     FlushSetting();
+    RebuildManualRows();
     if (!Arrangement->HasField(TEXT("cameras"))) {
         CameraRows->ClearChildren();
         if (!RowKey.IsEmpty()) { GroupRows->ClearChildren(); ActorRows->ClearChildren(); ActiveActions->ClearChildren(); ProposalRows->ClearChildren(); RowKey.Reset(); }
@@ -761,12 +930,7 @@ void SCameraArrangementPanel::RebuildCameras()
                                                                         : ECheckBoxState::Unchecked;
                                        })
                                        .OnCheckStateChanged_Lambda([this, Id](ECheckBoxState S) {
-                                           if (S == ECheckBoxState::Checked)
-                                               Selected.Add(Id);
-                                           else
-                                               Selected.Remove(Id);
-                                           ActorKey.Reset();
-                                           SelectCameras(SelectedIds());
+                                           SetCameraSelected(Id, S == ECheckBoxState::Checked);
                                        })];
         Row->AddSlot().FillWidth(1).VAlign(VAlign_Center).Padding(8, 0)[SNew(STextBlock).AutoWrapText(true).Text(FText::FromString(Label))];
         auto CameraButtons = SNew(SHorizontalBox);
@@ -785,7 +949,7 @@ void SCameraArrangementPanel::RebuildCameras()
             C->SetStringField(TEXT("newViewId"), TEXT("view-") + FGuid::NewGuid().ToString(EGuidFormats::Digits));
             Submit(C);
         })];
-        Actions->AddSlot()[Button(TEXT("Unpin"), [this, Id] {
+        Actions->AddSlot()[Button(TEXT("Restore fitted position"), [this, Id] {
             auto C = Command(TEXT("unpin"));
             C->SetStringField(TEXT("cameraId"), Id);
             Submit(C);

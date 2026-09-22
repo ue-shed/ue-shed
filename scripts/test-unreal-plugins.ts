@@ -31,6 +31,7 @@ const descriptors = prepareUnrealPlugins({ engineRoot, projectPath: project, too
 const tests = [
 	"UEShed.Cameras.Authoring.NativeLifecycle",
 	"UEShed.Cameras.Authoring.FullSetEditing",
+	"UEShed.Cameras.Authoring.ScaleAndCleanup",
 	"UEShed.Cameras.Authoring.MultiCameraPreviews",
 	"UEShed.Cameras.Authoring.PreviewPanel",
 	"UEShed.Cameras.Rendering.ViewLocalVisibilityProof",

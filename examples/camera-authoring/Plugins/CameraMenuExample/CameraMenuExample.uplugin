@@ -1,0 +1,11 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "1",
+	"FriendlyName": "Camera Menu Adoption Example",
+	"Description": "Independent reference consumer of the public camera bridge.",
+	"CanContainContent": false,
+	"EnabledByDefault": false,
+	"Modules": [{ "Name": "CameraMenuExample", "Type": "Editor", "LoadingPhase": "Default" }],
+	"Plugins": [{ "Name": "UEShedCameraAuthoringBridge", "Enabled": true }]
+}

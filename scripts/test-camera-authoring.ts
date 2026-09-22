@@ -34,7 +34,14 @@ copyFileSync(
 	join(engineRoot, "Engine", "Content", "Maps", "Templates", "Template_Default.umap"),
 	join(root, "Content", "Fixture.umap")
 );
-const descriptors = prepareUnrealPlugins({ engineRoot, projectPath: project, tools });
+const descriptors = prepareUnrealPlugins({
+	engineRoot,
+	projectPath: project,
+	tools,
+	additionalPluginDescriptors: [
+		resolve("examples/camera-authoring/Plugins/CameraMenuExample/CameraMenuExample.uplugin")
+	]
+});
 const port = await new Promise<number>((resolvePort, reject) => {
 	const server = createServer();
 	server.once("error", reject);
@@ -72,6 +79,11 @@ async function launch(ids: readonly string[], label: string) {
 				.filter((path) => ids.includes(basename(dirname(path))))
 				.map((path) => `-PLUGIN=${path}`),
 			...unrealRemoteControlLaunchArguments(ids, port),
+			...(ids.includes("CameraMenuExample")
+				? [
+						"-ini:RemoteControl:[/Script/RemoteControlCommon.RemoteControlSettings]:+CustomAllowedRemoteFunctionCalls=(ClassPath=/Script/CameraMenuExample.CameraMenuExampleLibrary,FunctionName=SubmitAction,bAllowChildClasses=False)"
+					]
+				: []),
 			// Fixture setup only; production launch never grants this editor subsystem access.
 			...(["SelectAll", "SetSelectedLevelActors"] as const).map(
 				(name) =>
@@ -100,7 +112,7 @@ async function launch(ids: readonly string[], label: string) {
 }
 try {
 	await launch(
-		["UEShedCore", "UEShedCameras", "UEShedCameraAuthoringBridge"],
+		["UEShedCore", "UEShedCameras", "UEShedCameraAuthoringBridge", "CameraMenuExample"],
 		"authoring-editor"
 	);
 	const capabilities = await Effect.runPromise(renderer.capabilities());
@@ -193,6 +205,133 @@ try {
 	);
 	const draftPath = join(root, "draft.json"),
 		destination = join(root, "approved.json");
+	const latencyEvidence = [];
+	for (const count of [1, 6, 37]) {
+		const measured = Cameras.CameraArrangement.make({
+			...arrangement,
+			id: Cameras.CameraArrangementId.make(`scale-${count}`),
+			cameras: Array.from({ length: count }, (_, index) => ({
+				...arrangement.cameras[0]!,
+				id: Cameras.ArrangementCameraId.make(`camera-${index}`),
+				viewId: Cameras.ReviewViewId.make(`scale-${count}-${index}`),
+				yawDegrees: (index * 360) / count
+			}))
+		});
+		const measuredStore = Cameras.makeCameraAuthoringStore(join(root, `scale-${count}.json`));
+		await Effect.runPromise(measuredStore.create(measured, set));
+		let current = await Effect.runPromise(
+			Cameras.attachArrangementCamera(measuredStore, bridge, measured.cameras[0]!.id)
+		);
+		const latencies = [];
+		for (let index = 0; index < 10; index++) {
+			const started = performance.now();
+			current = await Effect.runPromise(
+				bridge
+					.call({
+						version: 1,
+						operation: "edit",
+						sessionId: current.sessionId,
+						producerId: current.producerId,
+						expectedRevision: current.revision,
+						sequence: current.sequence,
+						pose: {
+							...current.pose,
+							location: { ...current.pose.location, z: current.pose.location.z + 1 }
+						}
+					})
+					.pipe(Effect.flatMap(Cameras.readyCameraBridge))
+			);
+			current = await Effect.runPromise(
+				Cameras.synchronizeArrangementCamera({
+					store: measuredStore,
+					bridge,
+					attachment: current,
+					approvalDestination: join(root, `scale-${count}-approved.json`)
+				})
+			);
+			latencies.push(performance.now() - started);
+			assert.equal(current.pending, false);
+			assert.equal(current.cameras?.length, count);
+		}
+		latencies.sort((a, b) => a - b);
+		latencyEvidence.push({
+			cameras: count,
+			samples: latencies.length,
+			editThroughDurableAckMs: { median: latencies[5], maximum: latencies.at(-1) },
+			snapshotBytes: Buffer.byteLength(JSON.stringify(current))
+		});
+		await Effect.runPromise(
+			bridge.call({
+				version: 1,
+				operation: "detach",
+				sessionId: current.sessionId,
+				producerId: current.producerId
+			})
+		);
+	}
+	await writeFile(
+		join(root, "host-latency.json"),
+		JSON.stringify(
+			{
+				measurements: latencyEvidence,
+				note: "Direct RC edit through disk commit and native acknowledgement; excludes host polling delay."
+			},
+			null,
+			"\t"
+		)
+	);
+	// No host renewals for one full lease. The bridge must preserve pending edits and release ownership.
+	const leaseStore = Cameras.makeCameraAuthoringStore(join(root, "lease-draft.json"));
+	await Effect.runPromise(
+		leaseStore.create(
+			{ ...arrangement, id: Cameras.CameraArrangementId.make("lease-recovery") },
+			set
+		)
+	);
+	const leaseAttachment = await Effect.runPromise(
+		Cameras.attachArrangementCamera(leaseStore, bridge, arrangement.cameras[0]!.id)
+	);
+	const leaseScope = {
+		version: 1 as const,
+		sessionId: leaseAttachment.sessionId,
+		producerId: leaseAttachment.producerId
+	};
+	await Effect.runPromise(
+		bridge.call({
+			...leaseScope,
+			operation: "edit",
+			expectedRevision: leaseAttachment.revision,
+			sequence: leaseAttachment.sequence,
+			pose: { ...leaseAttachment.pose, fieldOfViewDegrees: 51 }
+		})
+	);
+	await Effect.runPromise(Effect.sleep("31 seconds"));
+	const expired = await Effect.runPromise(bridge.call({ ...leaseScope, operation: "inspect" }));
+	assert.equal(expired.status, "unavailable");
+	const recoveryFile = join(
+		root,
+		"Saved",
+		"UEShed",
+		"CameraAuthoringRecovery",
+		`${leaseAttachment.producerId}.json`
+	);
+	const recoverySnapshot = Schema.decodeUnknownSync(Cameras.CameraBridgeSnapshot)(
+		JSON.parse(await readFile(recoveryFile, "utf8"))
+	);
+	const recoveryProposal = await Effect.runPromise(
+		Cameras.prepareCameraRecovery(leaseStore, recoverySnapshot)
+	);
+	await Effect.runPromise(Cameras.restoreCameraRecovery(leaseStore, recoveryProposal, "native"));
+	const restored = await Effect.runPromise(
+		Cameras.restoreCameraRecovery(leaseStore, recoveryProposal, "native")
+	);
+	assert.equal(restored.arrangement.revision, 1);
+	assert.equal(
+		Cameras.resolveArrangementCamera(restored.arrangement, leaseAttachment.cameraId)
+			.fieldOfViewDegrees,
+		51
+	);
+	assert.equal(restored.reviewSet.views.length, 0);
 	const store = Cameras.makeCameraAuthoringStore(draftPath);
 	await Effect.runPromise(store.create(arrangement, set));
 	const attachment = await Effect.runPromise(
@@ -225,6 +364,21 @@ try {
 			.pipe(Effect.flatMap(Cameras.readyCameraBridge))
 	);
 	assert.equal(edited.pending, true);
+	await Effect.runPromise(
+		store.mutate({
+			kind: "tune",
+			arrangementId: arrangement.id,
+			expectedRevision: 0,
+			operationId: Cameras.CameraOperationId.make("conflicting-host-edit"),
+			settings: { fieldOfViewDegrees: 45 }
+		})
+	);
+	const conflict = await Effect.runPromise(
+		Cameras.inspectCameraRecovery(store, bridge, attachment)
+	);
+	assert.equal(conflict.saved[0]?.pose.fieldOfViewDegrees, 45);
+	await Effect.runPromise(Cameras.resolveCameraRecovery(store, bridge, conflict, "native"));
+	assert.equal((await Effect.runPromise(store.load())).reviewSet.views.length, 0);
 	await Effect.runPromise(bridge.call({ ...scope, operation: "save" }));
 	const synced = await Effect.runPromise(
 		Cameras.synchronizeArrangementCamera({
@@ -245,11 +399,45 @@ try {
 		})
 	);
 	await Effect.runPromise(panel.tick());
+	const wrongScope = await Effect.runPromise(
+		client
+			.request({
+				endpoint,
+				objectPath: "/Script/CameraMenuExample.Default__CameraMenuExampleLibrary",
+				functionName: "SubmitAction",
+				parameters: {
+					SessionId: "another-set",
+					ProducerId: scope.producerId,
+					ExpectedRevision: synced.revision,
+					ActionJson: JSON.stringify({ kind: "cancel_proposal" })
+				}
+			})
+			.pipe(Effect.flatMap(Schema.decodeUnknownEffect(Cameras.CameraBridgeResponse)))
+	);
+	assert.equal(wrongScope.status, "stale");
 	const action = async (event: Cameras.CameraPanelAction) => {
-		const queued = await Effect.runPromise(
+		const before = await Effect.runPromise(
 			bridge
-				.call({ ...scope, operation: "enqueue", action: event })
+				.call({ ...scope, operation: "inspect" })
 				.pipe(Effect.flatMap(Cameras.readyCameraBridge))
+		);
+		const queued = await Effect.runPromise(
+			client
+				.request({
+					endpoint,
+					objectPath: "/Script/CameraMenuExample.Default__CameraMenuExampleLibrary",
+					functionName: "SubmitAction",
+					parameters: {
+						SessionId: scope.sessionId,
+						ProducerId: scope.producerId,
+						ExpectedRevision: before.revision,
+						ActionJson: JSON.stringify(event)
+					}
+				})
+				.pipe(
+					Effect.flatMap(Schema.decodeUnknownEffect(Cameras.CameraBridgeResponse)),
+					Effect.flatMap(Cameras.readyCameraBridge)
+				)
 		);
 		assert.ok(queued.panelEvent);
 		const result = await Effect.runPromise(panel.tick());
@@ -458,7 +646,8 @@ try {
 				synced,
 				frame,
 				captureOnlyRestart: true,
-				authoringCapabilityAbsent: true
+				authoringCapabilityAbsent: true,
+				replacementMenu: "CameraMenuExample"
 			},
 			null,
 			"\t"

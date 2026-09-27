@@ -387,7 +387,8 @@ bool FUEShedMapMinorCompatibilityTest::RunTest(const FString &Parameters)
 				while (UEShedCameraJson(Text)->GetStringField(TEXT("state")) == TEXT("running") &&
 					   FPlatformTime::Seconds() < Deadline)
 				{
-					FSlateApplication::Get().Tick();
+					// Drive the production capture callbacks without nesting Slate paint inside automation.
+					FSlateApplication::Get().OnPostTick().Broadcast(0.0f);
 					UUEShedCameraReviewLibrary::PollMapTileCapture(
 						Request->GetStringField(TEXT("runId")), TEXT("compatibility"), Text);
 				}

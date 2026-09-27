@@ -12,6 +12,7 @@ import { startPerforceMapHistoryFixture } from "./test-perforce-map-history.ts";
 
 const supportedJourneys = [
 	"saved-workflows",
+	"site-saved",
 	"custodian",
 	"config-explorer",
 	"map-review",
@@ -56,29 +57,39 @@ try {
 		P4ENVIRO: _environmentFile,
 		...perforceEnvironment
 	} = (fixture?.environment ?? {}) as NodeJS.ProcessEnv;
-	const environment = await createWorkbenchEnvironment({
-		...process.env,
-		...perforceEnvironment,
-		...(journey === "map-review" && !process.env.UE_SHED_REMOTE_CONTROL_ENDPOINT
-			? { UE_SHED_REMOTE_CONTROL_ENDPOINT: "http://127.0.0.1:30001" }
-			: undefined),
-		...(fixture
-			? {
-					UE_SHED_PROJECT_NAME: "World Log Perforce Fixture",
-					UE_SHED_PROJECT_ROOT: fixture.projectRoot,
-					UE_SHED_SAVED_WORLD_MAP: fixture.seeded.worldPartition.mapPath
-				}
-			: undefined),
-		...(custodianFixture ? { UE_SHED_CUSTODIAN_ROOT: custodianFixture.root } : undefined),
-		...(journey === "custodian"
-			? { UE_SHED_CAMERA_PIPE_NAME: `\\\\.\\pipe\\ue-shed-cameras-${recordingId}` }
-			: undefined),
-		UE_SHED_RECORDING_COMMIT: gitOutput(["rev-parse", "--short", "HEAD"]),
-		UE_SHED_RECORDING_DIRTY: gitOutput(["status", "--porcelain"]) ? "true" : "false",
-		UE_SHED_RECORDING_ID: recordingId,
-		UE_SHED_RECORDING_JOURNEY: journey,
-		UE_SHED_RECORDING_OUTPUT_DIR: resultRoot
-	});
+	// Public website recordings always use the generic fixture and a free offline endpoint.
+	const recordingEnvironment =
+		journey === "site-saved"
+			? Object.fromEntries(
+					Object.entries(process.env).filter(([key]) => !key.startsWith("UE_SHED_"))
+				)
+			: process.env;
+	const environment = await createWorkbenchEnvironment(
+		{
+			...recordingEnvironment,
+			...perforceEnvironment,
+			...(journey === "map-review" && !process.env.UE_SHED_REMOTE_CONTROL_ENDPOINT
+				? { UE_SHED_REMOTE_CONTROL_ENDPOINT: "http://127.0.0.1:30001" }
+				: undefined),
+			...(fixture
+				? {
+						UE_SHED_PROJECT_NAME: "World Log Perforce Fixture",
+						UE_SHED_PROJECT_ROOT: fixture.projectRoot,
+						UE_SHED_SAVED_WORLD_MAP: fixture.seeded.worldPartition.mapPath
+					}
+				: undefined),
+			...(custodianFixture ? { UE_SHED_CUSTODIAN_ROOT: custodianFixture.root } : undefined),
+			...(journey === "custodian"
+				? { UE_SHED_CAMERA_PIPE_NAME: `\\\\.\\pipe\\ue-shed-cameras-${recordingId}` }
+				: undefined),
+			UE_SHED_RECORDING_COMMIT: gitOutput(["rev-parse", "--short", "HEAD"]),
+			UE_SHED_RECORDING_DIRTY: gitOutput(["status", "--porcelain"]) ? "true" : "false",
+			UE_SHED_RECORDING_ID: recordingId,
+			UE_SHED_RECORDING_JOURNEY: journey,
+			UE_SHED_RECORDING_OUTPUT_DIR: resultRoot
+		},
+		journey === "site-saved" ? { fetch: async () => ({ ok: false }) } : {}
+	);
 
 	if (!skipBuild)
 		runPnpm(

@@ -7,14 +7,14 @@ const endpoint = process.env.UE_SHED_REMOTE_CONTROL_ENDPOINT;
 if (!endpoint) {
 	console.error(
 		"Map Review full-flow evidence requires UE_SHED_REMOTE_CONTROL_ENDPOINT.\n" +
-			"Start the gallery editor first:\n" +
-			"  $env:UE_SHED_FIXTURE_AUTHORING_MAP='/Game/Fixture/MapReview/L_MapReviewFixture'\n" +
+			"Start the Camera Lab fixture editor first:\n" +
+			"  $env:UE_SHED_FIXTURE_AUTHORING_MAP='/Game/Fixture/Cameras/L_CameraLoad'\n" +
 			"  pnpm fixture:launch-authoring"
 	);
 	process.exit(1);
 }
 
-await loadFixtureEditorMap(endpoint, "/Game/Fixture/MapReview/L_MapReviewFixture");
+await loadFixtureEditorMap(endpoint, "/Game/Fixture/Cameras/L_CameraLoad");
 const fixture = Schema.decodeUnknownSync(
 	Schema.Struct({
 		mapReviewGallery: Schema.Struct({
@@ -33,7 +33,7 @@ const fixture = Schema.decodeUnknownSync(
 
 const environment = await createWorkbenchEnvironment({
 	...process.env,
-	UE_SHED_FIXTURE_AUTHORING_MAP: "/Game/Fixture/MapReview/L_MapReviewFixture",
+	UE_SHED_FIXTURE_AUTHORING_MAP: "/Game/Fixture/Cameras/L_CameraLoad",
 	UE_SHED_MAP_REVIEW_FLOW_E2E: "1",
 	UE_SHED_MAP_REVIEW_AUTHORING_E2E: "1",
 	UE_SHED_CAMERA_WORKSPACE_TEST_MAP: fixture.mapReviewGallery.map,

@@ -9,6 +9,7 @@ import { WorkbenchPage } from "../pages/workbench-page.js";
 
 const RecordingJourney = Schema.Literals([
 	"saved-workflows",
+	"site-saved",
 	"custodian",
 	"config-explorer",
 	"map-review",
@@ -87,8 +88,10 @@ async function recordChapter(options: {
 			await options.page.evaluate("scrollTo(0, 0)");
 		}
 		await options.page.waitForTimeout(750);
+		await options.page.evaluate("document.fonts.ready");
 		const screenshot = `chapters/${options.slug}.png`;
 		await options.page.screenshot({
+			animations: "disabled",
 			path: options.testInfo.outputPath(screenshot)
 		});
 		return { screenshot, title: options.title };
@@ -123,7 +126,7 @@ test(`records the ${journey} Workbench journey`, async ({
 		const environment = { ...process.env };
 		delete environment.ELECTRON_RUN_AS_NODE;
 		application = await electron.launch({
-			args: [workbenchRoot],
+			args: [workbenchRoot, `--user-data-dir=${testInfo.outputPath("profile")}`],
 			artifactsDir: playwrightArtifacts,
 			cwd: workbenchRoot,
 			env: {
@@ -133,6 +136,9 @@ test(`records the ${journey} Workbench journey`, async ({
 			executablePath: electronExecutable
 		});
 		page = await application.firstWindow();
+		await application.evaluate(({ BrowserWindow }) => {
+			BrowserWindow.getAllWindows()[0]?.setContentSize(1440, 900);
+		});
 		page.on("console", (message) =>
 			logs.push(`[renderer:${message.type()}] ${message.text()}`)
 		);
@@ -191,75 +197,71 @@ test(`records the ${journey} Workbench journey`, async ({
 		};
 		if (journey === "map-review") {
 			await workbench.expectShowcaseReady();
-			await workbench.openRoute("Map Review");
-			await expect(page.getByRole("navigation", { name: "Breadcrumb" })).toBeVisible();
-			await expect(page.getByRole("region", { name: "Review set status" })).toContainText(
-				"Fixture Structure"
-			);
-			const history = page.getByRole("region", { name: "Runs" });
-			const initialRuns = history.getByRole("button");
-			const initialRunCount = await initialRuns.count();
-			const successfulRuns = initialRuns.filter({ hasText: "completed" });
-			if ((await successfulRuns.count()) === 0) {
-				throw new Error(
-					"Map Review recording requires one prior local Capture Run to demonstrate before-and-after evidence."
-				);
-			}
-			await successfulRuns.first().click();
-			const selectedCapture = page.getByRole("region", { name: "Selected capture" });
-			const selectedRunId = selectedCapture.locator("code");
-			const initialRunId = await selectedRunId.textContent();
-			if (!initialRunId) throw new Error("The prior Map Review capture has no run ID");
-			const initialImage = selectedCapture.getByRole("img");
-			await expect(initialImage).toHaveJSProperty("naturalWidth", 1280);
-
 			const launch = decodeFixtureLaunchResult(
 				await page.evaluate("globalThis.ueShed.fixture.launchReview()")
 			);
-			if (launch.status === "failed") {
-				throw new Error(`${launch.message} ${launch.recovery}`);
-			}
+			if (launch.status === "failed") throw new Error(`${launch.message} ${launch.recovery}`);
+			await workbench.openRoute("Map Review");
+			await expect(page.getByRole("region", { name: "Review set status" })).toContainText(
+				"/Game/Fixture/Cameras/L_CameraLoad"
+			);
+			const history = page.getByRole("region", { name: "Runs" });
+			const selectedCapture = page.getByRole("region", { name: "Selected capture" });
+			const selectedRunId = selectedCapture.locator("code").first();
+			const captureFreshRun = async () => {
+				await page!.getByRole("button", { name: "Capture set", exact: true }).click();
+				const dialog = page!.getByRole("dialog", { name: "Capture review set" });
+				await dialog.getByRole("button", { name: /REVIEW CAPTURE PLAN/ }).click();
+				await dialog.getByRole("button", { name: "CAPTURE 1 VIEW", exact: true }).click();
+				const completed = dialog.getByRole("region", { name: "Capture complete" });
+				await expect(completed).toBeVisible({ timeout: 120_000 });
+				await expect(completed).toContainText(/1\s*Captured/);
+				await expect(completed).toContainText(/0\s*Failed/);
+				const runId = (await completed.locator("code").textContent())?.trim();
+				if (!runId) throw new Error("The capture omitted its run ID");
+				await dialog.getByRole("button", { name: "DONE", exact: true }).click();
+				await expect(selectedRunId).toHaveText(runId);
+				const image = selectedCapture.getByRole("img", { name: /^Natural capture/ });
+				await expect(image).toHaveJSProperty("naturalWidth", 1280);
+				await expect(image).toHaveJSProperty("naturalHeight", 720);
+				return runId;
+			};
+			// Capture both observations now: an old local run must never become the website baseline.
+			const initialRunId = await captureFreshRun();
 			await startScreencast();
 			await startTracing();
-
 			chapters.push(
 				await recordChapter({
 					action: async () => {
-						await expect(selectedCapture).toContainText("Natural");
-						await expect(initialImage).toBeVisible();
-					},
-					description: "The latest immutable Pure capture is our visual baseline.",
-					page,
-					slug: "01-before-capture",
-					testInfo,
-					title: "Before: retained evidence"
-				})
-			);
-			chapters.push(
-				await recordChapter({
-					action: async () => {
-						await page!.getByRole("button", { name: "Capture set" }).click();
-						await expect(history.getByRole("button")).toHaveCount(initialRunCount + 1, {
-							timeout: 120_000
-						});
-						await expect(selectedRunId).not.toHaveText(initialRunId, {
-							timeout: 120_000
-						});
-						const image = selectedCapture.getByRole("img");
-						await expect(image).toHaveJSProperty("naturalWidth", 1280);
-						await expect(image).toHaveJSProperty("naturalHeight", 720);
-						await page!.waitForTimeout(2_000);
+						await selectedCapture.scrollIntoViewIfNeeded();
+						await expect(selectedRunId).toHaveText(initialRunId);
 					},
 					description:
-						"Workbench realizes the approved pose in Unreal and promotes a new immutable Capture Run.",
+						"A fresh observation of the colorful Camera Lab fixture establishes the baseline.",
 					page,
-					slug: "02-new-capture",
+					resetScroll: false,
+					slug: "01-before-capture",
 					testInfo,
-					title: "Capture the approved Review Set"
+					title: "The Camera Lab map, through Map Review"
 				})
 			);
-			const newRunId = await selectedRunId.textContent();
-			if (!newRunId) throw new Error("The new Map Review capture has no run ID");
+			let newRunId = "";
+			chapters.push(
+				await recordChapter({
+					action: async () => {
+						newRunId = await captureFreshRun();
+						expect(newRunId).not.toBe(initialRunId);
+						await selectedCapture.scrollIntoViewIfNeeded();
+					},
+					description:
+						"Capture the same approved pose into another immutable run without replacing the baseline.",
+					page,
+					resetScroll: false,
+					slug: "02-new-capture",
+					testInfo,
+					title: "Recapture the approved view"
+				})
+			);
 			chapters.push(
 				await recordChapter({
 					action: async () => {
@@ -268,18 +270,20 @@ test(`records the ${journey} Workbench journey`, async ({
 							.filter({ hasText: "completed" });
 						await completedRuns.nth(1).click();
 						await expect(selectedRunId).toHaveText(initialRunId);
-						await page!.waitForTimeout(1_200);
 						await completedRuns.first().click();
 						await expect(selectedRunId).toHaveText(newRunId);
-						await page!.waitForTimeout(1_000);
+						await expect(
+							selectedCapture.getByRole("button", { name: "Compare previous run" })
+						).toBeEnabled();
+						await selectedCapture.scrollIntoViewIfNeeded();
 					},
 					description:
-						"The previous and fresh observations remain independently addressable in local history.",
+						"Both fresh observations of the colorful fixture remain independently addressable in history.",
 					page,
 					resetScroll: false,
 					slug: "03-before-and-after",
 					testInfo,
-					title: "Review before and after"
+					title: "Review the colorful Camera Lab map"
 				})
 			);
 		} else if (journey === "world-log-fast") {
@@ -795,11 +799,13 @@ test(`records the ${journey} Workbench journey`, async ({
 				await recordChapter({
 					action: async () => {
 						await workbench.expectShowcaseReady();
-						await page!.getByText("LAUNCH ▾", { exact: true }).click();
+						await page!.getByRole("button", { name: "Launch ▾", exact: true }).click();
 						await expect(
-							page!.getByRole("button", { name: /WITH UE SHED/ })
+							page!.getByRole("button", { name: /With plugin suite/i })
 						).toBeVisible();
-						await expect(page!.getByRole("button", { name: /NORMALLY/ })).toBeVisible();
+						await expect(
+							page!.getByRole("button", { name: /Plain editor/i })
+						).toBeVisible();
 					},
 					description:
 						"The project is usable offline; both editor launch modes remain explicit and leave the project descriptor unchanged.",
@@ -812,11 +818,8 @@ test(`records the ${journey} Workbench journey`, async ({
 			chapters.push(
 				await recordChapter({
 					action: async () => {
-						await page!.getByText("LAUNCH ▾", { exact: true }).click();
+						await page!.getByRole("button", { name: "Launch ▾", exact: true }).click();
 						await workbench.openRoute("Data Authoring");
-						await expect(
-							page!.getByRole("navigation", { name: "Breadcrumb" })
-						).toBeVisible();
 						await expect(
 							page!.getByRole("region", { name: "Table summary" })
 						).toContainText("DT_Scalars");
@@ -846,53 +849,51 @@ test(`records the ${journey} Workbench journey`, async ({
 					title: "Chart the open DataTable"
 				})
 			);
-			chapters.push(
-				await recordChapter({
-					action: async () => {
-						await workbench.openRoute("Texture Audit");
-						await expect(
-							page!.getByRole("navigation", { name: "Breadcrumb" })
-						).toBeVisible();
-						await expect(
-							page!.getByRole("complementary", {
-								name: "Facets"
-							})
-						).toContainText(/textures/i);
-						await expect(page!.getByRole("article", { name: "Asset" })).toContainText(
-							"Comparison"
-						);
-						await page!
-							.getByRole("button", { name: /Generate \d+ saved previews/ })
-							.click();
-						await expect(page!.getByLabel("Preview authority")).toHaveText(
-							"Saved asset",
-							{
-								timeout: 90_000
-							}
-						);
-						await page!
-							.getByRole("region", { name: "Results" })
-							.getByRole("button", { name: /T_Audit_UI_2048x1024/ })
-							.click();
-						await expect(page!.getByLabel("Preview authority")).toHaveText(
-							"Saved asset"
-						);
-					},
-					description:
-						"Move from a rule finding to peer evidence, while filling the bounded saved-preview cache in one headless Unreal launch.",
-					page,
-					slug: "03-texture-audit",
-					testInfo,
-					title: "Investigate a texture outlier"
-				})
-			);
+			if (journey !== "site-saved")
+				chapters.push(
+					await recordChapter({
+						action: async () => {
+							await workbench.openRoute("Texture Audit");
+							await expect(
+								page!.getByRole("navigation", { name: "Breadcrumb" })
+							).toBeVisible();
+							await expect(
+								page!.getByRole("complementary", {
+									name: "Facets"
+								})
+							).toContainText(/textures/i);
+							await expect(
+								page!.getByRole("article", { name: "Asset" })
+							).toContainText("Comparison");
+							await page!
+								.getByRole("button", { name: /Generate \d+ saved previews/ })
+								.click();
+							await expect(page!.getByLabel("Preview authority")).toHaveText(
+								"Saved asset",
+								{
+									timeout: 90_000
+								}
+							);
+							await page!
+								.getByRole("region", { name: "Results" })
+								.getByRole("button", { name: /T_Audit_UI_2048x1024/ })
+								.click();
+							await expect(page!.getByLabel("Preview authority")).toHaveText(
+								"Saved asset"
+							);
+						},
+						description:
+							"Move from a rule finding to peer evidence, while filling the bounded saved-preview cache in one headless Unreal launch.",
+						page,
+						slug: "03-texture-audit",
+						testInfo,
+						title: "Investigate a texture outlier"
+					})
+				);
 			chapters.push(
 				await recordChapter({
 					action: async () => {
 						await workbench.openRoute("Game Text");
-						await expect(
-							page!.getByRole("navigation", { name: "Breadcrumb" })
-						).toBeVisible();
 						await page!
 							.getByRole("searchbox", { name: "Search game text" })
 							.fill("Hold to skip");
@@ -923,10 +924,10 @@ test(`records the ${journey} Workbench journey`, async ({
 				await recordChapter({
 					action: async () => {
 						await workbench.openRoute("Config Explorer");
+						await page!.getByRole("button", { name: /^Compare platforms/i }).click();
 						await expect(
-							page!.getByRole("navigation", { name: "Breadcrumb" })
-						).toContainText("Config Explorer");
-						await expect(page!.getByRole("status")).toContainText("Value diverges");
+							page!.getByRole("region", { name: "Config Explorer evidence" })
+						).toContainText("Value diverges");
 						await expect(
 							page!.getByRole("region", { name: "Platform config comparison" })
 						).toContainText("PlatformA");
@@ -942,7 +943,9 @@ test(`records the ${journey} Workbench journey`, async ({
 			chapters.push(
 				await recordChapter({
 					action: async () => {
-						await page!.getByRole("button", { name: /Platform A/ }).click();
+						await page!
+							.getByRole("list", { name: "PlatformA ordered contributions" })
+							.scrollIntoViewIfNeeded();
 						await expect(
 							page!.getByRole("list", { name: "PlatformA ordered contributions" })
 						).not.toBeEmpty();
@@ -951,6 +954,7 @@ test(`records the ${journey} Workbench journey`, async ({
 						"The ordered ledger exposes operation, source line, concrete effect, and whether each contribution survives.",
 					page,
 					slug: "06-config-contribution-ledger",
+					resetScroll: false,
 					testInfo,
 					title: "Trace the winning value"
 				})
@@ -958,7 +962,8 @@ test(`records the ${journey} Workbench journey`, async ({
 			chapters.push(
 				await recordChapter({
 					action: async () => {
-						await page!.getByRole("button", { name: /Unsupported/ }).click();
+						await page!.getByRole("button", { name: /Coverage gap/ }).click();
+						await page!.getByRole("button", { name: /^Trace value/i }).click();
 						await expect(
 							page!.getByRole("region", { name: "PlatformA coverage exceptions" })
 						).toContainText("unsupported");

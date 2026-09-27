@@ -77,6 +77,14 @@ export const showcaseTabs: readonly ShowcaseTab[] = [
 		alt: "The Workbench's Map Review route comparing immutable capture runs of a fixture camera pose",
 		note: "An approved camera pose recaptured into an immutable run, before and after kept independently addressable.",
 		chips: ["immutable capture runs", "before/after history", "live editor capture"]
+	},
+	{
+		id: "config-explorer",
+		label: "Config Explorer",
+		capture: "configExplorer",
+		alt: "Config Explorer comparing effective saved values for two sample platforms",
+		note: "Follow each saved value through its ordered source contributions and see why platforms differ.",
+		chips: ["saved configuration", "source lineage", "platform comparison"]
 	}
 ];
 
@@ -84,61 +92,101 @@ export type Tool = {
 	readonly name: string;
 	readonly tag: string;
 	readonly line: string;
+	readonly href: string;
 };
 
 export const tools: readonly Tool[] = [
 	{
-		name: "ue-shed",
-		tag: "CLI",
-		line: "Everything below, scriptable: inspect, audit, author, review, capture."
-	},
-	{
-		name: "uasset",
-		tag: "Rust crate",
-		line: "Read-only parser for saved .uasset packages. Versioned JSON out, no engine needed."
-	},
-	{
 		name: "Data Authoring",
-		tag: "Library + UI",
-		line: "Inspect and edit DataTables from disk or a live editor. Sessions, typed drafts, undo/redo."
-	},
-	{
-		name: "Asset Audits",
-		tag: "Library + UI",
-		line: "Rule-check every texture in a content folder, straight from saved packages."
+		tag: "Saved + live",
+		href: "/docs/data-authoring",
+		line: "Inspect typed DataTables, chart filtered rows, and carry drafts through review, Apply, and Save."
 	},
 	{
 		name: "Game Text",
-		tag: "Library",
-		line: "Search player-facing text across a saved content corpus, with coverage reports."
+		tag: "Saved corpus",
+		href: "/docs/game-text",
+		line: "Find player-facing language with identity, authored context, and every known use attached."
+	},
+	{
+		name: "Config Explorer",
+		tag: "Saved source",
+		href: "/docs/config-explorer",
+		line: "Explain a saved .ini value through its contribution history and compare platforms."
+	},
+	{
+		name: "Texture Audit",
+		tag: "Saved + optional previews",
+		href: `${repositoryUrl}/blob/main/docs/showcase.md#demo-2-texture-asset-audit`,
+		line: "Check texture sizes, groups, and compression against rules; investigate individual outliers."
 	},
 	{
 		name: "Map Review",
-		tag: "Live + UI",
-		line: "Capture frames from a running editor, approve a set, diff before and after."
+		tag: "Live editor",
+		href: "/docs/map-review",
+		line: "Frame an actor, approve review views, and compare independently addressable capture runs."
 	},
 	{
-		name: "Actor Observatory",
-		tag: "Plugin + UI",
-		line: "Discover actors and stream their state live — bounded, resumable, backpressure-aware."
+		name: "Map Capture",
+		tag: "Live editor",
+		href: `${repositoryUrl}/blob/main/docs/products/map-capture.md`,
+		line: "Capture orthographic map tiles into a multiresolution pyramid with immutable evidence."
 	},
 	{
-		name: "RC Explorer",
-		tag: "UI",
-		line: "See what stock Remote Control already exposes before adding anything."
+		name: "World Log",
+		tag: "Saved history + Perforce",
+		href: `${repositoryUrl}/blob/main/docs/products/map-history.md`,
+		line: "Compare saved map revisions and investigate actor changes across time."
 	},
 	{
-		name: "UEShed* plugins",
-		tag: "Unreal plugins",
-		line: "Small, separately enabled editor plugins. Capabilities are negotiated, not assumed."
+		name: "Project Custodian",
+		tag: "Local storage",
+		href: `${repositoryUrl}/blob/main/docs/products/project-custodian.md`,
+		line: "Inventory rebuildable storage, review a durable cleanup proposal, and retain a receipt."
 	},
 	{
-		name: "Workbench",
-		tag: "Electron",
-		line: "The showcase desktop app. A client of the public API — nothing more."
+		name: "Input Atlas",
+		tag: "Saved packages",
+		href: `${repositoryUrl}/blob/main/packages/enhanced-input/README.md`,
+		line: "Inspect Enhanced Input mappings, actions, modifiers, and contested chords."
+	},
+	{
+		name: "Blueprint Graphs",
+		tag: "Saved packages",
+		href: `${repositoryUrl}/blob/main/docs/showcase.md`,
+		line: "Reconstruct saved Blueprint nodes, pins, defaults, and links outside the editor."
+	},
+	{
+		name: "Live World Scout",
+		tag: "Live editor",
+		href: `${repositoryUrl}/blob/main/packages/observatory/README.md`,
+		line: "Search and select actors, follow a subject, and receive bounded transform updates."
+	},
+	{
+		name: "Scenario Studio",
+		tag: "Live PIE · proving slice",
+		href: `${repositoryUrl}/blob/main/docs/products/scenario-studio.md`,
+		line: "Run the bounded Movement Gym scenario with status, cancellation, and evidence."
+	},
+	{
+		name: "Niagara Preview",
+		tag: "Live editor",
+		href: `${repositoryUrl}/blob/main/docs/products/niagara-preview.md`,
+		line: "Capture portable preview evidence from a separately enabled Niagara workflow."
+	},
+	{
+		name: "uasset",
+		tag: "Rust + native + WASM",
+		href: `${repositoryUrl}/blob/main/packages/uasset/README.md`,
+		line: "Read saved Unreal packages through shared parser and inspection libraries, without an engine."
+	},
+	{
+		name: "CLI & libraries",
+		tag: "Headless-first",
+		href: "/docs/getting-started",
+		line: "Use the same domain workflows from a shell, automation, or your own trusted host."
 	}
 ];
-
 export type Fact = {
 	readonly label: string;
 	readonly text: string;

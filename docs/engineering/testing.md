@@ -172,4 +172,4 @@ pnpm test:flow:map-review
 The command keeps the fixture map clean, removes only the sessions and Capture Runs it creates, and
 retains projection, visibility, recovery, and raw PNG evidence in Playwright's `test-results` output.
 It requires a live fixture editor; the command refuses to discard dirty map state and establishes
-`/Game/Fixture/MapReview/L_MapReviewFixture` in a clean connected editor before running.
+`/Game/Fixture/Cameras/L_CameraLoad` in a clean connected editor before running.

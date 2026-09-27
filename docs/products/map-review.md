@@ -81,8 +81,8 @@ positive counts, partial group+index overrides, and durable recipe v2 provenance
 and Cardinal are convenience presets rather than domain limits. Workbench provides progressive
 controls and a 1–24 ergonomic range while the library and CLI remain permissive.
 
-The maintained fixture evidence includes a dedicated Map Review gallery with varied geometry and
-occlusion bays. `pnpm test:flow:map-review` exercises a seven-View multi-subject collection, two
+The maintained fixture evidence includes Map Review gallery subjects and occlusion bays inside the
+colorful Camera Lab map (`/Game/Fixture/Cameras/L_CameraLoad`). `pnpm test:flow:map-review` exercises a seven-View multi-subject collection, two
 Views for one subject, full authoring persistence, restart/load, two captures around a restored
 fixture change, a 37-candidate rig, bounds-change recovery, framing variation, and explicit Clear
 restoration against UE 5.7. The authoring and high-count journeys can record those same asserted

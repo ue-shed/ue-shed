@@ -89,7 +89,9 @@
 		"uasset:check:libraries": "cargo clippy -p uasset-source-gen --all-targets -- -D warnings && cargo test -p uasset-source-gen --all-targets && pnpm run uasset:architecture && cargo fmt --all -- --check && cargo clippy -p uasset-parser --all-targets -- -D warnings && cargo test -p uasset-parser --all-targets && cargo clippy -p uasset-inspection --all-targets -- -D warnings && cargo test -p uasset-inspection --all-targets && pnpm run uasset:check:wasm:libraries",
 		"uasset:check:wasm": "pnpm run uasset:check:wasm:libraries && pnpm run test:uasset-wasm",
 		"uasset:check:wasm:libraries": "cargo check --locked -p uasset-parser --lib --target wasm32-unknown-unknown && cargo fmt --manifest-path crates/uasset-inspection-wasm/Cargo.toml -- --check && cargo clippy --locked --manifest-path crates/uasset-inspection-wasm/Cargo.toml --target wasm32-unknown-unknown -- -D warnings && pnpm run test:uasset-wasm:browser && pnpm run test:uasset-wasm:package",
-		"ue-shed": "node scripts/ue-shed.ts"
+		"ue-shed": "node scripts/ue-shed.ts",
+		"site:refresh": "pnpm showcase:record site-saved && pnpm site:media --journey site-saved && pnpm site:check",
+		"site:check": "node --test scripts/site-media.test.ts && node scripts/site-media.ts --check && pnpm --filter @ue-shed/site typecheck && pnpm --filter @ue-shed/workbench exec playwright test --config e2e/site/playwright.config.ts"
 	},
 	"devDependencies": {
 		"@changesets/cli": "3.0.0",

@@ -19,6 +19,8 @@ UE Shed code should be functional, typed, observable, and well tested.
 
 ## Guides
 
+- [Website and illustrated guides](website.md) — asserted screenshot refresh, provenance, and browser checks.
+
 | Guide                                                                 | Use it for                                                     |
 | --------------------------------------------------------------------- | -------------------------------------------------------------- |
 | [Functional design](functional-design.md)                             | Logic, state, services, and concurrency                        |

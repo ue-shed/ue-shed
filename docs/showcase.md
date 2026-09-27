@@ -321,13 +321,13 @@ See [`products/map-review.md`](products/map-review.md) for the product contract.
 
 ### Exercise and record the complete Map Review flow
 
-The dedicated fixture gallery contains compact, tall, wide, asymmetric, compound, translucent, and
+The colorful Camera Lab map includes a gallery of compact, tall, wide, asymmetric, compound, translucent, and
 occluded subjects. With its editor running, exercise the real-Unreal scenarios—including a durable
 seven-View collection, two Views for the compound subject, persistence across a Workbench restart,
 two full-set runs around a restored fixture change, and the permissive 37-camera case—with:
 
 ```powershell
-$env:UE_SHED_FIXTURE_AUTHORING_MAP = "/Game/Fixture/MapReview/L_MapReviewFixture"
+$env:UE_SHED_FIXTURE_AUTHORING_MAP = "/Game/Fixture/Cameras/L_CameraLoad"
 $env:UE_SHED_REMOTE_CONTROL_ENDPOINT = "http://127.0.0.1:30001"
 pnpm fixture:launch-authoring
 pnpm test:flow:map-review
@@ -524,14 +524,14 @@ The command creates a fresh disposable project, moves only its generated targets
 system Trash/Recycle Bin, verifies the receipt in Workbench, and removes the remaining fixture files
 after recording. It never points cleanup at the repository fixture.
 
-To showcase Map Review by creating fresh evidence and comparing it with the prior Capture Run:
+To showcase Map Review with two fresh captures of the colorful Camera Lab map:
 
 ```powershell
 pnpm showcase:record map-review
 ```
 
-This journey requires one prior successful Capture Run. It launches or reuses the configured Unreal
-fixture before recording, then captures the approved Review Set live, verifies the new immutable run
+This journey launches or reuses the configured Unreal fixture on `L_CameraLoad`, captures a fresh
+baseline, then records a second capture of the approved Review Set and verifies the new immutable run
 and its 1280x720 image, and demonstrates before-and-after history navigation. Fixture startup stays
 out of the review video; a failed live capture fails the recording rather than presenting stale
 evidence as a successful showcase.
@@ -553,16 +553,25 @@ bundle, export its curated chapter frames into `apps/site/public/media` and rege
 typed media manifest:
 
 ```powershell
-pnpm site:media
+pnpm site:refresh
 ```
 
-The exporter picks the latest passing bundle per journey; pin a specific one with
-`pnpm site:media --bundle map-review=<recording-id>`. The site renders only what the manifest
-exports, and the showcase tabs fail typecheck if their capture leaves the manifest, so published
-media cannot drift from a real recording.
+This runs the asserted `site-saved` journey, exports its screenshots to both the homepage and
+illustrated guides, and checks the production website at desktop and mobile sizes. It does not
+launch Unreal. Each recording uses an isolated desktop profile.
+
+The exporter requires the latest selected recording to pass with every required chapter. Pin a
+reviewed bundle with `pnpm site:media --bundle site-saved=<recording-id>`. Map Review remains an
+explicit live capture: record it, then use `pnpm site:media --journey map-review`. Other journeys
+keep their existing images and original capture dates. `pnpm site:media --check` validates the
+committed images against their manifest hashes without requiring local recordings.
+
+See [Website and illustrated guides](engineering/website.md) for commands, CI artifacts, and how
+to extend the walkthroughs. These checks establish provenance and working images; refresh the
+recording when the illustrated application workflow changes.
 
 Review exported frames before deploying. Captures show the real Workbench, including whatever
-diagnostics it surfaces; withhold a capture in `scripts/site-media.ts` rather than publish an
+diagnostics it surfaces; curate captures in `scripts/site-media-model.ts` rather than publish an
 embarrassing frame.
 
 ## Editor handoffs

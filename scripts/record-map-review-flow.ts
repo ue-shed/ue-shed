@@ -21,14 +21,14 @@ const endpoint = process.env.UE_SHED_REMOTE_CONTROL_ENDPOINT;
 if (!endpoint) {
 	console.error(
 		"Map Review recording requires UE_SHED_REMOTE_CONTROL_ENDPOINT.\n" +
-			"Start the gallery editor first:\n" +
-			"  $env:UE_SHED_FIXTURE_AUTHORING_MAP='/Game/Fixture/MapReview/L_MapReviewFixture'\n" +
+			"Start the Camera Lab fixture editor first:\n" +
+			"  $env:UE_SHED_FIXTURE_AUTHORING_MAP='/Game/Fixture/Cameras/L_CameraLoad'\n" +
 			"  pnpm fixture:launch-authoring"
 	);
 	process.exit(1);
 }
 
-await loadFixtureEditorMap(endpoint, "/Game/Fixture/MapReview/L_MapReviewFixture");
+await loadFixtureEditorMap(endpoint, "/Game/Fixture/Cameras/L_CameraLoad");
 
 function gitOutput(gitArgs: readonly string[]) {
 	const result = spawnSync("git", gitArgs, { encoding: "utf8", windowsHide: true });
@@ -44,7 +44,7 @@ const recordingRoot = resolve(
 const resultRoot = join(recordingRoot, recordingId);
 const environment = await createWorkbenchEnvironment({
 	...process.env,
-	UE_SHED_FIXTURE_AUTHORING_MAP: "/Game/Fixture/MapReview/L_MapReviewFixture",
+	UE_SHED_FIXTURE_AUTHORING_MAP: "/Game/Fixture/Cameras/L_CameraLoad",
 	UE_SHED_MAP_REVIEW_FLOW: flow,
 	UE_SHED_MAP_REVIEW_FLOW_RECORDING: "1",
 	UE_SHED_RECORDING_COMMIT: gitOutput(["rev-parse", "--short", "HEAD"]),

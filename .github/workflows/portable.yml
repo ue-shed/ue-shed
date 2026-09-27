@@ -327,10 +327,35 @@ jobs:
                   path: evidence/catalog-oracle.log
                   if-no-files-found: error
                   retention-days: 30
+    site:
+        name: Website and illustrated guides
+        runs-on: blacksmith-2vcpu-ubuntu-2404
+        timeout-minutes: 15
+        steps:
+            - uses: actions/checkout@v6
+              with:
+                  persist-credentials: false
+            - uses: pnpm/action-setup@v6
+            - uses: actions/setup-node@v6
+              with:
+                  node-version: "26"
+                  cache: pnpm
+            - run: pnpm install --frozen-lockfile
+            - run: pnpm --filter @ue-shed/workbench exec playwright install --with-deps --only-shell chromium
+            - run: pnpm site:check
+            - name: Upload desktop and mobile website captures
+              if: always()
+              uses: actions/upload-artifact@v7
+              with:
+                  name: website-evidence-${{ github.run_id }}
+                  path: test-results/site/**
+                  if-no-files-found: error
+                  retention-days: 14
     gate:
         name: pnpm check
         needs:
             - repository
+            - site
             - uasset_io
             - uasset_libraries
             - catalog_oracle
@@ -341,12 +366,14 @@ jobs:
               shell: bash
               env:
                   REPOSITORY_RESULT: ${{ needs.repository.result }}
+                  SITE_RESULT: ${{ needs.site.result }}
                   UASSET_IO_RESULT: ${{ needs.uasset_io.result }}
                   UASSET_LIBRARIES_RESULT: ${{ needs.uasset_libraries.result }}
                   CATALOG_ORACLE_RESULT: ${{ needs.catalog_oracle.result }}
               run: |
                   set -euo pipefail
                   [[ "$REPOSITORY_RESULT" == "success" ]]
+                  [[ "$SITE_RESULT" == "success" ]]
                   [[ "$UASSET_IO_RESULT" == "success" || "$UASSET_IO_RESULT" == "skipped" ]]
                   [[ "$UASSET_LIBRARIES_RESULT" == "success" || \
                       "$UASSET_LIBRARIES_RESULT" == "skipped" ]]

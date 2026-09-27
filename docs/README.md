@@ -19,6 +19,9 @@ there; do not invent a second status source in docs.
 
 ## Map
 
+For user walkthroughs, see the website's `/docs` section. Contributors maintaining its screenshots
+should follow [Website and illustrated guides](engineering/website.md).
+
 | Path                                                     | Authority                   | Use it for                                                                                  |
 | -------------------------------------------------------- | --------------------------- | ------------------------------------------------------------------------------------------- |
 | [vision-and-architecture.md](vision-and-architecture.md) | Canonical intent            | Boundaries, sequencing, suite shape                                                         |

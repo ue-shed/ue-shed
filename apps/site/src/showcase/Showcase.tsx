@@ -18,6 +18,31 @@ export function Showcase() {
 						<button
 							type="button"
 							role="tab"
+							id={`capture-tab-${tab.id}`}
+							aria-controls={`capture-panel-${tab.id}`}
+							tabindex={active() === tab.id ? 0 : -1}
+							onKeyDown={(event) => {
+								const index = showcaseTabs.findIndex(
+									(entry) => entry.id === tab.id
+								);
+								const next =
+									event.key === "ArrowRight"
+										? (index + 1) % showcaseTabs.length
+										: event.key === "ArrowLeft"
+											? (index + showcaseTabs.length - 1) %
+												showcaseTabs.length
+											: event.key === "Home"
+												? 0
+												: event.key === "End"
+													? showcaseTabs.length - 1
+													: undefined;
+								if (next === undefined) return;
+								const target = showcaseTabs[next];
+								if (!target) return;
+								event.preventDefault();
+								setActive(target.id);
+								document.getElementById(`capture-tab-${target.id}`)?.focus();
+							}}
 							aria-selected={active() === tab.id ? "true" : "false"}
 							onClick={() => setActive(tab.id)}
 							{...stylex.attrs(styles.tab, active() === tab.id && styles.tabActive)}
@@ -32,7 +57,11 @@ export function Showcase() {
 					const capture = siteMedia.captures[tab.capture];
 					return (
 						<Show when={active() === tab.id}>
-							<div role="tabpanel">
+							<div
+								role="tabpanel"
+								id={`capture-panel-${tab.id}`}
+								aria-labelledby={`capture-tab-${tab.id}`}
+							>
 								<WindowFrame title={capture.title}>
 									<img
 										src={`/media/${capture.file}`}
@@ -49,6 +78,12 @@ export function Showcase() {
 				{(tab) => (
 					<div {...stylex.attrs(styles.caption)}>
 						<p {...stylex.attrs(styles.note)}>{tab().note}</p>
+						<a
+							href={`/docs/${tab().id === "authoring" ? "data-authoring" : tab().id}`}
+							{...stylex.attrs(styles.guideLink)}
+						>
+							Follow the walkthrough →
+						</a>
 						<div {...stylex.attrs(styles.chips)}>
 							<For each={tab().chips}>
 								{(chip) => <span {...stylex.attrs(styles.chip)}>{chip}</span>}
@@ -62,6 +97,7 @@ export function Showcase() {
 }
 
 const styles = stylex.create({
+	guideLink: { color: tokens.colorAccent, fontSize: 12, textUnderlineOffset: 4 },
 	tabBar: {
 		borderColor: tokens.colorBorderInteractive,
 		borderRadius: tokens.radiusControl,

@@ -1,18 +1,22 @@
 import * as stylex from "@stylexjs/stylex";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { For } from "solid-js";
-import { AuthoringMock } from "./showcase/AuthoringMock.js";
+import { Documentation } from "./Documentation.js";
 import { Showcase } from "./showcase/Showcase.js";
 import { Terminal } from "./Terminal.js";
 import { approach, diagram, facts, inspectTerminal, repositoryUrl, tools } from "./content.js";
 
 export function App() {
+	if (window.location.pathname.startsWith("/docs")) return <Documentation />;
 	return (
 		<div {...stylex.attrs(styles.page)}>
 			<div {...stylex.attrs(styles.container)}>
 				<header {...stylex.attrs(styles.nav)}>
 					<span {...stylex.attrs(styles.wordmark)}>ue-shed</span>
 					<nav {...stylex.attrs(styles.navLinks)}>
+						<a href="/docs" {...stylex.attrs(styles.navLink)}>
+							Docs
+						</a>
 						<a href="#showcase" {...stylex.attrs(styles.navLink)}>
 							Showcase
 						</a>
@@ -32,7 +36,7 @@ export function App() {
 					<section {...stylex.attrs(styles.hero)}>
 						<p {...stylex.attrs(styles.eyebrow)}>Open source · headless-first</p>
 						<h1 {...stylex.attrs(styles.h1)}>
-							Unreal tooling that runs without Unreal.
+							Your Unreal project. A new point of view.
 						</h1>
 						<p {...stylex.attrs(styles.heroSub)}>
 							Headless-first libraries and a CLI for inspecting, auditing, and
@@ -40,19 +44,24 @@ export function App() {
 							desktop showcase app included — separately enabled, never required.
 						</p>
 						<div {...stylex.attrs(styles.ctaRow)}>
-							<a href={repositoryUrl} {...stylex.attrs(styles.buttonPrimary)}>
-								View on GitHub ↗
+							<a href="/docs" {...stylex.attrs(styles.buttonPrimary)}>
+								Start exploring →
 							</a>
 							<a href="#approach" {...stylex.attrs(styles.buttonGhost)}>
 								How it's put together
 							</a>
 						</div>
-						<div {...stylex.attrs(styles.heroTrial)}>
-							<AuthoringMock />
-						</div>
 					</section>
 
 					<section id="showcase" {...stylex.attrs(styles.showcaseSection)}>
+						<header {...stylex.attrs(styles.sectionHead)}>
+							<p {...stylex.attrs(styles.eyebrow)}>Inside Workbench</p>
+							<h2 {...stylex.attrs(styles.h2)}>Real tools. Real project evidence.</h2>
+							<p {...stylex.attrs(styles.sectionSub)}>
+								Explore the recorded workflows, then follow the guides with the
+								included sample project.
+							</p>
+						</header>
 						<Showcase />
 					</section>
 
@@ -81,7 +90,9 @@ export function App() {
 									<article {...stylex.attrs(styles.toolCard)}>
 										<h3 {...stylex.attrs(styles.toolName)}>{tool.name}</h3>
 										<p {...stylex.attrs(styles.toolLine)}>{tool.line}</p>
-										<span {...stylex.attrs(styles.toolTag)}>{tool.tag}</span>
+										<a href={tool.href} {...stylex.attrs(styles.toolTag)}>
+											{tool.tag} · Explore →
+										</a>
 									</article>
 								)}
 							</For>
@@ -185,6 +196,7 @@ const styles = stylex.create({
 	},
 	navLinks: {
 		display: "flex",
+		flexWrap: "wrap",
 		gap: 22
 	},
 	navLink: {
@@ -264,9 +276,6 @@ const styles = stylex.create({
 		color: tokens.colorTextSubtle,
 		fontSize: 11,
 		margin: "14px 0 0"
-	},
-	heroTrial: {
-		marginTop: 44
 	},
 	facts: {
 		borderBottomColor: tokens.colorBorder,

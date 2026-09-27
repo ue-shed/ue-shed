@@ -2560,6 +2560,12 @@ bool VerifyOfflineWorldMap()
 	return Packages.Num() >= OfflineWorldActorCount;
 }
 
+bool GenerateMapReviewGallery(UWorld* World);
+bool VerifyMapReviewGalleryWorld(UWorld* World, bool bLog);
+
+// Keep the framing/occlusion bays outside the 64x64 observation grid.
+const FVector MapReviewGalleryOffset(10000, 0, 0);
+
 bool GenerateCameraMap()
 {
 	static const TCHAR* PackageName = TEXT("/Game/Fixture/Cameras/L_CameraLoad");
@@ -2637,6 +2643,12 @@ bool GenerateCameraMap()
 			{
 				NestedAttachmentChild->AttachToActor(
 					NestedAttachmentParent, FAttachmentTransformRules::KeepWorldTransform);
+				Package->MarkPackageDirty();
+				if (!SaveAsset(Package, World)) return false;
+			}
+			if (!VerifyMapReviewGalleryWorld(World, false))
+			{
+				if (!GenerateMapReviewGallery(World)) return false;
 				Package->MarkPackageDirty();
 				if (!SaveAsset(Package, World)) return false;
 			}
@@ -2829,6 +2841,7 @@ bool GenerateCameraMap()
 		Camera->SetActorLabel(FString::Printf(TEXT("Camera %02d"), Index + 1));
 	}
 
+	if (!GenerateMapReviewGallery(World)) return false;
 	Package->MarkPackageDirty();
 	const bool bSaved = SaveAsset(Package, World);
 	if (bCreatedWorld) World->CleanupWorld();
@@ -2901,7 +2914,8 @@ bool VerifyCameraMap()
 		&& bHasReviewOccluder && bHasAtmosphere
 		&& bHasNestedMoverAttachment
 		&& StationaryMovers == StationaryMoverCount && FlyingMovers == FlyingMoverCount
-		&& IntermittentMovers == IntermittentMoverCount && bMoverMotionsMatch;
+		&& IntermittentMovers == IntermittentMoverCount && bMoverMotionsMatch
+		&& VerifyMapReviewGalleryWorld(World, true);
 }
 
 struct FMapReviewGalleryActorDefinition
@@ -2986,7 +3000,8 @@ bool VerifyMapReviewGalleryWorld(UWorld* World, const bool bLog)
 	{
 		if (Actor == nullptr) continue;
 		if (Actor->ActorHasTag(TEXT("UEShedMapReviewFixture"))) ++FixtureActors;
-		Subjects += Actor->ActorHasTag(TEXT("UEShedReviewSubject")) ? 1 : 0;
+		Subjects += Actor->ActorHasTag(TEXT("UEShedMapReviewFixture"))
+			&& Actor->ActorHasTag(TEXT("UEShedReviewSubject")) ? 1 : 0;
 		bHasAtmosphere = bHasAtmosphere || Actor->IsA<ASkyAtmosphere>();
 		bHasSun = bHasSun || Actor->IsA<ADirectionalLight>();
 		bHasSky = bHasSky || Actor->IsA<ASkyLight>();
@@ -3009,7 +3024,7 @@ bool VerifyMapReviewGalleryWorld(UWorld* World, const bool bLog)
 			continue;
 		}
 		const bool bActorMatches = Actor->ActorHasTag(TEXT("UEShedMapReviewFixture"))
-			&& Root->GetRelativeLocation().Equals(Definition.Location, 0.01)
+			&& Root->GetRelativeLocation().Equals(Definition.Location + MapReviewGalleryOffset, 0.01)
 			&& Root->GetRelativeRotation().Equals(Definition.Rotation, 0.01)
 			&& Root->GetRelativeScale3D().Equals(Definition.Scale, 0.001)
 			&& Actor->ActorHasTag(TEXT("UEShedReviewSubject")) == Definition.bSubject;
@@ -3034,7 +3049,7 @@ bool VerifyMapReviewGalleryWorld(UWorld* World, const bool bLog)
 		UE_LOG(LogTemp, Error, TEXT("Map Review compound child component contract does not match"));
 	}
 	bMatches = bMatches && bCompoundMatches;
-	const int32 ExpectedFixtureActors = MapReviewGalleryActors().Num() + 4;
+	const int32 ExpectedFixtureActors = MapReviewGalleryActors().Num() + 1;
 	if (bLog)
 	{
 		UE_LOG(LogTemp, Display,
@@ -3047,28 +3062,10 @@ bool VerifyMapReviewGalleryWorld(UWorld* World, const bool bLog)
 		&& bHasAtmosphere && bHasSun && bHasSky && bHasFloor;
 }
 
-bool GenerateMapReviewGallery()
+bool GenerateMapReviewGallery(UWorld* World)
 {
-	static const TCHAR* PackageName = TEXT("/Game/Fixture/MapReview/L_MapReviewFixture");
-	static const TCHAR* AssetName = TEXT("L_MapReviewFixture");
-	UPackage* Package = FindOrCreatePackage(PackageName);
-	if (Package == nullptr) return false;
-	UWorld* World = UWorld::FindWorldInPackage(Package);
-	const bool bCreatedWorld = World == nullptr;
-	if (World == nullptr)
-	{
-		UWorldFactory* Factory = NewObject<UWorldFactory>();
-		Factory->WorldType = EWorldType::Editor;
-		Factory->bCreateWorldPartition = false;
-		World = Cast<UWorld>(Factory->FactoryCreateNew(UWorld::StaticClass(), Package, AssetName,
-			RF_Public | RF_Standalone, nullptr, GWarn));
-	}
 	if (World == nullptr) return false;
-	if (!bCreatedWorld && VerifyMapReviewGalleryWorld(World, false))
-	{
-		UE_LOG(LogTemp, Display, TEXT("Map Review fixture gallery already matches its contract"));
-		return true;
-	}
+	if (VerifyMapReviewGalleryWorld(World, false)) return true;
 
 	TArray<AActor*> Existing;
 	for (AActor* Actor : World->PersistentLevel->Actors)
@@ -3086,37 +3083,16 @@ bool GenerateMapReviewGallery()
 	FloorSpawn.Name = TEXT("MapReviewFloor");
 	FloorSpawn.NameMode = FActorSpawnParameters::ESpawnActorNameMode::Required_ErrorAndReturnNull;
 	AStaticMeshActor* Floor = World->SpawnActor<AStaticMeshActor>(
-		FVector(4500, 2200, -20), FRotator::ZeroRotator, FloorSpawn);
+		FVector(4500, 2200, -20) + MapReviewGalleryOffset, FRotator::ZeroRotator, FloorSpawn);
 	if (Floor == nullptr) return false;
 	Floor->Tags.Add(TEXT("UEShedMapReviewFixture"));
 	Floor->SetActorLabel(TEXT("Map Review Gallery Floor"));
 	Floor->GetStaticMeshComponent()->SetStaticMesh(LoadObject<UStaticMesh>(nullptr,
 		TEXT("/Engine/BasicShapes/Plane.Plane")));
 	Floor->SetActorScale3D(FVector(110, 70, 1));
-	ApplySolidColor(Floor->GetStaticMeshComponent(), FLinearColor(0.16f, 0.18f, 0.20f, 1.0f));
+	ApplySolidColor(Floor->GetStaticMeshComponent(), FLinearColor(0.18f, 0.22f, 0.17f, 1.0f));
 
-	ADirectionalLight* Sun = World->SpawnActor<ADirectionalLight>(FVector::ZeroVector, FRotator(-45, -30, 0));
-	ASkyAtmosphere* Atmosphere = World->SpawnActor<ASkyAtmosphere>();
-	ASkyLight* Sky = World->SpawnActor<ASkyLight>();
-	if (Sun == nullptr || Atmosphere == nullptr || Sky == nullptr) return false;
-	for (AActor* Environment : { static_cast<AActor*>(Sun), static_cast<AActor*>(Atmosphere), static_cast<AActor*>(Sky) })
-	{
-		Environment->Tags.Add(TEXT("UEShedMapReviewFixture"));
-	}
-	Sun->SetActorLabel(TEXT("Map Review Gallery Sun"));
-	Atmosphere->SetActorLabel(TEXT("Map Review Gallery Atmosphere"));
-	Sky->SetActorLabel(TEXT("Map Review Gallery Sky"));
-	if (UDirectionalLightComponent* Light = Cast<UDirectionalLightComponent>(Sun->GetLightComponent()))
-	{
-		Light->SetAtmosphereSunLight(true);
-		Light->SetIntensity(7.0f);
-	}
-	if (USkyLightComponent* SkyLight = Sky->GetLightComponent())
-	{
-		SkyLight->bRealTimeCapture = true;
-		SkyLight->SetIntensity(1.0f);
-		SkyLight->RecaptureSky();
-	}
+	// Use the Camera Lab atmosphere, sun, sky light, and fog.
 
 	UMaterialInterface* TranslucentMaterial = LoadObject<UMaterialInterface>(nullptr,
 		TEXT("/Engine/EngineDebugMaterials/M_SimpleTranslucent.M_SimpleTranslucent"));
@@ -3127,7 +3103,7 @@ bool GenerateMapReviewGallery()
 		Spawn.Name = Definition.Name;
 		Spawn.NameMode = FActorSpawnParameters::ESpawnActorNameMode::Required_ErrorAndReturnNull;
 		AStaticMeshActor* Actor = World->SpawnActor<AStaticMeshActor>(
-			Definition.Location, Definition.Rotation, Spawn);
+			Definition.Location + MapReviewGalleryOffset, Definition.Rotation, Spawn);
 		if (Actor == nullptr) return false;
 		Actor->Tags.Add(TEXT("UEShedMapReviewFixture"));
 		if (Definition.bSubject) Actor->Tags.Add(TEXT("UEShedReviewSubject"));
@@ -3159,19 +3135,6 @@ bool GenerateMapReviewGallery()
 		}
 	}
 
-	Package->MarkPackageDirty();
-	const bool bSaved = SaveAsset(Package, World);
-	if (bCreatedWorld) World->CleanupWorld();
-	if (!bSaved) return false;
-	UE_LOG(LogTemp, Display, TEXT("Generated %s with %d gallery actors"),
-		PackageName, MapReviewGalleryActors().Num());
-	return true;
-}
-
-bool VerifyMapReviewGallery()
-{
-	UPackage* Package = LoadPackage(nullptr, TEXT("/Game/Fixture/MapReview/L_MapReviewFixture"), LOAD_None);
-	UWorld* World = Package == nullptr ? nullptr : UWorld::FindWorldInPackage(Package);
 	return VerifyMapReviewGalleryWorld(World, true);
 }
 
@@ -3489,7 +3452,6 @@ int32 UUEShedBuildFixtureCommandlet::Main(const FString& Params)
 		Succeeded = GenerateGameTextCorpus() && Succeeded;
 		Succeeded = GenerateOfflineWorldMap() && Succeeded;
 		Succeeded = GenerateCameraMap() && Succeeded;
-		Succeeded = GenerateMapReviewGallery() && Succeeded;
 		Succeeded = GenerateAuditTextures() && Succeeded;
 		Succeeded = GenerateBlueprintGraphFixture() && Succeeded;
 		Succeeded = GenerateAnimationFixtures() && Succeeded;
@@ -3509,7 +3471,6 @@ int32 UUEShedBuildFixtureCommandlet::Main(const FString& Params)
 		Succeeded = VerifyGameTextCorpus() && Succeeded;
 		Succeeded = VerifyOfflineWorldMap() && Succeeded;
 		Succeeded = VerifyCameraMap() && Succeeded;
-		Succeeded = VerifyMapReviewGallery() && Succeeded;
 		Succeeded = VerifyAuditTextures() && Succeeded;
 		Succeeded = VerifyBlueprintGraphFixture() && Succeeded;
 		Succeeded = VerifyAnimationFixtures() && Succeeded;

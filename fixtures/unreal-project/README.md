@@ -133,6 +133,9 @@ regenerates just this package.
 - Sky atmosphere, realtime-capture sky light, directional sun, and height fog
 - A multi-piece opaque `ReviewSubject` building, a translucent review subject for depth-assessment
   limitation coverage, and a stable `ReviewOccluder` actor for explicit Clear-capture coverage
+- Ten Map Review gallery subjects plus explicit occlusion bays, offset 10,000 units along X
+  beyond the observation grid. The live authoring, framing, Clear-capture, and recording flows
+  use these actors in the same map and share its sky, sunlight, fog, and colored materials.
 - 4,096 observation actors in three recognizable families (World Scout density at the stream max):
     - **UEShedFixtureStationary** — 3,278 slate cubes that stay put (tick disabled in PIE)
     - **UEShedFixtureFlying** — 409 cyan spheres on airborne orbits

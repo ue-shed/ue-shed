@@ -51,7 +51,7 @@ function validManifest(
 		finishedAt: timestamp,
 		...(options.failure === undefined ? undefined : { failure: options.failure }),
 		fixture: {
-			map: "/Game/Fixture/MapReview/L_MapReviewFixture",
+			map: "/Game/Fixture/Cameras/L_CameraLoad",
 			subjectKey: "compound"
 		},
 		flow: "authoring-roundtrip",

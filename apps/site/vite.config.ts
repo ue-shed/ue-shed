@@ -31,7 +31,7 @@ export default defineConfig(({ command }) => ({
 			name: "ue-shed-link-stylex",
 			transformIndexHtml: () => [
 				{
-					attrs: { href: "./stylex.css", rel: "stylesheet" },
+					attrs: { href: "/stylex.css", rel: "stylesheet" },
 					tag: "link",
 					injectTo: "head"
 				}

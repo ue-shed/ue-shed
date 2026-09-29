@@ -138,6 +138,27 @@
 				"Runtime/CoreUObject/Private/StructUtils/InstancedStruct.cpp",
 				"Runtime/CoreUObject/Private/UObject/SavePackage/SavePackageUtilities.cpp"
 			]
+		},
+		{
+			"name": "Core",
+			"root": "engine_source",
+			"headers": [],
+			"sources": [
+				"Runtime/Core/Public/Math/Quat.h",
+				"Runtime/Core/Public/Math/TransformNonVectorized.h",
+				"Runtime/Core/Public/Math/Vector2D.h",
+				"Runtime/Core/Public/Math/Box.h",
+				"Runtime/Core/Public/Math/IntVector.h"
+			]
+		},
+		{
+			"name": "GameplayTags",
+			"root": "engine_source",
+			"headers": [],
+			"sources": [
+				"Runtime/GameplayTags/Classes/GameplayTagContainer.h",
+				"Runtime/GameplayTags/Private/GameplayTagContainer.cpp"
+			]
 		}
 	]
 }

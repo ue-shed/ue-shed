@@ -39,7 +39,9 @@ not "failed parse".
 UE 5.7 inspection also decodes rich keys in CurveFloat/CurveVector/CurveLinearColor, Skeleton raw
 reference transforms and name indices, float/double Sequencer channels, bounded InstancedStruct
 values, and saved package/object annotations. Numeric layouts reuse the source model's common
-native reader. Unknown InstancedStruct payloads preserve type and byte-size evidence. These are
+native reader. Source-checked layouts also decode GameplayTagContainer, Quat, Vector2D, Box, and
+IntVector in properties, containers, and InstancedStruct. Transform keeps Unreal's tagged framing
+with its nested quaternion decoded. Unknown InstancedStruct payloads preserve type and byte-size evidence. These are
 saved values, without curve evaluation or an editing contract. See the
 [source-model coverage matrix](../uasset-source-gen/README.md#expanded-native-coverage).
 

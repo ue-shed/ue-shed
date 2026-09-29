@@ -1,5 +1,6 @@
 #include "UEShedBuildFixtureCommandlet.h"
 #include "UEShedWorldPartitionFixture.h"
+#include "Misc/EngineVersionComparison.h"
 
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Algo/AnyOf.h"
@@ -1108,9 +1109,17 @@ bool GenerateGameTextCorpus()
 	MutableTable->ClearSourceStrings();
 	MutableTable->ClearMetaData();
 	MutableTable->SetNamespace(FTextKey(TEXT("Fixture.StringTable")));
-	MutableTable->SetSourceString(FTextKey(TEXT("PromptContinue")), TEXT("Continue"));
-	MutableTable->SetSourceString(FTextKey(TEXT("StatusSaving")), TEXT("Saving progress…"));
-	MutableTable->SetSourceString(FTextKey(TEXT("PromptHold")), TEXT("Hold to skip"));
+	const auto SetSourceString = [&MutableTable](const TCHAR* Key, const TCHAR* Source)
+	{
+#if UE_VERSION_OLDER_THAN(5, 8, 0)
+		MutableTable->SetSourceString(FTextKey(Key), Source);
+#else
+		MutableTable->SetSourceString(FTextKey(Key), Source, FString());
+#endif
+	};
+	SetSourceString(TEXT("PromptContinue"), TEXT("Continue"));
+	SetSourceString(TEXT("StatusSaving"), TEXT("Saving progress…"));
+	SetSourceString(TEXT("PromptHold"), TEXT("Hold to skip"));
 	MutableTable->SetMetaData(FTextKey(TEXT("PromptContinue")), TEXT("Comment"), TEXT("Continue from the pause menu"));
 	MutableTable->SetMetaData(FTextKey(TEXT("PromptContinue")), TEXT("Context"), TEXT("Menu"));
 	MutableTable->SetMetaData(FTextKey(TEXT("StatusSaving")), TEXT("Comment"), TEXT("Progress: caf\u00e9 / \u4fdd\u5b58"));

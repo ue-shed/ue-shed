@@ -19,13 +19,13 @@
 
 namespace
 {
-constexpr TCHAR Map[] = TEXT("/Game/Fixture/WorldPartition/L_WorldPartitionStress");
+constexpr TCHAR FixtureMapPath[] = TEXT("/Game/Fixture/WorldPartition/L_WorldPartitionStress");
 constexpr int32 Side = 32;
 constexpr int32 MeshCount = Side * Side * 5;
 
 bool Verify()
 {
-	UWorld *World = UEditorLoadingAndSavingUtils::LoadMap(Map);
+	UWorld *World = UEditorLoadingAndSavingUtils::LoadMap(FixtureMapPath);
 	if (!World || !World->GetWorldPartition() || !World->GetWorldPartition()->IsStreamingEnabled())
 		return false;
 	UWorldPartition *Partition = World->GetWorldPartition();
@@ -111,7 +111,7 @@ bool BuildWorldPartitionStressFixture(bool bVerifyOnly)
 		return false;
 	if (bVerifyOnly)
 		return Verify();
-	if (FPackageName::DoesPackageExist(Map))
+	if (FPackageName::DoesPackageExist(FixtureMapPath))
 	{
 		UE_LOG(LogTemp, Display,
 			   TEXT("World Partition stress fixture exists; verifying without overwriting."));
@@ -121,7 +121,7 @@ bool BuildWorldPartitionStressFixture(bool bVerifyOnly)
 	if (!World || !World->GetWorldPartition())
 		return false;
 	World->GetWorldPartition()->SetEnableStreaming(true);
-	if (!UEditorLoadingAndSavingUtils::SaveMap(World, Map))
+	if (!UEditorLoadingAndSavingUtils::SaveMap(World, FixtureMapPath))
 		return false;
 	TArray<UPackage *> Packages;
 	auto *Layers = GEditor->GetEditorSubsystem<UDataLayerEditorSubsystem>();
@@ -204,7 +204,7 @@ bool BuildWorldPartitionStressFixture(bool bVerifyOnly)
 	if (!UEditorLoadingAndSavingUtils::SavePackages(Packages, false))
 		return false;
 	UE_LOG(LogTemp, Display,
-		   TEXT("Generated %s: %d mesh actors across 4 km x 4 km, three Data Layers."), Map,
+		   TEXT("Generated %s: %d mesh actors across 4 km x 4 km, three Data Layers."), FixtureMapPath,
 		   MeshCount);
 	return true;
 }

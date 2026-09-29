@@ -4,6 +4,9 @@ Completed implementation plans. Kept as execution history (intent, STOP conditio
 paths). They are not living guidance — prefer product docs, ADRs, and active plans under
 [`../`](../README.md).
 
+- [Native parser increment](uasset-native-increment.md) — DONE; numeric Sequencer projections,
+  GameplayTagContainer, and common math properties with Unreal evidence and native/WASM parity.
+
 - [UAsset source-model rollout](uasset-source-model-rollout.md) — DONE; default native and WASM
   integration, optimized embedded model, full local gate, and fresh Unreal conformance.
 

@@ -9,8 +9,11 @@
 #include "HAL/FileManager.h"
 #include "LevelSequence.h"
 #include "Misc/FileHelper.h"
+#include "Misc/EngineVersion.h"
 #include "Misc/PackageName.h"
 #include "MovieScene.h"
+#include "Sections/MovieScene3DTransformSection.h"
+#include "Tracks/MovieScene3DTransformTrack.h"
 #include "ReferenceSkeleton.h"
 #include "Sections/MovieSceneFloatSection.h"
 #include "Sections/MovieSceneDoubleSection.h"
@@ -157,6 +160,17 @@ TArray<TSharedPtr<FJsonValue>> Numbers(std::initializer_list<double> Values)
 	for (double Value : Values) Result.Add(MakeShared<FJsonValueNumber>(Value));
 	return Result;
 }
+
+TSharedRef<FJsonObject> TransformEvidence(const FTransform& Value)
+{
+	auto Result = MakeShared<FJsonObject>();
+	const FQuat R = Value.GetRotation();
+	const FVector T = Value.GetTranslation(), S = Value.GetScale3D();
+	Result->SetArrayField(TEXT("rotation"), Numbers({R.X, R.Y, R.Z, R.W}));
+	Result->SetArrayField(TEXT("translation"), Numbers({T.X, T.Y, T.Z}));
+	Result->SetArrayField(TEXT("scale"), Numbers({S.X, S.Y, S.Z}));
+	return Result;
+}
 }
 
 bool GenerateNativeParserFixtures()
@@ -197,8 +211,37 @@ bool GenerateNativeParserFixtures()
 	FVector NativeVector(4.5, -6.25, 8.125);
 	Asset->NativeValue.InitializeAs(TBaseStructure<FVector>::Get(), reinterpret_cast<const uint8*>(&NativeVector));
 	Asset->Values = {Asset->Value, Asset->EmptyValue, Asset->NativeValue};
-	const FQuat OpaqueRotation(0.0, 0.0, 0.5, 0.8660254037844386);
-	Asset->OpaqueValue.InitializeAs(TBaseStructure<FQuat>::Get(), reinterpret_cast<const uint8*>(&OpaqueRotation));
+	Asset->OpaqueValue.InitializeAs<FUEShedOpaqueNative>();
+	Asset->Tags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("Fixture.Action.Move")));
+	Asset->Tags.AddTag(FGameplayTag::RequestGameplayTag(TEXT("Fixture.State.Ready")));
+	Asset->EmptyTags.Reset();
+	Asset->TagContainers = {Asset->Tags, Asset->EmptyTags};
+	Asset->Rotation = FQuat(0.0, 0.0, 0.5, 0.8660254037844386);
+	Asset->Transform = FTransform(Asset->Rotation, FVector(123456789.12345679, -2.5, 3.75), FVector(0.5, 1.5, 2.0));
+	Asset->Position2D = FVector2D(123456789.12345679, -0.125);
+	Asset->Bounds = FBox(FVector(-5.5, -4.25, -3.125), FVector(7.75, 8.5, 9.25));
+	Asset->Grid = FIntVector(-2147483647, 0, 2147483647);
+	Asset->Rotations = {Asset->Rotation, FQuat::Identity};
+	Asset->Transforms = {Asset->Transform, FTransform::Identity};
+	Asset->Positions2D = {Asset->Position2D, FVector2D::ZeroVector};
+	Asset->Boxes = {Asset->Bounds, FBox(ForceInit)};
+	Asset->Grids = {Asset->Grid, FIntVector(1, 2, 3)};
+	Asset->NamedTransforms.Add(TEXT("origin"), Asset->Transform);
+	Asset->MathInstances.Reset();
+	const auto AddInstance = [&]<typename T>(const T& Value)
+	{
+		FInstancedStruct Instance;
+		Instance.InitializeAs(TBaseStructure<T>::Get(), reinterpret_cast<const uint8*>(&Value));
+		Asset->MathInstances.Add(Instance);
+	};
+	AddInstance(Asset->Rotation); AddInstance(Asset->Transform); AddInstance(Asset->Position2D);
+	FInstancedStruct BoxInstance;
+	BoxInstance.InitializeAs(FindObjectChecked<UScriptStruct>(nullptr, TEXT("/Script/CoreUObject.Box")), reinterpret_cast<const uint8*>(&Asset->Bounds));
+	Asset->MathInstances.Add(BoxInstance);
+	AddInstance(Asset->Grid);
+	FInstancedStruct TagInstance;
+	TagInstance.InitializeAs<FGameplayTagContainer>(Asset->Tags);
+	Asset->MathInstances.Add(TagInstance);
 	FMetaData& Metadata = Asset->GetOutermost()->GetMetaData();
 	Metadata.RootMetaDataMap.Add(TEXT("FixturePurpose"), TEXT("Shared native layouts"));
 	Metadata.RootMetaDataMap.Add(TEXT("EmptyRoot"), TEXT(""));
@@ -223,6 +266,18 @@ bool GenerateNativeParserFixtures()
 	DoubleSection->SetRange(TRange<FFrameNumber>(-12, 101));
 	DoubleTrack->AddSection(*DoubleSection);
 	DoubleSection->GetChannel() = Asset->DoubleChannel;
+	UMovieScene3DTransformTrack* TransformTrack = Scene->AddTrack<UMovieScene3DTransformTrack>();
+	TransformTrack->SetPropertyNameAndPath(TEXT("Transform"), TEXT("Transform"));
+	auto* TransformSection = CastChecked<UMovieScene3DTransformSection>(TransformTrack->CreateNewSection());
+	TransformSection->SetRange(TRange<FFrameNumber>(-12, 101));
+	TransformTrack->AddSection(*TransformSection);
+	auto TransformChannels = TransformSection->GetChannelProxy().GetChannels<FMovieSceneDoubleChannel>();
+	for (int32 Index = 0; Index < TransformChannels.Num(); ++Index)
+	{
+		FillChannel(*TransformChannels[Index]);
+		TransformChannels[Index]->SetDefault(Index + 0.25);
+	}
+	TransformSection->SetMask(EMovieSceneTransformChannel::Translation | EMovieSceneTransformChannel::Rotation);
 	return Save(Sequence);
 }
 
@@ -236,7 +291,7 @@ bool WriteNativeParserEvidence(const FString& OutputDirectory)
 	const auto* Sequence = LoadAsset<ULevelSequence>(TEXT("LS_Numeric"));
 	if (!Float || !Vector || !Color || !Skeleton || !Asset || !Sequence) return false;
 	auto Result = MakeShared<FJsonObject>();
-	Result->SetStringField(TEXT("producer"), TEXT("Unreal 5.7 loaded asset APIs"));
+	Result->SetStringField(TEXT("producer"), FString::Printf(TEXT("Unreal %s loaded asset APIs"), *FEngineVersion::Current().ToString()));
 	auto Curves = MakeShared<FJsonObject>();
 	Curves->SetObjectField(TEXT("float"), CurveEvidence(Float->FloatCurve));
 	TArray<TSharedPtr<FJsonValue>> VectorCurves, ColorCurves;
@@ -277,6 +332,21 @@ bool WriteNativeParserEvidence(const FString& OutputDirectory)
 	const FVector& NativeVector = *reinterpret_cast<const FVector*>(Asset->NativeValue.GetMemory());
 	Result->SetArrayField(TEXT("native_instance"), Numbers({NativeVector.X, NativeVector.Y, NativeVector.Z}));
 	Result->SetBoolField(TEXT("empty_instance"), !Asset->EmptyValue.IsValid());
+	auto Math = MakeShared<FJsonObject>();
+	Math->SetArrayField(TEXT("rotation"), Numbers({Asset->Rotation.X, Asset->Rotation.Y, Asset->Rotation.Z, Asset->Rotation.W}));
+	Math->SetObjectField(TEXT("transform"), TransformEvidence(Asset->Transform));
+	Math->SetArrayField(TEXT("position2d"), Numbers({Asset->Position2D.X, Asset->Position2D.Y}));
+	Math->SetArrayField(TEXT("box_min"), Numbers({Asset->Bounds.Min.X, Asset->Bounds.Min.Y, Asset->Bounds.Min.Z}));
+	Math->SetArrayField(TEXT("box_max"), Numbers({Asset->Bounds.Max.X, Asset->Bounds.Max.Y, Asset->Bounds.Max.Z}));
+	Math->SetBoolField(TEXT("box_valid"), Asset->Bounds.IsValid != 0);
+	Math->SetArrayField(TEXT("grid"), Numbers({double(Asset->Grid.X), double(Asset->Grid.Y), double(Asset->Grid.Z)}));
+	Result->SetObjectField(TEXT("math"), Math);
+	TArray<FString> TagNames;
+	for (const FGameplayTag& Tag : Asset->Tags) TagNames.Add(Tag.ToString());
+	TagNames.Sort();
+	TArray<TSharedPtr<FJsonValue>> Tags;
+	for (const FString& Tag : TagNames) Tags.Add(MakeShared<FJsonValueString>(Tag));
+	Result->SetArrayField(TEXT("tags"), Tags);
 	auto Metadata = MakeShared<FJsonObject>(), Objects = MakeShared<FJsonObject>(), Package = MakeShared<FJsonObject>();
 	const FMetaData& Meta = Asset->GetOutermost()->GetMetaData();
 	for (const auto& Pair : Meta.RootMetaDataMap) Package->SetStringField(Pair.Key.ToString(), Pair.Value);
@@ -289,15 +359,23 @@ bool WriteNativeParserEvidence(const FString& OutputDirectory)
 	Metadata->SetObjectField(TEXT("root"), Package); Metadata->SetObjectField(TEXT("objects"), Objects);
 	Result->SetObjectField(TEXT("metadata"), Metadata);
 	TArray<TSharedPtr<FJsonValue>> SequenceChannels;
+	TArray<TSharedPtr<FJsonValue>> TransformChannels;
 	for (UMovieSceneTrack* Track : Sequence->GetMovieScene()->GetTracks())
 	{
 		for (UMovieSceneSection* Section : Track->GetAllSections())
 		{
 			if (auto* S = Cast<UMovieSceneFloatSection>(Section)) SequenceChannels.Add(MakeShared<FJsonValueObject>(ChannelEvidence(S->GetChannel())));
 			if (auto* S = Cast<UMovieSceneDoubleSection>(Section)) SequenceChannels.Add(MakeShared<FJsonValueObject>(ChannelEvidence(S->GetChannel())));
+			if (auto* S = Cast<UMovieScene3DTransformSection>(Section))
+			{
+				for (const auto* Channel : S->GetChannelProxy().GetChannels<FMovieSceneDoubleChannel>())
+					TransformChannels.Add(MakeShared<FJsonValueObject>(ChannelEvidence(*Channel)));
+				Result->SetNumberField(TEXT("transform_mask"), uint32(S->GetMask().GetChannels()));
+			}
 		}
 	}
 	Result->SetArrayField(TEXT("sequence_channels"), SequenceChannels);
+	Result->SetArrayField(TEXT("transform_channels"), TransformChannels);
 	FString Json;
 	const auto Writer = TJsonWriterFactory<>::Create(&Json);
 	if (!FJsonSerializer::Serialize(Result, Writer)) return false;

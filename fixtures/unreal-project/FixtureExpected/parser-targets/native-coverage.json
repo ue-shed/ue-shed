@@ -458,6 +458,20 @@
 	},
 	"native_instance": [4.5, -6.25, 8.125],
 	"empty_instance": true,
+	"math": {
+		"rotation": [0, 0, 0.5, 0.8660254037844386],
+		"transform": {
+			"rotation": [0, 0, 0.5, 0.8660254037844386],
+			"translation": [123456789.12345679, -2.5, 3.75],
+			"scale": [0.5, 1.5, 2]
+		},
+		"position2d": [123456789.12345679, -0.125],
+		"box_min": [-5.5, -4.25, -3.125],
+		"box_max": [7.75, 8.5, 9.25],
+		"box_valid": true,
+		"grid": [-2147483647, 0, 2147483647]
+	},
+	"tags": ["Fixture.Action.Move", "Fixture.State.Ready"],
 	"metadata": {
 		"root": {
 			"FixturePurpose": "Shared native layouts",
@@ -471,6 +485,7 @@
 			}
 		}
 	},
+	"transform_mask": 63,
 	"sequence_channels": [
 		{
 			"default": 0.125,
@@ -564,6 +579,386 @@
 					"leave": 0,
 					"arrive_weight": 0,
 					"leave_weight": 0
+				}
+			]
+		}
+	],
+	"transform_channels": [
+		{
+			"default": 0.25,
+			"pre": 1,
+			"post": 2,
+			"numerator": 24000,
+			"denominator": 1001,
+			"keys": [
+				{
+					"frame": -12,
+					"value": 2.5,
+					"interp": 1,
+					"tangent_mode": 0,
+					"weight_mode": 0,
+					"arrive": 0,
+					"leave": 0,
+					"arrive_weight": 0,
+					"leave_weight": 0
+				},
+				{
+					"frame": 18,
+					"value": -4.25,
+					"interp": 0,
+					"tangent_mode": 0,
+					"weight_mode": 0,
+					"arrive": -0.22499999403953552,
+					"leave": 0.55729168653488159,
+					"arrive_weight": 0,
+					"leave_weight": 0
+				},
+				{
+					"frame": 42,
+					"value": 9.125,
+					"interp": 2,
+					"tangent_mode": 2,
+					"weight_mode": 3,
+					"arrive": 1.5,
+					"leave": -2.25,
+					"arrive_weight": 0.125,
+					"leave_weight": 0.875
+				}
+			]
+		},
+		{
+			"default": 1.25,
+			"pre": 1,
+			"post": 2,
+			"numerator": 24000,
+			"denominator": 1001,
+			"keys": [
+				{
+					"frame": -12,
+					"value": 2.5,
+					"interp": 1,
+					"tangent_mode": 0,
+					"weight_mode": 0,
+					"arrive": 0,
+					"leave": 0,
+					"arrive_weight": 0,
+					"leave_weight": 0
+				},
+				{
+					"frame": 18,
+					"value": -4.25,
+					"interp": 0,
+					"tangent_mode": 0,
+					"weight_mode": 0,
+					"arrive": -0.22499999403953552,
+					"leave": 0.55729168653488159,
+					"arrive_weight": 0,
+					"leave_weight": 0
+				},
+				{
+					"frame": 42,
+					"value": 9.125,
+					"interp": 2,
+					"tangent_mode": 2,
+					"weight_mode": 3,
+					"arrive": 1.5,
+					"leave": -2.25,
+					"arrive_weight": 0.125,
+					"leave_weight": 0.875
+				}
+			]
+		},
+		{
+			"default": 2.25,
+			"pre": 1,
+			"post": 2,
+			"numerator": 24000,
+			"denominator": 1001,
+			"keys": [
+				{
+					"frame": -12,
+					"value": 2.5,
+					"interp": 1,
+					"tangent_mode": 0,
+					"weight_mode": 0,
+					"arrive": 0,
+					"leave": 0,
+					"arrive_weight": 0,
+					"leave_weight": 0
+				},
+				{
+					"frame": 18,
+					"value": -4.25,
+					"interp": 0,
+					"tangent_mode": 0,
+					"weight_mode": 0,
+					"arrive": -0.22499999403953552,
+					"leave": 0.55729168653488159,
+					"arrive_weight": 0,
+					"leave_weight": 0
+				},
+				{
+					"frame": 42,
+					"value": 9.125,
+					"interp": 2,
+					"tangent_mode": 2,
+					"weight_mode": 3,
+					"arrive": 1.5,
+					"leave": -2.25,
+					"arrive_weight": 0.125,
+					"leave_weight": 0.875
+				}
+			]
+		},
+		{
+			"default": 3.25,
+			"pre": 1,
+			"post": 2,
+			"numerator": 24000,
+			"denominator": 1001,
+			"keys": [
+				{
+					"frame": -12,
+					"value": 2.5,
+					"interp": 1,
+					"tangent_mode": 0,
+					"weight_mode": 0,
+					"arrive": 0,
+					"leave": 0,
+					"arrive_weight": 0,
+					"leave_weight": 0
+				},
+				{
+					"frame": 18,
+					"value": -4.25,
+					"interp": 0,
+					"tangent_mode": 0,
+					"weight_mode": 0,
+					"arrive": -0.22499999403953552,
+					"leave": 0.55729168653488159,
+					"arrive_weight": 0,
+					"leave_weight": 0
+				},
+				{
+					"frame": 42,
+					"value": 9.125,
+					"interp": 2,
+					"tangent_mode": 2,
+					"weight_mode": 3,
+					"arrive": 1.5,
+					"leave": -2.25,
+					"arrive_weight": 0.125,
+					"leave_weight": 0.875
+				}
+			]
+		},
+		{
+			"default": 4.25,
+			"pre": 1,
+			"post": 2,
+			"numerator": 24000,
+			"denominator": 1001,
+			"keys": [
+				{
+					"frame": -12,
+					"value": 2.5,
+					"interp": 1,
+					"tangent_mode": 0,
+					"weight_mode": 0,
+					"arrive": 0,
+					"leave": 0,
+					"arrive_weight": 0,
+					"leave_weight": 0
+				},
+				{
+					"frame": 18,
+					"value": -4.25,
+					"interp": 0,
+					"tangent_mode": 0,
+					"weight_mode": 0,
+					"arrive": -0.22499999403953552,
+					"leave": 0.55729168653488159,
+					"arrive_weight": 0,
+					"leave_weight": 0
+				},
+				{
+					"frame": 42,
+					"value": 9.125,
+					"interp": 2,
+					"tangent_mode": 2,
+					"weight_mode": 3,
+					"arrive": 1.5,
+					"leave": -2.25,
+					"arrive_weight": 0.125,
+					"leave_weight": 0.875
+				}
+			]
+		},
+		{
+			"default": 5.25,
+			"pre": 1,
+			"post": 2,
+			"numerator": 24000,
+			"denominator": 1001,
+			"keys": [
+				{
+					"frame": -12,
+					"value": 2.5,
+					"interp": 1,
+					"tangent_mode": 0,
+					"weight_mode": 0,
+					"arrive": 0,
+					"leave": 0,
+					"arrive_weight": 0,
+					"leave_weight": 0
+				},
+				{
+					"frame": 18,
+					"value": -4.25,
+					"interp": 0,
+					"tangent_mode": 0,
+					"weight_mode": 0,
+					"arrive": -0.22499999403953552,
+					"leave": 0.55729168653488159,
+					"arrive_weight": 0,
+					"leave_weight": 0
+				},
+				{
+					"frame": 42,
+					"value": 9.125,
+					"interp": 2,
+					"tangent_mode": 2,
+					"weight_mode": 3,
+					"arrive": 1.5,
+					"leave": -2.25,
+					"arrive_weight": 0.125,
+					"leave_weight": 0.875
+				}
+			]
+		},
+		{
+			"default": 6.25,
+			"pre": 1,
+			"post": 2,
+			"numerator": 24000,
+			"denominator": 1001,
+			"keys": [
+				{
+					"frame": -12,
+					"value": 2.5,
+					"interp": 1,
+					"tangent_mode": 0,
+					"weight_mode": 0,
+					"arrive": 0,
+					"leave": 0,
+					"arrive_weight": 0,
+					"leave_weight": 0
+				},
+				{
+					"frame": 18,
+					"value": -4.25,
+					"interp": 0,
+					"tangent_mode": 0,
+					"weight_mode": 0,
+					"arrive": -0.22499999403953552,
+					"leave": 0.55729168653488159,
+					"arrive_weight": 0,
+					"leave_weight": 0
+				},
+				{
+					"frame": 42,
+					"value": 9.125,
+					"interp": 2,
+					"tangent_mode": 2,
+					"weight_mode": 3,
+					"arrive": 1.5,
+					"leave": -2.25,
+					"arrive_weight": 0.125,
+					"leave_weight": 0.875
+				}
+			]
+		},
+		{
+			"default": 7.25,
+			"pre": 1,
+			"post": 2,
+			"numerator": 24000,
+			"denominator": 1001,
+			"keys": [
+				{
+					"frame": -12,
+					"value": 2.5,
+					"interp": 1,
+					"tangent_mode": 0,
+					"weight_mode": 0,
+					"arrive": 0,
+					"leave": 0,
+					"arrive_weight": 0,
+					"leave_weight": 0
+				},
+				{
+					"frame": 18,
+					"value": -4.25,
+					"interp": 0,
+					"tangent_mode": 0,
+					"weight_mode": 0,
+					"arrive": -0.22499999403953552,
+					"leave": 0.55729168653488159,
+					"arrive_weight": 0,
+					"leave_weight": 0
+				},
+				{
+					"frame": 42,
+					"value": 9.125,
+					"interp": 2,
+					"tangent_mode": 2,
+					"weight_mode": 3,
+					"arrive": 1.5,
+					"leave": -2.25,
+					"arrive_weight": 0.125,
+					"leave_weight": 0.875
+				}
+			]
+		},
+		{
+			"default": 8.25,
+			"pre": 1,
+			"post": 2,
+			"numerator": 24000,
+			"denominator": 1001,
+			"keys": [
+				{
+					"frame": -12,
+					"value": 2.5,
+					"interp": 1,
+					"tangent_mode": 0,
+					"weight_mode": 0,
+					"arrive": 0,
+					"leave": 0,
+					"arrive_weight": 0,
+					"leave_weight": 0
+				},
+				{
+					"frame": 18,
+					"value": -4.25,
+					"interp": 0,
+					"tangent_mode": 0,
+					"weight_mode": 0,
+					"arrive": -0.22499999403953552,
+					"leave": 0.55729168653488159,
+					"arrive_weight": 0,
+					"leave_weight": 0
+				},
+				{
+					"frame": 42,
+					"value": 9.125,
+					"interp": 2,
+					"tangent_mode": 2,
+					"weight_mode": 3,
+					"arrive": 1.5,
+					"leave": -2.25,
+					"arrive_weight": 0.125,
+					"leave_weight": 0.875
 				}
 			]
 		}

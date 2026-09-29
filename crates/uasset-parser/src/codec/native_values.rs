@@ -118,6 +118,83 @@ pub(super) fn known_struct(
     }
 }
 
+/// Source-generated property recipes use package-qualified identities, including when nested
+/// in containers or InstancedStruct. A project type sharing an engine short name cannot match.
+pub(super) fn property_type_path(module: &str, name: &str) -> Option<&'static str> {
+    // Build the borrowed identity index once; do not allocate a joined path for every struct
+    // in large tables or maps, including the many types without a native recipe.
+    type PropertyTypes = std::collections::BTreeMap<(&'static str, &'static str), &'static str>;
+    static TYPES: once_cell::sync::Lazy<PropertyTypes> = once_cell::sync::Lazy::new(|| {
+        embedded_source_model()
+            .native_layouts
+            .keys()
+            .filter_map(|path| {
+                path.split_once('.')
+                    .map(|identity| (identity, path.as_str()))
+            })
+            .collect()
+    });
+    TYPES.get(&(module, name)).copied()
+}
+
+pub(super) fn generated_struct(
+    type_path: &str,
+    reader: &mut Reader<'_>,
+    package: &Package,
+    path: &str,
+) -> Result<Option<PropertyValue>, PropertyError> {
+    let Some(layout) = embedded_source_model().native_layout(type_path) else {
+        return Ok(None);
+    };
+    if package.summary.versions.ue5 != crate::version::VersionContext::LATEST_SUPPORTED_UE5 {
+        return Err(error(
+            reader,
+            path,
+            PropertyErrorKind::UnsupportedVersion,
+            "generated native properties require the verified UE 5.7 package revision",
+        ));
+    }
+    let value =
+        decode_native(reader, layout, path)
+            .map(property)
+            .map_err(|failure| match failure {
+                NativeError::Archive(failure) => PropertyError::from(failure),
+                NativeError::Layout(message) => error(
+                    reader,
+                    path,
+                    PropertyErrorKind::UnsupportedCapability,
+                    message,
+                ),
+            })?;
+    if type_path == "/Script/CoreUObject.Box"
+        && !matches!(field(&value, "IsValid"), Some(PropertyValue::UInt(0 | 1)))
+    {
+        return Err(error(
+            reader,
+            path,
+            PropertyErrorKind::MalformedData,
+            "box validity must be 0 or 1",
+        ));
+    }
+    if type_path == "/Script/GameplayTags.GameplayTagContainer" {
+        let Some(PropertyValue::Array(tags)) = field(&value, "GameplayTags") else {
+            unreachable!()
+        };
+        for tag in tags {
+            if !matches!(tag, PropertyValue::Name(name) if package.resolve_name_cow(*name).is_some())
+            {
+                return Err(error(
+                    reader,
+                    path,
+                    PropertyErrorKind::MalformedData,
+                    "gameplay tag has an invalid name reference",
+                ));
+            }
+        }
+    }
+    Ok(Some(value))
+}
+
 fn custom_version(package: &Package, words: [u32; 4]) -> Option<i32> {
     let key = crate::archive::Guid {
         a: words[0],
@@ -247,17 +324,22 @@ fn instanced(
             )
         })?;
         let name = type_path.rsplit('.').next().unwrap_or(type_path);
-        let decoded = match type_path {
-            "/Script/CoreUObject.Vector" => Some(PropertyValue::Vector(decode_vector_value(
-                &mut inner, path,
-            )?)),
-            "/Script/CoreUObject.IntPoint" => Some(PropertyValue::IntPoint(
-                decode_int_point_value(&mut inner, path)?,
-            )),
-            "/Script/CoreUObject.Guid" => {
-                Some(PropertyValue::Guid(decode_guid_value(&mut inner, path)?))
+        let generated = generated_struct(type_path, &mut inner, package, path)?;
+        let decoded = if generated.is_some() {
+            generated
+        } else {
+            match type_path {
+                "/Script/CoreUObject.Vector" => Some(PropertyValue::Vector(decode_vector_value(
+                    &mut inner, path,
+                )?)),
+                "/Script/CoreUObject.IntPoint" => Some(PropertyValue::IntPoint(
+                    decode_int_point_value(&mut inner, path)?,
+                )),
+                "/Script/CoreUObject.Guid" => {
+                    Some(PropertyValue::Guid(decode_guid_value(&mut inner, path)?))
+                }
+                _ => known_struct(source, name, &mut inner, package, path, depth + 1)?,
             }
-            _ => known_struct(source, name, &mut inner, package, path, depth + 1)?,
         };
         let decoded = if let Some(value) = decoded {
             value
@@ -432,7 +514,7 @@ mod tests {
         else {
             panic!()
         };
-        assert_eq!(payload.len(), 32);
+        assert_eq!(payload.len(), 8);
         assert!(matches!(*value, PropertyValue::Raw { .. }));
         assert_eq!(
             instanced(
@@ -481,6 +563,89 @@ mod tests {
         assert_eq!(
             field(&value, "LeaveTangentWeight"),
             Some(&PropertyValue::Float(0.75))
+        );
+    }
+
+    #[test]
+    fn generated_properties_reject_truncation_bad_counts_names_and_versions() {
+        let package = Package::parse(FIXTURE).unwrap();
+        for (name, size) in [
+            ("Quat", 32),
+            ("Vector2D", 16),
+            ("Box", 49),
+            ("IntVector", 12),
+        ] {
+            let type_path = format!("/Script/CoreUObject.{name}");
+            let bytes = vec![0; size];
+            for end in 0..size {
+                assert!(
+                    generated_struct(
+                        &type_path,
+                        &mut Reader::new(&bytes[..end]),
+                        &package,
+                        "test"
+                    )
+                    .is_err(),
+                    "{name}: {end}"
+                );
+            }
+            assert!(
+                generated_struct(&type_path, &mut Reader::new(&bytes), &package, "test")
+                    .unwrap()
+                    .is_some()
+            );
+            assert!(
+                generated_struct(
+                    &format!("/Script/Project.{name}"),
+                    &mut Reader::new(&bytes),
+                    &package,
+                    "test"
+                )
+                .unwrap()
+                .is_none()
+            );
+        }
+        let tags = "/Script/GameplayTags.GameplayTagContainer";
+        for count in [-1_i32, i32::MAX, 1] {
+            assert!(
+                generated_struct(
+                    tags,
+                    &mut Reader::new(&count.to_le_bytes()),
+                    &package,
+                    "test"
+                )
+                .is_err()
+            );
+        }
+        let mut bad_name = 1_i32.to_le_bytes().to_vec();
+        bad_name.extend_from_slice(&i32::MAX.to_le_bytes());
+        bad_name.extend_from_slice(&0_i32.to_le_bytes());
+        assert!(generated_struct(tags, &mut Reader::new(&bad_name), &package, "test").is_err());
+        let empty = generated_struct(tags, &mut Reader::new(&[0; 4]), &package, "test")
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            field(&empty, "GameplayTags"),
+            Some(&PropertyValue::Array(Vec::new()))
+        );
+        let mut bad_box = vec![0; 49];
+        bad_box[48] = 2;
+        assert!(
+            generated_struct(
+                "/Script/CoreUObject.Box",
+                &mut Reader::new(&bad_box),
+                &package,
+                "test"
+            )
+            .is_err()
+        );
+        let mut older = package.clone();
+        older.summary.versions.ue5 -= 1;
+        assert_eq!(
+            generated_struct(tags, &mut Reader::new(&[0; 4]), &older, "test")
+                .unwrap_err()
+                .kind(),
+            PropertyErrorKind::UnsupportedVersion
         );
     }
 }

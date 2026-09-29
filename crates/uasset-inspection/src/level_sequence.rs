@@ -5,6 +5,8 @@
 //! object binding.
 
 use serde::Serialize;
+mod numeric;
+pub use numeric::{SequenceNumericChannel, SequenceNumericKey};
 use uasset_parser::asset::{DecodedAsset, DecodedUObject};
 use uasset_parser::package::{Package, PackageIndex};
 use uasset_parser::property::{
@@ -130,6 +132,8 @@ pub enum SequenceTrackContent {
     TimedText,
     SubSequence,
     CinematicShot,
+    Numeric,
+    Transform,
     StructureOnly,
 }
 
@@ -141,6 +145,7 @@ pub struct SequenceSection {
     pub sequence_path: Option<String>,
     pub shot_display_name: Option<String>,
     pub text_keys: Vec<SequenceTextKey>,
+    pub numeric_channels: Vec<SequenceNumericChannel>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -171,12 +176,15 @@ pub enum SequenceCoverageGapReason {
     WrongValueKind,
     MismatchedChannelLengths,
     UnsupportedTrackContent,
+    UnsupportedSectionContent,
+    MissingChannel,
+    MissingChannelMask,
 }
 
 /// Projects the first saved `ULevelSequence` export in a package.
 ///
-/// All tracks and sections remain visible. Text tracks receive timed localized values; other track
-/// classes are retained as structural inventory and produce an explicit coverage gap.
+/// All tracks and sections remain visible. Supported sections expose text, numeric channels, or
+/// nested-sequence references; other classes remain structural inventory with explicit gaps.
 #[must_use]
 pub fn project_level_sequence(
     package: &Package,
@@ -186,7 +194,7 @@ pub fn project_level_sequence(
         objects(assets).find(|object| object.class_path.as_str() == LEVEL_SEQUENCE_CLASS)?;
     let (references, reference_coverage_gaps) = inventory_references(package, assets);
     let mut projection = LevelSequenceProjection {
-        schema_version: 3,
+        schema_version: 4,
         object_path: sequence.object_path.to_string(),
         movie_scene_path: None,
         tick_resolution: None,
@@ -597,6 +605,9 @@ fn project_track(
         TEXT_TRACK_CLASS => SequenceTrackContent::TimedText,
         SUB_SEQUENCE_TRACK_CLASS => SequenceTrackContent::SubSequence,
         CINEMATIC_SHOT_TRACK_CLASS => SequenceTrackContent::CinematicShot,
+        "/Script/MovieSceneTracks.MovieSceneFloatTrack"
+        | "/Script/MovieSceneTracks.MovieSceneDoubleTrack" => SequenceTrackContent::Numeric,
+        "/Script/MovieSceneTracks.MovieScene3DTransformTrack" => SequenceTrackContent::Transform,
         _ => SequenceTrackContent::StructureOnly,
     };
     if content == SequenceTrackContent::StructureOnly {
@@ -662,6 +673,14 @@ fn project_section(
     } else {
         None
     };
+    let numeric_channels = if matches!(
+        content,
+        SequenceTrackContent::Numeric | SequenceTrackContent::Transform
+    ) {
+        numeric::project_channels(package, section, gaps)
+    } else {
+        Vec::new()
+    };
     SequenceSection {
         object_path: section.object_path.to_string(),
         class_path: section.class_path.to_string(),
@@ -669,6 +688,7 @@ fn project_section(
         sequence_path,
         shot_display_name,
         text_keys,
+        numeric_channels,
     }
 }
 

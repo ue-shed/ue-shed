@@ -1994,6 +1994,152 @@
 		}
 	],
 	"native_layouts": {
+		"/Script/CoreUObject.Box": {
+			"kind": "record",
+			"fields": [
+				{
+					"name": "Min",
+					"layout": {
+						"kind": "record",
+						"fields": [
+							{
+								"name": "X",
+								"layout": {
+									"kind": "double"
+								}
+							},
+							{
+								"name": "Y",
+								"layout": {
+									"kind": "double"
+								}
+							},
+							{
+								"name": "Z",
+								"layout": {
+									"kind": "double"
+								}
+							}
+						]
+					}
+				},
+				{
+					"name": "Max",
+					"layout": {
+						"kind": "record",
+						"fields": [
+							{
+								"name": "X",
+								"layout": {
+									"kind": "double"
+								}
+							},
+							{
+								"name": "Y",
+								"layout": {
+									"kind": "double"
+								}
+							},
+							{
+								"name": "Z",
+								"layout": {
+									"kind": "double"
+								}
+							}
+						]
+					}
+				},
+				{
+					"name": "IsValid",
+					"layout": {
+						"kind": "u_int8"
+					}
+				}
+			]
+		},
+		"/Script/CoreUObject.IntVector": {
+			"kind": "record",
+			"fields": [
+				{
+					"name": "X",
+					"layout": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "Y",
+					"layout": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "Z",
+					"layout": {
+						"kind": "int32"
+					}
+				}
+			]
+		},
+		"/Script/CoreUObject.Quat": {
+			"kind": "record",
+			"fields": [
+				{
+					"name": "X",
+					"layout": {
+						"kind": "double"
+					}
+				},
+				{
+					"name": "Y",
+					"layout": {
+						"kind": "double"
+					}
+				},
+				{
+					"name": "Z",
+					"layout": {
+						"kind": "double"
+					}
+				},
+				{
+					"name": "W",
+					"layout": {
+						"kind": "double"
+					}
+				}
+			]
+		},
+		"/Script/CoreUObject.Vector2D": {
+			"kind": "record",
+			"fields": [
+				{
+					"name": "X",
+					"layout": {
+						"kind": "double"
+					}
+				},
+				{
+					"name": "Y",
+					"layout": {
+						"kind": "double"
+					}
+				}
+			]
+		},
+		"/Script/GameplayTags.GameplayTagContainer": {
+			"kind": "record",
+			"fields": [
+				{
+					"name": "GameplayTags",
+					"layout": {
+						"kind": "array",
+						"element": {
+							"kind": "name"
+						}
+					}
+				}
+			]
+		},
 		"FInstancedStructHeader": {
 			"kind": "record",
 			"fields": [
@@ -2535,6 +2681,95 @@
 								"kind": "string"
 							}
 						}
+					}
+				}
+			]
+		},
+		"FTransform": {
+			"kind": "record",
+			"fields": [
+				{
+					"name": "Rotation",
+					"layout": {
+						"kind": "record",
+						"fields": [
+							{
+								"name": "X",
+								"layout": {
+									"kind": "double"
+								}
+							},
+							{
+								"name": "Y",
+								"layout": {
+									"kind": "double"
+								}
+							},
+							{
+								"name": "Z",
+								"layout": {
+									"kind": "double"
+								}
+							},
+							{
+								"name": "W",
+								"layout": {
+									"kind": "double"
+								}
+							}
+						]
+					}
+				},
+				{
+					"name": "Translation",
+					"layout": {
+						"kind": "record",
+						"fields": [
+							{
+								"name": "X",
+								"layout": {
+									"kind": "double"
+								}
+							},
+							{
+								"name": "Y",
+								"layout": {
+									"kind": "double"
+								}
+							},
+							{
+								"name": "Z",
+								"layout": {
+									"kind": "double"
+								}
+							}
+						]
+					}
+				},
+				{
+					"name": "Scale3D",
+					"layout": {
+						"kind": "record",
+						"fields": [
+							{
+								"name": "X",
+								"layout": {
+									"kind": "double"
+								}
+							},
+							{
+								"name": "Y",
+								"layout": {
+									"kind": "double"
+								}
+							},
+							{
+								"name": "Z",
+								"layout": {
+									"kind": "double"
+								}
+							}
+						]
 					}
 				}
 			]

@@ -12,6 +12,7 @@ public class UEShedFixture : ModuleRules
 				"Core",
 				"CoreUObject",
 				"Engine",
+				"GameplayTags",
 				"EnhancedInput",
 				"Json",
 				"MovieScene"

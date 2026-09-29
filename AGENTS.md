@@ -37,9 +37,15 @@ while their hosted flows are being redesigned. Individual commands include `type
 
 ## Unreal Engine reference
 
-A local engine install exists, but its location is not a given — discover it (for example, the
-`HKLM:\SOFTWARE\EpicGames\Unreal Engine` registry keys) or ask. On this machine, the default
-location is `D:\ue5\UE_5.7`; verify Unreal APIs against its `Engine\Source` instead of guessing.
+Always run relevant Unreal checks on both **UE 5.7 and UE 5.8** for parser, codegen, fixture, and
+Unreal integration changes. A pass on only one version is incomplete verification. Report each
+version's result and any unavailable check explicitly. For parser/codegen work, run
+`pnpm test:uasset-engine-matrix` in addition to the portable checks; see
+[`docs/engineering/testing.md`](docs/engineering/testing.md).
+
+Discover local engine installations (for example, the `HKLM:\SOFTWARE\EpicGames\Unreal Engine`
+registry keys) or use explicit configuration. Verify Unreal APIs against each engine's
+`Engine\Source` instead of guessing.
 
 This is a development reference, not a product default. Runtime code, fixtures, and tests must use
 engine discovery or explicit configuration rather than depend on any machine path.

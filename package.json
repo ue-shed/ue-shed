@@ -78,6 +78,7 @@
 		"test:unreal-review": "node scripts/test-unreal-review.ts",
 		"test:flow:map-review": "node scripts/test-map-review-flow.ts",
 		"test:uasset-conformance": "node scripts/test-uasset-conformance.ts",
+		"test:uasset-engine-matrix": "node scripts/test-uasset-engine-matrix.ts",
 		"test:uasset-wasm": "pnpm run uasset:build:wasm && node scripts/test-uasset-wasm.ts",
 		"test:uasset-wasm:browser": "pnpm run uasset:build:wasm && node scripts/test-uasset-wasm-browser.ts",
 		"test:uasset-wasm:package": "node scripts/test-uasset-wasm-package.ts",

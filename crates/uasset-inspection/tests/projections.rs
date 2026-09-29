@@ -68,7 +68,7 @@ fn level_sequence_projection_joins_timed_localized_text() {
     ));
     let projection = project_level_sequence(&package, &assets).expect("LevelSequence projection");
 
-    assert_eq!(projection.schema_version, 3);
+    assert_eq!(projection.schema_version, 4);
     assert_eq!(
         projection.tick_resolution.expect("tick rate").numerator,
         24_000
@@ -133,7 +133,7 @@ fn level_sequence_projection_exposes_subsequences_and_cinematic_shots() {
     ));
     let projection = project_level_sequence(&package, &assets).expect("LevelSequence projection");
 
-    assert_eq!(projection.schema_version, 3);
+    assert_eq!(projection.schema_version, 4);
     assert_eq!(projection.root_tracks.len(), 2);
     let sub_sequence = projection
         .root_tracks

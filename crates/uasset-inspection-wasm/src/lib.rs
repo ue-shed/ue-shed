@@ -483,6 +483,14 @@ fn level_sequence_item_count(sequence: &LevelSequenceProjection) -> usize {
                             .map(|section| {
                                 1_usize
                                     .saturating_add(section.text_keys.len())
+                                    .saturating_add(section.numeric_channels.iter().fold(
+                                        0_usize,
+                                        |count, channel| {
+                                            count
+                                                .saturating_add(1)
+                                                .saturating_add(channel.keys.len())
+                                        },
+                                    ))
                                     .saturating_add(usize::from(section.sequence_path.is_some()))
                             })
                             .sum::<usize>(),

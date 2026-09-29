@@ -69,6 +69,12 @@ records the required companion files and the passing tests against current main'
 
 ## Generate from UE 5.7
 
+Always validate parser/codegen changes against both UE 5.7 and UE 5.8 with
+`pnpm test:uasset-engine-matrix` as described in the
+[testing guide](../../docs/engineering/testing.md#unreal-gate-reporting). The embedded model retains
+the 5.7 baseline; the matrix checks native recipe equivalence against 5.8 source and exercises newly
+saved native fixtures against each engine's independent API evidence.
+
 The engine-only model is embedded by the portable parser and deliberately excludes fixture or
 project declarations:
 
@@ -137,8 +143,9 @@ reordered enum record test establishes that generated layout order drives the re
 
 The expanded recipes also cover Engine rich curve keys and reference poses, MovieScene numeric
 channels, and CoreUObject InstancedStruct framing and package annotations. These are source-checked
-recipes for UE 5.7, not automatic interpretation of arbitrary C++. General source change detection,
-preprocessor conditions, and additional engine versions remain future work.
+recipes based on UE 5.7, not automatic interpretation of arbitrary C++. The engine matrix checks
+their native layout equivalence against UE 5.8 source. General source change detection, preprocessor
+conditions, and version-specific layout selection remain future work.
 
 For a focused fixture refresh, build `UEShedFixtureEditor` and run `UnrealEditor-Cmd` with the fixture
 project and `-run=UEShedBuildFixture -TextOnly -unattended -nop4 -NullRHI`. Then run a **new process**
@@ -151,15 +158,17 @@ Unreal source is read locally and is never copied into the product or generated 
 
 ## Expanded native coverage
 
-Six fixtures in `Content/Fixture/ParserNative` cover the five additions:
+Six fixtures in `Content/Fixture/ParserNative` cover these capabilities:
 
-| Capability                                  | Decoded evidence                                                                                                    | Remaining boundary                                                                                                                 |
-| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| CurveFloat / CurveVector / CurveLinearColor | Rich keys, interpolation, tangents and weights; reflected defaults/extrapolation                                    | No curve evaluation                                                                                                                |
-| Skeleton                                    | Raw reference transforms (quaternion, translation, scale) and name-to-index map                                     | Later native Skeleton data remains `tail_bytes`                                                                                    |
-| Sequencer float/double channels             | Frames, numeric values, tangents/weights, default, extrapolation, tick resolution, ShowCurve                        | Verified UE 5.7 bulk strides and custom-version framing only; compact sequence projection still reports these tracks as structural |
-| InstancedStruct                             | Selected type, bounded byte size, tagged inner properties, supported native inner values, null instances and arrays | Other native inner types remain typed raw evidence; no authoring                                                                   |
-| Package metadata                            | Root and per-object name/string annotations, including empty/Unicode values                                         | Current saved metadata section; no legacy UMetaData export decoder                                                                 |
+| Capability                                  | Decoded evidence                                                                                                    | Remaining boundary                                                                                       |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| CurveFloat / CurveVector / CurveLinearColor | Rich keys, interpolation, tangents and weights; reflected defaults/extrapolation                                    | No curve evaluation                                                                                      |
+| Skeleton                                    | Raw reference transforms (quaternion, translation, scale) and name-to-index map                                     | Later native Skeleton data remains `tail_bytes`                                                          |
+| Sequencer float/double channels             | Frames, numeric values, tangents/weights, default, extrapolation, tick resolution, ShowCurve                        | Verified UE 5.7 framing; scalar and transform section projections expose saved values without evaluation |
+| InstancedStruct                             | Selected type, bounded byte size, tagged inner properties, supported native inner values, null instances and arrays | Other native inner types remain typed raw evidence; no authoring                                         |
+| Package metadata                            | Root and per-object name/string annotations, including empty/Unicode values                                         | Current saved metadata section; no legacy UMetaData export decoder                                       |
+| GameplayTagContainer                        | Saved tag names, including empty and nested containers and InstancedStruct                                          | No redirects or inferred parent tags                                                                     |
+| Common math values                          | Quat, Vector2D, Box, IntVector native fields; tagged Transform with decoded quaternion                              | Verified UE 5.7/5.8 framing; explicit float/double aliases outside these identities remain unsupported   |
 
 The property codecs use the embedded engine layouts in both generated and fallback class lanes.
 They compose `native_struct` fields without inventing Unreal property tags. `instanced_struct` keeps
@@ -176,3 +185,16 @@ Compare that directory's `native-coverage.json` with the committed file in
 The ordinary Unreal conformance command runs this comparison too. Portable tests use the committed
 assets/evidence, reject malformed counts, strides, booleans, versions and bounded payloads, and
 compare all six assets across native and WASM inspection.
+
+The additional property recipes use fully qualified `/Script/...` layout keys, shared by standalone
+properties, array/set/map elements, and InstancedStruct. `FTransform`'s archive layout is kept under
+its C++ name: Unreal's script-struct traits do **not** enable its native serializer, so saved Transform
+properties and instances retain their tagged framing. The fixture deliberately preserves an unknown
+custom native instance as raw evidence alongside the supported types.
+
+Level Sequence projection records use schema 4. Scalar float/double and 3D transform sections expose
+`numeric_channels`, including indexed translation/rotation/scale paths, saved mask enablement, keys,
+tangents, defaults, extrapolation, tick resolution, and ShowCurve. Omitted channels, wrong value kinds,
+and unknown section classes remain coverage gaps. No defaults are inferred from an editor CDO. The
+WASM package publishes `contracts/level-sequence.v4.schema.json`; its one-million-item projection
+limit counts channels and keys. Fixtures and fresh-process Unreal APIs verify the saved semantics.

@@ -364,6 +364,12 @@ fn decode_binary_or_native_value(
         // wants an owned `&str`; materialize the breadcrumb once here rather
         // than per read.
         let path = path.to_string();
+        if let Some(type_path) = resolve_struct_type_path(package, type_tree)
+            && let Some(value) =
+                native_values::generated_struct(type_path, payload, package, &path)?
+        {
+            return Ok(Some(value));
+        }
         let struct_name = resolve_struct_type_name(package, type_tree);
         if let Some(name) = &struct_name
             && let Some(value) =
@@ -855,6 +861,11 @@ fn decode_struct_value(
             format!("property value nesting exceeds depth limit {MAX_PROPERTY_DECODE_DEPTH}"),
         ));
     }
+    if let Some(type_path) = resolve_struct_type_path(package, type_tree)
+        && let Some(value) = native_values::generated_struct(type_path, payload, package, path)?
+    {
+        return Ok(value);
+    }
     let struct_name = resolve_struct_type_name(package, type_tree);
     if let Some(name) = &struct_name
         && let Some(value) =
@@ -1135,6 +1146,16 @@ fn decode_linear_color_value(
         b: payload.read_f32(&format_args!("{path}.B"))?,
         a: payload.read_f32(&format_args!("{path}.A"))?,
     })
+}
+
+fn resolve_struct_type_path(
+    package: &Package,
+    type_tree: &PropertyTypeName,
+) -> Option<&'static str> {
+    let identity = type_tree.parameters.first()?;
+    let name = package.resolve_name_cow(identity.name)?;
+    let module = package.resolve_name_cow(identity.parameters.first()?.name)?;
+    native_values::property_type_path(&module, &name)
 }
 
 fn resolve_struct_type_name<'a>(

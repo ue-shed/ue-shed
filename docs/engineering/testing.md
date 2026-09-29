@@ -114,6 +114,34 @@ hosted workflow runs repository checks and the applicable UAsset lanes described
 
 ### Unreal gate reporting
 
+Always run the relevant Unreal checks on **both UE 5.7 and UE 5.8** for parser, codegen, fixture,
+and Unreal integration changes. Report each version separately. If an engine or a required check is
+unavailable, record that gap; a single-version pass does not complete verification.
+
+For parser and source-codegen changes, run the engine matrix alongside `pnpm check`:
+
+```powershell
+$env:UE_SHED_UNREAL_57_ROOT = "C:\Engines\UE_5.7"
+$env:UE_SHED_UNREAL_58_ROOT = "C:\Engines\UE_5.8"
+pnpm test:uasset-engine-matrix
+```
+
+Use discovered installation paths. This Windows lane requires both engines and their source. It
+checks the committed 5.7 source models, regenerates the same recipes from 5.8 source, and rejects
+changes to the shared native layouts or struct schemas. Tagged class declarations can differ;
+the complete generated models remain in the evidence directory for review.
+
+Each engine builds a disposable fixture, saves the native parser assets, and reloads them in a
+separate commandlet process. Rust semantic conformance uses that engine's saved bytes and independent
+Unreal API evidence; native/WASM parity and numeric projection contract checks use the same assets.
+Only `ParserNative` assets are regenerated in this focused lane; the other copied fixtures retain
+their committed 5.7 baseline. The lane retains logs, assets, models, and per-version `results.json`
+under `out/uasset-engine-matrix-*`. It does not overwrite committed fixtures or use an open editor.
+
+For plugin or live integration changes, also run the relevant plugin/authoring gates with
+`UE_SHED_UNREAL_ENGINE_ROOT` pointing to each version. The existing `check:unreal` command still uses
+the committed 5.7 fixture contract and does not replace the matrix.
+
 The ordinary Vitest run prints every environment-gated real-Unreal suite before executing tests. A
 gate is reported as `RUN` or `SKIP`, and skipped gates include the exact environment variable or
 specialized command that enables them. The final Vitest skipped count should agree with this list;

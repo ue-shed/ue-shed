@@ -24,11 +24,117 @@ fn vector() -> L {
     L::record([("X", L::Double), ("Y", L::Double), ("Z", L::Double)])
 }
 
+fn quaternion() -> L {
+    L::record([
+        ("X", L::Double),
+        ("Y", L::Double),
+        ("Z", L::Double),
+        ("W", L::Double),
+    ])
+}
+
 pub(super) fn derive(
     sources: &BTreeMap<String, Vec<Token>>,
     layouts: &mut BTreeMap<String, L>,
 ) -> Result<(), GeneratorError> {
     for (path, tokens) in sources {
+        // Fully qualified keys bind these property serializers directly to a layout.
+        // Archive representations are distinct from tagged reflected fields and NetSerialize.
+        if path.ends_with("Math/Quat.h") {
+            require(
+                tokens,
+                &[
+                    "operator<<(FArchive& Ar, TQuat<double>& F)",
+                    "Ar << F.X << F.Y << F.Z << F.W",
+                ],
+            )?;
+            layouts.insert("/Script/CoreUObject.Quat".into(), quaternion());
+        }
+        if path.ends_with("Math/TransformNonVectorized.h") {
+            require(
+                tokens,
+                &[
+                    "operator<<(FArchive& Ar, TTransform<T>& M)",
+                    "Ar << M.Rotation",
+                    "Ar << M.Translation",
+                    "Ar << M.Scale3D",
+                ],
+            )?;
+            layouts.insert(
+                "FTransform".into(),
+                L::record([
+                    ("Rotation", quaternion()),
+                    ("Translation", vector()),
+                    ("Scale3D", vector()),
+                ]),
+            );
+        }
+        if path.ends_with("Math/Vector2D.h") {
+            require(
+                tokens,
+                &[
+                    "operator<<(FArchive& Ar, TVector2<double>& V)",
+                    "Ar << V.X << V.Y",
+                ],
+            )?;
+            layouts.insert(
+                "/Script/CoreUObject.Vector2D".into(),
+                L::record([("X", L::Double), ("Y", L::Double)]),
+            );
+        }
+        if path.ends_with("Math/Box.h") {
+            require(
+                tokens,
+                &[
+                    "operator<<( FArchive& Ar, TBox<T>& Box )",
+                    "Ar << Box.Min << Box.Max << Box.IsValid",
+                ],
+            )?;
+            layouts.insert(
+                "/Script/CoreUObject.Box".into(),
+                L::record([("Min", vector()), ("Max", vector()), ("IsValid", L::UInt8)]),
+            );
+        }
+        if path.ends_with("Math/IntVector.h") {
+            require(
+                tokens,
+                &[
+                    "operator<<(FArchive& Ar, TIntVector3& Vector)",
+                    "Ar << Vector.X << Vector.Y << Vector.Z",
+                ],
+            )?;
+            layouts.insert(
+                "/Script/CoreUObject.IntVector".into(),
+                L::record([("X", L::Int32), ("Y", L::Int32), ("Z", L::Int32)]),
+            );
+        }
+        if path.ends_with("GameplayTagContainer.cpp") {
+            require(
+                tokens,
+                &[
+                    "bool FGameplayTagContainer::Serialize",
+                    "Slot << GameplayTags",
+                ],
+            )?;
+            let header = sources
+                .get("Runtime/GameplayTags/Classes/GameplayTagContainer.h")
+                .ok_or_else(|| {
+                    GeneratorError::new(
+                        "GameplayTagContainer recipe requires its tag archive operator",
+                    )
+                })?;
+            require(
+                header,
+                &[
+                    "operator<<(FStructuredArchive::FSlot Slot, FGameplayTag& GameplayTag)",
+                    "Slot << GameplayTag.TagName",
+                ],
+            )?;
+            layouts.insert(
+                "/Script/GameplayTags.GameplayTagContainer".into(),
+                L::record([("GameplayTags", L::array(L::Name))]),
+            );
+        }
         if path.ends_with("Curves/RichCurve.cpp") {
             require(
                 tokens,
@@ -210,6 +316,40 @@ pub(super) fn derive(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn qualified_property_recipes_require_the_archive_shape() {
+        let quat =
+            "operator<<(FArchive& Ar, TQuat<double>& F) { return Ar << F.X << F.Y << F.Z << F.W; }";
+        let header = "operator<<(FStructuredArchive::FSlot Slot, FGameplayTag& GameplayTag) { Slot << GameplayTag.TagName; }";
+        let container = "bool FGameplayTagContainer::Serialize(FStructuredArchive::FSlot Slot) { Slot << GameplayTags; }";
+        let sources = BTreeMap::from([
+            (
+                "Runtime/Core/Public/Math/Quat.h".into(),
+                super::super::lex(quat).unwrap(),
+            ),
+            (
+                "Runtime/GameplayTags/Classes/GameplayTagContainer.h".into(),
+                super::super::lex(header).unwrap(),
+            ),
+            (
+                "Runtime/GameplayTags/Private/GameplayTagContainer.cpp".into(),
+                super::super::lex(container).unwrap(),
+            ),
+        ]);
+        let mut layouts = BTreeMap::new();
+        derive(&sources, &mut layouts).unwrap();
+        assert!(layouts.contains_key("/Script/CoreUObject.Quat"));
+        assert!(layouts.contains_key("/Script/GameplayTags.GameplayTagContainer"));
+        let mut changed = sources.clone();
+        changed.insert(
+            "Runtime/Core/Public/Math/Quat.h".into(),
+            super::super::lex(&quat.replace("F.Z << F.W", "F.W << F.Z")).unwrap(),
+        );
+        assert!(derive(&changed, &mut BTreeMap::new()).is_err());
+        let mut missing = sources;
+        missing.remove("Runtime/GameplayTags/Classes/GameplayTagContainer.h");
+        assert!(derive(&missing, &mut BTreeMap::new()).is_err());
+    }
     #[test]
     fn ordered_recipes_fail_closed_when_source_changes() {
         let source = "bool FRichCurveKey::Serialize(FArchive& Ar) { Ar << InterpMode; Ar << TangentMode; Ar << TangentWeightMode; Ar << Time; Ar << Value; Ar << ArriveTangent; Ar << ArriveTangentWeight; Ar << LeaveTangent; Ar << LeaveTangentWeight; }";

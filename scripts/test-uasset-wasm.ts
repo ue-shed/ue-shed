@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { ensureUassetExecutable } from "./native-tools.ts";
+import { JsonSchema, Schema, SchemaRepresentation } from "effect";
 
 const repositoryRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const packageNodeEntry = join(
@@ -14,7 +15,28 @@ const packageNodeEntry = join(
 	"node.js"
 );
 const nativeExecutable = ensureUassetExecutable();
-const fixtureRoot = join(repositoryRoot, "fixtures", "unreal-project");
+const fixtureRoot = process.env.UE_SHED_UASSET_FIXTURE_ROOT
+	? resolve(process.env.UE_SHED_UASSET_FIXTURE_ROOT)
+	: join(repositoryRoot, "fixtures", "unreal-project");
+// SAFETY: checked-in JSON Schema is a development contract, validated against real output below.
+const sequenceSchema: JsonSchema.JsonSchema = JSON.parse(
+	readFileSync(
+		join(
+			repositoryRoot,
+			"packages/uasset-inspection-wasm/contracts/level-sequence.v4.schema.json"
+		),
+		"utf8"
+	)
+);
+const decodeSequence = Schema.decodeUnknownSync(
+	// JSON Schema contains pure value checks, with no Effect service requirements.
+	SchemaRepresentation.toSchema<Schema.Codec<unknown>>(
+		SchemaRepresentation.fromJsonSchemaDocument(
+			JsonSchema.fromSchemaDraft2020_12(sequenceSchema)
+		)
+	),
+	{ onExcessProperty: "error" }
+);
 const fixtures = [
 	"Content/Fixture/ParserNative/CF_Native.uasset",
 	"Content/Fixture/ParserNative/CV_Native.uasset",
@@ -109,7 +131,8 @@ const levelSequence = runtime.extractLevelSequences(
 );
 assert.equal(levelSequence.status, "complete");
 assert.equal(levelSequence.sequences.length, 1);
-assert.equal(levelSequence.sequences[0].schema_version, 3);
+assert.equal(levelSequence.sequences[0].schema_version, 4);
+decodeSequence(levelSequence.sequences[0]);
 assert.equal(levelSequence.sequences[0].reference_coverage_gaps.length, 0);
 assert.ok(
 	levelSequence.sequences[0].references.some(
@@ -132,6 +155,59 @@ assert.deepEqual(
 	]
 );
 
+const numericSequenceFixture = join(fixtureRoot, "Content/Fixture/ParserNative/LS_Numeric.uasset");
+const numericSequence = runtime.extractLevelSequences(
+	"LS_Numeric.uasset",
+	readFileSync(numericSequenceFixture)
+);
+assert.equal(numericSequence.status, "complete");
+const numericRecord = numericSequence.sequences[0];
+decodeSequence(numericRecord);
+assert.throws(() => decodeSequence({ ...numericRecord, schema_version: 3 }));
+assert.deepEqual(numericRecord.coverage_gaps, []);
+const nativeEvidence: unknown = JSON.parse(
+	readFileSync(join(fixtureRoot, "FixtureExpected/parser-targets/native-coverage.json"), "utf8")
+);
+const normalizedChannels = numericRecord.root_tracks.flatMap((track) =>
+	track.sections.flatMap((section) =>
+		section.numeric_channels
+			.filter((channel) => channel.property_path !== "ManualWeight")
+			.map((channel) => ({
+				default: channel.default_value,
+				pre: channel.pre_extrapolation,
+				post: channel.post_extrapolation,
+				numerator: channel.tick_resolution.numerator,
+				denominator: channel.tick_resolution.denominator,
+				keys: channel.keys.map((key) => ({
+					frame: key.frame,
+					value: key.value,
+					interp: key.interpolation,
+					tangent_mode: key.tangent_mode,
+					weight_mode: key.tangent_weight_mode,
+					arrive: key.arrive_tangent,
+					leave: key.leave_tangent,
+					arrive_weight: key.arrive_tangent_weight,
+					leave_weight: key.leave_tangent_weight
+				}))
+			}))
+	)
+);
+const oracle = Schema.decodeUnknownSync(
+	Schema.Struct({
+		sequence_channels: Schema.Array(Schema.Json),
+		transform_channels: Schema.Array(Schema.Json),
+		transform_mask: Schema.Number
+	})
+)(nativeEvidence);
+assert.deepEqual(normalizedChannels, [...oracle.sequence_channels, ...oracle.transform_channels]);
+const transformChannels = numericRecord.root_tracks
+	.find((track) => track.content === "transform")
+	?.sections[0].numeric_channels.filter((channel) => channel.property_path !== "ManualWeight");
+assert.equal(transformChannels?.length, 9);
+transformChannels?.forEach((channel, index) =>
+	assert.equal(channel.enabled, (oracle.transform_mask & (1 << index)) !== 0)
+);
+
 const nestedSequenceFixture = join(
 	fixtureRoot,
 	"Content/Fixture/Sequences/LS_NestedTimeline.uasset"
@@ -142,7 +218,8 @@ const nestedSequence = runtime.extractLevelSequences(
 	readFileSync(nestedSequenceFixture)
 );
 assert.equal(nestedSequence.status, "complete");
-assert.equal(nestedSequence.sequences[0].schema_version, 3);
+assert.equal(nestedSequence.sequences[0].schema_version, 4);
+decodeSequence(nestedSequence.sequences[0]);
 assert.equal(
 	nestedSequence.sequences[0].references.filter(
 		(reference) =>

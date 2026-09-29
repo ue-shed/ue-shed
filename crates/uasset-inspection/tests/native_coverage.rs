@@ -1,16 +1,23 @@
-//! Semantic evidence is produced by Unreal loading the committed assets in a fresh process.
+//! Semantic evidence is produced by Unreal loading saved assets in a fresh process.
 use serde_json::{Value, json};
 use std::{fs, path::PathBuf};
 use uasset_inspection::generic::{inspect_bytes, inspect_bytes_json};
 
+fn fixture_root() -> PathBuf {
+    std::env::var_os("UE_SHED_UASSET_FIXTURE_ROOT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/unreal-project")
+        })
+}
+
+fn fixture_bytes(name: &str) -> Vec<u8> {
+    fs::read(fixture_root().join(format!("Content/Fixture/ParserNative/{name}.uasset"))).unwrap()
+}
+
 fn fixture(name: &str) -> Value {
     let path = format!("Content/Fixture/ParserNative/{name}.uasset");
-    let bytes = fs::read(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../fixtures/unreal-project")
-            .join(&path),
-    )
-    .unwrap();
+    let bytes = fixture_bytes(name);
     let typed = inspect_bytes(&path, &bytes).unwrap();
     assert_eq!(typed.status, "ok", "{name}: {:?}", typed.decode_errors);
     let streamed: Value = serde_json::from_str(&inspect_bytes_json(&path, &bytes)).unwrap();
@@ -21,10 +28,7 @@ fn fixture(name: &str) -> Value {
 fn evidence() -> Value {
     let path = std::env::var_os("UE_SHED_NATIVE_EVIDENCE_DIR")
         .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("../../fixtures/unreal-project/FixtureExpected/parser-targets")
-        });
+        .unwrap_or_else(|| fixture_root().join("FixtureExpected/parser-targets"));
     serde_json::from_slice(&fs::read(path.join("native-coverage.json")).unwrap()).unwrap()
 }
 fn fields(value: &Value) -> Value {
@@ -266,10 +270,13 @@ fn instanced_values_and_package_annotations_match_unreal() {
     standalone.as_object_mut().unwrap().remove("type");
     assert_eq!(values[2], standalone);
     let opaque = property(asset, "OpaqueValue");
-    assert_eq!(opaque["struct_type"], "/Script/CoreUObject.Quat");
-    assert_eq!(opaque["size"], 32);
+    assert_eq!(
+        opaque["struct_type"],
+        "/Script/UEShedFixture.UEShedOpaqueNative"
+    );
+    assert_eq!(opaque["size"], 8);
     assert_eq!(opaque["value"]["value_kind"], "raw");
-    assert_eq!(opaque["value"]["size"], 32);
+    assert_eq!(opaque["value"]["size"], 8);
     assert!(
         opaque["value"]["reason"]
             .as_str()
@@ -279,12 +286,209 @@ fn instanced_values_and_package_annotations_match_unreal() {
     equivalent(&output["metadata"], &expected["metadata"], "metadata");
 }
 
+fn components(value: &Value, names: &[&str]) -> Value {
+    if value.is_array() {
+        return value.clone();
+    }
+    names.iter().map(|name| value[name].clone()).collect()
+}
+fn transform(value: &Value) -> Value {
+    json!({"rotation":components(&value["Rotation"], &["X","Y","Z","W"]),
+        "translation":components(&value["Translation"], &["X","Y","Z"]),
+        "scale":components(&value["Scale3D"], &["X","Y","Z"])})
+}
+
+#[test]
+fn math_and_tags_match_unreal_in_properties_containers_and_instances() {
+    let output = fixture("DA_Native");
+    let asset = &output["assets"][0];
+    let expected = evidence();
+    let read = |name| fields(property(asset, name));
+    let math = json!({
+        "rotation":components(&read("Rotation"), &["X","Y","Z","W"]),
+        "transform":transform(&read("Transform")),
+        "position2d":components(&read("Position2D"), &["X","Y"]),
+        "box_min":components(&read("Bounds")["Min"], &["X","Y","Z"]),
+        "box_max":components(&read("Bounds")["Max"], &["X","Y","Z"]),
+        "box_valid":read("Bounds")["IsValid"] == 1,
+        "grid":components(&read("Grid"), &["X","Y","Z"])
+    });
+    equivalent(&math, &expected["math"], "math");
+    let mut tags = read("Tags")["GameplayTags"].as_array().unwrap().clone();
+    tags.sort_by_key(|tag| tag.as_str().unwrap().to_owned());
+    equivalent(&json!(tags), &expected["tags"], "tags");
+    assert_eq!(read("TagContainers")[0], read("Tags"));
+    assert_eq!(read("TagContainers")[1]["GameplayTags"], json!([]));
+    for (array, scalar) in [
+        ("Rotations", "Rotation"),
+        ("Transforms", "Transform"),
+        ("Positions2D", "Position2D"),
+        ("Boxes", "Bounds"),
+    ] {
+        assert_eq!(read(array)[0], read(scalar), "{array}");
+        assert_eq!(read(array).as_array().unwrap().len(), 2);
+    }
+    assert_eq!(read("Boxes")[1]["IsValid"], 0);
+    let grids = &property(asset, "Grids")["values"];
+    assert!(
+        grids
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|grid| fields(grid) == read("Grid"))
+    );
+    let entries = &property(asset, "NamedTransforms")["entries"];
+    assert_eq!(entries[0]["key"]["value"], "origin");
+    assert_eq!(fields(&entries[0]["value"]), read("Transform"));
+    let instances = &property(asset, "MathInstances")["values"];
+    for (index, scalar) in [
+        "Rotation",
+        "Transform",
+        "Position2D",
+        "Bounds",
+        "Grid",
+        "Tags",
+    ]
+    .iter()
+    .enumerate()
+    {
+        assert_eq!(
+            fields(&instances[index]["value"]),
+            read(scalar),
+            "instance {scalar}"
+        );
+    }
+}
+
+fn projected_channel(channel: &uasset_inspection::level_sequence::SequenceNumericChannel) -> Value {
+    let keys: Vec<_> = channel.keys.iter().map(|key| json!({"frame":key.frame,"value":key.value,
+        "interp":key.interpolation,"tangent_mode":key.tangent_mode,"weight_mode":key.tangent_weight_mode,
+        "arrive":key.arrive_tangent,"leave":key.leave_tangent,"arrive_weight":key.arrive_tangent_weight,"leave_weight":key.leave_tangent_weight})).collect();
+    json!({"default":channel.default_value,"pre":channel.pre_extrapolation,"post":channel.post_extrapolation,
+        "numerator":channel.tick_resolution.numerator,"denominator":channel.tick_resolution.denominator,"keys":keys})
+}
+
+#[test]
+fn numeric_sequence_projection_matches_unreal_channels_masks_and_reports_gaps() {
+    use uasset_inspection::level_sequence::{SequenceTrackContent, project_level_sequence};
+    use uasset_parser::asset::{AssetDecodeContext, DecodedAsset, decode_export};
+    let bytes = fixture_bytes("LS_Numeric");
+    let package = uasset_parser::Package::parse(&bytes).unwrap();
+    let context = AssetDecodeContext {
+        source: &bytes,
+        package: &package,
+        schemas: uasset_parser::schema::embedded_source_model(),
+    };
+    let mut assets: Vec<_> = package
+        .exports
+        .iter()
+        .filter_map(|export| decode_export(export, &context).unwrap())
+        .collect();
+    let projection = project_level_sequence(&package, &assets).unwrap();
+    assert_eq!(projection.schema_version, 4);
+    assert!(
+        projection.coverage_gaps.is_empty(),
+        "{:?}",
+        projection.coverage_gaps
+    );
+    let expected = evidence();
+    let numeric: Vec<_> = projection
+        .root_tracks
+        .iter()
+        .filter(|t| t.content == SequenceTrackContent::Numeric)
+        .flat_map(|t| &t.sections)
+        .flat_map(|s| &s.numeric_channels)
+        .map(projected_channel)
+        .collect();
+    equivalent(
+        &json!(numeric),
+        &expected["sequence_channels"],
+        "scalar projection",
+    );
+    let transform = projection
+        .root_tracks
+        .iter()
+        .find(|t| t.content == SequenceTrackContent::Transform)
+        .unwrap();
+    let channels = &transform.sections[0].numeric_channels;
+    let axes: Vec<_> = channels
+        .iter()
+        .filter(|c| c.property_path != "ManualWeight")
+        .collect();
+    equivalent(
+        &json!(
+            axes.iter()
+                .map(|c| projected_channel(c))
+                .collect::<Vec<_>>()
+        ),
+        &expected["transform_channels"],
+        "transform projection",
+    );
+    assert_eq!(axes.len(), 9);
+    for (i, channel) in axes.iter().enumerate() {
+        assert_eq!(
+            channel.enabled,
+            Some(expected["transform_mask"].as_u64().unwrap() & (1 << i) != 0)
+        );
+    }
+    for asset in &mut assets {
+        if let DecodedAsset::UObject(object) = asset {
+            if object
+                .class_path
+                .as_str()
+                .ends_with("MovieScene3DTransformSection")
+            {
+                object.properties.records.retain(|record| {
+                    package.resolve_name_str(record.name) != Some("TransformMask")
+                });
+            }
+            if object
+                .class_path
+                .as_str()
+                .ends_with("MovieSceneFloatSection")
+            {
+                object
+                    .properties
+                    .records
+                    .retain(|record| package.resolve_name_str(record.name) != Some("FloatCurve"));
+            }
+            if object
+                .class_path
+                .as_str()
+                .ends_with("MovieSceneDoubleSection")
+            {
+                for record in &mut object.properties.records {
+                    if package.resolve_name_str(record.name) == Some("DoubleCurve") {
+                        record.value = uasset_parser::property::PropertyValue::Int(3);
+                    }
+                }
+            }
+        }
+    }
+    let partial = project_level_sequence(&package, &assets).unwrap();
+    assert!(
+        partial
+            .coverage_gaps
+            .iter()
+            .any(|g| g.property_path == "TransformMask")
+    );
+    assert!(
+        partial
+            .coverage_gaps
+            .iter()
+            .any(|g| g.property_path == "FloatCurve")
+    );
+    assert!(
+        partial
+            .coverage_gaps
+            .iter()
+            .any(|g| g.property_path == "DoubleCurve")
+    );
+}
+
 #[test]
 fn malformed_metadata_is_partial_without_hiding_decodable_exports() {
-    let mut bytes = include_bytes!(
-        "../../../fixtures/unreal-project/Content/Fixture/ParserNative/DA_Native.uasset"
-    )
-    .to_vec();
+    let mut bytes = fixture_bytes("DA_Native");
     let package = uasset_parser::Package::parse(&bytes).unwrap();
     let offset = package.summary.metadata_offset.unwrap().get() as usize;
     bytes[offset..offset + 4].copy_from_slice(&(-1_i32).to_le_bytes());

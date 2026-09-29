@@ -103,6 +103,10 @@ implementation and can allow matching mistakes to hide each other.
 - Run ordinary parser tests without requiring Unreal.
 - Gate regeneration and real-Unreal conformance separately so CI can run them where UE is installed.
 - When Unreal regenerates evidence, reload assets in a fresh process before accepting results.
+- Always validate parser/codegen changes on both UE 5.7 and UE 5.8 with
+  `pnpm test:uasset-engine-matrix`; follow `docs/engineering/testing.md` for engine configuration.
+  Keep each engine's generated assets and fresh-process evidence separate. Report results for both;
+  a missing engine or a single-version pass is incomplete verification.
 - Add malformed-package regression tests separately; valid Unreal fixtures do not exercise hostile
   input handling.
 

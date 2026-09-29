@@ -80,6 +80,8 @@ import { readFileSync } from "node:fs";
 import { createNodeRuntime as createRootRuntime } from "@ue-shed/uasset-inspection-wasm";
 import { createNodeRuntime, extractBlueprints, inspect } from "@ue-shed/uasset-inspection-wasm/node";
 import * as browserEntry from "@ue-shed/uasset-inspection-wasm/browser";
+const sequenceContract = JSON.parse(readFileSync(new URL(import.meta.resolve("@ue-shed/uasset-inspection-wasm/contracts/level-sequence.v4.schema.json")), "utf8"));
+assert.equal(sequenceContract.properties.schema_version.const, 4);
 const bytes = readFileSync("DT_Scalars.uasset");
 const blueprintBytes = readFileSync("BP_GraphFixture.uasset");
 const runtime = createNodeRuntime();

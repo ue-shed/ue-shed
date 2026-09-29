@@ -9,7 +9,7 @@ The first public contract is deliberately small:
 - generic inspection returns schema 8;
 - `extractText`, `extractTextures`, `extractLevelSequences`, and `extractBlueprints` return compact
   schema-1 envelopes;
-  LevelSequence records use schema 3 and include nested-sequence and cinematic-shot semantics plus
+  LevelSequence records use schema 4 and include saved scalar/transform channels, nested-sequence and cinematic-shot semantics plus
   a recursive inventory of every decoded object, soft-object, and DataTable-row reference in the
   package;
 - malformed, unsupported, partial, and resource-limited packages are represented as typed result
@@ -23,6 +23,15 @@ target is internal to the package or external. `reference_coverage_gaps` identif
 values, native object tails, or unresolved package indices that could conceal or prevent resolving
 a reference; an empty list means the inventory is complete for the saved package's decoded property
 surface. It does not recursively load referenced packages or evaluate Sequencer bindings.
+
+Scalar float/double and 3D transform sections expose `numeric_channels`: section-local frame keys,
+values, interpolation/tangent modes, weighted tangents, nullable defaults, extrapolation, channel tick
+resolution, and ShowCurve. Indexed paths such as `Translation[0]` preserve axis identity. `enabled`
+is true for scalar channels, or the saved transform mask bit (null when unavailable). Missing channels and unsupported
+sections remain explicit coverage gaps; no editor defaults or evaluated world transforms are invented.
+Consumers upgrading from schema 3 must accept the new track kinds and required channel arrays.
+The language-neutral record schema is published at
+`@ue-shed/uasset-inspection-wasm/contracts/level-sequence.v4.schema.json`.
 
 The default input and serialized-output limit is 64 MiB. The Rust adapter also bounds package
 exports and compact projection records. JavaScript rejects an oversized `Uint8Array` before

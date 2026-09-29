@@ -14,6 +14,7 @@
 	},
 	"files": [
 		"dist",
+		"contracts",
 		"LICENSE",
 		"README.md"
 	],
@@ -42,7 +43,8 @@
 			"import": "./dist/node.js",
 			"default": "./dist/node.js"
 		},
-		"./package.json": "./package.json"
+		"./package.json": "./package.json",
+		"./contracts/level-sequence.v4.schema.json": "./contracts/level-sequence.v4.schema.json"
 	},
 	"publishConfig": {
 		"access": "public"

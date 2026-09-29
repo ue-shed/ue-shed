@@ -281,13 +281,43 @@ export interface LevelSequenceSection {
 	readonly sequence_path: string | null;
 	readonly shot_display_name: string | null;
 	readonly text_keys: readonly LevelSequenceTextKey[];
+	readonly numeric_channels: readonly LevelSequenceNumericChannel[];
+}
+
+export interface LevelSequenceNumericKey {
+	readonly frame: number;
+	readonly value: number;
+	readonly interpolation: number;
+	readonly tangent_mode: number;
+	readonly tangent_weight_mode: number;
+	readonly arrive_tangent: number;
+	readonly leave_tangent: number;
+	readonly arrive_tangent_weight: number;
+	readonly leave_tangent_weight: number;
+}
+
+export interface LevelSequenceNumericChannel {
+	readonly property_path: string;
+	readonly enabled: boolean | null;
+	readonly default_value: number | null;
+	readonly pre_extrapolation: number;
+	readonly post_extrapolation: number;
+	readonly tick_resolution: LevelSequenceFrameRate;
+	readonly show_curve: boolean;
+	readonly keys: readonly LevelSequenceNumericKey[];
 }
 
 export interface LevelSequenceTrack {
 	readonly object_path: string;
 	readonly class_path: string;
 	readonly property_path: string | null;
-	readonly content: "timed_text" | "sub_sequence" | "cinematic_shot" | "structure_only";
+	readonly content:
+		| "timed_text"
+		| "sub_sequence"
+		| "cinematic_shot"
+		| "numeric"
+		| "transform"
+		| "structure_only";
 	readonly sections: readonly LevelSequenceSection[];
 }
 
@@ -309,7 +339,7 @@ export interface LevelSequenceReference {
 }
 
 export interface LevelSequenceProjectionRecord {
-	readonly schema_version: 3;
+	readonly schema_version: 4;
 	readonly object_path: string;
 	readonly movie_scene_path: string | null;
 	readonly tick_resolution: LevelSequenceFrameRate | null;
@@ -333,7 +363,10 @@ export interface LevelSequenceProjectionRecord {
 			| "missing_reference"
 			| "wrong_value_kind"
 			| "mismatched_channel_lengths"
-			| "unsupported_track_content";
+			| "unsupported_track_content"
+			| "unsupported_section_content"
+			| "missing_channel"
+			| "missing_channel_mask";
 	}[];
 }
 

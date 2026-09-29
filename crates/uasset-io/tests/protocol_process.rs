@@ -903,6 +903,17 @@ fn protocol_process_emits_native_values_with_the_public_discriminators() {
     assert_eq!(property("FloatChannel")["value_kind"], "native_struct");
     assert_eq!(property("Value")["value_kind"], "instanced_struct");
     assert_eq!(property("OpaqueValue")["value"]["value_kind"], "raw");
-    assert_eq!(property("OpaqueValue")["value"]["size"], 32);
+    assert_eq!(property("OpaqueValue")["value"]["size"], 8);
+    for name in ["Tags", "Rotation", "Position2D", "Bounds", "Grid"] {
+        assert_eq!(property(name)["value_kind"], "native_struct", "{name}");
+    }
+    assert_eq!(property("Transform")["value_kind"], "struct");
+    assert_eq!(
+        property("MathInstances")["values"]
+            .as_array()
+            .unwrap()
+            .len(),
+        6
+    );
     assert_eq!(inspection["metadata"]["root"]["EmptyRoot"], "");
 }

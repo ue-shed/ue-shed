@@ -83,6 +83,8 @@ export function SequenceViewer(props: {
 				for (const key of item.text_keys) expand(key.frame);
 				for (const channel of item.numeric_channels)
 					for (const key of channel.keys) expand(key.frame);
+				for (const channel of item.discrete_channels)
+					for (const key of channel.keys ?? []) expand(key.frame);
 			}
 		const range = sequence()?.playback_range;
 		if (range?.lower.kind !== "open") expand(range?.lower.frame);
@@ -100,9 +102,9 @@ export function SequenceViewer(props: {
 						frames.add(key.frame);
 						if (frames.size >= remaining) break;
 					}
-					for (const channel of item.numeric_channels) {
+					for (const channel of [...item.numeric_channels, ...item.discrete_channels]) {
 						if (frames.size >= remaining) break;
-						for (const key of channel.keys) {
+						for (const key of channel.keys ?? []) {
 							frames.add(key.frame);
 							if (frames.size >= remaining) break;
 						}
@@ -578,6 +580,7 @@ function SectionInspector(props: { readonly section: SequenceSection }) {
 			<Show
 				when={
 					props.section.numeric_channels.length > 64 ||
+					props.section.discrete_channels.length > 64 ||
 					props.section.text_keys.length > 200
 				}
 			>
@@ -587,6 +590,63 @@ function SectionInspector(props: { readonly section: SequenceSection }) {
 			</Show>
 			<For each={props.section.numeric_channels.slice(0, 64)}>
 				{(channel) => <ChannelInspector channel={channel} />}
+			</For>
+			<For each={props.section.discrete_channels.slice(0, 64)}>
+				{(channel) => (
+					<details open>
+						<summary>
+							{channel.property_path} · {channel.value_type} ·{" "}
+							{channel.keys?.length ?? 0} saved keys
+						</summary>
+						<p>
+							Saved default:{" "}
+							{channel.default_value === null
+								? "not serialized"
+								: String(channel.default_value)}{" "}
+							· Default enabled:{" "}
+							{channel.has_default_value === null
+								? "not serialized"
+								: String(channel.has_default_value)}
+						</p>
+						<Show when={channel.enum_path}>
+							<p>
+								Enum: <code>{channel.enum_path}</code>
+							</p>
+						</Show>
+						<p>
+							Extrapolation before/after:{" "}
+							{channel.pre_extrapolation ?? "not serialized"} /{" "}
+							{channel.post_extrapolation ?? "not serialized"}
+						</p>
+						<Show when={channel.interpolate_linear_keys !== null}>
+							<p>
+								Saved linear interpolation flag:{" "}
+								{String(channel.interpolate_linear_keys)}
+							</p>
+						</Show>
+						<Show when={channel.externally_inverted !== null}>
+							<p>
+								Saved external inversion flag: {String(channel.externally_inverted)}
+							</p>
+						</Show>
+						<Show when={channel.keys === null}>
+							<p>
+								Key arrays were not serialized or could not be decoded; see coverage
+								details.
+							</p>
+						</Show>
+						<For each={(channel.keys ?? []).slice(0, 200)}>
+							{(key) => (
+								<p>
+									<code>{key.frame}</code> · {String(key.value)}
+								</p>
+							)}
+						</For>
+						<Show when={(channel.keys?.length ?? 0) > 200}>
+							<p>Showing the first 200 keys. Use the CLI for the full channel.</p>
+						</Show>
+					</details>
+				)}
 			</For>
 		</section>
 	);

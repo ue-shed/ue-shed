@@ -620,7 +620,7 @@ function makeAssetReader(
 					maximumOutputBytes: MAX_PROTOCOL_OUTPUT_BYTES,
 					timeoutMs: configuration.timeoutMs
 				},
-				{ contractMinor: 5 }
+				{ contractMinor: 6 }
 			),
 			expected: "level_sequence",
 			select: (result) => (result.kind === "level_sequence" ? result.sequence : undefined)

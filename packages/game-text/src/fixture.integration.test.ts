@@ -24,8 +24,8 @@ describe.skipIf(!executable)("game text fixture corpus", () => {
 			// fixture contributes one localized pin label, while the richer review Blueprint adds
 			// one text unit with two occurrences. The StringTable reference contributes
 			// one additional unit and occurrence with its table/key identity.
-			discoveredPackages: 78,
-			inspectedPackages: 78,
+			discoveredPackages: 79,
+			inspectedPackages: 79,
 			failedPackages: 0,
 			textUnits: 39,
 			textOccurrences: 41,

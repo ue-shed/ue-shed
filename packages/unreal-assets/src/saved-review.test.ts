@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import {
 	BlueprintGraphRead,
 	LevelSequenceRead,
+	SequenceDiscreteChannel,
 	UAssetIoEvent,
 	type SavedProperty
 } from "@ue-shed/protocol";
@@ -38,7 +39,7 @@ function sequence(): LevelSequenceRead {
 		outcome: "complete",
 		diagnostics: [],
 		sequence: {
-			schema_version: 4,
+			schema_version: 5,
 			object_path: "/Game/LS.LS",
 			movie_scene_path: "/Game/LS.LS.MovieScene",
 			tick_resolution: { numerator: 24000, denominator: 1 },
@@ -62,6 +63,7 @@ function sequence(): LevelSequenceRead {
 							sequence_path: null,
 							shot_display_name: null,
 							text_keys: [],
+							discrete_channels: [],
 							numeric_channels: [
 								{
 									property_path: "FloatCurve",
@@ -95,6 +97,55 @@ function sequence(): LevelSequenceRead {
 }
 
 describe("saved review", () => {
+	it("validates discrete value types and compares saved flags and boolean keys", () => {
+		const channel: Extract<SequenceDiscreteChannel, { value_type: "bool" }> = {
+			value_type: "bool",
+			property_path: "BoolCurve",
+			has_default_value: null,
+			default_value: false,
+			pre_extrapolation: null,
+			post_extrapolation: null,
+			interpolate_linear_keys: null,
+			externally_inverted: true,
+			enum_path: null,
+			keys: [{ frame: -12, value: false }]
+		};
+		const decode = Schema.decodeUnknownSync(SequenceDiscreteChannel);
+		expect(() => decode({ ...channel, keys: [{ frame: 0, value: 1 }] })).toThrow();
+		expect(() => decode({ ...channel, value_type: "byte", default_value: 256 })).toThrow();
+		expect(() =>
+			decode({ ...channel, value_type: "integer", default_value: 2147483648 })
+		).toThrow();
+		const withChannel = (value: SequenceDiscreteChannel): LevelSequenceRead => {
+			const read = sequence();
+			return {
+				...read,
+				sequence: {
+					...read.sequence,
+					root_tracks: read.sequence.root_tracks.map((track) => ({
+						...track,
+						content: "discrete",
+						sections: track.sections.map((section) => ({
+							...section,
+							numeric_channels: [],
+							discrete_channels: [value]
+						}))
+					}))
+				}
+			};
+		};
+		const before = withChannel(channel);
+		const after = withChannel({
+			...channel,
+			has_default_value: false,
+			keys: [{ frame: -12, value: true }]
+		});
+		const changes = compareSavedSequences(before, after).changes;
+		expect(changes).toHaveLength(2);
+		expect(changes.every((change) => change.category === "value")).toBe(true);
+		expect(JSON.stringify(changes)).toContain('"has_default_value":null');
+		expect(JSON.stringify(changes)).toContain('"has_default_value":false');
+	});
 	it("normalizes unordered sets while preserving array order", () => {
 		const withProperty = (property: SavedProperty): BlueprintGraphRead => {
 			const read = blueprint();

@@ -12,7 +12,7 @@
 	"result": {
 		"kind": "level_sequence",
 		"sequence": {
-			"schema_version": 5,
+			"schema_version": 4,
 			"object_path": "/Game/LS_Example.LS_Example",
 			"movie_scene_path": null,
 			"tick_resolution": {

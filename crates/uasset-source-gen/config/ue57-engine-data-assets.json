@@ -127,8 +127,17 @@
 		{
 			"name": "MovieScene",
 			"root": "engine_source",
-			"headers": [],
-			"sources": ["Runtime/MovieScene/Private/Channels/MovieSceneCurveChannelImpl.cpp"]
+			"headers": [
+				"Runtime/MovieScene/Public/Channels/MovieSceneBoolChannel.h",
+				"Runtime/MovieScene/Public/Channels/MovieSceneIntegerChannel.h",
+				"Runtime/MovieScene/Public/Channels/MovieSceneByteChannel.h"
+			],
+			"sources": ["Runtime/MovieScene/Private/Channels/MovieSceneCurveChannelImpl.cpp"],
+			"include_types": [
+				"FMovieSceneBoolChannel",
+				"FMovieSceneIntegerChannel",
+				"FMovieSceneByteChannel"
+			]
 		},
 		{
 			"name": "CoreUObject",

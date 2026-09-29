@@ -189,7 +189,8 @@ const sequenceOracle = Schema.decodeUnknownSync(
 for (const fixture of [
 	"Sequences/LS_TextTimeline",
 	"Sequences/LS_NestedTimeline",
-	"ParserNative/LS_Numeric"
+	"ParserNative/LS_Numeric",
+	"ParserNative/LS_Discrete"
 ]) {
 	const path = join(root, "Content/Fixture", `${fixture}.uasset`);
 	const native = await Effect.runPromise(
@@ -203,6 +204,15 @@ for (const fixture of [
 		`native/WASM sequence mismatch: ${fixture}`
 	);
 	assert.deepEqual(compareSavedSequences(native, native).changes, []);
+	if (fixture === "ParserNative/LS_Discrete") {
+		assert.equal(native.sequence.root_tracks.length, 8);
+		assert.equal(native.outcome, "partial");
+		assert.deepEqual(
+			native.sequence.coverage_gaps.map((gap) => gap.reason),
+			["missing_channel"]
+		);
+		assert.deepEqual(native.sequence.reference_coverage_gaps, []);
+	}
 	if (fixture === "Sequences/LS_TextTimeline") {
 		assert.deepEqual(native.sequence.tick_resolution, sequenceOracle.timeline.tickResolution);
 		assert.deepEqual(native.sequence.display_rate, sequenceOracle.timeline.displayRate);
@@ -257,5 +267,5 @@ for (const fixture of [
 	);
 }
 process.stdout.write(
-	`Saved review passed: ${oracle.producer}; Blueprint topology/defaults and three native/WASM sequence projections.\n`
+	`Saved review passed: ${oracle.producer}; Blueprint topology/defaults and four native/WASM sequence projections.\n`
 );

@@ -31,6 +31,129 @@ fn evidence() -> Value {
         .unwrap_or_else(|| fixture_root().join("FixtureExpected/parser-targets"));
     serde_json::from_slice(&fs::read(path.join("native-coverage.json")).unwrap()).unwrap()
 }
+
+#[test]
+fn discrete_sequence_matches_loaded_apis_and_retains_absent_fields() {
+    use uasset_inspection::level_sequence::{
+        SequenceCoverageGapReason, SequenceTrackContent, project_level_sequence,
+    };
+    use uasset_parser::asset::{AssetDecodeContext, DecodedAsset, decode_export};
+    use uasset_parser::property::PropertyValue;
+    let bytes = fixture_bytes("LS_Discrete");
+    let package = uasset_parser::Package::parse(&bytes).unwrap();
+    let context = AssetDecodeContext {
+        source: &bytes,
+        package: &package,
+        schemas: uasset_parser::schema::embedded_source_model(),
+    };
+    let mut assets: Vec<_> = package
+        .exports
+        .iter()
+        .filter_map(|export| decode_export(export, &context).unwrap())
+        .collect();
+    let projection = project_level_sequence(&package, &assets).unwrap();
+    assert_eq!(projection.schema_version, 5);
+    assert!(projection.reference_coverage_gaps.is_empty());
+    assert_eq!(projection.root_tracks.len(), 8);
+    assert!(
+        projection
+            .root_tracks
+            .iter()
+            .all(|track| track.content == SequenceTrackContent::Discrete)
+    );
+    assert_eq!(projection.coverage_gaps.len(), 1);
+    assert_eq!(
+        projection.coverage_gaps[0].reason,
+        SequenceCoverageGapReason::MissingChannel
+    );
+    let oracle = &evidence()["discrete_sequence"];
+    for track in &projection.root_tracks {
+        let name = track.property_path.as_deref().unwrap();
+        let section = &track.sections[0];
+        assert_eq!(section.class_path, oracle[name]["section_class"]);
+        if name == "Empty" {
+            assert!(section.discrete_channels.is_empty());
+            assert_eq!(oracle[name]["keys"], json!([]));
+            continue;
+        }
+        let channel = serde_json::to_value(&section.discrete_channels[0]).unwrap();
+        if name == "DefaultOnly" {
+            assert!(channel["keys"].is_null());
+            assert_eq!(oracle[name]["keys"], json!([]));
+            assert!(channel["pre_extrapolation"].is_null());
+        } else {
+            assert_eq!(channel["keys"], oracle[name]["keys"], "{name}");
+            assert_eq!(channel["pre_extrapolation"], "RCCE_Cycle");
+            assert_eq!(channel["post_extrapolation"], "RCCE_Oscillate");
+            assert_eq!(oracle[name]["pre"], 0);
+            assert_eq!(oracle[name]["post"], 2);
+        }
+        assert_eq!(channel["default_value"], oracle[name]["default"], "{name}");
+        if matches!(name, "bHidden" | "NoDefault") {
+            assert!(
+                channel["has_default_value"].is_null(),
+                "absence is not false"
+            );
+        } else {
+            assert_eq!(channel["has_default_value"], oracle[name]["has_default"]);
+        }
+        if name == "Count" {
+            assert_eq!(
+                channel["interpolate_linear_keys"],
+                oracle[name]["interpolate_linear_keys"]
+            );
+        }
+        if name == "Enabled" {
+            assert_eq!(channel["externally_inverted"], true);
+        }
+        if name == "CaptureSource" {
+            assert_eq!(channel["enum_path"], oracle[name]["enum_path"]);
+        }
+    }
+    // Real saved arrays are fully decoded in generic inspection too (including bool bytes).
+    let inspected = fixture("LS_Discrete");
+    assert!(!inspected.to_string().contains("trailing bytes left"));
+
+    // Corrupt decoded evidence independently of serialization: never zip mismatched arrays
+    // into a plausible, silently shortened key list.
+    for asset in &mut assets {
+        if let DecodedAsset::UObject(object) = asset {
+            for record in &mut object.properties.records {
+                if package.resolve_name_str(record.name) != Some("IntegerCurve") {
+                    continue;
+                }
+                if let PropertyValue::Struct(stream) = &mut record.value {
+                    for field in &mut stream.records {
+                        if package.resolve_name_str(field.name) == Some("Values")
+                            && let PropertyValue::Array(values) = &mut field.value
+                        {
+                            values.pop();
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let malformed = project_level_sequence(&package, &assets).unwrap();
+    assert_eq!(
+        malformed
+            .coverage_gaps
+            .iter()
+            .filter(|g| g.reason == SequenceCoverageGapReason::MismatchedChannelLengths)
+            .count(),
+        2
+    );
+    for track in malformed
+        .root_tracks
+        .iter()
+        .filter(|t| matches!(t.property_path.as_deref(), Some("Count" | "NoDefault")))
+    {
+        assert!(
+            serde_json::to_value(&track.sections[0].discrete_channels[0]).unwrap()["keys"]
+                .is_null()
+        );
+    }
+}
 fn fields(value: &Value) -> Value {
     match value["value_kind"]
         .as_str()
@@ -576,7 +699,7 @@ fn numeric_sequence_projection_matches_unreal_channels_masks_and_reports_gaps() 
         .filter_map(|export| decode_export(export, &context).unwrap())
         .collect();
     let projection = project_level_sequence(&package, &assets).unwrap();
-    assert_eq!(projection.schema_version, 4);
+    assert_eq!(projection.schema_version, 5);
     assert!(
         projection.coverage_gaps.is_empty(),
         "{:?}",

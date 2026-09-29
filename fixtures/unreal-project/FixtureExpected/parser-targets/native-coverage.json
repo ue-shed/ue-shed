@@ -337,7 +337,7 @@
 		{
 			"name": "joint",
 			"parent": 0,
-			"rotation": [0, 0, 0.50000001261839133, 0.86602539649920685],
+			"rotation": [0, 0, 0.5000000126183913, 0.8660253964992068],
 			"translation": [10, 20, 30],
 			"scale": [0.5, 1.5, 2]
 		}
@@ -371,7 +371,7 @@
 				"tangent_mode": 0,
 				"weight_mode": 0,
 				"arrive": -0.22499999403953552,
-				"leave": 0.55729168653488159,
+				"leave": 0.5572916865348816,
 				"arrive_weight": 0,
 				"leave_weight": 0
 			},
@@ -413,7 +413,7 @@
 				"tangent_mode": 0,
 				"weight_mode": 0,
 				"arrive": -0.22499999403953552,
-				"leave": 0.55729168653488159,
+				"leave": 0.5572916865348816,
 				"arrive_weight": 0,
 				"leave_weight": 0
 			},
@@ -564,7 +564,7 @@
 	},
 	"animation": {
 		"skeleton": "/Game/Fixture/ParserNative/SK_Native.SK_Native",
-		"duration": 1.6000000238418579,
+		"duration": 1.600000023841858,
 		"rate_scale": 1.5,
 		"loop": true,
 		"frames": 48,
@@ -629,7 +629,7 @@
 					"tangent_mode": 0,
 					"weight_mode": 0,
 					"arrive": -0.22499999403953552,
-					"leave": 0.55729168653488159,
+					"leave": 0.5572916865348816,
 					"arrive_weight": 0,
 					"leave_weight": 0
 				},
@@ -671,7 +671,7 @@
 					"tangent_mode": 0,
 					"weight_mode": 0,
 					"arrive": -0.22499999403953552,
-					"leave": 0.55729168653488159,
+					"leave": 0.5572916865348816,
 					"arrive_weight": 0,
 					"leave_weight": 0
 				},
@@ -726,7 +726,7 @@
 					"tangent_mode": 0,
 					"weight_mode": 0,
 					"arrive": -0.22499999403953552,
-					"leave": 0.55729168653488159,
+					"leave": 0.5572916865348816,
 					"arrive_weight": 0,
 					"leave_weight": 0
 				},
@@ -768,7 +768,7 @@
 					"tangent_mode": 0,
 					"weight_mode": 0,
 					"arrive": -0.22499999403953552,
-					"leave": 0.55729168653488159,
+					"leave": 0.5572916865348816,
 					"arrive_weight": 0,
 					"leave_weight": 0
 				},
@@ -810,7 +810,7 @@
 					"tangent_mode": 0,
 					"weight_mode": 0,
 					"arrive": -0.22499999403953552,
-					"leave": 0.55729168653488159,
+					"leave": 0.5572916865348816,
 					"arrive_weight": 0,
 					"leave_weight": 0
 				},
@@ -852,7 +852,7 @@
 					"tangent_mode": 0,
 					"weight_mode": 0,
 					"arrive": -0.22499999403953552,
-					"leave": 0.55729168653488159,
+					"leave": 0.5572916865348816,
 					"arrive_weight": 0,
 					"leave_weight": 0
 				},
@@ -894,7 +894,7 @@
 					"tangent_mode": 0,
 					"weight_mode": 0,
 					"arrive": -0.22499999403953552,
-					"leave": 0.55729168653488159,
+					"leave": 0.5572916865348816,
 					"arrive_weight": 0,
 					"leave_weight": 0
 				},
@@ -936,7 +936,7 @@
 					"tangent_mode": 0,
 					"weight_mode": 0,
 					"arrive": -0.22499999403953552,
-					"leave": 0.55729168653488159,
+					"leave": 0.5572916865348816,
 					"arrive_weight": 0,
 					"leave_weight": 0
 				},
@@ -978,7 +978,7 @@
 					"tangent_mode": 0,
 					"weight_mode": 0,
 					"arrive": -0.22499999403953552,
-					"leave": 0.55729168653488159,
+					"leave": 0.5572916865348816,
 					"arrive_weight": 0,
 					"leave_weight": 0
 				},
@@ -1020,7 +1020,7 @@
 					"tangent_mode": 0,
 					"weight_mode": 0,
 					"arrive": -0.22499999403953552,
-					"leave": 0.55729168653488159,
+					"leave": 0.5572916865348816,
 					"arrive_weight": 0,
 					"leave_weight": 0
 				},
@@ -1062,7 +1062,7 @@
 					"tangent_mode": 0,
 					"weight_mode": 0,
 					"arrive": -0.22499999403953552,
-					"leave": 0.55729168653488159,
+					"leave": 0.5572916865348816,
 					"arrive_weight": 0,
 					"leave_weight": 0
 				},
@@ -1079,5 +1079,152 @@
 				}
 			]
 		}
-	]
+	],
+	"discrete_sequence": {
+		"Enabled": {
+			"has_default": true,
+			"default": true,
+			"pre": 0,
+			"post": 2,
+			"keys": [
+				{
+					"frame": -12,
+					"value": false
+				},
+				{
+					"frame": 0,
+					"value": true
+				},
+				{
+					"frame": 100,
+					"value": false
+				}
+			],
+			"section_class": "/Script/MovieScene.MovieSceneBoolSection"
+		},
+		"bHidden": {
+			"has_default": true,
+			"default": false,
+			"pre": 0,
+			"post": 2,
+			"keys": [
+				{
+					"frame": -12,
+					"value": true
+				},
+				{
+					"frame": 0,
+					"value": false
+				},
+				{
+					"frame": 100,
+					"value": true
+				}
+			],
+			"section_class": "/Script/MovieSceneTracks.MovieSceneVisibilitySection"
+		},
+		"Count": {
+			"has_default": true,
+			"default": -17,
+			"pre": 0,
+			"post": 2,
+			"keys": [
+				{
+					"frame": -12,
+					"value": -2147483648
+				},
+				{
+					"frame": 0,
+					"value": 0
+				},
+				{
+					"frame": 100,
+					"value": 2147483647
+				}
+			],
+			"interpolate_linear_keys": true,
+			"section_class": "/Script/MovieSceneTracks.MovieSceneIntegerSection"
+		},
+		"Byte": {
+			"has_default": true,
+			"default": 255,
+			"pre": 0,
+			"post": 2,
+			"keys": [
+				{
+					"frame": -12,
+					"value": 0
+				},
+				{
+					"frame": 0,
+					"value": 127
+				},
+				{
+					"frame": 100,
+					"value": 255
+				}
+			],
+			"section_class": "/Script/MovieSceneTracks.MovieSceneByteSection"
+		},
+		"CaptureSource": {
+			"has_default": true,
+			"default": 2,
+			"pre": 0,
+			"post": 2,
+			"keys": [
+				{
+					"frame": -12,
+					"value": 0
+				},
+				{
+					"frame": 0,
+					"value": 1
+				},
+				{
+					"frame": 100,
+					"value": 2
+				}
+			],
+			"enum_path": "/Script/Engine.ESceneCaptureSource",
+			"section_class": "/Script/MovieSceneTracks.MovieSceneEnumSection"
+		},
+		"DefaultOnly": {
+			"has_default": true,
+			"default": true,
+			"pre": 4,
+			"post": 4,
+			"keys": [],
+			"section_class": "/Script/MovieScene.MovieSceneBoolSection"
+		},
+		"NoDefault": {
+			"has_default": false,
+			"default": null,
+			"pre": 0,
+			"post": 2,
+			"keys": [
+				{
+					"frame": -12,
+					"value": -1
+				},
+				{
+					"frame": 0,
+					"value": 0
+				},
+				{
+					"frame": 100,
+					"value": 1
+				}
+			],
+			"interpolate_linear_keys": false,
+			"section_class": "/Script/MovieSceneTracks.MovieSceneIntegerSection"
+		},
+		"Empty": {
+			"has_default": false,
+			"default": null,
+			"pre": 4,
+			"post": 4,
+			"keys": [],
+			"section_class": "/Script/MovieSceneTracks.MovieSceneByteSection"
+		}
+	}
 }

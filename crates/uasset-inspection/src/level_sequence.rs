@@ -5,6 +5,8 @@
 //! object binding.
 
 use serde::{Deserialize, Serialize};
+mod discrete;
+pub use discrete::{SequenceDiscreteChannel, SequenceDiscreteChannelData, SequenceDiscreteKey};
 mod numeric;
 pub use numeric::{SequenceNumericChannel, SequenceNumericKey};
 use uasset_parser::asset::{DecodedAsset, DecodedUObject};
@@ -134,6 +136,7 @@ pub enum SequenceTrackContent {
     CinematicShot,
     Numeric,
     Transform,
+    Discrete,
     StructureOnly,
 }
 
@@ -146,6 +149,7 @@ pub struct SequenceSection {
     pub shot_display_name: Option<String>,
     pub text_keys: Vec<SequenceTextKey>,
     pub numeric_channels: Vec<SequenceNumericChannel>,
+    pub discrete_channels: Vec<SequenceDiscreteChannel>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
@@ -194,7 +198,7 @@ pub fn project_level_sequence(
         objects(assets).find(|object| object.class_path.as_str() == LEVEL_SEQUENCE_CLASS)?;
     let (references, reference_coverage_gaps) = inventory_references(package, assets);
     let mut projection = LevelSequenceProjection {
-        schema_version: 4,
+        schema_version: 5,
         object_path: sequence.object_path.to_string(),
         movie_scene_path: None,
         tick_resolution: None,
@@ -608,6 +612,11 @@ fn project_track(
         "/Script/MovieSceneTracks.MovieSceneFloatTrack"
         | "/Script/MovieSceneTracks.MovieSceneDoubleTrack" => SequenceTrackContent::Numeric,
         "/Script/MovieSceneTracks.MovieScene3DTransformTrack" => SequenceTrackContent::Transform,
+        "/Script/MovieSceneTracks.MovieSceneBoolTrack"
+        | "/Script/MovieSceneTracks.MovieSceneVisibilityTrack"
+        | "/Script/MovieSceneTracks.MovieSceneIntegerTrack"
+        | "/Script/MovieSceneTracks.MovieSceneByteTrack"
+        | "/Script/MovieSceneTracks.MovieSceneEnumTrack" => SequenceTrackContent::Discrete,
         _ => SequenceTrackContent::StructureOnly,
     };
     if content == SequenceTrackContent::StructureOnly {
@@ -681,6 +690,11 @@ fn project_section(
     } else {
         Vec::new()
     };
+    let discrete_channels = if content == SequenceTrackContent::Discrete {
+        discrete::project_channels(package, section, gaps)
+    } else {
+        Vec::new()
+    };
     SequenceSection {
         object_path: section.object_path.to_string(),
         class_path: section.class_path.to_string(),
@@ -689,6 +703,7 @@ fn project_section(
         shot_display_name,
         text_keys,
         numeric_channels,
+        discrete_channels,
     }
 }
 

@@ -27,7 +27,10 @@ The source-model experiment adds UE 5.7 rich curve keys, Skeleton reference pose
 Sequencer float/double channels, bounded InstancedStruct values, and package/object annotations.
 The library, generic inspection, native IO, and WASM share these values. Unreal-generated fixtures
 and fresh-process API evidence cover all five; unsupported inner structs and later native tails
-remain explicit. Schema-4 Sequencer projections expose scalar and transform numeric channels.
+remain explicit. Schema-5 Sequencer projections expose scalar and transform numeric channels,
+plus saved bool, integer, byte/enum and visibility channels. Reflected channel declarations are
+source-model checked; bool container elements consume their own byte rather than a scalar tag flag.
+Omitted defaults, flags and key arrays remain explicit, and an entirely absent channel reports a gap.
 The additional recipes decode GameplayTagContainer and common math values across properties, containers,
 and InstancedStruct; Transform retains its tagged framing with decoded quaternion fields.
 See the [coverage and boundary matrix](../../crates/uasset-source-gen/README.md#expanded-native-coverage).
@@ -89,7 +92,7 @@ fixture contains a five-second `MovieScene`, one object binding, a text property
 and three localized `FMovieSceneTextChannel` keys. A second timeline references that text sequence
 through both a normal subsequence and a named cinematic shot. The generic UObject decoder already
 recovers the export graph, object references, and text values; the added native codecs recover
-`FFrameNumber` arrays, `FMovieSceneFrameRange`, and the metadata `FDateTime`. A compact schema-4
+`FFrameNumber` arrays, `FMovieSceneFrameRange`, and the metadata `FDateTime`. A compact schema-5
 projection joins binding, track, section, range, timed text, nested-sequence references, and shot
 names while retaining unsupported track classes as structural inventory with explicit coverage
 gaps. Independently of that semantic track support, it recursively inventories every decoded

@@ -1791,6 +1791,196 @@
 			"fields": []
 		},
 		{
+			"path": "/Script/MovieScene.MovieSceneBoolChannel",
+			"cpp_name": "FMovieSceneBoolChannel",
+			"super_path": null,
+			"fields": [
+				{
+					"name": "PreInfinityExtrap",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/MovieScene.RichCurveExtrapolation"
+					}
+				},
+				{
+					"name": "PostInfinityExtrap",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/MovieScene.RichCurveExtrapolation"
+					}
+				},
+				{
+					"name": "Times",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "struct",
+							"path": "/Script/MovieScene.FrameNumber"
+						}
+					}
+				},
+				{
+					"name": "DefaultValue",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bHasDefaultValue",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "Values",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "bool"
+						}
+					}
+				},
+				{
+					"name": "KeyHandles",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/MovieScene.MovieSceneKeyHandleMap"
+					}
+				}
+			]
+		},
+		{
+			"path": "/Script/MovieScene.MovieSceneByteChannel",
+			"cpp_name": "FMovieSceneByteChannel",
+			"super_path": null,
+			"fields": [
+				{
+					"name": "PreInfinityExtrap",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/MovieScene.RichCurveExtrapolation"
+					}
+				},
+				{
+					"name": "PostInfinityExtrap",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/MovieScene.RichCurveExtrapolation"
+					}
+				},
+				{
+					"name": "Times",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "struct",
+							"path": "/Script/MovieScene.FrameNumber"
+						}
+					}
+				},
+				{
+					"name": "DefaultValue",
+					"type": {
+						"kind": "uint8"
+					}
+				},
+				{
+					"name": "bHasDefaultValue",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "Values",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "uint8"
+						}
+					}
+				},
+				{
+					"name": "Enum",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/CoreUObject.Enum"
+					}
+				},
+				{
+					"name": "KeyHandles",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/MovieScene.MovieSceneKeyHandleMap"
+					}
+				}
+			]
+		},
+		{
+			"path": "/Script/MovieScene.MovieSceneIntegerChannel",
+			"cpp_name": "FMovieSceneIntegerChannel",
+			"super_path": null,
+			"fields": [
+				{
+					"name": "PreInfinityExtrap",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/MovieScene.RichCurveExtrapolation"
+					}
+				},
+				{
+					"name": "PostInfinityExtrap",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/MovieScene.RichCurveExtrapolation"
+					}
+				},
+				{
+					"name": "bInterpolateLinearKeys",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "Times",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "struct",
+							"path": "/Script/MovieScene.FrameNumber"
+						}
+					}
+				},
+				{
+					"name": "DefaultValue",
+					"type": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "bHasDefaultValue",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "Values",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "int32"
+						}
+					}
+				},
+				{
+					"name": "KeyHandles",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/MovieScene.MovieSceneKeyHandleMap"
+					}
+				}
+			]
+		},
+		{
 			"path": "/Script/UEShedFixture.UEShedFixtureAssetReferenceRow",
 			"cpp_name": "FUEShedFixtureAssetReferenceRow",
 			"super_path": "/Script/Engine.TableRowBase",

@@ -45,6 +45,7 @@
 		},
 		"./package.json": "./package.json",
 		"./contracts/level-sequence.v4.schema.json": "./contracts/level-sequence.v4.schema.json",
+		"./contracts/level-sequence.v5.schema.json": "./contracts/level-sequence.v5.schema.json",
 		"./contracts/animation.v1.schema.json": "./contracts/animation.v1.schema.json"
 	},
 	"publishConfig": {

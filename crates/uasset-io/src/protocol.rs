@@ -781,9 +781,9 @@ fn validate_event(event: &Event) -> Result<(), ProtocolError> {
 fn validate_result_frame(result: &ResultFrame) -> Result<(), ProtocolError> {
     match result {
         ResultFrame::LevelSequence { sequence } => {
-            if sequence.schema_version != 4 {
+            if sequence.schema_version != 5 {
                 return Err(ProtocolError(
-                    "expected Level Sequence schema version 4".to_owned(),
+                    "expected Level Sequence schema version 5".to_owned(),
                 ));
             }
             if sequence

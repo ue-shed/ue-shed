@@ -2,9 +2,16 @@
 
 Saved Blueprint and Level Sequence review works offline through `readSavedBlueprint` and
 `readSavedLevelSequence`. Both return diagnostics and an explicit `complete`/`partial` outcome.
-Native review reads are limited to 64 MiB. Sequence schema 4 includes bindings, tracks, section
+Native review reads are limited to 64 MiB. Sequence schema 5 includes bindings, tracks, section
 ranges, text/numeric keys, transform channel masks, subsequence/shot references, and coverage gaps.
 Unsupported tracks remain visible as structure.
+
+Schema 5 adds boolean, integer, byte/enum, and visibility channels under `discrete_channels`.
+Each `value_type` determines its key/default value type. Frame/value pairs retain local saved times;
+enum references, extrapolation names, integer interpolation flags, and external inversion flags are
+saved evidence only. Nullable fields mean the property was not serialized or could not be decoded,
+not an inferred constructor/CDO default. `keys: null` differs from an explicitly saved empty array.
+An entirely absent channel is a `missing_channel` gap. Comparisons include these values and flags.
 
 ```ts
 import { Effect } from "effect";

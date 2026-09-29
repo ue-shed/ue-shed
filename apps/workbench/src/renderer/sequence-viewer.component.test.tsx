@@ -16,7 +16,7 @@ const result: Extract<SequenceReadResult, { status: "ready" }> = {
 	outcome: "partial",
 	diagnostics: [],
 	sequence: {
-		schema_version: 4,
+		schema_version: 5,
 		object_path: "/Game/LS.LS",
 		movie_scene_path: "/Game/LS.LS:MovieScene",
 		tick_resolution: { numerator: 24000, denominator: 1 },
@@ -43,6 +43,7 @@ const result: Extract<SequenceReadResult, { status: "ready" }> = {
 						sequence_path: null,
 						shot_display_name: null,
 						text_keys: [],
+						discrete_channels: [],
 						numeric_channels: [
 							{
 								property_path: "FloatCurve",

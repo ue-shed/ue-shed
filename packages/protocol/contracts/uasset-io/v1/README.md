@@ -40,8 +40,9 @@ the immutable inventory and checked postings without hydrating package evidence.
 and corrupt postings fail with the same typed errors as queries. Old workers reject the operation
 before accepting it.
 
-Minor version 1.5 adds `level_sequence` in both `protocol` and `protocol-session`. Its request
-carries `assetPath`; its result carries a schema-4 `sequence`. Decode diagnostics, projection
+Minor version 1.5 added `level_sequence` in both `protocol` and `protocol-session`. Version 1.6
+advances its result to schema-5 with typed discrete channels. Its request carries `assetPath`.
+Decode diagnostics, projection
 coverage gaps and reference coverage gaps make the terminal outcome partial. Blueprint and
 Level Sequence reads are bounded to 64 MiB before parsing. Older workers reject the new operation
 before acceptance. Native/WASM fixture conformance checks the same sequence record fields.

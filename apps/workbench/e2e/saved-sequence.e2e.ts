@@ -7,6 +7,35 @@ import {
 } from "./fixtures/workbench-test.js";
 
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
+test("inspects saved boolean and integer keys with omitted defaults", async ({
+	offlineBlueprint: { harness, workbench }
+}) => {
+	test.setTimeout(60_000);
+	await workbench.openRoute("Sequencer");
+	const page = workbench.page;
+	await page
+		.getByLabel("Sequence asset path")
+		.fill(
+			resolve(
+				repositoryRoot,
+				"fixtures/unreal-project/Content/Fixture/ParserNative/LS_Discrete.uasset"
+			)
+		);
+	await page.getByRole("button", { name: "Open sequence" }).click();
+	await expect(page.getByText("Partial saved evidence", { exact: true })).toBeVisible();
+	const sections = page.getByRole("list", { name: "Sections" }).getByRole("button");
+	await sections.first().click();
+	const inspector = page.getByRole("region", { name: "Section inspector" });
+	await expect(inspector).toContainText("-12 · false");
+	await expect(inspector).toContainText("Saved external inversion flag: true");
+	await sections.nth(2).click();
+	await expect(inspector).toContainText("-2147483648");
+	await expect(inspector).toContainText("2147483647");
+	await sections.nth(6).click();
+	await expect(inspector).toContainText("Default enabled: not serialized");
+	expect(await harness.launchCount()).toBe(0);
+});
+
 test("reviews a saved sequence and baseline without Unreal", async ({
 	offlineBlueprint: { harness, workbench }
 }, testInfo) => {

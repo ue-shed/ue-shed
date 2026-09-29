@@ -662,6 +662,11 @@ fn decode_container_element(
     path: &str,
     depth: usize,
 ) -> Result<Option<PropertyValue>, PropertyError> {
+    // FBoolProperty::SerializeItem writes uint8 in containers (UE 5.7/5.8).
+    // Scalar tagged booleans instead carry their value in the tag flags.
+    if type_spec.name == "BoolProperty" {
+        return Ok(Some(PropertyValue::Bool(payload.read_u8(path)? != 0)));
+    }
     if type_spec.name == "StructProperty"
         && resolve_struct_type_name(package, type_spec.tree).as_deref() == Some("RichCurveKey")
     {
@@ -1260,6 +1265,83 @@ mod tests {
         let package = test_package(names);
         decode_property_stream_values(&bytes, &mut stream, &package).expect("decode struct");
         stream
+    }
+
+    #[test]
+    fn boolean_containers_consume_value_bytes_and_reject_truncation() {
+        let boolean = PropertyTypeName {
+            name: crate::test_support::name_ref(1, 0),
+            parameters: vec![],
+        };
+        for (kind, prefix, params, expected) in [
+            (
+                "ArrayProperty",
+                vec![3],
+                vec![boolean.clone()],
+                PropertyValue::Array(vec![
+                    PropertyValue::Bool(false),
+                    PropertyValue::Bool(true),
+                    PropertyValue::Bool(true),
+                ]),
+            ),
+            (
+                "SetProperty",
+                vec![0, 3],
+                vec![boolean.clone()],
+                PropertyValue::Set(vec![
+                    PropertyValue::Bool(false),
+                    PropertyValue::Bool(true),
+                    PropertyValue::Bool(true),
+                ]),
+            ),
+            (
+                "MapProperty",
+                vec![-1, 1],
+                vec![boolean.clone(), boolean.clone()],
+                PropertyValue::Map(vec![MapEntry {
+                    key: PropertyValue::Bool(false),
+                    value: PropertyValue::Bool(true),
+                }]),
+            ),
+        ] {
+            let mut payload = Vec::new();
+            for count in prefix {
+                push_i32(&mut payload, count);
+            }
+            payload.extend(if kind == "MapProperty" {
+                &[0, 1][..]
+            } else {
+                &[0, 1, 255][..]
+            });
+            let names = vec![kind.into(), "BoolProperty".into()];
+            assert_eq!(
+                decode_record(
+                    names.clone(),
+                    0,
+                    params.clone(),
+                    PropertyTagFlags(0),
+                    &payload
+                ),
+                expected,
+                "{kind}"
+            );
+            payload.pop();
+            assert!(
+                decode_record_result(names, 0, params, PropertyTagFlags(0), &payload).is_err(),
+                "{kind}"
+            );
+        }
+        let oversized = i32::MAX.to_le_bytes();
+        assert!(
+            decode_record_result(
+                vec!["ArrayProperty".into(), "BoolProperty".into()],
+                0,
+                vec![boolean],
+                PropertyTagFlags(0),
+                &oversized
+            )
+            .is_err()
+        );
     }
 
     #[test]

@@ -104,6 +104,11 @@ explicit development input; it is not embedded in the generated file or used as 
 
 ## Deliberate boundaries
 
+The embedded model also checks reflected `FMovieSceneBoolChannel`, `FMovieSceneIntegerChannel`, and
+`FMovieSceneByteChannel` declarations against both engines. These channels use ordinary tagged
+properties rather than a native serializer recipe. Their booleans in arrays, sets and maps consume
+one value byte (`FBoolProperty::SerializeItem`); scalar tagged booleans use tag flags.
+
 This is not a general C++ parser and does not pretend to understand arbitrary engine code. Its lexer
 and recognizers support the source constructs needed by the target types and preserve unrecognized
 field types as explicit `unknown` model entries. Parser dispatch additionally validates the generated
@@ -193,12 +198,14 @@ its C++ name: Unreal's script-struct traits do **not** enable its native seriali
 properties and instances retain their tagged framing. The fixture deliberately preserves an unknown
 custom native instance as raw evidence alongside the supported types.
 
-Level Sequence projection records use schema 4. Scalar float/double and 3D transform sections expose
+Level Sequence projection records use schema 5. Scalar float/double and 3D transform sections expose
 `numeric_channels`, including indexed translation/rotation/scale paths, saved mask enablement, keys,
 tangents, defaults, extrapolation, tick resolution, and ShowCurve. Omitted channels, wrong value kinds,
 and unknown section classes remain coverage gaps. No defaults are inferred from an editor CDO. The
-WASM package publishes `contracts/level-sequence.v4.schema.json`; its one-million-item projection
-limit counts channels and keys. Fixtures and fresh-process Unreal APIs verify the saved semantics.
+WASM package publishes `contracts/level-sequence.v5.schema.json`; its one-million-item projection
+limit counts numeric and discrete channels and keys. Discrete bool/integer/byte/enum and visibility
+sections expose `discrete_channels`, with nullable saved defaults/flags, enum references and paired
+frame/value arrays. Fixtures and fresh-process Unreal APIs verify the saved semantics.
 
 InstancedPropertyBag uses generated descriptor-prefix, metadata and UE 5.8 suffix layouts, with
 bounded conditional framing in the codec. `ue58-property-bags.json` supplements the base model;

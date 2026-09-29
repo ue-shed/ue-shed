@@ -282,7 +282,24 @@ export interface LevelSequenceSection {
 	readonly shot_display_name: string | null;
 	readonly text_keys: readonly LevelSequenceTextKey[];
 	readonly numeric_channels: readonly LevelSequenceNumericChannel[];
+	readonly discrete_channels: readonly LevelSequenceDiscreteChannel[];
 }
+
+export interface LevelSequenceDiscreteChannelData<T> {
+	readonly property_path: string;
+	readonly has_default_value: boolean | null;
+	readonly default_value: T | null;
+	readonly pre_extrapolation: string | null;
+	readonly post_extrapolation: string | null;
+	readonly interpolate_linear_keys: boolean | null;
+	readonly externally_inverted: boolean | null;
+	readonly enum_path: string | null;
+	readonly keys: readonly { readonly frame: number; readonly value: T }[] | null;
+}
+
+export type LevelSequenceDiscreteChannel =
+	| ({ readonly value_type: "bool" } & LevelSequenceDiscreteChannelData<boolean>)
+	| ({ readonly value_type: "integer" | "byte" } & LevelSequenceDiscreteChannelData<number>);
 
 export interface LevelSequenceNumericKey {
 	readonly frame: number;
@@ -317,6 +334,7 @@ export interface LevelSequenceTrack {
 		| "cinematic_shot"
 		| "numeric"
 		| "transform"
+		| "discrete"
 		| "structure_only";
 	readonly sections: readonly LevelSequenceSection[];
 }
@@ -339,7 +357,7 @@ export interface LevelSequenceReference {
 }
 
 export interface LevelSequenceProjectionRecord {
-	readonly schema_version: 4;
+	readonly schema_version: 5;
 	readonly object_path: string;
 	readonly movie_scene_path: string | null;
 	readonly tick_resolution: LevelSequenceFrameRate | null;

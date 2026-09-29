@@ -525,6 +525,14 @@ fn level_sequence_item_count(sequence: &LevelSequenceProjection) -> usize {
                                                 .saturating_add(channel.keys.len())
                                         },
                                     ))
+                                    .saturating_add(section.discrete_channels.iter().fold(
+                                        0_usize,
+                                        |count, channel| {
+                                            count
+                                                .saturating_add(1)
+                                                .saturating_add(channel.key_count())
+                                        },
+                                    ))
                                     .saturating_add(usize::from(section.sequence_path.is_some()))
                             })
                             .sum::<usize>(),
@@ -795,6 +803,25 @@ mod tests {
     const BLUEPRINT_FIXTURE: &[u8] = include_bytes!(
         "../../../fixtures/unreal-project/Content/Fixture/Blueprints/BP_GraphFixture.uasset"
     );
+
+    #[test]
+    fn discrete_channels_and_keys_count_toward_the_projection_limit() {
+        let bytes = include_bytes!(
+            "../../../fixtures/unreal-project/Content/Fixture/ParserNative/LS_Discrete.uasset"
+        );
+        let output: Value =
+            serde_json::from_str(&super::extract_level_sequences("LS_Discrete.uasset", bytes))
+                .unwrap();
+        let mut sequence: super::LevelSequenceProjection =
+            serde_json::from_value(output["sequences"][0].clone()).unwrap();
+        let count = super::level_sequence_item_count(&sequence);
+        for track in &mut sequence.root_tracks {
+            for section in &mut track.sections {
+                section.discrete_channels.clear();
+            }
+        }
+        assert_eq!(count - super::level_sequence_item_count(&sequence), 7 + 18);
+    }
 
     #[test]
     fn projects_the_real_blueprint_fixture_through_the_wasm_boundary() {

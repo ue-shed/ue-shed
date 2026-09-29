@@ -2,6 +2,7 @@
 #include "UEShedNativeParserTypes.h"
 #include "UEShedPropertyBagFixture.h"
 #include "UEShedAnimationParserFixture.h"
+#include "UEShedDiscreteSequenceFixture.h"
 #include "Animation/Skeleton.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Curves/CurveFloat.h"
@@ -282,7 +283,7 @@ bool GenerateNativeParserFixtures()
 		TransformChannels[Index]->SetDefault(Index + 0.25);
 	}
 	TransformSection->SetMask(EMovieSceneTransformChannel::Translation | EMovieSceneTransformChannel::Rotation);
-	return Save(Sequence);
+	return Save(Sequence) && GenerateDiscreteSequenceFixture();
 }
 
 bool WriteNativeParserEvidence(const FString& OutputDirectory)
@@ -355,6 +356,9 @@ bool WriteNativeParserEvidence(const FString& OutputDirectory)
 	const auto Animation = AnimationParserFixtureEvidence();
 	if (!Animation) return false;
 	Result->SetObjectField(TEXT("animation"), Animation);
+	const auto Discrete = DiscreteSequenceFixtureEvidence();
+	if (!Discrete) return false;
+	Result->SetObjectField(TEXT("discrete_sequence"), Discrete);
 	auto Metadata = MakeShared<FJsonObject>(), Objects = MakeShared<FJsonObject>(), Package = MakeShared<FJsonObject>();
 	const FMetaData& Meta = Asset->GetOutermost()->GetMetaData();
 	for (const auto& Pair : Meta.RootMetaDataMap) Package->SetStringField(Pair.Key.ToString(), Pair.Value);

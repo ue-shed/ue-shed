@@ -1,4 +1,4 @@
-// Mirrors the published saved Level Sequence v4 record; checked by contract conformance.
+// Mirrors the published saved Level Sequence v5 record; checked by contract conformance.
 import { Schema } from "effect";
 import { BlueprintGraphDiagnostic } from "./blueprint-graph.js";
 
@@ -76,6 +76,46 @@ export const SequenceNumericChannel = Schema.Struct({
 }).annotate({ identifier: "SequenceNumericChannel" });
 export interface SequenceNumericChannel extends Schema.Schema.Type<typeof SequenceNumericChannel> {}
 
+const discreteChannel = <const K extends string, S extends Schema.Top>(kind: K, value: S) =>
+	Schema.Struct({
+		value_type: Schema.Literal(kind),
+		property_path: Schema.String,
+		has_default_value: Schema.NullOr(Schema.Boolean),
+		default_value: Schema.NullOr(value),
+		pre_extrapolation: Schema.NullOr(Schema.String),
+		post_extrapolation: Schema.NullOr(Schema.String),
+		interpolate_linear_keys: Schema.NullOr(Schema.Boolean),
+		externally_inverted: Schema.NullOr(Schema.Boolean),
+		enum_path: Schema.NullOr(Schema.String),
+		keys: Schema.NullOr(
+			Schema.Array(
+				Schema.Struct({
+					frame: Schema.Int.check(
+						Schema.isGreaterThanOrEqualTo(-2147483648),
+						Schema.isLessThanOrEqualTo(2147483647)
+					),
+					value
+				})
+			).check(Schema.isMaxLength(1000000))
+		)
+	});
+
+export const SequenceDiscreteChannel = Schema.Union([
+	discreteChannel("bool", Schema.Boolean),
+	discreteChannel(
+		"integer",
+		Schema.Int.check(
+			Schema.isGreaterThanOrEqualTo(-2147483648),
+			Schema.isLessThanOrEqualTo(2147483647)
+		)
+	),
+	discreteChannel(
+		"byte",
+		Schema.Int.check(Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(255))
+	)
+]).annotate({ identifier: "SequenceDiscreteChannel" });
+export type SequenceDiscreteChannel = Schema.Schema.Type<typeof SequenceDiscreteChannel>;
+
 export const SequenceSection = Schema.Struct({
 	object_path: Schema.String,
 	class_path: Schema.String,
@@ -83,7 +123,8 @@ export const SequenceSection = Schema.Struct({
 	sequence_path: Schema.Union([Schema.String, Schema.Null]),
 	shot_display_name: Schema.Union([Schema.String, Schema.Null]),
 	text_keys: Schema.Array(SequenceTextKey).check(Schema.isMaxLength(1000000)),
-	numeric_channels: Schema.Array(SequenceNumericChannel).check(Schema.isMaxLength(1000000))
+	numeric_channels: Schema.Array(SequenceNumericChannel).check(Schema.isMaxLength(1000000)),
+	discrete_channels: Schema.Array(SequenceDiscreteChannel).check(Schema.isMaxLength(1000000))
 }).annotate({ identifier: "SequenceSection" });
 export interface SequenceSection extends Schema.Schema.Type<typeof SequenceSection> {}
 
@@ -97,6 +138,7 @@ export const SequenceTrack = Schema.Struct({
 		"cinematic_shot",
 		"numeric",
 		"transform",
+		"discrete",
 		"structure_only"
 	]),
 	sections: Schema.Array(SequenceSection).check(Schema.isMaxLength(1000000))
@@ -149,7 +191,7 @@ export const SequenceGap = Schema.Struct({
 export interface SequenceGap extends Schema.Schema.Type<typeof SequenceGap> {}
 
 export const LevelSequenceProjection = Schema.Struct({
-	schema_version: Schema.Literal(4),
+	schema_version: Schema.Literal(5),
 	object_path: Schema.String,
 	movie_scene_path: Schema.Union([Schema.String, Schema.Null]),
 	tick_resolution: Schema.Union([SequenceRate, Schema.Null]),

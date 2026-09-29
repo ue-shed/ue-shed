@@ -4,6 +4,9 @@ Completed implementation plans. Kept as execution history (intent, STOP conditio
 paths). They are not living guidance — prefer product docs, ADRs, and active plans under
 [`../`](../README.md).
 
+- [Discrete Sequencer channels](sequencer-discrete-channels.md) — DONE; saved bool, integer,
+  byte/enum and visibility channels, boolean container decoding, and UE 5.7/5.8 conformance.
+
 - [Blueprint and Sequencer review](saved-graph-and-sequence-review.md) — DONE; public readers and
   comparisons, CLI, offline viewers and reference navigation, with fresh UE 5.7/5.8 conformance.
 

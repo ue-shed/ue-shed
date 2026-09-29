@@ -375,6 +375,16 @@ function sequenceEvidence(read: LevelSequenceRead, warnings: string[]): Evidence
 					for (const key of keys)
 						add(evidence, warnings, `${channelPath}/keys/${key.frame}`, "value", key);
 				}
+				for (const channel of section.discrete_channels) {
+					const channelPath = `${sectionPath}/channels/${segment(channel.property_path)}`;
+					const { keys, ...settings } = channel;
+					add(evidence, warnings, channelPath, "value", {
+						...settings,
+						keys_serialized: keys !== null
+					});
+					for (const key of keys ?? [])
+						add(evidence, warnings, `${channelPath}/keys/${key.frame}`, "value", key);
+				}
 			}
 		}
 	};

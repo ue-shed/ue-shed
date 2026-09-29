@@ -2326,6 +2326,435 @@
 			],
 			"additionalProperties": false
 		},
+		"SequenceDiscreteChannel": {
+			"anyOf": [
+				{
+					"type": "object",
+					"properties": {
+						"value_type": {
+							"type": "string",
+							"enum": ["bool"]
+						},
+						"property_path": {
+							"type": "string"
+						},
+						"has_default_value": {
+							"anyOf": [
+								{
+									"type": "boolean"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"default_value": {
+							"anyOf": [
+								{
+									"type": "boolean"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"pre_extrapolation": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"post_extrapolation": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"interpolate_linear_keys": {
+							"anyOf": [
+								{
+									"type": "boolean"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"externally_inverted": {
+							"anyOf": [
+								{
+									"type": "boolean"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"enum_path": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"keys": {
+							"anyOf": [
+								{
+									"type": "array",
+									"items": {
+										"type": "object",
+										"properties": {
+											"frame": {
+												"type": "integer",
+												"allOf": [
+													{
+														"minimum": -2147483648
+													},
+													{
+														"maximum": 2147483647
+													}
+												]
+											},
+											"value": {
+												"type": "boolean"
+											}
+										},
+										"required": ["frame", "value"],
+										"additionalProperties": false
+									},
+									"allOf": [
+										{
+											"maxItems": 1000000
+										}
+									]
+								},
+								{
+									"type": "null"
+								}
+							]
+						}
+					},
+					"required": [
+						"value_type",
+						"property_path",
+						"has_default_value",
+						"default_value",
+						"pre_extrapolation",
+						"post_extrapolation",
+						"interpolate_linear_keys",
+						"externally_inverted",
+						"enum_path",
+						"keys"
+					],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_type": {
+							"type": "string",
+							"enum": ["integer"]
+						},
+						"property_path": {
+							"type": "string"
+						},
+						"has_default_value": {
+							"anyOf": [
+								{
+									"type": "boolean"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"default_value": {
+							"anyOf": [
+								{
+									"type": "integer",
+									"allOf": [
+										{
+											"minimum": -2147483648
+										},
+										{
+											"maximum": 2147483647
+										}
+									]
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"pre_extrapolation": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"post_extrapolation": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"interpolate_linear_keys": {
+							"anyOf": [
+								{
+									"type": "boolean"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"externally_inverted": {
+							"anyOf": [
+								{
+									"type": "boolean"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"enum_path": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"keys": {
+							"anyOf": [
+								{
+									"type": "array",
+									"items": {
+										"type": "object",
+										"properties": {
+											"frame": {
+												"type": "integer",
+												"allOf": [
+													{
+														"minimum": -2147483648
+													},
+													{
+														"maximum": 2147483647
+													}
+												]
+											},
+											"value": {
+												"type": "integer",
+												"allOf": [
+													{
+														"minimum": -2147483648
+													},
+													{
+														"maximum": 2147483647
+													}
+												]
+											}
+										},
+										"required": ["frame", "value"],
+										"additionalProperties": false
+									},
+									"allOf": [
+										{
+											"maxItems": 1000000
+										}
+									]
+								},
+								{
+									"type": "null"
+								}
+							]
+						}
+					},
+					"required": [
+						"value_type",
+						"property_path",
+						"has_default_value",
+						"default_value",
+						"pre_extrapolation",
+						"post_extrapolation",
+						"interpolate_linear_keys",
+						"externally_inverted",
+						"enum_path",
+						"keys"
+					],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_type": {
+							"type": "string",
+							"enum": ["byte"]
+						},
+						"property_path": {
+							"type": "string"
+						},
+						"has_default_value": {
+							"anyOf": [
+								{
+									"type": "boolean"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"default_value": {
+							"anyOf": [
+								{
+									"type": "integer",
+									"allOf": [
+										{
+											"minimum": 0
+										},
+										{
+											"maximum": 255
+										}
+									]
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"pre_extrapolation": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"post_extrapolation": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"interpolate_linear_keys": {
+							"anyOf": [
+								{
+									"type": "boolean"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"externally_inverted": {
+							"anyOf": [
+								{
+									"type": "boolean"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"enum_path": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"keys": {
+							"anyOf": [
+								{
+									"type": "array",
+									"items": {
+										"type": "object",
+										"properties": {
+											"frame": {
+												"type": "integer",
+												"allOf": [
+													{
+														"minimum": -2147483648
+													},
+													{
+														"maximum": 2147483647
+													}
+												]
+											},
+											"value": {
+												"type": "integer",
+												"allOf": [
+													{
+														"minimum": 0
+													},
+													{
+														"maximum": 255
+													}
+												]
+											}
+										},
+										"required": ["frame", "value"],
+										"additionalProperties": false
+									},
+									"allOf": [
+										{
+											"maxItems": 1000000
+										}
+									]
+								},
+								{
+									"type": "null"
+								}
+							]
+						}
+					},
+					"required": [
+						"value_type",
+						"property_path",
+						"has_default_value",
+						"default_value",
+						"pre_extrapolation",
+						"post_extrapolation",
+						"interpolate_linear_keys",
+						"externally_inverted",
+						"enum_path",
+						"keys"
+					],
+					"additionalProperties": false
+				}
+			]
+		},
 		"SequenceSection": {
 			"type": "object",
 			"properties": {
@@ -2386,6 +2815,17 @@
 							"maxItems": 1000000
 						}
 					]
+				},
+				"discrete_channels": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/SequenceDiscreteChannel"
+					},
+					"allOf": [
+						{
+							"maxItems": 1000000
+						}
+					]
 				}
 			},
 			"required": [
@@ -2395,7 +2835,8 @@
 				"sequence_path",
 				"shot_display_name",
 				"text_keys",
-				"numeric_channels"
+				"numeric_channels",
+				"discrete_channels"
 			],
 			"additionalProperties": false
 		},
@@ -2426,6 +2867,7 @@
 						"cinematic_shot",
 						"numeric",
 						"transform",
+						"discrete",
 						"structure_only"
 					]
 				},
@@ -2573,7 +3015,7 @@
 			"properties": {
 				"schema_version": {
 					"type": "number",
-					"enum": [4]
+					"enum": [5]
 				},
 				"object_path": {
 					"type": "string"

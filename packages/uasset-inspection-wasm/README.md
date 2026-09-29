@@ -9,7 +9,7 @@ The first public contract is deliberately small:
 - generic inspection returns schema 8;
 - `extractText`, `extractTextures`, `extractLevelSequences`, `extractBlueprints`, and `extractAnimations` return compact
   schema-1 envelopes;
-  LevelSequence records use schema 4 and include saved scalar/transform channels, nested-sequence and cinematic-shot semantics plus
+  LevelSequence records use schema 5 and include saved scalar/transform and discrete channels, nested-sequence and cinematic-shot semantics plus
   a recursive inventory of every decoded object, soft-object, and DataTable-row reference in the
   package;
 - malformed, unsupported, partial, and resource-limited packages are represented as typed result
@@ -29,9 +29,14 @@ values, interpolation/tangent modes, weighted tangents, nullable defaults, extra
 resolution, and ShowCurve. Indexed paths such as `Translation[0]` preserve axis identity. `enabled`
 is true for scalar channels, or the saved transform mask bit (null when unavailable). Missing channels and unsupported
 sections remain explicit coverage gaps; no editor defaults or evaluated world transforms are invented.
-Consumers upgrading from schema 3 must accept the new track kinds and required channel arrays.
+Schema 5 also adds `discrete_channels` for bool, integer, byte/enum and visibility sections. Typed
+keys, saved default values/presence flags, extrapolation names, integer interpolation and external
+inversion flags, and enum references retain serialized evidence. Null flags/defaults mean absent or
+undecodable properties; null key arrays differ from explicitly saved empty arrays. No effective
+constructor/CDO defaults are inferred. Consumers upgrading from schema 4 must accept the new
+`discrete` track kind and required `discrete_channels` array. Upgrade native/WASM and consumers together.
 The language-neutral record schema is published at
-`@ue-shed/uasset-inspection-wasm/contracts/level-sequence.v4.schema.json`.
+`@ue-shed/uasset-inspection-wasm/contracts/level-sequence.v5.schema.json`.
 
 `extractAnimations` joins AnimSequence exports to their saved AnimationSequencerDataModel and FK
 Control Rig section. Schema-1 records include duration, frame rate/count, rate scale, looping,

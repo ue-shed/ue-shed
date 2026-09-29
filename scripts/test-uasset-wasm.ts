@@ -23,7 +23,7 @@ const sequenceSchema: JsonSchema.JsonSchema = JSON.parse(
 	readFileSync(
 		join(
 			repositoryRoot,
-			"packages/uasset-inspection-wasm/contracts/level-sequence.v4.schema.json"
+			"packages/uasset-inspection-wasm/contracts/level-sequence.v5.schema.json"
 		),
 		"utf8"
 	)
@@ -132,7 +132,7 @@ const levelSequence = runtime.extractLevelSequences(
 );
 assert.equal(levelSequence.status, "complete");
 assert.equal(levelSequence.sequences.length, 1);
-assert.equal(levelSequence.sequences[0].schema_version, 4);
+assert.equal(levelSequence.sequences[0].schema_version, 5);
 decodeSequence(levelSequence.sequences[0]);
 assert.equal(levelSequence.sequences[0].reference_coverage_gaps.length, 0);
 assert.ok(
@@ -219,7 +219,7 @@ const nestedSequence = runtime.extractLevelSequences(
 	readFileSync(nestedSequenceFixture)
 );
 assert.equal(nestedSequence.status, "complete");
-assert.equal(nestedSequence.sequences[0].schema_version, 4);
+assert.equal(nestedSequence.sequences[0].schema_version, 5);
 decodeSequence(nestedSequence.sequences[0]);
 assert.equal(
 	nestedSequence.sequences[0].references.filter(

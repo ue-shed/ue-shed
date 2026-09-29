@@ -70,16 +70,19 @@ jobs:
                               uasset_libraries=true
                               ;;
                           crates/uasset-io/* | \
+                              scripts/test-saved-review.ts | \
                               apps/cli/src/*investigation* | \
                               packages/uasset/* | packages/uasset-win32-x64/* | \
                               packages/unreal-assets/* | \
                               packages/protocol/contracts/uasset-io/* | \
-                              packages/protocol/src/uasset-*)
+                              packages/protocol/src/uasset-* | \
+                              packages/protocol/src/blueprint-graph.ts | \
+                              packages/protocol/src/level-sequence.ts)
                               uasset_io=true
                               ;;
                           package.json)
                               if git diff --unified=0 "$range" -- package.json | \
-                                  grep -Eq '^[+-][[:space:]]*"(uasset:|test:uasset)'; then
+                                  grep -Eq '^[+-][[:space:]]*"(uasset:|test:uasset|test:saved-review)'; then
                                   uasset_io=true
                                   uasset_libraries=true
                               fi

@@ -1,0 +1,449 @@
+{
+	"producer": "Unreal 5.7.4-51494982+++UE5+Release-5.7 loaded graph APIs",
+	"objectPath": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture",
+	"graphs": [
+		{
+			"path": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:UserConstructionScript",
+			"name": "UserConstructionScript",
+			"guid": "4199232d-410c0319-f9a534b9-9652101b",
+			"nodes": [
+				{
+					"path": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:UserConstructionScript.K2Node_FunctionEntry_0",
+					"class": "/Script/BlueprintGraph.K2Node_FunctionEntry",
+					"guid": "b6c3a45f-4c938bfe-56d8c695-0244140e",
+					"x": 0,
+					"y": 0,
+					"pins": [
+						{
+							"id": "4521030c-481c1660-b07c94b7-4f28850a",
+							"name": "then",
+							"direction": "output",
+							"category": "exec",
+							"defaultValue": "",
+							"links": []
+						}
+					]
+				}
+			]
+		},
+		{
+			"path": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:ReviewFunction",
+			"name": "ReviewFunction",
+			"guid": "b9ce4574-450b6be3-fceda7a0-b0e88cd4",
+			"nodes": [
+				{
+					"path": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:ReviewFunction.K2Node_FunctionEntry_0",
+					"class": "/Script/BlueprintGraph.K2Node_FunctionEntry",
+					"guid": "5daad95e-4f99b4e5-bb244693-2e7a98f8",
+					"x": 0,
+					"y": 0,
+					"pins": [
+						{
+							"id": "13f6fd9b-4f7a142e-dd7f2d93-858776b7",
+							"name": "then",
+							"direction": "output",
+							"category": "exec",
+							"defaultValue": "",
+							"links": []
+						}
+					]
+				}
+			]
+		},
+		{
+			"path": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:EventGraph",
+			"name": "EventGraph",
+			"guid": "2eef5b1d-48c6d957-f0db7586-f44ef0bd",
+			"nodes": [
+				{
+					"path": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:EventGraph.K2Node_Event_0",
+					"class": "/Script/BlueprintGraph.K2Node_Event",
+					"guid": "c1ab3ce8-4ee3668f-0e403fae-d731f5be",
+					"x": 0,
+					"y": 0,
+					"pins": [
+						{
+							"id": "6534b49c-4eb2399c-1b3a908e-f8736d89",
+							"name": "OutputDelegate",
+							"direction": "output",
+							"category": "delegate",
+							"defaultValue": "",
+							"links": []
+						},
+						{
+							"id": "73d9864b-4cf30fbd-8ccec9b9-0569b1e3",
+							"name": "then",
+							"direction": "output",
+							"category": "exec",
+							"defaultValue": "",
+							"links": []
+						}
+					]
+				},
+				{
+					"path": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:EventGraph.K2Node_Event_1",
+					"class": "/Script/BlueprintGraph.K2Node_Event",
+					"guid": "fcaa27f4-44924906-506df3aa-1b422f4e",
+					"x": 0,
+					"y": 208,
+					"pins": [
+						{
+							"id": "c1e5c3ea-46512e54-08fd4fa6-51bb425c",
+							"name": "OutputDelegate",
+							"direction": "output",
+							"category": "delegate",
+							"defaultValue": "",
+							"links": []
+						},
+						{
+							"id": "af932544-4dc13b04-de956f83-31480a45",
+							"name": "then",
+							"direction": "output",
+							"category": "exec",
+							"defaultValue": "",
+							"links": []
+						},
+						{
+							"id": "eed0b2d8-44a1981f-963f58a4-c480e603",
+							"name": "OtherActor",
+							"direction": "output",
+							"category": "object",
+							"defaultValue": "",
+							"links": []
+						}
+					]
+				},
+				{
+					"path": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:EventGraph.K2Node_Event_2",
+					"class": "/Script/BlueprintGraph.K2Node_Event",
+					"guid": "6b9d0f43-4d4b3d44-61f2db9d-019c3b73",
+					"x": 0,
+					"y": 416,
+					"pins": [
+						{
+							"id": "9e5f0e96-478a19f4-78c51bb2-e06fbdda",
+							"name": "OutputDelegate",
+							"direction": "output",
+							"category": "delegate",
+							"defaultValue": "",
+							"links": []
+						},
+						{
+							"id": "6cfbfeeb-4e7ba2b2-593f79ac-43e77406",
+							"name": "then",
+							"direction": "output",
+							"category": "exec",
+							"defaultValue": "",
+							"links": []
+						},
+						{
+							"id": "560de0f3-469ba62f-270e7e8f-c5fadc68",
+							"name": "DeltaSeconds",
+							"direction": "output",
+							"category": "real",
+							"defaultValue": "0.0",
+							"links": []
+						}
+					]
+				},
+				{
+					"path": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:EventGraph.K2Node_Event_3",
+					"class": "/Script/BlueprintGraph.K2Node_Event",
+					"guid": "0353203f-4238902d-da1d5f81-e338f3b5",
+					"x": 0,
+					"y": 0,
+					"pins": [
+						{
+							"id": "e81bb519-478e6a8f-ddb6e08f-5a20ea1b",
+							"name": "OutputDelegate",
+							"direction": "output",
+							"category": "delegate",
+							"defaultValue": "",
+							"links": []
+						},
+						{
+							"id": "e617af7e-404e0adc-1a66b683-ef4c3ecc",
+							"name": "then",
+							"direction": "output",
+							"category": "exec",
+							"defaultValue": "",
+							"links": [
+								{
+									"node": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:EventGraph.K2Node_IfThenElse_0",
+									"pin": "6e1bc3f6-4cc01bd7-18fe5ea2-2dfcb687"
+								}
+							]
+						}
+					]
+				},
+				{
+					"path": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:EventGraph.K2Node_CallParentFunction_0",
+					"class": "/Script/BlueprintGraph.K2Node_CallParentFunction",
+					"guid": "5a76c379-442ee36b-cac5079f-785a1e77",
+					"x": 200,
+					"y": 0,
+					"pins": [
+						{
+							"id": "f447ec19-4208209b-7ef00d82-82f85e07",
+							"name": "execute",
+							"direction": "input",
+							"category": "exec",
+							"defaultValue": "",
+							"links": []
+						},
+						{
+							"id": "ed7c9c98-46c5ef49-13b31ba1-caaa1290",
+							"name": "then",
+							"direction": "output",
+							"category": "exec",
+							"defaultValue": "",
+							"links": []
+						},
+						{
+							"id": "c4163322-41a8c878-2c1e1590-0dffc1a4",
+							"name": "self",
+							"direction": "input",
+							"category": "object",
+							"defaultValue": "",
+							"links": []
+						}
+					]
+				},
+				{
+					"path": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:EventGraph.K2Node_IfThenElse_0",
+					"class": "/Script/BlueprintGraph.K2Node_IfThenElse",
+					"guid": "0cf23738-413dde3b-cae9ba89-f135ff64",
+					"x": 350,
+					"y": 0,
+					"pins": [
+						{
+							"id": "6e1bc3f6-4cc01bd7-18fe5ea2-2dfcb687",
+							"name": "execute",
+							"direction": "input",
+							"category": "exec",
+							"defaultValue": "",
+							"links": [
+								{
+									"node": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:EventGraph.K2Node_Event_3",
+									"pin": "e617af7e-404e0adc-1a66b683-ef4c3ecc"
+								}
+							]
+						},
+						{
+							"id": "2780e202-45e8c4dc-49f5f183-9da6558b",
+							"name": "Condition",
+							"direction": "input",
+							"category": "bool",
+							"defaultValue": "true",
+							"links": [
+								{
+									"node": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:EventGraph.K2Node_Knot_0",
+									"pin": "bae4dcae-4f3bcca8-039ce987-f0c98898"
+								}
+							]
+						},
+						{
+							"id": "9a62710f-47960ae7-ddac49ba-b4320010",
+							"name": "then",
+							"direction": "output",
+							"category": "exec",
+							"defaultValue": "",
+							"links": [
+								{
+									"node": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:EventGraph.K2Node_VariableSet_0",
+									"pin": "8cefd693-452b3080-5e3e339d-ea455b54"
+								}
+							]
+						},
+						{
+							"id": "61029034-40327afa-cb859ba3-7eed4389",
+							"name": "else",
+							"direction": "output",
+							"category": "exec",
+							"defaultValue": "",
+							"links": []
+						}
+					]
+				},
+				{
+					"path": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:EventGraph.K2Node_Knot_0",
+					"class": "/Script/BlueprintGraph.K2Node_Knot",
+					"guid": "cef463e7-4df525d4-d4ffae8e-6cbe692b",
+					"x": 250,
+					"y": 180,
+					"pins": [
+						{
+							"id": "b16e3e0a-4856c8e2-eca52d9c-941c2283",
+							"name": "InputPin",
+							"direction": "input",
+							"category": "bool",
+							"defaultValue": "",
+							"links": [
+								{
+									"node": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:EventGraph.K2Node_VariableGet_0",
+									"pin": "ea38149e-4b9fe3c8-25c71f80-76a53e4d"
+								}
+							]
+						},
+						{
+							"id": "bae4dcae-4f3bcca8-039ce987-f0c98898",
+							"name": "OutputPin",
+							"direction": "output",
+							"category": "bool",
+							"defaultValue": "",
+							"links": [
+								{
+									"node": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:EventGraph.K2Node_IfThenElse_0",
+									"pin": "2780e202-45e8c4dc-49f5f183-9da6558b"
+								}
+							]
+						}
+					]
+				},
+				{
+					"path": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:EventGraph.K2Node_VariableGet_0",
+					"class": "/Script/BlueprintGraph.K2Node_VariableGet",
+					"guid": "474274b9-4e9bf08f-374d91b6-00c2d8ee",
+					"x": 0,
+					"y": 180,
+					"pins": [
+						{
+							"id": "ea38149e-4b9fe3c8-25c71f80-76a53e4d",
+							"name": "ReviewEnabled",
+							"direction": "output",
+							"category": "bool",
+							"defaultValue": "false",
+							"links": [
+								{
+									"node": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:EventGraph.K2Node_Knot_0",
+									"pin": "b16e3e0a-4856c8e2-eca52d9c-941c2283"
+								}
+							]
+						},
+						{
+							"id": "590969de-4cfa2967-ced1c491-9061050f",
+							"name": "self",
+							"direction": "input",
+							"category": "object",
+							"defaultValue": "",
+							"links": []
+						}
+					]
+				},
+				{
+					"path": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:EventGraph.K2Node_VariableSet_0",
+					"class": "/Script/BlueprintGraph.K2Node_VariableSet",
+					"guid": "c1f678c4-458ede36-94cdc5a3-7bf5ce02",
+					"x": 680,
+					"y": 0,
+					"pins": [
+						{
+							"id": "8cefd693-452b3080-5e3e339d-ea455b54",
+							"name": "execute",
+							"direction": "input",
+							"category": "exec",
+							"defaultValue": "",
+							"links": [
+								{
+									"node": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:EventGraph.K2Node_IfThenElse_0",
+									"pin": "9a62710f-47960ae7-ddac49ba-b4320010"
+								}
+							]
+						},
+						{
+							"id": "14656307-4fe52cf6-6d232f93-3f0b6d58",
+							"name": "then",
+							"direction": "output",
+							"category": "exec",
+							"defaultValue": "",
+							"links": [
+								{
+									"node": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:EventGraph.K2Node_CallFunction_0",
+									"pin": "83fd25a3-4807b5d9-d850ada1-1cbd0ce1"
+								}
+							]
+						},
+						{
+							"id": "81c78994-4c190d3a-5bb89399-538b8d2f",
+							"name": "ReviewEnabled",
+							"direction": "input",
+							"category": "bool",
+							"defaultValue": "false",
+							"links": []
+						},
+						{
+							"id": "b7681117-42d5c1fc-aad1e9bb-1e3bbefb",
+							"name": "Output_Get",
+							"direction": "output",
+							"category": "bool",
+							"defaultValue": "false",
+							"links": []
+						},
+						{
+							"id": "416e937c-4e183f40-13c48e88-69991e45",
+							"name": "self",
+							"direction": "input",
+							"category": "object",
+							"defaultValue": "",
+							"links": []
+						}
+					]
+				},
+				{
+					"path": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:EventGraph.K2Node_CallFunction_0",
+					"class": "/Script/BlueprintGraph.K2Node_CallFunction",
+					"guid": "635dd247-49621f5c-b5f517ac-5d2d52c5",
+					"x": 1000,
+					"y": 0,
+					"pins": [
+						{
+							"id": "83fd25a3-4807b5d9-d850ada1-1cbd0ce1",
+							"name": "execute",
+							"direction": "input",
+							"category": "exec",
+							"defaultValue": "",
+							"links": [
+								{
+									"node": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:EventGraph.K2Node_VariableSet_0",
+									"pin": "14656307-4fe52cf6-6d232f93-3f0b6d58"
+								}
+							]
+						},
+						{
+							"id": "fb8a7d94-4c8d772e-67688e84-2fc61faf",
+							"name": "then",
+							"direction": "output",
+							"category": "exec",
+							"defaultValue": "",
+							"links": []
+						},
+						{
+							"id": "9781101f-4e101783-7cf8308e-28bf50a3",
+							"name": "self",
+							"direction": "input",
+							"category": "object",
+							"defaultValue": "",
+							"links": []
+						},
+						{
+							"id": "cf75d567-4a4e7223-abcbafb4-c00851c9",
+							"name": "bNewHidden",
+							"direction": "input",
+							"category": "bool",
+							"defaultValue": "true",
+							"links": []
+						}
+					]
+				},
+				{
+					"path": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:EventGraph.EdGraphNode_Comment_0",
+					"class": "/Script/UnrealEd.EdGraphNode_Comment",
+					"guid": "20605f32-41b49c7c-235f5a8b-58ea8c4d",
+					"x": -40,
+					"y": -80,
+					"pins": []
+				}
+			]
+		}
+	]
+}

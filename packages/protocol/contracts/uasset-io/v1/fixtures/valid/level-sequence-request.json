@@ -1,0 +1,18 @@
+{
+	"contract": {
+		"name": "uasset-io",
+		"version": {
+			"major": 1,
+			"minor": 5
+		}
+	},
+	"limits": {
+		"maximumOutputBytes": 1048576,
+		"timeoutMs": 30000
+	},
+	"operation": {
+		"kind": "level_sequence",
+		"assetPath": "C:/project/Content/LS_Example.uasset"
+	},
+	"requestId": "sequence-001"
+}

@@ -2057,6 +2057,9 @@
 				}
 			]
 		},
+		"/Script/CoreUObject.InstancedPropertyBag": {
+			"kind": "bool"
+		},
 		"/Script/CoreUObject.IntVector": {
 			"kind": "record",
 			"fields": [
@@ -2461,6 +2464,81 @@
 					}
 				}
 			]
+		},
+		"FPropertyBagDescriptorPrefix": {
+			"kind": "record",
+			"fields": [
+				{
+					"name": "ValueTypeObject",
+					"layout": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "ID",
+					"layout": {
+						"kind": "record",
+						"fields": [
+							{
+								"name": "A",
+								"layout": {
+									"kind": "int32"
+								}
+							},
+							{
+								"name": "B",
+								"layout": {
+									"kind": "int32"
+								}
+							},
+							{
+								"name": "C",
+								"layout": {
+									"kind": "int32"
+								}
+							},
+							{
+								"name": "D",
+								"layout": {
+									"kind": "int32"
+								}
+							}
+						]
+					}
+				},
+				{
+					"name": "Name",
+					"layout": {
+						"kind": "name"
+					}
+				},
+				{
+					"name": "ValueType",
+					"layout": {
+						"kind": "u_int8"
+					}
+				}
+			]
+		},
+		"FPropertyBagMetadata": {
+			"kind": "array",
+			"element": {
+				"kind": "record",
+				"fields": [
+					{
+						"name": "Key",
+						"layout": {
+							"kind": "name"
+						}
+					},
+					{
+						"name": "Value",
+						"layout": {
+							"kind": "string"
+						}
+					}
+				]
+			}
 		},
 		"FReferenceSkeletonPose": {
 			"kind": "record",

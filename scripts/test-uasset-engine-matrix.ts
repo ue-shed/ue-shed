@@ -7,10 +7,11 @@ import {
 	mkdtempSync,
 	openSync,
 	readFileSync,
+	rmSync,
 	writeFileSync
 } from "node:fs";
 import { basename, join, resolve } from "node:path";
-import { isJsonString, parseJsonObject } from "./json.ts";
+import { isJsonObject, isJsonString, parseJsonObject } from "./json.ts";
 import { repositoryRoot, unrealEngineTools, unrealEngineVersion } from "./unreal-plugin-host.ts";
 
 // Require both engines before starting work. The ordinary fixture command remains the
@@ -59,6 +60,20 @@ function run(
 	}
 }
 
+const packageManager =
+	process.env.npm_execpath ?? (process.platform === "win32" ? "pnpm.cmd" : "pnpm");
+const packageManagerIsScript = /\.(?:c|m)?js$/iu.test(packageManager);
+for (const name of ["protocol", "unreal-assets"])
+	run(
+		join(output, `build-${name}.log`),
+		packageManagerIsScript ? process.execPath : packageManager,
+		[
+			...(packageManagerIsScript ? [packageManager] : []),
+			"--filter",
+			`@ue-shed/${name}`,
+			"build"
+		]
+	);
 run(join(output, "build-native.log"), "cargo", ["build", "--locked", "-p", "uasset-io"]);
 run(join(output, "build-wasm.log"), process.execPath, ["scripts/build-uasset-wasm.ts"]);
 
@@ -75,6 +90,30 @@ for (const engine of engines) {
 	const root = join(output, engine.version);
 	mkdirSync(root);
 	try {
+		const bagModel = parseJsonObject(
+			readFileSync(
+				join(repositoryRoot, "crates/uasset-parser/source-models/ue58-property-bags.json"),
+				"utf8"
+			)
+		);
+		if (engine.version === "5.8") {
+			run(join(root, "property-bag-codegen.log"), "cargo", [
+				"run",
+				"--locked",
+				"-p",
+				"uasset-source-gen",
+				"--",
+				"check",
+				"--config",
+				"crates/uasset-source-gen/config/ue58-property-bags.json",
+				"--engine-source",
+				join(engine.root, "Engine", "Source"),
+				"--workspace",
+				repositoryRoot,
+				"--output",
+				"crates/uasset-parser/source-models/ue58-property-bags.json"
+			]);
+		}
 		for (const model of [
 			{
 				name: "engine",
@@ -126,9 +165,12 @@ for (const engine of engines) {
 				// Tagged class fields can evolve independently. The parser currently shares
 				// native layouts; fail if source-derived wire recipes diverge between engines.
 				assert.equal(actual.schema_version, expected.schema_version);
+				assert.ok(
+					isJsonObject(expected.native_layouts) && isJsonObject(bagModel.native_layouts)
+				);
 				assert.deepEqual(
 					actual.native_layouts,
-					expected.native_layouts,
+					{ ...expected.native_layouts, ...bagModel.native_layouts },
 					`${model.name}: native layout drift`
 				);
 				assert.deepEqual(
@@ -178,6 +220,24 @@ for (const engine of engines) {
 		// This directory did not exist in the source copy, so stale committed evidence
 		// cannot satisfy the oracle check if the commandlet fails to produce output.
 		const evidence = join(root, "evidence");
+		const reviewArgs = commandletArgs.map((arg) =>
+			arg === "-NativeParserOnly" ? "-SavedReviewOnly" : arg
+		);
+		for (const path of [
+			"Blueprints/BP_GraphFixture",
+			"Blueprints/BP_ReviewFixture",
+			"Sequences/LS_TextTimeline",
+			"Sequences/LS_NestedTimeline"
+		]) {
+			rmSync(join(fixture, "Content/Fixture", `${path}.uasset`), { force: true });
+		}
+		run(join(root, "generate-review.log"), tools.editorCommandlet, reviewArgs);
+		run(join(root, "verify-review.log"), tools.editorCommandlet, [
+			...reviewArgs,
+			"-VerifyOnly",
+			`-SavedReviewEvidence=${evidence}`
+		]);
+
 		run(join(root, "verify.log"), tools.editorCommandlet, [
 			...commandletArgs,
 			"-VerifyOnly",
@@ -188,7 +248,14 @@ for (const engine of engines) {
 		);
 		assert.ok(isJsonString(oracle.producer), "missing oracle producer");
 		assert.ok(oracle.producer.startsWith(`Unreal ${engine.version}.`), "wrong oracle engine");
-		cpSync(evidence, join(fixture, "FixtureExpected", "parser-targets"), { recursive: true });
+		for (const filename of ["native-coverage.json", "blueprint-review.json"])
+			cpSync(
+				join(evidence, filename),
+				join(fixture, "FixtureExpected/parser-targets", filename)
+			);
+		cpSync(join(evidence, "parser-targets"), join(fixture, "FixtureExpected/parser-targets"), {
+			recursive: true
+		});
 		const environment = {
 			...process.env,
 			UE_SHED_UASSET_FIXTURE_ROOT: fixture,
@@ -205,6 +272,12 @@ for (const engine of engines) {
 			join(root, "wasm-parity.log"),
 			process.execPath,
 			["scripts/test-uasset-wasm.ts"],
+			environment
+		);
+		run(
+			join(root, "saved-review-parity.log"),
+			process.execPath,
+			["--import", "tsx", "scripts/test-saved-review.ts"],
 			environment
 		);
 		results.push({ version: engine.version, status: "passed" });

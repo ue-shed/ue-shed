@@ -10,6 +10,7 @@ export type WorkbenchRoute =
 	| "Texture Audit"
 	| "Camera Lab"
 	| "Blueprint Graphs"
+	| "Sequencer"
 	| "Config Explorer"
 	| "Project Custodian"
 	| "Scenario Studio"

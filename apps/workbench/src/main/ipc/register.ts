@@ -1,3 +1,4 @@
+import { register as registerSavedReview } from "./saved-review.js";
 import { Effect } from "effect";
 import { ElectronIpc } from "../adapters/electron-ipc.js";
 import { WorkbenchUnrealConnection } from "../services/unreal-connection.js";
@@ -33,6 +34,7 @@ const registerChannels = Effect.all(
 		registerAssetAudits,
 		registerAssetNavigation,
 		registerBlueprintGraphs,
+		registerSavedReview,
 		registerGameText,
 		registerInputAtlas,
 		registerAuthoring,

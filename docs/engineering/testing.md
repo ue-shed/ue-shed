@@ -134,8 +134,10 @@ the complete generated models remain in the evidence directory for review.
 Each engine builds a disposable fixture, saves the native parser assets, and reloads them in a
 separate commandlet process. Rust semantic conformance uses that engine's saved bytes and independent
 Unreal API evidence; native/WASM parity and numeric projection contract checks use the same assets.
-Only `ParserNative` assets are regenerated in this focused lane; the other copied fixtures retain
-their committed 5.7 baseline. The lane retains logs, assets, models, and per-version `results.json`
+`ParserNative`, Blueprint graph/review, and text/nested Level Sequence assets are regenerated in
+this lane. Blueprint membership, pin types/defaults and links are compared with fresh loaded graph
+APIs; sequence timing, text keys and nested references are compared with loaded MovieScene APIs.
+Other copied fixtures retain their committed 5.7 baseline. The lane retains logs, assets, models, and per-version `results.json`
 under `out/uasset-engine-matrix-*`. It does not overwrite committed fixtures or use an open editor.
 
 For plugin or live integration changes, also run the relevant plugin/authoring gates with

@@ -66,6 +66,10 @@ export async function extractBlueprints(path, bytes) {
 	return (await createBrowserRuntime()).extractBlueprints(path, bytes);
 }
 
+export async function extractAnimations(path, bytes) {
+	return (await createBrowserRuntime()).extractAnimations(path, bytes);
+}
+
 export async function version() {
 	return (await createBrowserRuntime()).version();
 }

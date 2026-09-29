@@ -73,6 +73,8 @@ const approvedPromiseAdapters = new Set([
 	// implementation remains isolated in preload.ts and the Electron IPC adapter.
 	"apps/workbench/src/main/preload-contract.ts",
 	"apps/workbench/src/main/preload.ts",
+	// Saved review adapts Electron IPC promises to validated, typed Effect reads.
+	"apps/workbench/src/renderer/saved-review-client.ts",
 	"apps/workbench/src/renderer/asset-audits-client.ts",
 	"apps/workbench/src/renderer/authoring-client.ts",
 	"apps/workbench/src/renderer/content-observatory-client.ts",
@@ -230,6 +232,8 @@ const workbenchMainBootstrap = "apps/workbench/src/main/main.ts";
 const workbenchMainAdaptersPrefix = "apps/workbench/src/main/adapters/";
 const workbenchRendererPrefix = "apps/workbench/src/renderer/";
 const rendererTransportFiles = new Set([
+	// Saved review adapts Electron IPC promises to validated, typed Effect reads.
+	"apps/workbench/src/renderer/saved-review-client.ts",
 	"apps/workbench/src/renderer/asset-audits-client.ts",
 	"apps/workbench/src/renderer/authoring-client.ts",
 	"apps/workbench/src/renderer/content-observatory-client.ts",

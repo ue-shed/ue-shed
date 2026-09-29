@@ -1,0 +1,109 @@
+{
+	"schema_version": 9,
+	"engine_version": "5.8",
+	"classes": [],
+	"structs": [],
+	"native_layouts": {
+		"/Script/CoreUObject.InstancedPropertyBag": {
+			"kind": "bool"
+		},
+		"FPropertyBagDescriptorPrefix": {
+			"kind": "record",
+			"fields": [
+				{
+					"name": "ValueTypeObject",
+					"layout": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "ID",
+					"layout": {
+						"kind": "record",
+						"fields": [
+							{
+								"name": "A",
+								"layout": {
+									"kind": "int32"
+								}
+							},
+							{
+								"name": "B",
+								"layout": {
+									"kind": "int32"
+								}
+							},
+							{
+								"name": "C",
+								"layout": {
+									"kind": "int32"
+								}
+							},
+							{
+								"name": "D",
+								"layout": {
+									"kind": "int32"
+								}
+							}
+						]
+					}
+				},
+				{
+					"name": "Name",
+					"layout": {
+						"kind": "name"
+					}
+				},
+				{
+					"name": "ValueType",
+					"layout": {
+						"kind": "u_int8"
+					}
+				}
+			]
+		},
+		"FPropertyBagDescriptorV5Suffix": {
+			"kind": "record",
+			"fields": [
+				{
+					"name": "PropertyFlags",
+					"layout": {
+						"kind": "int64"
+					}
+				},
+				{
+					"name": "KeyType",
+					"layout": {
+						"kind": "u_int8"
+					}
+				},
+				{
+					"name": "KeyTypeObject",
+					"layout": {
+						"kind": "int32"
+					}
+				}
+			]
+		},
+		"FPropertyBagMetadata": {
+			"kind": "array",
+			"element": {
+				"kind": "record",
+				"fields": [
+					{
+						"name": "Key",
+						"layout": {
+							"kind": "name"
+						}
+					},
+					{
+						"name": "Value",
+						"layout": {
+							"kind": "string"
+						}
+					}
+				]
+			}
+		}
+	}
+}

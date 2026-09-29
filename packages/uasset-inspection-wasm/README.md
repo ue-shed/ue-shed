@@ -7,7 +7,7 @@ processes, maintain caches, or write assets.
 The first public contract is deliberately small:
 
 - generic inspection returns schema 8;
-- `extractText`, `extractTextures`, `extractLevelSequences`, and `extractBlueprints` return compact
+- `extractText`, `extractTextures`, `extractLevelSequences`, `extractBlueprints`, and `extractAnimations` return compact
   schema-1 envelopes;
   LevelSequence records use schema 4 and include saved scalar/transform channels, nested-sequence and cinematic-shot semantics plus
   a recursive inventory of every decoded object, soft-object, and DataTable-row reference in the
@@ -32,6 +32,22 @@ sections remain explicit coverage gaps; no editor defaults or evaluated world tr
 Consumers upgrading from schema 3 must accept the new track kinds and required channel arrays.
 The language-neutral record schema is published at
 `@ue-shed/uasset-inspection-wasm/contracts/level-sequence.v4.schema.json`.
+
+`extractAnimations` joins AnimSequence exports to their saved AnimationSequencerDataModel and FK
+Control Rig section. Schema-1 records include duration, frame rate/count, rate scale, looping,
+skeleton references, bone tracks, float-curve names/key counts, absolute notify timing, and
+root-motion settings. Absent saved properties stay null with coverage gaps; unknown data models
+and unsupported notify timing make the summary partial. It does not load dependencies or evaluate
+poses. The record contract is published as `contracts/animation.v1.schema.json`. The same method
+is available on Node/browser runtimes and their convenience exports; native CLI parity is checked
+with `uasset animation <path> --format json`.
+
+Generic inspection also decodes InstancedPropertyBag descriptors and bounded values through the
+existing `native_struct` representation: `CustomVersion`, `HasData`, and, for populated bags,
+`Descriptors` and `Value`. Descriptors retain GUIDs, value types, references, container types and
+saved metadata. UE 5.8 adds property flags and map key descriptors. Empty bags have no value field;
+unknown custom versions remain explicit unsupported evidence. These values are parameters as saved,
+without StateTree/PCG evaluation.
 
 The default input and serialized-output limit is 64 MiB. The Rust adapter also bounds package
 exports and compact projection records. JavaScript rejects an oversized `Uint8Array` before

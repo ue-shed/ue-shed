@@ -1,0 +1,15 @@
+{
+	"schema_version": 9,
+	"engine_version": "5.8",
+	"modules": [
+		{
+			"name": "CoreUObject",
+			"root": "engine_source",
+			"headers": [],
+			"sources": [
+				"Runtime/CoreUObject/Private/StructUtils/PropertyBag.cpp",
+				"Runtime/CoreUObject/Public/StructUtils/PropertyBag.h"
+			]
+		}
+	]
+}

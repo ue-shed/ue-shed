@@ -7,6 +7,20 @@ Saved-package inventory and CLI tests copy fixture files listed in Git's index i
 projects. Ignored, locally generated content does not participate in portable fixture counts. Stage
 new fixture files before running these tests; existing files use their current working contents.
 
+## Saved Blueprint and Sequencer review
+
+`BP_ReviewFixture` adds a branch, bool variable get/set, reroute, comment, function graph and linked
+call to the minimal Blueprint fixture. `UEShedSavedReviewFixture.cpp` builds it through editor APIs.
+`FixtureExpected/parser-targets/blueprint-review.json` records loaded graph membership, GUIDs,
+positions, pin categories/defaults and links. The conformance script normalizes Unreal's first
+subobject `:` separator to the parser's export outer-chain `.` notation; it does not discard graph
+or pin evidence.
+
+`-run=UEShedBuildFixture -SavedReviewOnly` generates Blueprint and text/nested Sequence fixtures;
+a separate invocation with `-VerifyOnly -SavedReviewEvidence=<directory>` reloads them and writes
+independent evidence. Use an isolated fixture project for regeneration. `pnpm test:uasset-engine-matrix`
+automates generation/reload plus native/WASM/public-reader comparisons on both UE 5.7 and UE 5.8.
+
 ## Large World Partition map
 
 Run `pnpm fixture:generate-world-partition` to build, generate, and verify
@@ -161,6 +175,13 @@ offline review accepts a conventional level package.
 float/double/empty channels and tagged/native/null/unsupported InstancedStruct values, and a real
 Level Sequence with float and double tracks. Source inputs are in `UEShedNativeParserTypes.h` and
 `UEShedNativeParserFixture.cpp`. Package annotations cover root/object maps, empty values and Unicode.
+
+The DataAsset also includes populated/empty/nested property bags, array values, type/object
+references, Unicode metadata, and a bag inside InstancedStruct. UE 5.8 adds a Name-to-Int32 map.
+`UEShedPropertyBagFixture.cpp` constructs these through Unreal's property-bag API. `A_Native` and
+`UEShedAnimationParserFixture.cpp` add two bone tracks, a float curve, a notify, saved rational frame
+rate, and root-motion settings. Fresh-process evidence uses property-bag getters and animation-data
+model APIs, independently of the parser's byte representation.
 
 Build `UEShedFixtureEditor`, run the fixture commandlet with `-NativeParserOnly`, then run a new
 process with `-NativeParserOnly -VerifyOnly -NativeParserEvidence=<directory>`. Only accept the

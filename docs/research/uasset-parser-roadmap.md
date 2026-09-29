@@ -32,6 +32,13 @@ The additional recipes decode GameplayTagContainer and common math values across
 and InstancedStruct; Transform retains its tagged framing with decoded quaternion fields.
 See the [coverage and boundary matrix](../../crates/uasset-source-gen/README.md#expanded-native-coverage).
 
+Property bags now preserve dynamic descriptors, metadata, references and bounded tagged values,
+including nested bags and UE 5.8 maps. Source-checked recipes select custom version 3 (UE 5.7) or 5
+(UE 5.8); matching package revisions do not imply matching descriptor type IDs. Saved animation
+summaries now join AnimSequence, AnimationSequencerDataModel and FK section exports for timing,
+tracks, curves, notifies and root-motion settings. Both additions are verified against fresh-process
+Unreal APIs on 5.7 and 5.8, with native/WASM parity and a published schema-1 animation record.
+
 ## Dependency order
 
 Precision and diagnostic correctness come first. Real-fixture conformance and the shared wire
@@ -40,6 +47,10 @@ and input bounds can then proceed independently. Broad codec work should be incr
 by checked-in Unreal-generated fixtures. Fuzz failures become ordinary regression tests.
 
 ## Current boundary
+
+Blueprint and Sequencer completeness means recovering saved structures, values, references, and
+metadata with explicit coverage gaps. Editing and compilation are out of scope. Evaluated playback
+is a separate consumer of parsed data and is not a parser-completeness target.
 
 The supported product boundary is read-only inspection of classic, uncooked, versioned editor
 packages. Cooked packages, unversioned properties, IoStore/Zen packages, swapped endianness, UTrace,
@@ -70,8 +81,8 @@ pairs a two-bone `Skeleton` with an uncooked sequence containing two seconds of 
 tracks, and root-motion settings. The parser consumes the sequence's small native trailer and keeps
 the package at `status: ok`; it deliberately does not decode cooked compressed tracks or legacy
 inline raw tracks. UE 5.7's authoritative source motion lives in separately exported animation-data
-model objects, so track/curve summaries belong in a narrow animation projection over the decoded
-package rather than in the `AnimSequence` trailer decoder.
+model objects. The portable `animation` projection follows those saved references and retains
+missing/default-elided properties and unsupported model classes as explicit coverage gaps.
 
 `LevelSequence` is the next increment and is intentionally evaluator-independent. The UE 5.7
 fixture contains a five-second `MovieScene`, one object binding, a text property track, one section,

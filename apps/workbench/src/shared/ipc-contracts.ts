@@ -1,3 +1,4 @@
+import { SequenceReadResult, SavedReviewInventory } from "./saved-review-contract.js";
 import { EditorHandoffNotice } from "./editor-handoff.js";
 import {
 	MapReviewMapOpenResult,
@@ -809,6 +810,21 @@ export const invokeContracts = {
 		channel: "asset-navigation:locate",
 		args: Schema.Tuple([GameObjectPath]),
 		result: EditorAssetLocateResult
+	}),
+	"saved-review:sequence": invoke({
+		channel: "saved-review:sequence",
+		args: Schema.Tuple([BlueprintAssetPath]),
+		result: SequenceReadResult
+	}),
+	"saved-review:choose-sequence": invoke({
+		channel: "saved-review:choose-sequence",
+		args: Schema.Tuple([]),
+		result: SequenceReadResult
+	}),
+	"saved-review:inventory": invoke({
+		channel: "saved-review:inventory",
+		args: Schema.Tuple([]),
+		result: SavedReviewInventory
 	}),
 	"blueprint-graphs:read": invoke({
 		channel: "blueprint-graphs:read",

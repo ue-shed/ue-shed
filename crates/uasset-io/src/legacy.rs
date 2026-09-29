@@ -37,6 +37,7 @@ pub fn run(arguments: Vec<OsString>) -> u8 {
         }
         Ok(Command::Inspect(options)) => inspect(&options),
         Ok(Command::Authoring(options)) => authoring(&options),
+        Ok(Command::Animation(options)) => animation(&options),
         Ok(Command::Scan(options)) => scan(&options),
         Ok(Command::SavedWorld(options)) => saved_world(&options),
         Err(error) => {
@@ -132,6 +133,7 @@ impl Input {
 enum Command {
     Inspect(InspectOptions),
     Authoring(InspectOptions),
+    Animation(InspectOptions),
     Scan(ScanOptions),
     SavedWorld(SavedWorldOptions),
     Help,
@@ -151,6 +153,10 @@ impl Command {
                 _ => unreachable!("parse_inspect only returns Inspect"),
             },
             Some("scan") => Self::parse_scan(arguments.collect()),
+            Some("animation") => match Self::parse_inspect(arguments.collect())? {
+                Self::Inspect(options) => Ok(Self::Animation(options)),
+                _ => unreachable!("parse_inspect only returns Inspect"),
+            },
             Some("saved-world") => Self::parse_saved_world(arguments.collect()),
             Some("-h" | "--help" | "help") => {
                 reject_trailing_arguments(arguments)?;
@@ -512,6 +518,41 @@ fn authoring(options: &InspectOptions) -> u8 {
     }
 }
 
+fn animation(options: &InspectOptions) -> u8 {
+    if options.format != OutputFormat::Json {
+        eprintln!("uasset: animation requires --format json");
+        return EXIT_USAGE;
+    }
+    let path = options.input.display_name();
+    let bytes = match read_input(&options.input) {
+        Ok(bytes) => bytes,
+        Err(error) => return emit_failure(options.format, &path, "io", error.to_string(), true),
+    };
+    match uasset_inspection::animation::inspect_animation_bytes(&path, &bytes) {
+        Ok(output) => {
+            let result = write_json_line(&output);
+            if result == EXIT_SUCCESS && output.status == "partial" {
+                EXIT_PARTIAL
+            } else {
+                result
+            }
+        }
+        Err(error) => emit_failure(
+            options.format,
+            &path,
+            match error.kind() {
+                uasset_parser::PackageErrorKind::MalformedData => "malformed_data",
+                uasset_parser::PackageErrorKind::UnsupportedFormat => "unsupported_format",
+                uasset_parser::PackageErrorKind::UnsupportedVersion => "unsupported_version",
+                uasset_parser::PackageErrorKind::UnsupportedCapability => "unsupported_capability",
+                uasset_parser::PackageErrorKind::ResourceLimit => "resource_limit",
+            },
+            error.to_string(),
+            false,
+        ),
+    }
+}
+
 fn scan(options: &ScanOptions) -> u8 {
     let operation = match options.projection {
         ScanProjection::Generic => Operation::Scan {
@@ -845,13 +886,14 @@ fn emit_failure(
     }
 }
 
-const USAGE: &str = "Usage: uasset <inspect|authoring|scan|saved-world> <path> [options]";
+const USAGE: &str = "Usage: uasset <inspect|authoring|animation|scan|saved-world> <path> [options]";
 
 const HELP: &str = "\
 uasset — Unreal asset inspection and project IO\n\n\
 Commands:\n\
   inspect     Inspect one package as text or JSON.\n\
   authoring   Emit the typed authoring snapshot for one DataTable package.\n\
+  animation   Summarize saved animation timing, tracks, curves and notifies (--format json).\n\
   scan        Scan selected project packages, optionally at header depth.\n\
   saved-world Read one saved map and resolve actor transforms.\n\n\
 Protocol operations use the same native direct executors as these human adapters.\n";

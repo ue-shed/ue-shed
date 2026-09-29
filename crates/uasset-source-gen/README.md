@@ -145,7 +145,8 @@ The expanded recipes also cover Engine rich curve keys and reference poses, Movi
 channels, and CoreUObject InstancedStruct framing and package annotations. These are source-checked
 recipes based on UE 5.7, not automatic interpretation of arbitrary C++. The engine matrix checks
 their native layout equivalence against UE 5.8 source. General source change detection, preprocessor
-conditions, and version-specific layout selection remain future work.
+conditions remain future work. Property bags separately verify UE 5.7 and 5.8 enum declarations and
+serialization fragments; the runtime selects the suffix and type IDs by the saved custom version.
 
 For a focused fixture refresh, build `UEShedFixtureEditor` and run `UnrealEditor-Cmd` with the fixture
 project and `-run=UEShedBuildFixture -TextOnly -unattended -nop4 -NullRHI`. Then run a **new process**
@@ -158,7 +159,7 @@ Unreal source is read locally and is never copied into the product or generated 
 
 ## Expanded native coverage
 
-Six fixtures in `Content/Fixture/ParserNative` cover these capabilities:
+Seven fixtures in `Content/Fixture/ParserNative` cover these capabilities:
 
 | Capability                                  | Decoded evidence                                                                                                    | Remaining boundary                                                                                       |
 | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
@@ -184,7 +185,7 @@ Compare that directory's `native-coverage.json` with the committed file in
 `cargo test -p uasset-inspection --test native_coverage` to compare directly with the fresh oracle.
 The ordinary Unreal conformance command runs this comparison too. Portable tests use the committed
 assets/evidence, reject malformed counts, strides, booleans, versions and bounded payloads, and
-compare all six assets across native and WASM inspection.
+compare all seven assets across native and WASM inspection.
 
 The additional property recipes use fully qualified `/Script/...` layout keys, shared by standalone
 properties, array/set/map elements, and InstancedStruct. `FTransform`'s archive layout is kept under
@@ -198,3 +199,15 @@ tangents, defaults, extrapolation, tick resolution, and ShowCurve. Omitted chann
 and unknown section classes remain coverage gaps. No defaults are inferred from an editor CDO. The
 WASM package publishes `contracts/level-sequence.v4.schema.json`; its one-million-item projection
 limit counts channels and keys. Fixtures and fresh-process Unreal APIs verify the saved semantics.
+
+InstancedPropertyBag uses generated descriptor-prefix, metadata and UE 5.8 suffix layouts, with
+bounded conditional framing in the codec. `ue58-property-bags.json` supplements the base model;
+custom versions 3 and 5 are supported explicitly. The source gate checks value/container enum
+ordering because UE 5.8 inserts integer types before UInt32/UInt64. Descriptors expose IDs, names,
+type references, containers and metadata; version 5 also exposes flags and map key types/references.
+Nested tagged values use ordinary property codecs. Other custom versions remain unsupported.
+
+`A_Native` exercises saved animation timing, two bone tracks, a float curve, a named notify and
+root-motion settings. The animation projection uses decoded model exports rather than generic
+inspection JSON. Native CLI and WASM share the projection and its published schema-1 record.
+`pnpm test:uasset-engine-matrix` builds fresh assets and reloads them independently on both engines.

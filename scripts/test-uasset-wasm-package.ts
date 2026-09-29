@@ -82,6 +82,8 @@ import { createNodeRuntime, extractBlueprints, inspect } from "@ue-shed/uasset-i
 import * as browserEntry from "@ue-shed/uasset-inspection-wasm/browser";
 const sequenceContract = JSON.parse(readFileSync(new URL(import.meta.resolve("@ue-shed/uasset-inspection-wasm/contracts/level-sequence.v4.schema.json")), "utf8"));
 assert.equal(sequenceContract.properties.schema_version.const, 4);
+const animationContract = JSON.parse(readFileSync(new URL(import.meta.resolve("@ue-shed/uasset-inspection-wasm/contracts/animation.v1.schema.json")), "utf8"));
+assert.equal(animationContract.properties.schema_version.const, 1);
 const bytes = readFileSync("DT_Scalars.uasset");
 const blueprintBytes = readFileSync("BP_GraphFixture.uasset");
 const runtime = createNodeRuntime();

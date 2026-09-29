@@ -4,7 +4,7 @@
 //! export graph. It does not attempt to reproduce Sequencer evaluation, blending, or runtime
 //! object binding.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 mod numeric;
 pub use numeric::{SequenceNumericChannel, SequenceNumericKey};
 use uasset_parser::asset::{DecodedAsset, DecodedUObject};
@@ -24,7 +24,7 @@ pub const CINEMATIC_SHOT_SECTION_CLASS: &str =
 pub const TEXT_TRACK_CLASS: &str = "/Script/MovieSceneTracks.MovieSceneTextTrack";
 pub const TEXT_SECTION_CLASS: &str = "/Script/MovieSceneTracks.MovieSceneTextSection";
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct LevelSequenceProjection {
     pub schema_version: u8,
     pub object_path: String,
@@ -41,7 +41,7 @@ pub struct LevelSequenceProjection {
     pub coverage_gaps: Vec<SequenceCoverageGap>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub struct SequenceReference {
     pub owner_path: String,
     pub owner_class_path: String,
@@ -53,7 +53,7 @@ pub struct SequenceReference {
     pub scope: SequenceReferenceScope,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SequenceReferenceKind {
     Object,
@@ -61,21 +61,21 @@ pub enum SequenceReferenceKind {
     DataTableRowHandle,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SequenceReferenceScope {
     Internal,
     External,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub struct SequenceReferenceCoverageGap {
     pub owner_path: String,
     pub property_path: String,
     pub reason: SequenceReferenceCoverageGapReason,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SequenceReferenceCoverageGapReason {
     RawPropertyValue,
@@ -83,25 +83,25 @@ pub enum SequenceReferenceCoverageGapReason {
     UnresolvedObjectReference,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub struct SequenceFrameRate {
     pub numerator: i64,
     pub denominator: i64,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub struct SequenceFrameRange {
     pub lower: SequenceFrameBound,
     pub upper: SequenceFrameBound,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub struct SequenceFrameBound {
     pub kind: SequenceFrameBoundKind,
     pub frame: i32,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SequenceFrameBoundKind {
     Exclusive,
@@ -109,7 +109,7 @@ pub enum SequenceFrameBoundKind {
     Open,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct SequenceBinding {
     pub id: String,
     pub name: Option<String>,
@@ -117,7 +117,7 @@ pub struct SequenceBinding {
     pub tracks: Vec<SequenceTrack>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct SequenceTrack {
     pub object_path: String,
     pub class_path: String,
@@ -126,7 +126,7 @@ pub struct SequenceTrack {
     pub sections: Vec<SequenceSection>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SequenceTrackContent {
     TimedText,
@@ -137,7 +137,7 @@ pub enum SequenceTrackContent {
     StructureOnly,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct SequenceSection {
     pub object_path: String,
     pub class_path: String,
@@ -148,28 +148,28 @@ pub struct SequenceSection {
     pub numeric_channels: Vec<SequenceNumericChannel>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub struct SequenceTextKey {
     pub frame: i64,
     pub source: String,
     pub identity: SequenceTextIdentity,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum SequenceTextIdentity {
     Resolved { namespace: String, key: String },
     Unresolved,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub struct SequenceCoverageGap {
     pub object_path: String,
     pub property_path: String,
     pub reason: SequenceCoverageGapReason,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SequenceCoverageGapReason {
     MissingReference,

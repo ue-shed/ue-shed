@@ -1,5 +1,4 @@
 use std::collections::HashSet;
-use std::fs;
 
 use uasset_inspection::{
     BlueprintGraphProjection, is_control_rig_blueprint_package, project_blueprint_graphs,
@@ -25,12 +24,7 @@ pub(crate) fn blueprint_with_cancellation(
     cancellation: &CancellationToken,
 ) -> Result<BlueprintOutput, Failure> {
     checkpoint(cancellation, "read")?;
-    let bytes = fs::read(path).map_err(|error| Failure {
-        code: "io".to_owned(),
-        message: format!("could not read Blueprint asset {path}: {error}"),
-        retry_safe: true,
-        ..Default::default()
-    })?;
+    let bytes = super::level_sequence::read_review_asset(path)?;
     checkpoint(cancellation, "read")?;
     blueprint_bytes_with_cancellation(path, &bytes, cancellation)
 }
@@ -157,7 +151,7 @@ fn is_graph_class_candidate(class_path: &str) -> bool {
     })
 }
 
-fn package_error_code(kind: uasset_parser::PackageErrorKind) -> &'static str {
+pub(super) fn package_error_code(kind: uasset_parser::PackageErrorKind) -> &'static str {
     match kind {
         uasset_parser::PackageErrorKind::MalformedData => "malformed_data",
         uasset_parser::PackageErrorKind::ResourceLimit => "resource_limit",
@@ -167,7 +161,7 @@ fn package_error_code(kind: uasset_parser::PackageErrorKind) -> &'static str {
     }
 }
 
-fn asset_error_code(kind: uasset_parser::asset::AssetErrorKind) -> &'static str {
+pub(super) fn asset_error_code(kind: uasset_parser::asset::AssetErrorKind) -> &'static str {
     match kind {
         uasset_parser::asset::AssetErrorKind::MalformedData => "malformed_data",
         uasset_parser::asset::AssetErrorKind::ResourceLimit => "resource_limit",

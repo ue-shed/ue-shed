@@ -1,0 +1,332 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"title": "UE Shed saved animation summary v1",
+	"type": "object",
+	"properties": {
+		"schema_version": {
+			"const": 1
+		},
+		"object_path": {
+			"type": "string"
+		},
+		"skeleton": {
+			"anyOf": [
+				{
+					"type": "string"
+				},
+				{
+					"type": "null"
+				}
+			]
+		},
+		"data_model": {
+			"anyOf": [
+				{
+					"type": "string"
+				},
+				{
+					"type": "null"
+				}
+			]
+		},
+		"data_model_class": {
+			"anyOf": [
+				{
+					"type": "string"
+				},
+				{
+					"type": "null"
+				}
+			]
+		},
+		"duration_seconds": {
+			"anyOf": [
+				{
+					"type": "number"
+				},
+				{
+					"type": "null"
+				}
+			]
+		},
+		"rate_scale": {
+			"anyOf": [
+				{
+					"type": "number"
+				},
+				{
+					"type": "null"
+				}
+			]
+		},
+		"looping": {
+			"anyOf": [
+				{
+					"type": "boolean"
+				},
+				{
+					"type": "null"
+				}
+			]
+		},
+		"frame_rate": {
+			"anyOf": [
+				{
+					"type": "object",
+					"properties": {
+						"numerator": {
+							"type": "integer",
+							"minimum": 1,
+							"maximum": 2147483647
+						},
+						"denominator": {
+							"type": "integer",
+							"minimum": 1,
+							"maximum": 2147483647
+						}
+					},
+					"required": ["numerator", "denominator"],
+					"additionalProperties": false
+				},
+				{
+					"type": "null"
+				}
+			]
+		},
+		"frame_count": {
+			"anyOf": [
+				{
+					"type": "integer",
+					"minimum": 0,
+					"maximum": 2147483647
+				},
+				{
+					"type": "null"
+				}
+			]
+		},
+		"bone_tracks": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"properties": {
+					"name": {
+						"type": "string"
+					},
+					"property_path": {
+						"type": "string"
+					}
+				},
+				"required": ["name", "property_path"],
+				"additionalProperties": false
+			},
+			"maxItems": 1000000
+		},
+		"curves": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"properties": {
+					"name": {
+						"type": "string"
+					},
+					"kind": {
+						"enum": ["float", "transform"]
+					},
+					"key_count": {
+						"anyOf": [
+							{
+								"type": "integer",
+								"minimum": 0,
+								"maximum": 1000000
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"property_path": {
+						"type": "string"
+					}
+				},
+				"required": ["name", "kind", "key_count", "property_path"],
+				"additionalProperties": false
+			},
+			"maxItems": 1000000
+		},
+		"notifies": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"properties": {
+					"name": {
+						"anyOf": [
+							{
+								"type": "string"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"time_seconds": {
+						"anyOf": [
+							{
+								"type": "number"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"duration_seconds": {
+						"anyOf": [
+							{
+								"type": "number"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"track_index": {
+						"anyOf": [
+							{
+								"type": "integer"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"notify_object": {
+						"anyOf": [
+							{
+								"type": "string"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"notify_state_object": {
+						"anyOf": [
+							{
+								"type": "string"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"property_path": {
+						"type": "string"
+					}
+				},
+				"required": [
+					"name",
+					"time_seconds",
+					"duration_seconds",
+					"track_index",
+					"notify_object",
+					"notify_state_object",
+					"property_path"
+				],
+				"additionalProperties": false
+			},
+			"maxItems": 1000000
+		},
+		"root_motion": {
+			"type": "object",
+			"properties": {
+				"enabled": {
+					"anyOf": [
+						{
+							"type": "boolean"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"root_lock": {
+					"anyOf": [
+						{
+							"type": "string"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"force_root_lock": {
+					"anyOf": [
+						{
+							"type": "boolean"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"normalized_scale": {
+					"anyOf": [
+						{
+							"type": "boolean"
+						},
+						{
+							"type": "null"
+						}
+					]
+				}
+			},
+			"required": ["enabled", "root_lock", "force_root_lock", "normalized_scale"],
+			"additionalProperties": false
+		},
+		"coverage_gaps": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"properties": {
+					"object_path": {
+						"type": "string"
+					},
+					"property_path": {
+						"type": "string"
+					},
+					"reason": {
+						"enum": [
+							"missing_saved_property",
+							"undecoded_value",
+							"missing_export",
+							"unsupported_data_model",
+							"unsupported_track",
+							"invalid_value"
+						]
+					}
+				},
+				"required": ["object_path", "property_path", "reason"],
+				"additionalProperties": false
+			},
+			"maxItems": 1000000
+		}
+	},
+	"required": [
+		"schema_version",
+		"object_path",
+		"skeleton",
+		"data_model",
+		"data_model_class",
+		"duration_seconds",
+		"rate_scale",
+		"looping",
+		"frame_rate",
+		"frame_count",
+		"bone_tracks",
+		"curves",
+		"notifies",
+		"root_motion",
+		"coverage_gaps"
+	],
+	"additionalProperties": false
+}

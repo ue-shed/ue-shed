@@ -50,10 +50,12 @@ describe("uasset IO protocol v1", () => {
 				for (const name of [
 					"valid/scan-request.json",
 					"valid/blueprint-request.json",
+					"valid/level-sequence-request.json",
 					"valid/accepted-event.json",
 					"valid/inspect-result-event.json",
 					"valid/inspect-native-result-event.json",
 					"valid/blueprint-result-event.json",
+					"valid/level-sequence-result-event.json",
 					"valid/authoring-result-event.json",
 					"valid/scan-asset-result-event.json",
 					"valid/scan-inventory-result-event.json",
@@ -93,6 +95,7 @@ describe("uasset IO protocol v1", () => {
 				for (const name of [
 					"invalid/request-wrong-major.json",
 					"invalid/event-unknown-kind.json",
+					"invalid/level-sequence-version.json",
 					"invalid/negative-instanced-size.json",
 					"invalid/non-string-metadata.json",
 					"invalid/unknown-native-value.json",

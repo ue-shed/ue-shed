@@ -1,0 +1,43 @@
+{
+	"contract": {
+		"name": "uasset-io",
+		"version": {
+			"major": 1,
+			"minor": 5
+		}
+	},
+	"kind": "result",
+	"requestId": "sequence-001",
+	"sequence": 1,
+	"result": {
+		"kind": "level_sequence",
+		"sequence": {
+			"schema_version": 4,
+			"object_path": "/Game/LS_Example.LS_Example",
+			"movie_scene_path": null,
+			"tick_resolution": {
+				"numerator": 24000,
+				"denominator": 1
+			},
+			"display_rate": {
+				"numerator": 30,
+				"denominator": 1
+			},
+			"playback_range": {
+				"lower": {
+					"kind": "inclusive",
+					"frame": 0
+				},
+				"upper": {
+					"kind": "exclusive",
+					"frame": 24000
+				}
+			},
+			"bindings": [],
+			"root_tracks": [],
+			"references": [],
+			"reference_coverage_gaps": [],
+			"coverage_gaps": []
+		}
+	}
+}

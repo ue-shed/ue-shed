@@ -265,6 +265,7 @@ fn operation_kind(operation: &Operation) -> &'static str {
     match operation {
         Operation::Inspect { .. } => "inspect",
         Operation::Blueprint { .. } => "blueprint",
+        Operation::LevelSequence { .. } => "level_sequence",
         Operation::Authoring { .. } => "authoring",
         Operation::Scan { .. } => "scan",
         Operation::ExtractText { .. } => "extract_text",
@@ -289,6 +290,7 @@ fn execute_direct(
             &request.operation,
             Operation::Inspect { .. }
                 | Operation::Blueprint { .. }
+                | Operation::LevelSequence { .. }
                 | Operation::Authoring { .. }
                 | Operation::ProjectIndexQuery { .. }
                 | Operation::ProjectIndexCount { .. }
@@ -316,6 +318,20 @@ fn execute_direct(
                 emitter,
                 &ResultFrame::Blueprint {
                     blueprint: output.blueprint,
+                },
+            )?;
+            Ok(output.partial)
+        }
+        Operation::LevelSequence { asset_path } => {
+            let output =
+                direct_executor::level_sequence_with_cancellation(asset_path, cancellation)?;
+            for diagnostic in &output.diagnostics {
+                emit_diagnostic(emitter, diagnostic)?;
+            }
+            emit_typed_result(
+                emitter,
+                &ResultFrame::LevelSequence {
+                    sequence: output.sequence,
                 },
             )?;
             Ok(output.partial)

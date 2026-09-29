@@ -20,6 +20,10 @@ pub enum ResultFrame {
     Blueprint {
         blueprint: uasset_inspection::BlueprintGraphProjection,
     },
+    #[serde(rename = "level_sequence")]
+    LevelSequence {
+        sequence: uasset_inspection::level_sequence::LevelSequenceProjection,
+    },
     #[serde(rename = "authoring")]
     Authoring { snapshot: AuthoringTableSnapshot },
     #[serde(rename = "scan_asset")]

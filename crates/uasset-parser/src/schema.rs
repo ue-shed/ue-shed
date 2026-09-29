@@ -130,6 +130,16 @@ pub fn embedded_source_model() -> &'static SourceModel {
     &MODEL
 }
 
+/// Source-derived UE 5.8 property-bag fragments whose framing differs from the baseline.
+#[must_use]
+pub fn embedded_property_bag_ue58_model() -> &'static SourceModel {
+    static MODEL: Lazy<SourceModel> = Lazy::new(|| {
+        serde_json::from_str(include_str!("../source-models/ue58-property-bags.json"))
+            .expect("embedded UE 5.8 property-bag model must be valid")
+    });
+    &MODEL
+}
+
 pub trait SchemaProvider {
     fn find_struct(&self, path: &ObjectPath) -> Option<&StructSchema>;
     fn find_class(&self, path: &ObjectPath) -> Option<&ClassSchema>;

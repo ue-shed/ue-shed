@@ -27,3 +27,7 @@ export declare function extractBlueprints(
 	bytes: Uint8Array
 ): Promise<import("./types.js").BlueprintResult>;
 export declare function version(): Promise<string>;
+export declare function extractAnimations(
+	path: string,
+	bytes: Uint8Array
+): Promise<import("./types.js").AnimationResult>;

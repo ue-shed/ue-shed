@@ -1,5 +1,5 @@
 {
-	"producer": "Unreal 5.7 loaded asset APIs",
+	"producer": "Unreal 5.7.4-51494982+++UE5+Release-5.7 loaded asset APIs",
 	"curves": {
 		"float": {
 			"default": 0.25,
@@ -472,6 +472,123 @@
 		"grid": [-2147483647, 0, 2147483647]
 	},
 	"tags": ["Fixture.Action.Move", "Fixture.State.Ready"],
+	"property_bag": {
+		"values": {
+			"Enabled": true,
+			"Count": -17,
+			"Unsigned": 4294967295,
+			"Weight": 123456789.12345679,
+			"Label": "café / 保存",
+			"Reference": "/Game/Fixture/ParserNative/CF_Native.CF_Native",
+			"Offset": [1.25, -2.5, 3.75],
+			"Samples": [-1.25, 0, 9.5],
+			"NestedMessage": "nested value"
+		},
+		"descriptors": [
+			{
+				"name": "Enabled",
+				"id": "1ccd19354a2a07b64248ddaa5f788c25",
+				"type": "bool",
+				"type_object": "",
+				"containers": [],
+				"metadata": {
+					"Comment": "café / parameters",
+					"Empty": ""
+				}
+			},
+			{
+				"name": "Count",
+				"id": "4c5a333e42d332337456bcbdf4b04588",
+				"type": "int32",
+				"type_object": "",
+				"containers": [],
+				"metadata": {}
+			},
+			{
+				"name": "Unsigned",
+				"id": "23c630664c150283a77aa08706890eeb",
+				"type": "uint32",
+				"type_object": "",
+				"containers": [],
+				"metadata": {}
+			},
+			{
+				"name": "Weight",
+				"id": "cea61b5c4788866e8e027a86393f310f",
+				"type": "double",
+				"type_object": "",
+				"containers": [],
+				"metadata": {}
+			},
+			{
+				"name": "Label",
+				"id": "ee469bef40044058c4fee29d1db3ebc1",
+				"type": "string",
+				"type_object": "",
+				"containers": [],
+				"metadata": {}
+			},
+			{
+				"name": "Offset",
+				"id": "fac8e25d4e3bf14a063390bd51e1c623",
+				"type": "struct",
+				"type_object": "/Script/CoreUObject.Vector",
+				"containers": [],
+				"metadata": {}
+			},
+			{
+				"name": "Reference",
+				"id": "5e21c82e41594b628640879840fff60b",
+				"type": "object",
+				"type_object": "/Script/CoreUObject.Object",
+				"containers": [],
+				"metadata": {}
+			},
+			{
+				"name": "Samples",
+				"id": "d17cf430415beb29b8546e8773ed00cf",
+				"type": "float",
+				"type_object": "",
+				"containers": ["array"],
+				"metadata": {}
+			},
+			{
+				"name": "Nested",
+				"id": "b90dfbfe40e8cd739926709fc1e4f330",
+				"type": "struct",
+				"type_object": "/Script/CoreUObject.InstancedPropertyBag",
+				"containers": [],
+				"metadata": {}
+			}
+		]
+	},
+	"animation": {
+		"skeleton": "/Game/Fixture/ParserNative/SK_Native.SK_Native",
+		"duration": 1.6000000238418579,
+		"rate_scale": 1.5,
+		"loop": true,
+		"frames": 48,
+		"numerator": 60,
+		"denominator": 2,
+		"root_motion": true,
+		"force_root_lock": true,
+		"normalized_root_motion": false,
+		"tracks": ["root", "joint"],
+		"curves": [
+			{
+				"name": "Intensity",
+				"keys": 3
+			}
+		],
+		"notifies": [
+			{
+				"name": "Footstep",
+				"time": 0.5,
+				"duration": 0,
+				"track": 0
+			}
+		]
+	},
 	"metadata": {
 		"root": {
 			"FixturePurpose": "Shared native layouts",

@@ -1,5 +1,6 @@
 import { Argument, Command, Flag } from "effect/unstable/cli";
 import { Option } from "effect";
+import { runSavedReview } from "../saved-review-workflows.js";
 import {
 	runAssetsScan,
 	runInputInspect,
@@ -16,7 +17,7 @@ function optionalValue<A>(value: Option.Option<A>): A | undefined {
 
 function readerFields(reader: Option.Option<string>) {
 	const value = optionalValue(reader);
-	return value === undefined ? {} : { reader: value };
+	return value === undefined ? undefined : { reader: value };
 }
 
 function repeatedStringFlag(name: string) {
@@ -68,7 +69,33 @@ const assetsScanCommand = Command.make(
 
 export const assetsCommand = Command.make("assets").pipe(
 	Command.withDescription("Inspect saved Unreal assets."),
-	Command.withSubcommands([assetsScanCommand])
+	Command.withSubcommands([
+		assetsScanCommand,
+		...(["blueprint", "sequence"] as const).map((name) =>
+			Command.make(
+				name,
+				{
+					path: Argument.string("asset-path"),
+					baseline: optionalFlag("baseline"),
+					reader: readerFlag
+				},
+				({ path, baseline, reader }) => {
+					const before = optionalValue(baseline);
+					return runSavedReview({
+						_tag: "SavedReview",
+						domain: name === "blueprint" ? "blueprint" : "level_sequence",
+						path,
+						...(before === undefined ? undefined : { baseline: before }),
+						...readerFields(reader)
+					});
+				}
+			).pipe(
+				Command.withDescription(
+					"Inspect saved structure, values and references; optionally compare with --baseline <path>."
+				)
+			)
+		)
+	])
 );
 
 const textScanCommand = Command.make(

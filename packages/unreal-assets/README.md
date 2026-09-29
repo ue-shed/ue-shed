@@ -1,5 +1,54 @@
 # `@ue-shed/unreal-assets`
 
+Saved Blueprint and Level Sequence review works offline through `readSavedBlueprint` and
+`readSavedLevelSequence`. Both return diagnostics and an explicit `complete`/`partial` outcome.
+Native review reads are limited to 64 MiB. Sequence schema 4 includes bindings, tracks, section
+ranges, text/numeric keys, transform channel masks, subsequence/shot references, and coverage gaps.
+Unsupported tracks remain visible as structure.
+
+```ts
+import { Effect } from "effect";
+import { AssetReaderLive, readSavedLevelSequence } from "@ue-shed/unreal-assets";
+import { compareSavedSequences } from "@ue-shed/unreal-assets/saved-review";
+
+const changes = await Effect.runPromise(
+	Effect.gen(function* () {
+		const before = yield* readSavedLevelSequence({ assetPath: "before/LS_Intro.uasset" });
+		const after = yield* readSavedLevelSequence({ assetPath: "after/LS_Intro.uasset" });
+		return compareSavedSequences(before, after);
+	}).pipe(Effect.provide(AssetReaderLive))
+);
+```
+
+The browser-safe `./saved-review` entry exports `blueprintReferences`, `sequenceReferences`,
+`resolveSavedReference`, `compareSavedBlueprints`, and `compareSavedSequences`, plus output schemas.
+Reference resolution requires an explicit package inventory, preserves the complete object target,
+and reports internal, native, resolved, ambiguous, or unavailable targets. It never guesses disk paths.
+Blueprint inventories cover decoded node properties and pin type/default references, not every
+package export. Workbench follows indexed Blueprint and sequence packages; other references remain
+labeled as outside that inventory.
+
+Comparisons return schema version 1 with categorized changes and before/after evidence. Blueprint
+graphs/nodes use GUIDs when present, pins use saved IDs, and Sequencer tracks/sections use relative
+saved object paths. Recreated objects without preserved identities appear as removals/additions.
+Map/set ordering is normalized; array order is retained. Duplicate identities, partial reads, and
+the 5,000-change output limit produce warnings. No-change results describe decoded saved evidence,
+not runtime equivalence, CDO defaults, compilation, or evaluated playback.
+
+```powershell
+pnpm ue-shed assets blueprint 'C:/Project/Content/BP_Player.uasset'
+pnpm ue-shed assets sequence 'C:/Project/Content/LS_Intro.uasset' --baseline 'C:/Baseline/LS_Intro.uasset'
+```
+
+Their JSON output contract is published at
+`@ue-shed/unreal-assets/contracts/saved-review.v1.schema.json` and as the `SavedReviewOutput` runtime schema.
+
+These read-only commands emit JSON and accept `--reader <executable>`. They require no Unreal process
+or durable authoring session. Partial coverage appears in `outcome`; malformed and unsupported assets
+fail with reader errors. `pnpm test:saved-review` checks public-reader/native/WASM and committed
+Unreal-oracle conformance. `pnpm test:uasset-engine-matrix` regenerates and reloads both UE 5.7 and 5.8
+fixtures before comparing independent loaded-API evidence.
+
 Project Index aggregate queries return a count and its committed generation without loading all
 candidate headers. `countProjectIndex({ projectId, expectedGeneration, filters })` accepts 1–16
 `ProjectIndexFilter` values: `Maps`, `ExactClasses`, `ClassPrefixes`, `ClassNameSuffixes`, or
@@ -25,7 +74,7 @@ normalized package evidence with explicit partial and unsupported results.
 npm install --save-exact @ue-shed/unreal-assets @ue-shed/uasset
 ```
 
-Node.js 22.14 or newer is required. The package exposes one stable entry point:
+Node.js 22.14 or newer is required. The main entry point provides:
 
 ```ts
 import {
@@ -34,6 +83,7 @@ import {
 	discoverSavedAssets,
 	readSavedAsset,
 	readSavedBlueprint,
+	readSavedLevelSequence,
 	readSavedWorld,
 	readSavedTable,
 	scanSavedProject

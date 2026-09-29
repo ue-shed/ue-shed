@@ -510,6 +510,7 @@ export interface BrowserRuntimeOptions extends RuntimeOptions {
 }
 
 export interface WasmRuntime {
+	readonly extractAnimations: (path: string, bytes: Uint8Array) => AnimationResult;
 	readonly limits: RuntimeLimits;
 	readonly inspect: (path: string, bytes: Uint8Array) => InspectionResult;
 	readonly extractText: (path: string, bytes: Uint8Array) => TextResult;
@@ -518,6 +519,65 @@ export interface WasmRuntime {
 	readonly extractBlueprints: (path: string, bytes: Uint8Array) => BlueprintResult;
 	readonly version: () => string;
 }
+
+export interface AnimationSummary {
+	readonly schema_version: 1;
+	readonly object_path: string;
+	readonly skeleton: string | null;
+	readonly data_model: string | null;
+	readonly data_model_class: string | null;
+	readonly duration_seconds: number | null;
+	readonly rate_scale: number | null;
+	readonly looping: boolean | null;
+	readonly frame_rate: { readonly numerator: number; readonly denominator: number } | null;
+	readonly frame_count: number | null;
+	readonly bone_tracks: readonly { readonly name: string; readonly property_path: string }[];
+	readonly curves: readonly {
+		readonly name: string;
+		readonly kind: "float" | "transform";
+		readonly key_count: number | null;
+		readonly property_path: string;
+	}[];
+	readonly notifies: readonly {
+		readonly name: string | null;
+		readonly time_seconds: number | null;
+		readonly duration_seconds: number | null;
+		readonly track_index: number | null;
+		readonly notify_object: string | null;
+		readonly notify_state_object: string | null;
+		readonly property_path: string;
+	}[];
+	readonly root_motion: {
+		readonly enabled: boolean | null;
+		readonly root_lock: string | null;
+		readonly force_root_lock: boolean | null;
+		readonly normalized_scale: boolean | null;
+	};
+	readonly coverage_gaps: readonly {
+		readonly object_path: string;
+		readonly property_path: string;
+		readonly reason:
+			| "missing_saved_property"
+			| "undecoded_value"
+			| "missing_export"
+			| "unsupported_data_model"
+			| "unsupported_track"
+			| "invalid_value";
+	}[];
+}
+
+export type AnimationResult =
+	| ProjectionError
+	| {
+			readonly schema_version: 1;
+			readonly status: "complete" | "partial";
+			readonly path: string;
+			readonly animations: readonly AnimationSummary[];
+			readonly diagnostics: readonly {
+				readonly object_path: string;
+				readonly message: string;
+			}[];
+	  };
 
 export class WasmInputLimitError extends Error {
 	readonly name: "WasmInputLimitError";

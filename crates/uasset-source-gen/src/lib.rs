@@ -1,5 +1,6 @@
 mod coverage_layouts;
 mod native_layouts;
+mod property_bag_layouts;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;

@@ -55,16 +55,16 @@ describe.skipIf(!executable)("batched project scan", () => {
 
 	it("inspects every fixture package in one reader process", async () => {
 		const scan = await runReader(scanSavedProject({ projectRoot: fixture.root }));
-		// 73 `.uasset` packages (including six World Partition external actors, one Blueprint, two
-		// animation fixtures, two Level Sequences, the 25-asset Enhanced Input surface and six native
+		// 75 `.uasset` packages (including six World Partition external actors, two Blueprints, two
+		// animation fixtures, two Level Sequences, the 25-asset Enhanced Input surface and seven native
 		// coverage assets) plus three maps,
 		// including Movement Gym. Levels use the same classic package
 		// container, so enumeration selects them too.
-		expect(scan.summary.scannedAssets).toBe(76);
-		expect(scan.summary.emittedAssets).toBe(76);
+		expect(scan.summary.scannedAssets).toBe(78);
+		expect(scan.summary.emittedAssets).toBe(78);
 		expect(scan.summary.skippedAssets).toBe(0);
 		expect(scan.failures).toEqual([]);
-		expect(scan.assets).toHaveLength(76);
+		expect(scan.assets).toHaveLength(78);
 		expect(scan.assets.every((entry) => entry.fileBytes > 0)).toBe(true);
 	}, 15_000);
 
@@ -123,11 +123,11 @@ describe.skipIf(!executable)("batched project scan", () => {
 		const scan = await runReader(
 			scanSavedProject({ classes: ["Texture2D"], projectRoot: fixture.root })
 		);
-		expect(scan.summary.scannedAssets).toBe(76);
+		expect(scan.summary.scannedAssets).toBe(78);
 		expect(scan.summary.emittedAssets).toBe(17);
 		// The levels, Level Sequences, saved World Partition actor packages, and every Enhanced Input
 		// asset carry no Texture2D export, so they are ruled out before any decode.
-		expect(scan.summary.skippedAssets).toBe(59);
+		expect(scan.summary.skippedAssets).toBe(61);
 		expect(
 			scan.assets
 				.filter(isFullScanEntry)
@@ -151,7 +151,7 @@ describe.skipIf(!executable)("batched project scan", () => {
 		);
 		// Every InputAction and InputMappingContext names TextProperty for its description; the
 		// LevelSequence and Blueprint fixtures name it for localized native graph/channel values.
-		expect(scan.summary.emittedAssets).toBe(30);
+		expect(scan.summary.emittedAssets).toBe(31);
 		expect(
 			scan.assets
 				.filter(isFullScanEntry)
@@ -252,7 +252,7 @@ describe.skipIf(!executable)("batched project scan", () => {
 			})
 		);
 		expect(scan.summary.depth).toBe("header");
-		expect(scan.summary.scannedAssets).toBe(76);
+		expect(scan.summary.scannedAssets).toBe(78);
 		// The twelve authoring packages, each exporting exactly one table.
 		expect(scan.summary.emittedAssets).toBe(12);
 		const headers = scan.assets.filter(isHeaderScanEntry);

@@ -1,4 +1,5 @@
 use super::*;
+mod property_bag;
 use crate::native::{NativeError, NativeValue, decode_native};
 use crate::property::{NativeProperty, PropertyErrorKind};
 use crate::schema::{SchemaProvider, embedded_source_model};
@@ -137,7 +138,21 @@ pub(super) fn property_type_path(module: &str, name: &str) -> Option<&'static st
     TYPES.get(&(module, name)).copied()
 }
 
-pub(super) fn generated_struct(
+pub(super) fn generated_value(
+    source: &[u8],
+    type_path: &str,
+    reader: &mut Reader<'_>,
+    package: &Package,
+    path: &str,
+    depth: usize,
+) -> Result<Option<PropertyValue>, PropertyError> {
+    if type_path == "/Script/CoreUObject.InstancedPropertyBag" {
+        return property_bag::decode(source, reader, package, path, depth).map(Some);
+    }
+    generated_struct(type_path, reader, package, path)
+}
+
+fn generated_struct(
     type_path: &str,
     reader: &mut Reader<'_>,
     package: &Package,
@@ -324,7 +339,7 @@ fn instanced(
             )
         })?;
         let name = type_path.rsplit('.').next().unwrap_or(type_path);
-        let generated = generated_struct(type_path, &mut inner, package, path)?;
+        let generated = generated_value(source, type_path, &mut inner, package, path, depth + 1)?;
         let decoded = if generated.is_some() {
             generated
         } else {
@@ -423,6 +438,79 @@ mod tests {
     }
     fn decode(bytes: &[u8], package: &Package, name: &str) -> Result<PropertyValue, PropertyError> {
         known_struct(bytes, name, &mut Reader::new(bytes), package, "test", 0).map(Option::unwrap)
+    }
+    #[test]
+    fn property_bags_reject_truncation_invalid_names_counts_types_and_custom_versions() {
+        let mut package = Package::parse(FIXTURE).unwrap();
+        let bytes = payload(&package, "Parameters");
+        let read = |bytes: &[u8], package: &Package| {
+            generated_value(
+                bytes,
+                "/Script/CoreUObject.InstancedPropertyBag",
+                &mut Reader::new(bytes),
+                package,
+                "bag",
+                0,
+            )
+        };
+        assert!(read(&bytes, &package).is_ok());
+        for end in 0..bytes.len() {
+            assert!(
+                read(&bytes[..end], &package).is_err(),
+                "truncated bag at {end}"
+            );
+        }
+        // HasData, descriptor count, first type reference, first FName index/number.
+        for (offset, value) in [
+            (0, 2),
+            (4, -1),
+            (4, i32::MAX),
+            (8, i32::MAX),
+            (28, i32::MAX),
+            (32, -1),
+        ] {
+            let mut bad = bytes.clone();
+            bad[offset..offset + 4].copy_from_slice(&i32::to_le_bytes(value));
+            assert!(read(&bad, &package).is_err(), "bag offset {offset}");
+        }
+        for (offset, value) in [(36, 255), (37, 255)] {
+            let mut bad = bytes.clone();
+            bad[offset] = value;
+            assert!(read(&bad, &package).is_err(), "bag offset {offset}");
+        }
+        // Metadata is framed with an archive bool, not a permissive byte.
+        let mut bad = bytes.clone();
+        bad[38..42].copy_from_slice(&2_i32.to_le_bytes());
+        assert!(read(&bad, &package).is_err());
+        let id = crate::archive::Guid {
+            a: 0x134A157E,
+            b: 0xD5E249A3,
+            c: 0x8D4E843C,
+            d: 0x98FE9E31,
+        };
+        let entry = package
+            .summary
+            .custom_versions
+            .iter_mut()
+            .find(|v| v.key == id)
+            .unwrap();
+        entry.version = 6;
+        assert_eq!(
+            read(&bytes, &package).unwrap_err().kind(),
+            PropertyErrorKind::UnsupportedVersion
+        );
+        assert_eq!(
+            property_bag::decode(
+                &bytes,
+                &mut Reader::new(&bytes),
+                &package,
+                "bag",
+                MAX_PROPERTY_DECODE_DEPTH
+            )
+            .unwrap_err()
+            .kind(),
+            PropertyErrorKind::ResourceLimit
+        );
     }
     #[test]
     fn channel_framing_rejects_truncation_bad_stride_counts_order_and_boolean() {

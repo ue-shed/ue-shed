@@ -1,3 +1,6 @@
+import { SavedReviewPanel } from "./saved-review-panel.js";
+import type { SavedReviewClient } from "./saved-review-client.js";
+import type { SavedReviewAsset } from "@ue-shed/unreal-assets/saved-review";
 import * as stylex from "@stylexjs/stylex";
 import type {
 	BlueprintGraph,
@@ -52,6 +55,9 @@ interface PanOrigin {
 type PinTone = "boolean" | "exec" | "numeric" | "object" | "struct" | "text" | "wildcard";
 
 export interface BlueprintGraphViewerProps {
+	readonly reviewClient?: SavedReviewClient;
+	readonly initialAssetPath?: string | undefined;
+	readonly onOpenReference?: (asset: SavedReviewAsset) => void;
 	readonly client: Pick<
 		WorkbenchRendererClient,
 		"chooseBlueprint" | "chooseProject" | "readBlueprint" | "searchBlueprints"
@@ -461,7 +467,10 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 		setZoomLevel(zoom() + (event.deltaY < 0 ? 0.1 : -0.1));
 	};
 
-	onSettled(() => requestBlueprints(""));
+	onSettled(() => {
+		requestBlueprints("");
+		if (props.initialAssetPath) run(props.client.readBlueprint(props.initialAssetPath));
+	});
 	onCleanup(() => {
 		if (searchTimer !== undefined) clearTimeout(searchTimer);
 	});
@@ -1135,6 +1144,35 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 							</section>
 						</Show>
 					</>
+				)}
+			</Show>
+			<Show when={ready()}>
+				{(read) => (
+					<Show when={props.reviewClient}>
+						{(client) => (
+							<SavedReviewPanel
+								review={{ kind: "blueprint", read: read() }}
+								client={client()}
+								blueprintClient={props.client}
+								onOpen={(asset) => {
+									if (asset.kind === "blueprint")
+										run(props.client.readBlueprint(asset.assetPath));
+									else props.onOpenReference?.(asset);
+								}}
+								onInternal={(target) => {
+									const index = read().blueprint.graphs.findIndex(
+										(item) =>
+											item.object_path === target ||
+											item.nodes.some((node) => node.object_path === target)
+									);
+									if (index >= 0) {
+										setGraphIndex(index);
+										setSelectedNodePath(target);
+									}
+								}}
+							/>
+						)}
+					</Show>
 				)}
 			</Show>
 		</main>

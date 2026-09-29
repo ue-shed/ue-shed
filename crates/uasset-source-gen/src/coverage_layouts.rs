@@ -3,7 +3,7 @@ use super::{GeneratorError, Token};
 use std::collections::BTreeMap;
 use uasset_parser::native::NativeLayout as L;
 
-fn require(tokens: &[Token], sequences: &[&str]) -> Result<(), GeneratorError> {
+pub(super) fn require(tokens: &[Token], sequences: &[&str]) -> Result<(), GeneratorError> {
     let mut cursor = 0;
     for sequence in sequences {
         let expected = super::lex(sequence)?;
@@ -38,6 +38,12 @@ pub(super) fn derive(
     layouts: &mut BTreeMap<String, L>,
 ) -> Result<(), GeneratorError> {
     for (path, tokens) in sources {
+        if path.ends_with("StructUtils/PropertyBag.h") {
+            super::property_bag_layouts::verify_types(tokens)?;
+        }
+        if path.ends_with("StructUtils/PropertyBag.cpp") {
+            super::property_bag_layouts::derive(tokens, layouts)?;
+        }
         // Fully qualified keys bind these property serializers directly to a layout.
         // Archive representations are distinct from tagged reflected fields and NetSerialize.
         if path.ends_with("Math/Quat.h") {

@@ -366,7 +366,7 @@ fn decode_binary_or_native_value(
         let path = path.to_string();
         if let Some(type_path) = resolve_struct_type_path(package, type_tree)
             && let Some(value) =
-                native_values::generated_struct(type_path, payload, package, &path)?
+                native_values::generated_value(source, type_path, payload, package, &path, depth)?
         {
             return Ok(Some(value));
         }
@@ -862,7 +862,8 @@ fn decode_struct_value(
         ));
     }
     if let Some(type_path) = resolve_struct_type_path(package, type_tree)
-        && let Some(value) = native_values::generated_struct(type_path, payload, package, path)?
+        && let Some(value) =
+            native_values::generated_value(source, type_path, payload, package, path, depth)?
     {
         return Ok(value);
     }

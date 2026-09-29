@@ -50,6 +50,7 @@ interface ProjectSummaryInventory {
 }
 
 export type WorkbenchProjectCandidateKind =
+	| "saved_review"
 	| "blueprint"
 	| "enhanced_input"
 	| "game_text"
@@ -59,6 +60,10 @@ export type WorkbenchProjectCandidateKind =
 
 function candidateFilters(kind: WorkbenchProjectCandidateKind): readonly ProjectIndexFilter[] {
 	const byKind = {
+		saved_review: [
+			{ _tag: "ClassNameSuffixes", values: [...BLUEPRINT_ASSET_CLASS_NAME_SUFFIXES] },
+			{ _tag: "ExactClasses", values: ["/Script/LevelSequence.LevelSequence"] }
+		],
 		blueprint: [
 			{ _tag: "ClassNameSuffixes", values: [...BLUEPRINT_ASSET_CLASS_NAME_SUFFIXES] }
 		],

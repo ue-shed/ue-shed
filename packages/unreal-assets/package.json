@@ -14,6 +14,7 @@
 	},
 	"files": [
 		"dist",
+		"contracts",
 		"README.md",
 		"LICENSE"
 	],
@@ -33,7 +34,12 @@
 		"./investigation-files": {
 			"types": "./dist/investigation-files.d.ts",
 			"import": "./dist/investigation-files.js"
-		}
+		},
+		"./saved-review": {
+			"types": "./dist/saved-review.d.ts",
+			"import": "./dist/saved-review.js"
+		},
+		"./contracts/saved-review.v1.schema.json": "./contracts/saved-review.v1.schema.json"
 	},
 	"publishConfig": {
 		"access": "public"

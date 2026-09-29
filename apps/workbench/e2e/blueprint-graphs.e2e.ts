@@ -122,6 +122,11 @@ test("opens saved Blueprint evidence without a project or Unreal process", async
 	await expect(pathInput).toHaveValue(fixturePath);
 	await expect(workbench.page.getByText("Complete saved-graph projection")).toBeVisible();
 
+	await workbench.page.getByText("Compare saved versions", { exact: true }).click();
+	await workbench.page.getByLabel("Baseline asset path").fill(fixturePath);
+	await workbench.page.getByRole("button", { name: "Compare baseline" }).click();
+	await expect(workbench.page.getByText(/No changes in decoded evidence/)).toBeVisible();
+
 	expect(await harness.launchCount()).toBe(0);
 	expect(await harness.markerExists()).toBe(false);
 	await workbench.page.screenshot({

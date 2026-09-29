@@ -67,6 +67,11 @@ pub enum Operation {
         #[serde(rename = "assetPath")]
         asset_path: String,
     },
+    #[serde(rename = "level_sequence")]
+    LevelSequence {
+        #[serde(rename = "assetPath")]
+        asset_path: String,
+    },
     #[serde(rename = "authoring")]
     Authoring {
         #[serde(rename = "assetPath")]
@@ -239,6 +244,8 @@ pub enum OperationKind {
     ProjectIndexCount,
     Inspect,
     Blueprint,
+    #[serde(rename = "level_sequence")]
+    LevelSequence,
     Authoring,
     Scan,
     #[serde(rename = "extract_text")]
@@ -577,6 +584,7 @@ fn validate_request(request: &Request) -> Result<(), ProtocolError> {
     match &request.operation {
         Operation::Inspect { asset_path }
         | Operation::Blueprint { asset_path }
+        | Operation::LevelSequence { asset_path }
         | Operation::Authoring { asset_path } => validate_non_empty(asset_path, "assetPath"),
         Operation::Scan {
             cache_path,
@@ -772,6 +780,24 @@ fn validate_event(event: &Event) -> Result<(), ProtocolError> {
 
 fn validate_result_frame(result: &ResultFrame) -> Result<(), ProtocolError> {
     match result {
+        ResultFrame::LevelSequence { sequence } => {
+            if sequence.schema_version != 4 {
+                return Err(ProtocolError(
+                    "expected Level Sequence schema version 4".to_owned(),
+                ));
+            }
+            if sequence
+                .tick_resolution
+                .iter()
+                .chain(sequence.display_rate.iter())
+                .any(|rate| rate.denominator < 1)
+            {
+                return Err(ProtocolError(
+                    "sequence frame rate denominator must be positive".to_owned(),
+                ));
+            }
+            Ok(())
+        }
         ResultFrame::ProjectIndexCount { result } => {
             validate_non_empty(&result.project_id, "projectId")?;
             if result.generation == 0 {
@@ -979,6 +1005,8 @@ mod tests {
 
     #[test]
     fn accepts_shared_valid_fixtures() {
+        decode_request(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/level-sequence-request.json")).unwrap();
+        decode_event(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/level-sequence-result-event.json")).unwrap();
         decode_request(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/project-index-count-request.json")).unwrap();
         decode_event(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/project-index-count-result-event.json")).unwrap();
         decode_request(VALID_REQUEST.as_bytes()).expect("valid request");
@@ -1018,6 +1046,7 @@ mod tests {
 
     #[test]
     fn rejects_shared_invalid_fixtures() {
+        assert!(decode_event(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/level-sequence-version.json")).is_err());
         assert!(decode_request(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/project-index-count-empty-filters.json")).is_err());
         assert!(decode_request(INVALID_MAJOR.as_bytes()).is_err());
         assert!(decode_event(INVALID_KIND.as_bytes()).is_err());

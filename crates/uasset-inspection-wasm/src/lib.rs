@@ -191,6 +191,40 @@ pub fn extract_textures(path: &str, bytes: &[u8]) -> String {
     }
 }
 
+/// Parses one package and emits its saved animation summaries.
+#[wasm_bindgen]
+pub fn extract_animations(path: &str, bytes: &[u8]) -> String {
+    if let Some(error) = input_limit_error(1, path, bytes) {
+        return error;
+    }
+    if let Some(error) = export_limit_error(1, path, bytes) {
+        return error;
+    }
+    match uasset_inspection::animation::inspect_animation_bytes(path, bytes) {
+        Ok(output) => {
+            let items = output
+                .animations
+                .iter()
+                .fold(output.diagnostics.len(), |count, a| {
+                    count
+                        .saturating_add(1)
+                        .saturating_add(a.bone_tracks.len())
+                        .saturating_add(a.curves.len())
+                        .saturating_add(a.notifies.len())
+                        .saturating_add(a.coverage_gaps.len())
+                });
+            if items > MAX_PROJECTION_ITEMS {
+                return serialize_projection_limit_error(
+                    path,
+                    "animation projection item count exceeds the WASM limit",
+                );
+            }
+            serialize_bounded_projection(path, &output)
+        }
+        Err(error) => serialize_projection_error(path, &error),
+    }
+}
+
 /// Parses one package and emits the compact, portable Level Sequence projection.
 #[wasm_bindgen]
 pub fn extract_level_sequences(path: &str, bytes: &[u8]) -> String {

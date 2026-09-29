@@ -1,7 +1,7 @@
 //! Saved channel values only: frame coordinates remain local, with no blending or evaluation.
 use super::*;
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct SequenceNumericChannel {
     pub property_path: String,
     /// Scalar channels use true. Transform channels use the saved mask bit, or None when
@@ -15,7 +15,7 @@ pub struct SequenceNumericChannel {
     pub keys: Vec<SequenceNumericKey>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct SequenceNumericKey {
     pub frame: i64,
     pub value: f64,

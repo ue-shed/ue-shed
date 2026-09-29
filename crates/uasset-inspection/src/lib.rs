@@ -4,6 +4,7 @@
 //! caches, and scheduling. These projections are the portable ownership boundary used by native
 //! IO and the WebAssembly adapter.
 
+pub mod animation;
 pub mod blueprint;
 pub mod generic;
 pub mod level_sequence;

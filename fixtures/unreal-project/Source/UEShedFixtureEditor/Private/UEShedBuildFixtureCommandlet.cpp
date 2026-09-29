@@ -1,4 +1,5 @@
 #include "UEShedBuildFixtureCommandlet.h"
+#include "UEShedSavedReviewFixture.h"
 #include "UEShedWorldPartitionFixture.h"
 #include "Misc/EngineVersionComparison.h"
 
@@ -2097,6 +2098,7 @@ bool WriteConformanceEvidence(const FString& OutputDirectory)
 		&& WriteStringTableEvidence(OutputDirectory)
 		&& WriteTextAssetEvidence(OutputDirectory)
 		&& WriteLevelSequenceEvidence(OutputDirectory)
+		&& WriteSavedReviewBlueprintEvidence(FPaths::Combine(OutputDirectory, TEXT("parser-targets")))
 		&& WriteTextureEvidence(OutputDirectory)
 		&& WriteEnhancedInputEvidence(OutputDirectory)
 		&& WriteLevelEvidence(OutputDirectory);
@@ -3444,6 +3446,16 @@ int32 UUEShedBuildFixtureCommandlet::Main(const FString& Params)
 	{
 		return (VerifyOnly ? VerifyCameraMap() : GenerateCameraMap()) ? 0 : 1;
 	}
+	if (FParse::Param(*Params, TEXT("SavedReviewOnly")))
+	{
+		if (!VerifyOnly && !(GenerateBlueprintGraphFixture() && GenerateSavedReviewBlueprintFixture()
+			&& GenerateLevelSequenceFixture() && GenerateNestedLevelSequenceFixture())) return 1;
+		if (!(VerifyBlueprintGraphFixture() && VerifyLevelSequenceFixture())) return 1;
+		FString Evidence;
+		if (FParse::Value(*Params, TEXT("SavedReviewEvidence="), Evidence))
+			return WriteSavedReviewBlueprintEvidence(Evidence) && WriteLevelSequenceEvidence(Evidence) ? 0 : 1;
+		return 0;
+	}
 	if (FParse::Param(*Params, TEXT("BlueprintOnly")))
 	{
 		return (VerifyOnly ? VerifyBlueprintGraphFixture() : GenerateBlueprintGraphFixture())
@@ -3463,6 +3475,7 @@ int32 UUEShedBuildFixtureCommandlet::Main(const FString& Params)
 		Succeeded = GenerateCameraMap() && Succeeded;
 		Succeeded = GenerateAuditTextures() && Succeeded;
 		Succeeded = GenerateBlueprintGraphFixture() && Succeeded;
+		Succeeded = GenerateSavedReviewBlueprintFixture() && Succeeded;
 		Succeeded = GenerateAnimationFixtures() && Succeeded;
 		Succeeded = GenerateLevelSequenceFixture() && Succeeded;
 		Succeeded = GenerateNestedLevelSequenceFixture() && Succeeded;

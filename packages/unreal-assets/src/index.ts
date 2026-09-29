@@ -22,6 +22,7 @@ export {
 	makeAssetReaderTestLayer,
 	readSavedAsset,
 	readSavedBlueprint,
+	readSavedLevelSequence,
 	readSavedTable,
 	readSavedWorld,
 	SAVED_TABLE_SCAN_CLASSES,
@@ -87,3 +88,5 @@ export {
 	SavedWorldProgress
 } from "@ue-shed/protocol";
 export type { SavedProperty, SavedPropertyValue } from "@ue-shed/protocol";
+
+export * from "./saved-review.js";

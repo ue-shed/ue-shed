@@ -4,6 +4,12 @@ Completed implementation plans. Kept as execution history (intent, STOP conditio
 paths). They are not living guidance — prefer product docs, ADRs, and active plans under
 [`../`](../README.md).
 
+- [Blueprint and Sequencer review](saved-graph-and-sequence-review.md) — DONE; public readers and
+  comparisons, CLI, offline viewers and reference navigation, with fresh UE 5.7/5.8 conformance.
+
+- [Property bags and animation summaries](uasset-property-bags-and-animation.md) — DONE;
+  custom-versioned bags, saved animation inventory, CLI/WASM contracts, and UE 5.7/5.8 conformance.
+
 - [Native parser increment](uasset-native-increment.md) — DONE; numeric Sequencer projections,
   GameplayTagContainer, and common math properties with Unreal evidence and native/WASM parity.
 

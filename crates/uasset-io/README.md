@@ -31,3 +31,7 @@ inspection DTO. Human commands are thin diagnostic adapters over the same execut
 cargo test -p uasset-io
 cargo run -p uasset-io -- protocol < request.json
 ```
+
+`uasset animation <asset.uasset|-> --format json` emits schema-1 animation summaries from the
+portable inspection library. Exit 0 means complete saved evidence; exit 6 means partial coverage.
+This diagnostic CLI command accepts bounded file/stdin bytes. It does not add a protocol operation.

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -44,6 +44,7 @@ const fixtures = [
 	"Content/Fixture/ParserNative/SK_Native.uasset",
 	"Content/Fixture/ParserNative/DA_Native.uasset",
 	"Content/Fixture/ParserNative/LS_Numeric.uasset",
+	"Content/Fixture/ParserNative/A_Native.uasset",
 
 	"Content/Fixture/Authoring/DT_Scalars.uasset",
 	"Content/Fixture/Authoring/DT_LargeScalars.uasset",
@@ -289,7 +290,57 @@ assert.equal(malformedBlueprint.status, "error");
 assert.equal(malformedBlueprint.path, "Broken.uasset");
 assert.equal(malformedBlueprint.kind, "unsupported_format");
 
+// SAFETY: checked-in language-neutral schema is validated against both producers.
+const animationSchema: JsonSchema.JsonSchema = JSON.parse(
+	readFileSync(
+		join(repositoryRoot, "packages/uasset-inspection-wasm/contracts/animation.v1.schema.json"),
+		"utf8"
+	)
+);
+const decodeAnimation = Schema.decodeUnknownSync(
+	SchemaRepresentation.toSchema<Schema.Codec<unknown>>(
+		SchemaRepresentation.fromJsonSchemaDocument(
+			JsonSchema.fromSchemaDraft2020_12(animationSchema)
+		)
+	),
+	{ onExcessProperty: "error" }
+);
+for (const [path, status] of [
+	["Content/Fixture/ParserNative/A_Native.uasset", "complete"],
+	["Content/Fixture/Animation/A_FixtureMotion.uasset", "partial"]
+] as const) {
+	const bytes = readFileSync(join(fixtureRoot, path));
+	const actual = runtime.extractAnimations(path, bytes);
+	assert.equal(actual.status, status);
+	assert.equal(actual.animations.length, 1);
+	decodeAnimation(actual.animations[0]);
+	assert.throws(() => decodeAnimation({ ...actual.animations[0], schema_version: 2 }));
+	assert.throws(() => decodeAnimation({ ...actual.animations[0], frame_count: -1 }));
+	const native = spawnSync(nativeExecutable, ["animation", "-", "--format", "json"], {
+		input: bytes,
+		encoding: "utf8",
+		maxBuffer: 64 * 1024 * 1024
+	});
+	assert.equal(native.status, status === "complete" ? 0 : 6, native.stderr);
+	const expected = JSON.parse(native.stdout);
+	expected.path = path;
+	assert.deepEqual(actual, expected, `${path} animation native/WASM parity`);
+}
+const malformedAnimation = runtime.extractAnimations(
+	"Broken.uasset",
+	Uint8Array.from([0, 1, 2, 3])
+);
+assert.equal(malformedAnimation.status, "error");
+assert.equal(malformedAnimation.kind, "unsupported_format");
+
 const narrowRuntime = wasm.createNodeRuntime({ maxInputBytes: 4 });
+assert.throws(
+	() => narrowRuntime.extractAnimations("TooLarge.uasset", new Uint8Array(5)),
+	(cause: unknown) =>
+		cause instanceof Object &&
+		"code" in cause &&
+		cause.code === "UE_SHED_UASSET_WASM_INPUT_LIMIT"
+);
 assert.throws(
 	() => narrowRuntime.inspect("TooLarge.uasset", new Uint8Array(5)),
 	(cause: unknown) =>

@@ -79,6 +79,11 @@ const workbenchRendererApi = {
 	assetNavigation: {
 		locate: (objectPath: string) => ipcRenderer.invoke("asset-navigation:locate", objectPath)
 	},
+	savedReview: {
+		sequence: (path: string) => ipcRenderer.invoke("saved-review:sequence", path),
+		chooseSequence: () => ipcRenderer.invoke("saved-review:choose-sequence"),
+		inventory: () => ipcRenderer.invoke("saved-review:inventory")
+	},
 	blueprintGraphs: {
 		choose: () => ipcRenderer.invoke("blueprint-graphs:choose"),
 		read: (assetPath: string) => ipcRenderer.invoke("blueprint-graphs:read", assetPath),

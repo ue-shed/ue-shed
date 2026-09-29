@@ -6,6 +6,7 @@
 #include "Channels/MovieSceneDoubleChannel.h"
 #include "StructUtils/InstancedStruct.h"
 #include "GameplayTagContainer.h"
+#include "StructUtils/PropertyBag.h"
 #include "UEShedNativeParserTypes.generated.h"
 
 USTRUCT()
@@ -46,6 +47,10 @@ public:
 	UPROPERTY() TSet<FIntVector> Grids;
 	UPROPERTY() TMap<FName, FTransform> NamedTransforms;
 	UPROPERTY() TArray<FInstancedStruct> MathInstances;
+	UPROPERTY() FInstancedPropertyBag Parameters;
+	UPROPERTY() FInstancedPropertyBag EmptyParameters;
+	UPROPERTY() TArray<FInstancedPropertyBag> ParameterBags;
+	UPROPERTY() FInstancedStruct BagInstance;
 };
 
 USTRUCT()

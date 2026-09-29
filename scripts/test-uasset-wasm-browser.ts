@@ -48,6 +48,9 @@ const contentTypes: ContentTypesByExtension = {
 assert.ok(statSync(join(packageDist, "browser.js")).isFile(), "build the browser package first");
 const bytes = readFileSync(fixture);
 const blueprintBytes = readFileSync(blueprintFixture);
+const animationBytes = readFileSync(
+	join(repositoryRoot, "fixtures/unreal-project/Content/Fixture/ParserNative/A_Native.uasset")
+);
 const server = createServer((request, response) => {
 	const requestPath = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
 	if (requestPath === "/") {
@@ -63,6 +66,11 @@ const server = createServer((request, response) => {
 	if (requestPath === "/blueprint.uasset") {
 		response.writeHead(200, { "content-type": "application/octet-stream" });
 		response.end(blueprintBytes);
+		return;
+	}
+	if (requestPath === "/animation.uasset") {
+		response.writeHead(200, { "content-type": "application/octet-stream" });
+		response.end(animationBytes);
 		return;
 	}
 	if (!requestPath.startsWith("/package/")) {
@@ -110,6 +118,14 @@ try {
 		const packageBytes = new Uint8Array(await response.arrayBuffer());
 		const blueprintResponse = await fetch(`${baseUrl}/blueprint.uasset`);
 		const blueprintPackageBytes = new Uint8Array(await blueprintResponse.arrayBuffer());
+		const animationBytes = new Uint8Array(
+			await (await fetch(`${baseUrl}/animation.uasset`)).arrayBuffer()
+		);
+		const animation = runtime.extractAnimations("A_Native.uasset", animationBytes);
+		const animationFromEntry = await module.extractAnimations(
+			"A_Native.uasset",
+			animationBytes
+		);
 		const inspection = runtime.inspect(
 			"Content/Fixture/Authoring/DT_Scalars.uasset",
 			packageBytes
@@ -150,6 +166,8 @@ try {
 			outputLimitCode = errorCode(error);
 		}
 		return {
+			animation,
+			animationFromEntry,
 			version: runtime.version(),
 			inspection,
 			repeated,
@@ -165,6 +183,9 @@ try {
 	}, origin);
 
 	assert.equal(result.version, expectedVersion);
+	assert.equal(result.animation.status, "complete");
+	assert.equal(result.animation.animations[0].bone_tracks.length, 2);
+	assert.deepEqual(result.animationFromEntry, result.animation);
 	assert.equal(result.inspection.schema_version, 8);
 	assert.equal(result.inspection.status, "ok");
 	assert.deepEqual(result.repeated, result.inspection);

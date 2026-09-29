@@ -1,6 +1,7 @@
 import { Schema } from "effect";
 import { AuthoringTableSnapshot } from "./authoring.js";
 import { BlueprintGraphProjection } from "./blueprint-graph.js";
+import { LevelSequenceProjection } from "./level-sequence.js";
 import { SavedWorld } from "./saved-world.js";
 import {
 	SavedAssetInspection,
@@ -225,6 +226,7 @@ export const UAssetIoOperation = Schema.Union([
 		assetPath: NonEmptyString,
 		kind: Schema.Literal("blueprint")
 	}),
+	Schema.Struct({ assetPath: NonEmptyString, kind: Schema.Literal("level_sequence") }),
 	Schema.Struct({
 		assetPath: NonEmptyString,
 		kind: Schema.Literal("authoring")
@@ -287,6 +289,7 @@ export type UAssetIoRequest = Schema.Schema.Type<typeof UAssetIoRequest>;
 const UAssetIoOperationKind = Schema.Literals([
 	"inspect",
 	"blueprint",
+	"level_sequence",
 	"authoring",
 	"scan",
 	"extract_text",
@@ -308,6 +311,7 @@ export const UAssetIoResult = Schema.Union([
 	}),
 	Schema.Struct({ inspection: SavedAssetInspection, kind: Schema.Literal("inspect") }),
 	Schema.Struct({ blueprint: BlueprintGraphProjection, kind: Schema.Literal("blueprint") }),
+	Schema.Struct({ sequence: LevelSequenceProjection, kind: Schema.Literal("level_sequence") }),
 	Schema.Struct({ kind: Schema.Literal("authoring"), snapshot: AuthoringTableSnapshot }),
 	Schema.Struct({ entry: SavedAssetScanEntry, kind: Schema.Literal("scan_asset") }),
 	Schema.Struct({ entry: SavedAssetManifestEntry, kind: Schema.Literal("scan_inventory") }),

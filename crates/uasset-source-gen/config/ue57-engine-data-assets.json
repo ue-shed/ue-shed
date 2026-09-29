@@ -136,7 +136,9 @@
 			"headers": [],
 			"sources": [
 				"Runtime/CoreUObject/Private/StructUtils/InstancedStruct.cpp",
-				"Runtime/CoreUObject/Private/UObject/SavePackage/SavePackageUtilities.cpp"
+				"Runtime/CoreUObject/Private/StructUtils/PropertyBag.cpp",
+				"Runtime/CoreUObject/Private/UObject/SavePackage/SavePackageUtilities.cpp",
+				"Runtime/CoreUObject/Public/StructUtils/PropertyBag.h"
 			]
 		},
 		{

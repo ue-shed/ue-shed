@@ -292,6 +292,197 @@ fn components(value: &Value, names: &[&str]) -> Value {
     }
     names.iter().map(|name| value[name].clone()).collect()
 }
+
+#[test]
+fn property_bags_match_unreal_descriptors_values_containers_and_instances() {
+    let output = fixture("DA_Native");
+    let asset = &output["assets"][0];
+    let bag = fields(property(asset, "Parameters"));
+    assert_eq!(bag["HasData"], true);
+    let expected = evidence();
+    let oracle = &expected["property_bag"];
+    let mut actual = bag["Value"].clone();
+    actual["NestedMessage"] = actual["Nested"]["Value"]["Message"].clone();
+    actual.as_object_mut().unwrap().remove("Nested");
+    if bag["CustomVersion"] == 5 {
+        let values = &property(asset, "Parameters")["fields"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|f| f["name"] == "Value")
+            .unwrap()["value"];
+        let lookup = values["properties"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|p| p["name"] == "Lookup")
+            .unwrap();
+        actual["Lookup"] = lookup["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| {
+                (
+                    e["key"]["value"].as_str().unwrap().to_owned(),
+                    fields(&e["value"]),
+                )
+            })
+            .collect();
+    }
+    equivalent(&actual, &oracle["values"], "property bag values");
+    let descriptors: Vec<Value> = bag["Descriptors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| {
+            let mut desc = json!({"name":d["Name"], "id":d["ID"].as_str().unwrap().replace('-', ""),
+            "type":d["ValueType"], "type_object":d["ValueTypeObject"].as_str().unwrap_or(""),
+            "containers":d["ContainerTypes"], "metadata":{}});
+            if let Some(metadata) = d["MetaData"].as_array() {
+                desc["metadata"] = metadata
+                    .iter()
+                    .map(|m| (m["Key"].as_str().unwrap().to_owned(), m["Value"].clone()))
+                    .collect();
+            }
+            if bag["CustomVersion"] == 5 {
+                desc["flags"] = json!(d["PropertyFlags"].as_u64().unwrap().to_string());
+                desc["key_type"] = d["KeyType"].clone();
+                desc["key_type_object"] = json!(d["KeyTypeObject"].as_str().unwrap_or(""));
+            }
+            desc
+        })
+        .collect();
+    equivalent(
+        &json!(descriptors),
+        &oracle["descriptors"],
+        "property bag descriptors",
+    );
+    let containers = fields(property(asset, "ParameterBags"));
+    assert_eq!(containers[0], bag);
+    assert_eq!(containers[1]["HasData"], false);
+    assert!(containers[1].get("Value").is_none());
+    assert_eq!(fields(&property(asset, "BagInstance")["value"]), bag);
+}
+
+#[test]
+fn animation_summary_matches_unreal_and_preserves_missing_evidence() {
+    use uasset_inspection::animation::{
+        AnimationGapReason, inspect_animation_bytes, project_animations,
+    };
+    use uasset_parser::asset::{AssetDecodeContext, DecodedAsset, decode_export};
+    use uasset_parser::property::PropertyValue;
+    let bytes = fixture_bytes("A_Native");
+    fixture("A_Native");
+    let output = inspect_animation_bytes("A_Native.uasset", &bytes).unwrap();
+    assert_eq!(output.status, "complete", "{output:#?}");
+    assert_eq!(output.animations.len(), 1);
+    let a = &output.animations[0];
+    let mut tracks: Vec<_> = a.bone_tracks.iter().map(|t| t.name.clone()).collect();
+    tracks.sort();
+    let mut curves: Vec<_> = a
+        .curves
+        .iter()
+        .map(|c| json!({"name":c.name.to_lowercase(), "keys":c.key_count}))
+        .collect();
+    curves.sort_by_key(|c| c["name"].as_str().unwrap().to_owned());
+    let actual = json!({"skeleton":a.skeleton,"duration":a.duration_seconds,"rate_scale":a.rate_scale,
+        "loop":a.looping,"frames":a.frame_count,"numerator":a.frame_rate.as_ref().unwrap().numerator,
+        "denominator":a.frame_rate.as_ref().unwrap().denominator,"root_motion":a.root_motion.enabled,
+        "force_root_lock":a.root_motion.force_root_lock,"normalized_root_motion":a.root_motion.normalized_scale,
+        "tracks":tracks,"curves":curves,"notifies":a.notifies.iter().map(|n| json!({"name":n.name,"time":n.time_seconds,"duration":n.duration_seconds,"track":n.track_index})).collect::<Vec<_>>()});
+    let mut expected = evidence()["animation"].clone();
+    expected["tracks"]
+        .as_array_mut()
+        .unwrap()
+        .sort_by_key(|t| t.as_str().unwrap().to_owned());
+    for c in expected["curves"].as_array_mut().unwrap() {
+        c["name"] = json!(c["name"].as_str().unwrap().to_lowercase());
+    }
+    expected["curves"]
+        .as_array_mut()
+        .unwrap()
+        .sort_by_key(|c| c["name"].as_str().unwrap().to_owned());
+    equivalent(&actual, &expected, "animation summary");
+    assert_eq!(
+        a.root_motion.root_lock.as_deref(),
+        Some("ERootMotionRootLock::AnimFirstFrame")
+    );
+
+    let package = uasset_parser::Package::parse(&bytes).unwrap();
+    let context = AssetDecodeContext {
+        source: &bytes,
+        package: &package,
+        schemas: uasset_parser::schema::embedded_source_model(),
+    };
+    let mut assets: Vec<_> = package
+        .exports
+        .iter()
+        .filter_map(|e| decode_export(e, &context).unwrap())
+        .collect();
+    for asset in &mut assets {
+        match asset {
+            DecodedAsset::AnimSequence(a) => {
+                a.properties
+                    .records
+                    .retain(|r| package.resolve_name_str(r.name) != Some("RateScale"));
+                for r in &mut a.properties.records {
+                    if package.resolve_name_str(r.name) == Some("SequenceLength") {
+                        r.value = PropertyValue::Float(f32::NAN);
+                    }
+                }
+            }
+            DecodedAsset::UObject(o)
+                if o.class_path.as_str() == "/Script/MovieScene.MovieScene" =>
+            {
+                o.properties
+                    .records
+                    .retain(|r| package.resolve_name_str(r.name) != Some("DisplayRate"));
+            }
+            _ => {}
+        }
+    }
+    let partial = project_animations(&package, &assets).remove(0);
+    assert_eq!(partial.rate_scale, None);
+    assert_eq!(partial.duration_seconds, None);
+    assert_eq!(partial.frame_rate, None);
+    for field in ["RateScale", "SequenceLength", "DisplayRate"] {
+        assert!(
+            partial
+                .coverage_gaps
+                .iter()
+                .any(|g| g.property_path == field)
+        );
+    }
+    let mut unsupported = assets.clone();
+    for asset in &mut unsupported {
+        if let DecodedAsset::UObject(o) = asset
+            && o.class_path.as_str().contains("DataModel")
+        {
+            o.class_path =
+                uasset_parser::package::ObjectPath::new("/Script/Test.UnknownAnimationModel");
+        }
+    }
+    let unsupported = project_animations(&package, &unsupported).remove(0);
+    assert!(
+        unsupported
+            .coverage_gaps
+            .iter()
+            .any(|g| g.reason == AnimationGapReason::UnsupportedDataModel)
+    );
+    assert!(unsupported.bone_tracks.is_empty());
+    assets.retain(
+        |a| !matches!(a, DecodedAsset::UObject(o) if o.class_path.as_str().contains("DataModel")),
+    );
+    let missing = project_animations(&package, &assets).remove(0);
+    assert!(
+        missing
+            .coverage_gaps
+            .iter()
+            .any(|g| g.reason == AnimationGapReason::MissingExport)
+    );
+    assert!(missing.bone_tracks.is_empty());
+    assert_eq!(missing.frame_count, None);
+}
 fn transform(value: &Value) -> Value {
     json!({"rotation":components(&value["Rotation"], &["X","Y","Z","W"]),
         "translation":components(&value["Translation"], &["X","Y","Z"]),

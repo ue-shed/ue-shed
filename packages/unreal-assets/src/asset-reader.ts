@@ -1,5 +1,6 @@
 import {
 	BlueprintGraphRead,
+	LevelSequenceRead,
 	isHeaderScanEntry,
 	SavedAssetCatalogInspection,
 	SavedAssetInspection,
@@ -136,6 +137,7 @@ export class AssetReaderError extends Schema.TaggedErrorClass<AssetReaderError>(
 		operation: Schema.Literals([
 			"authoring",
 			"blueprint",
+			"level_sequence",
 			"catalog",
 			"extract_text",
 			"extract_texture",
@@ -273,6 +275,9 @@ export interface AssetReaderApi {
 	readonly readBlueprint: (
 		assetPath: string
 	) => Effect.Effect<BlueprintGraphRead, AssetReaderError>;
+	readonly readLevelSequence: (
+		assetPath: string
+	) => Effect.Effect<LevelSequenceRead, AssetReaderError>;
 	readonly readTable: (
 		assetPath: string
 	) => Effect.Effect<AuthoringTableSnapshot, AssetReaderError>;
@@ -299,6 +304,7 @@ type AssetReaderTestDefaults =
 	| "extractProjectText"
 	| "extractProjectTextures"
 	| "readBlueprint"
+	| "readLevelSequence"
 	| "readSavedWorld"
 	| "savedWorldProgress"
 	| "scanProgress"
@@ -601,6 +607,30 @@ function makeAssetReader(
 			outcome: evidence.outcome
 		};
 	});
+	const readLevelSequence = Effect.fn("AssetReader.readLevelSequence")(function* (
+		assetPath: string
+	) {
+		const evidence = yield* invokeSingleWithEvidence({
+			configuration,
+			operation: "level_sequence",
+			path: assetPath,
+			request: makeProtocolRequest(
+				{ kind: "level_sequence", assetPath },
+				{
+					maximumOutputBytes: MAX_PROTOCOL_OUTPUT_BYTES,
+					timeoutMs: configuration.timeoutMs
+				},
+				{ contractMinor: 5 }
+			),
+			expected: "level_sequence",
+			select: (result) => (result.kind === "level_sequence" ? result.sequence : undefined)
+		});
+		return {
+			sequence: evidence.value,
+			diagnostics: evidence.diagnostics,
+			outcome: evidence.outcome
+		};
+	});
 	const readTable = Effect.fn("AssetReader.readTable")(function* (assetPath: string) {
 		return yield* invokeSingle({
 			configuration,
@@ -690,6 +720,7 @@ function makeAssetReader(
 		extractProjectTextures,
 		readAsset,
 		readBlueprint,
+		readLevelSequence,
 		readSavedWorld,
 		readTable,
 		scanProgress,
@@ -821,6 +852,18 @@ export function makeAssetReaderTestLayer(service: AssetReaderTestApi): Layer.Lay
 							retrySafe: false
 						})
 					)),
+			readLevelSequence:
+				service.readLevelSequence ??
+				((assetPath) =>
+					Effect.fail(
+						new AssetReaderError({
+							kind: "process",
+							operation: "level_sequence",
+							message: "This test asset reader does not stub readLevelSequence.",
+							path: assetPath,
+							retrySafe: false
+						})
+					)),
 			savedWorldProgress:
 				service.savedWorldProgress ?? (() => Effect.succeed(idleSavedWorldProgress())),
 			scanProgress: service.scanProgress ?? (() => Effect.succeed(idleScanProgress())),
@@ -865,6 +908,11 @@ export function readSavedBlueprint(
 	options: AssetReaderOptions
 ): Effect.Effect<BlueprintGraphRead, AssetReaderError, AssetReader> {
 	return Effect.flatMap(AssetReader, (reader) => reader.readBlueprint(options.assetPath));
+}
+export function readSavedLevelSequence(
+	options: AssetReaderOptions
+): Effect.Effect<LevelSequenceRead, AssetReaderError, AssetReader> {
+	return Effect.flatMap(AssetReader, (reader) => reader.readLevelSequence(options.assetPath));
 }
 
 export function discoverSavedAssets(

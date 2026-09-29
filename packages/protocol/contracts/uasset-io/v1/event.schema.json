@@ -4513,6 +4513,605 @@
 			"required": ["schema_version", "object_path", "graphs", "coverage_gaps"],
 			"additionalProperties": false
 		},
+		"SequenceRate": {
+			"type": "object",
+			"properties": {
+				"numerator": {
+					"type": "integer"
+				},
+				"denominator": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 1
+						}
+					]
+				}
+			},
+			"required": ["numerator", "denominator"],
+			"additionalProperties": false
+		},
+		"SequenceBound": {
+			"type": "object",
+			"properties": {
+				"kind": {
+					"type": "string",
+					"enum": ["exclusive", "inclusive", "open"]
+				},
+				"frame": {
+					"type": "integer"
+				}
+			},
+			"required": ["kind", "frame"],
+			"additionalProperties": false
+		},
+		"SequenceRange": {
+			"type": "object",
+			"properties": {
+				"lower": {
+					"$ref": "#/$defs/SequenceBound"
+				},
+				"upper": {
+					"$ref": "#/$defs/SequenceBound"
+				}
+			},
+			"required": ["lower", "upper"],
+			"additionalProperties": false
+		},
+		"SequenceTextKey": {
+			"type": "object",
+			"properties": {
+				"frame": {
+					"type": "integer"
+				},
+				"source": {
+					"type": "string"
+				},
+				"identity": {
+					"anyOf": [
+						{
+							"type": "object",
+							"properties": {
+								"status": {
+									"type": "string",
+									"enum": ["resolved"]
+								},
+								"namespace": {
+									"type": "string"
+								},
+								"key": {
+									"type": "string"
+								}
+							},
+							"required": ["status", "namespace", "key"],
+							"additionalProperties": false
+						},
+						{
+							"type": "object",
+							"properties": {
+								"status": {
+									"type": "string",
+									"enum": ["unresolved"]
+								}
+							},
+							"required": ["status"],
+							"additionalProperties": false
+						}
+					]
+				}
+			},
+			"required": ["frame", "source", "identity"],
+			"additionalProperties": false
+		},
+		"SequenceNumericKey": {
+			"type": "object",
+			"properties": {
+				"frame": {
+					"type": "integer"
+				},
+				"value": {
+					"type": "number"
+				},
+				"interpolation": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 0
+						},
+						{
+							"maximum": 255
+						}
+					]
+				},
+				"tangent_mode": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 0
+						},
+						{
+							"maximum": 255
+						}
+					]
+				},
+				"tangent_weight_mode": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 0
+						},
+						{
+							"maximum": 255
+						}
+					]
+				},
+				"arrive_tangent": {
+					"type": "number"
+				},
+				"leave_tangent": {
+					"type": "number"
+				},
+				"arrive_tangent_weight": {
+					"type": "number"
+				},
+				"leave_tangent_weight": {
+					"type": "number"
+				}
+			},
+			"required": [
+				"frame",
+				"value",
+				"interpolation",
+				"tangent_mode",
+				"tangent_weight_mode",
+				"arrive_tangent",
+				"leave_tangent",
+				"arrive_tangent_weight",
+				"leave_tangent_weight"
+			],
+			"additionalProperties": false
+		},
+		"SequenceNumericChannel": {
+			"type": "object",
+			"properties": {
+				"property_path": {
+					"type": "string"
+				},
+				"enabled": {
+					"anyOf": [
+						{
+							"type": "boolean"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"default_value": {
+					"anyOf": [
+						{
+							"type": "number"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"pre_extrapolation": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 0
+						},
+						{
+							"maximum": 255
+						}
+					]
+				},
+				"post_extrapolation": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 0
+						},
+						{
+							"maximum": 255
+						}
+					]
+				},
+				"tick_resolution": {
+					"$ref": "#/$defs/SequenceRate"
+				},
+				"show_curve": {
+					"type": "boolean"
+				},
+				"keys": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/SequenceNumericKey"
+					},
+					"allOf": [
+						{
+							"maxItems": 1000000
+						}
+					]
+				}
+			},
+			"required": [
+				"property_path",
+				"enabled",
+				"default_value",
+				"pre_extrapolation",
+				"post_extrapolation",
+				"tick_resolution",
+				"show_curve",
+				"keys"
+			],
+			"additionalProperties": false
+		},
+		"SequenceSection": {
+			"type": "object",
+			"properties": {
+				"object_path": {
+					"type": "string"
+				},
+				"class_path": {
+					"type": "string"
+				},
+				"range": {
+					"anyOf": [
+						{
+							"$ref": "#/$defs/SequenceRange"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"sequence_path": {
+					"anyOf": [
+						{
+							"type": "string"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"shot_display_name": {
+					"anyOf": [
+						{
+							"type": "string"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"text_keys": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/SequenceTextKey"
+					},
+					"allOf": [
+						{
+							"maxItems": 1000000
+						}
+					]
+				},
+				"numeric_channels": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/SequenceNumericChannel"
+					},
+					"allOf": [
+						{
+							"maxItems": 1000000
+						}
+					]
+				}
+			},
+			"required": [
+				"object_path",
+				"class_path",
+				"range",
+				"sequence_path",
+				"shot_display_name",
+				"text_keys",
+				"numeric_channels"
+			],
+			"additionalProperties": false
+		},
+		"SequenceTrack": {
+			"type": "object",
+			"properties": {
+				"object_path": {
+					"type": "string"
+				},
+				"class_path": {
+					"type": "string"
+				},
+				"property_path": {
+					"anyOf": [
+						{
+							"type": "string"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"content": {
+					"type": "string",
+					"enum": [
+						"timed_text",
+						"sub_sequence",
+						"cinematic_shot",
+						"numeric",
+						"transform",
+						"structure_only"
+					]
+				},
+				"sections": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/SequenceSection"
+					},
+					"allOf": [
+						{
+							"maxItems": 1000000
+						}
+					]
+				}
+			},
+			"required": ["object_path", "class_path", "property_path", "content", "sections"],
+			"additionalProperties": false
+		},
+		"SequenceBinding": {
+			"type": "object",
+			"properties": {
+				"id": {
+					"type": "string"
+				},
+				"name": {
+					"anyOf": [
+						{
+							"type": "string"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"possessed_object_class": {
+					"anyOf": [
+						{
+							"type": "string"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"tracks": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/SequenceTrack"
+					},
+					"allOf": [
+						{
+							"maxItems": 1000000
+						}
+					]
+				}
+			},
+			"required": ["id", "name", "possessed_object_class", "tracks"],
+			"additionalProperties": false
+		},
+		"SequenceReference": {
+			"type": "object",
+			"properties": {
+				"owner_path": {
+					"type": "string"
+				},
+				"owner_class_path": {
+					"type": "string"
+				},
+				"property_path": {
+					"type": "string"
+				},
+				"kind": {
+					"type": "string",
+					"enum": ["object", "soft_object", "data_table_row_handle"]
+				},
+				"target_path": {
+					"type": "string"
+				},
+				"target_row": {
+					"type": "string"
+				},
+				"scope": {
+					"type": "string",
+					"enum": ["internal", "external"]
+				}
+			},
+			"required": [
+				"owner_path",
+				"owner_class_path",
+				"property_path",
+				"kind",
+				"target_path",
+				"scope"
+			],
+			"additionalProperties": false
+		},
+		"SequenceReferenceGap": {
+			"type": "object",
+			"properties": {
+				"owner_path": {
+					"type": "string"
+				},
+				"property_path": {
+					"type": "string"
+				},
+				"reason": {
+					"type": "string",
+					"enum": [
+						"raw_property_value",
+						"native_object_tail",
+						"unresolved_object_reference"
+					]
+				}
+			},
+			"required": ["owner_path", "property_path", "reason"],
+			"additionalProperties": false
+		},
+		"SequenceGap": {
+			"type": "object",
+			"properties": {
+				"object_path": {
+					"type": "string"
+				},
+				"property_path": {
+					"type": "string"
+				},
+				"reason": {
+					"type": "string",
+					"enum": [
+						"missing_reference",
+						"wrong_value_kind",
+						"mismatched_channel_lengths",
+						"unsupported_track_content",
+						"unsupported_section_content",
+						"missing_channel",
+						"missing_channel_mask"
+					]
+				}
+			},
+			"required": ["object_path", "property_path", "reason"],
+			"additionalProperties": false
+		},
+		"LevelSequenceProjection": {
+			"type": "object",
+			"properties": {
+				"schema_version": {
+					"type": "number",
+					"enum": [4]
+				},
+				"object_path": {
+					"type": "string"
+				},
+				"movie_scene_path": {
+					"anyOf": [
+						{
+							"type": "string"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"tick_resolution": {
+					"anyOf": [
+						{
+							"$ref": "#/$defs/SequenceRate"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"display_rate": {
+					"anyOf": [
+						{
+							"$ref": "#/$defs/SequenceRate"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"playback_range": {
+					"anyOf": [
+						{
+							"$ref": "#/$defs/SequenceRange"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"bindings": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/SequenceBinding"
+					},
+					"allOf": [
+						{
+							"maxItems": 1000000
+						}
+					]
+				},
+				"root_tracks": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/SequenceTrack"
+					},
+					"allOf": [
+						{
+							"maxItems": 1000000
+						}
+					]
+				},
+				"references": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/SequenceReference"
+					},
+					"allOf": [
+						{
+							"maxItems": 1000000
+						}
+					]
+				},
+				"reference_coverage_gaps": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/SequenceReferenceGap"
+					},
+					"allOf": [
+						{
+							"maxItems": 1000000
+						}
+					]
+				},
+				"coverage_gaps": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/SequenceGap"
+					},
+					"allOf": [
+						{
+							"maxItems": 1000000
+						}
+					]
+				}
+			},
+			"required": [
+				"schema_version",
+				"object_path",
+				"movie_scene_path",
+				"tick_resolution",
+				"display_rate",
+				"playback_range",
+				"bindings",
+				"root_tracks",
+				"references",
+				"reference_coverage_gaps",
+				"coverage_gaps"
+			],
+			"additionalProperties": false
+		},
 		"NonNegativeInt": {
 			"type": "integer",
 			"allOf": [
@@ -7399,6 +7998,20 @@
 				{
 					"type": "object",
 					"properties": {
+						"sequence": {
+							"$ref": "#/$defs/LevelSequenceProjection"
+						},
+						"kind": {
+							"type": "string",
+							"enum": ["level_sequence"]
+						}
+					},
+					"required": ["sequence", "kind"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
 						"kind": {
 							"type": "string",
 							"enum": ["authoring"]
@@ -7575,6 +8188,7 @@
 							"enum": [
 								"inspect",
 								"blueprint",
+								"level_sequence",
 								"authoring",
 								"scan",
 								"extract_text",

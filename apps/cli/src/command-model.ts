@@ -27,6 +27,12 @@ const EditorPlayAction = Schema.Literals([
 ]);
 
 export const CliCommand = Schema.TaggedUnion({
+	SavedReview: {
+		domain: Schema.Literals(["blueprint", "level_sequence"]),
+		path: Schema.String,
+		baseline: Schema.optionalKey(Schema.String),
+		...Reader
+	},
 	Version: {},
 	InvestigationRun: {
 		...Project,

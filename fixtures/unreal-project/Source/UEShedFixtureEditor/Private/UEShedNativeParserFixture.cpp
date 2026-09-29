@@ -1,5 +1,7 @@
 #include "UEShedNativeParserFixture.h"
 #include "UEShedNativeParserTypes.h"
+#include "UEShedPropertyBagFixture.h"
+#include "UEShedAnimationParserFixture.h"
 #include "Animation/Skeleton.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Curves/CurveFloat.h"
@@ -193,6 +195,7 @@ bool GenerateNativeParserFixtures()
 			FTransform(FQuat(FVector::UpVector, PI / 3.0), FVector(10.0, 20.0, 30.0), FVector(0.5, 1.5, 2.0)));
 	}
 	if (!Save(Skeleton)) return false;
+	if (!GenerateAnimationParserFixture(Skeleton)) return false;
 
 	UUEShedNativeCoverageAsset* Asset = CreateAsset<UUEShedNativeCoverageAsset>(TEXT("DA_Native"));
 	FillChannel(Asset->FloatChannel);
@@ -242,6 +245,7 @@ bool GenerateNativeParserFixtures()
 	FInstancedStruct TagInstance;
 	TagInstance.InitializeAs<FGameplayTagContainer>(Asset->Tags);
 	Asset->MathInstances.Add(TagInstance);
+	FillPropertyBagFixture(Asset, Float);
 	FMetaData& Metadata = Asset->GetOutermost()->GetMetaData();
 	Metadata.RootMetaDataMap.Add(TEXT("FixturePurpose"), TEXT("Shared native layouts"));
 	Metadata.RootMetaDataMap.Add(TEXT("EmptyRoot"), TEXT(""));
@@ -347,6 +351,10 @@ bool WriteNativeParserEvidence(const FString& OutputDirectory)
 	TArray<TSharedPtr<FJsonValue>> Tags;
 	for (const FString& Tag : TagNames) Tags.Add(MakeShared<FJsonValueString>(Tag));
 	Result->SetArrayField(TEXT("tags"), Tags);
+	Result->SetObjectField(TEXT("property_bag"), PropertyBagFixtureEvidence(Asset));
+	const auto Animation = AnimationParserFixtureEvidence();
+	if (!Animation) return false;
+	Result->SetObjectField(TEXT("animation"), Animation);
 	auto Metadata = MakeShared<FJsonObject>(), Objects = MakeShared<FJsonObject>(), Package = MakeShared<FJsonObject>();
 	const FMetaData& Meta = Asset->GetOutermost()->GetMetaData();
 	for (const auto& Pair : Meta.RootMetaDataMap) Package->SetStringField(Pair.Key.ToString(), Pair.Value);

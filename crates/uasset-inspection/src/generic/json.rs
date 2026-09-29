@@ -749,6 +749,7 @@ impl Serialize for StringTableEntriesView<'_> {
             sequence.serialize_element(&StringTableEntryView {
                 key: &entry.key,
                 source: &entry.source,
+                dev_notes: &entry.dev_notes,
             })?;
         }
         sequence.end()
@@ -759,6 +760,7 @@ impl Serialize for StringTableEntriesView<'_> {
 struct StringTableEntryView<'a> {
     key: &'a str,
     source: &'a str,
+    dev_notes: &'a str,
 }
 
 struct EnumEntriesView<'a> {
@@ -1054,6 +1056,8 @@ enum PropertyValueView<'a> {
         table_id: Option<&'a str>,
         #[serde(skip_serializing_if = "Option::is_none")]
         key: Option<&'a str>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        dev_notes: Option<&'a str>,
     },
     Vector {
         x: f64,
@@ -1156,13 +1160,15 @@ impl<'a> PropertyValueView<'a> {
             PropertyValue::Text(text) => match &text.history {
                 TextHistory::None => Self::Text {
                     value: &text.source,
+                    dev_notes: text.dev_notes(),
                     history: "none",
                     namespace: None,
                     table_id: None,
                     key: None,
                 },
-                TextHistory::Base { namespace, key } => Self::Text {
+                TextHistory::Base { namespace, key, .. } => Self::Text {
                     value: &text.source,
+                    dev_notes: text.dev_notes(),
                     history: "base",
                     namespace: Some(namespace),
                     table_id: None,
@@ -1170,6 +1176,7 @@ impl<'a> PropertyValueView<'a> {
                 },
                 TextHistory::StringTableEntry { table_id, key } => Self::Text {
                     value: &text.source,
+                    dev_notes: text.dev_notes(),
                     history: "string_table",
                     namespace: None,
                     table_id: Some(table_id),
@@ -1179,6 +1186,7 @@ impl<'a> PropertyValueView<'a> {
                     let (history, namespace, table_id, key) = text_identity_parts(format);
                     Self::Text {
                         value: &text.source,
+                        dev_notes: text.dev_notes(),
                         history,
                         namespace,
                         table_id,
@@ -1281,7 +1289,7 @@ fn text_identity_parts(
         TextHistory::StringTableEntry { table_id, key } => {
             ("string_table", None, Some(table_id), Some(key))
         }
-        TextHistory::Base { namespace, key } => ("base", Some(namespace), None, Some(key)),
+        TextHistory::Base { namespace, key, .. } => ("base", Some(namespace), None, Some(key)),
         TextHistory::NamedFormat { format, .. } => text_identity_parts(format),
     }
 }

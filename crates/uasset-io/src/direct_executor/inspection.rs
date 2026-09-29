@@ -189,6 +189,7 @@ fn saved_asset(package: &Package, decoded: DecodedAsset) -> SavedAsset {
                 .map(|entry| SavedStringTableEntry {
                     key: entry.key,
                     source: entry.source,
+                    dev_notes: entry.dev_notes,
                 })
                 .collect(),
         },
@@ -331,39 +332,46 @@ fn saved_value(package: &Package, value: PropertyValue) -> SavedPropertyValue {
             value: resolve_name(package, value),
         },
         PropertyValue::String(value) => SavedPropertyValue::StringValue { value },
-        PropertyValue::Text(text) => match text.history {
-            ParserTextHistory::None => SavedPropertyValue::Text {
-                value: text.source,
-                history: TextHistory::None,
-                namespace: None,
-                table_id: None,
-                key: None,
-            },
-            ParserTextHistory::Base { namespace, key } => SavedPropertyValue::Text {
-                value: text.source,
-                history: TextHistory::Base,
-                namespace: Some(namespace),
-                table_id: None,
-                key: Some(key),
-            },
-            ParserTextHistory::StringTableEntry { table_id, key } => SavedPropertyValue::Text {
-                value: text.source,
-                history: TextHistory::StringTableEntry,
-                namespace: None,
-                table_id: Some(table_id),
-                key: Some(key),
-            },
-            ParserTextHistory::NamedFormat { format, .. } => {
-                let (history, namespace, table_id, key) = text_identity_parts(*format);
-                SavedPropertyValue::Text {
+        PropertyValue::Text(text) => {
+            let dev_notes = text.dev_notes().map(str::to_owned);
+            match text.history {
+                ParserTextHistory::None => SavedPropertyValue::Text {
                     value: text.source,
-                    history,
-                    namespace,
-                    table_id,
-                    key,
+                    dev_notes,
+                    history: TextHistory::None,
+                    namespace: None,
+                    table_id: None,
+                    key: None,
+                },
+                ParserTextHistory::Base { namespace, key, .. } => SavedPropertyValue::Text {
+                    value: text.source,
+                    dev_notes,
+                    history: TextHistory::Base,
+                    namespace: Some(namespace),
+                    table_id: None,
+                    key: Some(key),
+                },
+                ParserTextHistory::StringTableEntry { table_id, key } => SavedPropertyValue::Text {
+                    value: text.source,
+                    dev_notes,
+                    history: TextHistory::StringTableEntry,
+                    namespace: None,
+                    table_id: Some(table_id),
+                    key: Some(key),
+                },
+                ParserTextHistory::NamedFormat { format, .. } => {
+                    let (history, namespace, table_id, key) = text_identity_parts(*format);
+                    SavedPropertyValue::Text {
+                        value: text.source,
+                        dev_notes,
+                        history,
+                        namespace,
+                        table_id,
+                        key,
+                    }
                 }
             }
-        },
+        }
         PropertyValue::Vector(value) => SavedPropertyValue::Vector {
             x: finite_f64(value.x),
             y: finite_f64(value.y),
@@ -478,7 +486,7 @@ fn text_identity_parts(
             Some(table_id),
             Some(key),
         ),
-        ParserTextHistory::Base { namespace, key } => {
+        ParserTextHistory::Base { namespace, key, .. } => {
             (TextHistory::Base, Some(namespace), None, Some(key))
         }
         ParserTextHistory::NamedFormat { format, .. } => text_identity_parts(*format),

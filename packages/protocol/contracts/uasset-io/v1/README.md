@@ -57,3 +57,11 @@ The TypeScript and Rust sides both run the complete shared fixture set. TypeScri
 `packages/protocol/src/uasset-io.test.ts`; Rust coverage is `cargo test -p uasset-io protocol`.
 Adding a result variant requires a valid fixture that both tests decode, plus an invalid fixture when
 the boundary rule needs a rejection case.
+
+### Saved translator notes
+
+Generic keyed-text values may include `dev_notes`; new producers emit it even when empty.
+StringTable entries and compact text occurrences also carry `dev_notes`. Consumers default missing
+entry/occurrence notes from older producers to `""`. This additive evidence does not change the
+source-only authoring value contract. The package decoder gates the serialized FString on
+FortniteMain custom version >= 260 and the absence of `FILTER_EDITOR_ONLY`.

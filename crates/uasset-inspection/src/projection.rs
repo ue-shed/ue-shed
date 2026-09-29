@@ -27,6 +27,7 @@ pub struct TextAssetProjection {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct TextOccurrence {
     pub source: String,
+    pub dev_notes: String,
     pub identity: TextIdentity,
     pub location: TextLocation,
     pub edit_capability: TextEditCapability,
@@ -101,6 +102,7 @@ pub fn project_text_asset(package: &Package, asset: &DecodedAsset) -> TextAssetP
             for entry in &table.entries {
                 output.occurrences.push(TextOccurrence {
                     source: entry.source.clone(),
+                    dev_notes: entry.dev_notes.clone(),
                     identity: identity_for_string_table(&table.namespace, &entry.key),
                     location: TextLocation::StringTableEntry {
                         object_path: table.object_path.to_string(),
@@ -274,6 +276,7 @@ fn visit_text_value<F>(
     match value {
         PropertyValue::Text(text) => output.occurrences.push(TextOccurrence {
             source: text.source.clone(),
+            dev_notes: text.dev_notes().unwrap_or_default().to_owned(),
             identity: identity_for_text(text),
             location: location(path),
             edit_capability,
@@ -346,10 +349,10 @@ fn identity_for_text(text: &TextValue) -> TextIdentity {
         TextHistory::None => TextIdentity::Unresolved {
             reason: TextIdentityReason::CultureInvariant,
         },
-        TextHistory::Base { namespace, key } if key.is_empty() => TextIdentity::Unresolved {
+        TextHistory::Base { namespace, key, .. } if key.is_empty() => TextIdentity::Unresolved {
             reason: TextIdentityReason::MissingKey,
         },
-        TextHistory::Base { namespace, key } => TextIdentity::Resolved {
+        TextHistory::Base { namespace, key, .. } => TextIdentity::Resolved {
             namespace: namespace.clone(),
             key: key.clone(),
         },

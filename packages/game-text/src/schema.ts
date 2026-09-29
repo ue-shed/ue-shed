@@ -1,4 +1,4 @@
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
 
 export const TextUnitId = Schema.String.pipe(Schema.brand("TextUnitId"));
 export type TextUnitId = Schema.Schema.Type<typeof TextUnitId>;
@@ -54,6 +54,7 @@ export const TextLocation = Schema.Union([
 export type TextLocation = Schema.Schema.Type<typeof TextLocation>;
 
 export const TextOccurrence = Schema.Struct({
+	devNotes: Schema.String.pipe(Schema.withDecodingDefaultKey(Effect.succeed(""))),
 	id: TextOccurrenceId,
 	packageFile: Schema.String,
 	source: Schema.String,

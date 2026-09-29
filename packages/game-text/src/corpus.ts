@@ -129,6 +129,7 @@ function addTextOccurrence(options: {
 		id: makeOccurrenceId(occurrenceId(options.packageFile, options.location)),
 		packageFile: options.packageFile,
 		source: options.value.value,
+		devNotes: options.value.history === "base" ? (options.value.dev_notes ?? "") : "",
 		identity: identityForText(options.value),
 		location: options.location,
 		editCapability: options.editCapability
@@ -184,6 +185,7 @@ function textOccurrenceFromExtraction(options: {
 		id: makeOccurrenceId(occurrenceId(options.packageFile, location)),
 		packageFile: options.packageFile,
 		source: options.occurrence.source,
+		devNotes: options.occurrence.dev_notes,
 		identity,
 		location,
 		editCapability: options.occurrence.edit_capability
@@ -352,6 +354,7 @@ export function textOccurrencesFromInspection(options: {
 					value: {
 						value_kind: "text",
 						value: entry.source,
+						dev_notes: entry.dev_notes,
 						history: "base",
 						namespace: asset.string_table_namespace,
 						key: entry.key

@@ -302,6 +302,7 @@ fn asset_output_from_decoded(package: &Package, decoded: DecodedAsset) -> AssetO
                 .map(|entry| StringTableEntryOutput {
                     key: entry.key,
                     source: entry.source,
+                    dev_notes: entry.dev_notes,
                 })
                 .collect(),
             enum_cpp_form: None,
@@ -649,6 +650,7 @@ pub struct CurveKeyOutput {
 pub struct StringTableEntryOutput {
     pub key: String,
     pub source: String,
+    pub dev_notes: String,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -729,6 +731,8 @@ pub enum PropertyValueOutput {
         table_id: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         key: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        dev_notes: Option<String>,
     },
     Vector {
         x: f64,
@@ -915,16 +919,19 @@ pub struct NativeFieldOutput {
 fn text_value_output(text: uasset_parser::property::TextValue) -> PropertyValueOutput {
     use uasset_parser::property::TextHistory;
 
+    let dev_notes = text.dev_notes().map(str::to_owned);
     match text.history {
         TextHistory::None => PropertyValueOutput::Text {
             value: text.source,
+            dev_notes,
             history: "none".to_owned(),
             namespace: None,
             table_id: None,
             key: None,
         },
-        TextHistory::Base { namespace, key } => PropertyValueOutput::Text {
+        TextHistory::Base { namespace, key, .. } => PropertyValueOutput::Text {
             value: text.source,
+            dev_notes,
             history: "base".to_owned(),
             namespace: Some(namespace),
             table_id: None,
@@ -932,6 +939,7 @@ fn text_value_output(text: uasset_parser::property::TextValue) -> PropertyValueO
         },
         TextHistory::StringTableEntry { table_id, key } => PropertyValueOutput::Text {
             value: text.source,
+            dev_notes,
             history: "string_table".to_owned(),
             namespace: None,
             table_id: Some(table_id),
@@ -941,6 +949,7 @@ fn text_value_output(text: uasset_parser::property::TextValue) -> PropertyValueO
             let (history, namespace, table_id, key) = text_identity_parts(&format);
             PropertyValueOutput::Text {
                 value: text.source,
+                dev_notes,
                 history: history.to_owned(),
                 namespace,
                 table_id,
@@ -956,7 +965,7 @@ fn text_identity_parts(
     use uasset_parser::property::TextHistory;
 
     match &text.history {
-        TextHistory::Base { namespace, key } => {
+        TextHistory::Base { namespace, key, .. } => {
             ("base", Some(namespace.clone()), None, Some(key.clone()))
         }
         TextHistory::NamedFormat { format, .. } => text_identity_parts(format),

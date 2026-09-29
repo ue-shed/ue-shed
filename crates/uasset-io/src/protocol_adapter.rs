@@ -823,6 +823,7 @@ fn adapt_asset(asset: uasset_inspection::generic::AssetOutput) -> Result<SavedAs
                 .map(|entry| SavedStringTableEntry {
                     key: entry.key,
                     source: entry.source,
+                    dev_notes: entry.dev_notes,
                 })
                 .collect(),
         }),
@@ -1027,12 +1028,14 @@ fn adapt_property_value(
             namespace,
             table_id,
             key,
+            dev_notes,
         } => SavedPropertyValue::Text {
             value,
             history: adapt_text_history(&history)?,
             namespace,
             table_id,
             key,
+            dev_notes,
         },
         Value::Vector { x, y, z } => SavedPropertyValue::Vector {
             x: finite_f64(x),

@@ -879,6 +879,7 @@ fn text_occurrence(
 ) -> SavedAssetTextOccurrence {
     SavedAssetTextOccurrence {
         source: occurrence.source,
+        dev_notes: occurrence.dev_notes,
         identity: match occurrence.identity {
             TextIdentity::Resolved { namespace, key } => {
                 TextExtractionIdentity::Resolved { namespace, key }

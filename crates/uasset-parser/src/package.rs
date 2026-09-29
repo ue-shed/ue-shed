@@ -508,6 +508,26 @@ fn resolve_package_paths(
 }
 
 impl PackageSummary {
+    /// UE 5.8 FText/StringTable translator notes are editor-only package data.
+    /// Saved packages are not network archives (TextHistory_Base's third gate).
+    #[must_use]
+    pub fn has_text_dev_notes(&self) -> bool {
+        const FORTNITE_MAIN: Guid = Guid {
+            a: 0x601D_1886,
+            b: 0xAC64_4F84,
+            c: 0xAA16_D3DE,
+            d: 0x0DEA_C7D6,
+        };
+        !self
+            .versions
+            .package_flags
+            .contains(PackageFlags::FILTER_EDITOR_ONLY)
+            && self
+                .custom_versions
+                .iter()
+                .any(|version| version.key == FORTNITE_MAIN && version.version >= 260)
+    }
+
     /// Parses and validates a classic package summary.
     ///
     /// # Errors

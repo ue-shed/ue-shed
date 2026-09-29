@@ -267,3 +267,49 @@ describe("game text corpus", () => {
 		expect(focus?.nextOccurrenceCursor).toBeDefined();
 	});
 });
+
+it("preserves translator notes from keyed properties and string table entries", () => {
+	const withNotes: SavedAssetInspection = {
+		...inspection,
+		assets: [
+			{
+				kind: "UObject",
+				object_path: "/Game/Notes.Notes",
+				class_path: "/Script/Engine.DataAsset",
+				properties: [
+					{
+						name: "Label",
+						type: "TextProperty",
+						value_kind: "text",
+						value: "Hello",
+						history: "base",
+						namespace: "Fixture",
+						key: "Greeting",
+						dev_notes: "Greeting, not a command"
+					}
+				]
+			},
+			{
+				kind: "StringTable",
+				object_path: "/Game/Notes.ST_Notes",
+				string_table_namespace: "Fixture",
+				string_table_entries: [
+					{ key: "Goodbye", source: "Bye", dev_notes: "Friendly farewell" }
+				]
+			}
+		]
+	};
+	const occurrences = textOccurrencesFromInspection({
+		packageFile: "Content/Notes.uasset",
+		inspection: withNotes
+	});
+	expect(occurrences.map((occurrence) => occurrence.devNotes)).toEqual([
+		"Greeting, not a command",
+		"Friendly farewell"
+	]);
+	const legacy = textOccurrencesFromInspection({
+		packageFile: "Content/Text.uasset",
+		inspection
+	});
+	expect(legacy.every((occurrence) => occurrence.devNotes === "")).toBe(true);
+});

@@ -1,6 +1,10 @@
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
-import { decodeSavedAssetInspection } from "./uasset-inspection.js";
+import {
+	decodeSavedAssetInspection,
+	SavedProperty,
+	SavedAssetTextOccurrence
+} from "./uasset-inspection.js";
 
 describe("saved asset inspection wire contract", () => {
 	it("decodes a complete empty inspection", async () => {
@@ -57,4 +61,42 @@ describe("saved asset inspection wire contract", () => {
 		);
 		expect(result._tag).toBe("Failure");
 	});
+});
+
+it("retains keyed-text translator notes without requiring them in older inspection JSON", () => {
+	const property = {
+		name: "Label",
+		type: "TextProperty",
+		value_kind: "text",
+		value: "Hello",
+		history: "base",
+		namespace: "Fixture",
+		key: "Greeting"
+	};
+	const decode = Schema.decodeUnknownSync(SavedProperty);
+	expect(decode({ ...property, dev_notes: "Use a friendly tone" })).toEqual({
+		...property,
+		dev_notes: "Use a friendly tone"
+	});
+	expect(decode({ ...property, dev_notes: "" })).toEqual({ ...property, dev_notes: "" });
+	expect(decode(property)).toEqual(property);
+	expect(() => decode({ ...property, dev_notes: 42 })).toThrow();
+});
+
+it("defaults translator notes in legacy compact text events", () => {
+	const occurrence = {
+		source: "Hello",
+		identity: { status: "resolved", namespace: "Fixture", key: "Greeting" },
+		location: {
+			kind: "string_table_entry",
+			object_path: "/Game/Fixture/ST_Notes.ST_Notes",
+			entry_key: "Greeting"
+		},
+		edit_capability: "source_editable"
+	};
+	const decode = Schema.decodeUnknownSync(SavedAssetTextOccurrence);
+	expect(decode(occurrence).dev_notes).toBe("");
+	expect(decode({ ...occurrence, dev_notes: "Use a friendly tone" }).dev_notes).toBe(
+		"Use a friendly tone"
+	);
 });

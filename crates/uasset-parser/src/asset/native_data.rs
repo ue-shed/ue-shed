@@ -60,7 +60,43 @@ pub(super) fn string_table(
     context: &AssetDecodeContext<'_>,
     path: &ObjectPath,
 ) -> Result<SourceStringTableData, AssetError> {
-    let mut data = modeled_data(reader, context, "FStringTable", path)?;
+    // The embedded source model describes the UE 5.7 layout. Resolve the additive
+    // editor-only entry field from package versions before decoding that layout.
+    let has_dev_notes = context.package.summary.has_text_dev_notes();
+    let mut data = if has_dev_notes {
+        use crate::native::{NativeField, NativeLayout};
+        let mut layout = context
+            .schemas
+            .native_layout("FStringTable")
+            .ok_or_else(|| invalid_layout(path, "FStringTable"))?
+            .clone();
+        let NativeLayout::Record { fields } = &mut layout else {
+            return Err(invalid_layout(path, "FStringTable"));
+        };
+        let entries = fields
+            .iter_mut()
+            .find(|field| field.name == "Entries")
+            .ok_or_else(|| invalid_layout(path, "Entries"))?;
+        let NativeLayout::Array { element } = &mut entries.layout else {
+            return Err(invalid_layout(path, "Entries"));
+        };
+        let NativeLayout::Record { fields } = element.as_mut() else {
+            return Err(invalid_layout(path, "Entries.Element"));
+        };
+        if fields.len() != 2 || fields[0].name != "Key" || fields[1].name != "SourceString" {
+            return Err(invalid_layout(path, "Entries.Element"));
+        }
+        fields.push(NativeField {
+            name: "DevNotes".into(),
+            layout: NativeLayout::String,
+        });
+        decode_native(reader, &layout, path.as_str()).map_err(|error| match error {
+            NativeError::Archive(error) => AssetError::from(error),
+            NativeError::Layout(message) => invalid_layout(path, &message),
+        })?
+    } else {
+        modeled_data(reader, context, "FStringTable", path)?
+    };
     let namespace = string(field(&mut data, "Namespace", path)?, path)?;
     let NativeValue::Array(raw_entries) = field(&mut data, "Entries", path)? else {
         return Err(invalid_layout(path, "Entries"));
@@ -69,8 +105,17 @@ pub(super) fn string_table(
     for mut entry in raw_entries {
         let key = string(field(&mut entry, "Key", path)?, path)?;
         let source = string(field(&mut entry, "SourceString", path)?, path)?;
+        let dev_notes = if has_dev_notes {
+            string(field(&mut entry, "DevNotes", path)?, path)?
+        } else {
+            String::new()
+        };
         finish_record(entry, path)?;
-        entries.push(StringTableEntry { key, source });
+        entries.push(StringTableEntry {
+            key,
+            source,
+            dev_notes,
+        });
     }
     let NativeValue::Map(raw_metadata) = field(&mut data, "MetaData", path)? else {
         return Err(invalid_layout(path, "MetaData"));

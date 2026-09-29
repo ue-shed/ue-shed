@@ -245,6 +245,9 @@
 							"type": "string",
 							"enum": ["base"]
 						},
+						"dev_notes": {
+							"type": "string"
+						},
 						"namespace": {
 							"type": "string"
 						},
@@ -1067,6 +1070,9 @@
 						"history": {
 							"type": "string",
 							"enum": ["base"]
+						},
+						"dev_notes": {
+							"type": "string"
 						},
 						"namespace": {
 							"type": "string"
@@ -1985,6 +1991,9 @@
 							"type": "string",
 							"enum": ["base"]
 						},
+						"dev_notes": {
+							"type": "string"
+						},
 						"namespace": {
 							"type": "string"
 						},
@@ -2860,6 +2869,9 @@
 							"type": "string",
 							"enum": ["base"]
 						},
+						"dev_notes": {
+							"type": "string"
+						},
 						"namespace": {
 							"type": "string"
 						},
@@ -3684,6 +3696,9 @@
 													"type": "string"
 												},
 												"source": {
+													"type": "string"
+												},
+												"dev_notes": {
 													"type": "string"
 												}
 											},
@@ -5815,6 +5830,9 @@
 			"type": "object",
 			"properties": {
 				"source": {
+					"type": "string"
+				},
+				"dev_notes": {
 					"type": "string"
 				},
 				"identity": {

@@ -953,9 +953,18 @@ fn decode_text_value(
         let namespace = payload.read_fstring(&format_args!("{path}.Namespace"))?;
         let key = payload.read_fstring(&format_args!("{path}.Key"))?;
         let source = payload.read_fstring(&format_args!("{path}.SourceString"))?;
+        let dev_notes = if package.summary.has_text_dev_notes() {
+            payload.read_fstring(&format_args!("{path}.DevNotes"))?
+        } else {
+            String::new()
+        };
         return Ok(Some(TextValue {
             source,
-            history: TextHistory::Base { namespace, key },
+            history: TextHistory::Base {
+                namespace,
+                key,
+                dev_notes,
+            },
         }));
     }
 
@@ -1181,6 +1190,16 @@ mod tests {
         flags: PropertyTagFlags,
         payload: &[u8],
     ) -> Result<PropertyValue, PropertyError> {
+        decode_record_with_package(test_package(names), type_index, type_params, flags, payload)
+    }
+
+    fn decode_record_with_package(
+        package: Package,
+        type_index: i32,
+        type_params: Vec<PropertyTypeName>,
+        flags: PropertyTagFlags,
+        payload: &[u8],
+    ) -> Result<PropertyValue, PropertyError> {
         let source = payload.to_vec();
         let record = PropertyRecord {
             name: crate::test_support::name_ref(0, 0),
@@ -1197,7 +1216,6 @@ mod tests {
                 reason: RawReason::UnsupportedType,
             },
         };
-        let package = test_package(names);
         let mut record = record;
         decode_property_record(&source, &mut record, &package, 0)?;
         Ok(record.value)
@@ -1427,8 +1445,81 @@ mod tests {
                 history: TextHistory::Base {
                     namespace: String::new(),
                     key: "deadbeef".to_owned(),
+                    dev_notes: String::new(),
                 },
             })
+        );
+    }
+
+    #[test]
+    fn keyed_text_dev_notes_follow_custom_version_and_editor_filter() {
+        use crate::test_support::text_version;
+        use crate::version::PackageFlags;
+        for (version, flags, notes) in [
+            (None, 0, None),
+            (Some(259), 0, None),
+            (Some(260), 0, Some("Translator: greeting, not a command")),
+            (Some(261), 0, Some("")),
+            (Some(260), PackageFlags::FILTER_EDITOR_ONLY, None),
+            (
+                Some(260),
+                PackageFlags::FILTER_EDITOR_ONLY | PackageFlags::COOKED,
+                None,
+            ),
+        ] {
+            let mut package = test_package(vec!["TextProperty".into()]);
+            text_version(&mut package, version, flags);
+            let mut payload = vec![0, 0, 0, 0, 0];
+            for value in ["Fixture", "Greeting", "Hello"] {
+                push_fstring(&mut payload, value);
+            }
+            if let Some(notes) = notes {
+                if notes.is_empty() {
+                    push_i32(&mut payload, 0);
+                } else {
+                    push_fstring(&mut payload, notes);
+                }
+            }
+            let decode = |bytes: &[u8]| {
+                decode_record_with_package(
+                    package.clone(),
+                    0,
+                    Vec::new(),
+                    PropertyTagFlags(0),
+                    bytes,
+                )
+            };
+            assert_eq!(
+                decode(&payload).unwrap(),
+                PropertyValue::Text(TextValue {
+                    source: "Hello".into(),
+                    history: TextHistory::Base {
+                        namespace: "Fixture".into(),
+                        key: "Greeting".into(),
+                        dev_notes: notes.unwrap_or_default().into()
+                    },
+                })
+            );
+            // A valid text must consume exactly the versioned payload.
+            let mut trailing = payload.clone();
+            trailing.extend_from_slice(&0_i32.to_le_bytes());
+            assert!(matches!(
+                decode(&trailing).unwrap(),
+                PropertyValue::Raw { .. }
+            ));
+            if notes.is_some() {
+                assert!(decode(&payload[..payload.len() - 1]).is_err());
+            }
+        }
+        let mut package = test_package(vec!["TextProperty".into()]);
+        text_version(&mut package, Some(260), 0);
+        let mut payload = vec![0, 0, 0, 0, 0];
+        for value in ["Fixture", "Key", "Hello"] {
+            push_fstring(&mut payload, value);
+        }
+        assert!(
+            decode_record_with_package(package, 0, Vec::new(), PropertyTagFlags(0), &payload)
+                .is_err()
         );
     }
 

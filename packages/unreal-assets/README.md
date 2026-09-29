@@ -40,6 +40,18 @@ import {
 } from "@ue-shed/unreal-assets";
 ```
 
+## Saved translator notes
+
+Keyed FText (`history: "base"`) and StringTable entries saved by UE 5.8 retain translator
+notes as `dev_notes` in `readSavedAsset` inspection output. Empty notes stay `""`.
+The parser reads this field only at FortniteMain custom version 260 or later, when
+`FILTER_EDITOR_ONLY` is absent. Older packages retain their existing layout.
+
+`readSavedTable` remains the shared source-value authoring snapshot: its text cells contain
+`{ kind: "text", value }`. Use `readSavedAsset` for namespace, key, and translator notes, or
+compact text extraction (`occurrence.dev_notes`). Game Text exposes those notes on each
+`TextOccurrence.devNotes`, keeping different notes for different occurrences of the same key.
+
 ## Reading one saved Blueprint graph
 
 `readSavedBlueprint` opens one uncooked `.uasset` in the supported UE 5.7 saved-revision window and

@@ -39,6 +39,7 @@ export type SavedPropertyValue =
 			readonly value_kind: "text";
 			readonly value: string;
 			readonly history: "base";
+			readonly dev_notes?: string;
 			readonly namespace: string;
 			readonly key: string;
 	  }
@@ -133,6 +134,7 @@ const SavedPropertyValueUnion = Schema.Union([
 		value_kind: Schema.Literal("text"),
 		value: Schema.String,
 		history: Schema.Literal("base"),
+		dev_notes: Schema.optionalKey(Schema.String),
 		namespace: Schema.String,
 		key: Schema.String
 	}),
@@ -245,7 +247,13 @@ export const SavedAssetInspection = Schema.Struct({
 					Schema.Record(Schema.String, Schema.Record(Schema.String, Schema.String))
 				),
 				string_table_entries: Schema.Array(
-					Schema.Struct({ key: Schema.String, source: Schema.String })
+					Schema.Struct({
+						key: Schema.String,
+						source: Schema.String,
+						dev_notes: Schema.String.pipe(
+							Schema.withDecodingDefaultKey(Effect.succeed(""))
+						)
+					})
 				)
 			}),
 			Schema.Struct({
@@ -535,6 +543,7 @@ const TextExtractionLocation = Schema.Union([
 
 export const SavedAssetTextOccurrence = Schema.Struct({
 	source: Schema.String,
+	dev_notes: Schema.String.pipe(Schema.withDecodingDefaultKey(Effect.succeed(""))),
 	identity: TextExtractionIdentity,
 	location: TextExtractionLocation,
 	edit_capability: Schema.Literals(["source_editable", "read_only"])

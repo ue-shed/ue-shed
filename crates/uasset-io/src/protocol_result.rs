@@ -301,6 +301,8 @@ pub enum SavedAsset {
 pub struct SavedStringTableEntry {
     pub key: String,
     pub source: String,
+    #[serde(default)]
+    pub dev_notes: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
@@ -390,6 +392,8 @@ pub enum SavedPropertyValue {
         table_id: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         key: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        dev_notes: Option<String>,
     },
     #[serde(rename = "object_ref")]
     ObjectRef { value: Option<String> },
@@ -637,6 +641,8 @@ pub enum ProjectionStatus {
 #[serde(deny_unknown_fields)]
 pub struct SavedAssetTextOccurrence {
     pub source: String,
+    #[serde(default)]
+    pub dev_notes: String,
     pub identity: TextExtractionIdentity,
     pub location: TextExtractionLocation,
     pub edit_capability: EditCapability,
@@ -1465,6 +1471,7 @@ mod tests {
                 SavedPropertyValue::Text {
                     value: "Generic label".to_owned(),
                     history: TextHistory::None,
+                    dev_notes: None,
                     table_id: None,
                     namespace: None,
                     key: None,
@@ -1477,13 +1484,14 @@ mod tests {
                 SavedPropertyValue::Text {
                     value: "Generic label".to_owned(),
                     history: TextHistory::Base,
+                    dev_notes: Some("Translator note".into()),
                     table_id: None,
                     namespace: Some("Fixture".to_owned()),
                     key: Some("Label".to_owned()),
                 },
                 serde_json::json!({
                     "value_kind": "text", "value": "Generic label", "history": "base",
-                    "namespace": "Fixture", "key": "Label"
+                    "namespace": "Fixture", "key": "Label", "dev_notes": "Translator note"
                 }),
             ),
         ] {

@@ -70,6 +70,7 @@ pub enum TextHistory {
     Base {
         namespace: String,
         key: String,
+        dev_notes: String,
     },
     NamedFormat {
         format: Box<TextValue>,
@@ -81,6 +82,17 @@ pub enum TextHistory {
 pub struct TextValue {
     pub source: String,
     pub history: TextHistory,
+}
+
+impl TextValue {
+    #[must_use]
+    pub fn dev_notes(&self) -> Option<&str> {
+        match &self.history {
+            TextHistory::Base { dev_notes, .. } => Some(dev_notes),
+            TextHistory::NamedFormat { format, .. } => format.dev_notes(),
+            TextHistory::None | TextHistory::StringTableEntry { .. } => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]

@@ -21,6 +21,7 @@ import {
 const fixtureRules = fileURLToPath(new URL("../fixtures/quality-rules.v1.json", import.meta.url));
 
 const menuOccurrence: TextOccurrence = {
+	devNotes: "",
 	editCapability: "source_editable",
 	id: makeTextOccurrenceId("occurrence:menu"),
 	identity: { key: "MenuConfirm", namespace: "Fixture", status: "resolved" },
@@ -35,6 +36,7 @@ const menuOccurrence: TextOccurrence = {
 };
 
 const unrelatedOccurrence: TextOccurrence = {
+	devNotes: "",
 	editCapability: "read_only",
 	id: makeTextOccurrenceId("occurrence:unrelated"),
 	identity: { key: "Unrelated", namespace: "Fixture", status: "resolved" },
@@ -85,6 +87,7 @@ const corpus: TextCorpus = {
 				menuOccurrence,
 				{
 					...menuOccurrence,
+					devNotes: "",
 					editCapability: "read_only",
 					id: makeTextOccurrenceId("occurrence:menu-evidence"),
 					location: {
@@ -103,6 +106,7 @@ const corpus: TextCorpus = {
 			identity: { key: "Prompt.Continue", namespace: "Fixture", status: "resolved" },
 			occurrences: [
 				{
+					devNotes: "",
 					editCapability: "source_editable",
 					id: makeTextOccurrenceId("occurrence:string-table"),
 					identity: { key: "Prompt.Continue", namespace: "Fixture", status: "resolved" },

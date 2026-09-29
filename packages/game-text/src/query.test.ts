@@ -11,6 +11,7 @@ const identity = { key: "Continue", namespace: "UI", status: "resolved" as const
 
 function occurrence(index: number): TextOccurrence {
 	return {
+		devNotes: "",
 		editCapability: "source_editable",
 		id: makeTextOccurrenceId(`occurrence:${index}`),
 		identity,

@@ -29,6 +29,7 @@ const textEvents = (options: {
 		fileBytes: 1510,
 		occurrence: {
 			source: "Hello",
+			dev_notes: "Friendly greeting",
 			identity: { status: "resolved", namespace: "Fixture", key: "GREETING" },
 			location: {
 				kind: "string_table_entry",
@@ -118,6 +119,7 @@ it.effect("builds a corpus from compact text extraction events", () =>
 		expect(corpus.coverage.inspectedPackages).toBe(29);
 		expect(corpus.coverage.failedPackages).toBe(1);
 		expect(corpus.coverage.textOccurrences).toBe(1);
+		expect(corpus.units[0]?.occurrences[0]?.devNotes).toBe("Friendly greeting");
 		expect(corpus.status).toBe("partial");
 		expect(corpus.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
 			"package_inspection_failed"

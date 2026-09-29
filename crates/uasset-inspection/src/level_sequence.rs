@@ -770,10 +770,12 @@ fn text_keys(
 
 fn text_identity(text: &TextValue) -> SequenceTextIdentity {
     match &text.history {
-        TextHistory::Base { namespace, key } if !key.is_empty() => SequenceTextIdentity::Resolved {
-            namespace: namespace.clone(),
-            key: key.clone(),
-        },
+        TextHistory::Base { namespace, key, .. } if !key.is_empty() => {
+            SequenceTextIdentity::Resolved {
+                namespace: namespace.clone(),
+                key: key.clone(),
+            }
+        }
         _ => SequenceTextIdentity::Unresolved,
     }
 }

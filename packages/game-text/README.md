@@ -5,6 +5,10 @@ package keeps Unreal namespace/key identity distinct from occurrence identity, r
 coverage, and returns bounded search and focus results. Saved packages are evidence only; this
 package does not mutate assets.
 
+Each occurrence retains saved translator notes as `devNotes`. UE 5.8 keyed text and StringTable
+entries can supply them; older packages and empty notes produce `""`. Notes stay separate from the
+source string and localization identity.
+
 ## Install
 
 Pin the package and the host's Effect runtime exactly:

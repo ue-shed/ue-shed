@@ -41,6 +41,7 @@ const corpus: TextCorpus = {
 			identity: { key: "Continue", namespace: "UI", status: "resolved" },
 			occurrences: [
 				{
+					devNotes: "",
 					editCapability: "source_editable",
 					id: makeTextOccurrenceId("occurrence:continue"),
 					identity: { key: "Continue", namespace: "UI", status: "resolved" },
@@ -60,6 +61,7 @@ const corpus: TextCorpus = {
 			identity: { key: "Quit", namespace: "UI", status: "resolved" },
 			occurrences: [
 				{
+					devNotes: "",
 					editCapability: "read_only",
 					id: makeTextOccurrenceId("occurrence:quit"),
 					identity: { key: "Quit", namespace: "UI", status: "resolved" },
@@ -98,6 +100,7 @@ const completed = { status: "completed", summary } satisfies TextCorpusQueryRunR
 
 function resultFor(unit: TextCorpus["units"][number]) {
 	const contexts = unit.occurrences.slice(0, 3).map((occurrence) => ({
+		devNotes: "",
 		editCapability: occurrence.editCapability,
 		location: occurrence.location
 	}));

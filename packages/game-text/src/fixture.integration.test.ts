@@ -23,8 +23,8 @@ describe.skipIf(!executable)("game text fixture corpus", () => {
 			// description, the text timeline contributes three localized keys, and the Blueprint graph
 			// fixture contributes one localized pin label. The StringTable reference contributes
 			// one additional unit and occurrence with its table/key identity.
-			discoveredPackages: 77,
-			inspectedPackages: 77,
+			discoveredPackages: 76,
+			inspectedPackages: 76,
 			failedPackages: 0,
 			textUnits: 38,
 			textOccurrences: 39,

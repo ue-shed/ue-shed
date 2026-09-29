@@ -170,3 +170,21 @@ pub fn write_uobject_export(none_name_index: i32, properties: &[u8]) -> Vec<u8> 
     write_property_terminator(&mut bytes, none_name_index);
     bytes
 }
+
+/// Model package custom versions independently of an engine-version label.
+pub fn text_version(package: &mut crate::package::Package, version: Option<i32>, flags: u32) {
+    package.summary.versions.package_flags = crate::version::PackageFlags::from_bits(flags);
+    package.summary.custom_versions = version
+        .into_iter()
+        .map(|version| crate::package::CustomVersion {
+            key: crate::archive::Guid {
+                a: 0x601D1886,
+                b: 0xAC644F84,
+                c: 0xAA16D3DE,
+                d: 0x0DEAC7D6,
+            },
+            version,
+            friendly_name: None,
+        })
+        .collect();
+}

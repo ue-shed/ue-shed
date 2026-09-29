@@ -32,6 +32,7 @@ const corpus: TextCorpus = {
 						objectPath: "/Game/Text/ST_Game.ST_Game",
 						entryKey: "PromptContinue"
 					},
+					devNotes: "",
 					editCapability: "source_editable"
 				}
 			]

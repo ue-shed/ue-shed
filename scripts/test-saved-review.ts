@@ -11,15 +11,16 @@ import {
 	compareSavedBlueprints,
 	compareSavedSequences
 } from "../packages/unreal-assets/dist/saved-review.js";
-import { createNodeRuntime } from "../packages/uasset-inspection-wasm/dist/node.js";
+import { ensureUassetExecutable } from "./native-tools.ts";
 import { LevelSequenceProjection } from "../packages/protocol/src/level-sequence.ts";
 
 const root = resolve(process.env.UE_SHED_UASSET_FIXTURE_ROOT ?? "fixtures/unreal-project");
 const evidence =
 	process.env.UE_SHED_NATIVE_EVIDENCE_DIR ?? join(root, "FixtureExpected/parser-targets");
-const reader = assetReaderLayer({
-	executable: resolve(process.env.UE_SHED_UASSET_EXECUTABLE ?? "target/debug/uasset.exe")
-});
+const reader = assetReaderLayer({ executable: ensureUassetExecutable() });
+const wasmEntry = new URL("../packages/uasset-inspection-wasm/dist/node.js", import.meta.url);
+const { createNodeRuntime }: typeof import("../packages/uasset-inspection-wasm/src/node.js") =
+	await import(wasmEntry.href);
 const runtime = createNodeRuntime();
 const readJson = (name: string) =>
 	Schema.decodeUnknownSync(Schema.Json)(JSON.parse(readFileSync(join(evidence, name), "utf8")));

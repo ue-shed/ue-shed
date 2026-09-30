@@ -47,6 +47,15 @@ coverage gaps and reference coverage gaps make the terminal outcome partial. Blu
 Level Sequence reads are bounded to 64 MiB before parsing. Older workers reject the new operation
 before acceptance. Native/WASM fixture conformance checks the same sequence record fields.
 
+Minor version 1.7 advances `level_sequence` records to schema 6 and `blueprint` records to schema 2.
+Sequence records add shared section settings, the separately saved camera-cut track, scoped cut IDs,
+possessable/spawnable metadata, and string/object channels. Blueprint records add saved declarations,
+CDO overrides and construction component/template inventory. Missing fields and unsupported native
+bytes remain explicit nullable evidence or coverage gaps. The public readers request minor 1.7 and
+validate these record versions; older result shapes are rejected at the boundary. Optional `native_data`
+retains source-checked actor/component instance records separately from tagged properties in generic
+inspection and Blueprint saved objects. Unknown subclass bytes remain explicit gaps.
+
 Result frames use an explicit result kind. Generic inspection, authoring, scan, compact text,
 compact texture, Blueprint graph, and saved-world values each have a named schema; there is no
 untyped result field.

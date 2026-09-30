@@ -214,6 +214,10 @@ pub enum SavedAsset {
     UObject {
         object_path: String,
         class_path: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        object_guid: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        native_data: Option<Box<SavedPropertyValue>>,
         #[serde(default)]
         properties: Vec<SavedProperty>,
         #[serde(skip_serializing_if = "Option::is_none")]

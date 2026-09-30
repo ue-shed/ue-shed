@@ -9,7 +9,7 @@ The first public contract is deliberately small:
 - generic inspection returns schema 8;
 - `extractText`, `extractTextures`, `extractLevelSequences`, `extractBlueprints`, and `extractAnimations` return compact
   schema-1 envelopes;
-  LevelSequence records use schema 5 and include saved scalar/transform and discrete channels, nested-sequence and cinematic-shot semantics plus
+  LevelSequence records use schema 6 and include saved scalar/transform and discrete channels, nested-sequence and cinematic-shot semantics plus
   a recursive inventory of every decoded object, soft-object, and DataTable-row reference in the
   package;
 - malformed, unsupported, partial, and resource-limited packages are represented as typed result
@@ -36,7 +36,25 @@ undecodable properties; null key arrays differ from explicitly saved empty array
 constructor/CDO defaults are inferred. Consumers upgrading from schema 4 must accept the new
 `discrete` track kind and required `discrete_channels` array. Upgrade native/WASM and consumers together.
 The language-neutral record schema is published at
-`@ue-shed/uasset-inspection-wasm/contracts/level-sequence.v5.schema.json`.
+`@ue-shed/uasset-inspection-wasm/contracts/level-sequence.v6.schema.json`.
+
+Schema 6 adds required `settings`, `camera_cut` and `value_channels` section fields. Section settings
+retain saved rows, priority, active/locked flags, frame pre/post-roll, and reflected blend/easing
+properties. The separate camera-cut track joins cuts with binding GUIDs, sequence IDs and resolve
+parent indices. Bindings distinguish possessables and spawnables, retaining parent GUIDs and saved
+template identity/class. String and object-path channels preserve Unicode/empty strings, defaults,
+local frame keys, and soft/hard references. A null object key differs from an omitted default or key
+array. Upgrade native/WASM producers and schema-6 consumers together; schemas 4 and 5 remain published.
+
+Blueprint records now use schema 2 and include a required `definition`: saved parent class, nullable
+variable declarations, the proven saved class default object, and construction component inventory.
+Declarations retain names/GUIDs, full pin types (including map terminals), categories, decimal 64-bit
+flags, declaration default text and reflected metadata. Saved CDO/template properties are separate
+from declaration defaults. Components retain ordered roots/children, classes, templates, sockets and
+native/inherited parent identity. Omitted values remain null; dependencies and effective inherited
+or constructor defaults are not inferred. Undecoded template native bytes produce explicit definition
+gaps while decoded topology and tagged properties remain usable. The record contract is published as
+`contracts/blueprint.v2.schema.json`.
 
 `extractAnimations` joins AnimSequence exports to their saved AnimationSequencerDataModel and FK
 Control Rig section. Schema-1 records include duration, frame rate/count, rate scale, looping,
@@ -117,3 +135,8 @@ exception-based control flow.
 
 The npm package is MIT licensed. It is a read-only bytes-to-evidence adapter and does not publish
 the private Rust crate to crates.io.
+
+Generic UObject inspection and Blueprint saved objects expose optional `native_data` for the inherited
+actor/component serialization supported by the source model. Member-parent references participate in
+Sequencer reference inventory and Blueprint navigation/comparison. Class default objects use their
+separate property save path, and unsupported subclass/conditional bytes remain opaque.

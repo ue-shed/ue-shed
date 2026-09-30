@@ -780,10 +780,18 @@ fn validate_event(event: &Event) -> Result<(), ProtocolError> {
 
 fn validate_result_frame(result: &ResultFrame) -> Result<(), ProtocolError> {
     match result {
-        ResultFrame::LevelSequence { sequence } => {
-            if sequence.schema_version != 5 {
+        ResultFrame::Blueprint { blueprint } => {
+            if blueprint.schema_version != 2 {
                 return Err(ProtocolError(
-                    "expected Level Sequence schema version 5".to_owned(),
+                    "expected Blueprint schema version 2".to_owned(),
+                ));
+            }
+            Ok(())
+        }
+        ResultFrame::LevelSequence { sequence } => {
+            if sequence.schema_version != 6 {
+                return Err(ProtocolError(
+                    "expected Level Sequence schema version 6".to_owned(),
                 ));
             }
             if sequence

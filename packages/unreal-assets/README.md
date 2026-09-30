@@ -31,8 +31,8 @@ The browser-safe `./saved-review` entry exports `blueprintReferences`, `sequence
 `resolveSavedReference`, `compareSavedBlueprints`, and `compareSavedSequences`, plus output schemas.
 Reference resolution requires an explicit package inventory, preserves the complete object target,
 and reports internal, native, resolved, ambiguous, or unavailable targets. It never guesses disk paths.
-Blueprint inventories cover decoded node properties and pin type/default references, not every
-package export. Workbench follows indexed Blueprint and sequence packages; other references remain
+Blueprint inventories cover decoded graph, declaration, saved CDO and component-template
+properties plus pin type/default references. They do not cover every package export. Workbench follows indexed Blueprint and sequence packages; other references remain
 labeled as outside that inventory.
 
 Comparisons return schema version 1 with categorized changes and before/after evidence. Blueprint
@@ -40,7 +40,10 @@ graphs/nodes use GUIDs when present, pins use saved IDs, and Sequencer tracks/se
 saved object paths. Recreated objects without preserved identities appear as removals/additions.
 Map/set ordering is normalized; array order is retained. Duplicate identities, partial reads, and
 the 5,000-change output limit produce warnings. No-change results describe decoded saved evidence,
-not runtime equivalence, CDO defaults, compilation, or evaluated playback.
+not runtime equivalence, effective constructor/inherited defaults, compilation, or evaluated playback.
+Schema-2 Blueprint reads compare declarations, saved CDO overrides and component templates separately.
+Schema-6 Sequencer reads compare shared settings, camera scopes, string/object keys and binding metadata.
+These readers require native protocol minor 1.7.
 
 ```powershell
 pnpm ue-shed assets blueprint 'C:/Project/Content/BP_Player.uasset'
@@ -274,3 +277,9 @@ executable when embedding another compatible producer.
 
 MIT. Unreal Engine is a trademark of Epic Games, Inc. This project is not affiliated with or
 endorsed by Epic Games.
+
+Saved actor/component instance records are available as optional `native_data` alongside tagged
+properties. Blueprint saved CDO/component objects retain this evidence, and comparisons/reference
+navigation include it. Supported inherited records cover modified construction-script member
+references and uncooked actor/scene flags. Unknown subclass bytes remain explicit coverage gaps;
+class default objects use a different save path and have no instance native record.

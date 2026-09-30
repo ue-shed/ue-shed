@@ -92,7 +92,7 @@ fixture contains a five-second `MovieScene`, one object binding, a text property
 and three localized `FMovieSceneTextChannel` keys. A second timeline references that text sequence
 through both a normal subsequence and a named cinematic shot. The generic UObject decoder already
 recovers the export graph, object references, and text values; the added native codecs recover
-`FFrameNumber` arrays, `FMovieSceneFrameRange`, and the metadata `FDateTime`. A compact schema-5
+`FFrameNumber` arrays, `FMovieSceneFrameRange`, and the metadata `FDateTime`. A compact schema-6
 projection joins binding, track, section, range, timed text, nested-sequence references, and shot
 names while retaining unsupported track classes as structural inventory with explicit coverage
 gaps. Independently of that semantic track support, it recursively inventories every decoded
@@ -111,7 +111,7 @@ Graph discovery follows saved `Nodes` arrays beneath the Blueprint root, and tho
 references prove arbitrary engine, plugin, and project `UEdGraph`/`UEdGraphNode` subclasses without
 a class-name allowlist. Data-only Blueprints produce a valid empty projection.
 
-A schema-1 projection joins graph, node, pin, and canonical link topology while preserving each
+A schema-2 projection joins graph, node, pin, and canonical link topology while preserving each
 node's arbitrary tagged properties. Node positions are saved evidence, so clients can reconstruct a
 useful read-only graph without loading Unreal. Missing references, unprojected native property
 payloads such as `FRichCurveKey`, and node-subclass native tails remain explicit coverage gaps.
@@ -119,6 +119,20 @@ Control Rig is deliberately rejected because its editor model is RigVM rather th
 `UEdGraph` surface. This does not load referenced packages, reproduce every editor-only
 title-generation behavior, compile Blueprint bytecode, or mutate and resave a package. Other saved
 package versions remain deferred until UE Shed chooses a compatibility window.
+
+The next saved-review increment adds common Sequencer section settings, scoped camera cuts and
+possessable/spawnable identities, plus string and object-path channels. Blueprint definitions now
+include variable declarations and native source-checked pin types, distinct saved CDO overrides,
+and construction component trees/templates with native parent identity. Both producer paths retain
+omitted/null evidence and unavailable native suffixes. Minimal real assets are generated and reloaded
+independently on UE 5.7 and 5.8; offline comparisons and Workbench inspections share the public records.
+
+A further increment decodes inherited actor/component native records through checked source layouts:
+uncooked actor-label markers, saved construction-script modified-member references and scene bounds
+markers with explicit saved branch evidence. Generic inspection and Blueprint saved objects expose
+these as `native_data` separate from tagged properties. Navigation, comparisons and Sequencer
+reference inventory include their decoded references. CDOs follow `SerializeDefaultObject` and omit
+instance records; unknown subclass suffixes and ambiguous inherited scene defaults remain gaps.
 
 Catalog discovery now reads only the package header needed for names, imports, exports, and resolved
 class paths. It does not decode DataTable rows. A versioned cache stores path, size, modified time,

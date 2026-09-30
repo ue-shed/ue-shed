@@ -22,14 +22,14 @@ describe.skipIf(!executable)("game text fixture corpus", () => {
 			// carry no text of their own. Every InputAction and InputMappingContext carries one FText
 			// description, the text timeline contributes three localized keys, and the Blueprint graph
 			// fixture contributes one localized pin label, while the richer review Blueprint adds
-			// one text unit with two occurrences. The StringTable reference contributes
+			// saved variable/component categories, including Review|Settings. The StringTable reference contributes
 			// one additional unit and occurrence with its table/key identity.
-			discoveredPackages: 79,
-			inspectedPackages: 79,
+			discoveredPackages: 80,
+			inspectedPackages: 80,
 			failedPackages: 0,
-			textUnits: 39,
-			textOccurrences: 41,
-			resolvedOccurrences: 41,
+			textUnits: 40,
+			textOccurrences: 49,
+			resolvedOccurrences: 49,
 			unsupportedTextProperties: 0
 		});
 		const holdMatches = searchTextCorpus(corpus, "Hold to skip");

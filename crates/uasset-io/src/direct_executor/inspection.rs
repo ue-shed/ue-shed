@@ -219,18 +219,26 @@ fn saved_asset(package: &Package, decoded: DecodedAsset) -> SavedAsset {
             }
         }
         DecodedAsset::UObject(object) => SavedAsset::UObject {
+            object_guid: object.object_guid.map(|guid| guid.to_string()),
+            native_data: object
+                .native_data
+                .map(|value| Box::new(saved_value(package, *value))),
             object_path: object.object_path.into_string(),
             class_path: object.class_path.into_string(),
             properties: saved_properties(package, object.properties),
             tail_bytes: (!object.tail.is_empty()).then_some(object.tail.len()),
         },
         DecodedAsset::BlueprintGraphNode(node) => SavedAsset::UObject {
+            object_guid: node.object_guid.map(|guid| guid.to_string()),
+            native_data: None,
             object_path: node.object_path.into_string(),
             class_path: node.class_path.into_string(),
             properties: saved_properties(package, node.properties),
             tail_bytes: (!node.tail.is_empty()).then_some(node.tail.len()),
         },
         DecodedAsset::AnimSequence(sequence) => SavedAsset::UObject {
+            object_guid: sequence.object_guid.map(|guid| guid.to_string()),
+            native_data: None,
             object_path: sequence.object_path.into_string(),
             class_path: ANIM_SEQUENCE_CLASS.to_owned(),
             properties: saved_properties(package, sequence.properties),

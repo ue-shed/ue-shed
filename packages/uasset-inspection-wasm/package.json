@@ -46,6 +46,8 @@
 		"./package.json": "./package.json",
 		"./contracts/level-sequence.v4.schema.json": "./contracts/level-sequence.v4.schema.json",
 		"./contracts/level-sequence.v5.schema.json": "./contracts/level-sequence.v5.schema.json",
+		"./contracts/level-sequence.v6.schema.json": "./contracts/level-sequence.v6.schema.json",
+		"./contracts/blueprint.v2.schema.json": "./contracts/blueprint.v2.schema.json",
 		"./contracts/animation.v1.schema.json": "./contracts/animation.v1.schema.json"
 	},
 	"publishConfig": {

@@ -27,8 +27,9 @@ families:
   double-precision reference transforms, and name-to-index map. Later Skeleton data remains opaque.
 - `UAnimSequence`: inherited UObject serialization, `UAnimationAsset::SkeletonGuid`, strip flags,
   the legacy raw-track array boundary, and the uncooked compressed-data gate.
-- Generic `UObject`: source-owned classes with the inherited tagged-property/GUID prefix retain all
-  later class-specific native data as the same opaque byte span as the compatibility decoder. The
+- Generic `UObject`: source-owned classes with the inherited tagged-property/GUID prefix retain
+  unmodeled later class-specific native data as opaque bytes. Actor/component records described below
+  are decoded separately from tagged properties. The
   real conformance inventory includes the `UTexture2D` inheritance chain and all 17 texture fixtures.
 
 The conformance test decodes all 12 DataTable fixtures (10,022 rows total) and the fixture DataAsset
@@ -118,6 +119,26 @@ Tagged property values remain decoded from the type information serialized in th
 same bounded codecs in both lanes. Generated declarations validate those values and supply class
 inheritance and native serialization order; they do not override contradictory on-disk evidence.
 
+## Saved actor and component records
+
+The engine-only model now includes Actor, Pawn, Character, ActorComponent, SceneComponent,
+MovementComponent, RotatingMovementComponent, CameraActor and CameraComponent ancestry. Source checks
+prove the modern inherited native prefixes, custom-version GUIDs/thresholds and CDO save dispatch on
+both UE 5.7 and UE 5.8. The native/WASM decoder exposes them as optional `native_data` in generic
+inspection and Blueprint saved-object records, with arbitrary later subclass bytes still in `tail_bytes`.
+
+Supported records include Actor's uncooked label marker and ActorComponent's bounded array of saved
+construction-script modified members (parent object, name and GUID). SceneComponent's uncooked bounds
+marker is read only when `bComputeBoundsOnceForGame` is explicitly saved true. An absent flag with
+remaining bytes can depend on an inherited default; those bytes remain opaque. Cooked payloads are
+rejected. Class default objects use `SerializeDefaultObject` and do not get these instance records.
+
+The decoder follows source-owned class ancestry or actual saved BlueprintGeneratedClass superclass
+exports. It does not guess native project class ancestry or execute construction scripts. Older custom
+versions omit records according to their source gates. Unsupported package revisions retain existing
+opaque evidence. A fresh-process fixture compares both empty and nonempty member lists with
+`GetUCSModifiedProperties`; native references feed Sequencer inventory and Blueprint navigation/diffs.
+
 ## Reusable native layouts
 
 Source-model schema 9 provides named native layouts alongside the class operation lists. The shared
@@ -198,14 +219,16 @@ its C++ name: Unreal's script-struct traits do **not** enable its native seriali
 properties and instances retain their tagged framing. The fixture deliberately preserves an unknown
 custom native instance as raw evidence alongside the supported types.
 
-Level Sequence projection records use schema 5. Scalar float/double and 3D transform sections expose
+Level Sequence projection records use schema 6. Scalar float/double and 3D transform sections expose
 `numeric_channels`, including indexed translation/rotation/scale paths, saved mask enablement, keys,
 tangents, defaults, extrapolation, tick resolution, and ShowCurve. Omitted channels, wrong value kinds,
 and unknown section classes remain coverage gaps. No defaults are inferred from an editor CDO. The
-WASM package publishes `contracts/level-sequence.v5.schema.json`; its one-million-item projection
-limit counts numeric and discrete channels and keys. Discrete bool/integer/byte/enum and visibility
+WASM package publishes `contracts/level-sequence.v6.schema.json`; its one-million-item projection
+limit counts channels and keys. Discrete bool/integer/byte/enum and visibility
 sections expose `discrete_channels`, with nullable saved defaults/flags, enum references and paired
-frame/value arrays. Fixtures and fresh-process Unreal APIs verify the saved semantics.
+frame/value arrays. String/object channels preserve saved keys, defaults and references. Shared section
+settings, scoped camera cuts and possessable/spawnable bindings retain their saved evidence without
+resolving runtime actors. Fixtures and fresh-process Unreal APIs verify the saved semantics.
 
 InstancedPropertyBag uses generated descriptor-prefix, metadata and UE 5.8 suffix layouts, with
 bounded conditional framing in the codec. `ue58-property-bags.json` supplements the base model;

@@ -596,7 +596,7 @@ function makeAssetReader(
 					maximumOutputBytes: MAX_PROTOCOL_OUTPUT_BYTES,
 					timeoutMs: configuration.timeoutMs
 				},
-				{ contractMinor: 2 }
+				{ contractMinor: 7 }
 			),
 			expected: "blueprint",
 			select: (result) => (result.kind === "blueprint" ? result.blueprint : undefined)
@@ -620,7 +620,7 @@ function makeAssetReader(
 					maximumOutputBytes: MAX_PROTOCOL_OUTPUT_BYTES,
 					timeoutMs: configuration.timeoutMs
 				},
-				{ contractMinor: 6 }
+				{ contractMinor: 7 }
 			),
 			expected: "level_sequence",
 			select: (result) => (result.kind === "level_sequence" ? result.sequence : undefined)

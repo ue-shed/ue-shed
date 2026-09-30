@@ -5,17 +5,17 @@
 		{
 			"path": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:UserConstructionScript",
 			"name": "UserConstructionScript",
-			"guid": "4199232d-410c0319-f9a534b9-9652101b",
+			"guid": "8cffd633-4217c142-074ccbb3-86bebf6b",
 			"nodes": [
 				{
 					"path": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:UserConstructionScript.K2Node_FunctionEntry_0",
 					"class": "/Script/BlueprintGraph.K2Node_FunctionEntry",
-					"guid": "b6c3a45f-4c938bfe-56d8c695-0244140e",
+					"guid": "47b775fb-4f4bff53-86b5419f-f8d28b27",
 					"x": 0,
 					"y": 0,
 					"pins": [
 						{
-							"id": "4521030c-481c1660-b07c94b7-4f28850a",
+							"id": "8eb0effe-4a7d2430-24b7dfb0-fe66b559",
 							"name": "then",
 							"direction": "output",
 							"category": "exec",
@@ -29,17 +29,17 @@
 		{
 			"path": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:ReviewFunction",
 			"name": "ReviewFunction",
-			"guid": "b9ce4574-450b6be3-fceda7a0-b0e88cd4",
+			"guid": "828b957a-4c2d96c9-c052b1a4-e7224251",
 			"nodes": [
 				{
 					"path": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:ReviewFunction.K2Node_FunctionEntry_0",
 					"class": "/Script/BlueprintGraph.K2Node_FunctionEntry",
-					"guid": "5daad95e-4f99b4e5-bb244693-2e7a98f8",
+					"guid": "a4c0b04c-417cf176-bc26309f-d97a744f",
 					"x": 0,
 					"y": 0,
 					"pins": [
 						{
-							"id": "13f6fd9b-4f7a142e-dd7f2d93-858776b7",
+							"id": "4990f3ae-4be2c9d4-015d3a8a-4204a9f4",
 							"name": "then",
 							"direction": "output",
 							"category": "exec",
@@ -53,17 +53,17 @@
 		{
 			"path": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:EventGraph",
 			"name": "EventGraph",
-			"guid": "2eef5b1d-48c6d957-f0db7586-f44ef0bd",
+			"guid": "99d1eb77-4ee897d4-51b0d7be-229e845d",
 			"nodes": [
 				{
 					"path": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:EventGraph.K2Node_Event_0",
 					"class": "/Script/BlueprintGraph.K2Node_Event",
-					"guid": "c1ab3ce8-4ee3668f-0e403fae-d731f5be",
+					"guid": "24679a4d-4295aab3-88104199-28630c9e",
 					"x": 0,
 					"y": 0,
 					"pins": [
 						{
-							"id": "6534b49c-4eb2399c-1b3a908e-f8736d89",
+							"id": "73b4eb51-410cb78d-d1b53fbf-7d5adc54",
 							"name": "OutputDelegate",
 							"direction": "output",
 							"category": "delegate",
@@ -71,7 +71,7 @@
 							"links": []
 						},
 						{
-							"id": "73d9864b-4cf30fbd-8ccec9b9-0569b1e3",
+							"id": "e0ed6059-4e1c9250-ebda03b0-49d15f2f",
 							"name": "then",
 							"direction": "output",
 							"category": "exec",
@@ -83,12 +83,12 @@
 				{
 					"path": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:EventGraph.K2Node_Event_1",
 					"class": "/Script/BlueprintGraph.K2Node_Event",
-					"guid": "fcaa27f4-44924906-506df3aa-1b422f4e",
+					"guid": "fea6e791-4d84f48b-f58a58af-a4e8938a",
 					"x": 0,
 					"y": 208,
 					"pins": [
 						{
-							"id": "c1e5c3ea-46512e54-08fd4fa6-51bb425c",
+							"id": "de40eefd-46b25deb-ff5c7191-51b7ed1a",
 							"name": "OutputDelegate",
 							"direction": "output",
 							"category": "delegate",
@@ -96,7 +96,7 @@
 							"links": []
 						},
 						{
-							"id": "af932544-4dc13b04-de956f83-31480a45",
+							"id": "9fd98fa0-4d45ac9a-e361e796-84f5effb",
 							"name": "then",
 							"direction": "output",
 							"category": "exec",
@@ -104,7 +104,7 @@
 							"links": []
 						},
 						{
-							"id": "eed0b2d8-44a1981f-963f58a4-c480e603",
+							"id": "fa7ca92c-46c66bd6-4f9b4893-f95a27b3",
 							"name": "OtherActor",
 							"direction": "output",
 							"category": "object",
@@ -116,12 +116,12 @@
 				{
 					"path": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:EventGraph.K2Node_Event_2",
 					"class": "/Script/BlueprintGraph.K2Node_Event",
-					"guid": "6b9d0f43-4d4b3d44-61f2db9d-019c3b73",
+					"guid": "9357b4a9-4892df73-c365ddb9-58c895ae",
 					"x": 0,
 					"y": 416,
 					"pins": [
 						{
-							"id": "9e5f0e96-478a19f4-78c51bb2-e06fbdda",
+							"id": "c20baf61-44072fc2-59fc81a2-d9505661",
 							"name": "OutputDelegate",
 							"direction": "output",
 							"category": "delegate",
@@ -129,7 +129,7 @@
 							"links": []
 						},
 						{
-							"id": "6cfbfeeb-4e7ba2b2-593f79ac-43e77406",
+							"id": "51ec3e8f-4d9bad97-b331cfa4-38197a53",
 							"name": "then",
 							"direction": "output",
 							"category": "exec",
@@ -137,7 +137,7 @@
 							"links": []
 						},
 						{
-							"id": "560de0f3-469ba62f-270e7e8f-c5fadc68",
+							"id": "14b62118-4fda9d29-8ab4e1a5-b4258904",
 							"name": "DeltaSeconds",
 							"direction": "output",
 							"category": "real",
@@ -149,12 +149,12 @@
 				{
 					"path": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:EventGraph.K2Node_Event_3",
 					"class": "/Script/BlueprintGraph.K2Node_Event",
-					"guid": "0353203f-4238902d-da1d5f81-e338f3b5",
+					"guid": "b83c53d1-49da4917-0aef62b8-debcec46",
 					"x": 0,
 					"y": 0,
 					"pins": [
 						{
-							"id": "e81bb519-478e6a8f-ddb6e08f-5a20ea1b",
+							"id": "62554972-4ff21cd1-a2cb2480-a7379d9e",
 							"name": "OutputDelegate",
 							"direction": "output",
 							"category": "delegate",
@@ -162,7 +162,7 @@
 							"links": []
 						},
 						{
-							"id": "e617af7e-404e0adc-1a66b683-ef4c3ecc",
+							"id": "61f28936-42b1bb59-6e333593-31e30c68",
 							"name": "then",
 							"direction": "output",
 							"category": "exec",
@@ -170,7 +170,7 @@
 							"links": [
 								{
 									"node": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:EventGraph.K2Node_IfThenElse_0",
-									"pin": "6e1bc3f6-4cc01bd7-18fe5ea2-2dfcb687"
+									"pin": "f6b79376-499056ed-e2570a91-abef3d57"
 								}
 							]
 						}
@@ -179,12 +179,12 @@
 				{
 					"path": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:EventGraph.K2Node_CallParentFunction_0",
 					"class": "/Script/BlueprintGraph.K2Node_CallParentFunction",
-					"guid": "5a76c379-442ee36b-cac5079f-785a1e77",
+					"guid": "cfaf5866-43ee72f1-60a8ec88-a6fb4c48",
 					"x": 200,
 					"y": 0,
 					"pins": [
 						{
-							"id": "f447ec19-4208209b-7ef00d82-82f85e07",
+							"id": "b9cd8605-4d9e6a37-ae73b2ad-4ef79a4e",
 							"name": "execute",
 							"direction": "input",
 							"category": "exec",
@@ -192,7 +192,7 @@
 							"links": []
 						},
 						{
-							"id": "ed7c9c98-46c5ef49-13b31ba1-caaa1290",
+							"id": "5dab2be3-4e33366a-6d94d8a8-d562b0c1",
 							"name": "then",
 							"direction": "output",
 							"category": "exec",
@@ -200,7 +200,7 @@
 							"links": []
 						},
 						{
-							"id": "c4163322-41a8c878-2c1e1590-0dffc1a4",
+							"id": "6773bd7f-456905ca-6464a29c-7710b980",
 							"name": "self",
 							"direction": "input",
 							"category": "object",
@@ -212,12 +212,12 @@
 				{
 					"path": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:EventGraph.K2Node_IfThenElse_0",
 					"class": "/Script/BlueprintGraph.K2Node_IfThenElse",
-					"guid": "0cf23738-413dde3b-cae9ba89-f135ff64",
+					"guid": "570e1d0a-4e16075b-339f20a6-b7029b34",
 					"x": 350,
 					"y": 0,
 					"pins": [
 						{
-							"id": "6e1bc3f6-4cc01bd7-18fe5ea2-2dfcb687",
+							"id": "f6b79376-499056ed-e2570a91-abef3d57",
 							"name": "execute",
 							"direction": "input",
 							"category": "exec",
@@ -225,12 +225,12 @@
 							"links": [
 								{
 									"node": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:EventGraph.K2Node_Event_3",
-									"pin": "e617af7e-404e0adc-1a66b683-ef4c3ecc"
+									"pin": "61f28936-42b1bb59-6e333593-31e30c68"
 								}
 							]
 						},
 						{
-							"id": "2780e202-45e8c4dc-49f5f183-9da6558b",
+							"id": "7293391a-4ff5754f-17a9ec90-121e6902",
 							"name": "Condition",
 							"direction": "input",
 							"category": "bool",
@@ -238,12 +238,12 @@
 							"links": [
 								{
 									"node": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:EventGraph.K2Node_Knot_0",
-									"pin": "bae4dcae-4f3bcca8-039ce987-f0c98898"
+									"pin": "5fac1754-4599c83b-9125eb92-fb8f7fd9"
 								}
 							]
 						},
 						{
-							"id": "9a62710f-47960ae7-ddac49ba-b4320010",
+							"id": "767a5ebf-4e57b0f3-3cd3f99c-714f27d5",
 							"name": "then",
 							"direction": "output",
 							"category": "exec",
@@ -251,12 +251,12 @@
 							"links": [
 								{
 									"node": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:EventGraph.K2Node_VariableSet_0",
-									"pin": "8cefd693-452b3080-5e3e339d-ea455b54"
+									"pin": "422c8498-4ce06fa6-fb24d985-04b29207"
 								}
 							]
 						},
 						{
-							"id": "61029034-40327afa-cb859ba3-7eed4389",
+							"id": "549fa0e5-49377250-dd83819e-d75bae19",
 							"name": "else",
 							"direction": "output",
 							"category": "exec",
@@ -268,12 +268,12 @@
 				{
 					"path": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:EventGraph.K2Node_Knot_0",
 					"class": "/Script/BlueprintGraph.K2Node_Knot",
-					"guid": "cef463e7-4df525d4-d4ffae8e-6cbe692b",
+					"guid": "272f27db-4e2792bf-41fdb5bb-ac300434",
 					"x": 250,
 					"y": 180,
 					"pins": [
 						{
-							"id": "b16e3e0a-4856c8e2-eca52d9c-941c2283",
+							"id": "094fb6fe-4bfbfd51-b3cb90bb-a45d23b6",
 							"name": "InputPin",
 							"direction": "input",
 							"category": "bool",
@@ -281,12 +281,12 @@
 							"links": [
 								{
 									"node": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:EventGraph.K2Node_VariableGet_0",
-									"pin": "ea38149e-4b9fe3c8-25c71f80-76a53e4d"
+									"pin": "203cef99-4541421d-130233a4-f0ae782c"
 								}
 							]
 						},
 						{
-							"id": "bae4dcae-4f3bcca8-039ce987-f0c98898",
+							"id": "5fac1754-4599c83b-9125eb92-fb8f7fd9",
 							"name": "OutputPin",
 							"direction": "output",
 							"category": "bool",
@@ -294,7 +294,7 @@
 							"links": [
 								{
 									"node": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:EventGraph.K2Node_IfThenElse_0",
-									"pin": "2780e202-45e8c4dc-49f5f183-9da6558b"
+									"pin": "7293391a-4ff5754f-17a9ec90-121e6902"
 								}
 							]
 						}
@@ -303,12 +303,12 @@
 				{
 					"path": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:EventGraph.K2Node_VariableGet_0",
 					"class": "/Script/BlueprintGraph.K2Node_VariableGet",
-					"guid": "474274b9-4e9bf08f-374d91b6-00c2d8ee",
+					"guid": "7c194e64-45ece13e-a24fa698-c43b2385",
 					"x": 0,
 					"y": 180,
 					"pins": [
 						{
-							"id": "ea38149e-4b9fe3c8-25c71f80-76a53e4d",
+							"id": "203cef99-4541421d-130233a4-f0ae782c",
 							"name": "ReviewEnabled",
 							"direction": "output",
 							"category": "bool",
@@ -316,12 +316,12 @@
 							"links": [
 								{
 									"node": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:EventGraph.K2Node_Knot_0",
-									"pin": "b16e3e0a-4856c8e2-eca52d9c-941c2283"
+									"pin": "094fb6fe-4bfbfd51-b3cb90bb-a45d23b6"
 								}
 							]
 						},
 						{
-							"id": "590969de-4cfa2967-ced1c491-9061050f",
+							"id": "fda40d53-43f4f3a2-238c6492-07667b4f",
 							"name": "self",
 							"direction": "input",
 							"category": "object",
@@ -333,12 +333,12 @@
 				{
 					"path": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:EventGraph.K2Node_VariableSet_0",
 					"class": "/Script/BlueprintGraph.K2Node_VariableSet",
-					"guid": "c1f678c4-458ede36-94cdc5a3-7bf5ce02",
+					"guid": "cb3982d6-45763f4a-f3d4d7b3-66b046d2",
 					"x": 680,
 					"y": 0,
 					"pins": [
 						{
-							"id": "8cefd693-452b3080-5e3e339d-ea455b54",
+							"id": "422c8498-4ce06fa6-fb24d985-04b29207",
 							"name": "execute",
 							"direction": "input",
 							"category": "exec",
@@ -346,12 +346,12 @@
 							"links": [
 								{
 									"node": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:EventGraph.K2Node_IfThenElse_0",
-									"pin": "9a62710f-47960ae7-ddac49ba-b4320010"
+									"pin": "767a5ebf-4e57b0f3-3cd3f99c-714f27d5"
 								}
 							]
 						},
 						{
-							"id": "14656307-4fe52cf6-6d232f93-3f0b6d58",
+							"id": "5aabdb58-4582222b-52611ea2-075cf20f",
 							"name": "then",
 							"direction": "output",
 							"category": "exec",
@@ -359,12 +359,12 @@
 							"links": [
 								{
 									"node": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:EventGraph.K2Node_CallFunction_0",
-									"pin": "83fd25a3-4807b5d9-d850ada1-1cbd0ce1"
+									"pin": "bc2577c7-4ea6c572-357f1b82-7fe29e51"
 								}
 							]
 						},
 						{
-							"id": "81c78994-4c190d3a-5bb89399-538b8d2f",
+							"id": "93d54b0b-480629a1-ca08a7a7-dd246eca",
 							"name": "ReviewEnabled",
 							"direction": "input",
 							"category": "bool",
@@ -372,7 +372,7 @@
 							"links": []
 						},
 						{
-							"id": "b7681117-42d5c1fc-aad1e9bb-1e3bbefb",
+							"id": "dd146fa6-43a42fe6-2b82e695-41e99bbd",
 							"name": "Output_Get",
 							"direction": "output",
 							"category": "bool",
@@ -380,7 +380,7 @@
 							"links": []
 						},
 						{
-							"id": "416e937c-4e183f40-13c48e88-69991e45",
+							"id": "12b4ae96-48eff4aa-34897d81-613bc457",
 							"name": "self",
 							"direction": "input",
 							"category": "object",
@@ -392,12 +392,12 @@
 				{
 					"path": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:EventGraph.K2Node_CallFunction_0",
 					"class": "/Script/BlueprintGraph.K2Node_CallFunction",
-					"guid": "635dd247-49621f5c-b5f517ac-5d2d52c5",
+					"guid": "64c2d847-4929e8da-1b6e66b0-3eb742a5",
 					"x": 1000,
 					"y": 0,
 					"pins": [
 						{
-							"id": "83fd25a3-4807b5d9-d850ada1-1cbd0ce1",
+							"id": "bc2577c7-4ea6c572-357f1b82-7fe29e51",
 							"name": "execute",
 							"direction": "input",
 							"category": "exec",
@@ -405,12 +405,12 @@
 							"links": [
 								{
 									"node": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:EventGraph.K2Node_VariableSet_0",
-									"pin": "14656307-4fe52cf6-6d232f93-3f0b6d58"
+									"pin": "5aabdb58-4582222b-52611ea2-075cf20f"
 								}
 							]
 						},
 						{
-							"id": "fb8a7d94-4c8d772e-67688e84-2fc61faf",
+							"id": "f465b0a1-4bef1b18-97078291-e84c0e54",
 							"name": "then",
 							"direction": "output",
 							"category": "exec",
@@ -418,7 +418,7 @@
 							"links": []
 						},
 						{
-							"id": "9781101f-4e101783-7cf8308e-28bf50a3",
+							"id": "0ddfa98b-4f20b307-4fc1dda1-36b797fa",
 							"name": "self",
 							"direction": "input",
 							"category": "object",
@@ -426,7 +426,7 @@
 							"links": []
 						},
 						{
-							"id": "cf75d567-4a4e7223-abcbafb4-c00851c9",
+							"id": "4a9d6962-4eee1fd8-aeddec8b-f3cfe05d",
 							"name": "bNewHidden",
 							"direction": "input",
 							"category": "bool",
@@ -438,12 +438,114 @@
 				{
 					"path": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture:EventGraph.EdGraphNode_Comment_0",
 					"class": "/Script/UnrealEd.EdGraphNode_Comment",
-					"guid": "20605f32-41b49c7c-235f5a8b-58ea8c4d",
+					"guid": "cde7ed32-40813c1b-4f0dcfb2-df571f8a",
 					"x": -40,
 					"y": -80,
 					"pins": []
 				}
 			]
+		}
+	],
+	"variables": [
+		{
+			"name": "ReviewEnabled",
+			"guid": "552921fe-4bfd3fdb-f8566cb8-bb12ad7f",
+			"category": "Default",
+			"type_category": "bool",
+			"container": 0,
+			"declaration_default": "",
+			"loaded_default": "True"
+		},
+		{
+			"name": "ReviewCount",
+			"guid": "c590f1f4-4e998f19-403f6c92-a6596ed5",
+			"category": "Review|Settings",
+			"type_category": "int",
+			"container": 0,
+			"declaration_default": "",
+			"loaded_default": "23"
+		},
+		{
+			"name": "ReviewLabel",
+			"guid": "cdce752b-4bf39a88-4c5758a3-696e15cb",
+			"category": "Default",
+			"type_category": "string",
+			"container": 0,
+			"declaration_default": "",
+			"loaded_default": "Unicode 世界"
+		},
+		{
+			"name": "ReviewNumbers",
+			"guid": "caa5d886-41f73aeb-7bcf4aad-458906c4",
+			"category": "Default",
+			"type_category": "int",
+			"container": 1,
+			"declaration_default": "",
+			"loaded_default": "(1,-2,3)"
+		},
+		{
+			"name": "ReviewAssets",
+			"guid": "d85a4b6e-454ace1e-066d4d9a-641b839f",
+			"category": "Default",
+			"type_category": "name",
+			"container": 3,
+			"declaration_default": "",
+			"loaded_default": "()"
+		},
+		{
+			"name": "ReviewObject",
+			"guid": "8a9b7f97-4324619e-b2d7b8a9-11a9b9eb",
+			"category": "Default",
+			"type_category": "object",
+			"container": 0,
+			"declaration_default": "",
+			"loaded_default": "/Script/Engine.StaticMesh'/Engine/BasicShapes/Cube.Cube'"
+		}
+	],
+	"components": [
+		{
+			"path": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture_C:SimpleConstructionScript_0.SCS_Node_1",
+			"name": "ReviewRoot",
+			"class": "/Script/Engine.SceneComponent",
+			"guid": "dc12238f-4c57577a-9af25697-130f7d9b",
+			"parent": "CollisionCylinder",
+			"parent_owner": "None",
+			"parent_native": true,
+			"template": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture_C:ReviewRoot_GEN_VARIABLE",
+			"socket": "None",
+			"children": [
+				"/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture_C:SimpleConstructionScript_0.SCS_Node_2"
+			],
+			"x": 0,
+			"y": 0,
+			"z": 0
+		},
+		{
+			"path": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture_C:SimpleConstructionScript_0.SCS_Node_2",
+			"name": "ReviewChild",
+			"class": "/Script/Engine.SceneComponent",
+			"guid": "a3ccce8a-425760a0-b05c13bd-3e25ee25",
+			"parent": "None",
+			"parent_owner": "None",
+			"parent_native": false,
+			"template": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture_C:ReviewChild_GEN_VARIABLE",
+			"socket": "SavedSocket",
+			"children": [],
+			"x": 11,
+			"y": 22,
+			"z": 33
+		},
+		{
+			"path": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture_C:SimpleConstructionScript_0.SCS_Node_3",
+			"name": "ReviewMovement",
+			"class": "/Script/Engine.RotatingMovementComponent",
+			"guid": "aede6038-4eab02a7-78462498-f87fe723",
+			"parent": "None",
+			"parent_owner": "None",
+			"parent_native": false,
+			"template": "/Game/Fixture/Blueprints/BP_ReviewFixture.BP_ReviewFixture_C:ReviewMovement_GEN_VARIABLE",
+			"socket": "None",
+			"children": []
 		}
 	]
 }

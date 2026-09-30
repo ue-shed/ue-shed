@@ -52,7 +52,7 @@ fn discrete_sequence_matches_loaded_apis_and_retains_absent_fields() {
         .filter_map(|export| decode_export(export, &context).unwrap())
         .collect();
     let projection = project_level_sequence(&package, &assets).unwrap();
-    assert_eq!(projection.schema_version, 5);
+    assert_eq!(projection.schema_version, 6);
     assert!(projection.reference_coverage_gaps.is_empty());
     assert_eq!(projection.root_tracks.len(), 8);
     assert!(
@@ -699,7 +699,7 @@ fn numeric_sequence_projection_matches_unreal_channels_masks_and_reports_gaps() 
         .filter_map(|export| decode_export(export, &context).unwrap())
         .collect();
     let projection = project_level_sequence(&package, &assets).unwrap();
-    assert_eq!(projection.schema_version, 5);
+    assert_eq!(projection.schema_version, 6);
     assert!(
         projection.coverage_gaps.is_empty(),
         "{:?}",
@@ -816,4 +816,288 @@ fn malformed_metadata_is_partial_without_hiding_decodable_exports() {
         serde_json::from_str(&inspect_bytes_json("malformed.uasset", &bytes)).unwrap();
     let serialized: Value = serde_json::from_str(&serde_json::to_string(&typed).unwrap()).unwrap();
     assert_eq!(serialized, streamed);
+}
+
+#[test]
+fn saved_sequence_rejects_bad_key_arrays_settings_cut_ids_and_binding_metadata() {
+    use uasset_inspection::level_sequence::{
+        SequenceCoverageGapReason, SequenceValueChannel, project_level_sequence,
+    };
+    use uasset_parser::asset::{AssetDecodeContext, DecodedAsset, decode_export};
+    use uasset_parser::property::PropertyValue;
+    let bytes = fixture_bytes("LS_SavedDetails");
+    let package = uasset_parser::Package::parse(&bytes).unwrap();
+    let context = AssetDecodeContext {
+        source: &bytes,
+        package: &package,
+        schemas: uasset_parser::schema::embedded_source_model(),
+    };
+    let assets: Vec<_> = package
+        .exports
+        .iter()
+        .filter_map(|e| decode_export(e, &context).unwrap())
+        .collect();
+    let valid = project_level_sequence(&package, &assets).unwrap();
+    assert!(valid.coverage_gaps.is_empty(), "{:?}", valid.coverage_gaps);
+    let object = valid
+        .root_tracks
+        .iter()
+        .find(|t| t.property_path.as_deref() == Some("Mesh"))
+        .unwrap();
+    let SequenceValueChannel::Object(channel) = &object.sections[0].value_channels[0] else {
+        panic!()
+    };
+    assert_eq!(
+        channel.keys.as_ref().unwrap()[1].value.soft_path.as_deref(),
+        Some("")
+    );
+    assert_eq!(channel.keys.as_ref().unwrap()[1].value.hard_path, None);
+    let default = valid
+        .root_tracks
+        .iter()
+        .find(|t| t.property_path.as_deref() == Some("DefaultOnly"))
+        .unwrap();
+    let SequenceValueChannel::String(channel) = &default.sections[0].value_channels[0] else {
+        panic!()
+    };
+    assert_eq!(channel.keys, None);
+    for field in ["Times", "Values"] {
+        let mut corrupt = assets.clone();
+        for asset in &mut corrupt {
+            if let DecodedAsset::UObject(object) = asset {
+                for record in &mut object.properties.records {
+                    if package.resolve_name_str(record.name) == Some("StringCurve")
+                        && let PropertyValue::Struct(stream) = &mut record.value
+                    {
+                        for record in &mut stream.records {
+                            if package.resolve_name_str(record.name) == Some(field)
+                                && let PropertyValue::Array(values) = &mut record.value
+                            {
+                                values.pop();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        let partial = project_level_sequence(&package, &corrupt).unwrap();
+        assert!(
+            partial
+                .coverage_gaps
+                .iter()
+                .any(|g| g.reason == SequenceCoverageGapReason::MismatchedChannelLengths)
+        );
+        assert!(partial.root_tracks.iter().flat_map(|t| &t.sections).flat_map(|s| &s.value_channels).any(|c| matches!(c, SequenceValueChannel::String(c) if c.default_value.as_deref() == Some("default label") && c.keys.is_none())));
+    }
+    let mut corrupt = assets.clone();
+    for asset in &mut corrupt {
+        if let DecodedAsset::UObject(object) = asset {
+            for record in &mut object.properties.records {
+                if matches!(
+                    package.resolve_name_str(record.name),
+                    Some("RowIndex" | "CameraBindingID" | "Spawnables")
+                ) {
+                    record.value = PropertyValue::Bool(false);
+                }
+            }
+        }
+    }
+    let partial = project_level_sequence(&package, &corrupt).unwrap();
+    for field in ["RowIndex", "CameraBindingID", "Spawnables"] {
+        assert!(
+            partial
+                .coverage_gaps
+                .iter()
+                .any(|g| g.property_path == field)
+        );
+    }
+    // Invalid object indices remain explicit missing references, not a null key.
+    let mut corrupt = assets;
+    for asset in &mut corrupt {
+        if let DecodedAsset::UObject(object) = asset {
+            for record in &mut object.properties.records {
+                if package.resolve_name_str(record.name) == Some("ObjectChannel")
+                    && let PropertyValue::Struct(stream) = &mut record.value
+                {
+                    for r in &mut stream.records {
+                        if package.resolve_name_str(r.name) == Some("PropertyClass") {
+                            r.value = PropertyValue::ObjectRef(
+                                uasset_parser::package::PackageIndex::Export(u32::MAX),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        project_level_sequence(&package, &corrupt)
+            .unwrap()
+            .coverage_gaps
+            .iter()
+            .any(|g| g.property_path == "ObjectChannel.PropertyClass"
+                && g.reason == SequenceCoverageGapReason::MissingReference)
+    );
+}
+
+#[test]
+fn blueprint_definition_reports_unavailable_defaults_templates_bad_variables_and_cycles() {
+    use uasset_inspection::blueprint::{BlueprintGraphCoverageGapReason, project_blueprint_graphs};
+    use uasset_parser::asset::{AssetDecodeContext, DecodedAsset, decode_export};
+    use uasset_parser::property::PropertyValue;
+    let bytes = fs::read(fixture_root().join("Content/Fixture/Blueprints/BP_ReviewFixture.uasset"))
+        .unwrap();
+    let package = uasset_parser::Package::parse(&bytes).unwrap();
+    let context = AssetDecodeContext {
+        source: &bytes,
+        package: &package,
+        schemas: uasset_parser::schema::embedded_source_model(),
+    };
+    let assets: Vec<_> = package
+        .exports
+        .iter()
+        .filter_map(|e| decode_export(e, &context).unwrap())
+        .collect();
+    let valid = project_blueprint_graphs(&package, &assets).unwrap();
+    assert_eq!(valid.definition.variables.as_ref().unwrap().len(), 6);
+    let scs = valid.definition.construction_script.as_ref().unwrap();
+    assert_eq!(scs.nodes.len(), 3);
+    assert!(
+        scs.nodes
+            .iter()
+            .any(|n| n.parent_is_native == Some(true) && n.parent_component_name.is_some())
+    );
+    let mut corrupt = assets.clone();
+    for asset in &mut corrupt {
+        if let DecodedAsset::UObject(object) = asset {
+            let self_index = package
+                .exports
+                .iter()
+                .position(|e| e.object_path == object.object_path)
+                .unwrap() as u32;
+            for record in &mut object.properties.records {
+                match package.resolve_name_str(record.name) {
+                    Some("NewVariables") => record.value = PropertyValue::Int(9),
+                    Some("ChildNodes") => {
+                        record.value = PropertyValue::Array(vec![PropertyValue::ObjectRef(
+                            uasset_parser::package::PackageIndex::Export(self_index),
+                        )])
+                    }
+                    Some("ComponentTemplate") => {
+                        record.value = PropertyValue::ObjectRef(
+                            uasset_parser::package::PackageIndex::Export(u32::MAX),
+                        )
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    let partial = project_blueprint_graphs(&package, &corrupt).unwrap();
+    assert!(partial.definition.variables.is_none());
+    assert!(!partial.graphs.is_empty());
+    for detail in ["NewVariables", "cycle", "unresolved reference"] {
+        assert!(
+            partial.coverage_gaps.iter().any(|g| g.reason
+                == BlueprintGraphCoverageGapReason::IncompleteDefinition
+                && g.detail.contains(detail)),
+            "{:?}",
+            partial.coverage_gaps
+        );
+    }
+    let mut unavailable = assets;
+    let default = valid
+        .definition
+        .default_object
+        .as_ref()
+        .unwrap()
+        .object_path
+        .as_str();
+    unavailable
+        .retain(|a| !matches!(a, DecodedAsset::UObject(o) if o.object_path.as_str() == default));
+    let partial = project_blueprint_graphs(&package, &unavailable).unwrap();
+    assert!(partial.definition.default_object.is_none());
+    assert!(
+        partial
+            .coverage_gaps
+            .iter()
+            .any(|g| g.detail.contains("default object was not decoded"))
+    );
+}
+
+#[test]
+fn saved_actor_component_native_data_matches_independent_loaded_apis() {
+    let inspected = fixture("LS_SavedDetails");
+    let oracle = evidence();
+    for object in oracle["saved_sequence"]["native_objects"]
+        .as_array()
+        .unwrap()
+    {
+        let path = object["path"].as_str().unwrap().replace(':', ".");
+        let asset = inspected["assets"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|asset| asset["object_path"] == path)
+            .unwrap();
+        assert_eq!(asset["class_path"], object["class"]);
+        assert!(asset.get("tail_bytes").is_none(), "{path}");
+        let native = fields(&asset["native_data"]);
+        if let Some(members) = object.get("modified_members") {
+            let mut actual: Vec<_> = native["UCSModifiedProperties"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|member| {
+                    assert_eq!(member["MemberGuid"], "00000000-00000000-00000000-00000000");
+                    json!({"name": member["MemberName"], "owner": member["MemberParent"]})
+                })
+                .collect();
+            actual.sort_by_key(|value| value.to_string());
+            let mut expected = members.as_array().unwrap().clone();
+            expected.sort_by_key(|value| value.to_string());
+            assert_eq!(actual, expected, "{path}");
+            if object["compute_static_bounds"] == true {
+                assert_eq!(native["StaticBoundsIsCooked"], false);
+            } else {
+                assert!(native.get("StaticBoundsIsCooked").is_none());
+            }
+        } else {
+            assert_eq!(native["ActorLabelIsCooked"], false);
+        }
+    }
+    let bytes = fixture_bytes("LS_SavedDetails");
+    let package = uasset_parser::Package::parse(&bytes).unwrap();
+    let context = uasset_parser::asset::AssetDecodeContext {
+        source: &bytes,
+        package: &package,
+        schemas: uasset_parser::schema::embedded_source_model(),
+    };
+    let assets: Vec<_> = package
+        .exports
+        .iter()
+        .filter_map(|export| uasset_parser::asset::decode_export(export, &context).unwrap())
+        .collect();
+    let sequence =
+        uasset_inspection::level_sequence::project_level_sequence(&package, &assets).unwrap();
+    assert!(
+        sequence.reference_coverage_gaps.is_empty(),
+        "{:?}",
+        sequence.reference_coverage_gaps
+    );
+    let members: Vec<_> = sequence
+        .references
+        .iter()
+        .filter(|reference| {
+            reference
+                .property_path
+                .starts_with("$native_data.UCSModifiedProperties")
+        })
+        .collect();
+    assert_eq!(members.len(), 2);
+    assert!(
+        members
+            .iter()
+            .all(|reference| reference.target_path == "/Script/Engine.CameraComponent")
+    );
 }

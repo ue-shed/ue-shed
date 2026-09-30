@@ -6,6 +6,9 @@ import type {
 	BlueprintGraph,
 	BlueprintGraphCoverageGap,
 	BlueprintGraphProjection,
+	BlueprintDefinition,
+	SavedProperty,
+	SavedPropertyValue,
 	BlueprintNode,
 	BlueprintPin,
 	BlueprintPinReference
@@ -135,7 +138,11 @@ function pinLabel(pin: BlueprintPin): string {
 }
 
 function isTopologyGap(gap: BlueprintGraphCoverageGap): boolean {
-	return !["native_node_subclass_tail", "undecoded_node_property"].includes(gap.reason);
+	return ![
+		"native_node_subclass_tail",
+		"undecoded_node_property",
+		"incomplete_definition"
+	].includes(gap.reason);
 }
 
 function gapLabel(reason: BlueprintGraphCoverageGap["reason"]): string {
@@ -495,7 +502,7 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 				<div {...stylex.attrs(styles.authorityBadges)}>
 					<span {...stylex.attrs(styles.offlineBadge)}>LOCAL FILE · NO UNREAL</span>
 					<span {...stylex.attrs(styles.readOnlyStamp)}>
-						READ ONLY · SAVED PACKAGE · SCHEMA 1
+						READ ONLY · SAVED PACKAGE · SCHEMA 2
 					</span>
 				</div>
 			</header>
@@ -802,6 +809,7 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 								</span>
 							</div>
 						</section>
+						<DefinitionInspector definition={projection().definition} />
 
 						<ProjectionCoverage
 							gaps={projection().coverage_gaps}
@@ -1350,6 +1358,178 @@ function PinEvidence(props: { readonly pin: BlueprintPin }) {
 				<p {...stylex.attrs(styles.pinTooltip)}>{props.pin.tooltip}</p>
 			</Show>
 		</article>
+	);
+}
+
+function SavedProperties(props: { readonly properties: readonly SavedProperty[] }) {
+	return (
+		<div {...stylex.attrs(styles.properties)}>
+			<For each={props.properties.slice(0, 200)}>
+				{(property) => (
+					<details {...stylex.attrs(styles.property)}>
+						<summary {...stylex.attrs(styles.propertySummary)}>
+							<span>{property.name}</span>
+							<small>{property.type}</small>
+						</summary>
+						<code {...stylex.attrs(styles.propertyValue)}>
+							{JSON.stringify(property)}
+						</code>
+					</details>
+				)}
+			</For>
+			<Show when={props.properties.length > 200}>
+				<p>Showing the first 200 properties. Use the CLI for all saved properties.</p>
+			</Show>
+		</div>
+	);
+}
+
+function SavedNativeData(props: { readonly value: SavedPropertyValue | undefined }) {
+	const serialized = createMemo(() => (props.value ? JSON.stringify(props.value) : ""));
+	return (
+		<Show when={props.value !== undefined}>
+			<details>
+				<summary>Saved native data</summary>
+				<code {...stylex.attrs(styles.propertyValue)}>{serialized().slice(0, 20000)}</code>
+				<Show when={serialized().length > 20000}>
+					<p>Showing the first 20,000 characters. Use the CLI for the complete record.</p>
+				</Show>
+			</details>
+		</Show>
+	);
+}
+
+function DefinitionInspector(props: { readonly definition: BlueprintDefinition }) {
+	const nodeNames = createMemo(
+		() =>
+			new Map(
+				props.definition.construction_script?.nodes.map((node) => [
+					node.object_path,
+					node.variable_name ?? node.object_path
+				])
+			)
+	);
+	const nodeName = (path: string) => nodeNames().get(path) ?? path;
+
+	return (
+		<details aria-label="Blueprint definition" {...stylex.attrs(styles.property)}>
+			<summary {...stylex.attrs(styles.propertySummary)}>
+				Saved variables, defaults and components
+			</summary>
+			<p>Parent class: {props.definition.parent_class ?? "not serialized"}</p>
+			<h3>Variables</h3>
+			<Show
+				when={props.definition.variables !== null}
+				fallback={<p>Variable declarations were not serialized or unavailable.</p>}
+			>
+				<For each={props.definition.variables?.slice(0, 200)}>
+					{(variable) => (
+						<details>
+							<summary>
+								{variable.name ?? "unnamed variable"} ·{" "}
+								{variable.pin_type?.category ?? "type unavailable"} ·{" "}
+								{variable.pin_type?.container_type ?? "unknown"}
+							</summary>
+							<p>
+								Category: {variable.category?.source ?? "not serialized"} · Flags:{" "}
+								{variable.property_flags ?? "not serialized"}
+							</p>
+							<p>
+								Declaration default:{" "}
+								{variable.default_value === null
+									? "not serialized"
+									: JSON.stringify(variable.default_value)}
+							</p>
+							<SavedProperties properties={variable.properties} />
+						</details>
+					)}
+				</For>
+			</Show>
+			<h3>Saved class default object</h3>
+			<Show
+				when={props.definition.default_object}
+				fallback={<p>Saved class default object unavailable.</p>}
+			>
+				{(object) => (
+					<>
+						<p>{object().object_path}</p>
+						<SavedProperties properties={object().properties} />
+						<SavedNativeData value={object().native_data} />
+					</>
+				)}
+			</Show>
+			<h3>Components</h3>
+			<Show
+				when={props.definition.construction_script}
+				fallback={<p>Saved construction script unavailable.</p>}
+			>
+				{(scs) => (
+					<>
+						<p>
+							Root order:{" "}
+							{scs().root_nodes?.slice(0, 200).map(nodeName).join(" → ") ??
+								"not serialized"}
+						</p>
+						<For each={scs().nodes.slice(0, 200)}>
+							{(node) => (
+								<details>
+									<summary>
+										{node.variable_name ?? node.object_path} ·{" "}
+										{node.component_class ?? "class unavailable"}
+									</summary>
+									<p>
+										Children:{" "}
+										{node.children?.slice(0, 200).map(nodeName).join(" → ") ??
+											"not serialized"}
+									</p>
+									<p>
+										Attachment: {node.attach_to_name ?? "not serialized"} ·
+										Parent: {node.parent_component_name ?? "not serialized"} ·
+										Owner class:{" "}
+										{node.parent_owner_class_name ?? "not serialized"} · Native
+										parent:{" "}
+										{node.parent_is_native === null
+											? "not serialized"
+											: String(node.parent_is_native)}
+									</p>
+									<Show
+										when={node.template}
+										fallback={<p>Saved component template unavailable.</p>}
+									>
+										{(template) => (
+											<>
+												<p>{template().object_path}</p>
+												<SavedProperties
+													properties={template().properties}
+												/>
+												<SavedNativeData value={template().native_data} />
+											</>
+										)}
+									</Show>
+								</details>
+							)}
+						</For>
+						<Show when={scs().nodes.length > 200}>
+							<p>Showing the first 200 components. Use the CLI for all components.</p>
+						</Show>
+						<Show
+							when={
+								(scs().root_nodes?.length ?? 0) > 200 ||
+								scs().nodes.some((node) => (node.children?.length ?? 0) > 200)
+							}
+						>
+							<p>
+								Showing up to 200 root or child links per list. Use the CLI for the
+								full hierarchy.
+							</p>
+						</Show>
+					</>
+				)}
+			</Show>
+			<Show when={(props.definition.variables?.length ?? 0) > 200}>
+				<p>Showing the first 200 variables. Use the CLI for all variables.</p>
+			</Show>
+		</details>
 	);
 }
 

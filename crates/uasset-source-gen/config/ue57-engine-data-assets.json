@@ -170,6 +170,104 @@
 				"Runtime/GameplayTags/Classes/GameplayTagContainer.h",
 				"Runtime/GameplayTags/Private/GameplayTagContainer.cpp"
 			]
+		},
+		{
+			"name": "MovieScene",
+			"root": "engine_source",
+			"headers": [
+				"Runtime/MovieScene/Public/MovieSceneSection.h",
+				"Runtime/MovieScene/Public/MovieSceneSpawnable.h",
+				"Runtime/MovieScene/Public/MovieScenePossessable.h",
+				"Runtime/MovieScene/Public/MovieSceneObjectBindingID.h",
+				"Runtime/MovieScene/Public/Channels/MovieSceneObjectPathChannel.h"
+			],
+			"sources": [],
+			"include_types": [
+				"FMovieSceneObjectPathChannel",
+				"FMovieSceneObjectPathChannelKeyValue",
+				"FMovieSceneEasingSettings",
+				"FMovieSceneObjectBindingID",
+				"FMovieSceneSpawnable",
+				"FMovieScenePossessable"
+			]
+		},
+		{
+			"name": "MovieSceneTracks",
+			"root": "engine_source",
+			"headers": ["Runtime/MovieSceneTracks/Public/Channels/MovieSceneStringChannel.h"],
+			"sources": [],
+			"include_types": ["FMovieSceneStringChannel"]
+		},
+		{
+			"name": "Engine",
+			"root": "engine_source",
+			"headers": [
+				"Runtime/Engine/Classes/Engine/Blueprint.h",
+				"Runtime/Engine/Classes/EdGraph/EdGraphPin.h",
+				"Runtime/Engine/Classes/Engine/SCS_Node.h",
+				"Runtime/Engine/Classes/Engine/SimpleConstructionScript.h"
+			],
+			"sources": [
+				"Runtime/Engine/Private/EdGraph/EdGraphPin.cpp",
+				"Runtime/Engine/Private/EdGraph/EdGraphNode.cpp"
+			],
+			"include_types": [
+				"FBPVariableDescription",
+				"FBPVariableMetaDataEntry",
+				"USCS_Node",
+				"USimpleConstructionScript"
+			]
+		},
+		{
+			"name": "Core",
+			"root": "engine_source",
+			"headers": ["Runtime/Core/Public/Misc/FrameNumber.h"],
+			"sources": ["Runtime/Core/Private/Misc/FrameNumber.cpp"]
+		},
+		{
+			"name": "Engine",
+			"root": "engine_source",
+			"headers": [
+				"Runtime/Engine/Classes/GameFramework/Actor.h",
+				"Runtime/Engine/Classes/GameFramework/Pawn.h",
+				"Runtime/Engine/Classes/GameFramework/Character.h",
+				"Runtime/Engine/Classes/Components/ActorComponent.h",
+				"Runtime/Engine/Classes/Components/SceneComponent.h",
+				"Runtime/Engine/Classes/GameFramework/MovementComponent.h",
+				"Runtime/Engine/Classes/GameFramework/RotatingMovementComponent.h",
+				"Runtime/Engine/Classes/Camera/CameraActor.h",
+				"Runtime/Engine/Classes/Camera/CameraComponent.h"
+			],
+			"sources": [
+				"Runtime/Engine/Private/Actor.cpp",
+				"Runtime/Engine/Private/Components/ActorComponent.cpp",
+				"Runtime/Engine/Private/Components/SceneComponent.cpp"
+			],
+			"include_types": [
+				"AActor",
+				"APawn",
+				"ACharacter",
+				"UActorComponent",
+				"USceneComponent",
+				"UMovementComponent",
+				"URotatingMovementComponent",
+				"ACameraActor",
+				"UCameraComponent"
+			]
+		},
+		{
+			"name": "Core",
+			"root": "engine_source",
+			"headers": [
+				"Runtime/Core/Public/UObject/FortniteReleaseBranchCustomObjectVersions.inl",
+				"Runtime/Core/Public/UObject/UE5SpecialProjectStreamObjectVersion.inl",
+				"Runtime/CoreUObject/Public/UObject/ObjectMacros.h"
+			],
+			"sources": [
+				"Runtime/Core/Private/UObject/DevObjectVersion.cpp",
+				"Runtime/CoreUObject/Private/UObject/SavePackage2.cpp"
+			],
+			"include_types": []
 		}
 	]
 }

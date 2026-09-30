@@ -1226,5 +1226,152 @@
 			"keys": [],
 			"section_class": "/Script/MovieSceneTracks.MovieSceneByteSection"
 		}
+	},
+	"saved_sequence": {
+		"tracks": [
+			{
+				"property": "Label",
+				"row": 2,
+				"priority": -7,
+				"active": false,
+				"locked": true,
+				"pre": 3,
+				"post": 4,
+				"ease_in": 8,
+				"ease_out": 12,
+				"has_default": true,
+				"default": "default label",
+				"keys": [
+					{
+						"frame": 0,
+						"value": "hello"
+					},
+					{
+						"frame": 24,
+						"value": ""
+					},
+					{
+						"frame": 100,
+						"value": "世界 🌟"
+					}
+				]
+			},
+			{
+				"property": "DefaultOnly",
+				"row": 0,
+				"priority": 0,
+				"active": true,
+				"locked": false,
+				"pre": 0,
+				"post": 0,
+				"ease_in": 0,
+				"ease_out": 0,
+				"has_default": true,
+				"default": "only",
+				"keys": []
+			},
+			{
+				"property": "Mesh",
+				"row": 0,
+				"priority": 0,
+				"active": true,
+				"locked": false,
+				"pre": 0,
+				"post": 0,
+				"ease_in": 0,
+				"ease_out": 0,
+				"property_class": "/Script/Engine.StaticMesh",
+				"default": "/Engine/BasicShapes/Cube.Cube",
+				"keys": [
+					{
+						"frame": 0,
+						"value": "/Engine/BasicShapes/Cube.Cube"
+					},
+					{
+						"frame": 24,
+						"value": ""
+					},
+					{
+						"frame": 100,
+						"value": "/Engine/BasicShapes/Sphere.Sphere"
+					}
+				]
+			},
+			{
+				"property": "Amount",
+				"row": 0,
+				"priority": 0,
+				"active": true,
+				"locked": false,
+				"pre": 0,
+				"post": 0,
+				"ease_in": 0,
+				"ease_out": 0,
+				"keys": []
+			}
+		],
+		"bindings": [
+			{
+				"id": "0a0295de-452b6f0d-1b4a7e8b-06381fcf",
+				"name": "ExistingCamera",
+				"kind": "possessable"
+			},
+			{
+				"id": "8acc0bc7-4899a1f9-6f31cdb5-89a05898",
+				"name": "SpawnedCamera",
+				"kind": "spawnable",
+				"template": "/Game/Fixture/ParserNative/LS_SavedDetails.LS_SavedDetails:MovieScene_0.SavedCameraTemplate"
+			}
+		],
+		"cuts": [
+			{
+				"guid": "0a0295de-452b6f0d-1b4a7e8b-06381fcf",
+				"sequence_id": 0,
+				"lock": false,
+				"start": 0,
+				"end": 40
+			},
+			{
+				"guid": "8acc0bc7-4899a1f9-6f31cdb5-89a05898",
+				"sequence_id": 0,
+				"lock": true,
+				"start": 40,
+				"end": 80
+			},
+			{
+				"guid": "00000001-00000002-00000003-00000004",
+				"sequence_id": 42,
+				"lock": false,
+				"start": 80,
+				"end": 120
+			}
+		],
+		"native_objects": [
+			{
+				"path": "/Game/Fixture/ParserNative/LS_SavedDetails.LS_SavedDetails:MovieScene_0.SavedCameraTemplate",
+				"class": "/Script/Engine.CameraActor"
+			},
+			{
+				"path": "/Game/Fixture/ParserNative/LS_SavedDetails.LS_SavedDetails:MovieScene_0.SavedCameraTemplate.CameraComponent",
+				"class": "/Script/Engine.CameraComponent",
+				"modified_members": [
+					{
+						"name": "FieldOfView",
+						"owner": "/Script/Engine.CameraComponent"
+					},
+					{
+						"name": "PostProcessBlendWeight",
+						"owner": "/Script/Engine.CameraComponent"
+					}
+				],
+				"compute_static_bounds": false
+			},
+			{
+				"path": "/Game/Fixture/ParserNative/LS_SavedDetails.LS_SavedDetails:MovieScene_0.SavedCameraTemplate.SceneComponent",
+				"class": "/Script/Engine.SceneComponent",
+				"modified_members": [],
+				"compute_static_bounds": true
+			}
+		]
 	}
 }

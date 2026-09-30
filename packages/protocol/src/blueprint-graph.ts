@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import { SavedProperty } from "./uasset-inspection.js";
+import { SavedProperty, SavedPropertyValue } from "./uasset-inspection.js";
 
 const NonNegativeInt = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 
@@ -12,7 +12,8 @@ export const BlueprintGraphCoverageGap = Schema.Struct({
 		"unresolved_pin_owner",
 		"unresolved_linked_pin",
 		"undecoded_node_property",
-		"native_node_subclass_tail"
+		"native_node_subclass_tail",
+		"incomplete_definition"
 	]),
 	detail: Schema.String
 }).annotate({ identifier: "BlueprintGraphCoverageGap" });
@@ -116,10 +117,54 @@ export const BlueprintGraph = Schema.Struct({
 }).annotate({ identifier: "BlueprintGraph" });
 export interface BlueprintGraph extends Schema.Schema.Type<typeof BlueprintGraph> {}
 
+export const BlueprintSavedObject = Schema.Struct({
+	native_data: Schema.optionalKey(SavedPropertyValue),
+	object_path: Schema.String,
+	class_path: Schema.String,
+	properties: Schema.Array(SavedProperty).check(Schema.isMaxLength(1000000))
+}).annotate({ identifier: "BlueprintSavedObject" });
+export const BlueprintVariable = Schema.Struct({
+	name: Schema.NullOr(Schema.String),
+	guid: Schema.NullOr(Schema.String),
+	pin_type: Schema.NullOr(BlueprintPinType),
+	category: Schema.NullOr(BlueprintText),
+	property_flags: Schema.NullOr(Schema.String),
+	default_value: Schema.NullOr(Schema.String),
+	properties: Schema.Array(SavedProperty).check(Schema.isMaxLength(1000000))
+}).annotate({ identifier: "BlueprintVariable" });
+export const BlueprintComponentNode = Schema.Struct({
+	object_path: Schema.String,
+	variable_name: Schema.NullOr(Schema.String),
+	guid: Schema.NullOr(Schema.String),
+	component_class: Schema.NullOr(Schema.String),
+	template: Schema.NullOr(BlueprintSavedObject),
+	children: Schema.NullOr(Schema.Array(Schema.String).check(Schema.isMaxLength(1000000))),
+	attach_to_name: Schema.NullOr(Schema.String),
+	parent_component_name: Schema.NullOr(Schema.String),
+	parent_owner_class_name: Schema.NullOr(Schema.String),
+	parent_is_native: Schema.NullOr(Schema.Boolean)
+}).annotate({ identifier: "BlueprintComponentNode" });
+export const BlueprintDefinition = Schema.Struct({
+	parent_class: Schema.NullOr(Schema.String),
+	variables: Schema.NullOr(Schema.Array(BlueprintVariable).check(Schema.isMaxLength(1000000))),
+	default_object: Schema.NullOr(BlueprintSavedObject),
+	construction_script: Schema.NullOr(
+		Schema.Struct({
+			object_path: Schema.String,
+			root_nodes: Schema.NullOr(
+				Schema.Array(Schema.String).check(Schema.isMaxLength(1000000))
+			),
+			nodes: Schema.Array(BlueprintComponentNode).check(Schema.isMaxLength(1000000))
+		})
+	)
+}).annotate({ identifier: "BlueprintDefinition" });
+export type BlueprintDefinition = Schema.Schema.Type<typeof BlueprintDefinition>;
+
 export const BlueprintGraphProjection = Schema.Struct({
-	schema_version: Schema.Literal(1),
+	schema_version: Schema.Literal(2),
 	object_path: Schema.String,
 	graphs: Schema.Array(BlueprintGraph),
+	definition: BlueprintDefinition,
 	coverage_gaps: Schema.Array(BlueprintGraphCoverageGap)
 }).annotate({ identifier: "BlueprintGraphProjection" });
 export interface BlueprintGraphProjection extends Schema.Schema.Type<

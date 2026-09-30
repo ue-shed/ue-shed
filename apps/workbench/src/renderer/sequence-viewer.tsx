@@ -1,5 +1,10 @@
 import * as stylex from "@stylexjs/stylex";
-import type { SequenceNumericChannel, SequenceSection } from "@ue-shed/protocol";
+import type {
+	SequenceNumericChannel,
+	SequenceSection,
+	SequenceObjectValue,
+	SequenceValueChannel
+} from "@ue-shed/protocol";
 import type { SavedReviewAsset } from "@ue-shed/unreal-assets/saved-review";
 import { createEffectAction } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
@@ -83,7 +88,7 @@ export function SequenceViewer(props: {
 				for (const key of item.text_keys) expand(key.frame);
 				for (const channel of item.numeric_channels)
 					for (const key of channel.keys) expand(key.frame);
-				for (const channel of item.discrete_channels)
+				for (const channel of [...item.discrete_channels, ...item.value_channels])
 					for (const key of channel.keys ?? []) expand(key.frame);
 			}
 		const range = sequence()?.playback_range;
@@ -102,7 +107,11 @@ export function SequenceViewer(props: {
 						frames.add(key.frame);
 						if (frames.size >= remaining) break;
 					}
-					for (const channel of [...item.numeric_channels, ...item.discrete_channels]) {
+					for (const channel of [
+						...item.numeric_channels,
+						...item.discrete_channels,
+						...item.value_channels
+					]) {
 						if (frames.size >= remaining) break;
 						for (const key of channel.keys ?? []) {
 							frames.add(key.frame);
@@ -282,6 +291,30 @@ export function SequenceViewer(props: {
 									? `${read().sequence.tick_resolution?.numerator}/${read().sequence.tick_resolution?.denominator}`
 									: "not saved"}
 							</p>
+							<details>
+								<summary>Saved bindings</summary>
+								<For each={read().sequence.bindings.slice(0, 200)}>
+									{(binding) => (
+										<p>
+											{binding.name ?? binding.id} · {binding.kind} ·{" "}
+											{binding.possessed_object_class ??
+												binding.object_template_class ??
+												"class unavailable"}
+											<br />
+											GUID: {binding.id} · Parent GUID:{" "}
+											{binding.parent_id ?? "not serialized"}
+											<br />
+											Template: {binding.object_template ?? "not serialized"}
+										</p>
+									)}
+								</For>
+								<Show when={read().sequence.bindings.length > 200}>
+									<p>
+										Showing the first 200 bindings. Use the CLI for all
+										bindings.
+									</p>
+								</Show>
+							</details>
 							<details>
 								<summary>Coverage details</summary>
 								<ul>
@@ -554,6 +587,23 @@ export function SequenceViewer(props: {
 }
 
 function SectionInspector(props: { readonly section: SequenceSection }) {
+	const objectValue = (value: SequenceObjectValue | null) =>
+		value === null
+			? "not serialized"
+			: value.soft_path ||
+				value.hard_path ||
+				(value.soft_path === ""
+					? "null object"
+					: "reference not serialized or unavailable");
+	const keyRows = (channel: SequenceValueChannel) =>
+		channel.value_type === "string"
+			? (channel.keys ?? [])
+					.slice(0, 200)
+					.map((key) => ({ frame: key.frame, value: JSON.stringify(key.value) }))
+			: (channel.keys ?? [])
+					.slice(0, 200)
+					.map((key) => ({ frame: key.frame, value: objectValue(key.value) }));
+
 	return (
 		<section aria-label="Section inspector" {...stylex.attrs(styles.panel)}>
 			<h2>{leaf(props.section.object_path)}</h2>
@@ -564,6 +614,35 @@ function SectionInspector(props: { readonly section: SequenceSection }) {
 					? `${props.section.range.lower.kind} ${props.section.range.lower.frame} → ${props.section.range.upper.kind} ${props.section.range.upper.frame}`
 					: "not saved"}
 			</p>
+			<details>
+				<summary>Saved section settings</summary>
+				<For each={Object.entries(props.section.settings)}>
+					{([name, value]) => (
+						<p>
+							{name.replaceAll("_", " ")}:{" "}
+							{value === null ? "not serialized" : JSON.stringify(value)}
+						</p>
+					)}
+				</For>
+			</details>
+			<Show when={props.section.camera_cut}>
+				{(cut) => (
+					<section aria-label="Camera binding">
+						<h3>Camera binding</h3>
+						<p>GUID: {cut().binding?.guid ?? "unavailable"}</p>
+						<p>
+							Sequence ID: {cut().binding?.sequence_id ?? "not serialized"} · Resolve
+							parent index: {cut().binding?.resolve_parent_index ?? "not serialized"}
+						</p>
+						<p>
+							Lock previous camera:{" "}
+							{cut().lock_previous_camera === null
+								? "not serialized"
+								: String(cut().lock_previous_camera)}
+						</p>
+					</section>
+				)}
+			</Show>
 			<Show when={props.section.sequence_path}>
 				<p>Sequence: {props.section.sequence_path}</p>
 			</Show>
@@ -581,6 +660,7 @@ function SectionInspector(props: { readonly section: SequenceSection }) {
 				when={
 					props.section.numeric_channels.length > 64 ||
 					props.section.discrete_channels.length > 64 ||
+					props.section.value_channels.length > 64 ||
 					props.section.text_keys.length > 200
 				}
 			>
@@ -590,6 +670,54 @@ function SectionInspector(props: { readonly section: SequenceSection }) {
 			</Show>
 			<For each={props.section.numeric_channels.slice(0, 64)}>
 				{(channel) => <ChannelInspector channel={channel} />}
+			</For>
+			<For each={props.section.value_channels.slice(0, 64)}>
+				{(channel) => (
+					<details open>
+						<summary>
+							{channel.property_path} · {channel.value_type} ·{" "}
+							{channel.keys?.length ?? 0} saved keys
+						</summary>
+						<p>
+							Saved default:{" "}
+							{channel.value_type === "string"
+								? channel.default_value === null
+									? "not serialized"
+									: JSON.stringify(channel.default_value)
+								: objectValue(channel.default_value)}
+						</p>
+						<Show
+							when={channel.value_type === "object" ? channel.property_class : null}
+						>
+							{(path) => <p>Property class: {path()}</p>}
+						</Show>
+						<Show when={channel.value_type === "string"}>
+							<p>
+								Default enabled:{" "}
+								{channel.value_type === "string" &&
+									(channel.has_default_value === null
+										? "not serialized"
+										: String(channel.has_default_value))}
+							</p>
+						</Show>
+						<Show when={channel.keys === null}>
+							<p>
+								Key arrays were not serialized or could not be decoded; see coverage
+								details.
+							</p>
+						</Show>
+						<For each={keyRows(channel)}>
+							{(key) => (
+								<p>
+									<code>{key.frame}</code> · {key.value}
+								</p>
+							)}
+						</For>
+						<Show when={(channel.keys?.length ?? 0) > 200}>
+							<p>Showing the first 200 keys. Use the CLI for the full channel.</p>
+						</Show>
+					</details>
+				)}
 			</For>
 			<For each={props.section.discrete_channels.slice(0, 64)}>
 				{(channel) => (

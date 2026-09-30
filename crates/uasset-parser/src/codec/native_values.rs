@@ -1,4 +1,5 @@
 use super::*;
+mod pin_type;
 mod property_bag;
 use crate::native::{NativeError, NativeValue, decode_native};
 use crate::property::{NativeProperty, PropertyErrorKind};
@@ -122,6 +123,9 @@ pub(super) fn known_struct(
 /// Source-generated property recipes use package-qualified identities, including when nested
 /// in containers or InstancedStruct. A project type sharing an engine short name cannot match.
 pub(super) fn property_type_path(module: &str, name: &str) -> Option<&'static str> {
+    if module == "/Script/Engine" && name == "EdGraphPinType" {
+        return Some("/Script/Engine.EdGraphPinType");
+    }
     // Build the borrowed identity index once; do not allocate a joined path for every struct
     // in large tables or maps, including the many types without a native recipe.
     type PropertyTypes = std::collections::BTreeMap<(&'static str, &'static str), &'static str>;
@@ -146,6 +150,9 @@ pub(super) fn generated_value(
     path: &str,
     depth: usize,
 ) -> Result<Option<PropertyValue>, PropertyError> {
+    if type_path == "/Script/Engine.EdGraphPinType" {
+        return pin_type::decode(reader, package, path).map(Some);
+    }
     if type_path == "/Script/CoreUObject.InstancedPropertyBag" {
         return property_bag::decode(source, reader, package, path, depth).map(Some);
     }

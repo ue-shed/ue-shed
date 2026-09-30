@@ -7,8 +7,9 @@
 //! `Level`, `World`, and `WorldSettings` exports all decode as generic UObjects.
 //!
 //! The boundary that does exist is native serialization. Classes with a custom `UObject::Serialize`
-//! write binary after their tagged properties; that payload is preserved as `tail_bytes` rather than
-//! decoded, so a non-zero `tail_bytes` means "undecoded native payload", not "failed parse".
+//! write binary after their tagged properties. Selected inherited actor/component records are
+//! decoded as separate native evidence; remaining bytes are preserved as `tail_bytes`. A non-zero
+//! count means "undecoded native payload", not "failed parse".
 
 use std::fmt;
 
@@ -258,6 +259,8 @@ pub struct DecodedDataAsset {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct DecodedUObject {
+    /// Source-checked inherited native evidence, distinct from tagged properties.
+    pub native_data: Option<Box<PropertyValue>>,
     pub object_path: ObjectPath,
     pub class_path: ObjectPath,
     pub object_guid: Option<Guid>,
@@ -2270,10 +2273,11 @@ impl AssetDecoder for UObjectDecoder {
         }
 
         let (properties, mut reader) = decode_uobject_properties(export, context)?;
-        let (object_guid, tail) =
-            consume_uobject_export_footer_lenient(&mut reader, &export.object_path)?;
+        let (object_guid, native_data, tail) =
+            native_data::object_tail(export, context, &properties, &mut reader)?;
 
         Ok(DecodedAsset::UObject(DecodedUObject {
+            native_data,
             object_path: export.object_path.clone(),
             class_path: class_path.clone(),
             object_guid,
@@ -2546,9 +2550,10 @@ pub fn decode_modeled_export(
     if is_generic_uobject_class(class_path.as_str()) {
         validate_source_serialization(context.schemas, class_path, SourcePlanKind::UObject)?;
         let (properties, mut reader) = decode_uobject_properties(export, context)?;
-        let (object_guid, tail) =
-            consume_uobject_export_footer_lenient(&mut reader, &export.object_path)?;
+        let (object_guid, native_data, tail) =
+            native_data::object_tail(export, context, &properties, &mut reader)?;
         return Ok(Some(DecodedAsset::UObject(DecodedUObject {
+            native_data,
             object_path: export.object_path.clone(),
             class_path: class_path.clone(),
             object_guid,

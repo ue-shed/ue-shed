@@ -95,7 +95,13 @@ const eventPath = "/Game/UI/WBP_Settings.WBP_Settings:EventGraph.Event";
 const callPath = "/Game/UI/WBP_Settings.WBP_Settings:EventGraph.Call";
 
 const blueprint: BlueprintGraphProjection = {
-	schema_version: 1,
+	schema_version: 2,
+	definition: {
+		parent_class: null,
+		variables: null,
+		default_object: null,
+		construction_script: null
+	},
 	object_path: "/Game/UI/WBP_Settings.WBP_Settings",
 	coverage_gaps: [],
 	graphs: [

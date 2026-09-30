@@ -99,7 +99,7 @@ export type SavedProperty = SavedPropertyValue & {
 	readonly type: string;
 };
 
-const SavedPropertyValue: Schema.Codec<SavedPropertyValue> = Schema.suspend(
+export const SavedPropertyValue: Schema.Codec<SavedPropertyValue> = Schema.suspend(
 	() => SavedPropertyValueUnion
 ).annotate({ identifier: "SavedPropertyValue" });
 export const SavedProperty: Schema.Codec<SavedProperty> = Schema.suspend(() =>
@@ -258,11 +258,13 @@ export const SavedAssetInspection = Schema.Struct({
 			}),
 			Schema.Struct({
 				kind: Schema.Literal("UObject"),
+				object_guid: Schema.optionalKey(Schema.String),
 				object_path: Schema.String,
 				class_path: Schema.String,
 				properties: Schema.Array(SavedProperty).pipe(
 					Schema.withDecodingDefaultKey(Effect.succeed([]))
 				),
+				native_data: Schema.optionalKey(SavedPropertyValue),
 				tail_bytes: Schema.optional(NonNegativeInt)
 			}),
 			Schema.Struct({

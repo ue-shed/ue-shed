@@ -16,7 +16,7 @@ const result: Extract<SequenceReadResult, { status: "ready" }> = {
 	outcome: "partial",
 	diagnostics: [],
 	sequence: {
-		schema_version: 5,
+		schema_version: 6,
 		object_path: "/Game/LS.LS",
 		movie_scene_path: "/Game/LS.LS:MovieScene",
 		tick_resolution: { numerator: 24000, denominator: 1 },
@@ -44,6 +44,18 @@ const result: Extract<SequenceReadResult, { status: "ready" }> = {
 						shot_display_name: null,
 						text_keys: [],
 						discrete_channels: [],
+						value_channels: [],
+						settings: {
+							row_index: null,
+							overlap_priority: null,
+							is_active: null,
+							is_locked: null,
+							pre_roll_frames: null,
+							post_roll_frames: null,
+							blend_type: null,
+							easing: null
+						},
+						camera_cut: null,
 						numeric_channels: [
 							{
 								property_path: "FloatCurve",

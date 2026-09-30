@@ -5,7 +5,15 @@
 #include "EdGraphNode_Comment.h"
 #include "EdGraphSchema_K2.h"
 #include "Engine/Blueprint.h"
+#include "Engine/SimpleConstructionScript.h"
+#include "Engine/SCS_Node.h"
+#include "Components/SceneComponent.h"
+#include "GameFramework/RotatingMovementComponent.h"
+#include "UObject/UnrealType.h"
 #include "GameFramework/Actor.h"
+#include "GameFramework/Character.h"
+#include "Components/CapsuleComponent.h"
+#include "Engine/StaticMesh.h"
 #include "K2Node_CallFunction.h"
 #include "K2Node_Event.h"
 #include "K2Node_IfThenElse.h"
@@ -46,12 +54,35 @@ bool GenerateSavedReviewBlueprintFixture()
 	UPackage* Package = CreatePackage(PackageName);
 	if (FindObject<UBlueprint>(Package, TEXT("BP_ReviewFixture"))) return true;
 	UBlueprint* Blueprint = FKismetEditorUtilities::CreateBlueprint(
-		AActor::StaticClass(), Package, TEXT("BP_ReviewFixture"), BPTYPE_Normal);
+		ACharacter::StaticClass(), Package, TEXT("BP_ReviewFixture"), BPTYPE_Normal);
 	if (!Blueprint || Blueprint->UbergraphPages.IsEmpty()) return false;
 	FAssetRegistryModule::AssetCreated(Blueprint);
 	FEdGraphPinType BoolType;
 	BoolType.PinCategory = UEdGraphSchema_K2::PC_Boolean;
 	if (!FBlueprintEditorUtils::AddMemberVariable(Blueprint, TEXT("ReviewEnabled"), BoolType, TEXT("true"))) return false;
+
+    FEdGraphPinType IntType; IntType.PinCategory = UEdGraphSchema_K2::PC_Int;
+    FEdGraphPinType StringType; StringType.PinCategory = UEdGraphSchema_K2::PC_String;
+    FEdGraphPinType ObjectType; ObjectType.PinCategory = UEdGraphSchema_K2::PC_Object; ObjectType.PinSubCategoryObject = UStaticMesh::StaticClass();
+    FEdGraphPinType ArrayType = IntType; ArrayType.ContainerType = EPinContainerType::Array;
+    FEdGraphPinType MapType; MapType.PinCategory = UEdGraphSchema_K2::PC_Name; MapType.ContainerType = EPinContainerType::Map;
+    MapType.PinValueType.TerminalCategory = UEdGraphSchema_K2::PC_Object; MapType.PinValueType.TerminalSubCategoryObject = UObject::StaticClass();
+    if (!FBlueprintEditorUtils::AddMemberVariable(Blueprint,TEXT("ReviewCount"),IntType,TEXT("17"))
+        || !FBlueprintEditorUtils::AddMemberVariable(Blueprint,TEXT("ReviewLabel"),StringType,TEXT("Unicode 世界"))
+        || !FBlueprintEditorUtils::AddMemberVariable(Blueprint,TEXT("ReviewNumbers"),ArrayType,TEXT("(1,-2,3)"))
+        || !FBlueprintEditorUtils::AddMemberVariable(Blueprint,TEXT("ReviewAssets"),MapType)
+        || !FBlueprintEditorUtils::AddMemberVariable(Blueprint,TEXT("ReviewObject"),ObjectType,TEXT("StaticMesh'/Engine/BasicShapes/Cube.Cube'"))) return false;
+    FBlueprintEditorUtils::SetBlueprintVariableCategory(Blueprint,TEXT("ReviewCount"),nullptr,FText::FromString(TEXT("Review|Settings")),true);
+    FBlueprintEditorUtils::SetBlueprintVariableMetaData(Blueprint,TEXT("ReviewCount"),nullptr,TEXT("ToolTip"),TEXT("Saved count metadata"));
+    auto* SCS = Blueprint->SimpleConstructionScript.Get();
+    auto* Root = SCS->CreateNode(USceneComponent::StaticClass(),TEXT("ReviewRoot"));
+    auto* Child = SCS->CreateNode(USceneComponent::StaticClass(),TEXT("ReviewChild"));
+    auto* Movement = SCS->CreateNode(URotatingMovementComponent::StaticClass(),TEXT("ReviewMovement"));
+    SCS->AddNode(Root); Root->AddChildNode(Child); SCS->AddNode(Movement);
+    Root->SetParent(GetDefault<ACharacter>()->GetCapsuleComponent());
+    CastChecked<USceneComponent>(Child->ComponentTemplate)->SetRelativeLocation(FVector(11,22,33));
+    Child->AttachToName=TEXT("SavedSocket");
+    CastChecked<URotatingMovementComponent>(Movement->ComponentTemplate)->RotationRate=FRotator(1,2,3);
 	UEdGraph* Graph = Blueprint->UbergraphPages[0];
 	int32 Y = 0;
 	UK2Node_Event* Event = FKismetEditorUtilities::AddDefaultEventNode(
@@ -89,6 +120,7 @@ bool GenerateSavedReviewBlueprintFixture()
 	FBlueprintEditorUtils::AddFunctionGraph<UClass>(Blueprint, Function, true, nullptr);
 	FKismetEditorUtilities::CompileBlueprint(Blueprint);
 	if (Blueprint->Status == BS_Error) return false;
+    FindFProperty<FIntProperty>(Blueprint->GeneratedClass,TEXT("ReviewCount"))->SetPropertyValue_InContainer(Blueprint->GeneratedClass->GetDefaultObject(),23);
 	Package->MarkPackageDirty();
 	const FString Filename = FPackageName::LongPackageNameToFilename(PackageName, FPackageName::GetAssetPackageExtension());
 	IFileManager::Get().MakeDirectory(*FPaths::GetPath(Filename), true);
@@ -148,8 +180,35 @@ bool WriteSavedReviewBlueprintEvidence(const FString& OutputDirectory)
 		GraphValue->SetArrayField(TEXT("nodes"), Nodes); GraphValues.Add(MakeShared<FJsonValueObject>(GraphValue));
 	}
 	Root->SetArrayField(TEXT("graphs"), GraphValues);
+    TArray<TSharedPtr<FJsonValue>> Variables;
+    const UObject* Defaults=Blueprint->GeneratedClass->GetDefaultObject();
+    for (const auto& Variable : Blueprint->NewVariables) {
+        auto V=MakeShared<FJsonObject>(); V->SetStringField(TEXT("name"),Variable.VarName.ToString()); V->SetStringField(TEXT("guid"),Guid(Variable.VarGuid));
+        V->SetStringField(TEXT("category"),Variable.Category.ToString()); V->SetStringField(TEXT("type_category"),Variable.VarType.PinCategory.ToString());
+        V->SetNumberField(TEXT("container"),int32(Variable.VarType.ContainerType)); V->SetStringField(TEXT("declaration_default"),Variable.DefaultValue);
+        if (const FProperty* P=FindFProperty<FProperty>(Blueprint->GeneratedClass,Variable.VarName)) {
+            FString Default; P->ExportText_InContainer(0,Default,Defaults,Defaults,const_cast<UObject*>(Defaults),PPF_None);
+            V->SetStringField(TEXT("loaded_default"),Default);
+        }
+        Variables.Add(MakeShared<FJsonValueObject>(V));
+    }
+    Root->SetArrayField(TEXT("variables"),Variables);
+    TArray<TSharedPtr<FJsonValue>> Components;
+    for (const auto* N : Blueprint->SimpleConstructionScript->GetAllNodes()) {
+        auto V=MakeShared<FJsonObject>(); V->SetStringField(TEXT("path"),N->GetPathName()); V->SetStringField(TEXT("name"),N->GetVariableName().ToString());
+        V->SetStringField(TEXT("class"),N->ComponentClass->GetPathName()); V->SetStringField(TEXT("guid"),Guid(N->VariableGuid));
+        V->SetStringField(TEXT("parent"),N->ParentComponentOrVariableName.ToString());
+        V->SetStringField(TEXT("parent_owner"),N->ParentComponentOwnerClassName.ToString()); V->SetBoolField(TEXT("parent_native"),N->bIsParentComponentNative);
+        V->SetStringField(TEXT("template"),N->ComponentTemplate->GetPathName()); V->SetStringField(TEXT("socket"),N->AttachToName.ToString());
+        TArray<TSharedPtr<FJsonValue>> Children; for (const auto* C : N->GetChildNodes()) Children.Add(MakeShared<FJsonValueString>(C->GetPathName()));
+        V->SetArrayField(TEXT("children"),Children);
+        if (const auto* C=Cast<USceneComponent>(N->ComponentTemplate)) { auto L=C->GetRelativeLocation(); V->SetNumberField(TEXT("x"),L.X); V->SetNumberField(TEXT("y"),L.Y); V->SetNumberField(TEXT("z"),L.Z); }
+        Components.Add(MakeShared<FJsonValueObject>(V));
+    }
+    Root->SetArrayField(TEXT("components"),Components);
+
 	FString Json;
 	FJsonSerializer::Serialize(Root, TJsonWriterFactory<>::Create(&Json));
 	IFileManager::Get().MakeDirectory(*OutputDirectory, true);
-	return FFileHelper::SaveStringToFile(Json, *FPaths::Combine(OutputDirectory, TEXT("blueprint-review.json")));
+	return FFileHelper::SaveStringToFile(Json, *FPaths::Combine(OutputDirectory, TEXT("blueprint-review.json")), FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
 }

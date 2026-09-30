@@ -3460,6 +3460,9 @@
 		"SavedPropertyValue1": {
 			"$ref": "#/$defs/Union_"
 		},
+		"SavedPropertyValue3": {
+			"$ref": "#/$defs/Union_"
+		},
 		"SavedAssetDecodeError": {
 			"type": "object",
 			"properties": {
@@ -3722,6 +3725,9 @@
 										"type": "string",
 										"enum": ["UObject"]
 									},
+									"object_guid": {
+										"type": "string"
+									},
 									"object_path": {
 										"type": "string"
 									},
@@ -3733,6 +3739,9 @@
 										"items": {
 											"$ref": "#/$defs/SavedProperty"
 										}
+									},
+									"native_data": {
+										"$ref": "#/$defs/SavedPropertyValue1"
 									},
 									"tail_bytes": {
 										"anyOf": [
@@ -3900,7 +3909,7 @@
 										"enum": ["Skeleton"]
 									},
 									"reference_pose": {
-										"$ref": "#/$defs/SavedPropertyValue1"
+										"$ref": "#/$defs/SavedPropertyValue3"
 									},
 									"tail_bytes": {
 										"$ref": "#/$defs/UAssetInspectionNonNegativeInt"
@@ -4462,6 +4471,332 @@
 			"required": ["object_path", "name", "nodes", "links"],
 			"additionalProperties": false
 		},
+		"BlueprintVariable": {
+			"type": "object",
+			"properties": {
+				"name": {
+					"anyOf": [
+						{
+							"type": "string"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"guid": {
+					"anyOf": [
+						{
+							"type": "string"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"pin_type": {
+					"anyOf": [
+						{
+							"$ref": "#/$defs/BlueprintPinType"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"category": {
+					"anyOf": [
+						{
+							"$ref": "#/$defs/BlueprintText"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"property_flags": {
+					"anyOf": [
+						{
+							"type": "string"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"default_value": {
+					"anyOf": [
+						{
+							"type": "string"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"properties": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/SavedProperty1"
+					},
+					"allOf": [
+						{
+							"maxItems": 1000000
+						}
+					]
+				}
+			},
+			"required": [
+				"name",
+				"guid",
+				"pin_type",
+				"category",
+				"property_flags",
+				"default_value",
+				"properties"
+			],
+			"additionalProperties": false
+		},
+		"SavedPropertyValue4": {
+			"$ref": "#/$defs/Union_"
+		},
+		"BlueprintSavedObject": {
+			"type": "object",
+			"properties": {
+				"native_data": {
+					"$ref": "#/$defs/SavedPropertyValue4"
+				},
+				"object_path": {
+					"type": "string"
+				},
+				"class_path": {
+					"type": "string"
+				},
+				"properties": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/SavedProperty1"
+					},
+					"allOf": [
+						{
+							"maxItems": 1000000
+						}
+					]
+				}
+			},
+			"required": ["object_path", "class_path", "properties"],
+			"additionalProperties": false
+		},
+		"BlueprintComponentNode": {
+			"type": "object",
+			"properties": {
+				"object_path": {
+					"type": "string"
+				},
+				"variable_name": {
+					"anyOf": [
+						{
+							"type": "string"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"guid": {
+					"anyOf": [
+						{
+							"type": "string"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"component_class": {
+					"anyOf": [
+						{
+							"type": "string"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"template": {
+					"anyOf": [
+						{
+							"$ref": "#/$defs/BlueprintSavedObject"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"children": {
+					"anyOf": [
+						{
+							"type": "array",
+							"items": {
+								"type": "string"
+							},
+							"allOf": [
+								{
+									"maxItems": 1000000
+								}
+							]
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"attach_to_name": {
+					"anyOf": [
+						{
+							"type": "string"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"parent_component_name": {
+					"anyOf": [
+						{
+							"type": "string"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"parent_owner_class_name": {
+					"anyOf": [
+						{
+							"type": "string"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"parent_is_native": {
+					"anyOf": [
+						{
+							"type": "boolean"
+						},
+						{
+							"type": "null"
+						}
+					]
+				}
+			},
+			"required": [
+				"object_path",
+				"variable_name",
+				"guid",
+				"component_class",
+				"template",
+				"children",
+				"attach_to_name",
+				"parent_component_name",
+				"parent_owner_class_name",
+				"parent_is_native"
+			],
+			"additionalProperties": false
+		},
+		"BlueprintDefinition": {
+			"type": "object",
+			"properties": {
+				"parent_class": {
+					"anyOf": [
+						{
+							"type": "string"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"variables": {
+					"anyOf": [
+						{
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/BlueprintVariable"
+							},
+							"allOf": [
+								{
+									"maxItems": 1000000
+								}
+							]
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"default_object": {
+					"anyOf": [
+						{
+							"$ref": "#/$defs/BlueprintSavedObject"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"construction_script": {
+					"anyOf": [
+						{
+							"type": "object",
+							"properties": {
+								"object_path": {
+									"type": "string"
+								},
+								"root_nodes": {
+									"anyOf": [
+										{
+											"type": "array",
+											"items": {
+												"type": "string"
+											},
+											"allOf": [
+												{
+													"maxItems": 1000000
+												}
+											]
+										},
+										{
+											"type": "null"
+										}
+									]
+								},
+								"nodes": {
+									"type": "array",
+									"items": {
+										"$ref": "#/$defs/BlueprintComponentNode"
+									},
+									"allOf": [
+										{
+											"maxItems": 1000000
+										}
+									]
+								}
+							},
+							"required": ["object_path", "root_nodes", "nodes"],
+							"additionalProperties": false
+						},
+						{
+							"type": "null"
+						}
+					]
+				}
+			},
+			"required": ["parent_class", "variables", "default_object", "construction_script"],
+			"additionalProperties": false
+		},
 		"BlueprintGraphCoverageGap": {
 			"type": "object",
 			"properties": {
@@ -4477,7 +4812,8 @@
 						"unresolved_pin_owner",
 						"unresolved_linked_pin",
 						"undecoded_node_property",
-						"native_node_subclass_tail"
+						"native_node_subclass_tail",
+						"incomplete_definition"
 					]
 				},
 				"detail": {
@@ -4492,7 +4828,7 @@
 			"properties": {
 				"schema_version": {
 					"type": "number",
-					"enum": [1]
+					"enum": [2]
 				},
 				"object_path": {
 					"type": "string"
@@ -4503,6 +4839,9 @@
 						"$ref": "#/$defs/BlueprintGraph"
 					}
 				},
+				"definition": {
+					"$ref": "#/$defs/BlueprintDefinition"
+				},
 				"coverage_gaps": {
 					"type": "array",
 					"items": {
@@ -4510,7 +4849,7 @@
 					}
 				}
 			},
-			"required": ["schema_version", "object_path", "graphs", "coverage_gaps"],
+			"required": ["schema_version", "object_path", "graphs", "definition", "coverage_gaps"],
 			"additionalProperties": false
 		},
 		"SequenceRate": {
@@ -5178,6 +5517,431 @@
 				}
 			]
 		},
+		"SequenceValueChannel": {
+			"anyOf": [
+				{
+					"type": "object",
+					"properties": {
+						"value_type": {
+							"type": "string",
+							"enum": ["string"]
+						},
+						"property_path": {
+							"type": "string"
+						},
+						"has_default_value": {
+							"anyOf": [
+								{
+									"type": "boolean"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"default_value": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"keys": {
+							"anyOf": [
+								{
+									"type": "array",
+									"items": {
+										"type": "object",
+										"properties": {
+											"frame": {
+												"type": "integer",
+												"allOf": [
+													{
+														"minimum": -2147483648
+													},
+													{
+														"maximum": 2147483647
+													}
+												]
+											},
+											"value": {
+												"type": "string"
+											}
+										},
+										"required": ["frame", "value"],
+										"additionalProperties": false
+									},
+									"allOf": [
+										{
+											"maxItems": 1000000
+										}
+									]
+								},
+								{
+									"type": "null"
+								}
+							]
+						}
+					},
+					"required": [
+						"value_type",
+						"property_path",
+						"has_default_value",
+						"default_value",
+						"keys"
+					],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_type": {
+							"type": "string",
+							"enum": ["object"]
+						},
+						"property_path": {
+							"type": "string"
+						},
+						"property_class": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"default_value": {
+							"anyOf": [
+								{
+									"type": "object",
+									"properties": {
+										"soft_path": {
+											"anyOf": [
+												{
+													"type": "string"
+												},
+												{
+													"type": "null"
+												}
+											]
+										},
+										"hard_path": {
+											"anyOf": [
+												{
+													"type": "string"
+												},
+												{
+													"type": "null"
+												}
+											]
+										}
+									},
+									"required": ["soft_path", "hard_path"],
+									"additionalProperties": false
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"keys": {
+							"anyOf": [
+								{
+									"type": "array",
+									"items": {
+										"type": "object",
+										"properties": {
+											"frame": {
+												"type": "integer",
+												"allOf": [
+													{
+														"minimum": -2147483648
+													},
+													{
+														"maximum": 2147483647
+													}
+												]
+											},
+											"value": {
+												"type": "object",
+												"properties": {
+													"soft_path": {
+														"anyOf": [
+															{
+																"type": "string"
+															},
+															{
+																"type": "null"
+															}
+														]
+													},
+													"hard_path": {
+														"anyOf": [
+															{
+																"type": "string"
+															},
+															{
+																"type": "null"
+															}
+														]
+													}
+												},
+												"required": ["soft_path", "hard_path"],
+												"additionalProperties": false
+											}
+										},
+										"required": ["frame", "value"],
+										"additionalProperties": false
+									},
+									"allOf": [
+										{
+											"maxItems": 1000000
+										}
+									]
+								},
+								{
+									"type": "null"
+								}
+							]
+						}
+					},
+					"required": [
+						"value_type",
+						"property_path",
+						"property_class",
+						"default_value",
+						"keys"
+					],
+					"additionalProperties": false
+				}
+			]
+		},
+		"SequenceSectionSettings": {
+			"type": "object",
+			"properties": {
+				"row_index": {
+					"anyOf": [
+						{
+							"type": "integer",
+							"allOf": [
+								{
+									"minimum": -2147483648
+								},
+								{
+									"maximum": 2147483647
+								}
+							]
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"overlap_priority": {
+					"anyOf": [
+						{
+							"type": "integer",
+							"allOf": [
+								{
+									"minimum": -2147483648
+								},
+								{
+									"maximum": 2147483647
+								}
+							]
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"is_active": {
+					"anyOf": [
+						{
+							"type": "boolean"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"is_locked": {
+					"anyOf": [
+						{
+							"type": "boolean"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"pre_roll_frames": {
+					"anyOf": [
+						{
+							"type": "integer",
+							"allOf": [
+								{
+									"minimum": -2147483648
+								},
+								{
+									"maximum": 2147483647
+								}
+							]
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"post_roll_frames": {
+					"anyOf": [
+						{
+							"type": "integer",
+							"allOf": [
+								{
+									"minimum": -2147483648
+								},
+								{
+									"maximum": 2147483647
+								}
+							]
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"blend_type": {
+					"anyOf": [
+						{
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/SavedProperty1"
+							},
+							"allOf": [
+								{
+									"maxItems": 1000000
+								}
+							]
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"easing": {
+					"anyOf": [
+						{
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/SavedProperty1"
+							},
+							"allOf": [
+								{
+									"maxItems": 1000000
+								}
+							]
+						},
+						{
+							"type": "null"
+						}
+					]
+				}
+			},
+			"required": [
+				"row_index",
+				"overlap_priority",
+				"is_active",
+				"is_locked",
+				"pre_roll_frames",
+				"post_roll_frames",
+				"blend_type",
+				"easing"
+			],
+			"additionalProperties": false
+		},
+		"SequenceCameraCut": {
+			"type": "object",
+			"properties": {
+				"binding": {
+					"anyOf": [
+						{
+							"type": "object",
+							"properties": {
+								"guid": {
+									"anyOf": [
+										{
+											"type": "string"
+										},
+										{
+											"type": "null"
+										}
+									]
+								},
+								"sequence_id": {
+									"anyOf": [
+										{
+											"type": "integer",
+											"allOf": [
+												{
+													"minimum": -2147483648
+												},
+												{
+													"maximum": 2147483647
+												}
+											]
+										},
+										{
+											"type": "null"
+										}
+									]
+								},
+								"resolve_parent_index": {
+									"anyOf": [
+										{
+											"type": "integer",
+											"allOf": [
+												{
+													"minimum": -2147483648
+												},
+												{
+													"maximum": 2147483647
+												}
+											]
+										},
+										{
+											"type": "null"
+										}
+									]
+								}
+							},
+							"required": ["guid", "sequence_id", "resolve_parent_index"],
+							"additionalProperties": false
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"lock_previous_camera": {
+					"anyOf": [
+						{
+							"type": "boolean"
+						},
+						{
+							"type": "null"
+						}
+					]
+				}
+			},
+			"required": ["binding", "lock_previous_camera"],
+			"additionalProperties": false
+		},
 		"SequenceSection": {
 			"type": "object",
 			"properties": {
@@ -5249,6 +6013,30 @@
 							"maxItems": 1000000
 						}
 					]
+				},
+				"value_channels": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/SequenceValueChannel"
+					},
+					"allOf": [
+						{
+							"maxItems": 1000000
+						}
+					]
+				},
+				"settings": {
+					"$ref": "#/$defs/SequenceSectionSettings"
+				},
+				"camera_cut": {
+					"anyOf": [
+						{
+							"$ref": "#/$defs/SequenceCameraCut"
+						},
+						{
+							"type": "null"
+						}
+					]
 				}
 			},
 			"required": [
@@ -5259,7 +6047,10 @@
 				"shot_display_name",
 				"text_keys",
 				"numeric_channels",
-				"discrete_channels"
+				"discrete_channels",
+				"value_channels",
+				"settings",
+				"camera_cut"
 			],
 			"additionalProperties": false
 		},
@@ -5291,6 +6082,8 @@
 						"numeric",
 						"transform",
 						"discrete",
+						"value",
+						"camera_cut",
 						"structure_only"
 					]
 				},
@@ -5335,6 +6128,40 @@
 						}
 					]
 				},
+				"kind": {
+					"type": "string",
+					"enum": ["possessable", "spawnable", "unknown"]
+				},
+				"parent_id": {
+					"anyOf": [
+						{
+							"type": "string"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"object_template": {
+					"anyOf": [
+						{
+							"type": "string"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"object_template_class": {
+					"anyOf": [
+						{
+							"type": "string"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
 				"tracks": {
 					"type": "array",
 					"items": {
@@ -5347,7 +6174,16 @@
 					]
 				}
 			},
-			"required": ["id", "name", "possessed_object_class", "tracks"],
+			"required": [
+				"id",
+				"name",
+				"possessed_object_class",
+				"kind",
+				"parent_id",
+				"object_template",
+				"object_template_class",
+				"tracks"
+			],
 			"additionalProperties": false
 		},
 		"SequenceReference": {
@@ -5438,7 +6274,7 @@
 			"properties": {
 				"schema_version": {
 					"type": "number",
-					"enum": [5]
+					"enum": [6]
 				},
 				"object_path": {
 					"type": "string"

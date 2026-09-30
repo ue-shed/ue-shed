@@ -109,6 +109,7 @@ export interface InspectionAsset {
 		readonly display_name?: string;
 	}[];
 	readonly properties: readonly InspectionProperty[];
+	readonly native_data?: InspectionValue;
 	readonly tail_bytes?: number;
 	readonly bones: readonly { readonly name: string; readonly parent_index: number }[];
 	readonly row_count: number;
@@ -283,6 +284,9 @@ export interface LevelSequenceSection {
 	readonly text_keys: readonly LevelSequenceTextKey[];
 	readonly numeric_channels: readonly LevelSequenceNumericChannel[];
 	readonly discrete_channels: readonly LevelSequenceDiscreteChannel[];
+	readonly value_channels: readonly SequenceValueChannel[];
+	readonly settings: SequenceSectionSettings;
+	readonly camera_cut: SequenceCameraCut | null;
 }
 
 export interface LevelSequenceDiscreteChannelData<T> {
@@ -335,6 +339,8 @@ export interface LevelSequenceTrack {
 		| "numeric"
 		| "transform"
 		| "discrete"
+		| "value"
+		| "camera_cut"
 		| "structure_only";
 	readonly sections: readonly LevelSequenceSection[];
 }
@@ -343,6 +349,10 @@ export interface LevelSequenceBinding {
 	readonly id: string;
 	readonly name: string | null;
 	readonly possessed_object_class: string | null;
+	readonly kind: "possessable" | "spawnable" | "unknown";
+	readonly parent_id: string | null;
+	readonly object_template: string | null;
+	readonly object_template_class: string | null;
 	readonly tracks: readonly LevelSequenceTrack[];
 }
 
@@ -357,7 +367,7 @@ export interface LevelSequenceReference {
 }
 
 export interface LevelSequenceProjectionRecord {
-	readonly schema_version: 5;
+	readonly schema_version: 6;
 	readonly object_path: string;
 	readonly movie_scene_path: string | null;
 	readonly tick_resolution: LevelSequenceFrameRate | null;
@@ -482,9 +492,10 @@ export interface BlueprintGraph {
 }
 
 export interface BlueprintGraphProjectionRecord {
-	readonly schema_version: 1;
+	readonly schema_version: 2;
 	readonly object_path: string;
 	readonly graphs: readonly BlueprintGraph[];
+	readonly definition: BlueprintDefinition;
 	readonly coverage_gaps: readonly {
 		readonly object_path: string;
 		readonly reason:
@@ -494,7 +505,8 @@ export interface BlueprintGraphProjectionRecord {
 			| "unresolved_pin_owner"
 			| "unresolved_linked_pin"
 			| "undecoded_node_property"
-			| "native_node_subclass_tail";
+			| "native_node_subclass_tail"
+			| "incomplete_definition";
 		readonly detail: string;
 	}[];
 }
@@ -624,4 +636,81 @@ export class WasmInitializationError extends Error {
 	readonly name: "WasmInitializationError";
 	readonly code: "UE_SHED_UASSET_WASM_INITIALIZATION";
 	constructor(message: string, cause?: unknown);
+}
+
+export interface SequenceSectionSettings {
+	readonly row_index: number | null;
+	readonly overlap_priority: number | null;
+	readonly is_active: boolean | null;
+	readonly is_locked: boolean | null;
+	readonly pre_roll_frames: number | null;
+	readonly post_roll_frames: number | null;
+	readonly blend_type: readonly InspectionProperty[] | null;
+	readonly easing: readonly InspectionProperty[] | null;
+}
+export interface SequenceObjectValue {
+	readonly soft_path: string | null;
+	readonly hard_path: string | null;
+}
+export type SequenceValueChannel =
+	| {
+			readonly value_type: "string";
+			readonly property_path: string;
+			readonly has_default_value: boolean | null;
+			readonly default_value: string | null;
+			readonly keys: readonly { readonly frame: number; readonly value: string }[] | null;
+	  }
+	| {
+			readonly value_type: "object";
+			readonly property_path: string;
+			readonly property_class: string | null;
+			readonly default_value: SequenceObjectValue | null;
+			readonly keys:
+				| readonly { readonly frame: number; readonly value: SequenceObjectValue }[]
+				| null;
+	  };
+export interface SequenceCameraCut {
+	readonly binding: {
+		readonly guid: string | null;
+		readonly sequence_id: number | null;
+		readonly resolve_parent_index: number | null;
+	} | null;
+	readonly lock_previous_camera: boolean | null;
+}
+export interface BlueprintSavedObject {
+	readonly native_data?: InspectionValue;
+	readonly object_path: string;
+	readonly class_path: string;
+	readonly properties: readonly InspectionProperty[];
+}
+export interface BlueprintVariable {
+	readonly name: string | null;
+	readonly guid: string | null;
+	readonly pin_type: BlueprintPinType | null;
+	readonly category: BlueprintText | null;
+	readonly property_flags: string | null;
+	readonly default_value: string | null;
+	readonly properties: readonly InspectionProperty[];
+}
+export interface BlueprintComponentNode {
+	readonly object_path: string;
+	readonly variable_name: string | null;
+	readonly guid: string | null;
+	readonly component_class: string | null;
+	readonly template: BlueprintSavedObject | null;
+	readonly children: readonly string[] | null;
+	readonly attach_to_name: string | null;
+	readonly parent_component_name: string | null;
+	readonly parent_owner_class_name: string | null;
+	readonly parent_is_native: boolean | null;
+}
+export interface BlueprintDefinition {
+	readonly parent_class: string | null;
+	readonly variables: readonly BlueprintVariable[] | null;
+	readonly default_object: BlueprintSavedObject | null;
+	readonly construction_script: {
+		readonly object_path: string;
+		readonly root_nodes: readonly string[] | null;
+		readonly nodes: readonly BlueprintComponentNode[];
+	} | null;
 }

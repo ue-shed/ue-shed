@@ -68,7 +68,7 @@ fn level_sequence_projection_joins_timed_localized_text() {
     ));
     let projection = project_level_sequence(&package, &assets).expect("LevelSequence projection");
 
-    assert_eq!(projection.schema_version, 5);
+    assert_eq!(projection.schema_version, 6);
     assert_eq!(
         projection.tick_resolution.expect("tick rate").numerator,
         24_000
@@ -133,7 +133,7 @@ fn level_sequence_projection_exposes_subsequences_and_cinematic_shots() {
     ));
     let projection = project_level_sequence(&package, &assets).expect("LevelSequence projection");
 
-    assert_eq!(projection.schema_version, 5);
+    assert_eq!(projection.schema_version, 6);
     assert_eq!(projection.root_tracks.len(), 2);
     let sub_sequence = projection
         .root_tracks
@@ -207,7 +207,7 @@ fn blueprint_projection(path: &str) -> BlueprintGraphProjection {
 }
 
 fn assert_blueprint_topology(projection: &BlueprintGraphProjection) {
-    assert_eq!(projection.schema_version, 1);
+    assert_eq!(projection.schema_version, 2);
     assert!(!projection.graphs.is_empty());
     assert!(
         projection
@@ -229,14 +229,15 @@ fn assert_blueprint_topology(projection: &BlueprintGraphProjection) {
             .any(|graph| !graph.links.is_empty())
     );
     assert!(
-        projection.coverage_gaps.is_empty(),
-        "sample should be complete enough for graph reconstruction"
+        projection.coverage_gaps.iter().all(|g| g.reason
+            == uasset_inspection::blueprint::BlueprintGraphCoverageGapReason::IncompleteDefinition),
+        "graph reconstruction has no topology gaps"
     );
 
     // Exercise the portable JSON boundary as well as the typed Rust projection.
     let json = serde_json::to_value(projection).expect("projection serializes");
-    assert_eq!(json["schema_version"], 1);
-    assert_eq!(json["coverage_gaps"], serde_json::json!([]));
+    assert_eq!(json["schema_version"], 2);
+    assert!(json["coverage_gaps"].is_array());
 }
 
 #[test]

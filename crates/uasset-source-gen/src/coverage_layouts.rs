@@ -38,6 +38,46 @@ pub(super) fn derive(
     layouts: &mut BTreeMap<String, L>,
 ) -> Result<(), GeneratorError> {
     for (path, tokens) in sources {
+        if path.ends_with("Misc/FrameNumber.cpp") {
+            require(
+                tokens,
+                &[
+                    "bool FFrameNumber::Serialize(FArchive& Ar)",
+                    "Ar << Value",
+                    "operator<<(FArchive& Ar, FFrameNumber& FrameNumber)",
+                    "Ar << FrameNumber.Value",
+                ],
+            )?;
+            layouts.insert("/Script/CoreUObject.FrameNumber".into(), L::Int32);
+        }
+        if path.ends_with("EdGraph/EdGraphPin.cpp") {
+            super::pin_type_layouts::derive(tokens, layouts)?;
+        }
+        if path.ends_with("EdGraph/EdGraphPin.h") {
+            require(
+                tokens,
+                &[
+                    "operator<<(FArchive& Ar, FSimpleMemberReference& Data)",
+                    "Ar << Data.MemberParent",
+                    "Ar << Data.MemberName",
+                    "Ar << Data.MemberGuid",
+                ],
+            )?;
+        }
+        if path.ends_with("EdGraph/EdGraphNode.cpp") {
+            require(
+                tokens,
+                &[
+                    "operator<<(FArchive& Ar, FEdGraphTerminalType& T)",
+                    "Ar << T.TerminalCategory",
+                    "Ar << T.TerminalSubCategory",
+                    "Ar << Object",
+                    "Ar << T.bTerminalIsConst",
+                    "Ar << T.bTerminalIsWeakPointer",
+                    "Ar << T.bTerminalIsUObjectWrapper",
+                ],
+            )?;
+        }
         if path.ends_with("StructUtils/PropertyBag.h") {
             super::property_bag_layouts::verify_types(tokens)?;
         }

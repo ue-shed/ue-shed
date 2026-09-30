@@ -844,6 +844,11 @@ fn adapt_asset(asset: uasset_inspection::generic::AssetOutput) -> Result<SavedAs
                 .collect(),
         }),
         "UObject" => Ok(SavedAsset::UObject {
+            object_guid: asset.object_guid,
+            native_data: asset
+                .native_data
+                .map(|value| adapt_property_value(*value).map(Box::new))
+                .transpose()?,
             object_path: asset.object_path,
             class_path: required_string(asset.class_path, "UObject class path")?,
             properties: asset

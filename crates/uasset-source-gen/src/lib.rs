@@ -1,5 +1,7 @@
 mod coverage_layouts;
 mod native_layouts;
+mod object_tail_layouts;
+mod pin_type_layouts;
 mod property_bag_layouts;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -230,6 +232,7 @@ pub fn generate(
     }
 
     coverage_layouts::derive(&native_sources, &mut native_layouts)?;
+    object_tail_layouts::derive(&native_sources, &mut native_layouts)?;
 
     let paths = reflected
         .iter()

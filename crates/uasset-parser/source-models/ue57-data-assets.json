@@ -193,6 +193,945 @@
 			]
 		},
 		{
+			"path": "/Script/Engine.Actor",
+			"cpp_name": "AActor",
+			"super_path": "/Script/CoreUObject.Object",
+			"fields": [
+				{
+					"name": "PrimaryActorTick",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.ActorTickFunction"
+					}
+				},
+				{
+					"name": "bNetTemporary",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bOnlyRelevantToOwner",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bAlwaysRelevant",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bReplicateMovement",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bCallPreReplication",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bCallPreReplicationForReplay",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bHidden",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bTearOff",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bForceNetAddressable",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "LevelInstanceType",
+					"type": {
+						"kind": "unknown",
+						"cpp_type": "ELevelInstanceType"
+					}
+				},
+				{
+					"name": "LevelInstanceFlags",
+					"type": {
+						"kind": "unknown",
+						"cpp_type": "ELevelInstanceFlags"
+					}
+				},
+				{
+					"name": "bIsMainWorldOnly",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bIgnoreInPIE",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bExchangedRoles",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bNetLoadOnClient",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bNetUseOwnerRelevancy",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bRelevantForNetworkReplays",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bRelevantForLevelBounds",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bReplayRewindable",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bAllowTickBeforeBeginPlay",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bAutoDestroyWhenFinished",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bCanBeDamaged",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bBlockInput",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bCollideWhenPlacing",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bFindCameraComponentWhenViewTarget",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bGenerateOverlapEventsDuringLevelStreaming",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bIgnoresOriginShifting",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bEnableAutoLODGeneration",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bIsEditorOnlyActor",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bReplicates",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bCanBeInCluster",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bMigratingAsset",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bAllowReceiveTickEventOnDedicatedServer",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bReplicateUsingRegisteredSubObjectList",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bActorEnableCollision",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bActorIsBeingDestroyed",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bAsyncPhysicsTickEnabled",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "UpdateOverlapsMethodDuringLevelStreaming",
+					"type": {
+						"kind": "unknown",
+						"cpp_type": "EActorUpdateOverlapsMethod"
+					}
+				},
+				{
+					"name": "DefaultUpdateOverlapsMethodDuringLevelStreaming",
+					"type": {
+						"kind": "unknown",
+						"cpp_type": "EActorUpdateOverlapsMethod"
+					}
+				},
+				{
+					"name": "RemoteRole",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/Engine.NetRole"
+					}
+				},
+				{
+					"name": "InitialLifeSpan",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "CustomTimeDilation",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "RayTracingGroupId",
+					"type": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "GridPlacement_DEPRECATED",
+					"type": {
+						"kind": "unknown",
+						"cpp_type": "EActorGridPlacement"
+					}
+				},
+				{
+					"name": "RuntimeGrid",
+					"type": {
+						"kind": "name"
+					}
+				},
+				{
+					"name": "AttachmentReplication",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.RepAttachment"
+					}
+				},
+				{
+					"name": "ReplicatedMovement",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.RepMovement"
+					}
+				},
+				{
+					"name": "Owner",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.Actor"
+					}
+				},
+				{
+					"name": "NetDriverName",
+					"type": {
+						"kind": "name"
+					}
+				},
+				{
+					"name": "Role",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/Engine.NetRole"
+					}
+				},
+				{
+					"name": "NetDormancy",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/Engine.NetDormancy"
+					}
+				},
+				{
+					"name": "SpawnCollisionHandlingMethod",
+					"type": {
+						"kind": "unknown",
+						"cpp_type": "ESpawnActorCollisionHandlingMethod"
+					}
+				},
+				{
+					"name": "AutoReceiveInput",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/Engine.AutoReceiveInput::Type"
+					}
+				},
+				{
+					"name": "InputPriority",
+					"type": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "InputComponent",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.InputComponent"
+					}
+				},
+				{
+					"name": "NetTag",
+					"type": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "NetCullDistanceSquared",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "NetUpdateFrequency",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "MinNetUpdateFrequency",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "NetPriority",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "PhysicsReplicationMode",
+					"type": {
+						"kind": "unknown",
+						"cpp_type": "EPhysicsReplicationMode"
+					}
+				},
+				{
+					"name": "Instigator",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.Pawn"
+					}
+				},
+				{
+					"name": "Children",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "object",
+							"class_path": "/Script/Engine.Actor"
+						}
+					}
+				},
+				{
+					"name": "RootComponent",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.SceneComponent"
+					}
+				},
+				{
+					"name": "PivotOffset",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/CoreUObject.Vector"
+					}
+				},
+				{
+					"name": "HLODLayer",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.HLODLayer"
+					}
+				},
+				{
+					"name": "ObjectsDetachedFromExternalPackage",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "object",
+							"class_path": "/Script/CoreUObject.Object"
+						}
+					}
+				},
+				{
+					"name": "Layers",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "name"
+						}
+					}
+				},
+				{
+					"name": "ParentComponentActor_DEPRECATED",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.Actor"
+					}
+				},
+				{
+					"name": "ParentComponent",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.ChildActorComponent"
+					}
+				},
+				{
+					"name": "ActorGuid",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/CoreUObject.Guid"
+					}
+				},
+				{
+					"name": "ActorInstanceGuid",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/CoreUObject.Guid"
+					}
+				},
+				{
+					"name": "ContentBundleGuid",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/CoreUObject.Guid"
+					}
+				},
+				{
+					"name": "DataLayers",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "struct",
+							"path": "/Script/Engine.ActorDataLayer"
+						}
+					}
+				},
+				{
+					"name": "DataLayerAssets",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "soft_object",
+							"class_path": "/Script/Engine.DataLayerAsset"
+						}
+					}
+				},
+				{
+					"name": "ExternalDataLayerAsset",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.ExternalDataLayerAsset"
+					}
+				},
+				{
+					"name": "GroupActor",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.Actor"
+					}
+				},
+				{
+					"name": "SpriteScale",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "HiddenEditorViews",
+					"type": {
+						"kind": "uint64"
+					}
+				},
+				{
+					"name": "ActorLabel",
+					"type": {
+						"kind": "string"
+					}
+				},
+				{
+					"name": "FolderPath",
+					"type": {
+						"kind": "name"
+					}
+				},
+				{
+					"name": "FolderGuid",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/CoreUObject.Guid"
+					}
+				},
+				{
+					"name": "bHiddenEd",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bIsEditorPreviewActor",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bHiddenEdLayer",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bHiddenEdLevel",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bLockLocation",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bActorLabelEditable",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bEditable",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bListedInSceneOutliner",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bOptimizeBPComponentData",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bCanPlayFromHere",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bIsSpatiallyLoaded",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bHiddenEdTemporary",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bForceExternalActorLevelReferenceForPIE",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "Tags",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "name"
+						}
+					}
+				},
+				{
+					"name": "OnTakeAnyDamage",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.TakeAnyDamageSignature"
+					}
+				},
+				{
+					"name": "OnTakePointDamage",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.TakePointDamageSignature"
+					}
+				},
+				{
+					"name": "OnTakeRadialDamage",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.TakeRadialDamageSignature"
+					}
+				},
+				{
+					"name": "OnActorBeginOverlap",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.ActorBeginOverlapSignature"
+					}
+				},
+				{
+					"name": "OnActorEndOverlap",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.ActorEndOverlapSignature"
+					}
+				},
+				{
+					"name": "OnBeginCursorOver",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.ActorBeginCursorOverSignature"
+					}
+				},
+				{
+					"name": "OnEndCursorOver",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.ActorEndCursorOverSignature"
+					}
+				},
+				{
+					"name": "OnClicked",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.ActorOnClickedSignature"
+					}
+				},
+				{
+					"name": "OnReleased",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.ActorOnReleasedSignature"
+					}
+				},
+				{
+					"name": "OnInputTouchBegin",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.ActorOnInputTouchBeginSignature"
+					}
+				},
+				{
+					"name": "OnInputTouchEnd",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.ActorOnInputTouchEndSignature"
+					}
+				},
+				{
+					"name": "OnInputTouchEnter",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.ActorBeginTouchOverSignature"
+					}
+				},
+				{
+					"name": "OnInputTouchLeave",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.ActorEndTouchOverSignature"
+					}
+				},
+				{
+					"name": "OnActorHit",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.ActorHitSignature"
+					}
+				},
+				{
+					"name": "OnDestroyed",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.ActorDestroyedSignature"
+					}
+				},
+				{
+					"name": "OnEndPlay",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.ActorEndPlaySignature"
+					}
+				},
+				{
+					"name": "InstanceComponents",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "object",
+							"class_path": "/Script/Engine.ActorComponent"
+						}
+					}
+				},
+				{
+					"name": "BlueprintCreatedComponents",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "object",
+							"class_path": "/Script/Engine.ActorComponent"
+						}
+					}
+				}
+			],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				}
+			]
+		},
+		{
+			"path": "/Script/Engine.ActorComponent",
+			"cpp_name": "UActorComponent",
+			"super_path": "/Script/CoreUObject.Object",
+			"fields": [
+				{
+					"name": "PrimaryComponentTick",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.ActorComponentTickFunction"
+					}
+				},
+				{
+					"name": "ComponentTags",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "name"
+						}
+					}
+				},
+				{
+					"name": "AssetUserData",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "object",
+							"class_path": "/Script/Engine.AssetUserData"
+						}
+					}
+				},
+				{
+					"name": "AssetUserDataEditorOnly",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "object",
+							"class_path": "/Script/Engine.AssetUserData"
+						}
+					}
+				},
+				{
+					"name": "UCSSerializationIndex",
+					"type": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "bNetAddressable",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bReplicateUsingRegisteredSubObjectList",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bReplicates",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bCreatedByConstructionScript_DEPRECATED",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bInstanceComponent_DEPRECATED",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bAutoActivate",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bIsActive",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bEditableWhenInherited",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bCanEverAffectNavigation",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bIsEditorOnly",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bIsVisualizationComponent",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bNeedsUCSSerializationIndexEvaluted",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "CreationMethod",
+					"type": {
+						"kind": "unknown",
+						"cpp_type": "EComponentCreationMethod"
+					}
+				},
+				{
+					"name": "OnComponentActivated",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.ActorComponentActivatedSignature"
+					}
+				},
+				{
+					"name": "OnComponentDeactivated",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.ActorComponentDeactivateSignature"
+					}
+				},
+				{
+					"name": "UCSModifiedProperties_DEPRECATED",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "struct",
+							"path": "/Script/Engine.SimpleMemberReference"
+						}
+					}
+				}
+			],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				}
+			]
+		},
+		{
 			"path": "/Script/Engine.AnimSequence",
 			"cpp_name": "UAnimSequence",
 			"super_path": "/Script/Engine.AnimSequenceBase",
@@ -654,6 +1593,554 @@
 			]
 		},
 		{
+			"path": "/Script/Engine.CameraActor",
+			"cpp_name": "ACameraActor",
+			"super_path": "/Script/Engine.Actor",
+			"fields": [
+				{
+					"name": "AutoActivateForPlayer",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/Engine.AutoReceiveInput::Type"
+					}
+				},
+				{
+					"name": "CameraComponent",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.CameraComponent"
+					}
+				},
+				{
+					"name": "SceneComponent",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.SceneComponent"
+					}
+				},
+				{
+					"name": "bConstrainAspectRatio_DEPRECATED",
+					"type": {
+						"kind": "uint32"
+					}
+				},
+				{
+					"name": "AspectRatio_DEPRECATED",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "FOVAngle_DEPRECATED",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "PostProcessBlendWeight_DEPRECATED",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "PostProcessSettings_DEPRECATED",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.PostProcessSettings"
+					}
+				}
+			],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				}
+			]
+		},
+		{
+			"path": "/Script/Engine.CameraComponent",
+			"cpp_name": "UCameraComponent",
+			"super_path": "/Script/Engine.SceneComponent",
+			"fields": [
+				{
+					"name": "FieldOfView",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "FirstPersonFieldOfView",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "FirstPersonScale",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "OrthoWidth",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "bAutoCalculateOrthoPlanes",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "AutoPlaneShift",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "OrthoNearClipPlane",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "OrthoFarClipPlane",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "bUpdateOrthoPlanes",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bUseCameraHeightAsViewTarget",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "AspectRatio",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "AspectRatioAxisConstraint",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/Engine.AspectRatioAxisConstraint"
+					}
+				},
+				{
+					"name": "bConstrainAspectRatio",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bOverrideAspectRatioAxisConstraint",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bUseFieldOfViewForLOD",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "Overscan",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "AsymmetricOverscan",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.Vector4f"
+					}
+				},
+				{
+					"name": "bScaleResolutionWithOverscan",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bCropOverscan",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bDrawFrustumAllowed",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bCameraMeshHiddenInGame",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bLockToHmd",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bUsePawnControlRotation",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bEnableFirstPersonFieldOfView",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bEnableFirstPersonScale",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "ProjectionMode",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/Engine.CameraProjectionMode::Type"
+					}
+				},
+				{
+					"name": "CameraMesh",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.StaticMesh"
+					}
+				},
+				{
+					"name": "PostProcessBlendWeight",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "PostProcessSettings",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.PostProcessSettings"
+					}
+				},
+				{
+					"name": "bUseControllerViewRotation_DEPRECATED",
+					"type": {
+						"kind": "uint32"
+					}
+				}
+			],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				}
+			]
+		},
+		{
+			"path": "/Script/Engine.Character",
+			"cpp_name": "ACharacter",
+			"super_path": "/Script/Engine.Pawn",
+			"fields": [
+				{
+					"name": "Mesh",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.SkeletalMeshComponent"
+					}
+				},
+				{
+					"name": "CharacterMovement",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.CharacterMovementComponent"
+					}
+				},
+				{
+					"name": "CapsuleComponent",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.CapsuleComponent"
+					}
+				},
+				{
+					"name": "ArrowComponent",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.ArrowComponent"
+					}
+				},
+				{
+					"name": "BasedMovement",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.BasedMovementInfo"
+					}
+				},
+				{
+					"name": "ReplicatedBasedMovement",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.BasedMovementInfo"
+					}
+				},
+				{
+					"name": "ReplicatedServerLastTransformUpdateTimeStamp",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "ReplayLastTransformUpdateTimeStamp",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "BaseRotationOffset",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.Quat"
+					}
+				},
+				{
+					"name": "BaseTranslationOffset",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/CoreUObject.Vector"
+					}
+				},
+				{
+					"name": "ReplicatedGravityDirection",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.Vector_NetQuantizeNormal"
+					}
+				},
+				{
+					"name": "AnimRootMotionTranslationScale",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "CrouchedEyeHeight",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "bInBaseReplication",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bIsCrouched",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bProxyIsJumpForceApplied",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bPressedJump",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bClientUpdating",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bClientWasFalling",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bClientResimulateRootMotion",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bClientResimulateRootMotionSources",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bSimGravityDisabled",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bClientCheckEncroachmentOnNetUpdate",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bServerMoveIgnoreRootMotion",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bWasJumping",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "ReplicatedMovementMode",
+					"type": {
+						"kind": "uint8"
+					}
+				},
+				{
+					"name": "JumpKeyHoldTime",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "JumpForceTimeRemaining",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "ProxyJumpForceStartedTime",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "JumpMaxHoldTime",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "JumpMaxCount",
+					"type": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "JumpCurrentCount",
+					"type": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "JumpCurrentCountPreJump",
+					"type": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "OnReachedJumpApex",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.CharacterReachedApexSignature"
+					}
+				},
+				{
+					"name": "LandedDelegate",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.LandedSignature"
+					}
+				},
+				{
+					"name": "MovementModeChangedDelegate",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.MovementModeChangedSignature"
+					}
+				},
+				{
+					"name": "OnCharacterMovementUpdated",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.CharacterMovementUpdatedSignature"
+					}
+				},
+				{
+					"name": "SavedRootMotion",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.RootMotionSourceGroup"
+					}
+				},
+				{
+					"name": "ClientRootMotionParams",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.RootMotionMovementParams"
+					}
+				},
+				{
+					"name": "RootMotionRepMoves",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "struct",
+							"path": "/Script/Engine.SimulatedRootMotionReplicatedMove"
+						}
+					}
+				},
+				{
+					"name": "RepRootMotion",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.RepRootMotionMontage"
+					}
+				}
+			],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				}
+			]
+		},
+		{
 			"path": "/Script/Engine.CompositeDataTable",
 			"cpp_name": "UCompositeDataTable",
 			"super_path": "/Script/Engine.DataTable",
@@ -847,6 +2334,258 @@
 			]
 		},
 		{
+			"path": "/Script/Engine.MovementComponent",
+			"cpp_name": "UMovementComponent",
+			"super_path": "/Script/Engine.ActorComponent",
+			"fields": [
+				{
+					"name": "UpdatedComponent",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.SceneComponent"
+					}
+				},
+				{
+					"name": "UpdatedPrimitive",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.PrimitiveComponent"
+					}
+				},
+				{
+					"name": "Velocity",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/CoreUObject.Vector"
+					}
+				},
+				{
+					"name": "PlaneConstraintNormal",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/CoreUObject.Vector"
+					}
+				},
+				{
+					"name": "PlaneConstraintOrigin",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/CoreUObject.Vector"
+					}
+				},
+				{
+					"name": "bUpdateOnlyIfRendered",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bAutoUpdateTickRegistration",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bTickBeforeOwner",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bAutoRegisterUpdatedComponent",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bConstrainToPlane",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bSnapToPlaneAtStart",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bAutoRegisterPhysicsVolumeUpdates",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bComponentShouldUpdatePhysicsVolume",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "PlaneConstraintAxisSetting",
+					"type": {
+						"kind": "unknown",
+						"cpp_type": "EPlaneConstraintAxisSetting"
+					}
+				}
+			],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				}
+			]
+		},
+		{
+			"path": "/Script/Engine.Pawn",
+			"cpp_name": "APawn",
+			"super_path": "/Script/Engine.Actor",
+			"fields": [
+				{
+					"name": "bUseControllerRotationPitch",
+					"type": {
+						"kind": "uint32"
+					}
+				},
+				{
+					"name": "bUseControllerRotationYaw",
+					"type": {
+						"kind": "uint32"
+					}
+				},
+				{
+					"name": "bUseControllerRotationRoll",
+					"type": {
+						"kind": "uint32"
+					}
+				},
+				{
+					"name": "bCanAffectNavigationGeneration",
+					"type": {
+						"kind": "uint32"
+					}
+				},
+				{
+					"name": "bIsLocalViewTarget",
+					"type": {
+						"kind": "uint32"
+					}
+				},
+				{
+					"name": "BaseEyeHeight",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "AutoPossessPlayer",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/Engine.AutoReceiveInput::Type"
+					}
+				},
+				{
+					"name": "AutoPossessAI",
+					"type": {
+						"kind": "unknown",
+						"cpp_type": "EAutoPossessAI"
+					}
+				},
+				{
+					"name": "RemoteViewPitch16",
+					"type": {
+						"kind": "uint16"
+					}
+				},
+				{
+					"name": "RemoteViewPitch",
+					"type": {
+						"kind": "uint8"
+					}
+				},
+				{
+					"name": "AIControllerClass",
+					"type": {
+						"kind": "class",
+						"class_path": "/Script/Engine.Controller"
+					}
+				},
+				{
+					"name": "PlayerState",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.PlayerState"
+					}
+				},
+				{
+					"name": "LastHitBy",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.Controller"
+					}
+				},
+				{
+					"name": "Controller",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.Controller"
+					}
+				},
+				{
+					"name": "PreviousController",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.Controller"
+					}
+				},
+				{
+					"name": "ReceiveControllerChangedDelegate",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.PawnControllerChangedSignature"
+					}
+				},
+				{
+					"name": "ReceiveRestartedDelegate",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.PawnRestartedSignature"
+					}
+				},
+				{
+					"name": "ControlInputVector",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/CoreUObject.Vector"
+					}
+				},
+				{
+					"name": "LastControlInputVector",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/CoreUObject.Vector"
+					}
+				},
+				{
+					"name": "OverrideInputComponentClass",
+					"type": {
+						"kind": "class",
+						"class_path": "/Script/Engine.InputComponent"
+					}
+				}
+			],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				}
+			]
+		},
+		{
 			"path": "/Script/Engine.PrimaryDataAsset",
 			"cpp_name": "UPrimaryDataAsset",
 			"super_path": "/Script/Engine.DataAsset",
@@ -856,6 +2595,435 @@
 					"type": {
 						"kind": "struct",
 						"path": "/Script/Engine.AssetBundleData"
+					}
+				}
+			],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				}
+			]
+		},
+		{
+			"path": "/Script/Engine.RotatingMovementComponent",
+			"cpp_name": "URotatingMovementComponent",
+			"super_path": "/Script/Engine.MovementComponent",
+			"fields": [
+				{
+					"name": "RotationRate",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.Rotator"
+					}
+				},
+				{
+					"name": "PivotTranslation",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/CoreUObject.Vector"
+					}
+				},
+				{
+					"name": "bRotationInLocalSpace",
+					"type": {
+						"kind": "uint32"
+					}
+				}
+			],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				}
+			]
+		},
+		{
+			"path": "/Script/Engine.SCS_Node",
+			"cpp_name": "USCS_Node",
+			"super_path": "/Script/CoreUObject.Object",
+			"fields": [
+				{
+					"name": "ComponentClass",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.Class"
+					}
+				},
+				{
+					"name": "ComponentTemplate",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.ActorComponent"
+					}
+				},
+				{
+					"name": "CookedComponentInstancingData",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.BlueprintCookedComponentInstancingData"
+					}
+				},
+				{
+					"name": "CategoryName",
+					"type": {
+						"kind": "text"
+					}
+				},
+				{
+					"name": "AttachToName",
+					"type": {
+						"kind": "name"
+					}
+				},
+				{
+					"name": "ParentComponentOrVariableName",
+					"type": {
+						"kind": "name"
+					}
+				},
+				{
+					"name": "ParentComponentOwnerClassName",
+					"type": {
+						"kind": "name"
+					}
+				},
+				{
+					"name": "bIsParentComponentNative",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "ChildNodes",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "object",
+							"class_path": "/Script/Engine.SCS_Node"
+						}
+					}
+				},
+				{
+					"name": "MetaDataArray",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "struct",
+							"path": "/Script/Engine.BPVariableMetaDataEntry"
+						}
+					}
+				},
+				{
+					"name": "VariableGuid",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/CoreUObject.Guid"
+					}
+				},
+				{
+					"name": "bIsNative_DEPRECATED",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "NativeComponentName_DEPRECATED",
+					"type": {
+						"kind": "name"
+					}
+				},
+				{
+					"name": "bVariableNameAutoGenerated_DEPRECATED",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "InternalVariableName",
+					"type": {
+						"kind": "name"
+					}
+				}
+			],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				}
+			]
+		},
+		{
+			"path": "/Script/Engine.SceneComponent",
+			"cpp_name": "USceneComponent",
+			"super_path": "/Script/Engine.ActorComponent",
+			"fields": [
+				{
+					"name": "PhysicsVolume",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.PhysicsVolume"
+					}
+				},
+				{
+					"name": "AttachParent",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.SceneComponent"
+					}
+				},
+				{
+					"name": "AttachSocketName",
+					"type": {
+						"kind": "name"
+					}
+				},
+				{
+					"name": "AttachChildren",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "object",
+							"class_path": "/Script/Engine.SceneComponent"
+						}
+					}
+				},
+				{
+					"name": "ClientAttachedChildren",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "object",
+							"class_path": "/Script/Engine.SceneComponent"
+						}
+					}
+				},
+				{
+					"name": "RelativeLocation",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/CoreUObject.Vector"
+					}
+				},
+				{
+					"name": "RelativeRotation",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.Rotator"
+					}
+				},
+				{
+					"name": "RelativeScale3D",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/CoreUObject.Vector"
+					}
+				},
+				{
+					"name": "ComponentVelocity",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/CoreUObject.Vector"
+					}
+				},
+				{
+					"name": "bComponentToWorldUpdated",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bAbsoluteLocation",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bAbsoluteRotation",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bAbsoluteScale",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bVisible",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bShouldBeAttached",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bShouldSnapLocationWhenAttached",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bShouldSnapRotationWhenAttached",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bShouldSnapScaleWhenAttached",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bHiddenEdTemporary",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bShouldUpdatePhysicsVolume",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bHiddenInGame",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bBoundsChangeTriggersStreamingDataRebuild",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bUseAttachParentBound",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bComputeFastLocalBounds",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bComputeBoundsOnceForGame",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bComputedBoundsOnceForGame",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bIsNotRenderAttachmentRoot",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bVisualizeComponent",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "Mobility",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/Engine.ComponentMobility::Type"
+					}
+				},
+				{
+					"name": "DetailMode",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/Engine.DetailMode"
+					}
+				},
+				{
+					"name": "PhysicsVolumeChangedDelegate",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.PhysicsVolumeChanged"
+					}
+				}
+			],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				}
+			]
+		},
+		{
+			"path": "/Script/Engine.SimpleConstructionScript",
+			"cpp_name": "USimpleConstructionScript",
+			"super_path": "/Script/CoreUObject.Object",
+			"fields": [
+				{
+					"name": "RootNodes",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "object",
+							"class_path": "/Script/Engine.SCS_Node"
+						}
+					}
+				},
+				{
+					"name": "AllNodes",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "object",
+							"class_path": "/Script/Engine.SCS_Node"
+						}
+					}
+				},
+				{
+					"name": "DefaultSceneRootNode",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.SCS_Node"
+					}
+				},
+				{
+					"name": "RootNode_DEPRECATED",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.SCS_Node"
+					}
+				},
+				{
+					"name": "ActorComponentNodes_DEPRECATED",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "object",
+							"class_path": "/Script/Engine.SCS_Node"
+						}
 					}
 				}
 			],
@@ -1674,6 +3842,105 @@
 	],
 	"structs": [
 		{
+			"path": "/Script/Core.public",
+			"cpp_name": "public",
+			"super_path": null,
+			"fields": []
+		},
+		{
+			"path": "/Script/Engine.BPVariableDescription",
+			"cpp_name": "FBPVariableDescription",
+			"super_path": null,
+			"fields": [
+				{
+					"name": "VarName",
+					"type": {
+						"kind": "name"
+					}
+				},
+				{
+					"name": "VarGuid",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/CoreUObject.Guid"
+					}
+				},
+				{
+					"name": "VarType",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.EdGraphPinType"
+					}
+				},
+				{
+					"name": "FriendlyName",
+					"type": {
+						"kind": "string"
+					}
+				},
+				{
+					"name": "Category",
+					"type": {
+						"kind": "text"
+					}
+				},
+				{
+					"name": "PropertyFlags",
+					"type": {
+						"kind": "uint64"
+					}
+				},
+				{
+					"name": "RepNotifyFunc",
+					"type": {
+						"kind": "name"
+					}
+				},
+				{
+					"name": "ReplicationCondition",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/Engine.LifetimeCondition"
+					}
+				},
+				{
+					"name": "MetaDataArray",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "struct",
+							"path": "/Script/Engine.BPVariableMetaDataEntry"
+						}
+					}
+				},
+				{
+					"name": "DefaultValue",
+					"type": {
+						"kind": "string"
+					}
+				}
+			]
+		},
+		{
+			"path": "/Script/Engine.BPVariableMetaDataEntry",
+			"cpp_name": "FBPVariableMetaDataEntry",
+			"super_path": null,
+			"fields": [
+				{
+					"name": "DataKey",
+					"type": {
+						"kind": "name"
+					}
+				},
+				{
+					"name": "DataValue",
+					"type": {
+						"kind": "string"
+					}
+				}
+			]
+		},
+		{
 			"path": "/Script/Engine.CurveTableRowHandle",
 			"cpp_name": "FCurveTableRowHandle",
 			"super_path": null,
@@ -1871,6 +4138,87 @@
 			]
 		},
 		{
+			"path": "/Script/MovieScene.MovieSceneEasingSettings",
+			"cpp_name": "FMovieSceneEasingSettings",
+			"super_path": null,
+			"fields": [
+				{
+					"name": "AutoEaseInDuration",
+					"type": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "AutoEaseOutDuration",
+					"type": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "EaseIn",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/MovieScene.MovieSceneEasingFunction"
+					}
+				},
+				{
+					"name": "bManualEaseIn",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "ManualEaseInDuration",
+					"type": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "EaseOut",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/MovieScene.MovieSceneEasingFunction"
+					}
+				},
+				{
+					"name": "bManualEaseOut",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "ManualEaseOutDuration",
+					"type": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "AutoEaseInTime_DEPRECATED",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "AutoEaseOutTime_DEPRECATED",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "ManualEaseInTime_DEPRECATED",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "ManualEaseOutTime_DEPRECATED",
+					"type": {
+						"kind": "float"
+					}
+				}
+			]
+		},
+		{
 			"path": "/Script/MovieScene.MovieSceneIntegerChannel",
 			"cpp_name": "FMovieSceneIntegerChannel",
 			"super_path": null,
@@ -1931,6 +4279,302 @@
 					"type": {
 						"kind": "struct",
 						"path": "/Script/MovieScene.MovieSceneKeyHandleMap"
+					}
+				}
+			]
+		},
+		{
+			"path": "/Script/MovieScene.MovieSceneObjectBindingID",
+			"cpp_name": "FMovieSceneObjectBindingID",
+			"super_path": null,
+			"fields": [
+				{
+					"name": "Guid",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/CoreUObject.Guid"
+					}
+				},
+				{
+					"name": "SequenceID",
+					"type": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "ResolveParentIndex",
+					"type": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "Space_DEPRECATED",
+					"type": {
+						"kind": "unknown",
+						"cpp_type": "EMovieSceneObjectBindingSpace"
+					}
+				}
+			]
+		},
+		{
+			"path": "/Script/MovieScene.MovieSceneObjectPathChannel",
+			"cpp_name": "FMovieSceneObjectPathChannel",
+			"super_path": null,
+			"fields": [
+				{
+					"name": "PropertyClass",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/MovieScene.Class"
+					}
+				},
+				{
+					"name": "Times",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "struct",
+							"path": "/Script/MovieScene.FrameNumber"
+						}
+					}
+				},
+				{
+					"name": "Values",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "struct",
+							"path": "/Script/MovieScene.MovieSceneObjectPathChannelKeyValue"
+						}
+					}
+				},
+				{
+					"name": "DefaultValue",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/MovieScene.MovieSceneObjectPathChannelKeyValue"
+					}
+				},
+				{
+					"name": "KeyHandles",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/MovieScene.MovieSceneKeyHandleMap"
+					}
+				}
+			]
+		},
+		{
+			"path": "/Script/MovieScene.MovieSceneObjectPathChannelKeyValue",
+			"cpp_name": "FMovieSceneObjectPathChannelKeyValue",
+			"super_path": null,
+			"fields": [
+				{
+					"name": "SoftPtr",
+					"type": {
+						"kind": "soft_object",
+						"class_path": "/Script/CoreUObject.Object"
+					}
+				},
+				{
+					"name": "HardPtr",
+					"type": {
+						"kind": "unknown",
+						"cpp_type": "mutableTObjectPtr<UObject>"
+					}
+				}
+			]
+		},
+		{
+			"path": "/Script/MovieScene.MovieScenePossessable",
+			"cpp_name": "FMovieScenePossessable",
+			"super_path": null,
+			"fields": [
+				{
+					"name": "Tags",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "name"
+						}
+					}
+				},
+				{
+					"name": "DynamicBinding_DEPRECATED",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/MovieScene.MovieSceneDynamicBinding"
+					}
+				},
+				{
+					"name": "Guid",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/CoreUObject.Guid"
+					}
+				},
+				{
+					"name": "Name",
+					"type": {
+						"kind": "string"
+					}
+				},
+				{
+					"name": "PossessedObjectClass",
+					"type": {
+						"kind": "unknown",
+						"cpp_type": "TSoftClassPtr<UObject>"
+					}
+				},
+				{
+					"name": "ParentGuid",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/CoreUObject.Guid"
+					}
+				},
+				{
+					"name": "SpawnableObjectBindingID",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/MovieScene.MovieSceneObjectBindingID"
+					}
+				}
+			]
+		},
+		{
+			"path": "/Script/MovieScene.MovieSceneSpawnable",
+			"cpp_name": "FMovieSceneSpawnable",
+			"super_path": null,
+			"fields": [
+				{
+					"name": "SpawnTransform",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/CoreUObject.Transform"
+					}
+				},
+				{
+					"name": "Tags",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "name"
+						}
+					}
+				},
+				{
+					"name": "bContinuouslyRespawn",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bNetAddressableName",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "DynamicBinding_DEPRECATED",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/MovieScene.MovieSceneDynamicBinding"
+					}
+				},
+				{
+					"name": "Guid",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/CoreUObject.Guid"
+					}
+				},
+				{
+					"name": "Name",
+					"type": {
+						"kind": "string"
+					}
+				},
+				{
+					"name": "ObjectTemplate",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/CoreUObject.Object"
+					}
+				},
+				{
+					"name": "ChildPossessables",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "struct",
+							"path": "/Script/CoreUObject.Guid"
+						}
+					}
+				},
+				{
+					"name": "Ownership",
+					"type": {
+						"kind": "unknown",
+						"cpp_type": "ESpawnOwnership"
+					}
+				},
+				{
+					"name": "GeneratedClass_DEPRECATED",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/MovieScene.Class"
+					}
+				},
+				{
+					"name": "LevelName",
+					"type": {
+						"kind": "name"
+					}
+				}
+			]
+		},
+		{
+			"path": "/Script/MovieSceneTracks.MovieSceneStringChannel",
+			"cpp_name": "FMovieSceneStringChannel",
+			"super_path": null,
+			"fields": [
+				{
+					"name": "Times",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "struct",
+							"path": "/Script/MovieSceneTracks.FrameNumber"
+						}
+					}
+				},
+				{
+					"name": "Values",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "string"
+						}
+					}
+				},
+				{
+					"name": "DefaultValue",
+					"type": {
+						"kind": "string"
+					}
+				},
+				{
+					"name": "bHasDefaultValue",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "KeyHandles",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/MovieSceneTracks.MovieSceneKeyHandleMap"
 					}
 				}
 			]
@@ -1999,6 +4643,9 @@
 					}
 				}
 			]
+		},
+		"/Script/CoreUObject.FrameNumber": {
+			"kind": "int32"
 		},
 		"/Script/CoreUObject.InstancedPropertyBag": {
 			"kind": "bool"
@@ -2082,6 +4729,158 @@
 						"element": {
 							"kind": "name"
 						}
+					}
+				}
+			]
+		},
+		"AActor.CookedLabel": {
+			"kind": "bool"
+		},
+		"FEdGraphPinTypePrefix": {
+			"kind": "record",
+			"fields": [
+				{
+					"name": "PinCategory",
+					"layout": {
+						"kind": "name"
+					}
+				},
+				{
+					"name": "PinSubCategory",
+					"layout": {
+						"kind": "name"
+					}
+				},
+				{
+					"name": "PinSubCategoryObject",
+					"layout": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "ContainerType",
+					"layout": {
+						"kind": "u_int8"
+					}
+				}
+			]
+		},
+		"FEdGraphPinTypeSuffix": {
+			"kind": "record",
+			"fields": [
+				{
+					"name": "bIsReference",
+					"layout": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bIsWeakPointer",
+					"layout": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "MemberParent",
+					"layout": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "MemberName",
+					"layout": {
+						"kind": "name"
+					}
+				},
+				{
+					"name": "MemberGuid",
+					"layout": {
+						"kind": "record",
+						"fields": [
+							{
+								"name": "A",
+								"layout": {
+									"kind": "int32"
+								}
+							},
+							{
+								"name": "B",
+								"layout": {
+									"kind": "int32"
+								}
+							},
+							{
+								"name": "C",
+								"layout": {
+									"kind": "int32"
+								}
+							},
+							{
+								"name": "D",
+								"layout": {
+									"kind": "int32"
+								}
+							}
+						]
+					}
+				},
+				{
+					"name": "bIsConst",
+					"layout": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bIsUObjectWrapper",
+					"layout": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bSerializeAsSinglePrecisionFloat",
+					"layout": {
+						"kind": "bool"
+					}
+				}
+			]
+		},
+		"FEdGraphTerminalType": {
+			"kind": "record",
+			"fields": [
+				{
+					"name": "TerminalCategory",
+					"layout": {
+						"kind": "name"
+					}
+				},
+				{
+					"name": "TerminalSubCategory",
+					"layout": {
+						"kind": "name"
+					}
+				},
+				{
+					"name": "TerminalSubCategoryObject",
+					"layout": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "bTerminalIsConst",
+					"layout": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bTerminalIsWeakPointer",
+					"layout": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bTerminalIsUObjectWrapper",
+					"layout": {
+						"kind": "bool"
 					}
 				}
 			]
@@ -2795,6 +5594,58 @@
 				}
 			]
 		},
+		"UActorComponent.UCSModifiedProperties": {
+			"kind": "array",
+			"element": {
+				"kind": "record",
+				"fields": [
+					{
+						"name": "MemberParent",
+						"layout": {
+							"kind": "int32"
+						}
+					},
+					{
+						"name": "MemberName",
+						"layout": {
+							"kind": "name"
+						}
+					},
+					{
+						"name": "MemberGuid",
+						"layout": {
+							"kind": "record",
+							"fields": [
+								{
+									"name": "A",
+									"layout": {
+										"kind": "int32"
+									}
+								},
+								{
+									"name": "B",
+									"layout": {
+										"kind": "int32"
+									}
+								},
+								{
+									"name": "C",
+									"layout": {
+										"kind": "int32"
+									}
+								},
+								{
+									"name": "D",
+									"layout": {
+										"kind": "int32"
+									}
+								}
+							]
+						}
+					}
+				]
+			}
+		},
 		"UEnum": {
 			"kind": "record",
 			"fields": [
@@ -2828,6 +5679,9 @@
 					}
 				}
 			]
+		},
+		"USceneComponent.StaticBoundsCooked": {
+			"kind": "bool"
 		}
 	}
 }

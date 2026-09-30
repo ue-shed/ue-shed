@@ -110,6 +110,38 @@ export function blueprintReferences(read: BlueprintGraphRead): readonly SavedRev
 				break;
 		}
 	};
+	const definition = read.blueprint.definition;
+	add(read.blueprint.object_path, "parent_class", definition.parent_class);
+	for (const variable of definition.variables ?? []) {
+		const path = `variables.${variable.name ?? variable.guid ?? "unknown"}`;
+		add(read.blueprint.object_path, `${path}.type`, variable.pin_type?.subcategory_object);
+		add(
+			read.blueprint.object_path,
+			`${path}.value_type`,
+			variable.pin_type?.value_type?.subcategory_object
+		);
+		add(
+			read.blueprint.object_path,
+			`${path}.member`,
+			variable.pin_type?.member_reference.parent
+		);
+		variable.properties.forEach((property) =>
+			visit(read.blueprint.object_path, `${path}.${property.name}`, property)
+		);
+	}
+	const savedObjects = [
+		definition.default_object,
+		...(definition.construction_script?.nodes.map((node) => node.template) ?? [])
+	];
+	for (const object of savedObjects) {
+		if (!object) continue;
+		add(object.object_path, "class", object.class_path);
+		object.properties.forEach((property) => visit(object.object_path, property.name, property));
+		if (object.native_data) visit(object.object_path, "$native_data", object.native_data);
+	}
+	for (const node of definition.construction_script?.nodes ?? []) {
+		add(node.object_path, "component_class", node.component_class);
+	}
 	for (const graph of read.blueprint.graphs)
 		for (const node of graph.nodes) {
 			add(node.object_path, "class", node.class_path);
@@ -205,26 +237,41 @@ const id = (guid: string | undefined, fallback: string) =>
 	guid && !/^0+-?0*-?0*-?0*$/.test(guid) ? guid : fallback;
 const segment = (value: string) => encodeURIComponent(value);
 
-function normalized(value: Schema.Json, root: string): Schema.Json {
-	if (Array.isArray(value)) return value.map((item) => normalized(item, root));
+function normalized(
+	value: Schema.Json,
+	root: string,
+	aliases: readonly (readonly [string, string])[] = []
+): Schema.Json {
+	const path = (value: string) => {
+		for (const [source, target] of aliases) {
+			const result = relative(value, source);
+			if (result !== value) return result.replace("$asset", target);
+		}
+		return relative(value, root);
+	};
+	if (Array.isArray(value)) return value.map((item) => normalized(item, root, aliases));
 	if (!(value instanceof Object)) return value;
 	const record = Object.fromEntries(
-		Object.entries(value).map(([key, child]) => [key, normalized(child, root)])
+		Object.entries(value).map(([key, child]) => [key, normalized(child, root, aliases)])
 	);
 	for (const key of [
 		"default_object",
 		"subcategory_object",
 		"table_object_path",
 		"struct_type",
-		"parent"
+		"parent",
+		"object_path",
+		"class_path",
+		"soft_path",
+		"hard_path"
 	]) {
-		if (Predicate.isString(record[key])) record[key] = relative(record[key], root);
+		if (Predicate.isString(record[key])) record[key] = path(record[key]);
 	}
 	if (
 		["object_ref", "soft_object_path"].includes(String(record.value_kind)) &&
 		Predicate.isString(record.value)
 	)
-		record.value = relative(record.value, root);
+		record.value = path(record.value);
 	if (record.value_kind === "set" && Array.isArray(record.values))
 		record.values.sort((a, b) => compareText(canonical(a), canonical(b)));
 	if (record.value_kind === "map" && Array.isArray(record.entries))
@@ -253,6 +300,112 @@ function add<A>(
 function blueprintEvidence(read: BlueprintGraphRead, warnings: string[]): Evidence {
 	const evidence: Evidence = new Map();
 	const root = read.blueprint.object_path;
+	const definition = read.blueprint.definition;
+	// The package portion also covers the proven generated class and its CDO, whose
+	// paths are siblings of the Blueprint export rather than children of it.
+	const packageRoot = root.split(/[.:]/, 1)[0] ?? root;
+	const aliases: (readonly [string, string])[] = [[root, "$asset"]];
+	if (definition.default_object)
+		aliases.push(
+			[definition.default_object.object_path, "$default_object"],
+			[definition.default_object.class_path, "$generated_class"]
+		);
+	const normalizeDefinition = (value: Schema.Json) => normalized(value, packageRoot, aliases);
+	add(evidence, warnings, "definition", "structure", {
+		parent_class: definition.parent_class,
+		variables_serialized: definition.variables !== null,
+		default_object_available: definition.default_object !== null,
+		construction_script_available: definition.construction_script !== null
+	});
+	for (const variable of definition.variables ?? []) {
+		const path = `variables/${segment(id(variable.guid ?? undefined, variable.name ?? "unknown"))}`;
+		add(evidence, warnings, path, "structure", { name: variable.name });
+		add(
+			evidence,
+			warnings,
+			`${path}/declaration`,
+			"value",
+			normalizeDefinition(
+				json({
+					pin_type: variable.pin_type,
+					category: variable.category,
+					property_flags: variable.property_flags,
+					default_value: variable.default_value
+				})
+			)
+		);
+		for (const property of variable.properties) {
+			if (["VarGuid", "VarName"].includes(property.name)) continue;
+			add(
+				evidence,
+				warnings,
+				`${path}/properties/${segment(property.name)}`,
+				"value",
+				normalizeDefinition(json(property))
+			);
+		}
+	}
+	const objectProperties = (
+		path: string,
+		object: NonNullable<typeof definition.default_object>
+	) => {
+		add(evidence, warnings, path, "structure", {
+			class: normalizeDefinition(json({ class_path: object.class_path }))
+		});
+		if (object.native_data)
+			add(
+				evidence,
+				warnings,
+				`${path}/native_data`,
+				"value",
+				normalizeDefinition(json(object.native_data))
+			);
+		for (const property of object.properties)
+			add(
+				evidence,
+				warnings,
+				`${path}/properties/${segment(property.name)}`,
+				"value",
+				normalizeDefinition(json(property))
+			);
+	};
+	if (definition.default_object) objectProperties("default_object", definition.default_object);
+	const scs = definition.construction_script;
+	if (scs) {
+		const nodeIds = new Map(
+			scs.nodes.map((node) => [
+				node.object_path,
+				id(
+					node.guid ?? undefined,
+					node.variable_name ?? relative(node.object_path, packageRoot)
+				)
+			])
+		);
+		const definitionPath = (path: string) => {
+			for (const [source, target] of aliases) {
+				const result = relative(path, source);
+				if (result !== path) return result.replace("$asset", target);
+			}
+			return relative(path, packageRoot);
+		};
+		const refs = (paths: readonly string[] | null) =>
+			paths?.map((path) => nodeIds.get(path) ?? definitionPath(path)) ?? null;
+		add(evidence, warnings, "components/root_order", "connection", refs(scs.root_nodes));
+		for (const node of scs.nodes) {
+			const path = `components/${segment(nodeIds.get(node.object_path) ?? node.object_path)}`;
+			add(evidence, warnings, path, "structure", {
+				name: node.variable_name,
+				class: node.component_class,
+				attach_to_name: node.attach_to_name,
+				parent_component_name: node.parent_component_name,
+				parent_owner_class_name: node.parent_owner_class_name,
+				parent_is_native: node.parent_is_native,
+				template_available: node.template !== null
+			});
+			add(evidence, warnings, `${path}/children`, "connection", refs(node.children));
+			if (node.template) objectProperties(`${path}/template`, node.template);
+		}
+	}
 	for (const graph of read.blueprint.graphs) {
 		const graphPath = `graphs/${segment(id(graph.guid, relative(graph.object_path, root)))}`;
 		add(evidence, warnings, graphPath, "structure", { name: graph.name });
@@ -366,6 +519,14 @@ function sequenceEvidence(read: LevelSequenceRead, warnings: string[]): Evidence
 					shot: section.shot_display_name
 				});
 				add(evidence, warnings, `${sectionPath}/range`, "value", section.range);
+				add(
+					evidence,
+					warnings,
+					`${sectionPath}/settings`,
+					"value",
+					normalized(json(section.settings), sequence.object_path)
+				);
+				add(evidence, warnings, `${sectionPath}/camera_cut`, "value", section.camera_cut);
 				for (const key of section.text_keys)
 					add(evidence, warnings, `${sectionPath}/text/${key.frame}`, "value", key);
 				for (const channel of section.numeric_channels) {
@@ -385,6 +546,28 @@ function sequenceEvidence(read: LevelSequenceRead, warnings: string[]): Evidence
 					for (const key of keys ?? [])
 						add(evidence, warnings, `${channelPath}/keys/${key.frame}`, "value", key);
 				}
+				for (const channel of section.value_channels) {
+					const channelPath = `${sectionPath}/channels/${segment(channel.property_path)}`;
+					const { keys, ...settings } = channel;
+					add(
+						evidence,
+						warnings,
+						channelPath,
+						"value",
+						normalized(
+							json({ ...settings, keys_serialized: keys !== null }),
+							sequence.object_path
+						)
+					);
+					for (const key of keys ?? [])
+						add(
+							evidence,
+							warnings,
+							`${channelPath}/keys/${key.frame}`,
+							"value",
+							normalized(json(key), sequence.object_path)
+						);
+				}
 			}
 		}
 	};
@@ -393,7 +576,14 @@ function sequenceEvidence(read: LevelSequenceRead, warnings: string[]): Evidence
 		const path = `bindings/${segment(binding.id)}`;
 		add(evidence, warnings, path, "structure", {
 			name: binding.name,
-			class: binding.possessed_object_class
+			class: binding.possessed_object_class,
+			kind: binding.kind,
+			parent_id: binding.parent_id,
+			object_template:
+				binding.object_template === null
+					? null
+					: relative(binding.object_template, sequence.object_path),
+			object_template_class: binding.object_template_class
 		});
 		tracks(binding.tracks, path);
 	}

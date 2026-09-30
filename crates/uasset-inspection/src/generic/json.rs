@@ -352,6 +352,7 @@ impl Serialize for AssetView<'_> {
                     fields: &[],
                 },
                 properties: PropertiesView::empty(package),
+                native_data: None,
                 tail_bytes: 0,
                 reference_pose: None,
                 bones: BonesView {
@@ -386,6 +387,7 @@ impl Serialize for AssetView<'_> {
                     fields: &[],
                 },
                 properties: PropertiesView::new(package, &table.properties),
+                native_data: None,
                 tail_bytes: 0,
                 reference_pose: None,
                 bones: BonesView {
@@ -420,6 +422,7 @@ impl Serialize for AssetView<'_> {
                     fields: &[],
                 },
                 properties: PropertiesView::empty(package),
+                native_data: None,
                 tail_bytes: 0,
                 reference_pose: None,
                 bones: BonesView {
@@ -451,6 +454,7 @@ impl Serialize for AssetView<'_> {
                     fields: &[],
                 },
                 properties: PropertiesView::new(package, &asset.properties),
+                native_data: None,
                 tail_bytes: 0,
                 reference_pose: None,
                 bones: BonesView {
@@ -482,6 +486,10 @@ impl Serialize for AssetView<'_> {
                     fields: &[],
                 },
                 properties: PropertiesView::new(package, &object.properties),
+                native_data: object
+                    .native_data
+                    .as_deref()
+                    .map(|value| PropertyValueView::new(package, value, 0)),
                 tail_bytes: object.tail.len(),
                 reference_pose: None,
                 bones: BonesView {
@@ -513,6 +521,7 @@ impl Serialize for AssetView<'_> {
                     fields: &[],
                 },
                 properties: PropertiesView::new(package, &node.properties),
+                native_data: None,
                 tail_bytes: node.tail.len(),
                 reference_pose: None,
                 bones: BonesView {
@@ -544,6 +553,7 @@ impl Serialize for AssetView<'_> {
                     fields: &[],
                 },
                 properties: PropertiesView::new(package, &sequence.properties),
+                native_data: None,
                 tail_bytes: 0,
                 reference_pose: None,
                 bones: BonesView {
@@ -575,6 +585,7 @@ impl Serialize for AssetView<'_> {
                     fields: &[],
                 },
                 properties: PropertiesView::new(package, &skeleton.properties),
+                native_data: None,
                 tail_bytes: skeleton.tail.len(),
                 reference_pose: skeleton
                     .reference_pose
@@ -609,6 +620,7 @@ impl Serialize for AssetView<'_> {
                     fields: &[],
                 },
                 properties: PropertiesView::empty(package),
+                native_data: None,
                 tail_bytes: 0,
                 reference_pose: None,
                 bones: BonesView {
@@ -640,6 +652,7 @@ impl Serialize for AssetView<'_> {
                     fields: &decoded.fields,
                 },
                 properties: PropertiesView::new(package, &decoded.default_values),
+                native_data: None,
                 tail_bytes: 0,
                 reference_pose: None,
                 bones: BonesView {
@@ -682,6 +695,8 @@ struct AssetFields<'a> {
     #[serde(skip_serializing_if = "StructFieldsView::is_empty")]
     struct_fields: StructFieldsView<'a>,
     properties: PropertiesView<'a>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    native_data: Option<PropertyValueView<'a>>,
     #[serde(skip_serializing_if = "is_zero_u64")]
     tail_bytes: u64,
     #[serde(skip_serializing_if = "BonesView::is_empty")]

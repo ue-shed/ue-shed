@@ -13,6 +13,43 @@ const fixturePath = resolve(
 	"fixtures/unreal-project/Content/Fixture/Blueprints/BP_GraphFixture.uasset"
 );
 
+test("inspects saved Blueprint variables, class defaults and component templates without Unreal", async ({
+	offlineBlueprint: { harness, workbench }
+}) => {
+	test.setTimeout(60_000);
+	await workbench.openRoute("Blueprint Graphs");
+	const page = workbench.page;
+	await page
+		.getByLabel("Blueprint package path")
+		.fill(
+			resolve(
+				repositoryRoot,
+				"fixtures/unreal-project/Content/Fixture/Blueprints/BP_ReviewFixture.uasset"
+			)
+		);
+	await page.getByRole("button", { name: "Open graph" }).click();
+	await page.getByText("Saved variables, defaults and components", { exact: true }).click();
+	const definition = page.getByLabel("Blueprint definition");
+	await definition.getByText("ReviewCount · int · none", { exact: true }).click();
+	await expect(definition).toContainText("Review|Settings");
+	await definition.getByText("ReviewCount", { exact: true }).click();
+	await expect(
+		definition.locator("code").filter({ hasText: '"name":"ReviewCount"' })
+	).toContainText('"value":23');
+	await definition.getByText(/^ReviewChild ·/).click();
+	await expect(definition).toContainText("SavedSocket");
+	await definition.getByText("RelativeLocation", { exact: true }).click();
+	await expect(definition.getByText(/"x":11,"y":22,"z":33/)).toBeVisible();
+	await definition.getByText(/^ReviewRoot ·/).click();
+	await expect(definition).toContainText("CollisionCylinder");
+	const root = definition.locator("details").filter({ has: page.getByText(/^ReviewRoot ·/) });
+	await root.getByText("Saved native data", { exact: true }).click();
+	await expect(root.locator("code").filter({ hasText: "UCSModifiedProperties" })).toContainText(
+		'"values":[]'
+	);
+	expect(await harness.launchCount()).toBe(0);
+});
+
 test("offers samples without a selected project and finishes failed camera status checks", async ({
 	offlineBlueprint: { application, harness, workbench }
 }) => {

@@ -3,7 +3,7 @@
 		"name": "uasset-io",
 		"version": {
 			"major": 1,
-			"minor": 6
+			"minor": 7
 		}
 	},
 	"kind": "result",
@@ -12,7 +12,7 @@
 	"result": {
 		"kind": "level_sequence",
 		"sequence": {
-			"schema_version": 5,
+			"schema_version": 6,
 			"object_path": "/Game/LS_Example.LS_Example",
 			"movie_scene_path": null,
 			"tick_resolution": {

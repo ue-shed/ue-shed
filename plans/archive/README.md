@@ -4,6 +4,14 @@ Completed implementation plans. Kept as execution history (intent, STOP conditio
 paths). They are not living guidance — prefer product docs, ADRs, and active plans under
 [`../`](../README.md).
 
+- [Saved actor/component native records](saved-actor-component-native-data.md) — DONE; checked
+  inherited records, construction-script member references, conditional scene flags and public
+  native evidence, with independent UE 5.7/5.8 and offline native/WASM conformance.
+
+- [Next five saved Blueprint and Sequencer targets](saved-blueprint-sequencer-next-five.md) — DONE;
+  section settings, scoped camera cuts/bindings, string/object channels, variable/CDO evidence and
+  component hierarchies/templates, with UE 5.7/5.8 and offline native/WASM conformance.
+
 - [Discrete Sequencer channels](sequencer-discrete-channels.md) — DONE; saved bool, integer,
   byte/enum and visibility channels, boolean container decoding, and UE 5.7/5.8 conformance.
 

@@ -1,5 +1,6 @@
-// Mirrors the published saved Level Sequence v5 record; checked by contract conformance.
+// Mirrors the published saved Level Sequence v6 record; checked by contract conformance.
 import { Schema } from "effect";
+import { SavedProperty } from "./uasset-inspection.js";
 import { BlueprintGraphDiagnostic } from "./blueprint-graph.js";
 
 export const SequenceRate = Schema.Struct({
@@ -116,6 +117,68 @@ export const SequenceDiscreteChannel = Schema.Union([
 ]).annotate({ identifier: "SequenceDiscreteChannel" });
 export type SequenceDiscreteChannel = Schema.Schema.Type<typeof SequenceDiscreteChannel>;
 
+const SavedFrame = Schema.Int.check(
+	Schema.isGreaterThanOrEqualTo(-2147483648),
+	Schema.isLessThanOrEqualTo(2147483647)
+);
+
+export const SequenceSectionSettings = Schema.Struct({
+	row_index: Schema.NullOr(SavedFrame),
+	overlap_priority: Schema.NullOr(SavedFrame),
+	is_active: Schema.NullOr(Schema.Boolean),
+	is_locked: Schema.NullOr(Schema.Boolean),
+	pre_roll_frames: Schema.NullOr(SavedFrame),
+	post_roll_frames: Schema.NullOr(SavedFrame),
+	blend_type: Schema.NullOr(Schema.Array(SavedProperty).check(Schema.isMaxLength(1000000))),
+	easing: Schema.NullOr(Schema.Array(SavedProperty).check(Schema.isMaxLength(1000000)))
+}).annotate({ identifier: "SequenceSectionSettings" });
+export type SequenceSectionSettings = Schema.Schema.Type<typeof SequenceSectionSettings>;
+export const SequenceObjectValue = Schema.Struct({
+	soft_path: Schema.NullOr(Schema.String),
+	hard_path: Schema.NullOr(Schema.String)
+});
+export type SequenceObjectValue = Schema.Schema.Type<typeof SequenceObjectValue>;
+const valueKeys = <S extends Schema.Top>(value: S) =>
+	Schema.NullOr(
+		Schema.Array(
+			Schema.Struct({
+				frame: Schema.Int.check(
+					Schema.isGreaterThanOrEqualTo(-2147483648),
+					Schema.isLessThanOrEqualTo(2147483647)
+				),
+				value
+			})
+		).check(Schema.isMaxLength(1000000))
+	);
+export const SequenceValueChannel = Schema.Union([
+	Schema.Struct({
+		value_type: Schema.Literal("string"),
+		property_path: Schema.String,
+		has_default_value: Schema.NullOr(Schema.Boolean),
+		default_value: Schema.NullOr(Schema.String),
+		keys: valueKeys(Schema.String)
+	}),
+	Schema.Struct({
+		value_type: Schema.Literal("object"),
+		property_path: Schema.String,
+		property_class: Schema.NullOr(Schema.String),
+		default_value: Schema.NullOr(SequenceObjectValue),
+		keys: valueKeys(SequenceObjectValue)
+	})
+]).annotate({ identifier: "SequenceValueChannel" });
+export type SequenceValueChannel = Schema.Schema.Type<typeof SequenceValueChannel>;
+export const SequenceCameraCut = Schema.Struct({
+	binding: Schema.NullOr(
+		Schema.Struct({
+			guid: Schema.NullOr(Schema.String),
+			sequence_id: Schema.NullOr(SavedFrame),
+			resolve_parent_index: Schema.NullOr(SavedFrame)
+		})
+	),
+	lock_previous_camera: Schema.NullOr(Schema.Boolean)
+}).annotate({ identifier: "SequenceCameraCut" });
+export type SequenceCameraCut = Schema.Schema.Type<typeof SequenceCameraCut>;
+
 export const SequenceSection = Schema.Struct({
 	object_path: Schema.String,
 	class_path: Schema.String,
@@ -124,7 +187,10 @@ export const SequenceSection = Schema.Struct({
 	shot_display_name: Schema.Union([Schema.String, Schema.Null]),
 	text_keys: Schema.Array(SequenceTextKey).check(Schema.isMaxLength(1000000)),
 	numeric_channels: Schema.Array(SequenceNumericChannel).check(Schema.isMaxLength(1000000)),
-	discrete_channels: Schema.Array(SequenceDiscreteChannel).check(Schema.isMaxLength(1000000))
+	discrete_channels: Schema.Array(SequenceDiscreteChannel).check(Schema.isMaxLength(1000000)),
+	value_channels: Schema.Array(SequenceValueChannel).check(Schema.isMaxLength(1000000)),
+	settings: SequenceSectionSettings,
+	camera_cut: Schema.NullOr(SequenceCameraCut)
 }).annotate({ identifier: "SequenceSection" });
 export interface SequenceSection extends Schema.Schema.Type<typeof SequenceSection> {}
 
@@ -139,6 +205,8 @@ export const SequenceTrack = Schema.Struct({
 		"numeric",
 		"transform",
 		"discrete",
+		"value",
+		"camera_cut",
 		"structure_only"
 	]),
 	sections: Schema.Array(SequenceSection).check(Schema.isMaxLength(1000000))
@@ -149,6 +217,10 @@ export const SequenceBinding = Schema.Struct({
 	id: Schema.String,
 	name: Schema.Union([Schema.String, Schema.Null]),
 	possessed_object_class: Schema.Union([Schema.String, Schema.Null]),
+	kind: Schema.Literals(["possessable", "spawnable", "unknown"]),
+	parent_id: Schema.NullOr(Schema.String),
+	object_template: Schema.NullOr(Schema.String),
+	object_template_class: Schema.NullOr(Schema.String),
 	tracks: Schema.Array(SequenceTrack).check(Schema.isMaxLength(1000000))
 }).annotate({ identifier: "SequenceBinding" });
 export interface SequenceBinding extends Schema.Schema.Type<typeof SequenceBinding> {}
@@ -191,7 +263,7 @@ export const SequenceGap = Schema.Struct({
 export interface SequenceGap extends Schema.Schema.Type<typeof SequenceGap> {}
 
 export const LevelSequenceProjection = Schema.Struct({
-	schema_version: Schema.Literal(5),
+	schema_version: Schema.Literal(6),
 	object_path: Schema.String,
 	movie_scene_path: Schema.Union([Schema.String, Schema.Null]),
 	tick_resolution: Schema.Union([SequenceRate, Schema.Null]),

@@ -209,6 +209,7 @@ fn asset_output_from_decoded(package: &Package, decoded: DecodedAsset) -> AssetO
         DecodedAsset::DataTable(datatable) => {
             let row_count = datatable.rows.len();
             AssetOutput {
+                native_data: None,
                 tail_bytes: 0,
                 bones: Vec::new(),
                 reference_pose: None,
@@ -248,6 +249,7 @@ fn asset_output_from_decoded(package: &Package, decoded: DecodedAsset) -> AssetO
         DecodedAsset::CurveTable(curve_table) => {
             let row_count = curve_table.rows.len();
             AssetOutput {
+                native_data: None,
                 tail_bytes: 0,
                 bones: Vec::new(),
                 reference_pose: None,
@@ -285,6 +287,7 @@ fn asset_output_from_decoded(package: &Package, decoded: DecodedAsset) -> AssetO
             }
         }
         DecodedAsset::StringTable(string_table) => AssetOutput {
+            native_data: None,
             tail_bytes: 0,
             bones: Vec::new(),
             reference_pose: None,
@@ -317,6 +320,7 @@ fn asset_output_from_decoded(package: &Package, decoded: DecodedAsset) -> AssetO
         DecodedAsset::DataAsset(data_asset) => {
             let kind = data_asset_kind(data_asset.class_path.as_str());
             AssetOutput {
+                native_data: None,
                 tail_bytes: 0,
                 bones: Vec::new(),
                 reference_pose: None,
@@ -354,6 +358,9 @@ fn asset_output_from_decoded(package: &Package, decoded: DecodedAsset) -> AssetO
             struct_flags: None,
             struct_fields: Vec::new(),
             properties: property_outputs(package, object.properties),
+            native_data: object
+                .native_data
+                .map(|value| Box::new(value_output(package, *value))),
             tail_bytes: object.tail.len(),
             bones: Vec::new(),
             reference_pose: None,
@@ -376,6 +383,7 @@ fn asset_output_from_decoded(package: &Package, decoded: DecodedAsset) -> AssetO
             struct_flags: None,
             struct_fields: Vec::new(),
             properties: property_outputs(package, node.properties),
+            native_data: None,
             tail_bytes: node.tail.len(),
             bones: Vec::new(),
             reference_pose: None,
@@ -398,6 +406,7 @@ fn asset_output_from_decoded(package: &Package, decoded: DecodedAsset) -> AssetO
             struct_flags: None,
             struct_fields: Vec::new(),
             properties: property_outputs(package, sequence.properties),
+            native_data: None,
             tail_bytes: 0,
             bones: Vec::new(),
             reference_pose: None,
@@ -420,6 +429,7 @@ fn asset_output_from_decoded(package: &Package, decoded: DecodedAsset) -> AssetO
             struct_flags: None,
             struct_fields: Vec::new(),
             properties: property_outputs(package, skeleton.properties),
+            native_data: None,
             tail_bytes: skeleton.tail.len(),
             reference_pose: skeleton
                 .reference_pose
@@ -439,6 +449,7 @@ fn asset_output_from_decoded(package: &Package, decoded: DecodedAsset) -> AssetO
         DecodedAsset::Enum(decoded_enum) => {
             let row_count = decoded_enum.entries.len();
             AssetOutput {
+                native_data: None,
                 tail_bytes: 0,
                 bones: Vec::new(),
                 reference_pose: None,
@@ -472,6 +483,7 @@ fn asset_output_from_decoded(package: &Package, decoded: DecodedAsset) -> AssetO
         DecodedAsset::Struct(decoded_struct) => {
             let row_count = decoded_struct.fields.len();
             AssetOutput {
+                native_data: None,
                 tail_bytes: 0,
                 bones: Vec::new(),
                 reference_pose: None,
@@ -581,6 +593,9 @@ pub struct AssetOutput {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub struct_fields: Vec<StructFieldOutput>,
     pub properties: Vec<PropertyOutput>,
+    /// Decoded native records, separate from tagged properties.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_data: Option<Box<PropertyValueOutput>>,
     /// Count of unparsed class-specific bytes retained after the property stream
     /// (e.g. a `StaticMesh`/`Texture2D` binary tail). Omitted when zero.
     #[serde(skip_serializing_if = "is_zero_u64")]
@@ -795,7 +810,7 @@ pub enum PropertyValueOutput {
     },
 }
 
-fn value_output(package: &Package, value: PropertyValue) -> PropertyValueOutput {
+pub(crate) fn value_output(package: &Package, value: PropertyValue) -> PropertyValueOutput {
     match value {
         PropertyValue::NativeStruct { fields } => PropertyValueOutput::NativeStruct {
             fields: fields

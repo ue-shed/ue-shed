@@ -178,13 +178,19 @@ describe("AssetReader protocol boundary validation", () => {
 	it("retains diagnostics and a partial terminal outcome for one Blueprint result", async () => {
 		const contract = {
 			name: "uasset-io" as const,
-			version: { major: 1 as const, minor: 2 }
+			version: { major: 1 as const, minor: 7 }
 		};
 		const blueprint: BlueprintGraphProjection = {
 			coverage_gaps: [],
 			graphs: [],
 			object_path: "/Game/Blueprints/BP_Partial.BP_Partial",
-			schema_version: 1
+			schema_version: 2,
+			definition: {
+				parent_class: null,
+				variables: null,
+				default_object: null,
+				construction_script: null
+			}
 		};
 		const events = (async function* (): AsyncGenerator<ProtocolEvent> {
 			yield {

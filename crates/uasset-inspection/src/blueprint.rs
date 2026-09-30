@@ -4,6 +4,11 @@
 //! to lay out and inspect the saved graph, but deliberately does not claim Blueprint compilation
 //! or execution semantics.
 
+mod definition;
+pub use definition::{
+    BlueprintComponentNode, BlueprintConstructionScript, BlueprintDefinition, BlueprintSavedObject,
+    BlueprintVariable,
+};
 use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
@@ -17,7 +22,7 @@ use uasset_parser::property::{PropertyStream, PropertyValue, RawReason, TextHist
 
 use crate::generic::{PropertyOutput, property_outputs};
 
-pub const BLUEPRINT_GRAPH_SCHEMA_VERSION: u8 = 1;
+pub const BLUEPRINT_GRAPH_SCHEMA_VERSION: u8 = 2;
 const CONTROL_RIG_BLUEPRINT_CLASS: &str = "/Script/ControlRigDeveloper.ControlRigBlueprint";
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -25,6 +30,7 @@ pub struct BlueprintGraphProjection {
     pub schema_version: u8,
     pub object_path: String,
     pub graphs: Vec<BlueprintGraph>,
+    pub definition: BlueprintDefinition,
     pub coverage_gaps: Vec<BlueprintGraphCoverageGap>,
 }
 
@@ -187,6 +193,7 @@ pub enum BlueprintGraphCoverageGapReason {
     UnresolvedLinkedPin,
     UndecodedNodeProperty,
     NativeNodeSubclassTail,
+    IncompleteDefinition,
 }
 
 /// Projects all saved `UEdGraph` exports in one package.
@@ -220,10 +227,12 @@ pub fn project_blueprint_graphs(
         .map(|graph| project_graph(package, graph, &nodes_by_path, &mut coverage_gaps))
         .collect();
 
+    let definition = definition::project(package, assets, &object_path, &mut coverage_gaps);
     Some(BlueprintGraphProjection {
         schema_version: BLUEPRINT_GRAPH_SCHEMA_VERSION,
         object_path,
         graphs,
+        definition,
         coverage_gaps,
     })
 }

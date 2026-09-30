@@ -7,6 +7,51 @@ import {
 } from "./fixtures/workbench-test.js";
 
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
+test("inspects saved strings, null object keys and camera binding scope without Unreal", async ({
+	offlineBlueprint: { harness, workbench }
+}) => {
+	test.setTimeout(60_000);
+	await workbench.openRoute("Sequencer");
+	const page = workbench.page;
+	await page
+		.getByLabel("Sequence asset path")
+		.fill(
+			resolve(
+				repositoryRoot,
+				"fixtures/unreal-project/Content/Fixture/ParserNative/LS_SavedDetails.uasset"
+			)
+		);
+	await page.getByRole("button", { name: "Open sequence" }).click();
+	await expect(page.getByText("Saved evidence decoded", { exact: true })).toBeVisible();
+	const sections = page.getByRole("list", { name: "Sections" });
+	await sections
+		.getByRole("listitem")
+		.filter({ hasText: "Root · Label" })
+		.getByRole("button")
+		.click();
+	const inspector = page.getByRole("region", { name: "Section inspector" });
+	await expect(inspector).toContainText('100 · "世界 🌟"');
+	await inspector.getByText("Saved section settings", { exact: true }).click();
+	await expect(inspector).toContainText("row index: 2");
+	await sections
+		.getByRole("listitem")
+		.filter({ hasText: "Root · Mesh" })
+		.getByRole("button")
+		.click();
+	await expect(inspector).toContainText("24 · null object");
+	await sections
+		.getByRole("listitem")
+		.filter({ hasText: "MovieSceneCameraCutTrack" })
+		.getByRole("button")
+		.nth(2)
+		.click();
+	await expect(inspector.getByRole("region", { name: "Camera binding" })).toContainText(
+		"Sequence ID: 42"
+	);
+	await expect(inspector).toContainText("Resolve parent index: 1");
+	expect(await harness.launchCount()).toBe(0);
+});
+
 test("inspects saved boolean and integer keys with omitted defaults", async ({
 	offlineBlueprint: { harness, workbench }
 }) => {

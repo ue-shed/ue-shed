@@ -7,6 +7,11 @@
 use serde::{Deserialize, Serialize};
 mod discrete;
 pub use discrete::{SequenceDiscreteChannel, SequenceDiscreteChannelData, SequenceDiscreteKey};
+mod saved;
+pub use saved::{
+    SequenceCameraCut, SequenceObjectBindingId, SequenceObjectChannel, SequenceObjectValue,
+    SequenceSectionSettings, SequenceStringChannel, SequenceValueChannel,
+};
 mod numeric;
 pub use numeric::{SequenceNumericChannel, SequenceNumericKey};
 use uasset_parser::asset::{DecodedAsset, DecodedUObject};
@@ -116,6 +121,10 @@ pub struct SequenceBinding {
     pub id: String,
     pub name: Option<String>,
     pub possessed_object_class: Option<String>,
+    pub kind: String,
+    pub parent_id: Option<String>,
+    pub object_template: Option<String>,
+    pub object_template_class: Option<String>,
     pub tracks: Vec<SequenceTrack>,
 }
 
@@ -137,6 +146,8 @@ pub enum SequenceTrackContent {
     Numeric,
     Transform,
     Discrete,
+    Value,
+    CameraCut,
     StructureOnly,
 }
 
@@ -150,6 +161,9 @@ pub struct SequenceSection {
     pub text_keys: Vec<SequenceTextKey>,
     pub numeric_channels: Vec<SequenceNumericChannel>,
     pub discrete_channels: Vec<SequenceDiscreteChannel>,
+    pub value_channels: Vec<SequenceValueChannel>,
+    pub settings: SequenceSectionSettings,
+    pub camera_cut: Option<SequenceCameraCut>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
@@ -198,7 +212,7 @@ pub fn project_level_sequence(
         objects(assets).find(|object| object.class_path.as_str() == LEVEL_SEQUENCE_CLASS)?;
     let (references, reference_coverage_gaps) = inventory_references(package, assets);
     let mut projection = LevelSequenceProjection {
-        schema_version: 5,
+        schema_version: 6,
         object_path: sequence.object_path.to_string(),
         movie_scene_path: None,
         tick_resolution: None,
@@ -236,7 +250,13 @@ pub fn project_level_sequence(
     projection.display_rate = frame_rate(package, &movie_scene.properties, "DisplayRate");
     projection.playback_range = frame_range(package, &movie_scene.properties, "PlaybackRange");
 
-    let possessables = possessable_metadata(package, &movie_scene.properties);
+    let possessables = possessable_metadata(
+        package,
+        assets,
+        &movie_scene.properties,
+        movie_scene.object_path.as_str(),
+        &mut projection.coverage_gaps,
+    );
     if let Some(PropertyValue::Array(bindings)) =
         property(package, &movie_scene.properties, "ObjectBindings")
     {
@@ -271,6 +291,10 @@ pub fn project_level_sequence(
                 id,
                 name: metadata.and_then(|value| value.name.clone()),
                 possessed_object_class: metadata.and_then(|value| value.object_class.clone()),
+                kind: metadata.map_or("unknown".into(), |v| v.kind.clone()),
+                parent_id: metadata.and_then(|v| v.parent_id.clone()),
+                object_template: metadata.and_then(|v| v.object_template.clone()),
+                object_template_class: metadata.and_then(|v| v.object_template_class.clone()),
                 tracks,
             });
         }
@@ -284,6 +308,28 @@ pub fn project_level_sequence(
         movie_scene.object_path.as_str(),
         &mut projection.coverage_gaps,
     );
+    if let Some(value) = property(package, &movie_scene.properties, "CameraCutTrack") {
+        let track = if let PropertyValue::ObjectRef(index) = value {
+            resolve_object(package, *index).and_then(|path| object_at_path(assets, &path))
+        } else {
+            None
+        };
+        if let Some(track) = track {
+            projection.root_tracks.push(project_track(
+                package,
+                assets,
+                track,
+                &mut projection.coverage_gaps,
+            ));
+        } else if !matches!(value, PropertyValue::ObjectRef(PackageIndex::Null)) {
+            gap(
+                &mut projection,
+                movie_scene.object_path.as_str(),
+                "CameraCutTrack",
+                SequenceCoverageGapReason::MissingReference,
+            );
+        }
+    }
     Some(projection)
 }
 
@@ -302,6 +348,16 @@ fn inventory_references(
             &mut references,
             &mut gaps,
         );
+        if let Some(value) = object.native_data.as_deref() {
+            inventory_property_value(
+                package,
+                object,
+                "$native_data",
+                value,
+                &mut references,
+                &mut gaps,
+            );
+        }
         if !object.tail.is_empty() {
             gaps.push(SequenceReferenceCoverageGap {
                 owner_path: object.object_path.to_string(),
@@ -513,29 +569,66 @@ struct PossessableMetadata {
     id: String,
     name: Option<String>,
     object_class: Option<String>,
+    kind: String,
+    parent_id: Option<String>,
+    object_template: Option<String>,
+    object_template_class: Option<String>,
 }
 
 fn possessable_metadata(
     package: &Package,
+    assets: &[DecodedAsset],
     properties: &PropertyStream,
+    owner: &str,
+    gaps: &mut Vec<SequenceCoverageGap>,
 ) -> Vec<PossessableMetadata> {
-    let Some(PropertyValue::Array(possessables)) = property(package, properties, "Possessables")
-    else {
-        return Vec::new();
-    };
-    possessables
-        .iter()
-        .filter_map(|value| {
+    let mut result = Vec::new();
+    for (field, kind) in [("Possessables", "possessable"), ("Spawnables", "spawnable")] {
+        let Some(raw) = property(package, properties, field) else {
+            continue;
+        };
+        let wrong = || SequenceCoverageGap {
+            object_path: owner.into(),
+            property_path: field.into(),
+            reason: SequenceCoverageGapReason::WrongValueKind,
+        };
+        let PropertyValue::Array(values) = raw else {
+            gaps.push(wrong());
+            continue;
+        };
+        for value in values {
             let PropertyValue::Struct(value) = value else {
-                return None;
+                gaps.push(wrong());
+                continue;
             };
-            Some(PossessableMetadata {
-                id: guid(package, value, "Guid")?,
+            let Some(id) = guid(package, value, "Guid") else {
+                gaps.push(wrong());
+                continue;
+            };
+            let object_template = object_reference(package, value, "ObjectTemplate");
+            let object_template_class = object_template
+                .as_ref()
+                .and_then(|path| object_at_path(assets, path))
+                .map(|v| v.class_path.to_string());
+            if kind == "spawnable" && object_template_class.is_none() {
+                gaps.push(SequenceCoverageGap {
+                    object_path: owner.into(),
+                    property_path: format!("{field}.ObjectTemplate"),
+                    reason: SequenceCoverageGapReason::MissingReference,
+                });
+            }
+            result.push(PossessableMetadata {
+                id,
                 name: string(package, value, "Name"),
                 object_class: soft_object_path(package, value, "PossessedObjectClass"),
-            })
-        })
-        .collect()
+                kind: kind.into(),
+                parent_id: guid(package, value, "ParentGuid"),
+                object_template,
+                object_template_class,
+            });
+        }
+    }
+    result
 }
 
 fn project_track_references(
@@ -617,6 +710,9 @@ fn project_track(
         | "/Script/MovieSceneTracks.MovieSceneIntegerTrack"
         | "/Script/MovieSceneTracks.MovieSceneByteTrack"
         | "/Script/MovieSceneTracks.MovieSceneEnumTrack" => SequenceTrackContent::Discrete,
+        "/Script/MovieSceneTracks.MovieSceneStringTrack"
+        | "/Script/MovieSceneTracks.MovieSceneObjectPropertyTrack" => SequenceTrackContent::Value,
+        "/Script/MovieSceneTracks.MovieSceneCameraCutTrack" => SequenceTrackContent::CameraCut,
         _ => SequenceTrackContent::StructureOnly,
     };
     if content == SequenceTrackContent::StructureOnly {
@@ -704,6 +800,17 @@ fn project_section(
         text_keys,
         numeric_channels,
         discrete_channels,
+        value_channels: if content == SequenceTrackContent::Value {
+            saved::channels(package, section, gaps)
+        } else {
+            Vec::new()
+        },
+        settings: saved::settings(package, section, gaps),
+        camera_cut: if content == SequenceTrackContent::CameraCut {
+            Some(saved::camera_cut(package, section, gaps))
+        } else {
+            None
+        },
     }
 }
 

@@ -1,0 +1,3358 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$defs": {
+		"SequenceRate": {
+			"type": "object",
+			"properties": {
+				"numerator": {
+					"type": "integer"
+				},
+				"denominator": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 1
+						}
+					]
+				}
+			},
+			"required": ["numerator", "denominator"],
+			"additionalProperties": false
+		},
+		"SequenceBound": {
+			"type": "object",
+			"properties": {
+				"kind": {
+					"type": "string",
+					"enum": ["exclusive", "inclusive", "open"]
+				},
+				"frame": {
+					"type": "integer"
+				}
+			},
+			"required": ["kind", "frame"],
+			"additionalProperties": false
+		},
+		"SequenceRange": {
+			"type": "object",
+			"properties": {
+				"lower": {
+					"$ref": "#/$defs/SequenceBound"
+				},
+				"upper": {
+					"$ref": "#/$defs/SequenceBound"
+				}
+			},
+			"required": ["lower", "upper"],
+			"additionalProperties": false
+		},
+		"SequenceTextKey": {
+			"type": "object",
+			"properties": {
+				"frame": {
+					"type": "integer"
+				},
+				"source": {
+					"type": "string"
+				},
+				"identity": {
+					"anyOf": [
+						{
+							"type": "object",
+							"properties": {
+								"status": {
+									"type": "string",
+									"enum": ["resolved"]
+								},
+								"namespace": {
+									"type": "string"
+								},
+								"key": {
+									"type": "string"
+								}
+							},
+							"required": ["status", "namespace", "key"],
+							"additionalProperties": false
+						},
+						{
+							"type": "object",
+							"properties": {
+								"status": {
+									"type": "string",
+									"enum": ["unresolved"]
+								}
+							},
+							"required": ["status"],
+							"additionalProperties": false
+						}
+					]
+				}
+			},
+			"required": ["frame", "source", "identity"],
+			"additionalProperties": false
+		},
+		"SequenceNumericKey": {
+			"type": "object",
+			"properties": {
+				"frame": {
+					"type": "integer"
+				},
+				"value": {
+					"type": "number"
+				},
+				"interpolation": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 0
+						},
+						{
+							"maximum": 255
+						}
+					]
+				},
+				"tangent_mode": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 0
+						},
+						{
+							"maximum": 255
+						}
+					]
+				},
+				"tangent_weight_mode": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 0
+						},
+						{
+							"maximum": 255
+						}
+					]
+				},
+				"arrive_tangent": {
+					"type": "number"
+				},
+				"leave_tangent": {
+					"type": "number"
+				},
+				"arrive_tangent_weight": {
+					"type": "number"
+				},
+				"leave_tangent_weight": {
+					"type": "number"
+				}
+			},
+			"required": [
+				"frame",
+				"value",
+				"interpolation",
+				"tangent_mode",
+				"tangent_weight_mode",
+				"arrive_tangent",
+				"leave_tangent",
+				"arrive_tangent_weight",
+				"leave_tangent_weight"
+			],
+			"additionalProperties": false
+		},
+		"SequenceNumericChannel": {
+			"type": "object",
+			"properties": {
+				"property_path": {
+					"type": "string"
+				},
+				"enabled": {
+					"anyOf": [
+						{
+							"type": "boolean"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"default_value": {
+					"anyOf": [
+						{
+							"type": "number"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"pre_extrapolation": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 0
+						},
+						{
+							"maximum": 255
+						}
+					]
+				},
+				"post_extrapolation": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 0
+						},
+						{
+							"maximum": 255
+						}
+					]
+				},
+				"tick_resolution": {
+					"$ref": "#/$defs/SequenceRate"
+				},
+				"show_curve": {
+					"type": "boolean"
+				},
+				"keys": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/SequenceNumericKey"
+					},
+					"allOf": [
+						{
+							"maxItems": 1000000
+						}
+					]
+				}
+			},
+			"required": [
+				"property_path",
+				"enabled",
+				"default_value",
+				"pre_extrapolation",
+				"post_extrapolation",
+				"tick_resolution",
+				"show_curve",
+				"keys"
+			],
+			"additionalProperties": false
+		},
+		"SequenceDiscreteChannel": {
+			"anyOf": [
+				{
+					"type": "object",
+					"properties": {
+						"value_type": {
+							"type": "string",
+							"enum": ["bool"]
+						},
+						"property_path": {
+							"type": "string"
+						},
+						"has_default_value": {
+							"anyOf": [
+								{
+									"type": "boolean"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"default_value": {
+							"anyOf": [
+								{
+									"type": "boolean"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"pre_extrapolation": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"post_extrapolation": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"interpolate_linear_keys": {
+							"anyOf": [
+								{
+									"type": "boolean"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"externally_inverted": {
+							"anyOf": [
+								{
+									"type": "boolean"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"enum_path": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"keys": {
+							"anyOf": [
+								{
+									"type": "array",
+									"items": {
+										"type": "object",
+										"properties": {
+											"frame": {
+												"type": "integer",
+												"allOf": [
+													{
+														"minimum": -2147483648
+													},
+													{
+														"maximum": 2147483647
+													}
+												]
+											},
+											"value": {
+												"type": "boolean"
+											}
+										},
+										"required": ["frame", "value"],
+										"additionalProperties": false
+									},
+									"allOf": [
+										{
+											"maxItems": 1000000
+										}
+									]
+								},
+								{
+									"type": "null"
+								}
+							]
+						}
+					},
+					"required": [
+						"value_type",
+						"property_path",
+						"has_default_value",
+						"default_value",
+						"pre_extrapolation",
+						"post_extrapolation",
+						"interpolate_linear_keys",
+						"externally_inverted",
+						"enum_path",
+						"keys"
+					],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_type": {
+							"type": "string",
+							"enum": ["integer"]
+						},
+						"property_path": {
+							"type": "string"
+						},
+						"has_default_value": {
+							"anyOf": [
+								{
+									"type": "boolean"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"default_value": {
+							"anyOf": [
+								{
+									"type": "integer",
+									"allOf": [
+										{
+											"minimum": -2147483648
+										},
+										{
+											"maximum": 2147483647
+										}
+									]
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"pre_extrapolation": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"post_extrapolation": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"interpolate_linear_keys": {
+							"anyOf": [
+								{
+									"type": "boolean"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"externally_inverted": {
+							"anyOf": [
+								{
+									"type": "boolean"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"enum_path": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"keys": {
+							"anyOf": [
+								{
+									"type": "array",
+									"items": {
+										"type": "object",
+										"properties": {
+											"frame": {
+												"type": "integer",
+												"allOf": [
+													{
+														"minimum": -2147483648
+													},
+													{
+														"maximum": 2147483647
+													}
+												]
+											},
+											"value": {
+												"type": "integer",
+												"allOf": [
+													{
+														"minimum": -2147483648
+													},
+													{
+														"maximum": 2147483647
+													}
+												]
+											}
+										},
+										"required": ["frame", "value"],
+										"additionalProperties": false
+									},
+									"allOf": [
+										{
+											"maxItems": 1000000
+										}
+									]
+								},
+								{
+									"type": "null"
+								}
+							]
+						}
+					},
+					"required": [
+						"value_type",
+						"property_path",
+						"has_default_value",
+						"default_value",
+						"pre_extrapolation",
+						"post_extrapolation",
+						"interpolate_linear_keys",
+						"externally_inverted",
+						"enum_path",
+						"keys"
+					],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_type": {
+							"type": "string",
+							"enum": ["byte"]
+						},
+						"property_path": {
+							"type": "string"
+						},
+						"has_default_value": {
+							"anyOf": [
+								{
+									"type": "boolean"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"default_value": {
+							"anyOf": [
+								{
+									"type": "integer",
+									"allOf": [
+										{
+											"minimum": 0
+										},
+										{
+											"maximum": 255
+										}
+									]
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"pre_extrapolation": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"post_extrapolation": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"interpolate_linear_keys": {
+							"anyOf": [
+								{
+									"type": "boolean"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"externally_inverted": {
+							"anyOf": [
+								{
+									"type": "boolean"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"enum_path": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"keys": {
+							"anyOf": [
+								{
+									"type": "array",
+									"items": {
+										"type": "object",
+										"properties": {
+											"frame": {
+												"type": "integer",
+												"allOf": [
+													{
+														"minimum": -2147483648
+													},
+													{
+														"maximum": 2147483647
+													}
+												]
+											},
+											"value": {
+												"type": "integer",
+												"allOf": [
+													{
+														"minimum": 0
+													},
+													{
+														"maximum": 255
+													}
+												]
+											}
+										},
+										"required": ["frame", "value"],
+										"additionalProperties": false
+									},
+									"allOf": [
+										{
+											"maxItems": 1000000
+										}
+									]
+								},
+								{
+									"type": "null"
+								}
+							]
+						}
+					},
+					"required": [
+						"value_type",
+						"property_path",
+						"has_default_value",
+						"default_value",
+						"pre_extrapolation",
+						"post_extrapolation",
+						"interpolate_linear_keys",
+						"externally_inverted",
+						"enum_path",
+						"keys"
+					],
+					"additionalProperties": false
+				}
+			]
+		},
+		"SequenceValueChannel": {
+			"anyOf": [
+				{
+					"type": "object",
+					"properties": {
+						"value_type": {
+							"type": "string",
+							"enum": ["string"]
+						},
+						"property_path": {
+							"type": "string"
+						},
+						"has_default_value": {
+							"anyOf": [
+								{
+									"type": "boolean"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"default_value": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"keys": {
+							"anyOf": [
+								{
+									"type": "array",
+									"items": {
+										"type": "object",
+										"properties": {
+											"frame": {
+												"type": "integer",
+												"allOf": [
+													{
+														"minimum": -2147483648
+													},
+													{
+														"maximum": 2147483647
+													}
+												]
+											},
+											"value": {
+												"type": "string"
+											}
+										},
+										"required": ["frame", "value"],
+										"additionalProperties": false
+									},
+									"allOf": [
+										{
+											"maxItems": 1000000
+										}
+									]
+								},
+								{
+									"type": "null"
+								}
+							]
+						}
+					},
+					"required": [
+						"value_type",
+						"property_path",
+						"has_default_value",
+						"default_value",
+						"keys"
+					],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_type": {
+							"type": "string",
+							"enum": ["object"]
+						},
+						"property_path": {
+							"type": "string"
+						},
+						"property_class": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"default_value": {
+							"anyOf": [
+								{
+									"type": "object",
+									"properties": {
+										"soft_path": {
+											"anyOf": [
+												{
+													"type": "string"
+												},
+												{
+													"type": "null"
+												}
+											]
+										},
+										"hard_path": {
+											"anyOf": [
+												{
+													"type": "string"
+												},
+												{
+													"type": "null"
+												}
+											]
+										}
+									},
+									"required": ["soft_path", "hard_path"],
+									"additionalProperties": false
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"keys": {
+							"anyOf": [
+								{
+									"type": "array",
+									"items": {
+										"type": "object",
+										"properties": {
+											"frame": {
+												"type": "integer",
+												"allOf": [
+													{
+														"minimum": -2147483648
+													},
+													{
+														"maximum": 2147483647
+													}
+												]
+											},
+											"value": {
+												"type": "object",
+												"properties": {
+													"soft_path": {
+														"anyOf": [
+															{
+																"type": "string"
+															},
+															{
+																"type": "null"
+															}
+														]
+													},
+													"hard_path": {
+														"anyOf": [
+															{
+																"type": "string"
+															},
+															{
+																"type": "null"
+															}
+														]
+													}
+												},
+												"required": ["soft_path", "hard_path"],
+												"additionalProperties": false
+											}
+										},
+										"required": ["frame", "value"],
+										"additionalProperties": false
+									},
+									"allOf": [
+										{
+											"maxItems": 1000000
+										}
+									]
+								},
+								{
+									"type": "null"
+								}
+							]
+						}
+					},
+					"required": [
+						"value_type",
+						"property_path",
+						"property_class",
+						"default_value",
+						"keys"
+					],
+					"additionalProperties": false
+				}
+			]
+		},
+		"UAssetInspectionNonNegativeInt": {
+			"type": "integer",
+			"allOf": [
+				{
+					"minimum": 0
+				}
+			]
+		},
+		"SavedPropertyValue": {
+			"anyOf": [
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["native_struct"]
+						},
+						"fields": {
+							"$ref": "#/$defs/Arrays_"
+						}
+					},
+					"required": ["value_kind", "fields"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["instanced_struct"]
+						},
+						"struct_type": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"size": {
+							"$ref": "#/$defs/UAssetInspectionNonNegativeInt"
+						},
+						"value": {
+							"anyOf": [
+								{
+									"$ref": "#/$defs/SavedPropertyValue"
+								},
+								{
+									"type": "null"
+								}
+							]
+						}
+					},
+					"required": ["value_kind", "struct_type", "size", "value"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["bool"]
+						},
+						"value": {
+							"type": "boolean"
+						}
+					},
+					"required": ["value_kind", "value"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["int", "uint"]
+						},
+						"value": {
+							"anyOf": [
+								{
+									"type": "number"
+								},
+								{
+									"type": "string",
+									"enum": ["NaN"]
+								},
+								{
+									"type": "string",
+									"enum": ["Infinity"]
+								},
+								{
+									"type": "string",
+									"enum": ["-Infinity"]
+								}
+							]
+						}
+					},
+					"required": ["value_kind", "value"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["float", "double"]
+						},
+						"value": {
+							"anyOf": [
+								{
+									"anyOf": [
+										{
+											"type": "number"
+										},
+										{
+											"type": "string",
+											"enum": ["NaN"]
+										},
+										{
+											"type": "string",
+											"enum": ["Infinity"]
+										},
+										{
+											"type": "string",
+											"enum": ["-Infinity"]
+										}
+									]
+								},
+								{
+									"type": "null"
+								}
+							]
+						}
+					},
+					"required": ["value_kind", "value"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["name", "enum", "string", "guid", "soft_object_path"]
+						},
+						"value": {
+							"type": "string"
+						}
+					},
+					"required": ["value_kind", "value"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["text"]
+						},
+						"value": {
+							"type": "string"
+						},
+						"history": {
+							"type": "string",
+							"enum": ["none"]
+						}
+					},
+					"required": ["value_kind", "value", "history"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["text"]
+						},
+						"value": {
+							"type": "string"
+						},
+						"history": {
+							"type": "string",
+							"enum": ["base"]
+						},
+						"dev_notes": {
+							"type": "string"
+						},
+						"namespace": {
+							"type": "string"
+						},
+						"key": {
+							"type": "string"
+						}
+					},
+					"required": ["value_kind", "value", "history", "namespace", "key"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["text"]
+						},
+						"value": {
+							"type": "string"
+						},
+						"history": {
+							"type": "string",
+							"enum": ["string_table"]
+						},
+						"table_id": {
+							"type": "string"
+						},
+						"key": {
+							"type": "string"
+						}
+					},
+					"required": ["value_kind", "value", "history", "table_id", "key"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["object_ref"]
+						},
+						"value": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							]
+						}
+					},
+					"required": ["value_kind", "value"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"row_name": {
+							"type": "string"
+						},
+						"table_object_path": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"value_kind": {
+							"type": "string",
+							"enum": ["data_table_row_handle"]
+						}
+					},
+					"required": ["row_name", "table_object_path", "value_kind"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["vector"]
+						},
+						"x": {
+							"anyOf": [
+								{
+									"anyOf": [
+										{
+											"type": "number"
+										},
+										{
+											"type": "string",
+											"enum": ["NaN"]
+										},
+										{
+											"type": "string",
+											"enum": ["Infinity"]
+										},
+										{
+											"type": "string",
+											"enum": ["-Infinity"]
+										}
+									]
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"y": {
+							"anyOf": [
+								{
+									"anyOf": [
+										{
+											"type": "number"
+										},
+										{
+											"type": "string",
+											"enum": ["NaN"]
+										},
+										{
+											"type": "string",
+											"enum": ["Infinity"]
+										},
+										{
+											"type": "string",
+											"enum": ["-Infinity"]
+										}
+									]
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"z": {
+							"anyOf": [
+								{
+									"anyOf": [
+										{
+											"type": "number"
+										},
+										{
+											"type": "string",
+											"enum": ["NaN"]
+										},
+										{
+											"type": "string",
+											"enum": ["Infinity"]
+										},
+										{
+											"type": "string",
+											"enum": ["-Infinity"]
+										}
+									]
+								},
+								{
+									"type": "null"
+								}
+							]
+						}
+					},
+					"required": ["value_kind", "x", "y", "z"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["int_point"]
+						},
+						"x": {
+							"anyOf": [
+								{
+									"type": "number"
+								},
+								{
+									"type": "string",
+									"enum": ["NaN"]
+								},
+								{
+									"type": "string",
+									"enum": ["Infinity"]
+								},
+								{
+									"type": "string",
+									"enum": ["-Infinity"]
+								}
+							]
+						},
+						"y": {
+							"anyOf": [
+								{
+									"type": "number"
+								},
+								{
+									"type": "string",
+									"enum": ["NaN"]
+								},
+								{
+									"type": "string",
+									"enum": ["Infinity"]
+								},
+								{
+									"type": "string",
+									"enum": ["-Infinity"]
+								}
+							]
+						}
+					},
+					"required": ["value_kind", "x", "y"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["rotator"]
+						},
+						"pitch": {
+							"anyOf": [
+								{
+									"anyOf": [
+										{
+											"type": "number"
+										},
+										{
+											"type": "string",
+											"enum": ["NaN"]
+										},
+										{
+											"type": "string",
+											"enum": ["Infinity"]
+										},
+										{
+											"type": "string",
+											"enum": ["-Infinity"]
+										}
+									]
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"yaw": {
+							"anyOf": [
+								{
+									"anyOf": [
+										{
+											"type": "number"
+										},
+										{
+											"type": "string",
+											"enum": ["NaN"]
+										},
+										{
+											"type": "string",
+											"enum": ["Infinity"]
+										},
+										{
+											"type": "string",
+											"enum": ["-Infinity"]
+										}
+									]
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"roll": {
+							"anyOf": [
+								{
+									"anyOf": [
+										{
+											"type": "number"
+										},
+										{
+											"type": "string",
+											"enum": ["NaN"]
+										},
+										{
+											"type": "string",
+											"enum": ["Infinity"]
+										},
+										{
+											"type": "string",
+											"enum": ["-Infinity"]
+										}
+									]
+								},
+								{
+									"type": "null"
+								}
+							]
+						}
+					},
+					"required": ["value_kind", "pitch", "yaw", "roll"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["color"]
+						},
+						"r": {
+							"anyOf": [
+								{
+									"type": "number"
+								},
+								{
+									"type": "string",
+									"enum": ["NaN"]
+								},
+								{
+									"type": "string",
+									"enum": ["Infinity"]
+								},
+								{
+									"type": "string",
+									"enum": ["-Infinity"]
+								}
+							]
+						},
+						"g": {
+							"anyOf": [
+								{
+									"type": "number"
+								},
+								{
+									"type": "string",
+									"enum": ["NaN"]
+								},
+								{
+									"type": "string",
+									"enum": ["Infinity"]
+								},
+								{
+									"type": "string",
+									"enum": ["-Infinity"]
+								}
+							]
+						},
+						"b": {
+							"anyOf": [
+								{
+									"type": "number"
+								},
+								{
+									"type": "string",
+									"enum": ["NaN"]
+								},
+								{
+									"type": "string",
+									"enum": ["Infinity"]
+								},
+								{
+									"type": "string",
+									"enum": ["-Infinity"]
+								}
+							]
+						},
+						"a": {
+							"anyOf": [
+								{
+									"type": "number"
+								},
+								{
+									"type": "string",
+									"enum": ["NaN"]
+								},
+								{
+									"type": "string",
+									"enum": ["Infinity"]
+								},
+								{
+									"type": "string",
+									"enum": ["-Infinity"]
+								}
+							]
+						}
+					},
+					"required": ["value_kind", "r", "g", "b", "a"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["linear_color"]
+						},
+						"r": {
+							"anyOf": [
+								{
+									"anyOf": [
+										{
+											"type": "number"
+										},
+										{
+											"type": "string",
+											"enum": ["NaN"]
+										},
+										{
+											"type": "string",
+											"enum": ["Infinity"]
+										},
+										{
+											"type": "string",
+											"enum": ["-Infinity"]
+										}
+									]
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"g": {
+							"anyOf": [
+								{
+									"anyOf": [
+										{
+											"type": "number"
+										},
+										{
+											"type": "string",
+											"enum": ["NaN"]
+										},
+										{
+											"type": "string",
+											"enum": ["Infinity"]
+										},
+										{
+											"type": "string",
+											"enum": ["-Infinity"]
+										}
+									]
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"b": {
+							"anyOf": [
+								{
+									"anyOf": [
+										{
+											"type": "number"
+										},
+										{
+											"type": "string",
+											"enum": ["NaN"]
+										},
+										{
+											"type": "string",
+											"enum": ["Infinity"]
+										},
+										{
+											"type": "string",
+											"enum": ["-Infinity"]
+										}
+									]
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"a": {
+							"anyOf": [
+								{
+									"anyOf": [
+										{
+											"type": "number"
+										},
+										{
+											"type": "string",
+											"enum": ["NaN"]
+										},
+										{
+											"type": "string",
+											"enum": ["Infinity"]
+										},
+										{
+											"type": "string",
+											"enum": ["-Infinity"]
+										}
+									]
+								},
+								{
+									"type": "null"
+								}
+							]
+						}
+					},
+					"required": ["value_kind", "r", "g", "b", "a"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["array", "set"]
+						},
+						"values": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/SavedPropertyValue"
+							}
+						}
+					},
+					"required": ["value_kind", "values"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["map"]
+						},
+						"entries": {
+							"type": "array",
+							"items": {
+								"type": "object",
+								"properties": {
+									"key": {
+										"$ref": "#/$defs/SavedPropertyValue"
+									},
+									"value": {
+										"$ref": "#/$defs/SavedPropertyValue"
+									}
+								},
+								"required": ["key", "value"],
+								"additionalProperties": false
+							}
+						}
+					},
+					"required": ["value_kind", "entries"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["struct"]
+						},
+						"properties": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/SavedProperty"
+							}
+						}
+					},
+					"required": ["value_kind", "properties"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["raw"]
+						},
+						"reason": {
+							"type": "string"
+						},
+						"size": {
+							"$ref": "#/$defs/UAssetInspectionNonNegativeInt"
+						}
+					},
+					"required": ["value_kind", "reason", "size"],
+					"additionalProperties": false
+				}
+			]
+		},
+		"Arrays_": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"properties": {
+					"name": {
+						"type": "string"
+					},
+					"value": {
+						"$ref": "#/$defs/SavedPropertyValue"
+					}
+				},
+				"required": ["name", "value"],
+				"additionalProperties": false
+			}
+		},
+		"SavedProperty": {
+			"anyOf": [
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["native_struct"]
+						},
+						"fields": {
+							"$ref": "#/$defs/Arrays_"
+						},
+						"name": {
+							"type": "string"
+						},
+						"type": {
+							"type": "string"
+						}
+					},
+					"required": ["value_kind", "fields", "name", "type"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["instanced_struct"]
+						},
+						"struct_type": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"size": {
+							"$ref": "#/$defs/UAssetInspectionNonNegativeInt"
+						},
+						"value": {
+							"anyOf": [
+								{
+									"$ref": "#/$defs/SavedPropertyValue"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"name": {
+							"type": "string"
+						},
+						"type": {
+							"type": "string"
+						}
+					},
+					"required": ["value_kind", "struct_type", "size", "value", "name", "type"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["bool"]
+						},
+						"value": {
+							"type": "boolean"
+						},
+						"name": {
+							"type": "string"
+						},
+						"type": {
+							"type": "string"
+						}
+					},
+					"required": ["value_kind", "value", "name", "type"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["int", "uint"]
+						},
+						"value": {
+							"anyOf": [
+								{
+									"type": "number"
+								},
+								{
+									"type": "string",
+									"enum": ["NaN"]
+								},
+								{
+									"type": "string",
+									"enum": ["Infinity"]
+								},
+								{
+									"type": "string",
+									"enum": ["-Infinity"]
+								}
+							]
+						},
+						"name": {
+							"type": "string"
+						},
+						"type": {
+							"type": "string"
+						}
+					},
+					"required": ["value_kind", "value", "name", "type"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["float", "double"]
+						},
+						"value": {
+							"anyOf": [
+								{
+									"anyOf": [
+										{
+											"type": "number"
+										},
+										{
+											"type": "string",
+											"enum": ["NaN"]
+										},
+										{
+											"type": "string",
+											"enum": ["Infinity"]
+										},
+										{
+											"type": "string",
+											"enum": ["-Infinity"]
+										}
+									]
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"name": {
+							"type": "string"
+						},
+						"type": {
+							"type": "string"
+						}
+					},
+					"required": ["value_kind", "value", "name", "type"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["name", "enum", "string", "guid", "soft_object_path"]
+						},
+						"value": {
+							"type": "string"
+						},
+						"name": {
+							"type": "string"
+						},
+						"type": {
+							"type": "string"
+						}
+					},
+					"required": ["value_kind", "value", "name", "type"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["text"]
+						},
+						"value": {
+							"type": "string"
+						},
+						"history": {
+							"type": "string",
+							"enum": ["none"]
+						},
+						"name": {
+							"type": "string"
+						},
+						"type": {
+							"type": "string"
+						}
+					},
+					"required": ["value_kind", "value", "history", "name", "type"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["text"]
+						},
+						"value": {
+							"type": "string"
+						},
+						"history": {
+							"type": "string",
+							"enum": ["base"]
+						},
+						"dev_notes": {
+							"type": "string"
+						},
+						"namespace": {
+							"type": "string"
+						},
+						"key": {
+							"type": "string"
+						},
+						"name": {
+							"type": "string"
+						},
+						"type": {
+							"type": "string"
+						}
+					},
+					"required": [
+						"value_kind",
+						"value",
+						"history",
+						"namespace",
+						"key",
+						"name",
+						"type"
+					],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["text"]
+						},
+						"value": {
+							"type": "string"
+						},
+						"history": {
+							"type": "string",
+							"enum": ["string_table"]
+						},
+						"table_id": {
+							"type": "string"
+						},
+						"key": {
+							"type": "string"
+						},
+						"name": {
+							"type": "string"
+						},
+						"type": {
+							"type": "string"
+						}
+					},
+					"required": [
+						"value_kind",
+						"value",
+						"history",
+						"table_id",
+						"key",
+						"name",
+						"type"
+					],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["object_ref"]
+						},
+						"value": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"name": {
+							"type": "string"
+						},
+						"type": {
+							"type": "string"
+						}
+					},
+					"required": ["value_kind", "value", "name", "type"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"row_name": {
+							"type": "string"
+						},
+						"table_object_path": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"value_kind": {
+							"type": "string",
+							"enum": ["data_table_row_handle"]
+						},
+						"name": {
+							"type": "string"
+						},
+						"type": {
+							"type": "string"
+						}
+					},
+					"required": ["row_name", "table_object_path", "value_kind", "name", "type"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["vector"]
+						},
+						"x": {
+							"anyOf": [
+								{
+									"anyOf": [
+										{
+											"type": "number"
+										},
+										{
+											"type": "string",
+											"enum": ["NaN"]
+										},
+										{
+											"type": "string",
+											"enum": ["Infinity"]
+										},
+										{
+											"type": "string",
+											"enum": ["-Infinity"]
+										}
+									]
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"y": {
+							"anyOf": [
+								{
+									"anyOf": [
+										{
+											"type": "number"
+										},
+										{
+											"type": "string",
+											"enum": ["NaN"]
+										},
+										{
+											"type": "string",
+											"enum": ["Infinity"]
+										},
+										{
+											"type": "string",
+											"enum": ["-Infinity"]
+										}
+									]
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"z": {
+							"anyOf": [
+								{
+									"anyOf": [
+										{
+											"type": "number"
+										},
+										{
+											"type": "string",
+											"enum": ["NaN"]
+										},
+										{
+											"type": "string",
+											"enum": ["Infinity"]
+										},
+										{
+											"type": "string",
+											"enum": ["-Infinity"]
+										}
+									]
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"name": {
+							"type": "string"
+						},
+						"type": {
+							"type": "string"
+						}
+					},
+					"required": ["value_kind", "x", "y", "z", "name", "type"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["int_point"]
+						},
+						"x": {
+							"anyOf": [
+								{
+									"type": "number"
+								},
+								{
+									"type": "string",
+									"enum": ["NaN"]
+								},
+								{
+									"type": "string",
+									"enum": ["Infinity"]
+								},
+								{
+									"type": "string",
+									"enum": ["-Infinity"]
+								}
+							]
+						},
+						"y": {
+							"anyOf": [
+								{
+									"type": "number"
+								},
+								{
+									"type": "string",
+									"enum": ["NaN"]
+								},
+								{
+									"type": "string",
+									"enum": ["Infinity"]
+								},
+								{
+									"type": "string",
+									"enum": ["-Infinity"]
+								}
+							]
+						},
+						"name": {
+							"type": "string"
+						},
+						"type": {
+							"type": "string"
+						}
+					},
+					"required": ["value_kind", "x", "y", "name", "type"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["rotator"]
+						},
+						"pitch": {
+							"anyOf": [
+								{
+									"anyOf": [
+										{
+											"type": "number"
+										},
+										{
+											"type": "string",
+											"enum": ["NaN"]
+										},
+										{
+											"type": "string",
+											"enum": ["Infinity"]
+										},
+										{
+											"type": "string",
+											"enum": ["-Infinity"]
+										}
+									]
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"yaw": {
+							"anyOf": [
+								{
+									"anyOf": [
+										{
+											"type": "number"
+										},
+										{
+											"type": "string",
+											"enum": ["NaN"]
+										},
+										{
+											"type": "string",
+											"enum": ["Infinity"]
+										},
+										{
+											"type": "string",
+											"enum": ["-Infinity"]
+										}
+									]
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"roll": {
+							"anyOf": [
+								{
+									"anyOf": [
+										{
+											"type": "number"
+										},
+										{
+											"type": "string",
+											"enum": ["NaN"]
+										},
+										{
+											"type": "string",
+											"enum": ["Infinity"]
+										},
+										{
+											"type": "string",
+											"enum": ["-Infinity"]
+										}
+									]
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"name": {
+							"type": "string"
+						},
+						"type": {
+							"type": "string"
+						}
+					},
+					"required": ["value_kind", "pitch", "yaw", "roll", "name", "type"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["color"]
+						},
+						"r": {
+							"anyOf": [
+								{
+									"type": "number"
+								},
+								{
+									"type": "string",
+									"enum": ["NaN"]
+								},
+								{
+									"type": "string",
+									"enum": ["Infinity"]
+								},
+								{
+									"type": "string",
+									"enum": ["-Infinity"]
+								}
+							]
+						},
+						"g": {
+							"anyOf": [
+								{
+									"type": "number"
+								},
+								{
+									"type": "string",
+									"enum": ["NaN"]
+								},
+								{
+									"type": "string",
+									"enum": ["Infinity"]
+								},
+								{
+									"type": "string",
+									"enum": ["-Infinity"]
+								}
+							]
+						},
+						"b": {
+							"anyOf": [
+								{
+									"type": "number"
+								},
+								{
+									"type": "string",
+									"enum": ["NaN"]
+								},
+								{
+									"type": "string",
+									"enum": ["Infinity"]
+								},
+								{
+									"type": "string",
+									"enum": ["-Infinity"]
+								}
+							]
+						},
+						"a": {
+							"anyOf": [
+								{
+									"type": "number"
+								},
+								{
+									"type": "string",
+									"enum": ["NaN"]
+								},
+								{
+									"type": "string",
+									"enum": ["Infinity"]
+								},
+								{
+									"type": "string",
+									"enum": ["-Infinity"]
+								}
+							]
+						},
+						"name": {
+							"type": "string"
+						},
+						"type": {
+							"type": "string"
+						}
+					},
+					"required": ["value_kind", "r", "g", "b", "a", "name", "type"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["linear_color"]
+						},
+						"r": {
+							"anyOf": [
+								{
+									"anyOf": [
+										{
+											"type": "number"
+										},
+										{
+											"type": "string",
+											"enum": ["NaN"]
+										},
+										{
+											"type": "string",
+											"enum": ["Infinity"]
+										},
+										{
+											"type": "string",
+											"enum": ["-Infinity"]
+										}
+									]
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"g": {
+							"anyOf": [
+								{
+									"anyOf": [
+										{
+											"type": "number"
+										},
+										{
+											"type": "string",
+											"enum": ["NaN"]
+										},
+										{
+											"type": "string",
+											"enum": ["Infinity"]
+										},
+										{
+											"type": "string",
+											"enum": ["-Infinity"]
+										}
+									]
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"b": {
+							"anyOf": [
+								{
+									"anyOf": [
+										{
+											"type": "number"
+										},
+										{
+											"type": "string",
+											"enum": ["NaN"]
+										},
+										{
+											"type": "string",
+											"enum": ["Infinity"]
+										},
+										{
+											"type": "string",
+											"enum": ["-Infinity"]
+										}
+									]
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"a": {
+							"anyOf": [
+								{
+									"anyOf": [
+										{
+											"type": "number"
+										},
+										{
+											"type": "string",
+											"enum": ["NaN"]
+										},
+										{
+											"type": "string",
+											"enum": ["Infinity"]
+										},
+										{
+											"type": "string",
+											"enum": ["-Infinity"]
+										}
+									]
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"name": {
+							"type": "string"
+						},
+						"type": {
+							"type": "string"
+						}
+					},
+					"required": ["value_kind", "r", "g", "b", "a", "name", "type"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["array", "set"]
+						},
+						"values": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/SavedPropertyValue"
+							}
+						},
+						"name": {
+							"type": "string"
+						},
+						"type": {
+							"type": "string"
+						}
+					},
+					"required": ["value_kind", "values", "name", "type"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["map"]
+						},
+						"entries": {
+							"type": "array",
+							"items": {
+								"type": "object",
+								"properties": {
+									"key": {
+										"$ref": "#/$defs/SavedPropertyValue"
+									},
+									"value": {
+										"$ref": "#/$defs/SavedPropertyValue"
+									}
+								},
+								"required": ["key", "value"],
+								"additionalProperties": false
+							}
+						},
+						"name": {
+							"type": "string"
+						},
+						"type": {
+							"type": "string"
+						}
+					},
+					"required": ["value_kind", "entries", "name", "type"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["struct"]
+						},
+						"properties": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/SavedProperty"
+							}
+						},
+						"name": {
+							"type": "string"
+						},
+						"type": {
+							"type": "string"
+						}
+					},
+					"required": ["value_kind", "properties", "name", "type"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["raw"]
+						},
+						"reason": {
+							"type": "string"
+						},
+						"size": {
+							"$ref": "#/$defs/UAssetInspectionNonNegativeInt"
+						},
+						"name": {
+							"type": "string"
+						},
+						"type": {
+							"type": "string"
+						}
+					},
+					"required": ["value_kind", "reason", "size", "name", "type"],
+					"additionalProperties": false
+				}
+			]
+		},
+		"SequenceSectionSettings": {
+			"type": "object",
+			"properties": {
+				"row_index": {
+					"anyOf": [
+						{
+							"type": "integer",
+							"allOf": [
+								{
+									"minimum": -2147483648
+								},
+								{
+									"maximum": 2147483647
+								}
+							]
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"overlap_priority": {
+					"anyOf": [
+						{
+							"type": "integer",
+							"allOf": [
+								{
+									"minimum": -2147483648
+								},
+								{
+									"maximum": 2147483647
+								}
+							]
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"is_active": {
+					"anyOf": [
+						{
+							"type": "boolean"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"is_locked": {
+					"anyOf": [
+						{
+							"type": "boolean"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"pre_roll_frames": {
+					"anyOf": [
+						{
+							"type": "integer",
+							"allOf": [
+								{
+									"minimum": -2147483648
+								},
+								{
+									"maximum": 2147483647
+								}
+							]
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"post_roll_frames": {
+					"anyOf": [
+						{
+							"type": "integer",
+							"allOf": [
+								{
+									"minimum": -2147483648
+								},
+								{
+									"maximum": 2147483647
+								}
+							]
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"blend_type": {
+					"anyOf": [
+						{
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/SavedProperty"
+							},
+							"allOf": [
+								{
+									"maxItems": 1000000
+								}
+							]
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"easing": {
+					"anyOf": [
+						{
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/SavedProperty"
+							},
+							"allOf": [
+								{
+									"maxItems": 1000000
+								}
+							]
+						},
+						{
+							"type": "null"
+						}
+					]
+				}
+			},
+			"required": [
+				"row_index",
+				"overlap_priority",
+				"is_active",
+				"is_locked",
+				"pre_roll_frames",
+				"post_roll_frames",
+				"blend_type",
+				"easing"
+			],
+			"additionalProperties": false
+		},
+		"SequenceCameraCut": {
+			"type": "object",
+			"properties": {
+				"binding": {
+					"anyOf": [
+						{
+							"type": "object",
+							"properties": {
+								"guid": {
+									"anyOf": [
+										{
+											"type": "string"
+										},
+										{
+											"type": "null"
+										}
+									]
+								},
+								"sequence_id": {
+									"anyOf": [
+										{
+											"type": "integer",
+											"allOf": [
+												{
+													"minimum": -2147483648
+												},
+												{
+													"maximum": 2147483647
+												}
+											]
+										},
+										{
+											"type": "null"
+										}
+									]
+								},
+								"resolve_parent_index": {
+									"anyOf": [
+										{
+											"type": "integer",
+											"allOf": [
+												{
+													"minimum": -2147483648
+												},
+												{
+													"maximum": 2147483647
+												}
+											]
+										},
+										{
+											"type": "null"
+										}
+									]
+								}
+							},
+							"required": ["guid", "sequence_id", "resolve_parent_index"],
+							"additionalProperties": false
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"lock_previous_camera": {
+					"anyOf": [
+						{
+							"type": "boolean"
+						},
+						{
+							"type": "null"
+						}
+					]
+				}
+			},
+			"required": ["binding", "lock_previous_camera"],
+			"additionalProperties": false
+		},
+		"SequenceSection": {
+			"type": "object",
+			"properties": {
+				"object_path": {
+					"type": "string"
+				},
+				"class_path": {
+					"type": "string"
+				},
+				"range": {
+					"anyOf": [
+						{
+							"$ref": "#/$defs/SequenceRange"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"sequence_path": {
+					"anyOf": [
+						{
+							"type": "string"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"shot_display_name": {
+					"anyOf": [
+						{
+							"type": "string"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"text_keys": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/SequenceTextKey"
+					},
+					"allOf": [
+						{
+							"maxItems": 1000000
+						}
+					]
+				},
+				"numeric_channels": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/SequenceNumericChannel"
+					},
+					"allOf": [
+						{
+							"maxItems": 1000000
+						}
+					]
+				},
+				"discrete_channels": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/SequenceDiscreteChannel"
+					},
+					"allOf": [
+						{
+							"maxItems": 1000000
+						}
+					]
+				},
+				"value_channels": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/SequenceValueChannel"
+					},
+					"allOf": [
+						{
+							"maxItems": 1000000
+						}
+					]
+				},
+				"settings": {
+					"$ref": "#/$defs/SequenceSectionSettings"
+				},
+				"camera_cut": {
+					"anyOf": [
+						{
+							"$ref": "#/$defs/SequenceCameraCut"
+						},
+						{
+							"type": "null"
+						}
+					]
+				}
+			},
+			"required": [
+				"object_path",
+				"class_path",
+				"range",
+				"sequence_path",
+				"shot_display_name",
+				"text_keys",
+				"numeric_channels",
+				"discrete_channels",
+				"value_channels",
+				"settings",
+				"camera_cut"
+			],
+			"additionalProperties": false
+		},
+		"SequenceTrack": {
+			"type": "object",
+			"properties": {
+				"object_path": {
+					"type": "string"
+				},
+				"class_path": {
+					"type": "string"
+				},
+				"property_path": {
+					"anyOf": [
+						{
+							"type": "string"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"content": {
+					"type": "string",
+					"enum": [
+						"timed_text",
+						"sub_sequence",
+						"cinematic_shot",
+						"numeric",
+						"transform",
+						"discrete",
+						"value",
+						"camera_cut",
+						"structure_only"
+					]
+				},
+				"sections": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/SequenceSection"
+					},
+					"allOf": [
+						{
+							"maxItems": 1000000
+						}
+					]
+				}
+			},
+			"required": ["object_path", "class_path", "property_path", "content", "sections"],
+			"additionalProperties": false
+		},
+		"SequenceBinding": {
+			"type": "object",
+			"properties": {
+				"id": {
+					"type": "string"
+				},
+				"name": {
+					"anyOf": [
+						{
+							"type": "string"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"possessed_object_class": {
+					"anyOf": [
+						{
+							"type": "string"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"kind": {
+					"type": "string",
+					"enum": ["possessable", "spawnable", "unknown"]
+				},
+				"parent_id": {
+					"anyOf": [
+						{
+							"type": "string"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"object_template": {
+					"anyOf": [
+						{
+							"type": "string"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"object_template_class": {
+					"anyOf": [
+						{
+							"type": "string"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"tracks": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/SequenceTrack"
+					},
+					"allOf": [
+						{
+							"maxItems": 1000000
+						}
+					]
+				}
+			},
+			"required": [
+				"id",
+				"name",
+				"possessed_object_class",
+				"kind",
+				"parent_id",
+				"object_template",
+				"object_template_class",
+				"tracks"
+			],
+			"additionalProperties": false
+		},
+		"SequenceReference": {
+			"type": "object",
+			"properties": {
+				"owner_path": {
+					"type": "string"
+				},
+				"owner_class_path": {
+					"type": "string"
+				},
+				"property_path": {
+					"type": "string"
+				},
+				"kind": {
+					"type": "string",
+					"enum": ["object", "soft_object", "data_table_row_handle"]
+				},
+				"target_path": {
+					"type": "string"
+				},
+				"target_row": {
+					"type": "string"
+				},
+				"scope": {
+					"type": "string",
+					"enum": ["internal", "external"]
+				}
+			},
+			"required": [
+				"owner_path",
+				"owner_class_path",
+				"property_path",
+				"kind",
+				"target_path",
+				"scope"
+			],
+			"additionalProperties": false
+		},
+		"SequenceReferenceGap": {
+			"type": "object",
+			"properties": {
+				"owner_path": {
+					"type": "string"
+				},
+				"property_path": {
+					"type": "string"
+				},
+				"reason": {
+					"type": "string",
+					"enum": [
+						"raw_property_value",
+						"native_object_tail",
+						"unresolved_object_reference"
+					]
+				}
+			},
+			"required": ["owner_path", "property_path", "reason"],
+			"additionalProperties": false
+		},
+		"SequenceGap": {
+			"type": "object",
+			"properties": {
+				"object_path": {
+					"type": "string"
+				},
+				"property_path": {
+					"type": "string"
+				},
+				"reason": {
+					"type": "string",
+					"enum": [
+						"missing_reference",
+						"wrong_value_kind",
+						"mismatched_channel_lengths",
+						"unsupported_track_content",
+						"unsupported_section_content",
+						"missing_channel",
+						"missing_channel_mask"
+					]
+				}
+			},
+			"required": ["object_path", "property_path", "reason"],
+			"additionalProperties": false
+		},
+		"LevelSequenceProjection": {
+			"type": "object",
+			"properties": {
+				"schema_version": {
+					"type": "number",
+					"enum": [6]
+				},
+				"object_path": {
+					"type": "string"
+				},
+				"movie_scene_path": {
+					"anyOf": [
+						{
+							"type": "string"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"tick_resolution": {
+					"anyOf": [
+						{
+							"$ref": "#/$defs/SequenceRate"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"display_rate": {
+					"anyOf": [
+						{
+							"$ref": "#/$defs/SequenceRate"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"playback_range": {
+					"anyOf": [
+						{
+							"$ref": "#/$defs/SequenceRange"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"bindings": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/SequenceBinding"
+					},
+					"allOf": [
+						{
+							"maxItems": 1000000
+						}
+					]
+				},
+				"root_tracks": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/SequenceTrack"
+					},
+					"allOf": [
+						{
+							"maxItems": 1000000
+						}
+					]
+				},
+				"references": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/SequenceReference"
+					},
+					"allOf": [
+						{
+							"maxItems": 1000000
+						}
+					]
+				},
+				"reference_coverage_gaps": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/SequenceReferenceGap"
+					},
+					"allOf": [
+						{
+							"maxItems": 1000000
+						}
+					]
+				},
+				"coverage_gaps": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/SequenceGap"
+					},
+					"allOf": [
+						{
+							"maxItems": 1000000
+						}
+					]
+				}
+			},
+			"required": [
+				"schema_version",
+				"object_path",
+				"movie_scene_path",
+				"tick_resolution",
+				"display_rate",
+				"playback_range",
+				"bindings",
+				"root_tracks",
+				"references",
+				"reference_coverage_gaps",
+				"coverage_gaps"
+			],
+			"additionalProperties": false
+		}
+	},
+	"type": "object",
+	"properties": {
+		"schema_version": {
+			"type": "number",
+			"enum": [6]
+		},
+		"object_path": {
+			"type": "string"
+		},
+		"movie_scene_path": {
+			"anyOf": [
+				{
+					"type": "string"
+				},
+				{
+					"type": "null"
+				}
+			]
+		},
+		"tick_resolution": {
+			"anyOf": [
+				{
+					"$ref": "#/$defs/SequenceRate"
+				},
+				{
+					"type": "null"
+				}
+			]
+		},
+		"display_rate": {
+			"anyOf": [
+				{
+					"$ref": "#/$defs/SequenceRate"
+				},
+				{
+					"type": "null"
+				}
+			]
+		},
+		"playback_range": {
+			"anyOf": [
+				{
+					"$ref": "#/$defs/SequenceRange"
+				},
+				{
+					"type": "null"
+				}
+			]
+		},
+		"bindings": {
+			"type": "array",
+			"items": {
+				"$ref": "#/$defs/SequenceBinding"
+			},
+			"allOf": [
+				{
+					"maxItems": 1000000
+				}
+			]
+		},
+		"root_tracks": {
+			"type": "array",
+			"items": {
+				"$ref": "#/$defs/SequenceTrack"
+			},
+			"allOf": [
+				{
+					"maxItems": 1000000
+				}
+			]
+		},
+		"references": {
+			"type": "array",
+			"items": {
+				"$ref": "#/$defs/SequenceReference"
+			},
+			"allOf": [
+				{
+					"maxItems": 1000000
+				}
+			]
+		},
+		"reference_coverage_gaps": {
+			"type": "array",
+			"items": {
+				"$ref": "#/$defs/SequenceReferenceGap"
+			},
+			"allOf": [
+				{
+					"maxItems": 1000000
+				}
+			]
+		},
+		"coverage_gaps": {
+			"type": "array",
+			"items": {
+				"$ref": "#/$defs/SequenceGap"
+			},
+			"allOf": [
+				{
+					"maxItems": 1000000
+				}
+			]
+		}
+	},
+	"required": [
+		"schema_version",
+		"object_path",
+		"movie_scene_path",
+		"tick_resolution",
+		"display_rate",
+		"playback_range",
+		"bindings",
+		"root_tracks",
+		"references",
+		"reference_coverage_gaps",
+		"coverage_gaps"
+	],
+	"additionalProperties": false
+}

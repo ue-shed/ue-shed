@@ -8,7 +8,7 @@ use uasset_inspection::blueprint::{
     BlueprintGraphProjection, is_control_rig_blueprint_package, project_blueprint_graphs,
     saved_blueprint_graph_node_paths,
 };
-use uasset_inspection::generic::{InspectionJsonError, write_inspection_json};
+use uasset_inspection::generic::{InspectionJsonError, PropertyValueOutput, write_inspection_json};
 use uasset_inspection::level_sequence::{LevelSequenceProjection, project_level_sequence};
 use uasset_inspection::projection::{
     TEXTURE2D_CLASS, TextCoverageGap, TextOccurrence, TextureRecord, project_text_asset,
@@ -479,8 +479,72 @@ struct BlueprintGraphProjectionOutput<'a> {
     diagnostics: Vec<ProjectionDiagnostic>,
 }
 
+fn native_item_count(value: &PropertyValueOutput) -> usize {
+    let children = match value {
+        PropertyValueOutput::NativeStruct { fields } => {
+            fields.iter().fold(0_usize, |count, field| {
+                count.saturating_add(native_item_count(&field.value))
+            })
+        }
+        PropertyValueOutput::Array { values } | PropertyValueOutput::Set { values } => {
+            values.iter().fold(0_usize, |count, value| {
+                count.saturating_add(native_item_count(value))
+            })
+        }
+        PropertyValueOutput::Struct { properties } => {
+            properties.iter().fold(0_usize, |count, property| {
+                count.saturating_add(native_item_count(&property.value))
+            })
+        }
+        PropertyValueOutput::Map { entries } => entries.iter().fold(0_usize, |count, entry| {
+            count
+                .saturating_add(native_item_count(&entry.key))
+                .saturating_add(native_item_count(&entry.value))
+        }),
+        PropertyValueOutput::InstancedStruct { value, .. } => {
+            value.as_deref().map_or(0, native_item_count)
+        }
+        _ => 0,
+    };
+    1_usize.saturating_add(children)
+}
+
 fn blueprint_graph_item_count(blueprint: &BlueprintGraphProjection) -> usize {
     1_usize
+        .saturating_add(blueprint.definition.variables.as_ref().map_or(0, |v| {
+            v.iter().fold(0_usize, |count, variable| {
+                count
+                    .saturating_add(1)
+                    .saturating_add(variable.properties.len())
+            })
+        }))
+        .saturating_add(blueprint.definition.default_object.as_ref().map_or(0, |v| {
+            v.properties
+                .len()
+                .saturating_add(v.native_data.as_deref().map_or(0, native_item_count))
+        }))
+        .saturating_add(
+            blueprint
+                .definition
+                .construction_script
+                .as_ref()
+                .map_or(0, |v| {
+                    v.root_nodes.as_ref().map_or(0, Vec::len).saturating_add(
+                        v.nodes
+                            .iter()
+                            .map(|n| {
+                                1_usize
+                                    .saturating_add(n.children.as_ref().map_or(0, Vec::len))
+                                    .saturating_add(n.template.as_ref().map_or(0, |v| {
+                                        v.properties.len().saturating_add(
+                                            v.native_data.as_deref().map_or(0, native_item_count),
+                                        )
+                                    }))
+                            })
+                            .sum::<usize>(),
+                    )
+                }),
+        )
         .saturating_add(blueprint.coverage_gaps.len())
         .saturating_add(
             blueprint
@@ -533,6 +597,21 @@ fn level_sequence_item_count(sequence: &LevelSequenceProjection) -> usize {
                                                 .saturating_add(channel.key_count())
                                         },
                                     ))
+                                    .saturating_add(section.value_channels.iter().fold(
+                                        0_usize,
+                                        |count, channel| {
+                                            count
+                                                .saturating_add(1)
+                                                .saturating_add(channel.key_count())
+                                        },
+                                    ))
+                                    .saturating_add(usize::from(section.camera_cut.is_some()))
+                                    .saturating_add(
+                                        section.settings.blend_type.as_ref().map_or(0, Vec::len),
+                                    )
+                                    .saturating_add(
+                                        section.settings.easing.as_ref().map_or(0, Vec::len),
+                                    )
                                     .saturating_add(usize::from(section.sequence_path.is_some()))
                             })
                             .sum::<usize>(),
@@ -821,6 +900,71 @@ mod tests {
             }
         }
         assert_eq!(count - super::level_sequence_item_count(&sequence), 7 + 18);
+    }
+
+    #[test]
+    fn saved_channels_defaults_and_component_properties_consume_projection_budget() {
+        let bytes = include_bytes!(
+            "../../../fixtures/unreal-project/Content/Fixture/ParserNative/LS_SavedDetails.uasset"
+        );
+        let output: Value =
+            serde_json::from_str(&super::extract_level_sequences("saved.uasset", bytes)).unwrap();
+        let mut sequence: super::LevelSequenceProjection =
+            serde_json::from_value(output["sequences"][0].clone()).unwrap();
+        let count = super::level_sequence_item_count(&sequence);
+        for track in &mut sequence.root_tracks {
+            for section in &mut track.sections {
+                section.value_channels.clear();
+                section.camera_cut = None;
+            }
+        }
+        assert_eq!(
+            count - super::level_sequence_item_count(&sequence),
+            3 + 6 + 3
+        );
+        assert!(exceeds_limit(0, count, count - 1));
+        let bytes = include_bytes!(
+            "../../../fixtures/unreal-project/Content/Fixture/Blueprints/BP_ReviewFixture.uasset"
+        );
+        let output: Value =
+            serde_json::from_str(&super::extract_blueprints("review.uasset", bytes)).unwrap();
+        let mut blueprint: super::BlueprintGraphProjection =
+            serde_json::from_value(output["blueprints"][0].clone()).unwrap();
+        let count = super::blueprint_graph_item_count(&blueprint);
+        blueprint.definition.variables = None;
+        blueprint.definition.default_object = None;
+        blueprint.definition.construction_script = None;
+        assert!(count - super::blueprint_graph_item_count(&blueprint) > 6 + 3);
+        assert!(exceeds_limit(0, count, count - 1));
+    }
+
+    #[test]
+    fn native_member_arrays_count_toward_the_blueprint_budget() {
+        let output: Value = serde_json::from_str(&super::extract_blueprints(
+            "graph.uasset",
+            BLUEPRINT_FIXTURE,
+        ))
+        .unwrap();
+        let mut blueprint: super::BlueprintGraphProjection =
+            serde_json::from_value(output["blueprints"][0].clone()).unwrap();
+        let count = super::blueprint_graph_item_count(&blueprint);
+        let template = blueprint
+            .definition
+            .construction_script
+            .as_mut()
+            .unwrap()
+            .nodes[0]
+            .template
+            .as_mut()
+            .unwrap();
+        template.native_data = Some(Box::new(super::PropertyValueOutput::Array {
+            values: vec![
+                super::PropertyValueOutput::Bool { value: false };
+                super::MAX_PROJECTION_ITEMS
+            ],
+        }));
+        assert!(super::blueprint_graph_item_count(&blueprint) > super::MAX_PROJECTION_ITEMS);
+        assert!(super::blueprint_graph_item_count(&blueprint) > count);
     }
 
     #[test]

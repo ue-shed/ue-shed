@@ -23,7 +23,7 @@ const sequenceSchema: JsonSchema.JsonSchema = JSON.parse(
 	readFileSync(
 		join(
 			repositoryRoot,
-			"packages/uasset-inspection-wasm/contracts/level-sequence.v5.schema.json"
+			"packages/uasset-inspection-wasm/contracts/level-sequence.v6.schema.json"
 		),
 		"utf8"
 	)
@@ -44,6 +44,7 @@ const fixtures = [
 	"Content/Fixture/ParserNative/SK_Native.uasset",
 	"Content/Fixture/ParserNative/DA_Native.uasset",
 	"Content/Fixture/ParserNative/LS_Numeric.uasset",
+	"Content/Fixture/ParserNative/LS_SavedDetails.uasset",
 	"Content/Fixture/ParserNative/A_Native.uasset",
 
 	"Content/Fixture/Authoring/DT_Scalars.uasset",
@@ -132,7 +133,7 @@ const levelSequence = runtime.extractLevelSequences(
 );
 assert.equal(levelSequence.status, "complete");
 assert.equal(levelSequence.sequences.length, 1);
-assert.equal(levelSequence.sequences[0].schema_version, 5);
+assert.equal(levelSequence.sequences[0].schema_version, 6);
 decodeSequence(levelSequence.sequences[0]);
 assert.equal(levelSequence.sequences[0].reference_coverage_gaps.length, 0);
 assert.ok(
@@ -219,7 +220,7 @@ const nestedSequence = runtime.extractLevelSequences(
 	readFileSync(nestedSequenceFixture)
 );
 assert.equal(nestedSequence.status, "complete");
-assert.equal(nestedSequence.sequences[0].schema_version, 5);
+assert.equal(nestedSequence.sequences[0].schema_version, 6);
 decodeSequence(nestedSequence.sequences[0]);
 assert.equal(
 	nestedSequence.sequences[0].references.filter(
@@ -252,7 +253,7 @@ const blueprintPath = relative(repositoryRoot, blueprintFixture).replaceAll("\\"
 const blueprint = runtime.extractBlueprints(blueprintPath, readFileSync(blueprintFixture));
 assert.equal(blueprint.status, "ok");
 assert.equal(blueprint.blueprints.length, 1);
-assert.equal(blueprint.blueprints[0].schema_version, 1);
+assert.equal(blueprint.blueprints[0].schema_version, 2);
 assert.ok(blueprint.blueprints[0].graphs.length > 0);
 assert.ok(blueprint.blueprints[0].graphs.flatMap((graph) => graph.nodes).length > 0);
 assert.ok(

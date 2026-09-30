@@ -16,6 +16,7 @@
 		"@ue-shed/authoring": "workspace:*",
 		"@ue-shed/authoring-catalog": "workspace:*",
 		"@ue-shed/authoring-sdk": "workspace:*",
+		"@ue-shed/blueprints": "workspace:*",
 		"@ue-shed/cameras": "workspace:*",
 		"@ue-shed/config-explorer": "workspace:*",
 		"@ue-shed/engine": "workspace:*",

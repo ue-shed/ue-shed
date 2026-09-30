@@ -104,6 +104,7 @@ packages/
   unreal-connection/           # Remote Control and companion transports
   engine/            # Installed engines, projects, processes, sessions
   unreal-assets/               # Versioned read-only saved-package inspection
+  blueprints/                  # Headless saved graph navigation, search and visualization data
   ui-theme/                    # StyleX variables and suite themes
   ui/                          # Shared SolidJS + StyleX primitives
   authoring/                   # Data-authoring domain services

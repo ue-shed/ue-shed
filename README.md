@@ -31,6 +31,7 @@ workflows that connect to a separately enabled Unreal editor when you ask for th
 | **Data Authoring**      | Inspect typed DataTables, then stage safe live edits with drafts, undo/redo, and review.    | No for inspection; yes for editing and apply.    |
 | **Texture Asset Audit** | Scan texture content against rules and inspect serialized evidence and diagnostics.         | No; live previews are optional.                  |
 | **Game Text**           | Search player-facing text across DataTables, String Tables, and supported asset properties. | No.                                              |
+| **Blueprint Graphs**    | Inspect saved graphs, search nodes/pins, and review variables, defaults and components.     | No.                                              |
 | **Map Review**          | Author a review set, capture cameras, and compare immutable before/after runs.              | Yes for capture and editor actions.              |
 | **World Scout**         | Browse a live actor catalog, filter it, and follow or frame actors on a world map.          | Yes; enabled through the Observatory capability. |
 | **Camera Load Lab**     | Measure camera capture, readback, transport, and presentation as distinct stages.           | Yes.                                             |
@@ -92,6 +93,10 @@ The browser or desktop transport is an embedding decision; the domain client con
 same.
 
 ## How the pieces fit
+
+[`@ue-shed/blueprints`](packages/blueprints/README.md) provides headless graph navigation, search,
+reference layout and saved display metadata over native/WASM Blueprint projections. Workbench owns
+the showcase viewer; other hosts can use the package with their own rendering and file access.
 
 - [`crates/`](crates/) contains the Rust saved-package reader.
 - [`packages/`](packages/) contains reusable TypeScript domains, contracts, and clients.

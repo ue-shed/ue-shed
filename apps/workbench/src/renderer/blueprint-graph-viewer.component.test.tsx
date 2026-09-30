@@ -220,6 +220,20 @@ async function openPath() {
 }
 
 describe("BlueprintGraphViewer", () => {
+	it("searches saved nodes and pins across graphs and selects their owning node", async () => {
+		renderViewer(clientWith());
+		await openPath();
+		const user = userEvent.setup();
+		const search = screen.getByLabelText("Search saved nodes and pins");
+		await user.type(search, "Saved Value");
+		await user.click(screen.getByRole("button", { name: "node · Saved Value" }));
+		expect(screen.getByRole("heading", { name: "Saved Value" })).toBeTruthy();
+		await user.clear(search);
+		await user.type(search, "bEnabled");
+		await user.click(screen.getByRole("button", { name: "pin · bEnabled" }));
+		expect(screen.getByRole("heading", { name: /Apply Settings With/ })).toBeTruthy();
+	});
+
 	it("searches the selected project's saved package index and opens a result", async () => {
 		const readBlueprint = vi.fn((_path: string) => Effect.succeed(ready()));
 		const searchBlueprints = vi.fn((request: { readonly query: string }) => {

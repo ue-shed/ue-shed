@@ -63,7 +63,7 @@ function run(
 const packageManager =
 	process.env.npm_execpath ?? (process.platform === "win32" ? "pnpm.cmd" : "pnpm");
 const packageManagerIsScript = /\.(?:c|m)?js$/iu.test(packageManager);
-for (const name of ["protocol", "unreal-assets"])
+for (const name of ["protocol", "blueprints", "unreal-assets"])
 	run(
 		join(output, `build-${name}.log`),
 		packageManagerIsScript ? process.execPath : packageManager,

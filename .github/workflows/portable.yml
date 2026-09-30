@@ -73,7 +73,7 @@ jobs:
                               scripts/test-saved-review.ts | \
                               apps/cli/src/*investigation* | \
                               packages/uasset/* | packages/uasset-win32-x64/* | \
-                              packages/unreal-assets/* | \
+                              packages/unreal-assets/* | packages/blueprints/* | \
                               packages/protocol/contracts/uasset-io/* | \
                               packages/protocol/src/uasset-* | \
                               packages/protocol/src/blueprint-graph.ts | \

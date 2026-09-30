@@ -1,17 +1,31 @@
+import {
+	blueprintClassLabel as shortClass,
+	blueprintLinkPath as linkPath,
+	blueprintNodeHeight as nodeHeight,
+	blueprintPinDefaults as pinDefaults,
+	blueprintPinLabel as pinLabel,
+	blueprintPinTone as pinTone,
+	blueprintPinTypeLabel as pinTypeLabel,
+	findBlueprintPin as findPin,
+	indexBlueprintGraph,
+	isBlueprintTopologyGap as isTopologyGap,
+	layoutBlueprintGraph as layoutGraph,
+	searchBlueprint,
+	type BlueprintPinTone as PinTone,
+	type BlueprintSearchHit
+} from "@ue-shed/blueprints";
 import { SavedReviewPanel } from "./saved-review-panel.js";
 import type { SavedReviewClient } from "./saved-review-client.js";
 import type { SavedReviewAsset } from "@ue-shed/unreal-assets/saved-review";
 import * as stylex from "@stylexjs/stylex";
 import type {
-	BlueprintGraph,
 	BlueprintGraphCoverageGap,
 	BlueprintGraphProjection,
 	BlueprintDefinition,
 	SavedProperty,
 	SavedPropertyValue,
 	BlueprintNode,
-	BlueprintPin,
-	BlueprintPinReference
+	BlueprintPin
 } from "@ue-shed/protocol";
 import { createEffectAction } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
@@ -28,22 +42,8 @@ const NODE_WIDTH = 268;
 const NODE_HEADER_HEIGHT = 43;
 const PIN_ROW_HEIGHT = 25;
 const GRAPH_MARGIN = 72;
-const POSITION_SCALE = 0.82;
 const MIN_ZOOM = 0.35;
 const MAX_ZOOM = 1.6;
-
-interface LaidOutNode {
-	readonly height: number;
-	readonly node: BlueprintNode;
-	readonly x: number;
-	readonly y: number;
-}
-
-interface GraphLayout {
-	readonly height: number;
-	readonly nodes: ReadonlyMap<string, LaidOutNode>;
-	readonly width: number;
-}
 
 type FailedResult = Extract<BlueprintGraphReadResult, { readonly status: "failed" }>;
 
@@ -54,8 +54,6 @@ interface PanOrigin {
 	readonly scrollLeft: number;
 	readonly scrollTop: number;
 }
-
-type PinTone = "boolean" | "exec" | "numeric" | "object" | "struct" | "text" | "wildcard";
 
 export interface BlueprintGraphViewerProps {
 	readonly reviewClient?: SavedReviewClient;
@@ -75,103 +73,8 @@ type IndexedBlueprintState =
 	| { readonly result: ReadyBlueprintSearch; readonly status: "ready" | "updating" }
 	| Exclude<BlueprintAssetSearchResult, { readonly status: "ready" }>;
 
-function nodeHeight(node: BlueprintNode): number {
-	return NODE_HEADER_HEIGHT + Math.max(node.pins.length, 1) * PIN_ROW_HEIGHT + 8;
-}
-
-function layoutGraph(graph: BlueprintGraph | undefined): GraphLayout {
-	if (graph === undefined || graph.nodes.length === 0) {
-		return { height: 480, nodes: new Map(), width: 760 };
-	}
-	const minimumX = Math.min(...graph.nodes.map((node) => node.position.x));
-	const minimumY = Math.min(...graph.nodes.map((node) => node.position.y));
-	const nodes = new Map<string, LaidOutNode>();
-	let width = 0;
-	let height = 0;
-	for (const node of graph.nodes) {
-		const x = GRAPH_MARGIN + (node.position.x - minimumX) * POSITION_SCALE;
-		const y = GRAPH_MARGIN + (node.position.y - minimumY) * POSITION_SCALE;
-		const laidOut = { height: nodeHeight(node), node, x, y };
-		nodes.set(node.object_path, laidOut);
-		width = Math.max(width, x + NODE_WIDTH + GRAPH_MARGIN);
-		height = Math.max(height, y + laidOut.height + GRAPH_MARGIN);
-	}
-	return { height: Math.max(height, 480), nodes, width: Math.max(width, 760) };
-}
-
-function pinPoint(
-	layout: GraphLayout,
-	reference: { readonly node_object_path?: string; readonly pin_id: string }
-): { readonly x: number; readonly y: number } | undefined {
-	if (reference.node_object_path === undefined) return undefined;
-	const node = layout.nodes.get(reference.node_object_path);
-	if (node === undefined) return undefined;
-	const index = node.node.pins.findIndex((pin) => pin.id === reference.pin_id);
-	if (index < 0) return undefined;
-	const pin = node.node.pins[index];
-	if (pin === undefined) return undefined;
-	return {
-		x: pin.direction === "output" ? node.x + NODE_WIDTH : node.x,
-		y: node.y + NODE_HEADER_HEIGHT + (index + 0.5) * PIN_ROW_HEIGHT
-	};
-}
-
-function linkPath(layout: GraphLayout, link: BlueprintGraph["links"][number]): string | undefined {
-	const from = pinPoint(layout, link.from);
-	const to = pinPoint(layout, link.to);
-	if (from === undefined || to === undefined) return undefined;
-	const handle = Math.max(64, Math.abs(to.x - from.x) * 0.46);
-	return `M ${from.x} ${from.y} C ${from.x + handle} ${from.y}, ${to.x - handle} ${to.y}, ${to.x} ${to.y}`;
-}
-
-function shortClass(classPath: string): string {
-	return (
-		classPath
-			.split(".")
-			.at(-1)
-			?.replace(/^K2Node_/, "") ?? classPath
-	);
-}
-
-function pinLabel(pin: BlueprintPin): string {
-	return pin.friendly_name?.source || pin.name || "unnamed";
-}
-
-function isTopologyGap(gap: BlueprintGraphCoverageGap): boolean {
-	return ![
-		"native_node_subclass_tail",
-		"undecoded_node_property",
-		"incomplete_definition"
-	].includes(gap.reason);
-}
-
 function gapLabel(reason: BlueprintGraphCoverageGap["reason"]): string {
 	return reason.replaceAll("_", " ");
-}
-
-function findPin(
-	graph: BlueprintGraph,
-	reference: BlueprintPinReference
-): BlueprintPin | undefined {
-	if (reference.node_object_path === undefined) return undefined;
-	return graph.nodes
-		.find((node) => node.object_path === reference.node_object_path)
-		?.pins.find((pin) => pin.id === reference.pin_id);
-}
-
-function pinTone(pin: BlueprintPin | undefined): PinTone {
-	const category = pin?.pin_type.category.toLowerCase() ?? "";
-	if (category === "exec") return "exec";
-	if (category === "bool" || category === "boolean") return "boolean";
-	if (["byte", "double", "float", "int", "int64", "real"].includes(category)) {
-		return "numeric";
-	}
-	if (["name", "string", "text"].includes(category)) return "text";
-	if (["class", "interface", "object", "softclass", "softobject"].includes(category)) {
-		return "object";
-	}
-	if (category === "struct") return "struct";
-	return "wildcard";
 }
 
 function pinToneColor(tone: PinTone): string {
@@ -202,46 +105,6 @@ function PinDot(props: { readonly pin: BlueprintPin }) {
 	);
 }
 
-function terminalTypeLabel(type: NonNullable<BlueprintPin["pin_type"]["value_type"]>): string {
-	return [type.category, type.subcategory || type.subcategory_object?.split(".").at(-1)]
-		.filter((value): value is string => value !== undefined && value !== "")
-		.join(" · ");
-}
-
-function pinTypeLabel(pin: BlueprintPin): string {
-	const type = pin.pin_type;
-	const base = [type.category, type.subcategory || type.subcategory_object?.split(".").at(-1)]
-		.filter((value): value is string => value !== undefined && value !== "")
-		.join(" · ");
-	const contained =
-		type.container_type === "map" && type.value_type !== undefined
-			? base + " → " + terminalTypeLabel(type.value_type)
-			: base;
-	const container =
-		type.container_type === "none" ? contained : type.container_type + "<" + contained + ">";
-	const modifiers = [type.is_const ? "const" : undefined, type.is_reference ? "ref" : undefined]
-		.filter((value): value is string => value !== undefined)
-		.join(" ");
-	return modifiers === "" ? container || "wildcard" : modifiers + " " + (container || "wildcard");
-}
-
-function pinDefaults(
-	pin: BlueprintPin
-): readonly { readonly label: string; readonly value: string }[] {
-	const defaults: Array<{ readonly label: string; readonly value: string }> = [];
-	if (pin.default_text_value?.source) {
-		defaults.push({ label: "Text default", value: pin.default_text_value.source });
-	}
-	if (pin.default_object) defaults.push({ label: "Object default", value: pin.default_object });
-	if (pin.default_value !== "") {
-		defaults.push({ label: "Saved default", value: pin.default_value });
-	}
-	if (pin.autogenerated_default_value !== "") {
-		defaults.push({ label: "Generated default", value: pin.autogenerated_default_value });
-	}
-	return defaults;
-}
-
 function failureTitle(reason: BlueprintGraphFailureReason): string {
 	switch (reason) {
 		case "control_rig":
@@ -264,6 +127,7 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 	const indexAction = createEffectAction();
 	const [assetPath, setAssetPath] = createSignal("");
 	const [assetQuery, setAssetQuery] = createSignal("");
+	const [graphQuery, setGraphQuery] = createSignal("");
 	const [indexedBlueprints, setIndexedBlueprints] = createSignal<IndexedBlueprintState>({
 		status: "loading"
 	});
@@ -290,6 +154,22 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 	});
 	const graph = createMemo(() => blueprint()?.graphs[graphIndex()]);
 	const layout = createMemo(() => layoutGraph(graph()));
+	const graphLookup = createMemo(() => {
+		const selected = graph();
+		return selected === undefined ? undefined : indexBlueprintGraph(selected);
+	});
+	const currentPin = (
+		reference: BlueprintGraphProjection["graphs"][number]["links"][number]["from"]
+	) => {
+		const index = graphLookup();
+		return index === undefined ? undefined : findPin(index, reference);
+	};
+	const graphSearch = createMemo(() => {
+		const value = blueprint();
+		return value === undefined
+			? { hits: [], truncated: false }
+			: searchBlueprint({ blueprint: value, query: graphQuery() });
+	});
 	const selectedNode = createMemo(() => {
 		const path = selectedNodePath();
 		return path === undefined
@@ -341,6 +221,7 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 		if (next.status === "ready") {
 			setAssetPath(next.assetPath);
 			setGraphIndex(0);
+			setGraphQuery("");
 			setSelectedNodePath(next.blueprint.graphs[0]?.nodes[0]?.object_path);
 			setZoom(1);
 			resetViewport();
@@ -427,6 +308,15 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 		setZoom(1);
 		resetViewport();
 	};
+	const chooseSearchHit = (hit: BlueprintSearchHit) => {
+		const index = blueprint()?.graphs.findIndex(
+			(item) => item.object_path === hit.graphObjectPath
+		);
+		if (index === undefined || index < 0) return;
+		chooseGraph(index);
+		setSelectedNodePath(hit.nodeObjectPath);
+	};
+
 	const fitGraph = () => {
 		if (viewport === undefined) return;
 		setZoomLevel(
@@ -920,6 +810,54 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 							</div>
 
 							<section
+								aria-label="Graph search"
+								{...stylex.attrs(styles.graphSearch)}
+							>
+								<label>
+									Search saved nodes and pins
+									<input
+										aria-label="Search saved nodes and pins"
+										onInput={(event) =>
+											setGraphQuery(event.currentTarget.value)
+										}
+										value={graphQuery()}
+										type="search"
+										{...stylex.attrs(styles.indexSearchInput)}
+									/>
+								</label>
+								<Show when={graphQuery().trim() !== ""}>
+									<ul aria-label="Graph search results">
+										<For each={graphSearch().hits.slice(0, 20)}>
+											{(hit) => (
+												<li>
+													<button
+														type="button"
+														onClick={() => chooseSearchHit(hit)}
+														{...stylex.attrs(styles.graphTab)}
+													>
+														{hit.kind} · {hit.label}
+													</button>
+												</li>
+											)}
+										</For>
+									</ul>
+									<Show when={graphSearch().hits.length === 0}>
+										<p>No saved nodes or pins match.</p>
+									</Show>
+									<Show
+										when={
+											graphSearch().hits.length > 20 ||
+											graphSearch().truncated
+										}
+									>
+										<p>
+											Showing the first 20 matches. Refine the search to find
+											more.
+										</p>
+									</Show>
+								</Show>
+							</section>
+							<section
 								aria-label="Saved Blueprint graph"
 								{...stylex.attrs(styles.workspace)}
 							>
@@ -976,13 +914,9 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 																		"stroke:" +
 																		pinToneColor(
 																			pinTone(
-																				graph() ===
-																					undefined
-																					? undefined
-																					: findPin(
-																							graph()!,
-																							link.from
-																						)
+																				currentPin(
+																					link.from
+																				)
 																			)
 																		) +
 																		";opacity:" +
@@ -1608,6 +1542,11 @@ function NodeInspector(props: { readonly node: BlueprintNode }) {
 }
 
 const styles = stylex.create({
+	graphSearch: {
+		display: "grid",
+		gap: 8,
+		padding: 12
+	},
 	route: {
 		minHeight: "100%",
 		padding: "28px 30px 38px",

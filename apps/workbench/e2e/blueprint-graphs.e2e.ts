@@ -47,6 +47,9 @@ test("inspects saved Blueprint variables, class defaults and component templates
 	await expect(root.locator("code").filter({ hasText: "UCSModifiedProperties" })).toContainText(
 		'"values":[]'
 	);
+	await page.getByLabel("Search saved nodes and pins").fill("Saved review fixture");
+	await page.getByRole("button", { name: "node · EdGraphNode_Comment" }).click();
+	await expect(page.getByRole("heading", { name: "EdGraphNode_Comment" })).toBeVisible();
 	expect(await harness.launchCount()).toBe(0);
 });
 

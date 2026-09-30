@@ -630,11 +630,21 @@ try {
 		);
 	}
 	const wasmConsumerScript = join(consumerDirectory, "verify-wasm.mjs");
+	await mkdir(join(consumerDirectory, "fixture"), { recursive: true });
+	await copyFile(
+		join(
+			repositoryRoot,
+			"fixtures/unreal-project/Content/Fixture/Blueprints/BP_ReviewFixture.uasset"
+		),
+		join(consumerDirectory, "fixture/BP_ReviewFixture.uasset")
+	);
 	await writeFile(
 		wasmConsumerScript,
 		`${[
 			"import { readFile } from 'node:fs/promises';",
 			"import * as imported from '@ue-shed/uasset-inspection-wasm';",
+			"import { Schema } from 'effect';",
+			"import * as blueprints from '@ue-shed/blueprints';",
 			"const api = { ...imported };",
 			"if (imported.default && typeof imported.default === 'object') Object.assign(api, imported.default);",
 			"if (typeof api.initialize === 'function') await api.initialize();",
@@ -667,6 +677,20 @@ try {
 			"const malformed = new Uint8Array([0, 1, 2, 3]);",
 			"const malformedInspection = await decode(api.inspect, malformed);",
 			"if (malformedInspection.schema_version !== 8 || malformedInspection.status !== 'error') throw new Error('WASM malformed-input contract failed');",
+			"const blueprintBytes = new Uint8Array(await readFile('./fixture/BP_ReviewFixture.uasset'));",
+			"const blueprintResult = api.extractBlueprints('fixture/BP_ReviewFixture.uasset', blueprintBytes);",
+			"if (blueprintResult.status === 'error') throw new Error(blueprintResult.message);",
+			"const blueprint = Schema.decodeUnknownSync(blueprints.BlueprintGraphProjection)(blueprintResult.blueprints[0]);",
+			"const found = blueprints.searchBlueprint({ blueprint, query: 'Saved review fixture' });",
+			"if (!found.hits.some(hit => hit.kind === 'node' && hit.label === 'EdGraphNode_Comment')) throw new Error('packed Blueprint search failed');",
+			"for (const graph of blueprint.graphs) {",
+			"  const index = blueprints.indexBlueprintGraph(graph);",
+			"  const layout = blueprints.layoutBlueprintGraph(graph);",
+			"  if (index.issues.length || layout.nodes.size !== graph.nodes.length) throw new Error('packed Blueprint indexing failed');",
+			"  for (const link of graph.links) {",
+			"    if (!blueprints.findBlueprintPin(index, link.from) || !blueprints.blueprintLinkPath(layout, link)) throw new Error('packed Blueprint link failed');",
+			"  }",
+			"}",
 			"console.log('wasm-offline-ok');"
 		].join("\n")}\n`,
 		"utf8"

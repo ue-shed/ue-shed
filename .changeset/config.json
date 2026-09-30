@@ -15,6 +15,7 @@
 			"@ue-shed/uasset-inspection-wasm",
 			"@ue-shed/uasset-win32-x64",
 			"@ue-shed/unreal-assets",
+			"@ue-shed/blueprints",
 			"@ue-shed/map-history",
 			"@ue-shed/uasset",
 			"@ue-shed/game-text",

@@ -251,6 +251,9 @@ importers:
       '@ue-shed/authoring-sdk':
         specifier: workspace:*
         version: link:../../packages/authoring-sdk
+      '@ue-shed/blueprints':
+        specifier: workspace:*
+        version: link:../../packages/blueprints
       '@ue-shed/cameras':
         specifier: workspace:*
         version: link:../../packages/cameras
@@ -726,6 +729,16 @@ importers:
       '@ue-shed/protocol':
         specifier: workspace:*
         version: link:../protocol
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0-beta.98
+
+  packages/blueprints:
+    dependencies:
+      '@ue-shed/protocol':
+        specifier: workspace:0.8.0
+        version: link:../protocol
+    devDependencies:
       effect:
         specifier: 'catalog:'
         version: 4.0.0-beta.98

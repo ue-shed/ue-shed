@@ -14,6 +14,14 @@ import {
 } from "../packages/unreal-assets/dist/saved-review.js";
 import { ensureUassetExecutable } from "./native-tools.ts";
 import { LevelSequenceProjection, SavedAssetInspection } from "../packages/protocol/dist/index.js";
+import {
+	blueprintLinkPath,
+	blueprintNodeDisplay,
+	findBlueprintPin,
+	indexBlueprintGraph,
+	layoutBlueprintGraph,
+	searchBlueprint
+} from "../packages/blueprints/dist/index.js";
 
 const root = resolve(process.env.UE_SHED_UASSET_FIXTURE_ROOT ?? "fixtures/unreal-project");
 const evidence =
@@ -147,7 +155,30 @@ assert.deepEqual(
 	"Unreal loaded Blueprint topology/defaults mismatch"
 );
 assert.ok(blueprint.blueprint.graphs.some((graph) => graph.name === "ReviewFunction"));
+for (const graph of blueprint.blueprint.graphs) {
+	const index = indexBlueprintGraph(graph);
+	assert.deepEqual(index.issues, [], "fixture graph identities must resolve unambiguously");
+	const layout = layoutBlueprintGraph(graph);
+	assert.equal(layout.nodes.size, graph.nodes.length);
+	for (const link of graph.links) {
+		assert.ok(findBlueprintPin(index, link.from));
+		assert.ok(findBlueprintPin(index, link.to));
+		assert.ok(blueprintLinkPath(layout, link));
+	}
+}
+assert.ok(
+	searchBlueprint({ blueprint: blueprint.blueprint, query: "Saved review fixture" }).hits.some(
+		(hit) => hit.kind === "node" && hit.label === "EdGraphNode_Comment"
+	)
+);
 const nodes = blueprint.blueprint.graphs.flatMap((graph) => graph.nodes);
+assert.equal(
+	blueprintNodeDisplay(
+		nodes.find((node) => node.class_path.endsWith(".EdGraphNode_Comment")) ??
+			assert.fail("missing comment node")
+	).comment,
+	"Saved review fixture: branch, variable and reroute"
+);
 for (const type of [
 	"K2Node_IfThenElse",
 	"K2Node_Knot",

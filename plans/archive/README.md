@@ -4,6 +4,10 @@ Completed implementation plans. Kept as execution history (intent, STOP conditio
 paths). They are not living guidance — prefer product docs, ADRs, and active plans under
 [`../`](../README.md).
 
+- [Headless Blueprint package](headless-blueprints-package.md) — DONE; public graph navigation,
+  search, reference layout and saved display helpers, with the Solid viewer kept in Workbench;
+  full local, packed-consumer, UE 5.7/5.8 and offline showcase checks passed.
+
 - [Saved actor/component native records](saved-actor-component-native-data.md) — DONE; checked
   inherited records, construction-script member references, conditional scene flags and public
   native evidence, with independent UE 5.7/5.8 and offline native/WASM conformance.

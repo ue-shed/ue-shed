@@ -36,6 +36,9 @@ should follow [Website and illustrated guides](engineering/website.md).
 
 ## Products
 
+- [Saved Blueprint graph tools](../packages/blueprints/README.md) — public navigation, search,
+  reference layout and saved display metadata; Workbench owns the showcase viewer.
+
 - [Shared world preparation](products/world-preparation.md) — actor context, selective editor loading,
   scoped ownership, readiness evidence and capture composition.
 

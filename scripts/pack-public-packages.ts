@@ -74,6 +74,7 @@ export const PUBLIC_PACKAGES: readonly PublicPackage[] = [
 	{ name: WASM_PACKAGE_NAME, directory: "packages/uasset-inspection-wasm" },
 	{ name: "@ue-shed/uasset-win32-x64", directory: "packages/uasset-win32-x64" },
 	{ name: "@ue-shed/unreal-assets", directory: "packages/unreal-assets" },
+	{ name: "@ue-shed/blueprints", directory: "packages/blueprints" },
 	{ name: MAP_HISTORY_PACKAGE_NAME, directory: "packages/map-history" },
 	{ name: "@ue-shed/uasset", directory: "packages/uasset" },
 	{ name: GAME_TEXT_PACKAGE_NAME, directory: "packages/game-text" },

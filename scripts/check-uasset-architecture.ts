@@ -42,6 +42,27 @@ async function main() {
 	const failures: string[] = [];
 	await checkPortableCrate("crates/uasset-parser/src", failures);
 	await checkPortableCrate("crates/uasset-inspection/src", failures);
+	const executor = await readFile(
+		join(repositoryRoot, "crates/uasset-io/src/direct_executor.rs"),
+		"utf8"
+	);
+	for (const helper of [
+		"authoring_value",
+		"authoring_float",
+		"authoring_values",
+		"authoring_field"
+	]) {
+		if (new RegExp(`fn ${helper}\\b`).test(executor)) {
+			failures.push(`uasset-io still owns portable authoring helper ${helper}`);
+		}
+	}
+	const results = await readFile(
+		join(repositoryRoot, "crates/uasset-io/src/protocol_result.rs"),
+		"utf8"
+	);
+	if (/pub (?:struct|enum) Authoring\w+/.test(results)) {
+		failures.push("uasset-io must re-export authoring models from uasset-inspection");
+	}
 
 	const parserBin = join(repositoryRoot, "crates", "uasset-parser", "src", "bin");
 	try {

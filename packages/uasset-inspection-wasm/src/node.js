@@ -19,6 +19,7 @@ export const extractTextures = runtime.extractTextures;
 export const extractLevelSequences = runtime.extractLevelSequences;
 export const extractBlueprints = runtime.extractBlueprints;
 export const extractAnimations = runtime.extractAnimations;
+export const extractAuthoringTable = runtime.extractAuthoringTable;
 export const version = runtime.version;
 
 export {

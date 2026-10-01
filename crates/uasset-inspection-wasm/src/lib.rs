@@ -37,6 +37,97 @@ pub const MAX_EXPORTS: usize = 100_000;
 /// Maximum number of records emitted by a compact projection.
 pub const MAX_PROJECTION_ITEMS: usize = 1_000_000;
 
+/// Emits the same saved-file DataTable snapshot as the native authoring operation.
+#[wasm_bindgen]
+pub fn extract_authoring_table(path: &str, bytes: &[u8]) -> String {
+    if let Some(error) = input_limit_error(1, path, bytes) {
+        return error;
+    }
+    if let Some(error) = export_limit_error(1, path, bytes) {
+        return error;
+    }
+    match uasset_inspection::authoring::inspect_authoring_bytes(path, bytes) {
+        Ok((snapshot, partial)) => {
+            let rows = match &snapshot {
+                uasset_inspection::authoring::AuthoringTableSnapshot::V1(value) => {
+                    &value.table.rows
+                }
+                uasset_inspection::authoring::AuthoringTableSnapshot::V2(value) => {
+                    &value.table.rows
+                }
+            };
+            let items = rows.iter().fold(1_usize, |count, row| {
+                row.fields
+                    .iter()
+                    .fold(count.saturating_add(1), |count, field| {
+                        count.saturating_add(authoring_value_item_count(&field.value))
+                    })
+            });
+            if items > MAX_PROJECTION_ITEMS {
+                return serialize_projection_limit_error(
+                    path,
+                    "authoring projection item count exceeds the WASM limit",
+                );
+            }
+            serialize_bounded_projection(
+                path,
+                &AuthoringTableOutput {
+                    schema_version: 1,
+                    status: if partial { "partial" } else { "ok" },
+                    path,
+                    snapshot,
+                },
+            )
+        }
+        Err(error) => serialize_bounded_projection(
+            path,
+            &ProjectionErrorOutput {
+                schema_version: 1,
+                status: "error",
+                path,
+                kind: match error.code.as_str() {
+                    "malformed_data" => "malformed_data",
+                    "resource_limit" => "resource_limit",
+                    "unsupported_version" => "unsupported_version",
+                    "unsupported_capability" | "unsupported" => "unsupported_capability",
+                    "unsupported_format" => "unsupported_format",
+                    _ => "internal",
+                },
+                message: error.message,
+            },
+        ),
+    }
+}
+
+#[derive(Serialize)]
+struct AuthoringTableOutput<'a> {
+    schema_version: u8,
+    status: &'static str,
+    path: &'a str,
+    snapshot: uasset_inspection::authoring::AuthoringTableSnapshot,
+}
+
+fn authoring_value_item_count(value: &uasset_inspection::authoring::AuthoringValue) -> usize {
+    use uasset_inspection::authoring::AuthoringValue;
+    let children = match value {
+        AuthoringValue::Array { values } | AuthoringValue::Set { values } => {
+            values.iter().fold(0_usize, |count, value| {
+                count.saturating_add(authoring_value_item_count(value))
+            })
+        }
+        AuthoringValue::Map { entries } => entries.iter().fold(0_usize, |count, entry| {
+            count
+                .saturating_add(authoring_value_item_count(&entry.key))
+                .saturating_add(authoring_value_item_count(&entry.value))
+        }),
+        AuthoringValue::Struct { fields } => fields.iter().fold(0_usize, |count, field| {
+            count.saturating_add(authoring_value_item_count(&field.value))
+        }),
+        _ => 0,
+    };
+    1_usize.saturating_add(children)
+}
+
 /// Parses bounded package bytes and returns the native schema-versioned inspection JSON.
 #[wasm_bindgen]
 pub fn inspect(path: &str, bytes: &[u8]) -> String {
@@ -882,6 +973,46 @@ mod tests {
     const BLUEPRINT_FIXTURE: &[u8] = include_bytes!(
         "../../../fixtures/unreal-project/Content/Fixture/Blueprints/BP_GraphFixture.uasset"
     );
+
+    #[test]
+    fn authoring_envelope_preserves_the_portable_snapshot() {
+        let bytes = include_bytes!(
+            "../../../fixtures/unreal-project/Content/Fixture/Authoring/DT_Scalars.uasset"
+        );
+        let output: Value =
+            serde_json::from_str(&super::extract_authoring_table("DT.uasset", bytes))
+                .expect("authoring envelope");
+        let (snapshot, partial) =
+            uasset_inspection::authoring::inspect_authoring_bytes("DT.uasset", bytes)
+                .expect("portable authoring projection");
+        assert_eq!(output["schema_version"], 1);
+        assert_eq!(output["status"], if partial { "partial" } else { "ok" });
+        assert_eq!(
+            output["snapshot"],
+            serde_json::to_value(snapshot).expect("snapshot JSON")
+        );
+    }
+
+    #[test]
+    fn authoring_rejects_non_tables_malformed_bytes_and_oversized_input() {
+        for (bytes, kind) in [
+            (BLUEPRINT_FIXTURE, "unsupported_capability"),
+            (&[0_u8, 1, 2, 3][..], "unsupported_format"),
+        ] {
+            let output: Value =
+                serde_json::from_str(&super::extract_authoring_table("Other.uasset", bytes))
+                    .expect("authoring error JSON");
+            assert_eq!(output["schema_version"], 1);
+            assert_eq!(output["status"], "error");
+            assert_eq!(output["kind"], kind);
+        }
+        let output: Value = serde_json::from_str(&super::extract_authoring_table(
+            "Large.uasset",
+            &vec![0; MAX_INPUT_BYTES + 1],
+        ))
+        .expect("authoring limit JSON");
+        assert_eq!(output["kind"], "resource_limit");
+    }
 
     #[test]
     fn discrete_channels_and_keys_count_toward_the_projection_limit() {

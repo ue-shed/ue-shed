@@ -21,3 +21,12 @@ section. Timing, bone/float-curve inventory, absolute notify times, skeleton ref
 root-motion settings retain saved provenance. Missing properties and unsupported data models are
 explicit coverage gaps; no CDO defaults, poses, external packages, or compressed tracks are evaluated.
 `animation::project_animations` accepts an already decoded package for library callers.
+
+`authoring::inspect_authoring_bytes` returns the saved-file authoring contract 2.1 snapshot
+for exactly one DataTable or Composite DataTable. `authoring::project_authoring_table` accepts
+typed inspection evidence, preserving native field order, diagnostic codes, partial coverage,
+special float representations and unavailable schema/fingerprint evidence. The mechanical move
+retains the existing typed-inspection coupling rather than changing native snapshot semantics.
+`saved_inspection` owns that typed projection and its serde models; it projects directly from
+decoded parser values. Optional checkpoint closures allow IO cancellation without a portable
+dependency on cancellation tokens, files, processes or scheduling.

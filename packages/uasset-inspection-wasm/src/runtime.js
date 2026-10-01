@@ -9,6 +9,7 @@
 /** @typedef {import("./types.d.ts").LevelSequenceResult} LevelSequenceResult */
 /** @typedef {import("./types.d.ts").BlueprintResult} BlueprintResult */
 /** @typedef {import("./types.d.ts").AnimationResult} AnimationResult */
+/** @typedef {import("./types.d.ts").AuthoringTableResult} AuthoringTableResult */
 
 /**
  * @typedef WasmBinding
@@ -18,6 +19,7 @@
  * @property {(path: string, bytes: Uint8Array) => string} extract_level_sequences
  * @property {(path: string, bytes: Uint8Array) => string} extract_blueprints
  * @property {(path: string, bytes: Uint8Array) => string} extract_animations
+ * @property {(path: string, bytes: Uint8Array) => string} extract_authoring_table
  * @property {() => string} version
  */
 
@@ -190,6 +192,7 @@ export function createRuntime(binding, options = undefined) {
 		!isFunction(binding.extract_level_sequences) ||
 		!isFunction(binding.extract_blueprints) ||
 		!isFunction(binding.extract_animations) ||
+		!isFunction(binding.extract_authoring_table) ||
 		!isFunction(binding.version)
 	) {
 		throw new WasmProtocolError("initialization", "the generated binding is missing an export");
@@ -263,6 +266,19 @@ export function createRuntime(binding, options = undefined) {
 					decodeResult(
 						"extractBlueprints",
 						binding.extract_blueprints(path, input),
+						1,
+						limits.maxOutputBytes
+					)
+				)
+			);
+		},
+		extractAuthoringTable(/** @type {string} */ path, /** @type {Uint8Array} */ bytes) {
+			const input = assertInputBytes(bytes, limits.maxInputBytes);
+			return /** @type {AuthoringTableResult} */ (
+				/** @type {unknown} */ (
+					decodeResult(
+						"extractAuthoringTable",
+						binding.extract_authoring_table(path, input),
 						1,
 						limits.maxOutputBytes
 					)

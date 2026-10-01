@@ -545,10 +545,92 @@ export interface WasmRuntime {
 	readonly inspect: (path: string, bytes: Uint8Array) => InspectionResult;
 	readonly extractText: (path: string, bytes: Uint8Array) => TextResult;
 	readonly extractTextures: (path: string, bytes: Uint8Array) => TextureResult;
+	readonly extractAuthoringTable: (path: string, bytes: Uint8Array) => AuthoringTableResult;
 	readonly extractLevelSequences: (path: string, bytes: Uint8Array) => LevelSequenceResult;
 	readonly extractBlueprints: (path: string, bytes: Uint8Array) => BlueprintResult;
 	readonly version: () => string;
 }
+
+export type AuthoringValue =
+	| { readonly kind: "bool"; readonly value: boolean }
+	| {
+			readonly kind:
+				| "int"
+				| "uint"
+				| "name"
+				| "enum"
+				| "string"
+				| "text"
+				| "guid"
+				| "soft_object_path";
+			readonly value: string;
+	  }
+	| {
+			readonly kind: "float" | "double";
+			readonly value: number | "nan" | "infinity" | "-infinity";
+	  }
+	| { readonly kind: "object_ref"; readonly value: string | null }
+	| {
+			readonly kind: "row_reference";
+			readonly tableObjectPath: string | null;
+			readonly rowName: string;
+	  }
+	| { readonly kind: "vector"; readonly x: number; readonly y: number; readonly z: number }
+	| { readonly kind: "array" | "set"; readonly values: readonly AuthoringValue[] }
+	| {
+			readonly kind: "map";
+			readonly entries: readonly {
+				readonly key: AuthoringValue;
+				readonly value: AuthoringValue;
+			}[];
+	  }
+	| { readonly kind: "struct"; readonly fields: readonly AuthoringFieldValue[] }
+	| { readonly kind: "unsupported"; readonly reason: string; readonly byteSize: number };
+
+export interface AuthoringFieldValue {
+	readonly name: string;
+	readonly typeName: string;
+	readonly value: AuthoringValue;
+}
+
+/** The portable saved-file producer emits authoring contract 2.1 with unavailable reflection. */
+export interface SavedAuthoringTableSnapshot {
+	readonly contract: {
+		readonly name: "unreal-authoring";
+		readonly version: { readonly major: 2; readonly minor: 1 };
+	};
+	readonly authority: { readonly kind: "project_files"; readonly packageName: string };
+	readonly completeness: "complete" | "partial";
+	readonly diagnostics: readonly {
+		readonly code: string;
+		readonly message: string;
+		readonly path: string | null;
+	}[];
+	readonly fingerprint: { readonly status: "unavailable"; readonly reason: string };
+	readonly producer: { readonly name: string; readonly version: string };
+	readonly table: {
+		readonly kind: "data_table" | "composite_data_table";
+		readonly objectPath: string;
+		readonly rowStruct: string;
+		readonly parentTables: readonly string[];
+		readonly packageName: string;
+		readonly schema: { readonly status: "unavailable"; readonly reason: string };
+		readonly rows: readonly {
+			readonly id: string;
+			readonly name: string;
+			readonly fields: readonly AuthoringFieldValue[];
+		}[];
+	};
+}
+
+export type AuthoringTableResult =
+	| ProjectionError
+	| {
+			readonly schema_version: 1;
+			readonly status: "ok" | "partial";
+			readonly path: string;
+			readonly snapshot: SavedAuthoringTableSnapshot;
+	  };
 
 export interface AnimationSummary {
 	readonly schema_version: 1;

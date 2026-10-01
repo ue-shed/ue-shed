@@ -117,6 +117,7 @@
 			"packages/ui/src/actor-explorer.tsx",
 			"packages/ui/src/effect-solid.tsx",
 			"packages/ui/src/dismissible-details.ts",
+			"packages/ui/src/file-drop-zone.tsx",
 			"packages/ui/src/virtualizer.ts",
 			"packages/ui/src/index.ts",
 			"packages/ui/src/page-header.tsx",

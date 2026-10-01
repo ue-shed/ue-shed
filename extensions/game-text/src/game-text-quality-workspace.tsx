@@ -644,9 +644,8 @@ const styles = stylex.create({
 		color: tokens.colorTextFaint
 	},
 	filterActive: {
-		color: tokens.colorTextStrong,
 		backgroundColor: tokens.colorSurfaceHover,
-		boxShadow: `inset 2px 0 ${tokens.colorAccent}`
+		color: tokens.colorAccent
 	},
 	railSection: {
 		display: "flex",
@@ -722,7 +721,7 @@ const styles = stylex.create({
 	},
 	findingActive: {
 		backgroundColor: tokens.colorSurfaceHover,
-		boxShadow: `inset 2px 0 ${tokens.colorAccent}`
+		color: tokens.colorAccent
 	},
 	findingMeta: {
 		display: "flex",

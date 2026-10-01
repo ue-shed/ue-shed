@@ -919,8 +919,7 @@ const styles = stylex.create({
 		borderColor: tokens.colorBorder,
 		borderStyle: "solid",
 		borderWidth: 1,
-		backgroundColor: tokens.colorSurface,
-		boxShadow: `inset 4px 0 ${tokens.colorAccent}`
+		backgroundColor: tokens.colorSurface
 	},
 	header: {
 		display: "flex",
@@ -1205,7 +1204,7 @@ const styles = stylex.create({
 	},
 	followButtonActive: {
 		borderColor: tokens.colorAccent,
-		backgroundColor: "rgba(228, 242, 34, 0.08)",
+		backgroundColor: tokens.colorAccentWash,
 		color: tokens.colorAccent
 	},
 	focusedCopy: {

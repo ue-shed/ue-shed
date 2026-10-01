@@ -495,8 +495,8 @@ const styles = stylex.create({
 		cursor: "pointer"
 	},
 	ruleChoiceActive: {
-		backgroundColor: "rgba(255, 255, 255, 0.07)",
-		boxShadow: `inset 2px 0 ${tokens.colorAccent}`
+		backgroundColor: tokens.colorSurfaceHover,
+		color: tokens.colorAccent
 	},
 	ruleChoiceMeta: {
 		display: "flex",

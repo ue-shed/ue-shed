@@ -522,7 +522,7 @@ const styles = stylex.create({
 		backgroundColor: {
 			default: tokens.colorAccent,
 			":hover": tokens.colorAccentStrong,
-			":active": "#d3e01f",
+			":active": "#68b2f2",
 			":disabled": tokens.colorAccent
 		},
 		color: tokens.colorAccentText,

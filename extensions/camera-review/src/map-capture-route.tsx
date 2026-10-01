@@ -1529,7 +1529,7 @@ const styles = stylex.create({
 		backgroundColor: tokens.colorSurfaceInset,
 		color: tokens.colorTextSubtle
 	},
-	readoutAccent: { boxShadow: `inset 2px 0 0 ${tokens.colorAccent}` },
+	readoutAccent: { backgroundColor: tokens.colorAccentWash, color: tokens.colorAccent },
 	readoutStrong: {
 		color: tokens.colorText,
 		fontFamily: tokens.fontMono,
@@ -1686,10 +1686,10 @@ const styles = stylex.create({
 		top: "50%",
 		transform: "translate(-50%, -50%)",
 		boxSizing: "border-box",
-		borderColor: "rgba(228, 242, 34, 0.4)",
+		borderColor: "rgba(124, 192, 255, 0.4)",
 		borderStyle: "solid",
 		borderWidth: 1,
-		boxShadow: "inset 0 0 54px rgba(8, 9, 10, 0.6), 0 0 30px rgba(228, 242, 34, 0.07)",
+		boxShadow: "inset 0 0 54px rgba(8, 9, 10, 0.6), 0 0 30px rgba(124, 192, 255, 0.07)",
 		pointerEvents: "none"
 	},
 	requestedBoundary: {
@@ -1784,9 +1784,9 @@ const styles = stylex.create({
 		flexDirection: "column",
 		gap: 3,
 		paddingLeft: 10,
-		borderLeftColor: tokens.colorAccent,
-		borderLeftStyle: "solid",
-		borderLeftWidth: 2,
+		borderColor: tokens.colorAccent,
+		borderStyle: "solid",
+		borderWidth: 1,
 		color: tokens.colorTextMuted,
 		fontSize: 11
 	},

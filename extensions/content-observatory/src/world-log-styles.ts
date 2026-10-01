@@ -209,9 +209,8 @@ export const styles = stylex.create({
 		fontSize: 12
 	},
 	targetRowActive: {
-		backgroundColor: "rgba(255, 255, 255, 0.07)",
-		color: tokens.colorTextStrong,
-		boxShadow: `inset 2px 0 ${tokens.colorAccent}`
+		backgroundColor: tokens.colorSurfaceHover,
+		color: tokens.colorAccent
 	},
 	targetRowSmall: {
 		overflow: "hidden",
@@ -674,9 +673,6 @@ export const styles = stylex.create({
 		borderBottomColor: tokens.colorBorder,
 		borderBottomStyle: "solid",
 		borderBottomWidth: 1,
-		borderLeftColor: "transparent",
-		borderLeftStyle: "solid",
-		borderLeftWidth: 2,
 		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.03)" },
 		color: tokens.colorText,
 		padding: "8px 10px",
@@ -684,9 +680,8 @@ export const styles = stylex.create({
 		cursor: "pointer"
 	},
 	actorRowSelected: {
-		borderLeftColor: tokens.colorAccent,
-		backgroundColor: "rgba(255, 255, 255, 0.07)",
-		color: tokens.colorTextStrong
+		backgroundColor: tokens.colorSurfaceHover,
+		color: tokens.colorAccent
 	},
 	actorRowHistorical: { opacity: 0.62 },
 	actorEventCount: {
@@ -967,11 +962,8 @@ export const styles = stylex.create({
 		}
 	},
 	revisionSelected: {
-		marginLeft: -6,
-		paddingLeft: 6,
-		borderLeftColor: tokens.colorAccent,
-		borderLeftStyle: "solid",
-		borderLeftWidth: 2
+		backgroundColor: tokens.colorSurfaceHover,
+		color: tokens.colorAccent
 	},
 	revisionMain: { minWidth: 0 },
 	revisionMarker: {
@@ -1043,7 +1035,6 @@ export const styles = stylex.create({
 		borderColor: tokens.colorBorder,
 		borderStyle: "solid",
 		borderWidth: 1,
-		borderLeftWidth: 3,
 		backgroundColor: {
 			default: tokens.colorSurfaceInset,
 			":hover": "rgba(255, 255, 255, 0.03)"
@@ -1061,10 +1052,10 @@ export const styles = stylex.create({
 		borderColor: tokens.colorAccent,
 		color: tokens.colorTextStrong
 	},
-	added: { borderLeftColor: tokens.colorSuccess },
-	removed: { borderLeftColor: tokens.colorDanger },
-	changed: { borderLeftColor: "#02b8cc" },
-	warning: { borderLeftColor: tokens.colorWarning },
+	added: { borderColor: tokens.colorSuccess },
+	removed: { borderColor: tokens.colorDanger },
+	changed: { borderColor: tokens.colorAccent },
+	warning: { borderColor: tokens.colorWarning },
 	changeType: {
 		minWidth: 0,
 		overflow: "hidden",

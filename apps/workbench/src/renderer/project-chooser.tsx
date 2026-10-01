@@ -436,9 +436,6 @@ const styles = stylex.create({
 		justifyContent: "space-between",
 		gap: 12,
 		minWidth: 0,
-		borderLeftColor: { default: "transparent", ":hover": tokens.colorAccent },
-		borderLeftStyle: "solid",
-		borderLeftWidth: 2,
 		borderRadius: tokens.radiusBadge,
 		backgroundColor: {
 			default: "transparent",
@@ -517,9 +514,6 @@ const styles = stylex.create({
 			":hover": "rgba(255, 255, 255, 0.05)",
 			":disabled": "transparent"
 		},
-		borderLeftColor: "transparent",
-		borderLeftStyle: "solid",
-		borderLeftWidth: 2,
 		borderRadius: tokens.radiusBadge,
 		color: { default: tokens.colorText, ":disabled": tokens.colorTextSubtle },
 		cursor: { default: "pointer", ":disabled": "wait" },
@@ -536,8 +530,8 @@ const styles = stylex.create({
 		transform: { default: "scale(1)", ":active": "scale(0.98)", ":disabled": "scale(1)" }
 	},
 	launchOptionPrimary: {
-		borderLeftColor: tokens.colorAccent,
-		color: tokens.colorTextStrong
+		backgroundColor: tokens.colorAccentWash,
+		color: tokens.colorAccent
 	},
 	launchNotice: {
 		backgroundColor: tokens.colorSurfaceRaised,

@@ -64,24 +64,10 @@ export function ScrubbableNumberField(props: {
 		emit(value);
 		commit(value);
 	};
-	const toneStyle = () => {
-		switch (props.tone) {
-			case "x":
-				return styles.axisX;
-			case "y":
-				return styles.axisY;
-			case "z":
-				return styles.axisZ;
-			default:
-				return styles.neutral;
-		}
-	};
-
 	return (
 		<label
 			{...stylex.attrs(
 				styles.field,
-				toneStyle(),
 				props.wide && styles.wide,
 				scrubbing() && styles.scrubbing
 			)}
@@ -137,7 +123,16 @@ export function ScrubbableNumberField(props: {
 					}}
 					{...stylex.attrs(styles.scrubHandle)}
 				>
-					<span>{props.label}</span>
+					<span
+						{...stylex.attrs(
+							styles.neutral,
+							props.tone === "x" && styles.axisX,
+							props.tone === "y" && styles.axisY,
+							props.tone === "z" && styles.axisZ
+						)}
+					>
+						{props.label}
+					</span>
 					<span aria-hidden="true" {...stylex.attrs(styles.dragGlyph)}>
 						↔
 					</span>
@@ -189,16 +184,15 @@ const styles = stylex.create({
 		borderColor: tokens.colorBorder,
 		borderStyle: "solid",
 		borderWidth: 1,
-		borderLeftWidth: 2,
 		backgroundColor: tokens.colorSurfaceInset,
 		transition:
 			"border-color 120ms cubic-bezier(0.23, 1, 0.32, 1), background-color 120ms cubic-bezier(0.23, 1, 0.32, 1)"
 	},
-	neutral: { borderLeftColor: tokens.colorTextSubtle },
+	neutral: { color: tokens.colorTextMuted },
 	wide: { gridColumn: "1 / -1" },
-	axisX: { borderLeftColor: "#eb5757" },
-	axisY: { borderLeftColor: "#4cb782" },
-	axisZ: { borderLeftColor: "#6366f1" },
+	axisX: { color: tokens.colorDanger },
+	axisY: { color: tokens.colorSuccess },
+	axisZ: { color: tokens.colorAccent },
 	scrubbing: {
 		borderColor: tokens.colorAccent,
 		backgroundColor: tokens.colorAccentWash

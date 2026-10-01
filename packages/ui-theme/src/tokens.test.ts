@@ -9,6 +9,7 @@ const supportedBackgrounds = [
 	"colorSurfaceInset"
 ] as const;
 const secondaryText = ["colorTextSubtle", "colorTextFaint"] as const;
+const accentFills = ["colorAccent", "colorAccentStrong"] as const;
 
 function readColor(source: string, token: string): string {
 	const match = new RegExp(`${token}:\\s*"(#[\\da-f]{6})"`, "iu").exec(source);
@@ -49,6 +50,25 @@ for (const file of ["tokens.stylex.ts", "themes.stylex.ts"]) {
 					).toBeGreaterThanOrEqual(4.5);
 				});
 			}
+		}
+	});
+
+	describe(`${file} accent contrast`, () => {
+		const source = readFileSync(new URL(file, import.meta.url), "utf8");
+		// The accent doubles as link and emphasis text, so it must read on every background.
+		for (const backgroundToken of supportedBackgrounds) {
+			it(`colorAccent remains readable on ${backgroundToken}`, () => {
+				expect(
+					contrast(readColor(source, "colorAccent"), readColor(source, backgroundToken))
+				).toBeGreaterThanOrEqual(4.5);
+			});
+		}
+		for (const fillToken of accentFills) {
+			it(`colorAccentText remains readable on ${fillToken}`, () => {
+				expect(
+					contrast(readColor(source, "colorAccentText"), readColor(source, fillToken))
+				).toBeGreaterThanOrEqual(4.5);
+			});
 		}
 	});
 }

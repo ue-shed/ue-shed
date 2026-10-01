@@ -56,12 +56,12 @@ const styles = stylex.create({
 		whiteSpace: "nowrap",
 		opacity: { default: 1, ":disabled": 0.42 }
 	},
-	// The one acid-lime call to action per view: heavier and roomier than the rest.
+	// The one sky-blue call to action per view: heavier and roomier than the rest.
 	primary: {
 		backgroundColor: {
 			default: tokens.colorAccent,
 			":hover": tokens.colorAccentStrong,
-			":active": "#d3e01f",
+			":active": "#68b2f2",
 			":disabled": tokens.colorAccent
 		},
 		borderColor: "transparent",

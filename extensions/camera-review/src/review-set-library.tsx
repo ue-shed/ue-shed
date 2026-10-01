@@ -574,9 +574,9 @@ const styles = stylex.create({
 		backgroundColor: tokens.colorSurface
 	},
 	setCardActive: {
-		borderColor: tokens.colorBorderStrong,
-		backgroundColor: "rgba(255, 255, 255, 0.05)",
-		boxShadow: `inset 2px 0 ${tokens.colorAccent}`
+		borderColor: tokens.colorAccent,
+		backgroundColor: tokens.colorAccentWash,
+		color: tokens.colorAccent
 	},
 	setIndex: { color: tokens.colorAccent, fontFamily: tokens.fontMono, fontSize: 21 },
 	setCopy: {
@@ -633,9 +633,6 @@ const styles = stylex.create({
 		borderColor: tokens.colorBorder,
 		borderStyle: "solid",
 		borderWidth: 1,
-		borderLeftColor: tokens.colorBorderStrong,
-		borderLeftStyle: "solid",
-		borderLeftWidth: 3,
 		backgroundColor: tokens.colorSurface,
 		display: "grid",
 		gridTemplateColumns: "minmax(0, 1fr)",

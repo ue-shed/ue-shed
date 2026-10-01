@@ -593,9 +593,9 @@ const styles = stylex.create({
 	},
 	performanceHint: {
 		margin: 0,
-		borderLeftColor: tokens.colorWarning,
-		borderLeftStyle: "solid",
-		borderLeftWidth: 2,
+		borderColor: tokens.colorWarning,
+		borderStyle: "solid",
+		borderWidth: 1,
 		padding: "8px 10px",
 		color: tokens.colorWarning,
 		backgroundColor: "rgba(242, 153, 74, 0.08)",

@@ -12,6 +12,9 @@ pub mod level_sequence;
 pub mod projection;
 pub mod saved_inspection;
 pub mod saved_world;
+pub mod saved_world_wire;
+pub mod text_wire;
+pub mod texture_wire;
 
 pub use blueprint::{
     BLUEPRINT_GRAPH_SCHEMA_VERSION, BlueprintGraph, BlueprintGraphCoverageGap,

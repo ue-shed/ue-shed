@@ -42,7 +42,26 @@ IO owns file reads, cancellation tokens and failure mapping; portable projection
 small checkpoint closures. No NDJSON or TypeScript protocol schema changed. Native fixture tests
 compare the portable snapshot's JSON structurally with the file-reading authoring wrapper.
 
-The remaining pure text/texture and saved-world conversion helpers in `direct_executor/project_io`
-adapt already-portable projections into IO protocol result/event models. Moving those requires
-moving their protocol model families too; they remain at this boundary. Scanning, filtering,
-Catalog/index work and saved-world filesystem enumeration stay in IO.
+Text, texture and saved-world wire models and their pure conversions now belong to
+`uasset-inspection::text_wire`, `texture_wire` and `saved_world_wire`. These modules sit beside the
+portable evidence projections because they preserve the native protocol's serde contract without
+changing the evidence models serialized by WASM. `protocol_result` re-exports all moved types,
+including the saved-world contract, authority, diagnostics and summary family.
+
+`direct_executor/project_io` retains the text/texture event builders and package/status envelopes,
+scanning, filters, header-cache adaptation, roots, limits, signatures, manifests, saved-world
+filesystem enumeration and progress. These operations frame or describe native IO.
+Projection diagnostics, error vocabulary and failure mapping remain here because they report
+native execution failures; the WASM adapter does not need these mappings.
+
+The remaining adapter audit found:
+
+- `project_index_io::to_protocol_*` and dictionary-page encoding adapt Catalog query/refresh results,
+  so they remain with the filesystem-backed index and its protocol seam.
+- `direct_executor::summary_diagnostics` adapts scan diagnostics, so it remains with scan framing.
+- The `protocol_adapter` event/contract helpers remain process framing. Its test-only generic
+  inspection adapter remains an independent oracle for typed-inspection parity.
+- `legacy` retains CLI argument, human-text and JSON event presentation; it defines command output
+  framing rather than portable saved-asset meaning.
+- Blueprint and Level Sequence executors already return portable projection models directly;
+  their reads, cancellation and diagnostic handling remain IO.

@@ -7,14 +7,15 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde::{Deserialize, Serialize};
 use uasset_inspection::projection::{
-    Evidence, EvidenceSource, EvidenceUnavailableReason, TextAssetProjection, TextEditCapability,
-    TextIdentity, TextIdentityReason, TextLocation, TextureRecord, project_text_asset,
-    project_texture_asset,
+    TextAssetProjection, TextureRecord, project_text_asset, project_texture_asset,
 };
 use uasset_inspection::saved_world::{
-    SavedWorldActorEvidence, SavedWorldPackageFragment, SavedWorldTransform,
-    project_saved_world_package, resolve_saved_world_actors,
+    SavedWorldPackageFragment, SavedWorldTransform, project_saved_world_package,
+    resolve_saved_world_actors,
 };
+use uasset_inspection::saved_world_wire::saved_world_actor;
+use uasset_inspection::text_wire::{text_coverage_gap, text_occurrence};
+use uasset_inspection::texture_wire::texture_record;
 use uasset_parser::asset::{AssetDecodeContext, AssetErrorKind, decode_export};
 use uasset_parser::package::{Package, PackageError, PackageErrorKind};
 use uasset_parser::schema::embedded_source_model;
@@ -27,17 +28,12 @@ use super::{
 use crate::cancellation::CancellationToken;
 use crate::protocol::{Operation, ProjectSelection, Request, ScanDepth, ScanFilters};
 use crate::protocol_result::{
-    Completeness, EditCapability, ManifestEntryKind, ProjectionStatus, ResultFrame,
-    SavedAssetHeader, SavedAssetHeaderExport, SavedAssetHeaderPackage, SavedAssetManifestEntry,
+    Completeness, ManifestEntryKind, ProjectionStatus, ResultFrame, SavedAssetHeader,
+    SavedAssetHeaderExport, SavedAssetHeaderPackage, SavedAssetManifestEntry,
     SavedAssetProjectionDiagnostic, SavedAssetScanEntry, SavedAssetScanSummary,
-    SavedAssetTextCoverageGap, SavedAssetTextExtractionEvent, SavedAssetTextOccurrence,
-    SavedAssetTextureExtractionEvent, SavedAssetTextureRecord, SavedWorld, SavedWorldActor,
-    SavedWorldAttachment, SavedWorldAuthority, SavedWorldContract, SavedWorldContractName,
-    SavedWorldContractVersion, SavedWorldDiagnostic, SavedWorldQuaternion, SavedWorldSourceKind,
-    SavedWorldSummary, SavedWorldTransform as WireWorldTransform, SavedWorldVector,
-    ScanSummaryDepth, TextCoverageGapReason, TextExtractionIdentity, TextExtractionLocation,
-    TextUnresolvedReason, TextureDimensions, TextureEvidence, TextureEvidenceSource,
-    TextureUnavailableReason,
+    SavedAssetTextExtractionEvent, SavedAssetTextureExtractionEvent, SavedWorld,
+    SavedWorldAuthority, SavedWorldContract, SavedWorldContractName, SavedWorldContractVersion,
+    SavedWorldDiagnostic, SavedWorldSourceKind, SavedWorldSummary, ScanSummaryDepth,
 };
 
 const SCHEMA_VERSION: u8 = 8;
@@ -859,73 +855,11 @@ fn text_results(path: &str, file_bytes: u64, projection: TextAssetProjection) ->
             event: SavedAssetTextExtractionEvent::TextCoverageGap {
                 schema_version: 1,
                 path: path.to_owned(),
-                coverage_gap: SavedAssetTextCoverageGap {
-                    object_path: gap.object_path,
-                    property_path: gap.property_path,
-                    reason: match gap.reason {
-                        uasset_inspection::projection::TextCoverageGapReason::UnsupportedTextHistory => {
-                            TextCoverageGapReason::UnsupportedTextHistory
-                        }
-                    },
-                },
+                coverage_gap: text_coverage_gap(gap),
             },
         });
     }
     results
-}
-
-fn text_occurrence(
-    occurrence: uasset_inspection::projection::TextOccurrence,
-) -> SavedAssetTextOccurrence {
-    SavedAssetTextOccurrence {
-        source: occurrence.source,
-        dev_notes: occurrence.dev_notes,
-        identity: match occurrence.identity {
-            TextIdentity::Resolved { namespace, key } => {
-                TextExtractionIdentity::Resolved { namespace, key }
-            }
-            TextIdentity::StringTable { table_id, key } => {
-                TextExtractionIdentity::StringTable { table_id, key }
-            }
-            TextIdentity::Unresolved { reason } => TextExtractionIdentity::Unresolved {
-                reason: match reason {
-                    TextIdentityReason::CultureInvariant => TextUnresolvedReason::CultureInvariant,
-                    TextIdentityReason::MissingKey => TextUnresolvedReason::MissingKey,
-                },
-            },
-        },
-        location: match occurrence.location {
-            TextLocation::DataTableCell {
-                object_path,
-                row,
-                property_path,
-            } => TextExtractionLocation::DataTableCell {
-                object_path,
-                row,
-                property_path,
-            },
-            TextLocation::StringTableEntry {
-                object_path,
-                entry_key,
-            } => TextExtractionLocation::StringTableEntry {
-                object_path,
-                entry_key,
-            },
-            TextLocation::AssetProperty {
-                object_path,
-                class_path,
-                property_path,
-            } => TextExtractionLocation::AssetProperty {
-                object_path,
-                class_path,
-                property_path,
-            },
-        },
-        edit_capability: match occurrence.edit_capability {
-            TextEditCapability::SourceEditable => EditCapability::SourceEditable,
-            TextEditCapability::ReadOnly => EditCapability::ReadOnly,
-        },
-    }
 }
 
 fn texture_record_result(path: &str, record: TextureRecord) -> ResultFrame {
@@ -935,85 +869,6 @@ fn texture_record_result(path: &str, record: TextureRecord) -> ResultFrame {
             path: path.to_owned(),
             record: texture_record(record),
         },
-    }
-}
-
-fn texture_record(record: TextureRecord) -> SavedAssetTextureRecord {
-    SavedAssetTextureRecord {
-        object_path: record.object_path,
-        package_file_bytes: texture_evidence(record.package_file_bytes),
-        dimensions: texture_evidence(record.dimensions),
-        source_format: texture_evidence(record.source_format),
-        source_mips: texture_evidence(record.source_mips),
-        compression: texture_evidence(record.compression),
-        s_rgb: texture_evidence(record.s_rgb),
-        texture_group: texture_evidence(record.texture_group),
-        mip_generation: texture_evidence(record.mip_generation),
-    }
-}
-
-fn texture_evidence<T>(value: Evidence<T>) -> TextureEvidence<T::Wire>
-where
-    T: TextureWire,
-{
-    match value {
-        Evidence::Available { source, value } => TextureEvidence::Available {
-            source: match source {
-                EvidenceSource::Serialized => TextureEvidenceSource::Serialized,
-                EvidenceSource::File => TextureEvidenceSource::File,
-            },
-            value: value.into_wire(),
-        },
-        Evidence::Unavailable { reason } => TextureEvidence::Unavailable {
-            reason: match reason {
-                EvidenceUnavailableReason::NotSerialized => TextureUnavailableReason::NotSerialized,
-                EvidenceUnavailableReason::WrongValueKind => {
-                    TextureUnavailableReason::WrongValueKind
-                }
-                EvidenceUnavailableReason::MissingSource => TextureUnavailableReason::MissingSource,
-            },
-        },
-    }
-}
-
-trait TextureWire {
-    type Wire;
-
-    fn into_wire(self) -> Self::Wire;
-}
-
-impl TextureWire for u64 {
-    type Wire = u64;
-
-    fn into_wire(self) -> Self::Wire {
-        self
-    }
-}
-
-impl TextureWire for String {
-    type Wire = String;
-
-    fn into_wire(self) -> Self::Wire {
-        self
-    }
-}
-
-impl TextureWire for bool {
-    type Wire = bool;
-
-    fn into_wire(self) -> Self::Wire {
-        self
-    }
-}
-
-impl TextureWire for uasset_inspection::projection::TextureDimensions {
-    type Wire = TextureDimensions;
-
-    fn into_wire(self) -> Self::Wire {
-        TextureDimensions {
-            width: self.width,
-            height: self.height,
-        }
     }
 }
 
@@ -1806,74 +1661,6 @@ fn read_saved_world_package(
         fragment: Some(fragment),
         partial,
     })
-}
-
-fn saved_world_actor(actor: SavedWorldActorEvidence) -> SavedWorldActor {
-    SavedWorldActor {
-        actor_guid: actor.actor_guid.map(|guid| guid.to_string()),
-        actor_path: actor.actor_path.to_string(),
-        attachment: actor.attachment.map(|attachment| SavedWorldAttachment {
-            component_path: attachment.component_path.to_string(),
-            parent_component_path: attachment.parent_component_path.to_string(),
-        }),
-        class_path: actor.class_path.to_string(),
-        label: actor.label,
-        package_name: actor.package_name,
-        transform: saved_world_transform(actor.transform),
-    }
-}
-
-fn saved_world_transform(transform: SavedWorldTransform) -> WireWorldTransform {
-    match transform {
-        SavedWorldTransform::Resolved {
-            location,
-            rotation,
-            scale,
-        } => WireWorldTransform::Resolved {
-            location: SavedWorldVector {
-                x: location.x,
-                y: location.y,
-                z: location.z,
-            },
-            rotation: SavedWorldQuaternion {
-                w: rotation.w,
-                x: rotation.x,
-                y: rotation.y,
-                z: rotation.z,
-            },
-            scale: SavedWorldVector {
-                x: scale.x,
-                y: scale.y,
-                z: scale.z,
-            },
-        },
-        SavedWorldTransform::MissingRootComponent => WireWorldTransform::MissingRootComponent,
-        SavedWorldTransform::MissingAttachmentParent { parent_path } => {
-            WireWorldTransform::MissingAttachmentParent {
-                parent_path: parent_path.to_string(),
-            }
-        }
-        SavedWorldTransform::AttachmentCycle { component_path } => {
-            WireWorldTransform::AttachmentCycle {
-                component_path: component_path.to_string(),
-            }
-        }
-        SavedWorldTransform::AmbiguousComponentPath { component_path } => {
-            WireWorldTransform::AmbiguousComponentPath {
-                component_path: component_path.to_string(),
-            }
-        }
-        SavedWorldTransform::UnsupportedAbsoluteTransform { component_path } => {
-            WireWorldTransform::UnsupportedAbsoluteTransform {
-                component_path: component_path.to_string(),
-            }
-        }
-        SavedWorldTransform::NonFiniteTransform { component_path } => {
-            WireWorldTransform::NonFiniteTransform {
-                component_path: component_path.to_string(),
-            }
-        }
-    }
 }
 
 #[cfg(test)]

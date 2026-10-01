@@ -30,3 +30,16 @@ retains the existing typed-inspection coupling rather than changing native snaps
 `saved_inspection` owns that typed projection and its serde models; it projects directly from
 decoded parser values. Optional checkpoint closures allow IO cancellation without a portable
 dependency on cancellation tokens, files, processes or scheduling.
+
+`text_wire`, `texture_wire` and `saved_world_wire` own the native saved-text, saved-texture and
+saved-world serde model families and the pure evidence-to-wire conversions. The names distinguish
+the preserved native wire contract from the existing `projection` and `saved_world` evidence
+models. Text occurrence/coverage-gap mapping, texture record/evidence mapping and its private
+`TextureWire` trait, and saved actor/transform mapping require no IO. The saved-world family also
+includes its authority, contract, diagnostics and summary types. Native `uasset-io::protocol_result`
+re-exports the types and retains result/event envelopes, file enumeration and failure mapping.
+
+Unit tests assert serialized JSON strings, including field order, every enum variant, empty/default
+text notes and omitted versus present saved-world options. All moved serde attributes are retained.
+WASM still serializes its existing text/texture evidence models; adopting the matching wire models
+there is a possible follow-up, outside this ownership change.

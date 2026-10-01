@@ -28,6 +28,9 @@ async function checkPortableCrate(directory: string, failures: string[]) {
 			/\bstd::thread\b/,
 			/\bstd::sync\b/,
 			/\b(?:rayon|tokio)\b/,
+			/\buasset_io\b/,
+			/\bCancellationToken\b/,
+			/\b(?:rusqlite|duckdb)\b/,
 			/\bCommand::new\b/,
 			/\bFile::open\b/
 		]) {
@@ -42,18 +45,27 @@ async function main() {
 	const failures: string[] = [];
 	await checkPortableCrate("crates/uasset-parser/src", failures);
 	await checkPortableCrate("crates/uasset-inspection/src", failures);
-	const executor = await readFile(
-		join(repositoryRoot, "crates/uasset-io/src/direct_executor.rs"),
-		"utf8"
-	);
-	for (const helper of [
+	const portableHelpers = [
 		"authoring_value",
 		"authoring_float",
 		"authoring_values",
-		"authoring_field"
-	]) {
-		if (new RegExp(`fn ${helper}\\b`).test(executor)) {
-			failures.push(`uasset-io still owns portable authoring helper ${helper}`);
+		"authoring_field",
+		"text_occurrence",
+		"text_coverage_gap",
+		"texture_record",
+		"texture_evidence",
+		"saved_world_actor",
+		"saved_world_transform"
+	];
+	for (const path of await rustFiles("crates/uasset-io/src")) {
+		const source = await readFile(join(repositoryRoot, path), "utf8");
+		for (const helper of portableHelpers) {
+			if (new RegExp(`fn ${helper}\\b`).test(source)) {
+				failures.push(`${path} still owns portable projection helper ${helper}`);
+			}
+		}
+		if (/trait TextureWire\b/.test(source)) {
+			failures.push(`${path} still owns portable texture wire conversion`);
 		}
 	}
 	const results = await readFile(
@@ -62,6 +74,23 @@ async function main() {
 	);
 	if (/pub (?:struct|enum) Authoring\w+/.test(results)) {
 		failures.push("uasset-io must re-export authoring models from uasset-inspection");
+	}
+
+	for (const family of [
+		"SavedAssetTextOccurrence",
+		"SavedAssetTextCoverageGap",
+		"TextExtraction",
+		"TextUnresolvedReason",
+		"TextCoverageGapReason",
+		"EditCapability",
+		"SavedAssetTextureRecord",
+		"Texture",
+		"SavedWorld",
+		"ProjectFilesKind"
+	]) {
+		if (new RegExp(`pub (?:struct|enum) ${family}\\w*`).test(results)) {
+			failures.push(`uasset-io must re-export ${family} models from uasset-inspection`);
+		}
 	}
 
 	const parserBin = join(repositoryRoot, "crates", "uasset-parser", "src", "bin");

@@ -37,7 +37,7 @@ does not need.
 
 ## Decision
 
-- Pin the exact reviewed `peculiar-sheets@0.13.0` MIT core. Do not rely on a caret range while the
+- Pin the exact reviewed `peculiar-sheets` MIT core (currently `0.15.0`, compiled for Solid rc.9). Do not rely on a caret range while the
   library is on a pre-1.0 API.
 - Enforce the production boundary in `pnpm license:check`: UE Shed must not acquire HyperFormula,
   `peculiar-sheets-ironcalc`, or `@ironcalc/wasm` through a production dependency path.
@@ -68,13 +68,14 @@ to other Peculiar Sheets consumers without becoming an unused UE Shed dependency
 ## Approval record
 
 The repository owner stated that they own Peculiar Sheets and authorized the formula-free core under
-MIT. The published `0.13.0` registry metadata and installed manifest are checked by the release gate.
+MIT. The release gate checks the installed manifest against the currently pinned version (`0.15.0`,
+the Solid rc.9 build, since 2026-10-01).
 This decision does not alter the licenses of HyperFormula, IronCalc, Unreal Engine, or any other
 third-party dependency.
 
 ## Implementation evidence
 
-`peculiar-sheets@0.13.0` is pinned exactly in the Data Authoring extension. The browser adapter uses
+`peculiar-sheets@0.15.0` is pinned exactly in the Data Authoring extension (0.13.0 at the time of this decision; 0.15.0 is the Solid rc.9 build). The browser adapter uses
 only `Sheet`, `rowId`, published types, and the published stylesheet. It does not instantiate a
 formula engine, use private selectors, or transfer authoring authority into the grid.
 

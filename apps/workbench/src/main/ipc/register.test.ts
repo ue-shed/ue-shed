@@ -106,6 +106,7 @@ const sampleCameraStatus: CameraStatus = {
 
 interface RegistrationOptions {
 	readonly blueprintErrorCode?: string;
+	readonly sequenceErrorCode?: string;
 	readonly blueprintProjectConfigured?: boolean;
 }
 
@@ -125,6 +126,17 @@ function buildRegistrationLayer(recorder: Recorder, options: RegistrationOptions
 					kind: "process",
 					message: "Blueprint fixture failure",
 					operation: "blueprint",
+					path: assetPath,
+					retrySafe: false
+				})
+			),
+		readLevelSequence: (assetPath) =>
+			Effect.fail(
+				new AssetReaderError({
+					code: options.sequenceErrorCode ?? "unsupported",
+					kind: "process",
+					message: "Sequence fixture failure",
+					operation: "level_sequence",
 					path: assetPath,
 					retrySafe: false
 				})
@@ -844,13 +856,6 @@ it.effect("classifies native Blueprint failures for focused recovery", () =>
 	})
 );
 
-it.effect("treats a cancelled Blueprint file picker as idle", () =>
-	Effect.gen(function* () {
-		const { result } = yield* runRegistered((ipc) => ipc.invoke("blueprint-graphs:choose"));
-		expect(result).toEqual({ status: "cancelled" });
-	})
-);
-
 it.effect("dispatches Niagara preview runs and manifest-owned frames", () =>
 	Effect.gen(function* () {
 		const systemObjectPath =
@@ -1194,3 +1199,47 @@ it.effect("rejects malformed input instead of reaching the service", () =>
 		expect(yield* recorder.calls()).toEqual([]);
 	})
 );
+
+it.effect("registers path reads and inventory without a sequence file chooser", () =>
+	Effect.gen(function* () {
+		const { result } = yield* runRegistered((ipc) => ipc.handlers());
+		const channels = result.map((entry) => entry.channel);
+		expect(channels).toContain("saved-review:sequence");
+		expect(channels).toContain("saved-review:inventory");
+		expect(channels).not.toContain("saved-review:choose-sequence");
+	})
+);
+
+it.effect("reports missing indexed projects as configuration state", () =>
+	Effect.gen(function* () {
+		const { result } = yield* runRegistered((ipc) => ipc.invoke("saved-review:inventory"));
+		expect(result).toMatchObject({ status: "not_configured" });
+	})
+);
+
+const sequenceErrors: readonly (readonly [string, string])[] = [
+	["malformed_data", "malformed_package"],
+	["unsupported_version", "unsupported_version"],
+	["unsupported", "unsupported_asset"],
+	["unsupported_format", "unsupported_asset"],
+	["unsupported_capability", "unsupported_asset"],
+	["executable_missing", "missing_reader"],
+	["resource_limit", "reader_failure"],
+	["other", "reader_failure"]
+];
+for (const [code, reason] of sequenceErrors) {
+	it.effect(`maps native sequence error ${code} to ${reason}`, () =>
+		Effect.gen(function* () {
+			const { result } = yield* runRegistered(
+				(ipc) => ipc.invoke("saved-review:sequence", "LS.uasset"),
+				{ sequenceErrorCode: code }
+			);
+			expect(result).toMatchObject({
+				status: "failed",
+				assetPath: "LS.uasset",
+				reason,
+				message: "Sequence fixture failure"
+			});
+		})
+	);
+}

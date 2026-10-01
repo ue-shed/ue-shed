@@ -391,11 +391,11 @@ const styles = stylex.create({
 		transform: { default: "scale(1)", ":active": "scale(0.97)", ":disabled": "scale(1)" }
 	},
 	primary: {
-		borderColor: "rgba(228, 242, 34, 0.45)",
+		borderColor: "rgba(124, 192, 255, 0.45)",
 		color: tokens.colorAccent,
 		":hover": {
 			backgroundColor: tokens.colorAccentWash,
-			borderColor: "rgba(228, 242, 34, 0.7)",
+			borderColor: "rgba(124, 192, 255, 0.7)",
 			color: tokens.colorAccent
 		}
 	}

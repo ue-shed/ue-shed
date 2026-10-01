@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen, waitFor } from "@solidjs/testing-library";
+import { cleanup, render, screen, waitFor, within } from "@solidjs/testing-library";
 import { userEvent } from "@testing-library/user-event";
 import type {
 	AuthoringClientApi,
@@ -10,11 +10,16 @@ import type {
 import type { AuthoringTableSnapshot } from "@ue-shed/protocol";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
 import { Deferred, Effect, Layer, ManagedRuntime } from "effect";
+import { columnIdx, physicalRow, rowId, visualRow } from "peculiar-sheets";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { AuthoringRoute } from "./authoring-route.js";
+import { captureAuthoringSheet } from "./authoring-sheet.test-support.js";
 
 const runtime = ManagedRuntime.make(Layer.empty);
-afterEach(cleanup);
+afterEach(() => {
+	cleanup();
+	vi.restoreAllMocks();
+});
 afterAll(() => runtime.dispose());
 
 const snapshot: AuthoringTableSnapshot = {
@@ -548,6 +553,20 @@ describe("AuthoringRoute", () => {
 		));
 
 		await screen.findByRole("tab", { name: "Charts" });
+		const summary = screen.getByRole("region", { name: "Table summary" });
+		await waitFor(() => expect(summary.textContent).toContain("Saved · 0 changes · 0 errors"));
+		expect(within(summary).getByText("Complete snapshot")).toBeDefined();
+		expect(within(summary).getByText(snapshot.table.objectPath).getAttribute("title")).toBe(
+			snapshot.table.objectPath
+		);
+		expect(screen.getByRole("button", { name: "Review" })).toBeDefined();
+		expect(screen.queryByRole("button", { name: "Review 0" })).toBeNull();
+		const inspector = screen.getByRole("complementary", { name: "Cell inspector" });
+		expect(within(inspector).getByRole("heading", { name: "Count" })).toBeDefined();
+		expect(within(inspector).getByText("IntProperty")).toBeDefined();
+		expect(within(inspector).getByText("row:Alpha")).toBeDefined();
+		expect(within(inspector).queryByText("Unreal type")).toBeNull();
+		expect(within(inspector).queryByText("Value kind")).toBeNull();
 		await userEvent.setup().click(screen.getByRole("tab", { name: "Charts" }));
 		expect(await screen.findByText("Count distribution")).toBeDefined();
 		await userEvent
@@ -869,6 +888,122 @@ describe("AuthoringRoute", () => {
 		expect(confirm).toHaveBeenCalled();
 		expect(screen.getByText(snapshot.table.objectPath)).toBeDefined();
 		confirm.mockRestore();
+	});
+
+	it("stages a typed cell change through the Sheet operation boundary", async () => {
+		const sheet = captureAuthoringSheet();
+		const intents: AuthoringSessionIntent[] = [];
+		const editedSnapshot: AuthoringTableSnapshot = {
+			...snapshot,
+			table: {
+				...snapshot.table,
+				rows: snapshot.table.rows.map((row) => ({
+					...row,
+					fields: row.fields.map((field) =>
+						row.id === "row:Alpha" && field.name === "Count"
+							? { ...field, value: { kind: "int" as const, value: "13" } }
+							: field
+					)
+				}))
+			}
+		};
+		const stagedView: AuthoringSessionView = {
+			...sessionView,
+			snapshot: editedSnapshot,
+			review: {
+				...sessionView.review,
+				tables: [
+					{
+						...sessionView.review.tables[0]!,
+						base: snapshot,
+						working: editedSnapshot,
+						changes: [
+							{
+								fieldName: "Count",
+								kind: "cell_changed",
+								newValue: { kind: "int", value: "13" },
+								oldValue: { kind: "int", value: "2" },
+								rowId: "row:Alpha",
+								rowName: "Alpha"
+							}
+						]
+					}
+				]
+			}
+		};
+		const client: AuthoringClientApi = {
+			applySession: () => Effect.die("unused"),
+			beginSession: () =>
+				Effect.succeed({ status: "ready" as const, view: cleanSession(snapshot) }),
+			chooseTable: () => Effect.die("unused"),
+			discardSession: () => Effect.die("unused"),
+			editSession: (intent) =>
+				Effect.sync(() => {
+					intents.push(intent);
+					return { status: "ready" as const, view: stagedView };
+				}),
+			getCatalogProgress: () =>
+				Effect.succeed({
+					cacheHits: 0,
+					phase: "ready" as const,
+					processedAssets: 1,
+					tablesFound: 1,
+					totalAssets: 1
+				}),
+			listSessions: () =>
+				Effect.succeed({ diagnostics: [], sessions: [], status: "ready" as const }),
+			loadConfiguredCatalog: () =>
+				Effect.succeed({ diagnostics: [], status: "ready" as const, tables: [] }),
+			loadConfiguredTable: () => Effect.succeed({ snapshot, status: "ready" as const }),
+			openCatalogTable: () => Effect.die("unused"),
+			openSession: () => Effect.die("unused"),
+			reconcileSession: () => Effect.die("unused"),
+			redoSession: () => Effect.die("unused"),
+			reviewSession: () => Effect.die("unused"),
+			saveSession: () => Effect.die("unused"),
+			undoSession: () => Effect.die("unused")
+		};
+		render(() => (
+			<EffectRuntimeProvider runtime={runtime}>
+				<AuthoringRoute client={client} />
+			</EffectRuntimeProvider>
+		));
+		const user = userEvent.setup();
+		await waitFor(() => expect(sheet.props().readOnly).toBe(false));
+		expect(sheet.props().columns[0]?.editable).toBe(false);
+		expect(sheet.props().columns[1]?.editable).toBe(true);
+		sheet.emit({
+			type: "cell-edit",
+			mutation: {
+				address: { row: physicalRow(0), col: columnIdx(1) },
+				viewAddress: { row: visualRow(0), col: columnIdx(1) },
+				rowId: rowId("row:Alpha"),
+				columnId: "Count",
+				oldValue: "2",
+				newValue: "13",
+				source: "user"
+			}
+		});
+		await waitFor(() =>
+			expect(intents).toEqual([
+				{
+					edits: [
+						{
+							fieldName: "Count",
+							rowId: "row:Alpha",
+							value: { kind: "int", value: "13" }
+						}
+					],
+					kind: "set_cells",
+					sessionId: "session-1",
+					tableObjectPath: snapshot.table.objectPath
+				}
+			])
+		);
+		await waitFor(() => expect(sheet.props().data[0]).toEqual(["Alpha", "13"]));
+		await user.click(screen.getByRole("button", { name: "Review 1" }));
+		expect(await screen.findByText("Alpha.Count")).toBeTruthy();
+		expect(screen.getByText("2 → 13")).toBeTruthy();
 	});
 
 	it("loads a referenced table without replacing the source draft and stages a typed row handle", async () => {

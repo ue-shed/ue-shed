@@ -13,12 +13,16 @@ import type {
 	BlueprintAssetCandidate,
 	BlueprintGraphFailureReason,
 	BlueprintGraphReadResult
-} from "../shared/ipc-contracts.js";
+} from "./contract.js";
 import { BlueprintGraphViewer } from "./blueprint-graph-viewer.js";
-import { WorkbenchRendererError, type WorkbenchRendererClient } from "./workbench-client.js";
+import {
+	ProjectBlueprintSearch,
+	type ProjectBlueprintSearchProps
+} from "./project-blueprint-search.js";
 
 const runtime = ManagedRuntime.make(Layer.empty);
 const assetPath = "C:/Project/Content/UI/WBP_Settings.uasset";
+const searchLabel = "Search project Blueprints";
 const indexedSettings: BlueprintAssetCandidate = {
 	assetName: "WBP_Settings",
 	assetPath,
@@ -32,6 +36,13 @@ const indexedPlayer: BlueprintAssetCandidate = {
 	className: "Blueprint",
 	packageName: "/Game/Characters/BP_PlayerCharacter",
 	relativePath: "Content/Characters/BP_PlayerCharacter.uasset"
+};
+
+const indexedProject = {
+	assets: [indexedSettings],
+	matchCount: 1,
+	projectName: "ExampleProject",
+	status: "ready" as const
 };
 
 afterEach(cleanup);
@@ -183,43 +194,104 @@ function ready(projection: BlueprintGraphProjection = blueprint): BlueprintGraph
 }
 
 type BlueprintViewerClient = Pick<
-	WorkbenchRendererClient,
-	"chooseBlueprint" | "chooseProject" | "readBlueprint" | "searchBlueprints"
+	ProjectBlueprintSearchProps,
+	"readBlueprint" | "searchBlueprints"
 >;
 
 function renderViewer(client: BlueprintViewerClient) {
 	return render(() => (
 		<EffectRuntimeProvider runtime={runtime}>
-			<BlueprintGraphViewer client={client} />
+			<BlueprintGraphViewer
+				opener={(controls) => <ProjectBlueprintSearch controls={controls} {...client} />}
+				transportFailureCopy={{
+					title: "The local reader request failed",
+					message: "The read request could not be completed.",
+					recovery: "Retry the read request. Unreal is not required."
+				}}
+			/>
 		</EffectRuntimeProvider>
 	));
 }
 
 function clientWith(
 	overrides: {
-		readonly chooseBlueprint?: WorkbenchRendererClient["chooseBlueprint"];
-		readonly chooseProject?: WorkbenchRendererClient["chooseProject"];
-		readonly readBlueprint?: WorkbenchRendererClient["readBlueprint"];
-		readonly searchBlueprints?: WorkbenchRendererClient["searchBlueprints"];
+		readonly readBlueprint?: BlueprintViewerClient["readBlueprint"];
+		readonly searchBlueprints?: BlueprintViewerClient["searchBlueprints"];
 	} = {}
 ): BlueprintViewerClient {
 	return {
-		chooseBlueprint:
-			overrides.chooseBlueprint ?? (() => Effect.succeed({ status: "cancelled" })),
-		chooseProject: overrides.chooseProject ?? (() => Effect.succeed({ status: "cancelled" })),
 		readBlueprint: overrides.readBlueprint ?? (() => Effect.succeed(ready())),
-		searchBlueprints:
-			overrides.searchBlueprints ?? (() => Effect.succeed({ status: "not_configured" }))
+		searchBlueprints: overrides.searchBlueprints ?? (() => Effect.succeed(indexedProject))
 	};
 }
 
 async function openPath() {
-	const user = userEvent.setup();
-	await user.type(screen.getByLabelText("Blueprint package path"), assetPath);
-	await user.click(screen.getByRole("button", { name: "Open graph" }));
+	await userEvent
+		.setup()
+		.click(await screen.findByRole("button", { name: "Open WBP_Settings from project index" }));
 }
 
 describe("BlueprintGraphViewer", () => {
+	it("opens a canned read through a custom opener without a project index", async () => {
+		const opener = vi.fn(
+			(controls: import("./blueprint-graph-viewer.js").BlueprintGraphOpenerControls) => (
+				<button
+					disabled={controls.loading}
+					onClick={() => controls.open(Effect.succeed(ready()))}
+				>
+					Open uploaded Blueprint
+				</button>
+			)
+		);
+		render(() => (
+			<EffectRuntimeProvider runtime={runtime}>
+				<BlueprintGraphViewer opener={opener} />
+			</EffectRuntimeProvider>
+		));
+
+		await userEvent
+			.setup()
+			.click(screen.getByRole("button", { name: "Open uploaded Blueprint" }));
+		const summary = await screen.findByRole("region", { name: "Blueprint summary" });
+		expect(within(summary).getByRole("heading", { name: "WBP_Settings" })).toBeTruthy();
+		expect(
+			within(summary).getByRole("button", { name: "Open uploaded Blueprint" })
+		).toBeTruthy();
+		expect(screen.queryByRole("searchbox", { name: searchLabel })).toBeNull();
+		expect(opener).toHaveBeenCalledTimes(1);
+	});
+
+	it("accepts an initial read and lets a footer reveal another graph's node", async () => {
+		render(() => (
+			<EffectRuntimeProvider runtime={runtime}>
+				<BlueprintGraphViewer
+					initialRead={Effect.succeed(ready())}
+					opener={() => undefined}
+					footer={(_read, controls) => (
+						<button
+							onClick={() =>
+								controls.reveal(
+									"/Game/UI/WBP_Settings.WBP_Settings:UtilityGraph.Value"
+								)
+							}
+						>
+							Reveal footer reference
+						</button>
+					)}
+				/>
+			</EffectRuntimeProvider>
+		));
+		await userEvent
+			.setup()
+			.click(await screen.findByRole("button", { name: "Reveal footer reference" }));
+		expect(
+			screen
+				.getByRole("tab", { name: /A Utility Graph With A Very Long Saved Name/ })
+				.getAttribute("aria-selected")
+		).toBe("true");
+		expect(screen.getByRole("heading", { name: "Saved Value" })).toBeTruthy();
+	});
+
 	it("searches saved nodes and pins across graphs and selects their owning node", async () => {
 		renderViewer(clientWith());
 		await openPath();
@@ -255,7 +327,7 @@ describe("BlueprintGraphViewer", () => {
 			})
 		).toBeDefined();
 		const user = userEvent.setup();
-		await user.type(screen.getByLabelText("Search indexed Blueprints"), "settings");
+		await user.type(screen.getByLabelText(searchLabel), "settings");
 		await waitFor(() =>
 			expect(searchBlueprints).toHaveBeenLastCalledWith({ query: "settings" })
 		);
@@ -267,64 +339,62 @@ describe("BlueprintGraphViewer", () => {
 
 		await user.keyboard("{Enter}");
 		await waitFor(() => expect(readBlueprint).toHaveBeenCalledWith(assetPath));
-		expect(await screen.findByText("Complete saved-graph projection")).toBeDefined();
-		expect(screen.getByLabelText<HTMLInputElement>("Blueprint package path").value).toBe(
-			assetPath
-		);
+		expect(await screen.findByText("Fully decoded")).toBeDefined();
+		expect(screen.getByLabelText<HTMLInputElement>(searchLabel).value).toBe("");
+		await waitFor(() => expect(searchBlueprints).toHaveBeenLastCalledWith({ query: "" }));
 	});
 
-	it("offers project selection when indexed search is not configured", async () => {
-		let searchCount = 0;
-		const chooseProject = vi.fn(() =>
-			Effect.succeed({
-				project: {
-					inputAtlas: "deferred" as const,
-					mapCount: 0,
-					packageCount: 1,
-					projectName: "ExampleProject",
-					projectRoot: "C:/Project"
-				},
-				status: "ready" as const
-			})
+	it("searches only the scanned project and defers project selection to the sidebar", async () => {
+		renderViewer(
+			clientWith({ searchBlueprints: () => Effect.succeed({ status: "not_configured" }) })
 		);
+
+		expect(await screen.findByRole("heading", { name: "No project selected" })).toBeDefined();
+		expect(screen.queryByRole("button", { name: /Choose project|Browse|^Open$/ })).toBeNull();
+		expect(screen.queryByLabelText(searchLabel)).toBeNull();
+	});
+
+	it("keeps the project index one keystroke away after a Blueprint is open", async () => {
+		const readBlueprint = vi.fn((_path: string) => Effect.succeed(ready()));
 		renderViewer(
 			clientWith({
-				chooseProject,
-				searchBlueprints: () => {
-					searchCount += 1;
-					return Effect.succeed(
-						searchCount === 1
-							? ({ status: "not_configured" } as const)
-							: ({
-									assets: [indexedSettings],
-									matchCount: 1,
-									projectName: "ExampleProject",
-									status: "ready"
-								} as const)
-					);
-				}
+				readBlueprint,
+				searchBlueprints: () =>
+					Effect.succeed({
+						assets: [indexedPlayer, indexedSettings],
+						matchCount: 2,
+						projectName: "ExampleProject",
+						status: "ready" as const
+					})
 			})
 		);
-
-		expect(await screen.findByText("No Workbench project is selected")).toBeDefined();
-		await userEvent.setup().click(screen.getByRole("button", { name: "Choose project" }));
-		await waitFor(() => expect(chooseProject).toHaveBeenCalledOnce());
+		await openPath();
+		expect(await screen.findByText("Fully decoded")).toBeDefined();
 		expect(
-			await screen.findByRole("button", {
-				name: "Open WBP_Settings from project index"
-			})
-		).toBeDefined();
+			screen.queryByRole("button", { name: "Open BP_PlayerCharacter from project index" })
+		).toBeNull();
+
+		const user = userEvent.setup();
+		await user.type(screen.getByLabelText(searchLabel), "player");
+		await user.keyboard("{ArrowDown}");
+		expect(document.activeElement?.getAttribute("aria-label")).toBe(
+			"Open BP_PlayerCharacter from project index"
+		);
+		await user.keyboard("{Enter}");
+		await waitFor(() =>
+			expect(readBlueprint).toHaveBeenLastCalledWith(indexedPlayer.assetPath)
+		);
 	});
 
-	it("opens an absolute path and exposes saved topology, pin types, and defaults", async () => {
+	it("opens an indexed Blueprint and exposes saved topology, pin types, and defaults", async () => {
 		const readBlueprint = vi.fn((_path: string) => Effect.succeed(ready()));
 		const view = renderViewer(clientWith({ readBlueprint }));
 
 		await openPath();
 
 		await waitFor(() => expect(readBlueprint).toHaveBeenCalledWith(assetPath));
-		expect(await screen.findByText("Complete saved-graph projection")).toBeDefined();
-		expect(screen.getByText("Topology complete")).toBeDefined();
+		expect(await screen.findByText("Fully decoded")).toBeDefined();
+		expect(screen.queryByLabelText("Projection coverage")).toBeNull();
 		expect(screen.getByRole("button", { name: "Inspect On Clicked" })).toBeDefined();
 		expect(view.container.querySelectorAll("svg path")).toHaveLength(1);
 
@@ -360,34 +430,24 @@ describe("BlueprintGraphViewer", () => {
 			})
 		);
 
-		await userEvent
-			.setup()
-			.type(screen.getByLabelText("Blueprint package path"), "C:/Project/BP_Partial.uasset");
-		await userEvent.setup().click(screen.getByRole("button", { name: "Open graph" }));
+		await openPath();
 
 		expect(await screen.findByText("Topology complete; projection partial")).toBeDefined();
 		expect(screen.getByText("Topology complete")).toBeDefined();
-		expect(screen.getByText("Partial Blueprint decode")).toBeDefined();
+		expect(screen.getByLabelText("Blueprint decode diagnostics")).toBeDefined();
 		expect(screen.getByText("One node payload remains only partially decoded.")).toBeDefined();
 	});
 
-	it("opens the native picker result, switches graphs, and changes zoom", async () => {
-		renderViewer(
-			clientWith({
-				chooseBlueprint: () => Effect.succeed(ready())
-			})
-		);
+	it("switches graphs and changes zoom", async () => {
+		renderViewer(clientWith());
 		const user = userEvent.setup();
 
-		await user.click(screen.getByRole("button", { name: "Browse…" }));
-		expect(await screen.findByText("Complete saved-graph projection")).toBeDefined();
-		expect(screen.getByLabelText<HTMLInputElement>("Blueprint package path").value).toBe(
-			assetPath
-		);
+		await openPath();
+		expect(await screen.findByText("Fully decoded")).toBeDefined();
 
 		await user.click(
-			screen.getByRole("button", {
-				name: "A Utility Graph With A Very Long Saved Name, 1 nodes"
+			screen.getByRole("tab", {
+				name: "A Utility Graph With A Very Long Saved Name, 1 node"
 			})
 		);
 		expect(screen.getByRole("button", { name: "Inspect Saved Value" })).toBeDefined();
@@ -398,23 +458,10 @@ describe("BlueprintGraphViewer", () => {
 		expect(screen.getByLabelText("Graph zoom").textContent).toBe("100%");
 	});
 
-	it("reports loading and a cancelled picker without treating cancellation as failure", async () => {
-		renderViewer(
-			clientWith({
-				chooseBlueprint: () => Effect.succeed({ status: "cancelled" }),
-				readBlueprint: () => Effect.never
-			})
-		);
-		const user = userEvent.setup();
-		await user.type(screen.getByLabelText("Blueprint package path"), assetPath);
-		await user.click(screen.getByRole("button", { name: "Open graph" }));
+	it("reports loading while a saved package is decoded", async () => {
+		renderViewer(clientWith({ readBlueprint: () => Effect.never }));
+		await openPath();
 		expect(await screen.findByText("Reading saved package")).toBeDefined();
-		expect(screen.getByRole("button", { name: "Browse…" }).hasAttribute("disabled")).toBe(true);
-
-		cleanup();
-		renderViewer(clientWith());
-		await userEvent.setup().click(screen.getByRole("button", { name: "Browse…" }));
-		expect(await screen.findByText(/File selection cancelled/)).toBeDefined();
 		expect(screen.queryByRole("alert")).toBeNull();
 	});
 
@@ -430,6 +477,8 @@ describe("BlueprintGraphViewer", () => {
 			await screen.findByRole("heading", { name: "No saved editor graphs" })
 		).toBeDefined();
 		expect(screen.getByText(/valid graphless result/)).toBeDefined();
+		expect(screen.getByRole("tab", { name: "Blueprint", selected: true })).toBeDefined();
+		expect(screen.getByLabelText("Blueprint definition")).toBeDefined();
 		expect(within(screen.getByLabelText("Blueprint summary")).getAllByText("0")).toHaveLength(
 			4
 		);
@@ -453,7 +502,7 @@ describe("BlueprintGraphViewer", () => {
 			await screen.findByText("Topology complete; specialized metadata partial")
 		).toBeDefined();
 		expect(screen.getByText(/does not mean graph links are missing/)).toBeDefined();
-		await userEvent.setup().click(screen.getByText("1 coverage gaps"));
+		await userEvent.setup().click(screen.getByText("1 coverage gap"));
 		expect(screen.getByText("24 native subclass bytes remain opaque")).toBeDefined();
 	});
 
@@ -567,19 +616,42 @@ describe("BlueprintGraphViewer", () => {
 		const alert = await screen.findByRole("alert");
 		expect(alert.textContent).toContain(title);
 		expect(alert.textContent).toContain("Use the safe recovery");
+		const message = within(alert).getByText(`Reader reported ${reason}.`);
+		const recovery = within(alert).getByText("Use the safe recovery for this state.");
+		expect(message.tagName).toBe("P");
+		expect(recovery.tagName).toBe("P");
+		expect(message).not.toBe(recovery);
+	});
+
+	it("places host recovery actions inside the package failure callout", async () => {
+		render(() => (
+			<EffectRuntimeProvider runtime={runtime}>
+				<BlueprintGraphViewer
+					opener={() => undefined}
+					initialRead={Effect.succeed<BlueprintGraphReadResult>({
+						status: "failed",
+						reason: "unsupported_asset",
+						message: "This file contains no saved Blueprint editor graph",
+						recovery: "Choose an uncooked Blueprint .uasset."
+					})}
+					failureActions={(failure) =>
+						failure.reason === "unsupported_asset" ? (
+							<a href="/inspect">Inspect this file instead</a>
+						) : undefined
+					}
+				/>
+			</EffectRuntimeProvider>
+		));
+		const alert = await screen.findByRole("alert");
+		const action = within(alert).getByRole("link", { name: "Inspect this file instead" });
+		expect(action.getAttribute("href")).toBe("/inspect");
+		expect(within(alert).getByText("Choose an uncooked Blueprint .uasset.").tagName).toBe("P");
 	});
 
 	it("keeps renderer transport failures distinct from package failures", async () => {
 		renderViewer(
 			clientWith({
-				readBlueprint: () =>
-					Effect.fail(
-						new WorkbenchRendererError({
-							cause: "IPC unavailable",
-							operation: "blueprintGraphs.read",
-							recovery: "Retry"
-						})
-					)
+				readBlueprint: () => Effect.fail("Host transport unavailable")
 			})
 		);
 		await openPath();

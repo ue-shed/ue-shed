@@ -21,6 +21,18 @@ export function Documentation() {
 					ue-shed <span {...stylex.attrs(styles.muted)}>/ docs</span>
 				</a>
 				<nav aria-label="Main" {...stylex.attrs(styles.links)}>
+					<a href="/blueprints" {...stylex.attrs(styles.link)}>
+						Blueprint viewer
+					</a>
+					<a href="/sequencer" {...stylex.attrs(styles.link)}>
+						Sequencer viewer
+					</a>
+					<a href="/data-tables" {...stylex.attrs(styles.link)}>
+						Data tables
+					</a>
+					<a href="/inspect" {...stylex.attrs(styles.link)}>
+						Asset inspector
+					</a>
 					<a href="/#showcase" {...stylex.attrs(styles.link)}>
 						Showcase
 					</a>
@@ -267,9 +279,9 @@ const styles = stylex.create({
 	provenance: { color: tokens.colorTextSubtle, display: "block", fontSize: 11, marginTop: 4 },
 	boundary: {
 		backgroundColor: tokens.colorSurface,
-		borderLeftColor: tokens.colorAccent,
-		borderLeftStyle: "solid",
-		borderLeftWidth: 2,
+		borderColor: tokens.colorAccent,
+		borderStyle: "solid",
+		borderWidth: 1,
 		padding: 24
 	},
 	source: {

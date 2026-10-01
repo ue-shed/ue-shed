@@ -281,10 +281,8 @@ const validArgsByChannel = {
 	"game-text:quality:focus": [{ id: "quality-finding:1", pageSize: 50 }],
 	"asset-navigation:locate": ["/Game/Text/ST_Game.ST_Game"],
 	"saved-review:sequence": ["C:/Project/LS.uasset"],
-	"saved-review:choose-sequence": [],
 	"saved-review:inventory": [],
 	"blueprint-graphs:read": ["C:/Project/Content/BP_Example.uasset"],
-	"blueprint-graphs:choose": [],
 	"blueprint-graphs:search": [{ query: "example" }],
 	"input-atlas:configured-scan": [],
 	"input-atlas:choose-and-scan": [],
@@ -617,10 +615,8 @@ const validResultByChannel = {
 		status: "located"
 	},
 	"saved-review:sequence": { status: "cancelled" },
-	"saved-review:choose-sequence": { status: "cancelled" },
 	"saved-review:inventory": { status: "ready", assets: [], generation: 1 },
 	"blueprint-graphs:read": { status: "cancelled" },
-	"blueprint-graphs:choose": { status: "cancelled" },
 	"blueprint-graphs:search": { status: "not_configured" },
 	"input-atlas:configured-scan": { status: "not_configured" },
 	"input-atlas:choose-and-scan": { status: "cancelled" },
@@ -846,9 +842,9 @@ const malformedArgsByChannel = {
 	"map-capture:tile": [{ manifestPath: "", relativePath: "../outside.png" }]
 } satisfies Partial<Record<InvokeChannel, IpcFixtureValue>>;
 
-it("registers exactly 127 invoke channels plus renderer events", () => {
-	expect(invokeChannelNames).toHaveLength(127);
-	expect(new Set(invokeChannelNames).size).toBe(127);
+it("registers exactly 126 invoke channels plus renderer events", () => {
+	expect(invokeChannelNames).toHaveLength(125);
+	expect(new Set(invokeChannelNames).size).toBe(125);
 	expect(cameraFrameEvent.channel).toBe("camera:frame");
 	expect(mapCaptureProgressEvent.channel).toBe("map-capture:progress");
 	expect(worldObservationEvent.channel).toBe("map-review:world-observation");

@@ -78,7 +78,7 @@ try {
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createNodeRuntime as createRootRuntime } from "@ue-shed/uasset-inspection-wasm";
-import { createNodeRuntime, extractBlueprints, inspect } from "@ue-shed/uasset-inspection-wasm/node";
+import { createNodeRuntime, extractBlueprints, extractAuthoringTable, inspect } from "@ue-shed/uasset-inspection-wasm/node";
 import * as browserEntry from "@ue-shed/uasset-inspection-wasm/browser";
 const sequenceContract = JSON.parse(readFileSync(new URL(import.meta.resolve("@ue-shed/uasset-inspection-wasm/contracts/level-sequence.v6.schema.json")), "utf8"));
 assert.deepEqual(sequenceContract.properties.schema_version.enum, [6]);
@@ -89,6 +89,13 @@ assert.equal(animationContract.properties.schema_version.const, 1);
 const bytes = readFileSync("DT_Scalars.uasset");
 const blueprintBytes = readFileSync("BP_GraphFixture.uasset");
 const runtime = createNodeRuntime();
+const authoringContract = JSON.parse(readFileSync(new URL(import.meta.resolve("@ue-shed/uasset-inspection-wasm/contracts/authoring-table.v1.schema.json")), "utf8"));
+assert.equal(authoringContract.oneOf[0].properties.schema_version.const, 1);
+const authoring = runtime.extractAuthoringTable("DT_Scalars.uasset", bytes);
+assert.equal(authoring.status, "ok");
+assert.equal(authoring.snapshot.table.rows.length, 2);
+assert.deepEqual(extractAuthoringTable("DT_Scalars.uasset", bytes), authoring);
+assert.equal(typeof browserEntry.extractAuthoringTable, "function");
 const result = runtime.inspect("DT_Scalars.uasset", bytes);
 const blueprint = runtime.extractBlueprints("BP_GraphFixture.uasset", blueprintBytes);
 assert.equal(result.schema_version, 8);
@@ -122,13 +129,16 @@ console.log(JSON.stringify({ version: runtime.version(), schemaVersion: result.s
 	const declarationConsumer = join(consumerDirectory, "consumer-types.ts");
 	writeFileSync(
 		declarationConsumer,
-		`import { createNodeRuntime as createRootRuntime, type BlueprintResult, type InspectionResult } from "@ue-shed/uasset-inspection-wasm";
-import { createNodeRuntime, extractBlueprints, type WasmRuntime } from "@ue-shed/uasset-inspection-wasm/node";
-import { createBrowserRuntime, extractBlueprints as extractBlueprintsInBrowser, type BrowserRuntimeOptions } from "@ue-shed/uasset-inspection-wasm/browser";
+		`import { createNodeRuntime as createRootRuntime, type AuthoringTableResult, type BlueprintResult, type InspectionResult } from "@ue-shed/uasset-inspection-wasm";
+import { createNodeRuntime, extractBlueprints, extractAuthoringTable, type WasmRuntime } from "@ue-shed/uasset-inspection-wasm/node";
+import { createBrowserRuntime, extractBlueprints as extractBlueprintsInBrowser, extractAuthoringTable as extractAuthoringTableInBrowser, type BrowserRuntimeOptions } from "@ue-shed/uasset-inspection-wasm/browser";
 const bytes = new Uint8Array();
 const result: InspectionResult = createRootRuntime().inspect("fixture.uasset", bytes);
 const runtime: WasmRuntime = createNodeRuntime();
 const blueprint: BlueprintResult = extractBlueprints("fixture.uasset", bytes);
+const authoring: AuthoringTableResult = extractAuthoringTable("fixture.uasset", bytes);
+void authoring;
+void extractAuthoringTableInBrowser("fixture.uasset", bytes);
 const options: BrowserRuntimeOptions = { maxInputBytes: 1 };
 void result;
 void runtime;

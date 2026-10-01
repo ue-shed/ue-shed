@@ -9,9 +9,9 @@ import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { For, Show, createMemo } from "solid-js";
 import { Chart } from "./chart-host.js";
 
-const chartFill = "#e4f222";
+const chartFill = "#7cc0ff";
 const chartStroke = "#08090a";
-const scatterColors = ["#e4f222", "#4cb782", "#8fb8ff", "#f2994a", "#d89cff"];
+const scatterColors = ["#7cc0ff", "#4cb782", "#f08cb4", "#f2994a", "#d89cff"];
 
 export interface AuthoringAnalysisViewProps {
 	readonly rows: readonly AuthoringRow[];
@@ -229,11 +229,11 @@ const styles = stylex.create({
 		flexDirection: "column",
 		gap: tokens.space4,
 		minHeight: 320,
-		padding: tokens.space4
+		padding: 12
 	},
 	header: {
 		display: "flex",
-		alignItems: "flex-end",
+		alignItems: "baseline",
 		justifyContent: "space-between",
 		gap: tokens.space3,
 		flexWrap: "wrap"
@@ -241,8 +241,8 @@ const styles = stylex.create({
 	title: {
 		margin: 0,
 		color: tokens.colorTextStrong,
-		fontSize: 16,
-		fontWeight: 600
+		fontSize: 13,
+		fontWeight: 500
 	},
 	stats: {
 		display: "flex",
@@ -250,14 +250,8 @@ const styles = stylex.create({
 		flexWrap: "wrap"
 	},
 	stat: {
-		borderColor: tokens.colorBorder,
-		borderStyle: "solid",
-		borderWidth: 1,
-		borderRadius: tokens.radiusPill,
-		backgroundColor: tokens.colorSurfaceInset,
-		color: tokens.colorTextMuted,
-		padding: "2px 8px",
-		fontSize: 11
+		color: tokens.colorTextSubtle,
+		fontSize: 12
 	},
 	gallery: {
 		display: "grid",
@@ -288,10 +282,10 @@ const styles = stylex.create({
 		margin: 0,
 		color: tokens.colorTextStrong,
 		fontSize: 13,
-		fontWeight: 600
+		fontWeight: 500
 	},
 	cardDescription: {
-		margin: "4px 0 0",
+		margin: "2px 0 0",
 		color: tokens.colorTextMuted,
 		fontSize: 12
 	},

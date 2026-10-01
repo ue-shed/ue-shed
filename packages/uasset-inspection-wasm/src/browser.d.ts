@@ -1,5 +1,10 @@
 export * from "./types.js";
 
+export declare function extractAuthoringTable(
+	path: string,
+	bytes: Uint8Array
+): Promise<import("./types.js").AuthoringTableResult>;
+
 export declare function createBrowserRuntime(
 	options?: import("./types.js").BrowserRuntimeOptions
 ): Promise<import("./types.js").WasmRuntime>;

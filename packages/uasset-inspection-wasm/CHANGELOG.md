@@ -1,5 +1,13 @@
 # @ue-shed/uasset-inspection-wasm
 
+## Unreleased
+
+- Add `extractAuthoringTable` to Rust/WASM, initialized runtimes, and browser/Node convenience
+  exports. Schema-1 envelopes carry the unchanged native authoring contract 2.1 snapshot and typed
+  failures under the existing 64 MiB limits. Publish `authoring-table.v1.schema.json` and compare
+  all authoring fixtures against native protocol output. The website uses the projection in its
+  read-only Data Tables page.
+
 ## 0.8.0
 
 ### Minor Changes

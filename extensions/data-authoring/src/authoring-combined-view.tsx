@@ -2,7 +2,7 @@ import * as stylex from "@stylexjs/stylex";
 import { buildJoinedView, type JoinedViewRow } from "@ue-shed/authoring/joined-views";
 import type { AuthoringAuthority, AuthoringClientApi } from "@ue-shed/authoring-sdk";
 import type { AuthoringRow, AuthoringTableSnapshot } from "@ue-shed/protocol";
-import { createEffectAction } from "@ue-shed/ui";
+import { Button, createEffectAction } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { Cause, Effect } from "effect";
 import { For, Show, createEffect, createMemo, createSignal } from "solid-js";
@@ -265,13 +265,13 @@ export function AuthoringCombinedView(props: CombinedViewProps) {
 					</select>
 					<small>{rows().length} source rows shown</small>
 				</label>
-				<button
+				<Button
+					tone="quiet"
 					type="button"
 					onClick={() => props.onOpenForEditing(sourceSnapshot().table.objectPath)}
-					{...stylex.attrs(styles.editButton)}
 				>
 					Open source editor
-				</button>
+				</Button>
 			</div>
 
 			<div {...stylex.attrs(styles.switchboard)}>
@@ -281,20 +281,20 @@ export function AuthoringCombinedView(props: CombinedViewProps) {
 						{visiblePaths().size} / {participantPaths().length}
 					</strong>
 					<div {...stylex.attrs(styles.switchboardActions)}>
-						<button
+						<Button
+							tone="quiet"
 							type="button"
 							onClick={() => setVisiblePaths(new Set(participantPaths()))}
-							{...stylex.attrs(styles.minorButton)}
 						>
 							Show all
-						</button>
-						<button
+						</Button>
+						<Button
+							tone="quiet"
 							type="button"
 							onClick={() => setVisiblePaths(new Set())}
-							{...stylex.attrs(styles.minorButton)}
 						>
 							Hide all
-						</button>
+						</Button>
 					</div>
 				</div>
 				<div {...stylex.attrs(styles.tableToggles)}>
@@ -319,14 +319,14 @@ export function AuthoringCombinedView(props: CombinedViewProps) {
 										<strong>{shortObjectName(path)}</strong>
 									</span>
 								</label>
-								<button
+								<Button
+									tone="quiet"
 									type="button"
 									aria-label={`Isolate ${shortObjectName(path)}`}
 									onClick={() => setVisiblePaths(new Set([path]))}
-									{...stylex.attrs(styles.isolateButton)}
 								>
 									Isolate
-								</button>
+								</Button>
 							</div>
 						)}
 					</For>
@@ -498,41 +498,33 @@ const styles = stylex.create({
 	},
 	heading: {
 		display: "flex",
-		alignItems: "flex-start",
+		alignItems: "baseline",
 		justifyContent: "space-between",
 		flexWrap: "wrap",
-		gap: tokens.space4,
-		padding: "16px 20px",
+		gap: 8,
+		padding: "10px 12px",
 		borderBottomColor: tokens.colorBorder,
 		borderBottomStyle: "solid",
 		borderBottomWidth: 1
 	},
 	title: {
-		margin: "0 0 6px",
+		margin: "0 0 2px",
 		color: tokens.colorTextStrong,
-		fontFamily: tokens.fontDisplay,
-		fontSize: 18,
-		fontWeight: 590,
-		letterSpacing: "-0.02em"
+		fontSize: 13,
+		fontWeight: 500
 	},
 	description: {
-		maxWidth: 560,
 		margin: 0,
 		color: tokens.colorTextMuted,
-		fontSize: 13,
+		fontSize: 12,
 		lineHeight: 1.5
 	},
 	readOnlyStamp: {
 		display: "flex",
-		flexDirection: "column",
-		gap: 2,
-		width: "fit-content",
-		padding: "6px 12px",
-		borderColor: tokens.colorBorder,
-		borderStyle: "solid",
-		borderWidth: 1,
-		borderRadius: tokens.radiusControl,
-		backgroundColor: tokens.colorSurfaceInset
+		alignItems: "baseline",
+		gap: 6,
+		color: tokens.colorTextSubtle,
+		fontSize: 12
 	},
 	controls: {
 		display: "grid",
@@ -563,25 +555,13 @@ const styles = stylex.create({
 		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurfaceInset,
 		color: tokens.colorText,
-		padding: "8px 10px",
-		fontSize: 13
-	},
-	editButton: {
-		height: 34,
-		borderColor: tokens.colorBorder,
-		borderStyle: "solid",
-		borderWidth: 1,
-		borderRadius: tokens.radiusControl,
-		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
-		color: tokens.colorText,
-		cursor: "pointer",
-		padding: "0 12px",
+		padding: "6px 8px",
 		fontSize: 12
 	},
 	switchboard: {
 		display: "grid",
 		gridTemplateColumns: {
-			default: "180px minmax(0, 1fr)",
+			default: "220px minmax(0, 1fr)",
 			"@media (max-width: 700px)": "1fr"
 		},
 		borderBottomColor: tokens.colorBorder,
@@ -591,12 +571,10 @@ const styles = stylex.create({
 	},
 	switchboardHeading: {
 		display: "flex",
-		flexDirection: "column",
-		gap: 8,
-		padding: 12,
-		borderRightColor: tokens.colorBorder,
-		borderRightStyle: "solid",
-		borderRightWidth: 1
+		alignItems: "center",
+		flexWrap: "wrap",
+		gap: 6,
+		padding: 8
 	},
 	switchboardLabel: { color: tokens.colorTextSubtle, fontSize: 11, fontWeight: 600 },
 	switchboardCount: {
@@ -606,17 +584,6 @@ const styles = stylex.create({
 		textAlign: "right"
 	},
 	switchboardActions: { display: "flex", gap: 6 },
-	minorButton: {
-		borderColor: "transparent",
-		borderStyle: "solid",
-		borderWidth: 1,
-		borderRadius: tokens.radiusControl,
-		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.06)" },
-		color: tokens.colorTextMuted,
-		cursor: "pointer",
-		padding: "4px 8px",
-		fontSize: 11
-	},
 	tableToggles: {
 		display: "flex",
 		alignItems: "stretch",
@@ -633,16 +600,13 @@ const styles = stylex.create({
 		borderStyle: "solid",
 		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
-		borderTopColor: tokens.colorBorder,
-		borderTopStyle: "solid",
-		borderTopWidth: 2,
 		backgroundColor: tokens.colorSurfaceInset,
 		overflow: "hidden",
 		opacity: 0.55
 	},
 	tableToggleVisible: {
-		borderTopColor: tokens.colorAccent,
-		backgroundColor: tokens.colorSurfaceRaised,
+		backgroundColor: tokens.colorSurfaceHover,
+		color: tokens.colorAccent,
 		opacity: 1
 	},
 	toggleLabel: {
@@ -652,19 +616,6 @@ const styles = stylex.create({
 		gap: 9,
 		padding: "9px 10px",
 		cursor: "pointer"
-	},
-	isolateButton: {
-		alignSelf: "stretch",
-		borderStyle: "none",
-		borderWidth: 0,
-		borderLeftColor: tokens.colorBorder,
-		borderLeftStyle: "solid",
-		borderLeftWidth: 1,
-		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
-		color: tokens.colorTextMuted,
-		cursor: "pointer",
-		padding: "0 8px",
-		fontSize: 11
 	},
 	loadingLine: {
 		textAlign: "center",
@@ -678,11 +629,11 @@ const styles = stylex.create({
 		gap: 6,
 		margin: 12,
 		padding: "10px 14px",
-		borderColor: "rgba(235, 87, 87, 0.35)",
+		borderColor: tokens.colorDanger,
 		borderStyle: "solid",
 		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
-		backgroundColor: "rgba(235, 87, 87, 0.08)",
+		backgroundColor: tokens.colorSurfaceRaised,
 		color: tokens.colorDanger,
 		fontSize: 12
 	},
@@ -749,15 +700,11 @@ const styles = stylex.create({
 		lineHeight: 1.3
 	},
 	sourceHeading: {
-		borderTopColor: tokens.colorAccent,
-		borderTopStyle: "solid",
-		borderTopWidth: 2,
+		color: tokens.colorAccent,
 		backgroundColor: tokens.colorSurfaceRaised
 	},
 	targetHeading: {
-		borderTopColor: "#02b8cc",
-		borderTopStyle: "solid",
-		borderTopWidth: 2,
+		color: tokens.colorTextMuted,
 		backgroundColor: tokens.colorSurface
 	},
 	linkCell: {

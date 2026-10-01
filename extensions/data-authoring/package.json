@@ -4,6 +4,14 @@
 	"private": true,
 	"type": "module",
 	"exports": {
+		"./viewer": {
+			"types": "./src/viewer.ts",
+			"default": "./src/viewer.ts"
+		},
+		"./wasm": {
+			"types": "./src/wasm-reader.ts",
+			"default": "./src/wasm-reader.ts"
+		},
 		".": {
 			"types": "./src/index.ts",
 			"default": "./src/index.ts"

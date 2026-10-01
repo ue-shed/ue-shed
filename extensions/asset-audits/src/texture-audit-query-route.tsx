@@ -1510,8 +1510,8 @@ const styles = stylex.create({
 		":focus-visible": { outline: `2px solid ${tokens.colorAccent}`, outlineOffset: -2 }
 	},
 	assetRowActive: {
-		backgroundColor: "rgba(255, 255, 255, 0.07)",
-		boxShadow: `inset 2px 0 ${tokens.colorAccent}`
+		backgroundColor: tokens.colorSurfaceHover,
+		color: tokens.colorAccent
 	},
 	rowPreview: {
 		display: "grid",

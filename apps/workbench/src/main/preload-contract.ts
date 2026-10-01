@@ -12,11 +12,9 @@ export const workbenchInvokeChannels = {
 	assetNavigation: { locate: "asset-navigation:locate" },
 	savedReview: {
 		sequence: "saved-review:sequence",
-		chooseSequence: "saved-review:choose-sequence",
 		inventory: "saved-review:inventory"
 	},
 	blueprintGraphs: {
-		choose: "blueprint-graphs:choose",
 		read: "blueprint-graphs:read",
 		search: "blueprint-graphs:search"
 	},

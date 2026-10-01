@@ -1307,7 +1307,7 @@ const styles = stylex.create({
 		minHeight: "calc(100vh - 52px)",
 		backgroundColor: tokens.colorCanvas,
 		backgroundImage:
-			"radial-gradient(circle at 54% -10%, rgba(228, 242, 34, 0.03), transparent 32%), linear-gradient(90deg, #ffffff04 1px, transparent 1px)",
+			"radial-gradient(circle at 54% -10%, rgba(124, 192, 255, 0.03), transparent 32%), linear-gradient(90deg, #ffffff04 1px, transparent 1px)",
 		backgroundSize: "auto, 64px 100%",
 		color: tokens.colorText,
 		fontFamily: tokens.fontBody
@@ -1440,13 +1440,13 @@ const styles = stylex.create({
 	},
 	demoGuideToggleActive: {
 		borderColor: tokens.colorAccent,
-		backgroundColor: "rgba(228, 242, 34, 0.08)",
+		backgroundColor: tokens.colorAccentWash,
 		color: tokens.colorAccent
 	},
 	offlineDot: { width: 7, height: 7, borderRadius: "50%", backgroundColor: tokens.colorWarning },
 	liveDot: {
 		backgroundColor: tokens.colorAccent,
-		boxShadow: "0 0 10px rgba(228, 242, 34, 0.35)"
+		boxShadow: "0 0 10px rgba(124, 192, 255, 0.35)"
 	},
 	terminalDot: { backgroundColor: tokens.colorSuccess },
 	runtimeStatusStrong: {},
@@ -1539,7 +1539,7 @@ const styles = stylex.create({
 	},
 	demoStepComplete: { color: tokens.colorTextMuted },
 	demoStepCurrent: {
-		backgroundColor: "rgba(228, 242, 34, 0.03)",
+		backgroundColor: "rgba(124, 192, 255, 0.03)",
 		boxShadow: `inset 0 -2px ${tokens.colorAccent}`,
 		color: tokens.colorText
 	},
@@ -1625,20 +1625,16 @@ const styles = stylex.create({
 		borderBottomColor: tokens.colorBorder,
 		borderBottomStyle: "solid",
 		borderBottomWidth: 1,
-		borderLeftColor: "transparent",
-		borderLeftStyle: "solid",
-		borderLeftWidth: 2,
 		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.03)" },
 		color: tokens.colorText,
 		cursor: "pointer",
 		textAlign: "left"
 	},
 	takeActive: {
-		borderLeftColor: tokens.colorAccent,
+		color: tokens.colorAccent,
 		backgroundColor: "rgba(255, 255, 255, 0.07)"
 	},
 	draftTake: {
-		borderLeftColor: tokens.colorBorderStrong,
 		backgroundColor: tokens.colorSurfaceInset
 	},
 	takeNumber: { color: tokens.colorTextSubtle, fontFamily: tokens.fontDisplay, fontSize: 16 },
@@ -1661,10 +1657,10 @@ const styles = stylex.create({
 		marginTop: 16,
 		padding: "10px",
 		borderRadius: tokens.radiusPanel,
-		borderColor: "rgba(228, 242, 34, 0.2)",
+		borderColor: "rgba(124, 192, 255, 0.2)",
 		borderStyle: "solid",
 		borderWidth: 1,
-		backgroundColor: "rgba(228, 242, 34, 0.03)"
+		backgroundColor: "rgba(124, 192, 255, 0.03)"
 	},
 	lockMark: { color: tokens.colorAccent, fontSize: 11 },
 	timelinePanel: { minWidth: 0, backgroundColor: tokens.colorSurface },
@@ -1787,7 +1783,7 @@ const styles = stylex.create({
 	},
 	trackSupportLive: {
 		borderColor: tokens.colorAccent,
-		backgroundColor: "rgba(228, 242, 34, 0.03)",
+		backgroundColor: "rgba(124, 192, 255, 0.03)",
 		color: tokens.colorAccent
 	},
 	trackBody: {
@@ -1825,7 +1821,7 @@ const styles = stylex.create({
 		transition: `filter ${tokens.motionFast}, box-shadow ${tokens.motionFast}`
 	},
 	semantic_action: {
-		borderColor: "rgba(228, 242, 34, 0.45)",
+		borderColor: "rgba(124, 192, 255, 0.45)",
 		backgroundColor: tokens.colorAccentWash
 	},
 	raw_input: {
@@ -1853,7 +1849,7 @@ const styles = stylex.create({
 	},
 	clipSelected: {
 		filter: "brightness(1.32)",
-		boxShadow: "0 0 0 1px rgba(228, 242, 34, 0.55), 0 0 18px rgba(228, 242, 34, 0.09)",
+		boxShadow: "0 0 0 1px rgba(124, 192, 255, 0.55), 0 0 18px rgba(124, 192, 255, 0.09)",
 		zIndex: 3
 	},
 	curve: { position: "absolute", right: 7, bottom: 2, color: tokens.colorAccent, fontSize: 16 },
@@ -1863,7 +1859,7 @@ const styles = stylex.create({
 		bottom: 0,
 		width: 2,
 		backgroundColor: tokens.colorAccent,
-		boxShadow: "0 0 8px rgba(228, 242, 34, 0.35)",
+		boxShadow: "0 0 8px rgba(124, 192, 255, 0.35)",
 		pointerEvents: "none",
 		zIndex: 7
 	},
@@ -1944,10 +1940,10 @@ const styles = stylex.create({
 		marginTop: 14,
 		padding: "9px 10px",
 		borderRadius: tokens.radiusPanel,
-		borderColor: "rgba(228, 242, 34, 0.2)",
+		borderColor: "rgba(124, 192, 255, 0.2)",
 		borderStyle: "solid",
 		borderWidth: 1,
-		backgroundColor: "rgba(228, 242, 34, 0.03)",
+		backgroundColor: "rgba(124, 192, 255, 0.03)",
 		color: tokens.colorTextMuted,
 		fontSize: 11
 	},
@@ -1969,7 +1965,7 @@ const styles = stylex.create({
 		borderStyle: "solid",
 		borderWidth: 1,
 		backgroundColor: tokens.colorSurfaceRaised,
-		boxShadow: `inset 3px 0 ${tokens.colorSuccess}`
+		color: tokens.colorSuccess
 	},
 	structuredEvidenceTopline: {
 		display: "flex",

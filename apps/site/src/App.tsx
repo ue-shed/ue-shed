@@ -1,13 +1,63 @@
 import * as stylex from "@stylexjs/stylex";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
-import { For } from "solid-js";
+import { For, lazy, Loading, onSettled } from "solid-js";
 import { Documentation } from "./Documentation.js";
 import { Showcase } from "./showcase/Showcase.js";
 import { Terminal } from "./Terminal.js";
 import { approach, diagram, facts, inspectTerminal, repositoryUrl, tools } from "./content.js";
+import { createSitePathname } from "./navigation.js";
+
+const BlueprintsPage = lazy(() => import("./BlueprintsPage.js"));
+const SequencerPage = lazy(() => import("./SequencerPage.js"));
+const DataTablesPage = lazy(() => import("./DataTablesPage.js"));
+const InspectPage = lazy(() => import("./InspectPage.js"));
 
 export function App() {
-	if (window.location.pathname.startsWith("/docs")) return <Documentation />;
+	const pathname = createSitePathname();
+	// Key by path so setup-time reads and consumed handoffs belong to a fresh route owner.
+	return <For each={[pathname()]}>{(path) => <SiteRoute path={path} />}</For>;
+}
+
+function SiteRoute(props: { readonly path: string }) {
+	if (props.path === "/blueprints") {
+		return (
+			<Loading fallback={<p role="status">Loading Blueprint viewer…</p>}>
+				<BlueprintsPage />
+			</Loading>
+		);
+	}
+	if (props.path === "/sequencer") {
+		return (
+			<Loading fallback={<p role="status">Loading Sequencer viewer…</p>}>
+				<SequencerPage />
+			</Loading>
+		);
+	}
+	if (props.path === "/data-tables") {
+		return (
+			<Loading fallback={<p role="status">Loading Data Tables…</p>}>
+				<DataTablesPage />
+			</Loading>
+		);
+	}
+	if (props.path === "/inspect") {
+		return (
+			<Loading fallback={<p role="status">Loading Asset Inspector…</p>}>
+				<InspectPage />
+			</Loading>
+		);
+	}
+	if (props.path.startsWith("/docs")) return <Documentation />;
+	return <HomePage />;
+}
+
+function HomePage() {
+	document.title = "UE Shed · External tools for Unreal Engine";
+	onSettled(() => {
+		if (window.location.hash !== "") {
+			document.getElementById(window.location.hash.slice(1))?.scrollIntoView();
+		}
+	});
 	return (
 		<div {...stylex.attrs(styles.page)}>
 			<div {...stylex.attrs(styles.container)}>
@@ -16,6 +66,18 @@ export function App() {
 					<nav {...stylex.attrs(styles.navLinks)}>
 						<a href="/docs" {...stylex.attrs(styles.navLink)}>
 							Docs
+						</a>
+						<a href="/blueprints" {...stylex.attrs(styles.navLink)}>
+							Blueprint viewer
+						</a>
+						<a href="/sequencer" {...stylex.attrs(styles.navLink)}>
+							Sequencer viewer
+						</a>
+						<a href="/data-tables" {...stylex.attrs(styles.navLink)}>
+							Data tables
+						</a>
+						<a href="/inspect" {...stylex.attrs(styles.navLink)}>
+							Asset inspector
 						</a>
 						<a href="#showcase" {...stylex.attrs(styles.navLink)}>
 							Showcase

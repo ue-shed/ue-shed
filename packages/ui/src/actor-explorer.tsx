@@ -819,7 +819,7 @@ const styles = stylex.create({
 		whiteSpace: "nowrap"
 	},
 	classOptionActive: {
-		borderColor: "rgba(228, 242, 34, 0.35)",
+		borderColor: "rgba(124, 192, 255, 0.35)",
 		backgroundColor: tokens.colorAccentWash,
 		color: tokens.colorTextStrong
 	},

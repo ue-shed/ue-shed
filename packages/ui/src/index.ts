@@ -6,3 +6,4 @@ export * from "./dismissible-details.js";
 export * from "./effect-solid.js";
 export * from "./page-header.js";
 export * from "./saved-map-picker.js";
+export * from "./file-drop-zone.js";

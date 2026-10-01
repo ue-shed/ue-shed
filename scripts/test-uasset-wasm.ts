@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { ensureUassetExecutable } from "./native-tools.ts";
@@ -57,6 +57,25 @@ const fixtures = [
 	"Content/Fixture/Text/ST_Game.uasset",
 	"Content/Fixture/Cameras/L_CameraLoad.umap"
 ].map((path) => join(fixtureRoot, path));
+
+// SAFETY: the checked-in envelope embeds the authoritative authoring snapshot definitions.
+const authoringSchema: JsonSchema.JsonSchema = JSON.parse(
+	readFileSync(
+		join(
+			repositoryRoot,
+			"packages/uasset-inspection-wasm/contracts/authoring-table.v1.schema.json"
+		),
+		"utf8"
+	)
+);
+const decodeAuthoringTable = Schema.decodeUnknownSync(
+	SchemaRepresentation.toSchema<Schema.Codec<unknown>>(
+		SchemaRepresentation.fromJsonSchemaDocument(
+			JsonSchema.fromSchemaDraft2020_12(authoringSchema)
+		)
+	),
+	{ onExcessProperty: "error" }
+);
 const projectionFixtures: ReadonlyArray<{
 	readonly path: string;
 	readonly kind: "text" | "texture";
@@ -76,6 +95,45 @@ const wasm = (await import(
 	pathToFileURL(packageNodeEntry).href
 )) as typeof import("../packages/uasset-inspection-wasm/src/node.js");
 const runtime = wasm.createNodeRuntime();
+
+const authoringDirectory = join(fixtureRoot, "Content/Fixture/Authoring");
+const authoringFixtures = readdirSync(authoringDirectory, { encoding: "utf8", recursive: true })
+	.filter((path) => /\.uasset$/i.test(path))
+	.map((path) => join(authoringDirectory, path));
+assert.ok(authoringFixtures.length > 0, "authoring parity must exercise DataTable fixtures");
+for (const fixture of authoringFixtures) {
+	const displayPath = relative(repositoryRoot, fixture).replaceAll("\\", "/");
+	const request = {
+		contract: { name: "uasset-io", version: { major: 1, minor: 7 } },
+		requestId: "wasm-authoring-parity",
+		operation: { kind: "authoring", assetPath: fixture },
+		limits: { maximumOutputBytes: 64 * 1024 * 1024, timeoutMs: 30_000 }
+	};
+	const native = spawnSync(nativeExecutable, ["protocol"], {
+		cwd: repositoryRoot,
+		encoding: "utf8",
+		input: JSON.stringify(request),
+		maxBuffer: 64 * 1024 * 1024
+	});
+	assert.ifError(native.error);
+	assert.equal(native.status, 0, native.stderr);
+	const events = native.stdout
+		.trim()
+		.split(/\r?\n/)
+		.map((line) => JSON.parse(line));
+	const event = events.find(
+		(item) => item.kind === "result" && item.result?.kind === "authoring"
+	);
+	assert.ok(event, `${displayPath} must emit a native authoring snapshot`);
+	const result = runtime.extractAuthoringTable(displayPath, readFileSync(fixture));
+	decodeAuthoringTable(result);
+	assert.ok(result.status === "ok" || result.status === "partial");
+	assert.deepEqual(result.snapshot, event.result.snapshot, `${displayPath} authoring parity`);
+	assert.equal(result.status === "partial", event.result.snapshot.completeness === "partial");
+	const completed = events.find((item) => item.kind === "completed");
+	assert.ok(completed, `${displayPath} native authoring must complete`);
+	assert.equal(result.status === "ok" ? "complete" : "partial", completed.outcome);
+}
 
 assert.equal(
 	`uasset ${runtime.version()}`,
@@ -351,7 +409,7 @@ assert.throws(
 );
 
 process.stdout.write(
-	`WASM inspection parity passed for ${fixtures.length} fixtures, compact projections passed for ${projectionFixtures.length} fixtures plus Blueprint and Level Sequence coverage, and typed failures/limits passed.\n`
+	`WASM inspection parity passed for ${fixtures.length} fixtures, authoring parity passed for ${authoringFixtures.length} fixtures, compact projections passed for ${projectionFixtures.length} fixtures plus Blueprint and Level Sequence coverage, and typed failures/limits passed.\n`
 );
 
 function readNativeProjection(

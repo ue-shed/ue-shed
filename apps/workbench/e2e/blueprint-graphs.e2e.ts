@@ -6,6 +6,7 @@ import {
 	indexedBlueprintTest,
 	offlineBlueprintTest as test
 } from "./fixtures/workbench-test.js";
+import type { WorkbenchPage } from "./pages/workbench-page.js";
 
 const repositoryRoot = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
 const fixturePath = resolve(
@@ -13,45 +14,48 @@ const fixturePath = resolve(
 	"fixtures/unreal-project/Content/Fixture/Blueprints/BP_GraphFixture.uasset"
 );
 
-test("inspects saved Blueprint variables, class defaults and component templates without Unreal", async ({
-	offlineBlueprint: { harness, workbench }
-}) => {
-	test.setTimeout(60_000);
+async function openIndexedBlueprint(workbench: WorkbenchPage, assetName: string) {
 	await workbench.openRoute("Blueprint Graphs");
-	const page = workbench.page;
-	await page
-		.getByLabel("Blueprint package path")
-		.fill(
-			resolve(
-				repositoryRoot,
-				"fixtures/unreal-project/Content/Fixture/Blueprints/BP_ReviewFixture.uasset"
-			)
-		);
-	await page.getByRole("button", { name: "Open graph" }).click();
-	await page.getByText("Saved variables, defaults and components", { exact: true }).click();
-	const definition = page.getByLabel("Blueprint definition");
-	await definition.getByText("ReviewCount · int · none", { exact: true }).click();
-	await expect(definition).toContainText("Review|Settings");
-	await definition.getByText("ReviewCount", { exact: true }).click();
-	await expect(
-		definition.locator("code").filter({ hasText: '"name":"ReviewCount"' })
-	).toContainText('"value":23');
-	await definition.getByText(/^ReviewChild ·/).click();
-	await expect(definition).toContainText("SavedSocket");
-	await definition.getByText("RelativeLocation", { exact: true }).click();
-	await expect(definition.getByText(/"x":11,"y":22,"z":33/)).toBeVisible();
-	await definition.getByText(/^ReviewRoot ·/).click();
-	await expect(definition).toContainText("CollisionCylinder");
-	const root = definition.locator("details").filter({ has: page.getByText(/^ReviewRoot ·/) });
-	await root.getByText("Saved native data", { exact: true }).click();
-	await expect(root.locator("code").filter({ hasText: "UCSModifiedProperties" })).toContainText(
-		'"values":[]'
-	);
-	await page.getByLabel("Search saved nodes and pins").fill("Saved review fixture");
-	await page.getByRole("button", { name: "node · EdGraphNode_Comment" }).click();
-	await expect(page.getByRole("heading", { name: "EdGraphNode_Comment" })).toBeVisible();
-	expect(await harness.launchCount()).toBe(0);
-});
+	const search = workbench.page.getByLabel("Search project Blueprints");
+	await expect(search).toBeVisible({ timeout: 60_000 });
+	await search.fill(assetName);
+	await workbench.page
+		.getByRole("button", { name: `Open ${assetName} from project index` })
+		.click();
+	await expect(workbench.page.getByText("Fully decoded", { exact: true })).toBeVisible();
+}
+
+indexedBlueprintTest(
+	"inspects saved Blueprint variables, class defaults and component templates without Unreal",
+	async ({ indexedBlueprint: { harness, workbench } }) => {
+		indexedBlueprintTest.setTimeout(90_000);
+		await openIndexedBlueprint(workbench, "BP_ReviewFixture");
+		const page = workbench.page;
+		await page.getByRole("tab", { name: "Blueprint", exact: true }).click();
+		const definition = page.getByLabel("Blueprint definition");
+		await definition.getByText("ReviewCount · int · none", { exact: true }).click();
+		await expect(definition).toContainText("Review|Settings");
+		await definition.getByText("ReviewCount", { exact: true }).click();
+		await expect(
+			definition.locator("code").filter({ hasText: '"name":"ReviewCount"' })
+		).toContainText('"value":23');
+		await definition.getByText(/^ReviewChild ·/).click();
+		await expect(definition).toContainText("SavedSocket");
+		await definition.getByText("RelativeLocation", { exact: true }).click();
+		await expect(definition.getByText(/"x":11,"y":22,"z":33/)).toBeVisible();
+		await definition.getByText(/^ReviewRoot ·/).click();
+		await expect(definition).toContainText("CollisionCylinder");
+		const root = definition.locator("details").filter({ has: page.getByText(/^ReviewRoot ·/) });
+		await root.getByText("Saved native data", { exact: true }).click();
+		await expect(
+			root.locator("code").filter({ hasText: "UCSModifiedProperties" })
+		).toContainText('"values":[]');
+		await page.getByLabel("Search saved nodes and pins").fill("Saved review fixture");
+		await page.getByRole("button", { name: "node · EdGraphNode_Comment" }).click();
+		await expect(page.getByRole("heading", { name: "EdGraphNode_Comment" })).toBeVisible();
+		expect(await harness.launchCount()).toBe(0);
+	}
+);
 
 test("offers samples without a selected project and finishes failed camera status checks", async ({
 	offlineBlueprint: { application, harness, workbench }
@@ -94,110 +98,83 @@ test("offers samples without a selected project and finishes failed camera statu
 	expect(await harness.launchCount()).toBe(0);
 });
 
-test("opens saved Blueprint evidence without a project or Unreal process", async ({
-	offlineBlueprint: { application, harness, workbench }
-}, testInfo) => {
-	test.setTimeout(60_000);
-	expect(await harness.launchCount()).toBe(0);
-
+test("asks for a project instead of a file path", async ({
+	offlineBlueprint: { harness, workbench }
+}) => {
 	await workbench.openRoute("Blueprint Graphs");
-	await expect(workbench.page.getByText("LOCAL FILE · NO UNREAL", { exact: true })).toBeVisible();
-	await expect(workbench.page.getByText(/No Workbench project/)).toBeVisible();
-
-	const pathInput = workbench.page.getByLabel("Blueprint package path");
-	await pathInput.fill(fixturePath);
-	await workbench.page.getByRole("button", { name: "Open graph" }).click();
-
-	const summary = workbench.page.getByRole("region", { name: "Blueprint summary" });
-	await expect(summary).toContainText("2graphs");
-	await expect(summary).toContainText("6nodes");
-	await expect(summary).toContainText("15pins");
-	await expect(summary).toContainText("1links");
-	await expect(workbench.page.getByText("Complete saved-graph projection")).toBeVisible();
-	await expect(
-		workbench.page.getByRole("region", { name: "Saved Blueprint graph" }).locator("svg path")
-	).toHaveCount(1);
-	await workbench.page.getByRole("button", { name: "Inspect SetActorHiddenInGame" }).click();
-	await expect(workbench.page.getByLabel("Saved pin evidence")).toContainText("bool");
-	await workbench.page.getByRole("button", { name: "UserConstructionScript, 1 nodes" }).click();
-	await expect(workbench.page.getByRole("button", { name: /Inspect/ })).toHaveCount(1);
-	await workbench.page.getByRole("button", { name: "EventGraph, 5 nodes" }).click();
-
-	const graphViewport = workbench.page.getByLabel("Graph viewport");
-	await workbench.page.getByRole("button", { name: "Zoom in" }).click();
-	await expect(workbench.page.getByLabel("Graph zoom")).toHaveText("110%");
-	for (let index = 0; index < 5; index += 1) {
-		await workbench.page.getByRole("button", { name: "Zoom in" }).click();
-	}
-	await expect(workbench.page.getByLabel("Graph zoom")).toHaveText("160%");
-	await expect
-		.poll(() => graphViewport.evaluate((element) => element.scrollWidth > element.clientWidth))
-		.toBe(true);
-	await graphViewport.dispatchEvent("pointerdown", {
-		button: 0,
-		clientX: 320,
-		clientY: 240,
-		pointerId: 7
-	});
-	await graphViewport.dispatchEvent("pointermove", {
-		button: 0,
-		clientX: 180,
-		clientY: 140,
-		pointerId: 7
-	});
-	await graphViewport.dispatchEvent("pointerup", {
-		button: 0,
-		clientX: 180,
-		clientY: 140,
-		pointerId: 7
-	});
-	await expect
-		.poll(() => graphViewport.evaluate((element) => element.scrollLeft))
-		.toBeGreaterThan(0);
-
-	await application.evaluate(({ dialog }, selectedPath) => {
-		dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [selectedPath] });
-	}, fixturePath);
-	await workbench.page.getByRole("button", { name: "Browse…" }).click();
-	await expect(pathInput).toHaveValue(fixturePath);
-	await expect(workbench.page.getByText("Complete saved-graph projection")).toBeVisible();
-
-	await workbench.page.getByText("Compare saved versions", { exact: true }).click();
-	await workbench.page.getByLabel("Baseline asset path").fill(fixturePath);
-	await workbench.page.getByRole("button", { name: "Compare baseline" }).click();
-	await expect(workbench.page.getByText(/No changes in decoded evidence/)).toBeVisible();
-
+	const page = workbench.page;
+	await expect(page.getByText("Read-only · no Unreal required", { exact: true })).toBeVisible();
+	await expect(page.getByRole("heading", { name: "No project selected" })).toBeVisible();
+	await expect(page.getByLabel("Search project Blueprints")).toHaveCount(0);
+	await expect(page.getByRole("button", { name: /Browse/ })).toHaveCount(0);
 	expect(await harness.launchCount()).toBe(0);
-	expect(await harness.markerExists()).toBe(false);
-	await workbench.page.screenshot({
-		fullPage: true,
-		path: testInfo.outputPath("blueprint-graphs-offline.png")
-	});
 });
 
 indexedBlueprintTest(
-	"searches the initial project index and opens a Blueprint without Unreal",
+	"searches the project index and inspects a saved Blueprint graph without Unreal",
 	async ({ indexedBlueprint: { harness, workbench } }, testInfo) => {
 		indexedBlueprintTest.setTimeout(90_000);
 		expect(await harness.launchCount()).toBe(0);
+		await openIndexedBlueprint(workbench, "BP_GraphFixture");
+		const page = workbench.page;
 
-		await workbench.openRoute("Blueprint Graphs");
-		const search = workbench.page.getByLabel("Search indexed Blueprints");
-		await expect(search).toBeVisible({ timeout: 60_000 });
-		await search.fill("GraphFixture");
-		await workbench.page
-			.getByRole("button", { name: "Open BP_GraphFixture from project index" })
-			.click();
-
-		const summary = workbench.page.getByRole("region", { name: "Blueprint summary" });
+		const summary = page.getByRole("region", { name: "Blueprint summary" });
 		await expect(summary).toContainText("2graphs");
 		await expect(summary).toContainText("6nodes");
-		await expect(workbench.page.getByLabel("Blueprint package path")).toHaveValue(fixturePath);
-		await expect(workbench.page.getByText("Complete saved-graph projection")).toBeVisible();
+		await expect(summary).toContainText("15pins");
+		await expect(summary).toContainText("1link");
+		await expect(page.getByLabel("Search project Blueprints")).toHaveValue("");
+		await expect(
+			page.getByRole("region", { name: "Saved Blueprint graph" }).locator("svg path")
+		).toHaveCount(1);
+		await page.getByRole("button", { name: "Inspect SetActorHiddenInGame" }).click();
+		await expect(page.getByLabel("Saved pin evidence")).toContainText("bool");
+		await page.getByRole("tab", { name: "UserConstructionScript, 1 node" }).click();
+		await expect(page.getByRole("button", { name: /Inspect/ })).toHaveCount(1);
+		await page.getByRole("tab", { name: "EventGraph, 5 nodes" }).click();
+
+		const graphViewport = page.getByLabel("Graph viewport");
+		await page.getByRole("button", { name: "Zoom in" }).click();
+		await expect(page.getByLabel("Graph zoom")).toHaveText("110%");
+		for (let index = 0; index < 5; index += 1) {
+			await page.getByRole("button", { name: "Zoom in" }).click();
+		}
+		await expect(page.getByLabel("Graph zoom")).toHaveText("160%");
+		await expect
+			.poll(() =>
+				graphViewport.evaluate((element) => element.scrollWidth > element.clientWidth)
+			)
+			.toBe(true);
+		await graphViewport.dispatchEvent("pointerdown", {
+			button: 0,
+			clientX: 320,
+			clientY: 240,
+			pointerId: 7
+		});
+		await graphViewport.dispatchEvent("pointermove", {
+			button: 0,
+			clientX: 180,
+			clientY: 140,
+			pointerId: 7
+		});
+		await graphViewport.dispatchEvent("pointerup", {
+			button: 0,
+			clientX: 180,
+			clientY: 140,
+			pointerId: 7
+		});
+		await expect
+			.poll(() => graphViewport.evaluate((element) => element.scrollLeft))
+			.toBeGreaterThan(0);
+
+		await page.getByText("Compare saved versions", { exact: true }).click();
+		await page.getByLabel("Baseline asset path").fill(fixturePath);
+		await page.getByRole("button", { name: "Compare baseline" }).click();
+		await expect(page.getByText(/No changes in decoded evidence/)).toBeVisible();
+
 		expect(await harness.launchCount()).toBe(0);
 		expect(await harness.markerExists()).toBe(false);
-
-		await workbench.page.screenshot({
+		await page.screenshot({
 			fullPage: true,
 			path: testInfo.outputPath("blueprint-graphs-indexed.png")
 		});

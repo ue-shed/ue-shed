@@ -37,7 +37,15 @@ should follow [Website and illustrated guides](engineering/website.md).
 ## Products
 
 - [Saved Blueprint graph tools](../packages/blueprints/README.md) — public navigation, search,
-  reference layout and saved display metadata; Workbench owns the showcase viewer.
+  reference layout and saved display metadata; the [Blueprint Graphs extension](../extensions/blueprint-graphs/README.md)
+  owns the host-neutral viewer.
+
+- [Sequencer extension](../extensions/sequencer/README.md) — shared saved Level Sequence timeline,
+  channel evidence and section inspector, available at `/sequencer` and in Workbench.
+
+- [Asset Inspector extension](../extensions/asset-inspector/README.md) — host-neutral, read-only
+  saved-package summaries, specialized asset panels, and typed property trees; available on the
+  public website at `/inspect`.
 
 - [Shared world preparation](products/world-preparation.md) — actor context, selective editor loading,
   scoped ownership, readiness evidence and capture composition.

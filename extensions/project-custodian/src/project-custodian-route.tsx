@@ -978,9 +978,9 @@ const styles = stylex.create({
 		gap: 12,
 		margin: "10px 0 18px",
 		padding: "9px 12px",
-		borderLeftColor: tokens.colorSuccess,
-		borderLeftStyle: "solid",
-		borderLeftWidth: 3,
+		borderColor: tokens.colorSuccess,
+		borderStyle: "solid",
+		borderWidth: 1,
 		backgroundColor: tokens.colorSurfaceInset,
 		color: tokens.colorTextMuted,
 		fontSize: 11,
@@ -1400,9 +1400,9 @@ const styles = stylex.create({
 		display: "grid",
 		gap: 8,
 		padding: 16,
-		borderLeftColor: tokens.colorWarning,
-		borderLeftStyle: "solid",
-		borderLeftWidth: 3,
+		borderColor: tokens.colorWarning,
+		borderStyle: "solid",
+		borderWidth: 1,
 		backgroundColor: "rgba(242, 153, 74, 0.08)",
 		color: tokens.colorTextMuted,
 		fontSize: 11,
@@ -1478,7 +1478,7 @@ const styles = stylex.create({
 		backgroundColor: {
 			default: tokens.colorAccent,
 			":hover": tokens.colorAccentStrong,
-			":disabled": "rgba(228, 242, 34, 0.25)"
+			":disabled": "rgba(124, 192, 255, 0.25)"
 		},
 		color: tokens.colorAccentText,
 		fontSize: 12,
@@ -1515,9 +1515,9 @@ const styles = stylex.create({
 	receiptRefusal: {
 		margin: "18px 0",
 		padding: 15,
-		borderLeftColor: tokens.colorDanger,
-		borderLeftStyle: "solid",
-		borderLeftWidth: 3,
+		borderColor: tokens.colorDanger,
+		borderStyle: "solid",
+		borderWidth: 1,
 		backgroundColor: "rgba(235, 87, 87, 0.10)",
 		color: tokens.colorDanger,
 		fontSize: 12

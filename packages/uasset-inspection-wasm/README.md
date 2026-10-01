@@ -7,6 +7,8 @@ processes, maintain caches, or write assets.
 The first public contract is deliberately small:
 
 - generic inspection returns schema 8;
+- `extractAuthoringTable` returns a schema-1 `ok` / `partial` / `error` envelope containing
+  the native authoring contract 2.1 snapshot for a DataTable or Composite DataTable;
 - `extractText`, `extractTextures`, `extractLevelSequences`, `extractBlueprints`, and `extractAnimations` return compact
   schema-1 envelopes;
   LevelSequence records use schema 6 and include saved scalar/transform and discrete channels, nested-sequence and cinematic-shot semantics plus
@@ -76,6 +78,19 @@ The default input and serialized-output limit is 64 MiB. The Rust adapter also b
 exports and compact projection records. JavaScript rejects an oversized `Uint8Array` before
 wasm-bindgen copies it into WebAssembly linear memory, and Rust stops JSON serialization when the
 output cap is reached instead of first constructing an oversized string.
+
+`extractAuthoringTable(path, bytes)` is available on initialized Node/browser runtimes and their
+convenience exports. Its snapshot comes from `uasset-inspection::authoring`, the same projection
+as native IO's `authoring` protocol operation. Saved rows, nested values, parent precedence,
+row references, diagnostics and partial coverage preserve the native snapshot contract; schema
+and fingerprints remain explicitly unavailable. External parent/reference packages are not loaded.
+Non-table packages return `unsupported_capability`; other failures use the existing projection
+kind vocabulary. Input/output, export and projection-item caps apply.
+
+The envelope contract is published as `contracts/authoring-table.v1.schema.json`; its snapshot
+definitions are copied from the authoritative protocol authoring v2 schema without alteration.
+`scripts/test-uasset-wasm.ts` validates the envelope and compares snapshots structurally with the
+native protocol for every DataTable/Composite DataTable in the authoring fixture directory.
 
 These public limits compose with the parser's own `ArchiveLimits`: declared table/container counts
 are rejected before allocation, and nested property types, values, and struct fields are bounded by

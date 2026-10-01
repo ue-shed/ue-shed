@@ -26,7 +26,11 @@ test("persists a live save when reopened from the saved package", async ({ workb
 	await expect(page.getByRole("region", { name: "Table summary" })).toContainText("Live editor");
 	await expect(page.getByText("2 / 2 rows", { exact: true })).toBeVisible();
 
-	await page.getByRole("gridcell").first().click();
+	await page
+		.getByRole("row")
+		.filter({ has: page.getByRole("rowheader", { name: "Scalar_Alpha", exact: true }) })
+		.getByRole("gridcell", { name: "true", exact: true })
+		.click();
 	await page.getByRole("button", { name: "Duplicate row" }).click();
 	const rowName = page.getByRole("textbox", { name: "Row name" });
 	await rowName.fill("E2E_ApplyProbe");
@@ -44,8 +48,14 @@ test("persists a live save when reopened from the saved package", async ({ workb
 	await page.getByRole("button", { name: "Live editor" }).click();
 	await expect(page.getByRole("region", { name: "Table summary" })).toContainText("Live editor");
 
-	await page.getByRole("gridcell").nth(5).click();
-	await expect(page.getByText("E2E_ApplyProbe / Enabled", { exact: true })).toBeVisible();
+	await page
+		.getByRole("row")
+		.filter({ has: page.getByRole("rowheader", { name: "E2E_ApplyProbe", exact: true }) })
+		.getByRole("gridcell", { name: "true", exact: true })
+		.click();
+	const inspector = page.getByRole("complementary", { name: "Cell inspector" });
+	await expect(inspector.getByRole("heading", { name: "Enabled", exact: true })).toBeVisible();
+	await expect(inspector.getByText("E2E_ApplyProbe", { exact: true })).toBeVisible();
 	await page.getByRole("button", { name: "Delete row" }).click();
 	await expect(page.getByText("Draft", { exact: true })).toBeVisible();
 	await page.getByRole("button", { name: "Apply changes" }).click();

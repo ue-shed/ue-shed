@@ -121,6 +121,11 @@ try {
 		const animationBytes = new Uint8Array(
 			await (await fetch(`${baseUrl}/animation.uasset`)).arrayBuffer()
 		);
+		const authoring = runtime.extractAuthoringTable("DT_Scalars.uasset", packageBytes);
+		const authoringFromEntry = await module.extractAuthoringTable(
+			"DT_Scalars.uasset",
+			packageBytes
+		);
 		const animation = runtime.extractAnimations("A_Native.uasset", animationBytes);
 		const animationFromEntry = await module.extractAnimations(
 			"A_Native.uasset",
@@ -168,6 +173,8 @@ try {
 		return {
 			animation,
 			animationFromEntry,
+			authoring,
+			authoringFromEntry,
 			version: runtime.version(),
 			inspection,
 			repeated,
@@ -182,6 +189,9 @@ try {
 		};
 	}, origin);
 
+	assert.equal(result.authoring.status, "ok");
+	assert.equal(result.authoring.snapshot.table.rows.length, 2);
+	assert.deepEqual(result.authoringFromEntry, result.authoring);
 	assert.equal(result.version, expectedVersion);
 	assert.equal(result.animation.status, "complete");
 	assert.equal(result.animation.animations[0].bone_tracks.length, 2);

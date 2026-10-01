@@ -1571,7 +1571,7 @@ const styles = stylex.create({
 		backgroundColor: {
 			default: tokens.colorAccent,
 			":hover": tokens.colorAccentStrong,
-			":disabled": "rgba(228, 242, 34, 0.5)"
+			":disabled": "rgba(124, 192, 255, 0.5)"
 		},
 		color: tokens.colorAccentText,
 		fontWeight: 500,

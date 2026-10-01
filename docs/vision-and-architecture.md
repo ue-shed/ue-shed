@@ -115,6 +115,9 @@ packages/
   scenarios/                   # Interactive scenario execution
   niagara/                     # Headless Niagara preview runs
 extensions/
+  asset-inspector/             # Host-neutral saved asset inspection and property trees
+  blueprint-graphs/            # Host-neutral saved Blueprint graph viewer
+  sequencer/                   # Host-neutral saved Level Sequence timeline and inspector
   rc-explorer/                 # Stock Remote Control inspection
   data-authoring/              # First-party authoring product
   actor-observatory/           # First real-time observability UI
@@ -146,6 +149,11 @@ without pretending every API is frozen.
 - The parser core accepts bounded package bytes and has no required filesystem or subprocess
   authority. Native discovery, process management, and caching are adapters; WASM consumers use the
   same inspection semantics and fixture evidence.
+- Portable DataTable authoring, typed saved-inspection, text, texture and saved-world projections,
+  including their wire models and pure evidence conversions, belong to `uasset-inspection`.
+  Native `uasset-io` re-exports those models and supplies file reads, enumeration, cancellation
+  checkpoints, failure mapping and result/event framing. Browser WASM keeps its existing portable
+  projection output; neither the Workbench editor nor a filesystem adapter owns snapshot meaning.
 - Extensions depend on public domain packages and host extension contracts.
 - The CLI and Workbench compose extensions; they do not own domain behavior.
 - Unreal feature plugins depend on `UEShedCore` where shared identity or transport is required, not

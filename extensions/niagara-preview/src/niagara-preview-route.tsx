@@ -1159,9 +1159,6 @@ const styles = stylex.create({
 		borderBottomColor: tokens.colorBorder,
 		borderBottomStyle: "solid",
 		borderBottomWidth: 1,
-		borderLeftColor: "transparent",
-		borderLeftStyle: "solid",
-		borderLeftWidth: 2,
 		color: tokens.colorText,
 		cursor: "pointer",
 		display: "grid",
@@ -1172,7 +1169,7 @@ const styles = stylex.create({
 	},
 	catalogueRowActive: {
 		backgroundColor: tokens.colorAccentWash,
-		borderLeftColor: tokens.colorAccent
+		color: tokens.colorAccent
 	},
 	catalogueName: {
 		fontSize: 12,

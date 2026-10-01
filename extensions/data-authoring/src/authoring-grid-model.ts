@@ -1,5 +1,11 @@
 import type { AuthoringRow, AuthoringValue } from "@ue-shed/protocol";
-import type { CellMutation, CellValue, ColumnDef, SheetOperation } from "peculiar-sheets";
+import type {
+	CellMutation,
+	CellValue,
+	ColumnDef,
+	ColumnIndex,
+	SheetOperation
+} from "peculiar-sheets";
 import { Schema } from "effect";
 import type { AuthoringColumn } from "./authoring-view.js";
 import { fieldInRow, formatAuthoringValue } from "./authoring-view.js";
@@ -29,6 +35,86 @@ export type AuthoringGridOperationResult =
 	| { readonly status: "ready"; readonly gesture: AuthoringGridGesture }
 	| { readonly status: "ignored" }
 	| { readonly status: "failed"; readonly message: string };
+
+export const AUTHORING_ROW_NAME_COLUMN_ID = "$row-name";
+export const AUTHORING_ROW_NAME_COLUMN_INDEX = 0;
+
+/** The pinned row name belongs to the sheet, never to the authoring field model. */
+export function authoringModelColumnIndex(sheetColumnIndex: number): number | undefined {
+	return Number.isInteger(sheetColumnIndex) && sheetColumnIndex > AUTHORING_ROW_NAME_COLUMN_INDEX
+		? sheetColumnIndex - 1
+		: undefined;
+}
+
+/** Selection and getCellStyle use visual rows; mutation addresses are physical. */
+export function authoringRowAtVisualIndex(
+	rows: readonly AuthoringRow[],
+	visualIndex: number,
+	rowName: CellValue | undefined
+): AuthoringRow | undefined {
+	return rowName === undefined ? rows[visualIndex] : rows.find((row) => row.name === rowName);
+}
+
+function authoringModelMutation(mutation: CellMutation): CellMutation | undefined {
+	const col = authoringModelColumnIndex(mutation.address.col);
+	const viewCol = mutation.viewAddress
+		? authoringModelColumnIndex(mutation.viewAddress.col)
+		: undefined;
+	if (
+		col === undefined ||
+		(mutation.viewAddress && viewCol === undefined) ||
+		mutation.columnId === AUTHORING_ROW_NAME_COLUMN_ID
+	) {
+		return undefined;
+	}
+	// SAFETY: the offset helper validates integer coordinates before restoring Peculiar's brand.
+	const projected = { ...mutation, address: { ...mutation.address, col: col as ColumnIndex } };
+	if (mutation.viewAddress) {
+		// SAFETY: viewCol is defined whenever viewAddress is, checked by the early return above.
+		projected.viewAddress = { ...mutation.viewAddress, col: viewCol as ColumnIndex };
+	}
+	return projected;
+}
+
+type AuthoringSheetProjectionResult =
+	| { readonly status: "ready"; readonly operation: SheetOperation }
+	| { readonly status: "failed"; readonly message: string };
+
+export function projectAuthoringSheetOperation(
+	operation: SheetOperation
+): AuthoringSheetProjectionResult {
+	if (operation.type !== "cell-edit" && operation.type !== "batch-edit") {
+		return { operation, status: "ready" };
+	}
+	const mutations = operation.type === "cell-edit" ? [operation.mutation] : operation.mutations;
+	const projected: CellMutation[] = [];
+	for (const mutation of mutations) {
+		const modelMutation = authoringModelMutation(mutation);
+		if (!modelMutation) {
+			return { message: "Row names are read-only in the grid.", status: "failed" };
+		}
+		projected.push(modelMutation);
+	}
+	return {
+		operation:
+			operation.type === "cell-edit"
+				? { ...operation, mutation: projected[0]! }
+				: { ...operation, mutations: projected },
+		status: "ready"
+	};
+}
+
+/** All edit sources (editor, paste, cut/delete, fill, history) enter through this boundary. */
+export function decodeAuthoringSheetOperation(args: {
+	readonly operation: SheetOperation;
+	readonly rows: readonly AuthoringRow[];
+	readonly columns: readonly AuthoringColumn[];
+}): AuthoringGridOperationResult {
+	const projected = projectAuthoringSheetOperation(args.operation);
+	return projected.status === "failed"
+		? projected
+		: decodeAuthoringGridOperation({ ...args, operation: projected.operation });
+}
 
 function isEditable(column: AuthoringColumn): boolean {
 	const descriptor = column.descriptor;
@@ -97,9 +183,12 @@ export function decodeAuthoringGridMutation(args: {
 	readonly rows: readonly AuthoringRow[];
 	readonly columns: readonly AuthoringColumn[];
 }): AuthoringGridDecodeResult {
-	const row = args.rows[args.mutation.address.row];
-	const column = args.columns.find((candidate) => candidate.name === args.mutation.columnId);
-	if (!row || !column)
+	const row =
+		args.mutation.rowId === undefined
+			? args.rows[args.mutation.address.row]
+			: args.rows.find((candidate) => candidate.id === args.mutation.rowId);
+	const column = args.columns[args.mutation.address.col];
+	if (!row || !column || column.name !== args.mutation.columnId)
 		return { message: "The edited cell is outside the table.", status: "failed" };
 	if (!isEditable(column)) {
 		return { message: `${column.name} is read-only for this authority.`, status: "failed" };
@@ -184,26 +273,40 @@ export function toReadOnlyGridValue(value: AuthoringValue): CellValue {
 export function buildReadOnlyAuthoringGridModel(args: {
 	readonly rows: readonly AuthoringRow[];
 	readonly columns: readonly AuthoringColumn[];
+	readonly readOnly?: boolean;
 }): ReadOnlyAuthoringGridModel {
+	const data = args.rows.map((row) =>
+		args.columns.map((column) => {
+			const field = fieldInRow(row, column.name);
+			return field ? toReadOnlyGridValue(field.value) : null;
+		})
+	);
 	return {
-		columns: args.columns.map((column) => ({
-			editable: isEditable(column),
+		columns: args.columns.map((column, index) => ({
+			editable: !args.readOnly && isEditable(column),
 			getCellTitle: (value) => (value === null ? undefined : String(value)),
 			header: column.name,
 			id: column.name,
 			meta: { typeName: column.typeName },
-			minWidth: 140,
+			minWidth: 96,
+			maxWidth: 360,
 			parseValue: parseEditorText,
 			resizable: true,
 			sortable: false,
-			width: 190
+			width: Math.min(
+				360,
+				Math.max(
+					/string|str|text/i.test(column.typeName) ? 180 : 96,
+					data.reduce(
+						(length, row) => Math.max(length, String(row[index] ?? "").length),
+						column.name.length
+					) *
+						7 +
+						28
+				)
+			)
 		})),
-		data: args.rows.map((row) =>
-			args.columns.map((column) => {
-				const field = fieldInRow(row, column.name);
-				return field ? toReadOnlyGridValue(field.value) : null;
-			})
-		),
+		data,
 		rowKeys: args.rows.map((row) => row.id)
 	};
 }

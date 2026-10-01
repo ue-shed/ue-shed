@@ -26,7 +26,7 @@ input,
 select,
 textarea {
 	font: inherit;
-	accent-color: #e4f222;
+	accent-color: #7cc0ff;
 }
 /*
  * Strip the user-agent control chrome. Under `color-scheme: dark` an unstyled button keeps a
@@ -43,7 +43,7 @@ textarea {
 	color: inherit;
 }
 ::selection {
-	background-color: rgba(228, 242, 34, 0.28);
+	background-color: rgba(124, 192, 255, 0.28);
 	color: #f7f8f8;
 }
 :focus-visible {

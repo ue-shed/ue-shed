@@ -735,7 +735,7 @@ const styles = stylex.create({
 	},
 	launchButton: {
 		padding: "7px 12px",
-		borderColor: "rgba(228, 242, 34, 0.45)",
+		borderColor: "rgba(124, 192, 255, 0.45)",
 		borderStyle: "solid",
 		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
@@ -802,8 +802,8 @@ const styles = stylex.create({
 		":hover": { borderColor: "#4a4e54", transform: "translateY(-1px)" }
 	},
 	tileFocused: {
-		borderColor: "rgba(228, 242, 34, 0.65)",
-		boxShadow: `inset 0 0 0 1px rgba(228, 242, 34, 0.25), ${tokens.shadowOverlay}`
+		borderColor: "rgba(124, 192, 255, 0.65)",
+		boxShadow: `inset 0 0 0 1px rgba(124, 192, 255, 0.25), ${tokens.shadowOverlay}`
 	},
 	canvas: { width: "100%", height: "100%", display: "block", objectFit: "cover" },
 	tileTop: {

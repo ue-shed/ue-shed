@@ -426,9 +426,6 @@ const styles = stylex.create({
 		gap: 3,
 		padding: "8px 9px",
 		borderRadius: tokens.radiusBadge,
-		borderLeftColor: "transparent",
-		borderLeftStyle: "solid",
-		borderLeftWidth: 2,
 		color: tokens.colorText,
 		cursor: "pointer",
 		fontSize: 12
@@ -445,12 +442,11 @@ const styles = stylex.create({
 	},
 	optionPathSelected: { color: tokens.colorTextMuted },
 	optionActive: {
-		backgroundColor: "rgba(255, 255, 255, 0.04)"
+		backgroundColor: tokens.colorSurfaceHover
 	},
 	optionSelected: {
-		backgroundColor: "rgba(255, 255, 255, 0.07)",
-		borderLeftColor: tokens.colorAccent,
-		color: tokens.colorTextStrong
+		backgroundColor: tokens.colorSurfaceHover,
+		color: tokens.colorAccent
 	},
 	customOption: {
 		marginTop: 4,

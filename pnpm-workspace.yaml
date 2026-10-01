@@ -80,4 +80,5 @@ minimumReleaseAgeExclude:
     - solid-js@2.0.0-rc.9
 
 patchedDependencies:
+    peculiar-sheets@0.13.0: patches/peculiar-sheets@0.13.0.patch
     solid-js@2.0.0-rc.9: patches/solid-js@2.0.0-rc.9.patch

@@ -70,6 +70,10 @@ export async function extractAnimations(path, bytes) {
 	return (await createBrowserRuntime()).extractAnimations(path, bytes);
 }
 
+export async function extractAuthoringTable(path, bytes) {
+	return (await createBrowserRuntime()).extractAuthoringTable(path, bytes);
+}
+
 export async function version() {
 	return (await createBrowserRuntime()).version();
 }

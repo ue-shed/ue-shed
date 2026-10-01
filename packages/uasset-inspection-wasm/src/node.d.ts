@@ -11,4 +11,5 @@ export declare const extractTextures: import("./types.js").WasmRuntime["extractT
 export declare const extractLevelSequences: import("./types.js").WasmRuntime["extractLevelSequences"];
 export declare const extractBlueprints: import("./types.js").WasmRuntime["extractBlueprints"];
 export declare const extractAnimations: import("./types.js").WasmRuntime["extractAnimations"];
+export declare const extractAuthoringTable: import("./types.js").WasmRuntime["extractAuthoringTable"];
 export declare const version: import("./types.js").WasmRuntime["version"];

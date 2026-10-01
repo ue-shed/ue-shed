@@ -36,6 +36,12 @@ pnpm showcase
 See [`docs/showcase.md`](../../docs/showcase.md) for the saved-asset reader, fixture, and live Unreal
 instructions. Direct Workbench build and start commands remain available for host development.
 
+Saved Sequencer review is available at `#/sequences` through the shared
+[`@ue-shed/extension-sequencer`](../../extensions/sequencer/README.md) viewer. Choose a project in
+the sidebar, then search its scanned Level Sequences beside the timeline title. It uses the saved
+project index and the native reader without launching Unreal. References and Compare saved versions
+remain Workbench tools; comparison still accepts an explicit baseline asset path.
+
 ## End-to-end tests
 
 From the repository root, build and test the real Electron app against the committed fixture:

@@ -976,6 +976,92 @@ test(`records the ${journey} Workbench journey`, async ({
 					title: "Keep uncertainty visible"
 				})
 			);
+			if (journey === "site-saved")
+				chapters.push(
+					await recordChapter({
+						action: async () => {
+							await workbench.openRoute("Map Review");
+							const source = page!
+								.getByRole("tablist", { name: "Map data source" })
+								.getByRole("tab", { name: "Saved map", exact: true });
+							await source.click();
+							await expect(source).toHaveAttribute("aria-selected", "true");
+							const savedMap = page!.getByRole("region", {
+								name: "Saved top-down actor map"
+							});
+							const picker = savedMap.getByRole("combobox", { name: "Saved map" });
+							await expect(picker).toBeEnabled({ timeout: 90_000 });
+							await picker.click();
+							await savedMap
+								.getByRole("searchbox", { name: "Search saved maps" })
+								.fill("L_CameraLoad");
+							await savedMap
+								.getByRole("option", {
+									name: /Content\/Fixture\/Cameras\/L_CameraLoad\.umap/
+								})
+								.click();
+							await expect(picker).toContainText("L_CameraLoad", { timeout: 90_000 });
+							await expect(savedMap.locator("header")).toContainText(
+								"/Game/Fixture/Cameras/L_CameraLoad"
+							);
+							await expect(savedMap).toContainText(/[1-9]\d* of [\d,]+ actors/);
+							const actors = savedMap.getByRole("list", { name: "Saved actors" });
+							await expect(actors.getByRole("button").first()).toBeVisible();
+							const pointMap = savedMap.getByRole("application", {
+								name: "Top-down saved actor map"
+							});
+							await expect(pointMap).toBeVisible();
+							await expect
+								.poll(() =>
+									pointMap.evaluate(
+										(canvas: {
+											readonly width: number;
+											readonly height: number;
+										}) => canvas.width * canvas.height
+									)
+								)
+								.toBeGreaterThan(0);
+							await expect(savedMap).toContainText(/\d[\d,]* × \d[\d,]* UU/);
+							const findActor = savedMap.getByRole("textbox", {
+								name: "Find saved actor"
+							});
+							await findActor.fill("path:PersistentLevel.ReviewSubject");
+							const subject = actors.getByRole("button", { name: /Review Subject/ });
+							await subject.click();
+							await expect(subject).toHaveAttribute("aria-pressed", "true");
+							await findActor.fill("");
+							await savedMap.getByRole("button", { name: "Reset view" }).click();
+							const details = savedMap.getByRole("complementary");
+							await expect(
+								details.getByRole("heading", {
+									name: "Review Subject",
+									exact: true
+								})
+							).toBeVisible();
+							await expect(details).toContainText("PersistentLevel.ReviewSubject");
+							await expect(details.getByRole("definition")).toHaveCount(5);
+							await expect(details).toContainText("Read from saved project files.");
+							await expect(page!.getByRole("alert")).toHaveCount(0);
+							await expect(
+								savedMap.getByRole("heading", { name: "Couldn't load saved map" })
+							).toHaveCount(0);
+							// Start the frame at the source tabs: the offline recorder's editor status probe
+							// above them is expected to fail and is not part of the saved-map story.
+							await page!
+								.getByRole("tablist", { name: "Map data source" })
+								.evaluate((tabs: { scrollIntoView(options: object): void }) =>
+									tabs.scrollIntoView({ block: "start" })
+								);
+						},
+						description:
+							"Read Camera Lab's saved map without Unreal, inspect its actor positions, and select Review Subject as the starting point for review.",
+						page,
+						resetScroll: false,
+						slug: "08-map-review-saved-map",
+						testInfo,
+						title: "Start review from the saved Camera Lab map"
+					})
+				);
 		}
 	} catch (cause) {
 		failure = cause;

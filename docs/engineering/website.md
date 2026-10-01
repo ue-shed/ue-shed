@@ -127,9 +127,10 @@ pnpm site:refresh
 This builds Workbench, runs the `site-saved` Playwright journey against the generic fixture,
 exports its asserted chapters, and checks the production website at desktop and mobile widths.
 The journey opens Data Authoring, switches to Charts, searches Game Text, compares config
-platforms, and inspects the contribution ledger. It uses an isolated Electron profile and does
-not launch Unreal. This website journey ignores inherited `UE_SHED_*` project and endpoint
-overrides and reserves an offline endpoint so it cannot capture a different configured project.
+platforms, inspects the contribution ledger, and browses Map Review's saved Camera Lab map with
+Review Subject selected. It uses an isolated Electron profile and does not launch Unreal. This
+website journey ignores inherited `UE_SHED_*` project and endpoint overrides and reserves an
+offline endpoint so it cannot capture a different configured project.
 Texture preview generation remains in the separate `saved-workflows` journey,
 because that operation can need an Unreal commandlet.
 
@@ -151,7 +152,7 @@ deploys the website or updates visual baselines automatically.
 pnpm showcase:record site-saved --no-build
 pnpm site:media --journey site-saved
 
-# Choose a specific reviewed recording. Other journeys stay unchanged.
+# Choose a specific reviewed recording.
 pnpm site:media --bundle site-saved=<recording-id>
 
 # Verify committed images without requiring local recording bundles.
@@ -164,14 +165,18 @@ pnpm site:check
 With no journey selection, `site:media` requires a complete recording for every export-plan
 journey. A missing chapter, failed latest recording, invalid manifest, escaped path, or invalid
 PNG fails before publication files are written. Explicit pins allow choosing an older reviewed
-recording. Selecting one journey preserves the other journey's images and original provenance.
-Do not hand-edit a capture or its digest to bypass a failed workflow.
+recording. Only journeys that publish screenshots belong in the export plan. The exporter removes
+recording provenance once a journey has no remaining captures. Do not hand-edit a capture or its
+digest to bypass a failed workflow.
 
-Map Review remains an explicit live lane. Follow [the showcase setup](../showcase.md#demo-6-map-review),
-record `pnpm showcase:record map-review`, then export `pnpm site:media --journey map-review`.
-It requires a rendering fixture editor on the colorful Camera Lab map, `L_CameraLoad`. The
-journey creates both Capture Runs itself and verifies switching between them, so an old local
-capture cannot silently become the website baseline. The site displays the actual capture date.
+`map-review.png` comes from the `site-saved` chapter `08-map-review-saved-map`. It shows
+`/Game/Fixture/Cameras/L_CameraLoad` read from disk, its actor positions, and Review Subject's
+details without an editor. Exporting this chapter replaces the earlier live capture and removes
+the unused `map-review` recording provenance. The site displays the actual capture date.
+
+The separate `pnpm showcase:record map-review` demo remains a live lane outside the website export
+plan. Follow [the showcase setup](../showcase.md#demo-6-map-review) for a rendering fixture editor.
+That journey creates two Capture Runs and verifies switching between them.
 
 ## Continuous checks and review artifacts
 

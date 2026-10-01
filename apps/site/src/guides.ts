@@ -180,10 +180,10 @@ export const guides: readonly Guide[] = [
 			{
 				key: "mapReview",
 				caption:
-					"The colorful Camera Lab fixture, captured through Map Review with two fresh runs retained in history."
+					"The saved Camera Lab map read offline, with actor positions and the selected Review Subject's details."
 			}
 		],
 		boundary:
-			"Capturing needs a rendering editor. The flow test uses the generic fixture, requires a clean map, and retains PNG evidence. The illustrated recording captures the Camera Lab map twice from the same approved view without replacing either observation."
+			"Capturing needs a rendering editor. The flow test uses the generic fixture, requires a clean map, and retains PNG evidence. The illustration shows where review starts: the saved Camera Lab map's actors and positions, read offline without Unreal."
 	}
 ];

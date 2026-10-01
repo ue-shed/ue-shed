@@ -36,8 +36,33 @@ test("media promotion requires passed, complete, contained recording evidence", 
 		chapters
 	});
 	const promoted = prepareCaptures(bundle, manifest, "site-saved");
-	assert.equal(promoted.length, 5);
+	assert.equal(promoted.length, 6);
+	assert.deepEqual(Object.keys(exportPlan), ["site-saved"]);
+	assert.deepEqual(promoted.find(({ key }) => key === "mapReview")?.capture, {
+		file: "map-review.png",
+		journey: "site-saved",
+		title: "08-map-review-saved-map",
+		sha256: pngDigest(png)
+	});
 	assert.equal(promoted[0].capture.sha256, pngDigest(png));
+	assert.throws(
+		() => prepareCaptures(bundle, { ...manifest, journey: "map-review" }, "site-saved"),
+		/passed site-saved recording/
+	);
+	assert.throws(
+		() =>
+			prepareCaptures(
+				bundle,
+				{
+					...manifest,
+					chapters: chapters.filter(
+						(chapter) => chapter.screenshot !== "chapters/08-map-review-saved-map.png"
+					)
+				},
+				"site-saved"
+			),
+		/exactly one chapter 08-map-review-saved-map/
+	);
 	assert.throws(
 		() => prepareCaptures(bundle, { ...manifest, status: "failed" }, "site-saved"),
 		/passed/
@@ -83,6 +108,24 @@ test("site check detects missing images and edits outside the promotion workflow
 	}
 	const media = { exportedAt: "2026-09-27T00:00:00Z", captures, journeys };
 	checkSiteMedia(media, root);
+	assert.throws(
+		() => checkSiteMedia({ ...media, journeys: {} }, root),
+		/Missing recording provenance for site-saved/
+	);
+	assert.throws(
+		() =>
+			checkSiteMedia(
+				{
+					...media,
+					captures: {
+						...captures,
+						mapReview: { ...captures.mapReview, journey: "map-review" }
+					}
+				},
+				root
+			),
+		/Missing or mismatched capture: mapReview/
+	);
 	writeFileSync(join(root, "authoring.png"), Buffer.concat([png, Buffer.from("changed")]));
 	assert.throws(() => checkSiteMedia(media, root), /differs from its manifest/);
 	checkSiteMedia(media, root, new Map([["authoring.png", png]]));

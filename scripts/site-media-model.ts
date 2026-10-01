@@ -23,9 +23,9 @@ export const exportPlan = {
 		"02-data-authoring-charts": { key: "authoringCharts", file: "authoring-charts.png" },
 		"04-game-text": { key: "gameText", file: "game-text.png" },
 		"05-config-platform-comparison": { key: "configExplorer", file: "config-explorer.png" },
-		"06-config-contribution-ledger": { key: "configLineage", file: "config-lineage.png" }
-	},
-	"map-review": { "03-before-and-after": { key: "mapReview", file: "map-review.png" } }
+		"06-config-contribution-ledger": { key: "configLineage", file: "config-lineage.png" },
+		"08-map-review-saved-map": { key: "mapReview", file: "map-review.png" }
+	}
 } as const;
 export type Journey = keyof typeof exportPlan;
 

@@ -19,8 +19,10 @@ import {
 	AbsoluteCamera,
 	CameraFrameOperationId,
 	CameraRenderCapabilities,
+	CameraRendererPolicy,
 	CameraRenderSessionId,
 	cameraRenderContract,
+	highResolutionReviewRenderer,
 	legacyReviewRenderPolicy,
 	type CameraFrameResult,
 	type CameraRenderSessionRequest
@@ -350,5 +352,127 @@ describe("shared renderer lifecycle", () => {
 			}
 		])
 			expect(cameraRenderReuseIdentity(changed)).not.toBe(key);
+	});
+});
+
+describe("editor preview renderer policy", () => {
+	const viewportPreviews: CameraRenderSessionRequest = {
+		...request,
+		policy: {
+			...request.policy,
+			renderer: { ...highResolutionReviewRenderer, editorPreviews: true }
+		}
+	};
+	const supported = (sceneCapture: boolean) =>
+		CameraRenderCapabilities.make({
+			...capabilities,
+			editorPreviews: {
+				version: 1,
+				subjects: "child_actors_of_editor_only_owners",
+				viewport: true,
+				sceneCapture
+			}
+		});
+	it("is optional on both renderers, round-trips absence and accepts only booleans", () => {
+		const decode = Schema.decodeUnknownResult(CameraRendererPolicy);
+		const strict = { onExcessProperty: "error" } as const;
+		for (const renderer of [highResolutionReviewRenderer, legacyReviewRenderPolicy.renderer]) {
+			const absent = decode(renderer, strict);
+			expect(absent._tag === "Success" && "editorPreviews" in absent.success).toBe(false);
+			for (const editorPreviews of [true, false])
+				expect(decode({ ...renderer, editorPreviews }, strict)._tag).toBe("Success");
+			for (const editorPreviews of ["yes", 1, null])
+				expect(decode({ ...renderer, editorPreviews }, strict)._tag).toBe("Failure");
+		}
+	});
+	it("reports a missing plugin capability before acquiring the editor", async () => {
+		for (const session of [
+			viewportPreviews,
+			{
+				...request,
+				policy: {
+					...request.policy,
+					renderer: { ...highResolutionReviewRenderer, editorPreviews: false }
+				}
+			}
+		]) {
+			const h = harness();
+			const opened = await Effect.runPromise(
+				Effect.scoped(h.renderer.open(session)).pipe(Effect.flip)
+			);
+			expect(opened).toMatchObject({ code: "unsupported_capability", operation: "open" });
+			const checked = await Effect.runPromise(
+				h.renderer.preflight(session).pipe(Effect.flip)
+			);
+			expect(checked).toMatchObject({
+				code: "unsupported_capability",
+				operation: "preflight"
+			});
+			expect(h.calls).not.toContain("BeginCameraRender");
+			expect(h.calls).not.toContain("PreflightCameraRender");
+		}
+	});
+	it("checks support for the requested backend", async () => {
+		const h = harness((name) =>
+			name === "GetCameraRenderCapabilities" ? Effect.succeed(supported(false)) : undefined
+		);
+		const sceneCapture: CameraRenderSessionRequest = {
+			...request,
+			policy: {
+				...request.policy,
+				renderer: { ...legacyReviewRenderPolicy.renderer, editorPreviews: true }
+			}
+		};
+		const result = await Effect.runPromise(
+			Effect.scoped(h.renderer.open(sceneCapture)).pipe(Effect.flip)
+		);
+		expect(result.code).toBe("unsupported_capability");
+		expect(h.calls).not.toContain("BeginCameraRender");
+	});
+	it("renders with the exact policy and returns revealed-preview evidence", async () => {
+		const evidence = {
+			...captured.evidence,
+			policy: viewportPreviews.policy,
+			editorPreviews: { revealedChildActors: 2 }
+		};
+		const h = harness((name) =>
+			name === "GetCameraRenderCapabilities"
+				? Effect.succeed(supported(true))
+				: name === "BeginCameraRender"
+					? Effect.succeed({
+							status: "opened",
+							sessionId: request.sessionId,
+							resolvedPolicy: viewportPreviews.policy
+						})
+					: name === "StartCameraFrame"
+						? Effect.succeed({ ...captured, evidence })
+						: undefined
+		);
+		const result = await Effect.runPromise(
+			renderCamera({ session: viewportPreviews, frame }).pipe(
+				Effect.provideService(CameraRenderer, h.renderer)
+			)
+		);
+		expect(result.evidence.editorPreviews).toEqual({ revealedChildActors: 2 });
+		expect(h.calls.at(-1)).toBe("EndCameraRender");
+		expect(
+			cameraRenderReuseIdentity({
+				frame,
+				policy: viewportPreviews.policy,
+				engineVersion: "engine",
+				pluginVersion: "plugin",
+				sceneRevision: "scene",
+				workflow: "standalone"
+			})
+		).not.toBe(
+			cameraRenderReuseIdentity({
+				frame,
+				policy: request.policy,
+				engineVersion: "engine",
+				pluginVersion: "plugin",
+				sceneRevision: "scene",
+				workflow: "standalone"
+			})
+		);
 	});
 });

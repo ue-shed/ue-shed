@@ -44,6 +44,7 @@ const tests = [
 	"UEShed.Cameras.Rendering.ScreenshotOwnership",
 	"UEShed.Cameras.Rendering.MapMinorCompatibility",
 	"UEShed.Cameras.Rendering.PreparationAndWorldChange",
+	"UEShed.Cameras.Rendering.EditorPreviews",
 	"UEShed.Cameras.Streaming.BoundedLifecycle",
 	"UEShed.Cameras.Streaming.DeliveryScope",
 	"UEShed.Cameras.Streaming.CadenceUpdates",

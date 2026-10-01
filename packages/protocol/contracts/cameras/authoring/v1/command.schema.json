@@ -1416,6 +1416,9 @@
 										},
 										"volumetricFog": {
 											"type": "boolean"
+										},
+										"editorPreviews": {
+											"type": "boolean"
 										}
 									},
 									"required": [
@@ -1457,6 +1460,9 @@
 											"type": "boolean"
 										},
 										"volumetricFog": {
+											"type": "boolean"
+										},
+										"editorPreviews": {
 											"type": "boolean"
 										}
 									},

@@ -139,6 +139,27 @@ function inputError(
 const decode = <S extends Schema.Top, Input>(schema: S, input: Input) =>
 	Schema.decodeUnknownEffect(schema)(input, { onExcessProperty: "error" });
 
+/** Older plugins reject unknown renderer fields; report the missing capability instead. */
+function unsupportedRendererPolicy(
+	request: CameraRenderSessionRequest,
+	capabilities: CameraRenderCapabilities,
+	operation: "preflight" | "open"
+): CameraRenderError | undefined {
+	const renderer = request.policy.renderer;
+	if (renderer.editorPreviews === undefined) return undefined;
+	const support = capabilities.editorPreviews;
+	if (support?.[renderer.kind === "editor_viewport" ? "viewport" : "sceneCapture"])
+		return undefined;
+	return new CameraRenderError({
+		code: "unsupported_capability",
+		operation,
+		sessionId: request.sessionId,
+		message: `The connected plugin does not support renderer.editorPreviews for ${renderer.kind}.`,
+		recovery:
+			"Omit renderer.editorPreviews or install a matching UE Shed Cameras plugin that advertises editorPreviews."
+	});
+}
+
 export interface CameraRenderSession {
 	readonly id: CameraRenderSessionId;
 	readonly resolvedPolicy: CameraRenderPolicy;
@@ -229,7 +250,8 @@ export function makeCameraRenderer(
 		const request = yield* decode(CameraRenderSessionRequest, input).pipe(
 			Effect.mapError((cause) => inputError("preflight", input.sessionId, cause))
 		);
-		yield* capabilities();
+		const unsupported = unsupportedRendererPolicy(request, yield* capabilities(), "preflight");
+		if (unsupported) return yield* unsupported;
 		return yield* call("preflight", request.sessionId, "PreflightCameraRender", {
 			RequestJson: JSON.stringify(request)
 		}).pipe(
@@ -241,7 +263,8 @@ export function makeCameraRenderer(
 		const request = yield* decode(CameraRenderSessionRequest, input).pipe(
 			Effect.mapError((cause) => inputError("open", input.sessionId, cause))
 		);
-		yield* capabilities();
+		const unsupported = unsupportedRendererPolicy(request, yield* capabilities(), "open");
+		if (unsupported) return yield* unsupported;
 		const events = yield* PubSub.sliding<CameraRenderProgress>(32);
 		let ownsOrUncertain = true;
 		let leaseFailure: CameraRenderError | undefined;

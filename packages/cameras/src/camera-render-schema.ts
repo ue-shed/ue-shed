@@ -52,6 +52,11 @@ export const CameraRenderRegion = Schema.Struct({
 		z: Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 1e7 }))
 	})
 });
+/**
+ * Opt-in: show child actors that ChildActorComponents spawn for editor-only owners. Absent means
+ * false. Requires the `editorPreviews` render capability; older plugins reject the field.
+ */
+const EditorPreviews = Schema.optionalKey(Schema.Boolean);
 export const CameraRendererPolicy = Schema.Union([
 	Schema.Struct({
 		kind: Schema.Literal("editor_viewport"),
@@ -59,7 +64,8 @@ export const CameraRendererPolicy = Schema.Union([
 		profile: Schema.Literals(["lit", "observation"]),
 		vignette: Schema.Literals(["project", "disabled"]),
 		fog: Schema.Boolean,
-		volumetricFog: Schema.Boolean
+		volumetricFog: Schema.Boolean,
+		editorPreviews: EditorPreviews
 	}),
 	Schema.Struct({
 		kind: Schema.Literal("scene_capture"),
@@ -71,7 +77,8 @@ export const CameraRendererPolicy = Schema.Union([
 		]),
 		lodDistanceScale: Schema.Finite.check(Schema.isBetween({ minimum: 0.1, maximum: 100 })),
 		fog: Schema.Boolean,
-		volumetricFog: Schema.Boolean
+		volumetricFog: Schema.Boolean,
+		editorPreviews: EditorPreviews
 	})
 ]);
 export type CameraRendererPolicy = Schema.Schema.Type<typeof CameraRendererPolicy>;
@@ -212,6 +219,14 @@ export const CameraRenderCapabilities = Schema.Struct({
 			sceneCapture: Schema.Boolean
 		})
 	),
+	editorPreviews: Schema.optionalKey(
+		Schema.Struct({
+			version: Schema.Literal(1),
+			subjects: Schema.Literal("child_actors_of_editor_only_owners"),
+			viewport: Schema.Boolean,
+			sceneCapture: Schema.Boolean
+		})
+	),
 	contract: CameraRenderContract,
 	engineVersion: Text,
 	pluginVersion: Text,
@@ -258,6 +273,8 @@ export const CameraRenderProgress = Schema.Struct({
 export type CameraRenderProgress = typeof CameraRenderProgress.Type;
 export const CameraFrameEvidence = Schema.Struct({
 	visibilityDiagnostics: Schema.optionalKey(Schema.Array(CameraVisibilityDiagnostic)),
+	/** Present when the policy enables editor previews: preview child actors shown in the loaded world. */
+	editorPreviews: Schema.optionalKey(Schema.Struct({ revealedChildActors: integer(0, 1000000) })),
 	editorState: Schema.Struct({
 		mapPackageDirtyBefore: Schema.Boolean,
 		mapPackageDirtyAfter: Schema.Boolean

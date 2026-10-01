@@ -842,6 +842,22 @@
 								"additionalProperties": false
 							}
 						},
+						"editorPreviews": {
+							"type": "object",
+							"properties": {
+								"revealedChildActors": {
+									"type": "integer",
+									"allOf": [
+										{
+											"minimum": 0,
+											"maximum": 1000000
+										}
+									]
+								}
+							},
+							"required": ["revealedChildActors"],
+							"additionalProperties": false
+						},
 						"editorState": {
 							"type": "object",
 							"properties": {
@@ -1161,6 +1177,9 @@
 												},
 												"volumetricFog": {
 													"type": "boolean"
+												},
+												"editorPreviews": {
+													"type": "boolean"
 												}
 											},
 											"required": [
@@ -1202,6 +1221,9 @@
 													"type": "boolean"
 												},
 												"volumetricFog": {
+													"type": "boolean"
+												},
+												"editorPreviews": {
 													"type": "boolean"
 												}
 											},
@@ -1882,6 +1904,22 @@
 								"additionalProperties": false
 							}
 						},
+						"editorPreviews": {
+							"type": "object",
+							"properties": {
+								"revealedChildActors": {
+									"type": "integer",
+									"allOf": [
+										{
+											"minimum": 0,
+											"maximum": 1000000
+										}
+									]
+								}
+							},
+							"required": ["revealedChildActors"],
+							"additionalProperties": false
+						},
 						"editorState": {
 							"type": "object",
 							"properties": {
@@ -2201,6 +2239,9 @@
 												},
 												"volumetricFog": {
 													"type": "boolean"
+												},
+												"editorPreviews": {
+													"type": "boolean"
 												}
 											},
 											"required": [
@@ -2242,6 +2283,9 @@
 													"type": "boolean"
 												},
 												"volumetricFog": {
+													"type": "boolean"
+												},
+												"editorPreviews": {
 													"type": "boolean"
 												}
 											},

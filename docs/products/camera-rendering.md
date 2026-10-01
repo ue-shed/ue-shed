@@ -118,6 +118,7 @@ file or open a map implicitly.
 | Exposure                          | Project auto, fixed EV100, meter once  | Project auto, fixed EV100                                      |
 | LOD distance scale                | Unsupported                            | Explicit 0.1–100                                               |
 | Vignette                          | Project or disabled                    | Profile/project behavior                                       |
+| Editor previews (opt-in)          | Supported                              | Supported                                                      |
 | Review depth assessment and Clear | Unsupported; Natural remains available | Existing assessment and component-list Clear                   |
 
 Observation disables post processing and rejects exposure overrides. Fixed EV100 clamps exposure
@@ -131,6 +132,44 @@ Frame counting does not prove shader, temporal, lighting, or texture convergence
 `freeze_materials_and_ticks` uses the existing owned editor freeze after initial warmup/metering.
 It freezes the supported material clocks and actor/component ticks; it does not initialize a game
 or guarantee that every engine subsystem stops advancing. No arbitrary CVar bag is accepted.
+
+### Editor previews
+
+Renders use game view, so Unreal hides every primitive whose owner actor is editor-only. That
+includes child actors that a `ChildActorComponent` spawns for an editor-only owner. For example, a
+spawn volume that previews what will spawn there renders as empty space. Set the optional
+`renderer.editorPreviews: true` on either renderer to show those child actors. Omitting it is the
+same as `false`.
+
+```json
+{
+	"kind": "editor_viewport",
+	"strategy": "high_resolution_screenshot",
+	"profile": "lit",
+	"vignette": "project",
+	"fog": true,
+	"volumetricFog": true,
+	"editorPreviews": true
+}
+```
+
+The plugin follows Unreal's own rule. A child actor qualifies if its `ChildActorComponent` or that
+component's owner is editor-only; nested children of a revealed preview also qualify. For the
+session, only those child actors lose their editor-only flag and get new render proxies. Owners
+stay editor-only, so their own components and visualization stay hidden. Other editor-only
+actors, billboards, volumes, gizmos and selection also stay hidden. Components inside a preview
+keep their usual game visibility, so components hidden in game stay hidden. Each frame rescans for
+previews, so children recreated by a construction script are shown too. A child actor class that
+overrides `IsEditorOnly()` cannot be revealed and stays hidden.
+
+The flag is restored on close, failure, cancellation, lease expiry, world change, Play startup and
+plugin shutdown. It is serialized, so the plugin writes the original value back before saving a
+revealed actor (including autosave) and reveals the actor again after the save. Revealing it
+neither dirties the map nor records a transaction. Check the `editorPreviews` capability first.
+Plugins without it reject the field, and `CameraRenderer` reports `unsupported_capability` before
+opening a session. When enabled, frame evidence includes
+`editorPreviews.revealedChildActors`, the number of preview child actors shown in the loaded
+world. Zero means none were loaded; it does not say whether any were in view.
 
 `camera_regions` owns bounded World Partition loader references around the frame camera, or around
 the explicit frame `region` override. The caller chooses extents that include the visible scene;
@@ -152,7 +191,7 @@ studio lighting convention, gameplay bootstrap, or Play dependency.
 One native owner spans clients and workflows, including legacy Review and map adapters. The viewport
 state machine was extracted from Lit map capture; there is no second viewport manager. It restores
 the owned camera lock, transforms, projection, show flags, exposure, input, realtime override,
-screenshot configuration, freeze, Data Layers, and region references on completion, failure,
+screenshot configuration, freeze, editor-preview flags, Data Layers, and region references on completion, failure,
 cancellation, lease expiry, world change, Play startup, and plugin shutdown. External ownership
 changes are reported as restoration failures rather than overwritten. Map dirty state is observed,
 not forcibly cleared. No map is saved by rendering.

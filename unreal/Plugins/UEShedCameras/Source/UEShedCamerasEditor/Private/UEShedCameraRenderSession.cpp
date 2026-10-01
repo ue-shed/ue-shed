@@ -22,8 +22,11 @@
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 #include "UEShedCameraRenderingLibrary.h"
+#include "UEShedEditorPreviews.h"
 #include "UEShedMapCaptureFreeze.h"
 #include "UEShedTransientCapture.h"
+#include "UObject/ObjectSaveContext.h"
+#include "UObject/Package.h"
 #include "UnrealClient.h"
 #include "WorldPartition/DataLayer/DataLayerAsset.h"
 #include "WorldPartition/DataLayer/DataLayerInstance.h"
@@ -40,7 +43,7 @@ struct FClosedSession
 	double At;
 };
 TArray<FClosedSession> ClosedSessions;
-FDelegateHandle TickHandle, WorldHandle, PIEHandle;
+FDelegateHandle TickHandle, WorldHandle, PIEHandle, PreSaveHandle, SavedHandle;
 const FText RealtimeOwner = NSLOCTEXT("UEShed", "CameraRenderRealtime", "UE Shed Camera Rendering");
 constexpr int32 RetainedOperations = 64;
 constexpr double RetentionSeconds = 120;
@@ -201,7 +204,8 @@ bool ValidPolicy(const TSharedPtr<FJsonObject> &P)
 	if (Kind == TEXT("editor_viewport"))
 	{
 		if (!Fields(R, {TEXT("kind"), TEXT("strategy"), TEXT("profile"), TEXT("vignette"), TEXT("fog"),
-						TEXT("volumetricFog")}) ||
+						TEXT("volumetricFog")},
+					{TEXT("editorPreviews")}) ||
 			String(R, TEXT("strategy")) != TEXT("high_resolution_screenshot") ||
 			(String(R, TEXT("profile")) != TEXT("lit") &&
 			 String(R, TEXT("profile")) != TEXT("observation")) ||
@@ -212,7 +216,8 @@ bool ValidPolicy(const TSharedPtr<FJsonObject> &P)
 	else if (Kind == TEXT("scene_capture"))
 	{
 		if (!Fields(R, {TEXT("kind"), TEXT("profile"), TEXT("lodDistanceScale"), TEXT("fog"),
-						TEXT("volumetricFog")}) ||
+						TEXT("volumetricFog")},
+					{TEXT("editorPreviews")}) ||
 			!Number(R, TEXT("lodDistanceScale"), .1, 100))
 			return false;
 		const FString Profile = String(R, TEXT("profile"));
@@ -222,7 +227,8 @@ bool ValidPolicy(const TSharedPtr<FJsonObject> &P)
 	}
 	else
 		return false;
-	if (!Boolean(R, TEXT("fog")) || !Boolean(R, TEXT("volumetricFog")))
+	if (!Boolean(R, TEXT("fog")) || !Boolean(R, TEXT("volumetricFog")) ||
+		(R->HasField(TEXT("editorPreviews")) && !Boolean(R, TEXT("editorPreviews"))))
 		return false;
 	if (Mode == TEXT("project_auto"))
 	{
@@ -414,6 +420,7 @@ struct FUEShedCameraRenderSession::FState
 	TOptional<double> EV;
 	TSharedPtr<FUEShedCameraVisibility, ESPMode::ThreadSafe> Visibility;
 	FUEShedResolvedVisibility ResolvedVisibility;
+	FUEShedEditorPreviews EditorPreviews;
 	FString WorldLeaseId;
 	TSharedPtr<FJsonObject> PreparedWorld;
 	int32 WorldRevision = 0, LayerCount = 0;
@@ -468,6 +475,12 @@ struct FUEShedCameraRenderSession::FState
 	{
 		return Child(Request, TEXT("policy"));
 	}
+	bool ShowsEditorPreviews() const
+	{
+		bool Enabled = false;
+		const auto Renderer = Child(Policy(), TEXT("renderer"));
+		return Renderer && Renderer->TryGetBoolField(TEXT("editorPreviews"), Enabled) && Enabled;
+	}
 	bool OwnsScreenshot() const
 	{
 		if (!ScreenshotApplied)
@@ -521,6 +534,8 @@ struct FUEShedCameraRenderSession::FState
 			return Restored;
 		Closed = true;
 		if (Visibility) Visibility->Enabled = false;
+		// A world being torn down discards its proxies; only the serialized flag needs restoring.
+		EditorPreviews.Restore(!WorldCleanup);
 		RestoreScreenshot();
 		// Snapshot/restore extracted from the Lit map renderer. No second viewport manager.
 		if (Client)
@@ -604,6 +619,7 @@ struct FUEShedCameraRenderSession::FState
 	{
 		ResolvedVisibility = UEShedResolveCameraVisibility(World.Get(), Child(Policy(), TEXT("visibility")));
 		if (!ResolvedVisibility.Valid) return false;
+		if (ShowsEditorPreviews()) EditorPreviews.Apply(World.Get());
 		if (Viewport()) {
 			if (!Visibility) Visibility = FSceneViewExtensions::NewExtension<FUEShedCameraVisibility>();
 			Visibility->Target = Client->ViewState.GetReference(); Visibility->Components = ResolvedVisibility.Components; Visibility->Enabled = true;
@@ -936,6 +952,16 @@ TSharedPtr<FUEShedCameraRenderSession> FUEShedCameraRenderSession::Open(
 				Owner->State->Fail(TEXT("editor_required"),
 								   TEXT("Play or Simulate started during rendering."));
 		});
+		// Revealed editor previews must never be saved, including by autosave during settling.
+		PreSaveHandle = FCoreUObjectDelegates::OnObjectPreSave.AddLambda([](UObject *Object, FObjectPreSaveContext) {
+			if (Owner && !Owner->IsClosed())
+				Owner->State->EditorPreviews.PreSave(Object);
+		});
+		SavedHandle = UPackage::PackageSavedWithContextEvent.AddLambda(
+			[](const FString &, UPackage *Package, FObjectPostSaveContext) {
+				if (Owner && !Owner->IsClosed())
+					Owner->State->EditorPreviews.PostSave(Package);
+			});
 	}
 	// Synchronous world preparation consumes no client heartbeat budget.
 	Session->Touch();
@@ -1225,6 +1251,12 @@ void FUEShedCameraRenderSession::Tick(bool bDrawViewport)
 	Evidence->SetObjectField(TEXT("size"), Size);
 	Evidence->SetObjectField(TEXT("policy"), S.Policy());
 	if (S.Policy()->HasField(TEXT("visibility"))) Evidence->SetArrayField(TEXT("visibilityDiagnostics"), S.ResolvedVisibility.Diagnostics);
+	if (S.ShowsEditorPreviews())
+	{
+		auto Previews = Object();
+		Previews->SetNumberField(TEXT("revealedChildActors"), S.EditorPreviews.Num());
+		Evidence->SetObjectField(TEXT("editorPreviews"), Previews);
+	}
 	if (S.EV.IsSet())
 		Evidence->SetNumberField(TEXT("exposureEV100"), S.EV.GetValue());
 	else
@@ -1339,9 +1371,13 @@ void FUEShedCameraRenderSession::Shutdown()
 		FSlateApplication::Get().OnPostTick().Remove(TickHandle);
 	FWorldDelegates::OnWorldCleanup.Remove(WorldHandle);
 	FEditorDelegates::PreBeginPIE.Remove(PIEHandle);
+	FCoreUObjectDelegates::OnObjectPreSave.Remove(PreSaveHandle);
+	UPackage::PackageSavedWithContextEvent.Remove(SavedHandle);
 	TickHandle.Reset();
 	WorldHandle.Reset();
 	PIEHandle.Reset();
+	PreSaveHandle.Reset();
+	SavedHandle.Reset();
 }
 TSharedPtr<FJsonObject> FUEShedCameraRenderSession::Capabilities()
 {
@@ -1357,6 +1393,9 @@ TSharedPtr<FJsonObject> FUEShedCameraRenderSession::Capabilities()
 		"and_ticks\"],\"maximumRetainedOperations\":64,\"retentionMs\":120000}"));
 	Out->SetNumberField(TEXT("maximumRetainedSessions"), 9);
 	Out->SetObjectField(TEXT("authoredVisibility"), UEShedCameraVisibilityCapabilities());
+	Out->SetObjectField(TEXT("editorPreviews"),
+						UEShedCameraJson(TEXT("{\"version\":1,\"subjects\":\"child_actors_of_editor_only_"
+											  "owners\",\"viewport\":true,\"sceneCapture\":true}")));
 	for (const auto &Value : Out->GetArrayField(TEXT("renderers")))
 	{
 		auto R = Value->AsObject();

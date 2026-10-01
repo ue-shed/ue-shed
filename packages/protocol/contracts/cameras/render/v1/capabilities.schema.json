@@ -28,6 +28,27 @@
 			"required": ["version", "maximumActorsPerList", "geometry", "viewport", "sceneCapture"],
 			"additionalProperties": false
 		},
+		"editorPreviews": {
+			"type": "object",
+			"properties": {
+				"version": {
+					"type": "number",
+					"enum": [1]
+				},
+				"subjects": {
+					"type": "string",
+					"enum": ["child_actors_of_editor_only_owners"]
+				},
+				"viewport": {
+					"type": "boolean"
+				},
+				"sceneCapture": {
+					"type": "boolean"
+				}
+			},
+			"required": ["version", "subjects", "viewport", "sceneCapture"],
+			"additionalProperties": false
+		},
 		"contract": {
 			"type": "object",
 			"properties": {

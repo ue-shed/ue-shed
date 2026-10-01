@@ -20,6 +20,12 @@ Review's separately versioned `ue-shed-review-render-stages/1.0` uses
 `ResolveReviewViewpoint(RequestJson)` and
 `InspectRenderedReview(SessionId, RequestJson)` on `UEShedCameraReviewLibrary`.
 
+Both renderer policies accept an optional `editorPreviews` boolean (absent means `false`). It
+shows child actors that ChildActorComponents spawn for editor-only owners. Plugins that support it
+advertise the `editorPreviews` capability, and frame evidence then carries
+`editorPreviews.revealedChildActors`. Earlier plugins reject the field as `invalid_policy`. Review
+capture responses and map-tile evidence embed the same renderer policy and frame evidence.
+
 Request JSON rejects unknown fields. Native semantic validation additionally rejects duplicate Data
 Layer identities, unsupported renderer/exposure combinations, effective layer hierarchy conflicts,
 world/project mismatch, contention, region overrides with preserved loading, exceeded resource

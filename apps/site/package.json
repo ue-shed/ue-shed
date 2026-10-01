@@ -8,12 +8,19 @@
 		"deploy": "vite build && wrangler deploy",
 		"dev": "vite dev",
 		"preview": "vite preview",
-		"typecheck": "tsc --noEmit"
+		"typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.worker.json"
 	},
 	"dependencies": {
 		"@solidjs/web": "catalog:",
 		"@stylexjs/stylex": "catalog:",
+		"@ue-shed/extension-asset-inspector": "workspace:*",
+		"@ue-shed/extension-blueprint-graphs": "workspace:*",
+		"@ue-shed/extension-data-authoring": "workspace:*",
+		"@ue-shed/extension-sequencer": "workspace:*",
+		"@ue-shed/uasset-inspection-wasm": "workspace:*",
+		"@ue-shed/ui": "workspace:*",
 		"@ue-shed/ui-theme": "workspace:*",
+		"effect": "catalog:",
 		"solid-js": "catalog:"
 	},
 	"devDependencies": {

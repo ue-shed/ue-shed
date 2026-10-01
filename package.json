@@ -92,7 +92,8 @@
 		"uasset:check:wasm:libraries": "cargo check --locked -p uasset-parser --lib --target wasm32-unknown-unknown && cargo fmt --manifest-path crates/uasset-inspection-wasm/Cargo.toml -- --check && cargo clippy --locked --manifest-path crates/uasset-inspection-wasm/Cargo.toml --target wasm32-unknown-unknown -- -D warnings && pnpm run test:uasset-wasm:browser && pnpm run test:uasset-wasm:package",
 		"ue-shed": "node scripts/ue-shed.ts",
 		"site:refresh": "pnpm showcase:record site-saved && pnpm site:media --journey site-saved && pnpm site:check",
-		"site:check": "node --test scripts/site-media.test.ts && node scripts/site-media.ts --check && pnpm --filter @ue-shed/site typecheck && pnpm --filter @ue-shed/workbench exec playwright test --config e2e/site/playwright.config.ts",
+		"site:prepare": "pnpm --filter @ue-shed/protocol build && pnpm --filter @ue-shed/blueprints build && pnpm run uasset:build:wasm",
+		"site:check": "pnpm run site:prepare && node --test scripts/site-media.test.ts && node scripts/site-media.ts --check && pnpm --filter @ue-shed/site typecheck && pnpm --filter @ue-shed/workbench exec playwright test --config e2e/site/playwright.config.ts",
 		"test:saved-review": "pnpm --filter @ue-shed/protocol build && pnpm --filter @ue-shed/blueprints build && pnpm --filter @ue-shed/unreal-assets build && tsx scripts/test-saved-review.ts"
 	},
 	"devDependencies": {

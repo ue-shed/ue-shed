@@ -74,9 +74,9 @@ export const showcaseTabs: readonly ShowcaseTab[] = [
 		id: "map-review",
 		label: "Map Review",
 		capture: "mapReview",
-		alt: "The Workbench's Map Review route comparing immutable capture runs of a fixture camera pose",
-		note: "An approved camera pose recaptured into an immutable run, before and after kept independently addressable.",
-		chips: ["immutable capture runs", "before/after history", "live editor capture"]
+		alt: "Map Review's offline Saved map view of Camera Lab, with actor positions and the selected Review Subject's details",
+		note: "Start review with the saved Camera Lab map: inspect its actors and positions offline, then connect a live editor to author and capture views.",
+		chips: ["saved Camera Lab map", "offline actor inspection", "actor positions"]
 	},
 	{
 		id: "config-explorer",

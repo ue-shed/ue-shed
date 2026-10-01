@@ -557,14 +557,17 @@ pnpm site:refresh
 ```
 
 This runs the asserted `site-saved` journey, exports its screenshots to both the homepage and
-illustrated guides, and checks the production website at desktop and mobile sizes. It does not
-launch Unreal. Each recording uses an isolated desktop profile.
+illustrated guides, and checks the production website at desktop and mobile sizes. Map Review's
+`map-review.png` comes from its offline Saved map chapter, `08-map-review-saved-map`: the Camera Lab
+map (`/Game/Fixture/Cameras/L_CameraLoad`), actor positions, and selected Review Subject details.
+It does not launch Unreal. Each recording uses an isolated desktop profile.
 
 The exporter requires the latest selected recording to pass with every required chapter. Pin a
-reviewed bundle with `pnpm site:media --bundle site-saved=<recording-id>`. Map Review remains an
-explicit live capture: record it, then use `pnpm site:media --journey map-review`. Other journeys
-keep their existing images and original capture dates. `pnpm site:media --check` validates the
-committed images against their manifest hashes without requiring local recordings.
+reviewed bundle with `pnpm site:media --bundle site-saved=<recording-id>`. The live `map-review`
+recording remains a separate demo and is outside the website export plan. Exporting `site-saved`
+also retires that journey's earlier website provenance once its capture is replaced.
+`pnpm site:media --check` validates the committed images against their manifest hashes without
+requiring local recordings.
 
 See [Website and illustrated guides](engineering/website.md) for commands, CI artifacts, and how
 to extend the walkthroughs. These checks establish provenance and working images; refresh the

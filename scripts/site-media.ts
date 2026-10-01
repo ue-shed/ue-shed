@@ -23,7 +23,7 @@ let resultsRoot = join(repositoryRoot, "test-results/showcase");
 let check = false;
 
 function journeyName(value: string | undefined): Journey {
-	if (value === "site-saved" || value === "map-review") return value;
+	if (value === "site-saved") return value;
 	throw new Error(`Unknown journey: ${value}. Choose ${Object.keys(exportPlan).join(", ")}.`);
 }
 
@@ -88,6 +88,7 @@ if (check) {
 			finishedAt: manifest.finishedAt
 		};
 	}
+	// Moving a capture to another journey also retires its unused recording provenance.
 	for (const journey of Object.keys(journeys)) {
 		if (!Object.values(captures).some((capture) => capture.journey === journey))
 			delete journeys[journey];

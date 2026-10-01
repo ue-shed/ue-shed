@@ -10,7 +10,8 @@ test("virtualizes the saved actor outliner while retaining keyboard access to th
 	await workbench.openRoute("World Log");
 	const page = workbench.page;
 	const outliner = page.getByRole("complementary", { name: "Saved actor outliner" });
-	await expect(outliner).toContainText("4137");
+	// L_CameraLoad hosts the Map Review gallery since e0d3945d (10 subjects plus occluders).
+	await expect(outliner).toContainText("4154");
 	const list = outliner.getByRole("list", { name: "Saved actors" });
 	await expect(list.getByRole("button", { name: /Brush_0/ }).first()).toBeVisible();
 	expect(await list.getByRole("listitem").count()).toBeLessThan(80);

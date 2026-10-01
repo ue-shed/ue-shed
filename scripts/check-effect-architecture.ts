@@ -26,6 +26,8 @@ const catalogOwned = new Set([
 ]);
 
 const approvedRuntimeExits = new Set([
+	// The browser worker is a foreign entrypoint; each read's scope terminates its runtime.
+	"apps/site/src/blueprints/blueprint.worker.ts",
 	"apps/cli/src/index.ts",
 	// The plugin installer adapts the synchronous manifest validator at the CLI/filesystem boundary.
 	"apps/cli/src/plugin-installer.ts",
@@ -123,13 +125,19 @@ const approvedEnvironmentAdapters = new Set([
 	"packages/observatory/scripts/benchmark.ts"
 ]);
 const approvedRawFetchAdapters = new Set([
+	// Only the bundled public sample is fetched; selected files are read locally and transferred.
+	"apps/site/src/blueprints/browser-reader.ts",
 	"packages/authoring-sdk/src/index.ts",
 	"packages/unreal-connection/src/remote-control-client.ts"
 ]);
 const approvedResourceAdapters = new Set([
+	// Site navigation owns click/popstate listeners through onSettled cleanup.
+	"apps/site/src/navigation.ts",
 	// Popover DOM listeners and animation frames are released by Solid effect/onSettled cleanup;
 	// anchored-popover.component.test.tsx verifies close and unmount teardown.
 	"packages/ui/src/anchored-popover.tsx",
+	// Shared file-drop listeners are limited to the containing viewer and released on teardown.
+	"packages/ui/src/file-drop-zone.tsx",
 	// Native details light-dismiss listeners belong to the Solid owner and are removed on unmount;
 	// dismissible-details.component.test.tsx pins the document-listener cleanup.
 	"packages/ui/src/dismissible-details.ts",
@@ -146,7 +154,9 @@ const approvedResourceAdapters = new Set([
 	"apps/workbench/scripts/benchmark-project-index.ts",
 	"apps/workbench/src/renderer/app-shell.tsx",
 	// Blueprint Graphs owns its bounded search debounce through Solid onCleanup.
-	"apps/workbench/src/renderer/blueprint-graph-viewer.tsx",
+	"extensions/blueprint-graphs/src/project-blueprint-search.tsx",
+	// Sequencer owns the same bounded index-search debounce through Solid onCleanup.
+	"extensions/sequencer/src/project-sequence-search.tsx",
 	// The chooser owns focus and progress-polling resources through Solid cleanup adapters.
 	"apps/workbench/src/renderer/project-chooser.tsx",
 	"apps/workbench/src/renderer/index.tsx",

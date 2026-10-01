@@ -103,3 +103,44 @@ export function valueSummary(value: AuthoringValue): string {
 			return value.kind.replaceAll("_", " ");
 	}
 }
+
+export function containsRowReference(value: AuthoringValue): boolean {
+	switch (value.kind) {
+		case "row_reference":
+			return true;
+		case "array":
+		case "set":
+			return value.values.some(containsRowReference);
+		case "map":
+			return value.entries.some(
+				(entry) => containsRowReference(entry.key) || containsRowReference(entry.value)
+			);
+		case "struct":
+			return value.fields.some((field) => containsRowReference(field.value));
+		default:
+			return false;
+	}
+}
+
+export function unsupportedValueCount(value: AuthoringValue): number {
+	switch (value.kind) {
+		case "unsupported":
+			return 1;
+		case "array":
+		case "set":
+			return value.values.reduce((count, item) => count + unsupportedValueCount(item), 0);
+		case "map":
+			return value.entries.reduce(
+				(count, entry) =>
+					count + unsupportedValueCount(entry.key) + unsupportedValueCount(entry.value),
+				0
+			);
+		case "struct":
+			return value.fields.reduce(
+				(count, field) => count + unsupportedValueCount(field.value),
+				0
+			);
+		default:
+			return 0;
+	}
+}

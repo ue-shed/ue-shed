@@ -1,4 +1,3 @@
-import { savedReviewClient } from "./saved-review-client.js";
 import type { SavedReviewAsset } from "@ue-shed/unreal-assets/saved-review";
 import * as stylex from "@stylexjs/stylex";
 import { workbenchDarkTheme } from "@ue-shed/ui-theme/themes.stylex.js";
@@ -110,14 +109,20 @@ const ConfigExplorerShowcase = lazy(() =>
 		default: module.ConfigExplorerShowcase
 	}))
 );
-const SequenceViewer = lazy(() =>
-	import("./sequence-viewer.js").then((module) => ({ default: module.SequenceViewer }))
-);
-const BlueprintGraphViewer = lazy(() =>
-	import("./blueprint-graph-viewer.js").then((module) => ({
-		default: module.BlueprintGraphViewer
-	}))
-);
+const SequencerRoute = lazy(async () => {
+	const [extension, { createSequencerRoute }] = await Promise.all([
+		import("@ue-shed/extension-sequencer"),
+		import("./sequencer-route.js")
+	]);
+	return { default: createSequencerRoute(extension) };
+});
+const BlueprintGraphsRoute = lazy(async () => {
+	const [extension, { createBlueprintGraphsRoute }] = await Promise.all([
+		import("@ue-shed/extension-blueprint-graphs"),
+		import("./blueprint-graphs-route.js")
+	]);
+	return { default: createBlueprintGraphsRoute(extension) };
+});
 import { type ScenarioStudioDraft } from "@ue-shed/extension-scenarios";
 const ScenarioStudioRoute = lazy(async () => {
 	const [route, { scenarioStudioClient }] = await Promise.all([
@@ -609,10 +614,8 @@ export function AppShell() {
 												/>
 											</Match>
 											<Match when={route() === "#/sequences"}>
-												<SequenceViewer
-													client={savedReviewClient}
-													blueprintClient={workbenchRendererClient}
-													onOpen={openReviewAsset}
+												<SequencerRoute
+													onOpenReference={openReviewAsset}
 													initialAssetPath={
 														reviewAsset()?.kind === "level_sequence"
 															? reviewAsset()?.assetPath
@@ -621,15 +624,13 @@ export function AppShell() {
 												/>
 											</Match>
 											<Match when={route() === "#/blueprint-graphs"}>
-												<BlueprintGraphViewer
-													reviewClient={savedReviewClient}
+												<BlueprintGraphsRoute
 													onOpenReference={openReviewAsset}
 													initialAssetPath={
 														reviewAsset()?.kind === "blueprint"
 															? reviewAsset()?.assetPath
 															: undefined
 													}
-													client={workbenchRendererClient}
 												/>
 											</Match>
 											<Match when={route() === "#/project-custodian"}>

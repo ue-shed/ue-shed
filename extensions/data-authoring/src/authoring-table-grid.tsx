@@ -1,12 +1,23 @@
 import * as stylex from "@stylexjs/stylex";
 import type { AuthoringRow } from "@ue-shed/protocol";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
-import { Sheet, rowId, type Selection, type SheetOperation } from "peculiar-sheets";
-import "peculiar-sheets/styles";
-import { createMemo } from "solid-js";
 import {
+	Sheet,
+	rowId,
+	type ColumnDef,
+	type Selection,
+	type SheetController,
+	type SheetOperation
+} from "peculiar-sheets";
+import "peculiar-sheets/styles";
+import { createMemo, onCleanup } from "solid-js";
+import {
+	AUTHORING_ROW_NAME_COLUMN_ID,
+	AUTHORING_ROW_NAME_COLUMN_INDEX,
+	authoringModelColumnIndex,
+	authoringRowAtVisualIndex,
 	buildReadOnlyAuthoringGridModel,
-	decodeAuthoringGridOperation,
+	decodeAuthoringSheetOperation,
 	type AuthoringGridGesture
 } from "./authoring-grid-model.js";
 import type { AuthoringColumn } from "./authoring-view.js";
@@ -20,6 +31,7 @@ export interface AuthoringTableGridProps {
 	readonly rows: readonly AuthoringRow[];
 	readonly columns: readonly AuthoringColumn[];
 	readonly disabled?: boolean;
+	readonly readOnly?: boolean;
 	readonly dirtyCells?:
 		| readonly { readonly fieldName: string; readonly rowId: string }[]
 		| undefined;
@@ -30,25 +42,85 @@ export interface AuthoringTableGridProps {
 }
 
 export function AuthoringTableGrid(props: AuthoringTableGridProps) {
+	let controller: SheetController | undefined;
+	onCleanup(() => {
+		controller = undefined;
+	});
+	const visualRow = (index: number) =>
+		authoringRowAtVisualIndex(
+			props.rows,
+			index,
+			controller?.getRawCellValue(index, AUTHORING_ROW_NAME_COLUMN_INDEX)
+		);
 	const model = createMemo(() =>
-		buildReadOnlyAuthoringGridModel({ columns: props.columns, rows: props.rows })
+		buildReadOnlyAuthoringGridModel({
+			columns: props.columns,
+			rows: props.rows,
+			readOnly: props.readOnly ?? false
+		})
 	);
 	const dirtyCells = createMemo(
 		() =>
 			new Set((props.dirtyCells ?? []).map((cell) => `${cell.rowId}\u0000${cell.fieldName}`))
 	);
 	const dirtyRows = createMemo(() => new Set(props.dirtyRowIds ?? []));
+	const sheetColumns = createMemo<ColumnDef[]>(() => [
+		{
+			id: AUTHORING_ROW_NAME_COLUMN_ID,
+			header: "Row",
+			editable: false,
+			pinned: "left",
+			resizable: true,
+			sortable: true,
+			minWidth: 120,
+			maxWidth: 280,
+			width: Math.min(
+				280,
+				Math.max(
+					120,
+					props.rows.reduce((length, row) => Math.max(length, row.name.length), 3) * 7 +
+						(dirtyRows().size > 0 ? 76 : 28)
+				)
+			),
+			renderCell: (context) => (
+				<span
+					role="rowheader"
+					aria-label={context.formattedText}
+					aria-readonly="true"
+					{...stylex.attrs(styles.rowName)}
+				>
+					<span {...stylex.attrs(styles.rowLabel)}>{context.formattedText}</span>
+					{dirtyRows().has(
+						authoringRowAtVisualIndex(props.rows, context.row, context.value)?.id ?? ""
+					) && (
+						<span aria-hidden="true" {...stylex.attrs(styles.edited)}>
+							edited
+						</span>
+					)}
+				</span>
+			)
+		},
+		...model().columns
+	]);
+	const sheetData = createMemo(() =>
+		model().data.map((values, index) => [props.rows[index]?.name ?? "", ...values])
+	);
 
 	const handleSelection = (selection: Selection) => {
-		const row = props.rows[selection.focus.row];
-		const column = props.columns[selection.focus.col];
+		const row = visualRow(selection.focus.row);
+		const columnIndex =
+			selection.focus.col === AUTHORING_ROW_NAME_COLUMN_INDEX
+				? 0
+				: authoringModelColumnIndex(selection.focus.col);
+		const column = columnIndex === undefined ? undefined : props.columns[columnIndex];
 		props.onSelectionChange?.(
 			row && column ? { fieldName: column.name, rowId: row.id } : undefined
 		);
 	};
 
 	const handleOperation = (operation: SheetOperation) => {
-		const result = decodeAuthoringGridOperation({
+		if (props.readOnly || props.disabled) return;
+		const result = decodeAuthoringSheetOperation({
 			columns: props.columns,
 			operation,
 			rows: props.rows
@@ -58,33 +130,45 @@ export function AuthoringTableGrid(props: AuthoringTableGridProps) {
 	};
 
 	return (
-		<div {...stylex.attrs(styles.frame)}>
+		<div
+			{...stylex.attrs(styles.frame)}
+			style={`height: min(70vh, ${52 + Math.max(1, props.rows.length) * 28}px)`}
+		>
 			<Sheet
-				columns={model().columns}
+				ref={(value) => {
+					controller = value;
+				}}
+				columns={sheetColumns()}
 				customization={{
 					getCellStyle: (rowIndex, columnIndex) => {
-						const row = props.rows[rowIndex];
-						const column = props.columns[columnIndex];
+						const row = visualRow(rowIndex);
+						if (columnIndex === AUTHORING_ROW_NAME_COLUMN_INDEX) {
+							return row && dirtyRows().has(row.id)
+								? { background: tokens.colorAccentWash }
+								: undefined;
+						}
+						const modelIndex = authoringModelColumnIndex(columnIndex);
+						const column =
+							modelIndex === undefined ? undefined : props.columns[modelIndex];
 						return row && column && dirtyCells().has(`${row.id}\u0000${column.name}`)
 							? {
 									background: tokens.colorAccentWash,
-									boxShadow: "inset 0 0 0 1px rgba(228, 242, 34, 0.55)"
+									boxShadow: `inset 0 0 0 1px ${tokens.colorAccent}`
 								}
 							: undefined;
-					},
-					getRowHeaderLabel: (index) => {
-						const row = props.rows[index];
-						if (!row) return String(index + 1);
-						return `${dirtyRows().has(row.id) ? "● " : ""}${row.name}`;
-					},
-					getRowHeaderSublabel: (index) =>
-						dirtyRows().has(props.rows[index]?.id ?? "") ? "edited" : ""
+					}
 				}}
-				data={model().data}
+				data={sheetData()}
 				onOperation={handleOperation}
 				onSelectionChange={handleSelection}
-				readOnly={props.disabled ?? false}
+				onSortChange={() => {
+					queueMicrotask(() => {
+						if (controller) handleSelection(controller.getSelection());
+					});
+				}}
+				readOnly={props.readOnly || props.disabled || false}
 				rowIds={model().rowKeys.map(rowId)}
+				rowHeight={28}
 				showFormulaBar={false}
 				showReferenceHeaders={false}
 				sortBehavior="view"
@@ -100,9 +184,31 @@ const styles = stylex.create({
 		borderRadius: tokens.radiusPanel,
 		borderStyle: "solid",
 		borderWidth: 1,
-		height: "min(68vh, 760px)",
-		minHeight: 420,
+		maxHeight: "70vh",
 		marginTop: tokens.space2,
-		overflow: "hidden"
+		overflow: "hidden",
+		minWidth: 0
+	},
+	rowName: {
+		alignItems: "center",
+		color: tokens.colorTextMuted,
+		display: "flex",
+		fontSize: 12,
+		fontWeight: 500,
+		gap: tokens.space2,
+		minWidth: 0,
+		width: "100%"
+	},
+	rowLabel: {
+		minWidth: 0,
+		overflow: "hidden",
+		textOverflow: "ellipsis",
+		whiteSpace: "nowrap"
+	},
+	edited: {
+		color: tokens.colorAccent,
+		flexShrink: 0,
+		fontSize: 10,
+		fontWeight: 500
 	}
 });

@@ -3,26 +3,33 @@ import { fileURLToPath } from "node:url";
 import {
 	expect,
 	indexedBlueprintTest,
-	offlineBlueprintTest as test
+	indexedBlueprintTest as test,
+	offlineBlueprintTest as noProjectTest
 } from "./fixtures/workbench-test.js";
 
+import type { WorkbenchPage } from "./pages/workbench-page.js";
+
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
+async function openIndexedSequence(workbench: WorkbenchPage, assetName: string) {
+	await workbench.openRoute("Sequencer");
+	const search = workbench.page.getByLabel("Search project Sequences");
+	await expect(search).toBeVisible({ timeout: 60_000 });
+	await search.fill(assetName);
+	await workbench.page
+		.getByRole("button", { name: `Open ${assetName} from project index` })
+		.click();
+	await expect(workbench.page.getByRole("region", { name: "Sequence coverage" })).toContainText(
+		assetName
+	);
+}
+
 test("inspects saved strings, null object keys and camera binding scope without Unreal", async ({
-	offlineBlueprint: { harness, workbench }
+	indexedBlueprint: { harness, workbench }
 }) => {
 	test.setTimeout(60_000);
-	await workbench.openRoute("Sequencer");
+	await openIndexedSequence(workbench, "LS_SavedDetails");
 	const page = workbench.page;
-	await page
-		.getByLabel("Sequence asset path")
-		.fill(
-			resolve(
-				repositoryRoot,
-				"fixtures/unreal-project/Content/Fixture/ParserNative/LS_SavedDetails.uasset"
-			)
-		);
-	await page.getByRole("button", { name: "Open sequence" }).click();
-	await expect(page.getByText("Saved evidence decoded", { exact: true })).toBeVisible();
+	await expect(page.getByText("Fully decoded", { exact: true })).toBeVisible();
 	const sections = page.getByRole("list", { name: "Sections" });
 	await sections
 		.getByRole("listitem")
@@ -53,22 +60,15 @@ test("inspects saved strings, null object keys and camera binding scope without 
 });
 
 test("inspects saved boolean and integer keys with omitted defaults", async ({
-	offlineBlueprint: { harness, workbench }
+	indexedBlueprint: { harness, workbench }
 }) => {
 	test.setTimeout(60_000);
-	await workbench.openRoute("Sequencer");
+	await openIndexedSequence(workbench, "LS_Discrete");
 	const page = workbench.page;
-	await page
-		.getByLabel("Sequence asset path")
-		.fill(
-			resolve(
-				repositoryRoot,
-				"fixtures/unreal-project/Content/Fixture/ParserNative/LS_Discrete.uasset"
-			)
-		);
-	await page.getByRole("button", { name: "Open sequence" }).click();
-	await expect(page.getByText("Partial saved evidence", { exact: true })).toBeVisible();
-	const sections = page.getByRole("list", { name: "Sections" }).getByRole("button");
+	await expect(page.getByText(/^Partial ·/)).toBeVisible();
+	const sections = page
+		.getByRole("list", { name: "Sections" })
+		.locator("button[data-sequence-section]");
 	await sections.first().click();
 	const inspector = page.getByRole("region", { name: "Section inspector" });
 	await expect(inspector).toContainText("-12 · false");
@@ -82,24 +82,26 @@ test("inspects saved boolean and integer keys with omitted defaults", async ({
 });
 
 test("reviews a saved sequence and baseline without Unreal", async ({
-	offlineBlueprint: { harness, workbench }
+	indexedBlueprint: { harness, workbench }
 }, testInfo) => {
 	test.setTimeout(60_000);
 	const path = resolve(
 		repositoryRoot,
 		"fixtures/unreal-project/Content/Fixture/ParserNative/LS_Numeric.uasset"
 	);
-	await workbench.openRoute("Sequencer");
 	const page = workbench.page;
-	await page.getByLabel("Sequence asset path").fill(path);
-	await page.getByRole("button", { name: "Open sequence" }).click();
+	await openIndexedSequence(workbench, "LS_Numeric");
 	await expect(page.getByRole("region", { name: "Sequence coverage" })).toContainText(
 		"LS_Numeric"
 	);
 	await expect(
 		page.getByRole("img", { name: "Saved sequence tracks and sections" })
 	).toBeVisible();
-	await page.getByRole("list", { name: "Sections" }).getByRole("button").first().click();
+	await page
+		.getByRole("list", { name: "Sections" })
+		.locator("button[data-sequence-section]")
+		.first()
+		.click();
 	await expect(page.getByRole("region", { name: "Section inspector" })).toBeVisible();
 	await page.getByText("Compare saved versions", { exact: true }).click();
 	await page.getByLabel("Baseline asset path").fill(path);
@@ -116,12 +118,8 @@ indexedBlueprintTest(
 	"follows a saved subsequence reference through the project index",
 	async ({ indexedBlueprint: { harness, workbench } }) => {
 		indexedBlueprintTest.setTimeout(90_000);
-		await workbench.openRoute("Sequencer");
+		await openIndexedSequence(workbench, "LS_NestedTimeline");
 		const page = workbench.page;
-		await page.getByText("Sequences in the selected project", { exact: true }).click();
-		await page
-			.getByRole("button", { name: "/Game/Fixture/Sequences/LS_NestedTimeline", exact: true })
-			.click();
 		await expect(page.getByRole("region", { name: "Sequence coverage" })).toContainText(
 			"LS_NestedTimeline"
 		);
@@ -131,6 +129,21 @@ indexedBlueprintTest(
 		await expect(page.getByRole("region", { name: "Sequence coverage" })).toContainText(
 			"LS_TextTimeline"
 		);
+		expect(await harness.launchCount()).toBe(0);
+	}
+);
+
+noProjectTest(
+	"asks for a project instead of a file path",
+	async ({ offlineBlueprint: { harness, workbench } }) => {
+		await workbench.openRoute("Sequencer");
+		const page = workbench.page;
+		await expect(page.getByRole("heading", { name: "No project selected" })).toBeVisible();
+		await expect(
+			page.getByText(/Choose a project in the sidebar to search its Level Sequences/)
+		).toBeVisible();
+		await expect(page.getByLabel("Sequence asset path")).toHaveCount(0);
+		await expect(page.getByRole("button", { name: "Choose file", exact: true })).toHaveCount(0);
 		expect(await harness.launchCount()).toBe(0);
 	}
 );

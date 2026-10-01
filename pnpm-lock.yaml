@@ -69,6 +69,7 @@ overrides:
   undici@>=7.0.0 <7.29.0: 7.29.0
 
 patchedDependencies:
+  peculiar-sheets@0.13.0: 9fe50b850c217e6b5c39412a94d7daeb75b87817cc7591d6e685b3d35f742f83
   solid-js@2.0.0-rc.9: f94ddf1478fbf9d7645f64cd7b46fc46a0f66490acbcda4375c50a55a5104a21
 
 importers:
@@ -208,9 +209,30 @@ importers:
       '@stylexjs/stylex':
         specifier: 'catalog:'
         version: 0.19.0
+      '@ue-shed/extension-asset-inspector':
+        specifier: workspace:*
+        version: link:../../extensions/asset-inspector
+      '@ue-shed/extension-blueprint-graphs':
+        specifier: workspace:*
+        version: link:../../extensions/blueprint-graphs
+      '@ue-shed/extension-data-authoring':
+        specifier: workspace:*
+        version: link:../../extensions/data-authoring
+      '@ue-shed/extension-sequencer':
+        specifier: workspace:*
+        version: link:../../extensions/sequencer
+      '@ue-shed/uasset-inspection-wasm':
+        specifier: workspace:*
+        version: link:../../packages/uasset-inspection-wasm
+      '@ue-shed/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
       '@ue-shed/ui-theme':
         specifier: workspace:*
         version: link:../../packages/ui-theme
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0-beta.98
       solid-js:
         specifier: 'catalog:'
         version: 2.0.0-rc.9(patch_hash=f94ddf1478fbf9d7645f64cd7b46fc46a0f66490acbcda4375c50a55a5104a21)
@@ -269,6 +291,9 @@ importers:
       '@ue-shed/extension-asset-audits':
         specifier: workspace:*
         version: link:../../extensions/asset-audits
+      '@ue-shed/extension-blueprint-graphs':
+        specifier: workspace:*
+        version: link:../../extensions/blueprint-graphs
       '@ue-shed/extension-camera-review':
         specifier: workspace:*
         version: link:../../extensions/camera-review
@@ -296,6 +321,9 @@ importers:
       '@ue-shed/extension-scenarios':
         specifier: workspace:*
         version: link:../../extensions/scenarios
+      '@ue-shed/extension-sequencer':
+        specifier: workspace:*
+        version: link:../../extensions/sequencer
       '@ue-shed/game-text':
         specifier: workspace:*
         version: link:../../packages/game-text
@@ -407,6 +435,57 @@ importers:
       '@ue-shed/asset-audits':
         specifier: workspace:*
         version: link:../../packages/asset-audits
+      '@ue-shed/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
+      '@ue-shed/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+      '@ue-shed/ui-theme':
+        specifier: workspace:*
+        version: link:../../packages/ui-theme
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0-beta.98
+      solid-js:
+        specifier: 'catalog:'
+        version: 2.0.0-rc.9(patch_hash=f94ddf1478fbf9d7645f64cd7b46fc46a0f66490acbcda4375c50a55a5104a21)
+
+  extensions/asset-inspector:
+    dependencies:
+      '@solidjs/web':
+        specifier: 'catalog:'
+        version: 2.0.0-rc.9(solid-js@2.0.0-rc.9(patch_hash=f94ddf1478fbf9d7645f64cd7b46fc46a0f66490acbcda4375c50a55a5104a21))
+      '@stylexjs/stylex':
+        specifier: 'catalog:'
+        version: 0.19.0
+      '@ue-shed/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
+      '@ue-shed/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+      '@ue-shed/ui-theme':
+        specifier: workspace:*
+        version: link:../../packages/ui-theme
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0-beta.98
+      solid-js:
+        specifier: 'catalog:'
+        version: 2.0.0-rc.9(patch_hash=f94ddf1478fbf9d7645f64cd7b46fc46a0f66490acbcda4375c50a55a5104a21)
+
+  extensions/blueprint-graphs:
+    dependencies:
+      '@solidjs/web':
+        specifier: 'catalog:'
+        version: 2.0.0-rc.9(solid-js@2.0.0-rc.9(patch_hash=f94ddf1478fbf9d7645f64cd7b46fc46a0f66490acbcda4375c50a55a5104a21))
+      '@stylexjs/stylex':
+        specifier: 'catalog:'
+        version: 0.19.0
+      '@ue-shed/blueprints':
+        specifier: workspace:*
+        version: link:../../packages/blueprints
       '@ue-shed/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
@@ -541,7 +620,7 @@ importers:
         version: 4.0.0-beta.98
       peculiar-sheets:
         specifier: 0.13.0
-        version: 0.13.0(@solidjs/web@2.0.0-rc.9(solid-js@2.0.0-rc.9(patch_hash=f94ddf1478fbf9d7645f64cd7b46fc46a0f66490acbcda4375c50a55a5104a21)))(solid-js@2.0.0-rc.9(patch_hash=f94ddf1478fbf9d7645f64cd7b46fc46a0f66490acbcda4375c50a55a5104a21))
+        version: 0.13.0(patch_hash=9fe50b850c217e6b5c39412a94d7daeb75b87817cc7591d6e685b3d35f742f83)(@solidjs/web@2.0.0-rc.9(solid-js@2.0.0-rc.9(patch_hash=f94ddf1478fbf9d7645f64cd7b46fc46a0f66490acbcda4375c50a55a5104a21)))(solid-js@2.0.0-rc.9(patch_hash=f94ddf1478fbf9d7645f64cd7b46fc46a0f66490acbcda4375c50a55a5104a21))
       solid-js:
         specifier: 'catalog:'
         version: 2.0.0-rc.9(patch_hash=f94ddf1478fbf9d7645f64cd7b46fc46a0f66490acbcda4375c50a55a5104a21)
@@ -678,6 +757,30 @@ importers:
       vite-plugin-solid:
         specifier: 'catalog:'
         version: 3.0.0-next.27(@solidjs/web@2.0.0-rc.9(solid-js@2.0.0-rc.9(patch_hash=f94ddf1478fbf9d7645f64cd7b46fc46a0f66490acbcda4375c50a55a5104a21)))(solid-js@2.0.0-rc.9(patch_hash=f94ddf1478fbf9d7645f64cd7b46fc46a0f66490acbcda4375c50a55a5104a21))(supports-color@10.2.2)(vite@8.1.4(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.1)(yaml@2.9.0))
+
+  extensions/sequencer:
+    dependencies:
+      '@solidjs/web':
+        specifier: 'catalog:'
+        version: 2.0.0-rc.9(solid-js@2.0.0-rc.9(patch_hash=f94ddf1478fbf9d7645f64cd7b46fc46a0f66490acbcda4375c50a55a5104a21))
+      '@stylexjs/stylex':
+        specifier: 'catalog:'
+        version: 0.19.0
+      '@ue-shed/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
+      '@ue-shed/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+      '@ue-shed/ui-theme':
+        specifier: workspace:*
+        version: link:../../packages/ui-theme
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0-beta.98
+      solid-js:
+        specifier: 'catalog:'
+        version: 2.0.0-rc.9(patch_hash=f94ddf1478fbf9d7645f64cd7b46fc46a0f66490acbcda4375c50a55a5104a21)
 
   packages/asset-audits:
     dependencies:
@@ -6591,7 +6694,7 @@ snapshots:
 
   pathe@2.0.3: {}
 
-  peculiar-sheets@0.13.0(@solidjs/web@2.0.0-rc.9(solid-js@2.0.0-rc.9(patch_hash=f94ddf1478fbf9d7645f64cd7b46fc46a0f66490acbcda4375c50a55a5104a21)))(solid-js@2.0.0-rc.9(patch_hash=f94ddf1478fbf9d7645f64cd7b46fc46a0f66490acbcda4375c50a55a5104a21)):
+  peculiar-sheets@0.13.0(patch_hash=9fe50b850c217e6b5c39412a94d7daeb75b87817cc7591d6e685b3d35f742f83)(@solidjs/web@2.0.0-rc.9(solid-js@2.0.0-rc.9(patch_hash=f94ddf1478fbf9d7645f64cd7b46fc46a0f66490acbcda4375c50a55a5104a21)))(solid-js@2.0.0-rc.9(patch_hash=f94ddf1478fbf9d7645f64cd7b46fc46a0f66490acbcda4375c50a55a5104a21)):
     dependencies:
       '@solidjs/web': 2.0.0-rc.9(solid-js@2.0.0-rc.9(patch_hash=f94ddf1478fbf9d7645f64cd7b46fc46a0f66490acbcda4375c50a55a5104a21))
       '@tanstack/virtual-core': 3.17.9

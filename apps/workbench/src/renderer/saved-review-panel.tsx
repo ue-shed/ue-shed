@@ -114,12 +114,18 @@ export function SavedReviewPanel(props: {
 	};
 	return (
 		<section aria-label="Saved references and changes" {...stylex.attrs(styles.panel)}>
-			<details>
-				<summary>References · {references().length}</summary>
-				<button type="button" onClick={loadInventory} {...stylex.attrs(styles.button)}>
-					Load project references
-				</button>
-				<p role="status">{inventoryMessage()}</p>
+			<details {...stylex.attrs(styles.section)}>
+				<summary {...stylex.attrs(styles.summary)}>
+					References · {references().length}
+				</summary>
+				<div {...stylex.attrs(styles.toolbar)}>
+					<button type="button" onClick={loadInventory} {...stylex.attrs(styles.button)}>
+						Load project references
+					</button>
+					<p role="status" {...stylex.attrs(styles.muted)}>
+						{inventoryMessage()}
+					</p>
+				</div>
 				<ul {...stylex.attrs(styles.list)}>
 					<For each={references().slice(0, 200)}>
 						{(reference) => {
@@ -128,14 +134,16 @@ export function SavedReviewPanel(props: {
 							);
 							return (
 								<li {...stylex.attrs(styles.reference)}>
-									<small>{reference.propertyPath}</small>
-									<code>
+									<small {...stylex.attrs(styles.muted, styles.referenceText)}>
+										{reference.propertyPath}
+									</small>
+									<code {...stylex.attrs(styles.code, styles.referenceText)}>
 										{reference.targetPath}
 										{reference.targetRow ? ` · row ${reference.targetRow}` : ""}
 									</code>
 									<button
 										type="button"
-										{...stylex.attrs(styles.button)}
+										{...stylex.attrs(styles.button, styles.referenceAction)}
 										disabled={
 											!["resolved", "internal"].includes(resolution().status)
 										}
@@ -163,16 +171,16 @@ export function SavedReviewPanel(props: {
 					</For>
 				</ul>
 				<Show when={references().length > 200}>
-					<p>
+					<p {...stylex.attrs(styles.muted)}>
 						Showing the first 200 references. The CLI includes the full decoded
 						inventory.
 					</p>
 				</Show>
 			</details>
-			<details>
-				<summary>Compare saved versions</summary>
+			<details {...stylex.attrs(styles.section)}>
+				<summary {...stylex.attrs(styles.summary)}>Compare saved versions</summary>
 				<form onSubmit={compare} {...stylex.attrs(styles.form)}>
-					<label>
+					<label {...stylex.attrs(styles.field)}>
 						Baseline asset path
 						<input
 							aria-label="Baseline asset path"
@@ -195,8 +203,8 @@ export function SavedReviewPanel(props: {
 				</Show>
 				<Show when={visibleComparison()}>
 					{(result) => (
-						<div aria-label="Saved changes">
-							<p>
+						<div aria-label="Saved changes" {...stylex.attrs(styles.changes)}>
+							<p {...stylex.attrs(styles.muted)}>
 								{result().changes.length === 0
 									? "No changes in decoded evidence."
 									: `${result().changes.length} saved changes.`}{" "}
@@ -248,39 +256,95 @@ export function SavedReviewPanel(props: {
 const styles = stylex.create({
 	panel: {
 		display: "grid",
-		gap: 16,
-		padding: 16,
+		marginTop: 12,
 		borderWidth: 1,
 		borderStyle: "solid",
 		borderColor: tokens.colorBorder,
-		borderRadius: tokens.radiusControl,
-		backgroundColor: tokens.colorSurfaceInset,
+		borderRadius: tokens.radiusPanel,
+		backgroundColor: tokens.colorSurface,
 		color: tokens.colorText,
-		fontSize: 12
+		fontSize: 12,
+		overflow: "hidden"
 	},
-	form: { display: "flex", gap: 12, alignItems: "end", flexWrap: "wrap", marginTop: 12 },
+	section: {
+		borderBottomWidth: { default: 1, ":last-child": 0 },
+		borderBottomStyle: "solid",
+		borderBottomColor: tokens.colorBorder,
+		padding: "0 16px"
+	},
+	summary: {
+		padding: "11px 0",
+		color: { default: tokens.colorTextStrong, ":hover": tokens.colorAccent },
+		cursor: "pointer",
+		fontSize: 13,
+		fontWeight: 510
+	},
+	toolbar: { display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" },
+	muted: { margin: 0, color: tokens.colorTextMuted, fontSize: 12, lineHeight: 1.5 },
+	code: { fontFamily: tokens.fontMono, fontSize: 11, color: tokens.colorText },
+	field: { display: "grid", gap: 5, flex: "1 1 320px", color: tokens.colorTextMuted },
+	form: {
+		display: "flex",
+		gap: 8,
+		alignItems: "end",
+		flexWrap: "wrap",
+		padding: "4px 0 14px"
+	},
 	input: {
 		display: "block",
+		width: "100%",
 		minWidth: 260,
-		padding: 8,
-		color: tokens.colorText,
-		backgroundColor: tokens.colorSurface,
+		height: 34,
+		padding: "0 10px",
+		color: tokens.colorTextStrong,
+		backgroundColor: tokens.colorSurfaceInset,
 		borderWidth: 1,
 		borderStyle: "solid",
-		borderColor: tokens.colorBorder,
-		borderRadius: tokens.radiusControl
+		borderColor: { default: tokens.colorBorder, ":focus": tokens.colorBorderStrong },
+		borderRadius: tokens.radiusControl,
+		outline: "none",
+		fontFamily: tokens.fontMono,
+		fontSize: 11
 	},
 	button: {
-		padding: "7px 12px",
+		flexShrink: 0,
+		height: 34,
+		padding: "0 12px",
 		borderRadius: tokens.radiusControl,
 		borderWidth: 1,
 		borderStyle: "solid",
-		borderColor: tokens.colorBorder,
+		borderColor: { default: tokens.colorBorder, ":hover": tokens.colorBorderStrong },
 		color: tokens.colorText,
-		backgroundColor: tokens.colorSurface,
-		cursor: "pointer"
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		cursor: { default: "pointer", ":disabled": "not-allowed" },
+		fontSize: 12,
+		opacity: { default: 1, ":disabled": 0.45 },
+		whiteSpace: "nowrap"
 	},
-	list: { maxHeight: 360, overflow: "auto", paddingLeft: 20 },
-	reference: { display: "grid", gap: 6, padding: 8, overflowWrap: "anywhere" },
-	values: { whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontFamily: tokens.fontMono }
+	changes: { display: "grid", gap: 8, paddingBottom: 14 },
+	list: { maxHeight: 360, margin: "8px 0 14px", overflow: "auto", padding: 0, listStyle: "none" },
+	referenceText: { gridColumn: 1 },
+	referenceAction: { gridColumn: 2, gridRow: "1 / span 2" },
+	reference: {
+		display: "grid",
+		gridTemplateColumns: "minmax(0, 1fr) auto",
+		alignItems: "center",
+		gap: "2px 12px",
+		padding: "7px 0",
+		borderBottomWidth: 1,
+		borderBottomStyle: "solid",
+		borderBottomColor: tokens.colorBorder,
+		overflowWrap: "anywhere"
+	},
+	values: {
+		margin: "6px 0 0",
+		padding: "8px 10px",
+		borderRadius: tokens.radiusBadge,
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorTextMuted,
+		fontFamily: tokens.fontMono,
+		fontSize: 11,
+		whiteSpace: "pre-wrap",
+		overflowWrap: "anywhere"
+	}
 });

@@ -24,7 +24,6 @@ export interface SavedReviewClient {
 	readonly readSequence: (
 		path: string
 	) => Effect.Effect<SequenceReadResult, WorkbenchRendererError>;
-	readonly chooseSequence: () => Effect.Effect<SequenceReadResult, WorkbenchRendererError>;
 	readonly inventory: () => Effect.Effect<SavedReviewInventory, WorkbenchRendererError>;
 }
 export const savedReviewClient: SavedReviewClient = {
@@ -32,12 +31,6 @@ export const savedReviewClient: SavedReviewClient = {
 		request(
 			"savedReview.readSequence",
 			() => window.ueShed.savedReview.sequence(path),
-			Schema.decodeUnknownEffect(SequenceReadResult)
-		),
-	chooseSequence: () =>
-		request(
-			"savedReview.chooseSequence",
-			() => window.ueShed.savedReview.chooseSequence(),
 			Schema.decodeUnknownEffect(SequenceReadResult)
 		),
 	inventory: () =>

@@ -1,3 +1,18 @@
+import {
+	BlueprintAssetPath,
+	BlueprintAssetSearchRequest,
+	BlueprintAssetSearchResult,
+	BlueprintGraphReadResult
+} from "@ue-shed/extension-blueprint-graphs/contract";
+export {
+	BlueprintAssetPath,
+	BLUEPRINT_ASSET_SEARCH_LIMIT,
+	BlueprintAssetSearchRequest,
+	BlueprintAssetCandidate,
+	BlueprintAssetSearchResult,
+	BlueprintGraphFailureReason,
+	BlueprintGraphReadResult
+} from "@ue-shed/extension-blueprint-graphs/contract";
 import { SequenceReadResult, SavedReviewInventory } from "./saved-review-contract.js";
 import { EditorHandoffNotice } from "./editor-handoff.js";
 import {
@@ -106,7 +121,6 @@ import {
 	WorldScoutRefreshRate
 } from "@ue-shed/observatory/browser";
 import {
-	BlueprintGraphRead,
 	CameraScheduleConfig,
 	CameraStatus,
 	EditorPlaySessionCommand,
@@ -151,77 +165,6 @@ import {
 } from "./project-workspace-contract.js";
 
 const EmptyArgs = Schema.Tuple([]);
-
-export const BlueprintAssetPath = Schema.Trim.check(
-	Schema.isNonEmpty(),
-	Schema.isMaxLength(32_768)
-);
-export type BlueprintAssetPath = Schema.Schema.Type<typeof BlueprintAssetPath>;
-
-export const BLUEPRINT_ASSET_SEARCH_LIMIT = 80;
-
-export const BlueprintAssetSearchRequest = Schema.Struct({
-	query: Schema.Trim.check(Schema.isMaxLength(256))
-});
-export interface BlueprintAssetSearchRequest extends Schema.Schema.Type<
-	typeof BlueprintAssetSearchRequest
-> {}
-
-export const BlueprintAssetCandidate = Schema.Struct({
-	assetName: Schema.NonEmptyString.check(Schema.isMaxLength(1_024)),
-	assetPath: BlueprintAssetPath,
-	className: Schema.NonEmptyString.check(Schema.isMaxLength(1_024)),
-	packageName: Schema.NonEmptyString.check(Schema.isMaxLength(32_768)),
-	relativePath: Schema.NonEmptyString.check(Schema.isMaxLength(32_768))
-});
-export interface BlueprintAssetCandidate extends Schema.Schema.Type<
-	typeof BlueprintAssetCandidate
-> {}
-
-export const BlueprintAssetSearchResult = Schema.Union([
-	Schema.Struct({ status: Schema.Literal("not_configured") }),
-	Schema.Struct({
-		assets: Schema.Array(BlueprintAssetCandidate).check(
-			Schema.isMaxLength(BLUEPRINT_ASSET_SEARCH_LIMIT)
-		),
-		matchCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
-		projectName: Schema.NonEmptyString,
-		status: Schema.Literal("ready")
-	}),
-	Schema.Struct({
-		message: Schema.NonEmptyString,
-		recovery: Schema.NonEmptyString,
-		status: Schema.Literal("failed")
-	})
-]);
-export type BlueprintAssetSearchResult = Schema.Schema.Type<typeof BlueprintAssetSearchResult>;
-
-export const BlueprintGraphFailureReason = Schema.Literals([
-	"control_rig",
-	"malformed_package",
-	"missing_reader",
-	"reader_failure",
-	"unsupported_asset",
-	"unsupported_version"
-]);
-export type BlueprintGraphFailureReason = Schema.Schema.Type<typeof BlueprintGraphFailureReason>;
-
-export const BlueprintGraphReadResult = Schema.Union([
-	Schema.Struct({
-		assetPath: BlueprintAssetPath,
-		...BlueprintGraphRead.fields,
-		status: Schema.Literal("ready")
-	}),
-	Schema.Struct({ status: Schema.Literal("cancelled") }),
-	Schema.Struct({
-		assetPath: Schema.optionalKey(BlueprintAssetPath),
-		message: Schema.NonEmptyString,
-		reason: BlueprintGraphFailureReason,
-		recovery: Schema.NonEmptyString,
-		status: Schema.Literal("failed")
-	})
-]);
-export type BlueprintGraphReadResult = Schema.Schema.Type<typeof BlueprintGraphReadResult>;
 
 export const RemoteControlPort = Schema.Int.check(
 	Schema.isGreaterThanOrEqualTo(1),
@@ -816,11 +759,6 @@ export const invokeContracts = {
 		args: Schema.Tuple([BlueprintAssetPath]),
 		result: SequenceReadResult
 	}),
-	"saved-review:choose-sequence": invoke({
-		channel: "saved-review:choose-sequence",
-		args: Schema.Tuple([]),
-		result: SequenceReadResult
-	}),
 	"saved-review:inventory": invoke({
 		channel: "saved-review:inventory",
 		args: Schema.Tuple([]),
@@ -829,11 +767,6 @@ export const invokeContracts = {
 	"blueprint-graphs:read": invoke({
 		channel: "blueprint-graphs:read",
 		args: Schema.Tuple([BlueprintAssetPath]),
-		result: BlueprintGraphReadResult
-	}),
-	"blueprint-graphs:choose": invoke({
-		channel: "blueprint-graphs:choose",
-		args: EmptyArgs,
 		result: BlueprintGraphReadResult
 	}),
 	"blueprint-graphs:search": invoke({

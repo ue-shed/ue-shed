@@ -160,7 +160,6 @@ const getMetrics = Effect.fn("WorkbenchRenderer.getMetrics")(
 export interface WorkbenchRendererClient {
 	readonly activateEditorWindow: () => Effect.Effect<EditorHandoffNotice, WorkbenchRendererError>;
 	readonly editorHandoffs: Stream.Stream<EditorHandoffNotice>;
-	readonly chooseBlueprint: () => Effect.Effect<BlueprintGraphReadResult, WorkbenchRendererError>;
 	readonly searchBlueprints: (
 		request: BlueprintAssetSearchRequest
 	) => Effect.Effect<BlueprintAssetSearchResult, WorkbenchRendererError>;
@@ -245,13 +244,6 @@ export const workbenchRendererClient: WorkbenchRendererClient = {
 			decode: decodeWorkbenchProjectState,
 			invoke: () => window.ueShed.project.sample(),
 			operation: "project.sample"
-		})
-	),
-	chooseBlueprint: Effect.fn("WorkbenchRenderer.chooseBlueprint")(() =>
-		request({
-			decode: decodeBlueprintGraphReadResult,
-			invoke: () => window.ueShed.blueprintGraphs.choose(),
-			operation: "blueprintGraphs.choose"
 		})
 	),
 	searchBlueprints: Effect.fn("WorkbenchRenderer.searchBlueprints")((searchRequest) =>

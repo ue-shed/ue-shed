@@ -6,8 +6,12 @@ test("opens saved tables and restores a staged draft after navigation", async ({
 	await workbench.openRoute("Data Authoring");
 	const page = workbench.page;
 	await expect(page.getByRole("heading", { name: "Data authoring", exact: true })).toBeVisible();
-	await expect(page.getByText("Scalar_Alpha / Enabled", { exact: true })).toBeVisible();
-	await expect(page.getByText("Saved snapshot", { exact: true })).toBeVisible();
+	const inspector = page.getByRole("complementary", { name: "Cell inspector" });
+	await expect(inspector.getByRole("heading", { name: "Enabled", exact: true })).toBeVisible();
+	await expect(inspector.getByText("Scalar_Alpha", { exact: true })).toBeVisible();
+	await expect(page.getByRole("region", { name: "Table summary" })).toContainText(
+		"Saved · 0 changes · 0 errors"
+	);
 	await expect(page.getByText("Applied", { exact: true })).toHaveCount(0);
 	await page.getByRole("button", { name: "Duplicate row", exact: true }).click();
 	const editor = page.getByRole("form", { name: "Row name editor" });

@@ -1,7 +1,6 @@
 import { AssetReader, isHeaderScanEntry, type AssetReaderError } from "@ue-shed/unreal-assets";
 import { Cache, Duration, Effect, Exit } from "effect";
 import { resolve } from "node:path";
-import { ElectronDialog } from "../adapters/electron-dialog.js";
 import { ElectronIpc } from "../adapters/electron-ipc.js";
 import {
 	BLUEPRINT_ASSET_SEARCH_LIMIT,
@@ -116,7 +115,6 @@ function readerFailure(assetPath: string, error: AssetReaderError): BlueprintGra
 
 export const register = Effect.gen(function* () {
 	const ipc = yield* ElectronIpc;
-	const dialog = yield* ElectronDialog;
 	const reader = yield* AssetReader;
 	const project = yield* WorkbenchProject;
 
@@ -195,27 +193,5 @@ export const register = Effect.gen(function* () {
 				})
 			)
 		)
-	);
-	yield* ipc.register(invokeContracts["blueprint-graphs:choose"], () =>
-		dialog
-			.chooseFile({
-				filters: [{ extensions: ["uasset"], name: "Unreal asset" }],
-				title: "Open a saved Blueprint"
-			})
-			.pipe(
-				Effect.flatMap((choice) =>
-					choice.status === "cancelled"
-						? Effect.succeed({ status: "cancelled" as const })
-						: read(choice.path)
-				),
-				Effect.catchTag("Workbench.WorkbenchWindowError", (error) =>
-					Effect.succeed({
-						message: error.message,
-						reason: "reader_failure" as const,
-						recovery: error.recovery,
-						status: "failed" as const
-					})
-				)
-			)
 	);
 }).pipe(Effect.withSpan("Workbench.Ipc.registerBlueprintGraphs"));

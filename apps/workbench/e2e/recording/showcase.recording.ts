@@ -1049,8 +1049,10 @@ test(`records the ${journey} Workbench journey`, async ({
 							// above them is expected to fail and is not part of the saved-map story.
 							await page!
 								.getByRole("tablist", { name: "Map data source" })
-								.evaluate((tabs: { scrollIntoView(options: object): void }) =>
-									tabs.scrollIntoView({ block: "start" })
+								.evaluate(
+									(tabs: {
+										scrollIntoView(options: { readonly block: "start" }): void;
+									}) => tabs.scrollIntoView({ block: "start" })
 								);
 						},
 						description:

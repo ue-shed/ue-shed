@@ -1,5 +1,11 @@
 import { expect, test } from "./fixtures/workbench-test.js";
 
+// Inline editing needs a live editor session; saved-package authority is read-only by design.
+test.skip(
+	process.env.UE_SHED_UNREAL_INTEGRATION !== "1",
+	"Set UE_SHED_UNREAL_INTEGRATION=1 with the fixture editor available"
+);
+
 test("stages Count 7 to 13 with the inline editor", async ({ workbench }, testInfo) => {
 	test.setTimeout(90_000);
 	await workbench.expectShowcaseReady();

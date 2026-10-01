@@ -24,13 +24,6 @@ catalog:
     "solid-js": "2.0.0-rc.9"
     "vite-plugin-solid": "3.0.0-next.27"
 
-# Peculiar Sheets' published peers still pin rc.7; validate this bounded exception
-# with the component suite and Data Authoring adoption gate when upgrading Solid.
-peerDependencyRules:
-    allowedVersions:
-        "peculiar-sheets@0.13.0>@solidjs/web": "2.0.0-rc.9"
-        "peculiar-sheets@0.13.0>solid-js": "2.0.0-rc.9"
-
 allowBuilds:
     electron: true
     esbuild: true
@@ -56,7 +49,7 @@ minimumReleaseAgeExclude:
     - "@solidjs/compiler-wasm32-wasi@2.0.0-rc.9"
     - "@solidjs/compiler-win32-x64-msvc@2.0.0-rc.9"
     - p4client-ts@0.7.1
-    - peculiar-sheets@0.13.0
+    - peculiar-sheets@0.15.0
     - "@cloudflare/vite-plugin@1.51.0"
     - miniflare@5.20260801.0-alpha
     - wrangler@4.119.0
@@ -80,5 +73,4 @@ minimumReleaseAgeExclude:
     - solid-js@2.0.0-rc.9
 
 patchedDependencies:
-    peculiar-sheets@0.13.0: patches/peculiar-sheets@0.13.0.patch
     solid-js@2.0.0-rc.9: patches/solid-js@2.0.0-rc.9.patch

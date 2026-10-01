@@ -26,35 +26,21 @@ are unowned; register their lifetime cleanup during component setup.
 
 Peculiar Sheets runs directly on Solid 2. Data Authoring mounts TanStack Charts through its
 framework-neutral DOM host, with updates and disposal owned by the surrounding Solid 2 component.
-Peculiar Sheets `0.13.0` still declares exact rc.7 peers. The workspace and adoption template allow
-only rc.9 as an additional peer version for that package; keep this exception bounded and rerun
-the component suite and Data Authoring adoption gate when changing it. All consumers must resolve
-the same Solid runtime, not a separate rc.7 copy for the spreadsheet.
 
-The peer exception does not establish compiler/runtime compatibility. The `0.13.0` distribution
-was compiled with rc.7. `patches/peculiar-sheets@0.13.0.patch` renames its 23 static delegated
-handler assignments from `$$event` to `_$$event`, matching the rc.9 renderer's event key. The
-installed patched distribution has no remaining `$$event` or `$$eventData` assignments.
-Double-click handlers already use the compatible public `addEvent(node, name, handler, true)`
-call; `true` still means delegated. All 35 template calls use the default HTML flag. The four
-`addEvent` calls, seven `ref` calls, class helpers and delegated event names match the installed
-rc.9 helpers; the distribution has no `spread` calls or `use:` directives. No additional
-mechanical DOM-helper patch has been identified.
+Peculiar Sheets `0.15.0` is compiled for Solid `2.0.0-rc.9` and declares exact rc.9 peers for
+`solid-js`, `@solidjs/web` and `@solidjs/signals`. The library's compiled output must match the
+renderer. Solid's renderer looks up delegated event handlers under a key that changed between release
+candidates: rc.7 used `$$<event>`, rc.9 uses `_$$<event>`. A distribution built for another rc
+renders correctly but silently drops keyboard, input, mouse and context-menu events. Upgrade Solid
+and Peculiar Sheets together, and keep every consumer on a single Solid runtime.
 
-Inline editing still failed to mount in the Electron probe after the event patch. The grid's
-direct guards are Sheet `readOnly` and column `editable`; no `canEdit` prop or edit-mode callback
-is required. Live DT_Scalars supplies editable bool/int/float/name/string descriptors. Workbench
-disables the Sheet without a session, during persistence, or for composite tables. An enabled
-Count cell's `aria-readonly="false"` establishes that both direct guards permit editing.
-The remaining failure has not been isolated to event delivery or edit-state/DOM mounting.
-Isolated in-process probes of installed rc.9 development and production signals both propagated
-`latest(editMode)` into a rectangle memo; production also propagated it without an explicit flush.
-These probes do not verify the mounted spreadsheet. The Workbench inline-edit e2e
-exercises the actual Count cell, editor input, commit and Session Review, without applying or saving
-to Unreal. It attaches column/cell read-only attributes and delegated-handler presence to
-distinguish event registration failures from edit-state/DOM mounting failures. Rendering and mouse
-selection alone do not verify inline editing. A saved-only snapshot without schema descriptors
-intentionally keeps fields read-only; it cannot exercise the enabled inline editor.
+`extensions/data-authoring/src/peculiar-sheets-runtime.test.ts` guards this offline. It reads the
+renderer's `EVENT_KEY` from the installed `@solidjs/web` and requires every delegated handler in
+the installed Peculiar distribution to use it. It also requires the Workbench to resolve the same
+renderer. The Workbench inline-edit e2e (`apps/workbench/e2e/data-authoring-inline-edit.e2e.ts`)
+edits the DT_Scalars Count cell through the real editor and checks Session Review. Inline editing
+needs a live editor session, so it runs only with `UE_SHED_UNREAL_INTEGRATION=1`. Rendering and
+mouse selection alone do not prove inline editing works.
 
 Data Authoring component tests cover row-header rendering, selection and the host's public
 `SheetProps.onOperation` boundary. They pass synthetic physical/visual addresses, including paste

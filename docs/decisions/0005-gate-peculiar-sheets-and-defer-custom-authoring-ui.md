@@ -37,7 +37,7 @@ does not need.
 
 ## Decision
 
-- Pin the exact reviewed `peculiar-sheets@0.13.0` MIT core. Do not rely on a caret range while the
+- Pin the exact reviewed `peculiar-sheets` MIT core (currently `0.15.0`, compiled for Solid rc.9). Do not rely on a caret range while the
   library is on a pre-1.0 API.
 - Enforce the production boundary in `pnpm license:check`: UE Shed must not acquire HyperFormula,
   `peculiar-sheets-ironcalc`, or `@ironcalc/wasm` through a production dependency path.
@@ -74,7 +74,7 @@ third-party dependency.
 
 ## Implementation evidence
 
-`peculiar-sheets@0.13.0` is pinned exactly in the Data Authoring extension. The browser adapter uses
+`peculiar-sheets@0.15.0` is pinned exactly in the Data Authoring extension (0.13.0 at the time of this decision; 0.15.0 is the Solid rc.9 build). The browser adapter uses
 only `Sheet`, `rowId`, published types, and the published stylesheet. It does not instantiate a
 formula engine, use private selectors, or transfer authoring authority into the grid.
 

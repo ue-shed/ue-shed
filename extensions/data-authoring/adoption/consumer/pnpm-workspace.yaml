@@ -24,12 +24,6 @@ catalog:
     "solid-js": "2.0.0-rc.9"
     "vite-plugin-solid": "3.0.0-next.27"
 
-# Keep the tested Peculiar Sheets compatibility exception aligned with the source workspace.
-peerDependencyRules:
-    allowedVersions:
-        "peculiar-sheets@0.13.0>@solidjs/web": "2.0.0-rc.9"
-        "peculiar-sheets@0.13.0>solid-js": "2.0.0-rc.9"
-
 patchedDependencies:
     solid-js@2.0.0-rc.9: patches/solid-js@2.0.0-rc.9.patch
 
@@ -46,3 +40,4 @@ minimumReleaseAgeExclude:
     - "@solidjs/compiler-linux-x64-gnu@2.0.0-rc.9"
     - "@solidjs/compiler-wasm32-wasi@2.0.0-rc.9"
     - "@solidjs/compiler-win32-x64-msvc@2.0.0-rc.9"
+    - peculiar-sheets@0.15.0

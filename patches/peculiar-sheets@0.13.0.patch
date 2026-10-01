@@ -1,0 +1,148 @@
+diff --git a/dist/index.js b/dist/index.js
+index 88576198cd1ef4d79350b21f7d00b940f0108b74..9684ece18979e0f00cd6ee1af60bd1e5366a78a4 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -3248,7 +3248,7 @@ function GridHeader(props) {
+ 				children: (col, index) => {
+ 					const isPinned = () => (props.pinnedLeftOffsets?.[index()] ?? -1) >= 0;
+ 					var _el$13 = _tmpl$6$1();
+-					_el$13.$$mousedown = (e) => props.onColumnHeaderMouseDown?.(columnIdx(index()), e);
++					_el$13._$$mousedown = (e) => props.onColumnHeaderMouseDown?.(columnIdx(index()), e);
+ 					setStyleProperty(_el$13, "height", `32px`);
+ 					insert(_el$13, () => {
+ 						return columnIndexToLetters(index());
+@@ -3383,7 +3383,7 @@ function GridHeader(props) {
+ 			var _el$17 = _el$16.firstChild;
+ 			var _el$18 = _el$17.firstChild;
+ 			var _el$19 = _el$18.nextSibling;
+-			_el$16.$$mousedown = (e) => props.onColumnHeaderMouseDown?.(columnIdx(index()), e);
++			_el$16._$$mousedown = (e) => props.onColumnHeaderMouseDown?.(columnIdx(index()), e);
+ 			_el$16.classList.toggle("se-header-cell--sortable", !!isSortable);
+ 			setStyleProperty(_el$16, "height", `32px`);
+ 			setStyleProperty(_el$16, "cursor", isSortable ? "pointer" : void 0);
+@@ -3399,7 +3399,7 @@ function GridHeader(props) {
+ 				},
+ 				get children() {
+ 					var _el$20 = _tmpl$9();
+-					_el$20.$$mousedown = (e) => props.onColumnResizeStart(col.id, e);
++					_el$20._$$mousedown = (e) => props.onColumnResizeStart(col.id, e);
+ 					effect(() => !!isResizing(), (_v$) => {
+ 						_el$20.classList.toggle("se-resize-handle--active", _v$);
+ 					});
+@@ -3621,7 +3621,7 @@ function GridBody(props) {
+ 					var _el$4 = _el$3.firstChild;
+ 					var _el$5 = _el$4.nextSibling;
+ 					var _el$7 = _el$5.nextSibling;
+-					_el$3.$$mousedown = (e) => props.onRowHeaderMouseDown?.(vRow(), e);
++					_el$3._$$mousedown = (e) => props.onRowHeaderMouseDown?.(vRow(), e);
+ 					insert(_el$3, createComponent(Show, {
+ 						get when() {
+ 							return customization?.getRowHeaderSublabel?.(rowHeaderIndex());
+@@ -3641,7 +3641,7 @@ function GridBody(props) {
+ 						},
+ 						get children() {
+ 							var _el$6 = _tmpl$2$3();
+-							_el$6.$$mousedown = (e) => {
++							_el$6._$$mousedown = (e) => {
+ 								e.preventDefault();
+ 								e.stopPropagation();
+ 								props.onRowResizeStart?.(vRow(), e);
+@@ -3829,7 +3829,7 @@ function CellEditor(props) {
+ 	}
+ 	var _el$ = _tmpl$$5();
+ 	_el$.addEventListener("blur", () => props.onCommit());
+-	_el$.$$keydown = handleKeyDown;
++	_el$._$$keydown = handleKeyDown;
+ 	_el$.addEventListener("focus", () => {
+ 		if (!didInitSelection() && inputRef) {
+ 			inputRef.setSelectionRange(props.value.length, props.value.length);
+@@ -3837,10 +3837,10 @@ function CellEditor(props) {
+ 			setDidInitSelection(true);
+ 		}
+ 	});
+-	_el$.$$keyup = (e) => props.onSelectionChange(e.currentTarget.selectionStart ?? 0, e.currentTarget.selectionEnd ?? 0);
++	_el$._$$keyup = (e) => props.onSelectionChange(e.currentTarget.selectionStart ?? 0, e.currentTarget.selectionEnd ?? 0);
+ 	_el$.addEventListener("select", (e) => props.onSelectionChange(e.currentTarget.selectionStart ?? 0, e.currentTarget.selectionEnd ?? 0));
+-	_el$.$$click = (e) => props.onSelectionChange(e.currentTarget.selectionStart ?? 0, e.currentTarget.selectionEnd ?? 0);
+-	_el$.$$input = (e) => {
++	_el$._$$click = (e) => props.onSelectionChange(e.currentTarget.selectionStart ?? 0, e.currentTarget.selectionEnd ?? 0);
++	_el$._$$input = (e) => {
+ 		props.onInput(e.currentTarget.value);
+ 		props.onSelectionChange(e.currentTarget.selectionStart ?? 0, e.currentTarget.selectionEnd ?? 0);
+ 	};
+@@ -3905,11 +3905,11 @@ function FormulaBar(props) {
+ 	insert(_el$2, () => {
+ 		return props.address;
+ 	});
+-	_el$4.$$keydown = handleKeyDown;
+-	_el$4.$$keyup = (event) => props.onSelectionChange(event.currentTarget.selectionStart ?? 0, event.currentTarget.selectionEnd ?? 0);
++	_el$4._$$keydown = handleKeyDown;
++	_el$4._$$keyup = (event) => props.onSelectionChange(event.currentTarget.selectionStart ?? 0, event.currentTarget.selectionEnd ?? 0);
+ 	_el$4.addEventListener("select", (event) => props.onSelectionChange(event.currentTarget.selectionStart ?? 0, event.currentTarget.selectionEnd ?? 0));
+-	_el$4.$$click = (event) => props.onSelectionChange(event.currentTarget.selectionStart ?? 0, event.currentTarget.selectionEnd ?? 0);
+-	_el$4.$$input = (event) => props.onInput(event.currentTarget.value);
++	_el$4._$$click = (event) => props.onSelectionChange(event.currentTarget.selectionStart ?? 0, event.currentTarget.selectionEnd ?? 0);
++	_el$4._$$input = (event) => props.onInput(event.currentTarget.value);
+ 	addEvent(_el$4, "blur", props.onBlur);
+ 	addEvent(_el$4, "focus", props.onFocus);
+ 	var _ref$ = props.inputRef;
+@@ -4110,7 +4110,7 @@ function SelectionOverlay(props) {
+ 		},
+ 		children: (rect) => (() => {
+ 			var _el$13 = _tmpl$6();
+-			_el$13.$$mousedown = (event) => props.onFillHandleMouseDown?.(event);
++			_el$13._$$mousedown = (event) => props.onFillHandleMouseDown?.(event);
+ 			effect(() => {
+ 				return {
+ 					e: `${rect().left + rect().width}px`,
+@@ -4219,7 +4219,7 @@ function ContextMenu(props) {
+ 		document.removeEventListener("mousedown", handleClickOutside);
+ 	});
+ 	var _el$ = _tmpl$$2();
+-	_el$.$$keydown = handleMenuKeyDown;
++	_el$._$$keydown = handleMenuKeyDown;
+ 	var _ref$ = menuRef;
+ 	typeof _ref$ === "function" || Array.isArray(_ref$) ? ref(() => {
+ 		return _ref$;
+@@ -4237,7 +4237,7 @@ function ContextMenu(props) {
+ 			_el$3.addEventListener("mouseenter", () => {
+ 				if (!item.disabled) focusItem(ai);
+ 			});
+-			_el$3.$$click = () => handleClick(item);
++			_el$3._$$click = () => handleClick(item);
+ 			ref(() => {
+ 				return (el) => {
+ 					itemRefs[ai] = el;
+@@ -4329,16 +4329,16 @@ function SearchBar(props) {
+ 	var _el$4 = _el$3.nextSibling;
+ 	var _el$5 = _el$4.nextSibling;
+ 	var _el$6 = _el$5.nextSibling;
+-	_el$.$$keydown = handleKeyDown;
+-	_el$2.$$input = (e) => props.onQueryChange(e.currentTarget.value);
++	_el$._$$keydown = handleKeyDown;
++	_el$2._$$input = (e) => props.onQueryChange(e.currentTarget.value);
+ 	var _ref$ = inputRef;
+ 	typeof _ref$ === "function" || Array.isArray(_ref$) ? ref(() => {
+ 		return _ref$;
+ 	}, _el$2) : inputRef = _el$2;
+ 	insert(_el$3, countLabel);
+-	_el$4.$$click = () => props.onPrev();
+-	_el$5.$$click = () => props.onNext();
+-	_el$6.$$click = () => props.onClose();
++	_el$4._$$click = () => props.onPrev();
++	_el$5._$$click = () => props.onNext();
++	_el$6._$$click = () => props.onClose();
+ 	effect(() => {
+ 		return {
+ 			e: props.query,
+@@ -6516,8 +6516,8 @@ function Grid(props) {
+ 	var _el$3 = _el$2.firstChild;
+ 	var _el$4 = _el$2.nextSibling;
+ 	var _el$5 = _el$4.nextSibling;
+-	_el$.$$contextmenu = handleContextMenu;
+-	_el$.$$keydown = handleKeyDown;
++	_el$._$$contextmenu = handleContextMenu;
++	_el$._$$keydown = handleKeyDown;
+ 	var _ref$ = gridRef;
+ 	typeof _ref$ === "function" || Array.isArray(_ref$) ? ref(() => {
+ 		return _ref$;

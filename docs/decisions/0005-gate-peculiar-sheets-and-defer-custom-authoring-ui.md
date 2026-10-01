@@ -68,7 +68,8 @@ to other Peculiar Sheets consumers without becoming an unused UE Shed dependency
 ## Approval record
 
 The repository owner stated that they own Peculiar Sheets and authorized the formula-free core under
-MIT. The published `0.13.0` registry metadata and installed manifest are checked by the release gate.
+MIT. The release gate checks the installed manifest against the currently pinned version (`0.15.0`,
+the Solid rc.9 build, since 2026-10-01).
 This decision does not alter the licenses of HyperFormula, IronCalc, Unreal Engine, or any other
 third-party dependency.
 

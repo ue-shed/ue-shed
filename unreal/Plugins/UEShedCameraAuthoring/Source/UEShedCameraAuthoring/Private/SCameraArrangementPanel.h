@@ -91,5 +91,12 @@ class SCameraArrangementPanel : public SCompoundWidget
     void RecipeAction(bool Export);
     void RebuildCameras();
     void RebuildActors();
+    // Designer-facing wording. Raw contract values never reach the UI.
+    static FString SelectionSummary(int32 Count);
+    FString OutputMode() const;
+    static FString OutputLabel(const FString& Mode);
+    static FString OutputDescription(const FString& Mode);
+    static FString VisibilityProblem(const FString& Status);
+    FString ScopeName() const;
     EActiveTimerReturnType Refresh(double Time, float Delta);
 };

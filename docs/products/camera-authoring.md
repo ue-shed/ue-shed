@@ -27,10 +27,13 @@ neither erase operation failures nor preserve obsolete prerequisite errors.
 
 The native FOV Enter/focus regression from the baseline walkthrough has been fixed.
 
-Native numeric fields support exact typing and Ctrl-drag for finer adjustments. Distance is a
-multiplier of the fitted distance (1× fits the subject; 2× moves twice as far away). Its normal
-drag range is 0.25–3×; exact typed values retain the supported 0.01–100× range. Margin is a
-fraction (0.15 means 15%). Position offsets are centimeters and angles are degrees.
+Native numeric fields support exact typing and Ctrl-drag for finer adjustments. **Distance (1 = fits
+subject)** is a multiplier of the fitted distance (1 fits the subject; 2 moves twice as far away).
+Its normal drag range is 0.25–3; exact typed values retain the supported 0.01–100 range.
+**Margin (% per side)** is the empty space kept on each side of the subject as a percentage of the
+frame; the contract stores it as a fraction (12% is `0.12`), with a 0–45% range. The scope line reads
+"Editing 1 selected camera" or "Editing N selected cameras". Position offsets are centimeters and
+angles are degrees.
 Height, aim offsets, dolly, and world-Z dragging scale with the subject's longest dimension:
 a field-width drag moves about one subject length. Ctrl reduces movement to one tenth, Shift
 increases it tenfold, and exact typed offsets remain available. The drag range follows the
@@ -328,19 +331,32 @@ the draft, and previously saved Views retain their own snapshots.
 
 ## Explicit actor visibility
 
-Select actors in Unreal, then **Hide selected actors in scope** or **Protect selected actors in scope**.
-Shared, group and camera lists compose; protection wins, including GUID/path aliases resolved to the
-same live actor. The capture subject is protected automatically. The panel displays effective lists
-and resolution diagnostics. A GUID never falls back to a potentially reassigned path. Save views
-validates authored references; drafts may retain unresolved entries for repair.
+Select actors in Unreal, then **Hide selected actors** or **Always show selected actors** for the
+current scope. "Always show" is the panel's name for protection. Shared, group and camera lists
+compose; protection wins, including GUID/path aliases resolved to the same live actor. The capture
+subject is protected automatically. The panel lists the scope's own entries, then what the active
+camera's shots use ("In Orbit 1's shots: 2 hidden, 1 always shown"), and explains unresolved entries
+in words, for example "Rock_01 isn't in the open level, or isn't loaded". A GUID never falls back to a
+potentially reassigned path. Save views validates authored references; drafts may retain unresolved
+entries for repair.
 
-Choose Pure only, Authored only, or Pure + Authored. The native preview toggle applies to the
-piloted viewport. The separate review panel applies configured exclusions for Authored outputs;
-Pure only remains unmodified. Capture applies the same lists through the shared renderer. Actor visibility
-flags and map packages are not changed. Paired SceneCapture requires fixed EV100; viewport pairs may
-meter the natural scene once and hold its exposure for Authored. Natural assessment belongs to Pure;
-Authored-only has no natural-scene visibility score. Legacy Clear remains a separate workflow;
-explicit authored output replaces its companion request for that View.
+**What saved shots show** chooses the visibility output. The native panel never shows the raw
+values:
+
+| Panel choice          | Output                 | What the designer sees in the shot                      |
+| --------------------- | ---------------------- | ------------------------------------------------------- |
+| Level as it is        | `natural_only`         | Every actor, including hidden ones; lists are kept      |
+| Without hidden actors | `authored_only`        | Hidden actors left out; subject and Always show stay in |
+| Both                  | `natural_and_authored` | Two shots per view: as it is, and without hidden actors |
+
+Sets without an `output` (saved before visibility output existed) behave like Level as it is. The
+**Hide them in the viewport while piloting** toggle applies to the piloted viewport and only when
+shots leave hidden actors out. The separate review panel applies configured exclusions for those
+outputs; Level as it is remains unmodified. Capture applies the same lists through the shared
+renderer. Actor visibility flags and map packages are not changed. Paired SceneCapture requires fixed
+EV100; viewport pairs may meter the natural scene once and hold its exposure for Authored. Natural
+assessment belongs to Pure; Authored-only has no natural-scene visibility score. Legacy Clear
+remains a separate workflow; explicit authored output replaces its companion request for that View.
 
 Review Set 1.5 and Capture/Run 1.7 carry authored policy and separately named artifact evidence.
 Map Capture 1.2 accepts the same `capture.visibility`; live map previews use provisioning version 4.

@@ -356,41 +356,44 @@ TSharedRef<SWidget> SCameraArrangementPanel::Setting(const TCHAR *Label, const T
     const TOptional<double> Maximum = Name == TEXT("fieldOfViewDegrees") ? TOptional<double>(170) :
         Name == TEXT("distanceScale") ? TOptional<double>(100) : Name == TEXT("margin") ? TOptional<double>(.45) :
         Name == TEXT("elevationDegrees") ? TOptional<double>(89) : TOptional<double>();
+    // Margin is stored as a fraction of the frame per side; designers read and type it as a percentage.
+    const double Scale = Name == TEXT("margin") ? 100. : 1.;
+    const auto Scaled = [Scale](TOptional<double> V) { return V.IsSet() ? TOptional<double>(V.GetValue() * Scale) : V; };
     auto ValueRow = SNew(SHorizontalBox);
     ValueRow->AddSlot().FillWidth(1)[SNew(SNumericEntryBox<double>)
-                      .AllowSpin(true).MinValue(Minimum).MaxValue(Maximum)
-                      .MinSliderValue_Lambda([this, Field, Name, Minimum] { return Name == TEXT("heightOffset") ? TOptional<double>(DisplaySetting(Field).Get(0) - PositionDragSpan() / 2) : Name == TEXT("distanceScale") ? TOptional<double>(.25) : Name == TEXT("fieldOfViewDegrees") ? TOptional<double>(30) : Name == TEXT("elevationDegrees") ? TOptional<double>(-45) : Minimum; })
-                      .MaxSliderValue_Lambda([this, Field, Name, Maximum] { return Name == TEXT("heightOffset") ? TOptional<double>(DisplaySetting(Field).Get(0) + PositionDragSpan() / 2) : Name == TEXT("distanceScale") ? TOptional<double>(3) : Name == TEXT("fieldOfViewDegrees") ? TOptional<double>(100) : Name == TEXT("elevationDegrees") ? TOptional<double>(45) : Maximum; })
-                      .Delta(Name == TEXT("distanceScale") || Name == TEXT("heightOffset") ? .01 : Name == TEXT("margin") ? .005 : .1)
+                      .AllowSpin(true).MinValue(Scaled(Minimum)).MaxValue(Scaled(Maximum))
+                      .MinSliderValue_Lambda([this, Field, Name, Minimum, Scaled] { return Name == TEXT("heightOffset") ? TOptional<double>(DisplaySetting(Field).Get(0) - PositionDragSpan() / 2) : Name == TEXT("distanceScale") ? TOptional<double>(.25) : Name == TEXT("fieldOfViewDegrees") ? TOptional<double>(30) : Name == TEXT("elevationDegrees") ? TOptional<double>(-45) : Scaled(Minimum); })
+                      .MaxSliderValue_Lambda([this, Field, Name, Maximum, Scaled] { return Name == TEXT("heightOffset") ? TOptional<double>(DisplaySetting(Field).Get(0) + PositionDragSpan() / 2) : Name == TEXT("distanceScale") ? TOptional<double>(3) : Name == TEXT("fieldOfViewDegrees") ? TOptional<double>(100) : Name == TEXT("elevationDegrees") ? TOptional<double>(45) : Scaled(Maximum); })
+                      .Delta(Name == TEXT("distanceScale") || Name == TEXT("heightOffset") ? .01 : Name == TEXT("margin") ? .5 : .1)
                       .LinearDeltaSensitivity(5).MinFractionalDigits(1).MaxFractionalDigits(3)
                       .ToolTipText(FText::FromString(Name == TEXT("distanceScale")
                           ? TEXT("Multiplier of the distance needed to fit the subject: 1 fits, 2 is twice as far. Drag 0.25–3; type 0.01–100. Ctrl for finer steps.")
                           : Name == TEXT("heightOffset") ? TEXT("Vertical offset in centimeters. A field-width drag covers about one subject length. Ctrl for finer steps; Shift for larger moves. Click to type exactly.")
-                          : Name == TEXT("margin") ? TEXT("Fraction reserved around the subject: 0.15 = 15%. Range 0–0.45. Ctrl for finer steps.")
+                          : Name == TEXT("margin") ? TEXT("Empty space kept on each side of the subject, as a percentage of the frame: 12 leaves 12% on every side. Range 0–45. Ctrl for finer steps.")
                           : TEXT("Drag to adjust; Ctrl for finer steps, Shift for larger steps. Click to type an exact value.")))
                       .UndeterminedString(FText::FromString(TEXT("Mixed")))
                       .IsEnabled_Lambda([this, Name] { return (Ready() || (SettingEdit && SettingEdit->Field == Name)) && CanAdjust(Name); })
-                      .Value_Lambda([this, Field] { return DisplaySetting(Field); })
+                      .Value_Lambda([this, Field, Scaled] { return Scaled(DisplaySetting(Field)); })
                       .OnBeginSliderMovement_Lambda([this, Name] { BeginSettingDrag(Name); })
-                      .OnValueChanged_Lambda([this, Name](double V) {
-                          if (SettingEdit && SettingEdit->Dragging && SettingEdit->Field == Name) ChangeSetting(Name, V, false);
+                      .OnValueChanged_Lambda([this, Name, Scale](double V) {
+                          if (SettingEdit && SettingEdit->Dragging && SettingEdit->Field == Name) ChangeSetting(Name, V / Scale, false);
                       })
-                      .OnEndSliderMovement_Lambda([this, Name](double V) {
-                          if (SettingEdit && SettingEdit->Dragging && SettingEdit->Field == Name) ChangeSetting(Name, V, true);
+                      .OnEndSliderMovement_Lambda([this, Name, Scale](double V) {
+                          if (SettingEdit && SettingEdit->Dragging && SettingEdit->Field == Name) ChangeSetting(Name, V / Scale, true);
                       })
-                      .OnValueCommitted_Lambda([this, Field](double V, ETextCommit::Type T) {
+                      .OnValueCommitted_Lambda([this, Field, Scale](double V, ETextCommit::Type T) {
                           if (T == ETextCommit::OnCleared || CommittingNumber || (SettingEdit && SettingEdit->Dragging))
                               return;
                           TGuardValue<bool> CommitGuard(CommittingNumber, true);
                           if (T == ETextCommit::OnEnter)
                               FSlateApplication::Get().ClearKeyboardFocus(EFocusCause::Cleared);
-                          ChangeSetting(Field, V, true);
+                          ChangeSetting(Field, V / Scale, true);
                       })];
     ValueRow->AddSlot().AutoWidth()[SNew(SBox).IsEnabled_Lambda([this, Name] { return CanAdjust(Name); }).ToolTipText(FText::FromString(TEXT("Reset to inherited value"))).Visibility_Lambda([this] { return Scope == TEXT("arrangement") ? EVisibility::Collapsed : EVisibility::Visible; })[Button(TEXT("↶"), [this, Field] {
                if (!CanAdjust(Field)) return;
                if (Scope == TEXT("arrangement"))
                {
-                   Message = TEXT("Arrangement defaults have no parent. Choose a group or cameras.");
+                   Message = TEXT("The whole set has no inherited value to return to. Choose cameras or a group first.");
                    return;
                }
                auto C = Command(TEXT("batch"));
@@ -529,7 +532,7 @@ void SCameraArrangementPanel::Construct(const FArguments &Args)
         + SSegmentedControl<FString>::Slot(TEXT("cameras")).Text(FText::FromString(TEXT("Selected cameras")))];
     Inspector->AddSlot().AutoHeight().Padding(0, 0, 0, 8)[SNew(STextBlock).Text_Lambda([this] {
         return FText::FromString(Scope == TEXT("arrangement") ? TEXT("Editing the whole set") :
-            Scope == TEXT("group") ? TEXT("Editing group: ") + Str(Group(), TEXT("name")) : FString::Printf(TEXT("Editing %d selected cameras"), Selected.Num()));
+            Scope == TEXT("group") ? TEXT("Editing group: ") + Str(Group(), TEXT("name")) : SelectionSummary(Selected.Num()));
     })];
     auto Tabs = SNew(SHorizontalBox);
     auto Pages = SNew(SWidgetSwitcher).WidgetIndex_Lambda([this] { return InspectorPage; });
@@ -606,11 +609,11 @@ void SCameraArrangementPanel::Construct(const FArguments &Args)
     SectionBody = Framing;
     int32 FieldIndex = 0;
     for (const auto &P : TArray<TPair<FString, FString>>{{TEXT("FOV (°)"), TEXT("fieldOfViewDegrees")},
-                                                         {TEXT("Distance (×)"), TEXT("distanceScale")},
+                                                         {TEXT("Distance (1 = fits subject)"), TEXT("distanceScale")},
                                                          {TEXT("Height (cm)"), TEXT("heightOffset")},
                                                          {TEXT("Elevation (°)"), TEXT("elevationDegrees")},
                                                          {TEXT("Yaw (°)"), TEXT("yawOffset")},
-                                                         {TEXT("Margin (fraction)"), TEXT("margin")}})
+                                                         {TEXT("Margin (% per side)"), TEXT("margin")}})
     {
         // Stable literal storage: Setting callbacks retain field strings via static interned names below.
         const TCHAR *Field = P.Value == TEXT("fieldOfViewDegrees") ? TEXT("fieldOfViewDegrees")
@@ -661,7 +664,7 @@ void SCameraArrangementPanel::Construct(const FArguments &Args)
         if (!CanAdjust(TEXT("aimOffset"))) return;
         if (Scope == TEXT("arrangement"))
         {
-            Message = TEXT("Arrangement defaults have no parent. Set an explicit aim offset.");
+            Message = TEXT("The whole set has no inherited aim to return to. Set an aim offset instead.");
             return;
         }
         auto C = Command(TEXT("batch"));
@@ -692,29 +695,37 @@ void SCameraArrangementPanel::Construct(const FArguments &Args)
         Submit(C);
     }));
     Page(TEXT("Visibility"));
-    Add(SNew(SWrapBox).UseAllottedSize(true).InnerSlotPadding(FVector2D(4, 4))
-        + SWrapBox::Slot()[Button(TEXT("Hide selection"), [this] { CaptureSelection(TEXT("hide")); })]
-        + SWrapBox::Slot()[Button(TEXT("Protect selection"), [this] { CaptureSelection(TEXT("protect")); })]);
-    Add(SAssignNew(ActorRows, SVerticalBox));
-    Add(SNew(SCheckBox).IsChecked_Lambda([this] { return Preview ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; }).OnCheckStateChanged_Lambda([this](ECheckBoxState S) {
-        Preview = S == ECheckBoxState::Checked;
-        PreviewVisibility();
-    })[Text(TEXT("Preview hidden actors"))]);
-    Add(SNew(STextBlock).Text_Lambda([this] {
-        return FText::FromString(TEXT("Saved output: ") + (Str(Arrangement, TEXT("output")).IsEmpty()
-                                                               ? TEXT("natural_only")
-                                                               : Str(Arrangement, TEXT("output"))));
-    }));
-    auto Outputs = SNew(SWrapBox).UseAllottedSize(true).InnerSlotPadding(FVector2D(4, 4));
-    Add(Outputs);
-    for (const auto &P : TArray<TPair<FString, FString>>{{TEXT("Pure only"), TEXT("natural_only")},
-                                                         {TEXT("Authored only"), TEXT("authored_only")},
-                                                         {TEXT("Pure + Authored"), TEXT("natural_and_authored")}})
-        Outputs->AddSlot()[Button(P.Key, [this, Mode = P.Value] {
+    // Visibility output modes, in the designer's terms: what the saved shots show.
+    Add(SNew(STextBlock).Font(FAppStyle::GetFontStyle("NormalFontBold")).Text(FText::FromString(TEXT("What saved shots show"))));
+    auto Outputs = SNew(SSegmentedControl<FString>)
+        .IsEnabled_Lambda([this] { return Ready(); })
+        .Value_Lambda([this] { return OutputMode(); })
+        .OnValueChanged_Lambda([this](FString Mode) {
+            if (Mode == OutputMode()) return;
             auto C = Command(TEXT("output"));
             C->SetStringField(TEXT("output"), Mode);
             Submit(C);
-        })];
+        });
+    for (const TCHAR* Mode : {TEXT("natural_only"), TEXT("authored_only"), TEXT("natural_and_authored")})
+        Outputs->AddSlot(Mode).Text(FText::FromString(OutputLabel(Mode))).ToolTip(FText::FromString(OutputDescription(Mode)));
+    Add(Outputs);
+    Add(SNew(STextBlock).AutoWrapText(true).ColorAndOpacity(FSlateColor::UseSubduedForeground())
+        .Text_Lambda([this] { return FText::FromString(OutputDescription(OutputMode())); }));
+    Add(SNew(STextBlock).Font(FAppStyle::GetFontStyle("NormalFontBold")).Text(FText::FromString(TEXT("Hidden actors"))));
+    Add(Text(TEXT("Select actors in the viewport or Outliner, then choose an action. It applies to the scope above.")));
+    Add(SNew(SWrapBox).UseAllottedSize(true).InnerSlotPadding(FVector2D(4, 4))
+        + SWrapBox::Slot()[SNew(SBox).ToolTipText(FText::FromString(TEXT("Leave the selected actors out of shots that hide actors.")))
+            [Button(TEXT("Hide selected actors"), [this] { CaptureSelection(TEXT("hide")); })]]
+        + SWrapBox::Slot()[SNew(SBox).ToolTipText(FText::FromString(TEXT("Keep the selected actors in every shot, even if a wider scope hides them. The subject is always shown.")))
+            [Button(TEXT("Always show selected actors"), [this] { CaptureSelection(TEXT("protect")); })]]);
+    Add(SAssignNew(ActorRows, SVerticalBox));
+    Add(SNew(SCheckBox)
+        .ToolTipText(FText::FromString(TEXT("While you pilot a camera, hide its hidden actors in the viewport too. Shots that show the level as it is are not affected.")))
+        .IsEnabled_Lambda([this] { return OutputMode() != TEXT("natural_only"); })
+        .IsChecked_Lambda([this] { return Preview ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; }).OnCheckStateChanged_Lambda([this](ECheckBoxState S) {
+        Preview = S == ECheckBoxState::Checked;
+        PreviewVisibility();
+    })[Text(TEXT("Hide them in the viewport while piloting"))]);
     Section(TEXT("Visibility presets"));
     Add(Input(TEXT("Preset file"), VisibilityPath));
     Add(Input(TEXT("Visibility preset name"), VisibilityName));
@@ -834,7 +845,7 @@ void SCameraArrangementPanel::PreviewVisibility()
         {
             auto Q = Request(TEXT("preview_visibility"));
             Q->SetObjectField(TEXT("actors"), Child(V->AsObject(), TEXT("visibility")));
-            Q->SetBoolField(TEXT("enabled"), Preview && Str(Arrangement, TEXT("output")) != TEXT("natural_only"));
+            Q->SetBoolField(TEXT("enabled"), Preview && OutputMode() != TEXT("natural_only"));
             Call(Q);
         }
 }
@@ -1043,10 +1054,60 @@ void SCameraArrangementPanel::RebuildCameras()
         })];
     }
 }
+FString SCameraArrangementPanel::SelectionSummary(int32 Count)
+{
+    return Count == 0   ? TEXT("No cameras selected. Check cameras in the list to edit them.")
+           : Count == 1 ? TEXT("Editing 1 selected camera")
+                        : FString::Printf(TEXT("Editing %d selected cameras"), Count);
+}
+FString SCameraArrangementPanel::OutputMode() const
+{
+    // Sets saved before visibility output existed capture the level as it is.
+    const FString Output = Str(Arrangement, TEXT("output"));
+    return Output.IsEmpty() ? FString(TEXT("natural_only")) : Output;
+}
+FString SCameraArrangementPanel::OutputLabel(const FString& Mode)
+{
+    return Mode == TEXT("authored_only")          ? TEXT("Without hidden actors")
+           : Mode == TEXT("natural_and_authored") ? TEXT("Both")
+                                                  : TEXT("Level as it is");
+}
+FString SCameraArrangementPanel::OutputDescription(const FString& Mode)
+{
+    return Mode == TEXT("authored_only")
+               ? TEXT("Shots leave out the hidden actors. The subject and actors marked Always show stay in.")
+           : Mode == TEXT("natural_and_authored")
+               ? TEXT("Each view saves two shots: the level as it is, and one without the hidden actors. With "
+                      "SceneCapture rendering, set a fixed exposure on the Capture tab so both shots match.")
+               : TEXT("Shots show every actor, including hidden ones. Your hidden-actor lists are kept for later.");
+}
+FString SCameraArrangementPanel::VisibilityProblem(const FString& Status)
+{
+    return Status == TEXT("missing_or_unloaded") ? TEXT("isn't in the open level, or isn't loaded. Load it before capturing.")
+           : Status == TEXT("ambiguous")         ? TEXT("matches more than one actor. Hide or show the exact actor again.")
+           : Status == TEXT("unsupported")
+               ? TEXT("can't be left out of shots yet. Only solid, non-Nanite static meshes can be hidden.")
+               : TEXT("can't be found. Hide or show it again.");
+}
+FString SCameraArrangementPanel::ScopeName() const
+{
+    if (Scope == TEXT("arrangement")) return TEXT("the whole set");
+    if (Scope == TEXT("group")) return TEXT("group ") + Str(Group(), TEXT("name"));
+    const auto Cameras = ScopedCameras();
+    return Cameras.Num() == 1 ? Str(Cameras[0], TEXT("displayName"))
+                              : FString::Printf(TEXT("%d selected cameras"), Cameras.Num());
+}
 void SCameraArrangementPanel::RebuildActors()
 {
     ActorRows->ClearChildren();
     const auto Local = LocalVisibility();
+    const bool Any = !Items(Local, TEXT("hide")).IsEmpty() || !Items(Local, TEXT("protect")).IsEmpty();
+    const bool Single = Scope != TEXT("cameras") || ScopedCameras().Num() == 1;
+    ActorRows->AddSlot().AutoHeight().Padding(0, 6, 0, 2)[Text(
+        !Single ? TEXT("Select one camera, a group or the whole set to see its list.")
+        : Any   ? TEXT("Set for ") + ScopeName() + TEXT(":")
+                : TEXT("Nothing hidden or always shown for ") + ScopeName() + TEXT("."))];
+    TMap<FString, FString> Labels;
     for (const TCHAR *Field : {TEXT("hide"), TEXT("protect")})
         for (const auto &V : Items(Local, Field))
         {
@@ -1054,8 +1115,9 @@ void SCameraArrangementPanel::RebuildActors()
             const FString Key = Json(Child(E, TEXT("locator")));
             ActorRows->AddSlot()
                 .AutoHeight()[SNew(SHorizontalBox) +
-                              SHorizontalBox::Slot().FillWidth(
-                                  1)[Text(FString(Field) + TEXT(" · local · ") + Str(E, TEXT("label")))] +
+                              SHorizontalBox::Slot().FillWidth(1).VAlign(VAlign_Center)[Text(
+                                  (FCString::Strcmp(Field, TEXT("hide")) == 0 ? TEXT("Hidden · ") : TEXT("Always shown · ")) +
+                                  Str(E, TEXT("label")))] +
                               SHorizontalBox::Slot().AutoWidth()[Button(TEXT("Remove"), [this, Field, Key] {
                                   auto Next = Obj();
                                   const auto Local = LocalVisibility();
@@ -1072,25 +1134,40 @@ void SCameraArrangementPanel::RebuildActors()
                                   C->SetObjectField(TEXT("scope"), EditScope());
                                   C->SetObjectField(TEXT("visibility"), Next);
                                   Submit(C);
-                              })]];
+                              }, true, true)]];
         }
     for (const auto &V : Items(Panel, TEXT("cameras")))
         if (Str(V->AsObject(), TEXT("id")) == Str(Active, TEXT("cameraId")))
         {
+            // The composed list this camera's shots use, after group and set lists and Always show.
             const auto Lists = Child(V->AsObject(), TEXT("visibility"));
-            ActorRows->AddSlot().AutoHeight()[Text(
-                TEXT("Effective visibility"))];
+            const int32 Hidden = Items(Lists, TEXT("hide")).Num(), Shown = Items(Lists, TEXT("protect")).Num();
+            FString Name;
+            for (const auto &Camera : Items(Arrangement, TEXT("cameras")))
+                if (Str(Camera->AsObject(), TEXT("id")) == Str(Active, TEXT("cameraId")))
+                    Name = Str(Camera->AsObject(), TEXT("displayName"));
+            ActorRows->AddSlot().AutoHeight().Padding(0, 8, 0, 2)[Text(FString::Printf(
+                TEXT("In %s's shots: %d hidden, %d always shown"), *Name, Hidden, Shown))];
             for (const TCHAR *F : {TEXT("hide"), TEXT("protect")})
                 for (const auto &E : Items(Lists, F))
-                    ActorRows->AddSlot()
-                        .AutoHeight()[Text(FString(F) + TEXT(" · ") + Str(E->AsObject(), TEXT("label")))];
+                {
+                    Labels.Add(Json(Child(E->AsObject(), TEXT("locator"))), Str(E->AsObject(), TEXT("label")));
+                    ActorRows->AddSlot().AutoHeight()[Text(
+                        (FCString::Strcmp(F, TEXT("hide")) == 0 ? TEXT("Hidden · ") : TEXT("Always shown · ")) +
+                        Str(E->AsObject(), TEXT("label")))];
+                }
             auto Q = Request(TEXT("resolve_visibility"));
             Q->SetObjectField(TEXT("actors"), Lists);
-            const auto R = Call(Q);
+            // Each problem is explained beside its actor; keep the panel message for actions.
+            const auto R = FUEShedCameraAuthoringBridge::Execute(Q);
             for (const auto &D : Items(R, TEXT("diagnostics")))
                 if (Str(D->AsObject(), TEXT("status")) != TEXT("resolved"))
-                    ActorRows->AddSlot().AutoHeight()[Text(Str(D->AsObject(), TEXT("status")) + TEXT(" · ") +
-                                                           Json(Child(D->AsObject(), TEXT("locator"))) + TEXT(": ") +
-                                                           Str(D->AsObject(), TEXT("message")))];
+                {
+                    const FString *Label = Labels.Find(Json(Child(D->AsObject(), TEXT("locator"))));
+                    ActorRows->AddSlot().AutoHeight()[SNew(STextBlock).AutoWrapText(true)
+                        .ColorAndOpacity(FLinearColor(1.f, .65f, .3f))
+                        .Text(FText::FromString((Label && !Label->IsEmpty() ? *Label : FString(TEXT("An actor"))) + TEXT(" ") +
+                                                VisibilityProblem(Str(D->AsObject(), TEXT("status")))))];
+                }
         }
 }

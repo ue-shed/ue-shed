@@ -252,9 +252,49 @@ bool FUEShedCameraPreviewPanelTest::RunTest(const FString &Parameters)
     FSlateApplication::Get().Tick();
     FSlateApplication::Get().Tick();
     Screenshot(Panel, TEXT("editing-wide.png"));
-    Panel->InspectorPage = 1;
-    FSlateApplication::Get().Tick();
-    Screenshot(Panel, TEXT("visibility.png"));
+    TestEqual(TEXT("One selected camera reads in the singular"), SCameraArrangementPanel::SelectionSummary(1),
+              FString(TEXT("Editing 1 selected camera")));
+    TestEqual(TEXT("Several selected cameras read in the plural"), SCameraArrangementPanel::SelectionSummary(3),
+              FString(TEXT("Editing 3 selected cameras")));
+    TestEqual(TEXT("Sets without an output choice capture the level as it is"), Panel->OutputMode(),
+              FString(TEXT("natural_only")));
+    for (const TCHAR *Mode : {TEXT("natural_only"), TEXT("authored_only"), TEXT("natural_and_authored")})
+    {
+        TestFalse(TEXT("Output labels never show raw values"), SCameraArrangementPanel::OutputLabel(Mode).Contains(TEXT("_")));
+        TestFalse(TEXT("Output descriptions never show raw values"),
+                  SCameraArrangementPanel::OutputDescription(Mode).Contains(TEXT("_")));
+    }
+    for (const TCHAR *Status : {TEXT("missing_or_unloaded"), TEXT("ambiguous"), TEXT("unsupported"), TEXT("other")})
+        TestFalse(TEXT("Visibility problems never show raw values"),
+                  SCameraArrangementPanel::VisibilityProblem(Status).Contains(TEXT("_")));
+    {
+        // Show a hidden actor that is not in the level, as a designer would after a rename.
+        auto Missing = MakeShared<FJsonObject>(), Locator = MakeShared<FJsonObject>(), Lists = MakeShared<FJsonObject>();
+        Locator->SetStringField(TEXT("kind"), TEXT("actor_path"));
+        Locator->SetStringField(TEXT("actorPath"), TEXT("/Game/Fixture.Fixture:PersistentLevel.Rock_01"));
+        Missing->SetObjectField(TEXT("locator"), Locator);
+        Missing->SetStringField(TEXT("label"), TEXT("Rock_01"));
+        Lists->SetArrayField(TEXT("hide"), {MakeShared<FJsonValueObject>(Missing)});
+        Lists->SetArrayField(TEXT("protect"), {});
+        Arrangement->SetObjectField(TEXT("visibility"), Lists);
+        Effective[0]->AsObject()->SetObjectField(TEXT("visibility"), Lists);
+        FUEShedCameraAuthoringBridge::Execute(Request);
+        Panel->ActorKey.Reset();
+        Panel->Refresh(1, .2f);
+        Panel->InspectorPage = 1;
+        FSlateApplication::Get().Tick();
+        Screenshot(Panel, TEXT("visibility.png"));
+        TestTrue(TEXT("The visibility page explains each listed actor"), Panel->ActorRows->GetChildren()->Num() >= 4);
+        auto Empty = MakeShared<FJsonObject>();
+        Empty->SetArrayField(TEXT("hide"), {});
+        Empty->SetArrayField(TEXT("protect"), {});
+        Arrangement->RemoveField(TEXT("visibility"));
+        Effective[0]->AsObject()->SetObjectField(TEXT("visibility"), Empty);
+        FUEShedCameraAuthoringBridge::Execute(Request);
+        Panel->ActorKey.Reset();
+        Panel->Message.Reset();
+        Panel->Refresh(1, .2f);
+    }
     auto ExposureSpin = StaticCastSharedPtr<SSpinBox<double>>(Panel->ExposureInput->GetSpinBox());
     TestEqual(TEXT("Exposure typed minimum"), ExposureSpin->GetMinValue(), -20.);
     TestEqual(TEXT("Exposure typed maximum"), ExposureSpin->GetMaxValue(), 30.);

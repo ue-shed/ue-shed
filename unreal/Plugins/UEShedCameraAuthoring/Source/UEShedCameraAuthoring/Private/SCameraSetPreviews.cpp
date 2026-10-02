@@ -237,7 +237,9 @@ void SCameraSetPreviews::RenderAll()
             }
             View.FixedEV100 = EV;
         }
-        if (Str(Arrangement, TEXT("output")) != TEXT("natural_only"))
+        // Sets without an output choice capture the level as it is, so their previews do too.
+        const FString Output = Str(Arrangement, TEXT("output"));
+        if (!Output.IsEmpty() && Output != TEXT("natural_only"))
         {
             const auto Visibility = UEShedResolveCameraVisibility(Proxy->GetWorld(), Child(Camera, TEXT("visibility")));
             if (!Visibility.Valid)

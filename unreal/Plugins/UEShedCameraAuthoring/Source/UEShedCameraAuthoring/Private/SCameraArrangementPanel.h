@@ -87,6 +87,7 @@ class SCameraArrangementPanel : public SCompoundWidget
     void FocusCamera(const FString& Id);
     void PilotCamera(const FString& Id);
     void SaveScope();
+    FString SaveStatus() const;
     void RecipeAction(bool Export);
     void RebuildCameras();
     void RebuildActors();

@@ -767,17 +767,25 @@ void SCameraArrangementPanel::Construct(const FArguments &Args)
         .ColorAndOpacity(FLinearColor(1.f, .65f, .3f))
         .Text_Lambda([this] { return FText::FromString(Message.IsEmpty() ? Str(Panel, TEXT("notice")) : Message); })];
     auto Review = SNew(SHorizontalBox);
-    Review->AddSlot().AutoWidth()[SNew(SButton).ButtonStyle(FAppStyle::Get(), "PrimaryButton")
-        .ContentPadding(FMargin(12, 8)).Text(FText::FromString(TEXT("See Previews")))
+    Review->AddSlot().AutoWidth().VAlign(VAlign_Center)[SNew(SBox)
+        .ToolTipText(FText::FromString(TEXT("Render a snapshot of every camera in a separate tab to check the shots. Doesn't save anything.")))
+        [Button(TEXT("See previews"), [this] { SeePreviews.ExecuteIfBound(); })]];
+    Review->AddSlot().FillWidth(1).VAlign(VAlign_Center).Padding(12, 0)[SNew(STextBlock)
+        .AutoWrapText(true).ColorAndOpacity(FSlateColor::UseSubduedForeground())
+        .Text_Lambda([this] { return FText::FromString(SaveStatus()); })];
+    // Saving keeps the designer's work, so it is the primary action. Drafts autosave separately.
+    Review->AddSlot().AutoWidth().VAlign(VAlign_Center).Padding(6, 0)[SNew(SButton)
+        .ButtonStyle(FAppStyle::Get(), "PrimaryButton").ContentPadding(FMargin(14, 8))
+        .Text(FText::FromString(TEXT("Save views")))
+        .ToolTipText(FText::FromString(TEXT("Save every camera in this set as a view for capture. Updates views you saved before. Doesn't render images.")))
         .IsEnabled_Lambda([this] { return Ready(); })
-        .OnClicked_Lambda([this] { SeePreviews.ExecuteIfBound(); return FReply::Handled(); })];
-    Review->AddSlot().FillWidth(1)[SNew(SBox)];
-    Review->AddSlot().AutoWidth().Padding(6, 0)[SNew(SBox)
-        .ToolTipText(FText::FromString(TEXT("Save all cameras in this set to the associated Review Set for later capture and comparison. Updates existing saved views. Does not render images.")))
-        [Button(TEXT("Save views to Review Set"), [this] {
-        const auto Previous = Scope; Scope = TEXT("arrangement"); SaveScope(); Scope = Previous;
-    })]];
-    Review->AddSlot().AutoWidth()[Button(TEXT("Close set"), [this] { Call(Request(TEXT("detach"))); }, false)];
+        .OnClicked_Lambda([this] {
+            const auto Previous = Scope; Scope = TEXT("arrangement"); SaveScope(); Scope = Previous;
+            return FReply::Handled();
+        })];
+    Review->AddSlot().AutoWidth().VAlign(VAlign_Center)[SNew(SBox)
+        .ToolTipText(FText::FromString(TEXT("Remove this set's temporary cameras from the level. The set stays saved.")))
+        [Button(TEXT("Close set"), [this] { Call(Request(TEXT("detach"))); }, false)]];
     Shell->AddSlot().AutoHeight()[SNew(SBox).Visibility_Lambda([this] {
         return Panel->HasField(TEXT("arrangement")) && !SetupOpen ? EVisibility::Visible : EVisibility::Collapsed;
     })[Review]];
@@ -792,6 +800,18 @@ void SCameraArrangementPanel::RecipeAction(bool Export)
     if (Export)
         A->SetStringField(TEXT("name"), RecipeName);
     Action(A);
+}
+FString SCameraArrangementPanel::SaveStatus() const
+{
+    const auto Cameras = Items(Panel, TEXT("cameras"));
+    int32 Unsaved = 0;
+    for (const auto& Camera : Cameras)
+        Unsaved += Flag(Camera->AsObject(), TEXT("approved")) ? 0 : 1;
+    if (Cameras.IsEmpty()) return {};
+    if (Unsaved == 0) return TEXT("All views saved");
+    return Unsaved == Cameras.Num()
+        ? FString::Printf(TEXT("%d %s not saved yet"), Unsaved, Unsaved == 1 ? TEXT("view") : TEXT("views"))
+        : FString::Printf(TEXT("%d of %d views not saved yet"), Unsaved, Cameras.Num());
 }
 void SCameraArrangementPanel::SaveScope()
 {
@@ -930,7 +950,7 @@ EActiveTimerReturnType SCameraArrangementPanel::Refresh(double Time, float Delta
                 .AutoHeight()[Button(TEXT("Cancel"), [this] { SimpleAction(TEXT("cancel_proposal")); })];
         }
         for (const auto &V : Items(Panel, TEXT("retiredViews")))
-            ProposalRows->AddSlot().AutoHeight()[Text(TEXT("Retired saved View: ") + Str(V->AsObject(), TEXT("name")))];
+            ProposalRows->AddSlot().AutoHeight()[Text(TEXT("Removed camera, view still saved: ") + Str(V->AsObject(), TEXT("name")))];
     }
     const FString AKey = Key + Scope + GroupId + LexToString(Selected.Num());
     if (AKey != ActorKey)

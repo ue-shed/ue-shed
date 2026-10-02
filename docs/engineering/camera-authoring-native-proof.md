@@ -80,7 +80,7 @@ its pixel assertions use test-only readback. The separate batch reviewer deliber
 back each completed camera once to cache the image and release its capture resources.
 
 `UEShed.Cameras.Authoring.PreviewPanel` publishes a sixteen-camera fixture through the public bridge,
-checks the editing list and its See Previews action, renders the separate Slate review panel, and
+checks the editing list and its See previews action, renders the separate Slate review panel, and
 saves `Saved/UEShed/PreviewValidation/panel.png`. It checks all sixteen review tiles without paging,
 hidden-tab pause, one capture at a time, no capture after completion, cached images surviving GC,
 stale-image warnings after edits, explicit refresh, closing mid-render without ending authoring,

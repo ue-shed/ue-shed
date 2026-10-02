@@ -45,10 +45,12 @@ FOV remains editable when synchronized.
 Select one manual camera and choose **Restore fitted position** to move it back to its computed
 placement and restore those controls. Dolly and world-Z moves still work for manual cameras.
 
-**Save views to Review Set** saves every camera in the current set as a capture-ready view,
-including its pose, visibility, and capture policy. It updates existing views with the same IDs.
-It does not render images or publish online. Drafts continue to autosave independently; later draft
-changes require saving the views again to update the Review Set.
+**Save views**, the primary footer button, saves every camera in the current set as a capture-ready
+view, including its pose, visibility, and capture policy. It updates existing views with the same
+IDs. It does not render images or publish online. Drafts continue to autosave independently; later
+draft changes require saving the views again to update the Review Set. Beside it, the native footer
+reports how many views are not saved yet, or "All views saved". Native panel text says "views"
+rather than "Review Set".
 
 The capture dialog defaults to **Unreal high-resolution screenshot**, using the public cameras
 API's editor-viewport renderer and Unreal's `TakeHighResScreenShot` at the saved resolution.
@@ -96,7 +98,7 @@ Numeric values support Unreal's click-drag scrubbing as well as typed input. Liv
 coalesce behind the host's single pending command; releasing the mouse retains the latest value
 until it can be sent. A selection/scope/session change cancels unsent values rather than retargeting them.
 **Change preset** previews additions/removals and requires acceptance before replacing cameras.
-**See Previews**, **Publish views**, and **Close set** stay in the footer. Transform and FOV editing
+**See previews**, **Save views** (primary) and **Close set** stay in the footer. Transform and FOV editing
 use Unreal's own viewport and Details panel, with native Undo/Redo.
 
 Capture-only projects continue to enable Core+Cameras. The new `camera-authoring` source bundle preset
@@ -180,7 +182,7 @@ durable draft on the next reconciliation step, without **Save views**. Native Du
 Undo/Redo also reconcile into the draft; at least one camera must remain. **Save views** is a separate,
 explicit publication step for immutable reviewed poses. Unreal's selected-camera previews retain
 the engine's own limits: selecting all cameras is not a promise of simultaneous live thumbnails.
-Use the separate **See Previews** panel for a whole-set review.
+Use the separate **See previews** panel for a whole-set review.
 
 ## CLI journey
 
@@ -204,7 +206,7 @@ The lower-level path for existing inputs is:
 3. `review authoring arrangement attach draft.json camera-a --endpoint http://localhost:30010 --output approved.json`
 4. Edit the selected camera in Unreal, or use **Pilot camera** in the optional menu. Keep the CLI
    running; it reconciles every 200 ms and reports state changes.
-5. Choose **Publish views** in Unreal. The host approves the whole set into `approved.json`.
+5. Choose **Save views** in Unreal. The host approves the whole set into `approved.json`.
 6. Interrupt the attach command to release all transient cameras. Restart either client and inspect with
    `review authoring arrangement show draft.json`. Existing Review capture commands accept the
    approved Review Set with Core+Cameras only.
@@ -307,7 +309,7 @@ keep exceptions. Removing a draft camera does not delete its saved View: retired
 and removing those saved definitions requires the explicit checkbox at arrangement scope.
 Duplicate, reorder, rename, and add-from-current-viewport work without regenerating the set.
 
-Draft changes autosave to the durable authoring document. Native **Publish views** publishes the whole
+Draft changes autosave to the durable authoring document. Native **Save views** publishes the whole
 open set; library scope commands and Workbench **Save views** can publish narrower scopes.
 Other actors' Views cannot be included. Saved pose and effective
 visibility lists are snapshots, so later group edits do not rewrite previous captures. Fixed exposure
@@ -357,7 +359,7 @@ policy, and no general distributed synchronization service is introduced here.
 ## Native workspace handoff
 
 The optional menu separates preset setup from camera editing, keeps advanced settings collapsed,
-and keeps the camera list beside its tabbed inspector for editing in the main viewport. **See Previews**
+and keeps the camera list beside its tabbed inspector for editing in the main viewport. **See previews**
 opens a separate **Camera Previews** tab for reviewing the entire set. It displays all cameras
 in a scrollable contact sheet with adjustable tile size, without four-camera paging.
 

@@ -232,6 +232,20 @@ bool FUEShedCameraPreviewPanelTest::RunTest(const FString &Parameters)
         Window->RequestDestroyWindow();
     };
     Panel->Refresh(1, .2f);
+    TestEqual(TEXT("The footer says nothing is saved yet"), Panel->SaveStatus(), FString(TEXT("16 views not saved yet")));
+    Effective[0]->AsObject()->SetBoolField(TEXT("approved"), true);
+    FUEShedCameraAuthoringBridge::Execute(Request);
+    Panel->Refresh(1, .2f);
+    TestEqual(TEXT("The footer counts views still to save"), Panel->SaveStatus(), FString(TEXT("15 of 16 views not saved yet")));
+    for (const auto &Camera : Effective)
+        Camera->AsObject()->SetBoolField(TEXT("approved"), true);
+    FUEShedCameraAuthoringBridge::Execute(Request);
+    Panel->Refresh(1, .2f);
+    TestEqual(TEXT("The footer confirms a saved set"), Panel->SaveStatus(), FString(TEXT("All views saved")));
+    for (const auto &Camera : Effective)
+        Camera->AsObject()->SetBoolField(TEXT("approved"), false);
+    FUEShedCameraAuthoringBridge::Execute(Request);
+    Panel->Refresh(1, .2f);
     FSlateApplication::Get().Tick();
     Screenshot(Panel, TEXT("editing.png"));
     Window->Resize(FVector2D(1000, 640));

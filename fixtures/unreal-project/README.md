@@ -82,8 +82,9 @@ pnpm test:uasset-conformance
 ```
 
 `fixture:generate` compiles the project and regenerates the committed DataTables from JSON under
-`FixtureSource/Authoring`. `fixture:verify` regenerates them, reloads every asset in a fresh commandlet
-process, and compares their row structures and row names with `fixture-contract.json`.
+`FixtureSource/Authoring`. `fixture:verify` loads the committed assets in a fresh commandlet
+process and compares their row structures and row names with `fixture-contract.json`, without
+regenerating them. Use `fixture:generate` explicitly when changing fixture assets.
 
 The fixture enables the separately packaged core and authoring companions plus stock Remote Control.
 Remote Control binds to loopback on ports 30001 and 30002. A full editor used for live HTTP tests
@@ -97,11 +98,12 @@ observation setting, not a UE Shed runtime requirement.
 sets: shared authoring snapshots under `authoring/`, parser implementation targets under
 `parser-targets/`, and the level property view under `levels/`. The checked-in target shapes in
 `FixtureExpected/parser-targets` cover StringTable namespace, entries, and nested metadata,
-localized-text DataAsset, Texture2D, and Enhanced Input semantics. Regenerate and compare all evidence through
-`test:uasset-conformance`; do not hand-edit the expected shapes.
+localized-text DataAsset, Texture2D, and Enhanced Input semantics. Emit and compare evidence from the committed assets through
+`test:uasset-conformance`; use `fixture:generate` explicitly for asset regeneration and do not hand-edit
+the expected shapes.
 
 `levels/L_CameraLoad.json` is the editor-side view of the fixture level: the declared property set of
-every class the level instantiates, plus the property tags each of the 16,525 exports actually wrote.
+every class the level instantiates, plus the property tags each of the 16,605 exports actually wrote.
 
 That second part is recorded, not inferred. The commandlet runs Unreal's own
 `SerializeTaggedProperties` for each object through an archive that records the property behind every
@@ -117,8 +119,9 @@ report one that was not recorded. `FixtureExpected/level-decode-gaps.json` pins 
 `undecodedByClass` is empty — the parser decodes every tagged property on disk in this level. Its
 `postLoadMutatedByClass` entry is the one editor-side artifact, explained inline in that file.
 
-`test:uasset-conformance` is the complete saved-package lane. It regenerates the assets, verifies them
-in a fresh Unreal process, emits evidence in another process, and structurally compares every
+`test:uasset-conformance` is the complete saved-package lane. It verifies committed assets
+in a fresh Unreal process without regenerating them, emits evidence in another process, and
+structurally compares every
 DataTable and CompositeDataTable against the Rust parser. It also rejects drift between real Unreal
 and the four checked-in parser target shapes, and rejects drift in level decode coverage: the parser
 must decode every property tag Unreal wrote, must never report one it did not, and must match the

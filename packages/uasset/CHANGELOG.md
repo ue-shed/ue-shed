@@ -2,6 +2,8 @@
 
 ## 0.9.0
 
+Align this package with the synchronized UE Shed 0.9.0 suite and exact internal dependency pins. There is no direct behavioral change.
+
 ## 0.8.0
 
 ## 0.7.1

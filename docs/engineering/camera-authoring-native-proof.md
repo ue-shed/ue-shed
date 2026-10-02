@@ -78,13 +78,21 @@ pause/manual refresh, target reuse, local pose changes, per-view exclusion pixel
 invalid input, and unchanged viewport/map state. The pool exposes GPU textures directly;
 its pixel assertions use test-only readback. The separate batch reviewer deliberately reads
 back each completed camera once to cache the image and release its capture resources.
+The same test drives that batch reviewer through subject visibility: a clear view, a half-covered
+view with its measured fraction, a walled-off view and the same view with the wall excluded, views
+looking away and aside, and an editor-only preview subject with and without `editorPreviews`,
+including restoring the editor-only flag and keeping 160 × 90 thumbnails from the same readback.
 
 `UEShed.Cameras.Authoring.PreviewPanel` publishes a sixteen-camera fixture through the public bridge,
 checks the editing list and its See previews action, renders the separate Slate review panel, and
 saves `Saved/UEShed/PreviewValidation/panel.png`. It checks all sixteen review tiles without paging,
 hidden-tab pause, one capture at a time, no capture after completion, cached images surviving GC,
 stale-image warnings after edits, explicit refresh, closing mid-render without ending authoring,
-reopening, and detach cleanup. `NativeLifecycle` also
+reopening, and detach cleanup. It also checks the Window-menu entry and short tab title, Select
+framing (and switching pilot while piloting), the save status, plain visibility wording, per-tile
+subject status and the summary, the editor-preview toggle, camera-list thumbnails and their
+staleness, and reopening a saved set through the setup protocol, including the reply shape older
+hosts receive. Screenshots of each panel state are saved next to `panel.png`. `NativeLifecycle` also
 saves and reloads a map with a preview allocated, proving world cleanup and non-serialization of
 the transient preview actor. These tests run through `pnpm test:unreal-plugins` in an isolated host.
 The fixture is not a performance guarantee for large studio maps or final-capture fidelity.

@@ -3463,6 +3463,11 @@ int32 UUEShedBuildFixtureCommandlet::Main(const FString& Params)
 	}
 
 	bool Succeeded = true;
+	const auto RecordResult = [&Succeeded](const TCHAR* Step, bool Result)
+	{
+		if (!Result) UE_LOG(LogTemp, Error, TEXT("UE Shed fixture step failed: %s"), Step);
+		Succeeded = Result && Succeeded;
+	};
 	if (!VerifyOnly)
 	{
 		for (const FFixtureTableDefinition& Definition : Definitions)
@@ -3470,18 +3475,18 @@ int32 UUEShedBuildFixtureCommandlet::Main(const FString& Params)
 			Succeeded = GenerateTable(Definition) && Succeeded;
 		}
 		Succeeded = GenerateComposite() && Succeeded;
-		Succeeded = GenerateGameTextCorpus() && Succeeded;
+		RecordResult(TEXT("GenerateGameTextCorpus"), GenerateGameTextCorpus());
 		Succeeded = GenerateOfflineWorldMap() && Succeeded;
 		Succeeded = GenerateCameraMap() && Succeeded;
 		Succeeded = GenerateAuditTextures() && Succeeded;
 		Succeeded = GenerateBlueprintGraphFixture() && Succeeded;
-		Succeeded = GenerateSavedReviewBlueprintFixture() && Succeeded;
+		RecordResult(TEXT("GenerateSavedReviewBlueprintFixture"), GenerateSavedReviewBlueprintFixture());
 		Succeeded = GenerateAnimationFixtures() && Succeeded;
 		Succeeded = GenerateLevelSequenceFixture() && Succeeded;
 		Succeeded = GenerateNestedLevelSequenceFixture() && Succeeded;
-		Succeeded = GenerateEnhancedInputFixtures() && Succeeded;
+		RecordResult(TEXT("GenerateEnhancedInputFixtures"), GenerateEnhancedInputFixtures());
 		Succeeded = GenerateMovementGym() && Succeeded;
-		Succeeded = GenerateNativeParserFixtures() && Succeeded;
+		RecordResult(TEXT("GenerateNativeParserFixtures"), GenerateNativeParserFixtures());
 	}
 	else
 	{
@@ -3504,7 +3509,7 @@ int32 UUEShedBuildFixtureCommandlet::Main(const FString& Params)
 	FString NativeEvidenceDirectory;
 	if (!FParse::Value(*Params, TEXT("NativeParserEvidence="), NativeEvidenceDirectory))
 		NativeEvidenceDirectory = FPaths::ProjectSavedDir() / TEXT("NativeParserEvidence");
-	Succeeded = WriteNativeParserEvidence(NativeEvidenceDirectory) && Succeeded;
+	RecordResult(TEXT("WriteNativeParserEvidence"), WriteNativeParserEvidence(NativeEvidenceDirectory));
 
 	UE_LOG(LogTemp, Display, TEXT("UE Shed fixture %s %s"),
 		VerifyOnly ? TEXT("verification") : TEXT("generation"),

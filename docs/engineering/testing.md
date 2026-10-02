@@ -179,7 +179,7 @@ child processes, so those entry points can appear uncovered even when their exte
 Read coverage together with `pnpm test:e2e`, not as a replacement for it.
 
 Real Unreal verification remains an explicit, heavier local lane because it builds the fixture
-plugins, runs commandlets, and regenerates fixture content before verifying it:
+plugins and runs fresh commandlets against committed fixture content:
 
 ```powershell
 pnpm check:unreal

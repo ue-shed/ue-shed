@@ -1,5 +1,13 @@
 # @ue-shed/niagara
 
+## 0.9.0
+
+### Patch Changes
+
+- Ignore invisible half-float background variation during native camera fitting so it does not
+  falsely reject auto-fit previews as clipped at the image edge.
+- @ue-shed/engine@0.9.0
+
 ## 0.8.0
 
 ### Patch Changes

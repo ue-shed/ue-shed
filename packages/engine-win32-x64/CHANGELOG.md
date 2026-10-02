@@ -1,5 +1,7 @@
 # @ue-shed/engine-win32-x64
 
+## 0.9.0
+
 ## 0.8.0
 
 ### Minor Changes

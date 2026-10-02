@@ -1,6 +1,6 @@
 {
 	"name": "@ue-shed/blueprints",
-	"version": "0.8.0",
+	"version": "0.9.0",
 	"description": "Headless navigation, search and visualization data for saved Unreal Blueprint graphs.",
 	"homepage": "https://github.com/ue-shed/ue-shed#readme",
 	"bugs": {
@@ -36,7 +36,7 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@ue-shed/protocol": "workspace:0.8.0"
+		"@ue-shed/protocol": "workspace:0.9.0"
 	},
 	"devDependencies": {
 		"effect": "catalog:"

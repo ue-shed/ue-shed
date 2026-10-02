@@ -249,7 +249,9 @@ if (action === "launch") {
 if (action === "launch-authoring") {
 	launchAuthoring(tools, pluginDescriptors);
 }
-if (action === "generate" || action === "verify" || action === "conformance") {
+// Pinned conformance evidence includes saved GUIDs and property-bag identities. Regeneration
+// belongs to the explicit generate command and the disposable engine matrix, not verification.
+if (action === "generate") {
 	runCommandlet(tools, pluginDescriptors);
 }
 if (action === "scenario") {

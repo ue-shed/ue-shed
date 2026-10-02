@@ -576,7 +576,7 @@
 		"tracks": ["root", "joint"],
 		"curves": [
 			{
-				"name": "Intensity",
+				"name": "intensity",
 				"keys": 3
 			}
 		],

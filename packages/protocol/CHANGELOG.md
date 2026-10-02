@@ -1,5 +1,43 @@
 # @ue-shed/protocol
 
+## 0.9.0
+
+### Minor Changes
+
+- a3b58fd: Add opt-in `renderer.editorPreviews` to camera render policies. When true, viewport and
+  SceneCapture renders show child actors that ChildActorComponents spawn for editor-only owners,
+  such as spawn-volume previews, while the owners and other editor-only content stay hidden. The
+  plugin restores the original editor-only flags when the session ends, fails or its world is
+  cleaned up, and saves never write the changed flag. Renderers report `editorPreviews` support
+  in their capabilities; frame evidence records how many child actors were shown. Older plugins
+  reject the field, so the renderer reports `unsupported_capability` before opening a session.
+- f69d878: Let the native camera panel reopen a saved set for its selected subject. `makeCameraSetupHost`
+  accepts optional `open` and `sets` callbacks; with both, each setup poll negotiates `reopen` and
+  lists the host's saved sets (`CameraSetupSavedSet`, built with `cameraSetupSavedSet`), and the host
+  opens a set when the panel asks. The camera-authoring/v1 setup contract gains optional `reopen`,
+  `sets`, `canOpen`, `open`, `selection.actorGuid` and the `setup_open` request. The bridge only adds
+  reply fields for hosts that sent `reopen: true`, so older hosts and older plugins are unaffected.
+- b8c7623: Add saved Blueprint and Sequencer review through the public reader, CLI, and Workbench:
+  typed Level Sequence reads, reference inventory and resolution, and bounded comparisons with
+  explicit incomplete evidence. Validate richer Blueprint graphs and regenerated sequences on
+  Unreal 5.7 and 5.8. Include native property-bag decoding and saved animation summaries.
+- 679d972: Decode boolean container bytes correctly and expose saved bool, integer, byte/enum, and visibility
+  channels through Level Sequence schema 5. Preserve omitted defaults, channel flags and enum references;
+  extend native/WASM, comparison, and Unreal 5.7/5.8 conformance.
+- e5c5811: Expose shared Sequencer settings, scoped camera cuts, binding metadata and saved string/object
+  channels through schema 6. Add Blueprint variable declarations, saved CDO overrides and component
+  hierarchies/templates through schema 2. Publish bounded contracts and update native/WASM readers,
+  reference navigation, comparisons and viewers with independent UE 5.7/5.8 fixture conformance.
+
+    Decode source-checked inherited actor/component native records, including saved construction-script
+    member references and conditional scene flags. Expose native evidence separately from tagged
+    properties and include it in Blueprint comparisons/navigation and Sequencer reference coverage.
+
+- 3d4c6b1: Keep saved FText translator notes. Keyed text and StringTable entries saved by UE 5.8 expose
+  `dev_notes` in `readSavedAsset` inspection output and compact text extraction, and Game Text
+  exposes them on each `TextOccurrence.devNotes`, separate from the source string and localization
+  identity. Older packages and empty notes produce `""`. `readSavedTable` text cells are unchanged.
+
 ## 0.8.0
 
 ### Minor Changes

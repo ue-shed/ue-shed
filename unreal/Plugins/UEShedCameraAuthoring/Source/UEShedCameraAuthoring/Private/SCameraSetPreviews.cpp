@@ -1,4 +1,5 @@
 #include "SCameraSetPreviews.h"
+#include "CameraShotStatus.h"
 #include "Engine/Texture2D.h"
 #include "Serialization/JsonSerializer.h"
 #include "UEShedCameraAuthoringBridge.h"
@@ -91,9 +92,7 @@ void SCameraSetPreviews::Construct(const FArguments &Args)
                 if (Review.IsRunning())
                     return FText::FromString(
                         FString::Printf(TEXT("Rendering %d / %d cameras…"), Review.Completed(), Review.Num()));
-                return FText::FromString(FString::Printf(TEXT("Review complete · %d ready · %d unavailable"),
-                                                         Review.Num() - Review.Failed(),
-                                                         Errors.Num() + Review.Failed()));
+                return FText::FromString(Summary());
             })] +
             SVerticalBox::Slot().FillHeight(
                 1)[SNew(SScrollBox) +
@@ -104,7 +103,9 @@ void SCameraSetPreviews::Construct(const FArguments &Args)
                                 .AutoWrapText(true)
                                 .Text(FText::FromString(TEXT(
                                     "640 × 360 SceneCapture snapshots using the project renderer. Not final-capture "
-                                    "evidence; viewport rendering may differ. Refresh after scene changes.")))]]];
+                                    "evidence; viewport rendering may differ. Subject visibility is measured from "
+                                    "rendered depth, so translucent subjects can read as not rendered. Refresh after "
+                                    "scene changes.")))]]];
     Poll(0, 0);
     RegisterActiveTimer(.2f, FWidgetActiveTimerDelegate::CreateSP(this, &SCameraSetPreviews::Poll));
 }
@@ -115,6 +116,8 @@ void SCameraSetPreviews::Clear()
     if (Grid)
         Grid->ClearChildren();
     Errors.Reset();
+    Order.Reset();
+    Subject.Reset();
     Snapshot.Reset();
     SnapshotKey.Reset();
     Identity.Reset();
@@ -188,6 +191,7 @@ void SCameraSetPreviews::RenderAll()
     Review.Reset();
     Grid->ClearChildren();
     Errors.Reset();
+    Order.Reset();
     Failure.Reset();
     Initial = false;
     Stale = false;
@@ -196,10 +200,14 @@ void SCameraSetPreviews::RenderAll()
     TArray<FUEShedCameraPreviewView> Views;
     const auto Policy = Child(Panel, TEXT("renderPolicy")), Renderer = Child(Policy, TEXT("renderer")),
                Exposure = Child(Policy, TEXT("exposure"));
+    // The same subject and editor-preview policy the host capture uses, so tiles show what it will.
+    Subject = UEShedResolveCameraActor(Proxy->GetWorld(), Child(Arrangement, TEXT("subject")));
+    EditorPreviews = Flag(Renderer, TEXT("editorPreviews"));
     for (const auto &Definition : Cameras)
     {
         const FString Id = Str(Definition->AsObject(), TEXT("id"));
         AddCamera(Id, Str(Definition->AsObject(), TEXT("displayName")));
+        Order.Add(Id);
         const auto Resolved = Items(Panel, TEXT("cameras"));
         const auto *Match =
             Resolved.FindByPredicate([&Id](const auto &Value) { return Str(Value->AsObject(), TEXT("id")) == Id; });
@@ -227,6 +235,8 @@ void SCameraSetPreviews::RenderAll()
         double Lod = 1;
         Renderer->TryGetNumberField(TEXT("lodDistanceScale"), Lod);
         View.LodDistanceScale = Lod;
+        View.Subject = Subject;
+        View.EditorPreviews = EditorPreviews;
         double EV = 0;
         if (Str(Exposure, TEXT("mode")) == TEXT("fixed_ev100"))
         {
@@ -271,14 +281,59 @@ void SCameraSetPreviews::AddCamera(const FString &Id, const FString &Label)
                Brush->SetResourceObject(Review.Texture(Id));
                return Review.Texture(Id) ? &Brush.Get() : nullptr;
            })]] +
-           SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).AutoWrapText(true).Text_Lambda([this, Id] {
-               if (const auto *Error = Errors.Find(Id))
-                   return FText::FromString(*Error);
-               const FString Error = Review.Error(Id);
-               return FText::FromString(!Error.IsEmpty()     ? Error
-                                        : Review.Texture(Id) ? TEXT("Ready")
-                                                             : TEXT("Queued…"));
-           })]]]];
+           SVerticalBox::Slot().AutoHeight()[SNew(STextBlock)
+               .AutoWrapText(true)
+               .ColorAndOpacity_Lambda([this, Id] {
+                   const bool Rendered = !Errors.Contains(Id) && Review.Error(Id).IsEmpty() && Review.Texture(Id);
+                   return FSlateColor(Rendered ? Shot(Id).Color : FLinearColor(.6f, .6f, .6f));
+               })
+               .ToolTipText_Lambda([this, Id] {
+                   return FText::FromString(Review.Texture(Id) ? Shot(Id).Detail : FString());
+               })
+               .Text_Lambda([this, Id] {
+                   if (const auto *Error = Errors.Find(Id))
+                       return FText::FromString(*Error);
+                   const FString Error = Review.Error(Id);
+                   return FText::FromString(!Error.IsEmpty()     ? Error
+                                            : Review.Texture(Id) ? Shot(Id).Label
+                                                                 : TEXT("Queued…"));
+               })]]]];
+}
+
+FCameraShotStatus SCameraSetPreviews::Shot(const FString &Id) const
+{
+    return DescribeShot(Review.SubjectVisibility(Id), Subject.IsValid(), EditorPreviews);
+}
+
+FString SCameraSetPreviews::Summary() const
+{
+    // Only shots that show the subject count as good; the rest say what is wrong.
+    using ECategory = FCameraShotStatus::ECategory;
+    int32 Counts[4] = {0, 0, 0, 0}, Rendered = 0;
+    for (const auto &Id : Order)
+        if (Review.Texture(Id))
+        {
+            ++Rendered;
+            ++Counts[int32(Shot(Id).Category)];
+        }
+    TArray<FString> Parts;
+    if (!Subject.IsValid())
+        Parts.Add(FString::Printf(TEXT("%d rendered · subject not found in the level, so shots weren't checked"),
+                                  Rendered));
+    else
+    {
+        if (const int32 N = Counts[int32(ECategory::Shows)])
+            Parts.Add(FString::Printf(TEXT("%d %s the subject"), N, N == 1 ? TEXT("shows") : TEXT("show")));
+        if (const int32 N = Counts[int32(ECategory::Partly)])
+            Parts.Add(FString::Printf(TEXT("%d partly %s it"), N, N == 1 ? TEXT("shows") : TEXT("show")));
+        if (const int32 N = Counts[int32(ECategory::Missing)])
+            Parts.Add(FString::Printf(TEXT("%d %s show it"), N, N == 1 ? TEXT("doesn't") : TEXT("don't")));
+        if (const int32 N = Counts[int32(ECategory::Unchecked)])
+            Parts.Add(FString::Printf(TEXT("%d not checked"), N));
+    }
+    if (const int32 Unavailable = Errors.Num() + Review.Failed())
+        Parts.Add(FString::Printf(TEXT("%d couldn't render"), Unavailable));
+    return TEXT("Review complete · ") + FString::Join(Parts, TEXT(" · "));
 }
 
 EActiveTimerReturnType SCameraSetPreviews::Draw(double Time, float Delta)

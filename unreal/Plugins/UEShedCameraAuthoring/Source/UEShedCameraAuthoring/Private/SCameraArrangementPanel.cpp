@@ -756,6 +756,16 @@ void SCameraArrangementPanel::Construct(const FArguments &Args)
         [Button(TEXT("Apply fixed"), [this] { ApplyExposure(false); })];
     Add(Text(TEXT("Lower EV brightens the image. Range: -20 to 30. Exposure applies to the whole set.")));
     Add(Button(TEXT("Restore default (automatic exposure)"), [this] { ApplyExposure(true); }));
+    Add(SNew(SCheckBox)
+        .ToolTipText(FText::FromString(TEXT("Some actors only show an editor preview of what they will spawn, for example a spawn volume. "
+                                            "Turn this on to include those previews in saved shots and in See previews. Other editor-only content stays hidden.")))
+        .IsEnabled_Lambda([this] { return Ready(); })
+        .IsChecked_Lambda([this] {
+            return Flag(Child(Child(Panel, TEXT("renderPolicy")), TEXT("renderer")), TEXT("editorPreviews"))
+                ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+        })
+        .OnCheckStateChanged_Lambda([this](ECheckBoxState State) { SetEditorPreviews(State == ECheckBoxState::Checked); })
+        [Text(TEXT("Show editor-only previews in shots (for example what a spawn volume spawns)"))]);
     Add(SNew(STextBlock).AutoWrapText(true).Text_Lambda([this] {
         auto Policy = Child(Panel, TEXT("renderPolicy"));
         const auto Renderer = Child(Policy, TEXT("renderer")), Exposure = Child(Policy, TEXT("exposure"));
@@ -767,7 +777,8 @@ void SCameraArrangementPanel::Construct(const FArguments &Args)
             ExposureLabel = FString::Printf(TEXT("Fixed EV100: %.2f"), EV);
         else if (Str(Exposure, TEXT("mode")) == TEXT("meter_once"))
             ExposureLabel = TEXT("Meter once, then hold exposure");
-        return FText::FromString(Backend + TEXT(" · ") + ExposureLabel);
+        const bool Previews = Flag(Renderer, TEXT("editorPreviews"));
+        return FText::FromString(Backend + TEXT(" · ") + ExposureLabel + (Previews ? TEXT(" · Editor-only previews shown") : TEXT("")));
     }));
     Section(TEXT("Portable recipes"));
     Add(Input(TEXT("Recipe file"), RecipePath));
@@ -867,9 +878,8 @@ void SCameraArrangementPanel::CaptureSelection(const TCHAR *List)
     Submit(C);
 }
 
-void SCameraArrangementPanel::ApplyExposure(bool Automatic)
+SCameraArrangementPanel::FObject SCameraArrangementPanel::EditablePolicy() const
 {
-    if (!Automatic && (!FMath::IsFinite(ExposureEV) || ExposureEV < -20 || ExposureEV > 30)) return;
     auto Policy = Child(Panel, TEXT("renderPolicy"));
     if (!Policy->HasField(TEXT("renderer")))
     {
@@ -883,6 +893,12 @@ void SCameraArrangementPanel::ApplyExposure(bool Automatic)
         FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Json(Policy)), Copy);
         Policy = Copy;
     }
+    return Policy;
+}
+void SCameraArrangementPanel::ApplyExposure(bool Automatic)
+{
+    if (!Automatic && (!FMath::IsFinite(ExposureEV) || ExposureEV < -20 || ExposureEV > 30)) return;
+    auto Policy = EditablePolicy();
     auto Exposure = Obj();
     Exposure->SetStringField(TEXT("mode"), Automatic ? TEXT("project_auto") : TEXT("fixed_ev100"));
     if (!Automatic)
@@ -891,6 +907,20 @@ void SCameraArrangementPanel::ApplyExposure(bool Automatic)
         Exposure->SetStringField(TEXT("compensation"), TEXT("project"));
     }
     Policy->SetObjectField(TEXT("exposure"), Exposure);
+    auto C = Command(TEXT("render_policy"));
+    C->SetObjectField(TEXT("policy"), Policy);
+    Submit(C);
+}
+void SCameraArrangementPanel::SetEditorPreviews(bool Enabled)
+{
+    // renderer.editorPreviews: captures and these previews reveal editor-only preview children.
+    auto Policy = EditablePolicy();
+    auto Renderer = Child(Policy, TEXT("renderer"));
+    if (Enabled)
+        Renderer->SetBoolField(TEXT("editorPreviews"), true);
+    else
+        Renderer->RemoveField(TEXT("editorPreviews"));
+    Policy->SetObjectField(TEXT("renderer"), Renderer);
     auto C = Command(TEXT("render_policy"));
     C->SetObjectField(TEXT("policy"), Policy);
     Submit(C);

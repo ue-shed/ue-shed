@@ -4,6 +4,7 @@
 #include "Widgets/SCompoundWidget.h"
 
 class SWrapBox;
+struct FCameraShotStatus;
 
 /** Optional, on-demand review contact sheet. Never owns editing or approval. */
 class SCameraSetPreviews : public SCompoundWidget
@@ -25,6 +26,11 @@ class SCameraSetPreviews : public SCompoundWidget
     TAttribute<bool> PreviewVisible;
     TWeakPtr<FActiveTimerHandle> RenderTimer;
     TMap<FString, FString> Errors;
+    TArray<FString> Order;
+    TWeakObjectPtr<AActor> Subject;
+    bool EditorPreviews = false;
+    FCameraShotStatus Shot(const FString &Id) const;
+    FString Summary() const;
     FString Identity, SnapshotKey, Message, Failure, Title = TEXT("Camera previews");
     bool Initial = true, Stale = false, Synced = false, Closed = false;
     float TileWidth = 280;

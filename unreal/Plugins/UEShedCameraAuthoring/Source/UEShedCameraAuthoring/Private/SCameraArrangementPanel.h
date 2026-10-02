@@ -57,6 +57,8 @@ class SCameraArrangementPanel : public SCompoundWidget
     double ExposureEV = 10;
     FString ExposureKey;
     void ApplyExposure(bool Automatic);
+    FObject EditablePolicy() const;
+    void SetEditorPreviews(bool Enabled);
     double Count = 4, Start = 0, Span = 360, Dolly = 100, Height = 0, AimX = 0, AimY = 0, AimZ = 0;
     bool Retain = true, SubjectOrientation = false, RemoveRetired = false, Preview = true;
     bool Ready() const;

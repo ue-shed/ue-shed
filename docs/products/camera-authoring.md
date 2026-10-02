@@ -396,10 +396,43 @@ PIE release transient review resources. Actual completion time depends on editor
 These are review snapshots, not final-capture evidence: bounded settling is not a convergence
 guarantee, and SceneCapture may differ from the editor viewport. Project automatic exposure
 applies unless fixed EV100 is selected; meter-once exposure remains a final-capture feature.
-Resolved per-camera exclusions, fog, LOD scale, pose, and FOV apply. Pure + Authored shows the
-Authored preview, not a paired capture comparison. Unsupported visibility is shown as an error
-instead of displaying an incorrect image. Previewing never moves the Level Editor viewport
+Resolved per-camera exclusions, fog, LOD scale, pose, and FOV apply. Both shows the
+Without hidden actors preview, not a paired capture comparison. Unsupported visibility is shown as an
+error instead of displaying an incorrect image. Previewing never moves the Level Editor viewport
 or changes persistent actor visibility.
+
+### Does each shot show the subject?
+
+Every tile says whether its shot shows the set's subject, and the summary counts only those shots
+as good, for example "Review complete · 1 shows the subject · 1 partly shows it · 14 don't show
+it". After a snapshot settles, the review measures the subject on the same capture with the review
+capture's own depth comparison (`depth_compare`, at most 320 × 180): a depth pass of the scene, with
+the same per-camera exclusions, against a depth pass of only the subject and its child actors.
+The visible fraction is classified with the same bounds as ray classification:
+
+| Tile label                         | Measurement                                                         |
+| ---------------------------------- | ------------------------------------------------------------------- |
+| Subject visible                    | at least 95% of the subject's rendered pixels are in front          |
+| Subject cut off by the frame edge  | as above, but part of the subject's bounds lies outside the frame   |
+| Subject partly hidden · N% visible | between 5% and 95%                                                  |
+| Subject blocked from view          | at most 5%; the tooltip suggests hiding the blocker or moving       |
+| Subject not in the shot            | the bounds are behind the camera or entirely outside the frame      |
+| Subject didn't render              | inside the frame, but the subject drew no depth                     |
+| Subject not found in the level     | the arrangement's subject locator does not resolve; nothing checked |
+
+"Didn't render" covers hidden, translucent, non-depth-writing and editor-only subjects. Bounds that
+cross the camera plane are still measured from rendered depth. These remain snapshot evidence;
+final capture records its own visibility.
+
+The previews honour the set's `renderer.editorPreviews`, using the shared renderer's
+editor-preview reveal: child actors that ChildActorComponents spawn for editor-only owners (for
+example a spawn volume's "what spawns here" actor) are revealed only while those snapshots render
+and restored afterwards, and saves never see the changed flag. A designer therefore sees the same
+subject the host's capture will. When a subject didn't render and editor previews are off, the tile
+says to turn on **Show editor-only previews in shots** on the Capture tab, which sets
+`renderer.editorPreviews` in the set's render policy through the ordinary `render_policy` command.
+Hosts need no change; older plugins without the `editorPreviews` capability already make
+`CameraRenderer` report `unsupported_capability` before capture.
 
 Shared framing applies only to the open actor set; individual cameras retain explicit
 exceptions and manual poses. Selection and save status track the host panel snapshot.

@@ -17,6 +17,7 @@
 #include "Serialization/JsonSerializer.h"
 #include "UEShedCameraAuthoringBridge.h"
 #include "UEShedCameraAuthoringTab.h"
+#include "CameraShotStatus.h"
 #include "UEShedCameraVisibility.h"
 #include "LevelEditorViewport.h"
 #include "Components/StaticMeshComponent.h"
@@ -213,6 +214,38 @@ bool FUEShedCameraPreviewPanelTest::RunTest(const FString &Parameters)
         Effective.Add(MakeShared<FJsonValueObject>(Resolved));
     }
     Arrangement->SetArrayField(TEXT("cameras"), Cameras);
+    {
+        // Three shots around the subject: clear, half covered by a post, and behind a wall. The
+        // other cameras look at the floor, so the subject is not in their shots.
+        const auto Place = [&](int32 Index, const FVector &Offset, double Yaw) {
+            auto Pose = Effective[Index]->AsObject()->GetObjectField(TEXT("pose"));
+            auto Location = MakeShared<FJsonObject>(), Rotation = MakeShared<FJsonObject>();
+            Location->SetNumberField(TEXT("x"), SubjectLocation.X + Offset.X);
+            Location->SetNumberField(TEXT("y"), SubjectLocation.Y + Offset.Y);
+            Location->SetNumberField(TEXT("z"), SubjectLocation.Z + Offset.Z);
+            Rotation->SetNumberField(TEXT("pitch"), 0);
+            Rotation->SetNumberField(TEXT("yaw"), Yaw);
+            Rotation->SetNumberField(TEXT("roll"), 0);
+            Pose->SetObjectField(TEXT("location"), Location);
+            Pose->SetObjectField(TEXT("rotation"), Rotation);
+        };
+        Place(0, FVector(0, 800, 0), -90);
+        Place(1, FVector(0, -800, 0), 90);
+        Place(2, FVector(-800, 0, 0), 0);
+    }
+    const auto Blocker = [&](const FVector &Offset, const FVector &Scale) {
+        auto *Actor = World->SpawnActor<AStaticMeshActor>(SubjectLocation + Offset, FRotator::ZeroRotator, Spawn);
+        Actor->GetStaticMeshComponent()->SetStaticMesh(Cube);
+        Actor->SetActorScale3D(Scale);
+        return Actor;
+    };
+    auto *Wall = Blocker(FVector(-400, 0, 0), FVector(.2, 6, 6));
+    auto *Post = Blocker(FVector(50, -400, 0), FVector(1, .2, 4));
+    ON_SCOPE_EXIT
+    {
+        World->DestroyActor(Wall);
+        World->DestroyActor(Post);
+    };
     State->SetObjectField(TEXT("arrangement"), Arrangement);
     State->SetStringField(TEXT("activeCameraId"), TEXT("camera-0"));
     State->SetArrayField(TEXT("cameras"), Effective);
@@ -327,6 +360,17 @@ bool FUEShedCameraPreviewPanelTest::RunTest(const FString &Parameters)
     Panel->Refresh(1.2, .1f);
     for (auto *Camera : FUEShedCameraAuthoringBridge::Cameras())
         TestFalse(TEXT("Restore removes native exposure overrides"), Camera->GetCameraComponent()->PostProcessSettings.bOverride_AutoExposureMinBrightness != 0);
+    Panel->SetEditorPreviews(true);
+    auto PreviewsEvent = FUEShedCameraAuthoringBridge::InspectActive()->GetObjectField(TEXT("panelEvent"));
+    auto PreviewsPolicy = PreviewsEvent->GetObjectField(TEXT("action"))->GetObjectField(TEXT("command"))->GetObjectField(TEXT("policy"));
+    TestTrue(TEXT("The Capture tab turns on editor-only previews for the set"),
+             PreviewsPolicy->GetObjectField(TEXT("renderer"))->GetBoolField(TEXT("editorPreviews")));
+    TestEqual(TEXT("Turning on editor-only previews keeps the exposure"),
+              PreviewsPolicy->GetObjectField(TEXT("exposure"))->GetStringField(TEXT("mode")), FString(TEXT("project_auto")));
+    State->SetObjectField(TEXT("renderPolicy"), PreviewsPolicy);
+    Request->SetStringField(TEXT("acknowledgeEvent"), PreviewsEvent->GetStringField(TEXT("id")));
+    FUEShedCameraAuthoringBridge::Execute(Request);
+    Panel->Refresh(1.25, .1f);
     Panel->InspectorPage = 2;
     FSlateApplication::Get().Tick();
     Screenshot(Panel, TEXT("capture.png"));
@@ -584,6 +628,17 @@ bool FUEShedCameraPreviewPanelTest::RunTest(const FString &Parameters)
     for (int32 I = 0; I < 16; ++I)
         TestNotNull(TEXT("Every camera has a review snapshot"),
                     Previews->Review.Texture(FString::Printf(TEXT("camera-%d"), I)));
+    {
+        // Only shots that show the subject count as good, whatever else rendered.
+        using ECategory = FCameraShotStatus::ECategory;
+        TestTrue(TEXT("Previews follow the set's editor-only preview policy"), Previews->EditorPreviews);
+        TestEqual(TEXT("A clear shot shows the subject"), int32(Previews->Shot(TEXT("camera-0")).Category), int32(ECategory::Shows));
+        TestEqual(TEXT("A half-covered shot partly shows the subject"), int32(Previews->Shot(TEXT("camera-1")).Category), int32(ECategory::Partly));
+        TestEqual(TEXT("A walled-off shot says the subject is blocked"), Previews->Shot(TEXT("camera-2")).Label, FString(TEXT("Subject blocked from view")));
+        TestEqual(TEXT("A floor shot says the subject is not in it"), Previews->Shot(TEXT("camera-3")).Label, FString(TEXT("Subject not in the shot")));
+        TestEqual(TEXT("The summary stops calling every rendered shot ready"), Previews->Summary(),
+                  FString(TEXT("Review complete · 1 shows the subject · 1 partly shows it · 14 don't show it")));
+    }
     CollectGarbage(RF_NoFlags);
     TestNotNull(TEXT("Snapshot textures survive garbage collection"), Previews->Review.Texture(TEXT("camera-0")));
     const auto *FirstTexture = Previews->Review.Texture(TEXT("camera-0"));

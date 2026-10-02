@@ -687,7 +687,10 @@ bool FUEShedNiagaraCapture::FitCaptureCamera(FString& OutError)
 				PeakCoverage = FMath::Max(PeakCoverage, Difference);
 			}
 		}
-		const float CoverageThreshold = FMath::Max(0.000001f, PeakCoverage * 0.01f);
+		// Half-float background noise can cover the frame when the effect is very small.
+		// Keep the floor well below the final frame's 0.01 activity threshold, while avoiding
+		// treating invisible background variation as clipped particles.
+		const float CoverageThreshold = FMath::Max(0.0001f, PeakCoverage * 0.01f);
 		for (int32 Pixel = 0; Pixel < Coverage.Num(); ++Pixel)
 		{
 			if (Coverage[Pixel] < CoverageThreshold)

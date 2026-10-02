@@ -1,5 +1,44 @@
 # @ue-shed/uasset-win32-x64
 
+## 0.9.0
+
+### Minor Changes
+
+- b8c7623: Add saved Blueprint and Sequencer review through the public reader, CLI, and Workbench:
+  typed Level Sequence reads, reference inventory and resolution, and bounded comparisons with
+  explicit incomplete evidence. Validate richer Blueprint graphs and regenerated sequences on
+  Unreal 5.7 and 5.8. Include native property-bag decoding and saved animation summaries.
+- 679d972: Decode boolean container bytes correctly and expose saved bool, integer, byte/enum, and visibility
+  channels through Level Sequence schema 5. Preserve omitted defaults, channel flags and enum references;
+  extend native/WASM, comparison, and Unreal 5.7/5.8 conformance.
+- e5c5811: Expose shared Sequencer settings, scoped camera cuts, binding metadata and saved string/object
+  channels through schema 6. Add Blueprint variable declarations, saved CDO overrides and component
+  hierarchies/templates through schema 2. Publish bounded contracts and update native/WASM readers,
+  reference navigation, comparisons and viewers with independent UE 5.7/5.8 fixture conformance.
+
+    Decode source-checked inherited actor/component native records, including saved construction-script
+    member references and conditional scene flags. Expose native evidence separately from tagged
+    properties and include it in Blueprint comparisons/navigation and Sequencer reference coverage.
+
+- 3d4c6b1: Decode saved GameplayTagContainer and common math properties through the shared native layouts,
+  and expose saved scalar float/double and 3D transform channels through Level Sequence schema 4.
+  Each `numeric_channels` entry keeps section-local frame keys, values, interpolation and tangent
+  modes, weighted tangents, nullable defaults, extrapolation, tick resolution and ShowCurve; indexed
+  paths such as `Translation[0]` preserve axis identity. Missing channels and unsupported sections
+  remain explicit coverage gaps. Consumers upgrading from schema 3 must accept the new track kinds
+  and required channel arrays.
+- 3d4c6b1: Keep saved FText translator notes. Keyed text and StringTable entries saved by UE 5.8 expose
+  `dev_notes` in `readSavedAsset` inspection output and compact text extraction, and Game Text
+  exposes them on each `TextOccurrence.devNotes`, separate from the source string and localization
+  identity. Older packages and empty notes produce `""`. `readSavedTable` text cells are unchanged.
+
+### Patch Changes
+
+- 8de1090: Export bounded DataTable authoring snapshots from the portable inspection projection through
+  `extractAuthoringTable`. Keep native authoring JSON unchanged and compare every authoring fixture
+  between the native protocol and WASM. Add the read-only website Data Tables viewer and inspector
+  handoff using the shared grid and Patterns components.
+
 ## 0.8.0
 
 ## 0.7.1

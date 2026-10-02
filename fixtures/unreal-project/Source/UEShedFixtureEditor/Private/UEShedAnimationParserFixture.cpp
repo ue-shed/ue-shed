@@ -80,7 +80,8 @@ TSharedPtr<FJsonObject> AnimationParserFixtureEvidence()
 	for (const FFloatCurve& Curve : Model->GetFloatCurves())
 	{
 		auto Entry = MakeShared<FJsonObject>();
-		Entry->SetStringField(TEXT("name"), Curve.GetName().ToString());
+		// FName identity is case-insensitive; display casing depends on prior engine loads.
+		Entry->SetStringField(TEXT("name"), Curve.GetName().ToString().ToLower());
 		Entry->SetNumberField(TEXT("keys"), Curve.FloatCurve.GetNumKeys());
 		Curves.Add(MakeShared<FJsonValueObject>(Entry));
 	}

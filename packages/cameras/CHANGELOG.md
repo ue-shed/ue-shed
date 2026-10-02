@@ -1,5 +1,50 @@
 # @ue-shed/cameras
 
+## 0.9.0
+
+### Minor Changes
+
+- f5610db: Polish the native Unreal camera panel for level designers. It opens from **Window → Cameras (UE
+  Shed)** in the Level Editor section (menu search finds "camera" or "UE Shed") as a short
+  **Cameras** tab with an icon and tooltip. **Select** frames the camera with its subject, or switches
+  the pilot while piloting. **Save views** is the primary action and the footer says how many views
+  are not saved yet. Numbers and the Visibility page use plain wording ("Distance (1 = fits
+  subject)", "Margin (% per side)", "What saved shots show") instead of raw values. Every preview tile
+  and camera-list row says whether its shot shows the subject (visible, partly hidden, blocked, not in
+  the shot or didn't render), measured with the review capture's depth comparison, and the summary
+  counts only shots that show it. Previews honour `renderer.editorPreviews`, which the Capture tab can
+  now turn on. Camera-list rows show thumbnails from the same preview renders.
+- a3b58fd: Add opt-in `renderer.editorPreviews` to camera render policies. When true, viewport and
+  SceneCapture renders show child actors that ChildActorComponents spawn for editor-only owners,
+  such as spawn-volume previews, while the owners and other editor-only content stay hidden. The
+  plugin restores the original editor-only flags when the session ends, fails or its world is
+  cleaned up, and saves never write the changed flag. Renderers report `editorPreviews` support
+  in their capabilities; frame evidence records how many child actors were shown. Older plugins
+  reject the field, so the renderer reports `unsupported_capability` before opening a session.
+- f69d878: Let the native camera panel reopen a saved set for its selected subject. `makeCameraSetupHost`
+  accepts optional `open` and `sets` callbacks; with both, each setup poll negotiates `reopen` and
+  lists the host's saved sets (`CameraSetupSavedSet`, built with `cameraSetupSavedSet`), and the host
+  opens a set when the panel asks. The camera-authoring/v1 setup contract gains optional `reopen`,
+  `sets`, `canOpen`, `open`, `selection.actorGuid` and the `setup_open` request. The bridge only adds
+  reply fields for hosts that sent `reopen: true`, so older hosts and older plugins are unaffected.
+
+### Patch Changes
+
+- 78b1b48: Keep a saved `renderer.editorPreviews` when a Review capture run picks another renderer, such as
+  the high-resolution screenshot. `reviewCaptureRenderPolicy` previously replaced the whole renderer,
+  so spawn-volume previews that the saved policy showed disappeared from that run's images. A
+  per-run renderer that sets `editorPreviews` itself still wins.
+- Updated dependencies [a3b58fd]
+- Updated dependencies [f69d878]
+- Updated dependencies [b8c7623]
+- Updated dependencies [679d972]
+- Updated dependencies [e5c5811]
+- Updated dependencies [3d4c6b1]
+    - @ue-shed/protocol@0.9.0
+    - @ue-shed/unreal-connection@0.9.0
+    - @ue-shed/world@0.9.0
+    - @ue-shed/observability@0.9.0
+
 ## 0.8.0
 
 ### Minor Changes

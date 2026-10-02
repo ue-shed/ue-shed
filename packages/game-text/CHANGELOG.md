@@ -1,5 +1,22 @@
 # @ue-shed/game-text
 
+## 0.9.0
+
+### Minor Changes
+
+- 3d4c6b1: Keep saved FText translator notes. Keyed text and StringTable entries saved by UE 5.8 expose
+  `dev_notes` in `readSavedAsset` inspection output and compact text extraction, and Game Text
+  exposes them on each `TextOccurrence.devNotes`, separate from the source string and localization
+  identity. Older packages and empty notes produce `""`. `readSavedTable` text cells are unchanged.
+
+### Patch Changes
+
+- Updated dependencies [b8c7623]
+- Updated dependencies [679d972]
+- Updated dependencies [e5c5811]
+- Updated dependencies [3d4c6b1]
+    - @ue-shed/unreal-assets@0.9.0
+
 ## 0.8.0
 
 ### Patch Changes

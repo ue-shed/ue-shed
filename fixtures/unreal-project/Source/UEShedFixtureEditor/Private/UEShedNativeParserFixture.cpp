@@ -63,7 +63,9 @@ bool Save(UObject* Asset)
 	FSavePackageArgs Args;
 	Args.TopLevelFlags = RF_Public | RF_Standalone;
 	Args.SaveFlags = SAVE_NoError;
-	return UPackage::SavePackage(Asset->GetOutermost(), Asset, *Filename, Args);
+	const bool Saved = UPackage::SavePackage(Asset->GetOutermost(), Asset, *Filename, Args);
+	if (!Saved) UE_LOG(LogTemp, Error, TEXT("Could not save native parser fixture: %s"), *Filename);
+	return Saved;
 }
 
 void FillCurve(FRichCurve& Curve, float Offset)
@@ -197,7 +199,11 @@ bool GenerateNativeParserFixtures()
 			FTransform(FQuat(FVector::UpVector, PI / 3.0), FVector(10.0, 20.0, 30.0), FVector(0.5, 1.5, 2.0)));
 	}
 	if (!Save(Skeleton)) return false;
-	if (!GenerateAnimationParserFixture(Skeleton)) return false;
+	if (!GenerateAnimationParserFixture(Skeleton))
+	{
+		UE_LOG(LogTemp, Error, TEXT("Could not generate native animation fixture"));
+		return false;
+	}
 
 	UUEShedNativeCoverageAsset* Asset = CreateAsset<UUEShedNativeCoverageAsset>(TEXT("DA_Native"));
 	FillChannel(Asset->FloatChannel);

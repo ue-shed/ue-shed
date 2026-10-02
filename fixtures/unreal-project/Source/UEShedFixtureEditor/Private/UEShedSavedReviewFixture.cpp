@@ -52,6 +52,7 @@ template <typename T> T* Node(UEdGraph* Graph, int32 X, int32 Y)
 bool GenerateSavedReviewBlueprintFixture()
 {
 	UPackage* Package = CreatePackage(PackageName);
+	Package->FullyLoad();
 	if (FindObject<UBlueprint>(Package, TEXT("BP_ReviewFixture"))) return true;
 	UBlueprint* Blueprint = FKismetEditorUtilities::CreateBlueprint(
 		ACharacter::StaticClass(), Package, TEXT("BP_ReviewFixture"), BPTYPE_Normal);

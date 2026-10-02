@@ -33,6 +33,9 @@ template<typename T> UMovieSceneSection* Section(UMovieScene* Scene, const TCHAR
 
 bool GenerateSavedSequenceFixture() {
     auto* Package = CreatePackage(PackageName);
+    Package->FullyLoad();
+    if (auto* Existing = FindObject<ULevelSequence>(Package, TEXT("LS_SavedDetails")))
+        Existing->Rename(nullptr, GetTransientPackage(), REN_DontCreateRedirectors | REN_NonTransactional);
     auto* Sequence = NewObject<ULevelSequence>(Package, TEXT("LS_SavedDetails"), RF_Public|RF_Standalone);
     FAssetRegistryModule::AssetCreated(Sequence); Sequence->Initialize();
     auto* Scene = Sequence->GetMovieScene(); Scene->SetTickResolutionDirectly(FFrameRate(24,1)); Scene->SetDisplayRate(FFrameRate(24,1)); Scene->SetPlaybackRange(0,120);

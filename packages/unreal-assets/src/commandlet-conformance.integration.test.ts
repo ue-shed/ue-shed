@@ -143,6 +143,7 @@ describe.skipIf(!executable || !evidenceDirectory)("Unreal commandlet UAsset con
 			}
 			if (property.value.identity.kind === "localized") {
 				expect(saved, property.name).toEqual({
+					dev_notes: "",
 					history: "base",
 					key: property.value.identity.key,
 					name: property.name,
@@ -190,7 +191,9 @@ describe.skipIf(!executable || !evidenceDirectory)("Unreal commandlet UAsset con
 		expect(asset.string_table_metadata).toEqual(unreal.metadata);
 		const byKey = (left: { readonly key: string }, right: { readonly key: string }) =>
 			left.key.localeCompare(right.key);
-		expect(asset.string_table_entries.toSorted(byKey)).toEqual(unreal.entries.toSorted(byKey));
+		expect(asset.string_table_entries.toSorted(byKey)).toEqual(
+			unreal.entries.map((entry) => ({ ...entry, dev_notes: "" })).toSorted(byKey)
+		);
 	});
 
 	it("decodes every level property tag that is on disk", async () => {

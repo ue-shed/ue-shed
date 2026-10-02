@@ -69,8 +69,9 @@ flowchart LR
 ```
 
 Enable `UEShedCameraAuthoring` for the reference menu, or enable only
-`UEShedCameraAuthoringBridge` for a studio's own native menu. Both are editor-only. Open **Window → UE
-Shed Camera Authoring** to create or edit a set. For creation, keep a camera setup host connected to
+`UEShedCameraAuthoringBridge` for a studio's own native menu. Both are editor-only. Open **Window →
+Cameras (UE Shed)** (in the Level Editor section; menu search finds it by "camera" or "UE Shed")
+to create or edit a set. It opens as a **Cameras** tab. For creation, keep a camera setup host connected to
 the same project (Workbench provides one in the background; its Map Review page need not be open).
 Select one subject in the viewport/Outliner, choose **Single**, **Four sides**, **Front arc**, or
 **Full orbit**, then **Create N cameras**. Count/angles and an optional name are available before creation.

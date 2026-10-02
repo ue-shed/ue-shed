@@ -16,6 +16,11 @@
 #include "SCameraSetPreviews.h"
 #include "Serialization/JsonSerializer.h"
 #include "UEShedCameraAuthoringBridge.h"
+#include "UEShedCameraAuthoringTab.h"
+#include "Framework/Docking/TabManager.h"
+#include "Widgets/Docking/SDockTab.h"
+#include "WorkspaceMenuStructure.h"
+#include "WorkspaceMenuStructureModule.h"
 #include "UObject/GarbageCollection.h"
 #include "Widgets/Layout/SWrapBox.h"
 #include "Widgets/SBoxPanel.h"
@@ -69,6 +74,30 @@ bool FUEShedCameraPreviewPanelTest::RunTest(const FString &Parameters)
         if (TestTrue(TEXT("Capture native authoring UI"), FSlateApplication::Get().TakeScreenshot(Widget, Pixels, Size)))
             TestTrue(TEXT("Save native authoring UI"), FImageUtils::SaveImageByExtension(*FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("UEShed/PreviewValidation"), Name), FImageView(Pixels.GetData(), Size.X, Size.Y)));
     };
+    {
+        // Window-menu search matches the visible label only, so both search terms must be in it.
+        const auto Spawner = FGlobalTabmanager::Get()->FindTabSpawnerFor(UEShedCameraAuthoringTab::Id());
+        if (TestTrue(TEXT("The camera panel is registered as a tab"), Spawner.IsValid()))
+        {
+            const FString MenuLabel = Spawner->GetDisplayName().ToString();
+            TestTrue(TEXT("Window menu search for 'camera' finds the panel"), MenuLabel.Contains(TEXT("camera")));
+            TestTrue(TEXT("Window menu search for 'UE Shed' finds the panel"), MenuLabel.Contains(TEXT("UE Shed")));
+            TestFalse(TEXT("The Window menu entry explains the panel"), Spawner->GetTooltipText().IsEmpty());
+            TestTrue(TEXT("The Window menu entry has an icon"), Spawner->GetIcon().IsSet());
+            TestTrue(TEXT("The Window menu lists the panel under Level Editor"),
+                     Spawner->GetParent().Get() == &WorkspaceMenu::GetMenuStructure().GetLevelEditorCategory().Get());
+        }
+        const auto Tab = FGlobalTabmanager::Get()->TryInvokeTab(UEShedCameraAuthoringTab::Id());
+        if (TestTrue(TEXT("The Window menu entry opens the panel"), Tab.IsValid()))
+        {
+            TestEqual(TEXT("The docked tab title is short"), Tab->GetTabLabel().ToString(), FString(TEXT("Cameras")));
+            FSlateApplication::Get().Tick();
+            if (const auto TabWindow = Tab->GetParentWindow())
+                Screenshot(TabWindow.ToSharedRef(), TEXT("tab.png"));
+            Tab->RequestCloseTab();
+            FSlateApplication::Get().Tick();
+        }
+    }
     Screenshot(SetupPanel, TEXT("setup.png"));
     SetupPanel->CreateFromPreset();
     auto Queued = FUEShedCameraAuthoringBridge::Execute(Poll);

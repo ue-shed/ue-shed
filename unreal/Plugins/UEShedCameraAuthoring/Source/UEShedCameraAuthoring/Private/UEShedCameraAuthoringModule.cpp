@@ -2,25 +2,32 @@
 #include "Modules/ModuleManager.h"
 #include "SCameraArrangementPanel.h"
 #include "SCameraSetPreviews.h"
-#include "ToolMenus.h"
+#include "Styling/AppStyle.h"
 #include "UEShedCameraAuthoringBridge.h"
+#include "UEShedCameraAuthoringTab.h"
 #include "Widgets/Docking/SDockTab.h"
 #include "Widgets/SWindow.h"
+#include "WorkspaceMenuStructure.h"
+#include "WorkspaceMenuStructureModule.h"
 
 class FUEShedCameraAuthoringMenuModule final : public IModuleInterface
 {
     FDelegateHandle FocusHandle;
     static FName TabId()
     {
-        return TEXT("UEShedCameraAuthoring");
+        return UEShedCameraAuthoringTab::Id();
     }
     static FName PreviewTabId()
     {
-        return TEXT("UEShedCameraPreviews");
+        return UEShedCameraAuthoringTab::PreviewId();
     }
     TSharedRef<SDockTab> Spawn(const FSpawnTabArgs &Args)
     {
-        auto Tab = SNew(SDockTab).TabRole(ETabRole::NomadTab);
+        // An explicit label keeps the docked tab short; the Window menu keeps the searchable name.
+        auto Tab = SNew(SDockTab)
+                       .TabRole(ETabRole::NomadTab)
+                       .Label(UEShedCameraAuthoringTab::Label())
+                       .ToolTipText(UEShedCameraAuthoringTab::ToolTip());
         Tab->SetContent(SNew(SCameraArrangementPanel).OnSeePreviews(FSimpleDelegate::CreateLambda([] {
             FGlobalTabmanager::Get()->TryInvokeTab(PreviewTabId());
         })));
@@ -48,39 +55,29 @@ class FUEShedCameraAuthoringMenuModule final : public IModuleInterface
         }));
         return Tab;
     }
-    void RegisterMenu()
-    {
-        FToolMenuOwnerScoped Owner(this);
-        auto *Menu = UToolMenus::Get()->ExtendMenu(TEXT("LevelEditor.MainMenu.Window"));
-        Menu->FindOrAddSection(TEXT("WindowLayout"))
-            .AddMenuEntry(
-                TabId(), FText::FromString(TEXT("UE Shed Camera Authoring")),
-                FText::FromString(TEXT("Author an actor's camera arrangement and per-view exclusions.")), FSlateIcon(),
-                FUIAction(FExecuteAction::CreateLambda([] { FGlobalTabmanager::Get()->TryInvokeTab(TabId()); })));
-    }
 
   public:
     void StartupModule() override
     {
+        // Listed in Window > Level Editor beside the Outliner and Details panels.
         FGlobalTabmanager::Get()
             ->RegisterNomadTabSpawner(TabId(), FOnSpawnTab::CreateRaw(this, &FUEShedCameraAuthoringMenuModule::Spawn))
-            .SetDisplayName(FText::FromString(TEXT("UE Shed Camera Authoring")))
-            .SetMenuType(ETabSpawnerMenuType::Hidden);
+            .SetDisplayName(UEShedCameraAuthoringTab::MenuLabel())
+            .SetTooltipText(UEShedCameraAuthoringTab::ToolTip())
+            .SetIcon(FSlateIcon(FAppStyle::GetAppStyleSetName(), UEShedCameraAuthoringTab::Icon()))
+            .SetGroup(WorkspaceMenu::GetMenuStructure().GetLevelEditorCategory());
         FGlobalTabmanager::Get()
             ->RegisterNomadTabSpawner(PreviewTabId(),
                                       FOnSpawnTab::CreateRaw(this, &FUEShedCameraAuthoringMenuModule::SpawnPreviews))
             .SetDisplayName(FText::FromString(TEXT("Camera Previews")))
+            .SetIcon(FSlateIcon(FAppStyle::GetAppStyleSetName(), UEShedCameraAuthoringTab::Icon()))
             .SetMenuType(ETabSpawnerMenuType::Hidden);
         FocusHandle = FUEShedCameraAuthoringBridge::OnEditorFocusRequested().AddLambda(
             [] { FGlobalTabmanager::Get()->TryInvokeTab(TabId()); });
-        UToolMenus::RegisterStartupCallback(
-            FSimpleMulticastDelegate::FDelegate::CreateRaw(this, &FUEShedCameraAuthoringMenuModule::RegisterMenu));
     }
     void ShutdownModule() override
     {
         FUEShedCameraAuthoringBridge::OnEditorFocusRequested().Remove(FocusHandle);
-        UToolMenus::UnRegisterStartupCallback(this);
-        UToolMenus::UnregisterOwner(this);
         if (auto Tab = FGlobalTabmanager::Get()->FindExistingLiveTab(PreviewTabId()))
             Tab->RequestCloseTab();
         FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(PreviewTabId());

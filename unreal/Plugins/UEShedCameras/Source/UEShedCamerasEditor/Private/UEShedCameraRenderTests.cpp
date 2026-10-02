@@ -19,6 +19,7 @@
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "Misc/ScopeExit.h"
+#include "StaticMeshCompiler.h"
 #include "UEShedCameraRenderSession.h"
 #include "UEShedCameraReviewLibrary.h"
 #include "UEShedEditorPreviews.h"
@@ -534,6 +535,9 @@ bool FUEShedCameraEditorPreviewsTest::RunTest(const FString &Parameters)
 		AddError(TEXT("Open a rendering editor fixture without Play or Simulate."));
 		return false;
 	}
+	// A fresh project compiles the engine cube asynchronously. Components using it get no render
+	// state until that finishes, and a blocking test never pumps the step that completes it.
+	FStaticMeshCompilingManager::Get().FinishCompilation({Cube});
 	const bool DirtyBefore = World->GetOutermost()->IsDirty();
 	FActorSpawnParameters Spawn;
 	Spawn.ObjectFlags = RF_Transient;
@@ -567,6 +571,7 @@ bool FUEShedCameraEditorPreviewsTest::RunTest(const FString &Parameters)
 	}
 	Child->GetStaticMeshComponent()->SetStaticMesh(Cube);
 	Child->SetActorScale3D(FVector(20));
+	TestNotNull(TEXT("Preview mesh is in the scene"), Child->GetStaticMeshComponent()->SceneProxy);
 	TestTrue(TEXT("Engine marks the preview child editor-only"), Child->IsEditorOnly());
 
 	// Saves must see the original flag even while a session reveals the preview.

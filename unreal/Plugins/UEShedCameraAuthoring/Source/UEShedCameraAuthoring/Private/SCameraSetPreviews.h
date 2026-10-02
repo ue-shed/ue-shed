@@ -27,6 +27,11 @@ class SCameraSetPreviews : public SCompoundWidget
     TWeakPtr<FActiveTimerHandle> RenderTimer;
     TMap<FString, FString> Errors;
     TArray<FString> Order;
+    /** Cameras handed to the review, in its order, and the inputs each was rendered from. */
+    TArray<FString> Queued;
+    TMap<FString, FString> Keys;
+    int32 Published = 0;
+    void Publish();
     TWeakObjectPtr<AActor> Subject;
     bool EditorPreviews = false;
     FCameraShotStatus Shot(const FString &Id) const;

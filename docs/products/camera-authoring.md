@@ -383,8 +383,15 @@ in a scrollable contact sheet with adjustable tile size, without four-camera pag
 Opening the review tab renders the synced set once. **Refresh all** renders it again. Completed
 images stay fixed for comparison, and camera/configuration edits mark them out of date instead
 of continuously rerendering during editing. Scene changes require an explicit refresh. Closing
-the review tab frees its images and rendering resources without ending authoring; closing the
-authoring panel ends the bridge session too.
+the review tab frees its full-size images and rendering resources without ending authoring; closing
+the authoring panel ends the bridge session too.
+
+Each row in the camera list shows that camera's latest review thumbnail and subject check, for
+example "Subject blocked from view". The thumbnail is the review's own readback downscaled to
+160 × 90, so the list never renders anything itself; before the first review a row says "No preview
+yet". A thumbnail dims and reads "out of date" once that camera's pose, hidden-actor lists, the
+render policy, output or subject change. Thumbnails survive closing the review tab and are released
+when the set closes (about 14 MB at the 256-camera limit).
 
 The reusable `FUEShedCameraPreviewReview` in `UEShedCamerasEditor` queues the set (up to the
 domain limit of 256 cameras), using one 640 × 360 SceneCapture at a time. Each camera receives

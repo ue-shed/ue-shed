@@ -639,8 +639,25 @@ bool FUEShedCameraPreviewPanelTest::RunTest(const FString &Parameters)
         TestEqual(TEXT("The summary stops calling every rendered shot ready"), Previews->Summary(),
                   FString(TEXT("Review complete · 1 shows the subject · 1 partly shows it · 14 don't show it")));
     }
+    {
+        // The camera list reuses the review's thumbnails and subject checks; it renders nothing.
+        Panel->Refresh(Start + 2.9, .2f);
+        TestNotNull(TEXT("The camera list shows each review thumbnail"), Panel->PreviewShot(TEXT("camera-0")));
+        TestEqual(TEXT("The camera list repeats the shot's subject check"), Panel->ShotLine(TEXT("camera-0")).Label,
+                  FString(TEXT("Subject visible")));
+        TestEqual(TEXT("The camera list flags shots without the subject"), Panel->ShotLine(TEXT("camera-2")).Label,
+                  FString(TEXT("Subject blocked from view")));
+        TestFalse(TEXT("Fresh thumbnails are current"), Panel->PreviewStale(TEXT("camera-0")));
+        Window->Resize(FVector2D(1000, 640));
+        FSlateApplication::Get().Tick();
+        FSlateApplication::Get().Tick();
+        Screenshot(Panel, TEXT("editing-thumbnails.png"));
+        Window->Resize(FVector2D(620, 640));
+        FSlateApplication::Get().Tick();
+    }
     CollectGarbage(RF_NoFlags);
     TestNotNull(TEXT("Snapshot textures survive garbage collection"), Previews->Review.Texture(TEXT("camera-0")));
+    TestNotNull(TEXT("Thumbnails survive garbage collection"), Panel->PreviewShot(TEXT("camera-0"))->Thumbnail.Get());
     const auto *FirstTexture = Previews->Review.Texture(TEXT("camera-0"));
     Previews->Draw(Start + 3, .02f);
     TestTrue(TEXT("Completed snapshots stay frozen"), FirstTexture == Previews->Review.Texture(TEXT("camera-0")));
@@ -658,6 +675,9 @@ bool FUEShedCameraPreviewPanelTest::RunTest(const FString &Parameters)
     FUEShedCameraAuthoringBridge::Execute(Request);
     Previews->Poll(Start + 4, .2f);
     TestTrue(TEXT("Camera edits mark snapshots out of date"), Previews->Stale);
+    Panel->Refresh(Start + 4.1, .2f);
+    TestTrue(TEXT("Camera edits mark the camera's thumbnail out of date"), Panel->PreviewStale(TEXT("camera-0")));
+    TestFalse(TEXT("Other cameras' thumbnails stay current"), Panel->PreviewStale(TEXT("camera-5")));
     TestTrue(TEXT("Editing does not silently rerender review images"),
              FirstTexture == Previews->Review.Texture(TEXT("camera-0")));
     Previews->RenderAll();
@@ -668,6 +688,7 @@ bool FUEShedCameraPreviewPanelTest::RunTest(const FString &Parameters)
     Previews->Close();
     Previews->Poll(Start + 6, .2f);
     TestEqual(TEXT("Closing mid-render releases all review resources"), Previews->Review.Num(), 0);
+    TestNotNull(TEXT("Thumbnails outlive the review tab"), Panel->PreviewShot(TEXT("camera-5")));
     TestEqual(TEXT("Closing review does not end the editing session"),
               FUEShedCameraAuthoringBridge::InspectActive()->GetStringField(TEXT("status")), FString(TEXT("ready")));
     auto Reopened = SNew(SCameraSetPreviews).PreviewVisible(false);
@@ -699,6 +720,7 @@ bool FUEShedCameraPreviewPanelTest::RunTest(const FString &Parameters)
     Reopened->Poll(Start + 7, .2f);
     TestEqual(TEXT("Detach clears review grid"), Reopened->Grid->GetChildren()->Num(), 0);
     TestEqual(TEXT("Detach releases snapshots"), Reopened->Review.Num(), 0);
+    TestNull(TEXT("Closing the set releases its thumbnails"), Panel->PreviewShot(TEXT("camera-5")));
     return true;
 }
 #endif

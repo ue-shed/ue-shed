@@ -2,6 +2,8 @@
 #include "CoreMinimal.h"
 #include "Dom/JsonObject.h"
 #include "Widgets/SCompoundWidget.h"
+#include "CameraPreviewShelf.h"
+#include "CameraShotStatus.h"
 class SVerticalBox;
 template<typename NumericType> class SNumericEntryBox;
 
@@ -92,6 +94,12 @@ class SCameraArrangementPanel : public SCompoundWidget
     FString SaveStatus() const;
     void RecipeAction(bool Export);
     void RebuildCameras();
+    /** Camera-list thumbnails and shot status, from the latest See previews run. */
+    TMap<FString, FString> ShotKeys;
+    const FCameraPreviewShelf::FShot *PreviewShot(const FString &Id) const;
+    bool PreviewStale(const FString &Id) const;
+    FCameraShotStatus ShotLine(const FString &Id) const;
+    TSharedRef<SWidget> Thumbnail(const FString &Id);
     void RebuildActors();
     // Designer-facing wording. Raw contract values never reach the UI.
     static FString SelectionSummary(int32 Count);

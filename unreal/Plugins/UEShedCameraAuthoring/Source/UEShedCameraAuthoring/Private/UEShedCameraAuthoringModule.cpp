@@ -1,3 +1,4 @@
+#include "CameraPreviewShelf.h"
 #include "Framework/Docking/TabManager.h"
 #include "Modules/ModuleManager.h"
 #include "SCameraArrangementPanel.h"
@@ -84,6 +85,7 @@ class FUEShedCameraAuthoringMenuModule final : public IModuleInterface
         if (auto Tab = FGlobalTabmanager::Get()->FindExistingLiveTab(TabId()))
             Tab->RequestCloseTab();
         FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(TabId());
+        FCameraPreviewShelf::Get().Reset();
     }
 };
 IMPLEMENT_MODULE(FUEShedCameraAuthoringMenuModule, UEShedCameraAuthoring)

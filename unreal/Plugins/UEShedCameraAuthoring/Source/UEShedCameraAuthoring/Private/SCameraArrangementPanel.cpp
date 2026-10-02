@@ -6,6 +6,10 @@
 #include "Framework/Application/SlateApplication.h"
 #include "UEShedCameraAuthoringBridge.h"
 #include "UEShedCameraVisibility.h"
+#include "CameraPreviewShelf.h"
+#include "CameraShotStatus.h"
+#include "Widgets/Images/SImage.h"
+#include "Widgets/SOverlay.h"
 #include "Editor.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SCheckBox.h"
@@ -933,6 +937,15 @@ EActiveTimerReturnType SCameraArrangementPanel::Refresh(double Time, float Delta
     if (PreviousProducer != Str(Active, TEXT("producerId"))) { Selected.Reset(); Scope = TEXT("arrangement"); RowKey.Reset(); ActorKey.Reset(); }
     Panel = Child(Active, TEXT("panel"));
     Arrangement = Child(Panel, TEXT("arrangement"));
+    // Thumbnails belong to one open set; drop them once no set is open.
+    if (Str(Active, TEXT("status")) != TEXT("ready"))
+        FCameraPreviewShelf::Get().Reset();
+    ShotKeys.Reset();
+    for (const auto &Camera : Items(Arrangement, TEXT("cameras")))
+    {
+        const FString Id = Str(Camera->AsObject(), TEXT("id"));
+        ShotKeys.Add(Id, FCameraPreviewShelf::Key(Panel, Id));
+    }
     const auto Exposure = Child(Child(Panel, TEXT("renderPolicy")), TEXT("exposure"));
     const FString NextExposureKey = Str(Active, TEXT("producerId")) + Json(Exposure);
     if (NextExposureKey != ExposureKey)
@@ -1001,6 +1014,59 @@ EActiveTimerReturnType SCameraArrangementPanel::Refresh(double Time, float Delta
     }
     return EActiveTimerReturnType::Continue;
 }
+const FCameraPreviewShelf::FShot *SCameraArrangementPanel::PreviewShot(const FString &Id) const
+{
+    return FCameraPreviewShelf::Get().Find(FCameraPreviewShelf::Session(Active), Id);
+}
+bool SCameraArrangementPanel::PreviewStale(const FString &Id) const
+{
+    const auto *Shot = PreviewShot(Id);
+    const FString *Current = ShotKeys.Find(Id);
+    return Shot && Current && *Current != Shot->Key;
+}
+FCameraShotStatus SCameraArrangementPanel::ShotLine(const FString &Id) const
+{
+    const auto *Shot = PreviewShot(Id);
+    if (!Shot)
+    {
+        FCameraShotStatus None;
+        None.Label = TEXT("No preview yet");
+        None.Detail = TEXT("See previews renders a thumbnail for every camera and checks whether each shot shows the subject.");
+        return None;
+    }
+    auto Status = DescribeShot(&Shot->Visibility, Shot->bSubjectFound, Shot->bEditorPreviews);
+    if (PreviewStale(Id))
+    {
+        Status.Label += TEXT(" · out of date");
+        Status.Detail = TEXT("This camera changed after its preview. Refresh in See previews to check it again.");
+        Status.Color = FLinearColor(.6f, .6f, .6f);
+    }
+    return Status;
+}
+TSharedRef<SWidget> SCameraArrangementPanel::Thumbnail(const FString &Id)
+{
+    // The review's own 160x90 readback; the list never renders anything itself.
+    auto Brush = MakeShared<FSlateBrush>();
+    Brush->DrawAs = ESlateBrushDrawType::Image;
+    Brush->ImageSize = FVector2D(FUEShedCameraPreviewReview::ThumbnailWidth, FUEShedCameraPreviewReview::ThumbnailHeight);
+    return SNew(SBox).WidthOverride(80).HeightOverride(45)
+        .ToolTipText_Lambda([this, Id] { return FText::FromString(ShotLine(Id).Detail); })
+        [SNew(SBorder).Padding(0).BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+            .BorderBackgroundColor(FLinearColor(0, 0, 0, .35f))
+            [SNew(SOverlay)
+                + SOverlay::Slot()[SNew(SImage)
+                    .ColorAndOpacity_Lambda([this, Id] { return FSlateColor(PreviewStale(Id) ? FLinearColor(1, 1, 1, .4f) : FLinearColor::White); })
+                    .Image_Lambda([this, Id, Brush]() -> const FSlateBrush * {
+                        const auto *Shot = PreviewShot(Id);
+                        Brush->SetResourceObject(Shot ? Shot->Thumbnail.Get() : nullptr);
+                        return Shot && Shot->Thumbnail.IsValid() ? &Brush.Get() : nullptr;
+                    })]
+                + SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center)[SNew(STextBlock)
+                    .Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
+                    .ColorAndOpacity(FSlateColor::UseSubduedForeground())
+                    .Visibility_Lambda([this, Id] { return PreviewShot(Id) ? EVisibility::Collapsed : EVisibility::HitTestInvisible; })
+                    .Text(FText::FromString(TEXT("No preview")))]]];
+}
 void SCameraArrangementPanel::RebuildCameras()
 {
     CameraRows->ClearChildren();
@@ -1022,7 +1088,14 @@ void SCameraArrangementPanel::RebuildCameras()
                                        .OnCheckStateChanged_Lambda([this, Id](ECheckBoxState S) {
                                            SetCameraSelected(Id, S == ECheckBoxState::Checked);
                                        })];
-        Row->AddSlot().FillWidth(1).VAlign(VAlign_Center).Padding(8, 0)[SNew(STextBlock).AutoWrapText(true).Text(FText::FromString(Label))];
+        Row->AddSlot().AutoWidth().VAlign(VAlign_Center).Padding(6, 0, 0, 0)[Thumbnail(Id)];
+        Row->AddSlot().FillWidth(1).VAlign(VAlign_Center).Padding(8, 0)[SNew(SVerticalBox)
+            + SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).AutoWrapText(true).Text(FText::FromString(Label))]
+            + SVerticalBox::Slot().AutoHeight().Padding(0, 2, 0, 0)[SNew(STextBlock)
+                .AutoWrapText(true).Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
+                .ColorAndOpacity_Lambda([this, Id] { return FSlateColor(ShotLine(Id).Color); })
+                .ToolTipText_Lambda([this, Id] { return FText::FromString(ShotLine(Id).Detail); })
+                .Text_Lambda([this, Id] { return FText::FromString(ShotLine(Id).Label); })]];
         auto CameraButtons = SNew(SHorizontalBox);
         CameraButtons->AddSlot().AutoWidth()[SNew(SBox)
             .ToolTipText(FText::FromString(TEXT("Select this camera and frame it with its subject in the viewport. "

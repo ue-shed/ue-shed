@@ -1,5 +1,6 @@
 #include "SCameraSetPreviews.h"
 #include "CameraShotStatus.h"
+#include "CameraPreviewShelf.h"
 #include "Engine/Texture2D.h"
 #include "Serialization/JsonSerializer.h"
 #include "UEShedCameraAuthoringBridge.h"
@@ -203,9 +204,13 @@ void SCameraSetPreviews::RenderAll()
     // The same subject and editor-preview policy the host capture uses, so tiles show what it will.
     Subject = UEShedResolveCameraActor(Proxy->GetWorld(), Child(Arrangement, TEXT("subject")));
     EditorPreviews = Flag(Renderer, TEXT("editorPreviews"));
+    Queued.Reset();
+    Published = 0;
+    Keys.Reset();
     for (const auto &Definition : Cameras)
     {
         const FString Id = Str(Definition->AsObject(), TEXT("id"));
+        Keys.Add(Id, FCameraPreviewShelf::Key(Panel, Id));
         AddCamera(Id, Str(Definition->AsObject(), TEXT("displayName")));
         Order.Add(Id);
         const auto Resolved = Items(Panel, TEXT("cameras"));
@@ -260,7 +265,11 @@ void SCameraSetPreviews::RenderAll()
             View.HiddenActors = Visibility.Hidden;
         }
         Views.Add(View);
+        Queued.Add(Id);
     }
+    // Cameras that cannot render must not keep showing an older thumbnail in the camera list.
+    for (const auto &Error : Errors)
+        FCameraPreviewShelf::Get().Remove(Identity, Error.Key);
     if (!Review.Begin(Proxy->GetWorld(), Views, Failure))
         return;
     if (!RenderTimer.IsValid() && Review.IsRunning() && PreviewVisible.Get(true))
@@ -336,6 +345,29 @@ FString SCameraSetPreviews::Summary() const
     return TEXT("Review complete · ") + FString::Join(Parts, TEXT(" · "));
 }
 
+void SCameraSetPreviews::Publish()
+{
+    // Hand each completed snapshot's thumbnail and subject check to the camera list.
+    for (; Published < Review.Completed() && Queued.IsValidIndex(Published); ++Published)
+    {
+        const FString &Id = Queued[Published];
+        auto *Thumbnail = Review.Thumbnail(Id);
+        if (!Thumbnail)
+        {
+            FCameraPreviewShelf::Get().Remove(Identity, Id);
+            continue;
+        }
+        FCameraPreviewShelf::FShot Shot;
+        Shot.Thumbnail.Reset(Thumbnail);
+        Shot.Key = Keys.FindRef(Id);
+        if (const auto *Visibility = Review.SubjectVisibility(Id))
+            Shot.Visibility = *Visibility;
+        Shot.bSubjectFound = Subject.IsValid();
+        Shot.bEditorPreviews = EditorPreviews;
+        FCameraPreviewShelf::Get().Put(Identity, Id, MoveTemp(Shot));
+    }
+}
+
 EActiveTimerReturnType SCameraSetPreviews::Draw(double Time, float Delta)
 {
     if (Closed)
@@ -348,5 +380,6 @@ EActiveTimerReturnType SCameraSetPreviews::Draw(double Time, float Delta)
     if (!PreviewVisible.Get(true) || !Review.IsRunning())
         return EActiveTimerReturnType::Stop;
     Review.Tick(Time);
+    Publish();
     return Review.IsRunning() ? EActiveTimerReturnType::Continue : EActiveTimerReturnType::Stop;
 }

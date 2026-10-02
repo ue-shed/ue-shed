@@ -38,6 +38,13 @@ class SCameraArrangementPanel : public SCompoundWidget
     int32 InspectorPage = 0;
     bool SetupOpen = false, NewSetup = true;
     FString SetupName, CreatingId;
+    /** Reopening a saved set for the selected subject, when the host offers it. */
+    bool OpeningSet = false;
+    TSharedPtr<SVerticalBox> SavedRows;
+    FString SavedSetsKey;
+    TArray<TSharedPtr<FJsonObject>> SavedSets() const;
+    void OpenSavedSet(const FString& ArrangementId);
+    void RebuildSavedSets();
     TSharedRef<SWidget> BuildSetup();
     void StartSetup(bool New);
     void CreateFromPreset();

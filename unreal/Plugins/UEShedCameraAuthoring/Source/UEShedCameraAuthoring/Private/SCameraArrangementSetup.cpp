@@ -30,6 +30,70 @@ bool Connected(const TSharedPtr<FJsonObject>& Setup)
     bool B = false;
     return Setup && Setup->TryGetBoolField(TEXT("connected"), B) && B;
 }
+bool CanOpen(const TSharedPtr<FJsonObject>& Setup)
+{
+    bool B = false;
+    return Connected(Setup) && Setup->TryGetBoolField(TEXT("canOpen"), B) && B;
+}
+}
+
+TArray<TSharedPtr<FJsonObject>> SCameraArrangementPanel::SavedSets() const
+{
+    // The host's saved sets whose subject is the selected actor, except the set already open.
+    TArray<TSharedPtr<FJsonObject>> Result;
+    const TArray<TSharedPtr<FJsonValue>>* Values = nullptr;
+    FString OpenId;
+    if (Arrangement) Arrangement->TryGetStringField(TEXT("id"), OpenId);
+    if (CanOpen(Setup) && Setup->TryGetArrayField(TEXT("sets"), Values))
+        for (const auto& Set : *Values)
+            if (Set->AsObject() && Value(Set->AsObject(), TEXT("id")) != OpenId)
+                Result.Add(Set->AsObject());
+    return Result;
+}
+void SCameraArrangementPanel::OpenSavedSet(const FString& ArrangementId)
+{
+    if (!CreatingId.IsEmpty()) return;
+    auto Intent = MakeShared<FJsonObject>(), Q = MakeShared<FJsonObject>();
+    const FString Id = FGuid::NewGuid().ToString(EGuidFormats::Digits);
+    Intent->SetStringField(TEXT("id"), Id);
+    Intent->SetStringField(TEXT("arrangementId"), ArrangementId);
+    Q->SetNumberField(TEXT("version"), 1);
+    Q->SetStringField(TEXT("operation"), TEXT("setup_open"));
+    Q->SetObjectField(TEXT("intent"), Intent);
+    const auto Result = Call(Q);
+    if (Value(Result, TEXT("status")) != TEXT("setup")) return;
+    CreatingId = Id;
+    OpeningSet = true;
+}
+void SCameraArrangementPanel::RebuildSavedSets()
+{
+    FString Key;
+    for (const auto& Set : SavedSets())
+        Key += Value(Set, TEXT("id")) + TEXT(":") + Value(Set, TEXT("name")) + TEXT(";");
+    if (!SavedRows || Key == SavedSetsKey) return;
+    SavedSetsKey = Key;
+    SavedRows->ClearChildren();
+    for (const auto& Set : SavedSets())
+    {
+        const FString Id = Value(Set, TEXT("id"));
+        double Cameras = 0;
+        Set->TryGetNumberField(TEXT("cameras"), Cameras);
+        const int32 N = static_cast<int32>(Cameras);
+        SavedRows->AddSlot().AutoHeight().Padding(0, 2)[SNew(SBorder)
+            .BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder")).Padding(FMargin(10, 6))
+            [SNew(SHorizontalBox)
+                + SHorizontalBox::Slot().FillWidth(1).VAlign(VAlign_Center)[SNew(SVerticalBox)
+                    + SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Font(FAppStyle::GetFontStyle("NormalFontBold"))
+                        .Text(FText::FromString(Value(Set, TEXT("name"))))]
+                    + SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).ColorAndOpacity(FSlateColor::UseSubduedForeground())
+                        .Text(FText::FromString(FString::Printf(TEXT("%d camera%s"), N, N == 1 ? TEXT("") : TEXT("s"))))]]
+                + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)[SNew(SButton)
+                    .ButtonStyle(FAppStyle::Get(), "PrimaryButton").ContentPadding(FMargin(12, 6))
+                    .Text(FText::FromString(TEXT("Open")))
+                    .ToolTipText(FText::FromString(TEXT("Open this saved set to keep editing its cameras.")))
+                    .IsEnabled_Lambda([this] { return CreatingId.IsEmpty(); })
+                    .OnClicked_Lambda([this, Id] { OpenSavedSet(Id); return FReply::Handled(); })]]];
+    }
 }
 
 void SCameraArrangementPanel::StartSetup(bool New)
@@ -53,6 +117,7 @@ SCameraArrangementPanel::FObject SCameraArrangementPanel::Layout() const
 void SCameraArrangementPanel::CreateFromPreset()
 {
     if (!CreatingId.IsEmpty()) return;
+    OpeningSet = false;
     if (!NewSetup && Panel->HasField(TEXT("arrangement")))
     {
         auto A = MakeShared<FJsonObject>();
@@ -81,14 +146,36 @@ TSharedRef<SWidget> SCameraArrangementPanel::BuildSetup()
     auto Body = SNew(SVerticalBox).IsEnabled_Lambda([this] { return CreatingId.IsEmpty(); });
     Body->AddSlot().AutoHeight().Padding(0, 0, 0, 12)[SNew(STextBlock)
         .Font(FAppStyle::GetFontStyle("NormalFontBold"))
-        .Text_Lambda([this] { return FText::FromString(NewSetup ? TEXT("Create a camera set") : TEXT("Change camera preset")); })];
+        .Text_Lambda([this] {
+            return FText::FromString(!NewSetup ? TEXT("Change camera preset")
+                                     : SavedSets().IsEmpty() ? TEXT("Create a camera set") : TEXT("Open or create a camera set"));
+        })];
     Body->AddSlot().AutoHeight().Padding(0, 0, 0, 12)[SNew(STextBlock).AutoWrapText(true)
         .Text_Lambda([this] {
             if (!NewSetup) return FText::FromString(TEXT("Choose a new arrangement around this subject. Review the changes before applying."));
             const FString Name = Value(Selection(Setup), TEXT("displayName"));
             return FText::FromString(Name.IsEmpty() ? TEXT("1. Select one subject actor in the viewport or Outliner.") : TEXT("Subject: ") + Name);
         })];
-    Body->AddSlot().AutoHeight().Padding(0, 0, 0, 6)[SNew(STextBlock).Text(FText::FromString(TEXT("Choose a starting preset")))];
+    // Reopening, when the host offers it: the subject's saved sets come before creating another.
+    auto Saved = SNew(SVerticalBox);
+    Saved->AddSlot().AutoHeight().Padding(0, 0, 0, 4)[SNew(STextBlock).Font(FAppStyle::GetFontStyle("NormalFontBold"))
+        .Text(FText::FromString(TEXT("Open a saved set")))];
+    Saved->AddSlot().AutoHeight().Padding(0, 0, 0, 6)[SNew(STextBlock).AutoWrapText(true)
+        .Text(FText::FromString(TEXT("This subject already has camera sets. Open one to keep editing it, or create a new one below.")))];
+    Saved->AddSlot().AutoHeight()[SAssignNew(SavedRows, SVerticalBox)];
+    Body->AddSlot().AutoHeight().Padding(0, 0, 0, 12)[SNew(SBox)
+        .Visibility_Lambda([this] { return NewSetup && !SavedSets().IsEmpty() ? EVisibility::Visible : EVisibility::Collapsed; })
+        [Saved]];
+    Body->AddSlot().AutoHeight().Padding(0, 0, 0, 12)[SNew(STextBlock).AutoWrapText(true)
+        .ColorAndOpacity(FSlateColor::UseSubduedForeground())
+        .Visibility_Lambda([this] {
+            return NewSetup && Connected(Setup) && !CanOpen(Setup) && !Value(Selection(Setup), TEXT("actorPath")).IsEmpty()
+                ? EVisibility::Visible : EVisibility::Collapsed;
+        })
+        .Text(FText::FromString(TEXT("To reopen a saved set for this subject, open it from your camera host app.")))];
+    Body->AddSlot().AutoHeight().Padding(0, 0, 0, 6)[SNew(STextBlock).Text_Lambda([this] {
+        return FText::FromString(NewSetup && !SavedSets().IsEmpty() ? TEXT("Or start a new set from a preset") : TEXT("Choose a starting preset"));
+    })];
     auto Grid = SNew(SUniformGridPanel).SlotPadding(3);
     struct FPreset { const TCHAR* Label; const TCHAR* Description; const TCHAR* Kind; int32 Count; double Start; double Span; };
     const FPreset Presets[] = {
@@ -139,12 +226,12 @@ TSharedRef<SWidget> SCameraArrangementPanel::BuildSetup()
     Body->AddSlot().AutoHeight().Padding(0, 8)[SNew(SHorizontalBox)
         + SHorizontalBox::Slot().FillWidth(1)[SNew(SButton).ButtonStyle(FAppStyle::Get(), "PrimaryButton").ContentPadding(FMargin(12, 8))
             .IsEnabled_Lambda([this] { return CreatingId.IsEmpty() && (NewSetup ? Connected(Setup) && !Value(Selection(Setup), TEXT("actorPath")).IsEmpty() : Ready()); })
-            .Text_Lambda([this] { return FText::FromString(!CreatingId.IsEmpty() ? TEXT("Creating cameras…") : NewSetup ? FString::Printf(TEXT("Create %d camera%s"), static_cast<int32>(Count), Count == 1 ? TEXT("") : TEXT("s")) : TEXT("Review changes")); })
+            .Text_Lambda([this] { return FText::FromString(!CreatingId.IsEmpty() ? (OpeningSet ? TEXT("Opening set…") : TEXT("Creating cameras…")) : NewSetup ? FString::Printf(TEXT("Create %d camera%s"), static_cast<int32>(Count), Count == 1 ? TEXT("") : TEXT("s")) : TEXT("Review changes")); })
             .OnClicked_Lambda([this] { CreateFromPreset(); return FReply::Handled(); })]
         + SHorizontalBox::Slot().AutoWidth().Padding(6, 0)[SNew(SBox).Visibility_Lambda([this] { return Panel->HasField(TEXT("arrangement")) ? EVisibility::Visible : EVisibility::Collapsed; })
             [Button(TEXT("Cancel"), [this] { SetupOpen = false; }, false)]]];
     Body->AddSlot().AutoHeight()[SNew(STextBlock).AutoWrapText(true)
-        .Text_Lambda([this] { return FText::FromString(NewSetup && !Connected(Setup) ? TEXT("Waiting for a camera host for this project. Keep Workbench connected in the background.") : TEXT("Cameras stay out of level data. Edits sync automatically to the camera set.")); })];
+        .Text_Lambda([this] { return FText::FromString(NewSetup && !Connected(Setup) ? TEXT("Waiting for a camera host app for this project, such as Workbench. Keep it running in the background.") : TEXT("Cameras stay out of level data. Edits sync automatically to the camera set.")); })];
     Body->AddSlot().AutoHeight().Padding(0, 6)[SAssignNew(ProposalRows, SVerticalBox)];
     return SNew(SBorder).BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder")).Padding(14)[Body];
 }

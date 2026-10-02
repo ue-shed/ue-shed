@@ -132,6 +132,81 @@ bool FUEShedCameraPreviewPanelTest::RunTest(const FString &Parameters)
     TestEqual(TEXT("Setup errors reach the panel"), SetupPanel->Message, FString(TEXT("Fixture write denied")));
     TestTrue(TEXT("Failed setup can be retried"), SetupPanel->CreatingId.IsEmpty());
     Poll->RemoveField(TEXT("outcome"));
+    {
+        // Hosts that predate reopening keep receiving exactly the fields they decode.
+        const auto Plain = FUEShedCameraAuthoringBridge::Execute(Poll);
+        TestFalse(TEXT("Older hosts get no canOpen"), Plain->HasField(TEXT("canOpen")));
+        TestFalse(TEXT("Older hosts get no saved sets"), Plain->HasField(TEXT("sets")));
+        TestFalse(TEXT("Older hosts get no selection GUID"),
+                  Plain->GetObjectField(TEXT("selection"))->HasField(TEXT("actorGuid")));
+        auto Open = MakeShared<FJsonObject>(), OpenIntent = MakeShared<FJsonObject>();
+        Open->SetNumberField(TEXT("version"), 1);
+        Open->SetStringField(TEXT("operation"), TEXT("setup_open"));
+        OpenIntent->SetStringField(TEXT("id"), TEXT("open-early"));
+        OpenIntent->SetStringField(TEXT("arrangementId"), TEXT("saved-by-guid"));
+        Open->SetObjectField(TEXT("intent"), OpenIntent);
+        TestEqual(TEXT("Nothing reopens through a host that cannot"),
+                  FUEShedCameraAuthoringBridge::Execute(Open)->GetStringField(TEXT("status")), FString(TEXT("unavailable")));
+        const auto Listed = [&](const TCHAR *Id, const TCHAR *Name, const TSharedPtr<FJsonObject> &Locator, const FString &Map) {
+            auto Set = MakeShared<FJsonObject>();
+            Set->SetStringField(TEXT("id"), Id);
+            Set->SetStringField(TEXT("name"), Name);
+            Set->SetStringField(TEXT("mapPath"), Map);
+            Set->SetObjectField(TEXT("subject"), Locator);
+            Set->SetNumberField(TEXT("cameras"), 4);
+            return MakeShared<FJsonValueObject>(Set);
+        };
+        const FString Map = World->GetOutermost()->GetName();
+        const auto SubjectLocator = UEShedCameraActorEntry(Subject)->GetObjectField(TEXT("locator"));
+        auto OtherLocator = MakeShared<FJsonObject>();
+        OtherLocator->SetStringField(TEXT("kind"), TEXT("actor_guid"));
+        OtherLocator->SetStringField(TEXT("actorGuid"), FGuid::NewGuid().ToString(EGuidFormats::UniqueObjectGuid));
+        Poll->SetBoolField(TEXT("reopen"), true);
+        Poll->SetArrayField(TEXT("sets"), {Listed(TEXT("saved-by-guid"), TEXT("Gate views"), SubjectLocator, Map),
+                                           Listed(TEXT("other-subject"), TEXT("Other actor"), OtherLocator, Map),
+                                           Listed(TEXT("other-map"), TEXT("Elsewhere"), SubjectLocator, TEXT("/Game/Elsewhere"))});
+        const auto Offered = FUEShedCameraAuthoringBridge::Execute(Poll);
+        TestTrue(TEXT("A reopening host is told the panel can open sets"), Offered->GetBoolField(TEXT("canOpen")));
+        const auto OfferedSets = Offered->GetArrayField(TEXT("sets"));
+        if (TestEqual(TEXT("Only the selected subject's sets in this map are offered"), OfferedSets.Num(), 1))
+            TestEqual(TEXT("The subject's set is offered"), OfferedSets[0]->AsObject()->GetStringField(TEXT("id")),
+                      FString(TEXT("saved-by-guid")));
+        TestTrue(TEXT("Reopening hosts get the selection GUID"),
+                 Offered->GetObjectField(TEXT("selection"))->HasField(TEXT("actorGuid")));
+        SetupPanel->Refresh(.3, .2f);
+        TestEqual(TEXT("The setup page offers the saved set"), SetupPanel->SavedSets().Num(), 1);
+        FSlateApplication::Get().Tick();
+        Screenshot(SetupPanel, TEXT("setup-reopen.png"));
+        SetupPanel->OpenSavedSet(TEXT("saved-by-guid"));
+        const auto Asked = FUEShedCameraAuthoringBridge::Execute(Poll);
+        TestFalse(TEXT("Reopening never asks the host to create"), Asked->HasField(TEXT("request")));
+        if (TestTrue(TEXT("The host is asked to open the set"), Asked->HasField(TEXT("open"))))
+            TestEqual(TEXT("The host opens the chosen set"),
+                      Asked->GetObjectField(TEXT("open"))->GetStringField(TEXT("arrangementId")), FString(TEXT("saved-by-guid")));
+        TestEqual(TEXT("One setup request at a time"),
+                  FUEShedCameraAuthoringBridge::Execute(Open)->GetStringField(TEXT("status")), FString(TEXT("busy")));
+        auto Opened = MakeShared<FJsonObject>();
+        Opened->SetStringField(TEXT("id"), Asked->GetObjectField(TEXT("open"))->GetStringField(TEXT("id")));
+        Opened->SetField(TEXT("error"), MakeShared<FJsonValueNull>());
+        Poll->SetObjectField(TEXT("outcome"), Opened);
+        FUEShedCameraAuthoringBridge::Execute(Poll);
+        Poll->RemoveField(TEXT("outcome"));
+        SetupPanel->Refresh(.4, .2f);
+        TestTrue(TEXT("An answered reopen frees the setup page"), SetupPanel->CreatingId.IsEmpty() && !SetupPanel->OpeningSet);
+        TestTrue(TEXT("A successful reopen reports no error"), SetupPanel->Message.IsEmpty());
+        auto BadLocator = MakeShared<FJsonObject>();
+        BadLocator->SetStringField(TEXT("kind"), TEXT("actor_path"));
+        BadLocator->SetStringField(TEXT("actorPath"), TEXT("C:/not-a-game-path"));
+        Poll->SetArrayField(TEXT("sets"), {Listed(TEXT("bad"), TEXT("Bad"), BadLocator, Map)});
+        TestEqual(TEXT("Malformed saved sets are rejected"),
+                  FUEShedCameraAuthoringBridge::Execute(Poll)->GetStringField(TEXT("status")), FString(TEXT("invalid")));
+        Poll->RemoveField(TEXT("sets"));
+        Poll->RemoveField(TEXT("reopen"));
+        TestFalse(TEXT("A poll without reopen gets the original reply"),
+                  FUEShedCameraAuthoringBridge::Execute(Poll)->HasField(TEXT("canOpen")));
+        TestFalse(TEXT("The panel stops offering sets once the host withdraws"),
+                  FUEShedCameraAuthoringBridge::InspectSetup()->GetBoolField(TEXT("canOpen")));
+    }
     auto InvalidCreate = MakeShared<FJsonObject>();
     InvalidCreate->SetNumberField(TEXT("version"), 1);
     InvalidCreate->SetStringField(TEXT("operation"), TEXT("setup_create"));

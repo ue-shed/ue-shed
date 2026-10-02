@@ -810,7 +810,7 @@ void SCameraArrangementPanel::Construct(const FArguments &Args)
             return FReply::Handled();
         })];
     Review->AddSlot().AutoWidth().VAlign(VAlign_Center)[SNew(SBox)
-        .ToolTipText(FText::FromString(TEXT("Remove this set's temporary cameras from the level. The set stays saved.")))
+        .ToolTipText(FText::FromString(TEXT("Remove this set's temporary cameras from the level. The set stays saved and can be opened again.")))
         [Button(TEXT("Close set"), [this] { Call(Request(TEXT("detach"))); }, false)]];
     Shell->AddSlot().AutoHeight()[SNew(SBox).Visibility_Lambda([this] {
         return Panel->HasField(TEXT("arrangement")) && !SetupOpen ? EVisibility::Visible : EVisibility::Collapsed;
@@ -957,12 +957,15 @@ EActiveTimerReturnType SCameraArrangementPanel::Refresh(double Time, float Delta
     }
     Setup = FUEShedCameraAuthoringBridge::InspectSetup();
     if (!Panel->HasField(TEXT("arrangement"))) NewSetup = true;
-    if (!CreatingId.IsEmpty() && !Setup->HasField(TEXT("request")))
+    // Creating and reopening share one pending request; either clears when the host answers.
+    if (!CreatingId.IsEmpty() && !Setup->HasField(TEXT("request")) && !Setup->HasField(TEXT("open")))
     {
         Message = Str(Setup, TEXT("message"));
         if (Message.IsEmpty() && Panel->HasField(TEXT("arrangement"))) SetupOpen = false;
         CreatingId.Reset();
+        OpeningSet = false;
     }
+    RebuildSavedSets();
     if (Active->HasField(TEXT("selectedCameraIds")))
     {
         Selected.Reset();

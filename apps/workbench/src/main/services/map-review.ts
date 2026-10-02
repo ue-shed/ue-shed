@@ -2361,6 +2361,39 @@ export const WorkbenchMapReviewLive = Layer.effect(
 							recovery: "Correct the error and retry."
 						})
 					);
+			}),
+			// The native panel offers the active collection's sets for its selected subject.
+			open: Effect.fn("Workbench.MapReview.openFromNativePanel")(function* (intent) {
+				if (!service.cameraWorkspace)
+					return yield* Effect.fail(
+						new CameraBridgeError({
+							code: "unavailable",
+							message: "Camera authoring is unavailable.",
+							recovery: "Enable the camera workspace."
+						})
+					);
+				const result = yield* service.cameraWorkspace({
+					kind: "open",
+					id: intent.arrangementId,
+					livePreview: false
+				});
+				if (result.error || !result.panel)
+					return yield* Effect.fail(
+						new CameraBridgeError({
+							code: "unavailable",
+							message: result.error ?? "The camera set could not be opened.",
+							recovery: "Choose the set again, or open it from Workbench."
+						})
+					);
+			}),
+			sets: Effect.fn("Workbench.MapReview.savedCameraSets")(function* () {
+				const selected = yield* resolveReviewProject();
+				const reviewSetPath = yield* selectedReviewSetPath();
+				if (!selected || !reviewSetPath) return [];
+				return yield* cameraWorkspace.setupSets({
+					projectRoot: selected.projectRoot,
+					reviewSetPath
+				});
 			})
 		});
 		yield* Effect.addFinalizer(() =>

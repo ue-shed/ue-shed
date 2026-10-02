@@ -16,6 +16,7 @@ import {
 	makeCameraAuthoringBridge,
 	makeCameraAuthoringPanelSession,
 	makeCameraAuthoringStore,
+	cameraSetupSavedSet,
 	inspectCameraRecovery,
 	resolveCameraRecovery,
 	type CameraRecoveryProposal,
@@ -60,6 +61,36 @@ export const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(f
 	let error: string | null = null;
 	let recovery: CameraRecoveryProposal | null = null;
 	let savedSets: CameraWorkspaceResult["sets"] = [];
+	const setRoot = (projectRoot: string, reviewSetId: string) =>
+		join(
+			projectRoot,
+			".ue-shed",
+			"camera-sets",
+			createHash("sha256").update(reviewSetId).digest("hex").slice(0, 20)
+		);
+	const listArrangements = Effect.fn("Workbench.CameraWorkspace.listArrangements")(function* (
+		root: string
+	) {
+		const names = yield* Effect.tryPromise({
+			try: async () => {
+				try {
+					return await readdir(root);
+				} catch (cause) {
+					if (cause instanceof Error && "code" in cause && cause.code === "ENOENT")
+						return [];
+					throw cause;
+				}
+			},
+			catch: failure
+		});
+		return yield* Effect.forEach(
+			names.filter((name) => /^[a-zA-Z0-9][a-zA-Z0-9._-]*\.json$/u.test(name)),
+			(name) =>
+				makeCameraAuthoringStore(join(root, name))
+					.load()
+					.pipe(Effect.map((document) => document.arrangement))
+		);
+	});
 	const close = Effect.fn("Workbench.CameraWorkspace.close")(function* () {
 		if (!active) return;
 		const current = active;
@@ -137,12 +168,7 @@ export const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(f
 			const owner = JSON.stringify(context);
 			if (active && active.owner !== owner) yield* close();
 			const set = yield* repository.loadSet(context.reviewSetPath);
-			const root = join(
-				context.projectRoot,
-				".ue-shed",
-				"camera-sets",
-				createHash("sha256").update(set.id).digest("hex").slice(0, 20)
-			);
+			const root = setRoot(context.projectRoot, set.id);
 			if (intent.kind === "close") yield* close();
 			if (intent.kind === "inspect_recovery" || intent.kind === "resolve_recovery") {
 				const id =
@@ -340,36 +366,15 @@ export const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(f
 					savedViews,
 					error
 				};
-			const names = yield* Effect.tryPromise({
-				try: async () => {
-					try {
-						return await readdir(root);
-					} catch (cause) {
-						if (cause instanceof Error && "code" in cause && cause.code === "ENOENT")
-							return [];
-						throw cause;
-					}
-				},
-				catch: failure
-			});
-			const sets = yield* Effect.forEach(
-				names.filter((name) => /^[a-zA-Z0-9][a-zA-Z0-9._-]*\.json$/u.test(name)),
-				(name) =>
-					Effect.gen(function* () {
-						const { arrangement: a } = yield* makeCameraAuthoringStore(
-							join(root, name)
-						).load();
-						return {
-							id: a.id,
-							name: a.displayName ?? "Camera set",
-							actorPath:
-								a.subject.kind === "actor_path"
-									? a.subject.actorPath
-									: (a.subject.lastKnownActorPath ?? ""),
-							cameras: a.cameras.length
-						};
-					})
-			);
+			const sets = (yield* listArrangements(root)).map((a) => ({
+				id: a.id,
+				name: a.displayName ?? "Camera set",
+				actorPath:
+					a.subject.kind === "actor_path"
+						? a.subject.actorPath
+						: (a.subject.lastKnownActorPath ?? ""),
+				cameras: a.cameras.length
+			}));
 			savedSets = sets;
 			return {
 				preview: active?.preview ?? null,
@@ -391,5 +396,16 @@ export const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(f
 			})
 		)
 	);
-	return { request, close: () => close().pipe(gate.withPermits(1)) };
+	/** The active collection's camera sets, as the native panel's reopen list. */
+	const setupSets = Effect.fn("Workbench.CameraWorkspace.setupSets")(function* (context: {
+		projectRoot: string;
+		reviewSetPath: string;
+	}) {
+		const set = yield* repository.loadSet(context.reviewSetPath);
+		const arrangements = yield* listArrangements(setRoot(context.projectRoot, set.id));
+		return arrangements
+			.filter((arrangement) => arrangement.mapPath === set.project.mapPath)
+			.map(cameraSetupSavedSet);
+	}, gate.withPermits(1));
+	return { request, setupSets, close: () => close().pipe(gate.withPermits(1)) };
 });

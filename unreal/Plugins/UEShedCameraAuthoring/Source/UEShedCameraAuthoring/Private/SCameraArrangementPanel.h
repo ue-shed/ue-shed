@@ -83,6 +83,8 @@ class SCameraArrangementPanel : public SCompoundWidget
     void PreviewVisibility();
     void SelectCameras(const TArray<TSharedPtr<FJsonValue>>& Ids);
     void SetCameraSelected(const FString& Id, bool Checked);
+    void StopPiloting();
+    void FocusCamera(const FString& Id);
     void PilotCamera(const FString& Id);
     void SaveScope();
     void RecipeAction(bool Export);

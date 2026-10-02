@@ -30,5 +30,7 @@ struct UESHEDCAMERASEDITOR_API FUEShedResolvedVisibility
 /** Strict loaded-world resolution. A GUID never silently falls back to a possibly reassigned path. */
 UESHEDCAMERASEDITOR_API FUEShedResolvedVisibility UEShedResolveCameraVisibility(UWorld *World,
                                                                                 const TSharedPtr<FJsonObject> &Actors);
+/** Resolves one actor locator by the same strict rules, or null when missing, unloaded or ambiguous. */
+UESHEDCAMERASEDITOR_API AActor *UEShedResolveCameraActor(UWorld *World, const TSharedPtr<FJsonObject> &Locator);
 UESHEDCAMERASEDITOR_API TSharedPtr<FJsonObject> UEShedCameraActorEntry(AActor *Actor);
 UESHEDCAMERASEDITOR_API TSharedPtr<FJsonObject> UEShedCameraVisibilityCapabilities();

@@ -5,6 +5,8 @@
 #include "Widgets/Layout/SWidgetSwitcher.h"
 #include "Framework/Application/SlateApplication.h"
 #include "UEShedCameraAuthoringBridge.h"
+#include "UEShedCameraVisibility.h"
+#include "Editor.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SCheckBox.h"
 #include "Widgets/Input/SEditableTextBox.h"
@@ -110,6 +112,33 @@ void SCameraArrangementPanel::SetCameraSelected(const FString& Id, bool Checked)
     else Selected.Remove(Id);
     ActorKey.Reset();
     SelectCameras(SelectedIds());
+}
+void SCameraArrangementPanel::StopPiloting()
+{
+    // Keep the snapshot current so an immediate Select frames instead of piloting again.
+    const auto Result = Call(Request(TEXT("eject")));
+    if (Str(Result, TEXT("status")) == TEXT("ready")) Active = Result;
+}
+void SCameraArrangementPanel::FocusCamera(const FString& Id)
+{
+    // While piloting, the viewport already looks through a camera: switch it to this one.
+    if (Flag(Active, TEXT("piloting")))
+    {
+        PilotCamera(Id);
+        return;
+    }
+    Selected.Reset();
+    Selected.Add(Id);
+    Scope = TEXT("cameras");
+    ActorKey.Reset();
+    SelectCameras({MakeShared<FJsonValueString>(Id)});
+    // Otherwise behave like pressing F: frame the camera and its subject, leaving the viewport free.
+    auto* Camera = FUEShedCameraAuthoringBridge::Camera(Id);
+    if (!Camera || !GEditor) return;
+    TArray<AActor*> Framed{Camera};
+    if (auto* Subject = UEShedResolveCameraActor(Camera->GetWorld(), Child(Arrangement, TEXT("subject"))))
+        Framed.Add(Subject);
+    GEditor->MoveViewportCamerasToActor(Framed, true);
 }
 void SCameraArrangementPanel::PilotCamera(const FString& Id)
 {
@@ -487,11 +516,11 @@ void SCameraArrangementPanel::Construct(const FArguments &Args)
         SelectCameras(Ids);
     }, false)];
     Toolbar->AddSlot()[SNew(SBox).Visibility_Lambda([this] { return Flag(Active, TEXT("piloting")) ? EVisibility::Visible : EVisibility::Collapsed; })
-        [Button(TEXT("Stop piloting"), [this] { Call(Request(TEXT("eject"))); }, false)]];
+        [Button(TEXT("Stop piloting"), [this] { StopPiloting(); }, false)]];
     Editing->AddSlot().AutoHeight().Padding(0, 0, 0, 8)[Toolbar];
     Editing->AddSlot().FillHeight(1)[SNew(SScrollBox) + SScrollBox::Slot()[SAssignNew(CameraRows, SVerticalBox)]];
     Editing->AddSlot().AutoHeight().Padding(0, 8, 0, 0)[SNew(STextBlock).AutoWrapText(true)
-        .Text(FText::FromString(TEXT("Select to edit in the viewport or Details. Pilot to compose.")))];
+        .Text(FText::FromString(TEXT("Select frames a camera and its subject in the viewport. Pilot to look through it.")))];
     auto Tools = SNew(SVerticalBox);
     Inspector->AddSlot().AutoHeight().Padding(0, 0, 0, 6)[SNew(SSegmentedControl<FString>)
         .Value_Lambda([this] { return Scope; })
@@ -934,10 +963,10 @@ void SCameraArrangementPanel::RebuildCameras()
                                        })];
         Row->AddSlot().FillWidth(1).VAlign(VAlign_Center).Padding(8, 0)[SNew(STextBlock).AutoWrapText(true).Text(FText::FromString(Label))];
         auto CameraButtons = SNew(SHorizontalBox);
-        CameraButtons->AddSlot().AutoWidth()[Button(TEXT("Select"), [this, Id] {
-            Selected.Reset(); Selected.Add(Id); Scope = TEXT("cameras"); ActorKey.Reset();
-            SelectCameras({MakeShared<FJsonValueString>(Id)});
-        }, false, true)];
+        CameraButtons->AddSlot().AutoWidth()[SNew(SBox)
+            .ToolTipText(FText::FromString(TEXT("Select this camera and frame it with its subject in the viewport. "
+                                                "While piloting, switches the viewport to this camera.")))
+            [Button(TEXT("Select"), [this, Id] { FocusCamera(Id); }, false, true)]];
         CameraButtons->AddSlot().AutoWidth().Padding(4, 0)[Button(Id == Str(Active, TEXT("cameraId")) && Flag(Active, TEXT("piloting")) ? TEXT("Piloting") : TEXT("Pilot"), [this, Id] { PilotCamera(Id); }, false, true)];
         if (Id == Str(Active, TEXT("cameraId"))) {
         auto Actions = SNew(SWrapBox).UseAllottedSize(true).InnerSlotPadding(FVector2D(4, 4));

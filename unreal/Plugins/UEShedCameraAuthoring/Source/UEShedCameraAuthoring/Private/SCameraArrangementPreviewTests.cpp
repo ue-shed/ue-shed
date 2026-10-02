@@ -17,6 +17,12 @@
 #include "Serialization/JsonSerializer.h"
 #include "UEShedCameraAuthoringBridge.h"
 #include "UEShedCameraAuthoringTab.h"
+#include "UEShedCameraVisibility.h"
+#include "LevelEditorViewport.h"
+#include "Components/StaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
+#include "Engine/StaticMeshActor.h"
+#include "StaticMeshCompiler.h"
 #include "Framework/Docking/TabManager.h"
 #include "Widgets/Docking/SDockTab.h"
 #include "WorkspaceMenuStructure.h"
@@ -44,7 +50,19 @@ bool FUEShedCameraPreviewPanelTest::RunTest(const FString &Parameters)
     FActorSpawnParameters Spawn;
     Spawn.ObjectFlags = RF_Transient;
     Spawn.bTemporaryEditorActor = true;
-    auto Subject = World->SpawnActor<AActor>(Spawn);
+    Spawn.bCreateActorPackage = false;
+    // A real subject in open sky, so framing and visibility checks have bounds and depth.
+    auto *Cube = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+    if (!Cube)
+    {
+        AddError(TEXT("The engine cube is unavailable."));
+        return false;
+    }
+    FStaticMeshCompilingManager::Get().FinishCompilation({Cube});
+    const FVector SubjectLocation(0, 0, 20000);
+    auto Subject = World->SpawnActor<AStaticMeshActor>(SubjectLocation, FRotator::ZeroRotator, Spawn);
+    Subject->GetStaticMeshComponent()->SetStaticMesh(Cube);
+    Subject->SetActorScale3D(FVector(2));
     ON_SCOPE_EXIT
     {
         // Detach restores the original subject selection. Release its editor selection handle
@@ -164,6 +182,7 @@ bool FUEShedCameraPreviewPanelTest::RunTest(const FString &Parameters)
     Arrangement->SetStringField(TEXT("mapPath"), World->GetOutermost()->GetName());
     Arrangement->SetNumberField(TEXT("revision"), 0);
     Arrangement->SetArrayField(TEXT("groups"), {});
+    Arrangement->SetObjectField(TEXT("subject"), UEShedCameraActorEntry(Subject)->GetObjectField(TEXT("locator")));
     auto Settings = MakeShared<FJsonObject>();
     Settings->SetNumberField(TEXT("fieldOfViewDegrees"), 60);
     Settings->SetNumberField(TEXT("distanceScale"), 1.15);
@@ -443,6 +462,46 @@ bool FUEShedCameraPreviewPanelTest::RunTest(const FString &Parameters)
     Panel->PilotCamera(TEXT("camera-0"));
     TestTrue(TEXT("Panel pilots native camera"),
              FUEShedCameraAuthoringBridge::InspectActive()->GetBoolField(TEXT("piloting")));
+    {
+        // Switching the active camera is a native edit; the host acknowledges it like any other.
+        const auto Acknowledge = [&] {
+            const auto Observed = FUEShedCameraAuthoringBridge::InspectActive();
+            auto Apply = MakeShared<FJsonObject>(*Request);
+            Apply->SetStringField(TEXT("operation"), TEXT("apply"));
+            Apply->SetStringField(TEXT("cameraId"), Observed->GetStringField(TEXT("cameraId")));
+            Apply->SetNumberField(TEXT("expectedRevision"), Observed->GetNumberField(TEXT("revision")));
+            Apply->SetNumberField(TEXT("revision"), Observed->GetNumberField(TEXT("revision")));
+            Apply->SetNumberField(TEXT("sequence"), Observed->GetNumberField(TEXT("sequence")));
+            Apply->SetObjectField(TEXT("pose"), Observed->GetObjectField(TEXT("pose")));
+            Apply->SetArrayField(TEXT("cameras"), Observed->GetArrayField(TEXT("cameras")));
+            FUEShedCameraAuthoringBridge::Execute(Apply);
+            State->SetStringField(TEXT("activeCameraId"), Observed->GetStringField(TEXT("cameraId")));
+            FUEShedCameraAuthoringBridge::Execute(Request);
+            Panel->Refresh(1.9, .2f);
+        };
+        Panel->FocusCamera(TEXT("camera-2"));
+        const auto Switched = FUEShedCameraAuthoringBridge::InspectActive();
+        TestTrue(TEXT("Select while piloting keeps the viewport piloting"), Switched->GetBoolField(TEXT("piloting")));
+        TestEqual(TEXT("Select while piloting looks through the chosen camera"),
+                  Switched->GetStringField(TEXT("cameraId")), FString(TEXT("camera-2")));
+        Acknowledge();
+        Panel->StopPiloting();
+        auto *Viewport = GCurrentLevelEditingViewportClient;
+        if (TestNotNull(TEXT("A level viewport is available to frame cameras"), Viewport))
+        {
+            const FVector LookAtBefore = Viewport->GetViewTransform().GetLookAt();
+            Panel->FocusCamera(TEXT("camera-5"));
+            const FVector LookAt = Viewport->GetViewTransform().GetLookAt();
+            auto *Focused = FUEShedCameraAuthoringBridge::Camera(TEXT("camera-5"));
+            TestTrue(TEXT("Select selects the native camera"), Focused && Focused->IsSelected());
+            TestFalse(TEXT("Select does not lock the viewport"),
+                      FUEShedCameraAuthoringBridge::InspectActive()->GetBoolField(TEXT("piloting")));
+            TestFalse(TEXT("Select frames the camera in the viewport"), LookAt.Equals(LookAtBefore, 1));
+            TestTrue(TEXT("Select frames the subject together with the camera"),
+                     Focused && !LookAt.Equals(Focused->GetActorLocation(), 1));
+        }
+        Acknowledge();
+    }
     Panel->SelectCameras(SelectIds);
     Panel->SeePreviews.ExecuteIfBound();
     TestTrue(TEXT("See Previews requests a separate panel"), RequestedReview);

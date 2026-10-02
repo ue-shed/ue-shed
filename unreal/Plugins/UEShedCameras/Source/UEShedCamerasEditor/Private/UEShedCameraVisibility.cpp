@@ -15,6 +15,29 @@ void FUEShedCameraVisibility::SetupView(FSceneViewFamily &Family, FSceneView &Vi
         if (Component.IsValid())
             View.HiddenPrimitives.Add(Component->GetPrimitiveSceneId());
 }
+AActor *UEShedResolveCameraActor(UWorld *World, const TSharedPtr<FJsonObject> &Locator)
+{
+    FString Kind, Path, GuidText;
+    FGuid Guid;
+    if (!World || !Locator || !Locator->TryGetStringField(TEXT("kind"), Kind))
+        return nullptr;
+    const bool ByGuid = Kind == TEXT("actor_guid");
+    if (ByGuid ? !Locator->TryGetStringField(TEXT("actorGuid"), GuidText) ||
+                     !FGuid::ParseExact(GuidText, EGuidFormats::UniqueObjectGuid, Guid) || !Guid.IsValid()
+               : Kind != TEXT("actor_path") || !Locator->TryGetStringField(TEXT("actorPath"), Path) ||
+                     !Path.StartsWith(TEXT("/Game/")) || Path.Len() > 4096)
+        return nullptr;
+    AActor *Match = nullptr;
+    for (TActorIterator<AActor> It(World); It; ++It)
+        if (ByGuid ? It->GetActorGuid() == Guid : It->GetPathName() == Path)
+        {
+            // A GUID never falls back to a path, and an ambiguous match resolves to nothing.
+            if (Match)
+                return nullptr;
+            Match = *It;
+        }
+    return Match;
+}
 TSharedPtr<FJsonObject> UEShedCameraActorEntry(AActor *Actor)
 {
     auto Entry = MakeShared<FJsonObject>(), Locator = MakeShared<FJsonObject>();

@@ -79,7 +79,11 @@ The host persists the complete draft before attaching all its native cameras; no
 Set is required. Missing hosts, invalid selections, and failed writes are visible rather than silent.
 
 Once editing, a resizable split panel keeps cameras and their **Select/Pilot** controls on the left,
-with a separately scrolling inspector on the right. Scope is a segmented Whole set/Selected cameras
+with a separately scrolling inspector on the right. **Select** selects that camera and frames it
+together with its subject in the active viewport, as pressing F would; it never locks the viewport.
+While piloting, **Select** switches the pilot to that camera instead, so the viewport keeps looking
+through a camera. **Pilot** remains the explicit way to look through and move a camera. Checking a
+camera only changes the editing scope. Scope is a segmented Whole set/Selected cameras
 control. Framing, Visibility, and Capture use native dock-tab styling with an active-tab indicator.
 Framing values occupy a two-column grid; camera actions and visibility actions use compact rows.
 Groups and advanced aim/placement controls remain collapsed until needed.

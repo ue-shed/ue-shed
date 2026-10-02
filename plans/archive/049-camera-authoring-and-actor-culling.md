@@ -1,6 +1,6 @@
 # 049 — Camera authoring in Unreal and explicit actor culling
 
-Design proposal, 2026-09-09. Implementation status is tracked in [the plan index](README.md).
+Design proposal, 2026-09-09. Implementation status is tracked in [the plan index](../README.md).
 This document proposes behavior; it does not change the shipped product contract.
 
 ## Step 6 hardening record (2026-09-21)
@@ -19,7 +19,7 @@ This document proposes behavior; it does not change the shipped product contract
 - Added explicit refusal tests for Nanite-configured meshes, instanced meshes and translucency.
   Loaded opaque non-Nanite meshes remain the supported exclusion scope.
 - Verification and measurements are recorded in
-  [native proof](../docs/engineering/camera-authoring-native-proof.md). Full local `pnpm check`,
+  [native proof](../../docs/engineering/camera-authoring-native-proof.md). Full local `pnpm check`,
   `check:precommit` and `check:unreal` passed, along with native automation and independent-menu
   round trips on UE 5.7 and 5.8. Versioning, release-commit CI and publication are separate work.
 
@@ -39,8 +39,8 @@ to exclude from particular captures. Camera exceptions survive subsequent batch 
 produces portable definitions outside the map; a later headless capture reproduces those choices.
 
 The user's actor-oriented workflow belongs primarily to
-[Map Review](../docs/products/map-review.md). [Map Capture](../docs/products/map-capture.md) is the
-orthographic tile-pyramid product. Both use the [shared renderer](../docs/products/camera-rendering.md).
+[Map Review](../../docs/products/map-review.md). [Map Capture](../../docs/products/map-capture.md) is the
+orthographic tile-pyramid product. Both use the [shared renderer](../../docs/products/camera-rendering.md).
 Implement reusable authoring and visibility primitives, integrate Review first, and apply the same
 visibility definition to a whole tile plan. A tile grid is not a collection of independently authored
 perspective cameras: arbitrary tile-camera edits would break its geometry and assembly contract.
@@ -385,7 +385,7 @@ Do not promise Ctrl+Z integration based solely on property-change delegates.
 
 ### Synchronization boundary for this feature
 
-The broader [authoring synchronization concept](../docs/ideas/authoring-sync-layer.md) records the
+The broader [authoring synchronization concept](../../docs/ideas/authoring-sync-layer.md) records the
 Node coordinator, public command/state ports, `unreal-rc` transport, and optional native bridge/menu
 split. It is a future infrastructure direction, not a prerequisite to build a general sync engine.
 
@@ -485,7 +485,7 @@ Keep the existing Core+Cameras capture-only bundle usable. Add authoring as an e
 plugin/bundle option. Update exact-engine artifact attestations and capability compatibility together;
 do not make a UI plugin a requirement for batch capture. If claiming host adoption, provide an
 agent-facing guide, machine-readable package closure/capability manifest, and clean-consumer journey
-as required by [agent adoption](../docs/engineering/agent-adoption.md).
+as required by [agent adoption](../../docs/engineering/agent-adoption.md).
 
 ## Public and CLI operations
 

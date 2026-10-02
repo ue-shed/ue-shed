@@ -1,8 +1,8 @@
 # Shared camera rendering API
 
-Status: Implemented, unreleased — shared native lifecycle and first-party adapters are in place.
-See [the public contract](../docs/products/camera-rendering.md) and
-[validation evidence](../docs/research/shared-camera-rendering-2026-09-08.md) for the implemented
+Status: DONE — released in 0.7.0; shared native lifecycle and first-party adapters are in place.
+See [the public contract](../../docs/products/camera-rendering.md) and
+[validation evidence](../../docs/research/shared-camera-rendering-2026-09-08.md) for the implemented
 policy matrix, compatibility decisions, and remaining visual/readiness limitations. The sections
 below retain the original proposal context; the product document describes the final API.
 

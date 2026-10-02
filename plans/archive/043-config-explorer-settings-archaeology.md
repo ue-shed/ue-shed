@@ -15,7 +15,7 @@ project, section, key, and platform, resolve the supported saved-source `.ini` h
 every contribution in order. The package and CLI are authoritative; a standalone host-neutral
 extension renders supplied results without gaining filesystem authority.
 
-The product contract is [`docs/products/config-explorer.md`](../docs/products/config-explorer.md).
+The product contract is [`docs/products/config-explorer.md`](../../docs/products/config-explorer.md).
 Its distinction between effective saved-source evidence and runtime authority is an acceptance
 boundary, not UI wording that can be relaxed later.
 

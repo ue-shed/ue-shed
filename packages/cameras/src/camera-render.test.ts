@@ -24,6 +24,7 @@ import {
 	cameraRenderContract,
 	highResolutionReviewRenderer,
 	legacyReviewRenderPolicy,
+	reviewCaptureRenderPolicy,
 	type CameraFrameResult,
 	type CameraRenderSessionRequest
 } from "./camera-render-schema.js";
@@ -373,6 +374,24 @@ describe("editor preview renderer policy", () => {
 				sceneCapture
 			}
 		});
+	it("keeps a saved editorPreviews when a capture run picks another renderer", () => {
+		const saved = {
+			...legacyReviewRenderPolicy,
+			renderer: { ...legacyReviewRenderPolicy.renderer, editorPreviews: true }
+		};
+		expect(reviewCaptureRenderPolicy(saved, highResolutionReviewRenderer).renderer).toEqual({
+			...highResolutionReviewRenderer,
+			editorPreviews: true
+		});
+		const explicit = { ...highResolutionReviewRenderer, editorPreviews: false };
+		expect(reviewCaptureRenderPolicy(saved, explicit).renderer).toEqual(explicit);
+		expect(
+			"editorPreviews" in
+				reviewCaptureRenderPolicy(legacyReviewRenderPolicy, highResolutionReviewRenderer)
+					.renderer
+		).toBe(false);
+		expect(reviewCaptureRenderPolicy(saved)).toBe(saved);
+	});
 	it("is optional on both renderers, round-trips absence and accepts only booleans", () => {
 		const decode = Schema.decodeUnknownResult(CameraRendererPolicy);
 		const strict = { onExcessProperty: "error" } as const;

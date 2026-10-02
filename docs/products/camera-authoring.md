@@ -58,7 +58,8 @@ rather than "Review Set".
 The capture dialog defaults to **Unreal high-resolution screenshot**, using the public cameras
 API's editor-viewport renderer and Unreal's `TakeHighResScreenShot` at the saved resolution.
 The capture plan shows the effective renderer, exposure mode, and settling frames. The explicit
-per-run choice preserves saved exposure/loading settings and uses at least eight settling frames.
+per-run choice preserves saved exposure/loading settings and the saved `renderer.editorPreviews`,
+and uses at least eight settling frames.
 **Use saved profile renderer** retains the profile's renderer, including historical SceneCapture2D
 defaults for profiles without an explicit policy. No renderer fallback occurs on failure, and the
 per-run choice does not rewrite saved profiles. Quick native preview tiles remain SceneCapture snapshots.

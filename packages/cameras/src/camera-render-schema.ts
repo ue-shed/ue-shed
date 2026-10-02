@@ -367,17 +367,25 @@ export const highResolutionReviewRenderer = {
 	volumetricFog: true
 } as const satisfies CameraRendererPolicy;
 
-/** Explicit per-run choice; saved exposure, loading, time, and profile documents remain intact. */
+/**
+ * Explicit per-run choice; saved exposure, loading, time, and profile documents remain intact.
+ * The choice picks a backend, not what the shot contains, so a saved `editorPreviews` carries over
+ * unless the per-run renderer sets it explicitly.
+ */
 export function reviewCaptureRenderPolicy(
 	saved: CameraRenderPolicy | undefined,
 	renderer?: CameraRendererPolicy
 ): CameraRenderPolicy {
 	const policy = saved ?? legacyReviewRenderPolicy;
+	const editorPreviews = policy.renderer.editorPreviews;
 	return renderer === undefined
 		? policy
 		: {
 				...policy,
-				renderer,
+				renderer:
+					renderer.editorPreviews === undefined && editorPreviews !== undefined
+						? { ...renderer, editorPreviews }
+						: renderer,
 				settling: {
 					...policy.settling,
 					minimumFrames:

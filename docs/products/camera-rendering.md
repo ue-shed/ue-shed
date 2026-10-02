@@ -171,6 +171,10 @@ opening a session. When enabled, frame evidence includes
 `editorPreviews.revealedChildActors`, the number of preview child actors shown in the loaded
 world. Zero means none were loaded; it does not say whether any were in view.
 
+`reviewCaptureRenderPolicy(saved, renderer)` keeps a saved `editorPreviews` when a capture run picks
+another renderer (for example the high-resolution screenshot), unless that renderer sets the field
+itself. The native camera panel previews honour the same field, so they show what capture will.
+
 `camera_regions` owns bounded World Partition loader references around the frame camera, or around
 the explicit frame `region` override. The caller chooses extents that include the visible scene;
 this is not frustum inference. Up to 64 distinct regions can be held until session close. A

@@ -181,6 +181,29 @@ Workbench ties this to its Effect scope. Host loss interrupts pending setup inst
 create; inspect saved sets before retrying. This is not crash-safe exactly-once creation.
 Workbench-created native sessions do not start its otherwise hidden live-preview stream.
 
+### Reopening a saved set from Unreal
+
+After **Close set**, the panel returns to its setup page for the same subject. When the connected
+host supports reopening, the page starts with **Open a saved set**: that subject's saved sets in the
+current map, each with its name, camera count and an **Open** button, above the presets for a new
+set. Hosts that cannot reopen get a one-line hint to open sets from the host app instead.
+
+Hosts opt in with `makeCameraSetupHost({ create, open, sets })`:
+
+- `sets()` returns the host's saved, reopenable sets as `CameraSetupSavedSet` values; build each
+  with `cameraSetupSavedSet(arrangement)` from the saved `CameraArrangement`. Return the sets you
+  can actually open (Workbench lists the active collection's sets for its map). The host lists at
+  most every five seconds and again after each create/open outcome, and keeps its previous list if
+  listing fails.
+- `open({ id, arrangementId })` opens and attaches that saved arrangement exactly as the host's own
+  "open camera set" does (load the draft, `attachArrangementCamera`, start its panel session). A
+  failure message is shown in the panel; success returns the panel to editing.
+
+The bridge filters the list to the single selected actor and map, so hosts need not track the
+editor selection. Opening shares creation's queue, lease and outcome rules. Hosts that supply only
+`create`, and older plugins, are unaffected; see the
+[v1 contract](../../packages/protocol/contracts/cameras/authoring/v1/README.md) for the wire fields.
+
 While the host is connected, moving/rotating any camera or editing its FOV automatically updates the
 durable draft on the next reconciliation step, without **Save views**. Native Duplicate, Delete and
 Undo/Redo also reconcile into the draft; at least one camera must remain. **Save views** is a separate,

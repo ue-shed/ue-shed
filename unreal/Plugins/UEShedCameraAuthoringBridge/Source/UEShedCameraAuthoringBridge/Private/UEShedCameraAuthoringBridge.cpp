@@ -577,8 +577,15 @@ TSharedPtr<FJsonObject> FUEShedCameraAuthoringBridge::Execute(const TSharedPtr<F
     if (!Number(Q, TEXT("version"), Version) || Version != 1)
         return Result(TEXT("invalid"), TEXT("Expected camera authoring version 1."));
     const FString Op = Str(Q, TEXT("operation")), Session = Str(Q, TEXT("sessionId"));
-    if (Op == TEXT("setup_status")) return FUEShedCameraSetup::Inspect();
-    if (Op == TEXT("setup_poll") || Op == TEXT("setup_create") || Op == TEXT("setup_release")) return FUEShedCameraSetup::Execute(Q);
+    if (Op == TEXT("setup_status"))
+    {
+        // Reopening state only for callers that negotiated it; older hosts decode replies strictly.
+        bool Reopen = false;
+        Q->TryGetBoolField(TEXT("reopen"), Reopen);
+        return FUEShedCameraSetup::Inspect(Reopen);
+    }
+    if (Op == TEXT("setup_poll") || Op == TEXT("setup_create") || Op == TEXT("setup_open") || Op == TEXT("setup_release"))
+        return FUEShedCameraSetup::Execute(Q);
     if (Op == TEXT("discover"))
     {
         auto R = Result(TEXT("available"));

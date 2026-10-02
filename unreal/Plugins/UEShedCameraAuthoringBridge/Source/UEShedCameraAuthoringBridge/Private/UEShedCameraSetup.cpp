@@ -10,6 +10,9 @@ namespace
 FString Host, SetupMap, Message;
 double Deadline = 0;
 TSharedPtr<FJsonObject> Pending;
+// Reopening, negotiated per poll by the owning host: whether it can open and what it listed.
+bool HostCanOpen = false, PendingOpen = false;
+TArray<TSharedPtr<FJsonObject>> Sets;
 FString String(const TSharedPtr<FJsonObject>& O, const TCHAR* Key)
 {
     FString Value;
@@ -36,25 +39,67 @@ UWorld* World()
 {
     return GEditor && !GEditor->PlayWorld ? GEditor->GetEditorWorldContext().World() : nullptr;
 }
+void Disconnect()
+{
+    if (Pending) Message = TEXT("Setup interrupted. Check your saved sets before trying again.");
+    Pending.Reset();
+    PendingOpen = false;
+    Host.Reset();
+    HostCanOpen = false;
+    Sets.Reset();
+}
 void Expire()
 {
     const auto W = World();
     if ((!Host.IsEmpty() && FPlatformTime::Seconds() > Deadline) ||
         (Pending && (!W || SetupMap != W->GetOutermost()->GetName())))
-    {
-        if (Pending) Message = TEXT("Setup interrupted. Check your saved sets before trying again.");
-        Pending.Reset();
-        Host.Reset();
-    }
+        Disconnect();
+}
+bool Flag(const TSharedPtr<FJsonObject>& O, const TCHAR* Key)
+{
+    bool Value = false;
+    return O && O->TryGetBoolField(Key, Value) && Value;
+}
+/** The same bounds as the camera-authoring/v1 setup contract. */
+bool ValidSet(const TSharedPtr<FJsonObject>& Set)
+{
+    const TSharedPtr<FJsonObject>* Subject = nullptr;
+    double Cameras = 0;
+    if (!Set || !Id(String(Set, TEXT("id"))) || String(Set, TEXT("name")).IsEmpty() || String(Set, TEXT("name")).Len() > 256 ||
+        String(Set, TEXT("mapPath")).IsEmpty() || String(Set, TEXT("mapPath")).Len() > 4096 ||
+        !Set->TryGetNumberField(TEXT("cameras"), Cameras) || Cameras < 1 || Cameras > 256 ||
+        Cameras != FMath::FloorToDouble(Cameras) || !Set->TryGetObjectField(TEXT("subject"), Subject))
+        return false;
+    const FString Kind = String(*Subject, TEXT("kind"));
+    FGuid Guid;
+    const FString Path = String(*Subject, TEXT("actorPath"));
+    return Kind == TEXT("actor_guid")
+               ? FGuid::Parse(String(*Subject, TEXT("actorGuid")), Guid) && Guid.IsValid()
+               : Kind == TEXT("actor_path") && Path.StartsWith(TEXT("/Game/")) && Path.Len() <= 4096;
+}
+/** A GUID subject never falls back to its last known path. */
+bool IsSubject(const TSharedPtr<FJsonObject>& Set, const AActor* Actor)
+{
+    const TSharedPtr<FJsonObject>* Subject = nullptr;
+    if (!Set->TryGetObjectField(TEXT("subject"), Subject)) return false;
+    FGuid Guid;
+    return String(*Subject, TEXT("kind")) == TEXT("actor_guid")
+               ? FGuid::Parse(String(*Subject, TEXT("actorGuid")), Guid) && Guid == Actor->GetActorGuid()
+               : String(*Subject, TEXT("actorPath")) == Actor->GetPathName();
 }
 }
 
-TSharedPtr<FJsonObject> FUEShedCameraSetup::Inspect()
+TSharedPtr<FJsonObject> FUEShedCameraSetup::Inspect(bool bExtended)
 {
     Expire();
     auto R = Failure(TEXT("setup"), *Message);
     R->SetBoolField(TEXT("connected"), !Host.IsEmpty());
-    if (Pending) R->SetObjectField(TEXT("request"), Pending);
+    if (Pending && !PendingOpen) R->SetObjectField(TEXT("request"), Pending);
+    if (bExtended)
+    {
+        R->SetBoolField(TEXT("canOpen"), !Host.IsEmpty() && HostCanOpen);
+        if (Pending && PendingOpen) R->SetObjectField(TEXT("open"), Pending);
+    }
     if (auto W = World())
     {
         AActor* Selected = nullptr;
@@ -71,7 +116,19 @@ TSharedPtr<FJsonObject> FUEShedCameraSetup::Inspect()
             S->SetStringField(TEXT("actorPath"), Selected->GetPathName());
             S->SetStringField(TEXT("displayName"), Selected->GetActorLabel());
             S->SetStringField(TEXT("mapPath"), W->GetOutermost()->GetName());
+            if (bExtended && Selected->GetActorGuid().IsValid())
+                S->SetStringField(TEXT("actorGuid"), Selected->GetActorGuid().ToString(EGuidFormats::UniqueObjectGuid));
             R->SetObjectField(TEXT("selection"), S);
+        }
+        if (bExtended && HostCanOpen && !Host.IsEmpty())
+        {
+            // Only the sets whose subject is the one selected actor in this map.
+            TArray<TSharedPtr<FJsonValue>> Matching;
+            if (Count == 1)
+                for (const auto& Set : Sets)
+                    if (String(Set, TEXT("mapPath")) == W->GetOutermost()->GetName() && IsSubject(Set, Selected))
+                        Matching.Add(MakeShared<FJsonValueObject>(Set));
+            R->SetArrayField(TEXT("sets"), Matching);
         }
     }
     return R;
@@ -80,14 +137,13 @@ TSharedPtr<FJsonObject> FUEShedCameraSetup::Inspect()
 TSharedPtr<FJsonObject> FUEShedCameraSetup::Execute(const TSharedPtr<FJsonObject>& Q)
 {
     Expire();
+    const bool Extended = Flag(Q, TEXT("reopen"));
     if (String(Q, TEXT("operation")) == TEXT("setup_release"))
     {
         if (!Id(String(Q, TEXT("hostId"))) || Host != String(Q, TEXT("hostId")))
             return Failure(TEXT("stale"), TEXT("The setup host no longer owns this connection."));
-        if (Pending) Message = TEXT("Setup interrupted. Check your saved sets before trying again.");
-        Pending.Reset();
-        Host.Reset();
-        return Inspect();
+        Disconnect();
+        return Inspect(false);
     }
     if (String(Q, TEXT("operation")) == TEXT("setup_poll"))
     {
@@ -106,19 +162,63 @@ TSharedPtr<FJsonObject> FUEShedCameraSetup::Execute(const TSharedPtr<FJsonObject
             if (!Error || ((*Error)->Type != EJson::String && (*Error)->Type != EJson::Null))
                 return Failure(TEXT("invalid"), TEXT("Setup outcome error must be text or null."));
         }
+        TArray<TSharedPtr<FJsonObject>> Listed;
+        const TArray<TSharedPtr<FJsonValue>>* Values = nullptr;
+        const bool HasSets = Q->HasField(TEXT("sets"));
+        if (HasSets)
+        {
+            if (!Q->TryGetArrayField(TEXT("sets"), Values) || Values->Num() > 256)
+                return Failure(TEXT("invalid"), TEXT("List at most 256 saved camera sets."));
+            for (const auto& Value : *Values)
+            {
+                const TSharedPtr<FJsonObject>* Set = nullptr;
+                if (!Value->TryGetObject(Set) || !ValidSet(*Set))
+                    return Failure(TEXT("invalid"), TEXT("Each saved set needs an ID, name, map, subject and camera count."));
+                Listed.Add(*Set);
+            }
+        }
+        if (Host != RequestedHost)
+        {
+            HostCanOpen = false;
+            Sets.Reset();
+        }
         Host = RequestedHost;
         Deadline = FPlatformTime::Seconds() + 30;
+        // Each poll states whether this host can reopen; a list replaces the previous one.
+        HostCanOpen = Extended;
+        if (!Extended) Sets.Reset();
+        else if (HasSets) Sets = MoveTemp(Listed);
         if (Outcome && Pending &&
             String(*Outcome, TEXT("id")) == String(Pending, TEXT("id")))
         {
             Message = String(*Outcome, TEXT("error"));
             Pending.Reset();
+            PendingOpen = false;
         }
-        return Inspect();
+        return Inspect(Extended);
     }
     if (Host.IsEmpty()) return Failure(TEXT("unavailable"), TEXT("Connect a camera host for this project. Workbench can run in the background."));
-    if (Pending) return Failure(TEXT("busy"), TEXT("Your camera set is still being created."));
+    if (Pending) return Failure(TEXT("busy"), PendingOpen ? TEXT("Your camera set is still opening.") : TEXT("Your camera set is still being created."));
     const TSharedPtr<FJsonObject>* Intent;
+    if (String(Q, TEXT("operation")) == TEXT("setup_open"))
+    {
+        if (!HostCanOpen)
+            return Failure(TEXT("unavailable"), TEXT("This camera host can't reopen saved sets. Open the set from the host app."));
+        if (!Q->TryGetObjectField(TEXT("intent"), Intent) || !Id(String(*Intent, TEXT("id"))) ||
+            !Id(String(*Intent, TEXT("arrangementId"))))
+            return Failure(TEXT("invalid"), TEXT("Choose a saved camera set to open."));
+        const FString Wanted = String(*Intent, TEXT("arrangementId"));
+        auto W = World();
+        if (!W || !Sets.ContainsByPredicate([&Wanted](const auto& Set) { return String(Set, TEXT("id")) == Wanted; }))
+            return Failure(TEXT("stale"), TEXT("That saved set is no longer listed. Choose it again."));
+        Pending = MakeShared<FJsonObject>();
+        Pending->SetStringField(TEXT("id"), String(*Intent, TEXT("id")));
+        Pending->SetStringField(TEXT("arrangementId"), Wanted);
+        PendingOpen = true;
+        SetupMap = W->GetOutermost()->GetName();
+        Message.Reset();
+        return Inspect(true);
+    }
     const TSharedPtr<FJsonObject>* Layout;
     if (!Q->TryGetObjectField(TEXT("intent"), Intent) || !(*Intent)->TryGetObjectField(TEXT("layout"), Layout))
         return Failure(TEXT("invalid"), TEXT("Choose an actor and camera preset."));
@@ -139,7 +239,8 @@ TSharedPtr<FJsonObject> FUEShedCameraSetup::Execute(const TSharedPtr<FJsonObject
         String(*Intent, TEXT("mapPath")) != W->GetOutermost()->GetName() || Path.Len() > 4096)
         return Failure(TEXT("stale"), TEXT("Select a subject actor in the current editor map."));
     Pending = MakeShared<FJsonObject>(**Intent);
+    PendingOpen = false;
     SetupMap = W->GetOutermost()->GetName();
     Message.Reset();
-    return Inspect();
+    return Inspect(Extended);
 }

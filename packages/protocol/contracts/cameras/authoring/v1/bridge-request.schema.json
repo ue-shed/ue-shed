@@ -14,6 +14,9 @@
 						"operation": {
 							"type": "string",
 							"enum": ["setup_status"]
+						},
+						"reopen": {
+							"type": "boolean"
 						}
 					},
 					"required": ["version", "operation"],
@@ -156,6 +159,44 @@
 						},
 						"operation": {
 							"type": "string",
+							"enum": ["setup_open"]
+						},
+						"intent": {
+							"type": "object",
+							"properties": {
+								"id": {
+									"type": "string",
+									"allOf": [
+										{
+											"pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$"
+										}
+									]
+								},
+								"arrangementId": {
+									"type": "string",
+									"allOf": [
+										{
+											"pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$"
+										}
+									]
+								}
+							},
+							"required": ["id", "arrangementId"],
+							"additionalProperties": false
+						}
+					},
+					"required": ["version", "operation", "intent"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"version": {
+							"type": "number",
+							"enum": [1]
+						},
+						"operation": {
+							"type": "string",
 							"enum": ["setup_poll"]
 						},
 						"hostId": {
@@ -198,6 +239,162 @@
 							},
 							"required": ["id", "error"],
 							"additionalProperties": false
+						},
+						"reopen": {
+							"type": "boolean"
+						},
+						"sets": {
+							"type": "array",
+							"items": {
+								"type": "object",
+								"properties": {
+									"id": {
+										"type": "string",
+										"allOf": [
+											{
+												"pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$"
+											}
+										]
+									},
+									"name": {
+										"type": "string",
+										"allOf": [
+											{
+												"minLength": 1
+											},
+											{
+												"maxLength": 256
+											}
+										]
+									},
+									"mapPath": {
+										"type": "string",
+										"allOf": [
+											{
+												"minLength": 1
+											},
+											{
+												"maxLength": 4096
+											}
+										]
+									},
+									"subject": {
+										"anyOf": [
+											{
+												"type": "object",
+												"properties": {
+													"actorGuid": {
+														"type": "string",
+														"allOf": [
+															{
+																"pattern": "^(?!00000000-00000000-00000000-00000000$)[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{8}){3}$"
+															}
+														]
+													},
+													"diagnosticLabel": {
+														"anyOf": [
+															{
+																"type": "string",
+																"allOf": [
+																	{
+																		"minLength": 1
+																	}
+																]
+															},
+															{
+																"type": "null"
+															}
+														]
+													},
+													"kind": {
+														"type": "string",
+														"enum": ["actor_guid"]
+													},
+													"lastKnownActorPath": {
+														"anyOf": [
+															{
+																"type": "string",
+																"allOf": [
+																	{
+																		"minLength": 7
+																	},
+																	{
+																		"maxLength": 4096
+																	},
+																	{
+																		"pattern": "^\\/Game\\/"
+																	}
+																]
+															},
+															{
+																"type": "null"
+															}
+														]
+													}
+												},
+												"required": ["actorGuid", "kind"],
+												"additionalProperties": false
+											},
+											{
+												"type": "object",
+												"properties": {
+													"actorPath": {
+														"type": "string",
+														"allOf": [
+															{
+																"minLength": 7
+															},
+															{
+																"maxLength": 4096
+															},
+															{
+																"pattern": "^\\/Game\\/"
+															}
+														]
+													},
+													"diagnosticLabel": {
+														"anyOf": [
+															{
+																"type": "string",
+																"allOf": [
+																	{
+																		"minLength": 1
+																	}
+																]
+															},
+															{
+																"type": "null"
+															}
+														]
+													},
+													"kind": {
+														"type": "string",
+														"enum": ["actor_path"]
+													}
+												},
+												"required": ["actorPath", "kind"],
+												"additionalProperties": false
+											}
+										]
+									},
+									"cameras": {
+										"type": "integer",
+										"allOf": [
+											{
+												"minimum": 1,
+												"maximum": 256
+											}
+										]
+									}
+								},
+								"required": ["id", "name", "mapPath", "subject", "cameras"],
+								"additionalProperties": false
+							},
+							"allOf": [
+								{
+									"maxItems": 256
+								}
+							]
 						}
 					},
 					"required": ["version", "operation", "hostId", "projectName"],

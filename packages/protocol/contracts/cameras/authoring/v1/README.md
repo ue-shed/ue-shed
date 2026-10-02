@@ -44,6 +44,19 @@ a reply is lost during that host lifetime. Inspect saved data after interruption
 `setup_release` requires the owning host identity; hosts use it on graceful shutdown so reconnecting
 does not have to wait for the old lease. The public host exposes this as `close`.
 
+Reopening a saved set is optional and negotiated by the host. A host that can open sets sends
+`reopen: true` on every `setup_poll`, with `sets` (at most 256 `{ id, name, mapPath, subject,
+cameras }`) to replace its previous list; `reopen: true` without `sets` keeps the list, and a poll
+without `reopen` withdraws both. Only replies to requests carrying `reopen: true` (and the native
+panel's own reads) gain `canOpen`, `sets` filtered to the single selected actor in the current map
+(GUID subjects match the actor GUID and never fall back to a path), `selection.actorGuid`, and a
+pending `open: { id, arrangementId }`; older hosts, which decode replies strictly, keep receiving
+exactly the previous fields. `setup_open` queues one listed arrangement under its own request ID
+and shares the creation queue: one pending request, the same 30-second lease, cancellation on host
+loss or map change, and the same `outcome` acknowledgement. A host is never asked to open unless
+it negotiated reopening, so older hosts are unaffected; older plugins ignore the extra poll fields
+and never send `open`. The public `makeCameraSetupHost({ create, open, sets })` implements this.
+
 Consumers negotiate `cameras.authoring.v1` plus `arrangementPanel` before attaching this panel protocol.
 Capture-only consumers need Core+Cameras, never the menu or bridge. Render capabilities independently
 advertise authored visibility. Generic synchronization and the production recovery matrix remain

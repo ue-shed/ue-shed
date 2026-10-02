@@ -8,6 +8,9 @@ the status row when done.
 
 ## Active
 
+Standalone synchronization: [Architecture review and phased plan](standalone-sync.md) — `TODO`,
+awaiting design review; implementation is not authorized.
+
 Shared rendering API: [Shared camera rendering](shared-camera-rendering-api.md) — implemented,
 unreleased; Review and all map modes share native ownership and rendering. The plan links the
 public contract, adoption guidance, and live validation report.

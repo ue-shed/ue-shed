@@ -6,8 +6,10 @@ through vertical slices and engine-source verification.
 
 ## Shared infrastructure
 
-- [Authoring synchronization layer](authoring-sync-layer.md) — proposed Node coordinator, public
-  sync interfaces, and optional Unreal bridge/menu clients; a general sync library remains future work
+- [Authoring synchronization layer](authoring-sync-layer.md) — standalone primitive proposal:
+  Node authority, revisioned commands, recovery, reactive clients and optional native bridge;
+  linked implementation plan awaits review
+  ([standalone HTML reading edition](authoring-sync-layer.html))
 
 ## Running-world products
 

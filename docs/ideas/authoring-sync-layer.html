@@ -1,0 +1,2559 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="UE Shed standalone synchronization design: authority, protocol, reactive clients, Unreal participation and phased implementation plan."
+		/>
+		<title>Standalone synchronization — UE Shed</title>
+		<style>
+			:root {
+				color-scheme: light;
+				--paper: #f6f5f0;
+				--ink: #203334;
+				--muted: #607170;
+				--line: #d6ddda;
+				--accent: #17695b;
+				--wash: #e8f1ea;
+				--mono: Consolas, "Cascadia Code", monospace;
+			}
+			* {
+				box-sizing: border-box;
+			}
+			html {
+				scroll-behavior: smooth;
+				scroll-padding-top: 30px;
+			}
+			body {
+				margin: 0;
+				background: var(--paper);
+				color: var(--ink);
+				font:
+					16px/1.7 "Segoe UI",
+					Arial,
+					sans-serif;
+			}
+			a {
+				color: var(--accent);
+				text-underline-offset: 3px;
+			}
+			a:hover {
+				text-decoration-thickness: 2px;
+			}
+			button {
+				font: inherit;
+				cursor: pointer;
+			}
+			:focus-visible {
+				outline: 3px solid #c37523;
+				outline-offset: 4px;
+			}
+			.skip {
+				position: fixed;
+				top: -70px;
+				left: 20px;
+				z-index: 20;
+				padding: 12px;
+				background: white;
+			}
+			.skip:focus {
+				top: 10px;
+			}
+			.sidebar {
+				position: fixed;
+				inset: 0 auto 0 0;
+				width: 270px;
+				padding: 30px 23px;
+				border-right: 1px solid var(--line);
+				background: #eef0e9;
+				overflow: auto;
+			}
+			.brand {
+				color: var(--ink);
+				font: 700 18px/1.2 var(--mono);
+				text-decoration: none;
+				letter-spacing: -0.5px;
+			}
+			.edition {
+				font: 11px/1.8 var(--mono);
+				color: var(--muted);
+				margin: 8px 0 27px;
+				text-transform: uppercase;
+				letter-spacing: 1px;
+			}
+			nav strong {
+				display: block;
+				margin: 24px 0 8px;
+				font: 11px var(--mono);
+				text-transform: uppercase;
+				letter-spacing: 1px;
+				color: var(--muted);
+			}
+			nav a {
+				display: block;
+				padding: 5px 9px;
+				margin: 2px 0;
+				border-left: 2px solid transparent;
+				color: #425654;
+				font-size: 12px;
+				line-height: 1.5;
+				text-decoration: none;
+			}
+			nav a:hover,
+			nav a.active {
+				color: var(--accent);
+				border-color: var(--accent);
+				background: #e1e9df;
+			}
+			.print {
+				margin-top: 26px;
+				border: 1px solid #bbc9c3;
+				background: transparent;
+				padding: 7px 12px;
+				border-radius: 4px;
+				font-size: 12px;
+			}
+			main {
+				margin-left: 270px;
+				max-width: 1320px;
+				padding: 56px 64px 90px;
+			}
+			.eyebrow {
+				display: flex;
+				gap: 10px;
+				align-items: center;
+				flex-wrap: wrap;
+				font: 11px var(--mono);
+				letter-spacing: 1px;
+				text-transform: uppercase;
+			}
+			.badge {
+				padding: 5px 9px;
+				border: 1px solid #a5b9a9;
+				background: var(--wash);
+				border-radius: 3px;
+			}
+			h1 {
+				margin: 25px 0 20px;
+				max-width: 800px;
+				font:
+					500 clamp(40px, 5vw, 70px)/1.05 Georgia,
+					serif;
+				letter-spacing: -2px;
+			}
+			.lede {
+				max-width: 750px;
+				font-size: 20px;
+				line-height: 1.6;
+				color: #536563;
+			}
+			.sources {
+				font-size: 12px;
+				margin: 24px 0 35px;
+				color: var(--muted);
+			}
+			.sources a {
+				margin-right: 16px;
+			}
+			.summary {
+				display: grid;
+				grid-template-columns: repeat(3, 1fr);
+				gap: 1px;
+				border: 1px solid var(--line);
+				background: var(--line);
+				margin: 30px 0 50px;
+			}
+			.summary div {
+				background: #fffefa;
+				padding: 20px;
+			}
+			.summary b {
+				display: block;
+				font-size: 14px;
+				margin-bottom: 8px;
+			}
+			.summary p {
+				font-size: 13px;
+				margin: 0;
+				color: var(--muted);
+			}
+			.chapter {
+				border-top: 2px solid var(--ink);
+				padding-top: 20px;
+				margin-top: 70px;
+			}
+			.chapter > .chapter-title {
+				font: 12px var(--mono);
+				text-transform: uppercase;
+				letter-spacing: 2px;
+				color: var(--accent);
+				margin-bottom: 26px;
+			}
+			h2 {
+				margin: 60px 0 18px;
+				font:
+					500 32px/1.2 Georgia,
+					serif;
+				letter-spacing: -0.5px;
+				border-top: 1px solid var(--line);
+				padding-top: 27px;
+			}
+			h3 {
+				font-size: 19px;
+				margin: 35px 0 12px;
+			}
+			p {
+				margin: 14px 0;
+			}
+			li {
+				margin: 8px 0;
+			}
+			ul,
+			ol {
+				padding-left: 24px;
+			}
+			code {
+				font: 0.86em/1.6 var(--mono);
+				background: #e9ece6;
+				padding: 2px 4px;
+				border-radius: 3px;
+				overflow-wrap: anywhere;
+			}
+			pre {
+				background: #203334;
+				color: #deede5;
+				border-radius: 5px;
+				padding: 24px;
+				overflow: auto;
+				font-size: 13px;
+				line-height: 1.7;
+			}
+			pre code {
+				background: none;
+				padding: 0;
+				color: inherit;
+				overflow-wrap: normal;
+			}
+			.table-wrap {
+				overflow-x: auto;
+				margin: 25px 0;
+				border: 1px solid var(--line);
+				border-radius: 4px;
+				background: #fffefa;
+			}
+			table {
+				width: 100%;
+				border-collapse: collapse;
+				font-size: 13px;
+				line-height: 1.65;
+			}
+			th {
+				text-align: left;
+				font-size: 11px;
+				text-transform: uppercase;
+				letter-spacing: 0.6px;
+				background: #e8ede6;
+				color: #48625b;
+			}
+			th,
+			td {
+				padding: 13px 16px;
+				border-bottom: 1px solid var(--line);
+				vertical-align: top;
+			}
+			tr:last-child td {
+				border-bottom: 0;
+			}
+			td:first-child {
+				font-weight: 600;
+				min-width: 150px;
+			}
+			td {
+				overflow-wrap: anywhere;
+			}
+			.diagram {
+				margin: 26px 0;
+				padding: 16px;
+				border: 1px solid var(--line);
+				background: #fffefa;
+				border-radius: 5px;
+			}
+			.diagram-scroll {
+				overflow-x: auto;
+			}
+			svg {
+				width: 100%;
+				min-width: 670px;
+				display: block;
+			}
+			.node rect {
+				fill: #eef1e9;
+				stroke: #b7c5bd;
+				rx: 5;
+			}
+			.node text {
+				text-anchor: middle;
+				font:
+					13px "Segoe UI",
+					sans-serif;
+				fill: #203334;
+			}
+			.node .small {
+				font-size: 11px;
+				fill: #536762;
+			}
+			.node .authority {
+				fill: #205749;
+				stroke: #205749;
+			}
+			.node .light {
+				fill: #f1f7ef;
+			}
+			.node .optional {
+				stroke-dasharray: 5 3;
+			}
+			.edge-label {
+				font:
+					10px "Segoe UI",
+					sans-serif;
+				fill: #647975;
+			}
+			figcaption {
+				font-size: 12px;
+				line-height: 1.6;
+				color: var(--muted);
+				margin-top: 12px;
+			}
+			.explorer {
+				border: 1px solid #b7cbbd;
+				background: #eef3eb;
+				padding: 25px;
+				border-radius: 5px;
+				margin-top: 30px;
+			}
+			.explorer h2 {
+				border: 0;
+				padding: 0;
+				margin: 0 0 10px;
+				font-size: 25px;
+			}
+			.explorer > p {
+				font-size: 14px;
+			}
+			.choices {
+				display: flex;
+				flex-wrap: wrap;
+				gap: 8px;
+				margin: 20px 0;
+			}
+			.choices button {
+				border: 1px solid #b6c7bb;
+				background: #fffefa;
+				border-radius: 4px;
+				padding: 7px 12px;
+				font-size: 12px;
+			}
+			.choices button[aria-pressed="true"] {
+				background: #205749;
+				color: white;
+				border-color: #205749;
+			}
+			.stages {
+				display: grid;
+				grid-template-columns: repeat(4, 1fr);
+				gap: 10px;
+			}
+			.stage {
+				padding: 13px;
+				background: #fffefa;
+				border: 1px solid var(--line);
+				border-radius: 3px;
+			}
+			.stage span {
+				display: block;
+				font: 10px var(--mono);
+				text-transform: uppercase;
+				letter-spacing: 0.6px;
+				color: var(--muted);
+			}
+			.stage b {
+				display: block;
+				font-size: 14px;
+				margin-top: 8px;
+			}
+			.scenario-note {
+				min-height: 3.4em;
+				font-size: 13px;
+			}
+			footer {
+				border-top: 1px solid var(--line);
+				margin-top: 60px;
+				padding-top: 20px;
+				font-size: 12px;
+				color: var(--muted);
+			}
+			@media (min-width: 1600px) {
+				main {
+					margin-left: calc(270px + (100vw - 1600px) / 2);
+				}
+			}
+			@media (max-width: 1100px) {
+				.sidebar {
+					width: 230px;
+				}
+				main {
+					margin-left: 230px;
+					padding: 40px 30px 70px;
+				}
+			}
+			@media (max-width: 760px) {
+				.sidebar {
+					position: static;
+					width: auto;
+					padding: 20px;
+					border-right: 0;
+					border-bottom: 1px solid var(--line);
+				}
+				.edition {
+					margin: 8px 0;
+				}
+				nav details {
+					margin-top: 10px;
+				}
+				nav summary {
+					cursor: pointer;
+					font-size: 13px;
+				}
+				main {
+					margin: 0;
+					padding: 30px 20px 60px;
+				}
+				.summary {
+					grid-template-columns: 1fr;
+				}
+				.stages {
+					grid-template-columns: repeat(2, 1fr);
+				}
+				h1 {
+					letter-spacing: -1px;
+				}
+				h2 {
+					font-size: 27px;
+				}
+				th,
+				td {
+					padding: 10px;
+				}
+			}
+			@media (prefers-reduced-motion: reduce) {
+				html {
+					scroll-behavior: auto;
+				}
+			}
+			@media print {
+				.sidebar,
+				.skip,
+				.choices {
+					display: none;
+				}
+				main {
+					margin: 0;
+					max-width: none;
+					padding: 0;
+				}
+				body {
+					background: white;
+					font-size: 10pt;
+				}
+				.chapter {
+					break-before: page;
+				}
+				h2,
+				h3 {
+					break-after: avoid;
+				}
+				pre {
+					white-space: pre-wrap;
+					background: #f0f0ed;
+					color: #203334;
+				}
+				.table-wrap,
+				.diagram-scroll {
+					overflow: visible;
+				}
+				table {
+					font-size: 8pt;
+				}
+				tr,
+				.stage {
+					break-inside: avoid;
+				}
+				svg {
+					min-width: 0;
+				}
+				.explorer {
+					break-inside: avoid;
+				}
+				a {
+					color: inherit;
+				}
+			}
+		</style>
+	</head>
+	<body>
+		<a class="skip" href="#content">Skip to document</a>
+		<aside class="sidebar">
+			<a class="brand" href="#overview">UE SHED / FIELD NOTES</a>
+			<p class="edition">Architecture review · 14 Sep 2026</p>
+			<nav aria-label="Document navigation">
+				<details id="toc">
+					<summary>Contents</summary>
+					<a href="#overview">Overview</a><a href="#outcomes-title">Outcome explorer</a
+					><strong>01 / Architecture</strong
+					><a href="#design-standing-boundaries-and-recommendations"
+						>Standing boundaries and recommendations</a
+					><a href="#design-evidence-from-camera-flow">Evidence from camera flow</a
+					><a href="#design-snapshot-delivery-for-v1">Snapshot delivery for v1</a
+					><a href="#design-responsibility-and-authority">Responsibility and authority</a
+					><a href="#design-language-neutral-protocol">Language-neutral protocol</a
+					><a href="#design-command-and-acknowledgement-semantics"
+						>Command and acknowledgement semantics</a
+					><a href="#design-solid-2-client-integration">Solid 2 client integration</a
+					><a href="#design-native-participation-and-game-thread-execution"
+						>Native participation and game-thread execution</a
+					><a href="#design-ownership-and-lifetimes">Ownership and lifetimes</a
+					><a href="#design-failure-and-recovery-matrix">Failure and recovery matrix</a
+					><a href="#design-validation-authorization-observability-and-limits"
+						>Validation, authorization, observability and limits</a
+					><a href="#design-camera-acceptance-and-incremental-adoption"
+						>Camera acceptance and incremental adoption</a
+					><strong>02 / Implementation plan</strong
+					><a href="#plan-review-decisions-and-stop-conditions"
+						>Review decisions and stop conditions</a
+					><a href="#plan-phase-1-contract-and-state-machine-conformance"
+						>Phase 1 — contract and state-machine conformance</a
+					><a href="#plan-phase-2-headless-coordinator-repository-and-client"
+						>Phase 2 — headless coordinator, repository and client</a
+					><a href="#plan-phase-3-optional-native-bridge-and-transport-adapter"
+						>Phase 3 — optional native bridge and transport adapter</a
+					><a href="#plan-phase-4-incremental-camera-migration"
+						>Phase 4 — incremental camera migration</a
+					><a href="#plan-phase-5-adoption-and-release-readiness"
+						>Phase 5 — adoption and release readiness</a
+					><a href="#plan-verification-strategy">Verification strategy</a>
+				</details>
+			</nav>
+			<button type="button" class="print" id="print">Print / Save as PDF</button>
+		</aside>
+		<main id="content">
+			<header id="overview">
+				<div class="eyebrow">
+					<span class="badge">Design proposal</span
+					><span>Headless-first · domain-independent</span>
+				</div>
+				<h1>One coordinator.<br />Many clients.<br />Explicit outcomes.</h1>
+				<p class="lede">
+					A standalone synchronization primitive for UE Shed: order domain commands,
+					reconcile confirmed state and recover uncertain work across a host and Unreal
+					Editor.
+				</p>
+				<p class="sources">
+					Reading edition of the
+					<a href="authoring-sync-layer.md">existing concept</a> and
+					<a href="../../plans/standalone-sync.md">implementation plan</a>. The plan owns
+					implementation status; this edition records a proposal awaiting review.
+				</p>
+			</header>
+			<div class="summary">
+				<div>
+					<b>Node orders document changes</b>
+					<p>
+						A single coordinator accepts revision-checked domain commands. Clients share
+						confirmed state through scoped subscriptions.
+					</p>
+				</div>
+				<div>
+					<b>Unreal owns engine reality</b>
+					<p>
+						An optional C++ bridge applies fenced work and reports observations. Native
+						edits become domain proposals.
+					</p>
+				</div>
+				<div>
+					<b>Domains retain their policies</b>
+					<p>
+						Persistence choices, camera rules, approval and capture remain outside
+						generic synchronization.
+					</p>
+				</div>
+			</div>
+			<section class="explorer" aria-labelledby="outcomes-title">
+				<h2 id="outcomes-title">One edit. Four separate facts.</h2>
+				<p>
+					Explore illustrative outcomes. A transport acknowledgement cannot stand in for a
+					saved document, applied engine change or domain approval.
+				</p>
+				<div class="choices" role="group" aria-label="Example outcome">
+					<button type="button" data-case="received" aria-pressed="true">
+						Receipt only</button
+					><button type="button" data-case="saved" aria-pressed="false">
+						Draft saved</button
+					><button type="button" data-case="lost" aria-pressed="false">
+						Engine reply lost</button
+					><button type="button" data-case="approved" aria-pressed="false">
+						Domain approved
+					</button>
+				</div>
+				<div id="scenario" aria-live="polite" aria-atomic="true">
+					<div class="stages">
+						<div class="stage">
+							<span>Decision</span><b id="decision">Unresolved</b>
+						</div>
+						<div class="stage">
+							<span>Engine</span><b id="engine">Not dispatched</b>
+						</div>
+						<div class="stage">
+							<span>Persistence</span><b id="persistence">Unconfirmed</b>
+						</div>
+						<div class="stage">
+							<span>Domain approval</span><b id="approval">Not granted</b>
+						</div>
+					</div>
+					<p class="scenario-note" id="scenario-note">
+						The request entered a bounded queue. It may not survive a receiver crash;
+						query its command ID before treating the edit as accepted.
+					</p>
+				</div>
+				<noscript
+					><p>
+						Interactive examples require JavaScript. All protocol and recovery details
+						are available in the document below.
+					</p></noscript
+				>
+			</section>
+			<article class="chapter" id="architecture">
+				<div class="chapter-title">01 / Architecture and protocol</div>
+				<p>
+					This develops the concept recorded 2026-09-10 in place. New protocol/package
+					names are proposals, not shipped promises. Implementation status and the review
+					boundary live in the <a href="#implementation">implementation plan</a>.
+				</p>
+				<p>
+					The reusable unit is a
+					<strong
+						>single-authority, revisioned command coordinator with a scoped client read
+						model</strong
+					>: command identity, serialization, pending intent, outcome recovery,
+					latest-snapshot subscriptions, resynchronization and fenced engine dispatch.
+					Domains supply command meaning and persistence policy; adapters supply storage
+					and transport. The next package supplies its reducer and ports instead of
+					writing another polling/reconciliation loop.
+				</p>
+				<h2 id="design-standing-boundaries-and-recommendations">
+					Standing boundaries and recommendations
+				</h2>
+				<div class="table-wrap" role="region" aria-label="Reference table" tabindex="0">
+					<table>
+						<thead>
+							<tr>
+								<th>Standing boundary</th>
+								<th>Basis</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td>
+									Libraries and CLI are first-class; Workbench and native menus
+									are clients
+								</td>
+								<td>
+									<a href="../vision-and-architecture.md">Architecture</a>,
+									<a href="../engineering/README.md">engineering</a>,
+									<a href="../engineering/agent-adoption.md">adoption</a>
+								</td>
+							</tr>
+							<tr>
+								<td>
+									Language-neutral contracts, validation, optional
+									capability-discovered plugins
+								</td>
+								<td>
+									Architecture and
+									<a href="../engineering/types-and-errors.md">types/errors</a>
+								</td>
+							</tr>
+							<tr>
+								<td>
+									UE Shed-owned <code>unreal-rc</code> remains the Unreal
+									transport behind <code>@ue-shed/unreal-connection</code>
+								</td>
+								<td>
+									Architecture and original concept; no repository move or
+									release-ownership change
+								</td>
+							</tr>
+							<tr>
+								<td>
+									Placement, inheritance, culling, approval merging and capture
+									policy stay in cameras
+								</td>
+								<td>Existing camera domain and this design's scope</td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+				<p>Recommendations for review, not previously accepted architecture decisions:</p>
+				<ul>
+					<li>
+						Retain Node coordination: one active owner per document, embedded in a CLI
+						or studio host if desired. No mandatory daemon, cloud service or native
+						TypeScript runtime.
+					</li>
+					<li>
+						Propose <code>@ue-shed/sync</code> with browser-safe client and Node
+						coordinator exports; neutral wire schemas and fixtures live under
+						<code>packages/protocol/contracts/sync/v1</code>.
+					</li>
+					<li>
+						Propose optional <code>UEShedSyncBridge</code> for C++ queues, fences,
+						outcomes, subscriptions and lease plumbing. Domain bridges register typed
+						apply/observation handlers. Generic bridge depends on Core; camera bridge
+						depends on it and Cameras; menus use public facades. Rendering stays
+						independent.
+					</li>
+					<li>
+						V1 uses strict document compare-and-swap (CAS), full snapshots and explicit
+						operation recovery. Prove extraction with cameras plus a tiny unrelated
+						fixture domain before publication. This refines the original “second
+						workflow before wider extraction” sequencing: the fixture proves
+						independence; another production workflow must justify broader APIs.
+					</li>
+					<li>
+						Durable domains commit before publishing acceptance. Volatile domains
+						advertise volatile acceptance. Neither equates acceptance with engine
+						application or domain approval.
+					</li>
+				</ul>
+				<p>
+					TanStack DB motivated the reactive read-model discussion. V1 neither adopts it
+					nor builds a database, query language, joins, indexes, CRDTs, arbitrary JSON
+					merging, offline multi-master editing, automatic cross-host failover or
+					distributed lock service. Support multiple online clients, one coordinator per
+					document, one attached editor binding per session and explicit editor
+					replacement. Independent documents run concurrently. Names and defaults remain
+					subject to review.
+				</p>
+				<h2 id="design-evidence-from-camera-flow">Evidence from camera flow</h2>
+				<p>
+					Rechecked <code>feat/camera-flow</code> at <code>f7e6dec</code> on 2026-09-13
+					with a clean source worktree. These are source and test observations, not a
+					fresh claim that live gates pass. Paths below refer to that revision; the
+					concept branch does not contain the later camera implementation.
+				</p>
+				<div class="table-wrap" role="region" aria-label="Reference table" tabindex="0">
+					<table>
+						<thead>
+							<tr>
+								<th>Source at that revision</th>
+								<th>Extraction lesson</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td>
+									<code>packages/cameras/src/camera-arrangement.ts</code> and
+									<code>.test.ts</code>
+								</td>
+								<td>
+									Stable camera/View IDs, scope/revision checks, pure commands,
+									exceptions and retired identities remain domain behavior.
+								</td>
+							</tr>
+							<tr>
+								<td>
+									<code>packages/cameras/src/camera-authoring-store.ts</code>:
+									<code>mutate</code>, <code>prior</code>
+								</td>
+								<td>
+									Outcomes/fingerprints commit with documents; its 256-entry
+									history needs explicit expiry/retry semantics.
+								</td>
+							</tr>
+							<tr>
+								<td>
+									Same file: <code>cameraApprovalBase</code>,
+									<code>recoverProjection</code>, <code>approve</code>
+								</td>
+								<td>
+									Owned-view approvals are domain-aware. Projection intent repairs
+									interrupted export. Source/destination are separately locked,
+									not one atomic transaction; concurrent cross-document
+									publication needs conformance.
+								</td>
+							</tr>
+							<tr>
+								<td>
+									<code>packages/cameras/src/camera-authoring-bridge.ts</code>:
+									<code>synchronizeArrangementCamera</code>
+								</td>
+								<td>
+									Producer/sequence checks stop old acknowledgements overwriting
+									continued movement. Intervening host edits conflict; two-way
+									traffic does not create equal authority.
+								</td>
+							</tr>
+							<tr>
+								<td>
+									<code>packages/cameras/src/camera-authoring-panel.ts</code>:
+									<code>tick</code>, <code>processEvent</code>
+								</td>
+								<td>
+									Load/import/recover/approve/activate/republish orchestration
+									mixes mechanics with panel actions. Extract mechanics, retain
+									domain actions/projections.
+								</td>
+							</tr>
+							<tr>
+								<td>
+									<code>UEShedCameraAuthoringBridge.cpp</code>:
+									<code>Observe</code>, <code>Execute</code>,
+									<code>Shutdown</code>
+								</td>
+								<td>
+									Observing actual proxy transform/FOV catches edits outside
+									menus. Game-thread checks, 30-second lease, transient proxies
+									and recovery-file attempts exist; unacknowledged gestures are
+									not crash-durable.
+								</td>
+							</tr>
+							<tr>
+								<td>
+									<code>SCameraArrangementPanel.cpp</code>: <code>Refresh</code>,
+									<code>RebuildCameras</code>
+								</td>
+								<td>
+									Revision/approval-sensitive refresh improves on ID-only refresh,
+									but rebuilding rows can disturb focus. Stable subscriptions
+									should update retained instances.
+								</td>
+							</tr>
+							<tr>
+								<td>
+									<code>camera-authoring-bridge.test.ts</code>,
+									<code>camera-authoring-panel.test.ts</code>,
+									<code>camera-arrangement.test.ts</code>
+								</td>
+								<td>
+									Baselines include lost replies, continued movement, overlap,
+									restart, disjoint approvals and interrupted exports.
+								</td>
+							</tr>
+							<tr>
+								<td><code>docs/products/camera-authoring.md</code></td>
+								<td>
+									Documents an unresolved Enter/focus numeric-input regression.
+									Reactive plumbing alone cannot fix input commit semantics;
+									require an interaction regression.
+								</td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+				<p>
+					The newer branch includes Workbench composition at <code>96aa5fe</code> and the
+					actor-scoped workspace at <code>f7e6dec</code>. In
+					<code>apps/workbench/src/main/services/camera-workspace.ts</code>, a semaphore
+					serializes requests and a 250 ms loop calls the public camera panel service.
+					Responses already contain full panel state and saved View IDs with revisions. In
+					<code>extensions/camera-review/src/camera-workspace.tsx</code>, a generation
+					guard rejects obsolete polls and <code>reconcile(result)</code> updates a
+					retained Solid store. These mechanisms should move into reusable
+					services/adapters; they are not new snapshot functionality to invent.
+				</p>
+				<div class="table-wrap" role="region" aria-label="Reference table" tabindex="0">
+					<table>
+						<thead>
+							<tr>
+								<th>Reuse</th>
+								<th>Extract or add</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td>Pure camera commands, identities and revision checks</td>
+								<td>
+									Public per-document coordinator, shared by CLI and studio hosts
+								</td>
+							</tr>
+							<tr>
+								<td>
+									File lock, atomic replacement, recent outcomes and approval
+									journal
+								</td>
+								<td>
+									Repository guarantees, explicit outcome lookup/expiry and owner
+									recovery
+								</td>
+							</tr>
+							<tr>
+								<td>
+									Native inspect/apply snapshots, producer/sequence guards and
+									leases
+								</td>
+								<td>
+									Generic binding fences, dispatch/outcome plumbing; domain
+									handlers remain native
+								</td>
+							</tr>
+							<tr>
+								<td>
+									Full Workbench panel responses, stale-poll guard and keyed
+									reconciliation
+								</td>
+								<td>Versioned snapshot envelope and optional Solid adapter</td>
+							</tr>
+							<tr>
+								<td>Saved View IDs plus revisions</td>
+								<td>
+									Preserve in domain snapshot projection; add explicit
+									checkpoint/engine evidence
+								</td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+				<h2 id="design-snapshot-delivery-for-v1">Snapshot delivery for v1</h2>
+				<p>
+					Use complete snapshots for bounded authoring documents over local connections.
+					This replaces the earlier proposal's entity patches, delta replay cursors and
+					retained batch history. Locality makes bandwidth less concerning; bounded
+					documents and latest-state consumers are the stronger reasons. Serialization,
+					decoding and native game-thread cost still require measurement.
+				</p>
+				<p>
+					After acceptance or a relevant outcome/checkpoint change, publish a consistent
+					full snapshot of the authorized document projection. Coalesce pending delivery
+					to the newest snapshot per subscriber. Clients may skip intermediate snapshots;
+					they cannot skip command execution or assume a missing outcome means failure.
+					Operation records and lookup survive independently of snapshot delivery. No UI
+					requires a general collection/query layer for this access pattern; domain
+					functions and Solid memos derive local views. Stable entity IDs remain useful
+					for rendering and domain ownership.
+				</p>
+				<p>
+					Keep frequent native observation samples and image data outside the document
+					snapshot channel. Observers can coalesce gesture samples; finalized domain
+					commands retain ordered, recoverable outcomes. Measure serialized bytes,
+					encode/decode time, game-thread processing and UI update cost at maximum
+					supported document size and realistic drag rates before considering incremental
+					delivery.
+				</p>
+				<h2 id="design-responsibility-and-authority">Responsibility and authority</h2>
+				<figure class="diagram">
+					<div class="diagram-scroll">
+						<svg
+							viewBox="0 0 910 590"
+							role="img"
+							aria-labelledby="diagram-title diagram-desc"
+						>
+							<title id="diagram-title">Responsibility and authority</title>
+							<desc id="diagram-desc">
+								External clients use a public facade to reach the Node coordinator.
+								Domain packages supply policy, and persistence is an adapter. The
+								coordinator uses unreal-connection and unreal-rc to reach an
+								optional generic bridge. Native clients use a public native facade.
+								Domain native handlers connect the bridge to Unreal Editor.
+							</desc>
+							<defs>
+								<marker
+									id="arrow"
+									markerWidth="7"
+									markerHeight="7"
+									refX="6"
+									refY="3.5"
+									orient="auto-start-reverse"
+								>
+									<path d="M0 0L7 3.5L0 7Z" fill="#748584" />
+								</marker>
+							</defs>
+							<g
+								fill="none"
+								stroke="#748584"
+								stroke-width="1.6"
+								marker-end="url(#arrow)"
+							>
+								<path d="M450 62V95" />
+								<path d="M450 145V180" marker-start="url(#arrow)" />
+								<path d="M275 212H325" />
+								<path d="M575 212H630" marker-start="url(#arrow)" />
+								<path d="M755 243V274" />
+								<path d="M450 244V300" marker-start="url(#arrow)" />
+								<path d="M450 362V410" marker-start="url(#arrow)" />
+								<path d="M575 442H630" marker-start="url(#arrow)" />
+								<path d="M755 474V508" marker-start="url(#arrow)" />
+								<path d="M150 438V500" />
+								<path d="M275 531H307V442H325" marker-start="url(#arrow)" />
+							</g>
+							<g class="node">
+								<rect x="325" y="12" width="250" height="50" />
+								<text x="450" y="42">CLI · Workbench · studio host</text>
+								<rect x="325" y="95" width="250" height="50" />
+								<text x="450" y="125">Public client + domain facade</text>
+								<rect x="25" y="180" width="250" height="64" />
+								<text x="150" y="206">Domain packages</text>
+								<text class="small" x="150" y="226">
+									Schemas · reducers · policy
+								</text>
+								<rect class="authority" x="325" y="180" width="250" height="64" />
+								<text class="light" x="450" y="206">Node coordinator</text>
+								<text class="small light" x="450" y="226">
+									Orders document acceptance
+								</text>
+								<rect x="630" y="180" width="250" height="64" />
+								<text x="755" y="206">Persistence adapter</text>
+								<text class="small" x="755" y="226">
+									CAS · outcomes · checkpoint
+								</text>
+								<rect x="630" y="274" width="250" height="50" />
+								<text x="755" y="304">Domain repository</text>
+								<rect x="325" y="300" width="250" height="62" />
+								<text x="450" y="326">Transport adapter</text>
+								<text class="small" x="450" y="346">
+									unreal-connection / unreal-rc
+								</text>
+								<rect class="optional" x="325" y="410" width="250" height="64" />
+								<text x="450" y="436">Optional C++ sync bridge</text>
+								<text class="small" x="450" y="456">Queues · fences · leases</text>
+								<rect x="630" y="410" width="250" height="64" />
+								<text x="755" y="436">Domain native bridge</text>
+								<text class="small" x="755" y="456">
+									Typed apply / observations
+								</text>
+								<rect class="authority" x="630" y="508" width="250" height="64" />
+								<text class="light" x="755" y="534">Unreal Editor</text>
+								<text class="small light" x="755" y="554">
+									Authority over actual engine state
+								</text>
+								<rect x="25" y="388" width="250" height="50" />
+								<text x="150" y="418">First-party / studio native UI</text>
+								<rect x="25" y="500" width="250" height="62" />
+								<text x="150" y="526">Public native client facade</text>
+								<text class="small" x="150" y="546">
+									Commands in · confirmed state out
+								</text>
+							</g>
+							<g class="edge-label">
+								<text x="463" y="279">dispatch / recover</text>
+								<text x="463" y="390">Remote Control</text>
+								<text x="765" y="496">game thread</text>
+							</g>
+						</svg>
+					</div>
+					<figcaption>
+						Logical responsibility flow. Node orders document changes; Unreal reports
+						what actually happened. The optional bridge and transport do not own domain
+						policy.
+					</figcaption>
+				</figure>
+				<p>
+					Arrows show logical traffic, not separate sockets. The host initiates Remote
+					Control calls, drains a bounded native queue, acknowledges terminal outcomes and
+					sends complete confirmed snapshots. Push may replace polling behind the adapter.
+					No native callback HTTP server is needed. External-client IPC belongs to the
+					embedding host; sync defines its validated port, not a competing Unreal network
+					client.
+				</p>
+				<div class="table-wrap" role="region" aria-label="Reference table" tabindex="0">
+					<table>
+						<thead>
+							<tr>
+								<th>State plane</th>
+								<th>Authority/order</th>
+								<th>Persistence</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td>Document</td>
+								<td>Node-hosted domain reducer, serialized per document</td>
+								<td>
+									Domain repository/commit policy; checkpoints name exact
+									revisions.
+								</td>
+							</tr>
+							<tr>
+								<td>Shared interaction</td>
+								<td>Coordinator session, separate interaction revision</td>
+								<td>
+									Volatile by default; domain opts into shared selection/gesture
+									state.
+								</td>
+							</tr>
+							<tr>
+								<td>Observed engine</td>
+								<td>Unreal producer/world and observation sequence</td>
+								<td>
+									Domain may convert observations to commands; not implicit
+									document data.
+								</td>
+							</tr>
+							<tr>
+								<td>Local presentation/pending intent</td>
+								<td>Client; overlays never replace confirmed state</td>
+								<td>Optional domain recovery draft, never silently approved.</td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+				<p>
+					The coordinator orders document proposals. Unreal owns actual transforms, world
+					contents and engine outcomes. Native actions happen independently; observations
+					are evidence/proposals, not a second document writer. Domains decide whether
+					observations author a draft, report drift or require review. Neither menu has
+					special authority.
+				</p>
+				<p>
+					Durable profile: validate/reduce, atomically CAS document + outcome + required
+					effect intents, then publish acceptance. Storage failure yields no acceptance
+					unless lookup proves the commit. V1 does not publish unsaved intermediate
+					document revisions in this profile. Explicit draft Save may checkpoint the same
+					revision; approval is separate. Secondary exports have separate outcomes.
+				</p>
+				<p>
+					Volatile profile: accept in memory with <code>durability: volatile</code>.
+					Coordinator restart changes document incarnation; old revisions are incomparable
+					and commands cannot replay. A domain may offer explicit checkpointing, but
+					volatile acceptance never implies saving.
+				</p>
+				<p>
+					Headless use needs only an in-process client and repository, without bridge or
+					editor. Bridge-less engine adapters can use existing capabilities but must
+					advertise actual fencing, observation and idempotency support. Missing
+					guarantees yield unsupported/manual recovery, not blind RC retries. Fully native
+					document authoring without Node is deferred. Immediate native movement may
+					continue visibly pending and bounded during a valid lease while Node is
+					unavailable.
+				</p>
+				<h2 id="design-language-neutral-protocol">Language-neutral protocol</h2>
+				<p>
+					Propose UTF-8 JSON with authoritative JSON Schema and shared TS/C++
+					positive/negative fixtures. Envelope and domain payload each have versions.
+					Unknown versions, kinds, fields and commands fail explicitly;
+					<code>hello</code> negotiates capabilities/limits. Domain payloads use
+					registered schemas, never executable code, arbitrary object paths or unvalidated
+					patches.
+				</p>
+				<div class="table-wrap" role="region" aria-label="Reference table" tabindex="0">
+					<table>
+						<thead>
+							<tr>
+								<th>Identity/counter</th>
+								<th>Semantics</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td><code>documentId</code>, <code>documentEpoch</code></td>
+								<td>
+									Repository identity/incarnation. Delete/recreate, old-backup
+									restore or volatile restart changes incarnation. Never
+									filename/current selection.
+								</td>
+							</tr>
+							<tr>
+								<td><code>scope</code></td>
+								<td>
+									Domain kind/version and validated keys; domain verifies document
+									membership.
+								</td>
+							</tr>
+							<tr>
+								<td><code>sessionId</code></td>
+								<td>
+									Explicit editing lifetime, independent of panel/document; ending
+									prevents new execution.
+								</td>
+							</tr>
+							<tr>
+								<td><code>authorityEpoch</code></td>
+								<td>
+									Owner incarnation changed on acquisition. Exclusive storage
+									guard is required; epoch alone is not a lock.
+								</td>
+							</tr>
+							<tr>
+								<td><code>clientId</code>, <code>bindingId</code></td>
+								<td>
+									Client instance and server-issued session/scope attachment.
+									Switching scope closes old binding.
+								</td>
+							</tr>
+							<tr>
+								<td>
+									<code>producerId</code>, <code>worldEpoch</code>,
+									<code>editorBindingId</code>
+								</td>
+								<td>
+									Engine process, loaded-world incarnation and coordinator
+									attachment; checked at execution, not only enqueue.
+								</td>
+							</tr>
+							<tr>
+								<td><code>commandId</code></td>
+								<td>
+									Random opaque client identity, immutable on retry; lookup
+									includes document incarnation. Payload/preconditions cannot
+									change.
+								</td>
+							</tr>
+							<tr>
+								<td>
+									<code>revision</code>, <code>interactionRevision</code>,
+									<code>observationSequence</code>
+								</td>
+								<td>
+									Separate document, transient-state and engine-evidence counters;
+									incomparable across planes/incarnations.
+								</td>
+							</tr>
+							<tr>
+								<td><code>publicationSequence</code></td>
+								<td>
+									Monotonic snapshot publication within owner epoch and
+									document/scope; advances for outcome/checkpoint changes without
+									edits. Gaps are allowed and need no replay.
+								</td>
+							</tr>
+							<tr>
+								<td><code>effectId</code>, <code>leaseToken</code></td>
+								<td>
+									Engine step identity and fenced ownership, distinct from
+									transport request IDs.
+								</td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+				<p>
+					IDs: 1–128 ASCII characters, leading alphanumeric, then alphanumeric or
+					<code>.</code>, <code>_</code>, <code>-</code>. Wire counters: canonical
+					unsigned decimal strings through <code>2^64-1</code>. TS decodes branded
+					<code>bigint</code>; C++ uses distinct wrapper structs over <code>uint64</code>.
+					Compare decoded counters, never lexicographic strings or JS numbers. Overflow
+					closes the incarnation with a typed error, never wraps. IDs map to branded
+					strings/native <code>FString</code> wrappers. Variants map to schema-derived TS
+					discriminated unions/native tagged structs or variants. Domain codecs own
+					payload mapping. Native facades expose result/delegate completion; Node exposes
+					typed Effects. No Slate, Solid, Electron, database types or raw UObject pointers
+					cross the wire.
+				</p>
+				<p>
+					Example command in an unrelated fixture domain; short IDs represent negotiated
+					opaque tokens:
+				</p>
+				<pre><code class="language-json">{
+	&quot;protocol&quot;: &quot;ue-shed.sync&quot;,
+	&quot;version&quot;: 1,
+	&quot;kind&quot;: &quot;command&quot;,
+	&quot;receiptId&quot;: &quot;request-19&quot;,
+	&quot;documentId&quot;: &quot;document-a&quot;,
+	&quot;documentEpoch&quot;: &quot;doc-epoch-1&quot;,
+	&quot;sessionId&quot;: &quot;session-a&quot;,
+	&quot;authorityEpoch&quot;: &quot;owner-3&quot;,
+	&quot;clientId&quot;: &quot;client-a&quot;,
+	&quot;bindingId&quot;: &quot;binding-a&quot;,
+	&quot;scope&quot;: { &quot;domain&quot;: &quot;fixture-labels&quot;, &quot;version&quot;: 1, &quot;groupId&quot;: &quot;group-a&quot; },
+	&quot;commandId&quot;: &quot;edit-57&quot;,
+	&quot;expectedRevision&quot;: &quot;41&quot;,
+	&quot;retryWindowId&quot;: &quot;window-4&quot;,
+	&quot;command&quot;: { &quot;version&quot;: 1, &quot;kind&quot;: &quot;setLabel&quot;, &quot;itemId&quot;: &quot;item-a&quot;, &quot;label&quot;: &quot;Checked&quot; }
+}
+</code></pre>
+				<pre><code class="language-json">{
+	&quot;protocol&quot;: &quot;ue-shed.sync&quot;,
+	&quot;version&quot;: 1,
+	&quot;kind&quot;: &quot;outcome&quot;,
+	&quot;documentId&quot;: &quot;document-a&quot;,
+	&quot;documentEpoch&quot;: &quot;doc-epoch-1&quot;,
+	&quot;commandId&quot;: &quot;edit-57&quot;,
+	&quot;outcomeRevision&quot;: &quot;2&quot;,
+	&quot;decision&quot;: { &quot;kind&quot;: &quot;accepted&quot;, &quot;revision&quot;: &quot;42&quot;, &quot;commitId&quot;: &quot;commit-42&quot; },
+	&quot;engine&quot;: { &quot;kind&quot;: &quot;notRequired&quot; },
+	&quot;persistence&quot;: { &quot;kind&quot;: &quot;persisted&quot;, &quot;checkpointId&quot;: &quot;checkpoint-42&quot;, &quot;revision&quot;: &quot;42&quot; }
+}
+</code></pre>
+				<pre><code class="language-json">{
+	&quot;protocol&quot;: &quot;ue-shed.sync&quot;,
+	&quot;version&quot;: 1,
+	&quot;kind&quot;: &quot;snapshot&quot;,
+	&quot;documentId&quot;: &quot;document-a&quot;,
+	&quot;documentEpoch&quot;: &quot;doc-epoch-1&quot;,
+	&quot;authorityEpoch&quot;: &quot;owner-3&quot;,
+	&quot;sessionId&quot;: &quot;session-a&quot;,
+	&quot;bindingId&quot;: &quot;binding-a&quot;,
+	&quot;scope&quot;: { &quot;domain&quot;: &quot;fixture-labels&quot;, &quot;version&quot;: 1, &quot;groupId&quot;: &quot;group-a&quot; },
+	&quot;publicationSequence&quot;: &quot;91&quot;,
+	&quot;revision&quot;: &quot;42&quot;,
+	&quot;document&quot;: {
+		&quot;version&quot;: 1,
+		&quot;items&quot;: [{ &quot;id&quot;: &quot;item-a&quot;, &quot;label&quot;: &quot;Checked&quot; }]
+	},
+	&quot;interaction&quot;: { &quot;revision&quot;: &quot;5&quot;, &quot;selectedItemId&quot;: &quot;item-a&quot; },
+	&quot;engine&quot;: { &quot;kind&quot;: &quot;notRequired&quot; },
+	&quot;persistence&quot;: { &quot;kind&quot;: &quot;persisted&quot;, &quot;checkpointId&quot;: &quot;checkpoint-42&quot;, &quot;revision&quot;: &quot;42&quot; },
+	&quot;operationSummaries&quot;: [
+		{ &quot;commandId&quot;: &quot;edit-57&quot;, &quot;outcomeRevision&quot;: &quot;2&quot;, &quot;decision&quot;: &quot;accepted&quot;, &quot;revision&quot;: &quot;42&quot; }
+	],
+	&quot;operationLookupRequired&quot;: true
+}
+</code></pre>
+				<p>
+					The domain payload is the complete authorized document projection, not an
+					upsert/patch list. Shared interaction has its own revision; domain packages opt
+					into it. A missing entity in the full payload means it is absent from that
+					projection. Document deletion/session end uses a complete terminal snapshot with
+					explicit lifecycle identity, retained tombstones and invalidated bindings;
+					disconnect alone never implies deletion. A fresh open also detects deletion if a
+					terminal notification was lost.
+				</p>
+				<p>
+					Operation summaries are a bounded convenience, not the operation journal.
+					Omission never means unknown, rejected or forgotten: clients query their
+					outstanding IDs. Saved state includes checkpoint and domain-owned saved entity
+					revisions, even with unchanged membership. Monotonic
+					<code>outcomeRevision</code> prevents stale lookup responses undoing newer
+					operation evidence. Phase 1 formalizes all variants, envelope/summary limits and
+					TS/C++ mappings, including terminal snapshots.
+				</p>
+				<p>
+					Engine requests add <code>effectId</code>, <code>commandId</code>, accepted
+					revision, editor identity triple, expected observation sequence, resource
+					key/token and typed domain action. Results repeat identities plus
+					<code>applied | failed | indeterminate | superseded</code>, actual observation
+					sequence, postcondition and partial-work details. For example, effect
+					<code>effect-57</code> at revision <code>42</code>, producer
+					<code>editor-2</code>, world <code>world-7</code>, binding
+					<code>editor-binding-3</code>, observation <code>108</code>, lease
+					<code>viewport-lease-9</code> cannot apply in a replacement world even if actor
+					ID matches. An RC reply proves application only if the handler finished and
+					supplied this evidence.
+				</p>
+				<h2 id="design-command-and-acknowledgement-semantics">
+					Command and acknowledgement semantics
+				</h2>
+				<div class="table-wrap" role="region" aria-label="Reference table" tabindex="0">
+					<table>
+						<thead>
+							<tr>
+								<th>Stage</th>
+								<th>Proves</th>
+								<th>Does not prove</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td><code>received</code></td>
+								<td>
+									Valid envelope admitted to bounded queue with receipt
+									correlation
+								</td>
+								<td>
+									Authorization, acceptance, execution, storage or survival of
+									receiver crash
+								</td>
+							</tr>
+							<tr>
+								<td><code>rejected</code></td>
+								<td>
+									Authoritative typed refusal, reason, revision and recovery
+									action
+								</td>
+								<td>A timeout alone cannot establish rejection</td>
+							</tr>
+							<tr>
+								<td><code>accepted</code></td>
+								<td>
+									Domain validation/revision checks passed at ordered commit point
+								</td>
+								<td>Engine success, export, approval or capture readiness</td>
+							</tr>
+							<tr>
+								<td>Engine status</td>
+								<td>
+									Named step: <code>queued</code>, <code>applying</code>,
+									<code>applied</code>, <code>failed</code>,
+									<code>indeterminate</code>, <code>superseded</code>,
+									<code>notRequired</code>
+								</td>
+								<td>Storage/approval; superseded does not mean applied</td>
+							</tr>
+							<tr>
+								<td>Persistence status</td>
+								<td>
+									Named checkpoint: <code>volatile</code>, <code>pending</code>,
+									<code>persisted</code>, <code>failed</code>,
+									<code>indeterminate</code>, <code>notRequired</code>, exact
+									revision/guarantee
+								</td>
+								<td>
+									Later edits saved, secondary export complete, Unreal asset saved
+									or approval
+								</td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+				<p>
+					These are orthogonal tagged fields, not a Boolean or mandatory linear lifecycle.
+					Durable acceptance and primary persistence become visible together. Secondary
+					exports are separately keyed. Unreal asset Save is an engine/domain operation,
+					not the repository checkpoint.
+				</p>
+				<p>
+					“Synced” means the latest advertised snapshot is installed for the current
+					binding, with no unresolved intent for that state. It is an as-of observation,
+					not proof that another edit cannot be in flight. “Draft saved” requires a
+					checkpoint at the displayed revision. “Approved for capture” requires domain
+					approval of reviewed revisions; engine readiness may still block capture.
+					Disconnected/stale observation remains visible alongside these facts.
+				</p>
+				<h3 id="design-admission-ordering-and-duplicates">
+					Admission, ordering and duplicates
+				</h3>
+				<ol>
+					<li>
+						Authenticate, validate size/envelope/domain codec and authorize
+						scope/action. IDs alone grant no authority. Unknown queued work requires a
+						current session/binding.
+					</li>
+					<li>
+						Look up ID/fingerprint in the authorized document. Identical known command
+						returns its outcome; changed input yields <code>commandIdReused</code>.
+						Fresh authorized connections may query old epochs/ended sessions without
+						authorizing new execution.
+					</li>
+					<li>
+						Unknown commands require current owner epoch, open session/binding, live
+						retry window, matching document incarnation and exact expected revision.
+						Reject stale proposals without editing their preconditions. Rebase requires
+						domain review and a new ID.
+					</li>
+					<li>
+						Serialize per-document acceptance in a mailbox. Revalidate under repository
+						CAS, run pure reducer, atomically commit state/outcome/effect intent.
+						Multi-entity command produces one revision and atomic full state. Accepted
+						no-op retains revision but changes its outcome and publication sequence.
+						Same-revision competitors yield one winner and a conflict.
+					</li>
+					<li>
+						Publish complete snapshot, dispatch engine effects in bounded per-resource
+						queues. No global ordering or implicit multi-document transaction; use CAS
+						and recoverable domain projection steps.
+					</li>
+				</ol>
+				<p>
+					Clients serialize dependent commands or await predecessor acceptance. Wire
+					arrival order is not user-intent order across clients. Scoped Effect services
+					own scheduling; reducers stay pure. Engine dispatch checks document freshness
+					and native fences. Accepted effects are not dropped automatically: domains may
+					permit obsolete desired-state realization to become <code>superseded</code>;
+					imperative actions retain order and resolve before conflicting resource work.
+				</p>
+				<p>
+					No exactly-once network claim. Durable at-most-once acceptance requires atomic
+					identity/outcome storage. Proposed server-issued retry windows last 24 hours
+					with published expiry. Persist windows; retain terminal outcomes at least 24
+					hours after window closure, unresolved effect/export intents until resolved.
+					Never evict unexpired IDs to make room: backpressure admissions. Unknown
+					expired-window commands yield <code>outcomeExpired</code>, never execute anew.
+					After owner restart, unknown old-epoch commands fail even if their window
+					survives; known outcomes remain queryable. Store loss requires a new document
+					incarnation, not blind retries.
+				</p>
+				<p>
+					Fingerprints cover validated semantic envelope (target/preconditions/payload),
+					excluding receipt correlation and authenticated transport metadata. Fix
+					canonical JSON encoding and cross-language vectors in phase 1. New pose,
+					timestamp or expected revision cannot reuse a command ID.
+				</p>
+				<h3 id="design-reconnect-and-reactive-clients">Reconnect and reactive clients</h3>
+				<p>
+					<code>open(scope)</code> registers the subscription and obtains its initial
+					snapshot under the same serialized coordinator turn. It returns session/binding,
+					owner epoch, publication sequence, capabilities, durability profile and limits.
+					Subsequent updates occupy a latest-only slot. This prevents an update between
+					initial read and subscription from being lost without introducing replay
+					history. A polling adapter reads the current snapshot through the same port and
+					may skip unchanged publications.
+				</p>
+				<p>
+					Validate schema and scope, then install an entire snapshot atomically only for
+					the current document, owner and binding. Within that identity, require a
+					strictly newer publication sequence and a nondecreasing document revision.
+					Equal/older publications are duplicates or stale responses. Skipping from
+					sequence 91 to 96 is normal: snapshot 96 is self-contained. A lower document
+					revision in a newer publication is a protocol error. Local binding generations
+					discard callbacks from prior scopes.
+				</p>
+				<p>
+					Reconnect always opens a fresh snapshot and reconciles pending command IDs
+					through outcome lookup; there is no delta replay, gap repair or cursor expiry.
+					Never compare sequences across owner epochs. Same document incarnation retains
+					durable revision meaning; a new incarnation requires explicit pending-intent
+					recovery. Known old commands may be inspected, unknown old-epoch commands cannot
+					execute.
+				</p>
+				<p>
+					An accepted command's overlay retires once its outcome is known and a snapshot
+					from the same document incarnation at or beyond its accepted revision is
+					installed. That snapshot may include later edits and need not repeat the command
+					ID. Retire to the latest authoritative value rather than replaying the old
+					optimistic value. Response-first and snapshot-first delivery must both work; a
+					coalesced-away publication cannot leave intent stuck. Unknown/expired outcomes
+					remain explicit until inspected or abandoned; a new snapshot never silently
+					discards pending drafts.
+				</p>
+				<p>Proposed semantic API, not implementation code:</p>
+				<div class="table-wrap" role="region" aria-label="Reference table" tabindex="0">
+					<table>
+						<thead>
+							<tr>
+								<th>Operation</th>
+								<th>Result</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td><code>open({ scope, session })</code></td>
+								<td>
+									Scoped handle with consistent initial snapshot and registered
+									subscription
+								</td>
+							</tr>
+							<tr>
+								<td><code>handle.current()</code></td>
+								<td>
+									Full confirmed projection, pending intents,
+									connection/freshness, publication/revision and operation
+									evidence
+								</td>
+							</tr>
+							<tr>
+								<td><code>handle.updates()</code></td>
+								<td>
+									Latest-snapshot stream; intermediate publications may coalesce
+								</td>
+							</tr>
+							<tr>
+								<td><code>handle.submit(command)</code></td>
+								<td>
+									Typed admission/decision or indeterminate; cancellation cannot
+									erase accepted work
+								</td>
+							</tr>
+							<tr>
+								<td><code>handle.operation(commandId)</code></td>
+								<td>Known, unknown or expired outcome; lookup never executes</td>
+							</tr>
+							<tr>
+								<td><code>handle.close()</code></td>
+								<td>
+									Release binding/subscription, return unsettled IDs; does not
+									delete/end document/session
+								</td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+				<p>
+					Browser facade adapts once to <code>getSnapshot</code>/<code
+						>subscribe(listener) -&gt; unsubscribe</code
+					>
+					without Node authority. Native facade retains a document handle and broadcasts
+					validated immutable snapshots on the game thread. Both prevent read/subscribe
+					races. Client/domain selectors are local functions, not queries. The Solid
+					adapter reconciles stable keys into retained entities and preview handles even
+					though the wire carries whole snapshots. Operation lookup is independent of
+					coalesced display notifications.
+				</p>
+				<h2 id="design-solid-2-client-integration">Solid 2 client integration</h2>
+				<p>
+					Solid 2 should simplify the maintained UI's integration substantially. The
+					original proposal's generic subscription facade underspecified this opportunity.
+					Add an optional <code>@ue-shed/sync/solid</code> export (or separate adapter
+					package if peer isolation requires it), with Solid confined to that dependency
+					closure. The coordinator, CLI and native clients continue using
+					framework-neutral ports.
+				</p>
+				<p>
+					Version evidence checked 2026-09-13: the separate
+					<code>t3code/migrate-workbench-solid-2-rc</code> worktree pins Solid and its
+					renderer to <code>2.0.0-rc.7</code>; this design worktree still inherits Solid
+					1.9. That migration's engineering guide and installed declarations are the
+					implementation reference. Do not silently upgrade dependencies as part of this
+					proposal. Upstream <code>next</code> documentation remains moving guidance.
+				</p>
+				<p>
+					Solid 2 computations can consume Promises/async iterables;
+					<code>Loading</code> handles initial readiness and
+					<code>isPending</code> describes reactive transitions. Routine polling/refresh
+					does not necessarily become pending. See the official
+					<a
+						href="https://github.com/solidjs/solid/blob/next/documentation/solid-2.0/05-async-data.md"
+						>async data design</a
+					>. Actions and optimistic primitives provide tentative UI state whose lifecycle
+					follows the action transition; see
+					<a
+						href="https://github.com/solidjs/solid/blob/next/documentation/solid-2.0/06-actions-optimistic.md"
+						>actions and optimism</a
+					>. Installed rc.7 declarations also describe keyed projections that retain
+					surviving entity proxies.
+				</p>
+				<p>Proposed adapter responsibilities:</p>
+				<ul>
+					<li>
+						Open one scoped sync handle for the selected document binding and project
+						its validated snapshot stream into a keyed Solid store. An async iterable
+						can expose already-reconciled models; components must never interpret raw
+						transport messages. Effect owns the service subscription; Solid ownership
+						releases the adapter's subscription/fiber once on disposal or scope
+						replacement.
+					</li>
+					<li>
+						Expose confirmed entities, display entities, local transition state and
+						explicit protocol outcomes as separate reactive reads. Use initial loading
+						boundaries and retain the existing controls/preview during same-document
+						updates. Document switches must visibly change scope and disable stale
+						controls even if a transition temporarily retains the old display.
+					</li>
+					<li>
+						Give actions a command-completion helper that waits for acceptance
+						<strong>and matching confirmed state installation</strong>, rather than
+						resolving on transport receipt. Engine application and persistence can be
+						separately awaited when the domain workflow requires them.
+					</li>
+					<li>
+						Keep command-ID recovery/pending intent in the framework-neutral client.
+						Prefer projecting that client's display model directly. Optional Solid
+						optimism can cover immediate input feedback, but must not apply the same
+						domain edit again on top of the client's overlay. On an indeterminate
+						outcome, unresolved intent remains in the client even after the UI action
+						settles or unmounts.
+					</li>
+				</ul>
+				<p>
+					For example, a shared-FOV action can immediately show the proposed value while
+					the coordinator checks its revision. When the confirmed revision arrives, keyed
+					updates preserve controls and preview handles. A lost engine reply still
+					displays an explicit indeterminate engine outcome even if Solid has finished its
+					transition. Two clients editing the same revision still need CAS and conflict
+					resolution. Local async scheduling cannot order a native Details edit against a
+					Node command or recover an engine operation after process loss.
+				</p>
+				<p>
+					Do not compute <code>synced</code> as <code>!isPending(...)</code>. Pending
+					rendering, outstanding command identity, checkpoint revision and engine evidence
+					answer different questions. Nor should a long-lived event stream be modeled as
+					one action that never completes. Local UI transition management belongs to
+					Solid; durable operation and reconciliation lifetimes belong to sync.
+				</p>
+				<p>
+					Add adapter conformance for receipt-before-snapshot, snapshot-before-reply,
+					rejection, indeterminate outcome, late old-scope replies, overlapping local
+					edits, stable keyed identity and retained preview instances. Test teardown
+					during a pending action and microtask-batched writes: capture command input and
+					revision explicitly rather than setting a signal and immediately assuming a
+					subsequent read sees that write.
+				</p>
+				<h2 id="design-native-participation-and-game-thread-execution">
+					Native participation and game-thread execution
+				</h2>
+				<p>
+					Generic C++ bridge owns protocol validation, bounded queues, peer fences,
+					operation cache, leases and dispatch. It does not reduce domain documents, save
+					Review Sets or decide approval. Domain bridges own object lookup, native
+					observation/apply handlers, transactions, postconditions and restoration. Menus
+					enqueue commands through the facade; they do not implement retries or
+					reconciliation.
+				</p>
+				<p>
+					All UObject/world access and mutation handlers run on the game thread: actor
+					spawn/destroy/transforms, component properties, transactions/Undo interactions,
+					selection, viewport pose/pilot, visibility, world transitions and initiating
+					capture/asset Save. Parsing and file IO may run elsewhere with immutable data.
+					Verify RC invocation threads; dispatch explicitly schedules/checks game-thread
+					execution and rechecks fences there. A queue acknowledgement is only
+					<code>received</code>; <code>applied</code> follows postcondition verification.
+					Asynchronous engine work reports via the game thread after its actual completion
+					signal; initiating work is insufficient evidence.
+				</p>
+				<p>
+					Local UE 5.7 source inspection verified
+					<code>FCoreUObjectDelegates::OnObjectPropertyChanged</code> and
+					<code>OnObjectTransacted</code> in
+					<code>Runtime/CoreUObject/Public/UObject/UObjectGlobals.h</code>,
+					<code>AActor::PostEditMove</code> and <code>PostEditUndo</code> in
+					<code>Runtime/Engine/Classes/GameFramework/Actor.h</code>, and
+					selection/viewport APIs in <code>Editor/UnrealEd</code>. These are candidate
+					hooks, not proof of coverage. Engine location was verified locally; it is not a
+					runtime default or fixture path.
+				</p>
+				<p>
+					Domain observers filter registered objects/properties, assign
+					producer/world/sequence and report actual values. Details-panel writes,
+					transforms, Undo/Redo, scripts and relevant transactions use the same path. Use
+					event hooks plus bounded snapshot comparison where events are incomplete, as the
+					camera proxy currently does. Do not replicate the whole editor. Distinguish
+					applied echoes by effect provenance and postconditions; a broad “ignore changes
+					while applying” flag can lose concurrent edits. Native drift during pending
+					application yields conflict evidence preserving both values. Undo proposes a new
+					domain revision; it does not rewind coordinator history.
+				</p>
+				<p>
+					Intermediate samples may coalesce by entity + editor binding + gesture identity;
+					sequence gaps are allowed on this explicitly lossy observation channel.
+					Start/end/cancel, final commands, selection/pilot requests, save/approval,
+					deletion, leases and accepted commands preserve order; snapshot publications may
+					coalesce. Final gestures carry stable command ID, starting revision and final
+					sequence; retain until terminal acknowledgement or visible recovery. End cannot
+					overtake the final value. V1 permits one in-flight finalized gesture per owned
+					resource; newer samples remain a separate pending gesture. No generic automatic
+					rebase through earlier gestures is promised.
+				</p>
+				<h2 id="design-ownership-and-lifetimes">Ownership and lifetimes</h2>
+				<p>
+					Document owner: exclusive repository/host guard for process lifetime. Another
+					coordinator attaches to the known owner or fails <code>ownerBusy</code>, never
+					steals on timeout. The adapter fences stale writes. V1 local stale-file-lock
+					recovery can require proving the prior process exited; there is no automatic
+					multi-host election. Storage CAS guards other legitimate writers. Unsupported
+					direct file edits are detected as drift, not silently folded into the revision
+					history.
+				</p>
+				<p>
+					Engine resources: bridge-enforced leases for viewport, pilot target, visibility
+					preview and transient proxy. Proposed default: 30 seconds, renew every 10
+					seconds using the bridge's monotonic clock. Grants have fresh fence tokens,
+					resource keys, owner session and editor binding. Every queued mutation rechecks
+					validity at execution. Coordinator grants logical gesture ownership; native
+					bridge is final arbiter of actual engine availability. An uncertain mutation
+					quarantines conflicting resource work until inspected/safely released. This is
+					scoped ownership, not a distributed lock service.
+				</p>
+				<p>
+					Record baseline and last-installed values. Cleanup restores only resources still
+					owned and values still attributable to the lease; later user edits survive. Map
+					change, PIE, viewport destruction, shutdown and expiry invalidate bindings,
+					release resources and attempt recovery of unsettled native intent. Recovery-file
+					failure is visible; files contain pending intent, not saved document authority.
+					Hard crashes can lose them.
+				</p>
+				<p>
+					Capture handoff: settle/freeze authoring at a named revision, release
+					pilot/preview interventions, confirm cleanup, acquire capture resources, execute
+					the domain capture plan. Return <code>busy</code> if another owner prevents
+					handoff. Reacquisition after capture needs a new lease and fresh observations;
+					no silent restoration of obsolete authoring state. Capture policy stays in
+					cameras.
+				</p>
+				<div class="table-wrap" role="region" aria-label="Reference table" tabindex="0">
+					<table>
+						<thead>
+							<tr>
+								<th>Action</th>
+								<th>Required effect</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td>Close panel</td>
+								<td>
+									Dispose UI subscription and explicitly panel-owned resources;
+									session/host may continue.
+								</td>
+							</tr>
+							<tr>
+								<td>Disconnect client</td>
+								<td>
+									Close transport binding, mark stale, expose unsettled IDs,
+									expire client-owned leases; accepted work stays recoverable.
+								</td>
+							</tr>
+							<tr>
+								<td>Switch actor/document</td>
+								<td>
+									Close old binding, release resources and reject unknown queued
+									work before opening new scope. Accepted old-document work may
+									finish only in its original scope.
+								</td>
+							</tr>
+							<tr>
+								<td>End session</td>
+								<td>
+									Explicit authorized action: invalidate bindings, reject unknown
+									queued commands, settle/query accepted effects, release
+									resources; retain document.
+								</td>
+							</tr>
+							<tr>
+								<td>Delete document</td>
+								<td>
+									Revision-checked domain command/tombstone: fence sessions, stop
+									new effects and recover outstanding effects; disconnect is never
+									deletion.
+								</td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+				<h2 id="design-failure-and-recovery-matrix">Failure and recovery matrix</h2>
+				<div class="table-wrap" role="region" aria-label="Reference table" tabindex="0">
+					<table>
+						<thead>
+							<tr>
+								<th>Failure window</th>
+								<th>Exposed truth</th>
+								<th>Recovery</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td>Lost reply before/after acceptance</td>
+								<td>Pending/indeterminate until lookup</td>
+								<td>
+									Query same ID; identical retry only with live window/binding.
+								</td>
+							</tr>
+							<tr>
+								<td>Duplicate with changed payload</td>
+								<td><code>commandIdReused</code></td>
+								<td>Inspect original; new reviewed intent needs new ID.</td>
+							</tr>
+							<tr>
+								<td>Delayed poll or slow subscriber</td>
+								<td>Stale publications ignored; skipped publications are normal</td>
+								<td>
+									Install latest full snapshot, then query unresolved command IDs;
+									no history replay.
+								</td>
+							</tr>
+							<tr>
+								<td>Scope switch with work in flight</td>
+								<td>Old binding invalid; accepted work names old scope</td>
+								<td>
+									Ignore stale callbacks, fence native execution, query old
+									outcome without retargeting.
+								</td>
+							</tr>
+							<tr>
+								<td>Coordinator crash before CAS</td>
+								<td>No acceptance unless repository proves commit</td>
+								<td>
+									New owner loads store; unknown old-epoch command is stale, not
+									replayed.
+								</td>
+							</tr>
+							<tr>
+								<td>Coordinator crash after CAS before publish/dispatch</td>
+								<td>
+									State/outcome/effect intent durable, engine possibly pending
+								</td>
+								<td>
+									New owner supplies current snapshot; recover outbox,
+									reattach/query engine before dispatch.
+								</td>
+							</tr>
+							<tr>
+								<td>Coordinator unavailable</td>
+								<td>Confirmed state stale; native gestures pending</td>
+								<td>
+									Bounded buffer during lease, recovery attempt then cleanup; no
+									native document acceptance.
+								</td>
+							</tr>
+							<tr>
+								<td>Disconnect during engine mutation</td>
+								<td>Document accepted, engine indeterminate</td>
+								<td>
+									Query effect on same producer/binding, inspect postconditions;
+									no blind non-idempotent retry. Caller cancellation does not undo
+									execution.
+								</td>
+							</tr>
+							<tr>
+								<td>Editor crash during/after mutation before reply</td>
+								<td>Engine indeterminate, old binding invalid</td>
+								<td>
+									Handshake new producer, domain inspect/reconcile. Imperative
+									work is not auto-replayed; safe desired-state recovery needs a
+									fresh fenced step.
+								</td>
+							</tr>
+							<tr>
+								<td>Repeated engine delivery in same binding</td>
+								<td>Cached outcome or applying</td>
+								<td>
+									Reserve effect ID before execution, reject changed input. Cache
+									lasts for binding; expired/lost binding always rejects old work.
+								</td>
+							</tr>
+							<tr>
+								<td>Primary save timeout/crash</td>
+								<td>Persistence indeterminate, acceptance unresolved</td>
+								<td>
+									Read checkpoint/outcome atomically; absence does not permit
+									old-epoch execution.
+								</td>
+							</tr>
+							<tr>
+								<td>Primary saved, secondary export reply lost</td>
+								<td>Draft/approval durable, export indeterminate</td>
+								<td>
+									Read journal/destination version; matching commit succeeds, CAS
+									mismatch conflicts; no duplicate View revisions.
+								</td>
+							</tr>
+							<tr>
+								<td>Destination changes concurrently</td>
+								<td>Projection conflict, exact destination version</td>
+								<td>
+									Domain recomputes under CAS, preserves disjoint ownership and
+									rejects same-owned-view drift.
+								</td>
+							</tr>
+							<tr>
+								<td>Native edit races host apply</td>
+								<td>Accepted document plus engine conflict, both observations</td>
+								<td>Preserve pending native intent; explicit domain resolution.</td>
+							</tr>
+							<tr>
+								<td>Lease expiry/panel close mid-gesture</td>
+								<td>Unsaved pending intent and cleanup result</td>
+								<td>
+									Recovery patch if available; fresh lease/review before
+									resubmission.
+								</td>
+							</tr>
+							<tr>
+								<td>Queue full, expired outcome, disk full</td>
+								<td>Busy/expired/typed storage failure</td>
+								<td>
+									Coalesce snapshots, backpressure commands, inspect outcomes or
+									repair storage; never drop accepted commands.
+								</td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+				<p>
+					No transaction spans Node storage and Unreal. Write-ahead effect intent plus
+					queryable outcomes narrows uncertainty; some engine actions need manual
+					inspection after a crash. Repository adapters declare process-crash versus
+					power-loss durability, CAS and atomicity. File rename alone proves neither
+					concurrent-write safety nor power-loss durability. Unsupported adapters fail
+					capability negotiation for stronger workflows instead of weakening the meaning
+					of persisted.
+				</p>
+				<h2 id="design-validation-authorization-observability-and-limits">
+					Validation, authorization, observability and limits
+				</h2>
+				<p>
+					Boundary codecs enforce versions, bounded payloads, finite domain numbers and no
+					excess fields. Domains own membership, invariants, shared/persisted policy and
+					approval preconditions. Coordinator rechecks authorization at acceptance; native
+					executor checks capability, identity, fences and engine preconditions at
+					application. Trusted host principals map to document/action grants; a
+					client-supplied ID grants nothing. Local transport is a trust boundary. Generic
+					sync does not expose arbitrary UObject calls, file destinations or plugin
+					loading. Studios own identity/access policy; v1 supplies enforcement hooks
+					rather than a tenancy/security platform.
+				</p>
+				<p>
+					Proposed defaults, negotiated down and raised only by explicit host
+					configuration:
+				</p>
+				<div class="table-wrap" role="region" aria-label="Reference table" tabindex="0">
+					<table>
+						<thead>
+							<tr>
+								<th>Budget</th>
+								<th>Default / saturation behavior</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td>Command / snapshot</td>
+								<td>
+									1 MiB / 4 MiB; reject oversized input/document. Chunked
+									bootstrap deferred.
+								</td>
+							</tr>
+							<tr>
+								<td>Snapshot delivery</td>
+								<td>
+									One in-flight and one replaceable pending snapshot per
+									subscriber; no retained delta history.
+								</td>
+							</tr>
+							<tr>
+								<td>Admissions</td>
+								<td>
+									128 queued commands/document, 32 in-flight/client; typed busy
+									before admission.
+								</td>
+							</tr>
+							<tr>
+								<td>Subscriptions</td>
+								<td>
+									64/client; host also limits per principal so many client IDs
+									cannot bypass caps.
+								</td>
+							</tr>
+							<tr>
+								<td>Snapshot operation summaries</td>
+								<td>
+									At most 128 authorized recent summaries; outstanding IDs remain
+									individually queryable. Whole envelope stays within snapshot
+									byte limit.
+								</td>
+							</tr>
+							<tr>
+								<td>Outcome retention</td>
+								<td>
+									10,000 records/document; refuse new admissions before violating
+									retry-window guarantees. Unresolved records never evicted.
+								</td>
+							</tr>
+							<tr>
+								<td>Native observation</td>
+								<td>
+									Start at 200 ms while active, configurable within native limits;
+									back off idle/disconnected.
+								</td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+				<p>
+					Finalized commands have reserved bounded capacity separate from latest-sample
+					slots. At saturation, managed gestures fail visibly; unmanaged native edits
+					remain reported as drift. Domain storage policy bounds recovery artifacts.
+					Leases, timeouts and work per game-thread tick are advertised; measure native
+					cost before choosing a shipped tick budget. Synchronous handlers declare bounded
+					work or split into steps. Test small configured limits to force every boundary.
+				</p>
+				<p>
+					Instrument receipt→decision, decision→engine, decision→checkpoint and
+					reconnect→caught-up latency, queue depth, rejection reasons, sample drops,
+					coalesced snapshots, stale publications, dedup hits, indeterminate outcomes and
+					lease cleanup/recovery. Spans/logs correlate safe
+					command/document/session/effect IDs; metric labels use bounded
+					domain/operation/result names, never payloads, secrets or unbounded actor IDs.
+					Public health separates transport, coordinator, persistence, engine and
+					subscription lag for CLI and replacement UIs. Follow
+					<a href="../engineering/observability.md">observability</a> and
+					<a href="../engineering/testing.md">testing</a>.
+				</p>
+				<h2 id="design-camera-acceptance-and-incremental-adoption">
+					Camera acceptance and incremental adoption
+				</h2>
+				<div class="table-wrap" role="region" aria-label="Reference table" tabindex="0">
+					<table>
+						<thead>
+							<tr>
+								<th>Scenario</th>
+								<th>Mechanism to prove</th>
+								<th>Camera-owned policy</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td>1. Two interfaces, one actor-scoped set</td>
+								<td>
+									Shared document facade, CAS/atomic snapshots, separate shared
+									selection plane
+								</td>
+								<td>
+									Membership, shared settings, exceptions, native-pose
+									interpretation
+								</td>
+							</tr>
+							<tr>
+								<td>2. Delayed polling</td>
+								<td>
+									Publication sequence/revision plus binding generation checks
+								</td>
+								<td>Stale/conflict presentation</td>
+							</tr>
+							<tr>
+								<td>3. Retry and revisions</td>
+								<td>Immutable IDs, admission windows, atomic outcomes</td>
+								<td>Validation and explicit rebase</td>
+							</tr>
+							<tr>
+								<td>4. Scope/session switching</td>
+								<td>Document incarnation, binding/editor execution fences</td>
+								<td>Actor/map locators and scope</td>
+							</tr>
+							<tr>
+								<td>5. Synced/saved/approved</td>
+								<td>Independent outcome planes/checkpoints</td>
+								<td>Approval and capture readiness</td>
+							</tr>
+							<tr>
+								<td>6. Subsequent saves of same Views</td>
+								<td>Checkpoint/publication sequence and per-View revisions</td>
+								<td>Saved-view projection/badges</td>
+							</tr>
+							<tr>
+								<td>7. Several sets publish one Review Set</td>
+								<td>Destination CAS, recoverable projection identity</td>
+								<td>
+									Owned-view comparison/disjoint rebase; preserve unrelated
+									Views/configuration, reject owned conflicts
+								</td>
+							</tr>
+							<tr>
+								<td>8. Frequent dragging</td>
+								<td>Lossy observations, ordered final commands, leases</td>
+								<td>Pose/lens thresholds and gestures</td>
+							</tr>
+							<tr>
+								<td>9. Retained UI/preview</td>
+								<td>Stable handle, keyed entities, scoped subscriptions</td>
+								<td>Focus/commit semantics, preview invalidation</td>
+							</tr>
+							<tr>
+								<td>10. Pose/selection/pilot/visibility/capture</td>
+								<td>Leases, conditional cleanup, explicit handoff</td>
+								<td>Native restoration and capture policy</td>
+							</tr>
+							<tr>
+								<td>11. Close/disconnect/end/delete</td>
+								<td>Distinct lifecycle operations, unsettled IDs</td>
+								<td>Archive/delete policy</td>
+							</tr>
+							<tr>
+								<td>12. Details and other native edits</td>
+								<td>Registered observers, provenance/fences</td>
+								<td>Transform/FOV/Undo mapping into commands</td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+				<p>
+					Adapt behind existing public camera ports. First wrap store CAS/outcomes,
+					preserving its file format through explicit migration. Do not rewrite documents
+					simply to enable sync. Next move reconciliation scheduling out of the panel into
+					the coordinator; retain camera actions, regeneration previews, culling and
+					<code>cameraApprovalBase</code> in cameras. Preserve revision-bearing saved
+					state in snapshots, then move native queue/fencing/facade behind a negotiated
+					capability. Old camera v1 and new sync sessions must be mutually exclusive per
+					document/editor resource; never run two shadow writers.
+				</p>
+				<p>
+					Finally run CLI, menus and a tiny studio-style host/menu through the same public
+					facades. Removing both first-party UIs must leave synchronization in packages
+					and bridge helpers. Capture-only clients retain their dependency closure. No
+					<code>unreal-rc</code> migration/release is involved. The
+					<a href="#implementation">phased plan</a> defines tests, exit criteria and the
+					implementation stop.
+				</p>
+			</article>
+			<article class="chapter" id="implementation">
+				<div class="chapter-title">02 / Phased implementation plan</div>
+				<p>
+					Status: <code>TODO</code> — architecture and implementation plan for review;
+					implementation is not authorized.
+				</p>
+				<p>
+					Design authority for this proposal remains the existing
+					<a href="#architecture">authoring synchronization concept</a>. This plan is the
+					sole status source. It elaborates that proposal rather than creating a second
+					architecture document.
+				</p>
+				<p>
+					Snapshot revision (2026-09-13): the camera workspace already sends complete
+					panel state, includes saved View revisions, serializes host requests and
+					reconciles keyed UI state with stale-poll guards. Reuse those behaviors. Add the
+					shared snapshot envelope, per-document ownership, explicit operation
+					lookup/recovery and framework adapter; do not implement entity patches, live
+					queries, replay cursors or retained delta history. Separate high-rate
+					observations from document publication.
+				</p>
+				<h2 id="plan-review-decisions-and-stop-conditions">
+					Review decisions and stop conditions
+				</h2>
+				<p>Review the following concrete recommendations together:</p>
+				<ol>
+					<li>
+						One Node coordinator per document, repository owner guard/CAS, separate
+						session and editor fences.
+					</li>
+					<li>
+						Durable commit-before-publication plus explicitly volatile domains;
+						independent acceptance, engine, checkpoint/export and domain approval
+						outcomes.
+					</li>
+					<li>
+						Small sync package/client facade and optional generic native bridge with
+						domain handler ports. <code>unreal-rc</code> remains the transport and
+						retains its repository/release ownership.
+					</li>
+					<li>
+						Strict revisions, complete latest snapshots, persisted retry windows and no
+						blind replay after identity loss. Uncertain imperative engine effects may
+						need manual recovery.
+					</li>
+					<li>
+						Camera adoption plus an unrelated fixture proves the boundary; a second
+						production domain earns future expansion. No database framework or
+						distributed authority project.
+					</li>
+				</ol>
+				<p>
+					STOP before phase 1 implementation until this design is reviewed and
+					implementation is explicitly authorized. During execution, stop/revise the
+					design if a provider cannot enforce atomic outcome/CAS, old-owner fencing,
+					game-thread cleanup or truthful indeterminate states. Do not weaken guarantees
+					or move domain rules into sync to make a test pass. Missing Unreal capability is
+					typed unsupported.
+				</p>
+				<h2 id="plan-phase-1-contract-and-state-machine-conformance">
+					Phase 1 — contract and state-machine conformance
+				</h2>
+				<p>Deliverables after authorization:</p>
+				<ul>
+					<li>
+						Neutral <code>sync/v1</code> schemas for hello/open, commands,
+						admission/outcome lookup, full/terminal snapshots, engine dispatch/result,
+						observations, leases and lifecycle actions. Complete every variant and
+						default described by the concept; examples alone are not the wire
+						specification.
+					</li>
+					<li>
+						Typed TS schema mappings and native wrapper/codec design using shared
+						fixtures; version policy, canonical command fingerprint encoding, counter
+						overflow and retry-window expiry rules.
+					</li>
+					<li>
+						Pure client/coordinator transition model and fixture-label domain. Define
+						persisted session-end tombstones, document incarnations, retry windows and
+						outcome/outbox records before storage code.
+					</li>
+					<li>
+						Service/adapter contracts: domain decode/reduce/project/observe/recover;
+						repository owner guard, load/CAS/checkpoint/outcome/effect-intent; transport
+						negotiate/drain/dispatch/query; scoped client.
+					</li>
+				</ul>
+				<p>
+					Tests: decimal counters beyond JS safe integer, max/overflow/noncanonical
+					counters; malformed versions, unknown/oversized payloads; altered duplicate
+					fingerprints; same-revision competing commands; no-ops; multi-entity atomic
+					install; delete/recreate; expiry and unknown-old-epoch refusal. Property-based
+					delivery permutations must preserve monotonic confirmed state and at-most-once
+					acceptance.
+				</p>
+				<p>
+					Exit: shared fixtures define the same observable TS/C++ semantics; every concept
+					failure row maps to a transition/test; the unrelated domain requires no camera,
+					UI or transport dependency.
+				</p>
+				<h2 id="plan-phase-2-headless-coordinator-repository-and-client">
+					Phase 2 — headless coordinator, repository and client
+				</h2>
+				<p>Deliverables:</p>
+				<ul>
+					<li>
+						Proposed sync package with browser-safe client exports and Node Effect
+						coordinator services. Effect handles resource scopes, concurrency, retries,
+						time and telemetry; reducers remain pure.
+					</li>
+					<li>
+						One per-document mailbox, consistent snapshot/publication sequence,
+						latest-only subscriptions, pending-overlay fold, operation lookup,
+						authorization hooks and public health.
+					</li>
+					<li>
+						In-memory volatile adapter and durable reference adapter over existing
+						camera store semantics, including a documented process-crash guarantee and
+						owner-lock recovery. Reuse format only if it can truthfully supply
+						CAS/state/outcome/effect-intent atomicity; otherwise make migration
+						explicit.
+					</li>
+					<li>
+						Headless fixture CLI/library journey without editor, bridge or Workbench. No
+						camera policy in core.
+					</li>
+				</ul>
+				<p>
+					Tests: two real host processes contest owner acquisition; two store instances
+					contest CAS; crash before/after durable write and before snapshot publication;
+					retained known-ID lookup versus rejected unknown ID after restart; saved
+					checkpoint/outcome consistency; session-end persistence. Fake-clock tests force
+					expiry/backpressure. Race subscription/bootstrap, response-before-snapshot,
+					snapshot-before-response, duplicate/stale snapshots, skipped publications,
+					delayed polls and disconnect. Dispose one client while another continues;
+					preserve pending intent on reconnect. Test policy denial and queue caps at real
+					boundaries.
+				</p>
+				<p>
+					Snapshot-specific tests: subscribe concurrently with acceptance; skip several
+					publications including the exact accepting snapshot, then install a newer
+					revision and resolve the original command by ID. Change engine/checkpoint status
+					without changing the document revision; publication sequence must advance.
+					Reject lower revision under a higher publication sequence. Exercise
+					deletion/reopen and authorization-scoped projections. A slow subscriber must
+					keep at most one pending snapshot while command outcomes remain recoverable.
+					Enforce the complete envelope size bound and summary limit. Measure bytes,
+					encode/decode time, native-thread cost and retained UI/preview identity at the
+					maximum supported document size, drag rate and configured client count. Record
+					results and tune coalescing; incremental delivery needs measured justification
+					and a separate design change.
+				</p>
+				<p>
+					Exit: headless clients converge under faults with bounded memory; accepted
+					commands never duplicate; durability is explicit; browser dependency closure
+					excludes Node/Unreal/Workbench. Both volatile and durable restart behavior match
+					the declared contract.
+				</p>
+				<p>
+					Solid adapter addition to phase 2 (design revision 2026-09-13): specify and
+					build an optional public Solid 2 adapter over the framework-neutral handle,
+					following the concept's Solid integration section. Coordinate with the existing
+					rc.7 migration before selecting actual package versions. Provide a keyed
+					reactive model, owner-scoped subscription cleanup and an action helper that
+					settles after acceptance plus confirmed-state installation. Keep protocol
+					pending/outcomes separate from rendering transitions; avoid duplicate optimistic
+					overlays. Prove first-load readiness, same-document background updates,
+					microtask input capture, response/snapshot permutations, indeterminate recovery,
+					old-scope fencing and teardown while an action is pending. Exit requires
+					retained control/preview identity and no Solid dependency in the coordinator,
+					CLI or native contract. No Solid migration is authorized by this plan.
+				</p>
+				<h2 id="plan-phase-3-optional-native-bridge-and-transport-adapter">
+					Phase 3 — optional native bridge and transport adapter
+				</h2>
+				<p>Deliverables:</p>
+				<ul>
+					<li>
+						Capability-discovered generic native bridge/facade and
+						<code>unreal-connection</code> adapter using existing
+						<code>unreal-rc</code>. Bounded polling is baseline; no new Unreal
+						HTTP/WebSocket client or callback server.
+					</li>
+					<li>
+						Native reserve-before-execute operation cache, session/editor fences,
+						game-thread dispatch, observation sequencing, monotonic leases,
+						postcondition outcomes and cleanup registration.
+					</li>
+					<li>
+						Domain registration for camera engine handlers, keeping
+						transform/culling/capture interpretation in the camera bridge. Bridge-only
+						and custom-native-client examples require no first-party menu.
+					</li>
+				</ul>
+				<p>
+					Tests: shared codec fixtures on C++; lost RC replies while mutation executes;
+					repeated same effect; changed payload; authority/world/editor replacement
+					between enqueue and execute; game-thread assertions; bridge-cache saturation;
+					lease expiry during a queued operation; native queue overflow. Verify
+					Details-panel transform/FOV changes, Undo/Redo and script changes enter
+					observation. Test host-applied echo versus a genuinely intervening native edit.
+					Disconnect/crash before/after apply must report indeterminate unless a real
+					postcondition/outcome resolves it.
+				</p>
+				<p>
+					Exit: discovered local Unreal fixture evidence proves thread/lease cleanup and
+					truthful outcomes; optional bridge absence preserves headless and existing
+					capture-only journeys. Generic plugin has no camera/menu dependencies. Measured
+					tick cost yields bounded configured work budgets.
+				</p>
+				<h2 id="plan-phase-4-incremental-camera-migration">
+					Phase 4 — incremental camera migration
+				</h2>
+				<p>Deliverables in order:</p>
+				<ol>
+					<li>
+						Adapt <code>CameraAuthoringStore</code>, keeping public command semantics
+						and explicit stored-format compatibility. Move
+						identity/outcome/serialization mechanics behind sync; retain pure
+						arrangement rules and approval ownership logic in cameras.
+					</li>
+					<li>
+						Extract <code>camera-authoring-panel.ts</code> reconciliation scheduling and
+						Workbench <code>camera-workspace.ts</code> request serialization into scoped
+						public coordinator/client services. Native menu and CLI call the same camera
+						facade; existing API wrappers can delegate.
+					</li>
+					<li>
+						Move native queue/lease/recovery plumbing behind the generic bridge.
+						Negotiate new capability; reject simultaneous old/new authority on the same
+						document/resource. Preserve capture closure.
+					</li>
+					<li>
+						Preserve existing saved-View revision summaries and add checkpoint/outcome
+						evidence to snapshots. Update clients through stable handles and keyed
+						entities, with explicit local text-edit buffers and retained preview
+						resources.
+					</li>
+					<li>
+						Adopt recoverable destination CAS for Review Set publication. Validate
+						owned-view base and required configuration under the destination guard;
+						re-read/recompute a disjoint update after CAS failure. Persist projection
+						intent and retry identity before publication. Do not move merge policy to
+						sync.
+					</li>
+				</ol>
+				<p>
+					Tests: retain existing camera arrangement/bridge/panel baselines, then prove all
+					12 acceptance rows in the concept. Specifically race two independent
+					arrangements publishing one Review Set: unrelated views survive, same-owned-view
+					changes conflict, and save interruption cannot increment a View twice. Save the
+					same view ID twice and observe the second revision. Delay an old actor poll
+					while editing a new actor. Race native drag and shared tuning, preserve
+					exceptions and selection, exercise native Details/Undo. Test Enter then blur and
+					Tab commits without reverting new state. Count retained UI and preview instances
+					across updates; prove accepted data changes do not remount them. Verify
+					selection, pilot, visibility and pose restoration after external user changes
+					and explicit capture handoff.
+				</p>
+				<p>
+					Exit: both interfaces converge without UI-owned reconciliation; actor/document
+					scope stays isolated; saved, synced and approved remain distinct; old saved
+					documents and capture-only clients still work. An interrupted migration has
+					documented rollback to the old provider with new sessions fenced and pending
+					outcomes inspected, never concurrent writers or silent format downgrade.
+				</p>
+				<h2 id="plan-phase-5-adoption-and-release-readiness">
+					Phase 5 — adoption and release readiness
+				</h2>
+				<p>Deliverables:</p>
+				<ul>
+					<li>
+						Package-mode <code>ADOPTING.md</code>, exact dependency closure, host
+						integration manifest, version/capability matrix and recovery guide. CLI
+						provides machine-readable target, outcome, checkpoint and health inspection
+						through public APIs. Native facade has a minimal independent menu example.
+					</li>
+					<li>
+						Clean consumer using packed packages and optional plugin artifacts. Replace
+						both Workbench and first-party native menu; do not copy private code or
+						reimplement coordinator mechanics.
+					</li>
+					<li>
+						Fixture-label consumer and camera journey validate public seams. Run
+						ordinary capture-only consumer with authoring/sync plugins disabled. Release
+						metadata/Changesets only when publication boundaries are actually ready; no
+						change to <code>unreal-rc</code> ownership.
+					</li>
+				</ul>
+				<p>
+					Tests: clean build and public-export-only checks; custom host/menu edits in both
+					directions, save/reopen, lost-response recovery, preview cleanup and capture.
+					Run all relevant portable gates, packed-consumer conformance and
+					discovered-engine Unreal evidence. Record skipped/unavailable gates explicitly;
+					do not claim full verification with a relevant failing or unrun native gate.
+				</p>
+				<p>
+					Exit: deleting first-party UIs removes only presentation; two unrelated domain
+					adapters reuse the same machinery. Public adoption guide is sufficient without
+					inspecting Workbench or private endpoints.
+				</p>
+				<h2 id="plan-verification-strategy">Verification strategy</h2>
+				<p>
+					Use pure/property tests for folds and ordering, Effect tests for
+					clocks/resources/concurrency, real files/processes for durability/CAS and
+					transport fault injection, shared fixtures for TS/C++, actual Unreal for native
+					observations/mutations/cleanup, and narrow UI tests for focus/instance
+					retention. No mock may stand in for the native thread, Undo, save or cleanup
+					evidence it claims to prove.
+				</p>
+				<p>
+					During implementation follow repository targeted-check guidance. Broad
+					TS/contract changes run <code>pnpm run check:precommit</code>; changed C++/live
+					mutation surfaces require <code>pnpm check:unreal</code> and fixture Remote
+					Control evidence as appropriate. Final readiness requires
+					<code>pnpm check</code> plus newly registered sync/adoption/native gates. These
+					are planned checks, not results of this design-only task.
+				</p>
+			</article>
+			<footer>
+				UE Shed · Design review edition · Camera source evidence: feat/camera-flow at
+				f7e6dec. No runtime implementation is introduced by this document. Read alongside
+				the linked Markdown sources when the proposal changes.
+			</footer>
+		</main>
+		<script>
+			const cases = {
+				received: [
+					"Unresolved",
+					"Not dispatched",
+					"Unconfirmed",
+					"Not granted",
+					"The request entered a bounded queue. It may not survive a receiver crash; query its command ID before treating the edit as accepted."
+				],
+				saved: [
+					"Accepted · r42",
+					"Queued",
+					"Draft saved · r42",
+					"Not granted",
+					"The durable-profile document and outcome are committed. Engine realization is still queued. Saving the draft did not approve it."
+				],
+				lost: [
+					"Accepted · r42",
+					"Indeterminate",
+					"Draft saved · r42",
+					"Not granted",
+					"The engine may have applied the edit before the connection failed. Query the effect on the same binding or inspect postconditions. Do not blindly retry an imperative action."
+				],
+				approved: [
+					"Accepted · r43",
+					"Applied · r42",
+					"Approved state · r43",
+					"Reviewed r42",
+					"An explicit domain command recorded approval of reviewed revision 42 at revision 43. Capture still requires readiness and resource handoff; approval does not prove capture succeeded."
+				]
+			};
+			document.querySelectorAll("[data-case]").forEach((button) =>
+				button.addEventListener("click", () => {
+					document
+						.querySelectorAll("[data-case]")
+						.forEach((other) =>
+							other.setAttribute("aria-pressed", String(other === button))
+						);
+					const values = cases[button.dataset.case];
+					["decision", "engine", "persistence", "approval", "scenario-note"].forEach(
+						(id, index) => {
+							document.getElementById(id).textContent = values[index];
+						}
+					);
+				})
+			);
+			document.getElementById("print").addEventListener("click", () => window.print());
+			const toc = document.getElementById("toc");
+			if (window.matchMedia("(min-width: 761px)").matches) toc.open = true;
+			const headings = document.querySelectorAll("main h2[id]");
+			if ("IntersectionObserver" in window) {
+				const observer = new IntersectionObserver(
+					(entries) => {
+						entries.forEach((entry) => {
+							if (!entry.isIntersecting) return;
+							document.querySelectorAll("nav a").forEach((link) => {
+								const selected = link.hash === "#" + entry.target.id;
+								link.classList.toggle("active", selected);
+								if (selected) link.setAttribute("aria-current", "location");
+								else link.removeAttribute("aria-current");
+							});
+						});
+					},
+					{ rootMargin: "-5% 0px -65% 0px" }
+				);
+				headings.forEach((heading) => observer.observe(heading));
+			}
+		</script>
+	</body>
+</html>

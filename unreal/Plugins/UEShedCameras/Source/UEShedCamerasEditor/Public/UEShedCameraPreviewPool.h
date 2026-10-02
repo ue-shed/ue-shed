@@ -5,6 +5,7 @@
 class AActor;
 class UWorld;
 class UTextureRenderTarget2D;
+class USceneCaptureComponent2D;
 class FUEShedTransientCapture;
 
 /** Resolved working view, independent of the authoring UI and any file/transport encoding. */
@@ -19,6 +20,10 @@ struct UESHEDCAMERASEDITOR_API FUEShedCameraPreviewView
     bool VolumetricFog = true;
     float LodDistanceScale = 1;
     TArray<TWeakObjectPtr<AActor>> HiddenActors;
+    /** Optional. Review snapshots measure whether the shot shows this actor; the pool ignores it. */
+    TWeakObjectPtr<AActor> Subject;
+    /** renderer.editorPreviews: review snapshots reveal editor-only preview children, as capture does. */
+    bool EditorPreviews = false;
 };
 
 /** Game-thread-only GPU previews. At most four targets and one capture per Tick.
@@ -39,6 +44,7 @@ class UESHEDCAMERASEDITOR_API FUEShedCameraPreviewPool
     void RequestRefresh();
     FString Tick(double Seconds, bool Realtime);
     UTextureRenderTarget2D *Texture(const FString &Id) const;
+    USceneCaptureComponent2D *Component(const FString &Id) const;
     uint64 Frames(const FString &Id) const;
     bool NeedsRefresh() const;
     int32 Num() const;

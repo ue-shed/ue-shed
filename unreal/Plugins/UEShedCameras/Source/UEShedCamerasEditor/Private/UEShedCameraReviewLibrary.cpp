@@ -1,5 +1,6 @@
 #include "UEShedCameraReviewLibrary.h"
 #include "UEShedCameraRenderSession.h"
+#include "UEShedCameraSubjectAssessment.h"
 #include "UEShedTransientCapture.h"
 
 #include "Camera/CameraTypes.h"
@@ -630,6 +631,22 @@ TSharedRef<FJsonObject> AssessVisibility(
 	return Result;
 }
 } // namespace
+
+TSharedRef<FJsonObject> UEShedProjectReviewSubject(const FVector &Center, const FVector &Extent,
+												   const FRotator &BoundsRotation, const FMinimalViewInfo &View)
+{
+	return ProjectSubjectBounds(Center, Extent, BoundsRotation, View);
+}
+
+TSharedRef<FJsonObject> UEShedAssessReviewVisibility(UWorld *World, AActor *Subject, const FVector &CameraLocation,
+													 const FVector &Center, const FVector &Extent,
+													 const FRotator &BoundsRotation, const FString &Method,
+													 const TSharedRef<FJsonObject> &Projection,
+													 USceneCaptureComponent2D *Capture, int32 Width, int32 Height)
+{
+	return AssessVisibility(World, Subject, CameraLocation, Center, Extent, BoundsRotation, Method, TEXT("standard"),
+							Projection, false, Capture, Width, Height);
+}
 
 void UUEShedCameraReviewLibrary::InspectReviewSelection(FString &ResultJson)
 {

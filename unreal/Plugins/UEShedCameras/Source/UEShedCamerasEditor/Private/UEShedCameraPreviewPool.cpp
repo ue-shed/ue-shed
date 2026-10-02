@@ -148,6 +148,14 @@ UTextureRenderTarget2D *FUEShedCameraPreviewPool::Texture(const FString &Id) con
     return nullptr;
 }
 
+USceneCaptureComponent2D *FUEShedCameraPreviewPool::Component(const FString &Id) const
+{
+    for (const auto &Entry : Entries)
+        if (Entry->Id == Id)
+            return Entry->Capture->Component();
+    return nullptr;
+}
+
 uint64 FUEShedCameraPreviewPool::Frames(const FString &Id) const
 {
     for (const auto &Entry : Entries)

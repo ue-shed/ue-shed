@@ -20,8 +20,8 @@ catalog:
     "@stylexjs/rollup-plugin": "^0.19.0"
     "@stylexjs/stylex": "^0.19.0"
     "effect": "4.0.0-beta.98"
-    "@solidjs/web": "2.0.0-rc.9"
-    "solid-js": "2.0.0-rc.9"
+    "@solidjs/web": "2.0.0-rc.13"
+    "solid-js": "2.0.0-rc.13"
     "vite-plugin-solid": "3.0.0-next.27"
 
 allowBuilds:
@@ -32,6 +32,8 @@ allowBuilds:
     workerd: true
 
 overrides:
+    "@solidjs/vite-plugin": 3.0.0-next.47
+    "@solidjs/signals": 2.0.0-rc.13
     "@opentelemetry/core@<2.8.0": 2.8.0
     "esbuild@>=0.27.3 <0.28.1": 0.28.1
     "nanoid@<3.3.18": 3.3.18
@@ -43,15 +45,15 @@ overrides:
     "baseline-browser-mapping@<2.11.0": 2.11.0
 
 minimumReleaseAgeExclude:
-    - "@solidjs/vite-plugin@3.0.0-next.44"
-    - "@solidjs/babel-plugin@2.0.0-rc.9"
-    - "@solidjs/compiler@2.0.0-rc.9"
-    - "@solidjs/compiler-darwin-arm64@2.0.0-rc.9"
-    - "@solidjs/compiler-darwin-x64@2.0.0-rc.9"
-    - "@solidjs/compiler-linux-arm64-gnu@2.0.0-rc.9"
-    - "@solidjs/compiler-linux-x64-gnu@2.0.0-rc.9"
-    - "@solidjs/compiler-wasm32-wasi@2.0.0-rc.9"
-    - "@solidjs/compiler-win32-x64-msvc@2.0.0-rc.9"
+    - "@solidjs/vite-plugin@3.0.0-next.47"
+    - "@solidjs/babel-plugin@2.0.0-rc.13"
+    - "@solidjs/compiler@2.0.0-rc.13"
+    - "@solidjs/compiler-darwin-arm64@2.0.0-rc.13"
+    - "@solidjs/compiler-darwin-x64@2.0.0-rc.13"
+    - "@solidjs/compiler-linux-arm64-gnu@2.0.0-rc.13"
+    - "@solidjs/compiler-linux-x64-gnu@2.0.0-rc.13"
+    - "@solidjs/compiler-wasm32-wasi@2.0.0-rc.13"
+    - "@solidjs/compiler-win32-x64-msvc@2.0.0-rc.13"
     - p4client-ts@0.7.1
     - peculiar-sheets@0.15.0
     - "@cloudflare/vite-plugin@1.51.0"
@@ -72,9 +74,6 @@ minimumReleaseAgeExclude:
     - "@changesets/types@7.0.0"
     - "@changesets/write@1.0.0"
     - "@tanstack/charts@0.18.0"
-    - "@solidjs/signals@2.0.0-rc.9"
-    - "@solidjs/web@2.0.0-rc.9"
-    - solid-js@2.0.0-rc.9
-
-patchedDependencies:
-    solid-js@2.0.0-rc.9: patches/solid-js@2.0.0-rc.9.patch
+    - "@solidjs/signals@2.0.0-rc.13"
+    - "@solidjs/web@2.0.0-rc.13"
+    - solid-js@2.0.0-rc.13

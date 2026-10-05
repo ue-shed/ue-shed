@@ -1,0 +1,16 @@
+{
+	"schemaVersion": 5,
+	"expectedMapPath": "/Game/Fixture/Cameras/L_CameraLoad",
+	"previewFps": 1,
+	"editorPreviews": true,
+	"cameras": [
+		{
+			"correlation": { "type": "review_view", "reviewViewId": "spawn-volume-overview" },
+			"projection": { "type": "perspective", "fieldOfViewDegrees": 60 },
+			"location": { "x": -4000, "y": 0, "z": 600 },
+			"rotation": { "pitch": -10, "yaw": 0, "roll": 0 },
+			"width": 320,
+			"height": 180
+		}
+	]
+}

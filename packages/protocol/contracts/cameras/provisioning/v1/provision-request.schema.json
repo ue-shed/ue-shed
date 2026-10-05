@@ -682,9 +682,12 @@
 				}
 			]
 		},
+		"editorPreviews": {
+			"type": "boolean"
+		},
 		"schemaVersion": {
 			"type": "number",
-			"enum": [3, 4]
+			"enum": [3, 4, 5]
 		}
 	},
 	"required": ["cameras", "expectedMapPath", "previewFps", "schemaVersion"],

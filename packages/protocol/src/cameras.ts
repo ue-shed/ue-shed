@@ -75,6 +75,12 @@ export type CameraDescriptor = Schema.Schema.Type<typeof CameraDescriptor>;
 export const CameraStatus = Schema.Struct({
 	cameras: Schema.Array(CameraDescriptor),
 	config: CameraScheduleConfig,
+	/** Present while a provisioned feed shows editor previews; counts the revealed child actors. */
+	editorPreviews: Schema.optionalKey(
+		Schema.Struct({
+			revealedChildActors: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+		})
+	),
 	pipeName: Schema.String,
 	schemaVersion: Schema.Literal(1),
 	stats: CameraStreamStats

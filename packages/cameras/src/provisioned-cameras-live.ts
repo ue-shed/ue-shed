@@ -20,7 +20,9 @@ export class ProvisionedCameraError extends Schema.TaggedErrorClass<ProvisionedC
 		message: Schema.String,
 		operation: Schema.Literals(["ensure_cameras", "clear_cameras", "await_frame", "configure"]),
 		recovery: Schema.String,
-		retrySafe: Schema.Boolean
+		retrySafe: Schema.Boolean,
+		/** Set when the connected plugin cannot honour a requested option. */
+		code: Schema.optionalKey(Schema.Literal("unsupported_capability"))
 	}
 ) {}
 
@@ -72,13 +74,20 @@ export const ProvisionedCameraRequest = Schema.Struct({
 		Schema.isPattern(/^\/[A-Za-z0-9_./-]+$/)
 	),
 	previewFps: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 10 })),
-	schemaVersion: Schema.Literals([3, 4])
+	/** Reveal child actors of editor-only owners in the previews, as renderer.editorPreviews does. */
+	editorPreviews: Schema.optionalKey(Schema.Boolean),
+	schemaVersion: Schema.Literals([3, 4, 5])
 }).check(
 	Schema.makeFilter((request) =>
-		request.schemaVersion === 4 ||
+		request.schemaVersion >= 4 ||
 		request.cameras.every((camera) => camera.visibility === undefined)
 			? undefined
 			: "Visibility requires provisioning version 4."
+	),
+	Schema.makeFilter((request) =>
+		request.schemaVersion === 5 || request.editorPreviews === undefined
+			? undefined
+			: "Editor previews require provisioning version 5."
 	)
 );
 export type ProvisionedCameraRequest = Schema.Schema.Type<typeof ProvisionedCameraRequest>;
@@ -162,8 +171,13 @@ const ProvisionedCameraStatus = Schema.Struct({
 			})
 		)
 	),
+	editorPreviews: Schema.optional(
+		Schema.Struct({
+			revealedChildActors: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+		})
+	),
 	error: Schema.optional(Schema.String),
-	schemaVersion: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 4 }))),
+	schemaVersion: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 5 }))),
 	status: Schema.optional(Schema.String),
 	worldContext: Schema.optional(Schema.Literals(["editor", "play"]))
 });
@@ -200,22 +214,43 @@ function provisionedCameraError(
 	});
 }
 
+/** Picks the oldest provisioning version that carries the request, so older plugins keep working. */
+export function provisionedCameraRequest(
+	cameras: ReadonlyArray<ProvisionedCameraSpec>,
+	options: ProvisionedCameraOptions
+): ProvisionedCameraRequest {
+	const previewFps = Math.min(10, Math.max(1, Math.round(options.previewFps ?? 5)));
+	const { expectedMapPath } = options;
+	if (options.editorPreviews === true)
+		return { cameras, editorPreviews: true, expectedMapPath, previewFps, schemaVersion: 5 };
+	const schemaVersion = cameras.some((camera) => camera.visibility !== undefined) ? 4 : 3;
+	return { cameras, expectedMapPath, previewFps, schemaVersion };
+}
+
+export interface ProvisionedCameraOptions {
+	readonly expectedMapPath: string;
+	readonly previewFps?: number;
+	/**
+	 * Show child actors that ChildActorComponents spawn for editor-only owners (for example
+	 * spawn-volume previews), like renderer.editorPreviews on renders. Defaults to false. Plugins
+	 * without support fail with code "unsupported_capability"; retry without the option to fall back.
+	 */
+	readonly editorPreviews?: boolean;
+}
+
 export function ensureProvisionedCameras(
 	endpoint: string,
 	cameras: ReadonlyArray<ProvisionedCameraSpec>,
-	options: { readonly expectedMapPath: string; readonly previewFps?: number }
+	options: ProvisionedCameraOptions
 ): Effect.Effect<
 	ReadonlyArray<ProvisionedCameraBinding>,
 	ProvisionedCameraError,
 	RemoteControlClient
 > {
 	return Effect.gen(function* () {
-		const request = yield* Schema.decodeUnknownEffect(ProvisionedCameraRequest)({
-			cameras,
-			expectedMapPath: options.expectedMapPath,
-			previewFps: Math.min(10, Math.max(1, Math.round(options.previewFps ?? 5))),
-			schemaVersion: cameras.some((camera) => camera.visibility !== undefined) ? 4 : 3
-		}).pipe(
+		const request = yield* Schema.decodeUnknownEffect(ProvisionedCameraRequest)(
+			provisionedCameraRequest(cameras, options)
+		).pipe(
 			Effect.mapError((cause) =>
 				provisionedCameraError(
 					"ensure_cameras",
@@ -252,15 +287,33 @@ export function ensureProvisionedCameras(
 				)
 			)
 		);
+		// Plugins that support version 5 echo it in every response, failures included.
+		if (request.schemaVersion === 5 && status.schemaVersion !== 5)
+			return yield* Effect.fail(
+				new ProvisionedCameraError({
+					code: "unsupported_capability",
+					operation: "ensure_cameras",
+					message: "The connected plugin cannot show editor previews in live previews.",
+					recovery:
+						"Omit editorPreviews or install a matching UE Shed Cameras plugin that supports provisioning version 5.",
+					retrySafe: false
+				})
+			);
 		if (request.schemaVersion === 4 && status.schemaVersion !== 4)
 			return yield* Effect.fail(
 				new ProvisionedCameraError({
+					code: "unsupported_capability",
 					operation: "ensure_cameras",
 					message: "The connected plugin cannot confirm authored preview visibility.",
 					recovery:
 						"Install a matching Cameras plugin before previewing authored output.",
 					retrySafe: false
 				})
+			);
+		if (status.editorPreviews !== undefined)
+			yield* Effect.annotateCurrentSpan(
+				"camera.provisioned.editor_previews.revealed",
+				status.editorPreviews.revealedChildActors
 			);
 		const statusCameras = status.cameras ?? [];
 		if (status.error !== undefined || statusCameras.length === 0) {

@@ -138,13 +138,40 @@ for (const { file, schema } of invalidFixtures) {
 }
 
 // SAFETY: this repository fixture is decoded by the matching protocol schema below.
-const provisioningFixture = JSON.parse(
-	readFileSync(join(provisioningFixturesDirectory, "provision-request-valid.json"), "utf8")
-) as unknown;
-try {
-	deepStrictEqual(roundTrip(ProvisionedCameraRequest, provisioningFixture), provisioningFixture);
-} catch (cause) {
-	throw new Error("provisioned camera request failed JSON/Effect compatibility", { cause });
+const provisioningDocument = Schema.toJsonSchemaDocument(ProvisionedCameraRequest);
+deepStrictEqual(
+	JSON.parse(
+		readFileSync(
+			join(provisioningFixturesDirectory, "../provision-request.schema.json"),
+			"utf8"
+		)
+	),
+	{
+		$schema: "https://json-schema.org/draft/2020-12/schema",
+		$id: "https://ue-shed.dev/contracts/cameras/provisioning/v1/provision-request.schema.json",
+		...provisioningDocument.schema,
+		$defs: provisioningDocument.definitions
+	},
+	"provisioned camera request decoder differs from its wire authority"
+);
+const provisioningFixtures = [
+	"provision-request-valid.json",
+	"provision-request-editor-previews.json"
+];
+for (const file of provisioningFixtures) {
+	const provisioningFixture = Schema.decodeUnknownSync(Schema.Json)(
+		JSON.parse(readFileSync(join(provisioningFixturesDirectory, file), "utf8"))
+	);
+	try {
+		deepStrictEqual(
+			roundTrip(ProvisionedCameraRequest, provisioningFixture),
+			provisioningFixture
+		);
+	} catch (cause) {
+		throw new Error(`provisioned camera request ${file} failed JSON/Effect compatibility`, {
+			cause
+		});
+	}
 }
 
 const mapTileFixtures: ReadonlyArray<{
@@ -199,5 +226,5 @@ for (const file of present) {
 }
 
 console.log(
-	`review contract parity: ${validFixtures.length} valid, ${invalidFixtures.length} invalid; provisioned v3; map-tile v1 (${mapTileFixtures.length} valid, 2 invalid)`
+	`review contract parity: ${validFixtures.length} valid, ${invalidFixtures.length} invalid; provisioned v3-v5 (${provisioningFixtures.length} valid); map-tile v1 (${mapTileFixtures.length} valid, 2 invalid)`
 );

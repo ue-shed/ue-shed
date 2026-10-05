@@ -181,16 +181,15 @@ TSharedPtr<FJsonObject> Failure(const FString &Session, const FString &Code, con
 		Out->SetStringField(TEXT("operationId"), Operation);
 	return Out;
 }
-void Issue(TArray<TSharedPtr<FJsonValue>> &Issues, const TCHAR *Code, const TCHAR *Path, const TCHAR *Message)
+void Issue(TArray<TSharedPtr<FJsonValue>> &Issues, const TCHAR *Code, const TCHAR *Path, const TCHAR *Message,
+		   const TCHAR *Recovery = TEXT("Correct the specified policy or prepare an unlocked "
+										"editor world before opening a session."))
 {
 	auto Out = Object();
 	Out->SetStringField(TEXT("code"), Code);
 	Out->SetStringField(TEXT("path"), Path);
 	Out->SetStringField(TEXT("message"), Message);
-	Out->SetStringField(
-		TEXT("recovery"),
-		TEXT("Correct the specified policy or prepare an unlocked "
-											   "editor world before opening a session."));
+	Out->SetStringField(TEXT("recovery"), Recovery);
 	Issues.Add(MakeShared<FJsonValueObject>(Out));
 }
 bool ValidPolicy(const TSharedPtr<FJsonObject> &P)
@@ -762,9 +761,14 @@ TSharedPtr<FJsonObject> FUEShedCameraRenderSession::Preflight(const TSharedPtr<F
 		if (String(Request, TEXT("expectedProjectName")) != FApp::GetProjectName())
 			Issue(Issues, TEXT("project_mismatch"), TEXT("expectedProjectName"),
 				  TEXT("The connected editor belongs to a different project."));
-		if (IsBusy() || FUEShedCameraEditorOwnership::HasAuthoringOwner())
+		if (IsBusy())
 			Issue(Issues, TEXT("editor_busy"), TEXT("sessionId"),
-				  TEXT("Another render session owns the editor world."));
+				  TEXT("Another render session owns the editor world."),
+				  TEXT("Wait for the other render session to end, then retry."));
+		// A camera set (native authoring session) holds the editor camera; it is not a render session.
+		if (FUEShedCameraEditorOwnership::HasAuthoringOwner())
+			Issue(Issues, TEXT("authoring_open"), TEXT("sessionId"), TEXT("A camera set is open in the editor."),
+				  TEXT("Close the camera set, then retry."));
 		const bool Viewport =
 			String(Child(Policy, TEXT("renderer")), TEXT("kind")) == TEXT("editor_viewport");
 		auto *Client = GCurrentLevelEditingViewportClient;
@@ -815,6 +819,7 @@ TSharedPtr<FUEShedCameraRenderSession> FUEShedCameraRenderSession::Open(
 		const auto First = Check->GetArrayField(TEXT("issues"))[0]->AsObject();
 		Error = Failure(String(Request, TEXT("sessionId")), String(First, TEXT("code")),
 						String(First, TEXT("message")));
+		Error->SetStringField(TEXT("recovery"), String(First, TEXT("recovery")));
 		Error->SetArrayField(TEXT("issues"), Check->GetArrayField(TEXT("issues")));
 		return nullptr;
 	}

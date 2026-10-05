@@ -1689,8 +1689,9 @@ void UUEShedCameraReviewLibrary::CaptureReviewView(const FString &RequestJson, F
 	auto Renderer = FUEShedCameraRenderSession::Open(RenderRequest, RenderError);
 	if (!Renderer)
 	{
+		// The renderer's recovery distinguishes an open camera set from another render session.
 		Fail(*RenderError->GetStringField(TEXT("code")), *RenderError->GetStringField(TEXT("message")),
-			 TEXT("Inspect the shared renderer policy and editor ownership."), true);
+			 *RenderError->GetStringField(TEXT("recovery")), true);
 		return;
 	}
 	ON_SCOPE_EXIT

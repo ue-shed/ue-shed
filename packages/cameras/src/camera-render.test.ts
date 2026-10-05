@@ -8,13 +8,20 @@ import {
 } from "@ue-shed/world";
 import { renderPreparedCamera } from "./prepared-camera.js";
 import { describe, expect, it } from "vitest";
-import { RemoteControlClientError, type RemoteControlClientApi } from "@ue-shed/unreal-connection";
+import {
+	RemoteControlClient,
+	RemoteControlClientError,
+	type RemoteControlClientApi
+} from "@ue-shed/unreal-connection";
 import {
 	CameraRenderer,
+	isEditorOwnershipRejection,
 	makeCameraRenderer,
 	renderCamera,
 	cameraRenderReuseIdentity
 } from "./camera-render.js";
+import { captureReviewView } from "./review-live.js";
+import { ReviewCaptureRequestCurrent } from "./review-schema.js";
 import {
 	AbsoluteCamera,
 	CameraFrameOperationId,
@@ -131,6 +138,7 @@ function harness(
 	const renderer = makeCameraRenderer(client, "http://fixture");
 	return {
 		calls,
+		client,
 		renderer,
 		run: () =>
 			renderCamera({ session: request, frame }).pipe(
@@ -494,4 +502,129 @@ describe("editor preview renderer policy", () => {
 			})
 		);
 	});
+});
+
+describe("editor ownership rejections", () => {
+	const message = "A camera set is open in the editor.";
+	const recovery = "Close the camera set, then retry.";
+	const rejected = (code: "authoring_open" | "editor_busy") => ({
+		status: "failed",
+		code,
+		message,
+		recovery,
+		sessionId: request.sessionId,
+		issues: [{ code, path: "sessionId", message, recovery }],
+		restoration: "not_acquired"
+	});
+	const reviewRequest = (minor: 6 | 7) =>
+		Schema.decodeUnknownSync(ReviewCaptureRequestCurrent)({
+			contract: { name: "ue-shed-review-capture", version: { major: 1, minor } },
+			operationId: "0b6f1c1e-3c3a-4d7e-9a43-6f3f0e8d2a11",
+			viewId: "front",
+			expectedMapPath: request.expectedMapPath,
+			subject: {
+				kind: "actor_path",
+				actorPath: "/Game/Fixture.Fixture:PersistentLevel.Floor"
+			},
+			viewpoint: {
+				kind: "world_fixed",
+				approvedPose: {
+					aspectRatio: "16:9",
+					projection: "perspective",
+					location: { x: 1, y: 2, z: 3 },
+					rotation: { pitch: 0, yaw: 0, roll: 0 },
+					fieldOfViewDegrees: 60
+				}
+			},
+			resolution: { width: 320, height: 180 },
+			assessment: { method: "automatic" },
+			clearCompanion: { status: "not_requested" },
+			renderPolicy: legacyReviewRenderPolicy,
+			...(minor === 7
+				? {
+						authoredVisibility: {
+							version: 1,
+							output: "authored_only",
+							actors: {
+								hide: [
+									{
+										label: "Column",
+										locator: {
+											kind: "actor_path",
+											actorPath:
+												"/Game/Fixture.Fixture:PersistentLevel.Column"
+										}
+									}
+								],
+								protect: []
+							}
+						}
+					}
+				: undefined)
+		});
+	const authoredCapabilities = {
+		...capabilities,
+		authoredVisibility: {
+			version: 1,
+			maximumActorsPerList: 256,
+			geometry: "loaded_non_nanite_opaque_static_mesh_actors",
+			viewport: true,
+			sceneCapture: true
+		}
+	};
+
+	it("keeps an open camera set distinct from another render session", async () => {
+		const h = harness((name) =>
+			name === "BeginCameraRender" ? Effect.succeed(rejected("authoring_open")) : undefined
+		);
+		const error = await Effect.runPromise(Effect.flip(h.run()));
+		expect(error).toMatchObject({
+			code: "authoring_open",
+			operation: "open",
+			message,
+			recovery
+		});
+		expect(isEditorOwnershipRejection(error)).toBe(true);
+		expect(h.calls).not.toContain("EndCameraRender");
+	});
+	it("does not treat failures after acquisition as ownership rejections", async () => {
+		const h = harness((name) =>
+			name === "StartCameraFrame" ? Effect.succeed(failed("capture_failed")) : undefined
+		);
+		const error = await Effect.runPromise(Effect.flip(h.run()));
+		expect(isEditorOwnershipRejection(error)).toBe(false);
+	});
+	it.each([
+		["authoring_open", 6],
+		["authoring_open", 7],
+		["editor_busy", 6]
+	] as const)(
+		"reports %s as a retryable Review failure for contract 1.%i",
+		async (code, minor) => {
+			const h = harness((name) =>
+				name === "BeginCameraRender"
+					? Effect.succeed(rejected(code))
+					: name === "GetCameraRenderCapabilities"
+						? Effect.succeed(authoredCapabilities)
+						: undefined
+			);
+			const response = await Effect.runPromise(
+				captureReviewView({
+					endpoint: "http://fixture",
+					request: reviewRequest(minor)
+				}).pipe(Effect.provideService(RemoteControlClient, h.client))
+			);
+			expect(response).toMatchObject({
+				status: "failed",
+				code,
+				message,
+				recovery,
+				retrySafe: true,
+				contract: { name: "ue-shed-review-capture", version: { major: 1, minor } },
+				viewId: "front"
+			});
+			expect(h.calls).not.toContain("StartCameraFrame");
+			expect(h.calls).not.toContain("EndCameraRender");
+		}
+	);
 });

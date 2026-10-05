@@ -42,6 +42,7 @@ const tests = [
 	"UEShed.Cameras.Rendering.LifecycleAndReference",
 	"UEShed.Cameras.Rendering.OpeningLease",
 	"UEShed.Cameras.Rendering.ScreenshotOwnership",
+	"UEShed.Cameras.Rendering.AuthoringOwnership",
 	"UEShed.Cameras.Rendering.MapMinorCompatibility",
 	"UEShed.Cameras.Rendering.PreparationAndWorldChange",
 	"UEShed.Cameras.Rendering.EditorPreviews",

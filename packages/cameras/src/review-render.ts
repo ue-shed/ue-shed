@@ -1,8 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { captureAuthoredReviewView } from "./review-authored-render.js";
-import { Cause, Effect, Exit, Schema } from "effect";
+import { Cause, Effect, Exit, Option, Schema } from "effect";
 import { RemoteControlClient } from "@ue-shed/unreal-connection";
-import { makeCameraRenderer, CameraRenderError } from "./camera-render.js";
+import {
+	makeCameraRenderer,
+	CameraRenderError,
+	isEditorOwnershipRejection
+} from "./camera-render.js";
 import {
 	CameraFrameResult,
 	CameraFrameOperationId,
@@ -72,6 +76,23 @@ export const ReviewRenderInspectionResult = Schema.Union([
 	ReviewRenderStageFailure
 ]);
 
+/** Another editor owner refused the render session; report it as this view's retryable failure. */
+function editorOwnershipFailure(
+	request: typeof ReviewCaptureRequestCurrent.Type,
+	error: CameraRenderError
+) {
+	return {
+		status: "failed" as const,
+		code: error.code,
+		message: error.message,
+		recovery: error.recovery,
+		retrySafe: true,
+		contract: request.contract,
+		operationId: request.operationId,
+		viewId: request.viewId
+	};
+}
+
 /** Realize -> prepare/render in one owned session -> optional assessment -> restore -> publish. */
 export const captureRenderedReviewView = Effect.fn("ReviewRenderer.capture")(function* (args: {
 	readonly endpoint: string;
@@ -82,7 +103,13 @@ export const captureRenderedReviewView = Effect.fn("ReviewRenderer.capture")(fun
 		onExcessProperty: "error"
 	});
 	if (request.authoredVisibility)
-		return yield* captureAuthoredReviewView({ endpoint: args.endpoint, request });
+		return yield* captureAuthoredReviewView({ endpoint: args.endpoint, request }).pipe(
+			Effect.catchTag("CameraRenderError", (error) =>
+				isEditorOwnershipRejection(error)
+					? Effect.succeed(editorOwnershipFailure(request, error))
+					: Effect.fail(error)
+			)
+		);
 	const renderer = makeCameraRenderer(client, args.endpoint);
 	const remote = (functionName: string, parameters: Record<string, string>) =>
 		client.request({
@@ -187,6 +214,14 @@ export const captureRenderedReviewView = Effect.fn("ReviewRenderer.capture")(fun
 	);
 	if (Exit.isSuccess(outcome)) return outcome.value;
 	if (Cause.hasInterrupts(outcome.cause)) return yield* Effect.failCause(outcome.cause);
+	const failure = Cause.findErrorOption(outcome.cause);
+	if (
+		!Cause.hasDies(outcome.cause) &&
+		Option.isSome(failure) &&
+		failure.value instanceof CameraRenderError &&
+		isEditorOwnershipRejection(failure.value)
+	)
+		return editorOwnershipFailure(request, failure.value);
 	return yield* new CameraRenderError({
 		code: "review_render_or_restoration_failed",
 		operation: "capture",

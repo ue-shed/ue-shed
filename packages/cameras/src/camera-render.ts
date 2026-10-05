@@ -102,6 +102,15 @@ export class CameraRenderError extends Schema.TaggedErrorClass<CameraRenderError
 	}
 ) {}
 
+/**
+ * Open was refused because another owner holds the editor: a camera set (`authoring_open`) or
+ * another render session (`editor_busy`). Nothing was acquired, so retrying after it ends is safe.
+ */
+export const isEditorOwnershipRejection = (error: CameraRenderError): boolean =>
+	error.operation === "open" &&
+	(error.code === "authoring_open" || error.code === "editor_busy") &&
+	error.nativeFailure?.restoration === "not_acquired";
+
 function renderError(
 	operation: CameraRenderError["operation"],
 	sessionId: string,

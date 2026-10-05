@@ -28,6 +28,10 @@ import { expect } from "vitest";
 import { makeLocalFilesTestLayer } from "../adapters/local-files.js";
 import { makeWorkbenchWindowTestLayer, WorkbenchWindowTest } from "../adapters/electron-window.js";
 import { type WorkbenchConfigurationApi } from "../workbench-config.js";
+import {
+	WorkbenchCameraWorkspaceLive,
+	makeWorkbenchCameraWorkspaceTestLayer
+} from "./camera-workspace.js";
 import { WorkbenchMapReview, WorkbenchMapReviewLive } from "./map-review.js";
 import { makeWorkbenchProjectTestLayer } from "./project-workspace.js";
 
@@ -57,7 +61,10 @@ const projectTestLayer = makeWorkbenchProjectTestLayer({
 			projectRoot: mapReviewProject.project.projectRoot
 		})
 });
-const MapReviewLiveWithDialog = Layer.provide(WorkbenchMapReviewLive, projectTestLayer);
+const MapReviewWithProject = Layer.provide(WorkbenchMapReviewLive, projectTestLayer);
+const MapReviewLiveWithDialog = MapReviewWithProject.pipe(
+	Layer.provide(WorkbenchCameraWorkspaceLive)
+);
 
 const reviewSetPath = "C:/Fixture/.ue-shed/review/sets/fixture.json";
 const projectRoot = "C:/FixtureProject";
@@ -796,6 +803,7 @@ it.effect("does not carry the startup Review Set into a newly selected project",
 		}
 	};
 	const live = WorkbenchMapReviewLive.pipe(
+		Layer.provide(WorkbenchCameraWorkspaceLive),
 		Layer.provide(selectedProjectLayer),
 		Layer.provide(makeMapReviewDeps(sessions))
 	);
@@ -2107,4 +2115,56 @@ it.effect("blocks Capture Set while PIE is running", () =>
 			)
 		)
 	)
+);
+
+it.effect("closes the open camera set before Capture Set renders", () =>
+	Effect.gen(function* () {
+		const calls: string[] = [];
+		const exit = yield* Effect.gen(function* () {
+			const service = yield* WorkbenchMapReview;
+			return yield* service.capture({ viewIds: ["view-1"] });
+		}).pipe(
+			Effect.provide(
+				MapReviewWithProject.pipe(
+					Layer.provide(
+						makeWorkbenchCameraWorkspaceTestLayer({
+							close: () =>
+								Effect.sync(() => {
+									calls.push("close");
+								})
+						})
+					),
+					Layer.provide(
+						Layer.mergeAll(
+							baseMapReviewDeps,
+							makeWorkbenchConfigurationLayer(configuredReview),
+							makeLocalFilesTestLayer(),
+							makeReviewRepositoryTestLayer({
+								discardStaging: () => Effect.die("not used"),
+								findSet: () => Effect.die("not used"),
+								finalizeRun: () => Effect.die("not used"),
+								listRuns: () => Effect.die("not used"),
+								loadRun: () => Effect.die("not used"),
+								loadSet: () => Effect.succeed(fixtureReviewSet),
+								prepareRun: () => Effect.die("not used"),
+								saveSet: () => Effect.die("not used"),
+								storeArtifact: () => Effect.die("not used"),
+								writeRunDocument: () => Effect.die("not used")
+							}),
+							makeReviewCaptureTestLayer({
+								captureSet: () =>
+									Effect.sync(() => calls.push("capture")).pipe(
+										Effect.andThen(Effect.die("stop after the render starts"))
+									)
+							}),
+							makeReviewAuthoringTestLayer(dyingAuthoring)
+						)
+					)
+				)
+			),
+			Effect.exit
+		);
+		expect(exit._tag).toBe("Failure");
+		expect(calls).toEqual(["close", "capture"]);
+	})
 );

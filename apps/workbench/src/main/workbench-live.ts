@@ -50,6 +50,7 @@ import { WorkbenchEditorHandoffLive } from "./services/editor-handoff.js";
 import { WorkbenchAssetNavigationLive } from "./services/asset-navigation.js";
 import { WorkbenchAuthoringLive } from "./services/authoring.js";
 import { CameraPresentationLive } from "./services/camera-presentation.js";
+import { WorkbenchCameraWorkspaceLive } from "./services/camera-workspace.js";
 import { WorkbenchContentObservatoryLive } from "./services/content-observatory.js";
 import { WorkbenchConfigExplorerLive } from "./services/config-explorer.js";
 import { FixtureHealthLive, FixtureLauncherLive } from "./services/fixture-launcher.js";
@@ -213,7 +214,11 @@ function featureLayer(hosts: WorkbenchHosts) {
 		contentObservatory,
 		WorkbenchConfigExplorerLive.pipe(Layer.provide(ConfigExplorerNodeLive)),
 		CameraPresentationLive
-	).pipe(Layer.provideMerge(reviewAndFixtureLayer(hosts)));
+	).pipe(
+		// Map Review and Map Capture share the one open camera set so either can close it.
+		Layer.provideMerge(WorkbenchCameraWorkspaceLive),
+		Layer.provideMerge(reviewAndFixtureLayer(hosts))
+	);
 }
 
 /**

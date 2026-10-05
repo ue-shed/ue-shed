@@ -22,6 +22,7 @@ import { afterEach, expect } from "vitest";
 import { ElectronDialog } from "../adapters/electron-dialog.js";
 import { makeWorkbenchWindowTestLayer } from "../adapters/electron-window.js";
 import { type WorkbenchConfigurationApi } from "../workbench-config.js";
+import { CameraWorkspaceError, makeWorkbenchCameraWorkspaceTestLayer } from "./camera-workspace.js";
 import { WorkbenchMapCapture, WorkbenchMapCaptureLive } from "./map-capture.js";
 import { makeWorkbenchProjectTestLayer } from "./project-workspace.js";
 
@@ -101,6 +102,123 @@ it.effect("focuses explicit map opening but never the map opened as capture prep
 	})
 );
 
+it.effect("closes the open camera set before the capture touches the editor", () =>
+	Effect.gen(function* () {
+		const projectRoot = yield* Effect.promise(() =>
+			mkdtemp(join(tmpdir(), "ue-shed-capture-close-set-"))
+		);
+		roots.push(projectRoot);
+		const calls: string[] = [];
+		const plan = makeDefaultMapCapturePlan({ projectId: "fixture" });
+		const result = yield* Effect.gen(function* () {
+			const service = yield* WorkbenchMapCapture;
+			return yield* service.capture({
+				plan,
+				operationId: "capture",
+				openMap: true,
+				captureBackend: "scene_capture_tiles"
+			});
+		}).pipe(
+			Effect.provide(
+				mapCaptureLayer(projectRoot, {
+					cameraWorkspace: makeWorkbenchCameraWorkspaceTestLayer({
+						close: () =>
+							Effect.sync(() => {
+								calls.push("close");
+							})
+					}),
+					worldControl: makeEditorWorldControlTestLayer({
+						snapshot: () => Effect.die("not used"),
+						open: (request) =>
+							Effect.sync(() => {
+								calls.push("open");
+								const snapshot = {
+									mapPath: plan.project.mapPath,
+									playSessionActive: false,
+									dirtyWorldPackages: []
+								};
+								return {
+									...request,
+									operationId: EditorWorldOpenRequest.fields.operationId.make(
+										request.operationId
+									),
+									contract: {
+										name: "unreal-editor-world-control",
+										version: { major: 1, minor: 0 }
+									},
+									outcome: "opened",
+									before: snapshot,
+									after: snapshot
+								};
+							})
+					}),
+					remoteControl: makeRemoteControlClientTestLayer((request) =>
+						Effect.sync(() => {
+							calls.push(request.functionName);
+							return { cameras: [], schemaVersion: 1 };
+						})
+					)
+				})
+			)
+		);
+		// The tile run has no fixture editor, so it fails after the map preparation it follows.
+		expect(result.status).toBe("failed");
+		expect(calls).toEqual([
+			"close",
+			"ClearProvisionedCameras",
+			"ClearProvisionedCameras",
+			"open"
+		]);
+	})
+);
+
+it.effect("stops a capture before rendering when the open camera set will not close", () =>
+	Effect.gen(function* () {
+		const projectRoot = yield* Effect.promise(() =>
+			mkdtemp(join(tmpdir(), "ue-shed-capture-close-set-failed-"))
+		);
+		roots.push(projectRoot);
+		const calls: string[] = [];
+		const result = yield* Effect.gen(function* () {
+			const service = yield* WorkbenchMapCapture;
+			return yield* service.capture({
+				plan: makeDefaultMapCapturePlan({ projectId: "fixture" }),
+				operationId: "capture",
+				openMap: true,
+				captureBackend: "scene_capture_tiles"
+			});
+		}).pipe(
+			Effect.provide(
+				mapCaptureLayer(projectRoot, {
+					cameraWorkspace: makeWorkbenchCameraWorkspaceTestLayer({
+						close: () =>
+							Effect.sync(() => calls.push("close")).pipe(
+								Effect.andThen(
+									Effect.fail(
+										new CameraWorkspaceError({ message: "detach refused" })
+									)
+								)
+							)
+					}),
+					worldControl: makeEditorWorldControlTestLayer({
+						open: () => Effect.die("the map must not open"),
+						snapshot: () => Effect.die("not used")
+					}),
+					remoteControl: makeRemoteControlClientTestLayer((request) =>
+						Effect.die(`unexpected render request ${request.functionName}`)
+					)
+				})
+			)
+		);
+		expect(calls).toEqual(["close"]);
+		expect(result).toMatchObject({
+			message:
+				"Workbench could not close the open camera set before capturing: detach refused",
+			status: "failed"
+		});
+	})
+);
+
 afterEach(async () => {
 	await Promise.all(roots.splice(0).map((root) => rm(root, { force: true, recursive: true })));
 });
@@ -125,6 +243,7 @@ function mapCaptureLayer(
 		readonly assetReader?: ReturnType<typeof makeAssetReaderTestLayer>;
 		readonly cameraFeed?: ReturnType<typeof makeCameraFeedTestLayer>;
 		readonly remoteControl?: ReturnType<typeof makeRemoteControlClientTestLayer>;
+		readonly cameraWorkspace?: ReturnType<typeof makeWorkbenchCameraWorkspaceTestLayer>;
 	} = {}
 ) {
 	const project = makeWorkbenchProjectTestLayer({
@@ -170,6 +289,7 @@ function mapCaptureLayer(
 				MapCaptureRepositoryLive,
 				assetReader,
 				options.cameraFeed ?? makeCameraFeedTestLayer(),
+				options.cameraWorkspace ?? makeWorkbenchCameraWorkspaceTestLayer(),
 				options.remoteControl ??
 					makeRemoteControlClientTestLayer(() => Effect.die("not used")),
 				project,

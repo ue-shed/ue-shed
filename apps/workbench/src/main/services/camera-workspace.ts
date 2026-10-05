@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { readdir } from "node:fs/promises";
 import { basename, join } from "node:path";
-import { Effect, Schedule, Schema, Semaphore } from "effect";
+import { Context, Effect, Layer, Schedule, Schema, Semaphore } from "effect";
 import {
 	FramingCandidateId,
 	ensureProvisionedCameras,
@@ -407,5 +407,36 @@ export const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(f
 			.filter((arrangement) => arrangement.mapPath === set.project.mapPath)
 			.map(cameraSetupSavedSet);
 	}, gate.withPermits(1));
-	return { request, setupSets, close: () => close().pipe(gate.withPermits(1)) };
+	return { request, setupSets, close: () => close().pipe(Effect.asVoid, gate.withPermits(1)) };
 });
+
+export type WorkbenchCameraWorkspaceApi = Effect.Success<ReturnType<typeof makeCameraWorkspace>>;
+
+/**
+ * The one native camera-set session Workbench owns. Map Review drives it; any render path
+ * (Review capture, Map Capture) closes it first because UE Shed refuses renders while a set is
+ * open.
+ */
+export class WorkbenchCameraWorkspace extends Context.Service<
+	WorkbenchCameraWorkspace,
+	WorkbenchCameraWorkspaceApi
+>()("@ue-shed/workbench/WorkbenchCameraWorkspace") {}
+
+export const WorkbenchCameraWorkspaceLive = Layer.effect(
+	WorkbenchCameraWorkspace,
+	makeCameraWorkspace()
+);
+
+export function makeWorkbenchCameraWorkspaceTestLayer(
+	service: Partial<WorkbenchCameraWorkspaceApi> = {}
+): Layer.Layer<WorkbenchCameraWorkspace> {
+	return Layer.succeed(
+		WorkbenchCameraWorkspace,
+		WorkbenchCameraWorkspace.of({
+			close: () => Effect.void,
+			request: () => Effect.die("not used"),
+			setupSets: () => Effect.die("not used"),
+			...service
+		})
+	);
+}

@@ -5,7 +5,7 @@ import type {
 	MapReviewMapOpenResult,
 	MapReviewEditorState
 } from "@ue-shed/extension-camera-review/client";
-import { makeCameraWorkspace } from "./camera-workspace.js";
+import { WorkbenchCameraWorkspace } from "./camera-workspace.js";
 import type {
 	CameraWorkspaceRequest,
 	CameraWorkspaceResult
@@ -397,7 +397,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 		const window = yield* WorkbenchWindow;
 		const layerScope = yield* Effect.scope;
 		const coordinator = yield* makeUnrealOperationCoordinator;
-		const cameraWorkspace = yield* makeCameraWorkspace();
+		const cameraWorkspace = yield* WorkbenchCameraWorkspace;
 		const openingMap = yield* Ref.make<string | undefined>(undefined);
 		const lastWorldSnapshot = yield* Ref.make<
 			Option.Option<{ endpoint: string; result: WorldScoutResult }>

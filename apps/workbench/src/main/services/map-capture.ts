@@ -1,3 +1,4 @@
+import { WorkbenchCameraWorkspace } from "./camera-workspace.js";
 import { WorkbenchEditorHandoff } from "./editor-handoff.js";
 import { WorkbenchUnrealConnection } from "./unreal-connection.js";
 import {
@@ -106,6 +107,7 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 	Effect.gen(function* () {
 		const assetReader = yield* AssetReader;
 		const cameraFeed = yield* CameraFeed;
+		const cameraWorkspace = yield* WorkbenchCameraWorkspace;
 		const connection = yield* WorkbenchUnrealConnection;
 		const editorHandoff = yield* WorkbenchEditorHandoff;
 		const dialog = yield* ElectronDialog;
@@ -416,6 +418,21 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 			intent: MapCaptureExecuteIntent
 		) {
 			const endpoint = yield* connection.endpoint();
+
+			// UE Shed refuses render sessions while a camera set is open, so detach it first
+			// exactly like Review capture; a set that will not detach stops the capture here.
+			const closeFailure = yield* cameraWorkspace.close().pipe(
+				Effect.as(undefined),
+				Effect.catch((cause) =>
+					Effect.succeed(
+						failure(
+							`Workbench could not close the open camera set before capturing: ${messageOf(cause)}`,
+							"Close the camera set in the editor or Workbench, then retry the capture."
+						)
+					)
+				)
+			);
+			if (closeFailure !== undefined) return closeFailure;
 
 			return yield* Effect.gen(function* () {
 				yield* clearLivePreview();

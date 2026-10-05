@@ -39,7 +39,7 @@
 		"access": "public"
 	},
 	"scripts": {
-		"build": "tsc -p tsconfig.build.json",
+		"build": "node ../../scripts/clean-package-dist.ts && tsc -p tsconfig.build.json",
 		"prepack": "pnpm run build",
 		"typecheck": "tsc --noEmit"
 	},

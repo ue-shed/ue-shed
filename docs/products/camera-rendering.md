@@ -200,6 +200,14 @@ cancellation, lease expiry, world change, Play startup, and plugin shutdown. Ext
 changes are reported as restoration failures rather than overwritten. Map dirty state is observed,
 not forcibly cleared. No map is saved by rendering.
 
+Begin refuses ownership held elsewhere without acquiring anything. `editor_busy` means another
+render session (or an unrelated screenshot) owns the editor. `authoring_open` means a camera set is
+open in the editor; close it, then retry. `isEditorOwnershipRejection` identifies both, and Review
+capture reports them as retry-safe view failures carrying the native message and recovery. Plugins
+before 0.9.1 report an open camera set as `editor_busy`. `@ue-shed/cameras` before 0.9.1 does not
+decode `authoring_open` and reports it as `render_connection_failed`; upgrade the package with the
+plugin.
+
 Begin is idempotent for an active identity with identical input. Frame operation IDs cannot be
 reused for different input. Lost Start responses are reconciled by polling the same ID. The TS
 session renews its lease while scoped; raw clients must renew by polling or repeating Begin. The

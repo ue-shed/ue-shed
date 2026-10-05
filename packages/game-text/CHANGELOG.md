@@ -1,10 +1,10 @@
 # @ue-shed/game-text
 
-## 0.10.0
+## 0.9.1
 
 ### Patch Changes
 
-- @ue-shed/unreal-assets@0.10.0
+- @ue-shed/unreal-assets@0.9.1
 
 ## 0.9.0
 

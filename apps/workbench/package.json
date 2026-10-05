@@ -61,6 +61,6 @@
 		"vite-plugin-solid": "catalog:"
 	},
 	"optionalDependencies": {
-		"@ue-shed/engine-win32-x64": "workspace:0.10.0"
+		"@ue-shed/engine-win32-x64": "workspace:0.9.1"
 	}
 }

@@ -28,7 +28,7 @@ should follow [Website and illustrated guides](engineering/website.md).
 | [engineering/](engineering/README.md)                    | Canonical engineering       | Effect, schemas, UI, tests, observability, agent adoption                                   |
 | [products/](products/)                                   | Canonical product contracts | Shipped promises and acceptance for a domain                                                |
 | [showcase.md](showcase.md)                               | Canonical demos             | Fresh-clone walkthroughs and live setup                                                     |
-| [releases/](releases/0.10.0.md)                          | Release notes               | User-facing changes and compatibility notes                                                 |
+| [releases/](releases/0.9.1.md)                           | Release notes               | User-facing changes and compatibility notes                                                 |
 | [decisions/](decisions/)                                 | Accepted ADRs               | Settled design choices                                                                      |
 | [ideas/](ideas/README.md)                                | Vision / brainstorm         | Directions not yet product contracts                                                        |
 | [research/](research/)                                   | Dated investigation         | Historical notes; not living authority                                                      |

@@ -1,7 +1,7 @@
 {
 	"FileVersion": 3,
 	"Version": 1,
-	"VersionName": "0.10.0",
+	"VersionName": "0.9.1",
 	"FriendlyName": "UE Shed Camera Authoring",
 	"Description": "Optional reference menu for the public camera authoring bridge.",
 	"Category": "UE Shed",

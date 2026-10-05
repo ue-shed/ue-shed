@@ -1,6 +1,6 @@
 # @ue-shed/uasset-inspection-wasm
 
-## 0.10.0
+## 0.9.1
 
 ## 0.9.0
 

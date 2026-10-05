@@ -1,10 +1,10 @@
 # @ue-shed/config-explorer
 
-## 0.10.0
+## 0.9.1
 
 ### Patch Changes
 
-- @ue-shed/engine@0.10.0
+- @ue-shed/engine@0.9.1
 
 ## 0.9.0
 

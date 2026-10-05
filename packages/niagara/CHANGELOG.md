@@ -1,5 +1,11 @@
 # @ue-shed/niagara
 
+## 0.10.0
+
+### Patch Changes
+
+- @ue-shed/engine@0.10.0
+
 ## 0.9.0
 
 ### Patch Changes

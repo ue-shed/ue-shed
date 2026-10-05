@@ -1,5 +1,48 @@
 # @ue-shed/cameras
 
+## 0.10.0
+
+### Minor Changes
+
+- 31c84a3: Add opt-in `editorPreviews` to the provisioned live feed. With `editorPreviews: true`,
+  `ensureProvisionedCameras` previews show the child actors that ChildActorComponents spawn for
+  editor-only owners, such as spawn-volume previews, using the same rule as
+  `renderer.editorPreviews` on renders. A host's live preview can then match its captures, including
+  while a camera set is open and render sessions are refused with `authoring_open`.
+
+    The plugin rescans before each batch of preview frames. It restores the original flags when the
+    feed is cleared or reprovisioned without the option, when the world is cleaned up, when Play
+    starts, and on shutdown. Saves never write the changed flag. Render sessions, camera panel
+    previews and the feed now share one reference-counted reveal, so one of them finishing never hides
+    a preview another still shows.
+
+    The request uses provisioning version 5 only when the option is on, so other requests are
+    unchanged. Status and `getCameraStatus` report `editorPreviews.revealedChildActors` while the feed
+    shows previews. Older plugins ignore the option, so `ensureProvisionedCameras` fails with the new
+    `ProvisionedCameraError` code `unsupported_capability`. Retry without the option to fall back. A
+    missing visibility echo (version 4) now carries the same code. The provisioning contract adds
+    `editorPreviews` and version 5, and `CameraStatus` adds optional `editorPreviews`. Update the plugin
+    with the package to use the option.
+
+### Patch Changes
+
+- b52e4ae: Tell an open camera set apart from another render session. When a camera set is open in the
+  editor, the renderer now refuses a session with the new `authoring_open` code, the message "A
+  camera set is open in the editor." and the recovery "Close the camera set, then retry."
+  `editor_busy` now means only another render session or an unrelated screenshot, and its recovery
+  says to wait for that session. Failures carry the blocking issue's recovery instead of a generic
+  one, including Review and map-tile captures. `isEditorOwnershipRejection` identifies both codes, and
+  Review capture reports them as retry-safe view failures with the native message instead of a
+  connection failure. The camera render wire adds `authoring_open` to its failure codes. Older plugins
+  keep sending `editor_busy`. Packages before this release don't recognise `authoring_open` and
+  report it as `render_connection_failed`, so upgrade the package with the plugin.
+- Updated dependencies [b52e4ae]
+- Updated dependencies [31c84a3]
+    - @ue-shed/protocol@0.10.0
+    - @ue-shed/unreal-connection@0.10.0
+    - @ue-shed/world@0.10.0
+    - @ue-shed/observability@0.10.0
+
 ## 0.9.0
 
 ### Minor Changes

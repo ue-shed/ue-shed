@@ -175,6 +175,41 @@ world. Zero means none were loaded; it does not say whether any were in view.
 another renderer (for example the high-resolution screenshot), unless that renderer sets the field
 itself. The native camera panel previews honour the same field, so they show what capture will.
 
+#### Live previews
+
+The provisioned live feed takes the same opt-in, so a host's live preview can match its captures:
+
+```ts
+ensureProvisionedCameras(endpoint, cameras, {
+	expectedMapPath,
+	previewFps: 1,
+	editorPreviews: true
+});
+```
+
+It reveals the same child actors with the same rule. The plugin rescans before each batch of
+preview frames, so it also catches children that a construction script respawns. The reveal holds
+while the feed's cameras exist with the option on. It is restored when the feed is cleared or
+reprovisioned without the option, when the world is cleaned up or the map changes, when Play starts,
+and on plugin shutdown. After Play ends, the feed's next editor frame reveals the previews again. A
+play world has no editor previews, so a feed provisioned there reports zero. The same save handling
+applies: saves, including autosave, write the original flag.
+
+Render sessions, camera panel previews and the live feed share one reference-counted reveal. A child
+stays revealed while any of them holds it, and its flag is restored only when the last one releases
+it. Closing a render session while the live feed shows editor previews leaves the feed's previews
+on screen, and clearing the feed during a session leaves the session's frame unchanged.
+
+The request uses provisioning version 5 only when `editorPreviews` is `true`. Omitting it or passing
+`false` sends the same version 3 or 4 request as before. A plugin with support echoes version 5 in
+every response, failures included, and its status carries `editorPreviews.revealedChildActors`
+while the feed shows previews. `getCameraStatus` reports the same field. Older plugins ignore the
+field, so `ensureProvisionedCameras` fails with `ProvisionedCameraError` code
+`unsupported_capability` instead of streaming previews that silently lack it. That matches how
+renders report a missing `editorPreviews` capability. The older plugin has already provisioned the
+cameras by then; to fall back, retry without the option. A runtime build without the editor module
+rejects the option with `editor-previews-unavailable`.
+
 `camera_regions` owns bounded World Partition loader references around the frame camera, or around
 the explicit frame `region` override. The caller chooses extents that include the visible scene;
 this is not frustum inference. Up to 64 distinct regions can be held until session close. A

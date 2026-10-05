@@ -463,7 +463,11 @@ subject the host's capture will. When a subject didn't render and editor preview
 says to turn on **Show editor-only previews in shots** on the Capture tab, which sets
 `renderer.editorPreviews` in the set's render policy through the ordinary `render_policy` command.
 Hosts need no change; older plugins without the `editorPreviews` capability already make
-`CameraRenderer` report `unsupported_capability` before capture.
+`CameraRenderer` report `unsupported_capability` before capture. While a set is open, render
+sessions are refused with `authoring_open`. A host that keeps a live preview through
+`ensureProvisionedCameras` can pass `editorPreviews: true` so that preview matches too (see
+[Live previews](camera-rendering.md#live-previews)). Panel previews and the feed share the reveal,
+so neither restores a child the other still shows.
 
 Shared framing applies only to the open actor set; individual cameras retain explicit
 exceptions and manual poses. Selection and save status track the host panel snapshot.

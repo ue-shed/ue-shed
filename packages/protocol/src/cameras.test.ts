@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { Effect } from "effect";
 import {
 	decodeCameraScheduleConfig as decodeCameraScheduleConfigEffect,
-	decodeCameraStatus as decodeCameraStatusEffect
+	decodeCameraStatus as decodeCameraStatusEffect,
+	CameraStreamStats
 } from "./cameras.js";
 
 const decodeCameraScheduleConfig = <Input>(input: Input) =>
@@ -122,5 +123,28 @@ describe("camera schedule contract", () => {
 			experimentScheduledCaptures: 24,
 			schedulerTicks: 16
 		});
+	});
+
+	it("reports provisioned editor previews only when the feed shows them", () => {
+		const base = {
+			cameras: [],
+			config,
+			pipeName: "test-pipe",
+			schemaVersion: 1,
+			stats: Object.fromEntries(
+				Object.keys(CameraStreamStats.fields).map((key) => [
+					key,
+					key === "pipeConnected" ? false : 0
+				])
+			)
+		};
+		expect(decodeCameraStatus(base).editorPreviews).toBeUndefined();
+		expect(
+			decodeCameraStatus({ ...base, editorPreviews: { revealedChildActors: 3 } })
+				.editorPreviews
+		).toEqual({ revealedChildActors: 3 });
+		expect(() =>
+			decodeCameraStatus({ ...base, editorPreviews: { revealedChildActors: -1 } })
+		).toThrow();
 	});
 });

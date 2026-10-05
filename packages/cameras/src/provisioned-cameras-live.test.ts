@@ -1,11 +1,71 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect, Fiber } from "effect";
+import { RemoteControlClient } from "@ue-shed/unreal-connection";
+import { Effect, Fiber, Schema } from "effect";
 import { TestClock } from "effect/testing";
 import {
 	awaitProvisionedCameraFrame,
 	decodeProvisionedCameraRequest,
-	ProvisionedCameraError
+	ensureProvisionedCameras,
+	ProvisionedCameraError,
+	ProvisionedCameraRequest,
+	provisionedCameraRequest,
+	ProvisionedCameraSpec
 } from "./provisioned-cameras-live.js";
+
+const camera = Schema.decodeUnknownSync(ProvisionedCameraSpec)({
+	correlation: { reviewViewId: "overview", type: "review_view" },
+	height: 180,
+	location: { x: 0, y: 0, z: 500 },
+	projection: { fieldOfViewDegrees: 60, type: "perspective" },
+	rotation: { pitch: -30, roll: 0, yaw: 0 },
+	width: 320
+});
+const visibleCamera = Schema.decodeUnknownSync(ProvisionedCameraSpec)({
+	...camera,
+	visibility: { hide: [], protect: [] }
+});
+const expectedMapPath = "/Game/Fixture/Cameras/L_CameraLoad";
+const decodeWireRequest = Schema.decodeUnknownSync(ProvisionedCameraRequest);
+
+/** Provisions one camera against a fake plugin, recording each request as decoded wire input. */
+function provisionWith(respond: () => Schema.Json) {
+	const requests: Array<ProvisionedCameraRequest> = [];
+	return {
+		requests,
+		run: (options: { readonly editorPreviews?: boolean }) =>
+			ensureProvisionedCameras("http://localhost:30010", [camera], {
+				expectedMapPath,
+				...options
+			}).pipe(
+				Effect.provideService(RemoteControlClient, {
+					request: (request) => {
+						requests.push(
+							decodeWireRequest(JSON.parse(String(request.parameters.RequestJson)))
+						);
+						return Effect.succeed(respond());
+					}
+				})
+			)
+	};
+}
+
+function status(schemaVersion: number, editorPreviews?: { readonly revealedChildActors: number }) {
+	const response = {
+		cameras: [
+			{
+				cameraId: "camera-0",
+				correlation: { reviewViewId: "overview", type: "review_view" },
+				displayName: "overview",
+				height: 180,
+				index: 0,
+				width: 320
+			}
+		],
+		schemaVersion,
+		worldContext: "editor"
+	};
+	return editorPreviews === undefined ? response : { ...response, editorPreviews };
+}
 
 describe("provisioned camera helpers", () => {
 	it.effect(
@@ -156,6 +216,98 @@ describe("provisioned camera helpers", () => {
 			expect(error).toBeInstanceOf(ProvisionedCameraError);
 			expect(error.operation).toBe("await_frame");
 			expect(error.recovery).toMatch(/camera pipe/i);
+		})
+	);
+
+	it("requests editor previews through provisioning version 5 only when enabled", () => {
+		const options = { expectedMapPath, previewFps: 0.5 };
+		expect(provisionedCameraRequest([camera], options)).toEqual({
+			cameras: [camera],
+			expectedMapPath,
+			previewFps: 1,
+			schemaVersion: 3
+		});
+		expect(
+			provisionedCameraRequest([camera], { ...options, editorPreviews: false })
+		).not.toHaveProperty("editorPreviews");
+		expect(
+			provisionedCameraRequest([camera], { ...options, editorPreviews: false }).schemaVersion
+		).toBe(3);
+		expect(provisionedCameraRequest([visibleCamera], options).schemaVersion).toBe(4);
+		expect(
+			provisionedCameraRequest([camera], { ...options, editorPreviews: true })
+		).toMatchObject({ editorPreviews: true, schemaVersion: 5 });
+		expect(
+			provisionedCameraRequest([visibleCamera], { ...options, editorPreviews: true })
+				.schemaVersion
+		).toBe(5);
+	});
+
+	it.effect("accepts editorPreviews only in provisioning version 5", () =>
+		Effect.gen(function* () {
+			const base = { cameras: [camera], expectedMapPath, previewFps: 1 };
+			const decode = Schema.decodeUnknownEffect(ProvisionedCameraRequest);
+			expect(
+				yield* decode({ ...base, editorPreviews: true, schemaVersion: 5 })
+			).toMatchObject({ editorPreviews: true, schemaVersion: 5 });
+			expect(
+				yield* decode({ ...base, cameras: [visibleCamera], schemaVersion: 5 })
+			).toMatchObject({ schemaVersion: 5 });
+			for (const schemaVersion of [3, 4])
+				expect(
+					(yield* Effect.exit(decode({ ...base, editorPreviews: true, schemaVersion })))
+						._tag
+				).toBe("Failure");
+			expect(
+				(yield* Effect.exit(decode({ ...base, editorPreviews: "yes", schemaVersion: 5 })))
+					._tag
+			).toBe("Failure");
+		})
+	);
+
+	it.effect("sends editorPreviews and accepts a plugin that confirms version 5", () =>
+		Effect.gen(function* () {
+			const provision = provisionWith(() => status(5, { revealedChildActors: 2 }));
+			const bindings = yield* provision.run({ editorPreviews: true });
+			expect(provision.requests[0]).toMatchObject({ editorPreviews: true, schemaVersion: 5 });
+			expect(bindings).toHaveLength(1);
+			expect(bindings[0]?.previewContext).toBe("editor_live");
+		})
+	);
+
+	it.effect("leaves the request unchanged when editor previews are off", () =>
+		Effect.gen(function* () {
+			const provision = provisionWith(() => status(1));
+			yield* provision.run({ editorPreviews: false });
+			expect(provision.requests[0]).not.toHaveProperty("editorPreviews");
+			expect(provision.requests[0]?.schemaVersion).toBe(3);
+		})
+	);
+
+	it.effect("reports an older plugin as an unsupported capability", () =>
+		Effect.gen(function* () {
+			const error = yield* provisionWith(() => status(1))
+				.run({ editorPreviews: true })
+				.pipe(Effect.flip);
+			expect(error).toBeInstanceOf(ProvisionedCameraError);
+			expect(error.code).toBe("unsupported_capability");
+			expect(error.retrySafe).toBe(false);
+			expect(error.recovery).toMatch(/Omit editorPreviews/);
+		})
+	);
+
+	it.effect("keeps a version 5 native failure distinct from missing support", () =>
+		Effect.gen(function* () {
+			const error = yield* provisionWith(() => ({
+				error: "expected-map-mismatch",
+				schemaVersion: 5,
+				status: "failed"
+			}))
+				.run({ editorPreviews: true })
+				.pipe(Effect.flip);
+			expect(error.code).toBeUndefined();
+			expect(error.message).toBe("expected-map-mismatch");
+			expect(error.retrySafe).toBe(true);
 		})
 	);
 });

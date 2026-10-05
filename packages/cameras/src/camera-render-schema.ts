@@ -173,6 +173,7 @@ export const CameraRenderFailureCode = Schema.Literals([
 	"map_mismatch",
 	"project_mismatch",
 	"editor_busy",
+	"authoring_open",
 	"viewport_unavailable",
 	"viewport_locked",
 	"preparation_failed",

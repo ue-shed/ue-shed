@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
-import { basename, dirname, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { isJsonObject, isJsonString, type JsonObject, type JsonValue } from "./json.ts";
@@ -257,20 +257,70 @@ export function validateWasmPackageManifest({
 	return failures;
 }
 
+const typeScriptOutputSuffixes = [".d.ts.map", ".d.ts", ".js.map", ".js"] as const;
+
+/**
+ * Returns packed `dist` files that the package's current TypeScript build does not emit.
+ * `sourceFiles` are the build's input files relative to `src` (the shared `rootDir`), so
+ * `package/dist/a/b.js` is accepted only while `src/a/b.ts` is part of the build.
+ */
+export function findStrayTypeScriptOutput({
+	files,
+	sourceFiles
+}: {
+	readonly files: readonly string[];
+	readonly sourceFiles: readonly string[];
+}) {
+	const sources = new Set(sourceFiles.map((path) => path.replaceAll("\\", "/")));
+	return files.filter((path) => {
+		if (!path.startsWith("package/dist/") || path.endsWith("/")) return false;
+		const emitted = path.slice("package/dist/".length);
+		const suffix = typeScriptOutputSuffixes.find((candidate) => emitted.endsWith(candidate));
+		return suffix === undefined || !sources.has(`${emitted.slice(0, -suffix.length)}.ts`);
+	});
+}
+
+function listTypeScriptBuildSources(packageDirectory: string) {
+	const sourceDirectory = join(packageDirectory, "src");
+	return run(
+		executable("pnpm"),
+		["exec", "tsc", "-p", "tsconfig.build.json", "--listFilesOnly"],
+		{
+			cwd: packageDirectory
+		}
+	)
+		.split(/\r?\n/u)
+		.map((path) => relative(sourceDirectory, resolve(packageDirectory, path.trim())))
+		.filter((path) => path !== "" && !path.startsWith("..") && !isAbsolute(path))
+		.filter((path) => path.endsWith(".ts") && !path.endsWith(".d.ts"));
+}
+
 export function validatePackedManifest({
 	manifest,
 	manifestRaw,
 	expectedName,
 	expectedVersion,
-	files
+	files,
+	typeScriptSources
 }: {
 	readonly manifest: PackageManifest;
 	readonly manifestRaw: string;
 	readonly expectedName: string;
 	readonly expectedVersion: string;
 	readonly files: readonly string[];
+	/** Build inputs relative to `src` for packages compiled by `tsconfig.build.json`. */
+	readonly typeScriptSources?: readonly string[] | undefined;
 }) {
 	const failures: string[] = [];
+	if (typeScriptSources !== undefined) {
+		const stray = findStrayTypeScriptOutput({ files, sourceFiles: typeScriptSources });
+		if (stray.length > 0) {
+			failures.push(
+				`archive contains dist files that no current source emits (stale build output; ` +
+					`rebuild from a clean dist): ${stray.join(", ")}`
+			);
+		}
+	}
 	if (manifest.name !== expectedName) failures.push(`expected package name ${expectedName}`);
 	if (manifest.version !== expectedVersion) {
 		failures.push(`expected exact version ${expectedVersion}, received ${manifest.version}`);
@@ -567,12 +617,19 @@ export async function packPublicPackages({
 		// SAFETY: npm pack generated this manifest from workspaceManifest and it is validated below.
 		const manifest = JSON.parse(manifestRaw) as PackageManifest;
 		const files = listPackedFiles(path);
+		const packageDirectory = join(repositoryRoot, workspacePackage.directory);
+		// Native and WASM packages either allowlist exact files or rebuild `dist` from scratch;
+		// every `tsc`-built package is checked against the sources its build currently compiles.
+		const typeScriptSources = existsSync(join(packageDirectory, "tsconfig.build.json"))
+			? listTypeScriptBuildSources(packageDirectory)
+			: undefined;
 		const failures = validatePackedManifest({
 			manifest,
 			manifestRaw,
 			expectedName: workspacePackage.name,
 			expectedVersion: workspaceManifest.version,
-			files
+			files,
+			typeScriptSources
 		});
 		if (
 			workspacePackage.name === ENGINE_WINDOWS_PACKAGE_NAME &&

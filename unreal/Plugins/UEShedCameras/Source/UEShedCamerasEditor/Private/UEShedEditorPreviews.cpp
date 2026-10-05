@@ -8,8 +8,21 @@
 
 namespace
 {
+struct FHold
+{
+	int32 Holders = 0;
+	bool bSuspended = false;
+};
+
+// Game-thread ledger of every revealed child, shared by all holders.
+TMap<TWeakObjectPtr<AActor>, FHold>& Ledger()
+{
+	static TMap<TWeakObjectPtr<AActor>, FHold> Value;
+	return Value;
+}
+
 // Mirrors UChildActorComponent::CreateChildActor, which marks the child editor-only when the
-// component or its owner is. An owner revealed by this session was editor-only before it began.
+// component or its owner is. An owner revealed by any holder was editor-only before it began.
 bool IsEditorPreview(const AActor* Actor, const TSet<const AActor*>& Revealed)
 {
 	if (Actor == nullptr || !Actor->bIsEditorOnlyActor) return false;
@@ -23,33 +36,51 @@ bool IsEditorPreview(const AActor* Actor, const TSet<const AActor*>& Revealed)
 
 int32 FUEShedEditorPreviews::Apply(UWorld* World)
 {
+	check(IsInGameThread());
+	auto& Shared = Ledger();
+	for (auto It = Shared.CreateIterator(); It; ++It)
+		if (!It.Key().IsValid()) It.RemoveCurrent();
 	Revealed.RemoveAll([](const TWeakObjectPtr<AActor>& Actor) { return !Actor.IsValid(); });
 	if (World == nullptr) return Num();
+	TSet<const AActor*> Mine;
+	for (const auto& Actor : Revealed) Mine.Add(Actor.Get());
 	TSet<const AActor*> Known;
-	for (const auto& Actor : Revealed) Known.Add(Actor.Get());
+	for (const auto& Entry : Shared) Known.Add(Entry.Key.Get());
 	bool bChanged = false;
 	// Rescanned per frame so children respawned by a construction script are also revealed.
 	for (TActorIterator<AActor> It(World); It; ++It)
 	{
 		AActor* Actor = *It;
-		const bool bTracked = Known.Contains(Actor);
-		// A tracked actor is editor-only again only after a save suspended it.
-		if (bTracked ? !Actor->bIsEditorOnlyActor : !IsEditorPreview(Actor, Known)) continue;
-		Actor->bIsEditorOnlyActor = false;
-		if (Actor->IsEditorOnly())
+		if (Mine.Contains(Actor))
 		{
-			// The class itself reports editor-only; it cannot be revealed by its flag.
-			Actor->bIsEditorOnlyActor = true;
+			// A held actor is editor-only again only after a save suspended it.
+			if (!Actor->bIsEditorOnlyActor) continue;
+			Actor->bIsEditorOnlyActor = false;
+			Shared.FindOrAdd(Actor).bSuspended = false;
+			Actor->MarkComponentsRenderStateDirty();
+			bChanged = true;
 			continue;
 		}
-		if (!bTracked)
+		const bool bShared = Known.Contains(Actor);
+		if (!bShared && !IsEditorPreview(Actor, Known)) continue;
+		if (Actor->bIsEditorOnlyActor)
 		{
-			Revealed.Add(Actor);
-			Known.Add(Actor);
+			Actor->bIsEditorOnlyActor = false;
+			if (Actor->IsEditorOnly())
+			{
+				// The class itself reports editor-only; it cannot be revealed by its flag.
+				Actor->bIsEditorOnlyActor = true;
+				continue;
+			}
+			Actor->MarkComponentsRenderStateDirty();
+			bChanged = true;
 		}
-		Suspended.Remove(Actor);
-		Actor->MarkComponentsRenderStateDirty();
-		bChanged = true;
+		FHold& Hold = Shared.FindOrAdd(Actor);
+		Hold.bSuspended = false;
+		++Hold.Holders;
+		Known.Add(Actor);
+		Mine.Add(Actor);
+		Revealed.Add(Actor);
 	}
 	// Proxies cache owner editor-only state when created. Recreate them before the next render.
 	if (bChanged) World->SendAllEndOfFrameUpdates();
@@ -58,32 +89,42 @@ int32 FUEShedEditorPreviews::Apply(UWorld* World)
 
 void FUEShedEditorPreviews::Restore(bool bRecreateRenderState)
 {
+	if (Revealed.IsEmpty()) return;
+	check(IsInGameThread());
+	auto& Shared = Ledger();
 	for (const auto& Weak : Revealed)
+	{
+		FHold* Hold = Shared.Find(Weak);
+		if (Hold == nullptr || --Hold->Holders > 0) continue;
+		Shared.Remove(Weak);
 		if (AActor* Actor = Weak.Get())
 		{
 			Actor->bIsEditorOnlyActor = true;
 			if (bRecreateRenderState) Actor->MarkComponentsRenderStateDirty();
 		}
+	}
 	Revealed.Reset();
-	Suspended.Reset();
 }
 
 void FUEShedEditorPreviews::PreSave(UObject* Object)
 {
 	AActor* Actor = Cast<AActor>(Object);
-	if (Actor == nullptr || Actor->bIsEditorOnlyActor || !Revealed.Contains(Actor)) return;
+	if (Actor == nullptr || Actor->bIsEditorOnlyActor) return;
+	FHold* Hold = Ledger().Find(Actor);
+	if (Hold == nullptr) return;
 	// Existing proxies keep rendering the revealed state; only serialized data sees the original.
 	Actor->bIsEditorOnlyActor = true;
-	Suspended.AddUnique(Actor);
+	Hold->bSuspended = true;
 }
 
 void FUEShedEditorPreviews::PostSave(const UPackage* Package)
 {
-	for (int32 Index = Suspended.Num() - 1; Index >= 0; --Index)
+	for (auto& Entry : Ledger())
 	{
-		AActor* Actor = Suspended[Index].Get();
+		if (!Entry.Value.bSuspended) continue;
+		AActor* Actor = Entry.Key.Get();
 		if (Actor != nullptr && Actor->GetPackage() != Package) continue;
-		Suspended.RemoveAt(Index);
+		Entry.Value.bSuspended = false;
 		if (Actor == nullptr) continue;
 		Actor->bIsEditorOnlyActor = false;
 		Actor->MarkComponentsRenderStateDirty();

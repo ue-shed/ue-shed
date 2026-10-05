@@ -304,8 +304,9 @@ bool CaptureViewportHighResolutionLevel(const TArray<TSharedPtr<FJsonValue>> &Ti
 	TSharedPtr<FJsonObject> Error;
 	auto Renderer = FUEShedCameraRenderSession::Open(SessionRequest, Error);
 	if (!Renderer)
-		return Fail(*Error->GetStringField(TEXT("code")), *Error->GetStringField(TEXT("message")),
-					TEXT("Inspect shared editor rendering ownership."));
+		// Map-tile failure codes are a closed set; keep the renderer's message and recovery.
+		return Fail(TEXT("capture_failed"), *Error->GetStringField(TEXT("message")),
+					*Error->GetStringField(TEXT("recovery")));
 	ON_SCOPE_EXIT
 	{
 		Renderer->Close();
@@ -779,7 +780,7 @@ static void CaptureMapTilesInternal(const FString &RequestJson, FString &ResultJ
 					FinalizeAllEncodes();
 					MapTileTopFailure(ResultJson, OperationId, CorrelationId, TEXT("capture_failed"),
 									  *Error->GetStringField(TEXT("message")),
-									  TEXT("Inspect shared renderer ownership."), true, ResponseMinor, bDirtyBefore,
+									  *Error->GetStringField(TEXT("recovery")), true, ResponseMinor, bDirtyBefore,
 									  MapPackage->IsDirty());
 					return;
 				}

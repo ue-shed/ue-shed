@@ -20,6 +20,7 @@
 #include "Misc/Paths.h"
 #include "Misc/ScopeExit.h"
 #include "StaticMeshCompiler.h"
+#include "UEShedCameraEditorOwnership.h"
 #include "UEShedCameraRenderSession.h"
 #include "UEShedCameraReviewLibrary.h"
 #include "UEShedEditorPreviews.h"
@@ -362,6 +363,69 @@ bool FUEShedCameraScreenshotOwnershipTest::RunTest(const FString &Parameters)
 		GScreenshotResolutionX = BeforeX;
 		GScreenshotResolutionY = BeforeY;
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUEShedCameraRenderAuthoringOwnershipTest,
+								 "UEShed.Cameras.Rendering.AuthoringOwnership",
+								 EAutomationTestFlags::EditorContext |
+									 EAutomationTestFlags::EngineFilter)
+
+bool FUEShedCameraRenderAuthoringOwnershipTest::RunTest(const FString &Parameters)
+{
+	UWorld *World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+	if (!World || !GCurrentLevelEditingViewportClient)
+		return false;
+	auto Codes = [](const TSharedPtr<FJsonObject> &Preflight)
+	{
+		TArray<FString> Out;
+		for (const auto &Value : Preflight->GetArrayField(TEXT("issues")))
+			Out.Add(Value->AsObject()->GetStringField(TEXT("code")));
+		return Out;
+	};
+	const FString AuthoringOwner = TEXT("authoring-ownership-test");
+	{
+		if (!TestTrue(TEXT("Camera set ownership acquired"),
+					  FUEShedCameraEditorOwnership::TryAcquire(AuthoringOwner)))
+			return false;
+		ON_SCOPE_EXIT { FUEShedCameraEditorOwnership::Release(AuthoringOwner); };
+		const auto Request =
+			UEShedLegacyRenderRequest(FGuid::NewGuid().ToString(EGuidFormats::Digits), World, false);
+		const auto Blocked = Codes(FUEShedCameraRenderSession::Preflight(Request));
+		TestTrue(TEXT("An open camera set reports authoring_open"), Blocked.Contains(TEXT("authoring_open")));
+		TestFalse(TEXT("An open camera set is not another render session"), Blocked.Contains(TEXT("editor_busy")));
+		TSharedPtr<FJsonObject> Error;
+		auto Session = FUEShedCameraRenderSession::Open(Request, Error);
+		if (Session)
+		{
+			Session->Close();
+			AddError(TEXT("A render session opened while a camera set owned the editor."));
+			return false;
+		}
+		TestEqual(TEXT("Open failure code"), Error->GetStringField(TEXT("code")), FString(TEXT("authoring_open")));
+		TestEqual(TEXT("Open failure message"), Error->GetStringField(TEXT("message")),
+				  FString(TEXT("A camera set is open in the editor.")));
+		TestEqual(TEXT("Open failure recovery"), Error->GetStringField(TEXT("recovery")),
+				  FString(TEXT("Close the camera set, then retry.")));
+		TestEqual(TEXT("Nothing was acquired"), Error->GetStringField(TEXT("restoration")),
+				  FString(TEXT("not_acquired")));
+	}
+	TestFalse(TEXT("Camera set ownership released"), FUEShedCameraEditorOwnership::HasAuthoringOwner());
+	auto Request = UEShedLegacyRenderRequest(FGuid::NewGuid().ToString(EGuidFormats::Digits), World, false);
+	TSharedPtr<FJsonObject> Error;
+	auto Session = FUEShedCameraRenderSession::Open(Request, Error);
+	if (!Session)
+	{
+		AddError(UEShedCameraJsonText(Error));
+		return false;
+	}
+	ON_SCOPE_EXIT { Session->Close(); };
+	const auto Contender = Codes(FUEShedCameraRenderSession::Preflight(
+		UEShedLegacyRenderRequest(FGuid::NewGuid().ToString(EGuidFormats::Digits), World, false)));
+	TestTrue(TEXT("Another render session reports editor_busy"), Contender.Contains(TEXT("editor_busy")));
+	TestFalse(TEXT("Another render session is not a camera set"), Contender.Contains(TEXT("authoring_open")));
+	TestFalse(TEXT("Camera sets cannot open during a render session"),
+			  FUEShedCameraEditorOwnership::TryAcquire(AuthoringOwner));
 	return true;
 }
 

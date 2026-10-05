@@ -82,6 +82,51 @@ adding target-directory caches or increasing runner size.
 The former `.depot/workflows/portable.yml` is removed so pushes after migration do not schedule a
 second portable workflow in Depot. No release or Unreal runner is enabled by this migration.
 
+### Optional local Rust compiler cache
+
+[Kache](https://github.com/kunobi-ninja/kache) can share compatible Rust compilation outputs between
+local builds and worktrees. GitHub Actions continues to use the sccache configuration above.
+Install the prebuilt Windows package through the upstream Scoop bucket:
+
+```powershell
+scoop bucket add kunobi https://github.com/kunobi-ninja/scoop-kunobi
+scoop install kunobi/kache
+kache --version
+```
+
+For other platforms, follow the [upstream installation guide](https://github.com/kunobi-ninja/kache/blob/v0.28.1/docs/getting-started/installation.mdx).
+To enable Kache only in this checkout, create the ignored `.cargo/config.toml` at the repository root:
+
+```toml
+[build]
+rustc-wrapper = "kache"
+```
+
+Keep any existing Cargo settings when adding the wrapper. Kache must be on `PATH` in terminals
+that run Cargo or pnpm. `RUSTC_WRAPPER` takes precedence over this setting, so an existing environment
+override must be cleared or deliberately retained. Cargo commands and the repository's pnpm gates
+then use the wrapper without changes to package scripts. Configure each worktree separately.
+`kache init` configures Cargo for the whole user account; the checkout configuration above keeps
+activation local. The default Windows store is `%LOCALAPPDATA%\kache`, shared across checkouts.
+
+```powershell
+kache doctor
+cargo build --locked -p uasset-inspection
+kache stats --last-build
+kache why-miss uasset_inspection
+```
+
+An already populated target directory can make Cargo skip the compiler altogether. To verify reuse,
+build the same package with two fresh `--target-dir` paths and inspect the second build's report.
+Retain separate target directories for concurrent worktrees. Windows executable caching is disabled
+by default because of external PDB paths; inspect bypass reasons before expecting every unit to hit.
+Leave that default in place. Kache's adaptive incremental policy manages eligible units, so local
+setup does not need to disable Cargo incremental compilation globally.
+
+For one uncached diagnostic build, set `KACHE_DISABLED=1` in its environment. To remove checkout
+activation, remove the `build.rustc-wrapper` setting from `.cargo/config.toml`. Neither action deletes
+Cargo outputs or the shared compiler cache.
+
 Run every process-level end-to-end journey with:
 
 ```powershell

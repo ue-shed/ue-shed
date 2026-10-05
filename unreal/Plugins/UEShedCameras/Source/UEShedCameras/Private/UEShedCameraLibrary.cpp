@@ -10,6 +10,7 @@
 #include "UEShedCameraSubsystem.h"
 
 FUEShedResolvePreviewVisibility& UEShedPreviewVisibilityResolver() { static FUEShedResolvePreviewVisibility Resolver; return Resolver; }
+FUEShedProvisionedEditorPreviews& UEShedProvisionedEditorPreviewsHook() { static FUEShedProvisionedEditorPreviews Hook; return Hook; }
 
 namespace
 {
@@ -100,17 +101,27 @@ void UUEShedCameraLibrary::EnsureProvisionedCameras(
 	const FString& RequestJson,
 	FString& ResultJson)
 {
-	UUEShedCameraSubsystem* Subsystem = FindCameraSubsystem();
-	if (Subsystem == nullptr)
-	{
-		ResultJson = ErrorJson(TEXT("no-renderable-world"));
-		return;
-	}
 	TSharedPtr<FJsonObject> Root;
 	const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(RequestJson);
 	if (!FJsonSerializer::Deserialize(Reader, Root) || !Root.IsValid())
 	{
 		ResultJson = ErrorJson(TEXT("invalid-json"));
+		return;
+	}
+	double RequestedVersion = 0;
+	Root->TryGetNumberField(TEXT("schemaVersion"), RequestedVersion);
+	// Version 5 responses echo the version even on failure, so a client can tell a native failure
+	// from an older plugin that ignored editorPreviews.
+	auto Fail = [&ResultJson, RequestedVersion](const TCHAR* Code)
+	{
+		ResultJson = RequestedVersion == 5
+			? FString::Printf(TEXT("{\"schemaVersion\":5,\"status\":\"failed\",\"error\":\"%s\"}"), Code)
+			: ErrorJson(Code);
+	};
+	UUEShedCameraSubsystem* Subsystem = FindCameraSubsystem();
+	if (Subsystem == nullptr)
+	{
+		Fail(TEXT("no-renderable-world"));
 		return;
 	}
 	FString ExpectedMapPath;
@@ -121,7 +132,7 @@ void UUEShedCameraLibrary::EnsureProvisionedCameras(
 			? FString() : UWorld::RemovePIEPrefix(World->GetOutermost()->GetName());
 		if (ExpectedMapPath.IsEmpty() || ActualMapPath != ExpectedMapPath)
 		{
-			ResultJson = ErrorJson(TEXT("expected-map-mismatch"));
+			Fail(TEXT("expected-map-mismatch"));
 			return;
 		}
 	}
@@ -133,13 +144,30 @@ void UUEShedCameraLibrary::EnsureProvisionedCameras(
 	}
 	if (CamerasJson == nullptr)
 	{
-		ResultJson = ErrorJson(TEXT("missing-cameras"));
+		Fail(TEXT("missing-cameras"));
 		return;
 	}
 	if (CamerasJson->Num() == 0 || CamerasJson->Num() > 32)
 	{
-		ResultJson = ErrorJson(TEXT("invalid-camera-count"));
+		Fail(TEXT("invalid-camera-count"));
 		return;
+	}
+	// Version 5 adds editorPreviews; older plugins ignore it and echo no version 5.
+	bool bEditorPreviews = false;
+	if (const TSharedPtr<FJsonValue>* EditorPreviews = Root->Values.Find(TEXT("editorPreviews")))
+	{
+		if (RequestedVersion != 5 || !EditorPreviews->IsValid()
+			|| (*EditorPreviews)->Type != EJson::Boolean)
+		{
+			Fail(TEXT("invalid-editor-previews"));
+			return;
+		}
+		bEditorPreviews = (*EditorPreviews)->AsBool();
+		if (bEditorPreviews && !UEShedProvisionedEditorPreviewsHook().IsBound())
+		{
+			Fail(TEXT("editor-previews-unavailable"));
+			return;
+		}
 	}
 	TArray<FUEShedProvisionedCameraSpec> Specs;
 	Specs.Reserve(CamerasJson->Num());
@@ -148,19 +176,18 @@ void UUEShedCameraLibrary::EnsureProvisionedCameras(
 		const TSharedPtr<FJsonObject> Object = Entry->AsObject();
 		if (!Object.IsValid())
 		{
-			ResultJson = ErrorJson(TEXT("invalid-camera"));
+			Fail(TEXT("invalid-camera"));
 			return;
 		}
 		FUEShedProvisionedCameraSpec Spec;
         if (Object->HasField(TEXT("visibility")))
         {
             const TSharedPtr<FJsonObject>* Visibility = nullptr;
-            double Version = 0;
             FString VisibilityError;
             auto& Resolver = UEShedPreviewVisibilityResolver();
-            if (!Root->TryGetNumberField(TEXT("schemaVersion"), Version) || Version != 4 || !Object->TryGetObjectField(TEXT("visibility"), Visibility) || !Resolver.IsBound() || !Resolver.Execute(Subsystem->GetWorld(), *Visibility, Spec.HiddenActors, VisibilityError))
+            if ((RequestedVersion != 4 && RequestedVersion != 5) || !Object->TryGetObjectField(TEXT("visibility"), Visibility) || !Resolver.IsBound() || !Resolver.Execute(Subsystem->GetWorld(), *Visibility, Spec.HiddenActors, VisibilityError))
             {
-                ResultJson = ErrorJson(VisibilityError.IsEmpty() ? TEXT("authored-preview-unavailable") : *VisibilityError);
+                Fail(VisibilityError.IsEmpty() ? TEXT("authored-preview-unavailable") : *VisibilityError);
                 return;
             }
         }
@@ -172,7 +199,7 @@ void UUEShedCameraLibrary::EnsureProvisionedCameras(
 					&& Spec.CorrelationType != TEXT("review_view")
 					&& Spec.CorrelationType != TEXT("map_capture_plan")))
 			{
-				ResultJson = ErrorJson(TEXT("invalid-correlation-type"));
+				Fail(TEXT("invalid-correlation-type"));
 				return;
 			}
 			const TCHAR* CorrelationIdField =
@@ -182,7 +209,7 @@ void UUEShedCameraLibrary::EnsureProvisionedCameras(
 			if (!(*CorrelationObject)->TryGetStringField(CorrelationIdField, Spec.CorrelationId)
 				|| Spec.CorrelationId.IsEmpty())
 			{
-				ResultJson = ErrorJson(TEXT("invalid-correlation-id"));
+				Fail(TEXT("invalid-correlation-id"));
 				return;
 			}
 		}
@@ -194,7 +221,7 @@ void UUEShedCameraLibrary::EnsureProvisionedCameras(
 		}
 		else
 		{
-			ResultJson = ErrorJson(TEXT("invalid-correlation"));
+			Fail(TEXT("invalid-correlation"));
 			return;
 		}
 		const TSharedPtr<FJsonObject>* LocationObject = nullptr;
@@ -217,7 +244,7 @@ void UUEShedCameraLibrary::EnsureProvisionedCameras(
 			|| !(*RotationObject)->TryGetNumberField(TEXT("pitch"), Pitch)
 			|| !(*RotationObject)->TryGetNumberField(TEXT("yaw"), Yaw))
 		{
-			ResultJson = ErrorJson(TEXT("invalid-pose"));
+			Fail(TEXT("invalid-pose"));
 			return;
 		}
 		(*RotationObject)->TryGetNumberField(TEXT("roll"), Roll);
@@ -227,14 +254,14 @@ void UUEShedCameraLibrary::EnsureProvisionedCameras(
 			FString ProjectionType;
 			if (!(*ProjectionObject)->TryGetStringField(TEXT("type"), ProjectionType))
 			{
-				ResultJson = ErrorJson(TEXT("invalid-projection"));
+				Fail(TEXT("invalid-projection"));
 				return;
 			}
 			if (ProjectionType == TEXT("perspective"))
 			{
 				if (!(*ProjectionObject)->TryGetNumberField(TEXT("fieldOfViewDegrees"), Fov))
 				{
-					ResultJson = ErrorJson(TEXT("invalid-perspective-projection"));
+					Fail(TEXT("invalid-perspective-projection"));
 					return;
 				}
 			}
@@ -243,13 +270,13 @@ void UUEShedCameraLibrary::EnsureProvisionedCameras(
 				Spec.bOrthographic = true;
 				if (!(*ProjectionObject)->TryGetNumberField(TEXT("orthoWidth"), OrthoWidth))
 				{
-					ResultJson = ErrorJson(TEXT("invalid-orthographic-projection"));
+					Fail(TEXT("invalid-orthographic-projection"));
 					return;
 				}
 			}
 			else
 			{
-				ResultJson = ErrorJson(TEXT("invalid-projection-type"));
+				Fail(TEXT("invalid-projection-type"));
 				return;
 			}
 		}
@@ -265,7 +292,7 @@ void UUEShedCameraLibrary::EnsureProvisionedCameras(
 			|| Width < 64 || Width > 2560
 			|| Height < 64 || Height > 1440)
 		{
-			ResultJson = ErrorJson(TEXT("invalid-camera-dimensions"));
+			Fail(TEXT("invalid-camera-dimensions"));
 			return;
 		}
 		Spec.Location = FVector(X, Y, Z);
@@ -278,9 +305,9 @@ void UUEShedCameraLibrary::EnsureProvisionedCameras(
 	}
 	ClearOtherProvisionedCameraSubsystems(Subsystem);
 	FString Error;
-	if (!Subsystem->EnsureProvisionedCameras(Specs, Error))
+	if (!Subsystem->EnsureProvisionedCameras(Specs, Error, bEditorPreviews))
 	{
-		ResultJson = ErrorJson(*Error);
+		Fail(*Error);
 		return;
 	}
 	double PreviewFps = 10.0;
@@ -301,15 +328,15 @@ void UUEShedCameraLibrary::EnsureProvisionedCameras(
 	if (!Subsystem->ApplyConfigJson(ConfigJson, ConfigureError))
 	{
 		Subsystem->ClearProvisionedCameras();
-		ResultJson = ErrorJson(*ConfigureError);
+		Fail(*ConfigureError);
 		return;
 	}
 	ResultJson = Subsystem->StatusJson();
-    double RequestedVersion = 0;
-    if (Root->TryGetNumberField(TEXT("schemaVersion"), RequestedVersion) && RequestedVersion == 4) {
+    // Echoing the version confirms the plugin honoured visibility (4) and editor previews (5).
+    if (RequestedVersion == 4 || RequestedVersion == 5) {
         TSharedPtr<FJsonObject> Status;
         if (FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(ResultJson), Status) && Status) {
-            Status->SetNumberField(TEXT("schemaVersion"), 4);
+            Status->SetNumberField(TEXT("schemaVersion"), RequestedVersion);
             ResultJson.Reset();
             FJsonSerializer::Serialize(Status.ToSharedRef(), TJsonWriterFactory<>::Create(&ResultJson));
         }

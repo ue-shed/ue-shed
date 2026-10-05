@@ -5,6 +5,8 @@
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/StaticMeshActor.h"
+#include "Engine/TextureRenderTarget2D.h"
+#include "EngineUtils.h"
 #include "DataLayer/DataLayerEditorSubsystem.h"
 #include "Editor.h"
 #include "FileHelpers.h"
@@ -20,9 +22,13 @@
 #include "Misc/Paths.h"
 #include "Misc/ScopeExit.h"
 #include "StaticMeshCompiler.h"
+#include "TextureResource.h"
 #include "UEShedCameraEditorOwnership.h"
 #include "UEShedCameraRenderSession.h"
+#include "UEShedCameraLibrary.h"
 #include "UEShedCameraReviewLibrary.h"
+#include "UEShedCameraSource.h"
+#include "UEShedCameraSubsystem.h"
 #include "UEShedEditorPreviews.h"
 #include "UnrealClient.h"
 #include "WorldPartition/DataLayer/DataLayerAsset.h"
@@ -587,6 +593,45 @@ bool FUEShedCameraRenderPreparationTest::RunTest(const FString &Parameters)
 			 FEditorFileUtils::LoadMap(OriginalMap, false, false));
 	return true;
 }
+namespace
+{
+// An editor-only owner whose ChildActorComponent previews what it will spawn (a large cube), plus
+// its own editor visualization that must stay hidden. Returns the preview child.
+AStaticMeshActor *SpawnEditorPreviewFixture(UWorld *World, const FVector &Location, UStaticMesh *Cube,
+											AActor *&Owner, FString &Error)
+{
+	FActorSpawnParameters Spawn;
+	Spawn.ObjectFlags = RF_Transient;
+	Spawn.bTemporaryEditorActor = true;
+	Spawn.bHideFromSceneOutliner = true;
+	Spawn.bCreateActorPackage = false;
+	Owner = World->SpawnActor<AActor>(Location, FRotator::ZeroRotator, Spawn);
+	if (!Owner)
+	{
+		Error = TEXT("Could not create the transient editor-only owner.");
+		return nullptr;
+	}
+	auto *Root = NewObject<USceneComponent>(Owner, TEXT("Root"), RF_Transient);
+	Owner->SetRootComponent(Root);
+	Root->RegisterComponent();
+	Owner->SetActorLocation(Location);
+	Owner->bIsEditorOnlyActor = true;
+	auto *Preview = NewObject<UChildActorComponent>(Owner, TEXT("Preview"), RF_Transient);
+	Preview->SetChildActorClass(AStaticMeshActor::StaticClass());
+	Preview->SetupAttachment(Root);
+	Preview->RegisterComponent();
+	auto *Child = Cast<AStaticMeshActor>(Preview->GetChildActor());
+	if (!Child)
+	{
+		Error = TEXT("The ChildActorComponent did not spawn its preview.");
+		return nullptr;
+	}
+	Child->GetStaticMeshComponent()->SetStaticMesh(Cube);
+	Child->SetActorScale3D(FVector(20));
+	return Child;
+}
+} // namespace
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUEShedCameraEditorPreviewsTest, "UEShed.Cameras.Rendering.EditorPreviews",
 								 EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
@@ -603,38 +648,20 @@ bool FUEShedCameraEditorPreviewsTest::RunTest(const FString &Parameters)
 	// state until that finishes, and a blocking test never pumps the step that completes it.
 	FStaticMeshCompilingManager::Get().FinishCompilation({Cube});
 	const bool DirtyBefore = World->GetOutermost()->IsDirty();
-	FActorSpawnParameters Spawn;
-	Spawn.ObjectFlags = RF_Transient;
-	Spawn.bTemporaryEditorActor = true;
-	Spawn.bHideFromSceneOutliner = true;
-	Spawn.bCreateActorPackage = false;
-	// An editor-only owner whose ChildActorComponent previews what it will spawn, plus its own
-	// editor visualization that must stay hidden.
 	const FVector Location(0, 0, 50000);
-	AActor *Owner = World->SpawnActor<AActor>(Location, FRotator::ZeroRotator, Spawn);
-	if (!Owner)
+	FString FixtureError;
+	AActor *Owner = nullptr;
+	AStaticMeshActor *Child = SpawnEditorPreviewFixture(World, Location, Cube, Owner, FixtureError);
+	ON_SCOPE_EXIT
 	{
-		AddError(TEXT("Could not create the transient editor-only owner."));
-		return false;
-	}
-	ON_SCOPE_EXIT { World->DestroyActor(Owner); };
-	auto *Root = NewObject<USceneComponent>(Owner, TEXT("Root"), RF_Transient);
-	Owner->SetRootComponent(Root);
-	Root->RegisterComponent();
-	Owner->SetActorLocation(Location);
-	Owner->bIsEditorOnlyActor = true;
-	auto *Preview = NewObject<UChildActorComponent>(Owner, TEXT("Preview"), RF_Transient);
-	Preview->SetChildActorClass(AStaticMeshActor::StaticClass());
-	Preview->SetupAttachment(Root);
-	Preview->RegisterComponent();
-	auto *Child = Cast<AStaticMeshActor>(Preview->GetChildActor());
+		if (Owner)
+			World->DestroyActor(Owner);
+	};
 	if (!Child)
 	{
-		AddError(TEXT("The ChildActorComponent did not spawn its preview."));
+		AddError(FixtureError);
 		return false;
 	}
-	Child->GetStaticMeshComponent()->SetStaticMesh(Cube);
-	Child->SetActorScale3D(FVector(20));
 	TestNotNull(TEXT("Preview mesh is in the scene"), Child->GetStaticMeshComponent()->SceneProxy);
 	TestTrue(TEXT("Engine marks the preview child editor-only"), Child->IsEditorOnly());
 
@@ -709,6 +736,198 @@ bool FUEShedCameraEditorPreviewsTest::RunTest(const FString &Parameters)
 								 FMath::Abs(Pixels[0].B - Pixels[1].B);
 		TestTrue(*(Backend + TEXT(" preview geometry appears only when revealed")), Difference > 24);
 	}
+	TestEqual(TEXT("Map dirty state preserved"), World->GetOutermost()->IsDirty(), DirtyBefore);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUEShedProvisionedEditorPreviewsTest,
+								 "UEShed.Cameras.Streaming.ProvisionedEditorPreviews",
+								 EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FUEShedProvisionedEditorPreviewsTest::RunTest(const FString &Parameters)
+{
+	UWorld *World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+	auto *Cameras = World ? World->GetSubsystem<UUEShedCameraSubsystem>() : nullptr;
+	auto *Cube = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+	if (!World || !Cameras || GEditor->PlayWorld || !Cube)
+	{
+		AddError(TEXT("Open an editor fixture with UEShedCameras, without Play or Simulate."));
+		return false;
+	}
+	// A fresh project compiles the engine cube asynchronously. Components using it get no render
+	// state until that finishes, and a blocking test never pumps the step that completes it.
+	FStaticMeshCompilingManager::Get().FinishCompilation({Cube});
+	const bool DirtyBefore = World->GetOutermost()->IsDirty();
+	const FVector Location(0, 0, 50000);
+	FString FixtureError;
+	AActor *Owner = nullptr;
+	AStaticMeshActor *Child = SpawnEditorPreviewFixture(World, Location, Cube, Owner, FixtureError);
+	ON_SCOPE_EXIT
+	{
+		if (Owner)
+			World->DestroyActor(Owner);
+	};
+	if (!Child)
+	{
+		AddError(FixtureError);
+		return false;
+	}
+	TestTrue(TEXT("Engine marks the preview child editor-only"), Child->IsEditorOnly());
+
+	// Holders share one ledger: a child stays revealed until the last holder releases it.
+	{
+		FUEShedEditorPreviews First, Second;
+		TestTrue(TEXT("First holder reveals the child"), First.Apply(World) >= 1);
+		TestTrue(TEXT("Second holder holds the already revealed child"), Second.Apply(World) >= 1);
+		First.Restore(true);
+		TestFalse(TEXT("Child stays revealed while another holder holds it"), Child->bIsEditorOnlyActor);
+		Second.Restore(true);
+		TestTrue(TEXT("Last holder restores the child flag"), Child->IsEditorOnly());
+	}
+
+	ON_SCOPE_EXIT
+	{
+		FString Ignored;
+		UUEShedCameraLibrary::ClearProvisionedCameras(Ignored);
+	};
+	const FString MapPath = UWorld::RemovePIEPrefix(World->GetOutermost()->GetName());
+	const FVector Eye = Location - FVector(4000, 0, 0);
+	auto Provision = [&](int32 Version, const TCHAR *EditorPreviews) {
+		const FString Request = FString::Printf(
+			TEXT("{\"schemaVersion\":%d,\"expectedMapPath\":\"%s\",\"previewFps\":1,%s")
+				TEXT("\"cameras\":[{\"correlation\":{\"type\":\"review_view\",\"reviewViewId\":\"editor-previews\"},")
+					TEXT("\"projection\":{\"type\":\"perspective\",\"fieldOfViewDegrees\":60},")
+						TEXT("\"location\":{\"x\":%f,\"y\":%f,\"z\":%f},")
+							TEXT("\"rotation\":{\"pitch\":0,\"yaw\":0,\"roll\":0},\"width\":320,\"height\":180}]}"),
+			Version, *MapPath, EditorPreviews, Eye.X, Eye.Y, Eye.Z);
+		FString Result;
+		UUEShedCameraLibrary::EnsureProvisionedCameras(Request, Result);
+		return UEShedCameraJson(Result);
+	};
+	auto Revealed = [](const TSharedPtr<FJsonObject> &Status) {
+		const TSharedPtr<FJsonObject> *Previews = nullptr;
+		return Status && Status->TryGetObjectField(TEXT("editorPreviews"), Previews)
+				   ? (*Previews)->GetIntegerField(TEXT("revealedChildActors"))
+				   : -1;
+	};
+	auto Failure = [](const TSharedPtr<FJsonObject> &Status) {
+		FString Error;
+		if (Status)
+			Status->TryGetStringField(TEXT("error"), Error);
+		return Error;
+	};
+	auto Captures = [&]() -> int64 {
+		return UEShedCameraJson(Cameras->StatusJson())
+			->GetObjectField(TEXT("stats"))
+			->GetIntegerField(TEXT("capturesRequested"));
+	};
+	// Renders one scheduled preview frame through the feed and reads its center pixel. Automation
+	// has no host on the camera pipe, so the frame renders without delivery.
+	auto RenderCenter = [&](FColor &Out) {
+		FString Error;
+		if (!Cameras->ApplyConfigJson(TEXT("{\"activeCameraCount\":1,\"backgroundFps\":1,\"captureBudgetPerTick\":1,")
+										  TEXT("\"focusedCameraIndex\":0,\"focusedFps\":1,\"paused\":false,")
+											  TEXT("\"pipelineMode\":\"render_only\",\"renderProfile\":\"observation\",")
+												  TEXT("\"resolution\":\"320x180\",\"viewMode\":\"posed\"}"),
+									  Error))
+		{
+			AddError(Error);
+			return false;
+		}
+		const int64 Before = Captures();
+		Cameras->Tick(0.f);
+		if (!TestEqual(TEXT("Feed rendered one preview frame"), Captures(), Before + 1))
+			return false;
+		AUEShedCameraSource *Source = nullptr;
+		for (TActorIterator<AUEShedCameraSource> It(World); It && !Source; ++It)
+			if (It->bTransientProvisionedCamera)
+				Source = *It;
+		UTextureRenderTarget2D *Target = Source ? Source->GetCaptureComponent2D()->TextureTarget.Get() : nullptr;
+		TArray<FColor> Pixels;
+		if (!Target || !Target->GameThread_GetRenderTargetResource()->ReadPixels(Pixels) ||
+			Pixels.Num() != 320 * 180)
+		{
+			AddError(TEXT("Could not read the provisioned camera's preview frame."));
+			return false;
+		}
+		Out = Pixels[90 * 320 + 160];
+		return true;
+	};
+
+	TestEqual(TEXT("editorPreviews requires provisioning version 5"),
+			  Failure(Provision(4, TEXT("\"editorPreviews\":true,"))), FString(TEXT("invalid-editor-previews")));
+	TestEqual(TEXT("editorPreviews must be a boolean"), Failure(Provision(5, TEXT("\"editorPreviews\":1,"))),
+			  FString(TEXT("invalid-editor-previews")));
+	TestTrue(TEXT("A rejected request reveals nothing"), Child->IsEditorOnly());
+
+	FColor Centers[2] = {FColor::Black, FColor::Black};
+	for (bool Reveal : {false, true})
+	{
+		const FString Mode = Reveal ? TEXT("With editorPreviews") : TEXT("Without editorPreviews");
+		const auto Status = Reveal ? Provision(5, TEXT("\"editorPreviews\":true,")) : Provision(3, TEXT(""));
+		if (!TestEqual(*(Mode + TEXT(" provisioning succeeds")), Failure(Status), FString()))
+			return false;
+		TestEqual(*(Mode + TEXT(" echoes the requested version")), int32(Status->GetNumberField(TEXT("schemaVersion"))),
+				  Reveal ? 5 : 1);
+		TestEqual(*(Mode + TEXT(" reports previews only when enabled")), Revealed(Status) >= 1, Reveal);
+		TestEqual(*(Mode + TEXT(" child flag")), Child->IsEditorOnly(), !Reveal);
+		TestTrue(*(Mode + TEXT(" owner never revealed")), Owner->IsEditorOnly());
+		RenderCenter(Centers[Reveal ? 1 : 0]);
+		TestEqual(*(Mode + TEXT(" child flag after a frame")), Child->IsEditorOnly(), !Reveal);
+		if (Reveal)
+		{
+			TestTrue(TEXT("Status counts the revealed child"), Revealed(UEShedCameraJson(Cameras->StatusJson())) >= 1);
+			// Saves must see the original flag while the feed reveals the preview.
+			FUEShedEditorPreviews::PreSave(Child);
+			TestTrue(TEXT("Pre-save writes the original flag for the feed"), Child->bIsEditorOnlyActor);
+			FUEShedEditorPreviews::PostSave(Child->GetPackage());
+			TestFalse(TEXT("Post-save re-reveals the feed's child"), Child->bIsEditorOnlyActor);
+		}
+		FString Cleared;
+		UUEShedCameraLibrary::ClearProvisionedCameras(Cleared);
+		TestTrue(*(Mode + TEXT(" child editor-only after clear")), Child->IsEditorOnly());
+		TestEqual(*(Mode + TEXT(" status drops previews after clear")), Revealed(UEShedCameraJson(Cleared)), -1);
+	}
+	const int32 Difference = FMath::Abs(Centers[0].R - Centers[1].R) + FMath::Abs(Centers[0].G - Centers[1].G) +
+							 FMath::Abs(Centers[0].B - Centers[1].B);
+	if (!TestTrue(TEXT("Preview geometry appears in the feed only when revealed"), Difference > 24))
+		AddInfo(FString::Printf(TEXT("Hidden center %s, revealed center %s"), *Centers[0].ToString(),
+								*Centers[1].ToString()));
+
+	// Reconfiguring the same feed without the option restores the flag.
+	TestTrue(TEXT("Feed reveals again"), Revealed(Provision(5, TEXT("\"editorPreviews\":true,"))) >= 1);
+	TestFalse(TEXT("Feed holds the child"), Child->IsEditorOnly());
+	TestEqual(TEXT("Reconfigure without previews succeeds"), Failure(Provision(3, TEXT(""))), FString());
+	TestTrue(TEXT("Reconfigure without previews restores the child"), Child->IsEditorOnly());
+	TestEqual(TEXT("Explicit false is accepted"), Failure(Provision(5, TEXT("\"editorPreviews\":false,"))),
+			  FString());
+	TestTrue(TEXT("Explicit false keeps the child editor-only"), Child->IsEditorOnly());
+
+	// A render session revealing the same child alongside the feed must not restore it on close.
+	TestTrue(TEXT("Feed reveals for the shared check"), Revealed(Provision(5, TEXT("\"editorPreviews\":true,"))) >= 1);
+	{
+		auto Request = UEShedLegacyRenderRequest(FGuid::NewGuid().ToString(EGuidFormats::Digits), World, false);
+		Request->GetObjectField(TEXT("policy"))
+			->GetObjectField(TEXT("renderer"))
+			->SetBoolField(TEXT("editorPreviews"), true);
+		TSharedPtr<FJsonObject> Error;
+		auto Session = FUEShedCameraRenderSession::Open(Request, Error);
+		if (!Session)
+		{
+			AddError(UEShedCameraJsonText(Error));
+			return false;
+		}
+		const auto Result = Session->RenderBlocking(UEShedRenderFrame(
+			Session->Id(), TEXT("shared"), UEShedCameraPose(Eye, FRotator::ZeroRotator, 60, false), 160, 90));
+		TestEqual(TEXT("Render session captures alongside the feed"), Result->GetStringField(TEXT("status")),
+				  FString(TEXT("captured")));
+		TestEqual(TEXT("Render session restored"), Session->Close()->GetStringField(TEXT("status")),
+				  FString(TEXT("closed")));
+		TestFalse(TEXT("Closing the render session leaves the feed's reveal"), Child->IsEditorOnly());
+	}
+	FString Cleared;
+	UUEShedCameraLibrary::ClearProvisionedCameras(Cleared);
+	TestTrue(TEXT("Clearing the feed after the session restores the child"), Child->IsEditorOnly());
 	TestEqual(TEXT("Map dirty state preserved"), World->GetOutermost()->IsDirty(), DirtyBefore);
 	return true;
 }

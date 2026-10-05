@@ -250,6 +250,9 @@ struct FUEShedCameraRuntime
 	FGuid ProducerId = FGuid::NewGuid();
 	FGuid SessionId = FGuid::NewGuid();
 	bool bProvisionedCameraSession = false;
+	// The provisioned feed reveals editor previews while set; the editor hook owns the reveal.
+	bool bEditorPreviews = false;
+	int32 RevealedEditorPreviews = 0;
 	uint64 CaptureBatchesSubmitted = 0;
 	uint64 CadenceIntervalsSkipped = 0;
 	uint64 CamerasDue = 0;
@@ -436,6 +439,7 @@ void UUEShedCameraSubsystem::ClearProvisionedCameras()
 		if (It->bTransientProvisionedCamera || It->bTransientAuthoredCamera) ToDestroy.Add(*It);
 	}
 	ResetCameraStates();
+	ReleaseEditorPreviews();
 	Runtime->bProvisionedCameraSession = false;
 	Runtime->Config.ViewMode = EUEShedCameraViewMode::Overview;
 	for (AUEShedCameraSource* Source : ToDestroy)
@@ -447,9 +451,21 @@ void UUEShedCameraSubsystem::ClearProvisionedCameras()
 	}
 }
 
+void UUEShedCameraSubsystem::ReleaseEditorPreviews()
+{
+	if (!Runtime || !Runtime->bEditorPreviews) return;
+	Runtime->bEditorPreviews = false;
+	Runtime->RevealedEditorPreviews = 0;
+	if (FUEShedProvisionedEditorPreviews& Hook = UEShedProvisionedEditorPreviewsHook(); Hook.IsBound())
+	{
+		Hook.Execute(GetWorld(), false);
+	}
+}
+
 bool UUEShedCameraSubsystem::EnsureProvisionedCameras(
 	const TArray<FUEShedProvisionedCameraSpec>& Specs,
-	FString& Error)
+	FString& Error,
+	bool bEditorPreviews)
 {
 	if (!Runtime)
 	{
@@ -465,6 +481,12 @@ bool UUEShedCameraSubsystem::EnsureProvisionedCameras(
 	if (Specs.Num() == 0 || Specs.Num() > 32)
 	{
 		Error = TEXT("invalid-source-count");
+		return false;
+	}
+	FUEShedProvisionedEditorPreviews& EditorPreviewsHook = UEShedProvisionedEditorPreviewsHook();
+	if (bEditorPreviews && !EditorPreviewsHook.IsBound())
+	{
+		Error = TEXT("editor-previews-unavailable");
 		return false;
 	}
 	bool bCanReconcile = Runtime->bProvisionedCameraSession
@@ -583,6 +605,16 @@ bool UUEShedCameraSubsystem::EnsureProvisionedCameras(
 	Runtime->Config.CaptureHeight = Specs[0].Height;
 	Runtime->Config.bPaused = false;
 	Runtime->Config.RenderProfile = EUEShedCameraRenderProfile::Observation;
+	if (bEditorPreviews)
+	{
+		// Reveal now so status reports the count; each capture batch rescans before rendering.
+		Runtime->bEditorPreviews = true;
+		Runtime->RevealedEditorPreviews = EditorPreviewsHook.Execute(World, true);
+	}
+	else
+	{
+		ReleaseEditorPreviews();
+	}
 	return true;
 }
 
@@ -833,6 +865,12 @@ void UUEShedCameraSubsystem::Tick(float DeltaTime)
 	// end-of-frame update flush per camera. Readbacks are interleaved after their corresponding
 	// renderer so each copy observes the frame that was just rendered into that camera's target.
 	const double BatchSubmissionStartSeconds = FPlatformTime::Seconds();
+	if (Runtime->bEditorPreviews)
+	{
+		// Same per-frame rescan as render sessions, so respawned preview children are shown too.
+		FUEShedProvisionedEditorPreviews& Hook = UEShedProvisionedEditorPreviewsHook();
+		Runtime->RevealedEditorPreviews = Hook.IsBound() ? Hook.Execute(World, true) : 0;
+	}
 	World->SendAllEndOfFrameUpdates();
 	TUniquePtr<ISceneRenderBuilder> SceneRenderBuilder = ISceneRenderBuilder::Create(World->Scene);
 	int32 SubmittedCaptureCount = 0;
@@ -1141,6 +1179,12 @@ FString UUEShedCameraSubsystem::StatusJson() const
 		Cameras.Add(MakeShared<FJsonValueObject>(Camera));
 	}
 	Root->SetArrayField(TEXT("cameras"), Cameras);
+	if (Runtime->bEditorPreviews)
+	{
+		const TSharedRef<FJsonObject> EditorPreviews = MakeShared<FJsonObject>();
+		EditorPreviews->SetNumberField(TEXT("revealedChildActors"), Runtime->RevealedEditorPreviews);
+		Root->SetObjectField(TEXT("editorPreviews"), EditorPreviews);
+	}
 	const TSharedRef<FJsonObject> Stats = MakeShared<FJsonObject>();
 	Stats->SetNumberField(TEXT("bytesSent"), Runtime->Writer->BytesSent.Load());
 	Stats->SetNumberField(TEXT("captureBatchesSubmitted"), Runtime->CaptureBatchesSubmitted);

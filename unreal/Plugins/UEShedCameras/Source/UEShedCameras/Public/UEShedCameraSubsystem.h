@@ -9,6 +9,13 @@ class AUEShedCameraSource;
 class FJsonObject;
 DECLARE_DELEGATE_RetVal_FourParams(bool, FUEShedResolvePreviewVisibility, UWorld*, const TSharedPtr<FJsonObject>&, TArray<TWeakObjectPtr<AActor>>&, FString&);
 UESHEDCAMERAS_API FUEShedResolvePreviewVisibility& UEShedPreviewVisibilityResolver();
+/**
+ * Editor hook for the provisioned feed's editor previews. Enabled reveals (and rescans) child
+ * actors of editor-only owners in the world and returns how many are shown; disabled releases the
+ * feed's reveal. Unbound outside the editor, where provisioning rejects editorPreviews.
+ */
+DECLARE_DELEGATE_RetVal_TwoParams(int32, FUEShedProvisionedEditorPreviews, UWorld*, bool);
+UESHEDCAMERAS_API FUEShedProvisionedEditorPreviews& UEShedProvisionedEditorPreviewsHook();
 
 enum class EUEShedCameraRenderProfile : uint8
 {
@@ -86,7 +93,8 @@ public:
 
 	bool EnsureProvisionedCameras(
 		const TArray<FUEShedProvisionedCameraSpec>& Specs,
-		FString& Error);
+		FString& Error,
+		bool bEditorPreviews = false);
 	void ClearProvisionedCameras();
 	bool IsProvisionedCameraSessionActive() const;
 	bool ShouldKeepEditorTicking() const;
@@ -95,6 +103,7 @@ private:
 	void DiscoverAuthoredCameras();
 	void RegisterSource(AUEShedCameraSource* Source);
 	void ResetCameraStates();
+	void ReleaseEditorPreviews();
 
 	TUniquePtr<FUEShedCameraRuntime> Runtime;
 };

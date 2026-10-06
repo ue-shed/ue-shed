@@ -1,7 +1,7 @@
 {
 	"FileVersion": 3,
 	"Version": 1,
-	"VersionName": "0.9.1",
+	"VersionName": "0.9.2",
 	"FriendlyName": "UE Shed World",
 	"Description": "Scoped editor actor and area preparation with independent loading ownership.",
 	"Category": "UE Shed",

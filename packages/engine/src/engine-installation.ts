@@ -23,6 +23,13 @@ export interface ProjectDescriptor extends Schema.Schema.Type<typeof ProjectDesc
 
 const registeredBuildsKey = "HKCU\\Software\\Epic Games\\Unreal Engine\\Builds";
 
+/** The Epic Games Launcher's record of what it installed, wherever the user put it. */
+const LauncherInstalled = Schema.Struct({
+	InstallationList: Schema.Array(
+		Schema.Struct({ AppName: Schema.String, InstallLocation: Schema.String })
+	)
+});
+
 export const EngineInstallation = Schema.Struct({
 	root: Schema.NonEmptyString,
 	version: EngineVersion
@@ -257,28 +264,55 @@ function versionLabel(version: EngineVersion): string {
 	return `${version.major}.${version.minor}`;
 }
 
+function programFilesEngineRoots(programFiles: string): Effect.Effect<readonly string[]> {
+	const epicRoot = join(programFiles, "Epic Games");
+	return Effect.tryPromise(() => readdir(epicRoot, { withFileTypes: true })).pipe(
+		Effect.map((entries) =>
+			entries
+				.filter((entry) => entry.isDirectory() && entry.name.startsWith("UE_"))
+				.map((entry) => join(epicRoot, entry.name))
+		),
+		Effect.catch(() => Effect.succeed([]))
+	);
+}
+
+/** Launcher engines can live on any drive; the Launcher lists them under ProgramData. */
+function launcherEngineRoots(programData: string): Effect.Effect<readonly string[]> {
+	return readJson(
+		join(programData, "Epic", "UnrealEngineLauncher", "LauncherInstalled.dat"),
+		"engine_not_found"
+	).pipe(
+		Effect.flatMap(Schema.decodeUnknownEffect(LauncherInstalled)),
+		Effect.map((installed) =>
+			installed.InstallationList.filter((entry) => entry.AppName.startsWith("UE_")).map(
+				(entry) => entry.InstallLocation
+			)
+		),
+		Effect.catch(() => Effect.succeed([]))
+	);
+}
+
 function discoverStandardInstallations(options: {
 	readonly association?: string;
+	readonly programData: string;
 	readonly programFiles: string;
-}): Effect.Effect<readonly EngineInstallation[], EngineInstallationError> {
+}): Effect.Effect<readonly EngineInstallation[]> {
 	if (process.platform !== "win32") return Effect.succeed([]);
-	const epicRoot = join(options.programFiles, "Epic Games");
-	return Effect.tryPromise({
-		try: () => readdir(epicRoot, { withFileTypes: true }),
-		catch: () =>
-			failure(
-				"engine_not_found",
-				"Standard engine locations are unavailable.",
-				"Pass an explicit engine root."
-			)
-	}).pipe(
-		Effect.catch(() => Effect.succeed([])),
-		Effect.flatMap((entries) =>
-			Effect.forEach(
-				entries.filter((entry) => entry.isDirectory() && entry.name.startsWith("UE_")),
-				(entry) => Effect.option(installationAt(join(epicRoot, entry.name))),
-				{ concurrency: 4 }
-			)
+	return Effect.all([
+		programFilesEngineRoots(options.programFiles),
+		launcherEngineRoots(options.programData)
+	]).pipe(
+		Effect.map(([standard, launcher]) => {
+			// The Launcher also lists the Program Files engines; keep one candidate per folder.
+			const roots = new Map<string, string>();
+			for (const root of [...standard, ...launcher])
+				roots.set(resolve(root).toLocaleLowerCase("en-US"), root);
+			return [...roots.values()];
+		}),
+		Effect.flatMap((roots) =>
+			Effect.forEach(roots, (root) => Effect.option(installationAt(root)), {
+				concurrency: 4
+			})
 		),
 		Effect.map((candidates) =>
 			candidates.flatMap((candidate) =>
@@ -293,11 +327,13 @@ function discoverStandardInstallations(options: {
 }
 
 const programFiles = Config.string("ProgramFiles").pipe(Config.withDefault("C:\\Program Files"));
+const programData = Config.string("ProgramData").pipe(Config.withDefault("C:\\ProgramData"));
 
 export const EngineInstallationDiscoveryLive = Layer.effect(
 	EngineInstallationDiscovery,
 	Effect.gen(function* () {
 		const configuredProgramFiles = yield* programFiles;
+		const configuredProgramData = yield* programData;
 		const resolveInstallation = Effect.fn("EngineInstallationDiscovery.resolve")(function* (
 			request: EngineInstallationRequest
 		) {
@@ -310,6 +346,7 @@ export const EngineInstallationDiscoveryLive = Layer.effect(
 				if (registered._tag === "Some") return registered.value;
 			}
 			const candidates = yield* discoverStandardInstallations({
+				programData: configuredProgramData,
 				programFiles: configuredProgramFiles,
 				...(association === undefined ? undefined : { association })
 			});

@@ -254,6 +254,24 @@ async function walkFiles(options: {
 	return files;
 }
 
+/**
+ * Fits a path into a ustar header: a name of up to 100 bytes, plus a prefix of up to 155 bytes
+ * split off at a "/". Undefined when no split fits.
+ */
+export function splitUstarPath(
+	path: string
+): { readonly name: string; readonly prefix: string } | undefined {
+	if (Buffer.byteLength(path) <= 100) return { name: path, prefix: "" };
+	// Split at the first slash whose remainder fits, keeping the prefix as short as possible.
+	for (let index = path.indexOf("/"); index > 0; index = path.indexOf("/", index + 1)) {
+		const prefix = path.slice(0, index);
+		const name = path.slice(index + 1);
+		if (Buffer.byteLength(prefix) > 155) return undefined;
+		if (name.length > 0 && Buffer.byteLength(name) <= 100) return { name, prefix };
+	}
+	return undefined;
+}
+
 async function writeDeterministicArchive(options: {
 	readonly destination: string;
 	readonly limits: PluginDistributionLimits;
@@ -269,16 +287,9 @@ async function writeDeterministicArchive(options: {
 		for (const file of files) {
 			if (options.signal.aborted) throw cancelled("archive");
 			const archivePath = `UEShed/${file.relativePath}`;
-			let name = archivePath;
-			let prefix = "";
-			if (Buffer.byteLength(name) > 100) {
-				const splitAt = archivePath.lastIndexOf("/", archivePath.length - 101);
-				if (splitAt <= 0) throw new Error(`Archive path is too long: ${archivePath}`);
-				prefix = archivePath.slice(0, splitAt);
-				name = archivePath.slice(splitAt + 1);
-				if (Buffer.byteLength(name) > 100 || Buffer.byteLength(prefix) > 155)
-					throw new Error(`Archive path is too long: ${archivePath}`);
-			}
+			const split = splitUstarPath(archivePath);
+			if (split === undefined) throw new Error(`Archive path is too long: ${archivePath}`);
+			const { name, prefix } = split;
 			const header = Buffer.alloc(512);
 			header.write(name, 0, 100, "utf8");
 			writeOctal(header, 100, 8, 0o644);

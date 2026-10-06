@@ -15,7 +15,8 @@ import {
 	CompiledPluginBuildFailed,
 	CompiledPluginBuilder,
 	InvalidCompiledPluginBuild,
-	compiledPluginBuilderLayer
+	compiledPluginBuilderLayer,
+	splitUstarPath
 } from "./builder.js";
 import { variantPluginReleaseAssetNames } from "./source.js";
 
@@ -503,5 +504,37 @@ describe("compiled plugin builder", () => {
 		expect(error.stage).toBe("archive");
 		expect(error.message).toContain("file-size limit");
 		expect(await readdir(source.request.outputDirectory)).toEqual([]);
+	});
+});
+
+describe("ustar path splitting", () => {
+	it("keeps paths of up to 100 bytes whole", () => {
+		const path = `UEShed/${"a".repeat(93)}`;
+		expect(splitUstarPath(path)).toEqual({ name: path, prefix: "" });
+	});
+
+	it("splits a source path just over 100 bytes into a prefix and a name", () => {
+		// 101 bytes; every compiled camera-authoring archive contains it.
+		const path =
+			"UEShed/Plugins/UEShedCameraAuthoring/Source/UEShedCameraAuthoring/Private/SCameraArrangementPanel.cpp";
+		expect(Buffer.byteLength(path)).toBe(101);
+		const split = splitUstarPath(path);
+		expect(split).toEqual({
+			prefix: "UEShed",
+			name: "Plugins/UEShedCameraAuthoring/Source/UEShedCameraAuthoring/Private/SCameraArrangementPanel.cpp"
+		});
+		expect(`${split?.prefix}/${split?.name}`).toBe(path);
+	});
+
+	it("counts bytes, not characters, against the header fields", () => {
+		const path = `UEShed/${"é".repeat(50)}/${"é".repeat(49)}`;
+		const split = splitUstarPath(path);
+		expect(Buffer.byteLength(split?.name ?? "")).toBeLessThanOrEqual(100);
+		expect(`${split?.prefix}/${split?.name}`).toBe(path);
+	});
+
+	it("rejects paths no split can fit", () => {
+		expect(splitUstarPath(`UEShed/${"a".repeat(101)}`)).toBeUndefined();
+		expect(splitUstarPath(`${"a".repeat(156)}/${"b".repeat(10)}`)).toBeUndefined();
 	});
 });

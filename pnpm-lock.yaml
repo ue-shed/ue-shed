@@ -166,6 +166,9 @@ importers:
       '@ue-shed/game-text':
         specifier: workspace:*
         version: link:../../packages/game-text
+      '@ue-shed/localization':
+        specifier: workspace:*
+        version: link:../../packages/localization
       '@ue-shed/map-history':
         specifier: workspace:*
         version: link:../../packages/map-history
@@ -872,6 +875,19 @@ importers:
       '@ue-shed/engine':
         specifier: workspace:0.9.2
         version: link:../engine
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0-beta.98
+    devDependencies:
+      '@effect/vitest':
+        specifier: 'catalog:'
+        version: 4.0.0-beta.98(effect@4.0.0-beta.98)(vitest@4.1.11)
+
+  packages/localization:
+    dependencies:
+      '@ue-shed/config-explorer':
+        specifier: workspace:0.9.2
+        version: link:../config-explorer
       effect:
         specifier: 'catalog:'
         version: 4.0.0-beta.98

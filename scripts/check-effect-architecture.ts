@@ -1,5 +1,5 @@
 import { readFile, readdir } from "node:fs/promises";
-import { dirname, join, relative } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { isJsonObject, parseJsonObject } from "./json.ts";
 
@@ -631,12 +631,69 @@ export async function checkWorkbenchBoundaries(root: string = repositoryRoot) {
 	return failures;
 }
 
+/** Localization formats are independently usable; browser consumers receive no Node authority. */
+export async function checkLocalizationBoundaries(root: string = repositoryRoot) {
+	const failures: string[] = [];
+	const packageRoot = join(root, "packages/localization");
+	let manifestText: string;
+	try {
+		manifestText = await readFile(join(packageRoot, "package.json"), "utf8");
+	} catch {
+		return failures;
+	}
+	if (manifestText.includes("@ue-shed/game-text")) {
+		failures.push(
+			"packages/localization/package.json: localization must not depend on the Game Text corpus"
+		);
+	}
+	for (const path of await filesUnder(root, "packages/localization")) {
+		if (!path.endsWith(".ts") || testSourcePattern.test(path)) continue;
+		if ((await readFile(path, "utf8")).includes("@ue-shed/game-text")) {
+			failures.push(
+				`${relative(root, path).replaceAll("\\", "/")}: localization must not import the Game Text corpus`
+			);
+		}
+	}
+	const pending = [join(packageRoot, "src/browser.ts")];
+	const visited = new Set<string>();
+	while (pending.length > 0) {
+		const path = pending.pop();
+		if (path === undefined || visited.has(path)) continue;
+		visited.add(path);
+		const text = await readFile(path, "utf8");
+		const label = relative(root, path).replaceAll("\\", "/");
+		if (/\bprocess\s*\./u.test(text))
+			failures.push(`${label}: browser closure must not use process`);
+		const imports = [
+			...text.matchAll(/(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s*)["']([^"']+)["']/gu)
+		].map((match) => match[1]);
+		for (const specifier of imports) {
+			if (specifier === undefined) continue;
+			if (
+				/^(?:node:|electron(?:\/|$)|fs(?:\/|$)|path$|child_process$|process$)/u.test(
+					specifier
+				)
+			) {
+				failures.push(`${label}: browser closure must not import ${specifier}`);
+			} else if (specifier.startsWith(".")) {
+				pending.push(resolve(dirname(path), specifier.replace(/\.js$/u, ".ts")));
+			} else if (specifier === "@ue-shed/config-explorer/browser") {
+				pending.push(join(root, "packages/config-explorer/src/browser.ts"));
+			} else if (specifier !== "effect" && !specifier.startsWith("effect/")) {
+				failures.push(`${label}: unreviewed browser dependency ${specifier}`);
+			}
+		}
+	}
+	return failures;
+}
+
 export async function checkArchitecture(root: string = repositoryRoot) {
 	return [
 		...(await checkCatalogUsage(root)),
 		...(await checkSourcePolicy(root)),
 		...(await checkServiceStrategies(root)),
 		...(await checkDomainServices(root)),
+		...(await checkLocalizationBoundaries(root)),
 		...(await checkWorkbenchBoundaries(root))
 	];
 }

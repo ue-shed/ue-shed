@@ -5,12 +5,44 @@ import { join } from "node:path";
 import { after, before, test } from "node:test";
 import {
 	checkCatalogUsage,
+	checkLocalizationBoundaries,
 	checkSourcePolicy,
 	checkServiceStrategies,
 	checkWorkbenchBoundaries
 } from "./check-effect-architecture.ts";
 
 let root = "";
+
+test("the localization browser entry and Config Explorer dependency are browser-safe", async () => {
+	assert.deepEqual(await checkLocalizationBoundaries(), []);
+});
+
+test("rejects corpus dependencies and Node authority in the localization browser closure", async () => {
+	const fixtureRoot = await mkdtemp(join(tmpdir(), "ue-shed-localization-boundary-"));
+	try {
+		const source = join(fixtureRoot, "packages/localization/src");
+		await mkdir(source, { recursive: true });
+		await writeFile(
+			join(source, "../package.json"),
+			'{"dependencies":{"@ue-shed/game-text":"workspace:*"}}'
+		);
+		await writeFile(join(source, "browser.ts"), 'export * from "./formats.js";\n');
+		await writeFile(
+			join(source, "formats.ts"),
+			'import { readFile } from "node:fs/promises";\nprocess.cwd();\n'
+		);
+		assert.deepEqual(await checkLocalizationBoundaries(fixtureRoot), [
+			"packages/localization/package.json: localization must not depend on the Game Text corpus",
+			"packages/localization/src/formats.ts: browser closure must not use process",
+			"packages/localization/src/formats.ts: browser closure must not import node:fs/promises"
+		]);
+		await writeFile(join(source, "../package.json"), '{"dependencies":{"effect":"catalog:"}}');
+		await writeFile(join(source, "formats.ts"), 'import { Schema } from "effect";\n');
+		assert.deepEqual(await checkLocalizationBoundaries(fixtureRoot), []);
+	} finally {
+		await rm(fixtureRoot, { recursive: true, force: true });
+	}
+});
 
 before(async () => {
 	root = await mkdtemp(join(tmpdir(), "ue-shed-effect-architecture-"));

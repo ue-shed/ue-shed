@@ -20,6 +20,7 @@
 			"@ue-shed/uasset",
 			"@ue-shed/game-text",
 			"@ue-shed/config-explorer",
+			"@ue-shed/localization",
 			"@ue-shed/project-custodian",
 			"@ue-shed/niagara",
 			"@ue-shed/world"

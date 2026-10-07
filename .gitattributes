@@ -2,3 +2,4 @@
 # them (BOMs, UTF-16 and CRLF included) regardless of local line-ending settings.
 fixtures/**/Content/Localization/** -text
 fixtures/**/Config/Localization/** -text
+fixtures/**/FixtureExpected/localization/*-output/** -text

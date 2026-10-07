@@ -10,6 +10,7 @@ import {
 } from "./unreal-plugin-host.ts";
 import { unrealRemoteControlLaunchArguments } from "./workbench-tools.ts";
 import { localizationFixtureSteps } from "./localization-fixture-steps.ts";
+import { retainLocalizationFixtureOutput } from "./localization-fixture-output.ts";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const action = process.argv[2];
@@ -284,6 +285,11 @@ if (action === "localization") {
 		});
 	for (const args of localizationFixtureSteps(projectFile, output))
 		run(tools.editorCommandlet, args);
+	if (process.env.UE_SHED_LOCALIZATION_FIXTURE_ROOT) {
+		const version = engineVersion(engineRoot);
+		if (version === undefined) throw new Error("Localization engine version is unavailable.");
+		retainLocalizationFixtureOutput(fixtureRoot, output, version.label);
+	}
 }
 if (action === "localization-verify") {
 	runCommandlet(

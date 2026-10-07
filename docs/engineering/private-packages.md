@@ -15,3 +15,6 @@ ledger whenever a package joins the synchronized public suite.
 
 Promotion requires public metadata and licensing, a browser-safe entry point where relevant, exact
 internal dependency pins, a clean offline packed-consumer journey, and an explicit Changesets entry.
+
+[`@ue-shed/localization`](../../packages/localization/README.md) is in the public suite. It owns
+read-only localization formats and evidence independently of the Game Text corpus and Workbench.

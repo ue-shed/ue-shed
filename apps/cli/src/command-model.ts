@@ -34,6 +34,7 @@ export const CliCommand = Schema.TaggedUnion({
 		...Reader
 	},
 	Version: {},
+	LocalizationTargets: { ...Project },
 	InvestigationRun: {
 		...Project,
 		preset: Schema.String,

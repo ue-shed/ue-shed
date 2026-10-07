@@ -295,6 +295,11 @@ try {
 		}
 	);
 	const custodianRoot = join(consumerDirectory, "custodian-root");
+	await cp(
+		join(repositoryRoot, "fixtures", "unreal-427-localization"),
+		join(consumerDirectory, "localization-project"),
+		{ recursive: true }
+	);
 	const custodianProject = join(custodianRoot, "PackedFixture");
 	const custodianTarget = join(custodianProject, "Intermediate");
 	await mkdir(join(custodianProject, "Content"), { recursive: true });
@@ -344,6 +349,8 @@ try {
 			"import { NiagaraPreviewRunManifest } from '@ue-shed/niagara/browser';",
 			"import { ConfigExplorer, ConfigExplorerNodeLive, ConfigFamily, ConfigKey, ConfigPlatform, ConfigSection } from '@ue-shed/config-explorer';",
 			"import { ConfigExplanation } from '@ue-shed/config-explorer/browser';",
+			"import { LocalizationEvidence, LocalizationEvidenceNodeLive } from '@ue-shed/localization';",
+			"import { LocalizationTargetEvidence, parsePO, serializePO } from '@ue-shed/localization/browser';",
 			"import { Custodian, CustodianNodeLive } from '@ue-shed/project-custodian';",
 			"import { CustodianReceipt } from '@ue-shed/project-custodian/browser';",
 			"if (protocol.CURRENT_PROTOCOL_VERSION.major !== 0) throw new Error('bad protocol');",
@@ -424,6 +431,22 @@ try {
 			"if (explanation.status !== 'complete' || explanation.effectiveValue?.values?.[0] !== 'PlatformA') {",
 			"  throw new Error('packed Config Explorer journey failed');",
 			"}",
+			"await Effect.runPromise(",
+			"  Effect.gen(function* () {",
+			"    const reader = yield* LocalizationEvidence;",
+			"    const projectRoot = resolve('./localization-project');",
+			"    const discovery = yield* reader.targets({ projectRoot });",
+			"    const target = discovery.targets[0];",
+			"    if (!target || target.source !== 'config_only' || target.nativeCulture !== 'en') throw new Error('packed localization discovery failed');",
+			"    const evidence = yield* reader.read({ projectRoot, target });",
+			"    yield* Schema.decodeUnknownEffect(LocalizationTargetEvidence)(evidence);",
+			"    if (evidence.manifest.status !== 'read' || evidence.manifest.value.entries.length !== 3) throw new Error('packed localization manifest failed');",
+			"    if (evidence.cultures.length !== 3 || evidence.cultures.some(c => c.archive.status !== 'read' || c.po.status !== 'read')) throw new Error('packed localization cultures failed');",
+			'    const bytes = new TextEncoder().encode(\'msgctxt "NS,Key"\\r\\nmsgid "Source"\\r\\nmsgstr "Translation"\');',
+			"    const po = parsePO(bytes);",
+			"    if (po._tag !== 'Success' || !Buffer.from(serializePO(po.success)).equals(Buffer.from(bytes))) throw new Error('packed localization browser round trip failed');",
+			"  }).pipe(Effect.provide(LocalizationEvidenceNodeLive))",
+			");",
 			"const custodian = await Effect.runPromise(",
 			"  Effect.gen(function* () {",
 			"    const service = yield* Custodian;",

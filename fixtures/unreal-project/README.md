@@ -52,6 +52,10 @@ translation; their shared product state is `not_translated`.
 
 Use `UE_SHED_LOCALIZATION_FIXTURE_ROOT` to generate in an explicit disposable project copy;
 an optional argument to `fixture:generate-localization` selects its evidence directory.
+After a successful disposable-copy run, the runner replaces `ue<major.minor>-output/` beside the
+version-specific evidence with an unchanged copy of `Content/Localization/FixtureGame/**`.
+The default destination is `FixtureExpected/localization/` in the selected copy. Canonical runs
+already retain their generated files under `Content/Localization/FixtureGame`.
 `pnpm fixture:verify-localization <directory>` only reloads and records evidence after the build.
 `pnpm test:uasset-engine-matrix` regenerates localization in each engine's disposable fixture copy
 and compares fresh evidence with the committed version-specific evidence. It retains all 13
@@ -61,6 +65,12 @@ comparison; arrays, identities, sources, translations, paths and 5.8 `DevNotes` 
 generated key is normalized: every authored identity and target GUID is explicit. Package save
 GUIDs, PO header dates and word-count report timestamps are Unreal-owned and outside the semantic
 evidence comparison.
+
+`FixtureExpected/localization/ue5.8-output` holds the UE 5.8 run's generated target files (manifest
+with `DevNotes`, archives, PO, compiled resources, reports). They are copied unchanged from the
+disposable 5.8 copy that produced `evidence.ue5.8.json`, so format readers are tested on real 5.8
+bytes. Two independent 5.8 runs produced identical manifests and archives; PO files differ only in
+header dates.
 
 The smaller [4.27 fixture](../unreal-427-localization/README.md) proves source-only gather output
 formats without a compiled module.

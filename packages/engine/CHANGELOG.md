@@ -1,5 +1,15 @@
 # @ue-shed/engine
 
+## 0.9.3
+
+### Patch Changes
+
+- 0aa99d8: Expose a structured engine_plugins_stale launch failure when Remote Control dependencies have
+  outdated module identities on a buildable Windows source engine. Missing binaries and installed
+  engines retain plugin_unavailable, allowing hosts to offer a targeted rebuild only when appropriate.
+- @ue-shed/protocol@0.9.3
+    - @ue-shed/unreal-connection@0.9.3
+
 ## 0.9.2
 
 ### Patch Changes

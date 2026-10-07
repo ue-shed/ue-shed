@@ -1,5 +1,14 @@
 # @ue-shed/map-history
 
+## 0.9.3
+
+No direct behavioral change. Align with the UE Shed 0.9.3 suite and exact internal dependency pins.
+
+### Patch Changes
+
+- @ue-shed/protocol@0.9.3
+    - @ue-shed/unreal-assets@0.9.3
+
 ## 0.9.2
 
 ### Patch Changes

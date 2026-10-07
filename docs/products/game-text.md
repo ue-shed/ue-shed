@@ -170,7 +170,125 @@ The first quality slice must prove:
 - ordinary telemetry contains no source, path, identity, or rule contents; and
 - `pnpm check` passes.
 
+## Localization workspace (planned)
+
+> Status: planned by [Plan 051](../../plans/051-localization-workspace.md) under accepted
+> [ADR 0009](../decisions/0009-localization-change-sets-and-review-state.md). Nothing in this section
+> is shipped yet; each part becomes a product promise when its phase completes.
+
+Game Text grows into a localization workspace that a writing and localization team can use all
+day. For every line it shows the source text, each culture's translation, and that translation's
+state. It finds work that is missing or stale, validates translations, runs Unreal's localization
+steps, edits translations through a reviewed change set, and records review progress.
+
+### Evidence levels
+
+| Level             | Needs                             | Gives                                                                                                 |
+| ----------------- | --------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| 1. Project files  | Nothing                           | The live corpus joined with target settings, manifest, archives and PO files: states, checks, reports |
+| 2. Unreal process | An engine install                 | Unreal's own answer: gather, import, export, compile, word counts and conflicts                       |
+| 3. Running editor | Unreal open with a UE Shed plugin | Immediate translation writes through Unreal's own APIs (optional, later)                              |
+
+Level 1 is the default experience and needs no engine. Each later level adds a capability; none is
+required to browse, search or check text.
+
+### Unreal stays authoritative
+
+- A localization target is the unit of work. UE Shed reads the project's target settings and the
+  files Unreal generated for them: `<Target>.manifest`, `<culture>/<Target>.archive` and
+  `<culture>/<Target>.po`. The compiled `.locres` and `.locmeta` are evidence only.
+- Translations join text in the corpus by Unreal namespace and key only, never by matching source
+  text. Text that exists only in the manifest, such as C++ `LOCTEXT` or config text, is shown as
+  gathered-only evidence with its manifest source location.
+- UE Shed never writes a manifest, archive, `.locres` or `.locmeta` itself. The current PO file is the
+  translators' working copy and the only localization file UE Shed's own code writes. Unreal
+  imports and compiles it.
+- Unreal's gather, import, export and compile run as Unreal processes. UE Shed runs the configs the
+  project already has; it does not reimplement Unreal's gather or PO mapping.
+
+### Translation states
+
+States are computed per line and culture from evidence. Each one names its evidence and is never
+guessed.
+
+| State                    | Meaning                                                                      |
+| ------------------------ | ---------------------------------------------------------------------------- |
+| Translated               | The archive has a translation whose recorded source matches the manifest     |
+| Not translated           | No translation, or an empty one, for the culture                             |
+| Needs update             | The translation was written for a different source than the manifest now has |
+| Not synced               | The PO file holds a translation Unreal has not imported and compiled yet     |
+| Not gathered yet         | In the project and inside the target's gather paths, but not in the manifest |
+| Changed since gather     | The project's current source differs from the manifest source for the key    |
+| Not found in the project | In the manifest, and its package was fully read, but the key was not found   |
+| Gathered only            | In the manifest from a source the asset scan does not read, such as C++ code |
+| Outside this target      | In the project but excluded by the target's include or exclude paths         |
+
+"Not gathered yet" and "Not found in the project" are claimed only when scan coverage proves them.
+If the relevant package was partially read or not read, the line says so instead.
+
+### Checks and reports
+
+Localization checks are quality findings over the same corpus and report model:
+
+- built-in Unreal syntax checks: format arguments missing or added against the source, plural,
+  ordinal and gender forms, rich text tags, escapes that will not survive a PO round trip, and
+  leading or trailing whitespace;
+- missing translations, missing translator notes, and the same source under different keys;
+- project-authored character budgets and glossary rules, extended per culture.
+
+Reports give per culture the share of lines and words translated, reviewed and proofread, and the
+words that are new or changed since a chosen baseline. Every report carries corpus and gather
+coverage, as quality reports already do.
+
+### Editing and review
+
+A translation edit is a staged change set. Each change names the target, culture, namespace and key,
+the source it translates, and the translation it replaces. A host shows the diff before anything is
+written. The change set is applied by the strongest available writer:
+
+- **PO writer (headless default):** rewrites only the changed `msgstr` values of the culture's PO
+  file atomically and preserves everything else in the file. Level 1 shows the result at once as
+  "Not synced". A separate, batchable sync asks Unreal to import and compile.
+- **Editor writer (optional, Level 3):** a UE Shed editor plugin applies the same change set
+  through Unreal's localization APIs, then exports and compiles, without a separate process.
+
+Before writing, every change is checked against current evidence. If the source or the replaced
+translation has changed, the change is rejected as stale rather than applied.
+
+Edits that Unreal has not imported are always visible. A translation in the PO file that differs
+from the archive is "Not synced", whether UE Shed or another tool wrote it:
+
+- its row carries a "Not synced" mark for that culture;
+- the detail pane shows both the PO translation and the translation the game currently uses;
+- the toolbar shows how many translations are not synced, beside a "Sync with Unreal" action;
+- a "Not synced" filter lists them, and the CLI status and reports count them; and
+- checks evaluate the PO translation, because that is what the next sync will ship.
+
+Synced means Unreal imported the PO and compiled the target; a rescan after sync clears the mark.
+
+Review state (reviewed, proofread, approved, machine translated, accepted duplicate) is not
+stored by Unreal. It lives in a versioned, project-owned review file per target.
+Each record keeps a fingerprint of the source and translation it was given for, so a later edit
+shows as "Changed since review" instead of silently keeping the old state.
+
+### Source control
+
+Manifests, archives and PO files are usually checked in. The core reports which files an operation
+may write before it runs, so a host can check them out. UE Shed never passes Unreal's source control
+switches and never submits. Hosts own source control.
+
+### Workbench presentation
+
+The Game Text route uses one toolbar row (view tabs, one coverage line, Rescan) and gives the rest of
+the window to a list and detail workbench. Rows keep the user's words: the text first, then where it
+lives. When a culture is selected, each row adds that culture's translation and state. The detail
+pane stacks every culture with its translation, state, checks and edit field. A side-by-side grid
+for bulk work is a later, optional mode. Counts are computed through the same query as search, so
+every count agrees with the list it describes.
+
 ## Explicitly out of scope
+
+Out of scope for the shipped product today:
 
 - another filesystem enumeration, scanner, corpus, or persistence adapter;
 - direct package, source-text, localization, PO, manifest, archive, or compiled-resource mutation;
@@ -180,6 +298,24 @@ The first quality slice must prove:
 - built-in studio terminology, roles, paths, cultures, or budgets;
 - full-corpus renderer IPC, renderer filesystem authority, or UI-owned rule evaluation; and
 - telemetry containing authored text or rule evidence.
+
+Under Plan 051, the following move into scope as its phases complete. Each is bounded as described
+above:
+
+- reading localization target settings, manifests, archives and PO files as evidence;
+- running Unreal's gather, import, export, compile and report steps;
+- translation editing through staged change sets, with atomic PO writes as the only file writes
+  made by UE Shed's own code;
+- a project-owned review state file; and
+- per-culture checks and localization reports.
+
+The following remain out of scope even under Plan 051:
+
+- UE Shed writing manifests, archives, `.locres` or `.locmeta` itself;
+- linking text to translations by matching source strings;
+- translation memory, machine translation services, vendors, assignment and billing;
+- voice lines and dialogue; and
+- source control operations inside the core.
 
 The broader localization and authoring direction remains in
 [`docs/ideas/game-text-workbench.md`](../ideas/game-text-workbench.md), which is vision rather than

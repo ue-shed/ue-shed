@@ -5,10 +5,45 @@ import { runLocalizationCheck } from "../workflows/localization-check.js";
 import { runLocalizationReport } from "../workflows/localization-report.js";
 import { runLocalizationStatus, runLocalizationTargets } from "../workflows/localization.js";
 import { localizationFlags, optionalLocalizationFlags } from "./localization-flags.js";
+import { LocalizationOperation } from "@ue-shed/localization/browser";
+import { runLocalizationOperation } from "../workflows/localization-run.js";
 
 export const localizationCommand = Command.make("loc").pipe(
 	Command.withDescription("Read saved Unreal localization targets."),
 	Command.withSubcommands([
+		Command.make(
+			"run",
+			{
+				operation: Argument.choice("operation", LocalizationOperation.literals),
+				projectRoot: Argument.string("project-root"),
+				target: Flag.string("target"),
+				engineRoot: Flag.string("engine-root").pipe(Flag.optional),
+				plan: Flag.boolean("plan"),
+				json: Flag.boolean("json"),
+				timeout: Flag.integer("timeout").pipe(Flag.withDefault(1800))
+			},
+			({ operation, projectRoot, target, engineRoot, plan, json, timeout }) => {
+				const command = {
+					_tag: "LocalizationRun",
+					operation,
+					projectRoot,
+					target,
+					plan,
+					json,
+					timeout
+				} satisfies Extract<
+					import("../command-model.js").CliCommand,
+					{ readonly _tag: "LocalizationRun" }
+				>;
+				if (Option.isSome(engineRoot))
+					Object.assign(command, { engineRoot: engineRoot.value });
+				return runLocalizationOperation(command);
+			}
+		).pipe(
+			Command.withDescription(
+				"Plan or run Unreal localization steps; sync imports then compiles."
+			)
+		),
 		Command.make(
 			"report",
 			{

@@ -1,7 +1,7 @@
 {
 	"name": "@ue-shed/localization",
 	"version": "0.9.2",
-	"description": "Read Unreal localization target settings and saved localization evidence.",
+	"description": "Read Unreal localization evidence and plan or run headless localization operations.",
 	"homepage": "https://github.com/ue-shed/ue-shed#readme",
 	"bugs": {
 		"url": "https://github.com/ue-shed/ue-shed/issues"
@@ -41,6 +41,7 @@
 	},
 	"dependencies": {
 		"@ue-shed/config-explorer": "workspace:0.9.2",
+		"@ue-shed/engine": "workspace:0.9.2",
 		"effect": "catalog:"
 	},
 	"devDependencies": {

@@ -18,3 +18,5 @@ internal dependency pins, a clean offline packed-consumer journey, and an explic
 
 [`@ue-shed/localization`](../../packages/localization/README.md) is in the public suite. It owns
 read-only localization formats and evidence independently of the Game Text corpus and Workbench.
+Its Node entry also depends on public `@ue-shed/engine` for the separately enabled localization
+process capability; browser consumers receive pure planning and no engine/process authority.

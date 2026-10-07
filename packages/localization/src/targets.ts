@@ -200,6 +200,12 @@ const booleanFields = new Set([
 	"bUseCultureDirectory",
 	"bImportLoc",
 	"bExportLoc",
+	"bWordCountReport",
+	"bConflictReport",
+	"FixMissingGatherCache",
+	"FixPackageLocalizationIdConflict",
+	"FixStaleGatherCache",
+	"ReportStaleGatherCache",
 	"ShouldExcludeDerivedClasses",
 	"ShouldGatherFromEditorOnlyData",
 	"SkipGatherCache"

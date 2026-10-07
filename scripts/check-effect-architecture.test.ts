@@ -17,6 +17,53 @@ test("the localization browser entry and Config Explorer dependency are browser-
 	assert.deepEqual(await checkLocalizationBoundaries(), []);
 });
 
+test("browser import scanning distinguishes module syntax from strings and comments", async () => {
+	const fixtureRoot = await mkdtemp(join(tmpdir(), "ue-shed-localization-import-syntax-"));
+	try {
+		const source = join(fixtureRoot, "packages/localization/src");
+		await mkdir(source, { recursive: true });
+		await writeFile(join(source, "../package.json"), '{"dependencies":{"effect":"catalog:"}}');
+		await writeFile(join(source, "browser.ts"), 'export * from "./formats.js";\n');
+		await writeFile(
+			join(source, "formats.ts"),
+			[
+				"import {",
+				"  Schema",
+				'} from "effect";',
+				'import "effect";',
+				'export const operations = Schema.Literals(["import", "export"]);',
+				'export const isImport = (operation: string) => operation === "import" || operation === "export";',
+				'export const label = \'import("node:fs") from ","\';',
+				'export const template = `import("node:fs")`;',
+				'// import { readFile } from "node:fs/promises";',
+				'/* export * from "electron"; */'
+			].join("\n")
+		);
+		assert.deepEqual(await checkLocalizationBoundaries(fixtureRoot), []);
+		await writeFile(
+			join(source, "formats.ts"),
+			[
+				'import { readFile } from "node:fs/promises";',
+				'export { spawn } from "node:child_process";',
+				'export type FileInfo = import("node:fs").Stats;',
+				'export const load = () => import("electron");',
+				'import events = require("node:events");',
+				'export const socket = require("node:net");'
+			].join("\n")
+		);
+		assert.deepEqual(await checkLocalizationBoundaries(fixtureRoot), [
+			"packages/localization/src/formats.ts: browser closure must not import node:fs/promises",
+			"packages/localization/src/formats.ts: browser closure must not import node:child_process",
+			"packages/localization/src/formats.ts: browser closure must not import node:fs",
+			"packages/localization/src/formats.ts: browser closure must not import electron",
+			"packages/localization/src/formats.ts: browser closure must not import node:events",
+			"packages/localization/src/formats.ts: browser closure must not import node:net"
+		]);
+	} finally {
+		await rm(fixtureRoot, { recursive: true, force: true });
+	}
+});
+
 test("checks the Game Text browser closure and its localization dependency", async () => {
 	const fixtureRoot = await mkdtemp(join(tmpdir(), "ue-shed-localization-join-boundary-"));
 	try {

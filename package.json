@@ -80,6 +80,7 @@
 		"test:unreal-plugins": "node scripts/test-unreal-plugins.ts",
 		"test:unreal-niagara": "pnpm --filter @ue-shed/engine build && pnpm --filter @ue-shed/niagara build && node --import tsx scripts/test-unreal-niagara.ts",
 		"test:unreal-review": "node scripts/test-unreal-review.ts",
+		"test:localization-processes": "pnpm run build:typescript-packages && node --import tsx scripts/test-localization-processes.ts",
 		"test:flow:map-review": "node scripts/test-map-review-flow.ts",
 		"test:uasset-conformance": "node scripts/test-uasset-conformance.ts",
 		"test:uasset-engine-matrix": "node scripts/test-uasset-engine-matrix.ts",

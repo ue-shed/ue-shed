@@ -1,6 +1,7 @@
 import { readFile, readdir } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import ts from "typescript";
 import { isJsonObject, parseJsonObject } from "./json.ts";
 
 const repositoryRoot = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -115,6 +116,9 @@ const approvedPromiseAdapters = new Set([
 	// Project Custodian owns process inspection, filesystem mutation, OS Trash, and durable
 	// proposal/receipt promises in one executor adapter; the public service remains Effect-shaped.
 	"packages/project-custodian/src/node-executor.ts",
+	// Localization owns bounded config/log reads and hash audits in one Node filesystem adapter;
+	// public operation services expose only scoped Effect and Stream values.
+	"packages/localization/src/operation-io.ts",
 	// The generated browser declaration is a foreign WebAssembly adapter surface.
 	"packages/uasset-inspection-wasm/src/browser.d.ts"
 ]);
@@ -631,6 +635,39 @@ export async function checkWorkbenchBoundaries(root: string = repositoryRoot) {
 	return failures;
 }
 
+/** Read module syntax without mistaking authored strings or comments for import declarations. */
+function moduleSpecifiers(path: string, text: string): readonly string[] {
+	const source = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true);
+	const specifiers: string[] = [];
+	const visit = (node: ts.Node): void => {
+		if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
+			if (node.moduleSpecifier && ts.isStringLiteralLike(node.moduleSpecifier))
+				specifiers.push(node.moduleSpecifier.text);
+		} else if (ts.isCallExpression(node)) {
+			const argument = node.arguments[0];
+			if (
+				(node.expression.kind === ts.SyntaxKind.ImportKeyword ||
+					(ts.isIdentifier(node.expression) && node.expression.text === "require")) &&
+				argument &&
+				ts.isStringLiteralLike(argument)
+			)
+				specifiers.push(argument.text);
+		} else if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument)) {
+			if (ts.isStringLiteralLike(node.argument.literal))
+				specifiers.push(node.argument.literal.text);
+		} else if (
+			ts.isImportEqualsDeclaration(node) &&
+			ts.isExternalModuleReference(node.moduleReference)
+		) {
+			const expression = node.moduleReference.expression;
+			if (expression && ts.isStringLiteralLike(expression)) specifiers.push(expression.text);
+		}
+		ts.forEachChild(node, visit);
+	};
+	visit(source);
+	return specifiers;
+}
+
 /** Localization formats are independently usable; browser consumers receive no Node authority. */
 export async function checkLocalizationBoundaries(root: string = repositoryRoot) {
 	const failures: string[] = [];
@@ -671,9 +708,7 @@ export async function checkLocalizationBoundaries(root: string = repositoryRoot)
 		const label = relative(root, path).replaceAll("\\", "/");
 		if (/\bprocess\s*\./u.test(text))
 			failures.push(`${label}: browser closure must not use process`);
-		const imports = [
-			...text.matchAll(/(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s*)["']([^"']+)["']/gu)
-		].map((match) => match[1]);
+		const imports = moduleSpecifiers(path, text);
 		for (const specifier of imports) {
 			if (specifier === undefined) continue;
 			if (

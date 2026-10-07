@@ -402,6 +402,23 @@ never writes a file.
 - The listed files cover every file that changed. 4.27 is run and reported if it is in the support
   window.
 
+**Progress (2026-10-07)**: 5a is done.
+
+- `@ue-shed/localization` plans operations as pure functions: gather, import, export, compile,
+  reports, and sync, which runs import then compile in one `-Config=a;b` process. Each plan names
+  the configs, the arguments, and every file the operation may write. It works for Dashboard
+  per-operation configs and for config-only recipes.
+- Runs go through `@ue-shed/engine` discovery and `OwnedProcessTree`, using `UnrealEditor-Cmd`, or
+  `UE4Editor-Cmd` with the 4.27 argument set. They emit bounded step progress from a private log
+  and fail with typed errors. A receipt compares file hashes and reports any unplanned write.
+- UE Shed never passes source-control switches. `ue-shed loc run <operation> --plan` prints the plan
+  without launching.
+- `pnpm test:localization-processes` passed on UE 5.7, UE 5.8 and UE 4.27. It runs every plan and
+  every supported operation, checks that every changed file was planned, and checks that a
+  mid-run cancel leaves no process behind. On UE 5.7 and UE 5.8 a PO edit followed by `sync`
+  turns the line from `not_synced` to `translated`.
+- 5b (the Workbench actions, with progress and cancel) is next.
+
 ## Phase 6 — Translation editing
 
 1. Add the version 1 change set schema, revalidation against current evidence, and the PO writer

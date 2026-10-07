@@ -3,7 +3,7 @@
 Read saved Unreal localization evidence without Unreal, an asset scan, or Workbench. The package
 has no Game Text dependency. It supports the committed Unreal 4.27, 5.7 and 5.8 format layouts.
 
-- `@ue-shed/localization`: Effect IO services and Layers, plus the pure exports.
+- `@ue-shed/localization`: Effect evidence and Unreal process services and Layers, plus pure exports.
 - `@ue-shed/localization/browser`: schemas, branded identifiers and pure decoders; no Node IO.
 
 The readers cover Dashboard target settings in `Config/DefaultEditor.ini`, authored and generated
@@ -34,6 +34,74 @@ Pure decoders return `Result<value, LocalizationError>`. Their output schemas ow
 Lists and opaque JSON metadata are frozen. Duplicate manifest/archive identities remain separate
 entries with diagnostics; no text matching or conflict resolution happens here.
 
+## Headless Unreal operations
+
+`LocalizationOperations` / `LocalizationOperationsNodeLive` add an optional engine capability.
+`plan(request)` returns version-1 config, argument, step and files-to-write evidence without
+launching or creating a log directory. `run(request)` returns a bounded Effect stream of process
+start, step start/completion, and receipt events. Requests select a parsed target and `gather`,
+`import`, `export`, `compile`, `reports` or `sync`; engine discovery follows the project's
+association, with an optional `explicitEngineRoot` override. The Node-only `@ue-shed/engine`
+dependency owns discovery and process-tree supervision. The browser entry exposes only schemas,
+`planLocalizationOperation`, `availableLocalizationOperations` and log-boundary parsing.
+
+```ts
+import { Effect, Stream } from "effect";
+import { LocalizationOperations, LocalizationOperationsNodeLive } from "@ue-shed/localization";
+
+// `target` is a LocalizationTarget returned by LocalizationEvidence.discover.
+const run = Effect.flatMap(LocalizationOperations, (operations) =>
+	operations
+		.run({ projectRoot: "/project", target, operation: "sync", timeoutSeconds: 1800 })
+		.pipe(Stream.runCollect)
+).pipe(Effect.provide(LocalizationOperationsNodeLive));
+```
+
+Review `plan.files` and arrange checkout in the host before running. Sync supplies Import then
+Compile to one `GatherText -Config=a;b` process. UE 4.27 runs configs in order; UE 5.7/5.8 schedule
+the Import phase before Compile. This avoids a second engine startup. Dashboard operations select
+their corresponding existing configs. A config-only target runs its entire authored recipe;
+`wholeRecipe` and the complete write list make those additional effects explicit. Only operations
+present in its steps are offered; the committed 4.27 recipe offers gather/export/compile/reports,
+not import or sync. UE Shed does not generate recipes or use Unreal's Preview mode as a dry run.
+
+The planner respects section overrides, cultures, PO culture-directory flags, report enable flags,
+resource names and version-specific conflict extensions. It rejects custom commandlets, platform
+splitting and asset repair/cache-report modes whose complete writes are not modeled. Paths must
+stay under the project; engine substitutions, traversal and symlink escapes are rejected. The
+runner re-reads configs before launch and rejects changes from the discovered target.
+
+The commandlet writes a private log outside the project. It is tailed in 64-KiB chunks, with a
+64-event backpressure queue, at most 8192 characters of incomplete line and 40 private excerpt
+lines of 2048 characters each. Logs over 256 MiB fail explicitly. Receipts and failures name the
+retained log; hosts own retention and should keep it out of telemetry. Timeout defaults to 1800
+seconds (explicit range 1–86400). Ending or interrupting the stream terminates the owned process
+tree. Effect interruption remains interruption; a process reported as terminated returns the
+typed `cancelled` failure. Failed cleanup remains visible rather than silently accepting orphans.
+Nonzero exits, timeouts and cancellation are not safe automatic retries: inspect partial output
+and plan again. Editor/file locks are detected only when Unreal reports a sharing violation or
+that another process holds the file; no running-editor presence is guessed.
+
+Receipts compare SHA-256 before/after across durable project files, including changes outside the
+target. Unplanned changes produce `planning_defect` and named diagnostics. The plan explicitly
+lists excluded build/scratch directories (`Saved`, `Intermediate`, `DerivedDataCache`, `Binaries`,
+`.git`, `.vs`, `node_modules`, at any depth); those are outside this content audit. An audit is
+bounded to 100000 entries, 512 MiB per file and 2 GiB total, hashing in 64-KiB buffers. Schema,
+telemetry and error messages carry operation/count/code data; private paths and text occur only
+in explicit plans, receipts and log excerpts. No source-control switches or submissions are used.
+
+CLI: `ue-shed loc run <operation> <project-root> --target <name> [--engine-root <path>] [--plan]
+[--timeout <seconds>] [--json]`. `--plan` prints JSON without launching. A run prints human step
+progress to stderr and a JSON receipt, or schema-versioned NDJSON with `--json`. `reports` means
+Unreal's report commandlet; `loc report` remains UE Shed's own progress/baseline report.
+
+`pnpm test:localization-processes` is separate from portable tests. It uses configured
+`UE_SHED_UNREAL_57_ROOT`, `UE_SHED_UNREAL_58_ROOT` and optional `UE_SHED_UNREAL_427_ROOT`, disposable
+copies, actual owned processes, cancellation and a test-only PO edit followed by sync. It retains
+plans, receipts, copies and logs under `out/localization-processes`. No fixtures ship in the npm
+package. Readers remain read-only; UE Shed never writes manifests, archives, `.locres` or
+`.locmeta`. Only the launched Unreal process produces those outputs.
+
 Targets from Dashboard settings have `source: "dashboard_settings"`. Recipes without Dashboard
 settings have `source: "config_only"`, use the manifest basename as the target name, and retain
 each recipe and step. The native culture is `null` when Dashboard has no native selection.
@@ -56,9 +124,10 @@ Node reads reject project-root
 escapes, external symlinks, and unresolved engine-root tokens. Conflicting output locations return
 an `ambiguous_config` diagnostic rather than selecting one implicitly.
 
-This package is read-only. It exposes no filesystem write or translation edit API. UE Shed never
-writes manifests, archives, `.locres`, or `.locmeta`. A future change-set writer will own PO edits;
-Unreal remains responsible for import, export and compilation.
+The format and evidence APIs are read-only. There is no translation edit API. UE Shed never writes
+manifests, archives, `.locres`, or `.locmeta`; the optional process service creates a private log
+directory and delegates localization outputs to Unreal. A future change-set writer will own PO
+edits. Unreal remains responsible for import, export and compilation.
 
 `LocalizationChange` and `LocalizationChangeSet` are browser-safe version-1 proposal schemas,
 not writers. Each change names target/culture/namespace/key, source, `previousTranslation` (null
@@ -79,4 +148,5 @@ CLI: `ue-shed loc targets <project-root>` prints schema-versioned target setting
 configs, output paths, and culture file presence. `@ue-shed/game-text` consumes the browser entry
 to join saved corpus identities, compute coverage-qualified states, and expose bounded queries and
 `ue-shed loc status` reports. This package remains independent of the corpus. Localization
-processes, editing and Workbench views are later slices.
+editing remains a later slice. Hosts can use the separately enabled process service to import and
+compile translations.

@@ -222,6 +222,23 @@ steps, edits translations through a reviewed change set, and records review prog
 Level 1 is the default experience and needs no engine. Each later level adds a capability; none is
 required to browse, search or check text.
 
+The Level 2 headless capability is `ue-shed loc run <operation> <project-root> --target <name>`.
+Operations are gather/import/export/compile/reports and sync (Import then Compile in one owned
+`GatherText` process). `--plan` returns config files, exact arguments and possible localization
+writes without launching. `--engine-root` selects an explicit installation; discovery otherwise
+uses the project. UE 4.27 and UE 5.7/5.8 use their respective commandlet executables. `--timeout`
+bounds the run; interruption stops its owned process tree. `--json` emits versioned NDJSON step
+progress and a receipt. Config-only targets execute their entire supported recipe, with its full
+write list, and do not offer operations absent from that recipe. The separate Unreal lane tests
+plans, write coverage, cancellation and a PO-to-archive sync in disposable copies.
+
+Receipts audit durable project files by hash, with build/scratch exclusions recorded in the plan.
+An unplanned changed file is a planning-defect diagnostic. Private commandlet logs and bounded
+failure excerpts are explicit evidence, never telemetry. Failed or interrupted runs may have
+partial output and require a fresh plan before retrying. Editor locks are reported when Unreal
+provides a sharing-violation message; editor presence alone does not prove a lock. Platform splits,
+custom commandlets and asset-repair settings are rejected until their writes can be planned.
+
 ### Unreal stays authoritative
 
 - A localization target is the unit of work. UE Shed reads the project's target settings and the

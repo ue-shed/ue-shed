@@ -1,0 +1,7 @@
+{
+	"contract": {
+		"name": "unreal-automation-csv",
+		"version": { "major": 1, "minor": 0 }
+	},
+	"command": "status"
+}

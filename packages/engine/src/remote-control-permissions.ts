@@ -15,6 +15,7 @@ const remoteClasses = {
 	],
 	UEShedCameraAuthoringBridge: ["UEShedCameraAuthoringBridge.UEShedCameraAuthoringBridgeLibrary"],
 	UEShedAuthoring: ["UEShedAuthoring.UEShedAuthoringLibrary"],
+	UEShedAutomation: ["UEShedAutomation.UEShedAutomationLibrary"],
 	UEShedObservatory: ["UEShedObservatoryEditor.UEShedObservatoryLibrary"],
 	UEShedAssetAudits: ["UEShedAssetAudits.UEShedAssetAuditsLibrary"],
 	UEShedScenarios: ["UEShedScenariosEditor.UEShedScenarioLibrary"]

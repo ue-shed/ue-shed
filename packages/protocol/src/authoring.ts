@@ -1,6 +1,6 @@
 import { Schema } from "effect";
 
-export const AUTHORING_SNAPSHOT_CONTRACT_VERSION = { major: 2, minor: 1 } as const;
+export const AUTHORING_SNAPSHOT_CONTRACT_VERSION = { major: 2, minor: 2 } as const;
 export const AUTHORING_MUTATION_CONTRACT_VERSION = { major: 1, minor: 1 } as const;
 export const AUTHORING_TABLE_LIST_CONTRACT_VERSION = { major: 1, minor: 0 } as const;
 

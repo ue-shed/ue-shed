@@ -1,0 +1,156 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$defs": {
+		"AutomationInputRequest": {
+			"type": "object",
+			"properties": {
+				"contract": {
+					"type": "object",
+					"properties": {
+						"name": {
+							"type": "string",
+							"enum": ["unreal-automation-input"]
+						},
+						"version": {
+							"type": "object",
+							"properties": {
+								"major": {
+									"type": "number",
+									"enum": [1]
+								},
+								"minor": {
+									"type": "number",
+									"enum": [0]
+								}
+							},
+							"required": ["major", "minor"],
+							"additionalProperties": false
+						}
+					},
+					"required": ["name", "version"],
+					"additionalProperties": false
+				},
+				"worldObjectPath": {
+					"type": "string",
+					"allOf": [
+						{
+							"minLength": 1
+						},
+						{
+							"maxLength": 2048
+						},
+						{
+							"pattern": "^\\/[^\\u0000-\\u001f]*$"
+						}
+					]
+				},
+				"playerControllerObjectPath": {
+					"type": "string",
+					"allOf": [
+						{
+							"minLength": 1
+						},
+						{
+							"maxLength": 2048
+						},
+						{
+							"pattern": "^\\/[^\\u0000-\\u001f]*$"
+						}
+					]
+				},
+				"actionObjectPath": {
+					"type": "string",
+					"allOf": [
+						{
+							"minLength": 1
+						},
+						{
+							"maxLength": 2048
+						},
+						{
+							"pattern": "^\\/[^\\u0000-\\u001f]*$"
+						}
+					]
+				},
+				"value": {
+					"anyOf": [
+						{
+							"type": "object",
+							"properties": {
+								"kind": {
+									"type": "string",
+									"enum": ["boolean"]
+								},
+								"value": {
+									"type": "boolean"
+								}
+							},
+							"required": ["kind", "value"],
+							"additionalProperties": false
+						},
+						{
+							"type": "object",
+							"properties": {
+								"kind": {
+									"type": "string",
+									"enum": ["axis1d"]
+								},
+								"x": {
+									"type": "number"
+								}
+							},
+							"required": ["kind", "x"],
+							"additionalProperties": false
+						},
+						{
+							"type": "object",
+							"properties": {
+								"kind": {
+									"type": "string",
+									"enum": ["axis2d"]
+								},
+								"x": {
+									"type": "number"
+								},
+								"y": {
+									"type": "number"
+								}
+							},
+							"required": ["kind", "x", "y"],
+							"additionalProperties": false
+						},
+						{
+							"type": "object",
+							"properties": {
+								"kind": {
+									"type": "string",
+									"enum": ["axis3d"]
+								},
+								"x": {
+									"type": "number"
+								},
+								"y": {
+									"type": "number"
+								},
+								"z": {
+									"type": "number"
+								}
+							},
+							"required": ["kind", "x", "y", "z"],
+							"additionalProperties": false
+						}
+					]
+				}
+			},
+			"required": [
+				"contract",
+				"worldObjectPath",
+				"playerControllerObjectPath",
+				"actionObjectPath",
+				"value"
+			],
+			"additionalProperties": false
+		}
+	},
+	"$ref": "#/$defs/AutomationInputRequest"
+}

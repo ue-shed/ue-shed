@@ -1,0 +1,7 @@
+{
+	"contract": {
+		"name": "unreal-automation-players",
+		"version": { "major": 1, "minor": 0 }
+	},
+	"worldObjectPath": "/Engine/Transient.UEShedAutomationFixtureWorld"
+}

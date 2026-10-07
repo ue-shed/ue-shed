@@ -1,0 +1,11 @@
+{
+	"contract": {
+		"name": "unreal-authoring-actor-references",
+		"version": { "major": 1, "minor": 0 }
+	},
+	"worldObjectPath": "/Engine/Transient.UEShedAuthoringFixtureWorld",
+	"tableObjectPath": "/Engine/Transient.UEShedAuthoringFixtureTable",
+	"rowName": "ReferencedRow",
+	"maxActors": 1000,
+	"maxResults": 100
+}

@@ -12,6 +12,7 @@
 #include "Modules/ModuleManager.h"
 #include "UObject/Class.h"
 #include "UObject/UObjectGlobals.h"
+#include "ProfilingDebugging/CsvProfiler.h"
 
 void UUEShedCoreLibrary::GetCapabilityManifest(FString& ResultJson)
 {
@@ -38,7 +39,8 @@ void UUEShedCoreLibrary::GetCapabilityManifest(FString& ResultJson)
  }
  Identity->SetArrayField(TEXT("plugins"), Plugins);
  Root->SetObjectField(TEXT("identity"), Identity);
-	Root->SetStringField(TEXT("producerKind"), TEXT("unreal_editor"));
+	Root->SetStringField(TEXT("producerKind"),
+		GIsEditor ? TEXT("unreal_editor") : TEXT("unreal_runtime"));
 	Root->SetStringField(TEXT("projectName"), FApp::GetProjectName());
 	TArray<TSharedPtr<FJsonValue>> Capabilities;
 	if (FModuleManager::Get().IsModuleLoaded(TEXT("UEShedWorldEditor")))
@@ -62,6 +64,18 @@ void UUEShedCoreLibrary::GetCapabilityManifest(FString& ResultJson)
 		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("authoring.apply.v1")));
 		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("authoring.apply-result.v1")));
 		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("authoring.save.v1")));
+		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("authoring.defaults.v1")));
+		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("authoring.actor-references.v1")));
+	}
+	if (FModuleManager::Get().IsModuleLoaded(TEXT("UEShedAutomation")))
+	{
+		Root->SetStringField(TEXT("automationObjectPath"),
+			TEXT("/Script/UEShedAutomation.Default__UEShedAutomationLibrary"));
+		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("automation.players.v1")));
+		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("automation.input.v1")));
+#if CSV_PROFILER
+		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("automation.csv.v1")));
+#endif
 	}
 	if (FModuleManager::Get().IsModuleLoaded(TEXT("UEShedCameras")))
 	{

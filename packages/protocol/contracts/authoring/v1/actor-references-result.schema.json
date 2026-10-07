@@ -1,0 +1,105 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$defs": {
+		"AuthoringActorReferencesResult": {
+			"type": "object",
+			"properties": {
+				"contract": {
+					"type": "object",
+					"properties": {
+						"name": {
+							"type": "string",
+							"enum": ["unreal-authoring-actor-references"]
+						},
+						"version": {
+							"type": "object",
+							"properties": {
+								"major": {
+									"type": "number",
+									"enum": [1]
+								},
+								"minor": {
+									"type": "number",
+									"enum": [0]
+								}
+							},
+							"required": ["major", "minor"],
+							"additionalProperties": false
+						}
+					},
+					"required": ["name", "version"],
+					"additionalProperties": false
+				},
+				"status": {
+					"type": "string",
+					"enum": ["ok", "rejected"]
+				},
+				"worldObjectPath": {
+					"type": "string"
+				},
+				"tableObjectPath": {
+					"type": "string"
+				},
+				"rowName": {
+					"type": "string"
+				},
+				"actorObjectPaths": {
+					"type": "array",
+					"items": {
+						"type": "string",
+						"allOf": [
+							{
+								"minLength": 1
+							}
+						]
+					}
+				},
+				"scannedActorCount": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 0
+						}
+					]
+				},
+				"isComplete": {
+					"type": "boolean"
+				},
+				"errors": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"properties": {
+							"code": {
+								"type": "string",
+								"allOf": [
+									{
+										"minLength": 1
+									}
+								]
+							},
+							"message": {
+								"type": "string"
+							}
+						},
+						"required": ["code", "message"],
+						"additionalProperties": false
+					}
+				}
+			},
+			"required": [
+				"contract",
+				"status",
+				"worldObjectPath",
+				"tableObjectPath",
+				"rowName",
+				"actorObjectPaths",
+				"scannedActorCount",
+				"isComplete",
+				"errors"
+			],
+			"additionalProperties": false
+		}
+	},
+	"$ref": "#/$defs/AuthoringActorReferencesResult"
+}

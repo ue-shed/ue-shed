@@ -15,10 +15,14 @@
 #include "Serialization/JsonWriter.h"
 #include "UObject/SavePackage.h"
 #include "UObject/SoftObjectPtr.h"
+#include "UObject/StructOnScope.h"
 #include "UObject/UnrealType.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
+#include "Kismet2/StructureEditorUtils.h"
 #include "Misc/AutomationTest.h"
+#include "Tests/UEShedAuthoringTestTypes.h"
+#include "UserDefinedStructure/UserDefinedStructEditorData.h"
 #endif
 
 namespace
@@ -109,7 +113,10 @@ TSharedRef<FJsonObject> ValueObject(const TCHAR* Kind)
 	return Result;
 }
 
-TSharedRef<FJsonObject> DescribePropertyType(const FProperty* Property);
+TSharedPtr<FJsonValue> SerializePropertyValue(
+	const FProperty* Property, const void* Value, bool& bPartial);
+TSharedRef<FJsonObject> DescribePropertyType(
+	const FProperty* Property, const void* DefaultValue = nullptr);
 
 TSharedRef<FJsonObject> DescribeEnum(const UEnum* Enum)
 {
@@ -147,14 +154,15 @@ void AddStringMetadata(
 	}
 }
 
-TSharedRef<FJsonObject> DescribeField(const FProperty* Property)
+TSharedRef<FJsonObject> DescribeField(const FProperty* Property, const void* Defaults)
 {
 	const bool bReadOnly = Property->HasAnyPropertyFlags(CPF_EditConst);
 	const TSharedRef<FJsonObject> Result = MakeShared<FJsonObject>();
 	Result->SetStringField(TEXT("id"), TEXT("field:") + Property->GetAuthoredName());
 	Result->SetStringField(TEXT("name"), Property->GetAuthoredName());
 	Result->SetStringField(TEXT("typeName"), Property->GetClass()->GetName());
-	Result->SetObjectField(TEXT("type"), DescribePropertyType(Property));
+	const void* FieldDefault = Defaults ? Property->ContainerPtrToValuePtr<void>(Defaults) : nullptr;
+	Result->SetObjectField(TEXT("type"), DescribePropertyType(Property, FieldDefault));
 	Result->SetStringField(TEXT("presence"), TEXT("required"));
 
 	const TSharedRef<FJsonObject> Editability = MakeShared<FJsonObject>();
@@ -198,11 +206,21 @@ TSharedRef<FJsonObject> DescribeField(const FProperty* Property)
 
 	const TSharedRef<FJsonObject> DefaultValue = MakeShared<FJsonObject>();
 	DefaultValue->SetStringField(TEXT("status"), TEXT("unknown"));
+	if (FieldDefault && Property->ArrayDim == 1)
+	{
+		bool bPartial = false;
+		const TSharedPtr<FJsonValue> Value = SerializePropertyValue(Property, FieldDefault, bPartial);
+		if (!bPartial)
+		{
+			DefaultValue->SetStringField(TEXT("status"), TEXT("known"));
+			DefaultValue->SetField(TEXT("value"), Value);
+		}
+	}
 	Result->SetObjectField(TEXT("defaultValue"), DefaultValue);
 	return Result;
 }
 
-TSharedRef<FJsonObject> DescribePropertyType(const FProperty* Property)
+TSharedRef<FJsonObject> DescribePropertyType(const FProperty* Property, const void* DefaultValue)
 {
 	if (const FEnumProperty* Enum = CastField<FEnumProperty>(Property))
 	{
@@ -277,10 +295,14 @@ TSharedRef<FJsonObject> DescribePropertyType(const FProperty* Property)
 		}
 		const TSharedRef<FJsonObject> Result = ValueObject(TEXT("struct"));
 		Result->SetStringField(TEXT("structPath"), Struct->Struct->GetPathName());
+		// Initialize through UScriptStruct so native constructors and UserDefinedStruct
+		// authored defaults follow the same engine path as a newly created row.
+		const FStructOnScope Defaults(DefaultValue ? nullptr : Struct->Struct);
+		const void* StructDefaults = DefaultValue ? DefaultValue : Defaults.GetStructMemory();
 		TArray<TSharedPtr<FJsonValue>> Fields;
 		for (TFieldIterator<FProperty> It(Struct->Struct); It; ++It)
 		{
-			Fields.Add(MakeShared<FJsonValueObject>(DescribeField(*It)));
+			Fields.Add(MakeShared<FJsonValueObject>(DescribeField(*It, StructDefaults)));
 		}
 		Result->SetArrayField(TEXT("fields"), Fields);
 		return Result;
@@ -316,7 +338,7 @@ TSharedPtr<FJsonValue> SerializePropertyValue(
 TSharedPtr<FJsonValue> SerializeField(const FProperty* Property, const void* Container, bool& bPartial)
 {
 	const TSharedRef<FJsonObject> Field = MakeShared<FJsonObject>();
-	Field->SetStringField(TEXT("name"), Property->GetName());
+	Field->SetStringField(TEXT("name"), Property->GetAuthoredName());
 	Field->SetStringField(TEXT("typeName"), Property->GetClass()->GetName());
 	Field->SetField(TEXT("value"), SerializePropertyValue(
 		Property, Property->ContainerPtrToValuePtr<void>(Container), bPartial));
@@ -326,6 +348,14 @@ TSharedPtr<FJsonValue> SerializeField(const FProperty* Property, const void* Con
 TSharedPtr<FJsonValue> SerializePropertyValue(
 	const FProperty* Property, const void* Value, bool& bPartial)
 {
+	if (Property->ArrayDim > 1)
+	{
+		bPartial = true;
+		const TSharedRef<FJsonObject> Result = ValueObject(TEXT("unsupported"));
+		Result->SetNumberField(TEXT("byteSize"), Property->GetSize());
+		Result->SetStringField(TEXT("reason"), TEXT("Static arrays have no normalized authoring codec."));
+		return MakeShared<FJsonValueObject>(Result);
+	}
 	if (const FBoolProperty* Bool = CastField<FBoolProperty>(Property))
 	{
 		const TSharedRef<FJsonObject> Result = ValueObject(TEXT("bool"));
@@ -605,6 +635,18 @@ bool FUEShedAuthoringCanonicalJsonTest::RunTest(const FString& Parameters)
 }
 #endif
 
+FProperty* FindRowProperty(const UStruct* Struct, const FString& Name)
+{
+	// FindPropertyByName only matches the generated field FName in both supported
+	// engines. Snapshot fields use authored names for Blueprint structs.
+	if (FProperty* Property = Struct->FindPropertyByName(FName(*Name))) return Property;
+	for (TFieldIterator<FProperty> It(Struct); It; ++It)
+	{
+		if (It->GetAuthoredName() == Name || It->GetName() == Name) return *It;
+	}
+	return nullptr;
+}
+
 bool AssignPropertyValue(
 	const FProperty* Property, void* Value, const TSharedPtr<FJsonObject>& Input, FString& Error)
 {
@@ -826,7 +868,7 @@ bool AssignPropertyValue(
 		{
 			const TSharedPtr<FJsonObject> Field = FieldValue->AsObject();
 			const FString FieldName = Field->GetStringField(TEXT("name"));
-			FProperty* Child = Struct->Struct->FindPropertyByName(FName(FieldName));
+			FProperty* Child = FindRowProperty(Struct->Struct, FieldName);
 			if (!Child || !AssignPropertyValue(Child, Child->ContainerPtrToValuePtr<void>(Value),
 				Field->GetObjectField(TEXT("value")), Error))
 			{
@@ -945,7 +987,7 @@ TSharedRef<FJsonObject> BuildTableSnapshot(const UDataTable* Table)
 	Contract->SetStringField(TEXT("name"), TEXT("unreal-authoring"));
 	const TSharedRef<FJsonObject> Version = MakeShared<FJsonObject>();
 	Version->SetNumberField(TEXT("major"), 2);
-	Version->SetNumberField(TEXT("minor"), 1);
+	Version->SetNumberField(TEXT("minor"), 2);
 	Contract->SetObjectField(TEXT("version"), Version);
 	const TSharedRef<FJsonObject> Authority = MakeShared<FJsonObject>();
 	Authority->SetStringField(TEXT("kind"), TEXT("live_editor"));
@@ -971,9 +1013,10 @@ TSharedRef<FJsonObject> BuildTableSnapshot(const UDataTable* Table)
 	Schema->SetStringField(TEXT("status"), TEXT("available"));
 	Schema->SetStringField(TEXT("source"), TEXT("live_reflection"));
 	TArray<TSharedPtr<FJsonValue>> SchemaFields;
+	const FStructOnScope Defaults(Table->GetRowStruct());
 	for (TFieldIterator<FProperty> It(Table->GetRowStruct()); It; ++It)
 	{
-		SchemaFields.Add(MakeShared<FJsonValueObject>(DescribeField(*It)));
+		SchemaFields.Add(MakeShared<FJsonValueObject>(DescribeField(*It, Defaults.GetStructMemory())));
 	}
 	Schema->SetArrayField(TEXT("fields"), SchemaFields);
 	TableJson->SetObjectField(TEXT("schema"), Schema);
@@ -1098,7 +1141,7 @@ bool ApplyCommand(
 		uint8* const* RowData = RowName ? Table->GetRowMap().Find(*RowName) : nullptr;
 		if (!RowData) { Error = FString::Printf(TEXT("unknown row %s"), *RowId); return false; }
 		const FString FieldName = Body->GetStringField(TEXT("fieldName"));
-		FProperty* Property = Table->GetRowStruct()->FindPropertyByName(FName(FieldName));
+		FProperty* Property = FindRowProperty(Table->GetRowStruct(), FieldName);
 		if (!Property) { Error = FString::Printf(TEXT("unknown field %s"), *FieldName); return false; }
 		bool bPartial = false;
 		const TSharedPtr<FJsonValue> Current = SerializePropertyValue(
@@ -1133,7 +1176,7 @@ bool ApplyCommand(
 		{
 			const TSharedPtr<FJsonObject> Field = FieldValue->AsObject();
 			const FString FieldName = Field->GetStringField(TEXT("name"));
-			FProperty* Property = Table->GetRowStruct()->FindPropertyByName(FName(FieldName));
+			FProperty* Property = FindRowProperty(Table->GetRowStruct(), FieldName);
 			if (!Property || !AssignPropertyValue(Property,
 				Property->ContainerPtrToValuePtr<void>(RowData),
 				Field->GetObjectField(TEXT("value")), Error))
@@ -1555,3 +1598,116 @@ void UUEShedAuthoringLibrary::Save(const FString& RequestJson, FString& ResultJs
 	Result->SetArrayField(TEXT("packages"), Packages);
 	ResultJson = JsonString(Result);
 }
+
+#if WITH_DEV_AUTOMATION_TESTS
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUEShedAuthoringDefaultsCodecTest,
+	"UEShed.Authoring.DefaultsCodec",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FUEShedAuthoringDefaultsCodecTest::RunTest(const FString& Parameters)
+{
+	UDataTable* Table = NewObject<UDataTable>(GetTransientPackage());
+	Table->RowStruct = FUEShedAuthoringTestRow::StaticStruct();
+	const TSharedPtr<FJsonObject> Snapshot = BuildTableSnapshot(Table);
+	TArray<TSharedPtr<FJsonValue>> Fields;
+	for (const TSharedPtr<FJsonValue>& Value : Snapshot->GetObjectField(TEXT("table"))
+		->GetObjectField(TEXT("schema"))->GetArrayField(TEXT("fields")))
+	{
+		const TSharedPtr<FJsonObject> SchemaField = Value->AsObject();
+		const TSharedPtr<FJsonObject> Default = SchemaField->GetObjectField(TEXT("defaultValue"));
+		if (Default->GetStringField(TEXT("status")) != TEXT("known")) continue;
+		const TSharedRef<FJsonObject> Field = MakeShared<FJsonObject>();
+		Field->SetStringField(TEXT("name"), SchemaField->GetStringField(TEXT("name")));
+		Field->SetField(TEXT("value"), Default->TryGetField(TEXT("value")));
+		Fields.Add(MakeShared<FJsonValueObject>(Field));
+	}
+	const TSharedRef<FJsonObject> Row = MakeShared<FJsonObject>();
+	Row->SetStringField(TEXT("id"), TEXT("row:Created"));
+	Row->SetStringField(TEXT("name"), TEXT("Created"));
+	Row->SetArrayField(TEXT("fields"), Fields);
+	const TSharedRef<FJsonObject> Body = MakeShared<FJsonObject>();
+	Body->SetStringField(TEXT("kind"), TEXT("add_row"));
+	Body->SetObjectField(TEXT("row"), Row);
+	Body->SetNumberField(TEXT("atIndex"), 0);
+	const TSharedRef<FJsonObject> Command = MakeShared<FJsonObject>();
+	Command->SetObjectField(TEXT("body"), Body);
+	TMap<FString, FName> RowNames;
+	FString Error;
+	if (!TestTrue(TEXT("Published defaults create a row through the real command decoder"),
+		ApplyCommand(Table, Command, RowNames, Error)))
+	{
+		AddError(Error);
+		return false;
+	}
+	const FUEShedAuthoringTestRow* Created = Table->FindRow<FUEShedAuthoringTestRow>(
+		TEXT("Created"), TEXT("DefaultsCodecTest"));
+	if (!TestNotNull(TEXT("Row is created"), Created)) return false;
+	TestEqual(TEXT("Integer survives typed defaults decoding"), Created->Count, 73);
+	TestEqual(TEXT("String survives typed defaults decoding"),
+		Created->Label, FString(TEXT("native-default")));
+	TestEqual(TEXT("Nested default survives typed defaults decoding"),
+		Created->Nested.Tag, FString(TEXT("nested-default")));
+	TestEqual(TEXT("Container survives typed defaults decoding"), Created->Numbers.Num(), 2);
+	TestEqual(TEXT("First container value survives typed defaults decoding"), Created->Numbers[0], 3);
+	TestEqual(TEXT("Second container value survives typed defaults decoding"), Created->Numbers[1], 7);
+
+	UUserDefinedStruct* BlueprintStruct = FStructureEditorUtils::CreateUserDefinedStruct(
+		GetTransientPackage(), MakeUniqueObjectName(GetTransientPackage(),
+			UUserDefinedStruct::StaticClass()), RF_Transient);
+	if (!TestNotNull(TEXT("Create Blueprint struct for default round trip"), BlueprintStruct))
+		return false;
+	const FGuid Variable = FStructureEditorUtils::GetVarDesc(BlueprintStruct)[0].VarGuid;
+	if (!TestTrue(TEXT("Author Blueprint default for round trip"),
+		FStructureEditorUtils::ChangeVariableDefaultValue(BlueprintStruct, Variable, TEXT("True"))))
+		return false;
+	UDataTable* BlueprintTable = NewObject<UDataTable>(GetTransientPackage());
+	BlueprintTable->RowStruct = BlueprintStruct;
+	const TSharedPtr<FJsonObject> BlueprintSnapshot = BuildTableSnapshot(BlueprintTable);
+	const TSharedPtr<FJsonObject> Descriptor = BlueprintSnapshot->GetObjectField(TEXT("table"))
+		->GetObjectField(TEXT("schema"))->GetArrayField(TEXT("fields"))[0]->AsObject();
+	const TSharedRef<FJsonObject> BlueprintField = MakeShared<FJsonObject>();
+	BlueprintField->SetStringField(TEXT("name"), Descriptor->GetStringField(TEXT("name")));
+	BlueprintField->SetField(TEXT("value"),
+		Descriptor->GetObjectField(TEXT("defaultValue"))->TryGetField(TEXT("value")));
+	Row->SetArrayField(TEXT("fields"), { MakeShared<FJsonValueObject>(BlueprintField) });
+	RowNames.Empty();
+	if (!TestTrue(TEXT("Blueprint defaults create a row through the command decoder"),
+		ApplyCommand(BlueprintTable, Command, RowNames, Error)))
+	{
+		AddError(Error);
+		return false;
+	}
+	const TSharedPtr<FJsonObject> CreatedBlueprintSnapshot = BuildTableSnapshot(BlueprintTable);
+	const TSharedPtr<FJsonObject> CreatedField = CreatedBlueprintSnapshot->GetObjectField(TEXT("table"))
+		->GetArrayField(TEXT("rows"))[0]->AsObject()->GetArrayField(TEXT("fields"))[0]->AsObject();
+	TestEqual(TEXT("Blueprint row names and schema authored names match"),
+		CreatedField->GetStringField(TEXT("name")), Descriptor->GetStringField(TEXT("name")));
+	TestTrue(TEXT("Blueprint boolean default survives typed decoding"),
+		CreatedField->GetObjectField(TEXT("value"))->GetBoolField(TEXT("value")));
+	FStructOnScope NestedBlueprintValue(BlueprintStruct);
+	const TUniquePtr<FStructProperty> NestedBlueprintProperty = MakeUnique<FStructProperty>(
+		BlueprintStruct, TEXT("NestedBlueprintValue"), RF_NoFlags);
+	NestedBlueprintProperty->Struct = BlueprintStruct;
+	const TSharedRef<FJsonObject> NestedInput = ValueObject(TEXT("struct"));
+	const TSharedRef<FJsonObject> NestedField = MakeShared<FJsonObject>();
+	NestedField->SetStringField(TEXT("name"), Descriptor->GetStringField(TEXT("name")));
+	const TSharedRef<FJsonObject> FalseValue = ValueObject(TEXT("bool"));
+	FalseValue->SetBoolField(TEXT("value"), false);
+	NestedField->SetObjectField(TEXT("value"), FalseValue);
+	NestedInput->SetArrayField(TEXT("fields"), { MakeShared<FJsonValueObject>(NestedField) });
+	if (!TestTrue(TEXT("Nested Blueprint authored field names decode"),
+		AssignPropertyValue(NestedBlueprintProperty.Get(), NestedBlueprintValue.GetStructMemory(),
+			NestedInput, Error)))
+	{
+		AddError(Error);
+		return false;
+	}
+	const FBoolProperty* BlueprintBool = CastField<FBoolProperty>(
+		FindRowProperty(BlueprintStruct, Descriptor->GetStringField(TEXT("name"))));
+	if (!TestNotNull(TEXT("Authored Blueprint boolean field resolves"), BlueprintBool)) return false;
+	TestFalse(TEXT("Nested Blueprint field mutation reaches the initialized value"),
+		BlueprintBool->GetPropertyValue(BlueprintBool->ContainerPtrToValuePtr<void>(
+			NestedBlueprintValue.GetStructMemory())));
+	return true;
+}
+#endif

@@ -56,19 +56,20 @@ should follow [Website and illustrated guides](engineering/website.md).
 - [Camera arrangement authoring](products/camera-authoring.md) — actor-scoped drafts, optional native
   editing, Unreal RC synchronization, and recoverable approval.
 
-| Document                                                  | Domain                               |
-| --------------------------------------------------------- | ------------------------------------ |
-| [data-authoring.md](products/data-authoring.md)           | DataTable authoring product          |
-| [hosting-grill.md](products/hosting-grill.md)             | Hosting / authoring grill contract   |
-| [hosting-conformance.md](products/hosting-conformance.md) | Hosting conformance gates            |
-| [map-review.md](products/map-review.md)                   | Map Review product                   |
-| [map-capture.md](products/map-capture.md)                 | Orthographic map tile pyramids       |
-| [map-history.md](products/map-history.md)                 | Perforce-backed saved map history    |
-| [config-explorer.md](products/config-explorer.md)         | Saved Unreal config provenance       |
-| [game-text.md](products/game-text.md)                     | Saved text corpus and quality review |
-| [scenario-studio.md](products/scenario-studio.md)         | Live PIE scenario execution          |
-| [project-custodian.md](products/project-custodian.md)     | Reclaimable Unreal workspace storage |
-| [niagara-preview.md](products/niagara-preview.md)         | Portable Niagara preview evidence    |
+| Document                                                  | Domain                                                  |
+| --------------------------------------------------------- | ------------------------------------------------------- |
+| [data-authoring.md](products/data-authoring.md)           | DataTable authoring product                             |
+| [unreal-automation.md](products/unreal-automation.md)     | Live defaults, actor references, input, and CSV capture |
+| [hosting-grill.md](products/hosting-grill.md)             | Hosting / authoring grill contract                      |
+| [hosting-conformance.md](products/hosting-conformance.md) | Hosting conformance gates                               |
+| [map-review.md](products/map-review.md)                   | Map Review product                                      |
+| [map-capture.md](products/map-capture.md)                 | Orthographic map tile pyramids                          |
+| [map-history.md](products/map-history.md)                 | Perforce-backed saved map history                       |
+| [config-explorer.md](products/config-explorer.md)         | Saved Unreal config provenance                          |
+| [game-text.md](products/game-text.md)                     | Saved text corpus and quality review                    |
+| [scenario-studio.md](products/scenario-studio.md)         | Live PIE scenario execution                             |
+| [project-custodian.md](products/project-custodian.md)     | Reclaimable Unreal workspace storage                    |
+| [niagara-preview.md](products/niagara-preview.md)         | Portable Niagara preview evidence                       |
 
 ## Decisions
 

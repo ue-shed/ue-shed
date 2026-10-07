@@ -18,6 +18,7 @@ export const CompanionCapabilityManifest = Schema.Struct({
 	assetAuditsObjectPath: Schema.optional(Schema.String),
 	assetNavigationObjectPath: Schema.optional(Schema.String),
 	authoringObjectPath: Schema.optional(Schema.String),
+	automationObjectPath: Schema.optionalKey(Schema.NonEmptyString),
 	cameraReviewObjectPath: Schema.optional(Schema.String),
 	cameraAuthoringObjectPath: Schema.optionalKey(Schema.String),
 	camerasObjectPath: Schema.optional(Schema.String),
@@ -49,7 +50,7 @@ export const CompanionCapabilityManifest = Schema.Struct({
 			maxTilesPerRequest: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))
 		})
 	),
-	producerKind: Schema.Literal("unreal_editor"),
+	producerKind: Schema.Literals(["unreal_editor", "unreal_runtime"]),
 	projectName: Schema.optional(Schema.String),
 	schemaVersion: Schema.Literal(1)
 }).annotate({ identifier: "CompanionCapabilityManifest" });

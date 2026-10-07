@@ -1,0 +1,81 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$defs": {
+		"AutomationCsvResult": {
+			"type": "object",
+			"properties": {
+				"contract": {
+					"type": "object",
+					"properties": {
+						"name": {
+							"type": "string",
+							"enum": ["unreal-automation-csv"]
+						},
+						"version": {
+							"type": "object",
+							"properties": {
+								"major": {
+									"type": "number",
+									"enum": [1]
+								},
+								"minor": {
+									"type": "number",
+									"enum": [0]
+								}
+							},
+							"required": ["major", "minor"],
+							"additionalProperties": false
+						}
+					},
+					"required": ["name", "version"],
+					"additionalProperties": false
+				},
+				"status": {
+					"type": "string",
+					"enum": ["ok", "rejected"]
+				},
+				"state": {
+					"type": "string",
+					"enum": ["idle", "starting", "capturing", "stopping", "unavailable"]
+				},
+				"outputDirectory": {
+					"type": "string"
+				},
+				"outputFile": {
+					"anyOf": [
+						{
+							"type": "string"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"errors": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"properties": {
+							"code": {
+								"type": "string",
+								"allOf": [
+									{
+										"minLength": 1
+									}
+								]
+							},
+							"message": {
+								"type": "string"
+							}
+						},
+						"required": ["code", "message"],
+						"additionalProperties": false
+					}
+				}
+			},
+			"required": ["contract", "status", "state", "outputDirectory", "outputFile", "errors"],
+			"additionalProperties": false
+		}
+	},
+	"$ref": "#/$defs/AutomationCsvResult"
+}

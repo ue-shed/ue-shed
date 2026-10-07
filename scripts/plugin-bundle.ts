@@ -118,6 +118,36 @@ export const CAMERA_AUTHORING_PLUGIN_IDS = Object.freeze([
 export const OBSERVATORY_PLUGIN_IDS = Object.freeze(["UEShedCore", "UEShedObservatory"]);
 /** Exact Unreal plugin graph for the headless Niagara preview capability. */
 export const NIAGARA_PLUGIN_IDS = Object.freeze(["UEShedNiagara"]);
+/** Optional DataTable authoring and runtime automation capabilities for an existing host. */
+export const AUTHORING_AUTOMATION_PLUGIN_IDS = Object.freeze([
+	"UEShedCore",
+	"UEShedAuthoring",
+	"UEShedAutomation"
+]);
+
+function bundleContracts(pluginIds: ReadonlySet<string>) {
+	const contracts: Array<{ name: string; version: { major: number; minor: number } }> = [];
+	if (pluginIds.has("UEShedCameras")) {
+		contracts.push({ name: "ue-shed-review-capture", version: { major: 1, minor: 5 } });
+	}
+	if (pluginIds.has("UEShedAuthoring")) {
+		contracts.push(
+			{ name: "unreal-authoring", version: { major: 2, minor: 2 } },
+			{ name: "unreal-authoring-table-list", version: { major: 1, minor: 0 } },
+			{ name: "unreal-authoring-apply", version: { major: 1, minor: 1 } },
+			{ name: "unreal-authoring-save", version: { major: 1, minor: 1 } },
+			{ name: "unreal-authoring-actor-references", version: { major: 1, minor: 0 } }
+		);
+	}
+	if (pluginIds.has("UEShedAutomation")) {
+		contracts.push(
+			{ name: "unreal-automation-players", version: { major: 1, minor: 0 } },
+			{ name: "unreal-automation-input", version: { major: 1, minor: 0 } },
+			{ name: "unreal-automation-csv", version: { major: 1, minor: 0 } }
+		);
+	}
+	return contracts;
+}
 
 const supportedEnginePluginIds = new Set(["EnhancedInput", "Niagara"]);
 
@@ -342,6 +372,10 @@ async function readDescriptors({
 	if (descriptors.length === 0)
 		throw new Error(`No Unreal plugin descriptors found below ${pluginRoot}.`);
 	const ids = new Set(descriptors.map((descriptor) => descriptor.id));
+	for (const id of requested ?? []) {
+		if (!ids.has(id))
+			throw new Error(`Requested plugin ${id} is absent from the source bundle.`);
+	}
 	for (const descriptor of descriptors) {
 		const missing = descriptor.dependencies.filter((dependency) => !ids.has(dependency));
 		if (missing.length > 0) {
@@ -593,12 +627,7 @@ export async function buildPluginBundle({
 			...(attestedCandidate
 				? {
 						compatibility: { kind: "source", unrealVersionRange: unrealRange },
-						contracts: [
-							{
-								name: "ue-shed-review-capture",
-								version: { major: 1, minor: 5 }
-							}
-						],
+						contracts: bundleContracts(pluginIds),
 						packages: candidateManifestData.packages
 					}
 				: { unreal: unrealRange }),

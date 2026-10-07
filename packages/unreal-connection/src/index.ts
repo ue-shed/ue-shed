@@ -1,4 +1,12 @@
 import {
+	AutomationCsvRequest,
+	AutomationInputRequest,
+	AutomationPlayersRequest,
+	AuthoringActorReferencesRequest,
+	decodeAutomationCsvResult,
+	decodeAutomationInputResult,
+	decodeAutomationPlayersResult,
+	decodeAuthoringActorReferencesResult,
 	decodeAuthoringApplyResult,
 	decodeAuthoringSaveResult,
 	decodeAuthoringTableList,
@@ -10,6 +18,9 @@ import {
 	type AuthoringSaveRequest,
 	type AuthoringSaveResult,
 	type AuthoringTableSnapshot,
+	type AutomationCsvResult,
+	type AutomationInputResult,
+	type AutomationPlayersResult,
 	type CompanionCapabilityManifest,
 	type EditorAssetLocateResult
 } from "@ue-shed/protocol";
@@ -66,6 +77,239 @@ export interface UnrealAuthoringConnection {
 		request: AuthoringSaveRequest
 	) => Effect.Effect<AuthoringSaveResult, UnrealConnectionError>;
 }
+
+export interface UnrealAutomationConnection {
+	readonly endpoint: string;
+	readonly manifest: CompanionCapabilityManifest;
+	readonly listPlayers: (
+		request: AutomationPlayersRequest
+	) => Effect.Effect<AutomationPlayersResult, UnrealConnectionError | UnrealCapabilityError>;
+	readonly injectInput: (
+		request: AutomationInputRequest
+	) => Effect.Effect<AutomationInputResult, UnrealConnectionError | UnrealCapabilityError>;
+	readonly csvProfiler: (
+		request: AutomationCsvRequest
+	) => Effect.Effect<AutomationCsvResult, UnrealConnectionError | UnrealCapabilityError>;
+}
+
+function requireCapability(
+	manifest: CompanionCapabilityManifest,
+	capability: string,
+	objectPath: string | undefined
+): Effect.Effect<string, UnrealCapabilityError> {
+	if (!manifest.capabilities.includes(capability) || !objectPath) {
+		return Effect.fail(
+			new UnrealCapabilityError({
+				capability,
+				message: `Connected producer does not advertise ${capability} with an object path.`
+			})
+		);
+	}
+	return Effect.succeed(objectPath);
+}
+
+function validateRequest<A, DecodeError>(
+	input: A,
+	endpoint: string,
+	operation: string,
+	decode: (value: A) => Effect.Effect<A, DecodeError>
+): Effect.Effect<A, UnrealConnectionError> {
+	return decode(input).pipe(
+		Effect.mapError(
+			(cause) =>
+				new UnrealConnectionError({
+					endpoint,
+					operation,
+					message: `Invalid ${operation} request: ${String(cause)}`,
+					retrySafe: false
+				})
+		),
+		Effect.flatMap((request) =>
+			new TextEncoder().encode(JSON.stringify(request)).byteLength <= 16384
+				? Effect.succeed(request)
+				: Effect.fail(
+						new UnrealConnectionError({
+							endpoint,
+							operation,
+							message: "Companion requests are limited to 16384 UTF-8 bytes.",
+							retrySafe: false
+						})
+					)
+		)
+	);
+}
+
+function resultMismatch(endpoint: string, operation: string): UnrealConnectionError {
+	return new UnrealConnectionError({
+		endpoint,
+		operation,
+		message: "The producer response does not match the selected target or request limits.",
+		retrySafe: false
+	});
+}
+
+/** Query one explicitly selected loaded world; partial scans remain visible. */
+export const findUnrealActorsReferencingRow = Effect.fn(
+	"UnrealConnection.findActorsReferencingRow"
+)(function* (options: {
+	readonly endpoint: string;
+	readonly request: AuthoringActorReferencesRequest;
+}) {
+	const endpoint = normalizedEndpoint(options.endpoint);
+	const operation = "unreal.authoring.actor_references";
+	const request = yield* validateRequest(
+		options.request,
+		endpoint,
+		operation,
+		Schema.decodeUnknownEffect(AuthoringActorReferencesRequest)
+	);
+	const client = yield* RemoteControlClient;
+	const manifest = yield* decodeResult(
+		remoteCall(client, endpoint, coreObjectPath, "GetCapabilityManifest", {}),
+		endpoint,
+		"capability manifest",
+		decodeCompanionCapabilityManifest
+	);
+	const objectPath = yield* requireCapability(
+		manifest,
+		"authoring.actor-references.v1",
+		manifest.authoringObjectPath
+	);
+	const result = yield* decodeResult(
+		remoteCall(client, endpoint, objectPath, "FindActorsReferencingRow", {
+			RequestJson: JSON.stringify(request)
+		}),
+		endpoint,
+		operation,
+		decodeAuthoringActorReferencesResult
+	);
+	if (
+		result.worldObjectPath !== request.worldObjectPath ||
+		result.tableObjectPath !== request.tableObjectPath ||
+		result.rowName !== request.rowName ||
+		result.scannedActorCount > request.maxActors ||
+		result.actorObjectPaths.length > request.maxResults ||
+		(result.status === "rejected" && result.isComplete)
+	) {
+		return yield* Effect.fail(resultMismatch(endpoint, operation));
+	}
+	return result;
+});
+
+/** Optional runtime capabilities negotiate independently; mutation failures are never replay-safe. */
+export const connectUnrealAutomation = Effect.fn("UnrealConnection.connectAutomation")(function* (
+	configuredEndpoint: string
+) {
+	const endpoint = normalizedEndpoint(configuredEndpoint);
+	const client = yield* RemoteControlClient;
+	const manifest = yield* decodeResult(
+		remoteCall(client, endpoint, coreObjectPath, "GetCapabilityManifest", {}),
+		endpoint,
+		"capability manifest",
+		decodeCompanionCapabilityManifest
+	);
+	const call = <A, DecodeError>(
+		capability: string,
+		functionName: string,
+		parameters: Schema.JsonObject,
+		decode: (input: Schema.Json) => Effect.Effect<A, DecodeError>,
+		isMutation: boolean
+	) =>
+		requireCapability(manifest, capability, manifest.automationObjectPath).pipe(
+			Effect.flatMap((objectPath) =>
+				decodeResult(
+					remoteCall(client, endpoint, objectPath, functionName, parameters).pipe(
+						Effect.mapError((cause) =>
+							isMutation
+								? new UnrealConnectionError({
+										endpoint: cause.endpoint,
+										operation: cause.operation,
+										message: cause.message,
+										retrySafe: false,
+										...(cause.status === undefined
+											? undefined
+											: { status: cause.status })
+									})
+								: cause
+						)
+					),
+					endpoint,
+					functionName,
+					decode
+				)
+			)
+		);
+	const listPlayers = Effect.fn("UnrealAutomation.listPlayers")(function* (
+		input: AutomationPlayersRequest
+	) {
+		const request = yield* validateRequest(
+			input,
+			endpoint,
+			"ListPlayers",
+			Schema.decodeUnknownEffect(AutomationPlayersRequest)
+		);
+		const result = yield* call(
+			"automation.players.v1",
+			"ListPlayers",
+			{ RequestJson: JSON.stringify(request) },
+			decodeAutomationPlayersResult,
+			false
+		);
+		if (result.worldObjectPath !== request.worldObjectPath) {
+			return yield* Effect.fail(resultMismatch(endpoint, "ListPlayers"));
+		}
+		return result;
+	});
+	const injectInput = Effect.fn("UnrealAutomation.injectInput")(function* (
+		input: AutomationInputRequest
+	) {
+		const request = yield* validateRequest(
+			input,
+			endpoint,
+			"InjectInput",
+			Schema.decodeUnknownEffect(AutomationInputRequest)
+		);
+		const result = yield* call(
+			"automation.input.v1",
+			"InjectInput",
+			{ RequestJson: JSON.stringify(request) },
+			decodeAutomationInputResult,
+			true
+		);
+		if (
+			result.worldObjectPath !== request.worldObjectPath ||
+			result.playerControllerObjectPath !== request.playerControllerObjectPath ||
+			result.actionObjectPath !== request.actionObjectPath
+		) {
+			return yield* Effect.fail(resultMismatch(endpoint, "InjectInput"));
+		}
+		return result;
+	});
+	const csvProfiler = Effect.fn("UnrealAutomation.csvProfiler")(function* (
+		input: AutomationCsvRequest
+	) {
+		const request = yield* validateRequest(
+			input,
+			endpoint,
+			"CsvProfiler",
+			Schema.decodeUnknownEffect(AutomationCsvRequest)
+		);
+		return yield* call(
+			"automation.csv.v1",
+			"CsvProfiler",
+			{ RequestJson: JSON.stringify(request) },
+			decodeAutomationCsvResult,
+			request.command !== "status"
+		);
+	});
+	return {
+		endpoint,
+		manifest,
+		listPlayers,
+		injectInput,
+		csvProfiler
+	} satisfies UnrealAutomationConnection;
+});
 
 function normalizedEndpoint(endpoint: string): string {
 	return endpoint.replace(/\/+$/, "");

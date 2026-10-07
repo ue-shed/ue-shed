@@ -7,12 +7,14 @@ import { spawnSync } from "node:child_process";
 import test from "node:test";
 import {
 	buildPluginBundle,
+	AUTHORING_AUTOMATION_PLUGIN_IDS,
 	CAMERA_AUTHORING_PLUGIN_IDS,
 	MAP_REVIEW_PLUGIN_IDS,
 	NIAGARA_PLUGIN_IDS,
 	OBSERVATORY_PLUGIN_IDS,
 	validatePublicPluginBundle
 } from "./plugin-bundle.ts";
+import { PUBLIC_VERSION } from "./pack-public-packages.ts";
 
 async function writeFixtureFile(root: string, relativePath: string, contents: string) {
 	const path = join(root, relativePath);
@@ -156,9 +158,7 @@ test("builds deterministic source archive and excludes local Unreal output", asy
 		if (!("contracts" in first.manifest) || !("packages" in first.manifest)) {
 			throw new Error("Attested candidate did not produce a schema-v3 source manifest.");
 		}
-		assert.deepEqual(first.manifest.contracts, [
-			{ name: "ue-shed-review-capture", version: { major: 1, minor: 5 } }
-		]);
+		assert.deepEqual(first.manifest.contracts, []);
 		assert.deepEqual(first.manifest.packages, [
 			{
 				bytes: 1024,
@@ -288,6 +288,97 @@ test("camera authoring preset includes the complete native dependency graph", as
 		}
 	} finally {
 		await rm(output, { recursive: true, force: true });
+	}
+});
+
+test("authoring automation source closure attests its contracts and passes release validation", async () => {
+	const output = await mkdtemp(join(tmpdir(), "ue-shed-authoring-automation-plugins-"));
+	try {
+		const pluginRoot = join(output, "Plugins");
+		const repository = join(import.meta.dirname, "..");
+		for (const id of AUTHORING_AUTOMATION_PLUGIN_IDS) {
+			await cp(join(repository, "unreal", "Plugins", id), join(pluginRoot, id), {
+				recursive: true
+			});
+		}
+		const candidateManifest = join(output, "candidate-manifest.json");
+		await writeFile(
+			candidateManifest,
+			JSON.stringify({ candidateVersion: PUBLIC_VERSION, packages: [] })
+		);
+		const releaseAssetStem = `ue-shed-plugins-authoring-automation-${PUBLIC_VERSION}`;
+		const result = await buildPluginBundle({
+			output: join(output, "bundle"),
+			pluginRoot,
+			candidateManifest,
+			licensePath: join(repository, "LICENSE"),
+			releaseAssetStem,
+			releaseVersion: PUBLIC_VERSION,
+			requestedPlugins: AUTHORING_AUTOMATION_PLUGIN_IDS,
+			sourceCommit: "a".repeat(40),
+			sourceRef: `refs/tags/v${PUBLIC_VERSION}`
+		});
+		assert.deepEqual(
+			result.manifest.plugins.map(({ id, dependencies, engineDependencies }) => ({
+				id,
+				dependencies,
+				engineDependencies
+			})),
+			[
+				{ id: "UEShedAuthoring", dependencies: ["UEShedCore"], engineDependencies: [] },
+				{
+					id: "UEShedAutomation",
+					dependencies: ["UEShedCore"],
+					engineDependencies: ["EnhancedInput"]
+				},
+				{ id: "UEShedCore", dependencies: [], engineDependencies: [] }
+			]
+		);
+		assert.ok("contracts" in result.manifest);
+		if (!("contracts" in result.manifest)) throw new Error("Missing contract attestations.");
+		assert.deepEqual(result.manifest.contracts, [
+			{ name: "unreal-authoring", version: { major: 2, minor: 2 } },
+			{ name: "unreal-authoring-table-list", version: { major: 1, minor: 0 } },
+			{ name: "unreal-authoring-apply", version: { major: 1, minor: 1 } },
+			{ name: "unreal-authoring-save", version: { major: 1, minor: 1 } },
+			{ name: "unreal-authoring-actor-references", version: { major: 1, minor: 0 } },
+			{ name: "unreal-automation-players", version: { major: 1, minor: 0 } },
+			{ name: "unreal-automation-input", version: { major: 1, minor: 0 } },
+			{ name: "unreal-automation-csv", version: { major: 1, minor: 0 } }
+		]);
+		assert.equal(basename(result.archivePath), `${releaseAssetStem}.tar.gz`);
+		assert.equal(basename(result.manifestPath), `${releaseAssetStem}.manifest.json`);
+		const entries = archiveEntries(result.archivePath);
+		for (const id of AUTHORING_AUTOMATION_PLUGIN_IDS) {
+			assert.ok(entries.includes(`UEShed/Plugins/${id}/${id}.uplugin`));
+		}
+		assert.ok(!entries.some((entry) => /UEShedCameras|UEShedScenarios|Workbench/u.test(entry)));
+		assert.equal(await validatePublicPluginBundle(result), result.manifest);
+		const full = await buildPluginBundle({
+			output: join(output, "full"),
+			pluginRoot,
+			releaseVersion: PUBLIC_VERSION
+		});
+		assert.ok(full.manifest.plugins.some(({ id }) => id === "UEShedAutomation"));
+	} finally {
+		await rm(output, { recursive: true, force: true });
+	}
+});
+
+test("an explicit plugin selection rejects missing requested sources", async () => {
+	const fixture = await createFixture();
+	try {
+		await assert.rejects(
+			buildPluginBundle({
+				output: join(fixture.root, "bundle"),
+				pluginRoot: fixture.pluginRoot,
+				releaseVersion: "0.1.0",
+				requestedPlugins: ["UEShedAlpha", "UEShedAutomation"]
+			}),
+			/Requested plugin UEShedAutomation is absent/
+		);
+	} finally {
+		await rm(fixture.root, { recursive: true, force: true });
 	}
 });
 

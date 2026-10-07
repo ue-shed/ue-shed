@@ -1,4 +1,3 @@
-import { Schema } from "effect";
 import type {
 	LocalizationChangeSet,
 	LocalizationTargetEvidence
@@ -18,11 +17,14 @@ import {
 	type LocalizationCheckDiagnostic
 } from "./localization-quality-schema.js";
 import { localizationEvidenceFileStatuses } from "./localization-status.js";
-import {
-	TextQualityRuleId,
-	type TextQualityAffectedOccurrence,
-	type TextQualityRuleDocument
-} from "./quality-schema.js";
+import { TextQualityRuleId, type TextQualityAffectedOccurrence } from "./quality-schema.js";
+import type { GameTextRuleDocument } from "./quality-rules-v2.js";
+import { evaluateLocalizationPolicy } from "./localization-policy.js";
+import { localizationShippedTranslation } from "./localization-shipped-translation.js";
+export {
+	localizationShippedTranslation,
+	LocalizationShippedTranslation
+} from "./localization-shipped-translation.js";
 import type { TextCorpus } from "./schema.js";
 import {
 	parseUnrealFormatPattern,
@@ -48,21 +50,6 @@ type DuplicateSourceActual = Extract<
 	LocalizationQualityFinding,
 	{ kind: "duplicate_source" }
 >["actual"];
-
-/** Secondary not_synced facts matter even when drift or gathered_only is the primary state. */
-export function localizationShippedTranslation(culture: LocalizationCultureState) {
-	if (culture.facts.includes("not_synced") || culture.state === "not_synced")
-		return LocalizationShippedTranslation.make({ origin: "po", value: culture.poTranslation });
-	return LocalizationShippedTranslation.make({
-		origin: culture.archive ? "archive" : "absent",
-		value: culture.archive?.translation.Text ?? null
-	});
-}
-
-export const LocalizationShippedTranslation = Schema.Struct({
-	origin: Schema.Literals(["po", "archive", "absent"]),
-	value: Schema.NullOr(Schema.String)
-});
 
 function argumentNames(pattern: UnrealFormatPattern): readonly string[] {
 	return [...new Set(pattern.arguments.map((argument) => argument.name))].sort();
@@ -124,7 +111,7 @@ export function checkLocalizationTarget(
 	join: LocalizationJoin,
 	evidence: LocalizationTargetEvidence,
 	options: LocalizationCheckOptions = {},
-	ruleDocument?: TextQualityRuleDocument
+	ruleDocument?: GameTextRuleDocument
 ): LocalizationQualityReport {
 	if (
 		join.target !== evidence.target.name ||
@@ -436,21 +423,43 @@ export function checkLocalizationTarget(
 			JSON.stringify(a.actual).localeCompare(JSON.stringify(b.actual))
 	);
 	const files = localizationEvidenceFileStatuses(evidence);
-	return LocalizationQualityReport.make({
+	const policy =
+		ruleDocument?.schemaVersion === 2
+			? evaluateLocalizationPolicy(corpus, join, ruleDocument, options)
+			: { findings: [], diagnostics: [] };
+	const combined = [...findings, ...policy.findings].sort(
+		(a, b) =>
+			a.lineId.localeCompare(b.lineId) ||
+			a.culture.localeCompare(b.culture) ||
+			a.kind.localeCompare(b.kind) ||
+			a.ruleId.localeCompare(b.ruleId) ||
+			JSON.stringify(a.actual).localeCompare(JSON.stringify(b.actual))
+	);
+	const report = LocalizationQualityReport.make({
 		schemaVersion: 1,
-		ruleDocumentVersion: 1,
+		ruleDocumentVersion: ruleDocument?.schemaVersion ?? 1,
 		status: corpus.status,
 		coverage: corpus.coverage,
 		diagnostics: corpus.diagnostics,
 		target: join.target,
 		gatherEvidence: files,
-		findings,
+		findings: combined,
 		checkDiagnostics,
 		roles: [],
-		rules: enabled.map((id) => ({
-			ruleId: TextQualityRuleId.make(`localization.${id}`),
-			findingCount: findings.filter((finding) => finding.kind === id).length
-		})),
+		rules: [
+			...(ruleDocument?.schemaVersion === 2
+				? (ruleDocument.localizationRules ?? []).map((rule) => ({
+						ruleId: rule.id,
+						findingCount: policy.findings.filter(
+							(finding) => finding.ruleId === rule.id
+						).length
+					}))
+				: []),
+			...enabled.map((id) => ({
+				ruleId: TextQualityRuleId.make(`localization.${id}`),
+				findingCount: findings.filter((finding) => finding.kind === id).length
+			}))
+		],
 		changes: {
 			schemaVersion: 1,
 			provenance: {
@@ -460,4 +469,7 @@ export function checkLocalizationTarget(
 			changes
 		}
 	});
+	if (ruleDocument?.schemaVersion === 2)
+		Object.assign(report, { ruleDiagnostics: policy.diagnostics });
+	return report;
 }

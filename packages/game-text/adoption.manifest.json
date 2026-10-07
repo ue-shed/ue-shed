@@ -16,6 +16,8 @@
 	},
 	"packageGraph": {
 		"dependencies": {
+			"@ue-shed/localization": "package.json#dependencies",
+			"linebreak": "package.json#dependencies",
 			"@ue-shed/unreal-assets": "package.json#dependencies"
 		},
 		"peerDependencies": {

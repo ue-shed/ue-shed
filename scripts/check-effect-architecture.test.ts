@@ -36,6 +36,17 @@ test("checks the Game Text browser closure and its localization dependency", asy
 			'import { LocalizationIdentity } from "@ue-shed/localization/browser";\n'
 		);
 		assert.deepEqual(await checkLocalizationBoundaries(fixtureRoot), []);
+		await writeFile(
+			join(corpus, "localization-words.ts"),
+			'import LineBreaker from "linebreak";\n'
+		);
+		await writeFile(join(corpus, "browser.ts"), 'export * from "./localization-words.js";\n');
+		assert.deepEqual(await checkLocalizationBoundaries(fixtureRoot), []);
+		await writeFile(join(corpus, "join.ts"), 'import LineBreaker from "linebreak";\n');
+		await writeFile(join(corpus, "browser.ts"), 'export * from "./join.js";\n');
+		assert.deepEqual(await checkLocalizationBoundaries(fixtureRoot), [
+			"packages/game-text/src/join.ts: linebreak must be confined to localization-words.ts"
+		]);
 	} finally {
 		await rm(fixtureRoot, { recursive: true, force: true });
 	}

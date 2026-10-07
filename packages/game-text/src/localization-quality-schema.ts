@@ -12,6 +12,11 @@ import {
 	TextQualityAffectedOccurrence,
 	TextQualityFinding,
 	TextQualityReport,
+	TextRoleId,
+	CharacterBudgetActual,
+	CharacterBudgetExpectation,
+	TerminologyActual,
+	TerminologyExpectation,
 	TextQualityRuleId
 } from "./quality-schema.js";
 import { LocalizationFileStatus } from "./localization-status.js";
@@ -99,6 +104,38 @@ export const LocalizationQualityFinding = Schema.Union([
 ]);
 export type LocalizationQualityFinding = typeof LocalizationQualityFinding.Type;
 
+export const LocalizationPolicyFinding = Schema.Union([
+	Schema.Struct({
+		...Base,
+		role: TextRoleId,
+		kind: Schema.Literal("localization_character_budget"),
+		actual: CharacterBudgetActual.mapFields(({ source, ...fields }) => ({
+			...fields,
+			translation: source
+		})),
+		expectation: CharacterBudgetExpectation
+	}),
+	Schema.Struct({
+		...Base,
+		role: TextRoleId,
+		kind: Schema.Literal("localization_terminology"),
+		actual: TerminologyActual.mapFields(({ source, ...fields }) => ({
+			...fields,
+			translation: source
+		})),
+		expectation: TerminologyExpectation
+	})
+]);
+export type LocalizationPolicyFinding = typeof LocalizationPolicyFinding.Type;
+export const LocalizationRuleDiagnostic = Schema.Struct({
+	code: Schema.Literal("rule_culture_not_in_target"),
+	severity: Schema.Literal("warning"),
+	culture: CultureCode,
+	ruleId: TextQualityRuleId,
+	recovery: Schema.NonEmptyString
+});
+export type LocalizationRuleDiagnostic = typeof LocalizationRuleDiagnostic.Type;
+
 export const LocalizationCheckOptions = Schema.Struct({
 	culture: Schema.optionalKey(CultureCode),
 	checks: Schema.optionalKey(Schema.Array(LocalizationCheckId)),
@@ -124,7 +161,11 @@ export type LocalizationCheckDiagnostic = typeof LocalizationCheckDiagnostic.Typ
 /** Additive report variant: legacy source-quality consumers keep their existing finding contract. */
 export const LocalizationQualityReport = TextQualityReport.mapFields((fields) => ({
 	...fields,
-	findings: Schema.Array(Schema.Union([TextQualityFinding, LocalizationQualityFinding])),
+	findings: Schema.Array(
+		Schema.Union([TextQualityFinding, LocalizationQualityFinding, LocalizationPolicyFinding])
+	),
+	ruleDocumentVersion: Schema.Literals([1, 2]),
+	ruleDiagnostics: Schema.optionalKey(Schema.Array(LocalizationRuleDiagnostic)),
 	target: LocalizationTargetName,
 	gatherEvidence: Schema.Array(LocalizationFileStatus),
 	checkDiagnostics: Schema.Array(LocalizationCheckDiagnostic),

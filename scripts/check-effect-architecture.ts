@@ -690,6 +690,13 @@ export async function checkLocalizationBoundaries(root: string = repositoryRoot)
 				pending.push(join(packageRoot, "src/browser.ts"));
 			} else if (specifier === "@ue-shed/unreal-assets/investigation") {
 				pending.push(join(root, "packages/unreal-assets/src/investigation.ts"));
+			} else if (specifier === "linebreak") {
+				// Reviewed: MIT, exact pin 1.1.0, packaged iterator/table data with no Node/IO.
+				// UE 5.7/5.8 FLocTextHelper::GetWordCountReport counts positive spans from
+				// FBreakIterator::CreateLineBreakIterator (FICULineBreakIterator), using
+				// UAX #14 line opportunities; Intl.Segmenter word tokens would differ.
+				if (label !== "packages/game-text/src/localization-words.ts")
+					failures.push(`${label}: linebreak must be confined to localization-words.ts`);
 			} else if (specifier !== "effect" && !specifier.startsWith("effect/")) {
 				failures.push(`${label}: unreviewed browser dependency ${specifier}`);
 			}

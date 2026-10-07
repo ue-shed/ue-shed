@@ -1,0 +1,33 @@
+{
+	"schemaVersion": 2,
+	"roles": [
+		{
+			"id": "menu",
+			"description": "Saved String Table menu entries",
+			"scopes": [{ "matchers": [{ "kind": "location_kind", "value": "string_table_entry" }] }]
+		}
+	],
+	"rules": [],
+	"localizationRules": [
+		{
+			"kind": "localization_character_budget",
+			"id": "menu.translation-budget",
+			"role": "menu",
+			"cultures": { "de": 32, "fr": 36 },
+			"defaultMaximumCharacters": 28,
+			"recovery": "Shorten the translation to the authored culture budget."
+		},
+		{
+			"kind": "localization_terminology",
+			"id": "menu.translation-terms",
+			"role": "menu",
+			"caseSensitive": false,
+			"cultures": {
+				"de": [{ "kind": "preferred", "term": "Fortsetzen", "alternatives": ["Weiter"] }],
+				"fr": [{ "kind": "forbidden", "term": "gameplay" }]
+			},
+			"recovery": "Use the culture's project terminology."
+		}
+	],
+	"disabledLocalizationChecks": []
+}

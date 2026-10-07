@@ -107,7 +107,7 @@ function escapedRegExp(value: string): string {
 	return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }
 
-function termMatches(
+export function termMatches(
 	source: string,
 	term: string,
 	caseSensitive: boolean

@@ -295,7 +295,8 @@ Localization checks are quality findings over the same corpus and report model:
   rich text tags, unsafe PO escapes, boundary whitespace and line-break counts, existing empty
   translation entries, missing translator notes, and the same source under different keys;
 - missing translation evidence is a check diagnostic rather than a claim that a translation is empty;
-- project-authored character budgets and glossary rules per culture remain planned.
+- version-2 project rules add role budgets and glossary terms per culture, evaluated on that
+  culture's shipped translation with the same substring and UTF-16 offset evidence as source rules.
 
 `checkLocalizationTarget` is pure and available from both Game Text package entries. It checks the
 non-empty pending PO translation when a `not_synced` fact exists, even if source drift or gathered-only
@@ -329,9 +330,43 @@ source and previous-translation preconditions and evidence provenance. `--change
 creates a new JSON proposal; it never overwrites a file or writes PO, manifests, archives, locres or
 locmeta. Applying proposals and Workbench check views are later slices.
 
-Planned reports give per culture the share of lines and words translated, reviewed and proofread, and the
-words that are new or changed since a chosen baseline. Every report carries corpus and gather
-coverage, as quality reports already do.
+Version-2 rules derive from v1 and retain source rules and roles. `localizationRules` contains
+`localization_character_budget` rules with an explicit culture-to-maximum map and optional default
+for unlisted cultures, or `localization_terminology` rules with culture-to-term lists. There are no
+implicit expansion multipliers or glossary defaults. Unknown target cultures are warning diagnostics
+because a project rule file may serve several targets. Duplicate culture keys, empty terms,
+non-positive budgets and invalid role references are typed failures. V1 decoding/evaluation and the
+v1 starter remain available unchanged; source review in the CLI also accepts v2. Rules only assign
+roles from saved occurrences, so gathered-only evidence cannot acquire an asset role.
+
+```sh
+ue-shed loc report <project-root> --target <name> [--baseline <file>] [--save-baseline <file>]
+```
+
+Reports give per culture every primary state's line/source-word counts, independent unsynced totals
+including secondary facts, and the share of non-optional manifest lines/source words with a current
+archive translation. Pending PO edits and source drift remain visible in state counts but do not
+increase archive progress. Progress follows Unreal's CSV commandlet, which creates its
+helper with an empty native culture: every culture needs a non-empty archive translation recorded
+against the full manifest source, without runtime native fallback or foreign native-text overrides.
+Reviewed/proofread are explicitly `not_tracked` until Phase 7, rather
+than zero percent. Missing/ambiguous archives make progress unknown; uncountable source words make
+word percentages null.
+
+Unreal uses ICU line-break spans for word counts, not whitespace splitting or `Intl.Segmenter` word
+tokens. The portable UAX #14 iterator is tested against both committed UE 5.7/5.8 CSVs, requiring
+total/de/en/fr of 62/59/62/54 without adjustments. Its Unicode 13 rules are not a claim of complete
+ICU 64 parity across locale tailoring or dictionary scripts. Thai/Lao/Khmer/Myanmar source yields
+`dictionary_line_breaking_unavailable` and null word totals; billing baselines reject it.
+
+`--save-baseline` exclusively creates version-1 JSON with manifest identities, SHA-256 source
+fingerprints (including metadata), word counts, target, timestamp and corpus/evidence provenance.
+`--baseline` reports added, source-changed and removed identities with counts for every culture.
+Changed words use the current complete source word count, as a vendor's new workload, rather than
+the numeric difference from the old count. Removed means absent from the new manifest; it does not
+prove absence from an unscanned asset. Every report retains corpus/package coverage, gather file
+provenance/failures and unknown reasons. Baseline JSON is the only file this command writes;
+Workbench policy/report views remain a later slice.
 
 ### Editing and review
 

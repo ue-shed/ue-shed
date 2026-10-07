@@ -16,15 +16,22 @@ import type { CliCommand } from "../command-model.js";
 type LocalizationStatusCommand = Extract<CliCommand, { readonly _tag: "LocalizationStatus" }>;
 type LocalizationSearchCommand = Extract<CliCommand, { readonly _tag: "TextSearch" }>;
 type LocalizationCheckCommand = Extract<CliCommand, { readonly _tag: "LocalizationCheck" }>;
+type LocalizationReportCommand = Extract<CliCommand, { readonly _tag: "LocalizationReport" }>;
 
 /** Decode CLI selections and read evidence before starting the saved-package reader. */
 export const loadLocalizationContext = Effect.fn("Cli.localization.load_context")(function* (
-	command: LocalizationStatusCommand | LocalizationSearchCommand | LocalizationCheckCommand
+	command:
+		| LocalizationStatusCommand
+		| LocalizationSearchCommand
+		| LocalizationCheckCommand
+		| LocalizationReportCommand
 ) {
 	const selection = yield* Schema.decodeUnknownEffect(LocalizationSelection)({
 		target: command.target,
-		...(command.culture === undefined ? undefined : { culture: command.culture }),
-		...(command._tag !== "LocalizationCheck" && command.state !== undefined
+		...("culture" in command && command.culture !== undefined
+			? { culture: command.culture }
+			: undefined),
+		...("state" in command && command.state !== undefined
 			? { state: command.state }
 			: undefined),
 		...(command._tag === "TextSearch" && command.searchTranslations !== undefined

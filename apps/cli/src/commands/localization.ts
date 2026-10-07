@@ -2,12 +2,36 @@ import { Argument, Command, Flag } from "effect/unstable/cli";
 import { Option } from "effect";
 import { LocalizationCheckId } from "@ue-shed/game-text/browser";
 import { runLocalizationCheck } from "../workflows/localization-check.js";
+import { runLocalizationReport } from "../workflows/localization-report.js";
 import { runLocalizationStatus, runLocalizationTargets } from "../workflows/localization.js";
 import { localizationFlags, optionalLocalizationFlags } from "./localization-flags.js";
 
 export const localizationCommand = Command.make("loc").pipe(
 	Command.withDescription("Read saved Unreal localization targets."),
 	Command.withSubcommands([
+		Command.make(
+			"report",
+			{
+				projectRoot: Argument.string("project-root"),
+				target: Flag.string("target"),
+				baseline: Flag.string("baseline").pipe(Flag.optional),
+				saveBaseline: Flag.string("save-baseline").pipe(Flag.optional),
+				reader: Flag.string("reader").pipe(Flag.optional)
+			},
+			({ projectRoot, target, baseline, saveBaseline, reader }) =>
+				runLocalizationReport({
+					_tag: "LocalizationReport",
+					projectRoot,
+					target,
+					...(Option.isSome(baseline) ? { baseline: baseline.value } : undefined),
+					...(Option.isSome(saveBaseline)
+						? { saveBaseline: saveBaseline.value }
+						: undefined),
+					...(Option.isSome(reader) ? { reader: reader.value } : undefined)
+				})
+		).pipe(
+			Command.withDescription("Report archive progress, coverage and manifest source deltas.")
+		),
 		Command.make(
 			"check",
 			{

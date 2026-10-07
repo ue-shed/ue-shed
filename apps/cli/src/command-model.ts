@@ -36,6 +36,13 @@ export const CliCommand = Schema.TaggedUnion({
 	},
 	Version: {},
 	LocalizationTargets: { ...Project },
+	LocalizationReport: {
+		...Project,
+		...Reader,
+		target: Schema.String,
+		baseline: Schema.optionalKey(Schema.String),
+		saveBaseline: Schema.optionalKey(Schema.String)
+	},
 	LocalizationCheck: {
 		...Project,
 		...Reader,

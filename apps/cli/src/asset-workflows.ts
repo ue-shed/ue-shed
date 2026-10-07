@@ -178,8 +178,8 @@ export const runTextReview = Effect.fn("Cli.workflow.text_review")((command: Tex
 		command._tag,
 		Effect.gen(function* () {
 			const {
-				decodeTextQualityRuleDocumentJson,
-				evaluateTextQuality,
+				decodeGameTextRuleDocumentJson,
+				evaluateGameTextSourceQuality,
 				TextCorpusScanError,
 				TextCorpusService,
 				TextCorpusServiceLive
@@ -192,7 +192,7 @@ export const runTextReview = Effect.fn("Cli.workflow.text_review")((command: Tex
 							"Could not read the Game Text quality rule file. Confirm it exists and is readable, then retry."
 					})
 			});
-			const document = yield* decodeTextQualityRuleDocumentJson(ruleJson).pipe(
+			const document = yield* decodeGameTextRuleDocumentJson(ruleJson).pipe(
 				Effect.mapError(
 					(error) =>
 						new CliCommandError({
@@ -216,7 +216,7 @@ export const runTextReview = Effect.fn("Cli.workflow.text_review")((command: Tex
 						})
 				)
 			);
-			return yield* printJson(evaluateTextQuality(corpus, document));
+			return yield* printJson(evaluateGameTextSourceQuality(corpus, document));
 		})
 	)
 );

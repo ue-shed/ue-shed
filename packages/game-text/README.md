@@ -128,7 +128,7 @@ The checks are `format_arguments`, `argument_modifiers`, `rich_text`, `po_escape
 `whitespace`, `empty_translation`, `missing_translator_notes`, and `duplicate_source`. Pass
 `{ culture?, checks?, disabledChecks? }` to select them. They need no rule document; existing v1
 `Config/UEShed/GameTextRules.json` documents can optionally contain `disabledLocalizationChecks`.
-Per-culture project policy and progress reports remain later work.
+Version 2 adds per-culture project policy and progress reports, described below.
 
 Checks use the pending non-empty PO text when the culture has a `not_synced` fact, otherwise archive
 text. They compare with manifest source, falling back to corpus source with a diagnostic. Crowdin
@@ -159,6 +159,73 @@ ue-shed loc check <project-root> --target <name> --changes suggestions.json
 The CLI's optional `--changes` exclusively creates a new JSON proposal. It rejects existing files
 and non-JSON destinations and never edits localization evidence. Engine-recorded validator tests
 compare each shipped translation against both committed fixture oracles.
+
+## Culture rules and progress reports
+
+`TextQualityRuleDocumentV2` derives from the v1 document. `decodeGameTextRuleDocumentJson` accepts
+both versions; the original v1 decoder and `evaluateTextQuality` retain their contracts.
+`evaluateGameTextSourceQuality` and `text review` evaluate either version's source rules. `loc check`
+combines translation policy and built-ins in the same report. The starter stays v1: choosing budgets
+and glossaries for a culture requires project knowledge.
+
+V2 adds `localizationRules`, an array of role-scoped rules. A `localization_character_budget` rule
+has `cultures: { "de": 32, "fr": 36 }` and optional `defaultMaximumCharacters`. Without a default,
+unlisted cultures have no budget. There are no multipliers. A `localization_terminology` rule has
+`caseSensitive` and `cultures: { "de": [{ "kind": "forbidden", "term": "..." }] }`; preferred entries
+reuse v1's `term` and `alternatives`. An unlisted culture has no glossary. Both check the shipped
+translation selected by `localizationShippedTranslation`, count UTF-16 code units, and report the
+same case-sensitive/insensitive substring matches and UTF-16 offsets as v1. Only occurrences
+matching the role appear in policy evidence; gathered-only lines cannot acquire an asset role.
+
+Unknown target cultures appear in `ruleDiagnostics` as warnings because rules are project-wide.
+Duplicate culture keys (including escaped JSON keys), duplicate role/rule IDs, undeclared roles,
+empty terms and non-positive budgets fail with typed recovery guidance. Both versions support
+`disabledLocalizationChecks`. See [the v2 example](fixtures/quality-rules.v2.json) for an authored
+document; its limits and terms are examples, not built-ins.
+
+`localizationProgressReport(corpus, joined, evidence, baseline?)` is pure and browser-safe. It
+reports every primary state's line/source-word counts, independent `notSynced` counts including
+secondary facts, unknown reasons, reduced checking, corpus/package coverage and gather file
+provenance/failures. `total`, `upToDateArchive` and `translatedPercent` describe non-optional manifest
+identities, independent of current corpus source drift and pending PO edits. Source words are
+counted once per identity/source, not once per location. Missing or ambiguous archive evidence
+makes archive progress and percentages null. Reviewed/proofread are `not_tracked` until review
+state exists; empty targets have null percentages.
+
+Unreal's `FLocTextHelper::GetWordCountReport` counts ICU **line-break spans**, including punctuation
+and format syntax. `localizationWordCount` uses the MIT [linebreak UAX #14 implementation](https://github.com/foliojs/linebreak),
+exactly pinned to 1.1.0 and confined to `localization-words.ts`. Its published iterator and tables
+use no Node APIs or file IO. In both UE 5.7 and 5.8, `GetWordCountReport` uses
+`FBreakIterator::CreateLineBreakIterator` / `FICULineBreakIterator`: UAX #14 line-break opportunities
+differ from `Intl.Segmenter` word tokens. `GenerateTextLocalizationReport` creates its helper with
+an empty native culture: CSV progress requires a non-empty archive translation recorded against
+the full manifest source for every culture. It does not use runtime native fallback or foreign
+native-text overrides. Tests
+compare both committed UE 5.7/5.8 CSVs directly (total/de/en/fr: 62/59/62/54), with no adjustments.
+The portable iterator uses Unicode 13, whereas the engines use ICU 64; this is fixture parity,
+not a claim of exhaustive parity for every Unicode version or ICU locale tailoring. Thai, Lao,
+Khmer and Myanmar source require ICU dictionary breaking: they produce explicit
+`dictionary_line_breaking_unavailable` diagnostics and null word totals instead of estimates.
+They cannot be saved in a billing baseline until a matching dictionary counter is available.
+
+`createLocalizationBaseline(corpus, evidence, createdAt)` creates a version-1 document containing
+each non-optional identity, its SHA-256 fingerprint of canonical full manifest source (including
+opaque metadata), and word count. Provenance names the target, time, corpus/evidence generation
+fingerprints and input files. `decodeLocalizationBaselineJson` validates it;
+`diffLocalizationBaselines(previous, current)` returns added, changed and removed entries/counts.
+Changed-word billing uses the **current complete source** count, not the word difference. The same
+source delta applies to each current target culture, regardless of translation progress. Removed
+means absent from the current manifest; coverage accompanies the report and does not prove deletion
+from an unscanned project. A mismatched target or conflicting manifest source fails explicitly.
+
+```sh
+ue-shed loc report <project-root> --target <name>
+ue-shed loc report <project-root> --target <name> --save-baseline baseline.json
+ue-shed loc report <project-root> --target <name> --baseline baseline.json
+```
+
+Only `--save-baseline` writes, exclusively to a new JSON file. Existing files are retained. These
+APIs never write PO, manifests, archives, locres or locmeta. Workbench policy/report UI is a later slice.
 
 ## Capabilities
 

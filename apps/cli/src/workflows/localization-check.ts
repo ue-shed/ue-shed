@@ -3,7 +3,8 @@ import { Effect, FileSystem, Metric, Result, Schema } from "effect";
 import { LocalizationChangeSet, LocalizationEvidenceNodeLive } from "@ue-shed/localization";
 import {
 	checkLocalizationTarget,
-	decodeTextQualityRuleDocumentJson,
+	decodeGameTextRuleDocumentJson,
+	GameTextRuleDocumentError,
 	GAME_TEXT_RULES_RELATIVE_PATH
 } from "@ue-shed/game-text";
 import { observeCliOperation } from "../cli-operation.js";
@@ -90,16 +91,17 @@ export const runLocalizationCheck = Effect.fn("Cli.workflow.localization_check")
 						if (!(yield* fs.exists(rulesPath))) return undefined;
 						return yield* fs
 							.readFileString(rulesPath)
-							.pipe(Effect.flatMap(decodeTextQualityRuleDocumentJson));
+							.pipe(Effect.flatMap(decodeGameTextRuleDocumentJson));
 					}).pipe(
-						Effect.mapError(
-							() =>
-								new LocalizationCheckOutputError({
-									code: "rules_unreadable",
-									message: "The project quality rules could not be read.",
-									recovery:
-										"Repair the Game Text rules file or remove it to use all built-ins."
-								})
+						Effect.mapError((error) =>
+							error instanceof GameTextRuleDocumentError
+								? error
+								: new LocalizationCheckOutputError({
+										code: "rules_unreadable",
+										message: "The project quality rules could not be read.",
+										recovery:
+											"Repair the Game Text rules file or remove it to use all built-ins."
+									})
 						)
 					);
 					const options = {

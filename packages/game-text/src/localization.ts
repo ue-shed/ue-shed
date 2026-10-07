@@ -211,7 +211,7 @@ function sameJson(left: typeof Schema.Json.Type, right: typeof Schema.Json.Type)
 	);
 }
 
-function sameSource(left: LocalizationText, right: LocalizationText): boolean {
+export function localizationTextMatches(left: LocalizationText, right: LocalizationText): boolean {
 	return sameJson(left, right);
 }
 
@@ -454,12 +454,16 @@ export function joinLocalizationTarget(
 				entries.length === 1 &&
 				archive &&
 				first &&
-				!sameSource(archive.source, first.source)
+				!localizationTextMatches(archive.source, first.source)
 			)
 				facts.push("needs_update");
 			if ((index?.archive.status === "read" || archiveAbsent) && archives.length <= 1) {
 				if (!archive || archive.translation.Text === "") facts.push("not_translated");
-				else if (entries.length === 1 && first && sameSource(archive.source, first.source))
+				else if (
+					entries.length === 1 &&
+					first &&
+					localizationTextMatches(archive.source, first.source)
+				)
 					facts.push("translated");
 			}
 			// Native entries are evaluated from the native archive too; absent evidence is never invented.

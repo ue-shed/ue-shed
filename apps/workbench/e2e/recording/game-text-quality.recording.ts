@@ -599,6 +599,26 @@ test("records the real Game Text quality workflow", async ({
 		).toBeVisible();
 		await expect(page.getByText("Loading reports…", { exact: true })).toHaveCount(0);
 		await page.screenshot({ path: testInfo.outputPath("13-reports.png") });
+
+		// Planning resolves the engine and lists writes; the recording never starts Unreal.
+		const unchangedReport = await reportTable.innerText();
+		const pendingIndicator = page.getByText(/^[\d,]+ not synced$/u);
+		const unchangedPending = await pendingIndicator.innerText();
+		await page.getByRole("button", { name: "Sync with Unreal", exact: true }).click();
+		const confirmation = page.getByRole("region", { name: "Confirm Unreal step" });
+		await expect(confirmation).toContainText(/Unreal Engine (?:4\.27|5\.[78])/u);
+		await expect(confirmation).toContainText("Content/Localization/FixtureGame/");
+		await expect(confirmation).toContainText(
+			"Check these files out in your source control first"
+		);
+		await expect(confirmation.getByRole("button", { name: "Run", exact: true })).toBeEnabled();
+		await expect(page.getByText("Preparing Unreal step…", { exact: true })).toBeHidden();
+		await page.screenshot({ path: testInfo.outputPath("14-sync-plan.png") });
+		await confirmation.getByRole("button", { name: "Cancel", exact: true }).click();
+		await expect(confirmation).toBeHidden();
+		await expect(reportTable).toHaveText(unchangedReport, { useInnerText: true });
+		await expect(pendingIndicator).toHaveText(unchangedPending);
+		await expect(page.getByText(/Syncing with Unreal/u)).toHaveCount(0);
 	} finally {
 		if (recording) await page.screencast.stop().catch(() => undefined);
 		await application.close().catch(() => undefined);

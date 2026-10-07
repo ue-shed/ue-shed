@@ -46,6 +46,7 @@ function problem(finding: TextQualityFindingSummary): string {
 
 export function GameTextQualityWorkspace(props: {
 	readonly client: GameTextClientApi;
+	readonly disabled?: boolean;
 	readonly filter?: TextQualityFilter;
 	readonly onFilterChange?: (filter: TextQualityFilter) => void;
 	readonly selectedId?: TextQualityFindingId | undefined;
@@ -225,14 +226,29 @@ export function GameTextQualityWorkspace(props: {
 					)}
 				</For>
 				{props.exports}
-				<Button size="compact" tone="quiet" onClick={props.onReplaceRules}>
+				<Button
+					size="compact"
+					tone="quiet"
+					disabled={props.disabled}
+					onClick={props.onReplaceRules}
+				>
 					Reload rules
 				</Button>
-				<Button size="compact" tone="quiet" onClick={() => setEditing(!editing())}>
+				<Button
+					size="compact"
+					tone="quiet"
+					disabled={props.disabled}
+					onClick={() => setEditing(!editing())}
+				>
 					{editing() ? "Close rules" : "Edit rules"}
 				</Button>
 				<Show when={editing() && props.onLoadRules}>
-					<Button size="compact" tone="quiet" onClick={() => props.onLoadRules?.()}>
+					<Button
+						size="compact"
+						tone="quiet"
+						disabled={props.disabled}
+						onClick={() => props.onLoadRules?.()}
+					>
 						Load rules
 					</Button>
 				</Show>
@@ -251,6 +267,7 @@ export function GameTextQualityWorkspace(props: {
 					<Show when={props.editor.state()}>
 						{(state) => (
 							<GameTextRuleEditor
+								disabled={props.disabled}
 								editor={props.editor}
 								state={state()}
 								summary={props.summary}

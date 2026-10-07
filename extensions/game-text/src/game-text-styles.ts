@@ -2,6 +2,22 @@ import * as stylex from "@stylexjs/stylex";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 
 export const styles = stylex.create({
+	operationPanel: {
+		display: "flex",
+		flexDirection: "column",
+		gap: 6,
+		flexShrink: 0,
+		fontSize: 12,
+		padding: 10,
+		backgroundColor: tokens.colorSurface,
+		borderWidth: 1,
+		borderStyle: "solid",
+		borderColor: tokens.colorBorderInteractive,
+		borderRadius: tokens.radiusControl,
+		maxHeight: 250,
+		overflowY: "auto"
+	},
+	operationFiles: { maxHeight: 110, overflowY: "auto", margin: 0, paddingLeft: 18, fontSize: 11 },
 	page: {
 		display: "flex",
 		flexDirection: "column",

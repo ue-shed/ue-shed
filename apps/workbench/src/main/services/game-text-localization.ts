@@ -440,6 +440,19 @@ export const makeGameTextLocalization = Effect.fn("Workbench.GameText.localizati
 		return result;
 	});
 	return {
+		operationTarget: (name: LocalizationJoin["target"]) =>
+			targets().pipe(
+				Effect.flatMap((result) =>
+					result.status === "ready"
+						? Effect.gen(function* () {
+								const cached = yield* Ref.get(discovery);
+								return cached?.corpus === (yield* currentCorpus())
+									? cached?.targets.find((target) => target.name === name)
+									: undefined;
+							})
+						: Effect.succeed(undefined)
+				)
+			),
 		reset,
 		targets,
 		select,

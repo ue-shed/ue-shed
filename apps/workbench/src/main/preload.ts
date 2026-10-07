@@ -17,6 +17,7 @@ import type {
 } from "@ue-shed/extension-camera-review/client";
 import type { EditorHandoffNotice } from "../shared/editor-handoff.js";
 import type { MapCaptureProgressEvent } from "@ue-shed/extension-camera-review/map-capture-client";
+import type { WorkbenchOperationProgress } from "@ue-shed/game-text/browser";
 import type { ContentObservatoryHistoryRequestWire } from "@ue-shed/extension-content-observatory/client";
 import type {
 	CameraScheduleConfig,
@@ -160,6 +161,23 @@ const workbenchRendererApi = {
 			ipcRenderer.invoke("asset-audits:textures:preview-offline-batch", request)
 	},
 	gameText: {
+		operationState: (target) =>
+			ipcRenderer.invoke("game-text:localization:operation-state", target),
+		operationPlan: (request) =>
+			ipcRenderer.invoke("game-text:localization:operation-plan", request),
+		operationRun: (id) => ipcRenderer.invoke("game-text:localization:operation-run", id),
+		operationCancel: (id) => ipcRenderer.invoke("game-text:localization:operation-cancel", id),
+		operationFiles: (request) =>
+			ipcRenderer.invoke("game-text:localization:operation-files", request),
+		onOperationProgress: (listener: (progress: WorkbenchOperationProgress) => void) => {
+			const handler = (
+				_event: Electron.IpcRendererEvent,
+				progress: WorkbenchOperationProgress
+			) => listener(progress);
+			ipcRenderer.on("game-text:localization:operation-progress", handler);
+			return () =>
+				ipcRenderer.removeListener("game-text:localization:operation-progress", handler);
+		},
 		localizationQualitySearch: (request) =>
 			ipcRenderer.invoke("game-text:localization:quality-search", request),
 		localizationQualityFocus: (request) =>

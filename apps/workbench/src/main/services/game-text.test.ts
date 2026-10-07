@@ -148,6 +148,119 @@ const unselectedProject = makeWorkbenchProjectTestLayer({
 });
 
 it.effect(
+	"scans and Unreal operations exclude each other while retained reads remain available",
+	() =>
+		Effect.gen(function* () {
+			const started = yield* Deferred.make<void>();
+			const finish = yield* Deferred.make<void>();
+			const scans = yield* Ref.make(0);
+			yield* Effect.gen(function* () {
+				const service = yield* WorkbenchGameText;
+				const scan = yield* service.configuredRefresh(true).pipe(Effect.forkChild);
+				yield* Deferred.await(started);
+				expect(yield* service.beginOperation()).toBe(false);
+				expect(yield* service.operationBusyReason()).toContain("scan");
+				yield* Deferred.succeed(finish, undefined);
+				expect((yield* Fiber.join(scan)).status).toBe("completed");
+				expect(yield* service.beginOperation()).toBe(true);
+				expect(yield* service.beginOperation()).toBe(false);
+				expect((yield* service.configuredRefresh(false)).status).toBe("completed");
+				expect((yield* service.configuredRefresh(true)).status).toBe("failed");
+				expect((yield* service.configuredScan()).status).toBe("failed");
+				expect((yield* service.chooseAndRefresh()).status).toBe("failed");
+				expect((yield* service.chooseAndScan()).status).toBe("failed");
+				expect(yield* service.saveQualityRules(STARTER_GAME_TEXT_RULES)).toMatchObject({
+					status: "failed",
+					error: { code: "write_failed" }
+				});
+				expect(yield* service.createStarterRules(false)).toMatchObject({
+					status: "failed",
+					error: { code: "write_failed" }
+				});
+				expect(yield* Ref.get(scans)).toBe(1);
+				yield* service.endOperation();
+				expect(yield* service.operationBusyReason()).toBeUndefined();
+				expect((yield* service.configuredRefresh(true)).status).toBe("completed");
+				expect(yield* Ref.get(scans)).toBe(2);
+			}).pipe(
+				Effect.provide(
+					gameTextLive.pipe(
+						Layer.provide(selectedProject),
+						Layer.provide(
+							makeTextCorpusServiceTestLayer({
+								scan: () => Effect.die("unused"),
+								scanFromProjectIndex: () =>
+									Ref.update(scans, (count) => count + 1).pipe(
+										Effect.andThen(Deferred.succeed(started, undefined)),
+										Effect.andThen(Deferred.await(finish)),
+										Effect.as(emptyCorpus)
+									)
+							})
+						)
+					)
+				)
+			);
+		})
+);
+
+it.effect("operation refresh reloads evidence and gathers also rescan the retained corpus", () =>
+	Effect.gen(function* () {
+		const reads = yield* Ref.make(0);
+		const scans = yield* Ref.make(0);
+		const reader = makeLocalizationEvidenceTestLayer({
+			discover: () =>
+				Effect.succeed({
+					schemaVersion: 1,
+					targets: [localizationTarget],
+					diagnostics: []
+				}),
+			read: () =>
+				Ref.updateAndGet(reads, (count) => count + 1).pipe(
+					Effect.map((count) =>
+						localizationEvidence(poDocument(count === 1 ? "Pending" : "Translation"))
+					)
+				),
+			targets: () => Effect.die("unused")
+		});
+		yield* Effect.gen(function* () {
+			const service = yield* WorkbenchGameText;
+			yield* service.configuredRefresh(true);
+			expect(yield* service.localizationTarget(localizationTarget.name)).toMatchObject({
+				notSynced: 2
+			});
+			expect(yield* service.beginOperation()).toBe(true);
+			expect(yield* service.refreshAfterOperation(localizationTarget.name, false)).toBe(true);
+			expect(yield* service.localizationTarget(localizationTarget.name)).toMatchObject({
+				notSynced: 0
+			});
+			expect(yield* Ref.get(reads)).toBe(2);
+			expect(yield* Ref.get(scans)).toBe(1);
+			expect(yield* service.refreshAfterOperation(localizationTarget.name, true)).toBe(true);
+			expect(yield* Ref.get(reads)).toBe(3);
+			expect(yield* Ref.get(scans)).toBe(2);
+			yield* service.endOperation();
+		}).pipe(
+			Effect.provide(
+				WorkbenchGameTextLive.pipe(
+					Layer.provide(gameTextAdapters),
+					Layer.provide(selectedProject),
+					Layer.provide(reader),
+					Layer.provide(
+						makeTextCorpusServiceTestLayer({
+							scan: () => Effect.die("unused"),
+							scanFromProjectIndex: () =>
+								Ref.update(scans, (count) => count + 1).pipe(
+									Effect.as(localizationCorpus())
+								)
+						})
+					)
+				)
+			)
+		);
+	})
+);
+
+it.effect(
 	"reloads localization evidence on Rescan and leaves no-target projects on the source query",
 	() =>
 		Effect.gen(function* () {

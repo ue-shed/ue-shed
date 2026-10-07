@@ -9,6 +9,51 @@ import { InvestigationActions } from "./investigation-actions.js";
 
 afterEach(cleanup);
 
+it("blocks compact export and preset actions while a project operation is running", async () => {
+	const runtime = ManagedRuntime.make(Layer.empty);
+	const [blocked, setBlocked] = createSignal(false);
+	const opened = vi.fn();
+	const user = userEvent.setup();
+	const view = render(() => (
+		<EffectRuntimeProvider runtime={runtime}>
+			<InvestigationActions
+				compact
+				query="text"
+				revision={1}
+				disabled={false}
+				blocked={blocked()}
+				onOpen={opened}
+				client={{
+					export: () => Effect.succeed({ status: "cancelled" }),
+					save: () => Effect.succeed({ status: "cancelled" }),
+					open: () =>
+						Effect.succeed({ status: "opened", path: "preset.json", preset: "text" })
+				}}
+			/>
+		</EffectRuntimeProvider>
+	));
+	try {
+		await user.click(view.getByRole("button", { name: "Presets" }));
+		setBlocked(true);
+		flush();
+		expect(view.getByRole("button", { name: "Export" })).toHaveProperty("disabled", true);
+		expect(view.getByRole("button", { name: "Presets" })).toHaveProperty("disabled", true);
+		expect(screen.getByRole("button", { name: "Save preset…" })).toHaveProperty(
+			"disabled",
+			true
+		);
+		expect(screen.getByRole("button", { name: "Open preset…" })).toHaveProperty(
+			"disabled",
+			true
+		);
+		await user.click(screen.getByRole("button", { name: "Open preset…" }));
+		expect(opened).not.toHaveBeenCalled();
+	} finally {
+		view.unmount();
+		await runtime.dispose();
+	}
+});
+
 it("groups compact exports and presets, closes menus and keeps host actions available", async () => {
 	const runtime = ManagedRuntime.make(Layer.empty);
 	const exported = vi.fn();

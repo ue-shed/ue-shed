@@ -16,6 +16,7 @@ import {
 	cameraFrameEvent,
 	decodeMapCaptureProgressEvent,
 	mapCaptureProgressEvent,
+	gameTextOperationProgressEvent,
 	worldObservationEvent,
 	CandidateId,
 	decodeCameraFrameEvent,
@@ -273,6 +274,11 @@ const validArgsByChannel = {
 	],
 	"game-text:investigation-open": [],
 	"game-text:localization:quality-search": [{ target: "FixtureGame", filter: "all" }],
+	"game-text:localization:operation-state": ["FixtureGame"],
+	"game-text:localization:operation-plan": [{ target: "FixtureGame", operation: "sync" }],
+	"game-text:localization:operation-run": ["operation-1"],
+	"game-text:localization:operation-cancel": ["operation-1"],
+	"game-text:localization:operation-files": [{ id: "operation-1", kind: "planned", offset: 0 }],
 	"game-text:localization:quality-focus": [{ target: "FixtureGame", id: "quality-finding:1" }],
 	"game-text:localization:changes": [{ target: "FixtureGame", filter: "all" }],
 	"game-text:localization:report": [{ target: "FixtureGame" }],
@@ -618,6 +624,17 @@ const validResultByChannel = {
 	"game-text:focus": { status: "not_ready" },
 	"game-text:quality:choose-rules": { status: "not_ready" },
 	"game-text:localization:quality-search": { status: "not_ready" },
+	"game-text:localization:operation-state": { operations: [], wholeRecipe: false },
+	"game-text:localization:operation-plan": {
+		status: "failed",
+		code: "engine_not_found",
+		message: "Engine unavailable.",
+		recovery: "Configure the project's Unreal Engine installation.",
+		details: []
+	},
+	"game-text:localization:operation-run": { status: "cancelled" },
+	"game-text:localization:operation-cancel": { status: "cancelled" },
+	"game-text:localization:operation-files": { status: "ready", files: [], total: 0 },
 	"game-text:localization:quality-focus": { status: "not_found" },
 	"game-text:localization:changes": { status: "not_ready" },
 	"game-text:localization:report": { status: "not_ready" },
@@ -828,6 +845,11 @@ const malformedArgsByChannel = {
 	"game-text:localization:quality-search": [
 		{ target: "FixtureGame", filter: "internal_rule", offset: -1 }
 	],
+	"game-text:localization:operation-state": ["../../Private"],
+	"game-text:localization:operation-plan": [{ target: "FixtureGame", operation: "write_assets" }],
+	"game-text:localization:operation-run": [""],
+	"game-text:localization:operation-cancel": [null],
+	"game-text:localization:operation-files": [{ id: "operation-1", kind: "planned", offset: -1 }],
 	"game-text:localization:quality-focus": [
 		{ target: "FixtureGame", id: "quality-finding:1", occurrenceOffset: -1 }
 	],
@@ -881,12 +903,17 @@ const malformedArgsByChannel = {
 	"map-capture:tile": [{ manifestPath: "", relativePath: "../outside.png" }]
 } satisfies Partial<Record<InvokeChannel, IpcFixtureValue>>;
 
-it("registers exactly 135 invoke channels plus renderer events", () => {
-	expect(invokeChannelNames).toHaveLength(135);
-	expect(new Set(invokeChannelNames).size).toBe(135);
+it("registers exactly 140 invoke channels plus renderer events", () => {
+	expect(invokeChannelNames).toHaveLength(140);
+	expect(new Set(invokeChannelNames).size).toBe(140);
 	expect(invokeChannelNames).toEqual(
 		expect.arrayContaining([
 			"game-text:localization:quality-search",
+			"game-text:localization:operation-state",
+			"game-text:localization:operation-plan",
+			"game-text:localization:operation-run",
+			"game-text:localization:operation-cancel",
+			"game-text:localization:operation-files",
 			"game-text:localization:quality-focus",
 			"game-text:localization:changes",
 			"game-text:localization:report",
@@ -896,6 +923,9 @@ it("registers exactly 135 invoke channels plus renderer events", () => {
 	expect(cameraFrameEvent.channel).toBe("camera:frame");
 	expect(mapCaptureProgressEvent.channel).toBe("map-capture:progress");
 	expect(worldObservationEvent.channel).toBe("map-review:world-observation");
+	expect(gameTextOperationProgressEvent.channel).toBe(
+		"game-text:localization:operation-progress"
+	);
 });
 
 it.effect("decodes map-capture progress events", () =>
@@ -915,9 +945,53 @@ it("keeps contract channels in exact preload parity", () => {
 			"camera:frame",
 			"editor-window:handoff",
 			"map-capture:progress",
-			"map-review:world-observation"
+			"map-review:world-observation",
+			"game-text:localization:operation-progress"
 		].toSorted()
 	);
+});
+
+it("bounds Unreal operation plans, receipts, progress and project-relative file pages", () => {
+	const files = invokeContracts["game-text:localization:operation-files"].result;
+	expect(
+		Schema.is(files)({
+			status: "ready",
+			files: [{ path: "Content/Localization/Game.po", planned: true }],
+			total: 1
+		})
+	).toBe(true);
+	for (const path of ["C:/Private/Game.po", "/private/Game.po", "../Game.po", "Content\\Game.po"])
+		expect(
+			Schema.is(files)({ status: "ready", files: [{ path, planned: true }], total: 1 })
+		).toBe(false);
+	expect(
+		Schema.is(files)({
+			status: "ready",
+			files: Array.from({ length: 51 }, () => ({ path: "Content/Game.po", planned: true })),
+			total: 51
+		})
+	).toBe(false);
+	expect(
+		Schema.is(gameTextOperationProgressEvent.payload)({
+			id: "operation-1",
+			target: "FixtureGame",
+			operation: "sync",
+			phase: "running",
+			stepIndex: 1,
+			stepTotal: 3,
+			kind: "compile"
+		})
+	).toBe(true);
+	expect(
+		Schema.is(gameTextOperationProgressEvent.payload)({
+			id: "operation-1",
+			target: "FixtureGame",
+			operation: "sync",
+			phase: "running",
+			stepIndex: -1,
+			stepTotal: 3
+		})
+	).toBe(false);
 });
 
 it("bounds localization details and rejects filesystem requests", () => {

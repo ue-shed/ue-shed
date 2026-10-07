@@ -45,6 +45,12 @@ import {
 	GatheredDetail
 } from "./game-text-localization-view.js";
 import { GameTextResultRows } from "./game-text-result-rows.js";
+import {
+	createGameTextOperations,
+	OperationPanel,
+	SyncWithUnreal,
+	UnrealSteps
+} from "./game-text-operations.js";
 import { identityLabel, locationDetail, sourceText } from "./game-text-view.js";
 import { styles } from "./game-text-styles.js";
 
@@ -152,6 +158,13 @@ export function GameTextRoute(props: {
 			setSearching(true);
 			setPage(undefined);
 		}
+	});
+	const operations = createGameTextOperations({
+		client: props.client,
+		target: localization.target,
+		scanning: loading,
+		revision: summary,
+		onCompleted: () => load(false)
 	});
 	const editor = createGameTextRuleState({
 		client: props.client,
@@ -503,6 +516,7 @@ export function GameTextRoute(props: {
 				<div {...stylex.attrs(styles.exports)}>
 					<InvestigationActions
 						compact
+						blocked={operations.busy()}
 						client={client()}
 						disabled={
 							!summary() || (mode() === "corpus" ? searching() : !qualitySummary())
@@ -538,14 +552,22 @@ export function GameTextRoute(props: {
 			</Show>
 			<div {...stylex.attrs(styles.bar)}>
 				<Show when={props.client.createStarterRules}>
-					<Button tone="primary" onClick={() => loadRules(false)}>
+					<Button
+						tone="primary"
+						disabled={operations.busy()}
+						onClick={() => loadRules(false)}
+					>
 						Create rules file
 					</Button>
 				</Show>
 				<Show when={qualityFailure()?.code === "already_exists"}>
-					<Button onClick={() => loadRules(true)}>Load existing rules</Button>
+					<Button disabled={operations.busy()} onClick={() => loadRules(true)}>
+						Load existing rules
+					</Button>
 				</Show>
-				<Button onClick={() => loadRules()}>Load rules</Button>
+				<Button disabled={operations.busy()} onClick={() => loadRules()}>
+					Load rules
+				</Button>
 			</div>
 		</section>
 	);
@@ -597,7 +619,17 @@ export function GameTextRoute(props: {
 						</button>
 					</Show>
 				</div>
-				<LocalizationControls model={localization} />
+				<LocalizationControls
+					model={localization}
+					disabled={operations.busy()}
+					syncAction={
+						<SyncWithUnreal
+							model={operations}
+							pending={localization.active()?.notSynced ?? 0}
+						/>
+					}
+				/>
+				<UnrealSteps model={operations} />
 				<Show when={summary()}>
 					{(current) => (
 						<span {...stylex.attrs(styles.coverage)}>
@@ -632,11 +664,17 @@ export function GameTextRoute(props: {
 					)}
 				</Show>
 				<Show when={summary()}>
-					<Button size="compact" disabled={loading()} onClick={() => load(true)}>
+					<Button
+						size="compact"
+						disabled={loading() || operations.busy()}
+						title={operations.reason()}
+						onClick={() => load(true)}
+					>
 						Rescan
 					</Button>
 				</Show>
 			</div>
+			<OperationPanel model={operations} />
 			<Show when={localization.error()}>
 				<p role="alert" {...stylex.attrs(styles.problemMessage)}>
 					{localization.error()}
@@ -694,6 +732,7 @@ export function GameTextRoute(props: {
 							<Show when={localization.target()}>
 								{(target) => (
 									<GameTextReports
+										disabled={operations.busy()}
 										client={props.client}
 										target={target()}
 										revision={summary()}
@@ -716,6 +755,7 @@ export function GameTextRoute(props: {
 											<Show when={qualityDocument()}>
 												{(document) => (
 													<GameTextQualityWorkspace
+														disabled={operations.busy()}
 														client={props.client}
 														summary={quality()}
 														document={document()}
@@ -748,6 +788,7 @@ export function GameTextRoute(props: {
 									}
 								>
 									<GameTextLocalizationQuality
+										disabled={operations.busy()}
 										client={props.client}
 										localization={localization}
 										summary={qualitySummary()}

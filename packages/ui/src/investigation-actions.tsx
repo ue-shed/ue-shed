@@ -32,6 +32,8 @@ export function InvestigationActions<Query, Preset, Error>(props: {
 	readonly query: Query;
 	readonly revision: unknown;
 	readonly disabled: boolean;
+	/** Block every action while the host has an exclusive project operation. */
+	readonly blocked?: boolean;
 	readonly onOpen: (preset: Preset) => void;
 	readonly compact?: boolean;
 }) {
@@ -46,6 +48,7 @@ export function InvestigationActions<Query, Preset, Error>(props: {
 	const key = () => JSON.stringify([props.query, props.revision]);
 	const replay = () => (saved()?.key === key() ? saved()?.command : undefined);
 	const run = (operation: "json" | "csv" | "save" | "open") => {
+		if (props.blocked) return;
 		setExportOpen(false);
 		setPresetOpen(false);
 		const baseline = key();
@@ -113,26 +116,30 @@ export function InvestigationActions<Query, Preset, Error>(props: {
 						<>
 							<Button
 								type="button"
-								disabled={pending() || props.disabled}
+								disabled={pending() || props.disabled || props.blocked}
 								onClick={() => run("json")}
 							>
 								Export JSON
 							</Button>
 							<Button
 								type="button"
-								disabled={pending() || props.disabled}
+								disabled={pending() || props.disabled || props.blocked}
 								onClick={() => run("csv")}
 							>
 								Export CSV
 							</Button>
 							<Button
 								type="button"
-								disabled={pending() || props.disabled}
+								disabled={pending() || props.disabled || props.blocked}
 								onClick={() => run("save")}
 							>
 								Save preset
 							</Button>
-							<Button type="button" disabled={pending()} onClick={() => run("open")}>
+							<Button
+								type="button"
+								disabled={pending() || props.blocked}
+								onClick={() => run("open")}
+							>
 								Open preset
 							</Button>
 						</>
@@ -151,7 +158,7 @@ export function InvestigationActions<Query, Preset, Error>(props: {
 								type="button"
 								size="compact"
 								tone="quiet"
-								disabled={pending() || props.disabled}
+								disabled={pending() || props.disabled || props.blocked}
 							>
 								Export
 							</Button>
@@ -161,6 +168,7 @@ export function InvestigationActions<Query, Preset, Error>(props: {
 							type="button"
 							size="compact"
 							tone="quiet"
+							disabled={props.blocked}
 							onClick={() => run("csv")}
 						>
 							CSV
@@ -169,6 +177,7 @@ export function InvestigationActions<Query, Preset, Error>(props: {
 							type="button"
 							size="compact"
 							tone="quiet"
+							disabled={props.blocked}
 							onClick={() => run("json")}
 						>
 							JSON
@@ -187,7 +196,7 @@ export function InvestigationActions<Query, Preset, Error>(props: {
 								type="button"
 								size="compact"
 								tone="quiet"
-								disabled={pending()}
+								disabled={pending() || props.blocked}
 							>
 								Presets
 							</Button>
@@ -197,7 +206,7 @@ export function InvestigationActions<Query, Preset, Error>(props: {
 							type="button"
 							size="compact"
 							tone="quiet"
-							disabled={props.disabled}
+							disabled={props.disabled || props.blocked}
 							onClick={() => run("save")}
 						>
 							Save preset…
@@ -206,6 +215,7 @@ export function InvestigationActions<Query, Preset, Error>(props: {
 							type="button"
 							size="compact"
 							tone="quiet"
+							disabled={props.blocked}
 							onClick={() => run("open")}
 						>
 							Open preset…
@@ -216,7 +226,7 @@ export function InvestigationActions<Query, Preset, Error>(props: {
 					<Button
 						type="button"
 						size={props.compact ? "compact" : undefined}
-						disabled={pending()}
+						disabled={pending() || props.blocked}
 						onClick={copy}
 					>
 						Copy CLI replay

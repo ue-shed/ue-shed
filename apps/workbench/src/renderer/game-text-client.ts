@@ -43,7 +43,14 @@ import {
 	WorkbenchTaskProgress,
 	WorkbenchProjectState
 } from "../shared/project-workspace-contract.js";
-import { Effect, Schema } from "effect";
+import { Effect, Queue, Schema, Stream } from "effect";
+import {
+	WorkbenchOperationState,
+	WorkbenchOperationPlanResult,
+	WorkbenchOperationResult,
+	WorkbenchOperationFilesResult,
+	WorkbenchOperationProgress
+} from "@ue-shed/game-text/browser";
 
 const recovery = "Restart Workbench. If the problem persists, verify package versions.";
 
@@ -62,6 +69,62 @@ function invokeRequest<A, HostValue, DecodeError>(
 }
 
 export const gameTextClient: GameTextClientApi = GameTextClient.of({
+	operations: {
+		state: (target) =>
+			invokeRequest(
+				"gameText.operationState",
+				() => window.ueShed.gameText.operationState(target),
+				Schema.decodeUnknownEffect(WorkbenchOperationState)
+			),
+		plan: (request) =>
+			invokeRequest(
+				"gameText.operationPlan",
+				() => window.ueShed.gameText.operationPlan(request),
+				Schema.decodeUnknownEffect(WorkbenchOperationPlanResult)
+			),
+		run: (id) =>
+			invokeRequest(
+				"gameText.operationRun",
+				() => window.ueShed.gameText.operationRun(id),
+				Schema.decodeUnknownEffect(WorkbenchOperationResult)
+			),
+		cancel: (id) =>
+			invokeRequest(
+				"gameText.operationCancel",
+				() => window.ueShed.gameText.operationCancel(id),
+				Schema.decodeUnknownEffect(WorkbenchOperationResult)
+			),
+		files: (request) =>
+			invokeRequest(
+				"gameText.operationFiles",
+				() => window.ueShed.gameText.operationFiles(request),
+				Schema.decodeUnknownEffect(WorkbenchOperationFilesResult)
+			),
+		progress: Stream.callback<WorkbenchOperationProgress>(
+			(queue) =>
+				Effect.acquireRelease(
+					Effect.sync(() =>
+						window.ueShed.gameText.onOperationProgress((progress) =>
+							Queue.offerUnsafe(queue, progress)
+						)
+					),
+					(unsubscribe) => Effect.sync(unsubscribe)
+				),
+			{ bufferSize: 1, strategy: "sliding" }
+		).pipe(
+			Stream.mapEffect((progress) =>
+				Schema.decodeUnknownEffect(WorkbenchOperationProgress)(progress)
+			),
+			Stream.mapError(
+				(cause) =>
+					new GameTextClientError({
+						cause,
+						operation: "gameText.operationProgress",
+						recovery
+					})
+			)
+		)
+	},
 	localizationQualitySearch: Effect.fn("GameTextClient.localizationQualitySearch")(
 		(request: WorkspaceQualityRequest) =>
 			invokeRequest(

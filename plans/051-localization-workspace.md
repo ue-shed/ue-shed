@@ -17,7 +17,7 @@
 
 ## Status
 
-- **State**: IN PROGRESS. Phases 0–4 are done; Phase 5 is next.
+- **State**: IN PROGRESS. Phases 0–5 are done; Phase 6 is next.
 - **Priority**: P1
 - **Effort**: XL
 - **Risk**: HIGH. The plan adds the first UE Shed writes to localization files and the first
@@ -417,7 +417,19 @@ never writes a file.
   every supported operation, checks that every changed file was planned, and checks that a
   mid-run cancel leaves no process behind. On UE 5.7 and UE 5.8 a PO edit followed by `sync`
   turns the line from `not_synced` to `translated`.
-- 5b (the Workbench actions, with progress and cancel) is next.
+- **5b done.** The Workbench has the following:
+    - A "Sync with Unreal" button beside the not-synced indicator, and an "Unreal steps" menu
+      limited to the operations the target supports.
+    - An inline confirmation before every run, showing the engine version, the project-relative
+      files that may be written, "Copy file list", and the reminder about source control.
+    - A one-line progress display with Cancel, then a result line and a disclosure listing the
+      changed files.
+    - Typed failures with safe details.
+    - Single-flight admission shared with scanning. After a successful run the target's evidence
+      reloads, and `gather` also rescans.
+    - Tests pass on Node 24 and Node 26, the recording passes, and screenshot 14 shows the sync
+      plan.
+- Phase 5's gate is met. Phase 6 (translation editing) is next.
 
 ## Phase 6 — Translation editing
 

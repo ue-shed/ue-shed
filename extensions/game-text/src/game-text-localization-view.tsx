@@ -13,6 +13,7 @@ import { CopyButton } from "./game-text-copy-button.js";
 import { LocalizationPicker } from "./game-text-localization-picker.js";
 import type { GameTextLocalizationState } from "./game-text-localization-state.js";
 import { styles } from "./game-text-styles.js";
+import type { JSX } from "@solidjs/web";
 
 export const localizationLabels = {
 	translated: "Translated",
@@ -76,7 +77,11 @@ function visibleTranslations(detail: LocalizationFocus) {
 	);
 }
 
-export function LocalizationControls(props: { readonly model: GameTextLocalizationState }) {
+export function LocalizationControls(props: {
+	readonly model: GameTextLocalizationState;
+	readonly disabled?: boolean;
+	readonly syncAction?: JSX.Element;
+}) {
 	return (
 		<>
 			<Show when={props.model.targets().length > 1}>
@@ -84,7 +89,7 @@ export function LocalizationControls(props: { readonly model: GameTextLocalizati
 					label="Localization target"
 					value={props.model.target() ?? "Choose target"}
 					values={props.model.targets().map((target) => target.name)}
-					disabled={!props.model.ready() && !props.model.error()}
+					disabled={props.disabled || (!props.model.ready() && !props.model.error())}
 					onSelect={(value) => {
 						const target = props.model.targets().find((item) => item.name === value);
 						if (target) props.model.selectTarget(target.name);
@@ -96,6 +101,7 @@ export function LocalizationControls(props: { readonly model: GameTextLocalizati
 					<>
 						<LocalizationPicker
 							label="Culture"
+							disabled={props.disabled === true}
 							value={props.model.culture() ?? "All cultures"}
 							values={["All cultures", ...active().target.cultures]}
 							onSelect={(value) =>
@@ -111,6 +117,7 @@ export function LocalizationControls(props: { readonly model: GameTextLocalizati
 								{active().notSynced.toLocaleString()} not synced
 							</span>
 						</Show>
+						{props.syncAction}
 					</>
 				)}
 			</Show>

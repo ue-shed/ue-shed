@@ -111,6 +111,7 @@ function replaceRecovery(
 }
 
 export function GameTextRuleEditor(props: {
+	readonly disabled?: boolean | undefined;
 	readonly editor: GameTextRuleState;
 	readonly state: RuleEditorState;
 	readonly summary: TextQualityQuerySummary;
@@ -173,7 +174,7 @@ export function GameTextRuleEditor(props: {
 		props.summary.rules.find((rule) => rule.ruleId === ruleId)?.findingCount ?? 0;
 
 	return (
-		<div {...stylex.attrs(styles.editor)}>
+		<fieldset disabled={props.disabled} {...stylex.attrs(styles.editor)}>
 			<aside aria-label="Quality rule list" {...stylex.attrs(styles.ruleList)}>
 				<header {...stylex.attrs(styles.panelHeader)}>
 					<span>Rules</span>
@@ -586,12 +587,15 @@ export function GameTextRuleEditor(props: {
 					)}
 				</For>
 			</aside>
-		</div>
+		</fieldset>
 	);
 }
 
 const styles = stylex.create({
 	editor: {
+		borderWidth: 0,
+		padding: 0,
+		margin: 0,
 		display: "grid",
 		gridTemplateColumns: "210px minmax(0, 1fr) 260px",
 		gridTemplateRows: "minmax(0, 1fr)",

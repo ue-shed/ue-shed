@@ -2,10 +2,26 @@ import { Effect } from "effect";
 import { ElectronIpc } from "../adapters/electron-ipc.js";
 import { invokeContracts } from "../ipc-contracts.js";
 import { WorkbenchGameText } from "../services/game-text.js";
+import { WorkbenchGameTextOperations } from "../services/game-text-operations.js";
 
 export const register = Effect.gen(function* () {
 	const ipc = yield* ElectronIpc;
 	const gameText = yield* WorkbenchGameText;
+	const operations = yield* WorkbenchGameTextOperations;
+	yield* ipc.register(
+		invokeContracts["game-text:localization:operation-state"],
+		operations.state
+	);
+	yield* ipc.register(invokeContracts["game-text:localization:operation-plan"], operations.plan);
+	yield* ipc.register(invokeContracts["game-text:localization:operation-run"], operations.run);
+	yield* ipc.register(
+		invokeContracts["game-text:localization:operation-cancel"],
+		operations.cancel
+	);
+	yield* ipc.register(
+		invokeContracts["game-text:localization:operation-files"],
+		operations.files
+	);
 	yield* ipc.register(invokeContracts["game-text:localization:quality-search"], (request) =>
 		gameText.localizationQualitySearch(request)
 	);

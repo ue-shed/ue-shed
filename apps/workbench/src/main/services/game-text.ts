@@ -59,6 +59,7 @@ import {
 } from "@ue-shed/game-text";
 import { makeGameTextLocalization } from "./game-text-localization.js";
 import type { SavedAssetScan } from "@ue-shed/unreal-assets";
+import type { LocalizationTarget } from "@ue-shed/localization";
 import { Cache, Context, Data, Duration, Effect, Layer, Ref } from "effect";
 import type { WorkbenchTaskProgress } from "../project-workspace-contract.js";
 import { ElectronDialog } from "../adapters/electron-dialog.js";
@@ -66,6 +67,17 @@ import { LocalFiles } from "../adapters/local-files.js";
 import { WorkbenchProject, type WorkbenchProjectCandidates } from "./project-workspace.js";
 
 export interface WorkbenchGameTextApi {
+	/** Main-only admission and refresh methods. These are never registered as IPC handlers. */
+	readonly operationTarget: (
+		name: LocalizationJoin["target"]
+	) => Effect.Effect<LocalizationTarget | undefined>;
+	readonly operationBusyReason: () => Effect.Effect<string | undefined>;
+	readonly beginOperation: () => Effect.Effect<boolean>;
+	readonly endOperation: () => Effect.Effect<void>;
+	readonly refreshAfterOperation: (
+		target: LocalizationJoin["target"],
+		gather: boolean
+	) => Effect.Effect<boolean>;
 	readonly localizationQualitySearch: (
 		request: WorkspaceQualityRequest
 	) => Effect.Effect<WorkspaceQualityResult>;
@@ -147,6 +159,33 @@ export const WorkbenchGameTextLive = Layer.effect(
 		const textCorpus = yield* TextCorpusService;
 		const dialog = yield* ElectronDialog;
 		const files = yield* LocalFiles;
+		const activity = yield* Ref.make({ scans: 0, operation: false });
+		const operationBusyReason = () =>
+			Ref.get(activity).pipe(
+				Effect.map((value) =>
+					value.operation
+						? "An Unreal localization step is running. Cancel it or wait before scanning."
+						: value.scans > 0
+							? "A project scan is running. Wait before running Unreal steps."
+							: undefined
+				)
+			);
+		const guardScan = <A, B>(scan: Effect.Effect<A>, unavailable: () => B) =>
+			Effect.uninterruptibleMask((restore) =>
+				Effect.gen(function* () {
+					const admitted = yield* Ref.modify(activity, (value) =>
+						value.operation
+							? [false, value]
+							: [true, { ...value, scans: value.scans + 1 }]
+					);
+					if (!admitted) return unavailable();
+					return yield* restore(scan).pipe(
+						Effect.ensuring(
+							Ref.update(activity, (value) => ({ ...value, scans: value.scans - 1 }))
+						)
+					);
+				})
+			);
 		const retainedCorpus = yield* Ref.make<TextCorpus | undefined>(undefined);
 		const queryModel = yield* Ref.make<TextCorpusQuery | undefined>(undefined);
 		const qualityModel = yield* Ref.make<TextQualityQuery | undefined>(undefined);
@@ -488,6 +527,16 @@ export const WorkbenchGameTextLive = Layer.effect(
 
 		const createStarterRules = Effect.fn("Workbench.WorkbenchGameText.createStarterRules")(
 			function* (loadExisting: boolean) {
+				if ((yield* Ref.get(activity)).operation)
+					return {
+						status: "failed" as const,
+						error: {
+							code: "write_failed" as const,
+							message: "An Unreal step is running.",
+							recovery: "Cancel it or wait before changing rules.",
+							retrySafe: true
+						}
+					};
 				const current = yield* project.current();
 				if (current.status !== "ready" || !(yield* currentModel(retainedCorpus)))
 					return { status: "not_ready" as const };
@@ -670,6 +719,16 @@ export const WorkbenchGameTextLive = Layer.effect(
 
 		const saveQualityRules = Effect.fn("Workbench.WorkbenchGameText.saveQualityRules")(
 			function* (document: GameTextRuleDocument) {
+				if ((yield* Ref.get(activity)).operation)
+					return {
+						status: "failed" as const,
+						error: {
+							code: "write_failed" as const,
+							message: "An Unreal step is running.",
+							recovery: "Cancel it or wait before saving rules.",
+							retrySafe: true
+						}
+					};
 				const destination = yield* Ref.get(qualityRulePath);
 				const owner = yield* Ref.get(modelSelection);
 				const path =
@@ -842,6 +901,22 @@ export const WorkbenchGameTextLive = Layer.effect(
 		);
 
 		return WorkbenchGameText.of({
+			operationTarget: localization.operationTarget,
+			operationBusyReason,
+			beginOperation: () =>
+				Ref.modify(activity, (value) =>
+					value.operation || value.scans > 0
+						? [false, value]
+						: [true, { ...value, operation: true }]
+				),
+			endOperation: () => Ref.update(activity, (value) => ({ ...value, operation: false })),
+			refreshAfterOperation: (target, gather) =>
+				Effect.gen(function* () {
+					if (gather && (yield* configuredRefresh(true)).status !== "completed")
+						return false;
+					if (!gather) yield* localization.reset();
+					return (yield* localization.select(target)).status === "ready";
+				}),
 			localizationQualitySearch: localization.qualitySearch,
 			localizationQualityFocus: localization.qualityFocus,
 			localizationChanges: localization.changes,
@@ -853,10 +928,36 @@ export const WorkbenchGameTextLive = Layer.effect(
 			investigationExport,
 			investigationSave,
 			investigationOpen,
-			chooseAndRefresh,
-			chooseAndScan,
-			configuredRefresh,
-			configuredScan,
+			chooseAndRefresh: () =>
+				guardScan(chooseAndRefresh(), () =>
+					unavailableQueryProject(
+						"An Unreal localization step is running.",
+						"Cancel it or wait before scanning."
+					)
+				),
+			chooseAndScan: () =>
+				guardScan(chooseAndScan(), () =>
+					unavailableProject(
+						"An Unreal localization step is running.",
+						"Cancel it or wait before scanning."
+					)
+				),
+			configuredRefresh: (refresh = true) =>
+				refresh
+					? guardScan(configuredRefresh(true), () =>
+							unavailableQueryProject(
+								"An Unreal localization step is running.",
+								"Cancel it or wait before scanning."
+							)
+						)
+					: configuredRefresh(false),
+			configuredScan: () =>
+				guardScan(configuredScan(), () =>
+					unavailableProject(
+						"An Unreal localization step is running.",
+						"Cancel it or wait before scanning."
+					)
+				),
 			focus,
 			progress,
 			search,
@@ -878,6 +979,11 @@ export function makeWorkbenchGameTextTestLayer(
 	return Layer.succeed(
 		WorkbenchGameText,
 		WorkbenchGameText.of({
+			operationTarget: () => Effect.succeed(undefined),
+			operationBusyReason: () => Effect.succeed(undefined),
+			beginOperation: () => Effect.succeed(true),
+			endOperation: () => Effect.void,
+			refreshAfterOperation: () => Effect.succeed(true),
 			localizationQualitySearch: () => Effect.succeed({ status: "not_ready" }),
 			localizationQualityFocus: () => Effect.succeed({ status: "not_ready" }),
 			localizationChanges: () => Effect.succeed({ status: "not_ready" }),

@@ -21,3 +21,4 @@ export * from "./search.js";
 export * from "./investigation.js";
 export * from "./csv.js";
 export * from "./starter-rules.js";
+export * from "./operation-query.js";

@@ -34,6 +34,7 @@ import { makeWorkbenchContentObservatoryTestLayer } from "../services/content-ob
 import { makeWorkbenchConfigExplorerTestLayer } from "../services/config-explorer.js";
 import { makeFixtureLauncherTestLayer } from "../services/fixture-launcher.js";
 import { makeWorkbenchGameTextTestLayer } from "../services/game-text.js";
+import { WorkbenchGameTextOperations } from "../services/game-text-operations.js";
 import { makeWorkbenchInputAtlasTestLayer } from "../services/input-atlas.js";
 import { makeWorkbenchMapReviewTestLayer } from "../services/map-review.js";
 import { makeWorkbenchMapCaptureTestLayer } from "../services/map-capture.js";
@@ -742,6 +743,23 @@ function buildRegistrationLayer(recorder: Recorder, options: RegistrationOptions
 		assetAudits,
 		assetNavigation,
 		gameText,
+		Layer.succeed(
+			WorkbenchGameTextOperations,
+			WorkbenchGameTextOperations.of({
+				state: () => Effect.succeed({ operations: [], wholeRecipe: false }),
+				plan: () =>
+					Effect.succeed({
+						status: "failed",
+						code: "not_ready",
+						message: "Not scanned.",
+						recovery: "Scan the project.",
+						details: []
+					}),
+				run: () => Effect.succeed({ status: "cancelled" }),
+				cancel: () => Effect.succeed({ status: "cancelled" }),
+				files: () => Effect.succeed({ status: "ready", files: [], total: 0 })
+			})
+		),
 		contentObservatory,
 		configExplorer,
 		inputAtlas,

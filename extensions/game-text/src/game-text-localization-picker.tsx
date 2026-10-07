@@ -1,5 +1,5 @@
 import { AnchoredPopover, Button } from "@ue-shed/ui";
-import { For, Show, createSignal, createUniqueId } from "solid-js";
+import { For, Show, createEffect, createSignal, createUniqueId } from "solid-js";
 import { styles } from "./game-text-styles.js";
 
 /** Uses the same light-dismiss popover as Export, with keyboard focus on the choices. */
@@ -12,6 +12,12 @@ export function LocalizationPicker(props: {
 }) {
 	const id = createUniqueId();
 	const [open, setOpen] = createSignal(false);
+	createEffect(
+		() => props.disabled,
+		(disabled) => {
+			if (disabled) setOpen(false);
+		}
+	);
 	let anchor: HTMLButtonElement | undefined;
 	return (
 		<AnchoredPopover
@@ -57,8 +63,10 @@ export function LocalizationPicker(props: {
 						type="button"
 						size="compact"
 						tone="quiet"
+						disabled={props.disabled}
 						aria-pressed={props.value === value ? "true" : "false"}
 						onClick={() => {
+							if (props.disabled) return;
 							setOpen(false);
 							props.onSelect(value);
 							queueMicrotask(() => anchor?.focus());

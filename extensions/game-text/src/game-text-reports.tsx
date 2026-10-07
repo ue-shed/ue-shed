@@ -22,6 +22,7 @@ const percent = (value: number | null) =>
 
 export function GameTextReports(props: {
 	readonly client: GameTextClientApi;
+	readonly disabled?: boolean;
 	readonly target: LocalizationSelection["target"];
 	readonly revision: TextCorpusQuerySummary | undefined;
 }) {
@@ -117,7 +118,7 @@ export function GameTextReports(props: {
 				<Button
 					size="compact"
 					tone="quiet"
-					disabled={loading() || fileBusy() || !page()}
+					disabled={props.disabled || loading() || fileBusy() || !page()}
 					onClick={() => operation("save_baseline")}
 				>
 					Save baseline…
@@ -125,7 +126,7 @@ export function GameTextReports(props: {
 				<Button
 					size="compact"
 					tone="quiet"
-					disabled={loading() || fileBusy() || !page()}
+					disabled={props.disabled || loading() || fileBusy() || !page()}
 					onClick={() => operation("compare_baseline")}
 				>
 					Compare with baseline…
@@ -133,7 +134,7 @@ export function GameTextReports(props: {
 				<Button
 					size="compact"
 					tone="quiet"
-					disabled={loading() || fileBusy() || !page()}
+					disabled={props.disabled || loading() || fileBusy() || !page()}
 					onClick={() => operation("export_csv")}
 				>
 					Export CSV

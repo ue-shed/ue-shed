@@ -34,7 +34,16 @@ import type {
 } from "@ue-shed/game-text/browser";
 import type { EditorAssetLocateResult } from "@ue-shed/protocol";
 import type { TaskProgress } from "@ue-shed/ui/task-progress";
-import { Context, type Effect, Schema } from "effect";
+import { Context, type Effect, Schema, type Stream } from "effect";
+import type {
+	WorkbenchOperationRequest,
+	WorkbenchOperationPlanResult,
+	WorkbenchOperationResult,
+	WorkbenchOperationState,
+	WorkbenchOperationProgress,
+	WorkbenchOperationFilesRequest,
+	WorkbenchOperationFilesResult
+} from "@ue-shed/game-text/browser";
 
 export class GameTextClientError extends Schema.TaggedErrorClass<GameTextClientError>()(
 	"GameTextClientError",
@@ -46,6 +55,22 @@ export class GameTextClientError extends Schema.TaggedErrorClass<GameTextClientE
 ) {}
 
 export interface GameTextClientApi {
+	readonly operations?: {
+		readonly state: (
+			target: LocalizationSelection["target"]
+		) => Effect.Effect<WorkbenchOperationState, GameTextClientError>;
+		readonly plan: (
+			request: WorkbenchOperationRequest
+		) => Effect.Effect<WorkbenchOperationPlanResult, GameTextClientError>;
+		readonly run: (id: string) => Effect.Effect<WorkbenchOperationResult, GameTextClientError>;
+		readonly cancel: (
+			id: string
+		) => Effect.Effect<WorkbenchOperationResult, GameTextClientError>;
+		readonly files: (
+			request: WorkbenchOperationFilesRequest
+		) => Effect.Effect<WorkbenchOperationFilesResult, GameTextClientError>;
+		readonly progress: Stream.Stream<WorkbenchOperationProgress, GameTextClientError>;
+	};
 	readonly localizationQualitySearch?: (
 		request: WorkspaceQualityRequest
 	) => Effect.Effect<WorkspaceQualityResult, GameTextClientError>;

@@ -27,7 +27,16 @@ import {
 
 import {
 	GameTextInvestigationQuery,
-	GameTextInvestigationPresetResult
+	GameTextInvestigationPresetResult,
+	WorkbenchOperationRequest,
+	WorkbenchOperationPlanResult,
+	WorkbenchOperationId,
+	WorkbenchOperationTarget,
+	WorkbenchOperationState,
+	WorkbenchOperationResult,
+	WorkbenchOperationFilesRequest,
+	WorkbenchOperationFilesResult,
+	WorkbenchOperationProgress
 } from "@ue-shed/game-text/browser";
 import { InvestigationFileResult, InvestigationFormat } from "@ue-shed/unreal-assets/investigation";
 import {
@@ -727,6 +736,31 @@ export const invokeContracts = {
 		args: Schema.Tuple([]),
 		result: GameTextInvestigationPresetResult
 	}),
+	"game-text:localization:operation-state": invoke({
+		channel: "game-text:localization:operation-state",
+		args: Schema.Tuple([WorkbenchOperationTarget]),
+		result: WorkbenchOperationState
+	}),
+	"game-text:localization:operation-plan": invoke({
+		channel: "game-text:localization:operation-plan",
+		args: Schema.Tuple([WorkbenchOperationRequest]),
+		result: WorkbenchOperationPlanResult
+	}),
+	"game-text:localization:operation-run": invoke({
+		channel: "game-text:localization:operation-run",
+		args: Schema.Tuple([WorkbenchOperationId]),
+		result: WorkbenchOperationResult
+	}),
+	"game-text:localization:operation-cancel": invoke({
+		channel: "game-text:localization:operation-cancel",
+		args: Schema.Tuple([WorkbenchOperationId]),
+		result: WorkbenchOperationResult
+	}),
+	"game-text:localization:operation-files": invoke({
+		channel: "game-text:localization:operation-files",
+		args: Schema.Tuple([WorkbenchOperationFilesRequest]),
+		result: WorkbenchOperationFilesResult
+	}),
 	"game-text:localization:quality-search": invoke({
 		channel: "game-text:localization:quality-search",
 		args: Schema.Tuple([WorkspaceQualityRequest]),
@@ -1194,6 +1228,11 @@ export const mapCaptureProgressEvent = {
 	kind: "event",
 	channel: "map-capture:progress",
 	payload: MapCaptureProgressEvent
+} as const;
+
+export const gameTextOperationProgressEvent = {
+	channel: "game-text:localization:operation-progress",
+	payload: WorkbenchOperationProgress
 } as const;
 
 // SAFETY: invokeContracts is the sole source of keys, so Object.keys cannot produce another channel.

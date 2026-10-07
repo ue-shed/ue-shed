@@ -99,6 +99,7 @@ export function FindingText(props: {
 }
 
 export function GameTextLocalizationQuality(props: {
+	readonly disabled?: boolean;
 	readonly client: GameTextClientApi;
 	readonly localization: GameTextLocalizationState;
 	readonly summary: TextQualityQuerySummary | undefined;
@@ -412,15 +413,30 @@ export function GameTextLocalizationQuality(props: {
 					</Button>
 				</Show>
 				<Show when={props.document}>
-					<Button size="compact" tone="quiet" onClick={props.onReloadRules}>
+					<Button
+						size="compact"
+						tone="quiet"
+						disabled={props.disabled}
+						onClick={props.onReloadRules}
+					>
 						Reload rules
 					</Button>
-					<Button size="compact" tone="quiet" onClick={() => setEditing(!editing())}>
+					<Button
+						size="compact"
+						tone="quiet"
+						disabled={props.disabled}
+						onClick={() => setEditing(!editing())}
+					>
 						{editing() ? "Close rules" : "Edit rules"}
 					</Button>
 				</Show>
 				<Show when={editing()}>
-					<Button size="compact" tone="quiet" onClick={props.onLoadRules}>
+					<Button
+						size="compact"
+						tone="quiet"
+						disabled={props.disabled}
+						onClick={props.onLoadRules}
+					>
 						Load rules
 					</Button>
 				</Show>
@@ -464,6 +480,7 @@ export function GameTextLocalizationQuality(props: {
 							<Show when={editorSummary()}>
 								{(summary) => (
 									<GameTextRuleEditor
+										disabled={props.disabled}
 										editor={props.editor}
 										state={state()}
 										summary={summary()}

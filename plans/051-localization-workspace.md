@@ -156,7 +156,11 @@ every state in the product contract. No generated localization file is edited by
 - UE 4.27.2 generated `fixtures/unreal-427-localization` from config text without a module build.
   Its manifest uses the older brace-on-its-own-line JSON layout. It has no translations.
 - `.gitattributes` keeps generated localization files byte-exact (`-text`).
-- Not yet run: `pnpm test:uasset-engine-matrix` with the new localization lane.
+- `pnpm test:uasset-engine-matrix` passed on UE 5.7 and UE 5.8. The new localization lane
+  regenerated the target in each engine's disposable copy and matched the committed evidence; the
+  existing native, WASM and saved-review parity lanes also passed. The run is from a worktree nested
+  inside another checkout, where the excluded WASM crate needs a temporary standalone `[workspace]`
+  table; the manifest was restored afterwards.
 
 Follow-up: once Plan 050's `fixtures/legacy-unreal-project` lands, give it a localization target so
 4.27 joins real asset text with translations, then retire the config-only 4.27 fixture.

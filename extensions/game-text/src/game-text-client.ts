@@ -10,6 +10,8 @@ import type {
 	WorkspaceQualityFocusRequest,
 	WorkspaceQualityFocusResult,
 	WorkspaceChangesResult,
+	LocalizationEditRequest,
+	LocalizationEditResult,
 	WorkspaceReportRequest,
 	WorkspaceReportResult,
 	WorkspaceReportFileRequest,
@@ -80,6 +82,9 @@ export interface GameTextClientApi {
 	readonly localizationChanges?: (
 		request: WorkspaceQualityRequest
 	) => Effect.Effect<WorkspaceChangesResult, GameTextClientError>;
+	readonly localizationEdits?: (
+		request: LocalizationEditRequest
+	) => Effect.Effect<LocalizationEditResult, GameTextClientError>;
 	readonly localizationReport?: (
 		request: WorkspaceReportRequest
 	) => Effect.Effect<WorkspaceReportResult, GameTextClientError>;

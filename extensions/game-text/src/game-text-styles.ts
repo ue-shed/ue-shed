@@ -67,6 +67,21 @@ export const styles = stylex.create({
 		backgroundColor: tokens.colorSurface,
 		":focus-within": { borderColor: tokens.colorAccent }
 	},
+	textarea: {
+		minHeight: 56,
+		resize: "vertical",
+		borderColor: tokens.colorBorderStrong,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorTextStrong,
+		padding: tokens.space2,
+		fontFamily: "inherit",
+		fontSize: 13,
+		lineHeight: 1.45,
+		":focus-visible": { borderColor: tokens.colorAccent }
+	},
 	input: {
 		flex: 1,
 		minWidth: 0,

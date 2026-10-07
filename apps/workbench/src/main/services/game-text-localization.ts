@@ -23,6 +23,10 @@ import {
 	type WorkspaceReportFileResult,
 	localizationFocusPage,
 	textCorpusQuery,
+	localizationEditChangeSet,
+	localizationEditOutcomes,
+	type LocalizationEditRequest,
+	type LocalizationEditResult,
 	type LocalizationFocusRequest,
 	type LocalizationFocusResult,
 	type LocalizationJoin,
@@ -34,7 +38,10 @@ import {
 	type TextCorpusSearchResult
 } from "@ue-shed/game-text";
 import {
+	applyLocalizationChangeSet,
 	LocalizationEvidence,
+	LocalizationFileAccessLive,
+	reviewLocalizationChangeSet,
 	type LocalizationTargetEvidence,
 	type LocalizationTarget
 } from "@ue-shed/localization";
@@ -439,6 +446,65 @@ export const makeGameTextLocalization = Effect.fn("Workbench.GameText.localizati
 		);
 		return result;
 	});
+	/**
+	 * Reviews or writes staged translation edits against the retained evidence. Writing replaces
+	 * only PO `msgstr` values; the target is then reloaded so pending edits show as not synced.
+	 */
+	const edits = Effect.fn("Workbench.GameText.localization.edits")(function* (
+		request: LocalizationEditRequest
+	): Effect.fn.Return<LocalizationEditResult> {
+		const retained = yield* current(request.target);
+		const root = yield* currentRoot();
+		if (!retained || !root) return { status: "not_ready" as const };
+		const changeSet = localizationEditChangeSet(retained.evidence, request.edits, "workbench");
+		if (request.mode === "review") {
+			const review = reviewLocalizationChangeSet(retained.evidence, changeSet);
+			return {
+				status: "reviewed" as const,
+				edits: localizationEditOutcomes(review),
+				files: review.files.map(({ culture, relativePath, changes }) => ({
+					culture,
+					relativePath,
+					changes,
+					written: false
+				})),
+				notSynced: retained.result.status === "ready" ? retained.result.notSynced : 0
+			};
+		}
+		const receipt = yield* applyLocalizationChangeSet({ projectRoot: root, changeSet }).pipe(
+			Effect.provideService(LocalizationEvidence, reader),
+			Effect.provide(LocalizationFileAccessLive),
+			Effect.result
+		);
+		if (Result.isFailure(receipt))
+			return {
+				status: "failed" as const,
+				code: receipt.failure.code,
+				message: receipt.failure.message,
+				recovery: receipt.failure.recovery
+			};
+		// Reload so states, counts and the not-synced indicator describe the written files.
+		yield* Ref.set(selected, undefined);
+		const reloaded = yield* select(request.target);
+		yield* Effect.annotateCurrentSpan({
+			edits: request.edits.length,
+			status: receipt.success.status
+		});
+		return {
+			status:
+				receipt.success.status === "nothing_to_write"
+					? ("written" as const)
+					: receipt.success.status,
+			edits: localizationEditOutcomes(receipt.success.review),
+			files: receipt.success.files.map(({ culture, relativePath, changes, error }) => ({
+				culture,
+				relativePath,
+				changes,
+				written: error === null
+			})),
+			notSynced: reloaded.status === "ready" ? reloaded.notSynced : 0
+		};
+	});
 	return {
 		operationTarget: (name: LocalizationJoin["target"]) =>
 			targets().pipe(
@@ -462,6 +528,7 @@ export const makeGameTextLocalization = Effect.fn("Workbench.GameText.localizati
 		qualityFocus,
 		changes,
 		report,
-		reportFile
+		reportFile,
+		edits
 	};
 });

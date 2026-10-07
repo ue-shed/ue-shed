@@ -6,7 +6,10 @@ import {
 	LocalizationTargetName
 } from "./schema.js";
 
-/** A proposal only. Applying it requires fresh source/translation validation by a future writer. */
+/**
+ * One proposed translation. `source` and `previousTranslation` record what the proposal was made
+ * against; `applyLocalizationChangeSet` revalidates both before writing.
+ */
 export const LocalizationChange = Schema.Struct({
 	target: LocalizationTargetName,
 	culture: CultureCode,
@@ -30,7 +33,12 @@ export type LocalizationChangeSet = typeof LocalizationChangeSet.Type;
 export class LocalizationChangeSetError extends Schema.TaggedErrorClass<LocalizationChangeSetError>()(
 	"LocalizationChangeSetError",
 	{
-		code: Schema.Literals(["invalid_change_set", "duplicate_change"]),
+		code: Schema.Literals([
+			"invalid_change_set",
+			"duplicate_change",
+			"multiple_targets",
+			"unwritable_change"
+		]),
 		message: Schema.String,
 		recovery: Schema.String
 	}

@@ -17,7 +17,7 @@
 
 ## Status
 
-- **State**: IN PROGRESS. Phases 0–5 are done; Phase 6 is next.
+- **State**: IN PROGRESS. Phases 0–6 are done; Phase 7 (review workflow) is next.
 - **Priority**: P1
 - **Effort**: XL
 - **Risk**: HIGH. The plan adds the first UE Shed writes to localization files and the first
@@ -456,6 +456,43 @@ never writes a file.
 - A written edit shows as "Not synced" on its row, in detail, in the toolbar total, in the filter
   and in CLI status, and no surface shows it as translated in game before the sync.
 - A Workbench edit followed by a UE 5.7 and UE 5.8 sync shows the line as translated after a rescan.
+
+**Evidence (2026-10-07)**: Phase 6 is done. From here on Claude implements directly, without
+Codex.
+
+- `@ue-shed/localization` gains the following:
+    - A pure `replacePOTranslations`. It escapes like Unreal's exporter and replaces only the
+      identified singular `msgstr` lines. It rejects plural, missing, ambiguous and duplicate edits,
+      and translations that Unreal's PO import would alter (a backslash before `n`, `r` or `t`). It
+      re-parses its own output, so a write cannot change any other entry.
+    - A pure `reviewLocalizationChangeSet`, which gives every change one outcome: ready, unchanged,
+      wrong target, culture unavailable, not in manifest, stale source, not in PO, PO out of date,
+      or stale translation. Changes are checked against what ships next: a pending PO `msgstr`, or
+      else the archive.
+    - `applyLocalizationChangeSet`. It writes nothing if any change is stale, unless stale changes
+      are skipped. Each PO file is replaced atomically, beside itself and then renamed, and only
+      while it still hashes to what was read. It returns a receipt.
+- `ue-shed loc apply --changes <file> [--review] [--skip-stale] [--sync]` reviews, writes, and
+  optionally runs Unreal's sync.
+- Workbench main reviews or writes staged edits against the retained evidence, building each
+  change's source from the manifest, and reloads the target afterwards.
+- Game Text lets you edit a non-native culture's translation inline, starting from what ships
+  next. Edits are staged; a "N staged" panel shows each edit compactly, checks it against the
+  project's files, lists the PO files to check out, and offers "Write to PO" only after a clean
+  check. Written edits then show as not synced until "Sync with Unreal".
+- Verified:
+    - writer, review, apply and CLI tests;
+    - Workbench main, IPC and component tests on Node 24 and Node 26;
+    - the packed-consumer journey;
+    - the recording, with screenshot 15 showing the staged and checked edit;
+    - `pnpm test:localization-processes` on UE 5.7 and UE 5.8, where one edit is written through
+      `loc apply` (not synced), one is written with `--sync`, and both read as translated with the
+      new text in Unreal's archive; UE 4.27 passed its operations.
+- Deferred, by choice:
+    - multi-select bulk editing. Staging several lines in turn covers batch work, and a
+      same-text-for-many-lines editor needs a design decision first;
+    - keeping staged edits across a Workbench restart. They live in memory until written or
+      discarded.
 
 ## Phase 7 — Review workflow
 

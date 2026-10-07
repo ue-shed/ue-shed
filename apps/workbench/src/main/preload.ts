@@ -184,6 +184,7 @@ const workbenchRendererApi = {
 			ipcRenderer.invoke("game-text:localization:quality-focus", request),
 		localizationChanges: (request) =>
 			ipcRenderer.invoke("game-text:localization:changes", request),
+		localizationEdits: (request) => ipcRenderer.invoke("game-text:localization:edits", request),
 		localizationReport: (request) =>
 			ipcRenderer.invoke("game-text:localization:report", request),
 		localizationReportFile: (request) =>

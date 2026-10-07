@@ -19,7 +19,7 @@ the status row when done.
 | [033](033-compact-project-corpora-before-persistence.md) | Compact project corpora before persistence                      | P1       | XL     | ADR 0004, project index     | IN PROGRESS                      |
 | [035](035-world-log-investigation-workspace.md)          | Build the World Log investigation workspace                     | P2       | XL     | 034 Map History             | IN PROGRESS — Phase 7            |
 | [041](041-execute-one-live-pie-scenario.md)              | Execute one live PIE scenario                                   | P1       | XL     | Scenario Studio prototype   | IN PROGRESS — contract bootstrap |
-| [051](051-localization-workspace.md)                     | Build the Game Text localization workspace                      | P1       | XL     | 042, 033, `@ue-shed/engine` | IN PROGRESS — Phase 6 next       |
+| [051](051-localization-workspace.md)                     | Build the Game Text localization workspace                      | P1       | XL     | 042, 033, `@ue-shed/engine` | IN PROGRESS — Phase 7 next       |
 
 Status values: `TODO`, `IN PROGRESS`, `DONE`, `BLOCKED` with a one-line reason, or `REJECTED` with a
 one-line rationale. When a plan is `DONE`, move it into [`archive/`](archive/) and update both this

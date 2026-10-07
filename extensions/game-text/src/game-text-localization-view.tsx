@@ -13,6 +13,7 @@ import { CopyButton } from "./game-text-copy-button.js";
 import { LocalizationPicker } from "./game-text-localization-picker.js";
 import type { GameTextLocalizationState } from "./game-text-localization-state.js";
 import { styles } from "./game-text-styles.js";
+import { TranslationEditor, type GameTextEdits } from "./game-text-translation-edits.js";
 import type { JSX } from "@solidjs/web";
 
 export const localizationLabels = {
@@ -248,6 +249,7 @@ export function TranslationsDetail(props: {
 	readonly focus?: LocalizationFocus | undefined;
 	readonly onMore?: (cultureOffset?: number, locationOffset?: number) => void;
 	readonly onMoreContext?: (culture: LocalizationTranslation["culture"]) => void;
+	readonly edits?: GameTextEdits;
 }) {
 	return (
 		<Show when={props.model.active()}>
@@ -400,6 +402,15 @@ export function TranslationsDetail(props: {
 												<span {...stylex.attrs(styles.muted)}>
 													This PO format stores less source information.
 												</span>
+											</Show>
+											<Show when={props.edits}>
+												{(edits) => (
+													<TranslationEditor
+														model={edits()}
+														detail={detail()}
+														translation={translation}
+													/>
+												)}
 											</Show>
 										</article>
 									)}

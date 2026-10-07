@@ -32,6 +32,8 @@ import {
 	type WorkspaceQualityFocusRequest,
 	type WorkspaceQualityFocusResult,
 	type WorkspaceChangesResult,
+	type LocalizationEditRequest,
+	type LocalizationEditResult,
 	type WorkspaceReportRequest,
 	type WorkspaceReportResult,
 	type WorkspaceReportFileRequest,
@@ -87,6 +89,9 @@ export interface WorkbenchGameTextApi {
 	readonly localizationChanges: (
 		request: WorkspaceQualityRequest
 	) => Effect.Effect<WorkspaceChangesResult>;
+	readonly localizationEdits: (
+		request: LocalizationEditRequest
+	) => Effect.Effect<LocalizationEditResult>;
 	readonly localizationReport: (
 		request: WorkspaceReportRequest
 	) => Effect.Effect<WorkspaceReportResult>;
@@ -920,6 +925,7 @@ export const WorkbenchGameTextLive = Layer.effect(
 			localizationQualitySearch: localization.qualitySearch,
 			localizationQualityFocus: localization.qualityFocus,
 			localizationChanges: localization.changes,
+			localizationEdits: localization.edits,
 			localizationReport: localization.report,
 			localizationReportFile: (request) => localization.reportFile(request, dialog, files),
 			localizationTargets: localization.targets,
@@ -987,6 +993,7 @@ export function makeWorkbenchGameTextTestLayer(
 			localizationQualitySearch: () => Effect.succeed({ status: "not_ready" }),
 			localizationQualityFocus: () => Effect.succeed({ status: "not_ready" }),
 			localizationChanges: () => Effect.succeed({ status: "not_ready" }),
+			localizationEdits: () => Effect.succeed({ status: "not_ready" }),
 			localizationReport: () => Effect.succeed({ status: "not_ready" }),
 			localizationReportFile: () => Effect.succeed({ status: "not_ready" }),
 			localizationTargets: () => Effect.succeed({ status: "ready", targets: [] }),

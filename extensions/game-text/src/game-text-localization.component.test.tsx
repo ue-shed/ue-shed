@@ -8,6 +8,8 @@ import {
 	LocalizationJoin,
 	LocalizationSelection,
 	type LocalizationCultureState,
+	type LocalizationEditRequest,
+	type LocalizationEditResult,
 	type LocalizationLinePreview,
 	type LocalizationFocusResult,
 	type LocalizationTranslation,
@@ -702,5 +704,148 @@ describe("Game Text localization", () => {
 		expect(screen.queryByText("Loading translations…")).toBeNull();
 		expect(screen.queryByText("0 matches")).toBeNull();
 		expect(screen.queryByText("No text matches these filters.")).toBeNull();
+	});
+});
+
+describe("Game Text translation editing", () => {
+	function editingClient(respond: (request: LocalizationEditRequest) => LocalizationEditResult) {
+		const requests: LocalizationEditRequest[] = [];
+		const api: GameTextClientApi = {
+			...client(),
+			localizationEdits: (request) => {
+				requests.push(request);
+				return Effect.succeed(respond(request));
+			}
+		};
+		return { api, requests };
+	}
+	const frenchPO = "Content/Localization/Fixture/fr/Fixture.po";
+
+	async function stageFrench(user: ReturnType<typeof userEvent.setup>) {
+		await screen.findByText("3 matches");
+		const results = screen.getByRole("region", { name: "Results" });
+		await user.click(within(results).getByRole("button", { name: /^Welcome/u }));
+		const translations = await screen.findByRole("region", { name: "Translations" });
+		const english = await within(translations).findByRole("article", {
+			name: "Translation en"
+		});
+		// The native culture's text is its source; it is never edited here.
+		expect(within(english).queryByRole("button", { name: "Edit" })).toBeNull();
+		const french = within(translations).getByRole("article", { name: "Translation fr" });
+		await user.click(within(french).getByRole("button", { name: "Edit" }));
+		const field = within(french).getByRole("textbox", { name: "New fr translation" });
+		expect(field).toHaveProperty("value", "Bienvenue");
+		expect(within(french).getByRole("button", { name: "Stage" })).toHaveProperty(
+			"disabled",
+			true
+		);
+		await user.clear(field);
+		await user.type(field, "Bon retour");
+		await user.click(within(french).getByRole("button", { name: "Stage" }));
+		expect(within(french).getByText("Staged: Bon retour")).toBeDefined();
+	}
+
+	it("stages an edit against the translation that ships, checks it, and writes it", async () => {
+		const user = userEvent.setup();
+		const outcome = (request: LocalizationEditRequest) =>
+			request.edits.map((edit) => ({
+				culture: edit.culture,
+				namespace: edit.namespace,
+				key: edit.key,
+				outcome: "ready" as const,
+				currentTranslation: edit.seenTranslation,
+				translation: edit.translation
+			}));
+		const { api, requests } = editingClient((request) =>
+			request.mode === "review"
+				? {
+						status: "reviewed",
+						edits: outcome(request),
+						files: [
+							{
+								culture: cultureCode("fr"),
+								relativePath: frenchPO,
+								changes: 1,
+								written: false
+							}
+						],
+						notSynced: 1
+					}
+				: {
+						status: "written",
+						edits: outcome(request),
+						files: [
+							{
+								culture: cultureCode("fr"),
+								relativePath: frenchPO,
+								changes: 1,
+								written: true
+							}
+						],
+						notSynced: 2
+					}
+		);
+		mount(api);
+		await stageFrench(user);
+		await user.click(screen.getByRole("button", { name: "1 staged" }));
+		const panel = screen.getByRole("region", { name: "Staged translations" });
+		expect(within(panel).getByText("Bienvenue")).toBeDefined();
+		expect(within(panel).getByText("Bon retour")).toBeDefined();
+		// Writing is only offered after the edits were checked against the project's files.
+		expect(within(panel).getByRole("button", { name: "Write to PO" })).toHaveProperty(
+			"disabled",
+			true
+		);
+		await user.click(within(panel).getByRole("button", { name: "Check changes" }));
+		await within(panel).findByText("Ready to write");
+		expect(within(panel).getByText(frenchPO)).toBeDefined();
+		expect(requests[0]).toEqual({
+			target: target.name,
+			mode: "review",
+			edits: [
+				{
+					culture: "fr",
+					namespace: "NS",
+					key: "K",
+					seenTranslation: "Bienvenue",
+					translation: "Bon retour"
+				}
+			]
+		});
+		await user.click(within(panel).getByRole("button", { name: "Write to PO" }));
+		await screen.findByText(
+			"Wrote 1 translation to 1 PO file. They are not synced until you sync with Unreal."
+		);
+		expect(requests[1]?.mode).toBe("write");
+		expect(screen.queryByRole("button", { name: "1 staged" })).toBeNull();
+	});
+
+	it("keeps stale edits staged and explains why nothing was written", async () => {
+		const user = userEvent.setup();
+		const { api } = editingClient((request) => ({
+			status: "reviewed",
+			edits: request.edits.map((edit) => ({
+				culture: edit.culture,
+				namespace: edit.namespace,
+				key: edit.key,
+				outcome: "stale_translation" as const,
+				currentTranslation: "Changed elsewhere",
+				translation: edit.translation
+			})),
+			files: [],
+			notSynced: 1
+		}));
+		mount(api);
+		await stageFrench(user);
+		await user.click(screen.getByRole("button", { name: "1 staged" }));
+		const panel = screen.getByRole("region", { name: "Staged translations" });
+		await user.click(within(panel).getByRole("button", { name: "Check changes" }));
+		await within(panel).findByText("The translation changed since you staged this");
+		expect(within(panel).getByRole("button", { name: "Write to PO" })).toHaveProperty(
+			"disabled",
+			true
+		);
+		await user.click(within(panel).getByRole("button", { name: "Unstage" }));
+		expect(screen.queryByRole("region", { name: "Staged translations" })).toBeNull();
 	});
 });

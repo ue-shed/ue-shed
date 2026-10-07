@@ -7,6 +7,7 @@ import { runLocalizationStatus, runLocalizationTargets } from "../workflows/loca
 import { localizationFlags, optionalLocalizationFlags } from "./localization-flags.js";
 import { LocalizationOperation } from "@ue-shed/localization/browser";
 import { runLocalizationOperation } from "../workflows/localization-run.js";
+import { applyLocalizationChanges } from "../workflows/localization-apply.js";
 
 export const localizationCommand = Command.make("loc").pipe(
 	Command.withDescription("Read saved Unreal localization targets."),
@@ -42,6 +43,41 @@ export const localizationCommand = Command.make("loc").pipe(
 		).pipe(
 			Command.withDescription(
 				"Plan or run Unreal localization steps; sync imports then compiles."
+			)
+		),
+		Command.make(
+			"apply",
+			{
+				projectRoot: Argument.string("project-root"),
+				changes: Flag.string("changes"),
+				skipStale: Flag.boolean("skip-stale"),
+				review: Flag.boolean("review"),
+				sync: Flag.boolean("sync"),
+				engineRoot: Flag.string("engine-root").pipe(Flag.optional),
+				json: Flag.boolean("json"),
+				timeout: Flag.integer("timeout").pipe(Flag.withDefault(1800))
+			},
+			({ projectRoot, changes, skipStale, review, sync, engineRoot, json, timeout }) => {
+				const command = {
+					_tag: "LocalizationApply",
+					projectRoot,
+					changes,
+					skipStale,
+					review,
+					sync,
+					json,
+					timeout
+				} satisfies Extract<
+					import("../command-model.js").CliCommand,
+					{ readonly _tag: "LocalizationApply" }
+				>;
+				if (Option.isSome(engineRoot))
+					Object.assign(command, { engineRoot: engineRoot.value });
+				return applyLocalizationChanges(command);
+			}
+		).pipe(
+			Command.withDescription(
+				"Write a reviewed translation change set into the target's PO files; --sync then imports and compiles."
 			)
 		),
 		Command.make(

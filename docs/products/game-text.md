@@ -398,7 +398,26 @@ written. The change set is applied by the strongest available writer:
   through Unreal's localization APIs, then exports and compiles, without a separate process.
 
 Before writing, every change is checked against current evidence. If the source or the replaced
-translation has changed, the change is rejected as stale rather than applied.
+translation has changed, the change is rejected as stale rather than applied. By default a change
+set with any stale change writes nothing, so a reviewed set is never half applied.
+
+The PO writer and its CLI are shipped (Plan 051 Phase 6):
+
+- `ue-shed loc apply <project-root> --changes <file>` writes a version 1 change set.
+    - `--review` reports each change's outcome and the PO files a write would replace, without
+      writing.
+    - `--skip-stale` writes the changes that are still current.
+    - `--sync` then runs Unreal's import and compile.
+    - Change sets come from `loc check --changes` suggested fixes or from any host.
+- In Workbench, a non-native culture's translation can be edited in the detail pane, starting
+  from the translation that ships next. Edits are staged.
+- A "N staged" panel lists them with the old and new text, checks them against the project's
+  files, names the PO files to check out first, and offers "Write to PO" after a clean check.
+  Staged edits stay in memory until written or discarded.
+- Only `msgstr` values change. A PO file that changed after it was read is never overwritten. A
+  translation that Unreal's PO import would alter (a backslash before `n`, `r` or `t`) is
+  rejected with guidance.
+- The editor writer is not built yet.
 
 Edits that Unreal has not imported are always visible. A translation in the PO file that differs
 from the archive is "Not synced", whether UE Shed or another tool wrote it:

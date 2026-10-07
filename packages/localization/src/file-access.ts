@@ -1,5 +1,5 @@
-import { createHash } from "node:crypto";
-import { open, readdir, realpath, stat } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { open, readdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { Context, Effect, Layer, Result, Schema } from "effect";
 import { localizationError, validate } from "./decode.js";
@@ -21,6 +21,17 @@ export interface LocalizationFileAccessApi {
 		limits: LocalizationLimits
 	) => Effect.Effect<readonly string[], LocalizationError>;
 	readonly presence: (root: string, path: string) => Effect.Effect<boolean, LocalizationError>;
+	/**
+	 * Atomically replaces an existing project file, only while its content still hashes to
+	 * `expectedHash`. The new bytes are written beside it and renamed over it.
+	 */
+	readonly replace: (
+		root: string,
+		path: string,
+		bytes: Uint8Array,
+		expectedHash: string,
+		limits: LocalizationLimits
+	) => Effect.Effect<FileProvenance, LocalizationError>;
 }
 export class LocalizationFileAccess extends Context.Service<
 	LocalizationFileAccess,
@@ -28,6 +39,12 @@ export class LocalizationFileAccess extends Context.Service<
 >()("@ue-shed/localization/LocalizationFileAccess") {}
 
 const FileSystemFailure = Schema.Struct({ code: Schema.String });
+
+const sha256 = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
+
+function writeError(cause: unknown): LocalizationError {
+	return cause instanceof LocalizationError ? cause : localizationError("file_unwritable");
+}
 
 function fileError(cause: unknown): LocalizationError {
 	if (cause instanceof LocalizationError) return cause;
@@ -115,7 +132,7 @@ export const LocalizationFileAccessLive = Layer.succeed(
 							relativePath: path.replaceAll("\\", "/"),
 							size: bytes.length,
 							modifiedTime: before.mtime.toISOString(),
-							contentHash: createHash("sha256").update(bytes).digest("hex")
+							contentHash: sha256(bytes)
 						}
 					});
 				})
@@ -139,6 +156,43 @@ export const LocalizationFileAccessLive = Layer.succeed(
 				return yield* Effect.fail(localizationError("limit_exceeded"));
 			return names;
 		}),
+		replace: Effect.fn("LocalizationFileAccess.replace")(
+			function* (root, path, bytes, expectedHash, limits) {
+				if (bytes.byteLength > limits.maxFileBytes)
+					return yield* Effect.fail(localizationError("limit_exceeded"));
+				const actual = yield* projectPath(root, path);
+				const current = yield* Effect.tryPromise({
+					try: () => readFile(actual),
+					catch: fileError
+				});
+				if (sha256(current) !== expectedHash)
+					return yield* Effect.fail(localizationError("file_changed"));
+				// Write beside the target and rename over it, so readers never see a partial file.
+				const temporary = `${actual}.ue-shed-${randomUUID().slice(0, 8)}.tmp`;
+				yield* Effect.tryPromise({
+					try: async () => {
+						await writeFile(temporary, bytes, { flag: "wx" });
+						await rename(temporary, actual);
+					},
+					catch: writeError
+				}).pipe(
+					Effect.tapError(() =>
+						Effect.promise(() => rm(temporary, { force: true }).catch(() => undefined))
+					)
+				);
+				const info = yield* Effect.tryPromise({
+					try: () => stat(actual),
+					catch: fileError
+				});
+				yield* Effect.annotateCurrentSpan({ "localization.file.bytes": bytes.byteLength });
+				return validate(FileProvenance, {
+					relativePath: path.replaceAll("\\", "/"),
+					size: bytes.byteLength,
+					modifiedTime: info.mtime.toISOString(),
+					contentHash: sha256(bytes)
+				});
+			}
+		),
 		presence: Effect.fn("LocalizationFileAccess.presence")(function* (root, path) {
 			const location = yield* projectPath(root, path).pipe(Effect.result);
 			if (location._tag === "Failure") {

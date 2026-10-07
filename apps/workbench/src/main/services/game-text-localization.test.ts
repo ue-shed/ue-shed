@@ -1,7 +1,17 @@
+import { cp, mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { it } from "@effect/vitest";
 import { Effect, Ref, Deferred, Fiber } from "effect";
 import { expect } from "vitest";
-import { makeLocalizationEvidenceTestLayer, LocalizationError } from "@ue-shed/localization";
+import {
+	makeLocalizationEvidenceTestLayer,
+	LocalizationError,
+	LocalizationEvidenceNodeLive,
+	LocalizationTargetName,
+	TextKey,
+	TextNamespace
+} from "@ue-shed/localization";
 import {
 	corpus,
 	evidence,
@@ -154,4 +164,60 @@ it.effect("discards evidence loaded for a corpus that changed during the read", 
 			})
 		).toEqual({ status: "not_ready" });
 	})
+);
+
+it.live("reviews and writes staged edits into the PO file, then reports them as not synced", () =>
+	Effect.gen(function* () {
+		const root = yield* Effect.promise(() => mkdtemp(join(tmpdir(), "ue-shed-wb-edits-")));
+		yield* Effect.addFinalizer(() =>
+			Effect.promise(() => rm(root, { recursive: true, force: true }))
+		);
+		for (const path of [
+			"Config/DefaultEditor.ini",
+			"Config/Localization",
+			"Content/Localization"
+		])
+			yield* Effect.promise(() =>
+				cp(join(resolve("fixtures/unreal-project"), path), join(root, path), {
+					recursive: true
+				})
+			);
+		const saved = corpus([]);
+		const localization = yield* makeGameTextLocalization(
+			() => Effect.succeed(saved),
+			() => Effect.succeed(root)
+		);
+		const name = LocalizationTargetName.make("FixtureGame");
+		const selected = yield* localization.select(name);
+		if (selected.status !== "ready") throw new Error("Fixture target did not load.");
+		const edit = {
+			culture: cultureCode("de"),
+			namespace: TextNamespace.make("Fixture.Localization.Table"),
+			key: TextKey.make("NamedArgument"),
+			seenTranslation: "Gespräch mit {Name}",
+			translation: "Gespräch mit {PlayerName}"
+		};
+		const review = yield* localization.edits({ target: name, mode: "review", edits: [edit] });
+		expect(review).toMatchObject({
+			status: "reviewed",
+			edits: [{ outcome: "ready" }],
+			files: [{ culture: "de", changes: 1, written: false }]
+		});
+		const written = yield* localization.edits({ target: name, mode: "write", edits: [edit] });
+		expect(written).toMatchObject({
+			status: "written",
+			files: [{ culture: "de", changes: 1, written: true }],
+			notSynced: selected.notSynced + 1
+		});
+		const po = yield* Effect.promise(() =>
+			readFile(join(root, "Content/Localization/FixtureGame/de/FixtureGame.po"), "utf8")
+		);
+		expect(po).toContain('msgstr "Gespräch mit {PlayerName}"');
+		// The same staged edit is stale now: its translation already ships next.
+		const again = yield* localization.edits({ target: name, mode: "write", edits: [edit] });
+		expect(again).toMatchObject({
+			status: "rejected",
+			edits: [{ outcome: "stale_translation" }]
+		});
+	}).pipe(Effect.scoped, Effect.provide(LocalizationEvidenceNodeLive))
 );

@@ -619,6 +619,30 @@ test("records the real Game Text quality workflow", async ({
 		await expect(reportTable).toHaveText(unchangedReport, { useInnerText: true });
 		await expect(pendingIndicator).toHaveText(unchangedPending);
 		await expect(page.getByText(/Syncing with Unreal/u)).toHaveCount(0);
+
+		// Stage and check a translation edit. The recording uses the committed fixture, so it
+		// never writes: it discards the staged edit after checking it against the project's files.
+		await page.getByRole("tab", { name: "Text", exact: true }).click();
+		await namedLine.click();
+		const german = translations.getByRole("article", { name: "Translation de", exact: true });
+		await german.getByRole("button", { name: "Edit", exact: true }).click();
+		const field = german.getByRole("textbox", { name: "New de translation" });
+		await expect(field).toHaveValue("Gespräch mit {Name}");
+		await field.fill("Gespräch mit {PlayerName}");
+		await german.getByRole("button", { name: "Stage", exact: true }).click();
+		await expect(german).toContainText("Staged: Gespräch mit {PlayerName}");
+		await page.getByRole("button", { name: "1 staged", exact: true }).click();
+		const staged = page.getByRole("region", { name: "Staged translations" });
+		await staged.getByRole("button", { name: "Check changes", exact: true }).click();
+		await expect(staged).toContainText("Ready to write");
+		await expect(staged).toContainText("Content/Localization/FixtureGame/de/FixtureGame.po");
+		await expect(
+			staged.getByRole("button", { name: "Write to PO", exact: true })
+		).toBeEnabled();
+		await page.screenshot({ path: testInfo.outputPath("15-staged-edit.png") });
+		await staged.getByRole("button", { name: "Discard all", exact: true }).click();
+		await expect(staged).toBeHidden();
+		await expect(pendingIndicator).toHaveText(unchangedPending);
 	} finally {
 		if (recording) await page.screencast.stop().catch(() => undefined);
 		await application.close().catch(() => undefined);

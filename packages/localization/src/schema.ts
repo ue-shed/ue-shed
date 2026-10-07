@@ -32,7 +32,8 @@ export const LocalizationErrorCode = Schema.Literals([
 	"unsafe_path",
 	"target_not_found",
 	"ambiguous_config",
-	"file_changed"
+	"file_changed",
+	"file_unwritable"
 ]);
 export class LocalizationError extends Schema.TaggedErrorClass<LocalizationError>()(
 	"LocalizationError",

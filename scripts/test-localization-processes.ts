@@ -13,8 +13,7 @@ import {
 	LocalizationOperationPlan,
 	LocalizationOperationError,
 	availableLocalizationOperations,
-	parsePO,
-	serializePO,
+	currentLocalizationTranslation,
 	type LocalizationTarget,
 	type LocalizationOperationReceipt
 } from "../packages/localization/src/index.ts";
@@ -73,6 +72,50 @@ const retainedLog = async (source: string, destination: string) => {
 		);
 	}
 };
+/** Runs `ue-shed loc apply` in-process and returns its NDJSON output lines and exit code. */
+async function applyThroughCli(
+	projectRoot: string,
+	changesFile: string,
+	engine: EngineLane,
+	...flags: string[]
+): Promise<{ readonly code: number; readonly lines: readonly unknown[] }> {
+	return Effect.runPromise(
+		Effect.gen(function* () {
+			const output = yield* Ref.make("");
+			const code = yield* Ref.make(0);
+			const runtime = Layer.succeed(
+				CliRuntime,
+				CliRuntime.of({
+					print: (value) => Ref.update(output, (text) => text + value),
+					printError: () => Effect.void,
+					setExitCode: (value) => Ref.set(code, value)
+				})
+			);
+			yield* runCli([
+				"loc",
+				"apply",
+				projectRoot,
+				"--changes",
+				changesFile,
+				"--engine-root",
+				engine.root,
+				"--json",
+				...flags
+			]).pipe(Effect.provide(runtime));
+			const text = yield* Ref.get(output);
+			return {
+				code: yield* Ref.get(code),
+				lines: text
+					.split("\n")
+					.filter((line) => line.trim() !== "")
+					.map((line) =>
+						Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Json))(line)
+					)
+			};
+		})
+	);
+}
+
 async function capturePlan(
 	operation: LocalizationOperation,
 	projectRoot: string,
@@ -291,72 +334,109 @@ for (const engine of configured) {
 		const before = await readEvidence();
 		const culture = before.cultures.find((culture) => culture.culture === "de");
 		assert(culture?.po.status === "read");
-		const translated = joinLocalizationTarget(corpus, before, target).lines.find(
+		const translatedLines = joinLocalizationTarget(corpus, before, target).lines.filter(
 			(line) =>
 				line.origin.kind === "corpus" &&
 				line.identity &&
 				line.cultures.find((culture) => culture.culture === "de")?.state === "translated"
 		);
+		const [first, second] = translatedLines;
 		assert(
-			translated?.identity,
-			"No up-to-date corpus translation is available for the sync proof."
+			first?.identity && second?.identity,
+			"Two up-to-date corpus translations are needed for the edit proof."
 		);
-		const selectedIdentity = translated.identity;
-		const block = culture.po.value.blocks.find(
-			(block) =>
-				block.entry?.identity?.namespace === selectedIdentity.namespace &&
-				block.entry.identity.key === selectedIdentity.key &&
-				block.fields.some((field) => field.name === "msgstr")
-		);
-		assert(block?.entry?.identity);
-		const identity = block.entry.identity;
-		// Test-only replacement of one msgstr field through the lossless PO model, not a writer API.
-		const document = culture.po.value;
-		const edited = {
-			...document,
-			blocks: document.blocks.map((candidate) => {
-				if (candidate !== block) return candidate;
-				const field = candidate.fields.find((field) => field.name === "msgstr");
-				assert(field && field.lineIndices.length > 0);
-				const first = field.lineIndices[0];
-				return {
-					...candidate,
-					lines: candidate.lines.flatMap((line, index) =>
-						index === first
-							? [{ ...line, text: 'msgstr "Process lane translation"' }]
-							: field.lineIndices.includes(index)
-								? []
-								: [line]
-					)
-				};
-			})
+		const manifest = before.manifest.status === "read" ? before.manifest.value : undefined;
+		assert(manifest);
+		// Proposals are built from evidence exactly as a host would: source from the manifest,
+		// the replaced translation from what ships next.
+		const proposal = (identity: NonNullable<typeof first.identity>, translation: string) => {
+			const entry =
+				culture.po.status === "read"
+					? culture.po.value.blocks.find(
+							(block) =>
+								block.entry?.identity?.namespace === identity.namespace &&
+								block.entry.identity.key === identity.key
+						)?.entry
+					: undefined;
+			const archive =
+				culture.archive.status === "read"
+					? (culture.archive.value.entries.find(
+							(item) =>
+								item.namespace === identity.namespace && item.key === identity.key
+						)?.translation.Text ?? null)
+					: null;
+			const source = manifest.entries.find(
+				(item) => item.namespace === identity.namespace && item.key === identity.key
+			)?.source.Text;
+			assert(source !== undefined);
+			return {
+				target: target.name,
+				culture: "de",
+				namespace: identity.namespace,
+				key: identity.key,
+				source,
+				previousTranslation: currentLocalizationTranslation(archive, entry),
+				translation
+			};
 		};
-		const bytes = serializePO(edited);
-		const reparsed = parsePO(bytes, { format: document.format });
-		assert(Result.isSuccess(reparsed));
-		await writeFile(join(project, culture.po.provenance.relativePath), bytes);
-		const pending = joinLocalizationTarget(corpus, await readEvidence(), target).lines.find(
-			(line) =>
-				line.identity?.namespace === identity.namespace &&
-				line.identity.key === identity.key
-		);
+		const changeFile = async (name: string, changes: readonly unknown[]) => {
+			const path = join(output, engine.label, name);
+			await writeFile(
+				path,
+				`${JSON.stringify({ schemaVersion: 1, provenance: { producer: "process-lane", files: [] }, changes })}\n`
+			);
+			return path;
+		};
+		const firstChanges = await changeFile("first.changes.json", [
+			proposal(first.identity, "Process lane translation")
+		]);
+		const review = await applyThroughCli(project, firstChanges, engine, "--review");
+		assert.equal(review.code, 0);
+		assert.match(JSON.stringify(review.lines), /"outcome":"ready"/u);
+		const written = await applyThroughCli(project, firstChanges, engine);
+		assert.equal(written.code, 0);
+		assert.match(JSON.stringify(written.lines), /"status":"written"/u);
+		const stateOf = (
+			join: ReturnType<typeof joinLocalizationTarget>,
+			identity: NonNullable<typeof first.identity>
+		) =>
+			join.lines
+				.find(
+					(line) =>
+						line.identity?.namespace === identity.namespace &&
+						line.identity.key === identity.key
+				)
+				?.cultures.find((culture) => culture.culture === "de")?.state;
 		assert.equal(
-			pending?.cultures.find((culture) => culture.culture === "de")?.state,
+			stateOf(joinLocalizationTarget(corpus, await readEvidence(), target), first.identity),
 			"not_synced"
 		);
-		await runOperation("sync", project, target, engine);
-		const synced = joinLocalizationTarget(corpus, await readEvidence(), target).lines.find(
-			(line) =>
-				line.identity?.namespace === identity.namespace &&
-				line.identity.key === identity.key
-		);
-		assert.equal(
-			synced?.cultures.find((culture) => culture.culture === "de")?.state,
-			"translated"
-		);
+		// Re-applying the same proposal is stale now: the edit already ships next.
+		const again = await applyThroughCli(project, firstChanges, engine);
+		assert.equal(again.code, 2);
+		assert.match(JSON.stringify(again.lines), /"status":"rejected"/u);
+
+		const secondChanges = await changeFile("second.changes.json", [
+			proposal(second.identity, "Process lane second translation")
+		]);
+		const synced = await applyThroughCli(project, secondChanges, engine, "--sync");
+		assert.equal(synced.code, 0, JSON.stringify(synced.lines));
+		assert.match(JSON.stringify(synced.lines), /"status":"completed"/u);
+		const after = await readEvidence();
+		const joined = joinLocalizationTarget(corpus, after, target);
+		assert.equal(stateOf(joined, first.identity), "translated");
+		assert.equal(stateOf(joined, second.identity), "translated");
+		const archive = after.cultures.find((item) => item.culture === "de")?.archive;
+		assert(archive?.status === "read");
+		const archived = (identity: NonNullable<typeof first.identity>) =>
+			archive.value.entries.find(
+				(item) => item.namespace === identity.namespace && item.key === identity.key
+			)?.translation.Text;
+		assert.equal(archived(first.identity), "Process lane translation");
+		assert.equal(archived(second.identity), "Process lane second translation");
 	}
 	console.log(
-		`Localization processes ${engine.label}: plans, supported operations, audit and cancellation passed${legacy ? "" : ", including PO sync"}.`
+		`Localization processes ${engine.label}: plans, supported operations, audit and cancellation passed${legacy ? "" : ", including PO writes through loc apply and sync"}.`
 	);
 }
 console.log(`Retained disposable projects, plans, receipts and private logs under ${output}.`);

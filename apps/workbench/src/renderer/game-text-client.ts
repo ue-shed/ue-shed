@@ -6,6 +6,8 @@ import {
 	type WorkspaceQualityFocusRequest,
 	WorkspaceQualityFocusResult,
 	WorkspaceChangesResult,
+	type LocalizationEditRequest,
+	LocalizationEditResult,
 	type WorkspaceReportRequest,
 	WorkspaceReportResult,
 	type WorkspaceReportFileRequest,
@@ -147,6 +149,14 @@ export const gameTextClient: GameTextClientApi = GameTextClient.of({
 				"gameText.localizationChanges",
 				() => window.ueShed.gameText.localizationChanges(request),
 				Schema.decodeUnknownEffect(WorkspaceChangesResult)
+			)
+	),
+	localizationEdits: Effect.fn("GameTextClient.localizationEdits")(
+		(request: LocalizationEditRequest) =>
+			invokeRequest(
+				"gameText.localizationEdits",
+				() => window.ueShed.gameText.localizationEdits(request),
+				Schema.decodeUnknownEffect(LocalizationEditResult)
 			)
 	),
 	localizationReport: Effect.fn("GameTextClient.localizationReport")(

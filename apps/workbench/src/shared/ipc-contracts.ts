@@ -102,6 +102,8 @@ import {
 	WorkspaceQualityFocusRequest,
 	WorkspaceQualityFocusResult,
 	WorkspaceChangesResult,
+	LocalizationEditRequest,
+	LocalizationEditResult,
 	WorkspaceReportRequest,
 	WorkspaceReportResult,
 	WorkspaceReportFileRequest,
@@ -775,6 +777,11 @@ export const invokeContracts = {
 		channel: "game-text:localization:changes",
 		args: Schema.Tuple([WorkspaceQualityRequest]),
 		result: WorkspaceChangesResult
+	}),
+	"game-text:localization:edits": invoke({
+		channel: "game-text:localization:edits",
+		args: Schema.Tuple([LocalizationEditRequest]),
+		result: LocalizationEditResult
 	}),
 	"game-text:localization:report": invoke({
 		channel: "game-text:localization:report",

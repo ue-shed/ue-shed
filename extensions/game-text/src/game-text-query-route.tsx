@@ -39,6 +39,11 @@ import {
 } from "./game-text-preferences.js";
 import { createGameTextLocalizationState } from "./game-text-localization-state.js";
 import {
+	createGameTextEdits,
+	StagedEditsButton,
+	StagedEditsPanel
+} from "./game-text-translation-edits.js";
+import {
 	LocalizationControls,
 	LocalizationChips,
 	TranslationsDetail,
@@ -165,6 +170,13 @@ export function GameTextRoute(props: {
 		scanning: loading,
 		revision: summary,
 		onCompleted: () => load(false)
+	});
+	const edits = createGameTextEdits({
+		client: props.client,
+		target: localization.target,
+		nativeCulture: () => localization.active()?.target.nativeCulture ?? undefined,
+		busy: () => loading() || operations.busy(),
+		onWritten: () => load(false)
 	});
 	const editor = createGameTextRuleState({
 		client: props.client,
@@ -629,6 +641,7 @@ export function GameTextRoute(props: {
 						/>
 					}
 				/>
+				<StagedEditsButton model={edits} />
 				<UnrealSteps model={operations} />
 				<Show when={summary()}>
 					{(current) => (
@@ -675,6 +688,7 @@ export function GameTextRoute(props: {
 				</Show>
 			</div>
 			<OperationPanel model={operations} />
+			<StagedEditsPanel model={edits} />
 			<Show when={localization.error()}>
 				<p role="alert" {...stylex.attrs(styles.problemMessage)}>
 					{localization.error()}
@@ -1010,7 +1024,10 @@ export function GameTextRoute(props: {
 												{(gathered) => (
 													<div {...stylex.attrs(styles.detail)}>
 														<GatheredDetail focus={gathered()} />
-														<TranslationsDetail model={localization} />
+														<TranslationsDetail
+															model={localization}
+															edits={edits}
+														/>
 													</div>
 												)}
 											</Show>
@@ -1079,7 +1096,10 @@ export function GameTextRoute(props: {
 														/>
 													)}
 												</For>
-												<TranslationsDetail model={localization} />
+												<TranslationsDetail
+													model={localization}
+													edits={edits}
+												/>
 												<CoverageNotes
 													diagnostics={current().diagnostics}
 												/>

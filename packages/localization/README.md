@@ -124,10 +124,38 @@ Node reads reject project-root
 escapes, external symlinks, and unresolved engine-root tokens. Conflicting output locations return
 an `ambiguous_config` diagnostic rather than selecting one implicitly.
 
-The format and evidence APIs are read-only. There is no translation edit API. UE Shed never writes
-manifests, archives, `.locres`, or `.locmeta`; the optional process service creates a private log
-directory and delegates localization outputs to Unreal. A future change-set writer will own PO
-edits. Unreal remains responsible for import, export and compilation.
+The format and evidence APIs are read-only. UE Shed never writes manifests, archives, `.locres`, or
+`.locmeta`. The optional process service creates a private log directory and delegates
+localization outputs to Unreal. Unreal remains responsible for import, export and compilation.
+
+Translation edits are written only through change sets, into PO files.
+
+**`reviewLocalizationChangeSet(evidence, changeSet)`** (browser) checks every change against freshly
+read evidence. Each change gets one outcome:
+
+- `ready`
+- `unchanged`
+- `wrong_target`
+- `culture_unavailable`
+- `not_in_manifest`
+- `stale_source`
+- `not_in_po`
+- `po_out_of_date`
+- `stale_translation`
+
+A change's replaced translation must equal what ships next: a non-empty PO `msgstr`, or otherwise
+the archive translation. The review also lists the PO files a write would replace, so hosts can
+check them out first.
+
+**`replacePOTranslations(document, edits)`** (browser) replaces only the identified singular
+`msgstr` lines. It escapes as Unreal's PO exporter does. It rejects edits that are plural, missing,
+ambiguous or duplicated, and translations that Unreal's PO import would alter. It re-parses its
+result to prove that every other byte is unchanged.
+
+**`applyLocalizationChangeSet`** (Node) reviews, then writes each culture's PO file. If any change
+is stale it writes nothing, unless `skipStale` is set. Each write lands in a file beside the
+target, which is then renamed over it, and only while the target still hashes to what was read.
+It returns a receipt.
 
 `LocalizationChange` and `LocalizationChangeSet` are browser-safe version-1 proposal schemas,
 not writers. Each change names target/culture/namespace/key, source, `previousTranslation` (null

@@ -13,6 +13,7 @@ import {
 } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { isJsonObject, isJsonString, parseJsonObject } from "./json.ts";
+import { ensureUassetExecutable } from "./native-tools.ts";
 import { repositoryRoot, unrealEngineTools, unrealEngineVersion } from "./unreal-plugin-host.ts";
 
 // Require both engines before starting work. The ordinary fixture command remains the
@@ -26,7 +27,9 @@ const engines = ["5.7", "5.8"].map((version) => {
 	return { version, root: resolve(configured) };
 });
 
-const outputParent = join(repositoryRoot, "out");
+const outputParent = resolve(
+	process.env.UE_SHED_UASSET_ENGINE_MATRIX_OUTPUT_ROOT ?? join(repositoryRoot, "out")
+);
 mkdirSync(outputParent, { recursive: true });
 const output = mkdtempSync(join(outputParent, "uasset-engine-matrix-"));
 process.stdout.write(`UAsset engine matrix evidence: ${output}\n`);
@@ -266,7 +269,7 @@ for (const engine of engines) {
 			...process.env,
 			UE_SHED_UASSET_FIXTURE_ROOT: fixture,
 			UE_SHED_NATIVE_EVIDENCE_DIR: evidence,
-			UE_SHED_UASSET_EXECUTABLE: join(repositoryRoot, "target", "debug", "uasset.exe")
+			UE_SHED_UASSET_EXECUTABLE: ensureUassetExecutable()
 		};
 		run(
 			join(root, "native-parity.log"),

@@ -47,6 +47,11 @@ pnpm check
 The full local gate also retains packed-package and Data Authoring adoption conformance while those
 hosted release and adoption flows are being redesigned.
 
+`test:uasset-engine-matrix` honors `CARGO_TARGET_DIR` for its native reader. Set
+`UE_SHED_UASSET_ENGINE_MATRIX_OUTPUT_ROOT` to keep disposable fixture projects, builds, and evidence
+outside a worktree, including the legacy fixture generator; it defaults to the repository's `out`
+directory.
+
 Run the conditional UAsset lanes independently with:
 
 ```powershell

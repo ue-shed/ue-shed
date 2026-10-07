@@ -36,7 +36,9 @@ const omitted = new Set([
 	"Generated",
 	"Content"
 ]);
-const outputParent = join(repositoryRoot, "out");
+const outputParent = resolve(
+	process.env.UE_SHED_UASSET_ENGINE_MATRIX_OUTPUT_ROOT ?? join(repositoryRoot, "out")
+);
 mkdirSync(outputParent, { recursive: true });
 const output = mkdtempSync(join(outputParent, "legacy-unreal-fixtures-"));
 process.stdout.write(`Legacy Unreal fixture logs and assets: ${output}\n`);

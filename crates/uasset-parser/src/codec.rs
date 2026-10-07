@@ -4,7 +4,7 @@ use std::fmt;
 
 pub(crate) mod native_values;
 
-use crate::archive::Reader;
+use crate::archive::{Guid, Reader};
 use crate::package::{Package, PackageIndex};
 use crate::property::{
     ColorValue, DataTableRowHandleValue, FrameRangeBound, FrameRangeValue, IntPointValue,
@@ -22,6 +22,13 @@ const RICH_CURVE_KEY_SERIALIZED_BYTES: u64 = 27;
 struct TypeSpec<'a> {
     name: &'a str,
     tree: &'a PropertyTypeName,
+    struct_guid: Option<Guid>,
+}
+
+impl TypeSpec<'_> {
+    fn is_user_defined_struct(self) -> bool {
+        self.name == "StructProperty" && self.struct_guid.is_some_and(|guid| !guid.is_zero())
+    }
 }
 
 /// Lazily renders the `Property.<name>` breadcrumb used in decode error
@@ -131,8 +138,11 @@ fn decode_property_record_inner(
         match decode_binary_or_native_value(
             source,
             depth,
-            type_name.as_ref(),
-            &record.type_name,
+            TypeSpec {
+                name: type_name.as_ref(),
+                tree: &record.type_name,
+                struct_guid: record.struct_guid,
+            },
             &mut payload,
             package,
             &path,
@@ -149,6 +159,7 @@ fn decode_property_record_inner(
                     TypeSpec {
                         name: type_name.as_ref(),
                         tree: &record.type_name,
+                        struct_guid: record.struct_guid,
                     },
                     record.flags,
                     &mut payload,
@@ -180,6 +191,7 @@ fn decode_property_record_inner(
             TypeSpec {
                 name: type_name.as_ref(),
                 tree: &record.type_name,
+                struct_guid: record.struct_guid,
             },
             record.flags,
             &mut payload,
@@ -307,7 +319,7 @@ fn decode_typed_value(
         }
         "StructProperty" => {
             let path = path.to_string();
-            decode_struct_value(source, type_spec.tree, payload, package, &path, depth).map(Some)
+            decode_struct_value(source, type_spec, payload, package, &path, depth).map(Some)
         }
         _ => Ok(None),
     }
@@ -417,13 +429,18 @@ fn decode_soft_object_path(
 fn decode_binary_or_native_value(
     source: &[u8],
     depth: usize,
-    type_name: &str,
-    type_tree: &PropertyTypeName,
+    type_spec: TypeSpec<'_>,
     payload: &mut Reader<'_>,
     package: &Package,
     path: &(impl fmt::Display + ?Sized),
 ) -> Result<Option<PropertyValue>, PropertyError> {
-    if type_name == "StructProperty" {
+    // Legacy UUserDefinedStruct tags retain a custom GUID even when their short
+    // name collides with a native type. Their payload is a tagged field stream.
+    if type_spec.is_user_defined_struct() {
+        return Ok(None);
+    }
+    let type_tree = type_spec.tree;
+    if type_spec.name == "StructProperty" {
         // Native structs are the only branch that reads, and each read helper
         // wants an owned `&str`; materialize the breadcrumb once here rather
         // than per read.
@@ -558,6 +575,7 @@ fn decode_array_value(
             TypeSpec {
                 name: &inner_name,
                 tree: &inner_tag.type_name,
+                struct_guid: inner_tag.struct_guid,
             },
             &mut inner_payload,
             package,
@@ -580,6 +598,7 @@ fn decode_array_value(
         TypeSpec {
             name: &inner_name,
             tree: inner_type,
+            struct_guid: None,
         },
         payload,
         package,
@@ -647,6 +666,7 @@ fn decode_set_value(
             TypeSpec {
                 name: &element_name,
                 tree: element_type,
+                struct_guid: None,
             },
             payload,
             package,
@@ -673,6 +693,7 @@ fn decode_set_value(
                 TypeSpec {
                     name: &element_name,
                     tree: element_type,
+                    struct_guid: None,
                 },
                 payload,
                 package,
@@ -712,6 +733,7 @@ fn decode_map_value(
                 TypeSpec {
                     name: &key_name,
                     tree: key_type,
+                    struct_guid: None,
                 },
                 payload,
                 package,
@@ -747,6 +769,7 @@ fn decode_map_value(
             TypeSpec {
                 name: &key_name,
                 tree: key_type,
+                struct_guid: None,
             },
             payload,
             package,
@@ -759,6 +782,7 @@ fn decode_map_value(
             TypeSpec {
                 name: &value_name,
                 tree: value_type,
+                struct_guid: None,
             },
             payload,
             package,
@@ -781,6 +805,9 @@ fn decode_container_element(
     path: &str,
     depth: usize,
 ) -> Result<Option<PropertyValue>, PropertyError> {
+    if type_spec.is_user_defined_struct() {
+        return decode_struct_value(source, type_spec, payload, package, path, depth).map(Some);
+    }
     if type_spec.name == "StructProperty" {
         if let Some(value) = native_values::math_struct(
             resolve_math_struct_name(package, type_spec.tree)
@@ -796,7 +823,7 @@ fn decode_container_element(
         if package.summary.versions.uses_legacy_property_tags()
             && type_spec.tree.parameters.is_empty()
         {
-            return decode_struct_value(source, type_spec.tree, payload, package, path, depth)
+            return decode_struct_value(source, type_spec, payload, package, path, depth)
                 .map(Some)
                 .map_err(|error| {
                     error.with_raw_reason(RawReason::LegacyContainerElementWithoutTypeInformation)
@@ -996,7 +1023,7 @@ fn resolve_map_value_type<'a>(
 
 fn decode_struct_value(
     source: &[u8],
-    type_tree: &PropertyTypeName,
+    type_spec: TypeSpec<'_>,
     payload: &mut Reader<'_>,
     package: &Package,
     path: &str,
@@ -1010,33 +1037,36 @@ fn decode_struct_value(
             format!("property value nesting exceeds depth limit {MAX_PROPERTY_DECODE_DEPTH}"),
         ));
     }
-    if let Some(value) = native_values::math_struct(
-        resolve_math_struct_name(package, type_tree)
-            .as_deref()
-            .unwrap_or(""),
-        payload,
-        package,
-        path,
-    )? {
-        return Ok(value);
-    }
-    if let Some(type_path) = resolve_struct_type_path(package, type_tree)
-        && let Some(value) =
-            native_values::generated_value(source, type_path, payload, package, path, depth)?
-    {
-        return Ok(value);
-    }
+    let type_tree = type_spec.tree;
     let struct_name = resolve_struct_type_name(package, type_tree);
-    if let Some(name) = &struct_name
-        && let Some(value) =
-            native_values::known_struct(source, name, payload, package, path, depth)?
-    {
-        return Ok(value);
+    if !type_spec.is_user_defined_struct() {
+        if let Some(value) = native_values::math_struct(
+            resolve_math_struct_name(package, type_tree)
+                .as_deref()
+                .unwrap_or(""),
+            payload,
+            package,
+            path,
+        )? {
+            return Ok(value);
+        }
+        if let Some(type_path) = resolve_struct_type_path(package, type_tree)
+            && let Some(value) =
+                native_values::generated_value(source, type_path, payload, package, path, depth)?
+        {
+            return Ok(value);
+        }
+        if let Some(name) = &struct_name
+            && let Some(value) =
+                native_values::known_struct(source, name, payload, package, path, depth)?
+        {
+            return Ok(value);
+        }
     }
     let mut stream =
         read_tagged_property_stream(payload, &package.summary.versions, &package.names, path)?;
     decode_property_stream_values_at_depth(source, &mut stream, package, depth + 1)?;
-    if struct_name.as_deref() == Some("DataTableRowHandle") {
+    if !type_spec.is_user_defined_struct() && struct_name.as_deref() == Some("DataTableRowHandle") {
         return decode_data_table_row_handle(&stream, package, path);
     }
     Ok(PropertyValue::Struct(stream))
@@ -1574,6 +1604,121 @@ mod tests {
                     reason: RawReason::UnsupportedType
                 }
             );
+        }
+    }
+
+    #[test]
+    fn legacy_user_defined_guids_preserve_colliding_scalar_and_array_text() {
+        use crate::test_support::write_legacy_property_tag;
+        for ue5 in [0, 1000, 1009, 1011] {
+            for name in [
+                "Vector",
+                "Vector2D",
+                "Quat",
+                "Guid",
+                "RichCurveKey",
+                "DataTableRowHandle",
+            ] {
+                let package = versioned_package(
+                    &[
+                        "None",
+                        "Value",
+                        "StructProperty",
+                        "ArrayProperty",
+                        name,
+                        "Caption",
+                        "TextProperty",
+                        "IntProperty",
+                    ],
+                    ue5,
+                );
+                let mut text = Vec::new();
+                push_i32(&mut text, 0);
+                text.push(0); // FTextHistory::Base
+                for value in ["Fixture", "Caption", "Hello"] {
+                    push_fstring(&mut text, value);
+                }
+                if package.summary.has_text_dev_notes() {
+                    push_fstring(&mut text, "Translator note");
+                }
+                let mut fields = Vec::new();
+                write_legacy_property_tag(
+                    &mut fields,
+                    5,
+                    6,
+                    &legacy_extras(&[], false, ue5),
+                    &text,
+                );
+                write_property_terminator(&mut fields, 0);
+                let mut struct_extras = legacy_extras(&[4], true, ue5);
+                struct_extras[8..24].fill(1); // UUserDefinedStruct::GetCustomGuid
+                for array in [false, true] {
+                    let mut bytes = Vec::new();
+                    if array {
+                        let mut payload = Vec::new();
+                        push_i32(&mut payload, 2);
+                        let mut elements = fields.clone();
+                        elements.extend_from_slice(&fields);
+                        write_legacy_property_tag(&mut payload, 1, 2, &struct_extras, &elements);
+                        write_legacy_property_tag(
+                            &mut bytes,
+                            1,
+                            3,
+                            &legacy_extras(&[2], false, ue5),
+                            &payload,
+                        );
+                    } else {
+                        write_legacy_property_tag(&mut bytes, 1, 2, &struct_extras, &fields);
+                    }
+                    write_legacy_property_tag(
+                        &mut bytes,
+                        1,
+                        7,
+                        &legacy_extras(&[], false, ue5),
+                        &42_i32.to_le_bytes(),
+                    );
+                    write_property_terminator(&mut bytes, 0);
+                    let mut reader = Reader::new(&bytes);
+                    let mut stream = read_tagged_property_stream(
+                        &mut reader,
+                        &package.summary.versions,
+                        &package.names,
+                        "Test",
+                    )
+                    .unwrap();
+                    decode_property_stream_values(&bytes, &mut stream, &package).unwrap();
+                    let values = match &stream.records[0].value {
+                        PropertyValue::Array(values) if array => values.iter().collect::<Vec<_>>(),
+                        value if !array => vec![value],
+                        value => panic!("{name}, {ue5}: expected struct array, got {value:?}"),
+                    };
+                    assert_eq!(values.len(), if array { 2 } else { 1 });
+                    for value in values {
+                        let PropertyValue::Struct(nested) = value else {
+                            panic!("{name}, {ue5}: expected tagged struct, got {value:?}");
+                        };
+                        assert_eq!(nested.records.len(), 1);
+                        assert_eq!(
+                            nested.records[0].value,
+                            PropertyValue::Text(TextValue {
+                                source: "Hello".into(),
+                                history: TextHistory::Base {
+                                    namespace: "Fixture".into(),
+                                    key: "Caption".into(),
+                                    dev_notes: if package.summary.has_text_dev_notes() {
+                                        "Translator note".into()
+                                    } else {
+                                        String::new()
+                                    }
+                                }
+                            }),
+                            "{name}, {ue5}, array={array}"
+                        );
+                    }
+                    assert_eq!(stream.records[1].value, PropertyValue::Int(42));
+                    assert_eq!(reader.tell(), bytes.len() as u64);
+                }
+            }
         }
     }
 

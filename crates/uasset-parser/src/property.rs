@@ -58,6 +58,28 @@ impl PropertyTagFlags {
 pub enum RawReason {
     UnsupportedType,
     DecoderRejected(String),
+    LegacyDecoderRejected(String),
+    LegacyContainerElementWithoutTypeInformation,
+    FeatureUnavailableForEngineVersion(String),
+    UnsupportedTextHistory(i8),
+}
+
+impl RawReason {
+    #[must_use]
+    pub fn detail(&self) -> std::borrow::Cow<'_, str> {
+        match self {
+            Self::UnsupportedType => "unsupported type".into(),
+            Self::DecoderRejected(detail)
+            | Self::LegacyDecoderRejected(detail)
+            | Self::FeatureUnavailableForEngineVersion(detail) => detail.as_str().into(),
+            Self::LegacyContainerElementWithoutTypeInformation => {
+                "legacy container struct element has no type information".into()
+            }
+            Self::UnsupportedTextHistory(history) => {
+                format!("unsupported text history {history}").into()
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -235,6 +257,7 @@ pub struct PropertyRecord {
     pub array_index: i32,
     pub flags: PropertyTagFlags,
     pub property_guid: Option<Guid>,
+    pub struct_guid: Option<Guid>,
     pub extensions: Option<PropertyTagExtensions>,
     pub payload: Span,
     pub value: PropertyValue,
@@ -275,6 +298,7 @@ pub struct PropertyError {
     path: String,
     detail: String,
     source: Option<Box<ArchiveError>>,
+    pub(crate) raw_reason: Option<RawReason>,
 }
 
 impl PropertyError {
@@ -290,12 +314,18 @@ impl PropertyError {
             path: path.into(),
             detail: detail.into(),
             source: None,
+            raw_reason: None,
         }
     }
 
     #[must_use]
     pub const fn kind(&self) -> PropertyErrorKind {
         self.kind
+    }
+
+    pub(crate) fn with_raw_reason(mut self, reason: RawReason) -> Self {
+        self.raw_reason = Some(reason);
+        self
     }
 
     #[must_use]
@@ -358,13 +388,14 @@ impl From<ArchiveError> for PropertyError {
             path: source.path().to_owned(),
             detail: source.detail().to_owned(),
             source: Some(Box::new(source)),
+            raw_reason: None,
         }
     }
 }
 
 /// Parses a root UObject versioned tagged-property stream.
 ///
-/// UE5 root object streams include class serialization-control extensions
+/// From UE5 1011, root object streams include class serialization-control extensions
 /// immediately before the tagged-property array. Struct/row streams do not.
 ///
 /// # Errors
@@ -377,6 +408,8 @@ pub fn read_uobject_tagged_property_stream(
     names: &[String],
     path: &str,
 ) -> Result<PropertyStream, PropertyError> {
+    validate_tagged_property_versions(versions, reader.tell(), path)?;
+    // UE 5.7/5.8 Class.cpp, PROPERTY_TAG_EXTENSION_AND_OVERRIDABLE_SERIALIZATION (1011).
     let class_extensions = versions
         .is_at_least_ue5(UE5_PROPERTY_TAG_EXTENSION_AND_OVERRIDABLE_SERIALIZATION)
         .then(|| {
@@ -398,7 +431,7 @@ pub fn read_uobject_tagged_property_stream(
 ///
 /// # Errors
 ///
-/// Returns an error for unsupported pre-complete-type-name tags, malformed name
+/// Returns an error for tags outside the legacy/complete-type-name window, malformed name
 /// references, malformed type trees, invalid payload sizes, unsupported future
 /// extension groups, or any bounded-reader failure.
 pub fn read_tagged_property_stream(
@@ -407,14 +440,8 @@ pub fn read_tagged_property_stream(
     names: &[String],
     path: &str,
 ) -> Result<PropertyStream, PropertyError> {
-    if !versions.is_at_least_ue5(UE5_PROPERTY_TAG_COMPLETE_TYPE_NAME) {
-        return Err(PropertyError::new(
-            PropertyErrorKind::UnsupportedVersion,
-            Some(reader.tell()),
-            path,
-            "property tags before complete type names are not supported",
-        ));
-    }
+    validate_tagged_property_versions(versions, reader.tell(), path)?;
+    let legacy = versions.uses_legacy_property_tags();
 
     let mut records = Vec::new();
     loop {
@@ -435,6 +462,14 @@ pub fn read_tagged_property_stream(
             });
         }
 
+        // UE 4.27/5.0/5.3 PropertyTag.cpp; UE 5.7 LoadPropertyTagNoFullType,
+        // PROPERTY_TAG_COMPLETE_TYPE_NAME (1012).
+        if legacy {
+            records.push(read_legacy_property_tag(
+                reader, versions, names, name, path,
+            )?);
+            continue;
+        }
         let type_name = read_property_type_name(reader, names, &format_args!("{path}.Tag.Type"))?;
         let size_offset = reader.tell();
         let size = reader.read_i32(&format_args!("{path}.Tag.Size"))?;
@@ -475,6 +510,7 @@ pub fn read_tagged_property_stream(
             array_index,
             flags,
             property_guid,
+            struct_guid: None,
             extensions,
             payload,
             value: PropertyValue::Raw {
@@ -482,6 +518,116 @@ pub fn read_tagged_property_stream(
             },
         });
     }
+}
+
+fn validate_tagged_property_versions(
+    versions: &VersionContext,
+    offset: u64,
+    path: &str,
+) -> Result<(), PropertyError> {
+    if versions.ue4 < 522
+        || (!versions.uses_legacy_property_tags()
+            && !versions.is_at_least_ue5(UE5_PROPERTY_TAG_COMPLETE_TYPE_NAME))
+    {
+        return Err(PropertyError::new(
+            PropertyErrorKind::UnsupportedVersion,
+            Some(offset),
+            path,
+            "unsupported tagged-property version; resave the package in UE 4.27 or later",
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) fn read_legacy_property_tag(
+    reader: &mut Reader<'_>,
+    versions: &VersionContext,
+    names: &[String],
+    name: NameRef,
+    path: &str,
+) -> Result<PropertyRecord, PropertyError> {
+    validate_name_ref(names, name, &format_args!("{path}.Tag.Name"))?;
+    let type_ref = reader.read_name_ref(&format_args!("{path}.Tag.Type"))?;
+    validate_name_ref(names, type_ref, path)?;
+    let size_offset = reader.tell();
+    let size = reader.read_i32(&format_args!("{path}.Tag.Size"))?;
+    if size < 0 {
+        return Err(PropertyError::new(
+            PropertyErrorKind::MalformedData,
+            Some(size_offset),
+            path,
+            "legacy property payload size must be non-negative",
+        ));
+    }
+    let array_index = reader.read_i32(&format_args!("{path}.Tag.ArrayIndex"))?;
+    let mut type_name = PropertyTypeName {
+        name: type_ref,
+        parameters: Vec::new(),
+    };
+    let mut flags = PropertyTagFlags::default();
+    let mut struct_guid = None;
+    if type_ref.number() == 0 {
+        let type_text = &names[type_ref.index().get() as usize];
+        let parameter_count = match type_text.as_str() {
+            "StructProperty" | "ByteProperty" | "EnumProperty" | "ArrayProperty"
+            | "SetProperty" | "OptionalProperty" => 1,
+            "MapProperty" => 2,
+            _ => 0,
+        };
+        for _ in 0..parameter_count {
+            let parameter = reader.read_name_ref(&format_args!("{path}.Tag.TypeParameter"))?;
+            // An unresolved struct identity remains evidence, not a malformed tag.
+            if type_text != "StructProperty" {
+                validate_name_ref(names, parameter, path)?;
+            }
+            if type_text != "ByteProperty"
+                || parameter.number() != 0
+                || names
+                    .get(parameter.index().get() as usize)
+                    .is_none_or(|name| name != "None")
+            {
+                type_name.parameters.push(PropertyTypeName {
+                    name: parameter,
+                    parameters: Vec::new(),
+                });
+            }
+        }
+        if type_text == "StructProperty" {
+            // UE 4.27 PropertyTag.cpp, VER_UE4_STRUCT_GUID_IN_PROPERTY_TAG.
+            struct_guid = Some(reader.read_guid(&format_args!("{path}.Tag.StructGuid"))?);
+        } else if type_text == "BoolProperty"
+            && reader.read_u8(&format_args!("{path}.Tag.BoolVal"))? != 0
+        {
+            flags.0 |= TAG_FLAG_BOOL_TRUE;
+        }
+    }
+    // UE 4.27 PropertyTag.cpp, VER_UE4_PROPERTY_GUID_IN_PROPERTY_TAG; always present in this window.
+    let property_guid = if reader.read_u8(&format_args!("{path}.Tag.HasPropertyGuid"))? != 0 {
+        flags.0 |= TAG_FLAG_HAS_PROPERTY_GUID;
+        Some(reader.read_guid(&format_args!("{path}.Tag.PropertyGuid"))?)
+    } else {
+        None
+    };
+    // UE 5.7 PropertyTag.cpp, PROPERTY_TAG_EXTENSION_AND_OVERRIDABLE_SERIALIZATION (1011).
+    let extensions = versions
+        .is_at_least_ue5(UE5_PROPERTY_TAG_EXTENSION_AND_OVERRIDABLE_SERIALIZATION)
+        .then(|| read_property_extensions(reader, versions, path))
+        .transpose()?;
+    let payload = Span::new(reader.tell(), size as u64)?;
+    reader.skip(size as u64, &format_args!("{path}.Tag.Payload"))?;
+    Ok(PropertyRecord {
+        name,
+        type_name,
+        array_index,
+        flags,
+        property_guid,
+        struct_guid,
+        extensions,
+        payload,
+        value: PropertyValue::Raw {
+            reason: RawReason::UnsupportedType,
+        },
+    })
 }
 
 fn read_class_serialization_control_extensions(
@@ -850,16 +996,231 @@ mod tests {
     }
 
     #[test]
-    fn rejects_pre_complete_type_name_versions() {
+    fn rejects_versions_before_the_legacy_window() {
+        for ue5 in [0, 1011, 1012] {
+            let versions = VersionContext {
+                ue4: 521,
+                ue5,
+                ..ue5_versions()
+            };
+            for root in [false, true] {
+                let mut reader = Reader::new(&[]);
+                let result = if root {
+                    read_uobject_tagged_property_stream(&mut reader, &versions, &names(), "Test")
+                } else {
+                    read_tagged_property_stream(&mut reader, &versions, &names(), "Test")
+                };
+                let error = result.unwrap_err();
+                assert_eq!(error.kind(), PropertyErrorKind::UnsupportedVersion);
+                assert_eq!(error.offset(), Some(0));
+                assert!(error.detail().contains("resave"));
+                assert_eq!(reader.tell(), 0);
+            }
+        }
+    }
+
+    #[test]
+    fn dispatches_at_each_tag_version_boundary() {
+        for ue5 in [0, 999, 1000, 1001, 1010, 1011, 1012, 1013] {
+            let versions = VersionContext {
+                ue5,
+                ..ue5_versions()
+            };
+            let mut bytes = Vec::new();
+            if ue5 >= 1011 {
+                bytes.push(0);
+            }
+            write_property_terminator(&mut bytes, 0);
+            let mut reader = Reader::new(&bytes);
+            let result =
+                read_uobject_tagged_property_stream(&mut reader, &versions, &names(), "Object");
+            if ue5 == 999 {
+                assert_eq!(
+                    result.unwrap_err().kind(),
+                    PropertyErrorKind::UnsupportedVersion
+                );
+            } else {
+                let stream = result.unwrap();
+                assert!(stream.records.is_empty());
+                assert_eq!(stream.class_extensions.is_some(), ue5 >= 1011);
+                assert_eq!(reader.tell(), bytes.len() as u64);
+            }
+        }
+    }
+
+    #[test]
+    fn legacy_tags_preserve_each_extra_and_bound_the_payload() {
+        use crate::test_support::write_legacy_property_tag;
+        let names: Vec<String> = [
+            "None",
+            "Value",
+            "StructProperty",
+            "BoolProperty",
+            "ByteProperty",
+            "EnumProperty",
+            "ArrayProperty",
+            "SetProperty",
+            "MapProperty",
+            "OptionalProperty",
+            "Vector",
+            "IntProperty",
+            "ExampleEnum",
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+        for ue5 in [0, 1000, 1009, 1010, 1011] {
+            let versions = VersionContext {
+                ue5,
+                ..ue5_versions()
+            };
+            for (kind, parameters) in [
+                (2, vec![10]),
+                (3, vec![]),
+                (4, vec![0]),
+                (4, vec![12]),
+                (5, vec![12]),
+                (6, vec![11]),
+                (7, vec![11]),
+                (8, vec![11, 3]),
+                (9, vec![11]),
+            ] {
+                let mut extras = Vec::new();
+                for parameter in &parameters {
+                    push_i32(&mut extras, *parameter);
+                    push_i32(&mut extras, 0);
+                }
+                if kind == 2 {
+                    for word in [1_i32, 2, 3, 4] {
+                        push_i32(&mut extras, word);
+                    }
+                } else if kind == 3 {
+                    extras.push(1);
+                }
+                extras.push(1);
+                for word in [5_i32, 6, 7, 8] {
+                    push_i32(&mut extras, word);
+                }
+                if ue5 == 1011 {
+                    extras.extend_from_slice(&[2, 7]);
+                    push_i32(&mut extras, 1);
+                }
+                let payload = if kind == 3 { vec![] } else { vec![0xAB, 0xCD] };
+                let mut bytes = Vec::new();
+                write_legacy_property_tag(&mut bytes, 1, kind, &extras, &payload);
+                bytes[20..24].copy_from_slice(&7_i32.to_le_bytes());
+                write_property_terminator(&mut bytes, 0);
+                let mut reader = Reader::new(&bytes);
+                let stream =
+                    read_tagged_property_stream(&mut reader, &versions, &names, "Test").unwrap();
+                let record = &stream.records[0];
+                assert_eq!(record.array_index, 7);
+                assert_eq!(record.payload.len(), payload.len() as u64);
+                assert_eq!(record.flags.bool_value(), kind == 3);
+                assert_eq!(
+                    record.struct_guid,
+                    (kind == 2).then_some(Guid {
+                        a: 1,
+                        b: 2,
+                        c: 3,
+                        d: 4,
+                    })
+                );
+                assert_eq!(
+                    record.property_guid,
+                    Some(Guid {
+                        a: 5,
+                        b: 6,
+                        c: 7,
+                        d: 8,
+                    })
+                );
+                if ue5 == 1011 {
+                    let extensions = record.extensions.as_ref().unwrap();
+                    assert_eq!(extensions.raw_flags, 2);
+                    assert_eq!(extensions.override_operation, Some(7));
+                    assert_eq!(extensions.experimental_overridable_logic, Some(true));
+                } else {
+                    assert!(record.extensions.is_none());
+                }
+                let expected = if kind == 4 && parameters == [0] {
+                    0
+                } else {
+                    parameters.len()
+                };
+                assert_eq!(record.type_name.parameters.len(), expected);
+                assert_eq!(reader.tell(), bytes.len() as u64);
+            }
+        }
+    }
+
+    #[test]
+    fn legacy_numbered_types_have_no_extras_and_unresolved_structs_are_preserved() {
+        use crate::test_support::write_legacy_property_tag;
+        let names: Vec<String> = ["None", "Value", "StructProperty"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
         let versions = VersionContext {
-            ue5: UE5_PROPERTY_TAG_COMPLETE_TYPE_NAME - 1,
+            ue5: 1009,
             ..ue5_versions()
         };
-        let error = read_tagged_property_stream(&mut Reader::new(&[]), &versions, &names(), "Test")
-            .unwrap_err();
+        let mut bytes = Vec::new();
+        write_legacy_property_tag(&mut bytes, 1, 2, &[0], &[1, 2]);
+        bytes[12..16].copy_from_slice(&1_i32.to_le_bytes());
+        let mut extras = Vec::new();
+        push_i32(&mut extras, 99);
+        push_i32(&mut extras, 0);
+        extras.extend_from_slice(&[0; 17]);
+        write_legacy_property_tag(&mut bytes, 1, 2, &extras, &[]);
+        write_property_terminator(&mut bytes, 0);
+        let stream =
+            read_tagged_property_stream(&mut Reader::new(&bytes), &versions, &names, "Test")
+                .unwrap();
+        assert!(stream.records[0].type_name.parameters.is_empty());
+        assert_eq!(
+            stream.records[1].type_name.parameters[0].name,
+            name_ref(99, 0)
+        );
+    }
 
-        assert_eq!(error.kind(), PropertyErrorKind::UnsupportedVersion);
-        assert_eq!(error.offset(), Some(0));
+    #[test]
+    fn legacy_invalid_sizes_and_truncated_extensions_are_rejected() {
+        use crate::test_support::write_legacy_property_tag;
+        for ue5 in [0, 1010, 1011] {
+            let versions = VersionContext {
+                ue5,
+                ..ue5_versions()
+            };
+            let mut extras = vec![0];
+            if ue5 == 1011 {
+                extras.push(0);
+            }
+            let mut bytes = Vec::new();
+            write_legacy_property_tag(&mut bytes, 3, 1, &extras, &[42]);
+            for size in [-1_i32, 2] {
+                let mut malformed = bytes.clone();
+                malformed[16..20].copy_from_slice(&size.to_le_bytes());
+                let error = read_tagged_property_stream(
+                    &mut Reader::new(&malformed),
+                    &versions,
+                    &names(),
+                    "Test",
+                )
+                .unwrap_err();
+                assert_eq!(error.kind(), PropertyErrorKind::MalformedData);
+            }
+            for length in [24, 24 + extras.len() - 1] {
+                let error = read_tagged_property_stream(
+                    &mut Reader::new(&bytes[..length]),
+                    &versions,
+                    &names(),
+                    "Test",
+                )
+                .unwrap_err();
+                assert_eq!(error.kind(), PropertyErrorKind::MalformedData);
+            }
+        }
     }
 
     #[test]

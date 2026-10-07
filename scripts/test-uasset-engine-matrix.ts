@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import {
 	closeSync,
 	cpSync,
+	existsSync,
 	mkdirSync,
 	mkdtempSync,
 	openSync,
@@ -77,7 +78,12 @@ for (const name of ["protocol", "blueprints", "unreal-assets"])
 run(join(output, "build-native.log"), "cargo", ["build", "--locked", "-p", "uasset-io"]);
 run(join(output, "build-wasm.log"), process.execPath, ["scripts/build-uasset-wasm.ts"]);
 
-const results: Array<{ version: string; status: "passed" | "failed"; error?: string }> = [];
+const results: Array<{
+	version: string;
+	status: "passed" | "failed" | "skipped";
+	error?: string;
+	message?: string;
+}> = [];
 const fixtureSource = join(repositoryRoot, "fixtures", "unreal-project");
 const omittedDirectories = new Set([
 	"Binaries",
@@ -288,5 +294,34 @@ for (const engine of engines) {
 		process.stderr.write(`UE ${engine.version}: ${message}\n`);
 	}
 }
+const legacyResults = join(output, "legacy-results.json");
+try {
+	run(join(output, "legacy-fixtures.log"), process.execPath, [
+		"scripts/generate-legacy-unreal-fixtures.ts",
+		`--results=${legacyResults}`
+	]);
+} catch (error) {
+	process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+}
+if (existsSync(legacyResults)) {
+	// SAFETY: the repository-owned generator writes these per-version results even on failure.
+	const legacy = JSON.parse(readFileSync(legacyResults, "utf8")) as Array<{
+		version: string;
+		status: "passed" | "failed" | "skipped";
+		message: string;
+	}>;
+	results.push(...legacy);
+	for (const result of legacy) {
+		process.stdout.write(`UE ${result.version}: ${result.status} — ${result.message}\n`);
+	}
+} else {
+	for (const version of ["4.27", "5.3"]) {
+		results.push({
+			version,
+			status: "failed",
+			error: "Legacy generator did not report results."
+		});
+	}
+}
 writeFileSync(join(output, "results.json"), JSON.stringify(results, null, "\t") + "\n");
-process.exitCode = results.every((result) => result.status === "passed") ? 0 : 1;
+process.exitCode = results.some((result) => result.status === "failed") ? 1 : 0;

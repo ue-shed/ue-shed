@@ -46,13 +46,13 @@ impl fmt::Display for PropertyPath<'_> {
 
 /// Decodes supported property payloads in place.
 ///
-/// Unsupported property types remain represented as raw payload spans. Malformed
-/// supported payloads return an error rather than desynchronizing the stream.
+/// Unsupported property types and legacy codec failures retain their bounded raw spans.
+/// Malformed supported payloads in modern records return an error.
 ///
 /// # Errors
 ///
-/// Returns an error when a supported property payload is not fully consumed,
-/// has the wrong byte size, or contains malformed primitive data.
+/// Returns an error for malformed supported modern payloads, primitive-read failures,
+/// or resource limits. Legacy failures retain their record boundary as raw values.
 pub fn decode_property_stream_values(
     source: &[u8],
     stream: &mut PropertyStream,
@@ -74,6 +74,28 @@ fn decode_property_stream_values_at_depth(
 }
 
 fn decode_property_record(
+    source: &[u8],
+    record: &mut PropertyRecord,
+    package: &Package,
+    depth: usize,
+) -> Result<(), PropertyError> {
+    if let Err(error) = decode_property_record_inner(source, record, package, depth) {
+        if !package.summary.versions.uses_legacy_property_tags() && error.raw_reason.is_none() {
+            return Err(error);
+        }
+        let reason = error.raw_reason.clone().unwrap_or_else(|| {
+            if error.kind() == crate::property::PropertyErrorKind::UnsupportedVersion {
+                RawReason::FeatureUnavailableForEngineVersion(error.to_string())
+            } else {
+                RawReason::LegacyDecoderRejected(error.to_string())
+            }
+        });
+        record.value = PropertyValue::Raw { reason };
+    }
+    Ok(())
+}
+
+fn decode_property_record_inner(
     source: &[u8],
     record: &mut PropertyRecord,
     package: &Package,
@@ -103,7 +125,9 @@ fn decode_property_record(
         name: record.name,
     };
 
-    let decoded = if record.flags.is_binary_or_native() {
+    let legacy = package.summary.versions.uses_legacy_property_tags();
+    let decoded = if record.flags.is_binary_or_native() || (legacy && type_name == "StructProperty")
+    {
         match decode_binary_or_native_value(
             source,
             depth,
@@ -118,7 +142,7 @@ fn decode_property_record(
                 if matches!(
                     type_name.as_ref(),
                     "ArrayProperty" | "SetProperty" | "MapProperty"
-                ) =>
+                ) || (legacy && type_name == "StructProperty") =>
             {
                 match decode_typed_value(
                     source,
@@ -263,7 +287,7 @@ fn decode_typed_value(
         "LazyObjectProperty" => Ok(Some(PropertyValue::Guid(
             payload.read_guid(&format_args!("{path}.Guid"))?,
         ))),
-        "SoftObjectProperty" => {
+        "SoftObjectProperty" | "SoftClassProperty" => {
             let path = path.to_string();
             Ok(Some(PropertyValue::SoftObjectPath(
                 decode_soft_object_path(payload, &path, package)?,
@@ -292,14 +316,15 @@ fn decode_typed_value(
 /// Decodes `FSoftObjectPath` / `TSoftObjectPtr` wire format.
 ///
 /// Editor packages with a package-level soft object path table store a 4-byte
-/// index into that table. Otherwise the path is serialized inline as `FString`
-/// asset path plus optional `FUtf8String` subpath.
+/// index into that table. Inline paths use one asset FName before 1007 and
+/// package/asset FNames from 1007, followed by the subpath string.
 fn decode_soft_object_path(
     payload: &mut Reader<'_>,
     path: &str,
     package: &Package,
 ) -> Result<String, PropertyError> {
-    if !package.soft_object_paths.is_empty() {
+    // UE 5.7 LinkerLoad.cpp, ADD_SOFTOBJECTPATH_LIST (1008).
+    if package.summary.versions.is_at_least_ue5(1008) && !package.soft_object_paths.is_empty() {
         if payload.remaining() != 4 {
             return Err(PropertyError::new(
                 crate::property::PropertyErrorKind::MalformedData,
@@ -345,9 +370,48 @@ fn decode_soft_object_path(
             });
     }
 
-    payload
-        .read_soft_object_path(path)
-        .map_err(PropertyError::from)
+    // UE 5.3 SoftObjectPath.cpp, FSOFTOBJECTPATH_REMOVE_ASSET_PATH_FNAMES (1007).
+    if !package.summary.versions.is_at_least_ue5(1007) {
+        let asset = payload.read_name_ref(&format_args!("{path}.AssetPathName"))?;
+        let asset = package.resolve_name(asset).ok_or_else(|| {
+            unsupported_container_type(payload, path, "soft path", "unresolved asset name")
+        })?;
+        let subpath = payload.read_fstring(&format_args!("{path}.SubPath"))?;
+        return Ok(if asset == "None" {
+            String::new()
+        } else if subpath.is_empty() {
+            asset
+        } else {
+            format!("{asset}:{subpath}")
+        });
+    }
+    let package_name = payload.read_name_ref(&format_args!("{path}.PackageName"))?;
+    let asset_name = payload.read_name_ref(&format_args!("{path}.AssetName"))?;
+    let resolve = |name| {
+        package.resolve_name(name).ok_or_else(|| {
+            unsupported_container_type(payload, path, "soft path", "unresolved name")
+        })
+    };
+    let package_name = resolve(package_name)?;
+    let asset_name = resolve(asset_name)?;
+    let subpath = if package.summary.versions.uses_legacy_property_tags() {
+        payload.read_fstring(&format_args!("{path}.SubPath"))?
+    } else {
+        payload.read_soft_object_subpath(&format_args!("{path}.SubPath"))?
+    };
+    if package_name == "None" {
+        return Ok(String::new());
+    }
+    let asset = if asset_name == "None" {
+        package_name
+    } else {
+        format!("{package_name}.{asset_name}")
+    };
+    Ok(if subpath.is_empty() {
+        asset
+    } else {
+        format!("{asset}:{subpath}")
+    })
 }
 
 fn decode_binary_or_native_value(
@@ -364,6 +428,16 @@ fn decode_binary_or_native_value(
         // wants an owned `&str`; materialize the breadcrumb once here rather
         // than per read.
         let path = path.to_string();
+        if let Some(value) = native_values::math_struct(
+            resolve_math_struct_name(package, type_tree)
+                .as_deref()
+                .unwrap_or(""),
+            payload,
+            package,
+            &path,
+        )? {
+            return Ok(Some(value));
+        }
         if let Some(type_path) = resolve_struct_type_path(package, type_tree)
             && let Some(value) =
                 native_values::generated_value(source, type_path, payload, package, &path, depth)?
@@ -378,18 +452,8 @@ fn decode_binary_or_native_value(
             return Ok(Some(value));
         }
         match struct_name.as_deref() {
-            Some("Vector") => {
-                return Ok(Some(PropertyValue::Vector(decode_vector_value(
-                    payload, &path,
-                )?)));
-            }
             Some("IntPoint") => {
                 return Ok(Some(PropertyValue::IntPoint(decode_int_point_value(
-                    payload, &path,
-                )?)));
-            }
-            Some("Rotator") => {
-                return Ok(Some(PropertyValue::Rotator(decode_rotator_value(
                     payload, &path,
                 )?)));
             }
@@ -469,29 +533,84 @@ fn decode_array_value(
     let (inner_type, inner_name) = resolve_inner_type(package, type_tree, path, "ArrayProperty")?;
 
     let count = payload.read_count(&format_args!("{path}.Count"))?;
+    // UE 4.27/5.3 PropertyArray.cpp, VER_UE4_INNER_ARRAY_TAG_INFO;
+    // UE 5.7 removes this inner envelope at PROPERTY_TAG_COMPLETE_TYPE_NAME (1012).
+    if package.summary.versions.uses_legacy_property_tags() && inner_name == "StructProperty" {
+        let name = payload.read_name_ref(&format_args!("{path}.InnerTag.Name"))?;
+        let inner_tag = crate::property::read_legacy_property_tag(
+            payload,
+            &package.summary.versions,
+            &package.names,
+            name,
+            path,
+        )?;
+        if package.resolve_name(inner_tag.type_name.name).as_deref() != Some("StructProperty") {
+            return Err(unsupported_container_type(
+                payload,
+                path,
+                "array inner tag",
+                "non-struct",
+            ));
+        }
+        let mut inner_payload = Reader::new(source).bounded(inner_tag.payload, path)?;
+        let value = decode_array_elements(
+            source,
+            TypeSpec {
+                name: &inner_name,
+                tree: &inner_tag.type_name,
+            },
+            &mut inner_payload,
+            package,
+            path,
+            depth,
+            count,
+        )?;
+        if inner_payload.remaining() != 0 {
+            return Err(unsupported_container_type(
+                &inner_payload,
+                path,
+                "array inner payload",
+                "trailing bytes",
+            ));
+        }
+        return Ok(value);
+    }
+    decode_array_elements(
+        source,
+        TypeSpec {
+            name: &inner_name,
+            tree: inner_type,
+        },
+        payload,
+        package,
+        path,
+        depth,
+        count,
+    )
+}
+
+fn decode_array_elements(
+    source: &[u8],
+    inner: TypeSpec<'_>,
+    payload: &mut Reader<'_>,
+    package: &Package,
+    path: &str,
+    depth: usize,
+    count: usize,
+) -> Result<PropertyValue, PropertyError> {
     let capacity = payload.checked_vec_capacity::<PropertyValue>(
         count,
-        minimum_serialized_size(&inner_name, inner_type),
+        minimum_serialized_size(inner.name, inner.tree),
         &format!("{path}.Count"),
     )?;
     let mut values = Vec::with_capacity(capacity);
     for index in 0..count {
         let element_path = format!("{path}[{index}]");
         values.push(
-            decode_container_element(
-                source,
-                TypeSpec {
-                    name: &inner_name,
-                    tree: inner_type,
-                },
-                payload,
-                package,
-                &element_path,
-                depth,
-            )?
-            .ok_or_else(|| {
-                unsupported_container_type(payload, &element_path, "array element", &inner_name)
-            })?,
+            decode_container_element(source, inner, payload, package, &element_path, depth)?
+                .ok_or_else(|| {
+                    unsupported_container_type(payload, &element_path, "array element", inner.name)
+                })?,
         );
     }
     Ok(PropertyValue::Array(values))
@@ -662,6 +781,28 @@ fn decode_container_element(
     path: &str,
     depth: usize,
 ) -> Result<Option<PropertyValue>, PropertyError> {
+    if type_spec.name == "StructProperty" {
+        if let Some(value) = native_values::math_struct(
+            resolve_math_struct_name(package, type_spec.tree)
+                .as_deref()
+                .unwrap_or(""),
+            payload,
+            package,
+            path,
+        )? {
+            return Ok(Some(value));
+        }
+        // UE 4.27/5.3 PropertyMap.cpp and PropertySet.cpp omit struct identities.
+        if package.summary.versions.uses_legacy_property_tags()
+            && type_spec.tree.parameters.is_empty()
+        {
+            return decode_struct_value(source, type_spec.tree, payload, package, path, depth)
+                .map(Some)
+                .map_err(|error| {
+                    error.with_raw_reason(RawReason::LegacyContainerElementWithoutTypeInformation)
+                });
+        }
+    }
     // FBoolProperty::SerializeItem writes uint8 in containers (UE 5.7/5.8).
     // Scalar tagged booleans instead carry their value in the tag flags.
     if type_spec.name == "BoolProperty" {
@@ -700,7 +841,10 @@ fn decode_container_element(
         ))));
     }
 
-    if type_spec.name == "SoftObjectProperty" && !package.soft_object_paths.is_empty() {
+    if matches!(type_spec.name, "SoftObjectProperty" | "SoftClassProperty")
+        && package.summary.versions.is_at_least_ue5(1008)
+        && !package.soft_object_paths.is_empty()
+    {
         let mut element_payload = payload.take_bounded(4, path)?;
         return decode_typed_value(
             source,
@@ -866,6 +1010,16 @@ fn decode_struct_value(
             format!("property value nesting exceeds depth limit {MAX_PROPERTY_DECODE_DEPTH}"),
         ));
     }
+    if let Some(value) = native_values::math_struct(
+        resolve_math_struct_name(package, type_tree)
+            .as_deref()
+            .unwrap_or(""),
+        payload,
+        package,
+        path,
+    )? {
+        return Ok(value);
+    }
     if let Some(type_path) = resolve_struct_type_path(package, type_tree)
         && let Some(value) =
             native_values::generated_value(source, type_path, payload, package, path, depth)?
@@ -953,8 +1107,9 @@ fn decode_text_value(
     let history_type = payload.read_i8(&format_args!("{path}.HistoryType"))?;
 
     if history_type == -1 {
-        let has_culture_invariant =
-            read_archive_bool(payload, &format!("{path}.CultureInvariant"))?;
+        // UE 4.27/5.3 Text.cpp, Dev-Editor CultureInvariantTextSerializationKeyStability (32).
+        let has_culture_invariant = package.summary.has_culture_invariant_text()
+            && read_archive_bool(payload, &format!("{path}.CultureInvariant"))?;
         let source = if has_culture_invariant {
             payload.read_fstring(&format_args!("{path}.CultureInvariantString"))?
         } else {
@@ -1006,52 +1161,13 @@ fn decode_text_value(
         }));
     }
 
-    Ok(None)
-}
-
-fn decode_vector_value(payload: &mut Reader<'_>, path: &str) -> Result<VectorValue, PropertyError> {
-    match payload.remaining() {
-        12 => Ok(VectorValue {
-            x: f64::from(payload.read_f32(&format_args!("{path}.X"))?),
-            y: f64::from(payload.read_f32(&format_args!("{path}.Y"))?),
-            z: f64::from(payload.read_f32(&format_args!("{path}.Z"))?),
-        }),
-        24 => Ok(VectorValue {
-            x: payload.read_f64(&format_args!("{path}.X"))?,
-            y: payload.read_f64(&format_args!("{path}.Y"))?,
-            z: payload.read_f64(&format_args!("{path}.Z"))?,
-        }),
-        remaining => Err(PropertyError::new(
-            crate::property::PropertyErrorKind::MalformedData,
-            Some(payload.tell()),
-            path,
-            format!("unsupported FVector payload size {remaining}"),
-        )),
-    }
-}
-
-fn decode_rotator_value(
-    payload: &mut Reader<'_>,
-    path: &str,
-) -> Result<RotatorValue, PropertyError> {
-    match payload.remaining() {
-        12 => Ok(RotatorValue {
-            pitch: f64::from(payload.read_f32(&format_args!("{path}.Pitch"))?),
-            yaw: f64::from(payload.read_f32(&format_args!("{path}.Yaw"))?),
-            roll: f64::from(payload.read_f32(&format_args!("{path}.Roll"))?),
-        }),
-        24 => Ok(RotatorValue {
-            pitch: payload.read_f64(&format_args!("{path}.Pitch"))?,
-            yaw: payload.read_f64(&format_args!("{path}.Yaw"))?,
-            roll: payload.read_f64(&format_args!("{path}.Roll"))?,
-        }),
-        remaining => Err(PropertyError::new(
-            crate::property::PropertyErrorKind::MalformedData,
-            Some(payload.tell()),
-            path,
-            format!("unsupported FRotator payload size {remaining}"),
-        )),
-    }
+    Err(PropertyError::new(
+        crate::property::PropertyErrorKind::UnsupportedCapability,
+        Some(payload.tell() - 1),
+        path,
+        format!("unsupported text history {history_type}"),
+    )
+    .with_raw_reason(RawReason::UnsupportedTextHistory(history_type)))
 }
 
 fn decode_guid_value(
@@ -1164,6 +1280,19 @@ fn resolve_struct_type_path(
     native_values::property_type_path(&module, &name)
 }
 
+fn resolve_math_struct_name<'a>(
+    package: &'a Package,
+    type_tree: &PropertyTypeName,
+) -> Option<std::borrow::Cow<'a, str>> {
+    let identity = type_tree.parameters.first()?;
+    if let Some(module) = identity.parameters.first()
+        && package.resolve_name_cow(module.name).as_deref() != Some("/Script/CoreUObject")
+    {
+        return None;
+    }
+    package.resolve_name_cow(identity.name)
+}
+
 fn resolve_struct_type_name<'a>(
     package: &'a Package,
     type_tree: &PropertyTypeName,
@@ -1237,6 +1366,7 @@ mod tests {
             array_index: 0,
             flags,
             property_guid: None,
+            struct_guid: None,
             extensions: None,
             payload: Span::new(0, source.len() as u64).expect("payload span"),
             value: PropertyValue::Raw {
@@ -1265,6 +1395,646 @@ mod tests {
         let package = test_package(names);
         decode_property_stream_values(&bytes, &mut stream, &package).expect("decode struct");
         stream
+    }
+
+    fn versioned_package(names: &[&str], ue5: i32) -> Package {
+        let mut package = test_package(names.iter().map(|name| (*name).to_owned()).collect());
+        package.summary.versions.ue5 = ue5;
+        package
+    }
+
+    fn legacy_extras(parameters: &[i32], struct_tag: bool, ue5: i32) -> Vec<u8> {
+        let mut extras = Vec::new();
+        for parameter in parameters {
+            push_i32(&mut extras, *parameter);
+            push_i32(&mut extras, 0);
+        }
+        if struct_tag {
+            extras.extend_from_slice(&[0; 16]);
+        }
+        extras.push(0);
+        if ue5 >= 1011 {
+            extras.push(0);
+        }
+        extras
+    }
+
+    #[test]
+    fn legacy_codec_failure_keeps_the_next_record_at_its_boundary() {
+        use crate::test_support::write_legacy_property_tag;
+        for ue5 in [0, 1000, 1010, 1011] {
+            let package = versioned_package(&["None", "Value", "IntProperty"], ue5);
+            let mut bytes = Vec::new();
+            let extras = legacy_extras(&[], false, ue5);
+            write_legacy_property_tag(&mut bytes, 1, 2, &extras, &[0xFF]);
+            write_legacy_property_tag(&mut bytes, 1, 2, &extras, &42_i32.to_le_bytes());
+            write_property_terminator(&mut bytes, 0);
+            let mut reader = Reader::new(&bytes);
+            let mut stream = read_tagged_property_stream(
+                &mut reader,
+                &package.summary.versions,
+                &package.names,
+                "Test",
+            )
+            .unwrap();
+            decode_property_stream_values(&bytes, &mut stream, &package).unwrap();
+            assert!(matches!(
+                stream.records[0].value,
+                PropertyValue::Raw {
+                    reason: RawReason::LegacyDecoderRejected(_)
+                }
+            ));
+            assert_eq!(stream.records[0].payload.len(), 1);
+            assert_eq!(stream.records[1].value, PropertyValue::Int(42));
+            assert_eq!(reader.tell(), bytes.len() as u64);
+        }
+    }
+
+    #[test]
+    fn math_struct_components_and_array_strides_follow_lwc_and_inner_tag_gates() {
+        use crate::test_support::write_legacy_property_tag;
+        for ue5 in [0, 1003, 1004, 1005, 1011, 1012, 1013] {
+            for (name, components) in [
+                ("Vector", 3),
+                ("Vector2D", 2),
+                ("Vector4", 4),
+                ("Rotator", 3),
+                ("Quat", 4),
+                ("Plane", 4),
+                ("Box", 6),
+            ] {
+                let package = versioned_package(
+                    &["None", "Value", "StructProperty", "ArrayProperty", name],
+                    ue5,
+                );
+                let mut element = Vec::new();
+                for index in 0..components {
+                    if ue5 >= 1004 {
+                        push_f64(&mut element, f64::from(index) + 0.25);
+                    } else {
+                        push_f32(&mut element, index as f32 + 0.25);
+                    }
+                }
+                if name == "Box" {
+                    element.push(1);
+                }
+                let struct_type = PropertyTypeName {
+                    name: crate::test_support::name_ref(2, 0),
+                    parameters: vec![PropertyTypeName {
+                        name: crate::test_support::name_ref(4, 0),
+                        parameters: vec![],
+                    }],
+                };
+                let scalar = decode_record_with_package(
+                    package.clone(),
+                    2,
+                    struct_type.parameters.clone(),
+                    PropertyTagFlags(0),
+                    &element,
+                )
+                .unwrap();
+                assert!(
+                    !matches!(scalar, PropertyValue::Raw { .. }),
+                    "{name}, {ue5}"
+                );
+                let mut array = Vec::new();
+                push_i32(&mut array, 2);
+                let mut elements = element.clone();
+                elements.extend_from_slice(&element);
+                if ue5 < 1012 {
+                    write_legacy_property_tag(
+                        &mut array,
+                        1,
+                        2,
+                        &legacy_extras(&[4], true, ue5),
+                        &elements,
+                    );
+                } else {
+                    array.extend_from_slice(&elements);
+                }
+                let inner = if ue5 < 1012 {
+                    PropertyTypeName {
+                        name: crate::test_support::name_ref(2, 0),
+                        parameters: vec![],
+                    }
+                } else {
+                    struct_type
+                };
+                let value = decode_record_with_package(
+                    package.clone(),
+                    3,
+                    vec![inner.clone()],
+                    PropertyTagFlags(0),
+                    &array,
+                )
+                .unwrap();
+                assert_eq!(
+                    value,
+                    PropertyValue::Array(vec![scalar.clone(), scalar]),
+                    "{name}, {ue5}"
+                );
+                array.pop();
+                let malformed = decode_record_with_package(
+                    package,
+                    3,
+                    vec![inner],
+                    PropertyTagFlags(0),
+                    &array,
+                );
+                if ue5 < 1012 {
+                    assert!(matches!(malformed.unwrap(), PropertyValue::Raw { .. }));
+                } else {
+                    assert!(malformed.is_err());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn complete_math_identities_do_not_match_a_project_module() {
+        for name in ["Vector", "Quat", "Box"] {
+            let package = versioned_package(&["StructProperty", name, "/Script/Fixture"], 1012);
+            let value = decode_record_with_package(
+                package,
+                0,
+                vec![PropertyTypeName {
+                    name: crate::test_support::name_ref(1, 0),
+                    parameters: vec![PropertyTypeName {
+                        name: crate::test_support::name_ref(2, 0),
+                        parameters: vec![],
+                    }],
+                }],
+                PropertyTagFlags(0x08),
+                &[0; 49],
+            )
+            .unwrap();
+            assert_eq!(
+                value,
+                PropertyValue::Raw {
+                    reason: RawReason::UnsupportedType
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn legacy_transform_members_keep_tagged_framing_and_versioned_components() {
+        use crate::test_support::write_legacy_property_tag;
+        for ue5 in [0, 1003, 1004, 1005] {
+            let package = versioned_package(
+                &[
+                    "None",
+                    "Value",
+                    "StructProperty",
+                    "Transform",
+                    "Quat",
+                    "Vector",
+                    "Rotation",
+                    "Translation",
+                    "Scale3D",
+                ],
+                ue5,
+            );
+            let mut bytes = Vec::new();
+            for (field, kind, count) in [(6, 4, 4), (7, 5, 3), (8, 5, 3)] {
+                let mut payload = Vec::new();
+                for _ in 0..count {
+                    if ue5 >= 1004 {
+                        push_f64(&mut payload, 1.25);
+                    } else {
+                        push_f32(&mut payload, 1.25);
+                    }
+                }
+                write_legacy_property_tag(
+                    &mut bytes,
+                    field,
+                    2,
+                    &legacy_extras(&[kind], true, ue5),
+                    &payload,
+                );
+            }
+            write_property_terminator(&mut bytes, 0);
+            let value = decode_record_with_package(
+                package,
+                2,
+                vec![PropertyTypeName {
+                    name: crate::test_support::name_ref(3, 0),
+                    parameters: vec![],
+                }],
+                PropertyTagFlags(0),
+                &bytes,
+            )
+            .unwrap();
+            let PropertyValue::Struct(stream) = value else {
+                panic!("Transform must stay tagged");
+            };
+            assert_eq!(stream.records.len(), 3);
+            assert!(matches!(
+                stream.records[0].value,
+                PropertyValue::NativeStruct { .. }
+            ));
+            for record in &stream.records[1..] {
+                assert_eq!(
+                    record.value,
+                    PropertyValue::Vector(VectorValue {
+                        x: 1.25,
+                        y: 1.25,
+                        z: 1.25,
+                    })
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn soft_path_name_and_table_gates_include_empty_tables() {
+        for ue5 in [0, 1006, 1007, 1008, 1009] {
+            for table in [false, true] {
+                let mut package = versioned_package(
+                    &[
+                        "SoftObjectProperty",
+                        "/Game/Fixture.Asset",
+                        "/Game/Fixture",
+                        "Asset",
+                        "None",
+                    ],
+                    ue5,
+                );
+                if table {
+                    package.soft_object_paths = vec!["/Game/Fixture.Asset:Child".into()];
+                }
+                let mut bytes = Vec::new();
+                if ue5 >= 1008 && table {
+                    push_i32(&mut bytes, 0);
+                } else {
+                    let names = if ue5 < 1007 {
+                        vec![1, 0]
+                    } else {
+                        vec![2, 0, 3, 0]
+                    };
+                    for word in names {
+                        push_i32(&mut bytes, word);
+                    }
+                    push_fstring(&mut bytes, "Child");
+                }
+                let value = decode_record_with_package(
+                    package.clone(),
+                    0,
+                    vec![],
+                    PropertyTagFlags(0),
+                    &bytes,
+                )
+                .unwrap();
+                assert_eq!(
+                    value,
+                    PropertyValue::SoftObjectPath("/Game/Fixture.Asset:Child".into())
+                );
+                if ue5 >= 1008 && table {
+                    let invalid = decode_record_with_package(
+                        package,
+                        0,
+                        vec![],
+                        PropertyTagFlags(0),
+                        &(-1_i32).to_le_bytes(),
+                    )
+                    .unwrap();
+                    assert!(matches!(
+                        invalid,
+                        PropertyValue::Raw {
+                            reason: RawReason::LegacyDecoderRejected(_)
+                        }
+                    ));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn culture_invariant_text_uses_editor_custom_versions_in_both_legacy_lanes() {
+        use crate::test_support::editor_text_version;
+        for ue5 in [0, 1009] {
+            for version in [None, Some(31), Some(32), Some(33)] {
+                for invariant in [false, true] {
+                    let mut package = versioned_package(&["TextProperty"], ue5);
+                    editor_text_version(&mut package, version);
+                    let gated = version.is_some_and(|version| version >= 32);
+                    let mut bytes = vec![0, 0, 0, 0, 255];
+                    if gated {
+                        push_i32(&mut bytes, i32::from(invariant));
+                        if invariant {
+                            push_fstring(&mut bytes, "Invariant");
+                        }
+                    }
+                    let value =
+                        decode_record_with_package(package, 0, vec![], PropertyTagFlags(0), &bytes)
+                            .unwrap();
+                    assert_eq!(
+                        value,
+                        PropertyValue::Text(TextValue {
+                            source: if gated && invariant {
+                                "Invariant".into()
+                            } else {
+                                String::new()
+                            },
+                            history: TextHistory::None,
+                        })
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn legacy_map_and_set_structs_attempt_tagged_streams_and_never_guess_widths() {
+        use crate::test_support::write_legacy_property_tag;
+        for ue5 in [0, 1009, 1010, 1011] {
+            for (kind, parameters) in [(4, vec![2]), (5, vec![2, 3]), (5, vec![3, 2])] {
+                let package = versioned_package(
+                    &[
+                        "None",
+                        "Value",
+                        "StructProperty",
+                        "IntProperty",
+                        "SetProperty",
+                        "MapProperty",
+                    ],
+                    ue5,
+                );
+                for tagged in [true, false] {
+                    let mut nested = Vec::new();
+                    if tagged {
+                        write_legacy_property_tag(
+                            &mut nested,
+                            1,
+                            3,
+                            &legacy_extras(&[], false, ue5),
+                            &7_i32.to_le_bytes(),
+                        );
+                        write_property_terminator(&mut nested, 0);
+                    } else {
+                        nested.extend_from_slice(&[0xFF; 24]);
+                    }
+                    let mut payload = Vec::new();
+                    push_i32(&mut payload, 0);
+                    push_i32(&mut payload, 1);
+                    for parameter in &parameters {
+                        if *parameter == 2 {
+                            payload.extend_from_slice(&nested);
+                        } else {
+                            push_i32(&mut payload, 42);
+                        }
+                    }
+                    let mut bytes = Vec::new();
+                    write_legacy_property_tag(
+                        &mut bytes,
+                        1,
+                        kind,
+                        &legacy_extras(&parameters, false, ue5),
+                        &payload,
+                    );
+                    write_legacy_property_tag(
+                        &mut bytes,
+                        1,
+                        3,
+                        &legacy_extras(&[], false, ue5),
+                        &99_i32.to_le_bytes(),
+                    );
+                    write_property_terminator(&mut bytes, 0);
+                    let mut reader = Reader::new(&bytes);
+                    let mut stream = read_tagged_property_stream(
+                        &mut reader,
+                        &package.summary.versions,
+                        &package.names,
+                        "Test",
+                    )
+                    .unwrap();
+                    decode_property_stream_values(&bytes, &mut stream, &package).unwrap();
+                    if tagged {
+                        assert!(!matches!(
+                            stream.records[0].value,
+                            PropertyValue::Raw { .. }
+                        ));
+                    } else {
+                        assert_eq!(
+                            stream.records[0].value,
+                            PropertyValue::Raw {
+                                reason: RawReason::LegacyContainerElementWithoutTypeInformation
+                            }
+                        );
+                    }
+                    assert_eq!(stream.records[1].value, PropertyValue::Int(99));
+                    assert_eq!(reader.tell(), bytes.len() as u64);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn complete_tags_keep_errors_for_malformed_container_structs() {
+        for ue5 in [1012, 1013] {
+            let package = versioned_package(&["SetProperty", "StructProperty"], ue5);
+            let mut payload = Vec::new();
+            push_i32(&mut payload, 0);
+            push_i32(&mut payload, 1);
+            payload.extend_from_slice(&[0xFF; 24]);
+            let error = decode_record_with_package(
+                package,
+                0,
+                vec![PropertyTypeName {
+                    name: crate::test_support::name_ref(1, 0),
+                    parameters: vec![],
+                }],
+                PropertyTagFlags(0),
+                &payload,
+            )
+            .unwrap_err();
+            assert_eq!(error.kind(), PropertyErrorKind::MalformedData);
+        }
+    }
+
+    #[test]
+    fn legacy_native_features_keep_their_existing_version_messages() {
+        for ue5 in [0, 1009, 1011] {
+            for (name, message) in [
+                ("InstancedStruct", "InstancedStruct"),
+                ("InstancedPropertyBag", "property bags"),
+                ("EdGraphPinType", "pin type"),
+                ("MovieSceneFloatChannel", "native numeric channels"),
+            ] {
+                let package = versioned_package(&["StructProperty", name], ue5);
+                let value = decode_record_with_package(
+                    package,
+                    0,
+                    vec![PropertyTypeName {
+                        name: crate::test_support::name_ref(1, 0),
+                        parameters: vec![],
+                    }],
+                    PropertyTagFlags(0),
+                    &[],
+                )
+                .unwrap();
+                let PropertyValue::Raw {
+                    reason: RawReason::FeatureUnavailableForEngineVersion(detail),
+                } = value
+                else {
+                    panic!("expected version coverage gap for {name}");
+                };
+                assert!(detail.contains(message), "{detail}");
+            }
+        }
+    }
+
+    #[test]
+    fn legacy_bool_byte_and_enum_payloads_share_the_existing_codecs() {
+        use crate::test_support::write_legacy_property_tag;
+        for ue5 in [0, 1009, 1011] {
+            let package = versioned_package(
+                &[
+                    "None",
+                    "Value",
+                    "BoolProperty",
+                    "ByteProperty",
+                    "EnumProperty",
+                    "ExampleEnum",
+                    "Choice",
+                ],
+                ue5,
+            );
+            let mut bytes = Vec::new();
+            for value in [0, 1] {
+                let mut extras = vec![value];
+                extras.extend_from_slice(&legacy_extras(&[], false, ue5));
+                write_legacy_property_tag(&mut bytes, 1, 2, &extras, &[]);
+            }
+            write_legacy_property_tag(&mut bytes, 1, 3, &legacy_extras(&[0], false, ue5), &[7]);
+            let mut enum_value = Vec::new();
+            push_i32(&mut enum_value, 6);
+            push_i32(&mut enum_value, 0);
+            for kind in [3, 4] {
+                write_legacy_property_tag(
+                    &mut bytes,
+                    1,
+                    kind,
+                    &legacy_extras(&[5], false, ue5),
+                    &enum_value,
+                );
+            }
+            write_property_terminator(&mut bytes, 0);
+            let mut stream = read_tagged_property_stream(
+                &mut Reader::new(&bytes),
+                &package.summary.versions,
+                &package.names,
+                "Test",
+            )
+            .unwrap();
+            decode_property_stream_values(&bytes, &mut stream, &package).unwrap();
+            let values: Vec<_> = stream
+                .records
+                .into_iter()
+                .map(|record| record.value)
+                .collect();
+            assert_eq!(
+                values,
+                vec![
+                    PropertyValue::Bool(false),
+                    PropertyValue::Bool(true),
+                    PropertyValue::UInt(7),
+                    PropertyValue::Enum(crate::test_support::name_ref(6, 0)),
+                    PropertyValue::Enum(crate::test_support::name_ref(6, 0)),
+                ]
+            );
+        }
+    }
+
+    #[test]
+    fn legacy_text_dev_notes_follow_the_custom_version_and_editor_filter() {
+        use crate::test_support::text_version;
+        use crate::version::PackageFlags;
+        for ue5 in [0, 1009] {
+            for version in [259, 260, 261] {
+                for filtered in [false, true] {
+                    let mut package = versioned_package(&["TextProperty"], ue5);
+                    let flags = if filtered {
+                        PackageFlags::FILTER_EDITOR_ONLY
+                    } else {
+                        0
+                    };
+                    text_version(&mut package, Some(version), flags);
+                    let notes = version >= 260 && !filtered;
+                    let mut payload = vec![0, 0, 0, 0, 0];
+                    for value in ["Fixture", "Greeting", "Hello"] {
+                        push_fstring(&mut payload, value);
+                    }
+                    if notes {
+                        push_fstring(&mut payload, "Context");
+                    }
+                    let value = decode_record_with_package(
+                        package.clone(),
+                        0,
+                        vec![],
+                        PropertyTagFlags(0),
+                        &payload,
+                    )
+                    .unwrap();
+                    assert_eq!(
+                        value,
+                        PropertyValue::Text(TextValue {
+                            source: "Hello".into(),
+                            history: TextHistory::Base {
+                                namespace: "Fixture".into(),
+                                key: "Greeting".into(),
+                                dev_notes: if notes {
+                                    "Context".into()
+                                } else {
+                                    String::new()
+                                },
+                            },
+                        })
+                    );
+                    payload.pop();
+                    assert!(matches!(
+                        decode_record_with_package(
+                            package,
+                            0,
+                            vec![],
+                            PropertyTagFlags(0),
+                            &payload,
+                        )
+                        .unwrap(),
+                        PropertyValue::Raw {
+                            reason: RawReason::LegacyDecoderRejected(_)
+                        }
+                    ));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn unsupported_histories_in_text_containers_keep_a_specific_raw_reason() {
+        for ue5 in [0, 1009, 1011, 1012] {
+            let package = versioned_package(&["ArrayProperty", "TextProperty"], ue5);
+            let mut payload = vec![];
+            push_i32(&mut payload, 2);
+            payload.extend_from_slice(&[0, 0, 0, 0, 12]);
+            let value = decode_record_with_package(
+                package,
+                0,
+                vec![PropertyTypeName {
+                    name: crate::test_support::name_ref(1, 0),
+                    parameters: vec![],
+                }],
+                PropertyTagFlags(0),
+                &payload,
+            )
+            .unwrap();
+            assert_eq!(
+                value,
+                PropertyValue::Raw {
+                    reason: RawReason::UnsupportedTextHistory(12)
+                }
+            );
+        }
     }
 
     #[test]
@@ -1946,12 +2716,15 @@ mod tests {
 
     #[test]
     fn decodes_populated_soft_object_path_payload() {
-        let names = vec!["SoftObjectProperty".into()];
+        let names = vec![
+            "SoftObjectProperty".into(),
+            "/Engine/EngineResources/DefaultTexture".into(),
+            "DefaultTexture".into(),
+        ];
         let mut payload = Vec::new();
-        push_fstring(
-            &mut payload,
-            "/Engine/EngineResources/DefaultTexture.DefaultTexture",
-        );
+        for word in [1, 0, 2, 0] {
+            push_i32(&mut payload, word);
+        }
         push_fstring(&mut payload, "");
 
         let value = decode_record(names, 0, Vec::new(), PropertyTagFlags(0), &payload);
@@ -1965,9 +2738,15 @@ mod tests {
 
     #[test]
     fn decodes_soft_object_path_with_subpath() {
-        let names = vec!["SoftObjectProperty".into()];
+        let names = vec![
+            "SoftObjectProperty".into(),
+            "/Game/MyPackage".into(),
+            "MyAsset".into(),
+        ];
         let mut payload = Vec::new();
-        push_fstring(&mut payload, "/Game/MyPackage.MyAsset");
+        for word in [1, 0, 2, 0] {
+            push_i32(&mut payload, word);
+        }
         push_fstring(&mut payload, "SubObject");
 
         let value = decode_record(names, 0, Vec::new(), PropertyTagFlags(0), &payload);
@@ -1996,6 +2775,7 @@ mod tests {
             array_index: 0,
             flags: PropertyTagFlags(0),
             property_guid: None,
+            struct_guid: None,
             extensions: None,
             payload: Span::new(0, source.len() as u64).expect("payload span"),
             value: PropertyValue::Raw {
@@ -2027,6 +2807,7 @@ mod tests {
                 array_index: 0,
                 flags: PropertyTagFlags(0),
                 property_guid: None,
+                struct_guid: None,
                 extensions: None,
                 payload: Span::new(0, source.len() as u64).expect("payload span"),
                 value: PropertyValue::Raw {
@@ -2080,6 +2861,7 @@ mod tests {
             array_index: 0,
             flags: PropertyTagFlags(0),
             property_guid: None,
+            struct_guid: None,
             extensions: None,
             payload: Span::new(0, source.len() as u64).expect("payload span"),
             value: PropertyValue::Raw {
@@ -2380,8 +3162,10 @@ mod tests {
         push_f32(&mut payload, 5.0);
         push_f32(&mut payload, 6.0);
 
-        let value = decode_record(
-            names,
+        let mut package = test_package(names);
+        package.summary.versions.ue5 = 1003;
+        let value = decode_record_with_package(
+            package,
             0,
             vec![PropertyTypeName {
                 name: crate::test_support::name_ref(1, 0),
@@ -2389,7 +3173,8 @@ mod tests {
             }],
             PropertyTagFlags(0x08),
             &payload,
-        );
+        )
+        .unwrap();
         assert_eq!(
             value,
             PropertyValue::Vector(VectorValue {

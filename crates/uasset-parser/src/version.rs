@@ -42,6 +42,13 @@ impl VersionContext {
     pub const LATEST_SUPPORTED_UE5: i32 = 1018;
 
     #[must_use]
+    pub const fn uses_legacy_property_tags(&self) -> bool {
+        // UE 4.27 ObjectVersion.h: CORRECT_LICENSEE_FLAG (522); UE 5.7 PropertyTag.cpp:
+        // INITIAL_VERSION (1000) through PROPERTY_TAG_COMPLETE_TYPE_NAME (1012), exclusive.
+        self.ue4 == 522 && (self.ue5 == 0 || (self.ue5 >= 1000 && self.ue5 <= 1011))
+    }
+
+    #[must_use]
     pub const fn is_at_least_ue4(&self, version: i32) -> bool {
         self.ue4 >= version
     }

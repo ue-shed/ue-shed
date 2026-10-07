@@ -5,6 +5,16 @@ interface TestGate {
 }
 
 const gates: readonly TestGate[] = [
+	...["4.27", "5.3"].flatMap((version) =>
+		["unreal-assets", "game-text"].map((name) => ({
+			file: `packages/${name}/src/legacy-fixture.integration.test.ts`,
+			name: `UE ${version} committed legacy ${name} conformance`,
+			missing: (environment: NodeJS.ProcessEnv) =>
+				environment.UE_SHED_UASSET_EXECUTABLE
+					? undefined
+					: "set UE_SHED_UASSET_EXECUTABLE or run pnpm test with the native reader enabled"
+		}))
+	),
 	{
 		file: "packages/engine/src/real-unreal.integration.test.ts",
 		name: "real Unreal editor play-session lifecycle",

@@ -59,8 +59,26 @@ The supported product boundary is read-only inspection of classic, uncooked, ver
 packages. Cooked packages, unversioned properties, IoStore/Zen packages, swapped endianness, UTrace,
 and general bulk-data decoding remain out of scope until a product use case changes that decision.
 
-Supporting property tags older than UE5 complete type names is also deferred until UE Shed chooses
-an explicit engine compatibility window.
+Tagged properties support UE 4.27 (UE4 522 with no UE5 version) and UE5 versions 1000–1011
+(UE 5.0–5.3 plus the pre-complete-type-name 5.4 revisions), feeding the same type tree and codecs
+as the complete-type-name reader used from UE5 1012. This includes String Tables, DataTable and
+CompositeDataTable rows, data assets, and generic UObject text. Tagged-property decoding rejects
+UE4 versions below 522 with guidance to resave in 4.27 or later; package-header inspection retains
+its older loadable floor.
+
+Legacy struct map/set elements are decoded only as bounded tagged streams. Native elements with
+missing type information remain Raw and produce explicit coverage gaps. Blueprint pins, Sequencer,
+AnimSequence, Skeleton, property bags, InstancedStruct, and actor/component native records retain
+their existing verified version gates; tagged-property support does not widen those native layouts.
+The independent [legacy fixture project](../../fixtures/legacy-unreal-project/README.md) provides
+UE 4.27/5.3 saves and fresh-process API evidence. Fixture generation and engine verification for
+those two lanes are pending; UE 5.0–5.2 currently have synthetic gate coverage only. The required
+UE 5.7/5.8 matrix remains unchanged for current native features.
+
+UE 4.27's summary stores a folder name rather than the full package name stored by UE5. Byte-only
+inspection retains that serialized export-path prefix, normally `None`. Full mounted package paths
+for 4.27 require caller context; the legacy oracle keeps its loaded API path and serialized summary
+name separate instead of authoring a special folder name to hide this boundary.
 
 Levels are inside that boundary and always have been. A `.umap` is the same classic package
 container as a `.uasset`, and `asset.rs` routes any class it does not specifically claim through the

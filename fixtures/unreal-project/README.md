@@ -34,6 +34,24 @@ After the final gather, a String Table key is added, another source changes and 
 removed from the fully readable table. Existing `ST_Game` entries exercise outside-target text;
 C++ text exercises gathered-only evidence.
 
+Built-in check inputs add ten String Table keys: `RichText`, `Whitespace`, `LineBreak`,
+`LiteralEscape`, `Ordinal`, `Gender`, `Hangul`, `MissingPluralForm`, `MalformedModifier`, and
+`NestedPlural`. German/French authored translations exercise broken rich tags, unsafe boundary
+spaces, changed line-break counts, literal backslash control sequences, required/redundant plural
+forms, malformed positional modifiers, and an argument rename inside quoted plural values.
+`LiteralEscape` has an empty final PO override in each foreign culture so the literal archive text
+remains selected for checks. Existing entries retain their intent; the ten keys add thirty
+translated state records (84 total). Missing notes, equal-source identities and empty translations
+are covered by the existing fixture too.
+
+Evidence additionally records decoded PO text and a `validation` object per manifest identity and
+culture. `FTextFormat::ValidatePattern` and `GetFormatArgumentNames` record source/translation
+patterns; `FCulture::GetValidPluralForms` records required categories. Rich tags and safe whitespace
+are checked through `FTextLocalizationResourceGenerator::GenerateLocRes` with a single-entry
+in-memory helper and the respective validation flags, observing warning counts. No oracle helper
+is saved. `PortableObjectPipeline` records the export/import escape round trip. Older raw evidence
+fields remain unchanged. The fixture's new expected fields require regeneration on both engines.
+
 Set `UE_SHED_UNREAL_ENGINE_ROOT` to a discovered 5.7 or 5.8 installation, then run
 `pnpm fixture:generate-localization`. This builds the editor and runs every stage in a fresh
 process. The command resets only `Content/Localization/FixtureGame`. The commandlet saves target

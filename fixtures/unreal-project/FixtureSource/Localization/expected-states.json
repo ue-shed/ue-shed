@@ -3,114 +3,6 @@
 	"target": "FixtureGame",
 	"entries": [
 		{
-			"culture": "en",
-			"namespace": "Fixture.Localization.Asset",
-			"key": "DuplicateA",
-			"state": "translated"
-		},
-		{
-			"culture": "en",
-			"namespace": "Fixture.Localization.Asset",
-			"key": "DuplicateB",
-			"state": "translated"
-		},
-		{
-			"culture": "en",
-			"namespace": "Fixture.Localization.Asset",
-			"key": "Outdated",
-			"state": "translated"
-		},
-		{
-			"culture": "en",
-			"namespace": "Fixture.Localization.Rows",
-			"key": "EmptyFrench",
-			"state": "translated"
-		},
-		{
-			"culture": "en",
-			"namespace": "Fixture.Localization.Rows",
-			"key": "MissingFrench",
-			"state": "translated"
-		},
-		{
-			"culture": "en",
-			"namespace": "Fixture.Localization.Source",
-			"key": "RuntimeOrdered",
-			"state": "gathered_only"
-		},
-		{
-			"culture": "en",
-			"namespace": "Fixture.Localization.Source",
-			"key": "RuntimeReady",
-			"state": "gathered_only"
-		},
-		{
-			"culture": "en",
-			"namespace": "Fixture.Localization.Table",
-			"key": "AddedAfterGather",
-			"state": "not_gathered"
-		},
-		{
-			"culture": "en",
-			"namespace": "Fixture.Localization.Table",
-			"key": "ChangedAfterGather",
-			"state": "changed_since_gather"
-		},
-		{
-			"culture": "en",
-			"namespace": "Fixture.Localization.Table",
-			"key": "NamedArgument",
-			"state": "translated"
-		},
-		{
-			"culture": "en",
-			"namespace": "Fixture.Localization.Table",
-			"key": "OrderedArgument",
-			"state": "translated"
-		},
-		{
-			"culture": "en",
-			"namespace": "Fixture.Localization.Table",
-			"key": "Plural",
-			"state": "translated"
-		},
-		{
-			"culture": "en",
-			"namespace": "Fixture.Localization.Table",
-			"key": "RemovedAfterGather",
-			"state": "not_found"
-		},
-		{
-			"culture": "en",
-			"namespace": "Fixture.Localization.Table",
-			"key": "Unsynced",
-			"state": "translated"
-		},
-		{
-			"culture": "en",
-			"namespace": "Fixture.Localization.Table",
-			"key": "Welcome",
-			"state": "translated"
-		},
-		{
-			"culture": "en",
-			"namespace": "Fixture.StringTable",
-			"key": "PromptContinue",
-			"state": "outside_target"
-		},
-		{
-			"culture": "en",
-			"namespace": "Fixture.StringTable",
-			"key": "PromptHold",
-			"state": "outside_target"
-		},
-		{
-			"culture": "en",
-			"namespace": "Fixture.StringTable",
-			"key": "StatusSaving",
-			"state": "outside_target"
-		},
-		{
 			"culture": "de",
 			"namespace": "Fixture.Localization.Asset",
 			"key": "DuplicateA",
@@ -167,13 +59,61 @@
 		{
 			"culture": "de",
 			"namespace": "Fixture.Localization.Table",
+			"key": "Gender",
+			"state": "translated"
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.Localization.Table",
+			"key": "Hangul",
+			"state": "translated"
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.Localization.Table",
+			"key": "LineBreak",
+			"state": "translated"
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.Localization.Table",
+			"key": "LiteralEscape",
+			"state": "translated"
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.Localization.Table",
+			"key": "MalformedModifier",
+			"state": "translated"
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.Localization.Table",
+			"key": "MissingPluralForm",
+			"state": "translated"
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.Localization.Table",
 			"key": "NamedArgument",
 			"state": "translated"
 		},
 		{
 			"culture": "de",
 			"namespace": "Fixture.Localization.Table",
+			"key": "NestedPlural",
+			"state": "translated"
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.Localization.Table",
 			"key": "OrderedArgument",
+			"state": "translated"
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.Localization.Table",
+			"key": "Ordinal",
 			"state": "translated"
 		},
 		{
@@ -187,6 +127,12 @@
 			"namespace": "Fixture.Localization.Table",
 			"key": "RemovedAfterGather",
 			"state": "not_found"
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.Localization.Table",
+			"key": "RichText",
+			"state": "translated"
 		},
 		{
 			"culture": "de",
@@ -202,6 +148,12 @@
 		},
 		{
 			"culture": "de",
+			"namespace": "Fixture.Localization.Table",
+			"key": "Whitespace",
+			"state": "translated"
+		},
+		{
+			"culture": "de",
 			"namespace": "Fixture.StringTable",
 			"key": "PromptContinue",
 			"state": "outside_target"
@@ -214,6 +166,174 @@
 		},
 		{
 			"culture": "de",
+			"namespace": "Fixture.StringTable",
+			"key": "StatusSaving",
+			"state": "outside_target"
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Asset",
+			"key": "DuplicateA",
+			"state": "translated"
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Asset",
+			"key": "DuplicateB",
+			"state": "translated"
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Asset",
+			"key": "Outdated",
+			"state": "translated"
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Rows",
+			"key": "EmptyFrench",
+			"state": "translated"
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Rows",
+			"key": "MissingFrench",
+			"state": "translated"
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Source",
+			"key": "RuntimeOrdered",
+			"state": "gathered_only"
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Source",
+			"key": "RuntimeReady",
+			"state": "gathered_only"
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Table",
+			"key": "AddedAfterGather",
+			"state": "not_gathered"
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Table",
+			"key": "ChangedAfterGather",
+			"state": "changed_since_gather"
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Table",
+			"key": "Gender",
+			"state": "translated"
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Table",
+			"key": "Hangul",
+			"state": "translated"
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Table",
+			"key": "LineBreak",
+			"state": "translated"
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Table",
+			"key": "LiteralEscape",
+			"state": "translated"
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Table",
+			"key": "MalformedModifier",
+			"state": "translated"
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Table",
+			"key": "MissingPluralForm",
+			"state": "translated"
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Table",
+			"key": "NamedArgument",
+			"state": "translated"
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Table",
+			"key": "NestedPlural",
+			"state": "translated"
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Table",
+			"key": "OrderedArgument",
+			"state": "translated"
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Table",
+			"key": "Ordinal",
+			"state": "translated"
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Table",
+			"key": "Plural",
+			"state": "translated"
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Table",
+			"key": "RemovedAfterGather",
+			"state": "not_found"
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Table",
+			"key": "RichText",
+			"state": "translated"
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Table",
+			"key": "Unsynced",
+			"state": "translated"
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Table",
+			"key": "Welcome",
+			"state": "translated"
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Table",
+			"key": "Whitespace",
+			"state": "translated"
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.StringTable",
+			"key": "PromptContinue",
+			"state": "outside_target"
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.StringTable",
+			"key": "PromptHold",
+			"state": "outside_target"
+		},
+		{
+			"culture": "en",
 			"namespace": "Fixture.StringTable",
 			"key": "StatusSaving",
 			"state": "outside_target"
@@ -275,13 +395,61 @@
 		{
 			"culture": "fr",
 			"namespace": "Fixture.Localization.Table",
+			"key": "Gender",
+			"state": "translated"
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.Localization.Table",
+			"key": "Hangul",
+			"state": "translated"
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.Localization.Table",
+			"key": "LineBreak",
+			"state": "translated"
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.Localization.Table",
+			"key": "LiteralEscape",
+			"state": "translated"
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.Localization.Table",
+			"key": "MalformedModifier",
+			"state": "translated"
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.Localization.Table",
+			"key": "MissingPluralForm",
+			"state": "translated"
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.Localization.Table",
 			"key": "NamedArgument",
 			"state": "translated"
 		},
 		{
 			"culture": "fr",
 			"namespace": "Fixture.Localization.Table",
+			"key": "NestedPlural",
+			"state": "translated"
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.Localization.Table",
 			"key": "OrderedArgument",
+			"state": "translated"
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.Localization.Table",
+			"key": "Ordinal",
 			"state": "translated"
 		},
 		{
@@ -299,6 +467,12 @@
 		{
 			"culture": "fr",
 			"namespace": "Fixture.Localization.Table",
+			"key": "RichText",
+			"state": "translated"
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.Localization.Table",
 			"key": "Unsynced",
 			"state": "translated"
 		},
@@ -306,6 +480,12 @@
 			"culture": "fr",
 			"namespace": "Fixture.Localization.Table",
 			"key": "Welcome",
+			"state": "translated"
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.Localization.Table",
+			"key": "Whitespace",
 			"state": "translated"
 		},
 		{

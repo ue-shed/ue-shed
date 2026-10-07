@@ -28,9 +28,9 @@ describe("localization metadata and word counts", () => {
 			});
 			const report = success(parseWordCountCSV(readFileSync(path(project, target, "csv"))));
 			expect(report.cultures).toEqual(["de", "en", "fr"]);
-			expect(report.rows.at(-1)?.wordCount).toBe(version === 2 ? 35 : 9);
+			expect(report.rows.at(-1)?.wordCount).toBe(version === 2 ? 62 : 9);
 			expect(report.rows.at(-1)?.cultureWordCounts).toEqual(
-				version === 2 ? { de: 32, en: 35, fr: 27 } : { de: 0, en: 9, fr: 0 }
+				version === 2 ? { de: 59, en: 62, fr: 54 } : { de: 0, en: 9, fr: 0 }
 			);
 		});
 	}
@@ -52,9 +52,9 @@ describe("localization metadata and word counts", () => {
 		);
 		expect(report.cultures).toEqual(["de", "en", "fr"]);
 		expect(report.rows).toHaveLength(2);
-		expect(report.rows[0]?.cultureWordCounts).toEqual({ de: 0, en: 35, fr: 0 });
-		expect(report.rows.at(-1)?.wordCount).toBe(35);
-		expect(report.rows.at(-1)?.cultureWordCounts).toEqual({ de: 32, en: 35, fr: 27 });
+		expect(report.rows[0]?.cultureWordCounts).toEqual({ de: 0, en: 62, fr: 0 });
+		expect(report.rows.at(-1)?.wordCount).toBe(62);
+		expect(report.rows.at(-1)?.cultureWordCounts).toEqual({ de: 59, en: 62, fr: 54 });
 	});
 
 	it("accepts quoted CSV fields, BOM and no final newline", () => {

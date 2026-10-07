@@ -39,6 +39,17 @@ test("localization evidence rejects malformed fields before evaluating states", 
 		contents.replace('"manifestSource": "Confirm"', '"manifestSource": 12')
 	);
 	assert.throws(() => assertLocalizationIntent(numericSource, intent), /manifestSource/);
+	const invalidValidator = parseJsonObject(
+		contents.replace('"translationRichTextValid": true', '"translationRichTextValid": "true"')
+	);
+	assert.throws(
+		() => assertLocalizationIntent(invalidValidator, intent),
+		/translationRichTextValid/
+	);
+	const invalidArguments = parseJsonObject(
+		contents.replace(/("arguments":\s*\[)[\s\S]*?\]/u, "$1 12]")
+	);
+	assert.throws(() => assertLocalizationIntent(invalidArguments, intent), /arguments/);
 	assert.throws(
 		() => assertLocalizationIntent(parseJsonObject(contents), { ...intent, schemaVersion: 2 }),
 		/schemaVersion/

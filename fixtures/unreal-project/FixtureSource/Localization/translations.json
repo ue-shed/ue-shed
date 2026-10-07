@@ -8,7 +8,17 @@
 				"Plural": "{Count} {Count}|plural(one=Gegenstand,other=Gegenstände)",
 				"Unsynced": "Eine neue Sitzung starten",
 				"ChangedAfterGather": "Gesammelte Anweisung",
-				"RemovedAfterGather": "Vorübergehende Anweisung"
+				"RemovedAfterGather": "Vorübergehende Anweisung",
+				"RichText": "<Em>Weiter",
+				"Whitespace": "Weitergehen ",
+				"LineBreak": "Erste Zweite",
+				"LiteralEscape": "Schreib \\n",
+				"Ordinal": "{Rank}|ordinal(other=letzte)",
+				"Gender": "{Person}|gender(Er)",
+				"Hangul": "{Name}|hpp(ist)",
+				"MissingPluralForm": "{Count}|plural(one=Gegenstand)",
+				"MalformedModifier": "{Count}|plural(one=Gegenstand,other=)",
+				"NestedPlural": "{Count}|plural(one=\"{Wrong} hat eins\",other=\"{Wrong} hat viele\")"
 			},
 			"Fixture.Localization.Asset": {
 				"Outdated": "Die Tür öffnen",
@@ -32,7 +42,17 @@
 				"Plural": "{Count} {Count}|plural(one=objet,other=objets)",
 				"Unsynced": "Commencer une nouvelle session",
 				"ChangedAfterGather": "Instruction collectée",
-				"RemovedAfterGather": "Instruction temporaire"
+				"RemovedAfterGather": "Instruction temporaire",
+				"RichText": "<Em>Continuer</>",
+				"Whitespace": " Continuer",
+				"LineBreak": "Première\nDeuxième",
+				"LiteralEscape": "Écrire \\t",
+				"Ordinal": "{Rank}|ordinal(one=premier,other=dernier)",
+				"Gender": "{Person}|gender(Il,Elle)",
+				"Hangul": "{Name}|hpp(은,는)",
+				"MissingPluralForm": "{Count}|plural(one=objet,other=objets)",
+				"MalformedModifier": "{Count}|plural(one=objet,other=objets)",
+				"NestedPlural": "{Count}|plural(one=\"{Owner} a un objet\",other=\"{Owner} a des objets\")"
 			},
 			"Fixture.Localization.Asset": {
 				"Outdated": "Ouvrir la porte",
@@ -51,7 +71,13 @@
 	"poOverrides": {
 		"de": {
 			"Fixture.Localization.Table": {
-				"Unsynced": "Eine frische Sitzung beginnen"
+				"Unsynced": "Eine frische Sitzung beginnen",
+				"LiteralEscape": ""
+			}
+		},
+		"fr": {
+			"Fixture.Localization.Table": {
+				"LiteralEscape": ""
 			}
 		}
 	}

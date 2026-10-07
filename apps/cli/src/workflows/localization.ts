@@ -15,15 +15,18 @@ import type { CliCommand } from "../command-model.js";
 
 type LocalizationStatusCommand = Extract<CliCommand, { readonly _tag: "LocalizationStatus" }>;
 type LocalizationSearchCommand = Extract<CliCommand, { readonly _tag: "TextSearch" }>;
+type LocalizationCheckCommand = Extract<CliCommand, { readonly _tag: "LocalizationCheck" }>;
 
 /** Decode CLI selections and read evidence before starting the saved-package reader. */
-export const loadLocalizationStatus = Effect.fn("Cli.localization.load_status")(function* (
-	command: LocalizationStatusCommand | LocalizationSearchCommand
+export const loadLocalizationContext = Effect.fn("Cli.localization.load_context")(function* (
+	command: LocalizationStatusCommand | LocalizationSearchCommand | LocalizationCheckCommand
 ) {
 	const selection = yield* Schema.decodeUnknownEffect(LocalizationSelection)({
 		target: command.target,
 		...(command.culture === undefined ? undefined : { culture: command.culture }),
-		...(command.state === undefined ? undefined : { state: command.state }),
+		...(command._tag !== "LocalizationCheck" && command.state !== undefined
+			? { state: command.state }
+			: undefined),
 		...(command._tag === "TextSearch" && command.searchTranslations !== undefined
 			? { searchTranslations: command.searchTranslations }
 			: undefined)
@@ -83,6 +86,13 @@ export const loadLocalizationStatus = Effect.fn("Cli.localization.load_status")(
 		)
 	);
 	const join = joinLocalizationTarget(corpus, evidence, target);
+	return { corpus, join, evidence, selection };
+});
+
+export const loadLocalizationStatus = Effect.fn("Cli.localization.load_status")(function* (
+	command: LocalizationStatusCommand | LocalizationSearchCommand
+) {
+	const { corpus, join, evidence, selection } = yield* loadLocalizationContext(command);
 	const page = textCorpusQuery(corpus, undefined, join).search({
 		capability: "all",
 		pageSize: command.limit ?? 50,

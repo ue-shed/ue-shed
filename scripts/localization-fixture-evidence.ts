@@ -22,7 +22,25 @@ const LocalizationIdentity = Schema.Struct({
 type LocalizationIdentity = Schema.Schema.Type<typeof LocalizationIdentity>;
 
 const NullableText = Schema.Union([Schema.String, Schema.Null]);
-const LocalizationEvidenceEntry = Schema.Struct({
+const FormatValidation = Schema.Struct({
+	valid: Schema.Boolean,
+	errors: Schema.Array(Schema.String),
+	arguments: Schema.Array(Schema.String)
+});
+export const LocalizationValidationEvidence = Schema.Struct({
+	checkedTranslation: NullableText,
+	sourceFormat: FormatValidation,
+	translationFormat: Schema.NullOr(FormatValidation),
+	cardinalForms: Schema.Array(Schema.String),
+	ordinalForms: Schema.Array(Schema.String),
+	sourceRichTextValid: Schema.Boolean,
+	translationRichTextValid: Schema.NullOr(Schema.Boolean),
+	sourceSafeWhitespaceValid: Schema.Boolean,
+	translationSafeWhitespaceValid: Schema.NullOr(Schema.Boolean),
+	poRoundTripTranslation: NullableText
+});
+export type LocalizationValidationEvidence = typeof LocalizationValidationEvidence.Type;
+export const LocalizationEvidenceEntry = Schema.Struct({
 	...LocalizationIdentity.fields,
 	manifestSource: NullableText,
 	currentAssetSource: NullableText,
@@ -30,6 +48,8 @@ const LocalizationEvidenceEntry = Schema.Struct({
 	archiveTranslation: NullableText,
 	runtimeText: NullableText,
 	poMsgstr: NullableText,
+	poDecodedMsgstr: NullableText,
+	validation: Schema.NullOr(LocalizationValidationEvidence),
 	manifestKeyPaths: Schema.Array(Schema.String),
 	manifestDevNotes: Schema.optionalKey(Schema.Array(Schema.String)),
 	poExtractedComments: Schema.Array(Schema.String),
@@ -39,7 +59,7 @@ const LocalizationEvidenceEntry = Schema.Struct({
 });
 type LocalizationEvidenceEntry = Schema.Schema.Type<typeof LocalizationEvidenceEntry>;
 
-const LocalizationEvidence = Schema.Struct({
+export const LocalizationEvidence = Schema.Struct({
 	schemaVersion: Schema.Literal(1),
 	target: Schema.String,
 	nativeCulture: Schema.Literal("en"),
@@ -68,7 +88,7 @@ function state(entry: LocalizationEvidenceEntry) {
 	const current = entry.currentAssetSource;
 	const archive = entry.archiveSource;
 	const translation = entry.archiveTranslation;
-	const po = entry.poMsgstr;
+	const po = entry.poDecodedMsgstr;
 	if (!entry.inTarget) {
 		assert.notEqual(current, null);
 		assert.equal(manifest, null);
@@ -84,7 +104,8 @@ function state(entry: LocalizationEvidenceEntry) {
 	if (current === null) return "not_found";
 	if (current !== manifest) return "changed_since_gather";
 	if (translation && archive !== manifest) return "needs_update";
-	if (po !== null && po !== (translation ?? "")) return "not_synced";
+	// Only a non-empty PO translation awaits import; Unreal's PO import skips empty msgstr values.
+	if (po !== null && po !== "" && po !== (translation ?? "")) return "not_synced";
 	if (!translation) return "not_translated";
 	return "translated";
 }
@@ -108,6 +129,14 @@ export function assertLocalizationIntent(evidenceJson: JsonObject, intentJson: J
 			`Unreal runtime source-check drift for ${id}`
 		);
 		if (manifest !== null) assert.ok(entry.manifestKeyPaths.length > 0);
+		if (manifest !== null) {
+			assert.ok(entry.validation, "manifest evidence requires actual Unreal validation");
+			const po = entry.poDecodedMsgstr;
+			assert.equal(
+				entry.validation.checkedTranslation,
+				po && po !== (translation ?? "") ? po : translation
+			);
+		} else assert.equal(entry.validation, null);
 		if (evidence.engineVersion === "5.8") assert.ok(entry.manifestDevNotes);
 		else assert.equal(entry.manifestDevNotes, undefined);
 	}
@@ -142,6 +171,31 @@ export function assertLocalizationIntent(evidenceJson: JsonObject, intentJson: J
 	);
 	assert.equal(find("en", "Fixture.Localization.Asset", "DuplicateA").manifestSource, "Confirm");
 	assert.equal(find("en", "Fixture.Localization.Asset", "DuplicateB").manifestSource, "Confirm");
+	// Validator evidence comes from Unreal, not the product checks. Assert fixture coverage here;
+	// the browser check tests compare individual findings with these recorded outcomes.
+	assert.equal(find("de", table, "RichText").validation?.translationRichTextValid, false);
+	assert.equal(find("fr", table, "RichText").validation?.translationRichTextValid, true);
+	assert.equal(find("de", table, "Whitespace").validation?.translationSafeWhitespaceValid, false);
+	assert.equal(
+		find("de", table, "MissingPluralForm").validation?.translationFormat?.valid,
+		false
+	);
+	assert.equal(find("de", table, "Ordinal").validation?.translationFormat?.valid, false);
+	assert.equal(find("fr", table, "Ordinal").validation?.translationFormat?.valid, true);
+	const escaped = find("de", table, "LiteralEscape").validation;
+	assert.ok(escaped);
+	assert.equal(escaped.checkedTranslation, "Schreib \\n");
+	assert.notEqual(escaped.poRoundTripTranslation, escaped.checkedTranslation);
+	assert.equal(find("de", table, "LiteralEscape").poDecodedMsgstr, "");
+	const namedValidation = named.validation;
+	assert.ok(namedValidation);
+	assert.deepEqual(namedValidation.sourceFormat.arguments, ["PlayerName"]);
+	assert.deepEqual(namedValidation.translationFormat?.arguments, ["Name"]);
+	assert.equal(
+		namedValidation.translationFormat?.valid,
+		true,
+		"pattern validation does not compare source argument names"
+	);
 	const welcome = find("de", table, "Welcome");
 	assert.ok(
 		welcome.poExtractedComments.some((comment) =>

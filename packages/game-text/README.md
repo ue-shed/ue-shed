@@ -116,6 +116,50 @@ ue-shed text search <project-root> <query> --target <name> [--culture <c>] [--st
 Both entries export the pure schemas and functions. Node IO stays in `@ue-shed/localization` and
 the saved-package reader. These surfaces never write project files or run localization commandlets.
 
+## Built-in localization checks
+
+`checkLocalizationTarget(corpus, joined, evidence, options?, ruleDocument?)` is browser-safe and
+pure. It returns `LocalizationQualityReport`, an additive variant of the existing quality report
+with culture and identity findings, structured evidence, saved occurrences, manifest locations,
+file provenance/diagnostics and unchanged corpus coverage. Existing source-quality reports retain
+their contract. Gathered-only findings have empty saved-occurrence lists and evidence line IDs.
+
+The checks are `format_arguments`, `argument_modifiers`, `rich_text`, `po_escape_safety`,
+`whitespace`, `empty_translation`, `missing_translator_notes`, and `duplicate_source`. Pass
+`{ culture?, checks?, disabledChecks? }` to select them. They need no rule document; existing v1
+`Config/UEShed/GameTextRules.json` documents can optionally contain `disabledLocalizationChecks`.
+Per-culture project policy and progress reports remain later work.
+
+Checks use the pending non-empty PO text when the culture has a `not_synced` fact, otherwise archive
+text. They compare with manifest source, falling back to corpus source with a diagnostic. Crowdin
+uses manifest source too. Empty PO/archive entries are reported independently of missing files.
+`checkDiagnostics` retain the join's unknown reasons and Crowdin's reduced checking, and explain
+unavailable source/translation, unsupported cultures and syntax limits.
+Syntax is capped at one million code units and 16 nested modifier forms. Coverage is not upgraded
+when a syntax check succeeds on a partial corpus.
+
+`parseUnrealFormatPattern`, `unrealPluralForms`, and `unrealRichTextCounts` expose the verified
+Unreal grammar helpers. Required plural categories come from the identical ICU 64 category data
+in the supported engines, rather than host `Intl.PluralRules`. Rich-text validation mirrors compile
+tag counts, including tolerated source imbalance, self-closing tags and `<br>`. Unreal does not
+validate matching argument names against source, missing/added modifiers, malformed parameters
+that become literals, source-relative whitespace/line-break drift, empty entries, notes, duplicates
+or PO escape safety; those additional checks are UE Shed findings.
+
+Exactly one missing and one added argument can stage a rename in `report.changes`; nested form
+renames preserve the grammar and revalidate the argument set. Each change records target, culture,
+namespace/key, manifest source, current PO translation (archive fallback when absent), and proposed
+translation. The report carries version-1 provenance. No check applies or writes a proposal.
+
+```sh
+ue-shed loc check <project-root> --target <name> [--culture <c>] [--check <id>]...
+ue-shed loc check <project-root> --target <name> --changes suggestions.json
+```
+
+The CLI's optional `--changes` exclusively creates a new JSON proposal. It rejects existing files
+and non-JSON destinations and never edits localization evidence. Engine-recorded validator tests
+compare each shipped translation against both committed fixture oracles.
+
 ## Capabilities
 
 - Required: a project root containing saved packages and a configured saved-asset reader.

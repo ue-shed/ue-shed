@@ -7,7 +7,7 @@ import {
 	ReleaseVersion
 } from "@ue-shed/plugin-distribution";
 import { Schema } from "effect";
-import { LocalizationState } from "@ue-shed/game-text/browser";
+import { LocalizationCheckId, LocalizationState } from "@ue-shed/game-text/browser";
 
 const Project = { projectRoot: Schema.String };
 const Reader = { reader: Schema.optionalKey(Schema.String) };
@@ -36,6 +36,14 @@ export const CliCommand = Schema.TaggedUnion({
 	},
 	Version: {},
 	LocalizationTargets: { ...Project },
+	LocalizationCheck: {
+		...Project,
+		...Reader,
+		target: Schema.String,
+		culture: Schema.optionalKey(Schema.String),
+		checks: Schema.Array(LocalizationCheckId),
+		changes: Schema.optionalKey(Schema.String)
+	},
 	LocalizationStatus: {
 		...Project,
 		...Reader,

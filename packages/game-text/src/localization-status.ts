@@ -53,6 +53,20 @@ function fileStatus(
 	return value;
 }
 
+export function localizationEvidenceFileStatuses(
+	evidence: LocalizationTargetEvidence
+): readonly LocalizationFileStatus[] {
+	return [
+		fileStatus("manifest", evidence.manifest),
+		...evidence.cultures.flatMap((culture) => [
+			fileStatus("archive", culture.archive, culture.culture),
+			fileStatus("po", culture.po, culture.culture)
+		]),
+		fileStatus("locmeta", evidence.locmeta),
+		fileStatus("word_count", evidence.wordCount)
+	];
+}
+
 export function localizationStatusReport(
 	corpus: TextCorpus,
 	evidence: LocalizationTargetEvidence,
@@ -64,15 +78,7 @@ export function localizationStatusReport(
 		counts: page.localization?.counts ?? [],
 		coverage: corpus.coverage,
 		diagnostics: corpus.diagnostics,
-		files: [
-			fileStatus("manifest", evidence.manifest),
-			...evidence.cultures.flatMap((culture) => [
-				fileStatus("archive", culture.archive, culture.culture),
-				fileStatus("po", culture.po, culture.culture)
-			]),
-			fileStatus("locmeta", evidence.locmeta),
-			fileStatus("word_count", evidence.wordCount)
-		],
+		files: localizationEvidenceFileStatuses(evidence),
 		page
 	};
 	if (corpus.packageCoverage !== undefined)

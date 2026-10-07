@@ -38,7 +38,7 @@ describe("lossless PO documents", () => {
 				expect(document.blocks[0]?.kind).toBe("header");
 				expect(document.hasSourceText).toBe(true);
 				expect(document.blocks.filter((block) => block.kind === "entry")).toHaveLength(
-					target === "FixtureGame" ? 14 : 3
+					target === "FixtureGame" ? 24 : 3
 				);
 				expect(Object.isFrozen(document.blocks)).toBe(true);
 			});

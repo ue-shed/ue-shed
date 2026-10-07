@@ -494,7 +494,10 @@ test("records the real Game Text quality workflow", async ({
 		await expect(allText).toHaveAccessibleName(`All text ${lines.toLocaleString()}`);
 		await expect(results).toContainText("de · needs update");
 		await expect(results).toContainText("fr · needs update");
+		// The pending edit is beyond the first page of all lines; filter to it, then clear the filter.
+		await notSynced.click();
 		await expect(results).toContainText("de · not synced");
+		await notSynced.click();
 		await expect(results.getByText("Outside this target", { exact: true })).toHaveCount(0);
 		await expect(results.getByText("Gathered only", { exact: true })).toHaveCount(0);
 		await expect(results).not.toContainText("en · translated");

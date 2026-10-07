@@ -60,6 +60,16 @@ This package is read-only. It exposes no filesystem write or translation edit AP
 writes manifests, archives, `.locres`, or `.locmeta`. A future change-set writer will own PO edits;
 Unreal remains responsible for import, export and compilation.
 
+`LocalizationChange` and `LocalizationChangeSet` are browser-safe version-1 proposal schemas,
+not writers. Each change names target/culture/namespace/key, source, `previousTranslation` (null
+means absent; empty string remains distinct), and the proposed `translation`. The document adds
+`schemaVersion: 1` and provenance (`producer` and evidence `files`).
+`decodeLocalizationChangeSet(json)` returns a typed safe failure for invalid versions, malformed
+fields or duplicate identities. A future writer must revalidate source and previous translation
+before applying a change. There is no change-set file IO or apply API in this package.
+Game Text checks produce these proposals; `ue-shed loc check --changes <new-file.json>` can
+exclusively create the proposal JSON without touching localization files.
+
 Tests decode committed manifest and archive bytes from both 5.7 and 5.8 against Unreal's
 version-specific evidence oracles, including 5.8 `DevNotes`. The unchanged 5.8 files live under
 `fixtures/unreal-project/FixtureExpected/localization/ue5.8-output`; its PO files also have

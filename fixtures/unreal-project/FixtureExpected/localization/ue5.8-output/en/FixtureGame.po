@@ -4,8 +4,8 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: FixtureGame\n"
-"POT-Creation-Date: 2026-10-07 01:23\n"
-"PO-Revision-Date: 2026-10-07 01:23\n"
+"POT-Creation-Date: 2026-10-07 09:00\n"
+"PO-Revision-Date: 2026-10-07 09:00\n"
 "Language-Team: \n"
 "Language: en\n"
 "MIME-Version: 1.0\n"
@@ -55,6 +55,48 @@ msgctxt "Fixture.Localization.Table,ChangedAfterGather"
 msgid "Gathered instruction"
 msgstr "Gathered instruction"
 
+#. Key:	Gender
+#. SourceLocation:	/Game/Fixture/Localization/ST_Localization.ST_Localization
+#: /Game/Fixture/Localization/ST_Localization.ST_Localization
+msgctxt "Fixture.Localization.Table,Gender"
+msgid "{Person}|gender(He,She,They)"
+msgstr "{Person}|gender(He,She,They)"
+
+#. Key:	Hangul
+#. SourceLocation:	/Game/Fixture/Localization/ST_Localization.ST_Localization
+#: /Game/Fixture/Localization/ST_Localization.ST_Localization
+msgctxt "Fixture.Localization.Table,Hangul"
+msgid "{Name}|hpp(은,는)"
+msgstr "{Name}|hpp(은,는)"
+
+#. Key:	LineBreak
+#. SourceLocation:	/Game/Fixture/Localization/ST_Localization.ST_Localization
+#: /Game/Fixture/Localization/ST_Localization.ST_Localization
+msgctxt "Fixture.Localization.Table,LineBreak"
+msgid "First\nSecond"
+msgstr "First\nSecond"
+
+#. Key:	LiteralEscape
+#. SourceLocation:	/Game/Fixture/Localization/ST_Localization.ST_Localization
+#: /Game/Fixture/Localization/ST_Localization.ST_Localization
+msgctxt "Fixture.Localization.Table,LiteralEscape"
+msgid "Type a slash"
+msgstr "Type a slash"
+
+#. Key:	MalformedModifier
+#. SourceLocation:	/Game/Fixture/Localization/ST_Localization.ST_Localization
+#: /Game/Fixture/Localization/ST_Localization.ST_Localization
+msgctxt "Fixture.Localization.Table,MalformedModifier"
+msgid "{Count}|plural(one=item,other=items)"
+msgstr "{Count}|plural(one=item,other=items)"
+
+#. Key:	MissingPluralForm
+#. SourceLocation:	/Game/Fixture/Localization/ST_Localization.ST_Localization
+#: /Game/Fixture/Localization/ST_Localization.ST_Localization
+msgctxt "Fixture.Localization.Table,MissingPluralForm"
+msgid "{Count}|plural(one=item,other=items)"
+msgstr "{Count}|plural(one=item,other=items)"
+
 #. Key:	NamedArgument
 #. SourceLocation:	/Game/Fixture/Localization/ST_Localization.ST_Localization
 #: /Game/Fixture/Localization/ST_Localization.ST_Localization
@@ -62,12 +104,26 @@ msgctxt "Fixture.Localization.Table,NamedArgument"
 msgid "Talking with {PlayerName}"
 msgstr "Talking with {PlayerName}"
 
+#. Key:	NestedPlural
+#. SourceLocation:	/Game/Fixture/Localization/ST_Localization.ST_Localization
+#: /Game/Fixture/Localization/ST_Localization.ST_Localization
+msgctxt "Fixture.Localization.Table,NestedPlural"
+msgid "{Count}|plural(one=\"{Owner} has one item\",other=\"{Owner} has items\")"
+msgstr "{Count}|plural(one=\"{Owner} has one item\",other=\"{Owner} has items\")"
+
 #. Key:	OrderedArgument
 #. SourceLocation:	/Game/Fixture/Localization/ST_Localization.ST_Localization
 #: /Game/Fixture/Localization/ST_Localization.ST_Localization
 msgctxt "Fixture.Localization.Table,OrderedArgument"
 msgid "Checkpoint {0}"
 msgstr "Checkpoint {0}"
+
+#. Key:	Ordinal
+#. SourceLocation:	/Game/Fixture/Localization/ST_Localization.ST_Localization
+#: /Game/Fixture/Localization/ST_Localization.ST_Localization
+msgctxt "Fixture.Localization.Table,Ordinal"
+msgid "{Rank}|ordinal(one=first,two=second,few=third,other=last)"
+msgstr "{Rank}|ordinal(one=first,two=second,few=third,other=last)"
 
 #. Key:	Plural
 #. SourceLocation:	/Game/Fixture/Localization/ST_Localization.ST_Localization
@@ -82,6 +138,13 @@ msgstr "{Count} {Count}|plural(one=item,other=items)"
 msgctxt "Fixture.Localization.Table,RemovedAfterGather"
 msgid "Temporary instruction"
 msgstr "Temporary instruction"
+
+#. Key:	RichText
+#. SourceLocation:	/Game/Fixture/Localization/ST_Localization.ST_Localization
+#: /Game/Fixture/Localization/ST_Localization.ST_Localization
+msgctxt "Fixture.Localization.Table,RichText"
+msgid "<Em>Continue</>"
+msgstr "<Em>Continue</>"
 
 #. Key:	Unsynced
 #. SourceLocation:	/Game/Fixture/Localization/ST_Localization.ST_Localization
@@ -98,6 +161,13 @@ msgstr "Start a new session"
 msgctxt "Fixture.Localization.Table,Welcome"
 msgid "Welcome back"
 msgstr "Welcome back"
+
+#. Key:	Whitespace
+#. SourceLocation:	/Game/Fixture/Localization/ST_Localization.ST_Localization
+#: /Game/Fixture/Localization/ST_Localization.ST_Localization
+msgctxt "Fixture.Localization.Table,Whitespace"
+msgid "Keep moving"
+msgstr "Keep moving"
 
 #. Key:	RuntimeOrdered
 #. SourceLocation:	Source/UEShedFixture/Private/UEShedLocalizationText.cpp(10)

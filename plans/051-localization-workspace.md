@@ -338,6 +338,23 @@ Phase 1.
 same inputs. Reports carry corpus and gather coverage. A suggested fix produces a change set and
 never writes a file.
 
+**Progress (2026-10-07)**: 4a is done.
+
+- `@ue-shed/game-text` has eight built-in checks: arguments, modifiers, rich text, PO escape
+  safety, whitespace and line breaks, empty entries, missing translator notes, and duplicate
+  sources. They evaluate the translation the next sync will ship. Rule documents can disable
+  individual checks.
+- Suggested argument renames become v1 change sets, defined in `@ue-shed/localization`.
+  `ue-shed loc check --changes` writes only that proposal file.
+- The fixture evidence records Unreal's own results for every line and culture, on UE 5.7 and
+  UE 5.8: `FTextFormat::ValidatePattern` and argument names, `FCulture` plural forms,
+  `GenerateLocRes` rich-text and safe-whitespace warnings, and PO escape conversion. Oracle tests
+  require a finding wherever Unreal reports a problem. Ten new fixture lines bring the intent to
+  84 entries.
+- Node 26 tests, the packed-consumer journey, the recording, Data Authoring adoption, and
+  `pnpm test:uasset-engine-matrix` pass on UE 5.7 and UE 5.8.
+- 4b (per-culture rules and reports) and 4c (the Workbench quality view) are next.
+
 ## Phase 5 — Unreal localization processes
 
 1. Add an Effect service that runs `GatherText` with the project's existing per-operation configs

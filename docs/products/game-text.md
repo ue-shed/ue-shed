@@ -291,13 +291,45 @@ evidence IDs, and focus exposes every culture, PO context and manifest source lo
 
 Localization checks are quality findings over the same corpus and report model:
 
-- built-in Unreal syntax checks: format arguments missing or added against the source, plural,
-  ordinal and gender forms, rich text tags, escapes that will not survive a PO round trip, and
-  leading or trailing whitespace;
-- missing translations, missing translator notes, and the same source under different keys;
-- project-authored character budgets and glossary rules, extended per culture.
+- built-ins now check case-sensitive format argument names, plural/ordinal/gender/Hangul modifiers,
+  rich text tags, unsafe PO escapes, boundary whitespace and line-break counts, existing empty
+  translation entries, missing translator notes, and the same source under different keys;
+- missing translation evidence is a check diagnostic rather than a claim that a translation is empty;
+- project-authored character budgets and glossary rules per culture remain planned.
 
-Reports give per culture the share of lines and words translated, reviewed and proofread, and the
+`checkLocalizationTarget` is pure and available from both Game Text package entries. It checks the
+non-empty pending PO translation when a `not_synced` fact exists, even if source drift or gathered-only
+evidence has primary state; otherwise it checks the archive translation. Empty archive/PO entries
+are reported independently. The manifest supplies the translation source, including for Crowdin PO;
+without a manifest, current corpus source is a fallback with `source_unavailable` diagnostic.
+Reports retain corpus coverage unchanged, file provenance and failures, affected saved locations,
+identity and culture, structured actual/expectation evidence, and recovery guidance. Unsupported
+cultures and bounded syntax parsing produce diagnostics, never assumed English validation.
+
+Grammar follows the supported engines' backtick escapes and modifier lexer. Culture form categories
+are fixed to the ICU 64 data used by UE 5.7/5.8, avoiding different results from a host's newer ICU.
+Rich text uses Unreal's compile validator: balanced counts pass, and imbalance passes if opening and
+closing counts match the source. Self-closing tags and lowercase `<br>` do not count; this check does
+not impose tag-name or nesting symmetry beyond Unreal's validator.
+
+UE Shed adds checks the compile validator does not perform: source/translation argument and modifier
+comparison, malformed modifier parameters that Unreal treats as literals, whitespace and line-break
+drift relative to source, PO escape safety, empty entries, notes, and duplicate source identities.
+These are evidence-based built-ins; no rule file is required. Existing version-1 project rule files
+may add `disabledLocalizationChecks`, an array of built-in IDs, without changing their source rules.
+
+```sh
+ue-shed loc check <project-root> --target <name> [--culture <c>] [--check <id>]...
+ue-shed loc check <project-root> --target <name> --changes suggestions.json
+```
+
+Check output is schema-versioned JSON. A single missing and single added argument can produce a
+rename proposal, including names inside modifier forms. Proposals are version-1 change sets with
+source and previous-translation preconditions and evidence provenance. `--changes` exclusively
+creates a new JSON proposal; it never overwrites a file or writes PO, manifests, archives, locres or
+locmeta. Applying proposals and Workbench check views are later slices.
+
+Planned reports give per culture the share of lines and words translated, reviewed and proofread, and the
 words that are new or changed since a chosen baseline. Every report carries corpus and gather
 coverage, as quality reports already do.
 

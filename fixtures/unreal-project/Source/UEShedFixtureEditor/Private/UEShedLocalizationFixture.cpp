@@ -5,6 +5,10 @@
 #include "Engine/DataTable.h"
 #include "HAL/FileManager.h"
 #include "Internationalization/InternationalizationArchive.h"
+#include "Internationalization/Culture.h"
+#include "Internationalization/Internationalization.h"
+#include "Internationalization/TextFormatter.h"
+#include "Internationalization/TextLocalizationResource.h"
 #include "Internationalization/StringTable.h"
 #include "Internationalization/StringTableCore.h"
 #include "Internationalization/TextNamespaceUtil.h"
@@ -17,6 +21,10 @@
 #include "Misc/PackageName.h"
 #include "Misc/Parse.h"
 #include "Misc/Paths.h"
+#include "Misc/OutputDevice.h"
+#include "Misc/OutputDeviceRedirector.h"
+#include "PortableObjectPipeline.h"
+#include "TextLocalizationResourceGenerator.h"
 #include "PortableObjectFormatDOM.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
@@ -97,6 +105,16 @@ bool InitialAssets()
 	SetString(Table, TEXT("NamedArgument"), TEXT("Talking with {PlayerName}"));
 	SetString(Table, TEXT("OrderedArgument"), TEXT("Checkpoint {0}"));
 	SetString(Table, TEXT("Plural"), TEXT("{Count} {Count}|plural(one=item,other=items)"));
+	SetString(Table, TEXT("RichText"), TEXT("<Em>Continue</>"));
+	SetString(Table, TEXT("Whitespace"), TEXT("Keep moving"));
+	SetString(Table, TEXT("LineBreak"), TEXT("First\nSecond"));
+	SetString(Table, TEXT("LiteralEscape"), TEXT("Type a slash"));
+	SetString(Table, TEXT("Ordinal"), TEXT("{Rank}|ordinal(one=first,two=second,few=third,other=last)"));
+	SetString(Table, TEXT("Gender"), TEXT("{Person}|gender(He,She,They)"));
+	SetString(Table, TEXT("Hangul"), TEXT("{Name}|hpp(은,는)"));
+	SetString(Table, TEXT("MissingPluralForm"), TEXT("{Count}|plural(one=item,other=items)"));
+	SetString(Table, TEXT("MalformedModifier"), TEXT("{Count}|plural(one=item,other=items)"));
+	SetString(Table, TEXT("NestedPlural"), TEXT("{Count}|plural(one=\"{Owner} has one item\",other=\"{Owner} has items\")"));
 	SetString(Table, TEXT("Unsynced"), TEXT("Start a new session"));
 	SetString(Table, TEXT("ChangedAfterGather"), TEXT("Gathered instruction"));
 	SetString(Table, TEXT("RemovedAfterGather"), TEXT("Temporary instruction"));
@@ -331,6 +349,124 @@ FString RelativeLocation(FString Location)
 	return Location;
 }
 
+// Observe the actual compile validator through its public API. Never reproduce the private
+// tag validator in the fixture oracle; the helper and generated resource stay in memory.
+class FValidationWarnings final : public FOutputDevice
+{
+public:
+	int32 Count = 0;
+	FValidationWarnings() { GLog->AddOutputDevice(this); }
+	~FValidationWarnings() override { GLog->RemoveOutputDevice(this); }
+	void Serialize(const TCHAR*, ELogVerbosity::Type Verbosity, const FName& Category) override
+	{
+		if (Category == TEXT("LogTextLocalizationResourceGenerator")
+			&& (Verbosity & ELogVerbosity::VerbosityMask) == ELogVerbosity::Warning) ++Count;
+	}
+};
+
+bool CompileValidation(const FString& Source, const FString& Translation, EGenerateLocResFlags Flags, bool& Valid)
+{
+	// FLocTextHelper requires a target path; this helper is never saved, so a scratch path suffices.
+	FLocTextHelper Single(FPaths::ProjectIntermediateDir() / TEXT("UEShedLocalizationValidation"),
+		TEXT("Validation.manifest"), TEXT("Validation.archive"), TEXT("en"), { TEXT("de") }, nullptr);
+	if (!Single.LoadAll(ELocTextHelperLoadFlags::Create)) return false;
+	FManifestContext Site;
+	Site.Key = FLocKey(TEXT("Validation"));
+	Site.SourceLocation = TEXT("Validation");
+	if (!Single.AddSourceText(FLocKey(TEXT("Validation")), FLocItem(Source), Site)
+		|| !Single.AddTranslation(TEXT("en"), FLocKey(TEXT("Validation")), Site.Key, nullptr, FLocItem(Source), FLocItem(Source), false)
+		|| !Single.AddTranslation(TEXT("de"), FLocKey(TEXT("Validation")), Site.Key, nullptr, FLocItem(Source), FLocItem(Translation), false)) return false;
+	FTextLocalizationResource Resource;
+	TMap<FName, TSharedRef<FTextLocalizationResource>> Platforms;
+	FValidationWarnings Warnings;
+	// Equal source/native text must still run the native compiler's whitespace validation.
+	const FString ValidationCulture = Source == Translation ? TEXT("en") : TEXT("de");
+	// Unreal derives the localization target directory from a LocRes path ID (<target>/<culture>/<name>.locres).
+	const FString LocResID = Single.GetTargetPath() / ValidationCulture / TEXT("Validation.locres");
+	if (!FTextLocalizationResourceGenerator::GenerateLocRes(Single, ValidationCulture, Flags, FTextKey(LocResID), Resource, Platforms)) return false;
+	// Log records can be dispatched to output devices asynchronously; deliver them before counting.
+	GLog->Flush();
+	Valid = Warnings.Count == 0;
+	return true;
+}
+
+TArray<TSharedPtr<FJsonValue>> JsonStrings(const TArray<FString>& Strings)
+{
+	TArray<TSharedPtr<FJsonValue>> Values;
+	for (const FString& String : Strings) Values.Add(MakeShared<FJsonValueString>(String));
+	return Values;
+}
+
+TSharedRef<FJsonObject> FormatValidation(const FString& Pattern, const FCulturePtr& Culture)
+{
+	const FTextFormat Format = FTextFormat::FromString(Pattern);
+	TArray<FString> Errors;
+	const bool Valid = Format.ValidatePattern(Culture, Errors);
+	TArray<FString> Arguments;
+	Format.GetFormatArgumentNames(Arguments);
+	Arguments.Sort();
+	const TSharedRef<FJsonObject> Result = MakeShared<FJsonObject>();
+	Result->SetBoolField(TEXT("valid"), Valid);
+	Result->SetArrayField(TEXT("errors"), JsonStrings(Errors));
+	Result->SetArrayField(TEXT("arguments"), JsonStrings(Arguments));
+	return Result;
+}
+
+TArray<TSharedPtr<FJsonValue>> PluralForms(const FCulturePtr& Culture, ETextPluralType Type)
+{
+	TArray<FString> Names;
+	for (ETextPluralForm Form : Culture->GetValidPluralForms(Type))
+	{
+		switch (Form)
+		{
+		case ETextPluralForm::Zero: Names.Add(TEXT("zero")); break;
+		case ETextPluralForm::One: Names.Add(TEXT("one")); break;
+		case ETextPluralForm::Two: Names.Add(TEXT("two")); break;
+		case ETextPluralForm::Few: Names.Add(TEXT("few")); break;
+		case ETextPluralForm::Many: Names.Add(TEXT("many")); break;
+		default: Names.Add(TEXT("other")); break;
+		}
+	}
+	Names.Sort();
+	return JsonStrings(Names);
+}
+
+bool ValidationEvidence(const FString& Source, const FString* Translation, const FString& CultureName, TSharedRef<FJsonObject> Result)
+{
+	const FCulturePtr Culture = FInternationalization::Get().GetCulture(CultureName);
+	if (!Culture) return false;
+	Result->SetObjectField(TEXT("sourceFormat"), FormatValidation(Source, Culture));
+	Result->SetArrayField(TEXT("cardinalForms"), PluralForms(Culture, ETextPluralType::Cardinal));
+	Result->SetArrayField(TEXT("ordinalForms"), PluralForms(Culture, ETextPluralType::Ordinal));
+	bool SourceRichText = true;
+	if (!CompileValidation(Source, Source, EGenerateLocResFlags::ValidateRichTextTags, SourceRichText)) return false;
+	Result->SetBoolField(TEXT("sourceRichTextValid"), SourceRichText);
+	bool SourceWhitespace = true;
+	if (!CompileValidation(Source, Source, EGenerateLocResFlags::ValidateSafeWhitespace, SourceWhitespace)) return false;
+	Result->SetBoolField(TEXT("sourceSafeWhitespaceValid"), SourceWhitespace);
+	Nullable(Result, TEXT("checkedTranslation"), Translation);
+	if (Translation)
+	{
+		Result->SetObjectField(TEXT("translationFormat"), FormatValidation(*Translation, Culture));
+		bool RichText = true;
+		if (!CompileValidation(Source, *Translation, EGenerateLocResFlags::ValidateRichTextTags, RichText)) return false;
+		Result->SetBoolField(TEXT("translationRichTextValid"), RichText);
+		bool Whitespace = true;
+		if (!CompileValidation(Source, *Translation, EGenerateLocResFlags::ValidateSafeWhitespace, Whitespace)) return false;
+		Result->SetBoolField(TEXT("translationSafeWhitespaceValid"), Whitespace);
+		const FString RoundTrip = PortableObjectPipeline::ConditionPOStringForArchive(PortableObjectPipeline::ConditionArchiveStrForPO(*Translation));
+		Result->SetStringField(TEXT("poRoundTripTranslation"), RoundTrip);
+	}
+	else
+	{
+		Result->SetField(TEXT("translationFormat"), MakeShared<FJsonValueNull>());
+		Result->SetField(TEXT("translationRichTextValid"), MakeShared<FJsonValueNull>());
+		Result->SetField(TEXT("translationSafeWhitespaceValid"), MakeShared<FJsonValueNull>());
+		Result->SetField(TEXT("poRoundTripTranslation"), MakeShared<FJsonValueNull>());
+	}
+	return true;
+}
+
 bool Evidence(const FString& Output)
 {
 	TArray<FCurrentText> Current;
@@ -383,6 +519,25 @@ bool Evidence(const FString& Output)
 			}
 			Nullable(Entry, TEXT("poMsgid"), POEntry ? &POEntry->MsgId : nullptr);
 			Nullable(Entry, TEXT("poMsgstr"), POEntry && POEntry->MsgStr.Num() ? &POEntry->MsgStr[0] : nullptr);
+			// Keep the older raw fields; decode with the same replacement order used by import
+			// and the browser reader, including Unreal's literal-backslash caveat.
+			FString DecodedPO;
+			const FString* DecodedPOPtr = nullptr;
+			if (POEntry && POEntry->MsgStr.Num())
+			{
+				DecodedPO = PortableObjectPipeline::ConditionPOStringForArchive(POEntry->MsgStr[0]);
+				DecodedPOPtr = &DecodedPO;
+			}
+			Nullable(Entry, TEXT("poDecodedMsgstr"), DecodedPOPtr);
+			if (Manifest)
+			{
+				const FString* Checked = Archive ? &Archive->Translation.Text : nullptr;
+				if (DecodedPOPtr && !DecodedPO.IsEmpty() && (!Checked || DecodedPO != *Checked)) Checked = DecodedPOPtr;
+				const TSharedRef<FJsonObject> Validation = MakeShared<FJsonObject>();
+				if (!ValidationEvidence(Manifest->Source.Text, Checked, Culture, Validation)) return false;
+				Entry->SetObjectField(TEXT("validation"), Validation);
+			}
+			else Entry->SetField(TEXT("validation"), MakeShared<FJsonValueNull>());
 			TArray<TSharedPtr<FJsonValue>> Comments;
 			if (POEntry)
 				for (const FString& Comment : POEntry->ExtractedComments)

@@ -14,6 +14,27 @@
 			"runtimeText": "Confirm",
 			"poMsgid": "Confirm",
 			"poMsgstr": "Confirm",
+			"poDecodedMsgstr": "Confirm",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["few", "one", "other", "two"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "Confirm",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "Confirm"
+			},
 			"poExtractedComments": [
 				"Key:\tDuplicateA",
 				"SourceLocation:\t/Game/Fixture/Localization/DA_Localization.DA_Localization.EqualSourceFirst"
@@ -38,6 +59,27 @@
 			"runtimeText": "Confirm",
 			"poMsgid": "Confirm",
 			"poMsgstr": "Confirm",
+			"poDecodedMsgstr": "Confirm",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["few", "one", "other", "two"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "Confirm",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "Confirm"
+			},
 			"poExtractedComments": [
 				"Key:\tDuplicateB",
 				"SourceLocation:\t/Game/Fixture/Localization/DA_Localization.DA_Localization.EqualSourceSecond"
@@ -62,6 +104,27 @@
 			"runtimeText": "Open the gate",
 			"poMsgid": "Open the gate",
 			"poMsgstr": "Open the gate",
+			"poDecodedMsgstr": "Open the gate",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["few", "one", "other", "two"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "Open the gate",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "Open the gate"
+			},
 			"poExtractedComments": [
 				"Key:\tOutdated",
 				"SourceLocation:\t/Game/Fixture/Localization/DA_Localization.DA_Localization.SharedPrimary"
@@ -86,6 +149,27 @@
 			"runtimeText": "Return to menu",
 			"poMsgid": "Return to menu",
 			"poMsgstr": "Return to menu",
+			"poDecodedMsgstr": "Return to menu",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["few", "one", "other", "two"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "Return to menu",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "Return to menu"
+			},
 			"poExtractedComments": [
 				"Key:\tEmptyFrench",
 				"SourceLocation:\t/Game/Fixture/Localization/DT_Localization.DT_Localization.EmptyFrench.DisplayName"
@@ -110,6 +194,27 @@
 			"runtimeText": "Save progress",
 			"poMsgid": "Save progress",
 			"poMsgstr": "Save progress",
+			"poDecodedMsgstr": "Save progress",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["few", "one", "other", "two"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "Save progress",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "Save progress"
+			},
 			"poExtractedComments": [
 				"Key:\tMissingFrench",
 				"SourceLocation:\t/Game/Fixture/Localization/DT_Localization.DT_Localization.MissingFrench.DisplayName"
@@ -134,6 +239,27 @@
 			"runtimeText": "Stage {0} of {1}",
 			"poMsgid": "Stage {0} of {1}",
 			"poMsgstr": "Stage {0} of {1}",
+			"poDecodedMsgstr": "Stage {0} of {1}",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["0", "1"]
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["few", "one", "other", "two"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "Stage {0} of {1}",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["0", "1"]
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "Stage {0} of {1}"
+			},
 			"poExtractedComments": [
 				"Key:\tRuntimeOrdered",
 				"SourceLocation:\tSource/UEShedFixture/Private/UEShedLocalizationText.cpp(10)"
@@ -156,6 +282,27 @@
 			"runtimeText": "Ready to begin",
 			"poMsgid": "Ready to begin",
 			"poMsgstr": "Ready to begin",
+			"poDecodedMsgstr": "Ready to begin",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["few", "one", "other", "two"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "Ready to begin",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "Ready to begin"
+			},
 			"poExtractedComments": [
 				"Key:\tRuntimeReady",
 				"SourceLocation:\tSource/UEShedFixture/Private/UEShedLocalizationText.cpp(9)"
@@ -178,6 +325,8 @@
 			"runtimeText": null,
 			"poMsgid": null,
 			"poMsgstr": null,
+			"poDecodedMsgstr": null,
+			"validation": null,
 			"poExtractedComments": [],
 			"manifestKeyPaths": [],
 			"manifestDevNotes": [],
@@ -197,6 +346,27 @@
 			"runtimeText": "Gathered instruction",
 			"poMsgid": "Gathered instruction",
 			"poMsgstr": "Gathered instruction",
+			"poDecodedMsgstr": "Gathered instruction",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["few", "one", "other", "two"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "Gathered instruction",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "Gathered instruction"
+			},
 			"poExtractedComments": [
 				"Key:\tChangedAfterGather",
 				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
@@ -212,6 +382,264 @@
 		{
 			"culture": "en",
 			"namespace": "Fixture.Localization.Table",
+			"key": "Gender",
+			"manifestSource": "{Person}|gender(He,She,They)",
+			"archiveSource": "{Person}|gender(He,She,They)",
+			"archiveTranslation": "{Person}|gender(He,She,They)",
+			"runtimeText": "{Person}|gender(He,She,They)",
+			"poMsgid": "{Person}|gender(He,She,They)",
+			"poMsgstr": "{Person}|gender(He,She,They)",
+			"poDecodedMsgstr": "{Person}|gender(He,She,They)",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["Person"]
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["few", "one", "other", "two"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "{Person}|gender(He,She,They)",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["Person"]
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "{Person}|gender(He,She,They)"
+			},
+			"poExtractedComments": [
+				"Key:\tGender",
+				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
+			],
+			"manifestKeyPaths": ["/Game/Fixture/Localization/ST_Localization.ST_Localization"],
+			"manifestDevNotes": [""],
+			"gatheredOnly": false,
+			"currentAssetSource": "{Person}|gender(He,She,They)",
+			"currentAssetPath": "/Game/Fixture/Localization/ST_Localization.ST_Localization:Gender",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Table",
+			"key": "Hangul",
+			"manifestSource": "{Name}|hpp(은,는)",
+			"archiveSource": "{Name}|hpp(은,는)",
+			"archiveTranslation": "{Name}|hpp(은,는)",
+			"runtimeText": "{Name}|hpp(은,는)",
+			"poMsgid": "{Name}|hpp(은,는)",
+			"poMsgstr": "{Name}|hpp(은,는)",
+			"poDecodedMsgstr": "{Name}|hpp(은,는)",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["Name"]
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["few", "one", "other", "two"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "{Name}|hpp(은,는)",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["Name"]
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "{Name}|hpp(은,는)"
+			},
+			"poExtractedComments": [
+				"Key:\tHangul",
+				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
+			],
+			"manifestKeyPaths": ["/Game/Fixture/Localization/ST_Localization.ST_Localization"],
+			"manifestDevNotes": [""],
+			"gatheredOnly": false,
+			"currentAssetSource": "{Name}|hpp(은,는)",
+			"currentAssetPath": "/Game/Fixture/Localization/ST_Localization.ST_Localization:Hangul",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Table",
+			"key": "LineBreak",
+			"manifestSource": "First\nSecond",
+			"archiveSource": "First\nSecond",
+			"archiveTranslation": "First\nSecond",
+			"runtimeText": "First\nSecond",
+			"poMsgid": "First\\nSecond",
+			"poMsgstr": "First\\nSecond",
+			"poDecodedMsgstr": "First\nSecond",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["few", "one", "other", "two"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "First\nSecond",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "First\nSecond"
+			},
+			"poExtractedComments": [
+				"Key:\tLineBreak",
+				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
+			],
+			"manifestKeyPaths": ["/Game/Fixture/Localization/ST_Localization.ST_Localization"],
+			"manifestDevNotes": [""],
+			"gatheredOnly": false,
+			"currentAssetSource": "First\nSecond",
+			"currentAssetPath": "/Game/Fixture/Localization/ST_Localization.ST_Localization:LineBreak",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Table",
+			"key": "LiteralEscape",
+			"manifestSource": "Type a slash",
+			"archiveSource": "Type a slash",
+			"archiveTranslation": "Type a slash",
+			"runtimeText": "Type a slash",
+			"poMsgid": "Type a slash",
+			"poMsgstr": "Type a slash",
+			"poDecodedMsgstr": "Type a slash",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["few", "one", "other", "two"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "Type a slash",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "Type a slash"
+			},
+			"poExtractedComments": [
+				"Key:\tLiteralEscape",
+				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
+			],
+			"manifestKeyPaths": ["/Game/Fixture/Localization/ST_Localization.ST_Localization"],
+			"manifestDevNotes": [""],
+			"gatheredOnly": false,
+			"currentAssetSource": "Type a slash",
+			"currentAssetPath": "/Game/Fixture/Localization/ST_Localization.ST_Localization:LiteralEscape",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Table",
+			"key": "MalformedModifier",
+			"manifestSource": "{Count}|plural(one=item,other=items)",
+			"archiveSource": "{Count}|plural(one=item,other=items)",
+			"archiveTranslation": "{Count}|plural(one=item,other=items)",
+			"runtimeText": "{Count}|plural(one=item,other=items)",
+			"poMsgid": "{Count}|plural(one=item,other=items)",
+			"poMsgstr": "{Count}|plural(one=item,other=items)",
+			"poDecodedMsgstr": "{Count}|plural(one=item,other=items)",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["Count"]
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["few", "one", "other", "two"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "{Count}|plural(one=item,other=items)",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["Count"]
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "{Count}|plural(one=item,other=items)"
+			},
+			"poExtractedComments": [
+				"Key:\tMalformedModifier",
+				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
+			],
+			"manifestKeyPaths": ["/Game/Fixture/Localization/ST_Localization.ST_Localization"],
+			"manifestDevNotes": [""],
+			"gatheredOnly": false,
+			"currentAssetSource": "{Count}|plural(one=item,other=items)",
+			"currentAssetPath": "/Game/Fixture/Localization/ST_Localization.ST_Localization:MalformedModifier",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Table",
+			"key": "MissingPluralForm",
+			"manifestSource": "{Count}|plural(one=item,other=items)",
+			"archiveSource": "{Count}|plural(one=item,other=items)",
+			"archiveTranslation": "{Count}|plural(one=item,other=items)",
+			"runtimeText": "{Count}|plural(one=item,other=items)",
+			"poMsgid": "{Count}|plural(one=item,other=items)",
+			"poMsgstr": "{Count}|plural(one=item,other=items)",
+			"poDecodedMsgstr": "{Count}|plural(one=item,other=items)",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["Count"]
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["few", "one", "other", "two"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "{Count}|plural(one=item,other=items)",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["Count"]
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "{Count}|plural(one=item,other=items)"
+			},
+			"poExtractedComments": [
+				"Key:\tMissingPluralForm",
+				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
+			],
+			"manifestKeyPaths": ["/Game/Fixture/Localization/ST_Localization.ST_Localization"],
+			"manifestDevNotes": [""],
+			"gatheredOnly": false,
+			"currentAssetSource": "{Count}|plural(one=item,other=items)",
+			"currentAssetPath": "/Game/Fixture/Localization/ST_Localization.ST_Localization:MissingPluralForm",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Table",
 			"key": "NamedArgument",
 			"manifestSource": "Talking with {PlayerName}",
 			"archiveSource": "Talking with {PlayerName}",
@@ -219,6 +647,27 @@
 			"runtimeText": "Talking with {PlayerName}",
 			"poMsgid": "Talking with {PlayerName}",
 			"poMsgstr": "Talking with {PlayerName}",
+			"poDecodedMsgstr": "Talking with {PlayerName}",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["PlayerName"]
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["few", "one", "other", "two"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "Talking with {PlayerName}",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["PlayerName"]
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "Talking with {PlayerName}"
+			},
 			"poExtractedComments": [
 				"Key:\tNamedArgument",
 				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
@@ -234,6 +683,49 @@
 		{
 			"culture": "en",
 			"namespace": "Fixture.Localization.Table",
+			"key": "NestedPlural",
+			"manifestSource": "{Count}|plural(one=\"{Owner} has one item\",other=\"{Owner} has items\")",
+			"archiveSource": "{Count}|plural(one=\"{Owner} has one item\",other=\"{Owner} has items\")",
+			"archiveTranslation": "{Count}|plural(one=\"{Owner} has one item\",other=\"{Owner} has items\")",
+			"runtimeText": "{Count}|plural(one=\"{Owner} has one item\",other=\"{Owner} has items\")",
+			"poMsgid": "{Count}|plural(one=\\\"{Owner} has one item\\\",other=\\\"{Owner} has items\\\")",
+			"poMsgstr": "{Count}|plural(one=\\\"{Owner} has one item\\\",other=\\\"{Owner} has items\\\")",
+			"poDecodedMsgstr": "{Count}|plural(one=\"{Owner} has one item\",other=\"{Owner} has items\")",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["Count", "Owner"]
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["few", "one", "other", "two"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "{Count}|plural(one=\"{Owner} has one item\",other=\"{Owner} has items\")",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["Count", "Owner"]
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "{Count}|plural(one=\"{Owner} has one item\",other=\"{Owner} has items\")"
+			},
+			"poExtractedComments": [
+				"Key:\tNestedPlural",
+				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
+			],
+			"manifestKeyPaths": ["/Game/Fixture/Localization/ST_Localization.ST_Localization"],
+			"manifestDevNotes": [""],
+			"gatheredOnly": false,
+			"currentAssetSource": "{Count}|plural(one=\"{Owner} has one item\",other=\"{Owner} has items\")",
+			"currentAssetPath": "/Game/Fixture/Localization/ST_Localization.ST_Localization:NestedPlural",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Table",
 			"key": "OrderedArgument",
 			"manifestSource": "Checkpoint {0}",
 			"archiveSource": "Checkpoint {0}",
@@ -241,6 +733,27 @@
 			"runtimeText": "Checkpoint {0}",
 			"poMsgid": "Checkpoint {0}",
 			"poMsgstr": "Checkpoint {0}",
+			"poDecodedMsgstr": "Checkpoint {0}",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["0"]
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["few", "one", "other", "two"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "Checkpoint {0}",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["0"]
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "Checkpoint {0}"
+			},
 			"poExtractedComments": [
 				"Key:\tOrderedArgument",
 				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
@@ -256,6 +769,49 @@
 		{
 			"culture": "en",
 			"namespace": "Fixture.Localization.Table",
+			"key": "Ordinal",
+			"manifestSource": "{Rank}|ordinal(one=first,two=second,few=third,other=last)",
+			"archiveSource": "{Rank}|ordinal(one=first,two=second,few=third,other=last)",
+			"archiveTranslation": "{Rank}|ordinal(one=first,two=second,few=third,other=last)",
+			"runtimeText": "{Rank}|ordinal(one=first,two=second,few=third,other=last)",
+			"poMsgid": "{Rank}|ordinal(one=first,two=second,few=third,other=last)",
+			"poMsgstr": "{Rank}|ordinal(one=first,two=second,few=third,other=last)",
+			"poDecodedMsgstr": "{Rank}|ordinal(one=first,two=second,few=third,other=last)",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["Rank"]
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["few", "one", "other", "two"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "{Rank}|ordinal(one=first,two=second,few=third,other=last)",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["Rank"]
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "{Rank}|ordinal(one=first,two=second,few=third,other=last)"
+			},
+			"poExtractedComments": [
+				"Key:\tOrdinal",
+				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
+			],
+			"manifestKeyPaths": ["/Game/Fixture/Localization/ST_Localization.ST_Localization"],
+			"manifestDevNotes": [""],
+			"gatheredOnly": false,
+			"currentAssetSource": "{Rank}|ordinal(one=first,two=second,few=third,other=last)",
+			"currentAssetPath": "/Game/Fixture/Localization/ST_Localization.ST_Localization:Ordinal",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Table",
 			"key": "Plural",
 			"manifestSource": "{Count} {Count}|plural(one=item,other=items)",
 			"archiveSource": "{Count} {Count}|plural(one=item,other=items)",
@@ -263,6 +819,27 @@
 			"runtimeText": "{Count} {Count}|plural(one=item,other=items)",
 			"poMsgid": "{Count} {Count}|plural(one=item,other=items)",
 			"poMsgstr": "{Count} {Count}|plural(one=item,other=items)",
+			"poDecodedMsgstr": "{Count} {Count}|plural(one=item,other=items)",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["Count"]
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["few", "one", "other", "two"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "{Count} {Count}|plural(one=item,other=items)",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["Count"]
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "{Count} {Count}|plural(one=item,other=items)"
+			},
 			"poExtractedComments": [
 				"Key:\tPlural",
 				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
@@ -285,6 +862,27 @@
 			"runtimeText": "Temporary instruction",
 			"poMsgid": "Temporary instruction",
 			"poMsgstr": "Temporary instruction",
+			"poDecodedMsgstr": "Temporary instruction",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["few", "one", "other", "two"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "Temporary instruction",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "Temporary instruction"
+			},
 			"poExtractedComments": [
 				"Key:\tRemovedAfterGather",
 				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
@@ -300,6 +898,49 @@
 		{
 			"culture": "en",
 			"namespace": "Fixture.Localization.Table",
+			"key": "RichText",
+			"manifestSource": "<Em>Continue</>",
+			"archiveSource": "<Em>Continue</>",
+			"archiveTranslation": "<Em>Continue</>",
+			"runtimeText": "<Em>Continue</>",
+			"poMsgid": "<Em>Continue</>",
+			"poMsgstr": "<Em>Continue</>",
+			"poDecodedMsgstr": "<Em>Continue</>",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["few", "one", "other", "two"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "<Em>Continue</>",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "<Em>Continue</>"
+			},
+			"poExtractedComments": [
+				"Key:\tRichText",
+				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
+			],
+			"manifestKeyPaths": ["/Game/Fixture/Localization/ST_Localization.ST_Localization"],
+			"manifestDevNotes": [""],
+			"gatheredOnly": false,
+			"currentAssetSource": "<Em>Continue</>",
+			"currentAssetPath": "/Game/Fixture/Localization/ST_Localization.ST_Localization:RichText",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Table",
 			"key": "Unsynced",
 			"manifestSource": "Start a new session",
 			"archiveSource": "Start a new session",
@@ -307,6 +948,27 @@
 			"runtimeText": "Start a new session",
 			"poMsgid": "Start a new session",
 			"poMsgstr": "Start a new session",
+			"poDecodedMsgstr": "Start a new session",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["few", "one", "other", "two"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "Start a new session",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "Start a new session"
+			},
 			"poExtractedComments": [
 				"Key:\tUnsynced",
 				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
@@ -329,6 +991,27 @@
 			"runtimeText": "Welcome back",
 			"poMsgid": "Welcome back",
 			"poMsgstr": "Welcome back",
+			"poDecodedMsgstr": "Welcome back",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["few", "one", "other", "two"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "Welcome back",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "Welcome back"
+			},
 			"poExtractedComments": [
 				"Key:\tWelcome",
 				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization",
@@ -345,6 +1028,49 @@
 		},
 		{
 			"culture": "en",
+			"namespace": "Fixture.Localization.Table",
+			"key": "Whitespace",
+			"manifestSource": "Keep moving",
+			"archiveSource": "Keep moving",
+			"archiveTranslation": "Keep moving",
+			"runtimeText": "Keep moving",
+			"poMsgid": "Keep moving",
+			"poMsgstr": "Keep moving",
+			"poDecodedMsgstr": "Keep moving",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["few", "one", "other", "two"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "Keep moving",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "Keep moving"
+			},
+			"poExtractedComments": [
+				"Key:\tWhitespace",
+				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
+			],
+			"manifestKeyPaths": ["/Game/Fixture/Localization/ST_Localization.ST_Localization"],
+			"manifestDevNotes": [""],
+			"gatheredOnly": false,
+			"currentAssetSource": "Keep moving",
+			"currentAssetPath": "/Game/Fixture/Localization/ST_Localization.ST_Localization:Whitespace",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "en",
 			"namespace": "Fixture.StringTable",
 			"key": "PromptContinue",
 			"manifestSource": null,
@@ -353,6 +1079,8 @@
 			"runtimeText": null,
 			"poMsgid": null,
 			"poMsgstr": null,
+			"poDecodedMsgstr": null,
+			"validation": null,
 			"poExtractedComments": [],
 			"manifestKeyPaths": [],
 			"manifestDevNotes": [],
@@ -372,6 +1100,8 @@
 			"runtimeText": null,
 			"poMsgid": null,
 			"poMsgstr": null,
+			"poDecodedMsgstr": null,
+			"validation": null,
 			"poExtractedComments": [],
 			"manifestKeyPaths": [],
 			"manifestDevNotes": [],
@@ -391,6 +1121,8 @@
 			"runtimeText": null,
 			"poMsgid": null,
 			"poMsgstr": null,
+			"poDecodedMsgstr": null,
+			"validation": null,
 			"poExtractedComments": [],
 			"manifestKeyPaths": [],
 			"manifestDevNotes": [],
@@ -410,6 +1142,27 @@
 			"runtimeText": "Bestätigen",
 			"poMsgid": "Confirm",
 			"poMsgstr": "Bestätigen",
+			"poDecodedMsgstr": "Bestätigen",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["other"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "Bestätigen",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "Bestätigen"
+			},
 			"poExtractedComments": [
 				"Key:\tDuplicateA",
 				"SourceLocation:\t/Game/Fixture/Localization/DA_Localization.DA_Localization.EqualSourceFirst"
@@ -434,6 +1187,27 @@
 			"runtimeText": "Bestätigen",
 			"poMsgid": "Confirm",
 			"poMsgstr": "Bestätigen",
+			"poDecodedMsgstr": "Bestätigen",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["other"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "Bestätigen",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "Bestätigen"
+			},
 			"poExtractedComments": [
 				"Key:\tDuplicateB",
 				"SourceLocation:\t/Game/Fixture/Localization/DA_Localization.DA_Localization.EqualSourceSecond"
@@ -458,6 +1232,27 @@
 			"runtimeText": "Open the gate",
 			"poMsgid": "Open the gate",
 			"poMsgstr": "",
+			"poDecodedMsgstr": "",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["other"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "Die Tür öffnen",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "Die Tür öffnen"
+			},
 			"poExtractedComments": [
 				"Key:\tOutdated",
 				"SourceLocation:\t/Game/Fixture/Localization/DA_Localization.DA_Localization.SharedPrimary"
@@ -482,6 +1277,27 @@
 			"runtimeText": "Zum Menü zurückkehren",
 			"poMsgid": "Return to menu",
 			"poMsgstr": "Zum Menü zurückkehren",
+			"poDecodedMsgstr": "Zum Menü zurückkehren",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["other"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "Zum Menü zurückkehren",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "Zum Menü zurückkehren"
+			},
 			"poExtractedComments": [
 				"Key:\tEmptyFrench",
 				"SourceLocation:\t/Game/Fixture/Localization/DT_Localization.DT_Localization.EmptyFrench.DisplayName"
@@ -506,6 +1322,27 @@
 			"runtimeText": "Fortschritt speichern",
 			"poMsgid": "Save progress",
 			"poMsgstr": "Fortschritt speichern",
+			"poDecodedMsgstr": "Fortschritt speichern",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["other"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "Fortschritt speichern",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "Fortschritt speichern"
+			},
 			"poExtractedComments": [
 				"Key:\tMissingFrench",
 				"SourceLocation:\t/Game/Fixture/Localization/DT_Localization.DT_Localization.MissingFrench.DisplayName"
@@ -530,6 +1367,27 @@
 			"runtimeText": "Abschnitt {0} von {1}",
 			"poMsgid": "Stage {0} of {1}",
 			"poMsgstr": "Abschnitt {0} von {1}",
+			"poDecodedMsgstr": "Abschnitt {0} von {1}",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["0", "1"]
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["other"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "Abschnitt {0} von {1}",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["0", "1"]
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "Abschnitt {0} von {1}"
+			},
 			"poExtractedComments": [
 				"Key:\tRuntimeOrdered",
 				"SourceLocation:\tSource/UEShedFixture/Private/UEShedLocalizationText.cpp(10)"
@@ -552,6 +1410,27 @@
 			"runtimeText": "Bereit zum Start",
 			"poMsgid": "Ready to begin",
 			"poMsgstr": "Bereit zum Start",
+			"poDecodedMsgstr": "Bereit zum Start",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["other"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "Bereit zum Start",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "Bereit zum Start"
+			},
 			"poExtractedComments": [
 				"Key:\tRuntimeReady",
 				"SourceLocation:\tSource/UEShedFixture/Private/UEShedLocalizationText.cpp(9)"
@@ -574,6 +1453,8 @@
 			"runtimeText": null,
 			"poMsgid": null,
 			"poMsgstr": null,
+			"poDecodedMsgstr": null,
+			"validation": null,
 			"poExtractedComments": [],
 			"manifestKeyPaths": [],
 			"manifestDevNotes": [],
@@ -593,6 +1474,27 @@
 			"runtimeText": "Gesammelte Anweisung",
 			"poMsgid": "Gathered instruction",
 			"poMsgstr": "Gesammelte Anweisung",
+			"poDecodedMsgstr": "Gesammelte Anweisung",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["other"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "Gesammelte Anweisung",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "Gesammelte Anweisung"
+			},
 			"poExtractedComments": [
 				"Key:\tChangedAfterGather",
 				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
@@ -608,6 +1510,266 @@
 		{
 			"culture": "de",
 			"namespace": "Fixture.Localization.Table",
+			"key": "Gender",
+			"manifestSource": "{Person}|gender(He,She,They)",
+			"archiveSource": "{Person}|gender(He,She,They)",
+			"archiveTranslation": "{Person}|gender(Er)",
+			"runtimeText": "{Person}|gender(Er)",
+			"poMsgid": "{Person}|gender(He,She,They)",
+			"poMsgstr": "{Person}|gender(Er)",
+			"poDecodedMsgstr": "{Person}|gender(Er)",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["Person"]
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["other"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "{Person}|gender(Er)",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["Person"]
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "{Person}|gender(Er)"
+			},
+			"poExtractedComments": [
+				"Key:\tGender",
+				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
+			],
+			"manifestKeyPaths": ["/Game/Fixture/Localization/ST_Localization.ST_Localization"],
+			"manifestDevNotes": [""],
+			"gatheredOnly": false,
+			"currentAssetSource": "{Person}|gender(He,She,They)",
+			"currentAssetPath": "/Game/Fixture/Localization/ST_Localization.ST_Localization:Gender",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.Localization.Table",
+			"key": "Hangul",
+			"manifestSource": "{Name}|hpp(은,는)",
+			"archiveSource": "{Name}|hpp(은,는)",
+			"archiveTranslation": "{Name}|hpp(ist)",
+			"runtimeText": "{Name}|hpp(ist)",
+			"poMsgid": "{Name}|hpp(은,는)",
+			"poMsgstr": "{Name}|hpp(ist)",
+			"poDecodedMsgstr": "{Name}|hpp(ist)",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["Name"]
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["other"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "{Name}|hpp(ist)",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["Name"]
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "{Name}|hpp(ist)"
+			},
+			"poExtractedComments": [
+				"Key:\tHangul",
+				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
+			],
+			"manifestKeyPaths": ["/Game/Fixture/Localization/ST_Localization.ST_Localization"],
+			"manifestDevNotes": [""],
+			"gatheredOnly": false,
+			"currentAssetSource": "{Name}|hpp(은,는)",
+			"currentAssetPath": "/Game/Fixture/Localization/ST_Localization.ST_Localization:Hangul",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.Localization.Table",
+			"key": "LineBreak",
+			"manifestSource": "First\nSecond",
+			"archiveSource": "First\nSecond",
+			"archiveTranslation": "Erste Zweite",
+			"runtimeText": "Erste Zweite",
+			"poMsgid": "First\\nSecond",
+			"poMsgstr": "Erste Zweite",
+			"poDecodedMsgstr": "Erste Zweite",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["other"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "Erste Zweite",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "Erste Zweite"
+			},
+			"poExtractedComments": [
+				"Key:\tLineBreak",
+				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
+			],
+			"manifestKeyPaths": ["/Game/Fixture/Localization/ST_Localization.ST_Localization"],
+			"manifestDevNotes": [""],
+			"gatheredOnly": false,
+			"currentAssetSource": "First\nSecond",
+			"currentAssetPath": "/Game/Fixture/Localization/ST_Localization.ST_Localization:LineBreak",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.Localization.Table",
+			"key": "LiteralEscape",
+			"manifestSource": "Type a slash",
+			"archiveSource": "Type a slash",
+			"archiveTranslation": "Schreib \\n",
+			"runtimeText": "Schreib \\n",
+			"poMsgid": "Type a slash",
+			"poMsgstr": "",
+			"poDecodedMsgstr": "",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["other"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "Schreib \\n",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "Schreib \\\n"
+			},
+			"poExtractedComments": [
+				"Key:\tLiteralEscape",
+				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
+			],
+			"manifestKeyPaths": ["/Game/Fixture/Localization/ST_Localization.ST_Localization"],
+			"manifestDevNotes": [""],
+			"gatheredOnly": false,
+			"currentAssetSource": "Type a slash",
+			"currentAssetPath": "/Game/Fixture/Localization/ST_Localization.ST_Localization:LiteralEscape",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.Localization.Table",
+			"key": "MalformedModifier",
+			"manifestSource": "{Count}|plural(one=item,other=items)",
+			"archiveSource": "{Count}|plural(one=item,other=items)",
+			"archiveTranslation": "{Count}|plural(one=Gegenstand,other=)",
+			"runtimeText": "{Count}|plural(one=Gegenstand,other=)",
+			"poMsgid": "{Count}|plural(one=item,other=items)",
+			"poMsgstr": "{Count}|plural(one=Gegenstand,other=)",
+			"poDecodedMsgstr": "{Count}|plural(one=Gegenstand,other=)",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["Count"]
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["other"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "{Count}|plural(one=Gegenstand,other=)",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["Count"]
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "{Count}|plural(one=Gegenstand,other=)"
+			},
+			"poExtractedComments": [
+				"Key:\tMalformedModifier",
+				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
+			],
+			"manifestKeyPaths": ["/Game/Fixture/Localization/ST_Localization.ST_Localization"],
+			"manifestDevNotes": [""],
+			"gatheredOnly": false,
+			"currentAssetSource": "{Count}|plural(one=item,other=items)",
+			"currentAssetPath": "/Game/Fixture/Localization/ST_Localization.ST_Localization:MalformedModifier",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.Localization.Table",
+			"key": "MissingPluralForm",
+			"manifestSource": "{Count}|plural(one=item,other=items)",
+			"archiveSource": "{Count}|plural(one=item,other=items)",
+			"archiveTranslation": "{Count}|plural(one=Gegenstand)",
+			"runtimeText": "{Count}|plural(one=Gegenstand)",
+			"poMsgid": "{Count}|plural(one=item,other=items)",
+			"poMsgstr": "{Count}|plural(one=Gegenstand)",
+			"poDecodedMsgstr": "{Count}|plural(one=Gegenstand)",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["Count"]
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["other"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "{Count}|plural(one=Gegenstand)",
+				"translationFormat": {
+					"valid": false,
+					"errors": [
+						"Cardinal plural form argument modifier is missing a required plural form for 'other'"
+					],
+					"arguments": ["Count"]
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "{Count}|plural(one=Gegenstand)"
+			},
+			"poExtractedComments": [
+				"Key:\tMissingPluralForm",
+				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
+			],
+			"manifestKeyPaths": ["/Game/Fixture/Localization/ST_Localization.ST_Localization"],
+			"manifestDevNotes": [""],
+			"gatheredOnly": false,
+			"currentAssetSource": "{Count}|plural(one=item,other=items)",
+			"currentAssetPath": "/Game/Fixture/Localization/ST_Localization.ST_Localization:MissingPluralForm",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.Localization.Table",
 			"key": "NamedArgument",
 			"manifestSource": "Talking with {PlayerName}",
 			"archiveSource": "Talking with {PlayerName}",
@@ -615,6 +1777,27 @@
 			"runtimeText": "Gespräch mit {Name}",
 			"poMsgid": "Talking with {PlayerName}",
 			"poMsgstr": "Gespräch mit {Name}",
+			"poDecodedMsgstr": "Gespräch mit {Name}",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["PlayerName"]
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["other"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "Gespräch mit {Name}",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["Name"]
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "Gespräch mit {Name}"
+			},
 			"poExtractedComments": [
 				"Key:\tNamedArgument",
 				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
@@ -630,6 +1813,49 @@
 		{
 			"culture": "de",
 			"namespace": "Fixture.Localization.Table",
+			"key": "NestedPlural",
+			"manifestSource": "{Count}|plural(one=\"{Owner} has one item\",other=\"{Owner} has items\")",
+			"archiveSource": "{Count}|plural(one=\"{Owner} has one item\",other=\"{Owner} has items\")",
+			"archiveTranslation": "{Count}|plural(one=\"{Wrong} hat eins\",other=\"{Wrong} hat viele\")",
+			"runtimeText": "{Count}|plural(one=\"{Wrong} hat eins\",other=\"{Wrong} hat viele\")",
+			"poMsgid": "{Count}|plural(one=\\\"{Owner} has one item\\\",other=\\\"{Owner} has items\\\")",
+			"poMsgstr": "{Count}|plural(one=\\\"{Wrong} hat eins\\\",other=\\\"{Wrong} hat viele\\\")",
+			"poDecodedMsgstr": "{Count}|plural(one=\"{Wrong} hat eins\",other=\"{Wrong} hat viele\")",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["Count", "Owner"]
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["other"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "{Count}|plural(one=\"{Wrong} hat eins\",other=\"{Wrong} hat viele\")",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["Count", "Wrong"]
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "{Count}|plural(one=\"{Wrong} hat eins\",other=\"{Wrong} hat viele\")"
+			},
+			"poExtractedComments": [
+				"Key:\tNestedPlural",
+				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
+			],
+			"manifestKeyPaths": ["/Game/Fixture/Localization/ST_Localization.ST_Localization"],
+			"manifestDevNotes": [""],
+			"gatheredOnly": false,
+			"currentAssetSource": "{Count}|plural(one=\"{Owner} has one item\",other=\"{Owner} has items\")",
+			"currentAssetPath": "/Game/Fixture/Localization/ST_Localization.ST_Localization:NestedPlural",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.Localization.Table",
 			"key": "OrderedArgument",
 			"manifestSource": "Checkpoint {0}",
 			"archiveSource": "Checkpoint {0}",
@@ -637,6 +1863,27 @@
 			"runtimeText": "Kontrollpunkt {0}",
 			"poMsgid": "Checkpoint {0}",
 			"poMsgstr": "Kontrollpunkt {0}",
+			"poDecodedMsgstr": "Kontrollpunkt {0}",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["0"]
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["other"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "Kontrollpunkt {0}",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["0"]
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "Kontrollpunkt {0}"
+			},
 			"poExtractedComments": [
 				"Key:\tOrderedArgument",
 				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
@@ -652,6 +1899,53 @@
 		{
 			"culture": "de",
 			"namespace": "Fixture.Localization.Table",
+			"key": "Ordinal",
+			"manifestSource": "{Rank}|ordinal(one=first,two=second,few=third,other=last)",
+			"archiveSource": "{Rank}|ordinal(one=first,two=second,few=third,other=last)",
+			"archiveTranslation": "{Rank}|ordinal(other=letzte)",
+			"runtimeText": "{Rank}|ordinal(other=letzte)",
+			"poMsgid": "{Rank}|ordinal(one=first,two=second,few=third,other=last)",
+			"poMsgstr": "{Rank}|ordinal(other=letzte)",
+			"poDecodedMsgstr": "{Rank}|ordinal(other=letzte)",
+			"validation": {
+				"sourceFormat": {
+					"valid": false,
+					"errors": [
+						"Ordinal plural form argument modifier is redundant as this culture only has a single plural form"
+					],
+					"arguments": ["Rank"]
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["other"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "{Rank}|ordinal(other=letzte)",
+				"translationFormat": {
+					"valid": false,
+					"errors": [
+						"Ordinal plural form argument modifier is redundant as this culture only has a single plural form"
+					],
+					"arguments": ["Rank"]
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "{Rank}|ordinal(other=letzte)"
+			},
+			"poExtractedComments": [
+				"Key:\tOrdinal",
+				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
+			],
+			"manifestKeyPaths": ["/Game/Fixture/Localization/ST_Localization.ST_Localization"],
+			"manifestDevNotes": [""],
+			"gatheredOnly": false,
+			"currentAssetSource": "{Rank}|ordinal(one=first,two=second,few=third,other=last)",
+			"currentAssetPath": "/Game/Fixture/Localization/ST_Localization.ST_Localization:Ordinal",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.Localization.Table",
 			"key": "Plural",
 			"manifestSource": "{Count} {Count}|plural(one=item,other=items)",
 			"archiveSource": "{Count} {Count}|plural(one=item,other=items)",
@@ -659,6 +1953,27 @@
 			"runtimeText": "{Count} {Count}|plural(one=Gegenstand,other=Gegenstände)",
 			"poMsgid": "{Count} {Count}|plural(one=item,other=items)",
 			"poMsgstr": "{Count} {Count}|plural(one=Gegenstand,other=Gegenstände)",
+			"poDecodedMsgstr": "{Count} {Count}|plural(one=Gegenstand,other=Gegenstände)",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["Count"]
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["other"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "{Count} {Count}|plural(one=Gegenstand,other=Gegenstände)",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["Count"]
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "{Count} {Count}|plural(one=Gegenstand,other=Gegenstände)"
+			},
 			"poExtractedComments": [
 				"Key:\tPlural",
 				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
@@ -681,6 +1996,27 @@
 			"runtimeText": "Vorübergehende Anweisung",
 			"poMsgid": "Temporary instruction",
 			"poMsgstr": "Vorübergehende Anweisung",
+			"poDecodedMsgstr": "Vorübergehende Anweisung",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["other"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "Vorübergehende Anweisung",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "Vorübergehende Anweisung"
+			},
 			"poExtractedComments": [
 				"Key:\tRemovedAfterGather",
 				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
@@ -696,6 +2032,49 @@
 		{
 			"culture": "de",
 			"namespace": "Fixture.Localization.Table",
+			"key": "RichText",
+			"manifestSource": "<Em>Continue</>",
+			"archiveSource": "<Em>Continue</>",
+			"archiveTranslation": "<Em>Weiter",
+			"runtimeText": "<Em>Weiter",
+			"poMsgid": "<Em>Continue</>",
+			"poMsgstr": "<Em>Weiter",
+			"poDecodedMsgstr": "<Em>Weiter",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["other"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "<Em>Weiter",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"translationRichTextValid": false,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "<Em>Weiter"
+			},
+			"poExtractedComments": [
+				"Key:\tRichText",
+				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
+			],
+			"manifestKeyPaths": ["/Game/Fixture/Localization/ST_Localization.ST_Localization"],
+			"manifestDevNotes": [""],
+			"gatheredOnly": false,
+			"currentAssetSource": "<Em>Continue</>",
+			"currentAssetPath": "/Game/Fixture/Localization/ST_Localization.ST_Localization:RichText",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.Localization.Table",
 			"key": "Unsynced",
 			"manifestSource": "Start a new session",
 			"archiveSource": "Start a new session",
@@ -703,6 +2082,27 @@
 			"runtimeText": "Eine neue Sitzung starten",
 			"poMsgid": "Start a new session",
 			"poMsgstr": "Eine frische Sitzung beginnen",
+			"poDecodedMsgstr": "Eine frische Sitzung beginnen",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["other"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "Eine frische Sitzung beginnen",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "Eine frische Sitzung beginnen"
+			},
 			"poExtractedComments": [
 				"Key:\tUnsynced",
 				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
@@ -725,6 +2125,27 @@
 			"runtimeText": "Willkommen zurück",
 			"poMsgid": "Welcome back",
 			"poMsgstr": "Willkommen zurück",
+			"poDecodedMsgstr": "Willkommen zurück",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["other"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "Willkommen zurück",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "Willkommen zurück"
+			},
 			"poExtractedComments": [
 				"Key:\tWelcome",
 				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization",
@@ -741,6 +2162,49 @@
 		},
 		{
 			"culture": "de",
+			"namespace": "Fixture.Localization.Table",
+			"key": "Whitespace",
+			"manifestSource": "Keep moving",
+			"archiveSource": "Keep moving",
+			"archiveTranslation": "Weitergehen ",
+			"runtimeText": "Weitergehen ",
+			"poMsgid": "Keep moving",
+			"poMsgstr": "Weitergehen ",
+			"poDecodedMsgstr": "Weitergehen ",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["other"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "Weitergehen ",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": false,
+				"poRoundTripTranslation": "Weitergehen "
+			},
+			"poExtractedComments": [
+				"Key:\tWhitespace",
+				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
+			],
+			"manifestKeyPaths": ["/Game/Fixture/Localization/ST_Localization.ST_Localization"],
+			"manifestDevNotes": [""],
+			"gatheredOnly": false,
+			"currentAssetSource": "Keep moving",
+			"currentAssetPath": "/Game/Fixture/Localization/ST_Localization.ST_Localization:Whitespace",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "de",
 			"namespace": "Fixture.StringTable",
 			"key": "PromptContinue",
 			"manifestSource": null,
@@ -749,6 +2213,8 @@
 			"runtimeText": null,
 			"poMsgid": null,
 			"poMsgstr": null,
+			"poDecodedMsgstr": null,
+			"validation": null,
 			"poExtractedComments": [],
 			"manifestKeyPaths": [],
 			"manifestDevNotes": [],
@@ -768,6 +2234,8 @@
 			"runtimeText": null,
 			"poMsgid": null,
 			"poMsgstr": null,
+			"poDecodedMsgstr": null,
+			"validation": null,
 			"poExtractedComments": [],
 			"manifestKeyPaths": [],
 			"manifestDevNotes": [],
@@ -787,6 +2255,8 @@
 			"runtimeText": null,
 			"poMsgid": null,
 			"poMsgstr": null,
+			"poDecodedMsgstr": null,
+			"validation": null,
 			"poExtractedComments": [],
 			"manifestKeyPaths": [],
 			"manifestDevNotes": [],
@@ -806,6 +2276,27 @@
 			"runtimeText": "Confirmer",
 			"poMsgid": "Confirm",
 			"poMsgstr": "Confirmer",
+			"poDecodedMsgstr": "Confirmer",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["one", "other"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "Confirmer",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "Confirmer"
+			},
 			"poExtractedComments": [
 				"Key:\tDuplicateA",
 				"SourceLocation:\t/Game/Fixture/Localization/DA_Localization.DA_Localization.EqualSourceFirst"
@@ -830,6 +2321,27 @@
 			"runtimeText": "Confirmer",
 			"poMsgid": "Confirm",
 			"poMsgstr": "Confirmer",
+			"poDecodedMsgstr": "Confirmer",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["one", "other"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "Confirmer",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "Confirmer"
+			},
 			"poExtractedComments": [
 				"Key:\tDuplicateB",
 				"SourceLocation:\t/Game/Fixture/Localization/DA_Localization.DA_Localization.EqualSourceSecond"
@@ -854,6 +2366,27 @@
 			"runtimeText": "Open the gate",
 			"poMsgid": "Open the gate",
 			"poMsgstr": "",
+			"poDecodedMsgstr": "",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["one", "other"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "Ouvrir la porte",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "Ouvrir la porte"
+			},
 			"poExtractedComments": [
 				"Key:\tOutdated",
 				"SourceLocation:\t/Game/Fixture/Localization/DA_Localization.DA_Localization.SharedPrimary"
@@ -878,6 +2411,27 @@
 			"runtimeText": "Return to menu",
 			"poMsgid": "Return to menu",
 			"poMsgstr": "",
+			"poDecodedMsgstr": "",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["one", "other"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": ""
+			},
 			"poExtractedComments": [
 				"Key:\tEmptyFrench",
 				"SourceLocation:\t/Game/Fixture/Localization/DT_Localization.DT_Localization.EmptyFrench.DisplayName"
@@ -902,6 +2456,27 @@
 			"runtimeText": "Save progress",
 			"poMsgid": "Save progress",
 			"poMsgstr": "",
+			"poDecodedMsgstr": "",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["one", "other"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": ""
+			},
 			"poExtractedComments": [
 				"Key:\tMissingFrench",
 				"SourceLocation:\t/Game/Fixture/Localization/DT_Localization.DT_Localization.MissingFrench.DisplayName"
@@ -926,6 +2501,27 @@
 			"runtimeText": "Étape {0} sur {1}",
 			"poMsgid": "Stage {0} of {1}",
 			"poMsgstr": "Étape {0} sur {1}",
+			"poDecodedMsgstr": "Étape {0} sur {1}",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["0", "1"]
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["one", "other"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "Étape {0} sur {1}",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["0", "1"]
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "Étape {0} sur {1}"
+			},
 			"poExtractedComments": [
 				"Key:\tRuntimeOrdered",
 				"SourceLocation:\tSource/UEShedFixture/Private/UEShedLocalizationText.cpp(10)"
@@ -948,6 +2544,27 @@
 			"runtimeText": "Prêt à commencer",
 			"poMsgid": "Ready to begin",
 			"poMsgstr": "Prêt à commencer",
+			"poDecodedMsgstr": "Prêt à commencer",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["one", "other"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "Prêt à commencer",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "Prêt à commencer"
+			},
 			"poExtractedComments": [
 				"Key:\tRuntimeReady",
 				"SourceLocation:\tSource/UEShedFixture/Private/UEShedLocalizationText.cpp(9)"
@@ -970,6 +2587,8 @@
 			"runtimeText": null,
 			"poMsgid": null,
 			"poMsgstr": null,
+			"poDecodedMsgstr": null,
+			"validation": null,
 			"poExtractedComments": [],
 			"manifestKeyPaths": [],
 			"manifestDevNotes": [],
@@ -989,6 +2608,27 @@
 			"runtimeText": "Instruction collectée",
 			"poMsgid": "Gathered instruction",
 			"poMsgstr": "Instruction collectée",
+			"poDecodedMsgstr": "Instruction collectée",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["one", "other"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "Instruction collectée",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "Instruction collectée"
+			},
 			"poExtractedComments": [
 				"Key:\tChangedAfterGather",
 				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
@@ -1004,6 +2644,264 @@
 		{
 			"culture": "fr",
 			"namespace": "Fixture.Localization.Table",
+			"key": "Gender",
+			"manifestSource": "{Person}|gender(He,She,They)",
+			"archiveSource": "{Person}|gender(He,She,They)",
+			"archiveTranslation": "{Person}|gender(Il,Elle)",
+			"runtimeText": "{Person}|gender(Il,Elle)",
+			"poMsgid": "{Person}|gender(He,She,They)",
+			"poMsgstr": "{Person}|gender(Il,Elle)",
+			"poDecodedMsgstr": "{Person}|gender(Il,Elle)",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["Person"]
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["one", "other"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "{Person}|gender(Il,Elle)",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["Person"]
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "{Person}|gender(Il,Elle)"
+			},
+			"poExtractedComments": [
+				"Key:\tGender",
+				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
+			],
+			"manifestKeyPaths": ["/Game/Fixture/Localization/ST_Localization.ST_Localization"],
+			"manifestDevNotes": [""],
+			"gatheredOnly": false,
+			"currentAssetSource": "{Person}|gender(He,She,They)",
+			"currentAssetPath": "/Game/Fixture/Localization/ST_Localization.ST_Localization:Gender",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.Localization.Table",
+			"key": "Hangul",
+			"manifestSource": "{Name}|hpp(은,는)",
+			"archiveSource": "{Name}|hpp(은,는)",
+			"archiveTranslation": "{Name}|hpp(은,는)",
+			"runtimeText": "{Name}|hpp(은,는)",
+			"poMsgid": "{Name}|hpp(은,는)",
+			"poMsgstr": "{Name}|hpp(은,는)",
+			"poDecodedMsgstr": "{Name}|hpp(은,는)",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["Name"]
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["one", "other"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "{Name}|hpp(은,는)",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["Name"]
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "{Name}|hpp(은,는)"
+			},
+			"poExtractedComments": [
+				"Key:\tHangul",
+				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
+			],
+			"manifestKeyPaths": ["/Game/Fixture/Localization/ST_Localization.ST_Localization"],
+			"manifestDevNotes": [""],
+			"gatheredOnly": false,
+			"currentAssetSource": "{Name}|hpp(은,는)",
+			"currentAssetPath": "/Game/Fixture/Localization/ST_Localization.ST_Localization:Hangul",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.Localization.Table",
+			"key": "LineBreak",
+			"manifestSource": "First\nSecond",
+			"archiveSource": "First\nSecond",
+			"archiveTranslation": "Première\nDeuxième",
+			"runtimeText": "Première\nDeuxième",
+			"poMsgid": "First\\nSecond",
+			"poMsgstr": "Première\\nDeuxième",
+			"poDecodedMsgstr": "Première\nDeuxième",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["one", "other"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "Première\nDeuxième",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "Première\nDeuxième"
+			},
+			"poExtractedComments": [
+				"Key:\tLineBreak",
+				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
+			],
+			"manifestKeyPaths": ["/Game/Fixture/Localization/ST_Localization.ST_Localization"],
+			"manifestDevNotes": [""],
+			"gatheredOnly": false,
+			"currentAssetSource": "First\nSecond",
+			"currentAssetPath": "/Game/Fixture/Localization/ST_Localization.ST_Localization:LineBreak",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.Localization.Table",
+			"key": "LiteralEscape",
+			"manifestSource": "Type a slash",
+			"archiveSource": "Type a slash",
+			"archiveTranslation": "Écrire \\t",
+			"runtimeText": "Écrire \\t",
+			"poMsgid": "Type a slash",
+			"poMsgstr": "",
+			"poDecodedMsgstr": "",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["one", "other"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "Écrire \\t",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "Écrire \\\t"
+			},
+			"poExtractedComments": [
+				"Key:\tLiteralEscape",
+				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
+			],
+			"manifestKeyPaths": ["/Game/Fixture/Localization/ST_Localization.ST_Localization"],
+			"manifestDevNotes": [""],
+			"gatheredOnly": false,
+			"currentAssetSource": "Type a slash",
+			"currentAssetPath": "/Game/Fixture/Localization/ST_Localization.ST_Localization:LiteralEscape",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.Localization.Table",
+			"key": "MalformedModifier",
+			"manifestSource": "{Count}|plural(one=item,other=items)",
+			"archiveSource": "{Count}|plural(one=item,other=items)",
+			"archiveTranslation": "{Count}|plural(one=objet,other=objets)",
+			"runtimeText": "{Count}|plural(one=objet,other=objets)",
+			"poMsgid": "{Count}|plural(one=item,other=items)",
+			"poMsgstr": "{Count}|plural(one=objet,other=objets)",
+			"poDecodedMsgstr": "{Count}|plural(one=objet,other=objets)",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["Count"]
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["one", "other"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "{Count}|plural(one=objet,other=objets)",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["Count"]
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "{Count}|plural(one=objet,other=objets)"
+			},
+			"poExtractedComments": [
+				"Key:\tMalformedModifier",
+				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
+			],
+			"manifestKeyPaths": ["/Game/Fixture/Localization/ST_Localization.ST_Localization"],
+			"manifestDevNotes": [""],
+			"gatheredOnly": false,
+			"currentAssetSource": "{Count}|plural(one=item,other=items)",
+			"currentAssetPath": "/Game/Fixture/Localization/ST_Localization.ST_Localization:MalformedModifier",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.Localization.Table",
+			"key": "MissingPluralForm",
+			"manifestSource": "{Count}|plural(one=item,other=items)",
+			"archiveSource": "{Count}|plural(one=item,other=items)",
+			"archiveTranslation": "{Count}|plural(one=objet,other=objets)",
+			"runtimeText": "{Count}|plural(one=objet,other=objets)",
+			"poMsgid": "{Count}|plural(one=item,other=items)",
+			"poMsgstr": "{Count}|plural(one=objet,other=objets)",
+			"poDecodedMsgstr": "{Count}|plural(one=objet,other=objets)",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["Count"]
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["one", "other"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "{Count}|plural(one=objet,other=objets)",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["Count"]
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "{Count}|plural(one=objet,other=objets)"
+			},
+			"poExtractedComments": [
+				"Key:\tMissingPluralForm",
+				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
+			],
+			"manifestKeyPaths": ["/Game/Fixture/Localization/ST_Localization.ST_Localization"],
+			"manifestDevNotes": [""],
+			"gatheredOnly": false,
+			"currentAssetSource": "{Count}|plural(one=item,other=items)",
+			"currentAssetPath": "/Game/Fixture/Localization/ST_Localization.ST_Localization:MissingPluralForm",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.Localization.Table",
 			"key": "NamedArgument",
 			"manifestSource": "Talking with {PlayerName}",
 			"archiveSource": "Talking with {PlayerName}",
@@ -1011,6 +2909,27 @@
 			"runtimeText": "Discussion avec {PlayerName}",
 			"poMsgid": "Talking with {PlayerName}",
 			"poMsgstr": "Discussion avec {PlayerName}",
+			"poDecodedMsgstr": "Discussion avec {PlayerName}",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["PlayerName"]
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["one", "other"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "Discussion avec {PlayerName}",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["PlayerName"]
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "Discussion avec {PlayerName}"
+			},
 			"poExtractedComments": [
 				"Key:\tNamedArgument",
 				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
@@ -1026,6 +2945,49 @@
 		{
 			"culture": "fr",
 			"namespace": "Fixture.Localization.Table",
+			"key": "NestedPlural",
+			"manifestSource": "{Count}|plural(one=\"{Owner} has one item\",other=\"{Owner} has items\")",
+			"archiveSource": "{Count}|plural(one=\"{Owner} has one item\",other=\"{Owner} has items\")",
+			"archiveTranslation": "{Count}|plural(one=\"{Owner} a un objet\",other=\"{Owner} a des objets\")",
+			"runtimeText": "{Count}|plural(one=\"{Owner} a un objet\",other=\"{Owner} a des objets\")",
+			"poMsgid": "{Count}|plural(one=\\\"{Owner} has one item\\\",other=\\\"{Owner} has items\\\")",
+			"poMsgstr": "{Count}|plural(one=\\\"{Owner} a un objet\\\",other=\\\"{Owner} a des objets\\\")",
+			"poDecodedMsgstr": "{Count}|plural(one=\"{Owner} a un objet\",other=\"{Owner} a des objets\")",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["Count", "Owner"]
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["one", "other"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "{Count}|plural(one=\"{Owner} a un objet\",other=\"{Owner} a des objets\")",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["Count", "Owner"]
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "{Count}|plural(one=\"{Owner} a un objet\",other=\"{Owner} a des objets\")"
+			},
+			"poExtractedComments": [
+				"Key:\tNestedPlural",
+				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
+			],
+			"manifestKeyPaths": ["/Game/Fixture/Localization/ST_Localization.ST_Localization"],
+			"manifestDevNotes": [""],
+			"gatheredOnly": false,
+			"currentAssetSource": "{Count}|plural(one=\"{Owner} has one item\",other=\"{Owner} has items\")",
+			"currentAssetPath": "/Game/Fixture/Localization/ST_Localization.ST_Localization:NestedPlural",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.Localization.Table",
 			"key": "OrderedArgument",
 			"manifestSource": "Checkpoint {0}",
 			"archiveSource": "Checkpoint {0}",
@@ -1033,6 +2995,27 @@
 			"runtimeText": "Point de contrôle {0}",
 			"poMsgid": "Checkpoint {0}",
 			"poMsgstr": "Point de contrôle {0}",
+			"poDecodedMsgstr": "Point de contrôle {0}",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["0"]
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["one", "other"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "Point de contrôle {0}",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["0"]
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "Point de contrôle {0}"
+			},
 			"poExtractedComments": [
 				"Key:\tOrderedArgument",
 				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
@@ -1048,6 +3031,52 @@
 		{
 			"culture": "fr",
 			"namespace": "Fixture.Localization.Table",
+			"key": "Ordinal",
+			"manifestSource": "{Rank}|ordinal(one=first,two=second,few=third,other=last)",
+			"archiveSource": "{Rank}|ordinal(one=first,two=second,few=third,other=last)",
+			"archiveTranslation": "{Rank}|ordinal(one=premier,other=dernier)",
+			"runtimeText": "{Rank}|ordinal(one=premier,other=dernier)",
+			"poMsgid": "{Rank}|ordinal(one=first,two=second,few=third,other=last)",
+			"poMsgstr": "{Rank}|ordinal(one=premier,other=dernier)",
+			"poDecodedMsgstr": "{Rank}|ordinal(one=premier,other=dernier)",
+			"validation": {
+				"sourceFormat": {
+					"valid": false,
+					"errors": [
+						"Ordinal plural form argument modifier has an unused plural form for 'two'",
+						"Ordinal plural form argument modifier has an unused plural form for 'few'"
+					],
+					"arguments": ["Rank"]
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["one", "other"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "{Rank}|ordinal(one=premier,other=dernier)",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["Rank"]
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "{Rank}|ordinal(one=premier,other=dernier)"
+			},
+			"poExtractedComments": [
+				"Key:\tOrdinal",
+				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
+			],
+			"manifestKeyPaths": ["/Game/Fixture/Localization/ST_Localization.ST_Localization"],
+			"manifestDevNotes": [""],
+			"gatheredOnly": false,
+			"currentAssetSource": "{Rank}|ordinal(one=first,two=second,few=third,other=last)",
+			"currentAssetPath": "/Game/Fixture/Localization/ST_Localization.ST_Localization:Ordinal",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.Localization.Table",
 			"key": "Plural",
 			"manifestSource": "{Count} {Count}|plural(one=item,other=items)",
 			"archiveSource": "{Count} {Count}|plural(one=item,other=items)",
@@ -1055,6 +3084,27 @@
 			"runtimeText": "{Count} {Count}|plural(one=objet,other=objets)",
 			"poMsgid": "{Count} {Count}|plural(one=item,other=items)",
 			"poMsgstr": "{Count} {Count}|plural(one=objet,other=objets)",
+			"poDecodedMsgstr": "{Count} {Count}|plural(one=objet,other=objets)",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["Count"]
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["one", "other"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "{Count} {Count}|plural(one=objet,other=objets)",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": ["Count"]
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "{Count} {Count}|plural(one=objet,other=objets)"
+			},
 			"poExtractedComments": [
 				"Key:\tPlural",
 				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
@@ -1077,6 +3127,27 @@
 			"runtimeText": "Instruction temporaire",
 			"poMsgid": "Temporary instruction",
 			"poMsgstr": "Instruction temporaire",
+			"poDecodedMsgstr": "Instruction temporaire",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["one", "other"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "Instruction temporaire",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "Instruction temporaire"
+			},
 			"poExtractedComments": [
 				"Key:\tRemovedAfterGather",
 				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
@@ -1092,6 +3163,49 @@
 		{
 			"culture": "fr",
 			"namespace": "Fixture.Localization.Table",
+			"key": "RichText",
+			"manifestSource": "<Em>Continue</>",
+			"archiveSource": "<Em>Continue</>",
+			"archiveTranslation": "<Em>Continuer</>",
+			"runtimeText": "<Em>Continuer</>",
+			"poMsgid": "<Em>Continue</>",
+			"poMsgstr": "<Em>Continuer</>",
+			"poDecodedMsgstr": "<Em>Continuer</>",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["one", "other"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "<Em>Continuer</>",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "<Em>Continuer</>"
+			},
+			"poExtractedComments": [
+				"Key:\tRichText",
+				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
+			],
+			"manifestKeyPaths": ["/Game/Fixture/Localization/ST_Localization.ST_Localization"],
+			"manifestDevNotes": [""],
+			"gatheredOnly": false,
+			"currentAssetSource": "<Em>Continue</>",
+			"currentAssetPath": "/Game/Fixture/Localization/ST_Localization.ST_Localization:RichText",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.Localization.Table",
 			"key": "Unsynced",
 			"manifestSource": "Start a new session",
 			"archiveSource": "Start a new session",
@@ -1099,6 +3213,27 @@
 			"runtimeText": "Commencer une nouvelle session",
 			"poMsgid": "Start a new session",
 			"poMsgstr": "Commencer une nouvelle session",
+			"poDecodedMsgstr": "Commencer une nouvelle session",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["one", "other"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "Commencer une nouvelle session",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "Commencer une nouvelle session"
+			},
 			"poExtractedComments": [
 				"Key:\tUnsynced",
 				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
@@ -1121,6 +3256,27 @@
 			"runtimeText": "Bon retour",
 			"poMsgid": "Welcome back",
 			"poMsgstr": "Bon retour",
+			"poDecodedMsgstr": "Bon retour",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["one", "other"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": "Bon retour",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": true,
+				"poRoundTripTranslation": "Bon retour"
+			},
 			"poExtractedComments": [
 				"Key:\tWelcome",
 				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization",
@@ -1137,6 +3293,49 @@
 		},
 		{
 			"culture": "fr",
+			"namespace": "Fixture.Localization.Table",
+			"key": "Whitespace",
+			"manifestSource": "Keep moving",
+			"archiveSource": "Keep moving",
+			"archiveTranslation": " Continuer",
+			"runtimeText": " Continuer",
+			"poMsgid": "Keep moving",
+			"poMsgstr": " Continuer",
+			"poDecodedMsgstr": " Continuer",
+			"validation": {
+				"sourceFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"cardinalForms": ["one", "other"],
+				"ordinalForms": ["one", "other"],
+				"sourceRichTextValid": true,
+				"sourceSafeWhitespaceValid": true,
+				"checkedTranslation": " Continuer",
+				"translationFormat": {
+					"valid": true,
+					"errors": [],
+					"arguments": []
+				},
+				"translationRichTextValid": true,
+				"translationSafeWhitespaceValid": false,
+				"poRoundTripTranslation": " Continuer"
+			},
+			"poExtractedComments": [
+				"Key:\tWhitespace",
+				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
+			],
+			"manifestKeyPaths": ["/Game/Fixture/Localization/ST_Localization.ST_Localization"],
+			"manifestDevNotes": [""],
+			"gatheredOnly": false,
+			"currentAssetSource": "Keep moving",
+			"currentAssetPath": "/Game/Fixture/Localization/ST_Localization.ST_Localization:Whitespace",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "fr",
 			"namespace": "Fixture.StringTable",
 			"key": "PromptContinue",
 			"manifestSource": null,
@@ -1145,6 +3344,8 @@
 			"runtimeText": null,
 			"poMsgid": null,
 			"poMsgstr": null,
+			"poDecodedMsgstr": null,
+			"validation": null,
 			"poExtractedComments": [],
 			"manifestKeyPaths": [],
 			"manifestDevNotes": [],
@@ -1164,6 +3365,8 @@
 			"runtimeText": null,
 			"poMsgid": null,
 			"poMsgstr": null,
+			"poDecodedMsgstr": null,
+			"validation": null,
 			"poExtractedComments": [],
 			"manifestKeyPaths": [],
 			"manifestDevNotes": [],
@@ -1183,6 +3386,8 @@
 			"runtimeText": null,
 			"poMsgid": null,
 			"poMsgstr": null,
+			"poDecodedMsgstr": null,
+			"validation": null,
 			"poExtractedComments": [],
 			"manifestKeyPaths": [],
 			"manifestDevNotes": [],

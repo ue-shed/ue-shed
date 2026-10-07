@@ -102,7 +102,13 @@ pub fn project_text_asset(package: &Package, asset: &DecodedAsset) -> TextAssetP
             for entry in &table.entries {
                 output.occurrences.push(TextOccurrence {
                     source: entry.source.clone(),
-                    dev_notes: entry.dev_notes.clone(),
+                    dev_notes: string_table_notes(
+                        &entry.dev_notes,
+                        table
+                            .metadata
+                            .get(&entry.key)
+                            .and_then(|metadata| metadata.get("Comment").map(String::as_str)),
+                    ),
                     identity: identity_for_string_table(&table.namespace, &entry.key),
                     location: TextLocation::StringTableEntry {
                         object_path: table.object_path.to_string(),
@@ -216,6 +222,17 @@ pub fn project_text_asset(package: &Package, asset: &DecodedAsset) -> TextAssetP
         DecodedAsset::Enum(_) => {}
     }
     output
+}
+
+fn string_table_notes(dev_notes: &str, comment: Option<&str>) -> String {
+    let notes = (!dev_notes.trim().is_empty()).then_some(dev_notes);
+    let comment = comment.filter(|value| !value.trim().is_empty());
+    match (notes, comment) {
+        (Some(notes), Some(comment)) if notes != comment => format!("{notes}\n\n{comment}"),
+        (Some(notes), _) => notes.to_owned(),
+        (None, Some(comment)) => comment.to_owned(),
+        (None, None) => String::new(),
+    }
 }
 
 fn identity_for_string_table(namespace: &str, key: &str) -> TextIdentity {
@@ -587,4 +604,24 @@ fn root_property<'a>(
         .records
         .iter()
         .find(|property| package.resolve_name_str(property.name) == Some(name))
+}
+
+#[cfg(test)]
+mod string_table_notes_tests {
+    use super::string_table_notes;
+
+    #[test]
+    fn preserves_comment_metadata_and_dev_notes_without_duplicates() {
+        assert_eq!(
+            string_table_notes("", Some("Translator context")),
+            "Translator context"
+        );
+        assert_eq!(
+            string_table_notes("Dev notes", Some("Comment")),
+            "Dev notes\n\nComment"
+        );
+        assert_eq!(string_table_notes("Same", Some("Same")), "Same");
+        assert_eq!(string_table_notes("", Some("  ")), "");
+        assert_eq!(string_table_notes("Notes", None), "Notes");
+    }
 }

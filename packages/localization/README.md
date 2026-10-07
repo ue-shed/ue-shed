@@ -66,5 +66,7 @@ version-specific evidence oracles, including 5.8 `DevNotes`. The unchanged 5.8 f
 byte-exact round-trip tests, and its locmeta and word-count CSV are decoded directly.
 
 CLI: `ue-shed loc targets <project-root>` prints schema-versioned target settings, discovered
-configs, output paths, and culture file presence. Corpus joins, status, processes, and views are
-separate later slices.
+configs, output paths, and culture file presence. `@ue-shed/game-text` consumes the browser entry
+to join saved corpus identities, compute coverage-qualified states, and expose bounded queries and
+`ue-shed loc status` reports. This package remains independent of the corpus. Localization
+processes, editing and Workbench views are later slices.

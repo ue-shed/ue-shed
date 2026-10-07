@@ -293,8 +293,13 @@ it("preserves translator notes from keyed properties and string table entries", 
 				kind: "StringTable",
 				object_path: "/Game/Notes.ST_Notes",
 				string_table_namespace: "Fixture",
+				string_table_metadata: {
+					Goodbye: { Comment: "Translator comment" },
+					Legacy: { Comment: "Legacy translator note" }
+				},
 				string_table_entries: [
-					{ key: "Goodbye", source: "Bye", dev_notes: "Friendly farewell" }
+					{ key: "Goodbye", source: "Bye", dev_notes: "Friendly farewell" },
+					{ key: "Legacy", source: "Legacy", dev_notes: "" }
 				]
 			}
 		]
@@ -305,7 +310,8 @@ it("preserves translator notes from keyed properties and string table entries", 
 	});
 	expect(occurrences.map((occurrence) => occurrence.devNotes)).toEqual([
 		"Greeting, not a command",
-		"Friendly farewell"
+		"Friendly farewell\n\nTranslator comment",
+		"Legacy translator note"
 	]);
 	const legacy = textOccurrencesFromInspection({
 		packageFile: "Content/Text.uasset",

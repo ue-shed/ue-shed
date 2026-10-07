@@ -484,6 +484,7 @@ function validateExactPackageGraph(manifests: readonly PackedPackage[]) {
 	requireExactInternalDependency(unrealAssets, "@ue-shed/protocol", byName, failures);
 	requireExactDependency(unrealAssets, "effect", exactEffectVersion, failures);
 	requireExactInternalDependency(gameText, "@ue-shed/unreal-assets", byName, failures);
+	requireExactInternalDependency(gameText, LOCALIZATION_PACKAGE_NAME, byName, failures);
 	requireExactPeerDependency(gameText, "effect", exactEffectVersion, failures);
 	requireExactInternalDependency(mapHistory, "@ue-shed/protocol", byName, failures);
 	requireExactInternalDependency(mapHistory, "@ue-shed/unreal-assets", byName, failures);
@@ -615,9 +616,9 @@ export async function packPublicPackages({
 		run(executable("pnpm"), ["--filter", "@ue-shed/unreal-assets", "build"]);
 		run(executable("pnpm"), ["--filter", MAP_HISTORY_PACKAGE_NAME, "build"]);
 		run(executable("pnpm"), assembleArgs("@ue-shed/uasset-win32-x64", "uasset.exe"));
-		run(executable("pnpm"), ["--filter", GAME_TEXT_PACKAGE_NAME, "build"]);
 		run(executable("pnpm"), ["--filter", CONFIG_EXPLORER_PACKAGE_NAME, "build"]);
 		run(executable("pnpm"), ["--filter", LOCALIZATION_PACKAGE_NAME, "build"]);
+		run(executable("pnpm"), ["--filter", GAME_TEXT_PACKAGE_NAME, "build"]);
 		run(executable("pnpm"), ["--filter", PROJECT_CUSTODIAN_PACKAGE_NAME, "build"]);
 		run(executable("pnpm"), ["--filter", NIAGARA_PACKAGE_NAME, "build"]);
 	}

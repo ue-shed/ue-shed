@@ -12,6 +12,18 @@ import type {
 	TextUnitSearchResult
 } from "./schema.js";
 import { hasSearchableSource, searchableSourceText } from "./search.js";
+import type {
+	LocalizationJoin,
+	LocalizationLine,
+	LocalizationLineId
+} from "./localization-schema.js";
+import { GameTextLocalizationError } from "./localization-schema.js";
+import { localizationManifestNotes } from "./localization.js";
+import {
+	localizationQueryPage,
+	matchesLocalizationLine,
+	validateLocalizationSelection
+} from "./localization-query.js";
 
 function normalizedTerms(query: string): readonly string[] {
 	return query.toLocaleLowerCase().trim().split(/\s+/u).filter(Boolean);
@@ -71,13 +83,18 @@ function matchesLens(
  * time and emits only bounded pages to callers.
  */
 export interface TextCorpusQuery {
+	readonly localizationFocus: (id: LocalizationLineId) => LocalizationLine | undefined;
 	readonly focus: (request: TextCorpusFocusRequest) => TextCorpusFocus | undefined;
 	readonly search: (request: TextCorpusSearchRequest) => TextCorpusSearchPage;
 	readonly export: (request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">) => TextCorpus;
 	readonly summary: () => TextCorpusQuerySummary;
 }
 
-export function textCorpusQuery(corpus: TextCorpus, scannedAt?: string): TextCorpusQuery {
+export function textCorpusQuery(
+	corpus: TextCorpus,
+	scannedAt?: string,
+	localization?: LocalizationJoin
+): TextCorpusQuery {
 	const units = [...corpus.units].sort((left, right) => left.id.localeCompare(right.id));
 	const sourceFrequency = new Map<string, number>();
 	for (const unit of units) {
@@ -100,6 +117,15 @@ export function textCorpusQuery(corpus: TextCorpus, scannedAt?: string): TextCor
 		unit
 	}));
 	const byId = new Map(indexed.map((entry) => [entry.unit.id, entry]));
+	const localizationByUnit = new Map(
+		localization?.lines.flatMap((line) =>
+			line.origin.kind === "corpus"
+				? line.origin.unitIds.map(
+						(id) => [id, line] satisfies [typeof id, LocalizationLine]
+					)
+				: []
+		) ?? []
+	);
 	const diagnosticsByPackage = new Map<string, typeof corpus.diagnostics>();
 	for (const diagnostic of corpus.diagnostics) {
 		diagnosticsByPackage.set(diagnostic.packageFile, [
@@ -147,6 +173,36 @@ export function textCorpusQuery(corpus: TextCorpus, scannedAt?: string): TextCor
 	};
 
 	const baseline = matching({ query: "", capability: "all" }).counts;
+	const localizedMatching = (request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">) => {
+		if (!localization || !request.localization)
+			throw new GameTextLocalizationError({
+				code: "invalid_selection",
+				message: "Localization evidence has not been supplied to this query.",
+				recovery:
+					"Load and join the selected target before querying its localization state."
+			});
+		validateLocalizationSelection(localization, request.localization);
+		const eligible = new Set(
+			matching({ ...request, query: "" }).matched.map(({ unit }) => unit.id)
+		);
+		return localization.lines.filter((line) => {
+			if (line.source.trim() === "") return false;
+			if (
+				line.origin.kind === "corpus" &&
+				!line.origin.unitIds.some((id) => eligible.has(id))
+			)
+				return false;
+			if (
+				line.origin.kind === "evidence" &&
+				(request.capability === "source_editable" ||
+					(request.lens !== undefined && request.lens !== "all") ||
+					(request.withoutNotes &&
+						line.manifest.some((entry) => localizationManifestNotes(entry).length > 0)))
+			)
+				return false;
+			return matchesLocalizationLine(line, request);
+		});
+	};
 	const summary: TextCorpusQuerySummary = {
 		counts: baseline,
 		...(scannedAt === undefined ? undefined : { scannedAt }),
@@ -181,11 +237,83 @@ export function textCorpusQuery(corpus: TextCorpus, scannedAt?: string): TextCor
 		}
 	};
 	return {
+		localizationFocus: (id) => localization?.lines.find((line) => line.id === id),
 		export: (request) => {
+			if (request.localization) {
+				const ids = new Set(
+					localizedMatching(request).flatMap((line) =>
+						line.origin.kind === "corpus" ? line.origin.unitIds : []
+					)
+				);
+				return { ...corpus, units: corpus.units.filter((unit) => ids.has(unit.id)) };
+			}
 			return { ...corpus, units: matching(request).matched.map(({ unit }) => unit) };
 		},
 		summary: () => summary,
 		search: (request) => {
+			if (request.localization) {
+				if (!localization)
+					throw new GameTextLocalizationError({
+						code: "invalid_selection",
+						message: "Localization evidence has not been supplied to this query.",
+						recovery:
+							"Load and join the selected target before querying its localization state."
+					});
+				const matched = localizedMatching(request);
+				const page = localizationQueryPage(localization, matched, request);
+				const counts = {
+					...matching({ ...request, query: "" }).counts,
+					all: matched.length,
+					shared: 0,
+					duplicate_source: 0,
+					long: 0,
+					unresolved: 0,
+					conflicting: 0,
+					editable: 0,
+					readOnly: 0,
+					withoutNotes: 0
+				} satisfies TextCorpusSearchCounts;
+				for (const line of matched) {
+					if (line.origin.kind === "evidence") {
+						counts.readOnly++;
+						if (
+							line.manifest.every(
+								(entry) => localizationManifestNotes(entry).length === 0
+							)
+						)
+							counts.withoutNotes++;
+						continue;
+					}
+					const entries = line.origin.unitIds.flatMap((id) => {
+						const entry = byId.get(id);
+						return entry ? [entry] : [];
+					});
+					if (entries.some((entry) => entry.hasEditable)) counts.editable++;
+					if (entries.some((entry) => entry.hasReadOnly)) counts.readOnly++;
+					if (entries.every((entry) => entry.withoutNotes)) counts.withoutNotes++;
+					for (const signal of new Set(
+						entries.flatMap((entry) => entry.presentation.reviewSignals)
+					))
+						if (signal !== "evidence_only") counts[signal]++;
+				}
+				return {
+					counts,
+					total: matched.length,
+					localization: page,
+					units: page.lines.flatMap((line) => {
+						if (line.origin.kind === "evidence") return [];
+						const entry = line.origin.unitIds
+							.flatMap((id) => {
+								const item = byId.get(id);
+								return item ? [item] : [];
+							})
+							.at(0);
+						return entry
+							? [{ ...entry.presentation, localization: line.cultures }]
+							: [];
+					})
+				};
+			}
 			const { matched, counts } = matching(request);
 			const afterCursor = request.cursor
 				? matched.findIndex(({ unit }) => unit.id === request.cursor) + 1
@@ -205,6 +333,7 @@ export function textCorpusQuery(corpus: TextCorpus, scannedAt?: string): TextCor
 			const entry = byId.get(request.id);
 			if (!entry) return undefined;
 			const { unit, presentation } = entry;
+			const localized = localizationByUnit.get(unit.id);
 			const afterCursor = request.occurrenceCursor
 				? unit.occurrences.findIndex(
 						(occurrence) => occurrence.id === request.occurrenceCursor
@@ -232,6 +361,7 @@ export function textCorpusQuery(corpus: TextCorpus, scannedAt?: string): TextCor
 				occurrences,
 				totalOccurrences: unit.occurrences.length,
 				unit: presentation,
+				...(localized === undefined ? undefined : { localization: localized }),
 				...(final !== undefined &&
 				afterCursor + occurrences.length < unit.occurrences.length
 					? { nextOccurrenceCursor: final }

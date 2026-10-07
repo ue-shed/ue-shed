@@ -74,6 +74,48 @@ overwritten.
 See [ADOPTING.md](ADOPTING.md) and [adoption.manifest.json](adoption.manifest.json) when integrating
 Game Text into an established trusted host.
 
+## Read-only localization
+
+`joinLocalizationTarget(corpus, evidence, target)` joins Unreal namespace and key only. String Table
+references resolve through the corpus's table namespace. Equal source strings never link identities.
+Each line has every culture's primary state, secondary facts, typed unknown reasons, archive
+translation, differing PO translation, PO context, and manifest locations and metadata. Native
+cultures use their archive as evidence. String Table `Comment` metadata and 5.8 developer notes
+both reach `devNotes`; distinct notes are separated by a blank line.
+
+Supply the join as `textCorpusQuery(corpus, scannedAt, joined)`'s optional third argument. Search
+requests accept `localization: { target, culture?, state?, searchTranslations? }`. Translation
+search requires a selected culture and explicit opt-in. `page.localization.lines` is the unified,
+bounded page, including gathered-only evidence and compact culture marks. `page.units` retains
+corpus-only previews for existing hosts. Pass `page.localization.nextCursor` as `localizationCursor`
+for subsequent pages. `localizationFocus(lineId)` returns every culture and full evidence for either
+kind of line; ordinary corpus `focus` also includes localization details. Evidence-only IDs have a
+distinct `LocalizationEvidenceLineId` brand and never masquerade as `TextUnitId`.
+
+Precedence: `outside_target`, `not_gathered`, `not_found`, `gathered_only`, `changed_since_gather`,
+`unknown`, `not_synced`, `needs_update`, `not_translated`, `translated`. Structural facts come first;
+uncertainty blocks unsupported translation claims. A non-empty PO translation differing from the
+archive precedes an outdated archive. All applicable facts remain available. Crowdin identity PO
+retains its reduced source-checking mark.
+
+Optional package completion records preserve compatibility with older corpora. Without them,
+absence is unknown. Missing/duplicate file evidence, unresolved identities, conflicting sources,
+unavailable gather settings/class ancestry and unscanned or partial packages have typed reasons.
+Unreal wildcard matching and ranked path filters determine scope. Native archives are never
+synthesized.
+
+`localizationStatusReport` exposes schema-versioned counts, coverage, file provenance and diagnostics.
+State counts and source word counts intersect every search filter, including the state filter,
+before pagination. Every culture receives zero counts when no lines match.
+
+```sh
+ue-shed loc status <project-root> --target <name> [--culture <c>] [--state <s>] [--limit 50]
+ue-shed text search <project-root> <query> --target <name> [--culture <c>] [--state <s>] [--search-translations]
+```
+
+Both entries export the pure schemas and functions. Node IO stays in `@ue-shed/localization` and
+the saved-package reader. These surfaces never write project files or run localization commandlets.
+
 ## Capabilities
 
 - Required: a project root containing saved packages and a configured saved-asset reader.

@@ -273,6 +273,32 @@ Phase 1.
 - Join tests reproduce `FixtureExpected/localization` states exactly and never join by text.
 - The CLI and the Workbench report identical counts.
 
+**Progress (2026-10-07)**:
+
+- **3a done.** `@ue-shed/localization` is public and adds `ue-shed loc targets`.
+    - It reads Dashboard target settings, applying config-array operations, and authored recipe
+      configs.
+    - It reads manifests and archives in the 4.27 and 5.x layouts, PO files in the Unreal and
+      Crowdin formats with a lossless model, locmeta, and word-count reports.
+    - Readers match Unreal's evidence for UE 5.7 and 5.8, including the retained `ue5.8-output`
+      bytes, and every fixture PO round-trips byte for byte.
+    - The packed-consumer journey passes with 20 tarballs.
+- **3b done in the package and CLI.**
+    - The join between the corpus and the localization evidence uses identity only.
+    - Every line and culture gets one primary state, chosen in this order: `outside_target`,
+      `not_gathered`, `not_found`, `gathered_only`, `changed_since_gather`, `unknown`, `not_synced`,
+      `needs_update`, `not_translated`, `translated`. The facts behind the other states remain
+      available.
+    - The bounded localization query feeds `ue-shed loc status` and translation-aware `text search`.
+    - A real-reader scan of the fixture reproduces all 54 intended states.
+    - The translator-notes gap from 3d is also closed: a String Table entry's `Comment` metadata is
+      merged into that occurrence's `dev_notes`. The wire shape is unchanged.
+    - Verified on Node 24 and Node 26. Precommit, `uasset:check:libraries`, `uasset:check:io`, the
+      packed-consumer journey and the Workbench recording pass. `pnpm test:uasset-engine-matrix`
+      passes on UE 5.7 and UE 5.8.
+- **3c next:** the Workbench culture picker, per-culture states on rows, and the stacked
+  per-culture detail.
+
 ## Phase 4 — Checks and reports
 
 1. Add built-in localization findings to the quality report model:

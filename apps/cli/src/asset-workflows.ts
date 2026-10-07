@@ -6,10 +6,12 @@ import {
 	scanSavedProject,
 	type SavedAssetScan
 } from "@ue-shed/unreal-assets";
-import { Effect } from "effect";
+import { Effect, Result } from "effect";
 import { CliCommandError, CliRuntime, messageOf, printJson } from "./cli-runtime.js";
 import { observeCliOperation, readerLayer } from "./cli-operation.js";
 import type { CliCommand } from "./command-model.js";
+import { LocalizationEvidenceNodeLive } from "@ue-shed/localization";
+import { loadLocalizationStatus } from "./workflows/localization.js";
 
 function summarizeScan(scan: SavedAssetScan) {
 	return {
@@ -124,6 +126,30 @@ export const runTextSearch = Effect.fn("Cli.workflow.text_search")((command: Tex
 			if (command.query.length === 0) {
 				return yield* Effect.fail(
 					new CliCommandError({ message: "text search requires a non-empty query" })
+				);
+			}
+			if (command.target !== undefined) {
+				const result = yield* loadLocalizationStatus(command).pipe(
+					Effect.provide(LocalizationEvidenceNodeLive),
+					Effect.result
+				);
+				if (Result.isFailure(result)) {
+					yield* printJson({ schemaVersion: 1, status: "failed", error: result.failure });
+					const runtime = yield* CliRuntime;
+					yield* runtime.setExitCode(2);
+					return;
+				}
+				return yield* printJson(result.success);
+			}
+			if (
+				command.culture !== undefined ||
+				command.state !== undefined ||
+				command.searchTranslations
+			) {
+				return yield* Effect.fail(
+					new CliCommandError({
+						message: "Localization search options require --target."
+					})
 				);
 			}
 			const { searchTextCorpus, TextCorpusService, TextCorpusServiceLive } =

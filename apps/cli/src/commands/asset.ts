@@ -1,5 +1,6 @@
 import { Argument, Command, Flag } from "effect/unstable/cli";
 import { Option } from "effect";
+import { localizationFlags, optionalLocalizationFlags } from "./localization-flags.js";
 import { runSavedReview } from "../saved-review-workflows.js";
 import {
 	runAssetsScan,
@@ -111,14 +112,23 @@ const textSearchCommand = Command.make(
 	{
 		projectRoot: Argument.string("project-root"),
 		query: Argument.string("query").pipe(Argument.variadic({ min: 1 })),
+		target: optionalFlag("target"),
+		searchTranslations: Flag.boolean("search-translations").pipe(Flag.optional),
+		...localizationFlags(),
 		reader: readerFlag
 	},
-	({ projectRoot, query, reader }) => {
+	({ projectRoot, query, reader, target, culture, state, limit, searchTranslations }) => {
 		const value = query.join(" ").trim();
 		return runTextSearch({
 			_tag: "TextSearch",
 			projectRoot,
 			query: value,
+			limit,
+			...optionalLocalizationFlags(culture, state),
+			...(Option.isSome(target) ? { target: target.value } : undefined),
+			...(Option.isSome(searchTranslations)
+				? { searchTranslations: searchTranslations.value }
+				: undefined),
 			...readerFields(reader)
 		});
 	}

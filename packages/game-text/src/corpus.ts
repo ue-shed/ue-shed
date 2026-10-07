@@ -20,6 +20,7 @@ import {
 	type TextIdentity,
 	type TextLocation,
 	type TextOccurrence,
+	type TextPackageCoverage,
 	type TextUnit
 } from "./schema.js";
 
@@ -354,7 +355,14 @@ export function textOccurrencesFromInspection(options: {
 					value: {
 						value_kind: "text",
 						value: entry.source,
-						dev_notes: entry.dev_notes,
+						dev_notes: [
+							...new Set([
+								entry.dev_notes,
+								asset.string_table_metadata?.[entry.key]?.Comment ?? ""
+							])
+						]
+							.filter((notes) => notes.trim() !== "")
+							.join("\n\n"),
 						history: "base",
 						namespace: asset.string_table_namespace,
 						key: entry.key
@@ -539,11 +547,24 @@ export function buildTextCorpus(
 			unsupportedTextProperties: unsupported.length
 		},
 		units,
+		packageCoverage: outcomes.map(
+			(outcome): NonNullable<TextCorpus["packageCoverage"]>[number] => ({
+				packageFile: outcome.packageFile,
+				status:
+					outcome.status === "failed"
+						? "failed"
+						: outcome.inspection.status === "partial" ||
+							  unsupportedTextProperties(outcome.inspection).length > 0
+							? "partial"
+							: "complete"
+			})
+		),
 		diagnostics
 	};
 }
 
 interface TextExtractionAccumulator {
+	readonly packageCoverage: NonNullable<TextCorpus["packageCoverage"]>[number][];
 	readonly coverageGaps: Array<{
 		readonly objectPath: string;
 		readonly packageFile: string;
@@ -559,6 +580,7 @@ interface TextExtractionAccumulator {
 
 function emptyTextExtractionAccumulator(): TextExtractionAccumulator {
 	return {
+		packageCoverage: [],
 		coverageGaps: [],
 		diagnostics: [],
 		failedPackages: 0,
@@ -591,6 +613,10 @@ function foldTextExtractionEvent(
 		return accumulator;
 	}
 	if (event.event === "text_package") {
+		accumulator.packageCoverage.push({
+			packageFile: relative(projectRoot, event.path),
+			status: event.status === "partial" ? "partial" : "complete"
+		});
 		accumulator.inspectedPackages += 1;
 		if (event.status === "partial") {
 			accumulator.partialPackages += 1;
@@ -603,6 +629,10 @@ function foldTextExtractionEvent(
 		return accumulator;
 	}
 	if (event.event === "error") {
+		accumulator.packageCoverage.push({
+			packageFile: relative(projectRoot, event.path),
+			status: "failed"
+		});
 		accumulator.failedPackages += 1;
 		accumulator.diagnostics.push({
 			code: "package_inspection_failed",
@@ -689,6 +719,16 @@ function buildTextCorpusFromExtraction(options: {
 			unsupportedTextProperties: accumulator.coverageGaps.length
 		},
 		units,
+		packageCoverage: accumulator.packageCoverage.map(
+			(coverage): NonNullable<TextCorpus["packageCoverage"]>[number] => ({
+				...coverage,
+				status:
+					coverage.status === "complete" &&
+					accumulator.coverageGaps.some((gap) => gap.packageFile === coverage.packageFile)
+						? "partial"
+						: coverage.status
+			})
+		),
 		diagnostics
 	};
 }
@@ -709,6 +749,14 @@ function extractTextCorpusWith(
 		const accumulator = emptyTextExtractionAccumulator();
 		accumulator.failedPackages = inheritedFailures.length;
 		accumulator.diagnostics.push(...inheritedFailures);
+		accumulator.packageCoverage.push(
+			...inheritedFailures.map(
+				(failure): TextPackageCoverage => ({
+					packageFile: failure.packageFile,
+					status: "failed"
+				})
+			)
+		);
 		return reportProgress({ phase: "ready", processedAssets: 0, totalAssets: 0 }).pipe(
 			Effect.as(
 				buildTextCorpusFromExtraction({
@@ -757,6 +805,14 @@ function extractTextCorpusWith(
 							const accumulator = emptyTextExtractionAccumulator();
 							accumulator.failedPackages = inheritedFailures.length;
 							accumulator.diagnostics.push(...inheritedFailures);
+							accumulator.packageCoverage.push(
+								...inheritedFailures.map(
+									(failure): TextPackageCoverage => ({
+										packageFile: failure.packageFile,
+										status: "failed"
+									})
+								)
+							);
 							return accumulator;
 						},
 						(current, event) =>

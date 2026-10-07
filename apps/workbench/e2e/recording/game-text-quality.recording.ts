@@ -181,7 +181,7 @@ test("records the real Game Text quality workflow", async ({
 		await expect(textDetail.getByRole("heading", { name: "Where it appears" })).toBeVisible();
 		await expect(textDetail).toContainText("String table entry");
 		await expect(textDetail).toContainText("/Game/Fixture/Text/ST_Game.ST_Game");
-		await expect(textDetail).toContainText("No translator notes");
+		await expect(textDetail).toContainText("Continue from the pause menu");
 		await expectPaneLayout(results, textDetail);
 		expect(await results.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
 		await expect(search).toBeInViewport();

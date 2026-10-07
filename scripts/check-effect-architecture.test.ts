@@ -17,6 +17,30 @@ test("the localization browser entry and Config Explorer dependency are browser-
 	assert.deepEqual(await checkLocalizationBoundaries(), []);
 });
 
+test("checks the Game Text browser closure and its localization dependency", async () => {
+	const fixtureRoot = await mkdtemp(join(tmpdir(), "ue-shed-localization-join-boundary-"));
+	try {
+		const formats = join(fixtureRoot, "packages/localization");
+		const corpus = join(fixtureRoot, "packages/game-text/src");
+		await mkdir(join(formats, "src"), { recursive: true });
+		await mkdir(corpus, { recursive: true });
+		await writeFile(join(formats, "package.json"), '{"dependencies":{"effect":"catalog:"}}');
+		await writeFile(join(formats, "src/browser.ts"), 'import { Schema } from "effect";\n');
+		await writeFile(join(corpus, "browser.ts"), 'export * from "./join.js";\n');
+		await writeFile(join(corpus, "join.ts"), 'import { readFile } from "node:fs/promises";\n');
+		assert.deepEqual(await checkLocalizationBoundaries(fixtureRoot), [
+			"packages/game-text/src/join.ts: browser closure must not import node:fs/promises"
+		]);
+		await writeFile(
+			join(corpus, "join.ts"),
+			'import { LocalizationIdentity } from "@ue-shed/localization/browser";\n'
+		);
+		assert.deepEqual(await checkLocalizationBoundaries(fixtureRoot), []);
+	} finally {
+		await rm(fixtureRoot, { recursive: true, force: true });
+	}
+});
+
 test("rejects corpus dependencies and Node authority in the localization browser closure", async () => {
 	const fixtureRoot = await mkdtemp(join(tmpdir(), "ue-shed-localization-boundary-"));
 	try {

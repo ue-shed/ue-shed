@@ -7,6 +7,7 @@ import {
 	ReleaseVersion
 } from "@ue-shed/plugin-distribution";
 import { Schema } from "effect";
+import { LocalizationState } from "@ue-shed/game-text/browser";
 
 const Project = { projectRoot: Schema.String };
 const Reader = { reader: Schema.optionalKey(Schema.String) };
@@ -35,6 +36,14 @@ export const CliCommand = Schema.TaggedUnion({
 	},
 	Version: {},
 	LocalizationTargets: { ...Project },
+	LocalizationStatus: {
+		...Project,
+		...Reader,
+		target: Schema.String,
+		culture: Schema.optionalKey(Schema.String),
+		state: Schema.optionalKey(LocalizationState),
+		limit: PositiveInt.check(Schema.isLessThanOrEqualTo(50))
+	},
 	InvestigationRun: {
 		...Project,
 		preset: Schema.String,
@@ -168,7 +177,16 @@ export const CliCommand = Schema.TaggedUnion({
 		...Reader
 	},
 	TextScan: { ...Project, ...Reader },
-	TextSearch: { ...Project, query: Schema.String, ...Reader },
+	TextSearch: {
+		...Project,
+		query: Schema.String,
+		...Reader,
+		target: Schema.optionalKey(Schema.String),
+		culture: Schema.optionalKey(Schema.String),
+		state: Schema.optionalKey(LocalizationState),
+		searchTranslations: Schema.optionalKey(Schema.Boolean),
+		limit: Schema.optionalKey(PositiveInt.check(Schema.isLessThanOrEqualTo(50)))
+	},
 	TextReview: { ...Project, ruleFile: Schema.String, ...Reader },
 	TextRulesInit: { ...Project, output: Schema.optionalKey(Schema.String) },
 	InputInspect: { path: Schema.String, ...Reader },

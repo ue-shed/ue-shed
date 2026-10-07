@@ -1,12 +1,13 @@
 import { Effect, Schema } from "effect";
-
-export const TextUnitId = Schema.String.pipe(Schema.brand("TextUnitId"));
-export type TextUnitId = Schema.Schema.Type<typeof TextUnitId>;
-
-export const TextOccurrenceId = Schema.String.pipe(Schema.brand("TextOccurrenceId"));
-export type TextOccurrenceId = Schema.Schema.Type<typeof TextOccurrenceId>;
-export const makeTextUnitId = TextUnitId.make;
-export const makeTextOccurrenceId = TextOccurrenceId.make;
+import { TextUnitId, TextOccurrenceId } from "./identifiers.js";
+import {
+	LocalizationCultureMark,
+	LocalizationLine,
+	LocalizationLineId,
+	LocalizationQueryPage,
+	LocalizationSelection
+} from "./localization-schema.js";
+export * from "./identifiers.js";
 
 export const UnrealTextIdentity = Schema.Struct({
 	status: Schema.Literal("resolved"),
@@ -91,6 +92,13 @@ export const TextCorpusDiagnostic = Schema.Struct({
 });
 export type TextCorpusDiagnostic = Schema.Schema.Type<typeof TextCorpusDiagnostic>;
 
+/** Package completion is needed to prove absence, including packages with zero text. */
+export const TextPackageCoverage = Schema.Struct({
+	packageFile: Schema.String,
+	status: Schema.Literals(["complete", "partial", "failed"])
+});
+export type TextPackageCoverage = typeof TextPackageCoverage.Type;
+
 export const TextCorpus = Schema.Struct({
 	schemaVersion: Schema.Literal(1),
 	status: Schema.Literals(["complete", "partial"]),
@@ -106,6 +114,7 @@ export const TextCorpus = Schema.Struct({
 		unsupportedTextProperties: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 	}),
 	units: Schema.Array(TextUnit),
+	packageCoverage: Schema.optionalKey(Schema.Array(TextPackageCoverage)),
 	diagnostics: Schema.Array(TextCorpusDiagnostic)
 });
 export type TextCorpus = Schema.Schema.Type<typeof TextCorpus>;
@@ -166,6 +175,7 @@ export const TextUnitContext = Schema.Struct({
 export interface TextUnitContext extends Schema.Schema.Type<typeof TextUnitContext> {}
 
 export const TextUnitSearchResult = Schema.Struct({
+	localization: Schema.optionalKey(Schema.Array(LocalizationCultureMark)),
 	contexts: Schema.Array(TextUnitContext).check(Schema.isMaxLength(3)),
 	id: TextUnitId,
 	source: TextUnit.fields.source,
@@ -235,6 +245,8 @@ export type TextCorpusQueryRunResult = Schema.Schema.Type<typeof TextCorpusQuery
 export const decodeTextCorpusQueryRunResult = Schema.decodeUnknownEffect(TextCorpusQueryRunResult);
 
 export const TextCorpusSearchRequest = Schema.Struct({
+	localization: Schema.optionalKey(LocalizationSelection),
+	localizationCursor: Schema.optionalKey(LocalizationLineId),
 	withoutNotes: Schema.optional(Schema.Boolean),
 	capability: TextCapabilityFilter,
 	cursor: Schema.optional(TextUnitId),
@@ -245,6 +257,7 @@ export const TextCorpusSearchRequest = Schema.Struct({
 export type TextCorpusSearchRequest = Schema.Schema.Type<typeof TextCorpusSearchRequest>;
 
 export const TextCorpusSearchPage = Schema.Struct({
+	localization: Schema.optionalKey(LocalizationQueryPage),
 	counts: TextCorpusSearchCounts,
 	nextCursor: Schema.optional(TextUnitId),
 	total: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
@@ -267,6 +280,7 @@ export const TextCorpusFocusRequest = Schema.Struct({
 export type TextCorpusFocusRequest = Schema.Schema.Type<typeof TextCorpusFocusRequest>;
 
 export const TextCorpusFocus = Schema.Struct({
+	localization: Schema.optionalKey(LocalizationLine),
 	diagnostics: Schema.Array(TextCorpusDiagnostic),
 	nextOccurrenceCursor: Schema.optional(TextOccurrenceId),
 	occurrences: Schema.Array(TextOccurrence),

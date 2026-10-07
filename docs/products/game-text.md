@@ -202,8 +202,9 @@ The first quality slice must prove:
 ## Localization workspace (planned)
 
 > Status: planned by [Plan 051](../../plans/051-localization-workspace.md) under accepted
-> [ADR 0009](../decisions/0009-localization-change-sets-and-review-state.md). Nothing in this section
-> is shipped yet; each part becomes a product promise when its phase completes.
+> [ADR 0009](../decisions/0009-localization-change-sets-and-review-state.md). Read-only formats,
+> corpus joins, bounded queries and CLI status are implemented. Workbench localization views,
+> checks, processes, editing and review remain planned.
 
 Game Text grows into a localization workspace that a writing and localization team can use all
 day. For every line it shows the source text, each culture's translation, and that translation's
@@ -251,9 +252,40 @@ guessed.
 | Not found in the project | In the manifest, and its package was fully read, but the key was not found   |
 | Gathered only            | In the manifest from a source the asset scan does not read, such as C++ code |
 | Outside this target      | In the project but excluded by the target's include or exclude paths         |
+| Unknown                  | Available evidence cannot prove a more specific state                        |
 
-"Not gathered yet" and "Not found in the project" are claimed only when scan coverage proves them.
-If the relevant package was partially read or not read, the line says so instead.
+"Not gathered yet" requires an observed identity inside the target's gather scope and a readable
+manifest without that identity. "Not found" requires explicit completion of the manifest's named
+package, including packages with no remaining text. Partial, failed and unscanned packages produce
+typed unknown reasons. Older corpora without per-package completion cannot prove absence.
+
+The primary state precedence is `outside_target`, `not_gathered`, `not_found`, `gathered_only`,
+`changed_since_gather`, `unknown`, `not_synced`, `needs_update`, `not_translated`, `translated`.
+Structural state and current-source drift precede culture translation work, matching the fixture
+intent. Uncertainty blocks unsupported translation claims. Non-empty PO text differing from the
+archive takes precedence over archive staleness. Secondary facts retain every applicable state,
+so a changed source can also have an unsynced translation. Native cultures use their native archive
+with the same rules; gathered native translations normally equal the source.
+
+Missing manifest/archive/PO evidence, duplicate identities, unresolved corpus identities or String
+Table namespaces, conflicting current sources, unavailable gather settings, non-project paths and
+unavailable asset classes or excluded-class ancestry are explicit unknown reasons. DataTable cell
+locations do not distinguish DataTable subclasses, so class exclusions can require unknown coverage.
+Namespace-collapsed PO identities
+without keys cannot support an exact join. Crowdin identity PO marks reduced source checking because
+it has no source; archive-to-manifest comparisons still determine staleness.
+
+A file confirmed missing supplies absence: a non-empty PO translation with a missing archive is
+not synced, while a missing PO does not invalidate a proven archive translation. File failures
+remain visible in diagnostics and coverage reasons. Unreadable files cannot supply that proof.
+
+`ue-shed loc status <project-root> --target <name> [--culture <c>] [--state <s>] [--limit 50]`
+reports schema-versioned per-culture counts of lines and source words, coverage and unknown reasons,
+file provenance and diagnostics, and a bounded page of matching lines. Localization-aware
+`ue-shed text search` accepts the same selection; translation search additionally requires
+`--search-translations` and a culture. Counts intersect the same filters as the returned lines
+before pagination, including a dedicated `not_synced` count. Gathered-only rows use distinct
+evidence IDs, and focus exposes every culture, PO context and manifest source locations.
 
 ### Checks and reports
 

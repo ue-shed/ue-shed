@@ -655,6 +655,13 @@ export async function checkLocalizationBoundaries(root: string = repositoryRoot)
 		}
 	}
 	const pending = [join(packageRoot, "src/browser.ts")];
+	const gameTextBrowser = join(root, "packages/game-text/src/browser.ts");
+	try {
+		await readFile(gameTextBrowser, "utf8");
+		pending.push(gameTextBrowser);
+	} catch {
+		// Focused boundary fixtures may contain only the independent format package.
+	}
 	const visited = new Set<string>();
 	while (pending.length > 0) {
 		const path = pending.pop();
@@ -679,6 +686,10 @@ export async function checkLocalizationBoundaries(root: string = repositoryRoot)
 				pending.push(resolve(dirname(path), specifier.replace(/\.js$/u, ".ts")));
 			} else if (specifier === "@ue-shed/config-explorer/browser") {
 				pending.push(join(root, "packages/config-explorer/src/browser.ts"));
+			} else if (specifier === "@ue-shed/localization/browser") {
+				pending.push(join(packageRoot, "src/browser.ts"));
+			} else if (specifier === "@ue-shed/unreal-assets/investigation") {
+				pending.push(join(root, "packages/unreal-assets/src/investigation.ts"));
 			} else if (specifier !== "effect" && !specifier.startsWith("effect/")) {
 				failures.push(`${label}: unreviewed browser dependency ${specifier}`);
 			}

@@ -18,7 +18,7 @@ import {
 } from "@ue-shed/game-text/browser";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
 import { Deferred, Effect, Layer, ManagedRuntime } from "effect";
-import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type GameTextClientApi } from "./game-text-client.js";
 import { GameTextRoute, type GameTextPreferences } from "./game-text-query-route.js";
 import { decodeGameTextPreferences } from "./game-text-preferences.js";
@@ -117,9 +117,20 @@ const rulesDocument = TextQualityRuleDocument.make({
 });
 const runtime = ManagedRuntime.make(Layer.empty);
 afterAll(() => runtime.dispose());
+// Node 26 defines its own global localStorage, which hides jsdom's storage unless Node is given a
+// storage file, so each test gets an isolated in-memory store.
+beforeEach(() => {
+	const values = new Map<string, string>();
+	vi.stubGlobal("localStorage", {
+		getItem: (key: string) => values.get(key) ?? null,
+		setItem: (key: string, value: string) => void values.set(key, value),
+		removeItem: (key: string) => void values.delete(key),
+		clear: () => values.clear()
+	});
+});
 afterEach(() => {
 	cleanup();
-	localStorage.clear();
+	vi.unstubAllGlobals();
 });
 
 function makeClient(
@@ -431,7 +442,7 @@ describe("Game Text writing workspace", () => {
 		await user.click(screen.getByRole("button", { name: /^No translator notes/ }));
 		await screen.findByText("1 match");
 		await waitFor(() =>
-			expect(localStorage.getItem("ue-shed:game-text:project-a")).toContain("Continue")
+			expect(window.localStorage.getItem("ue-shed:game-text:project-a")).toContain("Continue")
 		);
 		view.unmount();
 		mount(client, undefined, "project-a");
@@ -461,7 +472,7 @@ describe("Game Text writing workspace", () => {
 			withoutNotes: false
 		});
 		expect(decodeGameTextPreferences("broken JSON")).toMatchObject({ query: "", lens: "all" });
-		localStorage.setItem(
+		window.localStorage.setItem(
 			"ue-shed:game-text:project-a",
 			JSON.stringify({
 				query: "",
@@ -474,12 +485,13 @@ describe("Game Text writing workspace", () => {
 		await screen.findByText("2 matches");
 		await waitFor(() =>
 			expect(
-				JSON.parse(localStorage.getItem("ue-shed:game-text:project-a") ?? "{}").selectedId
+				JSON.parse(window.localStorage.getItem("ue-shed:game-text:project-a") ?? "{}")
+					.selectedId
 			).toBeUndefined()
 		);
 		expect(screen.getByText(/Select a line to see/)).toBeDefined();
 		cleanup();
-		localStorage.setItem("ue-shed:game-text:project-a", "broken JSON");
+		window.localStorage.setItem("ue-shed:game-text:project-a", "broken JSON");
 		mount(makeClient(), undefined, "project-a");
 		await screen.findByText("2 matches");
 		expect(screen.getByRole("searchbox")).toHaveProperty("value", "");
@@ -734,7 +746,7 @@ describe("Game Text writing workspace", () => {
 			).toBe("Quit")
 		);
 		await waitFor(() =>
-			expect(localStorage.getItem("ue-shed:game-text:quality-project")).toContain(
+			expect(window.localStorage.getItem("ue-shed:game-text:quality-project")).toContain(
 				"selectedFindingId"
 			)
 		);
@@ -758,7 +770,7 @@ describe("Game Text writing workspace", () => {
 		await screen.findByRole("table", { name: "Rules overview" });
 		await waitFor(() =>
 			expect(
-				JSON.parse(localStorage.getItem("ue-shed:game-text:quality-project") ?? "{}")
+				JSON.parse(window.localStorage.getItem("ue-shed:game-text:quality-project") ?? "{}")
 					.selectedFindingId
 			).toBeUndefined()
 		);

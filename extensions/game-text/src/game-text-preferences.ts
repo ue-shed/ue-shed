@@ -56,7 +56,7 @@ export function decodeGameTextPreferences(contents: string): GameTextPreferences
 export const readGameTextPreferences = Effect.fn("GameText.preferences.read")((key: string) =>
 	Effect.try({
 		try: () => {
-			const contents = localStorage.getItem("ue-shed:game-text:" + key) ?? "{}";
+			const contents = window.localStorage.getItem("ue-shed:game-text:" + key) ?? "{}";
 			return decodeGameTextPreferences(contents);
 		},
 		catch: () => undefined
@@ -68,7 +68,7 @@ export const saveGameTextPreferences = Effect.fn("GameText.preferences.save")(
 		Effect.try({
 			try: () => {
 				const { qualityEditor: _editor, ...stored } = preferences;
-				localStorage.setItem("ue-shed:game-text:" + key, JSON.stringify(stored));
+				window.localStorage.setItem("ue-shed:game-text:" + key, JSON.stringify(stored));
 			},
 			catch: () => undefined
 		}).pipe(Effect.catch(() => Effect.void))

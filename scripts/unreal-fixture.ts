@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -9,12 +9,30 @@ import {
 	type UnrealEngineTools
 } from "./unreal-plugin-host.ts";
 import { unrealRemoteControlLaunchArguments } from "./workbench-tools.ts";
+import { localizationFixtureSteps } from "./localization-fixture-steps.ts";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const fixtureRoot = join(repositoryRoot, "fixtures", "unreal-project");
-const projectFile = join(fixtureRoot, "UEShedFixture.uproject");
+const action = process.argv[2];
+const isLocalization = action === "localization" || action === "localization-verify";
+const fixtureRoot =
+	isLocalization && process.env.UE_SHED_LOCALIZATION_FIXTURE_ROOT
+		? resolve(process.env.UE_SHED_LOCALIZATION_FIXTURE_ROOT)
+		: join(
+				repositoryRoot,
+				"fixtures",
+				action === "localization-427" ? "unreal-427-localization" : "unreal-project"
+			);
+const projectFile = join(
+	fixtureRoot,
+	action === "localization-427" ? "UEShedLocalization427.uproject" : "UEShedFixture.uproject"
+);
 // SAFETY: the repository fixture contract owns this required engine version object.
-const contract = JSON.parse(readFileSync(join(fixtureRoot, "fixture-contract.json"), "utf8")) as {
+const contract = JSON.parse(
+	readFileSync(
+		join(repositoryRoot, "fixtures", "unreal-project", "fixture-contract.json"),
+		"utf8"
+	)
+) as {
 	readonly engine: { readonly major: number; readonly minor: number };
 };
 
@@ -24,17 +42,23 @@ function engineVersion(engineRoot: string) {
 
 function isMatchingEngine(engineRoot: string) {
 	const version = engineVersion(engineRoot);
+	if (action === "localization-427") return version?.label === "4.27";
+	if (isLocalization) return version?.label === "5.7" || version?.label === "5.8";
 	return version?.major === contract.engine.major && version?.minor === contract.engine.minor;
 }
 
 function discoverEngineRoot() {
+	const requiredVersion =
+		action === "localization-427"
+			? "4.27"
+			: isLocalization
+				? "5.7 or 5.8"
+				: `${contract.engine.major}.${contract.engine.minor}`;
 	const configured = process.env.UE_SHED_UNREAL_ENGINE_ROOT;
 	if (configured) {
 		const root = resolve(configured);
 		if (!isMatchingEngine(root)) {
-			throw new Error(
-				`UE_SHED_UNREAL_ENGINE_ROOT must point to Unreal ${contract.engine.major}.${contract.engine.minor}`
-			);
+			throw new Error(`UE_SHED_UNREAL_ENGINE_ROOT must point to Unreal ${requiredVersion}`);
 		}
 		return root;
 	}
@@ -54,7 +78,7 @@ function discoverEngineRoot() {
 	}
 
 	throw new Error(
-		`Could not discover Unreal ${contract.engine.major}.${contract.engine.minor}. ` +
+		`Could not discover Unreal ${requiredVersion}. ` +
 			"Set UE_SHED_UNREAL_ENGINE_ROOT to the engine installation root."
 	);
 }
@@ -85,7 +109,13 @@ function engineTools(engineRoot: string): UnrealEngineTools {
 	return {
 		build: join(engineRoot, "Engine", "Build", "BatchFiles", "Build.bat"),
 		editor: join(engineRoot, "Engine", "Binaries", "Win64", "UnrealEditor.exe"),
-		editorCommandlet: join(engineRoot, "Engine", "Binaries", "Win64", "UnrealEditor-Cmd.exe")
+		editorCommandlet: join(
+			engineRoot,
+			"Engine",
+			"Binaries",
+			"Win64",
+			action === "localization-427" ? "UE4Editor-Cmd.exe" : "UnrealEditor-Cmd.exe"
+		)
 	};
 }
 
@@ -202,7 +232,6 @@ function launchAuthoring(tools: UnrealEngineTools, pluginDescriptors: readonly s
 	child.unref();
 }
 
-const action = process.argv[2];
 if (
 	!action ||
 	!new Set<string>([
@@ -215,6 +244,9 @@ if (
 		"launch",
 		"launch-authoring",
 		"map-history",
+		"localization",
+		"localization-verify",
+		"localization-427",
 		"world-partition",
 		"save",
 		"scenario",
@@ -223,13 +255,65 @@ if (
 	]).has(action)
 ) {
 	throw new Error(
-		"Usage: node scripts/unreal-fixture.ts <apply|build|conformance|evidence|generate|launch|launch-authoring|map-history|world-partition|save|scenario|verify|snapshot> [input] [output]"
+		"Usage: node scripts/unreal-fixture.ts <apply|build|conformance|evidence|generate|launch|launch-authoring|localization|localization-verify|localization-427|map-history|world-partition|save|scenario|verify|snapshot> [input] [output]"
 	);
 }
 
 const engineRoot = discoverEngineRoot();
 const tools = engineTools(engineRoot);
-build(tools);
+if (action !== "localization-427") build(tools);
+if (action === "localization") {
+	const output = process.argv[3]
+		? resolve(process.argv[3])
+		: join(fixtureRoot, "FixtureExpected", "localization");
+	process.stdout.write(
+		`Localization writes: ${join(fixtureRoot, "Content/Fixture/Localization")}, ` +
+			`${join(fixtureRoot, "Config/DefaultEditor.ini")}, ${join(fixtureRoot, "Config/Localization")}, ` +
+			`${join(fixtureRoot, "Content/Localization/FixtureGame")}, ${output}\n`
+	);
+	// Only this named target's outputs are disposable. Reset archives and report history too.
+	rmSync(join(fixtureRoot, "Content", "Localization", "FixtureGame"), {
+		recursive: true,
+		force: true
+	});
+	// These three generated packages may have been saved by a newer engine. Recreate them
+	// from source instead of trying to load newer bytes in 5.7; leave other content alone.
+	for (const asset of ["ST_Localization", "DT_Localization", "DA_Localization"])
+		rmSync(join(fixtureRoot, "Content", "Fixture", "Localization", `${asset}.uasset`), {
+			force: true
+		});
+	for (const args of localizationFixtureSteps(projectFile, output))
+		run(tools.editorCommandlet, args);
+}
+if (action === "localization-verify") {
+	runCommandlet(
+		tools,
+		[],
+		[
+			"-LocalizationOnly",
+			"-VerifyOnly",
+			`-LocalizationEvidence=${resolve(process.argv[3] ?? join(fixtureRoot, "FixtureExpected/localization"))}`
+		]
+	);
+}
+if (action === "localization-427") {
+	process.stdout.write(
+		`Localization writes: ${join(fixtureRoot, "Content/Localization/Fixture427")}\n`
+	);
+	rmSync(join(fixtureRoot, "Content", "Localization", "Fixture427"), {
+		recursive: true,
+		force: true
+	});
+	run(tools.editorCommandlet, [
+		projectFile,
+		"-run=GatherText",
+		`-config=${join(fixtureRoot, "Config", "Localization", "Fixture427.ini")}`,
+		"-unattended",
+		"-nop4",
+		"-nosplash",
+		"-NullRHI"
+	]);
+}
 const needsPlugins = new Set([
 	"apply",
 	"apply-pair",

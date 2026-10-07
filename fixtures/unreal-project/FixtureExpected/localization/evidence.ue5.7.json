@@ -1,0 +1,1145 @@
+{
+	"schemaVersion": 1,
+	"target": "FixtureGame",
+	"nativeCulture": "en",
+	"engineVersion": "5.7",
+	"entries": [
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Asset",
+			"key": "DuplicateA",
+			"manifestSource": "Confirm",
+			"archiveSource": "Confirm",
+			"archiveTranslation": "Confirm",
+			"runtimeText": "Confirm",
+			"poMsgid": "Confirm",
+			"poMsgstr": "Confirm",
+			"poExtractedComments": [
+				"Key:\tDuplicateA",
+				"SourceLocation:\t/Game/Fixture/Localization/DA_Localization.DA_Localization.EqualSourceFirst"
+			],
+			"manifestKeyPaths": [
+				"/Game/Fixture/Localization/DA_Localization.DA_Localization.EqualSourceFirst"
+			],
+			"gatheredOnly": false,
+			"currentAssetSource": "Confirm",
+			"currentAssetPath": "/Game/Fixture/Localization/DA_Localization.DA_Localization:EqualSourceFirst",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Asset",
+			"key": "DuplicateB",
+			"manifestSource": "Confirm",
+			"archiveSource": "Confirm",
+			"archiveTranslation": "Confirm",
+			"runtimeText": "Confirm",
+			"poMsgid": "Confirm",
+			"poMsgstr": "Confirm",
+			"poExtractedComments": [
+				"Key:\tDuplicateB",
+				"SourceLocation:\t/Game/Fixture/Localization/DA_Localization.DA_Localization.EqualSourceSecond"
+			],
+			"manifestKeyPaths": [
+				"/Game/Fixture/Localization/DA_Localization.DA_Localization.EqualSourceSecond"
+			],
+			"gatheredOnly": false,
+			"currentAssetSource": "Confirm",
+			"currentAssetPath": "/Game/Fixture/Localization/DA_Localization.DA_Localization:EqualSourceSecond",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Asset",
+			"key": "Outdated",
+			"manifestSource": "Open the gate",
+			"archiveSource": "Open the gate",
+			"archiveTranslation": "Open the gate",
+			"runtimeText": "Open the gate",
+			"poMsgid": "Open the gate",
+			"poMsgstr": "Open the gate",
+			"poExtractedComments": [
+				"Key:\tOutdated",
+				"SourceLocation:\t/Game/Fixture/Localization/DA_Localization.DA_Localization.SharedPrimary"
+			],
+			"manifestKeyPaths": [
+				"/Game/Fixture/Localization/DA_Localization.DA_Localization.SharedPrimary"
+			],
+			"gatheredOnly": false,
+			"currentAssetSource": "Open the gate",
+			"currentAssetPath": "/Game/Fixture/Localization/DA_Localization.DA_Localization:SharedPrimary",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Rows",
+			"key": "EmptyFrench",
+			"manifestSource": "Return to menu",
+			"archiveSource": "Return to menu",
+			"archiveTranslation": "Return to menu",
+			"runtimeText": "Return to menu",
+			"poMsgid": "Return to menu",
+			"poMsgstr": "Return to menu",
+			"poExtractedComments": [
+				"Key:\tEmptyFrench",
+				"SourceLocation:\t/Game/Fixture/Localization/DT_Localization.DT_Localization.EmptyFrench.DisplayName"
+			],
+			"manifestKeyPaths": [
+				"/Game/Fixture/Localization/DT_Localization.DT_Localization.EmptyFrench.DisplayName"
+			],
+			"gatheredOnly": false,
+			"currentAssetSource": "Return to menu",
+			"currentAssetPath": "/Game/Fixture/Localization/DT_Localization.DT_Localization:EmptyFrench.DisplayName",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Rows",
+			"key": "MissingFrench",
+			"manifestSource": "Save progress",
+			"archiveSource": "Save progress",
+			"archiveTranslation": "Save progress",
+			"runtimeText": "Save progress",
+			"poMsgid": "Save progress",
+			"poMsgstr": "Save progress",
+			"poExtractedComments": [
+				"Key:\tMissingFrench",
+				"SourceLocation:\t/Game/Fixture/Localization/DT_Localization.DT_Localization.MissingFrench.DisplayName"
+			],
+			"manifestKeyPaths": [
+				"/Game/Fixture/Localization/DT_Localization.DT_Localization.MissingFrench.DisplayName"
+			],
+			"gatheredOnly": false,
+			"currentAssetSource": "Save progress",
+			"currentAssetPath": "/Game/Fixture/Localization/DT_Localization.DT_Localization:MissingFrench.DisplayName",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Source",
+			"key": "RuntimeOrdered",
+			"manifestSource": "Stage {0} of {1}",
+			"archiveSource": "Stage {0} of {1}",
+			"archiveTranslation": "Stage {0} of {1}",
+			"runtimeText": "Stage {0} of {1}",
+			"poMsgid": "Stage {0} of {1}",
+			"poMsgstr": "Stage {0} of {1}",
+			"poExtractedComments": [
+				"Key:\tRuntimeOrdered",
+				"SourceLocation:\tSource/UEShedFixture/Private/UEShedLocalizationText.cpp(10)"
+			],
+			"manifestKeyPaths": ["Source/UEShedFixture/Private/UEShedLocalizationText.cpp(10)"],
+			"gatheredOnly": true,
+			"currentAssetSource": null,
+			"currentAssetPath": null,
+			"inTarget": true,
+			"packageReadable": false
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Source",
+			"key": "RuntimeReady",
+			"manifestSource": "Ready to begin",
+			"archiveSource": "Ready to begin",
+			"archiveTranslation": "Ready to begin",
+			"runtimeText": "Ready to begin",
+			"poMsgid": "Ready to begin",
+			"poMsgstr": "Ready to begin",
+			"poExtractedComments": [
+				"Key:\tRuntimeReady",
+				"SourceLocation:\tSource/UEShedFixture/Private/UEShedLocalizationText.cpp(9)"
+			],
+			"manifestKeyPaths": ["Source/UEShedFixture/Private/UEShedLocalizationText.cpp(9)"],
+			"gatheredOnly": true,
+			"currentAssetSource": null,
+			"currentAssetPath": null,
+			"inTarget": true,
+			"packageReadable": false
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Table",
+			"key": "AddedAfterGather",
+			"manifestSource": null,
+			"archiveSource": null,
+			"archiveTranslation": null,
+			"runtimeText": null,
+			"poMsgid": null,
+			"poMsgstr": null,
+			"poExtractedComments": [],
+			"manifestKeyPaths": [],
+			"gatheredOnly": false,
+			"currentAssetSource": "A new instruction",
+			"currentAssetPath": "/Game/Fixture/Localization/ST_Localization.ST_Localization:AddedAfterGather",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Table",
+			"key": "ChangedAfterGather",
+			"manifestSource": "Gathered instruction",
+			"archiveSource": "Gathered instruction",
+			"archiveTranslation": "Gathered instruction",
+			"runtimeText": "Gathered instruction",
+			"poMsgid": "Gathered instruction",
+			"poMsgstr": "Gathered instruction",
+			"poExtractedComments": [
+				"Key:\tChangedAfterGather",
+				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
+			],
+			"manifestKeyPaths": ["/Game/Fixture/Localization/ST_Localization.ST_Localization"],
+			"gatheredOnly": false,
+			"currentAssetSource": "Current instruction",
+			"currentAssetPath": "/Game/Fixture/Localization/ST_Localization.ST_Localization:ChangedAfterGather",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Table",
+			"key": "NamedArgument",
+			"manifestSource": "Talking with {PlayerName}",
+			"archiveSource": "Talking with {PlayerName}",
+			"archiveTranslation": "Talking with {PlayerName}",
+			"runtimeText": "Talking with {PlayerName}",
+			"poMsgid": "Talking with {PlayerName}",
+			"poMsgstr": "Talking with {PlayerName}",
+			"poExtractedComments": [
+				"Key:\tNamedArgument",
+				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
+			],
+			"manifestKeyPaths": ["/Game/Fixture/Localization/ST_Localization.ST_Localization"],
+			"gatheredOnly": false,
+			"currentAssetSource": "Talking with {PlayerName}",
+			"currentAssetPath": "/Game/Fixture/Localization/ST_Localization.ST_Localization:NamedArgument",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Table",
+			"key": "OrderedArgument",
+			"manifestSource": "Checkpoint {0}",
+			"archiveSource": "Checkpoint {0}",
+			"archiveTranslation": "Checkpoint {0}",
+			"runtimeText": "Checkpoint {0}",
+			"poMsgid": "Checkpoint {0}",
+			"poMsgstr": "Checkpoint {0}",
+			"poExtractedComments": [
+				"Key:\tOrderedArgument",
+				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
+			],
+			"manifestKeyPaths": ["/Game/Fixture/Localization/ST_Localization.ST_Localization"],
+			"gatheredOnly": false,
+			"currentAssetSource": "Checkpoint {0}",
+			"currentAssetPath": "/Game/Fixture/Localization/ST_Localization.ST_Localization:OrderedArgument",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Table",
+			"key": "Plural",
+			"manifestSource": "{Count} {Count}|plural(one=item,other=items)",
+			"archiveSource": "{Count} {Count}|plural(one=item,other=items)",
+			"archiveTranslation": "{Count} {Count}|plural(one=item,other=items)",
+			"runtimeText": "{Count} {Count}|plural(one=item,other=items)",
+			"poMsgid": "{Count} {Count}|plural(one=item,other=items)",
+			"poMsgstr": "{Count} {Count}|plural(one=item,other=items)",
+			"poExtractedComments": [
+				"Key:\tPlural",
+				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
+			],
+			"manifestKeyPaths": ["/Game/Fixture/Localization/ST_Localization.ST_Localization"],
+			"gatheredOnly": false,
+			"currentAssetSource": "{Count} {Count}|plural(one=item,other=items)",
+			"currentAssetPath": "/Game/Fixture/Localization/ST_Localization.ST_Localization:Plural",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Table",
+			"key": "RemovedAfterGather",
+			"manifestSource": "Temporary instruction",
+			"archiveSource": "Temporary instruction",
+			"archiveTranslation": "Temporary instruction",
+			"runtimeText": "Temporary instruction",
+			"poMsgid": "Temporary instruction",
+			"poMsgstr": "Temporary instruction",
+			"poExtractedComments": [
+				"Key:\tRemovedAfterGather",
+				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
+			],
+			"manifestKeyPaths": ["/Game/Fixture/Localization/ST_Localization.ST_Localization"],
+			"gatheredOnly": false,
+			"currentAssetSource": null,
+			"currentAssetPath": null,
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Table",
+			"key": "Unsynced",
+			"manifestSource": "Start a new session",
+			"archiveSource": "Start a new session",
+			"archiveTranslation": "Start a new session",
+			"runtimeText": "Start a new session",
+			"poMsgid": "Start a new session",
+			"poMsgstr": "Start a new session",
+			"poExtractedComments": [
+				"Key:\tUnsynced",
+				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
+			],
+			"manifestKeyPaths": ["/Game/Fixture/Localization/ST_Localization.ST_Localization"],
+			"gatheredOnly": false,
+			"currentAssetSource": "Start a new session",
+			"currentAssetPath": "/Game/Fixture/Localization/ST_Localization.ST_Localization:Unsynced",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Table",
+			"key": "Welcome",
+			"manifestSource": "Welcome back",
+			"archiveSource": "Welcome back",
+			"archiveTranslation": "Welcome back",
+			"runtimeText": "Welcome back",
+			"poMsgid": "Welcome back",
+			"poMsgstr": "Welcome back",
+			"poExtractedComments": [
+				"Key:\tWelcome",
+				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization",
+				"InfoMetaData:\t\"Comment\" : \"Greeting on the start screen.\""
+			],
+			"manifestKeyPaths": ["/Game/Fixture/Localization/ST_Localization.ST_Localization"],
+			"gatheredOnly": false,
+			"currentAssetSource": "Welcome back",
+			"currentAssetPath": "/Game/Fixture/Localization/ST_Localization.ST_Localization:Welcome",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.StringTable",
+			"key": "PromptContinue",
+			"manifestSource": null,
+			"archiveSource": null,
+			"archiveTranslation": null,
+			"runtimeText": null,
+			"poMsgid": null,
+			"poMsgstr": null,
+			"poExtractedComments": [],
+			"manifestKeyPaths": [],
+			"gatheredOnly": false,
+			"currentAssetSource": "Continue",
+			"currentAssetPath": "/Game/Fixture/Text/ST_Game.ST_Game:PromptContinue",
+			"inTarget": false,
+			"packageReadable": true
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.StringTable",
+			"key": "PromptHold",
+			"manifestSource": null,
+			"archiveSource": null,
+			"archiveTranslation": null,
+			"runtimeText": null,
+			"poMsgid": null,
+			"poMsgstr": null,
+			"poExtractedComments": [],
+			"manifestKeyPaths": [],
+			"gatheredOnly": false,
+			"currentAssetSource": "Hold to skip",
+			"currentAssetPath": "/Game/Fixture/Text/ST_Game.ST_Game:PromptHold",
+			"inTarget": false,
+			"packageReadable": true
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.StringTable",
+			"key": "StatusSaving",
+			"manifestSource": null,
+			"archiveSource": null,
+			"archiveTranslation": null,
+			"runtimeText": null,
+			"poMsgid": null,
+			"poMsgstr": null,
+			"poExtractedComments": [],
+			"manifestKeyPaths": [],
+			"gatheredOnly": false,
+			"currentAssetSource": "Saving progress…",
+			"currentAssetPath": "/Game/Fixture/Text/ST_Game.ST_Game:StatusSaving",
+			"inTarget": false,
+			"packageReadable": true
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.Localization.Asset",
+			"key": "DuplicateA",
+			"manifestSource": "Confirm",
+			"archiveSource": "Confirm",
+			"archiveTranslation": "Bestätigen",
+			"runtimeText": "Bestätigen",
+			"poMsgid": "Confirm",
+			"poMsgstr": "Bestätigen",
+			"poExtractedComments": [
+				"Key:\tDuplicateA",
+				"SourceLocation:\t/Game/Fixture/Localization/DA_Localization.DA_Localization.EqualSourceFirst"
+			],
+			"manifestKeyPaths": [
+				"/Game/Fixture/Localization/DA_Localization.DA_Localization.EqualSourceFirst"
+			],
+			"gatheredOnly": false,
+			"currentAssetSource": "Confirm",
+			"currentAssetPath": "/Game/Fixture/Localization/DA_Localization.DA_Localization:EqualSourceFirst",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.Localization.Asset",
+			"key": "DuplicateB",
+			"manifestSource": "Confirm",
+			"archiveSource": "Confirm",
+			"archiveTranslation": "Bestätigen",
+			"runtimeText": "Bestätigen",
+			"poMsgid": "Confirm",
+			"poMsgstr": "Bestätigen",
+			"poExtractedComments": [
+				"Key:\tDuplicateB",
+				"SourceLocation:\t/Game/Fixture/Localization/DA_Localization.DA_Localization.EqualSourceSecond"
+			],
+			"manifestKeyPaths": [
+				"/Game/Fixture/Localization/DA_Localization.DA_Localization.EqualSourceSecond"
+			],
+			"gatheredOnly": false,
+			"currentAssetSource": "Confirm",
+			"currentAssetPath": "/Game/Fixture/Localization/DA_Localization.DA_Localization:EqualSourceSecond",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.Localization.Asset",
+			"key": "Outdated",
+			"manifestSource": "Open the gate",
+			"archiveSource": "Open the door",
+			"archiveTranslation": "Die Tür öffnen",
+			"runtimeText": "Open the gate",
+			"poMsgid": "Open the gate",
+			"poMsgstr": "",
+			"poExtractedComments": [
+				"Key:\tOutdated",
+				"SourceLocation:\t/Game/Fixture/Localization/DA_Localization.DA_Localization.SharedPrimary"
+			],
+			"manifestKeyPaths": [
+				"/Game/Fixture/Localization/DA_Localization.DA_Localization.SharedPrimary"
+			],
+			"gatheredOnly": false,
+			"currentAssetSource": "Open the gate",
+			"currentAssetPath": "/Game/Fixture/Localization/DA_Localization.DA_Localization:SharedPrimary",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.Localization.Rows",
+			"key": "EmptyFrench",
+			"manifestSource": "Return to menu",
+			"archiveSource": "Return to menu",
+			"archiveTranslation": "Zum Menü zurückkehren",
+			"runtimeText": "Zum Menü zurückkehren",
+			"poMsgid": "Return to menu",
+			"poMsgstr": "Zum Menü zurückkehren",
+			"poExtractedComments": [
+				"Key:\tEmptyFrench",
+				"SourceLocation:\t/Game/Fixture/Localization/DT_Localization.DT_Localization.EmptyFrench.DisplayName"
+			],
+			"manifestKeyPaths": [
+				"/Game/Fixture/Localization/DT_Localization.DT_Localization.EmptyFrench.DisplayName"
+			],
+			"gatheredOnly": false,
+			"currentAssetSource": "Return to menu",
+			"currentAssetPath": "/Game/Fixture/Localization/DT_Localization.DT_Localization:EmptyFrench.DisplayName",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.Localization.Rows",
+			"key": "MissingFrench",
+			"manifestSource": "Save progress",
+			"archiveSource": "Save progress",
+			"archiveTranslation": "Fortschritt speichern",
+			"runtimeText": "Fortschritt speichern",
+			"poMsgid": "Save progress",
+			"poMsgstr": "Fortschritt speichern",
+			"poExtractedComments": [
+				"Key:\tMissingFrench",
+				"SourceLocation:\t/Game/Fixture/Localization/DT_Localization.DT_Localization.MissingFrench.DisplayName"
+			],
+			"manifestKeyPaths": [
+				"/Game/Fixture/Localization/DT_Localization.DT_Localization.MissingFrench.DisplayName"
+			],
+			"gatheredOnly": false,
+			"currentAssetSource": "Save progress",
+			"currentAssetPath": "/Game/Fixture/Localization/DT_Localization.DT_Localization:MissingFrench.DisplayName",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.Localization.Source",
+			"key": "RuntimeOrdered",
+			"manifestSource": "Stage {0} of {1}",
+			"archiveSource": "Stage {0} of {1}",
+			"archiveTranslation": "Abschnitt {0} von {1}",
+			"runtimeText": "Abschnitt {0} von {1}",
+			"poMsgid": "Stage {0} of {1}",
+			"poMsgstr": "Abschnitt {0} von {1}",
+			"poExtractedComments": [
+				"Key:\tRuntimeOrdered",
+				"SourceLocation:\tSource/UEShedFixture/Private/UEShedLocalizationText.cpp(10)"
+			],
+			"manifestKeyPaths": ["Source/UEShedFixture/Private/UEShedLocalizationText.cpp(10)"],
+			"gatheredOnly": true,
+			"currentAssetSource": null,
+			"currentAssetPath": null,
+			"inTarget": true,
+			"packageReadable": false
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.Localization.Source",
+			"key": "RuntimeReady",
+			"manifestSource": "Ready to begin",
+			"archiveSource": "Ready to begin",
+			"archiveTranslation": "Bereit zum Start",
+			"runtimeText": "Bereit zum Start",
+			"poMsgid": "Ready to begin",
+			"poMsgstr": "Bereit zum Start",
+			"poExtractedComments": [
+				"Key:\tRuntimeReady",
+				"SourceLocation:\tSource/UEShedFixture/Private/UEShedLocalizationText.cpp(9)"
+			],
+			"manifestKeyPaths": ["Source/UEShedFixture/Private/UEShedLocalizationText.cpp(9)"],
+			"gatheredOnly": true,
+			"currentAssetSource": null,
+			"currentAssetPath": null,
+			"inTarget": true,
+			"packageReadable": false
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.Localization.Table",
+			"key": "AddedAfterGather",
+			"manifestSource": null,
+			"archiveSource": null,
+			"archiveTranslation": null,
+			"runtimeText": null,
+			"poMsgid": null,
+			"poMsgstr": null,
+			"poExtractedComments": [],
+			"manifestKeyPaths": [],
+			"gatheredOnly": false,
+			"currentAssetSource": "A new instruction",
+			"currentAssetPath": "/Game/Fixture/Localization/ST_Localization.ST_Localization:AddedAfterGather",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.Localization.Table",
+			"key": "ChangedAfterGather",
+			"manifestSource": "Gathered instruction",
+			"archiveSource": "Gathered instruction",
+			"archiveTranslation": "Gesammelte Anweisung",
+			"runtimeText": "Gesammelte Anweisung",
+			"poMsgid": "Gathered instruction",
+			"poMsgstr": "Gesammelte Anweisung",
+			"poExtractedComments": [
+				"Key:\tChangedAfterGather",
+				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
+			],
+			"manifestKeyPaths": ["/Game/Fixture/Localization/ST_Localization.ST_Localization"],
+			"gatheredOnly": false,
+			"currentAssetSource": "Current instruction",
+			"currentAssetPath": "/Game/Fixture/Localization/ST_Localization.ST_Localization:ChangedAfterGather",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.Localization.Table",
+			"key": "NamedArgument",
+			"manifestSource": "Talking with {PlayerName}",
+			"archiveSource": "Talking with {PlayerName}",
+			"archiveTranslation": "Gespräch mit {Name}",
+			"runtimeText": "Gespräch mit {Name}",
+			"poMsgid": "Talking with {PlayerName}",
+			"poMsgstr": "Gespräch mit {Name}",
+			"poExtractedComments": [
+				"Key:\tNamedArgument",
+				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
+			],
+			"manifestKeyPaths": ["/Game/Fixture/Localization/ST_Localization.ST_Localization"],
+			"gatheredOnly": false,
+			"currentAssetSource": "Talking with {PlayerName}",
+			"currentAssetPath": "/Game/Fixture/Localization/ST_Localization.ST_Localization:NamedArgument",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.Localization.Table",
+			"key": "OrderedArgument",
+			"manifestSource": "Checkpoint {0}",
+			"archiveSource": "Checkpoint {0}",
+			"archiveTranslation": "Kontrollpunkt {0}",
+			"runtimeText": "Kontrollpunkt {0}",
+			"poMsgid": "Checkpoint {0}",
+			"poMsgstr": "Kontrollpunkt {0}",
+			"poExtractedComments": [
+				"Key:\tOrderedArgument",
+				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
+			],
+			"manifestKeyPaths": ["/Game/Fixture/Localization/ST_Localization.ST_Localization"],
+			"gatheredOnly": false,
+			"currentAssetSource": "Checkpoint {0}",
+			"currentAssetPath": "/Game/Fixture/Localization/ST_Localization.ST_Localization:OrderedArgument",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.Localization.Table",
+			"key": "Plural",
+			"manifestSource": "{Count} {Count}|plural(one=item,other=items)",
+			"archiveSource": "{Count} {Count}|plural(one=item,other=items)",
+			"archiveTranslation": "{Count} {Count}|plural(one=Gegenstand,other=Gegenstände)",
+			"runtimeText": "{Count} {Count}|plural(one=Gegenstand,other=Gegenstände)",
+			"poMsgid": "{Count} {Count}|plural(one=item,other=items)",
+			"poMsgstr": "{Count} {Count}|plural(one=Gegenstand,other=Gegenstände)",
+			"poExtractedComments": [
+				"Key:\tPlural",
+				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
+			],
+			"manifestKeyPaths": ["/Game/Fixture/Localization/ST_Localization.ST_Localization"],
+			"gatheredOnly": false,
+			"currentAssetSource": "{Count} {Count}|plural(one=item,other=items)",
+			"currentAssetPath": "/Game/Fixture/Localization/ST_Localization.ST_Localization:Plural",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.Localization.Table",
+			"key": "RemovedAfterGather",
+			"manifestSource": "Temporary instruction",
+			"archiveSource": "Temporary instruction",
+			"archiveTranslation": "Vorübergehende Anweisung",
+			"runtimeText": "Vorübergehende Anweisung",
+			"poMsgid": "Temporary instruction",
+			"poMsgstr": "Vorübergehende Anweisung",
+			"poExtractedComments": [
+				"Key:\tRemovedAfterGather",
+				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
+			],
+			"manifestKeyPaths": ["/Game/Fixture/Localization/ST_Localization.ST_Localization"],
+			"gatheredOnly": false,
+			"currentAssetSource": null,
+			"currentAssetPath": null,
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.Localization.Table",
+			"key": "Unsynced",
+			"manifestSource": "Start a new session",
+			"archiveSource": "Start a new session",
+			"archiveTranslation": "Eine neue Sitzung starten",
+			"runtimeText": "Eine neue Sitzung starten",
+			"poMsgid": "Start a new session",
+			"poMsgstr": "Eine frische Sitzung beginnen",
+			"poExtractedComments": [
+				"Key:\tUnsynced",
+				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
+			],
+			"manifestKeyPaths": ["/Game/Fixture/Localization/ST_Localization.ST_Localization"],
+			"gatheredOnly": false,
+			"currentAssetSource": "Start a new session",
+			"currentAssetPath": "/Game/Fixture/Localization/ST_Localization.ST_Localization:Unsynced",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.Localization.Table",
+			"key": "Welcome",
+			"manifestSource": "Welcome back",
+			"archiveSource": "Welcome back",
+			"archiveTranslation": "Willkommen zurück",
+			"runtimeText": "Willkommen zurück",
+			"poMsgid": "Welcome back",
+			"poMsgstr": "Willkommen zurück",
+			"poExtractedComments": [
+				"Key:\tWelcome",
+				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization",
+				"InfoMetaData:\t\"Comment\" : \"Greeting on the start screen.\""
+			],
+			"manifestKeyPaths": ["/Game/Fixture/Localization/ST_Localization.ST_Localization"],
+			"gatheredOnly": false,
+			"currentAssetSource": "Welcome back",
+			"currentAssetPath": "/Game/Fixture/Localization/ST_Localization.ST_Localization:Welcome",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.StringTable",
+			"key": "PromptContinue",
+			"manifestSource": null,
+			"archiveSource": null,
+			"archiveTranslation": null,
+			"runtimeText": null,
+			"poMsgid": null,
+			"poMsgstr": null,
+			"poExtractedComments": [],
+			"manifestKeyPaths": [],
+			"gatheredOnly": false,
+			"currentAssetSource": "Continue",
+			"currentAssetPath": "/Game/Fixture/Text/ST_Game.ST_Game:PromptContinue",
+			"inTarget": false,
+			"packageReadable": true
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.StringTable",
+			"key": "PromptHold",
+			"manifestSource": null,
+			"archiveSource": null,
+			"archiveTranslation": null,
+			"runtimeText": null,
+			"poMsgid": null,
+			"poMsgstr": null,
+			"poExtractedComments": [],
+			"manifestKeyPaths": [],
+			"gatheredOnly": false,
+			"currentAssetSource": "Hold to skip",
+			"currentAssetPath": "/Game/Fixture/Text/ST_Game.ST_Game:PromptHold",
+			"inTarget": false,
+			"packageReadable": true
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.StringTable",
+			"key": "StatusSaving",
+			"manifestSource": null,
+			"archiveSource": null,
+			"archiveTranslation": null,
+			"runtimeText": null,
+			"poMsgid": null,
+			"poMsgstr": null,
+			"poExtractedComments": [],
+			"manifestKeyPaths": [],
+			"gatheredOnly": false,
+			"currentAssetSource": "Saving progress…",
+			"currentAssetPath": "/Game/Fixture/Text/ST_Game.ST_Game:StatusSaving",
+			"inTarget": false,
+			"packageReadable": true
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.Localization.Asset",
+			"key": "DuplicateA",
+			"manifestSource": "Confirm",
+			"archiveSource": "Confirm",
+			"archiveTranslation": "Confirmer",
+			"runtimeText": "Confirmer",
+			"poMsgid": "Confirm",
+			"poMsgstr": "Confirmer",
+			"poExtractedComments": [
+				"Key:\tDuplicateA",
+				"SourceLocation:\t/Game/Fixture/Localization/DA_Localization.DA_Localization.EqualSourceFirst"
+			],
+			"manifestKeyPaths": [
+				"/Game/Fixture/Localization/DA_Localization.DA_Localization.EqualSourceFirst"
+			],
+			"gatheredOnly": false,
+			"currentAssetSource": "Confirm",
+			"currentAssetPath": "/Game/Fixture/Localization/DA_Localization.DA_Localization:EqualSourceFirst",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.Localization.Asset",
+			"key": "DuplicateB",
+			"manifestSource": "Confirm",
+			"archiveSource": "Confirm",
+			"archiveTranslation": "Confirmer",
+			"runtimeText": "Confirmer",
+			"poMsgid": "Confirm",
+			"poMsgstr": "Confirmer",
+			"poExtractedComments": [
+				"Key:\tDuplicateB",
+				"SourceLocation:\t/Game/Fixture/Localization/DA_Localization.DA_Localization.EqualSourceSecond"
+			],
+			"manifestKeyPaths": [
+				"/Game/Fixture/Localization/DA_Localization.DA_Localization.EqualSourceSecond"
+			],
+			"gatheredOnly": false,
+			"currentAssetSource": "Confirm",
+			"currentAssetPath": "/Game/Fixture/Localization/DA_Localization.DA_Localization:EqualSourceSecond",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.Localization.Asset",
+			"key": "Outdated",
+			"manifestSource": "Open the gate",
+			"archiveSource": "Open the door",
+			"archiveTranslation": "Ouvrir la porte",
+			"runtimeText": "Open the gate",
+			"poMsgid": "Open the gate",
+			"poMsgstr": "",
+			"poExtractedComments": [
+				"Key:\tOutdated",
+				"SourceLocation:\t/Game/Fixture/Localization/DA_Localization.DA_Localization.SharedPrimary"
+			],
+			"manifestKeyPaths": [
+				"/Game/Fixture/Localization/DA_Localization.DA_Localization.SharedPrimary"
+			],
+			"gatheredOnly": false,
+			"currentAssetSource": "Open the gate",
+			"currentAssetPath": "/Game/Fixture/Localization/DA_Localization.DA_Localization:SharedPrimary",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.Localization.Rows",
+			"key": "EmptyFrench",
+			"manifestSource": "Return to menu",
+			"archiveSource": "Return to menu",
+			"archiveTranslation": "",
+			"runtimeText": "Return to menu",
+			"poMsgid": "Return to menu",
+			"poMsgstr": "",
+			"poExtractedComments": [
+				"Key:\tEmptyFrench",
+				"SourceLocation:\t/Game/Fixture/Localization/DT_Localization.DT_Localization.EmptyFrench.DisplayName"
+			],
+			"manifestKeyPaths": [
+				"/Game/Fixture/Localization/DT_Localization.DT_Localization.EmptyFrench.DisplayName"
+			],
+			"gatheredOnly": false,
+			"currentAssetSource": "Return to menu",
+			"currentAssetPath": "/Game/Fixture/Localization/DT_Localization.DT_Localization:EmptyFrench.DisplayName",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.Localization.Rows",
+			"key": "MissingFrench",
+			"manifestSource": "Save progress",
+			"archiveSource": "Save progress",
+			"archiveTranslation": "",
+			"runtimeText": "Save progress",
+			"poMsgid": "Save progress",
+			"poMsgstr": "",
+			"poExtractedComments": [
+				"Key:\tMissingFrench",
+				"SourceLocation:\t/Game/Fixture/Localization/DT_Localization.DT_Localization.MissingFrench.DisplayName"
+			],
+			"manifestKeyPaths": [
+				"/Game/Fixture/Localization/DT_Localization.DT_Localization.MissingFrench.DisplayName"
+			],
+			"gatheredOnly": false,
+			"currentAssetSource": "Save progress",
+			"currentAssetPath": "/Game/Fixture/Localization/DT_Localization.DT_Localization:MissingFrench.DisplayName",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.Localization.Source",
+			"key": "RuntimeOrdered",
+			"manifestSource": "Stage {0} of {1}",
+			"archiveSource": "Stage {0} of {1}",
+			"archiveTranslation": "Étape {0} sur {1}",
+			"runtimeText": "Étape {0} sur {1}",
+			"poMsgid": "Stage {0} of {1}",
+			"poMsgstr": "Étape {0} sur {1}",
+			"poExtractedComments": [
+				"Key:\tRuntimeOrdered",
+				"SourceLocation:\tSource/UEShedFixture/Private/UEShedLocalizationText.cpp(10)"
+			],
+			"manifestKeyPaths": ["Source/UEShedFixture/Private/UEShedLocalizationText.cpp(10)"],
+			"gatheredOnly": true,
+			"currentAssetSource": null,
+			"currentAssetPath": null,
+			"inTarget": true,
+			"packageReadable": false
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.Localization.Source",
+			"key": "RuntimeReady",
+			"manifestSource": "Ready to begin",
+			"archiveSource": "Ready to begin",
+			"archiveTranslation": "Prêt à commencer",
+			"runtimeText": "Prêt à commencer",
+			"poMsgid": "Ready to begin",
+			"poMsgstr": "Prêt à commencer",
+			"poExtractedComments": [
+				"Key:\tRuntimeReady",
+				"SourceLocation:\tSource/UEShedFixture/Private/UEShedLocalizationText.cpp(9)"
+			],
+			"manifestKeyPaths": ["Source/UEShedFixture/Private/UEShedLocalizationText.cpp(9)"],
+			"gatheredOnly": true,
+			"currentAssetSource": null,
+			"currentAssetPath": null,
+			"inTarget": true,
+			"packageReadable": false
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.Localization.Table",
+			"key": "AddedAfterGather",
+			"manifestSource": null,
+			"archiveSource": null,
+			"archiveTranslation": null,
+			"runtimeText": null,
+			"poMsgid": null,
+			"poMsgstr": null,
+			"poExtractedComments": [],
+			"manifestKeyPaths": [],
+			"gatheredOnly": false,
+			"currentAssetSource": "A new instruction",
+			"currentAssetPath": "/Game/Fixture/Localization/ST_Localization.ST_Localization:AddedAfterGather",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.Localization.Table",
+			"key": "ChangedAfterGather",
+			"manifestSource": "Gathered instruction",
+			"archiveSource": "Gathered instruction",
+			"archiveTranslation": "Instruction collectée",
+			"runtimeText": "Instruction collectée",
+			"poMsgid": "Gathered instruction",
+			"poMsgstr": "Instruction collectée",
+			"poExtractedComments": [
+				"Key:\tChangedAfterGather",
+				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
+			],
+			"manifestKeyPaths": ["/Game/Fixture/Localization/ST_Localization.ST_Localization"],
+			"gatheredOnly": false,
+			"currentAssetSource": "Current instruction",
+			"currentAssetPath": "/Game/Fixture/Localization/ST_Localization.ST_Localization:ChangedAfterGather",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.Localization.Table",
+			"key": "NamedArgument",
+			"manifestSource": "Talking with {PlayerName}",
+			"archiveSource": "Talking with {PlayerName}",
+			"archiveTranslation": "Discussion avec {PlayerName}",
+			"runtimeText": "Discussion avec {PlayerName}",
+			"poMsgid": "Talking with {PlayerName}",
+			"poMsgstr": "Discussion avec {PlayerName}",
+			"poExtractedComments": [
+				"Key:\tNamedArgument",
+				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
+			],
+			"manifestKeyPaths": ["/Game/Fixture/Localization/ST_Localization.ST_Localization"],
+			"gatheredOnly": false,
+			"currentAssetSource": "Talking with {PlayerName}",
+			"currentAssetPath": "/Game/Fixture/Localization/ST_Localization.ST_Localization:NamedArgument",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.Localization.Table",
+			"key": "OrderedArgument",
+			"manifestSource": "Checkpoint {0}",
+			"archiveSource": "Checkpoint {0}",
+			"archiveTranslation": "Point de contrôle {0}",
+			"runtimeText": "Point de contrôle {0}",
+			"poMsgid": "Checkpoint {0}",
+			"poMsgstr": "Point de contrôle {0}",
+			"poExtractedComments": [
+				"Key:\tOrderedArgument",
+				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
+			],
+			"manifestKeyPaths": ["/Game/Fixture/Localization/ST_Localization.ST_Localization"],
+			"gatheredOnly": false,
+			"currentAssetSource": "Checkpoint {0}",
+			"currentAssetPath": "/Game/Fixture/Localization/ST_Localization.ST_Localization:OrderedArgument",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.Localization.Table",
+			"key": "Plural",
+			"manifestSource": "{Count} {Count}|plural(one=item,other=items)",
+			"archiveSource": "{Count} {Count}|plural(one=item,other=items)",
+			"archiveTranslation": "{Count} {Count}|plural(one=objet,other=objets)",
+			"runtimeText": "{Count} {Count}|plural(one=objet,other=objets)",
+			"poMsgid": "{Count} {Count}|plural(one=item,other=items)",
+			"poMsgstr": "{Count} {Count}|plural(one=objet,other=objets)",
+			"poExtractedComments": [
+				"Key:\tPlural",
+				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
+			],
+			"manifestKeyPaths": ["/Game/Fixture/Localization/ST_Localization.ST_Localization"],
+			"gatheredOnly": false,
+			"currentAssetSource": "{Count} {Count}|plural(one=item,other=items)",
+			"currentAssetPath": "/Game/Fixture/Localization/ST_Localization.ST_Localization:Plural",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.Localization.Table",
+			"key": "RemovedAfterGather",
+			"manifestSource": "Temporary instruction",
+			"archiveSource": "Temporary instruction",
+			"archiveTranslation": "Instruction temporaire",
+			"runtimeText": "Instruction temporaire",
+			"poMsgid": "Temporary instruction",
+			"poMsgstr": "Instruction temporaire",
+			"poExtractedComments": [
+				"Key:\tRemovedAfterGather",
+				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
+			],
+			"manifestKeyPaths": ["/Game/Fixture/Localization/ST_Localization.ST_Localization"],
+			"gatheredOnly": false,
+			"currentAssetSource": null,
+			"currentAssetPath": null,
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.Localization.Table",
+			"key": "Unsynced",
+			"manifestSource": "Start a new session",
+			"archiveSource": "Start a new session",
+			"archiveTranslation": "Commencer une nouvelle session",
+			"runtimeText": "Commencer une nouvelle session",
+			"poMsgid": "Start a new session",
+			"poMsgstr": "Commencer une nouvelle session",
+			"poExtractedComments": [
+				"Key:\tUnsynced",
+				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization"
+			],
+			"manifestKeyPaths": ["/Game/Fixture/Localization/ST_Localization.ST_Localization"],
+			"gatheredOnly": false,
+			"currentAssetSource": "Start a new session",
+			"currentAssetPath": "/Game/Fixture/Localization/ST_Localization.ST_Localization:Unsynced",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.Localization.Table",
+			"key": "Welcome",
+			"manifestSource": "Welcome back",
+			"archiveSource": "Welcome back",
+			"archiveTranslation": "Bon retour",
+			"runtimeText": "Bon retour",
+			"poMsgid": "Welcome back",
+			"poMsgstr": "Bon retour",
+			"poExtractedComments": [
+				"Key:\tWelcome",
+				"SourceLocation:\t/Game/Fixture/Localization/ST_Localization.ST_Localization",
+				"InfoMetaData:\t\"Comment\" : \"Greeting on the start screen.\""
+			],
+			"manifestKeyPaths": ["/Game/Fixture/Localization/ST_Localization.ST_Localization"],
+			"gatheredOnly": false,
+			"currentAssetSource": "Welcome back",
+			"currentAssetPath": "/Game/Fixture/Localization/ST_Localization.ST_Localization:Welcome",
+			"inTarget": true,
+			"packageReadable": true
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.StringTable",
+			"key": "PromptContinue",
+			"manifestSource": null,
+			"archiveSource": null,
+			"archiveTranslation": null,
+			"runtimeText": null,
+			"poMsgid": null,
+			"poMsgstr": null,
+			"poExtractedComments": [],
+			"manifestKeyPaths": [],
+			"gatheredOnly": false,
+			"currentAssetSource": "Continue",
+			"currentAssetPath": "/Game/Fixture/Text/ST_Game.ST_Game:PromptContinue",
+			"inTarget": false,
+			"packageReadable": true
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.StringTable",
+			"key": "PromptHold",
+			"manifestSource": null,
+			"archiveSource": null,
+			"archiveTranslation": null,
+			"runtimeText": null,
+			"poMsgid": null,
+			"poMsgstr": null,
+			"poExtractedComments": [],
+			"manifestKeyPaths": [],
+			"gatheredOnly": false,
+			"currentAssetSource": "Hold to skip",
+			"currentAssetPath": "/Game/Fixture/Text/ST_Game.ST_Game:PromptHold",
+			"inTarget": false,
+			"packageReadable": true
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.StringTable",
+			"key": "StatusSaving",
+			"manifestSource": null,
+			"archiveSource": null,
+			"archiveTranslation": null,
+			"runtimeText": null,
+			"poMsgid": null,
+			"poMsgstr": null,
+			"poExtractedComments": [],
+			"manifestKeyPaths": [],
+			"gatheredOnly": false,
+			"currentAssetSource": "Saving progress…",
+			"currentAssetPath": "/Game/Fixture/Text/ST_Game.ST_Game:StatusSaving",
+			"inTarget": false,
+			"packageReadable": true
+		}
+	],
+	"readablePackages": [
+		"/Game/Fixture/Localization/DA_Localization",
+		"/Game/Fixture/Localization/DT_Localization",
+		"/Game/Fixture/Localization/ST_Localization",
+		"/Game/Fixture/Text/ST_Game"
+	]
+}

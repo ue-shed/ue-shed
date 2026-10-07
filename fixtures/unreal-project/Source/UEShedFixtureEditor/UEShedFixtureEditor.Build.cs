@@ -21,6 +21,7 @@ public class UEShedFixtureEditor : ModuleRules
 				"InputCore",
 				"Json",
 				"LevelSequence",
+				"Localization",
 				"MovieScene",
 				"MovieSceneTracks",
 				"UEShedFixture",

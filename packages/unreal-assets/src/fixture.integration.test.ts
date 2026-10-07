@@ -60,11 +60,11 @@ describe.skipIf(!executable)("batched project scan", () => {
 		// coverage assets) plus three maps,
 		// including Movement Gym. Levels use the same classic package
 		// container, so enumeration selects them too.
-		expect(scan.summary.scannedAssets).toBe(80);
-		expect(scan.summary.emittedAssets).toBe(80);
+		expect(scan.summary.scannedAssets).toBe(83);
+		expect(scan.summary.emittedAssets).toBe(83);
 		expect(scan.summary.skippedAssets).toBe(0);
 		expect(scan.failures).toEqual([]);
-		expect(scan.assets).toHaveLength(80);
+		expect(scan.assets).toHaveLength(83);
 		expect(scan.assets.every((entry) => entry.fileBytes > 0)).toBe(true);
 	}, 15_000);
 
@@ -123,11 +123,11 @@ describe.skipIf(!executable)("batched project scan", () => {
 		const scan = await runReader(
 			scanSavedProject({ classes: ["Texture2D"], projectRoot: fixture.root })
 		);
-		expect(scan.summary.scannedAssets).toBe(80);
+		expect(scan.summary.scannedAssets).toBe(83);
 		expect(scan.summary.emittedAssets).toBe(17);
 		// The levels, Level Sequences, saved World Partition actor packages, and every Enhanced Input
 		// asset carry no Texture2D export, so they are ruled out before any decode.
-		expect(scan.summary.skippedAssets).toBe(63);
+		expect(scan.summary.skippedAssets).toBe(66);
 		expect(
 			scan.assets
 				.filter(isFullScanEntry)
@@ -151,7 +151,7 @@ describe.skipIf(!executable)("batched project scan", () => {
 		);
 		// Every InputAction and InputMappingContext names TextProperty for its description; the
 		// LevelSequence and Blueprint fixtures name it for localized native graph/channel values.
-		expect(scan.summary.emittedAssets).toBe(31);
+		expect(scan.summary.emittedAssets).toBe(34);
 		expect(
 			scan.assets
 				.filter(isFullScanEntry)
@@ -252,14 +252,14 @@ describe.skipIf(!executable)("batched project scan", () => {
 			})
 		);
 		expect(scan.summary.depth).toBe("header");
-		expect(scan.summary.scannedAssets).toBe(80);
-		// The twelve authoring packages, each exporting exactly one table.
-		expect(scan.summary.emittedAssets).toBe(12);
+		expect(scan.summary.scannedAssets).toBe(83);
+		// The twelve authoring tables and the localization table, each exporting exactly one table.
+		expect(scan.summary.emittedAssets).toBe(13);
 		const headers = scan.assets.filter(isHeaderScanEntry);
-		expect(headers).toHaveLength(12);
+		expect(headers).toHaveLength(13);
 		// Only the exports the filter selected are emitted, so the AssetImportData export that
 		// accompanies every imported table is absent.
-		expect(headers.flatMap((entry) => entry.header.exports)).toHaveLength(12);
+		expect(headers.flatMap((entry) => entry.header.exports)).toHaveLength(13);
 		expect(
 			headers.every((entry) =>
 				entry.header.exports.every(
@@ -356,7 +356,7 @@ describe.skipIf(!executable)("batched project scan", () => {
 				})
 			);
 			expect(wider.summary.cacheHits).toBe(0);
-			expect(wider.summary.emittedAssets).toBe(12);
+			expect(wider.summary.emittedAssets).toBe(13);
 		} finally {
 			await rm(cacheDirectory, { force: true, recursive: true });
 		}
@@ -393,7 +393,7 @@ describe.skipIf(!executable)("batched project scan", () => {
 describe.skipIf(!executable)("saved authoring fixture", () => {
 	it("discovers DataTables without requiring their paths in advance", async () => {
 		const catalog = await runReader(discoverSavedTables({ projectRoot: fixture.root }));
-		expect(catalog.tables).toHaveLength(12);
+		expect(catalog.tables).toHaveLength(13);
 		expect(catalog.tables[0]?.objectPath).toBe(
 			"/Game/Fixture/Authoring/CDT_Scalars.CDT_Scalars"
 		);

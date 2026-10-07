@@ -17,7 +17,7 @@
 
 ## Status
 
-- **State**: IN PROGRESS. Phase 0 is done; Phases 1 and 2 are next.
+- **State**: IN PROGRESS. Phases 0 and 1 are done; Phase 2 is in verification.
 - **Priority**: P1
 - **Effort**: XL
 - **Risk**: HIGH. The plan adds the first UE Shed writes to localization files and the first
@@ -143,6 +143,24 @@ clearly indicated. ADR 0009 is accepted.
 **Gate**: both engines generate the target from the committed inputs. The recorded evidence covers
 every state in the product contract. No generated localization file is edited by hand.
 
+**Evidence (2026-10-07)**:
+
+- `pnpm fixture:generate-localization` (13 fresh processes) and `pnpm fixture:verify-localization`
+  passed on UE 5.7.4 in the canonical fixture and on UE 5.8.2 in a disposable copy. Each engine's
+  reload evidence equals its committed `evidence.ue<version>.json`. The two differ only by 5.8's
+  manifest `DevNotes`.
+- `pnpm test:localization-fixture` confirms every authored state in `expected-states.json` from both
+  engines' evidence without an engine.
+- A second UE 5.7 regeneration reproduced the manifest, archives, `.locres`, `.locmeta` and
+  evidence byte for byte. Only package save GUIDs, PO header dates and report timestamps differ.
+- UE 4.27.2 generated `fixtures/unreal-427-localization` from config text without a module build.
+  Its manifest uses the older brace-on-its-own-line JSON layout. It has no translations.
+- `.gitattributes` keeps generated localization files byte-exact (`-text`).
+- Not yet run: `pnpm test:uasset-engine-matrix` with the new localization lane.
+
+Follow-up: once Plan 050's `fixtures/legacy-unreal-project` lands, give it a localization target so
+4.27 joins real asset text with translations, then retire the config-only 4.27 fixture.
+
 ## Phase 2 — Game Text workbench alignment and count fixes
 
 This phase is read-only and independent of the localization decisions. It may run in parallel with
@@ -204,6 +222,11 @@ Phase 1.
 3. Add a pure join in `@ue-shed/game-text` from `TextCorpus` plus localization evidence to
    per-line, per-culture states, with coverage-qualified "Unknown" states and gathered-only lines.
    Expose the String Table namespace in the corpus if the join needs it.
+   Translator notes must also reach 5.7 projects. Today the corpus reads `devNotes` only from
+   UE 5.8 keyed text, so a String Table entry's `Comment` metadata shows as "No translator notes",
+   even though Unreal exports it to translators as PO `InfoMetaData`. Read String Table entry
+   metadata in the parser and inspection layers. Show manifest `InfoMetaData` and 5.8 `DevNotes` for
+   gathered-only lines.
 4. Extend the bounded query with target and culture selection, state lenses, translation text
    search, and focus that shows every culture. Counts come from the same query.
 5. Add CLI parity:

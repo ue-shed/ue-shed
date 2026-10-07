@@ -1,0 +1,58 @@
+{
+	"translations": {
+		"de": {
+			"Fixture.Localization.Table": {
+				"Welcome": "Willkommen zurück",
+				"NamedArgument": "Gespräch mit {Name}",
+				"OrderedArgument": "Kontrollpunkt {0}",
+				"Plural": "{Count} {Count}|plural(one=Gegenstand,other=Gegenstände)",
+				"Unsynced": "Eine neue Sitzung starten",
+				"ChangedAfterGather": "Gesammelte Anweisung",
+				"RemovedAfterGather": "Vorübergehende Anweisung"
+			},
+			"Fixture.Localization.Asset": {
+				"Outdated": "Die Tür öffnen",
+				"DuplicateA": "Bestätigen",
+				"DuplicateB": "Bestätigen"
+			},
+			"Fixture.Localization.Rows": {
+				"MissingFrench": "Fortschritt speichern",
+				"EmptyFrench": "Zum Menü zurückkehren"
+			},
+			"Fixture.Localization.Source": {
+				"RuntimeReady": "Bereit zum Start",
+				"RuntimeOrdered": "Abschnitt {0} von {1}"
+			}
+		},
+		"fr": {
+			"Fixture.Localization.Table": {
+				"Welcome": "Bon retour",
+				"NamedArgument": "Discussion avec {PlayerName}",
+				"OrderedArgument": "Point de contrôle {0}",
+				"Plural": "{Count} {Count}|plural(one=objet,other=objets)",
+				"Unsynced": "Commencer une nouvelle session",
+				"ChangedAfterGather": "Instruction collectée",
+				"RemovedAfterGather": "Instruction temporaire"
+			},
+			"Fixture.Localization.Asset": {
+				"Outdated": "Ouvrir la porte",
+				"DuplicateA": "Confirmer",
+				"DuplicateB": "Confirmer"
+			},
+			"Fixture.Localization.Rows": {
+				"EmptyFrench": ""
+			},
+			"Fixture.Localization.Source": {
+				"RuntimeReady": "Prêt à commencer",
+				"RuntimeOrdered": "Étape {0} sur {1}"
+			}
+		}
+	},
+	"poOverrides": {
+		"de": {
+			"Fixture.Localization.Table": {
+				"Unsynced": "Eine frische Sitzung beginnen"
+			}
+		}
+	}
+}

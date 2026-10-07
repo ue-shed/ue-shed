@@ -1,0 +1,114 @@
+﻿# FixtureGame English translation.
+# Fill out your copyright notice in the Description page of Project Settings.
+# 
+msgid ""
+msgstr ""
+"Project-Id-Version: FixtureGame\n"
+"POT-Creation-Date: 2026-10-07 01:53\n"
+"PO-Revision-Date: 2026-10-07 01:53\n"
+"Language-Team: \n"
+"Language: en\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+#. Key:	DuplicateA
+#. SourceLocation:	/Game/Fixture/Localization/DA_Localization.DA_Localization.EqualSourceFirst
+#: /Game/Fixture/Localization/DA_Localization.DA_Localization.EqualSourceFirst
+msgctxt "Fixture.Localization.Asset,DuplicateA"
+msgid "Confirm"
+msgstr "Confirm"
+
+#. Key:	DuplicateB
+#. SourceLocation:	/Game/Fixture/Localization/DA_Localization.DA_Localization.EqualSourceSecond
+#: /Game/Fixture/Localization/DA_Localization.DA_Localization.EqualSourceSecond
+msgctxt "Fixture.Localization.Asset,DuplicateB"
+msgid "Confirm"
+msgstr "Confirm"
+
+#. Key:	Outdated
+#. SourceLocation:	/Game/Fixture/Localization/DA_Localization.DA_Localization.SharedPrimary
+#: /Game/Fixture/Localization/DA_Localization.DA_Localization.SharedPrimary
+msgctxt "Fixture.Localization.Asset,Outdated"
+msgid "Open the gate"
+msgstr "Open the gate"
+
+#. Key:	EmptyFrench
+#. SourceLocation:	/Game/Fixture/Localization/DT_Localization.DT_Localization.EmptyFrench.DisplayName
+#: /Game/Fixture/Localization/DT_Localization.DT_Localization.EmptyFrench.DisplayName
+msgctxt "Fixture.Localization.Rows,EmptyFrench"
+msgid "Return to menu"
+msgstr "Return to menu"
+
+#. Key:	MissingFrench
+#. SourceLocation:	/Game/Fixture/Localization/DT_Localization.DT_Localization.MissingFrench.DisplayName
+#: /Game/Fixture/Localization/DT_Localization.DT_Localization.MissingFrench.DisplayName
+msgctxt "Fixture.Localization.Rows,MissingFrench"
+msgid "Save progress"
+msgstr "Save progress"
+
+#. Key:	ChangedAfterGather
+#. SourceLocation:	/Game/Fixture/Localization/ST_Localization.ST_Localization
+#: /Game/Fixture/Localization/ST_Localization.ST_Localization
+msgctxt "Fixture.Localization.Table,ChangedAfterGather"
+msgid "Gathered instruction"
+msgstr "Gathered instruction"
+
+#. Key:	NamedArgument
+#. SourceLocation:	/Game/Fixture/Localization/ST_Localization.ST_Localization
+#: /Game/Fixture/Localization/ST_Localization.ST_Localization
+msgctxt "Fixture.Localization.Table,NamedArgument"
+msgid "Talking with {PlayerName}"
+msgstr "Talking with {PlayerName}"
+
+#. Key:	OrderedArgument
+#. SourceLocation:	/Game/Fixture/Localization/ST_Localization.ST_Localization
+#: /Game/Fixture/Localization/ST_Localization.ST_Localization
+msgctxt "Fixture.Localization.Table,OrderedArgument"
+msgid "Checkpoint {0}"
+msgstr "Checkpoint {0}"
+
+#. Key:	Plural
+#. SourceLocation:	/Game/Fixture/Localization/ST_Localization.ST_Localization
+#: /Game/Fixture/Localization/ST_Localization.ST_Localization
+msgctxt "Fixture.Localization.Table,Plural"
+msgid "{Count} {Count}|plural(one=item,other=items)"
+msgstr "{Count} {Count}|plural(one=item,other=items)"
+
+#. Key:	RemovedAfterGather
+#. SourceLocation:	/Game/Fixture/Localization/ST_Localization.ST_Localization
+#: /Game/Fixture/Localization/ST_Localization.ST_Localization
+msgctxt "Fixture.Localization.Table,RemovedAfterGather"
+msgid "Temporary instruction"
+msgstr "Temporary instruction"
+
+#. Key:	Unsynced
+#. SourceLocation:	/Game/Fixture/Localization/ST_Localization.ST_Localization
+#: /Game/Fixture/Localization/ST_Localization.ST_Localization
+msgctxt "Fixture.Localization.Table,Unsynced"
+msgid "Start a new session"
+msgstr "Start a new session"
+
+#. Key:	Welcome
+#. SourceLocation:	/Game/Fixture/Localization/ST_Localization.ST_Localization
+#. InfoMetaData:	"Comment" : "Greeting on the start screen."
+#: /Game/Fixture/Localization/ST_Localization.ST_Localization
+msgctxt "Fixture.Localization.Table,Welcome"
+msgid "Welcome back"
+msgstr "Welcome back"
+
+#. Key:	RuntimeOrdered
+#. SourceLocation:	Source/UEShedFixture/Private/UEShedLocalizationText.cpp(10)
+#: Source/UEShedFixture/Private/UEShedLocalizationText.cpp(10)
+msgctxt "Fixture.Localization.Source,RuntimeOrdered"
+msgid "Stage {0} of {1}"
+msgstr "Stage {0} of {1}"
+
+#. Key:	RuntimeReady
+#. SourceLocation:	Source/UEShedFixture/Private/UEShedLocalizationText.cpp(9)
+#: Source/UEShedFixture/Private/UEShedLocalizationText.cpp(9)
+msgctxt "Fixture.Localization.Source,RuntimeReady"
+msgid "Ready to begin"
+msgstr "Ready to begin"
+

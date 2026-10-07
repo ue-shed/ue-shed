@@ -1,0 +1,330 @@
+{
+	"schemaVersion": 1,
+	"target": "FixtureGame",
+	"entries": [
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Asset",
+			"key": "DuplicateA",
+			"state": "translated"
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Asset",
+			"key": "DuplicateB",
+			"state": "translated"
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Asset",
+			"key": "Outdated",
+			"state": "translated"
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Rows",
+			"key": "EmptyFrench",
+			"state": "translated"
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Rows",
+			"key": "MissingFrench",
+			"state": "translated"
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Source",
+			"key": "RuntimeOrdered",
+			"state": "gathered_only"
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Source",
+			"key": "RuntimeReady",
+			"state": "gathered_only"
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Table",
+			"key": "AddedAfterGather",
+			"state": "not_gathered"
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Table",
+			"key": "ChangedAfterGather",
+			"state": "changed_since_gather"
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Table",
+			"key": "NamedArgument",
+			"state": "translated"
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Table",
+			"key": "OrderedArgument",
+			"state": "translated"
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Table",
+			"key": "Plural",
+			"state": "translated"
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Table",
+			"key": "RemovedAfterGather",
+			"state": "not_found"
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Table",
+			"key": "Unsynced",
+			"state": "translated"
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.Localization.Table",
+			"key": "Welcome",
+			"state": "translated"
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.StringTable",
+			"key": "PromptContinue",
+			"state": "outside_target"
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.StringTable",
+			"key": "PromptHold",
+			"state": "outside_target"
+		},
+		{
+			"culture": "en",
+			"namespace": "Fixture.StringTable",
+			"key": "StatusSaving",
+			"state": "outside_target"
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.Localization.Asset",
+			"key": "DuplicateA",
+			"state": "translated"
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.Localization.Asset",
+			"key": "DuplicateB",
+			"state": "translated"
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.Localization.Asset",
+			"key": "Outdated",
+			"state": "needs_update"
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.Localization.Rows",
+			"key": "EmptyFrench",
+			"state": "translated"
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.Localization.Rows",
+			"key": "MissingFrench",
+			"state": "translated"
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.Localization.Source",
+			"key": "RuntimeOrdered",
+			"state": "gathered_only"
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.Localization.Source",
+			"key": "RuntimeReady",
+			"state": "gathered_only"
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.Localization.Table",
+			"key": "AddedAfterGather",
+			"state": "not_gathered"
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.Localization.Table",
+			"key": "ChangedAfterGather",
+			"state": "changed_since_gather"
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.Localization.Table",
+			"key": "NamedArgument",
+			"state": "translated"
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.Localization.Table",
+			"key": "OrderedArgument",
+			"state": "translated"
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.Localization.Table",
+			"key": "Plural",
+			"state": "translated"
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.Localization.Table",
+			"key": "RemovedAfterGather",
+			"state": "not_found"
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.Localization.Table",
+			"key": "Unsynced",
+			"state": "not_synced"
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.Localization.Table",
+			"key": "Welcome",
+			"state": "translated"
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.StringTable",
+			"key": "PromptContinue",
+			"state": "outside_target"
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.StringTable",
+			"key": "PromptHold",
+			"state": "outside_target"
+		},
+		{
+			"culture": "de",
+			"namespace": "Fixture.StringTable",
+			"key": "StatusSaving",
+			"state": "outside_target"
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.Localization.Asset",
+			"key": "DuplicateA",
+			"state": "translated"
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.Localization.Asset",
+			"key": "DuplicateB",
+			"state": "translated"
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.Localization.Asset",
+			"key": "Outdated",
+			"state": "needs_update"
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.Localization.Rows",
+			"key": "EmptyFrench",
+			"state": "not_translated"
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.Localization.Rows",
+			"key": "MissingFrench",
+			"state": "not_translated"
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.Localization.Source",
+			"key": "RuntimeOrdered",
+			"state": "gathered_only"
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.Localization.Source",
+			"key": "RuntimeReady",
+			"state": "gathered_only"
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.Localization.Table",
+			"key": "AddedAfterGather",
+			"state": "not_gathered"
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.Localization.Table",
+			"key": "ChangedAfterGather",
+			"state": "changed_since_gather"
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.Localization.Table",
+			"key": "NamedArgument",
+			"state": "translated"
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.Localization.Table",
+			"key": "OrderedArgument",
+			"state": "translated"
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.Localization.Table",
+			"key": "Plural",
+			"state": "translated"
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.Localization.Table",
+			"key": "RemovedAfterGather",
+			"state": "not_found"
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.Localization.Table",
+			"key": "Unsynced",
+			"state": "translated"
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.Localization.Table",
+			"key": "Welcome",
+			"state": "translated"
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.StringTable",
+			"key": "PromptContinue",
+			"state": "outside_target"
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.StringTable",
+			"key": "PromptHold",
+			"state": "outside_target"
+		},
+		{
+			"culture": "fr",
+			"namespace": "Fixture.StringTable",
+			"key": "StatusSaving",
+			"state": "outside_target"
+		}
+	]
+}

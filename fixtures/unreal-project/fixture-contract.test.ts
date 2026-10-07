@@ -47,6 +47,20 @@ type FixtureContract = {
 	readonly fixtureVersion: string;
 	readonly engine: { readonly major: number; readonly minor: number };
 	readonly contentRoot: string;
+	readonly localization: {
+		readonly target: string;
+		readonly nativeCulture: string;
+		readonly cultures: readonly string[];
+		readonly contentRoot: string;
+		readonly sourceRoot: string;
+		readonly settings: string;
+		readonly configRoot: string;
+		readonly dataRoot: string;
+		readonly translations: string;
+		readonly intent: string;
+		readonly evidence: readonly string[];
+		readonly assets: readonly string[];
+	};
 	readonly blueprintGraph: {
 		readonly assetPath: string;
 		readonly graphs: number;
@@ -217,6 +231,7 @@ function readContract(): FixtureContract {
 		!isJsonObject(value.mapReview) ||
 		!isJsonObject(value.offlineWorld) ||
 		!isJsonObject(value.gameText) ||
+		!isJsonObject(value.localization) ||
 		!isJsonObject(value.levelSequence) ||
 		!isJsonObject(value.enhancedInput) ||
 		!isJsonObject(value.scenarioStudio) ||
@@ -725,6 +740,60 @@ describe("generic Unreal fixture contract", () => {
 });
 
 describe("fixture project", () => {
+	it("declares a generated localization target and its committed outputs", () => {
+		const value = readJson(join(fixtureRoot, "fixture-contract.json"));
+		if (!isJsonObject(value) || !isJsonObject(value.localization))
+			throw new Error("Missing localization contract");
+		const localization = value.localization;
+		expect(localization.target).toBe("FixtureGame");
+		expect(localization.nativeCulture).toBe("en");
+		expect(localization.cultures).toEqual(["en", "de", "fr"]);
+		expect(localization.contentRoot).toBe("/Game/Fixture/Localization");
+		expect(localization.sourceRoot).toBe("Source/UEShedFixture");
+		for (const name of ["settings", "configRoot", "dataRoot", "translations", "intent"]) {
+			const path = localization[name];
+			if (!isJsonString(path)) throw new Error(`Invalid localization ${name}`);
+			expect(existsSync(resolve(fixtureRoot, path)), path).toBe(true);
+		}
+		for (const name of ["evidence", "assets"]) {
+			const paths = localization[name];
+			if (!Array.isArray(paths)) throw new Error(`Invalid localization ${name}`);
+			for (const path of paths) {
+				if (!isJsonString(path)) throw new Error(`Invalid localization ${name} path`);
+				const relative =
+					name === "assets"
+						? `Content/${path.slice("/Game/".length).split(".")[0]}.uasset`
+						: path;
+				expect(existsSync(resolve(fixtureRoot, relative)), relative).toBe(true);
+			}
+		}
+		for (const operation of ["Gather", "Import", "Export", "Compile", "GenerateReports"])
+			expect(
+				existsSync(join(fixtureRoot, "Config/Localization", `FixtureGame_${operation}.ini`))
+			).toBe(true);
+		for (const culture of ["en", "de", "fr"])
+			for (const extension of ["archive", "po", "locres"])
+				expect(
+					existsSync(
+						join(
+							fixtureRoot,
+							"Content/Localization/FixtureGame",
+							culture,
+							`FixtureGame.${extension}`
+						)
+					)
+				).toBe(true);
+		for (const filename of [
+			"FixtureGame.manifest",
+			"FixtureGame.locmeta",
+			"FixtureGame.csv",
+			"FixtureGame_Conflicts.txt"
+		])
+			expect(
+				existsSync(join(fixtureRoot, "Content/Localization/FixtureGame", filename))
+			).toBe(true);
+	});
+
 	it("keeps UE Shed plugins out of the portable project descriptor", () => {
 		const project = readJson(join(fixtureRoot, "UEShedFixture.uproject"));
 		if (!isJsonObject(project) || !Array.isArray(project.Plugins)) {

@@ -7,7 +7,7 @@ import {
 	type SavedAssetScan
 } from "@ue-shed/unreal-assets";
 import { Effect } from "effect";
-import { CliCommandError, messageOf, printJson } from "./cli-runtime.js";
+import { CliCommandError, CliRuntime, messageOf, printJson } from "./cli-runtime.js";
 import { observeCliOperation, readerLayer } from "./cli-operation.js";
 import type { CliCommand } from "./command-model.js";
 
@@ -43,6 +43,32 @@ export type AssetsScanCommand = Extract<CliCommand, { readonly _tag: "AssetsScan
 export type TextScanCommand = Extract<CliCommand, { readonly _tag: "TextScan" }>;
 export type TextSearchCommand = Extract<CliCommand, { readonly _tag: "TextSearch" }>;
 export type TextReviewCommand = Extract<CliCommand, { readonly _tag: "TextReview" }>;
+export type TextRulesInitCommand = Extract<CliCommand, { readonly _tag: "TextRulesInit" }>;
+
+export const runTextRulesInit = Effect.fn("Cli.workflow.text_rules_init")(
+	(command: TextRulesInitCommand) =>
+		observeCliOperation(
+			command._tag,
+			Effect.gen(function* () {
+				const { createStarterTextRules } = yield* Effect.promise(
+					() => import("@ue-shed/game-text")
+				);
+				const path = yield* createStarterTextRules(
+					command.projectRoot,
+					command.output
+				).pipe(
+					Effect.mapError(
+						(error) =>
+							new CliCommandError({
+								message: `${error.message} ${error.recovery}`
+							})
+					)
+				);
+				const runtime = yield* CliRuntime;
+				yield* runtime.print(path + "\n");
+			})
+		)
+);
 export type InputInspectCommand = Extract<CliCommand, { readonly _tag: "InputInspect" }>;
 
 export const runAssetsScan = Effect.fn("Cli.workflow.assets_scan")((command: AssetsScanCommand) =>

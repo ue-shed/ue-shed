@@ -3,8 +3,12 @@ import {
 	type GameTextInvestigationQuery,
 	type GameTextInvestigationPresetResult,
 	exportGameTextInvestigation,
-	gameTextInvestigationCsv
+	gameTextCsv,
+	gameTextQualityCsv,
+	createStarterTextRules,
+	GAME_TEXT_RULES_RELATIVE_PATH
 } from "@ue-shed/game-text";
+import { resolve } from "node:path";
 import {
 	InvestigationError,
 	type InvestigationSource,
@@ -64,6 +68,10 @@ export interface WorkbenchGameTextApi {
 	readonly focus: (request: TextCorpusFocusRequest) => Effect.Effect<TextCorpusFocusResult>;
 	readonly search: (request: TextCorpusSearchRequest) => Effect.Effect<TextCorpusSearchResult>;
 	readonly chooseQualityRules: () => Effect.Effect<TextQualityQueryRunResult>;
+	readonly reloadQualityRules: () => Effect.Effect<TextQualityQueryRunResult>;
+	readonly createStarterRules: (
+		loadExisting: boolean
+	) => Effect.Effect<TextQualityQueryRunResult>;
 	readonly previewQualityRules: (
 		document: TextQualityRuleDocument
 	) => Effect.Effect<TextQualityRuleUpdateResult>;
@@ -107,7 +115,9 @@ export const WorkbenchGameTextLive = Layer.effect(
 		const queryModel = yield* Ref.make<TextCorpusQuery | undefined>(undefined);
 		const qualityModel = yield* Ref.make<TextQualityQuery | undefined>(undefined);
 		const qualityDocument = yield* Ref.make<TextQualityRuleDocument | undefined>(undefined);
-		const qualityRulePath = yield* Ref.make<string | undefined>(undefined);
+		const qualityRulePath = yield* Ref.make<
+			{ readonly path: string; readonly projectRoot: string } | undefined
+		>(undefined);
 		const progress = Effect.fn("Workbench.WorkbenchGameText.progress")(function* () {
 			const projectProgress = yield* project.progress();
 			if (projectProgress.phase === "enumerating" || projectProgress.phase === "scanning") {
@@ -192,21 +202,36 @@ export const WorkbenchGameTextLive = Layer.effect(
 									"The project changed during the scan.",
 									"Refresh to read the current project generation."
 								);
-							const next = textCorpusQuery(report);
+							const next = textCorpusQuery(report, new Date().toISOString());
+							const owner = yield* Ref.get(modelSelection);
+							const rules =
+								owner?.projectRoot === projectRoot
+									? yield* Ref.get(qualityDocument)
+									: undefined;
+							const rulePath =
+								owner?.projectRoot === projectRoot
+									? yield* Ref.get(qualityRulePath)
+									: undefined;
 							yield* Ref.set(investigationSnapshot, {
 								source: {
 									projectRoot,
 									generation: index.generation,
 									authority: "project_files"
 								},
-								corpus: report
+								corpus: report,
+								...(rules ? { rules } : undefined)
 							});
 							yield* Effect.all([
 								Ref.set(retainedCorpus, report),
 								Ref.set(queryModel, next),
-								Ref.set(qualityModel, undefined),
-								Ref.set(qualityDocument, undefined),
-								Ref.set(qualityRulePath, undefined)
+								Ref.set(
+									qualityModel,
+									rules
+										? textQualityQuery(evaluateTextQuality(report, rules))
+										: undefined
+								),
+								Ref.set(qualityDocument, rules),
+								Ref.set(qualityRulePath, rulePath)
 							]);
 							yield* Ref.set(modelSelection, {
 								projectRoot,
@@ -267,7 +292,6 @@ export const WorkbenchGameTextLive = Layer.effect(
 			readonly generation: number;
 			readonly ruleFile: string;
 		}> {}
-		const activeKey = yield* Ref.make<QueryKey | undefined>(undefined);
 		const refreshes = yield* Cache.makeWith(
 			(key: QueryKey) =>
 				Effect.gen(function* () {
@@ -280,9 +304,7 @@ export const WorkbenchGameTextLive = Layer.effect(
 							"The selected project changed.",
 							"Retry in the selected project."
 						);
-					const result = yield* runRefresh(key.projectRoot, index);
-					if (result.status === "completed") yield* Ref.set(activeKey, key);
-					return result;
+					return yield* runRefresh(key.projectRoot, index);
 				}).pipe(
 					Effect.catch((error) =>
 						Effect.succeed(unavailableQueryProject(error.message, error.recovery))
@@ -304,16 +326,11 @@ export const WorkbenchGameTextLive = Layer.effect(
 					generation: current.project.generation ?? 0,
 					ruleFile: ""
 				});
-				const previous = yield* Ref.get(activeKey);
 				const model = yield* currentModel(queryModel);
-				if (
-					!refresh &&
-					previous?.projectRoot === key.projectRoot &&
-					previous.generation === key.generation &&
-					previous.ruleFile === key.ruleFile &&
-					model
-				) {
-					return { status: "completed" as const, summary: model.summary() };
+				if (!refresh) {
+					return model
+						? { status: "completed" as const, summary: model.summary() }
+						: { status: "not_scanned" as const };
 				}
 				return yield* Cache.get(refreshes, key);
 			}
@@ -394,7 +411,11 @@ export const WorkbenchGameTextLive = Layer.effect(
 				readonly corpus: TextCorpus;
 			}) {
 				const snapshot = yield* Ref.get(investigationSnapshot);
-				if (snapshot?.corpus !== prepared.corpus) return { status: "not_ready" as const };
+				if (
+					snapshot?.corpus !== prepared.corpus ||
+					(yield* currentModel(retainedCorpus)) !== prepared.corpus
+				)
+					return { status: "not_ready" as const };
 				yield* Ref.set(investigationSnapshot, { ...snapshot, rules: prepared.document });
 				yield* Effect.all([
 					Ref.set(qualityDocument, prepared.document),
@@ -405,6 +426,78 @@ export const WorkbenchGameTextLive = Layer.effect(
 					status: "completed" as const,
 					summary: prepared.model.summary()
 				};
+			}
+		);
+
+		const createStarterRules = Effect.fn("Workbench.WorkbenchGameText.createStarterRules")(
+			function* (loadExisting: boolean) {
+				const current = yield* project.current();
+				if (current.status !== "ready" || !(yield* currentModel(retainedCorpus)))
+					return { status: "not_ready" as const };
+				const root = current.project.projectRoot;
+				const path = resolve(root, GAME_TEXT_RULES_RELATIVE_PATH);
+				if (!loadExisting) {
+					const created = yield* createStarterTextRules(root).pipe(
+						Effect.match({
+							onSuccess: () => ({ status: "ready" as const }),
+							onFailure: (error) => ({
+								status: "failed" as const,
+								error: {
+									code:
+										error.code === "already_exists"
+											? ("already_exists" as const)
+											: ("write_failed" as const),
+									message: error.message,
+									recovery:
+										error.code === "already_exists"
+											? "Load the existing rules file to use its writing checks."
+											: error.code === "invalid_project"
+												? "Select an existing project folder and scan it before creating rules."
+												: "Check the project folder's write permissions and try again.",
+									retrySafe: true
+								}
+							})
+						})
+					);
+					if (created.status === "failed") return created;
+				}
+				return yield* files
+					.readFileWithin(root, GAME_TEXT_RULES_RELATIVE_PATH, { maxBytes: 1_048_576 })
+					.pipe(
+						Effect.flatMap((bytes) =>
+							decodeTextQualityRuleDocumentJson(new TextDecoder().decode(bytes))
+						),
+						Effect.flatMap((document) => prepareQualityRules(document)),
+						Effect.flatMap((prepared) =>
+							Effect.gen(function* () {
+								const latest = yield* project.current();
+								if (
+									latest.status !== "ready" ||
+									latest.project.projectRoot !== root ||
+									(latest.project.generation ?? 0) !==
+										(current.project.generation ?? 0)
+								)
+									return { status: "not_ready" as const };
+								if (prepared.status !== "ready") return prepared;
+								yield* Ref.set(qualityRulePath, { path, projectRoot: root });
+								return yield* publishQualityRules(prepared);
+							})
+						),
+						Effect.catch((error) =>
+							Effect.succeed({
+								status: "failed" as const,
+								error: {
+									code:
+										error._tag === "TextQualityRuleDocumentError"
+											? ("invalid_rules" as const)
+											: ("read_failed" as const),
+									message: error.message,
+									recovery: error.recovery,
+									retrySafe: true
+								}
+							})
+						)
+					);
 			}
 		);
 
@@ -455,9 +548,16 @@ export const WorkbenchGameTextLive = Layer.effect(
 						status: "failed" as const
 					};
 				}
+				if ((yield* currentModel(retainedCorpus)) !== corpus)
+					return { status: "not_ready" as const };
 				const prepared = yield* prepareQualityRules(document.value);
 				if (prepared.status !== "ready") return prepared;
-				yield* Ref.set(qualityRulePath, choice.path);
+				const snapshot = yield* Ref.get(investigationSnapshot);
+				if (snapshot?.corpus !== prepared.corpus) return { status: "not_ready" as const };
+				yield* Ref.set(qualityRulePath, {
+					path: choice.path,
+					projectRoot: snapshot.source.projectRoot
+				});
 				return yield* publishQualityRules(prepared);
 			}
 		);
@@ -471,9 +571,52 @@ export const WorkbenchGameTextLive = Layer.effect(
 			}
 		);
 
+		const reloadQualityRules = Effect.fn("Workbench.WorkbenchGameText.reloadQualityRules")(
+			function* () {
+				const corpus = yield* currentModel(retainedCorpus);
+				if (!corpus) return { status: "not_ready" as const };
+				const destination = yield* Ref.get(qualityRulePath);
+				const owner = yield* Ref.get(modelSelection);
+				const path =
+					destination?.projectRoot === owner?.projectRoot ? destination?.path : undefined;
+				if (!path) {
+					return yield* chooseQualityRules();
+				}
+				return yield* files.readFile(path, { maxBytes: 1_048_576 }).pipe(
+					Effect.flatMap((bytes) =>
+						decodeTextQualityRuleDocumentJson(new TextDecoder().decode(bytes))
+					),
+					Effect.flatMap((document) =>
+						Effect.gen(function* () {
+							if ((yield* currentModel(retainedCorpus)) !== corpus)
+								return { status: "not_ready" as const };
+							return yield* previewQualityRules(document);
+						})
+					),
+					Effect.catch((error) =>
+						Effect.succeed({
+							status: "failed" as const,
+							error: {
+								code:
+									error._tag === "TextQualityRuleDocumentError"
+										? ("invalid_rules" as const)
+										: ("read_failed" as const),
+								message: error.message,
+								recovery: error.recovery,
+								retrySafe: true
+							}
+						})
+					)
+				);
+			}
+		);
+
 		const saveQualityRules = Effect.fn("Workbench.WorkbenchGameText.saveQualityRules")(
 			function* (document: TextQualityRuleDocument) {
-				const path = yield* Ref.get(qualityRulePath);
+				const destination = yield* Ref.get(qualityRulePath);
+				const owner = yield* Ref.get(modelSelection);
+				const path =
+					destination?.projectRoot === owner?.projectRoot ? destination?.path : undefined;
 				if (path === undefined) {
 					if ((yield* Ref.get(qualityDocument)) === undefined)
 						return { status: "not_ready" as const };
@@ -490,6 +633,12 @@ export const WorkbenchGameTextLive = Layer.effect(
 				}
 				const prepared = yield* prepareQualityRules(document);
 				if (prepared.status !== "ready") return prepared;
+				const snapshot = yield* Ref.get(investigationSnapshot);
+				if (
+					snapshot?.corpus !== prepared.corpus ||
+					snapshot.source.projectRoot !== destination?.projectRoot
+				)
+					return { status: "not_ready" as const };
 				const bytes = new TextEncoder().encode(
 					`${JSON.stringify(prepared.document, null, "\t")}\n`
 				);
@@ -558,23 +707,41 @@ export const WorkbenchGameTextLive = Layer.effect(
 					query,
 					...(snapshot.rules ? { rules: snapshot.rules } : undefined)
 				};
-				return yield* exportGameTextInvestigation(snapshot.corpus, preset, snapshot.source);
+				const document = yield* exportGameTextInvestigation(
+					snapshot.corpus,
+					preset,
+					snapshot.source
+				);
+				return { document, corpus: snapshot.corpus };
 			}
 		);
 		const investigationExport = Effect.fn("Workbench.GameText.investigationExport")(
 			(query: GameTextInvestigationQuery, format: InvestigationFormat) =>
 				captureInvestigation(query).pipe(
-					Effect.flatMap((document) =>
+					Effect.flatMap(({ document, corpus }) =>
 						saveInvestigation(dialog, {
 							contents:
 								format === "json"
 									? JSON.stringify(document, null, "\t") + "\n"
-									: gameTextInvestigationCsv(document),
+									: document.result.mode === "corpus"
+										? gameTextCsv(document.result.corpus, corpus)
+										: gameTextQualityCsv(document.result.report, corpus),
 							extension: format,
 							rowCount:
-								document.result.mode === "corpus"
-									? document.result.corpus.units.length
-									: document.result.report.findings.length
+								format === "json"
+									? document.result.mode === "corpus"
+										? document.result.corpus.units.length
+										: document.result.report.findings.length
+									: document.result.mode === "corpus"
+										? document.result.corpus.units.reduce(
+												(count, unit) => count + unit.occurrences.length,
+												0
+											)
+										: document.result.report.findings.reduce(
+												(count, finding) =>
+													count + finding.affectedOccurrences.length,
+												0
+											)
 						})
 					),
 					Effect.catch((error) => Effect.succeed(investigationFailure(error)))
@@ -583,7 +750,7 @@ export const WorkbenchGameTextLive = Layer.effect(
 		const investigationSave = Effect.fn("Workbench.GameText.investigationSave")(
 			(query: GameTextInvestigationQuery) =>
 				captureInvestigation(query).pipe(
-					Effect.flatMap((document) =>
+					Effect.flatMap(({ document }) =>
 						saveInvestigation(dialog, {
 							contents: JSON.stringify(document.preset, null, "\t") + "\n",
 							extension: "json",
@@ -629,6 +796,8 @@ export const WorkbenchGameTextLive = Layer.effect(
 			progress,
 			search,
 			chooseQualityRules,
+			reloadQualityRules,
+			createStarterRules,
 			qualityFocus,
 			qualitySearch,
 			previewQualityRules,
@@ -651,6 +820,8 @@ export function makeWorkbenchGameTextTestLayer(
 			configuredRefresh: () => Effect.succeed({ status: "not_configured" }),
 			focus: () => Effect.succeed({ status: "not_ready" }),
 			chooseQualityRules: () => Effect.succeed({ status: "not_ready" }),
+			reloadQualityRules: () => Effect.succeed({ status: "not_ready" }),
+			createStarterRules: () => Effect.succeed({ status: "not_ready" }),
 			progress: () =>
 				Effect.succeed({
 					completed: 0,

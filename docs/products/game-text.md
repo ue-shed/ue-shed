@@ -25,6 +25,19 @@ properties. Unsupported evidence and diagnostics remain visible in search/focus 
 reports. A zero-finding report never implies complete project coverage unless its attached corpus
 coverage does.
 
+Workbench searches source text as you type. **Editable**, **Read only**, and **No translator notes**
+filter the lines; **No translator notes** requires blank notes, after trimming, at every saved
+location. Review chips highlight reused lines, duplicate wording, long text and localization
+problems. The detail pane keeps keys, translator notes, exact Unreal names and **Where it appears**
+together. **Show in Unreal** reports success only when the editor confirms asset navigation.
+
+Every displayed text count in the toolbar, search and filter chips comes from the same query and
+filtering path. Empty or whitespace-only source lines are excluded from those counts and from role
+line counts. `TextCorpus.coverage` keeps raw scan provenance counts, including empty text; the query
+summary's searchable counts describe the lines shown to people. Read-problem and asset counts
+continue to describe scan coverage. Partial reads and unsupported text fields remain inspectable
+from either view, with related read problems available in the selected line's details.
+
 The compact corpus path is governed by Plan 033:
 
 - the shared project index performs the only project-wide enumeration;
@@ -94,6 +107,12 @@ The supported headless quality journey is:
 explicit project root + rule file -> existing TextCorpus scan -> pure evaluation -> JSON report
 ```
 
+Create a starter document with `ue-shed text rules init <project-root>`. Its default path is
+`Config/UEShed/GameTextRules.json`; `--output <file>` chooses another destination. Creation is
+exclusive and refuses to overwrite an existing file. The examples are neutral starting points for
+a project's own roles, limits and terminology. Workbench's **Create rules file** uses the same
+starter and offers to load an existing file.
+
 The CLI surface is `ue-shed text review <project-root> --rules <file>`, with the existing optional
 reader selection. Rule-file IO and decoding are typed boundary failures with safe recovery text.
 The evaluator itself is a pure exported function over a decoded rule document and `TextCorpus`.
@@ -110,15 +129,16 @@ main process performs semantic validation and evaluation against its retained co
 preview replaces the active decoded rules and report but does not write a file. Save atomically
 overwrites only the explicitly loaded rule document after the same validation succeeds. Invalid
 drafts produce typed recovery guidance and leave the prior valid rules and report intact, so a bad
-scope cannot broaden a role to the whole project. Choosing a new corpus clears the retained rule
-file and quality review.
+scope cannot broaden a role to the whole project. Choosing another project clears the retained rule
+file and quality review; rescanning the same project retains its rules and reevaluates the checks.
 
-The Workbench quality view presents character-budget and terminology queues, authored role/rule
-summaries, actual and expected evidence, recovery guidance, `TextUnitId`, affected saved-package
-occurrences, and the unchanged complete/partial corpus coverage. Its rule editor exposes rule IDs,
-assigned roles, role scopes, character limits, terminology entries, case sensitivity, and recovery
-guidance, with explicit Preview changes and Save rules actions. Text browsing remains available
-beside quality review, including the independent hardcoded `long` lens.
+The **Quality checks** tab presents character limits and terminology findings. With nothing
+selected, its rules and roles overview shows findings and lines in scope, warning when a role has
+none. Selecting a finding highlights the matched term and explains **How to fix** it. **Show key
+and translator notes** opens the line in Text. **Edit rules** retains character limits, forbidden
+and preferred terms, alternatives, case sensitivity and recovery guidance, with **Preview** and
+**Save** actions. Rule IDs, assigned roles and scopes remain inspectable beside the editable
+fields. Scan coverage and read problems remain available throughout.
 
 ## Agent operation and adoption
 
@@ -142,7 +162,16 @@ retain all matching units or findings and their full evidence. Existing search p
 unchanged. A capability filter selects units; exported units retain all their occurrences for
 context. Coverage, role counts, rule counts, and diagnostics retain whole-scan scope.
 
-A preset stores the corpus/quality view, search text, capability and review lens, finding-type
+Workbench's **Export → CSV** produces a spreadsheet for people: one row per saved location in
+**Text**, or one row per finding and affected location in **Quality checks**. Columns retain exact
+Unreal names, keys, translator notes where applicable, and package files. Every cell is quoted,
+embedded quotes are doubled, and text starting with optional whitespace then `=`, `+`, `-` or
+`@` receives a leading apostrophe. Output has a UTF-8 BOM and CRLF endings, including the last row.
+Character counts use the same JavaScript string-length measurement as the detail pane. JSON keeps
+the existing provenance document; `gameTextInvestigationCsv` keeps its documented metadata layout.
+
+Use **Presets → Save preset… / Open preset…** to retain or restore the current settings.
+A preset stores the corpus/quality view, search text, capability, **No translator notes** and review lens, finding-type
 filter, existing domain sort order, and optional quality rules. Quality mode requires a rule
 document, including semantic validation of rule and role identities. Workbench captures the
 current corpus, rules, project, and catalog generation before opening an export dialog. The

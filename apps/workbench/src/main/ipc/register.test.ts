@@ -8,7 +8,7 @@ import { AssetReaderError, makeAssetReaderTestLayer } from "@ue-shed/unreal-asse
 import type { TextureAuditRunResult, TexturePreviewResult } from "@ue-shed/asset-audits";
 import type { MapReviewApprovalResult } from "@ue-shed/cameras/review-contracts";
 import type { EnhancedInputRunResult } from "@ue-shed/enhanced-input";
-import type { TextCorpusRunResult } from "@ue-shed/game-text";
+import type { TextCorpusQueryRunResult } from "@ue-shed/game-text";
 import type { CameraScheduleConfig, CameraStatus } from "@ue-shed/protocol";
 import { makeEditorPlaySessionTestLayer } from "@ue-shed/engine";
 import {
@@ -227,14 +227,16 @@ function buildRegistrationLayer(recorder: Recorder, options: RegistrationOptions
 	});
 
 	const gameText = makeWorkbenchGameTextTestLayer({
-		chooseAndScan: () =>
+		chooseAndScan: () => Effect.die("Full corpus reads must remain in the host"),
+		configuredScan: () => Effect.die("Full corpus reads must remain in the host"),
+		chooseAndRefresh: () =>
 			recorder
-				.record("gameText.chooseAndScan")
-				.pipe(Effect.as({ status: "not_configured" } satisfies TextCorpusRunResult)),
-		configuredScan: () =>
+				.record("gameText.chooseAndRefresh")
+				.pipe(Effect.as({ status: "not_configured" } satisfies TextCorpusQueryRunResult)),
+		configuredRefresh: () =>
 			recorder
-				.record("gameText.configuredScan")
-				.pipe(Effect.as({ status: "not_configured" } satisfies TextCorpusRunResult))
+				.record("gameText.configuredRefresh")
+				.pipe(Effect.as({ status: "not_configured" } satisfies TextCorpusQueryRunResult))
 	});
 
 	const contentObservatory = makeWorkbenchContentObservatoryTestLayer({
@@ -1063,8 +1065,16 @@ it.effect("dispatches asset-audits channels to WorkbenchAssetAudits with decoded
 
 it.effect("dispatches game-text channels to WorkbenchGameText", () =>
 	Effect.gen(function* () {
-		const { recorder } = yield* runRegistered((ipc) => ipc.invoke("game-text:configured-scan"));
-		expect(yield* recorder.calls()).toEqual(["gameText.configuredScan"]);
+		const { recorder } = yield* runRegistered((ipc) =>
+			Effect.gen(function* () {
+				yield* ipc.invoke("game-text:configured-scan");
+				yield* ipc.invoke("game-text:choose-and-scan");
+			})
+		);
+		expect(yield* recorder.calls()).toEqual([
+			"gameText.configuredRefresh",
+			"gameText.chooseAndRefresh"
+		]);
 	})
 );
 

@@ -275,6 +275,8 @@ const validArgsByChannel = {
 	"game-text:search": [{ capability: "all", pageSize: 50, query: "" }],
 	"game-text:focus": [{ id: "unreal:UI:Example", pageSize: 50 }],
 	"game-text:quality:choose-rules": [],
+	"game-text:quality:create-starter-rules": [false],
+	"game-text:quality:reload-rules": [],
 	"game-text:quality:preview-rules": [qualityRuleDocument],
 	"game-text:quality:save-rules": [qualityRuleDocument],
 	"game-text:quality:search": [{ filter: "all", pageSize: 50 }],
@@ -605,6 +607,8 @@ const validResultByChannel = {
 	"game-text:search": { status: "not_ready" },
 	"game-text:focus": { status: "not_ready" },
 	"game-text:quality:choose-rules": { status: "not_ready" },
+	"game-text:quality:create-starter-rules": { status: "not_ready" },
+	"game-text:quality:reload-rules": { status: "not_ready" },
 	"game-text:quality:preview-rules": { status: "not_ready" },
 	"game-text:quality:save-rules": { status: "not_ready" },
 	"game-text:quality:search": { status: "not_ready" },
@@ -803,6 +807,9 @@ const validResultByChannel = {
 } satisfies ValidResultByChannel;
 
 const malformedArgsByChannel = {
+	"game-text:quality:create-starter-rules": ["C:/Untrusted/output.json"],
+	"game-text:quality:reload-rules": ["C:/Untrusted/rules.json"],
+	"game-text:search": [{ query: "", capability: "all", pageSize: 50, withoutNotes: "yes" }],
 	"editor-session:set-port": [65_536],
 	"asset-audits:textures:preview": ["/Engine/Textures/Bad"],
 	"asset-audits:textures:preview-offline": ["/Engine/Textures/Bad"],
@@ -842,9 +849,9 @@ const malformedArgsByChannel = {
 	"map-capture:tile": [{ manifestPath: "", relativePath: "../outside.png" }]
 } satisfies Partial<Record<InvokeChannel, IpcFixtureValue>>;
 
-it("registers exactly 126 invoke channels plus renderer events", () => {
-	expect(invokeChannelNames).toHaveLength(125);
-	expect(new Set(invokeChannelNames).size).toBe(125);
+it("registers exactly 127 invoke channels plus renderer events", () => {
+	expect(invokeChannelNames).toHaveLength(127);
+	expect(new Set(invokeChannelNames).size).toBe(127);
 	expect(cameraFrameEvent.channel).toBe("camera:frame");
 	expect(mapCaptureProgressEvent.channel).toBe("map-capture:progress");
 	expect(worldObservationEvent.channel).toBe("map-review:world-observation");
@@ -881,6 +888,16 @@ it("decodes valid arguments for every invoke channel", () => {
 		if (Result.isSuccess(decoded)) {
 			expect(Array.isArray(decoded.success)).toBe(true);
 		}
+	}
+});
+
+it("keeps legacy Game Text scan replies bounded instead of accepting a full corpus", () => {
+	for (const channel of ["game-text:configured-scan", "game-text:choose-and-scan"] as const) {
+		const decoded = Schema.decodeUnknownResult(invokeContracts[channel].result)({
+			status: "completed",
+			corpus: { units: [] }
+		});
+		expect(Result.isFailure(decoded)).toBe(true);
 	}
 });
 

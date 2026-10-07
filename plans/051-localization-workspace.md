@@ -17,7 +17,7 @@
 
 ## Status
 
-- **State**: IN PROGRESS. Phases 0 and 1 are done; Phase 2 is in verification.
+- **State**: IN PROGRESS. Phases 0–2 are done; Phase 3 is next.
 - **Priority**: P1
 - **Effort**: XL
 - **Risk**: HIGH. The plan adds the first UE Shed writes to localization files and the first
@@ -209,6 +209,27 @@ Phase 1.
 - Component tests cover chips, the search count, starting state and restored state.
 - A screenshot of the real Workbench passes self-review: vertical space before content, counts that
   agree, familiar terms and no loading flash.
+
+**Evidence (2026-10-07)**:
+
+- `TextCorpus.coverage` keeps raw provenance counts. Searchable counts in summaries, chips, role
+  coverage and the toolbar share the search filtering path and exclude empty-text lines.
+- `pnpm run check:precommit`, typecheck and lint pass. 242 component tests pass. Node tests pass
+  with the native reader (`UE_SHED_UASSET_EXECUTABLE`) and the staged native supervisor binary.
+- `game-text-quality.recording.ts` passes against the built Electron Workbench and the fixture
+  project. It asserts that the coverage line, All text chip and match count agree. It also asserts
+  in-pane scrolling and compact action sizing, and it saves seven review screenshots.
+- Two screenshot review rounds fixed the following:
+    - the page scrolled instead of the list;
+    - names were humanized instead of exact Unreal names;
+    - action buttons were oversized;
+    - the "1 locations" pluralization;
+    - "Saved" was shown in warning orange.
+- A capability audit restored Show in Unreal, copy text, saved-file details, partial-read
+  warnings, the Read only filter and location paging, which the rework had dropped.
+- `docs/showcase.md`, the site guide and this product contract describe the new flow. The
+  published site screenshot (`apps/site/public/media/game-text.png`) still shows the old layout
+  until the next `site:media` capture.
 
 ## Phase 3 — Read-only localization evidence
 

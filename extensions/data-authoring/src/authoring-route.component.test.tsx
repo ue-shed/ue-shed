@@ -219,6 +219,59 @@ function cleanSession(opened: AuthoringTableSnapshot): AuthoringSessionView {
 }
 
 describe("AuthoringRoute", () => {
+	it("opens the saved table selected in Game Text without loading a configured table", async () => {
+		const sheet = captureAuthoringSheet();
+		const requests: Array<{ objectPath: string; authority: "saved" | "live" }> = [];
+		const client: AuthoringClientApi = {
+			applySession: () => Effect.die("unused"),
+			beginSession: () => Effect.succeed({ status: "ready", view: cleanSession(snapshot) }),
+			chooseTable: () => Effect.die("unused"),
+			discardSession: () => Effect.die("unused"),
+			editSession: () => Effect.die("unused"),
+			getCatalogProgress: () =>
+				Effect.succeed({
+					cacheHits: 0,
+					phase: "ready",
+					processedAssets: 0,
+					tablesFound: 0,
+					totalAssets: 0
+				}),
+			listSessions: () => Effect.succeed({ diagnostics: [], sessions: [], status: "ready" }),
+			loadConfiguredCatalog: () =>
+				Effect.succeed({ diagnostics: [], tables: [], status: "ready" }),
+			loadConfiguredTable: () => Effect.die("Must open the selected saved table"),
+			openCatalogTable: (objectPath, authority) =>
+				Effect.sync(() => {
+					requests.push({ objectPath, authority });
+					return { status: "ready" as const, snapshot };
+				}),
+			openSession: () => Effect.die("unused"),
+			reconcileSession: () => Effect.die("unused"),
+			redoSession: () => Effect.die("unused"),
+			reviewSession: () => Effect.die("unused"),
+			saveSession: () => Effect.die("unused"),
+			undoSession: () => Effect.die("unused")
+		};
+		render(() => (
+			<EffectRuntimeProvider runtime={runtime}>
+				<AuthoringRoute client={client} initialObjectPath={snapshot.table.objectPath} />
+			</EffectRuntimeProvider>
+		));
+		await waitFor(() =>
+			expect(requests).toEqual([
+				{ objectPath: snapshot.table.objectPath, authority: "saved" }
+			])
+		);
+		await waitFor(() =>
+			expect(sheet.props().data).toEqual([
+				["Alpha", "2"],
+				["Beta", "3"]
+			])
+		);
+		expect(await screen.findByRole("heading", { name: "Count" })).toBeDefined();
+		expect(screen.getByText(snapshot.table.objectPath)).toBeDefined();
+	});
+
 	it("prefers verified live authority and preserves catalog scroll while changing tables", async () => {
 		const secondPath = "/Game/Fixture/DT_Second.DT_Second";
 		const saved = cleanSession(snapshot);

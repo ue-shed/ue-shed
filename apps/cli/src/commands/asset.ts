@@ -5,6 +5,7 @@ import {
 	runAssetsScan,
 	runInputInspect,
 	runTextReview,
+	runTextRulesInit,
 	runTextScan,
 	runTextSearch
 } from "../asset-workflows.js";
@@ -141,9 +142,31 @@ const textReviewCommand = Command.make(
 	Command.withDescription("Review the saved text corpus with project-authored quality rules.")
 );
 
+const textRulesCommand = Command.make("rules").pipe(
+	Command.withSubcommands([
+		Command.make(
+			"init",
+			{ projectRoot: Argument.string("project-root"), output: optionalFlag("output") },
+			({ projectRoot, output }) => {
+				const value = optionalValue(output);
+				return runTextRulesInit({
+					_tag: "TextRulesInit",
+					projectRoot,
+					...(value === undefined ? undefined : { output: value })
+				});
+			}
+		).pipe(Command.withDescription("Create example writing checks without overwriting a file."))
+	])
+);
+
 export const textCommand = Command.make("text").pipe(
 	Command.withDescription("Inspect, search, and review saved player-facing text."),
-	Command.withSubcommands([textScanCommand, textSearchCommand, textReviewCommand])
+	Command.withSubcommands([
+		textScanCommand,
+		textSearchCommand,
+		textReviewCommand,
+		textRulesCommand
+	])
 );
 
 const inputInspectCommand = Command.make(

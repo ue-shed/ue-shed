@@ -181,7 +181,28 @@ export const TextUnitSearchResult = Schema.Struct({
 });
 export type TextUnitSearchResult = Schema.Schema.Type<typeof TextUnitSearchResult>;
 
+export const TextCorpusSearchCounts = Schema.Struct({
+	// Review counts intersect the whole request. Toggle counts exclude their own toggle.
+	all: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+	shared: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+	duplicate_source: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+	long: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+	unresolved: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+	conflicting: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+	editable: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+	readOnly: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+	withoutNotes: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+});
+export type TextCorpusSearchCounts = Schema.Schema.Type<typeof TextCorpusSearchCounts>;
+
 export const TextCorpusQuerySummary = Schema.Struct({
+	counts: TextCorpusSearchCounts,
+	scannedAt: Schema.optional(Schema.String),
+	// Scan coverage remains raw provenance; presentation counts exclude blank source lines.
+	searchable: Schema.Struct({
+		textUnits: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+		textOccurrences: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+	}),
 	schemaVersion: Schema.Literal(1),
 	status: Schema.Literals(["complete", "partial"]),
 	coverage: TextCorpus.fields.coverage,
@@ -204,6 +225,7 @@ export const TextCorpusQuerySummary = Schema.Struct({
 export type TextCorpusQuerySummary = Schema.Schema.Type<typeof TextCorpusQuerySummary>;
 
 export const TextCorpusQueryRunResult = Schema.Union([
+	Schema.Struct({ status: Schema.Literal("not_scanned") }),
 	Schema.Struct({ status: Schema.Literal("completed"), summary: TextCorpusQuerySummary }),
 	Schema.Struct({ status: Schema.Literal("not_configured") }),
 	Schema.Struct({ status: Schema.Literal("cancelled") }),
@@ -213,6 +235,7 @@ export type TextCorpusQueryRunResult = Schema.Schema.Type<typeof TextCorpusQuery
 export const decodeTextCorpusQueryRunResult = Schema.decodeUnknownEffect(TextCorpusQueryRunResult);
 
 export const TextCorpusSearchRequest = Schema.Struct({
+	withoutNotes: Schema.optional(Schema.Boolean),
 	capability: TextCapabilityFilter,
 	cursor: Schema.optional(TextUnitId),
 	lens: Schema.optional(TextReviewLens),
@@ -222,9 +245,10 @@ export const TextCorpusSearchRequest = Schema.Struct({
 export type TextCorpusSearchRequest = Schema.Schema.Type<typeof TextCorpusSearchRequest>;
 
 export const TextCorpusSearchPage = Schema.Struct({
+	counts: TextCorpusSearchCounts,
 	nextCursor: Schema.optional(TextUnitId),
 	total: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
-	units: Schema.Array(TextUnitSearchResult)
+	units: Schema.Array(TextUnitSearchResult).check(Schema.isMaxLength(MAX_TEXT_QUERY_PAGE_SIZE))
 });
 export type TextCorpusSearchPage = Schema.Schema.Type<typeof TextCorpusSearchPage>;
 

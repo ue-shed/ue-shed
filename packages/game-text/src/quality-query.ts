@@ -7,7 +7,8 @@ import {
 	type TextQualityFinding,
 	type TextQualityReport
 } from "./quality-schema.js";
-import { TextCorpus, TextOccurrenceId, TextUnitId } from "./schema.js";
+import { textCountLabel } from "./csv.js";
+import { TextCorpus, TextLocation, TextOccurrenceId, TextUnitId } from "./schema.js";
 
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 const PageSize = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 50 }));
@@ -47,7 +48,13 @@ export const TextQualityQueryRunResult = Schema.Union([
 	Schema.Struct({
 		status: Schema.Literal("failed"),
 		error: Schema.Struct({
-			code: Schema.Literals(["invalid_rules", "read_failed", "contract_failure"]),
+			code: Schema.Literals([
+				"invalid_rules",
+				"read_failed",
+				"contract_failure",
+				"already_exists",
+				"write_failed"
+			]),
 			message: Schema.String,
 			recovery: Schema.String,
 			retrySafe: Schema.Boolean
@@ -85,6 +92,7 @@ export const TextQualityFindingSummary = Schema.Struct({
 	expectation: Schema.String.check(Schema.isMaxLength(512)),
 	id: TextQualityFindingId,
 	kind: TextQualityFindingKind,
+	location: Schema.optional(TextLocation),
 	occurrenceCount: Count,
 	recovery: Schema.String.check(Schema.isMaxLength(2048)),
 	role: Schema.String,
@@ -130,6 +138,7 @@ const FocusBase = {
 	role: Schema.String,
 	ruleId: Schema.String,
 	sourceExcerpt: Schema.String.check(Schema.isMaxLength(4096)),
+	sourceOffset: Count,
 	sourceTruncated: Schema.Boolean,
 	textUnitId: TextUnitId,
 	totalOccurrences: Count
@@ -180,16 +189,16 @@ function excerpt(source: string, maximum: number): string {
 
 function actualLabel(finding: TextQualityFinding): string {
 	return finding.kind === "character_budget"
-		? `${finding.actual.characterCount} characters`
+		? textCountLabel(finding.actual.characterCount, "character")
 		: `“${finding.actual.term}” at ${finding.actual.start}–${finding.actual.end}`;
 }
 
 function expectationLabel(finding: TextQualityFinding): string {
 	if (finding.kind === "character_budget") {
-		return `Maximum ${finding.expectation.maximumCharacters} characters`;
+		return `Maximum ${textCountLabel(finding.expectation.maximumCharacters, "character")}`;
 	}
 	return finding.expectation.kind === "forbidden_term"
-		? `Remove forbidden term “${finding.expectation.term}”`
+		? `Remove “${finding.expectation.term}”`
 		: `Prefer “${finding.expectation.preferredTerm}”`;
 }
 
@@ -203,6 +212,24 @@ interface IndexedFinding {
 	readonly summary: TextQualityFindingSummary;
 }
 
+/** Evidence-based IDs survive reordering and unrelated findings disappearing after a scan. */
+function findingId(finding: TextQualityFinding): TextQualityFindingId {
+	const evidence = JSON.stringify([
+		finding.ruleId,
+		finding.role,
+		finding.textUnitId,
+		finding.kind,
+		finding.actual,
+		finding.expectation,
+		finding.affectedOccurrences.map((occurrence) => occurrence.id).sort()
+	]);
+	let hash = 0xcbf29ce484222325n;
+	for (let index = 0; index < evidence.length; index++) {
+		hash = BigInt.asUintN(64, (hash ^ BigInt(evidence.charCodeAt(index))) * 0x100000001b3n);
+	}
+	return makeTextQualityFindingId("quality-finding:" + hash.toString(16));
+}
+
 /** Retained, bounded presentation query over a full quality report. */
 export interface TextQualityQuery {
 	readonly focus: (request: TextQualityFocusRequest) => TextQualityFocus | undefined;
@@ -212,8 +239,8 @@ export interface TextQualityQuery {
 }
 
 export function textQualityQuery(report: TextQualityReport): TextQualityQuery {
-	const indexed: readonly IndexedFinding[] = report.findings.map((finding, index) => {
-		const id = makeTextQualityFindingId(`quality-finding:${index + 1}`);
+	const indexed: readonly IndexedFinding[] = report.findings.map((finding) => {
+		const id = findingId(finding);
 		return {
 			finding,
 			id,
@@ -222,6 +249,9 @@ export function textQualityQuery(report: TextQualityReport): TextQualityQuery {
 				expectation: excerpt(expectationLabel(finding), 512),
 				id,
 				kind: finding.kind,
+				...(finding.affectedOccurrences[0]
+					? { location: finding.affectedOccurrences[0].location }
+					: undefined),
 				occurrenceCount: finding.affectedOccurrences.length,
 				recovery: excerpt(finding.recovery, 2048),
 				role: finding.role,
@@ -287,13 +317,18 @@ export function textQualityQuery(report: TextQualityReport): TextQualityQuery {
 			);
 			const final = affectedOccurrences.at(-1)?.id;
 			const source = sourceOf(finding);
+			const sourceOffset =
+				finding.kind === "terminology" && finding.actual.end > 4096
+					? Math.max(0, finding.actual.end - 3072)
+					: 0;
 			const base = {
 				affectedOccurrences,
 				id,
 				recovery: finding.recovery,
 				role: finding.role,
 				ruleId: finding.ruleId,
-				sourceExcerpt: excerpt(source, 4096),
+				sourceExcerpt: excerpt(source.slice(sourceOffset), 4096),
+				sourceOffset,
 				sourceTruncated: source.length > 4096,
 				textUnitId: finding.textUnitId,
 				totalOccurrences: finding.affectedOccurrences.length,

@@ -32,6 +32,14 @@ export class GameTextClientError extends Schema.TaggedErrorClass<GameTextClientE
 ) {}
 
 export interface GameTextClientApi {
+	readonly projectKey?: () => Effect.Effect<string | undefined, GameTextClientError>;
+	readonly reloadQualityRules?: () => Effect.Effect<
+		TextQualityQueryRunResult,
+		GameTextClientError
+	>;
+	readonly createStarterRules?: (
+		loadExisting: boolean
+	) => Effect.Effect<TextQualityQueryRunResult, GameTextClientError>;
 	readonly investigations?: {
 		readonly export: (
 			query: GameTextInvestigationQuery,

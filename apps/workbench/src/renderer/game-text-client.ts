@@ -25,7 +25,10 @@ import {
 	GameTextClientError,
 	type GameTextClientApi
 } from "@ue-shed/extension-game-text/client";
-import { WorkbenchTaskProgress } from "../shared/project-workspace-contract.js";
+import {
+	WorkbenchTaskProgress,
+	WorkbenchProjectState
+} from "../shared/project-workspace-contract.js";
 import { Effect, Schema } from "effect";
 
 const recovery = "Restart Workbench. If the problem persists, verify package versions.";
@@ -45,6 +48,31 @@ function invokeRequest<A, HostValue, DecodeError>(
 }
 
 export const gameTextClient: GameTextClientApi = GameTextClient.of({
+	reloadQualityRules: Effect.fn("GameTextClient.reloadQualityRules")(() =>
+		invokeRequest(
+			"gameText.reloadQualityRules",
+			() => window.ueShed.gameText.reloadQualityRules(),
+			decodeTextQualityQueryRunResult
+		)
+	),
+	projectKey: Effect.fn("GameTextClient.projectKey")(() =>
+		invokeRequest(
+			"gameText.projectKey",
+			() => window.ueShed.project.current(),
+			Schema.decodeUnknownEffect(WorkbenchProjectState)
+		).pipe(
+			Effect.map((result) =>
+				result.status === "ready" ? result.project.projectRoot : undefined
+			)
+		)
+	),
+	createStarterRules: Effect.fn("GameTextClient.createStarterRules")((loadExisting: boolean) =>
+		invokeRequest(
+			"gameText.createStarterRules",
+			() => window.ueShed.gameText.createStarterRules(loadExisting),
+			decodeTextQualityQueryRunResult
+		)
+	),
 	investigations: {
 		export: (query, format) =>
 			invokeRequest(

@@ -78,6 +78,8 @@ export const workbenchInvokeChannels = {
 		search: "game-text:search",
 		focus: "game-text:focus",
 		chooseQualityRules: "game-text:quality:choose-rules",
+		createStarterRules: "game-text:quality:create-starter-rules",
+		reloadQualityRules: "game-text:quality:reload-rules",
 		previewQualityRules: "game-text:quality:preview-rules",
 		saveQualityRules: "game-text:quality:save-rules",
 		qualitySearch: "game-text:quality:search",

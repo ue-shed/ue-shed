@@ -6,12 +6,18 @@ import { WorkbenchGameText } from "../services/game-text.js";
 export const register = Effect.gen(function* () {
 	const ipc = yield* ElectronIpc;
 	const gameText = yield* WorkbenchGameText;
+	yield* ipc.register(invokeContracts["game-text:quality:reload-rules"], () =>
+		gameText.reloadQualityRules()
+	);
+	yield* ipc.register(invokeContracts["game-text:quality:create-starter-rules"], (loadExisting) =>
+		gameText.createStarterRules(loadExisting)
+	);
 
 	yield* ipc.register(invokeContracts["game-text:configured-scan"], () =>
-		gameText.configuredScan()
+		gameText.configuredRefresh(true)
 	);
 	yield* ipc.register(invokeContracts["game-text:choose-and-scan"], () =>
-		gameText.chooseAndScan().pipe(Effect.orDie)
+		gameText.chooseAndRefresh().pipe(Effect.orDie)
 	);
 	yield* ipc.register(invokeContracts["game-text:configured-refresh"], (refresh) =>
 		gameText.configuredRefresh(refresh)

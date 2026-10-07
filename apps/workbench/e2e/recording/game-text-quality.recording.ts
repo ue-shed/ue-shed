@@ -2,7 +2,7 @@ import { createRequire } from "node:module";
 import { copyFile, mkdir, readFile, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
 import { Schema } from "effect";
 import { _electron as electron } from "playwright";
 import { WorkbenchPage } from "../pages/workbench-page.js";
@@ -24,6 +24,16 @@ test.skip(
 	"Launch explicitly with UE_SHED_RECORD_GAME_TEXT_QUALITY=true"
 );
 
+function displayedCount(label: string): number {
+	const digits = /([\d,]+)/u.exec(label)?.[1];
+	if (digits === undefined) throw new Error(`Missing count in: ${label}`);
+	const count = Number(digits.replaceAll(",", ""));
+	if (!Number.isSafeInteger(count) || count < 0) {
+		throw new Error(`Invalid count in: ${label}`);
+	}
+	return count;
+}
+
 test("records the real Game Text quality workflow", async ({
 	browserName: _browserName
 }, testInfo) => {
@@ -33,6 +43,7 @@ test("records the real Game Text quality workflow", async ({
 	await mkdir(testInfo.outputDir, { recursive: true });
 	const editableRuleFile = testInfo.outputPath("editable-quality-rules.json");
 	await copyFile(sourceRuleFile, editableRuleFile);
+	const originalRules = await readFile(editableRuleFile, "utf8");
 	const environment = { ...process.env };
 	delete environment.ELECTRON_RUN_AS_NODE;
 	const application = await electron.launch({
@@ -45,7 +56,9 @@ test("records the real Game Text quality workflow", async ({
 	const workbench = new WorkbenchPage(page);
 	let recording = false;
 	try {
-		await application.evaluate(({ dialog }, selectedRuleFile) => {
+		await page.setViewportSize({ width: 1440, height: 900 });
+		await application.evaluate(({ BrowserWindow, dialog }, selectedRuleFile) => {
+			BrowserWindow.getAllWindows()[0]?.setContentSize(1440, 900);
 			const original = dialog.showOpenDialog.bind(dialog);
 			Object.defineProperty(dialog, "showOpenDialog", {
 				configurable: true,
@@ -59,10 +72,37 @@ test("records the real Game Text quality workflow", async ({
 		}, editableRuleFile);
 
 		await workbench.expectShowcaseReady();
+		// A fresh recording starts with the setup notice, independent of saved UI preferences.
+		await page.evaluate(() => {
+			for (const key of Object.keys(localStorage)) {
+				if (key.startsWith("ue-shed:game-text:")) localStorage.removeItem(key);
+			}
+		});
 		await workbench.openRoute("Game Text");
-		await expect(page.getByRole("region", { name: "Results" })).toContainText(
-			"Showing 32 of 32 matches"
+		await page.getByRole("button", { name: "Scan project", exact: true }).click();
+
+		const results = page.getByRole("region", { name: "Results" });
+		const search = page.getByRole("searchbox", { name: "Search game text" });
+		const searchCount = search.locator("..").getByRole("status");
+		const allText = page.getByRole("button", { name: /^All text(?: [\d,]+)?$/u });
+		const editable = page.getByRole("button", { name: /^Editable(?: [\d,]+)?$/u });
+		const textDetail = page.getByRole("complementary", { name: "Text focus" });
+		const qualityTab = page.getByRole("tab", { name: /^Quality checks/u });
+		const coverage = page.getByRole("main").getByText(/^[\d,]+ lines? in [\d,]+ assets?/u);
+
+		await expect(results).toBeVisible();
+		await expect(searchCount).toHaveText(/^[\d,]+ match(?:es)?$/u);
+		await expect(coverage).toContainText("scanned");
+		const lines = displayedCount(await coverage.innerText());
+		expect(lines).toBeGreaterThan(0);
+		await expect(allText).toHaveAccessibleName(`All text ${lines.toLocaleString()}`);
+		await expect(searchCount).toHaveText(
+			`${lines.toLocaleString()} ${lines === 1 ? "match" : "matches"}`
 		);
+		await expect(textDetail).toContainText(
+			"Select a line to see its key, translator notes and every place it appears."
+		);
+		await expect(page.getByRole("button", { name: "Rescan", exact: true })).toBeEnabled();
 
 		const screenshot = await page.screenshot({ type: "png" });
 		const requestedSize = {
@@ -91,59 +131,226 @@ test("records the real Game Text quality workflow", async ({
 		});
 		recording = true;
 
+		const tabs = page.getByRole("tablist", { name: "Game Text view" });
+		const initialToolbar = await tabs.boundingBox();
+		if (!initialToolbar) throw new Error("Game Text toolbar has no layout");
+		const expectPaneLayout = async (list: Locator, detail: Locator) => {
+			const [toolbarBox, listBox, detailBox] = await Promise.all([
+				tabs.boundingBox(),
+				list.boundingBox(),
+				detail.boundingBox()
+			]);
+			if (!toolbarBox || !listBox || !detailBox) throw new Error("Missing pane layout");
+			expect(toolbarBox.y).toBe(initialToolbar.y);
+			for (const box of [listBox, detailBox]) {
+				expect(box.y).toBeGreaterThan(toolbarBox.y + toolbarBox.height);
+				expect(box.y + box.height).toBeLessThanOrEqual(900);
+				expect(box.y + box.height).toBeGreaterThanOrEqual(868);
+			}
+			expect(listBox.y).toBe(detailBox.y);
+			for (const pane of [list, detail]) {
+				await expect(pane).toHaveCSS("overflow-y", "auto");
+			}
+			expect(
+				await page
+					.locator("html")
+					.evaluate((element) => element.ownerDocument.scrollingElement?.scrollTop ?? 0)
+			).toBe(0);
+		};
+
+		await expectPaneLayout(results, textDetail);
+		for (const label of ["Export", "Presets", "Rescan"]) {
+			const button = page.getByRole("button", { name: label, exact: true });
+			await expect(button).toHaveCSS("height", "26px");
+		}
+		await page.screenshot({ path: testInfo.outputPath("01-text.png") });
 		await page.waitForTimeout(1_000);
-		await page.getByRole("tab", { name: "Quality review" }).click();
-		await expect(page.getByRole("region", { name: "Quality rules setup" })).toBeVisible();
-		await page.waitForTimeout(1_200);
-		await page.getByRole("button", { name: "Load rules" }).click();
-		await expect(page.getByRole("region", { name: "Findings" })).toBeVisible();
-		await expect(page.getByRole("region", { name: "Quality summary" })).toContainText(
-			"3 findings"
+
+		const continueLine = results.getByRole("button").filter({
+			hasText: "ST_Game · PromptContinue"
+		});
+		await expect(continueLine).toHaveCount(1);
+		await continueLine.click();
+		await expect(
+			textDetail.getByRole("heading", { name: "Continue", exact: true })
+		).toBeVisible();
+		await expect(textDetail).toContainText("PromptContinue");
+		await expect(textDetail).toContainText(
+			/[\d,]+ characters? · [\d,]+ words? · [\d,]+ locations?/u
 		);
+		await expect(textDetail.getByRole("heading", { name: "Where it appears" })).toBeVisible();
+		await expect(textDetail).toContainText("String table entry");
+		await expect(textDetail).toContainText("/Game/Fixture/Text/ST_Game.ST_Game");
+		await expect(textDetail).toContainText("No translator notes");
+		await expectPaneLayout(results, textDetail);
+		expect(await results.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+		await expect(search).toBeInViewport();
+		const copyKey = textDetail.getByRole("button", { name: "Copy key" });
+		const copyAsset = textDetail.getByRole("button", { name: "Copy asset path" });
+		await expect(copyKey).toHaveCSS("width", "26px");
+		await expect(copyAsset).toHaveCSS("width", "26px");
+		await expect(textDetail.getByRole("button", { name: "Copy text" })).toHaveCSS(
+			"width",
+			"26px"
+		);
+		await expect(textDetail.getByRole("button", { name: "Show in Unreal" })).toBeEnabled();
+		await expect(textDetail.getByText("Saved file", { exact: true })).toBeVisible();
+		await page.screenshot({ path: testInfo.outputPath("02-text-selected.png") });
+		await page.waitForTimeout(1_200);
+
+		await search.fill("Hold");
+		await editable.click();
+		await expect(editable).toHaveAttribute("aria-pressed", "true");
+		const holdLine = results.getByRole("button").filter({ hasText: "Hold to skip" });
+		await expect(holdLine).toHaveCount(1);
+		await expect(searchCount).toHaveText(/^[\d,]+ match(?:es)?$/u);
+		const matches = displayedCount(await searchCount.innerText());
+		expect(matches).toBeGreaterThan(0);
+		expect(matches).toBeLessThan(lines);
+		await expect(allText).toHaveAccessibleName(`All text ${matches.toLocaleString()}`);
+		await expect(editable).toHaveAccessibleName(`Editable ${matches.toLocaleString()}`);
+		await holdLine.click();
+		await expect(textDetail.getByRole("heading", { name: "Hold to skip" })).toBeVisible();
+		await page.screenshot({ path: testInfo.outputPath("03-text-search.png") });
+		await page.waitForTimeout(1_200);
+
+		await search.clear();
+		await editable.click();
+		await expect(editable).toHaveAttribute("aria-pressed", "false");
+		await expect(searchCount).toHaveText(
+			`${lines.toLocaleString()} ${lines === 1 ? "match" : "matches"}`
+		);
+		await expect(allText).toHaveAccessibleName(`All text ${lines.toLocaleString()}`);
+		await qualityTab.click();
+		const setup = page.getByRole("region", { name: "Quality rules setup" });
+		await expect(setup).toContainText("Set up writing checks");
+		await expect(setup.getByRole("button", { name: "Create rules file" })).toBeVisible();
+		await expect(setup.getByRole("button", { name: "Load rules", exact: true })).toBeEnabled();
+		await page.screenshot({ path: testInfo.outputPath("04-quality-setup.png") });
+		await page.waitForTimeout(1_200);
+
+		await setup.getByRole("button", { name: "Load rules", exact: true }).click();
+		const findings = page.getByRole("region", { name: "Findings" });
+		const findingDetail = page.getByRole("complementary", { name: "Finding detail" });
+		const allFindings = page.getByRole("button", { name: /^All findings [\d,]+$/u });
+		const characterLimits = page.getByRole("button", { name: /^Character limits [\d,]+$/u });
+		const terminology = page.getByRole("button", { name: /^Terminology [\d,]+$/u });
+		const rulesOverview = page.getByRole("table", { name: "Rules overview" });
+		const rolesOverview = page.getByRole("table", { name: "Roles overview" });
+		await expect(findings).toBeVisible();
+		await expect(findings.getByText("Loading findings…", { exact: true })).toBeHidden();
+		await expect(rulesOverview).toContainText("fixture.prompt.characters");
+		await expect(rulesOverview).toContainText("fixture.prompt.terms");
+		await expect(rolesOverview).toContainText("fixture.prompt");
+		await expect(findingDetail.locator("mark")).toHaveCount(0);
+		const initialBudgets = displayedCount(await characterLimits.innerText());
+		const initialTerms = displayedCount(await terminology.innerText());
+		expect(initialBudgets).toBeGreaterThan(0);
+		expect(initialTerms).toBeGreaterThan(1);
+		const expectFindingCounts = async (budgets: number, terms: number) => {
+			const total = budgets + terms;
+			await expect(allFindings).toHaveAccessibleName(
+				`All findings ${total.toLocaleString()}`
+			);
+			await expect(characterLimits).toHaveAccessibleName(
+				`Character limits ${budgets.toLocaleString()}`
+			);
+			await expect(terminology).toHaveAccessibleName(`Terminology ${terms.toLocaleString()}`);
+			await expect(qualityTab).toHaveAccessibleName(`Quality checks (${total})`);
+		};
+		await expectFindingCounts(initialBudgets, initialTerms);
+		await expect(findings.getByRole("button")).toHaveCount(initialBudgets + initialTerms);
+		await expectPaneLayout(findings, findingDetail);
+		await page.screenshot({ path: testInfo.outputPath("05-quality-overview.png") });
 		await page.waitForTimeout(1_700);
-		await page.getByRole("tab", { name: /Edit rules/ }).click();
+
+		await terminology.click();
+		const skipFinding = findings.getByRole("button").filter({ hasText: "Remove “skip”" });
+		await expect(skipFinding).toHaveCount(1);
+		await expect(terminology).toHaveAttribute("aria-pressed", "true");
+		await expect(findings.getByRole("button")).toHaveCount(initialTerms);
+		await expect(findings.getByText("Loading findings…", { exact: true })).toBeHidden();
+		await skipFinding.click();
+		await expect(findingDetail.locator("mark")).toHaveText("skip");
+		await expect(findingDetail.getByRole("heading", { name: "Hold to skip" })).toBeVisible();
+		await expect(findingDetail.getByRole("heading", { name: "How to fix" })).toBeVisible();
+		await expect(findingDetail).toContainText("/Game/Fixture/Text/ST_Game.ST_Game");
+		await expect(skipFinding).toContainText("ST_Game · PromptHold");
+		await expect(skipFinding).toContainText("1 location");
+		await expect(findingDetail.getByRole("button", { name: "Show in Unreal" })).toBeEnabled();
+		await expect(findingDetail.getByRole("button", { name: "Copy asset path" })).toBeEnabled();
+		await expectPaneLayout(findings, findingDetail);
+		await page.screenshot({ path: testInfo.outputPath("06-quality-finding.png") });
+		await page.waitForTimeout(1_500);
+
+		await page.getByRole("button", { name: "Edit rules", exact: true }).click();
+		const ruleForm = page.getByRole("region", { name: "Selected quality rule" });
+		const ruleList = page.getByRole("complementary", { name: "Quality rule list" });
+		const maximumCharacters = ruleForm.getByRole("spinbutton", {
+			name: "Maximum characters for fixture.prompt.characters"
+		});
+		await expect(maximumCharacters).toHaveValue("10");
 		await expect(
 			page.getByRole("complementary", { name: "Quality role scopes" })
 		).toContainText("String Table key starts with Prompt");
+		await expect(ruleForm.getByRole("button", { name: "Preview", exact: true })).toBeVisible();
+		const savedState = ruleForm.getByText("Saved", { exact: true });
+		await expect(savedState).toBeVisible();
+		expect(
+			await savedState.evaluate(
+				(element) => element.ownerDocument.defaultView?.getComputedStyle(element).color
+			)
+		).toBe(
+			await coverage.evaluate(
+				(element) => element.ownerDocument.defaultView?.getComputedStyle(element).color
+			)
+		);
+		await expectPaneLayout(ruleList, ruleForm);
+		await page.screenshot({ path: testInfo.outputPath("07-rule-editor.png") });
 		await page.waitForTimeout(1_300);
-		const maximumCharacters = page.getByRole("spinbutton", {
-			name: "Maximum characters for fixture.prompt.characters"
-		});
+
 		await maximumCharacters.fill("20");
 		await page.waitForTimeout(900);
-		await page.getByRole("button", { name: "Preview" }).click();
-		await expect(page.getByRole("region", { name: "Quality summary" })).toContainText(
-			"2 findings"
-		);
-		await expect(page.getByText("Budgets", { exact: true }).locator("..")).toContainText("0");
+		await ruleForm.getByRole("button", { name: "Preview", exact: true }).click();
+		await expect(ruleForm.getByRole("status")).toContainText("Preview updated.");
+		await expectFindingCounts(0, initialTerms);
+		expect(await readFile(editableRuleFile, "utf8")).toBe(originalRules);
 		await page.waitForTimeout(1_200);
-		await page.getByRole("button", { name: "Save" }).click();
-		await expect(
-			page.getByRole("region", { name: "Selected quality rule" }).getByRole("status")
-		).toContainText("Rule file saved.");
+		await ruleForm.getByRole("button", { name: "Save", exact: true }).click();
+		await expect(ruleForm.getByRole("status")).toContainText("Rule file saved.");
+		expect(await readFile(editableRuleFile, "utf8")).toContain('"maximumCharacters": 20');
 		await page.waitForTimeout(1_300);
+		await page.getByRole("button", { name: "Close rules", exact: true }).click();
+		await expect(findings.getByText("Loading findings…", { exact: true })).toBeHidden();
+		await expect(skipFinding).toBeVisible();
+		await expect(findings.getByRole("button")).toHaveCount(initialTerms);
 
-		await page.getByRole("button", { name: /fixture\.prompt\.terms/ }).click();
-		const forbiddenTerm = page.getByRole("textbox", { name: "Forbidden term 1" });
+		await page.getByRole("button", { name: "Edit rules", exact: true }).click();
+		await ruleList.getByRole("button", { name: /fixture\.prompt\.terms/u }).click();
+		const forbiddenTerm = ruleForm.getByRole("textbox", { name: "Forbidden term 1" });
+		await expect(forbiddenTerm).toHaveValue("skip");
 		await forbiddenTerm.fill("pause");
 		await page.waitForTimeout(900);
-		await page.getByRole("button", { name: "Preview" }).click();
-		await expect(page.getByRole("region", { name: "Quality summary" })).toContainText(
-			"1 finding"
-		);
+		await ruleForm.getByRole("button", { name: "Preview", exact: true }).click();
+		await expect(ruleForm.getByRole("status")).toContainText("Preview updated.");
+		await expectFindingCounts(0, initialTerms - 1);
+		expect(await readFile(editableRuleFile, "utf8")).toContain('"term": "skip"');
 		await page.waitForTimeout(1_200);
-		await page.getByRole("button", { name: "Save" }).click();
-		await expect(
-			page.getByRole("region", { name: "Selected quality rule" }).getByRole("status")
-		).toContainText("Rule file saved.");
+		await ruleForm.getByRole("button", { name: "Save", exact: true }).click();
+		await expect(ruleForm.getByRole("status")).toContainText("Rule file saved.");
 		await page.waitForTimeout(1_300);
 
-		await page.getByRole("tab", { name: /Findings/ }).click();
-		const findings = page.getByRole("region", { name: "Findings" });
-		await expect(findings).toContainText("TERM");
-		await expect(page.getByRole("complementary", { name: "Finding detail" })).toContainText(
-			"Expected"
-		);
+		await page.getByRole("button", { name: "Close rules", exact: true }).click();
+		await expect(findings.getByText("Loading findings…", { exact: true })).toBeHidden();
+		await expect(findings.getByRole("button")).toHaveCount(initialTerms - 1);
+		await expect(skipFinding).toHaveCount(0);
+		const preferredFinding = findings.getByRole("button").filter({
+			hasText: "Prefer “proceed”"
+		});
+		await preferredFinding.click();
+		await expect(findingDetail.locator("mark")).toHaveText("Continue");
+		await expect(findingDetail.getByRole("heading", { name: "How to fix" })).toBeVisible();
+		await expectFindingCounts(0, initialTerms - 1);
 		await page.waitForTimeout(1_500);
 		await page.screenshot({ path: testInfo.outputPath("final.png") });
 	} finally {

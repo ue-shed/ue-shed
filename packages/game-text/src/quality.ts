@@ -1,4 +1,5 @@
 import type { TextCorpus, TextLocation, TextOccurrence, TextUnit } from "./schema.js";
+import { hasSearchableSource } from "./search.js";
 import type {
 	TextQualityAffectedOccurrence,
 	TextQualityFinding,
@@ -179,7 +180,9 @@ export function evaluateTextQuality(
 	corpus: TextCorpus,
 	document: TextQualityRuleDocument
 ): TextQualityReport {
-	const units = [...corpus.units].sort((left, right) => left.id.localeCompare(right.id));
+	const units = corpus.units
+		.filter(hasSearchableSource)
+		.sort((left, right) => left.id.localeCompare(right.id));
 	const roles = [...document.roles].sort((left, right) => left.id.localeCompare(right.id));
 	const roleById = new Map(roles.map((role) => [role.id, role]));
 	const rules = [...document.rules].sort((left, right) => left.id.localeCompare(right.id));

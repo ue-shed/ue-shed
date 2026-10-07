@@ -14,6 +14,7 @@ import { textQualityQuery, TextQualityFilter } from "./quality-query.js";
 import { evaluateTextQuality } from "./quality.js";
 
 export const GameTextInvestigationQuery = Schema.Struct({
+	withoutNotes: TextCorpusSearchRequest.fields.withoutNotes,
 	mode: Schema.Literals(["corpus", "quality"]),
 	query: TextCorpusSearchRequest.fields.query,
 	capability: TextCorpusSearchRequest.fields.capability,

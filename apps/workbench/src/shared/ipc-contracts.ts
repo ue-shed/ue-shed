@@ -91,7 +91,6 @@ import {
 	TextCorpusFocusRequest,
 	TextCorpusFocusResult,
 	TextCorpusQueryRunResult,
-	TextCorpusRunResult,
 	TextCorpusSearchRequest,
 	TextCorpusSearchResult,
 	TextQualityFocusRequest,
@@ -677,12 +676,12 @@ export const invokeContracts = {
 	"game-text:configured-scan": invoke({
 		channel: "game-text:configured-scan",
 		args: EmptyArgs,
-		result: TextCorpusRunResult
+		result: TextCorpusQueryRunResult
 	}),
 	"game-text:choose-and-scan": invoke({
 		channel: "game-text:choose-and-scan",
 		args: EmptyArgs,
-		result: TextCorpusRunResult
+		result: TextCorpusQueryRunResult
 	}),
 	"game-text:configured-refresh": invoke({
 		channel: "game-text:configured-refresh",
@@ -726,6 +725,16 @@ export const invokeContracts = {
 	}),
 	"game-text:quality:choose-rules": invoke({
 		channel: "game-text:quality:choose-rules",
+		args: EmptyArgs,
+		result: TextQualityQueryRunResult
+	}),
+	"game-text:quality:create-starter-rules": invoke({
+		channel: "game-text:quality:create-starter-rules",
+		args: Schema.Tuple([Schema.Boolean]),
+		result: TextQualityQueryRunResult
+	}),
+	"game-text:quality:reload-rules": invoke({
+		channel: "game-text:quality:reload-rules",
 		args: EmptyArgs,
 		result: TextQualityQueryRunResult
 	}),

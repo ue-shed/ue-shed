@@ -6,8 +6,9 @@ import type {
 	TextRoleMatcher,
 	TextTerminologyEntry
 } from "@ue-shed/game-text/browser";
+import { textCountLabel } from "@ue-shed/game-text/browser";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
-import { For, Match, Show, Switch, createEffect, createSignal } from "solid-js";
+import { For, Match, Show, Switch, createEffect, createMemo, createSignal } from "solid-js";
 import type { GameTextRuleState, RuleEditorState } from "./game-text-rule-state.js";
 
 function characterBudgetRule(rule: TextQualityRule | undefined) {
@@ -16,6 +17,10 @@ function characterBudgetRule(rule: TextQualityRule | undefined) {
 
 function terminologyRule(rule: TextQualityRule | undefined) {
 	return rule?.kind === "terminology" ? rule : undefined;
+}
+
+function preferredTerm(term: TextTerminologyEntry) {
+	return term.kind === "preferred" ? term : undefined;
 }
 
 function matcherLabel(matcher: TextRoleMatcher): string {
@@ -72,8 +77,15 @@ export function GameTextRuleEditor(props: {
 	readonly summary: TextQualityQuerySummary;
 }) {
 	const draft = () => props.state.draft;
-	const { dirty, feedback, changeDraft, run } = props.editor;
-	const [selectedRuleId, setSelectedRuleId] = createSignal(draft().rules[0]?.id);
+	const dirty = () => props.editor.dirty();
+	const feedback = () => props.editor.feedback();
+	const changeDraft = (document: TextQualityRuleDocument) => props.editor.changeDraft(document);
+	const run = (operation: "preview" | "save") => props.editor.run(operation);
+	const [selectedRuleId, setSelectedRuleId] = createSignal<TextQualityRule["id"]>();
+	const failedFeedback = createMemo(() => {
+		const current = feedback();
+		return current.status === "failed" ? current : undefined;
+	});
 	createEffect(
 		() => draft().rules,
 		(rules) => {
@@ -127,7 +139,12 @@ export function GameTextRuleEditor(props: {
 						<>
 							<header {...stylex.attrs(styles.formHeader)}>
 								<h3 {...stylex.attrs(styles.formTitle)}>{rule().id}</h3>
-								<span {...stylex.attrs(styles.dirtyState)}>
+								<span
+									{...stylex.attrs(
+										styles.dirtyState,
+										dirty() && styles.unsavedState
+									)}
+								>
 									{dirty() ? "Unsaved changes" : "Saved"}
 								</span>
 							</header>
@@ -153,7 +170,7 @@ export function GameTextRuleEditor(props: {
 										}}
 									/>
 									<small {...stylex.attrs(styles.fieldHint)}>
-										Counts Unicode characters in the saved source text.
+										Uses the same character count as the line detail.
 									</small>
 								</label>
 							</Show>
@@ -183,24 +200,27 @@ export function GameTextRuleEditor(props: {
 									</label>
 								</div>
 								<div {...stylex.attrs(styles.termList)}>
-									<For each={selectedTerminologyRule()?.terms ?? []}>
+									<For
+										each={selectedTerminologyRule()?.terms ?? []}
+										keyed={false}
+									>
 										{(term, index) => (
 											<div {...stylex.attrs(styles.termRow)}>
 												<b {...stylex.attrs(styles.termKind)}>
-													{term.kind === "forbidden"
+													{term().kind === "forbidden"
 														? "Forbidden"
 														: "Preferred"}
 												</b>
 												<input
-													aria-label={`${term.kind === "forbidden" ? "Forbidden" : "Preferred"} term ${index() + 1}`}
+													aria-label={`${term().kind === "forbidden" ? "Forbidden" : "Preferred"} term ${index + 1}`}
 													{...stylex.attrs(styles.inputCompact)}
-													value={term.term}
+													value={term().term}
 													onInput={(event) =>
 														changeDraft(
 															updateTerm(
 																draft(),
 																rule().id,
-																index(),
+																index,
 																(current) => ({
 																	...current,
 																	term: event.currentTarget.value
@@ -209,14 +229,10 @@ export function GameTextRuleEditor(props: {
 														)
 													}
 												/>
-												<Show
-													when={
-														term.kind === "preferred" ? term : undefined
-													}
-												>
+												<Show when={preferredTerm(term())}>
 													{(preferred) => (
 														<input
-															aria-label={`Alternatives for preferred term ${index() + 1}`}
+															aria-label={`Alternatives for preferred term ${index + 1}`}
 															{...stylex.attrs(styles.inputCompact)}
 															value={preferred().alternatives.join(
 																", "
@@ -226,7 +242,7 @@ export function GameTextRuleEditor(props: {
 																	updateTerm(
 																		draft(),
 																		rule().id,
-																		index(),
+																		index,
 																		(current) =>
 																			current.kind ===
 																			"preferred"
@@ -253,7 +269,7 @@ export function GameTextRuleEditor(props: {
 												</Show>
 												<button
 													type="button"
-													aria-label={`Remove term ${index() + 1}`}
+													aria-label={`Remove term ${index + 1}`}
 													disabled={
 														(selectedTerminologyRule()?.terms.length ??
 															0) <= 1
@@ -273,7 +289,7 @@ export function GameTextRuleEditor(props: {
 																						currentIndex
 																					) =>
 																						currentIndex !==
-																						index()
+																						index
 																				)
 																			}
 																		: current
@@ -364,15 +380,12 @@ export function GameTextRuleEditor(props: {
 						<Match when={feedback().status === "saved"}>
 							<span role="status">Rule file saved.</span>
 						</Match>
-						<Match when={feedback().status === "failed"}>
-							{(() => {
-								const current = feedback();
-								return current.status === "failed" ? (
-									<span role="alert" {...stylex.attrs(styles.failedFeedback)}>
-										{current.message} {current.recovery}
-									</span>
-								) : null;
-							})()}
+						<Match when={failedFeedback()}>
+							{(current) => (
+								<span role="alert" {...stylex.attrs(styles.failedFeedback)}>
+									{current().message} {current().recovery}
+								</span>
+							)}
 						</Match>
 						<Match when={true}>
 							<span>Preview uses the saved text already loaded in Workbench.</span>
@@ -410,9 +423,11 @@ export function GameTextRuleEditor(props: {
 							<header {...stylex.attrs(styles.roleHeader)}>
 								<strong {...stylex.attrs(styles.roleTitle)}>{role.id}</strong>
 								<b {...stylex.attrs(styles.roleCount)}>
-									{props.summary.roles.find((item) => item.role === role.id)
-										?.matchedTextUnits ?? 0}{" "}
-									text entries
+									{textCountLabel(
+										props.summary.roles.find((item) => item.role === role.id)
+											?.matchedTextUnits ?? 0,
+										"line"
+									)}
 								</b>
 							</header>
 							<Show when={role.description}>
@@ -447,12 +462,18 @@ export function GameTextRuleEditor(props: {
 const styles = stylex.create({
 	editor: {
 		display: "grid",
-		gridTemplateColumns: "230px minmax(480px, 1fr) 300px",
+		gridTemplateColumns: "210px minmax(0, 1fr) 260px",
+		gridTemplateRows: "minmax(0, 1fr)",
+		flex: 1,
+		minHeight: 0,
+		minWidth: 0,
+		overflow: "hidden",
 		gap: tokens.space2
 	},
 	ruleList: {
-		height: "calc(100vh - 260px)",
-		minHeight: 430,
+		minHeight: 0,
+		minWidth: 0,
+		overscrollBehavior: "contain",
 		borderColor: tokens.colorBorder,
 		borderStyle: "solid",
 		borderWidth: 1,
@@ -507,8 +528,9 @@ const styles = stylex.create({
 	ruleForm: {
 		display: "flex",
 		flexDirection: "column",
-		height: "calc(100vh - 260px)",
-		minHeight: 430,
+		minHeight: 0,
+		minWidth: 0,
+		overscrollBehavior: "contain",
 		borderColor: tokens.colorBorder,
 		borderStyle: "solid",
 		borderWidth: 1,
@@ -534,9 +556,10 @@ const styles = stylex.create({
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap"
 	},
+	unsavedState: { color: tokens.colorWarning },
 	dirtyState: {
 		flexShrink: 0,
-		color: tokens.colorWarning,
+		color: tokens.colorTextMuted,
 		fontSize: 11
 	},
 	field: {
@@ -690,8 +713,9 @@ const styles = stylex.create({
 		transform: { default: "scale(1)", ":active": "scale(0.97)", ":disabled": "scale(1)" }
 	},
 	roles: {
-		height: "calc(100vh - 260px)",
-		minHeight: 430,
+		minHeight: 0,
+		minWidth: 0,
+		overscrollBehavior: "contain",
 		borderColor: tokens.colorBorder,
 		borderStyle: "solid",
 		borderWidth: 1,

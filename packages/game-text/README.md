@@ -41,6 +41,36 @@ guidance.
 The `@ue-shed/game-text/browser` entry point contains only schemas and pure query helpers. It does
 not expose filesystem, process, Electron, Perforce, or Unreal authority.
 
+Search pages include fixed-size `counts` for the current source query, capability, review filter,
+and `withoutNotes` toggle. `counts.all` equals the page's full `total`, independent of pagination.
+Review counts intersect every active filter; a toggle's count excludes that toggle itself so callers
+can show how many lines are available when it is enabled. Notes match only when every saved location
+has empty notes after trimming. An omitted `withoutNotes` means false.
+
+`summary().counts` uses that same query path with no active filters. `summary().searchable` counts
+only lines with searchable source and their saved locations. `TextCorpus.coverage` retains raw scan
+provenance, including empty FText values; it is not a count of writer-visible lines. Character counts
+in search, checks and human CSV use JavaScript string length (UTF-16 code units).
+
+`gameTextCsv(corpus)` produces one human-readable row per saved location of each searchable line.
+Pass the full scan as its optional second argument when exporting a filtered corpus to retain the
+same review signals shown in search.
+`gameTextQualityCsv(report, corpus)` produces one row per finding and affected location. Both are
+browser-safe, quote every cell, protect spreadsheet formulas, and include a UTF-8 BOM and final CRLF.
+`gameTextInvestigationCsv` keeps its provenance-oriented layout, and `exportGameTextInvestigation`
+remains the JSON provenance document.
+
+`STARTER_GAME_TEXT_RULES` contains neutral v1 examples to customize. A trusted Node host can use
+`createStarterTextRules(projectRoot, output?)` to create it exclusively, or use the CLI:
+
+```sh
+ue-shed text rules init <project-root> [--output <file>]
+```
+
+The default is `Config/UEShed/GameTextRules.json` under the project root. Relative output overrides
+also resolve under the project root. Existing files produce `TextRulesFileError` and are never
+overwritten.
+
 See [ADOPTING.md](ADOPTING.md) and [adoption.manifest.json](adoption.manifest.json) when integrating
 Game Text into an established trusted host.
 

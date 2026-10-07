@@ -570,7 +570,10 @@ function SessionShelf(props: {
 	);
 }
 
-export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
+export function AuthoringRoute(props: {
+	readonly client: AuthoringClientApi;
+	readonly initialObjectPath?: string | undefined;
+}) {
 	const loadAction = createEffectAction();
 	const catalogAction = createEffectAction();
 	const catalogProgressSubscription = createEffectSubscription();
@@ -828,7 +831,18 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 		const preserveCurrent = state().status === "ready";
 		loadAction.run(props.client.openCatalogTable(objectPath, authority), {
 			onFailure: (cause) => {
-				setReplacementNotice(Cause.pretty(cause));
+				applyResult(
+					{
+						status: "failed",
+						error: {
+							code: "contract_failure",
+							message: Cause.pretty(cause),
+							recovery: "Refresh the saved project and open this table again.",
+							retrySafe: true
+						}
+					},
+					preserveCurrent
+				);
 				setIsReplacing(false);
 			},
 			onSuccess: (result) => {
@@ -1065,7 +1079,8 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 	};
 
 	onSettled(() => {
-		load(false);
+		if (props.initialObjectPath) openCatalogTable(props.initialObjectPath, "saved");
+		else load(false);
 		loadCatalog();
 		refreshSessions();
 	});

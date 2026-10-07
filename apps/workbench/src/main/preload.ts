@@ -173,6 +173,9 @@ const workbenchRendererApi = {
 		search: (request) => ipcRenderer.invoke("game-text:search", request),
 		focus: (request) => ipcRenderer.invoke("game-text:focus", request),
 		chooseQualityRules: () => ipcRenderer.invoke("game-text:quality:choose-rules"),
+		reloadQualityRules: () => ipcRenderer.invoke("game-text:quality:reload-rules"),
+		createStarterRules: (loadExisting) =>
+			ipcRenderer.invoke("game-text:quality:create-starter-rules", loadExisting),
 		previewQualityRules: (document) =>
 			ipcRenderer.invoke("game-text:quality:preview-rules", document),
 		saveQualityRules: (document) =>

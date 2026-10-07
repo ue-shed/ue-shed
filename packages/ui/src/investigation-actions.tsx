@@ -1,8 +1,10 @@
 import * as stylex from "@stylexjs/stylex";
+import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { Effect } from "effect";
-import { Show, createSignal } from "solid-js";
+import { Show, createSignal, createUniqueId } from "solid-js";
 import { createEffectAction } from "./effect-solid.js";
 import { Button } from "./button.js";
+import { AnchoredPopover } from "./anchored-popover.js";
 
 type FileFeedback =
 	| {
@@ -31,14 +33,21 @@ export function InvestigationActions<Query, Preset, Error>(props: {
 	readonly revision: unknown;
 	readonly disabled: boolean;
 	readonly onOpen: (preset: Preset) => void;
+	readonly compact?: boolean;
 }) {
 	const action = createEffectAction();
+	const exportId = createUniqueId();
+	const presetId = createUniqueId();
+	const [exportOpen, setExportOpen] = createSignal(false);
+	const [presetOpen, setPresetOpen] = createSignal(false);
 	const [pending, setPending] = createSignal(false);
 	const [message, setMessage] = createSignal("");
 	const [saved, setSaved] = createSignal<{ readonly key: string; readonly command: string }>();
 	const key = () => JSON.stringify([props.query, props.revision]);
 	const replay = () => (saved()?.key === key() ? saved()?.command : undefined);
 	const run = (operation: "json" | "csv" | "save" | "open") => {
+		setExportOpen(false);
+		setPresetOpen(false);
 		const baseline = key();
 		setPending(true);
 		setMessage("");
@@ -70,10 +79,12 @@ export function InvestigationActions<Query, Preset, Error>(props: {
 				} else {
 					if (result.replayCommand)
 						setSaved({ key: baseline, command: result.replayCommand });
+					const count = result.rowCount.toLocaleString();
+					const noun = result.rowCount === 1 ? "result" : "results";
 					setMessage(
 						operation === "save"
 							? `Saved preset: ${result.path}`
-							: `Exported ${result.rowCount.toLocaleString()} matching results: ${result.path}`
+							: `Exported ${count} matching ${noun}: ${result.path}`
 					);
 				}
 			}
@@ -91,34 +102,123 @@ export function InvestigationActions<Query, Preset, Error>(props: {
 		);
 	};
 	return (
-		<section aria-label="Investigation files" {...stylex.attrs(styles.panel)}>
+		<section
+			aria-label="Investigation files"
+			{...stylex.attrs(styles.panel, props.compact && styles.compact)}
+		>
 			<div {...stylex.attrs(styles.actions)}>
-				<Button
-					type="button"
-					disabled={pending() || props.disabled}
-					onClick={() => run("json")}
+				<Show
+					when={props.compact}
+					fallback={
+						<>
+							<Button
+								type="button"
+								disabled={pending() || props.disabled}
+								onClick={() => run("json")}
+							>
+								Export JSON
+							</Button>
+							<Button
+								type="button"
+								disabled={pending() || props.disabled}
+								onClick={() => run("csv")}
+							>
+								Export CSV
+							</Button>
+							<Button
+								type="button"
+								disabled={pending() || props.disabled}
+								onClick={() => run("save")}
+							>
+								Save preset
+							</Button>
+							<Button type="button" disabled={pending()} onClick={() => run("open")}>
+								Open preset
+							</Button>
+						</>
+					}
 				>
-					Export JSON
-				</Button>
-				<Button
-					type="button"
-					disabled={pending() || props.disabled}
-					onClick={() => run("csv")}
-				>
-					Export CSV
-				</Button>
-				<Button
-					type="button"
-					disabled={pending() || props.disabled}
-					onClick={() => run("save")}
-				>
-					Save preset
-				</Button>
-				<Button type="button" disabled={pending()} onClick={() => run("open")}>
-					Open preset
-				</Button>
+					<AnchoredPopover
+						id={exportId}
+						ariaLabel="Export formats"
+						open={exportOpen()}
+						onOpenChange={setExportOpen}
+						placement="bottom-end"
+						style={styles.menu}
+						trigger={(triggerProps) => (
+							<Button
+								{...triggerProps}
+								type="button"
+								size="compact"
+								tone="quiet"
+								disabled={pending() || props.disabled}
+							>
+								Export
+							</Button>
+						)}
+					>
+						<Button
+							type="button"
+							size="compact"
+							tone="quiet"
+							onClick={() => run("csv")}
+						>
+							CSV
+						</Button>
+						<Button
+							type="button"
+							size="compact"
+							tone="quiet"
+							onClick={() => run("json")}
+						>
+							JSON
+						</Button>
+					</AnchoredPopover>
+					<AnchoredPopover
+						id={presetId}
+						ariaLabel="Investigation presets"
+						open={presetOpen()}
+						onOpenChange={setPresetOpen}
+						placement="bottom-end"
+						style={styles.menu}
+						trigger={(triggerProps) => (
+							<Button
+								{...triggerProps}
+								type="button"
+								size="compact"
+								tone="quiet"
+								disabled={pending()}
+							>
+								Presets
+							</Button>
+						)}
+					>
+						<Button
+							type="button"
+							size="compact"
+							tone="quiet"
+							disabled={props.disabled}
+							onClick={() => run("save")}
+						>
+							Save preset…
+						</Button>
+						<Button
+							type="button"
+							size="compact"
+							tone="quiet"
+							onClick={() => run("open")}
+						>
+							Open preset…
+						</Button>
+					</AnchoredPopover>
+				</Show>
 				<Show when={replay()}>
-					<Button type="button" disabled={pending()} onClick={copy}>
+					<Button
+						type="button"
+						size={props.compact ? "compact" : undefined}
+						disabled={pending()}
+						onClick={copy}
+					>
 						Copy CLI replay
 					</Button>
 				</Show>
@@ -143,6 +243,21 @@ export function InvestigationActions<Query, Preset, Error>(props: {
 
 const styles = stylex.create({
 	panel: { display: "flex", flexDirection: "column", gap: 8, paddingBlock: 12, fontSize: 12 },
+	compact: { paddingBlock: 0 },
+	menu: {
+		display: "flex",
+		flexDirection: "column",
+		gap: 2,
+		padding: 4,
+		minWidth: 120,
+		backgroundColor: tokens.colorSurfaceRaised,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		boxShadow: "0 8px 24px rgba(0, 0, 0, 0.25)",
+		zIndex: 20
+	},
 	actions: { display: "flex", flexWrap: "wrap", gap: 8 },
 	command: { display: "block", whiteSpace: "pre-wrap", overflowWrap: "anywhere", paddingBlock: 8 }
 });

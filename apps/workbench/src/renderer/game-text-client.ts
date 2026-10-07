@@ -1,6 +1,15 @@
 import { GameTextInvestigationPresetResult } from "@ue-shed/game-text/browser";
 import { InvestigationFileResult } from "@ue-shed/unreal-assets/investigation";
 import {
+	type WorkspaceQualityRequest,
+	WorkspaceQualityResult,
+	type WorkspaceQualityFocusRequest,
+	WorkspaceQualityFocusResult,
+	WorkspaceChangesResult,
+	type WorkspaceReportRequest,
+	WorkspaceReportResult,
+	type WorkspaceReportFileRequest,
+	WorkspaceReportFileResult,
 	LocalizationTargetsResult,
 	LocalizationTargetResult,
 	LocalizationFocusResult,
@@ -19,7 +28,7 @@ import {
 	type TextCorpusSearchResult,
 	type TextQualityFocusRequest,
 	type TextQualityFocusResult,
-	type TextQualityRuleDocument,
+	type GameTextRuleDocument,
 	type TextQualityRuleUpdateResult,
 	type TextQualitySearchRequest,
 	type TextQualitySearchResult
@@ -53,6 +62,46 @@ function invokeRequest<A, HostValue, DecodeError>(
 }
 
 export const gameTextClient: GameTextClientApi = GameTextClient.of({
+	localizationQualitySearch: Effect.fn("GameTextClient.localizationQualitySearch")(
+		(request: WorkspaceQualityRequest) =>
+			invokeRequest(
+				"gameText.localizationQualitySearch",
+				() => window.ueShed.gameText.localizationQualitySearch(request),
+				Schema.decodeUnknownEffect(WorkspaceQualityResult)
+			)
+	),
+	localizationQualityFocus: Effect.fn("GameTextClient.localizationQualityFocus")(
+		(request: WorkspaceQualityFocusRequest) =>
+			invokeRequest(
+				"gameText.localizationQualityFocus",
+				() => window.ueShed.gameText.localizationQualityFocus(request),
+				Schema.decodeUnknownEffect(WorkspaceQualityFocusResult)
+			)
+	),
+	localizationChanges: Effect.fn("GameTextClient.localizationChanges")(
+		(request: WorkspaceQualityRequest) =>
+			invokeRequest(
+				"gameText.localizationChanges",
+				() => window.ueShed.gameText.localizationChanges(request),
+				Schema.decodeUnknownEffect(WorkspaceChangesResult)
+			)
+	),
+	localizationReport: Effect.fn("GameTextClient.localizationReport")(
+		(request: WorkspaceReportRequest) =>
+			invokeRequest(
+				"gameText.localizationReport",
+				() => window.ueShed.gameText.localizationReport(request),
+				Schema.decodeUnknownEffect(WorkspaceReportResult)
+			)
+	),
+	localizationReportFile: Effect.fn("GameTextClient.localizationReportFile")(
+		(request: WorkspaceReportFileRequest) =>
+			invokeRequest(
+				"gameText.localizationReportFile",
+				() => window.ueShed.gameText.localizationReportFile(request),
+				Schema.decodeUnknownEffect(WorkspaceReportFileResult)
+			)
+	),
 	localizationTargets: Effect.fn("GameTextClient.localizationTargets")(() =>
 		invokeRequest(
 			"gameText.localizationTargets",
@@ -178,7 +227,7 @@ export const gameTextClient: GameTextClientApi = GameTextClient.of({
 	),
 	previewQualityRules: Effect.fn("GameTextClient.previewQualityRules")(
 		(
-			document: TextQualityRuleDocument
+			document: GameTextRuleDocument
 		): Effect.Effect<TextQualityRuleUpdateResult, GameTextClientError> =>
 			invokeRequest(
 				"gameText.previewQualityRules",
@@ -188,7 +237,7 @@ export const gameTextClient: GameTextClientApi = GameTextClient.of({
 	),
 	saveQualityRules: Effect.fn("GameTextClient.saveQualityRules")(
 		(
-			document: TextQualityRuleDocument
+			document: GameTextRuleDocument
 		): Effect.Effect<TextQualityRuleUpdateResult, GameTextClientError> =>
 			invokeRequest(
 				"gameText.saveQualityRules",

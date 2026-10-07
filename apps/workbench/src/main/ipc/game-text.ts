@@ -6,6 +6,21 @@ import { WorkbenchGameText } from "../services/game-text.js";
 export const register = Effect.gen(function* () {
 	const ipc = yield* ElectronIpc;
 	const gameText = yield* WorkbenchGameText;
+	yield* ipc.register(invokeContracts["game-text:localization:quality-search"], (request) =>
+		gameText.localizationQualitySearch(request)
+	);
+	yield* ipc.register(invokeContracts["game-text:localization:quality-focus"], (request) =>
+		gameText.localizationQualityFocus(request)
+	);
+	yield* ipc.register(invokeContracts["game-text:localization:changes"], (request) =>
+		gameText.localizationChanges(request)
+	);
+	yield* ipc.register(invokeContracts["game-text:localization:report"], (request) =>
+		gameText.localizationReport(request)
+	);
+	yield* ipc.register(invokeContracts["game-text:localization:report-file"], (request) =>
+		gameText.localizationReportFile(request)
+	);
 	yield* ipc.register(invokeContracts["game-text:localization:targets"], () =>
 		gameText.localizationTargets()
 	);

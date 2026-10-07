@@ -7,9 +7,10 @@ import {
 	makeTextUnitId,
 	textCorpusQuery,
 	textQualityQuery,
-	evaluateTextQuality,
+	evaluateGameTextSourceQuality,
 	STARTER_GAME_TEXT_RULES,
 	TextQualityRuleDocument,
+	type GameTextRuleDocument,
 	TextRoleId,
 	TextQualityRuleId,
 	type TextCorpus,
@@ -138,7 +139,7 @@ function makeClient(
 	overrides: Partial<GameTextClientApi> = {}
 ): GameTextClientApi {
 	const query = textCorpusQuery(input, "2026-10-07T16:53:00.000Z");
-	let quality = textQualityQuery(evaluateTextQuality(input, rulesDocument));
+	let quality = textQualityQuery(evaluateGameTextSourceQuality(input, rulesDocument));
 	return {
 		chooseProjectAndScan: () =>
 			Effect.succeed({ status: "completed", summary: query.summary() }),
@@ -173,7 +174,7 @@ function makeClient(
 			return Effect.succeed(focus ? { status: "found", focus } : { status: "not_found" });
 		},
 		previewQualityRules: (draft) => {
-			quality = textQualityQuery(evaluateTextQuality(input, draft));
+			quality = textQualityQuery(evaluateGameTextSourceQuality(input, draft));
 			return Effect.succeed({
 				status: "completed",
 				document: draft,
@@ -181,7 +182,7 @@ function makeClient(
 			});
 		},
 		saveQualityRules: (draft) => {
-			quality = textQualityQuery(evaluateTextQuality(input, draft));
+			quality = textQualityQuery(evaluateGameTextSourceQuality(input, draft));
 			return Effect.succeed({
 				status: "completed",
 				document: draft,
@@ -866,8 +867,8 @@ describe("Game Text writing workspace", () => {
 	it("retains every editable rule field, term actions, preview and save", async () => {
 		const user = userEvent.setup();
 		const client = makeClient();
-		const previews: TextQualityRuleDocument[] = [];
-		const saves: TextQualityRuleDocument[] = [];
+		const previews: GameTextRuleDocument[] = [];
+		const saves: GameTextRuleDocument[] = [];
 		mount({
 			...client,
 			previewQualityRules: (draft) => {
@@ -948,7 +949,9 @@ describe("Game Text writing workspace", () => {
 
 	it("offers to load an existing starter rules file and labels invalid rules", async () => {
 		const user = userEvent.setup();
-		const loaded = textQualityQuery(evaluateTextQuality(corpus, STARTER_GAME_TEXT_RULES));
+		const loaded = textQualityQuery(
+			evaluateGameTextSourceQuality(corpus, STARTER_GAME_TEXT_RULES)
+		);
 		const requested: boolean[] = [];
 		mount(
 			makeClient(corpus, {

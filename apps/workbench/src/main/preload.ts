@@ -160,6 +160,16 @@ const workbenchRendererApi = {
 			ipcRenderer.invoke("asset-audits:textures:preview-offline-batch", request)
 	},
 	gameText: {
+		localizationQualitySearch: (request) =>
+			ipcRenderer.invoke("game-text:localization:quality-search", request),
+		localizationQualityFocus: (request) =>
+			ipcRenderer.invoke("game-text:localization:quality-focus", request),
+		localizationChanges: (request) =>
+			ipcRenderer.invoke("game-text:localization:changes", request),
+		localizationReport: (request) =>
+			ipcRenderer.invoke("game-text:localization:report", request),
+		localizationReportFile: (request) =>
+			ipcRenderer.invoke("game-text:localization:report-file", request),
 		localizationTargets: () => ipcRenderer.invoke("game-text:localization:targets"),
 		localizationTarget: (target) => ipcRenderer.invoke("game-text:localization:target", target),
 		localizationFocus: (request) => ipcRenderer.invoke("game-text:localization:focus", request),

@@ -67,6 +67,11 @@ export const workbenchInvokeChannels = {
 		previewOfflineBatch: "asset-audits:textures:preview-offline-batch"
 	},
 	gameText: {
+		localizationQualitySearch: "game-text:localization:quality-search",
+		localizationQualityFocus: "game-text:localization:quality-focus",
+		localizationChanges: "game-text:localization:changes",
+		localizationReport: "game-text:localization:report",
+		localizationReportFile: "game-text:localization:report-file",
 		localizationTargets: "game-text:localization:targets",
 		localizationTarget: "game-text:localization:target",
 		localizationFocus: "game-text:localization:focus",

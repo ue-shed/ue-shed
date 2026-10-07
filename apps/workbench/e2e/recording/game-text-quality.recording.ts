@@ -57,19 +57,39 @@ test("records the real Game Text quality workflow", async ({
 	let recording = false;
 	try {
 		await page.setViewportSize({ width: 1440, height: 900 });
-		await application.evaluate(({ BrowserWindow, dialog }, selectedRuleFile) => {
-			BrowserWindow.getAllWindows()[0]?.setContentSize(1440, 900);
-			const original = dialog.showOpenDialog.bind(dialog);
-			Object.defineProperty(dialog, "showOpenDialog", {
-				configurable: true,
-				value: (...args: Parameters<typeof dialog.showOpenDialog>) => {
-					const options = args.at(-1);
-					if (options?.title !== "Choose Game Text quality rules")
-						return original(...args);
-					return Promise.resolve({ canceled: false, filePaths: [selectedRuleFile] });
-				}
-			});
-		}, editableRuleFile);
+		const baselineFile = testInfo.outputPath("localization.baseline.json");
+		await application.evaluate(
+			({ BrowserWindow, dialog }, paths) => {
+				const selectedRuleFile = paths.rules;
+				BrowserWindow.getAllWindows()[0]?.setContentSize(1440, 900);
+				const original = dialog.showOpenDialog.bind(dialog);
+				Object.defineProperty(dialog, "showOpenDialog", {
+					configurable: true,
+					value: (...args: Parameters<typeof dialog.showOpenDialog>) => {
+						const options = args.at(-1);
+						if (options?.title === "Compare localization baseline")
+							return Promise.resolve({
+								canceled: false,
+								filePaths: [paths.baseline]
+							});
+						if (options?.title !== "Choose Game Text quality rules")
+							return original(...args);
+						return Promise.resolve({ canceled: false, filePaths: [selectedRuleFile] });
+					}
+				});
+				const originalSave = dialog.showSaveDialog.bind(dialog);
+				Object.defineProperty(dialog, "showSaveDialog", {
+					configurable: true,
+					value: (...args: Parameters<typeof dialog.showSaveDialog>) => {
+						const options = args.at(-1);
+						if (options?.title === "Save localization baseline")
+							return Promise.resolve({ canceled: false, filePath: paths.baseline });
+						return originalSave(...args);
+					}
+				});
+			},
+			{ rules: editableRuleFile, baseline: baselineFile }
+		);
 
 		await workbench.expectShowcaseReady();
 		// A fresh recording starts with the setup notice, independent of saved UI preferences.
@@ -252,19 +272,30 @@ test("records the real Game Text quality workflow", async ({
 		const initialTerms = displayedCount(await terminology.innerText());
 		expect(initialBudgets).toBeGreaterThan(0);
 		expect(initialTerms).toBeGreaterThan(1);
+		const builtInCount =
+			displayedCount(await allFindings.innerText()) - initialBudgets - initialTerms;
+		expect(builtInCount).toBeGreaterThan(0);
 		const expectFindingCounts = async (budgets: number, terms: number) => {
-			const total = budgets + terms;
+			const total = budgets + terms + builtInCount;
 			await expect(allFindings).toHaveAccessibleName(
 				`All findings ${total.toLocaleString()}`
 			);
-			await expect(characterLimits).toHaveAccessibleName(
-				`Character limits ${budgets.toLocaleString()}`
-			);
+			if (budgets > 0)
+				await expect(characterLimits).toHaveAccessibleName(
+					`Character limits ${budgets.toLocaleString()}`
+				);
+			else await expect(characterLimits).toHaveCount(0);
 			await expect(terminology).toHaveAccessibleName(`Terminology ${terms.toLocaleString()}`);
 			await expect(qualityTab).toHaveAccessibleName(`Quality checks (${total})`);
 		};
 		await expectFindingCounts(initialBudgets, initialTerms);
-		await expect(findings.getByRole("button")).toHaveCount(initialBudgets + initialTerms);
+		const initialFindingTotal = initialBudgets + initialTerms + builtInCount;
+		await expect(findings.getByRole("button", { name: /^Show [\d,]+ more$/u })).toHaveCount(
+			initialFindingTotal > 50 ? 1 : 0
+		);
+		await expect(findings.getByRole("button").filter({ hasText: / · /u })).toHaveCount(
+			Math.min(50, initialFindingTotal)
+		);
 		await expectPaneLayout(findings, findingDetail);
 		await page.screenshot({ path: testInfo.outputPath("05-quality-overview.png") });
 		await page.waitForTimeout(1_700);
@@ -508,6 +539,66 @@ test("records the real Game Text quality workflow", async ({
 		);
 		await expectPaneLayout(results, textDetail);
 		await page.screenshot({ path: testInfo.outputPath("11-all-cultures.png") });
+
+		await culture.click();
+		await cultureChoices.getByRole("button", { name: "de", exact: true }).click();
+		await expect(culture).toHaveAccessibleName("Culture: de");
+		await qualityTab.click();
+		const formatArguments = page.getByRole("button", { name: /^Format arguments [\d,]+$/u });
+		await expect(formatArguments).toBeVisible();
+		const formatCount = displayedCount(await formatArguments.innerText());
+		await formatArguments.click();
+		await expect(formatArguments).toHaveAttribute("aria-pressed", "true");
+		await expect(findings.getByText("Loading findings…", { exact: true })).toBeHidden();
+		expect(formatCount).toBeGreaterThan(0);
+		await expect(findings.getByRole("button").filter({ hasText: / · /u })).toHaveCount(
+			Math.min(50, formatCount)
+		);
+		const argumentFinding = findings
+			.getByRole("button")
+			.filter({ hasText: "ST_Localization · NamedArgument" });
+		await argumentFinding.click();
+		const suggested = findingDetail.getByRole("region", { name: "Suggested fix" });
+		await expect(suggested).toBeVisible();
+		await expect(
+			findingDetail.getByRole("heading", { name: "Talking with {PlayerName}" })
+		).toBeVisible();
+		await expect(findingDetail.locator("h2 mark")).toHaveText("{PlayerName}");
+		await expect(suggested).toContainText("Gespräch mit {Name}");
+		await expect(suggested).toContainText("Gespräch mit {PlayerName}");
+		await expect(suggested.locator("mark")).toHaveText(["{Name}", "{PlayerName}"]);
+		await expect(
+			findingDetail.getByText("Translation the game uses", { exact: true })
+		).toBeVisible();
+		await expect(suggested.getByRole("button", { name: "Copy change set" })).toBeEnabled();
+		await expect(suggested).toContainText(
+			"Writing translations arrives with translation editing."
+		);
+		await expectPaneLayout(findings, findingDetail);
+		await suggested.evaluate((element) => element.scrollIntoView({ block: "nearest" }));
+		await page.screenshot({ path: testInfo.outputPath("12-localization-findings.png") });
+
+		await page.getByRole("tab", { name: "Reports", exact: true }).click();
+		const reportTable = page.getByRole("table", { name: "Localization report" });
+		await expect(reportTable).toBeVisible();
+		await expect(reportTable.getByRole("row").nth(1)).toHaveAttribute("aria-label", "en");
+		await expect(reportTable.getByRole("row")).toHaveCount(4);
+		await page.getByRole("button", { name: "Save baseline…" }).click();
+		await expect(page.getByText("Baseline saved.", { exact: true })).toBeVisible();
+		expect((await stat(baselineFile)).size).toBeGreaterThan(0);
+		await page.getByRole("button", { name: "Compare with baseline…" }).click();
+		await expect(page.getByText("Baseline compared.", { exact: true })).toBeVisible();
+		await expect(reportTable.getByRole("columnheader", { name: "New words" })).toBeVisible();
+		for (const code of ["en", "de", "fr"]) {
+			const row = reportTable.getByRole("row", { name: code, exact: true });
+			await expect(row.getByRole("cell").nth(6)).toHaveText("0");
+			await expect(row.getByRole("cell").nth(7)).toHaveText("0");
+		}
+		await expect(
+			page.getByText("Reviewed · Proofread: not tracked yet", { exact: true })
+		).toBeVisible();
+		await expect(page.getByText("Loading reports…", { exact: true })).toHaveCount(0);
+		await page.screenshot({ path: testInfo.outputPath("13-reports.png") });
 	} finally {
 		if (recording) await page.screencast.stop().catch(() => undefined);
 		await application.close().catch(() => undefined);

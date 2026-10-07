@@ -61,7 +61,7 @@ function locationCells(location: TextLocation): readonly string[] {
 }
 
 /** Human exports: quoted cells, BOM, final CRLF, and formula protection before whitespace. */
-function csv(rows: Iterable<readonly (string | number)[]>): string {
+export function spreadsheetCsv(rows: Iterable<readonly (string | number)[]>): string {
 	return (
 		"\uFEFF" +
 		[...rows]
@@ -82,7 +82,7 @@ function csv(rows: Iterable<readonly (string | number)[]>): string {
 /** One row per searchable line's saved location. Optional context keeps scan-wide review signals. */
 export function gameTextCsv(corpus: TextCorpus, reviewCorpus: TextCorpus = corpus): string {
 	const query = textCorpusQuery(reviewCorpus);
-	return csv(
+	return spreadsheetCsv(
 		(function* () {
 			yield [
 				"Source",
@@ -146,7 +146,7 @@ export function textQualityProblem(finding: TextQualityFinding): string {
 /** One row for each finding and affected saved location. Corpus supplies Unreal keys. */
 export function gameTextQualityCsv(report: TextQualityReport, corpus: TextCorpus): string {
 	const units = new Map(corpus.units.map((unit) => [unit.id, unit]));
-	return csv(
+	return spreadsheetCsv(
 		(function* () {
 			yield [
 				"Rule",

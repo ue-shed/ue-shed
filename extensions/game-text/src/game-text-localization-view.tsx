@@ -26,7 +26,7 @@ export const localizationLabels = {
 	outside_target: "Outside this target",
 	unknown: "Unknown"
 } satisfies Record<LocalizationState, string>;
-const unknownLabels = {
+export const unknownLabels = {
 	missing_manifest: "The gathered text file could not be read.",
 	missing_archive: "The game's translation file could not be read.",
 	missing_po: "The PO file could not be read.",
@@ -236,20 +236,25 @@ export function LocalizationRow(props: {
 	);
 }
 
-export function TranslationsDetail(props: { readonly model: GameTextLocalizationState }) {
+export function TranslationsDetail(props: {
+	readonly model: GameTextLocalizationState;
+	readonly focus?: LocalizationFocus | undefined;
+	readonly onMore?: (cultureOffset?: number, locationOffset?: number) => void;
+	readonly onMoreContext?: (culture: LocalizationTranslation["culture"]) => void;
+}) {
 	return (
 		<Show when={props.model.active()}>
 			<section aria-label="Translations" {...stylex.attrs(styles.detailSection)}>
 				<h3 {...stylex.attrs(styles.section)}>Translations</h3>
 				<Show
-					when={!props.model.detailLoading()}
+					when={props.focus || !props.model.detailLoading()}
 					fallback={
 						<span role="status" {...stylex.attrs(styles.muted)}>
 							Loading translations…
 						</span>
 					}
 				>
-					<Show when={props.model.detail()}>
+					<Show when={props.focus ?? props.model.detail()}>
 						{(detail) => (
 							<>
 								<Show when={detail().scopeSummary}>
@@ -368,7 +373,10 @@ export function TranslationsDetail(props: { readonly model: GameTextLocalization
 													size="compact"
 													tone="quiet"
 													onClick={() =>
-														props.model.moreContext(translation.culture)
+														(
+															props.onMoreContext ??
+															props.model.moreContext
+														)(translation.culture)
 													}
 												>
 													Show more PO comments and flags
@@ -393,7 +401,11 @@ export function TranslationsDetail(props: { readonly model: GameTextLocalization
 									<Button
 										size="compact"
 										tone="quiet"
-										onClick={() => props.model.more(detail().nextCultureOffset)}
+										onClick={() =>
+											(props.onMore ?? props.model.more)(
+												detail().nextCultureOffset
+											)
+										}
 									>
 										Show more cultures
 									</Button>
@@ -411,7 +423,10 @@ export function TranslationsDetail(props: { readonly model: GameTextLocalization
 										size="compact"
 										tone="quiet"
 										onClick={() =>
-											props.model.more(undefined, detail().nextLocationOffset)
+											(props.onMore ?? props.model.more)(
+												undefined,
+												detail().nextLocationOffset
+											)
 										}
 									>
 										Show more gathered locations

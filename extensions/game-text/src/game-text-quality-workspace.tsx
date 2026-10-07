@@ -5,7 +5,7 @@ import type {
 	TextQualityFindingSummary,
 	TextQualityFocus,
 	TextQualityQuerySummary,
-	TextQualityRuleDocument,
+	GameTextRuleDocument,
 	TextQualitySearchPage,
 	TextUnitId
 } from "@ue-shed/game-text/browser";
@@ -27,7 +27,7 @@ const filters = [
 	{ label: "Terminology", value: "terminology" }
 ] as const;
 
-function facts(focus: TextQualityFocus): string {
+export function qualityFindingFacts(focus: TextQualityFocus): string {
 	if (focus.kind === "character_budget") {
 		const limit = textCountLabel(focus.expectation.maximumCharacters, "character");
 		const actual = textCountLabel(focus.actual.characterCount, "character");
@@ -52,7 +52,7 @@ export function GameTextQualityWorkspace(props: {
 	readonly onSelectionChange?: (id: TextQualityFindingId | undefined) => void;
 	readonly onShowText?: (id: TextUnitId) => void;
 	readonly exports?: JSX.Element;
-	readonly document: TextQualityRuleDocument;
+	readonly document: GameTextRuleDocument;
 	readonly editor: GameTextRuleState;
 	readonly onReplaceRules: () => void;
 	readonly onLoadRules?: () => void;
@@ -413,7 +413,7 @@ export function GameTextQualityWorkspace(props: {
 										</span>
 									</Show>
 									<span {...stylex.attrs(styles.warning)}>
-										{facts(finding())}
+										{qualityFindingFacts(finding())}
 									</span>
 									<h3 {...stylex.attrs(styles.section)}>How to fix</h3>
 									<p {...stylex.attrs(styles.notes)}>{finding().recovery}</p>

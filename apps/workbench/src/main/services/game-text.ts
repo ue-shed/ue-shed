@@ -21,13 +21,21 @@ import {
 	investigationFailure
 } from "./investigation-files.js";
 import {
-	decodeTextQualityRuleDocumentJson,
-	decodeTextQualityRuleDocument,
-	evaluateTextQuality,
+	decodeGameTextRuleDocumentJson,
+	evaluateGameTextSourceQuality,
 	textCorpusQuery,
 	textQualityQuery,
 	TextCorpusService,
 	type TextCorpus,
+	type WorkspaceQualityRequest,
+	type WorkspaceQualityResult,
+	type WorkspaceQualityFocusRequest,
+	type WorkspaceQualityFocusResult,
+	type WorkspaceChangesResult,
+	type WorkspaceReportRequest,
+	type WorkspaceReportResult,
+	type WorkspaceReportFileRequest,
+	type WorkspaceReportFileResult,
 	type LocalizationTargetsResult,
 	type LocalizationTargetResult,
 	type LocalizationJoin,
@@ -44,7 +52,7 @@ import {
 	type TextQualityFocusResult,
 	type TextQualityQuery,
 	type TextQualityQueryRunResult,
-	type TextQualityRuleDocument,
+	type GameTextRuleDocument,
 	type TextQualityRuleUpdateResult,
 	type TextQualitySearchRequest,
 	type TextQualitySearchResult
@@ -58,6 +66,21 @@ import { LocalFiles } from "../adapters/local-files.js";
 import { WorkbenchProject, type WorkbenchProjectCandidates } from "./project-workspace.js";
 
 export interface WorkbenchGameTextApi {
+	readonly localizationQualitySearch: (
+		request: WorkspaceQualityRequest
+	) => Effect.Effect<WorkspaceQualityResult>;
+	readonly localizationQualityFocus: (
+		request: WorkspaceQualityFocusRequest
+	) => Effect.Effect<WorkspaceQualityFocusResult>;
+	readonly localizationChanges: (
+		request: WorkspaceQualityRequest
+	) => Effect.Effect<WorkspaceChangesResult>;
+	readonly localizationReport: (
+		request: WorkspaceReportRequest
+	) => Effect.Effect<WorkspaceReportResult>;
+	readonly localizationReportFile: (
+		request: WorkspaceReportFileRequest
+	) => Effect.Effect<WorkspaceReportFileResult>;
 	readonly localizationTargets: () => Effect.Effect<LocalizationTargetsResult>;
 	readonly localizationTarget: (
 		target: LocalizationJoin["target"]
@@ -86,10 +109,10 @@ export interface WorkbenchGameTextApi {
 		loadExisting: boolean
 	) => Effect.Effect<TextQualityQueryRunResult>;
 	readonly previewQualityRules: (
-		document: TextQualityRuleDocument
+		document: GameTextRuleDocument
 	) => Effect.Effect<TextQualityRuleUpdateResult>;
 	readonly saveQualityRules: (
-		document: TextQualityRuleDocument
+		document: GameTextRuleDocument
 	) => Effect.Effect<TextQualityRuleUpdateResult>;
 	readonly qualityFocus: (
 		request: TextQualityFocusRequest
@@ -127,7 +150,7 @@ export const WorkbenchGameTextLive = Layer.effect(
 		const retainedCorpus = yield* Ref.make<TextCorpus | undefined>(undefined);
 		const queryModel = yield* Ref.make<TextCorpusQuery | undefined>(undefined);
 		const qualityModel = yield* Ref.make<TextQualityQuery | undefined>(undefined);
-		const qualityDocument = yield* Ref.make<TextQualityRuleDocument | undefined>(undefined);
+		const qualityDocument = yield* Ref.make<GameTextRuleDocument | undefined>(undefined);
 		const qualityRulePath = yield* Ref.make<
 			{ readonly path: string; readonly projectRoot: string } | undefined
 		>(undefined);
@@ -166,7 +189,7 @@ export const WorkbenchGameTextLive = Layer.effect(
 			| {
 					readonly source: InvestigationSource;
 					readonly corpus: TextCorpus;
-					readonly rules?: TextQualityRuleDocument;
+					readonly rules?: GameTextRuleDocument;
 			  }
 			| undefined
 		>(undefined);
@@ -198,7 +221,8 @@ export const WorkbenchGameTextLive = Layer.effect(
 								)
 							: Effect.succeed(undefined)
 					)
-				)
+				),
+			() => currentModel(qualityDocument)
 		);
 		const runRefresh = (projectRoot: string, index: WorkbenchProjectCandidates) =>
 			Effect.gen(function* () {
@@ -254,7 +278,9 @@ export const WorkbenchGameTextLive = Layer.effect(
 								Ref.set(
 									qualityModel,
 									rules
-										? textQualityQuery(evaluateTextQuality(report, rules))
+										? textQualityQuery(
+												evaluateGameTextSourceQuality(report, rules)
+											)
 										: undefined
 								),
 								Ref.set(qualityDocument, rules),
@@ -408,10 +434,10 @@ export const WorkbenchGameTextLive = Layer.effect(
 		);
 
 		const prepareQualityRules = Effect.fn("Workbench.WorkbenchGameText.prepareQualityRules")(
-			function* (input: TextQualityRuleDocument) {
+			function* (input: GameTextRuleDocument) {
 				const corpus = yield* currentModel(retainedCorpus);
 				if (corpus === undefined) return { status: "not_ready" as const };
-				const document = yield* decodeTextQualityRuleDocument(input).pipe(
+				const document = yield* decodeGameTextRuleDocumentJson(JSON.stringify(input)).pipe(
 					Effect.match({
 						onFailure: (error) => ({ error, status: "failed" as const }),
 						onSuccess: (value) => ({ status: "ready" as const, value })
@@ -428,14 +454,16 @@ export const WorkbenchGameTextLive = Layer.effect(
 						status: "failed" as const
 					};
 				}
-				const model = textQualityQuery(evaluateTextQuality(corpus, document.value));
+				const model = textQualityQuery(
+					evaluateGameTextSourceQuality(corpus, document.value)
+				);
 				return { corpus, document: document.value, model, status: "ready" as const };
 			}
 		);
 
 		const publishQualityRules = Effect.fn("Workbench.WorkbenchGameText.publishQualityRules")(
 			function* (prepared: {
-				readonly document: TextQualityRuleDocument;
+				readonly document: GameTextRuleDocument;
 				readonly model: TextQualityQuery;
 				readonly corpus: TextCorpus;
 			}) {
@@ -494,7 +522,7 @@ export const WorkbenchGameTextLive = Layer.effect(
 					.readFileWithin(root, GAME_TEXT_RULES_RELATIVE_PATH, { maxBytes: 1_048_576 })
 					.pipe(
 						Effect.flatMap((bytes) =>
-							decodeTextQualityRuleDocumentJson(new TextDecoder().decode(bytes))
+							decodeGameTextRuleDocumentJson(new TextDecoder().decode(bytes))
 						),
 						Effect.flatMap((document) => prepareQualityRules(document)),
 						Effect.flatMap((prepared) =>
@@ -517,7 +545,7 @@ export const WorkbenchGameTextLive = Layer.effect(
 								status: "failed" as const,
 								error: {
 									code:
-										error._tag === "TextQualityRuleDocumentError"
+										error._tag === "GameTextRuleDocumentError"
 											? ("invalid_rules" as const)
 											: ("read_failed" as const),
 									message: error.message,
@@ -558,7 +586,7 @@ export const WorkbenchGameTextLive = Layer.effect(
 				if (bytes.status === "failed") {
 					return bytes;
 				}
-				const document = yield* decodeTextQualityRuleDocumentJson(
+				const document = yield* decodeGameTextRuleDocumentJson(
 					new TextDecoder().decode(bytes.value)
 				).pipe(
 					Effect.match({
@@ -592,7 +620,7 @@ export const WorkbenchGameTextLive = Layer.effect(
 		);
 
 		const previewQualityRules = Effect.fn("Workbench.WorkbenchGameText.previewQualityRules")(
-			function* (document: TextQualityRuleDocument) {
+			function* (document: GameTextRuleDocument) {
 				const prepared = yield* prepareQualityRules(document);
 				return prepared.status === "ready"
 					? yield* publishQualityRules(prepared)
@@ -613,7 +641,7 @@ export const WorkbenchGameTextLive = Layer.effect(
 				}
 				return yield* files.readFile(path, { maxBytes: 1_048_576 }).pipe(
 					Effect.flatMap((bytes) =>
-						decodeTextQualityRuleDocumentJson(new TextDecoder().decode(bytes))
+						decodeGameTextRuleDocumentJson(new TextDecoder().decode(bytes))
 					),
 					Effect.flatMap((document) =>
 						Effect.gen(function* () {
@@ -627,7 +655,7 @@ export const WorkbenchGameTextLive = Layer.effect(
 							status: "failed" as const,
 							error: {
 								code:
-									error._tag === "TextQualityRuleDocumentError"
+									error._tag === "GameTextRuleDocumentError"
 										? ("invalid_rules" as const)
 										: ("read_failed" as const),
 								message: error.message,
@@ -641,7 +669,7 @@ export const WorkbenchGameTextLive = Layer.effect(
 		);
 
 		const saveQualityRules = Effect.fn("Workbench.WorkbenchGameText.saveQualityRules")(
-			function* (document: TextQualityRuleDocument) {
+			function* (document: GameTextRuleDocument) {
 				const destination = yield* Ref.get(qualityRulePath);
 				const owner = yield* Ref.get(modelSelection);
 				const path =
@@ -814,6 +842,11 @@ export const WorkbenchGameTextLive = Layer.effect(
 		);
 
 		return WorkbenchGameText.of({
+			localizationQualitySearch: localization.qualitySearch,
+			localizationQualityFocus: localization.qualityFocus,
+			localizationChanges: localization.changes,
+			localizationReport: localization.report,
+			localizationReportFile: (request) => localization.reportFile(request, dialog, files),
 			localizationTargets: localization.targets,
 			localizationTarget: localization.select,
 			localizationFocus: localization.focus,
@@ -845,6 +878,11 @@ export function makeWorkbenchGameTextTestLayer(
 	return Layer.succeed(
 		WorkbenchGameText,
 		WorkbenchGameText.of({
+			localizationQualitySearch: () => Effect.succeed({ status: "not_ready" }),
+			localizationQualityFocus: () => Effect.succeed({ status: "not_ready" }),
+			localizationChanges: () => Effect.succeed({ status: "not_ready" }),
+			localizationReport: () => Effect.succeed({ status: "not_ready" }),
+			localizationReportFile: () => Effect.succeed({ status: "not_ready" }),
 			localizationTargets: () => Effect.succeed({ status: "ready", targets: [] }),
 			localizationTarget: () => Effect.succeed({ status: "not_ready" }),
 			localizationFocus: () => Effect.succeed({ status: "not_ready" }),

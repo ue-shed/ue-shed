@@ -1,6 +1,26 @@
 import {
 	MAX_LOCALIZATION_CULTURES,
 	joinLocalizationTarget,
+	localizationQualityWorkspace,
+	checkLocalizationTarget,
+	evaluateGameTextSourceQuality,
+	localizationProgressReport,
+	localizationReportPage,
+	localizationReportCsv,
+	createLocalizationBaseline,
+	decodeLocalizationBaselineJson,
+	LocalizationReportError,
+	type LocalizationBaseline,
+	type GameTextRuleDocument,
+	type WorkspaceQualityRequest,
+	type WorkspaceQualityFocusRequest,
+	type WorkspaceQualityResult,
+	type WorkspaceQualityFocusResult,
+	type WorkspaceChangesResult,
+	type WorkspaceReportRequest,
+	type WorkspaceReportResult,
+	type WorkspaceReportFileRequest,
+	type WorkspaceReportFileResult,
 	localizationFocusPage,
 	textCorpusQuery,
 	type LocalizationFocusRequest,
@@ -13,8 +33,14 @@ import {
 	type TextCorpusSearchRequest,
 	type TextCorpusSearchResult
 } from "@ue-shed/game-text";
-import { LocalizationEvidence, type LocalizationTarget } from "@ue-shed/localization";
+import {
+	LocalizationEvidence,
+	type LocalizationTargetEvidence,
+	type LocalizationTarget
+} from "@ue-shed/localization";
 import { Effect, Ref, Result } from "effect";
+import type { ElectronDialogApi } from "../adapters/electron-dialog.js";
+import type { LocalFilesApi } from "../adapters/local-files.js";
 
 function failure(code: string) {
 	return {
@@ -28,9 +54,20 @@ function failure(code: string) {
 /** The retained corpus reference is also the scan revision: stale readers cannot publish results. */
 export const makeGameTextLocalization = Effect.fn("Workbench.GameText.localization")(function* (
 	currentCorpus: () => Effect.Effect<TextCorpus | undefined>,
-	currentRoot: () => Effect.Effect<string | undefined>
+	currentRoot: () => Effect.Effect<string | undefined>,
+	currentRules?: () => Effect.Effect<GameTextRuleDocument | undefined>
 ) {
 	const reader = yield* LocalizationEvidence;
+	const rules = currentRules ?? (() => Effect.succeed(undefined));
+	const baseline = yield* Ref.make<LocalizationBaseline | undefined>(undefined);
+	const qualityCache = yield* Ref.make<
+		| {
+				join: LocalizationJoin;
+				document: GameTextRuleDocument | undefined;
+				model: ReturnType<typeof localizationQualityWorkspace>;
+		  }
+		| undefined
+	>(undefined);
 	const discovery = yield* Ref.make<
 		| {
 				readonly corpus: TextCorpus;
@@ -43,6 +80,7 @@ export const makeGameTextLocalization = Effect.fn("Workbench.GameText.localizati
 		| {
 				readonly corpus: TextCorpus;
 				readonly join: LocalizationJoin;
+				readonly evidence: LocalizationTargetEvidence;
 				readonly model: TextCorpusQuery;
 				readonly result: LocalizationTargetResult;
 		  }
@@ -54,6 +92,8 @@ export const makeGameTextLocalization = Effect.fn("Workbench.GameText.localizati
 		yield* Ref.update(revision, (value) => value + 1);
 		yield* Ref.set(discovery, undefined);
 		yield* Ref.set(selected, undefined);
+		yield* Ref.set(qualityCache, undefined);
+		yield* Ref.set(baseline, undefined);
 	});
 	const targets = Effect.fn("Workbench.GameText.localization.targets")(function* () {
 		const corpus = yield* currentCorpus();
@@ -106,7 +146,7 @@ export const makeGameTextLocalization = Effect.fn("Workbench.GameText.localizati
 		if (Result.isFailure(evidence)) return failure(evidence.failure.code);
 		const join = joinLocalizationTarget(corpus, evidence.success);
 		const model = textCorpusQuery(corpus, undefined, join);
-		const baseline = model.search({
+		const textCounts = model.search({
 			query: "",
 			capability: "all",
 			lens: "all",
@@ -121,12 +161,13 @@ export const makeGameTextLocalization = Effect.fn("Workbench.GameText.localizati
 				nativeCulture: target.nativeCulture,
 				cultures: target.cultures
 			},
-			lines: baseline.total,
-			notSynced: baseline.localization?.notSynced ?? 0
+			lines: textCounts.total,
+			notSynced: textCounts.localization?.notSynced ?? 0
 		};
-		yield* Ref.set(selected, { corpus, join, model, result });
+		if (cached?.join.target !== name) yield* Ref.set(baseline, undefined);
+		yield* Ref.set(selected, { corpus, join, model, result, evidence: evidence.success });
 		yield* Effect.annotateCurrentSpan({
-			lineCount: baseline.total,
+			lineCount: textCounts.total,
 			notSyncedCount: result.notSynced
 		});
 		return result;
@@ -166,5 +207,248 @@ export const makeGameTextLocalization = Effect.fn("Workbench.GameText.localizati
 			? { status: "found", focus: localizationFocusPage(cached.join, line, request) }
 			: { status: "not_found" };
 	});
-	return { reset, targets, select, search, focus };
+
+	const quality = Effect.fn("Workbench.GameText.localization.quality")(function* (
+		request: WorkspaceQualityRequest
+	) {
+		const retained = yield* current(request.target);
+		if (!retained || (request.culture && !retained.join.cultures.includes(request.culture)))
+			return undefined;
+		const document = yield* rules();
+		const cached = yield* Ref.get(qualityCache);
+		if (cached?.join === retained.join && cached.document === document) return cached.model;
+		const model = localizationQualityWorkspace(
+			document ? evaluateGameTextSourceQuality(retained.corpus, document) : undefined,
+			checkLocalizationTarget(
+				retained.corpus,
+				retained.join,
+				retained.evidence,
+				{},
+				document
+			),
+			retained.join
+		);
+		yield* Ref.set(qualityCache, { join: retained.join, document, model });
+		return model;
+	});
+	const qualitySearch = Effect.fn("Workbench.GameText.localization.qualitySearch")(function* (
+		request: WorkspaceQualityRequest
+	): Effect.fn.Return<WorkspaceQualityResult> {
+		const model = yield* quality(request);
+		if (!model) return { status: "not_ready" };
+		const page = model.search(request);
+		yield* Effect.annotateCurrentSpan({
+			findingCount: page.total,
+			pageCount: page.findings.length
+		});
+		return { status: "ready", page };
+	});
+	const qualityFocus = Effect.fn("Workbench.GameText.localization.qualityFocus")(function* (
+		request: WorkspaceQualityFocusRequest
+	): Effect.fn.Return<WorkspaceQualityFocusResult> {
+		const model = yield* quality({ ...request, filter: "all" });
+		return model ? model.focus(request) : { status: "not_ready" };
+	});
+	const changes = Effect.fn("Workbench.GameText.localization.changes")(function* (
+		request: WorkspaceQualityRequest
+	): Effect.fn.Return<WorkspaceChangesResult> {
+		const model = yield* quality(request);
+		if (!model) return { status: "not_ready" };
+		const result = model.changes(request);
+		if (result.status === "ready")
+			yield* Effect.annotateCurrentSpan({
+				changeCount: result.document.changes.length,
+				remainingCount: result.remaining
+			});
+		return result;
+	});
+	const reportFailure = (error: LocalizationReportError) => ({
+		status: "failed" as const,
+		message: error.message,
+		recovery: error.recovery
+	});
+	const report = Effect.fn("Workbench.GameText.localization.report")(function* (
+		request: WorkspaceReportRequest
+	): Effect.fn.Return<WorkspaceReportResult> {
+		const retained = yield* current(request.target);
+		if (!retained) return { status: "not_ready" };
+		const previous = yield* Ref.get(baseline);
+		return yield* Effect.try({
+			try: () => ({
+				status: "ready" as const,
+				page: localizationReportPage(
+					localizationProgressReport(
+						retained.corpus,
+						retained.join,
+						retained.evidence,
+						previous
+					),
+					retained.join.nativeCulture,
+					request,
+					previous
+				)
+			}),
+			catch: (cause) =>
+				cause instanceof LocalizationReportError
+					? cause
+					: new LocalizationReportError({
+							code: "invalid_report_context",
+							message: "Report evidence could not be read.",
+							recovery: "Rescan the selected project."
+						})
+		}).pipe(Effect.catch((error) => Effect.succeed(reportFailure(error))));
+	});
+	const reportFile = Effect.fn("Workbench.GameText.localization.reportFile")(function* (
+		request: WorkspaceReportFileRequest,
+		dialog: ElectronDialogApi,
+		files: LocalFilesApi
+	): Effect.fn.Return<WorkspaceReportFileResult> {
+		const retained = yield* current(request.target);
+		if (!retained) return { status: "not_ready" };
+		const previous = yield* Ref.get(baseline);
+		const result = yield* Effect.gen(function* () {
+			const choice =
+				request.operation === "compare_baseline"
+					? yield* dialog.chooseFile({
+							title: "Compare localization baseline",
+							filters: [{ name: "Localization baseline", extensions: ["json"] }]
+						})
+					: yield* dialog.chooseSaveFile({
+							title:
+								request.operation === "save_baseline"
+									? "Save localization baseline"
+									: "Export localization report",
+							defaultPath:
+								request.operation === "save_baseline"
+									? "localization.baseline.json"
+									: "localization.report.csv",
+							filters: [
+								{
+									name: "Localization report",
+									extensions: [
+										request.operation === "save_baseline" ? "json" : "csv"
+									]
+								}
+							]
+						});
+			if (choice.status === "cancelled") return choice;
+			if ((yield* current(request.target)) !== retained)
+				return { status: "not_ready" as const };
+			if (request.operation === "compare_baseline") {
+				const bytes = yield* files.readFile(choice.path, { maxBytes: 16 * 1024 * 1024 });
+				const decoded = decodeLocalizationBaselineJson(new TextDecoder().decode(bytes));
+				if (Result.isFailure(decoded)) return reportFailure(decoded.failure);
+				const progress = yield* Effect.try({
+					try: () =>
+						localizationProgressReport(
+							retained.corpus,
+							retained.join,
+							retained.evidence,
+							decoded.success
+						),
+					catch: (cause) =>
+						cause instanceof LocalizationReportError
+							? cause
+							: new LocalizationReportError({
+									code: "invalid_baseline",
+									message: "The baseline could not be compared.",
+									recovery: "Choose a baseline for this target."
+								})
+				});
+				if ((yield* current(request.target)) !== retained)
+					return { status: "not_ready" as const };
+				yield* Ref.set(baseline, decoded.success);
+				return {
+					status: "compared" as const,
+					page: localizationReportPage(
+						progress,
+						retained.join.nativeCulture,
+						request,
+						decoded.success
+					)
+				};
+			}
+			const contents = yield* Effect.try({
+				try: () => {
+					if (request.operation === "save_baseline")
+						return (
+							JSON.stringify(
+								createLocalizationBaseline(
+									retained.corpus,
+									retained.evidence,
+									new Date().toISOString()
+								),
+								null,
+								2
+							) + "\n"
+						);
+					const progress = localizationProgressReport(
+						retained.corpus,
+						retained.join,
+						retained.evidence,
+						previous
+					);
+					const rows = progress.cultures.flatMap((_, index) =>
+						index % 50 === 0
+							? localizationReportPage(
+									progress,
+									retained.join.nativeCulture,
+									{ target: request.target, offset: index },
+									previous
+								).rows
+							: []
+					);
+					return localizationReportCsv(rows, previous !== undefined);
+				},
+				catch: (cause) =>
+					cause instanceof LocalizationReportError
+						? cause
+						: new LocalizationReportError({
+								code: "invalid_report_context",
+								message: "The report could not be prepared.",
+								recovery: "Rescan and try again."
+							})
+			});
+			if ((yield* current(request.target)) !== retained)
+				return { status: "not_ready" as const };
+			yield* files.writeFile(choice.path, new TextEncoder().encode(contents), {
+				maxBytes: 16 * 1024 * 1024,
+				exclusive: request.operation === "save_baseline"
+			});
+			return {
+				status: "saved" as const,
+				message:
+					request.operation === "save_baseline"
+						? "Baseline saved."
+						: "Report CSV exported."
+			};
+		}).pipe(
+			Effect.catch((error) =>
+				Effect.succeed({
+					status: "failed" as const,
+					message:
+						error instanceof LocalizationReportError
+							? error.message
+							: "The file operation failed.",
+					recovery:
+						error instanceof LocalizationReportError
+							? error.recovery
+							: "Choose a new destination for a baseline; existing files are never overwritten. Check permissions and try again."
+				})
+			)
+		);
+		return result;
+	});
+	return {
+		reset,
+		targets,
+		select,
+		search,
+		focus,
+		qualitySearch,
+		qualityFocus,
+		changes,
+		report,
+		reportFile
+	};
 });

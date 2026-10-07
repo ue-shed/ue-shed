@@ -88,6 +88,15 @@ import {
 } from "@ue-shed/config-explorer/browser";
 import { EnhancedInputRunResult } from "@ue-shed/enhanced-input/browser";
 import {
+	WorkspaceQualityRequest,
+	WorkspaceQualityResult,
+	WorkspaceQualityFocusRequest,
+	WorkspaceQualityFocusResult,
+	WorkspaceChangesResult,
+	WorkspaceReportRequest,
+	WorkspaceReportResult,
+	WorkspaceReportFileRequest,
+	WorkspaceReportFileResult,
 	LocalizationTargetsResult,
 	LocalizationTargetResult,
 	LocalizationFocusRequest,
@@ -101,7 +110,7 @@ import {
 	TextQualityFocusRequest,
 	TextQualityFocusResult,
 	TextQualityQueryRunResult,
-	TextQualityRuleDocument,
+	GameTextRuleDocument,
 	TextQualityRuleUpdateResult,
 	TextQualitySearchRequest,
 	TextQualitySearchResult
@@ -718,6 +727,31 @@ export const invokeContracts = {
 		args: Schema.Tuple([]),
 		result: GameTextInvestigationPresetResult
 	}),
+	"game-text:localization:quality-search": invoke({
+		channel: "game-text:localization:quality-search",
+		args: Schema.Tuple([WorkspaceQualityRequest]),
+		result: WorkspaceQualityResult
+	}),
+	"game-text:localization:quality-focus": invoke({
+		channel: "game-text:localization:quality-focus",
+		args: Schema.Tuple([WorkspaceQualityFocusRequest]),
+		result: WorkspaceQualityFocusResult
+	}),
+	"game-text:localization:changes": invoke({
+		channel: "game-text:localization:changes",
+		args: Schema.Tuple([WorkspaceQualityRequest]),
+		result: WorkspaceChangesResult
+	}),
+	"game-text:localization:report": invoke({
+		channel: "game-text:localization:report",
+		args: Schema.Tuple([WorkspaceReportRequest]),
+		result: WorkspaceReportResult
+	}),
+	"game-text:localization:report-file": invoke({
+		channel: "game-text:localization:report-file",
+		args: Schema.Tuple([WorkspaceReportFileRequest]),
+		result: WorkspaceReportFileResult
+	}),
 	"game-text:localization:targets": invoke({
 		channel: "game-text:localization:targets",
 		args: Schema.Tuple([]),
@@ -760,12 +794,12 @@ export const invokeContracts = {
 	}),
 	"game-text:quality:preview-rules": invoke({
 		channel: "game-text:quality:preview-rules",
-		args: Schema.Tuple([TextQualityRuleDocument]),
+		args: Schema.Tuple([GameTextRuleDocument]),
 		result: TextQualityRuleUpdateResult
 	}),
 	"game-text:quality:save-rules": invoke({
 		channel: "game-text:quality:save-rules",
-		args: Schema.Tuple([TextQualityRuleDocument]),
+		args: Schema.Tuple([GameTextRuleDocument]),
 		result: TextQualityRuleUpdateResult
 	}),
 	"game-text:quality:search": invoke({

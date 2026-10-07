@@ -2,20 +2,31 @@ import * as stylex from "@stylexjs/stylex";
 import type {
 	TextQualityQuerySummary,
 	TextQualityRule,
-	TextQualityRuleDocument,
+	LocalizationProjectRule,
+	GameTextRuleDocument,
 	TextRoleMatcher,
 	TextTerminologyEntry
 } from "@ue-shed/game-text/browser";
-import { textCountLabel } from "@ue-shed/game-text/browser";
+import { TextQualityRuleId, textCountLabel } from "@ue-shed/game-text/browser";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { For, Match, Show, Switch, createEffect, createMemo, createSignal } from "solid-js";
+import { CultureRuleFields } from "./game-text-culture-rule-fields.js";
 import type { GameTextRuleState, RuleEditorState } from "./game-text-rule-state.js";
 
-function characterBudgetRule(rule: TextQualityRule | undefined) {
+type EditableRule = TextQualityRule | LocalizationProjectRule;
+
+function documentRules(document: GameTextRuleDocument): readonly EditableRule[] {
+	return [
+		...document.rules,
+		...(document.schemaVersion === 2 ? (document.localizationRules ?? []) : [])
+	];
+}
+
+function characterBudgetRule(rule: EditableRule | undefined) {
 	return rule?.kind === "character_budget" ? rule : undefined;
 }
 
-function terminologyRule(rule: TextQualityRule | undefined) {
+function terminologyRule(rule: EditableRule | undefined) {
 	return rule?.kind === "terminology" ? rule : undefined;
 }
 
@@ -43,10 +54,10 @@ function matcherLabel(matcher: TextRoleMatcher): string {
 }
 
 function replaceRule(
-	document: TextQualityRuleDocument,
+	document: GameTextRuleDocument,
 	ruleId: TextQualityRule["id"],
 	update: (rule: TextQualityRule) => TextQualityRule
-): TextQualityRuleDocument {
+): GameTextRuleDocument {
 	return {
 		...document,
 		rules: document.rules.map((rule) => (rule.id === ruleId ? update(rule) : rule))
@@ -54,11 +65,11 @@ function replaceRule(
 }
 
 function updateTerm(
-	document: TextQualityRuleDocument,
+	document: GameTextRuleDocument,
 	ruleId: TextQualityRule["id"],
 	index: number,
 	update: (term: TextTerminologyEntry) => TextTerminologyEntry
-): TextQualityRuleDocument {
+): GameTextRuleDocument {
 	return replaceRule(document, ruleId, (rule) =>
 		rule.kind === "terminology"
 			? {
@@ -71,15 +82,44 @@ function updateTerm(
 	);
 }
 
+function replaceLocalizationRule(
+	document: GameTextRuleDocument,
+	updated: LocalizationProjectRule
+): GameTextRuleDocument {
+	if (document.schemaVersion !== 2) return document;
+	return {
+		...document,
+		localizationRules: (document.localizationRules ?? []).map((rule) =>
+			rule.id === updated.id ? updated : rule
+		)
+	};
+}
+
+function replaceRecovery(
+	document: GameTextRuleDocument,
+	id: TextQualityRule["id"],
+	recovery: string
+): GameTextRuleDocument {
+	const source = replaceRule(document, id, (rule) => ({ ...rule, recovery }));
+	if (source.schemaVersion !== 2 || !source.localizationRules) return source;
+	return {
+		...source,
+		localizationRules: source.localizationRules.map((rule) =>
+			rule.id === id ? { ...rule, recovery } : rule
+		)
+	};
+}
+
 export function GameTextRuleEditor(props: {
 	readonly editor: GameTextRuleState;
 	readonly state: RuleEditorState;
 	readonly summary: TextQualityQuerySummary;
 }) {
 	const draft = () => props.state.draft;
+	const rules = () => documentRules(draft());
 	const dirty = () => props.editor.dirty();
 	const feedback = () => props.editor.feedback();
-	const changeDraft = (document: TextQualityRuleDocument) => props.editor.changeDraft(document);
+	const changeDraft = (document: GameTextRuleDocument) => props.editor.changeDraft(document);
 	const run = (operation: "preview" | "save") => props.editor.run(operation);
 	const [selectedRuleId, setSelectedRuleId] = createSignal<TextQualityRule["id"]>();
 	const failedFeedback = createMemo(() => {
@@ -87,15 +127,45 @@ export function GameTextRuleEditor(props: {
 		return current.status === "failed" ? current : undefined;
 	});
 	createEffect(
-		() => draft().rules,
+		() => rules(),
 		(rules) => {
 			setSelectedRuleId((current) =>
 				rules.some((rule) => rule.id === current) ? current : rules[0]?.id
 			);
 		}
 	);
-	const selectedRule = () =>
-		draft().rules.find((rule) => rule.id === selectedRuleId()) ?? draft().rules[0];
+	const selectedRule = () => rules().find((rule) => rule.id === selectedRuleId()) ?? rules()[0];
+	const addLocalizationRule = (kind: LocalizationProjectRule["kind"]) => {
+		const document = draft();
+		const role = document.roles[0]?.id;
+		if (document.schemaVersion !== 2 || !role) return;
+		let index = 1;
+		while (rules().some((rule) => rule.id === "translation.rule." + index)) index++;
+		const id = TextQualityRuleId.make("translation.rule." + index);
+		const rule: LocalizationProjectRule =
+			kind === "localization_character_budget"
+				? {
+						id,
+						role,
+						kind,
+						cultures: {},
+						defaultMaximumCharacters: 100,
+						recovery: "Shorten the translation."
+					}
+				: {
+						id,
+						role,
+						kind,
+						cultures: {},
+						caseSensitive: false,
+						recovery: "Use the preferred term."
+					};
+		changeDraft({
+			...document,
+			localizationRules: [...(document.localizationRules ?? []), rule]
+		});
+		setSelectedRuleId(id);
+	};
 	const selectedBudgetRule = () => characterBudgetRule(selectedRule());
 	const selectedTerminologyRule = () => terminologyRule(selectedRule());
 
@@ -107,9 +177,27 @@ export function GameTextRuleEditor(props: {
 			<aside aria-label="Quality rule list" {...stylex.attrs(styles.ruleList)}>
 				<header {...stylex.attrs(styles.panelHeader)}>
 					<span>Rules</span>
-					<b {...stylex.attrs(styles.panelCount)}>{draft().rules.length}</b>
+					<b {...stylex.attrs(styles.panelCount)}>{rules().length}</b>
 				</header>
-				<For each={draft().rules}>
+				<Show when={draft().schemaVersion === 2}>
+					<div {...stylex.attrs(styles.addTerms)}>
+						<button
+							type="button"
+							onClick={() => addLocalizationRule("localization_character_budget")}
+							{...stylex.attrs(styles.smallButton)}
+						>
+							Add translation budget
+						</button>
+						<button
+							type="button"
+							onClick={() => addLocalizationRule("localization_terminology")}
+							{...stylex.attrs(styles.smallButton)}
+						>
+							Add glossary
+						</button>
+					</div>
+				</Show>
+				<For each={rules()}>
 					{(rule) => (
 						<button
 							type="button"
@@ -121,7 +209,12 @@ export function GameTextRuleEditor(props: {
 							)}
 						>
 							<span {...stylex.attrs(styles.ruleChoiceMeta)}>
-								<b>{rule.kind === "character_budget" ? "Budget" : "Terms"}</b>
+								<b>
+									{rule.kind === "character_budget" ||
+									rule.kind === "localization_character_budget"
+										? "Budget"
+										: "Terms"}
+								</b>
 								<em {...stylex.attrs(styles.panelCount)}>
 									{findingCount(rule.id)}
 								</em>
@@ -353,6 +446,33 @@ export function GameTextRuleEditor(props: {
 									</button>
 								</div>
 							</Show>
+							<Show
+								when={
+									selectedRule()?.kind === "localization_character_budget" ||
+									selectedRule()?.kind === "localization_terminology"
+								}
+							>
+								<Show
+									when={(() => {
+										const current = selectedRule();
+										return current?.kind === "localization_character_budget" ||
+											current?.kind === "localization_terminology"
+											? current
+											: undefined;
+									})()}
+								>
+									{(current) => (
+										<CultureRuleFields
+											rule={current()}
+											onChange={(updated) =>
+												changeDraft(
+													replaceLocalizationRule(draft(), updated)
+												)
+											}
+										/>
+									)}
+								</Show>
+							</Show>
 							<label {...stylex.attrs(styles.field)}>
 								<span>Recovery guidance</span>
 								<textarea
@@ -361,10 +481,11 @@ export function GameTextRuleEditor(props: {
 									value={rule().recovery}
 									onInput={(event) =>
 										changeDraft(
-											replaceRule(draft(), rule().id, (current) => ({
-												...current,
-												recovery: event.currentTarget.value
-											}))
+											replaceRecovery(
+												draft(),
+												rule().id,
+												event.currentTarget.value
+											)
 										)
 									}
 								/>
@@ -392,6 +513,16 @@ export function GameTextRuleEditor(props: {
 						</Match>
 					</Switch>
 					<div {...stylex.attrs(styles.actionButtons)}>
+						<Show when={draft().schemaVersion === 1}>
+							<button
+								type="button"
+								disabled={props.editor.busy()}
+								onClick={props.editor.upgrade}
+								{...stylex.attrs(styles.actionButton)}
+							>
+								Upgrade to version 2
+							</button>
+						</Show>
 						<button
 							type="button"
 							disabled={!dirty() || props.editor.busy()}

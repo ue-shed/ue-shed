@@ -5,6 +5,15 @@ import type {
 	InvestigationFormat
 } from "@ue-shed/game-text/browser";
 import type {
+	WorkspaceQualityRequest,
+	WorkspaceQualityResult,
+	WorkspaceQualityFocusRequest,
+	WorkspaceQualityFocusResult,
+	WorkspaceChangesResult,
+	WorkspaceReportRequest,
+	WorkspaceReportResult,
+	WorkspaceReportFileRequest,
+	WorkspaceReportFileResult,
 	LocalizationTargetsResult,
 	LocalizationTargetResult,
 	LocalizationFocusRequest,
@@ -18,7 +27,7 @@ import type {
 	TextQualityFocusRequest,
 	TextQualityFocusResult,
 	TextQualityQueryRunResult,
-	TextQualityRuleDocument,
+	GameTextRuleDocument,
 	TextQualityRuleUpdateResult,
 	TextQualitySearchRequest,
 	TextQualitySearchResult
@@ -37,6 +46,21 @@ export class GameTextClientError extends Schema.TaggedErrorClass<GameTextClientE
 ) {}
 
 export interface GameTextClientApi {
+	readonly localizationQualitySearch?: (
+		request: WorkspaceQualityRequest
+	) => Effect.Effect<WorkspaceQualityResult, GameTextClientError>;
+	readonly localizationQualityFocus?: (
+		request: WorkspaceQualityFocusRequest
+	) => Effect.Effect<WorkspaceQualityFocusResult, GameTextClientError>;
+	readonly localizationChanges?: (
+		request: WorkspaceQualityRequest
+	) => Effect.Effect<WorkspaceChangesResult, GameTextClientError>;
+	readonly localizationReport?: (
+		request: WorkspaceReportRequest
+	) => Effect.Effect<WorkspaceReportResult, GameTextClientError>;
+	readonly localizationReportFile?: (
+		request: WorkspaceReportFileRequest
+	) => Effect.Effect<WorkspaceReportFileResult, GameTextClientError>;
 	readonly localizationTargets?: () => Effect.Effect<
 		LocalizationTargetsResult,
 		GameTextClientError
@@ -93,10 +117,10 @@ export interface GameTextClientApi {
 		request: TextQualitySearchRequest
 	) => Effect.Effect<TextQualitySearchResult, GameTextClientError>;
 	readonly previewQualityRules: (
-		document: TextQualityRuleDocument
+		document: GameTextRuleDocument
 	) => Effect.Effect<TextQualityRuleUpdateResult, GameTextClientError>;
 	readonly saveQualityRules: (
-		document: TextQualityRuleDocument
+		document: GameTextRuleDocument
 	) => Effect.Effect<TextQualityRuleUpdateResult, GameTextClientError>;
 }
 

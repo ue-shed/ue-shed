@@ -237,6 +237,14 @@ export const styles = stylex.create({
 		color: tokens.colorWarning,
 		textDecoration: "underline"
 	},
+	reportPane: { flex: 1, padding: tokens.space3 },
+	reportTable: {
+		width: "100%",
+		borderSpacing: "12px 8px",
+		textAlign: "left",
+		fontSize: 12,
+		fontVariantNumeric: "tabular-nums"
+	},
 	table: { width: "100%", textAlign: "left", fontSize: 12, borderSpacing: 8 },
 	pickerMenu: {
 		display: "flex",

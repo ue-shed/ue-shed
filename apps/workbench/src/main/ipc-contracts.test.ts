@@ -272,6 +272,11 @@ const validArgsByChannel = {
 		{ mode: "corpus", qualityFilter: "all", query: "", capability: "all", lens: "all" }
 	],
 	"game-text:investigation-open": [],
+	"game-text:localization:quality-search": [{ target: "FixtureGame", filter: "all" }],
+	"game-text:localization:quality-focus": [{ target: "FixtureGame", id: "quality-finding:1" }],
+	"game-text:localization:changes": [{ target: "FixtureGame", filter: "all" }],
+	"game-text:localization:report": [{ target: "FixtureGame" }],
+	"game-text:localization:report-file": [{ target: "FixtureGame", operation: "save_baseline" }],
 	"game-text:localization:targets": [],
 	"game-text:localization:target": ["FixtureGame"],
 	"game-text:localization:focus": [
@@ -612,6 +617,11 @@ const validResultByChannel = {
 	"game-text:search": { status: "not_ready" },
 	"game-text:focus": { status: "not_ready" },
 	"game-text:quality:choose-rules": { status: "not_ready" },
+	"game-text:localization:quality-search": { status: "not_ready" },
+	"game-text:localization:quality-focus": { status: "not_found" },
+	"game-text:localization:changes": { status: "not_ready" },
+	"game-text:localization:report": { status: "not_ready" },
+	"game-text:localization:report-file": { status: "cancelled" },
 	"game-text:localization:targets": { status: "ready", targets: [] },
 	"game-text:localization:target": { status: "not_ready" },
 	"game-text:localization:focus": { status: "not_found" },
@@ -815,6 +825,15 @@ const validResultByChannel = {
 } satisfies ValidResultByChannel;
 
 const malformedArgsByChannel = {
+	"game-text:localization:quality-search": [
+		{ target: "FixtureGame", filter: "internal_rule", offset: -1 }
+	],
+	"game-text:localization:quality-focus": [
+		{ target: "FixtureGame", id: "quality-finding:1", occurrenceOffset: -1 }
+	],
+	"game-text:localization:changes": [{ target: "../../Private", filter: "all" }],
+	"game-text:localization:report": [{ target: "FixtureGame", offset: -1 }],
+	"game-text:localization:report-file": [{ target: "FixtureGame", operation: "write_po" }],
 	"game-text:quality:create-starter-rules": ["C:/Untrusted/output.json"],
 	"game-text:quality:reload-rules": ["C:/Untrusted/rules.json"],
 	"game-text:localization:targets": ["C:/Untrusted"],
@@ -862,9 +881,18 @@ const malformedArgsByChannel = {
 	"map-capture:tile": [{ manifestPath: "", relativePath: "../outside.png" }]
 } satisfies Partial<Record<InvokeChannel, IpcFixtureValue>>;
 
-it("registers exactly 130 invoke channels plus renderer events", () => {
-	expect(invokeChannelNames).toHaveLength(130);
-	expect(new Set(invokeChannelNames).size).toBe(130);
+it("registers exactly 135 invoke channels plus renderer events", () => {
+	expect(invokeChannelNames).toHaveLength(135);
+	expect(new Set(invokeChannelNames).size).toBe(135);
+	expect(invokeChannelNames).toEqual(
+		expect.arrayContaining([
+			"game-text:localization:quality-search",
+			"game-text:localization:quality-focus",
+			"game-text:localization:changes",
+			"game-text:localization:report",
+			"game-text:localization:report-file"
+		])
+	);
 	expect(cameraFrameEvent.channel).toBe("camera:frame");
 	expect(mapCaptureProgressEvent.channel).toBe("map-capture:progress");
 	expect(worldObservationEvent.channel).toBe("map-review:world-observation");

@@ -6,8 +6,8 @@ import {
 	TextReviewLens,
 	TextUnitId,
 	TextQualityFindingId,
-	TextQualityFilter,
-	TextQualityRuleDocument
+	WorkspaceQualityFilter,
+	GameTextRuleDocument
 } from "@ue-shed/game-text/browser";
 import type { RuleEditorState } from "./game-text-rule-state.js";
 
@@ -21,11 +21,11 @@ const StoredPreferences = Schema.Struct({
 	capability: Schema.optionalKey(TextCapabilityFilter),
 	lens: Schema.optionalKey(TextReviewLens),
 	withoutNotes: Schema.optionalKey(Schema.Boolean),
-	mode: Schema.optionalKey(Schema.Literals(["corpus", "quality"])),
-	qualityFilter: Schema.optionalKey(TextQualityFilter),
+	mode: Schema.optionalKey(Schema.Literals(["corpus", "quality", "reports"])),
+	qualityFilter: Schema.optionalKey(WorkspaceQualityFilter),
 	selectedId: Schema.optionalKey(TextUnitId),
 	selectedFindingId: Schema.optionalKey(TextQualityFindingId),
-	qualityDocument: Schema.optionalKey(TextQualityRuleDocument)
+	qualityDocument: Schema.optionalKey(GameTextRuleDocument)
 });
 
 export interface GameTextPreferences {
@@ -44,11 +44,11 @@ export interface GameTextPreferences {
 	readonly capability: Schema.Schema.Type<typeof TextCapabilityFilter>;
 	readonly lens: Schema.Schema.Type<typeof TextReviewLens>;
 	readonly withoutNotes?: boolean;
-	readonly mode?: "corpus" | "quality";
-	readonly qualityFilter?: Schema.Schema.Type<typeof TextQualityFilter>;
+	readonly mode?: "corpus" | "quality" | "reports";
+	readonly qualityFilter?: Schema.Schema.Type<typeof WorkspaceQualityFilter>;
 	readonly selectedId: Schema.Schema.Type<typeof TextUnitId> | undefined;
 	readonly selectedFindingId?: Schema.Schema.Type<typeof TextQualityFindingId> | undefined;
-	readonly qualityDocument?: Schema.Schema.Type<typeof TextQualityRuleDocument> | undefined;
+	readonly qualityDocument?: Schema.Schema.Type<typeof GameTextRuleDocument> | undefined;
 	readonly qualityEditor?: RuleEditorState | undefined;
 }
 

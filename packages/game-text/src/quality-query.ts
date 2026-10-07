@@ -1,12 +1,12 @@
 import { Schema } from "effect";
 import {
 	TextQualityAffectedOccurrence,
-	TextQualityRuleDocument,
 	TextQualityRoleSummary,
 	TextQualityRuleSummary,
 	type TextQualityFinding,
 	type TextQualityReport
 } from "./quality-schema.js";
+import { GameTextRuleDocument } from "./quality-rules-v2.js";
 import { textCountLabel } from "./csv.js";
 import { TextCorpus, TextLocation, TextOccurrenceId, TextUnitId } from "./schema.js";
 
@@ -30,7 +30,7 @@ export const TextQualityQuerySummary = Schema.Struct({
 	findingCount: Count,
 	roles: Schema.Array(TextQualityRoleSummary),
 	rules: Schema.Array(TextQualityRuleSummary),
-	ruleDocumentVersion: Schema.Literal(1),
+	ruleDocumentVersion: Schema.Literals([1, 2]),
 	schemaVersion: Schema.Literal(1),
 	status: TextCorpus.fields.status,
 	terminologyCount: Count
@@ -39,7 +39,7 @@ export type TextQualityQuerySummary = Schema.Schema.Type<typeof TextQualityQuery
 
 export const TextQualityQueryRunResult = Schema.Union([
 	Schema.Struct({
-		document: TextQualityRuleDocument,
+		document: GameTextRuleDocument,
 		status: Schema.Literal("completed"),
 		summary: TextQualityQuerySummary
 	}),
@@ -67,7 +67,7 @@ export const decodeTextQualityQueryRunResult =
 
 export const TextQualityRuleUpdateResult = Schema.Union([
 	Schema.Struct({
-		document: TextQualityRuleDocument,
+		document: GameTextRuleDocument,
 		status: Schema.Literal("completed"),
 		summary: TextQualityQuerySummary
 	}),
@@ -213,7 +213,7 @@ interface IndexedFinding {
 }
 
 /** Evidence-based IDs survive reordering and unrelated findings disappearing after a scan. */
-function findingId(finding: TextQualityFinding): TextQualityFindingId {
+export function textQualityFindingId(finding: TextQualityFinding): TextQualityFindingId {
 	const evidence = JSON.stringify([
 		finding.ruleId,
 		finding.role,
@@ -240,7 +240,7 @@ export interface TextQualityQuery {
 
 export function textQualityQuery(report: TextQualityReport): TextQualityQuery {
 	const indexed: readonly IndexedFinding[] = report.findings.map((finding) => {
-		const id = findingId(finding);
+		const id = textQualityFindingId(finding);
 		return {
 			finding,
 			id,

@@ -17,7 +17,7 @@
 
 ## Status
 
-- **State**: IN PROGRESS. Phases 0–3 are done; Phase 4 is next.
+- **State**: IN PROGRESS. Phases 0–4 are done; Phase 5 is next.
 - **Priority**: P1
 - **Effort**: XL
 - **Risk**: HIGH. The plan adds the first UE Shed writes to localization files and the first
@@ -353,7 +353,24 @@ never writes a file.
   84 entries.
 - Node 26 tests, the packed-consumer journey, the recording, Data Authoring adoption, and
   `pnpm test:uasset-engine-matrix` pass on UE 5.7 and UE 5.8.
-- 4b (per-culture rules and reports) and 4c (the Workbench quality view) are next.
+- **4b done.**
+    - Rule documents gain version 2, built from version 1 with schema combinators. Roles can carry
+      per-culture budgets and glossaries.
+    - `ue-shed loc report` gives per-culture progress. Reviewed and proofread are marked "not
+      tracked yet".
+    - Word counts use Unicode line breaking through the reviewed `linebreak` dependency. They match
+      Unreal's word-count report exactly on both committed UE 5.7 and UE 5.8 CSVs (62/59/62/54).
+    - Baselines are created exclusively, and their deltas report new, changed and removed words.
+- **4c done.** The Workbench gains the following:
+    - The Quality checks tab carries localization and per-culture findings, with argument, tag,
+      escape and whitespace highlights.
+    - Suggested-fix diffs offer "Copy change set" and "Resolve all: copy suggested fixes". Nothing
+      is written.
+    - A Reports view with one row per culture, baseline save and compare, and CSV export. Its
+      numbers are identical to `loc report`.
+    - The rule editor edits version 2 culture rules and can upgrade version 1 documents.
+    - Node 24 and Node 26 tests and the recording pass, and screenshots 12–13 were reviewed.
+- Phase 4's gate is met. Phase 5 (Unreal localization processes) is next.
 
 ## Phase 5 — Unreal localization processes
 

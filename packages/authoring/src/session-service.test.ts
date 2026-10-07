@@ -490,6 +490,55 @@ describe("AuthoringSessionService", () => {
 		}
 	});
 
+	it("refuses add-row when live text defaults cannot round-trip their identity", async () => {
+		const root = await mkdtemp(join(tmpdir(), "ue-shed-session-text-defaults-"));
+		try {
+			const base = snapshotV2();
+			if (!("schema" in base.table) || base.table.schema.status !== "available") {
+				throw new Error("Expected fixture schema");
+			}
+			const live: AuthoringTableSnapshot = {
+				...base,
+				authority: { kind: "live_editor", producerId: "fixture", sessionId: "fixture" },
+				table: {
+					...base.table,
+					rows: [],
+					schema: {
+						...base.table.schema,
+						source: "live_reflection",
+						fields: base.table.schema.fields.map((field) => ({
+							...field,
+							id: "field:Caption",
+							name: "Caption",
+							typeName: "TextProperty",
+							type: { kind: "scalar", valueKind: "text" },
+							defaultValue: { status: "unknown" }
+						}))
+					}
+				}
+			};
+			const service = await Effect.runPromise(
+				makeAuthoringSessionService({ projectId: "fixture", projectRoot: root })
+			);
+			await Effect.runPromise(service.create([live], { id: "text-defaults" }));
+			const error = await Effect.runPromise(
+				Effect.flip(
+					service.addRow({
+						sessionId: "text-defaults",
+						tableObjectPath: live.table.objectPath,
+						rowName: "Created"
+					})
+				)
+			);
+			expect(error).toMatchObject({ _tag: "DraftIntentError", code: "unsupported_add" });
+			expect((await Effect.runPromise(service.open("text-defaults"))).draft.commands).toEqual(
+				[]
+			);
+		} finally {
+			await rm(root, { force: true, recursive: true });
+		}
+	});
+
 	it("rejects schema-incompatible and read-only cell edits without persistence", async () => {
 		const root = await mkdtemp(join(tmpdir(), "ue-shed-session-value-errors-"));
 		try {

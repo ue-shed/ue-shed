@@ -9,6 +9,8 @@ a bounded operation-result cache so clients never need to replay uncertain mutat
 Snapshots include known field defaults from an independently initialized row struct, including
 native constructors and authored Blueprint struct defaults. Values use the same typed codec as
 rows and Apply. Properties the codec cannot fully represent retain `unknown` defaults.
+This includes text and enclosing structs/containers containing text: the display-only text codec
+cannot preserve localization identity, string-table linkage, or text history when reused by Apply.
 
 `FindActorsReferencingRow(RequestJson, ResultJson)` implements
 `unreal-authoring-actor-references` version 1.0. The request selects an already-loaded editor or PIE

@@ -19,8 +19,10 @@
 #include "UObject/UnrealType.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
+#include "Internationalization/StringTableRegistry.h"
 #include "Kismet2/StructureEditorUtils.h"
 #include "Misc/AutomationTest.h"
+#include "Misc/ScopeExit.h"
 #include "Tests/UEShedAuthoringTestTypes.h"
 #include "UserDefinedStructure/UserDefinedStructEditorData.h"
 #endif
@@ -114,7 +116,7 @@ TSharedRef<FJsonObject> ValueObject(const TCHAR* Kind)
 }
 
 TSharedPtr<FJsonValue> SerializePropertyValue(
-	const FProperty* Property, const void* Value, bool& bPartial);
+	const FProperty* Property, const void* Value, bool& bPartial, bool bForDefault = false);
 TSharedRef<FJsonObject> DescribePropertyType(
 	const FProperty* Property, const void* DefaultValue = nullptr);
 
@@ -209,7 +211,7 @@ TSharedRef<FJsonObject> DescribeField(const FProperty* Property, const void* Def
 	if (FieldDefault && Property->ArrayDim == 1)
 	{
 		bool bPartial = false;
-		const TSharedPtr<FJsonValue> Value = SerializePropertyValue(Property, FieldDefault, bPartial);
+		const TSharedPtr<FJsonValue> Value = SerializePropertyValue(Property, FieldDefault, bPartial, true);
 		if (!bPartial)
 		{
 			DefaultValue->SetStringField(TEXT("status"), TEXT("known"));
@@ -332,21 +334,19 @@ TSharedRef<FJsonObject> DescribePropertyType(const FProperty* Property, const vo
 	return Result;
 }
 
-TSharedPtr<FJsonValue> SerializePropertyValue(
-	const FProperty* Property, const void* Value, bool& bPartial);
-
-TSharedPtr<FJsonValue> SerializeField(const FProperty* Property, const void* Container, bool& bPartial)
+TSharedPtr<FJsonValue> SerializeField(
+	const FProperty* Property, const void* Container, bool& bPartial, bool bForDefault = false)
 {
 	const TSharedRef<FJsonObject> Field = MakeShared<FJsonObject>();
 	Field->SetStringField(TEXT("name"), Property->GetAuthoredName());
 	Field->SetStringField(TEXT("typeName"), Property->GetClass()->GetName());
 	Field->SetField(TEXT("value"), SerializePropertyValue(
-		Property, Property->ContainerPtrToValuePtr<void>(Container), bPartial));
+		Property, Property->ContainerPtrToValuePtr<void>(Container), bPartial, bForDefault));
 	return MakeShared<FJsonValueObject>(Field);
 }
 
 TSharedPtr<FJsonValue> SerializePropertyValue(
-	const FProperty* Property, const void* Value, bool& bPartial)
+	const FProperty* Property, const void* Value, bool& bPartial, bool bForDefault)
 {
 	if (Property->ArrayDim > 1)
 	{
@@ -421,6 +421,10 @@ TSharedPtr<FJsonValue> SerializePropertyValue(
 	}
 	if (const FTextProperty* Text = CastField<FTextProperty>(Property))
 	{
+		// The display-only codec cannot preserve text identity or history through Apply.
+		// This also makes enclosing struct/container defaults unknown, without degrading
+		// the existing display representation of table rows.
+		if (bForDefault) bPartial = true;
 		const TSharedRef<FJsonObject> Result = ValueObject(TEXT("text"));
 		Result->SetStringField(TEXT("value"), Text->GetPropertyValue(Value).ToString());
 		return MakeShared<FJsonValueObject>(Result);
@@ -475,7 +479,7 @@ TSharedPtr<FJsonValue> SerializePropertyValue(
 		TArray<TSharedPtr<FJsonValue>> Fields;
 		for (TFieldIterator<FProperty> It(Struct->Struct); It; ++It)
 		{
-			Fields.Add(SerializeField(*It, Value, bPartial));
+			Fields.Add(SerializeField(*It, Value, bPartial, bForDefault));
 		}
 		Result->SetArrayField(TEXT("fields"), Fields);
 		return MakeShared<FJsonValueObject>(Result);
@@ -486,7 +490,7 @@ TSharedPtr<FJsonValue> SerializePropertyValue(
 		TArray<TSharedPtr<FJsonValue>> Values;
 		for (int32 Index = 0; Index < Helper.Num(); ++Index)
 		{
-			Values.Add(SerializePropertyValue(Array->Inner, Helper.GetRawPtr(Index), bPartial));
+			Values.Add(SerializePropertyValue(Array->Inner, Helper.GetRawPtr(Index), bPartial, bForDefault));
 		}
 		const TSharedRef<FJsonObject> Result = ValueObject(TEXT("array"));
 		Result->SetArrayField(TEXT("values"), Values);
@@ -500,7 +504,8 @@ TSharedPtr<FJsonValue> SerializePropertyValue(
 		{
 			if (Helper.IsValidIndex(Index))
 			{
-				Values.Add(SerializePropertyValue(Set->ElementProp, Helper.GetElementPtr(Index), bPartial));
+				Values.Add(SerializePropertyValue(
+					Set->ElementProp, Helper.GetElementPtr(Index), bPartial, bForDefault));
 			}
 		}
 		const TSharedRef<FJsonObject> Result = ValueObject(TEXT("set"));
@@ -519,9 +524,9 @@ TSharedPtr<FJsonValue> SerializePropertyValue(
 			}
 			const TSharedRef<FJsonObject> Entry = MakeShared<FJsonObject>();
 			Entry->SetField(TEXT("key"), SerializePropertyValue(
-				Map->KeyProp, Helper.GetKeyPtr(Index), bPartial));
+				Map->KeyProp, Helper.GetKeyPtr(Index), bPartial, bForDefault));
 			Entry->SetField(TEXT("value"), SerializePropertyValue(
-				Map->ValueProp, Helper.GetValuePtr(Index), bPartial));
+				Map->ValueProp, Helper.GetValuePtr(Index), bPartial, bForDefault));
 			Entries.Add(MakeShared<FJsonValueObject>(Entry));
 		}
 		const TSharedRef<FJsonObject> Result = ValueObject(TEXT("map"));
@@ -1650,6 +1655,73 @@ bool FUEShedAuthoringDefaultsCodecTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Container survives typed defaults decoding"), Created->Numbers.Num(), 2);
 	TestEqual(TEXT("First container value survives typed defaults decoding"), Created->Numbers[0], 3);
 	TestEqual(TEXT("Second container value survives typed defaults decoding"), Created->Numbers[1], 7);
+
+	{
+		const FName TableId(TEXT("UEShedAuthoringDefaults"));
+		FStringTableRegistry& Registry = FStringTableRegistry::Get();
+		Registry.Internal_NewLocTable(TableId, TEXT("UEShedAuthoringDefaults"));
+		Registry.Internal_SetLocTableEntry(TableId, TEXT("Default"), TEXT("String table default"));
+		ON_SCOPE_EXIT { Registry.UnregisterStringTable(TableId); };
+		UDataTable* TextTable = NewObject<UDataTable>(GetTransientPackage());
+		TextTable->RowStruct = FUEShedAuthoringTestTextRow::StaticStruct();
+		const TSharedPtr<FJsonObject> TextSnapshot = BuildTableSnapshot(TextTable);
+		TArray<TSharedPtr<FJsonValue>> SafeFields;
+		for (const TSharedPtr<FJsonValue>& Value : TextSnapshot->GetObjectField(TEXT("table"))
+			->GetObjectField(TEXT("schema"))->GetArrayField(TEXT("fields")))
+		{
+			const TSharedPtr<FJsonObject> Descriptor = Value->AsObject();
+			const FString Name = Descriptor->GetStringField(TEXT("name"));
+			const TSharedPtr<FJsonObject> Default = Descriptor->GetObjectField(TEXT("defaultValue"));
+			if (Name != TEXT("Count"))
+			{
+				TestEqual(TEXT("Text and enclosing defaults remain unknown: ") + Name,
+					Default->GetStringField(TEXT("status")), FString(TEXT("unknown")));
+				TestFalse(TEXT("Lossy default is not published: ") + Name, Default->HasField(TEXT("value")));
+				continue;
+			}
+			const TSharedRef<FJsonObject> SafeField = MakeShared<FJsonObject>();
+			SafeField->SetStringField(TEXT("name"), Name);
+			SafeField->SetField(TEXT("value"), Default->TryGetField(TEXT("value")));
+			SafeFields.Add(MakeShared<FJsonValueObject>(SafeField));
+		}
+		Row->SetArrayField(TEXT("fields"), SafeFields);
+		RowNames.Empty();
+		if (!TestTrue(TEXT("Add-row assigns only reusable defaults and preserves initialized text"),
+			ApplyCommand(TextTable, Command, RowNames, Error)))
+		{
+			AddError(Error);
+			return false;
+		}
+		const FUEShedAuthoringTestTextRow* TextRow = TextTable->FindRow<FUEShedAuthoringTestTextRow>(
+			TEXT("Created"), TEXT("DefaultsCodecTest"));
+		if (!TestNotNull(TEXT("Text default row is created"), TextRow)) return false;
+		TestEqual(TEXT("Reusable scalar default is assigned"), TextRow->Count, 73);
+		auto CheckIdentity = [&](const FText& Localized, const FText& StringTable, const FString& Context)
+		{
+			TestEqual(Context + TEXT(" localized namespace"),
+				FTextInspector::GetNamespace(Localized).Get(FString()), FString(TEXT("UEShedAuthoringDefaults")));
+			TestEqual(Context + TEXT(" localized key"),
+				FTextInspector::GetKey(Localized).Get(FString()), FString(TEXT("Localized")));
+			FName ActualTable;
+			FString ActualKey;
+			TestTrue(Context + TEXT(" retains string-table history"),
+				FTextInspector::GetTableIdAndKey(StringTable, ActualTable, ActualKey));
+			TestEqual(Context + TEXT(" string-table identity"), ActualTable, TableId);
+			TestEqual(Context + TEXT(" string-table key"), ActualKey, FString(TEXT("Default")));
+		};
+		CheckIdentity(TextRow->Localized, TextRow->StringTable, TEXT("Scalar"));
+		CheckIdentity(TextRow->Nested.Localized, TextRow->Nested.StringTable, TEXT("Struct"));
+		TestEqual(TEXT("Initialized text array is retained"), TextRow->Array.Num(), 1);
+		for (const auto& Item : TextRow->Array) CheckIdentity(Item.Localized, Item.StringTable, TEXT("Array"));
+		TestEqual(TEXT("Initialized text set is retained"), TextRow->Set.Num(), 1);
+		for (const auto& Item : TextRow->Set) CheckIdentity(Item.Localized, Item.StringTable, TEXT("Set"));
+		TestEqual(TEXT("Initialized text map is retained"), TextRow->Map.Num(), 1);
+		for (const auto& Item : TextRow->Map)
+		{
+			CheckIdentity(Item.Key.Localized, Item.Key.StringTable, TEXT("Map key"));
+			CheckIdentity(Item.Value.Localized, Item.Value.StringTable, TEXT("Map value"));
+		}
+	}
 
 	UUserDefinedStruct* BlueprintStruct = FStructureEditorUtils::CreateUserDefinedStruct(
 		GetTransientPackage(), MakeUniqueObjectName(GetTransientPackage(),

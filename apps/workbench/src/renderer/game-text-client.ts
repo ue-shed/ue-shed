@@ -1,6 +1,11 @@
 import { GameTextInvestigationPresetResult } from "@ue-shed/game-text/browser";
 import { InvestigationFileResult } from "@ue-shed/unreal-assets/investigation";
 import {
+	LocalizationTargetsResult,
+	LocalizationTargetResult,
+	LocalizationFocusResult,
+	type LocalizationFocusRequest,
+	type LocalizationSelection,
 	decodeTextCorpusFocusResult,
 	decodeTextCorpusQueryRunResult,
 	decodeTextCorpusSearchResult,
@@ -48,6 +53,29 @@ function invokeRequest<A, HostValue, DecodeError>(
 }
 
 export const gameTextClient: GameTextClientApi = GameTextClient.of({
+	localizationTargets: Effect.fn("GameTextClient.localizationTargets")(() =>
+		invokeRequest(
+			"gameText.localizationTargets",
+			() => window.ueShed.gameText.localizationTargets(),
+			Schema.decodeUnknownEffect(LocalizationTargetsResult)
+		)
+	),
+	localizationTarget: Effect.fn("GameTextClient.localizationTarget")(
+		(target: LocalizationSelection["target"]) =>
+			invokeRequest(
+				"gameText.localizationTarget",
+				() => window.ueShed.gameText.localizationTarget(target),
+				Schema.decodeUnknownEffect(LocalizationTargetResult)
+			)
+	),
+	localizationFocus: Effect.fn("GameTextClient.localizationFocus")(
+		(request: LocalizationFocusRequest) =>
+			invokeRequest(
+				"gameText.localizationFocus",
+				() => window.ueShed.gameText.localizationFocus(request),
+				Schema.decodeUnknownEffect(LocalizationFocusResult)
+			)
+	),
 	reloadQualityRules: Effect.fn("GameTextClient.reloadQualityRules")(() =>
 		invokeRequest(
 			"gameText.reloadQualityRules",

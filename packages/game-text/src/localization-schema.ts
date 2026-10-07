@@ -22,6 +22,7 @@ export const LocalizationState = Schema.Literals([
 	"unknown"
 ]);
 export const localizationStates = LocalizationState.literals;
+export const MAX_LOCALIZATION_CULTURES = 256;
 export type LocalizationState = typeof LocalizationState.Type;
 
 export const LocalizationUnknownReason = Schema.Literals([
@@ -113,13 +114,23 @@ export const LocalizationLinePreview = Schema.Struct({
 	source: Schema.String,
 	manifestLocations: Schema.Array(Schema.String).check(Schema.isMaxLength(3)),
 	remainingLocationCount: Count,
-	cultures: Schema.Array(LocalizationCultureMark)
+	cultures: Schema.Array(
+		LocalizationCultureMark.pipe(
+			Schema.fieldsAssign({
+				translation: Schema.NullOr(Schema.String)
+			})
+		)
+	).check(Schema.isMaxLength(MAX_LOCALIZATION_CULTURES))
 });
 export type LocalizationLinePreview = typeof LocalizationLinePreview.Type;
 export const LocalizationQueryPage = Schema.Struct({
 	target: LocalizationTargetName,
 	nextCursor: Schema.optionalKey(LocalizationLineId),
-	counts: Schema.Array(LocalizationCultureCounts),
+	counts: Schema.Array(LocalizationCultureCounts).check(
+		Schema.isMaxLength(MAX_LOCALIZATION_CULTURES)
+	),
+	stateCounts: Schema.Record(LocalizationState, Count),
+	notSynced: Count,
 	lines: Schema.Array(LocalizationLinePreview).check(Schema.isMaxLength(50))
 });
 export type LocalizationQueryPage = typeof LocalizationQueryPage.Type;

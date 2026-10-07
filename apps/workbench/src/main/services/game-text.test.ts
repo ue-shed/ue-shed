@@ -3,6 +3,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { makeWorkbenchTestConfigurationLayer as makeWorkbenchConfigurationLayer } from "../test-configuration.js";
 import { it } from "@effect/vitest";
+import { makeLocalizationEvidenceTestLayer } from "@ue-shed/localization";
+import {
+	corpus as localizationCorpus,
+	evidence as localizationEvidence,
+	poDocument,
+	target as localizationTarget
+} from "./game-text-localization.test-support.js";
 import {
 	makeTextCorpusServiceTestLayer,
 	makeTextUnitId,
@@ -21,6 +28,12 @@ import { makeWorkbenchProjectTestLayer } from "./project-workspace.js";
 import { ElectronDialog } from "../adapters/electron-dialog.js";
 import { LocalFilesLive, makeLocalFilesTestLayer } from "../adapters/local-files.js";
 
+const noLocalization = makeLocalizationEvidenceTestLayer({
+	discover: () => Effect.succeed({ schemaVersion: 1, targets: [], diagnostics: [] }),
+	read: () => Effect.die("No targets"),
+	targets: () => Effect.die("Not used")
+});
+
 const gameTextAdapters = Layer.mergeAll(
 	Layer.succeed(
 		ElectronDialog,
@@ -33,13 +46,17 @@ const gameTextAdapters = Layer.mergeAll(
 	),
 	makeLocalFilesTestLayer()
 );
-const gameTextLive = WorkbenchGameTextLive.pipe(Layer.provide(gameTextAdapters));
+const gameTextLive = WorkbenchGameTextLive.pipe(
+	Layer.provide(noLocalization),
+	Layer.provide(gameTextAdapters)
+);
 
 const qualityRulesPath = "C:/FixtureProject/game-text-quality.json";
 
 function qualityGameTextLive(contents: string, files = new Map<string, Uint8Array>()) {
 	files.set(qualityRulesPath, new TextEncoder().encode(contents));
 	return WorkbenchGameTextLive.pipe(
+		Layer.provide(noLocalization),
 		Layer.provide(
 			Layer.mergeAll(
 				Layer.succeed(
@@ -130,6 +147,81 @@ const unselectedProject = makeWorkbenchProjectTestLayer({
 	savedProject: () => Effect.die("not used")
 });
 
+it.effect(
+	"reloads localization evidence on Rescan and leaves no-target projects on the source query",
+	() =>
+		Effect.gen(function* () {
+			let reads = 0;
+			let available = true;
+			const reader = makeLocalizationEvidenceTestLayer({
+				discover: () =>
+					Effect.succeed({
+						schemaVersion: 1,
+						targets: available ? [localizationTarget] : [],
+						diagnostics: []
+					}),
+				read: ({ projectRoot }) =>
+					Effect.sync(() => {
+						expect(projectRoot).toBe(projectSummary.projectRoot);
+						reads++;
+						return localizationEvidence(
+							poDocument(reads === 1 ? "Pending" : "Translation")
+						);
+					}),
+				targets: () => Effect.die("Not used")
+			});
+			yield* Effect.gen(function* () {
+				const service = yield* WorkbenchGameText;
+				expect(yield* service.localizationTargets()).toEqual({ status: "not_ready" });
+				yield* service.configuredRefresh(true);
+				expect(yield* service.localizationTargets()).toMatchObject({
+					status: "ready",
+					targets: [{ name: localizationTarget.name }]
+				});
+				expect(yield* service.localizationTarget(localizationTarget.name)).toMatchObject({
+					status: "ready",
+					notSynced: 2
+				});
+				yield* service.configuredRefresh(false);
+				yield* service.localizationTarget(localizationTarget.name);
+				expect(reads).toBe(1);
+				yield* service.configuredRefresh(true);
+				expect(yield* service.localizationTarget(localizationTarget.name)).toMatchObject({
+					status: "ready",
+					notSynced: 0
+				});
+				expect(reads).toBe(2);
+				available = false;
+				yield* service.configuredRefresh(true);
+				expect(yield* service.localizationTargets()).toEqual({
+					status: "ready",
+					targets: []
+				});
+				expect(
+					yield* service.search({ query: "Source", capability: "all", pageSize: 50 })
+				).toMatchObject({
+					status: "ready",
+					page: { total: 1 }
+				});
+				expect(reads).toBe(2);
+			}).pipe(
+				Effect.provide(
+					WorkbenchGameTextLive.pipe(
+						Layer.provide(gameTextAdapters),
+						Layer.provide(selectedProject),
+						Layer.provide(reader),
+						Layer.provide(
+							makeTextCorpusServiceTestLayer({
+								scan: () => Effect.die("Not used"),
+								scanFromProjectIndex: () => Effect.sync(() => localizationCorpus())
+							})
+						)
+					)
+				)
+			);
+		})
+);
+
 it.effect("reuses navigation results and refreshes only when requested", () =>
 	Effect.gen(function* () {
 		const scans = yield* Ref.make(0);
@@ -184,6 +276,7 @@ it("creates starter rules exclusively, reloads the file and retains it through r
 		savedProject: () => Effect.die("unused")
 	});
 	const live = WorkbenchGameTextLive.pipe(
+		Layer.provide(noLocalization),
 		Layer.provide(
 			Layer.mergeAll(
 				project,
@@ -800,6 +893,7 @@ it("exports one captured generation when the project changes during the save dia
 			}).pipe(
 				Effect.provide(
 					WorkbenchGameTextLive.pipe(
+						Layer.provide(noLocalization),
 						Layer.provide(
 							Layer.mergeAll(
 								project,
@@ -880,6 +974,7 @@ it("restores embedded rules without retaining another rule file's write destinat
 			}).pipe(
 				Effect.provide(
 					WorkbenchGameTextLive.pipe(
+						Layer.provide(noLocalization),
 						Layer.provide(
 							Layer.mergeAll(
 								selectedProject,

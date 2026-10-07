@@ -238,6 +238,22 @@ export const styles = stylex.create({
 		textDecoration: "underline"
 	},
 	table: { width: "100%", textAlign: "left", fontSize: 12, borderSpacing: 8 },
+	pickerMenu: {
+		display: "flex",
+		flexDirection: "column",
+		gap: 2,
+		minWidth: 120,
+		maxHeight: 320,
+		overflowY: "auto",
+		padding: 4,
+		borderWidth: 1,
+		borderStyle: "solid",
+		borderColor: tokens.colorBorder,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurfaceRaised,
+		boxShadow: "0 8px 24px rgba(0, 0, 0, 0.25)",
+		zIndex: 20
+	},
 	button: {
 		boxSizing: "border-box",
 		height: 26,

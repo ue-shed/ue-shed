@@ -88,7 +88,9 @@ test("records the real Game Text quality workflow", async ({
 		const editable = page.getByRole("button", { name: /^Editable(?: [\d,]+)?$/u });
 		const textDetail = page.getByRole("complementary", { name: "Text focus" });
 		const qualityTab = page.getByRole("tab", { name: /^Quality checks/u });
-		const coverage = page.getByRole("main").getByText(/^[\d,]+ lines? in [\d,]+ assets?/u);
+		const coverage = page
+			.getByRole("main")
+			.getByText(/^[\d,]+ lines? (?:in|·) [\d,]+ assets?/u);
 
 		await expect(results).toBeVisible();
 		await expect(searchCount).toHaveText(/^[\d,]+ match(?:es)?$/u);
@@ -169,6 +171,9 @@ test("records the real Game Text quality workflow", async ({
 		const continueLine = results.getByRole("button").filter({
 			hasText: "ST_Game · PromptContinue"
 		});
+		if (!(await continueLine.count())) {
+			await results.getByRole("button", { name: /^Show [\d,]+ more$/u }).click();
+		}
 		await expect(continueLine).toHaveCount(1);
 		await continueLine.click();
 		await expect(
@@ -353,6 +358,153 @@ test("records the real Game Text quality workflow", async ({
 		await expectFindingCounts(0, initialTerms - 1);
 		await page.waitForTimeout(1_500);
 		await page.screenshot({ path: testInfo.outputPath("final.png") });
+
+		await page.getByRole("tab", { name: "Text", exact: true }).click();
+		const culture = page.getByRole("button", { name: /^Culture:/u });
+		await expect(culture).toBeVisible();
+		await culture.click();
+		const cultureChoices = page.getByRole("dialog", { name: "Culture choices" });
+		await expect(cultureChoices.getByRole("button")).toHaveCount(4);
+		await expect(cultureChoices.getByRole("button").first()).toHaveAccessibleName(
+			"All cultures"
+		);
+		for (const code of ["en", "de", "fr"]) {
+			await expect(
+				cultureChoices.getByRole("button", { name: code, exact: true })
+			).toBeVisible();
+		}
+		await cultureChoices.getByRole("button", { name: "de", exact: true }).click();
+		await expect(culture).toHaveAccessibleName("Culture: de");
+		await expect(culture).toHaveCSS("height", "26px");
+		await expect(searchCount).toHaveText(/^[\d,]+ match(?:es)?$/u);
+		await expect(allText).toHaveAccessibleName(`All text ${lines.toLocaleString()}`);
+		const unsyncedIndicator = page.getByRole("status").filter({
+			hasText: /^[\d,]+ not synced$/u
+		});
+		await expect(unsyncedIndicator).toBeVisible();
+		await expect(unsyncedIndicator).toHaveAttribute(
+			"title",
+			"Translations saved in PO files that Unreal has not imported yet"
+		);
+		const pendingTranslations = displayedCount(await unsyncedIndicator.innerText());
+		expect(pendingTranslations).toBeGreaterThan(0);
+		// This line exercises native/de/fr stacking and translations with named arguments.
+		const namedLine = results.getByRole("button").filter({
+			hasText: "ST_Localization · NamedArgument"
+		});
+		// Large targets page through the same bounded query; keep the recording independent of order.
+		if (!(await namedLine.count())) {
+			const more = results.getByRole("button", { name: /^Show [\d,]+ more$/u });
+			await expect(more).toBeVisible();
+			await more.click();
+		}
+		await expect(namedLine).toHaveCount(1);
+		await expect(results).toContainText("Gespräch mit {Name}");
+		await expect(page.getByText("Loading translations…", { exact: true })).toHaveCount(0);
+		await expectPaneLayout(results, textDetail);
+		await page.screenshot({ path: testInfo.outputPath("08-culture-de.png") });
+		await namedLine.click();
+		const translations = textDetail.getByRole("region", { name: "Translations" });
+		await expect(
+			translations.getByRole("article", { name: "Translation de", exact: true })
+		).toContainText("Gespräch mit {Name}");
+		await expect(
+			translations.getByRole("article", { name: "Translation en", exact: true })
+		).toContainText("Talking with {PlayerName}");
+		await expect(
+			translations.getByRole("article", { name: "Translation fr", exact: true })
+		).toContainText("Discussion avec {PlayerName}");
+		await expect(translations.getByText("Manifest key path")).toBeVisible();
+		await expect(translations.getByText("Loading translations…", { exact: true })).toHaveCount(
+			0
+		);
+		await expectPaneLayout(results, textDetail);
+		const outdated = results
+			.getByRole("button")
+			.filter({ hasText: "DA_Localization · SharedPrimary" });
+		await outdated.click();
+		await expect(textDetail.getByRole("heading", { name: "Open the gate" })).toBeVisible();
+		await expect(
+			translations.getByRole("article", { name: "Translation en", exact: true })
+		).toContainText("Translated");
+		await expect(
+			translations.getByRole("article", { name: "Translation de", exact: true })
+		).toContainText("Needs update");
+		const outdatedGerman = translations.getByRole("article", {
+			name: "Translation de",
+			exact: true
+		});
+		await expect(outdatedGerman).toContainText(
+			"Open the gate (source text — the translation is out of date)"
+		);
+		await expect(outdatedGerman).toContainText("Translation (out of date)");
+		await expect(outdatedGerman).toContainText("Die Tür öffnen");
+		await expect(outdatedGerman).toContainText("Written for this source");
+		await expect(outdatedGerman).toContainText("Open the door");
+		await expect(translations.getByText("In PO, not synced", { exact: true })).toHaveCount(0);
+		await expect(
+			translations.getByRole("article", { name: "Translation fr", exact: true })
+		).toContainText("Needs update");
+		await expect(translations.getByText("Loading translations…", { exact: true })).toHaveCount(
+			0
+		);
+		await expectPaneLayout(results, textDetail);
+		await translations
+			.getByRole("heading", { name: "Translations", exact: true })
+			.evaluate((element) => element.scrollIntoView({ block: "start" }));
+		await expectPaneLayout(results, textDetail);
+		await page.screenshot({ path: testInfo.outputPath("09-translations-detail.png") });
+
+		const notSynced = page.getByRole("button", { name: /^Not synced [\d,]+$/u });
+		const unsyncedLines = displayedCount(await notSynced.innerText());
+		expect(unsyncedLines).toBeGreaterThan(0);
+		await notSynced.click();
+		await expect(notSynced).toHaveAttribute("aria-pressed", "true");
+		await expect(searchCount).toHaveText(
+			`${unsyncedLines.toLocaleString()} ${unsyncedLines === 1 ? "match" : "matches"}`
+		);
+		await expect(allText).toHaveAccessibleName(`All text ${unsyncedLines.toLocaleString()}`);
+		await expect(results.getByRole("button")).toHaveCount(unsyncedLines);
+		await expect(unsyncedIndicator).toHaveText(
+			`${pendingTranslations.toLocaleString()} not synced`
+		);
+		await expect(results).toContainText("Eine frische Sitzung beginnen");
+		const pendingLine = results
+			.getByRole("button")
+			.filter({ hasText: "ST_Localization · Unsynced" });
+		await pendingLine.click();
+		await expect(translations.getByText("In PO, not synced")).toBeVisible();
+		await expect(translations.getByText("Loading translations…", { exact: true })).toHaveCount(
+			0
+		);
+		await expectPaneLayout(results, textDetail);
+		await translations
+			.getByRole("article", { name: "Translation de", exact: true })
+			.evaluate((element) => element.scrollIntoView({ block: "start" }));
+		await expectPaneLayout(results, textDetail);
+		await page.screenshot({ path: testInfo.outputPath("10-not-synced.png") });
+
+		await notSynced.click();
+		await culture.click();
+		await cultureChoices.getByRole("button", { name: "All cultures", exact: true }).click();
+		await expect(culture).toHaveAccessibleName("Culture: All cultures");
+		await expect(searchCount).toHaveText(
+			`${lines.toLocaleString()} ${lines === 1 ? "match" : "matches"}`
+		);
+		await expect(allText).toHaveAccessibleName(`All text ${lines.toLocaleString()}`);
+		await expect(results).toContainText("de · needs update");
+		await expect(results).toContainText("fr · needs update");
+		await expect(results).toContainText("de · not synced");
+		await expect(results.getByText("Outside this target", { exact: true })).toHaveCount(0);
+		await expect(results.getByText("Gathered only", { exact: true })).toHaveCount(0);
+		await expect(results).not.toContainText("en · translated");
+		await expect(page.getByText("Loading translations…", { exact: true })).toHaveCount(0);
+		await outdated.click();
+		await expect(outdatedGerman).toContainText(
+			"Open the gate (source text — the translation is out of date)"
+		);
+		await expectPaneLayout(results, textDetail);
+		await page.screenshot({ path: testInfo.outputPath("11-all-cultures.png") });
 	} finally {
 		if (recording) await page.screencast.stop().catch(() => undefined);
 		await application.close().catch(() => undefined);

@@ -1,5 +1,7 @@
 import { Effect, Option, Schema } from "effect";
 import {
+	LocalizationSelection,
+	LocalizationLineId,
 	TextCapabilityFilter,
 	TextReviewLens,
 	TextUnitId,
@@ -10,6 +12,11 @@ import {
 import type { RuleEditorState } from "./game-text-rule-state.js";
 
 const StoredPreferences = Schema.Struct({
+	localizationTarget: Schema.optionalKey(LocalizationSelection.fields.target),
+	localizationCulture: LocalizationSelection.fields.culture,
+	localizationState: LocalizationSelection.fields.state,
+	searchTranslations: Schema.optionalKey(Schema.Boolean),
+	selectedLocalizationId: Schema.optionalKey(LocalizationLineId),
 	query: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(512))),
 	capability: Schema.optionalKey(TextCapabilityFilter),
 	lens: Schema.optionalKey(TextReviewLens),
@@ -22,6 +29,17 @@ const StoredPreferences = Schema.Struct({
 });
 
 export interface GameTextPreferences {
+	readonly localizationTarget?:
+		| Schema.Schema.Type<typeof LocalizationSelection>["target"]
+		| undefined;
+	readonly localizationCulture?:
+		| Schema.Schema.Type<typeof LocalizationSelection>["culture"]
+		| undefined;
+	readonly localizationState?:
+		| Schema.Schema.Type<typeof LocalizationSelection>["state"]
+		| undefined;
+	readonly searchTranslations?: boolean | undefined;
+	readonly selectedLocalizationId?: Schema.Schema.Type<typeof LocalizationLineId> | undefined;
 	readonly query: string;
 	readonly capability: Schema.Schema.Type<typeof TextCapabilityFilter>;
 	readonly lens: Schema.Schema.Type<typeof TextReviewLens>;

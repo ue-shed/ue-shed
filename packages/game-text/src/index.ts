@@ -9,6 +9,7 @@ export * from "./localization-schema.js";
 export * from "./localization.js";
 export * from "./localization-query.js";
 export * from "./localization-status.js";
+export * from "./localization-view.js";
 
 export * from "./investigation.js";
 export * from "./csv.js";

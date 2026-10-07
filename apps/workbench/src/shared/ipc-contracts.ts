@@ -88,6 +88,11 @@ import {
 } from "@ue-shed/config-explorer/browser";
 import { EnhancedInputRunResult } from "@ue-shed/enhanced-input/browser";
 import {
+	LocalizationTargetsResult,
+	LocalizationTargetResult,
+	LocalizationFocusRequest,
+	LocalizationFocusResult,
+	LocalizationSelection,
 	TextCorpusFocusRequest,
 	TextCorpusFocusResult,
 	TextCorpusQueryRunResult,
@@ -712,6 +717,21 @@ export const invokeContracts = {
 		channel: "game-text:investigation-open",
 		args: Schema.Tuple([]),
 		result: GameTextInvestigationPresetResult
+	}),
+	"game-text:localization:targets": invoke({
+		channel: "game-text:localization:targets",
+		args: Schema.Tuple([]),
+		result: LocalizationTargetsResult
+	}),
+	"game-text:localization:target": invoke({
+		channel: "game-text:localization:target",
+		args: Schema.Tuple([LocalizationSelection.fields.target]),
+		result: LocalizationTargetResult
+	}),
+	"game-text:localization:focus": invoke({
+		channel: "game-text:localization:focus",
+		args: Schema.Tuple([LocalizationFocusRequest]),
+		result: LocalizationFocusResult
 	}),
 	"game-text:search": invoke({
 		channel: "game-text:search",

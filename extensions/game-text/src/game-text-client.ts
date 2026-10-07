@@ -5,6 +5,11 @@ import type {
 	InvestigationFormat
 } from "@ue-shed/game-text/browser";
 import type {
+	LocalizationTargetsResult,
+	LocalizationTargetResult,
+	LocalizationFocusRequest,
+	LocalizationFocusResult,
+	LocalizationSelection,
 	TextCorpusFocusRequest,
 	TextCorpusFocusResult,
 	TextCorpusQueryRunResult,
@@ -32,6 +37,16 @@ export class GameTextClientError extends Schema.TaggedErrorClass<GameTextClientE
 ) {}
 
 export interface GameTextClientApi {
+	readonly localizationTargets?: () => Effect.Effect<
+		LocalizationTargetsResult,
+		GameTextClientError
+	>;
+	readonly localizationTarget?: (
+		target: LocalizationSelection["target"]
+	) => Effect.Effect<LocalizationTargetResult, GameTextClientError>;
+	readonly localizationFocus?: (
+		request: LocalizationFocusRequest
+	) => Effect.Effect<LocalizationFocusResult, GameTextClientError>;
 	readonly projectKey?: () => Effect.Effect<string | undefined, GameTextClientError>;
 	readonly reloadQualityRules?: () => Effect.Effect<
 		TextQualityQueryRunResult,

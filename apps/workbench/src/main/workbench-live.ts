@@ -13,6 +13,7 @@ import {
 } from "@ue-shed/cameras";
 import { AuthoringCatalogLive } from "@ue-shed/authoring-catalog";
 import { EnhancedInputServiceLive } from "@ue-shed/enhanced-input";
+import { LocalizationEvidenceNodeLive } from "@ue-shed/localization";
 import { TextCorpusServiceLive } from "@ue-shed/game-text";
 import {
 	EditorWindowActivationLive,
@@ -166,6 +167,7 @@ function domainCatalogLayer(hosts: WorkbenchHosts) {
 		WorkbenchEditorHandoffLive,
 		TextureAuditLive,
 		TextCorpusServiceLive,
+		LocalizationEvidenceNodeLive,
 		EnhancedInputServiceLive,
 		CustodianNodeLive,
 		niagara,

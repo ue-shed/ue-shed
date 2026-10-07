@@ -479,7 +479,7 @@ export function joinLocalizationTarget(
 				unknownReasons: [...new Set(unknownReasons)],
 				reducedSourceChecking: index?.po.status === "read" && !index.po.value.hasSourceText,
 				archive,
-				poTranslation: po && poValue !== (archive?.translation.Text ?? "") ? poValue : null,
+				poTranslation: facts.includes("not_synced") ? poValue : null,
 				po
 			};
 		});

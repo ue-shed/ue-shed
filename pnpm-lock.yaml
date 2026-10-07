@@ -336,6 +336,9 @@ importers:
       '@ue-shed/host':
         specifier: workspace:*
         version: link:../../packages/host
+      '@ue-shed/localization':
+        specifier: workspace:*
+        version: link:../../packages/localization
       '@ue-shed/map-history':
         specifier: workspace:*
         version: link:../../packages/map-history

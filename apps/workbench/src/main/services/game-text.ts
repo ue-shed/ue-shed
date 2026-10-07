@@ -28,6 +28,11 @@ import {
 	textQualityQuery,
 	TextCorpusService,
 	type TextCorpus,
+	type LocalizationTargetsResult,
+	type LocalizationTargetResult,
+	type LocalizationJoin,
+	type LocalizationFocusRequest,
+	type LocalizationFocusResult,
 	type TextCorpusFocusRequest,
 	type TextCorpusFocusResult,
 	type TextCorpusQuery,
@@ -44,6 +49,7 @@ import {
 	type TextQualitySearchRequest,
 	type TextQualitySearchResult
 } from "@ue-shed/game-text";
+import { makeGameTextLocalization } from "./game-text-localization.js";
 import type { SavedAssetScan } from "@ue-shed/unreal-assets";
 import { Cache, Context, Data, Duration, Effect, Layer, Ref } from "effect";
 import type { WorkbenchTaskProgress } from "../project-workspace-contract.js";
@@ -52,6 +58,13 @@ import { LocalFiles } from "../adapters/local-files.js";
 import { WorkbenchProject, type WorkbenchProjectCandidates } from "./project-workspace.js";
 
 export interface WorkbenchGameTextApi {
+	readonly localizationTargets: () => Effect.Effect<LocalizationTargetsResult>;
+	readonly localizationTarget: (
+		target: LocalizationJoin["target"]
+	) => Effect.Effect<LocalizationTargetResult>;
+	readonly localizationFocus: (
+		request: LocalizationFocusRequest
+	) => Effect.Effect<LocalizationFocusResult>;
 	readonly investigationExport: (
 		query: GameTextInvestigationQuery,
 		format: InvestigationFormat
@@ -174,6 +187,19 @@ export const WorkbenchGameTextLive = Layer.effect(
 					return undefined;
 				return yield* Ref.get(ref);
 			});
+		const localization = yield* makeGameTextLocalization(
+			() => currentModel(retainedCorpus),
+			() =>
+				currentModel(queryModel).pipe(
+					Effect.flatMap((model) =>
+						model
+							? Ref.get(modelSelection).pipe(
+									Effect.map((owner) => owner?.projectRoot)
+								)
+							: Effect.succeed(undefined)
+					)
+				)
+		);
 		const runRefresh = (projectRoot: string, index: WorkbenchProjectCandidates) =>
 			Effect.gen(function* () {
 				const revision = yield* Ref.updateAndGet(scanRevision, (value) => value + 1);
@@ -202,6 +228,7 @@ export const WorkbenchGameTextLive = Layer.effect(
 									"The project changed during the scan.",
 									"Refresh to read the current project generation."
 								);
+							yield* localization.reset();
 							const next = textCorpusQuery(report, new Date().toISOString());
 							const owner = yield* Ref.get(modelSelection);
 							const rules =
@@ -356,13 +383,15 @@ export const WorkbenchGameTextLive = Layer.effect(
 
 		const search = Effect.fn("Workbench.WorkbenchGameText.search")(
 			(request: TextCorpusSearchRequest) =>
-				currentModel(queryModel).pipe(
-					Effect.map((model) =>
-						model === undefined
-							? { status: "not_ready" as const }
-							: { page: model.search(request), status: "ready" as const }
-					)
-				)
+				request.localization
+					? localization.search(request)
+					: currentModel(queryModel).pipe(
+							Effect.map((model) =>
+								model === undefined
+									? { status: "not_ready" as const }
+									: { page: model.search(request), status: "ready" as const }
+							)
+						)
 		);
 
 		const focus = Effect.fn("Workbench.WorkbenchGameText.focus")(
@@ -785,6 +814,9 @@ export const WorkbenchGameTextLive = Layer.effect(
 		);
 
 		return WorkbenchGameText.of({
+			localizationTargets: localization.targets,
+			localizationTarget: localization.select,
+			localizationFocus: localization.focus,
 			investigationExport,
 			investigationSave,
 			investigationOpen,
@@ -813,6 +845,9 @@ export function makeWorkbenchGameTextTestLayer(
 	return Layer.succeed(
 		WorkbenchGameText,
 		WorkbenchGameText.of({
+			localizationTargets: () => Effect.succeed({ status: "ready", targets: [] }),
+			localizationTarget: () => Effect.succeed({ status: "not_ready" }),
+			localizationFocus: () => Effect.succeed({ status: "not_ready" }),
 			investigationExport: () => Effect.succeed({ status: "cancelled" }),
 			investigationSave: () => Effect.succeed({ status: "cancelled" }),
 			investigationOpen: () => Effect.succeed({ status: "cancelled" }),

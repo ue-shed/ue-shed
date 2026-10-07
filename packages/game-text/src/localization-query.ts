@@ -9,7 +9,7 @@ import {
 	type LocalizationJoin,
 	type LocalizationLine,
 	type LocalizationLinePreview,
-	type LocalizationQueryPage,
+	LocalizationQueryPage,
 	type LocalizationSelection
 } from "./localization-schema.js";
 import type { TextCorpusSearchRequest } from "./schema.js";
@@ -27,12 +27,23 @@ export function localizationLinePreview(line: LocalizationLine): LocalizationLin
 		manifestLocations: line.manifest.slice(0, 3).map((entry) => entry.path),
 		remainingLocationCount: Math.max(0, line.manifest.length - 3),
 		cultures: line.cultures.map(
-			({ culture, state, facts, unknownReasons, reducedSourceChecking }) => ({
+			({
 				culture,
 				state,
 				facts,
 				unknownReasons,
-				reducedSourceChecking
+				reducedSourceChecking,
+				archive,
+				poTranslation
+			}) => ({
+				culture,
+				state,
+				facts,
+				unknownReasons,
+				reducedSourceChecking,
+				translation: facts.includes("not_synced")
+					? poTranslation
+					: (archive?.translation.Text ?? null)
 			})
 		)
 	};
@@ -98,7 +109,14 @@ export function matchesLocalizationLine(
 	const selected = line.cultures.filter(
 		(mark) => selection.culture === undefined || mark.culture === selection.culture
 	);
-	if (selection.state !== undefined && !selected.some((mark) => mark.state === selection.state))
+	if (
+		selection.state !== undefined &&
+		!selected.some((mark) =>
+			selection.state === "not_synced"
+				? mark.facts.includes("not_synced")
+				: mark.state === selection.state
+		)
+	)
 		return false;
 	const translation =
 		selection.searchTranslations && selection.culture !== undefined
@@ -127,9 +145,30 @@ export function localizationQueryPage(
 		? matched.findIndex((line) => line.id === request.localizationCursor) + 1
 		: 0;
 	const page = matched.slice(after, after + request.pageSize);
+	const stateCounts = Schema.decodeUnknownSync(LocalizationQueryPage.fields.stateCounts)(
+		Object.fromEntries(localizationStates.map((state) => [state, 0]))
+	);
+	let notSynced = 0;
+	for (const line of matched) {
+		const marks = line.cultures.filter(
+			(mark) =>
+				!request.localization?.culture || mark.culture === request.localization.culture
+		);
+		for (const state of localizationStates) {
+			if (
+				marks.some((mark) =>
+					state === "not_synced" ? mark.facts.includes(state) : mark.state === state
+				)
+			)
+				Object.assign(stateCounts, { [state]: stateCounts[state] + 1 });
+		}
+		notSynced += marks.filter((mark) => mark.facts.includes("not_synced")).length;
+	}
 	const result: LocalizationQueryPage = {
 		target: join.target,
 		counts: localizationCounts(matched, join.cultures),
+		stateCounts,
+		notSynced,
 		lines: page.map(localizationLinePreview)
 	};
 	const last = page.at(-1);

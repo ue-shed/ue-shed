@@ -17,7 +17,7 @@
 
 ## Status
 
-- **State**: IN PROGRESS. Phases 0–2 are done; Phase 3 is next.
+- **State**: IN PROGRESS. Phases 0–3 are done; Phase 4 is next.
 - **Priority**: P1
 - **Effort**: XL
 - **Risk**: HIGH. The plan adds the first UE Shed writes to localization files and the first
@@ -296,8 +296,23 @@ Phase 1.
     - Verified on Node 24 and Node 26. Precommit, `uasset:check:libraries`, `uasset:check:io`, the
       packed-consumer journey and the Workbench recording pass. `pnpm test:uasset-engine-matrix`
       passes on UE 5.7 and UE 5.8.
-- **3c next:** the Workbench culture picker, per-culture states on rows, and the stacked
-  per-culture detail.
+- **3c done.** Workbench main loads the selected target's evidence, joins it with the retained
+  corpus, reloads it on Rescan, and answers bounded IPC queries.
+    - The toolbar gains compact target and culture menus and a warning "N not synced" indicator.
+    - State chips show counts from the same query.
+    - With a culture selected, rows show that culture's translation, or the state when there is
+      none. With "All cultures", rows show only the cultures that need attention, and a
+      culture-independent state is said once.
+    - Gathered-only lines are labelled with their source location.
+    - The detail's Translations section, native culture first, shows what the game uses. For
+      `needs_update` and `not_translated` that is the source text, as Unreal's compiler falls back
+      to it. The old translation stays visible, with the source it was written for. The PO
+      translation appears only when it is a real unsynced edit. Informational states are muted and
+      said once.
+    - Target, culture, state and "Search translations" are remembered per project.
+    - Component tests pass on Node 24 and Node 26. Recording screenshots 08–11 were reviewed in two
+      rounds.
+- **3d (translator notes on 5.7)** landed with 3b. Phase 3's gate is met.
 
 ## Phase 4 — Checks and reports
 

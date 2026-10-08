@@ -18,6 +18,7 @@ import { LocalizationFileStatus, localizationEvidenceFileStatuses } from "./loca
 import { localizationTextMatches } from "./localization.js";
 import { localizationWordCount } from "./localization-words.js";
 import { canonicalLocalizationJson, localizationFingerprint } from "./localization-fingerprint.js";
+import { manifestPlace } from "./localization-key-changes.js";
 
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 const Words = Schema.NullOr(Count);
@@ -26,7 +27,9 @@ const Counts = Schema.Struct({ lines: Count, sourceWords: Words });
 export const LocalizationBaselineEntry = Schema.Struct({
 	...LocalizationIdentity.fields,
 	sourceFingerprint: Fingerprint,
-	sourceWords: Count
+	sourceWords: Count,
+	/** Unreal's first manifest path for the line; lets a later diff pair keys that changed. */
+	path: Schema.optionalKey(Schema.String)
 });
 export type LocalizationBaselineEntry = typeof LocalizationBaselineEntry.Type;
 export const LocalizationBaseline = Schema.Struct({
@@ -155,18 +158,29 @@ export function createLocalizationBaseline(
 				namespace: entry.namespace,
 				key: entry.key,
 				sourceFingerprint: localizationFingerprint(canonicalLocalizationJson(entry.source)),
-				sourceWords: count.words
+				sourceWords: count.words,
+				path: entry.path
 			};
 		})
 	});
 }
+/** A key that left the manifest, paired one to one with the key that took its place. */
+export const LocalizationBaselineKeyChange = Schema.Struct({
+	from: LocalizationBaselineEntry,
+	to: LocalizationBaselineEntry,
+	match: Schema.Literals(["same_place", "same_text"])
+});
+export type LocalizationBaselineKeyChange = typeof LocalizationBaselineKeyChange.Type;
 export const LocalizationBaselineDelta = Schema.Struct({
 	added: Schema.Array(LocalizationBaselineEntry),
 	changed: Schema.Array(LocalizationBaselineEntry),
 	removed: Schema.Array(LocalizationBaselineEntry),
+	/** Paired keys; they are not counted again as added or removed. */
+	keyChanged: Schema.Array(LocalizationBaselineKeyChange),
 	addedCounts: Counts,
 	changedCounts: Counts,
-	removedCounts: Counts
+	removedCounts: Counts,
+	keyChangedCounts: Counts
 });
 export type LocalizationBaselineDelta = typeof LocalizationBaselineDelta.Type;
 function entryCounts(entries: readonly LocalizationBaselineEntry[]) {
@@ -187,22 +201,86 @@ export function diffLocalizationBaselines(
 		[...entries].sort(
 			(a, b) => a.namespace.localeCompare(b.namespace) || a.key.localeCompare(b.key)
 		);
-	const added = sorted(current.entries.filter((entry) => !before.has(identityKey(entry))));
+	const keyChanged = pairBaselineKeys(
+		previous.entries.filter((entry) => !after.has(identityKey(entry))),
+		current.entries.filter((entry) => !before.has(identityKey(entry)))
+	);
+	const pairedFrom = new Set(keyChanged.map((item) => identityKey(item.from)));
+	const pairedTo = new Set(keyChanged.map((item) => identityKey(item.to)));
+	const added = sorted(
+		current.entries.filter(
+			(entry) => !before.has(identityKey(entry)) && !pairedTo.has(identityKey(entry))
+		)
+	);
 	const changed = sorted(
 		current.entries.filter((entry) => {
 			const old = before.get(identityKey(entry));
 			return old !== undefined && old.sourceFingerprint !== entry.sourceFingerprint;
 		})
 	);
-	const removed = sorted(previous.entries.filter((entry) => !after.has(identityKey(entry))));
+	const removed = sorted(
+		previous.entries.filter(
+			(entry) => !after.has(identityKey(entry)) && !pairedFrom.has(identityKey(entry))
+		)
+	);
 	return {
 		added,
 		changed,
 		removed,
+		keyChanged,
 		addedCounts: entryCounts(added),
 		changedCounts: entryCounts(changed),
-		removedCounts: entryCounts(removed)
+		removedCounts: entryCounts(removed),
+		keyChangedCounts: entryCounts(keyChanged.map((item) => item.to))
 	};
+}
+/**
+ * Pairs removed and added baseline entries strictly one to one: first by the place Unreal's
+ * manifest path names, then by an identical source fingerprint unique on both sides.
+ */
+function pairBaselineKeys(
+	removed: readonly LocalizationBaselineEntry[],
+	added: readonly LocalizationBaselineEntry[]
+): readonly LocalizationBaselineKeyChange[] {
+	const tiers: readonly (readonly [
+		LocalizationBaselineKeyChange["match"],
+		(entry: LocalizationBaselineEntry) => string | undefined
+	])[] = [
+		[
+			"same_place",
+			(entry) => (entry.path === undefined ? undefined : manifestPlace(entry.path))
+		],
+		["same_text", (entry) => entry.sourceFingerprint]
+	];
+	const pairs: LocalizationBaselineKeyChange[] = [];
+	let olds = [...removed];
+	let news = [...added];
+	for (const [match, keyOf] of tiers) {
+		const group = (entries: readonly LocalizationBaselineEntry[]) => {
+			const byKey = new Map<string, LocalizationBaselineEntry[]>();
+			for (const entry of entries) {
+				const key = keyOf(entry);
+				if (key !== undefined) byKey.set(key, [...(byKey.get(key) ?? []), entry]);
+			}
+			return byKey;
+		};
+		const oldByKey = group(olds);
+		const newByKey = group(news);
+		const paired = new Set<LocalizationBaselineEntry>();
+		for (const [key, fresh] of newByKey) {
+			const earlier = oldByKey.get(key);
+			const [from] = earlier ?? [];
+			const [to] = fresh;
+			if (earlier?.length !== 1 || fresh.length !== 1 || !from || !to) continue;
+			pairs.push({ from, to, match });
+			paired.add(from).add(to);
+		}
+		olds = olds.filter((entry) => !paired.has(entry));
+		news = news.filter((entry) => !paired.has(entry));
+	}
+	return pairs.sort(
+		(a, b) => a.to.namespace.localeCompare(b.to.namespace) || a.to.key.localeCompare(b.to.key)
+	);
 }
 /** "not_tracked" until the project has a review file for the target. */
 const ReviewProgress = Schema.Union([

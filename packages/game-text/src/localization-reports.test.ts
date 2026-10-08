@@ -182,6 +182,32 @@ describe("localization progress and manifest baselines", () => {
 			)
 		).toBe(true);
 	});
+	it("pairs keys that changed between baselines instead of counting them as new work", () => {
+		const before = createLocalizationBaseline(
+			corpus(),
+			evidence([
+				manifestEntry("Row", "Start game", "/Game/Text/DT.DT.Start.Label"),
+				manifestEntry("Entry", "Welcome back")
+			]),
+			"2026-10-07T00:00:00Z"
+		);
+		const after = createLocalizationBaseline(
+			corpus(),
+			evidence([
+				manifestEntry("RowRenamed", "Start the game", "/Game/Text/DT.DT.Start.Label"),
+				manifestEntry("EntryRenamed", "Welcome back")
+			]),
+			"2026-10-08T00:00:00Z"
+		);
+		const delta = diffLocalizationBaselines(before, after);
+		expect(delta.keyChanged.map((item) => [item.from.key, item.to.key, item.match])).toEqual([
+			["Entry", "EntryRenamed", "same_text"],
+			["Row", "RowRenamed", "same_place"]
+		]);
+		expect(delta.added).toEqual([]);
+		expect(delta.removed).toEqual([]);
+		expect(delta.keyChangedCounts.lines).toBe(2);
+	});
 	it("round-trips baselines and distinguishes added, changed, unchanged and removed identities", () => {
 		const before = createLocalizationBaseline(
 			corpus(),

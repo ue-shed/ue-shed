@@ -40,6 +40,17 @@ function placeKey(path: string): string {
 		.replace(/\((\d+)\)/gu, "[$1]");
 }
 
+/**
+ * The place a gathered manifest path names, when it names one line of text: an object path with
+ * its property chain, or a source file with its line. A String Table's manifest path is the table
+ * alone, shared by every entry, so it is no place.
+ */
+export function manifestPlace(path: string): string | undefined {
+	const place = placeKey(path);
+	if (place.startsWith("/")) return /^\/[^.]+\.[^.:]+[.:].+/u.test(place) ? place : undefined;
+	return /(?:\[\d+\]|:\d+)$/u.test(place) ? place : undefined;
+}
+
 function occurrencePlace(location: TextLocation): string | undefined {
 	switch (location.kind) {
 		case "data_table_cell":
@@ -159,7 +170,10 @@ function pair(
 function manifestCandidate(line: LocalizationLine): Candidate {
 	return {
 		line,
-		places: line.manifest.map((entry) => placeKey(entry.path)),
+		places: line.manifest.flatMap((entry) => {
+			const place = manifestPlace(entry.path);
+			return place === undefined ? [] : [place];
+		}),
 		packages: line.manifest.map((entry) => textFileKey(entry.path)),
 		source: line.manifest[0]?.source.Text ?? line.source
 	};
@@ -228,6 +242,21 @@ export function localizationKeyChangesAcross(
 			.map(manifestCandidate),
 		before.nativeCulture
 	);
+}
+
+/** Pairs from several sources; the first pair for a new key wins, and each key pairs once. */
+export function mergeLocalizationKeyChanges(
+	...sources: readonly (readonly LocalizationKeyChangePair[])[]
+): readonly LocalizationKeyChangePair[] {
+	const key = (identity: LocalizationKeyChangePair["from"]) =>
+		JSON.stringify([identity.namespace, identity.key]);
+	const used = new Set<string>();
+	return sources.flat().filter((item) => {
+		if (used.has(key(item.to)) || used.has(key(item.from))) return false;
+		used.add(key(item.to));
+		used.add(key(item.from));
+		return true;
+	});
 }
 
 /** Marks both lines of every pair; a pair whose earlier key is gone marks only the new key. */

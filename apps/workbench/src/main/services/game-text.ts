@@ -84,6 +84,8 @@ export interface WorkbenchGameTextApi {
 		target: LocalizationJoin["target"],
 		gather: boolean
 	) => Effect.Effect<boolean>;
+	/** Keeps the target's translations before Unreal gathers, to pair keys that change. */
+	readonly localizationBeforeGather: (target: LocalizationJoin["target"]) => Effect.Effect<void>;
 	readonly localizationQualitySearch: (
 		request: WorkspaceQualityRequest
 	) => Effect.Effect<WorkspaceQualityResult>;
@@ -962,6 +964,7 @@ export const WorkbenchGameTextLive = Layer.effect(
 					if (!gather) yield* localization.reset();
 					return (yield* localization.select(target)).status === "ready";
 				}),
+			localizationBeforeGather: localization.beforeGather,
 			localizationQualitySearch: localization.qualitySearch,
 			localizationQualityFocus: localization.qualityFocus,
 			localizationChanges: localization.changes,
@@ -1031,6 +1034,7 @@ export function makeWorkbenchGameTextTestLayer(
 			beginOperation: () => Effect.succeed(true),
 			endOperation: () => Effect.void,
 			refreshAfterOperation: () => Effect.succeed(true),
+			localizationBeforeGather: () => Effect.void,
 			localizationQualitySearch: () => Effect.succeed({ status: "not_ready" }),
 			localizationQualityFocus: () => Effect.succeed({ status: "not_ready" }),
 			localizationChanges: () => Effect.succeed({ status: "not_ready" }),

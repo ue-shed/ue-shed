@@ -23,7 +23,8 @@ const operationLabels = {
 	export: "Export PO files",
 	compile: "Compile",
 	reports: "Generate Unreal reports",
-	sync: "Sync with Unreal"
+	sync: "Sync with Unreal",
+	prepare: "Gather and export"
 } satisfies Record<WorkbenchOperationRequest["operation"], string>;
 const runningLabels = {
 	gather: "Gathering text",
@@ -31,7 +32,8 @@ const runningLabels = {
 	export: "Exporting PO files",
 	compile: "Compiling",
 	reports: "Generating Unreal reports",
-	sync: "Syncing with Unreal"
+	sync: "Syncing with Unreal",
+	prepare: "Gathering and exporting"
 } satisfies Record<WorkbenchOperationRequest["operation"], string>;
 const resultLabels = {
 	gather: "Gathered",
@@ -39,7 +41,8 @@ const resultLabels = {
 	export: "Exported",
 	compile: "Compiled",
 	reports: "Reports generated",
-	sync: "Synced"
+	sync: "Synced",
+	prepare: "Gathered and exported"
 } satisfies Record<WorkbenchOperationRequest["operation"], string>;
 const stepLabels = {
 	gather_source: "Gather source text",

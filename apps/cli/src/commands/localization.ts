@@ -1,3 +1,5 @@
+import { Effect } from "effect";
+import { CliCommandError } from "../cli-runtime.js";
 import { Argument, Command, Flag } from "effect/unstable/cli";
 import { Option } from "effect";
 import { LocalizationCheckId, LocalizationReviewLens } from "@ue-shed/game-text/browser";
@@ -24,11 +26,12 @@ export const localizationCommand = Command.make("loc").pipe(
 				projectRoot: Argument.string("project-root"),
 				target: Flag.string("target"),
 				engineRoot: Flag.string("engine-root").pipe(Flag.optional),
+				carry: Flag.string("carry").pipe(Flag.optional),
 				plan: Flag.boolean("plan"),
 				json: Flag.boolean("json"),
 				timeout: Flag.integer("timeout").pipe(Flag.withDefault(1800))
 			},
-			({ operation, projectRoot, target, engineRoot, plan, json, timeout }) => {
+			({ operation, projectRoot, target, engineRoot, carry, plan, json, timeout }) => {
 				const command = {
 					_tag: "LocalizationRun",
 					operation,
@@ -43,6 +46,16 @@ export const localizationCommand = Command.make("loc").pipe(
 				>;
 				if (Option.isSome(engineRoot))
 					Object.assign(command, { engineRoot: engineRoot.value });
+				if (Option.isSome(carry)) {
+					if (operation !== "gather" && operation !== "prepare")
+						return Effect.fail(
+							new CliCommandError({
+								message:
+									"--carry needs a run that gathers: use loc run gather or loc run prepare."
+							})
+						);
+					Object.assign(command, { carry: carry.value });
+				}
 				return runLocalizationOperation(command);
 			}
 		).pipe(

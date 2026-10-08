@@ -156,3 +156,27 @@ it.effect("loc run returns a typed unknown-target failure before engine discover
 		expect(yield* Ref.get(exit)).toBe(2);
 	})
 );
+
+it.effect("loc run refuses --carry for a run that does not gather", () =>
+	Effect.gen(function* () {
+		const runtime = Layer.succeed(
+			CliRuntime,
+			CliRuntime.of({
+				print: () => Effect.void,
+				printError: () => Effect.void,
+				setExitCode: () => Effect.void
+			})
+		);
+		const failure = yield* runCli([
+			"loc",
+			"run",
+			"sync",
+			resolve("fixtures/unreal-427-localization"),
+			"--target",
+			"FixtureGame",
+			"--carry",
+			"carry.json"
+		]).pipe(Effect.provide(runtime), Effect.flip);
+		expect(failure.message).toContain("--carry needs a run that gathers");
+	})
+);

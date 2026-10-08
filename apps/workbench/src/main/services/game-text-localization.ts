@@ -24,6 +24,9 @@ import {
 	localizationFocusPage,
 	textCorpusQuery,
 	applyLocalizationKeyChanges,
+	localizationKeyChangesAcross,
+	mergeLocalizationKeyChanges,
+	type LocalizationKeyChangePair,
 	applyLocalizationReview,
 	localizationKeyChanges,
 	localizationEditChangeSet,
@@ -105,6 +108,30 @@ export const makeGameTextLocalization = Effect.fn("Workbench.GameText.localizati
 		| undefined
 	>(undefined);
 	const revision = yield* Ref.make(0);
+	// Unreal's gather drops the archive translations of keys that left the manifest. The join from
+	// before a gather UE Shed runs is kept until the next selection pairs those keys with the keys
+	// that joined. The pairs live for the project, beyond the refresh that follows the gather.
+	const gatherBaseline = yield* Ref.make<
+		{ readonly root: string; readonly join: LocalizationJoin } | undefined
+	>(undefined);
+	const acrossGather = yield* Ref.make<
+		| {
+				readonly root: string;
+				readonly target: LocalizationJoin["target"];
+				readonly pairs: readonly LocalizationKeyChangePair[];
+		  }
+		| undefined
+	>(undefined);
+	const beforeGather = Effect.fn("Workbench.GameText.localization.before_gather")(function* (
+		name: LocalizationJoin["target"]
+	) {
+		const root = yield* currentRoot();
+		const cached = yield* Ref.get(selected);
+		yield* Ref.set(
+			gatherBaseline,
+			root && cached?.join.target === name ? { root, join: cached.join } : undefined
+		);
+	});
 
 	const reset = Effect.fn("Workbench.GameText.localization.reset")(function* () {
 		yield* Ref.update(revision, (value) => value + 1);
@@ -176,10 +203,22 @@ export const makeGameTextLocalization = Effect.fn("Workbench.GameText.localizati
 			joinLocalizationTarget(corpus, evidence.success),
 			review?.contentHash ? review.file : undefined
 		);
-		// Saved text whose key changed since the last gather pairs with the key Unreal still lists.
+		const before = yield* Ref.get(gatherBaseline);
+		if (before?.root === root && before.join.target === name) {
+			yield* Ref.set(gatherBaseline, undefined);
+			const across = localizationKeyChangesAcross(before.join, reviewed);
+			yield* Ref.set(acrossGather, { root, target: name, pairs: across.pairs });
+			yield* Effect.annotateCurrentSpan({ keyChangesAcrossGather: across.pairs.length });
+		}
+		const carried = yield* Ref.get(acrossGather);
+		// Saved text whose key changed since the last gather pairs with the key Unreal still lists;
+		// keys that changed in a gather UE Shed ran keep their pairs from before that gather.
 		const join = applyLocalizationKeyChanges(
 			reviewed,
-			localizationKeyChanges(reviewed, corpus).pairs
+			mergeLocalizationKeyChanges(
+				localizationKeyChanges(reviewed, corpus).pairs,
+				carried?.root === root && carried.target === name ? carried.pairs : []
+			)
 		);
 		const model = textCorpusQuery(corpus, undefined, join);
 		const textCounts = model.search({
@@ -597,6 +636,7 @@ export const makeGameTextLocalization = Effect.fn("Workbench.GameText.localizati
 		return { status: "written" as const, relativePath: written.success.relativePath };
 	});
 	return {
+		beforeGather,
 		operationTarget: (name: LocalizationJoin["target"]) =>
 			targets().pipe(
 				Effect.flatMap((result) =>

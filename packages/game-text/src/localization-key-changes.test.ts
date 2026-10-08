@@ -4,7 +4,8 @@ import { joinLocalizationTarget } from "./localization.js";
 import {
 	applyLocalizationKeyChanges,
 	localizationKeyChanges,
-	localizationKeyChangesAcross
+	localizationKeyChangesAcross,
+	manifestPlace
 } from "./localization-key-changes.js";
 import {
 	archiveEntry,
@@ -89,6 +90,24 @@ describe("localization key changes", () => {
 		const [found] = localizationKeyChanges(joined, text).pairs;
 		expect(found?.match).toBe("same_text_in_package");
 		expect(found?.sourceChanged).toBe(false);
+	});
+
+	it("never pairs String Table entries by the table path every entry shares", () => {
+		const text = scanned([]);
+		const before = joinLocalizationTarget(
+			text,
+			evidence([manifestEntry("Removed", "Temporary instruction")], [])
+		);
+		const after = joinLocalizationTarget(
+			text,
+			evidence([manifestEntry("Added", "A new instruction")], [])
+		);
+		expect(localizationKeyChangesAcross(before, after)).toEqual({ pairs: [], ambiguous: 0 });
+		expect(manifestPlace("/Game/Text/Table.Table")).toBeUndefined();
+		expect(manifestPlace("/Game/Text/DT.DT.Row.Label")).toBe("/game/text/dt.dt.row.label");
+		expect(manifestPlace("Source/Game/Private/Menu.cpp(12)")).toBe(
+			"source/game/private/menu.cpp[12]"
+		);
 	});
 
 	it("leaves ambiguous candidates unpaired and counts them", () => {

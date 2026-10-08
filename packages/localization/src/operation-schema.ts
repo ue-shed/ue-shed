@@ -12,7 +12,9 @@ export const LocalizationOperation = Schema.Literals([
 	"export",
 	"compile",
 	"reports",
-	"sync"
+	"sync",
+	// Gather, then export PO files, in one GatherText run.
+	"prepare"
 ]);
 export type LocalizationOperation = typeof LocalizationOperation.Type;
 export const LocalizationEngine = Schema.Literals(["4.27", "5.7", "5.8"]);

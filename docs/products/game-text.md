@@ -524,6 +524,22 @@ saved scan; it pairs across a gather UE Shed runs.
   earlier text.
 - A change's previous translation matches whether it was absent or empty, so an edit staged
   before the gather is still current after it (ADR 0009 addendum).
+- **Gather and export** (`ue-shed loc run prepare`) runs Unreal's gather, then its PO export, in
+  one GatherText process. Dashboard targets run their Gather and Export configs; a config-only
+  target needs one recipe that gathers, writes the manifest and exports.
+- When UE Shed runs a gather, it keeps the target's translations from before the run and pairs
+  keys that left the manifest with keys that joined it. This covers C++ and config text, such as
+  a cherry-picked `LOCTEXT` change. Workbench shows those pairs under **Key changed** until the
+  next gather.
+- `ue-shed loc run gather|prepare <project-root> --target <name> --carry <new-file.json>` writes
+  the carried translations as a change set for the new keys, then prints a `carry` summary (keys,
+  changes, keys whose text also changed and were left out, ambiguous keys). Apply it with
+  `loc apply --changes <file> --sync`, after an export if only gather ran.
+- A gather run outside UE Shed loses those translations: Unreal trims them from the archives and
+  the next export drops them from the PO files. Baseline comparison still reports the key change.
+- **Compare with baseline** pairs keys the same way, by manifest place and then by identical
+  source, and reports them as key changes rather than new and removed lines. Reports reads
+  "since then N new · N removed · N key changed · N source changed".
 - `ue-shed loc status --key-changed` lists them from the CLI; each line carries `keyChange`.
 
 ### Source control

@@ -54,6 +54,7 @@ export const CliCommand = Schema.TaggedUnion({
 		target: Schema.String,
 		operation: LocalizationOperation,
 		engineRoot: Schema.optionalKey(Schema.String),
+		carry: Schema.optionalKey(Schema.String),
 		plan: Schema.Boolean,
 		json: Schema.Boolean,
 		timeout: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 86_400 }))

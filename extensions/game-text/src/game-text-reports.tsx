@@ -254,6 +254,11 @@ export function GameTextReports(props: {
 										<p {...stylex.attrs(styles.muted)}>
 											Baseline: {baseline().target} ·{" "}
 											{new Date(baseline().createdAt).toLocaleString()}
+											<Show when={baseline().since}>
+												{(since) =>
+													` · since then ${since().added.toLocaleString()} new · ${since().removed.toLocaleString()} removed · ${since().keyChanged.toLocaleString()} key changed · ${since().changed.toLocaleString()} source changed`
+												}
+											</Show>
 										</p>
 									)}
 								</Show>

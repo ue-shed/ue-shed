@@ -324,6 +324,8 @@ export const WorkbenchGameTextOperationsLive = Layer.effect(
 						)
 							return stale();
 						const before = yield* gameText.localizationTarget(saved.view.target);
+						if (nextPlan.steps.some((step) => step.kind.startsWith("gather_")))
+							yield* gameText.localizationBeforeGather(saved.view.target);
 						const received = yield* Ref.make<LocalizationOperationReceipt | undefined>(
 							undefined
 						);

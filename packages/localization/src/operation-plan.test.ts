@@ -101,12 +101,26 @@ describe("localization operation plans", () => {
 			);
 		}
 	);
+	it("gathers then exports in one process for prepare", () => {
+		const plan = planLocalizationOperation({
+			...base,
+			target: dashboard,
+			operation: "prepare"
+		});
+		expect(plan.arguments[2]).toBe(
+			"-Config=Config/Localization/FixtureGame_Gather.ini;Config/Localization/FixtureGame_Export.ini"
+		);
+		const kinds = plan.steps.map((step) => step.kind);
+		expect(kinds.indexOf("manifest")).toBeLessThan(kinds.indexOf("export"));
+		expect(plan.files.some((file) => file.kind === "po")).toBe(true);
+	});
 	it("offers only supported recipe operations, explicitly retaining all recipe effects", () => {
 		expect(availableLocalizationOperations(legacy)).toEqual([
 			"gather",
 			"export",
 			"compile",
-			"reports"
+			"reports",
+			"prepare"
 		]);
 		for (const operation of availableLocalizationOperations(legacy)) {
 			const plan = planLocalizationOperation({

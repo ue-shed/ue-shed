@@ -11,8 +11,7 @@
 
 ## Status
 
-- **State**: IN PROGRESS. Phases 1–2 and 4a–4b are done; Phase 4c (gather and export, and
-  detection across a gather) is next.
+- **State**: IN PROGRESS. Phases 1–2 and 4 are done; Phase 5 (all-languages spreadsheet) is next.
   Phase 3 (Perforce) moves after the 0.10.0 release, by owner decision on 2026-10-08.
 - **Priority**: P1
 - **Effort**: L
@@ -187,6 +186,26 @@ against a local workspace is optional and reported either way.
 - Workbench "Carry translations" (or "Carry anyway" when the text changed) stages one edit per
   culture the earlier key translated; the staged panel shows each step's outcome. A component test
   covers staging, the check request and the "gather first" outcome.
+
+**Evidence, 4c–4d (2026-10-08)**: gather and export, detection across a gather, CLI carry and
+baseline pairing are done; the gate below passed.
+
+- `prepare` ("Gather and export") plans gather then export in one process, for dashboard and
+  config-only targets. The lane runs it on every engine.
+- Workbench keeps the selected join before a gather it runs and pairs keys across the gather on
+  the next selection (`localizationKeyChangesAcross`), merged with pairs found before a gather.
+  A main-process test simulates Unreal's rename in the manifest and archives and checks the
+  carried German translation.
+- `loc run gather|prepare --carry <file>` writes the change set for unchanged-text pairs and
+  refuses other operations.
+- String Table manifest paths name only the table, so they never pair by place
+  (`manifestPlace`); a test covers a removed and an added entry in one table.
+- Baseline entries record their manifest path; `diffLocalizationBaselines` reports `keyChanged`
+  pairs (by place, then by identical source) instead of adding them to added and removed. Reports
+  shows a "since then" line.
+- `pnpm test:localization-processes` on UE 5.7 and UE 5.8: a `LOCTEXT` key renamed in the lane's
+  project copy, then `loc run prepare --carry` and `loc apply --sync`, ships the earlier German
+  translation under the new key. UE 4.27 passed its operations, including `prepare`.
 
 **Gate**: on UE 5.7 and UE 5.8 (`pnpm test:localization-processes`), renaming a `LOCTEXT` key in
 the lane's temporary project copy, then `loc run prepare --carry` and `loc apply --sync`, ships the

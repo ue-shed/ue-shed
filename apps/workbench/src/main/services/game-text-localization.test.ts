@@ -1,4 +1,4 @@
-import { cp, mkdtemp, readFile, rm } from "node:fs/promises";
+import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { it } from "@effect/vitest";
@@ -281,5 +281,96 @@ it.live("writes review flags and shows a later edit as changed since review", ()
 			]
 		});
 		expect(yield* counts).toMatchObject({ reviewed: 0, changed_since_review: 1 });
+	}).pipe(Effect.scoped, Effect.provide(LocalizationEvidenceNodeLive))
+);
+
+/**
+ * Renames a key in an Unreal manifest or archive, as a gather does after the key changes; in an
+ * archive, `translation` replaces the key's translation.
+ */
+async function renameGatheredKey(path: string, from: string, to: string, translation?: string) {
+	const text = new TextDecoder("utf-16le").decode(await readFile(path)).replace(/^\uFEFF/u, "");
+	const key = `"Key": "${from}"`;
+	const renamed =
+		translation === undefined
+			? text.replaceAll(key, `"Key": "${to}"`)
+			: text.replace(
+					new RegExp(
+						`("Translation": \\{\\s*"Text": )"(?:[^"\\\\]|\\\\.)*"(\\s*\\},\\s*)${key}`,
+						"u"
+					),
+					`$1${JSON.stringify(translation)}$2"Key": "${to}"`
+				);
+	if (renamed === text) throw new Error(`${from} was not found in ${path}.`);
+	await writeFile(path, Buffer.from("\uFEFF" + renamed, "utf16le"));
+}
+
+it.live("pairs a key that changed across a gather it ran, keeping the trimmed translations", () =>
+	Effect.gen(function* () {
+		const root = yield* Effect.promise(() => mkdtemp(join(tmpdir(), "ue-shed-wb-keys-")));
+		yield* Effect.addFinalizer(() =>
+			Effect.promise(() => rm(root, { recursive: true, force: true }))
+		);
+		for (const path of [
+			"Config/DefaultEditor.ini",
+			"Config/Localization",
+			"Content/Localization"
+		])
+			yield* Effect.promise(() =>
+				cp(join(resolve("fixtures/unreal-project"), path), join(root, path), {
+					recursive: true
+				})
+			);
+		const saved = corpus([]);
+		const localization = yield* makeGameTextLocalization(
+			() => Effect.succeed(saved),
+			() => Effect.succeed(root)
+		);
+		const name = LocalizationTargetName.make("FixtureGame");
+		yield* localization.select(name);
+		yield* localization.beforeGather(name);
+		// What Unreal's gather writes after a LOCTEXT key is renamed: the earlier key leaves the
+		// manifest and archives, and the new key joins with an empty translation.
+		const folder = join(root, "Content/Localization/FixtureGame");
+		yield* Effect.promise(async () => {
+			await renameGatheredKey(
+				join(folder, "FixtureGame.manifest"),
+				"RuntimeReady",
+				"RuntimeStart"
+			);
+			await renameGatheredKey(
+				join(folder, "en/FixtureGame.archive"),
+				"RuntimeReady",
+				"RuntimeStart"
+			);
+			for (const culture of ["de", "fr"])
+				await renameGatheredKey(
+					join(folder, culture, "FixtureGame.archive"),
+					"RuntimeReady",
+					"RuntimeStart",
+					""
+				);
+		});
+		yield* localization.reset();
+		yield* localization.select(name);
+		const result = yield* localization.search({
+			query: "",
+			capability: "all",
+			pageSize: 50,
+			localization: { target: name, keyChanged: true }
+		});
+		if (result.status !== "ready") throw new Error("Expected the target to load.");
+		const lines = result.page.localization?.lines ?? [];
+		expect(lines.map((line) => line.identity?.key)).toEqual(["RuntimeStart"]);
+		expect(lines[0]?.keyChange).toMatchObject({
+			direction: "to",
+			other: { key: "RuntimeReady" },
+			match: "same_place",
+			sourceChanged: false
+		});
+		expect(lines[0]?.keyChange?.translations).toContainEqual({
+			culture: "de",
+			translation: "Bereit zum Start"
+		});
 	}).pipe(Effect.scoped, Effect.provide(LocalizationEvidenceNodeLive))
 );

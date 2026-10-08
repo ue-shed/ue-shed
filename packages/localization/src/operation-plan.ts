@@ -132,6 +132,13 @@ function supports(recipe: LocalizationRecipe, operation: LocalizationOperation):
 			kinds.includes("compile") &&
 			kinds.indexOf("import") < kinds.indexOf("compile")
 		);
+	if (operation === "prepare")
+		return (
+			kinds.some((kind) => kind.startsWith("gather_")) &&
+			kinds.includes("manifest") &&
+			kinds.includes("export") &&
+			kinds.indexOf("manifest") < kinds.indexOf("export")
+		);
 	if (operation === "import" || operation === "export")
 		return recipe.steps.some((step) => {
 			const fields = effective(recipe, step);
@@ -148,7 +155,7 @@ const suffixes = {
 	export: "Export",
 	compile: "Compile",
 	reports: "GenerateReports"
-} satisfies Record<Exclude<LocalizationOperation, "sync">, string>;
+} satisfies Record<Exclude<LocalizationOperation, "sync" | "prepare">, string>;
 
 /** Runs existing recipes intact. No dry-run Preview flag and no source-control flags. */
 export function planLocalizationOperation(
@@ -161,9 +168,14 @@ export function planLocalizationOperation(
 	let recipes: readonly LocalizationRecipe[];
 	if (target.source === "dashboard_settings") {
 		const operations: readonly LocalizationOperation[] =
-			operation === "sync" ? ["import", "compile"] : [operation];
+			operation === "sync"
+				? ["import", "compile"]
+				: operation === "prepare"
+					? ["gather", "export"]
+					: [operation];
 		recipes = operations.map((item) => {
-			if (item === "sync") throw localizationOperationError("invalid_request");
+			if (item === "sync" || item === "prepare")
+				throw localizationOperationError("invalid_request");
 			const name = `Config/Localization/${target.name}_${suffixes[item]}.ini`;
 			const recipe = target.configs.find(
 				(config) => config.relativePath.replaceAll("\\", "/") === name

@@ -210,7 +210,8 @@ it.effect("plans without running, streams safe progress and refreshes evidence a
 				"export",
 				"compile",
 				"reports",
-				"sync"
+				"sync",
+				"prepare"
 			]);
 			const plan = yield* service.plan({ target: target.name, operation: "sync" });
 			if (plan.status !== "ready") throw new Error("Expected confirmation.");

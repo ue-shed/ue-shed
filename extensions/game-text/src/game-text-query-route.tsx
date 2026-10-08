@@ -276,9 +276,12 @@ export function GameTextRoute(props: {
 	const [groupRows, setGroupRows] = createSignal<ReadonlyMap<string, readonly LoadedRow[]>>(
 		new Map()
 	);
+	// A line only in the gather has no unit, so a closed page (no unit either) must not match it.
 	const isOpenLine = (row: LoadedRow) => {
 		const line = localization.selectedId();
-		return line !== undefined ? row.line === line : row.unit === selectedId();
+		if (line !== undefined) return row.line === line;
+		const unit = selectedId();
+		return unit !== undefined && row.unit === unit;
 	};
 	const flatRows = (): readonly LoadedRow[] => {
 		const current = page();
@@ -437,6 +440,8 @@ export function GameTextRoute(props: {
 				}
 			: undefined;
 	const closeLine = () => {
+		pendingFlat = undefined;
+		pendingStep = undefined;
 		setSelectedId(undefined);
 		localization.setSelectedId(undefined);
 	};

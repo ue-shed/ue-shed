@@ -7,6 +7,8 @@ import {
 	textCorpusQuery,
 	LocalizationJoin,
 	LocalizationSelection,
+	GameTextInvestigationPreset,
+	type GameTextInvestigationQuery,
 	type LocalizationCultureState,
 	type LocalizationEditRequest,
 	type LocalizationEditResult,
@@ -36,7 +38,7 @@ import {
 	updateLocalizationReviewFile
 } from "../../../packages/localization/src/review-file.js";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
-import { Deferred, Effect, Layer, ManagedRuntime } from "effect";
+import { Deferred, Effect, Layer, ManagedRuntime, Schema } from "effect";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { GameTextClientApi } from "./game-text-client.js";
 import { GameTextRoute } from "./game-text-query-route.js";
@@ -1228,6 +1230,50 @@ describe("Game Text key changes", () => {
 });
 
 describe("Game Text all-languages export", () => {
+	it("opens a preset on its saved target, cultures and translation filters", async () => {
+		const user = userEvent.setup();
+		const preset = Schema.decodeUnknownSync(GameTextInvestigationPreset)({
+			schemaVersion: 1,
+			kind: "game_text",
+			sort: "domain_order",
+			query: {
+				mode: "corpus",
+				query: "",
+				capability: "all",
+				qualityFilter: "all",
+				filter: [{ field: "translation", op: "is", values: ["missing"] }],
+				localization: { target: second, cultures: ["de", "fr"], searchTranslations: true }
+			}
+		});
+		const exported: GameTextInvestigationQuery[] = [];
+		mount({
+			...client({ twoTargets: true }),
+			investigations: {
+				export: (query) => {
+					exported.push(query);
+					return Effect.succeed({ status: "cancelled" });
+				},
+				save: () => Effect.succeed({ status: "cancelled" }),
+				open: () => Effect.succeed({ status: "opened", preset, path: "C:/out/preset.json" })
+			}
+		});
+		await screen.findByRole("button", { name: `Localization target: ${target.name}` });
+		await user.click(screen.getByRole("button", { name: "Presets" }));
+		await user.click(await screen.findByRole("button", { name: "Open preset…" }));
+		await screen.findByRole("button", { name: "Localization target: Second" });
+		await screen.findByRole("button", { name: "Culture: de, fr" });
+		await waitFor(() => expect(screen.queryByText("Searching…")).toBeNull());
+		await user.click(screen.getByRole("button", { name: "Export" }));
+		await user.click(await screen.findByRole("button", { name: "JSON" }));
+		await waitFor(() => expect(exported).toHaveLength(1));
+		expect(exported[0]?.localization).toEqual({
+			target: second,
+			cultures: ["de", "fr"],
+			searchTranslations: true
+		});
+		expect(exported[0]?.filter).toEqual(preset.query.filter);
+	});
+
 	it("exports the lines the list shows with every language", async () => {
 		const user = userEvent.setup();
 		const requests: Parameters<NonNullable<GameTextClientApi["localizationLinesFile"]>>[0][] =

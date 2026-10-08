@@ -1039,6 +1039,8 @@ describe("Game Text writing workspace", () => {
 		await waitFor(() =>
 			expect(screen.queryByRole("radiogroup", { name: "Group by" })).toBeNull()
 		);
+		// The flat page replaces the grouped rows once its search settles.
+		await waitFor(() => expect(screen.queryByText("Searching…")).toBeNull());
 		const results = screen.getByRole("region", { name: "Results" });
 		const rows = () =>
 			within(results)
@@ -1050,6 +1052,54 @@ describe("Game Text writing workspace", () => {
 		await within(page).findByText("50 of 62");
 		await user.click(within(page).getByRole("button", { name: "Next line" }));
 		await within(page).findByText("51 of 62");
+	});
+
+	it("does not reopen a line when the list is back before the next page arrives", async () => {
+		const first = corpus.units[0]!;
+		const input: TextCorpus = {
+			...corpus,
+			units: Array.from({ length: 62 }, (_, index) => ({
+				...first,
+				id: makeTextUnitId("late-line:" + index.toString().padStart(3, "0")),
+				source: { status: "consistent", value: "Line " + index }
+			}))
+		};
+		const query = textCorpusQuery(input, "2026-10-07T16:53:00.000Z");
+		const later = Effect.runSync(Deferred.make<void>());
+		const user = userEvent.setup();
+		mount(
+			makeClient(input, {
+				search: (request) =>
+					(request.cursor ? Deferred.await(later) : Effect.void).pipe(
+						Effect.as({ status: "ready" as const, page: query.search(request) })
+					)
+			})
+		);
+		await screen.findByText("62 matches");
+		await user.click(screen.getByRole("button", { name: "Display" }));
+		await user.click(screen.getByRole("radio", { name: "No grouping" }));
+		await user.keyboard("{Escape}");
+		await waitFor(() =>
+			expect(screen.queryByRole("radiogroup", { name: "Group by" })).toBeNull()
+		);
+		// The flat page replaces the grouped rows once its search settles.
+		await waitFor(() => expect(screen.queryByText("Searching…")).toBeNull());
+		const results = screen.getByRole("region", { name: "Results" });
+		const rows = () =>
+			within(results)
+				.queryAllByRole("button")
+				.filter((button) => button.hasAttribute("data-row"));
+		await waitFor(() => expect(rows()).toHaveLength(50));
+		await user.click(rows()[49]!);
+		const page = screen.getByRole("complementary", { name: "Text focus" });
+		await within(page).findByText("50 of 62");
+		await user.click(within(page).getByRole("button", { name: "Next line" }));
+		await user.click(within(page).getByRole("button", { name: /Lines$/u }));
+		await waitFor(() => expect(screen.queryByText("50 of 62")).toBeNull());
+		Effect.runSync(Deferred.succeed(later, undefined));
+		await waitFor(() => expect(rows()).toHaveLength(62));
+		expect(screen.queryByText("51 of 62")).toBeNull();
+		expect(rows().every((row) => row.getAttribute("aria-current") !== "true")).toBe(true);
 	});
 
 	it("steps back to the previous group's last line, loading the pages it has not shown", async () => {

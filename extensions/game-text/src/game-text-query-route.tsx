@@ -37,6 +37,7 @@ import { GameTextLocalizationQuality } from "./game-text-localization-quality.js
 import { GameTextReports } from "./game-text-reports.js";
 import { createGameTextRuleState } from "./game-text-rule-state.js";
 import {
+	localizationPreferences,
 	migratePreferences,
 	readGameTextPreferences,
 	saveGameTextPreferences,
@@ -318,15 +319,22 @@ export function GameTextRoute(props: {
 			: { index: at.before + at.index, total };
 	};
 	// A step that has to open a group or load its next page finishes when that group reports its
-	// rows: the row to pick is the first, the last, or a place in the group.
+	// rows: the row to pick is the first, the last, or a place in the group. A step lands only while
+	// the line it started from is still open, so going back to the list or opening another line
+	// cancels it.
 	let pendingStep:
-		| { readonly group: string; readonly pick: "first" | "last" | number }
+		| {
+				readonly group: string;
+				readonly pick: "first" | "last" | number;
+				readonly from: LoadedRow;
+		  }
 		| undefined;
 	const selectRow = (row: LoadedRow | undefined) => {
 		if (row === undefined) return;
 		setSelectedId(row.unit);
 		localization.setSelectedId(row.line);
 	};
+	const stillOpen = (from: LoadedRow) => untrack(() => isOpenLine(from));
 	// Each open group's next-page loader, while it has more pages.
 	const groupMore = new Map<string, () => void>();
 	const groupLoaded: GroupLoaded = (group, rows, more) => {
@@ -335,6 +343,10 @@ export function GameTextRoute(props: {
 		else groupMore.set(group, more);
 		const step = pendingStep;
 		if (step === undefined || step.group !== group) return;
+		if (!stillOpen(step.from)) {
+			pendingStep = undefined;
+			return;
+		}
 		// A group's last line is its last matching line, so its pages load until none are left.
 		if (step.pick === "last" && more !== undefined) {
 			more();
@@ -346,12 +358,12 @@ export function GameTextRoute(props: {
 		);
 	};
 	// Without groups, a step past the loaded rows loads the next page and picks this row.
-	let pendingFlat: number | undefined;
+	let pendingFlat: { readonly index: number; readonly from: LoadedRow } | undefined;
 	createEffect(flatRows, (rows) => {
-		if (pendingFlat === undefined || rows.length <= pendingFlat) return;
-		const index = pendingFlat;
+		const step = pendingFlat;
+		if (step === undefined || rows.length <= step.index) return;
 		pendingFlat = undefined;
-		selectRow(rows[index]);
+		if (stillOpen(step.from)) selectRow(rows[step.index]);
 	});
 	// Opening a closed group goes through its header, as a click would.
 	const groupControl = (key: string, selector: string) =>
@@ -360,7 +372,8 @@ export function GameTextRoute(props: {
 			?.querySelector<HTMLButtonElement>(selector);
 	const moveLine = (step: -1 | 1) => {
 		const at = openLineAt();
-		if (at === undefined) return;
+		const from = at?.rows[at.index];
+		if (at === undefined || from === undefined) return;
 		const next = at.rows[at.index + step];
 		if (next !== undefined) {
 			selectRow(next);
@@ -370,7 +383,7 @@ export function GameTextRoute(props: {
 		if (!groups) {
 			const current = page();
 			if (step === 1 && (current?.localization?.nextCursor ?? current?.nextCursor)) {
-				pendingFlat = at.index + 1;
+				pendingFlat = { index: at.index + 1, from };
 				moreResults();
 			}
 			return;
@@ -380,7 +393,7 @@ export function GameTextRoute(props: {
 		// The group's next page, when there is one.
 		const more = step === 1 ? groupMore.get(entry.key) : undefined;
 		if (more) {
-			pendingStep = { group: entry.key, pick: at.index + 1 };
+			pendingStep = { group: entry.key, pick: at.index + 1, from };
 			more();
 			return;
 		}
@@ -390,7 +403,7 @@ export function GameTextRoute(props: {
 		const header = groupControl(neighbour.key, 'button[aria-expanded="false"]');
 		const rest = step === -1 ? groupMore.get(neighbour.key) : undefined;
 		if (header || rest) {
-			pendingStep = { group: neighbour.key, pick: step === 1 ? "first" : "last" };
+			pendingStep = { group: neighbour.key, pick: step === 1 ? "first" : "last", from };
 			if (header) header.click();
 			else rest?.();
 			return;
@@ -527,6 +540,11 @@ export function GameTextRoute(props: {
 	};
 	const requestPage = (request: TextCorpusSearchRequest, debounce = false) => {
 		const generation = ++searchGeneration;
+		// A new search replaces the rows a pending step was counting on.
+		if (!request.cursor && !request.localizationCursor) {
+			pendingFlat = undefined;
+			pendingStep = undefined;
+		}
 		setError(undefined);
 		setSearching(true);
 		searchAction.run(
@@ -771,10 +789,12 @@ export function GameTextRoute(props: {
 		);
 	};
 	const restorePreset = (preset: GameTextInvestigationPreset) => {
+		const { localization: selected, ...saved } = preset.query;
 		restore({
-			...preset.query,
-			withoutNotes: preset.query.withoutNotes ?? false,
-			lens: preset.query.lens ?? "all",
+			...saved,
+			...localizationPreferences(selected),
+			withoutNotes: saved.withoutNotes ?? false,
+			lens: saved.lens ?? "all",
 			selectedId: undefined,
 			qualityDocument: preset.rules
 		});

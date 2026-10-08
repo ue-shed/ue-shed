@@ -53,6 +53,9 @@ export function createGameTextLocalizationState(props: {
 	const focusAction = createEffectAction();
 	let generation = 0;
 	let focusGeneration = 0;
+	// A restore, such as opening a preset, can run in the same update as the load that follows it,
+	// before the restored target commits; the load picks this target instead of the one before.
+	let restoredTarget: { readonly name: LocalizationSelection["target"] | undefined } | undefined;
 	// Restored cultures can outlive the target; only cultures it still has count, in its order, and
 	// picking every culture is the same as picking none.
 	const cultures = (): readonly CultureCode[] => {
@@ -77,6 +80,7 @@ export function createGameTextLocalizationState(props: {
 		setDetail(undefined);
 		setError(undefined);
 		if (name !== untrack(() => latest(target))) setSelectedId(undefined);
+		restoredTarget = undefined;
 		setTarget(name);
 		targetAction.run(operation, {
 			onFailure: () => {
@@ -124,7 +128,9 @@ export function createGameTextLocalizationState(props: {
 					return;
 				}
 				setTargets(result.targets);
-				const rememberedTarget = untrack(() => latest(target));
+				const rememberedTarget = restoredTarget
+					? restoredTarget.name
+					: untrack(() => latest(target));
 				const chosen =
 					result.targets.find((item) => item.name === rememberedTarget) ??
 					result.targets[0];
@@ -340,6 +346,7 @@ export function createGameTextLocalizationState(props: {
 				});
 		},
 		restore: (preferences: GameTextPreferences) => {
+			restoredTarget = { name: preferences.localizationTarget };
 			setTarget(preferences.localizationTarget);
 			setPicked(
 				preferences.localizationCultures ??

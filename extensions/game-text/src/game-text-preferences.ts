@@ -96,6 +96,24 @@ export function migratePreferences(preferences: GameTextPreferences): GameTextPr
 	};
 }
 
+/**
+ * A preset's target, cultures and translation filters as the preference fields a restore reads. A
+ * preset without them picks the first target and every culture, as before presets carried them.
+ */
+export function localizationPreferences(
+	selection: Schema.Schema.Type<typeof LocalizationSelection> | undefined
+) {
+	return {
+		localizationTarget: selection?.target,
+		localizationCulture: selection?.culture,
+		localizationCultures: selection?.cultures,
+		localizationState: selection?.state,
+		localizationReview: selection?.review,
+		localizationKeyChanged: selection?.keyChanged ?? false,
+		searchTranslations: selection?.searchTranslations ?? false
+	} satisfies Partial<GameTextPreferences>;
+}
+
 const decodeStoredPreferences = Schema.decodeUnknownOption(
 	Schema.fromJsonString(StoredPreferences)
 );

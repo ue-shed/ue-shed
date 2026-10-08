@@ -18,6 +18,14 @@ existing entry; generated text (formatted, numeric, and other derived histories)
 defaults containing it stay `unknown`. Apply 1.1 requests compare and write display strings only,
 and rewriting an unchanged display string leaves the existing text identity in place.
 
+The table fingerprint leaves text identity out, so Apply 1.1 clients still match it. Apply 1.2
+checks identity per command instead:
+
+- `set_cell` compares its `oldValue`, identity included;
+- `remove_row` compares the text identities of the reviewed `row`, including text nested in
+  structs, arrays, sets and maps. If a key or string-table reference changed since review, the
+  removal is a conflict, even when the display text is the same.
+
 `FindActorsReferencingRow(RequestJson, ResultJson)` implements
 `unreal-authoring-actor-references` version 1.0. The request selects an already-loaded editor or PIE
 `worldObjectPath`, an already-loaded `tableObjectPath`, and an existing `rowName`, plus explicit

@@ -12,5 +12,6 @@ bundle. Existing hosts adopt the versioned UE Shed contracts without legacy nati
 Text values now carry their localization identity (snapshot 2.3, Apply 1.2): localized namespace and
 key, string-table entry, culture-invariant, or generated. Apply writes text from that identity,
 mints keys in the table package on request, and keeps identity for Apply 1.1 clients that rewrite an
-unchanged display string. Producer refusals are typed `UnrealConnectionError` codes. A new
+unchanged display string. Apply 1.2 refuses to remove a row whose text identity changed since
+review. Producer refusals are typed `UnrealConnectionError` codes. A new
 `editor-host` plugin bundle combines camera authoring with DataTable authoring.

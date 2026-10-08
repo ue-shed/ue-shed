@@ -715,7 +715,8 @@ rather than a side-by-side grid. See [Reviewing text in Workbench](#reviewing-te
 Out of scope for the shipped product:
 
 - another filesystem enumeration, scanner, corpus, or persistence adapter;
-- direct package or source-text mutation, and source Apply or Save from Game Text;
+- direct package or source-text mutation, and source Apply or Save from Game Text; fixes inside
+  assets, such as changing a key, are applied by Unreal or a UE Shed editor plugin (ADR 0009);
 - localization writes other than the bounded ones above: atomic PO `msgstr` changes, the review
   file, and the files Unreal's own processes write;
 - rendered-width estimation or engine-specific font/layout simulation;

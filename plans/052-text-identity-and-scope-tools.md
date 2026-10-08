@@ -50,6 +50,9 @@ This plan adds the four items with the best effort-to-impact ratio:
 - Out of scope here, each needing its own plan: fixing keys inside assets (keep, regenerate or
   merge), searchable export history, asset deduplication and submit-time validation, and a
   side-by-side editing grid.
+- Any fix that writes to assets, such as a key fix, is applied in Unreal: through its own APIs, or
+  through a UE Shed editor plugin where those fall short. UE Shed detects and plans; the headless PO
+  writer stays for translations (ADR 0009 addendum).
 
 ## Phase 1 — Where text comes from
 

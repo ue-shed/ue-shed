@@ -1,7 +1,8 @@
 # Game Text review workspace
 
 > Status: design direction, October 2026. A mockup with sample data, not a product contract. The
-> shipped behaviour lives in [`products/game-text.md`](../products/game-text.md).
+> shipped behaviour lives in [`products/game-text.md`](../products/game-text.md); the work is planned
+> in [Plan 053](../../plans/053-game-text-review-workspace.md).
 
 ## Why
 

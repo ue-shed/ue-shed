@@ -10,9 +10,16 @@ import { Schema } from "effect";
 import {
 	LocalizationCheckId,
 	LocalizationReviewLens,
-	LocalizationState
+	LocalizationState,
+	TextOriginKind
 } from "@ue-shed/game-text/browser";
 import { LocalizationOperation, LocalizationReviewFlag } from "@ue-shed/localization/browser";
+
+/** Where text comes from: `--kind` (repeatable) and `--path`. */
+const TextWhereFields = {
+	kinds: Schema.optionalKey(Schema.Array(TextOriginKind)),
+	pathPrefix: Schema.optionalKey(Schema.String)
+};
 
 const Project = { projectRoot: Schema.String };
 const Reader = { reader: Schema.optionalKey(Schema.String) };
@@ -93,6 +100,7 @@ export const CliCommand = Schema.TaggedUnion({
 		culture: Schema.optionalKey(Schema.String),
 		state: Schema.optionalKey(LocalizationState),
 		review: Schema.optionalKey(LocalizationReviewLens),
+		...TextWhereFields,
 		limit: PositiveInt.check(Schema.isLessThanOrEqualTo(50))
 	},
 	InvestigationRun: {
@@ -236,6 +244,7 @@ export const CliCommand = Schema.TaggedUnion({
 		culture: Schema.optionalKey(Schema.String),
 		state: Schema.optionalKey(LocalizationState),
 		searchTranslations: Schema.optionalKey(Schema.Boolean),
+		...TextWhereFields,
 		limit: Schema.optionalKey(PositiveInt.check(Schema.isLessThanOrEqualTo(50)))
 	},
 	TextReview: { ...Project, ruleFile: Schema.String, ...Reader },

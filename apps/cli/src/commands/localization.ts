@@ -4,7 +4,11 @@ import { LocalizationCheckId, LocalizationReviewLens } from "@ue-shed/game-text/
 import { runLocalizationCheck } from "../workflows/localization-check.js";
 import { runLocalizationReport } from "../workflows/localization-report.js";
 import { runLocalizationStatus, runLocalizationTargets } from "../workflows/localization.js";
-import { localizationFlags, optionalLocalizationFlags } from "./localization-flags.js";
+import {
+	localizationFlags,
+	optionalLocalizationFlags,
+	optionalWhereFlags
+} from "./localization-flags.js";
 import { LocalizationOperation, LocalizationReviewFlag } from "@ue-shed/localization/browser";
 import { runLocalizationReview } from "../workflows/localization-review.js";
 import { runLocalizationOperation } from "../workflows/localization-run.js";
@@ -179,13 +183,14 @@ export const localizationCommand = Command.make("loc").pipe(
 				review: Flag.choice("review", LocalizationReviewLens.literals).pipe(Flag.optional),
 				...localizationFlags()
 			},
-			({ projectRoot, target, culture, state, review, limit, reader }) => {
+			({ projectRoot, target, culture, state, review, limit, reader, kinds, path }) => {
 				return runLocalizationStatus({
 					_tag: "LocalizationStatus",
 					projectRoot,
 					target,
 					limit,
 					...optionalLocalizationFlags(culture, state),
+					...optionalWhereFlags(kinds, path),
 					...(Option.isSome(review) ? { review: review.value } : undefined),
 					...(Option.isSome(reader) ? { reader: reader.value } : undefined)
 				});

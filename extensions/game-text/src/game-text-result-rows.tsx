@@ -1,5 +1,6 @@
 import * as stylex from "@stylexjs/stylex";
 import {
+	manifestPathOrigin,
 	textReviewSignalLabel,
 	type LocalizationLineId,
 	type LocalizationLinePreview,
@@ -65,7 +66,7 @@ export function GameTextResultRows(props: {
 								{...stylex.attrs(styles.context)}
 							>
 								{row.line?.manifestLocations[0] ?? "Gathered source"}
-								{row.line?.manifestLocations[0]?.match(/\.(?:cpp|h)(?:[:(]|$)/iu)
+								{manifestPathOrigin(row.line?.manifestLocations[0] ?? "") === "cpp"
 									? " · C++"
 									: " · Gathered source"}
 							</span>

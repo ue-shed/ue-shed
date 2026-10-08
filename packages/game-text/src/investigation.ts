@@ -22,6 +22,7 @@ export const GameTextInvestigationQuery = Schema.Struct({
 	query: TextCorpusSearchRequest.fields.query,
 	capability: TextCorpusSearchRequest.fields.capability,
 	lens: TextCorpusSearchRequest.fields.lens,
+	where: TextCorpusSearchRequest.fields.where,
 	qualityFilter: TextQualityFilter
 });
 export type GameTextInvestigationQuery = Schema.Schema.Type<typeof GameTextInvestigationQuery>;

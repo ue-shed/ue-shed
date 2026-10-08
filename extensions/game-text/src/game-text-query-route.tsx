@@ -59,6 +59,7 @@ import {
 } from "./game-text-operations.js";
 import { identityLabel, locationDetail, sourceText } from "./game-text-view.js";
 import { styles } from "./game-text-styles.js";
+import { OriginChips, PathFilter } from "./game-text-where.js";
 
 export { CopyButton } from "./game-text-copy-button.js";
 export type { GameTextPreferences } from "./game-text-preferences.js";
@@ -103,6 +104,7 @@ export function GameTextRoute(props: {
 	const [capability, setCapability] = createSignal(initial?.capability ?? "all");
 	const [lens, setLens] = createSignal(initial?.lens ?? "all");
 	const [withoutNotes, setWithoutNotes] = createSignal(initial?.withoutNotes ?? false);
+	const [where, setWhere] = createSignal(initial?.where);
 	const [mode, setMode] = createSignal<"corpus" | "quality" | "reports">(
 		initial?.mode ?? "corpus"
 	);
@@ -231,6 +233,10 @@ export function GameTextRoute(props: {
 		);
 	};
 
+	const whereField = () => {
+		const value = where();
+		return value === undefined ? undefined : { where: value };
+	};
 	const searchRequest = (): TextCorpusSearchRequest => {
 		const selected = localization.selection();
 		return {
@@ -238,6 +244,7 @@ export function GameTextRoute(props: {
 			capability: capability(),
 			lens: lens(),
 			withoutNotes: withoutNotes(),
+			...whereField(),
 			...(selected ? { localization: selected } : undefined),
 			pageSize: 50
 		};
@@ -357,6 +364,7 @@ export function GameTextRoute(props: {
 		setCapability(preferences.capability);
 		setLens(preferences.lens);
 		setWithoutNotes(preferences.withoutNotes ?? false);
+		setWhere(preferences.where);
 		setMode(preferences.mode ?? "corpus");
 		setQualityFilter(preferences.qualityFilter ?? "all");
 		setSelectedId(preferences.selectedId);
@@ -413,6 +421,7 @@ export function GameTextRoute(props: {
 				capability: capability(),
 				lens: lens(),
 				withoutNotes: withoutNotes(),
+				where: where(),
 				mode: mode(),
 				qualityFilter: qualityFilter(),
 				selectedId: selectedId(),
@@ -542,6 +551,7 @@ export function GameTextRoute(props: {
 							capability: capability(),
 							lens: lens(),
 							withoutNotes: withoutNotes(),
+							...whereField(),
 							qualityFilter: sourceFilter()
 						}}
 						onOpen={restorePreset}
@@ -917,6 +927,18 @@ export function GameTextRoute(props: {
 										const next = !withoutNotes();
 										setWithoutNotes(next);
 									}}
+								/>
+								<OriginChips
+									where={where()}
+									counts={page()?.counts.origins}
+									searching={searching()}
+									disabled={loading()}
+									onChange={setWhere}
+								/>
+								<PathFilter
+									where={where()}
+									disabled={loading()}
+									onChange={setWhere}
 								/>
 							</div>
 							<div {...stylex.attrs(styles.bar)}>

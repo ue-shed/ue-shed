@@ -5,6 +5,7 @@ import {
 	TextCapabilityFilter,
 	TextReviewLens,
 	TextUnitId,
+	TextWhere,
 	TextQualityFindingId,
 	WorkspaceQualityFilter,
 	GameTextRuleDocument
@@ -22,6 +23,7 @@ const StoredPreferences = Schema.Struct({
 	capability: Schema.optionalKey(TextCapabilityFilter),
 	lens: Schema.optionalKey(TextReviewLens),
 	withoutNotes: Schema.optionalKey(Schema.Boolean),
+	where: Schema.optionalKey(TextWhere),
 	mode: Schema.optionalKey(Schema.Literals(["corpus", "quality", "reports"])),
 	qualityFilter: Schema.optionalKey(WorkspaceQualityFilter),
 	selectedId: Schema.optionalKey(TextUnitId),
@@ -48,6 +50,7 @@ export interface GameTextPreferences {
 	readonly capability: Schema.Schema.Type<typeof TextCapabilityFilter>;
 	readonly lens: Schema.Schema.Type<typeof TextReviewLens>;
 	readonly withoutNotes?: boolean;
+	readonly where?: Schema.Schema.Type<typeof TextWhere> | undefined;
 	readonly mode?: "corpus" | "quality" | "reports";
 	readonly qualityFilter?: Schema.Schema.Type<typeof WorkspaceQualityFilter>;
 	readonly selectedId: Schema.Schema.Type<typeof TextUnitId> | undefined;

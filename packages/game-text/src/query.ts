@@ -9,9 +9,19 @@ import type {
 	TextReviewLens,
 	TextReviewSignal,
 	TextUnit,
-	TextUnitSearchResult
+	TextUnitSearchResult,
+	TextWhere
 } from "./schema.js";
 import { hasSearchableSource, searchableSourceText } from "./search.js";
+import {
+	emptyTextOriginCounts,
+	manifestOrigins,
+	matchesTextKinds,
+	matchesTextPathPrefix,
+	normalizeTextPath,
+	unitOrigins,
+	unitPaths
+} from "./text-origin.js";
 import type {
 	LocalizationJoin,
 	LocalizationLine,
@@ -114,6 +124,8 @@ export function textCorpusQuery(
 			(occurrence) => occurrence.editCapability === "read_only"
 		),
 		withoutNotes: unit.occurrences.every((occurrence) => occurrence.devNotes.trim() === ""),
+		origins: unitOrigins(unit),
+		paths: unitPaths(unit),
 		unit
 	}));
 	const byId = new Map(indexed.map((entry) => [entry.unit.id, entry]));
@@ -144,12 +156,15 @@ export function textCorpusQuery(
 			conflicting: 0,
 			editable: 0,
 			readOnly: 0,
-			withoutNotes: 0
+			withoutNotes: 0,
+			origins: emptyTextOriginCounts()
 		} satisfies TextCorpusSearchCounts;
 		const matched: typeof indexed = [];
 		for (const entry of indexed) {
 			const { presentation, searchable, unit, hasEditable, hasReadOnly } = entry;
 			if (!terms.every((term) => searchable.includes(term))) continue;
+			if (!matchesTextPathPrefix(entry.paths, request.where?.pathPrefix)) continue;
+			const inKinds = matchesTextKinds(entry.origins, request.where?.kinds);
 			const hasCapability =
 				request.capability === "all"
 					? unit.occurrences.length > 0
@@ -159,10 +174,12 @@ export function textCorpusQuery(
 			const noNotes = entry.withoutNotes;
 			const hasNotesFilter = !request.withoutNotes || noNotes;
 			const hasLens = matchesLens(presentation.reviewSignals, request.lens);
-			if (hasLens && hasNotesFilter && hasEditable) counts.editable++;
-			if (hasLens && hasNotesFilter && hasReadOnly) counts.readOnly++;
-			if (hasLens && hasCapability && noNotes) counts.withoutNotes++;
-			if (!hasCapability || !hasNotesFilter || !hasLens) continue;
+			if (hasLens && hasNotesFilter && inKinds && hasEditable) counts.editable++;
+			if (hasLens && hasNotesFilter && inKinds && hasReadOnly) counts.readOnly++;
+			if (hasLens && hasCapability && inKinds && noNotes) counts.withoutNotes++;
+			if (hasLens && hasCapability && hasNotesFilter)
+				for (const origin of entry.origins) counts.origins[origin]++;
+			if (!hasCapability || !hasNotesFilter || !hasLens || !inKinds) continue;
 			matched.push(entry);
 			counts.all++;
 			for (const signal of presentation.reviewSignals) {
@@ -197,12 +214,28 @@ export function textCorpusQuery(
 				(request.capability === "source_editable" ||
 					(request.lens !== undefined && request.lens !== "all") ||
 					(request.withoutNotes &&
-						line.manifest.some((entry) => localizationManifestNotes(entry).length > 0)))
+						line.manifest.some(
+							(entry) => localizationManifestNotes(entry).length > 0
+						)) ||
+					!evidenceMatchesWhere(line, request.where))
 			)
 				return false;
 			return matchesLocalizationLine(line, request);
 		});
 	};
+	// Evidence-only lines have no saved occurrence; their gathered manifest paths say where they live.
+	const evidenceMatchesWhere = (line: LocalizationLine, where: TextWhere | undefined) => {
+		if (where === undefined) return true;
+		const paths = line.manifest.map((entry) => entry.path);
+		return (
+			matchesTextKinds(manifestOrigins(paths), where.kinds) &&
+			matchesTextPathPrefix(paths.map(normalizeTextPath), where.pathPrefix)
+		);
+	};
+	const lineOrigins = (line: LocalizationLine) =>
+		line.origin.kind === "evidence"
+			? manifestOrigins(line.manifest.map((entry) => entry.path))
+			: [...new Set(line.origin.unitIds.flatMap((id) => byId.get(id)?.origins ?? []))];
 	const summary: TextCorpusQuerySummary = {
 		counts: baseline,
 		...(scannedAt === undefined ? undefined : { scannedAt }),
@@ -271,8 +304,16 @@ export function textCorpusQuery(
 					conflicting: 0,
 					editable: 0,
 					readOnly: 0,
-					withoutNotes: 0
+					withoutNotes: 0,
+					origins: emptyTextOriginCounts()
 				} satisfies TextCorpusSearchCounts;
+				const { kinds: _kinds, ...withoutKinds } = request.where ?? {};
+				const originBase =
+					request.where?.kinds === undefined
+						? matched
+						: localizedMatching({ ...request, where: withoutKinds });
+				for (const line of originBase)
+					for (const origin of lineOrigins(line)) counts.origins[origin]++;
 				for (const line of matched) {
 					if (line.origin.kind === "evidence") {
 						counts.readOnly++;

@@ -389,6 +389,52 @@ describe("Game Text writing workspace", () => {
 		);
 	});
 
+	it("filters by where text comes from and by path, keeping each origin's count", async () => {
+		const user = userEvent.setup();
+		mount();
+		await screen.findByText("2 matches");
+		expect(screen.getByRole("button", { name: "String table 1" })).toBeDefined();
+		await user.click(screen.getByRole("button", { name: "Data table 1" }));
+		await screen.findByText("1 match");
+		const results = () => within(screen.getByRole("region", { name: "Results" }));
+		expect(results().getByText("Quit game?")).toBeDefined();
+		expect(results().queryByText("Continue")).toBeNull();
+		// The origin facet does not narrow its own counts.
+		expect(screen.getByRole("button", { name: "String table 1" })).toBeDefined();
+		expect(
+			screen.getByRole("button", { name: "Data table 1" }).getAttribute("aria-pressed")
+		).toBe("true");
+
+		await user.click(screen.getByRole("button", { name: "Path…" }));
+		await user.type(
+			screen.getByRole("textbox", { name: "Path starts with" }),
+			"content\\text\\st{Enter}"
+		);
+		await screen.findByText("0 matches");
+		await user.click(screen.getByRole("button", { name: /^Data table/ }));
+		await screen.findByText("1 match");
+		expect(results().getByText("Continue")).toBeDefined();
+		await user.click(screen.getByRole("button", { name: "Path: content\\text\\st" }));
+		await user.clear(screen.getByRole("textbox", { name: "Path starts with" }));
+		await user.keyboard("{Enter}");
+		await screen.findByText("2 matches");
+		expect(screen.getByRole("button", { name: "Path…" })).toBeDefined();
+	});
+
+	it("restores a saved origin filter", async () => {
+		mount(makeClient(), {
+			query: "",
+			capability: "all",
+			lens: "all",
+			selectedId: undefined,
+			where: { kinds: ["string_table"] }
+		});
+		await screen.findByText("1 match");
+		expect(
+			screen.getByRole("button", { name: "String table 1" }).getAttribute("aria-pressed")
+		).toBe("true");
+	});
+
 	it("shows the starting sentence and scans only after the primary action", async () => {
 		const calls: boolean[] = [];
 		const query = textCorpusQuery(corpus);

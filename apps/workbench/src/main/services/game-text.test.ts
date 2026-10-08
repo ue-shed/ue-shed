@@ -706,7 +706,8 @@ it.effect("keeps refreshed corpus data in main and serves bounded query results"
 					conflicting: 0,
 					editable: 0,
 					readOnly: 0,
-					withoutNotes: 0
+					withoutNotes: 0,
+					origins: { string_table: 0, data_table: 0, asset: 0, cpp: 0, other_source: 0 }
 				}
 			},
 			status: "ready"
@@ -847,7 +848,14 @@ it.effect(
 						conflicting: 0,
 						editable: 0,
 						readOnly: 0,
-						withoutNotes: 0
+						withoutNotes: 0,
+						origins: {
+							string_table: 0,
+							data_table: 0,
+							asset: 0,
+							cpp: 0,
+							other_source: 0
+						}
 					}
 				},
 				status: "ready"

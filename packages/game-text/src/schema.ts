@@ -147,6 +147,30 @@ const TextQueryPageSize = Schema.Int.pipe(
 export const TextCapabilityFilter = Schema.Literals(["all", "source_editable", "read_only"]);
 export type TextCapabilityFilter = Schema.Schema.Type<typeof TextCapabilityFilter>;
 
+/**
+ * Where text comes from: a String Table entry, a DataTable cell, another asset property, C++
+ * source gathered by Unreal, or another gathered source such as config or text files.
+ */
+export const TextOriginKind = Schema.Literals([
+	"string_table",
+	"data_table",
+	"asset",
+	"cpp",
+	"other_source"
+]);
+export type TextOriginKind = Schema.Schema.Type<typeof TextOriginKind>;
+
+/** Location filters: any of the given origin kinds, and a path prefix. */
+export const TextWhere = Schema.Struct({
+	kinds: Schema.optionalKey(
+		Schema.Array(TextOriginKind).check(Schema.isMinLength(1), Schema.isMaxLength(5))
+	),
+	pathPrefix: Schema.optionalKey(
+		Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(512))
+	)
+});
+export type TextWhere = Schema.Schema.Type<typeof TextWhere>;
+
 export const TextReviewLens = Schema.Literals([
 	"all",
 	"shared",
@@ -201,7 +225,15 @@ export const TextCorpusSearchCounts = Schema.Struct({
 	conflicting: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 	editable: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 	readOnly: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
-	withoutNotes: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+	withoutNotes: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+	// Origin counts exclude the origin filter itself, like the toggle counts.
+	origins: Schema.Struct({
+		string_table: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+		data_table: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+		asset: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+		cpp: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+		other_source: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+	})
 });
 export type TextCorpusSearchCounts = Schema.Schema.Type<typeof TextCorpusSearchCounts>;
 
@@ -251,6 +283,7 @@ export const TextCorpusSearchRequest = Schema.Struct({
 	capability: TextCapabilityFilter,
 	cursor: Schema.optional(TextUnitId),
 	lens: Schema.optional(TextReviewLens),
+	where: Schema.optionalKey(TextWhere),
 	pageSize: TextQueryPageSize,
 	query: Schema.String.pipe(Schema.check(Schema.isMaxLength(512)))
 });

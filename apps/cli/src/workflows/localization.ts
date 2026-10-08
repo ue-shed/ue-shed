@@ -1,3 +1,4 @@
+import { textWhere } from "../commands/localization-flags.js";
 import {
 	LocalizationEvidence,
 	LocalizationEvidenceNodeLive,
@@ -114,6 +115,11 @@ export const loadLocalizationContext = Effect.fn("Cli.localization.load_context"
 	return { corpus, join, evidence, selection, review };
 });
 
+function whereField(command: Parameters<typeof textWhere>[0]) {
+	const where = textWhere(command);
+	return where === undefined ? undefined : { where };
+}
+
 export const loadLocalizationStatus = Effect.fn("Cli.localization.load_status")(function* (
 	command: LocalizationStatusCommand | LocalizationSearchCommand
 ) {
@@ -122,7 +128,8 @@ export const loadLocalizationStatus = Effect.fn("Cli.localization.load_status")(
 		capability: "all",
 		pageSize: command.limit ?? 50,
 		query: command._tag === "TextSearch" ? command.query : "",
-		localization: selection
+		localization: selection,
+		...whereField(command)
 	});
 	yield* Metric.update(Metric.counter("cli.localization.status.lines"), page.total);
 	return localizationStatusReport(corpus, evidence, page);

@@ -1,4 +1,4 @@
-import { LocalizationState } from "@ue-shed/game-text/browser";
+import { LocalizationState, TextOriginKind, type TextWhere } from "@ue-shed/game-text/browser";
 import { Option } from "effect";
 import { Flag } from "effect/unstable/cli";
 
@@ -12,7 +12,32 @@ export function localizationFlags() {
 				() => "--limit must be between 1 and 50"
 			),
 			Flag.withDefault(50)
-		)
+		),
+		kinds: Flag.choice("kind", TextOriginKind.literals).pipe(Flag.atMost(5)),
+		path: Flag.string("path").pipe(Flag.optional)
+	};
+}
+
+/** Command fields for `--kind` and `--path`; absent when neither was given. */
+export function optionalWhereFlags(
+	kinds: readonly (typeof TextOriginKind.Type)[],
+	path: Option.Option<string>
+) {
+	return {
+		...(kinds.length > 0 ? { kinds } : undefined),
+		...(Option.isSome(path) ? { pathPrefix: path.value } : undefined)
+	};
+}
+
+/** The search request's location filter for those command fields. */
+export function textWhere(command: {
+	readonly kinds?: readonly (typeof TextOriginKind.Type)[];
+	readonly pathPrefix?: string;
+}): TextWhere | undefined {
+	if (command.kinds === undefined && command.pathPrefix === undefined) return undefined;
+	return {
+		...(command.kinds === undefined ? undefined : { kinds: command.kinds }),
+		...(command.pathPrefix === undefined ? undefined : { pathPrefix: command.pathPrefix })
 	};
 }
 

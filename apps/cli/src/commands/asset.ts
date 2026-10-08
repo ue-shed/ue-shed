@@ -1,6 +1,10 @@
 import { Argument, Command, Flag } from "effect/unstable/cli";
 import { Option } from "effect";
-import { localizationFlags, optionalLocalizationFlags } from "./localization-flags.js";
+import {
+	localizationFlags,
+	optionalLocalizationFlags,
+	optionalWhereFlags
+} from "./localization-flags.js";
 import { runSavedReview } from "../saved-review-workflows.js";
 import {
 	runAssetsScan,
@@ -117,7 +121,18 @@ const textSearchCommand = Command.make(
 		...localizationFlags(),
 		reader: readerFlag
 	},
-	({ projectRoot, query, reader, target, culture, state, limit, searchTranslations }) => {
+	({
+		projectRoot,
+		query,
+		reader,
+		target,
+		culture,
+		state,
+		limit,
+		searchTranslations,
+		kinds,
+		path
+	}) => {
 		const value = query.join(" ").trim();
 		return runTextSearch({
 			_tag: "TextSearch",
@@ -125,6 +140,7 @@ const textSearchCommand = Command.make(
 			query: value,
 			limit,
 			...optionalLocalizationFlags(culture, state),
+			...optionalWhereFlags(kinds, path),
 			...(Option.isSome(target) ? { target: target.value } : undefined),
 			...(Option.isSome(searchTranslations)
 				? { searchTranslations: searchTranslations.value }

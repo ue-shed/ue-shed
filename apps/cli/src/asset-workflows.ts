@@ -1,3 +1,4 @@
+import { textWhere } from "./commands/localization-flags.js";
 import { readFile, stat } from "node:fs/promises";
 import { EnhancedInputService, EnhancedInputServiceLive } from "@ue-shed/enhanced-input";
 import {
@@ -152,8 +153,12 @@ export const runTextSearch = Effect.fn("Cli.workflow.text_search")((command: Tex
 					})
 				);
 			}
-			const { searchTextCorpus, TextCorpusService, TextCorpusServiceLive } =
-				yield* Effect.promise(() => import("@ue-shed/game-text"));
+			const {
+				searchTextCorpus,
+				TextCorpusService,
+				TextCorpusServiceLive,
+				unitMatchesTextWhere
+			} = yield* Effect.promise(() => import("@ue-shed/game-text"));
 			const corpus = yield* Effect.gen(function* () {
 				const service = yield* TextCorpusService;
 				return yield* service.scan({ projectRoot: command.projectRoot });
@@ -166,7 +171,9 @@ export const runTextSearch = Effect.fn("Cli.workflow.text_search")((command: Tex
 				status: corpus.status,
 				query: command.query,
 				coverage: corpus.coverage,
-				matches: searchTextCorpus(corpus, command.query),
+				matches: searchTextCorpus(corpus, command.query).filter((unit) =>
+					unitMatchesTextWhere(unit, textWhere(command))
+				),
 				diagnostics: corpus.diagnostics
 			});
 		})

@@ -42,8 +42,21 @@ coverage does.
 
 Workbench searches source text as you type. **Editable**, **Read only**, and **No translator notes**
 filter the lines; **No translator notes** requires blank notes, after trimming, at every saved
-location. Review chips highlight reused lines, duplicate wording, long text and localization
-problems. The detail pane keeps keys, translator notes, exact Unreal names and **Where it appears**
+location.
+
+Two filters say where text comes from:
+
+- **Origin chips** (String table, Data table, Asset, C++, Other source) keep lines from any
+  selected origin. A String Table reference inside an asset counts as the asset. Gathered-only
+  lines take their origin from Unreal's manifest path: C++ source files, `/Game` assets, or other
+  gathered sources such as config files. Each chip's count ignores the origin chips themselves,
+  and a chip at zero is hidden unless it is selected.
+- **Path…** keeps lines whose object path, package file or gathered source path starts with the
+  given prefix, such as `/Game/UI/`, `Content/UI/` or `Source/`. The match ignores case and slash
+  direction.
+
+Both filters are saved with the project's view and carried by presets and exports. Review chips
+highlight reused lines, duplicate wording, long text and localization problems. The detail pane keeps keys, translator notes, exact Unreal names and **Where it appears**
 together. **Show in Unreal** reports success only when the editor confirms asset navigation.
 
 Every displayed text count in the toolbar, search and filter chips comes from the same query and
@@ -186,7 +199,7 @@ Character counts use the same JavaScript string-length measurement as the detail
 the existing provenance document; `gameTextInvestigationCsv` keeps its documented metadata layout.
 
 Use **Presets → Save preset… / Open preset…** to retain or restore the current settings.
-A preset stores the corpus/quality view, search text, capability, **No translator notes** and review lens, finding-type
+A preset stores the corpus/quality view, search text, capability, **No translator notes**, origin and path filters and review lens, finding-type
 filter, existing domain sort order, and optional quality rules. Quality mode requires a rule
 document, including semantic validation of rule and role identities. Workbench captures the
 current corpus, rules, project, and catalog generation before opening an export dialog. The
@@ -313,11 +326,13 @@ A file confirmed missing supplies absence: a non-empty PO translation with a mis
 not synced, while a missing PO does not invalidate a proven archive translation. File failures
 remain visible in diagnostics and coverage reasons. Unreadable files cannot supply that proof.
 
-`ue-shed loc status <project-root> --target <name> [--culture <c>] [--state <s>] [--limit 50]`
+`ue-shed loc status <project-root> --target <name> [--culture <c>] [--state <s>] [--kind <origin>]... [--path <prefix>] [--limit 50]`
 reports schema-versioned per-culture counts of lines and source words, coverage and unknown reasons,
 file provenance and diagnostics, and a bounded page of matching lines. Localization-aware
 `ue-shed text search` accepts the same selection; translation search additionally requires
-`--search-translations` and a culture. Counts intersect the same filters as the returned lines
+`--search-translations` and a culture. `--kind` (`string_table`, `data_table`, `asset`, `cpp`,
+`other_source`, repeatable) and `--path` filter both commands, including `text search` without a
+target; the page's `counts.origins` excludes the origin filter itself. Counts intersect the same filters as the returned lines
 before pagination, including a dedicated `not_synced` count. Gathered-only rows use distinct
 evidence IDs, and focus exposes every culture, PO context and manifest source locations.
 

@@ -11,7 +11,7 @@
 
 ## Status
 
-- **State**: IN PROGRESS. Phase 1 is next.
+- **State**: IN PROGRESS. Phase 1 is done; Phase 2 is next.
 - **Priority**: P1
 - **Effort**: L
 - **Risk**: MEDIUM. Phase 4 carries translations to new keys through the existing PO writer and
@@ -68,6 +68,21 @@ This plan adds the four items with the best effort-to-impact ratio:
 
 **Gate**: every kind and path count equals its query's search total; component tests cover the
 chips.
+
+**Evidence (2026-10-08)**: Phase 1 is done.
+
+- `@ue-shed/game-text` adds `TextOriginKind`, `TextWhere` (`where` on the search request),
+  `counts.origins`, and pure helpers in `text-origin.ts`. The renderer's C++ label now uses the
+  same `manifestPathOrigin`.
+- `where` applies to units and to gathered-only lines, through search, localized search, counts,
+  exports and saved presets. Origin counts exclude the origin facet; path is a hard filter.
+- CLI: `--kind` (repeatable) and `--path` on `loc status` and `text search`, with or without a
+  target.
+- Workbench: origin chips and a compact "Path…" filter in the first toolbar row, persisted per
+  project.
+- Verified: origin tests (each origin count equals its filtered total, for saved units and for
+  gathered C++ and config lines), the CLI integration test against the real fixture, route
+  component tests, precommit, and the Node 24 and Node 26 sweeps.
 
 ## Phase 2 — Changed files
 

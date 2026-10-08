@@ -1,4 +1,8 @@
-import { decodeTextQualityRuleDocument } from "./quality-schema.js";
+import {
+	GameTextRuleDocument,
+	decodeGameTextRuleDocumentJson,
+	evaluateGameTextSourceQuality
+} from "./quality-rules-v2.js";
 import { Effect, Schema } from "effect";
 import {
 	InvestigationSource,
@@ -8,12 +12,12 @@ import {
 	investigationTable
 } from "@ue-shed/unreal-assets/investigation";
 import { TextCorpus, TextCorpusSearchRequest } from "./schema.js";
-import { TextQualityRuleDocument, TextQualityReport } from "./quality-schema.js";
+import { TextQualityReport } from "./quality-schema.js";
 import { textCorpusQuery } from "./query.js";
 import { textQualityQuery, TextQualityFilter } from "./quality-query.js";
-import { evaluateTextQuality } from "./quality.js";
 
 export const GameTextInvestigationQuery = Schema.Struct({
+	withoutNotes: TextCorpusSearchRequest.fields.withoutNotes,
 	mode: Schema.Literals(["corpus", "quality"]),
 	query: TextCorpusSearchRequest.fields.query,
 	capability: TextCorpusSearchRequest.fields.capability,
@@ -26,7 +30,7 @@ export const GameTextInvestigationPreset = Schema.Struct({
 	kind: Schema.Literal("game_text"),
 	sort: Schema.Literal("domain_order"),
 	query: GameTextInvestigationQuery,
-	rules: Schema.optionalKey(TextQualityRuleDocument)
+	rules: Schema.optionalKey(GameTextRuleDocument)
 }).check(
 	Schema.makeFilter((preset) => preset.query.mode !== "quality" || preset.rules !== undefined)
 );
@@ -72,7 +76,7 @@ export function exportGameTextInvestigation(
 		const rules =
 			preset.rules === undefined
 				? undefined
-				: yield* decodeTextQualityRuleDocument(preset.rules).pipe(
+				: yield* decodeGameTextRuleDocumentJson(JSON.stringify(preset.rules)).pipe(
 						Effect.mapError(
 							(error) =>
 								new InvestigationError({
@@ -91,9 +95,9 @@ export function exportGameTextInvestigation(
 				preset.query.mode === "quality" && rules !== undefined
 					? {
 							mode: "quality",
-							report: textQualityQuery(evaluateTextQuality(corpus, rules)).export(
-								preset.query.qualityFilter
-							)
+							report: textQualityQuery(
+								evaluateGameTextSourceQuality(corpus, rules)
+							).export(preset.query.qualityFilter)
 						}
 					: { mode: "corpus", corpus: textCorpusQuery(corpus).export(preset.query) }
 		} satisfies GameTextInvestigationExport;

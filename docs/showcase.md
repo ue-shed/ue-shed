@@ -25,12 +25,11 @@ east orientation and is expressed in Unreal units.
 
 ## Take an investigation away
 
-Game Text and Texture Audit offer **Export JSON**, **Export CSV**, **Save preset**, and
-**Open preset**. Exports include every match to the current filters, including results beyond the
-visible page. Game Text exports either corpus units or quality findings, according to the active
-view. Full occurrences and source evidence remain available; coverage and distributions describe
-the whole scan, even when the exported result set is filtered or empty.
-
+In Game Text, use **Export → CSV / JSON** and **Presets → Save preset… / Open preset…**.
+Texture Audit keeps separate **Export JSON**, **Export CSV**, **Save preset**, and **Open preset**
+buttons. Exports include every match to the current filters, including results beyond the visible
+page. Game Text exports the active **Text** or **Quality checks** view. JSON retains the saved
+locations and scan coverage, even when the exported selection is filtered or empty.
 Presets are versioned JSON containing filters, the domain's existing sort order, and the actual
 rule document when applicable. Opening a preset applies it to the currently selected project.
 Texture Audit retains imported rules for subsequent refreshes in that project. Presets do not
@@ -49,11 +48,16 @@ include the source project, saved-file authority, and catalog generation. Direct
 `generation: null` because they do not use a persistent catalog generation. Keep an exported
 result artifact when you need the original evidence.
 
-CSV begins with a header and one `record_type=metadata` row carrying the preset, provenance,
-coverage, and diagnostics as JSON. Subsequent `record_type=record` rows contain matches, with
-nested evidence in JSON columns. Text cells that could be spreadsheet formulas receive a leading
-apostrophe; JSON preserves the original values. Presets are limited to 4 MiB and file exports to
-512 MiB. File errors retain the previous destination and give recovery guidance.
+Game Text's Workbench CSV has readable columns for people: one row per saved location in **Text**,
+or one row per finding and affected location in **Quality checks**. It includes exact Unreal
+names, keys, translator notes where applicable, and saved files. Cells that could become
+spreadsheet formulas receive a leading apostrophe; JSON preserves the original values.
+
+The CLI investigation CSV (`gameTextInvestigationCsv`) and Texture Audit CSV keep their existing
+layout: a header, one `record_type=metadata` row carrying filters, provenance, coverage and read
+problems as JSON, then `record_type=record` rows with nested evidence in JSON columns. Presets are
+limited to 4 MiB and file exports to 512 MiB. File errors retain the previous destination and give
+recovery guidance.
 
 ## Open the Workbench
 
@@ -181,22 +185,43 @@ resource or unsaved editor state is wanted. Saved and live preview authority rem
 
 ## Demo 3: Game Text
 
-Choose **Game Text** from the nav. Workbench searches player-facing language across saved
-DataTables, String Tables, and supported asset properties without flattening Unreal identity.
-Every result is a dense writing worklist row: source text, Unreal identity, decoded authored
-context, primary source authority, character count, and usage count stay visible together. A
-single-use identity exposes `Locate` immediately; a shared identity exposes `Show uses`, then a
-precise `Locate in Unreal` action for each occurrence. Locate synchronizes the Content Browser to
-the owning asset when a capable editor is connected, and reports offline, missing-plugin, and
-not-found states without pretending navigation happened. `Copy text` and `Copy ID` remain immediate
-row actions. Selecting a line expands every known context while raw Unreal object paths and package
-files remain behind technical disclosures. Occurrence evidence and coverage gaps stay inspectable
-from the same corpus.
+Open **Game Text** and choose **Scan project** if it has not been scanned. Game Text reads saved
+DataTables, String Tables and supported asset properties, so Unreal does not need to be running.
+One toolbar holds **Text**, **Quality checks**, the number of lines and assets, the scan time, and
+**Rescan**. Read warnings open **Read problems**, including partly read assets and text fields that
+could not be decoded. A clean writing-check result does not mean every asset was fully read.
+
+Type into **Search text** to search source text; the live match count updates as you type. Use
+**Editable**, **Read only** or **No translator notes**, then chips such as **Used in several places**,
+**Same text, different keys** or **Long text**. Counts follow the current search and filters.
+The toolbar stays in place while the list and detail pane scroll independently.
+
+Select a line to see its key, character and word counts, translator notes, and **Where it appears**.
+Rows preserve the exact Unreal asset, row, entry and property names. Copy icons copy the text, key
+or asset path. **Saved file** reveals the package file; **Show N more locations** loads more places
+when needed. Read problems for the selected line remain inspectable below its locations.
+**Show in Unreal** synchronizes the connected editor's Content Browser to that asset. Opening,
+offline, missing-plugin, not-found and failed feedback stays visible; **Opened** appears only after
+Unreal confirms the action.
+
+Open **Quality checks** and choose **Create rules file** to create examples at
+`Config/UEShed/GameTextRules.json`, or **Load rules** to choose an existing file. Creation never
+overwrites a file. With nothing selected, the rules and roles overview shows findings and lines in
+scope, including a warning when a role matches none. Filter by **Character limits** or
+**Terminology**, then select a finding to see the highlighted term and **How to fix** guidance.
+**Show key and translator notes** opens that line in Text. **Edit rules** keeps character limits,
+terminology, case sensitivity and recovery guidance editable; **Preview** updates findings without
+writing, and **Save** writes the loaded rules file.
+
+The same saved-text workflow is available from the CLI:
 
 ```powershell
 pnpm ue-shed text scan fixtures\unreal-project
 pnpm ue-shed text search fixtures\unreal-project "Fixture"
+pnpm ue-shed text rules init fixtures\unreal-project
 ```
+
+The last command creates the starter file and refuses to overwrite an existing one.
 
 ## Demo 4: Config Explorer
 

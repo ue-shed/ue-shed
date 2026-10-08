@@ -13,6 +13,10 @@ import {
 } from "@ue-shed/cameras";
 import { AuthoringCatalogLive } from "@ue-shed/authoring-catalog";
 import { EnhancedInputServiceLive } from "@ue-shed/enhanced-input";
+import {
+	LocalizationEvidenceNodeLive,
+	LocalizationOperationsNodeLive
+} from "@ue-shed/localization";
 import { TextCorpusServiceLive } from "@ue-shed/game-text";
 import {
 	EditorWindowActivationLive,
@@ -55,6 +59,7 @@ import { WorkbenchContentObservatoryLive } from "./services/content-observatory.
 import { WorkbenchConfigExplorerLive } from "./services/config-explorer.js";
 import { FixtureHealthLive, FixtureLauncherLive } from "./services/fixture-launcher.js";
 import { WorkbenchGameTextLive } from "./services/game-text.js";
+import { WorkbenchGameTextOperationsLive } from "./services/game-text-operations.js";
 import { WorkbenchInputAtlasLive } from "./services/input-atlas.js";
 import { WorkbenchMapReviewLive } from "./services/map-review.js";
 import { WorkbenchMapCaptureLive } from "./services/map-capture.js";
@@ -166,6 +171,7 @@ function domainCatalogLayer(hosts: WorkbenchHosts) {
 		WorkbenchEditorHandoffLive,
 		TextureAuditLive,
 		TextCorpusServiceLive,
+		LocalizationEvidenceNodeLive,
 		EnhancedInputServiceLive,
 		CustodianNodeLive,
 		niagara,
@@ -204,6 +210,10 @@ function featureLayer(hosts: WorkbenchHosts) {
 		WorkbenchAssetAuditsLive,
 		WorkbenchAssetNavigationLive,
 		WorkbenchGameTextLive,
+		WorkbenchGameTextOperationsLive.pipe(
+			Layer.provide(WorkbenchGameTextLive),
+			Layer.provide(LocalizationOperationsNodeLive)
+		),
 		WorkbenchInputAtlasLive,
 		WorkbenchCustodianLive,
 		authoring,

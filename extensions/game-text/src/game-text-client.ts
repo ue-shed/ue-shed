@@ -5,6 +5,24 @@ import type {
 	InvestigationFormat
 } from "@ue-shed/game-text/browser";
 import type {
+	WorkspaceQualityRequest,
+	WorkspaceQualityResult,
+	WorkspaceQualityFocusRequest,
+	WorkspaceQualityFocusResult,
+	WorkspaceChangesResult,
+	LocalizationEditRequest,
+	LocalizationEditResult,
+	LocalizationReviewRequest,
+	LocalizationReviewResult,
+	WorkspaceReportRequest,
+	WorkspaceReportResult,
+	WorkspaceReportFileRequest,
+	WorkspaceReportFileResult,
+	LocalizationTargetsResult,
+	LocalizationTargetResult,
+	LocalizationFocusRequest,
+	LocalizationFocusResult,
+	LocalizationSelection,
 	TextCorpusFocusRequest,
 	TextCorpusFocusResult,
 	TextCorpusQueryRunResult,
@@ -13,14 +31,23 @@ import type {
 	TextQualityFocusRequest,
 	TextQualityFocusResult,
 	TextQualityQueryRunResult,
-	TextQualityRuleDocument,
+	GameTextRuleDocument,
 	TextQualityRuleUpdateResult,
 	TextQualitySearchRequest,
 	TextQualitySearchResult
 } from "@ue-shed/game-text/browser";
 import type { EditorAssetLocateResult } from "@ue-shed/protocol";
 import type { TaskProgress } from "@ue-shed/ui/task-progress";
-import { Context, type Effect, Schema } from "effect";
+import { Context, type Effect, Schema, type Stream } from "effect";
+import type {
+	WorkbenchOperationRequest,
+	WorkbenchOperationPlanResult,
+	WorkbenchOperationResult,
+	WorkbenchOperationState,
+	WorkbenchOperationProgress,
+	WorkbenchOperationFilesRequest,
+	WorkbenchOperationFilesResult
+} from "@ue-shed/game-text/browser";
 
 export class GameTextClientError extends Schema.TaggedErrorClass<GameTextClientError>()(
 	"GameTextClientError",
@@ -32,6 +59,61 @@ export class GameTextClientError extends Schema.TaggedErrorClass<GameTextClientE
 ) {}
 
 export interface GameTextClientApi {
+	readonly operations?: {
+		readonly state: (
+			target: LocalizationSelection["target"]
+		) => Effect.Effect<WorkbenchOperationState, GameTextClientError>;
+		readonly plan: (
+			request: WorkbenchOperationRequest
+		) => Effect.Effect<WorkbenchOperationPlanResult, GameTextClientError>;
+		readonly run: (id: string) => Effect.Effect<WorkbenchOperationResult, GameTextClientError>;
+		readonly cancel: (
+			id: string
+		) => Effect.Effect<WorkbenchOperationResult, GameTextClientError>;
+		readonly files: (
+			request: WorkbenchOperationFilesRequest
+		) => Effect.Effect<WorkbenchOperationFilesResult, GameTextClientError>;
+		readonly progress: Stream.Stream<WorkbenchOperationProgress, GameTextClientError>;
+	};
+	readonly localizationQualitySearch?: (
+		request: WorkspaceQualityRequest
+	) => Effect.Effect<WorkspaceQualityResult, GameTextClientError>;
+	readonly localizationQualityFocus?: (
+		request: WorkspaceQualityFocusRequest
+	) => Effect.Effect<WorkspaceQualityFocusResult, GameTextClientError>;
+	readonly localizationChanges?: (
+		request: WorkspaceQualityRequest
+	) => Effect.Effect<WorkspaceChangesResult, GameTextClientError>;
+	readonly localizationEdits?: (
+		request: LocalizationEditRequest
+	) => Effect.Effect<LocalizationEditResult, GameTextClientError>;
+	readonly localizationReview?: (
+		request: LocalizationReviewRequest
+	) => Effect.Effect<LocalizationReviewResult, GameTextClientError>;
+	readonly localizationReport?: (
+		request: WorkspaceReportRequest
+	) => Effect.Effect<WorkspaceReportResult, GameTextClientError>;
+	readonly localizationReportFile?: (
+		request: WorkspaceReportFileRequest
+	) => Effect.Effect<WorkspaceReportFileResult, GameTextClientError>;
+	readonly localizationTargets?: () => Effect.Effect<
+		LocalizationTargetsResult,
+		GameTextClientError
+	>;
+	readonly localizationTarget?: (
+		target: LocalizationSelection["target"]
+	) => Effect.Effect<LocalizationTargetResult, GameTextClientError>;
+	readonly localizationFocus?: (
+		request: LocalizationFocusRequest
+	) => Effect.Effect<LocalizationFocusResult, GameTextClientError>;
+	readonly projectKey?: () => Effect.Effect<string | undefined, GameTextClientError>;
+	readonly reloadQualityRules?: () => Effect.Effect<
+		TextQualityQueryRunResult,
+		GameTextClientError
+	>;
+	readonly createStarterRules?: (
+		loadExisting: boolean
+	) => Effect.Effect<TextQualityQueryRunResult, GameTextClientError>;
 	readonly investigations?: {
 		readonly export: (
 			query: GameTextInvestigationQuery,
@@ -70,10 +152,10 @@ export interface GameTextClientApi {
 		request: TextQualitySearchRequest
 	) => Effect.Effect<TextQualitySearchResult, GameTextClientError>;
 	readonly previewQualityRules: (
-		document: TextQualityRuleDocument
+		document: GameTextRuleDocument
 	) => Effect.Effect<TextQualityRuleUpdateResult, GameTextClientError>;
 	readonly saveQualityRules: (
-		document: TextQualityRuleDocument
+		document: GameTextRuleDocument
 	) => Effect.Effect<TextQualityRuleUpdateResult, GameTextClientError>;
 }
 

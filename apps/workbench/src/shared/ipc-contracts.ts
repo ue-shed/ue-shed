@@ -27,7 +27,16 @@ import {
 
 import {
 	GameTextInvestigationQuery,
-	GameTextInvestigationPresetResult
+	GameTextInvestigationPresetResult,
+	WorkbenchOperationRequest,
+	WorkbenchOperationPlanResult,
+	WorkbenchOperationId,
+	WorkbenchOperationTarget,
+	WorkbenchOperationState,
+	WorkbenchOperationResult,
+	WorkbenchOperationFilesRequest,
+	WorkbenchOperationFilesResult,
+	WorkbenchOperationProgress
 } from "@ue-shed/game-text/browser";
 import { InvestigationFileResult, InvestigationFormat } from "@ue-shed/unreal-assets/investigation";
 import {
@@ -88,16 +97,33 @@ import {
 } from "@ue-shed/config-explorer/browser";
 import { EnhancedInputRunResult } from "@ue-shed/enhanced-input/browser";
 import {
+	WorkspaceQualityRequest,
+	WorkspaceQualityResult,
+	WorkspaceQualityFocusRequest,
+	WorkspaceQualityFocusResult,
+	WorkspaceChangesResult,
+	LocalizationEditRequest,
+	LocalizationEditResult,
+	LocalizationReviewRequest,
+	LocalizationReviewResult,
+	WorkspaceReportRequest,
+	WorkspaceReportResult,
+	WorkspaceReportFileRequest,
+	WorkspaceReportFileResult,
+	LocalizationTargetsResult,
+	LocalizationTargetResult,
+	LocalizationFocusRequest,
+	LocalizationFocusResult,
+	LocalizationSelection,
 	TextCorpusFocusRequest,
 	TextCorpusFocusResult,
 	TextCorpusQueryRunResult,
-	TextCorpusRunResult,
 	TextCorpusSearchRequest,
 	TextCorpusSearchResult,
 	TextQualityFocusRequest,
 	TextQualityFocusResult,
 	TextQualityQueryRunResult,
-	TextQualityRuleDocument,
+	GameTextRuleDocument,
 	TextQualityRuleUpdateResult,
 	TextQualitySearchRequest,
 	TextQualitySearchResult
@@ -677,12 +703,12 @@ export const invokeContracts = {
 	"game-text:configured-scan": invoke({
 		channel: "game-text:configured-scan",
 		args: EmptyArgs,
-		result: TextCorpusRunResult
+		result: TextCorpusQueryRunResult
 	}),
 	"game-text:choose-and-scan": invoke({
 		channel: "game-text:choose-and-scan",
 		args: EmptyArgs,
-		result: TextCorpusRunResult
+		result: TextCorpusQueryRunResult
 	}),
 	"game-text:configured-refresh": invoke({
 		channel: "game-text:configured-refresh",
@@ -714,6 +740,81 @@ export const invokeContracts = {
 		args: Schema.Tuple([]),
 		result: GameTextInvestigationPresetResult
 	}),
+	"game-text:localization:operation-state": invoke({
+		channel: "game-text:localization:operation-state",
+		args: Schema.Tuple([WorkbenchOperationTarget]),
+		result: WorkbenchOperationState
+	}),
+	"game-text:localization:operation-plan": invoke({
+		channel: "game-text:localization:operation-plan",
+		args: Schema.Tuple([WorkbenchOperationRequest]),
+		result: WorkbenchOperationPlanResult
+	}),
+	"game-text:localization:operation-run": invoke({
+		channel: "game-text:localization:operation-run",
+		args: Schema.Tuple([WorkbenchOperationId]),
+		result: WorkbenchOperationResult
+	}),
+	"game-text:localization:operation-cancel": invoke({
+		channel: "game-text:localization:operation-cancel",
+		args: Schema.Tuple([WorkbenchOperationId]),
+		result: WorkbenchOperationResult
+	}),
+	"game-text:localization:operation-files": invoke({
+		channel: "game-text:localization:operation-files",
+		args: Schema.Tuple([WorkbenchOperationFilesRequest]),
+		result: WorkbenchOperationFilesResult
+	}),
+	"game-text:localization:quality-search": invoke({
+		channel: "game-text:localization:quality-search",
+		args: Schema.Tuple([WorkspaceQualityRequest]),
+		result: WorkspaceQualityResult
+	}),
+	"game-text:localization:quality-focus": invoke({
+		channel: "game-text:localization:quality-focus",
+		args: Schema.Tuple([WorkspaceQualityFocusRequest]),
+		result: WorkspaceQualityFocusResult
+	}),
+	"game-text:localization:changes": invoke({
+		channel: "game-text:localization:changes",
+		args: Schema.Tuple([WorkspaceQualityRequest]),
+		result: WorkspaceChangesResult
+	}),
+	"game-text:localization:edits": invoke({
+		channel: "game-text:localization:edits",
+		args: Schema.Tuple([LocalizationEditRequest]),
+		result: LocalizationEditResult
+	}),
+	"game-text:localization:review": invoke({
+		channel: "game-text:localization:review",
+		args: Schema.Tuple([LocalizationReviewRequest]),
+		result: LocalizationReviewResult
+	}),
+	"game-text:localization:report": invoke({
+		channel: "game-text:localization:report",
+		args: Schema.Tuple([WorkspaceReportRequest]),
+		result: WorkspaceReportResult
+	}),
+	"game-text:localization:report-file": invoke({
+		channel: "game-text:localization:report-file",
+		args: Schema.Tuple([WorkspaceReportFileRequest]),
+		result: WorkspaceReportFileResult
+	}),
+	"game-text:localization:targets": invoke({
+		channel: "game-text:localization:targets",
+		args: Schema.Tuple([]),
+		result: LocalizationTargetsResult
+	}),
+	"game-text:localization:target": invoke({
+		channel: "game-text:localization:target",
+		args: Schema.Tuple([LocalizationSelection.fields.target]),
+		result: LocalizationTargetResult
+	}),
+	"game-text:localization:focus": invoke({
+		channel: "game-text:localization:focus",
+		args: Schema.Tuple([LocalizationFocusRequest]),
+		result: LocalizationFocusResult
+	}),
 	"game-text:search": invoke({
 		channel: "game-text:search",
 		args: Schema.Tuple([TextCorpusSearchRequest]),
@@ -729,14 +830,24 @@ export const invokeContracts = {
 		args: EmptyArgs,
 		result: TextQualityQueryRunResult
 	}),
+	"game-text:quality:create-starter-rules": invoke({
+		channel: "game-text:quality:create-starter-rules",
+		args: Schema.Tuple([Schema.Boolean]),
+		result: TextQualityQueryRunResult
+	}),
+	"game-text:quality:reload-rules": invoke({
+		channel: "game-text:quality:reload-rules",
+		args: EmptyArgs,
+		result: TextQualityQueryRunResult
+	}),
 	"game-text:quality:preview-rules": invoke({
 		channel: "game-text:quality:preview-rules",
-		args: Schema.Tuple([TextQualityRuleDocument]),
+		args: Schema.Tuple([GameTextRuleDocument]),
 		result: TextQualityRuleUpdateResult
 	}),
 	"game-text:quality:save-rules": invoke({
 		channel: "game-text:quality:save-rules",
-		args: Schema.Tuple([TextQualityRuleDocument]),
+		args: Schema.Tuple([GameTextRuleDocument]),
 		result: TextQualityRuleUpdateResult
 	}),
 	"game-text:quality:search": invoke({
@@ -1131,6 +1242,11 @@ export const mapCaptureProgressEvent = {
 	kind: "event",
 	channel: "map-capture:progress",
 	payload: MapCaptureProgressEvent
+} as const;
+
+export const gameTextOperationProgressEvent = {
+	channel: "game-text:localization:operation-progress",
+	payload: WorkbenchOperationProgress
 } as const;
 
 // SAFETY: invokeContracts is the sole source of keys, so Object.keys cannot produce another channel.

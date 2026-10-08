@@ -4,14 +4,26 @@ import type {
 	TextCorpusFocusRequest,
 	TextCorpusQuerySummary,
 	TextCorpusSearchPage,
+	TextCorpusSearchCounts,
 	TextCorpusSearchRequest,
-	TextOccurrence,
 	TextReviewLens,
 	TextReviewSignal,
 	TextUnit,
 	TextUnitSearchResult
 } from "./schema.js";
 import { hasSearchableSource, searchableSourceText } from "./search.js";
+import type {
+	LocalizationJoin,
+	LocalizationLine,
+	LocalizationLineId
+} from "./localization-schema.js";
+import { GameTextLocalizationError } from "./localization-schema.js";
+import { localizationManifestNotes } from "./localization.js";
+import {
+	localizationQueryPage,
+	matchesLocalizationLine,
+	validateLocalizationSelection
+} from "./localization-query.js";
 
 function normalizedTerms(query: string): readonly string[] {
 	return query.toLocaleLowerCase().trim().split(/\s+/u).filter(Boolean);
@@ -66,26 +78,23 @@ function matchesLens(
 	return signals.includes(lens);
 }
 
-function filteredOccurrences(
-	unit: TextUnit,
-	capability: TextCorpusSearchRequest["capability"]
-): readonly TextOccurrence[] {
-	if (capability === "all") return unit.occurrences;
-	return unit.occurrences.filter((occurrence) => occurrence.editCapability === capability);
-}
-
 /**
  * In-memory, query-scoped view of a compact text corpus. It normalizes every unit once at refresh
  * time and emits only bounded pages to callers.
  */
 export interface TextCorpusQuery {
+	readonly localizationFocus: (id: LocalizationLineId) => LocalizationLine | undefined;
 	readonly focus: (request: TextCorpusFocusRequest) => TextCorpusFocus | undefined;
 	readonly search: (request: TextCorpusSearchRequest) => TextCorpusSearchPage;
 	readonly export: (request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">) => TextCorpus;
 	readonly summary: () => TextCorpusQuerySummary;
 }
 
-export function textCorpusQuery(corpus: TextCorpus): TextCorpusQuery {
+export function textCorpusQuery(
+	corpus: TextCorpus,
+	scannedAt?: string,
+	localization?: LocalizationJoin
+): TextCorpusQuery {
 	const units = [...corpus.units].sort((left, right) => left.id.localeCompare(right.id));
 	const sourceFrequency = new Map<string, number>();
 	for (const unit of units) {
@@ -95,11 +104,28 @@ export function textCorpusQuery(corpus: TextCorpus): TextCorpusQuery {
 	const duplicateSources = new Set(
 		[...sourceFrequency].filter(([, count]) => count > 1).map(([source]) => source)
 	);
-	const indexed = units.map((unit) => ({
+	const indexed = units.filter(hasSearchableSource).map((unit) => ({
 		presentation: searchResult(unit, duplicateSources),
 		searchable: searchableSourceText(unit),
+		hasEditable: unit.occurrences.some(
+			(occurrence) => occurrence.editCapability === "source_editable"
+		),
+		hasReadOnly: unit.occurrences.some(
+			(occurrence) => occurrence.editCapability === "read_only"
+		),
+		withoutNotes: unit.occurrences.every((occurrence) => occurrence.devNotes.trim() === ""),
 		unit
 	}));
+	const byId = new Map(indexed.map((entry) => [entry.unit.id, entry]));
+	const localizationByUnit = new Map(
+		localization?.lines.flatMap((line) =>
+			line.origin.kind === "corpus"
+				? line.origin.unitIds.map(
+						(id) => [id, line] satisfies [typeof id, LocalizationLine]
+					)
+				: []
+		) ?? []
+	);
 	const diagnosticsByPackage = new Map<string, typeof corpus.diagnostics>();
 	for (const diagnostic of corpus.diagnostics) {
 		diagnosticsByPackage.set(diagnostic.packageFile, [
@@ -107,27 +133,94 @@ export function textCorpusQuery(corpus: TextCorpus): TextCorpusQuery {
 			diagnostic
 		]);
 	}
+	const matching = (request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">) => {
+		const terms = normalizedTerms(request.query);
+		const counts = {
+			all: 0,
+			shared: 0,
+			duplicate_source: 0,
+			long: 0,
+			unresolved: 0,
+			conflicting: 0,
+			editable: 0,
+			readOnly: 0,
+			withoutNotes: 0
+		} satisfies TextCorpusSearchCounts;
+		const matched: typeof indexed = [];
+		for (const entry of indexed) {
+			const { presentation, searchable, unit, hasEditable, hasReadOnly } = entry;
+			if (!terms.every((term) => searchable.includes(term))) continue;
+			const hasCapability =
+				request.capability === "all"
+					? unit.occurrences.length > 0
+					: request.capability === "source_editable"
+						? hasEditable
+						: hasReadOnly;
+			const noNotes = entry.withoutNotes;
+			const hasNotesFilter = !request.withoutNotes || noNotes;
+			const hasLens = matchesLens(presentation.reviewSignals, request.lens);
+			if (hasLens && hasNotesFilter && hasEditable) counts.editable++;
+			if (hasLens && hasNotesFilter && hasReadOnly) counts.readOnly++;
+			if (hasLens && hasCapability && noNotes) counts.withoutNotes++;
+			if (!hasCapability || !hasNotesFilter || !hasLens) continue;
+			matched.push(entry);
+			counts.all++;
+			for (const signal of presentation.reviewSignals) {
+				if (signal !== "evidence_only") counts[signal]++;
+			}
+		}
+		return { matched, counts };
+	};
+
+	const baseline = matching({ query: "", capability: "all" }).counts;
+	const localizedMatching = (request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">) => {
+		if (!localization || !request.localization)
+			throw new GameTextLocalizationError({
+				code: "invalid_selection",
+				message: "Localization evidence has not been supplied to this query.",
+				recovery:
+					"Load and join the selected target before querying its localization state."
+			});
+		validateLocalizationSelection(localization, request.localization);
+		const eligible = new Set(
+			matching({ ...request, query: "" }).matched.map(({ unit }) => unit.id)
+		);
+		return localization.lines.filter((line) => {
+			if (line.source.trim() === "") return false;
+			if (
+				line.origin.kind === "corpus" &&
+				!line.origin.unitIds.some((id) => eligible.has(id))
+			)
+				return false;
+			if (
+				line.origin.kind === "evidence" &&
+				(request.capability === "source_editable" ||
+					(request.lens !== undefined && request.lens !== "all") ||
+					(request.withoutNotes &&
+						line.manifest.some((entry) => localizationManifestNotes(entry).length > 0)))
+			)
+				return false;
+			return matchesLocalizationLine(line, request);
+		});
+	};
 	const summary: TextCorpusQuerySummary = {
+		counts: baseline,
+		...(scannedAt === undefined ? undefined : { scannedAt }),
+		searchable: {
+			textUnits: baseline.all,
+			textOccurrences: indexed.reduce((count, { unit }) => count + unit.occurrences.length, 0)
+		},
 		schemaVersion: 1,
 		status: corpus.status,
 		coverage: corpus.coverage,
 		diagnosticCount: corpus.diagnostics.length,
 		review: {
-			all: indexed.length,
-			shared: indexed.filter(({ presentation }) =>
-				presentation.reviewSignals.includes("shared")
-			).length,
-			duplicateSource: indexed.filter(({ presentation }) =>
-				presentation.reviewSignals.includes("duplicate_source")
-			).length,
-			long: indexed.filter(({ presentation }) => presentation.reviewSignals.includes("long"))
-				.length,
-			unresolved: indexed.filter(({ presentation }) =>
-				presentation.reviewSignals.includes("unresolved")
-			).length,
-			conflicting: indexed.filter(({ presentation }) =>
-				presentation.reviewSignals.includes("conflicting")
-			).length
+			all: baseline.all,
+			shared: baseline.shared,
+			duplicateSource: baseline.duplicate_source,
+			long: baseline.long,
+			unresolved: baseline.unresolved,
+			conflicting: baseline.conflicting
 		},
 		sources: {
 			assetProperty: indexed.filter(({ presentation }) =>
@@ -143,30 +236,92 @@ export function textCorpusQuery(corpus: TextCorpus): TextCorpusQuery {
 			).length
 		}
 	};
-
-	const matching = (request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">) => {
-		const terms = normalizedTerms(request.query);
-		return indexed.filter(({ presentation, searchable, unit }) => {
-			if (!hasSearchableSource(unit)) return false;
-			if (filteredOccurrences(unit, request.capability).length === 0) return false;
-			if (!matchesLens(presentation.reviewSignals, request.lens)) return false;
-			return terms.every((term) => searchable.includes(term));
-		});
-	};
-
 	return {
+		localizationFocus: (id) => localization?.lines.find((line) => line.id === id),
 		export: (request) => {
-			return { ...corpus, units: matching(request).map(({ unit }) => unit) };
+			if (request.localization) {
+				const ids = new Set(
+					localizedMatching(request).flatMap((line) =>
+						line.origin.kind === "corpus" ? line.origin.unitIds : []
+					)
+				);
+				return { ...corpus, units: corpus.units.filter((unit) => ids.has(unit.id)) };
+			}
+			return { ...corpus, units: matching(request).matched.map(({ unit }) => unit) };
 		},
 		summary: () => summary,
 		search: (request) => {
-			const matched = matching(request);
+			if (request.localization) {
+				if (!localization)
+					throw new GameTextLocalizationError({
+						code: "invalid_selection",
+						message: "Localization evidence has not been supplied to this query.",
+						recovery:
+							"Load and join the selected target before querying its localization state."
+					});
+				const matched = localizedMatching(request);
+				const page = localizationQueryPage(localization, matched, request);
+				const counts = {
+					...matching({ ...request, query: "" }).counts,
+					all: matched.length,
+					shared: 0,
+					duplicate_source: 0,
+					long: 0,
+					unresolved: 0,
+					conflicting: 0,
+					editable: 0,
+					readOnly: 0,
+					withoutNotes: 0
+				} satisfies TextCorpusSearchCounts;
+				for (const line of matched) {
+					if (line.origin.kind === "evidence") {
+						counts.readOnly++;
+						if (
+							line.manifest.every(
+								(entry) => localizationManifestNotes(entry).length === 0
+							)
+						)
+							counts.withoutNotes++;
+						continue;
+					}
+					const entries = line.origin.unitIds.flatMap((id) => {
+						const entry = byId.get(id);
+						return entry ? [entry] : [];
+					});
+					if (entries.some((entry) => entry.hasEditable)) counts.editable++;
+					if (entries.some((entry) => entry.hasReadOnly)) counts.readOnly++;
+					if (entries.every((entry) => entry.withoutNotes)) counts.withoutNotes++;
+					for (const signal of new Set(
+						entries.flatMap((entry) => entry.presentation.reviewSignals)
+					))
+						if (signal !== "evidence_only") counts[signal]++;
+				}
+				return {
+					counts,
+					total: matched.length,
+					localization: page,
+					units: page.lines.flatMap((line) => {
+						if (line.origin.kind === "evidence") return [];
+						const entry = line.origin.unitIds
+							.flatMap((id) => {
+								const item = byId.get(id);
+								return item ? [item] : [];
+							})
+							.at(0);
+						return entry
+							? [{ ...entry.presentation, localization: line.cultures }]
+							: [];
+					})
+				};
+			}
+			const { matched, counts } = matching(request);
 			const afterCursor = request.cursor
 				? matched.findIndex(({ unit }) => unit.id === request.cursor) + 1
 				: 0;
 			const page = matched.slice(Math.max(0, afterCursor), afterCursor + request.pageSize);
 			const final = page.at(-1)?.unit.id;
 			return {
+				counts,
 				total: matched.length,
 				units: page.map(({ presentation }) => presentation),
 				...(final !== undefined && afterCursor + page.length < matched.length
@@ -175,8 +330,10 @@ export function textCorpusQuery(corpus: TextCorpus): TextCorpusQuery {
 			};
 		},
 		focus: (request) => {
-			const unit = units.find((candidate) => candidate.id === request.id);
-			if (!unit) return undefined;
+			const entry = byId.get(request.id);
+			if (!entry) return undefined;
+			const { unit, presentation } = entry;
+			const localized = localizationByUnit.get(unit.id);
 			const afterCursor = request.occurrenceCursor
 				? unit.occurrences.findIndex(
 						(occurrence) => occurrence.id === request.occurrenceCursor
@@ -203,7 +360,8 @@ export function textCorpusQuery(corpus: TextCorpus): TextCorpusQuery {
 				diagnostics,
 				occurrences,
 				totalOccurrences: unit.occurrences.length,
-				unit: searchResult(unit, duplicateSources),
+				unit: presentation,
+				...(localized === undefined ? undefined : { localization: localized }),
 				...(final !== undefined &&
 				afterCursor + occurrences.length < unit.occurrences.length
 					? { nextOccurrenceCursor: final }

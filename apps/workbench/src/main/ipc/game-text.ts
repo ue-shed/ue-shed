@@ -2,16 +2,68 @@ import { Effect } from "effect";
 import { ElectronIpc } from "../adapters/electron-ipc.js";
 import { invokeContracts } from "../ipc-contracts.js";
 import { WorkbenchGameText } from "../services/game-text.js";
+import { WorkbenchGameTextOperations } from "../services/game-text-operations.js";
 
 export const register = Effect.gen(function* () {
 	const ipc = yield* ElectronIpc;
 	const gameText = yield* WorkbenchGameText;
+	const operations = yield* WorkbenchGameTextOperations;
+	yield* ipc.register(
+		invokeContracts["game-text:localization:operation-state"],
+		operations.state
+	);
+	yield* ipc.register(invokeContracts["game-text:localization:operation-plan"], operations.plan);
+	yield* ipc.register(invokeContracts["game-text:localization:operation-run"], operations.run);
+	yield* ipc.register(
+		invokeContracts["game-text:localization:operation-cancel"],
+		operations.cancel
+	);
+	yield* ipc.register(
+		invokeContracts["game-text:localization:operation-files"],
+		operations.files
+	);
+	yield* ipc.register(invokeContracts["game-text:localization:quality-search"], (request) =>
+		gameText.localizationQualitySearch(request)
+	);
+	yield* ipc.register(invokeContracts["game-text:localization:quality-focus"], (request) =>
+		gameText.localizationQualityFocus(request)
+	);
+	yield* ipc.register(invokeContracts["game-text:localization:changes"], (request) =>
+		gameText.localizationChanges(request)
+	);
+	yield* ipc.register(invokeContracts["game-text:localization:edits"], (request) =>
+		gameText.localizationEdits(request)
+	);
+	yield* ipc.register(invokeContracts["game-text:localization:review"], (request) =>
+		gameText.localizationReview(request)
+	);
+	yield* ipc.register(invokeContracts["game-text:localization:report"], (request) =>
+		gameText.localizationReport(request)
+	);
+	yield* ipc.register(invokeContracts["game-text:localization:report-file"], (request) =>
+		gameText.localizationReportFile(request)
+	);
+	yield* ipc.register(invokeContracts["game-text:localization:targets"], () =>
+		gameText.localizationTargets()
+	);
+	yield* ipc.register(invokeContracts["game-text:localization:target"], (target) =>
+		gameText.localizationTarget(target)
+	);
+	yield* ipc.register(invokeContracts["game-text:localization:focus"], (request) =>
+		gameText.localizationFocus(request)
+	);
+	yield* ipc.register(invokeContracts["game-text:quality:reload-rules"], () =>
+		gameText.reloadQualityRules()
+	);
+	yield* ipc.register(invokeContracts["game-text:quality:create-starter-rules"], (loadExisting) =>
+		gameText.createStarterRules(loadExisting)
+	);
 
 	yield* ipc.register(invokeContracts["game-text:configured-scan"], () =>
-		gameText.configuredScan()
+		gameText.configuredRefresh(true)
 	);
 	yield* ipc.register(invokeContracts["game-text:choose-and-scan"], () =>
-		gameText.chooseAndScan().pipe(Effect.orDie)
+		gameText.chooseAndRefresh().pipe(Effect.orDie)
 	);
 	yield* ipc.register(invokeContracts["game-text:configured-refresh"], (refresh) =>
 		gameText.configuredRefresh(refresh)

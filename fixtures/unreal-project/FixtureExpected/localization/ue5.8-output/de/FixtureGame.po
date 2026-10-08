@@ -1,0 +1,185 @@
+﻿# FixtureGame German translation.
+# Fill out your copyright notice in the Description page of Project Settings.
+# 
+msgid ""
+msgstr ""
+"Project-Id-Version: FixtureGame\n"
+"POT-Creation-Date: 2026-10-07 09:00\n"
+"PO-Revision-Date: 2026-10-07 09:00\n"
+"Language-Team: \n"
+"Language: de\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+#. Key:	DuplicateA
+#. SourceLocation:	/Game/Fixture/Localization/DA_Localization.DA_Localization.EqualSourceFirst
+#: /Game/Fixture/Localization/DA_Localization.DA_Localization.EqualSourceFirst
+msgctxt "Fixture.Localization.Asset,DuplicateA"
+msgid "Confirm"
+msgstr "Bestätigen"
+
+#. Key:	DuplicateB
+#. SourceLocation:	/Game/Fixture/Localization/DA_Localization.DA_Localization.EqualSourceSecond
+#: /Game/Fixture/Localization/DA_Localization.DA_Localization.EqualSourceSecond
+msgctxt "Fixture.Localization.Asset,DuplicateB"
+msgid "Confirm"
+msgstr "Bestätigen"
+
+#. Key:	Outdated
+#. SourceLocation:	/Game/Fixture/Localization/DA_Localization.DA_Localization.SharedPrimary
+#: /Game/Fixture/Localization/DA_Localization.DA_Localization.SharedPrimary
+msgctxt "Fixture.Localization.Asset,Outdated"
+msgid "Open the gate"
+msgstr ""
+
+#. Key:	EmptyFrench
+#. SourceLocation:	/Game/Fixture/Localization/DT_Localization.DT_Localization.EmptyFrench.DisplayName
+#: /Game/Fixture/Localization/DT_Localization.DT_Localization.EmptyFrench.DisplayName
+msgctxt "Fixture.Localization.Rows,EmptyFrench"
+msgid "Return to menu"
+msgstr "Zum Menü zurückkehren"
+
+#. Key:	MissingFrench
+#. SourceLocation:	/Game/Fixture/Localization/DT_Localization.DT_Localization.MissingFrench.DisplayName
+#: /Game/Fixture/Localization/DT_Localization.DT_Localization.MissingFrench.DisplayName
+msgctxt "Fixture.Localization.Rows,MissingFrench"
+msgid "Save progress"
+msgstr "Fortschritt speichern"
+
+#. Key:	ChangedAfterGather
+#. SourceLocation:	/Game/Fixture/Localization/ST_Localization.ST_Localization
+#: /Game/Fixture/Localization/ST_Localization.ST_Localization
+msgctxt "Fixture.Localization.Table,ChangedAfterGather"
+msgid "Gathered instruction"
+msgstr "Gesammelte Anweisung"
+
+#. Key:	Gender
+#. SourceLocation:	/Game/Fixture/Localization/ST_Localization.ST_Localization
+#: /Game/Fixture/Localization/ST_Localization.ST_Localization
+msgctxt "Fixture.Localization.Table,Gender"
+msgid "{Person}|gender(He,She,They)"
+msgstr "{Person}|gender(Er)"
+
+#. Key:	Hangul
+#. SourceLocation:	/Game/Fixture/Localization/ST_Localization.ST_Localization
+#: /Game/Fixture/Localization/ST_Localization.ST_Localization
+msgctxt "Fixture.Localization.Table,Hangul"
+msgid "{Name}|hpp(은,는)"
+msgstr "{Name}|hpp(ist)"
+
+#. Key:	LineBreak
+#. SourceLocation:	/Game/Fixture/Localization/ST_Localization.ST_Localization
+#: /Game/Fixture/Localization/ST_Localization.ST_Localization
+msgctxt "Fixture.Localization.Table,LineBreak"
+msgid "First\nSecond"
+msgstr "Erste Zweite"
+
+#. Key:	LiteralEscape
+#. SourceLocation:	/Game/Fixture/Localization/ST_Localization.ST_Localization
+#: /Game/Fixture/Localization/ST_Localization.ST_Localization
+msgctxt "Fixture.Localization.Table,LiteralEscape"
+msgid "Type a slash"
+msgstr ""
+
+#. Key:	MalformedModifier
+#. SourceLocation:	/Game/Fixture/Localization/ST_Localization.ST_Localization
+#: /Game/Fixture/Localization/ST_Localization.ST_Localization
+msgctxt "Fixture.Localization.Table,MalformedModifier"
+msgid "{Count}|plural(one=item,other=items)"
+msgstr "{Count}|plural(one=Gegenstand,other=)"
+
+#. Key:	MissingPluralForm
+#. SourceLocation:	/Game/Fixture/Localization/ST_Localization.ST_Localization
+#: /Game/Fixture/Localization/ST_Localization.ST_Localization
+msgctxt "Fixture.Localization.Table,MissingPluralForm"
+msgid "{Count}|plural(one=item,other=items)"
+msgstr "{Count}|plural(one=Gegenstand)"
+
+#. Key:	NamedArgument
+#. SourceLocation:	/Game/Fixture/Localization/ST_Localization.ST_Localization
+#: /Game/Fixture/Localization/ST_Localization.ST_Localization
+msgctxt "Fixture.Localization.Table,NamedArgument"
+msgid "Talking with {PlayerName}"
+msgstr "Gespräch mit {Name}"
+
+#. Key:	NestedPlural
+#. SourceLocation:	/Game/Fixture/Localization/ST_Localization.ST_Localization
+#: /Game/Fixture/Localization/ST_Localization.ST_Localization
+msgctxt "Fixture.Localization.Table,NestedPlural"
+msgid "{Count}|plural(one=\"{Owner} has one item\",other=\"{Owner} has items\")"
+msgstr "{Count}|plural(one=\"{Wrong} hat eins\",other=\"{Wrong} hat viele\")"
+
+#. Key:	OrderedArgument
+#. SourceLocation:	/Game/Fixture/Localization/ST_Localization.ST_Localization
+#: /Game/Fixture/Localization/ST_Localization.ST_Localization
+msgctxt "Fixture.Localization.Table,OrderedArgument"
+msgid "Checkpoint {0}"
+msgstr "Kontrollpunkt {0}"
+
+#. Key:	Ordinal
+#. SourceLocation:	/Game/Fixture/Localization/ST_Localization.ST_Localization
+#: /Game/Fixture/Localization/ST_Localization.ST_Localization
+msgctxt "Fixture.Localization.Table,Ordinal"
+msgid "{Rank}|ordinal(one=first,two=second,few=third,other=last)"
+msgstr "{Rank}|ordinal(other=letzte)"
+
+#. Key:	Plural
+#. SourceLocation:	/Game/Fixture/Localization/ST_Localization.ST_Localization
+#: /Game/Fixture/Localization/ST_Localization.ST_Localization
+msgctxt "Fixture.Localization.Table,Plural"
+msgid "{Count} {Count}|plural(one=item,other=items)"
+msgstr "{Count} {Count}|plural(one=Gegenstand,other=Gegenstände)"
+
+#. Key:	RemovedAfterGather
+#. SourceLocation:	/Game/Fixture/Localization/ST_Localization.ST_Localization
+#: /Game/Fixture/Localization/ST_Localization.ST_Localization
+msgctxt "Fixture.Localization.Table,RemovedAfterGather"
+msgid "Temporary instruction"
+msgstr "Vorübergehende Anweisung"
+
+#. Key:	RichText
+#. SourceLocation:	/Game/Fixture/Localization/ST_Localization.ST_Localization
+#: /Game/Fixture/Localization/ST_Localization.ST_Localization
+msgctxt "Fixture.Localization.Table,RichText"
+msgid "<Em>Continue</>"
+msgstr "<Em>Weiter"
+
+#. Key:	Unsynced
+#. SourceLocation:	/Game/Fixture/Localization/ST_Localization.ST_Localization
+#: /Game/Fixture/Localization/ST_Localization.ST_Localization
+msgctxt "Fixture.Localization.Table,Unsynced"
+msgid "Start a new session"
+msgstr "Eine frische Sitzung beginnen"
+
+#. Key:	Welcome
+#. SourceLocation:	/Game/Fixture/Localization/ST_Localization.ST_Localization
+#. DevNotes:	Greeting on the start screen.
+#. InfoMetaData:	"Comment" : "Greeting on the start screen."
+#: /Game/Fixture/Localization/ST_Localization.ST_Localization
+msgctxt "Fixture.Localization.Table,Welcome"
+msgid "Welcome back"
+msgstr "Willkommen zurück"
+
+#. Key:	Whitespace
+#. SourceLocation:	/Game/Fixture/Localization/ST_Localization.ST_Localization
+#: /Game/Fixture/Localization/ST_Localization.ST_Localization
+msgctxt "Fixture.Localization.Table,Whitespace"
+msgid "Keep moving"
+msgstr "Weitergehen "
+
+#. Key:	RuntimeOrdered
+#. SourceLocation:	Source/UEShedFixture/Private/UEShedLocalizationText.cpp(10)
+#: Source/UEShedFixture/Private/UEShedLocalizationText.cpp(10)
+msgctxt "Fixture.Localization.Source,RuntimeOrdered"
+msgid "Stage {0} of {1}"
+msgstr "Abschnitt {0} von {1}"
+
+#. Key:	RuntimeReady
+#. SourceLocation:	Source/UEShedFixture/Private/UEShedLocalizationText.cpp(9)
+#: Source/UEShedFixture/Private/UEShedLocalizationText.cpp(9)
+msgctxt "Fixture.Localization.Source,RuntimeReady"
+msgid "Ready to begin"
+msgstr "Bereit zum Start"
+

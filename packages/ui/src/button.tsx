@@ -5,12 +5,13 @@ import { type ComponentProps } from "@solidjs/web";
 
 export type ButtonProps = ParentProps<
 	Omit<ComponentProps<"button">, "class" | "style"> & {
+		readonly size?: "compact" | undefined;
 		readonly tone?: "primary" | "secondary" | "quiet";
 	}
 >;
 
 export function Button(props: ButtonProps) {
-	const buttonProps = omit(props, "children", "tone");
+	const buttonProps = omit(props, "children", "tone", "size");
 	return (
 		<button
 			{...buttonProps}
@@ -20,7 +21,8 @@ export function Button(props: ButtonProps) {
 					? styles.primary
 					: props.tone === "quiet"
 						? styles.quiet
-						: styles.secondary
+						: styles.secondary,
+				props.size === "compact" && styles.compact
 			)}
 		>
 			{props.children}
@@ -56,6 +58,7 @@ const styles = stylex.create({
 		whiteSpace: "nowrap",
 		opacity: { default: 1, ":disabled": 0.42 }
 	},
+	compact: { height: 26, padding: "3px 8px", fontSize: 12 },
 	// The one sky-blue call to action per view: heavier and roomier than the rest.
 	primary: {
 		backgroundColor: {

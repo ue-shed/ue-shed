@@ -318,7 +318,9 @@ fn conformance(version: &str, ue5: Option<i32>) {
         .iter()
         .map(|entry| {
             json!({
-                "source": entry.source, "dev_notes": "",
+                // A string table entry's Comment metadata is its translator notes.
+                "source": entry.source,
+                "dev_notes": entry.metadata.get("Comment").map_or("", String::as_str),
                 "identity": {
                     "status": "resolved", "namespace": strings.namespace, "key": entry.key
                 },

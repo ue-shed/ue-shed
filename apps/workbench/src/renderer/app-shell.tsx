@@ -565,7 +565,12 @@ export function AppShell() {
 					<span {...stylex.attrs(styles.version)}>0.0.0</span>
 				</footer>
 			</aside>
-			<div {...stylex.attrs(styles.content)}>
+			<div
+				{...stylex.attrs(
+					styles.content,
+					route() === "#/game-text" && styles.workbenchContent
+				)}
+			>
 				<Show when={projectRevision()} keyed>
 					{(_revision) => {
 						// Retained project state outlives routes remounted for a new Unreal target.
@@ -573,6 +578,7 @@ export function AppShell() {
 							createSignal<ScenarioStudioDraft>();
 						const [gameTextPreferences, setGameTextPreferences] =
 							createSignal<GameTextPreferences>();
+						const [gameTextTable, setGameTextTable] = createSignal<string>();
 						const [texturePreferences, setTexturePreferences] =
 							createSignal<TextureAuditPreferences>();
 						return (
@@ -591,7 +597,9 @@ export function AppShell() {
 											}
 										>
 											<Match when={route() === "#/authoring"}>
-												<AuthoringRoute />
+												<AuthoringRoute
+													initialObjectPath={gameTextTable()}
+												/>
 											</Match>
 											<Match when={route() === "#/asset-audits/textures"}>
 												<TextureAuditRoute
@@ -601,6 +609,10 @@ export function AppShell() {
 											</Match>
 											<Match when={route() === "#/game-text"}>
 												<GameTextRoute
+													onOpenDataAuthoring={(objectPath) => {
+														setGameTextTable(objectPath);
+														window.location.hash = "/authoring";
+													}}
 													initialPreferences={gameTextPreferences()}
 													onPreferencesChange={setGameTextPreferences}
 												/>
@@ -1016,6 +1028,11 @@ const styles = stylex.create({
 	content: {
 		flex: "1 1 auto",
 		minWidth: 0
+	},
+	workbenchContent: {
+		height: "100dvh",
+		minHeight: 0,
+		overflow: "hidden"
 	},
 	home: {
 		maxWidth: 1080,

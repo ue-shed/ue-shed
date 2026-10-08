@@ -1,11 +1,32 @@
 {
 	"schemaVersion": 1,
-	"fixtureVersion": "1.10.0",
+	"fixtureVersion": "1.11.0",
 	"engine": {
 		"major": 5,
 		"minor": 7
 	},
 	"contentRoot": "/Game/Fixture/Authoring",
+	"localization": {
+		"target": "FixtureGame",
+		"nativeCulture": "en",
+		"cultures": ["en", "de", "fr"],
+		"contentRoot": "/Game/Fixture/Localization",
+		"sourceRoot": "Source/UEShedFixture",
+		"settings": "Config/DefaultEditor.ini",
+		"configRoot": "Config/Localization",
+		"dataRoot": "Content/Localization/FixtureGame",
+		"translations": "FixtureSource/Localization/translations.json",
+		"intent": "FixtureSource/Localization/expected-states.json",
+		"evidence": [
+			"FixtureExpected/localization/evidence.ue5.7.json",
+			"FixtureExpected/localization/evidence.ue5.8.json"
+		],
+		"assets": [
+			"/Game/Fixture/Localization/ST_Localization.ST_Localization",
+			"/Game/Fixture/Localization/DT_Localization.DT_Localization",
+			"/Game/Fixture/Localization/DA_Localization.DA_Localization"
+		]
+	},
 	"blueprintGraph": {
 		"assetPath": "/Game/Fixture/Blueprints/BP_GraphFixture.BP_GraphFixture",
 		"graphs": 2,

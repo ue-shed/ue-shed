@@ -111,6 +111,7 @@
 			"packages/ui/package.json",
 			"packages/ui/tsconfig.json",
 			"packages/ui/src/button.tsx",
+			"packages/ui/src/chip.tsx",
 			"packages/ui/src/anchored-popover.tsx",
 			"packages/ui/src/actor-explorer-core.ts",
 			"packages/ui/src/actor-explorer-toolbar.tsx",

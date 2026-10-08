@@ -1,1858 +1,1215 @@
-import type { GameTextInvestigationPreset, TextQualityFilter } from "@ue-shed/game-text/browser";
-import { InvestigationActions } from "@ue-shed/ui/investigation-actions";
 import * as stylex from "@stylexjs/stylex";
-import type {
-	TextCorpusFocus,
-	TextCorpusQueryRunResult,
-	TextCorpusQuerySummary,
-	TextCorpusSearchPage,
-	TextReviewLens,
-	TextReviewSignal,
-	TextQualityQueryRunResult,
-	TextQualityQuerySummary,
-	TextQualityRuleDocument,
-	TextQualityRuleUpdateResult,
-	TextUnitSearchResult
+import {
+	textLocationLabel,
+	textCountLabel,
+	textReviewSignalLabel,
+	type GameTextInvestigationPreset,
+	type TextCorpusFocus,
+	type TextCorpusQueryRunResult,
+	type TextCorpusQuerySummary,
+	type TextCorpusSearchPage,
+	type TextCorpusSearchRequest,
+	type TextOccurrence,
+	type TextQualityFindingId,
+	type TextQualityFilter,
+	type TextQualityQueryRunResult,
+	type TextQualityQuerySummary,
+	type GameTextRuleDocument,
+	type TextQualityRuleUpdateResult,
+	type TextUnitId
 } from "@ue-shed/game-text/browser";
-import type { EditorAssetLocateResult } from "@ue-shed/protocol";
-import { createEffectAction, createEffectSubscription } from "@ue-shed/ui";
+import { Button, Chip, createEffectAction, createEffectSubscription } from "@ue-shed/ui";
+import { InvestigationActions } from "@ue-shed/ui/investigation-actions";
 import { TaskProgressModal, type TaskProgress } from "@ue-shed/ui/task-progress";
-import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { Effect, Schedule, Stream } from "effect";
-import {
-	For,
-	Match,
-	Show,
-	Switch,
-	createSignal,
-	createEffect,
-	onSettled,
-	type Accessor
-} from "solid-js";
+import { For, Show, createEffect, createSignal, onSettled, untrack } from "solid-js";
+import type { JSX } from "@solidjs/web";
 import type { GameTextClientApi } from "./game-text-client.js";
+import { CopyButton } from "./game-text-copy-button.js";
+import { ShowInUnrealButton } from "./game-text-locate-button.js";
+import { ReadProblems, CoverageNotes } from "./game-text-read-problems.js";
 import { GameTextQualityWorkspace } from "./game-text-quality-workspace.js";
-import { createGameTextRuleState, type RuleEditorState } from "./game-text-rule-state.js";
+import { GameTextLocalizationQuality } from "./game-text-localization-quality.js";
+import { GameTextReports } from "./game-text-reports.js";
+import { createGameTextRuleState } from "./game-text-rule-state.js";
 import {
-	identityLabel,
-	primaryContext,
-	sourceText,
-	textContext,
-	type CapabilityFilter
-} from "./game-text-view.js";
+	readGameTextPreferences,
+	saveGameTextPreferences,
+	type GameTextPreferences
+} from "./game-text-preferences.js";
+import { createGameTextLocalizationState } from "./game-text-localization-state.js";
+import {
+	createGameTextEdits,
+	StagedEditsButton,
+	StagedEditsPanel
+} from "./game-text-translation-edits.js";
+import {
+	LocalizationControls,
+	LocalizationChips,
+	ReviewChips,
+	TranslationsDetail,
+	GatheredDetail
+} from "./game-text-localization-view.js";
+import { GameTextResultRows } from "./game-text-result-rows.js";
+import {
+	createGameTextOperations,
+	OperationPanel,
+	SyncWithUnreal,
+	UnrealSteps
+} from "./game-text-operations.js";
+import { identityLabel, locationDetail, sourceText } from "./game-text-view.js";
+import { styles } from "./game-text-styles.js";
 
-type ViewState =
-	| { readonly status: "loading" }
-	| { readonly status: "not_configured" }
-	| { readonly status: "cancelled" }
-	| {
-			readonly status: "failed";
-			readonly error: Extract<TextCorpusQueryRunResult, { status: "failed" }>["error"];
-	  }
-	| { readonly status: "ready" };
+export { CopyButton } from "./game-text-copy-button.js";
+export type { GameTextPreferences } from "./game-text-preferences.js";
 
-type CopyFeedback =
-	| { readonly status: "idle" }
-	| { readonly status: "copied"; readonly target: string }
-	| { readonly status: "failed"; readonly target: string };
-
-type LocateFeedback =
-	| { readonly status: "idle" }
-	| { readonly objectPath: string; readonly status: "locating" }
-	| EditorAssetLocateResult
-	| {
-			readonly message: string;
-			readonly objectPath: string;
-			readonly recovery: string;
-			readonly status: "failed";
-	  };
-
-function locateLabel(feedback: LocateFeedback, objectPath: string, idleLabel: string): string {
-	if (feedback.status === "idle" || feedback.objectPath !== objectPath) return idleLabel;
-	if (feedback.status === "locating") return "Opening…";
-	if (feedback.status === "located") return "Opened";
-	if (feedback.status === "failed") return "Failed";
-	if (feedback.reason === "not_connected") return "Unreal offline";
-	if (feedback.reason === "capability_missing") return "Plugin needed";
-	if (feedback.reason === "asset_not_found") return "Not found";
-	return "Unavailable";
-}
-
-const filters: readonly { readonly value: CapabilityFilter; readonly label: string }[] = [
+const lenses = [
 	{ value: "all", label: "All text" },
-	{ value: "source_editable", label: "Source editable" },
-	{ value: "read_only", label: "Read only" }
-];
+	{ value: "shared", label: "Used in several places" },
+	{ value: "duplicate_source", label: "Same text, different keys" },
+	{ value: "long", label: "Long text" },
+	{ value: "unresolved", label: "Not localizable" },
+	{ value: "conflicting", label: "Same key, different text" }
+] as const;
 
-const reviewLenses: readonly {
-	readonly count: (summary: TextCorpusQuerySummary) => number;
-	readonly label: string;
-	readonly value: TextReviewLens;
-}[] = [
-	{ count: (summary) => summary.review.all, label: "All text", value: "all" },
-	{ count: (summary) => summary.review.shared, label: "Shared identity", value: "shared" },
-	{
-		count: (summary) => summary.review.duplicateSource,
-		label: "Duplicate source",
-		value: "duplicate_source"
-	},
-	{
-		count: (summary) => summary.review.long,
-		label: "Over 40 characters",
-		value: "long"
-	},
-	{ count: (summary) => summary.review.unresolved, label: "Unresolved ID", value: "unresolved" },
-	{
-		count: (summary) => summary.review.conflicting,
-		label: "Source conflicts",
-		value: "conflicting"
-	}
-];
-
-function signalLabel(signal: TextReviewSignal): string {
-	if (signal === "duplicate_source") return "Duplicate source";
-	if (signal === "evidence_only") return "Read only";
-	if (signal === "unresolved") return "Unresolved ID";
-	if (signal === "conflicting") return "Source conflict";
-	if (signal === "shared") return "Shared identity";
-	return "Over 40 characters";
-}
-
-function sourceKind(unit: TextUnitSearchResult): string {
-	if (unit.locationKinds.length > 1) return "Multiple sources";
-	const kind = unit.locationKinds[0];
-	if (kind === "string_table_entry") return "String Table";
-	if (kind === "data_table_cell") return "DataTable";
-	return "Asset property";
-}
-
-function failure(cause: unknown): Extract<ViewState, { status: "failed" }> {
-	return {
-		error: {
-			code: "contract_failure",
-			message: String(cause),
-			recovery: "Restart Workbench. If the problem persists, verify package versions.",
-			retrySafe: true
-		},
-		status: "failed"
-	};
-}
-
-function FailureCard(props: {
-	readonly title: string;
-	readonly detail: string | undefined;
-	readonly onRetry: () => void;
-}) {
+function scanTime(value: string | undefined): string {
+	if (!value) return "";
+	const date = new Date(value);
+	if (!Number.isFinite(date.getTime())) return "";
+	const today = date.toDateString() === new Date().toDateString();
 	return (
-		<section role="alert" {...stylex.attrs(styles.failureCard)}>
-			<strong {...stylex.attrs(styles.failureTitle)}>{props.title}</strong>
-			<p {...stylex.attrs(styles.failureCopy)}>
-				Try again. If it keeps failing, restart Workbench and verify package versions.
-			</p>
-			<button type="button" onClick={props.onRetry} {...stylex.attrs(styles.button)}>
-				Retry
-			</button>
-			<Show when={props.detail}>
-				{(detail) => (
-					<details {...stylex.attrs(styles.technicalDetails)}>
-						<summary {...stylex.attrs(styles.techSummary)}>Technical details</summary>
-						<pre {...stylex.attrs(styles.techPre)}>{detail()}</pre>
-					</details>
-				)}
-			</Show>
-		</section>
+		(today ? "" : date.toLocaleDateString() + " ") +
+		date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
 	);
 }
 
-function OccurrenceCard(props: {
-	readonly locateFeedback: LocateFeedback;
-	readonly occurrence: TextCorpusFocus["occurrences"][number];
-	readonly onLocate: (objectPath: string) => void;
-}) {
-	const context = textContext(props.occurrence.location);
-	const isCurrentLocate = () =>
-		props.locateFeedback.status !== "idle" &&
-		props.locateFeedback.objectPath === props.occurrence.location.objectPath;
-	return (
-		<article {...stylex.attrs(styles.occurrence)}>
-			<header {...stylex.attrs(styles.occurrenceHeader)}>
-				<div {...stylex.attrs(styles.contextIdentity)}>
-					<small {...stylex.attrs(styles.contextKind)}>{context.kind}</small>
-					<strong {...stylex.attrs(styles.contextTitle)}>{context.title}</strong>
-					<span {...stylex.attrs(styles.contextDetail)}>{context.detail}</span>
-				</div>
-				<span {...stylex.attrs(styles.occurrenceActions)}>
-					<span
-						{...stylex.attrs(
-							styles.authority,
-							props.occurrence.editCapability === "source_editable"
-								? styles.editable
-								: styles.readOnly
-						)}
-					>
-						{props.occurrence.editCapability === "source_editable"
-							? "Source editable"
-							: "Read only"}
-					</span>
-					<button
-						type="button"
-						disabled={isCurrentLocate() && props.locateFeedback.status === "locating"}
-						onClick={() => props.onLocate(props.occurrence.location.objectPath)}
-						aria-label={`Open package for ${context.title}`}
-						{...stylex.attrs(styles.locateButton)}
-					>
-						{locateLabel(
-							props.locateFeedback,
-							props.occurrence.location.objectPath,
-							"Open package"
-						)}
-					</button>
-				</span>
-			</header>
-			<Show
-				when={
-					isCurrentLocate() &&
-					(props.locateFeedback.status === "unavailable" ||
-						props.locateFeedback.status === "failed")
-						? props.locateFeedback
-						: undefined
-				}
-			>
-				{(feedback) => (
-					<p role="status" {...stylex.attrs(styles.locateMessage)}>
-						<strong>Couldn’t open the package.</strong> {feedback().message}{" "}
-						{feedback().recovery}
-					</p>
-				)}
-			</Show>
-			<details {...stylex.attrs(styles.sourceDetails)}>
-				<summary {...stylex.attrs(styles.detailsSummary)}>Technical details</summary>
-				<code {...stylex.attrs(styles.objectPath)}>
-					{props.occurrence.location.objectPath}
-				</code>
-				<span {...stylex.attrs(styles.packageFile)}>{props.occurrence.packageFile}</span>
-			</details>
-		</article>
-	);
+function focusStats(focus: TextCorpusFocus): string {
+	return [
+		textCountLabel(focus.unit.characterCount, "character"),
+		textCountLabel(focus.unit.wordCount, "word"),
+		textCountLabel(focus.totalOccurrences, "location")
+	].join(" · ");
 }
 
-/** Bounded query presentation; the renderer never receives the whole corpus. */
-export interface GameTextPreferences {
-	readonly mode?: "corpus" | "quality";
-	readonly qualityFilter?: TextQualityFilter;
-	readonly qualityDocument?: TextQualityRuleDocument | undefined;
-	readonly qualityEditor?: RuleEditorState | undefined;
-	readonly query: string;
-	readonly capability: CapabilityFilter;
-	readonly lens: TextReviewLens;
-	readonly selectedId: TextUnitSearchResult["id"] | undefined;
-}
 export function GameTextRoute(props: {
 	readonly client: GameTextClientApi;
 	readonly initialPreferences?: GameTextPreferences | undefined;
 	readonly onPreferencesChange?: (preferences: GameTextPreferences) => void;
+	readonly projectKey?: string | undefined;
+	readonly onOpenDataAuthoring?: (objectPath: string) => void;
 }) {
-	const [qualityFilter, setQualityFilter] = createSignal<TextQualityFilter>(
-		props.initialPreferences?.qualityFilter ?? "all"
+	const initial = untrack(() => props.initialPreferences);
+	const [query, setQuery] = createSignal(initial?.query ?? "");
+	const [capability, setCapability] = createSignal(initial?.capability ?? "all");
+	const [lens, setLens] = createSignal(initial?.lens ?? "all");
+	const [withoutNotes, setWithoutNotes] = createSignal(initial?.withoutNotes ?? false);
+	const [mode, setMode] = createSignal<"corpus" | "quality" | "reports">(
+		initial?.mode ?? "corpus"
 	);
-	const [investigationRevision, setInvestigationRevision] = createSignal(0);
-	const refreshAction = createEffectAction();
-	const searchAction = createEffectAction();
-	const focusAction = createEffectAction();
-	const locateAction = createEffectAction();
-	const qualityAction = createEffectAction();
-	const progressSubscription = createEffectSubscription();
-	const [state, setState] = createSignal<ViewState>({ status: "loading" });
+	const [qualityFilter, setQualityFilter] = createSignal(initial?.qualityFilter ?? "all");
+	const [selectedId, setSelectedId] = createSignal<TextUnitId | undefined>(initial?.selectedId);
+	const [selectedFindingId, setSelectedFindingId] = createSignal<
+		TextQualityFindingId | undefined
+	>(initial?.selectedFindingId);
+	const [summary, setSummary] = createSignal<TextCorpusQuerySummary>();
+	const [page, setPage] = createSignal<TextCorpusSearchPage>();
+	const [focus, setFocus] = createSignal<TextCorpusFocus>();
+	const [searching, setSearching] = createSignal(true);
+	const [loading, setLoading] = createSignal(true);
+	const [memoryReady, setMemoryReady] = createSignal(false);
+	const [projectKey, setProjectKey] = createSignal(untrack(() => props.projectKey));
+	const [error, setError] = createSignal<string>();
+	const [scanNotice, setScanNotice] = createSignal<string>();
+	const [qualityFailure, setQualityFailure] =
+		createSignal<Extract<TextQualityQueryRunResult, { status: "failed" }>["error"]>();
+	const [workspaceFindingCount, setWorkspaceFindingCount] = createSignal<number>();
+	const workspaceCountAction = createEffectAction();
+	const sourceFilter = (): TextQualityFilter =>
+		qualityFilter() === "character_budget"
+			? "character_budget"
+			: qualityFilter() === "terminology"
+				? "terminology"
+				: "all";
+	const [qualitySummary, setQualitySummary] = createSignal<TextQualityQuerySummary>();
+	const qualityTabCount = () =>
+		localization.target() && props.client.localizationQualitySearch
+			? workspaceFindingCount()
+			: qualitySummary()?.findingCount;
+	const [qualityDocument, setQualityDocument] = createSignal<GameTextRuleDocument | undefined>(
+		initial?.qualityDocument
+	);
 	const [progress, setProgress] = createSignal<TaskProgress>({
 		completed: 0,
+		total: 0,
 		phase: "idle",
-		stage: "game_text",
-		total: 0
+		stage: "game_text"
 	});
-	const [summary, setSummary] = createSignal<TextCorpusQuerySummary>();
-	const [page, setPage] = createSignal<TextCorpusSearchPage>({ total: 0, units: [] });
-	const [query, setQuery] = createSignal<string>(props.initialPreferences?.query ?? "");
-	const [capability, setCapability] = createSignal<CapabilityFilter>(
-		props.initialPreferences?.capability ?? "all"
-	);
-	const [lens, setLens] = createSignal<TextReviewLens>(props.initialPreferences?.lens ?? "all");
-	const [selectedId, setSelectedId] = createSignal<TextUnitSearchResult["id"] | undefined>(
-		props.initialPreferences?.selectedId ?? undefined
-	);
-	const [focus, setFocus] = createSignal<TextCorpusFocus>();
-	const [locateFeedback, setLocateFeedback] = createSignal<LocateFeedback>({ status: "idle" });
-	const [mode, setMode] = createSignal<"corpus" | "quality">(
-		props.initialPreferences?.mode ?? "corpus"
-	);
-	const [qualitySummary, setQualitySummary] = createSignal<TextQualityQuerySummary>();
-	const [qualityDocument, setQualityDocument] = createSignal<TextQualityRuleDocument | undefined>(
-		props.initialPreferences?.qualityDocument
-	);
-	const [qualityFailure, setQualityFailure] =
-		createSignal<
-			Extract<
-				TextQualityQueryRunResult | TextQualityRuleUpdateResult,
-				{ status: "failed" }
-			>["error"]
-		>();
+	const searchAction = createEffectAction();
+	const focusAction = createEffectAction();
+	const refreshAction = createEffectAction();
+	const qualityAction = createEffectAction();
+	const memoryAction = createEffectAction();
+	const persistAction = createEffectAction();
+	const progressSubscription = createEffectSubscription();
 	let searchGeneration = 0;
 	let focusGeneration = 0;
-	const initialQualityDocument = props.initialPreferences?.qualityDocument;
-	const qualityEditor = createGameTextRuleState({
+	const localization = createGameTextLocalizationState({
+		client: props.client,
+		initial,
+		summary,
+		selectedUnit: selectedId,
+		onPending: () => {
+			searchGeneration++;
+			searchAction.cancel();
+			setSearching(true);
+			setPage(undefined);
+		}
+	});
+	const operations = createGameTextOperations({
+		client: props.client,
+		target: localization.target,
+		scanning: loading,
+		revision: summary,
+		onCompleted: () => load(false)
+	});
+	const edits = createGameTextEdits({
+		client: props.client,
+		target: localization.target,
+		nativeCulture: () => localization.active()?.target.nativeCulture ?? undefined,
+		busy: () => loading() || operations.busy(),
+		onWritten: () => load(false)
+	});
+	const editor = createGameTextRuleState({
 		client: props.client,
 		initialState:
-			props.initialPreferences?.qualityEditor ??
-			(initialQualityDocument
+			initial?.qualityEditor ??
+			(initial?.qualityDocument
 				? {
-						draft: initialQualityDocument,
-						savedDocument: initialQualityDocument
+						draft: initial.qualityDocument,
+						savedDocument: initial.qualityDocument
 					}
 				: undefined),
 		onReviewed: (result) => {
+			setQualityFailure(undefined);
 			setQualityDocument(result.document);
 			setQualitySummary(result.summary);
-			setInvestigationRevision((value) => value + 1);
 		}
 	});
 
-	const requestFocus = (id: TextUnitSearchResult["id"]) => {
+	const requestFocus = (id: TextUnitId, cursor?: TextCorpusFocus["nextOccurrenceCursor"]) => {
 		const generation = ++focusGeneration;
-		focusAction.run(props.client.focus({ id, pageSize: 50 }), {
-			onFailure: (cause) => {
-				if (generation === focusGeneration) setState(failure(cause));
-			},
-			onSuccess: (result) => {
-				if (generation !== focusGeneration) return;
-				if (result.status === "found") setFocus(result.focus);
-				else setFocus(undefined);
-			}
-		});
-	};
-
-	const locateAsset = (objectPath: string) => {
-		setLocateFeedback({ objectPath, status: "locating" });
-		locateAction.run(props.client.locateAsset(objectPath), {
-			onFailure: (cause) =>
-				setLocateFeedback({
-					message: String(cause),
-					objectPath,
-					recovery: "Restart Workbench and retry asset navigation.",
-					status: "failed"
-				}),
-			onSuccess: setLocateFeedback
-		});
-	};
-
-	const requestPage = (
-		options: {
-			readonly capability?: CapabilityFilter;
-			readonly cursor?: TextUnitSearchResult["id"];
-			readonly lens?: TextReviewLens;
-			readonly query?: string;
-		} = {}
-	) => {
-		const generation = ++searchGeneration;
-		searchAction.run(
-			props.client.search({
-				capability: options.capability ?? capability(),
-				...(options.cursor === undefined ? undefined : { cursor: options.cursor }),
-				lens: options.lens ?? lens(),
+		focusAction.run(
+			props.client.focus({
+				id,
 				pageSize: 50,
-				query: options.query ?? query()
+				...(cursor ? { occurrenceCursor: cursor } : undefined)
 			}),
 			{
 				onFailure: (cause) => {
-					if (generation === searchGeneration) setState(failure(cause));
+					if (generation === focusGeneration) setError(String(cause));
 				},
 				onSuccess: (result) => {
-					if (generation !== searchGeneration || result.status !== "ready") return;
-					setPage(result.page);
-					const next =
-						result.page.units.find((unit) => unit.id === selectedId()) ??
-						result.page.units[0];
-					setSelectedId(next?.id);
-					if (next) requestFocus(next.id);
-					else {
-						focusGeneration += 1;
+					if (generation !== focusGeneration) return;
+					if (result.status === "found") {
+						setFocus((previous) =>
+							cursor && previous?.unit.id === id
+								? {
+										...result.focus,
+										occurrences: [
+											...previous.occurrences,
+											...result.focus.occurrences
+										]
+									}
+								: result.focus
+						);
+					} else {
 						setFocus(undefined);
+						if (result.status === "not_found") setSelectedId(undefined);
 					}
 				}
 			}
 		);
 	};
 
-	const applyRefresh = (result: TextCorpusQueryRunResult) => {
-		progressSubscription.cancel();
-		setInvestigationRevision((value) => value + 1);
-		if (result.status === "completed") {
-			setSummary(result.summary);
-			setPage({ total: 0, units: [] });
-
-			focusGeneration += 1;
-			setFocus(undefined);
-			setState({ status: "ready" });
-			requestPage();
-			const document = qualityDocument();
-			if (document)
-				qualityAction.run(props.client.previewQualityRules(document), {
-					onSuccess: (result) => {
-						if (result.status === "completed") setQualitySummary(result.summary);
-						else if (result.status === "failed") setQualityFailure(result.error);
+	const searchRequest = (): TextCorpusSearchRequest => {
+		const selected = localization.selection();
+		return {
+			query: query(),
+			capability: capability(),
+			lens: lens(),
+			withoutNotes: withoutNotes(),
+			...(selected ? { localization: selected } : undefined),
+			pageSize: 50
+		};
+	};
+	const moreResults = () => {
+		const current = untrack(page);
+		const request = searchRequest();
+		if (current?.localization?.nextCursor)
+			requestPage({ ...request, localizationCursor: current.localization.nextCursor });
+		else if (current?.nextCursor) requestPage({ ...request, cursor: current.nextCursor });
+	};
+	const requestPage = (request: TextCorpusSearchRequest, debounce = false) => {
+		const generation = ++searchGeneration;
+		setError(undefined);
+		setSearching(true);
+		searchAction.run(
+			(debounce ? Effect.sleep("120 millis") : Effect.void).pipe(
+				Effect.flatMap(() => props.client.search(request))
+			),
+			{
+				onFailure: (cause) => {
+					if (generation === searchGeneration) {
+						setSearching(false);
+						setPage(undefined);
+						setError(String(cause));
 					}
-				});
-		} else if (result.status === "failed") {
-			setState({ error: result.error, status: "failed" });
-		} else setState({ status: result.status });
+				},
+				onSuccess: (result) => {
+					if (generation !== searchGeneration) return;
+					if (result.status === "ready") {
+						setPage((previous) =>
+							(request.cursor || request.localizationCursor) && previous
+								? {
+										...result.page,
+										units: [...previous.units, ...result.page.units],
+										...(result.page.localization && previous.localization
+											? {
+													localization: {
+														...result.page.localization,
+														lines: [
+															...previous.localization.lines,
+															...result.page.localization.lines
+														]
+													}
+												}
+											: undefined)
+									}
+								: result.page
+						);
+						setSearching(false);
+					} else {
+						setPage(undefined);
+						setSearching(false);
+						setError("The saved assets changed. Rescan the project to search again.");
+					}
+				}
+			}
+		);
 	};
 
-	const load = (refresh: boolean) => {
-		searchGeneration += 1;
-		focusGeneration += 1;
-		searchAction.cancel();
-		focusAction.cancel();
-		if (refresh) {
-			qualityEditor.replace(undefined);
-			setMode("corpus");
-			setQualityDocument(undefined);
-		}
-		setQualitySummary(undefined);
-		setQualityFailure(undefined);
-		setState({ status: "loading" });
-		setProgress({ completed: 0, phase: "idle", stage: "game_text", total: 0 });
+	const applyQuality = (result: TextQualityQueryRunResult | TextQualityRuleUpdateResult) => {
+		if (result.status === "completed") {
+			setQualityFailure(undefined);
+			setQualityDocument(result.document);
+			setQualitySummary(result.summary);
+			editor.replace(result.document);
+		} else if (result.status === "failed") setQualityFailure(result.error);
+	};
+
+	const load = (refresh: boolean, choose = false) => {
+		setLoading(true);
+		setError(undefined);
+		setScanNotice(undefined);
+		setProgress({ completed: 0, total: 0, phase: "idle", stage: "game_text" });
 		progressSubscription.subscribe(
 			Stream.fromEffectSchedule(props.client.progress(), Schedule.spaced("100 millis")),
 			{ onValue: setProgress }
 		);
-		refreshAction.run(props.client.loadConfiguredProject(refresh), {
-			onFailure: (cause) => {
-				progressSubscription.cancel();
-				setState(failure(cause));
-			},
-			onSuccess: applyRefresh
-		});
+		refreshAction.run(
+			choose
+				? props.client.chooseProjectAndScan()
+				: props.client.loadConfiguredProject(refresh),
+			{
+				onFailure: (cause) => {
+					progressSubscription.cancel();
+					setLoading(false);
+					setError(String(cause));
+				},
+				onSuccess: (result: TextCorpusQueryRunResult) => {
+					progressSubscription.cancel();
+					setLoading(false);
+					if (result.status === "completed") {
+						localization.load();
+						setSummary(result.summary);
+						if (!untrack(projectKey) && props.client.projectKey) {
+							memoryAction.run(props.client.projectKey(), {
+								onSuccess: setProjectKey
+							});
+						}
+					} else if (result.status === "failed") {
+						setError(result.error.message + " " + result.error.recovery);
+					} else if (result.status === "cancelled") {
+						setScanNotice("Project selection was cancelled. Choose a project to scan.");
+					}
+				}
+			}
+		);
 	};
 
-	const loadQualityRules = () => {
+	const restore = (preferences: GameTextPreferences) => {
+		focusGeneration++;
+		setFocus(undefined);
+		setQualitySummary(undefined);
 		setQualityFailure(undefined);
-		qualityAction.run(props.client.chooseQualityRules(), {
-			onFailure: (cause) =>
-				setQualityFailure({
-					code: "contract_failure",
-					message: String(cause),
-					recovery: "Restart Workbench and retry loading the rule document.",
-					retrySafe: true
-				}),
-			onSuccess: (result) => {
-				if (result.status === "completed") {
-					qualityEditor.replace(result.document);
-					setQualitySummary(result.summary);
-					setQualityDocument(result.document);
-					setMode("quality");
-				} else if (result.status === "failed") setQualityFailure(result.error);
-			}
-		});
+		localization.restore(preferences);
+		setQuery(preferences.query);
+		setCapability(preferences.capability);
+		setLens(preferences.lens);
+		setWithoutNotes(preferences.withoutNotes ?? false);
+		setMode(preferences.mode ?? "corpus");
+		setQualityFilter(preferences.qualityFilter ?? "all");
+		setSelectedId(preferences.selectedId);
+		setSelectedFindingId(preferences.selectedFindingId);
+		setQualityDocument(preferences.qualityDocument);
+		editor.replace(preferences.qualityDocument);
 	};
+
+	// Requests consume committed state, including preferences restored during the first load.
+	createEffect(
+		() => ({
+			summary: summary(),
+			request: searchRequest(),
+			ready: localization.ready(),
+			loading: loading()
+		}),
+		({ summary: current, request, ready, loading: busy }) => {
+			if (current && ready && !busy) requestPage(request, true);
+		}
+	);
+	createEffect(
+		() => ({ summary: summary(), id: selectedId() }),
+		({ summary: current, id }) => {
+			if (current && id) requestFocus(id);
+			else {
+				focusGeneration++;
+				focusAction.cancel();
+				setFocus(undefined);
+			}
+		}
+	);
+	createEffect(
+		() => ({ summary: summary(), document: qualityDocument() }),
+		({ summary: current, document }) => {
+			if (!current || !document) return;
+			qualityAction.run(props.client.previewQualityRules(document), {
+				onSuccess: (reviewed) => {
+					if (reviewed.status === "completed") {
+						setQualityFailure(undefined);
+						setQualitySummary(reviewed.summary);
+					} else applyQuality(reviewed);
+				},
+				onFailure: (cause) => setError(String(cause))
+			});
+		}
+	);
 
 	createEffect(
 		() => ({
-			mode: mode(),
-			qualityDocument: qualityDocument(),
-			qualityEditor: qualityEditor.state(),
-			qualityFilter: qualityFilter(),
-			query: query(),
-			capability: capability(),
-			lens: lens(),
-			selectedId: selectedId()
+			ready: memoryReady(),
+			key: projectKey(),
+			preferences: {
+				query: query(),
+				capability: capability(),
+				lens: lens(),
+				withoutNotes: withoutNotes(),
+				mode: mode(),
+				qualityFilter: qualityFilter(),
+				selectedId: selectedId(),
+				selectedFindingId: selectedFindingId(),
+				qualityDocument: qualityDocument(),
+				qualityEditor: editor.state(),
+				localizationTarget: localization.target(),
+				localizationCulture: localization.culture(),
+				localizationState: localization.state(),
+				localizationReview: localization.review(),
+				searchTranslations: localization.searchTranslations(),
+				selectedLocalizationId: localization.selectedId()
+			}
 		}),
-		(value) => {
-			props.onPreferencesChange?.(value);
+		({ ready, key, preferences }) => {
+			if (!ready) return;
+			props.onPreferencesChange?.(preferences);
+			if (key)
+				persistAction.run(saveGameTextPreferences(key, preferences), {
+					onSuccess: () => undefined
+				});
 		}
 	);
-	const restoreInvestigation = (preset: GameTextInvestigationPreset) => {
-		qualityEditor.replace(undefined);
-		setQuery(preset.query.query);
-		setCapability(preset.query.capability);
-		setLens(preset.query.lens ?? "all");
-		setMode(preset.query.mode);
-		setQualityFilter(preset.query.qualityFilter);
-		setQualityDocument(preset.rules);
-		qualityEditor.replace(preset.rules, false);
-		setSelectedId(undefined);
+
+	onSettled(() => {
+		memoryAction.run(
+			Effect.gen(function* () {
+				const key =
+					props.projectKey ??
+					(props.client.projectKey ? yield* props.client.projectKey() : undefined);
+				const preferences = key ? yield* readGameTextPreferences(key) : undefined;
+				return { key, preferences };
+			}),
+			{
+				onSuccess: ({ key, preferences }) => {
+					setProjectKey(key);
+					if (!initial && preferences) restore(preferences);
+					setMemoryReady(true);
+					load(false);
+				},
+				onFailure: () => {
+					setMemoryReady(true);
+					load(false);
+				}
+			}
+		);
+	});
+
+	const loadRules = (create?: boolean) => {
+		setQualityFailure(undefined);
+		const operation =
+			create === undefined
+				? props.client.chooseQualityRules()
+				: props.client.createStarterRules?.(create);
+		if (!operation) return;
+		qualityAction.run(operation, {
+			onSuccess: applyQuality,
+			onFailure: (cause) => setError(String(cause))
+		});
+	};
+	const reloadRules = () => {
+		setQualityFailure(undefined);
+		qualityAction.run(
+			props.client.reloadQualityRules?.() ?? props.client.chooseQualityRules(),
+			{
+				onSuccess: applyQuality,
+				onFailure: (cause) => setError(String(cause))
+			}
+		);
+	};
+	const restorePreset = (preset: GameTextInvestigationPreset) => {
+		restore({
+			...preset.query,
+			withoutNotes: preset.query.withoutNotes ?? false,
+			lens: preset.query.lens ?? "all",
+			selectedId: undefined,
+			qualityDocument: preset.rules
+		});
 		load(false);
 	};
-	const refresh = () => load(true);
-	onSettled(() => load(false));
-
-	return (
-		<main {...stylex.attrs(styles.page)}>
-			<TaskProgressModal
-				open={state().status === "loading"}
-				progress={progress()}
-				title="Loading saved game text"
-				detail="Workbench is decoding the packages selected by the project index and preserving every text identity and occurrence."
-			/>
-			<header {...stylex.attrs(styles.header)}>
-				<div {...stylex.attrs(styles.headerLead)}>
-					<h1 {...stylex.attrs(styles.title)}>Game text</h1>
-					<p {...stylex.attrs(styles.subtitle)}>
-						Find player-facing text and jump straight back to its package and property.
-					</p>
-				</div>
-				<span {...stylex.attrs(styles.headerActions)}>
-					<button type="button" onClick={refresh} {...stylex.attrs(styles.button)}>
-						Rescan
-					</button>
-				</span>
-			</header>
-			<Show when={props.client.investigations}>
-				{(client) => (
+	createEffect(
+		() => ({
+			active: localization.active(),
+			culture: localization.culture(),
+			document: qualityDocument(),
+			summary: qualitySummary()
+		}),
+		({ active, culture }) => {
+			workspaceCountAction.cancel();
+			setWorkspaceFindingCount(undefined);
+			if (!active || !props.client.localizationQualitySearch) return;
+			workspaceCountAction.run(
+				props.client.localizationQualitySearch({
+					target: active.target.name,
+					filter: "all",
+					...(culture ? { culture } : undefined)
+				}),
+				{
+					onSuccess: (result) => {
+						if (result.status === "ready") setWorkspaceFindingCount(result.page.total);
+					}
+				}
+			);
+		}
+	);
+	createEffect(
+		() => ({ ready: localization.ready(), active: localization.active(), mode: mode() }),
+		(state) => {
+			if (state.ready && !state.active && state.mode === "reports") setMode("corpus");
+		}
+	);
+	const exports = (): JSX.Element => (
+		<Show when={props.client.investigations}>
+			{(client) => (
+				<div {...stylex.attrs(styles.exports)}>
 					<InvestigationActions
+						compact
+						blocked={operations.busy()}
 						client={client()}
-						disabled={state().status !== "ready"}
-						revision={[investigationRevision(), qualityDocument()]}
+						disabled={
+							!summary() || (mode() === "corpus" ? searching() : !qualitySummary())
+						}
+						revision={[summary(), qualitySummary()]}
 						query={{
-							mode: mode(),
+							mode: mode() === "quality" ? "quality" : "corpus",
 							query: query(),
 							capability: capability(),
 							lens: lens(),
-							qualityFilter: qualityFilter()
+							withoutNotes: withoutNotes(),
+							qualityFilter: sourceFilter()
 						}}
-						onOpen={restoreInvestigation}
+						onOpen={restorePreset}
 					/>
+				</div>
+			)}
+		</Show>
+	);
+
+	const rulesSetup = () => (
+		<section aria-label="Quality rules setup" {...stylex.attrs(styles.card)}>
+			<p>
+				<strong>Set up writing checks</strong> with a rules file for character limits and
+				terminology. The starter file contains examples you can customize.
+			</p>
+			<Show when={qualityFailure()}>
+				{(issue) => (
+					<p role="alert">
+						{issue().message} {issue().recovery}
+					</p>
 				)}
 			</Show>
-			<Switch>
-				<Match when={state().status === "loading"}>
-					<p role="status" {...stylex.attrs(styles.loadingLine)}>
-						Loading saved game text…
-					</p>
-				</Match>
-				<Match when={state().status === "not_configured"}>
-					<section {...stylex.attrs(styles.noticeCard)}>
-						<strong {...stylex.attrs(styles.noticeTitle)}>
-							No project is configured.
-						</strong>
-						<p {...stylex.attrs(styles.noticeCopy)}>
-							Choose an Unreal project in the Workbench header, then rescan.
-						</p>
-						<button type="button" onClick={refresh} {...stylex.attrs(styles.button)}>
-							Retry
+			<div {...stylex.attrs(styles.bar)}>
+				<Show when={props.client.createStarterRules}>
+					<Button
+						tone="primary"
+						disabled={operations.busy()}
+						onClick={() => loadRules(false)}
+					>
+						Create rules file
+					</Button>
+				</Show>
+				<Show when={qualityFailure()?.code === "already_exists"}>
+					<Button disabled={operations.busy()} onClick={() => loadRules(true)}>
+						Load existing rules
+					</Button>
+				</Show>
+				<Button disabled={operations.busy()} onClick={() => loadRules()}>
+					Load rules
+				</Button>
+			</div>
+		</section>
+	);
+	return (
+		<main {...stylex.attrs(styles.page)}>
+			<TaskProgressModal
+				open={loading() && progress().phase !== "idle"}
+				progress={progress()}
+				title="Scanning saved game text"
+				detail="Reading the project's saved assets."
+			/>
+			<div {...stylex.attrs(styles.toolbar)}>
+				<div role="tablist" aria-label="Game Text view" {...stylex.attrs(styles.bar)}>
+					<button
+						type="button"
+						role="tab"
+						aria-selected={mode() === "corpus" ? "true" : "false"}
+						onClick={() => setMode("corpus")}
+						{...stylex.attrs(styles.button, mode() === "corpus" && styles.selected)}
+					>
+						Text
+					</button>
+					<button
+						type="button"
+						role="tab"
+						aria-selected={mode() === "quality" ? "true" : "false"}
+						onClick={() => setMode("quality")}
+						{...stylex.attrs(styles.button, mode() === "quality" && styles.selected)}
+					>
+						Quality checks
+						{qualityFailure()?.code === "invalid_rules"
+							? " (rules invalid)"
+							: qualityTabCount() !== undefined
+								? " (" + qualityTabCount() + ")"
+								: ""}
+					</button>
+					<Show when={localization.active()}>
+						<button
+							type="button"
+							role="tab"
+							aria-selected={mode() === "reports" ? "true" : "false"}
+							onClick={() => setMode("reports")}
+							{...stylex.attrs(
+								styles.button,
+								mode() === "reports" && styles.selected
+							)}
+						>
+							Reports
 						</button>
-					</section>
-				</Match>
-				<Match when={state().status === "cancelled"}>
-					<section {...stylex.attrs(styles.noticeCard)}>
-						<strong {...stylex.attrs(styles.noticeTitle)}>
-							Project selection was cancelled.
-						</strong>
-						<p {...stylex.attrs(styles.noticeCopy)}>
-							Pick a project to load its saved game text.
-						</p>
-						<button type="button" onClick={refresh} {...stylex.attrs(styles.button)}>
-							Retry
-						</button>
-					</section>
-				</Match>
-				<Match when={state().status === "failed"}>
-					{(() => {
-						const current = state();
-						return current.status === "failed" ? (
-							<FailureCard
-								title="Couldn’t load saved game text."
-								detail={current.error.message}
-								onRetry={refresh}
-							/>
-						) : null;
-					})()}
-				</Match>
-				<Match when={state().status === "ready"}>
-					<Show when={summary()}>
-						{(currentSummary) => (
-							<>
-								<div
-									role="tablist"
-									aria-label="Game Text view"
-									{...stylex.attrs(styles.modeTabs)}
-								>
-									<button
-										type="button"
-										role="tab"
-										aria-selected={mode() === "corpus" ? "true" : "false"}
-										onClick={() => setMode("corpus")}
-										{...stylex.attrs(
-											styles.modeTab,
-											mode() === "corpus" && styles.modeTabActive
-										)}
-									>
-										Text
-									</button>
-									<button
-										type="button"
-										role="tab"
-										aria-selected={mode() === "quality" ? "true" : "false"}
-										onClick={() => setMode("quality")}
-										{...stylex.attrs(
-											styles.modeTab,
-											mode() === "quality" && styles.modeTabActive
-										)}
-									>
-										Quality
-										<Show when={qualitySummary()}>
-											{(quality) => (
-												<b {...stylex.attrs(styles.tabCount)}>
-													{quality().findingCount}
-												</b>
-											)}
-										</Show>
-									</button>
-								</div>
-								<Show when={mode() === "quality" ? qualityFailure() : undefined}>
-									{(error) => (
-										<FailureCard
-											title="Couldn’t load the rule file."
-											detail={error().message}
-											onRetry={loadQualityRules}
-										/>
-									)}
-								</Show>
-								<Show
-									when={mode() === "quality"}
-									fallback={
-										<TextCorpusWorkspace
-											summary={currentSummary()}
-											page={page}
-											query={query}
-											capability={capability}
-											lens={lens}
-											selectedId={selectedId}
-											focus={focus}
-											locateFeedback={locateFeedback}
-											onQuery={(value) => {
-												setQuery(value);
-												requestPage({ query: value });
-											}}
-											onCapability={(value) => {
-												setCapability(value);
-												requestPage({ capability: value });
-											}}
-											onLens={(value) => {
-												setLens(value);
-												requestPage({ lens: value });
-											}}
-											onNextPage={(cursor) => requestPage({ cursor })}
-											onLocate={locateAsset}
-											onSelect={(id) => {
-												setSelectedId(id);
-												requestFocus(id);
-											}}
-										/>
-									}
-								>
-									<Show
-										when={qualitySummary()}
-										fallback={
-											<section
-												aria-label="Quality rules setup"
-												{...stylex.attrs(styles.qualitySetup)}
-											>
-												<h2 {...stylex.attrs(styles.qualitySetupTitle)}>
-													Quality
-												</h2>
-												<p {...stylex.attrs(styles.qualitySetupCopy)}>
-													Load a rule file to check character limits and
-													terminology across the saved text.
-												</p>
-												<button
-													type="button"
-													onClick={loadQualityRules}
-													{...stylex.attrs(styles.qualityButton)}
-												>
-													Load rules
-												</button>
-											</section>
-										}
-									>
+					</Show>
+				</div>
+				<LocalizationControls
+					model={localization}
+					disabled={operations.busy()}
+					syncAction={
+						<SyncWithUnreal
+							model={operations}
+							pending={localization.active()?.notSynced ?? 0}
+						/>
+					}
+				/>
+				<StagedEditsButton model={edits} />
+				<UnrealSteps model={operations} />
+				<Show when={summary()}>
+					{(current) => (
+						<span {...stylex.attrs(styles.coverage)}>
+							<Show
+								when={localization.ready()}
+								fallback={
+									<span role="status">
+										{localization.error()
+											? "Translations unavailable"
+											: "Loading translations…"}
+									</span>
+								}
+							>
+								<b>
+									{(
+										localization.active()?.lines ?? current().counts.all
+									).toLocaleString()}
+								</b>{" "}
+								{(localization.active()?.lines ?? current().counts.all) === 1
+									? "line"
+									: "lines"}{" "}
+								{localization.active() ? "· " : "in "}
+							</Show>
+							<b>{current().coverage.inspectedPackages.toLocaleString()}</b>{" "}
+							{current().coverage.inspectedPackages === 1 ? "asset" : "assets"}
+							<Show when={current().scannedAt}>
+								{" "}
+								· scanned {scanTime(current().scannedAt)}
+							</Show>
+							<ReadProblems summary={current()} />
+						</span>
+					)}
+				</Show>
+				<Show when={summary()}>
+					<Button
+						size="compact"
+						disabled={loading() || operations.busy()}
+						title={operations.reason()}
+						onClick={() => load(true)}
+					>
+						Rescan
+					</Button>
+				</Show>
+			</div>
+			<OperationPanel model={operations} />
+			<StagedEditsPanel model={edits} />
+			<Show when={localization.error()}>
+				<p role="alert" {...stylex.attrs(styles.problemMessage)}>
+					{localization.error()}
+				</p>
+			</Show>
+			<Show when={scanNotice()}>
+				<p role="status" {...stylex.attrs(styles.problemMessage)}>
+					{scanNotice()}
+				</p>
+			</Show>
+			<Show when={error()}>
+				{(message) => (
+					<div role="alert" {...stylex.attrs(styles.card)}>
+						{message()}
+						<Button onClick={() => load(true)}>Retry</Button>
+					</div>
+				)}
+			</Show>
+			<Show when={mode() === "quality" && qualitySummary() && qualityFailure()}>
+				<p role="alert" {...stylex.attrs(styles.card)}>
+					{qualityFailure()?.message} {qualityFailure()?.recovery}
+					<Button onClick={() => loadRules()}>Load rules</Button>
+				</p>
+			</Show>
+			<Show
+				when={summary()}
+				fallback={
+					<div {...stylex.attrs(styles.empty)}>
+						<Show
+							when={!loading()}
+							fallback={<span role="status">Loading saved game text…</span>}
+						>
+							<p>
+								Game Text reads the project's saved assets, so Unreal does not need
+								to be running.
+							</p>
+							<Button tone="primary" onClick={() => load(true, !projectKey())}>
+								Scan project
+							</Button>
+						</Show>
+					</div>
+				}
+			>
+				<Show
+					when={mode() !== "reports"}
+					fallback={
+						<Show
+							when={localization.ready()}
+							fallback={
+								<p role="status" {...stylex.attrs(styles.empty)}>
+									Loading translations…
+								</p>
+							}
+						>
+							<Show when={localization.target()}>
+								{(target) => (
+									<GameTextReports
+										disabled={operations.busy()}
+										client={props.client}
+										target={target()}
+										revision={summary()}
+									/>
+								)}
+							</Show>
+						</Show>
+					}
+				>
+					<Show
+						when={mode() === "corpus"}
+						fallback={
+							<Show
+								when={
+									localization.target() && props.client.localizationQualitySearch
+								}
+								fallback={
+									<Show when={qualitySummary()} fallback={rulesSetup()}>
 										{(quality) => (
 											<Show when={qualityDocument()}>
 												{(document) => (
 													<GameTextQualityWorkspace
-														filter={qualityFilter()}
-														onFilterChange={setQualityFilter}
+														disabled={operations.busy()}
 														client={props.client}
-														document={document()}
-														onReplaceRules={loadQualityRules}
-														editor={qualityEditor}
 														summary={quality()}
+														document={document()}
+														editor={editor}
+														filter={sourceFilter()}
+														onFilterChange={setQualityFilter}
+														onReplaceRules={reloadRules}
+														onLoadRules={() => loadRules()}
+														selectedId={selectedFindingId()}
+														onSelectionChange={setSelectedFindingId}
+														exports={exports()}
+														onShowText={(id) => {
+															localization.setSelectedId(undefined);
+															setSelectedId(id);
+															setMode("corpus");
+														}}
 													/>
 												)}
 											</Show>
 										)}
 									</Show>
+								}
+							>
+								<Show
+									when={localization.ready()}
+									fallback={
+										<p role="status" {...stylex.attrs(styles.empty)}>
+											Loading translations…
+										</p>
+									}
+								>
+									<GameTextLocalizationQuality
+										disabled={operations.busy()}
+										client={props.client}
+										localization={localization}
+										summary={qualitySummary()}
+										document={qualityDocument()}
+										editor={editor}
+										setup={rulesSetup()}
+										exports={exports()}
+										filter={qualityFilter()}
+										onFilterChange={setQualityFilter}
+										selectedId={selectedFindingId()}
+										onSelectionChange={setSelectedFindingId}
+										onLoadRules={() => loadRules()}
+										onReloadRules={reloadRules}
+										onShowText={(id) => {
+											localization.setSelectedId(undefined);
+											setSelectedId(id);
+											setMode("corpus");
+										}}
+									/>
 								</Show>
-							</>
-						)}
+							</Show>
+						}
+					>
+						<div {...stylex.attrs(styles.workspace)}>
+							<div {...stylex.attrs(styles.bar)}>
+								<div {...stylex.attrs(styles.search)}>
+									<svg
+										aria-hidden="true"
+										viewBox="0 0 24 24"
+										{...stylex.attrs(styles.searchIcon)}
+									>
+										<circle cx="10" cy="10" r="6" />
+										<path d="M15 15 L21 21" />
+									</svg>
+									<input
+										autofocus
+										type="search"
+										aria-label="Search game text"
+										placeholder={
+											localization.culture() &&
+											localization.searchTranslations()
+												? "Search text and translations"
+												: "Search text"
+										}
+										maxlength={512}
+										disabled={loading()}
+										value={query()}
+										{...stylex.attrs(styles.input)}
+										onInput={(event) => setQuery(event.currentTarget.value)}
+										onKeyDown={(event) => {
+											if (event.key === "Enter" && localization.ready())
+												requestPage(searchRequest());
+										}}
+									/>
+									<span role="status" {...stylex.attrs(styles.count)}>
+										{localization.error() && !localization.ready()
+											? "Translations unavailable"
+											: searching() || !page()
+												? "Searching…"
+												: page()?.total === 1
+													? "1 match"
+													: page()?.total.toLocaleString() + " matches"}
+									</span>
+								</div>
+								<Show when={localization.active() && localization.culture()}>
+									<Chip
+										label="Search translations"
+										toggle
+										selected={localization.searchTranslations()}
+										onClick={() =>
+											localization.setSearchTranslations(
+												!localization.searchTranslations()
+											)
+										}
+									/>
+								</Show>
+								<Chip
+									label="Editable"
+									toggle
+									disabled={loading()}
+									selected={capability() === "source_editable"}
+									count={searching() ? undefined : page()?.counts.editable}
+									onClick={() => {
+										const next =
+											capability() === "source_editable"
+												? "all"
+												: "source_editable";
+										setCapability(next);
+									}}
+								/>
+								<Chip
+									label="Read only"
+									toggle
+									disabled={loading()}
+									selected={capability() === "read_only"}
+									count={searching() ? undefined : page()?.counts.readOnly}
+									onClick={() => {
+										const next =
+											capability() === "read_only" ? "all" : "read_only";
+										setCapability(next);
+									}}
+								/>
+								<Chip
+									label="No translator notes"
+									toggle
+									disabled={loading()}
+									selected={withoutNotes()}
+									count={searching() ? undefined : page()?.counts.withoutNotes}
+									onClick={() => {
+										const next = !withoutNotes();
+										setWithoutNotes(next);
+									}}
+								/>
+							</div>
+							<div {...stylex.attrs(styles.bar)}>
+								<For
+									each={lenses.filter(
+										(item) =>
+											item.value === "all" ||
+											item.value === lens() ||
+											(page()?.counts[item.value] ?? 0) > 0
+									)}
+								>
+									{(item) => (
+										<Chip
+											label={item.label}
+											disabled={loading()}
+											count={
+												searching() ? undefined : page()?.counts[item.value]
+											}
+											selected={lens() === item.value}
+											onClick={() => {
+												setLens(item.value);
+											}}
+										/>
+									)}
+								</For>
+								<Show
+									when={
+										!searching() &&
+										page() &&
+										lens() === "all" &&
+										lenses
+											.slice(1)
+											.every((item) => page()?.counts[item.value] === 0)
+									}
+								>
+									<span {...stylex.attrs(styles.muted)}>
+										Nothing reused, duplicated, too long or unlocalizable
+									</span>
+								</Show>
+								<LocalizationChips
+									model={localization}
+									counts={page()?.localization?.stateCounts}
+									searching={searching()}
+								/>
+								<ReviewChips
+									model={localization}
+									counts={page()?.localization?.reviewCounts}
+									searching={searching()}
+								/>
+								{exports()}
+							</div>
+							<div {...stylex.attrs(styles.grid)}>
+								<section aria-label="Results" {...stylex.attrs(styles.pane)}>
+									<GameTextResultRows
+										page={page()}
+										culture={localization.culture()}
+										selectedId={selectedId()}
+										selectedLocalizationId={localization.selectedId()}
+										onSelect={(unit, line) => {
+											setSelectedId(unit);
+											localization.setSelectedId(line);
+										}}
+									/>
+									<Show
+										when={
+											localization.ready() &&
+											!searching() &&
+											page()?.total === 0
+										}
+									>
+										<p {...stylex.attrs(styles.empty)}>
+											No text matches these filters.
+										</p>
+									</Show>
+									<Show
+										when={
+											page()?.localization?.nextCursor ?? page()?.nextCursor
+										}
+									>
+										<Button disabled={searching()} onClick={moreResults}>
+											Show{" "}
+											{Math.min(
+												50,
+												(page()?.total ?? 0) -
+													(page()?.localization?.lines.length ??
+														page()?.units.length ??
+														0)
+											)}{" "}
+											more
+										</Button>
+									</Show>
+								</section>
+								<aside aria-label="Text focus" {...stylex.attrs(styles.pane)}>
+									<Show
+										when={focus()}
+										fallback={
+											<Show
+												when={
+													localization.detail()?.origin.kind ===
+													"evidence"
+														? localization.detail()
+														: undefined
+												}
+												fallback={
+													<p {...stylex.attrs(styles.empty)}>
+														{localization.detailLoading()
+															? "Loading translations…"
+															: "Select a line to see its key, translator notes and every place it appears."}
+													</p>
+												}
+											>
+												{(gathered) => (
+													<div {...stylex.attrs(styles.detail)}>
+														<GatheredDetail focus={gathered()} />
+														<TranslationsDetail
+															model={localization}
+															edits={edits}
+															review={{
+																client: props.client,
+																busy:
+																	loading() || operations.busy(),
+																onChanged: () => load(false)
+															}}
+														/>
+													</div>
+												)}
+											</Show>
+										}
+									>
+										{(current) => (
+											<div {...stylex.attrs(styles.detail)}>
+												<div {...stylex.attrs(styles.bar)}>
+													<h2 {...stylex.attrs(styles.title)}>
+														{sourceText(current().unit)}
+													</h2>
+													<CopyButton
+														label="Copy text"
+														value={sourceText(current().unit)}
+													/>
+												</div>
+												<div {...stylex.attrs(styles.bar)}>
+													<code {...stylex.attrs(styles.mono)}>
+														{identityLabel(current().unit)}
+													</code>
+													<Show
+														when={
+															current().unit.identity.status !==
+															"unresolved"
+														}
+													>
+														<CopyButton
+															label="Copy key"
+															value={identityLabel(current().unit)}
+														/>
+													</Show>
+												</div>
+												<span {...stylex.attrs(styles.muted)}>
+													{focusStats(current())}
+												</span>
+												<Show
+													when={current().unit.reviewSignals.some(
+														(signal) => signal !== "evidence_only"
+													)}
+												>
+													<span {...stylex.attrs(styles.warning)}>
+														{current()
+															.unit.reviewSignals.filter(
+																(signal) =>
+																	signal !== "evidence_only"
+															)
+															.map(textReviewSignalLabel)
+															.join(" · ")}
+													</span>
+												</Show>
+												<h3 {...stylex.attrs(styles.section)}>
+													Where it appears
+												</h3>
+												<For each={current().occurrences}>
+													{(occurrence) => (
+														<OccurrenceCard
+															client={props.client}
+															occurrence={occurrence}
+															conflicting={
+																current().unit.source.status ===
+																"conflicting"
+															}
+															onOpenDataAuthoring={
+																props.onOpenDataAuthoring
+															}
+														/>
+													)}
+												</For>
+												<TranslationsDetail
+													model={localization}
+													edits={edits}
+													review={{
+														client: props.client,
+														busy: loading() || operations.busy(),
+														onChanged: () => load(false)
+													}}
+												/>
+												<CoverageNotes
+													diagnostics={current().diagnostics}
+												/>
+												<Show when={current().nextOccurrenceCursor}>
+													{(cursor) => (
+														<Button
+															onClick={() =>
+																requestFocus(
+																	current().unit.id,
+																	cursor()
+																)
+															}
+														>
+															Show{" "}
+															{textCountLabel(
+																Math.min(
+																	50,
+																	current().totalOccurrences -
+																		current().occurrences.length
+																),
+																"more location"
+															)}
+														</Button>
+													)}
+												</Show>
+											</div>
+										)}
+									</Show>
+								</aside>
+							</div>
+						</div>
 					</Show>
-				</Match>
-			</Switch>
+				</Show>
+			</Show>
 		</main>
 	);
 }
 
-function TextCorpusWorkspace(props: {
-	readonly summary: TextCorpusQuerySummary;
-	readonly page: Accessor<TextCorpusSearchPage>;
-	readonly query: Accessor<string>;
-	readonly capability: Accessor<CapabilityFilter>;
-	readonly lens: Accessor<TextReviewLens>;
-	readonly selectedId: Accessor<TextUnitSearchResult["id"] | undefined>;
-	readonly focus: Accessor<TextCorpusFocus | undefined>;
-	readonly locateFeedback: Accessor<LocateFeedback>;
-	readonly onQuery: (value: string) => void;
-	readonly onCapability: (value: CapabilityFilter) => void;
-	readonly onLens: (value: TextReviewLens) => void;
-	readonly onLocate: (objectPath: string) => void;
-	readonly onNextPage: (cursor: TextUnitSearchResult["id"]) => void;
-	readonly onSelect: (id: TextUnitSearchResult["id"]) => void;
+export function OccurrenceCard(props: {
+	readonly client: Pick<GameTextClientApi, "locateAsset">;
+	readonly occurrence: TextOccurrence;
+	readonly conflicting: boolean;
+	readonly onOpenDataAuthoring?: ((objectPath: string) => void) | undefined;
 }) {
-	const copyAction = createEffectAction();
-	const [copyFeedback, setCopyFeedback] = createSignal<CopyFeedback>({ status: "idle" });
-
-	const settleCopy = (feedback: Exclude<CopyFeedback, { status: "idle" }>) => {
-		setCopyFeedback(feedback);
-	};
-	const copyValue = (target: string, value: string) => {
-		copyAction.run(
-			Effect.tryPromise({
-				catch: () => undefined,
-				try: () => navigator.clipboard.writeText(value)
-			}),
-			{
-				onFailure: () => settleCopy({ status: "failed", target }),
-				onSuccess: () => settleCopy({ status: "copied", target })
-			}
-		);
-	};
-	const copyLabel = (target: string, idleLabel: string) => {
-		const feedback = copyFeedback();
-		if (feedback.status === "idle" || feedback.target !== target) return idleLabel;
-		return feedback.status === "copied" ? "Copied" : "Failed";
-	};
-	const copyStatus = (target: string): CopyFeedback["status"] => {
-		const feedback = copyFeedback();
-		return feedback.status !== "idle" && feedback.target === target ? feedback.status : "idle";
-	};
-
-	const coverage = props.summary.coverage;
 	return (
-		<div {...stylex.attrs(styles.workspace)}>
-			<form
-				aria-label="Search game text"
-				onSubmit={(event) => {
-					event.preventDefault();
-					props.onQuery(props.query());
-				}}
-				{...stylex.attrs(styles.queryBar)}
+		<article {...stylex.attrs(styles.card)}>
+			<div {...stylex.attrs(styles.toolbar)}>
+				<strong>{textLocationLabel(props.occurrence.location)}</strong>
+				<span {...stylex.attrs(styles.coverage)}>
+					{props.occurrence.editCapability === "source_editable"
+						? "Editable"
+						: "Read only"}
+				</span>
+			</div>
+			<code {...stylex.attrs(styles.mono)}>{props.occurrence.location.objectPath}</code>
+			<span {...stylex.attrs(styles.muted)}>{locationDetail(props.occurrence.location)}</span>
+			<Show when={props.conflicting}>
+				<p {...stylex.attrs(styles.notes)}>{props.occurrence.source}</p>
+			</Show>
+			<Show
+				when={props.occurrence.devNotes.trim()}
+				fallback={<span {...stylex.attrs(styles.muted)}>No translator notes</span>}
 			>
-				<input
-					autofocus
-					type="search"
-					value={props.query()}
-					onInput={(event) => props.onQuery(event.currentTarget.value)}
-					placeholder="Search source text…"
-					aria-label="Search game text"
-					{...stylex.attrs(styles.searchInput)}
+				<p {...stylex.attrs(styles.notes)}>{props.occurrence.devNotes}</p>
+			</Show>
+			<details>
+				<summary {...stylex.attrs(styles.muted)}>Saved file</summary>
+				<code {...stylex.attrs(styles.mono)}>{props.occurrence.packageFile}</code>
+			</details>
+			<div {...stylex.attrs(styles.bar)}>
+				<CopyButton label="Copy asset path" value={props.occurrence.location.objectPath} />
+				<ShowInUnrealButton
+					client={props.client}
+					objectPath={props.occurrence.location.objectPath}
 				/>
-				<div
-					aria-label="Filter by source support"
-					role="group"
-					{...stylex.attrs(styles.filters)}
+				<Show
+					when={
+						props.occurrence.location.kind === "data_table_cell" &&
+						props.onOpenDataAuthoring
+					}
 				>
-					<For each={filters}>
-						{(filter) => (
-							<button
-								type="button"
-								aria-pressed={
-									props.capability() === filter.value ? "true" : "false"
-								}
-								onClick={() => props.onCapability(filter.value)}
-								{...stylex.attrs(
-									styles.filterButton,
-									props.capability() === filter.value && styles.filterActive
-								)}
-							>
-								{filter.label}
-							</button>
-						)}
-					</For>
-				</div>
-				<select
-					aria-label="Review lens"
-					value={props.lens()}
-					onChange={(event) => {
-						const chosen = reviewLenses.find(
-							(item) => item.value === event.currentTarget.value
-						);
-						if (chosen !== undefined) props.onLens(chosen.value);
-					}}
-					{...stylex.attrs(styles.lensSelect)}
-				>
-					<For each={reviewLenses}>
-						{(item) => <option value={item.value}>{item.label}</option>}
-					</For>
-				</select>
-				<button type="submit" {...stylex.attrs(styles.button)}>
-					Search
-				</button>
-			</form>
-			<p {...stylex.attrs(styles.statsLine)}>
-				<span>{coverage.textUnits.toLocaleString()} identities</span>
-				<span>{coverage.textOccurrences.toLocaleString()} occurrences</span>
-				<span>
-					{coverage.inspectedPackages}/{coverage.discoveredPackages} packages read
-				</span>
-				<span
-					{...stylex.attrs(
-						styles.statsState,
-						props.summary.status === "complete" ? styles.complete : styles.partial
-					)}
-				>
-					{props.summary.status === "complete" ? "Complete" : "Partial"}
-				</span>
-				<Show when={coverage.unsupportedTextProperties > 0}>
-					<span {...stylex.attrs(styles.statsWarning)}>
-						{coverage.unsupportedTextProperties} properties not decoded
-					</span>
-				</Show>
-			</p>
-			<div {...stylex.attrs(styles.grid)}>
-				<section aria-label="Results" {...stylex.attrs(styles.results)}>
-					<header {...stylex.attrs(styles.resultsHeader)}>
-						<span {...stylex.attrs(styles.resultsTitle)}>Results</span>
-						<b {...stylex.attrs(styles.headerCount)}>{props.page().total}</b>
-					</header>
-					<Show
-						when={props.page().units.length > 0}
-						fallback={
-							<p {...stylex.attrs(styles.noMatches)}>
-								No matches. Widen the search or clear filters.
-							</p>
+					<Button
+						size="compact"
+						tone="quiet"
+						onClick={() =>
+							props.onOpenDataAuthoring?.(props.occurrence.location.objectPath)
 						}
 					>
-						<For each={props.page().units}>
-							{(unit) => {
-								const preview = primaryContext(unit);
-								const context = preview.context
-									? textContext(preview.context.location)
-									: undefined;
-								const text = sourceText(unit);
-								const identity = identityLabel(unit);
-								const textCopyTarget = `${unit.id}:text`;
-								const identityCopyTarget = `${unit.id}:identity`;
-								const rowLocatePath =
-									unit.occurrenceCount === 1
-										? preview.context?.location.objectPath
-										: undefined;
-								const rowLocateStatus = (): LocateFeedback["status"] => {
-									const feedback = props.locateFeedback();
-									return rowLocatePath !== undefined &&
-										feedback.status !== "idle" &&
-										feedback.objectPath === rowLocatePath
-										? feedback.status
-										: "idle";
-								};
-								return (
-									<div
-										aria-current={
-											props.selectedId() === unit.id ? "true" : undefined
-										}
-										onClick={() => props.onSelect(unit.id)}
-										{...stylex.attrs(
-											styles.resultRow,
-											props.selectedId() === unit.id && styles.resultActive
-										)}
-									>
-										<div {...stylex.attrs(styles.resultLead)}>
-											<strong
-												title={text}
-												{...stylex.attrs(styles.resultText)}
-											>
-												{text}
-											</strong>
-											<span {...stylex.attrs(styles.rowCounts)}>
-												{unit.wordCount} words · {unit.characterCount}{" "}
-												characters · {unit.occurrenceCount}{" "}
-												{unit.occurrenceCount === 1 ? "use" : "uses"}
-											</span>
-										</div>
-										<span
-											title={
-												context
-													? `${context.title} — ${context.detail}`
-													: "Context unavailable"
-											}
-											{...stylex.attrs(styles.resultContext)}
-										>
-											<strong>
-												{context?.title ?? "No authored context found"}
-											</strong>
-											<small>
-												{" "}
-												·{" "}
-												{context?.detail ??
-													"This text has no decoded source location"}
-												{preview.additional > 0
-													? ` · +${preview.additional}`
-													: ""}
-											</small>
-										</span>
-										<div {...stylex.attrs(styles.resultMeta)}>
-											<code
-												title={identity}
-												{...stylex.attrs(styles.resultIdentity)}
-											>
-												{identity}
-											</code>
-											<span {...stylex.attrs(styles.resultSource)}>
-												{sourceKind(unit)}
-												<small
-													{...stylex.attrs(
-														styles.sourceAuthority,
-														preview.context?.editCapability ===
-															"source_editable"
-															? styles.sourceEditable
-															: styles.sourceReadOnly
-													)}
-												>
-													{preview.context?.editCapability ===
-													"source_editable"
-														? "Source editable"
-														: "Read only"}
-												</small>
-											</span>
-										</div>
-										<Show when={unit.reviewSignals.length > 0}>
-											<div {...stylex.attrs(styles.signalRow)}>
-												<For each={unit.reviewSignals}>
-													{(signal) => (
-														<span {...stylex.attrs(styles.signal)}>
-															{signalLabel(signal)}
-														</span>
-													)}
-												</For>
-											</div>
-										</Show>
-										<span {...stylex.attrs(styles.rowActions)}>
-											<button
-												type="button"
-												onClick={(event) => {
-													event.stopPropagation();
-													props.onSelect(unit.id);
-													if (rowLocatePath)
-														props.onLocate(rowLocatePath);
-												}}
-												disabled={
-													rowLocatePath !== undefined &&
-													rowLocateStatus() === "locating"
-												}
-												aria-label={
-													rowLocatePath
-														? `Open package for ${text}`
-														: `Show ${unit.occurrenceCount} uses of ${text}`
-												}
-												{...stylex.attrs(styles.rowAction)}
-											>
-												{rowLocatePath
-													? locateLabel(
-															props.locateFeedback(),
-															rowLocatePath,
-															"Open package"
-														)
-													: "Show uses"}
-											</button>
-											<button
-												type="button"
-												onClick={(event) => {
-													event.stopPropagation();
-													copyValue(textCopyTarget, text);
-												}}
-												aria-label={`Copy source text ${text}`}
-												{...stylex.attrs(
-													styles.rowAction,
-													copyStatus(textCopyTarget) === "copied" &&
-														styles.rowActionSuccess,
-													copyStatus(textCopyTarget) === "failed" &&
-														styles.rowActionFailure
-												)}
-											>
-												{copyLabel(textCopyTarget, "Copy text")}
-											</button>
-											<button
-												type="button"
-												onClick={(event) => {
-													event.stopPropagation();
-													copyValue(identityCopyTarget, identity);
-												}}
-												aria-label={`Copy Unreal identity ${identity}`}
-												{...stylex.attrs(
-													styles.rowAction,
-													copyStatus(identityCopyTarget) === "copied" &&
-														styles.rowActionSuccess,
-													copyStatus(identityCopyTarget) === "failed" &&
-														styles.rowActionFailure
-												)}
-											>
-												{copyLabel(identityCopyTarget, "Copy ID")}
-											</button>
-										</span>
-									</div>
-								);
-							}}
-						</For>
-					</Show>
-					<Show when={props.page().nextCursor}>
-						{(cursor) => (
-							<button
-								type="button"
-								onClick={() => props.onNextPage(cursor())}
-								{...stylex.attrs(styles.nextPage)}
-							>
-								Next page
-							</button>
-						)}
-					</Show>
-					<footer {...stylex.attrs(styles.resultsFooter)}>
-						<span>
-							Showing {props.page().units.length} of {props.page().total} matches
-						</span>
-						<span>{coverage.textUnits.toLocaleString()} text entries</span>
-					</footer>
-				</section>
-				<FocusPanel
-					focus={props.focus()}
-					locateFeedback={props.locateFeedback()}
-					onLocate={props.onLocate}
-				/>
+						Open in Data Authoring
+					</Button>
+				</Show>
 			</div>
-		</div>
+		</article>
 	);
 }
-
-function FocusPanel(props: {
-	readonly focus: TextCorpusFocus | undefined;
-	readonly locateFeedback: LocateFeedback;
-	readonly onLocate: (objectPath: string) => void;
-}) {
-	return (
-		<aside aria-label="Text focus" {...stylex.attrs(styles.focus)}>
-			<Show
-				when={props.focus}
-				fallback={
-					<p {...stylex.attrs(styles.focusEmpty)}>
-						Select a result to see its identity, authored context, and every place it
-						appears.
-					</p>
-				}
-			>
-				{(result) => (
-					<>
-						<header {...stylex.attrs(styles.focusHeader)}>
-							<blockquote {...stylex.attrs(styles.focusQuote)}>
-								“{sourceText(result().unit)}”
-							</blockquote>
-							<div {...stylex.attrs(styles.focusMeta)}>
-								<span>{result().unit.wordCount} words</span>
-								<span>{result().unit.characterCount} characters</span>
-								<span>
-									{result().totalOccurrences}{" "}
-									{result().totalOccurrences === 1 ? "use" : "uses"}
-								</span>
-							</div>
-							<div {...stylex.attrs(styles.focusIdentity)}>
-								<small {...stylex.attrs(styles.focusIdentityLabel)}>
-									Unreal identity
-								</small>
-								<code {...stylex.attrs(styles.focusIdentityValue)}>
-									{identityLabel(result().unit)}
-								</code>
-							</div>
-							<Show when={result().unit.reviewSignals.length > 0}>
-								<div {...stylex.attrs(styles.focusSignals)}>
-									<For each={result().unit.reviewSignals}>
-										{(signal) => (
-											<span {...stylex.attrs(styles.signal)}>
-												{signalLabel(signal)}
-											</span>
-										)}
-									</For>
-								</div>
-							</Show>
-						</header>
-						<section aria-label="Occurrences" {...stylex.attrs(styles.occurrences)}>
-							<header {...stylex.attrs(styles.sectionHeader)}>
-								<span>Where it appears</span>
-								<b {...stylex.attrs(styles.headerCount)}>
-									{result().totalOccurrences}
-								</b>
-							</header>
-							<For each={result().occurrences}>
-								{(occurrence) => (
-									<OccurrenceCard
-										locateFeedback={props.locateFeedback}
-										occurrence={occurrence}
-										onLocate={props.onLocate}
-									/>
-								)}
-							</For>
-						</section>
-						<Show when={result().diagnostics.length > 0}>
-							<section
-								aria-label="Coverage notes"
-								{...stylex.attrs(styles.diagnostics)}
-							>
-								<header {...stylex.attrs(styles.sectionHeader)}>
-									<span>Coverage notes</span>
-									<b>{result().diagnostics.length}</b>
-								</header>
-								<For each={result().diagnostics}>
-									{(diagnostic) => (
-										<article {...stylex.attrs(styles.diagnostic)}>
-											<strong {...stylex.attrs(styles.diagnosticTitle)}>
-												{diagnostic.code.replaceAll("_", " ")}
-											</strong>
-											<p {...stylex.attrs(styles.diagnosticMessage)}>
-												{diagnostic.message}
-											</p>
-											<code {...stylex.attrs(styles.diagnosticPackage)}>
-												{diagnostic.packageFile}
-											</code>
-										</article>
-									)}
-								</For>
-							</section>
-						</Show>
-					</>
-				)}
-			</Show>
-		</aside>
-	);
-}
-
-const styles = stylex.create({
-	page: {
-		minHeight: "calc(100vh - 52px)",
-		padding: `${tokens.space5} ${tokens.space6} ${tokens.space6}`,
-		color: tokens.colorText,
-		fontFamily: tokens.fontBody,
-		backgroundColor: tokens.colorCanvas,
-		backgroundImage: "none"
-	},
-	header: {
-		display: "flex",
-		justifyContent: "space-between",
-		alignItems: "flex-start",
-		gap: tokens.space6,
-		paddingBottom: tokens.space4,
-		borderBottomColor: tokens.colorBorder,
-		borderBottomStyle: "solid",
-		borderBottomWidth: 1,
-		marginBottom: tokens.space5
-	},
-	headerLead: { display: "flex", flexDirection: "column", gap: tokens.space1 },
-	title: {
-		margin: 0,
-		color: tokens.colorTextStrong,
-		fontFamily: tokens.fontDisplay,
-		fontSize: 22,
-		fontWeight: 590,
-		letterSpacing: "-0.02em"
-	},
-	subtitle: {
-		maxWidth: 560,
-		margin: 0,
-		color: tokens.colorTextMuted,
-		fontSize: 14,
-		lineHeight: 1.5
-	},
-	button: {
-		borderColor: tokens.colorBorder,
-		borderStyle: "solid",
-		borderWidth: 1,
-		backgroundColor: { default: tokens.colorSurface, ":hover": tokens.colorSurfaceHover },
-		color: tokens.colorText,
-		padding: `${tokens.space2} ${tokens.space3}`,
-		borderRadius: tokens.radiusControl,
-		cursor: "pointer",
-		fontFamily: tokens.fontBody,
-		fontSize: 12,
-		fontWeight: 500,
-		whiteSpace: "nowrap",
-		transition: `transform ${tokens.motionFast} cubic-bezier(.23, 1, .32, 1)`,
-		":active": { transform: "scale(.97)" },
-		":focus-visible": { outline: `2px solid ${tokens.colorAccent}`, outlineOffset: 2 }
-	},
-	headerActions: { display: "flex", alignItems: "center", flexShrink: 0, gap: tokens.space2 },
-	loadingLine: {
-		minHeight: 320,
-		display: "grid",
-		placeItems: "center",
-		margin: 0,
-		color: tokens.colorTextMuted,
-		fontSize: 13
-	},
-	noticeCard: {
-		display: "flex",
-		flexDirection: "column",
-		alignItems: "flex-start",
-		gap: tokens.space2,
-		maxWidth: 520,
-		padding: tokens.space4,
-		borderColor: tokens.colorBorder,
-		borderStyle: "solid",
-		borderWidth: 1,
-		backgroundColor: tokens.colorSurface,
-		borderRadius: tokens.radiusControl
-	},
-	noticeTitle: { color: tokens.colorTextStrong, fontSize: 14 },
-	noticeCopy: { margin: 0, color: tokens.colorTextMuted, fontSize: 13, lineHeight: 1.5 },
-	failureCard: {
-		display: "flex",
-		flexDirection: "column",
-		alignItems: "flex-start",
-		gap: tokens.space2,
-		maxWidth: 520,
-		padding: tokens.space4,
-		borderColor: tokens.colorBorderStrong,
-		borderStyle: "solid",
-		borderWidth: 1,
-		backgroundColor: tokens.colorSurface,
-		borderRadius: tokens.radiusControl
-	},
-	failureTitle: { color: tokens.colorTextStrong, fontSize: 14 },
-	failureCopy: {
-		margin: 0,
-		color: tokens.colorTextMuted,
-		fontSize: 13,
-		lineHeight: 1.5
-	},
-	technicalDetails: {
-		width: "100%",
-		color: tokens.colorTextFaint,
-		fontSize: 11
-	},
-	techSummary: { cursor: "pointer", color: tokens.colorTextSubtle },
-	techPre: {
-		margin: `${tokens.space2} 0 0`,
-		padding: tokens.space2,
-		borderColor: tokens.colorBorder,
-		borderStyle: "solid",
-		borderWidth: 1,
-		backgroundColor: tokens.colorSurfaceInset,
-		color: tokens.colorTextMuted,
-		fontFamily: tokens.fontMono,
-		fontSize: 11,
-		whiteSpace: "pre-wrap",
-		wordBreak: "break-word"
-	},
-	modeTabs: {
-		display: "flex",
-		alignItems: "stretch",
-		gap: tokens.space1,
-		marginBottom: tokens.space4,
-		borderBottomColor: tokens.colorBorder,
-		borderBottomStyle: "solid",
-		borderBottomWidth: 1
-	},
-	modeTab: {
-		display: "flex",
-		alignItems: "center",
-		gap: tokens.space2,
-		padding: `${tokens.space2} ${tokens.space3}`,
-		borderStyle: "none",
-		borderWidth: 0,
-		borderBottomColor: "transparent",
-		borderBottomStyle: "solid",
-		borderBottomWidth: 2,
-		backgroundColor: "transparent",
-		color: tokens.colorTextMuted,
-		cursor: "pointer",
-		fontFamily: tokens.fontBody,
-		fontSize: 13,
-		fontWeight: 500
-	},
-	tabCount: {
-		padding: "1px 5px",
-		borderRadius: tokens.radiusBadge,
-		backgroundColor: tokens.colorSurfaceRaised,
-		color: tokens.colorTextMuted,
-		fontSize: 11,
-		fontWeight: 500
-	},
-	modeTabActive: {
-		borderBottomColor: tokens.colorAccent,
-		color: tokens.colorTextStrong,
-		backgroundColor: "transparent"
-	},
-	qualitySetup: {
-		display: "flex",
-		flexDirection: "column",
-		alignItems: "flex-start",
-		gap: tokens.space3,
-		maxWidth: 520,
-		minHeight: 240,
-		margin: `${tokens.space6} auto 0`,
-		padding: tokens.space5,
-		borderColor: tokens.colorBorder,
-		borderStyle: "solid",
-		borderWidth: 1,
-		backgroundColor: tokens.colorSurface,
-		borderRadius: tokens.radiusControl,
-		color: tokens.colorTextMuted,
-		fontSize: 13,
-		lineHeight: 1.5
-	},
-	qualitySetupTitle: {
-		margin: 0,
-		color: tokens.colorTextStrong,
-		fontSize: 16,
-		fontWeight: 590
-	},
-	qualitySetupCopy: { maxWidth: 430, margin: 0 },
-	qualityButton: {
-		borderColor: tokens.colorAccent,
-		borderStyle: "solid",
-		borderWidth: 1,
-		backgroundColor: { default: tokens.colorAccent, ":hover": tokens.colorAccentStrong },
-		color: tokens.colorAccentText,
-		padding: `${tokens.space2} ${tokens.space3}`,
-		borderRadius: tokens.radiusControl,
-		cursor: "pointer",
-		fontFamily: tokens.fontBody,
-		fontSize: 12,
-		fontWeight: 590
-	},
-	workspace: { display: "flex", flexDirection: "column", gap: tokens.space3 },
-	queryBar: {
-		display: "flex",
-		flexWrap: "wrap",
-		alignItems: "center",
-		gap: tokens.space2,
-		padding: tokens.space2,
-		borderColor: tokens.colorBorder,
-		borderStyle: "solid",
-		borderWidth: 1,
-		backgroundColor: tokens.colorSurfaceInset,
-		borderRadius: tokens.radiusControl
-	},
-	searchInput: {
-		flex: 1,
-		minWidth: 220,
-		padding: `${tokens.space2} ${tokens.space3}`,
-		borderColor: tokens.colorBorder,
-		borderStyle: "solid",
-		borderWidth: 1,
-		backgroundColor: tokens.colorSurface,
-		color: tokens.colorTextStrong,
-		outlineColor: { default: "transparent", ":focus-visible": tokens.colorTextMuted },
-		outlineOffset: 2,
-		outlineStyle: "solid",
-		outlineWidth: 1,
-		fontFamily: tokens.fontBody,
-		fontSize: 13,
-		borderRadius: tokens.radiusControl,
-		"::placeholder": { color: tokens.colorTextFaint },
-		":focus-visible": { borderColor: tokens.colorAccent }
-	},
-	filters: {
-		display: "flex",
-		gap: 2,
-		padding: 2,
-		borderColor: tokens.colorBorder,
-		borderStyle: "solid",
-		borderWidth: 1,
-		backgroundColor: tokens.colorSurface,
-		borderRadius: tokens.radiusControl
-	},
-	filterButton: {
-		borderStyle: "none",
-		borderWidth: 0,
-		backgroundColor: "transparent",
-		color: tokens.colorTextMuted,
-		padding: `${tokens.space1} ${tokens.space2}`,
-		borderRadius: tokens.radiusBadge,
-		cursor: "pointer",
-		fontFamily: tokens.fontBody,
-		fontSize: 12,
-		transition: `background-color ${tokens.motionFast} ease`
-	},
-	filterActive: {
-		backgroundColor: tokens.colorSurfaceRaised,
-		color: tokens.colorTextStrong,
-		fontWeight: 500
-	},
-	lensSelect: {
-		maxWidth: 200,
-		padding: `${tokens.space2} ${tokens.space3}`,
-		borderColor: tokens.colorBorder,
-		borderStyle: "solid",
-		borderWidth: 1,
-		backgroundColor: tokens.colorSurface,
-		color: tokens.colorText,
-		fontFamily: tokens.fontBody,
-		fontSize: 12,
-		borderRadius: tokens.radiusControl
-	},
-	statsLine: {
-		display: "flex",
-		flexWrap: "wrap",
-		alignItems: "center",
-		gap: tokens.space4,
-		margin: 0,
-		color: tokens.colorTextFaint,
-		fontSize: 12
-	},
-	statsState: { padding: "1px 6px", borderRadius: tokens.radiusBadge, fontSize: 11 },
-	complete: {
-		color: tokens.colorSuccess,
-		backgroundColor: "rgba(76, 183, 130, 0.12)"
-	},
-	partial: {
-		color: tokens.colorWarning,
-		backgroundColor: "rgba(242, 153, 74, 0.12)"
-	},
-	statsWarning: { color: tokens.colorWarning },
-	grid: {
-		display: "grid",
-		gridTemplateColumns: "minmax(360px, 1fr) minmax(340px, .8fr)",
-		gap: tokens.space3,
-		alignItems: "start"
-	},
-	results: {
-		display: "flex",
-		flexDirection: "column",
-		borderColor: tokens.colorBorder,
-		borderStyle: "solid",
-		borderWidth: 1,
-		backgroundColor: tokens.colorSurface,
-		height: "calc(100vh - 300px)",
-		minHeight: 420,
-		overflow: "auto",
-		borderRadius: tokens.radiusControl
-	},
-	resultsHeader: {
-		position: "sticky",
-		top: 0,
-		zIndex: 2,
-		display: "flex",
-		alignItems: "center",
-		justifyContent: "space-between",
-		gap: tokens.space3,
-		padding: `${tokens.space3} ${tokens.space4}`,
-		borderBottomColor: tokens.colorBorder,
-		borderBottomStyle: "solid",
-		borderBottomWidth: 1,
-		backgroundColor: tokens.colorSurfaceRaised,
-		fontSize: 12
-	},
-	resultsTitle: { color: tokens.colorTextStrong, fontWeight: 590 },
-	headerCount: {
-		color: tokens.colorTextMuted,
-		fontFamily: tokens.fontMono,
-		fontWeight: 500,
-		fontVariantNumeric: "tabular-nums"
-	},
-	resultRow: {
-		width: "100%",
-		display: "flex",
-		flexDirection: "column",
-		gap: tokens.space1,
-		borderStyle: "none",
-		borderWidth: 0,
-		borderBottomColor: tokens.colorBorder,
-		borderBottomStyle: "solid",
-		borderBottomWidth: 1,
-		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.03)" },
-		color: tokens.colorText,
-		padding: `${tokens.space3} ${tokens.space4}`,
-		textAlign: "left",
-		cursor: "pointer",
-		fontFamily: tokens.fontBody
-	},
-	resultActive: { backgroundColor: "rgba(255, 255, 255, 0.07)" },
-	resultLead: {
-		display: "flex",
-		justifyContent: "space-between",
-		alignItems: "baseline",
-		gap: tokens.space2
-	},
-	resultText: {
-		display: "block",
-		overflow: "hidden",
-		minWidth: 0,
-		color: tokens.colorTextStrong,
-		fontSize: 13,
-		fontWeight: 500,
-		lineHeight: 1.35,
-		textOverflow: "ellipsis",
-		whiteSpace: "nowrap"
-	},
-	rowCounts: {
-		flexShrink: 0,
-		color: tokens.colorTextFaint,
-		fontFamily: tokens.fontMono,
-		fontSize: 11,
-		fontVariantNumeric: "tabular-nums",
-		whiteSpace: "nowrap"
-	},
-	resultContext: {
-		display: "block",
-		overflow: "hidden",
-		minWidth: 0,
-		color: tokens.colorTextMuted,
-		fontSize: 12,
-		textOverflow: "ellipsis",
-		whiteSpace: "nowrap"
-	},
-	resultMeta: {
-		display: "flex",
-		alignItems: "center",
-		justifyContent: "space-between",
-		gap: tokens.space2,
-		minWidth: 0
-	},
-	resultIdentity: {
-		display: "block",
-		overflow: "hidden",
-		minWidth: 0,
-		color: tokens.colorTextMuted,
-		fontFamily: tokens.fontMono,
-		fontSize: 11,
-		textOverflow: "ellipsis",
-		whiteSpace: "nowrap"
-	},
-	resultSource: {
-		display: "flex",
-		alignItems: "center",
-		flexShrink: 0,
-		gap: tokens.space1,
-		fontSize: 11,
-		color: tokens.colorTextFaint,
-		whiteSpace: "nowrap"
-	},
-	sourceAuthority: {
-		padding: "1px 5px",
-		borderRadius: tokens.radiusBadge,
-		fontSize: 11,
-		fontWeight: 500
-	},
-	sourceEditable: {
-		color: tokens.colorSuccess,
-		backgroundColor: "rgba(76, 183, 130, 0.12)"
-	},
-	sourceReadOnly: {
-		color: tokens.colorTextMuted,
-		backgroundColor: "rgba(255, 255, 255, 0.05)"
-	},
-	signalRow: {
-		display: "flex",
-		flexWrap: "wrap",
-		gap: tokens.space1,
-		fontSize: 11
-	},
-	signal: {
-		padding: "1px 5px",
-		borderRadius: tokens.radiusBadge,
-		color: tokens.colorWarning,
-		backgroundColor: "rgba(242, 153, 74, 0.12)",
-		borderColor: "rgba(242, 153, 74, 0.25)",
-		borderStyle: "solid",
-		borderWidth: 1
-	},
-	rowActions: {
-		display: "flex",
-		justifyContent: "flex-start",
-		gap: tokens.space1,
-		marginTop: tokens.space1,
-		whiteSpace: "nowrap"
-	},
-	rowAction: {
-		borderColor: tokens.colorBorder,
-		borderStyle: "solid",
-		borderWidth: 1,
-		backgroundColor: { default: "transparent", ":hover": tokens.colorSurfaceRaised },
-		color: tokens.colorTextMuted,
-		minWidth: 0,
-		padding: "3px 7px",
-		borderRadius: tokens.radiusControl,
-		cursor: "pointer",
-		fontFamily: tokens.fontBody,
-		fontSize: 11,
-		lineHeight: 1.4,
-		opacity: { default: 1, ":disabled": 0.5 },
-		":focus-visible": { outline: `2px solid ${tokens.colorAccent}`, outlineOffset: 1 }
-	},
-	rowActionSuccess: {
-		color: tokens.colorSuccess,
-		borderColor: "rgba(76, 183, 130, 0.45)",
-		backgroundColor: "rgba(76, 183, 130, 0.12)"
-	},
-	rowActionFailure: {
-		color: tokens.colorDanger,
-		borderColor: "rgba(235, 87, 87, 0.45)",
-		backgroundColor: "rgba(235, 87, 87, 0.1)"
-	},
-	noMatches: {
-		padding: tokens.space6,
-		color: tokens.colorTextMuted,
-		textAlign: "center",
-		fontSize: 12
-	},
-	nextPage: {
-		borderStyle: "none",
-		borderWidth: 0,
-		borderTopColor: tokens.colorBorder,
-		borderTopStyle: "solid",
-		borderTopWidth: 1,
-		backgroundColor: { default: "transparent", ":hover": tokens.colorSurfaceInset },
-		color: tokens.colorTextMuted,
-		padding: tokens.space3,
-		cursor: "pointer",
-		fontFamily: tokens.fontBody,
-		fontSize: 12
-	},
-	resultsFooter: {
-		position: "sticky",
-		bottom: 0,
-		display: "flex",
-		justifyContent: "space-between",
-		marginTop: "auto",
-		padding: `${tokens.space2} ${tokens.space4}`,
-		borderTopColor: tokens.colorBorder,
-		borderTopStyle: "solid",
-		borderTopWidth: 1,
-		backgroundColor: tokens.colorSurfaceRaised,
-		color: tokens.colorTextFaint,
-		fontSize: 11
-	},
-	focus: {
-		borderColor: tokens.colorBorder,
-		borderStyle: "solid",
-		borderWidth: 1,
-		backgroundColor: tokens.colorSurface,
-		height: "calc(100vh - 300px)",
-		minHeight: 420,
-		overflow: "auto",
-		borderRadius: tokens.radiusControl
-	},
-	focusEmpty: {
-		padding: tokens.space4,
-		color: tokens.colorTextMuted,
-		fontSize: 12,
-		lineHeight: 1.6
-	},
-	focusHeader: {
-		display: "flex",
-		flexDirection: "column",
-		gap: tokens.space2,
-		padding: tokens.space4,
-		borderBottomColor: tokens.colorBorder,
-		borderBottomStyle: "solid",
-		borderBottomWidth: 1
-	},
-	focusQuote: {
-		margin: 0,
-		color: tokens.colorTextStrong,
-		fontFamily: tokens.fontDisplay,
-		fontSize: 17,
-		fontWeight: 590,
-		lineHeight: 1.3,
-		letterSpacing: "-0.01em"
-	},
-	focusMeta: {
-		display: "flex",
-		flexWrap: "wrap",
-		gap: tokens.space3,
-		color: tokens.colorTextSubtle,
-		fontSize: 11
-	},
-	focusIdentity: {
-		display: "grid",
-		gridTemplateColumns: "110px minmax(0, 1fr)",
-		alignItems: "baseline",
-		gap: tokens.space2,
-		paddingTop: tokens.space2,
-		borderTopColor: tokens.colorBorder,
-		borderTopStyle: "solid",
-		borderTopWidth: 1
-	},
-	focusIdentityLabel: { color: tokens.colorTextSubtle, fontSize: 11 },
-	focusIdentityValue: {
-		overflow: "hidden",
-		color: tokens.colorTextMuted,
-		fontFamily: tokens.fontMono,
-		fontSize: 11,
-		textOverflow: "ellipsis",
-		whiteSpace: "nowrap"
-	},
-	focusSignals: {
-		display: "flex",
-		flexWrap: "wrap",
-		gap: tokens.space1,
-		fontSize: 11
-	},
-	occurrences: {
-		display: "flex",
-		flexDirection: "column",
-		borderBottomColor: tokens.colorBorder,
-		borderBottomStyle: "solid",
-		borderBottomWidth: 1
-	},
-	diagnostics: {
-		display: "flex",
-		flexDirection: "column",
-		borderBottomColor: tokens.colorBorder,
-		borderBottomStyle: "solid",
-		borderBottomWidth: 1
-	},
-	sectionHeader: {
-		position: "sticky",
-		top: 0,
-		zIndex: 1,
-		display: "flex",
-		justifyContent: "space-between",
-		padding: `${tokens.space2} ${tokens.space4}`,
-		borderBottomColor: tokens.colorBorder,
-		borderBottomStyle: "solid",
-		borderBottomWidth: 1,
-		backgroundColor: tokens.colorSurfaceRaised,
-		color: tokens.colorTextMuted,
-		fontSize: 11,
-		fontWeight: 500
-	},
-	occurrence: {
-		display: "flex",
-		flexDirection: "column",
-		gap: tokens.space2,
-		padding: tokens.space3,
-		borderBottomColor: tokens.colorBorder,
-		borderBottomStyle: "solid",
-		borderBottomWidth: 1,
-		fontSize: 12
-	},
-	occurrenceHeader: {
-		display: "flex",
-		justifyContent: "space-between",
-		alignItems: "start",
-		gap: tokens.space3
-	},
-	occurrenceActions: {
-		display: "flex",
-		alignItems: "center",
-		flexShrink: 0,
-		gap: tokens.space2
-	},
-	contextIdentity: {
-		display: "flex",
-		flexDirection: "column",
-		gap: 2,
-		minWidth: 0
-	},
-	contextKind: { color: tokens.colorTextFaint, fontSize: 11 },
-	contextTitle: { color: tokens.colorText, fontWeight: 500 },
-	contextDetail: {
-		color: tokens.colorTextMuted,
-		fontSize: 11,
-		overflow: "hidden",
-		textOverflow: "ellipsis",
-		whiteSpace: "nowrap"
-	},
-	authority: {
-		flexShrink: 0,
-		padding: "1px 5px",
-		borderRadius: tokens.radiusBadge,
-		fontSize: 11
-	},
-	editable: {
-		color: tokens.colorSuccess,
-		backgroundColor: "rgba(76, 183, 130, 0.12)"
-	},
-	readOnly: {
-		color: tokens.colorTextMuted,
-		backgroundColor: "rgba(255, 255, 255, 0.05)"
-	},
-	locateButton: {
-		borderColor: tokens.colorBorder,
-		borderStyle: "solid",
-		borderWidth: 1,
-		backgroundColor: { default: tokens.colorSurface, ":hover": tokens.colorSurfaceHover },
-		color: tokens.colorText,
-		padding: "3px 8px",
-		borderRadius: tokens.radiusControl,
-		cursor: "pointer",
-		fontFamily: tokens.fontBody,
-		fontSize: 11,
-		opacity: { default: 1, ":disabled": 0.5 },
-		":focus-visible": { outline: `2px solid ${tokens.colorAccent}`, outlineOffset: 1 }
-	},
-	locateMessage: {
-		margin: 0,
-		padding: tokens.space2,
-		borderColor: "rgba(235, 87, 87, 0.4)",
-		borderStyle: "solid",
-		borderWidth: 1,
-		borderRadius: tokens.radiusControl,
-		backgroundColor: "rgba(235, 87, 87, 0.08)",
-		color: tokens.colorDanger,
-		fontSize: 11,
-		lineHeight: 1.45
-	},
-	objectPath: {
-		display: "block",
-		overflow: "hidden",
-		marginTop: tokens.space1,
-		color: tokens.colorText,
-		fontFamily: tokens.fontMono,
-		fontSize: 11,
-		textOverflow: "ellipsis",
-		whiteSpace: "nowrap"
-	},
-	packageFile: {
-		display: "block",
-		overflow: "hidden",
-		color: tokens.colorTextFaint,
-		fontSize: 11,
-		textOverflow: "ellipsis",
-		whiteSpace: "nowrap"
-	},
-	sourceDetails: {
-		marginTop: 0,
-		borderTopColor: tokens.colorBorder,
-		borderTopStyle: "solid",
-		borderTopWidth: 1,
-		paddingTop: tokens.space1,
-		color: tokens.colorTextFaint,
-		fontSize: 11
-	},
-	detailsSummary: { cursor: "pointer", color: tokens.colorTextSubtle },
-	diagnostic: {
-		display: "flex",
-		flexDirection: "column",
-		gap: 2,
-		padding: `${tokens.space2} ${tokens.space4}`,
-		borderBottomColor: tokens.colorBorder,
-		borderBottomStyle: "solid",
-		borderBottomWidth: 1
-	},
-	diagnosticTitle: { color: tokens.colorWarning, textTransform: "capitalize" },
-	diagnosticMessage: {
-		margin: 0,
-		color: tokens.colorTextMuted,
-		fontSize: 11,
-		lineHeight: 1.45
-	},
-	diagnosticPackage: {
-		overflow: "hidden",
-		color: tokens.colorTextFaint,
-		fontFamily: tokens.fontMono,
-		textOverflow: "ellipsis",
-		whiteSpace: "nowrap"
-	}
-});

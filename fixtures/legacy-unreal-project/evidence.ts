@@ -97,7 +97,8 @@ export function expectedLegacyOccurrences(evidence: LegacyEvidence): Schema.Json
 		if (asset.asset_name === "ST_LegacyText") {
 			return asset.entries.map((entry) => ({
 				source: entry.source,
-				dev_notes: "",
+				// The reader surfaces a string table entry's Comment metadata as translator notes.
+				dev_notes: entry.metadata.Comment ?? "",
 				identity: { status: "resolved", namespace: asset.namespace, key: entry.key },
 				location: {
 					kind: "string_table_entry",

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, waitFor } from "@solidjs/testing-library";
+import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
+import { userEvent } from "@testing-library/user-event";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import { createSignal, flush } from "solid-js";
 import { afterEach, expect, it, vi } from "vitest";
@@ -7,6 +8,110 @@ import { EffectRuntimeProvider } from "./effect-solid.js";
 import { InvestigationActions } from "./investigation-actions.js";
 
 afterEach(cleanup);
+
+it("blocks compact export and preset actions while a project operation is running", async () => {
+	const runtime = ManagedRuntime.make(Layer.empty);
+	const [blocked, setBlocked] = createSignal(false);
+	const opened = vi.fn();
+	const user = userEvent.setup();
+	const view = render(() => (
+		<EffectRuntimeProvider runtime={runtime}>
+			<InvestigationActions
+				compact
+				query="text"
+				revision={1}
+				disabled={false}
+				blocked={blocked()}
+				onOpen={opened}
+				client={{
+					export: () => Effect.succeed({ status: "cancelled" }),
+					save: () => Effect.succeed({ status: "cancelled" }),
+					open: () =>
+						Effect.succeed({ status: "opened", path: "preset.json", preset: "text" })
+				}}
+			/>
+		</EffectRuntimeProvider>
+	));
+	try {
+		await user.click(view.getByRole("button", { name: "Presets" }));
+		setBlocked(true);
+		flush();
+		expect(view.getByRole("button", { name: "Export" })).toHaveProperty("disabled", true);
+		expect(view.getByRole("button", { name: "Presets" })).toHaveProperty("disabled", true);
+		expect(screen.getByRole("button", { name: "Save preset…" })).toHaveProperty(
+			"disabled",
+			true
+		);
+		expect(screen.getByRole("button", { name: "Open preset…" })).toHaveProperty(
+			"disabled",
+			true
+		);
+		await user.click(screen.getByRole("button", { name: "Open preset…" }));
+		expect(opened).not.toHaveBeenCalled();
+	} finally {
+		view.unmount();
+		await runtime.dispose();
+	}
+});
+
+it("groups compact exports and presets, closes menus and keeps host actions available", async () => {
+	const runtime = ManagedRuntime.make(Layer.empty);
+	const exported = vi.fn();
+	const saved = vi.fn();
+	const opened = vi.fn();
+	const user = userEvent.setup();
+	const view = render(() => (
+		<EffectRuntimeProvider runtime={runtime}>
+			<InvestigationActions
+				compact
+				query="current filters"
+				revision={1}
+				disabled={false}
+				onOpen={opened}
+				client={{
+					export: (query, format) => {
+						exported(query, format);
+						return Effect.succeed({ status: "saved", path: "/export", rowCount: 1 });
+					},
+					save: (query) => {
+						saved(query);
+						return Effect.succeed({ status: "saved", path: "/preset", rowCount: 0 });
+					},
+					open: () =>
+						Effect.succeed({ status: "opened", path: "/preset", preset: "restored" })
+				}}
+			/>
+		</EffectRuntimeProvider>
+	));
+	try {
+		expect(screen.queryByRole("button", { name: "Export CSV" })).toBeNull();
+		for (const format of ["CSV", "JSON"]) {
+			await user.click(screen.getByRole("button", { name: "Export" }));
+			await user.click(screen.getByRole("button", { name: format }));
+			await waitFor(() =>
+				expect(exported).toHaveBeenCalledWith("current filters", format.toLowerCase())
+			);
+			expect(screen.queryByRole("dialog", { name: "Export formats" })).toBeNull();
+			await waitFor(() =>
+				expect(screen.getByRole("status").textContent).toContain("1 matching result:")
+			);
+		}
+		await user.click(screen.getByRole("button", { name: "Presets" }));
+		await user.click(screen.getByRole("button", { name: "Save preset…" }));
+		await waitFor(() => expect(saved).toHaveBeenCalledWith("current filters"));
+		await waitFor(() =>
+			expect(screen.getByRole("status").textContent).toContain("Saved preset")
+		);
+		expect(screen.queryByRole("dialog", { name: "Investigation presets" })).toBeNull();
+		await user.click(screen.getByRole("button", { name: "Presets" }));
+		await user.click(screen.getByRole("button", { name: "Open preset…" }));
+		await waitFor(() => expect(opened).toHaveBeenCalledWith("restored"));
+		expect(screen.queryByRole("dialog", { name: "Investigation presets" })).toBeNull();
+	} finally {
+		view.unmount();
+		await runtime.dispose();
+	}
+});
 
 it("restores presets, reports file failures and cancellation, and hides stale replay commands", async () => {
 	const runtime = ManagedRuntime.make(Layer.empty);

@@ -165,9 +165,9 @@ async function verifyFunctionalHost(remoteControlEndpoint: string) {
 		if (catalog.status !== "success" || catalog.value?.status !== "ready") {
 			fail(`functional host catalog failed: ${JSON.stringify(catalog)}`);
 		}
-		if (catalog.value?.tables?.length !== 12) {
+		if (catalog.value?.tables?.length !== 13) {
 			fail(
-				`functional host discovered ${catalog.value?.tables?.length ?? 0} fixture tables, expected 12`
+				`functional host discovered ${catalog.value?.tables?.length ?? 0} fixture tables, expected 13`
 			);
 		}
 		const objectPath = catalog.value.tables[0]?.objectPath;
@@ -277,7 +277,7 @@ runPnpm([
 		"release",
 		process.platform === "win32" ? "uasset.exe" : "uasset"
 	)}`,
-	"--expected-table-count=12"
+	"--expected-table-count=13"
 ]);
 
 console.log(

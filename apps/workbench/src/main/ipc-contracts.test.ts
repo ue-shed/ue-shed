@@ -16,6 +16,7 @@ import {
 	cameraFrameEvent,
 	decodeMapCaptureProgressEvent,
 	mapCaptureProgressEvent,
+	gameTextOperationProgressEvent,
 	worldObservationEvent,
 	CandidateId,
 	decodeCameraFrameEvent,
@@ -272,9 +273,55 @@ const validArgsByChannel = {
 		{ mode: "corpus", qualityFilter: "all", query: "", capability: "all", lens: "all" }
 	],
 	"game-text:investigation-open": [],
+	"game-text:localization:quality-search": [{ target: "FixtureGame", filter: "all" }],
+	"game-text:localization:operation-state": ["FixtureGame"],
+	"game-text:localization:operation-plan": [{ target: "FixtureGame", operation: "sync" }],
+	"game-text:localization:operation-run": ["operation-1"],
+	"game-text:localization:operation-cancel": ["operation-1"],
+	"game-text:localization:operation-files": [{ id: "operation-1", kind: "planned", offset: 0 }],
+	"game-text:localization:quality-focus": [{ target: "FixtureGame", id: "quality-finding:1" }],
+	"game-text:localization:changes": [{ target: "FixtureGame", filter: "all" }],
+	"game-text:localization:review": [
+		{
+			target: "FixtureGame",
+			changes: [
+				{
+					kind: "set",
+					culture: "de",
+					namespace: "Fixture.Localization.Table",
+					key: "NamedArgument",
+					flags: ["reviewed"]
+				}
+			]
+		}
+	],
+	"game-text:localization:edits": [
+		{
+			target: "FixtureGame",
+			mode: "review",
+			edits: [
+				{
+					culture: "de",
+					namespace: "Fixture.Localization.Table",
+					key: "NamedArgument",
+					seenTranslation: "Gespräch mit {Name}",
+					translation: "Gespräch mit {PlayerName}"
+				}
+			]
+		}
+	],
+	"game-text:localization:report": [{ target: "FixtureGame" }],
+	"game-text:localization:report-file": [{ target: "FixtureGame", operation: "save_baseline" }],
+	"game-text:localization:targets": [],
+	"game-text:localization:target": ["FixtureGame"],
+	"game-text:localization:focus": [
+		{ target: "FixtureGame", selection: { kind: "line", id: "line-1" } }
+	],
 	"game-text:search": [{ capability: "all", pageSize: 50, query: "" }],
 	"game-text:focus": [{ id: "unreal:UI:Example", pageSize: 50 }],
 	"game-text:quality:choose-rules": [],
+	"game-text:quality:create-starter-rules": [false],
+	"game-text:quality:reload-rules": [],
 	"game-text:quality:preview-rules": [qualityRuleDocument],
 	"game-text:quality:save-rules": [qualityRuleDocument],
 	"game-text:quality:search": [{ filter: "all", pageSize: 50 }],
@@ -605,6 +652,29 @@ const validResultByChannel = {
 	"game-text:search": { status: "not_ready" },
 	"game-text:focus": { status: "not_ready" },
 	"game-text:quality:choose-rules": { status: "not_ready" },
+	"game-text:localization:quality-search": { status: "not_ready" },
+	"game-text:localization:operation-state": { operations: [], wholeRecipe: false },
+	"game-text:localization:operation-plan": {
+		status: "failed",
+		code: "engine_not_found",
+		message: "Engine unavailable.",
+		recovery: "Configure the project's Unreal Engine installation.",
+		details: []
+	},
+	"game-text:localization:operation-run": { status: "cancelled" },
+	"game-text:localization:operation-cancel": { status: "cancelled" },
+	"game-text:localization:operation-files": { status: "ready", files: [], total: 0 },
+	"game-text:localization:quality-focus": { status: "not_found" },
+	"game-text:localization:changes": { status: "not_ready" },
+	"game-text:localization:edits": { status: "not_ready" },
+	"game-text:localization:review": { status: "not_ready" },
+	"game-text:localization:report": { status: "not_ready" },
+	"game-text:localization:report-file": { status: "cancelled" },
+	"game-text:localization:targets": { status: "ready", targets: [] },
+	"game-text:localization:target": { status: "not_ready" },
+	"game-text:localization:focus": { status: "not_found" },
+	"game-text:quality:create-starter-rules": { status: "not_ready" },
+	"game-text:quality:reload-rules": { status: "not_ready" },
 	"game-text:quality:preview-rules": { status: "not_ready" },
 	"game-text:quality:save-rules": { status: "not_ready" },
 	"game-text:quality:search": { status: "not_ready" },
@@ -803,6 +873,30 @@ const validResultByChannel = {
 } satisfies ValidResultByChannel;
 
 const malformedArgsByChannel = {
+	"game-text:localization:quality-search": [
+		{ target: "FixtureGame", filter: "internal_rule", offset: -1 }
+	],
+	"game-text:localization:operation-state": ["../../Private"],
+	"game-text:localization:operation-plan": [{ target: "FixtureGame", operation: "write_assets" }],
+	"game-text:localization:operation-run": [""],
+	"game-text:localization:operation-cancel": [null],
+	"game-text:localization:operation-files": [{ id: "operation-1", kind: "planned", offset: -1 }],
+	"game-text:localization:quality-focus": [
+		{ target: "FixtureGame", id: "quality-finding:1", occurrenceOffset: -1 }
+	],
+	"game-text:localization:changes": [{ target: "../../Private", filter: "all" }],
+	"game-text:localization:edits": [{ target: "FixtureGame", mode: "write", edits: [] }],
+	"game-text:localization:review": [{ target: "FixtureGame", changes: [] }],
+	"game-text:localization:report": [{ target: "FixtureGame", offset: -1 }],
+	"game-text:localization:report-file": [{ target: "FixtureGame", operation: "write_po" }],
+	"game-text:quality:create-starter-rules": ["C:/Untrusted/output.json"],
+	"game-text:quality:reload-rules": ["C:/Untrusted/rules.json"],
+	"game-text:localization:targets": ["C:/Untrusted"],
+	"game-text:localization:target": ["../../Private"],
+	"game-text:localization:focus": [
+		{ target: "FixtureGame", selection: { kind: "file", id: "C:/Untrusted" } }
+	],
+	"game-text:search": [{ query: "", capability: "all", pageSize: 50, withoutNotes: "yes" }],
 	"editor-session:set-port": [65_536],
 	"asset-audits:textures:preview": ["/Engine/Textures/Bad"],
 	"asset-audits:textures:preview-offline": ["/Engine/Textures/Bad"],
@@ -842,12 +936,31 @@ const malformedArgsByChannel = {
 	"map-capture:tile": [{ manifestPath: "", relativePath: "../outside.png" }]
 } satisfies Partial<Record<InvokeChannel, IpcFixtureValue>>;
 
-it("registers exactly 126 invoke channels plus renderer events", () => {
-	expect(invokeChannelNames).toHaveLength(125);
-	expect(new Set(invokeChannelNames).size).toBe(125);
+it("registers exactly 142 invoke channels plus renderer events", () => {
+	expect(invokeChannelNames).toHaveLength(142);
+	expect(new Set(invokeChannelNames).size).toBe(142);
+	expect(invokeChannelNames).toEqual(
+		expect.arrayContaining([
+			"game-text:localization:quality-search",
+			"game-text:localization:operation-state",
+			"game-text:localization:operation-plan",
+			"game-text:localization:operation-run",
+			"game-text:localization:operation-cancel",
+			"game-text:localization:operation-files",
+			"game-text:localization:quality-focus",
+			"game-text:localization:changes",
+			"game-text:localization:edits",
+			"game-text:localization:review",
+			"game-text:localization:report",
+			"game-text:localization:report-file"
+		])
+	);
 	expect(cameraFrameEvent.channel).toBe("camera:frame");
 	expect(mapCaptureProgressEvent.channel).toBe("map-capture:progress");
 	expect(worldObservationEvent.channel).toBe("map-review:world-observation");
+	expect(gameTextOperationProgressEvent.channel).toBe(
+		"game-text:localization:operation-progress"
+	);
 });
 
 it.effect("decodes map-capture progress events", () =>
@@ -867,9 +980,154 @@ it("keeps contract channels in exact preload parity", () => {
 			"camera:frame",
 			"editor-window:handoff",
 			"map-capture:progress",
-			"map-review:world-observation"
+			"map-review:world-observation",
+			"game-text:localization:operation-progress"
 		].toSorted()
 	);
+});
+
+it("bounds Unreal operation plans, receipts, progress and project-relative file pages", () => {
+	const files = invokeContracts["game-text:localization:operation-files"].result;
+	expect(
+		Schema.is(files)({
+			status: "ready",
+			files: [{ path: "Content/Localization/Game.po", planned: true }],
+			total: 1
+		})
+	).toBe(true);
+	for (const path of ["C:/Private/Game.po", "/private/Game.po", "../Game.po", "Content\\Game.po"])
+		expect(
+			Schema.is(files)({ status: "ready", files: [{ path, planned: true }], total: 1 })
+		).toBe(false);
+	expect(
+		Schema.is(files)({
+			status: "ready",
+			files: Array.from({ length: 51 }, () => ({ path: "Content/Game.po", planned: true })),
+			total: 51
+		})
+	).toBe(false);
+	expect(
+		Schema.is(gameTextOperationProgressEvent.payload)({
+			id: "operation-1",
+			target: "FixtureGame",
+			operation: "sync",
+			phase: "running",
+			stepIndex: 1,
+			stepTotal: 3,
+			kind: "compile"
+		})
+	).toBe(true);
+	expect(
+		Schema.is(gameTextOperationProgressEvent.payload)({
+			id: "operation-1",
+			target: "FixtureGame",
+			operation: "sync",
+			phase: "running",
+			stepIndex: -1,
+			stepTotal: 3
+		})
+	).toBe(false);
+});
+
+it("bounds localization details and rejects filesystem requests", () => {
+	const focus = invokeContracts["game-text:localization:focus"];
+	const detail = {
+		id: "line:Code",
+		origin: { kind: "evidence", id: "evidence:Code" },
+		identity: { namespace: "Example", key: "Code" },
+		source: "Hello",
+		locations: ["Source/Example.cpp(1)"],
+		translatorNotes: [],
+		totalLocations: 1,
+		translations: [],
+		totalCultures: 0
+	};
+	const translation = {
+		culture: "de",
+		state: "needs_update",
+		facts: ["needs_update"],
+		unknownReasons: [],
+		reducedSourceChecking: false,
+		gameTranslation: "Hello",
+		gameTextKind: "source_outdated",
+		archiveTranslation: "Hallo",
+		cultureState: "needs_update",
+		translationSource: "Old greeting",
+		poTranslation: null,
+		translatorComments: [],
+		flags: [],
+		remainingComments: 0,
+		remainingFlags: 0
+	};
+	expect(
+		Result.isSuccess(
+			Schema.decodeUnknownResult(focus.result)({
+				status: "found",
+				focus: { ...detail, translations: [translation], totalCultures: 1 }
+			})
+		)
+	).toBe(true);
+	expect(
+		Result.isFailure(
+			Schema.decodeUnknownResult(focus.result)({
+				status: "found",
+				focus: {
+					...detail,
+					translations: [{ ...translation, poTranslation: "" }],
+					totalCultures: 1
+				}
+			})
+		)
+	).toBe(true);
+	expect(
+		Result.isSuccess(
+			Schema.decodeUnknownResult(focus.result)({
+				status: "found",
+				focus: detail
+			})
+		)
+	).toBe(true);
+	expect(
+		Result.isFailure(
+			Schema.decodeUnknownResult(focus.result)({
+				status: "found",
+				focus: { ...detail, locations: Array(51).fill("Source/Example.cpp(1)") }
+			})
+		)
+	).toBe(true);
+	expect(
+		Result.isFailure(
+			Schema.decodeUnknownResult(focus.args)([
+				{
+					target: "FixtureGame",
+					selection: { kind: "file", id: "C:/Private/Game.po" }
+				}
+			])
+		)
+	).toBe(true);
+	expect(
+		Result.isFailure(
+			Schema.decodeUnknownResult(focus.result)({
+				status: "found",
+				focus: { manifest: [], cultures: [], files: [] }
+			})
+		)
+	).toBe(true);
+	const target = invokeContracts["game-text:localization:target"];
+	expect(
+		Result.isFailure(
+			Schema.decodeUnknownResult(target.result)({
+				status: "ready",
+				target: {
+					name: "FixtureGame",
+					nativeCulture: "en",
+					cultures: Array(257).fill("en")
+				},
+				lines: 1,
+				notSynced: 0
+			})
+		)
+	).toBe(true);
 });
 
 it("decodes valid arguments for every invoke channel", () => {
@@ -881,6 +1139,16 @@ it("decodes valid arguments for every invoke channel", () => {
 		if (Result.isSuccess(decoded)) {
 			expect(Array.isArray(decoded.success)).toBe(true);
 		}
+	}
+});
+
+it("keeps legacy Game Text scan replies bounded instead of accepting a full corpus", () => {
+	for (const channel of ["game-text:configured-scan", "game-text:choose-and-scan"] as const) {
+		const decoded = Schema.decodeUnknownResult(invokeContracts[channel].result)({
+			status: "completed",
+			corpus: { units: [] }
+		});
+		expect(Result.isFailure(decoded)).toBe(true);
 	}
 });
 

@@ -89,34 +89,41 @@ export const guides: readonly Guide[] = [
 	{
 		slug: "game-text",
 		title: "Find the text and every place it is used",
-		summary:
-			"Search player-facing language while keeping Unreal identity, authored context, and source evidence together.",
-		requirement: "Saved corpus · no editor required for search",
+		summary: "Search saved game text, check writing rules and see every place a line appears.",
+		requirement: "Saved assets · no editor required for search",
 		source: "docs/products/game-text.md",
 		steps: [
 			{
-				title: "Search the sample corpus",
-				text: "Open Game Text and search for Hold to skip. Results include source text, Unreal identity, character counts, and usage counts from supported saved packages."
+				title: "Scan and search",
+				text: "Open Game Text and choose Scan project if needed. Type “Hold to skip” in Search text and watch the live match count. Use Editable, Read only, No translator notes and the review chips to narrow the list."
 			},
 			{
-				title: "Inspect shared uses",
-				text: "Choose a line to inspect its authored contexts. Use Show uses for a shared identity. Copy text and Copy ID work without connecting to Unreal."
+				title: "See where a line appears",
+				text: "Select a line to see its key, character and word counts, translator notes and Where it appears. Rows keep exact Unreal names. Copy icons copy text, keys and asset paths; Show in Unreal opens the asset in the connected editor’s Content Browser."
 			},
 			{
-				title: "Check coverage before drawing conclusions",
-				text: "Inspect occurrence evidence and coverage gaps. Locate in Unreal is available when a capable editor is connected; an offline or unsupported state remains visible."
+				title: "Check read problems",
+				text: "The toolbar shows the scan time and any assets not fully read. Open Read problems for the warning details, and inspect the selected line’s read problems below its locations. Offline, missing-plugin and failed navigation never claims the asset opened."
+			},
+			{
+				title: "Check the writing",
+				text: "Open Quality checks. Create rules file starts with examples, or Load rules opens your rules. Review the rules and roles overview, then select a finding to see a highlighted term and How to fix. Edit rules, Preview and Save update checks without changing game text."
+			},
+			{
+				title: "Take the results away",
+				text: "Use Export for a readable CSV or JSON, and Presets to save or open the search and writing rules."
 			}
 		],
 		command:
-			'pnpm ue-shed text scan fixtures/unreal-project\npnpm ue-shed text search fixtures/unreal-project "Hold to skip"',
+			'pnpm ue-shed text scan fixtures/unreal-project\npnpm ue-shed text search fixtures/unreal-project "Hold to skip"\npnpm ue-shed text rules init fixtures/unreal-project',
 		captures: [
 			{
 				key: "gameText",
-				caption: "A shared source line remains connected to its authored uses."
+				caption: "A saved line, with its key, translator notes and every place it appears."
 			}
 		],
 		boundary:
-			"This is a saved-source corpus, not the runtime localized text displayed by a running game. Unsupported assets and incomplete decoding remain coverage gaps."
+			"Game Text reads saved assets. It does not show the translated text of a running game. Read problems and incomplete assets remain visible."
 	},
 	{
 		slug: "config-explorer",

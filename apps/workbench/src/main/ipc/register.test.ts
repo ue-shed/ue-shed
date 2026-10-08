@@ -8,7 +8,7 @@ import { AssetReaderError, makeAssetReaderTestLayer } from "@ue-shed/unreal-asse
 import type { TextureAuditRunResult, TexturePreviewResult } from "@ue-shed/asset-audits";
 import type { MapReviewApprovalResult } from "@ue-shed/cameras/review-contracts";
 import type { EnhancedInputRunResult } from "@ue-shed/enhanced-input";
-import type { TextCorpusRunResult } from "@ue-shed/game-text";
+import type { TextCorpusQueryRunResult } from "@ue-shed/game-text";
 import type { CameraScheduleConfig, CameraStatus } from "@ue-shed/protocol";
 import { makeEditorPlaySessionTestLayer } from "@ue-shed/engine";
 import {
@@ -34,6 +34,7 @@ import { makeWorkbenchContentObservatoryTestLayer } from "../services/content-ob
 import { makeWorkbenchConfigExplorerTestLayer } from "../services/config-explorer.js";
 import { makeFixtureLauncherTestLayer } from "../services/fixture-launcher.js";
 import { makeWorkbenchGameTextTestLayer } from "../services/game-text.js";
+import { WorkbenchGameTextOperations } from "../services/game-text-operations.js";
 import { makeWorkbenchInputAtlasTestLayer } from "../services/input-atlas.js";
 import { makeWorkbenchMapReviewTestLayer } from "../services/map-review.js";
 import { makeWorkbenchMapCaptureTestLayer } from "../services/map-capture.js";
@@ -227,14 +228,16 @@ function buildRegistrationLayer(recorder: Recorder, options: RegistrationOptions
 	});
 
 	const gameText = makeWorkbenchGameTextTestLayer({
-		chooseAndScan: () =>
+		chooseAndScan: () => Effect.die("Full corpus reads must remain in the host"),
+		configuredScan: () => Effect.die("Full corpus reads must remain in the host"),
+		chooseAndRefresh: () =>
 			recorder
-				.record("gameText.chooseAndScan")
-				.pipe(Effect.as({ status: "not_configured" } satisfies TextCorpusRunResult)),
-		configuredScan: () =>
+				.record("gameText.chooseAndRefresh")
+				.pipe(Effect.as({ status: "not_configured" } satisfies TextCorpusQueryRunResult)),
+		configuredRefresh: () =>
 			recorder
-				.record("gameText.configuredScan")
-				.pipe(Effect.as({ status: "not_configured" } satisfies TextCorpusRunResult))
+				.record("gameText.configuredRefresh")
+				.pipe(Effect.as({ status: "not_configured" } satisfies TextCorpusQueryRunResult))
 	});
 
 	const contentObservatory = makeWorkbenchContentObservatoryTestLayer({
@@ -740,6 +743,23 @@ function buildRegistrationLayer(recorder: Recorder, options: RegistrationOptions
 		assetAudits,
 		assetNavigation,
 		gameText,
+		Layer.succeed(
+			WorkbenchGameTextOperations,
+			WorkbenchGameTextOperations.of({
+				state: () => Effect.succeed({ operations: [], wholeRecipe: false }),
+				plan: () =>
+					Effect.succeed({
+						status: "failed",
+						code: "not_ready",
+						message: "Not scanned.",
+						recovery: "Scan the project.",
+						details: []
+					}),
+				run: () => Effect.succeed({ status: "cancelled" }),
+				cancel: () => Effect.succeed({ status: "cancelled" }),
+				files: () => Effect.succeed({ status: "ready", files: [], total: 0 })
+			})
+		),
 		contentObservatory,
 		configExplorer,
 		inputAtlas,
@@ -1063,8 +1083,16 @@ it.effect("dispatches asset-audits channels to WorkbenchAssetAudits with decoded
 
 it.effect("dispatches game-text channels to WorkbenchGameText", () =>
 	Effect.gen(function* () {
-		const { recorder } = yield* runRegistered((ipc) => ipc.invoke("game-text:configured-scan"));
-		expect(yield* recorder.calls()).toEqual(["gameText.configuredScan"]);
+		const { recorder } = yield* runRegistered((ipc) =>
+			Effect.gen(function* () {
+				yield* ipc.invoke("game-text:configured-scan");
+				yield* ipc.invoke("game-text:choose-and-scan");
+			})
+		);
+		expect(yield* recorder.calls()).toEqual([
+			"gameText.configuredRefresh",
+			"gameText.chooseAndRefresh"
+		]);
 	})
 );
 

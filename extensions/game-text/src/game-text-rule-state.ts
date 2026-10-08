@@ -1,14 +1,11 @@
-import type {
-	TextQualityRuleDocument,
-	TextQualityRuleUpdateResult
-} from "@ue-shed/game-text/browser";
+import type { GameTextRuleDocument, TextQualityRuleUpdateResult } from "@ue-shed/game-text/browser";
 import { createEffectAction } from "@ue-shed/ui";
 import { createMemo, createSignal } from "solid-js";
 import type { GameTextClientApi } from "./game-text-client.js";
 
 export interface RuleEditorState {
-	readonly draft: TextQualityRuleDocument;
-	readonly savedDocument: TextQualityRuleDocument | undefined;
+	readonly draft: GameTextRuleDocument;
+	readonly savedDocument: GameTextRuleDocument | undefined;
 }
 
 type EditorFeedback =
@@ -36,7 +33,7 @@ export function createGameTextRuleState(options: {
 			JSON.stringify(current.draft) !== JSON.stringify(current.savedDocument)
 		);
 	});
-	const replace = (document: TextQualityRuleDocument | undefined, persisted = true) => {
+	const replace = (document: GameTextRuleDocument | undefined, persisted = true) => {
 		action.cancel();
 		setState(
 			document
@@ -46,12 +43,12 @@ export function createGameTextRuleState(options: {
 		setBusy(false);
 		setFeedback({ status: "idle" });
 	};
-	const changeDraft = (draft: TextQualityRuleDocument) => {
+	const changeDraft = (draft: GameTextRuleDocument) => {
 		setState((current) => ({ draft, savedDocument: current?.savedDocument }));
 		setFeedback({ status: "idle" });
 	};
-	const run = (operation: "preview" | "save") => {
-		const submitted = state()?.draft;
+	const run = (operation: "preview" | "save", document?: GameTextRuleDocument) => {
+		const submitted = document ?? state()?.draft;
 		if (!submitted || busy()) return;
 		const problem = draftProblem(submitted);
 		if (problem) {
@@ -99,12 +96,19 @@ export function createGameTextRuleState(options: {
 			}
 		);
 	};
-	return { state, busy, dirty, feedback, replace, changeDraft, run };
+	const upgrade = () => {
+		const current = state()?.draft;
+		if (!current || current.schemaVersion !== 1 || busy()) return;
+		const upgraded: GameTextRuleDocument = { ...current, schemaVersion: 2 };
+		changeDraft(upgraded);
+		run("preview", upgraded);
+	};
+	return { state, busy, dirty, feedback, replace, changeDraft, run, upgrade };
 }
 
 export type GameTextRuleState = ReturnType<typeof createGameTextRuleState>;
 
-function draftProblem(document: TextQualityRuleDocument): string | undefined {
+function draftProblem(document: GameTextRuleDocument): string | undefined {
 	for (const rule of document.rules) {
 		if (rule.recovery.trim().length === 0) {
 			return `${rule.id} needs recovery guidance before it can be previewed or saved.`;

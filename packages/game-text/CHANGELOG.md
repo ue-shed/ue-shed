@@ -1,5 +1,35 @@
 # @ue-shed/game-text
 
+## 0.10.0
+
+### Minor Changes
+
+- 8d812df: Add pure Unreal localization quality checks, provenance-bearing version-1 change-set proposals,
+  and `ue-shed loc check` with optional exclusive proposal JSON creation.
+- 980ad73: Add compatible v2 culture budgets and glossaries, archive progress reports, and versioned manifest
+  source baselines. Expose `loc report` with exclusive baseline creation and preserve v1 source rules.
+- bbe2501: Join saved text with read-only Unreal localization evidence by namespace and key. Add coverage-qualified
+  per-culture states, bounded localization query pages, translation search, state and word counts, and
+  file evidence reports. Preserve String Table translator comments alongside developer notes.
+- 64976b1: Track localization review state in a project-owned review file per target. Records keep reviewed,
+  proofread, approved and machine translated flags against a fingerprint of the source and the
+  translation that ships next, so later edits read as changed since review. Game Text adds review
+  lenses, accepted check findings and reviewed and proofread report shares.
+- 271dcd1: Write reviewed translation change sets into PO files. Changes are revalidated against fresh
+  evidence: the source must match the manifest, and the replaced translation must match what ships
+  next. Only the edited `msgstr` values change, through an atomic, hash-guarded replace. Game Text
+  adds browser-safe edit request and result schemas for hosts that stage edits.
+
+### Patch Changes
+
+- Updated dependencies [8d812df]
+- Updated dependencies [f66ac19]
+- Updated dependencies [bdbcaec]
+- Updated dependencies [64976b1]
+- Updated dependencies [271dcd1]
+    - @ue-shed/localization@0.10.0
+    - @ue-shed/unreal-assets@0.10.0
+
 ## 0.9.3
 
 No direct behavioral change. Align with the UE Shed 0.9.3 suite and exact internal dependency pins.

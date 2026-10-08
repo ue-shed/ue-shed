@@ -1,5 +1,9 @@
 # @ue-shed/uasset
 
+## 0.10.0
+
+No direct behavioral change. Align with the UE Shed 0.10.0 suite and exact internal dependency pins.
+
 ## 0.9.3
 
 No direct behavioral change. Align with the UE Shed 0.9.3 suite and exact internal dependency pins.

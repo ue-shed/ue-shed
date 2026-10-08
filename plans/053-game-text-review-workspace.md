@@ -11,11 +11,10 @@
 
 ## Status
 
-- **State**: IN PROGRESS. Phases 1 and 2 are done; Phase 3's first slice (Filter, Display, grouped
-  list, culture strip, side facets, migration) and the multi-select culture picker are done;
-  keyboard and saved views remain. The design is a
-  mockup with sample data; each phase earns its part against the fixture and a generated large
-  corpus.
+- **State**: IN PROGRESS. Phases 1–4 are done (Phase 3 without the keyboard and saved views, which
+  the owner skipped as polish the showcase does not need; Phase 4 without history); Phase 5, bulk actions, is next. The
+  design is a mockup with sample data; each phase earns its part against the fixture and a
+  generated large corpus.
 - **Priority**: P1
 - **Effort**: XL
 - **Risk**: MEDIUM. The Workbench's Game Text surface changes shape; saved views and presets from
@@ -183,7 +182,8 @@ StyleX and visual-regression checks for the strip and group header.
   single `localizationCulture` still read). One culture shows its translations inline; several
   narrow the request's `cultures`, the strip and its summary, and translation search covers every
   picked culture. The keyboard works as in the other pickers; Enter keeps the choices open.
-- Still to do in Phase 3: the keyboard (6) and saved views (7).
+- Skipped by owner decision on 2026-10-08, as polish the showcase does not need: the keyboard (6)
+  and saved views (7). Presets already save pills, grouping and the search.
 
 ## Phase 4: The line page (Workbench)
 
@@ -192,10 +192,27 @@ StyleX and visual-regression checks for the strip and group header.
    and down through the list.
 2. History from the baselines the project already keeps: gathered, source changed, key changed,
    translated, with the baseline or export each fact came from. Without a baseline the section
-   says so.
+   says so. Deferred: a project keeps a baseline only when someone saves one by hand, so history
+   needs a baseline store first; it is a follow-up plan, not this phase.
 
-**Gate**: component tests for each problem's call to action; history from two fixture baselines;
-recording through open, carry, next line and back.
+**Gate**: component tests for each problem's call to action; recording through open, carry, next
+line and back.
+
+**Evidence (2026-10-08)**: Phase 4 is done without history (item 2, deferred above).
+
+- Opening a line replaces the list with its page; the list stays mounted (hidden), so "‹ Lines"
+  returns to the same groups and loaded pages. The header shows the line's place across the whole
+  list ("2 of 58": lines in the groups above plus its place in its group) and steps to the next or
+  previous line, loading a group's next page or opening the neighbouring group when needed.
+- The page states the worst problem in a sentence with what resolves it (key changed, same key
+  with different text, not gathered, changed since gather, translation work), in its severity
+  colour, above the existing detail: text and key, where it appears, translations with editing,
+  review and carrying, and read problems. A properties column lists problems, namespace and key,
+  origin, asset and folder, editing, translator notes, length and findings.
+- Verified: component tests for the page (position, properties, stepping, back), crossing into a
+  group's next page, and the key-change callout; the Game Text recording, which now checks the
+  page layout and returns to the list before picking other rows; screenshots on the fixture
+  project, including stepping from the key-changed line into the closed "Not gathered yet" group.
 
 ## Phase 5: Bulk actions
 

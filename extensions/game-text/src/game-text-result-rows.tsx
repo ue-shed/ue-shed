@@ -54,6 +54,9 @@ export function GameTextResultRows(props: {
 				<button
 					type="button"
 					aria-current={selected(row) ? "true" : undefined}
+					data-row=""
+					data-unit={row.unit?.id}
+					data-line={row.line?.id}
 					onClick={() => props.onSelect(row.unit?.id, row.line?.id)}
 					{...stylex.attrs(styles.row, local.line, selected(row) && styles.selected)}
 				>

@@ -2,7 +2,15 @@ import * as stylex from "@stylexjs/stylex";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 
 export const styles = stylex.create({
+	gridPage: { gridTemplateColumns: "minmax(0, 1fr)" },
+	hidden: { display: "none" },
+	pageBody: {
+		display: "grid",
+		gridTemplateColumns: "minmax(0, 1fr) minmax(240px, 320px)",
+		alignItems: "start"
+	},
 	grow: { flex: 1 },
+	calloutBox: { paddingInline: tokens.space4, paddingTop: tokens.space4 },
 	operationPanel: {
 		display: "flex",
 		flexDirection: "column",

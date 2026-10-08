@@ -247,6 +247,40 @@ describe("Game Text writing workspace", () => {
 		expect(within(results).getByText("DT_Menu · Quit · Prompt")).toBeDefined();
 	});
 
+	it("opens a line as a page, steps to the next line and goes back to the list", async () => {
+		const user = userEvent.setup();
+		mount();
+		await screen.findByText("2 matches");
+		const results = within(screen.getByRole("region", { name: "Results" }));
+		await user.click(results.getByRole("button", { name: /Continue/u }));
+		const page = screen.getByRole("complementary", { name: "Text focus" });
+		await within(page).findByRole("heading", { name: "Continue" });
+		// The page knows where the line sits in the list and offers its neighbours.
+		const rows = results
+			.getAllByRole("button")
+			.filter((button) => button.hasAttribute("data-row"));
+		const index = rows.findIndex((row) => row.textContent?.includes("Continue"));
+		expect(within(page).getByText(`${index + 1} of ${rows.length}`)).toBeDefined();
+		const properties = within(screen.getByRole("region", { name: "Properties" }));
+		expect(properties.getByText("Up to date")).toBeDefined();
+		expect(properties.getByText("UI")).toBeDefined();
+		expect(properties.getByText("8 characters · 1 word")).toBeDefined();
+		expect(properties.getByText("ST_Game")).toBeDefined();
+		expect(properties.getByText("Content/Text")).toBeDefined();
+		expect(properties.getByText("Editable")).toBeDefined();
+		// An up-to-date line has nothing to resolve.
+		expect(within(page).queryByRole("note", { name: "What this line needs" })).toBeNull();
+		const step = index === 0 ? "Next line" : "Previous line";
+		await user.click(within(page).getByRole("button", { name: step }));
+		await within(page).findByRole("heading", { name: "Quit game?" });
+		expect(properties.getByText("Read only")).toBeDefined();
+		await user.click(within(page).getByRole("button", { name: "‹ Lines" }));
+		await waitFor(() =>
+			expect(screen.getByRole("tablist", { name: "Where the lines are" })).toBeDefined()
+		);
+		expect(screen.queryByRole("region", { name: "Properties" })).toBeNull();
+	});
+
 	it("pluralizes a single line, asset, character, word and location", async () => {
 		const first = corpus.units[0]!;
 		mount(
@@ -957,6 +991,33 @@ describe("Game Text writing workspace", () => {
 		await user.click(within(results).getByRole("button", { name: "Show more (12 left)" }));
 		await waitFor(() => expect(rows()).toHaveLength(62));
 		expect(screen.getByText("62 matches")).toBeDefined();
+	});
+
+	it("steps past the last loaded line by loading the group's next page", async () => {
+		const first = corpus.units[0]!;
+		const input: TextCorpus = {
+			...corpus,
+			units: Array.from({ length: 62 }, (_, index) => ({
+				...first,
+				id: makeTextUnitId("page-line:" + index.toString().padStart(3, "0")),
+				source: { status: "consistent", value: "Line " + index }
+			}))
+		};
+		const user = userEvent.setup();
+		mount(makeClient(input));
+		await screen.findByText("62 matches");
+		const results = screen.getByRole("region", { name: "Results" });
+		const rows = () =>
+			within(results)
+				.getAllByRole("button")
+				.filter((button) => button.hasAttribute("data-row"));
+		await waitFor(() => expect(rows()).toHaveLength(50));
+		await user.click(rows()[49]!);
+		const page = screen.getByRole("complementary", { name: "Text focus" });
+		await within(page).findByText("50 of 62");
+		await user.click(within(page).getByRole("button", { name: "Next line" }));
+		await within(page).findByText("51 of 62");
+		expect(rows()).toHaveLength(62);
 	});
 
 	it("highlights terminology, shows its asset in Unreal and opens the matching line in Text", async () => {

@@ -45,6 +45,7 @@ import {
 import { DisplayMenu } from "./game-text-display-menu.js";
 import { FacetsPane } from "./game-text-facets.js";
 import { FolderBrowser } from "./game-text-folder-browser.js";
+import { LinePageHeader, LineProblem, LineProperties } from "./game-text-line-page.js";
 import {
 	FilterMenu,
 	FilterPills,
@@ -261,6 +262,87 @@ export function GameTextRoute(props: {
 	const groupField = () => {
 		const value = group();
 		return value === "none" ? undefined : { group: value };
+	};
+	// A picked line opens its page. Its place and neighbours come from the list's rows, in the
+	// order they show, so the page follows grouping, open groups and loaded pages.
+	let resultsSection: HTMLElement | undefined;
+	const lineOpen = () => selectedId() !== undefined || localization.selectedId() !== undefined;
+	const lineRows = () =>
+		Array.from(resultsSection?.querySelectorAll<HTMLButtonElement>("button[data-row]") ?? []);
+	const lineIndex = (rows: readonly HTMLButtonElement[]) => {
+		const line = localization.selectedId();
+		const unit = selectedId();
+		return rows.findIndex((row) =>
+			line !== undefined ? row.dataset.line === line : row.dataset.unit === unit
+		);
+	};
+	// Groups render as sections in the list, in the page's group order.
+	const groupSections = () =>
+		Array.from(resultsSection?.querySelectorAll<HTMLElement>(":scope section") ?? []);
+	const linePosition = () => {
+		// Read the selection and page so the position follows them; the rows are read from the list.
+		const current = page();
+		const rows = lineRows();
+		const row = rows[lineIndex(rows)];
+		if (!current || !row) return undefined;
+		const groups = current.groups?.entries;
+		const section = row.closest("section");
+		const sectionIndex = section ? groupSections().indexOf(section) : -1;
+		if (!groups || sectionIndex < 0) return { index: rows.indexOf(row), total: current.total };
+		// Lines in the groups above, then the line's place in its own group.
+		const before = groups.slice(0, sectionIndex).reduce((sum, group) => sum + group.count, 0);
+		const inGroup = Array.from(
+			section?.querySelectorAll<HTMLButtonElement>("button[data-row]") ?? []
+		).indexOf(row);
+		return { index: before + inGroup, total: current.total };
+	};
+	// Waits for a group's lines or next page to load after opening it.
+	const settle = async (ready: () => boolean) => {
+		for (let attempt = 0; attempt < 60 && !ready(); attempt++)
+			await new Promise((resolve) => setTimeout(resolve, 50));
+	};
+	const moveLine = async (step: -1 | 1) => {
+		const rows = lineRows();
+		const index = lineIndex(rows);
+		const row = rows[index];
+		if (!row) return;
+		const section = row.closest("section");
+		const inSection = (target: HTMLElement | null) =>
+			Array.from(target?.querySelectorAll<HTMLButtonElement>("button[data-row]") ?? []);
+		const siblings = inSection(section);
+		const at = siblings.indexOf(row);
+		// Within the group, or a flat list: the next loaded line.
+		if (at + step >= 0 && at + step < siblings.length) {
+			siblings[at + step]?.click();
+			return;
+		}
+		// The group's next page, when there is one.
+		const more = step === 1 ? section?.querySelector<HTMLButtonElement>("[data-more]") : null;
+		if (more) {
+			more.click();
+			await settle(() => inSection(section).length > siblings.length);
+			inSection(section)[at + 1]?.click();
+			return;
+		}
+		if (!section) {
+			rows[index + step]?.click();
+			return;
+		}
+		// The neighbouring group, opened if it is closed.
+		const sections = groupSections();
+		const target = sections[sections.indexOf(section) + step];
+		if (!target) return;
+		const header = target.querySelector<HTMLButtonElement>('button[aria-expanded="false"]');
+		if (header) {
+			header.click();
+			await settle(() => inSection(target).length > 0);
+		}
+		const targetRows = inSection(target);
+		(step === 1 ? targetRows[0] : targetRows.at(-1))?.click();
+	};
+	const closeLine = () => {
+		setSelectedId(undefined);
+		localization.setSelectedId(undefined);
 	};
 	// Review state and line facts still filter through the selection, one choice at a time.
 	const extraFields = (): readonly ExtraField[] => {
@@ -1100,8 +1182,16 @@ export function GameTextRoute(props: {
 									</Show>
 								</div>
 							</Show>
-							<div {...stylex.attrs(styles.grid)}>
-								<section aria-label="Results" {...stylex.attrs(styles.pane)}>
+							<div {...stylex.attrs(styles.grid, lineOpen() && styles.gridPage)}>
+								{/* An open line takes the page; the list stays mounted so its groups and pages
+								    survive, and the page steps through its rows. */}
+								<section
+									aria-label="Results"
+									ref={(element) => {
+										resultsSection = element;
+									}}
+									{...stylex.attrs(styles.pane, lineOpen() && styles.hidden)}
+								>
 									<Show
 										when={page()?.groups}
 										fallback={
@@ -1167,39 +1257,146 @@ export function GameTextRoute(props: {
 									</Show>
 								</section>
 								<aside aria-label="Text focus" {...stylex.attrs(styles.pane)}>
-									<Show
-										when={focus()}
-										fallback={
+									<Show when={lineOpen()}>
+										<LinePageHeader
+											position={linePosition()}
+											onBack={closeLine}
+											onMove={moveLine}
+										/>
+									</Show>
+									<div {...stylex.attrs(lineOpen() && styles.pageBody)}>
+										<div>
+											<Show when={lineOpen()}>
+												<div {...stylex.attrs(styles.calloutBox)}>
+													<LineProblem
+														focus={focus()}
+														detail={localization.detail()}
+													/>
+												</div>
+											</Show>
 											<Show
-												when={
-													localization.detail()?.origin.kind ===
-													"evidence"
-														? localization.detail()
-														: undefined
-												}
+												when={focus()}
 												fallback={
 													<Show
-														when={!localization.detailLoading()}
+														when={
+															localization.detail()?.origin.kind ===
+															"evidence"
+																? localization.detail()
+																: undefined
+														}
 														fallback={
-															<p {...stylex.attrs(styles.empty)}>
-																Loading translations…
-															</p>
+															<Show
+																when={!localization.detailLoading()}
+																fallback={
+																	<p
+																		{...stylex.attrs(
+																			styles.empty
+																		)}
+																	>
+																		Loading translations…
+																	</p>
+																}
+															>
+																<FacetsPane
+																	page={page()}
+																	group={groupField()?.group}
+																	filter={filter()}
+																	folder={facetFolder()}
+																	onFolderChange={setFacetFolder}
+																	onFilterChange={setFilter}
+																/>
+															</Show>
 														}
 													>
-														<FacetsPane
-															page={page()}
-															group={groupField()?.group}
-															filter={filter()}
-															folder={facetFolder()}
-															onFolderChange={setFacetFolder}
-															onFilterChange={setFilter}
-														/>
+														{(gathered) => (
+															<div {...stylex.attrs(styles.detail)}>
+																<GatheredDetail
+																	focus={gathered()}
+																/>
+																<TranslationsDetail
+																	model={localization}
+																	edits={edits}
+																	review={{
+																		client: props.client,
+																		busy:
+																			loading() ||
+																			operations.busy(),
+																		onChanged: () => load(false)
+																	}}
+																/>
+															</div>
+														)}
 													</Show>
 												}
 											>
-												{(gathered) => (
+												{(current) => (
 													<div {...stylex.attrs(styles.detail)}>
-														<GatheredDetail focus={gathered()} />
+														<div {...stylex.attrs(styles.bar)}>
+															<h2 {...stylex.attrs(styles.title)}>
+																{sourceText(current().unit)}
+															</h2>
+															<CopyButton
+																label="Copy text"
+																value={sourceText(current().unit)}
+															/>
+														</div>
+														<div {...stylex.attrs(styles.bar)}>
+															<code {...stylex.attrs(styles.mono)}>
+																{identityLabel(current().unit)}
+															</code>
+															<Show
+																when={
+																	current().unit.identity
+																		.status !== "unresolved"
+																}
+															>
+																<CopyButton
+																	label="Copy key"
+																	value={identityLabel(
+																		current().unit
+																	)}
+																/>
+															</Show>
+														</div>
+														<span {...stylex.attrs(styles.muted)}>
+															{focusStats(current())}
+														</span>
+														<Show
+															when={current().unit.reviewSignals.some(
+																(signal) =>
+																	signal !== "evidence_only"
+															)}
+														>
+															<span {...stylex.attrs(styles.warning)}>
+																{current()
+																	.unit.reviewSignals.filter(
+																		(signal) =>
+																			signal !==
+																			"evidence_only"
+																	)
+																	.map(textReviewSignalLabel)
+																	.join(" · ")}
+															</span>
+														</Show>
+														<h3 {...stylex.attrs(styles.section)}>
+															Where it appears
+														</h3>
+														<For each={current().occurrences}>
+															{(occurrence) => (
+																<OccurrenceCard
+																	client={props.client}
+																	occurrence={occurrence}
+																	conflicting={
+																		current().unit.source
+																			.status ===
+																		"conflicting"
+																	}
+																	onOpenDataAuthoring={
+																		props.onOpenDataAuthoring
+																	}
+																/>
+															)}
+														</For>
 														<TranslationsDetail
 															model={localization}
 															edits={edits}
@@ -1210,111 +1407,45 @@ export function GameTextRoute(props: {
 																onChanged: () => load(false)
 															}}
 														/>
+														<CoverageNotes
+															diagnostics={current().diagnostics}
+														/>
+														<Show when={current().nextOccurrenceCursor}>
+															{(cursor) => (
+																<Button
+																	onClick={() =>
+																		requestFocus(
+																			current().unit.id,
+																			cursor()
+																		)
+																	}
+																>
+																	Show{" "}
+																	{textCountLabel(
+																		Math.min(
+																			50,
+																			current()
+																				.totalOccurrences -
+																				current()
+																					.occurrences
+																					.length
+																		),
+																		"more location"
+																	)}
+																</Button>
+															)}
+														</Show>
 													</div>
 												)}
 											</Show>
-										}
-									>
-										{(current) => (
-											<div {...stylex.attrs(styles.detail)}>
-												<div {...stylex.attrs(styles.bar)}>
-													<h2 {...stylex.attrs(styles.title)}>
-														{sourceText(current().unit)}
-													</h2>
-													<CopyButton
-														label="Copy text"
-														value={sourceText(current().unit)}
-													/>
-												</div>
-												<div {...stylex.attrs(styles.bar)}>
-													<code {...stylex.attrs(styles.mono)}>
-														{identityLabel(current().unit)}
-													</code>
-													<Show
-														when={
-															current().unit.identity.status !==
-															"unresolved"
-														}
-													>
-														<CopyButton
-															label="Copy key"
-															value={identityLabel(current().unit)}
-														/>
-													</Show>
-												</div>
-												<span {...stylex.attrs(styles.muted)}>
-													{focusStats(current())}
-												</span>
-												<Show
-													when={current().unit.reviewSignals.some(
-														(signal) => signal !== "evidence_only"
-													)}
-												>
-													<span {...stylex.attrs(styles.warning)}>
-														{current()
-															.unit.reviewSignals.filter(
-																(signal) =>
-																	signal !== "evidence_only"
-															)
-															.map(textReviewSignalLabel)
-															.join(" · ")}
-													</span>
-												</Show>
-												<h3 {...stylex.attrs(styles.section)}>
-													Where it appears
-												</h3>
-												<For each={current().occurrences}>
-													{(occurrence) => (
-														<OccurrenceCard
-															client={props.client}
-															occurrence={occurrence}
-															conflicting={
-																current().unit.source.status ===
-																"conflicting"
-															}
-															onOpenDataAuthoring={
-																props.onOpenDataAuthoring
-															}
-														/>
-													)}
-												</For>
-												<TranslationsDetail
-													model={localization}
-													edits={edits}
-													review={{
-														client: props.client,
-														busy: loading() || operations.busy(),
-														onChanged: () => load(false)
-													}}
-												/>
-												<CoverageNotes
-													diagnostics={current().diagnostics}
-												/>
-												<Show when={current().nextOccurrenceCursor}>
-													{(cursor) => (
-														<Button
-															onClick={() =>
-																requestFocus(
-																	current().unit.id,
-																	cursor()
-																)
-															}
-														>
-															Show{" "}
-															{textCountLabel(
-																Math.min(
-																	50,
-																	current().totalOccurrences -
-																		current().occurrences.length
-																),
-																"more location"
-															)}
-														</Button>
-													)}
-												</Show>
-											</div>
-										)}
-									</Show>
+										</div>
+										<Show when={lineOpen()}>
+											<LineProperties
+												focus={focus()}
+												detail={localization.detail()}
+											/>
+										</Show>
+									</div>
 								</aside>
 							</div>
 						</div>

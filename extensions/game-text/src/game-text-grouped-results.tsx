@@ -211,6 +211,7 @@ function GroupSection(props: {
 										size="compact"
 										tone="quiet"
 										disabled={loading()}
+										data-more=""
 										onClick={() => load(true, props.request, props.group.key)}
 									>
 										Show more ({(props.group.count - listed()).toLocaleString()}{" "}

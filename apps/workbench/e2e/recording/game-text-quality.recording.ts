@@ -119,7 +119,14 @@ test("records the real Game Text quality workflow", async ({
 			return label;
 		};
 		// Lines sit in groups; open collapsed groups and later pages until the line shows.
+		// An open line takes the page; going back shows the list again.
+		const back = async () => {
+			const lines = page.getByRole("button", { name: "‹ Lines", exact: true });
+			if (await lines.count()) await lines.click();
+			await expect(results).toBeVisible();
+		};
 		const reveal = async (line: Locator) => {
+			await back();
 			for (let attempt = 0; attempt < 16 && (await line.count()) === 0; attempt++) {
 				const closed = results.locator('button[aria-expanded="false"]').first();
 				const more = results.getByRole("button", { name: /^Show more/u }).first();
@@ -205,6 +212,23 @@ test("records the real Game Text quality workflow", async ({
 			).toBe(0);
 		};
 
+		// An open line fills the workspace below the toolbar, with its properties beside it.
+		const expectPageLayout = async () => {
+			const [toolbarBox, pageBox] = await Promise.all([
+				tabs.boundingBox(),
+				textDetail.boundingBox()
+			]);
+			if (!toolbarBox || !pageBox) throw new Error("Missing line page layout");
+			expect(toolbarBox.y).toBe(initialToolbar.y);
+			expect(pageBox.y).toBeGreaterThan(toolbarBox.y + toolbarBox.height);
+			expect(pageBox.y + pageBox.height).toBeLessThanOrEqual(900);
+			expect(pageBox.y + pageBox.height).toBeGreaterThanOrEqual(868);
+			expect(pageBox.width).toBeGreaterThan(900);
+			await expect(results).toBeHidden();
+			await expect(textDetail).toHaveCSS("overflow-y", "auto");
+			await expect(textDetail.getByRole("region", { name: "Properties" })).toBeVisible();
+		};
+
 		await expectPaneLayout(results, textDetail);
 		for (const label of ["Export", "Presets", "Rescan"]) {
 			const button = page.getByRole("button", { name: label, exact: true });
@@ -229,7 +253,7 @@ test("records the real Game Text quality workflow", async ({
 		await expect(textDetail).toContainText("String table entry");
 		await expect(textDetail).toContainText("/Game/Fixture/Text/ST_Game.ST_Game");
 		await expect(textDetail).toContainText("Continue from the pause menu");
-		await expectPaneLayout(results, textDetail);
+		await expectPageLayout();
 		await expect(search).toBeInViewport();
 		const copyKey = textDetail.getByRole("button", { name: "Copy key" });
 		const copyAsset = textDetail.getByRole("button", { name: "Copy asset path" });
@@ -244,6 +268,7 @@ test("records the real Game Text quality workflow", async ({
 		await page.screenshot({ path: testInfo.outputPath("02-text-selected.png") });
 		await page.waitForTimeout(1_200);
 
+		await back();
 		await search.fill("Hold");
 		// Wait for the search's own count before reading the menu's counts.
 		await expect(searchCount).toHaveText(
@@ -259,6 +284,7 @@ test("records the real Game Text quality workflow", async ({
 		expect(matches).toBeGreaterThan(0);
 		expect(matches).toBeLessThan(lines);
 		expect(editableLabel).toBe(`Editable ${matches.toLocaleString()}`);
+		await back();
 		await holdLine.click();
 		await expect(textDetail.getByRole("heading", { name: "Hold to skip" })).toBeVisible();
 		await page.screenshot({ path: testInfo.outputPath("03-text-search.png") });
@@ -470,7 +496,7 @@ test("records the real Game Text quality workflow", async ({
 		await expect(translations.getByText("Loading translations…", { exact: true })).toHaveCount(
 			0
 		);
-		await expectPaneLayout(results, textDetail);
+		await expectPageLayout();
 		const outdated = results
 			.getByRole("button")
 			.filter({ hasText: "DA_Localization · SharedPrimary" });
@@ -507,13 +533,14 @@ test("records the real Game Text quality workflow", async ({
 		await expect(translations.getByText("Loading translations…", { exact: true })).toHaveCount(
 			0
 		);
-		await expectPaneLayout(results, textDetail);
+		await expectPageLayout();
 		await translations
 			.getByRole("heading", { name: "Translations", exact: true })
 			.evaluate((element) => element.scrollIntoView({ block: "start" }));
-		await expectPaneLayout(results, textDetail);
+		await expectPageLayout();
 		await page.screenshot({ path: testInfo.outputPath("09-translations-detail.png") });
 
+		await back();
 		const unsyncedLines = displayedCount(await pick("Translation", /^Not synced [\d,]+$/u));
 		expect(unsyncedLines).toBeGreaterThan(0);
 		await expect(pills).toContainText("Not synced");
@@ -529,16 +556,17 @@ test("records the real Game Text quality workflow", async ({
 		const pendingLine = results
 			.getByRole("button")
 			.filter({ hasText: "ST_Localization · Unsynced" });
+		await back();
 		await pendingLine.click();
 		await expect(translations.getByText("In PO, not synced")).toBeVisible();
 		await expect(translations.getByText("Loading translations…", { exact: true })).toHaveCount(
 			0
 		);
-		await expectPaneLayout(results, textDetail);
+		await expectPageLayout();
 		await translations
 			.getByRole("article", { name: "Translation de", exact: true })
 			.evaluate((element) => element.scrollIntoView({ block: "start" }));
-		await expectPaneLayout(results, textDetail);
+		await expectPageLayout();
 		await page.screenshot({ path: testInfo.outputPath("10-not-synced.png") });
 
 		await pills.getByRole("button", { name: /^Remove Translation/u }).click();
@@ -567,7 +595,7 @@ test("records the real Game Text quality workflow", async ({
 		await expect(outdatedGerman).toContainText(
 			"Open the gate (source text — the translation is out of date)"
 		);
-		await expectPaneLayout(results, textDetail);
+		await expectPageLayout();
 		await page.screenshot({ path: testInfo.outputPath("11-all-cultures.png") });
 
 		await culture.click();

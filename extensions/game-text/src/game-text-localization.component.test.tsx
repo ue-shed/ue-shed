@@ -1106,6 +1106,13 @@ describe("Game Text key changes", () => {
 		const results = screen.getByRole("region", { name: "Results" });
 		await user.click(within(results).getByRole("button", { name: /^Welcome back/u }));
 		const change = await screen.findByRole("region", { name: "Key change" });
+		// The page says the worst problem first, in plain words.
+		const needs = screen.getByRole("note", { name: "What this line needs" });
+		expect(needs.textContent).toContain("Key changed");
+		expect(needs.textContent).toContain("carry them below first");
+		expect(
+			within(screen.getByRole("region", { name: "Properties" })).getByText("Key changed")
+		).toBeDefined();
 		expect(change.textContent).toContain("Key changed · was NS,Welcome");
 		expect(change.textContent).toContain("same text in this asset");
 		expect(change.textContent).toContain("Willkommen zurück");

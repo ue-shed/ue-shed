@@ -100,9 +100,17 @@ A name adds its pill; a folder's arrow lists the folders inside it.
 - The summary reads "12 files · 5 with text · 2 not scanned · 1 outside the project". With the
   problems, it answers whether a change touches text and needs a gather.
 
-A changed-file list lasts for the session. The detail pane keeps keys, translator notes, exact
-Unreal names and **Where it appears** together. **Show in Unreal** reports success only when the
-editor confirms asset navigation.
+A changed-file list lasts for the session.
+
+Opening a line shows its **page** in place of the list; **‹ Lines** returns to the list as it was,
+with its groups and loaded pages. The header says where the line sits ("2 of 58") and steps to the
+line before or after it, opening the next group or loading its next page when needed. The page
+says the line's worst problem first, in plain words and its severity colour, with what resolves
+it. It keeps the text, key, **Where it appears**, every culture's translation (with editing,
+review and key-change carrying), and read problems together, and lists the line's properties
+beside them: problems, namespace and key, origin, asset and folder, editing, translator notes,
+length and findings. **Show in Unreal** reports success only when the editor confirms asset
+navigation.
 
 Every displayed text count in the toolbar, search, Filter menu and side pane comes from the same query and
 filtering path. Empty or whitespace-only source lines are excluded from those counts and from role

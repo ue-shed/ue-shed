@@ -103,6 +103,10 @@ export interface TextCorpusQuery {
 	readonly focus: (request: TextCorpusFocusRequest) => TextCorpusFocus | undefined;
 	readonly search: (request: TextCorpusSearchRequest) => TextCorpusSearchPage;
 	readonly export: (request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">) => TextCorpus;
+	/** Every localization line the request matches, unpaged, for exports. */
+	readonly localizationLines: (
+		request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">
+	) => readonly LocalizationLine[];
 	readonly summary: () => TextCorpusQuerySummary;
 }
 
@@ -297,6 +301,7 @@ export function textCorpusQuery(
 	};
 	return {
 		localizationFocus: (id) => localization?.lines.find((line) => line.id === id),
+		localizationLines: (request) => localizedMatching(request),
 		export: (request) => {
 			if (request.localization) {
 				const ids = new Set(

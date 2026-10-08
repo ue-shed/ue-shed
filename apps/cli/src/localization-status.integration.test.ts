@@ -1,7 +1,7 @@
 import { it } from "@effect/vitest";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { Effect, Layer, Ref, Schema } from "effect";
 import { describe, expect } from "vitest";
 import { LocalizationStatusReport } from "@ue-shed/game-text/browser";
@@ -141,6 +141,42 @@ describe.skipIf(!executable)("localization CLI with the real reader", () => {
 			expect(changed.page.counts.origins.cpp).toBe(cpp.page.total);
 			expect(changed.page.counts.origins.data_table).toBeGreaterThan(0);
 			expect(changed.page.counts.origins.string_table).toBe(0);
+
+			// One spreadsheet with every language, for the same filter.
+			const csvFile = join(dirname(list), "all-languages.csv");
+			yield* Ref.set(output, "");
+			yield* runCli([
+				"loc",
+				"export",
+				fixture.root,
+				"--target",
+				"FixtureGame",
+				"--kind",
+				"cpp",
+				"--output",
+				csvFile,
+				"--reader",
+				executable
+			]).pipe(Effect.provide(runtime));
+			expect(yield* Ref.get(output)).toContain(`"rows": ${cpp.page.total}`);
+			const csv = yield* Effect.promise(() => readFile(csvFile, "utf8"));
+			const header = csv.replace(/^﻿/u, "").split("\r\n")[0];
+			expect(header).toMatch(/^"Namespace","Key","Source","Where","Kind","en","en state"/u);
+			expect(csv.split("\r\n").filter(Boolean)).toHaveLength(cpp.page.total + 1);
+			// Existing files are never overwritten.
+			yield* Ref.set(output, "");
+			yield* runCli([
+				"loc",
+				"export",
+				fixture.root,
+				"--target",
+				"FixtureGame",
+				"--output",
+				csvFile,
+				"--reader",
+				executable
+			]).pipe(Effect.provide(runtime));
+			expect(yield* Ref.get(output)).toContain("destination_exists");
 		})
 	);
 });

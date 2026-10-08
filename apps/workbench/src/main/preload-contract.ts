@@ -80,6 +80,7 @@ export const workbenchInvokeChannels = {
 		localizationReview: "game-text:localization:review",
 		localizationReport: "game-text:localization:report",
 		localizationReportFile: "game-text:localization:report-file",
+		localizationLinesFile: "game-text:localization:lines-file",
 		localizationTargets: "game-text:localization:targets",
 		localizationTarget: "game-text:localization:target",
 		localizationFocus: "game-text:localization:focus",

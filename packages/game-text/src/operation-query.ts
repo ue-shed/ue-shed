@@ -73,7 +73,9 @@ export const WorkbenchOperationProgress = Schema.Struct({
 });
 export type WorkbenchOperationProgress = typeof WorkbenchOperationProgress.Type;
 export const WorkbenchOperationState = Schema.Struct({
-	operations: Schema.Array(LocalizationOperation).check(Schema.isMaxLength(6)),
+	operations: Schema.Array(LocalizationOperation).check(
+		Schema.isMaxLength(LocalizationOperation.literals.length)
+	),
 	wholeRecipe: Schema.Boolean,
 	busyReason: Schema.optionalKey(Text),
 	progress: Schema.optionalKey(WorkbenchOperationProgress),

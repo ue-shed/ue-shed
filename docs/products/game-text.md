@@ -542,6 +542,25 @@ saved scan; it pairs across a gather UE Shed runs.
   "since then N new · N removed · N key changed · N source changed".
 - `ue-shed loc status --key-changed` lists them from the CLI; each line carries `keyChange`.
 
+### One spreadsheet with every language
+
+Teams that keep a spreadsheet beside Unreal often keep one file per language, with lines missing
+or sorted differently. The all-languages CSV replaces those files:
+
+- one row per line, with Namespace, Key, Source, Where (the first location, plus a count of the
+  others) and Kind (String table, Data table, Asset, C++ or Other source);
+- then, native culture first and then the target's culture order, each culture's translation that
+  ships next and its state, in writer language;
+- missing translations as empty cells, so every language lines up by key;
+- rows in a stable order by namespace and key, the same on every machine.
+
+It exports what the list shows, with the same state, review, key-change, origin, path and
+changed-file filters. In Workbench it is **Export → All languages (CSV)** while a target is
+selected; from the CLI, `ue-shed loc export <project-root> --target <name> --output <new.csv>`
+takes the `loc status` filters and never overwrites a file. The CSV is for reading and sharing,
+with the usual spreadsheet protections (UTF-8 BOM, CRLF, a leading apostrophe before formula
+characters). Edits still go through PO change sets.
+
 ### Source control
 
 Manifests, archives and PO files are usually checked in. The core reports which files an operation

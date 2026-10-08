@@ -24,6 +24,8 @@ import {
 	localizationFocusPage,
 	textCorpusQuery,
 	applyLocalizationKeyChanges,
+	localizationLinesCsv,
+	type LocalizationLinesFileResult,
 	localizationKeyChangesAcross,
 	mergeLocalizationKeyChanges,
 	type LocalizationKeyChangePair,
@@ -521,6 +523,46 @@ export const makeGameTextLocalization = Effect.fn("Workbench.GameText.localizati
 		);
 		return result;
 	});
+	/** Writes every line the request matches, a column per culture, to a CSV the person chose. */
+	const linesFile = Effect.fn("Workbench.GameText.localization.linesFile")(function* (
+		request: TextCorpusSearchRequest,
+		dialog: ElectronDialogApi,
+		files: LocalFilesApi
+	): Effect.fn.Return<LocalizationLinesFileResult> {
+		const name = request.localization?.target;
+		if (name === undefined) return { status: "not_ready" };
+		const retained = yield* current(name);
+		if (!retained) return { status: "not_ready" };
+		return yield* Effect.gen(function* () {
+			const choice = yield* dialog.chooseSaveFile({
+				title: "Export all languages",
+				defaultPath: `${name}.all-languages.csv`,
+				filters: [{ name: "CSV", extensions: ["csv"] }]
+			});
+			if (choice.status === "cancelled") return choice;
+			if ((yield* current(name)) !== retained) return { status: "not_ready" as const };
+			const { csv, rows } = yield* Effect.try(() =>
+				localizationLinesCsv({
+					join: retained.join,
+					lines: retained.model.localizationLines(request),
+					corpus: retained.corpus
+				})
+			);
+			yield* files.writeFile(choice.path, new TextEncoder().encode(csv), {
+				maxBytes: 64 * 1024 * 1024
+			});
+			yield* Effect.annotateCurrentSpan({ rowCount: rows });
+			return { status: "saved" as const, path: choice.path, rowCount: rows };
+		}).pipe(
+			Effect.catch(() =>
+				Effect.succeed({
+					status: "failed" as const,
+					message: "The all-languages CSV could not be written.",
+					recovery: "Choose a writable destination and try again."
+				})
+			)
+		);
+	});
 	/**
 	 * Reviews or writes staged translation edits against the retained evidence. Writing replaces
 	 * only PO `msgstr` values; the target is then reloaded so pending edits show as not synced.
@@ -637,6 +679,7 @@ export const makeGameTextLocalization = Effect.fn("Workbench.GameText.localizati
 	});
 	return {
 		beforeGather,
+		linesFile,
 		operationTarget: (name: LocalizationJoin["target"]) =>
 			targets().pipe(
 				Effect.flatMap((result) =>

@@ -15,7 +15,11 @@ import {
 	type LocalizationOperationPlan,
 	type LocalizationRunRequest
 } from "@ue-shed/localization";
-import { WorkbenchOperationProgress, WorkbenchOperationPlanResult } from "@ue-shed/game-text";
+import {
+	WorkbenchOperationProgress,
+	WorkbenchOperationPlanResult,
+	WorkbenchOperationState
+} from "@ue-shed/game-text";
 import { makeWorkbenchWindowTestLayer, WorkbenchWindowTest } from "../adapters/electron-window.js";
 import { makeWorkbenchConfigurationLayer } from "../workbench-config.js";
 import { makeWorkbenchProjectTestLayer } from "./project-workspace.js";
@@ -213,6 +217,10 @@ it.effect("plans without running, streams safe progress and refreshes evidence a
 				"sync",
 				"prepare"
 			]);
+			// The state crosses IPC, so it must fit its schema with every operation offered.
+			expect(
+				Schema.decodeUnknownSync(WorkbenchOperationState)(state).operations
+			).toHaveLength(7);
 			const plan = yield* service.plan({ target: target.name, operation: "sync" });
 			if (plan.status !== "ready") throw new Error("Expected confirmation.");
 			expect(Schema.is(WorkbenchOperationPlanResult)(plan)).toBe(true);

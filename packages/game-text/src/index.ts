@@ -9,6 +9,7 @@ export * from "./query.js";
 export * from "./search.js";
 export * from "./text-origin.js";
 export * from "./localization-key-changes.js";
+export * from "./localization-export.js";
 export * from "./schema.js";
 export * from "./localization-schema.js";
 export * from "./localization.js";

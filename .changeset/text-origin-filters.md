@@ -15,3 +15,7 @@ same text in the same asset, or text unique in the project, strictly one to one.
 Baselines record each line's manifest path, and baseline comparison reports `keyChanged` pairs
 instead of counting them as added and removed. `localizationKeyChangesAcross` pairs keys across
 a gather.
+
+Export one spreadsheet with every language: `localizationLinesCsv` writes a row per line with a
+translation and state column per culture, native first, missing translations as empty cells, in
+code-unit order. `textCorpusQuery` adds an unpaged `localizationLines(request)`.

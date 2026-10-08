@@ -2,7 +2,8 @@ import type {
 	GameTextInvestigationQuery,
 	GameTextInvestigationPresetResult,
 	InvestigationFileResult,
-	InvestigationFormat
+	InvestigationFormat,
+	LocalizationLinesFileResult
 } from "@ue-shed/game-text/browser";
 import type {
 	WorkspaceQualityRequest,
@@ -96,6 +97,10 @@ export interface GameTextClientApi {
 	readonly localizationReportFile?: (
 		request: WorkspaceReportFileRequest
 	) => Effect.Effect<WorkspaceReportFileResult, GameTextClientError>;
+	/** Every matching line, a column per culture, written to a CSV the person chooses. */
+	readonly localizationLinesFile?: (
+		request: TextCorpusSearchRequest
+	) => Effect.Effect<LocalizationLinesFileResult, GameTextClientError>;
 	readonly localizationTargets?: () => Effect.Effect<
 		LocalizationTargetsResult,
 		GameTextClientError

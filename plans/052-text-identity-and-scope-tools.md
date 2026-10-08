@@ -11,7 +11,8 @@
 
 ## Status
 
-- **State**: IN PROGRESS. Phases 1–2 and 4 are done; Phase 5 (all-languages spreadsheet) is next.
+- **State**: IN PROGRESS. Phases 1, 2, 4 and 5 are done; Phase 3 (Perforce bridge) follows the
+  0.10.0 release.
   Phase 3 (Perforce) moves after the 0.10.0 release, by owner decision on 2026-10-08.
 - **Priority**: P1
 - **Effort**: L
@@ -223,6 +224,20 @@ old translation under the new key.
 5. The CSV is for reading and sharing; edits still go through PO change sets.
 
 **Gate**: CSV tests cover column order, missing cells, sort and the formula guard.
+
+**Evidence (2026-10-08)**: Phase 5 is done.
+
+- `localizationLinesCsv` (browser) and `LocalizationLinesFileResult`; `textCorpusQuery`
+  gains an unpaged `localizationLines(request)` for exports. `TEXT_ORIGIN_LABELS` and
+  `LOCALIZATION_STATE_LABELS` name origins and states in writer language.
+- Workbench main writes the file through a save dialog, re-checking that the target is still
+  current, over a new `game-text:localization:lines-file` channel. The shared export popover takes
+  an optional extra item; Game Text offers "All languages (CSV)" while a target is selected.
+- `ue-shed loc export` writes a new CSV with the `loc status` filters and refuses to overwrite.
+- Verified: the CSV test (columns, native culture first, empty cells, code-unit order, formula
+  guard, C++ kind and location), the CLI integration test against the real fixture (rows equal
+  the filtered total, header, refusal to overwrite), IPC contract samples, precommit, and the
+  Node 24 and Node 26 sweeps.
 
 ## Verification matrix
 

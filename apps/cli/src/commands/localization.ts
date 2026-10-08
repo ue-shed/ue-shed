@@ -1,11 +1,19 @@
-import { Effect } from "effect";
+import { Effect, Option } from "effect";
 import { CliCommandError } from "../cli-runtime.js";
 import { Argument, Command, Flag } from "effect/unstable/cli";
-import { Option } from "effect";
-import { LocalizationCheckId, LocalizationReviewLens } from "@ue-shed/game-text/browser";
+import {
+	LocalizationCheckId,
+	LocalizationReviewLens,
+	LocalizationState,
+	TextOriginKind
+} from "@ue-shed/game-text/browser";
 import { runLocalizationCheck } from "../workflows/localization-check.js";
 import { runLocalizationReport } from "../workflows/localization-report.js";
-import { runLocalizationStatus, runLocalizationTargets } from "../workflows/localization.js";
+import {
+	runLocalizationExport,
+	runLocalizationStatus,
+	runLocalizationTargets
+} from "../workflows/localization.js";
 import {
 	localizationFlags,
 	optionalLocalizationFlags,
@@ -185,6 +193,50 @@ export const localizationCommand = Command.make("loc").pipe(
 		).pipe(
 			Command.withDescription(
 				"List target settings, recipes, outputs and culture file presence."
+			)
+		),
+		Command.make(
+			"export",
+			{
+				projectRoot: Argument.string("project-root"),
+				target: Flag.string("target"),
+				output: Flag.string("output"),
+				reader: Flag.string("reader").pipe(Flag.optional),
+				review: Flag.choice("review", LocalizationReviewLens.literals).pipe(Flag.optional),
+				keyChanged: Flag.boolean("key-changed"),
+				culture: Flag.string("culture").pipe(Flag.optional),
+				state: Flag.choice("state", LocalizationState.literals).pipe(Flag.optional),
+				kinds: Flag.choice("kind", TextOriginKind.literals).pipe(Flag.atMost(5)),
+				path: Flag.string("path").pipe(Flag.optional),
+				files: Flag.string("files").pipe(Flag.optional)
+			},
+			({
+				projectRoot,
+				target,
+				output,
+				reader,
+				review,
+				keyChanged,
+				culture,
+				state,
+				kinds,
+				path,
+				files
+			}) =>
+				runLocalizationExport({
+					_tag: "LocalizationExport",
+					projectRoot,
+					target,
+					output,
+					...optionalLocalizationFlags(culture, state),
+					...optionalWhereFlags(kinds, path, files),
+					...(Option.isSome(review) ? { review: review.value } : undefined),
+					...(keyChanged ? { keyChanged } : undefined),
+					...(Option.isSome(reader) ? { reader: reader.value } : undefined)
+				})
+		).pipe(
+			Command.withDescription(
+				"Write every matching line, with a translation and state column per culture, to a new CSV."
 			)
 		),
 		Command.make(

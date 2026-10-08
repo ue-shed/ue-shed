@@ -95,6 +95,17 @@ export const CliCommand = Schema.TaggedUnion({
 		checks: Schema.Array(LocalizationCheckId),
 		changes: Schema.optionalKey(Schema.String)
 	},
+	LocalizationExport: {
+		...Project,
+		...Reader,
+		target: Schema.String,
+		culture: Schema.optionalKey(Schema.String),
+		state: Schema.optionalKey(LocalizationState),
+		review: Schema.optionalKey(LocalizationReviewLens),
+		keyChanged: Schema.optionalKey(Schema.Boolean),
+		...TextWhereFields,
+		output: Schema.String
+	},
 	LocalizationStatus: {
 		...Project,
 		...Reader,

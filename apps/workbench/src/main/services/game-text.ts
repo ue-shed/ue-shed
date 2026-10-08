@@ -7,7 +7,8 @@ import {
 	gameTextQualityCsv,
 	createStarterTextRules,
 	GAME_TEXT_RULES_RELATIVE_PATH,
-	projectRelativeTextFiles
+	projectRelativeTextFiles,
+	type LocalizationLinesFileResult
 } from "@ue-shed/game-text";
 import { userInfo } from "node:os";
 import { resolve } from "node:path";
@@ -107,6 +108,9 @@ export interface WorkbenchGameTextApi {
 	readonly localizationReportFile: (
 		request: WorkspaceReportFileRequest
 	) => Effect.Effect<WorkspaceReportFileResult>;
+	readonly localizationLinesFile: (
+		request: TextCorpusSearchRequest
+	) => Effect.Effect<LocalizationLinesFileResult>;
 	readonly localizationTargets: () => Effect.Effect<LocalizationTargetsResult>;
 	readonly localizationTarget: (
 		target: LocalizationJoin["target"]
@@ -972,6 +976,10 @@ export const WorkbenchGameTextLive = Layer.effect(
 			localizationReview: (request) => localization.review(request, reviewer()),
 			localizationReport: localization.report,
 			localizationReportFile: (request) => localization.reportFile(request, dialog, files),
+			localizationLinesFile: (input) =>
+				projectRelativeRequest(input).pipe(
+					Effect.flatMap((request) => localization.linesFile(request, dialog, files))
+				),
 			localizationTargets: localization.targets,
 			localizationTarget: localization.select,
 			localizationFocus: localization.focus,
@@ -1042,6 +1050,7 @@ export function makeWorkbenchGameTextTestLayer(
 			localizationReview: () => Effect.succeed({ status: "not_ready" }),
 			localizationReport: () => Effect.succeed({ status: "not_ready" }),
 			localizationReportFile: () => Effect.succeed({ status: "not_ready" }),
+			localizationLinesFile: () => Effect.succeed({ status: "not_ready" }),
 			localizationTargets: () => Effect.succeed({ status: "ready", targets: [] }),
 			localizationTarget: () => Effect.succeed({ status: "not_ready" }),
 			localizationFocus: () => Effect.succeed({ status: "not_ready" }),

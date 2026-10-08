@@ -536,6 +536,22 @@ export function GameTextRoute(props: {
 			if (state.ready && !state.active && state.mode === "reports") setMode("corpus");
 		}
 	);
+	// One spreadsheet with every language for the lines the list shows.
+	const allLanguagesExport = () => {
+		const request = props.client.localizationLinesFile;
+		if (!request) return Effect.succeed({ status: "cancelled" as const });
+		return request(searchRequest()).pipe(
+			Effect.map((result) =>
+				result.status === "not_ready"
+					? {
+							status: "failed" as const,
+							message: "Translations are still loading.",
+							recovery: "Try again in a moment."
+						}
+					: result
+			)
+		);
+	};
 	const exports = (): JSX.Element => (
 		<Show when={props.client.investigations}>
 			{(client) => (
@@ -558,6 +574,14 @@ export function GameTextRoute(props: {
 							qualityFilter: sourceFilter()
 						}}
 						onOpen={restorePreset}
+						extraExport={
+							localization.active() && props.client.localizationLinesFile
+								? {
+										label: "All languages (CSV)",
+										run: () => allLanguagesExport()
+									}
+								: undefined
+						}
 					/>
 				</div>
 			)}

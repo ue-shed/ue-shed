@@ -8,6 +8,15 @@ export const TEXT_ORIGIN_KINDS = [
 	"other_source"
 ] as const satisfies readonly TextOriginKind[];
 
+/** The names writers see for each origin. */
+export const TEXT_ORIGIN_LABELS = {
+	string_table: "String table",
+	data_table: "Data table",
+	asset: "Asset",
+	cpp: "C++",
+	other_source: "Other source"
+} as const satisfies Record<TextOriginKind, string>;
+
 const LOCATION_ORIGINS = {
 	asset_property: "asset",
 	data_table_cell: "data_table",

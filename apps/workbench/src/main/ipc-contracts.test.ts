@@ -312,6 +312,9 @@ const validArgsByChannel = {
 	],
 	"game-text:localization:report": [{ target: "FixtureGame" }],
 	"game-text:localization:report-file": [{ target: "FixtureGame", operation: "save_baseline" }],
+	"game-text:localization:lines-file": [
+		{ query: "", capability: "all", pageSize: 50, localization: { target: "FixtureGame" } }
+	],
 	"game-text:localization:targets": [],
 	"game-text:localization:target": ["FixtureGame"],
 	"game-text:localization:focus": [
@@ -670,6 +673,7 @@ const validResultByChannel = {
 	"game-text:localization:review": { status: "not_ready" },
 	"game-text:localization:report": { status: "not_ready" },
 	"game-text:localization:report-file": { status: "cancelled" },
+	"game-text:localization:lines-file": { status: "saved", path: "C:/out.csv", rowCount: 3 },
 	"game-text:localization:targets": { status: "ready", targets: [] },
 	"game-text:localization:target": { status: "not_ready" },
 	"game-text:localization:focus": { status: "not_found" },
@@ -889,6 +893,7 @@ const malformedArgsByChannel = {
 	"game-text:localization:review": [{ target: "FixtureGame", changes: [] }],
 	"game-text:localization:report": [{ target: "FixtureGame", offset: -1 }],
 	"game-text:localization:report-file": [{ target: "FixtureGame", operation: "write_po" }],
+	"game-text:localization:lines-file": [{ query: "", capability: "everything", pageSize: 50 }],
 	"game-text:quality:create-starter-rules": ["C:/Untrusted/output.json"],
 	"game-text:quality:reload-rules": ["C:/Untrusted/rules.json"],
 	"game-text:localization:targets": ["C:/Untrusted"],
@@ -936,9 +941,9 @@ const malformedArgsByChannel = {
 	"map-capture:tile": [{ manifestPath: "", relativePath: "../outside.png" }]
 } satisfies Partial<Record<InvokeChannel, IpcFixtureValue>>;
 
-it("registers exactly 142 invoke channels plus renderer events", () => {
-	expect(invokeChannelNames).toHaveLength(142);
-	expect(new Set(invokeChannelNames).size).toBe(142);
+it("registers exactly 143 invoke channels plus renderer events", () => {
+	expect(invokeChannelNames).toHaveLength(143);
+	expect(new Set(invokeChannelNames).size).toBe(143);
 	expect(invokeChannelNames).toEqual(
 		expect.arrayContaining([
 			"game-text:localization:quality-search",
@@ -952,7 +957,8 @@ it("registers exactly 142 invoke channels plus renderer events", () => {
 			"game-text:localization:edits",
 			"game-text:localization:review",
 			"game-text:localization:report",
-			"game-text:localization:report-file"
+			"game-text:localization:report-file",
+			"game-text:localization:lines-file"
 		])
 	);
 	expect(cameraFrameEvent.channel).toBe("camera:frame");

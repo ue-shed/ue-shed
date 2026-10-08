@@ -1,4 +1,7 @@
-import { GameTextInvestigationPresetResult } from "@ue-shed/game-text/browser";
+import {
+	GameTextInvestigationPresetResult,
+	LocalizationLinesFileResult
+} from "@ue-shed/game-text/browser";
 import { InvestigationFileResult } from "@ue-shed/unreal-assets/investigation";
 import {
 	type WorkspaceQualityRequest,
@@ -183,6 +186,14 @@ export const gameTextClient: GameTextClientApi = GameTextClient.of({
 				"gameText.localizationReportFile",
 				() => window.ueShed.gameText.localizationReportFile(request),
 				Schema.decodeUnknownEffect(WorkspaceReportFileResult)
+			)
+	),
+	localizationLinesFile: Effect.fn("GameTextClient.localizationLinesFile")(
+		(request: TextCorpusSearchRequest) =>
+			invokeRequest(
+				"gameText.localizationLinesFile",
+				() => window.ueShed.gameText.localizationLinesFile(request),
+				Schema.decodeUnknownEffect(LocalizationLinesFileResult)
 			)
 	),
 	localizationTargets: Effect.fn("GameTextClient.localizationTargets")(() =>

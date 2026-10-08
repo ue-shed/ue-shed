@@ -1078,3 +1078,28 @@ describe("Game Text key changes", () => {
 		]);
 	});
 });
+
+describe("Game Text all-languages export", () => {
+	it("exports the lines the list shows with every language", async () => {
+		const user = userEvent.setup();
+		const requests: Parameters<NonNullable<GameTextClientApi["localizationLinesFile"]>>[0][] =
+			[];
+		mount({
+			...client(),
+			investigations: {
+				export: () => Effect.succeed({ status: "cancelled" }),
+				save: () => Effect.succeed({ status: "cancelled" }),
+				open: () => Effect.succeed({ status: "cancelled" })
+			},
+			localizationLinesFile: (request) => {
+				requests.push(request);
+				return Effect.succeed({ status: "saved", path: "C:/out/all.csv", rowCount: 3 });
+			}
+		});
+		await screen.findByText("3 matches");
+		await user.click(screen.getByRole("button", { name: "Export" }));
+		await user.click(await screen.findByRole("button", { name: "All languages (CSV)" }));
+		await screen.findByText("Exported 3 matching results: C:/out/all.csv");
+		expect(requests[0]?.localization?.target).toBe(target.name);
+	});
+});

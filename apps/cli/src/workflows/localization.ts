@@ -6,7 +6,7 @@ import {
 	LocalizationFileAccessLive,
 	readLocalizationReview
 } from "@ue-shed/localization";
-import { Effect, Metric, Result, Schema } from "effect";
+import { Effect, FileSystem, Metric, Result, Schema } from "effect";
 import {
 	GameTextLocalizationError,
 	LocalizationSelection,
@@ -14,6 +14,7 @@ import {
 	applyLocalizationReview,
 	joinLocalizationTarget,
 	localizationKeyChanges,
+	localizationLinesCsv,
 	localizationStatusReport,
 	textCorpusQuery,
 	TextCorpusService,
@@ -24,6 +25,7 @@ import { CliRuntime, printJson } from "../cli-runtime.js";
 import type { CliCommand } from "../command-model.js";
 
 type LocalizationStatusCommand = Extract<CliCommand, { readonly _tag: "LocalizationStatus" }>;
+type LocalizationExportCommand = Extract<CliCommand, { readonly _tag: "LocalizationExport" }>;
 type LocalizationSearchCommand = Extract<CliCommand, { readonly _tag: "TextSearch" }>;
 type LocalizationCheckCommand = Extract<CliCommand, { readonly _tag: "LocalizationCheck" }>;
 type LocalizationReportCommand = Extract<CliCommand, { readonly _tag: "LocalizationReport" }>;
@@ -35,6 +37,7 @@ export const loadLocalizationContext = Effect.fn("Cli.localization.load_context"
 		| LocalizationSearchCommand
 		| LocalizationCheckCommand
 		| LocalizationReportCommand
+		| LocalizationExportCommand
 ) {
 	const selection = yield* Schema.decodeUnknownEffect(LocalizationSelection)({
 		target: command.target,
@@ -152,6 +155,81 @@ export const runLocalizationStatus = Effect.fn("Cli.workflow.localization_status
 			command._tag,
 			Effect.gen(function* () {
 				const result = yield* loadLocalizationStatus(command).pipe(
+					Effect.provide(LocalizationEvidenceNodeLive),
+					Effect.result
+				);
+				if (Result.isFailure(result)) {
+					yield* printJson({ schemaVersion: 1, status: "failed", error: result.failure });
+					const runtime = yield* CliRuntime;
+					yield* runtime.setExitCode(2);
+					return;
+				}
+				yield* printJson(result.success);
+			})
+		)
+);
+
+class LocalizationExportError extends Schema.TaggedErrorClass<LocalizationExportError>()(
+	"LocalizationExportError",
+	{
+		code: Schema.Literals(["invalid_destination", "destination_exists", "unwritable"]),
+		message: Schema.String,
+		recovery: Schema.String
+	}
+) {}
+
+/** Writes every matching line, with a column per culture, to a new CSV file. */
+export const runLocalizationExport = Effect.fn("Cli.workflow.localization_export")(
+	(command: LocalizationExportCommand) =>
+		observeCliOperation(
+			command._tag,
+			Effect.gen(function* () {
+				const work = Effect.gen(function* () {
+					if (!command.output.toLowerCase().endsWith(".csv"))
+						return yield* Effect.fail(
+							new LocalizationExportError({
+								code: "invalid_destination",
+								message: "The export destination must be a CSV file.",
+								recovery: "Choose a new .csv file."
+							})
+						);
+					const { corpus, join, selection } = yield* loadLocalizationContext(command);
+					const files =
+						command.changedFiles === undefined
+							? undefined
+							: yield* readChangedFiles(command.changedFiles, command.projectRoot);
+					const lines = textCorpusQuery(corpus, undefined, join).localizationLines({
+						capability: "all",
+						query: "",
+						localization: selection,
+						...whereField(command, files)
+					});
+					const { csv, rows } = localizationLinesCsv({ join, lines, corpus });
+					const fs = yield* FileSystem.FileSystem;
+					yield* fs.writeFileString(command.output, csv, { flag: "wx" }).pipe(
+						Effect.mapError(
+							(error) =>
+								new LocalizationExportError(
+									error.reason._tag === "AlreadyExists"
+										? {
+												code: "destination_exists",
+												message: "The export destination already exists.",
+												recovery:
+													"Choose a new file; existing files are never overwritten."
+											}
+										: {
+												code: "unwritable",
+												message: "The export file could not be created.",
+												recovery:
+													"Choose a writable directory and a new file name."
+											}
+								)
+						)
+					);
+					yield* Metric.update(Metric.counter("cli.localization.export.rows"), rows);
+					return { schemaVersion: 1, status: "written", path: command.output, rows };
+				});
+				const result = yield* work.pipe(
 					Effect.provide(LocalizationEvidenceNodeLive),
 					Effect.result
 				);

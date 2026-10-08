@@ -12,6 +12,7 @@ export * from "./text-problems.js";
 export * from "./text-groups.js";
 export * from "./localization-key-changes.js";
 export * from "./localization-export.js";
+export * from "./localization-gate.js";
 export * from "./schema.js";
 export * from "./localization-schema.js";
 export * from "./localization.js";

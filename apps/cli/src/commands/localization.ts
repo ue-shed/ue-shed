@@ -3,11 +3,13 @@ import { CliCommandError } from "../cli-runtime.js";
 import { Argument, Command, Flag } from "effect/unstable/cli";
 import {
 	LocalizationCheckId,
+	LocalizationGateCheck,
 	LocalizationReviewLens,
 	LocalizationState,
 	TextOriginKind
 } from "@ue-shed/game-text/browser";
 import { runLocalizationCheck } from "../workflows/localization-check.js";
+import { runLocalizationGate } from "../workflows/localization-gate.js";
 import { runLocalizationReport } from "../workflows/localization-report.js";
 import {
 	runLocalizationExport,
@@ -244,6 +246,37 @@ export const localizationCommand = Command.make("loc").pipe(
 		).pipe(
 			Command.withDescription(
 				"Write every matching line, with a translation and state column per culture, to a new CSV."
+			)
+		),
+		Command.make(
+			"gate",
+			{
+				projectRoot: Argument.string("project-root"),
+				files: Flag.string("files"),
+				targets: Flag.string("target").pipe(Flag.atMost(50)),
+				failOn: Flag.choice("fail-on", LocalizationGateCheck.literals).pipe(
+					Flag.atMost(LocalizationGateCheck.literals.length)
+				),
+				warnOn: Flag.choice("warn-on", LocalizationGateCheck.literals).pipe(
+					Flag.atMost(LocalizationGateCheck.literals.length)
+				),
+				summary: Flag.boolean("summary"),
+				reader: Flag.string("reader").pipe(Flag.optional)
+			},
+			({ projectRoot, files, targets, failOn, warnOn, summary, reader }) =>
+				runLocalizationGate({
+					_tag: "LocalizationGate",
+					projectRoot,
+					changedFiles: files,
+					targets,
+					failOn,
+					warnOn,
+					summary,
+					...(Option.isSome(reader) ? { reader: reader.value } : undefined)
+				})
+		).pipe(
+			Command.withDescription(
+				"Check the text in a change's files; exits 1 when it fails, 2 when it could not check."
 			)
 		),
 		Command.make(

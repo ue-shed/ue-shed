@@ -8,6 +8,7 @@ import {
 } from "@ue-shed/localization/browser";
 import { describe, expect, it } from "vitest";
 import { joinLocalizationTarget } from "./localization.js";
+import { DEFAULT_GATE_FAILURES, localizationGateTarget } from "./localization-gate.js";
 import {
 	archiveEntry,
 	corpus,
@@ -174,5 +175,27 @@ describe("Game Text at the scale of a shipping game", () => {
 		if (open === undefined) throw new Error("No groups at scale.");
 		const opened = query.search({ ...request, group: "asset", openGroup: open.key });
 		expect(opened.localization?.lines).toHaveLength(Math.min(50, open.count));
+
+		// Checking a change that touches every table costs a handful of searches.
+		const files = Array.from(
+			{ length: 1000 },
+			(_, index) => `Content/Text/Folder${index % 200}/Table${index}.uasset`
+		);
+		const gate = timed(() =>
+			localizationGateTarget({
+				corpus: text,
+				query,
+				join: join.value,
+				files,
+				failOn: DEFAULT_GATE_FAILURES
+			})
+		);
+		expect(gate.value.lines).toBe(LINES);
+		expect(gate.value.checks.not_gathered).toBe(1000);
+		expect(gate.value.checks.translated_text_changed + gate.value.checks.text_changed).toBe(
+			572
+		);
+		expect(gate.value.items).toHaveLength(200);
+		expect(gate.ms).toBeLessThan(8 * plain.ms + 1000);
 	});
 });

@@ -9,6 +9,7 @@ import {
 import { Schema } from "effect";
 import {
 	LocalizationCheckId,
+	LocalizationGateCheck,
 	LocalizationReviewLens,
 	LocalizationState,
 	TextGroupBy,
@@ -112,6 +113,15 @@ export const CliCommand = Schema.TaggedUnion({
 		keyChanged: Schema.optionalKey(Schema.Boolean),
 		...TextWhereFields,
 		output: Schema.String
+	},
+	LocalizationGate: {
+		...Project,
+		...Reader,
+		targets: Schema.Array(Schema.String),
+		changedFiles: Schema.String,
+		failOn: Schema.Array(LocalizationGateCheck),
+		warnOn: Schema.Array(LocalizationGateCheck),
+		summary: Schema.Boolean
 	},
 	LocalizationStatus: {
 		...Project,

@@ -695,6 +695,43 @@ takes the `loc status` filters and never overwrites a file. The CSV is for readi
 with the usual spreadsheet protections (UTF-8 BOM, CRLF, a leading apostrophe before formula
 characters). Edits still go through PO change sets.
 
+### Checking a change before submit
+
+`ue-shed loc gate <project-root> --files <list-file>` checks the text in a change's files and exits
+`0` when it passes, `1` when it fails and `2` when it could not check. It only reads, and a failure
+is only an exit code and a list: it stops a submit only where a team wires it into a submit script
+or a required build. It judges every line whose text lives in a listed file, as the files are on
+disk now, so a problem already in a touched file counts too.
+
+| Check                     | Default | When                                                                        |
+| ------------------------- | ------- | --------------------------------------------------------------------------- |
+| `key_changed`             | fails   | A key changed and its earlier key has translations the next gather drops    |
+| `conflicting_source`      | fails   | One key has two texts, so Unreal ships one of them everywhere               |
+| `translated_text_changed` | fails   | Translated text changed; those languages show it untranslated until redone  |
+| `text_changed`            | warns   | Text changed since the last gather, with nothing translated yet             |
+| `not_gathered`            | warns   | New text Unreal has not gathered, including a key change that loses nothing |
+| `unresolved_key`          | warns   | Text without a reliable key, which cannot be translated                     |
+| `removed`                 | warns   | Gathered text its file no longer has, or a file that could not be read      |
+| `gathered_source`         | warns   | Text in a changed C++ or config file, whose keys show only after a gather   |
+
+- `--fail-on <check>` and `--warn-on <check>` (repeatable) change the defaults for a project.
+- `--target <name>` (repeatable) picks targets. Without it every target is checked, and a target
+  Unreal has never gathered is listed as skipped; a named target must have a readable manifest.
+- The output is JSON: `status` (`passed` or `failed`), and per target the lines checked, a count
+  per check, up to 200 lines with their check, key, text, file and a way forward, and the
+  changed-file summary. A run that could not check prints `status: "not_checked"` with the error.
+  `--summary` prints the same verdict as a few lines for a pre-submit dialog.
+- The list file is the one `--files` takes elsewhere: one path per line from any version control
+  tool, relative to the project folder or absolute. With Git, run
+  `git diff --cached --name-only --relative > changed.txt` in the project folder to list a staged
+  change; with Perforce, list the changelist's opened files and map them to local paths.
+- Run it where the change is: on the submitter's machine, or in a build that has the change
+  applied. A Perforce server trigger has no workspace to read.
+- C++ and config key changes show only across a gather UE Shed runs, so changed source files that
+  hold gathered text only warn.
+- Fixes are made in Unreal (ADR 0009 addendum); the way forward names the step, such as carrying
+  translations with `loc run prepare --carry`.
+
 ### Source control
 
 Manifests, archives and PO files are usually checked in. The core reports which files an operation

@@ -32,6 +32,29 @@ type LocalizationSearchCommand = Extract<CliCommand, { readonly _tag: "TextSearc
 type LocalizationCheckCommand = Extract<CliCommand, { readonly _tag: "LocalizationCheck" }>;
 type LocalizationReportCommand = Extract<CliCommand, { readonly _tag: "LocalizationReport" }>;
 
+/** Scans the project's saved text once; every target a command reads joins the same corpus. */
+export const scanProjectText = Effect.fn("Cli.localization.scan")(function* (
+	projectRoot: string,
+	reader: string | undefined
+) {
+	return yield* Effect.gen(function* () {
+		const service = yield* TextCorpusService;
+		return yield* service.scan({ projectRoot });
+	}).pipe(
+		Effect.provide(TextCorpusServiceLive),
+		Effect.provide(readerLayer(reader)),
+		Effect.mapError(
+			() =>
+				new GameTextLocalizationError({
+					code: "reader_failure",
+					message: "The saved-package text reader could not complete the scan.",
+					recovery:
+						"Verify that the project root is readable and configure UE_SHED_UASSET_EXECUTABLE or --reader with a supported saved-asset reader, then retry."
+				})
+		)
+	);
+});
+
 /** Decode CLI selections and read evidence before starting the saved-package reader. */
 export const loadLocalizationContext = Effect.fn("Cli.localization.load_context")(function* (
 	command:
@@ -98,22 +121,7 @@ export const loadLocalizationContext = Effect.fn("Cli.localization.load_context"
 					"Run the target's Unreal gather configuration, or repair the manifest file."
 			})
 		);
-	const corpus = yield* Effect.gen(function* () {
-		const reader = yield* TextCorpusService;
-		return yield* reader.scan({ projectRoot: command.projectRoot });
-	}).pipe(
-		Effect.provide(TextCorpusServiceLive),
-		Effect.provide(readerLayer(command.reader)),
-		Effect.mapError(
-			() =>
-				new GameTextLocalizationError({
-					code: "reader_failure",
-					message: "The saved-package text reader could not complete the scan.",
-					recovery:
-						"Verify that the project root is readable and configure UE_SHED_UASSET_EXECUTABLE or --reader with a supported saved-asset reader, then retry."
-				})
-		)
-	);
+	const corpus = yield* scanProjectText(command.projectRoot, command.reader);
 	// The review file is UE Shed's own project data; a missing file means nothing is reviewed yet.
 	const review = yield* readLocalizationReview({
 		projectRoot: command.projectRoot,

@@ -4,6 +4,7 @@ import {
 	AUTHORING_AUTOMATION_PLUGIN_IDS,
 	MAP_REVIEW_PLUGIN_IDS,
 	CAMERA_AUTHORING_PLUGIN_IDS,
+	EDITOR_HOST_PLUGIN_IDS,
 	NIAGARA_PLUGIN_IDS,
 	OBSERVATORY_PLUGIN_IDS
 } from "./plugin-bundle.ts";
@@ -36,6 +37,11 @@ const presets = {
 		plugins: AUTHORING_AUTOMATION_PLUGIN_IDS,
 		stem: `ue-shed-plugins-authoring-automation-${PUBLIC_VERSION}`
 	},
+	"editor-host": {
+		directory: "plugins-editor-host",
+		plugins: EDITOR_HOST_PLUGIN_IDS,
+		stem: `ue-shed-plugins-editor-host-${PUBLIC_VERSION}`
+	},
 	niagara: {
 		directory: "plugins-niagara",
 		plugins: NIAGARA_PLUGIN_IDS,
@@ -53,11 +59,12 @@ if (
 	preset !== "map-review" &&
 	preset !== "camera-authoring" &&
 	preset !== "authoring-automation" &&
+	preset !== "editor-host" &&
 	preset !== "niagara" &&
 	preset !== "observatory"
 ) {
 	throw new Error(
-		"Usage: node scripts/release-plugin-bundle.ts <full|map-review|camera-authoring|authoring-automation|niagara|observatory>"
+		"Usage: node scripts/release-plugin-bundle.ts <full|map-review|camera-authoring|authoring-automation|editor-host|niagara|observatory>"
 	);
 }
 

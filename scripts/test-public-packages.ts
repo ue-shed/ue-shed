@@ -390,7 +390,7 @@ try {
 			"for (const name of ['connectUnrealAuthoring', 'findUnrealActorsReferencingRow', 'connectUnrealAutomation']) {",
 			"  if (typeof connection[name] !== 'function') throw new Error('bad connection export ' + name);",
 			"}",
-			"if (protocol.AUTHORING_SNAPSHOT_CONTRACT_VERSION.minor !== 2) throw new Error('old snapshot defaults contract');",
+			"if (protocol.AUTHORING_SNAPSHOT_CONTRACT_VERSION.minor !== 3) throw new Error('old snapshot text identity contract');",
 			"Schema.decodeUnknownSync(protocol.AutomationPlayersRequest)({ contract: { name: 'unreal-automation-players', version: { major: 1, minor: 0 } }, worldObjectPath: '/Game/Fixture/L_World.L_World' });",
 			"Schema.decodeUnknownSync(protocol.AutomationInputRequest)({ contract: { name: 'unreal-automation-input', version: { major: 1, minor: 0 } }, worldObjectPath: '/Game/Fixture/L_World.L_World', playerControllerObjectPath: '/Game/Fixture/L_World.L_World:PersistentLevel.PlayerController_0', actionObjectPath: '/Game/Fixture/Input/IA_Move.IA_Move', value: { kind: 'axis2d', x: 1, y: 0 } });",
 			"Schema.decodeUnknownSync(protocol.AutomationCsvRequest)({ contract: { name: 'unreal-automation-csv', version: { major: 1, minor: 0 } }, command: 'status' });",

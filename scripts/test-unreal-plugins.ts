@@ -41,6 +41,7 @@ const tests = [
 	"UEShed.Authoring.CanonicalJson",
 	"UEShed.Authoring.Defaults",
 	"UEShed.Authoring.DefaultsCodec",
+	"UEShed.Authoring.TextIdentity",
 	"UEShed.Authoring.ActorReferences",
 	"UEShed.Authoring.ActorReferenceDepth",
 	"UEShed.Automation.Input",

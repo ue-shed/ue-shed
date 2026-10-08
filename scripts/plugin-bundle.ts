@@ -124,6 +124,11 @@ export const AUTHORING_AUTOMATION_PLUGIN_IDS = Object.freeze([
 	"UEShedAuthoring",
 	"UEShedAutomation"
 ]);
+/** Camera authoring and editor DataTable authoring for a host that offers both. */
+export const EDITOR_HOST_PLUGIN_IDS = Object.freeze([
+	...CAMERA_AUTHORING_PLUGIN_IDS,
+	"UEShedAuthoring"
+]);
 
 function bundleContracts(pluginIds: ReadonlySet<string>) {
 	const contracts: Array<{ name: string; version: { major: number; minor: number } }> = [];
@@ -132,9 +137,9 @@ function bundleContracts(pluginIds: ReadonlySet<string>) {
 	}
 	if (pluginIds.has("UEShedAuthoring")) {
 		contracts.push(
-			{ name: "unreal-authoring", version: { major: 2, minor: 2 } },
+			{ name: "unreal-authoring", version: { major: 2, minor: 3 } },
 			{ name: "unreal-authoring-table-list", version: { major: 1, minor: 0 } },
-			{ name: "unreal-authoring-apply", version: { major: 1, minor: 1 } },
+			{ name: "unreal-authoring-apply", version: { major: 1, minor: 2 } },
 			{ name: "unreal-authoring-save", version: { major: 1, minor: 1 } },
 			{ name: "unreal-authoring-actor-references", version: { major: 1, minor: 0 } }
 		);

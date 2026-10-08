@@ -34,8 +34,14 @@ The defaults use the same typed value representation as table rows, including ne
 containers. A codec that cannot represent a property reports an unavailable or unsupported value;
 consumers must not substitute guessed zero values. Saved-package inspection can still report
 unknown defaults, since a saved asset does not necessarily serialize its struct's initialized value.
-Text defaults and enclosing structs/containers with text remain unknown: the display-only text
-codec cannot round-trip localization identity, string-table linkage, or text history through Apply.
+Text values carry their localization identity (snapshot 2.3, Apply 1.2), so text defaults are
+known unless they hold generated text. Hosts edit text content with `editAuthoringText`, which keeps
+a localized namespace and key; omitting the key asks the producer to mint one in the table package.
+Producer refusals such as `invalid_request` or `operation_not_found` arrive as an
+`UnrealConnectionError` with a `code`.
+
+The `editor-host` source bundle adds `UEShedAuthoring` to the camera-authoring plugin graph for hosts
+that offer both camera and DataTable authoring in one editor.
 
 `findUnrealActorsReferencingRow({ endpoint, request })` negotiates actor-reference support
 independently of Apply. The request selects a world, table object path, row name, and explicit

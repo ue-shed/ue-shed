@@ -3,6 +3,7 @@ import {
 	AutomationInputRequest,
 	AutomationPlayersRequest,
 	AuthoringActorReferencesRequest,
+	AuthoringEndpointError,
 	decodeAutomationCsvResult,
 	decodeAutomationInputResult,
 	decodeAutomationPlayersResult,
@@ -51,7 +52,9 @@ export class UnrealConnectionError extends Schema.TaggedErrorClass<UnrealConnect
 		operation: Schema.String,
 		message: Schema.String,
 		retrySafe: Schema.Boolean,
-		status: Schema.optional(Schema.Number)
+		status: Schema.optional(Schema.Number),
+		/** Producer refusal code, such as `invalid_request` or `operation_not_found`. */
+		code: Schema.optional(Schema.String)
 	}
 ) {}
 
@@ -361,6 +364,34 @@ function decodeResult<A, DecodeError>(
 	);
 }
 
+const isAuthoringEndpointError = Schema.is(AuthoringEndpointError);
+
+/** Authoring endpoints answer refusals with `{ status: "error", code }` instead of a result. */
+function decodeAuthoringResult<A, DecodeError>(
+	effect: Effect.Effect<Schema.Json, UnrealConnectionError>,
+	endpoint: string,
+	operation: string,
+	decode: (input: Schema.Json) => Effect.Effect<A, DecodeError>
+): Effect.Effect<A, UnrealConnectionError> {
+	const refusalChecked = effect.pipe(
+		Effect.flatMap((input) =>
+			isAuthoringEndpointError(input)
+				? Effect.fail(
+						new UnrealConnectionError({
+							code: input.code,
+							endpoint,
+							message: `${operation} refused (${input.code}): ${input.message}`,
+							operation,
+							// The producer refused before acting. Only a missing table may appear later.
+							retrySafe: input.code === "table_not_found"
+						})
+					)
+				: Effect.succeed(input)
+		)
+	);
+	return decodeResult(refusalChecked, endpoint, operation, decode);
+}
+
 export function locateUnrealAsset(options: {
 	readonly bringToFront: boolean;
 	readonly endpoint: string;
@@ -467,35 +498,35 @@ export function connectUnrealAuthoring(
 			endpoint,
 			manifest,
 			listTableObjectPaths: () =>
-				decodeResult(
+				decodeAuthoringResult(
 					call("ListTableObjectPaths", {}),
 					endpoint,
 					"table list",
 					decodeAuthoringTableList
 				).pipe(Effect.map((result) => result.objectPaths)),
 			getTableSnapshot: (objectPath) =>
-				decodeResult(
+				decodeAuthoringResult(
 					call("GetTableSnapshot", { TableObjectPath: objectPath }),
 					endpoint,
 					"table snapshot",
 					decodeAuthoringTableSnapshot
 				),
 			apply: (request) =>
-				decodeResult(
+				decodeAuthoringResult(
 					call("Apply", { RequestJson: JSON.stringify(request) }),
 					endpoint,
 					"Apply",
 					decodeAuthoringApplyResult
 				),
 			lookupApplyResult: (operationId) =>
-				decodeResult(
+				decodeAuthoringResult(
 					call("LookupApplyResult", { OperationId: operationId }),
 					endpoint,
 					"Apply lookup",
 					decodeAuthoringApplyResult
 				),
 			save: (request) =>
-				decodeResult(
+				decodeAuthoringResult(
 					call("Save", { RequestJson: JSON.stringify(request) }),
 					endpoint,
 					"Save",

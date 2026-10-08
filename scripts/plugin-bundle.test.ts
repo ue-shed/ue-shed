@@ -9,6 +9,7 @@ import {
 	buildPluginBundle,
 	AUTHORING_AUTOMATION_PLUGIN_IDS,
 	CAMERA_AUTHORING_PLUGIN_IDS,
+	EDITOR_HOST_PLUGIN_IDS,
 	MAP_REVIEW_PLUGIN_IDS,
 	NIAGARA_PLUGIN_IDS,
 	OBSERVATORY_PLUGIN_IDS,
@@ -291,6 +292,25 @@ test("camera authoring preset includes the complete native dependency graph", as
 	}
 });
 
+test("editor host preset adds DataTable authoring to the camera authoring graph", async () => {
+	const output = await mkdtemp(join(tmpdir(), "ue-shed-editor-host-plugins-"));
+	try {
+		const result = await buildPluginBundle({
+			output,
+			releaseVersion: "0.8.0",
+			requestedPlugins: [...EDITOR_HOST_PLUGIN_IDS]
+		});
+		const ids = new Set(result.manifest.plugins.map(({ id }) => id));
+		assert.deepEqual([...ids].toSorted(), [...EDITOR_HOST_PLUGIN_IDS].toSorted());
+		for (const plugin of result.manifest.plugins) {
+			for (const dependency of plugin.dependencies) assert.ok(ids.has(dependency));
+		}
+		assert.ok(!ids.has("UEShedAutomation"));
+	} finally {
+		await rm(output, { recursive: true, force: true });
+	}
+});
+
 test("authoring automation source closure attests its contracts and passes release validation", async () => {
 	const output = await mkdtemp(join(tmpdir(), "ue-shed-authoring-automation-plugins-"));
 	try {
@@ -337,9 +357,9 @@ test("authoring automation source closure attests its contracts and passes relea
 		assert.ok("contracts" in result.manifest);
 		if (!("contracts" in result.manifest)) throw new Error("Missing contract attestations.");
 		assert.deepEqual(result.manifest.contracts, [
-			{ name: "unreal-authoring", version: { major: 2, minor: 2 } },
+			{ name: "unreal-authoring", version: { major: 2, minor: 3 } },
 			{ name: "unreal-authoring-table-list", version: { major: 1, minor: 0 } },
-			{ name: "unreal-authoring-apply", version: { major: 1, minor: 1 } },
+			{ name: "unreal-authoring-apply", version: { major: 1, minor: 2 } },
 			{ name: "unreal-authoring-save", version: { major: 1, minor: 1 } },
 			{ name: "unreal-authoring-actor-references", version: { major: 1, minor: 0 } },
 			{ name: "unreal-automation-players", version: { major: 1, minor: 0 } },

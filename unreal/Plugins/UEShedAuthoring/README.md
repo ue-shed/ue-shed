@@ -9,8 +9,14 @@ a bounded operation-result cache so clients never need to replay uncertain mutat
 Snapshots include known field defaults from an independently initialized row struct, including
 native constructors and authored Blueprint struct defaults. Values use the same typed codec as
 rows and Apply. Properties the codec cannot fully represent retain `unknown` defaults.
-This includes text and enclosing structs/containers containing text: the display-only text codec
-cannot preserve localization identity, string-table linkage, or text history when reused by Apply.
+
+Text values carry an `identity` alongside the display string: `localized` (namespace, key, and
+source string), `string_table` (table id and key), `culture_invariant`, `none`, or `generated`.
+Apply 1.2 writes text from its identity. A localized write keeps the given namespace and key, or
+mints a new key in the table package when the key is omitted; a string-table write must name an
+existing entry; generated text (formatted, numeric, and other derived histories) is read-only, and
+defaults containing it stay `unknown`. Apply 1.1 requests compare and write display strings only,
+and rewriting an unchanged display string leaves the existing text identity in place.
 
 `FindActorsReferencingRow(RequestJson, ResultJson)` implements
 `unreal-authoring-actor-references` version 1.0. The request selects an already-loaded editor or PIE
@@ -31,5 +37,6 @@ payload bound.
 Native automation tests `UEShed.Authoring.Defaults` and `UEShed.Authoring.ActorReferences` create
 transient tables, Blueprint structs, worlds, actors, and components, and verify that read operations
 preserve row values and dirty state. `UEShed.Authoring.DefaultsCodec` creates a row through the
-actual command decoder using the snapshot defaults. The plugin gate passes shared wire fixtures via
+actual command decoder using the snapshot defaults, and `UEShed.Authoring.TextIdentity` covers
+localized, minted, string-table, culture-invariant, generated, and Apply 1.1 text writes. The plugin gate passes shared wire fixtures via
 `-UEShedAuthoringContractFixtures=<directory>`.

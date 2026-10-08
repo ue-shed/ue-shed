@@ -8,18 +8,23 @@
 #include "Engine/CompositeDataTable.h"
 #include "Engine/DataTable.h"
 #include "HAL/PlatformProcess.h"
+#include "Internationalization/StringTableCore.h"
+#include "Internationalization/StringTableRegistry.h"
+#include "Internationalization/TextNamespaceUtil.h"
+#include "Internationalization/TextPackageNamespaceUtil.h"
 #include "Misc/App.h"
+#include "Misc/Guid.h"
 #include "Misc/PackageName.h"
 #include "ScopedTransaction.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
+#include "Templates/UnrealTemplate.h"
 #include "UObject/SavePackage.h"
 #include "UObject/SoftObjectPtr.h"
 #include "UObject/StructOnScope.h"
 #include "UObject/UnrealType.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
-#include "Internationalization/StringTableRegistry.h"
 #include "Kismet2/StructureEditorUtils.h"
 #include "Misc/AutomationTest.h"
 #include "Misc/ScopeExit.h"
@@ -113,6 +118,52 @@ TSharedRef<FJsonObject> ValueObject(const TCHAR* Kind)
 	const TSharedRef<FJsonObject> Result = MakeShared<FJsonObject>();
 	Result->SetStringField(TEXT("kind"), Kind);
 	return Result;
+}
+
+// The table that Apply is mutating. New localization keys are stamped with its package namespace,
+// matching the editor's own text property edits. Apply runs on the game thread.
+UObject* GTextKeyOwner = nullptr;
+
+TSharedRef<FJsonObject> TextIdentity(const FText& Text, bool& bGenerated)
+{
+	const TSharedRef<FJsonObject> Identity = MakeShared<FJsonObject>();
+	FName TableId;
+	FString Key;
+	const TOptional<FString> Namespace = FTextInspector::GetNamespace(Text);
+	const TOptional<FString> LocalizedKey = FTextInspector::GetKey(Text);
+	if (Text.IsFromStringTable() && FTextInspector::GetTableIdAndKey(Text, TableId, Key))
+	{
+		Identity->SetStringField(TEXT("kind"), TEXT("string_table"));
+		Identity->SetStringField(TEXT("tableId"), TableId.ToString());
+		Identity->SetStringField(TEXT("key"), Key);
+	}
+	else if (Text.IsInitializedFromString())
+	{
+		Identity->SetStringField(TEXT("kind"), TEXT("none"));
+	}
+	else if (Text.IsCultureInvariant())
+	{
+		Identity->SetStringField(TEXT("kind"), TEXT("culture_invariant"));
+	}
+	else if (Namespace.IsSet() && LocalizedKey.IsSet())
+	{
+		Identity->SetStringField(TEXT("kind"), TEXT("localized"));
+		Identity->SetStringField(TEXT("namespace"), Namespace.GetValue());
+		Identity->SetStringField(TEXT("key"), LocalizedKey.GetValue());
+		const FString* SourceString = FTextInspector::GetSourceString(Text);
+		Identity->SetStringField(TEXT("sourceString"), SourceString ? *SourceString : FString());
+	}
+	else if (Text.IsEmpty())
+	{
+		Identity->SetStringField(TEXT("kind"), TEXT("none"));
+	}
+	else
+	{
+		// Format, numeric, date, and other generated histories have no writable source.
+		bGenerated = true;
+		Identity->SetStringField(TEXT("kind"), TEXT("generated"));
+	}
+	return Identity;
 }
 
 TSharedPtr<FJsonValue> SerializePropertyValue(
@@ -421,12 +472,14 @@ TSharedPtr<FJsonValue> SerializePropertyValue(
 	}
 	if (const FTextProperty* Text = CastField<FTextProperty>(Property))
 	{
-		// The display-only codec cannot preserve text identity or history through Apply.
-		// This also makes enclosing struct/container defaults unknown, without degrading
-		// the existing display representation of table rows.
-		if (bForDefault) bPartial = true;
+		const FText& Current = Text->GetPropertyValue(Value);
+		bool bGenerated = false;
 		const TSharedRef<FJsonObject> Result = ValueObject(TEXT("text"));
-		Result->SetStringField(TEXT("value"), Text->GetPropertyValue(Value).ToString());
+		Result->SetStringField(TEXT("value"), Current.ToString());
+		Result->SetObjectField(TEXT("identity"), TextIdentity(Current, bGenerated));
+		// Generated text cannot be rebuilt through Apply, so a default containing it (and any
+		// enclosing struct or container default) is not reusable.
+		if (bForDefault && bGenerated) bPartial = true;
 		return MakeShared<FJsonValueObject>(Result);
 	}
 	if (const FSoftObjectProperty* SoftObject = CastField<FSoftObjectProperty>(Property))
@@ -640,6 +693,113 @@ bool FUEShedAuthoringCanonicalJsonTest::RunTest(const FString& Parameters)
 }
 #endif
 
+TSharedPtr<FJsonValue> WithoutTextIdentity(const TSharedPtr<FJsonValue>& Value)
+{
+	if (!Value.IsValid()) return Value;
+	if (Value->Type == EJson::Array)
+	{
+		TArray<TSharedPtr<FJsonValue>> Items;
+		for (const TSharedPtr<FJsonValue>& Item : Value->AsArray()) Items.Add(WithoutTextIdentity(Item));
+		return MakeShared<FJsonValueArray>(Items);
+	}
+	if (Value->Type != EJson::Object) return Value;
+	const TSharedPtr<FJsonObject> Source = Value->AsObject();
+	FString Kind;
+	const bool bText = Source->TryGetStringField(TEXT("kind"), Kind) && Kind == TEXT("text");
+	const TSharedRef<FJsonObject> Copy = MakeShared<FJsonObject>();
+	for (const auto& Field : Source->Values)
+	{
+		if (bText && Field.Key == TEXT("identity")) continue;
+		Copy->SetField(Field.Key, WithoutTextIdentity(Field.Value));
+	}
+	return MakeShared<FJsonValueObject>(Copy);
+}
+
+bool TextFromIdentity(
+	const FText& Current, const TSharedPtr<FJsonObject>& Identity, const FString& Value,
+	FText& Result, FString& Error)
+{
+	FString Kind;
+	if (!Identity->TryGetStringField(TEXT("kind"), Kind))
+	{
+		Error = TEXT("text identity kind is missing");
+		return false;
+	}
+	bool bGenerated = false;
+	const TSharedRef<FJsonObject> CurrentIdentity = TextIdentity(Current, bGenerated);
+	if (!bGenerated && CanonicalJson(MakeShared<FJsonValueObject>(CurrentIdentity))
+		== CanonicalJson(MakeShared<FJsonValueObject>(Identity.ToSharedRef()))
+		&& (Kind == TEXT("localized") || Kind == TEXT("string_table") || Current.ToString() == Value))
+	{
+		// An unchanged identity keeps the existing instance and any engine-only text metadata.
+		Result = Current;
+		return true;
+	}
+	if (Kind == TEXT("localized"))
+	{
+		FString Namespace;
+		FString SourceString;
+		if (!Identity->TryGetStringField(TEXT("namespace"), Namespace)
+			|| !Identity->TryGetStringField(TEXT("sourceString"), SourceString))
+		{
+			Error = TEXT("localized text requires namespace and sourceString");
+			return false;
+		}
+		FString Key;
+		const bool bNewKey = !Identity->TryGetStringField(TEXT("key"), Key) || Key.IsEmpty();
+		if (bNewKey) Key = FGuid::NewGuid().ToString();
+#if USE_STABLE_LOCALIZATION_KEYS
+		if (GTextKeyOwner && (bNewKey || Namespace.EndsWith(TEXT("]"))))
+		{
+			// New keys always belong to the table package; an existing package-stamped
+			// namespace is rebased onto it, as the editor does when copying text.
+			Namespace = TextNamespaceUtil::BuildFullNamespace(Namespace,
+				TextNamespaceUtil::EnsurePackageNamespace(GTextKeyOwner), bNewKey);
+		}
+#endif
+		Result = FText::AsLocalizable_Advanced(FTextKey(Namespace), FTextKey(Key), MoveTemp(SourceString));
+		return true;
+	}
+	if (Kind == TEXT("string_table"))
+	{
+		FString TableId;
+		FString Key;
+		if (!Identity->TryGetStringField(TEXT("tableId"), TableId)
+			|| !Identity->TryGetStringField(TEXT("key"), Key))
+		{
+			Error = TEXT("string table text requires tableId and key");
+			return false;
+		}
+		Result = FText::FromStringTable(FName(TableId), FTextKey(Key), EStringTableLoadingPolicy::FindOrLoad);
+		const FStringTableConstPtr Table = FStringTableRegistry::Get().FindStringTable(FName(TableId));
+		if (!Table.IsValid() || !Table->FindEntry(FTextKey(Key)).IsValid())
+		{
+			Error = FString::Printf(
+				TEXT("text_string_table_entry_missing: %s has no entry %s"), *TableId, *Key);
+			return false;
+		}
+		return true;
+	}
+	if (Kind == TEXT("culture_invariant"))
+	{
+		Result = FText::AsCultureInvariant(FString(Value));
+		return true;
+	}
+	if (Kind == TEXT("none"))
+	{
+		Result = FText::FromString(Value);
+		return true;
+	}
+	if (Kind == TEXT("generated"))
+	{
+		Error = TEXT("generated text cannot be written; choose a localized, string_table, "
+			"culture_invariant, or none identity");
+		return false;
+	}
+	Error = FString::Printf(TEXT("unsupported text identity %s"), *Kind);
+	return false;
+}
+
 FProperty* FindRowProperty(const UStruct* Struct, const FString& Name)
 {
 	// FindPropertyByName only matches the generated field FName in both supported
@@ -791,7 +951,18 @@ bool AssignPropertyValue(
 			Error = TEXT("expected text value");
 			return false;
 		}
-		TextProperty->SetPropertyValue(Value, FText::FromString(Text));
+		const FText& Current = TextProperty->GetPropertyValue(Value);
+		const TSharedPtr<FJsonObject>* Identity;
+		if (!Input->TryGetObjectField(TEXT("identity"), Identity))
+		{
+			// Mutation contract 1.1 clients cannot express identity. Rewriting an unchanged display
+			// string must not discard the localization identity they never saw.
+			if (Current.ToString() != Text) TextProperty->SetPropertyValue(Value, FText::FromString(Text));
+			return true;
+		}
+		FText Result;
+		if (!TextFromIdentity(Current, *Identity, Text, Result, Error)) return false;
+		TextProperty->SetPropertyValue(Value, Result);
 		return true;
 	}
 	if (const FSoftObjectProperty* Soft = CastField<FSoftObjectProperty>(Property))
@@ -992,7 +1163,7 @@ TSharedRef<FJsonObject> BuildTableSnapshot(const UDataTable* Table)
 	Contract->SetStringField(TEXT("name"), TEXT("unreal-authoring"));
 	const TSharedRef<FJsonObject> Version = MakeShared<FJsonObject>();
 	Version->SetNumberField(TEXT("major"), 2);
-	Version->SetNumberField(TEXT("minor"), 2);
+	Version->SetNumberField(TEXT("minor"), 3);
 	Contract->SetObjectField(TEXT("version"), Version);
 	const TSharedRef<FJsonObject> Authority = MakeShared<FJsonObject>();
 	Authority->SetStringField(TEXT("kind"), TEXT("live_editor"));
@@ -1071,15 +1242,31 @@ FString TableFingerprintFromJson(const TSharedPtr<FJsonObject>& TableJson)
 		reinterpret_cast<const uint8*>(Bytes.Get()), Bytes.Length());
 }
 
-TSharedRef<FJsonObject> OperationContract(const TCHAR* Name)
+TSharedRef<FJsonObject> OperationContract(const TCHAR* Name, int32 Minor)
 {
 	const TSharedRef<FJsonObject> Contract = MakeShared<FJsonObject>();
 	Contract->SetStringField(TEXT("name"), Name);
 	const TSharedRef<FJsonObject> Version = MakeShared<FJsonObject>();
 	Version->SetNumberField(TEXT("major"), 1);
-	Version->SetNumberField(TEXT("minor"), 1);
+	Version->SetNumberField(TEXT("minor"), Minor);
 	Contract->SetObjectField(TEXT("version"), Version);
 	return Contract;
+}
+
+constexpr int32 ApplyContractMinor = 2;
+constexpr int32 SaveContractMinor = 1;
+
+int32 ContractMinor(const TSharedPtr<FJsonObject>& Request)
+{
+	const TSharedPtr<FJsonObject>* Contract;
+	const TSharedPtr<FJsonObject>* Version;
+	double Minor = 0;
+	if (Request->TryGetObjectField(TEXT("contract"), Contract)
+		&& (*Contract)->TryGetObjectField(TEXT("version"), Version))
+	{
+		(*Version)->TryGetNumberField(TEXT("minor"), Minor);
+	}
+	return static_cast<int32>(Minor);
 }
 
 bool HasContract(const TSharedPtr<FJsonObject>& Request, const TCHAR* Name)
@@ -1135,8 +1322,9 @@ void CacheApplyResult(
 
 bool ApplyCommand(
 	UDataTable* Table, const TSharedPtr<FJsonObject>& Command,
-	TMap<FString, FName>& RowNames, FString& Error)
+	TMap<FString, FName>& RowNames, FString& Error, bool bTextIdentity = true)
 {
+	TGuardValue<UObject*> TextKeyOwner(GTextKeyOwner, Table);
 	const TSharedPtr<FJsonObject> Body = Command->GetObjectField(TEXT("body"));
 	const FString Kind = Body->GetStringField(TEXT("kind"));
 	if (Kind == TEXT("set_cell"))
@@ -1149,8 +1337,10 @@ bool ApplyCommand(
 		FProperty* Property = FindRowProperty(Table->GetRowStruct(), FieldName);
 		if (!Property) { Error = FString::Printf(TEXT("unknown field %s"), *FieldName); return false; }
 		bool bPartial = false;
-		const TSharedPtr<FJsonValue> Current = SerializePropertyValue(
+		TSharedPtr<FJsonValue> Current = SerializePropertyValue(
 			Property, Property->ContainerPtrToValuePtr<void>(*RowData), bPartial);
+		// Mutation contract 1.1 clients read text without identity.
+		if (!bTextIdentity) Current = WithoutTextIdentity(Current);
 		if (bPartial || CanonicalJson(Current) != CanonicalJson(Body->TryGetField(TEXT("oldValue"))))
 		{
 			Error = FString::Printf(TEXT("field %s no longer matches oldValue"), *FieldName);
@@ -1376,6 +1566,8 @@ void UUEShedAuthoringLibrary::Apply(const FString& RequestJson, FString& ResultJ
 		ResultJson = ErrorJson(TEXT("unsupported_contract"), TEXT("Apply contract major 1 is required"));
 		return;
 	}
+	// Apply 1.2 added text identity; earlier requests compare and write display strings only.
+	const bool bTextIdentity = ContractMinor(Request) >= 2;
 	FString OperationId;
 	if (!Request->TryGetStringField(TEXT("operationId"), OperationId) || OperationId.IsEmpty())
 	{
@@ -1395,7 +1587,7 @@ void UUEShedAuthoringLibrary::Apply(const FString& RequestJson, FString& ResultJ
 		}
 		const TSharedRef<FJsonObject> Collision = MakeShared<FJsonObject>();
 		Collision->SetObjectField(
-			TEXT("contract"), OperationContract(TEXT("unreal-authoring-apply")));
+			TEXT("contract"), OperationContract(TEXT("unreal-authoring-apply"), ApplyContractMinor));
 		Collision->SetStringField(TEXT("operationId"), OperationId);
 		Collision->SetStringField(TEXT("status"), TEXT("rejected"));
 		Collision->SetArrayField(TEXT("snapshots"), TArray<TSharedPtr<FJsonValue>>());
@@ -1458,7 +1650,8 @@ void UUEShedAuthoringLibrary::Apply(const FString& RequestJson, FString& ResultJ
 		bool bIncludeSnapshots)
 	{
 		const TSharedRef<FJsonObject> Result = MakeShared<FJsonObject>();
-		Result->SetObjectField(TEXT("contract"), OperationContract(TEXT("unreal-authoring-apply")));
+		Result->SetObjectField(
+			TEXT("contract"), OperationContract(TEXT("unreal-authoring-apply"), ApplyContractMinor));
 		Result->SetStringField(TEXT("operationId"), OperationId);
 		Result->SetStringField(TEXT("status"), Status);
 		Result->SetArrayField(TEXT("errors"), ResultErrors);
@@ -1507,7 +1700,8 @@ void UUEShedAuthoringLibrary::Apply(const FString& RequestJson, FString& ResultJ
 		const FString ObjectPath = Command->GetStringField(TEXT("tableObjectPath"));
 		UDataTable* const* Table = Tables.Find(ObjectPath);
 		FString Error;
-		if (!Table || !ApplyCommand(*Table, Command, RowNames.FindChecked(ObjectPath), Error))
+		if (!Table || !ApplyCommand(
+			*Table, Command, RowNames.FindChecked(ObjectPath), Error, bTextIdentity))
 		{
 			if (!Table) Error = TEXT("command references a table outside the Apply plan");
 			Transaction.Cancel();
@@ -1596,7 +1790,8 @@ void UUEShedAuthoringLibrary::Save(const FString& RequestJson, FString& ResultJs
 		Packages.Add(MakeShared<FJsonValueObject>(PackageResult));
 	}
 	const TSharedRef<FJsonObject> Result = MakeShared<FJsonObject>();
-	Result->SetObjectField(TEXT("contract"), OperationContract(TEXT("unreal-authoring-save")));
+	Result->SetObjectField(
+		TEXT("contract"), OperationContract(TEXT("unreal-authoring-save"), SaveContractMinor));
 	Result->SetStringField(TEXT("requestId"), RequestId);
 	Result->SetStringField(TEXT("status"), SavedCount == Packages.Num()
 		? TEXT("complete") : SavedCount == 0 ? TEXT("failed") : TEXT("partial"));
@@ -1665,28 +1860,24 @@ bool FUEShedAuthoringDefaultsCodecTest::RunTest(const FString& Parameters)
 		UDataTable* TextTable = NewObject<UDataTable>(GetTransientPackage());
 		TextTable->RowStruct = FUEShedAuthoringTestTextRow::StaticStruct();
 		const TSharedPtr<FJsonObject> TextSnapshot = BuildTableSnapshot(TextTable);
-		TArray<TSharedPtr<FJsonValue>> SafeFields;
+		TArray<TSharedPtr<FJsonValue>> DefaultFields;
 		for (const TSharedPtr<FJsonValue>& Value : TextSnapshot->GetObjectField(TEXT("table"))
 			->GetObjectField(TEXT("schema"))->GetArrayField(TEXT("fields")))
 		{
 			const TSharedPtr<FJsonObject> Descriptor = Value->AsObject();
 			const FString Name = Descriptor->GetStringField(TEXT("name"));
 			const TSharedPtr<FJsonObject> Default = Descriptor->GetObjectField(TEXT("defaultValue"));
-			if (Name != TEXT("Count"))
-			{
-				TestEqual(TEXT("Text and enclosing defaults remain unknown: ") + Name,
-					Default->GetStringField(TEXT("status")), FString(TEXT("unknown")));
-				TestFalse(TEXT("Lossy default is not published: ") + Name, Default->HasField(TEXT("value")));
+			if (!TestEqual(TEXT("Text and enclosing defaults carry identity and are known: ") + Name,
+				Default->GetStringField(TEXT("status")), FString(TEXT("known"))))
 				continue;
-			}
-			const TSharedRef<FJsonObject> SafeField = MakeShared<FJsonObject>();
-			SafeField->SetStringField(TEXT("name"), Name);
-			SafeField->SetField(TEXT("value"), Default->TryGetField(TEXT("value")));
-			SafeFields.Add(MakeShared<FJsonValueObject>(SafeField));
+			const TSharedRef<FJsonObject> DefaultField = MakeShared<FJsonObject>();
+			DefaultField->SetStringField(TEXT("name"), Name);
+			DefaultField->SetField(TEXT("value"), Default->TryGetField(TEXT("value")));
+			DefaultFields.Add(MakeShared<FJsonValueObject>(DefaultField));
 		}
-		Row->SetArrayField(TEXT("fields"), SafeFields);
+		Row->SetArrayField(TEXT("fields"), DefaultFields);
 		RowNames.Empty();
-		if (!TestTrue(TEXT("Add-row assigns only reusable defaults and preserves initialized text"),
+		if (!TestTrue(TEXT("Add-row writes published text defaults and preserves their identity"),
 			ApplyCommand(TextTable, Command, RowNames, Error)))
 		{
 			AddError(Error);
@@ -1695,7 +1886,7 @@ bool FUEShedAuthoringDefaultsCodecTest::RunTest(const FString& Parameters)
 		const FUEShedAuthoringTestTextRow* TextRow = TextTable->FindRow<FUEShedAuthoringTestTextRow>(
 			TEXT("Created"), TEXT("DefaultsCodecTest"));
 		if (!TestNotNull(TEXT("Text default row is created"), TextRow)) return false;
-		TestEqual(TEXT("Reusable scalar default is assigned"), TextRow->Count, 73);
+		TestEqual(TEXT("Scalar default is assigned"), TextRow->Count, 73);
 		auto CheckIdentity = [&](const FText& Localized, const FText& StringTable, const FString& Context)
 		{
 			TestEqual(Context + TEXT(" localized namespace"),
@@ -1780,6 +1971,179 @@ bool FUEShedAuthoringDefaultsCodecTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("Nested Blueprint field mutation reaches the initialized value"),
 		BlueprintBool->GetPropertyValue(BlueprintBool->ContainerPtrToValuePtr<void>(
 			NestedBlueprintValue.GetStructMemory())));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUEShedAuthoringTextIdentityTest,
+	"UEShed.Authoring.TextIdentity",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FUEShedAuthoringTextIdentityTest::RunTest(const FString& Parameters)
+{
+	const FName TableId(TEXT("UEShedAuthoringDefaults"));
+	FStringTableRegistry& Registry = FStringTableRegistry::Get();
+	Registry.Internal_NewLocTable(TableId, TEXT("UEShedAuthoringDefaults"));
+	Registry.Internal_SetLocTableEntry(TableId, TEXT("Default"), TEXT("String table default"));
+	Registry.Internal_SetLocTableEntry(TableId, TEXT("Other"), TEXT("Other entry"));
+	ON_SCOPE_EXIT { Registry.UnregisterStringTable(TableId); };
+
+	UPackage* Package = CreatePackage(*FString::Printf(
+		TEXT("/Temp/UEShedAuthoringTextIdentity_%s"), *FGuid::NewGuid().ToString()));
+	UDataTable* Table = NewObject<UDataTable>(Package, TEXT("DT_TextIdentity"), RF_Transient);
+	Table->RowStruct = FUEShedAuthoringTestTextRow::StaticStruct();
+	Table->AddRow(TEXT("Row"), FUEShedAuthoringTestTextRow());
+	auto CurrentRow = [&]()
+	{
+		return Table->FindRow<FUEShedAuthoringTestTextRow>(TEXT("Row"), TEXT("TextIdentityTest"));
+	};
+	auto SnapshotValue = [&](const FString& FieldName) -> TSharedPtr<FJsonObject>
+	{
+		const TSharedPtr<FJsonObject> Row = BuildTableSnapshot(Table)->GetObjectField(TEXT("table"))
+			->GetArrayField(TEXT("rows"))[0]->AsObject();
+		for (const TSharedPtr<FJsonValue>& Field : Row->GetArrayField(TEXT("fields")))
+		{
+			if (Field->AsObject()->GetStringField(TEXT("name")) == FieldName)
+				return Field->AsObject()->GetObjectField(TEXT("value"));
+		}
+		return nullptr;
+	};
+	auto TextValue = [](const FString& Value, const TSharedPtr<FJsonObject>& Identity)
+	{
+		const TSharedRef<FJsonObject> Result = ValueObject(TEXT("text"));
+		Result->SetStringField(TEXT("value"), Value);
+		if (Identity.IsValid()) Result->SetObjectField(TEXT("identity"), Identity);
+		return Result;
+	};
+	auto Localized = [](const FString& Namespace, const FString* Key, const FString& Source)
+	{
+		const TSharedRef<FJsonObject> Identity = MakeShared<FJsonObject>();
+		Identity->SetStringField(TEXT("kind"), TEXT("localized"));
+		Identity->SetStringField(TEXT("namespace"), Namespace);
+		if (Key) Identity->SetStringField(TEXT("key"), *Key);
+		Identity->SetStringField(TEXT("sourceString"), Source);
+		return Identity;
+	};
+	auto SetCell = [&](const FString& FieldName, const TSharedPtr<FJsonValue>& OldValue,
+		const TSharedRef<FJsonObject>& NewValue, bool bTextIdentity, FString& Error)
+	{
+		const TSharedRef<FJsonObject> Body = MakeShared<FJsonObject>();
+		Body->SetStringField(TEXT("kind"), TEXT("set_cell"));
+		Body->SetStringField(TEXT("rowId"), TEXT("row:Row"));
+		Body->SetStringField(TEXT("fieldName"), FieldName);
+		Body->SetField(TEXT("oldValue"), OldValue);
+		Body->SetObjectField(TEXT("newValue"), NewValue);
+		const TSharedRef<FJsonObject> Command = MakeShared<FJsonObject>();
+		Command->SetObjectField(TEXT("body"), Body);
+		TMap<FString, FName> RowNames;
+		RowNames.Add(TEXT("row:Row"), TEXT("Row"));
+		return ApplyCommand(Table, Command, RowNames, Error, bTextIdentity);
+	};
+	auto AsValue = [](const TSharedPtr<FJsonObject>& Object) -> TSharedPtr<FJsonValue>
+	{
+		return MakeShared<FJsonValueObject>(Object);
+	};
+
+	const TSharedPtr<FJsonObject> Original = SnapshotValue(TEXT("Localized"));
+	const TSharedPtr<FJsonObject> OriginalIdentity = Original->GetObjectField(TEXT("identity"));
+	TestEqual(TEXT("Localized text reports its identity kind"),
+		OriginalIdentity->GetStringField(TEXT("kind")), FString(TEXT("localized")));
+	TestEqual(TEXT("Localized text reports its key"),
+		OriginalIdentity->GetStringField(TEXT("key")), FString(TEXT("Localized")));
+	TestEqual(TEXT("Localized text reports its source"),
+		OriginalIdentity->GetStringField(TEXT("sourceString")), FString(TEXT("Localized default")));
+	const TSharedPtr<FJsonObject> TableText = SnapshotValue(TEXT("StringTable"))->GetObjectField(TEXT("identity"));
+	TestEqual(TEXT("String-table text reports its table"),
+		TableText->GetStringField(TEXT("tableId")), TableId.ToString());
+	TestEqual(TEXT("String-table text reports its entry"),
+		TableText->GetStringField(TEXT("key")), FString(TEXT("Default")));
+
+	FString Error;
+	const FString Namespace = OriginalIdentity->GetStringField(TEXT("namespace"));
+	const FString Key = TEXT("Localized");
+	if (!TestTrue(TEXT("Editing localized source keeps namespace and key"),
+		SetCell(TEXT("Localized"), AsValue(Original),
+			TextValue(TEXT("Edited"), Localized(Namespace, &Key, TEXT("Edited"))), true, Error)))
+	{
+		AddError(Error);
+		return false;
+	}
+	TestEqual(TEXT("Edited source is stored"), CurrentRow()->Localized.ToString(), FString(TEXT("Edited")));
+	TestEqual(TEXT("Edited text keeps its key"),
+		FTextInspector::GetKey(CurrentRow()->Localized).Get(FString()), Key);
+	TestEqual(TEXT("Edited text keeps its namespace"),
+		FTextInspector::GetNamespace(CurrentRow()->Localized).Get(FString()), Namespace);
+
+	const TSharedPtr<FJsonObject> Edited = SnapshotValue(TEXT("Localized"));
+	if (!TestTrue(TEXT("Omitting the key mints a new localization key"),
+		SetCell(TEXT("Localized"), AsValue(Edited),
+			TextValue(TEXT("Minted"), Localized(FString(), nullptr, TEXT("Minted"))), true, Error)))
+	{
+		AddError(Error);
+		return false;
+	}
+	const FString MintedKey = FTextInspector::GetKey(CurrentRow()->Localized).Get(FString());
+	TestFalse(TEXT("Minted key is new"), MintedKey.IsEmpty() || MintedKey == Key);
+#if USE_STABLE_LOCALIZATION_KEYS
+	TestEqual(TEXT("Minted key uses the table package namespace"),
+		TextNamespaceUtil::ExtractPackageNamespace(
+			FTextInspector::GetNamespace(CurrentRow()->Localized).Get(FString())),
+		TextNamespaceUtil::GetPackageNamespace(Package));
+#endif
+
+	const TSharedPtr<FJsonObject> Minted = SnapshotValue(TEXT("Localized"));
+	const TSharedRef<FJsonObject> WrongKey = TextValue(Minted->GetStringField(TEXT("value")),
+		Localized(Namespace, &Key, Minted->GetStringField(TEXT("value"))));
+	TestFalse(TEXT("An identity-only oldValue mismatch fails the precondition"),
+		SetCell(TEXT("Localized"), AsValue(WrongKey), TextValue(TEXT("x"), nullptr), true, Error));
+
+	TestTrue(TEXT("A contract 1.1 rewrite of the unchanged display string is accepted"),
+		SetCell(TEXT("Localized"), WithoutTextIdentity(AsValue(Minted)),
+			TextValue(Minted->GetStringField(TEXT("value")), nullptr), false, Error));
+	TestEqual(TEXT("A contract 1.1 rewrite of unchanged text keeps identity"),
+		FTextInspector::GetKey(CurrentRow()->Localized).Get(FString()), MintedKey);
+
+	const TSharedRef<FJsonObject> OtherEntry = MakeShared<FJsonObject>();
+	OtherEntry->SetStringField(TEXT("kind"), TEXT("string_table"));
+	OtherEntry->SetStringField(TEXT("tableId"), TableId.ToString());
+	OtherEntry->SetStringField(TEXT("key"), TEXT("Other"));
+	if (!TestTrue(TEXT("Text can reference another string-table entry"),
+		SetCell(TEXT("StringTable"), AsValue(SnapshotValue(TEXT("StringTable"))),
+			TextValue(FString(), OtherEntry), true, Error)))
+	{
+		AddError(Error);
+		return false;
+	}
+	FName ActualTable;
+	FString ActualKey;
+	TestTrue(TEXT("String-table write keeps table history"),
+		FTextInspector::GetTableIdAndKey(CurrentRow()->StringTable, ActualTable, ActualKey));
+	TestEqual(TEXT("String-table write uses the requested entry"), ActualKey, FString(TEXT("Other")));
+
+	OtherEntry->SetStringField(TEXT("key"), TEXT("Missing"));
+	TestFalse(TEXT("A missing string-table entry is refused"),
+		SetCell(TEXT("StringTable"), AsValue(SnapshotValue(TEXT("StringTable"))),
+			TextValue(FString(), OtherEntry), true, Error));
+	TestTrue(TEXT("The refusal names the missing entry"),
+		Error.Contains(TEXT("text_string_table_entry_missing")));
+
+	const TSharedRef<FJsonObject> Invariant = MakeShared<FJsonObject>();
+	Invariant->SetStringField(TEXT("kind"), TEXT("culture_invariant"));
+	TestTrue(TEXT("Culture-invariant text can be written"),
+		SetCell(TEXT("Localized"), AsValue(SnapshotValue(TEXT("Localized"))),
+			TextValue(TEXT("42"), Invariant), true, Error));
+	TestTrue(TEXT("Culture-invariant write is invariant"), CurrentRow()->Localized.IsCultureInvariant());
+
+	const TSharedRef<FJsonObject> Generated = MakeShared<FJsonObject>();
+	Generated->SetStringField(TEXT("kind"), TEXT("generated"));
+	TestFalse(TEXT("Generated text cannot be written"),
+		SetCell(TEXT("Localized"), AsValue(SnapshotValue(TEXT("Localized"))),
+			TextValue(TEXT("3 items"), Generated), true, Error));
+
+	CurrentRow()->Localized = FText::Format(
+		NSLOCTEXT("UEShedAuthoringTests", "Count", "{0} items"), FText::AsNumber(3));
+	TestEqual(TEXT("Formatted text is reported as generated"),
+		SnapshotValue(TEXT("Localized"))->GetObjectField(TEXT("identity"))->GetStringField(TEXT("kind")),
+		FString(TEXT("generated")));
 	return true;
 }
 #endif

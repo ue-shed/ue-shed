@@ -288,6 +288,59 @@ describe("Remote Control authoring adapter", () => {
 		}
 	});
 
+	it("surfaces producer refusals as typed connection errors", async () => {
+		const endpoint = await listen((request, response) => {
+			let body = "";
+			request.setEncoding("utf8");
+			request.on("data", (chunk: string) => (body += chunk));
+			request.on("end", () => {
+				// SAFETY: every Remote Control request body includes its serialized functionName.
+				const { functionName } = JSON.parse(body) as { functionName: string };
+				response.setHeader("content-type", "application/json");
+				response.end(
+					functionName === "GetCapabilityManifest"
+						? resultJson({
+								authoringLimits: {
+									maxCommands: 1024,
+									maxPayloadBytes: 1048576,
+									maxTables: 16
+								},
+								authoringObjectPath:
+									"/Script/UEShedAuthoring.Default__UEShedAuthoringLibrary",
+								capabilities: [
+									"authoring.snapshot.v2",
+									"authoring.table-list.v1",
+									"authoring.apply.v1",
+									"authoring.apply-result.v1",
+									"authoring.save.v1"
+								],
+								producerKind: "unreal_editor",
+								schemaVersion: 1
+							})
+						: resultJson({
+								code: "operation_not_found",
+								message: "es:session:digest",
+								status: "error"
+							})
+				);
+			});
+		});
+		const error = await runRemoteControl(
+			Effect.flip(
+				connectUnrealAuthoring(endpoint).pipe(
+					Effect.flatMap((connection) =>
+						connection.lookupApplyResult("es:session:digest")
+					)
+				)
+			)
+		);
+		expect(error).toBeInstanceOf(UnrealConnectionError);
+		if (error instanceof UnrealConnectionError) {
+			expect(error.code).toBe("operation_not_found");
+			expect(error.retrySafe).toBe(false);
+		}
+	});
+
 	it("rejects a manifest that advertises authoring without an endpoint", async () => {
 		const endpoint = await listen((_request, response) => {
 			response.setHeader("content-type", "application/json");

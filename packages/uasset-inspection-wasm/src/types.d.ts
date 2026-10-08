@@ -200,7 +200,11 @@ export interface TextOccurrence {
 export interface TextCoverageGap {
 	readonly object_path: string;
 	readonly property_path: string;
-	readonly reason: "unsupported_text_history";
+	readonly reason:
+		| "unsupported_text_history"
+		| "legacy_container_element_without_type_information"
+		| "feature_unavailable_for_engine_version"
+		| "property_decoder_rejected";
 }
 
 export interface ProjectionDiagnostic {

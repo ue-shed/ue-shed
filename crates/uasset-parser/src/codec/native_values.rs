@@ -116,6 +116,12 @@ pub(super) fn known_struct(
             Ok(Some(value))
         }
         "InstancedStruct" => instanced(source, reader, package, path, depth).map(Some),
+        "InstancedPropertyBag" if package.summary.versions.uses_legacy_property_tags() => {
+            property_bag::decode(source, reader, package, path, depth).map(Some)
+        }
+        "EdGraphPinType" if package.summary.versions.uses_legacy_property_tags() => {
+            pin_type::decode(reader, package, path).map(Some)
+        }
         _ => Ok(None),
     }
 }
@@ -150,6 +156,11 @@ pub(super) fn generated_value(
     path: &str,
     depth: usize,
 ) -> Result<Option<PropertyValue>, PropertyError> {
+    if let Some(name) = type_path.strip_prefix("/Script/CoreUObject.")
+        && let Some(value) = math_struct(name, reader, package, path)?
+    {
+        return Ok(Some(value));
+    }
     if type_path == "/Script/Engine.EdGraphPinType" {
         return pin_type::decode(reader, package, path).map(Some);
     }
@@ -157,6 +168,83 @@ pub(super) fn generated_value(
         return property_bag::decode(source, reader, package, path, depth).map(Some);
     }
     generated_struct(type_path, reader, package, path)
+}
+
+pub(super) fn math_struct(
+    name: &str,
+    reader: &mut Reader<'_>,
+    package: &Package,
+    path: &str,
+) -> Result<Option<PropertyValue>, PropertyError> {
+    // UE 5.7/5.8 Math/{Vector,Vector2D,Vector4,Rotator,Quat,Plane}.h,
+    // LARGE_WORLD_COORDINATES (1004); Box.h composes two vectors.
+    let double = package.summary.versions.is_at_least_ue5(1004);
+    let component = |reader: &mut Reader<'_>, field: &str| -> Result<f64, PropertyError> {
+        Ok(if double {
+            reader.read_f64(&format_args!("{path}.{field}"))?
+        } else {
+            f64::from(reader.read_f32(&format_args!("{path}.{field}"))?)
+        })
+    };
+    let fields =
+        |reader: &mut Reader<'_>, names: &[&str]| -> Result<PropertyValue, PropertyError> {
+            Ok(PropertyValue::NativeStruct {
+                fields: names
+                    .iter()
+                    .map(|name| {
+                        Ok(NativeProperty {
+                            name: (*name).to_owned(),
+                            value: PropertyValue::Double(component(reader, name)?),
+                        })
+                    })
+                    .collect::<Result<Vec<_>, PropertyError>>()?,
+            })
+        };
+    let value = match name {
+        "Vector" => PropertyValue::Vector(VectorValue {
+            x: component(reader, "X")?,
+            y: component(reader, "Y")?,
+            z: component(reader, "Z")?,
+        }),
+        "Rotator" => PropertyValue::Rotator(RotatorValue {
+            pitch: component(reader, "Pitch")?,
+            yaw: component(reader, "Yaw")?,
+            roll: component(reader, "Roll")?,
+        }),
+        "Vector2D" => fields(reader, &["X", "Y"])?,
+        "Vector4" | "Quat" | "Plane" => fields(reader, &["X", "Y", "Z", "W"])?,
+        "Box" => {
+            let min = fields(reader, &["X", "Y", "Z"])?;
+            let max = fields(reader, &["X", "Y", "Z"])?;
+            let valid = reader.read_u8(&format_args!("{path}.IsValid"))?;
+            if valid > 1 {
+                return Err(error(
+                    reader,
+                    path,
+                    PropertyErrorKind::MalformedData,
+                    "box validity must be 0 or 1",
+                ));
+            }
+            PropertyValue::NativeStruct {
+                fields: vec![
+                    NativeProperty {
+                        name: "Min".into(),
+                        value: min,
+                    },
+                    NativeProperty {
+                        name: "Max".into(),
+                        value: max,
+                    },
+                    NativeProperty {
+                        name: "IsValid".into(),
+                        value: PropertyValue::UInt(u64::from(valid)),
+                    },
+                ],
+            }
+        }
+        _ => return Ok(None),
+    };
+    Ok(Some(value))
 }
 
 fn generated_struct(
@@ -351,9 +439,6 @@ fn instanced(
             generated
         } else {
             match type_path {
-                "/Script/CoreUObject.Vector" => Some(PropertyValue::Vector(decode_vector_value(
-                    &mut inner, path,
-                )?)),
                 "/Script/CoreUObject.IntPoint" => Some(PropertyValue::IntPoint(
                     decode_int_point_value(&mut inner, path)?,
                 )),

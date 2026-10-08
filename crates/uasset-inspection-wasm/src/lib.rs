@@ -12,7 +12,7 @@ use uasset_inspection::generic::{InspectionJsonError, PropertyValueOutput, write
 use uasset_inspection::level_sequence::{LevelSequenceProjection, project_level_sequence};
 use uasset_inspection::projection::{
     TEXTURE2D_CLASS, TextCoverageGap, TextOccurrence, TextureRecord, project_text_asset,
-    project_texture_asset,
+    project_texture_asset, text_feature_version_gap,
 };
 use uasset_parser::asset::{
     AssetDecodeContext, AssetErrorKind, DecodedAsset, decode_export,
@@ -21,6 +21,13 @@ use uasset_parser::asset::{
 use uasset_parser::schema::embedded_source_model;
 use uasset_parser::{Package, PackageError, PackageErrorKind, PackageSummary};
 use wasm_bindgen::prelude::*;
+
+#[cfg(test)]
+use uasset_parser::{archive, package, version};
+#[cfg(test)]
+#[allow(dead_code)]
+#[path = "../../uasset-parser/src/test_support.rs"]
+mod test_support;
 
 /// Maximum package size accepted by the public WASM boundary.
 ///
@@ -195,19 +202,38 @@ fn extract_text_from_package(path: &str, bytes: &[u8], package: &Package) -> Str
                 coverage_gaps.extend(projection.coverage_gaps);
             }
             Ok(None) => {}
-            Err(error) => diagnostics.push(ProjectionDiagnostic {
-                object_path: export.object_path.to_string(),
-                class_path: export.class_path.as_ref().map(ToString::to_string),
-                code: asset_error_kind_name(error.kind()),
-                message: error.message().to_owned(),
-            }),
+            Err(error) => {
+                if let Some(gap) = text_feature_version_gap(package, export, &error) {
+                    if exceeds_limit(
+                        occurrences.len().saturating_add(coverage_gaps.len()),
+                        1,
+                        MAX_PROJECTION_ITEMS,
+                    ) {
+                        return serialize_projection_limit_error(
+                            path,
+                            "text projection item count exceeds the WASM limit",
+                        );
+                    }
+                    coverage_gaps.push(gap);
+                }
+                diagnostics.push(ProjectionDiagnostic {
+                    object_path: export.object_path.to_string(),
+                    class_path: export.class_path.as_ref().map(ToString::to_string),
+                    code: asset_error_kind_name(error.kind()),
+                    message: error.message().to_owned(),
+                });
+            }
         }
     }
     serialize_bounded_projection(
         path,
         &TextProjectionOutput {
             schema_version: 1,
-            status: projection_status(&diagnostics),
+            status: if coverage_gaps.is_empty() {
+                projection_status(&diagnostics)
+            } else {
+                "partial"
+            },
             path,
             occurrences,
             coverage_gaps,
@@ -960,6 +986,40 @@ fn exceeds_limit(current: usize, additional: usize, limit: usize) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn synthetic_legacy_text_matches_the_native_projection_at_the_wasm_adapter() {
+        for ue5 in [0, 1000, 1009, 1010, 1011] {
+            let (bytes, package) = crate::test_support::legacy_text_package(ue5);
+            let context = uasset_parser::asset::AssetDecodeContext {
+                source: &bytes,
+                package: &package,
+                schemas: uasset_parser::schema::embedded_source_model(),
+            };
+            let asset = uasset_parser::asset::decode_export(&package.exports[0], &context)
+                .unwrap()
+                .unwrap();
+            let native = uasset_inspection::projection::project_text_asset(&package, &asset);
+            assert_eq!(native.occurrences.len(), 1);
+            assert_eq!(native.coverage_gaps.len(), 4);
+            let wasm: serde_json::Value = serde_json::from_str(&super::extract_text_from_package(
+                "legacy.uasset",
+                &bytes,
+                &package,
+            ))
+            .unwrap();
+            assert_eq!(wasm["status"], "partial");
+            assert_eq!(
+                wasm["occurrences"],
+                serde_json::to_value(&native.occurrences).unwrap()
+            );
+            assert_eq!(
+                wasm["coverage_gaps"],
+                serde_json::to_value(&native.coverage_gaps).unwrap()
+            );
+            assert_eq!(wasm["diagnostics"], serde_json::json!([]));
+        }
+    }
+
     use serde_json::Value;
     use uasset_parser::Package;
     use uasset_parser::package::ObjectPath;

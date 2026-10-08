@@ -47,6 +47,11 @@ pnpm check
 The full local gate also retains packed-package and Data Authoring adoption conformance while those
 hosted release and adoption flows are being redesigned.
 
+`test:uasset-engine-matrix` honors `CARGO_TARGET_DIR` for its native reader. Set
+`UE_SHED_UASSET_ENGINE_MATRIX_OUTPUT_ROOT` to keep disposable fixture projects, builds, and evidence
+outside a worktree, including the legacy fixture generator; it defaults to the repository's `out`
+directory.
+
 Run the conditional UAsset lanes independently with:
 
 ```powershell
@@ -158,6 +163,43 @@ Git creates a commit. The longer `pnpm check` gate is available for full local v
 hosted workflow runs repository checks and the applicable UAsset lanes described above.
 
 ### Unreal gate reporting
+
+Legacy tagged text adds separate UE 4.27 and UE 5.3 fixture lanes using the independent
+`fixtures/legacy-unreal-project` C++ project. Discover installations through the launcher registry
+or set `UE_SHED_UNREAL_427_ROOT` and `UE_SHED_UNREAL_53_ROOT` explicitly. The generator uses
+`UE4Editor-Cmd.exe` on 4.27 and `UnrealEditor-Cmd.exe` on 5.3:
+
+```powershell
+pnpm fixture:generate-legacy --update
+pnpm fixture:generate-legacy
+pnpm uasset:check:libraries
+pnpm uasset:check:io
+pnpm test packages/unreal-assets/src/legacy-fixture.integration.test.ts packages/game-text/src/legacy-fixture.integration.test.ts
+```
+
+Generation stages a clean project per version, builds its editor target, saves three assets, then
+reloads them in a separate process for deterministic Unreal API evidence and saved package versions.
+`--update` publishes the fixture-authored assets and evidence to `Generated/<version>`; normal mode
+compares evidence and versions, never nondeterministic package bytes. Logs and per-version results
+remain under `out/legacy-unreal-fixtures-*`. Missing installations are reported as skipped with the
+exact variable to set. Report **4.27** and **5.3** separately, including failures and skipped versions;
+neither a single-version pass nor an unavailable version completes legacy verification.
+
+UE 5.3 headers do not compile with MSVC 14.40 or newer. When the newest installed toolset is too new,
+set `UE_SHED_UNREAL_53_COMPILER_VERSION` (for example `14.38.33130`) to an installed older toolset.
+The generator forwards it to UnrealBuildTool as `-CompilerVersion`. The same
+`UE_SHED_UNREAL_<version>_COMPILER_VERSION` pattern applies to 4.27, but 4.27 builds with current
+VS 2022 toolsets.
+
+The portable Rust, native reader, Game Text, and native/WASM parity checks use the committed legacy
+files without engines. Both generated version directories are required. The native FVector map
+has one explicit `legacy_container_element_without_type_information` gap; other text and String
+Table metadata must match the engine oracle. Generation remains pending until the user runs the
+commands. See the [fixture README](../../fixtures/legacy-unreal-project/README.md) for optional
+initial editor builds, evidence layout, and all handoff commands.
+
+`test:uasset-engine-matrix` also runs optional 4.27/5.3 evidence comparison lanes and includes their
+separate results in its report. Its required 5.7/5.8 lanes and source/native checks remain in place.
 
 Always run the relevant Unreal checks on **both UE 5.7 and UE 5.8** for parser, codegen, fixture,
 and Unreal integration changes. Report each version separately. If an engine or a required check is

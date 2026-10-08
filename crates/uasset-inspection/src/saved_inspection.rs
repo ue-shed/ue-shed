@@ -11,7 +11,7 @@ use uasset_parser::asset::{
 };
 use uasset_parser::package::{ObjectPath, PackageErrorKind, PackageIndex};
 use uasset_parser::property::{
-    PropertyRecord, PropertyStream, PropertyValue, RawReason, TextHistory as ParserTextHistory,
+    PropertyRecord, PropertyStream, PropertyValue, TextHistory as ParserTextHistory,
 };
 use uasset_parser::schema::embedded_source_model;
 
@@ -469,10 +469,7 @@ fn saved_value(package: &Package, value: PropertyValue) -> SavedPropertyValue {
             properties: saved_properties(package, properties),
         },
         PropertyValue::Raw { reason } => SavedPropertyValue::Raw {
-            reason: match reason {
-                RawReason::UnsupportedType => "unsupported type".to_owned(),
-                RawReason::DecoderRejected(detail) => detail,
-            },
+            reason: reason.detail().into_owned(),
             size: 0,
         },
     }

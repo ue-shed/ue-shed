@@ -508,10 +508,25 @@ fn resolve_package_paths(
 }
 
 impl PackageSummary {
+    #[must_use]
+    pub fn has_culture_invariant_text(&self) -> bool {
+        // UE 4.27/5.3 Text.cpp, FEditorObjectVersion::CultureInvariantTextSerializationKeyStability.
+        const EDITOR: Guid = Guid {
+            a: 0xE4B0_68ED,
+            b: 0xF494_42E9,
+            c: 0xA231_DA0B,
+            d: 0x2E46_BB41,
+        };
+        self.custom_versions
+            .iter()
+            .any(|version| version.key == EDITOR && version.version >= 32)
+    }
+
     /// UE 5.8 FText/StringTable translator notes are editor-only package data.
     /// Saved packages are not network archives (TextHistory_Base's third gate).
     #[must_use]
     pub fn has_text_dev_notes(&self) -> bool {
+        // UE 5.8 TextHistory.cpp, FortniteMain AddDevNotesToFText (260).
         const FORTNITE_MAIN: Guid = Guid {
             a: 0x601D_1886,
             b: 0xAC64_4F84,
@@ -914,13 +929,14 @@ fn validate_package_versions(versions: &VersionContext, offset: u64) -> Result<(
     }
     if versions.ue4 > VersionContext::LATEST_SUPPORTED_UE4
         || versions.ue5 > VersionContext::LATEST_SUPPORTED_UE5
+        || (versions.ue5 != 0 && versions.ue5 < 1000)
     {
         return Err(PackageError::new(
             PackageErrorKind::UnsupportedVersion,
             Some(offset),
             "Summary.Version",
             format!(
-                "package version UE4={} UE5={} exceeds supported UE4={} UE5={}",
+                "package version UE4={} UE5={} is outside supported UE4={} UE5=0 or 1000..={}",
                 versions.ue4,
                 versions.ue5,
                 VersionContext::LATEST_SUPPORTED_UE4,
@@ -1858,7 +1874,16 @@ pub(crate) fn test_package(names: Vec<String>) -> Package {
         summary: PackageSummary {
             span: Span::new(0, 0).expect("empty span"),
             versions: crate::test_support::ue5_versions(),
-            custom_versions: Vec::new(),
+            custom_versions: vec![CustomVersion {
+                key: Guid {
+                    a: 0xE4B0_68ED,
+                    b: 0xF494_42E9,
+                    c: 0xA231_DA0B,
+                    d: 0x2E46_BB41,
+                },
+                version: 32,
+                friendly_name: None,
+            }],
             saved_hash: IoHash::default(),
             total_header_size: 0,
             package_name: "/Game/Test/Test".to_owned(),
@@ -2059,8 +2084,10 @@ mod tests {
         for _ in 0..2 {
             push_i32(&mut bytes, 0); // Names
         }
-        for _ in 0..2 {
-            push_i32(&mut bytes, 0); // SoftObjectPaths
+        if ue5 >= UE5_ADD_SOFT_OBJECT_PATH_LIST {
+            for _ in 0..2 {
+                push_i32(&mut bytes, 0); // SoftObjectPaths
+            }
         }
         push_i32(&mut bytes, 0); // LocalizationId
         for _ in 0..2 {
@@ -2072,13 +2099,17 @@ mod tests {
         for _ in 0..2 {
             push_i32(&mut bytes, 0); // Imports
         }
-        for _ in 0..2 {
-            push_i32(&mut bytes, 0); // CellExports
+        if ue5 >= UE5_VERSE_CELLS {
+            for _ in 0..2 {
+                push_i32(&mut bytes, 0); // CellExports
+            }
+            for _ in 0..2 {
+                push_i32(&mut bytes, 0); // CellImports
+            }
         }
-        for _ in 0..2 {
-            push_i32(&mut bytes, 0); // CellImports
+        if ue5 >= UE5_METADATA_SERIALIZATION_OFFSET {
+            push_i32(&mut bytes, 0); // MetaDataOffset
         }
-        push_i32(&mut bytes, 0); // MetaDataOffset
         push_i32(&mut bytes, 0); // DependsOffset
         for _ in 0..2 {
             push_i32(&mut bytes, 0); // SoftPackageReferences
@@ -2107,9 +2138,15 @@ mod tests {
         push_i32(&mut bytes, 0); // ChunkIDs
         push_i32(&mut bytes, -1); // PreloadDependencyCount
         push_i32(&mut bytes, 0); // PreloadDependencyOffset
-        push_i32(&mut bytes, 0); // NamesReferencedFromExportDataCount
-        push_i64(&mut bytes, -1); // PayloadTocOffset
-        push_i32(&mut bytes, -1); // DataResourceOffset
+        if ue5 >= UE5_NAMES_REFERENCED_FROM_EXPORT_DATA {
+            push_i32(&mut bytes, 0); // NamesReferencedFromExportDataCount
+        }
+        if ue5 >= UE5_PAYLOAD_TOC {
+            push_i64(&mut bytes, -1); // PayloadTocOffset
+        }
+        if ue5 >= UE5_DATA_RESOURCES {
+            push_i32(&mut bytes, -1); // DataResourceOffset
+        }
 
         let header_size = i32::try_from(bytes.len()).unwrap();
         let total_header_size_offset = total_header_size_offset.expect("header size offset");
@@ -2120,6 +2157,43 @@ mod tests {
 
     fn write_i32_at(bytes: &mut [u8], offset: usize, value: i32) {
         bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+    }
+
+    #[test]
+    fn legacy_summaries_cover_the_version_window_and_soft_path_table_gate() {
+        for ue5 in [
+            0, 1000, 1001, 1006, 1007, 1008, 1009, 1010, 1011, 1012, 1013,
+        ] {
+            let mut bytes = summary_fixture(ue5, 0);
+            if ue5 == 0 {
+                write_i32_at(&mut bytes, 4, -7);
+                drop(bytes.drain(16..20));
+                let length = bytes.len() as i32;
+                write_i32_at(&mut bytes, 24, length);
+            }
+            let package = Package::parse(&bytes).unwrap();
+            assert_eq!(package.summary.versions.ue5, ue5);
+            assert_eq!(
+                package.summary.versions.uses_legacy_property_tags(),
+                ue5 < 1012
+            );
+            assert_eq!(package.summary.soft_object_paths.is_some(), ue5 >= 1008);
+            assert_eq!(package.summary.span.len(), bytes.len() as u64);
+        }
+        // Header parsing keeps the loadable floor; the 522 floor belongs to tagged properties.
+        for ue4 in [521, 522, 523] {
+            let mut bytes = summary_fixture(1009, 0);
+            write_i32_at(&mut bytes, 12, ue4);
+            let result = Package::parse(&bytes);
+            if ue4 <= 522 {
+                assert!(result.is_ok());
+            } else {
+                assert_eq!(
+                    result.unwrap_err().kind(),
+                    PackageErrorKind::UnsupportedVersion
+                );
+            }
+        }
     }
 
     #[test]

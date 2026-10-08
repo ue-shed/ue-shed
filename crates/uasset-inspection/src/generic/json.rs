@@ -1412,9 +1412,6 @@ impl Serialize for RawReasonView<'_> {
     where
         S: Serializer,
     {
-        serializer.serialize_str(match self.0 {
-            RawReason::UnsupportedType => "unsupported type",
-            RawReason::DecoderRejected(detail) => detail,
-        })
+        serializer.serialize_str(&self.0.detail())
     }
 }

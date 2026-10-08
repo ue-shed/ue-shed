@@ -78,6 +78,116 @@ pub fn write_property_terminator(bytes: &mut Vec<u8>, none_name_index: i32) {
     push_i32(bytes, 0);
 }
 
+/// `extras` includes the type-specific fields, HasPropertyGuid and optional extensions.
+pub fn write_legacy_property_tag(
+    bytes: &mut Vec<u8>,
+    name_index: i32,
+    type_index: i32,
+    extras: &[u8],
+    payload: &[u8],
+) {
+    let size = i32::try_from(payload.len()).expect("payload fits in i32");
+    for value in [name_index, 0, type_index, 0, size, 0] {
+        push_i32(bytes, value);
+    }
+    bytes.extend_from_slice(extras);
+    bytes.extend_from_slice(payload);
+}
+
+pub fn editor_text_version(package: &mut crate::package::Package, version: Option<i32>) {
+    let key = crate::archive::Guid {
+        a: 0xE4B0_68ED,
+        b: 0xF494_42E9,
+        c: 0xA231_DA0B,
+        d: 0x2E46_BB41,
+    };
+    package
+        .summary
+        .custom_versions
+        .retain(|entry| entry.key != key);
+    if let Some(version) = version {
+        package
+            .summary
+            .custom_versions
+            .push(crate::package::CustomVersion {
+                key,
+                version,
+                friendly_name: None,
+            });
+    }
+}
+
+/// Reuses a current fixture's export address; every property byte is synthetic legacy framing.
+pub fn legacy_text_package(ue5: i32) -> (Vec<u8>, crate::package::Package) {
+    use crate::package::{ObjectPath, Package};
+    let seed = include_bytes!(
+        "../../../fixtures/unreal-project/Content/Fixture/Text/DA_TextOccurrences.uasset"
+    );
+    let mut package = Package::parse(seed).expect("header seed");
+    let mut export = package
+        .exports
+        .iter()
+        .find(|export| export.is_asset == Some(true))
+        .expect("asset export")
+        .clone();
+    package.names = [
+        "None",
+        "Value",
+        "TextProperty",
+        "MapProperty",
+        "StructProperty",
+        "IntProperty",
+        "InstancedStruct",
+    ]
+    .into_iter()
+    .map(str::to_owned)
+    .collect();
+    package.summary.versions.ue5 = ue5;
+    package.summary.custom_versions.clear();
+    editor_text_version(&mut package, Some(32));
+    let mut extras = vec![0];
+    if ue5 >= 1011 {
+        extras.push(0);
+    }
+    let mut properties = Vec::new();
+    if ue5 >= 1011 {
+        properties.push(0);
+    }
+    write_legacy_property_tag(&mut properties, 1, 2, &extras, &[0, 0, 0, 0, 12]);
+    let mut map_extras = Vec::new();
+    for word in [5, 0, 4, 0] {
+        push_i32(&mut map_extras, word);
+    }
+    map_extras.extend_from_slice(&extras);
+    let mut map = Vec::new();
+    for word in [0, 1, 7] {
+        push_i32(&mut map, word);
+    }
+    map.extend_from_slice(&[0xFF; 24]);
+    write_legacy_property_tag(&mut properties, 1, 3, &map_extras, &map);
+    let mut struct_extras = Vec::new();
+    for word in [6, 0] {
+        push_i32(&mut struct_extras, word);
+    }
+    struct_extras.extend_from_slice(&[0; 16]);
+    struct_extras.extend_from_slice(&extras);
+    write_legacy_property_tag(&mut properties, 1, 4, &struct_extras, &[]);
+    let mut text = vec![0, 0, 0, 0, 0];
+    for value in ["Fixture", "Greeting", "Hello"] {
+        push_fstring(&mut text, value);
+    }
+    write_legacy_property_tag(&mut properties, 1, 2, &extras, &text);
+    write_legacy_property_tag(&mut properties, 1, 5, &extras, &[0xFF]);
+    write_property_terminator(&mut properties, 0);
+    push_i32(&mut properties, 0);
+    let mut source = vec![0; export.serial_offset.get() as usize];
+    source.extend_from_slice(&properties);
+    export.serial_size = properties.len() as u64;
+    export.class_path = Some(ObjectPath::new("/Script/Engine.DataAsset"));
+    package.exports = vec![export];
+    (source, package)
+}
+
 pub fn write_int_property_tag(bytes: &mut Vec<u8>, name_index: i32, type_index: i32, value: i32) {
     write_property_tag(
         bytes,

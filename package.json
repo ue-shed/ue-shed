@@ -21,6 +21,7 @@
 		"fixture:evidence": "node scripts/unreal-fixture.ts evidence",
 		"fixture:apply": "node scripts/unreal-fixture.ts apply",
 		"fixture:generate": "node scripts/unreal-fixture.ts generate",
+		"fixture:generate-legacy": "node scripts/generate-legacy-unreal-fixtures.ts",
 		"fixture:generate-map-history": "node scripts/unreal-fixture.ts map-history",
 		"fixture:generate-world-partition": "node scripts/unreal-fixture.ts world-partition",
 		"fixture:launch": "node scripts/unreal-fixture.ts launch",

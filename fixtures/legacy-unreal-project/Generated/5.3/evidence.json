@@ -1,0 +1,383 @@
+{
+	"engine_version": "5.3",
+	"packages": [
+		{
+			"asset_name": "DA_LegacyText",
+			"class_path": "/Script/UEShedLegacyFixture.UEShedLegacyFixtureTextAsset",
+			"object_path": "/Game/Legacy/DA_LegacyText.DA_LegacyText",
+			"serialized_package_name": "/Game/Legacy/DA_LegacyText",
+			"texts": [
+				{
+					"culture_invariant": false,
+					"history": "base",
+					"key": "Asset",
+					"namespace": "LegacyFixture",
+					"property_path": "Text",
+					"row": null,
+					"source": "Asset greeting",
+					"table_id": null
+				},
+				{
+					"culture_invariant": true,
+					"history": "none",
+					"key": null,
+					"namespace": null,
+					"property_path": "Texts[0]",
+					"row": null,
+					"source": "Asset invariant",
+					"table_id": null
+				},
+				{
+					"culture_invariant": false,
+					"history": "string_table_entry",
+					"key": "Greeting",
+					"namespace": "LegacyStringTable",
+					"property_path": "Texts[1]",
+					"row": null,
+					"source": "Welcome back",
+					"table_id": "/Game/Legacy/ST_LegacyText.ST_LegacyText"
+				},
+				{
+					"culture_invariant": false,
+					"history": "base",
+					"key": "AssetNested",
+					"namespace": "LegacyFixture",
+					"property_path": "Nested.Text",
+					"row": null,
+					"source": "Nested greeting",
+					"table_id": null
+				},
+				{
+					"culture_invariant": true,
+					"history": "none",
+					"key": null,
+					"namespace": null,
+					"property_path": "Nested.Texts[0]",
+					"row": null,
+					"source": "Nested invariant",
+					"table_id": null
+				},
+				{
+					"culture_invariant": false,
+					"history": "string_table_entry",
+					"key": "Continue",
+					"namespace": "LegacyStringTable",
+					"property_path": "Nested.Texts[1]",
+					"row": null,
+					"source": "Continue onward",
+					"table_id": "/Game/Legacy/ST_LegacyText.ST_LegacyText"
+				}
+			],
+			"versions": {
+				"licensee": 0,
+				"ue4": 522,
+				"ue5": 1009
+			}
+		},
+		{
+			"asset_name": "DT_LegacyText",
+			"class_path": "/Script/Engine.DataTable",
+			"object_path": "/Game/Legacy/DT_LegacyText.DT_LegacyText",
+			"rows": [
+				{
+					"name": "EmptyContainers",
+					"texts": [
+						{
+							"culture_invariant": false,
+							"history": "base",
+							"key": "EmptyBase",
+							"namespace": "LegacyFixture",
+							"property_path": "BaseText",
+							"row": "EmptyContainers",
+							"source": "Legacy greeting",
+							"table_id": null
+						},
+						{
+							"culture_invariant": true,
+							"history": "none",
+							"key": null,
+							"namespace": null,
+							"property_path": "InvariantText",
+							"row": "EmptyContainers",
+							"source": "Invariant greeting",
+							"table_id": null
+						},
+						{
+							"culture_invariant": false,
+							"history": "string_table_entry",
+							"key": "Greeting",
+							"namespace": "LegacyStringTable",
+							"property_path": "TableText",
+							"row": "EmptyContainers",
+							"source": "Welcome back",
+							"table_id": "/Game/Legacy/ST_LegacyText.ST_LegacyText"
+						},
+						{
+							"culture_invariant": false,
+							"history": "none",
+							"key": null,
+							"namespace": null,
+							"property_path": "EmptyText",
+							"row": "EmptyContainers",
+							"source": "",
+							"table_id": null
+						},
+						{
+							"culture_invariant": false,
+							"history": "base",
+							"key": "EmptyNested",
+							"namespace": "LegacyFixture",
+							"property_path": "Nested.Text",
+							"row": "EmptyContainers",
+							"source": "Nested greeting",
+							"table_id": null
+						}
+					],
+					"vectors": []
+				},
+				{
+					"name": "Full",
+					"texts": [
+						{
+							"culture_invariant": false,
+							"history": "base",
+							"key": "FullBase",
+							"namespace": "LegacyFixture",
+							"property_path": "BaseText",
+							"row": "Full",
+							"source": "Legacy greeting",
+							"table_id": null
+						},
+						{
+							"culture_invariant": true,
+							"history": "none",
+							"key": null,
+							"namespace": null,
+							"property_path": "InvariantText",
+							"row": "Full",
+							"source": "Invariant greeting",
+							"table_id": null
+						},
+						{
+							"culture_invariant": false,
+							"history": "string_table_entry",
+							"key": "Greeting",
+							"namespace": "LegacyStringTable",
+							"property_path": "TableText",
+							"row": "Full",
+							"source": "Welcome back",
+							"table_id": "/Game/Legacy/ST_LegacyText.ST_LegacyText"
+						},
+						{
+							"culture_invariant": false,
+							"history": "none",
+							"key": null,
+							"namespace": null,
+							"property_path": "EmptyText",
+							"row": "Full",
+							"source": "",
+							"table_id": null
+						},
+						{
+							"culture_invariant": false,
+							"history": "base",
+							"key": "FullArray",
+							"namespace": "LegacyFixture",
+							"property_path": "Texts[0]",
+							"row": "Full",
+							"source": "Array greeting",
+							"table_id": null
+						},
+						{
+							"culture_invariant": true,
+							"history": "none",
+							"key": null,
+							"namespace": null,
+							"property_path": "Texts[1]",
+							"row": "Full",
+							"source": "Array invariant",
+							"table_id": null
+						},
+						{
+							"culture_invariant": false,
+							"history": "string_table_entry",
+							"key": "Continue",
+							"namespace": "LegacyStringTable",
+							"property_path": "Texts[2]",
+							"row": "Full",
+							"source": "Continue onward",
+							"table_id": "/Game/Legacy/ST_LegacyText.ST_LegacyText"
+						},
+						{
+							"culture_invariant": false,
+							"history": "none",
+							"key": null,
+							"namespace": null,
+							"property_path": "Texts[3]",
+							"row": "Full",
+							"source": "",
+							"table_id": null
+						},
+						{
+							"culture_invariant": false,
+							"history": "base",
+							"key": "FullMap",
+							"namespace": "LegacyFixture",
+							"property_path": "TextMap{0}.value",
+							"row": "Full",
+							"source": "Map greeting",
+							"table_id": null
+						},
+						{
+							"culture_invariant": false,
+							"history": "string_table_entry",
+							"key": "Farewell",
+							"namespace": "LegacyStringTable",
+							"property_path": "TextMap{1}.value",
+							"row": "Full",
+							"source": "Until next time",
+							"table_id": "/Game/Legacy/ST_LegacyText.ST_LegacyText"
+						},
+						{
+							"culture_invariant": false,
+							"history": "base",
+							"key": "FullNested",
+							"namespace": "LegacyFixture",
+							"property_path": "Nested.Text",
+							"row": "Full",
+							"source": "Nested greeting",
+							"table_id": null
+						},
+						{
+							"culture_invariant": true,
+							"history": "none",
+							"key": null,
+							"namespace": null,
+							"property_path": "Nested.Texts[0]",
+							"row": "Full",
+							"source": "Nested invariant",
+							"table_id": null
+						},
+						{
+							"culture_invariant": false,
+							"history": "string_table_entry",
+							"key": "Continue",
+							"namespace": "LegacyStringTable",
+							"property_path": "Nested.Texts[1]",
+							"row": "Full",
+							"source": "Continue onward",
+							"table_id": "/Game/Legacy/ST_LegacyText.ST_LegacyText"
+						},
+						{
+							"culture_invariant": false,
+							"history": "base",
+							"key": "FullFirstNested",
+							"namespace": "LegacyFixture",
+							"property_path": "NestedMap{0}.value.Text",
+							"row": "Full",
+							"source": "Nested greeting",
+							"table_id": null
+						},
+						{
+							"culture_invariant": true,
+							"history": "none",
+							"key": null,
+							"namespace": null,
+							"property_path": "NestedMap{0}.value.Texts[0]",
+							"row": "Full",
+							"source": "Nested invariant",
+							"table_id": null
+						},
+						{
+							"culture_invariant": false,
+							"history": "string_table_entry",
+							"key": "Continue",
+							"namespace": "LegacyStringTable",
+							"property_path": "NestedMap{0}.value.Texts[1]",
+							"row": "Full",
+							"source": "Continue onward",
+							"table_id": "/Game/Legacy/ST_LegacyText.ST_LegacyText"
+						},
+						{
+							"culture_invariant": false,
+							"history": "base",
+							"key": "FullSecondNested",
+							"namespace": "LegacyFixture",
+							"property_path": "NestedMap{1}.value.Text",
+							"row": "Full",
+							"source": "Nested greeting",
+							"table_id": null
+						},
+						{
+							"culture_invariant": true,
+							"history": "none",
+							"key": null,
+							"namespace": null,
+							"property_path": "NestedMap{1}.value.Texts[0]",
+							"row": "Full",
+							"source": "Nested invariant",
+							"table_id": null
+						},
+						{
+							"culture_invariant": false,
+							"history": "string_table_entry",
+							"key": "Continue",
+							"namespace": "LegacyStringTable",
+							"property_path": "NestedMap{1}.value.Texts[1]",
+							"row": "Full",
+							"source": "Continue onward",
+							"table_id": "/Game/Legacy/ST_LegacyText.ST_LegacyText"
+						}
+					],
+					"vectors": [
+						[1.25, -2.5, 3.75],
+						[-4.5, 5.25, -6.75]
+					]
+				}
+			],
+			"serialized_package_name": "/Game/Legacy/DT_LegacyText",
+			"versions": {
+				"licensee": 0,
+				"ue4": 522,
+				"ue5": 1009
+			}
+		},
+		{
+			"asset_name": "ST_LegacyText",
+			"class_path": "/Script/Engine.StringTable",
+			"entries": [
+				{
+					"key": "Continue",
+					"metadata": {
+						"Comment": "Navigation prompt"
+					},
+					"source": "Continue onward"
+				},
+				{
+					"key": "Farewell",
+					"metadata": {
+						"Comment": "Closing greeting"
+					},
+					"source": "Until next time"
+				},
+				{
+					"key": "Greeting",
+					"metadata": {
+						"Comment": "Opening greeting",
+						"Context": "Menu"
+					},
+					"source": "Welcome back"
+				}
+			],
+			"namespace": "LegacyStringTable",
+			"object_path": "/Game/Legacy/ST_LegacyText.ST_LegacyText",
+			"serialized_package_name": "/Game/Legacy/ST_LegacyText",
+			"versions": {
+				"licensee": 0,
+				"ue4": 522,
+				"ue5": 1009
+			}
+		}
+	],
+	"schema_version": 1
+}

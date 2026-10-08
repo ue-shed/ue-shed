@@ -1,0 +1,68 @@
+{
+	"schema_version": 1,
+	"engine_version": "4.27",
+	"packages": [
+		{
+			"asset_name": "DA_LegacyText",
+			"object_path": "/Game/Synthetic/DA_LegacyText.DA_LegacyText",
+			"class_path": "/Script/Synthetic.Fixture",
+			"versions": {
+				"ue4": 522,
+				"ue5": null,
+				"licensee": 0
+			},
+			"texts": [
+				{
+					"property_path": "Text",
+					"row": null,
+					"source": "Synthetic schema example",
+					"history": "base",
+					"culture_invariant": false,
+					"namespace": "Synthetic",
+					"key": "Example",
+					"table_id": null
+				}
+			],
+			"serialized_package_name": "None"
+		},
+		{
+			"asset_name": "DT_LegacyText",
+			"object_path": "/Game/Synthetic/DT_LegacyText.DT_LegacyText",
+			"class_path": "/Script/Synthetic.Fixture",
+			"versions": {
+				"ue4": 522,
+				"ue5": null,
+				"licensee": 0
+			},
+			"rows": [
+				{
+					"name": "Example",
+					"texts": [],
+					"vectors": [[1.25, -2.5, 3.75]]
+				}
+			],
+			"serialized_package_name": "None"
+		},
+		{
+			"asset_name": "ST_LegacyText",
+			"object_path": "/Game/Synthetic/ST_LegacyText.ST_LegacyText",
+			"class_path": "/Script/Synthetic.Fixture",
+			"versions": {
+				"ue4": 522,
+				"ue5": null,
+				"licensee": 0
+			},
+			"namespace": "SyntheticTable",
+			"entries": [
+				{
+					"key": "Example",
+					"source": "Synthetic schema example",
+					"metadata": {
+						"Comment": "Synthetic contract sample"
+					}
+				}
+			],
+			"serialized_package_name": "None"
+		}
+	]
+}

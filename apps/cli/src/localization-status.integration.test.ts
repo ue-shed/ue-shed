@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { Effect, Layer, Ref, Schema } from "effect";
 import { describe, expect } from "vitest";
-import { LocalizationStatusReport } from "@ue-shed/game-text/browser";
+import { LocalizationStatusReport, TextProblem } from "@ue-shed/game-text/browser";
 import { useSavedFixtureProject } from "../../../fixtures/unreal-project/saved-project.test-support.js";
 import { CliRuntime } from "./cli-runtime.js";
 import { runCli } from "./command.js";
@@ -225,6 +225,17 @@ describe.skipIf(!executable)("localization CLI with the real reader", () => {
 				yield* status("--filter", "problem is up-to-date", "--filter", "origin is-not cpp")
 			);
 			expect(notCode.page.total).toBeLessThan(problems.up_to_date);
+			// Groups count every matching line once, worst first.
+			const byFolder = yield* report(yield* status("--group", "folder"));
+			const groups = byFolder.page.groups;
+			expect(groups?.by).toBe("folder");
+			expect(groups?.entries.reduce((sum, entry) => sum + entry.count, 0)).toBe(
+				byFolder.page.total
+			);
+			// The first group holds the worst problem in the target.
+			expect(groups?.entries[0]?.worst).toBe(
+				TextProblem.literals.find((problem) => problems[problem] > 0)
+			);
 			// A culture set narrows the per-culture counts.
 			const german = yield* report(yield* status("--cultures", "de"));
 			expect(german.counts.map((count) => count.culture)).toEqual(["de"]);

@@ -20,6 +20,8 @@ const facts: TextFacts = {
 	translation: [],
 	origins: ["data_table"],
 	paths: ["content/ui/dt_menu.uasset", "/game/ui/dt_menu.dt_menu"],
+	files: ["Content/UI/DT_Menu"],
+	namespace: "Menu",
 	editing: ["editable"],
 	notes: "missing"
 };

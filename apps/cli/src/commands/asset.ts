@@ -135,6 +135,7 @@ const textSearchCommand = Command.make(
 		path,
 		files,
 		filters,
+		group,
 		cultures
 	}) => {
 		const value = query.join(" ").trim();
@@ -145,7 +146,7 @@ const textSearchCommand = Command.make(
 			limit,
 			...optionalLocalizationFlags(culture, state),
 			...optionalWhereFlags(kinds, path, files),
-			...optionalFilterFlags(filters, cultures),
+			...optionalFilterFlags(filters, cultures, group),
 			...(Option.isSome(target) ? { target: target.value } : undefined),
 			...(Option.isSome(searchTranslations)
 				? { searchTranslations: searchTranslations.value }

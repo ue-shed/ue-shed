@@ -154,5 +154,25 @@ describe("Game Text at the scale of a shipping game", () => {
 		expect(filtered.value.total).toBe(1000 + 1142 - 250);
 		expect(plain.ms).toBeLessThan(5_000);
 		expect(filtered.ms).toBeLessThan(2 * plain.ms + 250);
+
+		// Groups and facets stay bounded: 1,000 tables and 200 folders.
+		const grouped = timed(() =>
+			query.search({
+				...request,
+				group: "asset",
+				facets: { folder: "Content/Text", assets: true, origins: true, cultures: true }
+			})
+		);
+		const groups = grouped.value.groups;
+		expect(groups?.entries).toHaveLength(200);
+		expect(groups?.more).toBe(800);
+		expect(groups?.entries[0]?.worst).toBe("not_gathered");
+		expect(grouped.value.facets?.folders?.entries).toHaveLength(200);
+		expect(grouped.value.facets?.cultures).toHaveLength(CULTURES.length);
+		expect(grouped.ms).toBeLessThan(3 * plain.ms + 500);
+		const open = groups?.entries[0];
+		if (open === undefined) throw new Error("No groups at scale.");
+		const opened = query.search({ ...request, group: "asset", openGroup: open.key });
+		expect(opened.localization?.lines).toHaveLength(Math.min(50, open.count));
 	});
 });

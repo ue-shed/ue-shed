@@ -226,6 +226,7 @@ export const localizationCommand = Command.make("loc").pipe(
 				path,
 				files,
 				filters,
+				group,
 				cultures
 			}) =>
 				runLocalizationExport({
@@ -235,7 +236,7 @@ export const localizationCommand = Command.make("loc").pipe(
 					output,
 					...optionalLocalizationFlags(culture, state),
 					...optionalWhereFlags(kinds, path, files),
-					...optionalFilterFlags(filters, cultures),
+					...optionalFilterFlags(filters, cultures, group),
 					...(Option.isSome(review) ? { review: review.value } : undefined),
 					...(keyChanged ? { keyChanged } : undefined),
 					...(Option.isSome(reader) ? { reader: reader.value } : undefined)
@@ -268,6 +269,7 @@ export const localizationCommand = Command.make("loc").pipe(
 				path,
 				files,
 				filters,
+				group,
 				cultures
 			}) => {
 				return runLocalizationStatus({
@@ -277,7 +279,7 @@ export const localizationCommand = Command.make("loc").pipe(
 					limit,
 					...optionalLocalizationFlags(culture, state),
 					...optionalWhereFlags(kinds, path, files),
-					...optionalFilterFlags(filters, cultures),
+					...optionalFilterFlags(filters, cultures, group),
 					...(Option.isSome(review) ? { review: review.value } : undefined),
 					...(keyChanged ? { keyChanged } : undefined),
 					...(Option.isSome(reader) ? { reader: reader.value } : undefined)

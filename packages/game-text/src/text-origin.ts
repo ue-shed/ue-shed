@@ -97,6 +97,29 @@ export function textFileKey(path: string): string {
 	return normalized.replace(SOURCE_LINE, "").replace(PACKAGE_EXTENSION, "");
 }
 
+const GAME_PACKAGE_LABEL = /^\/Game\/([^.:]+)/iu;
+
+/**
+ * The same file as `textFileKey`, spelled as the project spells it, for showing: `Content/UI/WBP_Menu`
+ * for a saved package or `/Game` path, `Source/Game/Private/Menu.cpp` for a gathered source line.
+ */
+export function textFileLabel(path: string): string {
+	const spelled = path
+		.trim()
+		.replace(/^["']|["']$/gu, "")
+		.replaceAll("\\", "/")
+		.replace(/^\.\//u, "");
+	const game = spelled.match(GAME_PACKAGE_LABEL)?.[1];
+	if (game !== undefined) return "Content/" + game;
+	return spelled.replace(SOURCE_LINE, "").replace(/\.(?:uasset|umap|uexp|ubulk|uptnl)$/iu, "");
+}
+
+/** The folder holding a file label; empty for a file at the project root. */
+export function textFolderLabel(fileLabel: string): string {
+	const end = fileLabel.lastIndexOf("/");
+	return end < 0 ? "" : fileLabel.slice(0, end);
+}
+
 /** A key that names a saved package rather than a source file: no extension remains. */
 function isPackageKey(key: string): boolean {
 	return !/\.[^/]+$/u.test(key);

@@ -157,7 +157,8 @@ export const loadLocalizationStatus = Effect.fn("Cli.localization.load_status")(
 		query: command._tag === "TextSearch" ? command.query : "",
 		localization: selection,
 		...whereField(command, files),
-		...filter
+		...filter,
+		...(command.group === undefined ? undefined : { group: command.group })
 	});
 	yield* Metric.update(Metric.counter("cli.localization.status.lines"), page.total);
 	return localizationStatusReport(corpus, evidence, page);

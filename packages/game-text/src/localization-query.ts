@@ -189,15 +189,20 @@ export function matchesLocalizationLine(
 		.every((term) => searchable.includes(term));
 }
 
+/**
+ * Counts cover every matched line; the page lists `listed`, which is the matched lines or one
+ * open group of them.
+ */
 export function localizationQueryPage(
 	join: LocalizationJoin,
 	matched: readonly LocalizationLine[],
-	request: TextCorpusSearchRequest
+	request: TextCorpusSearchRequest,
+	listed: readonly LocalizationLine[] = matched
 ): LocalizationQueryPage {
 	const after = request.localizationCursor
-		? matched.findIndex((line) => line.id === request.localizationCursor) + 1
+		? listed.findIndex((line) => line.id === request.localizationCursor) + 1
 		: 0;
-	const page = matched.slice(after, after + request.pageSize);
+	const page = listed.slice(after, after + request.pageSize);
 	const stateCounts = Schema.decodeUnknownSync(LocalizationQueryPage.fields.stateCounts)(
 		Object.fromEntries(localizationStates.map((state) => [state, 0]))
 	);
@@ -236,7 +241,6 @@ export function localizationQueryPage(
 		});
 	if (keyChanged > 0 || request.localization?.keyChanged) Object.assign(result, { keyChanged });
 	const last = page.at(-1);
-	if (last && after + page.length < matched.length)
-		Object.assign(result, { nextCursor: last.id });
+	if (last && after + page.length < listed.length) Object.assign(result, { nextCursor: last.id });
 	return result;
 }

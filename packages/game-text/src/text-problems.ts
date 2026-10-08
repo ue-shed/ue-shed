@@ -12,7 +12,7 @@ import {
 	type TextReviewSignal,
 	type TextTranslationState
 } from "./schema.js";
-import { matchesTextPathPrefix } from "./text-origin.js";
+import { matchesTextPathPrefix, textFileKey } from "./text-origin.js";
 
 /** What a filter can ask about one line or text unit. */
 export interface TextFacts {
@@ -22,8 +22,27 @@ export interface TextFacts {
 	readonly origins: readonly TextOriginKind[];
 	/** Normalized object paths, package files and gathered source paths. */
 	readonly paths: readonly string[];
+	/** Files holding the text, spelled for showing (`textFileLabel`): assets and source files. */
+	readonly files: readonly string[];
+	readonly namespace: string | undefined;
 	readonly editing: readonly TextEditing[];
 	readonly notes: TextNotes;
+}
+
+export const TEXT_PROBLEM_LABELS = {
+	key_changed: "Key changed",
+	conflicting_source: "Same key, different text",
+	not_gathered: "Not gathered yet",
+	changed_since_gather: "Changed since gather",
+	translation: "Translation work",
+	finding: "Findings",
+	up_to_date: "Up to date"
+} satisfies Record<TextProblem, string>;
+
+/** Whether a line has work before it ships: any problem worse than a finding. */
+export function needsWork(problems: readonly TextProblem[]): boolean {
+	const worst = problems[0];
+	return worst !== undefined && worst !== "finding" && worst !== "up_to_date";
 }
 
 const findingSignals = new Set<TextReviewSignal>([
@@ -93,6 +112,12 @@ function clauseHas(facts: TextFacts, clause: TextFilterClause): boolean {
 			return clause.values.some((value) => facts.origins.includes(value));
 		case "folder":
 			return clause.values.some((value) => matchesTextPathPrefix(facts.paths, value));
+		case "asset": {
+			const keys = facts.files.map(textFileKey);
+			return clause.values.some((value) => keys.includes(textFileKey(value)));
+		}
+		case "namespace":
+			return facts.namespace !== undefined && clause.values.includes(facts.namespace);
 		case "editing":
 			return clause.values.some((value) => facts.editing.includes(value));
 		case "notes":

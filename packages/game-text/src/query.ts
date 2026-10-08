@@ -6,14 +6,25 @@ import type {
 	TextCorpusSearchPage,
 	TextCorpusSearchCounts,
 	TextCorpusSearchRequest,
+	TextCultureFacet,
 	TextEditing,
+	TextFacetRequest,
 	TextFilter,
+	TextFilterField,
 	TextReviewLens,
 	TextReviewSignal,
 	TextUnit,
 	TextUnitSearchResult,
 	TextWhere
 } from "./schema.js";
+import {
+	textAssetFacet,
+	textCultureFacet,
+	textFolderFacet,
+	textGroupOf,
+	textGroups,
+	textOriginFacet
+} from "./text-groups.js";
 import {
 	matchesTextFilter,
 	textFindings,
@@ -31,6 +42,7 @@ import {
 	matchesTextKinds,
 	matchesTextPathPrefix,
 	normalizeTextPath,
+	textFileLabel,
 	textFileScope,
 	textFileScopeSummary,
 	unitFileKeys,
@@ -160,6 +172,17 @@ export function textCorpusQuery(
 			translation: [],
 			origins,
 			paths,
+			files: [
+				...new Set(
+					unit.occurrences.map((occurrence) => textFileLabel(occurrence.packageFile))
+				)
+			],
+			namespace:
+				unit.identity.status === "resolved"
+					? unit.identity.namespace
+					: unit.identity.status === "string_table"
+						? unit.identity.tableId
+						: undefined,
 			editing,
 			notes: withoutNotes ? "missing" : "present"
 		};
@@ -343,6 +366,10 @@ export function textCorpusQuery(
 			translation: translationStates(marks),
 			origins: lineOrigins(line),
 			paths: [...entries.flatMap((entry) => entry.paths), ...manifestPaths],
+			files: evidence
+				? [...new Set(line.manifest.map((entry) => textFileLabel(entry.path)))]
+				: [...new Set(entries.flatMap((entry) => entry.facts.files))],
+			namespace: line.identity?.namespace,
 			editing: evidence
 				? ["read_only"]
 				: [...new Set(entries.flatMap((entry) => entry.editing))],
@@ -355,11 +382,43 @@ export function textCorpusQuery(
 				: "present"
 		};
 	}
-	const hasProblemClause = (filter: TextFilter | undefined) =>
-		filter?.some((clause) => clause.field === "problem") ?? false;
-	const withoutProblemClauses = (filter: TextFilter | undefined) => {
-		const rest = filter?.filter((clause) => clause.field !== "problem");
-		return rest === undefined || rest.length === 0 ? undefined : { filter: rest };
+	const hasClause = (filter: TextFilter | undefined, field: TextFilterField) =>
+		filter?.some((clause) => clause.field === field) ?? false;
+	/** The request without one field's clauses, so that field's counts do not narrow themselves. */
+	const without = (
+		request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">,
+		field: TextFilterField
+	): Omit<TextCorpusSearchRequest, "cursor" | "pageSize"> => {
+		const { filter, ...unfiltered } = request;
+		const rest = filter?.filter((clause) => clause.field !== field);
+		return rest === undefined || rest.length === 0
+			? unfiltered
+			: { ...unfiltered, filter: rest };
+	};
+	type Facts = readonly TextFacts[];
+	const facetsField = (
+		wanted: TextFacetRequest | undefined,
+		base: (field: TextFilterField) => Facts,
+		cultures?: () => readonly TextCultureFacet[]
+	) => {
+		if (wanted === undefined) return undefined;
+		return {
+			facets: {
+				...(wanted.folder === undefined
+					? undefined
+					: {
+							folders: {
+								under: wanted.folder,
+								...textFolderFacet(base("folder"), wanted.folder)
+							}
+						}),
+				...(wanted.assets ? { assets: textAssetFacet(base("asset")) } : undefined),
+				...(wanted.origins ? { origins: textOriginFacet(base("origin")) } : undefined),
+				...(wanted.cultures && cultures !== undefined
+					? { cultures: cultures() }
+					: undefined)
+			}
+		};
 	};
 	// Translation work only exists against a localization target.
 	const requireTarget = (request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">) => {
@@ -424,8 +483,7 @@ export function textCorpusQuery(
 		summary: () => summary,
 		search: (request) => {
 			requireTarget(request);
-			const { filter: _filter, ...unfiltered } = request;
-			const problemBase = { ...unfiltered, ...withoutProblemClauses(request.filter) };
+			const group = request.group;
 			const selection = request.localization;
 			if (selection) {
 				if (!localization)
@@ -436,14 +494,50 @@ export function textCorpusQuery(
 							"Load and join the selected target before querying its localization state."
 					});
 				const matched = localizedMatching(request);
-				// Without a problem clause the problem counts cover exactly the matched lines.
+				// Without a clause on a field, that field's counts cover exactly the matched lines.
+				const baseFor = (field: TextFilterField) =>
+					hasClause(request.filter, field)
+						? localizedMatching(without(request, field))
+						: matched;
 				const problems = textProblemCounts(
-					(hasProblemClause(request.filter)
-						? localizedMatching(problemBase)
-						: matched
-					).map((line) => lineProblems(line, selection))
+					baseFor("problem").map((line) => lineProblems(line, selection))
 				);
-				const page = localizationQueryPage(localization, matched, request);
+				const known = new Map<LocalizationLine, TextFacts>();
+				const factsOf = (line: LocalizationLine) => {
+					const cached = known.get(line);
+					if (cached !== undefined) return cached;
+					const facts = lineFacts(line, selection);
+					known.set(line, facts);
+					return facts;
+				};
+				const listed =
+					group === undefined || request.openGroup === undefined
+						? matched
+						: matched.filter(
+								(line) =>
+									textGroupOf(factsOf(line), group).key === request.openGroup
+							);
+				// The culture picker counts every culture, so it leaves the culture set out.
+				const cultureBase = () => {
+					const { cultures: _cultures, ...unscoped } = selection;
+					return selection.cultures === undefined
+						? matched
+						: localizedMatching({ ...request, localization: unscoped });
+				};
+				const grouping =
+					group === undefined
+						? undefined
+						: { groups: { by: group, ...textGroups(matched.map(factsOf), group) } };
+				const faceted = facetsField(
+					request.facets,
+					(field) => baseFor(field).map(factsOf),
+					() =>
+						textCultureFacet(
+							cultureBase().map((line) => line.cultures),
+							localization.cultures
+						)
+				);
+				const page = localizationQueryPage(localization, matched, request, listed);
 				const counts = {
 					...matching({ ...request, query: "" }).counts,
 					all: matched.length,
@@ -490,6 +584,8 @@ export function textCorpusQuery(
 				return {
 					counts,
 					problems,
+					...grouping,
+					...faceted,
 					total: matched.length,
 					localization: page,
 					...fileScopeField(request.where, () => matched.flatMap(lineFileKeys)),
@@ -508,23 +604,44 @@ export function textCorpusQuery(
 				};
 			}
 			const { matched, counts } = matching(request);
+			const baseFor = (field: TextFilterField) =>
+				hasClause(request.filter, field)
+					? matching(without(request, field)).matched
+					: matched;
+			const listed =
+				group === undefined || request.openGroup === undefined
+					? matched
+					: matched.filter(
+							(entry) => textGroupOf(entry.facts, group).key === request.openGroup
+						);
 			const afterCursor = request.cursor
-				? matched.findIndex(({ unit }) => unit.id === request.cursor) + 1
+				? listed.findIndex(({ unit }) => unit.id === request.cursor) + 1
 				: 0;
-			const page = matched.slice(Math.max(0, afterCursor), afterCursor + request.pageSize);
+			const page = listed.slice(Math.max(0, afterCursor), afterCursor + request.pageSize);
 			const final = page.at(-1)?.unit.id;
 			return {
 				counts,
 				problems: textProblemCounts(
-					(hasProblemClause(request.filter)
-						? matching(problemBase).matched
-						: matched
-					).map((entry) => entry.facts.problems)
+					baseFor("problem").map((entry) => entry.facts.problems)
+				),
+				...(group === undefined
+					? undefined
+					: {
+							groups: {
+								by: group,
+								...textGroups(
+									matched.map((entry) => entry.facts),
+									group
+								)
+							}
+						}),
+				...facetsField(request.facets, (field) =>
+					baseFor(field).map((entry) => entry.facts)
 				),
 				total: matched.length,
 				units: page.map(({ presentation }) => presentation),
 				...fileScopeField(request.where, () => matched.flatMap(({ fileKeys }) => fileKeys)),
-				...(final !== undefined && afterCursor + page.length < matched.length
+				...(final !== undefined && afterCursor + page.length < listed.length
 					? { nextCursor: final }
 					: undefined)
 			};

@@ -1,4 +1,9 @@
-import { LocalizationState, TextOriginKind, type TextWhere } from "@ue-shed/game-text/browser";
+import {
+	LocalizationState,
+	TextGroupBy,
+	TextOriginKind,
+	type TextWhere
+} from "@ue-shed/game-text/browser";
 import { Option } from "effect";
 import { Flag } from "effect/unstable/cli";
 
@@ -20,19 +25,25 @@ export function localizationFlags() {
 	};
 }
 
-/** `--filter` clauses (repeatable) and `--cultures`, the culture scope. */
+/** `--filter` clauses (repeatable), `--cultures`, the culture scope, and `--group`. */
 export function filterFlags() {
 	return {
 		filters: Flag.string("filter").pipe(Flag.atMost(32)),
-		cultures: Flag.string("cultures").pipe(Flag.optional)
+		cultures: Flag.string("cultures").pipe(Flag.optional),
+		group: Flag.choice("group", TextGroupBy.literals).pipe(Flag.optional)
 	};
 }
 
-/** Command fields for `--filter` and `--cultures`; absent when not given. */
-export function optionalFilterFlags(filters: readonly string[], cultures: Option.Option<string>) {
+/** Command fields for `--filter`, `--cultures` and `--group`; absent when not given. */
+export function optionalFilterFlags(
+	filters: readonly string[],
+	cultures: Option.Option<string>,
+	group: Option.Option<typeof TextGroupBy.Type> = Option.none()
+) {
 	return {
 		...(filters.length > 0 ? { filter: filters } : undefined),
-		...(Option.isSome(cultures) ? { cultures: cultures.value } : undefined)
+		...(Option.isSome(cultures) ? { cultures: cultures.value } : undefined),
+		...(Option.isSome(group) ? { group: group.value } : undefined)
 	};
 }
 

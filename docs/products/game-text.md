@@ -360,7 +360,17 @@ Gathered only, outside the target and origin are facts, not problems.
 values. Every clause must match; `is` matches any of its values and `is-not` none of them.
 `--cultures de,fr` limits states, counts and translation work to a culture set. Both work on
 `loc status`, `loc export` and localization-aware `text search`; a malformed clause fails with
-`invalid_selection` and the expected form.
+`invalid_selection` and the expected form. Clauses on `asset` match a file in any spelling
+(`Content/UI/WBP_Menu.uasset`, `/Game/UI/WBP_Menu`), and `namespace` matches exactly.
+
+A request can **group** the matching lines by problem, folder, asset, origin or namespace
+(`--group folder`). The page then lists every group, worst first, with its line count, how many
+lines need work before they ship (problems worse than a finding) and its worst problem; at most
+200 groups are listed, with a count of the rest. `openGroup` pages one group's lines while the
+counts and groups stay those of the whole request. **Facets** count where the matching lines
+are: the folders directly under a given folder, assets, origins, and each culture's shipped,
+missing, to-update and not-synced lines. Each facet leaves out its own clauses, and the culture
+facet leaves out the culture set, so the picker always shows every culture.
 
 ### Checks and reports
 

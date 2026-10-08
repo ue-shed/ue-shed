@@ -11,7 +11,7 @@
 
 ## Status
 
-- **State**: IN PROGRESS. Phase 1 is done; Phase 2 (groups and facets) is next. The design is a
+- **State**: IN PROGRESS. Phases 1 and 2 are done; Phase 3 (the Workbench list) is next. The design is a
   mockup with sample data; each phase earns its part against the fixture and a generated large
   corpus.
 - **Priority**: P1
@@ -111,6 +111,26 @@ filtered count inside the existing query budget.
 
 **Gate**: group counts sum to the total; each facet count equals the total after adding its clause;
 the folder facet on the generated corpus stays bounded (top 200 children, then a count).
+
+**Evidence (2026-10-08)**: Phase 2 is done.
+
+- `text-groups.ts`: `textGroupOf`, `textGroups`, `textFolderFacet` (one level under a folder),
+  `textAssetFacet`, `textOriginFacet` and `textCultureFacet`. Groups and facet entries carry a
+  count, the lines that need work (problems worse than a finding) and the worst problem, sorted
+  worst first, then by lines needing work, lines and label; at most 200 with a `more` count.
+- The request takes `group`, `openGroup` (one group's lines; counts and groups stay the whole
+  request's) and `facets`. Each facet leaves out its own clauses; the culture facet leaves out the
+  culture set. Facts now carry files spelled as the project spells them (`textFileLabel`) and the
+  namespace, and clauses add `asset` and `namespace`.
+- CLI: `--group <by>` on `loc status` and `text search`.
+- Scale: at 50,000 lines, 1,000 tables, 200 folders and 14 cultures, grouping by asset lists 200
+  groups and counts 800 more, the folder facet lists 200 folders, and a grouped page with all four
+  facets takes about 0.75 seconds against about 0.4 seconds for a plain page.
+- Verified: group and facet tests (groups sum to the total; an open group lists exactly its
+  count; each folder and asset facet entry equals its clause's total, and the facet ignores its
+  own clause; the culture picker ignores the culture set; grouping without a target); the scale
+  test; the real-reader CLI test, where folder groups sum to the total and the first group holds
+  the target's worst problem.
 
 ## Phase 3: The list, Filter, Display and the culture picker (Workbench)
 

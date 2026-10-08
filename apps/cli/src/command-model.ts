@@ -11,6 +11,7 @@ import {
 	LocalizationCheckId,
 	LocalizationReviewLens,
 	LocalizationState,
+	TextGroupBy,
 	TextOriginKind
 } from "@ue-shed/game-text/browser";
 import { LocalizationOperation, LocalizationReviewFlag } from "@ue-shed/localization/browser";
@@ -24,7 +25,8 @@ const TextWhereFields = {
 	pathPrefix: Schema.optionalKey(Schema.String),
 	changedFiles: Schema.optionalKey(Schema.String),
 	filter: Schema.optionalKey(Schema.Array(Schema.String)),
-	cultures: Schema.optionalKey(Schema.String)
+	cultures: Schema.optionalKey(Schema.String),
+	group: Schema.optionalKey(TextGroupBy)
 };
 
 const Project = { projectRoot: Schema.String };

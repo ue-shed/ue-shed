@@ -270,6 +270,8 @@ export const TextFilterClause = Schema.Union([
 	clause("translation", TextTranslationState, TextTranslationState.literals.length),
 	clause("origin", TextOriginKind, TextOriginKind.literals.length),
 	clause("folder", Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(512)), 50),
+	clause("asset", Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(1024)), 200),
+	clause("namespace", Schema.String.check(Schema.isMaxLength(1024)), 50),
 	clause("editing", TextEditing, TextEditing.literals.length),
 	clause("notes", TextNotes, TextNotes.literals.length)
 ]);
@@ -290,6 +292,61 @@ export const TextProblemCounts = Schema.Struct({
 	up_to_date: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 });
 export type TextProblemCounts = Schema.Schema.Type<typeof TextProblemCounts>;
+
+export const MAX_TEXT_GROUPS = 200;
+
+export const TextGroupBy = Schema.Literals(["problem", "folder", "asset", "origin", "namespace"]);
+export type TextGroupBy = Schema.Schema.Type<typeof TextGroupBy>;
+
+/**
+ * One group or facet entry: its key (a problem, a normalized folder or file, an origin, a
+ * namespace), how it reads, how many lines it holds, how many need work before they ship, and its
+ * worst problem.
+ */
+export const TextGroup = Schema.Struct({
+	key: Schema.String.check(Schema.isMaxLength(1024)),
+	label: Schema.String.check(Schema.isMaxLength(1024)),
+	count: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+	needWork: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+	worst: TextProblem
+});
+export type TextGroup = Schema.Schema.Type<typeof TextGroup>;
+
+/** Bounded entries, worst first, with how many more there are. */
+export const TextGroupList = Schema.Struct({
+	entries: Schema.Array(TextGroup).check(Schema.isMaxLength(MAX_TEXT_GROUPS)),
+	more: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+});
+export type TextGroupList = Schema.Schema.Type<typeof TextGroupList>;
+
+/** Which facets a page should count. Each facet leaves out its own filter clauses. */
+export const TextFacetRequest = Schema.Struct({
+	/** List the folders directly under this one; empty for the project's top folders. */
+	folder: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(512))),
+	assets: Schema.optionalKey(Schema.Boolean),
+	origins: Schema.optionalKey(Schema.Boolean),
+	cultures: Schema.optionalKey(Schema.Boolean)
+});
+export type TextFacetRequest = Schema.Schema.Type<typeof TextFacetRequest>;
+
+/** Per-culture translation work for the culture picker, over the request without its culture set. */
+export const TextCultureFacet = Schema.Struct({
+	culture: Schema.String,
+	lines: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+	shipped: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+	missing: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+	toUpdate: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+	notSynced: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+});
+export type TextCultureFacet = Schema.Schema.Type<typeof TextCultureFacet>;
+
+export const TextFacets = Schema.Struct({
+	folders: Schema.optionalKey(Schema.Struct({ under: Schema.String, ...TextGroupList.fields })),
+	assets: Schema.optionalKey(TextGroupList),
+	origins: Schema.optionalKey(TextGroupList),
+	cultures: Schema.optionalKey(Schema.Array(TextCultureFacet).check(Schema.isMaxLength(256)))
+});
+export type TextFacets = Schema.Schema.Type<typeof TextFacets>;
 
 /** A bounded authored/gathered location preview carried by corpus search results. */
 export const TextUnitContext = Schema.Struct({
@@ -386,6 +443,10 @@ export const TextCorpusSearchRequest = Schema.Struct({
 	where: Schema.optionalKey(TextWhere),
 	/** Filter pills, applied on top of the other fields. */
 	filter: Schema.optionalKey(TextFilter),
+	/** Count the matching lines in groups; the page lists the open group's lines, if any. */
+	group: Schema.optionalKey(TextGroupBy),
+	openGroup: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(1024))),
+	facets: Schema.optionalKey(TextFacetRequest),
 	pageSize: TextQueryPageSize,
 	query: Schema.String.pipe(Schema.check(Schema.isMaxLength(512)))
 });
@@ -396,6 +457,9 @@ export const TextCorpusSearchPage = Schema.Struct({
 	fileScope: Schema.optionalKey(TextFileScopeSummary),
 	/** Lines with each problem, over the request without its problem clauses. */
 	problems: Schema.optionalKey(TextProblemCounts),
+	/** Every group of the matching lines, when the request groups them. */
+	groups: Schema.optionalKey(Schema.Struct({ by: TextGroupBy, ...TextGroupList.fields })),
+	facets: Schema.optionalKey(TextFacets),
 	counts: TextCorpusSearchCounts,
 	nextCursor: Schema.optional(TextUnitId),
 	total: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),

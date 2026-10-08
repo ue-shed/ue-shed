@@ -1,8 +1,14 @@
-import { LocalizationEvidence, LocalizationEvidenceNodeLive } from "@ue-shed/localization";
+import {
+	LocalizationEvidence,
+	LocalizationEvidenceNodeLive,
+	LocalizationFileAccessLive,
+	readLocalizationReview
+} from "@ue-shed/localization";
 import { Effect, Metric, Result, Schema } from "effect";
 import {
 	GameTextLocalizationError,
 	LocalizationSelection,
+	applyLocalizationReview,
 	joinLocalizationTarget,
 	localizationStatusReport,
 	textCorpusQuery,
@@ -33,6 +39,9 @@ export const loadLocalizationContext = Effect.fn("Cli.localization.load_context"
 			: undefined),
 		...("state" in command && command.state !== undefined
 			? { state: command.state }
+			: undefined),
+		...("review" in command && command.review !== undefined
+			? { review: command.review }
 			: undefined),
 		...(command._tag === "TextSearch" && command.searchTranslations !== undefined
 			? { searchTranslations: command.searchTranslations }
@@ -92,8 +101,17 @@ export const loadLocalizationContext = Effect.fn("Cli.localization.load_context"
 				})
 		)
 	);
-	const join = joinLocalizationTarget(corpus, evidence, target);
-	return { corpus, join, evidence, selection };
+	// The review file is UE Shed's own project data; a missing file means nothing is reviewed yet.
+	const review = yield* readLocalizationReview({
+		projectRoot: command.projectRoot,
+		target: target.name
+	}).pipe(Effect.provide(LocalizationFileAccessLive));
+	// Review is tracked once the target has a review file; until then reports say "not tracked".
+	const join = applyLocalizationReview(
+		joinLocalizationTarget(corpus, evidence, target),
+		review.contentHash === null ? undefined : review.file
+	);
+	return { corpus, join, evidence, selection, review };
 });
 
 export const loadLocalizationStatus = Effect.fn("Cli.localization.load_status")(function* (

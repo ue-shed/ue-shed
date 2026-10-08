@@ -34,6 +34,9 @@ export const register = Effect.gen(function* () {
 	yield* ipc.register(invokeContracts["game-text:localization:edits"], (request) =>
 		gameText.localizationEdits(request)
 	);
+	yield* ipc.register(invokeContracts["game-text:localization:review"], (request) =>
+		gameText.localizationReview(request)
+	);
 	yield* ipc.register(invokeContracts["game-text:localization:report"], (request) =>
 		gameText.localizationReport(request)
 	);

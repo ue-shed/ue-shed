@@ -1,11 +1,12 @@
 import { Argument, Command, Flag } from "effect/unstable/cli";
 import { Option } from "effect";
-import { LocalizationCheckId } from "@ue-shed/game-text/browser";
+import { LocalizationCheckId, LocalizationReviewLens } from "@ue-shed/game-text/browser";
 import { runLocalizationCheck } from "../workflows/localization-check.js";
 import { runLocalizationReport } from "../workflows/localization-report.js";
 import { runLocalizationStatus, runLocalizationTargets } from "../workflows/localization.js";
 import { localizationFlags, optionalLocalizationFlags } from "./localization-flags.js";
-import { LocalizationOperation } from "@ue-shed/localization/browser";
+import { LocalizationOperation, LocalizationReviewFlag } from "@ue-shed/localization/browser";
+import { runLocalizationReview } from "../workflows/localization-review.js";
 import { runLocalizationOperation } from "../workflows/localization-run.js";
 import { applyLocalizationChanges } from "../workflows/localization-apply.js";
 
@@ -129,6 +130,37 @@ export const localizationCommand = Command.make("loc").pipe(
 			)
 		),
 		Command.make(
+			"review",
+			{
+				action: Argument.choice("action", ["set", "clear", "accept", "unaccept"] as const),
+				projectRoot: Argument.string("project-root"),
+				target: Flag.string("target"),
+				culture: Flag.string("culture"),
+				lines: Flag.string("line").pipe(Flag.between(1, 500)),
+				flags: Flag.choice("flag", LocalizationReviewFlag.literals).pipe(Flag.atMost(4)),
+				check: Flag.string("check").pipe(Flag.optional),
+				by: Flag.string("by").pipe(Flag.withDefault("ue-shed-cli")),
+				reviewFile: Flag.string("review-file").pipe(Flag.optional)
+			},
+			({ action, projectRoot, target, culture, lines, flags, check, by, reviewFile }) =>
+				runLocalizationReview({
+					_tag: "LocalizationReview",
+					action,
+					projectRoot,
+					target,
+					culture,
+					lines,
+					flags,
+					by,
+					...(Option.isSome(check) ? { check: check.value } : undefined),
+					...(Option.isSome(reviewFile) ? { reviewFile: reviewFile.value } : undefined)
+				})
+		).pipe(
+			Command.withDescription(
+				"Set or clear review flags, or accept findings, in the target's review file."
+			)
+		),
+		Command.make(
 			"targets",
 			{ projectRoot: Argument.string("project-root") },
 			({ projectRoot }) =>
@@ -144,15 +176,17 @@ export const localizationCommand = Command.make("loc").pipe(
 				projectRoot: Argument.string("project-root"),
 				target: Flag.string("target"),
 				reader: Flag.string("reader").pipe(Flag.optional),
+				review: Flag.choice("review", LocalizationReviewLens.literals).pipe(Flag.optional),
 				...localizationFlags()
 			},
-			({ projectRoot, target, culture, state, limit, reader }) => {
+			({ projectRoot, target, culture, state, review, limit, reader }) => {
 				return runLocalizationStatus({
 					_tag: "LocalizationStatus",
 					projectRoot,
 					target,
 					limit,
 					...optionalLocalizationFlags(culture, state),
+					...(Option.isSome(review) ? { review: review.value } : undefined),
 					...(Option.isSome(reader) ? { reader: reader.value } : undefined)
 				});
 			}

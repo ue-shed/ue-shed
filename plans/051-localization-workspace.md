@@ -17,7 +17,7 @@
 
 ## Status
 
-- **State**: IN PROGRESS. Phases 0–6 are done; Phase 7 (review workflow) is next.
+- **State**: IN PROGRESS. Phases 0–7 are done; Phase 8 items each need owner approval.
 - **Priority**: P1
 - **Effort**: XL
 - **Risk**: HIGH. The plan adds the first UE Shed writes to localization files and the first
@@ -507,6 +507,34 @@ Codex.
 - Review state survives a gather, import, export and compile on both engines.
 - An edited source or translation shows as changed since review.
 - The file's diffs stay sorted and minimal.
+
+**Evidence (2026-10-08)**: Phase 7 is done.
+
+- `@ue-shed/localization` adds the version 1 review file:
+    - flags `reviewed`, `proofread`, `approved` and `machine_translated`, each record stamped with
+      who set it and when;
+    - a SHA-256 fingerprint of the manifest source and the translation that ships next;
+    - accepted findings keyed by rule, culture, namespace and key;
+    - a pure decoder that rejects malformed files, a foreign target and duplicate records;
+    - a sorted, tab-indented encoder;
+    - a Node store that creates the file exclusively or replaces it only while it hashes to what
+      was read.
+- Game Text applies the file to the join as `current` or `changed` review state, adds five review
+  lenses with query-consistent counts, hides accepted findings until their text changes, and adds
+  reviewed and proofread shares to reports and CSV. Review is tracked only once the file exists.
+- `ue-shed loc review set|clear|accept|unaccept` writes the file. `loc status --review <lens>`
+  filters by it.
+- Workbench shows review toggles in the detail pane, review lens chips, "Accept as intended" on
+  check findings, and Reviewed and Proofread report columns.
+- Verified:
+    - review file, Game Text review, CLI and Workbench main tests, including an edit after review
+      reading as changed since review;
+    - component tests on Node 24 and Node 26;
+    - `pnpm test:localization-processes` on UE 5.7 and UE 5.8, where a line reviewed through
+      `loc review` keeps its file byte for byte and stays reviewed through gather, import, export
+      and compile; UE 4.27 passed its operations.
+- Deferred, by choice: a bulk "review all visible" action, and migrating records when Unreal
+  renames a key. Records for removed keys remain in the file until cleared.
 
 ## Phase 8 — Optional extensions (each needs separate owner approval)
 

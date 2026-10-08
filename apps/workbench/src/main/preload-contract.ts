@@ -77,6 +77,7 @@ export const workbenchInvokeChannels = {
 		localizationQualityFocus: "game-text:localization:quality-focus",
 		localizationChanges: "game-text:localization:changes",
 		localizationEdits: "game-text:localization:edits",
+		localizationReview: "game-text:localization:review",
 		localizationReport: "game-text:localization:report",
 		localizationReportFile: "game-text:localization:report-file",
 		localizationTargets: "game-text:localization:targets",

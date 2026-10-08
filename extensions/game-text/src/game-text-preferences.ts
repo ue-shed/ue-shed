@@ -15,6 +15,7 @@ const StoredPreferences = Schema.Struct({
 	localizationTarget: Schema.optionalKey(LocalizationSelection.fields.target),
 	localizationCulture: LocalizationSelection.fields.culture,
 	localizationState: LocalizationSelection.fields.state,
+	localizationReview: LocalizationSelection.fields.review,
 	searchTranslations: Schema.optionalKey(Schema.Boolean),
 	selectedLocalizationId: Schema.optionalKey(LocalizationLineId),
 	query: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(512))),
@@ -37,6 +38,9 @@ export interface GameTextPreferences {
 		| undefined;
 	readonly localizationState?:
 		| Schema.Schema.Type<typeof LocalizationSelection>["state"]
+		| undefined;
+	readonly localizationReview?:
+		| Schema.Schema.Type<typeof LocalizationSelection>["review"]
 		| undefined;
 	readonly searchTranslations?: boolean | undefined;
 	readonly selectedLocalizationId?: Schema.Schema.Type<typeof LocalizationLineId> | undefined;

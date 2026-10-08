@@ -10,7 +10,9 @@ import {
 	type TextQualityQuerySummary,
 	type TextUnitId,
 	type GameTextRuleDocument,
-	type LocalizationCheckDiagnostic
+	type LocalizationCheckDiagnostic,
+	type LocalizationFocus,
+	type LocalizationReviewChange
 } from "@ue-shed/game-text/browser";
 import { Button, Chip, createEffectAction } from "@ue-shed/ui";
 import { Effect } from "effect";
@@ -128,6 +130,49 @@ export function GameTextLocalizationQuality(props: {
 	const [failed, setFailed] = createSignal(false);
 	let revision = 0,
 		focusRevision = 0;
+	const acceptAction = createEffectAction();
+	const [accepting, setAccepting] = createSignal(false);
+	/** Records the finding as accepted in the review file; it returns if its text changes. */
+	const accept = (
+		finding: { readonly ruleId: string; readonly culture: LocalizationReviewChange["culture"] },
+		identity: NonNullable<LocalizationFocus["identity"]>
+	) => {
+		const request = props.client.localizationReview;
+		const target = props.localization.target();
+		if (!request || !target) return;
+		setAccepting(true);
+		acceptAction.run(
+			request({
+				target,
+				changes: [
+					{
+						kind: "accept",
+						check: finding.ruleId,
+						culture: finding.culture,
+						namespace: identity.namespace,
+						key: identity.key
+					}
+				]
+			}),
+			{
+				onSuccess: (result) => {
+					setAccepting(false);
+					if (result.status === "written") {
+						setMessage(
+							"Finding accepted. It returns if the source or translation changes."
+						);
+						props.onSelectionChange(undefined);
+						load();
+					} else if (result.status === "failed")
+						setMessage(`${result.message} ${result.recovery}`);
+				},
+				onFailure: () => {
+					setAccepting(false);
+					setMessage("The finding could not be accepted. Rescan and try again.");
+				}
+			}
+		);
+	};
 	const selection = () => {
 		const target = props.localization.target(),
 			culture = props.localization.culture();
@@ -673,6 +718,30 @@ export function GameTextLocalizationQuality(props: {
 												<p {...stylex.attrs(styles.notes)}>
 													{finding().recovery}
 												</p>
+												<Show
+													when={
+														props.client.localizationReview &&
+														finding().translations.identity
+													}
+												>
+													{(identity) => (
+														<div {...stylex.attrs(styles.inlineAction)}>
+															<Button
+																size="compact"
+																tone="quiet"
+																disabled={
+																	props.disabled || accepting()
+																}
+																title="Stop reporting this finding until the source or translation changes."
+																onClick={() =>
+																	accept(finding(), identity())
+																}
+															>
+																Accept as intended
+															</Button>
+														</div>
+													)}
+												</Show>
 												<Show when={finding().suggestedChange}>
 													{(change) => (
 														<section
@@ -743,8 +812,9 @@ export function GameTextLocalizationQuality(props: {
 																Copy change set
 															</Button>
 															<span {...stylex.attrs(styles.muted)}>
-																Writing translations arrives with
-																translation editing.
+																Edit the translation in Text to
+																stage it, or copy the change set for
+																ue-shed loc apply.
 															</span>
 														</section>
 													)}

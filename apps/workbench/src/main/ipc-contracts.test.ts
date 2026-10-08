@@ -281,6 +281,20 @@ const validArgsByChannel = {
 	"game-text:localization:operation-files": [{ id: "operation-1", kind: "planned", offset: 0 }],
 	"game-text:localization:quality-focus": [{ target: "FixtureGame", id: "quality-finding:1" }],
 	"game-text:localization:changes": [{ target: "FixtureGame", filter: "all" }],
+	"game-text:localization:review": [
+		{
+			target: "FixtureGame",
+			changes: [
+				{
+					kind: "set",
+					culture: "de",
+					namespace: "Fixture.Localization.Table",
+					key: "NamedArgument",
+					flags: ["reviewed"]
+				}
+			]
+		}
+	],
 	"game-text:localization:edits": [
 		{
 			target: "FixtureGame",
@@ -653,6 +667,7 @@ const validResultByChannel = {
 	"game-text:localization:quality-focus": { status: "not_found" },
 	"game-text:localization:changes": { status: "not_ready" },
 	"game-text:localization:edits": { status: "not_ready" },
+	"game-text:localization:review": { status: "not_ready" },
 	"game-text:localization:report": { status: "not_ready" },
 	"game-text:localization:report-file": { status: "cancelled" },
 	"game-text:localization:targets": { status: "ready", targets: [] },
@@ -871,6 +886,7 @@ const malformedArgsByChannel = {
 	],
 	"game-text:localization:changes": [{ target: "../../Private", filter: "all" }],
 	"game-text:localization:edits": [{ target: "FixtureGame", mode: "write", edits: [] }],
+	"game-text:localization:review": [{ target: "FixtureGame", changes: [] }],
 	"game-text:localization:report": [{ target: "FixtureGame", offset: -1 }],
 	"game-text:localization:report-file": [{ target: "FixtureGame", operation: "write_po" }],
 	"game-text:quality:create-starter-rules": ["C:/Untrusted/output.json"],
@@ -920,9 +936,9 @@ const malformedArgsByChannel = {
 	"map-capture:tile": [{ manifestPath: "", relativePath: "../outside.png" }]
 } satisfies Partial<Record<InvokeChannel, IpcFixtureValue>>;
 
-it("registers exactly 141 invoke channels plus renderer events", () => {
-	expect(invokeChannelNames).toHaveLength(141);
-	expect(new Set(invokeChannelNames).size).toBe(141);
+it("registers exactly 142 invoke channels plus renderer events", () => {
+	expect(invokeChannelNames).toHaveLength(142);
+	expect(new Set(invokeChannelNames).size).toBe(142);
 	expect(invokeChannelNames).toEqual(
 		expect.arrayContaining([
 			"game-text:localization:quality-search",
@@ -934,6 +950,7 @@ it("registers exactly 141 invoke channels plus renderer events", () => {
 			"game-text:localization:quality-focus",
 			"game-text:localization:changes",
 			"game-text:localization:edits",
+			"game-text:localization:review",
 			"game-text:localization:report",
 			"game-text:localization:report-file"
 		])

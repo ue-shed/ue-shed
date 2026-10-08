@@ -10,6 +10,9 @@ import {
 	type LocalizationCultureState,
 	type LocalizationEditRequest,
 	type LocalizationEditResult,
+	type LocalizationReviewRequest,
+	applyLocalizationReview,
+	localizationLineFingerprint,
 	type LocalizationLinePreview,
 	type LocalizationFocusResult,
 	type LocalizationTranslation,
@@ -25,6 +28,10 @@ import {
 	cultureCode,
 	target
 } from "../../../packages/game-text/src/localization.test-support.js";
+import {
+	emptyLocalizationReviewFile,
+	updateLocalizationReviewFile
+} from "../../../packages/localization/src/review-file.js";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
 import { Deferred, Effect, Layer, ManagedRuntime } from "effect";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -847,5 +854,123 @@ describe("Game Text translation editing", () => {
 		);
 		await user.click(within(panel).getByRole("button", { name: "Unstage" }));
 		expect(screen.queryByRole("region", { name: "Staged translations" })).toBeNull();
+	});
+});
+
+describe("Game Text review state", () => {
+	const lineK = joined.lines.find((line) => line.identity?.key === "K");
+	const markOf = (culture: string) => lineK?.cultures.find((mark) => mark.culture === culture);
+	const french = markOf("fr");
+	const german = markOf("de");
+	if (!lineK?.identity || !french || !german) throw new Error("Missing review fixture line.");
+	const reviewFile = updateLocalizationReviewFile(
+		emptyLocalizationReviewFile(target.name),
+		[
+			{
+				kind: "set",
+				culture: french.culture,
+				namespace: lineK.identity.namespace,
+				key: lineK.identity.key,
+				flags: ["reviewed"],
+				fingerprint: localizationLineFingerprint(lineK, french)
+			},
+			{
+				kind: "set",
+				culture: german.culture,
+				namespace: lineK.identity.namespace,
+				key: lineK.identity.key,
+				flags: ["reviewed", "proofread"],
+				// Reviewed against older text, so it now reads as changed since review.
+				fingerprint: "0".repeat(64)
+			}
+		],
+		{ by: "reviewer", at: "2026-10-08T00:00:00.000Z" }
+	);
+	const reviewed = applyLocalizationReview(joined, reviewFile);
+	const reviewedQuery = textCorpusQuery(text, undefined, reviewed);
+
+	function reviewClient() {
+		const requests: LocalizationReviewRequest[] = [];
+		const api: GameTextClientApi = {
+			...client(),
+			search: (request) =>
+				Effect.succeed({
+					status: "ready",
+					page: (request.localization ? reviewedQuery : plain).search(request)
+				}),
+			localizationFocus: (request) => {
+				const id =
+					request.selection.kind === "line"
+						? request.selection.id
+						: reviewedQuery.focus({ id: request.selection.id, pageSize: 1 })
+								?.localization?.id;
+				const line = id ? reviewedQuery.localizationFocus(id) : undefined;
+				return Effect.succeed(
+					line
+						? { status: "found", focus: localizationFocusPage(reviewed, line, request) }
+						: { status: "not_found" }
+				);
+			},
+			localizationReview: (request) => {
+				requests.push(request);
+				return Effect.succeed({ status: "written", relativePath: "Config/Review.json" });
+			}
+		};
+		return { api, requests };
+	}
+
+	it("shows review lenses, current and changed review, and toggles a flag", async () => {
+		const user = userEvent.setup();
+		const { api, requests } = reviewClient();
+		mount(api);
+		await screen.findByText("3 matches");
+		expect(screen.getByRole("button", { name: "Changed since review 1" })).toBeDefined();
+		expect(screen.getByRole("button", { name: "Reviewed 1" })).toBeDefined();
+		const results = screen.getByRole("region", { name: "Results" });
+		await user.click(within(results).getByRole("button", { name: /^Welcome/u }));
+		const translations = await screen.findByRole("region", { name: "Translations" });
+		const frenchCard = await within(translations).findByRole("article", {
+			name: "Translation fr"
+		});
+		const frenchReview = within(frenchCard).getByLabelText("Review fr");
+		expect(
+			within(frenchReview)
+				.getByRole("button", { name: "Reviewed" })
+				.getAttribute("aria-pressed")
+		).toBe("true");
+		expect(within(frenchReview).getByText("by reviewer")).toBeDefined();
+		const germanCard = within(translations).getByRole("article", { name: "Translation de" });
+		expect(
+			within(germanCard).getByText("Changed since review (Reviewed, Proofread by reviewer)")
+		).toBeDefined();
+		await user.click(within(frenchReview).getByRole("button", { name: "Proofread" }));
+		await waitFor(() => expect(requests).toHaveLength(1));
+		expect(requests[0]).toEqual({
+			target: target.name,
+			changes: [
+				{ kind: "set", culture: "fr", namespace: "NS", key: "K", flags: ["proofread"] }
+			]
+		});
+		// Writing reloads the target; wait for the refreshed controls before the next change.
+		const reviewedChip = await waitFor(() => {
+			const chip = within(screen.getByLabelText("Review fr")).getByRole("button", {
+				name: "Reviewed"
+			});
+			expect(chip).toHaveProperty("disabled", false);
+			return chip;
+		});
+		await user.click(reviewedChip);
+		await waitFor(() => expect(requests).toHaveLength(2));
+		expect(requests[1]?.changes[0]).toMatchObject({ kind: "clear", flags: ["reviewed"] });
+	});
+
+	it("filters to lines whose review is out of date", async () => {
+		const user = userEvent.setup();
+		mount(reviewClient().api);
+		await screen.findByText("3 matches");
+		await user.click(screen.getByRole("button", { name: "Changed since review 1" }));
+		await screen.findByText("1 match");
+		const results = screen.getByRole("region", { name: "Results" });
+		expect(within(results).getByRole("button", { name: /^Welcome/u })).toBeDefined();
 	});
 });

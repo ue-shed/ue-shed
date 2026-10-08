@@ -1,6 +1,16 @@
 import { createHash, randomUUID } from "node:crypto";
-import { open, readdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import {
+	mkdir,
+	open,
+	readdir,
+	readFile,
+	realpath,
+	rename,
+	rm,
+	stat,
+	writeFile
+} from "node:fs/promises";
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { Context, Effect, Layer, Result, Schema } from "effect";
 import { localizationError, validate } from "./decode.js";
 import { FileProvenance, LocalizationError, type LocalizationLimits } from "./schema.js";
@@ -30,6 +40,13 @@ export interface LocalizationFileAccessApi {
 		path: string,
 		bytes: Uint8Array,
 		expectedHash: string,
+		limits: LocalizationLimits
+	) => Effect.Effect<FileProvenance, LocalizationError>;
+	/** Creates a new project file (and its folders); fails with `file_changed` if it exists. */
+	readonly create: (
+		root: string,
+		path: string,
+		bytes: Uint8Array,
 		limits: LocalizationLimits
 	) => Effect.Effect<FileProvenance, LocalizationError>;
 }
@@ -83,6 +100,31 @@ const projectPath = Effect.fn("LocalizationFileAccess.projectPath")(function* (
 	if (!contained(actualRoot, actualPath))
 		return yield* Effect.fail(localizationError("unsafe_path"));
 	return actualPath;
+});
+
+/** Like `projectPath`, for a file that does not exist yet: its folder is created in the project. */
+const newProjectPath = Effect.fn("LocalizationFileAccess.newProjectPath")(function* (
+	root: string,
+	path: string
+) {
+	if (isAbsolute(path) || path.includes("\u0000") || path.includes("%"))
+		return yield* Effect.fail(localizationError("unsafe_path"));
+	const base = resolve(root);
+	const candidate = resolve(base, path);
+	if (!contained(base, candidate)) return yield* Effect.fail(localizationError("unsafe_path"));
+	const actualRoot = yield* Effect.tryPromise({
+		try: () => realpath(base),
+		catch: () => localizationError("directory_unreadable")
+	});
+	const folder = yield* Effect.tryPromise({
+		try: async () => {
+			await mkdir(dirname(candidate), { recursive: true });
+			return realpath(dirname(candidate));
+		},
+		catch: writeError
+	});
+	if (!contained(actualRoot, folder)) return yield* Effect.fail(localizationError("unsafe_path"));
+	return candidate;
 });
 
 export const LocalizationFileAccessLive = Layer.succeed(
@@ -193,6 +235,25 @@ export const LocalizationFileAccessLive = Layer.succeed(
 				});
 			}
 		),
+		create: Effect.fn("LocalizationFileAccess.create")(function* (root, path, bytes, limits) {
+			if (bytes.byteLength > limits.maxFileBytes)
+				return yield* Effect.fail(localizationError("limit_exceeded"));
+			const actual = yield* newProjectPath(root, path);
+			yield* Effect.tryPromise({
+				try: () => writeFile(actual, bytes, { flag: "wx" }),
+				catch: (cause) =>
+					Schema.is(FileSystemFailure)(cause) && cause.code === "EEXIST"
+						? localizationError("file_changed")
+						: writeError(cause)
+			});
+			const info = yield* Effect.tryPromise({ try: () => stat(actual), catch: fileError });
+			return validate(FileProvenance, {
+				relativePath: path.replaceAll("\\", "/"),
+				size: bytes.byteLength,
+				modifiedTime: info.mtime.toISOString(),
+				contentHash: sha256(bytes)
+			});
+		}),
 		presence: Effect.fn("LocalizationFileAccess.presence")(function* (root, path) {
 			const location = yield* projectPath(root, path).pipe(Effect.result);
 			if (location._tag === "Failure") {

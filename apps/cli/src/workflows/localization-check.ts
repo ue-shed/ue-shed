@@ -83,7 +83,8 @@ export const runLocalizationCheck = Effect.fn("Cli.workflow.localization_check")
 						corpus,
 						join: joined,
 						evidence,
-						selection
+						selection,
+						review
 					} = yield* loadLocalizationContext(command);
 					const fs = yield* FileSystem.FileSystem;
 					const rulesPath = join(command.projectRoot, GAME_TEXT_RULES_RELATIVE_PATH);
@@ -108,7 +109,8 @@ export const runLocalizationCheck = Effect.fn("Cli.workflow.localization_check")
 						...(selection.culture === undefined
 							? undefined
 							: { culture: selection.culture }),
-						...(command.checks.length ? { checks: command.checks } : undefined)
+						...(command.checks.length ? { checks: command.checks } : undefined),
+						review: review.file
 					};
 					const report = checkLocalizationTarget(
 						corpus,

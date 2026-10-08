@@ -8,6 +8,7 @@ import {
 	createStarterTextRules,
 	GAME_TEXT_RULES_RELATIVE_PATH
 } from "@ue-shed/game-text";
+import { userInfo } from "node:os";
 import { resolve } from "node:path";
 import {
 	InvestigationError,
@@ -34,6 +35,8 @@ import {
 	type WorkspaceChangesResult,
 	type LocalizationEditRequest,
 	type LocalizationEditResult,
+	type LocalizationReviewRequest,
+	type LocalizationReviewResult,
 	type WorkspaceReportRequest,
 	type WorkspaceReportResult,
 	type WorkspaceReportFileRequest,
@@ -92,6 +95,9 @@ export interface WorkbenchGameTextApi {
 	readonly localizationEdits: (
 		request: LocalizationEditRequest
 	) => Effect.Effect<LocalizationEditResult>;
+	readonly localizationReview: (
+		request: LocalizationReviewRequest
+	) => Effect.Effect<LocalizationReviewResult>;
 	readonly localizationReport: (
 		request: WorkspaceReportRequest
 	) => Effect.Effect<WorkspaceReportResult>;
@@ -254,6 +260,14 @@ export const WorkbenchGameTextLive = Layer.effect(
 					return undefined;
 				return yield* Ref.get(ref);
 			});
+		// Review records name who set them; the OS account is the honest default for a desktop host.
+		const reviewer = () => {
+			try {
+				return userInfo().username || "workbench";
+			} catch {
+				return "workbench";
+			}
+		};
 		const localization = yield* makeGameTextLocalization(
 			() => currentModel(retainedCorpus),
 			() =>
@@ -926,6 +940,7 @@ export const WorkbenchGameTextLive = Layer.effect(
 			localizationQualityFocus: localization.qualityFocus,
 			localizationChanges: localization.changes,
 			localizationEdits: localization.edits,
+			localizationReview: (request) => localization.review(request, reviewer()),
 			localizationReport: localization.report,
 			localizationReportFile: (request) => localization.reportFile(request, dialog, files),
 			localizationTargets: localization.targets,
@@ -994,6 +1009,7 @@ export function makeWorkbenchGameTextTestLayer(
 			localizationQualityFocus: () => Effect.succeed({ status: "not_ready" }),
 			localizationChanges: () => Effect.succeed({ status: "not_ready" }),
 			localizationEdits: () => Effect.succeed({ status: "not_ready" }),
+			localizationReview: () => Effect.succeed({ status: "not_ready" }),
 			localizationReport: () => Effect.succeed({ status: "not_ready" }),
 			localizationReportFile: () => Effect.succeed({ status: "not_ready" }),
 			localizationTargets: () => Effect.succeed({ status: "ready", targets: [] }),

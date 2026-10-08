@@ -21,6 +21,7 @@ import { TextQualityRuleId, type TextQualityAffectedOccurrence } from "./quality
 import type { GameTextRuleDocument } from "./quality-rules-v2.js";
 import { evaluateLocalizationPolicy } from "./localization-policy.js";
 import { localizationShippedTranslation } from "./localization-shipped-translation.js";
+import { withoutAcceptedFindings } from "./localization-review.js";
 export {
 	localizationShippedTranslation,
 	LocalizationShippedTranslation
@@ -427,7 +428,12 @@ export function checkLocalizationTarget(
 		ruleDocument?.schemaVersion === 2
 			? evaluateLocalizationPolicy(corpus, join, ruleDocument, options)
 			: { findings: [], diagnostics: [] };
-	const combined = [...findings, ...policy.findings].sort(
+	const visible = withoutAcceptedFindings(
+		join,
+		[...findings, ...policy.findings],
+		options.review
+	);
+	const combined = [...visible.findings].sort(
 		(a, b) =>
 			a.lineId.localeCompare(b.lineId) ||
 			a.culture.localeCompare(b.culture) ||
@@ -450,14 +456,14 @@ export function checkLocalizationTarget(
 			...(ruleDocument?.schemaVersion === 2
 				? (ruleDocument.localizationRules ?? []).map((rule) => ({
 						ruleId: rule.id,
-						findingCount: policy.findings.filter(
+						findingCount: visible.findings.filter(
 							(finding) => finding.ruleId === rule.id
 						).length
 					}))
 				: []),
 			...enabled.map((id) => ({
 				ruleId: TextQualityRuleId.make(`localization.${id}`),
-				findingCount: findings.filter((finding) => finding.kind === id).length
+				findingCount: visible.findings.filter((finding) => finding.kind === id).length
 			}))
 		],
 		changes: {
@@ -471,5 +477,6 @@ export function checkLocalizationTarget(
 	});
 	if (ruleDocument?.schemaVersion === 2)
 		Object.assign(report, { ruleDiagnostics: policy.diagnostics });
+	if (options.review) Object.assign(report, { acceptedFindings: visible.accepted });
 	return report;
 }

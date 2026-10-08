@@ -204,6 +204,11 @@ export function diffLocalizationBaselines(
 		removedCounts: entryCounts(removed)
 	};
 }
+/** "not_tracked" until the project has a review file for the target. */
+const ReviewProgress = Schema.Union([
+	Schema.Literal("not_tracked"),
+	Schema.Struct({ lines: Count, percent: Schema.NullOr(Schema.Number) })
+]);
 export const LocalizationProgressCulture = Schema.Struct({
 	culture: CultureCode,
 	states: Schema.Record(LocalizationState, Counts),
@@ -216,8 +221,8 @@ export const LocalizationProgressCulture = Schema.Struct({
 		lines: Schema.NullOr(Schema.Number),
 		words: Schema.NullOr(Schema.Number)
 	}),
-	reviewed: Schema.Literal("not_tracked"),
-	proofread: Schema.Literal("not_tracked"),
+	reviewed: ReviewProgress,
+	proofread: ReviewProgress,
 	baselineDelta: Schema.optionalKey(LocalizationBaselineDelta)
 });
 export type LocalizationProgressCulture = typeof LocalizationProgressCulture.Type;
@@ -248,6 +253,26 @@ export function localizationProgressReport(
 ): LocalizationProgressReport {
 	if (join.target !== evidence.target.name) throw reportError("invalid_report_context");
 	const entries = manifestEntries(evidence);
+	// Review applies to gathered lines; the share is over the same total as translation progress.
+	const tracked = join.lines.some((line) => line.cultures.some((mark) => mark.review));
+	const reviewProgress = (
+		culture: string,
+		flag: "reviewed" | "proofread",
+		total: number
+	): LocalizationProgressCulture["reviewed"] => {
+		if (!tracked) return "not_tracked";
+		const lines = join.lines.filter(
+			(line) =>
+				line.manifest.length > 0 &&
+				line.cultures.some(
+					(mark) =>
+						mark.culture === culture &&
+						mark.review?.status === "current" &&
+						mark.review.flags.includes(flag)
+				)
+		).length;
+		return { lines, percent: total ? (lines / total) * 100 : null };
+	};
 	const archives = new Map(
 		evidence.cultures.map((culture) => [culture.culture, culture.archive])
 	);
@@ -361,8 +386,8 @@ export function localizationProgressReport(
 						? (translatedWords / totalWords) * 100
 						: null
 			},
-			reviewed: "not_tracked",
-			proofread: "not_tracked"
+			reviewed: reviewProgress(culture, "reviewed", entries.length),
+			proofread: reviewProgress(culture, "proofread", entries.length)
 		};
 		if (delta) Object.assign(result, { baselineDelta: delta });
 		return result;

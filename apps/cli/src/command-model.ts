@@ -7,8 +7,12 @@ import {
 	ReleaseVersion
 } from "@ue-shed/plugin-distribution";
 import { Schema } from "effect";
-import { LocalizationCheckId, LocalizationState } from "@ue-shed/game-text/browser";
-import { LocalizationOperation } from "@ue-shed/localization/browser";
+import {
+	LocalizationCheckId,
+	LocalizationReviewLens,
+	LocalizationState
+} from "@ue-shed/game-text/browser";
+import { LocalizationOperation, LocalizationReviewFlag } from "@ue-shed/localization/browser";
 
 const Project = { projectRoot: Schema.String };
 const Reader = { reader: Schema.optionalKey(Schema.String) };
@@ -56,6 +60,17 @@ export const CliCommand = Schema.TaggedUnion({
 		json: Schema.Boolean,
 		timeout: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 86_400 }))
 	},
+	LocalizationReview: {
+		...Project,
+		target: Schema.String,
+		action: Schema.Literals(["set", "clear", "accept", "unaccept"]),
+		culture: Schema.String,
+		lines: Schema.Array(Schema.String),
+		flags: Schema.Array(LocalizationReviewFlag),
+		check: Schema.optionalKey(Schema.String),
+		by: Schema.String,
+		reviewFile: Schema.optionalKey(Schema.String)
+	},
 	LocalizationReport: {
 		...Project,
 		...Reader,
@@ -77,6 +92,7 @@ export const CliCommand = Schema.TaggedUnion({
 		target: Schema.String,
 		culture: Schema.optionalKey(Schema.String),
 		state: Schema.optionalKey(LocalizationState),
+		review: Schema.optionalKey(LocalizationReviewLens),
 		limit: PositiveInt.check(Schema.isLessThanOrEqualTo(50))
 	},
 	InvestigationRun: {

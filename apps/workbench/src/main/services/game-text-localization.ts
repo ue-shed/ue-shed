@@ -23,7 +23,10 @@ import {
 	type WorkspaceReportFileResult,
 	localizationFocusPage,
 	textCorpusQuery,
+	applyLocalizationReview,
 	localizationEditChangeSet,
+	type LocalizationReviewRequest,
+	type LocalizationReviewResult,
 	localizationEditOutcomes,
 	type LocalizationEditRequest,
 	type LocalizationEditResult,
@@ -41,11 +44,16 @@ import {
 	applyLocalizationChangeSet,
 	LocalizationEvidence,
 	LocalizationFileAccessLive,
+	localizationEvidenceFingerprint,
+	readLocalizationReview,
+	updateLocalizationReview,
+	type LocalizationReviewSnapshot,
+	type LocalizationReviewUpdate,
 	reviewLocalizationChangeSet,
 	type LocalizationTargetEvidence,
 	type LocalizationTarget
 } from "@ue-shed/localization";
-import { Effect, Ref, Result } from "effect";
+import { Effect, Option, Ref, Result } from "effect";
 import type { ElectronDialogApi } from "../adapters/electron-dialog.js";
 import type { LocalFilesApi } from "../adapters/local-files.js";
 
@@ -88,6 +96,7 @@ export const makeGameTextLocalization = Effect.fn("Workbench.GameText.localizati
 				readonly corpus: TextCorpus;
 				readonly join: LocalizationJoin;
 				readonly evidence: LocalizationTargetEvidence;
+				readonly review: LocalizationReviewSnapshot | undefined;
 				readonly model: TextCorpusQuery;
 				readonly result: LocalizationTargetResult;
 		  }
@@ -151,7 +160,20 @@ export const makeGameTextLocalization = Effect.fn("Workbench.GameText.localizati
 		if ((yield* currentCorpus()) !== corpus || (yield* Ref.get(revision)) !== version)
 			return { status: "not_ready" as const };
 		if (Result.isFailure(evidence)) return failure(evidence.failure.code);
-		const join = joinLocalizationTarget(corpus, evidence.success);
+		// A malformed review file must not hide translations: show them without review state.
+		const review = Option.getOrUndefined(
+			yield* readLocalizationReview({ projectRoot: root, target: target.name }).pipe(
+				Effect.provide(LocalizationFileAccessLive),
+				Effect.option
+			)
+		);
+		if ((yield* currentCorpus()) !== corpus || (yield* Ref.get(revision)) !== version)
+			return { status: "not_ready" as const };
+		// Review is tracked once the target has a review file; until then nothing is "not reviewed".
+		const join = applyLocalizationReview(
+			joinLocalizationTarget(corpus, evidence.success),
+			review?.contentHash ? review.file : undefined
+		);
 		const model = textCorpusQuery(corpus, undefined, join);
 		const textCounts = model.search({
 			query: "",
@@ -172,7 +194,14 @@ export const makeGameTextLocalization = Effect.fn("Workbench.GameText.localizati
 			notSynced: textCounts.localization?.notSynced ?? 0
 		};
 		if (cached?.join.target !== name) yield* Ref.set(baseline, undefined);
-		yield* Ref.set(selected, { corpus, join, model, result, evidence: evidence.success });
+		yield* Ref.set(selected, {
+			corpus,
+			join,
+			model,
+			result,
+			evidence: evidence.success,
+			review
+		});
 		yield* Effect.annotateCurrentSpan({
 			lineCount: textCounts.total,
 			notSyncedCount: result.notSynced
@@ -230,7 +259,7 @@ export const makeGameTextLocalization = Effect.fn("Workbench.GameText.localizati
 				retained.corpus,
 				retained.join,
 				retained.evidence,
-				{},
+				retained.review ? { review: retained.review.file } : {},
 				document
 			),
 			retained.join
@@ -505,6 +534,61 @@ export const makeGameTextLocalization = Effect.fn("Workbench.GameText.localizati
 			notSynced: reloaded.status === "ready" ? reloaded.notSynced : 0
 		};
 	});
+	/** Writes review flags or accepted findings, fingerprinted against the retained evidence. */
+	const review = Effect.fn("Workbench.GameText.localization.review")(function* (
+		request: LocalizationReviewRequest,
+		by: string
+	): Effect.fn.Return<LocalizationReviewResult> {
+		const retained = yield* current(request.target);
+		const root = yield* currentRoot();
+		if (!retained || !root) return { status: "not_ready" as const };
+		const updates: LocalizationReviewUpdate[] = [];
+		for (const change of request.changes) {
+			const identity = { namespace: change.namespace, key: change.key };
+			if (change.kind === "clear") {
+				updates.push({ ...change, kind: "clear" });
+				continue;
+			}
+			if (change.kind === "unaccept") {
+				updates.push({ ...change, kind: "unaccept" });
+				continue;
+			}
+			const fingerprint = localizationEvidenceFingerprint(
+				retained.evidence,
+				change.culture,
+				identity
+			);
+			if (fingerprint === undefined)
+				return {
+					status: "failed" as const,
+					code: "not_gathered",
+					message: "This line is not in the target's gathered text.",
+					recovery: "Gather the target with Unreal, then review the line."
+				};
+			updates.push({ ...change, fingerprint });
+		}
+		const written = yield* updateLocalizationReview(
+			{ projectRoot: root, target: request.target },
+			updates,
+			{ by, at: new Date().toISOString() },
+			retained.review
+		).pipe(Effect.provide(LocalizationFileAccessLive), Effect.result);
+		if (Result.isFailure(written))
+			return {
+				status: "failed" as const,
+				code: written.failure.code,
+				message: "The review file could not be updated.",
+				recovery:
+					written.failure.code === "file_changed"
+						? "The review file changed on disk, for example after a merge. Rescan and try again."
+						: "Check the file out in source control or make it writable, then try again."
+			};
+		yield* Ref.set(selected, undefined);
+		yield* Ref.set(qualityCache, undefined);
+		yield* select(request.target);
+		yield* Effect.annotateCurrentSpan({ changes: request.changes.length });
+		return { status: "written" as const, relativePath: written.success.relativePath };
+	});
 	return {
 		operationTarget: (name: LocalizationJoin["target"]) =>
 			targets().pipe(
@@ -529,6 +613,7 @@ export const makeGameTextLocalization = Effect.fn("Workbench.GameText.localizati
 		changes,
 		report,
 		reportFile,
-		edits
+		edits,
+		review
 	};
 });

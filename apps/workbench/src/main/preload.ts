@@ -185,6 +185,8 @@ const workbenchRendererApi = {
 		localizationChanges: (request) =>
 			ipcRenderer.invoke("game-text:localization:changes", request),
 		localizationEdits: (request) => ipcRenderer.invoke("game-text:localization:edits", request),
+		localizationReview: (request) =>
+			ipcRenderer.invoke("game-text:localization:review", request),
 		localizationReport: (request) =>
 			ipcRenderer.invoke("game-text:localization:report", request),
 		localizationReportFile: (request) =>

@@ -46,6 +46,7 @@ import {
 import {
 	LocalizationControls,
 	LocalizationChips,
+	ReviewChips,
 	TranslationsDetail,
 	GatheredDetail
 } from "./game-text-localization-view.js";
@@ -421,6 +422,7 @@ export function GameTextRoute(props: {
 				localizationTarget: localization.target(),
 				localizationCulture: localization.culture(),
 				localizationState: localization.state(),
+				localizationReview: localization.review(),
 				searchTranslations: localization.searchTranslations(),
 				selectedLocalizationId: localization.selectedId()
 			}
@@ -959,6 +961,11 @@ export function GameTextRoute(props: {
 									counts={page()?.localization?.stateCounts}
 									searching={searching()}
 								/>
+								<ReviewChips
+									model={localization}
+									counts={page()?.localization?.reviewCounts}
+									searching={searching()}
+								/>
 								{exports()}
 							</div>
 							<div {...stylex.attrs(styles.grid)}>
@@ -1027,6 +1034,12 @@ export function GameTextRoute(props: {
 														<TranslationsDetail
 															model={localization}
 															edits={edits}
+															review={{
+																client: props.client,
+																busy:
+																	loading() || operations.busy(),
+																onChanged: () => load(false)
+															}}
 														/>
 													</div>
 												)}
@@ -1099,6 +1112,11 @@ export function GameTextRoute(props: {
 												<TranslationsDetail
 													model={localization}
 													edits={edits}
+													review={{
+														client: props.client,
+														busy: loading() || operations.busy(),
+														onChanged: () => load(false)
+													}}
 												/>
 												<CoverageNotes
 													diagnostics={current().diagnostics}

@@ -2,6 +2,7 @@ import {
 	ArchiveEntry,
 	CultureCode,
 	LocalizationIdentity,
+	LocalizationReviewFlag,
 	LocalizationTargetName,
 	ManifestEntry,
 	POEntry
@@ -51,12 +52,35 @@ export const LocalizationEvidenceLineId = Schema.String.pipe(
 export type LocalizationEvidenceLineId = typeof LocalizationEvidenceLineId.Type;
 export const LocalizationLineId = Schema.String.pipe(Schema.brand("LocalizationLineId"));
 export type LocalizationLineId = typeof LocalizationLineId.Type;
+/**
+ * Review progress for one line and culture, from the project's review file. `changed` means the
+ * source or the shipped translation changed after the flags were set.
+ */
+export const LocalizationReviewState = Schema.Union([
+	Schema.Struct({ status: Schema.Literal("not_reviewed") }),
+	Schema.Struct({
+		status: Schema.Literals(["current", "changed"]),
+		flags: Schema.Array(LocalizationReviewFlag),
+		by: Schema.String,
+		at: Schema.String
+	})
+]);
+export type LocalizationReviewState = typeof LocalizationReviewState.Type;
+export const LocalizationReviewLens = Schema.Literals([
+	"reviewed",
+	"not_reviewed",
+	"not_proofread",
+	"changed_since_review",
+	"machine_translated"
+]);
+export type LocalizationReviewLens = typeof LocalizationReviewLens.Type;
 export const LocalizationCultureMark = Schema.Struct({
 	culture: CultureCode,
 	state: LocalizationState,
 	facts: Schema.Array(LocalizationState),
 	unknownReasons: Schema.Array(LocalizationUnknownReason),
-	reducedSourceChecking: Schema.Boolean
+	reducedSourceChecking: Schema.Boolean,
+	review: Schema.optionalKey(LocalizationReviewState)
 });
 export type LocalizationCultureMark = typeof LocalizationCultureMark.Type;
 export const LocalizationCultureState = LocalizationCultureMark.pipe(
@@ -91,6 +115,7 @@ export const LocalizationSelection = Schema.Struct({
 	target: LocalizationTargetName,
 	culture: Schema.optionalKey(CultureCode),
 	state: Schema.optionalKey(LocalizationState),
+	review: Schema.optionalKey(LocalizationReviewLens),
 	searchTranslations: Schema.optionalKey(Schema.Boolean)
 });
 export type LocalizationSelection = typeof LocalizationSelection.Type;
@@ -130,6 +155,8 @@ export const LocalizationQueryPage = Schema.Struct({
 		Schema.isMaxLength(MAX_LOCALIZATION_CULTURES)
 	),
 	stateCounts: Schema.Record(LocalizationState, Count),
+	/** Present when the project has a review file for the target. */
+	reviewCounts: Schema.optionalKey(Schema.Record(LocalizationReviewLens, Count)),
 	notSynced: Count,
 	lines: Schema.Array(LocalizationLinePreview).check(Schema.isMaxLength(50))
 });

@@ -6,6 +6,8 @@ export * from "./reports.js";
 export * from "./change-sets.js";
 export * from "./change-set-review.js";
 export * from "./po-writer.js";
+export * from "./review-file.js";
+export * from "./sha256.js";
 export * from "./operation-schema.js";
 export * from "./operation-plan.js";
 export * from "./operation-progress.js";

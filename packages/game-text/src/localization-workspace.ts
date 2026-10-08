@@ -147,6 +147,8 @@ export const WorkspaceLocalizationFindingFocus = Schema.Struct({
 	problem: WorkspaceFinding.fields.problem,
 	recovery: Schema.String,
 	check: WorkspaceQualityFilter,
+	/** The rule a review file records when someone accepts this finding. */
+	ruleId: Schema.String,
 	culture: CultureCode,
 	textUnitId: Schema.optionalKey(TextUnitId),
 	affectedOccurrences: Schema.Array(TextQualityAffectedOccurrence).check(Schema.isMaxLength(50)),
@@ -424,6 +426,7 @@ export function localizationQualityWorkspace(
 					problem: summary.problem,
 					recovery: finding.recovery,
 					check: summary.filter,
+					ruleId: finding.ruleId,
 					culture: finding.culture,
 					affectedOccurrences: finding.affectedOccurrences.slice(
 						request.occurrenceOffset ?? 0,
@@ -493,6 +496,9 @@ export const WorkspaceReportRow = Schema.Struct({
 	wordsPercent: Schema.NullOr(Schema.Number),
 	wordsNeedingWork: Words,
 	notSynced: Count,
+	/** Present once the project has a review file for the target. */
+	reviewedLines: Schema.optionalKey(Count),
+	proofreadLines: Schema.optionalKey(Count),
 	newWords: Schema.optionalKey(Words),
 	changedWords: Schema.optionalKey(Words)
 });
@@ -562,6 +568,12 @@ export function localizationReportPage(
 					? Math.max(0, culture.total.sourceWords - culture.upToDateArchive.sourceWords)
 					: null,
 			notSynced: culture.notSynced.lines,
+			...(culture.reviewed === "not_tracked" || culture.proofread === "not_tracked"
+				? undefined
+				: {
+						reviewedLines: culture.reviewed.lines,
+						proofreadLines: culture.proofread.lines
+					}),
 			...(culture.baselineDelta
 				? {
 						newWords: culture.baselineDelta.addedCounts.sourceWords,
@@ -594,6 +606,8 @@ export function localizationReportCsv(
 		"Words needing work",
 		"Not synced"
 	];
+	const reviewed = pages.some((row) => row.reviewedLines !== undefined);
+	if (reviewed) headers.push("Lines reviewed", "Lines proofread");
 	if (baseline) headers.push("New words", "Changed words");
 	return spreadsheetCsv([
 		headers,
@@ -607,6 +621,7 @@ export function localizationReportCsv(
 				row.wordsNeedingWork ?? "Unknown",
 				row.notSynced
 			];
+			if (reviewed) cells.push(row.reviewedLines ?? 0, row.proofreadLines ?? 0);
 			if (baseline) cells.push(row.newWords ?? "Unknown", row.changedWords ?? "Unknown");
 			return cells;
 		})

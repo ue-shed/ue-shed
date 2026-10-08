@@ -222,6 +222,7 @@ export function localizationFocusPage(
 			facts: mark.facts,
 			unknownReasons: mark.unknownReasons,
 			reducedSourceChecking: mark.reducedSourceChecking,
+			...(mark.review === undefined ? undefined : { review: mark.review }),
 			...runtimeText(line, mark),
 			archiveTranslation: mark.archive?.translation.Text ?? null,
 			cultureState:

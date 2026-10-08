@@ -167,6 +167,24 @@ before applying a change. There is no change-set file IO or apply API in this pa
 Game Text checks produce these proposals; `ue-shed loc check --changes <new-file.json>` can
 exclusively create the proposal JSON without touching localization files.
 
+Review state is UE Shed-owned project data, one file per target at
+`defaultLocalizationReviewPath(target)` (`Config/UEShed/Localization/<Target>.review.json`).
+
+**`decodeLocalizationReviewFile(text, target)`** and **`encodeLocalizationReviewFile(file)`**
+(browser) read and write version 1. Encoding sorts records and accepted findings by culture,
+namespace and key, so diffs stay minimal. **`updateLocalizationReviewFile(file, updates, stamp)`**
+applies `set`, `clear`, `accept` and `unaccept` updates. Setting flags on a line whose fingerprint
+changed replaces its old flags rather than merging them.
+
+**`localizationEvidenceFingerprint(evidence, culture, identity)`** fingerprints the manifest source
+and the translation that ships next. A record whose fingerprint differs from the current evidence
+is changed since review.
+
+**`readLocalizationReview(location)`** and **`updateLocalizationReview(location, updates, stamp,
+expected?)`** (Node) read and write the file. A missing file reads as empty with a null
+`contentHash`. The first write creates the file exclusively; later writes replace it atomically
+and only while it still hashes to `expected`.
+
 Tests decode committed manifest and archive bytes from both 5.7 and 5.8 against Unreal's
 version-specific evidence oracles, including 5.8 `DevNotes`. The unchanged 5.8 files live under
 `fixtures/unreal-project/FixtureExpected/localization/ue5.8-output`; its PO files also have
@@ -175,6 +193,5 @@ byte-exact round-trip tests, and its locmeta and word-count CSV are decoded dire
 CLI: `ue-shed loc targets <project-root>` prints schema-versioned target settings, discovered
 configs, output paths, and culture file presence. `@ue-shed/game-text` consumes the browser entry
 to join saved corpus identities, compute coverage-qualified states, and expose bounded queries and
-`ue-shed loc status` reports. This package remains independent of the corpus. Localization
-editing remains a later slice. Hosts can use the separately enabled process service to import and
+`ue-shed loc status` reports. This package remains independent of the corpus. Hosts can use the separately enabled process service to import and
 compile translations.

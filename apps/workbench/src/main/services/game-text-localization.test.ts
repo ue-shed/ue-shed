@@ -221,3 +221,65 @@ it.live("reviews and writes staged edits into the PO file, then reports them as 
 		});
 	}).pipe(Effect.scoped, Effect.provide(LocalizationEvidenceNodeLive))
 );
+
+it.live("writes review flags and shows a later edit as changed since review", () =>
+	Effect.gen(function* () {
+		const root = yield* Effect.promise(() => mkdtemp(join(tmpdir(), "ue-shed-wb-review-")));
+		yield* Effect.addFinalizer(() =>
+			Effect.promise(() => rm(root, { recursive: true, force: true }))
+		);
+		for (const path of [
+			"Config/DefaultEditor.ini",
+			"Config/Localization",
+			"Content/Localization"
+		])
+			yield* Effect.promise(() =>
+				cp(join(resolve("fixtures/unreal-project"), path), join(root, path), {
+					recursive: true
+				})
+			);
+		const saved = corpus([]);
+		const localization = yield* makeGameTextLocalization(
+			() => Effect.succeed(saved),
+			() => Effect.succeed(root)
+		);
+		const name = LocalizationTargetName.make("FixtureGame");
+		yield* localization.select(name);
+		const line = {
+			culture: cultureCode("de"),
+			namespace: TextNamespace.make("Fixture.Localization.Table"),
+			key: TextKey.make("NamedArgument")
+		};
+		const written = yield* localization.review(
+			{ target: name, changes: [{ kind: "set", ...line, flags: ["reviewed"] }] },
+			"tester"
+		);
+		expect(written).toEqual({
+			status: "written",
+			relativePath: "Config/UEShed/Localization/FixtureGame.review.json"
+		});
+		const counts = Effect.gen(function* () {
+			const result = yield* localization.search({
+				query: "",
+				capability: "all",
+				pageSize: 50,
+				localization: { target: name, culture: line.culture }
+			});
+			return result.status === "ready" ? result.page.localization?.reviewCounts : undefined;
+		});
+		expect(yield* counts).toMatchObject({ reviewed: 1, changed_since_review: 0 });
+		// Editing the translation afterwards invalidates the review.
+		yield* localization.edits({
+			target: name,
+			mode: "write",
+			edits: [
+				{
+					...line,
+					seenTranslation: "Gespräch mit {Name}",
+					translation: "Gespräch mit {PlayerName}"
+				}
+			]
+		});
+		expect(yield* counts).toMatchObject({ reviewed: 0, changed_since_review: 1 });
+	}).pipe(Effect.scoped, Effect.provide(LocalizationEvidenceNodeLive))
+);

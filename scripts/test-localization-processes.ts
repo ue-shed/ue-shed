@@ -14,12 +14,15 @@ import {
 	LocalizationOperationError,
 	availableLocalizationOperations,
 	currentLocalizationTranslation,
+	LocalizationFileAccessLive,
+	readLocalizationReview,
 	type LocalizationTarget,
 	type LocalizationOperationReceipt
 } from "../packages/localization/src/index.ts";
 import {
 	TextCorpusService,
 	TextCorpusServiceLive,
+	applyLocalizationReview,
 	joinLocalizationTarget
 } from "../packages/game-text/src/index.ts";
 import { runCli } from "../apps/cli/src/command.ts";
@@ -112,6 +115,25 @@ async function applyThroughCli(
 						Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Json))(line)
 					)
 			};
+		})
+	);
+}
+
+/** Runs `ue-shed loc review` in-process; returns its exit code. */
+async function reviewThroughCli(...args: string[]): Promise<number> {
+	return Effect.runPromise(
+		Effect.gen(function* () {
+			const code = yield* Ref.make(0);
+			const runtime = Layer.succeed(
+				CliRuntime,
+				CliRuntime.of({
+					print: () => Effect.void,
+					printError: () => Effect.void,
+					setExitCode: (value) => Ref.set(code, value)
+				})
+			);
+			yield* runCli(["loc", "review", ...args]).pipe(Effect.provide(runtime));
+			return yield* Ref.get(code);
 		})
 	);
 }
@@ -286,6 +308,31 @@ for (const engine of configured) {
 	assert(target, "Disposable target was not discovered.");
 	const operations = availableLocalizationOperations(target);
 	for (const operation of operations) await capturePlan(operation, project, target, engine);
+	// Review state is UE Shed's own file: Unreal's gather, import, export and compile must leave it
+	// alone, and a line nobody edits must still read as reviewed afterwards.
+	const reviewedLine = "Fixture.Localization.Table,Welcome";
+	const reviewPath = join(project, "Config/UEShed/Localization/FixtureGame.review.json");
+	if (!legacy)
+		assert.equal(
+			await reviewThroughCli(
+				"set",
+				project,
+				"--target",
+				target.name,
+				"--culture",
+				"de",
+				"--flag",
+				"reviewed",
+				"--flag",
+				"proofread",
+				"--line",
+				reviewedLine,
+				"--by",
+				"process-lane"
+			),
+			0
+		);
+	const reviewBytes = legacy ? undefined : await readFile(reviewPath);
 	for (const operation of legacy
 		? operations
 		: Schema.decodeUnknownSync(Schema.Array(LocalizationOperation))([
@@ -338,6 +385,7 @@ for (const engine of configured) {
 			(line) =>
 				line.origin.kind === "corpus" &&
 				line.identity &&
+				line.identity.key !== "Welcome" &&
 				line.cultures.find((culture) => culture.culture === "de")?.state === "translated"
 		);
 		const [first, second] = translatedLines;
@@ -434,9 +482,27 @@ for (const engine of configured) {
 			)?.translation.Text;
 		assert.equal(archived(first.identity), "Process lane translation");
 		assert.equal(archived(second.identity), "Process lane second translation");
+		assert.deepEqual(
+			await readFile(reviewPath),
+			reviewBytes,
+			"Unreal rewrote the review file."
+		);
+		const reviewState = await Effect.runPromise(
+			readLocalizationReview({ projectRoot: project, target: target.name }).pipe(
+				Effect.provide(LocalizationFileAccessLive)
+			)
+		);
+		const welcome = applyLocalizationReview(joined, reviewState.file)
+			.lines.find((line) => line.identity?.key === "Welcome")
+			?.cultures.find((item) => item.culture === "de")?.review;
+		assert.deepEqual(
+			welcome?.status === "current" ? welcome.flags : welcome,
+			["reviewed", "proofread"],
+			"An unedited reviewed line must stay reviewed through Unreal's operations."
+		);
 	}
 	console.log(
-		`Localization processes ${engine.label}: plans, supported operations, audit and cancellation passed${legacy ? "" : ", including PO writes through loc apply and sync"}.`
+		`Localization processes ${engine.label}: plans, supported operations, audit and cancellation passed${legacy ? "" : ", including review state, PO writes through loc apply and sync"}.`
 	);
 }
 console.log(`Retained disposable projects, plans, receipts and private logs under ${output}.`);

@@ -27,6 +27,7 @@ export function createGameTextLocalizationState(props: {
 	const [target, setTarget] = createSignal(props.initial?.localizationTarget);
 	const [culture, setCulture] = createSignal(props.initial?.localizationCulture);
 	const [state, setState] = createSignal(props.initial?.localizationState);
+	const [review, setReview] = createSignal(props.initial?.localizationReview);
 	const [searchTranslations, setSearchTranslations] = createSignal(
 		props.initial?.searchTranslations ?? false
 	);
@@ -125,11 +126,13 @@ export function createGameTextLocalizationState(props: {
 		// culture before constructing a query, regardless of when its persisted value is cleared.
 		const selectedCulture = current?.target.cultures.find((item) => item === rememberedCulture);
 		const selectedState = state();
+		const selectedReview = review();
 		if (!ready() || !current) return undefined;
 		return {
 			target: current.target.name,
 			...(selectedCulture ? { culture: selectedCulture } : undefined),
 			...(selectedState ? { state: selectedState } : undefined),
+			...(selectedReview ? { review: selectedReview } : undefined),
 			searchTranslations: !!selectedCulture && searchTranslations()
 		};
 	};
@@ -256,6 +259,7 @@ export function createGameTextLocalizationState(props: {
 		target,
 		culture,
 		state,
+		review,
 		searchTranslations,
 		selectedId,
 		targets,
@@ -266,6 +270,7 @@ export function createGameTextLocalizationState(props: {
 		detailLoading,
 		selectTarget,
 		setState,
+		setReview,
 		setSearchTranslations,
 		setSelectedId,
 		selectCulture: (value: string) =>
@@ -300,6 +305,7 @@ export function createGameTextLocalizationState(props: {
 			setTarget(preferences.localizationTarget);
 			setCulture(preferences.localizationCulture);
 			setState(preferences.localizationState);
+			setReview(preferences.localizationReview);
 			setSearchTranslations(preferences.searchTranslations ?? false);
 			setSelectedId(preferences.selectedLocalizationId);
 		}

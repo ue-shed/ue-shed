@@ -12,6 +12,8 @@ import type {
 	WorkspaceChangesResult,
 	LocalizationEditRequest,
 	LocalizationEditResult,
+	LocalizationReviewRequest,
+	LocalizationReviewResult,
 	WorkspaceReportRequest,
 	WorkspaceReportResult,
 	WorkspaceReportFileRequest,
@@ -85,6 +87,9 @@ export interface GameTextClientApi {
 	readonly localizationEdits?: (
 		request: LocalizationEditRequest
 	) => Effect.Effect<LocalizationEditResult, GameTextClientError>;
+	readonly localizationReview?: (
+		request: LocalizationReviewRequest
+	) => Effect.Effect<LocalizationReviewResult, GameTextClientError>;
 	readonly localizationReport?: (
 		request: WorkspaceReportRequest
 	) => Effect.Effect<WorkspaceReportResult, GameTextClientError>;

@@ -472,6 +472,12 @@ test("records the real Game Text quality workflow", async ({
 		await expect(outdatedGerman).toContainText("Die Tür öffnen");
 		await expect(outdatedGerman).toContainText("Written for this source");
 		await expect(outdatedGerman).toContainText("Open the door");
+		// Review toggles show for reviewable translations; the recording never writes the review file.
+		await expect(
+			outdatedGerman
+				.getByRole("group", { name: "Review de", exact: true })
+				.getByRole("button", { name: "Reviewed", exact: true })
+		).toBeEnabled();
 		await expect(translations.getByText("In PO, not synced", { exact: true })).toHaveCount(0);
 		await expect(
 			translations.getByRole("article", { name: "Translation fr", exact: true })
@@ -572,8 +578,11 @@ test("records the real Game Text quality workflow", async ({
 		).toBeVisible();
 		await expect(suggested.getByRole("button", { name: "Copy change set" })).toBeEnabled();
 		await expect(suggested).toContainText(
-			"Writing translations arrives with translation editing."
+			"Edit the translation in Text to stage it, or copy the change set for ue-shed loc apply."
 		);
+		await expect(
+			findingDetail.getByRole("button", { name: "Accept as intended", exact: true })
+		).toBeEnabled();
 		await expectPaneLayout(findings, findingDetail);
 		await suggested.evaluate((element) => element.scrollIntoView({ block: "nearest" }));
 		await page.screenshot({ path: testInfo.outputPath("12-localization-findings.png") });

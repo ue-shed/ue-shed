@@ -15,6 +15,8 @@ import { styles } from "./game-text-styles.js";
 
 const number = (value: number | null | undefined) =>
 	value === null || value === undefined ? "Unknown" : value.toLocaleString();
+const reviewTracked = (report: WorkspaceReportPage) =>
+	report.rows.some((row) => row.reviewedLines !== undefined);
 const percent = (value: number | null) =>
 	value === null
 		? "Unknown"
@@ -172,6 +174,10 @@ export function GameTextReports(props: {
 											<th>% by words</th>
 											<th>Words needing work</th>
 											<th>Not synced</th>
+											<Show when={reviewTracked(report())}>
+												<th>Reviewed</th>
+												<th>Proofread</th>
+											</Show>
 											<Show when={report().baseline}>
 												<th>New words</th>
 												<th>Changed words</th>
@@ -191,6 +197,10 @@ export function GameTextReports(props: {
 													<td>{percent(row.wordsPercent)}</td>
 													<td>{number(row.wordsNeedingWork)}</td>
 													<td>{number(row.notSynced)}</td>
+													<Show when={reviewTracked(report())}>
+														<td>{number(row.reviewedLines ?? 0)}</td>
+														<td>{number(row.proofreadLines ?? 0)}</td>
+													</Show>
 													<Show when={report().baseline}>
 														<td>{number(row.newWords)}</td>
 														<td>{number(row.changedWords)}</td>
@@ -200,9 +210,11 @@ export function GameTextReports(props: {
 										</For>
 									</tbody>
 								</table>
-								<p {...stylex.attrs(styles.muted)}>
-									Reviewed · Proofread: not tracked yet
-								</p>
+								<Show when={!reviewTracked(report())}>
+									<p {...stylex.attrs(styles.muted)}>
+										Reviewed · Proofread: not tracked yet
+									</p>
+								</Show>
 								<p {...stylex.attrs(styles.muted)}>
 									Progress counts gathered lines with current imported
 									translations. Pending PO edits are counted separately.

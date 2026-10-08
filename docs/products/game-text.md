@@ -203,8 +203,8 @@ The first quality slice must prove:
 
 > Status: planned by [Plan 051](../../plans/051-localization-workspace.md) under accepted
 > [ADR 0009](../decisions/0009-localization-change-sets-and-review-state.md). Read-only formats,
-> corpus joins, bounded queries and CLI status are implemented. Workbench localization views,
-> checks, processes, editing and review remain planned.
+> corpus joins, bounded queries, CLI status, Workbench localization views, checks, reports,
+> Unreal processes, PO editing and review state are implemented. Phase 8 extensions remain planned.
 
 Game Text grows into a localization workspace that a writing and localization team can use all
 day. For every line it shows the source text, each culture's translation, and that translation's
@@ -366,8 +366,8 @@ archive translation. Pending PO edits and source drift remain visible in state c
 increase archive progress. Progress follows Unreal's CSV commandlet, which creates its
 helper with an empty native culture: every culture needs a non-empty archive translation recorded
 against the full manifest source, without runtime native fallback or foreign native-text overrides.
-Reviewed/proofread are explicitly `not_tracked` until Phase 7, rather
-than zero percent. Missing/ambiguous archives make progress unknown; uncountable source words make
+Reviewed and proofread shares count lines whose current review includes that flag. They are
+`not_tracked` until the target has a review file, rather than zero percent. Missing/ambiguous archives make progress unknown; uncountable source words make
 word percentages null.
 
 Unreal uses ICU line-break spans for word counts, not whitespace splitting or `Intl.Segmenter` word
@@ -430,10 +430,31 @@ from the archive is "Not synced", whether UE Shed or another tool wrote it:
 
 Synced means Unreal imported the PO and compiled the target; a rescan after sync clears the mark.
 
-Review state (reviewed, proofread, approved, machine translated, accepted duplicate) is not
-stored by Unreal. It lives in a versioned, project-owned review file per target.
+Review state (reviewed, proofread, approved, machine translated, accepted findings) is not
+stored by Unreal. It lives in a versioned, project-owned review file per target, at
+`Config/UEShed/Localization/<Target>.review.json` by default.
 Each record keeps a fingerprint of the source and translation it was given for, so a later edit
 shows as "Changed since review" instead of silently keeping the old state.
+
+Review is shipped (Plan 051 Phase 7):
+
+- The file is sorted by culture, namespace and key, tab-indented, and written atomically while it
+  still hashes to what was read, so diffs stay one line per change and concurrent writers are
+  refused rather than merged. Unreal's gather, import, export and compile leave it untouched.
+- Review is tracked once the file exists. Until then lines are not "Not reviewed" and reports say
+  `not_tracked`; the first review creates the file.
+- Lenses: Reviewed, Not reviewed, Not proofread, Changed since review and Machine translated, with
+  counts from the same query as the list. They apply to translated, not synced and needs update
+  translations.
+- The fingerprint covers the manifest source and the translation that ships next, so a written
+  but not synced edit already reads as changed since review.
+- An accepted check finding is hidden from checks and counts until its source or translation
+  changes, then it returns.
+- `ue-shed loc review set|clear|accept|unaccept <project-root> --target <name> --culture <code>
+--line <Namespace,Key> [--flag <flag>] [--check <rule>] [--by <name>]`, and
+  `ue-shed loc status --review <lens>`.
+- In Workbench, the detail pane shows "Review <culture>" toggles for each flag, and a check
+  finding offers "Accept as intended".
 
 ### Source control
 

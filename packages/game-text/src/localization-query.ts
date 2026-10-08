@@ -10,8 +10,10 @@ import {
 	type LocalizationLine,
 	type LocalizationLinePreview,
 	LocalizationQueryPage,
+	LocalizationReviewLens,
 	type LocalizationSelection
 } from "./localization-schema.js";
+import { matchesLocalizationReview } from "./localization-review.js";
 import type { TextCorpusSearchRequest } from "./schema.js";
 
 function words(source: string): number {
@@ -34,13 +36,15 @@ export function localizationLinePreview(line: LocalizationLine): LocalizationLin
 				unknownReasons,
 				reducedSourceChecking,
 				archive,
-				poTranslation
+				poTranslation,
+				review
 			}) => ({
 				culture,
 				state,
 				facts,
 				unknownReasons,
 				reducedSourceChecking,
+				...(review === undefined ? undefined : { review }),
 				translation: facts.includes("not_synced")
 					? poTranslation
 					: (archive?.translation.Text ?? null)
@@ -109,6 +113,9 @@ export function matchesLocalizationLine(
 	const selected = line.cultures.filter(
 		(mark) => selection.culture === undefined || mark.culture === selection.culture
 	);
+	const lens = selection.review;
+	if (lens !== undefined && !selected.some((mark) => matchesLocalizationReview(mark, lens)))
+		return false;
 	if (
 		selection.state !== undefined &&
 		!selected.some((mark) =>
@@ -149,6 +156,8 @@ export function localizationQueryPage(
 		Object.fromEntries(localizationStates.map((state) => [state, 0]))
 	);
 	let notSynced = 0;
+	const reviewed = matched.some((line) => line.cultures.some((mark) => mark.review));
+	const reviewCounts = new Map(LocalizationReviewLens.literals.map((lens) => [lens, 0]));
 	for (const line of matched) {
 		const marks = line.cultures.filter(
 			(mark) =>
@@ -163,6 +172,9 @@ export function localizationQueryPage(
 				Object.assign(stateCounts, { [state]: stateCounts[state] + 1 });
 		}
 		notSynced += marks.filter((mark) => mark.facts.includes("not_synced")).length;
+		for (const lens of LocalizationReviewLens.literals)
+			if (marks.some((mark) => matchesLocalizationReview(mark, lens)))
+				reviewCounts.set(lens, (reviewCounts.get(lens) ?? 0) + 1);
 	}
 	const result: LocalizationQueryPage = {
 		target: join.target,
@@ -171,6 +183,12 @@ export function localizationQueryPage(
 		notSynced,
 		lines: page.map(localizationLinePreview)
 	};
+	if (reviewed)
+		Object.assign(result, {
+			reviewCounts: Schema.decodeUnknownSync(LocalizationQueryPage.fields.reviewCounts)(
+				Object.fromEntries(reviewCounts)
+			)
+		});
 	const last = page.at(-1);
 	if (last && after + page.length < matched.length)
 		Object.assign(result, { nextCursor: last.id });

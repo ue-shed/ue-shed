@@ -1,5 +1,6 @@
 import { Schema } from "effect";
 import {
+	LocalizationReviewFile,
 	CultureCode,
 	LocalizationChange,
 	LocalizationChangeSet,
@@ -139,7 +140,9 @@ export type LocalizationRuleDiagnostic = typeof LocalizationRuleDiagnostic.Type;
 export const LocalizationCheckOptions = Schema.Struct({
 	culture: Schema.optionalKey(CultureCode),
 	checks: Schema.optionalKey(Schema.Array(LocalizationCheckId)),
-	disabledChecks: Schema.optionalKey(Schema.Array(LocalizationCheckId))
+	disabledChecks: Schema.optionalKey(Schema.Array(LocalizationCheckId)),
+	/** Findings accepted in the target's review file are left out while their text is unchanged. */
+	review: Schema.optionalKey(LocalizationReviewFile)
 });
 export type LocalizationCheckOptions = typeof LocalizationCheckOptions.Type;
 export const LocalizationCheckDiagnostic = Schema.Struct({
@@ -169,6 +172,7 @@ export const LocalizationQualityReport = TextQualityReport.mapFields((fields) =>
 	target: LocalizationTargetName,
 	gatherEvidence: Schema.Array(LocalizationFileStatus),
 	checkDiagnostics: Schema.Array(LocalizationCheckDiagnostic),
-	changes: LocalizationChangeSet
+	changes: LocalizationChangeSet,
+	acceptedFindings: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)))
 }));
 export type LocalizationQualityReport = typeof LocalizationQualityReport.Type;

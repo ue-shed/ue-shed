@@ -196,7 +196,7 @@ describe("localization quality and reports", () => {
 		]);
 		expect(detail.textContent).toContain("Translation the game uses");
 		expect(detail.textContent).toContain(
-			"Writing translations arrives with translation editing."
+			"Edit the translation in Text to stage it, or copy the change set for ue-shed loc apply."
 		);
 		expect(within(detail).getByRole("article", { name: "Translation de" })).toBeTruthy();
 		await user.click(within(detail).getByRole("button", { name: "Copy change set" }));

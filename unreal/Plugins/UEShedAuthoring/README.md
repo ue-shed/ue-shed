@@ -27,6 +27,9 @@ checks identity per command instead:
   set element. If a key or string-table reference changed since review, the removal is a
   conflict, even when the display text is the same.
 
+Both comparisons read `float` values as Unreal stores them, rounded to 32 bits. A draft can
+therefore name a float it wrote earlier in the same Apply.
+
 `FindActorsReferencingRow(RequestJson, ResultJson)` implements
 `unreal-authoring-actor-references` version 1.0. The request selects an already-loaded editor or PIE
 `worldObjectPath`, an already-loaded `tableObjectPath`, and an existing `rowName`, plus explicit

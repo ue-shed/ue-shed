@@ -124,6 +124,9 @@ struct FUEShedAuthoringTestTextRow : public FTableRowBase
 	UPROPERTY()
 	TMap<FUEShedAuthoringTestTextDefault, FUEShedAuthoringTestTextDefault> Map;
 
+	UPROPERTY()
+	float Ratio = 0.f;
+
 	/** Name keys with same-display texts, for identity drift that only moves between keys. */
 	UPROPERTY()
 	TMap<FName, FText> Named;

@@ -715,6 +715,40 @@ TSharedPtr<FJsonValue> WithoutTextIdentity(const TSharedPtr<FJsonValue>& Value)
 	return MakeShared<FJsonValueObject>(Copy);
 }
 
+/**
+ * Float fields store 32 bits, so a requested value reads back rounded. Comparing values as Unreal
+ * stores them lets a draft echo what it wrote earlier in the same Apply.
+ */
+TSharedPtr<FJsonValue> AsStoredFloats(const TSharedPtr<FJsonValue>& Value)
+{
+	if (!Value.IsValid()) return Value;
+	if (Value->Type == EJson::Array)
+	{
+		TArray<TSharedPtr<FJsonValue>> Items;
+		for (const TSharedPtr<FJsonValue>& Item : Value->AsArray()) Items.Add(AsStoredFloats(Item));
+		return MakeShared<FJsonValueArray>(Items);
+	}
+	if (Value->Type != EJson::Object) return Value;
+	const TSharedPtr<FJsonObject> Source = Value->AsObject();
+	FString Kind;
+	const bool bFloat = Source->TryGetStringField(TEXT("kind"), Kind) && Kind == TEXT("float");
+	const TSharedRef<FJsonObject> Copy = MakeShared<FJsonObject>();
+	for (const auto& Field : Source->Values)
+	{
+		if (bFloat && Field.Key == TEXT("value") && Field.Value.IsValid()
+			&& Field.Value->Type == EJson::Number)
+		{
+			const float Stored = static_cast<float>(Field.Value->AsNumber());
+			Copy->SetNumberField(Field.Key, static_cast<double>(Stored));
+		}
+		else
+		{
+			Copy->SetField(Field.Key, AsStoredFloats(Field.Value));
+		}
+	}
+	return MakeShared<FJsonValueObject>(Copy);
+}
+
 bool TextFromIdentity(
 	const FText& Current, const TSharedPtr<FJsonObject>& Identity, const FString& Value,
 	FText& Result, FString& Error)
@@ -1350,7 +1384,8 @@ bool ApplyCommand(
 			Current = WithoutTextIdentity(Current);
 			Expected = WithoutTextIdentity(Expected);
 		}
-		if (bPartial || CanonicalJson(Current) != CanonicalJson(Expected))
+		if (bPartial
+			|| CanonicalJson(AsStoredFloats(Current)) != CanonicalJson(AsStoredFloats(Expected)))
 		{
 			Error = FString::Printf(TEXT("field %s no longer matches oldValue"), *FieldName);
 			return false;
@@ -1425,8 +1460,8 @@ bool ApplyCommand(
 			}
 			const TArray<TSharedPtr<FJsonValue>>* Reviewed = nullptr;
 			if (!Row->TryGetArrayField(TEXT("fields"), Reviewed)
-				|| CanonicalJson(MakeShared<FJsonValueArray>(Live))
-					!= CanonicalJson(MakeShared<FJsonValueArray>(*Reviewed)))
+				|| CanonicalJson(AsStoredFloats(MakeShared<FJsonValueArray>(Live)))
+					!= CanonicalJson(AsStoredFloats(MakeShared<FJsonValueArray>(*Reviewed))))
 			{
 				Error = TEXT("row changed since review, including its text identity");
 				return false;
@@ -2227,9 +2262,31 @@ bool FUEShedAuthoringTextIdentityTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("Removing a row whose map identities swapped keys is a conflict"),
 		RemoveRow(NamedRow, true, Error));
 
+	// A draft edits a float, then removes the row, in one Apply. It still holds the value it
+	// requested, which Unreal stores rounded to 32 bits.
 	const TSharedPtr<FJsonObject> FreshRow = BuildTableSnapshot(Table)->GetObjectField(TEXT("table"))
 		->GetArrayField(TEXT("rows"))[0]->AsObject();
-	TestTrue(TEXT("Removing an unchanged reviewed row succeeds"), RemoveRow(FreshRow, true, Error));
+	auto FloatValue = [](double Value)
+	{
+		const TSharedRef<FJsonObject> Result = ValueObject(TEXT("float"));
+		Result->SetNumberField(TEXT("value"), Value);
+		return Result;
+	};
+	if (!TestTrue(TEXT("A float edit is accepted"),
+		SetCell(TEXT("Ratio"), AsValue(FloatValue(0)), FloatValue(0.1), true, Error)))
+	{
+		AddError(Error);
+		return false;
+	}
+	TestTrue(TEXT("A second edit may name the requested float as its oldValue"),
+		SetCell(TEXT("Ratio"), AsValue(FloatValue(0.1)), FloatValue(0.1), true, Error));
+	for (const TSharedPtr<FJsonValue>& Field : FreshRow->GetArrayField(TEXT("fields")))
+	{
+		if (Field->AsObject()->GetStringField(TEXT("name")) == TEXT("Ratio"))
+			Field->AsObject()->SetObjectField(TEXT("value"), FloatValue(0.1));
+	}
+	TestTrue(TEXT("Removing a row after a float edit in the same Apply succeeds"),
+		RemoveRow(FreshRow, true, Error));
 	return true;
 }
 #endif

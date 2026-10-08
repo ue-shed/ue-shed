@@ -272,6 +272,15 @@ Phase 3).
   the website CI job is its evidence.
 - Changesets: `@ue-shed/ui` and the CLI are private packages, so only `@ue-shed/game-text` carries
   one (`text-problems-and-filter-clauses.md`, covering Phases 1, 2 and 5).
+- A captioned tour, `pnpm game-text:tour` (`game-text-tour.recording.ts`), walks every flow at
+  reading pace on a fixture copy with one renamed key: problems, Filter and the folder browser,
+  Display, cultures and translation search, changed files, the line page with a key change and
+  carry, editing and writing to PO, review, bulk actions, quality checks, reports and the Unreal
+  steps plan. It runs about six minutes and is documented in `docs/showcase.md`, whose Game Text demo
+  now describes the current list.
+- Recording the tour found that **Mark reviewed (n)** kept its count after marking, because the
+  selection held each line as ticked. Ticked lines now follow the list's newest copy, and reviews
+  written from the bar are not offered again; the component test checks it.
 
 ## Verification
 

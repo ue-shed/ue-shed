@@ -1085,6 +1085,8 @@ describe("Game Text review state", () => {
 		// Only translations that are not reviewed yet: de changed since review, fr is reviewed.
 		await user.click(within(bar).getByRole("button", { name: /^Mark reviewed \(/u }));
 		await within(bar).findByText(/^Marked \d+ translations reviewed\.$/u);
+		// Marked translations are not offered again, even before the list reloads them.
+		expect(within(bar).queryByRole("button", { name: /^Mark reviewed/u })).toBeNull();
 		expect(requests[0]?.changes.every((change) => change.kind === "set")).toBe(true);
 		expect(
 			requests[0]?.changes.some((change) => change.culture === "fr" && change.key === "K")

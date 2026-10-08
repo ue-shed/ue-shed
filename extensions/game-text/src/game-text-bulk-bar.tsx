@@ -3,6 +3,7 @@ import {
 	MAX_LOCALIZATION_EDITS,
 	type LocalizationLineId,
 	type LocalizationLinePreview,
+	type LocalizationReviewChange,
 	type LocalizationSelection,
 	type TextCorpusSearchRequest
 } from "@ue-shed/game-text/browser";
@@ -54,8 +55,13 @@ export function createLineSelection(input: {
 		setCapped(false);
 		setTicked(new Map());
 	};
+	// Each ticked line as the list last loaded it, so a reload after a write shows its new state.
+	const current = createMemo(() => {
+		const fresh = new Map(input.order().map((line) => [line.id, line]));
+		return new Map([...ticked()].map(([id, line]) => [id, fresh.get(id) ?? line] as const));
+	});
 	return {
-		ticked,
+		ticked: current,
 		capped,
 		isTicked: (id: LocalizationLineId) => ticked().has(id),
 		toggle,
@@ -84,7 +90,16 @@ export function BulkBar(props: {
 	const [working, setWorking] = createSignal(false);
 	const [message, setMessage] = createSignal<string | undefined>(undefined);
 	const lines = createMemo(() => [...props.selection.ticked().values()]);
-	const reviews = createMemo(() => reviewChanges(lines(), props.cultures, props.nativeCulture));
+	// Reviews written from this bar, so a ticked line in a closed group, which the list has not
+	// reloaded, does not offer them again.
+	const [written, setWritten] = createSignal<ReadonlySet<string>>(new Set());
+	const reviewKey = (change: LocalizationReviewChange) =>
+		change.kind === "set" ? [change.culture, change.namespace, change.key].join("\u0000") : "";
+	const reviews = createMemo(() =>
+		reviewChanges(lines(), props.cultures, props.nativeCulture).filter(
+			(change) => !written().has(reviewKey(change))
+		)
+	);
 	const carries = createMemo(() => carryEdits(lines()));
 	const count = () => lines().length;
 	const run = <A, E>(
@@ -138,21 +153,22 @@ export function BulkBar(props: {
 		if (!request || target === undefined || changes.length === 0) return;
 		// One request per batch, in order; the first failure stops the rest.
 		const write = Effect.gen(function* () {
-			let written = 0;
+			let marked = 0;
 			for (const batch of batches(changes, REVIEW_BATCH)) {
 				const result = yield* request({ target, changes: batch });
-				if (result.status !== "written") return { written, result };
-				written += batch.length;
+				if (result.status !== "written") return { marked, result };
+				marked += batch.length;
+				setWritten((done) => new Set([...done, ...batch.map(reviewKey)]));
 			}
-			return { written, result: undefined };
+			return { marked, result: undefined };
 		});
 		run(
 			write,
-			({ written, result }) => {
-				if (written > 0) props.onChanged();
-				const done = `Marked ${written.toLocaleString()} translations reviewed.`;
+			({ marked, result }) => {
+				if (marked > 0) props.onChanged();
+				const done = `Marked ${marked.toLocaleString()} translations reviewed.`;
 				return result?.status === "failed"
-					? `${written > 0 ? done + " " : ""}${result.message} ${result.recovery}`
+					? `${marked > 0 ? done + " " : ""}${result.message} ${result.recovery}`
 					: result?.status === "not_ready"
 						? "Translations are still loading. Try again in a moment."
 						: done;
@@ -193,6 +209,7 @@ export function BulkBar(props: {
 		);
 	const clear = () => {
 		setMessage(undefined);
+		setWritten(new Set<string>());
 		props.selection.clear();
 	};
 	return (

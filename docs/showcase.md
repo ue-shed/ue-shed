@@ -191,15 +191,22 @@ One toolbar holds **Text**, **Quality checks**, the number of lines and assets, 
 **Rescan**. Read warnings open **Read problems**, including partly read assets and text fields that
 could not be decoded. A clean writing-check result does not mean every asset was fully read.
 
-Type into **Search text** to search source text; the live match count updates as you type. Use
-**Editable**, **Read only** or **No translator notes**, then chips such as **Used in several places**,
-**Same text, different keys** or **Long text**. Counts follow the current search and filters.
-The toolbar stays in place while the list and detail pane scroll independently.
+Type into **Search text** to search source text; the live match count updates as you type. Lines
+are grouped by what they need, worst first: a changed key, gather work, translation work, then
+findings. **Filter** opens a field and then its values with counts, and each choice becomes a pill
+such as "Editing is Editable"; **Display** regroups the list by folder, asset, origin or namespace.
+The culture picker takes any number of cultures, and each line ends with a strip showing every
+culture's state. Counts follow the current search and filters.
 
-Select a line to see its key, character and word counts, translator notes, and **Where it appears**.
-Rows preserve the exact Unreal asset, row, entry and property names. Copy icons copy the text, key
-or asset path. **Saved file** reveals the package file; **Show N more locations** loads more places
-when needed. Read problems for the selected line remain inspectable below its locations.
+Select a line to open its page: what it needs, its key, character and word counts, translator
+notes, **Where it appears**, every translation, and its properties. **‹ Lines** returns to the list
+and the arrows step to the next line. Rows preserve the exact Unreal asset, row, entry and property
+names. Copy icons copy the text, key or asset path. **Saved file** reveals the package file;
+**Show N more locations** loads more places when needed. Read problems for the selected line remain
+inspectable below its locations. Tick lines (shift-click for a range) to export them for
+translators, mark them reviewed, carry translations to changed keys or copy their keys.
+[Reviewing text in Workbench](products/game-text.md#reviewing-text-in-workbench) describes each
+part.
 **Show in Unreal** synchronizes the connected editor's Content Browser to that asset. Opening,
 offline, missing-plugin, not-found and failed feedback stays visible; **Opened** appears only after
 Unreal confirms the action.
@@ -570,6 +577,19 @@ pnpm showcase:record world-log
 It starts the disposable local Perforce fixture for the recording, scans the World Partition map,
 and records actor movement, a label change, removal across time, and unclassified package evidence.
 It does not launch Unreal.
+
+To record a captioned tour of Game Text for people new to it:
+
+```powershell
+pnpm game-text:tour
+```
+
+It copies the fixture project to the recording folder and gives one gathered key an earlier name,
+so the tour can show a key change, carry its translations, write a translation to a PO file, mark
+reviews and export lines without touching the fixture. Each step has a caption at reading pace;
+the video, `game-text-tour.webm`, runs about six minutes and lands under
+`test-results/game-text-tour/<timestamp>`. The Unreal steps plan is shown and cancelled, so Unreal
+is not launched. Pass `--no-build` to reuse the current Workbench build.
 
 ## Publish captures to the site
 

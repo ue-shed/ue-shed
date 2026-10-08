@@ -42,6 +42,7 @@
 		"showcase": "node scripts/showcase.ts",
 		"showcase:world-log": "node scripts/showcase-world-log.ts",
 		"showcase:world-log-fast": "node scripts/record-showcase.ts world-log-fast",
+		"game-text:tour": "node scripts/record-game-text-tour.ts",
 		"showcase:record": "node scripts/record-showcase.ts",
 		"site:media": "node scripts/site-media.ts",
 		"test": "node scripts/test.ts",

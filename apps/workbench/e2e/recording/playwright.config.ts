@@ -12,7 +12,8 @@ export default defineConfig({
 	testMatch: [
 		"showcase.recording.ts",
 		"map-review-flow.recording.ts",
-		"game-text-quality.recording.ts"
+		"game-text-quality.recording.ts",
+		"game-text-tour.recording.ts"
 	],
 	timeout: 300_000,
 	workers: 1

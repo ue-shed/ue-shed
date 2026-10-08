@@ -715,47 +715,6 @@ TSharedPtr<FJsonValue> WithoutTextIdentity(const TSharedPtr<FJsonValue>& Value)
 	return MakeShared<FJsonValueObject>(Copy);
 }
 
-/**
- * Keeps only the text identities in a value, in place, so two values compare by identity alone.
- * Everything else is already covered by the table fingerprint, and leaving it out tolerates
- * clients that decode snapshot fields they do not model.
- */
-TSharedPtr<FJsonValue> TextIdentities(const TSharedPtr<FJsonValue>& Value)
-{
-	if (!Value.IsValid()) return MakeShared<FJsonValueNull>();
-	if (Value->Type == EJson::Array)
-	{
-		TArray<TSharedPtr<FJsonValue>> Items;
-		bool bAnyText = false;
-		for (const TSharedPtr<FJsonValue>& Item : Value->AsArray())
-		{
-			Items.Add(TextIdentities(Item));
-			bAnyText |= Items.Last()->Type != EJson::Null;
-		}
-		// Positions matter only where text is present.
-		if (!bAnyText) return MakeShared<FJsonValueNull>();
-		return MakeShared<FJsonValueArray>(Items);
-	}
-	if (Value->Type != EJson::Object) return MakeShared<FJsonValueNull>();
-	const TSharedPtr<FJsonObject> Source = Value->AsObject();
-	FString Kind;
-	if (Source->TryGetStringField(TEXT("kind"), Kind) && Kind == TEXT("text"))
-	{
-		const TSharedPtr<FJsonValue> Identity = Source->TryGetField(TEXT("identity"));
-		return Identity.IsValid() ? Identity : MakeShared<FJsonValueNull>();
-	}
-	const TSharedRef<FJsonObject> Copy = MakeShared<FJsonObject>();
-	for (const auto& Field : Source->Values)
-	{
-		const TSharedPtr<FJsonValue> Projected = TextIdentities(Field.Value);
-		if (Projected->Type != EJson::Null) Copy->SetField(Field.Key, Projected);
-	}
-	if (Copy->Values.Num() == 0) return MakeShared<FJsonValueNull>();
-	// Canonical JSON orders set and map members by their kind.
-	if (!Kind.IsEmpty()) Copy->SetStringField(TEXT("kind"), Kind);
-	return MakeShared<FJsonValueObject>(Copy);
-}
-
 bool TextFromIdentity(
 	const FText& Current, const TSharedPtr<FJsonObject>& Identity, const FString& Value,
 	FText& Result, FString& Error)
@@ -1452,8 +1411,9 @@ bool ApplyCommand(
 			Error = TEXT("row moved or no longer exists before removal");
 			return false;
 		}
-		// The fingerprint leaves text identity out, so a removal must check the reviewed row's
-		// identities itself: a key or string-table change since review is a conflict.
+		// The fingerprint leaves text identity out, so a removal compares the reviewed row itself,
+		// as set_cell compares oldValue: a key or string-table change since review, anywhere in
+		// the row, is a conflict. Apply 1.2 clients echo the snapshot row they fingerprinted.
 		if (bTextIdentity)
 		{
 			bool bPartial = false;
@@ -1465,10 +1425,10 @@ bool ApplyCommand(
 			}
 			const TArray<TSharedPtr<FJsonValue>>* Reviewed = nullptr;
 			if (!Row->TryGetArrayField(TEXT("fields"), Reviewed)
-				|| CanonicalJson(TextIdentities(MakeShared<FJsonValueArray>(Live)))
-					!= CanonicalJson(TextIdentities(MakeShared<FJsonValueArray>(*Reviewed))))
+				|| CanonicalJson(MakeShared<FJsonValueArray>(Live))
+					!= CanonicalJson(MakeShared<FJsonValueArray>(*Reviewed)))
 			{
-				Error = TEXT("row text identity changed since review");
+				Error = TEXT("row changed since review, including its text identity");
 				return false;
 			}
 		}
@@ -2253,7 +2213,20 @@ bool FUEShedAuthoringTextIdentityTest::RunTest(const FString& Parameters)
 		RemoveRow(ReviewedRow, false, Error));
 	TestFalse(TEXT("The contract 1.1 removal deletes the row"), Table->GetRowMap().Contains(TEXT("Row")));
 
+	// Swapping same-display identities between two name keys keeps every display string and the
+	// unordered set of identities, but each key now holds another text.
 	Table->AddRow(TEXT("Row"), FUEShedAuthoringTestTextRow());
+	const TSharedPtr<FJsonObject> NamedRow = BuildTableSnapshot(Table)->GetObjectField(TEXT("table"))
+		->GetArrayField(TEXT("rows"))[0]->AsObject();
+	const FString BeforeSwap = TableFingerprint(Table);
+	const FText First = CurrentRow()->Named.FindChecked(TEXT("A"));
+	CurrentRow()->Named.Add(TEXT("A"), CurrentRow()->Named.FindChecked(TEXT("B")));
+	CurrentRow()->Named.Add(TEXT("B"), First);
+	TestEqual(TEXT("Swapped map identities leave the fingerprint unchanged"),
+		TableFingerprint(Table), BeforeSwap);
+	TestFalse(TEXT("Removing a row whose map identities swapped keys is a conflict"),
+		RemoveRow(NamedRow, true, Error));
+
 	const TSharedPtr<FJsonObject> FreshRow = BuildTableSnapshot(Table)->GetObjectField(TEXT("table"))
 		->GetArrayField(TEXT("rows"))[0]->AsObject();
 	TestTrue(TEXT("Removing an unchanged reviewed row succeeds"), RemoveRow(FreshRow, true, Error));

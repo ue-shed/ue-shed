@@ -22,9 +22,10 @@ The table fingerprint leaves text identity out, so Apply 1.1 clients still match
 checks identity per command instead:
 
 - `set_cell` compares its `oldValue`, identity included;
-- `remove_row` compares the text identities of the reviewed `row`, including text nested in
-  structs, arrays, sets and maps. If a key or string-table reference changed since review, the
-  removal is a conflict, even when the display text is the same.
+- `remove_row` compares the reviewed `row` with the live row, identity included. Text nested in
+  structs, arrays, sets and maps is compared too, and each identity stays tied to its map key or
+  set element. If a key or string-table reference changed since review, the removal is a
+  conflict, even when the display text is the same.
 
 `FindActorsReferencingRow(RequestJson, ResultJson)` implements
 `unreal-authoring-actor-references` version 1.0. The request selects an already-loaded editor or PIE

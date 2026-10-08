@@ -98,6 +98,8 @@ struct FUEShedAuthoringTestTextRow : public FTableRowBase
 		Array.Add(FUEShedAuthoringTestTextDefault());
 		Set.Add(FUEShedAuthoringTestTextDefault());
 		Map.Add(FUEShedAuthoringTestTextDefault(), FUEShedAuthoringTestTextDefault());
+		Named.Add(TEXT("A"), NSLOCTEXT("UEShedAuthoringDefaults", "NamedA", "Same display"));
+		Named.Add(TEXT("B"), NSLOCTEXT("UEShedAuthoringDefaults", "NamedB", "Same display"));
 	}
 
 	UPROPERTY()
@@ -121,6 +123,10 @@ struct FUEShedAuthoringTestTextRow : public FTableRowBase
 
 	UPROPERTY()
 	TMap<FUEShedAuthoringTestTextDefault, FUEShedAuthoringTestTextDefault> Map;
+
+	/** Name keys with same-display texts, for identity drift that only moves between keys. */
+	UPROPERTY()
+	TMap<FName, FText> Named;
 };
 
 UCLASS(Transient, NotBlueprintable)

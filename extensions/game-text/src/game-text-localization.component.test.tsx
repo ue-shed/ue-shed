@@ -473,13 +473,47 @@ describe("Game Text localization", () => {
 				document.activeElement
 			)
 		);
+		// Enter picks a culture and keeps the choices open, so several can be picked.
 		await user.keyboard("{ArrowDown}{ArrowDown}{Enter}");
 		await screen.findByRole("button", { name: "Culture: de" });
+		expect(within(choices).getByRole("button", { name: "de" })).toBe(document.activeElement);
+		await user.keyboard("{ArrowDown}{Enter}");
+		await screen.findByRole("button", { name: "Culture: de, fr" });
+		await user.keyboard("{Escape}");
 		await waitFor(() => expect(document.activeElement).toBe(trigger));
 		expect(screen.queryByRole("dialog", { name: "Culture choices" })).toBeNull();
-		await user.keyboard("{Enter}{Escape}");
-		await waitFor(() => expect(document.activeElement).toBe(trigger));
-		expect(screen.queryByRole("dialog", { name: "Culture choices" })).toBeNull();
+		// Reopening focuses the first picked culture; "All cultures" clears the choice.
+		await user.keyboard("{Enter}");
+		const reopened = await screen.findByRole("dialog", { name: "Culture choices" });
+		await waitFor(() =>
+			expect(within(reopened).getByRole("button", { name: "de" })).toBe(
+				document.activeElement
+			)
+		);
+		await user.keyboard("{Home}{Enter}{Escape}");
+		await screen.findByRole("button", { name: "Culture: All cultures" });
+	});
+
+	it("narrows counts, the strip and translation search to several picked cultures", async () => {
+		const user = userEvent.setup();
+		mount();
+		await screen.findByText("3 matches");
+		await user.click(screen.getByRole("button", { name: "Culture: All cultures" }));
+		const choices = screen.getByRole("dialog", { name: "Culture choices" });
+		// Each culture shows its work over the current filters.
+		expect(within(choices).getByRole("button", { name: "de" }).title).toContain("not synced");
+		await user.click(within(choices).getByRole("button", { name: "en" }));
+		await user.click(within(choices).getByRole("button", { name: "fr" }));
+		await user.keyboard("{Escape}");
+		await screen.findByRole("button", { name: "Culture: en, fr" });
+		const results = within(screen.getByRole("region", { name: "Results" }));
+		// The strip shows the picked cultures only.
+		expect(await results.findByRole("img", { name: "en shipped, fr to update" })).toBeDefined();
+		expect(results.queryByText(/de not synced/u)).toBeNull();
+		// Translation search covers every picked culture.
+		await user.click(screen.getByRole("button", { name: "Search translations" }));
+		await user.type(screen.getByRole("searchbox"), "Bienvenue");
+		await waitFor(() => expect(results.getByText(/Welcome/u)).toBeDefined());
 	});
 	it("omits informational or fully translated row marks, while keeping translations visible", () => {
 		const preview = localized.search({

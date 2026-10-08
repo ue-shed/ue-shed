@@ -429,6 +429,7 @@ test("records the real Game Text quality workflow", async ({
 			).toBeVisible();
 		}
 		await cultureChoices.getByRole("button", { name: "de", exact: true }).click();
+		await page.keyboard.press("Escape");
 		await expect(culture).toHaveAccessibleName("Culture: de");
 		await expect(culture).toHaveCSS("height", "26px");
 		await expect(searchCount).toHaveText(
@@ -543,6 +544,7 @@ test("records the real Game Text quality workflow", async ({
 		await pills.getByRole("button", { name: /^Remove Translation/u }).click();
 		await culture.click();
 		await cultureChoices.getByRole("button", { name: "All cultures", exact: true }).click();
+		await page.keyboard.press("Escape");
 		await expect(culture).toHaveAccessibleName("Culture: All cultures");
 		await expect(searchCount).toHaveText(
 			`${lines.toLocaleString()} ${lines === 1 ? "match" : "matches"}`
@@ -570,6 +572,7 @@ test("records the real Game Text quality workflow", async ({
 
 		await culture.click();
 		await cultureChoices.getByRole("button", { name: "de", exact: true }).click();
+		await page.keyboard.press("Escape");
 		await expect(culture).toHaveAccessibleName("Culture: de");
 		await qualityTab.click();
 		const formatArguments = page.getByRole("button", { name: /^Format arguments [\d,]+$/u });

@@ -343,7 +343,12 @@ export function GameTextRoute(props: {
 			...whereField(),
 			...(filter().length > 0 ? { filter: filter() } : undefined),
 			...groupField(),
-			facets: { folder: facetFolder(), assets: true, origins: true },
+			facets: {
+				folder: facetFolder(),
+				assets: true,
+				origins: true,
+				...(selected ? { cultures: true } : undefined)
+			},
 			...(selected ? { localization: selected } : undefined),
 			pageSize: 50
 		};
@@ -535,6 +540,8 @@ export function GameTextRoute(props: {
 				qualityEditor: editor.state(),
 				localizationTarget: localization.target(),
 				localizationCulture: localization.culture(),
+				localizationCultures:
+					localization.cultures().length > 0 ? localization.cultures() : undefined,
 				localizationState: localization.state(),
 				localizationReview: localization.review(),
 				localizationKeyChanged: localization.keyChanged(),
@@ -778,6 +785,7 @@ export function GameTextRoute(props: {
 				<LocalizationControls
 					model={localization}
 					disabled={operations.busy()}
+					cultureWork={page()?.facets?.cultures}
 					syncAction={
 						<SyncWithUnreal
 							model={operations}
@@ -986,7 +994,7 @@ export function GameTextRoute(props: {
 										type="search"
 										aria-label="Search game text"
 										placeholder={
-											localization.culture() &&
+											localization.cultures().length > 0 &&
 											localization.searchTranslations()
 												? "Search text and translations"
 												: "Search text"
@@ -1011,7 +1019,11 @@ export function GameTextRoute(props: {
 													: page()?.total.toLocaleString() + " matches"}
 									</span>
 								</div>
-								<Show when={localization.active() && localization.culture()}>
+								<Show
+									when={
+										localization.active() && localization.cultures().length > 0
+									}
+								>
 									<Chip
 										label="Search translations"
 										toggle
@@ -1096,6 +1108,7 @@ export function GameTextRoute(props: {
 											<GameTextResultRows
 												page={page()}
 												culture={localization.culture()}
+												cultures={localization.cultures()}
 												selectedId={selectedId()}
 												selectedLocalizationId={localization.selectedId()}
 												onSelect={(unit, line) => {
@@ -1113,6 +1126,7 @@ export function GameTextRoute(props: {
 												request={searchRequest()}
 												client={props.client}
 												culture={localization.culture()}
+												cultures={localization.cultures()}
 												selectedId={selectedId()}
 												selectedLocalizationId={localization.selectedId()}
 												onSelect={(unit, line) => {

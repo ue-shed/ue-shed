@@ -12,8 +12,8 @@
 ## Status
 
 - **State**: IN PROGRESS. Phases 1 and 2 are done; Phase 3's first slice (Filter, Display, grouped
-  list, culture strip, side facets, migration) is done; culture sets, keyboard and saved views
-  remain. The design is a
+  list, culture strip, side facets, migration) and the multi-select culture picker are done;
+  keyboard and saved views remain. The design is a
   mockup with sample data; each phase earns its part against the fixture and a generated large
   corpus.
 - **Priority**: P1
@@ -30,7 +30,8 @@
 Game Text added a chip for every check and state. Together they wrap into rows, treat a lost
 translation and a long line alike, and do not scale to a shipping game. The review workspace design
 replaces them with a list grouped by worst problem, colour reserved for severity, one Filter and one
-Display control, a culture strip with culture sets, facets in the right pane, and a page per line.
+Display control, a culture strip with a multi-select culture picker, facets in the right pane,
+and a page per line.
 
 The core stays usable without the Workbench: problem classification, grouping, facets and culture
 scope are pure functions in `@ue-shed/game-text`, exposed through the existing query and the CLI.
@@ -47,8 +48,9 @@ scope are pure functions in `@ue-shed/game-text`, exposed through the existing q
 3. **Culture scope** is a request field, `cultures`, defaulting to every target culture. Problem
    classification, counts, findings with a culture (long text) and the strip use only the cultures
    in scope.
-4. **Culture sets** are stored with the Workbench project preferences (per user) in this plan. A
-   shared project file is a later decision.
+4. **Culture picker**: any number of cultures, remembered per project and user. Named culture
+   sets were dropped by owner decision on 2026-10-08: Unreal has no culture groups, and a
+   remembered multi-select covers the same work.
 5. **Filters are a list of clauses**, each `{ field, op: "is" | "is_not", values }`, decoded at the
    boundary and applied as an AND of ORs. They are an added request field, ANDed with the existing
    `lens`, `capability`, `withoutNotes`, `where` and `localization.state/review/keyChanged`, which
@@ -148,7 +150,8 @@ the folder facet on the generated corpus stays bounded (top 200 children, then a
 4. Culture picker with saved sets and every culture worst first.
 5. Right pane facets when nothing is picked; clicking a facet adds its pill.
 6. Keyboard: `/` search, `F` filter, `J`/`K` and arrows to move, `Enter` to open, `X` to select.
-7. Saved presets become saved views (name, filter, display, culture set); 0.10 presets migrate.
+7. Saved presets become saved views (name, filter, display, picked cultures); 0.10 presets
+   migrate.
 
 **Gate**: component tests for pills, groups, the strip (merged and mixed, set narrowing) and the
 picker; preset migration tests; recording and screenshots on the fixture and the generated corpus;
@@ -175,7 +178,12 @@ StyleX and visual-regression checks for the strip and group header.
 - Verified: 74 Game Text component tests (22 rewritten for the Filter submenus and pills), unit
   tests for pills, migration and the strip text, the Game Text recording on the fixture project,
   screenshots, precommit, Node 26 sweep and Node 24 components.
-- Still to do in Phase 3: culture sets in the picker (4), the keyboard (6), and saved views (7).
+- Multi-select culture picker (4): any number of cultures, each with its missing, to-update and
+  not-synced counts from the culture facet, remembered per project (`localizationCultures`, with the
+  single `localizationCulture` still read). One culture shows its translations inline; several
+  narrow the request's `cultures`, the strip and its summary, and translation search covers every
+  picked culture. The keyboard works as in the other pickers; Enter keeps the choices open.
+- Still to do in Phase 3: the keyboard (6) and saved views (7).
 
 ## Phase 4: The line page (Workbench)
 
@@ -201,7 +209,7 @@ form.
 
 ## Documentation
 
-- `docs/products/game-text.md` rewritten around problems, Filter, Display, culture sets, the line page
+- `docs/products/game-text.md` rewritten around problems, Filter, Display, picked cultures, the line page
   and bulk actions; the idea document marked as graduated.
 - Website guides and screenshots for Game Text refreshed (see `docs/engineering/website.md`).
 - Changesets for `@ue-shed/game-text`, `@ue-shed/ui` and the CLI.

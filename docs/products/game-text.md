@@ -76,11 +76,15 @@ Colour marks severity only: red for key problems, amber for lines waiting on Unr
 work, blue for translations not yet in Unreal. Findings and facts such as "Not found in the project"
 stay grey.
 
-With every culture shown, each line ends with a **culture strip**: one cell per culture, always in
-the target's order, empty when shipped, dashed when missing, amber when it needs an update and blue
-when not synced, and one merged bar when every culture shares a state. The text before it names
-cultures only when one or two are affected ("de, fr to update", "all missing"). A line every
-culture ships draws no mark; a gather state is said once for the line ("Not gathered yet").
+The culture picker takes any number of cultures, and the choice is remembered per project. Each
+culture shows its missing, to-update and not-synced lines over the current filters. With one
+culture picked, each line shows that culture's translation. With none, or several, each line ends
+with a **culture strip** of the cultures shown: one cell per culture, always in the target's order,
+empty when shipped, dashed when missing, amber when it needs an update and blue when not synced,
+and one merged bar when every culture shares a state. The text before it names cultures only when
+one or two are affected ("de, fr to update", "all missing"). A line every culture ships draws no
+mark; a gather state is said once for the line ("Not gathered yet"). Picked cultures also narrow
+states, counts and translation work, and **Search translations** searches every picked culture.
 
 Until a line is opened, the side pane shows where the lines are: problems (unless the list is
 grouped by them) and folders, assets and origins, each with its line count and how many need work.
@@ -389,7 +393,7 @@ Gathered only, outside the target and origin are facts, not problems.
 `folder is-not Content/Prototype/` or `translation is missing`: a field (`problem`, `finding`,
 `translation`, `origin`, `folder`, `editing`, `notes`), `is` or `is-not`, and comma-separated
 values. Every clause must match; `is` matches any of its values and `is-not` none of them.
-`--cultures de,fr` limits states, counts and translation work to a culture set. Both work on
+`--cultures de,fr` limits states, counts and translation work to those cultures. Both work on
 `loc status`, `loc export` and localization-aware `text search`; a malformed clause fails with
 `invalid_selection` and the expected form. Clauses on `asset` match a file in any spelling
 (`Content/UI/WBP_Menu.uasset`, `/Game/UI/WBP_Menu`), and `namespace` matches exactly.
@@ -401,7 +405,7 @@ lines need work before they ship (problems worse than a finding) and its worst p
 counts and groups stay those of the whole request. **Facets** count where the matching lines
 are: the folders directly under a given folder, assets, origins, and each culture's shipped,
 missing, to-update and not-synced lines. Each facet leaves out its own clauses, and the culture
-facet leaves out the culture set, so the picker always shows every culture.
+facet leaves out the picked cultures, so the picker always shows every culture.
 
 ### Checks and reports
 

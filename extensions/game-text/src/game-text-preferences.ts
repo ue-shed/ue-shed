@@ -18,6 +18,7 @@ import type { RuleEditorState } from "./game-text-rule-state.js";
 const StoredPreferences = Schema.Struct({
 	localizationTarget: Schema.optionalKey(LocalizationSelection.fields.target),
 	localizationCulture: LocalizationSelection.fields.culture,
+	localizationCultures: LocalizationSelection.fields.cultures,
 	localizationState: LocalizationSelection.fields.state,
 	localizationReview: LocalizationSelection.fields.review,
 	localizationKeyChanged: Schema.optionalKey(Schema.Boolean),
@@ -43,6 +44,10 @@ export interface GameTextPreferences {
 		| undefined;
 	readonly localizationCulture?:
 		| Schema.Schema.Type<typeof LocalizationSelection>["culture"]
+		| undefined;
+	/** Every picked culture; preferences saved before multi-select only have `localizationCulture`. */
+	readonly localizationCultures?:
+		| Schema.Schema.Type<typeof LocalizationSelection>["cultures"]
 		| undefined;
 	readonly localizationState?:
 		| Schema.Schema.Type<typeof LocalizationSelection>["state"]

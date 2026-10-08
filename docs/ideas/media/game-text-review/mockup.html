@@ -675,14 +675,14 @@
 		<div class="app" id="b" style="grid-template-rows: 44px 1fr"></div>
 
 		<h2>
-			C · Working in bulk with a culture set: the owner of the Asian cultures picks their set,
+			C · Working in bulk on picked cultures: the owner of a vendor's cultures picks them,
 			selects lines and acts on them together.
 		</h2>
 		<div class="app" id="c"></div>
 
 		<h2>
-			D · The culture picker is the one place for per-culture progress: saved sets, then every
-			culture worst first.
+			D · The culture picker is the one place for per-culture progress: pick any number of
+			cultures, each showing its work; the choice is remembered per project.
 		</h2>
 		<div class="app" id="d" style="height: 420px"></div>
 
@@ -859,11 +859,11 @@
 					folder("Content/Quests/Act1", 0, 40, "5,018") +
 					`<div class="facet quiet">212 more folders, sorted by problems</div>`
 			)}</div>`;
-			// Grouped by asset: the problems move to the pane, counted inside this folder and culture set.
+			// Grouped by asset: the problems move to the pane, counted inside this folder and the picked cultures.
 			const problem = (label, n, cls, mark) =>
 				`<div class="facet${cls === "quiet" ? " quiet" : ""}"><span class="mark">${mark ? keyMark : ""}</span><span class="${cls === "quiet" ? "" : cls}">${label}</span><span class="c">${n}</span></div>`;
 			const sideC = `<div class="side">
-	<div class="card"><h3>Problems <span>in this folder and set</span></h3>
+	<div class="card"><h3>Problems <span>in this folder and these cultures</span></h3>
 		${problem("Key changed", 4, "d", true)}${problem("Not gathered yet", 12, "w")}${problem("Changed since gather", 5, "w")}${problem("Translation work", 14, "")}
 		<div class="sep"></div>${problem("Findings", 48, "quiet")}
 	</div>
@@ -924,7 +924,7 @@
 		</div>
 	</div>`;
 
-			// C: bulk, with the Asian cultures set
+			// C: bulk, with five cultures picked
 			active = ["ja", "ko", "zh-Hans", "zh-Hant", "th"];
 			const listC = [
 				group(
@@ -992,7 +992,7 @@
 				)
 			].join("");
 			document.getElementById("c").innerHTML =
-				header("Cultures: Asian (5)") +
+				header("5 cultures") +
 				bar("<b>1,904</b> lines · 31 need work in ja, ko, zh-Hans, zh-Hant, th") +
 				`<div class="pills"><span class="pill"><span>Folder</span><span class="op">is</span><span class="v mono">Content/Characters/Companion</span><span class="x">×</span></span>
 	<span class="pill"><span>Group by</span><span class="v">Asset</span></span></div>
@@ -1000,7 +1000,7 @@
 	<div class="bulk"><span class="n">4 selected</span><span class="btn">Export for translators</span><span class="btn">Mark reviewed</span><span class="btn">Copy keys</span><span class="btn quiet">✕</span></div>`;
 
 			active = ORDER;
-			document.getElementById("d").innerHTML = header("Cultures: Asian (5)");
+			document.getElementById("d").innerHTML = header("5 cultures");
 			const pick = (c, pct, miss, upd, uns, on) =>
 				`<div class="it"><span class="check${on ? " on" : ""}"></span><span class="mono" style="width:56px">${c}</span><span class="prog"><i style="width:${pct}%;background:var(--ok)"></i></span><span class="c">${[
 					[miss, "missing"],
@@ -1014,13 +1014,10 @@
 				"beforeend",
 				`<div class="menu" style="left:250px;top:40px;width:430px">
 	<div class="in">Cultures…</div>
-	<div class="sec"><div class="head">Sets</div>
-		<div class="it">All 14<span class="c">default</span></div>
-		<div class="it hl">Asian cultures<span class="c">ja · ko · zh-Hans · zh-Hant · th</span></div>
-		<div class="it">European cultures<span class="c">8</span></div>
-		<div class="it" style="color:var(--muted)">Save this selection as a set…</div>
+	<div class="sec">
+		<div class="it">All cultures</div>
 	</div>
-	<div class="sec"><div class="head">Cultures, worst first</div>
+	<div class="sec"><div class="head">Pick any number; remembered per project</div>
 		${pick("th", 94.1, 210, 18, 0, true)}${pick("ko", 96.5, 160, 9, 0, true)}${pick("ja", 96.8, 140, 11, 22, true)}${pick("zh-Hant", 97.0, 131, 6, 0, true)}${pick("zh-Hans", 97.4, 118, 6, 0, true)}${pick("it", 97.2, 120, 14, 0)}
 		<div class="it" style="color:var(--muted)">8 more</div>
 	</div>

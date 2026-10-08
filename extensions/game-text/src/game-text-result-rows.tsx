@@ -24,6 +24,8 @@ type ResultRow = {
 export function GameTextResultRows(props: {
 	readonly page: TextCorpusSearchPage | undefined;
 	readonly culture: string | undefined;
+	/** The picked cultures; every culture when empty or absent. */
+	readonly cultures?: readonly string[];
 	readonly selectedId: TextUnitId | undefined;
 	readonly selectedLocalizationId: LocalizationLineId | undefined;
 	readonly onSelect: (unit: TextUnitId | undefined, line: LocalizationLineId | undefined) => void;
@@ -101,7 +103,9 @@ export function GameTextResultRows(props: {
 							)}
 						</Show>
 					</span>
-					<Show when={row.line}>{(line) => <LineStatus line={line()} />}</Show>
+					<Show when={row.line}>
+						{(line) => <LineStatus line={line()} cultures={props.cultures ?? []} />}
+					</Show>
 				</button>
 			)}
 		</For>
@@ -112,9 +116,17 @@ export function GameTextResultRows(props: {
  * What a line still needs, on the right: a changed key in red, a gather state the line shares
  * across cultures, or each culture's translation state as a strip.
  */
-function LineStatus(props: { readonly line: LocalizationLinePreview }) {
-	const shared = () => lineState(props.line.cultures);
-	const summary = () => cultureSummary(props.line.cultures);
+function LineStatus(props: {
+	readonly line: LocalizationLinePreview;
+	readonly cultures: readonly string[];
+}) {
+	// Only the picked cultures, in the target's order; every culture when none is picked.
+	const marks = () =>
+		props.cultures.length === 0
+			? props.line.cultures
+			: props.line.cultures.filter((mark) => props.cultures.includes(mark.culture));
+	const shared = () => lineState(marks());
+	const summary = () => cultureSummary(marks());
 	return (
 		<span {...stylex.attrs(local.status)}>
 			<Show when={props.line.keyChange?.direction === "to"}>
@@ -127,7 +139,7 @@ function LineStatus(props: { readonly line: LocalizationLinePreview }) {
 						<Show when={summary()}>
 							<span
 								{...stylex.attrs(
-									props.line.cultures.some(
+									marks().some(
 										(mark) =>
 											mark.state === "not_translated" ||
 											mark.state === "needs_update"
@@ -140,12 +152,8 @@ function LineStatus(props: { readonly line: LocalizationLinePreview }) {
 							</span>
 						</Show>
 						{/* A line every culture ships draws no mark. */}
-						<Show
-							when={props.line.cultures.some(
-								(mark) => cultureCell(mark) !== "shipped"
-							)}
-						>
-							<CultureStrip marks={props.line.cultures} />
+						<Show when={marks().some((mark) => cultureCell(mark) !== "shipped")}>
+							<CultureStrip marks={marks()} />
 						</Show>
 					</>
 				}

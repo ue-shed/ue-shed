@@ -27,6 +27,8 @@ export function GroupedResults(props: {
 	readonly request: TextCorpusSearchRequest;
 	readonly client: GameTextClientApi;
 	readonly culture: string | undefined;
+	/** The picked cultures; every culture when empty or absent. */
+	readonly cultures?: readonly string[];
 	readonly selectedId: TextUnitId | undefined;
 	readonly selectedLocalizationId: LocalizationLineId | undefined;
 	readonly onSelect: (unit: TextUnitId | undefined, line: LocalizationLineId | undefined) => void;
@@ -54,6 +56,7 @@ export function GroupedResults(props: {
 						request={props.request}
 						client={props.client}
 						culture={props.culture}
+						cultures={props.cultures ?? []}
 						selectedId={props.selectedId}
 						selectedLocalizationId={props.selectedLocalizationId}
 						onSelect={props.onSelect}
@@ -77,6 +80,8 @@ function GroupSection(props: {
 	readonly request: TextCorpusSearchRequest;
 	readonly client: GameTextClientApi;
 	readonly culture: string | undefined;
+	/** The picked cultures; every culture when empty or absent. */
+	readonly cultures?: readonly string[];
 	readonly selectedId: TextUnitId | undefined;
 	readonly selectedLocalizationId: LocalizationLineId | undefined;
 	readonly onSelect: (unit: TextUnitId | undefined, line: LocalizationLineId | undefined) => void;
@@ -195,6 +200,7 @@ function GroupSection(props: {
 							<GameTextResultRows
 								page={current()}
 								culture={props.culture}
+								cultures={props.cultures ?? []}
 								selectedId={props.selectedId}
 								selectedLocalizationId={props.selectedLocalizationId}
 								onSelect={props.onSelect}

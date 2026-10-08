@@ -7,6 +7,7 @@ import type {
 	TextCorpusQuerySummary,
 	TextUnitId
 } from "@ue-shed/game-text/browser";
+type CultureCode = NonNullable<LocalizationSelection["culture"]>;
 import { createEffectAction } from "@ue-shed/ui";
 import { createEffect, createSignal, latest, untrack } from "solid-js";
 import type { GameTextClientApi } from "./game-text-client.js";
@@ -25,7 +26,12 @@ export function createGameTextLocalizationState(props: {
 		props.client.localizationFocus
 	);
 	const [target, setTarget] = createSignal(props.initial?.localizationTarget);
-	const [culture, setCulture] = createSignal(props.initial?.localizationCulture);
+	// The picked cultures; none means every culture. One picked culture also shows its
+	// translations on each line and in the detail first.
+	const [picked, setPicked] = createSignal<readonly CultureCode[]>(
+		props.initial?.localizationCultures ??
+			(props.initial?.localizationCulture ? [props.initial.localizationCulture] : [])
+	);
 	const [state, setState] = createSignal(props.initial?.localizationState);
 	const [review, setReview] = createSignal(props.initial?.localizationReview);
 	const [keyChanged, setKeyChanged] = createSignal(
@@ -47,6 +53,19 @@ export function createGameTextLocalizationState(props: {
 	const focusAction = createEffectAction();
 	let generation = 0;
 	let focusGeneration = 0;
+	// Restored cultures can outlive the target; only cultures it still has count, in its order, and
+	// picking every culture is the same as picking none.
+	const cultures = (): readonly CultureCode[] => {
+		const available = active()?.target.cultures;
+		const chosen = picked();
+		if (!available) return chosen;
+		const kept = available.filter((item) => chosen.includes(item));
+		return kept.length === available.length ? [] : kept;
+	};
+	const culture = (): CultureCode | undefined => {
+		const chosen = cultures();
+		return chosen.length === 1 ? chosen[0] : undefined;
+	};
 
 	const selectTarget = (name: LocalizationSelection["target"]) => {
 		const operation = props.client.localizationTarget?.(name);
@@ -68,10 +87,8 @@ export function createGameTextLocalizationState(props: {
 				if (version !== generation) return;
 				if (result.status === "ready") {
 					setActive(result);
-					setCulture((remembered) =>
-						remembered && result.target.cultures.includes(remembered)
-							? remembered
-							: undefined
+					setPicked((remembered) =>
+						remembered.filter((item) => result.target.cultures.includes(item))
 					);
 					setReady(true);
 				} else if (result.status === "failed")
@@ -114,7 +131,7 @@ export function createGameTextLocalizationState(props: {
 				if (chosen) selectTarget(chosen.name);
 				else {
 					setTarget(undefined);
-					setCulture(undefined);
+					setPicked([]);
 					setState(undefined);
 					setSelectedId(undefined);
 					setReady(true);
@@ -124,20 +141,20 @@ export function createGameTextLocalizationState(props: {
 	};
 	const selection = (): LocalizationSelection | undefined => {
 		const current = active();
-		const rememberedCulture = culture();
-		// Restored signals can still be pending when target loading finishes. Default an unavailable
-		// culture before constructing a query, regardless of when its persisted value is cleared.
-		const selectedCulture = current?.target.cultures.find((item) => item === rememberedCulture);
+		// Restored signals can still be pending when target loading finishes; `cultures` keeps only
+		// cultures the loaded target has, regardless of when the persisted value is cleared.
+		const chosen = cultures();
 		const selectedState = state();
 		const selectedReview = review();
 		if (!ready() || !current) return undefined;
 		return {
 			target: current.target.name,
-			...(selectedCulture ? { culture: selectedCulture } : undefined),
+			...(chosen.length === 1 ? { culture: chosen[0] } : undefined),
+			...(chosen.length > 1 ? { cultures: chosen } : undefined),
 			...(selectedState ? { state: selectedState } : undefined),
 			...(selectedReview ? { review: selectedReview } : undefined),
 			...(keyChanged() ? { keyChanged: true } : undefined),
-			searchTranslations: !!selectedCulture && searchTranslations()
+			searchTranslations: chosen.length > 0 && searchTranslations()
 		};
 	};
 
@@ -262,6 +279,7 @@ export function createGameTextLocalizationState(props: {
 	return {
 		target,
 		culture,
+		cultures,
 		state,
 		review,
 		keyChanged,
@@ -279,8 +297,22 @@ export function createGameTextLocalizationState(props: {
 		setKeyChanged,
 		setSearchTranslations,
 		setSelectedId,
-		selectCulture: (value: string) =>
-			setCulture(untrack(active)?.target.cultures.find((item) => item === value)),
+		/** Picks only this culture; an unknown value, such as "All cultures", picks every culture. */
+		selectCulture: (value: string) => {
+			const found = untrack(active)?.target.cultures.find((item) => item === value);
+			setPicked(found === undefined ? [] : [found]);
+		},
+		/** Adds or removes one culture from the picked cultures. */
+		toggleCulture: (value: string) => {
+			const found = untrack(active)?.target.cultures.find((item) => item === value);
+			if (found === undefined) return;
+			const current = untrack(cultures);
+			setPicked(
+				current.includes(found)
+					? current.filter((item) => item !== found)
+					: [...current, found]
+			);
+		},
 		load,
 		selection,
 		more: (cultureOffset?: number, locationOffset?: number) => {
@@ -309,7 +341,10 @@ export function createGameTextLocalizationState(props: {
 		},
 		restore: (preferences: GameTextPreferences) => {
 			setTarget(preferences.localizationTarget);
-			setCulture(preferences.localizationCulture);
+			setPicked(
+				preferences.localizationCultures ??
+					(preferences.localizationCulture ? [preferences.localizationCulture] : [])
+			);
 			setState(preferences.localizationState);
 			setReview(preferences.localizationReview);
 			setKeyChanged(preferences.localizationKeyChanged ?? false);

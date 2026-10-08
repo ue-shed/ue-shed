@@ -171,8 +171,10 @@ export function matchesLocalizationLine(
 		)
 	)
 		return false;
+	// Translations are searched in the picked culture, or every culture in a picked set.
 	const translation =
-		selection.searchTranslations && selection.culture !== undefined
+		selection.searchTranslations &&
+		(selection.culture !== undefined || selection.cultures !== undefined)
 			? selected
 					.flatMap((mark) => [
 						mark.archive?.translation.Text ?? "",

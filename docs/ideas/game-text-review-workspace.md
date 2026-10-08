@@ -64,10 +64,12 @@ Projects ship a dozen or more cultures, so a line never lists them by name.
   draws one bar instead of identical cells.
 - **Summary text names cultures only when one or two are affected:** "ja, ko missing",
   "8 to update", "all missing".
-- **Culture sets.** The culture picker holds saved sets (all, a language family, a vendor's
-  cultures) and every culture sorted worst first with its missing, to-update and not-synced counts.
-  It is the one place for per-culture progress. Picking a set narrows the strip, the counts and the
-  findings to those cultures; lines whose problems are all outside the set leave "need work".
+- **Picked cultures.** The culture picker lists every culture with its missing, to-update and
+  not-synced counts, and takes any number of them; the choice is remembered per project. It is the
+  one place for per-culture progress. Picking cultures (a vendor's, a release wave's) narrows the
+  strip, the counts and translation work to them; lines whose problems are all in other cultures
+  leave "need work". Unreal has no culture groups, so named sets were left out: a remembered
+  multi-select covers the same work without names to manage.
 
 ## The right pane
 
@@ -76,7 +78,7 @@ Until a line is opened, the right pane holds the facets the current grouping doe
 - grouped by problem, it offers Folders, Assets and Origins, sorted by where the problems are, with
   a find box for projects with hundreds of folders;
 - grouped by folder or asset, it adds a Problems card counted inside the current filters and
-  culture set.
+  picked cultures.
 
 Clicking a facet adds the matching filter pill.
 
@@ -97,7 +99,6 @@ Up and down (J and K) move through the list without going back.
 ## Open questions
 
 - How grouping pages from the query: per-group cursors, or one cursor over the worst-first order.
-- Where culture sets are stored: the project's Game Text settings, or per user.
 - Which history the line page can show without a baseline taken before the change.
 - How the strip reads for colour-blind users; the dashed and filled shapes carry state, but the
   amber and blue pair needs checking.

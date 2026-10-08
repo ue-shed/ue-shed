@@ -119,6 +119,83 @@ describe("localization key changes", () => {
 		expect(localizationKeyChanges(joined, text)).toEqual({ pairs: [], ambiguous: 2 });
 	});
 
+	it("never pairs by text that a line whose key did not change also has", () => {
+		const kept = "/Game/Text/Kept.Kept";
+		// Across a gather: Removed and Added both say OK, and so does the unchanged Kept.
+		const before = joinLocalizationTarget(
+			scanned([]),
+			evidence(
+				[
+					manifestEntry("Removed", "OK", "/Game/Text/Old.Old"),
+					manifestEntry("Kept", "OK", kept)
+				],
+				[archiveEntry("Removed", "OK", "Okay")]
+			)
+		);
+		const after = joinLocalizationTarget(
+			scanned([]),
+			evidence(
+				[
+					manifestEntry("Added", "OK", "/Game/Text/New.New"),
+					manifestEntry("Kept", "OK", kept)
+				],
+				[]
+			)
+		);
+		expect(localizationKeyChangesAcross(before, after)).toEqual({ pairs: [], ambiguous: 1 });
+		// Before a gather: the earlier key is in a fully read table, the new one in another asset.
+		const text = scanned([
+			unit("Added", "OK", "Content/Text/New.uasset"),
+			unit("Kept", "OK", "Content/Text/Kept.uasset")
+		]);
+		const joined = joinLocalizationTarget(
+			text,
+			evidence(
+				[manifestEntry("Removed", "OK"), manifestEntry("Kept", "OK", kept)],
+				[archiveEntry("Removed", "OK", "Okay")]
+			)
+		);
+		expect(localizationKeyChanges(joined, text)).toEqual({ pairs: [], ambiguous: 1 });
+		// Without the unchanged line the text is unique, and the keys pair.
+		const alone = joinLocalizationTarget(
+			scanned([]),
+			evidence([manifestEntry("Added", "OK", "/Game/Text/New.New")], [])
+		);
+		const unique = joinLocalizationTarget(
+			scanned([]),
+			evidence(
+				[manifestEntry("Removed", "OK", "/Game/Text/Old.Old")],
+				[archiveEntry("Removed", "OK", "Okay")]
+			)
+		);
+		expect(localizationKeyChangesAcross(unique, alone).pairs[0]?.match).toBe("same_text");
+	});
+
+	it("counts unpaired keys in linear time", () => {
+		const earlier = joinLocalizationTarget(
+			scanned([]),
+			evidence(
+				Array.from({ length: 8000 }, (_, index) =>
+					manifestEntry(`Old${index}`, `Old text ${index}`, `/Game/Text/Old${index}.Old`)
+				),
+				[]
+			)
+		);
+		const later = joinLocalizationTarget(
+			scanned([]),
+			evidence(
+				Array.from({ length: 8000 }, (_, index) =>
+					manifestEntry(`New${index}`, `New text ${index}`, `/Game/Text/New${index}.New`)
+				),
+				[]
+			)
+		);
+		const start = performance.now();
+		expect(localizationKeyChangesAcross(earlier, later)).toEqual({ pairs: [], ambiguous: 0 });
+		// It took about 14 seconds when each new key rebuilt the indexes.
+		expect(performance.now() - start).toBeLessThan(3000);
+	});
+
 	it("pairs gathered C++ keys across a gather, carrying translations Unreal trimmed", () => {
 		const text = scanned([]);
 		const path = "Source/Game/Private/Menu.cpp(12)";

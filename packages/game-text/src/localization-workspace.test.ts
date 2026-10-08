@@ -6,7 +6,18 @@ import {
 } from "./investigation.js";
 import { describe, expect, it } from "vitest";
 import { qualityFixture } from "./localization-workspace.test-support.js";
-import { cultureCode } from "./localization.test-support.js";
+import {
+	archiveEntry,
+	corpus,
+	cultureCode,
+	evidence,
+	manifestEntry,
+	target,
+	unit
+} from "./localization.test-support.js";
+import { joinLocalizationTarget } from "./localization.js";
+import { applyLocalizationKeyChanges, localizationKeyChanges } from "./localization-key-changes.js";
+import { textCorpusQuery } from "./query.js";
 import {
 	WorkspaceQualityPage,
 	WorkspaceQualityFocusResult,
@@ -101,6 +112,65 @@ describe("bounded localization workspace", () => {
 			mode: "quality",
 			report: { ruleDocumentVersion: 2, findings: [{ kind: "character_budget" }] }
 		});
+	});
+
+	it("exports the lines a target's problem and translation pills select", async () => {
+		const text = corpus([unit("Renamed", "Welcome back"), unit("Other", "Other line")]);
+		const joined = joinLocalizationTarget(
+			text,
+			evidence(
+				[manifestEntry("Welcome", "Welcome back"), manifestEntry("Other", "Other line")],
+				[archiveEntry("Welcome", "Welcome back", "Willkommen zurück")]
+			)
+		);
+		const join = applyLocalizationKeyChanges(
+			joined,
+			localizationKeyChanges(joined, text).pairs
+		);
+		const source = {
+			projectRoot: "C:/Project",
+			generation: null,
+			authority: "project_files"
+		} as const;
+		type Query = (typeof GameTextInvestigationPreset.Encoded)["query"];
+		const preset = (filter: Query["filter"], localization?: Query["localization"]) =>
+			Schema.decodeUnknownSync(GameTextInvestigationPreset)({
+				schemaVersion: 1,
+				kind: "game_text",
+				sort: "domain_order",
+				query: {
+					mode: "corpus",
+					query: "",
+					capability: "all",
+					qualityFilter: "all",
+					filter,
+					...(localization === undefined ? undefined : { localization })
+				}
+			});
+		const keyChanged = preset([{ field: "problem", op: "is", values: ["key_changed"] }], {
+			target: target.name
+		});
+		const exported = await Effect.runPromise(
+			exportGameTextInvestigation(
+				text,
+				keyChanged,
+				source,
+				textCorpusQuery(text, undefined, join)
+			)
+		);
+		expect(
+			exported.result.mode === "corpus" && exported.result.corpus.units.map((item) => item.id)
+		).toEqual(["unit:Renamed"]);
+		// Without the target's files the export fails with guidance rather than guessing.
+		const unloaded = await Effect.runPromise(
+			Effect.flip(exportGameTextInvestigation(text, keyChanged, source))
+		);
+		expect(unloaded.message).toContain("not loaded");
+		const translation = preset([{ field: "translation", op: "is", values: ["missing"] }]);
+		const failed = await Effect.runPromise(
+			Effect.flip(exportGameTextInvestigation(text, translation, source))
+		);
+		expect(failed.recovery).toContain("localization target");
 	});
 
 	it("projects native-first report rows, zero baseline deltas and spreadsheet-safe CSV", () => {

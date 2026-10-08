@@ -874,10 +874,16 @@ export const WorkbenchGameTextLive = Layer.effect(
 					query,
 					...(snapshot.rules ? { rules: snapshot.rules } : undefined)
 				};
+				// Problem and translation pills select lines through the target's join, as the list does.
+				const localized =
+					query.localization === undefined
+						? undefined
+						: yield* localization.targetQuery(query.localization.target);
 				const document = yield* exportGameTextInvestigation(
 					snapshot.corpus,
 					preset,
-					snapshot.source
+					snapshot.source,
+					localized
 				);
 				return { document, corpus: snapshot.corpus };
 			}

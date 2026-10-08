@@ -8,7 +8,8 @@ import {
 	type TextFilterClause,
 	type TextWhere
 } from "./schema.js";
-import { textFileLabel } from "./text-origin.js";
+import type { LocalizationTargetEvidence } from "@ue-shed/localization/browser";
+import { textFileKey, textFileLabel, textFileScope } from "./text-origin.js";
 
 /**
  * What a change's text is checked for, in the order results list them:
@@ -187,17 +188,24 @@ export function localizationGateTarget(input: {
 		}
 		return found;
 	};
-	// The file a line's text lives in, as the project spells it: its saved package, or the file
-	// Unreal gathered it from.
+	// The file the change touched, as the project spells it: of the line's saved packages and
+	// gathered paths, the first one in the list.
+	const scope = textFileScope(input.files);
+	const listedFile = (path: string) => scope?.keys.has(textFileKey(path)) ?? false;
 	const packages = new Map(
-		input.corpus.units.map((unit) => [unit.id, unit.occurrences[0]?.packageFile] as const)
+		input.corpus.units.map(
+			(unit) =>
+				[unit.id, unit.occurrences.map((occurrence) => occurrence.packageFile)] as const
+		)
 	);
 	const lineFile = (line: LocalizationLine) => {
-		const saved =
-			line.origin.kind === "corpus"
-				? line.origin.unitIds.map((id) => packages.get(id)).find(Boolean)
-				: undefined;
-		return textFileLabel(saved ?? line.manifest[0]?.path ?? "");
+		const places = [
+			...(line.origin.kind === "corpus"
+				? line.origin.unitIds.flatMap((id) => packages.get(id) ?? [])
+				: []),
+			...line.manifest.map((entry) => entry.path)
+		];
+		return textFileLabel(places.find(listedFile) ?? places[0] ?? "");
 	};
 	const failing = new Set(input.failOn);
 	const checks = {
@@ -241,6 +249,42 @@ export function localizationGateTarget(input: {
 		omitted: Math.max(0, items.length - MAX_GATE_ITEMS),
 		...(fileScope === undefined ? undefined : { fileScope })
 	};
+}
+
+/**
+ * Target files that exist but could not be read or parsed, as `path (code)`. A missing archive or
+ * PO file means nothing is translated; an unreadable one means the translations are unknown, and
+ * a verdict built on them could pass a change that loses translations.
+ */
+export function localizationGateUnreadEvidence(
+	evidence: LocalizationTargetEvidence
+): readonly string[] {
+	const files = [
+		evidence.manifest,
+		...evidence.cultures.flatMap((culture) => [culture.archive, culture.po])
+	];
+	return files.flatMap((file) =>
+		file.status === "failed" && file.error.code !== "file_missing"
+			? [`${file.relativePath ?? "a localization file"} (${file.error.code})`]
+			: []
+	);
+}
+
+/**
+ * Listed saved packages the scan could not read completely. Their text cannot be judged, so a
+ * verdict that ignored them could pass new or conflicting text.
+ */
+export function localizationGateUnreadPackages(
+	corpus: TextCorpus,
+	files: readonly string[]
+): readonly string[] {
+	const scope = textFileScope(files);
+	if (scope === undefined) return [];
+	return (corpus.packageCoverage ?? []).flatMap((coverage) =>
+		coverage.status !== "complete" && scope.keys.has(textFileKey(coverage.packageFile))
+			? [`${textFileLabel(coverage.packageFile)} (${coverage.status})`]
+			: []
+	);
 }
 
 /** The whole change: failed when any target failed. */

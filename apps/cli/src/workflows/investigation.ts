@@ -44,10 +44,28 @@ export const runInvestigation = Effect.fn("Cli.workflow.investigation")(
 							Effect.provide(text.TextCorpusServiceLive),
 							Effect.provide(readerLayer(command.reader))
 						);
+						// Problem and translation filters need the target the preset was saved with.
+						const target = preset.query.localization?.target;
+						const localized =
+							target === undefined
+								? undefined
+								: yield* Effect.promise(() => import("./localization.js")).pipe(
+										Effect.flatMap(({ loadTargetQuery }) =>
+											loadTargetQuery(source.projectRoot, target, corpus)
+										),
+										Effect.mapError(
+											(error) =>
+												new InvestigationError({
+													message: error.message,
+													recovery: error.recovery
+												})
+										)
+									);
 						const document = yield* text.exportGameTextInvestigation(
 							corpus,
 							preset,
-							source
+							source,
+							localized
 						);
 						return command.format === "json"
 							? json(document)

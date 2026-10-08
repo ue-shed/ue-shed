@@ -6,8 +6,11 @@ import {
 	localizationGateFailures,
 	localizationGateResult,
 	localizationGateTarget,
+	localizationGateUnreadEvidence,
+	localizationGateUnreadPackages,
 	type LocalizationGateCheck
 } from "./localization-gate.js";
+import { LocalizationError } from "@ue-shed/localization/browser";
 import { applyLocalizationKeyChanges, localizationKeyChanges } from "./localization-key-changes.js";
 import {
 	archiveEntry,
@@ -187,6 +190,82 @@ describe("checking a change's text", () => {
 		expect(result.items.map((item) => item.severity)).toEqual(["warn"]);
 		expect(result.status).toBe("passed");
 		expect(localizationGateResult([result], failOn).status).toBe("passed");
+	});
+
+	it("names the listed file when a line lives in several", () => {
+		const shared = Schema.decodeUnknownSync(TextUnit)({
+			...Schema.encodeSync(TextUnit)(cell("Hello", "Hello there")),
+			occurrences: [
+				...Schema.encodeSync(TextUnit)(cell("Hello", "Hello there")).occurrences,
+				{
+					...Schema.encodeSync(TextUnit)(cell("Hello", "Hello there")).occurrences[0],
+					id: "occurrence:other",
+					packageFile: "Content/Text/Other.uasset"
+				}
+			]
+		});
+		const result = gate(
+			scanned([shared]),
+			evidence(
+				[manifestEntry("Hello", "Hello", place("Hello"))],
+				[archiveEntry("Hello", "Hello", "Hallo")]
+			),
+			["Content/Text/Other.uasset"]
+		);
+		expect(result.items[0]).toMatchObject({
+			check: "translated_text_changed",
+			file: "Content/Text/Other"
+		});
+	});
+
+	it("treats unreadable evidence and unread packages as unknown, never as absent", () => {
+		const base = evidence([manifestEntry("Hello", "Hello", place("Hello"))]);
+		const culture = base.cultures[1];
+		if (culture === undefined) throw new Error("The evidence helper produced one culture.");
+		const unreadable = {
+			...base,
+			cultures: [
+				...base.cultures.slice(0, 1),
+				{
+					...culture,
+					archive: {
+						status: "failed" as const,
+						relativePath: "Content/Localization/Test/de/Test.archive",
+						error: new LocalizationError({
+							code: "malformed_json",
+							message: "The archive is not JSON.",
+							recovery: "Restore it."
+						})
+					},
+					po: {
+						status: "failed" as const,
+						relativePath: null,
+						error: new LocalizationError({
+							code: "file_missing",
+							message: "No PO file.",
+							recovery: "Export one."
+						})
+					}
+				}
+			]
+		};
+		// A missing PO file is no translation; an unreadable archive is unknown.
+		expect(localizationGateUnreadEvidence(base)).toEqual([]);
+		expect(localizationGateUnreadEvidence(unreadable)).toEqual([
+			"Content/Localization/Test/de/Test.archive (malformed_json)"
+		]);
+		const partial: TextCorpus = {
+			...scanned([]),
+			packageCoverage: [
+				{ packageFile: MENU, status: "failed" },
+				{ packageFile: "Content/Text/Table.uasset", status: "partial" },
+				{ packageFile: "Content/Text/Untouched.uasset", status: "failed" }
+			]
+		};
+		expect(
+			localizationGateUnreadPackages(partial, [MENU, "Content/Text/Table.uasset"])
+		).toEqual(["Content/Text/DT_Menu (failed)", "Content/Text/Table (partial)"]);
+		expect(localizationGateUnreadPackages(scanned([]), [MENU])).toEqual([]);
 	});
 
 	it("lists a bounded number of lines and counts the rest", () => {

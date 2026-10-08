@@ -7,11 +7,13 @@ import { Effect, Schema } from "effect";
 
 const CLAUSE = /^\s*(\S+)\s+(is|is-not|is_not)\s+(.+?)\s*$/u;
 const decodeClause = Schema.decodeUnknownEffect(TextFilterClause);
+/** Fields whose values are fixed words, which accept hyphens for underscores. */
+const WORD_FIELDS = new Set(["problem", "finding", "translation", "origin", "editing", "notes"]);
 
 /**
  * Reads `--filter` clauses such as `problem is key-changed,not-gathered` or
  * `folder is-not Content/Prototype/`: a field, `is` or `is-not`, and comma-separated values.
- * Folder values keep their spelling; other values accept hyphens for underscores.
+ * Fixed words accept hyphens for underscores; folders, assets and namespaces keep their spelling.
  */
 export const parseTextFilter = Effect.fn("Cli.text_filter.parse")(function* (
 	clauses: readonly string[]
@@ -28,7 +30,7 @@ export const parseTextFilter = Effect.fn("Cli.text_filter.parse")(function* (
 			.split(",")
 			.map((value) => value.trim())
 			.filter((value) => value !== "")
-			.map((value) => (field === "folder" ? value : value.replaceAll("-", "_")));
+			.map((value) => (WORD_FIELDS.has(field) ? value.replaceAll("-", "_") : value));
 		filter.push(
 			yield* decodeClause({
 				field,
@@ -45,7 +47,7 @@ function invalidClause(text: string) {
 		code: "invalid_selection",
 		message: `The filter "${text}" is not a valid clause.`,
 		recovery:
-			"Write a field, is or is-not, and comma-separated values, such as `problem is key-changed,not-gathered`. Fields: problem, finding, translation, origin, folder, editing, notes."
+			"Write a field, is or is-not, and comma-separated values, such as `problem is key-changed,not-gathered`. Fields: problem, finding, translation, origin, folder, asset, namespace, editing, notes."
 	});
 }
 

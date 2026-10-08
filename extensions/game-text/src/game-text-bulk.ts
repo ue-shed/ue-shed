@@ -2,11 +2,36 @@ import type {
 	LocalizationEdit,
 	LocalizationLineId,
 	LocalizationLinePreview,
-	LocalizationReviewChange
+	LocalizationReviewChange,
+	LocalizationSelection,
+	TextCorpusSearchRequest
 } from "@ue-shed/game-text/browser";
 
 /** The most lines a selection holds; exports and reviews pick lines out by id. */
 export const MAX_SELECTED_LINES = 5000;
+
+/**
+ * Exports the ticked lines whatever the list shows now: only the target and cultures carry over,
+ * never the list's state, review or key-change filters, which could drop a ticked line.
+ */
+export function exportRequest(
+	localization: LocalizationSelection,
+	lines: readonly LocalizationLinePreview[]
+): TextCorpusSearchRequest {
+	return {
+		query: "",
+		capability: "all",
+		localization: {
+			target: localization.target,
+			...(localization.culture === undefined ? undefined : { culture: localization.culture }),
+			...(localization.cultures === undefined
+				? undefined
+				: { cultures: localization.cultures })
+		},
+		lines: lines.map((line) => line.id),
+		pageSize: 50
+	};
+}
 /** The most review changes one request writes. */
 export const REVIEW_BATCH = 500;
 

@@ -10,7 +10,7 @@ import type {
 } from "@ue-shed/game-text/browser";
 import { Button, createEffectAction } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
-import { For, Show, createEffect, createSignal, untrack } from "solid-js";
+import { For, Show, createEffect, createSignal } from "solid-js";
 import type { GameTextClientApi } from "./game-text-client.js";
 import { GameTextResultRows } from "./game-text-result-rows.js";
 
@@ -37,6 +37,12 @@ function loadedRows(page: TextCorpusSearchPage): readonly LoadedRow[] {
 				: undefined
 	}));
 }
+/** A group's loaded rows, and its next page's loader while it has more. */
+export type GroupLoaded = (
+	group: string,
+	rows: readonly LoadedRow[],
+	more: (() => void) | undefined
+) => void;
 /** Tick boxes for bulk actions, passed through to every group's rows. */
 export interface RowTicks {
 	readonly checked: (line: LocalizationLineId) => boolean;
@@ -61,8 +67,11 @@ export function GroupedResults(props: {
 	readonly selectedId: TextUnitId | undefined;
 	readonly selectedLocalizationId: LocalizationLineId | undefined;
 	readonly onSelect: (unit: TextUnitId | undefined, line: LocalizationLineId | undefined) => void;
-	/** A group's rows, in order, each time it loads a page; the line page steps through them. */
-	readonly onLoaded?: (group: string, rows: readonly LoadedRow[]) => void;
+	/**
+	 * A group's rows, in order, each time it loads a page, and how to load its next page when it
+	 * has one; the line page steps through them.
+	 */
+	readonly onLoaded?: GroupLoaded;
 	readonly ticks?: RowTicks | undefined;
 }) {
 	// When every line fits on one page all groups start open; otherwise the worst one does. What
@@ -121,22 +130,27 @@ function GroupSection(props: {
 	readonly selectedId: TextUnitId | undefined;
 	readonly selectedLocalizationId: LocalizationLineId | undefined;
 	readonly onSelect: (unit: TextUnitId | undefined, line: LocalizationLineId | undefined) => void;
-	readonly onLoaded?: (group: string, rows: readonly LoadedRow[]) => void;
+	readonly onLoaded?: GroupLoaded;
 	readonly ticks?: RowTicks | undefined;
 }) {
 	const action = createEffectAction();
 	const [page, setPage] = createSignal<TextCorpusSearchPage>();
 	const [loading, setLoading] = createSignal(false);
 	// The effect passes the request and key it tracked; "Show more" reads them in its handler.
-	const load = (more: boolean, base: TextCorpusSearchRequest, key: string) => {
-		const current = untrack(page);
+	// `after` is the page loaded so far, passed in rather than read back from the signal, which a
+	// write in the same update has not committed yet.
+	const load = (
+		after: TextCorpusSearchPage | undefined,
+		base: TextCorpusSearchRequest,
+		key: string
+	) => {
 		const request: TextCorpusSearchRequest = {
 			...base,
 			openGroup: key,
-			...(more && current?.localization?.nextCursor
-				? { localizationCursor: current.localization.nextCursor }
-				: more && current?.nextCursor
-					? { cursor: current.nextCursor }
+			...(after?.localization?.nextCursor
+				? { localizationCursor: after.localization.nextCursor }
+				: after?.nextCursor
+					? { cursor: after.nextCursor }
 					: undefined)
 		};
 		setLoading(true);
@@ -144,27 +158,30 @@ function GroupSection(props: {
 			onSuccess: (result) => {
 				setLoading(false);
 				if (result.status !== "ready") return;
-				const previous = untrack(page);
-				const merged =
-					more && previous
-						? {
-								...result.page,
-								units: [...previous.units, ...result.page.units],
-								...(result.page.localization && previous.localization
-									? {
-											localization: {
-												...result.page.localization,
-												lines: [
-													...previous.localization.lines,
-													...result.page.localization.lines
-												]
-											}
+				const merged = after
+					? {
+							...result.page,
+							units: [...after.units, ...result.page.units],
+							...(result.page.localization && after.localization
+								? {
+										localization: {
+											...result.page.localization,
+											lines: [
+												...after.localization.lines,
+												...result.page.localization.lines
+											]
 										}
-									: undefined)
-							}
-						: result.page;
+									}
+								: undefined)
+						}
+					: result.page;
 				setPage(merged);
-				props.onLoaded?.(key, loadedRows(merged));
+				const next = merged.localization?.nextCursor ?? merged.nextCursor;
+				props.onLoaded?.(
+					key,
+					loadedRows(merged),
+					next === undefined ? undefined : () => load(merged, base, key)
+				);
 			},
 			onFailure: () => setLoading(false)
 		});
@@ -177,11 +194,11 @@ function GroupSection(props: {
 			count: props.group.count
 		}),
 		({ open, request, key }) => {
-			if (open) load(false, request, key);
+			if (open) load(undefined, request, key);
 			else {
 				action.cancel();
 				setPage(undefined);
-				props.onLoaded?.(key, []);
+				props.onLoaded?.(key, [], undefined);
 			}
 		}
 	);
@@ -260,7 +277,7 @@ function GroupSection(props: {
 										tone="quiet"
 										disabled={loading()}
 										data-more=""
-										onClick={() => load(true, props.request, props.group.key)}
+										onClick={() => load(page(), props.request, props.group.key)}
 									>
 										Show more ({(props.group.count - listed()).toLocaleString()}{" "}
 										left)

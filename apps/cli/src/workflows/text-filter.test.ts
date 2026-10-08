@@ -9,12 +9,17 @@ describe("--filter clauses", () => {
 				yield* parseTextFilter([
 					"problem is key-changed,not-gathered",
 					"folder is-not Content/Prototype Maps/",
-					"origin is_not cpp"
+					"origin is_not cpp",
+					"namespace is Menu-UI",
+					"asset is Content/Text/DT_Menu-Extra.uasset"
 				])
 			).toEqual([
 				{ field: "problem", op: "is", values: ["key_changed", "not_gathered"] },
 				{ field: "folder", op: "is_not", values: ["Content/Prototype Maps/"] },
-				{ field: "origin", op: "is_not", values: ["cpp"] }
+				{ field: "origin", op: "is_not", values: ["cpp"] },
+				// Names keep their spelling; only fixed words accept hyphens.
+				{ field: "namespace", op: "is", values: ["Menu-UI"] },
+				{ field: "asset", op: "is", values: ["Content/Text/DT_Menu-Extra.uasset"] }
 			]);
 		})
 	);

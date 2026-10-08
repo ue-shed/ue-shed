@@ -318,9 +318,14 @@ current corpus, rules, project, and catalog generation before opening an export 
 renderer receives only file-operation feedback. Opening a preset uses the selected project's
 corpus, and exposes failures without applying invalid rules.
 
+While a localization target is selected, exports and presets also record the target and picked
+cultures, so problem and translation pills select the same lines as the list; the export joins the
+target's files to do so, and fails with guidance when the target is not loaded.
+
 The CLI command `investigations run <project-root> --preset <file> --format json|csv` uses the
 same public scan and export APIs. Add `--output <file>` to save the result or omit it for stdout.
-It requires an explicit project and rescans its current saved files. See
+It requires an explicit project and rescans its current saved files, and reads the target's
+localization files when the preset names one. See
 [Showcase](../showcase.md#take-an-investigation-away) for CSV layout, replay commands, and limits.
 
 ## Verification contract
@@ -716,7 +721,11 @@ disk now, so a problem already in a touched file counts too.
 
 - `--fail-on <check>` and `--warn-on <check>` (repeatable) change the defaults for a project.
 - `--target <name>` (repeatable) picks targets. Without it every target is checked, and a target
-  Unreal has never gathered is listed as skipped; a named target must have a readable manifest.
+  with no manifest (Unreal has never gathered it) is listed as skipped; a named target must have
+  one.
+- It never judges what it cannot see. A manifest, archive or PO file that exists but cannot be
+  read, or a listed package the scan could not read completely, stops the check with exit `2`
+  rather than passing it. A missing archive or PO file means nothing is translated.
 - The output is JSON: `status` (`passed` or `failed`), and per target the lines checked, a count
   per check, up to 200 lines with their check, key, text, file and a way forward, and the
   changed-file summary. A run that could not check prints `status: "not_checked"` with the error.

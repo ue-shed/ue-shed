@@ -1104,6 +1104,16 @@ it("restores embedded rules without retaining another rule file's write destinat
 					status: "not_ready"
 				});
 				expect((yield* service.investigationExport(query, "json")).status).toBe("saved");
+				// Problem and translation pills need the target's files; none are loaded here.
+				expect(
+					yield* service.investigationExport(
+						{ ...query, localization: { target: localizationTarget.name } },
+						"json"
+					)
+				).toMatchObject({
+					status: "failed",
+					message: expect.stringContaining("not loaded")
+				});
 			}).pipe(
 				Effect.provide(
 					WorkbenchGameTextLive.pipe(

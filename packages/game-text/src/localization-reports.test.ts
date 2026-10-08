@@ -208,6 +208,28 @@ describe("localization progress and manifest baselines", () => {
 		expect(delta.removed).toEqual([]);
 		expect(delta.keyChangedCounts.lines).toBe(2);
 	});
+	it("never pairs baseline keys by text an unchanged key also has", () => {
+		const before = createLocalizationBaseline(
+			corpus(),
+			evidence([
+				manifestEntry("Removed", "OK", "/Game/Text/Old.Old"),
+				manifestEntry("Kept", "OK", "/Game/Text/Kept.Kept")
+			]),
+			"2026-10-07T00:00:00Z"
+		);
+		const after = createLocalizationBaseline(
+			corpus(),
+			evidence([
+				manifestEntry("Added", "OK", "/Game/Text/New.New"),
+				manifestEntry("Kept", "OK", "/Game/Text/Kept.Kept")
+			]),
+			"2026-10-08T00:00:00Z"
+		);
+		const delta = diffLocalizationBaselines(before, after);
+		expect(delta.keyChanged).toEqual([]);
+		expect(delta.added.map((entry) => entry.key)).toEqual(["Added"]);
+		expect(delta.removed.map((entry) => entry.key)).toEqual(["Removed"]);
+	});
 	it("round-trips baselines and distinguishes added, changed, unchanged and removed identities", () => {
 		const before = createLocalizationBaseline(
 			corpus(),

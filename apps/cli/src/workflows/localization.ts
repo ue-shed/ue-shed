@@ -5,7 +5,8 @@ import {
 	LocalizationEvidence,
 	LocalizationEvidenceNodeLive,
 	LocalizationFileAccessLive,
-	readLocalizationReview
+	readLocalizationReview,
+	type LocalizationTargetEvidence
 } from "@ue-shed/localization";
 import { Effect, FileSystem, Metric, Result, Schema } from "effect";
 import {
@@ -20,7 +21,8 @@ import {
 	localizationStatusReport,
 	textCorpusQuery,
 	TextCorpusService,
-	TextCorpusServiceLive
+	TextCorpusServiceLive,
+	type TextCorpus
 } from "@ue-shed/game-text";
 import { observeCliOperation, readerLayer } from "../cli-operation.js";
 import { CliRuntime, printJson } from "../cli-runtime.js";
@@ -122,21 +124,62 @@ export const loadLocalizationContext = Effect.fn("Cli.localization.load_context"
 			})
 		);
 	const corpus = yield* scanProjectText(command.projectRoot, command.reader);
+	const joined = yield* joinProjectTarget(command.projectRoot, evidence, corpus);
+	return { corpus, evidence, selection, ...joined };
+});
+
+/** Joins a target's files to a scan, with its review file and the keys that changed. */
+const joinProjectTarget = Effect.fn("Cli.localization.join")(function* (
+	projectRoot: string,
+	evidence: LocalizationTargetEvidence,
+	corpus: TextCorpus
+) {
 	// The review file is UE Shed's own project data; a missing file means nothing is reviewed yet.
 	const review = yield* readLocalizationReview({
-		projectRoot: command.projectRoot,
-		target: target.name
+		projectRoot,
+		target: evidence.target.name
 	}).pipe(Effect.provide(LocalizationFileAccessLive));
 	// Review is tracked once the target has a review file; until then reports say "not tracked".
 	const joined = applyLocalizationReview(
-		joinLocalizationTarget(corpus, evidence, target),
+		joinLocalizationTarget(corpus, evidence, evidence.target),
 		review.contentHash === null ? undefined : review.file
 	);
 	// Saved text whose key changed since the last gather pairs with the key Unreal still lists.
 	const keyChanges = localizationKeyChanges(joined, corpus);
 	const join = applyLocalizationKeyChanges(joined, keyChanges.pairs);
-	return { corpus, join, evidence, selection, review, keyChanges };
+	return { join, review, keyChanges };
 });
+
+/** A target's query over a scan already made, for saved investigations that filter by target. */
+export const loadTargetQuery = Effect.fn("Cli.localization.target_query")(function* (
+	projectRoot: string,
+	targetName: string,
+	corpus: TextCorpus
+) {
+	const service = yield* LocalizationEvidence;
+	const discovery = yield* service.discover({ projectRoot });
+	const target = discovery.targets.find((item) => item.name === targetName);
+	if (!target)
+		return yield* Effect.fail(
+			new GameTextLocalizationError({
+				code: "target_not_found",
+				message: `The localization target ${targetName} was not found.`,
+				recovery: "Run loc targets and choose a listed target, or edit the preset."
+			})
+		);
+	const evidence = yield* service.read({ projectRoot, target });
+	if (evidence.manifest.status === "failed")
+		return yield* Effect.fail(
+			new GameTextLocalizationError({
+				code: "missing_manifest",
+				message: "The target manifest could not be read.",
+				recovery:
+					"Run the target's Unreal gather configuration, or repair the manifest file."
+			})
+		);
+	const { join } = yield* joinProjectTarget(projectRoot, evidence, corpus);
+	return textCorpusQuery(corpus, undefined, join);
+}, Effect.provide(LocalizationEvidenceNodeLive));
 
 function whereField(command: Parameters<typeof textWhere>[0], files?: readonly string[]) {
 	const where = textWhere(command, files);

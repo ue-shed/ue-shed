@@ -13,7 +13,7 @@ import {
 } from "@ue-shed/unreal-assets/investigation";
 import { TextCorpus, TextCorpusSearchRequest } from "./schema.js";
 import { TextQualityReport } from "./quality-schema.js";
-import { textCorpusQuery } from "./query.js";
+import { textCorpusQuery, type TextCorpusQuery } from "./query.js";
 import { textQualityQuery, TextQualityFilter } from "./quality-query.js";
 
 export const GameTextInvestigationQuery = Schema.Struct({
@@ -26,6 +26,11 @@ export const GameTextInvestigationQuery = Schema.Struct({
 	/** Filter pills; presets saved before them use the fields above. */
 	filter: TextCorpusSearchRequest.fields.filter,
 	group: TextCorpusSearchRequest.fields.group,
+	/**
+	 * The localization target and cultures the pills were chosen against. Problem and translation
+	 * pills need it, so the export joins the target's files as the list does.
+	 */
+	localization: TextCorpusSearchRequest.fields.localization,
 	qualityFilter: TextQualityFilter
 });
 export type GameTextInvestigationQuery = Schema.Schema.Type<typeof GameTextInvestigationQuery>;
@@ -64,11 +69,36 @@ export const GameTextInvestigationExport = Schema.Struct({
 });
 export type GameTextInvestigationExport = Schema.Schema.Type<typeof GameTextInvestigationExport>;
 
+/**
+ * Runs a preset over a scan. A preset that names a localization target needs that target's
+ * query (`localized`, built over the same corpus and the target's join), so its problem and
+ * translation pills select the lines the list showed.
+ */
 export function exportGameTextInvestigation(
 	corpus: TextCorpus,
 	preset: GameTextInvestigationPreset,
-	source: InvestigationSource
+	source: InvestigationSource,
+	localized?: TextCorpusQuery
 ): Effect.Effect<GameTextInvestigationExport, InvestigationError> {
+	const corpusExport = Effect.gen(function* () {
+		const target = preset.query.localization?.target;
+		if (target !== undefined && localized === undefined)
+			return yield* Effect.fail(
+				new InvestigationError({
+					message: `This export filters by the localization target ${target}, which is not loaded.`,
+					recovery:
+						"Select the target in Game Text, or remove its translation and problem filters."
+				})
+			);
+		return yield* Effect.try({
+			try: () => (localized ?? textCorpusQuery(corpus)).export(preset.query),
+			catch: (error) =>
+				new InvestigationError({
+					message: error instanceof Error ? error.message : String(error),
+					recovery: "Select a localization target, or remove its translation filters."
+				})
+		});
+	});
 	return Effect.gen(function* () {
 		if (preset.query.mode === "quality" && preset.rules === undefined)
 			return yield* Effect.fail(
@@ -103,7 +133,7 @@ export function exportGameTextInvestigation(
 								evaluateGameTextSourceQuality(corpus, rules)
 							).export(preset.query.qualityFilter)
 						}
-					: { mode: "corpus", corpus: textCorpusQuery(corpus).export(preset.query) }
+					: { mode: "corpus", corpus: yield* corpusExport }
 		} satisfies GameTextInvestigationExport;
 	});
 }

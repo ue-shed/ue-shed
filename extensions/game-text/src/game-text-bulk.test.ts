@@ -1,7 +1,18 @@
-import { LocalizationLineId, LocalizationLinePreview } from "@ue-shed/game-text/browser";
+import {
+	LocalizationLineId,
+	LocalizationLinePreview,
+	LocalizationSelection
+} from "@ue-shed/game-text/browser";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
-import { batches, carryEdits, keysText, lineRange, reviewChanges } from "./game-text-bulk.js";
+import {
+	batches,
+	carryEdits,
+	exportRequest,
+	keysText,
+	lineRange,
+	reviewChanges
+} from "./game-text-bulk.js";
 
 type Encoded = typeof LocalizationLinePreview.Encoded;
 const preview = Schema.decodeUnknownSync(LocalizationLinePreview);
@@ -92,6 +103,20 @@ describe("bulk actions", () => {
 				source: "Same text"
 			}
 		]);
+	});
+
+	it("exports the ticked lines without the list's state, review or key-change filters", () => {
+		const selection = Schema.decodeUnknownSync(LocalizationSelection)({
+			target: "Game",
+			cultures: ["de", "fr"],
+			state: "not_translated",
+			review: "not_reviewed",
+			keyChanged: true,
+			searchTranslations: true
+		});
+		const request = exportRequest(selection, [line("Start", []), line("Quit", [])]);
+		expect(request.localization).toEqual({ target: "Game", cultures: ["de", "fr"] });
+		expect(request.lines).toEqual(["line:Start", "line:Quit"]);
 	});
 
 	it("copies keys as two spreadsheet columns", () => {

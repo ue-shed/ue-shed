@@ -53,7 +53,7 @@ import {
 	type FilterCounts
 } from "./game-text-filter-menu.js";
 import { BulkBar, createLineSelection } from "./game-text-bulk-bar.js";
-import { GroupedResults, type LoadedRow } from "./game-text-grouped-results.js";
+import { GroupedResults, type GroupLoaded, type LoadedRow } from "./game-text-grouped-results.js";
 import { reviewLensLabel } from "./game-text-review.js";
 import { createGameTextLocalizationState } from "./game-text-localization-state.js";
 import {
@@ -264,6 +264,10 @@ export function GameTextRoute(props: {
 		const value = group();
 		return value === "none" ? undefined : { group: value };
 	};
+	const localizationField = () => {
+		const selected = localization.selection();
+		return selected === undefined ? undefined : { localization: selected };
+	};
 	// A picked line opens its page. Its place and neighbours come from the rows each group reports,
 	// or the flat page's rows, so the page follows grouping, open groups and loaded pages.
 	let resultsSection: HTMLElement | undefined;
@@ -323,16 +327,33 @@ export function GameTextRoute(props: {
 		setSelectedId(row.unit);
 		localization.setSelectedId(row.line);
 	};
-	const groupLoaded = (group: string, rows: readonly LoadedRow[]) => {
+	// Each open group's next-page loader, while it has more pages.
+	const groupMore = new Map<string, () => void>();
+	const groupLoaded: GroupLoaded = (group, rows, more) => {
 		setGroupRows((current) => new Map(current).set(group, rows));
+		if (more === undefined) groupMore.delete(group);
+		else groupMore.set(group, more);
 		const step = pendingStep;
 		if (step === undefined || step.group !== group) return;
+		// A group's last line is its last matching line, so its pages load until none are left.
+		if (step.pick === "last" && more !== undefined) {
+			more();
+			return;
+		}
 		pendingStep = undefined;
 		selectRow(
 			step.pick === "first" ? rows[0] : step.pick === "last" ? rows.at(-1) : rows[step.pick]
 		);
 	};
-	// Opening a group and loading its next page go through the list's own controls.
+	// Without groups, a step past the loaded rows loads the next page and picks this row.
+	let pendingFlat: number | undefined;
+	createEffect(flatRows, (rows) => {
+		if (pendingFlat === undefined || rows.length <= pendingFlat) return;
+		const index = pendingFlat;
+		pendingFlat = undefined;
+		selectRow(rows[index]);
+	});
+	// Opening a closed group goes through its header, as a click would.
 	const groupControl = (key: string, selector: string) =>
 		Array.from(resultsSection?.querySelectorAll<HTMLElement>("section[data-group]") ?? [])
 			.find((section) => section.dataset.group === key)
@@ -346,25 +367,35 @@ export function GameTextRoute(props: {
 			return;
 		}
 		const groups = page()?.groups?.entries;
-		const entry = groups?.[at.group];
-		if (!groups || !entry) return;
+		if (!groups) {
+			const current = page();
+			if (step === 1 && (current?.localization?.nextCursor ?? current?.nextCursor)) {
+				pendingFlat = at.index + 1;
+				moreResults();
+			}
+			return;
+		}
+		const entry = groups[at.group];
+		if (!entry) return;
 		// The group's next page, when there is one.
-		const more = step === 1 ? groupControl(entry.key, "[data-more]") : undefined;
+		const more = step === 1 ? groupMore.get(entry.key) : undefined;
 		if (more) {
 			pendingStep = { group: entry.key, pick: at.index + 1 };
-			more.click();
+			more();
 			return;
 		}
 		// The neighbouring group, opened if it is closed.
 		const neighbour = groups[at.group + step];
 		if (!neighbour) return;
-		const loaded = groupRows().get(neighbour.key) ?? [];
 		const header = groupControl(neighbour.key, 'button[aria-expanded="false"]');
-		if (header) {
+		const rest = step === -1 ? groupMore.get(neighbour.key) : undefined;
+		if (header || rest) {
 			pendingStep = { group: neighbour.key, pick: step === 1 ? "first" : "last" };
-			header.click();
+			if (header) header.click();
+			else rest?.();
 			return;
 		}
+		const loaded = groupRows().get(neighbour.key) ?? [];
 		selectRow(step === 1 ? loaded[0] : loaded.at(-1));
 	};
 	// Lines ticked for bulk actions, in the list's order for shift-click ranges. A new target
@@ -817,6 +848,8 @@ export function GameTextRoute(props: {
 							...whereField(),
 							...(filter().length > 0 ? { filter: filter() } : undefined),
 							...groupField(),
+							// Problem and translation pills need the target, as the list does.
+							...localizationField(),
 							qualityFilter: sourceFilter()
 						}}
 						onOpen={restorePreset}

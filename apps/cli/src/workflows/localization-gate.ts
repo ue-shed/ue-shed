@@ -1,5 +1,5 @@
 import { LocalizationEvidence, LocalizationEvidenceNodeLive } from "@ue-shed/localization";
-import { Effect, Metric, Result } from "effect";
+import { Effect, Metric, Result, Schema } from "effect";
 import {
 	GameTextLocalizationError,
 	applyLocalizationKeyChanges,
@@ -7,6 +7,8 @@ import {
 	localizationGateFailures,
 	localizationGateResult,
 	localizationGateTarget,
+	localizationGateUnreadEvidence,
+	localizationGateUnreadPackages,
 	localizationKeyChanges,
 	textCorpusQuery,
 	type LocalizationGateCheck,
@@ -60,6 +62,16 @@ export function localizationGateSummary(result: LocalizationGateResult): string 
 	return lines.join("\n");
 }
 
+/** The change could not be judged: a verdict here could pass what it never saw. */
+class LocalizationGateError extends Schema.TaggedErrorClass<LocalizationGateError>()(
+	"LocalizationGateError",
+	{
+		code: Schema.Literals(["unreadable_evidence", "unreadable_package"]),
+		message: Schema.String,
+		recovery: Schema.String
+	}
+) {}
+
 const loadGate = Effect.fn("Cli.localization.gate")(function* (command: LocalizationGateCommand) {
 	const both = command.failOn.filter((check) => command.warnOn.includes(check));
 	if (both.length > 0)
@@ -97,27 +109,49 @@ const loadGate = Effect.fn("Cli.localization.gate")(function* (command: Localiza
 	const evidence = yield* Effect.forEach(targets, (target) =>
 		service.read({ projectRoot: command.projectRoot, target })
 	);
-	// A target Unreal has never gathered has no translations to lose. Checking every target skips
-	// it; a target named on the command line must be readable.
-	const missing = evidence.filter((item) => item.manifest.status === "failed");
-	const named = command.targets.length > 0 ? missing[0] : undefined;
-	if (named !== undefined || missing.length === evidence.length)
+	// A target whose manifest does not exist was never gathered and has no translations to lose.
+	// Checking every target skips it; a target named on the command line must have one.
+	const ungathered = evidence.filter(
+		(item) => item.manifest.status === "failed" && item.manifest.error.code === "file_missing"
+	);
+	const named = command.targets.length > 0 ? ungathered[0] : undefined;
+	if (named !== undefined || ungathered.length === evidence.length)
 		return yield* Effect.fail(
 			new GameTextLocalizationError({
 				code: "missing_manifest",
-				message: `The manifest of ${(named ?? missing[0])?.target.name ?? "the target"} could not be read.`,
-				recovery:
-					"Run the target's Unreal gather configuration, or repair the manifest file."
+				message: `${(named ?? ungathered[0])?.target.name ?? "The target"} has no manifest; Unreal has not gathered it.`,
+				recovery: "Run the target's Unreal gather configuration first."
 			})
 		);
-	const skipped = missing.map((item) => ({
+	const checked = evidence.filter((item) => !ungathered.includes(item));
+	// Files that exist but cannot be read make translations unknown, never absent.
+	const unread = checked.flatMap(localizationGateUnreadEvidence);
+	if (unread.length > 0)
+		return yield* Effect.fail(
+			new LocalizationGateError({
+				code: "unreadable_evidence",
+				message: `Localization files could not be read: ${unread.join(", ")}.`,
+				recovery:
+					"Repair or restore those files, for example by running the target's Unreal gather and export, then check again."
+			})
+		);
+	const skipped = ungathered.map((item) => ({
 		target: item.target.name,
-		reason: "Its manifest could not be read; Unreal may never have gathered it."
+		reason: "It has no manifest; Unreal has not gathered it."
 	}));
 	const corpus = yield* scanProjectText(command.projectRoot, command.reader);
+	const unscanned = localizationGateUnreadPackages(corpus, files);
+	if (unscanned.length > 0)
+		return yield* Effect.fail(
+			new LocalizationGateError({
+				code: "unreadable_package",
+				message: `Changed packages could not be read completely: ${unscanned.join(", ")}.`,
+				recovery:
+					"Check that the packages are saved and not damaged, and that the reader supports their engine version, then check again."
+			})
+		);
 	const failOn = localizationGateFailures(command.failOn, command.warnOn);
-	const readable = evidence.filter((item) => item.manifest.status !== "failed");
-	const results = readable.map((item) => {
+	const results = checked.map((item) => {
 		const joined = joinLocalizationTarget(corpus, item);
 		const join = applyLocalizationKeyChanges(
 			joined,

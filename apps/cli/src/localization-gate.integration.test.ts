@@ -135,6 +135,23 @@ describe.skipIf(!executable)("loc gate with the real reader", () => {
 			const unknown = yield* gate("--files", table, "--target", "NoSuchTarget");
 			expect(unknown.exit).toBe(2);
 			expect(unknown.text).toContain("target_not_found");
+
+			// Damaged files make translations unknown: the check stops rather than passing.
+			const localization = join(fixture.root, "Content", "Localization", "FixtureGame");
+			yield* Effect.promise(() =>
+				writeFile(join(localization, "de", "FixtureGame.archive"), "not an archive")
+			);
+			const damagedArchive = yield* gate("--files", table, "--warn-on", "key_changed");
+			expect(damagedArchive.exit).toBe(2);
+			expect(damagedArchive.text).toContain("unreadable_evidence");
+			expect(damagedArchive.text).toContain("de/FixtureGame.archive");
+			// A damaged manifest is not a target Unreal never gathered.
+			yield* Effect.promise(() =>
+				writeFile(join(localization, "FixtureGame.manifest"), "not a manifest")
+			);
+			const damagedManifest = yield* gate("--files", table);
+			expect(damagedManifest.exit).toBe(2);
+			expect(damagedManifest.text).toContain("FixtureGame.manifest");
 		})
 	);
 });

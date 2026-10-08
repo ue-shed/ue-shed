@@ -4,8 +4,7 @@ import {
 	type LocalizationLineId,
 	type LocalizationLinePreview,
 	type LocalizationReviewChange,
-	type LocalizationSelection,
-	type TextCorpusSearchRequest
+	type LocalizationSelection
 } from "@ue-shed/game-text/browser";
 import { Button, createEffectAction } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
@@ -16,6 +15,7 @@ import {
 	REVIEW_BATCH,
 	batches,
 	carryEdits,
+	exportRequest,
 	keysText,
 	lineRange,
 	reviewChanges
@@ -125,16 +125,8 @@ export function BulkBar(props: {
 		const request = props.client.localizationLinesFile;
 		const localization = props.localization;
 		if (!request || !localization || count() === 0) return;
-		// The ticked lines whatever the list shows now: only the target and cultures carry over.
-		const exported: TextCorpusSearchRequest = {
-			query: "",
-			capability: "all",
-			localization,
-			lines: lines().map((line) => line.id),
-			pageSize: 50
-		};
 		run(
-			request(exported),
+			request(exportRequest(localization, lines())),
 			(result) =>
 				result.status === "saved"
 					? `Exported ${result.rowCount.toLocaleString()} lines.`

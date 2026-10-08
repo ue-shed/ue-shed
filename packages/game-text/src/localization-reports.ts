@@ -203,7 +203,9 @@ export function diffLocalizationBaselines(
 		);
 	const keyChanged = pairBaselineKeys(
 		previous.entries.filter((entry) => !after.has(identityKey(entry))),
-		current.entries.filter((entry) => !before.has(identityKey(entry)))
+		current.entries.filter((entry) => !before.has(identityKey(entry))),
+		previous.entries,
+		current.entries
 	);
 	const pairedFrom = new Set(keyChanged.map((item) => identityKey(item.from)));
 	const pairedTo = new Set(keyChanged.map((item) => identityKey(item.to)));
@@ -236,36 +238,54 @@ export function diffLocalizationBaselines(
 }
 /**
  * Pairs removed and added baseline entries strictly one to one: first by the place Unreal's
- * manifest path names, then by an identical source fingerprint unique on both sides.
+ * manifest path names, then by a source fingerprint that names one entry in each whole baseline,
+ * so text an unchanged entry also has never pairs.
  */
 function pairBaselineKeys(
 	removed: readonly LocalizationBaselineEntry[],
-	added: readonly LocalizationBaselineEntry[]
+	added: readonly LocalizationBaselineEntry[],
+	previous: readonly LocalizationBaselineEntry[],
+	current: readonly LocalizationBaselineEntry[]
 ): readonly LocalizationBaselineKeyChange[] {
+	const texts = (entries: readonly LocalizationBaselineEntry[]) => {
+		const counts = new Map<string, number>();
+		for (const entry of entries)
+			counts.set(entry.sourceFingerprint, (counts.get(entry.sourceFingerprint) ?? 0) + 1);
+		return counts;
+	};
+	const previousTexts = texts(previous);
+	const currentTexts = texts(current);
 	const tiers: readonly (readonly [
 		LocalizationBaselineKeyChange["match"],
-		(entry: LocalizationBaselineEntry) => string | undefined
+		(entry: LocalizationBaselineEntry, texts: ReadonlyMap<string, number>) => string | undefined
 	])[] = [
 		[
 			"same_place",
 			(entry) => (entry.path === undefined ? undefined : manifestPlace(entry.path))
 		],
-		["same_text", (entry) => entry.sourceFingerprint]
+		[
+			"same_text",
+			(entry, counts) =>
+				counts.get(entry.sourceFingerprint) === 1 ? entry.sourceFingerprint : undefined
+		]
 	];
 	const pairs: LocalizationBaselineKeyChange[] = [];
 	let olds = [...removed];
 	let news = [...added];
 	for (const [match, keyOf] of tiers) {
-		const group = (entries: readonly LocalizationBaselineEntry[]) => {
+		const group = (
+			entries: readonly LocalizationBaselineEntry[],
+			counts: ReadonlyMap<string, number>
+		) => {
 			const byKey = new Map<string, LocalizationBaselineEntry[]>();
 			for (const entry of entries) {
-				const key = keyOf(entry);
+				const key = keyOf(entry, counts);
 				if (key !== undefined) byKey.set(key, [...(byKey.get(key) ?? []), entry]);
 			}
 			return byKey;
 		};
-		const oldByKey = group(olds);
-		const newByKey = group(news);
+		const oldByKey = group(olds, previousTexts);
+		const newByKey = group(news, currentTexts);
 		const paired = new Set<LocalizationBaselineEntry>();
 		for (const [key, fresh] of newByKey) {
 			const earlier = oldByKey.get(key);

@@ -70,26 +70,48 @@ interface Candidate {
 	readonly places: readonly string[];
 	readonly packages: readonly string[];
 	readonly source: string;
+	/** No other line on its side has this text, counting lines whose key did not change. */
+	readonly unique: boolean;
 }
+
+/** How many lines carry each text on one side of a comparison. */
+function textCounts(sources: Iterable<string>): ReadonlyMap<string, number> {
+	const counts = new Map<string, number>();
+	for (const source of sources) counts.set(source, (counts.get(source) ?? 0) + 1);
+	return counts;
+}
+
+const manifestSource = (line: LocalizationLine) => line.manifest[0]?.source.Text ?? line.source;
+const textKeys = (candidate: Candidate) => (candidate.source === "" ? [] : [candidate.source]);
 
 const identityKey = (line: LocalizationLine) =>
 	line.identity === null
 		? undefined
 		: JSON.stringify([line.identity.namespace, line.identity.key]);
 
+/**
+ * Each tier's keys for pairing, and the looser keys that count a new key as ambiguous when it
+ * matched an earlier key but could not pair. Text alone pairs only when it names one line on
+ * each side, so text an unchanged line also has never moves a translation.
+ */
 const tiers: readonly (readonly [
 	LocalizationKeyChangeMatch,
+	(candidate: Candidate) => readonly string[],
 	(candidate: Candidate) => readonly string[]
 ])[] = [
-	["same_place", (candidate) => candidate.places],
+	["same_place", (candidate) => candidate.places, (candidate) => candidate.places],
 	[
 		"same_text_in_package",
 		(candidate) =>
 			candidate.source === ""
 				? []
+				: candidate.packages.map((file) => `${file}\0${candidate.source}`),
+		(candidate) =>
+			candidate.source === ""
+				? []
 				: candidate.packages.map((file) => `${file}\0${candidate.source}`)
 	],
-	["same_text", (candidate) => (candidate.source === "" ? [] : [candidate.source])]
+	["same_text", (candidate) => (candidate.unique ? textKeys(candidate) : []), textKeys]
 ];
 
 function index(
@@ -161,21 +183,27 @@ function pair(
 		olds = olds.filter((candidate) => !pairedOld.has(candidate));
 		news = news.filter((candidate) => !pairedNew.has(candidate));
 	}
+	// Each tier's index over the earlier keys left, built once rather than per new key.
+	const remaining = tiers.map(([, , loose]) => [loose, index(olds, loose)] as const);
 	const ambiguous = news.filter((candidate) =>
-		tiers.some(([, keys]) => reachable(candidate, keys, index(olds, keys)).size > 0)
+		remaining.some(([loose, byKey]) => reachable(candidate, loose, byKey).size > 0)
 	).length;
 	return { pairs, ambiguous };
 }
 
-function manifestCandidate(line: LocalizationLine): Candidate {
-	return {
-		line,
-		places: line.manifest.flatMap((entry) => {
-			const place = manifestPlace(entry.path);
-			return place === undefined ? [] : [place];
-		}),
-		packages: line.manifest.map((entry) => textFileKey(entry.path)),
-		source: line.manifest[0]?.source.Text ?? line.source
+function manifestCandidate(texts: ReadonlyMap<string, number>) {
+	return (line: LocalizationLine): Candidate => {
+		const source = manifestSource(line);
+		return {
+			line,
+			places: line.manifest.flatMap((entry) => {
+				const place = manifestPlace(entry.path);
+				return place === undefined ? [] : [place];
+			}),
+			packages: line.manifest.map((entry) => textFileKey(entry.path)),
+			source,
+			unique: texts.get(source) === 1
+		};
 	};
 }
 
@@ -193,6 +221,13 @@ export function localizationKeyChanges(
 	corpus: TextCorpus
 ): LocalizationKeyChanges {
 	const units = new Map(corpus.units.map((unit) => [unit.id, unit]));
+	// Text uniqueness counts every gathered line, and every saved line.
+	const gatheredTexts = textCounts(
+		join.lines.filter((line) => line.manifest.length > 0).map(manifestSource)
+	);
+	const savedTexts = textCounts(
+		join.lines.filter((line) => line.origin.kind === "corpus").map((line) => line.source)
+	);
 	const earlier = join.lines
 		.filter(
 			(line) =>
@@ -200,7 +235,7 @@ export function localizationKeyChanges(
 				line.identity !== null &&
 				hasState(line, "not_found")
 		)
-		.map(manifestCandidate);
+		.map(manifestCandidate(gatheredTexts));
 	const fresh = join.lines.flatMap((line): Candidate[] => {
 		if (line.origin.kind !== "corpus" || line.identity === null) return [];
 		if (!hasState(line, "not_gathered")) return [];
@@ -213,7 +248,8 @@ export function localizationKeyChanges(
 					return place === undefined ? [] : [place];
 				}),
 				packages: occurrences.map((occurrence) => textFileKey(occurrence.packageFile)),
-				source: line.source
+				source: line.source,
+				unique: savedTexts.get(line.source) === 1
 			}
 		];
 	});
@@ -236,10 +272,10 @@ export function localizationKeyChangesAcross(
 	return pair(
 		gathered(before)
 			.filter((line) => !afterKeys.has(identityKey(line)))
-			.map(manifestCandidate),
+			.map(manifestCandidate(textCounts(gathered(before).map(manifestSource)))),
 		gathered(after)
 			.filter((line) => !beforeKeys.has(identityKey(line)))
-			.map(manifestCandidate),
+			.map(manifestCandidate(textCounts(gathered(after).map(manifestSource)))),
 		before.nativeCulture
 	);
 }

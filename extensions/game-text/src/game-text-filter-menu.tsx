@@ -8,6 +8,7 @@ import type {
 import { AnchoredPopover, Button } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { For, Show, createMemo, createSignal, createUniqueId } from "solid-js";
+import type { JSX } from "@solidjs/web";
 import {
 	CHOICE_FIELDS,
 	FIELD_LABELS,
@@ -72,6 +73,8 @@ export function FilterMenu(props: {
 	readonly disabled: boolean;
 	readonly onChange: (filter: TextFilter) => void;
 	readonly extraFields?: readonly ExtraField[];
+	/** The Folder submenu browses folders a level at a time; typed text narrows that level. */
+	readonly folderBrowser?: (typed: () => string) => JSX.Element;
 }) {
 	const id = createUniqueId();
 	const [open, setOpen] = createSignal(false);
@@ -170,6 +173,13 @@ export function FilterMenu(props: {
 	]);
 	const fields = () => sections().flat();
 	const activeField = () => fields().find((field) => field.key === active());
+	// A clause field counts every value in its pills, including folders at other levels.
+	const chosenCount = (field: Field) => {
+		const clauses = props.filter.filter((clause) => clause.field === field.key);
+		return Object.hasOwn(FIELD_LABELS, field.key)
+			? clauses.reduce((sum, clause) => sum + clause.values.length, 0)
+			: field.options("").filter((option) => option.selected).length;
+	};
 	// Typing at the first level lists matching values from every field, labelled by field.
 	const found = createMemo(() =>
 		typed().trim() === ""
@@ -273,13 +283,7 @@ export function FilterMenu(props: {
 											<span {...stylex.attrs(styles.label)}>
 												{field.label}
 											</span>
-											<Show
-												when={
-													field
-														.options("")
-														.filter((option) => option.selected).length
-												}
-											>
+											<Show when={chosenCount(field)}>
 												{(count) => (
 													<span {...stylex.attrs(styles.count)}>
 														{count()}
@@ -323,9 +327,18 @@ export function FilterMenu(props: {
 							{...stylex.attrs(styles.typed, styles.subTyped)}
 						/>
 						<div {...stylex.attrs(styles.scroll)}>
-							<OptionRows options={field().options(subTyped())} />
-							<Show when={field().options(subTyped()).length === 0}>
-								<p {...stylex.attrs(styles.none)}>Nothing here.</p>
+							<Show
+								when={field().key === "folder" ? props.folderBrowser : undefined}
+								fallback={
+									<>
+										<OptionRows options={field().options(subTyped())} />
+										<Show when={field().options(subTyped()).length === 0}>
+											<p {...stylex.attrs(styles.none)}>Nothing here.</p>
+										</Show>
+									</>
+								}
+							>
+								{(browse) => browse()(subTyped)}
 							</Show>
 						</div>
 					</div>

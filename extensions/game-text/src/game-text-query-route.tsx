@@ -44,6 +44,7 @@ import {
 } from "./game-text-preferences.js";
 import { DisplayMenu } from "./game-text-display-menu.js";
 import { FacetsPane } from "./game-text-facets.js";
+import { FolderBrowser } from "./game-text-folder-browser.js";
 import {
 	FilterMenu,
 	FilterPills,
@@ -1039,6 +1040,17 @@ export function GameTextRoute(props: {
 									disabled={loading()}
 									onChange={setFilter}
 									extraFields={extraFields()}
+									folderBrowser={(typed) => (
+										<FolderBrowser
+											menu
+											typed={typed()}
+											list={page()?.facets?.folders}
+											folder={facetFolder()}
+											filter={filter()}
+											onFolderChange={setFacetFolder}
+											onFilterChange={setFilter}
+										/>
+									)}
 								/>
 								<DisplayMenu
 									group={group() === "none" ? undefined : groupField()?.group}

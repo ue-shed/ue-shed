@@ -207,6 +207,8 @@ async function chooseFilter(
 	field: string,
 	value: string | RegExp
 ) {
+	// Counts and items refresh with each page; open the menu once the search has settled.
+	await waitFor(() => expect(screen.queryByText("Searching…")).toBeNull());
 	const filter = screen.getByRole("button", { name: "Filter" });
 	await user.click(filter);
 	await user.click(await screen.findByRole("menuitem", { name: new RegExp(`^${field}`, "u") }));
@@ -436,15 +438,35 @@ describe("Game Text writing workspace", () => {
 		await user.click(screen.getByRole("button", { name: "Remove Origin is Data table" }));
 		await screen.findByText("2 matches");
 
-		// A typed folder filters by prefix in any spelling.
+		// The Folder submenu browses a level at a time, like the side pane, and shares its level.
+		await user.click(screen.getByRole("button", { name: "Filter" }));
+		await user.click(screen.getByRole("menuitem", { name: /^Folder/u }));
+		const folders = () => within(screen.getByRole("menu", { name: "Folder" }));
+		await user.click(folders().getByRole("menuitem", { name: "Folders in Content" }));
+		await user.click(await folders().findByRole("menuitemcheckbox", { name: "Text 2" }));
+		await waitFor(() =>
+			expect(
+				within(screen.getByRole("list", { name: "Filters" })).getByText("content/text/")
+			).toBeDefined()
+		);
+		// Inside a folder, the first item goes back up.
+		expect(folders().getByRole("menuitem", { name: "Top folders" })).toBeDefined();
+		await user.click(screen.getByRole("button", { name: "Filter" }));
+		await user.click(screen.getByRole("button", { name: /^Remove Folder/u }));
+		// The side pane opened at the same level.
+		const pane = within(screen.getByRole("region", { name: "Where the lines are" }));
+		expect(pane.getByRole("button", { name: "Text 2" })).toBeDefined();
+
+		// Typed text narrows the level, and can add a path prefix in any spelling.
 		await user.click(screen.getByRole("button", { name: "Filter" }));
 		await user.click(screen.getByRole("menuitem", { name: /^Folder/u }));
 		await user.type(
 			screen.getByRole("searchbox", { name: "Filter Folder" }),
 			"content\\text\\st"
 		);
+		expect(folders().queryByRole("menuitemcheckbox", { name: "Text 2" })).toBeNull();
 		await user.click(
-			screen.getByRole("menuitemcheckbox", { name: "Starts with content\\text\\st" })
+			folders().getByRole("menuitemcheckbox", { name: "Path starts with content\\text\\st" })
 		);
 		await screen.findByText("1 match");
 		expect(results().getByText("Continue")).toBeDefined();

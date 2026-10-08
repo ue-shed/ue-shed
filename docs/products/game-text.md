@@ -52,9 +52,12 @@ typing at the first level finds values across every field:
 - **Finding**: used in several places, same text with different keys, long text, not localizable.
 - **Folder**, **Asset** and **Origin** (String table, Data table, Asset, C++, Other source). A
   String Table reference inside an asset counts as the asset; gathered-only lines take their
-  origin and folder from Unreal's manifest path. Typing a folder offers "Starts with …", which
-  matches object paths, package files and gathered source paths, ignoring case and slash
-  direction.
+  origin and folder from Unreal's manifest path. A line belongs to every folder it is defined or
+  used in, and a folder includes its subfolders. The Folder submenu browses folders a level at a
+  time, like the side pane, and shares its level: a name adds its pill, the arrow opens the
+  folders inside it, and "‹" goes back up. Typing narrows the level shown and offers "Path starts
+  with …", which matches object paths, package files and gathered source paths, ignoring case and
+  slash direction.
 - **Editing** (editable, read only) and **Translator notes** (none, some). No translator notes
   means blank notes, after trimming, at every saved location.
 - **Review** and **Line state** (gathered only, not found, outside the target, unknown) pick one

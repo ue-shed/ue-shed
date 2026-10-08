@@ -199,6 +199,8 @@ async function chooseFilter(
 	field: string,
 	value: string | RegExp
 ) {
+	// Counts and items refresh with each page; open the menu once the search has settled.
+	await waitFor(() => expect(screen.queryByText("Searching…")).toBeNull());
 	const filter = screen.getByRole("button", { name: "Filter" });
 	await user.click(filter);
 	await user.click(await screen.findByRole("menuitem", { name: new RegExp(`^${field}`, "u") }));
@@ -212,6 +214,8 @@ async function chooseFilter(
 
 /** The values a Filter submenu offers, then closes the menu. */
 async function filterValues(user: ReturnType<typeof userEvent.setup>, field: string) {
+	// Counts and items refresh with each page; open the menu once the search has settled.
+	await waitFor(() => expect(screen.queryByText("Searching…")).toBeNull());
 	const filter = screen.getByRole("button", { name: "Filter" });
 	await user.click(filter);
 	await user.click(await screen.findByRole("menuitem", { name: new RegExp(`^${field}`, "u") }));

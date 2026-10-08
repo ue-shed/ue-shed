@@ -11,6 +11,7 @@ import {
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { For, Show, createSignal } from "solid-js";
 import { hasValue, toggleValue } from "./game-text-filter-model.js";
+import { FolderBrowser } from "./game-text-folder-browser.js";
 
 const SEVERE = new Set<string>(["key_changed", "conflicting_source"]);
 const WAITING = new Set<string>(["not_gathered", "changed_since_gather", "translation"]);
@@ -53,29 +54,21 @@ export function FacetsPane(props: {
 					: facets?.origins?.more) ?? 0
 		);
 	};
-	const field = () => (tab() === "folders" ? "folder" : tab() === "assets" ? "asset" : "origin");
-	const value = (entry: TextGroup) => (tab() === "folders" ? entry.key + "/" : entry.key);
+	// Folders have their own browser; assets and origins are flat lists.
+	const field = () => (tab() === "assets" ? "asset" : "origin");
+	const value = (entry: TextGroup) => entry.key;
 	const toggle = (entry: TextGroup) => {
-		const chosen = value(entry);
-		if (tab() === "origins") {
-			const origin = TextOriginKind.literals.find((item) => item === chosen);
-			if (origin !== undefined)
-				props.onFilterChange(
-					toggleValue(props.filter, { field: "origin", op: "is", values: [origin] })
-				);
+		if (tab() === "assets") {
+			props.onFilterChange(
+				toggleValue(props.filter, { field: "asset", op: "is", values: [entry.key] })
+			);
 			return;
 		}
-		props.onFilterChange(
-			toggleValue(props.filter, {
-				field: tab() === "folders" ? "folder" : "asset",
-				op: "is",
-				values: [chosen]
-			})
-		);
-	};
-	const parent = () => {
-		const end = props.folder.replace(/\/+$/u, "").lastIndexOf("/");
-		return end < 0 ? "" : props.folder.slice(0, end);
+		const origin = TextOriginKind.literals.find((item) => item === entry.key);
+		if (origin !== undefined)
+			props.onFilterChange(
+				toggleValue(props.filter, { field: "origin", op: "is", values: [origin] })
+			);
 	};
 	return (
 		<div {...stylex.attrs(styles.pane)}>
@@ -145,19 +138,16 @@ export function FacetsPane(props: {
 						)}
 					</For>
 				</div>
-				<Show when={tab() === "folders" && props.folder !== ""}>
-					<button
-						type="button"
-						onClick={() => props.onFolderChange(parent())}
-						{...stylex.attrs(styles.facet, styles.up)}
-					>
-						<span aria-hidden="true">‹</span>
-						<span {...stylex.attrs(styles.name, styles.mono)}>
-							{parent() === "" ? "Top folders" : parent()}
-						</span>
-					</button>
+				<Show when={tab() === "folders"}>
+					<FolderBrowser
+						list={props.page?.facets?.folders}
+						folder={props.folder}
+						filter={props.filter}
+						onFolderChange={props.onFolderChange}
+						onFilterChange={props.onFilterChange}
+					/>
 				</Show>
-				<For each={entries()}>
+				<For each={tab() === "folders" ? [] : entries()}>
 					{(entry) => (
 						<div {...stylex.attrs(styles.row)}>
 							<button
@@ -174,12 +164,10 @@ export function FacetsPane(props: {
 								<span
 									{...stylex.attrs(
 										styles.name,
-										tab() !== "origins" ? styles.mono : undefined
+										tab() === "assets" ? styles.mono : undefined
 									)}
 								>
-									{tab() === "folders"
-										? (entry.label.split("/").at(-1) ?? entry.label)
-										: entry.label}
+									{entry.label}
 								</span>
 								<span {...stylex.attrs(styles.count)}>
 									<Show when={entry.needWork > 0}>
@@ -197,23 +185,13 @@ export function FacetsPane(props: {
 									{entry.count.toLocaleString()}
 								</span>
 							</button>
-							<Show when={tab() === "folders"}>
-								<button
-									type="button"
-									aria-label={`Folders in ${entry.label}`}
-									onClick={() => props.onFolderChange(entry.label)}
-									{...stylex.attrs(styles.into)}
-								>
-									›
-								</button>
-							</Show>
 						</div>
 					)}
 				</For>
-				<Show when={entries().length === 0}>
+				<Show when={tab() !== "folders" && entries().length === 0}>
 					<p {...stylex.attrs(styles.empty)}>Nothing here.</p>
 				</Show>
-				<Show when={more() > 0}>
+				<Show when={tab() !== "folders" && more() > 0}>
 					<p {...stylex.attrs(styles.empty)}>
 						{more().toLocaleString()} more, by problems.
 					</p>

@@ -346,7 +346,7 @@ The first quality slice must prove:
 > corpus joins, bounded queries, CLI status, Workbench localization views, checks, reports,
 > Unreal processes, PO editing and review state. [Plan 052](../../plans/052-text-identity-and-scope-tools.md)
 > adds origin and changed-file filters, key-change detection with translation carry-over, and an
-> all-languages CSV; its Perforce file-list bridge follows the 0.10.0 release.
+> all-languages CSV; its Perforce file-list bridge is planned but not built.
 > [Plan 053](../../plans/053-game-text-review-workspace.md) reshapes the Workbench around problems,
 > Filter, Display, picked cultures, a page per line and bulk actions (see
 > [Reviewing text in Workbench](#reviewing-text-in-workbench)). Plan 051's Phase 8 extensions remain

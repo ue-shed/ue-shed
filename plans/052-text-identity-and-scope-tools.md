@@ -11,9 +11,9 @@
 
 ## Status
 
-- **State**: IN PROGRESS. Phases 1, 2, 4 and 5 are done; Phase 3 (Perforce bridge) follows the
-  0.10.0 release.
-  Phase 3 (Perforce) moves after the 0.10.0 release, by owner decision on 2026-10-08.
+- **State**: IN PROGRESS. Phases 1, 2, 4 and 5 are done. Phase 3 (Perforce bridge) waited for
+  the 0.10.0 release, by owner decision on 2026-10-08; 0.10.0 has shipped, so it is not started
+  but no longer blocked.
 - **Priority**: P1
 - **Effort**: L
 - **Risk**: MEDIUM. Phase 4 carries translations to new keys through the existing PO writer and

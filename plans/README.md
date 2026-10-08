@@ -8,18 +8,18 @@ the status row when done.
 
 ## Active
 
-| Plan                                                     | Title                                                           | Priority | Effort | Depends on                  | Status                           |
-| -------------------------------------------------------- | --------------------------------------------------------------- | -------- | ------ | --------------------------- | -------------------------------- |
-| [007](007-conflicts-rich-types-and-views.md)             | Complete conflicts, rich Unreal types, composites, and views    | P1       | XL     | 006, 015                    | IN PROGRESS — demo cutoff        |
-| [024](024-establish-ci-and-candidate-releases.md)        | Establish CI, Unreal evidence, and candidate-release provenance | P1       | L      | 020, 021                    | IN PROGRESS — first hosted runs  |
-| [027](027-adopt-parser-in-downstream-host.md)            | Adopt the released parser in the first downstream host          | P1       | M      | 021, 025, 026               | TODO                             |
-| [028](028-compose-map-review-downstream.md)              | Compose finished Map Review capabilities downstream             | P2       | XL     | 017–019, 022, 026, 032      | TODO                             |
-| [029](029-authoring-downstream-integration-gate.md)      | Gate authoring integration behind finished generic slices       | P2       | L      | 007, 022, 026               | TODO                             |
-| [030](030-resolve-authoring-row-identity.md)             | Resolve `AuthoringRow` identity provenance                      | P1       | M      | none                        | TODO                             |
-| [033](033-compact-project-corpora-before-persistence.md) | Compact project corpora before persistence                      | P1       | XL     | ADR 0004, project index     | IN PROGRESS                      |
-| [035](035-world-log-investigation-workspace.md)          | Build the World Log investigation workspace                     | P2       | XL     | 034 Map History             | IN PROGRESS — Phase 7            |
-| [041](041-execute-one-live-pie-scenario.md)              | Execute one live PIE scenario                                   | P1       | XL     | Scenario Studio prototype   | IN PROGRESS — contract bootstrap |
-| [051](051-localization-workspace.md)                     | Build the Game Text localization workspace                      | P1       | XL     | 042, 033, `@ue-shed/engine` | IN PROGRESS — Phase 7 next       |
+| Plan                                                     | Title                                                           | Priority | Effort | Depends on                | Status                           |
+| -------------------------------------------------------- | --------------------------------------------------------------- | -------- | ------ | ------------------------- | -------------------------------- |
+| [007](007-conflicts-rich-types-and-views.md)             | Complete conflicts, rich Unreal types, composites, and views    | P1       | XL     | 006, 015                  | IN PROGRESS — demo cutoff        |
+| [024](024-establish-ci-and-candidate-releases.md)        | Establish CI, Unreal evidence, and candidate-release provenance | P1       | L      | 020, 021                  | IN PROGRESS — first hosted runs  |
+| [027](027-adopt-parser-in-downstream-host.md)            | Adopt the released parser in the first downstream host          | P1       | M      | 021, 025, 026             | TODO                             |
+| [028](028-compose-map-review-downstream.md)              | Compose finished Map Review capabilities downstream             | P2       | XL     | 017–019, 022, 026, 032    | TODO                             |
+| [029](029-authoring-downstream-integration-gate.md)      | Gate authoring integration behind finished generic slices       | P2       | L      | 007, 022, 026             | TODO                             |
+| [030](030-resolve-authoring-row-identity.md)             | Resolve `AuthoringRow` identity provenance                      | P1       | M      | none                      | TODO                             |
+| [033](033-compact-project-corpora-before-persistence.md) | Compact project corpora before persistence                      | P1       | XL     | ADR 0004, project index   | IN PROGRESS                      |
+| [035](035-world-log-investigation-workspace.md)          | Build the World Log investigation workspace                     | P2       | XL     | 034 Map History           | IN PROGRESS — Phase 7            |
+| [041](041-execute-one-live-pie-scenario.md)              | Execute one live PIE scenario                                   | P1       | XL     | Scenario Studio prototype | IN PROGRESS — contract bootstrap |
+| [052](052-text-identity-and-scope-tools.md)              | Text identity and scope tools for Game Text                     | P1       | L      | 051, Map History Perforce | IN PROGRESS — Phase 1 next       |
 
 Status values: `TODO`, `IN PROGRESS`, `DONE`, `BLOCKED` with a one-line reason, or `REJECTED` with a
 one-line rationale. When a plan is `DONE`, move it into [`archive/`](archive/) and update both this
@@ -27,6 +27,10 @@ table and the archive index.
 
 ## Notes for active work
 
+- Plan 051 completed and is archived under
+  [`archive/051-localization-workspace.md`](archive/051-localization-workspace.md) after
+  read-only localization evidence, checks and reports, Unreal operations, PO change sets and
+  review state passed the portable gate and the UE 5.7, UE 5.8 and UE 4.27 process lanes.
 - Plan 046 completed and is archived under
   [`archive/046-niagara-preview.md`](archive/046-niagara-preview.md) after versioned contracts, a
   source-only UE 5.7 plugin, immutable host publication, CLI composition, stock-plugin bundle

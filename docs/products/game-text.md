@@ -214,12 +214,14 @@ The first quality slice must prove:
 - ordinary telemetry contains no source, path, identity, or rule contents; and
 - `pnpm check` passes.
 
-## Localization workspace (planned)
+## Localization workspace
 
-> Status: planned by [Plan 051](../../plans/051-localization-workspace.md) under accepted
-> [ADR 0009](../decisions/0009-localization-change-sets-and-review-state.md). Read-only formats,
+> Status: shipped by [Plan 051](../../plans/archive/051-localization-workspace.md) under accepted
+> [ADR 0009](../decisions/0009-localization-change-sets-and-review-state.md): read-only formats,
 > corpus joins, bounded queries, CLI status, Workbench localization views, checks, reports,
-> Unreal processes, PO editing and review state are implemented. Phase 8 extensions remain planned.
+> Unreal processes, PO editing and review state. [Plan 052](../../plans/052-text-identity-and-scope-tools.md)
+> adds origin and changed-file filters, a Perforce file-list bridge, key-change detection with
+> translation carry-over, and an all-languages CSV. Plan 051's Phase 8 extensions remain proposals.
 
 Game Text grows into a localization workspace that a writing and localization team can use all
 day. For every line it shows the source text, each culture's translation, and that translation's

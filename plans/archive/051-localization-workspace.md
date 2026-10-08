@@ -17,7 +17,8 @@
 
 ## Status
 
-- **State**: IN PROGRESS. Phases 0–7 are done; Phase 8 items each need owner approval.
+- **State**: DONE. Phases 0–7 shipped in #55; Phase 8 items each need separate owner approval.
+  Follow-up work continues in Plan 052.
 - **Priority**: P1
 - **Effort**: XL
 - **Risk**: HIGH. The plan adds the first UE Shed writes to localization files and the first

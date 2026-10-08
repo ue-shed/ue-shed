@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor, within } from "@solidjs/testing-library";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library";
 import { userEvent } from "@testing-library/user-event";
 import type {
 	BlueprintGraphCoverageGap,
@@ -44,6 +44,24 @@ const indexedProject = {
 	projectName: "ExampleProject",
 	status: "ready" as const
 };
+
+// JSDOM has no layout, ResizeObserver or DOMMatrix. The real Solid Flow components still mount
+// nodes and selection; handle geometry, edges and fitting need a browser. Solid Flow measures on
+// timers that can outlive a test, so the stand-ins stay on this file's window instead of being
+// stubbed per test. Node presses use fireEvent.click: d3-zoom's pane handler reads the pointer
+// event's view, which user-event leaves null in JSDOM.
+class NoLayoutResizeObserver {
+	observe() {}
+	unobserve() {}
+	disconnect() {}
+}
+class IdentityMatrix {
+	readonly m22 = 1;
+}
+Object.assign(window, {
+	ResizeObserver: window.ResizeObserver ?? NoLayoutResizeObserver,
+	DOMMatrixReadOnly: window.DOMMatrixReadOnly ?? IdentityMatrix
+});
 
 afterEach(cleanup);
 afterAll(() => runtime.dispose());
@@ -232,6 +250,58 @@ async function openPath() {
 }
 
 describe("BlueprintGraphViewer", () => {
+	it("renders Flow nodes and selects their saved evidence in the inspector", async () => {
+		render(() => (
+			<EffectRuntimeProvider runtime={runtime}>
+				<BlueprintGraphViewer
+					initialRead={Effect.succeed(ready())}
+					opener={() => undefined}
+				/>
+			</EffectRuntimeProvider>
+		));
+		const canvas = await screen.findByLabelText("Graph viewport");
+		expect(await within(canvas).findByText("On Clicked")).toBeTruthy();
+		const callNode = within(canvas).getByText(
+			"Apply Settings With A Deliberately Long Saved Node Name"
+		);
+		expect(within(canvas).getByText("bEnabled")).toBeTruthy();
+		fireEvent.click(callNode);
+		const inspector = screen.getByRole("complementary", { name: "Inspector" });
+		await waitFor(() => {
+			expect(
+				within(inspector).getByRole("heading", {
+					name: "Apply Settings With A Deliberately Long Saved Node Name"
+				})
+			).toBeTruthy();
+		});
+		expect(within(inspector).getByText("Whether the setting is enabled.")).toBeTruthy();
+	});
+
+	it("inspects the already-selected node again from the keyboard", async () => {
+		render(() => (
+			<EffectRuntimeProvider runtime={runtime}>
+				<BlueprintGraphViewer
+					initialRead={Effect.succeed(ready())}
+					opener={() => undefined}
+				/>
+			</EffectRuntimeProvider>
+		));
+		const selected = await screen.findByRole("button", { name: "Inspect On Clicked" });
+		const user = userEvent.setup();
+		await user.click(screen.getByRole("tab", { name: "Blueprint" }));
+		expect(screen.getByRole("tab", { name: "Blueprint" }).getAttribute("aria-selected")).toBe(
+			"true"
+		);
+		selected.focus();
+		await user.keyboard("{Enter}");
+		await waitFor(() =>
+			expect(screen.getByRole("tab", { name: "Node" }).getAttribute("aria-selected")).toBe(
+				"true"
+			)
+		);
+		expect(screen.getByRole("heading", { name: "On Clicked" })).toBeTruthy();
+	});
+
 	it("opens a canned read through a custom opener without a project index", async () => {
 		const opener = vi.fn(
 			(controls: import("./blueprint-graph-viewer.js").BlueprintGraphOpenerControls) => (
@@ -388,22 +458,21 @@ describe("BlueprintGraphViewer", () => {
 
 	it("opens an indexed Blueprint and exposes saved topology, pin types, and defaults", async () => {
 		const readBlueprint = vi.fn((_path: string) => Effect.succeed(ready()));
-		const view = renderViewer(clientWith({ readBlueprint }));
+		renderViewer(clientWith({ readBlueprint }));
 
 		await openPath();
 
 		await waitFor(() => expect(readBlueprint).toHaveBeenCalledWith(assetPath));
 		expect(await screen.findByText("Fully decoded")).toBeDefined();
 		expect(screen.queryByLabelText("Projection coverage")).toBeNull();
-		expect(screen.getByRole("button", { name: "Inspect On Clicked" })).toBeDefined();
-		expect(view.container.querySelectorAll("svg path")).toHaveLength(1);
+		expect(await screen.findByRole("button", { name: "Inspect On Clicked" })).toBeDefined();
 
-		await userEvent.setup().click(
+		fireEvent.click(
 			screen.getByRole("button", {
 				name: "Inspect Apply Settings With A Deliberately Long Saved Node Name"
 			})
 		);
-		const pins = screen.getByLabelText("Saved pin evidence");
+		const pins = await screen.findByLabelText("Saved pin evidence");
 		expect(within(pins).getByText("bool")).toBeDefined();
 		expect(within(pins).getByText("Saved default")).toBeDefined();
 		expect(within(pins).getByText("true")).toBeDefined();
@@ -450,12 +519,16 @@ describe("BlueprintGraphViewer", () => {
 				name: "A Utility Graph With A Very Long Saved Name, 1 node"
 			})
 		);
-		expect(screen.getByRole("button", { name: "Inspect Saved Value" })).toBeDefined();
-		expect(screen.getByLabelText("Graph zoom").textContent).toBe("100%");
+		expect(await screen.findByRole("button", { name: "Inspect Saved Value" })).toBeDefined();
+		const zoom = () =>
+			Number.parseInt(screen.getByLabelText("Graph zoom").textContent ?? "", 10);
+		await user.click(screen.getByRole("button", { name: "1:1" }));
+		await waitFor(() => expect(zoom()).toBe(100));
 		await user.click(screen.getByRole("button", { name: "Zoom in" }));
-		expect(screen.getByLabelText("Graph zoom").textContent).toBe("110%");
+		await waitFor(() => expect(zoom()).toBeGreaterThan(100));
+		await user.click(screen.getByRole("button", { name: "1:1" }));
 		await user.click(screen.getByRole("button", { name: "Zoom out" }));
-		expect(screen.getByLabelText("Graph zoom").textContent).toBe("100%");
+		await waitFor(() => expect(zoom()).toBeLessThan(100));
 	});
 
 	it("reports loading while a saved package is decoded", async () => {
@@ -557,7 +630,7 @@ describe("BlueprintGraphViewer", () => {
 						}
 					];
 		});
-		const view = renderViewer(
+		renderViewer(
 			clientWith({
 				readBlueprint: () =>
 					Effect.succeed(
@@ -577,20 +650,26 @@ describe("BlueprintGraphViewer", () => {
 		);
 		await openPath();
 
-		expect(view.container.querySelectorAll("svg path")).toHaveLength(23);
 		expect(within(screen.getByLabelText("Blueprint summary")).getByText("24")).toBeDefined();
-		await userEvent.setup().click(
+		// Every saved node mounts as an inspectable Flow node, however far apart they were saved.
+		const canvas = screen.getByLabelText("Graph viewport");
+		await waitFor(() =>
+			expect(
+				within(canvas).getAllByRole("button", { name: /^Inspect Dense Node/ })
+			).toHaveLength(23)
+		);
+		fireEvent.click(
 			screen.getByRole("button", {
 				name: "Inspect Final Dense Node With A Deliberately Long Saved Evidence Name"
 			})
 		);
-		expect(
-			screen.getByRole("heading", {
-				name: "Final Dense Node With A Deliberately Long Saved Evidence Name"
-			})
-		).toBeDefined();
-		await userEvent.setup().click(screen.getByRole("button", { name: "Zoom in" }));
-		expect(screen.getByLabelText("Graph zoom").textContent).toBe("110%");
+		await waitFor(() =>
+			expect(
+				screen.getByRole("heading", {
+					name: "Final Dense Node With A Deliberately Long Saved Evidence Name"
+				})
+			).toBeDefined()
+		);
 	});
 
 	it.each<readonly [BlueprintGraphFailureReason, string]>([

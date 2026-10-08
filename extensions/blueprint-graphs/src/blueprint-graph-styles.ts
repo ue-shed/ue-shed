@@ -520,48 +520,13 @@ export const styles = stylex.create({
 		gridTemplateRows: { default: "auto", "@media (max-width: 899px)": "420px auto" }
 	},
 	canvasFrame: { position: "relative", minWidth: 0, minHeight: 0, display: "grid" },
-	viewport: {
-		overflow: "auto",
-		outlineWidth: { default: 0, ":focus-visible": 1 },
-		outlineStyle: "solid",
-		outlineColor: tokens.colorAccent,
-		outlineOffset: -2,
-		cursor: "grab",
-		touchAction: "none",
-		backgroundColor: "#0a0c0f",
-		backgroundImage:
-			"linear-gradient(rgba(103,113,126,.08) 1px, transparent 1px), linear-gradient(90deg, rgba(103,113,126,.08) 1px, transparent 1px), linear-gradient(rgba(103,113,126,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(103,113,126,.035) 1px, transparent 1px)",
-		backgroundSize: "80px 80px, 80px 80px, 16px 16px, 16px 16px"
-	},
-	viewportPanning: { cursor: "grabbing", userSelect: "none" },
-	canvas: { position: "relative", transformOrigin: "top left" },
-	wires: {
-		position: "absolute",
-		zIndex: 1,
-		inset: 0,
-		overflow: "visible",
-		pointerEvents: "none",
-		fill: "none"
-	},
-	wire: {
-		strokeLinecap: "round",
-		vectorEffect: "non-scaling-stroke",
-		transitionProperty: "opacity, stroke-width",
-		transitionDuration: tokens.motionFast
-	},
 	panHint: {
-		position: "absolute",
-		left: 14,
-		bottom: 14,
 		color: tokens.colorTextFaint,
 		fontSize: 11,
 		pointerEvents: "none",
 		display: { default: "block", "@media (max-width: 1180px)": "none" }
 	},
 	zoomCluster: {
-		position: "absolute",
-		right: 12,
-		bottom: 12,
 		display: "flex",
 		alignItems: "center",
 		gap: 2,
@@ -622,9 +587,11 @@ export const styles = stylex.create({
 	},
 
 	node: {
-		position: "absolute",
-		zIndex: 2,
-		// Buttons centre their content; pin rows must start at the layout offset wires target.
+		position: "relative",
+		boxSizing: "border-box",
+		width: "100%",
+		height: "100%",
+		// Pin rows must start at the layout offset that edge handles target.
 		display: "flex",
 		flexDirection: "column",
 		justifyContent: "flex-start",
@@ -644,8 +611,10 @@ export const styles = stylex.create({
 		transitionTimingFunction: tokens.motionEaseOut
 	},
 	comment: {
-		position: "absolute",
-		zIndex: 0,
+		position: "relative",
+		boxSizing: "border-box",
+		width: "100%",
+		height: "100%",
 		display: "flex",
 		flexDirection: "column",
 		justifyContent: "flex-start",

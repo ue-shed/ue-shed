@@ -1,19 +1,10 @@
 import {
-	BLUEPRINT_LAYOUT,
 	blueprintClassLabel as shortClass,
-	blueprintLinkPath as linkPath,
-	blueprintNodeDisplay,
-	blueprintNodeHeight as nodeHeight,
 	blueprintPinDefaults as pinDefaults,
 	blueprintPinLabel as pinLabel,
-	blueprintPinTone as pinTone,
 	blueprintPinTypeLabel as pinTypeLabel,
-	findBlueprintPin as findPin,
-	indexBlueprintGraph,
 	isBlueprintTopologyGap as isTopologyGap,
-	layoutBlueprintGraph as layoutGraph,
 	searchBlueprint,
-	type BlueprintPinTone as PinTone,
 	type BlueprintSearchHit
 } from "@ue-shed/blueprints";
 import * as stylex from "@stylexjs/stylex";
@@ -28,29 +19,18 @@ import type {
 } from "@ue-shed/protocol";
 import { createEffectAction } from "@ue-shed/ui";
 import { styles } from "./blueprint-graph-styles.js";
+import { PinGlyph } from "./blueprint-graph-node.js";
+import { BlueprintGraphFlowCanvas } from "./blueprint-graph-flow-canvas.js";
 import type { Effect } from "effect";
 import type { JSX } from "@solidjs/web";
 import { For, Show, createMemo, createSignal, onSettled } from "solid-js";
 import type { BlueprintGraphReadResult } from "./contract.js";
 import type { BlueprintGraphFailureReason } from "./contract.js";
 
-// UEdGraphNode_Comment constructor defaults (UE 5.7 and 5.8); tagged saves omit unchanged sizes.
-const COMMENT_DEFAULT_WIDTH = 400;
-const COMMENT_DEFAULT_HEIGHT = 100;
-const MIN_ZOOM = 0.35;
-const MAX_ZOOM = 1.6;
 const GRAPH_SEARCH_LIMIT = 20;
 
 type FailedResult = Extract<BlueprintGraphReadResult, { readonly status: "failed" }>;
 type InspectorView = "blueprint" | "node";
-
-interface PanOrigin {
-	readonly pointerId: number;
-	readonly pointerX: number;
-	readonly pointerY: number;
-	readonly scrollLeft: number;
-	readonly scrollTop: number;
-}
 
 export type BlueprintGraphReadEffect = Effect.Effect<BlueprintGraphReadResult, unknown>;
 export type ReadyBlueprintGraphRead = Extract<
@@ -95,53 +75,6 @@ function gapLabel(reason: BlueprintGraphCoverageGap["reason"]): string {
 	return reason.replaceAll("_", " ");
 }
 
-function pinToneColor(tone: PinTone): string {
-	switch (tone) {
-		case "boolean":
-			return "#ef6a67";
-		case "exec":
-			return "#d8e0e8";
-		case "numeric":
-			return "#80d9ad";
-		case "object":
-			return "#5bc0eb";
-		case "struct":
-			return "#f0b35b";
-		case "text":
-			return "#d78ce8";
-		case "wildcard":
-			return "#8a919c";
-	}
-}
-
-function PinGlyph(props: {
-	readonly edge?: BlueprintPin["direction"] | undefined;
-	readonly pin: BlueprintPin;
-}) {
-	const exec = createMemo(() => pinTone(props.pin) === "exec");
-	const linked = createMemo(() => props.pin.linked_to.length > 0);
-	const color = createMemo(() => pinToneColor(pinTone(props.pin)));
-	return (
-		<i
-			aria-hidden="true"
-			style={
-				"border-color:" +
-				color() +
-				";background-color:" +
-				(linked() || exec() ? color() : "transparent") +
-				";opacity:" +
-				(exec() && !linked() ? "0.5" : "1")
-			}
-			{...stylex.attrs(
-				exec() && styles.pinExec,
-				!exec() && styles.pinData,
-				props.edge === "input" && styles.pinEdgeInput,
-				props.edge === "output" && styles.pinEdgeOutput
-			)}
-		/>
-	);
-}
-
 function failureTitle(reason: BlueprintGraphFailureReason): string {
 	switch (reason) {
 		case "control_rig":
@@ -172,10 +105,6 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 	const [graphIndex, setGraphIndex] = createSignal(0);
 	const [selectedNodePath, setSelectedNodePath] = createSignal<string>();
 	const [inspectorView, setInspectorView] = createSignal<InspectorView>("node");
-	const [zoom, setZoom] = createSignal(1);
-	const [panning, setPanning] = createSignal(false);
-	let viewport: HTMLDivElement | undefined;
-	let panOrigin: PanOrigin | undefined;
 
 	const ready = createMemo(() => {
 		const value = result();
@@ -187,17 +116,6 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 		return value?.status === "failed" ? value : undefined;
 	});
 	const graph = createMemo(() => blueprint()?.graphs[graphIndex()]);
-	const layout = createMemo(() => layoutGraph(graph()));
-	const graphLookup = createMemo(() => {
-		const selected = graph();
-		return selected === undefined ? undefined : indexBlueprintGraph(selected);
-	});
-	const currentPin = (
-		reference: BlueprintGraphProjection["graphs"][number]["links"][number]["from"]
-	) => {
-		const index = graphLookup();
-		return index === undefined ? undefined : findPin(index, reference);
-	};
 	const graphSearch = createMemo(() => {
 		const value = blueprint();
 		return value === undefined
@@ -234,15 +152,6 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 	const metadataGaps = createMemo(
 		() => blueprint()?.coverage_gaps.filter((gap) => !isTopologyGap(gap)) ?? []
 	);
-	const setZoomLevel = (value: number) => {
-		setZoom(Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round(value * 100) / 100)));
-	};
-	const resetViewport = () => {
-		if (viewport !== undefined) {
-			viewport.scrollLeft = 0;
-			viewport.scrollTop = 0;
-		}
-	};
 	const selectNode = (path: string | undefined) => {
 		setSelectedNodePath(path);
 		if (path !== undefined) setInspectorView("node");
@@ -258,8 +167,6 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 			setGraphQuery("");
 			setSelectedNodePath(firstNode);
 			setInspectorView(firstNode === undefined ? "blueprint" : "node");
-			setZoom(1);
-			resetViewport();
 		}
 	};
 	const run = (effect: BlueprintGraphReadEffect) => {
@@ -282,8 +189,6 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 	const chooseGraph = (index: number) => {
 		setGraphIndex(index);
 		setSelectedNodePath(blueprint()?.graphs[index]?.nodes[0]?.object_path);
-		setZoom(1);
-		resetViewport();
 	};
 	const chooseSearchHit = (hit: BlueprintSearchHit) => {
 		const index = blueprint()?.graphs.findIndex(
@@ -293,60 +198,6 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 		chooseGraph(index);
 		selectNode(hit.nodeObjectPath);
 		setGraphSearchOpen(false);
-	};
-
-	const fitGraph = () => {
-		if (viewport === undefined) return;
-		setZoomLevel(
-			Math.min(
-				(viewport.clientWidth - 32) / layout().width,
-				(viewport.clientHeight - 32) / layout().height
-			)
-		);
-		resetViewport();
-	};
-	const resetView = () => {
-		setZoom(1);
-		resetViewport();
-	};
-	const beginPan = (event: PointerEvent & { readonly currentTarget: HTMLDivElement }) => {
-		if (event.button !== 0) return;
-		if (event.target instanceof Element && event.target.closest("button") !== null) return;
-		panOrigin = {
-			pointerId: event.pointerId,
-			pointerX: event.clientX,
-			pointerY: event.clientY,
-			scrollLeft: event.currentTarget.scrollLeft,
-			scrollTop: event.currentTarget.scrollTop
-		};
-		event.currentTarget.setPointerCapture(event.pointerId);
-		setPanning(true);
-	};
-	const continuePan = (event: PointerEvent & { readonly currentTarget: HTMLDivElement }) => {
-		if (panOrigin === undefined || panOrigin.pointerId !== event.pointerId) return;
-		event.currentTarget.scrollLeft =
-			panOrigin.scrollLeft - (event.clientX - panOrigin.pointerX);
-		event.currentTarget.scrollTop = panOrigin.scrollTop - (event.clientY - panOrigin.pointerY);
-	};
-	const finishPan = (event: PointerEvent & { readonly currentTarget: HTMLDivElement }) => {
-		if (panOrigin?.pointerId !== event.pointerId) return;
-		if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-			event.currentTarget.releasePointerCapture(event.pointerId);
-		}
-		panOrigin = undefined;
-		setPanning(false);
-	};
-	const zoomWheel = (event: WheelEvent) => {
-		if (!event.ctrlKey) return;
-		event.preventDefault();
-		setZoomLevel(zoom() + (event.deltaY < 0 ? 0.1 : -0.1));
-	};
-	const wireStyle = (link: BlueprintGraphProjection["graphs"][number]["links"][number]) => {
-		const selected = selectedNodePath();
-		const touches =
-			selected === link.from.node_object_path || selected === link.to.node_object_path;
-		const opacity = selected === undefined ? 0.8 : touches ? 1 : 0.18;
-		return `stroke:${pinToneColor(pinTone(currentPin(link.from)))};opacity:${opacity};stroke-width:${touches ? 3 : 2}`;
 	};
 
 	onSettled(() => {
@@ -651,142 +502,15 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 											/>
 										}
 									>
-										<div
-											aria-label="Graph viewport"
-											onPointerCancel={finishPan}
-											onPointerDown={beginPan}
-											onPointerMove={continuePan}
-											onPointerUp={finishPan}
-											onWheel={zoomWheel}
-											ref={(element) => {
-												viewport = element;
-											}}
-											tabindex={0}
-											{...stylex.attrs(
-												styles.viewport,
-												panning() && styles.viewportPanning
+										<Show when={graph()} keyed>
+											{(selectedGraph) => (
+												<BlueprintGraphFlowCanvas
+													graph={selectedGraph}
+													onSelect={selectNode}
+													selectedNodePath={selectedNodePath()}
+												/>
 											)}
-										>
-											<div
-												style={`width:${layout().width * zoom()}px;height:${layout().height * zoom()}px`}
-											>
-												<div
-													style={`width:${layout().width}px;height:${layout().height}px;transform:scale(${zoom()})`}
-													{...stylex.attrs(styles.canvas)}
-												>
-													<svg
-														aria-hidden="true"
-														height={layout().height}
-														width={layout().width}
-														{...stylex.attrs(styles.wires)}
-													>
-														<For each={graph()?.links}>
-															{(link) => (
-																<Show
-																	when={linkPath(layout(), link)}
-																>
-																	{(path) => (
-																		<path
-																			d={path()}
-																			style={wireStyle(link)}
-																			{...stylex.attrs(
-																				styles.wire
-																			)}
-																		/>
-																	)}
-																</Show>
-															)}
-														</For>
-													</svg>
-													<Show when={(graph()?.nodes.length ?? 0) === 0}>
-														<div
-															{...stylex.attrs(
-																styles.emptyGraphCanvas
-															)}
-														>
-															<strong>
-																No nodes saved in this graph
-															</strong>
-															<span>
-																The graph export exists, but its
-																saved Nodes array is empty.
-															</span>
-														</div>
-													</Show>
-													<For each={graph()?.nodes}>
-														{(node) => (
-															<GraphNode
-																node={node}
-																onSelect={() =>
-																	selectNode(node.object_path)
-																}
-																placement={layout().nodes.get(
-																	node.object_path
-																)}
-																selected={
-																	selectedNodePath() ===
-																	node.object_path
-																}
-															/>
-														)}
-													</For>
-												</div>
-											</div>
-										</div>
-										<span aria-hidden="true" {...stylex.attrs(styles.panHint)}>
-											Drag to pan · Ctrl + wheel to zoom
-										</span>
-										<div
-											aria-label="Zoom"
-											role="group"
-											{...stylex.attrs(styles.zoomCluster)}
-										>
-											<button
-												aria-label="Zoom out"
-												onClick={() => setZoomLevel(zoom() - 0.1)}
-												type="button"
-												{...stylex.attrs(styles.zoomButton)}
-											>
-												−
-											</button>
-											<output
-												aria-label="Graph zoom"
-												{...stylex.attrs(styles.zoomOutput)}
-											>
-												{Math.round(zoom() * 100)}%
-											</output>
-											<button
-												aria-label="Zoom in"
-												onClick={() => setZoomLevel(zoom() + 0.1)}
-												type="button"
-												{...stylex.attrs(styles.zoomButton)}
-											>
-												+
-											</button>
-											<span {...stylex.attrs(styles.zoomDivider)} />
-											<button
-												onClick={fitGraph}
-												title="Fit the graph to the viewport"
-												type="button"
-												{...stylex.attrs(
-													styles.zoomButton,
-													styles.zoomText
-												)}
-											>
-												Fit
-											</button>
-											<button
-												onClick={resetView}
-												title="Reset to actual size"
-												type="button"
-												{...stylex.attrs(
-													styles.zoomButton,
-													styles.zoomText
-												)}
-											>
-												1:1
-											</button>
-										</div>
+										</Show>
 									</Show>
 								</div>
 
@@ -855,93 +579,6 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 			</Show>
 			<Show when={ready()}>{(read) => props.footer?.(read(), footerControls)}</Show>
 		</main>
-	);
-}
-
-function GraphNode(props: {
-	readonly node: BlueprintNode;
-	readonly onSelect: () => void;
-	readonly placement:
-		| { readonly height: number; readonly x: number; readonly y: number }
-		| undefined;
-	readonly selected: boolean;
-}) {
-	// Comments are drawn as their saved frames behind the graph, like the editor does.
-	const commentFrame = createMemo(() => {
-		if (!props.node.class_path.endsWith("EdGraphNode_Comment")) return undefined;
-		const display = blueprintNodeDisplay(props.node);
-		return {
-			height: (display.height ?? COMMENT_DEFAULT_HEIGHT) * BLUEPRINT_LAYOUT.positionScale,
-			text: display.comment ?? props.node.title,
-			width: (display.width ?? COMMENT_DEFAULT_WIDTH) * BLUEPRINT_LAYOUT.positionScale
-		};
-	});
-	const position = () => `left:${props.placement?.x ?? 0}px;top:${props.placement?.y ?? 0}px`;
-	return (
-		<Show when={commentFrame()} fallback={<GraphCard {...props} position={position()} />}>
-			{(frame) => (
-				<button
-					aria-label={"Inspect " + props.node.title}
-					onClick={() => props.onSelect()}
-					style={`${position()};width:${frame().width}px;height:${frame().height}px`}
-					type="button"
-					{...stylex.attrs(styles.comment, props.selected && styles.commentSelected)}
-				>
-					<span title={frame().text} {...stylex.attrs(styles.commentHeader)}>
-						{frame().text}
-					</span>
-				</button>
-			)}
-		</Show>
-	);
-}
-
-function GraphCard(props: {
-	readonly node: BlueprintNode;
-	readonly onSelect: () => void;
-	readonly placement: { readonly height: number } | undefined;
-	readonly position: string;
-	readonly selected: boolean;
-}) {
-	const kind = createMemo(() => props.node.kind);
-	return (
-		<button
-			aria-label={"Inspect " + props.node.title}
-			onClick={() => props.onSelect()}
-			style={`${props.position};width:${BLUEPRINT_LAYOUT.nodeWidth}px;height:${props.placement?.height ?? nodeHeight(props.node)}px`}
-			type="button"
-			{...stylex.attrs(styles.node, props.selected && styles.nodeSelected)}
-		>
-			<span
-				{...stylex.attrs(
-					styles.nodeHeader,
-					kind() === "event" && styles.nodeHeaderEvent,
-					kind() === "function_call" && styles.nodeHeaderFunction,
-					(kind() === "variable_get" || kind() === "variable_set") &&
-						styles.nodeHeaderVariable
-				)}
-			>
-				<span title={props.node.title} {...stylex.attrs(styles.nodeTitle)}>
-					{props.node.title}
-				</span>
-				<small {...stylex.attrs(styles.nodeClass)}>
-					{shortClass(props.node.class_path)}
-				</small>
-			</span>
-			<For each={props.node.pins}>
-				{(pin) => (
-					<span {...stylex.attrs(styles.pinRow)}>
-						<span {...stylex.attrs(styles.pinSide, styles.pinInput)}>
-							<Show when={pin.direction === "input"}>{pinLabel(pin)}</Show>
-						</span>
-						<span {...stylex.attrs(styles.pinSide, styles.pinOutput)}>
-							<Show when={pin.direction === "output"}>{pinLabel(pin)}</Show>
-						</span>
-						<PinGlyph edge={pin.direction} pin={pin} />
-					</span>
-				)}
-			</For>
-		</button>
 	);
 }
 

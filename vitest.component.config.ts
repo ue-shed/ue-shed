@@ -18,7 +18,8 @@ const stylex = (options: PluginOptions): Plugin => {
 
 export default defineProject({
 	plugins: [solid({ hot: false }), stylex({ fileName: "stylex.css" })],
-	ssr: { noExternal: ["@tanstack/charts", "peculiar-sheets"] },
+	// Packages that ship Solid source or import their own CSS must go through Vite, not Node.
+	ssr: { noExternal: ["@tanstack/charts", "peculiar-sheets", "@dschz/solid-flow"] },
 	test: {
 		environment: "jsdom",
 		setupFiles: ["./scripts/setup-solid-tests.ts", "./scripts/component-test-setup.ts"],

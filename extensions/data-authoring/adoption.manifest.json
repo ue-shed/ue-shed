@@ -22,7 +22,6 @@
 	"copy": {
 		"kernel": [
 			"scripts/clean-package-dist.ts",
-			"patches/solid-js@2.0.0-rc.9.patch",
 			"LICENSE",
 			"Cargo.toml",
 			"Cargo.lock",

@@ -5,6 +5,11 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { ensureUassetExecutable } from "./native-tools.ts";
 import { JsonSchema, Schema, SchemaRepresentation } from "effect";
+import {
+	legacyAssetNames,
+	legacyVersions,
+	readLegacyEvidence
+} from "../fixtures/legacy-unreal-project/evidence.ts";
 
 const repositoryRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const packageNodeEntry = join(
@@ -58,6 +63,17 @@ const fixtures = [
 	"Content/Fixture/Cameras/L_CameraLoad.umap"
 ].map((path) => join(fixtureRoot, path));
 
+const legacyRoot = join(repositoryRoot, "fixtures", "legacy-unreal-project", "Generated");
+const legacyFixtures = legacyVersions.flatMap((version) => {
+	const root = join(legacyRoot, version);
+	assert.equal(readLegacyEvidence(root).engine_version, version);
+	return legacyAssetNames.map((name) => ({
+		path: join(root, "Content", "Legacy", `${name}.uasset`),
+		root
+	}));
+});
+fixtures.push(...legacyFixtures.map((fixture) => fixture.path));
+
 // SAFETY: the checked-in envelope embeds the authoritative authoring snapshot definitions.
 const authoringSchema: JsonSchema.JsonSchema = JSON.parse(
 	readFileSync(
@@ -79,7 +95,9 @@ const decodeAuthoringTable = Schema.decodeUnknownSync(
 const projectionFixtures: ReadonlyArray<{
 	readonly path: string;
 	readonly kind: "text" | "texture";
+	readonly root?: string;
 }> = [
+	...legacyFixtures.map((fixture) => ({ ...fixture, kind: "text" as const })),
 	{ path: join(fixtureRoot, "Content/Fixture/Text/DA_TextOccurrences.uasset"), kind: "text" },
 	{
 		path: join(
@@ -168,10 +186,10 @@ for (const fixture of fixtures) {
 	);
 }
 
-for (const { path: fixture, kind } of projectionFixtures) {
+for (const { path: fixture, kind, root } of projectionFixtures) {
 	const displayPath = relative(repositoryRoot, fixture).replaceAll("\\", "/");
 	const bytes = readFileSync(fixture);
-	const nativeProjection = readNativeProjection(fixture, kind, displayPath);
+	const nativeProjection = readNativeProjection(fixture, kind, displayPath, root);
 	const wasmProjection =
 		kind === "text"
 			? runtime.extractText(displayPath, bytes)
@@ -415,13 +433,16 @@ process.stdout.write(
 function readNativeProjection(
 	fixture: string,
 	projection: "text" | "texture",
-	displayPath: string
+	displayPath: string,
+	projectRoot = fixtureRoot
 ) {
-	const lines = execFileSync(
+	const result = spawnSync(
 		nativeExecutable,
-		["scan", fixtureRoot, "--path", fixture, "--projection", projection, "--concurrency", "1"],
+		["scan", projectRoot, "--path", fixture, "--projection", projection, "--concurrency", "1"],
 		{ cwd: repositoryRoot, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }
-	)
+	);
+	if (result.error) throw result.error;
+	const lines = result.stdout
 		.trim()
 		.split(/\r?\n/)
 		.filter((line) => line.length > 0)
@@ -429,6 +450,12 @@ function readNativeProjection(
 	const eventPrefix = projection === "text" ? "text" : "texture";
 	const packageEvent = lines.find((line) => line.event === `${eventPrefix}_package`);
 	assert.ok(packageEvent, `${displayPath} must produce a ${eventPrefix} package event`);
+	// The native CLI exits 6 (partial) exactly when the package reports explicit coverage gaps.
+	assert.equal(
+		result.status,
+		packageEvent.status === "partial" ? 6 : 0,
+		`${displayPath} native scan exit status: ${result.stderr}`
+	);
 	if (projection === "text") {
 		return {
 			schema_version: 1,

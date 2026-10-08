@@ -10,6 +10,13 @@ pub mod protocol;
 mod protocol_adapter;
 pub mod protocol_result;
 
+#[cfg(test)]
+use uasset_parser::{archive, package, version};
+#[cfg(test)]
+#[allow(dead_code)]
+#[path = "../../uasset-parser/src/test_support.rs"]
+mod test_support;
+
 pub fn run(arguments: impl Iterator<Item = std::ffi::OsString>) -> u8 {
     let arguments: Vec<_> = arguments.collect();
     match arguments.first().and_then(|value| value.to_str()) {

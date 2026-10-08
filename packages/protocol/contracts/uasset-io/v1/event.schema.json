@@ -7845,7 +7845,12 @@
 				},
 				"reason": {
 					"type": "string",
-					"enum": ["unsupported_text_history"]
+					"enum": [
+						"unsupported_text_history",
+						"legacy_container_element_without_type_information",
+						"feature_unavailable_for_engine_version",
+						"property_decoder_rejected"
+					]
 				}
 			},
 			"required": ["object_path", "property_path", "reason"],

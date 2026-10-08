@@ -41,5 +41,12 @@ fixtures/unreal-427-localization/DerivedDataCache/
 fixtures/unreal-427-localization/Intermediate/
 fixtures/unreal-427-localization/Saved/
 fixtures/unreal-427-localization/.vs/
+fixtures/legacy-unreal-project/Binaries/
+fixtures/legacy-unreal-project/DerivedDataCache/
+fixtures/legacy-unreal-project/Intermediate/
+fixtures/legacy-unreal-project/Saved/
+fixtures/legacy-unreal-project/.vs/
+fixtures/legacy-unreal-project/*.sln
+fixtures/legacy-unreal-project/Content/
 unreal/Plugins/*/Binaries/
 unreal/Plugins/*/Intermediate/

@@ -74,6 +74,9 @@ pub struct SavedAssetTextCoverageGap {
 #[serde(rename_all = "snake_case")]
 pub enum TextCoverageGapReason {
     UnsupportedTextHistory,
+    LegacyContainerElementWithoutTypeInformation,
+    FeatureUnavailableForEngineVersion,
+    PropertyDecoderRejected,
 }
 
 pub fn text_occurrence(occurrence: crate::projection::TextOccurrence) -> SavedAssetTextOccurrence {
@@ -136,6 +139,15 @@ pub fn text_coverage_gap(gap: crate::projection::TextCoverageGap) -> SavedAssetT
             crate::projection::TextCoverageGapReason::UnsupportedTextHistory => {
                 TextCoverageGapReason::UnsupportedTextHistory
             }
+            crate::projection::TextCoverageGapReason::LegacyContainerElementWithoutTypeInformation => {
+                TextCoverageGapReason::LegacyContainerElementWithoutTypeInformation
+            }
+            crate::projection::TextCoverageGapReason::FeatureUnavailableForEngineVersion => {
+                TextCoverageGapReason::FeatureUnavailableForEngineVersion
+            }
+            crate::projection::TextCoverageGapReason::PropertyDecoderRejected => {
+                TextCoverageGapReason::PropertyDecoderRejected
+            }
         },
     }
 }
@@ -144,6 +156,39 @@ pub fn text_coverage_gap(gap: crate::projection::TextCoverageGap) -> SavedAssetT
 mod tests {
     use super::*;
     use crate::projection::{TextCoverageGap, TextOccurrence};
+
+    #[test]
+    fn coverage_gap_reasons_round_trip_without_collapsing_legacy_failures() {
+        use crate::projection::TextCoverageGapReason as Reason;
+        for (reason, expected) in [
+            (Reason::UnsupportedTextHistory, "unsupported_text_history"),
+            (
+                Reason::LegacyContainerElementWithoutTypeInformation,
+                "legacy_container_element_without_type_information",
+            ),
+            (
+                Reason::FeatureUnavailableForEngineVersion,
+                "feature_unavailable_for_engine_version",
+            ),
+            (Reason::PropertyDecoderRejected, "property_decoder_rejected"),
+        ] {
+            let gap = text_coverage_gap(TextCoverageGap {
+                object_path: "/Game/Fixture/Example.Example".into(),
+                property_path: "Values".into(),
+                reason,
+            });
+            let json = serde_json::to_value(&gap).unwrap();
+            assert_eq!(json["reason"], expected);
+            assert_eq!(
+                serde_json::from_value::<SavedAssetTextCoverageGap>(json).unwrap(),
+                gap
+            );
+        }
+        assert!(
+            serde_json::from_str::<TextCoverageGapReason>("\"legacy_struct_width_guessed\"")
+                .is_err()
+        );
+    }
 
     #[test]
     fn text_wire_json_preserves_all_variants_and_field_order() {

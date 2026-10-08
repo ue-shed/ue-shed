@@ -1,0 +1,18 @@
+{
+	"FileVersion": 3,
+	"EngineAssociation": "5.3",
+	"Category": "Development",
+	"Description": "Legacy tagged text conformance fixtures for UE Shed.",
+	"Modules": [
+		{
+			"Name": "UEShedLegacyFixture",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		},
+		{
+			"Name": "UEShedLegacyFixtureEditor",
+			"Type": "Editor",
+			"LoadingPhase": "Default"
+		}
+	]
+}

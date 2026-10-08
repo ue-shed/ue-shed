@@ -15,6 +15,21 @@ game text or localization resources.
 
 ## Shipped read-only corpus
 
+Tagged-property text extraction supports classic, uncooked, versioned editor packages from UE 4.27
+and UE 5.0–5.3, alongside the existing UE 5.4+ reader. The legacy window includes String Tables,
+DataTable and CompositeDataTable rows, data assets, and generic UObject text with nested containers.
+UE 4.26 and older tagged properties require resaving in 4.27 or later. UE 4.27 and 5.3 are verified
+against engine-saved fixtures and fresh-process Unreal evidence
+([Plan 050](../../plans/archive/050-legacy-property-tags.md)). UE 5.0–5.2 have synthetic
+version-boundary coverage only. On UE 4.27, packages usually store `None` as their package name, so
+text locations use the bare asset name rather than a mounted `/Game/...` path.
+
+Blueprint pins, Sequencer, animation/Skeleton, property bags, InstancedStruct, and actor/component
+native records retain their current version gates. Legacy native struct map/set elements without
+type information report `legacy_container_element_without_type_information`; unsupported histories
+and unavailable engine features retain their own gap reasons. Partial coverage stays visible in
+the corpus.
+
 The corpus includes decoded String Table entries, DataTable `FText` cells, and supported asset
 properties. Every text unit retains its resolved or unresolved Unreal identity and one or more
 occurrences with package, object, row/entry/property, and edit-capability evidence.

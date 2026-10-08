@@ -1502,6 +1502,12 @@ fn decode_skeleton_reference_bones(
     context: &AssetDecodeContext<'_>,
     object_path: &ObjectPath,
 ) -> Result<Vec<SkeletonBone>, AssetError> {
+    if context.package.summary.versions.uses_legacy_property_tags() {
+        return Err(AssetError::new(
+            AssetErrorKind::UnsupportedVersion,
+            "Skeleton native serialization requires a verified UE 5.7/5.8 package revision",
+        ));
+    }
     // `FReferenceSkeleton` begins with `TArray<FMeshBoneInfo>` (FName Name,
     // i32 ParentIndex, and an editor-only FString ExportName). The legacy
     // contract intentionally stops before RawRefBonePose and later Skeleton data.
@@ -3231,6 +3237,37 @@ mod tests {
             "ArrayProperty".into(),
             "Keys".into(),
         ]
+    }
+
+    #[test]
+    fn legacy_packages_keep_animation_and_blueprint_native_boundaries() {
+        for ue5 in [0, 1000, 1009, 1010, 1011] {
+            let mut package = test_package(vec!["None".into()]);
+            package.summary.versions.ue5 = ue5;
+            let context = AssetDecodeContext {
+                source: &[],
+                package: &package,
+                schemas: &EmptySchemas,
+            };
+            let mut reader = Reader::new(&[]);
+            let error = decode_skeleton_reference_bones(
+                &mut reader,
+                &context,
+                &ObjectPath::new("/Game/Fixture/Skeleton.Skeleton"),
+            )
+            .unwrap_err();
+            assert_eq!(error.kind(), AssetErrorKind::UnsupportedVersion);
+            assert_eq!(reader.tell(), 0);
+            assert_eq!(
+                validate_anim_sequence_boundary(&package)
+                    .unwrap_err()
+                    .kind(),
+                AssetErrorKind::UnsupportedVersion
+            );
+            assert!(!supports_blueprint_graph_package_version(
+                &package.summary.versions
+            ));
+        }
     }
 
     #[test]
@@ -5345,5 +5382,32 @@ mod tests {
             .expect_err("generated path rejects trailing bytes");
         assert_eq!(generated_error.kind(), error.kind());
         assert_eq!(generated_error.message(), error.message());
+    }
+
+    #[test]
+    fn synthetic_legacy_text_decodes_at_each_legacy_version_boundary() {
+        for ue5 in [0, 1000, 1004, 1009, 1010, 1011] {
+            let (bytes, package) = crate::test_support::legacy_text_package(ue5);
+            let context = AssetDecodeContext {
+                source: &bytes,
+                package: &package,
+                schemas: crate::schema::embedded_source_model(),
+            };
+            let Some(DecodedAsset::DataAsset(asset)) =
+                decode_export(&package.exports[0], &context).expect("legacy decode")
+            else {
+                panic!("expected a data asset at UE5 {ue5}");
+            };
+            let texts: Vec<_> = asset
+                .properties
+                .records
+                .iter()
+                .filter_map(|record| match &record.value {
+                    PropertyValue::Text(text) => Some(text.source.as_str()),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(texts, ["Hello"], "UE5 {ue5}");
+        }
     }
 }

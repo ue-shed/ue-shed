@@ -24,6 +24,7 @@
 		"fixture:generate-localization": "node scripts/unreal-fixture.ts localization",
 		"fixture:generate-localization-427": "node scripts/unreal-fixture.ts localization-427",
 		"fixture:verify-localization": "node scripts/unreal-fixture.ts localization-verify",
+		"fixture:generate-legacy": "node scripts/generate-legacy-unreal-fixtures.ts",
 		"fixture:generate-map-history": "node scripts/unreal-fixture.ts map-history",
 		"fixture:generate-world-partition": "node scripts/unreal-fixture.ts world-partition",
 		"fixture:launch": "node scripts/unreal-fixture.ts launch",

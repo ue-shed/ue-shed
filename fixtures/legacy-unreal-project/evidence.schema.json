@@ -1,0 +1,247 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"title": "UE Shed legacy fixture evidence v1",
+	"type": "object",
+	"additionalProperties": false,
+	"required": ["schema_version", "engine_version", "packages"],
+	"properties": {
+		"schema_version": {
+			"const": 1
+		},
+		"engine_version": {
+			"enum": ["4.27", "5.3"]
+		},
+		"packages": {
+			"type": "array",
+			"minItems": 3,
+			"maxItems": 3,
+			"items": {
+				"oneOf": [
+					{
+						"$ref": "#/$defs/data_asset"
+					},
+					{
+						"$ref": "#/$defs/data_table"
+					},
+					{
+						"$ref": "#/$defs/string_table"
+					}
+				]
+			}
+		}
+	},
+	"$defs": {
+		"path": {
+			"type": "string",
+			"minLength": 1
+		},
+		"nullable_string": {
+			"type": ["string", "null"]
+		},
+		"versions": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["ue4", "ue5", "licensee"],
+			"properties": {
+				"ue4": {
+					"const": 522
+				},
+				"ue5": {
+					"enum": [null, 1009]
+				},
+				"licensee": {
+					"const": 0
+				}
+			}
+		},
+		"text": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": [
+				"property_path",
+				"row",
+				"source",
+				"history",
+				"culture_invariant",
+				"namespace",
+				"key",
+				"table_id"
+			],
+			"properties": {
+				"property_path": {
+					"$ref": "#/$defs/path"
+				},
+				"row": {
+					"$ref": "#/$defs/nullable_string"
+				},
+				"source": {
+					"type": "string"
+				},
+				"history": {
+					"enum": ["none", "base", "string_table_entry"]
+				},
+				"culture_invariant": {
+					"type": "boolean"
+				},
+				"namespace": {
+					"$ref": "#/$defs/nullable_string"
+				},
+				"key": {
+					"$ref": "#/$defs/nullable_string"
+				},
+				"table_id": {
+					"$ref": "#/$defs/nullable_string"
+				}
+			}
+		},
+		"texts": {
+			"type": "array",
+			"items": {
+				"$ref": "#/$defs/text"
+			}
+		},
+		"data_asset": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": [
+				"asset_name",
+				"object_path",
+				"class_path",
+				"versions",
+				"texts",
+				"serialized_package_name"
+			],
+			"properties": {
+				"asset_name": {
+					"const": "DA_LegacyText"
+				},
+				"object_path": {
+					"$ref": "#/$defs/path"
+				},
+				"class_path": {
+					"$ref": "#/$defs/path"
+				},
+				"versions": {
+					"$ref": "#/$defs/versions"
+				},
+				"texts": {
+					"$ref": "#/$defs/texts"
+				},
+				"serialized_package_name": {
+					"type": "string"
+				}
+			}
+		},
+		"data_table": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": [
+				"asset_name",
+				"object_path",
+				"class_path",
+				"versions",
+				"rows",
+				"serialized_package_name"
+			],
+			"properties": {
+				"asset_name": {
+					"const": "DT_LegacyText"
+				},
+				"object_path": {
+					"$ref": "#/$defs/path"
+				},
+				"class_path": {
+					"$ref": "#/$defs/path"
+				},
+				"versions": {
+					"$ref": "#/$defs/versions"
+				},
+				"rows": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"additionalProperties": false,
+						"required": ["name", "texts", "vectors"],
+						"properties": {
+							"name": {
+								"$ref": "#/$defs/path"
+							},
+							"texts": {
+								"$ref": "#/$defs/texts"
+							},
+							"vectors": {
+								"type": "array",
+								"items": {
+									"type": "array",
+									"minItems": 3,
+									"maxItems": 3,
+									"items": {
+										"type": "number"
+									}
+								}
+							}
+						}
+					}
+				},
+				"serialized_package_name": {
+					"type": "string"
+				}
+			}
+		},
+		"string_table": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": [
+				"asset_name",
+				"object_path",
+				"class_path",
+				"versions",
+				"namespace",
+				"entries",
+				"serialized_package_name"
+			],
+			"properties": {
+				"asset_name": {
+					"const": "ST_LegacyText"
+				},
+				"object_path": {
+					"$ref": "#/$defs/path"
+				},
+				"class_path": {
+					"$ref": "#/$defs/path"
+				},
+				"versions": {
+					"$ref": "#/$defs/versions"
+				},
+				"namespace": {
+					"type": "string"
+				},
+				"entries": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"additionalProperties": false,
+						"required": ["key", "source", "metadata"],
+						"properties": {
+							"key": {
+								"$ref": "#/$defs/path"
+							},
+							"source": {
+								"type": "string"
+							},
+							"metadata": {
+								"type": "object",
+								"additionalProperties": {
+									"type": "string"
+								}
+							}
+						}
+					}
+				},
+				"serialized_package_name": {
+					"type": "string"
+				}
+			}
+		}
+	}
+}

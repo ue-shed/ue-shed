@@ -275,6 +275,7 @@ mod tests {
                     array_index: 0,
                     flags: PropertyTagFlags::default(),
                     property_guid: None,
+                    struct_guid: None,
                     extensions: None,
                     payload: Span::default(),
                     value,

@@ -1,7 +1,8 @@
 # Game text workbench
 
 > Status: early Workbench and CLI corpus slice shipped (scan/search); localization editing, Apply,
-> and Save remain vision.
+> and Save remain vision. The [review workspace](game-text-review-workspace.md) sketches how review
+> should work at the scale of a shipping game.
 
 ## Ambition
 

@@ -11,7 +11,9 @@ import {
 	type LocalizationEditRequest,
 	type LocalizationEditResult,
 	type LocalizationReviewRequest,
+	applyLocalizationKeyChanges,
 	applyLocalizationReview,
+	localizationKeyChanges,
 	localizationLineFingerprint,
 	type LocalizationLinePreview,
 	type LocalizationFocusResult,
@@ -972,5 +974,107 @@ describe("Game Text review state", () => {
 		await screen.findByText("1 match");
 		const results = screen.getByRole("region", { name: "Results" });
 		expect(within(results).getByRole("button", { name: /^Welcome/u })).toBeDefined();
+	});
+});
+
+describe("Game Text key changes", () => {
+	const renamedText = corpus([unit("Renamed", "Welcome back")]);
+	const renamedBase = joinLocalizationTarget(
+		renamedText,
+		evidence(
+			[manifestEntry("Welcome", "Welcome back")],
+			[archiveEntry("Welcome", "Welcome back", "Willkommen zurück")]
+		)
+	);
+	const renamed = applyLocalizationKeyChanges(
+		renamedBase,
+		localizationKeyChanges(renamedBase, renamedText).pairs
+	);
+	const renamedQuery = textCorpusQuery(renamedText, undefined, renamed);
+	const keyClient = (): GameTextClientApi => ({
+		...client(),
+		focus: (request) => {
+			const focus = renamedQuery.focus(request);
+			return Effect.succeed(focus ? { status: "found", focus } : { status: "not_found" });
+		},
+		search: (request) =>
+			Effect.succeed({
+				status: "ready",
+				page: (request.localization ? renamedQuery : textCorpusQuery(renamedText)).search(
+					request
+				)
+			}),
+		localizationFocus: (request) => {
+			const id =
+				request.selection.kind === "line"
+					? request.selection.id
+					: renamedQuery.focus({ id: request.selection.id, pageSize: 1 })?.localization
+							?.id;
+			const line = id ? renamedQuery.localizationFocus(id) : undefined;
+			return Effect.succeed(
+				line
+					? { status: "found", focus: localizationFocusPage(renamed, line, request) }
+					: { status: "not_found" }
+			);
+		}
+	});
+
+	it("lists new keys and shows the earlier key and its translations", async () => {
+		const user = userEvent.setup();
+		mount(keyClient());
+		await screen.findByText("2 matches");
+		await user.click(screen.getByRole("button", { name: "Key changed 1" }));
+		await screen.findByText("1 match");
+		const results = screen.getByRole("region", { name: "Results" });
+		await user.click(within(results).getByRole("button", { name: /^Welcome back/u }));
+		const change = await screen.findByRole("region", { name: "Key change" });
+		expect(change.textContent).toContain("Key changed · was NS,Welcome");
+		expect(change.textContent).toContain("same text in this asset");
+		expect(change.textContent).toContain("Willkommen zurück");
+	});
+
+	it("stages the earlier key's translations for the new key and checks them", async () => {
+		const user = userEvent.setup();
+		const requests: LocalizationEditRequest[] = [];
+		mount({
+			...keyClient(),
+			localizationEdits: (request) => {
+				requests.push(request);
+				return Effect.succeed({
+					status: "reviewed",
+					edits: request.edits.map((edit) => ({
+						culture: edit.culture,
+						namespace: edit.namespace,
+						key: edit.key,
+						outcome: "not_in_manifest" as const,
+						currentTranslation: null,
+						translation: edit.translation
+					})),
+					files: [],
+					notSynced: 0
+				});
+			}
+		});
+		await screen.findByText("2 matches");
+		await user.click(screen.getByRole("button", { name: "Key changed 1" }));
+		await screen.findByText("1 match");
+		const results = screen.getByRole("region", { name: "Results" });
+		await user.click(within(results).getByRole("button", { name: /^Welcome back/u }));
+		const change = await screen.findByRole("region", { name: "Key change" });
+		await user.click(within(change).getByRole("button", { name: "Carry translations" }));
+		expect(within(change).getByRole("status").textContent).toContain("Staged 1 translation.");
+		const panel = await screen.findByRole("region", { name: "Staged translations" });
+		expect(within(panel).getByText("Willkommen zurück")).toBeDefined();
+		await user.click(within(panel).getByRole("button", { name: "Check changes" }));
+		await within(panel).findByText("Not gathered: gather the target first");
+		expect(requests[0]?.edits).toEqual([
+			{
+				culture: "de",
+				namespace: "NS",
+				key: "Renamed",
+				seenTranslation: null,
+				translation: "Willkommen zurück"
+			}
+		]);
 	});
 });

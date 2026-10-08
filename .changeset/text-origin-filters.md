@@ -7,3 +7,7 @@ Filter Game Text by where text comes from. Search requests accept `where` with o
 units and gathered-only localization lines alike. Search counts add `origins`, which excludes the
 origin filter itself. `where.files` keeps the text a changed-file list touches, and the page's
 `fileScope` summarizes the list. `text-origin.ts` exports the pure classifiers and file helpers.
+
+Pair localization keys that changed with the key Unreal still lists: by the same saved place, the
+same text in the same asset, or text unique in the project, strictly one to one. Lines carry
+`keyChange`, selections accept `keyChanged`, and pages count new keys.

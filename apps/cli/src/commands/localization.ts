@@ -181,6 +181,7 @@ export const localizationCommand = Command.make("loc").pipe(
 				target: Flag.string("target"),
 				reader: Flag.string("reader").pipe(Flag.optional),
 				review: Flag.choice("review", LocalizationReviewLens.literals).pipe(Flag.optional),
+				keyChanged: Flag.boolean("key-changed"),
 				...localizationFlags()
 			},
 			({
@@ -189,6 +190,7 @@ export const localizationCommand = Command.make("loc").pipe(
 				culture,
 				state,
 				review,
+				keyChanged,
 				limit,
 				reader,
 				kinds,
@@ -203,6 +205,7 @@ export const localizationCommand = Command.make("loc").pipe(
 					...optionalLocalizationFlags(culture, state),
 					...optionalWhereFlags(kinds, path, files),
 					...(Option.isSome(review) ? { review: review.value } : undefined),
+					...(keyChanged ? { keyChanged } : undefined),
 					...(Option.isSome(reader) ? { reader: reader.value } : undefined)
 				});
 			}

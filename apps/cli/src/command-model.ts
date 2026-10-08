@@ -101,6 +101,7 @@ export const CliCommand = Schema.TaggedUnion({
 		culture: Schema.optionalKey(Schema.String),
 		state: Schema.optionalKey(LocalizationState),
 		review: Schema.optionalKey(LocalizationReviewLens),
+		keyChanged: Schema.optionalKey(Schema.Boolean),
 		...TextWhereFields,
 		limit: PositiveInt.check(Schema.isLessThanOrEqualTo(50))
 	},

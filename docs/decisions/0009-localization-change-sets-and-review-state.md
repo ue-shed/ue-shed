@@ -103,3 +103,11 @@ Writers and Unreal operations report the files they may write before they run. U
   merge-friendly formatting from its first release.
 - Machine translation is a review flag set by whoever wrote the translation. Integrating a
   translation service is a separate decision.
+
+## Addendum (2026-10-08, Plan 052)
+
+- **Absent and empty previous translations match.** A change's `previousTranslation` guards
+  against overwriting a translation someone else wrote. `null` (no translation) and `""` (an empty
+  translation) both mean nothing ships, so they match each other. Unreal's gather gives a new key
+  an empty archive translation; without this rule, a translation carried to a changed key before
+  the gather would read as stale after it.

@@ -91,6 +91,37 @@ export const LocalizationCultureState = LocalizationCultureMark.pipe(
 	})
 );
 export type LocalizationCultureState = typeof LocalizationCultureState.Type;
+/**
+ * How a changed key was paired with its earlier key: the same saved place (asset property or
+ * DataTable cell), the same text in the same package, or text unique in the project.
+ */
+export const LocalizationKeyChangeMatch = Schema.Literals([
+	"same_place",
+	"same_text_in_package",
+	"same_text"
+]);
+export type LocalizationKeyChangeMatch = typeof LocalizationKeyChangeMatch.Type;
+/** The earlier key's translation for one culture, as it shipped before the key changed. */
+export const LocalizationCarriedTranslation = Schema.Struct({
+	culture: CultureCode,
+	translation: Schema.String
+});
+export type LocalizationCarriedTranslation = typeof LocalizationCarriedTranslation.Type;
+/**
+ * A line's key changed. On the new key's line `direction` is "to" and `other` is the earlier key,
+ * with the translations it shipped; on the earlier key's line `direction` is "from".
+ */
+export const LocalizationKeyChange = Schema.Struct({
+	direction: Schema.Literals(["to", "from"]),
+	other: LocalizationIdentity,
+	match: LocalizationKeyChangeMatch,
+	sourceChanged: Schema.Boolean,
+	previousSource: Schema.String,
+	translations: Schema.Array(LocalizationCarriedTranslation).check(
+		Schema.isMaxLength(MAX_LOCALIZATION_CULTURES)
+	)
+});
+export type LocalizationKeyChange = typeof LocalizationKeyChange.Type;
 export const LocalizationLine = Schema.Struct({
 	id: LocalizationLineId,
 	origin: Schema.Union([
@@ -100,7 +131,8 @@ export const LocalizationLine = Schema.Struct({
 	identity: Schema.NullOr(LocalizationIdentity),
 	source: Schema.String,
 	manifest: Schema.Array(ManifestEntry),
-	cultures: Schema.Array(LocalizationCultureState)
+	cultures: Schema.Array(LocalizationCultureState),
+	keyChange: Schema.optionalKey(LocalizationKeyChange)
 });
 export type LocalizationLine = typeof LocalizationLine.Type;
 export const LocalizationJoin = Schema.Struct({
@@ -116,6 +148,8 @@ export const LocalizationSelection = Schema.Struct({
 	culture: Schema.optionalKey(CultureCode),
 	state: Schema.optionalKey(LocalizationState),
 	review: Schema.optionalKey(LocalizationReviewLens),
+	/** Only lines whose key changed, listed by their new key. */
+	keyChanged: Schema.optionalKey(Schema.Boolean),
 	searchTranslations: Schema.optionalKey(Schema.Boolean)
 });
 export type LocalizationSelection = typeof LocalizationSelection.Type;
@@ -139,6 +173,7 @@ export const LocalizationLinePreview = Schema.Struct({
 	source: Schema.String,
 	manifestLocations: Schema.Array(Schema.String).check(Schema.isMaxLength(3)),
 	remainingLocationCount: Count,
+	keyChange: Schema.optionalKey(LocalizationKeyChange),
 	cultures: Schema.Array(
 		LocalizationCultureMark.pipe(
 			Schema.fieldsAssign({
@@ -157,6 +192,8 @@ export const LocalizationQueryPage = Schema.Struct({
 	stateCounts: Schema.Record(LocalizationState, Count),
 	/** Present when the project has a review file for the target. */
 	reviewCounts: Schema.optionalKey(Schema.Record(LocalizationReviewLens, Count)),
+	/** New keys among the matched lines; present when any key changed. */
+	keyChanged: Schema.optionalKey(Count),
 	notSynced: Count,
 	lines: Schema.Array(LocalizationLinePreview).check(Schema.isMaxLength(50))
 });

@@ -33,6 +33,16 @@ export const styles = stylex.create({
 	toolbar: { display: "flex", alignItems: "center", gap: tokens.space2, flexShrink: 0 },
 	coverage: { flex: 1, textAlign: "right", color: tokens.colorTextMuted, fontSize: 12 },
 	muted: { color: tokens.colorTextMuted, fontSize: 12 },
+	keyChange: {
+		display: "grid",
+		gap: 3,
+		padding: "8px 10px",
+		borderWidth: 1,
+		borderStyle: "solid",
+		borderColor: tokens.colorBorder,
+		borderRadius: tokens.radiusControl,
+		fontSize: 12
+	},
 	warning: { color: tokens.colorWarning },
 	workspace: {
 		display: "flex",

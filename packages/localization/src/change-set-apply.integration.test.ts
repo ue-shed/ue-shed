@@ -169,6 +169,34 @@ it.effect("revalidates against the translation that ships next", () =>
 	}).pipe(Effect.provide(layer))
 );
 
+it.effect("treats an absent previous translation as matching an empty one", () =>
+	Effect.gen(function* () {
+		const root = yield* Effect.promise(project);
+		const reader = yield* LocalizationEvidence;
+		const discovery = yield* reader.discover({ projectRoot: root });
+		const target = discovery.targets.find((item) => item.name === "FixtureGame");
+		if (target === undefined) throw new Error("Fixture target missing.");
+		const evidence = yield* reader.read({ projectRoot: root, target });
+		// An edit staged before a gather saw no translation; Unreal's gather then gives the key an
+		// empty one. Both mean nothing ships, so the edit is still current.
+		const carried = (previousTranslation: string | null) =>
+			LocalizationChange.make({
+				target: LocalizationTargetName.make("FixtureGame"),
+				culture: CultureCode.make("fr"),
+				namespace: TextNamespace.make("Fixture.Localization.Rows"),
+				key: TextKey.make("EmptyFrench"),
+				source: "Return to menu",
+				previousTranslation,
+				translation: "Retour au menu"
+			});
+		const review = reviewLocalizationChangeSet(evidence, changeSet(carried(null)));
+		expect(review.changes.map((item) => item.outcome)).toEqual(["ready"]);
+		expect(
+			reviewLocalizationChangeSet(evidence, changeSet(carried("Menu"))).changes[0]?.outcome
+		).toBe("stale_translation");
+	}).pipe(Effect.provide(layer))
+);
+
 it.effect("refuses to replace a PO file that changed after it was read", () =>
 	Effect.gen(function* () {
 		const root = yield* Effect.promise(project);

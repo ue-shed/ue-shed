@@ -28,6 +28,7 @@ export function localizationLinePreview(line: LocalizationLine): LocalizationLin
 		source: line.source,
 		manifestLocations: line.manifest.slice(0, 3).map((entry) => entry.path),
 		remainingLocationCount: Math.max(0, line.manifest.length - 3),
+		...(line.keyChange === undefined ? undefined : { keyChange: line.keyChange }),
 		cultures: line.cultures.map(
 			({
 				culture,
@@ -116,6 +117,7 @@ export function matchesLocalizationLine(
 	const lens = selection.review;
 	if (lens !== undefined && !selected.some((mark) => matchesLocalizationReview(mark, lens)))
 		return false;
+	if (selection.keyChanged && line.keyChange?.direction !== "to") return false;
 	if (
 		selection.state !== undefined &&
 		!selected.some((mark) =>
@@ -156,6 +158,7 @@ export function localizationQueryPage(
 		Object.fromEntries(localizationStates.map((state) => [state, 0]))
 	);
 	let notSynced = 0;
+	let keyChanged = 0;
 	const reviewed = matched.some((line) => line.cultures.some((mark) => mark.review));
 	const reviewCounts = new Map(LocalizationReviewLens.literals.map((lens) => [lens, 0]));
 	for (const line of matched) {
@@ -172,6 +175,7 @@ export function localizationQueryPage(
 				Object.assign(stateCounts, { [state]: stateCounts[state] + 1 });
 		}
 		notSynced += marks.filter((mark) => mark.facts.includes("not_synced")).length;
+		if (line.keyChange?.direction === "to") keyChanged++;
 		for (const lens of LocalizationReviewLens.literals)
 			if (marks.some((mark) => matchesLocalizationReview(mark, lens)))
 				reviewCounts.set(lens, (reviewCounts.get(lens) ?? 0) + 1);
@@ -189,6 +193,7 @@ export function localizationQueryPage(
 				Object.fromEntries(reviewCounts)
 			)
 		});
+	if (keyChanged > 0 || request.localization?.keyChanged) Object.assign(result, { keyChanged });
 	const last = page.at(-1);
 	if (last && after + page.length < matched.length)
 		Object.assign(result, { nextCursor: last.id });

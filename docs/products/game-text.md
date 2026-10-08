@@ -500,6 +500,32 @@ Review is shipped (Plan 051 Phase 7):
 - In Workbench, the detail pane shows "Review <culture>" toggles for each flag, and a check
   finding offers "Accept as intended".
 
+### Key changes
+
+A small edit, a reference change or a cherry-pick can give text a new key. Unreal then treats it
+as new text, and its next gather drops the earlier key's translations from the archives. Game Text
+pairs the earlier key with the new one, strictly one to one, in this order:
+
+1. **Same place**: the same asset property or DataTable cell (Unreal's manifest path is the object
+   path followed by the property chain).
+2. **Same text in the same asset**, for example a renamed String Table entry.
+3. **Same text, unique in the project**, for text that moved.
+
+When more than one candidate matches, nothing is paired and the change is counted as ambiguous.
+Before a gather this works for saved asset text: the earlier key still in the manifest is "Not
+found in the project" and the new key is "Not gathered yet". C++ and config text is not in the
+saved scan; it pairs across a gather UE Shed runs.
+
+- In Workbench, **Key changed** lists the new keys. The detail pane shows the earlier key, how it
+  was paired, any text change, and the translations the earlier key shipped.
+- **Carry translations** stages those translations for the new key, as hand edits are staged. The
+  staged panel then guides the steps: gather, export, **Write to PO**, then sync. When the text
+  changed too, the action reads **Carry anyway**, because the translations were written for the
+  earlier text.
+- A change's previous translation matches whether it was absent or empty, so an edit staged
+  before the gather is still current after it (ADR 0009 addendum).
+- `ue-shed loc status --key-changed` lists them from the CLI; each line carries `keyChange`.
+
 ### Source control
 
 Manifests, archives and PO files are usually checked in. The core reports which files an operation

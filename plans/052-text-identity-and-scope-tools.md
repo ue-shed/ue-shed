@@ -11,7 +11,9 @@
 
 ## Status
 
-- **State**: IN PROGRESS. Phases 1–2 are done; Phase 3 is next.
+- **State**: IN PROGRESS. Phases 1–2 and 4a–4b are done; Phase 4c (gather and export, and
+  detection across a gather) is next.
+  Phase 3 (Perforce) moves after the 0.10.0 release, by owner decision on 2026-10-08.
 - **Priority**: P1
 - **Effort**: L
 - **Risk**: MEDIUM. Phase 4 carries translations to new keys through the existing PO writer and
@@ -161,6 +163,30 @@ against a local workspace is optional and reported either way.
    "N new · N removed · N key changed · N source changed".
 9. A gather run outside UE Shed is detected only through baseline pairing, without recovering
    translations. The docs say so.
+
+**Evidence, 4a (2026-10-08)**: detection, the lens and the CLI are done.
+
+- Verified against Unreal's gatherer (`PropertyLocalizationDataGathering.cpp` on UE 4.27, 5.7 and
+  5.8) and the fixture manifest: an asset property's path is the object path then the property
+  chain, a DataTable cell adds the row, a String Table entry's path is the table only, and
+  dynamic array elements are written `(n)` (the reader writes `[n]`; pairing normalizes).
+- `localizationKeyChanges` (before a gather) and `localizationKeyChangesAcross` (across a gather)
+  share one strict pairing routine; `applyLocalizationKeyChanges` marks both lines.
+- `LocalizationSelection.keyChanged`, `LocalizationQueryPage.keyChanged`, and `keyChange` on
+  lines, previews and focus. The CLI and Workbench apply detection after the join.
+- Workbench: a "Key changed" lens chip and a key-change block in the detail pane. CLI:
+  `loc status --key-changed`.
+- Verified: pairing tests for each tier, ambiguity and a C++ pair across a gather; query filter
+  and count; a component test for the lens and detail.
+
+**Evidence, 4b (2026-10-08)**: carrying translations is done.
+
+- `reviewLocalizationChangeSet` treats an absent and an empty previous translation as equal (ADR
+  0009 addendum), with a fixture test that a carried edit against an empty French translation is
+  ready and a mismatched one is still stale.
+- Workbench "Carry translations" (or "Carry anyway" when the text changed) stages one edit per
+  culture the earlier key translated; the staged panel shows each step's outcome. A component test
+  covers staging, the check request and the "gather first" outcome.
 
 **Gate**: on UE 5.7 and UE 5.8 (`pnpm test:localization-processes`), renaming a `LOCTEXT` key in
 the lane's temporary project copy, then `loc run prepare --carry` and `loc apply --sync`, ships the

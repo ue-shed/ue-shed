@@ -10,8 +10,10 @@ import { Effect, Metric, Result, Schema } from "effect";
 import {
 	GameTextLocalizationError,
 	LocalizationSelection,
+	applyLocalizationKeyChanges,
 	applyLocalizationReview,
 	joinLocalizationTarget,
+	localizationKeyChanges,
 	localizationStatusReport,
 	textCorpusQuery,
 	TextCorpusService,
@@ -45,6 +47,7 @@ export const loadLocalizationContext = Effect.fn("Cli.localization.load_context"
 		...("review" in command && command.review !== undefined
 			? { review: command.review }
 			: undefined),
+		...("keyChanged" in command && command.keyChanged ? { keyChanged: true } : undefined),
 		...(command._tag === "TextSearch" && command.searchTranslations !== undefined
 			? { searchTranslations: command.searchTranslations }
 			: undefined)
@@ -109,11 +112,14 @@ export const loadLocalizationContext = Effect.fn("Cli.localization.load_context"
 		target: target.name
 	}).pipe(Effect.provide(LocalizationFileAccessLive));
 	// Review is tracked once the target has a review file; until then reports say "not tracked".
-	const join = applyLocalizationReview(
+	const joined = applyLocalizationReview(
 		joinLocalizationTarget(corpus, evidence, target),
 		review.contentHash === null ? undefined : review.file
 	);
-	return { corpus, join, evidence, selection, review };
+	// Saved text whose key changed since the last gather pairs with the key Unreal still lists.
+	const keyChanges = localizationKeyChanges(joined, corpus);
+	const join = applyLocalizationKeyChanges(joined, keyChanges.pairs);
+	return { corpus, join, evidence, selection, review, keyChanges };
 });
 
 function whereField(command: Parameters<typeof textWhere>[0], files?: readonly string[]) {

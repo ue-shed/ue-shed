@@ -15,6 +15,7 @@ import type { GameTextLocalizationState } from "./game-text-localization-state.j
 import { styles } from "./game-text-styles.js";
 import { TranslationEditor, type GameTextEdits } from "./game-text-translation-edits.js";
 import { ReviewControls } from "./game-text-review.js";
+import { KeyChangeDetail } from "./game-text-key-changes.js";
 import type { GameTextClientApi } from "./game-text-client.js";
 import type { JSX } from "@solidjs/web";
 
@@ -287,6 +288,7 @@ export function TranslationsDetail(props: {
 										</p>
 									)}
 								</Show>
+								<KeyChangeDetail detail={detail()} edits={props.edits} />
 								<For each={visibleTranslations(detail())}>
 									{(translation) => (
 										<article

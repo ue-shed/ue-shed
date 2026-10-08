@@ -23,7 +23,9 @@ import {
 	type WorkspaceReportFileResult,
 	localizationFocusPage,
 	textCorpusQuery,
+	applyLocalizationKeyChanges,
 	applyLocalizationReview,
+	localizationKeyChanges,
 	localizationEditChangeSet,
 	type LocalizationReviewRequest,
 	type LocalizationReviewResult,
@@ -170,9 +172,14 @@ export const makeGameTextLocalization = Effect.fn("Workbench.GameText.localizati
 		if ((yield* currentCorpus()) !== corpus || (yield* Ref.get(revision)) !== version)
 			return { status: "not_ready" as const };
 		// Review is tracked once the target has a review file; until then nothing is "not reviewed".
-		const join = applyLocalizationReview(
+		const reviewed = applyLocalizationReview(
 			joinLocalizationTarget(corpus, evidence.success),
 			review?.contentHash ? review.file : undefined
+		);
+		// Saved text whose key changed since the last gather pairs with the key Unreal still lists.
+		const join = applyLocalizationKeyChanges(
+			reviewed,
+			localizationKeyChanges(reviewed, corpus).pairs
 		);
 		const model = textCorpusQuery(corpus, undefined, join);
 		const textCounts = model.search({

@@ -60,6 +60,7 @@ import {
 import { identityLabel, locationDetail, sourceText } from "./game-text-view.js";
 import { styles } from "./game-text-styles.js";
 import { ChangedFilesFilter, OriginChips, PathFilter, textWhere } from "./game-text-where.js";
+import { KeyChangeChip } from "./game-text-key-changes.js";
 
 export { CopyButton } from "./game-text-copy-button.js";
 export type { GameTextPreferences } from "./game-text-preferences.js";
@@ -433,6 +434,7 @@ export function GameTextRoute(props: {
 				localizationCulture: localization.culture(),
 				localizationState: localization.state(),
 				localizationReview: localization.review(),
+				localizationKeyChanged: localization.keyChanged(),
 				searchTranslations: localization.searchTranslations(),
 				selectedLocalizationId: localization.selectedId()
 			}
@@ -993,6 +995,11 @@ export function GameTextRoute(props: {
 								<ReviewChips
 									model={localization}
 									counts={page()?.localization?.reviewCounts}
+									searching={searching()}
+								/>
+								<KeyChangeChip
+									model={localization}
+									count={page()?.localization?.keyChanged}
 									searching={searching()}
 								/>
 								{exports()}

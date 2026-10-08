@@ -28,6 +28,9 @@ export function createGameTextLocalizationState(props: {
 	const [culture, setCulture] = createSignal(props.initial?.localizationCulture);
 	const [state, setState] = createSignal(props.initial?.localizationState);
 	const [review, setReview] = createSignal(props.initial?.localizationReview);
+	const [keyChanged, setKeyChanged] = createSignal(
+		props.initial?.localizationKeyChanged ?? false
+	);
 	const [searchTranslations, setSearchTranslations] = createSignal(
 		props.initial?.searchTranslations ?? false
 	);
@@ -133,6 +136,7 @@ export function createGameTextLocalizationState(props: {
 			...(selectedCulture ? { culture: selectedCulture } : undefined),
 			...(selectedState ? { state: selectedState } : undefined),
 			...(selectedReview ? { review: selectedReview } : undefined),
+			...(keyChanged() ? { keyChanged: true } : undefined),
 			searchTranslations: !!selectedCulture && searchTranslations()
 		};
 	};
@@ -260,6 +264,7 @@ export function createGameTextLocalizationState(props: {
 		culture,
 		state,
 		review,
+		keyChanged,
 		searchTranslations,
 		selectedId,
 		targets,
@@ -271,6 +276,7 @@ export function createGameTextLocalizationState(props: {
 		selectTarget,
 		setState,
 		setReview,
+		setKeyChanged,
 		setSearchTranslations,
 		setSelectedId,
 		selectCulture: (value: string) =>
@@ -306,6 +312,7 @@ export function createGameTextLocalizationState(props: {
 			setCulture(preferences.localizationCulture);
 			setState(preferences.localizationState);
 			setReview(preferences.localizationReview);
+			setKeyChanged(preferences.localizationKeyChanged ?? false);
 			setSearchTranslations(preferences.searchTranslations ?? false);
 			setSelectedId(preferences.selectedLocalizationId);
 		}

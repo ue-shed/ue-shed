@@ -29,6 +29,12 @@ export function GameTextResultRows(props: {
 	readonly selectedId: TextUnitId | undefined;
 	readonly selectedLocalizationId: LocalizationLineId | undefined;
 	readonly onSelect: (unit: TextUnitId | undefined, line: LocalizationLineId | undefined) => void;
+	/** Lines ticked for bulk actions; rows have no tick box without it. */
+	readonly checked?: ((line: LocalizationLineId) => boolean) | undefined;
+	/** Ticks or unticks a line; `range` extends from the last line ticked (shift-click). */
+	readonly onCheck?: ((line: LocalizationLinePreview, range: boolean) => void) | undefined;
+	/** Some line is ticked, so every tick box shows at full strength. */
+	readonly checking?: boolean | undefined;
 }) {
 	const rows = (): readonly ResultRow[] => {
 		const page = props.page;
@@ -51,65 +57,86 @@ export function GameTextResultRows(props: {
 	return (
 		<For each={rows()}>
 			{(row) => (
-				<button
-					type="button"
-					aria-current={selected(row) ? "true" : undefined}
-					data-row=""
-					data-unit={row.unit?.id}
-					data-line={row.line?.id}
-					onClick={() => props.onSelect(row.unit?.id, row.line?.id)}
-					{...stylex.attrs(styles.row, local.line, selected(row) && styles.selected)}
-				>
-					<span {...stylex.attrs(local.main)}>
-						<span {...stylex.attrs(styles.rowText)}>
-							{row.line?.source ?? (row.unit ? sourceText(row.unit) : "")}
+				<div {...stylex.attrs(local.wrap, selected(row) && styles.selected)}>
+					<Show when={props.onCheck !== undefined && row.line}>
+						{(line) => (
+							<span {...stylex.attrs(local.tick)}>
+								<input
+									type="checkbox"
+									aria-label={"Select " + line().source}
+									checked={props.checked?.(line().id) ?? false}
+									onClick={(event) => props.onCheck?.(line(), event.shiftKey)}
+									{...stylex.attrs(local.box, props.checking && local.boxOn)}
+								/>
+							</span>
+						)}
+					</Show>
+					<button
+						type="button"
+						aria-current={selected(row) ? "true" : undefined}
+						data-row=""
+						data-unit={row.unit?.id}
+						data-line={row.line?.id}
+						onClick={() => props.onSelect(row.unit?.id, row.line?.id)}
+						{...stylex.attrs(styles.row, local.line, selected(row) && styles.selected)}
+					>
+						<span {...stylex.attrs(local.main)}>
+							<span {...stylex.attrs(styles.rowText)}>
+								{row.line?.source ?? (row.unit ? sourceText(row.unit) : "")}
+							</span>
+							<Show when={row.line}>
+								{(line) => (
+									<LocalizationRow line={line()} culture={props.culture} />
+								)}
+							</Show>
+							<Show
+								when={row.unit}
+								fallback={
+									<span
+										title={row.line?.manifestLocations.join("\n")}
+										{...stylex.attrs(styles.context)}
+									>
+										{row.line?.manifestLocations[0] ?? "Gathered source"}
+										{manifestPathOrigin(
+											row.line?.manifestLocations[0] ?? ""
+										) === "cpp"
+											? " · C++"
+											: " · Gathered source"}
+									</span>
+								}
+							>
+								{(unit) => (
+									<span
+										title={unit().contexts[0]?.location.objectPath}
+										{...stylex.attrs(styles.context)}
+									>
+										{unit()
+											.contexts.slice(0, 1)
+											.map((context) => textContext(context.location).title)
+											.join("")}
+										{unit().occurrenceCount > 1
+											? " · +" + (unit().occurrenceCount - 1) + " more"
+											: ""}
+										<span>
+											{unit()
+												.reviewSignals.filter(
+													(signal) => signal !== "evidence_only"
+												)
+												.map(
+													(signal) =>
+														" · " + textReviewSignalLabel(signal)
+												)
+												.join("")}
+										</span>
+									</span>
+								)}
+							</Show>
 						</span>
 						<Show when={row.line}>
-							{(line) => <LocalizationRow line={line()} culture={props.culture} />}
+							{(line) => <LineStatus line={line()} cultures={props.cultures ?? []} />}
 						</Show>
-						<Show
-							when={row.unit}
-							fallback={
-								<span
-									title={row.line?.manifestLocations.join("\n")}
-									{...stylex.attrs(styles.context)}
-								>
-									{row.line?.manifestLocations[0] ?? "Gathered source"}
-									{manifestPathOrigin(row.line?.manifestLocations[0] ?? "") ===
-									"cpp"
-										? " · C++"
-										: " · Gathered source"}
-								</span>
-							}
-						>
-							{(unit) => (
-								<span
-									title={unit().contexts[0]?.location.objectPath}
-									{...stylex.attrs(styles.context)}
-								>
-									{unit()
-										.contexts.slice(0, 1)
-										.map((context) => textContext(context.location).title)
-										.join("")}
-									{unit().occurrenceCount > 1
-										? " · +" + (unit().occurrenceCount - 1) + " more"
-										: ""}
-									<span>
-										{unit()
-											.reviewSignals.filter(
-												(signal) => signal !== "evidence_only"
-											)
-											.map((signal) => " · " + textReviewSignalLabel(signal))
-											.join("")}
-									</span>
-								</span>
-							)}
-						</Show>
-					</span>
-					<Show when={row.line}>
-						{(line) => <LineStatus line={line()} cultures={props.cultures ?? []} />}
-					</Show>
-				</button>
+					</button>
+				</div>
 			)}
 		</For>
 	);
@@ -178,7 +205,23 @@ function LineStatus(props: {
 }
 
 const local = stylex.create({
-	line: { flexDirection: "row", alignItems: "center", gap: 12 },
+	wrap: { display: "flex", minWidth: 0 },
+	tick: {
+		display: "flex",
+		alignItems: "center",
+		paddingInlineStart: 12,
+		borderBottomWidth: 1,
+		borderBottomStyle: "solid",
+		borderBottomColor: tokens.colorBorder
+	},
+	box: {
+		margin: 0,
+		cursor: "pointer",
+		accentColor: tokens.colorAccent,
+		opacity: { default: 0.35, ":hover": 1, ":checked": 1, ":focus-visible": 1 }
+	},
+	boxOn: { opacity: 1 },
+	line: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 12 },
 	main: { flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 3 },
 	status: {
 		flexShrink: 0,

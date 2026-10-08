@@ -3,6 +3,7 @@ import { spreadsheetCsv } from "./csv.js";
 import type {
 	LocalizationJoin,
 	LocalizationLine,
+	LocalizationSelection,
 	LocalizationState
 } from "./localization-schema.js";
 import { localizationShippedTranslation } from "./localization-shipped-translation.js";
@@ -23,25 +24,37 @@ export const LOCALIZATION_STATE_LABELS = {
 	unknown: "Unknown"
 } satisfies Record<LocalizationState, string>;
 
+/** The cultures a selection picks: one, several, or none for every culture. */
+export const pickedLocalizationCultures = (selection: LocalizationSelection | undefined) =>
+	selection?.cultures ?? (selection?.culture === undefined ? [] : [selection.culture]);
+
 // Code-unit order is the same on every machine, unlike locale collation.
 const byCodeUnit = (left: string, right: string) => (left < right ? -1 : left > right ? 1 : 0);
 
 /**
  * One spreadsheet with every language: a row per line and, for the native culture first and then
  * the target's culture order, the translation that ships next and its state. Missing translations
- * are empty cells, so every language lines up by key. The CSV is for reading and sharing; edits
- * go through PO change sets.
+ * are empty cells, so every language lines up by key. Picked cultures limit the columns to the
+ * native culture and those. The CSV is for reading and sharing; edits go through PO change sets.
  */
 export function localizationLinesCsv(input: {
 	readonly join: LocalizationJoin;
 	readonly lines: readonly LocalizationLine[];
 	readonly corpus?: TextCorpus | undefined;
+	readonly cultures?: readonly string[] | undefined;
 }) {
 	const { join, lines } = input;
 	const units = new Map(input.corpus?.units.map((unit) => [unit.id, unit]));
+	const picked =
+		input.cultures === undefined || input.cultures.length === 0
+			? undefined
+			: new Set(input.cultures);
 	const cultures = [
 		...join.cultures.filter((culture) => culture === join.nativeCulture),
-		...join.cultures.filter((culture) => culture !== join.nativeCulture)
+		...join.cultures.filter(
+			(culture) =>
+				culture !== join.nativeCulture && (picked === undefined || picked.has(culture))
+		)
 	];
 	const placesOf = (line: LocalizationLine) =>
 		line.manifest.length > 0

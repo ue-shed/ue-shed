@@ -16,6 +16,7 @@ import {
 	joinLocalizationTarget,
 	localizationKeyChanges,
 	localizationLinesCsv,
+	pickedLocalizationCultures,
 	localizationStatusReport,
 	textCorpusQuery,
 	TextCorpusService,
@@ -221,7 +222,12 @@ export const runLocalizationExport = Effect.fn("Cli.workflow.localization_export
 						...whereField(command, files),
 						...filter
 					});
-					const { csv, rows } = localizationLinesCsv({ join, lines, corpus });
+					const { csv, rows } = localizationLinesCsv({
+						join,
+						lines,
+						corpus,
+						cultures: pickedLocalizationCultures(selection)
+					});
 					const fs = yield* FileSystem.FileSystem;
 					yield* fs.writeFileString(command.output, csv, { flag: "wx" }).pipe(
 						Effect.mapError(

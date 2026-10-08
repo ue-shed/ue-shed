@@ -112,6 +112,20 @@ beside them: problems, namespace and key, origin, asset and folder, editing, tra
 length and findings. **Show in Unreal** reports success only when the editor confirms asset
 navigation.
 
+While a target is selected, each line has a tick box; shift-click ticks every line from the last
+one ticked, across groups. The selection stays while filters and grouping change, so it can be
+built up from several views, holds up to 5,000 lines, and starts over when the target changes. A
+bar under the list acts on every ticked line:
+
+- **Export for translators** writes the all-languages CSV for just those lines, with the native
+  culture and the picked cultures (every culture when none is picked);
+- **Mark reviewed (n)** sets "Reviewed" on each picked culture's translation that has text to
+  review and is not reviewed yet, through the project's review file, 500 changes per request;
+- **Carry translations (n)** stages the earlier keys' translations for ticked lines whose key
+  changed, skipping pairs whose source text changed (the line page offers those one at a time), up
+  to the 500 edits that can be staged at once;
+- **Copy keys** copies each line's namespace and key as two tab-separated columns.
+
 Every displayed text count in the toolbar, search, Filter menu and side pane comes from the same query and
 filtering path. Empty or whitespace-only source lines are excluded from those counts and from role
 line counts. `TextCorpus.coverage` keeps raw scan provenance counts, including empty text; the query
@@ -622,7 +636,8 @@ or sorted differently. The all-languages CSV replaces those files:
 - rows in a stable order by namespace and key, the same on every machine.
 
 It exports what the list shows, with the same state, review, key-change, origin, path and
-changed-file filters. In Workbench it is **Export → All languages (CSV)** while a target is
+changed-file filters. Picked cultures limit the columns to the native culture and those cultures;
+a search request's `lines` limits the rows to the lines it names, as the Workbench selection does. In Workbench it is **Export → All languages (CSV)** while a target is
 selected; from the CLI, `ue-shed loc export <project-root> --target <name> --output <new.csv>`
 takes the `loc status` filters and never overwrites a file. The CSV is for reading and sharing,
 with the usual spreadsheet protections (UTF-8 BOM, CRLF, a leading apostrophe before formula

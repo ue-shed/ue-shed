@@ -25,6 +25,7 @@ import {
 	textCorpusQuery,
 	applyLocalizationKeyChanges,
 	localizationLinesCsv,
+	pickedLocalizationCultures,
 	type LocalizationLinesFileResult,
 	localizationKeyChangesAcross,
 	mergeLocalizationKeyChanges,
@@ -545,7 +546,8 @@ export const makeGameTextLocalization = Effect.fn("Workbench.GameText.localizati
 				localizationLinesCsv({
 					join: retained.join,
 					lines: retained.model.localizationLines(request),
-					corpus: retained.corpus
+					corpus: retained.corpus,
+					cultures: pickedLocalizationCultures(request.localization)
 				})
 			);
 			yield* files.writeFile(choice.path, new TextEncoder().encode(csv), {

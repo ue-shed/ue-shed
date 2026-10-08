@@ -11,6 +11,7 @@ import {
 	type LocalizationEditRequest,
 	type LocalizationEditResult,
 	type LocalizationReviewRequest,
+	type TextCorpusSearchRequest,
 	applyLocalizationKeyChanges,
 	applyLocalizationReview,
 	localizationKeyChanges,
@@ -1053,6 +1054,44 @@ describe("Game Text review state", () => {
 		const results = screen.getByRole("region", { name: "Results" });
 		expect(within(results).getByRole("button", { name: /^Welcome/u })).toBeDefined();
 	});
+
+	it("ticks a range of lines, exports them and marks them reviewed", async () => {
+		const user = userEvent.setup();
+		const { api, requests } = reviewClient();
+		const exports: TextCorpusSearchRequest[] = [];
+		mount({
+			...api,
+			localizationLinesFile: (request) => {
+				exports.push(request);
+				return Effect.succeed({ status: "saved", path: "C:/out/picked.csv", rowCount: 3 });
+			}
+		});
+		await screen.findByText("3 matches");
+		const results = screen.getByRole("region", { name: "Results" });
+		const boxes = within(results).getAllByRole("checkbox", { name: /^Select /u });
+		expect(boxes).toHaveLength(3);
+		await user.click(boxes[0]!);
+		// Shift-click ticks every line from the last one ticked.
+		await user.keyboard("{Shift>}");
+		await user.click(boxes[2]!);
+		await user.keyboard("{/Shift}");
+		const bar = screen.getByRole("toolbar", { name: "Selected lines" });
+		expect(within(bar).getByText("3 selected")).toBeDefined();
+		await user.click(within(bar).getByRole("button", { name: "Export for translators" }));
+		await within(bar).findByText("Exported 3 lines.");
+		expect(exports[0]).toMatchObject({ query: "", capability: "all" });
+		expect(exports[0]?.lines).toHaveLength(3);
+		expect(exports[0]?.filter).toBeUndefined();
+		// Only translations that are not reviewed yet: de changed since review, fr is reviewed.
+		await user.click(within(bar).getByRole("button", { name: /^Mark reviewed \(/u }));
+		await within(bar).findByText(/^Marked \d+ translations reviewed\.$/u);
+		expect(requests[0]?.changes.every((change) => change.kind === "set")).toBe(true);
+		expect(
+			requests[0]?.changes.some((change) => change.culture === "fr" && change.key === "K")
+		).toBe(false);
+		await user.click(within(bar).getByRole("button", { name: "Clear selection" }));
+		expect(screen.queryByRole("toolbar", { name: "Selected lines" })).toBeNull();
+	});
 });
 
 describe("Game Text key changes", () => {
@@ -1166,6 +1205,23 @@ describe("Game Text key changes", () => {
 				translation: "Willkommen zurück"
 			}
 		]);
+	});
+	it("carries the earlier keys' translations for every ticked line", async () => {
+		const user = userEvent.setup();
+		mount({
+			...keyClient(),
+			localizationEdits: () =>
+				Effect.succeed({ status: "reviewed", edits: [], files: [], notSynced: 0 })
+		});
+		await screen.findByText("2 matches");
+		const results = screen.getByRole("region", { name: "Results" });
+		for (const box of within(results).getAllByRole("checkbox", { name: /^Select /u }))
+			await user.click(box);
+		const bar = screen.getByRole("toolbar", { name: "Selected lines" });
+		await user.click(within(bar).getByRole("button", { name: "Carry translations (1)" }));
+		expect(within(bar).getByRole("status").textContent).toBe("Staged 1 translations to carry.");
+		const panel = await screen.findByRole("region", { name: "Staged translations" });
+		expect(within(panel).getByText("Willkommen zurück")).toBeDefined();
 	});
 });
 

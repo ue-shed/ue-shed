@@ -52,6 +52,7 @@ import {
 	type ExtraField,
 	type FilterCounts
 } from "./game-text-filter-menu.js";
+import { BulkBar, createLineSelection } from "./game-text-bulk-bar.js";
 import { GroupedResults, type LoadedRow } from "./game-text-grouped-results.js";
 import { reviewLensLabel } from "./game-text-review.js";
 import { createGameTextLocalizationState } from "./game-text-localization-state.js";
@@ -366,6 +367,31 @@ export function GameTextRoute(props: {
 		}
 		selectRow(step === 1 ? loaded[0] : loaded.at(-1));
 	};
+	// Lines ticked for bulk actions, in the list's order for shift-click ranges. A new target
+	// starts a new selection.
+	const selection = createLineSelection({
+		order: () => {
+			const groups = page()?.groups?.entries;
+			if (!groups) return page()?.localization?.lines ?? [];
+			return groups.flatMap((entry) =>
+				(groupRows().get(entry.key) ?? []).flatMap((row) =>
+					row.preview === undefined ? [] : [row.preview]
+				)
+			);
+		}
+	});
+	createEffect(
+		() => localization.target(),
+		() => selection.clear()
+	);
+	const ticks = () =>
+		localization.active()
+			? {
+					checked: selection.isTicked,
+					onCheck: selection.toggle,
+					checking: selection.ticked().size > 0
+				}
+			: undefined;
 	const closeLine = () => {
 		setSelectedId(undefined);
 		localization.setSelectedId(undefined);
@@ -1231,6 +1257,9 @@ export function GameTextRoute(props: {
 													setSelectedId(unit);
 													localization.setSelectedId(line);
 												}}
+												checked={ticks()?.checked}
+												onCheck={ticks()?.onCheck}
+												checking={ticks()?.checking}
 											/>
 										}
 									>
@@ -1250,6 +1279,7 @@ export function GameTextRoute(props: {
 													localization.setSelectedId(line);
 												}}
 												onLoaded={groupLoaded}
+												ticks={ticks()}
 											/>
 										)}
 									</Show>
@@ -1282,6 +1312,18 @@ export function GameTextRoute(props: {
 											more
 										</Button>
 									</Show>
+									<BulkBar
+										selection={selection}
+										client={props.client}
+										localization={localization.selection()}
+										cultures={localization.cultures()}
+										nativeCulture={
+											localization.active()?.target.nativeCulture ?? undefined
+										}
+										edits={edits}
+										busy={loading() || operations.busy()}
+										onChanged={() => load(false)}
+									/>
 								</section>
 								<aside aria-label="Text focus" {...stylex.attrs(styles.pane)}>
 									<Show when={lineOpen()}>

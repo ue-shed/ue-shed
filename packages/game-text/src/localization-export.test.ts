@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { joinLocalizationTarget } from "./localization.js";
-import { localizationLinesCsv } from "./localization-export.js";
+import { localizationLinesCsv, pickedLocalizationCultures } from "./localization-export.js";
 import {
 	archiveEntry,
 	corpus,
+	cultureCode,
 	evidence,
 	manifestEntry,
 	target,
@@ -66,5 +67,45 @@ describe("all-languages spreadsheet", () => {
 		const zeta = table[3] ?? [];
 		expect(zeta[7]).toBe("Letzte Zeile");
 		expect(zeta[8]).toBe("Translated");
+	});
+
+	it("exports only the picked lines and cultures", () => {
+		const text = corpus([unit("Zeta", "Last line"), unit("Alpha", "First line")]);
+		const joined = joinLocalizationTarget(
+			text,
+			evidence(
+				[manifestEntry("Zeta", "Last line"), manifestEntry("Alpha", "First line")],
+				[archiveEntry("Zeta", "Last line", "Letzte Zeile")]
+			)
+		);
+		const query = textCorpusQuery(text, undefined, joined);
+		const all = query.localizationLines({
+			query: "",
+			capability: "all",
+			localization: { target: target.name }
+		});
+		const zeta = all.find((line) => line.identity?.key === "Zeta");
+		if (zeta === undefined) throw new Error("The fixture has a Zeta line.");
+		const selection = { target: target.name, culture: cultureCode("en") };
+		const lines = query.localizationLines({
+			query: "",
+			capability: "all",
+			localization: selection,
+			lines: [zeta.id]
+		});
+		expect(lines.map((line) => line.identity?.key)).toEqual(["Zeta"]);
+		expect(pickedLocalizationCultures(selection)).toEqual(["en"]);
+		expect(pickedLocalizationCultures({ target: target.name })).toEqual([]);
+		// The native culture always leads; other cultures appear only when picked.
+		const table = rows(
+			localizationLinesCsv({
+				join: joined,
+				lines,
+				corpus: text,
+				cultures: pickedLocalizationCultures(selection)
+			}).csv
+		);
+		expect(table[0]?.slice(5)).toEqual(["en", "en state"]);
+		expect(table).toHaveLength(2);
 	});
 });

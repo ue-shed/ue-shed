@@ -281,7 +281,9 @@ export function textCorpusQuery(
 			matching({ ...unfiltered, query: "" }).matched.map(({ unit }) => unit.id)
 		);
 		const files = textFileScope(request.where?.files);
+		const picked = request.lines === undefined ? undefined : new Set(request.lines);
 		return localization.lines.filter((line) => {
+			if (picked !== undefined && !picked.has(line.id)) return false;
 			if (filter !== undefined && !matchesTextFilter(lineFacts(line, selection), filter))
 				return false;
 			if (line.source.trim() === "") return false;

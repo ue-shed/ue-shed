@@ -597,6 +597,18 @@ test("records the real Game Text quality workflow", async ({
 		);
 		await expectPageLayout();
 		await page.screenshot({ path: testInfo.outputPath("11-all-cultures.png") });
+		// Tick lines for bulk actions; a shift-click takes the range between.
+		await back();
+		const ticks = results.getByRole("checkbox", { name: /^Select /u });
+		await ticks.first().click();
+		await ticks.nth(3).click({ modifiers: ["Shift"] });
+		const bulk = page.getByRole("toolbar", { name: "Selected lines" });
+		await expect(bulk).toContainText("4 selected");
+		await expect(bulk.getByRole("button", { name: "Export for translators" })).toBeVisible();
+		await expect(bulk.getByRole("button", { name: "Copy keys" })).toBeVisible();
+		await page.screenshot({ path: testInfo.outputPath("11b-bulk-actions.png") });
+		await bulk.getByRole("button", { name: "Clear selection" }).click();
+		await expect(bulk).toHaveCount(0);
 
 		await culture.click();
 		await cultureChoices.getByRole("button", { name: "de", exact: true }).click();

@@ -11,8 +11,9 @@
 
 ## Status
 
-- **State**: IN PROGRESS. Phases 1–4 are done (Phase 3 without the keyboard and saved views, which
-  the owner skipped as polish the showcase does not need; Phase 4 without history); Phase 5, bulk actions, is next. The
+- **State**: IN PROGRESS. Phases 1–5 are done (Phase 3 without the keyboard and saved views, which
+  the owner skipped as polish the showcase does not need; Phase 4 without history; Phase 5 without
+  the `X` key); the documentation and website pass is next. The
   design is a mockup with sample data; each phase earns its part against the fixture and a
   generated large corpus.
 - **Priority**: P1
@@ -223,6 +224,27 @@ line and back.
 
 **Gate**: selection survives paging and regrouping; each action's result matches its single-line
 form.
+
+**Evidence (2026-10-08)**: Phase 5 is done without the `X` key (keyboard work was skipped in
+Phase 3).
+
+- Core: search requests accept `lines`, up to 5,000 localization line ids, and keep only those
+  lines; `localizationLinesCsv` takes picked cultures and keeps the native culture plus those, and
+  `pickedLocalizationCultures` reads them from a selection. The Workbench export and
+  `ue-shed loc export` both limit columns to the picked cultures.
+- Workbench: rows have a tick box beside the row button while a target is selected; shift-click
+  ticks or unticks the range from the last line ticked, in the order of the loaded rows across
+  groups. The selection is kept by line id with each line as listed, so it survives paging,
+  filtering and regrouping, and clears when the target changes.
+- The bar under the list shows the count and the actions that apply: Export for translators (the
+  ticked lines' ids with the target and picked cultures, not the list's filters), Mark reviewed
+  (the same "set reviewed" change the line page writes, batched 500 per request and stopping at
+  the first failure), Carry translations (the same staged edits as the line page's carry, without
+  pairs whose source changed, capped at the 500 edits one write takes), Copy keys, and Clear.
+- Verified: pure tests for review changes, batches, carried edits, copied keys and ranges; core
+  tests for `lines` and culture-limited columns; component tests for a shift-click range, export,
+  marking reviewed, clearing, and carrying a ticked key change; the Game Text recording ticks a
+  range and checks the bar; screenshot on the fixture project.
 
 ## Documentation
 

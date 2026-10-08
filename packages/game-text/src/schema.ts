@@ -146,6 +146,8 @@ const TextQueryPageSize = Schema.Int.pipe(
 
 /** A changed-file list is bounded: larger changes should be split or filtered first. */
 export const MAX_TEXT_SCOPE_FILES = 5000;
+/** The most localization lines a request can pick out by id, such as a selection. */
+export const MAX_TEXT_PICKED_LINES = 5000;
 
 export const TextCapabilityFilter = Schema.Literals(["all", "source_editable", "read_only"]);
 export type TextCapabilityFilter = Schema.Schema.Type<typeof TextCapabilityFilter>;
@@ -443,6 +445,13 @@ export const TextCorpusSearchRequest = Schema.Struct({
 	where: Schema.optionalKey(TextWhere),
 	/** Filter pills, applied on top of the other fields. */
 	filter: Schema.optionalKey(TextFilter),
+	/** Only these localization lines, such as a selection. */
+	lines: Schema.optionalKey(
+		Schema.Array(LocalizationLineId).check(
+			Schema.isMinLength(1),
+			Schema.isMaxLength(MAX_TEXT_PICKED_LINES)
+		)
+	),
 	/** Count the matching lines in groups; the page lists the open group's lines, if any. */
 	group: Schema.optionalKey(TextGroupBy),
 	openGroup: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(1024))),

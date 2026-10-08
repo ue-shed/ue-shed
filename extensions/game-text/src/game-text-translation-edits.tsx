@@ -87,6 +87,15 @@ export function createGameTextEdits(input: {
 		setStaged(next);
 		resetReview();
 	};
+	// Many edits at once, such as a selection's carried translations, in one update.
+	const stageAll = (
+		items: readonly { readonly edit: LocalizationEdit; readonly source: string }[]
+	) => {
+		const next = new Map(staged());
+		for (const item of items) next.set(editKey(item.edit), item);
+		setStaged(next);
+		resetReview();
+	};
 	const unstage = (edit: Pick<LocalizationEdit, "culture" | "namespace" | "key">) => {
 		const next = new Map(staged());
 		next.delete(editKey(edit));
@@ -183,6 +192,7 @@ export function createGameTextEdits(input: {
 		working,
 		busy: () => input.busy() || working(),
 		stage,
+		stageAll,
 		unstage,
 		editable,
 		discard: () => {

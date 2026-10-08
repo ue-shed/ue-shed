@@ -19,5 +19,9 @@ work. Clauses add `asset` and `namespace`. `text-groups.ts` exports the pure gro
 
 Investigation presets accept optional `filter` and `group`; presets saved before them still open.
 
+Search requests accept `lines`, up to 5,000 localization line ids, to act on a selection.
+`localizationLinesCsv` accepts `cultures` and then keeps the native culture plus those columns;
+`pickedLocalizationCultures` reads the picked cultures from a localization selection.
+
 Joining a large localization target is much faster: a 50,000-line, 14-culture target joined in
 about 30 seconds and now joins in about 1.5 seconds, and per-culture counts take one pass.

@@ -1,6 +1,7 @@
 import * as stylex from "@stylexjs/stylex";
 import type {
 	LocalizationLineId,
+	LocalizationLinePreview,
 	TextCorpusSearchPage,
 	TextCorpusSearchRequest,
 	TextGroup,
@@ -19,6 +20,8 @@ const SEVERE = new Set(["key_changed", "conflicting_source"]);
 export interface LoadedRow {
 	readonly unit: TextUnitId | undefined;
 	readonly line: LocalizationLineId | undefined;
+	/** The line as listed, for selecting ranges of lines. */
+	readonly preview?: LocalizationLinePreview;
 }
 
 /** A page's rows in display order: localization lines with their first listed unit, or units. */
@@ -27,11 +30,18 @@ function loadedRows(page: TextCorpusSearchPage): readonly LoadedRow[] {
 	const units = new Set(page.units.map((unit) => unit.id));
 	return page.localization.lines.map((line) => ({
 		line: line.id,
+		preview: line,
 		unit:
 			line.origin.kind === "corpus"
 				? line.origin.unitIds.find((id) => units.has(id))
 				: undefined
 	}));
+}
+/** Tick boxes for bulk actions, passed through to every group's rows. */
+export interface RowTicks {
+	readonly checked: (line: LocalizationLineId) => boolean;
+	readonly onCheck: (line: LocalizationLinePreview, range: boolean) => void;
+	readonly checking: boolean;
 }
 const WAITING = new Set(["not_gathered", "changed_since_gather", "translation"]);
 
@@ -53,6 +63,7 @@ export function GroupedResults(props: {
 	readonly onSelect: (unit: TextUnitId | undefined, line: LocalizationLineId | undefined) => void;
 	/** A group's rows, in order, each time it loads a page; the line page steps through them. */
 	readonly onLoaded?: (group: string, rows: readonly LoadedRow[]) => void;
+	readonly ticks?: RowTicks | undefined;
 }) {
 	// When every line fits on one page all groups start open; otherwise the worst one does. What
 	// you open or close is kept while the groups change.
@@ -84,6 +95,7 @@ export function GroupedResults(props: {
 						{...(props.onLoaded === undefined
 							? undefined
 							: { onLoaded: props.onLoaded })}
+						ticks={props.ticks}
 					/>
 				)}
 			</For>
@@ -110,6 +122,7 @@ function GroupSection(props: {
 	readonly selectedLocalizationId: LocalizationLineId | undefined;
 	readonly onSelect: (unit: TextUnitId | undefined, line: LocalizationLineId | undefined) => void;
 	readonly onLoaded?: (group: string, rows: readonly LoadedRow[]) => void;
+	readonly ticks?: RowTicks | undefined;
 }) {
 	const action = createEffectAction();
 	const [page, setPage] = createSignal<TextCorpusSearchPage>();
@@ -236,6 +249,9 @@ function GroupSection(props: {
 								selectedId={props.selectedId}
 								selectedLocalizationId={props.selectedLocalizationId}
 								onSelect={props.onSelect}
+								checked={props.ticks?.checked}
+								onCheck={props.ticks?.onCheck}
+								checking={props.ticks?.checking}
 							/>
 							<Show when={current().localization?.nextCursor ?? current().nextCursor}>
 								<div {...stylex.attrs(styles.more)}>

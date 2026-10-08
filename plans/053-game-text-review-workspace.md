@@ -11,7 +11,9 @@
 
 ## Status
 
-- **State**: IN PROGRESS. Phases 1 and 2 are done; Phase 3 (the Workbench list) is next. The design is a
+- **State**: IN PROGRESS. Phases 1 and 2 are done; Phase 3's first slice (Filter, Display, grouped
+  list, culture strip, side facets, migration) is done; culture sets, keyboard and saved views
+  remain. The design is a
   mockup with sample data; each phase earns its part against the fixture and a generated large
   corpus.
 - **Priority**: P1
@@ -151,6 +153,29 @@ the folder facet on the generated corpus stays bounded (top 200 children, then a
 **Gate**: component tests for pills, groups, the strip (merged and mixed, set narrowing) and the
 picker; preset migration tests; recording and screenshots on the fixture and the generated corpus;
 StyleX and visual-regression checks for the strip and group header.
+
+**Evidence (2026-10-08)**: first slice done (items 1, 2, 3, 5, and preset migration from 7).
+
+- The chip rows are gone. **Filter** lists fields (Problem, Translation, Finding | Folder, Asset,
+  Origin | Editing, Translator notes | Review, Line state), each opening a submenu of values with
+  counts and its own filter box, as the owner asked after the first screenshots; typing at the
+  first level finds values across fields. Values toggle pills; a pill's operator flips between
+  "is" and "is not". Review and line facts still filter through the selection and show as chips
+  beside the pills. Once a field has a pill its other values show without counts, because page
+  counts follow every pill; a later change can count each field without its own clauses.
+- **Display** groups by problem (default), folder, asset, origin or namespace, or none. Groups list
+  worst first; all start open when every line fits on one page, otherwise the worst one does, and
+  each fetches its own pages (`openGroup`), so a collapsed group costs only a count.
+- Rows end with a status: red "Key changed", a line-level gather state once, or the culture summary
+  and the culture strip (fixed order, merged when every culture shares a state, hidden when all
+  shipped; the accessible name lists every culture). Findings lost their warning colour.
+- The empty side pane shows Problems (unless grouped by them) and Folders / Assets / Origins.
+- `migratePreferences` turns 0.10 toggles, lenses, origin and path filters, key-changed and
+  translation-state chips into pills; presets add optional `filter` and `group`.
+- Verified: 74 Game Text component tests (22 rewritten for the Filter submenus and pills), unit
+  tests for pills, migration and the strip text, the Game Text recording on the fixture project,
+  screenshots, precommit, Node 26 sweep and Node 24 components.
+- Still to do in Phase 3: culture sets in the picker (4), the keyboard (6), and saved views (7).
 
 ## Phase 4: The line page (Workbench)
 

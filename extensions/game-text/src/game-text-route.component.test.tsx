@@ -201,6 +201,23 @@ function mount(client = makeClient(), preferences?: GameTextPreferences, key?: s
 	));
 }
 
+/** Filter → field → value, then closes the menu. */
+async function chooseFilter(
+	user: ReturnType<typeof userEvent.setup>,
+	field: string,
+	value: string | RegExp
+) {
+	const filter = screen.getByRole("button", { name: "Filter" });
+	await user.click(filter);
+	await user.click(await screen.findByRole("menuitem", { name: new RegExp(`^${field}`, "u") }));
+	await user.click(
+		within(screen.getByRole("menu", { name: field })).getByRole("menuitemcheckbox", {
+			name: value
+		})
+	);
+	await user.click(filter);
+}
+
 async function openQuality(user: ReturnType<typeof userEvent.setup>) {
 	await screen.findByRole("region", { name: "Results" });
 	await user.click(screen.getByRole("tab", { name: "Quality checks" }));
@@ -215,13 +232,14 @@ describe("Game Text writing workspace", () => {
 		expect(screen.queryByRole("heading", { name: /Game text/i })).toBeNull();
 		expect(screen.queryByRole("combobox")).toBeNull();
 		expect(screen.queryByRole("button", { name: "Search" })).toBeNull();
-		expect(screen.getByRole("button", { name: "All text 2" })).toBeDefined();
+		// One Filter and one Display control instead of chip rows; lines group by problem.
+		expect(screen.getByRole("button", { name: "Filter" })).toBeDefined();
+		expect(screen.getByRole("button", { name: "Display" })).toBeDefined();
 		expect(screen.queryByRole("button", { name: /Used in several places/ })).toBeNull();
-		expect(
-			screen.getByText("Nothing reused, duplicated, too long or unlocalizable")
-		).toBeDefined();
+		expect(screen.getByRole("region", { name: "Up to date" })).toBeDefined();
 		expect(screen.getByText(/lines in/).textContent).toContain("2 lines in 2 assets");
-		expect(screen.getByText(/Select a line to see/)).toBeDefined();
+		// With no line open, the side shows where the lines are.
+		expect(screen.getByRole("tablist", { name: "Where the lines are" })).toBeDefined();
 		const results = screen.getByRole("region", { name: "Results" });
 		expect(within(results).getByText("ST_Game · PromptContinue")).toBeDefined();
 		expect(within(results).getByText("DT_Menu · Quit · Prompt")).toBeDefined();
@@ -254,7 +272,7 @@ describe("Game Text writing workspace", () => {
 		await screen.findByText("1 character · 1 word · 1 location");
 	});
 
-	it("shows nonzero review chips and keeps a selected zero-count chip visible", async () => {
+	it("turns a saved lens into a pill and offers findings that have lines", async () => {
 		const first = corpus.units[0];
 		if (!first) throw new Error("Missing test line");
 		const shared = {
@@ -278,10 +296,20 @@ describe("Game Text writing workspace", () => {
 			selectedId: undefined
 		});
 		await screen.findByText("0 matches");
-		expect(screen.getByRole("button", { name: "Long text 0" })).toBeDefined();
-		await user.click(screen.getByRole("button", { name: /^All text/ }));
-		await screen.findByRole("button", { name: "Used in several places 1" });
-		expect(screen.queryByRole("button", { name: /^Long text/ })).toBeNull();
+		// The 0.10 lens became a pill.
+		const pills = within(screen.getByRole("list", { name: "Filters" }));
+		expect(pills.getByText("Finding")).toBeDefined();
+		expect(pills.getByText("Long text")).toBeDefined();
+		await user.click(screen.getByRole("button", { name: "Remove Finding is Long text" }));
+		await screen.findByText("2 matches");
+		await user.click(screen.getByRole("button", { name: "Filter" }));
+		await user.click(screen.getByRole("menuitem", { name: /^Finding/u }));
+		const findings = within(screen.getByRole("menu", { name: "Finding" }));
+		expect(
+			findings.getByRole("menuitemcheckbox", { name: "Used in several places 1" })
+		).toBeDefined();
+		// Findings without lines stay out of the menu.
+		expect(findings.queryByRole("menuitemcheckbox", { name: /^Long text/u })).toBeNull();
 	});
 
 	it("debounces source-only search, shows Searching and never flashes a false empty state", async () => {
@@ -377,46 +405,59 @@ describe("Game Text writing workspace", () => {
 		const user = userEvent.setup();
 		mount(makeClient(input));
 		await screen.findByText("2 matches");
-		expect(screen.getByRole("button", { name: "No translator notes 1" })).toBeDefined();
-		await user.click(screen.getByRole("button", { name: /^No translator notes/ }));
+		await chooseFilter(user, "Translator notes", "No translator notes 1");
 		await screen.findByText("1 match");
 		expect(
 			within(screen.getByRole("region", { name: "Results" })).queryByText("Quit game?")
 		).toBeNull();
-		await user.click(screen.getByRole("button", { name: /^Editable/ }));
-		expect(screen.getByRole("button", { name: /^Editable/ }).getAttribute("aria-pressed")).toBe(
-			"true"
-		);
+		await chooseFilter(user, "Editing", /^Editable/u);
+		const pills = () => within(screen.getByRole("list", { name: "Filters" }));
+		expect(pills().getByText("Translator notes")).toBeDefined();
+		expect(pills().getByText("Editable")).toBeDefined();
+		await user.click(screen.getByRole("button", { name: /^Remove Translator notes/u }));
+		const results = within(screen.getByRole("region", { name: "Results" }));
+		await results.findByText("Continue");
+		// A pill's operator switches it to "is not".
+		await user.click(pills().getByRole("button", { name: "is" }));
+		expect(await results.findByText("Quit game?")).toBeDefined();
+		expect(results.queryByText("Continue")).toBeNull();
+		expect(pills().getByRole("button", { name: "is not" })).toBeDefined();
 	});
 
-	it("filters by where text comes from and by path, keeping each origin's count", async () => {
+	it("filters by origin and by a typed folder, and the side counts where lines are", async () => {
 		const user = userEvent.setup();
 		mount();
 		await screen.findByText("2 matches");
-		await user.click(screen.getByRole("button", { name: "Where…" }));
-		const origins = screen.getByRole("group", { name: "Origins" });
-		expect(within(origins).getByRole("button", { name: "String table 1" })).toBeDefined();
-		await user.click(within(origins).getByRole("button", { name: "Data table 1" }));
+		await chooseFilter(user, "Origin", "Data table 1");
 		await screen.findByText("1 match");
 		const results = () => within(screen.getByRole("region", { name: "Results" }));
 		expect(results().getByText("Quit game?")).toBeDefined();
 		expect(results().queryByText("Continue")).toBeNull();
-		// The origin facet does not narrow its own counts.
-		expect(within(origins).getByRole("button", { name: "String table 1" })).toBeDefined();
-		expect(screen.getByRole("button", { name: "Where: Data table" })).toBeDefined();
+		await user.click(screen.getByRole("button", { name: "Remove Origin is Data table" }));
+		await screen.findByText("2 matches");
 
+		// A typed folder filters by prefix in any spelling.
+		await user.click(screen.getByRole("button", { name: "Filter" }));
+		await user.click(screen.getByRole("menuitem", { name: /^Folder/u }));
 		await user.type(
-			screen.getByRole("textbox", { name: "Path starts with" }),
-			"content\\text\\st{Enter}"
+			screen.getByRole("searchbox", { name: "Filter Folder" }),
+			"content\\text\\st"
 		);
-		await screen.findByText("0 matches");
-		await user.click(within(origins).getByRole("button", { name: /^Data table/ }));
+		await user.click(
+			screen.getByRole("menuitemcheckbox", { name: "Starts with content\\text\\st" })
+		);
 		await screen.findByText("1 match");
 		expect(results().getByText("Continue")).toBeDefined();
-		expect(screen.getByRole("button", { name: "Where: content\\text\\st" })).toBeDefined();
-		await user.click(screen.getByRole("button", { name: "Clear all" }));
+
+		// The side lists origins; a name there adds its pill too.
+		await user.click(screen.getByRole("button", { name: "Filter" }));
+		await user.click(screen.getByRole("button", { name: /^Remove Folder/u }));
 		await screen.findByText("2 matches");
-		expect(screen.getByRole("button", { name: "Where…" })).toBeDefined();
+		await user.click(screen.getByRole("tab", { name: "Origins" }));
+		const side = within(screen.getByRole("region", { name: "Where the lines are" }));
+		await user.click(side.getByRole("button", { name: /^String table/u }));
+		await screen.findByText("1 match");
+		expect(results().getByText("Continue")).toBeDefined();
 	});
 
 	it("shows the text a pasted changed-file list touches, for this session only", async () => {
@@ -431,7 +472,7 @@ describe("Game Text writing workspace", () => {
 			</EffectRuntimeProvider>
 		));
 		await screen.findByText("2 matches");
-		await user.click(screen.getByRole("button", { name: "Where…" }));
+		await user.click(screen.getByRole("button", { name: "Changed files…" }));
 		await user.type(
 			screen.getByRole("textbox", { name: "Changed files, one path per line" }),
 			"# from p4 opened{Enter}Content\\Text\\DT_Menu.uexp{Enter}Source/Unrelated.cpp"
@@ -440,7 +481,7 @@ describe("Game Text writing workspace", () => {
 		await screen.findByText("1 match");
 		const results = within(screen.getByRole("region", { name: "Results" }));
 		expect(results.getByText("Quit game?")).toBeDefined();
-		const trigger = screen.getByRole("button", { name: "Where: 2 files" });
+		const trigger = screen.getByRole("button", { name: "Changed files: 2" });
 		expect(trigger.getAttribute("aria-pressed")).toBe("true");
 		await waitFor(() => expect(trigger.getAttribute("title")).toBe("2 files · 1 with text"));
 		expect(saved.at(-1)?.where).toBeUndefined();
@@ -448,21 +489,37 @@ describe("Game Text writing workspace", () => {
 		await user.click(trigger);
 		await user.click(screen.getByRole("button", { name: "Clear files" }));
 		await screen.findByText("2 matches");
-		expect(screen.getByRole("button", { name: "Where…" })).toBeDefined();
+		expect(screen.getByRole("button", { name: "Changed files…" })).toBeDefined();
 	});
 
-	it("restores a saved origin filter", async () => {
-		mount(makeClient(), {
-			query: "",
-			capability: "all",
-			lens: "all",
-			selectedId: undefined,
-			where: { kinds: ["string_table"] }
-		});
+	it("turns a saved origin filter into a pill", async () => {
+		const saved: GameTextPreferences[] = [];
+		render(() => (
+			<EffectRuntimeProvider runtime={runtime}>
+				<GameTextRoute
+					client={makeClient()}
+					initialPreferences={{
+						query: "",
+						capability: "all",
+						lens: "all",
+						selectedId: undefined,
+						where: { kinds: ["string_table"] }
+					}}
+					onPreferencesChange={(preferences) => saved.push(preferences)}
+				/>
+			</EffectRuntimeProvider>
+		));
 		await screen.findByText("1 match");
-		expect(
-			screen.getByRole("button", { name: "Where: String table" }).getAttribute("aria-pressed")
-		).toBe("true");
+		const pills = within(screen.getByRole("list", { name: "Filters" }));
+		expect(pills.getByText("Origin")).toBeDefined();
+		expect(pills.getByText("String table")).toBeDefined();
+		// The migrated preferences save the pill, not the old field.
+		await waitFor(() =>
+			expect(saved.at(-1)?.filter).toEqual([
+				{ field: "origin", op: "is", values: ["string_table"] }
+			])
+		);
+		expect(saved.at(-1)?.where).toBeUndefined();
 	});
 
 	it("shows the starting sentence and scans only after the primary action", async () => {
@@ -514,10 +571,12 @@ describe("Game Text writing workspace", () => {
 			})
 		);
 		await screen.findByRole("heading", { name: "Continue" });
-		await user.click(screen.getByRole("button", { name: /^Editable/ }));
+		await chooseFilter(user, "Editing", /^Editable/u);
 		await screen.findByText("1 match");
-		await user.click(screen.getByRole("button", { name: /^No translator notes/ }));
+		await chooseFilter(user, "Translator notes", /^No translator notes/u);
 		await screen.findByText("1 match");
+		await user.click(screen.getByRole("button", { name: "Display" }));
+		await user.click(screen.getByRole("radio", { name: "Folder" }));
 		await waitFor(() =>
 			expect(window.localStorage.getItem("ue-shed:game-text:project-a")).toContain("Continue")
 		);
@@ -526,14 +585,11 @@ describe("Game Text writing workspace", () => {
 		await screen.findByText("1 match");
 		expect(screen.getByRole("searchbox")).toHaveProperty("value", "Continue");
 		expect(await screen.findByRole("heading", { name: "Continue" })).toBeDefined();
-		expect(screen.getByRole("button", { name: /^Editable/ }).getAttribute("aria-pressed")).toBe(
-			"true"
-		);
-		expect(
-			screen
-				.getByRole("button", { name: /^No translator notes/ })
-				.getAttribute("aria-pressed")
-		).toBe("true");
+		const pills = within(screen.getByRole("list", { name: "Filters" }));
+		expect(pills.getByText("Editable")).toBeDefined();
+		expect(pills.getByText("No translator notes")).toBeDefined();
+		// The grouping is remembered too.
+		expect(await screen.findByRole("region", { name: "Content/Text" })).toBeDefined();
 		expect(calls).toEqual([false, false]);
 		cleanup();
 		mount(client, undefined, "project-b");
@@ -566,7 +622,7 @@ describe("Game Text writing workspace", () => {
 					.selectedId
 			).toBeUndefined()
 		);
-		expect(screen.getByText(/Select a line to see/)).toBeDefined();
+		expect(screen.getByRole("tablist", { name: "Where the lines are" })).toBeDefined();
 		cleanup();
 		window.localStorage.setItem("ue-shed:game-text:project-a", "broken JSON");
 		mount(makeClient(), undefined, "project-a");
@@ -608,11 +664,11 @@ describe("Game Text writing workspace", () => {
 		expect(within(focus).getByRole("status").textContent).toContain("Content Browser");
 	});
 
-	it("restores Read only, keeps capability toggles exclusive and accepts keyboard search", async () => {
+	it("filters read-only lines, opens a row from the keyboard and accepts keyboard search", async () => {
 		const user = userEvent.setup();
 		mount();
 		await screen.findByText("2 matches");
-		await user.click(screen.getByRole("button", { name: "Read only 1" }));
+		await chooseFilter(user, "Editing", "Read only 1");
 		await screen.findByText("1 match");
 		const results = screen.getByRole("region", { name: "Results" });
 		expect(within(results).queryByText("Continue")).toBeNull();
@@ -620,15 +676,13 @@ describe("Game Text writing workspace", () => {
 		row.focus();
 		await user.keyboard("{Enter}");
 		await screen.findByRole("heading", { name: "Quit game?" });
-		await user.click(screen.getByRole("button", { name: /^Editable/u }));
-		await screen.findByText("1 match");
+		// Editable joins the same pill: "Editing is any of Read only, Editable".
+		await chooseFilter(user, "Editing", /^Editable/u);
+		await screen.findByText("2 matches");
 		expect(
-			screen.getByRole("button", { name: /^Read only/u }).getAttribute("aria-pressed")
-		).toBe("false");
-		expect(
-			screen.getByRole("button", { name: /^Editable/u }).getAttribute("aria-pressed")
-		).toBe("true");
-		await user.click(screen.getByRole("button", { name: /^Editable/u }));
+			within(screen.getByRole("list", { name: "Filters" })).getByText("Read only, Editable")
+		).toBeDefined();
+		await user.click(screen.getByRole("button", { name: /^Remove Editing/u }));
 		await screen.findByText("2 matches");
 		await user.type(screen.getByRole("searchbox"), "Quit{Enter}");
 		await screen.findByText("1 match");
@@ -769,7 +823,7 @@ describe("Game Text writing workspace", () => {
 				view === "quality"
 					? await openQuality(user)
 					: screen.getByRole("region", { name: "Results" });
-			await user.click(await within(list).findByRole("button"));
+			await user.click(await within(list).findByRole("button", { name: /Continue/u }));
 			const detail = screen.getByRole("complementary", {
 				name: view === "quality" ? "Finding detail" : "Text focus"
 			});
@@ -868,9 +922,18 @@ describe("Game Text writing workspace", () => {
 		mount(makeClient(input));
 		await screen.findByText("62 matches");
 		const results = screen.getByRole("region", { name: "Results" });
-		expect(within(results).getAllByRole("button")).toHaveLength(51);
-		await user.click(within(results).getByRole("button", { name: "Show 12 more" }));
-		await waitFor(() => expect(within(results).getAllByRole("button")).toHaveLength(62));
+		// Line rows only: not the group header or its "Show more".
+		const rows = () =>
+			within(results)
+				.getAllByRole("button")
+				.filter(
+					(button) =>
+						!button.hasAttribute("aria-expanded") &&
+						!(button.textContent ?? "").startsWith("Show more")
+				);
+		await waitFor(() => expect(rows()).toHaveLength(50));
+		await user.click(within(results).getByRole("button", { name: "Show more (12 left)" }));
+		await waitFor(() => expect(rows()).toHaveLength(62));
 		expect(screen.getByText("62 matches")).toBeDefined();
 	});
 

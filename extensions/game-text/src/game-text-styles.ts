@@ -2,6 +2,7 @@ import * as stylex from "@stylexjs/stylex";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 
 export const styles = stylex.create({
+	grow: { flex: 1 },
 	operationPanel: {
 		display: "flex",
 		flexDirection: "column",

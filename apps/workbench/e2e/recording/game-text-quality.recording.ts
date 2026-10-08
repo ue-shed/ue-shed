@@ -104,8 +104,32 @@ test("records the real Game Text quality workflow", async ({
 		const results = page.getByRole("region", { name: "Results" });
 		const search = page.getByRole("searchbox", { name: "Search game text" });
 		const searchCount = search.locator("..").getByRole("status");
-		const allText = page.getByRole("button", { name: /^All text(?: [\d,]+)?$/u });
-		const editable = page.getByRole("button", { name: /^Editable(?: [\d,]+)?$/u });
+		const filterButton = page.getByRole("button", { name: "Filter", exact: true });
+		const pills = page.getByRole("list", { name: "Filters" });
+		// Filter → field → value; returns the value's label with its count.
+		const pick = async (field: string, value: RegExp) => {
+			await filterButton.click();
+			await page.getByRole("menuitem", { name: new RegExp(`^${field}`, "u") }).hover();
+			const item = page
+				.getByRole("menu", { name: field })
+				.getByRole("menuitemcheckbox", { name: value });
+			const label = (await item.getAttribute("aria-label")) ?? "";
+			await item.click();
+			await filterButton.click();
+			return label;
+		};
+		// Lines sit in groups; open collapsed groups and later pages until the line shows.
+		const reveal = async (line: Locator) => {
+			for (let attempt = 0; attempt < 16 && (await line.count()) === 0; attempt++) {
+				const closed = results.locator('button[aria-expanded="false"]').first();
+				const more = results.getByRole("button", { name: /^Show more/u }).first();
+				if (await closed.count()) await closed.click();
+				else if (await more.count()) await more.click();
+				else break;
+				await page.waitForTimeout(250);
+			}
+			await expect(line).toHaveCount(1);
+		};
 		const textDetail = page.getByRole("complementary", { name: "Text focus" });
 		const qualityTab = page.getByRole("tab", { name: /^Quality checks/u });
 		const coverage = page
@@ -117,13 +141,14 @@ test("records the real Game Text quality workflow", async ({
 		await expect(coverage).toContainText("scanned");
 		const lines = displayedCount(await coverage.innerText());
 		expect(lines).toBeGreaterThan(0);
-		await expect(allText).toHaveAccessibleName(`All text ${lines.toLocaleString()}`);
 		await expect(searchCount).toHaveText(
 			`${lines.toLocaleString()} ${lines === 1 ? "match" : "matches"}`
 		);
-		await expect(textDetail).toContainText(
-			"Select a line to see its key, translator notes and every place it appears."
-		);
+		// Lines group by problem; with no line open the side shows where the lines are.
+		await expect(results.locator('button[aria-expanded="true"]').first()).toBeVisible();
+		await expect(
+			textDetail.getByRole("tablist", { name: "Where the lines are" })
+		).toBeVisible();
 		await expect(page.getByRole("button", { name: "Rescan", exact: true })).toBeEnabled();
 
 		const screenshot = await page.screenshot({ type: "png" });
@@ -191,10 +216,7 @@ test("records the real Game Text quality workflow", async ({
 		const continueLine = results.getByRole("button").filter({
 			hasText: "ST_Game · PromptContinue"
 		});
-		if (!(await continueLine.count())) {
-			await results.getByRole("button", { name: /^Show [\d,]+ more$/u }).click();
-		}
-		await expect(continueLine).toHaveCount(1);
+		await reveal(continueLine);
 		await continueLine.click();
 		await expect(
 			textDetail.getByRole("heading", { name: "Continue", exact: true })
@@ -208,7 +230,6 @@ test("records the real Game Text quality workflow", async ({
 		await expect(textDetail).toContainText("/Game/Fixture/Text/ST_Game.ST_Game");
 		await expect(textDetail).toContainText("Continue from the pause menu");
 		await expectPaneLayout(results, textDetail);
-		expect(await results.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
 		await expect(search).toBeInViewport();
 		const copyKey = textDetail.getByRole("button", { name: "Copy key" });
 		const copyAsset = textDetail.getByRole("button", { name: "Copy asset path" });
@@ -224,28 +245,31 @@ test("records the real Game Text quality workflow", async ({
 		await page.waitForTimeout(1_200);
 
 		await search.fill("Hold");
-		await editable.click();
-		await expect(editable).toHaveAttribute("aria-pressed", "true");
+		// Wait for the search's own count before reading the menu's counts.
+		await expect(searchCount).toHaveText(
+			new RegExp(`^(?!${lines.toLocaleString()} )[\\d,]+ match(?:es)?$`, "u")
+		);
+		// The menu counts the editable lines among the matches, and filtering keeps exactly those.
+		const editableLabel = await pick("Editing", /^Editable/u);
+		await expect(pills).toContainText("Editable");
 		const holdLine = results.getByRole("button").filter({ hasText: "Hold to skip" });
 		await expect(holdLine).toHaveCount(1);
 		await expect(searchCount).toHaveText(/^[\d,]+ match(?:es)?$/u);
 		const matches = displayedCount(await searchCount.innerText());
 		expect(matches).toBeGreaterThan(0);
 		expect(matches).toBeLessThan(lines);
-		await expect(allText).toHaveAccessibleName(`All text ${matches.toLocaleString()}`);
-		await expect(editable).toHaveAccessibleName(`Editable ${matches.toLocaleString()}`);
+		expect(editableLabel).toBe(`Editable ${matches.toLocaleString()}`);
 		await holdLine.click();
 		await expect(textDetail.getByRole("heading", { name: "Hold to skip" })).toBeVisible();
 		await page.screenshot({ path: testInfo.outputPath("03-text-search.png") });
 		await page.waitForTimeout(1_200);
 
 		await search.clear();
-		await editable.click();
-		await expect(editable).toHaveAttribute("aria-pressed", "false");
+		await pills.getByRole("button", { name: /^Remove Editing/u }).click();
+		await expect(pills).toHaveCount(0);
 		await expect(searchCount).toHaveText(
 			`${lines.toLocaleString()} ${lines === 1 ? "match" : "matches"}`
 		);
-		await expect(allText).toHaveAccessibleName(`All text ${lines.toLocaleString()}`);
 		await qualityTab.click();
 		const setup = page.getByRole("region", { name: "Quality rules setup" });
 		await expect(setup).toContainText("Set up writing checks");
@@ -407,8 +431,9 @@ test("records the real Game Text quality workflow", async ({
 		await cultureChoices.getByRole("button", { name: "de", exact: true }).click();
 		await expect(culture).toHaveAccessibleName("Culture: de");
 		await expect(culture).toHaveCSS("height", "26px");
-		await expect(searchCount).toHaveText(/^[\d,]+ match(?:es)?$/u);
-		await expect(allText).toHaveAccessibleName(`All text ${lines.toLocaleString()}`);
+		await expect(searchCount).toHaveText(
+			`${lines.toLocaleString()} ${lines === 1 ? "match" : "matches"}`
+		);
 		const unsyncedIndicator = page.getByRole("status").filter({
 			hasText: /^[\d,]+ not synced$/u
 		});
@@ -423,13 +448,8 @@ test("records the real Game Text quality workflow", async ({
 		const namedLine = results.getByRole("button").filter({
 			hasText: "ST_Localization · NamedArgument"
 		});
-		// Large targets page through the same bounded query; keep the recording independent of order.
-		if (!(await namedLine.count())) {
-			const more = results.getByRole("button", { name: /^Show [\d,]+ more$/u });
-			await expect(more).toBeVisible();
-			await more.click();
-		}
-		await expect(namedLine).toHaveCount(1);
+		// Groups page through the same bounded query; keep the recording independent of order.
+		await reveal(namedLine);
 		await expect(results).toContainText("Gespräch mit {Name}");
 		await expect(page.getByText("Loading translations…", { exact: true })).toHaveCount(0);
 		await expectPaneLayout(results, textDetail);
@@ -453,6 +473,7 @@ test("records the real Game Text quality workflow", async ({
 		const outdated = results
 			.getByRole("button")
 			.filter({ hasText: "DA_Localization · SharedPrimary" });
+		await reveal(outdated);
 		await outdated.click();
 		await expect(textDetail.getByRole("heading", { name: "Open the gate" })).toBeVisible();
 		await expect(
@@ -492,16 +513,14 @@ test("records the real Game Text quality workflow", async ({
 		await expectPaneLayout(results, textDetail);
 		await page.screenshot({ path: testInfo.outputPath("09-translations-detail.png") });
 
-		const notSynced = page.getByRole("button", { name: /^Not synced [\d,]+$/u });
-		const unsyncedLines = displayedCount(await notSynced.innerText());
+		const unsyncedLines = displayedCount(await pick("Translation", /^Not synced [\d,]+$/u));
 		expect(unsyncedLines).toBeGreaterThan(0);
-		await notSynced.click();
-		await expect(notSynced).toHaveAttribute("aria-pressed", "true");
+		await expect(pills).toContainText("Not synced");
 		await expect(searchCount).toHaveText(
 			`${unsyncedLines.toLocaleString()} ${unsyncedLines === 1 ? "match" : "matches"}`
 		);
-		await expect(allText).toHaveAccessibleName(`All text ${unsyncedLines.toLocaleString()}`);
-		await expect(results.getByRole("button")).toHaveCount(unsyncedLines);
+		// Line rows only, not group headers.
+		await expect(results.locator("button:not([aria-expanded])")).toHaveCount(unsyncedLines);
 		await expect(unsyncedIndicator).toHaveText(
 			`${pendingTranslations.toLocaleString()} not synced`
 		);
@@ -521,24 +540,27 @@ test("records the real Game Text quality workflow", async ({
 		await expectPaneLayout(results, textDetail);
 		await page.screenshot({ path: testInfo.outputPath("10-not-synced.png") });
 
-		await notSynced.click();
+		await pills.getByRole("button", { name: /^Remove Translation/u }).click();
 		await culture.click();
 		await cultureChoices.getByRole("button", { name: "All cultures", exact: true }).click();
 		await expect(culture).toHaveAccessibleName("Culture: All cultures");
 		await expect(searchCount).toHaveText(
 			`${lines.toLocaleString()} ${lines === 1 ? "match" : "matches"}`
 		);
-		await expect(allText).toHaveAccessibleName(`All text ${lines.toLocaleString()}`);
-		await expect(results).toContainText("de · needs update");
-		await expect(results).toContainText("fr · needs update");
-		// The pending edit is beyond the first page of all lines; filter to it, then clear the filter.
-		await notSynced.click();
-		await expect(results).toContainText("de · not synced");
-		await notSynced.click();
-		await expect(results.getByText("Outside this target", { exact: true })).toHaveCount(0);
-		await expect(results.getByText("Gathered only", { exact: true })).toHaveCount(0);
+		// With every culture, a line says which cultures need work, then shows its strip.
+		await reveal(outdated);
+		await expect(outdated).toContainText("de, fr to update");
+		await expect(
+			outdated.getByRole("img", { name: /de to update, fr to update/u })
+		).toBeVisible();
+		// Filter to the pending edit, then clear the filter.
+		await pick("Translation", /^Not synced/u);
+		await expect(results).toContainText("de not synced");
+		await pills.getByRole("button", { name: /^Remove Translation/u }).click();
+		// A line every culture ships draws no mark.
 		await expect(results).not.toContainText("en · translated");
 		await expect(page.getByText("Loading translations…", { exact: true })).toHaveCount(0);
+		await reveal(outdated);
 		await outdated.click();
 		await expect(outdatedGerman).toContainText(
 			"Open the gate (source text — the translation is out of date)"
@@ -632,6 +654,7 @@ test("records the real Game Text quality workflow", async ({
 		// Stage and check a translation edit. The recording uses the committed fixture, so it
 		// never writes: it discards the staged edit after checking it against the project's files.
 		await page.getByRole("tab", { name: "Text", exact: true }).click();
+		await reveal(namedLine);
 		await namedLine.click();
 		const german = translations.getByRole("article", { name: "Translation de", exact: true });
 		await german.getByRole("button", { name: "Edit", exact: true }).click();

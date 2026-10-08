@@ -40,36 +40,64 @@ properties. Unsupported evidence and diagnostics remain visible in search/focus 
 reports. A zero-finding report never implies complete project coverage unless its attached corpus
 coverage does.
 
-Workbench searches source text as you type. **Editable**, **Read only**, and **No translator notes**
-filter the lines; **No translator notes** requires blank notes, after trimming, at every saved
-location.
+Workbench searches source text as you type. Next to the search are **Changed files…**,
+**Filter**, **Display**, **Export** and **Presets**.
 
-**Where…** narrows the list by where text comes from. It is one compact control; while a filter
-is on it reads like "Where: C++ · Source/ · 12 files". It holds three filters:
+**Filter** lists fields; each opens a submenu of its values with how many lines have them, and
+typing at the first level finds values across every field:
 
-- **Origins** (String table, Data table, Asset, C++, Other source) keep lines from any selected
-  origin. A String Table reference inside an asset counts as the asset. Gathered-only lines take
-  their origin from Unreal's manifest path: C++ source files, `/Game` assets, or other gathered
-  sources such as config files. Each origin's count ignores the origin filter itself, and an origin
-  at zero is hidden unless it is selected.
-- **Path starts with** keeps lines whose object path, package file or gathered source path starts
-  with the given prefix, such as `/Game/UI/`, `Content/UI/` or `Source/`. The match ignores case
-  and slash direction.
-- **Changed files** takes a pasted list, one path per line, from any version control tool
-  (`p4 opened`, `git diff --name-only`, and so on) and keeps the text those files hold.
-    - Saved packages match by asset, whatever the extension (`.uasset`, `.umap`, `.uexp`); an
-      Unreal package path such as `/Game/UI/WBP_Menu` names the same asset.
-    - Gathered-only C++ and config lines match their source file.
-    - Absolute paths inside the project work; blank lines and `#` comments are ignored.
-    - The summary reads "12 files · 5 with text · 2 not scanned · 1 outside the project". With the
-      localization states, it answers whether a change touches text and needs a gather.
+- **Problem**: key changed, same key with different text, not gathered yet, changed since gather,
+  translation work, findings, up to date. A line counts once for each problem it has.
+- **Translation**: missing, to update, not synced, in the cultures shown.
+- **Finding**: used in several places, same text with different keys, long text, not localizable.
+- **Folder**, **Asset** and **Origin** (String table, Data table, Asset, C++, Other source). A
+  String Table reference inside an asset counts as the asset; gathered-only lines take their
+  origin and folder from Unreal's manifest path. Typing a folder offers "Starts with …", which
+  matches object paths, package files and gathered source paths, ignoring case and slash
+  direction.
+- **Editing** (editable, read only) and **Translator notes** (none, some). No translator notes
+  means blank notes, after trimming, at every saved location.
+- **Review** and **Line state** (gathered only, not found, outside the target, unknown) pick one
+  value each; they show as chips beside the pills.
 
-The origin and path filters are saved with the project's view; a changed-file list lasts for the
-session. All three are carried by presets and exports. Review chips
-highlight reused lines, duplicate wording, long text and localization problems. The detail pane keeps keys, translator notes, exact Unreal names and **Where it appears**
-together. **Show in Unreal** reports success only when the editor confirms asset navigation.
+Each chosen value becomes a pill such as "Problem | is any of | Key changed, Not gathered yet | ×".
+Values of one field join one pill; every pill must match. Clicking the middle part switches between
+"is" and "is not". Pills and grouping are saved with the project's view and carried by presets and
+exports; preferences and presets saved before pills open with their toggles, lenses and state chips
+as pills.
 
-Every displayed text count in the toolbar, search and filter chips comes from the same query and
+**Display** groups the list by problem (the default), folder, asset, origin or namespace, or not at
+all. Groups are listed worst first with their line counts; when every line fits on one page all
+groups start open, otherwise the worst one does, and each opens a page of its lines at a time.
+Colour marks severity only: red for key problems, amber for lines waiting on Unreal and translation
+work, blue for translations not yet in Unreal. Findings and facts such as "Not found in the project"
+stay grey.
+
+With every culture shown, each line ends with a **culture strip**: one cell per culture, always in
+the target's order, empty when shipped, dashed when missing, amber when it needs an update and blue
+when not synced, and one merged bar when every culture shares a state. The text before it names
+cultures only when one or two are affected ("de, fr to update", "all missing"). A line every
+culture ships draws no mark; a gather state is said once for the line ("Not gathered yet").
+
+Until a line is opened, the side pane shows where the lines are: problems (unless the list is
+grouped by them) and folders, assets and origins, each with its line count and how many need work.
+A name adds its pill; a folder's arrow lists the folders inside it.
+
+**Changed files…** takes a pasted list, one path per line, from any version control tool
+(`p4 opened`, `git diff --name-only`, and so on) and keeps the text those files hold.
+
+- Saved packages match by asset, whatever the extension (`.uasset`, `.umap`, `.uexp`); an Unreal
+  package path such as `/Game/UI/WBP_Menu` names the same asset.
+- Gathered-only C++ and config lines match their source file.
+- Absolute paths inside the project work; blank lines and `#` comments are ignored.
+- The summary reads "12 files · 5 with text · 2 not scanned · 1 outside the project". With the
+  problems, it answers whether a change touches text and needs a gather.
+
+A changed-file list lasts for the session. The detail pane keeps keys, translator notes, exact
+Unreal names and **Where it appears** together. **Show in Unreal** reports success only when the
+editor confirms asset navigation.
+
+Every displayed text count in the toolbar, search, Filter menu and side pane comes from the same query and
 filtering path. Empty or whitespace-only source lines are excluded from those counts and from role
 line counts. `TextCorpus.coverage` keeps raw scan provenance counts, including empty text; the query
 summary's searchable counts describe the lines shown to people. Read-problem and asset counts
@@ -209,7 +237,7 @@ Character counts use the same JavaScript string-length measurement as the detail
 the existing provenance document; `gameTextInvestigationCsv` keeps its documented metadata layout.
 
 Use **Presets → Save preset… / Open preset…** to retain or restore the current settings.
-A preset stores the corpus/quality view, search text, capability, **No translator notes**, origin and path filters and review lens, finding-type
+A preset stores the corpus/quality view, search text, filter pills and grouping (or, in presets saved before pills, capability, **No translator notes**, origin and path filters and review lens), finding-type
 filter, existing domain sort order, and optional quality rules. Quality mode requires a rule
 document, including semantic validation of rule and role identities. Workbench captures the
 current corpus, rules, project, and catalog generation before opening an export dialog. The
@@ -540,7 +568,7 @@ Before a gather this works for saved asset text: the earlier key still in the ma
 found in the project" and the new key is "Not gathered yet". C++ and config text is not in the
 saved scan; it pairs across a gather UE Shed runs.
 
-- In Workbench, **Key changed** lists the new keys. The detail pane shows the earlier key, how it
+- In Workbench, the **Key changed** group (or Filter → Problem → Key changed) lists the new keys. The detail pane shows the earlier key, how it
   was paired, any text change, and the translations the earlier key shipped.
 - **Carry translations** stages those translations for the new key, as hand edits are staged. The
   staged panel then guides the steps: gather, export, **Write to PO**, then sync. When the text
@@ -553,7 +581,7 @@ saved scan; it pairs across a gather UE Shed runs.
   target needs one recipe that gathers, writes the manifest and exports.
 - When UE Shed runs a gather, it keeps the target's translations from before the run and pairs
   keys that left the manifest with keys that joined it. This covers C++ and config text, such as
-  a cherry-picked `LOCTEXT` change. Workbench shows those pairs under **Key changed** until the
+  a cherry-picked `LOCTEXT` change. Workbench shows those pairs as **Key changed** until the
   next gather.
 - `ue-shed loc run gather|prepare <project-root> --target <name> --carry <new-file.json>` writes
   the carried translations as a change set for the new keys, then prints a `carry` summary (keys,

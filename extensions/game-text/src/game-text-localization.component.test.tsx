@@ -193,6 +193,35 @@ function mount(api = client()) {
 	));
 }
 
+/** Filter → field → value, then closes the menu. */
+async function chooseFilter(
+	user: ReturnType<typeof userEvent.setup>,
+	field: string,
+	value: string | RegExp
+) {
+	const filter = screen.getByRole("button", { name: "Filter" });
+	await user.click(filter);
+	await user.click(await screen.findByRole("menuitem", { name: new RegExp(`^${field}`, "u") }));
+	await user.click(
+		within(screen.getByRole("menu", { name: field })).getByRole("menuitemcheckbox", {
+			name: value
+		})
+	);
+	await user.click(filter);
+}
+
+/** The values a Filter submenu offers, then closes the menu. */
+async function filterValues(user: ReturnType<typeof userEvent.setup>, field: string) {
+	const filter = screen.getByRole("button", { name: "Filter" });
+	await user.click(filter);
+	await user.click(await screen.findByRole("menuitem", { name: new RegExp(`^${field}`, "u") }));
+	const values = within(screen.getByRole("menu", { name: field }))
+		.getAllByRole("menuitemcheckbox")
+		.map((item) => item.getAttribute("aria-label"));
+	await user.click(filter);
+	return values;
+}
+
 async function choose(
 	user: ReturnType<typeof userEvent.setup>,
 	label: "Culture" | "Localization target",
@@ -231,7 +260,8 @@ describe("Game Text localization", () => {
 		const first = mount({ ...api, localizationTarget: select });
 		await screen.findByText("3 matches");
 		await choose(user, "Localization target", "Second");
-		await screen.findByRole("button", { name: "All text 3" });
+		await screen.findByRole("button", { name: "Localization target: Second" });
+		await screen.findByText("3 matches");
 		await waitFor(() => expect(select.mock.calls).toEqual([[target.name], [second]]));
 		await waitFor(() =>
 			expect(
@@ -273,7 +303,7 @@ describe("Game Text localization", () => {
 			search.mock.calls.every(([request]) => request.localization?.culture === undefined)
 		).toBe(true);
 		expect(screen.queryByRole("alert")).toBeNull();
-		expect(screen.getByText(/Select a line to see/)).toBeDefined();
+		expect(screen.getByRole("tablist", { name: "Where the lines are" })).toBeDefined();
 	});
 
 	it("clears a line that vanished from the remembered target", async () => {
@@ -293,7 +323,7 @@ describe("Game Text localization", () => {
 				).selectedLocalizationId
 			).toBeUndefined()
 		);
-		expect(screen.getByText(/Select a line to see/)).toBeDefined();
+		expect(screen.getByRole("tablist", { name: "Where the lines are" })).toBeDefined();
 	});
 
 	it("explains unavailable translation evidence in plain words", async () => {
@@ -358,29 +388,28 @@ describe("Game Text localization", () => {
 				.getAttribute("aria-pressed")
 		).toBe("true");
 		await user.keyboard("{Escape}");
-		expect(screen.getByRole("button", { name: "All text 3" })).toBeDefined();
 		expect(
 			screen.getByText(
 				(_text, element) =>
 					element?.tagName === "SPAN" && element.textContent === "3 lines · 1 asset"
 			)
 		).toBeDefined();
-		expect(screen.getByRole("button", { name: "Not synced 1" })).toBeDefined();
-		expect(screen.getByRole("button", { name: "Needs update 1" })).toBeDefined();
-		expect(screen.queryByRole("button", { name: /^Unknown/ })).toBeNull();
+		// Translation work in the Filter menu, counted from the page.
+		expect(await filterValues(user, "Translation")).toEqual(["To update 1", "Not synced 1"]);
 		const indicator = screen.getByText("1 not synced", { exact: true });
 		expect(indicator.title).toBe(
 			"Translations saved in PO files that Unreal has not imported yet"
 		);
 		await choose(user, "Culture", "de");
-		await user.click(await screen.findByRole("button", { name: "Not synced 1" }));
+		await chooseFilter(user, "Translation", /^Not synced/u);
 		await screen.findByText("1 match");
-		expect(screen.getByRole("button", { name: "All text 1" })).toBeDefined();
 		expect(screen.getByText("1 not synced", { exact: true })).toBeDefined();
 		await user.type(screen.getByRole("searchbox"), "absent");
 		await screen.findByText("0 matches");
-		expect(screen.getByRole("button", { name: "Not synced 0" })).toBeDefined();
-		expect(screen.queryByRole("button", { name: /^Needs update/ })).toBeNull();
+		// The pill stays while nothing matches.
+		expect(
+			within(screen.getByRole("list", { name: "Filters" })).getByText("Not synced")
+		).toBeDefined();
 	});
 	it("shows selected-culture translations, opt-in translation search and native-first details", async () => {
 		const user = userEvent.setup();
@@ -388,10 +417,16 @@ describe("Game Text localization", () => {
 		await screen.findByText("3 matches");
 		expect(screen.queryByRole("button", { name: /^Localization target:/u })).toBeNull();
 		const results = screen.getByRole("region", { name: "Results" });
-		expect(within(results).getByText(/de · not synced · fr · needs update/)).toBeDefined();
+		// Without a picked culture, each line shows every culture's state as a strip.
+		expect(within(results).getByText("de not synced · fr to update")).toBeDefined();
+		expect(
+			within(results).getByRole("img", { name: "en shipped, de not synced, fr to update" })
+		).toBeDefined();
 		await choose(user, "Culture", "de");
 		await screen.findByText("Neue Begrüßung");
-		expect(within(results).getByText(/Not translated|Not gathered yet/)).toBeDefined();
+		expect(
+			within(results).getAllByText(/Not translated|Not gathered yet/).length
+		).toBeGreaterThan(0);
 		await user.click(within(results).getByRole("button", { name: /^Welcome/u }));
 		const translations = await screen.findByRole("region", { name: "Translations" });
 		await within(translations).findByText("Willkommen");
@@ -616,11 +651,11 @@ describe("Game Text localization", () => {
 		const user = userEvent.setup();
 		mount();
 		await screen.findByText("3 matches");
-		await user.click(screen.getByRole("button", { name: "Gathered only 1" }));
+		await chooseFilter(user, "Line state", "Gathered only 1");
 		await screen.findByText("1 match");
 		const results = screen.getByRole("region", { name: "Results" });
 		expect(within(results).getByText("Source/Example.cpp(12) · C++")).toBeDefined();
-		await user.click(within(results).getByRole("button"));
+		await user.click(within(results).getByRole("button", { name: /^Code greeting/u }));
 		const detail = screen.getByRole("complementary", { name: "Text focus" });
 		await within(detail).findByRole("heading", { name: "Code greeting" });
 		expect(within(detail).queryByRole("button", { name: "Show in Unreal" })).toBeNull();
@@ -635,10 +670,12 @@ describe("Game Text localization", () => {
 		await screen.findByText("3 matches");
 		await choose(user, "Culture", "de");
 		await user.click(screen.getByRole("button", { name: "Search translations" }));
-		await user.click(await screen.findByRole("button", { name: "Not synced 1" }));
+		await chooseFilter(user, "Translation", /^Not synced/u);
 		await screen.findByText("1 match");
 		await user.click(
-			within(screen.getByRole("region", { name: "Results" })).getByRole("button")
+			within(screen.getByRole("region", { name: "Results" })).getByRole("button", {
+				name: /^Welcome/u
+			})
 		);
 		await screen.findByRole("region", { name: "Translations" });
 		await waitFor(() =>
@@ -656,8 +693,8 @@ describe("Game Text localization", () => {
 			screen.getByRole("button", { name: "Search translations" }).getAttribute("aria-pressed")
 		).toBe("true");
 		expect(
-			screen.getByRole("button", { name: "Not synced 1" }).getAttribute("aria-pressed")
-		).toBe("true");
+			within(screen.getByRole("list", { name: "Filters" })).getByText("Not synced")
+		).toBeDefined();
 		await screen.findByRole("region", { name: "Translations" });
 		expect(load.mock.calls).toEqual([[false], [false]]);
 	});
@@ -926,8 +963,9 @@ describe("Game Text review state", () => {
 		const { api, requests } = reviewClient();
 		mount(api);
 		await screen.findByText("3 matches");
-		expect(screen.getByRole("button", { name: "Changed since review 1" })).toBeDefined();
-		expect(screen.getByRole("button", { name: "Reviewed 1" })).toBeDefined();
+		const review = await filterValues(user, "Review");
+		expect(review).toContain("Changed since review 1");
+		expect(review).toContain("Reviewed 1");
 		const results = screen.getByRole("region", { name: "Results" });
 		await user.click(within(results).getByRole("button", { name: /^Welcome/u }));
 		const translations = await screen.findByRole("region", { name: "Translations" });
@@ -970,8 +1008,10 @@ describe("Game Text review state", () => {
 		const user = userEvent.setup();
 		mount(reviewClient().api);
 		await screen.findByText("3 matches");
-		await user.click(screen.getByRole("button", { name: "Changed since review 1" }));
+		await chooseFilter(user, "Review", "Changed since review 1");
 		await screen.findByText("1 match");
+		// Review state shows as its own chip until review becomes a pill.
+		expect(screen.getByRole("button", { name: "Changed since review" })).toBeDefined();
 		const results = screen.getByRole("region", { name: "Results" });
 		expect(within(results).getByRole("button", { name: /^Welcome/u })).toBeDefined();
 	});
@@ -1023,7 +1063,7 @@ describe("Game Text key changes", () => {
 		const user = userEvent.setup();
 		mount(keyClient());
 		await screen.findByText("2 matches");
-		await user.click(screen.getByRole("button", { name: "Key changed 1" }));
+		await chooseFilter(user, "Problem", "Key changed 1");
 		await screen.findByText("1 match");
 		const results = screen.getByRole("region", { name: "Results" });
 		await user.click(within(results).getByRole("button", { name: /^Welcome back/u }));
@@ -1056,7 +1096,7 @@ describe("Game Text key changes", () => {
 			}
 		});
 		await screen.findByText("2 matches");
-		await user.click(screen.getByRole("button", { name: "Key changed 1" }));
+		await chooseFilter(user, "Problem", "Key changed 1");
 		await screen.findByText("1 match");
 		const results = screen.getByRole("region", { name: "Results" });
 		await user.click(within(results).getByRole("button", { name: /^Welcome back/u }));

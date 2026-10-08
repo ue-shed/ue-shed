@@ -17,5 +17,7 @@ count of the rest, and `facets` with folders a level at a time, assets, origins 
 work. Clauses add `asset` and `namespace`. `text-groups.ts` exports the pure grouping, and
 `textFileLabel` spells a file the way the project does.
 
+Investigation presets accept optional `filter` and `group`; presets saved before them still open.
+
 Joining a large localization target is much faster: a 50,000-line, 14-culture target joined in
 about 30 seconds and now joins in about 1.5 seconds, and per-culture counts take one pass.

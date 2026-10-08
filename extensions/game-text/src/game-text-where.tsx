@@ -68,8 +68,17 @@ export function WhereFilter(props: {
 	readonly fileScope: TextFileScopeSummary | undefined;
 	readonly searching: boolean;
 	readonly disabled: boolean;
+	/** Only the changed-file list; origins and paths are filter pills. */
+	readonly filesOnly?: boolean;
 	readonly onChange: (where: TextWhere | undefined) => void;
 }) {
+	const files = () => props.where?.files?.length;
+	const triggerLabel = () =>
+		props.filesOnly
+			? files() === undefined
+				? "Changed files…"
+				: `Changed files: ${files()?.toLocaleString()}`
+			: whereLabel(props.where);
 	const id = createUniqueId();
 	const [open, setOpen] = createSignal(false);
 	const [draft, setDraft] = createSignal("");
@@ -115,7 +124,7 @@ export function WhereFilter(props: {
 	return (
 		<AnchoredPopover
 			id={id}
-			ariaLabel="Where text comes from"
+			ariaLabel={props.filesOnly ? "Changed files" : "Where text comes from"}
 			open={open()}
 			onOpenChange={(next) => {
 				if (next) setDraft(props.where?.files?.join("\n") ?? "");
@@ -130,43 +139,28 @@ export function WhereFilter(props: {
 					size="compact"
 					tone="quiet"
 					disabled={props.disabled}
-					aria-pressed={props.where === undefined ? "false" : "true"}
+					aria-pressed={
+						(props.filesOnly ? files() === undefined : props.where === undefined)
+							? "false"
+							: "true"
+					}
 					title={props.fileScope ? fileScopeLine(props.fileScope) : undefined}
 				>
-					{whereLabel(props.where)}
+					{triggerLabel()}
 				</Button>
 			)}
 		>
-			<div role="group" aria-label="Origins" {...stylex.attrs(styles.chips)}>
-				<For
-					each={TEXT_ORIGIN_KINDS.filter(
-						(kind) => selected(kind) || (props.counts?.[kind] ?? 0) > 0
-					)}
-				>
-					{(kind) => (
-						<Chip
-							label={TEXT_ORIGIN_LABELS[kind]}
-							toggle
-							disabled={props.disabled}
-							selected={selected(kind)}
-							count={props.searching ? undefined : props.counts?.[kind]}
-							onClick={() => toggle(kind)}
-						/>
-					)}
-				</For>
-			</div>
-			<input
-				type="text"
-				aria-label="Path starts with"
-				placeholder="Path starts with: /Game/UI/ or Source/"
-				maxlength={512}
-				value={props.where?.pathPrefix ?? ""}
-				onKeyDown={(event) => {
-					if (event.key === "Enter") commitPath(event.currentTarget.value);
-				}}
-				onBlur={(event) => commitPath(event.currentTarget.value)}
-				{...stylex.attrs(styles.field)}
-			/>
+			<Show when={!props.filesOnly}>
+				<WhereOrigins
+					where={props.where}
+					counts={props.counts}
+					searching={props.searching}
+					disabled={props.disabled}
+					selected={selected}
+					toggle={toggle}
+					commitPath={commitPath}
+				/>
+			</Show>
 			<textarea
 				aria-label="Changed files, one path per line"
 				placeholder={
@@ -198,7 +192,7 @@ export function WhereFilter(props: {
 						Clear files
 					</Button>
 				</Show>
-				<Show when={props.where !== undefined}>
+				<Show when={!props.filesOnly && props.where !== undefined}>
 					<Button
 						type="button"
 						size="compact"
@@ -214,6 +208,51 @@ export function WhereFilter(props: {
 				</Show>
 			</div>
 		</AnchoredPopover>
+	);
+}
+
+function WhereOrigins(props: {
+	readonly where: TextWhere | undefined;
+	readonly counts: TextCorpusSearchCounts["origins"] | undefined;
+	readonly searching: boolean;
+	readonly disabled: boolean;
+	readonly selected: (kind: TextOriginKind) => boolean;
+	readonly toggle: (kind: TextOriginKind) => void;
+	readonly commitPath: (value: string) => void;
+}) {
+	return (
+		<>
+			<div role="group" aria-label="Origins" {...stylex.attrs(styles.chips)}>
+				<For
+					each={TEXT_ORIGIN_KINDS.filter(
+						(kind) => props.selected(kind) || (props.counts?.[kind] ?? 0) > 0
+					)}
+				>
+					{(kind) => (
+						<Chip
+							label={TEXT_ORIGIN_LABELS[kind]}
+							toggle
+							disabled={props.disabled}
+							selected={props.selected(kind)}
+							count={props.searching ? undefined : props.counts?.[kind]}
+							onClick={() => props.toggle(kind)}
+						/>
+					)}
+				</For>
+			</div>
+			<input
+				type="text"
+				aria-label="Path starts with"
+				placeholder="Path starts with: /Game/UI/ or Source/"
+				maxlength={512}
+				value={props.where?.pathPrefix ?? ""}
+				onKeyDown={(event) => {
+					if (event.key === "Enter") props.commitPath(event.currentTarget.value);
+				}}
+				onBlur={(event) => props.commitPath(event.currentTarget.value)}
+				{...stylex.attrs(styles.field)}
+			/>
+		</>
 	);
 }
 

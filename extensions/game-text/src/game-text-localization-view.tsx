@@ -133,11 +133,13 @@ export function LocalizationChips(props: {
 	readonly model: GameTextLocalizationState;
 	readonly counts: Readonly<Record<LocalizationState, number>> | undefined;
 	readonly searching: boolean;
+	/** Only these states; every state but translated when absent. */
+	readonly states?: readonly LocalizationState[];
 }) {
 	return (
 		<Show when={props.model.active()}>
 			<For
-				each={localizationStates.filter(
+				each={(props.states ?? localizationStates).filter(
 					(state) =>
 						state !== "translated" &&
 						(state === props.model.state() || (props.counts?.[state] ?? 0) > 0)
@@ -187,15 +189,10 @@ export function LocalizationRow(props: {
 			)
 			.join(" · ");
 	};
+	// Without a picked culture the row's culture strip shows every culture's state.
+	void attention;
 	return (
-		<Show
-			when={selected()}
-			fallback={
-				<Show when={!props.culture && attention()}>
-					<span {...stylex.attrs(styles.context, styles.warning)}>{attention()}</span>
-				</Show>
-			}
-		>
+		<Show when={selected()}>
 			{(mark) => (
 				<Show
 					when={

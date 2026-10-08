@@ -3,6 +3,8 @@ import {
 	LocalizationSelection,
 	LocalizationLineId,
 	TextCapabilityFilter,
+	TextFilter,
+	TextGroupBy,
 	TextReviewLens,
 	TextUnitId,
 	TextWhere,
@@ -10,6 +12,7 @@ import {
 	WorkspaceQualityFilter,
 	GameTextRuleDocument
 } from "@ue-shed/game-text/browser";
+import { legacyFilter } from "./game-text-filter-model.js";
 import type { RuleEditorState } from "./game-text-rule-state.js";
 
 const StoredPreferences = Schema.Struct({
@@ -29,7 +32,9 @@ const StoredPreferences = Schema.Struct({
 	qualityFilter: Schema.optionalKey(WorkspaceQualityFilter),
 	selectedId: Schema.optionalKey(TextUnitId),
 	selectedFindingId: Schema.optionalKey(TextQualityFindingId),
-	qualityDocument: Schema.optionalKey(GameTextRuleDocument)
+	qualityDocument: Schema.optionalKey(GameTextRuleDocument),
+	filter: Schema.optionalKey(TextFilter),
+	group: Schema.optionalKey(Schema.Literals([...TextGroupBy.literals, "none"]))
 });
 
 export interface GameTextPreferences {
@@ -59,6 +64,31 @@ export interface GameTextPreferences {
 	readonly selectedFindingId?: Schema.Schema.Type<typeof TextQualityFindingId> | undefined;
 	readonly qualityDocument?: Schema.Schema.Type<typeof GameTextRuleDocument> | undefined;
 	readonly qualityEditor?: RuleEditorState | undefined;
+	/** Filter pills. Absent in preferences saved before pills; see `migratePreferences`. */
+	readonly filter?: TextFilter | undefined;
+	/** How the list groups lines; `none` lists them flat. Problem when absent. */
+	readonly group?: TextGroupBy | "none" | undefined;
+}
+
+/**
+ * Preferences saved before filter pills keep their toggles, lenses and state chips as fields. They
+ * become pills here once; what has no pill (changed files, gathered-only and other line states)
+ * stays where it was.
+ */
+export function migratePreferences(preferences: GameTextPreferences): GameTextPreferences {
+	if (preferences.filter !== undefined) return preferences;
+	const { filter, remainingState } = legacyFilter(preferences);
+	const files = preferences.where?.files;
+	return {
+		...preferences,
+		filter,
+		capability: "all",
+		lens: "all",
+		withoutNotes: false,
+		where: files === undefined ? undefined : { files },
+		localizationState: remainingState,
+		localizationKeyChanged: false
+	};
 }
 
 const decodeStoredPreferences = Schema.decodeUnknownOption(
@@ -70,14 +100,14 @@ export function decodeGameTextPreferences(contents: string): GameTextPreferences
 	const value: Schema.Schema.Type<typeof StoredPreferences> = Option.isSome(decoded)
 		? decoded.value
 		: {};
-	return {
+	return migratePreferences({
 		...value,
 		query: value.query ?? "",
 		capability: value.capability ?? "all",
 		lens: value.lens ?? "all",
 		withoutNotes: value.withoutNotes ?? false,
 		selectedId: value.selectedId
-	};
+	});
 }
 
 export const readGameTextPreferences = Effect.fn("GameText.preferences.read")((key: string) =>

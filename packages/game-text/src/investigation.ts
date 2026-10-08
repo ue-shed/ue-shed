@@ -23,6 +23,9 @@ export const GameTextInvestigationQuery = Schema.Struct({
 	capability: TextCorpusSearchRequest.fields.capability,
 	lens: TextCorpusSearchRequest.fields.lens,
 	where: TextCorpusSearchRequest.fields.where,
+	/** Filter pills; presets saved before them use the fields above. */
+	filter: TextCorpusSearchRequest.fields.filter,
+	group: TextCorpusSearchRequest.fields.group,
 	qualityFilter: TextQualityFilter
 });
 export type GameTextInvestigationQuery = Schema.Schema.Type<typeof GameTextInvestigationQuery>;

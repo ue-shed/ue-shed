@@ -29,6 +29,10 @@ const flagLabels = {
 } satisfies Record<LocalizationReviewFlag, string>;
 const flags = LocalizationReviewFlag.literals;
 
+export function reviewLensLabel(lens: LocalizationReviewLens): string {
+	return lensLabels[lens];
+}
+
 /** Review lenses beside the state chips; shown only once the target has review state. */
 export function ReviewChips(props: {
 	readonly model: GameTextLocalizationState;

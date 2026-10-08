@@ -30,6 +30,19 @@ Schemas with inferred types. This subpath imports no UI code.
 - `transportFailureCopy?: BlueprintGraphTransportFailureCopy`, containing `title`, `message`, and
   `recovery`. The default copy is host-neutral.
 
+The graph canvas is [Solid Flow](https://github.com/dsnchz/solid-flow) (`@dschz/solid-flow`, MIT):
+
+- **Rendering:** nodes keep the saved layout from `layoutBlueprintGraph`. Each pin is an invisible
+  handle, and links are edges tinted by pin type. Comments are frames behind the graph.
+- **Interaction:** the canvas is read-only. Dragging and scrolling pan, Ctrl + wheel zooms, and a
+  zoom cluster offers zoom out and in, Fit and 1:1. Saved positions are fixed, so dragging on a node
+  pans too.
+- **Accessibility:** every node is a focusable button named "Inspect <title>"; Enter or a click
+  selects it in the inspector.
+- **Styling:** the canvas module imports Solid Flow's structural `base.css` itself, so hosts import
+  nothing. Theming goes through its `--xy-*` variables. StyleX sets only properties `base.css`
+  leaves alone, and never restyles Solid Flow classes, so stylesheet order does not matter.
+
 `BlueprintGraphReadEffect` is `Effect.Effect<BlueprintGraphReadResult, unknown>` with no required
 environment. Reads use the shared owner-scoped action adapter: replacement and teardown interrupt
 pending work; cancelled results retain the previous graph; Effect failures show transport failure.

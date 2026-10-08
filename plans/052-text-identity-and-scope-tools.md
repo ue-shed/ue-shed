@@ -80,8 +80,8 @@ chips.
   exports and saved presets. Origin counts exclude the origin facet; path is a hard filter.
 - CLI: `--kind` (repeatable) and `--path` on `loc status` and `text search`, with or without a
   target.
-- Workbench: origin chips and a compact "Path…" filter in the first toolbar row, persisted per
-  project.
+- Workbench: origins and a path prefix, persisted per project. They now live in the one
+  **Where…** control (see the toolbar note under Phase 2).
 - Verified: origin tests (each origin count equals its filtered total, for saved units and for
   gathered C++ and config lines), the CLI integration test against the real fixture, route
   component tests, precommit, and the Node 24 and Node 26 sweeps.
@@ -112,7 +112,10 @@ and config sources and a not-scanned file.
   paths elsewhere count as outside. Saved packages missing from package coverage count as not
   scanned.
 - CLI `--files <list-file>` reads a bounded UTF-8 list. Workbench main converts pasted absolute
-  paths with the project root; the "Changed files…" popover takes a pasted list for the session.
+  paths with the project root; a pasted list lasts for the session.
+- Toolbar: origins, path and changed files share one compact **Where…** control on the search row
+  so the toolbar stays on one row. Its label summarizes the active filter ("Where: C++ · Source/ ·
+  12 files") and its title gives the file scope summary. "From Perforce…" (Phase 3) joins it.
 - Verified: file-key, conversion and scope tests for saved units and gathered C++ lines; the CLI
   integration test with a real list file over the fixture (absolute content path, C++ source and
   an outside path); route component tests; precommit; Node 24 and Node 26 sweeps.
@@ -129,7 +132,7 @@ and config sources and a not-scanned file.
    `too_many_files`. Telemetry carries counts only.
 4. CLI: `ue-shed p4 files <project-root> [--change <n>|default]` and
    `loc status --changelist <n>`, loading the package lazily.
-5. Workbench: "From Perforce…" in the changed-files popover lists the user's pending changelists.
+5. Workbench: "From Perforce…" in the Where… popover lists the user's pending changelists.
    No Perforce command runs until the popover opens.
 6. ADR 0009 addendum: optional adapters may read file lists from source control.
 

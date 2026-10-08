@@ -1,7 +1,7 @@
 import * as stylex from "@stylexjs/stylex";
 import type { LocalizationFocus, LocalizationKeyChangeMatch } from "@ue-shed/game-text/browser";
 import { Button, Chip } from "@ue-shed/ui";
-import { For, Show, createSignal } from "solid-js";
+import { For, Show } from "solid-js";
 import type { GameTextLocalizationState } from "./game-text-localization-state.js";
 import { styles } from "./game-text-styles.js";
 import { seenTranslation, type GameTextEdits } from "./game-text-translation-edits.js";
@@ -38,7 +38,15 @@ export function KeyChangeDetail(props: {
 	readonly detail: LocalizationFocus;
 	readonly edits?: GameTextEdits | undefined;
 }) {
-	const [carried, setCarried] = createSignal<number>();
+	// What is staged now, so discarding the edits brings the action back.
+	const carried = () => {
+		const edits = props.edits;
+		const change = props.detail.keyChange;
+		if (edits === undefined || change === undefined) return 0;
+		return change.translations.filter((item) =>
+			edits.stagedFor(item.culture, props.detail.identity)
+		).length;
+	};
 	// Staged like hand edits: each culture starts from what ships now for the new key (nothing,
 	// before a gather), and the staged panel checks every edit against the project's files.
 	const carry = () => {
@@ -61,7 +69,6 @@ export function KeyChangeDetail(props: {
 				props.detail.source
 			);
 		}
-		setCarried(change.translations.length);
 		edits.setOpen(true);
 	};
 	return (
@@ -114,7 +121,7 @@ export function KeyChangeDetail(props: {
 							</For>
 							<Show when={props.edits && props.detail.identity !== null}>
 								<Show
-									when={carried()}
+									when={carried() > 0 ? carried() : undefined}
 									fallback={
 										<div>
 											<Button

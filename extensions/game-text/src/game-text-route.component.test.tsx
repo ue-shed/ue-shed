@@ -393,32 +393,30 @@ describe("Game Text writing workspace", () => {
 		const user = userEvent.setup();
 		mount();
 		await screen.findByText("2 matches");
-		expect(screen.getByRole("button", { name: "String table 1" })).toBeDefined();
-		await user.click(screen.getByRole("button", { name: "Data table 1" }));
+		await user.click(screen.getByRole("button", { name: "Where…" }));
+		const origins = screen.getByRole("group", { name: "Origins" });
+		expect(within(origins).getByRole("button", { name: "String table 1" })).toBeDefined();
+		await user.click(within(origins).getByRole("button", { name: "Data table 1" }));
 		await screen.findByText("1 match");
 		const results = () => within(screen.getByRole("region", { name: "Results" }));
 		expect(results().getByText("Quit game?")).toBeDefined();
 		expect(results().queryByText("Continue")).toBeNull();
 		// The origin facet does not narrow its own counts.
-		expect(screen.getByRole("button", { name: "String table 1" })).toBeDefined();
-		expect(
-			screen.getByRole("button", { name: "Data table 1" }).getAttribute("aria-pressed")
-		).toBe("true");
+		expect(within(origins).getByRole("button", { name: "String table 1" })).toBeDefined();
+		expect(screen.getByRole("button", { name: "Where: Data table" })).toBeDefined();
 
-		await user.click(screen.getByRole("button", { name: "Path…" }));
 		await user.type(
 			screen.getByRole("textbox", { name: "Path starts with" }),
 			"content\\text\\st{Enter}"
 		);
 		await screen.findByText("0 matches");
-		await user.click(screen.getByRole("button", { name: /^Data table/ }));
+		await user.click(within(origins).getByRole("button", { name: /^Data table/ }));
 		await screen.findByText("1 match");
 		expect(results().getByText("Continue")).toBeDefined();
-		await user.click(screen.getByRole("button", { name: "Path: content\\text\\st" }));
-		await user.clear(screen.getByRole("textbox", { name: "Path starts with" }));
-		await user.keyboard("{Enter}");
+		expect(screen.getByRole("button", { name: "Where: content\\text\\st" })).toBeDefined();
+		await user.click(screen.getByRole("button", { name: "Clear all" }));
 		await screen.findByText("2 matches");
-		expect(screen.getByRole("button", { name: "Path…" })).toBeDefined();
+		expect(screen.getByRole("button", { name: "Where…" })).toBeDefined();
 	});
 
 	it("shows the text a pasted changed-file list touches, for this session only", async () => {
@@ -433,7 +431,7 @@ describe("Game Text writing workspace", () => {
 			</EffectRuntimeProvider>
 		));
 		await screen.findByText("2 matches");
-		await user.click(screen.getByRole("button", { name: "Changed files…" }));
+		await user.click(screen.getByRole("button", { name: "Where…" }));
 		await user.type(
 			screen.getByRole("textbox", { name: "Changed files, one path per line" }),
 			"# from p4 opened{Enter}Content\\Text\\DT_Menu.uexp{Enter}Source/Unrelated.cpp"
@@ -442,15 +440,15 @@ describe("Game Text writing workspace", () => {
 		await screen.findByText("1 match");
 		const results = within(screen.getByRole("region", { name: "Results" }));
 		expect(results.getByText("Quit game?")).toBeDefined();
-		const trigger = screen.getByRole("button", { name: "Changed files 2" });
+		const trigger = screen.getByRole("button", { name: "Where: 2 files" });
 		expect(trigger.getAttribute("aria-pressed")).toBe("true");
 		await waitFor(() => expect(trigger.getAttribute("title")).toBe("2 files · 1 with text"));
 		expect(saved.at(-1)?.where).toBeUndefined();
 
 		await user.click(trigger);
-		await user.click(screen.getByRole("button", { name: "Clear" }));
+		await user.click(screen.getByRole("button", { name: "Clear files" }));
 		await screen.findByText("2 matches");
-		expect(screen.getByRole("button", { name: "Changed files…" })).toBeDefined();
+		expect(screen.getByRole("button", { name: "Where…" })).toBeDefined();
 	});
 
 	it("restores a saved origin filter", async () => {
@@ -463,7 +461,7 @@ describe("Game Text writing workspace", () => {
 		});
 		await screen.findByText("1 match");
 		expect(
-			screen.getByRole("button", { name: "String table 1" }).getAttribute("aria-pressed")
+			screen.getByRole("button", { name: "Where: String table" }).getAttribute("aria-pressed")
 		).toBe("true");
 	});
 

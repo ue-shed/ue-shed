@@ -59,7 +59,7 @@ import {
 } from "./game-text-operations.js";
 import { identityLabel, locationDetail, sourceText } from "./game-text-view.js";
 import { styles } from "./game-text-styles.js";
-import { ChangedFilesFilter, OriginChips, PathFilter, textWhere } from "./game-text-where.js";
+import { WhereFilter, textWhere } from "./game-text-where.js";
 import { KeyChangeChip } from "./game-text-key-changes.js";
 
 export { CopyButton } from "./game-text-copy-button.js";
@@ -955,21 +955,11 @@ export function GameTextRoute(props: {
 										setWithoutNotes(next);
 									}}
 								/>
-								<OriginChips
+								<WhereFilter
 									where={where()}
 									counts={page()?.counts.origins}
+									fileScope={page()?.fileScope}
 									searching={searching()}
-									disabled={loading()}
-									onChange={setWhere}
-								/>
-								<PathFilter
-									where={where()}
-									disabled={loading()}
-									onChange={setWhere}
-								/>
-								<ChangedFilesFilter
-									where={where()}
-									summary={page()?.fileScope}
 									disabled={loading()}
 									onChange={setWhere}
 								/>

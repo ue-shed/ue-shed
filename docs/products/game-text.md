@@ -44,18 +44,18 @@ Workbench searches source text as you type. **Editable**, **Read only**, and **N
 filter the lines; **No translator notes** requires blank notes, after trimming, at every saved
 location.
 
-Two filters say where text comes from:
+**Where…** narrows the list by where text comes from. It is one compact control; while a filter
+is on it reads like "Where: C++ · Source/ · 12 files". It holds three filters:
 
-- **Origin chips** (String table, Data table, Asset, C++, Other source) keep lines from any
-  selected origin. A String Table reference inside an asset counts as the asset. Gathered-only
-  lines take their origin from Unreal's manifest path: C++ source files, `/Game` assets, or other
-  gathered sources such as config files. Each chip's count ignores the origin chips themselves,
-  and a chip at zero is hidden unless it is selected.
-- **Path…** keeps lines whose object path, package file or gathered source path starts with the
-  given prefix, such as `/Game/UI/`, `Content/UI/` or `Source/`. The match ignores case and slash
-  direction.
-
-- **Changed files…** takes a pasted list, one path per line, from any version control tool
+- **Origins** (String table, Data table, Asset, C++, Other source) keep lines from any selected
+  origin. A String Table reference inside an asset counts as the asset. Gathered-only lines take
+  their origin from Unreal's manifest path: C++ source files, `/Game` assets, or other gathered
+  sources such as config files. Each origin's count ignores the origin filter itself, and an origin
+  at zero is hidden unless it is selected.
+- **Path starts with** keeps lines whose object path, package file or gathered source path starts
+  with the given prefix, such as `/Game/UI/`, `Content/UI/` or `Source/`. The match ignores case
+  and slash direction.
+- **Changed files** takes a pasted list, one path per line, from any version control tool
   (`p4 opened`, `git diff --name-only`, and so on) and keeps the text those files hold.
     - Saved packages match by asset, whatever the extension (`.uasset`, `.umap`, `.uexp`); an
       Unreal package path such as `/Game/UI/WBP_Menu` names the same asset.

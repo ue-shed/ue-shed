@@ -1067,6 +1067,11 @@ describe("Game Text key changes", () => {
 		expect(within(panel).getByText("Willkommen zurück")).toBeDefined();
 		await user.click(within(panel).getByRole("button", { name: "Check changes" }));
 		await within(panel).findByText("Not gathered: gather the target first");
+		// Discarding the staged edits brings the carry action back.
+		await user.click(within(panel).getByRole("button", { name: "Discard all" }));
+		expect(
+			await within(change).findByRole("button", { name: "Carry translations" })
+		).toBeDefined();
 		expect(requests[0]?.edits).toEqual([
 			{
 				culture: "de",

@@ -125,7 +125,7 @@ $env:UE_SHED_UNREAL_ENGINE_ROOT = "C:\Engines\UE_5.8"
 pnpm test:unreal-plugins out/plugins-5.8-evidence
 ```
 
-This builds all ten plugins and runs Authoring canonical JSON, world preparation, camera authoring,
+This builds all eleven plugins and runs Authoring canonical JSON, world preparation, camera authoring,
 rendering and restoration,
 map minor-version compatibility, screenshot ownership, and Niagara camera automation with real
 rendering in a disposable stock template project. Repeat for Unreal 5.7. The gate retains editor

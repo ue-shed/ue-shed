@@ -1,3 +1,4 @@
+import { readChangedFiles } from "./changed-files.js";
 import { textWhere } from "../commands/localization-flags.js";
 import {
 	LocalizationEvidence,
@@ -115,8 +116,8 @@ export const loadLocalizationContext = Effect.fn("Cli.localization.load_context"
 	return { corpus, join, evidence, selection, review };
 });
 
-function whereField(command: Parameters<typeof textWhere>[0]) {
-	const where = textWhere(command);
+function whereField(command: Parameters<typeof textWhere>[0], files?: readonly string[]) {
+	const where = textWhere(command, files);
 	return where === undefined ? undefined : { where };
 }
 
@@ -124,12 +125,16 @@ export const loadLocalizationStatus = Effect.fn("Cli.localization.load_status")(
 	command: LocalizationStatusCommand | LocalizationSearchCommand
 ) {
 	const { corpus, join, evidence, selection } = yield* loadLocalizationContext(command);
+	const files =
+		command.changedFiles === undefined
+			? undefined
+			: yield* readChangedFiles(command.changedFiles, command.projectRoot);
 	const page = textCorpusQuery(corpus, undefined, join).search({
 		capability: "all",
 		pageSize: command.limit ?? 50,
 		query: command._tag === "TextSearch" ? command.query : "",
 		localization: selection,
-		...whereField(command)
+		...whereField(command, files)
 	});
 	yield* Metric.update(Metric.counter("cli.localization.status.lines"), page.total);
 	return localizationStatusReport(corpus, evidence, page);

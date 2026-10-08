@@ -1,3 +1,4 @@
+import { readChangedFiles } from "./workflows/changed-files.js";
 import { textWhere } from "./commands/localization-flags.js";
 import { readFile, stat } from "node:fs/promises";
 import { EnhancedInputService, EnhancedInputServiceLive } from "@ue-shed/enhanced-input";
@@ -166,13 +167,19 @@ export const runTextSearch = Effect.fn("Cli.workflow.text_search")((command: Tex
 				Effect.provide(TextCorpusServiceLive),
 				Effect.provide(readerLayer(command.reader))
 			);
+			const where = textWhere(
+				command,
+				command.changedFiles === undefined
+					? undefined
+					: yield* readChangedFiles(command.changedFiles, command.projectRoot)
+			);
 			return yield* printJson({
 				schemaVersion: corpus.schemaVersion,
 				status: corpus.status,
 				query: command.query,
 				coverage: corpus.coverage,
 				matches: searchTextCorpus(corpus, command.query).filter((unit) =>
-					unitMatchesTextWhere(unit, textWhere(command))
+					unitMatchesTextWhere(unit, where)
 				),
 				diagnostics: corpus.diagnostics
 			});

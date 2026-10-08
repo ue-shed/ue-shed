@@ -59,7 +59,7 @@ import {
 } from "./game-text-operations.js";
 import { identityLabel, locationDetail, sourceText } from "./game-text-view.js";
 import { styles } from "./game-text-styles.js";
-import { OriginChips, PathFilter } from "./game-text-where.js";
+import { ChangedFilesFilter, OriginChips, PathFilter, textWhere } from "./game-text-where.js";
 
 export { CopyButton } from "./game-text-copy-button.js";
 export type { GameTextPreferences } from "./game-text-preferences.js";
@@ -421,7 +421,8 @@ export function GameTextRoute(props: {
 				capability: capability(),
 				lens: lens(),
 				withoutNotes: withoutNotes(),
-				where: where(),
+				// A changed-file list lasts for the session; only origin and path filters are saved.
+				where: textWhere(where()?.kinds, where()?.pathPrefix),
 				mode: mode(),
 				qualityFilter: qualityFilter(),
 				selectedId: selectedId(),
@@ -937,6 +938,12 @@ export function GameTextRoute(props: {
 								/>
 								<PathFilter
 									where={where()}
+									disabled={loading()}
+									onChange={setWhere}
+								/>
+								<ChangedFilesFilter
+									where={where()}
+									summary={page()?.fileScope}
 									disabled={loading()}
 									onChange={setWhere}
 								/>

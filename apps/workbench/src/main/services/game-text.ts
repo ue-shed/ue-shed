@@ -6,7 +6,8 @@ import {
 	gameTextCsv,
 	gameTextQualityCsv,
 	createStarterTextRules,
-	GAME_TEXT_RULES_RELATIVE_PATH
+	GAME_TEXT_RULES_RELATIVE_PATH,
+	projectRelativeTextFiles
 } from "@ue-shed/game-text";
 import { userInfo } from "node:os";
 import { resolve } from "node:path";
@@ -465,17 +466,42 @@ export const WorkbenchGameTextLive = Layer.effect(
 			}
 		);
 
+		// A pasted changed-file list may hold absolute paths; those under the project become relative.
+		const projectRelativeRequest = (request: TextCorpusSearchRequest) =>
+			Ref.get(modelSelection).pipe(
+				Effect.map((owner) =>
+					owner === undefined || request.where?.files === undefined
+						? request
+						: {
+								...request,
+								where: {
+									...request.where,
+									files: projectRelativeTextFiles(
+										request.where.files,
+										owner.projectRoot
+									)
+								}
+							}
+				)
+			);
 		const search = Effect.fn("Workbench.WorkbenchGameText.search")(
-			(request: TextCorpusSearchRequest) =>
-				request.localization
-					? localization.search(request)
-					: currentModel(queryModel).pipe(
-							Effect.map((model) =>
-								model === undefined
-									? { status: "not_ready" as const }
-									: { page: model.search(request), status: "ready" as const }
-							)
-						)
+			(input: TextCorpusSearchRequest) =>
+				projectRelativeRequest(input).pipe(
+					Effect.flatMap((request) =>
+						request.localization
+							? localization.search(request)
+							: currentModel(queryModel).pipe(
+									Effect.map((model) =>
+										model === undefined
+											? { status: "not_ready" as const }
+											: {
+													page: model.search(request),
+													status: "ready" as const
+												}
+									)
+								)
+					)
+				)
 		);
 
 		const focus = Effect.fn("Workbench.WorkbenchGameText.focus")(

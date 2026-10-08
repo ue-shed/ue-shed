@@ -11,7 +11,13 @@ import {
 } from "./localization.test-support.js";
 import { textCorpusQuery } from "./query.js";
 import { TextUnit, type TextOriginKind } from "./schema.js";
-import { TEXT_ORIGIN_KINDS, manifestPathOrigin, unitMatchesTextWhere } from "./text-origin.js";
+import {
+	TEXT_ORIGIN_KINDS,
+	manifestPathOrigin,
+	projectRelativeTextFiles,
+	textFileKey,
+	unitMatchesTextWhere
+} from "./text-origin.js";
 
 function located(key: string, packageFile: string, location: Record<string, string>): TextUnit {
 	return Schema.decodeUnknownSync(TextUnit)({
@@ -132,5 +138,85 @@ describe("text origins", () => {
 		}
 		const source = query.search({ ...request, where: { pathPrefix: "source/game/" } });
 		expect(source.localization?.lines.map((line) => line.identity?.key)).toEqual(["Code"]);
+	});
+
+	it("compares changed files by package stem or source file, in any spelling", () => {
+		expect(textFileKey("Content\\UI\\WBP_Menu.uexp")).toBe("content/ui/wbp_menu");
+		expect(textFileKey("/Game/UI/WBP_Menu")).toBe("content/ui/wbp_menu");
+		expect(textFileKey("/Game/UI/WBP_Menu.WBP_Menu:Title")).toBe("content/ui/wbp_menu");
+		expect(textFileKey('"Content/Maps/L_Main.umap"')).toBe("content/maps/l_main");
+		expect(textFileKey("Source/Game/Private/Menu.cpp(12)")).toBe(
+			"source/game/private/menu.cpp"
+		);
+		expect(textFileKey("Config/DefaultGame.ini:3")).toBe("config/defaultgame.ini");
+		expect(
+			projectRelativeTextFiles(
+				[
+					"D:\\Proj\\Content\\UI\\A.uasset",
+					"# a comment",
+					"  ",
+					"E:\\Other\\B.uasset",
+					"Source/X.cpp"
+				],
+				"d:/proj"
+			)
+		).toEqual(["content/ui/a.uasset", "E:\\Other\\B.uasset", "Source/X.cpp"]);
+	});
+
+	it("keeps lines from changed files and reports how the list relates to the scan", () => {
+		const scanned = {
+			...corpus(units),
+			packageCoverage: [
+				{ packageFile: "Content/Text/Table.uasset", status: "complete" as const },
+				{ packageFile: "Content/UI/DT_Menu.uasset", status: "complete" as const },
+				{ packageFile: "Content/Characters/BP_Hero.uasset", status: "complete" as const }
+			]
+		};
+		const query = textCorpusQuery(scanned);
+		const page = query.search({
+			query: "",
+			capability: "all",
+			pageSize: 50,
+			where: {
+				files: [
+					"Content/UI/DT_Menu.uexp",
+					"/Game/Missing/Thing",
+					"E:/elsewhere/x.uasset",
+					"Source/Readme.md"
+				]
+			}
+		});
+		expect(page.units.map((item) => item.id)).toEqual([dataTable.id]);
+		expect(page.fileScope).toEqual({ files: 4, textFiles: 1, outside: 1, notScanned: 1 });
+		expect(page.counts.origins.data_table).toBe(1);
+		expect(page.counts.origins.asset).toBe(0);
+		expect(
+			query.search({ query: "", capability: "all", pageSize: 50 }).fileScope
+		).toBeUndefined();
+		expect(unitMatchesTextWhere(dataTable, { files: ["/Game/UI/DT_Menu"] })).toBe(true);
+		expect(unitMatchesTextWhere(asset, { files: ["/Game/UI/DT_Menu"] })).toBe(false);
+	});
+
+	it("finds gathered C++ lines from a changed source file", () => {
+		const text = corpus([unit("K")]);
+		const joined = joinLocalizationTarget(
+			text,
+			evidence(
+				[
+					manifestEntry("K"),
+					manifestEntry("Code", "From code", "Source/Game/Private/Menu.cpp(12)")
+				],
+				[archiveEntry("K"), archiveEntry("Code", "From code")]
+			)
+		);
+		const page = textCorpusQuery(text, undefined, joined).search({
+			query: "",
+			capability: "all",
+			pageSize: 50,
+			localization: { target: target.name },
+			where: { files: ["Source\\Game\\Private\\Menu.cpp"] }
+		});
+		expect(page.localization?.lines.map((line) => line.identity?.key)).toEqual(["Code"]);
+		expect(page.fileScope).toEqual({ files: 1, textFiles: 1, outside: 0, notScanned: 0 });
 	});
 });

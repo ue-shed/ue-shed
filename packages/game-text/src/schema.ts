@@ -144,6 +144,9 @@ const TextQueryPageSize = Schema.Int.pipe(
 	Schema.check(Schema.isBetween({ minimum: 1, maximum: MAX_TEXT_QUERY_PAGE_SIZE }))
 );
 
+/** A changed-file list is bounded: larger changes should be split or filtered first. */
+export const MAX_TEXT_SCOPE_FILES = 5000;
+
 export const TextCapabilityFilter = Schema.Literals(["all", "source_editable", "read_only"]);
 export type TextCapabilityFilter = Schema.Schema.Type<typeof TextCapabilityFilter>;
 
@@ -160,16 +163,40 @@ export const TextOriginKind = Schema.Literals([
 ]);
 export type TextOriginKind = Schema.Schema.Type<typeof TextOriginKind>;
 
-/** Location filters: any of the given origin kinds, and a path prefix. */
+/**
+ * Location filters: any of the given origin kinds, a path prefix, and a list of changed files
+ * (project-relative package or source files, or `/Game` package paths).
+ */
 export const TextWhere = Schema.Struct({
 	kinds: Schema.optionalKey(
 		Schema.Array(TextOriginKind).check(Schema.isMinLength(1), Schema.isMaxLength(5))
 	),
 	pathPrefix: Schema.optionalKey(
 		Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(512))
+	),
+	files: Schema.optionalKey(
+		Schema.Array(Schema.String.check(Schema.isMaxLength(1024))).check(
+			Schema.isMinLength(1),
+			Schema.isMaxLength(MAX_TEXT_SCOPE_FILES)
+		)
 	)
 });
 export type TextWhere = Schema.Schema.Type<typeof TextWhere>;
+
+const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
+
+/**
+ * How a changed-file list relates to the project: how many files it names, how many contain text
+ * in the results, how many lie outside the project, and how many saved packages were not scanned
+ * (unknown when the corpus predates package coverage).
+ */
+export const TextFileScopeSummary = Schema.Struct({
+	files: Count,
+	textFiles: Count,
+	outside: Count,
+	notScanned: Schema.optionalKey(Count)
+});
+export type TextFileScopeSummary = Schema.Schema.Type<typeof TextFileScopeSummary>;
 
 export const TextReviewLens = Schema.Literals([
 	"all",
@@ -291,6 +318,7 @@ export type TextCorpusSearchRequest = Schema.Schema.Type<typeof TextCorpusSearch
 
 export const TextCorpusSearchPage = Schema.Struct({
 	localization: Schema.optionalKey(LocalizationQueryPage),
+	fileScope: Schema.optionalKey(TextFileScopeSummary),
 	counts: TextCorpusSearchCounts,
 	nextCursor: Schema.optional(TextUnitId),
 	total: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),

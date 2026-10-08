@@ -15,12 +15,18 @@ import type {
 import { hasSearchableSource, searchableSourceText } from "./search.js";
 import {
 	emptyTextOriginCounts,
+	manifestFileKeys,
 	manifestOrigins,
+	matchesTextFiles,
 	matchesTextKinds,
 	matchesTextPathPrefix,
 	normalizeTextPath,
+	textFileScope,
+	textFileScopeSummary,
+	unitFileKeys,
 	unitOrigins,
-	unitPaths
+	unitPaths,
+	type TextFileScope
 } from "./text-origin.js";
 import type {
 	LocalizationJoin,
@@ -126,6 +132,7 @@ export function textCorpusQuery(
 		withoutNotes: unit.occurrences.every((occurrence) => occurrence.devNotes.trim() === ""),
 		origins: unitOrigins(unit),
 		paths: unitPaths(unit),
+		fileKeys: unitFileKeys(unit),
 		unit
 	}));
 	const byId = new Map(indexed.map((entry) => [entry.unit.id, entry]));
@@ -160,10 +167,12 @@ export function textCorpusQuery(
 			origins: emptyTextOriginCounts()
 		} satisfies TextCorpusSearchCounts;
 		const matched: typeof indexed = [];
+		const files = textFileScope(request.where?.files);
 		for (const entry of indexed) {
 			const { presentation, searchable, unit, hasEditable, hasReadOnly } = entry;
 			if (!terms.every((term) => searchable.includes(term))) continue;
 			if (!matchesTextPathPrefix(entry.paths, request.where?.pathPrefix)) continue;
+			if (!matchesTextFiles(entry.fileKeys, files)) continue;
 			const inKinds = matchesTextKinds(entry.origins, request.where?.kinds);
 			const hasCapability =
 				request.capability === "all"
@@ -202,6 +211,7 @@ export function textCorpusQuery(
 		const eligible = new Set(
 			matching({ ...request, query: "" }).matched.map(({ unit }) => unit.id)
 		);
+		const files = textFileScope(request.where?.files);
 		return localization.lines.filter((line) => {
 			if (line.source.trim() === "") return false;
 			if (
@@ -217,20 +227,36 @@ export function textCorpusQuery(
 						line.manifest.some(
 							(entry) => localizationManifestNotes(entry).length > 0
 						)) ||
-					!evidenceMatchesWhere(line, request.where))
+					!evidenceMatchesWhere(line, request.where, files))
 			)
 				return false;
 			return matchesLocalizationLine(line, request);
 		});
 	};
 	// Evidence-only lines have no saved occurrence; their gathered manifest paths say where they live.
-	const evidenceMatchesWhere = (line: LocalizationLine, where: TextWhere | undefined) => {
+	const evidenceMatchesWhere = (
+		line: LocalizationLine,
+		where: TextWhere | undefined,
+		files: TextFileScope | undefined
+	) => {
 		if (where === undefined) return true;
 		const paths = line.manifest.map((entry) => entry.path);
 		return (
 			matchesTextKinds(manifestOrigins(paths), where.kinds) &&
-			matchesTextPathPrefix(paths.map(normalizeTextPath), where.pathPrefix)
+			matchesTextPathPrefix(paths.map(normalizeTextPath), where.pathPrefix) &&
+			matchesTextFiles(manifestFileKeys(paths), files)
 		);
+	};
+	const lineFileKeys = (line: LocalizationLine) =>
+		line.origin.kind === "evidence"
+			? manifestFileKeys(line.manifest.map((entry) => entry.path))
+			: line.origin.unitIds.flatMap((id) => byId.get(id)?.fileKeys ?? []);
+	const scannedPackages = corpus.packageCoverage?.map((coverage) => coverage.packageFile);
+	const fileScopeField = (where: TextWhere | undefined, keys: () => Iterable<string>) => {
+		const scope = textFileScope(where?.files);
+		return scope === undefined
+			? undefined
+			: { fileScope: textFileScopeSummary(scope, keys(), scannedPackages) };
 	};
 	const lineOrigins = (line: LocalizationLine) =>
 		line.origin.kind === "evidence"
@@ -341,6 +367,7 @@ export function textCorpusQuery(
 					counts,
 					total: matched.length,
 					localization: page,
+					...fileScopeField(request.where, () => matched.flatMap(lineFileKeys)),
 					units: page.lines.flatMap((line) => {
 						if (line.origin.kind === "evidence") return [];
 						const entry = line.origin.unitIds
@@ -365,6 +392,7 @@ export function textCorpusQuery(
 				counts,
 				total: matched.length,
 				units: page.map(({ presentation }) => presentation),
+				...fileScopeField(request.where, () => matched.flatMap(({ fileKeys }) => fileKeys)),
 				...(final !== undefined && afterCursor + page.length < matched.length
 					? { nextCursor: final }
 					: undefined)

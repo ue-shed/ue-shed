@@ -421,6 +421,38 @@ describe("Game Text writing workspace", () => {
 		expect(screen.getByRole("button", { name: "Path…" })).toBeDefined();
 	});
 
+	it("shows the text a pasted changed-file list touches, for this session only", async () => {
+		const saved: GameTextPreferences[] = [];
+		const user = userEvent.setup();
+		render(() => (
+			<EffectRuntimeProvider runtime={runtime}>
+				<GameTextRoute
+					client={makeClient()}
+					onPreferencesChange={(preferences) => saved.push(preferences)}
+				/>
+			</EffectRuntimeProvider>
+		));
+		await screen.findByText("2 matches");
+		await user.click(screen.getByRole("button", { name: "Changed files…" }));
+		await user.type(
+			screen.getByRole("textbox", { name: "Changed files, one path per line" }),
+			"# from p4 opened{Enter}Content\\Text\\DT_Menu.uexp{Enter}Source/Unrelated.cpp"
+		);
+		await user.click(screen.getByRole("button", { name: "Show their text" }));
+		await screen.findByText("1 match");
+		const results = within(screen.getByRole("region", { name: "Results" }));
+		expect(results.getByText("Quit game?")).toBeDefined();
+		const trigger = screen.getByRole("button", { name: "Changed files 2" });
+		expect(trigger.getAttribute("aria-pressed")).toBe("true");
+		await waitFor(() => expect(trigger.getAttribute("title")).toBe("2 files · 1 with text"));
+		expect(saved.at(-1)?.where).toBeUndefined();
+
+		await user.click(trigger);
+		await user.click(screen.getByRole("button", { name: "Clear" }));
+		await screen.findByText("2 matches");
+		expect(screen.getByRole("button", { name: "Changed files…" })).toBeDefined();
+	});
+
 	it("restores a saved origin filter", async () => {
 		mount(makeClient(), {
 			query: "",

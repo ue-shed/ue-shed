@@ -11,7 +11,7 @@
 
 ## Status
 
-- **State**: IN PROGRESS. Phase 1 is done; Phase 2 is next.
+- **State**: IN PROGRESS. Phases 1–2 are done; Phase 3 is next.
 - **Priority**: P1
 - **Effort**: L
 - **Risk**: MEDIUM. Phase 4 carries translations to new keys through the existing PO writer and
@@ -100,6 +100,20 @@ chips.
 
 **Gate**: a changed-file list over the fixture reports the right lines and states, including C++
 and config sources and a not-scanned file.
+
+**Evidence (2026-10-08)**: Phase 2 is done.
+
+- `TextWhere.files` (at most 5,000) and `fileScope` on the search page. Files compare by a key:
+  saved packages by extensionless stem, so `.uasset`, `.umap`, `.uexp` and `/Game` package paths
+  name the same asset; gathered sources by file, without the `(line)` or `:line` suffix.
+- `projectRelativeTextFiles` turns absolute paths under the project into relative ones; absolute
+  paths elsewhere count as outside. Saved packages missing from package coverage count as not
+  scanned.
+- CLI `--files <list-file>` reads a bounded UTF-8 list. Workbench main converts pasted absolute
+  paths with the project root; the "Changed files…" popover takes a pasted list for the session.
+- Verified: file-key, conversion and scope tests for saved units and gathered C++ lines; the CLI
+  integration test with a real list file over the fixture (absolute content path, C++ source and
+  an outside path); route component tests; precommit; Node 24 and Node 26 sweeps.
 
 ## Phase 3 — Perforce bridge
 

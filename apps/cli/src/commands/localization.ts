@@ -183,14 +183,25 @@ export const localizationCommand = Command.make("loc").pipe(
 				review: Flag.choice("review", LocalizationReviewLens.literals).pipe(Flag.optional),
 				...localizationFlags()
 			},
-			({ projectRoot, target, culture, state, review, limit, reader, kinds, path }) => {
+			({
+				projectRoot,
+				target,
+				culture,
+				state,
+				review,
+				limit,
+				reader,
+				kinds,
+				path,
+				files
+			}) => {
 				return runLocalizationStatus({
 					_tag: "LocalizationStatus",
 					projectRoot,
 					target,
 					limit,
 					...optionalLocalizationFlags(culture, state),
-					...optionalWhereFlags(kinds, path),
+					...optionalWhereFlags(kinds, path, files),
 					...(Option.isSome(review) ? { review: review.value } : undefined),
 					...(Option.isSome(reader) ? { reader: reader.value } : undefined)
 				});

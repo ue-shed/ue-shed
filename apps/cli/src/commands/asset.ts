@@ -131,7 +131,8 @@ const textSearchCommand = Command.make(
 		limit,
 		searchTranslations,
 		kinds,
-		path
+		path,
+		files
 	}) => {
 		const value = query.join(" ").trim();
 		return runTextSearch({
@@ -140,7 +141,7 @@ const textSearchCommand = Command.make(
 			query: value,
 			limit,
 			...optionalLocalizationFlags(culture, state),
-			...optionalWhereFlags(kinds, path),
+			...optionalWhereFlags(kinds, path, files),
 			...(Option.isSome(target) ? { target: target.value } : undefined),
 			...(Option.isSome(searchTranslations)
 				? { searchTranslations: searchTranslations.value }

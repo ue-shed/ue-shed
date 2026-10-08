@@ -55,7 +55,17 @@ Two filters say where text comes from:
   given prefix, such as `/Game/UI/`, `Content/UI/` or `Source/`. The match ignores case and slash
   direction.
 
-Both filters are saved with the project's view and carried by presets and exports. Review chips
+- **Changed files…** takes a pasted list, one path per line, from any version control tool
+  (`p4 opened`, `git diff --name-only`, and so on) and keeps the text those files hold.
+    - Saved packages match by asset, whatever the extension (`.uasset`, `.umap`, `.uexp`); an
+      Unreal package path such as `/Game/UI/WBP_Menu` names the same asset.
+    - Gathered-only C++ and config lines match their source file.
+    - Absolute paths inside the project work; blank lines and `#` comments are ignored.
+    - The summary reads "12 files · 5 with text · 2 not scanned · 1 outside the project". With the
+      localization states, it answers whether a change touches text and needs a gather.
+
+The origin and path filters are saved with the project's view; a changed-file list lasts for the
+session. All three are carried by presets and exports. Review chips
 highlight reused lines, duplicate wording, long text and localization problems. The detail pane keeps keys, translator notes, exact Unreal names and **Where it appears**
 together. **Show in Unreal** reports success only when the editor confirms asset navigation.
 
@@ -331,8 +341,10 @@ reports schema-versioned per-culture counts of lines and source words, coverage 
 file provenance and diagnostics, and a bounded page of matching lines. Localization-aware
 `ue-shed text search` accepts the same selection; translation search additionally requires
 `--search-translations` and a culture. `--kind` (`string_table`, `data_table`, `asset`, `cpp`,
-`other_source`, repeatable) and `--path` filter both commands, including `text search` without a
-target; the page's `counts.origins` excludes the origin filter itself. Counts intersect the same filters as the returned lines
+`other_source`, repeatable), `--path` and `--files <list-file>` filter both commands, including
+`text search` without a target. The page's `counts.origins` excludes the origin filter itself, and
+`fileScope` summarizes a file list (files, with text, outside the project, not scanned). A list
+file holds one path per line, at most 5,000. Counts intersect the same filters as the returned lines
 before pagination, including a dedicated `not_synced` count. Gathered-only rows use distinct
 evidence IDs, and focus exposes every culture, PO context and manifest source locations.
 

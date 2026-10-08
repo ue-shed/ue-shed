@@ -1,4 +1,7 @@
 import { it } from "@effect/vitest";
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { Effect, Layer, Ref, Schema } from "effect";
 import { describe, expect } from "vitest";
 import { LocalizationStatusReport } from "@ue-shed/game-text/browser";
@@ -104,6 +107,40 @@ describe.skipIf(!executable)("localization CLI with the real reader", () => {
 			);
 			const source = yield* status("--path", "source\\");
 			expect(source.page.total).toBe(cpp.page.total);
+
+			// A changed-file list as any version control tool would print it.
+			const list = join(
+				yield* Effect.promise(() => mkdtemp(join(tmpdir(), "ue-shed-files-"))),
+				"changed.txt"
+			);
+			const cppFile = cpp.page.localization?.lines[0]?.manifestLocations[0]?.replace(
+				/\(\d+\)$/u,
+				""
+			);
+			if (cppFile === undefined) throw new Error("The fixture has no gathered C++ line.");
+			yield* Effect.promise(() =>
+				writeFile(
+					list,
+					[
+						"# changed in this change",
+						join(
+							fixture.root,
+							"Content",
+							"Fixture",
+							"Localization",
+							"DT_Localization.uasset"
+						),
+						cppFile,
+						join(tmpdir(), "Elsewhere", "Other.uasset")
+					].join("\n")
+				)
+			);
+			const changed = yield* status("--files", list);
+			expect(changed.page.fileScope).toMatchObject({ files: 3, textFiles: 2, outside: 1 });
+			expect(changed.page.total).toBeGreaterThan(cpp.page.total);
+			expect(changed.page.counts.origins.cpp).toBe(cpp.page.total);
+			expect(changed.page.counts.origins.data_table).toBeGreaterThan(0);
+			expect(changed.page.counts.origins.string_table).toBe(0);
 		})
 	);
 });

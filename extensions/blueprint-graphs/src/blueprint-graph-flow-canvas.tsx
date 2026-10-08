@@ -220,8 +220,22 @@ export function BlueprintGraphFlowCanvas(props: {
 		}
 	);
 
+	// Solid Flow handles Enter on a node only as a selection change, so pressing it on the node
+	// that is already selected would do nothing. Each node is an inspect button: always inspect.
+	const inspectFromKeyboard = (event: KeyboardEvent) => {
+		if (event.key !== "Enter" && event.key !== " ") return;
+		if (!(event.target instanceof HTMLElement)) return;
+		if (event.target.getAttribute("aria-roledescription") !== "node") return;
+		const id = event.target.getAttribute("data-id");
+		if (id !== null) props.onSelect(id);
+	};
+
 	return (
-		<div aria-label="Graph viewport" {...stylex.attrs(styles.viewport)}>
+		<div
+			aria-label="Graph viewport"
+			onKeyDown={inspectFromKeyboard}
+			{...stylex.attrs(styles.viewport)}
+		>
 			<SolidFlow
 				nodes={nodes}
 				edges={edges}

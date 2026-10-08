@@ -277,6 +277,31 @@ describe("BlueprintGraphViewer", () => {
 		expect(within(inspector).getByText("Whether the setting is enabled.")).toBeTruthy();
 	});
 
+	it("inspects the already-selected node again from the keyboard", async () => {
+		render(() => (
+			<EffectRuntimeProvider runtime={runtime}>
+				<BlueprintGraphViewer
+					initialRead={Effect.succeed(ready())}
+					opener={() => undefined}
+				/>
+			</EffectRuntimeProvider>
+		));
+		const selected = await screen.findByRole("button", { name: "Inspect On Clicked" });
+		const user = userEvent.setup();
+		await user.click(screen.getByRole("tab", { name: "Blueprint" }));
+		expect(screen.getByRole("tab", { name: "Blueprint" }).getAttribute("aria-selected")).toBe(
+			"true"
+		);
+		selected.focus();
+		await user.keyboard("{Enter}");
+		await waitFor(() =>
+			expect(screen.getByRole("tab", { name: "Node" }).getAttribute("aria-selected")).toBe(
+				"true"
+			)
+		);
+		expect(screen.getByRole("heading", { name: "On Clicked" })).toBeTruthy();
+	});
+
 	it("opens a canned read through a custom opener without a project index", async () => {
 		const opener = vi.fn(
 			(controls: import("./blueprint-graph-viewer.js").BlueprintGraphOpenerControls) => (

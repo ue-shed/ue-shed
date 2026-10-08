@@ -14,6 +14,25 @@ import type { GameTextClientApi } from "./game-text-client.js";
 import { GameTextResultRows } from "./game-text-result-rows.js";
 
 const SEVERE = new Set(["key_changed", "conflicting_source"]);
+
+/** One row of a loaded page, as the list selects it. */
+export interface LoadedRow {
+	readonly unit: TextUnitId | undefined;
+	readonly line: LocalizationLineId | undefined;
+}
+
+/** A page's rows in display order: localization lines with their first listed unit, or units. */
+function loadedRows(page: TextCorpusSearchPage): readonly LoadedRow[] {
+	if (!page.localization) return page.units.map((unit) => ({ unit: unit.id, line: undefined }));
+	const units = new Set(page.units.map((unit) => unit.id));
+	return page.localization.lines.map((line) => ({
+		line: line.id,
+		unit:
+			line.origin.kind === "corpus"
+				? line.origin.unitIds.find((id) => units.has(id))
+				: undefined
+	}));
+}
 const WAITING = new Set(["not_gathered", "changed_since_gather", "translation"]);
 
 /**
@@ -32,6 +51,8 @@ export function GroupedResults(props: {
 	readonly selectedId: TextUnitId | undefined;
 	readonly selectedLocalizationId: LocalizationLineId | undefined;
 	readonly onSelect: (unit: TextUnitId | undefined, line: LocalizationLineId | undefined) => void;
+	/** A group's rows, in order, each time it loads a page; the line page steps through them. */
+	readonly onLoaded?: (group: string, rows: readonly LoadedRow[]) => void;
 }) {
 	// When every line fits on one page all groups start open; otherwise the worst one does. What
 	// you open or close is kept while the groups change.
@@ -60,6 +81,9 @@ export function GroupedResults(props: {
 						selectedId={props.selectedId}
 						selectedLocalizationId={props.selectedLocalizationId}
 						onSelect={props.onSelect}
+						{...(props.onLoaded === undefined
+							? undefined
+							: { onLoaded: props.onLoaded })}
 					/>
 				)}
 			</For>
@@ -85,6 +109,7 @@ function GroupSection(props: {
 	readonly selectedId: TextUnitId | undefined;
 	readonly selectedLocalizationId: LocalizationLineId | undefined;
 	readonly onSelect: (unit: TextUnitId | undefined, line: LocalizationLineId | undefined) => void;
+	readonly onLoaded?: (group: string, rows: readonly LoadedRow[]) => void;
 }) {
 	const action = createEffectAction();
 	const [page, setPage] = createSignal<TextCorpusSearchPage>();
@@ -106,7 +131,8 @@ function GroupSection(props: {
 			onSuccess: (result) => {
 				setLoading(false);
 				if (result.status !== "ready") return;
-				setPage((previous) =>
+				const previous = untrack(page);
+				const merged =
 					more && previous
 						? {
 								...result.page,
@@ -123,8 +149,9 @@ function GroupSection(props: {
 										}
 									: undefined)
 							}
-						: result.page
-				);
+						: result.page;
+				setPage(merged);
+				props.onLoaded?.(key, loadedRows(merged));
 			},
 			onFailure: () => setLoading(false)
 		});
@@ -141,6 +168,7 @@ function GroupSection(props: {
 			else {
 				action.cancel();
 				setPage(undefined);
+				props.onLoaded?.(key, []);
 			}
 		}
 	);
@@ -154,7 +182,11 @@ function GroupSection(props: {
 			: props.group.label;
 	const listed = () => page()?.localization?.lines.length ?? page()?.units.length ?? 0;
 	return (
-		<section aria-label={label()} {...stylex.attrs(styles.section)}>
+		<section
+			aria-label={label()}
+			data-group={props.group.key}
+			{...stylex.attrs(styles.section)}
+		>
 			<button
 				type="button"
 				aria-expanded={props.open ? "true" : "false"}

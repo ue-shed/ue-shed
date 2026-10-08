@@ -52,7 +52,7 @@ import {
 	type ExtraField,
 	type FilterCounts
 } from "./game-text-filter-menu.js";
-import { GroupedResults } from "./game-text-grouped-results.js";
+import { GroupedResults, type LoadedRow } from "./game-text-grouped-results.js";
 import { reviewLensLabel } from "./game-text-review.js";
 import { createGameTextLocalizationState } from "./game-text-localization-state.js";
 import {
@@ -263,82 +263,108 @@ export function GameTextRoute(props: {
 		const value = group();
 		return value === "none" ? undefined : { group: value };
 	};
-	// A picked line opens its page. Its place and neighbours come from the list's rows, in the
-	// order they show, so the page follows grouping, open groups and loaded pages.
+	// A picked line opens its page. Its place and neighbours come from the rows each group reports,
+	// or the flat page's rows, so the page follows grouping, open groups and loaded pages.
 	let resultsSection: HTMLElement | undefined;
 	const lineOpen = () => selectedId() !== undefined || localization.selectedId() !== undefined;
-	const lineRows = () =>
-		Array.from(resultsSection?.querySelectorAll<HTMLButtonElement>("button[data-row]") ?? []);
-	const lineIndex = (rows: readonly HTMLButtonElement[]) => {
+	const [groupRows, setGroupRows] = createSignal<ReadonlyMap<string, readonly LoadedRow[]>>(
+		new Map()
+	);
+	const isOpenLine = (row: LoadedRow) => {
 		const line = localization.selectedId();
-		const unit = selectedId();
-		return rows.findIndex((row) =>
-			line !== undefined ? row.dataset.line === line : row.dataset.unit === unit
+		return line !== undefined ? row.line === line : row.unit === selectedId();
+	};
+	const flatRows = (): readonly LoadedRow[] => {
+		const current = page();
+		if (!current) return [];
+		if (!current.localization)
+			return current.units.map((unit) => ({ unit: unit.id, line: undefined }));
+		const units = new Set(current.units.map((unit) => unit.id));
+		return current.localization.lines.map((line) => ({
+			line: line.id,
+			unit:
+				line.origin.kind === "corpus"
+					? line.origin.unitIds.find((id) => units.has(id))
+					: undefined
+		}));
+	};
+	// Where the open line is: its group (if grouped) and its place in that group's loaded rows.
+	const openLineAt = () => {
+		const groups = page()?.groups?.entries;
+		if (!groups) {
+			const rows = flatRows();
+			const index = rows.findIndex(isOpenLine);
+			return index < 0 ? undefined : { group: -1, rows, index, before: 0 };
+		}
+		let before = 0;
+		for (const [group, entry] of groups.entries()) {
+			const rows = groupRows().get(entry.key) ?? [];
+			const index = rows.findIndex(isOpenLine);
+			if (index >= 0) return { group, rows, index, before };
+			before += entry.count;
+		}
+		return undefined;
+	};
+	const linePosition = () => {
+		const total = page()?.total;
+		const at = openLineAt();
+		return total === undefined || at === undefined
+			? undefined
+			: { index: at.before + at.index, total };
+	};
+	// A step that has to open a group or load its next page finishes when that group reports its
+	// rows: the row to pick is the first, the last, or a place in the group.
+	let pendingStep:
+		| { readonly group: string; readonly pick: "first" | "last" | number }
+		| undefined;
+	const selectRow = (row: LoadedRow | undefined) => {
+		if (row === undefined) return;
+		setSelectedId(row.unit);
+		localization.setSelectedId(row.line);
+	};
+	const groupLoaded = (group: string, rows: readonly LoadedRow[]) => {
+		setGroupRows((current) => new Map(current).set(group, rows));
+		const step = pendingStep;
+		if (step === undefined || step.group !== group) return;
+		pendingStep = undefined;
+		selectRow(
+			step.pick === "first" ? rows[0] : step.pick === "last" ? rows.at(-1) : rows[step.pick]
 		);
 	};
-	// Groups render as sections in the list, in the page's group order.
-	const groupSections = () =>
-		Array.from(resultsSection?.querySelectorAll<HTMLElement>(":scope section") ?? []);
-	const linePosition = () => {
-		// Read the selection and page so the position follows them; the rows are read from the list.
-		const current = page();
-		const rows = lineRows();
-		const row = rows[lineIndex(rows)];
-		if (!current || !row) return undefined;
-		const groups = current.groups?.entries;
-		const section = row.closest("section");
-		const sectionIndex = section ? groupSections().indexOf(section) : -1;
-		if (!groups || sectionIndex < 0) return { index: rows.indexOf(row), total: current.total };
-		// Lines in the groups above, then the line's place in its own group.
-		const before = groups.slice(0, sectionIndex).reduce((sum, group) => sum + group.count, 0);
-		const inGroup = Array.from(
-			section?.querySelectorAll<HTMLButtonElement>("button[data-row]") ?? []
-		).indexOf(row);
-		return { index: before + inGroup, total: current.total };
-	};
-	// Waits for a group's lines or next page to load after opening it.
-	const settle = async (ready: () => boolean) => {
-		for (let attempt = 0; attempt < 60 && !ready(); attempt++)
-			await new Promise((resolve) => setTimeout(resolve, 50));
-	};
-	const moveLine = async (step: -1 | 1) => {
-		const rows = lineRows();
-		const index = lineIndex(rows);
-		const row = rows[index];
-		if (!row) return;
-		const section = row.closest("section");
-		const inSection = (target: HTMLElement | null) =>
-			Array.from(target?.querySelectorAll<HTMLButtonElement>("button[data-row]") ?? []);
-		const siblings = inSection(section);
-		const at = siblings.indexOf(row);
-		// Within the group, or a flat list: the next loaded line.
-		if (at + step >= 0 && at + step < siblings.length) {
-			siblings[at + step]?.click();
+	// Opening a group and loading its next page go through the list's own controls.
+	const groupControl = (key: string, selector: string) =>
+		Array.from(resultsSection?.querySelectorAll<HTMLElement>("section[data-group]") ?? [])
+			.find((section) => section.dataset.group === key)
+			?.querySelector<HTMLButtonElement>(selector);
+	const moveLine = (step: -1 | 1) => {
+		const at = openLineAt();
+		if (at === undefined) return;
+		const next = at.rows[at.index + step];
+		if (next !== undefined) {
+			selectRow(next);
 			return;
 		}
+		const groups = page()?.groups?.entries;
+		const entry = groups?.[at.group];
+		if (!groups || !entry) return;
 		// The group's next page, when there is one.
-		const more = step === 1 ? section?.querySelector<HTMLButtonElement>("[data-more]") : null;
+		const more = step === 1 ? groupControl(entry.key, "[data-more]") : undefined;
 		if (more) {
+			pendingStep = { group: entry.key, pick: at.index + 1 };
 			more.click();
-			await settle(() => inSection(section).length > siblings.length);
-			inSection(section)[at + 1]?.click();
-			return;
-		}
-		if (!section) {
-			rows[index + step]?.click();
 			return;
 		}
 		// The neighbouring group, opened if it is closed.
-		const sections = groupSections();
-		const target = sections[sections.indexOf(section) + step];
-		if (!target) return;
-		const header = target.querySelector<HTMLButtonElement>('button[aria-expanded="false"]');
+		const neighbour = groups[at.group + step];
+		if (!neighbour) return;
+		const loaded = groupRows().get(neighbour.key) ?? [];
+		const header = groupControl(neighbour.key, 'button[aria-expanded="false"]');
 		if (header) {
+			pendingStep = { group: neighbour.key, pick: step === 1 ? "first" : "last" };
 			header.click();
-			await settle(() => inSection(target).length > 0);
+			return;
 		}
-		const targetRows = inSection(target);
-		(step === 1 ? targetRows[0] : targetRows.at(-1))?.click();
+		selectRow(step === 1 ? loaded[0] : loaded.at(-1));
 	};
 	const closeLine = () => {
 		setSelectedId(undefined);
@@ -1223,6 +1249,7 @@ export function GameTextRoute(props: {
 													setSelectedId(unit);
 													localization.setSelectedId(line);
 												}}
+												onLoaded={groupLoaded}
 											/>
 										)}
 									</Show>

@@ -12,7 +12,7 @@ use uasset_parser::asset::{
 };
 use uasset_parser::package::Package;
 use uasset_parser::property::{
-    PropertyRecord, PropertyStream, PropertyValue, TextHistory, TextValue,
+    PropertyRecord, PropertyStream, PropertyValue, RawReason, TextHistory, TextValue,
 };
 
 /// Exact serialized class path used by `UTexture2D` exports.
@@ -85,6 +85,9 @@ pub struct TextCoverageGap {
 #[serde(rename_all = "snake_case")]
 pub enum TextCoverageGapReason {
     UnsupportedTextHistory,
+    LegacyContainerElementWithoutTypeInformation,
+    FeatureUnavailableForEngineVersion,
+    PropertyDecoderRejected,
 }
 
 /// Projects one decoded export into player-facing text facts and explicit coverage gaps.
@@ -102,7 +105,13 @@ pub fn project_text_asset(package: &Package, asset: &DecodedAsset) -> TextAssetP
             for entry in &table.entries {
                 output.occurrences.push(TextOccurrence {
                     source: entry.source.clone(),
-                    dev_notes: entry.dev_notes.clone(),
+                    dev_notes: string_table_notes(
+                        &entry.dev_notes,
+                        table
+                            .metadata
+                            .get(&entry.key)
+                            .and_then(|metadata| metadata.get("Comment").map(String::as_str)),
+                    ),
                     identity: identity_for_string_table(&table.namespace, &entry.key),
                     location: TextLocation::StringTableEntry {
                         object_path: table.object_path.to_string(),
@@ -141,18 +150,27 @@ pub fn project_text_asset(package: &Package, asset: &DecodedAsset) -> TextAssetP
             TextEditCapability::ReadOnly,
             &mut output,
         ),
-        DecodedAsset::UObject(object) => visit_text_stream(
-            package,
-            &object.properties,
-            "",
-            &|property_path| TextLocation::AssetProperty {
-                object_path: object.object_path.to_string(),
-                class_path: object.class_path.to_string(),
-                property_path: property_path.to_owned(),
-            },
-            TextEditCapability::ReadOnly,
-            &mut output,
-        ),
+        DecodedAsset::UObject(object) => {
+            if package.summary.versions.uses_legacy_property_tags() && !object.tail.is_empty() {
+                output.coverage_gaps.push(TextCoverageGap {
+                    object_path: object.object_path.to_string(),
+                    property_path: String::new(),
+                    reason: TextCoverageGapReason::FeatureUnavailableForEngineVersion,
+                });
+            }
+            visit_text_stream(
+                package,
+                &object.properties,
+                "",
+                &|property_path| TextLocation::AssetProperty {
+                    object_path: object.object_path.to_string(),
+                    class_path: object.class_path.to_string(),
+                    property_path: property_path.to_owned(),
+                },
+                TextEditCapability::ReadOnly,
+                &mut output,
+            );
+        }
         DecodedAsset::BlueprintGraphNode(node) => visit_text_stream(
             package,
             &node.properties,
@@ -218,6 +236,17 @@ pub fn project_text_asset(package: &Package, asset: &DecodedAsset) -> TextAssetP
     output
 }
 
+fn string_table_notes(dev_notes: &str, comment: Option<&str>) -> String {
+    let notes = (!dev_notes.trim().is_empty()).then_some(dev_notes);
+    let comment = comment.filter(|value| !value.trim().is_empty());
+    match (notes, comment) {
+        (Some(notes), Some(comment)) if notes != comment => format!("{notes}\n\n{comment}"),
+        (Some(notes), _) => notes.to_owned(),
+        (None, Some(comment)) => comment.to_owned(),
+        (None, None) => String::new(),
+    }
+}
+
 fn identity_for_string_table(namespace: &str, key: &str) -> TextIdentity {
     if key.is_empty() {
         TextIdentity::Unresolved {
@@ -244,7 +273,12 @@ fn visit_text_stream<F>(
     for property in &stream.records {
         let property_path = append_property_path(prefix, &resolve_name(package, property.name));
         if property_type_is_text(package, property)
-            && matches!(property.value, PropertyValue::Raw { .. })
+            && matches!(
+                property.value,
+                PropertyValue::Raw {
+                    reason: RawReason::UnsupportedType
+                }
+            )
         {
             output.coverage_gaps.push(TextCoverageGap {
                 object_path: location(&property_path).object_path().to_owned(),
@@ -281,6 +315,30 @@ fn visit_text_value<F>(
             location: location(path),
             edit_capability,
         }),
+        PropertyValue::Raw { reason } => {
+            let reason = match reason {
+                RawReason::LegacyContainerElementWithoutTypeInformation => {
+                    Some(TextCoverageGapReason::LegacyContainerElementWithoutTypeInformation)
+                }
+                RawReason::FeatureUnavailableForEngineVersion(_) => {
+                    Some(TextCoverageGapReason::FeatureUnavailableForEngineVersion)
+                }
+                RawReason::UnsupportedTextHistory(_) => {
+                    Some(TextCoverageGapReason::UnsupportedTextHistory)
+                }
+                RawReason::LegacyDecoderRejected(_) | RawReason::DecoderRejected(_) => {
+                    Some(TextCoverageGapReason::PropertyDecoderRejected)
+                }
+                _ => None,
+            };
+            if let Some(reason) = reason {
+                output.coverage_gaps.push(TextCoverageGap {
+                    object_path: location(path).object_path().to_owned(),
+                    property_path: path.to_owned(),
+                    reason,
+                });
+            }
+        }
         PropertyValue::Array(values) | PropertyValue::Set(values) => {
             for (index, value) in values.iter().enumerate() {
                 visit_text_value(
@@ -342,6 +400,21 @@ fn visit_text_value<F>(
         }
         _ => {}
     }
+}
+
+#[must_use]
+pub fn text_feature_version_gap(
+    package: &Package,
+    export: &uasset_parser::package::Export,
+    error: &uasset_parser::asset::AssetError,
+) -> Option<TextCoverageGap> {
+    (package.summary.versions.uses_legacy_property_tags()
+        && error.kind() == uasset_parser::asset::AssetErrorKind::UnsupportedVersion)
+        .then(|| TextCoverageGap {
+            object_path: export.object_path.to_string(),
+            property_path: String::new(),
+            reason: TextCoverageGapReason::FeatureUnavailableForEngineVersion,
+        })
 }
 
 fn identity_for_text(text: &TextValue) -> TextIdentity {
@@ -587,4 +660,24 @@ fn root_property<'a>(
         .records
         .iter()
         .find(|property| package.resolve_name_str(property.name) == Some(name))
+}
+
+#[cfg(test)]
+mod string_table_notes_tests {
+    use super::string_table_notes;
+
+    #[test]
+    fn preserves_comment_metadata_and_dev_notes_without_duplicates() {
+        assert_eq!(
+            string_table_notes("", Some("Translator context")),
+            "Translator context"
+        );
+        assert_eq!(
+            string_table_notes("Dev notes", Some("Comment")),
+            "Dev notes\n\nComment"
+        );
+        assert_eq!(string_table_notes("Same", Some("Same")), "Same");
+        assert_eq!(string_table_notes("", Some("  ")), "");
+        assert_eq!(string_table_notes("Notes", None), "Notes");
+    }
 }

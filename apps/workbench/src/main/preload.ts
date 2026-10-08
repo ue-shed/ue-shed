@@ -17,6 +17,7 @@ import type {
 } from "@ue-shed/extension-camera-review/client";
 import type { EditorHandoffNotice } from "../shared/editor-handoff.js";
 import type { MapCaptureProgressEvent } from "@ue-shed/extension-camera-review/map-capture-client";
+import type { WorkbenchOperationProgress } from "@ue-shed/game-text/browser";
 import type { ContentObservatoryHistoryRequestWire } from "@ue-shed/extension-content-observatory/client";
 import type {
 	CameraScheduleConfig,
@@ -160,6 +161,39 @@ const workbenchRendererApi = {
 			ipcRenderer.invoke("asset-audits:textures:preview-offline-batch", request)
 	},
 	gameText: {
+		operationState: (target) =>
+			ipcRenderer.invoke("game-text:localization:operation-state", target),
+		operationPlan: (request) =>
+			ipcRenderer.invoke("game-text:localization:operation-plan", request),
+		operationRun: (id) => ipcRenderer.invoke("game-text:localization:operation-run", id),
+		operationCancel: (id) => ipcRenderer.invoke("game-text:localization:operation-cancel", id),
+		operationFiles: (request) =>
+			ipcRenderer.invoke("game-text:localization:operation-files", request),
+		onOperationProgress: (listener: (progress: WorkbenchOperationProgress) => void) => {
+			const handler = (
+				_event: Electron.IpcRendererEvent,
+				progress: WorkbenchOperationProgress
+			) => listener(progress);
+			ipcRenderer.on("game-text:localization:operation-progress", handler);
+			return () =>
+				ipcRenderer.removeListener("game-text:localization:operation-progress", handler);
+		},
+		localizationQualitySearch: (request) =>
+			ipcRenderer.invoke("game-text:localization:quality-search", request),
+		localizationQualityFocus: (request) =>
+			ipcRenderer.invoke("game-text:localization:quality-focus", request),
+		localizationChanges: (request) =>
+			ipcRenderer.invoke("game-text:localization:changes", request),
+		localizationEdits: (request) => ipcRenderer.invoke("game-text:localization:edits", request),
+		localizationReview: (request) =>
+			ipcRenderer.invoke("game-text:localization:review", request),
+		localizationReport: (request) =>
+			ipcRenderer.invoke("game-text:localization:report", request),
+		localizationReportFile: (request) =>
+			ipcRenderer.invoke("game-text:localization:report-file", request),
+		localizationTargets: () => ipcRenderer.invoke("game-text:localization:targets"),
+		localizationTarget: (target) => ipcRenderer.invoke("game-text:localization:target", target),
+		localizationFocus: (request) => ipcRenderer.invoke("game-text:localization:focus", request),
 		investigationExport: (query, format) =>
 			ipcRenderer.invoke("game-text:investigation-export", query, format),
 		investigationSave: (query) => ipcRenderer.invoke("game-text:investigation-save", query),
@@ -173,6 +207,9 @@ const workbenchRendererApi = {
 		search: (request) => ipcRenderer.invoke("game-text:search", request),
 		focus: (request) => ipcRenderer.invoke("game-text:focus", request),
 		chooseQualityRules: () => ipcRenderer.invoke("game-text:quality:choose-rules"),
+		reloadQualityRules: () => ipcRenderer.invoke("game-text:quality:reload-rules"),
+		createStarterRules: (loadExisting) =>
+			ipcRenderer.invoke("game-text:quality:create-starter-rules", loadExisting),
 		previewQualityRules: (document) =>
 			ipcRenderer.invoke("game-text:quality:preview-rules", document),
 		saveQualityRules: (document) =>

@@ -3,13 +3,22 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { makeWorkbenchTestConfigurationLayer as makeWorkbenchConfigurationLayer } from "../test-configuration.js";
 import { it } from "@effect/vitest";
+import { makeLocalizationEvidenceTestLayer } from "@ue-shed/localization";
+import {
+	corpus as localizationCorpus,
+	evidence as localizationEvidence,
+	poDocument,
+	target as localizationTarget
+} from "./game-text-localization.test-support.js";
 import {
 	makeTextCorpusServiceTestLayer,
 	makeTextUnitId,
 	TextCorpusScanError,
 	TextQualityRuleId,
 	TextQualityRuleDocument,
-	TextRoleId
+	TextRoleId,
+	STARTER_GAME_TEXT_RULES,
+	GAME_TEXT_RULES_RELATIVE_PATH
 } from "@ue-shed/game-text";
 import type { SavedAssetScan } from "@ue-shed/unreal-assets";
 import { Deferred, Effect, Fiber, Layer, Ref } from "effect";
@@ -17,7 +26,13 @@ import { expect } from "vitest";
 import { WorkbenchGameText, WorkbenchGameTextLive } from "./game-text.js";
 import { makeWorkbenchProjectTestLayer } from "./project-workspace.js";
 import { ElectronDialog } from "../adapters/electron-dialog.js";
-import { makeLocalFilesTestLayer } from "../adapters/local-files.js";
+import { LocalFilesLive, makeLocalFilesTestLayer } from "../adapters/local-files.js";
+
+const noLocalization = makeLocalizationEvidenceTestLayer({
+	discover: () => Effect.succeed({ schemaVersion: 1, targets: [], diagnostics: [] }),
+	read: () => Effect.die("No targets"),
+	targets: () => Effect.die("Not used")
+});
 
 const gameTextAdapters = Layer.mergeAll(
 	Layer.succeed(
@@ -31,13 +46,17 @@ const gameTextAdapters = Layer.mergeAll(
 	),
 	makeLocalFilesTestLayer()
 );
-const gameTextLive = WorkbenchGameTextLive.pipe(Layer.provide(gameTextAdapters));
+const gameTextLive = WorkbenchGameTextLive.pipe(
+	Layer.provide(noLocalization),
+	Layer.provide(gameTextAdapters)
+);
 
 const qualityRulesPath = "C:/FixtureProject/game-text-quality.json";
 
 function qualityGameTextLive(contents: string, files = new Map<string, Uint8Array>()) {
 	files.set(qualityRulesPath, new TextEncoder().encode(contents));
 	return WorkbenchGameTextLive.pipe(
+		Layer.provide(noLocalization),
 		Layer.provide(
 			Layer.mergeAll(
 				Layer.succeed(
@@ -128,16 +147,209 @@ const unselectedProject = makeWorkbenchProjectTestLayer({
 	savedProject: () => Effect.die("not used")
 });
 
+it.effect(
+	"scans and Unreal operations exclude each other while retained reads remain available",
+	() =>
+		Effect.gen(function* () {
+			const started = yield* Deferred.make<void>();
+			const finish = yield* Deferred.make<void>();
+			const scans = yield* Ref.make(0);
+			yield* Effect.gen(function* () {
+				const service = yield* WorkbenchGameText;
+				const scan = yield* service.configuredRefresh(true).pipe(Effect.forkChild);
+				yield* Deferred.await(started);
+				expect(yield* service.beginOperation()).toBe(false);
+				expect(yield* service.operationBusyReason()).toContain("scan");
+				yield* Deferred.succeed(finish, undefined);
+				expect((yield* Fiber.join(scan)).status).toBe("completed");
+				expect(yield* service.beginOperation()).toBe(true);
+				expect(yield* service.beginOperation()).toBe(false);
+				expect((yield* service.configuredRefresh(false)).status).toBe("completed");
+				expect((yield* service.configuredRefresh(true)).status).toBe("failed");
+				expect((yield* service.configuredScan()).status).toBe("failed");
+				expect((yield* service.chooseAndRefresh()).status).toBe("failed");
+				expect((yield* service.chooseAndScan()).status).toBe("failed");
+				expect(yield* service.saveQualityRules(STARTER_GAME_TEXT_RULES)).toMatchObject({
+					status: "failed",
+					error: { code: "write_failed" }
+				});
+				expect(yield* service.createStarterRules(false)).toMatchObject({
+					status: "failed",
+					error: { code: "write_failed" }
+				});
+				expect(yield* Ref.get(scans)).toBe(1);
+				yield* service.endOperation();
+				expect(yield* service.operationBusyReason()).toBeUndefined();
+				expect((yield* service.configuredRefresh(true)).status).toBe("completed");
+				expect(yield* Ref.get(scans)).toBe(2);
+			}).pipe(
+				Effect.provide(
+					gameTextLive.pipe(
+						Layer.provide(selectedProject),
+						Layer.provide(
+							makeTextCorpusServiceTestLayer({
+								scan: () => Effect.die("unused"),
+								scanFromProjectIndex: () =>
+									Ref.update(scans, (count) => count + 1).pipe(
+										Effect.andThen(Deferred.succeed(started, undefined)),
+										Effect.andThen(Deferred.await(finish)),
+										Effect.as(emptyCorpus)
+									)
+							})
+						)
+					)
+				)
+			);
+		})
+);
+
+it.effect("operation refresh reloads evidence and gathers also rescan the retained corpus", () =>
+	Effect.gen(function* () {
+		const reads = yield* Ref.make(0);
+		const scans = yield* Ref.make(0);
+		const reader = makeLocalizationEvidenceTestLayer({
+			discover: () =>
+				Effect.succeed({
+					schemaVersion: 1,
+					targets: [localizationTarget],
+					diagnostics: []
+				}),
+			read: () =>
+				Ref.updateAndGet(reads, (count) => count + 1).pipe(
+					Effect.map((count) =>
+						localizationEvidence(poDocument(count === 1 ? "Pending" : "Translation"))
+					)
+				),
+			targets: () => Effect.die("unused")
+		});
+		yield* Effect.gen(function* () {
+			const service = yield* WorkbenchGameText;
+			yield* service.configuredRefresh(true);
+			expect(yield* service.localizationTarget(localizationTarget.name)).toMatchObject({
+				notSynced: 2
+			});
+			expect(yield* service.beginOperation()).toBe(true);
+			expect(yield* service.refreshAfterOperation(localizationTarget.name, false)).toBe(true);
+			expect(yield* service.localizationTarget(localizationTarget.name)).toMatchObject({
+				notSynced: 0
+			});
+			expect(yield* Ref.get(reads)).toBe(2);
+			expect(yield* Ref.get(scans)).toBe(1);
+			expect(yield* service.refreshAfterOperation(localizationTarget.name, true)).toBe(true);
+			expect(yield* Ref.get(reads)).toBe(3);
+			expect(yield* Ref.get(scans)).toBe(2);
+			yield* service.endOperation();
+		}).pipe(
+			Effect.provide(
+				WorkbenchGameTextLive.pipe(
+					Layer.provide(gameTextAdapters),
+					Layer.provide(selectedProject),
+					Layer.provide(reader),
+					Layer.provide(
+						makeTextCorpusServiceTestLayer({
+							scan: () => Effect.die("unused"),
+							scanFromProjectIndex: () =>
+								Ref.update(scans, (count) => count + 1).pipe(
+									Effect.as(localizationCorpus())
+								)
+						})
+					)
+				)
+			)
+		);
+	})
+);
+
+it.effect(
+	"reloads localization evidence on Rescan and leaves no-target projects on the source query",
+	() =>
+		Effect.gen(function* () {
+			let reads = 0;
+			let available = true;
+			const reader = makeLocalizationEvidenceTestLayer({
+				discover: () =>
+					Effect.succeed({
+						schemaVersion: 1,
+						targets: available ? [localizationTarget] : [],
+						diagnostics: []
+					}),
+				read: ({ projectRoot }) =>
+					Effect.sync(() => {
+						expect(projectRoot).toBe(projectSummary.projectRoot);
+						reads++;
+						return localizationEvidence(
+							poDocument(reads === 1 ? "Pending" : "Translation")
+						);
+					}),
+				targets: () => Effect.die("Not used")
+			});
+			yield* Effect.gen(function* () {
+				const service = yield* WorkbenchGameText;
+				expect(yield* service.localizationTargets()).toEqual({ status: "not_ready" });
+				yield* service.configuredRefresh(true);
+				expect(yield* service.localizationTargets()).toMatchObject({
+					status: "ready",
+					targets: [{ name: localizationTarget.name }]
+				});
+				expect(yield* service.localizationTarget(localizationTarget.name)).toMatchObject({
+					status: "ready",
+					notSynced: 2
+				});
+				yield* service.configuredRefresh(false);
+				yield* service.localizationTarget(localizationTarget.name);
+				expect(reads).toBe(1);
+				yield* service.configuredRefresh(true);
+				expect(yield* service.localizationTarget(localizationTarget.name)).toMatchObject({
+					status: "ready",
+					notSynced: 0
+				});
+				expect(reads).toBe(2);
+				available = false;
+				yield* service.configuredRefresh(true);
+				expect(yield* service.localizationTargets()).toEqual({
+					status: "ready",
+					targets: []
+				});
+				expect(
+					yield* service.search({ query: "Source", capability: "all", pageSize: 50 })
+				).toMatchObject({
+					status: "ready",
+					page: { total: 1 }
+				});
+				expect(reads).toBe(2);
+			}).pipe(
+				Effect.provide(
+					WorkbenchGameTextLive.pipe(
+						Layer.provide(gameTextAdapters),
+						Layer.provide(selectedProject),
+						Layer.provide(reader),
+						Layer.provide(
+							makeTextCorpusServiceTestLayer({
+								scan: () => Effect.die("Not used"),
+								scanFromProjectIndex: () => Effect.sync(() => localizationCorpus())
+							})
+						)
+					)
+				)
+			);
+		})
+);
+
 it.effect("reuses navigation results and refreshes only when requested", () =>
 	Effect.gen(function* () {
 		const scans = yield* Ref.make(0);
 		yield* Effect.gen(function* () {
 			const service = yield* WorkbenchGameText;
-			expect((yield* service.configuredRefresh(false)).status).toBe("completed");
+			expect((yield* service.configuredRefresh(false)).status).toBe("not_scanned");
+			expect(yield* Ref.get(scans)).toBe(0);
+			expect((yield* service.configuredRefresh(true)).status).toBe("completed");
 			expect((yield* service.configuredRefresh(false)).status).toBe("completed");
 			expect(yield* Ref.get(scans)).toBe(1);
 			expect((yield* service.configuredRefresh(true)).status).toBe("completed");
 			expect(yield* Ref.get(scans)).toBe(2);
+			expect((yield* service.chooseAndRefresh()).status).toBe("completed");
+			expect((yield* service.configuredRefresh(false)).status).toBe("completed");
+			expect(yield* Ref.get(scans)).toBe(3);
 		}).pipe(
 			Effect.provide(
 				gameTextLive.pipe(
@@ -154,6 +366,101 @@ it.effect("reuses navigation results and refreshes only when requested", () =>
 		);
 	})
 );
+
+it("creates starter rules exclusively, reloads the file and retains it through rescans", async () => {
+	const root = await mkdtemp(join(tmpdir(), "ue-shed-starter-rules-"));
+	const path = join(root, GAME_TEXT_RULES_RELATIVE_PATH);
+	const current = () =>
+		Effect.succeed({
+			status: "ready" as const,
+			project: { ...projectSummary, projectRoot: root }
+		});
+	const project = makeWorkbenchProjectTestLayer({
+		current,
+		choose: current,
+		refresh: current,
+		candidates: () =>
+			Effect.succeed({
+				...projectIndex,
+				summary: { ...projectIndex.summary, projectRoot: root }
+			}),
+		inputAtlas: () => Effect.die("unused"),
+		savedTables: () => Effect.die("unused"),
+		savedProject: () => Effect.die("unused")
+	});
+	const live = WorkbenchGameTextLive.pipe(
+		Layer.provide(noLocalization),
+		Layer.provide(
+			Layer.mergeAll(
+				project,
+				LocalFilesLive,
+				Layer.succeed(
+					ElectronDialog,
+					ElectronDialog.of({
+						chooseDirectory: () => Effect.succeed({ status: "cancelled" }),
+						chooseFile: () => Effect.die("Reload must use the retained file"),
+						chooseFiles: () => Effect.succeed({ status: "cancelled" }),
+						chooseSaveFile: () => Effect.succeed({ status: "cancelled" })
+					})
+				),
+				makeTextCorpusServiceTestLayer({
+					scan: () => Effect.die("unused"),
+					scanFromProjectIndex: () => Effect.succeed(emptyCorpus)
+				})
+			)
+		)
+	);
+	try {
+		await Effect.runPromise(
+			Effect.gen(function* () {
+				const service = yield* WorkbenchGameText;
+				expect(yield* service.createStarterRules(false)).toEqual({ status: "not_ready" });
+				expect((yield* service.configuredRefresh(true)).status).toBe("completed");
+				expect(yield* service.createStarterRules(false)).toMatchObject({
+					status: "completed",
+					document: STARTER_GAME_TEXT_RULES
+				});
+				const original = yield* Effect.promise(() => readFile(path, "utf8"));
+				expect(yield* service.createStarterRules(false)).toMatchObject({
+					status: "failed",
+					error: { code: "already_exists", retrySafe: true }
+				});
+				expect(yield* Effect.promise(() => readFile(path, "utf8"))).toBe(original);
+				expect((yield* service.createStarterRules(true)).status).toBe("completed");
+				const revised = {
+					...STARTER_GAME_TEXT_RULES,
+					rules: STARTER_GAME_TEXT_RULES.rules.map((rule) =>
+						rule.kind === "character_budget" ? { ...rule, maximumCharacters: 9 } : rule
+					)
+				};
+				yield* Effect.promise(() => writeFile(path, JSON.stringify(revised)));
+				expect(yield* service.reloadQualityRules()).toMatchObject({
+					status: "completed",
+					document: revised
+				});
+				expect((yield* service.configuredRefresh(true)).status).toBe("completed");
+				expect((yield* service.qualitySearch({ filter: "all", pageSize: 50 })).status).toBe(
+					"ready"
+				);
+				expect((yield* service.saveQualityRules(revised)).status).toBe("completed");
+				expect(JSON.parse(yield* Effect.promise(() => readFile(path, "utf8")))).toEqual(
+					revised
+				);
+				yield* Effect.promise(() => writeFile(path, "{"));
+				expect(yield* service.reloadQualityRules()).toMatchObject({
+					status: "failed",
+					error: { code: "invalid_rules" }
+				});
+				expect(yield* service.createStarterRules(true)).toMatchObject({
+					status: "failed",
+					error: { code: "invalid_rules" }
+				});
+			}).pipe(Effect.provide(live))
+		);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
 
 it.effect("an old project's scan cannot overwrite a newer project's result", () =>
 	Effect.gen(function* () {
@@ -193,10 +500,10 @@ it.effect("an old project's scan cannot overwrite a newer project's result", () 
 		});
 		yield* Effect.gen(function* () {
 			const service = yield* WorkbenchGameText;
-			const first = yield* Effect.forkChild(service.configuredRefresh(false));
+			const first = yield* Effect.forkChild(service.configuredRefresh(true));
 			yield* Deferred.await(started);
 			yield* Ref.set(root, "C:/B");
-			expect((yield* service.configuredRefresh(false)).status).toBe("completed");
+			expect((yield* service.configuredRefresh(true)).status).toBe("completed");
 			yield* Deferred.succeed(release, undefined);
 			expect((yield* Fiber.join(first)).status).toBe("failed");
 			expect(
@@ -249,7 +556,7 @@ for (const phase of ["candidates", "scan"] as const) {
 				});
 				yield* Effect.gen(function* () {
 					const service = yield* WorkbenchGameText;
-					const first = yield* Effect.forkChild(service.configuredRefresh(false));
+					const first = yield* Effect.forkChild(service.configuredRefresh(true));
 					yield* Deferred.await(started);
 					yield* Ref.set(generation, 2);
 					yield* Deferred.succeed(release, undefined);
@@ -274,7 +581,7 @@ for (const phase of ["candidates", "scan"] as const) {
 							"json"
 						)).status
 					).toBe("failed");
-					expect((yield* service.configuredRefresh(false)).status).toBe("completed");
+					expect((yield* service.configuredRefresh(true)).status).toBe("completed");
 					expect(
 						(yield* service.search({
 							query: "",
@@ -368,7 +675,7 @@ it.effect("keeps refreshed corpus data in main and serves bounded query results"
 	Effect.gen(function* () {
 		const service = yield* WorkbenchGameText;
 		const refreshed = yield* service.configuredRefresh();
-		expect(refreshed).toEqual({
+		expect(refreshed).toMatchObject({
 			status: "completed",
 			summary: {
 				coverage: emptyCorpus.coverage,
@@ -387,7 +694,21 @@ it.effect("keeps refreshed corpus data in main and serves bounded query results"
 			}
 		});
 		expect(yield* service.search({ capability: "all", pageSize: 50, query: "" })).toEqual({
-			page: { total: 0, units: [] },
+			page: {
+				total: 0,
+				units: [],
+				counts: {
+					all: 0,
+					shared: 0,
+					duplicate_source: 0,
+					long: 0,
+					unresolved: 0,
+					conflicting: 0,
+					editable: 0,
+					readOnly: 0,
+					withoutNotes: 0
+				}
+			},
 			status: "ready"
 		});
 		expect(
@@ -507,13 +828,28 @@ it.effect(
 				error: {
 					code: "invalid_rules",
 					message: "The Game Text quality rule file is not valid JSON.",
-					recovery: "Correct the JSON syntax and retry with a version-1 rule document.",
+					recovery:
+						"Correct the JSON syntax and retry with a version-1 or version-2 rule document.",
 					retrySafe: true
 				},
 				status: "failed"
 			});
 			expect(yield* service.search({ capability: "all", pageSize: 50, query: "" })).toEqual({
-				page: { total: 0, units: [] },
+				page: {
+					total: 0,
+					units: [],
+					counts: {
+						all: 0,
+						shared: 0,
+						duplicate_source: 0,
+						long: 0,
+						unresolved: 0,
+						conflicting: 0,
+						editable: 0,
+						readOnly: 0,
+						withoutNotes: 0
+					}
+				},
 				status: "ready"
 			});
 			expect(yield* service.qualitySearch({ filter: "all", pageSize: 50 })).toEqual({
@@ -652,7 +988,7 @@ it("exports one captured generation when the project changes during the save dia
 		await Effect.runPromise(
 			Effect.gen(function* () {
 				const service = yield* WorkbenchGameText;
-				expect((yield* service.configuredRefresh(false)).status).toBe("completed");
+				expect((yield* service.configuredRefresh(true)).status).toBe("completed");
 				const query = {
 					mode: "corpus" as const,
 					query: "",
@@ -671,6 +1007,7 @@ it("exports one captured generation when the project changes during the save dia
 			}).pipe(
 				Effect.provide(
 					WorkbenchGameTextLive.pipe(
+						Layer.provide(noLocalization),
 						Layer.provide(
 							Layer.mergeAll(
 								project,
@@ -732,7 +1069,7 @@ it("restores embedded rules without retaining another rule file's write destinat
 		await Effect.runPromise(
 			Effect.gen(function* () {
 				const service = yield* WorkbenchGameText;
-				expect((yield* service.configuredRefresh(false)).status).toBe("completed");
+				expect((yield* service.configuredRefresh(true)).status).toBe("completed");
 				expect((yield* service.chooseQualityRules()).status).toBe("completed");
 				openPath = presetPath;
 				expect((yield* service.investigationOpen()).status).toBe("opened");
@@ -751,6 +1088,7 @@ it("restores embedded rules without retaining another rule file's write destinat
 			}).pipe(
 				Effect.provide(
 					WorkbenchGameTextLive.pipe(
+						Layer.provide(noLocalization),
 						Layer.provide(
 							Layer.mergeAll(
 								selectedProject,

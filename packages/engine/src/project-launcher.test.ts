@@ -59,6 +59,17 @@ it("rejects different builds of the same engine before launch and accepts matchi
 });
 
 it("resolves platform commandlet executable paths", () => {
+	const platforms = ["win32", "darwin", "linux"] satisfies readonly NodeJS.Platform[];
+	for (const platform of platforms) {
+		const folder = platform === "win32" ? "Win64" : platform === "darwin" ? "Mac" : "Linux";
+		const extension = platform === "win32" ? ".exe" : "";
+		expect(
+			unrealEditorCommandletExecutable("/UE", platform, { major: 4, minor: 27, patch: 2 })
+		).toBe(join("/UE", "Engine", "Binaries", folder, `UE4Editor-Cmd${extension}`));
+		expect(
+			unrealEditorCommandletExecutable("/UE", platform, { major: 5, minor: 8, patch: 2 })
+		).toBe(join("/UE", "Engine", "Binaries", folder, `UnrealEditor-Cmd${extension}`));
+	}
 	expect(unrealEditorCommandletExecutable("C:/UE", "win32")).toBe(
 		join("C:/UE", "Engine", "Binaries", "Win64", "UnrealEditor-Cmd.exe")
 	);

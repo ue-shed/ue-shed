@@ -1,10 +1,12 @@
 import { Argument, Command, Flag } from "effect/unstable/cli";
 import { Option } from "effect";
+import { localizationFlags, optionalLocalizationFlags } from "./localization-flags.js";
 import { runSavedReview } from "../saved-review-workflows.js";
 import {
 	runAssetsScan,
 	runInputInspect,
 	runTextReview,
+	runTextRulesInit,
 	runTextScan,
 	runTextSearch
 } from "../asset-workflows.js";
@@ -110,14 +112,23 @@ const textSearchCommand = Command.make(
 	{
 		projectRoot: Argument.string("project-root"),
 		query: Argument.string("query").pipe(Argument.variadic({ min: 1 })),
+		target: optionalFlag("target"),
+		searchTranslations: Flag.boolean("search-translations").pipe(Flag.optional),
+		...localizationFlags(),
 		reader: readerFlag
 	},
-	({ projectRoot, query, reader }) => {
+	({ projectRoot, query, reader, target, culture, state, limit, searchTranslations }) => {
 		const value = query.join(" ").trim();
 		return runTextSearch({
 			_tag: "TextSearch",
 			projectRoot,
 			query: value,
+			limit,
+			...optionalLocalizationFlags(culture, state),
+			...(Option.isSome(target) ? { target: target.value } : undefined),
+			...(Option.isSome(searchTranslations)
+				? { searchTranslations: searchTranslations.value }
+				: undefined),
 			...readerFields(reader)
 		});
 	}
@@ -141,9 +152,31 @@ const textReviewCommand = Command.make(
 	Command.withDescription("Review the saved text corpus with project-authored quality rules.")
 );
 
+const textRulesCommand = Command.make("rules").pipe(
+	Command.withSubcommands([
+		Command.make(
+			"init",
+			{ projectRoot: Argument.string("project-root"), output: optionalFlag("output") },
+			({ projectRoot, output }) => {
+				const value = optionalValue(output);
+				return runTextRulesInit({
+					_tag: "TextRulesInit",
+					projectRoot,
+					...(value === undefined ? undefined : { output: value })
+				});
+			}
+		).pipe(Command.withDescription("Create example writing checks without overwriting a file."))
+	])
+);
+
 export const textCommand = Command.make("text").pipe(
 	Command.withDescription("Inspect, search, and review saved player-facing text."),
-	Command.withSubcommands([textScanCommand, textSearchCommand, textReviewCommand])
+	Command.withSubcommands([
+		textScanCommand,
+		textSearchCommand,
+		textReviewCommand,
+		textRulesCommand
+	])
 );
 
 const inputInspectCommand = Command.make(

@@ -6,10 +6,12 @@ import {
 	scanSavedProject,
 	type SavedAssetScan
 } from "@ue-shed/unreal-assets";
-import { Effect } from "effect";
-import { CliCommandError, messageOf, printJson } from "./cli-runtime.js";
+import { Effect, Result } from "effect";
+import { CliCommandError, CliRuntime, messageOf, printJson } from "./cli-runtime.js";
 import { observeCliOperation, readerLayer } from "./cli-operation.js";
 import type { CliCommand } from "./command-model.js";
+import { LocalizationEvidenceNodeLive } from "@ue-shed/localization";
+import { loadLocalizationStatus } from "./workflows/localization.js";
 
 function summarizeScan(scan: SavedAssetScan) {
 	return {
@@ -43,6 +45,32 @@ export type AssetsScanCommand = Extract<CliCommand, { readonly _tag: "AssetsScan
 export type TextScanCommand = Extract<CliCommand, { readonly _tag: "TextScan" }>;
 export type TextSearchCommand = Extract<CliCommand, { readonly _tag: "TextSearch" }>;
 export type TextReviewCommand = Extract<CliCommand, { readonly _tag: "TextReview" }>;
+export type TextRulesInitCommand = Extract<CliCommand, { readonly _tag: "TextRulesInit" }>;
+
+export const runTextRulesInit = Effect.fn("Cli.workflow.text_rules_init")(
+	(command: TextRulesInitCommand) =>
+		observeCliOperation(
+			command._tag,
+			Effect.gen(function* () {
+				const { createStarterTextRules } = yield* Effect.promise(
+					() => import("@ue-shed/game-text")
+				);
+				const path = yield* createStarterTextRules(
+					command.projectRoot,
+					command.output
+				).pipe(
+					Effect.mapError(
+						(error) =>
+							new CliCommandError({
+								message: `${error.message} ${error.recovery}`
+							})
+					)
+				);
+				const runtime = yield* CliRuntime;
+				yield* runtime.print(path + "\n");
+			})
+		)
+);
 export type InputInspectCommand = Extract<CliCommand, { readonly _tag: "InputInspect" }>;
 
 export const runAssetsScan = Effect.fn("Cli.workflow.assets_scan")((command: AssetsScanCommand) =>
@@ -100,6 +128,30 @@ export const runTextSearch = Effect.fn("Cli.workflow.text_search")((command: Tex
 					new CliCommandError({ message: "text search requires a non-empty query" })
 				);
 			}
+			if (command.target !== undefined) {
+				const result = yield* loadLocalizationStatus(command).pipe(
+					Effect.provide(LocalizationEvidenceNodeLive),
+					Effect.result
+				);
+				if (Result.isFailure(result)) {
+					yield* printJson({ schemaVersion: 1, status: "failed", error: result.failure });
+					const runtime = yield* CliRuntime;
+					yield* runtime.setExitCode(2);
+					return;
+				}
+				return yield* printJson(result.success);
+			}
+			if (
+				command.culture !== undefined ||
+				command.state !== undefined ||
+				command.searchTranslations
+			) {
+				return yield* Effect.fail(
+					new CliCommandError({
+						message: "Localization search options require --target."
+					})
+				);
+			}
 			const { searchTextCorpus, TextCorpusService, TextCorpusServiceLive } =
 				yield* Effect.promise(() => import("@ue-shed/game-text"));
 			const corpus = yield* Effect.gen(function* () {
@@ -126,8 +178,8 @@ export const runTextReview = Effect.fn("Cli.workflow.text_review")((command: Tex
 		command._tag,
 		Effect.gen(function* () {
 			const {
-				decodeTextQualityRuleDocumentJson,
-				evaluateTextQuality,
+				decodeGameTextRuleDocumentJson,
+				evaluateGameTextSourceQuality,
 				TextCorpusScanError,
 				TextCorpusService,
 				TextCorpusServiceLive
@@ -140,7 +192,7 @@ export const runTextReview = Effect.fn("Cli.workflow.text_review")((command: Tex
 							"Could not read the Game Text quality rule file. Confirm it exists and is readable, then retry."
 					})
 			});
-			const document = yield* decodeTextQualityRuleDocumentJson(ruleJson).pipe(
+			const document = yield* decodeGameTextRuleDocumentJson(ruleJson).pipe(
 				Effect.mapError(
 					(error) =>
 						new CliCommandError({
@@ -164,7 +216,7 @@ export const runTextReview = Effect.fn("Cli.workflow.text_review")((command: Tex
 						})
 				)
 			);
-			return yield* printJson(evaluateTextQuality(corpus, document));
+			return yield* printJson(evaluateGameTextSourceQuality(corpus, document));
 		})
 	)
 );

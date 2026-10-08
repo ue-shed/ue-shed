@@ -1,5 +1,5 @@
 import { it } from "@effect/vitest";
-import { Effect, Layer, Ref } from "effect";
+import { Cause, Effect, Exit, Layer, Ref } from "effect";
 import { expect } from "vitest";
 import { CliRuntime, type CliRuntimeApi } from "./cli-runtime.js";
 import { runCli } from "./command.js";
@@ -12,6 +12,23 @@ function runtimeLayer(output: Ref.Ref<string>, errors: Ref.Ref<string>, exitCode
 	};
 	return Layer.succeed(CliRuntime, CliRuntime.of(runtime));
 }
+
+it.effect("preserves the underlying defect when a command has no typed failure", () =>
+	Effect.gen(function* () {
+		const defect = new Error("Synthetic output defect");
+		const layer = Layer.succeed(
+			CliRuntime,
+			CliRuntime.of({
+				print: () => Effect.die(defect),
+				printError: () => Effect.void,
+				setExitCode: () => Effect.void
+			})
+		);
+		const result = yield* runCli(["version"]).pipe(Effect.provide(layer), Effect.exit);
+		expect(Exit.isFailure(result)).toBe(true);
+		if (Exit.isFailure(result)) expect(Cause.squash(result.cause)).toBe(defect);
+	})
+);
 
 it.effect("renders generated help through the Effect CLI command tree", () =>
 	Effect.gen(function* () {

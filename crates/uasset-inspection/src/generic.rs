@@ -1009,10 +1009,7 @@ fn resolve_object_ref(package: &Package, index: PackageIndex) -> Option<String> 
 }
 
 fn render_raw_reason(reason: RawReason) -> String {
-    match reason {
-        RawReason::UnsupportedType => "unsupported type".to_owned(),
-        RawReason::DecoderRejected(detail) => detail,
-    }
+    reason.detail().into_owned()
 }
 
 #[derive(Serialize)]

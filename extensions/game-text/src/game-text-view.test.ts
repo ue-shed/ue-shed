@@ -1,6 +1,12 @@
 import { makeTextOccurrenceId, makeTextUnitId, type TextCorpus } from "@ue-shed/game-text/browser";
 import { describe, expect, it } from "vitest";
-import { filterTextUnits, identityLabel, occurrenceContext, sourceText } from "./game-text-view.js";
+import {
+	filterTextUnits,
+	identityLabel,
+	occurrenceContext,
+	sourceText,
+	textContext
+} from "./game-text-view.js";
 
 const corpus: TextCorpus = {
 	schemaVersion: 1,
@@ -52,10 +58,29 @@ describe("game text presentation", () => {
 		).toHaveLength(0);
 	});
 
+	it("preserves exact asset, row, entry and property names", () => {
+		expect(
+			textContext({
+				kind: "data_table_cell",
+				objectPath: "/Game/Text/DT_Localization.DT_Localization",
+				row: "EmptyFrench",
+				propertyPath: "DisplayName"
+			}).title
+		).toBe("DT_Localization · EmptyFrench · DisplayName");
+		expect(
+			textContext({
+				kind: "asset_property",
+				objectPath: "/Game/Input/IA_Look.IA_Look",
+				classPath: "/Script/EnhancedInput.InputAction",
+				propertyPath: "ActionDescription"
+			}).title
+		).toBe("IA_Look · ActionDescription");
+	});
+
 	it("formats writing context without hiding Unreal identity", () => {
 		const unit = corpus.units[0]!;
 		expect(sourceText(unit)).toBe("Continue");
 		expect(identityLabel(unit)).toBe("UI · Continue");
-		expect(occurrenceContext(unit.occurrences[0]!)).toBe("Game · Prompt Continue");
+		expect(occurrenceContext(unit.occurrences[0]!)).toBe("ST_Game · PromptContinue");
 	});
 });

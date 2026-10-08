@@ -1,0 +1,53 @@
+{
+	"name": "@ue-shed/localization",
+	"version": "0.9.3",
+	"description": "Read Unreal localization evidence and plan or run headless localization operations.",
+	"homepage": "https://github.com/ue-shed/ue-shed#readme",
+	"bugs": {
+		"url": "https://github.com/ue-shed/ue-shed/issues"
+	},
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/ue-shed/ue-shed.git",
+		"directory": "packages/localization"
+	},
+	"files": [
+		"dist",
+		"README.md",
+		"LICENSE"
+	],
+	"type": "module",
+	"sideEffects": false,
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		},
+		"./browser": {
+			"types": "./dist/browser.d.ts",
+			"import": "./dist/browser.js"
+		}
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"scripts": {
+		"build": "node ../../scripts/clean-package-dist.ts && tsc -p tsconfig.build.json",
+		"prepack": "pnpm run build",
+		"typecheck": "tsc --noEmit && tsc -p tsconfig.browser.json --noEmit"
+	},
+	"dependencies": {
+		"@ue-shed/config-explorer": "workspace:0.9.3",
+		"@ue-shed/engine": "workspace:0.9.3",
+		"effect": "catalog:"
+	},
+	"devDependencies": {
+		"@effect/vitest": "catalog:"
+	},
+	"engines": {
+		"node": ">=22.14.0"
+	}
+}

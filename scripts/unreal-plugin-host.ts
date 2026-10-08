@@ -69,10 +69,11 @@ export function unrealEngineTools(engineRoot: string): UnrealEngineTools {
 	if (process.platform !== "win32") {
 		throw new Error("UE Shed's local Unreal build helpers currently support Windows only.");
 	}
+	const editorName = unrealEngineVersion(engineRoot)?.major === 4 ? "UE4Editor" : "UnrealEditor";
 	return {
 		build: join(engineRoot, "Engine", "Build", "BatchFiles", "Build.bat"),
-		editor: join(engineRoot, "Engine", "Binaries", "Win64", "UnrealEditor.exe"),
-		editorCommandlet: join(engineRoot, "Engine", "Binaries", "Win64", "UnrealEditor-Cmd.exe")
+		editor: join(engineRoot, "Engine", "Binaries", "Win64", `${editorName}.exe`),
+		editorCommandlet: join(engineRoot, "Engine", "Binaries", "Win64", `${editorName}-Cmd.exe`)
 	};
 }
 

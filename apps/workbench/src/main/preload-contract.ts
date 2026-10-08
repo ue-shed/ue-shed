@@ -7,6 +7,7 @@ import type {
 } from "./ipc-contracts.js";
 import type { EditorHandoffNotice } from "../shared/editor-handoff.js";
 import type { MapCaptureProgressEvent } from "@ue-shed/extension-camera-review/map-capture-client";
+import type { WorkbenchOperationProgress } from "@ue-shed/game-text/browser";
 
 export const workbenchInvokeChannels = {
 	assetNavigation: { locate: "asset-navigation:locate" },
@@ -67,6 +68,21 @@ export const workbenchInvokeChannels = {
 		previewOfflineBatch: "asset-audits:textures:preview-offline-batch"
 	},
 	gameText: {
+		operationState: "game-text:localization:operation-state",
+		operationPlan: "game-text:localization:operation-plan",
+		operationRun: "game-text:localization:operation-run",
+		operationCancel: "game-text:localization:operation-cancel",
+		operationFiles: "game-text:localization:operation-files",
+		localizationQualitySearch: "game-text:localization:quality-search",
+		localizationQualityFocus: "game-text:localization:quality-focus",
+		localizationChanges: "game-text:localization:changes",
+		localizationEdits: "game-text:localization:edits",
+		localizationReview: "game-text:localization:review",
+		localizationReport: "game-text:localization:report",
+		localizationReportFile: "game-text:localization:report-file",
+		localizationTargets: "game-text:localization:targets",
+		localizationTarget: "game-text:localization:target",
+		localizationFocus: "game-text:localization:focus",
 		investigationExport: "game-text:investigation-export",
 		investigationSave: "game-text:investigation-save",
 		investigationOpen: "game-text:investigation-open",
@@ -78,6 +94,8 @@ export const workbenchInvokeChannels = {
 		search: "game-text:search",
 		focus: "game-text:focus",
 		chooseQualityRules: "game-text:quality:choose-rules",
+		createStarterRules: "game-text:quality:create-starter-rules",
+		reloadQualityRules: "game-text:quality:reload-rules",
 		previewQualityRules: "game-text:quality:preview-rules",
 		saveQualityRules: "game-text:quality:save-rules",
 		qualitySearch: "game-text:quality:search",
@@ -184,7 +202,12 @@ type RendererInvokeApi<Mapping extends InvokeMapping> = {
 
 type Invokes = RendererInvokeApi<typeof workbenchInvokeChannels>;
 
-export type WorkbenchRendererApi = Omit<Invokes, "mapCapture"> & {
+export type WorkbenchRendererApi = Omit<Invokes, "mapCapture" | "gameText"> & {
+	readonly gameText: Invokes["gameText"] & {
+		readonly onOperationProgress: (
+			listener: (progress: WorkbenchOperationProgress) => void
+		) => () => void;
+	};
 	readonly mapCapture: Invokes["mapCapture"] & {
 		readonly onProgress: (listener: (progress: MapCaptureProgressEvent) => void) => () => void;
 	};

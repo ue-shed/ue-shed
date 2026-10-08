@@ -1,6 +1,7 @@
 import { readFile, readdir } from "node:fs/promises";
-import { dirname, join, relative } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import ts from "typescript";
 import { isJsonObject, parseJsonObject } from "./json.ts";
 
 const repositoryRoot = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -115,6 +116,9 @@ const approvedPromiseAdapters = new Set([
 	// Project Custodian owns process inspection, filesystem mutation, OS Trash, and durable
 	// proposal/receipt promises in one executor adapter; the public service remains Effect-shaped.
 	"packages/project-custodian/src/node-executor.ts",
+	// Localization owns bounded config/log reads and hash audits in one Node filesystem adapter;
+	// public operation services expose only scoped Effect and Stream values.
+	"packages/localization/src/operation-io.ts",
 	// The generated browser declaration is a foreign WebAssembly adapter surface.
 	"packages/uasset-inspection-wasm/src/browser.d.ts"
 ]);
@@ -631,12 +635,118 @@ export async function checkWorkbenchBoundaries(root: string = repositoryRoot) {
 	return failures;
 }
 
+/** Read module syntax without mistaking authored strings or comments for import declarations. */
+function moduleSpecifiers(path: string, text: string): readonly string[] {
+	const source = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true);
+	const specifiers: string[] = [];
+	const visit = (node: ts.Node): void => {
+		if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
+			if (node.moduleSpecifier && ts.isStringLiteralLike(node.moduleSpecifier))
+				specifiers.push(node.moduleSpecifier.text);
+		} else if (ts.isCallExpression(node)) {
+			const argument = node.arguments[0];
+			if (
+				(node.expression.kind === ts.SyntaxKind.ImportKeyword ||
+					(ts.isIdentifier(node.expression) && node.expression.text === "require")) &&
+				argument &&
+				ts.isStringLiteralLike(argument)
+			)
+				specifiers.push(argument.text);
+		} else if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument)) {
+			if (ts.isStringLiteralLike(node.argument.literal))
+				specifiers.push(node.argument.literal.text);
+		} else if (
+			ts.isImportEqualsDeclaration(node) &&
+			ts.isExternalModuleReference(node.moduleReference)
+		) {
+			const expression = node.moduleReference.expression;
+			if (expression && ts.isStringLiteralLike(expression)) specifiers.push(expression.text);
+		}
+		ts.forEachChild(node, visit);
+	};
+	visit(source);
+	return specifiers;
+}
+
+/** Localization formats are independently usable; browser consumers receive no Node authority. */
+export async function checkLocalizationBoundaries(root: string = repositoryRoot) {
+	const failures: string[] = [];
+	const packageRoot = join(root, "packages/localization");
+	let manifestText: string;
+	try {
+		manifestText = await readFile(join(packageRoot, "package.json"), "utf8");
+	} catch {
+		return failures;
+	}
+	if (manifestText.includes("@ue-shed/game-text")) {
+		failures.push(
+			"packages/localization/package.json: localization must not depend on the Game Text corpus"
+		);
+	}
+	for (const path of await filesUnder(root, "packages/localization")) {
+		if (!path.endsWith(".ts") || testSourcePattern.test(path)) continue;
+		if ((await readFile(path, "utf8")).includes("@ue-shed/game-text")) {
+			failures.push(
+				`${relative(root, path).replaceAll("\\", "/")}: localization must not import the Game Text corpus`
+			);
+		}
+	}
+	const pending = [join(packageRoot, "src/browser.ts")];
+	const gameTextBrowser = join(root, "packages/game-text/src/browser.ts");
+	try {
+		await readFile(gameTextBrowser, "utf8");
+		pending.push(gameTextBrowser);
+	} catch {
+		// Focused boundary fixtures may contain only the independent format package.
+	}
+	const visited = new Set<string>();
+	while (pending.length > 0) {
+		const path = pending.pop();
+		if (path === undefined || visited.has(path)) continue;
+		visited.add(path);
+		const text = await readFile(path, "utf8");
+		const label = relative(root, path).replaceAll("\\", "/");
+		if (/\bprocess\s*\./u.test(text))
+			failures.push(`${label}: browser closure must not use process`);
+		const imports = moduleSpecifiers(path, text);
+		for (const specifier of imports) {
+			if (specifier === undefined) continue;
+			if (
+				/^(?:node:|electron(?:\/|$)|fs(?:\/|$)|path$|child_process$|process$)/u.test(
+					specifier
+				)
+			) {
+				failures.push(`${label}: browser closure must not import ${specifier}`);
+			} else if (specifier.startsWith(".")) {
+				pending.push(resolve(dirname(path), specifier.replace(/\.js$/u, ".ts")));
+			} else if (specifier === "@ue-shed/config-explorer/browser") {
+				pending.push(join(root, "packages/config-explorer/src/browser.ts"));
+			} else if (specifier === "@ue-shed/localization/browser") {
+				pending.push(join(packageRoot, "src/browser.ts"));
+			} else if (specifier === "@ue-shed/unreal-assets/investigation") {
+				pending.push(join(root, "packages/unreal-assets/src/investigation.ts"));
+			} else if (specifier === "linebreak") {
+				// Reviewed: MIT, exact pin 1.1.0, packaged iterator/table data with no Node/IO.
+				// UE 5.7/5.8 FLocTextHelper::GetWordCountReport counts positive spans from
+				// FBreakIterator::CreateLineBreakIterator (FICULineBreakIterator), using
+				// UAX #14 line opportunities; Intl.Segmenter word tokens would differ.
+				if (label !== "packages/game-text/src/localization-words.ts")
+					failures.push(`${label}: linebreak must be confined to localization-words.ts`);
+			} else if (specifier !== "effect" && !specifier.startsWith("effect/")) {
+				failures.push(`${label}: unreviewed browser dependency ${specifier}`);
+			}
+		}
+	}
+	return failures;
+}
+
 export async function checkArchitecture(root: string = repositoryRoot) {
 	return [
 		...(await checkCatalogUsage(root)),
 		...(await checkSourcePolicy(root)),
 		...(await checkServiceStrategies(root)),
 		...(await checkDomainServices(root)),
+		...(await checkLocalizationBoundaries(root)),
 		...(await checkWorkbenchBoundaries(root))
 	];
 }

@@ -8,6 +8,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use serde::{Deserialize, Serialize};
 use uasset_inspection::projection::{
     TextAssetProjection, TextureRecord, project_text_asset, project_texture_asset,
+    text_feature_version_gap,
 };
 use uasset_inspection::saved_world::{
     SavedWorldPackageFragment, SavedWorldTransform, project_saved_world_package,
@@ -792,12 +793,25 @@ fn project_one_path(
             },
             Ok(None) => {}
             Err(error) => {
+                if matches!(kind, ProjectionKind::Text)
+                    && let Some(gap) = text_feature_version_gap(&package, export, &error)
+                {
+                    coverage_gap_count += 1;
+                    results.extend(text_results(
+                        &path_string,
+                        bytes.len() as u64,
+                        TextAssetProjection {
+                            occurrences: Vec::new(),
+                            coverage_gaps: vec![gap],
+                        },
+                    ));
+                }
                 diagnostics.push(projection_diagnostic(export, error.kind(), error.message()))
             }
         }
     }
     checkpoint(cancellation, "inspection")?;
-    let partial = !diagnostics.is_empty();
+    let partial = !diagnostics.is_empty() || coverage_gap_count != 0;
     match kind {
         ProjectionKind::Text => results.push(ResultFrame::ExtractText {
             event: SavedAssetTextExtractionEvent::TextPackage {
@@ -1668,6 +1682,46 @@ mod tests {
     use super::{saved_world_with_cancellation, scan_header_cache_needs_write};
     use crate::cancellation::CancellationToken;
     use crate::protocol::Request;
+
+    #[test]
+    fn legacy_text_protocol_frames_preserve_occurrences_and_each_gap_reason() {
+        use crate::protocol_result::{ResultFrame, SavedAssetTextExtractionEvent};
+        for ue5 in [0, 1000, 1009, 1010, 1011] {
+            let (bytes, package) = crate::test_support::legacy_text_package(ue5);
+            let context = uasset_parser::asset::AssetDecodeContext {
+                source: &bytes,
+                package: &package,
+                schemas: uasset_parser::schema::embedded_source_model(),
+            };
+            let asset = uasset_parser::asset::decode_export(&package.exports[0], &context)
+                .unwrap()
+                .unwrap();
+            let projection = super::project_text_asset(&package, &asset);
+            let frames = super::text_results("legacy.uasset", bytes.len() as u64, projection);
+            assert_eq!(frames.len(), 5);
+            let mut reasons = Vec::new();
+            for frame in frames {
+                match frame {
+                    ResultFrame::ExtractText {
+                        event: SavedAssetTextExtractionEvent::TextOccurrence { occurrence, .. },
+                    } => assert_eq!(occurrence.source, "Hello"),
+                    ResultFrame::ExtractText {
+                        event: SavedAssetTextExtractionEvent::TextCoverageGap { coverage_gap, .. },
+                    } => reasons.push(serde_json::to_value(coverage_gap.reason).unwrap()),
+                    _ => panic!("unexpected frame"),
+                }
+            }
+            assert_eq!(
+                reasons,
+                vec![
+                    serde_json::json!("unsupported_text_history"),
+                    serde_json::json!("legacy_container_element_without_type_information"),
+                    serde_json::json!("feature_unavailable_for_engine_version"),
+                    serde_json::json!("property_decoder_rejected"),
+                ]
+            );
+        }
+    }
 
     #[test]
     fn exact_header_cache_hit_is_a_no_op() {

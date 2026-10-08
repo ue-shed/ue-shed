@@ -1,6 +1,24 @@
 import { GameTextInvestigationPresetResult } from "@ue-shed/game-text/browser";
 import { InvestigationFileResult } from "@ue-shed/unreal-assets/investigation";
 import {
+	type WorkspaceQualityRequest,
+	WorkspaceQualityResult,
+	type WorkspaceQualityFocusRequest,
+	WorkspaceQualityFocusResult,
+	WorkspaceChangesResult,
+	type LocalizationEditRequest,
+	LocalizationEditResult,
+	type LocalizationReviewRequest,
+	LocalizationReviewResult,
+	type WorkspaceReportRequest,
+	WorkspaceReportResult,
+	type WorkspaceReportFileRequest,
+	WorkspaceReportFileResult,
+	LocalizationTargetsResult,
+	LocalizationTargetResult,
+	LocalizationFocusResult,
+	type LocalizationFocusRequest,
+	type LocalizationSelection,
 	decodeTextCorpusFocusResult,
 	decodeTextCorpusQueryRunResult,
 	decodeTextCorpusSearchResult,
@@ -14,7 +32,7 @@ import {
 	type TextCorpusSearchResult,
 	type TextQualityFocusRequest,
 	type TextQualityFocusResult,
-	type TextQualityRuleDocument,
+	type GameTextRuleDocument,
 	type TextQualityRuleUpdateResult,
 	type TextQualitySearchRequest,
 	type TextQualitySearchResult
@@ -25,8 +43,18 @@ import {
 	GameTextClientError,
 	type GameTextClientApi
 } from "@ue-shed/extension-game-text/client";
-import { WorkbenchTaskProgress } from "../shared/project-workspace-contract.js";
-import { Effect, Schema } from "effect";
+import {
+	WorkbenchTaskProgress,
+	WorkbenchProjectState
+} from "../shared/project-workspace-contract.js";
+import { Effect, Queue, Schema, Stream } from "effect";
+import {
+	WorkbenchOperationState,
+	WorkbenchOperationPlanResult,
+	WorkbenchOperationResult,
+	WorkbenchOperationFilesResult,
+	WorkbenchOperationProgress
+} from "@ue-shed/game-text/browser";
 
 const recovery = "Restart Workbench. If the problem persists, verify package versions.";
 
@@ -45,6 +73,166 @@ function invokeRequest<A, HostValue, DecodeError>(
 }
 
 export const gameTextClient: GameTextClientApi = GameTextClient.of({
+	operations: {
+		state: (target) =>
+			invokeRequest(
+				"gameText.operationState",
+				() => window.ueShed.gameText.operationState(target),
+				Schema.decodeUnknownEffect(WorkbenchOperationState)
+			),
+		plan: (request) =>
+			invokeRequest(
+				"gameText.operationPlan",
+				() => window.ueShed.gameText.operationPlan(request),
+				Schema.decodeUnknownEffect(WorkbenchOperationPlanResult)
+			),
+		run: (id) =>
+			invokeRequest(
+				"gameText.operationRun",
+				() => window.ueShed.gameText.operationRun(id),
+				Schema.decodeUnknownEffect(WorkbenchOperationResult)
+			),
+		cancel: (id) =>
+			invokeRequest(
+				"gameText.operationCancel",
+				() => window.ueShed.gameText.operationCancel(id),
+				Schema.decodeUnknownEffect(WorkbenchOperationResult)
+			),
+		files: (request) =>
+			invokeRequest(
+				"gameText.operationFiles",
+				() => window.ueShed.gameText.operationFiles(request),
+				Schema.decodeUnknownEffect(WorkbenchOperationFilesResult)
+			),
+		progress: Stream.callback<WorkbenchOperationProgress>(
+			(queue) =>
+				Effect.acquireRelease(
+					Effect.sync(() =>
+						window.ueShed.gameText.onOperationProgress((progress) =>
+							Queue.offerUnsafe(queue, progress)
+						)
+					),
+					(unsubscribe) => Effect.sync(unsubscribe)
+				),
+			{ bufferSize: 1, strategy: "sliding" }
+		).pipe(
+			Stream.mapEffect((progress) =>
+				Schema.decodeUnknownEffect(WorkbenchOperationProgress)(progress)
+			),
+			Stream.mapError(
+				(cause) =>
+					new GameTextClientError({
+						cause,
+						operation: "gameText.operationProgress",
+						recovery
+					})
+			)
+		)
+	},
+	localizationQualitySearch: Effect.fn("GameTextClient.localizationQualitySearch")(
+		(request: WorkspaceQualityRequest) =>
+			invokeRequest(
+				"gameText.localizationQualitySearch",
+				() => window.ueShed.gameText.localizationQualitySearch(request),
+				Schema.decodeUnknownEffect(WorkspaceQualityResult)
+			)
+	),
+	localizationQualityFocus: Effect.fn("GameTextClient.localizationQualityFocus")(
+		(request: WorkspaceQualityFocusRequest) =>
+			invokeRequest(
+				"gameText.localizationQualityFocus",
+				() => window.ueShed.gameText.localizationQualityFocus(request),
+				Schema.decodeUnknownEffect(WorkspaceQualityFocusResult)
+			)
+	),
+	localizationChanges: Effect.fn("GameTextClient.localizationChanges")(
+		(request: WorkspaceQualityRequest) =>
+			invokeRequest(
+				"gameText.localizationChanges",
+				() => window.ueShed.gameText.localizationChanges(request),
+				Schema.decodeUnknownEffect(WorkspaceChangesResult)
+			)
+	),
+	localizationEdits: Effect.fn("GameTextClient.localizationEdits")(
+		(request: LocalizationEditRequest) =>
+			invokeRequest(
+				"gameText.localizationEdits",
+				() => window.ueShed.gameText.localizationEdits(request),
+				Schema.decodeUnknownEffect(LocalizationEditResult)
+			)
+	),
+	localizationReview: Effect.fn("GameTextClient.localizationReview")(
+		(request: LocalizationReviewRequest) =>
+			invokeRequest(
+				"gameText.localizationReview",
+				() => window.ueShed.gameText.localizationReview(request),
+				Schema.decodeUnknownEffect(LocalizationReviewResult)
+			)
+	),
+	localizationReport: Effect.fn("GameTextClient.localizationReport")(
+		(request: WorkspaceReportRequest) =>
+			invokeRequest(
+				"gameText.localizationReport",
+				() => window.ueShed.gameText.localizationReport(request),
+				Schema.decodeUnknownEffect(WorkspaceReportResult)
+			)
+	),
+	localizationReportFile: Effect.fn("GameTextClient.localizationReportFile")(
+		(request: WorkspaceReportFileRequest) =>
+			invokeRequest(
+				"gameText.localizationReportFile",
+				() => window.ueShed.gameText.localizationReportFile(request),
+				Schema.decodeUnknownEffect(WorkspaceReportFileResult)
+			)
+	),
+	localizationTargets: Effect.fn("GameTextClient.localizationTargets")(() =>
+		invokeRequest(
+			"gameText.localizationTargets",
+			() => window.ueShed.gameText.localizationTargets(),
+			Schema.decodeUnknownEffect(LocalizationTargetsResult)
+		)
+	),
+	localizationTarget: Effect.fn("GameTextClient.localizationTarget")(
+		(target: LocalizationSelection["target"]) =>
+			invokeRequest(
+				"gameText.localizationTarget",
+				() => window.ueShed.gameText.localizationTarget(target),
+				Schema.decodeUnknownEffect(LocalizationTargetResult)
+			)
+	),
+	localizationFocus: Effect.fn("GameTextClient.localizationFocus")(
+		(request: LocalizationFocusRequest) =>
+			invokeRequest(
+				"gameText.localizationFocus",
+				() => window.ueShed.gameText.localizationFocus(request),
+				Schema.decodeUnknownEffect(LocalizationFocusResult)
+			)
+	),
+	reloadQualityRules: Effect.fn("GameTextClient.reloadQualityRules")(() =>
+		invokeRequest(
+			"gameText.reloadQualityRules",
+			() => window.ueShed.gameText.reloadQualityRules(),
+			decodeTextQualityQueryRunResult
+		)
+	),
+	projectKey: Effect.fn("GameTextClient.projectKey")(() =>
+		invokeRequest(
+			"gameText.projectKey",
+			() => window.ueShed.project.current(),
+			Schema.decodeUnknownEffect(WorkbenchProjectState)
+		).pipe(
+			Effect.map((result) =>
+				result.status === "ready" ? result.project.projectRoot : undefined
+			)
+		)
+	),
+	createStarterRules: Effect.fn("GameTextClient.createStarterRules")((loadExisting: boolean) =>
+		invokeRequest(
+			"gameText.createStarterRules",
+			() => window.ueShed.gameText.createStarterRules(loadExisting),
+			decodeTextQualityQueryRunResult
+		)
+	),
 	investigations: {
 		export: (query, format) =>
 			invokeRequest(
@@ -122,7 +310,7 @@ export const gameTextClient: GameTextClientApi = GameTextClient.of({
 	),
 	previewQualityRules: Effect.fn("GameTextClient.previewQualityRules")(
 		(
-			document: TextQualityRuleDocument
+			document: GameTextRuleDocument
 		): Effect.Effect<TextQualityRuleUpdateResult, GameTextClientError> =>
 			invokeRequest(
 				"gameText.previewQualityRules",
@@ -132,7 +320,7 @@ export const gameTextClient: GameTextClientApi = GameTextClient.of({
 	),
 	saveQualityRules: Effect.fn("GameTextClient.saveQualityRules")(
 		(
-			document: TextQualityRuleDocument
+			document: GameTextRuleDocument
 		): Effect.Effect<TextQualityRuleUpdateResult, GameTextClientError> =>
 			invokeRequest(
 				"gameText.saveQualityRules",

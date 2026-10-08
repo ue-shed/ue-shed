@@ -42,7 +42,9 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@ue-shed/unreal-assets": "workspace:0.9.3"
+		"@ue-shed/localization": "workspace:0.9.3",
+		"@ue-shed/unreal-assets": "workspace:0.9.3",
+		"linebreak": "1.1.0"
 	},
 	"devDependencies": {
 		"effect": "catalog:"

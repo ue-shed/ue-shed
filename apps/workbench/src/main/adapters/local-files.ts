@@ -30,7 +30,7 @@ export interface LocalFilesApi {
 	readonly writeFile: (
 		path: string,
 		bytes: Uint8Array,
-		options?: { readonly maxBytes?: number }
+		options?: { readonly maxBytes?: number; readonly exclusive?: boolean }
 	) => Effect.Effect<void, LocalFilesError>;
 }
 
@@ -210,6 +210,10 @@ export const LocalFilesLive = Layer.succeed(
 						return yield* Effect.tryPromise({
 							try: async () => {
 								try {
+									if (options?.exclusive) {
+										await writeFile(path, bytes, { flag: "wx" });
+										return;
+									}
 									await writeFile(temporaryPath, bytes, { flag: "wx" });
 									await rename(temporaryPath, path);
 								} catch (cause) {
@@ -323,6 +327,15 @@ export const makeLocalFilesTestLayer = (
 							)
 						);
 					}
+					if (options?.exclusive && files.has(path))
+						return yield* Effect.fail(
+							filesError(
+								"writeFile",
+								path,
+								"File exists.",
+								"Choose a new destination."
+							)
+						);
 					files.set(path, bytes);
 				}
 			)

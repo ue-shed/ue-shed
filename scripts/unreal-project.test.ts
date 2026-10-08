@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseUnrealDescriptor, registeredEngineRoot } from "./unreal-project-support.ts";
+import {
+	installedEngineRoot,
+	parseUnrealDescriptor,
+	registeredEngineRoot
+} from "./unreal-project-support.ts";
 
 test("parses Unreal descriptors with comments and trailing commas", () => {
 	const descriptor = parseUnrealDescriptor(`\ufeff{
@@ -42,4 +46,29 @@ test("does not resolve an absent registered association", () => {
 		}),
 		undefined
 	);
+});
+
+test("discovers launcher installations independently of custom build associations", () => {
+	assert.equal(
+		installedEngineRoot({
+			version: "4.27",
+			platform: "win32",
+			queryRegistry: (key) => {
+				assert.equal(key, "HKLM\\SOFTWARE\\EpicGames\\Unreal Engine\\4.27");
+				return "    InstalledDirectory    REG_SZ    D:/Engines/UE_4.27\r\n";
+			}
+		}),
+		"D:/Engines/UE_4.27"
+	);
+	assert.equal(
+		installedEngineRoot({
+			version: "5.3",
+			platform: "win32",
+			queryRegistry: () => {
+				throw new Error("not installed");
+			}
+		}),
+		undefined
+	);
+	assert.equal(installedEngineRoot({ version: "4.27", platform: "linux" }), undefined);
 });

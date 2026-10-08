@@ -43,6 +43,14 @@ honest unavailable state when the host has no compatible editor-selection capabi
 
 ## Acceptance journey
 
+For localization policy/report adoption, compose `LocalizationEvidenceNodeLive` in the trusted
+host and use the browser-safe `joinLocalizationTarget`, `decodeGameTextRuleDocumentJson`,
+`checkLocalizationTarget`, and `localizationProgressReport` functions. Keep the v1 starter;
+choose v2 only when the project supplies culture budgets or glossary terms. The report documents
+word-count limitations, unknown coverage and `not_tracked` review state. Baseline IO belongs to the
+host; `createLocalizationBaseline`/`diffLocalizationBaselines` are pure and do not edit Unreal files.
+Prove both fixture CSV oracles and exclusive baseline creation in the target's own journey.
+
 The integration is complete only when the target host can:
 
 1. Select an explicit project root without relying on ambient UI state.

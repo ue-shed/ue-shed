@@ -1,5 +1,6 @@
+import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
-import { textQualityQuery } from "./quality-query.js";
+import { TextQualitySearchPage, textQualityQuery } from "./quality-query.js";
 import { TextQualityRuleId, TextRoleId, type TextQualityReport } from "./quality-schema.js";
 import { makeTextOccurrenceId, makeTextUnitId } from "./schema.js";
 
@@ -76,6 +77,54 @@ const report: TextQualityReport = {
 };
 
 describe("text quality query", () => {
+	it("keeps late terminology matches visible in a bounded source preview", () => {
+		const term = report.findings[1];
+		if (term?.kind !== "terminology") throw new Error("Missing term finding");
+		const query = textQualityQuery({
+			...report,
+			findings: [
+				{
+					...term,
+					actual: {
+						...term.actual,
+						source: "x".repeat(6000) + " old end",
+						start: 6001,
+						end: 6004
+					}
+				}
+			]
+		});
+		const id = query.search({ filter: "all", pageSize: 50 }).findings[0]!.id;
+		const focus = query.focus({ id, pageSize: 50 });
+		if (focus?.kind !== "terminology") throw new Error("Missing term focus");
+		expect(focus.sourceTruncated).toBe(true);
+		expect(focus.sourceExcerpt.length).toBeLessThanOrEqual(4096);
+		expect(
+			focus.sourceExcerpt.slice(
+				focus.actual.start - focus.sourceOffset,
+				focus.actual.end - focus.sourceOffset
+			)
+		).toBe("old");
+	});
+
+	it("keeps remembered finding IDs stable and clears vanished evidence", () => {
+		const original = textQualityQuery(report).search({ filter: "terminology", pageSize: 50 });
+		const finding = original.findings[0];
+		if (!finding) throw new Error("Missing terminology finding");
+		const remaining = textQualityQuery({
+			...report,
+			findings: report.findings.filter((entry) => entry.kind === "terminology")
+		});
+		expect(remaining.search({ filter: "all", pageSize: 50 }).findings[0]?.id).toBe(finding.id);
+		expect(remaining.focus({ id: finding.id, pageSize: 50 })).toBeDefined();
+		expect(
+			textQualityQuery({ ...report, findings: [] }).focus({
+				id: finding.id,
+				pageSize: 50
+			})
+		).toBeUndefined();
+	});
+
 	it("keeps partial coverage visible while returning bounded finding summaries", () => {
 		const query = textQualityQuery(report);
 		expect(query.summary()).toMatchObject({
@@ -86,14 +135,31 @@ describe("text quality query", () => {
 		});
 		const page = query.search({ filter: "all", pageSize: 1 });
 		expect(page.findings).toHaveLength(1);
-		expect(page.nextCursor).toBe("quality-finding:1");
+		expect(Schema.decodeUnknownSync(TextQualitySearchPage)(page)).toEqual(page);
+		expect(page.findings[0]).not.toHaveProperty("affectedOccurrences");
+		expect(page.nextCursor).toBe(page.findings[0]?.id);
 		expect(page.findings[0]).toMatchObject({
 			actual: "24 characters",
 			expectation: "Maximum 10 characters",
 			role: "ui.prompt",
 			ruleId: "ui.prompt.characters",
-			textUnitId: "text:menu"
+			textUnitId: "text:menu",
+			location: occurrence.location
 		});
+	});
+
+	it("pluralizes a one-character limit in the finding summary", () => {
+		const query = textQualityQuery({
+			...report,
+			findings: report.findings.map((finding) =>
+				finding.kind === "character_budget"
+					? { ...finding, expectation: { ...finding.expectation, maximumCharacters: 1 } }
+					: finding
+			)
+		});
+		expect(
+			query.search({ filter: "character_budget", pageSize: 1 }).findings[0]?.expectation
+		).toBe("Maximum 1 character");
 	});
 
 	it("filters by finding kind and pages occurrence evidence only on focus", () => {

@@ -66,7 +66,7 @@ should follow [Website and illustrated guides](engineering/website.md).
 | [map-capture.md](products/map-capture.md)                 | Orthographic map tile pyramids                          |
 | [map-history.md](products/map-history.md)                 | Perforce-backed saved map history                       |
 | [config-explorer.md](products/config-explorer.md)         | Saved Unreal config provenance                          |
-| [game-text.md](products/game-text.md)                     | Saved text corpus and quality review                    |
+| [game-text.md](products/game-text.md)                     | Saved text corpus, quality review and localization      |
 | [scenario-studio.md](products/scenario-studio.md)         | Live PIE scenario execution                             |
 | [project-custodian.md](products/project-custodian.md)     | Reclaimable Unreal workspace storage                    |
 | [niagara-preview.md](products/niagara-preview.md)         | Portable Niagara preview evidence                       |
@@ -83,6 +83,7 @@ should follow [Website and illustrated guides](engineering/website.md).
 | [0006](decisions/0006-bounded-observatory-transform-stream.md)               | Bounded Observatory transform stream            |
 | [0007](decisions/0007-separate-uasset-inspection-and-io.md)                  | Separate UAsset parsing, inspection, and IO     |
 | [0008](decisions/0008-editor-world-camera-preview-stream.md)                 | Stream Map Review from the editor world         |
+| [0009](decisions/0009-localization-change-sets-and-review-state.md)          | Localization change sets and review state       |
 
 ## Research
 

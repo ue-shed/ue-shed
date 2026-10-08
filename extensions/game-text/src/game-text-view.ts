@@ -1,5 +1,6 @@
 import {
 	searchTextCorpus,
+	textAssetName,
 	type TextCorpus,
 	type TextLocation,
 	type TextOccurrence,
@@ -12,30 +13,19 @@ export type CapabilityFilter = "all" | "source_editable" | "read_only";
 type TextUnitPresentation = Pick<TextUnit, "identity" | "source"> | TextUnitSearchResult;
 
 export function sourceText(unit: TextUnitPresentation): string {
-	return unit.source.status === "consistent" ? unit.source.value : unit.source.values.join(" / ");
+	return unit.source.status === "consistent" ? unit.source.value : unit.source.values.join(" ");
 }
 
 export function identityLabel(unit: TextUnitPresentation): string {
 	if (unit.identity.status === "resolved") {
-		return `${unit.identity.namespace} · ${unit.identity.key}`;
+		return `${unit.identity.namespace || "global"} · ${unit.identity.key}`;
 	}
 	if (unit.identity.status === "string_table") {
 		return `${unit.identity.tableId} · ${unit.identity.key}`;
 	}
-	return `Identity unresolved · ${unit.identity.reason.replaceAll("_", " ")}`;
-}
-
-function leafName(objectPath: string): string {
-	const leaf = objectPath.split("/").at(-1) ?? objectPath;
-	return leaf.split(".").at(-1) ?? leaf;
-}
-
-function words(value: string): string {
-	return value
-		.replace(/^(?:DT|ST|T|WBP|BP)_/u, "")
-		.replaceAll(/[_./]+/gu, " ")
-		.replace(/([a-z0-9])([A-Z])/gu, "$1 $2")
-		.trim();
+	return unit.identity.reason === "culture_invariant"
+		? "Not localized (culture invariant)"
+		: "Missing localization key";
 }
 
 export interface TextContextPresentation {
@@ -46,25 +36,25 @@ export interface TextContextPresentation {
 
 /** Writer-facing authored context derived only from evidence present in the saved package. */
 export function textContext(location: TextLocation): TextContextPresentation {
-	const asset = words(leafName(location.objectPath));
+	const asset = textAssetName(location.objectPath);
 	if (location.kind === "string_table_entry") {
 		return {
 			detail: "Shared String Table entry",
 			kind: "String Table",
-			title: `${asset} · ${words(location.entryKey)}`
+			title: `${asset} · ${location.entryKey}`
 		};
 	}
 	if (location.kind === "data_table_cell") {
 		return {
-			detail: `${words(location.propertyPath)} field`,
+			detail: `${location.propertyPath} field`,
 			kind: "DataTable",
-			title: `${asset} · ${words(location.row)}`
+			title: `${asset} · ${location.row} · ${location.propertyPath}`
 		};
 	}
 	return {
-		detail: `${words(location.propertyPath)} property`,
-		kind: words(location.classPath.split(".").at(-1) ?? "Asset"),
-		title: asset
+		detail: `${location.propertyPath} property`,
+		kind: location.classPath.split(".").at(-1) ?? "Asset",
+		title: `${asset} · ${location.propertyPath}`
 	};
 }
 
@@ -83,6 +73,13 @@ export function sourceLength(unit: TextUnitPresentation): number {
 
 export function occurrenceContext(occurrence: TextOccurrence): string {
 	return textContext(occurrence.location).title;
+}
+
+export function locationDetail(location: TextLocation): string {
+	if (location.kind === "data_table_cell")
+		return `Row ${location.row} · ${location.propertyPath}`;
+	if (location.kind === "string_table_entry") return `Entry ${location.entryKey}`;
+	return location.propertyPath;
 }
 
 export function filterTextUnits(options: {

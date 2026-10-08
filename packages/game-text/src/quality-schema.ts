@@ -1,4 +1,5 @@
 import { Effect, Schema } from "effect";
+import { LocalizationCheckId } from "./localization-check-ids.js";
 import {
 	TextCorpus,
 	TextCorpusDiagnostic,
@@ -100,6 +101,7 @@ export const TextQualityRule = Schema.Union([
 export type TextQualityRule = Schema.Schema.Type<typeof TextQualityRule>;
 
 export const TextQualityRuleDocument = Schema.Struct({
+	disabledLocalizationChecks: Schema.optionalKey(Schema.Array(LocalizationCheckId)),
 	rules: Schema.Array(TextQualityRule).check(Schema.isMinLength(1), Schema.isMaxLength(512)),
 	roles: Schema.Array(TextRole).check(Schema.isMinLength(1), Schema.isMaxLength(256)),
 	schemaVersion: Schema.Literal(1)
@@ -274,7 +276,7 @@ export const TextQualityReport = Schema.Struct({
 	diagnostics: Schema.Array(TextCorpusDiagnostic),
 	findings: Schema.Array(TextQualityFinding),
 	roles: Schema.Array(TextQualityRoleSummary),
-	ruleDocumentVersion: TextQualityRuleDocument.fields.schemaVersion,
+	ruleDocumentVersion: Schema.Literals([1, 2]),
 	rules: Schema.Array(TextQualityRuleSummary),
 	schemaVersion: Schema.Literal(1),
 	status: TextCorpus.fields.status

@@ -16,6 +16,7 @@
 		"@ue-shed/engine": "workspace:*",
 		"@ue-shed/enhanced-input": "workspace:*",
 		"@ue-shed/game-text": "workspace:*",
+		"@ue-shed/localization": "workspace:*",
 		"@ue-shed/map-history": "workspace:*",
 		"@ue-shed/niagara": "workspace:*",
 		"@ue-shed/observability": "workspace:*",

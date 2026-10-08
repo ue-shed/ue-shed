@@ -3,6 +3,28 @@ import { parseJsonObject, type JsonObject } from "./json.ts";
 
 const registeredBuildsKey = "HKCU\\Software\\Epic Games\\Unreal Engine\\Builds";
 
+export function installedEngineRoot({
+	version,
+	platform = process.platform,
+	queryRegistry = (key) =>
+		execFileSync("reg.exe", ["query", key, "/v", "InstalledDirectory"], {
+			encoding: "utf8",
+			windowsHide: true
+		})
+}: {
+	readonly version: string;
+	readonly platform?: NodeJS.Platform;
+	readonly queryRegistry?: (key: string) => string;
+}) {
+	if (platform !== "win32") return undefined;
+	try {
+		const output = queryRegistry(`HKLM\\SOFTWARE\\EpicGames\\Unreal Engine\\${version}`);
+		return output.match(/^\s*InstalledDirectory\s+REG_(?:EXPAND_)?SZ\s+(.+?)\s*$/mu)?.[1];
+	} catch {
+		return undefined;
+	}
+}
+
 function withoutJsonComments(contents: string) {
 	let result = "";
 	let inString = false;

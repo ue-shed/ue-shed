@@ -555,7 +555,12 @@ export type SavedAssetTextOccurrence = Schema.Schema.Type<typeof SavedAssetTextO
 export const SavedAssetTextCoverageGap = Schema.Struct({
 	object_path: Schema.String,
 	property_path: Schema.String,
-	reason: Schema.Literal("unsupported_text_history")
+	reason: Schema.Literals([
+		"unsupported_text_history",
+		"legacy_container_element_without_type_information",
+		"feature_unavailable_for_engine_version",
+		"property_decoder_rejected"
+	])
 }).annotate({ identifier: "SavedAssetTextCoverageGap" });
 export type SavedAssetTextCoverageGap = Schema.Schema.Type<typeof SavedAssetTextCoverageGap>;
 

@@ -5,6 +5,7 @@ import { Context, Effect, Layer, Schema } from "effect";
 import { unrealRemoteControlPermissions } from "./remote-control-permissions.js";
 import {
 	EngineInstallationDiscovery,
+	type EngineVersion,
 	type EngineInstallationError
 } from "./engine-installation.js";
 
@@ -328,15 +329,17 @@ export function unrealEditorExecutable(engineRoot: string, platform = process.pl
 
 export function unrealEditorCommandletExecutable(
 	engineRoot: string,
-	platform = process.platform
+	platform = process.platform,
+	version?: EngineVersion
 ): string {
+	const name = version?.major === 4 ? "UE4Editor-Cmd" : "UnrealEditor-Cmd";
 	if (platform === "win32") {
-		return join(engineRoot, "Engine", "Binaries", "Win64", "UnrealEditor-Cmd.exe");
+		return join(engineRoot, "Engine", "Binaries", "Win64", `${name}.exe`);
 	}
 	if (platform === "darwin") {
-		return join(engineRoot, "Engine", "Binaries", "Mac", "UnrealEditor-Cmd");
+		return join(engineRoot, "Engine", "Binaries", "Mac", name);
 	}
-	return join(engineRoot, "Engine", "Binaries", "Linux", "UnrealEditor-Cmd");
+	return join(engineRoot, "Engine", "Binaries", "Linux", name);
 }
 
 export function unrealRemoteControlArguments(

@@ -24,6 +24,7 @@ import { reviewCommand } from "./commands/review.js";
 import { cameraCommand } from "./commands/camera-render.js";
 import { worldCommand } from "./commands/world.js";
 import { scenarioCommand } from "./commands/scenario.js";
+import { localizationCommand } from "./commands/localization.js";
 
 export const CliCommand = CliCommandSchema;
 export type CliCommand = CliCommandType;
@@ -44,6 +45,7 @@ export const cliCommand = Command.make("ue-shed").pipe(
 		authoringCommand,
 		assetsCommand,
 		textCommand,
+		localizationCommand,
 		inputCommand,
 		mapCommand,
 		mapCaptureCommand,
@@ -108,6 +110,6 @@ export function runCli(args: readonly string[]): Effect.Effect<void, CliCommandE
 		if (Option.isSome(error) && error.value instanceof CliCommandError) {
 			return yield* Effect.fail<CliCommandError>(error.value);
 		}
-		return yield* Effect.die(error);
+		return yield* Effect.die(Cause.squash(result.cause));
 	});
 }

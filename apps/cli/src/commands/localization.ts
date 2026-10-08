@@ -17,7 +17,9 @@ import {
 import {
 	localizationFlags,
 	optionalLocalizationFlags,
-	optionalWhereFlags
+	optionalWhereFlags,
+	filterFlags,
+	optionalFilterFlags
 } from "./localization-flags.js";
 import { LocalizationOperation, LocalizationReviewFlag } from "@ue-shed/localization/browser";
 import { runLocalizationReview } from "../workflows/localization-review.js";
@@ -208,7 +210,8 @@ export const localizationCommand = Command.make("loc").pipe(
 				state: Flag.choice("state", LocalizationState.literals).pipe(Flag.optional),
 				kinds: Flag.choice("kind", TextOriginKind.literals).pipe(Flag.atMost(5)),
 				path: Flag.string("path").pipe(Flag.optional),
-				files: Flag.string("files").pipe(Flag.optional)
+				files: Flag.string("files").pipe(Flag.optional),
+				...filterFlags()
 			},
 			({
 				projectRoot,
@@ -221,7 +224,9 @@ export const localizationCommand = Command.make("loc").pipe(
 				state,
 				kinds,
 				path,
-				files
+				files,
+				filters,
+				cultures
 			}) =>
 				runLocalizationExport({
 					_tag: "LocalizationExport",
@@ -230,6 +235,7 @@ export const localizationCommand = Command.make("loc").pipe(
 					output,
 					...optionalLocalizationFlags(culture, state),
 					...optionalWhereFlags(kinds, path, files),
+					...optionalFilterFlags(filters, cultures),
 					...(Option.isSome(review) ? { review: review.value } : undefined),
 					...(keyChanged ? { keyChanged } : undefined),
 					...(Option.isSome(reader) ? { reader: reader.value } : undefined)
@@ -260,7 +266,9 @@ export const localizationCommand = Command.make("loc").pipe(
 				reader,
 				kinds,
 				path,
-				files
+				files,
+				filters,
+				cultures
 			}) => {
 				return runLocalizationStatus({
 					_tag: "LocalizationStatus",
@@ -269,6 +277,7 @@ export const localizationCommand = Command.make("loc").pipe(
 					limit,
 					...optionalLocalizationFlags(culture, state),
 					...optionalWhereFlags(kinds, path, files),
+					...optionalFilterFlags(filters, cultures),
 					...(Option.isSome(review) ? { review: review.value } : undefined),
 					...(keyChanged ? { keyChanged } : undefined),
 					...(Option.isSome(reader) ? { reader: reader.value } : undefined)

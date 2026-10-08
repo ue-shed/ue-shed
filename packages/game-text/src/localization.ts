@@ -183,8 +183,22 @@ export function localizationGatherCoverage(
 	return uncertain ? { status: "unknown", reason: uncertain } : { status: "outside" };
 }
 
+// Built once: the join decodes an identity per saved unit, tens of thousands in a shipping game.
+const decodeLocalizationIdentity = Schema.decodeUnknownSync(LocalizationIdentity);
+
 function identityKey(identity: typeof LocalizationIdentity.Type): string {
 	return JSON.stringify([identity.namespace, identity.key]);
+}
+
+/**
+ * Whether an already-decoded JSON value is an object. Built once and shallow: text comparison runs
+ * for every culture of every line, and its values were validated when the files were read.
+ */
+type JsonValue = typeof Schema.Json.Type;
+
+// Decoded JSON objects are plain objects; JSON's strings, numbers and booleans are primitives.
+function isJsonRecord(value: JsonValue): value is { readonly [key: string]: JsonValue } {
+	return value instanceof Object && !Array.isArray(value);
 }
 
 function sameJson(left: typeof Schema.Json.Type, right: typeof Schema.Json.Type): boolean {
@@ -197,11 +211,7 @@ function sameJson(left: typeof Schema.Json.Type, right: typeof Schema.Json.Type)
 			left.every((item, index) => sameJson(item, right[index] ?? null))
 		);
 	if (Array.isArray(right)) return false;
-	if (
-		!Schema.is(Schema.Record(Schema.String, Schema.Json))(left) ||
-		!Schema.is(Schema.Record(Schema.String, Schema.Json))(right)
-	)
-		return false;
+	if (!isJsonRecord(left) || !isJsonRecord(right)) return false;
 	const keys = Object.keys(left);
 	return (
 		keys.length === Object.keys(right).length &&
@@ -265,14 +275,17 @@ export function joinLocalizationTarget(
 	const manifest = groupByIdentity(
 		evidence.manifest.status === "read" ? evidence.manifest.value.entries : []
 	);
+	const resolved = new Map<TextUnit["id"], typeof LocalizationIdentity.Type>();
 	const tables = new Map<string, typeof LocalizationIdentity.Type>();
 	for (const unit of corpus.units) {
 		if (unit.identity.status !== "resolved") continue;
+		const identity = decodeLocalizationIdentity(unit.identity);
+		resolved.set(unit.id, identity);
 		for (const occurrence of unit.occurrences) {
 			if (occurrence.location.kind === "string_table_entry")
 				tables.set(
 					JSON.stringify([occurrence.location.objectPath, occurrence.location.entryKey]),
-					Schema.decodeUnknownSync(LocalizationIdentity)(unit.identity)
+					identity
 				);
 		}
 	}
@@ -283,7 +296,7 @@ export function joinLocalizationTarget(
 	for (const unit of corpus.units) {
 		const identity =
 			unit.identity.status === "resolved"
-				? Schema.decodeUnknownSync(LocalizationIdentity)(unit.identity)
+				? (resolved.get(unit.id) ?? null)
 				: unit.identity.status === "string_table"
 					? (tables.get(JSON.stringify([unit.identity.tableId, unit.identity.key])) ??
 						null)

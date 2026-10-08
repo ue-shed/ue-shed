@@ -218,6 +218,79 @@ export const TextReviewSignal = Schema.Literals([
 ]);
 export type TextReviewSignal = Schema.Schema.Type<typeof TextReviewSignal>;
 
+/**
+ * What stands between a line and shipping, worst first. Key problems lose or mix up translations;
+ * not gathered and changed since gather wait on Unreal; translation work waits on a culture in
+ * scope; findings are worth a look but block nothing. A line with none is up to date.
+ */
+export const TextProblem = Schema.Literals([
+	"key_changed",
+	"conflicting_source",
+	"not_gathered",
+	"changed_since_gather",
+	"translation",
+	"finding",
+	"up_to_date"
+]);
+export type TextProblem = Schema.Schema.Type<typeof TextProblem>;
+
+/** Findings: reused text, the same text under different keys, long text, unlocalizable text. */
+export const TextFinding = Schema.Literals(["shared", "duplicate_source", "long", "unresolved"]);
+export type TextFinding = Schema.Schema.Type<typeof TextFinding>;
+
+/** Translation work in one culture: no translation, one written for older text, or not in Unreal. */
+export const TextTranslationState = Schema.Literals(["missing", "to_update", "not_synced"]);
+export type TextTranslationState = Schema.Schema.Type<typeof TextTranslationState>;
+
+export const TextEditing = Schema.Literals(["editable", "read_only"]);
+export type TextEditing = Schema.Schema.Type<typeof TextEditing>;
+
+export const TextNotes = Schema.Literals(["missing", "present"]);
+export type TextNotes = Schema.Schema.Type<typeof TextNotes>;
+
+const ClauseOp = Schema.Literals(["is", "is_not"]);
+const clause = <const Field extends string, Value extends Schema.Top>(
+	field: Field,
+	value: Value,
+	max: number
+) =>
+	Schema.Struct({
+		field: Schema.Literal(field),
+		op: ClauseOp,
+		values: Schema.Array(value).check(Schema.isMinLength(1), Schema.isMaxLength(max))
+	});
+
+/**
+ * One filter pill: a line matches `is` when it has any of the values, and `is_not` when it has
+ * none of them. Folders match by path prefix.
+ */
+export const TextFilterClause = Schema.Union([
+	clause("problem", TextProblem, TextProblem.literals.length),
+	clause("finding", TextFinding, TextFinding.literals.length),
+	clause("translation", TextTranslationState, TextTranslationState.literals.length),
+	clause("origin", TextOriginKind, TextOriginKind.literals.length),
+	clause("folder", Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(512)), 50),
+	clause("editing", TextEditing, TextEditing.literals.length),
+	clause("notes", TextNotes, TextNotes.literals.length)
+]);
+export type TextFilterClause = Schema.Schema.Type<typeof TextFilterClause>;
+export type TextFilterField = TextFilterClause["field"];
+
+/** Every clause must match. */
+export const TextFilter = Schema.Array(TextFilterClause).check(Schema.isMaxLength(32));
+export type TextFilter = Schema.Schema.Type<typeof TextFilter>;
+
+export const TextProblemCounts = Schema.Struct({
+	key_changed: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+	conflicting_source: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+	not_gathered: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+	changed_since_gather: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+	translation: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+	finding: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+	up_to_date: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+});
+export type TextProblemCounts = Schema.Schema.Type<typeof TextProblemCounts>;
+
 /** A bounded authored/gathered location preview carried by corpus search results. */
 export const TextUnitContext = Schema.Struct({
 	editCapability: TextOccurrence.fields.editCapability,
@@ -311,6 +384,8 @@ export const TextCorpusSearchRequest = Schema.Struct({
 	cursor: Schema.optional(TextUnitId),
 	lens: Schema.optional(TextReviewLens),
 	where: Schema.optionalKey(TextWhere),
+	/** Filter pills, applied on top of the other fields. */
+	filter: Schema.optionalKey(TextFilter),
 	pageSize: TextQueryPageSize,
 	query: Schema.String.pipe(Schema.check(Schema.isMaxLength(512)))
 });
@@ -319,6 +394,8 @@ export type TextCorpusSearchRequest = Schema.Schema.Type<typeof TextCorpusSearch
 export const TextCorpusSearchPage = Schema.Struct({
 	localization: Schema.optionalKey(LocalizationQueryPage),
 	fileScope: Schema.optionalKey(TextFileScopeSummary),
+	/** Lines with each problem, over the request without its problem clauses. */
+	problems: Schema.optionalKey(TextProblemCounts),
 	counts: TextCorpusSearchCounts,
 	nextCursor: Schema.optional(TextUnitId),
 	total: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),

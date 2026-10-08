@@ -146,6 +146,16 @@ export type LocalizationJoin = typeof LocalizationJoin.Type;
 export const LocalizationSelection = Schema.Struct({
 	target: LocalizationTargetName,
 	culture: Schema.optionalKey(CultureCode),
+	/**
+	 * The cultures in scope, such as a saved culture set; every target culture when absent. States,
+	 * counts and translation problems consider only these cultures.
+	 */
+	cultures: Schema.optionalKey(
+		Schema.Array(CultureCode).check(
+			Schema.isMinLength(1),
+			Schema.isMaxLength(MAX_LOCALIZATION_CULTURES)
+		)
+	),
 	state: Schema.optionalKey(LocalizationState),
 	review: Schema.optionalKey(LocalizationReviewLens),
 	/** Only lines whose key changed, listed by their new key. */

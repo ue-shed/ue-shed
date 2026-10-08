@@ -11,8 +11,9 @@
 
 ## Status
 
-- **State**: TODO. The design is a mockup with sample data; each phase earns its part against the
-  fixture and a generated large corpus.
+- **State**: IN PROGRESS. Phase 1 is done; Phase 2 (groups and facets) is next. The design is a
+  mockup with sample data; each phase earns its part against the fixture and a generated large
+  corpus.
 - **Priority**: P1
 - **Effort**: XL
 - **Risk**: MEDIUM. The Workbench's Game Text surface changes shape; saved views and presets from
@@ -47,8 +48,10 @@ scope are pure functions in `@ue-shed/game-text`, exposed through the existing q
 4. **Culture sets** are stored with the Workbench project preferences (per user) in this plan. A
    shared project file is a later decision.
 5. **Filters are a list of clauses**, each `{ field, op: "is" | "is_not", values }`, decoded at the
-   boundary and applied as an AND of ORs. Existing `lens`, `capability`, `withoutNotes`, `where` and
-   `localization.state/review/keyChanged` map to clauses; old requests and saved presets still decode.
+   boundary and applied as an AND of ORs. They are an added request field, ANDed with the existing
+   `lens`, `capability`, `withoutNotes`, `where` and `localization.state/review/keyChanged`, which
+   keep their own code path, so old requests and saved presets behave exactly as before. The
+   Workbench sends clauses from Phase 3, when 0.10 presets migrate to them.
 6. **Grouping pages per group.** The page returns every group's key, label, count and worst problem,
    and lines only for open groups, each with its own cursor. A collapsed group costs a count.
 7. **The line page** replaces the detail pane for a picked line. With nothing picked, the right pane
@@ -70,6 +73,32 @@ scope are pure functions in `@ue-shed/game-text`, exposed through the existing q
 **Gate**: every problem's count equals its filtered total; legacy requests and saved preset JSON
 decode to the same results as before; a generated 50,000-line, 14-culture corpus answers a
 filtered count inside the existing query budget.
+
+**Evidence (2026-10-08)**: Phase 1 is done.
+
+- `text-problems.ts`: `textProblems` returns every problem worst first (`up_to_date` alone when
+  none), so the worst is the first; `TextFacts`, `matchesTextFilter` (with one field left out for
+  facets) and `textProblemCounts`. Facts are gathered only, outside the target and origin; they
+  never count as problems.
+- `TextFilterClause` covers problem, finding, translation, origin, folder, editing and notes. Asset,
+  source file, namespace and culture clauses come with their facets in Phase 2; changed files stay
+  on `where.files` and review on the selection's `review`. A translation clause without a target
+  fails with `invalid_selection`.
+- `LocalizationSelection.cultures` scopes states, per-culture counts and translation work, and must
+  name target cultures.
+- CLI: one repeatable `--filter "<field> is|is-not <values>"`, mirroring a pill, and
+  `--cultures de,fr`, on `loc status`, `loc export` and localization-aware `text search`; malformed
+  clauses fail with the expected form. This replaces the planned `--problem` and `--exclude` flags.
+- Scale: no query budget existed, so `query-scale.test.ts` generates 50,000 lines in 200 folders and
+  14 cultures and measures. It found that joining the target took about 30 seconds, from a schema
+  guard rebuilt on every text comparison; the join now takes about 1.5 seconds. Per-culture counts
+  now take one pass. An unfiltered page takes about 0.3 seconds (0.24 seconds without problem
+  counts; 0.9 seconds before these fixes) and a problem-filtered page about 0.4 seconds. The test
+  keeps loose bounds that catch quadratic work without failing on slow machines.
+- Verified: problem and clause tests (each problem's count equals its filtered total; culture scope;
+  refusal without a target); the CLI parser tests; the real-reader CLI test on the fixture, where
+  each `--filter "problem is …"` total equals its count; the existing 142 Game Text tests unchanged;
+  precommit.
 
 ## Phase 2: Groups and facets (core and CLI)
 

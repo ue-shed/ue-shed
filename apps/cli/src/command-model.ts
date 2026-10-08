@@ -15,11 +15,16 @@ import {
 } from "@ue-shed/game-text/browser";
 import { LocalizationOperation, LocalizationReviewFlag } from "@ue-shed/localization/browser";
 
-/** Where text comes from: `--kind` (repeatable), `--path` and a `--files` list file. */
+/**
+ * Where text comes from (`--kind`, repeatable; `--path`; a `--files` list file), filter clauses
+ * (`--filter`, repeatable, parsed by the workflow) and the culture scope (`--cultures de,fr`).
+ */
 const TextWhereFields = {
 	kinds: Schema.optionalKey(Schema.Array(TextOriginKind)),
 	pathPrefix: Schema.optionalKey(Schema.String),
-	changedFiles: Schema.optionalKey(Schema.String)
+	changedFiles: Schema.optionalKey(Schema.String),
+	filter: Schema.optionalKey(Schema.Array(Schema.String)),
+	cultures: Schema.optionalKey(Schema.String)
 };
 
 const Project = { projectRoot: Schema.String };

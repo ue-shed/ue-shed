@@ -348,6 +348,20 @@ file holds one path per line, at most 5,000. Counts intersect the same filters a
 before pagination, including a dedicated `not_synced` count. Gathered-only rows use distinct
 evidence IDs, and focus exposes every culture, PO context and manifest source locations.
 
+Every page also counts lines by **problem**, worst first: key changed, same key with different
+text, not gathered yet, changed since gather, translation work, finding (reused, the same text
+under different keys, long, not localizable) and up to date. A line counts once for each problem
+it has; the counts leave out problem filters so each one equals what its own filter returns.
+Gathered only, outside the target and origin are facts, not problems.
+
+`--filter` takes a clause, repeatable, such as `problem is key-changed,not-gathered`,
+`folder is-not Content/Prototype/` or `translation is missing`: a field (`problem`, `finding`,
+`translation`, `origin`, `folder`, `editing`, `notes`), `is` or `is-not`, and comma-separated
+values. Every clause must match; `is` matches any of its values and `is-not` none of them.
+`--cultures de,fr` limits states, counts and translation work to a culture set. Both work on
+`loc status`, `loc export` and localization-aware `text search`; a malformed clause fails with
+`invalid_selection` and the expected form.
+
 ### Checks and reports
 
 Localization checks are quality findings over the same corpus and report model:

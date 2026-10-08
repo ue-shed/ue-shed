@@ -2,6 +2,7 @@ import { Schema } from "effect";
 import type { CultureCode } from "@ue-shed/localization/browser";
 import {
 	GameTextLocalizationError,
+	type LocalizationCultureMark,
 	LocalizationCultureCounts,
 	LocalizationStateCounts,
 	LocalizationUnknownReason,
@@ -11,10 +12,16 @@ import {
 	type LocalizationLinePreview,
 	LocalizationQueryPage,
 	LocalizationReviewLens,
-	type LocalizationSelection
+	type LocalizationSelection,
+	type LocalizationState
 } from "./localization-schema.js";
 import { matchesLocalizationReview } from "./localization-review.js";
 import type { TextCorpusSearchRequest } from "./schema.js";
+
+const decodeStateCounts = Schema.decodeUnknownSync(LocalizationStateCounts);
+const decodeUnknownReasonCounts = Schema.decodeUnknownSync(
+	LocalizationCultureCounts.fields.unknownReasons
+);
 
 function words(source: string): number {
 	return source.trim() ? source.trim().split(/\s+/u).length : 0;
@@ -59,34 +66,72 @@ export function localizationCounts(
 	lines: readonly LocalizationLine[],
 	cultures: readonly CultureCode[]
 ): readonly LocalizationCultureCounts[] {
-	return cultures.map((culture) => {
-		const states = Schema.decodeUnknownSync(LocalizationStateCounts)(
-			Object.fromEntries(
-				localizationStates.map((state) => [state, { lines: 0, sourceWords: 0 }])
-			)
-		);
-		const unknownReasons = Schema.decodeUnknownSync(
-			LocalizationCultureCounts.fields.unknownReasons
-		)(Object.fromEntries(LocalizationUnknownReason.literals.map((reason) => [reason, 0])));
-		let reducedSourceChecking = 0;
-		for (const line of lines) {
-			const mark = line.cultures.find((item) => item.culture === culture);
-			if (!mark) continue;
-			// Schema outputs are readonly. Replacing a count preserves its validated contract.
-			Object.assign(states, {
-				[mark.state]: {
-					lines: states[mark.state].lines + 1,
-					sourceWords: states[mark.state].sourceWords + words(line.source)
-				}
-			});
+	// One pass over the lines, tallying every culture at once: a shipping game has tens of
+	// thousands of lines and a dozen or more cultures.
+	const tallies = new Map(
+		cultures.map((culture) => [
+			culture,
+			{
+				states: new Map<LocalizationState, { lines: number; sourceWords: number }>(),
+				unknownReasons: new Map<LocalizationUnknownReason, number>(),
+				reducedSourceChecking: 0
+			}
+		])
+	);
+	for (const line of lines) {
+		const sourceWords = words(line.source);
+		const seen = new Set<CultureCode>();
+		for (const mark of line.cultures) {
+			const tally = tallies.get(mark.culture);
+			if (!tally || seen.has(mark.culture)) continue;
+			seen.add(mark.culture);
+			const state = tally.states.get(mark.state) ?? { lines: 0, sourceWords: 0 };
+			state.lines++;
+			state.sourceWords += sourceWords;
+			tally.states.set(mark.state, state);
 			for (const reason of mark.unknownReasons)
-				Object.assign(unknownReasons, {
-					[reason]: unknownReasons[reason] + 1
-				});
-			if (mark.reducedSourceChecking) reducedSourceChecking++;
+				tally.unknownReasons.set(reason, (tally.unknownReasons.get(reason) ?? 0) + 1);
+			if (mark.reducedSourceChecking) tally.reducedSourceChecking++;
 		}
-		return { culture, states, unknownReasons, reducedSourceChecking };
+	}
+	return cultures.map((culture) => {
+		const tally = tallies.get(culture);
+		return {
+			culture,
+			states: decodeStateCounts(
+				Object.fromEntries(
+					localizationStates.map((state) => [
+						state,
+						tally?.states.get(state) ?? { lines: 0, sourceWords: 0 }
+					])
+				)
+			),
+			unknownReasons: decodeUnknownReasonCounts(
+				Object.fromEntries(
+					LocalizationUnknownReason.literals.map((reason) => [
+						reason,
+						tally?.unknownReasons.get(reason) ?? 0
+					])
+				)
+			),
+			reducedSourceChecking: tally?.reducedSourceChecking ?? 0
+		};
 	});
+}
+
+/**
+ * The marks a selection looks at: the picked culture, else the cultures in scope, else every
+ * target culture.
+ */
+export function scopedLocalizationMarks<Mark extends Pick<LocalizationCultureMark, "culture">>(
+	line: { readonly cultures: readonly Mark[] },
+	selection: LocalizationSelection | undefined
+): readonly Mark[] {
+	const culture = selection?.culture;
+	const scope = selection?.cultures;
+	if (culture !== undefined) return line.cultures.filter((mark) => mark.culture === culture);
+	if (scope === undefined) return line.cultures;
+	return line.cultures.filter((mark) => scope.includes(mark.culture));
 }
 
 export function validateLocalizationSelection(
@@ -95,7 +140,8 @@ export function validateLocalizationSelection(
 ): void {
 	if (
 		selection.target !== join.target ||
-		(selection.culture !== undefined && !join.cultures.includes(selection.culture))
+		(selection.culture !== undefined && !join.cultures.includes(selection.culture)) ||
+		selection.cultures?.some((culture) => !join.cultures.includes(culture))
 	) {
 		throw new GameTextLocalizationError({
 			code: "invalid_selection",
@@ -111,9 +157,7 @@ export function matchesLocalizationLine(
 ): boolean {
 	const selection = request.localization;
 	if (!selection) return false;
-	const selected = line.cultures.filter(
-		(mark) => selection.culture === undefined || mark.culture === selection.culture
-	);
+	const selected = scopedLocalizationMarks(line, selection);
 	const lens = selection.review;
 	if (lens !== undefined && !selected.some((mark) => matchesLocalizationReview(mark, lens)))
 		return false;
@@ -162,10 +206,7 @@ export function localizationQueryPage(
 	const reviewed = matched.some((line) => line.cultures.some((mark) => mark.review));
 	const reviewCounts = new Map(LocalizationReviewLens.literals.map((lens) => [lens, 0]));
 	for (const line of matched) {
-		const marks = line.cultures.filter(
-			(mark) =>
-				!request.localization?.culture || mark.culture === request.localization.culture
-		);
+		const marks = scopedLocalizationMarks(line, request.localization);
 		for (const state of localizationStates) {
 			if (
 				marks.some((mark) =>
@@ -182,7 +223,7 @@ export function localizationQueryPage(
 	}
 	const result: LocalizationQueryPage = {
 		target: join.target,
-		counts: localizationCounts(matched, join.cultures),
+		counts: localizationCounts(matched, request.localization?.cultures ?? join.cultures),
 		stateCounts,
 		notSynced,
 		lines: page.map(localizationLinePreview)

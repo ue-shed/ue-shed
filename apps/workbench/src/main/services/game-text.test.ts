@@ -128,6 +128,15 @@ const projectIndex: SavedAssetScan & { readonly generation: number } = {
 		skippedAssets: 0
 	}
 };
+const noProblems = {
+	key_changed: 0,
+	conflicting_source: 0,
+	not_gathered: 0,
+	changed_since_gather: 0,
+	translation: 0,
+	finding: 0,
+	up_to_date: 0
+};
 const selectedProject = makeWorkbenchProjectTestLayer({
 	choose: () => Effect.succeed({ project: projectSummary, status: "ready" as const }),
 	current: () => Effect.succeed({ project: projectSummary, status: "ready" as const }),
@@ -708,7 +717,8 @@ it.effect("keeps refreshed corpus data in main and serves bounded query results"
 					readOnly: 0,
 					withoutNotes: 0,
 					origins: { string_table: 0, data_table: 0, asset: 0, cpp: 0, other_source: 0 }
-				}
+				},
+				problems: noProblems
 			},
 			status: "ready"
 		});
@@ -856,7 +866,8 @@ it.effect(
 							cpp: 0,
 							other_source: 0
 						}
-					}
+					},
+					problems: noProblems
 				},
 				status: "ready"
 			});

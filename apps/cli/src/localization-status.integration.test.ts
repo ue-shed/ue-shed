@@ -179,4 +179,61 @@ describe.skipIf(!executable)("localization CLI with the real reader", () => {
 			expect(yield* Ref.get(output)).toContain("destination_exists");
 		})
 	);
+
+	it.effect("filters by problem with clauses and narrows to a culture set", () =>
+		Effect.gen(function* () {
+			if (executable === undefined) throw new Error("The saved reader is not configured.");
+			const output = yield* Ref.make("");
+			const exitCode = yield* Ref.make(0);
+			const runtime = Layer.succeed(
+				CliRuntime,
+				CliRuntime.of({
+					print: (text) => Ref.update(output, (value) => value + text),
+					printError: () => Effect.void,
+					setExitCode: (code) => Ref.set(exitCode, code)
+				})
+			);
+			const status = (...extra: string[]) =>
+				Effect.gen(function* () {
+					yield* Ref.set(output, "");
+					yield* runCli([
+						"loc",
+						"status",
+						fixture.root,
+						"--target",
+						"FixtureGame",
+						"--reader",
+						executable,
+						...extra
+					]).pipe(Effect.provide(runtime));
+					return yield* Ref.get(output);
+				});
+			const report = (text: string) =>
+				Schema.decodeUnknownEffect(Schema.fromJsonString(LocalizationStatusReport))(text);
+			const all = yield* report(yield* status());
+			const problems = all.page.problems;
+			if (problems === undefined) throw new Error("The status page has no problem counts.");
+			expect(problems.not_gathered).toBeGreaterThan(0);
+			// Each problem's count is what its clause returns.
+			for (const [problem, count] of Object.entries(problems)) {
+				const filtered = yield* report(
+					yield* status("--filter", `problem is ${problem.replaceAll("_", "-")}`)
+				);
+				expect(filtered.page.total).toBe(count);
+			}
+			const notCode = yield* report(
+				yield* status("--filter", "problem is up-to-date", "--filter", "origin is-not cpp")
+			);
+			expect(notCode.page.total).toBeLessThan(problems.up_to_date);
+			// A culture set narrows the per-culture counts.
+			const german = yield* report(yield* status("--cultures", "de"));
+			expect(german.counts.map((count) => count.culture)).toEqual(["de"]);
+			expect(yield* Ref.get(exitCode)).toBe(0);
+			// A malformed clause fails with guidance, not a crash.
+			const failed = yield* status("--filter", "problem maybe key-changed");
+			expect(failed).toContain("invalid_selection");
+			expect(failed).toContain("is or is-not");
+			expect(yield* Ref.get(exitCode)).toBe(2);
+		})
+	);
 });

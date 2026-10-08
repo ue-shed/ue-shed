@@ -6,12 +6,22 @@ import type {
 	TextCorpusSearchPage,
 	TextCorpusSearchCounts,
 	TextCorpusSearchRequest,
+	TextEditing,
+	TextFilter,
 	TextReviewLens,
 	TextReviewSignal,
 	TextUnit,
 	TextUnitSearchResult,
 	TextWhere
 } from "./schema.js";
+import {
+	matchesTextFilter,
+	textFindings,
+	textProblemCounts,
+	textProblems,
+	translationStates,
+	type TextFacts
+} from "./text-problems.js";
 import { hasSearchableSource, searchableSourceText } from "./search.js";
 import {
 	emptyTextOriginCounts,
@@ -31,13 +41,15 @@ import {
 import type {
 	LocalizationJoin,
 	LocalizationLine,
-	LocalizationLineId
+	LocalizationLineId,
+	LocalizationSelection
 } from "./localization-schema.js";
 import { GameTextLocalizationError } from "./localization-schema.js";
 import { localizationManifestNotes } from "./localization.js";
 import {
 	localizationQueryPage,
 	matchesLocalizationLine,
+	scopedLocalizationMarks,
 	validateLocalizationSelection
 } from "./localization-query.js";
 
@@ -124,21 +136,47 @@ export function textCorpusQuery(
 	const duplicateSources = new Set(
 		[...sourceFrequency].filter(([, count]) => count > 1).map(([source]) => source)
 	);
-	const indexed = units.filter(hasSearchableSource).map((unit) => ({
-		presentation: searchResult(unit, duplicateSources),
-		searchable: searchableSourceText(unit),
-		hasEditable: unit.occurrences.some(
+	const indexed = units.filter(hasSearchableSource).map((unit) => {
+		const presentation = searchResult(unit, duplicateSources);
+		const hasEditable = unit.occurrences.some(
 			(occurrence) => occurrence.editCapability === "source_editable"
-		),
-		hasReadOnly: unit.occurrences.some(
+		);
+		const hasReadOnly = unit.occurrences.some(
 			(occurrence) => occurrence.editCapability === "read_only"
-		),
-		withoutNotes: unit.occurrences.every((occurrence) => occurrence.devNotes.trim() === ""),
-		origins: unitOrigins(unit),
-		paths: unitPaths(unit),
-		fileKeys: unitFileKeys(unit),
-		unit
-	}));
+		);
+		const withoutNotes = unit.occurrences.every(
+			(occurrence) => occurrence.devNotes.trim() === ""
+		);
+		const origins = unitOrigins(unit);
+		const paths = unitPaths(unit);
+		const editing: TextEditing[] = [
+			...(hasEditable ? ["editable" as const] : []),
+			...(hasReadOnly ? ["read_only" as const] : [])
+		];
+		// Without a localization target a unit's problems come from its own review signals.
+		const facts: TextFacts = {
+			problems: textProblems({ signals: presentation.reviewSignals, keyChanged: false }),
+			findings: textFindings(presentation.reviewSignals),
+			translation: [],
+			origins,
+			paths,
+			editing,
+			notes: withoutNotes ? "missing" : "present"
+		};
+		return {
+			presentation,
+			searchable: searchableSourceText(unit),
+			hasEditable,
+			hasReadOnly,
+			withoutNotes,
+			origins,
+			paths,
+			editing,
+			facts,
+			fileKeys: unitFileKeys(unit),
+			unit
+		};
+	});
 	const byId = new Map(indexed.map((entry) => [entry.unit.id, entry]));
 	const localizationByUnit = new Map(
 		localization?.lines.flatMap((line) =>
@@ -175,6 +213,7 @@ export function textCorpusQuery(
 		for (const entry of indexed) {
 			const { presentation, searchable, unit, hasEditable, hasReadOnly } = entry;
 			if (!terms.every((term) => searchable.includes(term))) continue;
+			if (!matchesTextFilter(entry.facts, request.filter)) continue;
 			if (!matchesTextPathPrefix(entry.paths, request.where?.pathPrefix)) continue;
 			if (!matchesTextFiles(entry.fileKeys, files)) continue;
 			const inKinds = matchesTextKinds(entry.origins, request.where?.kinds);
@@ -212,11 +251,16 @@ export function textCorpusQuery(
 					"Load and join the selected target before querying its localization state."
 			});
 		validateLocalizationSelection(localization, request.localization);
+		const selection = request.localization;
+		// Filter clauses ask about lines, so units qualify without them.
+		const { filter, ...unfiltered } = request;
 		const eligible = new Set(
-			matching({ ...request, query: "" }).matched.map(({ unit }) => unit.id)
+			matching({ ...unfiltered, query: "" }).matched.map(({ unit }) => unit.id)
 		);
 		const files = textFileScope(request.where?.files);
 		return localization.lines.filter((line) => {
+			if (filter !== undefined && !matchesTextFilter(lineFacts(line, selection), filter))
+				return false;
 			if (line.source.trim() === "") return false;
 			if (
 				line.origin.kind === "corpus" &&
@@ -266,6 +310,69 @@ export function textCorpusQuery(
 		line.origin.kind === "evidence"
 			? manifestOrigins(line.manifest.map((entry) => entry.path))
 			: [...new Set(line.origin.unitIds.flatMap((id) => byId.get(id)?.origins ?? []))];
+	const lineEntries = (line: LocalizationLine) =>
+		line.origin.kind === "evidence"
+			? []
+			: line.origin.unitIds.flatMap((id) => {
+					const entry = byId.get(id);
+					return entry ? [entry] : [];
+				});
+	const lineSignals = (entries: ReturnType<typeof lineEntries>) => [
+		...new Set(entries.flatMap((entry) => entry.presentation.reviewSignals))
+	];
+	// Counting needs only the problems, so it skips the paths, origins and notes a filter reads.
+	const lineProblems = (line: LocalizationLine, selection: LocalizationSelection) =>
+		textProblems({
+			signals: lineSignals(lineEntries(line)),
+			keyChanged: line.keyChange?.direction === "to",
+			marks: scopedLocalizationMarks(line, selection)
+		});
+	function lineFacts(line: LocalizationLine, selection: LocalizationSelection): TextFacts {
+		const entries = lineEntries(line);
+		const signals = lineSignals(entries);
+		const marks = scopedLocalizationMarks(line, selection);
+		const manifestPaths = line.manifest.map((entry) => normalizeTextPath(entry.path));
+		const evidence = line.origin.kind === "evidence";
+		return {
+			problems: textProblems({
+				signals,
+				keyChanged: line.keyChange?.direction === "to",
+				marks
+			}),
+			findings: textFindings(signals),
+			translation: translationStates(marks),
+			origins: lineOrigins(line),
+			paths: [...entries.flatMap((entry) => entry.paths), ...manifestPaths],
+			editing: evidence
+				? ["read_only"]
+				: [...new Set(entries.flatMap((entry) => entry.editing))],
+			notes: (
+				evidence
+					? line.manifest.every((entry) => localizationManifestNotes(entry).length === 0)
+					: entries.every((entry) => entry.withoutNotes)
+			)
+				? "missing"
+				: "present"
+		};
+	}
+	const hasProblemClause = (filter: TextFilter | undefined) =>
+		filter?.some((clause) => clause.field === "problem") ?? false;
+	const withoutProblemClauses = (filter: TextFilter | undefined) => {
+		const rest = filter?.filter((clause) => clause.field !== "problem");
+		return rest === undefined || rest.length === 0 ? undefined : { filter: rest };
+	};
+	// Translation work only exists against a localization target.
+	const requireTarget = (request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">) => {
+		if (
+			!request.localization &&
+			request.filter?.some((clause) => clause.field === "translation")
+		)
+			throw new GameTextLocalizationError({
+				code: "invalid_selection",
+				message: "Translation filters need a localization target.",
+				recovery: "Select a localization target, or remove the translation filter."
+			});
+	};
 	const summary: TextCorpusQuerySummary = {
 		counts: baseline,
 		...(scannedAt === undefined ? undefined : { scannedAt }),
@@ -303,6 +410,7 @@ export function textCorpusQuery(
 		localizationFocus: (id) => localization?.lines.find((line) => line.id === id),
 		localizationLines: (request) => localizedMatching(request),
 		export: (request) => {
+			requireTarget(request);
 			if (request.localization) {
 				const ids = new Set(
 					localizedMatching(request).flatMap((line) =>
@@ -315,7 +423,11 @@ export function textCorpusQuery(
 		},
 		summary: () => summary,
 		search: (request) => {
-			if (request.localization) {
+			requireTarget(request);
+			const { filter: _filter, ...unfiltered } = request;
+			const problemBase = { ...unfiltered, ...withoutProblemClauses(request.filter) };
+			const selection = request.localization;
+			if (selection) {
 				if (!localization)
 					throw new GameTextLocalizationError({
 						code: "invalid_selection",
@@ -324,6 +436,13 @@ export function textCorpusQuery(
 							"Load and join the selected target before querying its localization state."
 					});
 				const matched = localizedMatching(request);
+				// Without a problem clause the problem counts cover exactly the matched lines.
+				const problems = textProblemCounts(
+					(hasProblemClause(request.filter)
+						? localizedMatching(problemBase)
+						: matched
+					).map((line) => lineProblems(line, selection))
+				);
 				const page = localizationQueryPage(localization, matched, request);
 				const counts = {
 					...matching({ ...request, query: "" }).counts,
@@ -370,6 +489,7 @@ export function textCorpusQuery(
 				}
 				return {
 					counts,
+					problems,
 					total: matched.length,
 					localization: page,
 					...fileScopeField(request.where, () => matched.flatMap(lineFileKeys)),
@@ -395,6 +515,12 @@ export function textCorpusQuery(
 			const final = page.at(-1)?.unit.id;
 			return {
 				counts,
+				problems: textProblemCounts(
+					(hasProblemClause(request.filter)
+						? matching(problemBase).matched
+						: matched
+					).map((entry) => entry.facts.problems)
+				),
 				total: matched.length,
 				units: page.map(({ presentation }) => presentation),
 				...fileScopeField(request.where, () => matched.flatMap(({ fileKeys }) => fileKeys)),

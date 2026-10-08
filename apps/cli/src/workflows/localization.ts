@@ -1,3 +1,4 @@
+import { cultureList, parseTextFilter } from "./text-filter.js";
 import { readChangedFiles } from "./changed-files.js";
 import { textWhere } from "../commands/localization-flags.js";
 import {
@@ -51,6 +52,9 @@ export const loadLocalizationContext = Effect.fn("Cli.localization.load_context"
 			? { review: command.review }
 			: undefined),
 		...("keyChanged" in command && command.keyChanged ? { keyChanged: true } : undefined),
+		...("cultures" in command && cultureList(command.cultures) !== undefined
+			? { cultures: cultureList(command.cultures) }
+			: undefined),
 		...(command._tag === "TextSearch" && command.searchTranslations !== undefined
 			? { searchTranslations: command.searchTranslations }
 			: undefined)
@@ -130,6 +134,14 @@ function whereField(command: Parameters<typeof textWhere>[0], files?: readonly s
 	return where === undefined ? undefined : { where };
 }
 
+/** The request's `filter` for the command's `--filter` clauses; absent when none was given. */
+const filterField = Effect.fn("Cli.localization.filter")(function* (command: {
+	readonly filter?: readonly string[];
+}) {
+	if (command.filter === undefined) return undefined;
+	return { filter: yield* parseTextFilter(command.filter) };
+});
+
 export const loadLocalizationStatus = Effect.fn("Cli.localization.load_status")(function* (
 	command: LocalizationStatusCommand | LocalizationSearchCommand
 ) {
@@ -138,12 +150,14 @@ export const loadLocalizationStatus = Effect.fn("Cli.localization.load_status")(
 		command.changedFiles === undefined
 			? undefined
 			: yield* readChangedFiles(command.changedFiles, command.projectRoot);
+	const filter = yield* filterField(command);
 	const page = textCorpusQuery(corpus, undefined, join).search({
 		capability: "all",
 		pageSize: command.limit ?? 50,
 		query: command._tag === "TextSearch" ? command.query : "",
 		localization: selection,
-		...whereField(command, files)
+		...whereField(command, files),
+		...filter
 	});
 	yield* Metric.update(Metric.counter("cli.localization.status.lines"), page.total);
 	return localizationStatusReport(corpus, evidence, page);
@@ -198,11 +212,13 @@ export const runLocalizationExport = Effect.fn("Cli.workflow.localization_export
 						command.changedFiles === undefined
 							? undefined
 							: yield* readChangedFiles(command.changedFiles, command.projectRoot);
+					const filter = yield* filterField(command);
 					const lines = textCorpusQuery(corpus, undefined, join).localizationLines({
 						capability: "all",
 						query: "",
 						localization: selection,
-						...whereField(command, files)
+						...whereField(command, files),
+						...filter
 					});
 					const { csv, rows } = localizationLinesCsv({ join, lines, corpus });
 					const fs = yield* FileSystem.FileSystem;

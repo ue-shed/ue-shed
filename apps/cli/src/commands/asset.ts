@@ -3,7 +3,8 @@ import { Option } from "effect";
 import {
 	localizationFlags,
 	optionalLocalizationFlags,
-	optionalWhereFlags
+	optionalWhereFlags,
+	optionalFilterFlags
 } from "./localization-flags.js";
 import { runSavedReview } from "../saved-review-workflows.js";
 import {
@@ -132,7 +133,9 @@ const textSearchCommand = Command.make(
 		searchTranslations,
 		kinds,
 		path,
-		files
+		files,
+		filters,
+		cultures
 	}) => {
 		const value = query.join(" ").trim();
 		return runTextSearch({
@@ -142,6 +145,7 @@ const textSearchCommand = Command.make(
 			limit,
 			...optionalLocalizationFlags(culture, state),
 			...optionalWhereFlags(kinds, path, files),
+			...optionalFilterFlags(filters, cultures),
 			...(Option.isSome(target) ? { target: target.value } : undefined),
 			...(Option.isSome(searchTranslations)
 				? { searchTranslations: searchTranslations.value }

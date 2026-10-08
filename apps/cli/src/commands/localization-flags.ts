@@ -15,7 +15,24 @@ export function localizationFlags() {
 		),
 		kinds: Flag.choice("kind", TextOriginKind.literals).pipe(Flag.atMost(5)),
 		path: Flag.string("path").pipe(Flag.optional),
-		files: Flag.string("files").pipe(Flag.optional)
+		files: Flag.string("files").pipe(Flag.optional),
+		...filterFlags()
+	};
+}
+
+/** `--filter` clauses (repeatable) and `--cultures`, the culture scope. */
+export function filterFlags() {
+	return {
+		filters: Flag.string("filter").pipe(Flag.atMost(32)),
+		cultures: Flag.string("cultures").pipe(Flag.optional)
+	};
+}
+
+/** Command fields for `--filter` and `--cultures`; absent when not given. */
+export function optionalFilterFlags(filters: readonly string[], cultures: Option.Option<string>) {
+	return {
+		...(filters.length > 0 ? { filter: filters } : undefined),
+		...(Option.isSome(cultures) ? { cultures: cultures.value } : undefined)
 	};
 }
 

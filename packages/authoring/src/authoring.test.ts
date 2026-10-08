@@ -82,6 +82,17 @@ describe("semantic fingerprints", () => {
 		);
 		expect(fingerprintTable(saved)).toBe(fingerprintTable(live));
 	});
+
+	it("leaves text identity out so clients that predate it compute the same fingerprint", () => {
+		const authority = { kind: "project_files", packageName: "/Game/Fixture/DT_Test" } as const;
+		const withIdentity = snapshot(authority, {
+			identity: { key: "K", kind: "localized", namespace: "Items", sourceString: "Sword" },
+			kind: "text",
+			value: "Sword"
+		});
+		const withoutIdentity = snapshot(authority, { kind: "text", value: "Sword" });
+		expect(fingerprintTable(withIdentity)).toBe(fingerprintTable(withoutIdentity));
+	});
 });
 
 describe("draft command log", () => {

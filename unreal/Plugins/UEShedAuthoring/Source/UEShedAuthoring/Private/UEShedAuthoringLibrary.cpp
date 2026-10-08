@@ -1232,7 +1232,10 @@ FString TableFingerprintFromJson(const TSharedPtr<FJsonObject>& TableJson)
 		const TSharedPtr<FJsonObject> Source = RowValue->AsObject();
 		const TSharedRef<FJsonObject> Row = MakeShared<FJsonObject>();
 		Row->SetStringField(TEXT("name"), Source->GetStringField(TEXT("name")));
-		Row->SetArrayField(TEXT("fields"), Source->GetArrayField(TEXT("fields")));
+		// Text identity stays outside the fingerprint so clients that predate it still match;
+		// Apply checks the identity of each edited cell through its oldValue.
+		Row->SetField(TEXT("fields"), WithoutTextIdentity(
+			MakeShared<FJsonValueArray>(Source->GetArrayField(TEXT("fields")))));
 		Rows.Add(MakeShared<FJsonValueObject>(Row));
 	}
 	Semantic->SetArrayField(TEXT("rows"), Rows);
@@ -1339,9 +1342,15 @@ bool ApplyCommand(
 		bool bPartial = false;
 		TSharedPtr<FJsonValue> Current = SerializePropertyValue(
 			Property, Property->ContainerPtrToValuePtr<void>(*RowData), bPartial);
-		// Mutation contract 1.1 clients read text without identity.
-		if (!bTextIdentity) Current = WithoutTextIdentity(Current);
-		if (bPartial || CanonicalJson(Current) != CanonicalJson(Body->TryGetField(TEXT("oldValue"))))
+		// Mutation contract 1.1 clients compare display strings: they may echo an identity they
+		// read from a newer snapshot, or omit it, so neither side's identity counts.
+		TSharedPtr<FJsonValue> Expected = Body->TryGetField(TEXT("oldValue"));
+		if (!bTextIdentity)
+		{
+			Current = WithoutTextIdentity(Current);
+			Expected = WithoutTextIdentity(Expected);
+		}
+		if (bPartial || CanonicalJson(Current) != CanonicalJson(Expected))
 		{
 			Error = FString::Printf(TEXT("field %s no longer matches oldValue"), *FieldName);
 			return false;
@@ -2101,6 +2110,15 @@ bool FUEShedAuthoringTextIdentityTest::RunTest(const FString& Parameters)
 			TextValue(Minted->GetStringField(TEXT("value")), nullptr), false, Error));
 	TestEqual(TEXT("A contract 1.1 rewrite of unchanged text keeps identity"),
 		FTextInspector::GetKey(CurrentRow()->Localized).Get(FString()), MintedKey);
+	TestTrue(TEXT("A contract 1.1 client echoing a snapshot identity in oldValue is accepted"),
+		SetCell(TEXT("Localized"), AsValue(Minted),
+			TextValue(Minted->GetStringField(TEXT("value")), nullptr), false, Error));
+
+	const FString Before = TableFingerprint(Table);
+	CurrentRow()->Localized = FText::AsLocalizable_Advanced(
+		FTextKey(Namespace), FTextKey(TEXT("OtherKey")), CurrentRow()->Localized.ToString());
+	TestEqual(TEXT("Text identity alone does not change the table fingerprint"),
+		TableFingerprint(Table), Before);
 
 	const TSharedRef<FJsonObject> OtherEntry = MakeShared<FJsonObject>();
 	OtherEntry->SetStringField(TEXT("kind"), TEXT("string_table"));

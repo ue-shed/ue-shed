@@ -1,8 +1,9 @@
-import type {
-	AuthoringApplyRequest,
-	AuthoringApplyResult,
-	AuthoringSaveRequest,
-	AuthoringSaveResult
+import {
+	AUTHORING_MUTATION_CONTRACT_VERSION,
+	type AuthoringApplyRequest,
+	type AuthoringApplyResult,
+	type AuthoringSaveRequest,
+	type AuthoringSaveResult
 } from "@ue-shed/protocol";
 import { Effect, Schema } from "effect";
 import { workingTable, type DraftSession, type SaveReceipt } from "./draft.js";
@@ -95,7 +96,7 @@ export function buildApplyRequest(
 		})),
 		contract: {
 			name: "unreal-authoring-apply",
-			version: { major: 1, minor: 0 }
+			version: AUTHORING_MUTATION_CONTRACT_VERSION
 		},
 		operationId,
 		tables: tableObjectPaths.map((objectPath) => {

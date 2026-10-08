@@ -1,0 +1,94 @@
+{
+	"schemaVersion": 1,
+	"feature": "unreal-connection",
+	"mode": "existing-host-package",
+	"description": "Headless typed Unreal authoring, actor references, input, and CSV automation",
+	"release": {
+		"package": "@ue-shed/unreal-connection",
+		"versionSource": "package.json",
+		"exactVersionRequired": true,
+		"nativeBinaryBundled": false,
+		"uiBundled": false
+	},
+	"entrypoints": {
+		"host": "@ue-shed/unreal-connection"
+	},
+	"packageGraph": {
+		"dependencies": {
+			"@ue-shed/protocol": "package.json#dependencies",
+			"effect": "package.json#dependencies",
+			"unreal-rc": "package.json#dependencies"
+		},
+		"peerDependencies": {},
+		"runtimeProviders": [
+			{
+				"capability": "producer-capability-negotiation",
+				"plugins": ["UEShedCore"],
+				"versionPolicy": "exact compatible plugin release",
+				"optional": true
+			},
+			{
+				"capability": "editor-authoring-and-actor-references",
+				"plugins": ["UEShedCore", "UEShedAuthoring"],
+				"scope": "unreal_editor",
+				"versionPolicy": "exact compatible plugin release",
+				"optional": true
+			},
+			{
+				"capability": "runtime-input-and-csv-automation",
+				"plugins": ["UEShedCore", "UEShedAutomation"],
+				"enginePlugins": ["EnhancedInput"],
+				"scope": ["unreal_editor", "unreal_runtime"],
+				"versionPolicy": "exact compatible plugin release",
+				"optional": true
+			}
+		]
+	},
+	"hostIntegration": {
+		"ownership": "consumer",
+		"requiredSeams": [
+			"explicit-project-and-remote-control-endpoint",
+			"trusted-host-remote-control-client",
+			"schema-validated-host-transport",
+			"explicit-world-asset-controller-and-action-selection",
+			"durable-mutation-intent-and-result-record",
+			"indeterminate-mutation-recovery-without-automatic-replay",
+			"process-wide-profiler-coordination"
+		],
+		"forbiddenImports": ["apps/workbench", "@ue-shed/workbench"],
+		"browserAuthoritiesForbidden": ["filesystem", "process", "electron", "unreal"]
+	},
+	"capabilities": {
+		"required": ["explicit-remote-control-transport"],
+		"optional": [
+			"authoring.snapshot.v2",
+			"authoring.defaults.v1",
+			"authoring.table-list.v1",
+			"authoring.apply.v1",
+			"authoring.apply-result.v1",
+			"authoring.save.v1",
+			"authoring.actor-references.v1",
+			"automation.players.v1",
+			"automation.input.v1",
+			"automation.csv.v1"
+		],
+		"notRequired": ["workbench", "electron", "perforce", "source-copy-materializer"]
+	},
+	"conformance": {
+		"sourceCommand": "pnpm test:release:packages",
+		"nativeCommand": "pnpm test:unreal-plugins <new-evidence-directory>",
+		"nativeEngineMatrix": ["5.7", "5.8"],
+		"journey": [
+			"negotiate-capabilities",
+			"snapshot-live-defaults",
+			"review-apply-lookup-save-reopen",
+			"bounded-loaded-world-actor-references",
+			"explicit-local-player-input",
+			"plugin-owned-csv-capture",
+			"missing-capability-without-hidden-mutation"
+		],
+		"targetMustVerifyPackagedRuntime": true,
+		"targetMustUseRealHostTransport": true,
+		"targetMustRecordAdoptionReceipt": true
+	}
+}

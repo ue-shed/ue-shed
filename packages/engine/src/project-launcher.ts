@@ -54,10 +54,18 @@ export class UnrealProjectLaunchError extends Schema.TaggedErrorClass<UnrealProj
 			"build_mismatch",
 			"invalid_module_manifest",
 			"plugin_unavailable",
+			"engine_plugins_stale",
 			"spawn_failed"
 		]),
 		message: Schema.String,
 		details: Schema.optionalKey(Schema.String),
+		enginePlugins: Schema.optionalKey(
+			Schema.Struct({
+				engineRoot: Schema.NonEmptyString,
+				stalePlugins: Schema.Array(PluginId),
+				buildable: Schema.Boolean
+			})
+		),
 		recovery: Schema.String,
 		retrySafe: Schema.Boolean
 	}
@@ -212,7 +220,8 @@ export const validateUnrealRemoteControlBuild = Effect.fn(
 			}
 			const pending = ["RemoteControl"],
 				seen = new Set<string>(),
-				issues: string[] = [];
+				issues: string[] = [],
+				stalePlugins: string[] = [];
 			for (const id of pending) {
 				if (seen.has(id)) continue;
 				seen.add(id);
@@ -233,10 +242,12 @@ export const validateUnrealRemoteControlBuild = Effect.fn(
 					const manifest = Schema.decodeUnknownSync(PluginModuleBuild)(
 						JSON.parse(await readFile(join(binaries, "UnrealEditor.modules"), "utf8"))
 					);
-					if (manifest.BuildId !== engine.BuildId)
+					if (manifest.BuildId !== engine.BuildId) {
+						stalePlugins.push(id);
 						issues.push(
 							`${id}: plugin build ${manifest.BuildId}; engine build ${engine.BuildId}`
 						);
+					}
 					for (const file of Object.values(manifest.Modules)) {
 						try {
 							await access(join(binaries, file));
@@ -248,7 +259,39 @@ export const validateUnrealRemoteControlBuild = Effect.fn(
 					issues.push(`${id}: missing or invalid module manifest at ${binaries}`);
 				}
 			}
-			if (issues.length)
+			if (issues.length) {
+				const exists = (path: string) =>
+					access(path).then(
+						() => true,
+						() => false
+					);
+				const buildable =
+					platform === "win32" &&
+					(await exists(
+						join(engineRoot, "Engine", "Build", "BatchFiles", "Build.bat")
+					)) &&
+					(await exists(
+						join(
+							engineRoot,
+							"Engine",
+							"Source",
+							"Programs",
+							"UnrealBuildTool",
+							"UnrealBuildTool.csproj"
+						)
+					)) &&
+					!(await exists(join(engineRoot, "Engine", "Build", "InstalledBuild.txt")));
+				if (buildable && stalePlugins.length === issues.length)
+					throw new UnrealProjectLaunchError({
+						code: "engine_plugins_stale",
+						message:
+							"A project build updated this engine, but Remote Control's plugins were left behind.",
+						recovery:
+							"Close editors and builds using this engine, then rebuild the stale plugins with this project's Editor target.",
+						details: `Engine: ${engineRoot}\n${issues.join("\n")}`,
+						enginePlugins: { engineRoot, stalePlugins, buildable },
+						retrySafe: true
+					});
 				throw new UnrealProjectLaunchError({
 					code: "plugin_unavailable",
 					message:
@@ -258,6 +301,7 @@ export const validateUnrealRemoteControlBuild = Effect.fn(
 					details: `Engine: ${engineRoot}\n${issues.join("\n")}`,
 					retrySafe: false
 				});
+			}
 		},
 		catch: (cause) =>
 			cause instanceof UnrealProjectLaunchError

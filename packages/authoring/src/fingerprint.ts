@@ -7,6 +7,10 @@ export const FINGERPRINT_VERSION = "sha256-v1" as const;
 
 function normalizeValue(value: AuthoringValue): AuthoringValue {
 	switch (value.kind) {
+		// Text identity stays outside the fingerprint so clients that predate it still match;
+		// Apply checks the identity of each edited cell through its oldValue.
+		case "text":
+			return { kind: value.kind, value: value.value };
 		case "float":
 			return {
 				kind: value.kind,

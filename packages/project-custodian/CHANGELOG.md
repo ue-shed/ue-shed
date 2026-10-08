@@ -1,5 +1,9 @@
 # @ue-shed/project-custodian
 
+## 0.9.3
+
+No direct behavioral change. Align with the UE Shed 0.9.3 suite and exact internal dependency pins.
+
 ## 0.9.2
 
 ## 0.9.1

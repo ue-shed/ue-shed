@@ -1,0 +1,10 @@
+{
+	"contract": {
+		"name": "unreal-automation-input",
+		"version": { "major": 1, "minor": 0 }
+	},
+	"worldObjectPath": "/Engine/Transient.UEShedAutomationFixtureWorld",
+	"playerControllerObjectPath": "/Engine/Transient.UEShedAutomationFixtureWorld:PersistentLevel.PlayerController",
+	"actionObjectPath": "/Engine/Transient.UEShedAutomationFixtureAction",
+	"value": { "kind": "axis2d", "x": 0.25, "y": -0.5 }
+}

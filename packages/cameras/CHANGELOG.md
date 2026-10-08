@@ -1,5 +1,16 @@
 # @ue-shed/cameras
 
+## 0.9.3
+
+No direct behavioral change. Align with the UE Shed 0.9.3 suite and exact internal dependency pins.
+
+### Patch Changes
+
+- @ue-shed/observability@0.9.3
+    - @ue-shed/protocol@0.9.3
+    - @ue-shed/unreal-connection@0.9.3
+    - @ue-shed/world@0.9.3
+
 ## 0.9.2
 
 ### Patch Changes

@@ -147,6 +147,8 @@ export const decodeCapabilityManifest = Schema.decodeUnknownEffect(CapabilityMan
 export const decodeConnectionState = Schema.decodeUnknownEffect(ConnectionState);
 
 export * from "./authoring.js";
+export * from "./authoring-actor-references.js";
+export * from "./automation.js";
 export * from "./authoring-review.js";
 export * from "./blueprint-graph.js";
 export * from "./companion.js";

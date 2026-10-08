@@ -297,6 +297,9 @@
 						},
 						"value": {
 							"type": "string"
+						},
+						"identity": {
+							"$ref": "#/$defs/AuthoringTextIdentity"
 						}
 					},
 					"required": ["kind", "value"],
@@ -488,6 +491,80 @@
 						}
 					},
 					"required": ["byteSize", "kind", "reason"],
+					"additionalProperties": false
+				}
+			]
+		},
+		"AuthoringTextIdentity": {
+			"anyOf": [
+				{
+					"type": "object",
+					"properties": {
+						"key": {
+							"type": "string"
+						},
+						"kind": {
+							"type": "string",
+							"enum": ["localized"]
+						},
+						"namespace": {
+							"type": "string"
+						},
+						"sourceString": {
+							"type": "string"
+						}
+					},
+					"required": ["kind", "namespace", "sourceString"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"key": {
+							"type": "string"
+						},
+						"kind": {
+							"type": "string",
+							"enum": ["string_table"]
+						},
+						"tableId": {
+							"type": "string"
+						}
+					},
+					"required": ["key", "kind", "tableId"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"kind": {
+							"type": "string",
+							"enum": ["culture_invariant"]
+						}
+					},
+					"required": ["kind"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"kind": {
+							"type": "string",
+							"enum": ["none"]
+						}
+					},
+					"required": ["kind"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"kind": {
+							"type": "string",
+							"enum": ["generated"]
+						}
+					},
+					"required": ["kind"],
 					"additionalProperties": false
 				}
 			]

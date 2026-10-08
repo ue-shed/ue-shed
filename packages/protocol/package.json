@@ -1,6 +1,6 @@
 {
 	"name": "@ue-shed/protocol",
-	"version": "0.9.2",
+	"version": "0.9.3",
 	"description": "Runtime schemas and versioned wire contracts for UE Shed integrations.",
 	"homepage": "https://github.com/ue-shed/ue-shed#readme",
 	"bugs": {
@@ -33,7 +33,7 @@
 	},
 	"scripts": {
 		"build": "node ../../scripts/clean-package-dist.ts && tsc -p tsconfig.build.json",
-		"contract:check": "tsx scripts/check-authoring-contract.ts && tsx scripts/check-uasset-io-contract.ts",
+		"contract:check": "tsx scripts/check-authoring-contract.ts && tsx scripts/check-uasset-io-contract.ts && tsx scripts/check-automation-contract.ts",
 		"contract:generate": "tsx scripts/generate-uasset-io-contract.ts && oxfmt contracts/uasset-io/v1/*.schema.json",
 		"prepack": "pnpm run build",
 		"typecheck": "tsc --noEmit"

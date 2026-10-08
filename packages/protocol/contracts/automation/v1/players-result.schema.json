@@ -1,0 +1,112 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$defs": {
+		"AutomationPlayersResult": {
+			"type": "object",
+			"properties": {
+				"contract": {
+					"type": "object",
+					"properties": {
+						"name": {
+							"type": "string",
+							"enum": ["unreal-automation-players"]
+						},
+						"version": {
+							"type": "object",
+							"properties": {
+								"major": {
+									"type": "number",
+									"enum": [1]
+								},
+								"minor": {
+									"type": "number",
+									"enum": [0]
+								}
+							},
+							"required": ["major", "minor"],
+							"additionalProperties": false
+						}
+					},
+					"required": ["name", "version"],
+					"additionalProperties": false
+				},
+				"status": {
+					"type": "string",
+					"enum": ["ok", "rejected"]
+				},
+				"worldObjectPath": {
+					"type": "string"
+				},
+				"players": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"properties": {
+							"controllerObjectPath": {
+								"type": "string",
+								"allOf": [
+									{
+										"minLength": 1
+									}
+								]
+							},
+							"playerInputObjectPath": {
+								"anyOf": [
+									{
+										"type": "string",
+										"allOf": [
+											{
+												"minLength": 1
+											}
+										]
+									},
+									{
+										"type": "null"
+									}
+								]
+							},
+							"localPlayerIndex": {
+								"type": "integer",
+								"allOf": [
+									{
+										"minimum": 0
+									}
+								]
+							}
+						},
+						"required": [
+							"controllerObjectPath",
+							"playerInputObjectPath",
+							"localPlayerIndex"
+						],
+						"additionalProperties": false
+					}
+				},
+				"errors": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"properties": {
+							"code": {
+								"type": "string",
+								"allOf": [
+									{
+										"minLength": 1
+									}
+								]
+							},
+							"message": {
+								"type": "string"
+							}
+						},
+						"required": ["code", "message"],
+						"additionalProperties": false
+					}
+				}
+			},
+			"required": ["contract", "status", "worldObjectPath", "players", "errors"],
+			"additionalProperties": false
+		}
+	},
+	"$ref": "#/$defs/AutomationPlayersResult"
+}

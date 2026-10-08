@@ -16,6 +16,9 @@ public:
 	static void GetTableSnapshot(const FString& TableObjectPath, FString& ResultJson);
 
 	UFUNCTION(BlueprintCallable, Category = "UE Shed|Authoring")
+	static void FindActorsReferencingRow(const FString& RequestJson, FString& ResultJson);
+
+	UFUNCTION(BlueprintCallable, Category = "UE Shed|Authoring")
 	static void Apply(const FString& RequestJson, FString& ResultJson);
 
 	UFUNCTION(BlueprintCallable, Category = "UE Shed|Authoring")

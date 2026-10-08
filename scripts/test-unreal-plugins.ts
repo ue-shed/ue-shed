@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { isJsonObject, parseJsonObject } from "./json.ts";
+import { isJsonObject, isJsonString, parseJsonObject } from "./json.ts";
 import {
 	prepareUnrealPlugins,
 	repositoryRoot,
@@ -39,6 +39,13 @@ const tests = [
 	"UEShed.World.Preparation",
 	"UEShed.World.LeaseLifecycle",
 	"UEShed.Authoring.CanonicalJson",
+	"UEShed.Authoring.Defaults",
+	"UEShed.Authoring.DefaultsCodec",
+	"UEShed.Authoring.TextIdentity",
+	"UEShed.Authoring.ActorReferences",
+	"UEShed.Authoring.ActorReferenceDepth",
+	"UEShed.Automation.Input",
+	"UEShed.Automation.Profiling",
 	"UEShed.Cameras.Rendering.LifecycleAndReference",
 	"UEShed.Cameras.Rendering.OpeningLease",
 	"UEShed.Cameras.Rendering.ScreenshotOwnership",
@@ -65,6 +72,8 @@ const result = spawnSync(
 		"-TestExit=Automation Test Queue Empty",
 		`-ReportExportPath=${report}`,
 		`-UEShedWorldContractFixtures=${join(repositoryRoot, "packages/protocol/contracts/world/preparation/v1/fixtures")}`,
+		`-UEShedAutomationContractFixtures=${join(repositoryRoot, "packages/protocol/contracts/automation/v1/fixtures")}`,
+		`-UEShedAuthoringContractFixtures=${join(repositoryRoot, "packages/protocol/contracts/authoring/v1/fixtures")}`,
 		`-abslog=${join(root, "editor.log")}`,
 		"-unattended",
 		"-nop4",
@@ -84,12 +93,22 @@ const evidence = parseJsonObject(
 const recordedTests = evidence.tests;
 if (
 	!Array.isArray(recordedTests) ||
-	recordedTests.length !== tests.length ||
+	recordedTests.length < tests.length ||
 	!tests.every((name) =>
 		recordedTests.some(
 			(entry) =>
 				isJsonObject(entry) && entry.fullTestPath === name && entry.state === "Success"
 		)
+	) ||
+	!recordedTests.every(
+		(entry) =>
+			isJsonObject(entry) &&
+			entry.state === "Success" &&
+			tests.some(
+				(name) =>
+					entry.fullTestPath === name ||
+					(isJsonString(entry.fullTestPath) && entry.fullTestPath.startsWith(name + "."))
+			)
 	) ||
 	evidence.failed !== 0 ||
 	evidence.notRun !== 0 ||
@@ -98,5 +117,5 @@ if (
 	throw new Error(`Unreal plugin automation did not pass all ${tests.length} tests: ${report}`);
 }
 console.log(
-	`Unreal ${version.label}: all ${ueShedPluginIds.length} plugins built and ${tests.length} tests passed.`
+	`Unreal ${version.label}: all ${ueShedPluginIds.length} plugins built and ${recordedTests.length} tests passed.`
 );

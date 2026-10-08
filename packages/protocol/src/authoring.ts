@@ -1,7 +1,8 @@
 import { Schema } from "effect";
 
-export const AUTHORING_SNAPSHOT_CONTRACT_VERSION = { major: 2, minor: 1 } as const;
-export const AUTHORING_MUTATION_CONTRACT_VERSION = { major: 1, minor: 1 } as const;
+export const AUTHORING_SNAPSHOT_CONTRACT_VERSION = { major: 2, minor: 3 } as const;
+export const AUTHORING_MUTATION_CONTRACT_VERSION = { major: 1, minor: 2 } as const;
+export const AUTHORING_SAVE_CONTRACT_VERSION = { major: 1, minor: 1 } as const;
 export const AUTHORING_TABLE_LIST_CONTRACT_VERSION = { major: 1, minor: 0 } as const;
 
 /**
@@ -16,6 +17,30 @@ const NonNegativeInt = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)).annota
 });
 const FloatValue = Schema.Union([Schema.Finite, Schema.Literals(["nan", "infinity", "-infinity"])]);
 
+/**
+ * Where a text value's content comes from. Snapshots always report it. A localized write stores
+ * `sourceString` under the namespace and key; omitting `key` asks the producer to mint a new one in
+ * the table package. String-table writes reference an existing entry. Generated text (formatted,
+ * numeric, and other derived histories) is read-only.
+ */
+export const AuthoringTextIdentity = Schema.Union([
+	Schema.Struct({
+		key: Schema.optionalKey(Schema.String),
+		kind: Schema.Literal("localized"),
+		namespace: Schema.String,
+		sourceString: Schema.String
+	}),
+	Schema.Struct({
+		key: Schema.String,
+		kind: Schema.Literal("string_table"),
+		tableId: Schema.String
+	}),
+	Schema.Struct({ kind: Schema.Literal("culture_invariant") }),
+	Schema.Struct({ kind: Schema.Literal("none") }),
+	Schema.Struct({ kind: Schema.Literal("generated") })
+]).annotate({ identifier: "AuthoringTextIdentity" });
+export type AuthoringTextIdentity = Schema.Schema.Type<typeof AuthoringTextIdentity>;
+
 export type AuthoringValue =
 	| { readonly kind: "bool"; readonly value: boolean }
 	| { readonly kind: "int"; readonly value: string }
@@ -25,7 +50,11 @@ export type AuthoringValue =
 	| { readonly kind: "name"; readonly value: string }
 	| { readonly kind: "enum"; readonly value: string }
 	| { readonly kind: "string"; readonly value: string }
-	| { readonly kind: "text"; readonly value: string }
+	| {
+			readonly kind: "text";
+			readonly value: string;
+			readonly identity?: AuthoringTextIdentity;
+	  }
 	| { readonly kind: "guid"; readonly value: string }
 	| { readonly kind: "soft_object_path"; readonly value: string }
 	| { readonly kind: "object_ref"; readonly value: string | null }
@@ -67,7 +96,11 @@ const textValueSchemas = [
 	Schema.Struct({ kind: Schema.Literal("name"), value: Schema.String }),
 	Schema.Struct({ kind: Schema.Literal("enum"), value: Schema.String }),
 	Schema.Struct({ kind: Schema.Literal("string"), value: Schema.String }),
-	Schema.Struct({ kind: Schema.Literal("text"), value: Schema.String }),
+	Schema.Struct({
+		identity: Schema.optionalKey(AuthoringTextIdentity),
+		kind: Schema.Literal("text"),
+		value: Schema.String
+	}),
 	Schema.Struct({ kind: Schema.Literal("guid"), value: Schema.String }),
 	Schema.Struct({ kind: Schema.Literal("soft_object_path"), value: Schema.String })
 ] as const;
@@ -406,6 +439,22 @@ export function classifyAuthoringSnapshot(
 	};
 }
 
+/**
+ * Edit a text value's content while keeping its identity: a localized text keeps its namespace and
+ * key with a new source string. String-table and generated text cannot be edited in place.
+ */
+export function editAuthoringText(
+	current: Extract<AuthoringValue, { readonly kind: "text" }>,
+	content: string
+): Extract<AuthoringValue, { readonly kind: "text" }> | undefined {
+	const identity = current.identity;
+	if (identity?.kind === "string_table" || identity?.kind === "generated") return undefined;
+	if (identity?.kind === "localized") {
+		return { identity: { ...identity, sourceString: content }, kind: "text", value: content };
+	}
+	return identity ? { identity, kind: "text", value: content } : { kind: "text", value: content };
+}
+
 export const decodeAuthoringTableSnapshot = Schema.decodeUnknownEffect(AuthoringTableSnapshot);
 export const decodeAuthoringTableList = Schema.decodeUnknownEffect(AuthoringTableList);
 export const decodeAuthoringValue = Schema.decodeUnknownEffect(AuthoringValue);
@@ -477,6 +526,17 @@ export const AuthoringOperationError = Schema.Struct({
 	retrySafe: Schema.Boolean
 });
 export type AuthoringOperationError = Schema.Schema.Type<typeof AuthoringOperationError>;
+
+/**
+ * A producer refusal returned instead of a result, for example `invalid_request`,
+ * `request_too_large`, `unsupported_contract`, `table_not_found`, or `operation_not_found`.
+ */
+export const AuthoringEndpointError = Schema.Struct({
+	code: Schema.String,
+	message: Schema.String,
+	status: Schema.Literal("error")
+}).annotate({ identifier: "AuthoringEndpointError" });
+export type AuthoringEndpointError = Schema.Schema.Type<typeof AuthoringEndpointError>;
 
 export const AuthoringApplyResult = Schema.Struct({
 	contract: ApplyContract,

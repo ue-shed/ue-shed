@@ -228,6 +228,30 @@ it("validates Remote Control dependencies, identities and DLLs before launch", a
 			"Binaries",
 			"Win64"
 		);
+		const buildFiles = join(root, "Engine", "Build", "BatchFiles");
+		const ubtSource = join(root, "Engine", "Source", "Programs", "UnrealBuildTool");
+		await mkdir(buildFiles, { recursive: true });
+		await mkdir(ubtSource, { recursive: true });
+		await writeFile(join(buildFiles, "Build.bat"), "fixture");
+		await writeFile(join(ubtSource, "UnrealBuildTool.csproj"), "fixture");
+		expect(await check()).toMatchObject({
+			_tag: "Failure",
+			failure: {
+				code: "engine_plugins_stale",
+				enginePlugins: {
+					engineRoot: root,
+					stalePlugins: ["TransportDependency"],
+					buildable: true
+				}
+			}
+		});
+		const installed = join(root, "Engine", "Build", "InstalledBuild.txt");
+		await writeFile(installed, "fixture");
+		expect(await check()).toMatchObject({ failure: { code: "plugin_unavailable" } });
+		await rm(installed);
+		await rm(join(dependencyBin, "TransportDependency.dll"));
+		expect(await check()).toMatchObject({ failure: { code: "plugin_unavailable" } });
+		await writeFile(join(dependencyBin, "TransportDependency.dll"), "fixture");
 		await writeFile(
 			join(dependencyBin, "UnrealEditor.modules"),
 			JSON.stringify({

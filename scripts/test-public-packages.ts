@@ -170,6 +170,40 @@ try {
 		"saved-asset-reader"
 	]);
 	assert.ok(gameTextAdoption.capabilities.notRequired.includes("ue-shed-unreal-plugin"));
+	const connectionEntry = packed.find((entry) => entry.name === "@ue-shed/unreal-connection");
+	assert.ok(connectionEntry, "the public package graph must contain Unreal connectivity");
+	const connectionFiles = run("tar", ["-tzf", basename(connectionEntry.path)], packageDirectory)
+		.split(/\r?\n/u)
+		.filter(Boolean);
+	assert.ok(connectionFiles.includes("package/ADOPTING.md"));
+	assert.ok(connectionFiles.includes("package/adoption.manifest.json"));
+	const connectionAdoption = JSON.parse(
+		run(
+			"tar",
+			["-xOf", basename(connectionEntry.path), "package/adoption.manifest.json"],
+			packageDirectory
+		)
+	);
+	assert.equal(connectionAdoption.feature, "unreal-connection");
+	assert.equal(connectionAdoption.mode, "existing-host-package");
+	assert.equal(connectionAdoption.release.package, connectionEntry.name);
+	assert.equal(connectionAdoption.release.versionSource, "package.json");
+	assert.equal(connectionAdoption.release.exactVersionRequired, true);
+	assert.equal(connectionAdoption.release.nativeBinaryBundled, false);
+	assert.equal(connectionAdoption.release.uiBundled, false);
+	assert.deepEqual(
+		Object.keys(connectionAdoption.packageGraph.dependencies).sort(),
+		Object.keys(connectionEntry.manifest.dependencies ?? {}).sort()
+	);
+	assert.deepEqual(connectionAdoption.packageGraph.peerDependencies, {});
+	assert.deepEqual(connectionEntry.manifest.peerDependencies ?? {}, {});
+	assert.equal(
+		connectionEntry.manifest.dependencies?.["@ue-shed/protocol"],
+		connectionEntry.manifest.version
+	);
+	assert.ok(connectionAdoption.capabilities.optional.includes("automation.input.v1"));
+	assert.ok(connectionAdoption.capabilities.optional.includes("authoring.actor-references.v1"));
+	assert.deepEqual(connectionAdoption.conformance.nativeEngineMatrix, ["5.7", "5.8"]);
 	const pluginDistributionEntry = packed.find(
 		(entry) => entry.name === PLUGIN_DISTRIBUTION_PACKAGE_NAME
 	);
@@ -361,6 +395,14 @@ try {
 			"if (typeof connection.RemoteControlClient !== 'function') {",
 			"  throw new Error('bad unreal-connection export');",
 			"}",
+			"for (const name of ['connectUnrealAuthoring', 'findUnrealActorsReferencingRow', 'connectUnrealAutomation']) {",
+			"  if (typeof connection[name] !== 'function') throw new Error('bad connection export ' + name);",
+			"}",
+			"if (protocol.AUTHORING_SNAPSHOT_CONTRACT_VERSION.minor !== 3) throw new Error('old snapshot text identity contract');",
+			"Schema.decodeUnknownSync(protocol.AutomationPlayersRequest)({ contract: { name: 'unreal-automation-players', version: { major: 1, minor: 0 } }, worldObjectPath: '/Game/Fixture/L_World.L_World' });",
+			"Schema.decodeUnknownSync(protocol.AutomationInputRequest)({ contract: { name: 'unreal-automation-input', version: { major: 1, minor: 0 } }, worldObjectPath: '/Game/Fixture/L_World.L_World', playerControllerObjectPath: '/Game/Fixture/L_World.L_World:PersistentLevel.PlayerController_0', actionObjectPath: '/Game/Fixture/Input/IA_Move.IA_Move', value: { kind: 'axis2d', x: 1, y: 0 } });",
+			"Schema.decodeUnknownSync(protocol.AutomationCsvRequest)({ contract: { name: 'unreal-automation-csv', version: { major: 1, minor: 0 } }, command: 'status' });",
+			"Schema.decodeUnknownSync(protocol.AuthoringActorReferencesRequest)({ contract: { name: 'unreal-authoring-actor-references', version: { major: 1, minor: 0 } }, worldObjectPath: '/Game/Fixture/L_World.L_World', tableObjectPath: '/Game/Fixture/DT_Items.DT_Items', rowName: 'Item', maxActors: 100, maxResults: 10 });",
 			"for (const name of ['PluginDistribution', 'PluginReleaseSource', 'PluginStore', 'pluginDistributionLayer', 'pluginStoreLayer', 'localPluginReleaseSourceLayer', 'httpPluginReleaseSourceLayer']) {",
 			"  if (typeof pluginDistribution[name] !== 'function') throw new Error('bad plugin-distribution export ' + name);",
 			"}",

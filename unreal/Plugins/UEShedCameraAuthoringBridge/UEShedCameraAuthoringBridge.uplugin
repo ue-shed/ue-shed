@@ -1,7 +1,7 @@
 {
 	"FileVersion": 3,
 	"Version": 1,
-	"VersionName": "0.9.2",
+	"VersionName": "0.9.3",
 	"FriendlyName": "UE Shed Camera Authoring Bridge",
 	"Description": "Optional editor camera proxies and synchronization, independent of menus.",
 	"Category": "UE Shed",

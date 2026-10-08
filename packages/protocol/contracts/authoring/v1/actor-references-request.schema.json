@@ -1,0 +1,106 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$defs": {
+		"AuthoringActorReferencesRequest": {
+			"type": "object",
+			"properties": {
+				"contract": {
+					"type": "object",
+					"properties": {
+						"name": {
+							"type": "string",
+							"enum": ["unreal-authoring-actor-references"]
+						},
+						"version": {
+							"type": "object",
+							"properties": {
+								"major": {
+									"type": "number",
+									"enum": [1]
+								},
+								"minor": {
+									"type": "number",
+									"enum": [0]
+								}
+							},
+							"required": ["major", "minor"],
+							"additionalProperties": false
+						}
+					},
+					"required": ["name", "version"],
+					"additionalProperties": false
+				},
+				"worldObjectPath": {
+					"type": "string",
+					"allOf": [
+						{
+							"minLength": 1
+						},
+						{
+							"maxLength": 2048
+						},
+						{
+							"pattern": "^\\/[^\\u0000-\\u001f]*$"
+						}
+					]
+				},
+				"tableObjectPath": {
+					"type": "string",
+					"allOf": [
+						{
+							"minLength": 1
+						},
+						{
+							"maxLength": 2048
+						},
+						{
+							"pattern": "^\\/[^\\u0000-\\u001f]*$"
+						}
+					]
+				},
+				"rowName": {
+					"type": "string",
+					"allOf": [
+						{
+							"minLength": 1
+						},
+						{
+							"maxLength": 1023
+						},
+						{
+							"pattern": "^[^\\u0000-\\u001f]*$"
+						}
+					]
+				},
+				"maxActors": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 1,
+							"maximum": 100000
+						}
+					]
+				},
+				"maxResults": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 1,
+							"maximum": 10000
+						}
+					]
+				}
+			},
+			"required": [
+				"contract",
+				"worldObjectPath",
+				"tableObjectPath",
+				"rowName",
+				"maxActors",
+				"maxResults"
+			],
+			"additionalProperties": false
+		}
+	},
+	"$ref": "#/$defs/AuthoringActorReferencesRequest"
+}

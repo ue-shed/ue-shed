@@ -28,7 +28,7 @@ should follow [Website and illustrated guides](engineering/website.md).
 | [engineering/](engineering/README.md)                    | Canonical engineering       | Effect, schemas, UI, tests, observability, agent adoption                                   |
 | [products/](products/)                                   | Canonical product contracts | Shipped promises and acceptance for a domain                                                |
 | [showcase.md](showcase.md)                               | Canonical demos             | Fresh-clone walkthroughs and live setup                                                     |
-| [releases/](releases/0.9.2.md)                           | Release notes               | User-facing changes and compatibility notes                                                 |
+| [releases/](releases/0.9.3.md)                           | Release notes               | User-facing changes and compatibility notes                                                 |
 | [decisions/](decisions/)                                 | Accepted ADRs               | Settled design choices                                                                      |
 | [ideas/](ideas/README.md)                                | Vision / brainstorm         | Directions not yet product contracts                                                        |
 | [research/](research/)                                   | Dated investigation         | Historical notes; not living authority                                                      |
@@ -56,19 +56,20 @@ should follow [Website and illustrated guides](engineering/website.md).
 - [Camera arrangement authoring](products/camera-authoring.md) — actor-scoped drafts, optional native
   editing, Unreal RC synchronization, and recoverable approval.
 
-| Document                                                  | Domain                                                     |
-| --------------------------------------------------------- | ---------------------------------------------------------- |
-| [data-authoring.md](products/data-authoring.md)           | DataTable authoring product                                |
-| [hosting-grill.md](products/hosting-grill.md)             | Hosting / authoring grill contract                         |
-| [hosting-conformance.md](products/hosting-conformance.md) | Hosting conformance gates                                  |
-| [map-review.md](products/map-review.md)                   | Map Review product                                         |
-| [map-capture.md](products/map-capture.md)                 | Orthographic map tile pyramids                             |
-| [map-history.md](products/map-history.md)                 | Perforce-backed saved map history                          |
-| [config-explorer.md](products/config-explorer.md)         | Saved Unreal config provenance                             |
-| [game-text.md](products/game-text.md)                     | Saved text corpus, quality review and planned localization |
-| [scenario-studio.md](products/scenario-studio.md)         | Live PIE scenario execution                                |
-| [project-custodian.md](products/project-custodian.md)     | Reclaimable Unreal workspace storage                       |
-| [niagara-preview.md](products/niagara-preview.md)         | Portable Niagara preview evidence                          |
+| Document                                                  | Domain                                                  |
+| --------------------------------------------------------- | ------------------------------------------------------- |
+| [data-authoring.md](products/data-authoring.md)           | DataTable authoring product                             |
+| [unreal-automation.md](products/unreal-automation.md)     | Live defaults, actor references, input, and CSV capture |
+| [hosting-grill.md](products/hosting-grill.md)             | Hosting / authoring grill contract                      |
+| [hosting-conformance.md](products/hosting-conformance.md) | Hosting conformance gates                               |
+| [map-review.md](products/map-review.md)                   | Map Review product                                      |
+| [map-capture.md](products/map-capture.md)                 | Orthographic map tile pyramids                          |
+| [map-history.md](products/map-history.md)                 | Perforce-backed saved map history                       |
+| [config-explorer.md](products/config-explorer.md)         | Saved Unreal config provenance                          |
+| [game-text.md](products/game-text.md)                     | Saved text corpus, quality review and localization      |
+| [scenario-studio.md](products/scenario-studio.md)         | Live PIE scenario execution                             |
+| [project-custodian.md](products/project-custodian.md)     | Reclaimable Unreal workspace storage                    |
+| [niagara-preview.md](products/niagara-preview.md)         | Portable Niagara preview evidence                       |
 
 ## Decisions
 

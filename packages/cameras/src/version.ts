@@ -1,2 +1,2 @@
 /** Generated package identity used in durable capture artifacts. */
-export const CAMERAS_PACKAGE_VERSION = "0.9.2";
+export const CAMERAS_PACKAGE_VERSION = "0.9.3";

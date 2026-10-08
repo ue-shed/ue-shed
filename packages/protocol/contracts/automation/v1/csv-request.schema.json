@@ -1,0 +1,43 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$defs": {
+		"AutomationCsvRequest": {
+			"type": "object",
+			"properties": {
+				"contract": {
+					"type": "object",
+					"properties": {
+						"name": {
+							"type": "string",
+							"enum": ["unreal-automation-csv"]
+						},
+						"version": {
+							"type": "object",
+							"properties": {
+								"major": {
+									"type": "number",
+									"enum": [1]
+								},
+								"minor": {
+									"type": "number",
+									"enum": [0]
+								}
+							},
+							"required": ["major", "minor"],
+							"additionalProperties": false
+						}
+					},
+					"required": ["name", "version"],
+					"additionalProperties": false
+				},
+				"command": {
+					"type": "string",
+					"enum": ["status", "start", "stop"]
+				}
+			},
+			"required": ["contract", "command"],
+			"additionalProperties": false
+		}
+	},
+	"$ref": "#/$defs/AutomationCsvRequest"
+}

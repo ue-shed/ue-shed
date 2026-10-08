@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
 	AuthoringApplyRequest,
 	AuthoringApplyResult,
+	AuthoringEndpointError,
 	AuthoringSaveRequest,
 	AuthoringSaveResult,
 	AuthoringTableList,
@@ -13,6 +14,7 @@ import {
 	AuthoringValue,
 	classifyAuthoringSnapshot,
 	decodeAuthoringTableSnapshot as decodeAuthoringTableSnapshotEffect,
+	editAuthoringText,
 	makeAuthoringJsonSchema
 } from "./authoring.js";
 
@@ -170,9 +172,101 @@ describe("authoring wire contract", () => {
 			["v1", "apply-request", AuthoringApplyRequest],
 			["v1", "apply-result", AuthoringApplyResult],
 			["v1", "save-request", AuthoringSaveRequest],
-			["v1", "save-result", AuthoringSaveResult]
+			["v1", "save-result", AuthoringSaveResult],
+			["v1", "endpoint-error", AuthoringEndpointError]
 		] as const) {
 			await check(version, name, contract);
 		}
+	});
+
+	it("round-trips every text identity and keeps identity optional for older writers", () => {
+		const values = [
+			{
+				identity: {
+					key: "A1",
+					kind: "localized",
+					namespace: "Items [3F2A]",
+					sourceString: "Iron Sword"
+				},
+				kind: "text",
+				value: "Iron Sword"
+			},
+			{
+				identity: { key: "Title", kind: "string_table", tableId: "/Game/ST_Menu.ST_Menu" },
+				kind: "text",
+				value: "Main Menu"
+			},
+			{ identity: { kind: "culture_invariant" }, kind: "text", value: "42" },
+			{ identity: { kind: "none" }, kind: "text", value: "" },
+			{ identity: { kind: "generated" }, kind: "text", value: "3 items" },
+			{
+				identity: { kind: "localized", namespace: "", sourceString: "New" },
+				kind: "text",
+				value: "New"
+			},
+			{ kind: "text", value: "legacy" }
+		];
+		for (const value of values) {
+			const decoded = Schema.decodeUnknownSync(AuthoringValue)(value);
+			expect(Schema.encodeUnknownSync(AuthoringValue)(decoded)).toEqual(value);
+		}
+		expect(() =>
+			Schema.decodeUnknownSync(AuthoringValue)({
+				identity: { kind: "string_table", tableId: "/Game/ST_Menu.ST_Menu" },
+				kind: "text",
+				value: "Main Menu"
+			})
+		).toThrow();
+	});
+
+	it("edits text content without discarding its identity", () => {
+		expect(
+			editAuthoringText(
+				{
+					identity: {
+						key: "A1",
+						kind: "localized",
+						namespace: "Items",
+						sourceString: "Old"
+					},
+					kind: "text",
+					value: "Old"
+				},
+				"New"
+			)
+		).toEqual({
+			identity: { key: "A1", kind: "localized", namespace: "Items", sourceString: "New" },
+			kind: "text",
+			value: "New"
+		});
+		expect(
+			editAuthoringText(
+				{ identity: { kind: "culture_invariant" }, kind: "text", value: "1" },
+				"2"
+			)
+		).toEqual({ identity: { kind: "culture_invariant" }, kind: "text", value: "2" });
+		expect(editAuthoringText({ kind: "text", value: "a" }, "b")).toEqual({
+			kind: "text",
+			value: "b"
+		});
+		expect(
+			editAuthoringText(
+				{
+					identity: { key: "K", kind: "string_table", tableId: "/Game/ST" },
+					kind: "text",
+					value: "a"
+				},
+				"b"
+			)
+		).toBeUndefined();
+		expect(
+			editAuthoringText({ identity: { kind: "generated" }, kind: "text", value: "3" }, "4")
+		).toBeUndefined();
+	});
+
+	it("decodes producer refusals separately from operation results", () => {
+		const refusal = { code: "operation_not_found", message: "op-1", status: "error" };
+		expect(Schema.decodeUnknownSync(AuthoringEndpointError)(refusal)).toEqual(refusal);
+		expect(Schema.is(AuthoringApplyResult)(refusal)).toBe(false);
 	});
 });

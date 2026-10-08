@@ -894,30 +894,30 @@ test(`records the ${journey} Workbench journey`, async ({
 				await recordChapter({
 					action: async () => {
 						await workbench.openRoute("Game Text");
+						// A fresh profile scans on request; nothing reads the project before that.
 						await page!
-							.getByRole("searchbox", { name: "Search game text" })
-							.fill("Hold to skip");
-						await expect(page!.getByRole("region", { name: "Results" })).toContainText(
-							"Hold to skip"
-						);
+							.getByRole("button", { name: "Scan project", exact: true })
+							.click();
+						const results = page!.getByRole("region", { name: "Results" });
+						// Only the worst group starts open once the list is longer than a page.
+						const translationWork = results.getByRole("button", {
+							name: /^Translation work \d/u
+						});
+						await translationWork.click();
+						await expect(translationWork).toHaveAttribute("aria-expanded", "true");
 						await expect(
-							page!.getByRole("complementary", { name: "Text focus" })
-						).toContainText("2 uses");
-						await page!.getByRole("searchbox", { name: "Search game text" }).fill("");
-						await expect(page!.getByRole("region", { name: "Results" })).toContainText(
-							"Showing 32 of 32 matches"
-						);
-						await page!
-							.getByRole("region", { name: "Results" })
-							.locator('[aria-current="true"]')
-							.scrollIntoViewIfNeeded();
+							results.getByRole("img", { name: /de to update, fr to update/u })
+						).toBeVisible();
+						await expect(
+							page!.getByRole("button", { name: "Culture: All cultures" })
+						).toBeVisible();
 					},
 					description:
-						"One saved line stays connected to its stable Unreal identity and every authored use.",
+						"Every line grouped by what it needs, with a strip showing each culture's translation state.",
 					page,
 					slug: "04-game-text",
 					testInfo,
-					title: "Investigate a shared source line"
+					title: "Review lines by what they need"
 				})
 			);
 			chapters.push(

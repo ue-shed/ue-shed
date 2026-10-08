@@ -1,8 +1,10 @@
 # Game Text review workspace
 
-> Status: design direction, October 2026. A mockup with sample data, not a product contract. The
-> shipped behaviour lives in [`products/game-text.md`](../products/game-text.md); the work is planned
-> in [Plan 053](../../plans/053-game-text-review-workspace.md).
+> Status: graduated to [`products/game-text.md`](../products/game-text.md#reviewing-text-in-workbench)
+> by [Plan 053](../../plans/053-game-text-review-workspace.md). The mockup below is the design as
+> proposed; where the product differs, the product document is authoritative. Named culture sets
+> became a multi-select culture picker (Unreal has no culture groups), keyboard navigation and
+> saved views were dropped as polish, and line history waits for a baseline store.
 
 ## Why
 
@@ -98,7 +100,8 @@ Up and down (J and K) move through the list without going back.
 
 ## Open questions
 
-- How grouping pages from the query: per-group cursors, or one cursor over the worst-first order.
-- Which history the line page can show without a baseline taken before the change.
+- Grouping pages per group: each open group has its own cursor (answered by Plan 053).
+- Which history the line page can show without a baseline taken before the change. Still open:
+  history needs a baseline store first.
 - How the strip reads for colour-blind users; the dashed and filled shapes carry state, but the
   amber and blue pair needs checking.

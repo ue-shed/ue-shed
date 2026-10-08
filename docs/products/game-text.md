@@ -40,24 +40,59 @@ properties. Unsupported evidence and diagnostics remain visible in search/focus 
 reports. A zero-finding report never implies complete project coverage unless its attached corpus
 coverage does.
 
-Workbench searches source text as you type. Next to the search are **Changed files…**,
-**Filter**, **Display**, **Export** and **Presets**.
+The compact corpus path is governed by Plan 033:
+
+- the shared project index performs the only project-wide enumeration;
+- text extraction opens only explicit candidates from that index;
+- `@ue-shed/game-text` owns normalized text meaning and queries;
+- Workbench main owns the active query instance and returns bounded pages over validated IPC;
+- renderer state never receives a complete project corpus.
+
+## Reviewing text in Workbench
+
+> Status: shipped by [Plan 053](../../plans/053-game-text-review-workspace.md); the design is in
+> [`ideas/game-text-review-workspace.md`](../ideas/game-text-review-workspace.md).
+
+The **Text** view is a list of lines and a page per line, built to stay usable with tens of
+thousands of lines, hundreds of problems and a dozen cultures. The toolbar holds the search, which
+matches source text as you type, then **Changed files…**, **Filter**, **Display**, **Export** and
+**Presets**. Every count comes from the same query as the list (see [Counting](#counting)).
+
+### Problems
+
+Each line is classified by what it needs, worst first:
+
+1. **Key changed**: the text has a new key, and the earlier key's translations are lost at the
+   next gather unless they are carried over.
+2. **Same key, different text**: one key holds conflicting source text.
+3. **Not gathered yet**: Unreal's manifest does not have the line.
+4. **Changed since gather**: the source differs from what Unreal gathered.
+5. **Translation work**: a culture is missing, out of date or not synced.
+6. **Finding**: used in several places, the same text under different keys, long, or not
+   localizable.
+7. **Up to date**.
+
+A line counts once for each problem it has and is grouped under its worst. Colour marks severity
+only: red for key problems, amber for lines waiting on Unreal and translation work, blue for
+translations not yet in Unreal. Findings and facts such as "Gathered only" or "Not found in the
+project" stay grey; facts are not problems.
+
+### Filter
 
 **Filter** lists fields; each opens a submenu of its values with how many lines have them, and
 typing at the first level finds values across every field:
 
-- **Problem**: key changed, same key with different text, not gathered yet, changed since gather,
-  translation work, findings, up to date. A line counts once for each problem it has.
+- **Problem**, as above.
 - **Translation**: missing, to update, not synced, in the cultures shown.
 - **Finding**: used in several places, same text with different keys, long text, not localizable.
 - **Folder**, **Asset** and **Origin** (String table, Data table, Asset, C++, Other source). A
   String Table reference inside an asset counts as the asset; gathered-only lines take their
   origin and folder from Unreal's manifest path. A line belongs to every folder it is defined or
   used in, and a folder includes its subfolders. The Folder submenu browses folders a level at a
-  time, like the side pane, and shares its level: a name adds its pill, the arrow opens the
-  folders inside it, and "‹" goes back up. Typing narrows the level shown and offers "Path starts
-  with …", which matches object paths, package files and gathered source paths, ignoring case and
-  slash direction.
+  time, like the side pane, and never lists every folder at once: a name adds its pill, the arrow
+  opens the folders inside it, and "‹" goes back up. Typing narrows the level shown and offers
+  "Path starts with …", which matches object paths, package files and gathered source paths,
+  ignoring case and slash direction.
 - **Editing** (editable, read only) and **Translator notes** (none, some). No translator notes
   means blank notes, after trimming, at every saved location.
 - **Review** and **Line state** (gathered only, not found, outside the target, unknown) pick one
@@ -65,30 +100,41 @@ typing at the first level finds values across every field:
 
 Each chosen value becomes a pill such as "Problem | is any of | Key changed, Not gathered yet | ×".
 Values of one field join one pill; every pill must match. Clicking the middle part switches between
-"is" and "is not". Pills and grouping are saved with the project's view and carried by presets and
-exports; preferences and presets saved before pills open with their toggles, lenses and state chips
-as pills.
+"is" and "is not". Once a field has a pill, its other values hide their counts, which would read
+zero. Pills and grouping are saved with the project's view and carried by presets and exports;
+preferences and presets saved before pills open with their toggles, lenses and state chips as
+pills.
+
+### Display and groups
 
 **Display** groups the list by problem (the default), folder, asset, origin or namespace, or not at
-all. Groups are listed worst first with their line counts; when every line fits on one page all
-groups start open, otherwise the worst one does, and each opens a page of its lines at a time.
-Colour marks severity only: red for key problems, amber for lines waiting on Unreal and translation
-work, blue for translations not yet in Unreal. Findings and facts such as "Not found in the project"
-stay grey.
+all. Groups are listed worst first with their line counts and, outside problem grouping, how many
+lines need work. At most 200 groups are listed, with a count of the rest. When every line fits on
+one page all groups start open, otherwise the worst one does; each open group loads a page of its
+own lines at a time, and only open groups cost a request.
 
-The culture picker takes any number of cultures, and the choice is remembered per project. Each
-culture shows its missing, to-update and not-synced lines over the current filters. With one
-culture picked, each line shows that culture's translation. With none, or several, each line ends
-with a **culture strip** of the cultures shown: one cell per culture, always in the target's order,
-empty when shipped, dashed when missing, amber when it needs an update and blue when not synced,
-and one merged bar when every culture shares a state. The text before it names cultures only when
-one or two are affected ("de, fr to update", "all missing"). A line every culture ships draws no
-mark; a gather state is said once for the line ("Not gathered yet"). Picked cultures also narrow
-states, counts and translation work, and **Search translations** searches every picked culture.
+### Cultures
+
+The culture picker takes any number of cultures, and the choice is remembered per project. Unreal
+has no culture groups, so there are no named sets; pick the cultures you are working on. Each
+culture shows its missing, to-update and not-synced lines over the current filters.
+
+With one culture picked, each line shows that culture's translation. With none, or several, each
+line ends with a **culture strip** of the cultures shown: one cell per culture, always in the
+target's order, empty when shipped, dashed when missing, amber when it needs an update and blue
+when not synced, and one merged bar when every culture shares a state. The text before it names
+cultures only when one or two are affected ("de, fr to update", "all missing"). A line every
+culture ships draws no mark; a gather state is said once for the line ("Not gathered yet"). Picked
+cultures also narrow states, counts and translation work, and **Search translations** searches
+every picked culture.
+
+### Side pane
 
 Until a line is opened, the side pane shows where the lines are: problems (unless the list is
 grouped by them) and folders, assets and origins, each with its line count and how many need work.
 A name adds its pill; a folder's arrow lists the folders inside it.
+
+### Changed files
 
 **Changed files…** takes a pasted list, one path per line, from any version control tool
 (`p4 opened`, `git diff --name-only`, and so on) and keeps the text those files hold.
@@ -102,15 +148,20 @@ A name adds its pill; a folder's arrow lists the folders inside it.
 
 A changed-file list lasts for the session.
 
+### The line page
+
 Opening a line shows its **page** in place of the list; **‹ Lines** returns to the list as it was,
 with its groups and loaded pages. The header says where the line sits ("2 of 58") and steps to the
-line before or after it, opening the next group or loading its next page when needed. The page
-says the line's worst problem first, in plain words and its severity colour, with what resolves
-it. It keeps the text, key, **Where it appears**, every culture's translation (with editing,
-review and key-change carrying), and read problems together, and lists the line's properties
-beside them: problems, namespace and key, origin, asset and folder, editing, translator notes,
-length and findings. **Show in Unreal** reports success only when the editor confirms asset
+line before or after it, opening the next group or loading its next page when needed.
+
+The page says the line's worst problem first, in plain words and its severity colour, with what
+resolves it. It keeps the text, key, **Where it appears**, every culture's translation (with
+editing, review and key-change carrying), and read problems together, and lists the line's
+properties beside them: problems, namespace and key, origin, asset and folder, editing, translator
+notes, length and findings. **Show in Unreal** reports success only when the editor confirms asset
 navigation.
+
+### Bulk actions
 
 While a target is selected, each line has a tick box; shift-click ticks every line from the last
 one ticked, across groups. The selection stays while filters and grouping change, so it can be
@@ -126,20 +177,14 @@ bar under the list acts on every ticked line:
   to the 500 edits that can be staged at once;
 - **Copy keys** copies each line's namespace and key as two tab-separated columns.
 
+### Counting
+
 Every displayed text count in the toolbar, search, Filter menu and side pane comes from the same query and
 filtering path. Empty or whitespace-only source lines are excluded from those counts and from role
 line counts. `TextCorpus.coverage` keeps raw scan provenance counts, including empty text; the query
 summary's searchable counts describe the lines shown to people. Read-problem and asset counts
 continue to describe scan coverage. Partial reads and unsupported text fields remain inspectable
 from either view, with related read problems available in the selected line's details.
-
-The compact corpus path is governed by Plan 033:
-
-- the shared project index performs the only project-wide enumeration;
-- text extraction opens only explicit candidates from that index;
-- `@ue-shed/game-text` owns normalized text meaning and queries;
-- Workbench main owns the active query instance and returns bounded pages over validated IPC;
-- renderer state never receives a complete project corpus.
 
 ## Project-authored quality contract
 
@@ -262,7 +307,7 @@ Workbench's **Export → CSV** produces a spreadsheet for people: one row per sa
 Unreal names, keys, translator notes where applicable, and package files. Every cell is quoted,
 embedded quotes are doubled, and text starting with optional whitespace then `=`, `+`, `-` or
 `@` receives a leading apostrophe. Output has a UTF-8 BOM and CRLF endings, including the last row.
-Character counts use the same JavaScript string-length measurement as the detail pane. JSON keeps
+Character counts use the same JavaScript string-length measurement as the line page. JSON keeps
 the existing provenance document; `gameTextInvestigationCsv` keeps its documented metadata layout.
 
 Use **Presets → Save preset… / Open preset…** to retain or restore the current settings.
@@ -300,8 +345,12 @@ The first quality slice must prove:
 > [ADR 0009](../decisions/0009-localization-change-sets-and-review-state.md): read-only formats,
 > corpus joins, bounded queries, CLI status, Workbench localization views, checks, reports,
 > Unreal processes, PO editing and review state. [Plan 052](../../plans/052-text-identity-and-scope-tools.md)
-> adds origin and changed-file filters, a Perforce file-list bridge, key-change detection with
-> translation carry-over, and an all-languages CSV. Plan 051's Phase 8 extensions remain proposals.
+> adds origin and changed-file filters, key-change detection with translation carry-over, and an
+> all-languages CSV; its Perforce file-list bridge follows the 0.10.0 release.
+> [Plan 053](../../plans/053-game-text-review-workspace.md) reshapes the Workbench around problems,
+> Filter, Display, picked cultures, a page per line and bulk actions (see
+> [Reviewing text in Workbench](#reviewing-text-in-workbench)). Plan 051's Phase 8 extensions remain
+> proposals.
 
 Game Text grows into a localization workspace that a writing and localization team can use all
 day. For every line it shows the source text, each culture's translation, and that translation's
@@ -534,7 +583,7 @@ The PO writer and its CLI are shipped (Plan 051 Phase 6):
     - `--skip-stale` writes the changes that are still current.
     - `--sync` then runs Unreal's import and compile.
     - Change sets come from `loc check --changes` suggested fixes or from any host.
-- In Workbench, a non-native culture's translation can be edited in the detail pane, starting
+- In Workbench, a non-native culture's translation can be edited on the line page, starting
   from the translation that ships next. Edits are staged.
 - A "N staged" panel lists them with the old and new text, checks them against the project's
   files, names the PO files to check out first, and offers "Write to PO" after a clean check.
@@ -548,7 +597,7 @@ Edits that Unreal has not imported are always visible. A translation in the PO f
 from the archive is "Not synced", whether UE Shed or another tool wrote it:
 
 - its row carries a "Not synced" mark for that culture;
-- the detail pane shows both the PO translation and the translation the game currently uses;
+- the line page shows both the PO translation and the translation the game currently uses;
 - the toolbar shows how many translations are not synced, beside a "Sync with Unreal" action;
 - a "Not synced" filter lists them, and the CLI status and reports count them; and
 - checks evaluate the PO translation, because that is what the next sync will ship.
@@ -578,8 +627,9 @@ Review is shipped (Plan 051 Phase 7):
 - `ue-shed loc review set|clear|accept|unaccept <project-root> --target <name> --culture <code>
 --line <Namespace,Key> [--flag <flag>] [--check <rule>] [--by <name>]`, and
   `ue-shed loc status --review <lens>`.
-- In Workbench, the detail pane shows "Review <culture>" toggles for each flag, and a check
-  finding offers "Accept as intended".
+- In Workbench, the line page shows "Review <culture>" toggles for each flag, and a check
+  finding offers "Accept as intended". **Mark reviewed** in the bulk bar sets "Reviewed" for every
+  ticked line.
 
 ### Key changes
 
@@ -597,12 +647,14 @@ Before a gather this works for saved asset text: the earlier key still in the ma
 found in the project" and the new key is "Not gathered yet". C++ and config text is not in the
 saved scan; it pairs across a gather UE Shed runs.
 
-- In Workbench, the **Key changed** group (or Filter → Problem → Key changed) lists the new keys. The detail pane shows the earlier key, how it
-  was paired, any text change, and the translations the earlier key shipped.
+- In Workbench, the **Key changed** group (or Filter → Problem → Key changed) lists the new keys.
+  The line page shows the earlier key, how it was paired, any text change, and the translations
+  the earlier key shipped.
 - **Carry translations** stages those translations for the new key, as hand edits are staged. The
   staged panel then guides the steps: gather, export, **Write to PO**, then sync. When the text
   changed too, the action reads **Carry anyway**, because the translations were written for the
-  earlier text.
+  earlier text. **Carry translations** in the bulk bar stages every ticked key change whose text
+  did not change.
 - A change's previous translation matches whether it was absent or empty, so an edit staged
   before the gather is still current after it (ADR 0009 addendum).
 - **Gather and export** (`ue-shed loc run prepare`) runs Unreal's gather, then its PO export, in
@@ -651,38 +703,25 @@ switches and never submits. Hosts own source control.
 
 ### Workbench presentation
 
-The Game Text route uses one toolbar row (view tabs, one coverage line, Rescan) and gives the rest of
-the window to a list and detail workbench. Rows keep the user's words: the text first, then where it
-lives. When a culture is selected, each row adds that culture's translation and state. The detail
-pane stacks every culture with its translation, state, checks and edit field. A side-by-side grid
-for bulk work is a later, optional mode. Counts are computed through the same query as search, so
-every count agrees with the list it describes.
+The Game Text route uses one toolbar row (view tabs, target and cultures, the not-synced count with
+**Sync with Unreal**, **Unreal steps**, one coverage line and Rescan) and gives the rest of the
+window to the list and its side pane, or to one line's page. Rows keep the user's words: the text
+first, then where it lives, then what the line needs. The line page stacks every culture with its
+translation, state, checks, review and edit field. Work across many lines goes through the bulk bar
+rather than a side-by-side grid. See [Reviewing text in Workbench](#reviewing-text-in-workbench).
 
 ## Explicitly out of scope
 
-Out of scope for the shipped product today:
+Out of scope for the shipped product:
 
 - another filesystem enumeration, scanner, corpus, or persistence adapter;
-- direct package, source-text, localization, PO, manifest, archive, or compiled-resource mutation;
-- translation editing, source/localization Apply or Save, PO import/export, or localization
-  compilation;
+- direct package or source-text mutation, and source Apply or Save from Game Text;
+- localization writes other than the bounded ones above: atomic PO `msgstr` changes, the review
+  file, and the files Unreal's own processes write;
 - rendered-width estimation or engine-specific font/layout simulation;
 - built-in studio terminology, roles, paths, cultures, or budgets;
-- full-corpus renderer IPC, renderer filesystem authority, or UI-owned rule evaluation; and
-- telemetry containing authored text or rule evidence.
-
-Under Plan 051, the following move into scope as its phases complete. Each is bounded as described
-above:
-
-- reading localization target settings, manifests, archives and PO files as evidence;
-- running Unreal's gather, import, export, compile and report steps;
-- translation editing through staged change sets, with atomic PO writes as the only file writes
-  made by UE Shed's own code;
-- a project-owned review state file; and
-- per-culture checks and localization reports.
-
-The following remain out of scope even under Plan 051:
-
+- full-corpus renderer IPC, renderer filesystem authority, or UI-owned rule evaluation;
+- telemetry containing authored text or rule evidence;
 - UE Shed writing manifests, archives, `.locres` or `.locmeta` itself;
 - linking text to translations by matching source strings;
 - translation memory, machine translation services, vendors, assignment and billing;

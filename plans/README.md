@@ -20,7 +20,7 @@ the status row when done.
 | [035](035-world-log-investigation-workspace.md)          | Build the World Log investigation workspace                     | P2       | XL     | 034 Map History           | IN PROGRESS — Phase 7            |
 | [041](041-execute-one-live-pie-scenario.md)              | Execute one live PIE scenario                                   | P1       | XL     | Scenario Studio prototype | IN PROGRESS — contract bootstrap |
 | [052](052-text-identity-and-scope-tools.md)              | Text identity and scope tools for Game Text                     | P1       | L      | 051, Map History Perforce | IN PROGRESS — Phase 3 after 0.10 |
-| [053](053-game-text-review-workspace.md)                 | Game Text review workspace                                      | P1       | XL     | 052                       | IN PROGRESS — Phase 5 next       |
+| [053](053-game-text-review-workspace.md)                 | Game Text review workspace                                      | P1       | XL     | 052                       | IN PROGRESS — done, PR #58 open  |
 
 Status values: `TODO`, `IN PROGRESS`, `DONE`, `BLOCKED` with a one-line reason, or `REJECTED` with a
 one-line rationale. When a plan is `DONE`, move it into [`archive/`](archive/) and update both this

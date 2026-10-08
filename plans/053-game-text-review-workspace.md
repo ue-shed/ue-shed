@@ -13,9 +13,9 @@
 
 - **State**: IN PROGRESS. Phases 1–5 are done (Phase 3 without the keyboard and saved views, which
   the owner skipped as polish the showcase does not need; Phase 4 without history; Phase 5 without
-  the `X` key); the documentation and website pass is next. The
-  design is a mockup with sample data; each phase earns its part against the fixture and a
-  generated large corpus.
+  the `X` key), and so is the documentation and website pass. The plan stays open until PR #58
+  merges. The design is a mockup with sample data; each phase earned its part against the fixture
+  and a generated large corpus.
 - **Priority**: P1
 - **Effort**: XL
 - **Risk**: MEDIUM. The Workbench's Game Text surface changes shape; saved views and presets from
@@ -252,6 +252,26 @@ Phase 3).
   and bulk actions; the idea document marked as graduated.
 - Website guides and screenshots for Game Text refreshed (see `docs/engineering/website.md`).
 - Changesets for `@ue-shed/game-text`, `@ue-shed/ui` and the CLI.
+
+**Evidence (2026-10-08)**: done.
+
+- `docs/products/game-text.md` has a "Reviewing text in Workbench" section (problems, Filter,
+  Display and groups, cultures, side pane, changed files, the line page, bulk actions, counting),
+  moved out of the corpus section. The localization section's "detail pane" now reads "line
+  page", the presentation and out-of-scope lists match what ships, and the status note links this
+  plan.
+- `docs/ideas/game-text-review-workspace.md` and the ideas index say the idea graduated, with what
+  changed on the way (no culture sets, keyboard or saved views; history waits for a baseline
+  store).
+- The website's Game Text guide is rewritten around the same workflow, with a `loc status
+--filter --group` command checked against the fixture. The `site-saved` journey's Game Text
+  chapter had gone stale (Game Text now scans on request, and the "Showing 32 of 32" text is
+  gone); it now scans, opens Translation work and checks a culture strip. `site:media` exported
+  all six chapters from one passing recording and `site:media --check` verifies them. `site:check`
+  cannot build its WASM package inside a nested worktree (cargo resolves the parent workspace), so
+  the website CI job is its evidence.
+- Changesets: `@ue-shed/ui` and the CLI are private packages, so only `@ue-shed/game-text` carries
+  one (`text-problems-and-filter-clauses.md`, covering Phases 1, 2 and 5).
 
 ## Verification
 

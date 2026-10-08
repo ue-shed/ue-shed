@@ -126,8 +126,8 @@ pnpm site:refresh
 
 This builds Workbench, runs the `site-saved` Playwright journey against the generic fixture,
 exports its asserted chapters, and checks the production website at desktop and mobile widths.
-The journey opens Data Authoring, switches to Charts, searches Game Text, compares config
-platforms, inspects the contribution ledger, and browses Map Review's saved Camera Lab map with
+The journey opens Data Authoring, switches to Charts, scans Game Text and opens its translation
+work, compares config platforms, inspects the contribution ledger, and browses Map Review's saved Camera Lab map with
 Review Subject selected. It uses an isolated Electron profile and does not launch Unreal. This
 website journey ignores inherited `UE_SHED_*` project and endpoint overrides and reserves an
 offline endpoint so it cannot capture a different configured project.

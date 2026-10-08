@@ -28,8 +28,8 @@ reviewable corpora while keeping their headless capabilities independently usabl
 - [Asset audits](asset-audits.md) — Texture Audit lens shipped
 - [Asset lookbook](asset-lookbook.md)
 - [Game text workbench](game-text-workbench.md) — early scan/search slice shipped
-- [Game Text review workspace](game-text-review-workspace.md) — design direction for reviewing
-  localization at scale
+- [Game Text review workspace](game-text-review-workspace.md) — graduated to
+  [`products/game-text.md`](../products/game-text.md#reviewing-text-in-workbench)
 
 A separate [ranked catalog](catalog.md) collects a different family — corpus tools and analytical
 surfaces over authored project data. Promising entries graduate to their own vision documents.

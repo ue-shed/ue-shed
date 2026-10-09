@@ -4,6 +4,8 @@ Usage: python research/sync-probe/evidence.py query TASK VERSION SUBTREE REGEX
        python research/sync-probe/evidence.py read VERSION RELATIVE_PATH START END
 """
 import datetime
+import difflib
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -46,3 +48,14 @@ if __name__ == "__main__":
             print(f"{number}: {lines[number - 1]}")
     elif mode == "journal":
         journal(" ".join(args))
+    elif mode == "compare":
+        task, *files = args
+        records = []
+        for relative in files:
+            a = (engine("5.7") / relative).read_text(encoding="utf-8-sig", errors="replace")
+            b = (engine("5.8") / relative).read_text(encoding="utf-8-sig", errors="replace")
+            records.append(f"{relative}: 5.7={hashlib.sha256(a.encode()).hexdigest()} 5.8={hashlib.sha256(b.encode()).hexdigest()} identical={a == b}")
+            if a != b:
+                (OUT / f"{task}-{Path(relative).name}.diff").write_text("\n".join(difflib.unified_diff(a.splitlines(), b.splitlines(), fromfile="5.7", tofile="5.8")), encoding="utf-8")
+        (DOCS / f"evidence/{task}-source-comparison.txt").write_text("\n".join(records), encoding="utf-8")
+        print("\n".join(records))

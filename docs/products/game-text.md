@@ -46,6 +46,10 @@ The corpus includes decoded String Table entries, DataTable `FText` cells, and s
 properties. Every text unit retains its resolved or unresolved Unreal identity and one or more
 occurrences with package, object, row/entry/property, and edit-capability evidence.
 
+Localization lines use Unreal's gathered identity, with the trailing package namespace marker
+removed; saved corpus units and occurrences retain the full namespace for asset inspection.
+Package variants of one namespace and key share a localization line, including source conflicts.
+
 Coverage is part of every corpus result. Complete and partial results distinguish discovered,
 inspected, partial, and failed packages; resolved and unresolved occurrences; and unsupported text
 properties. Unsupported evidence and diagnostics remain visible in search/focus and downstream

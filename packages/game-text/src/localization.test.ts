@@ -5,7 +5,8 @@ import {
 	LocalizationError,
 	LocalizationTarget,
 	LocalizationTargetEvidence,
-	parseDashboardTargets
+	parseDashboardTargets,
+	type PODocument
 } from "@ue-shed/localization/browser";
 import {
 	joinLocalizationTarget,
@@ -51,6 +52,48 @@ function configureGather(includes: readonly string[], excludes: readonly string[
 }
 
 describe("localization identity join and precedence", () => {
+	it.each<[string, string, PODocument["format"]]>([
+		["[PKG]", "", "Unreal"],
+		["MyNamespace [PKG]", "MyNamespace", "Unreal"],
+		["[A] [B]", "[A]", "Unreal"],
+		["[PKG]", "", "Crowdin"],
+		["MyNamespace [PKG]", "MyNamespace", "Crowdin"]
+	])("joins saved namespace %j to gathered namespace %j (%s)", (saved, gathered, format) => {
+		const text = corpus([unit("K", "Source", "Content/Text/Table.uasset", saved)]);
+		const joined = joinLocalizationTarget(
+			text,
+			evidence(
+				[manifestEntry("K", "Source", "/Game/Text/Table.Table", gathered)],
+				[archiveEntry("K", "Source", "Translation", gathered)],
+				poDocument("Translation", format, gathered)
+			)
+		);
+		expect(joined.lines).toHaveLength(1);
+		expect(joined.lines[0]?.identity).toEqual({ namespace: gathered, key: "K" });
+		expect(joined.lines[0]?.cultures.map((culture) => culture.state)).toEqual([
+			"translated",
+			"translated"
+		]);
+		expect(joined.lines[0]?.cultures[0]?.po?.identity?.namespace).toBe(gathered);
+		expect(text.units[0]?.identity).toMatchObject({ namespace: saved });
+		expect(text.units[0]?.occurrences[0]?.identity).toMatchObject({ namespace: saved });
+	});
+
+	it("merges package variants and keeps conflicting sources visible", () => {
+		const first = unit("K", "Source", "Content/Text/Table.uasset", "NS [A]");
+		const second = TextUnit.make({
+			...unit("K", "Other", "Content/Text/Other.uasset", "NS [B]"),
+			id: TextUnit.fields.id.make("unit:other")
+		});
+		const joined = joinLocalizationTarget(corpus([first, second]), evidence());
+		expect(joined.lines).toHaveLength(1);
+		expect(joined.lines[0]?.origin).toMatchObject({
+			kind: "corpus",
+			unitIds: [first.id, second.id]
+		});
+		expect(joined.lines[0]?.cultures[0]?.unknownReasons).toContain("conflicting_source");
+	});
+
 	it("evaluates translated and native cultures from the archive", () => {
 		expect(mark().state).toBe("translated");
 		expect(

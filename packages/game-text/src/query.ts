@@ -58,6 +58,7 @@ import type {
 } from "./localization-schema.js";
 import { GameTextLocalizationError } from "./localization-schema.js";
 import { localizationManifestNotes } from "./localization.js";
+import { stripPackageNamespace } from "@ue-shed/localization/browser";
 import {
 	localizationQueryPage,
 	matchesLocalizationLine,
@@ -79,19 +80,23 @@ function wordCount(value: string): number {
 	return value.trim() === "" ? 0 : value.trim().split(/\s+/u).length;
 }
 
-function searchResult(unit: TextUnit, duplicateSources: ReadonlySet<string>): TextUnitSearchResult {
+function searchResult(
+	unit: TextUnit,
+	duplicateSources: ReadonlySet<string>,
+	group: { readonly occurrences: number; readonly sources: ReadonlySet<string> }
+): TextUnitSearchResult {
 	const contexts = unit.occurrences.slice(0, 3).map((occurrence) => ({
 		editCapability: occurrence.editCapability,
 		location: occurrence.location
 	}));
 	const value = sourceValue(unit);
 	const reviewSignals: TextReviewSignal[] = [];
-	if (unit.occurrences.length > 1) reviewSignals.push("shared");
+	if (group.occurrences > 1) reviewSignals.push("shared");
 	if (unit.source.status === "consistent" && duplicateSources.has(unit.source.value))
 		reviewSignals.push("duplicate_source");
 	if (value.length >= LONG_SOURCE_THRESHOLD) reviewSignals.push("long");
 	if (unit.identity.status === "unresolved") reviewSignals.push("unresolved");
-	if (unit.source.status === "conflicting") reviewSignals.push("conflicting");
+	if (group.sources.size > 1) reviewSignals.push("conflicting");
 	if (unit.occurrences.every((occurrence) => occurrence.editCapability === "read_only"))
 		reviewSignals.push("evidence_only");
 	return {
@@ -140,16 +145,41 @@ export function textCorpusQuery(
 	localization?: LocalizationJoin
 ): TextCorpusQuery {
 	const units = [...corpus.units].sort((left, right) => left.id.localeCompare(right.id));
-	const sourceFrequency = new Map<string, number>();
+	// Units retain saved identities; findings count the localization identities Unreal gathers.
+	const identities = new Map<TextUnit["id"], string>();
+	const groups = new Map<string, { occurrences: number; sources: Set<string> }>();
+	const sourceFrequency = new Map<string, Set<string>>();
 	for (const unit of units) {
-		if (unit.source.status !== "consistent") continue;
-		sourceFrequency.set(unit.source.value, (sourceFrequency.get(unit.source.value) ?? 0) + 1);
+		const identity =
+			unit.identity.status === "resolved"
+				? JSON.stringify([
+						stripPackageNamespace(unit.identity.namespace),
+						unit.identity.key
+					])
+				: unit.id;
+		identities.set(unit.id, identity);
+		const group = groups.get(identity) ?? { occurrences: 0, sources: new Set<string>() };
+		group.occurrences += unit.occurrences.length;
+		for (const source of unit.source.status === "consistent"
+			? [unit.source.value]
+			: unit.source.values)
+			group.sources.add(source);
+		groups.set(identity, group);
+		if (unit.source.status === "consistent") {
+			const keys = sourceFrequency.get(unit.source.value) ?? new Set<string>();
+			keys.add(identity);
+			sourceFrequency.set(unit.source.value, keys);
+		}
 	}
 	const duplicateSources = new Set(
-		[...sourceFrequency].filter(([, count]) => count > 1).map(([source]) => source)
+		[...sourceFrequency].filter(([, keys]) => keys.size > 1).map(([source]) => source)
 	);
 	const indexed = units.filter(hasSearchableSource).map((unit) => {
-		const presentation = searchResult(unit, duplicateSources);
+		const group = groups.get(identities.get(unit.id) ?? "") ?? {
+			occurrences: unit.occurrences.length,
+			sources: new Set<string>()
+		};
+		const presentation = searchResult(unit, duplicateSources, group);
 		const hasEditable = unit.occurrences.some(
 			(occurrence) => occurrence.editCapability === "source_editable"
 		);

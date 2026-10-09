@@ -10,7 +10,7 @@
 
 ## Status
 
-- **State**: IN PROGRESS. Phase 4 is implemented and targeted checks pass. Real-project checks and
+- **State**: IN PROGRESS. Phases 4–5 are implemented and targeted checks pass. Real-project checks and
   unrelated full-gate failures remain open.
 - **Priority**: P1
 - **Effort**: M
@@ -160,6 +160,16 @@ read-only: no gathers, no writes.
 - A pure test bounds the parser on a generated 50,000-entry PO file. Its time budget is generous,
   so it is not flaky.
 
+## Phase 5: Saved package namespaces
+
+- Match saved FText identities to manifests, archives and PO files after stripping Unreal's
+  trailing package namespace marker once. Export the pure helper from browser-safe localization.
+- Keep full saved namespaces in corpus units and occurrences, and use gathered identities for
+  localization lines, key changes, review fingerprints and gates.
+- Count duplicate sources by gathered identity, and retain conflicts across package variants.
+- Cover marker edge cases, translated joins, saved identity preservation, pairing, reviews and
+  gates with invented examples; update the product contract and add a Changeset.
+
 ## Docs and release
 
 - `docs/products/game-text.md`:
@@ -199,3 +209,36 @@ archive parsing from 2.14 s to 0.98 s and manifest parsing from 1.85 s to 0.91 s
 heap fell from 4,169 MiB to 1,121 MiB after GC; the final read completes on Node's default heap.
 See the [measurement and consumer audit](../docs/research/localization-read-performance-2026-10-09.md)
 for profiling attribution, compact evidence, reproduction and verification results.
+
+### Phase 5: saved package namespaces
+
+`stripPackageNamespace` lives in browser-safe `@ue-shed/localization`. The join strips each saved
+namespace once before grouping against manifest, archive and PO identities; key-change pairing,
+review fingerprints, gates and translation editing consume those gathered line identities.
+Localization files are not stripped again, preserving namespaces such as `[A]` after `[A] [B]`
+is cleaned. Corpus units, occurrence identities and asset focus/export keep full saved namespaces.
+Query findings count distinct gathered identities, including shared text and source conflicts
+across package variants. A navigation test now uses distinct keys for its distinct lines.
+
+Verified the stripping algorithm and asset-gather call against installed UE 5.7 and UE 5.8 source,
+and the algorithm against UE 4.27 source. This phase changes no parser, fixture or Unreal process
+integration; no engine commandlets were run for it.
+
+Verification on Node 24.21.0:
+
+- Sequential localization and game-text builds: both passed.
+- `pnpm exec vitest run packages/localization packages/game-text`: 324 passed, 0 failed,
+  4 environment-gated tests skipped; 41 files passed and 3 skipped.
+- `pnpm exec vitest run apps/cli/src`, with the release native reader explicitly configured:
+  76 passed, 0 failed, 25 files passed.
+- `pnpm exec vitest run extensions/game-text apps/workbench/src/main`: 339 passed, 0 failed,
+  43 files passed.
+- `pnpm exec oxfmt --write` on all 16 changed files: passed.
+- `pnpm run check:precommit`: passed all six stages; architecture tests 43 passed, 0 failed.
+- `pnpm check`: failed at unrelated Data Authoring adoption conformance. Its copied protocol
+  package imports missing `editor-foreground-responsiveness.js`; the full gate stops before the
+  final test stage. Native/WASM checks, package builds, types, architecture, license, release and
+  20 packed-package consumers passed before that failure.
+
+Node 26 and the plan's real-project checks remain unverified. A transient precommit failure from
+running while package conformance rebuilt dist outputs was resolved by rerunning after the build.

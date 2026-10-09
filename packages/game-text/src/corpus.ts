@@ -431,6 +431,7 @@ export function textPackagePathsFromProjectIndex(index: SavedAssetScan): readonl
 }
 
 function unitKey(occurrence: TextOccurrence): string {
+	// Keep the saved namespace for asset inspection; localization joins strip the package marker.
 	if (occurrence.identity.status === "resolved") {
 		return `unreal:${encodeURIComponent(occurrence.identity.namespace)}:${encodeURIComponent(occurrence.identity.key)}`;
 	}

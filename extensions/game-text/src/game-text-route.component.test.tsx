@@ -1104,20 +1104,29 @@ describe("Game Text writing workspace", () => {
 
 	it("steps back to the previous group's last line, loading the pages it has not shown", async () => {
 		const first = corpus.units[0]!;
+		const savedLine = (id: string, source: string) => {
+			const identity = { status: "resolved" as const, namespace: "UI", key: id };
+			return {
+				...first,
+				id: makeTextUnitId(id),
+				identity,
+				occurrences: first.occurrences.map((occurrence) => ({
+					...occurrence,
+					id: makeTextOccurrenceId(`occurrence:${id}`),
+					identity,
+					source
+				})),
+				source: { status: "consistent" as const, value: source }
+			};
+		};
 		const input: TextCorpus = {
 			...corpus,
 			units: [
 				// 62 lines with the same text are findings; one line on its own is up to date.
-				...Array.from({ length: 62 }, (_, index) => ({
-					...first,
-					id: makeTextUnitId("same-line:" + index.toString().padStart(3, "0")),
-					source: { status: "consistent" as const, value: "Same text" }
-				})),
-				{
-					...first,
-					id: makeTextUnitId("unique-line"),
-					source: { status: "consistent" as const, value: "Unique line" }
-				}
+				...Array.from({ length: 62 }, (_, index) =>
+					savedLine("same-line:" + index.toString().padStart(3, "0"), "Same text")
+				),
+				savedLine("unique-line", "Unique line")
 			]
 		};
 		const user = userEvent.setup();

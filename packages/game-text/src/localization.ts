@@ -1,6 +1,7 @@
 import {
 	LocalizationIdentity,
 	resolveLocalizationGatherPath,
+	stripPackageNamespace,
 	type ArchiveEntry,
 	type LocalizationTarget,
 	type LocalizationTargetEvidence,
@@ -283,7 +284,7 @@ function groupByIdentity<A extends typeof LocalizationIdentity.Type>(
 	return grouped;
 }
 
-/** Join namespace/key only. Source comparisons classify already-joined evidence. */
+/** Join gathered namespace/key, stripping saved package namespaces once at the corpus boundary. */
 export function joinLocalizationTarget(
 	corpus: TextCorpus,
 	evidence: LocalizationTargetEvidence,
@@ -296,7 +297,10 @@ export function joinLocalizationTarget(
 	const tables = new Map<string, typeof LocalizationIdentity.Type>();
 	for (const unit of corpus.units) {
 		if (unit.identity.status !== "resolved") continue;
-		const identity = decodeLocalizationIdentity(unit.identity);
+		const identity = decodeLocalizationIdentity({
+			...unit.identity,
+			namespace: stripPackageNamespace(unit.identity.namespace)
+		});
 		resolved.set(unit.id, identity);
 		for (const occurrence of unit.occurrences) {
 			if (occurrence.location.kind === "string_table_entry")

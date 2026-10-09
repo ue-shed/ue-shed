@@ -1,5 +1,6 @@
 export * from "./schema.js";
 export * from "./gather-path.js";
+export * from "./text-namespace.js";
 export * from "./targets.js";
 export * from "./json-formats.js";
 export * from "./po.js";

@@ -37,10 +37,11 @@ export const target = Schema.decodeUnknownSync(LocalizationTarget)(testTarget);
 export function manifestEntry(
 	key = "K",
 	text = "Source",
-	path = "/Game/Text/Table.Table"
+	path = "/Game/Text/Table.Table",
+	namespace = "NS"
 ): ManifestEntry {
 	return Schema.decodeUnknownSync(ManifestEntry)({
-		namespace: "NS",
+		namespace,
 		key,
 		source: { Text: text },
 		path
@@ -50,10 +51,11 @@ export function manifestEntry(
 export function archiveEntry(
 	key = "K",
 	source = "Source",
-	translation = "Translation"
+	translation = "Translation",
+	namespace = "NS"
 ): ArchiveEntry {
 	return Schema.decodeUnknownSync(ArchiveEntry)({
-		namespace: "NS",
+		namespace,
 		key,
 		source: { Text: source },
 		translation: { Text: translation }
@@ -62,9 +64,13 @@ export function archiveEntry(
 
 export function poDocument(
 	translation = "Translation",
-	format: PODocument["format"] = "Unreal"
+	format: PODocument["format"] = "Unreal",
+	namespace = "NS"
 ): PODocument {
-	const identity = format === "Crowdin" ? 'msgid "NS,K"' : 'msgctxt "NS,K"\nmsgid "Source"';
+	const identity =
+		format === "Crowdin"
+			? `msgid "${namespace},K"`
+			: `msgctxt "${namespace},K"\nmsgid "Source"`;
 	return success(
 		parsePO(
 			new TextEncoder().encode(
@@ -120,19 +126,20 @@ export function evidence(
 export function unit(
 	key = "K",
 	source = "Source",
-	packageFile = "Content/Text/Table.uasset"
+	packageFile = "Content/Text/Table.uasset",
+	namespace = "NS"
 ): TextUnit {
 	return Schema.decodeUnknownSync(TextUnit)({
 		id: `unit:${key}`,
 		source: { status: "consistent", value: source },
-		identity: { status: "resolved", namespace: "NS", key },
+		identity: { status: "resolved", namespace, key },
 		occurrences: [
 			{
 				id: `occurrence:${key}`,
 				devNotes: "",
 				packageFile,
 				source,
-				identity: { status: "resolved", namespace: "NS", key },
+				identity: { status: "resolved", namespace, key },
 				editCapability: "source_editable",
 				location: {
 					kind: "string_table_entry",

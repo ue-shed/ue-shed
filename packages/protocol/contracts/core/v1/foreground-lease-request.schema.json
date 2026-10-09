@@ -1,0 +1,139 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$defs": {},
+	"anyOf": [
+		{
+			"type": "object",
+			"properties": {
+				"operation": {
+					"type": "string",
+					"enum": ["acquire"]
+				},
+				"expectedProcessId": {
+					"type": "integer",
+					"allOf": [
+						{
+							"exclusiveMinimum": 0
+						},
+						{
+							"exclusiveMaximum": 4294967295
+						}
+					]
+				},
+				"clientProcessId": {
+					"type": "integer",
+					"allOf": [
+						{
+							"exclusiveMinimum": 0
+						},
+						{
+							"exclusiveMaximum": 4294967295
+						}
+					]
+				},
+				"ttlMs": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 2000,
+							"maximum": 30000
+						}
+					]
+				}
+			},
+			"required": ["operation", "expectedProcessId", "clientProcessId"],
+			"additionalProperties": false
+		},
+		{
+			"type": "object",
+			"properties": {
+				"operation": {
+					"type": "string",
+					"enum": ["renew"]
+				},
+				"expectedProcessId": {
+					"type": "integer",
+					"allOf": [
+						{
+							"exclusiveMinimum": 0
+						},
+						{
+							"exclusiveMaximum": 4294967295
+						}
+					]
+				},
+				"clientProcessId": {
+					"type": "integer",
+					"allOf": [
+						{
+							"exclusiveMinimum": 0
+						},
+						{
+							"exclusiveMaximum": 4294967295
+						}
+					]
+				},
+				"leaseId": {
+					"type": "string",
+					"allOf": [
+						{
+							"pattern": "^[0-9a-f]{32}$"
+						}
+					]
+				},
+				"ttlMs": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 2000,
+							"maximum": 30000
+						}
+					]
+				}
+			},
+			"required": ["operation", "expectedProcessId", "clientProcessId", "leaseId"],
+			"additionalProperties": false
+		},
+		{
+			"type": "object",
+			"properties": {
+				"operation": {
+					"type": "string",
+					"enum": ["release"]
+				},
+				"expectedProcessId": {
+					"type": "integer",
+					"allOf": [
+						{
+							"exclusiveMinimum": 0
+						},
+						{
+							"exclusiveMaximum": 4294967295
+						}
+					]
+				},
+				"clientProcessId": {
+					"type": "integer",
+					"allOf": [
+						{
+							"exclusiveMinimum": 0
+						},
+						{
+							"exclusiveMaximum": 4294967295
+						}
+					]
+				},
+				"leaseId": {
+					"type": "string",
+					"allOf": [
+						{
+							"pattern": "^[0-9a-f]{32}$"
+						}
+					]
+				}
+			},
+			"required": ["operation", "expectedProcessId", "clientProcessId", "leaseId"],
+			"additionalProperties": false
+		}
+	]
+}

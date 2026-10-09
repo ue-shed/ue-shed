@@ -1,0 +1,6 @@
+{
+	"operation": "renew",
+	"expectedProcessId": 4242,
+	"clientProcessId": 5151,
+	"leaseId": "0123456789ABCDEF0123456789ABCDEF"
+}

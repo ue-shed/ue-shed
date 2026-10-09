@@ -1,0 +1,5 @@
+{
+	"operation": "acquire",
+	"expectedProcessId": 4242,
+	"clientProcessId": 0
+}

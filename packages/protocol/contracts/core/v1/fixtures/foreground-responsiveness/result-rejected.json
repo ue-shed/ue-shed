@@ -1,0 +1,8 @@
+{
+	"status": "rejected",
+	"schemaVersion": 1,
+	"processId": 4242,
+	"message": "The connected editor identity changed.",
+	"recovery": "Reconnect to the intended editor and retry.",
+	"reason": "target_changed"
+}

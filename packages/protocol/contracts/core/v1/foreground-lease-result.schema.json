@@ -1,0 +1,338 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$defs": {},
+	"anyOf": [
+		{
+			"type": "object",
+			"properties": {
+				"status": {
+					"type": "string",
+					"enum": ["granted"]
+				},
+				"schemaVersion": {
+					"type": "number",
+					"enum": [1]
+				},
+				"processId": {
+					"type": "integer",
+					"allOf": [
+						{
+							"exclusiveMinimum": 0
+						},
+						{
+							"exclusiveMaximum": 4294967295
+						}
+					]
+				},
+				"message": {
+					"type": "string"
+				},
+				"recovery": {
+					"type": "string"
+				},
+				"activeLeases": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 0,
+							"maximum": 8
+						}
+					]
+				},
+				"leaseId": {
+					"type": "string",
+					"allOf": [
+						{
+							"pattern": "^[0-9a-f]{32}$"
+						}
+					]
+				},
+				"ttlMs": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 2000,
+							"maximum": 30000
+						}
+					]
+				}
+			},
+			"required": [
+				"status",
+				"schemaVersion",
+				"processId",
+				"message",
+				"recovery",
+				"activeLeases",
+				"leaseId",
+				"ttlMs"
+			],
+			"additionalProperties": false
+		},
+		{
+			"type": "object",
+			"properties": {
+				"status": {
+					"type": "string",
+					"enum": ["renewed"]
+				},
+				"schemaVersion": {
+					"type": "number",
+					"enum": [1]
+				},
+				"processId": {
+					"type": "integer",
+					"allOf": [
+						{
+							"exclusiveMinimum": 0
+						},
+						{
+							"exclusiveMaximum": 4294967295
+						}
+					]
+				},
+				"message": {
+					"type": "string"
+				},
+				"recovery": {
+					"type": "string"
+				},
+				"activeLeases": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 0,
+							"maximum": 8
+						}
+					]
+				},
+				"leaseId": {
+					"type": "string",
+					"allOf": [
+						{
+							"pattern": "^[0-9a-f]{32}$"
+						}
+					]
+				},
+				"ttlMs": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 2000,
+							"maximum": 30000
+						}
+					]
+				}
+			},
+			"required": [
+				"status",
+				"schemaVersion",
+				"processId",
+				"message",
+				"recovery",
+				"activeLeases",
+				"leaseId",
+				"ttlMs"
+			],
+			"additionalProperties": false
+		},
+		{
+			"type": "object",
+			"properties": {
+				"status": {
+					"type": "string",
+					"enum": ["released"]
+				},
+				"schemaVersion": {
+					"type": "number",
+					"enum": [1]
+				},
+				"processId": {
+					"type": "integer",
+					"allOf": [
+						{
+							"exclusiveMinimum": 0
+						},
+						{
+							"exclusiveMaximum": 4294967295
+						}
+					]
+				},
+				"message": {
+					"type": "string"
+				},
+				"recovery": {
+					"type": "string"
+				},
+				"activeLeases": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 0,
+							"maximum": 8
+						}
+					]
+				},
+				"leaseId": {
+					"type": "string",
+					"allOf": [
+						{
+							"pattern": "^[0-9a-f]{32}$"
+						}
+					]
+				}
+			},
+			"required": [
+				"status",
+				"schemaVersion",
+				"processId",
+				"message",
+				"recovery",
+				"activeLeases",
+				"leaseId"
+			],
+			"additionalProperties": false
+		},
+		{
+			"type": "object",
+			"properties": {
+				"status": {
+					"type": "string",
+					"enum": ["expired"]
+				},
+				"schemaVersion": {
+					"type": "number",
+					"enum": [1]
+				},
+				"processId": {
+					"type": "integer",
+					"allOf": [
+						{
+							"exclusiveMinimum": 0
+						},
+						{
+							"exclusiveMaximum": 4294967295
+						}
+					]
+				},
+				"message": {
+					"type": "string"
+				},
+				"recovery": {
+					"type": "string"
+				},
+				"activeLeases": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 0,
+							"maximum": 8
+						}
+					]
+				},
+				"leaseId": {
+					"type": "string",
+					"allOf": [
+						{
+							"pattern": "^[0-9a-f]{32}$"
+						}
+					]
+				},
+				"reason": {
+					"type": "string",
+					"enum": ["lease_ended", "client_exited", "client_changed"]
+				}
+			},
+			"required": [
+				"status",
+				"schemaVersion",
+				"processId",
+				"message",
+				"recovery",
+				"activeLeases",
+				"leaseId",
+				"reason"
+			],
+			"additionalProperties": false
+		},
+		{
+			"type": "object",
+			"properties": {
+				"status": {
+					"type": "string",
+					"enum": ["rejected"]
+				},
+				"schemaVersion": {
+					"type": "number",
+					"enum": [1]
+				},
+				"processId": {
+					"type": "integer",
+					"allOf": [
+						{
+							"exclusiveMinimum": 0
+						},
+						{
+							"exclusiveMaximum": 4294967295
+						}
+					]
+				},
+				"message": {
+					"type": "string"
+				},
+				"recovery": {
+					"type": "string"
+				},
+				"reason": {
+					"type": "string",
+					"enum": [
+						"invalid_request",
+						"target_changed",
+						"own_process",
+						"client_unavailable",
+						"lease_limit",
+						"lease_mismatch"
+					]
+				}
+			},
+			"required": ["status", "schemaVersion", "processId", "message", "recovery", "reason"],
+			"additionalProperties": false
+		},
+		{
+			"type": "object",
+			"properties": {
+				"status": {
+					"type": "string",
+					"enum": ["unsupported"]
+				},
+				"schemaVersion": {
+					"type": "number",
+					"enum": [1]
+				},
+				"processId": {
+					"type": "integer",
+					"allOf": [
+						{
+							"exclusiveMinimum": 0
+						},
+						{
+							"exclusiveMaximum": 4294967295
+						}
+					]
+				},
+				"message": {
+					"type": "string"
+				},
+				"recovery": {
+					"type": "string"
+				},
+				"reason": {
+					"type": "string",
+					"enum": ["platform", "editor_unavailable"]
+				}
+			},
+			"required": ["status", "schemaVersion", "processId", "message", "recovery", "reason"],
+			"additionalProperties": false
+		}
+	]
+}

@@ -1,0 +1,10 @@
+{
+	"status": "granted",
+	"schemaVersion": 1,
+	"processId": 4242,
+	"message": "",
+	"recovery": "",
+	"activeLeases": 1,
+	"leaseId": "0123456789abcdef0123456789abcdef",
+	"ttlMs": 5000
+}

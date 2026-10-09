@@ -69,3 +69,69 @@ renew. The editor's own process is refused.
 
 Command-line hosts are not supported yet: a terminal, not the host process, owns the console's
 foreground window.
+
+## Integrating a client
+
+A Node or Electron host should use `EditorForegroundResponsiveness.hold` from `@ue-shed/engine`
+(see its README); it implements every step below. Any other client can follow the same steps
+over Remote Control (`PUT /remote/object/call`).
+
+1. Skip everything unless the endpoint is loopback (`localhost`, `127.0.0.1`, `[::1]`).
+2. Call `GetCapabilityManifest` on `/Script/UEShedCore.Default__UEShedCoreLibrary`. Continue only
+   if `capabilities` contains `editor.foreground-responsiveness.v1`. Keep
+   `foregroundResponsivenessObjectPath` and `identity.processId` (the `expectedProcessId`).
+3. Call `UpdateForegroundLease` with `operation: "acquire"`, your `clientProcessId` and an optional
+   `ttlMs`. Keep the `leaseId` from `granted`.
+4. Renew with `operation: "renew"` and the `leaseId` about every `ttlMs / 3`. On `expired`,
+   acquire again. On `rejected` / `target_changed`, the editor restarted: read the manifest again,
+   then acquire. On a transport failure, retry with backoff; Unreal's normal policy applies
+   meanwhile.
+5. Release with `operation: "release"` when the client disconnects or exits. A crashed client's
+   lease expires after its TTL.
+
+For example, an acquire request body:
+
+```json
+{
+	"objectPath": "/Script/UEShedCoreEditor.Default__UEShedEditorResponsivenessLibrary",
+	"functionName": "UpdateForegroundLease",
+	"parameters": {
+		"RequestJson": "{\"operation\":\"acquire\",\"expectedProcessId\":4242,\"clientProcessId\":5151,\"ttlMs\":5000}"
+	},
+	"generateTransaction": false
+}
+```
+
+The response's `ResultJson` decodes with `foreground-lease-result.schema.json`. Example requests
+and results are in `fixtures/foreground-responsiveness/`.
+
+### Which process to name
+
+Name the process that owns the client's top-level windows: the exemption applies only while that
+process owns the foreground window. Check one real window with `GetWindowThreadProcessId` rather
+than assuming.
+
+| Host                | Process to name                                                             |
+| ------------------- | --------------------------------------------------------------------------- |
+| Electron            | The main process; call from main, not a renderer. Verified on Workbench.    |
+| Other native shells | Usually the process that creates the window. Verify it, including WebView2. |
+| Browser page        | Not supported directly; run a local helper process that holds the lease.    |
+| Command line        | Not supported: the terminal owns the console window.                        |
+
+A browser page cannot learn its process ID, and naming the browser would exempt Unreal whenever
+any browser window is in front.
+
+### Remote Control permissions
+
+UE 5.8 Remote Control only calls allowlisted classes. Add
+`UEShedCoreEditor.UEShedEditorResponsivenessLibrary` (and `UEShedCore.UEShedCoreLibrary` for the
+manifest) to `CustomAllowedRemoteFunctionCalls` with `bAllowChildClasses=False`. Editors launched
+through `@ue-shed/engine` already receive these rules.
+
+### What users will notice
+
+While the client is in front, requests to a minimised editor took about 6–17 ms at p50 instead of
+about 332 ms on UE 5.7 and 5.8. The first request after the user switches to the client can still
+wait for the end of Unreal's current throttled frame, up to about a third of a second. Use
+`GetForegroundResponsivenessState` to check `activeLeases`, `exemptionActive`, `editorThrottling`
+and the user's `throttleWhenNotForeground` setting when it does not seem to work.

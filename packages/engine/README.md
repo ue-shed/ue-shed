@@ -58,7 +58,9 @@ non-loopback endpoint fails with `remote_endpoint` before anything is sent. Only
 can fail; afterwards, failed renewals back off and report `Lapsed` through `lease.state` while
 Unreal's normal policy applies, and an ended lease or restarted editor is acquired again. A CLI
 host cannot use this yet: its console window belongs to the terminal, not to Node. See the
-[Core foreground responsiveness contract](../protocol/contracts/core/v1/FOREGROUND-RESPONSIVENESS.md).
+[Core foreground responsiveness contract](../protocol/contracts/core/v1/FOREGROUND-RESPONSIVENESS.md);
+its "Integrating a client" section covers other languages, which process to name, and the UE 5.8
+Remote Control allowlist.
 
 `SupervisedEditorSession` is a separate caller-owned launch path for bounded one-shot work. It
 validates explicit project and plugin descriptors before launch, owns a process tree inside

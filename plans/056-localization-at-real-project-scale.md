@@ -163,7 +163,9 @@ read-only: no gathers, no writes.
 ## Phase 5: Saved package namespaces
 
 - Match saved FText identities to manifests, archives and PO files after stripping Unreal's
-  trailing package namespace marker once. Export the pure helper from browser-safe localization.
+  trailing package namespace marker once for asset properties and DataTable cells. Keep String
+  Table definitions and references in their exact authored namespace. Export the pure helper from
+  browser-safe localization.
 - Keep full saved namespaces in corpus units and occurrences, and use gathered identities for
   localization lines, key changes, review fingerprints and gates.
 - Count duplicate sources by gathered identity, and retain conflicts across package variants.
@@ -213,8 +215,11 @@ for profiling attribution, compact evidence, reproduction and verification resul
 ### Phase 5: saved package namespaces
 
 `stripPackageNamespace` lives in browser-safe `@ue-shed/localization`. The join strips each saved
-namespace once before grouping against manifest, archive and PO identities; key-change pairing,
-review fingerprints, gates and translation editing consume those gathered line identities.
+FText namespace once for asset properties and DataTable cells before grouping against manifest,
+archive and PO identities. String Table definitions and references keep namespaces exactly as
+authored. Units mixing String Table entries with FText locations also preserve the namespace,
+avoiding loss of authored table identity. Key-change pairing, review fingerprints, gates and
+translation editing consume those gathered line identities.
 Localization files are not stripped again, preserving namespaces such as `[A]` after `[A] [B]`
 is cleaned. Corpus units, occurrence identities and asset focus/export keep full saved namespaces.
 Query findings count distinct gathered identities, including shared text and source conflicts

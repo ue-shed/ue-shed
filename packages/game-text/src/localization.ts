@@ -201,8 +201,26 @@ export function localizationGatherCoverage(
 	return uncertain ? { status: "unknown", reason: uncertain } : { status: "outside" };
 }
 
-// Built once: the join decodes an identity per saved unit, tens of thousands in a shipping game.
+// Built once: joins and queries decode an identity per saved unit, tens of thousands in a game.
 const decodeLocalizationIdentity = Schema.decodeUnknownSync(LocalizationIdentity);
+
+export function gatheredTextIdentity(unit: TextUnit): typeof LocalizationIdentity.Type | null {
+	if (unit.identity.status !== "resolved") return null;
+	// Mixed units keep the authored namespace so String Table definitions are never stripped.
+	const savedFText =
+		unit.occurrences.length > 0 &&
+		unit.occurrences.every(
+			(occurrence) =>
+				occurrence.location.kind === "asset_property" ||
+				occurrence.location.kind === "data_table_cell"
+		);
+	return decodeLocalizationIdentity({
+		...unit.identity,
+		namespace: savedFText
+			? stripPackageNamespace(unit.identity.namespace)
+			: unit.identity.namespace
+	});
+}
 
 function identityKey(identity: typeof LocalizationIdentity.Type): string {
 	return JSON.stringify([identity.namespace, identity.key]);
@@ -284,7 +302,7 @@ function groupByIdentity<A extends typeof LocalizationIdentity.Type>(
 	return grouped;
 }
 
-/** Join gathered namespace/key, stripping saved package namespaces once at the corpus boundary. */
+/** Join gathered namespace/key, stripping package markers only from saved FText units. */
 export function joinLocalizationTarget(
 	corpus: TextCorpus,
 	evidence: LocalizationTargetEvidence,
@@ -296,11 +314,8 @@ export function joinLocalizationTarget(
 	const resolved = new Map<TextUnit["id"], typeof LocalizationIdentity.Type>();
 	const tables = new Map<string, typeof LocalizationIdentity.Type>();
 	for (const unit of corpus.units) {
-		if (unit.identity.status !== "resolved") continue;
-		const identity = decodeLocalizationIdentity({
-			...unit.identity,
-			namespace: stripPackageNamespace(unit.identity.namespace)
-		});
+		const identity = gatheredTextIdentity(unit);
+		if (!identity) continue;
 		resolved.set(unit.id, identity);
 		for (const occurrence of unit.occurrences) {
 			if (occurrence.location.kind === "string_table_entry")

@@ -12,6 +12,7 @@ import {
 	corpus,
 	cultureCode,
 	evidence,
+	ftextUnit,
 	manifestEntry,
 	target,
 	unit
@@ -56,7 +57,7 @@ function scanned(units: readonly TextUnit[]): TextCorpus {
 describe("localization key changes", () => {
 	it("pairs saved package namespaces using the gathered identity", () => {
 		const text = scanned([
-			unit("Renamed", "Welcome back", "Content/Text/Table.uasset", "NS [PKG]")
+			ftextUnit("Renamed", "Welcome back", "Content/Text/Table.uasset", "NS [PKG]")
 		]);
 		const joined = joinLocalizationTarget(
 			text,

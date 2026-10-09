@@ -15,10 +15,12 @@ import {
 } from "./localization.js";
 import { LocalizationJoin } from "./localization-schema.js";
 import { TextUnit } from "./schema.js";
+import { textCorpusQuery } from "./query.js";
 import {
 	archiveEntry,
 	corpus,
 	evidence,
+	ftextUnit,
 	manifestEntry,
 	poDocument,
 	success,
@@ -59,7 +61,7 @@ describe("localization identity join and precedence", () => {
 		["[PKG]", "", "Crowdin"],
 		["MyNamespace [PKG]", "MyNamespace", "Crowdin"]
 	])("joins saved namespace %j to gathered namespace %j (%s)", (saved, gathered, format) => {
-		const text = corpus([unit("K", "Source", "Content/Text/Table.uasset", saved)]);
+		const text = corpus([ftextUnit("K", "Source", "Content/Text/Table.uasset", saved)]);
 		const joined = joinLocalizationTarget(
 			text,
 			evidence(
@@ -80,9 +82,9 @@ describe("localization identity join and precedence", () => {
 	});
 
 	it("merges package variants and keeps conflicting sources visible", () => {
-		const first = unit("K", "Source", "Content/Text/Table.uasset", "NS [A]");
+		const first = ftextUnit("K", "Source", "Content/Text/Table.uasset", "NS [A]");
 		const second = TextUnit.make({
-			...unit("K", "Other", "Content/Text/Other.uasset", "NS [B]"),
+			...ftextUnit("K", "Other", "Content/Text/Other.uasset", "NS [B]", "data_table_cell"),
 			id: TextUnit.fields.id.make("unit:other")
 		});
 		const joined = joinLocalizationTarget(corpus([first, second]), evidence());
@@ -93,6 +95,89 @@ describe("localization identity join and precedence", () => {
 		});
 		expect(joined.lines[0]?.cultures[0]?.unknownReasons).toContain("conflicting_source");
 	});
+
+	it.each(["Source", "Other"])(
+		"keeps distinct authored String Table namespaces separate in lines and findings (%s)",
+		(secondSource) => {
+			const first = unit("K", "Source", "Content/Text/Table.uasset", "UI [A]");
+			const other = unit("K", secondSource, "Content/Text/Other.uasset", "UI [B]");
+			const second = TextUnit.make({
+				...other,
+				id: TextUnit.fields.id.make("unit:other"),
+				occurrences: other.occurrences.map((occurrence) => ({
+					...occurrence,
+					location: {
+						kind: "string_table_entry",
+						objectPath: "/Game/Text/Other.Other",
+						entryKey: "K"
+					}
+				}))
+			});
+			const text = corpus([first, second]);
+			const joined = joinLocalizationTarget(
+				text,
+				evidence(
+					[
+						manifestEntry("K", "Source", "/Game/Text/Table.Table", "UI [A]"),
+						manifestEntry("K", secondSource, "/Game/Text/Other.Other", "UI [B]")
+					],
+					[],
+					poDocument("", "Unreal", "UI [A]")
+				)
+			);
+			expect(joined.lines).toHaveLength(2);
+			expect(joined.lines.map((line) => line.identity)).toEqual([
+				{ namespace: "UI [A]", key: "K" },
+				{ namespace: "UI [B]", key: "K" }
+			]);
+			const page = textCorpusQuery(text).search({
+				capability: "all",
+				query: "",
+				pageSize: 50
+			});
+			expect(page.counts.shared).toBe(0);
+			expect(page.counts.conflicting).toBe(0);
+			expect(page.counts.duplicate_source).toBe(secondSource === "Source" ? 2 : 0);
+		}
+	);
+
+	it.each([false, true])(
+		"preserves mixed units regardless of occurrence order (%s)",
+		(reverse) => {
+			const table = unit("K", "Source", "Content/Text/Table.uasset", "UI [Beta]");
+			const saved = ftextUnit("K", "Source", "Content/Text/Table.uasset", "UI [Beta]");
+			const occurrences = [...table.occurrences, ...saved.occurrences];
+			const mixed = TextUnit.make({
+				...table,
+				occurrences: reverse ? occurrences.reverse() : occurrences
+			});
+			const other = TextUnit.make({
+				...ftextUnit("K", "Other", "Content/Text/Other.uasset", "UI [Other]"),
+				id: TextUnit.fields.id.make("unit:other")
+			});
+			const text = corpus([mixed, other]);
+			const joined = joinLocalizationTarget(
+				text,
+				evidence(
+					[manifestEntry("K", "Source", "/Game/Text/Table.Table", "UI [Beta]")],
+					[archiveEntry("K", "Source", "Translation", "UI [Beta]")],
+					poDocument("Translation", "Unreal", "UI [Beta]")
+				)
+			);
+			expect(joined.lines).toHaveLength(2);
+			expect(
+				joined.lines.find((line) => line.identity?.namespace === "UI [Beta]")?.cultures[0]
+					?.state
+			).toBe("translated");
+			const page = textCorpusQuery(text).search({
+				capability: "all",
+				query: "",
+				pageSize: 50
+			});
+			expect(page.counts.shared).toBe(1);
+			expect(page.counts.conflicting).toBe(0);
+		}
+	);
 
 	it("evaluates translated and native cultures from the archive", () => {
 		expect(mark().state).toBe("translated");
@@ -269,18 +354,35 @@ describe("localization identity join and precedence", () => {
 		});
 		expect(mark(corpus(), collapsed).unknownReasons).toContain("ambiguous_po_identity");
 	});
-	it("resolves String Table references by table namespace and entry key", () => {
-		const own = unit();
+	it("keeps authored String Table namespaces when resolving references and joining evidence", () => {
+		const own = unit("K", "Source", "Content/Text/Table.uasset", "UI [Beta]");
+		const identity = {
+			status: "string_table" as const,
+			tableId: "/Game/Text/Table.Table",
+			key: "K"
+		};
+		const saved = ftextUnit("K", "", "Content/Text/Reference.uasset");
 		const reference = Schema.decodeUnknownSync(TextUnit)({
-			...unit(),
+			...saved,
 			id: "reference",
-			occurrences: unit("K", "").occurrences,
-			identity: { status: "string_table", tableId: "/Game/Text/Table.Table", key: "K" }
+			occurrences: saved.occurrences.map((occurrence) => ({ ...occurrence, identity })),
+			identity
 		});
-		const joined = joinLocalizationTarget(corpus([own, reference]), evidence());
+		const joined = joinLocalizationTarget(
+			corpus([own, reference]),
+			evidence(
+				[manifestEntry("K", "Source", "/Game/Text/Table.Table", "UI [Beta]")],
+				[archiveEntry("K", "Source", "Translation", "UI [Beta]")],
+				poDocument("Translation", "Unreal", "UI [Beta]")
+			)
+		);
 		expect(joined.lines).toHaveLength(1);
-		expect(joined.lines[0]?.identity).toMatchObject({ namespace: "NS", key: "K" });
-		expect(joined.lines[0]?.cultures[0]?.state).toBe("translated");
+		expect(joined.lines[0]?.identity).toEqual({ namespace: "UI [Beta]", key: "K" });
+		expect(joined.lines[0]?.origin).toMatchObject({ unitIds: [own.id, reference.id].sort() });
+		expect(joined.lines[0]?.cultures.map((culture) => culture.state)).toEqual([
+			"translated",
+			"translated"
+		]);
 	});
 	it("distinguishes confirmed file absence from unreadable evidence", () => {
 		const files = evidence();

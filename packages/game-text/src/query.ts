@@ -57,8 +57,7 @@ import type {
 	LocalizationSelection
 } from "./localization-schema.js";
 import { GameTextLocalizationError } from "./localization-schema.js";
-import { localizationManifestNotes } from "./localization.js";
-import { stripPackageNamespace } from "@ue-shed/localization/browser";
+import { gatheredTextIdentity, localizationManifestNotes } from "./localization.js";
 import {
 	localizationQueryPage,
 	matchesLocalizationLine,
@@ -150,13 +149,8 @@ export function textCorpusQuery(
 	const groups = new Map<string, { occurrences: number; sources: Set<string> }>();
 	const sourceFrequency = new Map<string, Set<string>>();
 	for (const unit of units) {
-		const identity =
-			unit.identity.status === "resolved"
-				? JSON.stringify([
-						stripPackageNamespace(unit.identity.namespace),
-						unit.identity.key
-					])
-				: unit.id;
+		const gathered = gatheredTextIdentity(unit);
+		const identity = gathered ? JSON.stringify([gathered.namespace, gathered.key]) : unit.id;
 		identities.set(unit.id, identity);
 		const group = groups.get(identity) ?? { occurrences: 0, sources: new Set<string>() };
 		group.occurrences += unit.occurrences.length;

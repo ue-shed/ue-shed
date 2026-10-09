@@ -151,6 +151,36 @@ export function unit(
 	});
 }
 
+export function ftextUnit(
+	key = "K",
+	source = "Source",
+	packageFile = "Content/Text/Table.uasset",
+	namespace = "NS",
+	kind: "asset_property" | "data_table_cell" = "asset_property"
+): TextUnit {
+	const text = unit(key, source, packageFile, namespace);
+	return TextUnit.make({
+		...text,
+		occurrences: text.occurrences.map((occurrence) => ({
+			...occurrence,
+			location:
+				kind === "asset_property"
+					? {
+							kind,
+							objectPath: "/Game/Text/Table.Table",
+							classPath: "/Script/Engine.DataAsset",
+							propertyPath: "Label"
+						}
+					: {
+							kind,
+							objectPath: "/Game/Text/Table.Table",
+							row: "Greeting",
+							propertyPath: "Label"
+						}
+		}))
+	});
+}
+
 export function corpus(units: readonly TextUnit[] = [unit()]): TextCorpus {
 	return {
 		schemaVersion: 1,

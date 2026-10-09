@@ -16,6 +16,7 @@ import {
 	archiveEntry,
 	corpus,
 	evidence,
+	ftextUnit,
 	manifestEntry,
 	unit
 } from "./localization.test-support.js";
@@ -80,7 +81,7 @@ function gate(
 describe("checking a change's text", () => {
 	it("recognizes translated saved package namespaces without reporting a new or removed key", () => {
 		const result = gate(
-			corpus([unit("K", "Source", "Content/Text/Table.uasset", "NS [PKG]")]),
+			corpus([ftextUnit("K", "Source", "Content/Text/Table.uasset", "NS [PKG]")]),
 			evidence(),
 			["Content/Text/Table.uasset"]
 		);
@@ -92,9 +93,9 @@ describe("checking a change's text", () => {
 	});
 
 	it.each(["Source", "Other"])("judges package variants as one identity (%s)", (source) => {
-		const first = unit("K", "Source", "Content/Text/Table.uasset", "NS [A]");
+		const first = ftextUnit("K", "Source", "Content/Text/Table.uasset", "NS [A]");
 		const second = TextUnit.make({
-			...unit("K", source, "Content/Text/Other.uasset", "NS [B]"),
+			...ftextUnit("K", source, "Content/Text/Other.uasset", "NS [B]"),
 			id: TextUnit.fields.id.make("unit:other")
 		});
 		const text = corpus([first, second]);

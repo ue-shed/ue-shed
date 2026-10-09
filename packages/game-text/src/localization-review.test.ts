@@ -19,6 +19,7 @@ import {
 	corpus,
 	cultureCode,
 	evidence,
+	ftextUnit,
 	manifestEntry,
 	poDocument,
 	target,
@@ -63,7 +64,7 @@ const stateOf = (file: LocalizationReviewFile, key: string, join = base) =>
 
 describe("localization review state", () => {
 	it("uses the gathered identity for saved package namespaces and evidence fingerprints", () => {
-		const saved = corpus([unit("K", "Source", "Content/Text/Table.uasset", "NS [PKG]")]);
+		const saved = corpus([ftextUnit("K", "Source", "Content/Text/Table.uasset", "NS [PKG]")]);
 		const joined = joinLocalizationTarget(saved, files);
 		const line = joined.lines.find((item) => item.identity?.key === "K");
 		const culture = line?.cultures.find((item) => item.culture === de);

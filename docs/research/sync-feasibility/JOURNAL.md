@@ -7,3 +7,7 @@
 - 2026-10-09T09:28:56.522606+07:00 T02 complete: stock RC preset WS push, 5-frame batching, property transaction modes and timer grouping documented per engine. UE Shed HTTP adapter uses transaction=false; internal Apply owns undo. Modal and runtime dispatch remain unverified. Next T03.
 
 - 2026-10-09T09:30:58.399518+07:00 T03 source complete: no DataTable row payload; modified hook coalesces per frame; cancel discards history without restoring; dirty fences track save. Transaction ID stable, operation ID changes for undo/redo. Guessed Transactor path failed and was corrected by file discovery. Next T04.
+
+- 2026-10-09T09:31:54.250138+07:00 T04 complete: signature survey on 4.27, 5.3, 5.7, 5.8. 5.5/5.6 registry entries stale, roots do not exist; FileNotFoundError recorded and survey fixed to continue with UNVERIFIED rows. Next T05.
+
+- 2026-10-09T09:32:21.664477+07:00 Housekeeping: Python import generated a pyc inadvertently staged in T04. Removed it, added probe-local __pycache__ ignore, and amended that research commit so no binary remains in branch history.

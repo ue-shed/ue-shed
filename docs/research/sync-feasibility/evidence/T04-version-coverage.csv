@@ -1,0 +1,61 @@
+engine,hook,source,line,declaration
+4.27,OnObjectTransacted,Engine/Source/Runtime/CoreUObject/Public/UObject/UObjectGlobals.h,2016,"DECLARE_MULTICAST_DELEGATE_TwoParams(FOnObjectTransacted, UObject*, const class FTransactionObjectEvent&);"
+4.27,OnObjectPropertyChanged,Engine/Source/Runtime/CoreUObject/Public/UObject/UObjectGlobals.h,1991,"DECLARE_MULTICAST_DELEGATE_TwoParams(FOnObjectPropertyChanged, UObject*, struct FPropertyChangedEvent&);"
+4.27,OnObjectModified,Engine/Source/Runtime/CoreUObject/Public/UObject/UObjectGlobals.h,1999,"DECLARE_MULTICAST_DELEGATE_OneParam(FOnObjectModified, UObject*);"
+4.27,DataTableChanged,Engine/Source/Runtime/Engine/Classes/Engine/DataTable.h,71,DECLARE_MULTICAST_DELEGATE(FOnDataTableChanged);
+4.27,HandleDataTableChanged,Engine/Source/Runtime/Engine/Classes/Engine/DataTable.h,170,ENGINE_API void HandleDataTableChanged(FName ChangedRowName = NAME_None);
+4.27,PostUndo,Engine/Source/Editor/UnrealEd/Public/EditorUndoClient.h,36,virtual void PostUndo( bool bSuccess ) {};
+4.27,PostRedo,Engine/Source/Editor/UnrealEd/Public/EditorUndoClient.h,42,virtual void PostRedo( bool bSuccess )	{};
+4.27,PackageDirtyStateChanged,Engine/Source/Runtime/CoreUObject/Public/UObject/Package.h,113,"DECLARE_MULTICAST_DELEGATE_OneParam(FOnPackageDirtyStateChanged, class UPackage*);"
+4.27,PackageMarkedDirty,Engine/Source/Runtime/CoreUObject/Public/UObject/Package.h,117,"DECLARE_MULTICAST_DELEGATE_TwoParams(FOnPackageMarkedDirty, class UPackage*, bool);"
+4.27,FScopedTransaction,Engine/Source/Editor/UnrealEd/Public/ScopedTransaction.h,21,"UNREALED_API FScopedTransaction(const TCHAR* TransactionContext, const FText& SessionName, UObject* PrimaryObject, const bool bShouldActuallyTransact = true);"
+5.3,OnObjectTransacted,Engine/Source/Runtime/CoreUObject/Public/UObject/UObjectGlobals.h,2889,"DECLARE_MULTICAST_DELEGATE_TwoParams(FOnObjectTransacted, UObject*, const class FTransactionObjectEvent&);"
+5.3,OnObjectPropertyChanged,Engine/Source/Runtime/CoreUObject/Public/UObject/UObjectGlobals.h,2864,"DECLARE_MULTICAST_DELEGATE_TwoParams(FOnObjectPropertyChanged, UObject*, struct FPropertyChangedEvent&);"
+5.3,OnObjectModified,Engine/Source/Runtime/CoreUObject/Public/UObject/UObjectGlobals.h,2872,"DECLARE_MULTICAST_DELEGATE_OneParam(FOnObjectModified, UObject*);"
+5.3,DataTableChanged,Engine/Source/Runtime/Engine/Classes/Engine/DataTable.h,73,DECLARE_MULTICAST_DELEGATE(FOnDataTableChanged);
+5.3,HandleDataTableChanged,Engine/Source/Runtime/Engine/Classes/Engine/DataTable.h,182,ENGINE_API void HandleDataTableChanged(FName ChangedRowName = NAME_None);
+5.3,PostUndo,Engine/Source/Editor/UnrealEd/Public/EditorUndoClient.h,38,virtual void PostUndo( bool bSuccess ) {};
+5.3,PostRedo,Engine/Source/Editor/UnrealEd/Public/EditorUndoClient.h,44,virtual void PostRedo( bool bSuccess )	{};
+5.3,PackageDirtyStateChanged,Engine/Source/Runtime/CoreUObject/Public/UObject/Package.h,159,"DECLARE_MULTICAST_DELEGATE_OneParam(FOnPackageDirtyStateChanged, class UPackage*);"
+5.3,PackageMarkedDirty,Engine/Source/Runtime/CoreUObject/Public/UObject/Package.h,165,"DECLARE_MULTICAST_DELEGATE_TwoParams(FOnPackageMarkedDirty, class UPackage*, bool);"
+5.3,FScopedTransaction,Engine/Source/Editor/UnrealEd/Public/ScopedTransaction.h,21,"UE_NODISCARD_CTOR UNREALED_API FScopedTransaction(const TCHAR* TransactionContext, const FText& SessionName, UObject* PrimaryObject, const bool bShouldActuallyTransact = true);"
+5.5,OnObjectTransacted,Engine/Source/Runtime/CoreUObject/Public/UObject/UObjectGlobals.h,0,UNVERIFIED: source file unavailable
+5.5,OnObjectPropertyChanged,Engine/Source/Runtime/CoreUObject/Public/UObject/UObjectGlobals.h,0,UNVERIFIED: source file unavailable
+5.5,OnObjectModified,Engine/Source/Runtime/CoreUObject/Public/UObject/UObjectGlobals.h,0,UNVERIFIED: source file unavailable
+5.5,DataTableChanged,Engine/Source/Runtime/Engine/Classes/Engine/DataTable.h,0,UNVERIFIED: source file unavailable
+5.5,HandleDataTableChanged,Engine/Source/Runtime/Engine/Classes/Engine/DataTable.h,0,UNVERIFIED: source file unavailable
+5.5,PostUndo,Engine/Source/Editor/UnrealEd/Public/EditorUndoClient.h,0,UNVERIFIED: source file unavailable
+5.5,PostRedo,Engine/Source/Editor/UnrealEd/Public/EditorUndoClient.h,0,UNVERIFIED: source file unavailable
+5.5,PackageDirtyStateChanged,Engine/Source/Runtime/CoreUObject/Public/UObject/Package.h,0,UNVERIFIED: source file unavailable
+5.5,PackageMarkedDirty,Engine/Source/Runtime/CoreUObject/Public/UObject/Package.h,0,UNVERIFIED: source file unavailable
+5.5,FScopedTransaction,Engine/Source/Editor/UnrealEd/Public/ScopedTransaction.h,0,UNVERIFIED: source file unavailable
+5.6,OnObjectTransacted,Engine/Source/Runtime/CoreUObject/Public/UObject/UObjectGlobals.h,0,UNVERIFIED: source file unavailable
+5.6,OnObjectPropertyChanged,Engine/Source/Runtime/CoreUObject/Public/UObject/UObjectGlobals.h,0,UNVERIFIED: source file unavailable
+5.6,OnObjectModified,Engine/Source/Runtime/CoreUObject/Public/UObject/UObjectGlobals.h,0,UNVERIFIED: source file unavailable
+5.6,DataTableChanged,Engine/Source/Runtime/Engine/Classes/Engine/DataTable.h,0,UNVERIFIED: source file unavailable
+5.6,HandleDataTableChanged,Engine/Source/Runtime/Engine/Classes/Engine/DataTable.h,0,UNVERIFIED: source file unavailable
+5.6,PostUndo,Engine/Source/Editor/UnrealEd/Public/EditorUndoClient.h,0,UNVERIFIED: source file unavailable
+5.6,PostRedo,Engine/Source/Editor/UnrealEd/Public/EditorUndoClient.h,0,UNVERIFIED: source file unavailable
+5.6,PackageDirtyStateChanged,Engine/Source/Runtime/CoreUObject/Public/UObject/Package.h,0,UNVERIFIED: source file unavailable
+5.6,PackageMarkedDirty,Engine/Source/Runtime/CoreUObject/Public/UObject/Package.h,0,UNVERIFIED: source file unavailable
+5.6,FScopedTransaction,Engine/Source/Editor/UnrealEd/Public/ScopedTransaction.h,0,UNVERIFIED: source file unavailable
+5.7,OnObjectTransacted,Engine/Source/Runtime/CoreUObject/Public/UObject/UObjectGlobals.h,3292,"DECLARE_MULTICAST_DELEGATE_TwoParams(FOnObjectTransacted, UObject*, const class FTransactionObjectEvent&);"
+5.7,OnObjectPropertyChanged,Engine/Source/Runtime/CoreUObject/Public/UObject/UObjectGlobals.h,3253,"DECLARE_MULTICAST_DELEGATE_TwoParams(FOnObjectPropertyChanged, UObject*, struct FPropertyChangedEvent&);"
+5.7,OnObjectModified,Engine/Source/Runtime/CoreUObject/Public/UObject/UObjectGlobals.h,3265,"DECLARE_MULTICAST_DELEGATE_OneParam(FOnObjectModified, UObject*);"
+5.7,DataTableChanged,Engine/Source/Runtime/Engine/Classes/Engine/DataTable.h,84,DECLARE_MULTICAST_DELEGATE(FOnDataTableChanged);
+5.7,HandleDataTableChanged,Engine/Source/Runtime/Engine/Classes/Engine/DataTable.h,200,ENGINE_API void HandleDataTableChanged(FName ChangedRowName = NAME_None);
+5.7,PostUndo,Engine/Source/Editor/UnrealEd/Public/EditorUndoClient.h,38,virtual void PostUndo( bool bSuccess ) {};
+5.7,PostRedo,Engine/Source/Editor/UnrealEd/Public/EditorUndoClient.h,44,virtual void PostRedo( bool bSuccess )	{};
+5.7,PackageDirtyStateChanged,Engine/Source/Runtime/CoreUObject/Public/UObject/Package.h,264,"DECLARE_MULTICAST_DELEGATE_OneParam(FOnPackageDirtyStateChanged, class UPackage*);"
+5.7,PackageMarkedDirty,Engine/Source/Runtime/CoreUObject/Public/UObject/Package.h,270,"DECLARE_MULTICAST_DELEGATE_TwoParams(FOnPackageMarkedDirty, class UPackage*, bool);"
+5.7,FScopedTransaction,Engine/Source/Editor/UnrealEd/Public/ScopedTransaction.h,21,"UE_NODISCARD_CTOR UNREALED_API FScopedTransaction(const TCHAR* TransactionContext, const FText& SessionName, UObject* PrimaryObject, const bool bShouldActuallyTransact = true);"
+5.8,OnObjectTransacted,Engine/Source/Runtime/CoreUObject/Public/UObject/UObjectGlobals.h,3335,"DECLARE_MULTICAST_DELEGATE_TwoParams(FOnObjectTransacted, UObject*, const class FTransactionObjectEvent&);"
+5.8,OnObjectPropertyChanged,Engine/Source/Runtime/CoreUObject/Public/UObject/UObjectGlobals.h,3293,"DECLARE_MULTICAST_DELEGATE_TwoParams(FOnObjectPropertyChanged, UObject*, struct FPropertyChangedEvent&);"
+5.8,OnObjectModified,Engine/Source/Runtime/CoreUObject/Public/UObject/UObjectGlobals.h,3305,"DECLARE_MULTICAST_DELEGATE_OneParam(FOnObjectModified, UObject*);"
+5.8,DataTableChanged,Engine/Source/Runtime/Engine/Classes/Engine/DataTable.h,81,DECLARE_TS_MULTICAST_DELEGATE(FOnDataTableChanged);
+5.8,HandleDataTableChanged,Engine/Source/Runtime/Engine/Classes/Engine/DataTable.h,195,ENGINE_API void HandleDataTableChanged(FName ChangedRowName = NAME_None);
+5.8,PostUndo,Engine/Source/Editor/UnrealEd/Public/EditorUndoClient.h,38,virtual void PostUndo( bool bSuccess ) {};
+5.8,PostRedo,Engine/Source/Editor/UnrealEd/Public/EditorUndoClient.h,44,virtual void PostRedo( bool bSuccess )	{};
+5.8,PackageDirtyStateChanged,Engine/Source/Runtime/CoreUObject/Public/UObject/Package.h,265,"DECLARE_MULTICAST_DELEGATE_OneParam(FOnPackageDirtyStateChanged, class UPackage*);"
+5.8,PackageMarkedDirty,Engine/Source/Runtime/CoreUObject/Public/UObject/Package.h,271,"DECLARE_MULTICAST_DELEGATE_TwoParams(FOnPackageMarkedDirty, class UPackage*, bool);"
+5.8,FScopedTransaction,Engine/Source/Editor/UnrealEd/Public/ScopedTransaction.h,21,"UE_NODISCARD_CTOR UNREALED_API FScopedTransaction(const TCHAR* TransactionContext, const FText& SessionName, UObject* PrimaryObject, const bool bShouldActuallyTransact = true);"

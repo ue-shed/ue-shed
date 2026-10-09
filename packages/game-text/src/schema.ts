@@ -1,4 +1,5 @@
 import { Effect, Schema } from "effect";
+import { SavedAssetTextCoverageGap } from "@ue-shed/unreal-assets/text-extraction";
 import { TextUnitId, TextOccurrenceId } from "./identifiers.js";
 import {
 	LocalizationCultureMark,
@@ -79,6 +80,12 @@ export const TextUnit = Schema.Struct({
 });
 export type TextUnit = Schema.Schema.Type<typeof TextUnit>;
 
+export const TextCoverageGapCounts = Schema.Record(
+	SavedAssetTextCoverageGap.fields.reason,
+	Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+);
+export type TextCoverageGapCounts = typeof TextCoverageGapCounts.Type;
+
 export const TextCorpusDiagnostic = Schema.Struct({
 	code: Schema.Literals([
 		"package_inspection_failed",
@@ -88,7 +95,8 @@ export const TextCorpusDiagnostic = Schema.Struct({
 	message: Schema.String,
 	packageFile: Schema.String,
 	objectPath: Schema.optional(Schema.String),
-	propertyPath: Schema.optional(Schema.String)
+	propertyPath: Schema.optional(Schema.String),
+	coverageGapCounts: Schema.optionalKey(TextCoverageGapCounts)
 });
 export type TextCorpusDiagnostic = Schema.Schema.Type<typeof TextCorpusDiagnostic>;
 

@@ -1,12 +1,7 @@
+import { TextCorpusDiagnosticSummary } from "./corpus-summary.js";
 import { Effect, Schema } from "effect";
 import { LocalizationCheckId } from "./localization-check-ids.js";
-import {
-	TextCorpus,
-	TextCorpusDiagnostic,
-	TextLocation,
-	TextOccurrenceId,
-	TextUnitId
-} from "./schema.js";
+import { TextCorpus, TextLocation, TextOccurrenceId, TextUnitId } from "./schema.js";
 
 const SafeIdentifier = Schema.Trim.check(Schema.isPattern(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/));
 const EvidenceValue = Schema.Trim.check(Schema.isNonEmpty(), Schema.isMaxLength(1024));
@@ -273,7 +268,7 @@ export type TextQualityRuleSummary = Schema.Schema.Type<typeof TextQualityRuleSu
 
 export const TextQualityReport = Schema.Struct({
 	coverage: TextCorpus.fields.coverage,
-	diagnostics: Schema.Array(TextCorpusDiagnostic),
+	...TextCorpusDiagnosticSummary.fields,
 	findings: Schema.Array(TextQualityFinding),
 	roles: Schema.Array(TextQualityRoleSummary),
 	ruleDocumentVersion: Schema.Literals([1, 2]),

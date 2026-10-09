@@ -897,7 +897,10 @@ export const WorkbenchGameTextLive = Layer.effect(
 								format === "json"
 									? JSON.stringify(document, null, "\t") + "\n"
 									: document.result.mode === "corpus"
-										? gameTextCsv(document.result.corpus, corpus)
+										? gameTextCsv(
+												{ ...corpus, units: document.result.corpus.units },
+												corpus
+											)
 										: gameTextQualityCsv(document.result.report, corpus),
 							extension: format,
 							rowCount:

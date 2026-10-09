@@ -34,6 +34,13 @@ const report: TextQualityReport = {
 			packageFile: "Content/Fixture/Text/DT_Menu.uasset"
 		}
 	],
+	diagnosticCount: 1,
+	diagnosticCounts: {
+		package_inspection_failed: 0,
+		package_partially_decoded: 1,
+		unsupported_text_history: 0
+	},
+	diagnosticsOmitted: 0,
 	findings: [
 		{
 			actual: {

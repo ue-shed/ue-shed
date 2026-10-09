@@ -159,7 +159,7 @@ const loadGate = Effect.fn("Cli.localization.gate")(function* (command: Localiza
 		return yield* Effect.fail(
 			new LocalizationGateError({
 				code: "unreadable_package",
-				message: `Changed packages could not be read completely: ${unscanned.join(", ")}.`,
+				message: `Changed packages could not be read completely: ${unscanned.slice(0, 200).join(", ")}.${unscanned.length > 200 ? ` ${unscanned.length - 200} more packages omitted.` : ""}`,
 				recovery:
 					"Check that the packages are saved and not damaged, and that the reader supports their engine version, then check again."
 			})

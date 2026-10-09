@@ -725,6 +725,10 @@ export async function checkLocalizationBoundaries(root: string = repositoryRoot)
 				pending.push(join(packageRoot, "src/browser.ts"));
 			} else if (specifier === "@ue-shed/unreal-assets/investigation") {
 				pending.push(join(root, "packages/unreal-assets/src/investigation.ts"));
+			} else if (specifier === "@ue-shed/unreal-assets/text-extraction") {
+				pending.push(join(root, "packages/unreal-assets/src/text-extraction.ts"));
+			} else if (specifier === "@ue-shed/protocol") {
+				pending.push(join(root, "packages/protocol/src/index.ts"));
 			} else if (specifier === "linebreak") {
 				// Reviewed: MIT, exact pin 1.1.0, packaged iterator/table data with no Node/IO.
 				// UE 5.7/5.8 FLocTextHelper::GetWordCountReport counts positive spans from

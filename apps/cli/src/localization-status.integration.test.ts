@@ -42,6 +42,19 @@ describe.skipIf(!executable)("localization CLI with the real reader", () => {
 			const status = yield* Schema.decodeUnknownEffect(
 				Schema.fromJsonString(LocalizationStatusReport)
 			)(yield* Ref.get(output));
+			expect(status.diagnostics.length).toBeLessThanOrEqual(200);
+			expect(status.diagnosticCount).toBe(
+				status.diagnostics.length + status.diagnosticsOmitted
+			);
+			expect(
+				Object.values(status.diagnosticCounts).reduce((sum, count) => sum + count, 0)
+			).toBe(status.diagnosticCount);
+			expect(status.packageCoverage?.packages.length).toBeLessThanOrEqual(200);
+			expect(
+				status.packageCoverage?.packages.every((item) =>
+					["partial", "failed"].includes(item.status)
+				)
+			).toBe(true);
 			expect(status.page.total).toBe(2);
 			expect(status.page.localization?.lines).toHaveLength(1);
 			expect(

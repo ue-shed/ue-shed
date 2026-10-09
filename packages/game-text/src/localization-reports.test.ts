@@ -167,7 +167,11 @@ describe("localization progress and manifest baselines", () => {
 			expect(culture.notSynced).toEqual({ lines: 1, sourceWords: 2 });
 		}
 		expect(report.coverage).toEqual(text.coverage);
-		expect(report.packageCoverage).toEqual(text.packageCoverage);
+		expect(report.packageCoverage).toEqual({
+			counts: { complete: 1, partial: 0, failed: 0 },
+			packages: [],
+			omitted: 0
+		});
 		expect(
 			Schema.decodeUnknownSync(Schema.fromJsonString(LocalizationProgressReport))(
 				JSON.stringify(report)

@@ -1,3 +1,9 @@
+import {
+	TextCorpusDiagnosticSummary,
+	TextPackageCoverageSummary,
+	textCorpusDiagnosticSummary,
+	textPackageCoverageSummary
+} from "./corpus-summary.js";
 import { Result, Schema } from "effect";
 import {
 	CultureCode,
@@ -8,7 +14,7 @@ import {
 	type ManifestEntry,
 	type LocalizationTargetEvidence
 } from "@ue-shed/localization/browser";
-import { TextCorpus, TextCorpusDiagnostic } from "./schema.js";
+import { TextCorpus } from "./schema.js";
 import {
 	LocalizationState,
 	LocalizationUnknownReason,
@@ -346,8 +352,8 @@ export const LocalizationProgressReport = Schema.Struct({
 	),
 	cultures: Schema.Array(LocalizationProgressCulture),
 	coverage: TextCorpus.fields.coverage,
-	packageCoverage: TextCorpus.fields.packageCoverage,
-	diagnostics: Schema.Array(TextCorpusDiagnostic),
+	packageCoverage: Schema.optionalKey(TextPackageCoverageSummary),
+	...TextCorpusDiagnosticSummary.fields,
 	gatherEvidence: Schema.Array(LocalizationFileStatus)
 });
 export type LocalizationProgressReport = typeof LocalizationProgressReport.Type;
@@ -517,10 +523,12 @@ export function localizationProgressReport(
 				: []
 		),
 		coverage: corpus.coverage,
-		diagnostics: corpus.diagnostics,
+		...textCorpusDiagnosticSummary(corpus.diagnostics),
 		gatherEvidence: localizationEvidenceFileStatuses(evidence)
 	};
 	if (corpus.packageCoverage !== undefined)
-		Object.assign(report, { packageCoverage: corpus.packageCoverage });
+		Object.assign(report, {
+			packageCoverage: textPackageCoverageSummary(corpus.packageCoverage)
+		});
 	return report;
 }

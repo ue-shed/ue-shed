@@ -94,6 +94,27 @@ test("checks the Game Text browser closure and its localization dependency", asy
 		assert.deepEqual(await checkLocalizationBoundaries(fixtureRoot), [
 			"packages/game-text/src/join.ts: linebreak must be confined to localization-words.ts"
 		]);
+		const reader = join(fixtureRoot, "packages/unreal-assets/src");
+		const protocol = join(fixtureRoot, "packages/protocol/src");
+		await mkdir(reader, { recursive: true });
+		await mkdir(protocol, { recursive: true });
+		await writeFile(
+			join(corpus, "join.ts"),
+			'import { SavedAssetTextCoverageGap } from "@ue-shed/unreal-assets/text-extraction";\n'
+		);
+		await writeFile(
+			join(reader, "text-extraction.ts"),
+			'export { SavedAssetTextCoverageGap } from "@ue-shed/protocol";\n'
+		);
+		await writeFile(join(protocol, "index.ts"), 'import { Schema } from "effect";\n');
+		assert.deepEqual(await checkLocalizationBoundaries(fixtureRoot), []);
+		await writeFile(
+			join(protocol, "index.ts"),
+			'import { readFile } from "node:fs/promises";\n'
+		);
+		assert.deepEqual(await checkLocalizationBoundaries(fixtureRoot), [
+			"packages/protocol/src/index.ts: browser closure must not import node:fs/promises"
+		]);
 	} finally {
 		await rm(fixtureRoot, { recursive: true, force: true });
 	}

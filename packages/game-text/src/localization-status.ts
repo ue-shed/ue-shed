@@ -1,4 +1,10 @@
 import {
+	TextCorpusDiagnosticSummary,
+	TextPackageCoverageSummary,
+	textCorpusDiagnosticSummary,
+	textPackageCoverageSummary
+} from "./corpus-summary.js";
+import {
 	CultureCode,
 	FileProvenance,
 	LocalizationError,
@@ -7,7 +13,7 @@ import {
 } from "@ue-shed/localization/browser";
 import { Schema } from "effect";
 import { LocalizationCultureCounts } from "./localization-schema.js";
-import { TextCorpus, TextCorpusDiagnostic, TextCorpusSearchPage } from "./schema.js";
+import { TextCorpus, TextCorpusSearchPage } from "./schema.js";
 
 export const LocalizationFileStatus = Schema.Struct({
 	kind: Schema.Literals(["manifest", "archive", "po", "locmeta", "word_count"]),
@@ -23,8 +29,8 @@ export const LocalizationStatusReport = Schema.Struct({
 	target: LocalizationTargetName,
 	counts: Schema.Array(LocalizationCultureCounts),
 	coverage: TextCorpus.fields.coverage,
-	packageCoverage: TextCorpus.fields.packageCoverage,
-	diagnostics: Schema.Array(TextCorpusDiagnostic),
+	packageCoverage: Schema.optionalKey(TextPackageCoverageSummary),
+	...TextCorpusDiagnosticSummary.fields,
 	files: Schema.Array(LocalizationFileStatus),
 	page: TextCorpusSearchPage
 });
@@ -77,11 +83,13 @@ export function localizationStatusReport(
 		target: evidence.target.name,
 		counts: page.localization?.counts ?? [],
 		coverage: corpus.coverage,
-		diagnostics: corpus.diagnostics,
+		...textCorpusDiagnosticSummary(corpus.diagnostics),
 		files: localizationEvidenceFileStatuses(evidence),
 		page
 	};
 	if (corpus.packageCoverage !== undefined)
-		Object.assign(report, { packageCoverage: corpus.packageCoverage });
+		Object.assign(report, {
+			packageCoverage: textPackageCoverageSummary(corpus.packageCoverage)
+		});
 	return report;
 }

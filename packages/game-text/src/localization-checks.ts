@@ -1,3 +1,4 @@
+import { textCorpusDiagnosticSummary } from "./corpus-summary.js";
 import type {
 	LocalizationChangeSet,
 	LocalizationTargetEvidence
@@ -446,7 +447,7 @@ export function checkLocalizationTarget(
 		ruleDocumentVersion: ruleDocument?.schemaVersion ?? 1,
 		status: corpus.status,
 		coverage: corpus.coverage,
-		diagnostics: corpus.diagnostics,
+		...textCorpusDiagnosticSummary(corpus.diagnostics),
 		target: join.target,
 		gatherEvidence: files,
 		findings: combined,

@@ -156,6 +156,7 @@ export const runTextSearch = Effect.fn("Cli.workflow.text_search")((command: Tex
 			}
 			const {
 				searchTextCorpus,
+				textCorpusDiagnosticSummary,
 				TextCorpusService,
 				TextCorpusServiceLive,
 				unitMatchesTextWhere
@@ -181,7 +182,7 @@ export const runTextSearch = Effect.fn("Cli.workflow.text_search")((command: Tex
 				matches: searchTextCorpus(corpus, command.query).filter((unit) =>
 					unitMatchesTextWhere(unit, where)
 				),
-				diagnostics: corpus.diagnostics
+				...textCorpusDiagnosticSummary(corpus.diagnostics)
 			});
 		})
 	)

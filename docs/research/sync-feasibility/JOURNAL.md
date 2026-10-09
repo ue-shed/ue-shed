@@ -317,3 +317,119 @@ SUCCESS: The process with PID 24208 (child process of PID 21020) has been termin
 SUCCESS: The process with PID 21020 (child process of PID 37932) has been terminated. 
 
 - 2026-10-09T10:31:11.555900+07:00 T12 both final runs: UI cached Count7 after memory Apply8, public notification-only refresh to8, editor-style write UI33; stale fingerprint rejected. Dirty revert baseline restored, tagged context survives undo/redo, Text property observed, String Table Modify wrapper undoable but raw setter invisible. Both final probes built. No assets saved in T12.
+
+- 2026-10-09T10:32:14.080365+07:00 T13 runner failed before starting a gate: shutil.which(pnpm.cmd) returned None, causing TypeError in Popen. This is harness command discovery, not a gate result. Checking actual installed pnpm executable and correcting runner.
+
+- 2026-10-09T10:32:22.939411+07:00 T13 authoring-5.7 started root PID=10812; command=['C:\\Users\\denny\\AppData\\Local\\vite-plus\\bin\\pnpm.EXE', 'test:unreal-authoring']; log=D:\git\ue-shed-sync-research\out\sync-research\T13-authoring-5.7.log; configured engines from manifest
+
+- 2026-10-09T10:33:43.559400+07:00 T13 authoring-5.7 finished exit=1, seconds=80.61, timedOut=False, remainingOwned=[]
+
+- 2026-10-09T10:35:17.636805+07:00 T13 first actual5.7 gate exit1 after80.61s: Failed to resolve entry for @ue-shed/protocol, zero tests imported; fresh worktree package dist missing. Node26.9.0 already installed in vite-plus cache; PATH selection verified node and pnpm exec node both v26.9.0. Building documented build:typescript-packages prerequisite, then retry once on required runtime. Initial logs/results preserved; no product source fixes.
+
+- 2026-10-09T10:35:17.716474+07:00 T13 prerequisites started root PID=36012; command=['C:\\Users\\denny\\AppData\\Local\\vite-plus\\bin\\pnpm.EXE', 'run', 'build:typescript-packages']; log=D:\git\ue-shed-sync-research\out\sync-research\T13-prerequisites.log; configured engines from manifest
+
+- 2026-10-09T10:35:22.463726+07:00 T13 prerequisites finished exit=0, seconds=4.74, timedOut=False, remainingOwned=[]
+
+- 2026-10-09T10:35:30.706520+07:00 T13 authoring-5.7 started root PID=46032; command=['C:\\Users\\denny\\AppData\\Local\\vite-plus\\bin\\pnpm.EXE', 'test:unreal-authoring']; log=D:\git\ue-shed-sync-research\out\sync-research\T13-authoring-5.7.log; configured engines from manifest
+
+- 2026-10-09T10:35:38.327945+07:00 T13 authoring-5.7 owned engine/tool process observed {'pid': 27188, 'parent': 23016, 'exe': 'UnrealEditor-Cmd.exe', 'seen': 1791516938.3279455}
+
+- 2026-10-09T10:37:10.613403+07:00 T13 authoring-5.7 owned engine/tool process observed {'pid': 21944, 'parent': 38712, 'exe': 'UnrealEditor-Cmd.exe', 'seen': 1791517030.613403}
+
+- 2026-10-09T10:37:38.430849+07:00 T13 authoring-5.7 owned engine/tool process observed {'pid': 38372, 'parent': 35260, 'exe': 'UnrealEditor-Cmd.exe', 'seen': 1791517058.4308493}
+
+- 2026-10-09T10:38:05.453326+07:00 T13 authoring-5.7 owned engine/tool process observed {'pid': 5132, 'parent': 16720, 'exe': 'UnrealEditor-Cmd.exe', 'seen': 1791517085.450797}
+
+- 2026-10-09T10:38:32.295809+07:00 T13 authoring-5.7 owned engine/tool process observed {'pid': 19880, 'parent': 21432, 'exe': 'UnrealEditor-Cmd.exe', 'seen': 1791517112.2958093}
+
+- 2026-10-09T10:38:58.557001+07:00 T13 authoring-5.7 owned engine/tool process observed {'pid': 41636, 'parent': 45432, 'exe': 'UnrealEditor-Cmd.exe', 'seen': 1791517138.5570009}
+
+- 2026-10-09T10:39:25.549623+07:00 T13 authoring-5.7 owned engine/tool process observed {'pid': 13964, 'parent': 17708, 'exe': 'UnrealEditor-Cmd.exe', 'seen': 1791517165.549623}
+
+- 2026-10-09T10:39:45.711461+07:00 T13 authoring-5.7 owned engine/tool process observed {'pid': 40096, 'parent': 38856, 'exe': 'UnrealEditor-Cmd.exe', 'seen': 1791517185.7104561}
+
+- 2026-10-09T10:39:45.973225+07:00 T13 authoring-5.7 owned engine/tool process observed {'pid': 19256, 'parent': 38084, 'exe': 'UnrealTraceServer.exe', 'seen': 1791517185.9732249}
+
+- 2026-10-09T10:40:03.797098+07:00 T13 authoring-5.7 finished exit=0, seconds=273.08, timedOut=False, remainingOwned=[{'pid': 37616, 'parent': 31616, 'exe': 'grep.exe'}, {'pid': 19256, 'parent': 38084, 'exe': 'UnrealTraceServer.exe'}, {'pid': 3904, 'parent': 40096, 'exe': 'zenserver.exe'}, {'pid': 23016, 'parent': 3904, 'exe': 'crashpad_handler.exe'}]
+
+- 2026-10-09T10:40:49.065640+07:00 T13 authoring-5.8 started root PID=26592; command=['C:\\Users\\denny\\AppData\\Local\\vite-plus\\bin\\pnpm.EXE', 'test:unreal-authoring']; log=D:\git\ue-shed-sync-research\out\sync-research\T13-authoring-5.8.log; configured engines from manifest
+
+- 2026-10-09T10:40:49.613472+07:00 T13 authoring-5.8 finished exit=1, seconds=0.54, timedOut=False, remainingOwned=[]
+
+- 2026-10-09T10:40:49.719368+07:00 T13 localization started root PID=33012; command=['C:\\Users\\denny\\AppData\\Local\\vite-plus\\bin\\pnpm.EXE', 'test:localization-processes']; log=D:\git\ue-shed-sync-research\out\sync-research\T13-localization.log; configured engines from manifest
+
+- 2026-10-09T10:41:56.935508+07:00 T13 localization owned engine/tool process observed {'pid': 45792, 'parent': 32676, 'exe': 'UnrealEditor-Cmd.exe', 'seen': 1791517316.9355085}
+
+- 2026-10-09T10:42:13.386949+07:00 T13 localization owned engine/tool process observed {'pid': 24792, 'parent': 33452, 'exe': 'UnrealEditor-Cmd.exe', 'seen': 1791517333.3859446}
+
+- 2026-10-09T10:42:30.128588+07:00 T13 localization owned engine/tool process observed {'pid': 37156, 'parent': 24136, 'exe': 'UnrealEditor-Cmd.exe', 'seen': 1791517350.128589}
+
+- 2026-10-09T10:42:46.578953+07:00 T13 localization owned engine/tool process observed {'pid': 34936, 'parent': 17712, 'exe': 'UnrealEditor-Cmd.exe', 'seen': 1791517366.578954}
+
+- 2026-10-09T10:43:07.487190+07:00 T13 localization owned engine/tool process observed {'pid': 38620, 'parent': 31956, 'exe': 'UnrealEditor-Cmd.exe', 'seen': 1791517387.4871902}
+
+- 2026-10-09T10:43:22.800460+07:00 T13 localization owned engine/tool process observed {'pid': 37848, 'parent': 16668, 'exe': 'UnrealEditor-Cmd.exe', 'seen': 1791517402.8004603}
+
+- 2026-10-09T10:43:38.626613+07:00 T13 localization owned engine/tool process observed {'pid': 20828, 'parent': 36672, 'exe': 'UnrealEditor-Cmd.exe', 'seen': 1791517418.6266131}
+
+- 2026-10-09T10:43:58.161803+07:00 T13 localization owned engine/tool process observed {'pid': 12548, 'parent': 43752, 'exe': 'UnrealEditor-Cmd.exe', 'seen': 1791517438.1618032}
+
+- 2026-10-09T10:44:13.474988+07:00 T13 localization owned engine/tool process observed {'pid': 36900, 'parent': 35620, 'exe': 'UnrealEditor-Cmd.exe', 'seen': 1791517453.474988}
+
+- 2026-10-09T10:44:32.319332+07:00 T13 localization owned engine/tool process observed {'pid': 40708, 'parent': 39180, 'exe': 'UnrealEditor-Cmd.exe', 'seen': 1791517472.3193326}
+
+- 2026-10-09T10:44:32.320335+07:00 T13 localization owned engine/tool process observed {'pid': 43788, 'parent': 40708, 'exe': 'UnrealTraceServer.exe', 'seen': 1791517472.3193326}
+
+- 2026-10-09T10:44:32.586898+07:00 T13 localization owned engine/tool process observed {'pid': 16228, 'parent': 43788, 'exe': 'UnrealTraceServer.exe', 'seen': 1791517472.5868988}
+
+- 2026-10-09T10:45:47.728762+07:00 T13 localization owned engine/tool process observed {'pid': 5932, 'parent': 40128, 'exe': 'UnrealEditor-Cmd.exe', 'seen': 1791517547.7287621}
+
+- 2026-10-09T10:46:02.809307+07:00 T13 localization owned engine/tool process observed {'pid': 7572, 'parent': 43632, 'exe': 'UnrealEditor-Cmd.exe', 'seen': 1791517562.8093069}
+
+- 2026-10-09T10:46:16.018297+07:00 T13 localization owned engine/tool process observed {'pid': 42184, 'parent': 24184, 'exe': 'UnrealTraceServer.exe', 'seen': 1791517576.0182972}
+
+- 2026-10-09T10:46:16.018801+07:00 T13 localization owned engine/tool process observed {'pid': 34228, 'parent': 44256, 'exe': 'UnrealEditor-Cmd.exe', 'seen': 1791517576.018802}
+
+- 2026-10-09T10:46:16.018801+07:00 T13 localization owned engine/tool process observed {'pid': 24184, 'parent': 34228, 'exe': 'UnrealTraceServer.exe', 'seen': 1791517576.018802}
+
+- 2026-10-09T10:46:28.957053+07:00 T13 localization owned engine/tool process observed {'pid': 32068, 'parent': 42852, 'exe': 'UnrealEditor-Cmd.exe', 'seen': 1791517588.9570532}
+
+- 2026-10-09T10:46:29.237566+07:00 T13 localization owned engine/tool process observed {'pid': 12864, 'parent': 41664, 'exe': 'UnrealTraceServer.exe', 'seen': 1791517589.2375662}
+
+- 2026-10-09T10:46:48.484089+07:00 T13 localization owned engine/tool process observed {'pid': 21520, 'parent': 30964, 'exe': 'UnrealEditor-Cmd.exe', 'seen': 1791517608.4840899}
+
+- 2026-10-09T10:47:00.922375+07:00 T13 localization owned engine/tool process observed {'pid': 31388, 'parent': 21004, 'exe': 'UnrealEditor-Cmd.exe', 'seen': 1791517620.9223757}
+
+- 2026-10-09T10:47:13.614091+07:00 T13 localization owned engine/tool process observed {'pid': 44144, 'parent': 39960, 'exe': 'UnrealEditor-Cmd.exe', 'seen': 1791517633.6140919}
+
+- 2026-10-09T10:47:31.254647+07:00 T13 localization owned engine/tool process observed {'pid': 41532, 'parent': 28764, 'exe': 'UnrealEditor-Cmd.exe', 'seen': 1791517651.2546477}
+
+- 2026-10-09T10:47:43.657261+07:00 T13 localization owned engine/tool process observed {'pid': 26872, 'parent': 14864, 'exe': 'UnrealEditor-Cmd.exe', 'seen': 1791517663.6572614}
+
+- 2026-10-09T10:48:00.240714+07:00 T13 localization owned engine/tool process observed {'pid': 32248, 'parent': 39060, 'exe': 'UnrealEditor-Cmd.exe', 'seen': 1791517680.240715}
+
+- 2026-10-09T10:48:00.498452+07:00 T13 localization owned engine/tool process observed {'pid': 25084, 'parent': 21356, 'exe': 'UnrealTraceServer.exe', 'seen': 1791517680.498452}
+
+- 2026-10-09T10:48:12.905179+07:00 T13 localization owned engine/tool process observed {'pid': 26312, 'parent': 22304, 'exe': 'UE4Editor-Cmd.exe', 'seen': 1791517692.90518}
+
+- 2026-10-09T10:48:20.171387+07:00 T13 localization owned engine/tool process observed {'pid': 17928, 'parent': 25284, 'exe': 'UE4Editor-Cmd.exe', 'seen': 1791517700.1713874}
+
+- 2026-10-09T10:48:21.204641+07:00 T13 localization owned engine/tool process observed {'pid': 28572, 'parent': 17928, 'exe': 'UnrealBuildTool.exe', 'seen': 1791517701.204641}
+
+- 2026-10-09T10:48:24.562161+07:00 T13 localization owned engine/tool process observed {'pid': 24408, 'parent': 16048, 'exe': 'UE4Editor-Cmd.exe', 'seen': 1791517704.5621612}
+
+- 2026-10-09T10:48:25.599092+07:00 T13 localization owned engine/tool process observed {'pid': 39428, 'parent': 24408, 'exe': 'UnrealBuildTool.exe', 'seen': 1791517705.599093}
+
+- 2026-10-09T10:48:28.957459+07:00 T13 localization owned engine/tool process observed {'pid': 12516, 'parent': 38724, 'exe': 'UE4Editor-Cmd.exe', 'seen': 1791517708.957459}
+
+- 2026-10-09T10:48:29.992185+07:00 T13 localization owned engine/tool process observed {'pid': 43156, 'parent': 12516, 'exe': 'UnrealBuildTool.exe', 'seen': 1791517709.992185}
+
+- 2026-10-09T10:48:33.346631+07:00 T13 localization owned engine/tool process observed {'pid': 16716, 'parent': 40156, 'exe': 'UE4Editor-Cmd.exe', 'seen': 1791517713.3466318}
+
+- 2026-10-09T10:48:34.386015+07:00 T13 localization owned engine/tool process observed {'pid': 42460, 'parent': 16716, 'exe': 'UnrealBuildTool.exe', 'seen': 1791517714.3860152}
+
+- 2026-10-09T10:48:38.018418+07:00 T13 localization finished exit=0, seconds=468.29, timedOut=False, remainingOwned=[]
+
+- 2026-10-09T10:50:08.050521+07:00 T13 summary extracted from retained receipts: [{'engine': '5.7', 'operation': 'compile', 'status': 'completed', 'durationMs': 16354, 'pid': 37156, 'receipt': 'out\\loc-processes-ce1947\\5.7\\compile.receipt.json'}, {'engine': '5.7', 'operation': 'export', 'status': 'completed', 'durationMs': 16282, 'pid': 45792, 'receipt': 'out\\loc-processes-ce1947\\5.7\\export.receipt.json'}, {'engine': '5.7', 'operation': 'gather', 'status': 'completed', 'durationMs': 20852, 'pid': 34936, 'receipt': 'out\\loc-processes-ce1947\\5.7\\gather.receipt.json'}, {'engine': '5.7', 'operation': 'import', 'status': 'completed', 'durationMs': 16762, 'pid': 24792, 'receipt': 'out\\loc-processes-ce1947\\5.7\\import.receipt.json'}, {'engine': '5.7', 'operation': 'prepare', 'status': 'completed', 'durationMs': 18343, 'pid': 20828, 'receipt': 'out\\loc-processes-ce1947\\5.7\\prepare.receipt.json'}, {'engine': '5.7', 'operation': 'reports', 'status': 'completed', 'durationMs': 15173, 'pid': 38620, 'receipt': 'out\\loc-processes-ce1947\\5.7\\reports.receipt.json'}, {'engine': '5.7', 'operation': 'sync', 'status': 'completed', 'durationMs': 15715, 'pid': 37848, 'receipt': 'out\\loc-processes-ce1947\\5.7\\sync.receipt.json'}, {'engine': '5.8', 'operation': 'compile', 'status': 'completed', 'durationMs': 12973, 'pid': 34228, 'receipt': 'out\\loc-processes-ce1947\\5.8\\compile.receipt.json'}, {'engine': '5.8', 'operation': 'export', 'status': 'completed', 'durationMs': 14934, 'pid': 5932, 'receipt': 'out\\loc-processes-ce1947\\5.8\\export.receipt.json'}, {'engine': '5.8', 'operation': 'gather', 'status': 'completed', 'durationMs': 19404, 'pid': 32068, 'receipt': 'out\\loc-processes-ce1947\\5.8\\gather.receipt.json'}, {'engine': '5.8', 'operation': 'import', 'status': 'completed', 'durationMs': 12943, 'pid': 7572, 'receipt': 'out\\loc-processes-ce1947\\5.8\\import.receipt.json'}, {'engine': '5.8', 'operation': 'prepare', 'status': 'completed', 'durationMs': 16709, 'pid': 44144, 'receipt': 'out\\loc-processes-ce1947\\5.8\\prepare.receipt.json'}, {'engine': '5.8', 'operation': 'reports', 'status': 'completed', 'durationMs': 12382, 'pid': 21520, 'receipt': 'out\\loc-processes-ce1947\\5.8\\reports.receipt.json'}, {'engine': '5.8', 'operation': 'sync', 'status': 'completed', 'durationMs': 12499, 'pid': 31388, 'receipt': 'out\\loc-processes-ce1947\\5.8\\sync.receipt.json'}, {'engine': '4.27', 'operation': 'compile', 'status': 'completed', 'durationMs': 4365, 'pid': 24408, 'receipt': 'out\\loc-processes-ce1947\\4.27\\compile.receipt.json'}, {'engine': '4.27', 'operation': 'export', 'status': 'completed', 'durationMs': 4412, 'pid': 17928, 'receipt': 'out\\loc-processes-ce1947\\4.27\\export.receipt.json'}, {'engine': '4.27', 'operation': 'gather', 'status': 'completed', 'durationMs': 7335, 'pid': 26312, 'receipt': 'out\\loc-processes-ce1947\\4.27\\gather.receipt.json'}, {'engine': '4.27', 'operation': 'prepare', 'status': 'completed', 'durationMs': 4342, 'pid': 16716, 'receipt': 'out\\loc-processes-ce1947\\4.27\\prepare.receipt.json'}, {'engine': '4.27', 'operation': 'reports', 'status': 'completed', 'durationMs': 4344, 'pid': 12516, 'receipt': 'out\\loc-processes-ce1947\\4.27\\reports.receipt.json'}]; saved asset inventory 72 distinct paths, tracked byte changes 48. PID ancestry caveat recorded; final live process inventory found none of the engine/service processes.
+
+- 2026-10-09T10:51:20.599922+07:00 T13 complete: authoring 5.7 pass, 5.8 exact gate unavailable due version pin; localization 5.7/5.8/4.27 pass with retained import/compile durations. T14 web scan in parallel with idle gate wait: official Epic Multi-User, RC WebSocket, Live Link, EULA; TanStack mutations; chongdashu/unreal-mcp README. Electric collection page later fetches timed out; use successful mutations guide for awaitTxId evidence. Next commit baseline then web scan and final audit.

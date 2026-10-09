@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import sys
 import time
+from pathlib import Path
 from evidence import ROOT, OUT, engine, journal
 
 class Entry(ctypes.Structure):
@@ -34,17 +35,24 @@ def processes():
 
 mode = sys.argv[1]
 env = dict(os.environ)
+node = env.get("UE_SHED_RESEARCH_NODE_EXECUTABLE")
+if node: env["PATH"] = str(Path(node).parent) + os.pathsep + env["PATH"]
+pnpm = shutil.which("pnpm")
+if not pnpm: raise SystemExit("pnpm executable is unavailable on PATH")
 temporary = OUT / "temp"
 temporary.mkdir(parents=True, exist_ok=True)
 for variable in ["TEMP", "TMP", "TMPDIR"]: env[variable] = str(temporary)
 if mode == "authoring":
     version = sys.argv[2]
     env["UE_SHED_UNREAL_ENGINE_ROOT"] = str(engine(version))
-    command = [shutil.which("pnpm.cmd"), "test:unreal-authoring"]
+    command = [pnpm, "test:unreal-authoring"]
     label = "authoring-" + version
+elif mode == "prerequisites":
+    command = [pnpm, "run", "build:typescript-packages"]
+    label = "prerequisites"
 elif mode == "localization":
     for version, variable in [("5.7", "UE_SHED_UNREAL_57_ROOT"), ("5.8", "UE_SHED_UNREAL_58_ROOT"), ("4.27", "UE_SHED_UNREAL_427_ROOT")]: env[variable] = str(engine(version))
-    command = [shutil.which("pnpm.cmd"), "test:localization-processes"]
+    command = [pnpm, "test:localization-processes"]
     label = "localization"
 else: raise SystemExit("unknown mode")
 log = OUT / f"T13-{label}.log"

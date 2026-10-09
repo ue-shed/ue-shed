@@ -1,0 +1,185 @@
+{
+  "runtime": "Node 26.9.0",
+  "retainedLocalizationRoot": "D:\\git\\ue-shed-sync-research\\out\\loc-processes-ce1947",
+  "gates": {
+    "prerequisites": {
+      "exit": 0,
+      "timedOut": false,
+      "elapsedSeconds": 4.7435760498046875,
+      "log": "D:\\git\\ue-shed-sync-research\\out\\sync-research\\T13-prerequisites.log"
+    },
+    "authoring-5.7": {
+      "exit": 0,
+      "timedOut": false,
+      "elapsedSeconds": 273.084557056427,
+      "log": "D:\\git\\ue-shed-sync-research\\out\\sync-research\\T13-authoring-5.7.log"
+    },
+    "authoring-5.8": {
+      "exit": 1,
+      "timedOut": false,
+      "elapsedSeconds": 0.5427601337432861,
+      "log": "D:\\git\\ue-shed-sync-research\\out\\sync-research\\T13-authoring-5.8.log"
+    },
+    "localization": {
+      "exit": 0,
+      "timedOut": false,
+      "elapsedSeconds": 468.29244232177734,
+      "log": "D:\\git\\ue-shed-sync-research\\out\\sync-research\\T13-localization.log"
+    }
+  },
+  "localizationReceipts": [
+    {
+      "engine": "5.7",
+      "operation": "compile",
+      "status": "completed",
+      "durationMs": 16354,
+      "pid": 37156,
+      "receipt": "out\\loc-processes-ce1947\\5.7\\compile.receipt.json"
+    },
+    {
+      "engine": "5.7",
+      "operation": "export",
+      "status": "completed",
+      "durationMs": 16282,
+      "pid": 45792,
+      "receipt": "out\\loc-processes-ce1947\\5.7\\export.receipt.json"
+    },
+    {
+      "engine": "5.7",
+      "operation": "gather",
+      "status": "completed",
+      "durationMs": 20852,
+      "pid": 34936,
+      "receipt": "out\\loc-processes-ce1947\\5.7\\gather.receipt.json"
+    },
+    {
+      "engine": "5.7",
+      "operation": "import",
+      "status": "completed",
+      "durationMs": 16762,
+      "pid": 24792,
+      "receipt": "out\\loc-processes-ce1947\\5.7\\import.receipt.json"
+    },
+    {
+      "engine": "5.7",
+      "operation": "prepare",
+      "status": "completed",
+      "durationMs": 18343,
+      "pid": 20828,
+      "receipt": "out\\loc-processes-ce1947\\5.7\\prepare.receipt.json"
+    },
+    {
+      "engine": "5.7",
+      "operation": "reports",
+      "status": "completed",
+      "durationMs": 15173,
+      "pid": 38620,
+      "receipt": "out\\loc-processes-ce1947\\5.7\\reports.receipt.json"
+    },
+    {
+      "engine": "5.7",
+      "operation": "sync",
+      "status": "completed",
+      "durationMs": 15715,
+      "pid": 37848,
+      "receipt": "out\\loc-processes-ce1947\\5.7\\sync.receipt.json"
+    },
+    {
+      "engine": "5.8",
+      "operation": "compile",
+      "status": "completed",
+      "durationMs": 12973,
+      "pid": 34228,
+      "receipt": "out\\loc-processes-ce1947\\5.8\\compile.receipt.json"
+    },
+    {
+      "engine": "5.8",
+      "operation": "export",
+      "status": "completed",
+      "durationMs": 14934,
+      "pid": 5932,
+      "receipt": "out\\loc-processes-ce1947\\5.8\\export.receipt.json"
+    },
+    {
+      "engine": "5.8",
+      "operation": "gather",
+      "status": "completed",
+      "durationMs": 19404,
+      "pid": 32068,
+      "receipt": "out\\loc-processes-ce1947\\5.8\\gather.receipt.json"
+    },
+    {
+      "engine": "5.8",
+      "operation": "import",
+      "status": "completed",
+      "durationMs": 12943,
+      "pid": 7572,
+      "receipt": "out\\loc-processes-ce1947\\5.8\\import.receipt.json"
+    },
+    {
+      "engine": "5.8",
+      "operation": "prepare",
+      "status": "completed",
+      "durationMs": 16709,
+      "pid": 44144,
+      "receipt": "out\\loc-processes-ce1947\\5.8\\prepare.receipt.json"
+    },
+    {
+      "engine": "5.8",
+      "operation": "reports",
+      "status": "completed",
+      "durationMs": 12382,
+      "pid": 21520,
+      "receipt": "out\\loc-processes-ce1947\\5.8\\reports.receipt.json"
+    },
+    {
+      "engine": "5.8",
+      "operation": "sync",
+      "status": "completed",
+      "durationMs": 12499,
+      "pid": 31388,
+      "receipt": "out\\loc-processes-ce1947\\5.8\\sync.receipt.json"
+    },
+    {
+      "engine": "4.27",
+      "operation": "compile",
+      "status": "completed",
+      "durationMs": 4365,
+      "pid": 24408,
+      "receipt": "out\\loc-processes-ce1947\\4.27\\compile.receipt.json"
+    },
+    {
+      "engine": "4.27",
+      "operation": "export",
+      "status": "completed",
+      "durationMs": 4412,
+      "pid": 17928,
+      "receipt": "out\\loc-processes-ce1947\\4.27\\export.receipt.json"
+    },
+    {
+      "engine": "4.27",
+      "operation": "gather",
+      "status": "completed",
+      "durationMs": 7335,
+      "pid": 26312,
+      "receipt": "out\\loc-processes-ce1947\\4.27\\gather.receipt.json"
+    },
+    {
+      "engine": "4.27",
+      "operation": "prepare",
+      "status": "completed",
+      "durationMs": 4342,
+      "pid": 16716,
+      "receipt": "out\\loc-processes-ce1947\\4.27\\prepare.receipt.json"
+    },
+    {
+      "engine": "4.27",
+      "operation": "reports",
+      "status": "completed",
+      "durationMs": 4344,
+      "pid": 12516,
+      "receipt": "out\\loc-processes-ce1947\\4.27\\reports.receipt.json"
+    }
+  ],
+  "pidWatcherLimitation": "PID-only ancestry is a candidate ownership list: PID reuse can produce false attribution. Final Win32 process inventory found no Unreal/UE4Editor/ShaderCompile/Zen/crashpad processes; do not kill a process solely because its numeric PID is listed."
+}

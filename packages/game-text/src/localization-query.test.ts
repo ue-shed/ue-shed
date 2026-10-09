@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Schema } from "effect";
-import { TextCorpusFocus, TextCorpusSearchPage } from "./schema.js";
+import { TextCorpusFocus, TextCorpusSearchPage, makeTextOccurrenceId } from "./schema.js";
 import { textCorpusQuery } from "./query.js";
 import { joinLocalizationTarget } from "./localization.js";
 import { GameTextLocalizationError, LocalizationLineId } from "./localization-schema.js";
@@ -12,6 +12,7 @@ import {
 	evidence,
 	manifestEntry,
 	poDocument,
+	splitUnit,
 	target,
 	unit
 } from "./localization.test-support.js";
@@ -24,6 +25,67 @@ const request = {
 } satisfies Parameters<ReturnType<typeof textCorpusQuery>["search"]>[0];
 
 describe("bounded localization query", () => {
+	it("focuses each split line with its preview's source, signals and occurrence page", () => {
+		const mixed = splitUnit();
+		const text = corpus([
+			{
+				...mixed,
+				occurrences: mixed.occurrences.flatMap((occurrence) => [
+					occurrence,
+					{ ...occurrence, id: makeTextOccurrenceId(`${occurrence.id}:second`) }
+				])
+			}
+		]);
+		const joined = joinLocalizationTarget(text, evidence([], [], poDocument("")));
+		const query = textCorpusQuery(text, undefined, joined);
+		const page = query.search(request);
+		expect(page.localization?.lines).toHaveLength(2);
+		for (const line of joined.lines) {
+			const saved = mixed.occurrences.find((occurrence) =>
+				line.identity?.namespace === "UI"
+					? occurrence.location.kind === "asset_property"
+					: occurrence.location.kind === "string_table_entry"
+			);
+			if (!saved) throw new Error("Missing line occurrence.");
+			const localization = { target: joined.target, id: line.id };
+			const focus = query.focus({ id: mixed.id, localization, pageSize: 1 });
+			Schema.decodeUnknownSync(TextCorpusFocus)(focus);
+			const preview = page.units.find(
+				(unit) => unit.source.status === "consistent" && unit.source.value === saved.source
+			);
+			expect(focus?.unit.contexts).toEqual(preview?.contexts);
+			expect(focus?.unit.reviewSignals).toEqual(preview?.reviewSignals);
+			expect(focus?.unit.source).toEqual({ status: "consistent", value: saved.source });
+			expect(focus?.unit.id).toBe(mixed.id);
+			expect(focus?.unit.reviewSignals).not.toContain("conflicting");
+			expect(focus?.localization?.id).toBe(line.id);
+			expect(focus?.totalOccurrences).toBe(2);
+			expect(focus?.occurrences).toEqual([saved]);
+			expect(focus?.nextOccurrenceCursor).toBe(saved.id);
+			const next = query.focus({
+				id: mixed.id,
+				localization,
+				pageSize: 1,
+				occurrenceCursor: focus?.nextOccurrenceCursor
+			});
+			expect(next?.occurrences).toEqual([
+				{ ...saved, id: makeTextOccurrenceId(`${saved.id}:second`) }
+			]);
+			expect(next?.nextOccurrenceCursor).toBeUndefined();
+		}
+		const plain = query.focus({ id: mixed.id, pageSize: 50 });
+		expect(plain?.unit.source).toEqual(mixed.source);
+		expect(plain?.totalOccurrences).toBe(4);
+		expect(plain?.occurrences).toEqual(text.units[0]?.occurrences);
+		expect(
+			query.focus({
+				id: mixed.id,
+				localization: { target: joined.target, id: LocalizationLineId.make("missing") },
+				pageSize: 50
+			})
+		).toBeUndefined();
+	});
+
 	it("adds compact state marks, culture focus and manifest locations", () => {
 		const text = corpus();
 		const files = evidence(

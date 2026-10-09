@@ -254,6 +254,7 @@ export function textCorpusQuery(
 		]) ?? []
 	);
 	const localizationEntries = [...entriesByLine.values()].flat();
+	const localizationById = new Map(localization?.lines.map((line) => [line.id, line]) ?? []);
 	const localizationByUnit = new Map(
 		localization?.lines.flatMap((line) =>
 			line.origin.kind === "corpus"
@@ -691,10 +692,18 @@ export function textCorpusQuery(
 			};
 		},
 		focus: (request) => {
-			const entry = byId.get(request.id);
+			if (request.localization && request.localization.target !== localization?.target)
+				return undefined;
+			const entry = request.localization
+				? entriesByLine
+						.get(request.localization.id)
+						?.find(({ unit }) => unit.id === request.id)
+				: byId.get(request.id);
 			if (!entry) return undefined;
 			const { unit, presentation } = entry;
-			const localized = localizationByUnit.get(unit.id);
+			const localized = request.localization
+				? localizationById.get(request.localization.id)
+				: localizationByUnit.get(unit.id);
 			const afterCursor = request.occurrenceCursor
 				? unit.occurrences.findIndex(
 						(occurrence) => occurrence.id === request.occurrenceCursor

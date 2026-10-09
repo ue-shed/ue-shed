@@ -11,7 +11,7 @@ import {
 	type LocalizationTargetEvidence,
 	type PODocument
 } from "@ue-shed/localization/browser";
-import { TextCorpus, TextUnit } from "./schema.js";
+import { TextCorpus, TextUnit, makeTextOccurrenceId } from "./schema.js";
 
 export function success<A, E>(result: Result.Result<A, E>): A {
 	if (Result.isFailure(result)) throw result.failure;
@@ -178,6 +178,25 @@ export function ftextUnit(
 							propertyPath: "Label"
 						}
 		}))
+	});
+}
+
+export function splitUnit(): TextUnit {
+	const table = unit("K", "Table label", "Content/Text/Table.uasset", "UI [Beta]");
+	const saved = ftextUnit("K", "Base label", "Content/Text/Base.uasset", "UI [Beta]");
+	return TextUnit.make({
+		...table,
+		source: { status: "conflicting", values: ["Base label", "Table label"] },
+		occurrences: [
+			...table.occurrences.map((occurrence) => ({ ...occurrence, devNotes: "Table note" })),
+			...saved.occurrences.map((occurrence) => ({
+				...occurrence,
+				id: makeTextOccurrenceId("occurrence:base"),
+				devNotes: "Base note",
+				editCapability: "read_only" as const,
+				location: { ...occurrence.location, objectPath: "/Game/Text/Base.Base" }
+			}))
+		]
 	});
 }
 

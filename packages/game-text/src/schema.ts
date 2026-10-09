@@ -493,6 +493,9 @@ export const decodeTextCorpusSearchResult = Schema.decodeUnknownEffect(TextCorpu
 
 export const TextCorpusFocusRequest = Schema.Struct({
 	id: TextUnitId,
+	localization: Schema.optionalKey(
+		Schema.Struct({ target: LocalizationSelection.fields.target, id: LocalizationLineId })
+	),
 	occurrenceCursor: Schema.optional(TextOccurrenceId),
 	pageSize: TextQueryPageSize
 });

@@ -323,7 +323,13 @@ const validArgsByChannel = {
 		{ target: "FixtureGame", selection: { kind: "line", id: "line-1" } }
 	],
 	"game-text:search": [{ capability: "all", pageSize: 50, query: "" }],
-	"game-text:focus": [{ id: "unreal:UI:Example", pageSize: 50 }],
+	"game-text:focus": [
+		{
+			id: "unreal:UI:Example",
+			localization: { target: "FixtureGame", id: "FixtureGame:Example" },
+			pageSize: 50
+		}
+	],
 	"game-text:quality:choose-rules": [],
 	"game-text:quality:create-starter-rules": [false],
 	"game-text:quality:reload-rules": [],
@@ -1158,6 +1164,21 @@ it("decodes valid arguments for every invoke channel", () => {
 			expect(Array.isArray(decoded.success)).toBe(true);
 		}
 	}
+});
+
+it("preserves optional localization selection in corpus focus requests", () => {
+	const args = invokeContracts["game-text:focus"].args;
+	const selected = validArgsByChannel["game-text:focus"];
+	expect(Schema.decodeUnknownSync(args)(selected)).toEqual(selected);
+	const plain = [{ id: "unreal:UI:Example", pageSize: 50 }];
+	expect(Schema.decodeUnknownSync(args)(plain)).toEqual(plain);
+	expect(
+		Result.isFailure(
+			Schema.decodeUnknownResult(args)([
+				{ ...plain[0], localization: { target: "FixtureGame", id: 1 } }
+			])
+		)
+	).toBe(true);
 });
 
 it("keeps legacy Game Text scan replies bounded instead of accepting a full corpus", () => {

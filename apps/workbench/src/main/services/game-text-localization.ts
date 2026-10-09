@@ -699,7 +699,7 @@ export const makeGameTextLocalization = Effect.fn("Workbench.GameText.localizati
 		targets,
 		select,
 		search,
-		/** The selected target's query, for exports whose pills need it; absent when not loaded. */
+		/** The selected target's query; absent when not loaded. */
 		targetQuery: (target: LocalizationJoin["target"]) =>
 			current(target).pipe(Effect.map((cached) => cached?.model)),
 		focus,

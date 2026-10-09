@@ -512,7 +512,10 @@ export const WorkbenchGameTextLive = Layer.effect(
 
 		const focus = Effect.fn("Workbench.WorkbenchGameText.focus")(
 			(request: TextCorpusFocusRequest) =>
-				currentModel(queryModel).pipe(
+				(request.localization
+					? localization.targetQuery(request.localization.target)
+					: currentModel(queryModel)
+				).pipe(
 					Effect.map((model) => {
 						if (model === undefined) return { status: "not_ready" as const };
 						const result = model.focus(request);

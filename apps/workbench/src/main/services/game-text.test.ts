@@ -8,11 +8,14 @@ import {
 	corpus as localizationCorpus,
 	evidence as localizationEvidence,
 	poDocument,
+	unit as localizationUnit,
 	target as localizationTarget
 } from "./game-text-localization.test-support.js";
 import {
 	makeTextCorpusServiceTestLayer,
 	makeTextUnitId,
+	makeTextOccurrenceId,
+	TextUnit,
 	TextCorpusScanError,
 	TextQualityRuleId,
 	TextQualityRuleDocument,
@@ -210,6 +213,106 @@ it.effect(
 				)
 			);
 		})
+);
+
+function splitUnit(): TextUnit {
+	const table = localizationUnit();
+	const occurrence = table.occurrences[0];
+	if (!occurrence) throw new Error("Missing saved occurrence.");
+	const identity = { status: "resolved" as const, namespace: "UI [Beta]", key: "K" };
+	return TextUnit.make({
+		...table,
+		identity,
+		source: { status: "conflicting", values: ["Base label", "Table label"] },
+		occurrences: [
+			{ ...occurrence, identity, source: "Table label" },
+			{
+				...occurrence,
+				id: makeTextOccurrenceId("occurrence:base"),
+				identity,
+				source: "Base label",
+				packageFile: "Content/Text/Base.uasset",
+				location: {
+					kind: "asset_property",
+					objectPath: "/Game/Text/Base.Base",
+					classPath: "/Script/Engine.DataAsset",
+					propertyPath: "Label"
+				}
+			}
+		]
+	});
+}
+
+it.effect("passes localization corpus focus through the selected target's query", () =>
+	Effect.gen(function* () {
+		const saved = splitUnit();
+		const service = yield* WorkbenchGameText;
+		yield* service.configuredRefresh();
+		yield* service.localizationTarget(localizationTarget.name);
+		const result = yield* service.search({
+			capability: "all",
+			query: "",
+			pageSize: 50,
+			localization: { target: localizationTarget.name }
+		});
+		if (result.status !== "ready") throw new Error("Missing search results.");
+		const lines =
+			result.page.localization?.lines.filter((line) => line.origin.kind === "corpus") ?? [];
+		expect(lines).toHaveLength(2);
+		for (const line of lines) {
+			const focused = yield* service.focus({
+				id: saved.id,
+				localization: { target: localizationTarget.name, id: line.id },
+				pageSize: 50
+			});
+			const occurrence = saved.occurrences.find((occurrence) =>
+				line.identity?.namespace === "UI"
+					? occurrence.location.kind === "asset_property"
+					: occurrence.location.kind === "string_table_entry"
+			);
+			expect(focused).toMatchObject({
+				status: "found",
+				focus: {
+					unit: {
+						id: saved.id,
+						source: { status: "consistent", value: occurrence?.source }
+					},
+					occurrences: [occurrence],
+					totalOccurrences: 1
+				}
+			});
+		}
+		expect(yield* service.focus({ id: saved.id, pageSize: 50 })).toMatchObject({
+			status: "found",
+			focus: { unit: { source: saved.source }, occurrences: saved.occurrences }
+		});
+	}).pipe(
+		Effect.provide(
+			WorkbenchGameTextLive.pipe(
+				Layer.provide(gameTextAdapters),
+				Layer.provide(selectedProject),
+				Layer.provide(
+					makeLocalizationEvidenceTestLayer({
+						discover: () =>
+							Effect.succeed({
+								schemaVersion: 1,
+								targets: [localizationTarget],
+								diagnostics: []
+							}),
+						read: () => Effect.succeed(localizationEvidence()),
+						targets: () => Effect.die("unused")
+					})
+				),
+				Layer.provide(
+					makeTextCorpusServiceTestLayer({
+						scan: () => Effect.die("unused"),
+						scanFromProjectIndex: () =>
+							Effect.succeed(localizationCorpus([splitUnit()]))
+					})
+				)
+			)
+		)
+	)
 );
 
 it.effect("operation refresh reloads evidence and gathers also rescan the retained corpus", () =>

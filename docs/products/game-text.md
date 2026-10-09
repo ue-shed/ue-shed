@@ -22,6 +22,11 @@ file. The saved-asset reader allows 10 GiB of cumulative protocol output and def
 scans to 50 minutes. A failed read names its cause and recovery; only a missing manifest asks for
 an Unreal gather.
 
+Every localization command still builds the corpus and join in memory. A target of about 130,000
+keys and 10 cultures in a project of 166,000 packages needs about 7 GB of Node heap, more than
+Node's default; run the CLI with `NODE_OPTIONS=--max-old-space-size=8192` for projects of that
+size. A compact, persistent index that refreshes only changed files replaces this in-memory build.
+
 Tagged-property text extraction supports classic, uncooked, versioned editor packages from UE 4.27
 and UE 5.0–5.3, alongside the existing UE 5.4+ reader. The legacy window includes String Tables,
 DataTable and CompositeDataTable rows, data assets, and generic UObject text with nested containers.

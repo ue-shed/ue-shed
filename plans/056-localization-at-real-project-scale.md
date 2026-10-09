@@ -10,8 +10,8 @@
 
 ## Status
 
-- **State**: IN PROGRESS. Phases 4–5 are implemented and targeted checks pass. Real-project checks and
-  unrelated full-gate failures remain open.
+- **State**: IN PROGRESS. Phases 1–5 are done; the plan closes when PR #61 merges. Memory at this
+  scale moves to Plan 057 (a compact, persistent Game Text index).
 - **Priority**: P1
 - **Effort**: M
 - **Risk**: MEDIUM. Changing how gather filters match changes which lines count as inside a target,
@@ -240,5 +240,40 @@ Verification on Node 24.21.0:
   final test stage. Native/WASM checks, package builds, types, architecture, license, release and
   20 packed-package consumers passed before that failure.
 
-Node 26 and the plan's real-project checks remain unverified. A transient precommit failure from
+Node 26 remains unverified for this phase; the real-project checks are recorded below. A transient precommit failure from
 running while package conformance rebuilt dist outputs was resolved by rerunning after the build.
+
+### Real project, read-only
+
+`loc status --limit 5` on a 132,606-key, 10-culture, 166,518-package UE 4.27 project, before and
+after this plan:
+
+|                              | Before                                                                       | After                                     |
+| ---------------------------- | ---------------------------------------------------------------------------- | ----------------------------------------- |
+| Result                       | Failed before output (limits, then the 1 GiB reader cap, then string length) | Completes in 335 s, 210 KB of JSON        |
+| Localization files read      | 7 of 21                                                                      | 21 of 21, including the Chinese PO file   |
+| Lines outside the target     | 241,067                                                                      | 2,461                                     |
+| Translated lines per culture | 0                                                                            | about 29,000 (122,630 after Phase 5)      |
+| Diagnostics                  | 4,813,877                                                                    | 16,272, one per package, with gap reasons |
+
+The table's "After" column predates Phase 5. Phase 5's package-namespace matching, measured on the
+same project through the join, changed the German line states as follows:
+
+| German       | Before Phase 5 | After Phase 5 |
+| ------------ | -------------: | ------------: |
+| Translated   |         29,235 |       122,630 |
+| Not gathered |        154,034 |        59,458 |
+| Not found    |         30,416 |           203 |
+| Unknown      |        459,142 |       394,790 |
+
+Joined lines fell from about 678,000 to 583,507, because package variants of one gathered identity
+now share a line.
+
+The run still needs a larger heap: Node peaks at 6.6 GB (reader 4 GB) and fails at Node's default
+4 GB while building the corpus and join, after the scan. The remaining memory is the corpus and join held as
+objects; Plan 057 replaces that with a compact, persistent index.
+
+Most of the remaining `not_gathered` lines are editor-only text, such as Blueprint node labels and
+Sequencer track names, which a target with editor-only gathering off never gathers. Most `unknown`
+lines have no key, or sit in packages the UE 4.27 reader only partly decodes. Both are recorded as
+follow-ups rather than fixed here.

@@ -1,4 +1,27 @@
 export * from "./corpus.js";
+export * from "./snapshot-format.js";
+export type { SnapshotLoadedDomain } from "./snapshot-file.js";
+export {
+	snapshotColumnsSource,
+	type SnapshotSource,
+	type SnapshotSourceColumn
+} from "./snapshot-file.js";
+export {
+	SnapshotStore,
+	SnapshotStoreError,
+	snapshotStoreNodeLayer,
+	snapshotStoreDirectory,
+	snapshotStoreMetrics,
+	GAME_TEXT_SNAPSHOT_NAMESPACE,
+	SNAPSHOT_ZSTD_LEVEL,
+	SNAPSHOT_STRING_ZSTD_LEVEL,
+	snapshotCompressionLevel,
+	type SnapshotStoreApi,
+	type SnapshotStoreOptions,
+	type SnapshotReader,
+	type SnapshotWriter,
+	type SnapshotManifest
+} from "./snapshot-store.js";
 export * from "./quality-schema.js";
 export * from "./quality-rules-v2.js";
 export * from "./localization-reports.js";

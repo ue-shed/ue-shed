@@ -55,6 +55,10 @@ const approvedRuntimeExits = new Set([
 	"packages/unreal-assets/src/protocol-transport.ts"
 ]);
 const approvedPromiseAdapters = new Set([
+	// Game Text owns bounded Node filesystem, zstd and cross-process locks behind an Effect store.
+	"packages/game-text/src/snapshot-store.ts",
+	// Positioned section reads and streaming publication are the Node adapter below that store.
+	"packages/game-text/src/snapshot-file.ts",
 	// Native foreground permission adapts Node execFile once behind an Effect-only service;
 	// the request AbortSignal and a bounded timeout own the short-lived helper process.
 	"packages/engine/src/editor-window-activation.ts",

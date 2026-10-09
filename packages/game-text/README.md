@@ -41,6 +41,13 @@ guidance.
 The `@ue-shed/game-text/browser` entry point contains only schemas and pure query helpers. It does
 not expose filesystem, process, Electron, Perforce, or Unreal authority.
 
+The package also exports a pure compact snapshot codec from both entry points and the Effect
+`SnapshotStore` with `snapshotStoreNodeLayer` from the Node entry point. These support the
+upcoming persistent corpus layers; current query hosts still use the in-memory model. See the
+[snapshot engineering guide](../../docs/engineering/game-text-snapshots.md) for the format, caps,
+immutable publication and recovery behavior. `reader.domain()` bulk-loads one source, identity,
+translation or path domain; `reader.strings()` keeps page reads limited to touched blocks.
+
 Search pages include fixed-size `counts` for the current source query, capability, review filter,
 and `withoutNotes` toggle. `counts.all` equals the page's full `total`, independent of pagination.
 Review counts intersect every active filter; a toggle's count excludes that toggle itself so callers

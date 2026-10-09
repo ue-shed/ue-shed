@@ -23,10 +23,13 @@ import { Result, Schema } from "effect";
 import { LocalizationLineId } from "../packages/game-text/dist/index.js";
 import { validateGameTextScale } from "./game-text-scale-validation.ts";
 import { boundedNumber, childWorkingSet, killBenchmarkTree } from "./game-text-scale-safety.ts";
+import { joinedTargetSnapshot } from "./game-text-snapshot-data.ts";
+import { decodeStringBlock } from "../packages/game-text/src/snapshot-format.ts";
 
 let temporary: string;
 let joined: Awaited<ReturnType<typeof joinScaleTarget>>;
 let first: string;
+let snapshot: ReturnType<typeof joinedTargetSnapshot>;
 const recipe = gameTextScaleRecipe(0.001);
 
 beforeAll(async () => {
@@ -37,6 +40,7 @@ beforeAll(async () => {
 	const evidence = await readScaleEvidence(first);
 	const corpus = await readScaleCorpus(first);
 	joined = await joinScaleTarget(first, corpus, evidence);
+	snapshot = joinedTargetSnapshot(first, corpus, joined.join);
 	const status = scaleStatus(corpus, evidence, joined.join);
 	expect(evidence.target.name).toBe("Generated");
 	expect(evidence.target.cultures).toHaveLength(10);
@@ -74,6 +78,53 @@ async function files(root: string, directory = ""): Promise<string[]> {
 }
 
 describe("generated scale harness", () => {
+	it("encodes the tiny joined target with archive text, states, sparse review and occurrences", () => {
+		const sections = new Map(snapshot.columns.map((column) => [column.name, column]));
+		const string = (domain: string, id: number) => {
+			const starts = sections.get(`${domain}.starts`)!.values;
+			let index = starts.length - 1;
+			while (starts[index]! > id) index--;
+			const block = sections.get(`${domain}.b${index}`)!.values;
+			if (!(block instanceof Uint8Array)) throw new Error("Wrong block type");
+			return decodeStringBlock(block).string(id - starts[index]!);
+		};
+		expect(sections.get("occurrence.object")!.domain).toBe("paths");
+		expect(sections.get("occurrence.property")!.domain).toBe("paths");
+		expect(sections.get("occurrence.id")!.domain).toBe("identity");
+		expect(snapshot.dimensions.lines).toBe(joined.join.lines.length);
+		expect(snapshot.dimensions.occurrences).toBe(recipe.occurrences);
+		const sourceIds = sections.get("line.source")!.values;
+
+		for (let index = 0; index < joined.join.lines.length; index++) {
+			const line = joined.join.lines[index]!;
+			expect(string("source", sourceIds[index]!)).toBe(line.source);
+			for (let culture = 0; culture < line.cultures.length; culture++) {
+				const translationIds = sections.get(`c${culture}.translation`)!.values;
+				const states = sections.get(`c${culture}.state`)!.values;
+				const row = index;
+				expect(string(`c${culture}`, translationIds[row]!)).toBe(
+					line.cultures[culture]!.archive?.translation.Text ?? ""
+				);
+				expect(states[row]).toBe(
+					[
+						"translated",
+						"not_translated",
+						"needs_update",
+						"not_synced",
+						"not_gathered",
+						"changed_since_gather",
+						"not_found",
+						"gathered_only",
+						"outside_target",
+						"unknown"
+					].indexOf(line.cultures[culture]!.state)
+				);
+			}
+		}
+		expect(sections.get("review.rows")!.values.length).toBeGreaterThan(0);
+		expect(sections.get("change.rows")!.values.length).toBeGreaterThan(0);
+		expect(sections.get("occurrence.line")!.values.length).toBe(recipe.occurrences);
+	});
 	it("writes identical bytes for the same seed at different output roots", async () => {
 		const second = resolve(temporary, "second");
 		await generateGameTextScale({ root: second, scale: 0.001, seed: 57 });

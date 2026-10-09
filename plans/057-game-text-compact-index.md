@@ -10,7 +10,8 @@
 
 ## Status
 
-- **State**: IN PROGRESS. Phase 1 (scale harness, baseline, oracle) is done; Phase 2 is next.
+- **State**: IN PROGRESS. Phases 1–2 are done, including lazy sections, streaming publication
+  and 1×/10× format evidence. Phases 3–7 remain.
 - **Priority**: P1
 - **Effort**: XL
 - **Risk**: HIGH. This replaces how every Game Text and localization host holds its data, and adds
@@ -99,14 +100,18 @@ not the project. The design is proven on a generated project ten times the measu
 
 **One snapshot format for all three.**
 
-- A deduplicated string table: one UTF-8 byte section plus an offsets column. Paths may later use a
-  prefix tree if the measurements justify it.
+- Deduplicated UTF-8 tables by domain (source/identity, each culture, paths and comments), split
+  into independently loaded blocks with local offsets. A page reads only the blocks it touches.
 - Columns as little-endian typed arrays, 4-byte aligned, so a reader views them without copying.
 - Sparse columns where a dense one wastes space. For example, a PO translation is stored only where it
   differs from the archive's, and unknown reasons are stored per line when every culture shares them.
-- Sections checksummed; whole snapshots compressed with zstd, chosen by measurement in Phase 2.
+- Sections checksummed and independently compressed with zstd, or raw when compression does not
+  pay. Readers open only the header/directory and load sections by positioned read on first use.
+- Writers stream sections into a temporary file, retaining at most one payload and its compressed
+  copy. Neither readers nor writers need a contiguous whole-file buffer.
 - A small manifest names the current snapshot and the keys of its inputs, published atomically under
-  one writer lock, with readers keeping the snapshot they opened. These are the binary catalog's
+  one writer lock, with readers holding the physical file open for their generation. These are
+  the binary catalog's
   rules; reuse its conventions, and its Rust code where the index is built natively.
 - The cache is disposable derived data, in a versioned namespace beside `catalogs-v4`. A format
   change rebuilds it.
@@ -295,3 +300,113 @@ packages/game-text`: 350 passed, 0 failed, 4 skipped (environment-gated). The 15
 scale 0.001. `pnpm run check:precommit` passed. A tiny generate-and-benchmark smoke run passed at
 the default heap and at 256 MiB. No parser, reader, fixture or Unreal integration changed, so
 UE 5.7 and 5.8 checks do not apply. Node 26 and the full `pnpm check` were not run for this phase.
+
+### Phase 2: lazy snapshot format and streaming file store
+
+Recorded 2026-10-10 on Windows, Node 24.21.0 and 26.11.1. The pure codec and Effect Node store
+remain in Game Text, available to libraries/CLI without a Rust protocol change or new dependency.
+The guide describes the reusable APIs; current importer/join semantics remain Phases 3–5.
+
+**Layout and lifecycle.** Version 3 stays in `game-text-v1`; old generations require rebuilding.
+Open reads the checksummed header/directory. Source text, identities (keys, namespaces, line/
+occurrence IDs), each culture, paths and comments have independent contiguous string domains.
+Blocks target raw bytes, including offsets; a small block-start-ID column supports binary lookup.
+Pages read only touched blocks. Bulk loads use 64 MiB reads including padding, sequential bounded
+zstd frames, per-block CRC/UTF-8/boundary checks, and one byte buffer plus block indexes per domain.
+Native UTF-8 validation and raw-sized zstd output chunks avoid redundant JS string/buffer allocation.
+Caps remain 128 MiB/section and 16 GiB/file or bulk domain; the 16 KiB trial needs 1,048,576 sections/96 MiB directory.
+Writers stream, fsync/rename, verify, then atomically publish the manifest under the owner/PID lock.
+Scoped readers pin handles across retirement; typed failures, quarantine and crash recovery remain.
+
+**Scale data.** Replayed saved raw 1× sections: 583,507 lines, 1,028,205 occurrences, ten cultures.
+No join or project regeneration. Source UTF-8 is 72.52 MiB, identity UTF-8 250.44 MiB, kept cold.
+Paths preserve the original 2,383,209 / 23,832,090 strings at 1×/10×. The synthetic probe scales
+measured domain bytes to 5,835,070 lines, 10,282,050 occurrences and twenty cultures. Invented
+compressible strings preserve widths; ratios do not forecast real content. Selected 10× creation:
+79.14 s, 394.1 MiB peak RSS. All children respect the heap/RSS/stage limits below.
+
+**Cause.** The 24.65 s profiled 10× paths load spends 16.0 s in native zstd/buffer allocation and
+teardown plus 2.0 s in GC as thousands of separately retained buffers accumulate; disk idle is <1 s.
+CPU profile and raw JSON live under `test-results/game-text-scale`; the old layout was profiled first.
+
+**Decision.** Choose 256 KiB: fewest frames, smallest files and fastest loads; pages and hot opens
+remain at least comparable to the previous 2.32/9.55 ms and 97.30/868.65 ms. Keep zstd level 1 for
+numeric columns and level 3 for strings, with raw fallback. Bulk times below load string bytes only.
+
+| Scale | Block KiB | File MiB | Page ms | Source load ms | Culture load ms | Paths load ms |
+| ----- | --------: | -------: | ------: | -------------: | --------------: | ------------: |
+| 1×    |        16 |    64.10 |    2.62 |         151.62 |           29.64 |        249.47 |
+| 1×    |        64 |    57.18 |    2.46 |         102.39 |           18.97 |        182.66 |
+| 1×    |       256 |    54.36 |    2.28 |          75.03 |           14.86 |        144.89 |
+| 10×   |        16 |   772.86 |    6.36 |        1748.24 |          406.97 |       2684.88 |
+| 10×   |        64 |   737.54 |    3.47 |        1087.71 |          262.10 |       1803.95 |
+| 10×   |       256 |   684.41 |    2.82 |         820.91 |          200.51 |       1451.44 |
+
+| Section group                    | 1× raw MiB | 1× chosen MiB | 10× raw MiB | 10× chosen MiB |
+| -------------------------------- | ---------: | ------------: | ----------: | -------------: |
+| Numeric columns                  |      73.93 |          7.52 |     1295.80 |          82.46 |
+| Source text + block index        |      74.68 |          3.12 |      746.84 |          36.63 |
+| Identity strings + block index   |     257.35 |         14.41 |     2573.51 |         114.46 |
+| Cultures, IDs/overrides + blocks |     168.14 |         10.17 |     3362.84 |         266.20 |
+| Paths, occurrence IDs + blocks   |     125.94 |         18.92 |     1259.35 |         181.89 |
+| Comments/review/change           |       0.32 |          0.01 |        3.19 |           0.02 |
+| Directory / alignment            |       0.23 |          0.23 |        2.76 |           2.74 |
+| **File total**                   | **700.59** |     **54.36** | **9244.29** |     **684.41** |
+
+**Production store/reader, Node 24.** Hot selection remains source/identity IDs, origins, occurrence
+indices, culture states and only the picked culture’s flags. Other strings/flags remain lazy.
+Times are incremental with no OS cache eviction; memory follows GC/async cleanup. Scans lowercase
+strings and count substring matches: `TALUMA` at 1×, `SOURCE` at 10×, `/` for paths. Page ID columns
+load separately before the 300-value decode; bulk domain buffers remain explicitly reachable.
+
+| Operation                           |  1× ms | Heap / buffers / RSS MiB |  10× ms | Heap / buffers / RSS MiB |
+| ----------------------------------- | -----: | -----------------------: | ------: | -----------------------: |
+| Directory only                      |  11.76 |       38.6 / 3.4 / 140.2 |   74.00 |       44.1 / 3.2 / 176.9 |
+| Load hot columns                    |  63.17 |      38.8 / 32.1 / 202.5 |  578.57 |     42.7 / 347.4 / 523.3 |
+| Bulk source text                    |  78.29 |     38.8 / 106.7 / 277.9 |  832.99 |   42.9 / 1094.3 / 1270.7 |
+| Scan source text                    | 108.48 |     38.9 / 106.7 / 278.9 | 1020.12 |   42.9 / 1094.3 / 1271.9 |
+| Bulk one culture translations       |  15.26 |     38.9 / 123.7 / 294.9 |  203.28 |   42.9 / 1263.7 / 1440.3 |
+| Scan one culture translations       |  25.87 |     38.9 / 123.7 / 295.4 |  241.95 |   42.9 / 1263.7 / 1440.9 |
+| Bulk all paths                      | 146.51 |     37.3 / 231.7 / 403.4 | 1398.50 |   42.9 / 2343.9 / 2520.9 |
+| Scan all paths                      | 380.26 |     37.3 / 231.7 / 403.7 | 4124.67 |   42.9 / 2343.9 / 2517.2 |
+| Page ID columns                     |  73.67 |     37.3 / 251.9 / 452.2 |  470.89 |   43.0 / 2545.5 / 2723.7 |
+| Decode 50-line strings (300 values) |   2.39 |     37.4 / 251.9 / 450.8 |    3.43 |   43.0 / 2545.5 / 2725.1 |
+
+10× loads reach 897/833/772 MiB/s, about 1.6–1.9× zstd time; required validation and output copies
+explain the remainder. Components below exclude index/setup; scans decode/lowercase strings.
+
+| Domain  | 1× zstd ms | Verify + copy ms | Read ms | 10× zstd ms | Verify + copy ms | Read ms |
+| ------- | ---------: | ---------------: | ------: | ----------: | ---------------: | ------: |
+| Source  |      41.52 |            34.19 |    0.84 |      525.19 |           293.84 |    8.71 |
+| Culture |       7.80 |             6.62 |    0.34 |      126.62 |            71.44 |    2.94 |
+| Paths   |      92.52 |            49.30 |    3.01 |      826.42 |           536.27 |   28.33 |
+
+| Measurement                               |                       1× |                        10× |
+| ----------------------------------------- | -----------------------: | -------------------------: |
+| Publish, including persisted verification |                   3.92 s |                    43.03 s |
+| Publish peak RSS                          |                300.1 MiB |                  547.1 MiB |
+| Directory + hot open                      |                 74.93 ms |                  652.57 ms |
+| Reader peak V8 heap / buffers / RSS       | 96.7 / 316.2 / 464.0 MiB | 76.2 / 2648.8 / 2756.8 MiB |
+| Node 26 directory + hot / page            |          77.42 / 2.11 ms |           658.02 / 2.45 ms |
+| Node 26 reader peak heap / RSS            |         67.6 / 459.4 MiB |          77.7 / 2763.2 MiB |
+
+**Targets and verification.** Chosen-layout disk/V8 heap targets and page latency pass at both
+scales. These are format/reader probes; complete count/filter/facet queries, refreshes and lossless
+hydration remain Phases 3–6. RSS is separate from the V8 targets; identity bytes remain unloaded.
+
+| Verification command                         |                          Passed | Failed |
+| -------------------------------------------- | ------------------------------: | -----: |
+| Targeted Vitest format/file/store/scale      |                              88 |      0 |
+| Required Vitest localization/game-text/scale |                 423 (4 skipped) |      0 |
+| Node 26 Vitest format/file/store             |                              72 |      0 |
+| 10× CPU profile                              |                           1 run |      0 |
+| Benchmark `reblock1` / `synthetic10`         |                      3 / 3 runs |      0 |
+| Benchmark `probe`                            |                          6 runs |      0 |
+| Benchmark `publish` / `open`                 |                      2 / 4 runs |      0 |
+| `pnpm run effect:architecture`               |                          1 gate |      0 |
+| `pnpm exec oxfmt` changed files              |                        19 files |      0 |
+| `pnpm run check:precommit`                   | 6 stages; 43 architecture tests |      0 |
+
+No Rust, parser, reader contract, codegen, fixture or Unreal integration changed: Rust and UE
+5.7/5.8 checks do not apply. Full `pnpm check` was not run; the requested gate is `check:precommit`.
+All scale children ran singly with 16,384 MiB heap, 20 GB RSS and 1,200 s stage caps.

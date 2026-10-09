@@ -180,6 +180,22 @@ join must produce exactly the same line states, unknown reasons, problems, key c
 - Remove the in-memory build from hosts. It stays in tests as the oracle.
 - Remove the `NODE_OPTIONS` note from the Game Text docs.
 
+## Phase 7: Show it in Game Text
+
+Game Text is the reader: its default list is browse and search, with the analysis computed over the
+same index. No separate reader is added.
+
+- Open the 1× generated project in Workbench Game Text and record:
+    - time to first list;
+    - search-as-you-type latency;
+    - culture switch, filter and grouping changes;
+    - opening a line's page;
+    - Rescan with nothing changed.
+- Confirm the 10× generated project opens and stays responsive on Node's default heap.
+- Update Showcase Demo 3 with what a project of this size looks like, and record a captioned tour on
+  the generated project for `docs/showcase.md` and the site. Never use a studio project; showcase
+  content is studio-agnostic.
+
 ## Acceptance targets
 
 Recorded on the generated projects; confirmed read-only on the real one.

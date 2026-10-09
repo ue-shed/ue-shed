@@ -10,7 +10,7 @@
 
 ## Status
 
-- **State**: TODO. Phase 1 is next.
+- **State**: IN PROGRESS. Phase 1 (scale harness, baseline, oracle) is done; Phase 2 is next.
 - **Priority**: P1
 - **Effort**: XL
 - **Risk**: HIGH. This replaces how every Game Text and localization host holds its data, and adds
@@ -130,9 +130,10 @@ join must produce exactly the same line states, unknown reasons, problems, key c
       packages, editor-only-looking properties, duplicate sources, many cultures.
 - Two scales: 1× (about 130,000 keys, 10 cultures, 1 million occurrences) and 10× (about 1.3 million
   keys, 20 cultures, 10 million occurrences).
-- A benchmark command records, for today's pipeline at 1× and as far as 10× gets: wall time, peak
-  heap, peak RSS, and where it fails. Results go to ignored `test-results`, and the plan records
-  them.
+- A benchmark command records today's pipeline at 1×: wall time, peak heap, peak RSS, array buffers,
+  and where it fails. Children have hard caps of 16,384 MiB old space, 20 GB RSS and 20 minutes per
+  stage. Today's 10× in-memory pipeline is **not run** for memory safety; the retained 10× files
+  are validated with a streaming census instead. Results go to ignored `test-results`.
 - An oracle harness that runs today's join on a generated target and compares any other join's
   output with it, line by line.
 
@@ -228,3 +229,69 @@ Recorded on the generated projects; confirmed read-only on the real one.
 ## Evidence
 
 Recorded per phase as it lands.
+
+### Phase 1: scale harness, baseline and oracle
+
+Recorded 2026-10-10 on Windows, Node 24.21.0, with seeded invented content. Tools and commands are in
+[`scripts/game-text-scale.md`](../scripts/game-text-scale.md). The generator writes Dashboard
+configuration, UTF-16LE manifest and archives, UTF-8 BOM/CRLF PO files, a review file and a
+saved-text event stream. The benchmark replays the events through `AssetReader`'s test layer into
+the production `TextCorpusService`, then reads evidence, joins with review and key changes, and
+queries a status page and `localizationStatusReport`, each in a fresh child process.
+
+**Generated inputs.** A streaming census confirmed every file's entry and event counts without
+parsing whole files (1× in 13 s, 10× in 113 s).
+
+|                         |               1× |                 10× |
+| ----------------------- | ---------------: | ------------------: |
+| Keys, cultures          |      132,606, 10 |       1,326,060, 20 |
+| Packages (partial)      | 166,518 (15,400) | 1,665,180 (154,000) |
+| Occurrences, gaps       | 1,028,205, 4.8 M |    10,282,050, 48 M |
+| Generation              |           21.7 s |             521.7 s |
+| Manifest                |            89 MB |              903 MB |
+| Archives, all cultures  |           891 MB |             17.9 GB |
+| PO files, all cultures  |           600 MB |             12.1 GB |
+| Saved-text event stream |           2.0 GB |             20.4 GB |
+| Total                   |           3.6 GB |             51.3 GB |
+
+At 10×, Unreal's localization formats alone take 30.9 GB, and the per-gap reader protocol another
+20.4 GB.
+
+**Today's pipeline at 1×** (`baseline-1x-traced.json`; heap includes V8 pre-GC peaks, RSS is polled
+by the parent; peaks include earlier stages' retained inputs):
+
+| Stage                     | Default heap         | 16 GiB heap | Peak heap / RSS (GiB) | Retained heap |
+| ------------------------- | -------------------- | ----------: | --------------------: | ------------: |
+| Evidence                  | 72.3 s               |      70.4 s |           1.72 / 2.35 |      1.11 GiB |
+| Corpus (event replay)     | 116.9 s              |     113.2 s |           2.53 / 2.91 |      2.24 GiB |
+| Join, review, key changes | **OOM** after 25.3 s |      33.3 s |           5.51 / 5.94 |      3.77 GiB |
+| Status page and report    | not reached          |      24.9 s |           6.25 / 6.59 |      3.77 GiB |
+| Total                     | failed, 215.0 s      |     243.2 s |           6.25 / 6.59 |               |
+
+The synthetic join has 583,507 lines (583,798 units against the real project's 574,848) and 102
+key-change pairs. German: translated 128,539, not gathered 60,769, unknown 386,000, outside target
+4,132, gathered only 1,048, not translated 1,340, not synced 1,476, not found 203. It is a
+proportional workload, not a replica: invented words share strings differently, and the replayed
+event stream skips the native package scan and the reader process's ~4 GB. Against the real
+project's ~6 minutes, 3.4 GiB retained and 6.6 GB peak, it takes 4.1 minutes, retains 3.77 GiB and
+peaks at 6.25 GiB.
+
+**Today's pipeline at 10×: not run.** 1× already needs about 6.2 GiB of heap; ten times the lines
+and twice the cultures would exhaust a 64 GB machine. A pre-crash attempt (`baseline-10x.json`)
+stopped after 0.09 s at evidence: every 10× localization file exceeds the 320 MiB per-file limit,
+and 1,326,060 entries exceed the 1,000,000-entry limit. The manifest's 451.6 million UTF-16 code
+units would also be 84% of V8's maximum string length. The benchmark now refuses scale 10 or
+above, caps children at 16,384 MiB of heap, 20 GB RSS (polled from the OS, so it works while
+JavaScript is blocked; the process tree is killed) and 20 minutes per stage.
+
+**Oracle.** `scripts/localization-join-oracle.test-support.ts` compares joins line by line by
+stable ID, keeping target culture order and treating origins and reasons as sets. Tests show
+identical and reordered joins compare equal, and that changed identities, origins, sources,
+states, facts, reasons, key changes, archive/PO/pending translations, and missing or extra lines
+are each reported, with a bounded list.
+
+**Verification.** `pnpm exec vitest run scripts/game-text-scale.test.ts packages/localization
+packages/game-text`: 350 passed, 0 failed, 4 skipped (environment-gated). The 15 new tests use
+scale 0.001. `pnpm run check:precommit` passed. A tiny generate-and-benchmark smoke run passed at
+the default heap and at 256 MiB. No parser, reader, fixture or Unreal integration changed, so
+UE 5.7 and 5.8 checks do not apply. Node 26 and the full `pnpm check` were not run for this phase.

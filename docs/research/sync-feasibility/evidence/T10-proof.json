@@ -1,0 +1,736 @@
+{
+  "5.7": {
+    "fingerprints": {
+      "before": [
+        "sha256-v1:1ca8a88da0613d351503a71bb923e4b5d8d8275a9a14fc10fcc80c73aadace36",
+        "sha256-v1:92c996997b3e511c8d0015c135207b8d9991ae9d0e1f14e9e521d4022898433c",
+        "sha256-v1:fcbf33dc44d49fb289749e917ae80ed2257d719a34b4591b46f2616247eac8c5",
+        "sha256-v1:ac29c6ee7f6d4938787bb51dfa03cd107e2cb9370942af1fbbe1ebb6a4daa916",
+        "sha256-v1:0e74985baec34f716316ae6b6a9614451d87643e8bd10af0b2b0ff15b6309fa4"
+      ],
+      "undo": [
+        "sha256-v1:1ca8a88da0613d351503a71bb923e4b5d8d8275a9a14fc10fcc80c73aadace36",
+        "sha256-v1:92c996997b3e511c8d0015c135207b8d9991ae9d0e1f14e9e521d4022898433c",
+        "sha256-v1:fcbf33dc44d49fb289749e917ae80ed2257d719a34b4591b46f2616247eac8c5",
+        "sha256-v1:ac29c6ee7f6d4938787bb51dfa03cd107e2cb9370942af1fbbe1ebb6a4daa916",
+        "sha256-v1:0e74985baec34f716316ae6b6a9614451d87643e8bd10af0b2b0ff15b6309fa4"
+      ],
+      "redo": [
+        "sha256-v1:15fa2c43ef6eb50f8d73b741252725439facb66356cd3add7274363dda4d7b11",
+        "sha256-v1:d83edcb530e1dcaed6956d99506b08a00edee5fc089c559f0094e9914c2f7795",
+        "sha256-v1:8c18bce8cbc6e4dc769173693aa752831e69bebacb442a763e496b1efcc3ddd0",
+        "sha256-v1:b57064290e40e5da4afa766b748bc804f00d3fae26cf136aaeb5d26418bfa7b1",
+        "sha256-v1:092d28f9c8886c791a827615148b6ccea21a5d29801089d12a26820823972093"
+      ],
+      "saveUndo": [
+        "sha256-v1:1ca8a88da0613d351503a71bb923e4b5d8d8275a9a14fc10fcc80c73aadace36",
+        "sha256-v1:92c996997b3e511c8d0015c135207b8d9991ae9d0e1f14e9e521d4022898433c",
+        "sha256-v1:fcbf33dc44d49fb289749e917ae80ed2257d719a34b4591b46f2616247eac8c5",
+        "sha256-v1:ac29c6ee7f6d4938787bb51dfa03cd107e2cb9370942af1fbbe1ebb6a4daa916",
+        "sha256-v1:0e74985baec34f716316ae6b6a9614451d87643e8bd10af0b2b0ff15b6309fa4"
+      ]
+    },
+    "counts": [
+      {
+        "hook": "Counts",
+        "utc": "2026-10-09T02:53:29.655Z",
+        "seconds": 17175633.3425006,
+        "threadId": 34780,
+        "gameThread": true,
+        "counts": {},
+        "tablesWatched": 12,
+        "processPhysicalBytes": 3764035584,
+        "throttleCPUWhenNotForeground": false,
+        "queueLength": 0,
+        "undoCount": 0,
+        "undoBytes": 0
+      },
+      {
+        "hook": "Counts",
+        "utc": "2026-10-09T02:53:29.688Z",
+        "seconds": 17175633.3773195,
+        "threadId": 34780,
+        "gameThread": true,
+        "counts": {
+          "Mark": 1,
+          "TransactionState": 4,
+          "PackageDirtyStateChanged": 5,
+          "PackageMarkedDirty": 5,
+          "ObjectModified": 5,
+          "ObjectTransacted": 5
+        },
+        "tablesWatched": 12,
+        "processPhysicalBytes": 3764453376,
+        "throttleCPUWhenNotForeground": false,
+        "queueLength": 1,
+        "undoCount": 0,
+        "undoBytes": 3042
+      },
+      {
+        "hook": "Counts",
+        "utc": "2026-10-09T02:53:30.052Z",
+        "seconds": 17175633.7395048,
+        "threadId": 34780,
+        "gameThread": true,
+        "counts": {
+          "Mark": 2,
+          "TransactionState": 6,
+          "PackageDirtyStateChanged": 10,
+          "PackageMarkedDirty": 5,
+          "ObjectModified": 15,
+          "ObjectTransacted": 10,
+          "DataTableChanged": 18,
+          "PropertyChanged": 10,
+          "UndoMatchesContext": 1,
+          "PostUndo": 1
+        },
+        "tablesWatched": 12,
+        "processPhysicalBytes": 3766870016,
+        "throttleCPUWhenNotForeground": false,
+        "queueLength": 1,
+        "undoCount": 1,
+        "undoBytes": 2954
+      },
+      {
+        "hook": "Counts",
+        "utc": "2026-10-09T02:53:30.379Z",
+        "seconds": 17175634.0667827,
+        "threadId": 34780,
+        "gameThread": true,
+        "counts": {
+          "Mark": 3,
+          "TransactionState": 8,
+          "PackageDirtyStateChanged": 15,
+          "PackageMarkedDirty": 5,
+          "ObjectModified": 25,
+          "ObjectTransacted": 15,
+          "DataTableChanged": 36,
+          "PropertyChanged": 20,
+          "UndoMatchesContext": 2,
+          "PostUndo": 1,
+          "PostRedo": 1
+        },
+        "tablesWatched": 12,
+        "processPhysicalBytes": 3767783424,
+        "throttleCPUWhenNotForeground": false,
+        "queueLength": 1,
+        "undoCount": 0,
+        "undoBytes": 3042
+      },
+      {
+        "hook": "Counts",
+        "utc": "2026-10-09T02:53:30.487Z",
+        "seconds": 17175634.1748543,
+        "threadId": 34780,
+        "gameThread": true,
+        "counts": {
+          "Mark": 4,
+          "TransactionState": 8,
+          "PackageDirtyStateChanged": 16,
+          "PackageMarkedDirty": 5,
+          "ObjectModified": 25,
+          "ObjectTransacted": 15,
+          "DataTableChanged": 36,
+          "PropertyChanged": 20,
+          "UndoMatchesContext": 2,
+          "PostUndo": 1,
+          "PostRedo": 1
+        },
+        "tablesWatched": 12,
+        "processPhysicalBytes": 3770998784,
+        "throttleCPUWhenNotForeground": false,
+        "queueLength": 1,
+        "undoCount": 0,
+        "undoBytes": 3042
+      },
+      {
+        "hook": "Counts",
+        "utc": "2026-10-09T02:53:30.690Z",
+        "seconds": 17175634.3783705,
+        "threadId": 34780,
+        "gameThread": true,
+        "counts": {
+          "Mark": 5,
+          "TransactionState": 10,
+          "PackageDirtyStateChanged": 21,
+          "PackageMarkedDirty": 5,
+          "ObjectModified": 35,
+          "ObjectTransacted": 20,
+          "DataTableChanged": 54,
+          "PropertyChanged": 30,
+          "UndoMatchesContext": 3,
+          "PostUndo": 2,
+          "PostRedo": 1
+        },
+        "tablesWatched": 12,
+        "processPhysicalBytes": 3708026880,
+        "throttleCPUWhenNotForeground": false,
+        "queueLength": 1,
+        "undoCount": 1,
+        "undoBytes": 2954
+      }
+    ],
+    "dirtyAtTransacted": {
+      "apply-five": [
+        {
+          "object": "/Game/Fixture/Authoring/DT_Scalars.DT_Scalars",
+          "dirty": true
+        },
+        {
+          "object": "/Game/Fixture/Authoring/DT_ScalarsOverride.DT_ScalarsOverride",
+          "dirty": true
+        },
+        {
+          "object": "/Game/Fixture/Authoring/DT_Structs.DT_Structs",
+          "dirty": true
+        },
+        {
+          "object": "/Game/Fixture/Authoring/DT_RightReferences.DT_RightReferences",
+          "dirty": true
+        },
+        {
+          "object": "/Game/Fixture/Authoring/DT_Text.DT_Text",
+          "dirty": true
+        }
+      ],
+      "undo": [
+        {
+          "object": "/Game/Fixture/Authoring/DT_Text.DT_Text",
+          "dirty": false
+        },
+        {
+          "object": "/Game/Fixture/Authoring/DT_RightReferences.DT_RightReferences",
+          "dirty": false
+        },
+        {
+          "object": "/Game/Fixture/Authoring/DT_Structs.DT_Structs",
+          "dirty": false
+        },
+        {
+          "object": "/Game/Fixture/Authoring/DT_ScalarsOverride.DT_ScalarsOverride",
+          "dirty": false
+        },
+        {
+          "object": "/Game/Fixture/Authoring/DT_Scalars.DT_Scalars",
+          "dirty": false
+        }
+      ],
+      "redo": [
+        {
+          "object": "/Game/Fixture/Authoring/DT_Scalars.DT_Scalars",
+          "dirty": true
+        },
+        {
+          "object": "/Game/Fixture/Authoring/DT_ScalarsOverride.DT_ScalarsOverride",
+          "dirty": true
+        },
+        {
+          "object": "/Game/Fixture/Authoring/DT_Structs.DT_Structs",
+          "dirty": true
+        },
+        {
+          "object": "/Game/Fixture/Authoring/DT_RightReferences.DT_RightReferences",
+          "dirty": true
+        },
+        {
+          "object": "/Game/Fixture/Authoring/DT_Text.DT_Text",
+          "dirty": true
+        }
+      ],
+      "save-scalar": [],
+      "undo-after-save": [
+        {
+          "object": "/Game/Fixture/Authoring/DT_Text.DT_Text",
+          "dirty": false
+        },
+        {
+          "object": "/Game/Fixture/Authoring/DT_RightReferences.DT_RightReferences",
+          "dirty": false
+        },
+        {
+          "object": "/Game/Fixture/Authoring/DT_Structs.DT_Structs",
+          "dirty": false
+        },
+        {
+          "object": "/Game/Fixture/Authoring/DT_ScalarsOverride.DT_ScalarsOverride",
+          "dirty": false
+        },
+        {
+          "object": "/Game/Fixture/Authoring/DT_Scalars.DT_Scalars",
+          "dirty": true
+        }
+      ],
+      "cancel": []
+    },
+    "cancel": {
+      "beforeFingerprint": "sha256-v1:1ca8a88da0613d351503a71bb923e4b5d8d8275a9a14fc10fcc80c73aadace36",
+      "afterFingerprint": "sha256-v1:b5077e5c6085124ba92fdc2ced578b3ed73bf8c47c504735623dc49127eea6e6",
+      "countsBefore": {
+        "hook": "Counts",
+        "utc": "2026-10-09T02:53:30.740Z",
+        "seconds": 17175634.4271294,
+        "threadId": 34780,
+        "gameThread": true,
+        "counts": {
+          "Mark": 5,
+          "TransactionState": 10,
+          "PackageDirtyStateChanged": 21,
+          "PackageMarkedDirty": 5,
+          "ObjectModified": 35,
+          "ObjectTransacted": 20,
+          "DataTableChanged": 54,
+          "PropertyChanged": 30,
+          "UndoMatchesContext": 3,
+          "PostUndo": 2,
+          "PostRedo": 1
+        },
+        "tablesWatched": 12,
+        "processPhysicalBytes": 3708252160,
+        "throttleCPUWhenNotForeground": false,
+        "queueLength": 1,
+        "undoCount": 1,
+        "undoBytes": 2954
+      },
+      "countsAfter": {
+        "hook": "Counts",
+        "utc": "2026-10-09T02:53:30.795Z",
+        "seconds": 17175634.4825107,
+        "threadId": 34780,
+        "gameThread": true,
+        "counts": {
+          "Mark": 6,
+          "TransactionState": 12,
+          "PackageDirtyStateChanged": 21,
+          "PackageMarkedDirty": 6,
+          "ObjectModified": 36,
+          "ObjectTransacted": 20,
+          "DataTableChanged": 57,
+          "PropertyChanged": 30,
+          "UndoMatchesContext": 3,
+          "PostUndo": 2,
+          "PostRedo": 1,
+          "MutationStart": 1
+        },
+        "tablesWatched": 12,
+        "processPhysicalBytes": 3708456960,
+        "throttleCPUWhenNotForeground": false,
+        "queueLength": 1,
+        "undoCount": 1,
+        "undoBytes": 2954
+      },
+      "row": {
+        "id": "row:Scalar_Alpha",
+        "name": "Scalar_Alpha",
+        "fields": [
+          {
+            "name": "Enabled",
+            "typeName": "BoolProperty",
+            "value": {
+              "kind": "bool",
+              "value": true
+            }
+          },
+          {
+            "name": "Count",
+            "typeName": "IntProperty",
+            "value": {
+              "kind": "int",
+              "value": "55"
+            }
+          },
+          {
+            "name": "Ratio",
+            "typeName": "FloatProperty",
+            "value": {
+              "kind": "float",
+              "value": 0.25
+            }
+          },
+          {
+            "name": "Key",
+            "typeName": "NameProperty",
+            "value": {
+              "kind": "name",
+              "value": "Alpha"
+            }
+          },
+          {
+            "name": "Notes",
+            "typeName": "StrProperty",
+            "value": {
+              "kind": "string",
+              "value": "First deterministic scalar row."
+            }
+          }
+        ]
+      }
+    }
+  },
+  "5.8": {
+    "fingerprints": {
+      "before": [
+        "sha256-v1:1ca8a88da0613d351503a71bb923e4b5d8d8275a9a14fc10fcc80c73aadace36",
+        "sha256-v1:92c996997b3e511c8d0015c135207b8d9991ae9d0e1f14e9e521d4022898433c",
+        "sha256-v1:fcbf33dc44d49fb289749e917ae80ed2257d719a34b4591b46f2616247eac8c5",
+        "sha256-v1:ac29c6ee7f6d4938787bb51dfa03cd107e2cb9370942af1fbbe1ebb6a4daa916",
+        "sha256-v1:0e74985baec34f716316ae6b6a9614451d87643e8bd10af0b2b0ff15b6309fa4"
+      ],
+      "undo": [
+        "sha256-v1:1ca8a88da0613d351503a71bb923e4b5d8d8275a9a14fc10fcc80c73aadace36",
+        "sha256-v1:92c996997b3e511c8d0015c135207b8d9991ae9d0e1f14e9e521d4022898433c",
+        "sha256-v1:fcbf33dc44d49fb289749e917ae80ed2257d719a34b4591b46f2616247eac8c5",
+        "sha256-v1:ac29c6ee7f6d4938787bb51dfa03cd107e2cb9370942af1fbbe1ebb6a4daa916",
+        "sha256-v1:0e74985baec34f716316ae6b6a9614451d87643e8bd10af0b2b0ff15b6309fa4"
+      ],
+      "redo": [
+        "sha256-v1:15fa2c43ef6eb50f8d73b741252725439facb66356cd3add7274363dda4d7b11",
+        "sha256-v1:d83edcb530e1dcaed6956d99506b08a00edee5fc089c559f0094e9914c2f7795",
+        "sha256-v1:8c18bce8cbc6e4dc769173693aa752831e69bebacb442a763e496b1efcc3ddd0",
+        "sha256-v1:b57064290e40e5da4afa766b748bc804f00d3fae26cf136aaeb5d26418bfa7b1",
+        "sha256-v1:092d28f9c8886c791a827615148b6ccea21a5d29801089d12a26820823972093"
+      ],
+      "saveUndo": [
+        "sha256-v1:1ca8a88da0613d351503a71bb923e4b5d8d8275a9a14fc10fcc80c73aadace36",
+        "sha256-v1:92c996997b3e511c8d0015c135207b8d9991ae9d0e1f14e9e521d4022898433c",
+        "sha256-v1:fcbf33dc44d49fb289749e917ae80ed2257d719a34b4591b46f2616247eac8c5",
+        "sha256-v1:ac29c6ee7f6d4938787bb51dfa03cd107e2cb9370942af1fbbe1ebb6a4daa916",
+        "sha256-v1:0e74985baec34f716316ae6b6a9614451d87643e8bd10af0b2b0ff15b6309fa4"
+      ]
+    },
+    "counts": [
+      {
+        "hook": "Counts",
+        "utc": "2026-10-09T02:54:31.661Z",
+        "seconds": 17175695.3488826,
+        "threadId": 10568,
+        "gameThread": true,
+        "counts": {},
+        "tablesWatched": 12,
+        "processPhysicalBytes": 3999801344,
+        "throttleCPUWhenNotForeground": false,
+        "queueLength": 0,
+        "undoCount": 0,
+        "undoBytes": 0
+      },
+      {
+        "hook": "Counts",
+        "utc": "2026-10-09T02:54:31.689Z",
+        "seconds": 17175695.3769209,
+        "threadId": 10568,
+        "gameThread": true,
+        "counts": {
+          "Mark": 1,
+          "TransactionState": 4,
+          "PackageDirtyStateChanged": 5,
+          "PackageMarkedDirty": 5,
+          "ObjectModified": 5,
+          "ObjectTransacted": 5
+        },
+        "tablesWatched": 12,
+        "processPhysicalBytes": 3998883840,
+        "throttleCPUWhenNotForeground": false,
+        "queueLength": 1,
+        "undoCount": 0,
+        "undoBytes": 3050
+      },
+      {
+        "hook": "Counts",
+        "utc": "2026-10-09T02:54:32.015Z",
+        "seconds": 17175695.7025279,
+        "threadId": 10568,
+        "gameThread": true,
+        "counts": {
+          "Mark": 2,
+          "TransactionState": 6,
+          "PackageDirtyStateChanged": 10,
+          "PackageMarkedDirty": 5,
+          "ObjectModified": 15,
+          "ObjectTransacted": 10,
+          "DataTableChanged": 18,
+          "PropertyChanged": 10,
+          "UndoMatchesContext": 1,
+          "PostUndo": 1
+        },
+        "tablesWatched": 12,
+        "processPhysicalBytes": 3999539200,
+        "throttleCPUWhenNotForeground": false,
+        "queueLength": 1,
+        "undoCount": 1,
+        "undoBytes": 2958
+      },
+      {
+        "hook": "Counts",
+        "utc": "2026-10-09T02:54:32.309Z",
+        "seconds": 17175695.9972315,
+        "threadId": 10568,
+        "gameThread": true,
+        "counts": {
+          "Mark": 3,
+          "TransactionState": 8,
+          "PackageDirtyStateChanged": 15,
+          "PackageMarkedDirty": 5,
+          "ObjectModified": 25,
+          "ObjectTransacted": 15,
+          "DataTableChanged": 36,
+          "PropertyChanged": 20,
+          "UndoMatchesContext": 2,
+          "PostUndo": 1,
+          "PostRedo": 1
+        },
+        "tablesWatched": 12,
+        "processPhysicalBytes": 4000567296,
+        "throttleCPUWhenNotForeground": false,
+        "queueLength": 1,
+        "undoCount": 0,
+        "undoBytes": 3050
+      },
+      {
+        "hook": "Counts",
+        "utc": "2026-10-09T02:54:32.396Z",
+        "seconds": 17175696.0842529,
+        "threadId": 10568,
+        "gameThread": true,
+        "counts": {
+          "Mark": 4,
+          "TransactionState": 8,
+          "PackageDirtyStateChanged": 16,
+          "PackageMarkedDirty": 5,
+          "ObjectModified": 25,
+          "ObjectTransacted": 15,
+          "DataTableChanged": 36,
+          "PropertyChanged": 20,
+          "UndoMatchesContext": 2,
+          "PostUndo": 1,
+          "PostRedo": 1
+        },
+        "tablesWatched": 12,
+        "processPhysicalBytes": 4004392960,
+        "throttleCPUWhenNotForeground": false,
+        "queueLength": 1,
+        "undoCount": 0,
+        "undoBytes": 3050
+      },
+      {
+        "hook": "Counts",
+        "utc": "2026-10-09T02:54:32.514Z",
+        "seconds": 17175696.2032334,
+        "threadId": 10568,
+        "gameThread": true,
+        "counts": {
+          "Mark": 5,
+          "TransactionState": 10,
+          "PackageDirtyStateChanged": 21,
+          "PackageMarkedDirty": 5,
+          "ObjectModified": 35,
+          "ObjectTransacted": 20,
+          "DataTableChanged": 54,
+          "PropertyChanged": 30,
+          "UndoMatchesContext": 3,
+          "PostUndo": 2,
+          "PostRedo": 1
+        },
+        "tablesWatched": 12,
+        "processPhysicalBytes": 4004401152,
+        "throttleCPUWhenNotForeground": false,
+        "queueLength": 1,
+        "undoCount": 1,
+        "undoBytes": 2958
+      }
+    ],
+    "dirtyAtTransacted": {
+      "apply-five": [
+        {
+          "object": "/Game/Fixture/Authoring/DT_Scalars.DT_Scalars",
+          "dirty": true
+        },
+        {
+          "object": "/Game/Fixture/Authoring/DT_ScalarsOverride.DT_ScalarsOverride",
+          "dirty": true
+        },
+        {
+          "object": "/Game/Fixture/Authoring/DT_Structs.DT_Structs",
+          "dirty": true
+        },
+        {
+          "object": "/Game/Fixture/Authoring/DT_RightReferences.DT_RightReferences",
+          "dirty": true
+        },
+        {
+          "object": "/Game/Fixture/Authoring/DT_Text.DT_Text",
+          "dirty": true
+        }
+      ],
+      "undo": [
+        {
+          "object": "/Game/Fixture/Authoring/DT_Text.DT_Text",
+          "dirty": false
+        },
+        {
+          "object": "/Game/Fixture/Authoring/DT_RightReferences.DT_RightReferences",
+          "dirty": false
+        },
+        {
+          "object": "/Game/Fixture/Authoring/DT_Structs.DT_Structs",
+          "dirty": false
+        },
+        {
+          "object": "/Game/Fixture/Authoring/DT_ScalarsOverride.DT_ScalarsOverride",
+          "dirty": false
+        },
+        {
+          "object": "/Game/Fixture/Authoring/DT_Scalars.DT_Scalars",
+          "dirty": false
+        }
+      ],
+      "redo": [
+        {
+          "object": "/Game/Fixture/Authoring/DT_Scalars.DT_Scalars",
+          "dirty": true
+        },
+        {
+          "object": "/Game/Fixture/Authoring/DT_ScalarsOverride.DT_ScalarsOverride",
+          "dirty": true
+        },
+        {
+          "object": "/Game/Fixture/Authoring/DT_Structs.DT_Structs",
+          "dirty": true
+        },
+        {
+          "object": "/Game/Fixture/Authoring/DT_RightReferences.DT_RightReferences",
+          "dirty": true
+        },
+        {
+          "object": "/Game/Fixture/Authoring/DT_Text.DT_Text",
+          "dirty": true
+        }
+      ],
+      "save-scalar": [],
+      "undo-after-save": [
+        {
+          "object": "/Game/Fixture/Authoring/DT_Text.DT_Text",
+          "dirty": false
+        },
+        {
+          "object": "/Game/Fixture/Authoring/DT_RightReferences.DT_RightReferences",
+          "dirty": false
+        },
+        {
+          "object": "/Game/Fixture/Authoring/DT_Structs.DT_Structs",
+          "dirty": false
+        },
+        {
+          "object": "/Game/Fixture/Authoring/DT_ScalarsOverride.DT_ScalarsOverride",
+          "dirty": false
+        },
+        {
+          "object": "/Game/Fixture/Authoring/DT_Scalars.DT_Scalars",
+          "dirty": true
+        }
+      ],
+      "cancel": []
+    },
+    "cancel": {
+      "beforeFingerprint": "sha256-v1:1ca8a88da0613d351503a71bb923e4b5d8d8275a9a14fc10fcc80c73aadace36",
+      "afterFingerprint": "sha256-v1:b5077e5c6085124ba92fdc2ced578b3ed73bf8c47c504735623dc49127eea6e6",
+      "countsBefore": {
+        "hook": "Counts",
+        "utc": "2026-10-09T02:54:32.549Z",
+        "seconds": 17175696.237092,
+        "threadId": 10568,
+        "gameThread": true,
+        "counts": {
+          "Mark": 5,
+          "TransactionState": 10,
+          "PackageDirtyStateChanged": 21,
+          "PackageMarkedDirty": 5,
+          "ObjectModified": 35,
+          "ObjectTransacted": 20,
+          "DataTableChanged": 54,
+          "PropertyChanged": 30,
+          "UndoMatchesContext": 3,
+          "PostUndo": 2,
+          "PostRedo": 1
+        },
+        "tablesWatched": 12,
+        "processPhysicalBytes": 4004401152,
+        "throttleCPUWhenNotForeground": false,
+        "queueLength": 1,
+        "undoCount": 1,
+        "undoBytes": 2958
+      },
+      "countsAfter": {
+        "hook": "Counts",
+        "utc": "2026-10-09T02:54:32.607Z",
+        "seconds": 17175696.2952342,
+        "threadId": 10568,
+        "gameThread": true,
+        "counts": {
+          "Mark": 6,
+          "TransactionState": 12,
+          "PackageDirtyStateChanged": 21,
+          "PackageMarkedDirty": 6,
+          "ObjectModified": 36,
+          "ObjectTransacted": 20,
+          "DataTableChanged": 57,
+          "PropertyChanged": 30,
+          "UndoMatchesContext": 3,
+          "PostUndo": 2,
+          "PostRedo": 1,
+          "MutationStart": 1
+        },
+        "tablesWatched": 12,
+        "processPhysicalBytes": 4004409344,
+        "throttleCPUWhenNotForeground": false,
+        "queueLength": 1,
+        "undoCount": 1,
+        "undoBytes": 2958
+      },
+      "row": {
+        "id": "row:Scalar_Alpha",
+        "name": "Scalar_Alpha",
+        "fields": [
+          {
+            "name": "Enabled",
+            "typeName": "BoolProperty",
+            "value": {
+              "kind": "bool",
+              "value": true
+            }
+          },
+          {
+            "name": "Count",
+            "typeName": "IntProperty",
+            "value": {
+              "kind": "int",
+              "value": "55"
+            }
+          },
+          {
+            "name": "Ratio",
+            "typeName": "FloatProperty",
+            "value": {
+              "kind": "float",
+              "value": 0.25
+            }
+          },
+          {
+            "name": "Key",
+            "typeName": "NameProperty",
+            "value": {
+              "kind": "name",
+              "value": "Alpha"
+            }
+          },
+          {
+            "name": "Notes",
+            "typeName": "StrProperty",
+            "value": {
+              "kind": "string",
+              "value": "First deterministic scalar row."
+            }
+          }
+        ]
+      }
+    }
+  }
+}

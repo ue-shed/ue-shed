@@ -78,3 +78,48 @@ SUCCESS: The process with PID 41876 (child process of PID 20840) has been termin
 - 2026-10-09T09:52:01.792255+07:00 T08 both engines complete: matching hook counts, Apply no DataTableChanged or PropertyChanged, transaction events expose coarse row-struct field names but no row IDs. Saved only disposable 5.7/5.8 DT_Scalars.uasset copies. Actual UI/modal/PIE and dirty reload remain NEEDS HUMAN. Task docs and CSV/sample evidence committed.
 
 - 2026-10-09T09:52:42.788210+07:00 T09 completed using both T08 runs: stable transaction ID across undo/redo, new operation IDs; current Apply context empty and no request operationId in events. Collision-safe suppression remains unverified; scoped authority provenance is a proposed workaround, not a tested result.
+
+- 2026-10-09T09:52:43.143008+07:00 Cleanup 5.8 PID=45744: SUCCESS: The process with PID 44696 (child process of PID 39368) has been terminated.
+SUCCESS: The process with PID 39368 (child process of PID 45744) has been terminated.
+SUCCESS: The process with PID 45744 (child process of PID 43456) has been terminated. 
+
+- 2026-10-09T09:53:03.724942+07:00 Restored saved disposable asset D:\git\ue-shed-sync-research\out\sync-research\5.7\fixture\Content\Fixture\Authoring\DT_Scalars.uasset from unchanged tracked fixture; no tracked asset saves occurred
+
+- 2026-10-09T09:53:03.780317+07:00 Restored saved disposable asset D:\git\ue-shed-sync-research\out\sync-research\5.8\fixture\Content\Fixture\Authoring\DT_Scalars.uasset from unchanged tracked fixture; no tracked asset saves occurred
+
+- 2026-10-09T09:53:03.837050+07:00 T07 launched 5.7 UnrealEditor PID=35276; command=D:\git\ue-shed-sync-research\out\sync-research\5.7\launch-command.json
+
+- 2026-10-09T09:53:30.798846+07:00 undo 5.7 finished; raw D:\git\ue-shed-sync-research\out\sync-research\5.7\undo-summary.json; 8 records
+
+- 2026-10-09T09:54:02.253716+07:00 Native window 5.7 minimize: {'editorPid': 35276, 'editorWindows': [{'handle': 131073982, 'pid': 35276, 'title': 'UEShedFixture - Unreal Editor', 'minimized': True, 'visible': True}], 'foreground': {'handle': 131698, 'pid': 18488, 'title': 'Search', 'minimized': False, 'visible': True}, 'editorForeground': False}
+
+- 2026-10-09T09:54:02.568840+07:00 Cleanup 5.7 PID=35276: SUCCESS: The process with PID 12876 (child process of PID 22160) has been terminated.
+SUCCESS: The process with PID 22160 (child process of PID 35276) has been terminated.
+SUCCESS: The process with PID 30664 (child process of PID 35276) has been terminated.
+SUCCESS: The process with PID 31680 (child process of PID 35276) has been terminated.
+SUCCESS: The process with PID 30760 (child process of PID 35276) has been terminated.
+SUCCESS: The process with PID 44124 (child process of PID 35276) has been terminated.
+SUCCESS: The process with PID 42360 (child process of PID 35276) has been terminated.
+SUCCESS: The process with PID 35276 (child process of PID 3768) has been terminated. 
+
+- 2026-10-09T09:54:02.633819+07:00 Restored saved disposable asset D:\git\ue-shed-sync-research\out\sync-research\5.7\fixture\Content\Fixture\Authoring\DT_Scalars.uasset from unchanged tracked fixture; no tracked asset saves occurred
+
+- 2026-10-09T09:54:02.698129+07:00 T07 launched 5.8 UnrealEditor PID=40340; command=D:\git\ue-shed-sync-research\out\sync-research\5.8\launch-command.json
+
+- 2026-10-09T09:54:31.420451+07:00 Native window 5.8 minimize: {'editorPid': 40340, 'editorWindows': [{'handle': 6621280, 'pid': 40340, 'title': 'UEShedFixture - Unreal Editor', 'minimized': True, 'visible': True}], 'foreground': {'handle': 131698, 'pid': 18488, 'title': 'Search', 'minimized': False, 'visible': True}, 'editorForeground': False}
+
+- 2026-10-09T09:54:32.610229+07:00 undo 5.8 finished; raw D:\git\ue-shed-sync-research\out\sync-research\5.8\undo-summary.json; 8 records
+
+- 2026-10-09T09:54:55.741615+07:00 Cleanup 5.8 PID=40340: SUCCESS: The process with PID 38828 (child process of PID 41268) has been terminated.
+SUCCESS: The process with PID 41268 (child process of PID 40340) has been terminated.
+SUCCESS: The process with PID 40340 (child process of PID 34972) has been terminated. 
+
+- 2026-10-09T09:54:55.817229+07:00 Restored saved disposable asset D:\git\ue-shed-sync-research\out\sync-research\5.8\fixture\Content\Fixture\Authoring\DT_Scalars.uasset from unchanged tracked fixture; no tracked asset saves occurred
+
+- 2026-10-09T09:54:55.893438+07:00 T07 launched 5.7 UnrealEditor PID=32716; command=D:\git\ue-shed-sync-research\out\sync-research\5.7\launch-command.json
+
+- 2026-10-09T09:54:55.981759+07:00 T10 both engines: five-table Apply creates queueLength1; one Undo restores all five fingerprints and clears initial dirty flags; after Save the same Undo leaves saved scalar package dirty. Cancel leaves Count55 with no new undo entry. Initial 5.7 unfocused Undo returned false because no undo entry remained; Redo true. 5.8 minimized Undo/Redo true. Will establish 5.7 minimized Undo with a fresh entry.
+
+- 2026-10-09T09:55:45.619929+07:00 Native window 5.7 minimize: {'editorPid': 32716, 'editorWindows': [{'handle': 52300870, 'pid': 32716, 'title': 'UEShedFixture - Unreal Editor', 'minimized': True, 'visible': True}], 'foreground': {'handle': 131698, 'pid': 18488, 'title': 'Search', 'minimized': False, 'visible': True}, 'editorForeground': False}
+
+- 2026-10-09T09:55:45.959834+07:00 T10 fresh UE5.7 minimized Apply committed, Undo true, Redo true; both engines verified focus-independent Undo. Completed compact proof and task report.

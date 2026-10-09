@@ -58,5 +58,10 @@ elif action == "stop":
     result = subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, text=True)
     journal(f"Cleanup {version} PID={pid}: {result.stdout.strip()} {result.stderr.strip()}")
     print(result.stdout, result.stderr)
+elif action == "restore-assets":
+    relative = Path("Content/Fixture/Authoring/DT_Scalars.uasset")
+    shutil.copy2(ROOT / "fixtures/unreal-project" / relative, fixture / relative)
+    journal(f"Restored saved disposable asset {fixture / relative} from unchanged tracked fixture; no tracked asset saves occurred")
+    print(f"restored {fixture / relative}")
 else:
     raise SystemExit("unknown action")

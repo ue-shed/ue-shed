@@ -94,6 +94,10 @@ elif task == "undo":
     record("undo-after-save", lambda: client.probe("Undo"))
     after_save_undo = [client.snapshot(p) for p in five]
     results.append({"label": "proof", "counts": [counts0, counts1, counts2, counts3, counts4, client.probe("GetCounts")], "before": [s["fingerprint"]["value"] for s in before], "undo": [s["fingerprint"]["value"] for s in after_undo], "redo": [s["fingerprint"]["value"] for s in after_redo], "saveUndo": [s["fingerprint"]["value"] for s in after_save_undo]})
+    cancel_before = client.snapshot(scalar)
+    cancel_counts = client.probe("GetCounts")
+    record("cancel", lambda: client.scenario("cancel", table=scalar, row="Scalar_Alpha", field="Count", value=55))
+    results.append({"label": "cancel-proof", "beforeFingerprint": cancel_before["fingerprint"]["value"], "afterSnapshot": client.snapshot(scalar), "countsBefore": cancel_counts, "countsAfter": client.probe("GetCounts")})
 elif task == "concurrent":
     record("open", lambda: client.scenario("open", table=scalar))
     stale = client.snapshot(scalar)
@@ -102,6 +106,8 @@ elif task == "concurrent":
     record("editor-cell", lambda: client.scenario("cell", table=scalar, row="Scalar_Alpha", field="Count", value=33))
     record("stale-apply", lambda: apply([stale])[0])
 elif task == "perf":
+    from windows import state
+    window_start = state(version)
     mode = sys.argv[3] if len(sys.argv) > 3 else "unfocused"
     samples = {"noop": [], "one": [], "five": [], "large-snapshot": [], "large-apply": []}
     mark(mode)
@@ -124,7 +130,7 @@ elif task == "perf":
     def stats(values):
         values = sorted(values)
         return {"n": len(values), "p50": values[math.ceil(len(values)*.5)-1], "p95": values[math.ceil(len(values)*.95)-1], "max": values[-1]}
-    results.append({"label": mode, "stats": {k: stats(v) for k, v in samples.items()}, "sequential": stats(sequential), "before": start, "after": end, "largeRows": len(large_state[0]["table"]["rows"]), "samples": samples, "sequentialSamples": sequential})
+    results.append({"label": mode, "windowStart": window_start, "windowEnd": state(version), "stats": {k: stats(v) for k, v in samples.items()}, "sequential": stats(sequential), "before": start, "after": end, "largeRows": len(large_state[0]["table"]["rows"]), "samples": samples, "sequentialSamples": sequential})
     (base / f"perf-{mode}-summary.json").write_text(json.dumps(results, indent=2), encoding="utf-8")
 else:
     raise SystemExit("unknown task")

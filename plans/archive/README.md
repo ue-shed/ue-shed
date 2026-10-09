@@ -43,6 +43,7 @@ paths). They are not living guidance — prefer product docs, ADRs, and active p
 
 | Plan                                                          | Title                                                                | Status                                                   |
 | ------------------------------------------------------------- | -------------------------------------------------------------------- | -------------------------------------------------------- |
+| [055](055-editor-foreground-responsiveness.md)                | Keep Unreal responsive while UE Shed is in the foreground            | DONE — portable and UE 5.7/5.8 live lanes passed         |
 | [051](051-localization-workspace.md)                          | Build the Game Text localization workspace                           | DONE — portable gate and UE 5.7/5.8/4.27 lanes passed    |
 | [050](050-legacy-property-tags.md)                            | Read legacy property tags for Game Text back to UE 4.27              | DONE — UE 4.27/5.3 fixtures and UE 5.7/5.8 matrix passed |
 | [049](049-camera-authoring-and-actor-culling.md)              | Author cameras in Unreal and persist explicit actor culling          | DONE — local portable and Unreal gates passed            |

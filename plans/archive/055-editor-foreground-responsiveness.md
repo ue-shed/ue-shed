@@ -14,8 +14,8 @@
 
 ## Status
 
-- **State**: IN PROGRESS. Phases 1–6 are done on `feat/editor-foreground-responsiveness`, including
-  real foreground switches on UE 5.7 and 5.8. Open: owner confirmation of the assumed decisions.
+- **State**: DONE. Phases 1–6 shipped in #60, including real foreground switches on UE 5.7 and
+  5.8. The owner confirmed the decisions below.
 - **Priority**: P1
 - **Effort**: L
 - **Risk**: MEDIUM. The Unreal side runs inside every connected editor's frame loop and holds
@@ -62,9 +62,9 @@ exits, but the remainder of the frame still elapses (yielding instead of sleepin
 request after the foreground change should therefore wait for the rest of the current throttled
 frame, 0–333 ms, about 167 ms on average, while every later request is fast. Phase 5 measures it.
 
-## Owner decisions assumed (confirm or change)
+## Owner decisions (confirmed)
 
-1. **On by default** in the Workbench, with a setting to turn it off. Assumed because the effect is
+1. **On by default** in the Workbench, with a setting to turn it off, because the effect is
    bounded to the time the user is looking at UE Shed and editing through it.
 2. **Name**: capability `editor.foreground-responsiveness.v1`, manifest field
    `foregroundResponsivenessObjectPath`, library `UUEShedEditorResponsivenessLibrary`.

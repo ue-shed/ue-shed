@@ -88,22 +88,31 @@ export const guides: readonly Guide[] = [
 	},
 	{
 		slug: "game-text",
-		title: "Find the text and every place it is used",
-		summary: "Search saved game text, check writing rules and see every place a line appears.",
-		requirement: "Saved assets · no editor required for search",
+		title: "Review game text in every language",
+		summary:
+			"Search saved game text, see what each line needs in every culture, and work on many lines at once.",
+		requirement: "Saved assets · no editor required for search and review",
 		source: "docs/products/game-text.md",
 		steps: [
 			{
 				title: "Scan and search",
-				text: "Open Game Text and choose Scan project if needed. Type “Hold to skip” in Search text and watch the live match count. Use Editable, Read only, No translator notes and the review chips to narrow the list."
+				text: "Open Game Text and choose Scan project if needed. Type “Hold to skip” in Search text and watch the live match count. Lines are grouped by what they need, worst first: changed keys, gather work, translation work, then findings."
 			},
 			{
-				title: "See where a line appears",
-				text: "Select a line to see its key, character and word counts, translator notes and Where it appears. Rows keep exact Unreal names. Copy icons copy text, keys and asset paths; Show in Unreal opens the asset in the connected editor’s Content Browser."
+				title: "Filter and group",
+				text: "Filter lists fields; each opens its values with counts, and a choice becomes a pill such as “Problem is Key changed”. Click the middle of a pill to switch between is and is not. Folder browses a level at a time. Display groups the list by problem, folder, asset, origin or namespace."
 			},
 			{
-				title: "Check read problems",
-				text: "The toolbar shows the scan time and any assets not fully read. Open Read problems for the warning details, and inspect the selected line’s read problems below its locations. Offline, missing-plugin and failed navigation never claims the asset opened."
+				title: "Pick your cultures",
+				text: "Choose any number of cultures. Each line ends with a strip, one cell per culture: dashed when missing, amber when it needs an update, blue when not synced. Until a line is open, the side pane shows which folders, assets and origins the lines come from."
+			},
+			{
+				title: "Open a line",
+				text: "Select a line to open its page: what it needs and how to fix it, its key, every translation with editing and review, Where it appears and its properties. ‹ Lines returns to the list and the arrows step to the next line. Show in Unreal opens the asset in the connected editor’s Content Browser."
+			},
+			{
+				title: "Work on many lines",
+				text: "Tick lines, or shift-click for a range, to export them for translators, mark their translations reviewed, carry translations to keys that changed, or copy their keys."
 			},
 			{
 				title: "Check the writing",
@@ -111,19 +120,19 @@ export const guides: readonly Guide[] = [
 			},
 			{
 				title: "Take the results away",
-				text: "Use Export for a readable CSV or JSON, and Presets to save or open the search and writing rules."
+				text: "Use Export for a readable CSV, JSON or one CSV with every language, and Presets to save the search, pills and grouping. The toolbar shows the scan time and any assets not fully read."
 			}
 		],
 		command:
-			'pnpm ue-shed text scan fixtures/unreal-project\npnpm ue-shed text search fixtures/unreal-project "Hold to skip"\npnpm ue-shed text rules init fixtures/unreal-project',
+			'pnpm ue-shed text scan fixtures/unreal-project\npnpm ue-shed text search fixtures/unreal-project "Hold to skip"\npnpm ue-shed loc status fixtures/unreal-project --target FixtureGame --filter "problem is translation" --group folder',
 		captures: [
 			{
 				key: "gameText",
-				caption: "A saved line, with its key, translator notes and every place it appears."
+				caption: "Lines grouped by what they need, with a strip for every culture."
 			}
 		],
 		boundary:
-			"Game Text reads saved assets. It does not show the translated text of a running game. Read problems and incomplete assets remain visible."
+			"Game Text reads saved assets and the project's localization files. Translations are written only to PO files, which Unreal then imports. Read problems and incomplete assets remain visible."
 	},
 	{
 		slug: "config-explorer",

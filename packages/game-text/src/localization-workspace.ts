@@ -514,7 +514,14 @@ export const WorkspaceReportPage = Schema.Struct({
 	wordCountUnknown: Count,
 	unknownReasons: LocalizationProgressCulture.fields.unknownReasons,
 	baseline: Schema.optionalKey(
-		Schema.Struct({ target: LocalizationTargetName, createdAt: Schema.String })
+		Schema.Struct({
+			target: LocalizationTargetName,
+			createdAt: Schema.String,
+			/** Lines since the baseline: new keys, removed keys, changed keys and changed source. */
+			since: Schema.optionalKey(
+				Schema.Struct({ added: Count, removed: Count, keyChanged: Count, changed: Count })
+			)
+		})
 	)
 });
 export type WorkspaceReportPage = typeof WorkspaceReportPage.Type;
@@ -589,7 +596,25 @@ export function localizationReportPage(
 		unknownReasons: reasons,
 		...(offset + 50 < cultures.length ? { nextOffset: offset + 50 } : undefined),
 		...(baseline
-			? { baseline: { target: baseline.target, createdAt: baseline.provenance.createdAt } }
+			? {
+					baseline: {
+						target: baseline.target,
+						createdAt: baseline.provenance.createdAt,
+						...(report.cultures[0]?.baselineDelta
+							? {
+									since: {
+										added: report.cultures[0].baselineDelta.addedCounts.lines,
+										removed:
+											report.cultures[0].baselineDelta.removedCounts.lines,
+										keyChanged:
+											report.cultures[0].baselineDelta.keyChangedCounts.lines,
+										changed:
+											report.cultures[0].baselineDelta.changedCounts.lines
+									}
+								}
+							: undefined)
+					}
+				}
 			: undefined)
 	};
 }

@@ -1,10 +1,28 @@
+import { Effect, Option } from "effect";
+import { CliCommandError } from "../cli-runtime.js";
 import { Argument, Command, Flag } from "effect/unstable/cli";
-import { Option } from "effect";
-import { LocalizationCheckId, LocalizationReviewLens } from "@ue-shed/game-text/browser";
+import {
+	LocalizationCheckId,
+	LocalizationGateCheck,
+	LocalizationReviewLens,
+	LocalizationState,
+	TextOriginKind
+} from "@ue-shed/game-text/browser";
 import { runLocalizationCheck } from "../workflows/localization-check.js";
+import { runLocalizationGate } from "../workflows/localization-gate.js";
 import { runLocalizationReport } from "../workflows/localization-report.js";
-import { runLocalizationStatus, runLocalizationTargets } from "../workflows/localization.js";
-import { localizationFlags, optionalLocalizationFlags } from "./localization-flags.js";
+import {
+	runLocalizationExport,
+	runLocalizationStatus,
+	runLocalizationTargets
+} from "../workflows/localization.js";
+import {
+	localizationFlags,
+	optionalLocalizationFlags,
+	optionalWhereFlags,
+	filterFlags,
+	optionalFilterFlags
+} from "./localization-flags.js";
 import { LocalizationOperation, LocalizationReviewFlag } from "@ue-shed/localization/browser";
 import { runLocalizationReview } from "../workflows/localization-review.js";
 import { runLocalizationOperation } from "../workflows/localization-run.js";
@@ -20,11 +38,12 @@ export const localizationCommand = Command.make("loc").pipe(
 				projectRoot: Argument.string("project-root"),
 				target: Flag.string("target"),
 				engineRoot: Flag.string("engine-root").pipe(Flag.optional),
+				carry: Flag.string("carry").pipe(Flag.optional),
 				plan: Flag.boolean("plan"),
 				json: Flag.boolean("json"),
 				timeout: Flag.integer("timeout").pipe(Flag.withDefault(1800))
 			},
-			({ operation, projectRoot, target, engineRoot, plan, json, timeout }) => {
+			({ operation, projectRoot, target, engineRoot, carry, plan, json, timeout }) => {
 				const command = {
 					_tag: "LocalizationRun",
 					operation,
@@ -39,6 +58,16 @@ export const localizationCommand = Command.make("loc").pipe(
 				>;
 				if (Option.isSome(engineRoot))
 					Object.assign(command, { engineRoot: engineRoot.value });
+				if (Option.isSome(carry)) {
+					if (operation !== "gather" && operation !== "prepare")
+						return Effect.fail(
+							new CliCommandError({
+								message:
+									"--carry needs a run that gathers: use loc run gather or loc run prepare."
+							})
+						);
+					Object.assign(command, { carry: carry.value });
+				}
 				return runLocalizationOperation(command);
 			}
 		).pipe(
@@ -171,22 +200,121 @@ export const localizationCommand = Command.make("loc").pipe(
 			)
 		),
 		Command.make(
+			"export",
+			{
+				projectRoot: Argument.string("project-root"),
+				target: Flag.string("target"),
+				output: Flag.string("output"),
+				reader: Flag.string("reader").pipe(Flag.optional),
+				review: Flag.choice("review", LocalizationReviewLens.literals).pipe(Flag.optional),
+				keyChanged: Flag.boolean("key-changed"),
+				culture: Flag.string("culture").pipe(Flag.optional),
+				state: Flag.choice("state", LocalizationState.literals).pipe(Flag.optional),
+				kinds: Flag.choice("kind", TextOriginKind.literals).pipe(Flag.atMost(5)),
+				path: Flag.string("path").pipe(Flag.optional),
+				files: Flag.string("files").pipe(Flag.optional),
+				...filterFlags()
+			},
+			({
+				projectRoot,
+				target,
+				output,
+				reader,
+				review,
+				keyChanged,
+				culture,
+				state,
+				kinds,
+				path,
+				files,
+				filters,
+				group,
+				cultures
+			}) =>
+				runLocalizationExport({
+					_tag: "LocalizationExport",
+					projectRoot,
+					target,
+					output,
+					...optionalLocalizationFlags(culture, state),
+					...optionalWhereFlags(kinds, path, files),
+					...optionalFilterFlags(filters, cultures, group),
+					...(Option.isSome(review) ? { review: review.value } : undefined),
+					...(keyChanged ? { keyChanged } : undefined),
+					...(Option.isSome(reader) ? { reader: reader.value } : undefined)
+				})
+		).pipe(
+			Command.withDescription(
+				"Write every matching line, with a translation and state column per culture, to a new CSV."
+			)
+		),
+		Command.make(
+			"gate",
+			{
+				projectRoot: Argument.string("project-root"),
+				files: Flag.string("files"),
+				targets: Flag.string("target").pipe(Flag.atMost(50)),
+				failOn: Flag.choice("fail-on", LocalizationGateCheck.literals).pipe(
+					Flag.atMost(LocalizationGateCheck.literals.length)
+				),
+				warnOn: Flag.choice("warn-on", LocalizationGateCheck.literals).pipe(
+					Flag.atMost(LocalizationGateCheck.literals.length)
+				),
+				summary: Flag.boolean("summary"),
+				reader: Flag.string("reader").pipe(Flag.optional)
+			},
+			({ projectRoot, files, targets, failOn, warnOn, summary, reader }) =>
+				runLocalizationGate({
+					_tag: "LocalizationGate",
+					projectRoot,
+					changedFiles: files,
+					targets,
+					failOn,
+					warnOn,
+					summary,
+					...(Option.isSome(reader) ? { reader: reader.value } : undefined)
+				})
+		).pipe(
+			Command.withDescription(
+				"Check the text in a change's files; exits 1 when it fails, 2 when it could not check."
+			)
+		),
+		Command.make(
 			"status",
 			{
 				projectRoot: Argument.string("project-root"),
 				target: Flag.string("target"),
 				reader: Flag.string("reader").pipe(Flag.optional),
 				review: Flag.choice("review", LocalizationReviewLens.literals).pipe(Flag.optional),
+				keyChanged: Flag.boolean("key-changed"),
 				...localizationFlags()
 			},
-			({ projectRoot, target, culture, state, review, limit, reader }) => {
+			({
+				projectRoot,
+				target,
+				culture,
+				state,
+				review,
+				keyChanged,
+				limit,
+				reader,
+				kinds,
+				path,
+				files,
+				filters,
+				group,
+				cultures
+			}) => {
 				return runLocalizationStatus({
 					_tag: "LocalizationStatus",
 					projectRoot,
 					target,
 					limit,
 					...optionalLocalizationFlags(culture, state),
+					...optionalWhereFlags(kinds, path, files),
+					...optionalFilterFlags(filters, cultures, group),
 					...(Option.isSome(review) ? { review: review.value } : undefined),
+					...(keyChanged ? { keyChanged } : undefined),
 					...(Option.isSome(reader) ? { reader: reader.value } : undefined)
 				});
 			}

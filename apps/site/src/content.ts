@@ -66,9 +66,9 @@ export const showcaseTabs: readonly ShowcaseTab[] = [
 		id: "game-text",
 		label: "Game Text",
 		capture: "gameText",
-		alt: "The Workbench's Game Text route searching the fixture's saved string table corpus",
-		note: "Player-facing text searched across the saved corpus — storage, identity, and authority stay attached to every result.",
-		chips: ["saved corpus", "identity-aware search", "coverage gaps"]
+		alt: "The Workbench's Game Text route listing the fixture's lines grouped by problem, with a culture strip per line",
+		note: "Every line grouped by what it needs, with its translation state in each culture — identity and every use stay attached.",
+		chips: ["problems worst first", "every culture", "bulk actions"]
 	},
 	{
 		id: "map-review",
@@ -106,7 +106,7 @@ export const tools: readonly Tool[] = [
 		name: "Game Text",
 		tag: "Saved corpus",
 		href: "/docs/game-text",
-		line: "Find player-facing language with identity, authored context, and every known use attached."
+		line: "Find player-facing text, see what each line needs in every language, and act on many lines at once."
 	},
 	{
 		name: "Config Explorer",

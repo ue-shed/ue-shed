@@ -6,7 +6,9 @@ import {
 	gameTextCsv,
 	gameTextQualityCsv,
 	createStarterTextRules,
-	GAME_TEXT_RULES_RELATIVE_PATH
+	GAME_TEXT_RULES_RELATIVE_PATH,
+	projectRelativeTextFiles,
+	type LocalizationLinesFileResult
 } from "@ue-shed/game-text";
 import { userInfo } from "node:os";
 import { resolve } from "node:path";
@@ -83,6 +85,8 @@ export interface WorkbenchGameTextApi {
 		target: LocalizationJoin["target"],
 		gather: boolean
 	) => Effect.Effect<boolean>;
+	/** Keeps the target's translations before Unreal gathers, to pair keys that change. */
+	readonly localizationBeforeGather: (target: LocalizationJoin["target"]) => Effect.Effect<void>;
 	readonly localizationQualitySearch: (
 		request: WorkspaceQualityRequest
 	) => Effect.Effect<WorkspaceQualityResult>;
@@ -104,6 +108,9 @@ export interface WorkbenchGameTextApi {
 	readonly localizationReportFile: (
 		request: WorkspaceReportFileRequest
 	) => Effect.Effect<WorkspaceReportFileResult>;
+	readonly localizationLinesFile: (
+		request: TextCorpusSearchRequest
+	) => Effect.Effect<LocalizationLinesFileResult>;
 	readonly localizationTargets: () => Effect.Effect<LocalizationTargetsResult>;
 	readonly localizationTarget: (
 		target: LocalizationJoin["target"]
@@ -465,17 +472,42 @@ export const WorkbenchGameTextLive = Layer.effect(
 			}
 		);
 
+		// A pasted changed-file list may hold absolute paths; those under the project become relative.
+		const projectRelativeRequest = (request: TextCorpusSearchRequest) =>
+			Ref.get(modelSelection).pipe(
+				Effect.map((owner) =>
+					owner === undefined || request.where?.files === undefined
+						? request
+						: {
+								...request,
+								where: {
+									...request.where,
+									files: projectRelativeTextFiles(
+										request.where.files,
+										owner.projectRoot
+									)
+								}
+							}
+				)
+			);
 		const search = Effect.fn("Workbench.WorkbenchGameText.search")(
-			(request: TextCorpusSearchRequest) =>
-				request.localization
-					? localization.search(request)
-					: currentModel(queryModel).pipe(
-							Effect.map((model) =>
-								model === undefined
-									? { status: "not_ready" as const }
-									: { page: model.search(request), status: "ready" as const }
-							)
-						)
+			(input: TextCorpusSearchRequest) =>
+				projectRelativeRequest(input).pipe(
+					Effect.flatMap((request) =>
+						request.localization
+							? localization.search(request)
+							: currentModel(queryModel).pipe(
+									Effect.map((model) =>
+										model === undefined
+											? { status: "not_ready" as const }
+											: {
+													page: model.search(request),
+													status: "ready" as const
+												}
+									)
+								)
+					)
+				)
 		);
 
 		const focus = Effect.fn("Workbench.WorkbenchGameText.focus")(
@@ -842,10 +874,16 @@ export const WorkbenchGameTextLive = Layer.effect(
 					query,
 					...(snapshot.rules ? { rules: snapshot.rules } : undefined)
 				};
+				// Problem and translation pills select lines through the target's join, as the list does.
+				const localized =
+					query.localization === undefined
+						? undefined
+						: yield* localization.targetQuery(query.localization.target);
 				const document = yield* exportGameTextInvestigation(
 					snapshot.corpus,
 					preset,
-					snapshot.source
+					snapshot.source,
+					localized
 				);
 				return { document, corpus: snapshot.corpus };
 			}
@@ -936,6 +974,7 @@ export const WorkbenchGameTextLive = Layer.effect(
 					if (!gather) yield* localization.reset();
 					return (yield* localization.select(target)).status === "ready";
 				}),
+			localizationBeforeGather: localization.beforeGather,
 			localizationQualitySearch: localization.qualitySearch,
 			localizationQualityFocus: localization.qualityFocus,
 			localizationChanges: localization.changes,
@@ -943,6 +982,10 @@ export const WorkbenchGameTextLive = Layer.effect(
 			localizationReview: (request) => localization.review(request, reviewer()),
 			localizationReport: localization.report,
 			localizationReportFile: (request) => localization.reportFile(request, dialog, files),
+			localizationLinesFile: (input) =>
+				projectRelativeRequest(input).pipe(
+					Effect.flatMap((request) => localization.linesFile(request, dialog, files))
+				),
 			localizationTargets: localization.targets,
 			localizationTarget: localization.select,
 			localizationFocus: localization.focus,
@@ -1005,6 +1048,7 @@ export function makeWorkbenchGameTextTestLayer(
 			beginOperation: () => Effect.succeed(true),
 			endOperation: () => Effect.void,
 			refreshAfterOperation: () => Effect.succeed(true),
+			localizationBeforeGather: () => Effect.void,
 			localizationQualitySearch: () => Effect.succeed({ status: "not_ready" }),
 			localizationQualityFocus: () => Effect.succeed({ status: "not_ready" }),
 			localizationChanges: () => Effect.succeed({ status: "not_ready" }),
@@ -1012,6 +1056,7 @@ export function makeWorkbenchGameTextTestLayer(
 			localizationReview: () => Effect.succeed({ status: "not_ready" }),
 			localizationReport: () => Effect.succeed({ status: "not_ready" }),
 			localizationReportFile: () => Effect.succeed({ status: "not_ready" }),
+			localizationLinesFile: () => Effect.succeed({ status: "not_ready" }),
 			localizationTargets: () => Effect.succeed({ status: "ready", targets: [] }),
 			localizationTarget: () => Effect.succeed({ status: "not_ready" }),
 			localizationFocus: () => Effect.succeed({ status: "not_ready" }),

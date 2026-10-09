@@ -9,10 +9,26 @@ import {
 import { Schema } from "effect";
 import {
 	LocalizationCheckId,
+	LocalizationGateCheck,
 	LocalizationReviewLens,
-	LocalizationState
+	LocalizationState,
+	TextGroupBy,
+	TextOriginKind
 } from "@ue-shed/game-text/browser";
 import { LocalizationOperation, LocalizationReviewFlag } from "@ue-shed/localization/browser";
+
+/**
+ * Where text comes from (`--kind`, repeatable; `--path`; a `--files` list file), filter clauses
+ * (`--filter`, repeatable, parsed by the workflow) and the culture scope (`--cultures de,fr`).
+ */
+const TextWhereFields = {
+	kinds: Schema.optionalKey(Schema.Array(TextOriginKind)),
+	pathPrefix: Schema.optionalKey(Schema.String),
+	changedFiles: Schema.optionalKey(Schema.String),
+	filter: Schema.optionalKey(Schema.Array(Schema.String)),
+	cultures: Schema.optionalKey(Schema.String),
+	group: Schema.optionalKey(TextGroupBy)
+};
 
 const Project = { projectRoot: Schema.String };
 const Reader = { reader: Schema.optionalKey(Schema.String) };
@@ -46,6 +62,7 @@ export const CliCommand = Schema.TaggedUnion({
 		target: Schema.String,
 		operation: LocalizationOperation,
 		engineRoot: Schema.optionalKey(Schema.String),
+		carry: Schema.optionalKey(Schema.String),
 		plan: Schema.Boolean,
 		json: Schema.Boolean,
 		timeout: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 86_400 }))
@@ -86,6 +103,26 @@ export const CliCommand = Schema.TaggedUnion({
 		checks: Schema.Array(LocalizationCheckId),
 		changes: Schema.optionalKey(Schema.String)
 	},
+	LocalizationExport: {
+		...Project,
+		...Reader,
+		target: Schema.String,
+		culture: Schema.optionalKey(Schema.String),
+		state: Schema.optionalKey(LocalizationState),
+		review: Schema.optionalKey(LocalizationReviewLens),
+		keyChanged: Schema.optionalKey(Schema.Boolean),
+		...TextWhereFields,
+		output: Schema.String
+	},
+	LocalizationGate: {
+		...Project,
+		...Reader,
+		targets: Schema.Array(Schema.String),
+		changedFiles: Schema.String,
+		failOn: Schema.Array(LocalizationGateCheck),
+		warnOn: Schema.Array(LocalizationGateCheck),
+		summary: Schema.Boolean
+	},
 	LocalizationStatus: {
 		...Project,
 		...Reader,
@@ -93,6 +130,8 @@ export const CliCommand = Schema.TaggedUnion({
 		culture: Schema.optionalKey(Schema.String),
 		state: Schema.optionalKey(LocalizationState),
 		review: Schema.optionalKey(LocalizationReviewLens),
+		keyChanged: Schema.optionalKey(Schema.Boolean),
+		...TextWhereFields,
 		limit: PositiveInt.check(Schema.isLessThanOrEqualTo(50))
 	},
 	InvestigationRun: {
@@ -236,6 +275,7 @@ export const CliCommand = Schema.TaggedUnion({
 		culture: Schema.optionalKey(Schema.String),
 		state: Schema.optionalKey(LocalizationState),
 		searchTranslations: Schema.optionalKey(Schema.Boolean),
+		...TextWhereFields,
 		limit: Schema.optionalKey(PositiveInt.check(Schema.isLessThanOrEqualTo(50)))
 	},
 	TextReview: { ...Project, ruleFile: Schema.String, ...Reader },

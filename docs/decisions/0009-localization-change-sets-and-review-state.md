@@ -103,3 +103,16 @@ Writers and Unreal operations report the files they may write before they run. U
   merge-friendly formatting from its first release.
 - Machine translation is a review flag set by whoever wrote the translation. Integrating a
   translation service is a separate decision.
+
+## Addendum (2026-10-08, Plan 052)
+
+- **Absent and empty previous translations match.** A change's `previousTranslation` guards
+  against overwriting a translation someone else wrote. `null` (no translation) and `""` (an empty
+  translation) both mean nothing ships, so they match each other. Unreal's gather gives a new key
+  an empty archive translation; without this rule, a translation carried to a changed key before
+  the gather would read as stale after it.
+- **Fixes inside assets are applied by Unreal.** UE Shed finds identity problems and plans their
+  fixes, such as keeping, regenerating or merging a key, but never writes a package itself. Unreal
+  applies the plan through its own APIs, or through a UE Shed editor plugin where those fall short.
+  The PO writer stays the headless default for translations: it changes only `msgstr` values, and
+  Unreal's own import brings them into the archives.

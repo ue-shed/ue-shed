@@ -19,6 +19,12 @@ export * from "./localization-checks.js";
 export * from "./unreal-text-syntax.js";
 export * from "./query.js";
 export * from "./search.js";
+export * from "./text-origin.js";
+export * from "./text-problems.js";
+export * from "./text-groups.js";
+export * from "./localization-key-changes.js";
+export * from "./localization-export.js";
+export * from "./localization-gate.js";
 
 export * from "./investigation.js";
 export * from "./csv.js";

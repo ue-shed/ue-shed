@@ -7,11 +7,16 @@ import {
 	textCorpusQuery,
 	LocalizationJoin,
 	LocalizationSelection,
+	GameTextInvestigationPreset,
+	type GameTextInvestigationQuery,
 	type LocalizationCultureState,
 	type LocalizationEditRequest,
 	type LocalizationEditResult,
 	type LocalizationReviewRequest,
+	type TextCorpusSearchRequest,
+	applyLocalizationKeyChanges,
 	applyLocalizationReview,
+	localizationKeyChanges,
 	localizationLineFingerprint,
 	type LocalizationLinePreview,
 	type LocalizationFocusResult,
@@ -33,7 +38,7 @@ import {
 	updateLocalizationReviewFile
 } from "../../../packages/localization/src/review-file.js";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
-import { Deferred, Effect, Layer, ManagedRuntime } from "effect";
+import { Deferred, Effect, Layer, ManagedRuntime, Schema } from "effect";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { GameTextClientApi } from "./game-text-client.js";
 import { GameTextRoute } from "./game-text-query-route.js";
@@ -191,6 +196,39 @@ function mount(api = client()) {
 	));
 }
 
+/** Filter → field → value, then closes the menu. */
+async function chooseFilter(
+	user: ReturnType<typeof userEvent.setup>,
+	field: string,
+	value: string | RegExp
+) {
+	// Counts and items refresh with each page; open the menu once the search has settled.
+	await waitFor(() => expect(screen.queryByText("Searching…")).toBeNull());
+	const filter = screen.getByRole("button", { name: "Filter" });
+	await user.click(filter);
+	await user.click(await screen.findByRole("menuitem", { name: new RegExp(`^${field}`, "u") }));
+	await user.click(
+		within(screen.getByRole("menu", { name: field })).getByRole("menuitemcheckbox", {
+			name: value
+		})
+	);
+	await user.click(filter);
+}
+
+/** The values a Filter submenu offers, then closes the menu. */
+async function filterValues(user: ReturnType<typeof userEvent.setup>, field: string) {
+	// Counts and items refresh with each page; open the menu once the search has settled.
+	await waitFor(() => expect(screen.queryByText("Searching…")).toBeNull());
+	const filter = screen.getByRole("button", { name: "Filter" });
+	await user.click(filter);
+	await user.click(await screen.findByRole("menuitem", { name: new RegExp(`^${field}`, "u") }));
+	const values = within(screen.getByRole("menu", { name: field }))
+		.getAllByRole("menuitemcheckbox")
+		.map((item) => item.getAttribute("aria-label"));
+	await user.click(filter);
+	return values;
+}
+
 async function choose(
 	user: ReturnType<typeof userEvent.setup>,
 	label: "Culture" | "Localization target",
@@ -229,7 +267,8 @@ describe("Game Text localization", () => {
 		const first = mount({ ...api, localizationTarget: select });
 		await screen.findByText("3 matches");
 		await choose(user, "Localization target", "Second");
-		await screen.findByRole("button", { name: "All text 3" });
+		await screen.findByRole("button", { name: "Localization target: Second" });
+		await screen.findByText("3 matches");
 		await waitFor(() => expect(select.mock.calls).toEqual([[target.name], [second]]));
 		await waitFor(() =>
 			expect(
@@ -271,7 +310,7 @@ describe("Game Text localization", () => {
 			search.mock.calls.every(([request]) => request.localization?.culture === undefined)
 		).toBe(true);
 		expect(screen.queryByRole("alert")).toBeNull();
-		expect(screen.getByText(/Select a line to see/)).toBeDefined();
+		expect(screen.getByRole("tablist", { name: "Where the lines are" })).toBeDefined();
 	});
 
 	it("clears a line that vanished from the remembered target", async () => {
@@ -291,7 +330,7 @@ describe("Game Text localization", () => {
 				).selectedLocalizationId
 			).toBeUndefined()
 		);
-		expect(screen.getByText(/Select a line to see/)).toBeDefined();
+		expect(screen.getByRole("tablist", { name: "Where the lines are" })).toBeDefined();
 	});
 
 	it("explains unavailable translation evidence in plain words", async () => {
@@ -356,29 +395,28 @@ describe("Game Text localization", () => {
 				.getAttribute("aria-pressed")
 		).toBe("true");
 		await user.keyboard("{Escape}");
-		expect(screen.getByRole("button", { name: "All text 3" })).toBeDefined();
 		expect(
 			screen.getByText(
 				(_text, element) =>
 					element?.tagName === "SPAN" && element.textContent === "3 lines · 1 asset"
 			)
 		).toBeDefined();
-		expect(screen.getByRole("button", { name: "Not synced 1" })).toBeDefined();
-		expect(screen.getByRole("button", { name: "Needs update 1" })).toBeDefined();
-		expect(screen.queryByRole("button", { name: /^Unknown/ })).toBeNull();
+		// Translation work in the Filter menu, counted from the page.
+		expect(await filterValues(user, "Translation")).toEqual(["To update 1", "Not synced 1"]);
 		const indicator = screen.getByText("1 not synced", { exact: true });
 		expect(indicator.title).toBe(
 			"Translations saved in PO files that Unreal has not imported yet"
 		);
 		await choose(user, "Culture", "de");
-		await user.click(await screen.findByRole("button", { name: "Not synced 1" }));
+		await chooseFilter(user, "Translation", /^Not synced/u);
 		await screen.findByText("1 match");
-		expect(screen.getByRole("button", { name: "All text 1" })).toBeDefined();
 		expect(screen.getByText("1 not synced", { exact: true })).toBeDefined();
 		await user.type(screen.getByRole("searchbox"), "absent");
 		await screen.findByText("0 matches");
-		expect(screen.getByRole("button", { name: "Not synced 0" })).toBeDefined();
-		expect(screen.queryByRole("button", { name: /^Needs update/ })).toBeNull();
+		// The pill stays while nothing matches.
+		expect(
+			within(screen.getByRole("list", { name: "Filters" })).getByText("Not synced")
+		).toBeDefined();
 	});
 	it("shows selected-culture translations, opt-in translation search and native-first details", async () => {
 		const user = userEvent.setup();
@@ -386,10 +424,16 @@ describe("Game Text localization", () => {
 		await screen.findByText("3 matches");
 		expect(screen.queryByRole("button", { name: /^Localization target:/u })).toBeNull();
 		const results = screen.getByRole("region", { name: "Results" });
-		expect(within(results).getByText(/de · not synced · fr · needs update/)).toBeDefined();
+		// Without a picked culture, each line shows every culture's state as a strip.
+		expect(within(results).getByText("de not synced · fr to update")).toBeDefined();
+		expect(
+			within(results).getByRole("img", { name: "en shipped, de not synced, fr to update" })
+		).toBeDefined();
 		await choose(user, "Culture", "de");
 		await screen.findByText("Neue Begrüßung");
-		expect(within(results).getByText(/Not translated|Not gathered yet/)).toBeDefined();
+		expect(
+			within(results).getAllByText(/Not translated|Not gathered yet/).length
+		).toBeGreaterThan(0);
 		await user.click(within(results).getByRole("button", { name: /^Welcome/u }));
 		const translations = await screen.findByRole("region", { name: "Translations" });
 		await within(translations).findByText("Willkommen");
@@ -432,13 +476,47 @@ describe("Game Text localization", () => {
 				document.activeElement
 			)
 		);
+		// Enter picks a culture and keeps the choices open, so several can be picked.
 		await user.keyboard("{ArrowDown}{ArrowDown}{Enter}");
 		await screen.findByRole("button", { name: "Culture: de" });
+		expect(within(choices).getByRole("button", { name: "de" })).toBe(document.activeElement);
+		await user.keyboard("{ArrowDown}{Enter}");
+		await screen.findByRole("button", { name: "Culture: de, fr" });
+		await user.keyboard("{Escape}");
 		await waitFor(() => expect(document.activeElement).toBe(trigger));
 		expect(screen.queryByRole("dialog", { name: "Culture choices" })).toBeNull();
-		await user.keyboard("{Enter}{Escape}");
-		await waitFor(() => expect(document.activeElement).toBe(trigger));
-		expect(screen.queryByRole("dialog", { name: "Culture choices" })).toBeNull();
+		// Reopening focuses the first picked culture; "All cultures" clears the choice.
+		await user.keyboard("{Enter}");
+		const reopened = await screen.findByRole("dialog", { name: "Culture choices" });
+		await waitFor(() =>
+			expect(within(reopened).getByRole("button", { name: "de" })).toBe(
+				document.activeElement
+			)
+		);
+		await user.keyboard("{Home}{Enter}{Escape}");
+		await screen.findByRole("button", { name: "Culture: All cultures" });
+	});
+
+	it("narrows counts, the strip and translation search to several picked cultures", async () => {
+		const user = userEvent.setup();
+		mount();
+		await screen.findByText("3 matches");
+		await user.click(screen.getByRole("button", { name: "Culture: All cultures" }));
+		const choices = screen.getByRole("dialog", { name: "Culture choices" });
+		// Each culture shows its work over the current filters.
+		expect(within(choices).getByRole("button", { name: "de" }).title).toContain("not synced");
+		await user.click(within(choices).getByRole("button", { name: "en" }));
+		await user.click(within(choices).getByRole("button", { name: "fr" }));
+		await user.keyboard("{Escape}");
+		await screen.findByRole("button", { name: "Culture: en, fr" });
+		const results = within(screen.getByRole("region", { name: "Results" }));
+		// The strip shows the picked cultures only.
+		expect(await results.findByRole("img", { name: "en shipped, fr to update" })).toBeDefined();
+		expect(results.queryByText(/de not synced/u)).toBeNull();
+		// Translation search covers every picked culture.
+		await user.click(screen.getByRole("button", { name: "Search translations" }));
+		await user.type(screen.getByRole("searchbox"), "Bienvenue");
+		await waitFor(() => expect(results.getByText(/Welcome/u)).toBeDefined());
 	});
 	it("omits informational or fully translated row marks, while keeping translations visible", () => {
 		const preview = localized.search({
@@ -614,11 +692,11 @@ describe("Game Text localization", () => {
 		const user = userEvent.setup();
 		mount();
 		await screen.findByText("3 matches");
-		await user.click(screen.getByRole("button", { name: "Gathered only 1" }));
+		await chooseFilter(user, "Line state", "Gathered only 1");
 		await screen.findByText("1 match");
 		const results = screen.getByRole("region", { name: "Results" });
 		expect(within(results).getByText("Source/Example.cpp(12) · C++")).toBeDefined();
-		await user.click(within(results).getByRole("button"));
+		await user.click(within(results).getByRole("button", { name: /^Code greeting/u }));
 		const detail = screen.getByRole("complementary", { name: "Text focus" });
 		await within(detail).findByRole("heading", { name: "Code greeting" });
 		expect(within(detail).queryByRole("button", { name: "Show in Unreal" })).toBeNull();
@@ -633,10 +711,12 @@ describe("Game Text localization", () => {
 		await screen.findByText("3 matches");
 		await choose(user, "Culture", "de");
 		await user.click(screen.getByRole("button", { name: "Search translations" }));
-		await user.click(await screen.findByRole("button", { name: "Not synced 1" }));
+		await chooseFilter(user, "Translation", /^Not synced/u);
 		await screen.findByText("1 match");
 		await user.click(
-			within(screen.getByRole("region", { name: "Results" })).getByRole("button")
+			within(screen.getByRole("region", { name: "Results" })).getByRole("button", {
+				name: /^Welcome/u
+			})
 		);
 		await screen.findByRole("region", { name: "Translations" });
 		await waitFor(() =>
@@ -654,8 +734,8 @@ describe("Game Text localization", () => {
 			screen.getByRole("button", { name: "Search translations" }).getAttribute("aria-pressed")
 		).toBe("true");
 		expect(
-			screen.getByRole("button", { name: "Not synced 1" }).getAttribute("aria-pressed")
-		).toBe("true");
+			within(screen.getByRole("list", { name: "Filters" })).getByText("Not synced")
+		).toBeDefined();
 		await screen.findByRole("region", { name: "Translations" });
 		expect(load.mock.calls).toEqual([[false], [false]]);
 	});
@@ -712,6 +792,81 @@ describe("Game Text localization", () => {
 		expect(screen.queryByText("0 matches")).toBeNull();
 		expect(screen.queryByText("No text matches these filters.")).toBeNull();
 	});
+});
+
+describe("Game Text line page", () => {
+	it.each([["without grouping", true] as const, ["grouped", false] as const])(
+		"does not reopen a line only in the gather when the list is back first, %s",
+		async (_name, flat) => {
+			const empty = corpus([]);
+			const gathered = joinLocalizationTarget(
+				empty,
+				evidence(
+					Array.from({ length: 62 }, (_, index) =>
+						manifestEntry(
+							"Code" + index.toString().padStart(3, "0"),
+							"Code line " + index,
+							`Source/Example.cpp(${index + 1})`
+						)
+					),
+					[]
+				)
+			);
+			const query = textCorpusQuery(empty, undefined, gathered);
+			const later = Effect.runSync(Deferred.make<void>());
+			const user = userEvent.setup();
+			mount({
+				...client(),
+				loadConfiguredProject: () =>
+					Effect.succeed({ status: "completed", summary: query.summary() }),
+				localizationFocus: (request) => {
+					const line =
+						request.selection.kind === "line"
+							? query.localizationFocus(request.selection.id)
+							: undefined;
+					return Effect.succeed(
+						line
+							? {
+									status: "found",
+									focus: localizationFocusPage(gathered, line, request)
+								}
+							: { status: "not_found" }
+					);
+				},
+				search: (request) =>
+					(request.cursor || request.localizationCursor
+						? Deferred.await(later)
+						: Effect.void
+					).pipe(Effect.as({ status: "ready" as const, page: query.search(request) }))
+			});
+			await screen.findByText("62 matches");
+			if (flat) {
+				await user.click(screen.getByRole("button", { name: "Display" }));
+				await user.click(screen.getByRole("radio", { name: "No grouping" }));
+				await user.keyboard("{Escape}");
+				await waitFor(() =>
+					expect(screen.queryByRole("radiogroup", { name: "Group by" })).toBeNull()
+				);
+			}
+			await waitFor(() => expect(screen.queryByText("Searching…")).toBeNull());
+			const results = screen.getByRole("region", { name: "Results" });
+			const rows = () =>
+				within(results)
+					.queryAllByRole("button")
+					.filter((button) => button.hasAttribute("data-row"));
+			await waitFor(() => expect(rows()).toHaveLength(50));
+			await user.click(rows()[49]!);
+			const page = screen.getByRole("complementary", { name: "Text focus" });
+			await within(page).findByText("50 of 62");
+			await user.click(within(page).getByRole("button", { name: "Next line" }));
+			await user.click(within(page).getByRole("button", { name: /Lines$/u }));
+			await waitFor(() => expect(screen.queryByText("50 of 62")).toBeNull());
+			Effect.runSync(Deferred.succeed(later, undefined));
+			await waitFor(() => expect(rows()).toHaveLength(62));
+			expect(screen.queryByText("51 of 62")).toBeNull();
+			expect(rows().every((row) => row.getAttribute("aria-current") !== "true")).toBe(true);
+		}
+	);
 });
 
 describe("Game Text translation editing", () => {
@@ -924,8 +1079,9 @@ describe("Game Text review state", () => {
 		const { api, requests } = reviewClient();
 		mount(api);
 		await screen.findByText("3 matches");
-		expect(screen.getByRole("button", { name: "Changed since review 1" })).toBeDefined();
-		expect(screen.getByRole("button", { name: "Reviewed 1" })).toBeDefined();
+		const review = await filterValues(user, "Review");
+		expect(review).toContain("Changed since review 1");
+		expect(review).toContain("Reviewed 1");
 		const results = screen.getByRole("region", { name: "Results" });
 		await user.click(within(results).getByRole("button", { name: /^Welcome/u }));
 		const translations = await screen.findByRole("region", { name: "Translations" });
@@ -968,9 +1124,251 @@ describe("Game Text review state", () => {
 		const user = userEvent.setup();
 		mount(reviewClient().api);
 		await screen.findByText("3 matches");
-		await user.click(screen.getByRole("button", { name: "Changed since review 1" }));
+		await chooseFilter(user, "Review", "Changed since review 1");
 		await screen.findByText("1 match");
+		// Review state shows as its own chip until review becomes a pill.
+		expect(screen.getByRole("button", { name: "Changed since review" })).toBeDefined();
 		const results = screen.getByRole("region", { name: "Results" });
 		expect(within(results).getByRole("button", { name: /^Welcome/u })).toBeDefined();
+	});
+
+	it("ticks a range of lines, exports them and marks them reviewed", async () => {
+		const user = userEvent.setup();
+		const { api, requests } = reviewClient();
+		const exports: TextCorpusSearchRequest[] = [];
+		mount({
+			...api,
+			localizationLinesFile: (request) => {
+				exports.push(request);
+				return Effect.succeed({ status: "saved", path: "C:/out/picked.csv", rowCount: 3 });
+			}
+		});
+		await screen.findByText("3 matches");
+		const results = screen.getByRole("region", { name: "Results" });
+		const boxes = within(results).getAllByRole("checkbox", { name: /^Select /u });
+		expect(boxes).toHaveLength(3);
+		await user.click(boxes[0]!);
+		// Shift-click ticks every line from the last one ticked.
+		await user.keyboard("{Shift>}");
+		await user.click(boxes[2]!);
+		await user.keyboard("{/Shift}");
+		const bar = screen.getByRole("toolbar", { name: "Selected lines" });
+		expect(within(bar).getByText("3 selected")).toBeDefined();
+		await user.click(within(bar).getByRole("button", { name: "Export for translators" }));
+		await within(bar).findByText("Exported 3 lines.");
+		expect(exports[0]).toMatchObject({ query: "", capability: "all" });
+		expect(exports[0]?.lines).toHaveLength(3);
+		expect(exports[0]?.filter).toBeUndefined();
+		// Only translations that are not reviewed yet: de changed since review, fr is reviewed.
+		await user.click(within(bar).getByRole("button", { name: /^Mark reviewed \(/u }));
+		await within(bar).findByText(/^Marked \d+ translations reviewed\.$/u);
+		// Marked translations are not offered again, even before the list reloads them.
+		expect(within(bar).queryByRole("button", { name: /^Mark reviewed/u })).toBeNull();
+		expect(requests[0]?.changes.every((change) => change.kind === "set")).toBe(true);
+		expect(
+			requests[0]?.changes.some((change) => change.culture === "fr" && change.key === "K")
+		).toBe(false);
+		await user.click(within(bar).getByRole("button", { name: "Clear selection" }));
+		expect(screen.queryByRole("toolbar", { name: "Selected lines" })).toBeNull();
+	});
+});
+
+describe("Game Text key changes", () => {
+	const renamedText = corpus([unit("Renamed", "Welcome back")]);
+	const renamedBase = joinLocalizationTarget(
+		renamedText,
+		evidence(
+			[manifestEntry("Welcome", "Welcome back")],
+			[archiveEntry("Welcome", "Welcome back", "Willkommen zurück")]
+		)
+	);
+	const renamed = applyLocalizationKeyChanges(
+		renamedBase,
+		localizationKeyChanges(renamedBase, renamedText).pairs
+	);
+	const renamedQuery = textCorpusQuery(renamedText, undefined, renamed);
+	const keyClient = (): GameTextClientApi => ({
+		...client(),
+		focus: (request) => {
+			const focus = renamedQuery.focus(request);
+			return Effect.succeed(focus ? { status: "found", focus } : { status: "not_found" });
+		},
+		search: (request) =>
+			Effect.succeed({
+				status: "ready",
+				page: (request.localization ? renamedQuery : textCorpusQuery(renamedText)).search(
+					request
+				)
+			}),
+		localizationFocus: (request) => {
+			const id =
+				request.selection.kind === "line"
+					? request.selection.id
+					: renamedQuery.focus({ id: request.selection.id, pageSize: 1 })?.localization
+							?.id;
+			const line = id ? renamedQuery.localizationFocus(id) : undefined;
+			return Effect.succeed(
+				line
+					? { status: "found", focus: localizationFocusPage(renamed, line, request) }
+					: { status: "not_found" }
+			);
+		}
+	});
+
+	it("lists new keys and shows the earlier key and its translations", async () => {
+		const user = userEvent.setup();
+		mount(keyClient());
+		await screen.findByText("2 matches");
+		await chooseFilter(user, "Problem", "Key changed 1");
+		await screen.findByText("1 match");
+		const results = screen.getByRole("region", { name: "Results" });
+		await user.click(within(results).getByRole("button", { name: /^Welcome back/u }));
+		const change = await screen.findByRole("region", { name: "Key change" });
+		// The page says the worst problem first, in plain words.
+		const needs = screen.getByRole("note", { name: "What this line needs" });
+		expect(needs.textContent).toContain("Key changed");
+		expect(needs.textContent).toContain("carry them below first");
+		expect(
+			within(screen.getByRole("region", { name: "Properties" })).getByText("Key changed")
+		).toBeDefined();
+		expect(change.textContent).toContain("Key changed · was NS,Welcome");
+		expect(change.textContent).toContain("same text in this asset");
+		expect(change.textContent).toContain("Willkommen zurück");
+	});
+
+	it("stages the earlier key's translations for the new key and checks them", async () => {
+		const user = userEvent.setup();
+		const requests: LocalizationEditRequest[] = [];
+		mount({
+			...keyClient(),
+			localizationEdits: (request) => {
+				requests.push(request);
+				return Effect.succeed({
+					status: "reviewed",
+					edits: request.edits.map((edit) => ({
+						culture: edit.culture,
+						namespace: edit.namespace,
+						key: edit.key,
+						outcome: "not_in_manifest" as const,
+						currentTranslation: null,
+						translation: edit.translation
+					})),
+					files: [],
+					notSynced: 0
+				});
+			}
+		});
+		await screen.findByText("2 matches");
+		await chooseFilter(user, "Problem", "Key changed 1");
+		await screen.findByText("1 match");
+		const results = screen.getByRole("region", { name: "Results" });
+		await user.click(within(results).getByRole("button", { name: /^Welcome back/u }));
+		const change = await screen.findByRole("region", { name: "Key change" });
+		await user.click(within(change).getByRole("button", { name: "Carry translations" }));
+		expect(within(change).getByRole("status").textContent).toContain("Staged 1 translation.");
+		const panel = await screen.findByRole("region", { name: "Staged translations" });
+		expect(within(panel).getByText("Willkommen zurück")).toBeDefined();
+		await user.click(within(panel).getByRole("button", { name: "Check changes" }));
+		await within(panel).findByText("Not gathered: gather the target first");
+		// Discarding the staged edits brings the carry action back.
+		await user.click(within(panel).getByRole("button", { name: "Discard all" }));
+		expect(
+			await within(change).findByRole("button", { name: "Carry translations" })
+		).toBeDefined();
+		expect(requests[0]?.edits).toEqual([
+			{
+				culture: "de",
+				namespace: "NS",
+				key: "Renamed",
+				seenTranslation: null,
+				translation: "Willkommen zurück"
+			}
+		]);
+	});
+	it("carries the earlier keys' translations for every ticked line", async () => {
+		const user = userEvent.setup();
+		mount({
+			...keyClient(),
+			localizationEdits: () =>
+				Effect.succeed({ status: "reviewed", edits: [], files: [], notSynced: 0 })
+		});
+		await screen.findByText("2 matches");
+		const results = screen.getByRole("region", { name: "Results" });
+		for (const box of within(results).getAllByRole("checkbox", { name: /^Select /u }))
+			await user.click(box);
+		const bar = screen.getByRole("toolbar", { name: "Selected lines" });
+		await user.click(within(bar).getByRole("button", { name: "Carry translations (1)" }));
+		expect(within(bar).getByRole("status").textContent).toBe("Staged 1 translations to carry.");
+		const panel = await screen.findByRole("region", { name: "Staged translations" });
+		expect(within(panel).getByText("Willkommen zurück")).toBeDefined();
+	});
+});
+
+describe("Game Text all-languages export", () => {
+	it("opens a preset on its saved target, cultures and translation filters", async () => {
+		const user = userEvent.setup();
+		const preset = Schema.decodeUnknownSync(GameTextInvestigationPreset)({
+			schemaVersion: 1,
+			kind: "game_text",
+			sort: "domain_order",
+			query: {
+				mode: "corpus",
+				query: "",
+				capability: "all",
+				qualityFilter: "all",
+				filter: [{ field: "translation", op: "is", values: ["missing"] }],
+				localization: { target: second, cultures: ["de", "fr"], searchTranslations: true }
+			}
+		});
+		const exported: GameTextInvestigationQuery[] = [];
+		mount({
+			...client({ twoTargets: true }),
+			investigations: {
+				export: (query) => {
+					exported.push(query);
+					return Effect.succeed({ status: "cancelled" });
+				},
+				save: () => Effect.succeed({ status: "cancelled" }),
+				open: () => Effect.succeed({ status: "opened", preset, path: "C:/out/preset.json" })
+			}
+		});
+		await screen.findByRole("button", { name: `Localization target: ${target.name}` });
+		await user.click(screen.getByRole("button", { name: "Presets" }));
+		await user.click(await screen.findByRole("button", { name: "Open preset…" }));
+		await screen.findByRole("button", { name: "Localization target: Second" });
+		await screen.findByRole("button", { name: "Culture: de, fr" });
+		await waitFor(() => expect(screen.queryByText("Searching…")).toBeNull());
+		await user.click(screen.getByRole("button", { name: "Export" }));
+		await user.click(await screen.findByRole("button", { name: "JSON" }));
+		await waitFor(() => expect(exported).toHaveLength(1));
+		expect(exported[0]?.localization).toEqual({
+			target: second,
+			cultures: ["de", "fr"],
+			searchTranslations: true
+		});
+		expect(exported[0]?.filter).toEqual(preset.query.filter);
+	});
+
+	it("exports the lines the list shows with every language", async () => {
+		const user = userEvent.setup();
+		const requests: Parameters<NonNullable<GameTextClientApi["localizationLinesFile"]>>[0][] =
+			[];
+		mount({
+			...client(),
+			investigations: {
+				export: () => Effect.succeed({ status: "cancelled" }),
+				save: () => Effect.succeed({ status: "cancelled" }),
+				open: () => Effect.succeed({ status: "cancelled" })
+			},
+			localizationLinesFile: (request) => {
+				requests.push(request);
+				return Effect.succeed({ status: "saved", path: "C:/out/all.csv", rowCount: 3 });
+			}
+		});
+		await screen.findByText("3 matches");
+		await user.click(screen.getByRole("button", { name: "Export" }));
+		await user.click(await screen.findByRole("button", { name: "All languages (CSV)" }));
+		await screen.findByText("Exported 3 matching results: C:/out/all.csv");
+		expect(requests[0]?.localization?.target).toBe(target.name);
 	});
 });

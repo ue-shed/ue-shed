@@ -5,16 +5,19 @@ import {
 	type LocalizationLinePreview,
 	type LocalizationState,
 	type LocalizationTranslation,
-	type LocalizationUnknownReason
+	type LocalizationUnknownReason,
+	type TextCultureFacet
 } from "@ue-shed/game-text/browser";
 import { Button, Chip } from "@ue-shed/ui";
 import { For, Show } from "solid-js";
 import { CopyButton } from "./game-text-copy-button.js";
 import { LocalizationPicker } from "./game-text-localization-picker.js";
+import { CulturePicker } from "./game-text-culture-picker.js";
 import type { GameTextLocalizationState } from "./game-text-localization-state.js";
 import { styles } from "./game-text-styles.js";
 import { TranslationEditor, type GameTextEdits } from "./game-text-translation-edits.js";
 import { ReviewControls } from "./game-text-review.js";
+import { KeyChangeDetail } from "./game-text-key-changes.js";
 import type { GameTextClientApi } from "./game-text-client.js";
 import type { JSX } from "@solidjs/web";
 
@@ -84,6 +87,8 @@ export function LocalizationControls(props: {
 	readonly model: GameTextLocalizationState;
 	readonly disabled?: boolean;
 	readonly syncAction?: JSX.Element;
+	/** Each culture's work over the current filters, for the culture picker. */
+	readonly cultureWork?: readonly TextCultureFacet[] | undefined;
 }) {
 	return (
 		<>
@@ -102,14 +107,13 @@ export function LocalizationControls(props: {
 			<Show when={props.model.active()}>
 				{(active) => (
 					<>
-						<LocalizationPicker
-							label="Culture"
+						<CulturePicker
 							disabled={props.disabled === true}
-							value={props.model.culture() ?? "All cultures"}
-							values={["All cultures", ...active().target.cultures]}
-							onSelect={(value) =>
-								props.model.selectCulture(value === "All cultures" ? "" : value)
-							}
+							cultures={active().target.cultures}
+							picked={props.model.cultures()}
+							work={props.cultureWork}
+							onToggle={props.model.toggleCulture}
+							onAll={() => props.model.selectCulture("")}
 						/>
 						<Show when={active().notSynced > 0}>
 							<span
@@ -132,11 +136,13 @@ export function LocalizationChips(props: {
 	readonly model: GameTextLocalizationState;
 	readonly counts: Readonly<Record<LocalizationState, number>> | undefined;
 	readonly searching: boolean;
+	/** Only these states; every state but translated when absent. */
+	readonly states?: readonly LocalizationState[];
 }) {
 	return (
 		<Show when={props.model.active()}>
 			<For
-				each={localizationStates.filter(
+				each={(props.states ?? localizationStates).filter(
 					(state) =>
 						state !== "translated" &&
 						(state === props.model.state() || (props.counts?.[state] ?? 0) > 0)
@@ -186,15 +192,10 @@ export function LocalizationRow(props: {
 			)
 			.join(" · ");
 	};
+	// Without a picked culture the row's culture strip shows every culture's state.
+	void attention;
 	return (
-		<Show
-			when={selected()}
-			fallback={
-				<Show when={!props.culture && attention()}>
-					<span {...stylex.attrs(styles.context, styles.warning)}>{attention()}</span>
-				</Show>
-			}
-		>
+		<Show when={selected()}>
 			{(mark) => (
 				<Show
 					when={
@@ -287,6 +288,7 @@ export function TranslationsDetail(props: {
 										</p>
 									)}
 								</Show>
+								<KeyChangeDetail detail={detail()} edits={props.edits} />
 								<For each={visibleTranslations(detail())}>
 									{(translation) => (
 										<article

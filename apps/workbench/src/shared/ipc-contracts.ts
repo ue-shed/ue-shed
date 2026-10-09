@@ -36,7 +36,8 @@ import {
 	WorkbenchOperationResult,
 	WorkbenchOperationFilesRequest,
 	WorkbenchOperationFilesResult,
-	WorkbenchOperationProgress
+	WorkbenchOperationProgress,
+	LocalizationLinesFileResult
 } from "@ue-shed/game-text/browser";
 import { InvestigationFileResult, InvestigationFormat } from "@ue-shed/unreal-assets/investigation";
 import {
@@ -799,6 +800,11 @@ export const invokeContracts = {
 		channel: "game-text:localization:report-file",
 		args: Schema.Tuple([WorkspaceReportFileRequest]),
 		result: WorkspaceReportFileResult
+	}),
+	"game-text:localization:lines-file": invoke({
+		channel: "game-text:localization:lines-file",
+		args: Schema.Tuple([TextCorpusSearchRequest]),
+		result: LocalizationLinesFileResult
 	}),
 	"game-text:localization:targets": invoke({
 		channel: "game-text:localization:targets",

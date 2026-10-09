@@ -16,7 +16,11 @@ import {
 	type TextQualityQuerySummary,
 	type GameTextRuleDocument,
 	type TextQualityRuleUpdateResult,
-	type TextUnitId
+	type TextFilter,
+	type TextGroupBy,
+	type TextUnitId,
+	type LocalizationState,
+	LocalizationReviewLens
 } from "@ue-shed/game-text/browser";
 import { Button, Chip, createEffectAction, createEffectSubscription } from "@ue-shed/ui";
 import { InvestigationActions } from "@ue-shed/ui/investigation-actions";
@@ -33,10 +37,25 @@ import { GameTextLocalizationQuality } from "./game-text-localization-quality.js
 import { GameTextReports } from "./game-text-reports.js";
 import { createGameTextRuleState } from "./game-text-rule-state.js";
 import {
+	localizationPreferences,
+	migratePreferences,
 	readGameTextPreferences,
 	saveGameTextPreferences,
 	type GameTextPreferences
 } from "./game-text-preferences.js";
+import { DisplayMenu } from "./game-text-display-menu.js";
+import { FacetsPane } from "./game-text-facets.js";
+import { FolderBrowser } from "./game-text-folder-browser.js";
+import { LinePageHeader, LineProblem, LineProperties } from "./game-text-line-page.js";
+import {
+	FilterMenu,
+	FilterPills,
+	type ExtraField,
+	type FilterCounts
+} from "./game-text-filter-menu.js";
+import { BulkBar, createLineSelection } from "./game-text-bulk-bar.js";
+import { GroupedResults, type GroupLoaded, type LoadedRow } from "./game-text-grouped-results.js";
+import { reviewLensLabel } from "./game-text-review.js";
 import { createGameTextLocalizationState } from "./game-text-localization-state.js";
 import {
 	createGameTextEdits,
@@ -45,10 +64,9 @@ import {
 } from "./game-text-translation-edits.js";
 import {
 	LocalizationControls,
-	LocalizationChips,
-	ReviewChips,
 	TranslationsDetail,
-	GatheredDetail
+	GatheredDetail,
+	localizationLabels
 } from "./game-text-localization-view.js";
 import { GameTextResultRows } from "./game-text-result-rows.js";
 import {
@@ -59,18 +77,18 @@ import {
 } from "./game-text-operations.js";
 import { identityLabel, locationDetail, sourceText } from "./game-text-view.js";
 import { styles } from "./game-text-styles.js";
+import { WhereFilter, textWhere } from "./game-text-where.js";
 
 export { CopyButton } from "./game-text-copy-button.js";
 export type { GameTextPreferences } from "./game-text-preferences.js";
 
-const lenses = [
-	{ value: "all", label: "All text" },
-	{ value: "shared", label: "Used in several places" },
-	{ value: "duplicate_source", label: "Same text, different keys" },
-	{ value: "long", label: "Long text" },
-	{ value: "unresolved", label: "Not localizable" },
-	{ value: "conflicting", label: "Same key, different text" }
-] as const;
+/** Line states that are facts rather than problems; they filter through the selection. */
+const LINE_FACT_STATES: readonly LocalizationState[] = [
+	"gathered_only",
+	"not_found",
+	"outside_target",
+	"unknown"
+];
 
 function scanTime(value: string | undefined): string {
 	if (!value) return "";
@@ -98,11 +116,19 @@ export function GameTextRoute(props: {
 	readonly projectKey?: string | undefined;
 	readonly onOpenDataAuthoring?: (objectPath: string) => void;
 }) {
-	const initial = untrack(() => props.initialPreferences);
+	const initial = untrack(() => {
+		const preferences = props.initialPreferences;
+		return preferences === undefined ? undefined : migratePreferences(preferences);
+	});
 	const [query, setQuery] = createSignal(initial?.query ?? "");
+	// Saved toggles and lenses became filter pills; these keep their defaults in requests.
 	const [capability, setCapability] = createSignal(initial?.capability ?? "all");
 	const [lens, setLens] = createSignal(initial?.lens ?? "all");
 	const [withoutNotes, setWithoutNotes] = createSignal(initial?.withoutNotes ?? false);
+	const [where, setWhere] = createSignal(initial?.where);
+	const [filter, setFilter] = createSignal<TextFilter>(initial?.filter ?? []);
+	const [group, setGroup] = createSignal<TextGroupBy | "none">(initial?.group ?? "problem");
+	const [facetFolder, setFacetFolder] = createSignal("");
 	const [mode, setMode] = createSignal<"corpus" | "quality" | "reports">(
 		initial?.mode ?? "corpus"
 	);
@@ -231,6 +257,265 @@ export function GameTextRoute(props: {
 		);
 	};
 
+	const whereField = () => {
+		const value = where();
+		return value === undefined ? undefined : { where: value };
+	};
+	const groupField = () => {
+		const value = group();
+		return value === "none" ? undefined : { group: value };
+	};
+	const localizationField = () => {
+		const selected = localization.selection();
+		return selected === undefined ? undefined : { localization: selected };
+	};
+	// A picked line opens its page. Its place and neighbours come from the rows each group reports,
+	// or the flat page's rows, so the page follows grouping, open groups and loaded pages.
+	let resultsSection: HTMLElement | undefined;
+	const lineOpen = () => selectedId() !== undefined || localization.selectedId() !== undefined;
+	const [groupRows, setGroupRows] = createSignal<ReadonlyMap<string, readonly LoadedRow[]>>(
+		new Map()
+	);
+	// A line only in the gather has no unit, so a closed page (no unit either) must not match it.
+	const isOpenLine = (row: LoadedRow) => {
+		const line = localization.selectedId();
+		if (line !== undefined) return row.line === line;
+		const unit = selectedId();
+		return unit !== undefined && row.unit === unit;
+	};
+	const flatRows = (): readonly LoadedRow[] => {
+		const current = page();
+		if (!current) return [];
+		if (!current.localization)
+			return current.units.map((unit) => ({ unit: unit.id, line: undefined }));
+		const units = new Set(current.units.map((unit) => unit.id));
+		return current.localization.lines.map((line) => ({
+			line: line.id,
+			unit:
+				line.origin.kind === "corpus"
+					? line.origin.unitIds.find((id) => units.has(id))
+					: undefined
+		}));
+	};
+	// Where the open line is: its group (if grouped) and its place in that group's loaded rows.
+	const openLineAt = () => {
+		const groups = page()?.groups?.entries;
+		if (!groups) {
+			const rows = flatRows();
+			const index = rows.findIndex(isOpenLine);
+			return index < 0 ? undefined : { group: -1, rows, index, before: 0 };
+		}
+		let before = 0;
+		for (const [group, entry] of groups.entries()) {
+			const rows = groupRows().get(entry.key) ?? [];
+			const index = rows.findIndex(isOpenLine);
+			if (index >= 0) return { group, rows, index, before };
+			before += entry.count;
+		}
+		return undefined;
+	};
+	const linePosition = () => {
+		const total = page()?.total;
+		const at = openLineAt();
+		return total === undefined || at === undefined
+			? undefined
+			: { index: at.before + at.index, total };
+	};
+	// A step that has to open a group or load its next page finishes when that group reports its
+	// rows: the row to pick is the first, the last, or a place in the group. A step lands only while
+	// the line it started from is still open, so going back to the list or opening another line
+	// cancels it.
+	let pendingStep:
+		| {
+				readonly group: string;
+				readonly pick: "first" | "last" | number;
+				readonly from: LoadedRow;
+		  }
+		| undefined;
+	const selectRow = (row: LoadedRow | undefined) => {
+		if (row === undefined) return;
+		setSelectedId(row.unit);
+		localization.setSelectedId(row.line);
+	};
+	const stillOpen = (from: LoadedRow) => untrack(() => isOpenLine(from));
+	// Each open group's next-page loader, while it has more pages.
+	const groupMore = new Map<string, () => void>();
+	const groupLoaded: GroupLoaded = (group, rows, more) => {
+		setGroupRows((current) => new Map(current).set(group, rows));
+		if (more === undefined) groupMore.delete(group);
+		else groupMore.set(group, more);
+		const step = pendingStep;
+		if (step === undefined || step.group !== group) return;
+		if (!stillOpen(step.from)) {
+			pendingStep = undefined;
+			return;
+		}
+		// A group's last line is its last matching line, so its pages load until none are left.
+		if (step.pick === "last" && more !== undefined) {
+			more();
+			return;
+		}
+		pendingStep = undefined;
+		selectRow(
+			step.pick === "first" ? rows[0] : step.pick === "last" ? rows.at(-1) : rows[step.pick]
+		);
+	};
+	// Without groups, a step past the loaded rows loads the next page and picks this row.
+	let pendingFlat: { readonly index: number; readonly from: LoadedRow } | undefined;
+	createEffect(flatRows, (rows) => {
+		const step = pendingFlat;
+		if (step === undefined || rows.length <= step.index) return;
+		pendingFlat = undefined;
+		if (stillOpen(step.from)) selectRow(rows[step.index]);
+	});
+	// Opening a closed group goes through its header, as a click would.
+	const groupControl = (key: string, selector: string) =>
+		Array.from(resultsSection?.querySelectorAll<HTMLElement>("section[data-group]") ?? [])
+			.find((section) => section.dataset.group === key)
+			?.querySelector<HTMLButtonElement>(selector);
+	const moveLine = (step: -1 | 1) => {
+		const at = openLineAt();
+		const from = at?.rows[at.index];
+		if (at === undefined || from === undefined) return;
+		const next = at.rows[at.index + step];
+		if (next !== undefined) {
+			selectRow(next);
+			return;
+		}
+		const groups = page()?.groups?.entries;
+		if (!groups) {
+			const current = page();
+			if (step === 1 && (current?.localization?.nextCursor ?? current?.nextCursor)) {
+				pendingFlat = { index: at.index + 1, from };
+				moreResults();
+			}
+			return;
+		}
+		const entry = groups[at.group];
+		if (!entry) return;
+		// The group's next page, when there is one.
+		const more = step === 1 ? groupMore.get(entry.key) : undefined;
+		if (more) {
+			pendingStep = { group: entry.key, pick: at.index + 1, from };
+			more();
+			return;
+		}
+		// The neighbouring group, opened if it is closed.
+		const neighbour = groups[at.group + step];
+		if (!neighbour) return;
+		const header = groupControl(neighbour.key, 'button[aria-expanded="false"]');
+		const rest = step === -1 ? groupMore.get(neighbour.key) : undefined;
+		if (header || rest) {
+			pendingStep = { group: neighbour.key, pick: step === 1 ? "first" : "last", from };
+			if (header) header.click();
+			else rest?.();
+			return;
+		}
+		const loaded = groupRows().get(neighbour.key) ?? [];
+		selectRow(step === 1 ? loaded[0] : loaded.at(-1));
+	};
+	// Lines ticked for bulk actions, in the list's order for shift-click ranges. A new target
+	// starts a new selection.
+	const selection = createLineSelection({
+		order: () => {
+			const groups = page()?.groups?.entries;
+			if (!groups) return page()?.localization?.lines ?? [];
+			return groups.flatMap((entry) =>
+				(groupRows().get(entry.key) ?? []).flatMap((row) =>
+					row.preview === undefined ? [] : [row.preview]
+				)
+			);
+		}
+	});
+	createEffect(
+		() => localization.target(),
+		() => selection.clear()
+	);
+	const ticks = () =>
+		localization.active()
+			? {
+					checked: selection.isTicked,
+					onCheck: selection.toggle,
+					checking: selection.ticked().size > 0
+				}
+			: undefined;
+	const closeLine = () => {
+		pendingFlat = undefined;
+		pendingStep = undefined;
+		setSelectedId(undefined);
+		localization.setSelectedId(undefined);
+	};
+	// Review state and line facts still filter through the selection, one choice at a time.
+	const extraFields = (): readonly ExtraField[] => {
+		if (!localization.active()) return [];
+		const current = searching() ? undefined : page()?.localization;
+		const review = current?.reviewCounts;
+		return [
+			...(review === undefined && !localization.review()
+				? []
+				: [
+						{
+							key: "review",
+							label: "Review",
+							options: LocalizationReviewLens.literals.map((lens) => ({
+								label: reviewLensLabel(lens),
+								count: review?.[lens],
+								selected: localization.review() === lens,
+								onSelect: () =>
+									localization.setReview(
+										localization.review() === lens ? undefined : lens
+									)
+							}))
+						}
+					]),
+			{
+				key: "line",
+				label: "Line state",
+				options: LINE_FACT_STATES.map((state) => ({
+					label: localizationLabels[state],
+					count: current?.stateCounts[state],
+					selected: localization.state() === state,
+					onSelect: () =>
+						localization.setState(localization.state() === state ? undefined : state)
+				}))
+			}
+		];
+	};
+	// The Filter menu counts each value from the current page, while no search is running.
+	const filterCounts = (): FilterCounts => {
+		const current = searching() ? undefined : page();
+		if (current === undefined) return { choices: {}, folders: undefined, assets: undefined };
+		const states = current.localization?.stateCounts;
+		const counts = current.counts;
+		return {
+			choices: {
+				...(current.problems === undefined ? undefined : { problem: current.problems }),
+				...(states === undefined
+					? undefined
+					: {
+							translation: {
+								missing: states.not_translated,
+								to_update: states.needs_update,
+								not_synced: states.not_synced
+							}
+						}),
+				finding: {
+					shared: counts.shared,
+					duplicate_source: counts.duplicate_source,
+					long: counts.long,
+					unresolved: counts.unresolved
+				},
+				origin: counts.origins,
+				editing: { editable: counts.editable, read_only: counts.readOnly },
+				notes: {
+					missing: counts.withoutNotes,
+					present: Math.max(0, current.total - counts.withoutNotes)
+				}
+			},
+			folders: current.facets?.folders,
+			assets: current.facets?.assets
+		};
+	};
 	const searchRequest = (): TextCorpusSearchRequest => {
 		const selected = localization.selection();
 		return {
@@ -238,6 +523,15 @@ export function GameTextRoute(props: {
 			capability: capability(),
 			lens: lens(),
 			withoutNotes: withoutNotes(),
+			...whereField(),
+			...(filter().length > 0 ? { filter: filter() } : undefined),
+			...groupField(),
+			facets: {
+				folder: facetFolder(),
+				assets: true,
+				origins: true,
+				...(selected ? { cultures: true } : undefined)
+			},
 			...(selected ? { localization: selected } : undefined),
 			pageSize: 50
 		};
@@ -251,6 +545,11 @@ export function GameTextRoute(props: {
 	};
 	const requestPage = (request: TextCorpusSearchRequest, debounce = false) => {
 		const generation = ++searchGeneration;
+		// A new search replaces the rows a pending step was counting on.
+		if (!request.cursor && !request.localizationCursor) {
+			pendingFlat = undefined;
+			pendingStep = undefined;
+		}
 		setError(undefined);
 		setSearching(true);
 		searchAction.run(
@@ -347,7 +646,8 @@ export function GameTextRoute(props: {
 		);
 	};
 
-	const restore = (preferences: GameTextPreferences) => {
+	const restore = (saved: GameTextPreferences) => {
+		const preferences = migratePreferences(saved);
 		focusGeneration++;
 		setFocus(undefined);
 		setQualitySummary(undefined);
@@ -357,6 +657,9 @@ export function GameTextRoute(props: {
 		setCapability(preferences.capability);
 		setLens(preferences.lens);
 		setWithoutNotes(preferences.withoutNotes ?? false);
+		setWhere(preferences.where);
+		setFilter(preferences.filter ?? []);
+		setGroup(preferences.group ?? "problem");
 		setMode(preferences.mode ?? "corpus");
 		setQualityFilter(preferences.qualityFilter ?? "all");
 		setSelectedId(preferences.selectedId);
@@ -413,6 +716,10 @@ export function GameTextRoute(props: {
 				capability: capability(),
 				lens: lens(),
 				withoutNotes: withoutNotes(),
+				// A changed-file list lasts for the session; pills and grouping are saved.
+				where: textWhere(where()?.kinds, where()?.pathPrefix),
+				filter: filter(),
+				group: group(),
 				mode: mode(),
 				qualityFilter: qualityFilter(),
 				selectedId: selectedId(),
@@ -421,8 +728,11 @@ export function GameTextRoute(props: {
 				qualityEditor: editor.state(),
 				localizationTarget: localization.target(),
 				localizationCulture: localization.culture(),
+				localizationCultures:
+					localization.cultures().length > 0 ? localization.cultures() : undefined,
 				localizationState: localization.state(),
 				localizationReview: localization.review(),
+				localizationKeyChanged: localization.keyChanged(),
 				searchTranslations: localization.searchTranslations(),
 				selectedLocalizationId: localization.selectedId()
 			}
@@ -484,10 +794,12 @@ export function GameTextRoute(props: {
 		);
 	};
 	const restorePreset = (preset: GameTextInvestigationPreset) => {
+		const { localization: selected, ...saved } = preset.query;
 		restore({
-			...preset.query,
-			withoutNotes: preset.query.withoutNotes ?? false,
-			lens: preset.query.lens ?? "all",
+			...saved,
+			...localizationPreferences(selected),
+			withoutNotes: saved.withoutNotes ?? false,
+			lens: saved.lens ?? "all",
 			selectedId: undefined,
 			qualityDocument: preset.rules
 		});
@@ -524,6 +836,22 @@ export function GameTextRoute(props: {
 			if (state.ready && !state.active && state.mode === "reports") setMode("corpus");
 		}
 	);
+	// One spreadsheet with every language for the lines the list shows.
+	const allLanguagesExport = () => {
+		const request = props.client.localizationLinesFile;
+		if (!request) return Effect.succeed({ status: "cancelled" as const });
+		return request(searchRequest()).pipe(
+			Effect.map((result) =>
+				result.status === "not_ready"
+					? {
+							status: "failed" as const,
+							message: "Translations are still loading.",
+							recovery: "Try again in a moment."
+						}
+					: result
+			)
+		);
+	};
 	const exports = (): JSX.Element => (
 		<Show when={props.client.investigations}>
 			{(client) => (
@@ -542,9 +870,22 @@ export function GameTextRoute(props: {
 							capability: capability(),
 							lens: lens(),
 							withoutNotes: withoutNotes(),
+							...whereField(),
+							...(filter().length > 0 ? { filter: filter() } : undefined),
+							...groupField(),
+							// Problem and translation pills need the target, as the list does.
+							...localizationField(),
 							qualityFilter: sourceFilter()
 						}}
 						onOpen={restorePreset}
+						extraExport={
+							localization.active() && props.client.localizationLinesFile
+								? {
+										label: "All languages (CSV)",
+										run: () => allLanguagesExport()
+									}
+								: undefined
+						}
 					/>
 				</div>
 			)}
@@ -636,6 +977,7 @@ export function GameTextRoute(props: {
 				<LocalizationControls
 					model={localization}
 					disabled={operations.busy()}
+					cultureWork={page()?.facets?.cultures}
 					syncAction={
 						<SyncWithUnreal
 							model={operations}
@@ -844,7 +1186,7 @@ export function GameTextRoute(props: {
 										type="search"
 										aria-label="Search game text"
 										placeholder={
-											localization.culture() &&
+											localization.cultures().length > 0 &&
 											localization.searchTranslations()
 												? "Search text and translations"
 												: "Search text"
@@ -869,7 +1211,11 @@ export function GameTextRoute(props: {
 													: page()?.total.toLocaleString() + " matches"}
 									</span>
 								</div>
-								<Show when={localization.active() && localization.culture()}>
+								<Show
+									when={
+										localization.active() && localization.cultures().length > 0
+									}
+								>
 									<Chip
 										label="Search translations"
 										toggle
@@ -881,105 +1227,120 @@ export function GameTextRoute(props: {
 										}
 									/>
 								</Show>
-								<Chip
-									label="Editable"
-									toggle
+								<span {...stylex.attrs(styles.grow)} />
+								<WhereFilter
+									where={where()}
+									counts={page()?.counts.origins}
+									fileScope={page()?.fileScope}
+									searching={searching()}
 									disabled={loading()}
-									selected={capability() === "source_editable"}
-									count={searching() ? undefined : page()?.counts.editable}
-									onClick={() => {
-										const next =
-											capability() === "source_editable"
-												? "all"
-												: "source_editable";
-										setCapability(next);
-									}}
+									filesOnly
+									onChange={setWhere}
 								/>
-								<Chip
-									label="Read only"
-									toggle
+								<FilterMenu
+									filter={filter()}
+									counts={filterCounts()}
+									hasTarget={localization.active() !== undefined}
 									disabled={loading()}
-									selected={capability() === "read_only"}
-									count={searching() ? undefined : page()?.counts.readOnly}
-									onClick={() => {
-										const next =
-											capability() === "read_only" ? "all" : "read_only";
-										setCapability(next);
-									}}
-								/>
-								<Chip
-									label="No translator notes"
-									toggle
-									disabled={loading()}
-									selected={withoutNotes()}
-									count={searching() ? undefined : page()?.counts.withoutNotes}
-									onClick={() => {
-										const next = !withoutNotes();
-										setWithoutNotes(next);
-									}}
-								/>
-							</div>
-							<div {...stylex.attrs(styles.bar)}>
-								<For
-									each={lenses.filter(
-										(item) =>
-											item.value === "all" ||
-											item.value === lens() ||
-											(page()?.counts[item.value] ?? 0) > 0
-									)}
-								>
-									{(item) => (
-										<Chip
-											label={item.label}
-											disabled={loading()}
-											count={
-												searching() ? undefined : page()?.counts[item.value]
-											}
-											selected={lens() === item.value}
-											onClick={() => {
-												setLens(item.value);
-											}}
+									onChange={setFilter}
+									extraFields={extraFields()}
+									folderBrowser={(typed) => (
+										<FolderBrowser
+											menu
+											typed={typed()}
+											list={page()?.facets?.folders}
+											folder={facetFolder()}
+											filter={filter()}
+											onFolderChange={setFacetFolder}
+											onFilterChange={setFilter}
 										/>
 									)}
-								</For>
-								<Show
-									when={
-										!searching() &&
-										page() &&
-										lens() === "all" &&
-										lenses
-											.slice(1)
-											.every((item) => page()?.counts[item.value] === 0)
-									}
-								>
-									<span {...stylex.attrs(styles.muted)}>
-										Nothing reused, duplicated, too long or unlocalizable
-									</span>
-								</Show>
-								<LocalizationChips
-									model={localization}
-									counts={page()?.localization?.stateCounts}
-									searching={searching()}
 								/>
-								<ReviewChips
-									model={localization}
-									counts={page()?.localization?.reviewCounts}
-									searching={searching()}
+								<DisplayMenu
+									group={group() === "none" ? undefined : groupField()?.group}
+									disabled={loading()}
+									onGroupChange={(next) => setGroup(next ?? "none")}
 								/>
 								{exports()}
 							</div>
-							<div {...stylex.attrs(styles.grid)}>
-								<section aria-label="Results" {...stylex.attrs(styles.pane)}>
-									<GameTextResultRows
-										page={page()}
-										culture={localization.culture()}
-										selectedId={selectedId()}
-										selectedLocalizationId={localization.selectedId()}
-										onSelect={(unit, line) => {
-											setSelectedId(unit);
-											localization.setSelectedId(line);
-										}}
-									/>
+							<Show
+								when={
+									filter().length > 0 ||
+									localization.state() ||
+									localization.review()
+								}
+							>
+								<div {...stylex.attrs(styles.bar)}>
+									<FilterPills filter={filter()} onChange={setFilter} />
+									<Show when={localization.state()}>
+										{(state) => (
+											<Chip
+												label={localizationLabels[state()]}
+												selected
+												onClick={() => localization.setState(undefined)}
+											/>
+										)}
+									</Show>
+									<Show when={localization.review()}>
+										{(review) => (
+											<Chip
+												label={reviewLensLabel(review())}
+												selected
+												onClick={() => localization.setReview(undefined)}
+											/>
+										)}
+									</Show>
+								</div>
+							</Show>
+							<div {...stylex.attrs(styles.grid, lineOpen() && styles.gridPage)}>
+								{/* An open line takes the page; the list stays mounted so its groups and pages
+								    survive, and the page steps through its rows. */}
+								<section
+									aria-label="Results"
+									ref={(element) => {
+										resultsSection = element;
+									}}
+									{...stylex.attrs(styles.pane, lineOpen() && styles.hidden)}
+								>
+									<Show
+										when={page()?.groups}
+										fallback={
+											<GameTextResultRows
+												page={page()}
+												culture={localization.culture()}
+												cultures={localization.cultures()}
+												selectedId={selectedId()}
+												selectedLocalizationId={localization.selectedId()}
+												onSelect={(unit, line) => {
+													setSelectedId(unit);
+													localization.setSelectedId(line);
+												}}
+												checked={ticks()?.checked}
+												onCheck={ticks()?.onCheck}
+												checking={ticks()?.checking}
+											/>
+										}
+									>
+										{(groups) => (
+											<GroupedResults
+												by={groups().by}
+												groups={groups().entries}
+												more={groups().more}
+												request={searchRequest()}
+												client={props.client}
+												culture={localization.culture()}
+												cultures={localization.cultures()}
+												selectedId={selectedId()}
+												selectedLocalizationId={localization.selectedId()}
+												onSelect={(unit, line) => {
+													setSelectedId(unit);
+													localization.setSelectedId(line);
+												}}
+												onLoaded={groupLoaded}
+												ticks={ticks()}
+											/>
+										)}
+									</Show>
 									<Show
 										when={
 											localization.ready() &&
@@ -993,7 +1354,8 @@ export function GameTextRoute(props: {
 									</Show>
 									<Show
 										when={
-											page()?.localization?.nextCursor ?? page()?.nextCursor
+											!page()?.groups &&
+											(page()?.localization?.nextCursor ?? page()?.nextCursor)
 										}
 									>
 										<Button disabled={searching()} onClick={moreResults}>
@@ -1008,29 +1370,160 @@ export function GameTextRoute(props: {
 											more
 										</Button>
 									</Show>
+									<BulkBar
+										selection={selection}
+										client={props.client}
+										localization={localization.selection()}
+										cultures={localization.cultures()}
+										nativeCulture={
+											localization.active()?.target.nativeCulture ?? undefined
+										}
+										edits={edits}
+										busy={loading() || operations.busy()}
+										onChanged={() => load(false)}
+									/>
 								</section>
 								<aside aria-label="Text focus" {...stylex.attrs(styles.pane)}>
-									<Show
-										when={focus()}
-										fallback={
+									<Show when={lineOpen()}>
+										<LinePageHeader
+											position={linePosition()}
+											onBack={closeLine}
+											onMove={moveLine}
+										/>
+									</Show>
+									<div {...stylex.attrs(lineOpen() && styles.pageBody)}>
+										<div>
+											<Show when={lineOpen()}>
+												<div {...stylex.attrs(styles.calloutBox)}>
+													<LineProblem
+														focus={focus()}
+														detail={localization.detail()}
+													/>
+												</div>
+											</Show>
 											<Show
-												when={
-													localization.detail()?.origin.kind ===
-													"evidence"
-														? localization.detail()
-														: undefined
-												}
+												when={focus()}
 												fallback={
-													<p {...stylex.attrs(styles.empty)}>
-														{localization.detailLoading()
-															? "Loading translations…"
-															: "Select a line to see its key, translator notes and every place it appears."}
-													</p>
+													<Show
+														when={
+															localization.detail()?.origin.kind ===
+															"evidence"
+																? localization.detail()
+																: undefined
+														}
+														fallback={
+															<Show
+																when={!localization.detailLoading()}
+																fallback={
+																	<p
+																		{...stylex.attrs(
+																			styles.empty
+																		)}
+																	>
+																		Loading translations…
+																	</p>
+																}
+															>
+																<FacetsPane
+																	page={page()}
+																	group={groupField()?.group}
+																	filter={filter()}
+																	folder={facetFolder()}
+																	onFolderChange={setFacetFolder}
+																	onFilterChange={setFilter}
+																/>
+															</Show>
+														}
+													>
+														{(gathered) => (
+															<div {...stylex.attrs(styles.detail)}>
+																<GatheredDetail
+																	focus={gathered()}
+																/>
+																<TranslationsDetail
+																	model={localization}
+																	edits={edits}
+																	review={{
+																		client: props.client,
+																		busy:
+																			loading() ||
+																			operations.busy(),
+																		onChanged: () => load(false)
+																	}}
+																/>
+															</div>
+														)}
+													</Show>
 												}
 											>
-												{(gathered) => (
+												{(current) => (
 													<div {...stylex.attrs(styles.detail)}>
-														<GatheredDetail focus={gathered()} />
+														<div {...stylex.attrs(styles.bar)}>
+															<h2 {...stylex.attrs(styles.title)}>
+																{sourceText(current().unit)}
+															</h2>
+															<CopyButton
+																label="Copy text"
+																value={sourceText(current().unit)}
+															/>
+														</div>
+														<div {...stylex.attrs(styles.bar)}>
+															<code {...stylex.attrs(styles.mono)}>
+																{identityLabel(current().unit)}
+															</code>
+															<Show
+																when={
+																	current().unit.identity
+																		.status !== "unresolved"
+																}
+															>
+																<CopyButton
+																	label="Copy key"
+																	value={identityLabel(
+																		current().unit
+																	)}
+																/>
+															</Show>
+														</div>
+														<span {...stylex.attrs(styles.muted)}>
+															{focusStats(current())}
+														</span>
+														<Show
+															when={current().unit.reviewSignals.some(
+																(signal) =>
+																	signal !== "evidence_only"
+															)}
+														>
+															<span {...stylex.attrs(styles.warning)}>
+																{current()
+																	.unit.reviewSignals.filter(
+																		(signal) =>
+																			signal !==
+																			"evidence_only"
+																	)
+																	.map(textReviewSignalLabel)
+																	.join(" · ")}
+															</span>
+														</Show>
+														<h3 {...stylex.attrs(styles.section)}>
+															Where it appears
+														</h3>
+														<For each={current().occurrences}>
+															{(occurrence) => (
+																<OccurrenceCard
+																	client={props.client}
+																	occurrence={occurrence}
+																	conflicting={
+																		current().unit.source
+																			.status ===
+																		"conflicting"
+																	}
+																	onOpenDataAuthoring={
+																		props.onOpenDataAuthoring
+																	}
+																/>
+															)}
+														</For>
 														<TranslationsDetail
 															model={localization}
 															edits={edits}
@@ -1041,111 +1534,45 @@ export function GameTextRoute(props: {
 																onChanged: () => load(false)
 															}}
 														/>
+														<CoverageNotes
+															diagnostics={current().diagnostics}
+														/>
+														<Show when={current().nextOccurrenceCursor}>
+															{(cursor) => (
+																<Button
+																	onClick={() =>
+																		requestFocus(
+																			current().unit.id,
+																			cursor()
+																		)
+																	}
+																>
+																	Show{" "}
+																	{textCountLabel(
+																		Math.min(
+																			50,
+																			current()
+																				.totalOccurrences -
+																				current()
+																					.occurrences
+																					.length
+																		),
+																		"more location"
+																	)}
+																</Button>
+															)}
+														</Show>
 													</div>
 												)}
 											</Show>
-										}
-									>
-										{(current) => (
-											<div {...stylex.attrs(styles.detail)}>
-												<div {...stylex.attrs(styles.bar)}>
-													<h2 {...stylex.attrs(styles.title)}>
-														{sourceText(current().unit)}
-													</h2>
-													<CopyButton
-														label="Copy text"
-														value={sourceText(current().unit)}
-													/>
-												</div>
-												<div {...stylex.attrs(styles.bar)}>
-													<code {...stylex.attrs(styles.mono)}>
-														{identityLabel(current().unit)}
-													</code>
-													<Show
-														when={
-															current().unit.identity.status !==
-															"unresolved"
-														}
-													>
-														<CopyButton
-															label="Copy key"
-															value={identityLabel(current().unit)}
-														/>
-													</Show>
-												</div>
-												<span {...stylex.attrs(styles.muted)}>
-													{focusStats(current())}
-												</span>
-												<Show
-													when={current().unit.reviewSignals.some(
-														(signal) => signal !== "evidence_only"
-													)}
-												>
-													<span {...stylex.attrs(styles.warning)}>
-														{current()
-															.unit.reviewSignals.filter(
-																(signal) =>
-																	signal !== "evidence_only"
-															)
-															.map(textReviewSignalLabel)
-															.join(" · ")}
-													</span>
-												</Show>
-												<h3 {...stylex.attrs(styles.section)}>
-													Where it appears
-												</h3>
-												<For each={current().occurrences}>
-													{(occurrence) => (
-														<OccurrenceCard
-															client={props.client}
-															occurrence={occurrence}
-															conflicting={
-																current().unit.source.status ===
-																"conflicting"
-															}
-															onOpenDataAuthoring={
-																props.onOpenDataAuthoring
-															}
-														/>
-													)}
-												</For>
-												<TranslationsDetail
-													model={localization}
-													edits={edits}
-													review={{
-														client: props.client,
-														busy: loading() || operations.busy(),
-														onChanged: () => load(false)
-													}}
-												/>
-												<CoverageNotes
-													diagnostics={current().diagnostics}
-												/>
-												<Show when={current().nextOccurrenceCursor}>
-													{(cursor) => (
-														<Button
-															onClick={() =>
-																requestFocus(
-																	current().unit.id,
-																	cursor()
-																)
-															}
-														>
-															Show{" "}
-															{textCountLabel(
-																Math.min(
-																	50,
-																	current().totalOccurrences -
-																		current().occurrences.length
-																),
-																"more location"
-															)}
-														</Button>
-													)}
-												</Show>
-											</div>
-										)}
-									</Show>
+										</div>
+										<Show when={lineOpen()}>
+											<LineProperties
+												focus={focus()}
+												detail={localization.detail()}
+											/>
+										</Show>
+									</div>
 								</aside>
 							</div>
 						</div>

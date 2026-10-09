@@ -23,7 +23,15 @@ import {
 	type WorkspaceReportFileResult,
 	localizationFocusPage,
 	textCorpusQuery,
+	applyLocalizationKeyChanges,
+	localizationLinesCsv,
+	pickedLocalizationCultures,
+	type LocalizationLinesFileResult,
+	localizationKeyChangesAcross,
+	mergeLocalizationKeyChanges,
+	type LocalizationKeyChangePair,
 	applyLocalizationReview,
+	localizationKeyChanges,
 	localizationEditChangeSet,
 	type LocalizationReviewRequest,
 	type LocalizationReviewResult,
@@ -103,6 +111,30 @@ export const makeGameTextLocalization = Effect.fn("Workbench.GameText.localizati
 		| undefined
 	>(undefined);
 	const revision = yield* Ref.make(0);
+	// Unreal's gather drops the archive translations of keys that left the manifest. The join from
+	// before a gather UE Shed runs is kept until the next selection pairs those keys with the keys
+	// that joined. The pairs live for the project, beyond the refresh that follows the gather.
+	const gatherBaseline = yield* Ref.make<
+		{ readonly root: string; readonly join: LocalizationJoin } | undefined
+	>(undefined);
+	const acrossGather = yield* Ref.make<
+		| {
+				readonly root: string;
+				readonly target: LocalizationJoin["target"];
+				readonly pairs: readonly LocalizationKeyChangePair[];
+		  }
+		| undefined
+	>(undefined);
+	const beforeGather = Effect.fn("Workbench.GameText.localization.before_gather")(function* (
+		name: LocalizationJoin["target"]
+	) {
+		const root = yield* currentRoot();
+		const cached = yield* Ref.get(selected);
+		yield* Ref.set(
+			gatherBaseline,
+			root && cached?.join.target === name ? { root, join: cached.join } : undefined
+		);
+	});
 
 	const reset = Effect.fn("Workbench.GameText.localization.reset")(function* () {
 		yield* Ref.update(revision, (value) => value + 1);
@@ -170,9 +202,26 @@ export const makeGameTextLocalization = Effect.fn("Workbench.GameText.localizati
 		if ((yield* currentCorpus()) !== corpus || (yield* Ref.get(revision)) !== version)
 			return { status: "not_ready" as const };
 		// Review is tracked once the target has a review file; until then nothing is "not reviewed".
-		const join = applyLocalizationReview(
+		const reviewed = applyLocalizationReview(
 			joinLocalizationTarget(corpus, evidence.success),
 			review?.contentHash ? review.file : undefined
+		);
+		const before = yield* Ref.get(gatherBaseline);
+		if (before?.root === root && before.join.target === name) {
+			yield* Ref.set(gatherBaseline, undefined);
+			const across = localizationKeyChangesAcross(before.join, reviewed);
+			yield* Ref.set(acrossGather, { root, target: name, pairs: across.pairs });
+			yield* Effect.annotateCurrentSpan({ keyChangesAcrossGather: across.pairs.length });
+		}
+		const carried = yield* Ref.get(acrossGather);
+		// Saved text whose key changed since the last gather pairs with the key Unreal still lists;
+		// keys that changed in a gather UE Shed ran keep their pairs from before that gather.
+		const join = applyLocalizationKeyChanges(
+			reviewed,
+			mergeLocalizationKeyChanges(
+				localizationKeyChanges(reviewed, corpus).pairs,
+				carried?.root === root && carried.target === name ? carried.pairs : []
+			)
 		);
 		const model = textCorpusQuery(corpus, undefined, join);
 		const textCounts = model.search({
@@ -475,6 +524,47 @@ export const makeGameTextLocalization = Effect.fn("Workbench.GameText.localizati
 		);
 		return result;
 	});
+	/** Writes every line the request matches, a column per culture, to a CSV the person chose. */
+	const linesFile = Effect.fn("Workbench.GameText.localization.linesFile")(function* (
+		request: TextCorpusSearchRequest,
+		dialog: ElectronDialogApi,
+		files: LocalFilesApi
+	): Effect.fn.Return<LocalizationLinesFileResult> {
+		const name = request.localization?.target;
+		if (name === undefined) return { status: "not_ready" };
+		const retained = yield* current(name);
+		if (!retained) return { status: "not_ready" };
+		return yield* Effect.gen(function* () {
+			const choice = yield* dialog.chooseSaveFile({
+				title: "Export all languages",
+				defaultPath: `${name}.all-languages.csv`,
+				filters: [{ name: "CSV", extensions: ["csv"] }]
+			});
+			if (choice.status === "cancelled") return choice;
+			if ((yield* current(name)) !== retained) return { status: "not_ready" as const };
+			const { csv, rows } = yield* Effect.try(() =>
+				localizationLinesCsv({
+					join: retained.join,
+					lines: retained.model.localizationLines(request),
+					corpus: retained.corpus,
+					cultures: pickedLocalizationCultures(request.localization)
+				})
+			);
+			yield* files.writeFile(choice.path, new TextEncoder().encode(csv), {
+				maxBytes: 64 * 1024 * 1024
+			});
+			yield* Effect.annotateCurrentSpan({ rowCount: rows });
+			return { status: "saved" as const, path: choice.path, rowCount: rows };
+		}).pipe(
+			Effect.catch(() =>
+				Effect.succeed({
+					status: "failed" as const,
+					message: "The all-languages CSV could not be written.",
+					recovery: "Choose a writable destination and try again."
+				})
+			)
+		);
+	});
 	/**
 	 * Reviews or writes staged translation edits against the retained evidence. Writing replaces
 	 * only PO `msgstr` values; the target is then reloaded so pending edits show as not synced.
@@ -590,6 +680,8 @@ export const makeGameTextLocalization = Effect.fn("Workbench.GameText.localizati
 		return { status: "written" as const, relativePath: written.success.relativePath };
 	});
 	return {
+		beforeGather,
+		linesFile,
 		operationTarget: (name: LocalizationJoin["target"]) =>
 			targets().pipe(
 				Effect.flatMap((result) =>
@@ -607,6 +699,9 @@ export const makeGameTextLocalization = Effect.fn("Workbench.GameText.localizati
 		targets,
 		select,
 		search,
+		/** The selected target's query, for exports whose pills need it; absent when not loaded. */
+		targetQuery: (target: LocalizationJoin["target"]) =>
+			current(target).pipe(Effect.map((cached) => cached?.model)),
 		focus,
 		qualitySearch,
 		qualityFocus,

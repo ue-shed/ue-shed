@@ -4,6 +4,7 @@ import {
 	MAX_LOCALIZATION_CULTURES,
 	LocalizationCultureMark,
 	LocalizationLineId,
+	LocalizationKeyChange,
 	LocalizationLine,
 	type LocalizationCultureState,
 	type LocalizationJoin
@@ -106,6 +107,7 @@ export const LocalizationFocus = Schema.Struct({
 	translations: Schema.Array(LocalizationTranslation).check(Schema.isMaxLength(50)),
 	totalCultures: Count,
 	scopeSummary: Schema.optionalKey(LocalizationScopeSummary),
+	keyChange: Schema.optionalKey(LocalizationKeyChange),
 	nextCultureOffset: Schema.optionalKey(Count),
 	nextLocationOffset: Schema.optionalKey(Count)
 });
@@ -250,6 +252,7 @@ export function localizationFocusPage(
 		})),
 		totalCultures: cultures.length,
 		...(summary ? { scopeSummary: summary } : undefined),
+		...(line.keyChange === undefined ? undefined : { keyChange: line.keyChange }),
 		...(cultureOffset + 50 < cultures.length
 			? { nextCultureOffset: cultureOffset + 50 }
 			: undefined),

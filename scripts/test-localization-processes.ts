@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { cp, copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
-import { Effect, Layer, Ref, Result, Schema, Stream } from "effect";
+import { Effect, Layer, Option, Ref, Result, Schema, Stream } from "effect";
 import {
 	LocalizationEvidence,
 	LocalizationEvidenceNodeLive,
@@ -76,6 +76,35 @@ const retainedLog = async (source: string, destination: string) => {
 	}
 };
 /** Runs `ue-shed loc apply` in-process and returns its NDJSON output lines and exit code. */
+/** Runs any `ue-shed` command in-process; returns its exit code and JSON output lines. */
+async function cliThroughLane(...args: string[]) {
+	return Effect.runPromise(
+		Effect.gen(function* () {
+			const output = yield* Ref.make("");
+			const code = yield* Ref.make(0);
+			const runtime = Layer.succeed(
+				CliRuntime,
+				CliRuntime.of({
+					print: (value) => Ref.update(output, (text) => text + value),
+					printError: () => Effect.void,
+					setExitCode: (value) => Ref.set(code, value)
+				})
+			);
+			yield* runCli(args).pipe(Effect.provide(runtime));
+			const text = yield* Ref.get(output);
+			return {
+				code: yield* Ref.get(code),
+				lines: text
+					.split("\n")
+					.filter((line) => line.trim().startsWith("{"))
+					.map((line) =>
+						Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Json))(line)
+					)
+			};
+		})
+	);
+}
+
 async function applyThroughCli(
 	projectRoot: string,
 	changesFile: string,
@@ -341,7 +370,8 @@ for (const engine of configured) {
 				"compile",
 				"gather",
 				"reports",
-				"sync"
+				"sync",
+				"prepare"
 			]))
 		await runOperation(operation, project, target, engine);
 	// The first event is emitted after launch; ending this stream must release the owned tree.
@@ -500,9 +530,61 @@ for (const engine of configured) {
 			["reviewed", "proofread"],
 			"An unedited reviewed line must stay reviewed through Unreal's operations."
 		);
+
+		// A renamed LOCTEXT key: Unreal's gather drops the earlier key's archive translations, and
+		// `loc run prepare --carry` keeps them as a change set for the new key.
+		const runtimeKey = (read: typeof after, key: string) => {
+			const archive = read.cultures.find((item) => item.culture === "de")?.archive;
+			return archive?.status === "read"
+				? archive.value.entries.find(
+						(item) =>
+							item.namespace === "Fixture.Localization.Source" && item.key === key
+					)?.translation.Text
+				: undefined;
+		};
+		const earlier = runtimeKey(after, "RuntimeReady");
+		assert(earlier, "The fixture's RuntimeReady line needs a German translation.");
+		const sourceFile = join(project, "Source/UEShedFixture/Private/UEShedLocalizationText.cpp");
+		const sourceText = await readFile(sourceFile, "utf8");
+		assert(sourceText.includes('LOCTEXT("RuntimeReady"'));
+		await writeFile(
+			sourceFile,
+			sourceText.replace('LOCTEXT("RuntimeReady"', 'LOCTEXT("RuntimeStart"')
+		);
+		const carryFile = join(directory, "carry.changes.json");
+		const carried = await cliThroughLane(
+			"loc",
+			"run",
+			"prepare",
+			project,
+			"--target",
+			target.name,
+			"--engine-root",
+			engine.root,
+			"--carry",
+			carryFile,
+			"--json"
+		);
+		assert.equal(carried.code, 0, JSON.stringify(carried.lines));
+		const CarrySummary = Schema.Struct({
+			type: Schema.Literal("carry"),
+			keys: Schema.Number,
+			changes: Schema.Number
+		});
+		const summary = carried.lines
+			.map((line) => Schema.decodeUnknownOption(CarrySummary)(line))
+			.find(Option.isSome);
+		assert.equal(summary?.value.keys, 1, JSON.stringify(carried.lines));
+		const carrySynced = await applyThroughCli(project, carryFile, engine, "--sync");
+		assert.equal(carrySynced.code, 0, JSON.stringify(carrySynced.lines));
+		assert.equal(
+			runtimeKey(await readEvidence(), "RuntimeStart"),
+			earlier,
+			"The renamed key must ship the earlier key's translation after the sync."
+		);
 	}
 	console.log(
-		`Localization processes ${engine.label}: plans, supported operations, audit and cancellation passed${legacy ? "" : ", including review state, PO writes through loc apply and sync"}.`
+		`Localization processes ${engine.label}: plans, supported operations, audit and cancellation passed${legacy ? "" : ", including review state, PO writes through loc apply and sync, and a key carried across a gather"}.`
 	);
 }
 console.log(`Retained disposable projects, plans, receipts and private logs under ${output}.`);

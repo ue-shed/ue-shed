@@ -1,3 +1,5 @@
+import { readChangedFiles } from "./workflows/changed-files.js";
+import { textWhere } from "./commands/localization-flags.js";
 import { readFile, stat } from "node:fs/promises";
 import { EnhancedInputService, EnhancedInputServiceLive } from "@ue-shed/enhanced-input";
 import {
@@ -152,8 +154,12 @@ export const runTextSearch = Effect.fn("Cli.workflow.text_search")((command: Tex
 					})
 				);
 			}
-			const { searchTextCorpus, TextCorpusService, TextCorpusServiceLive } =
-				yield* Effect.promise(() => import("@ue-shed/game-text"));
+			const {
+				searchTextCorpus,
+				TextCorpusService,
+				TextCorpusServiceLive,
+				unitMatchesTextWhere
+			} = yield* Effect.promise(() => import("@ue-shed/game-text"));
 			const corpus = yield* Effect.gen(function* () {
 				const service = yield* TextCorpusService;
 				return yield* service.scan({ projectRoot: command.projectRoot });
@@ -161,12 +167,20 @@ export const runTextSearch = Effect.fn("Cli.workflow.text_search")((command: Tex
 				Effect.provide(TextCorpusServiceLive),
 				Effect.provide(readerLayer(command.reader))
 			);
+			const where = textWhere(
+				command,
+				command.changedFiles === undefined
+					? undefined
+					: yield* readChangedFiles(command.changedFiles, command.projectRoot)
+			);
 			return yield* printJson({
 				schemaVersion: corpus.schemaVersion,
 				status: corpus.status,
 				query: command.query,
 				coverage: corpus.coverage,
-				matches: searchTextCorpus(corpus, command.query),
+				matches: searchTextCorpus(corpus, command.query).filter((unit) =>
+					unitMatchesTextWhere(unit, where)
+				),
 				diagnostics: corpus.diagnostics
 			});
 		})

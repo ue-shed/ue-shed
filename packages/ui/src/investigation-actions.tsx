@@ -36,6 +36,13 @@ export function InvestigationActions<Query, Preset, Error>(props: {
 	readonly blocked?: boolean;
 	readonly onOpen: (preset: Preset) => void;
 	readonly compact?: boolean;
+	/** A host-specific export offered beside CSV and JSON, such as one file for every language. */
+	readonly extraExport?:
+		| {
+				readonly label: string;
+				readonly run: () => Effect.Effect<FileFeedback, Error>;
+		  }
+		| undefined;
 }) {
 	const action = createEffectAction();
 	const exportId = createUniqueId();
@@ -47,7 +54,7 @@ export function InvestigationActions<Query, Preset, Error>(props: {
 	const [saved, setSaved] = createSignal<{ readonly key: string; readonly command: string }>();
 	const key = () => JSON.stringify([props.query, props.revision]);
 	const replay = () => (saved()?.key === key() ? saved()?.command : undefined);
-	const run = (operation: "json" | "csv" | "save" | "open") => {
+	const run = (operation: "json" | "csv" | "save" | "open" | "extra") => {
 		if (props.blocked) return;
 		setExportOpen(false);
 		setPresetOpen(false);
@@ -59,7 +66,10 @@ export function InvestigationActions<Query, Preset, Error>(props: {
 				? props.client.open()
 				: operation === "save"
 					? props.client.save(props.query)
-					: props.client.export(props.query, operation);
+					: operation === "extra"
+						? (props.extraExport?.run() ??
+							Effect.succeed({ status: "cancelled" as const }))
+						: props.client.export(props.query, operation);
 		action.run(task, {
 			onFailure: (cause) => {
 				setPending(false);
@@ -182,6 +192,19 @@ export function InvestigationActions<Query, Preset, Error>(props: {
 						>
 							JSON
 						</Button>
+						<Show when={props.extraExport}>
+							{(extra) => (
+								<Button
+									type="button"
+									size="compact"
+									tone="quiet"
+									disabled={props.blocked}
+									onClick={() => run("extra")}
+								>
+									{extra().label}
+								</Button>
+							)}
+						</Show>
 					</AnchoredPopover>
 					<AnchoredPopover
 						id={presetId}

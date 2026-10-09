@@ -97,7 +97,10 @@ export function reviewLocalizationChangeSet(
 		if (po === undefined) return review("not_in_po", current);
 		// A PO exported before the source changed would import the edit against the old source.
 		if (document.hasSourceText && po.msgid !== source) return review("po_out_of_date", current);
-		if (change.previousTranslation !== current) return review("stale_translation", current);
+		// Absent and empty both mean nothing ships. A gather gives a new key an empty translation,
+		// so an edit staged before the gather, against no translation at all, is still current.
+		if ((change.previousTranslation ?? "") !== (current ?? ""))
+			return review("stale_translation", current);
 		if (change.translation === current) return review("unchanged", current);
 		return review("ready", current);
 	});

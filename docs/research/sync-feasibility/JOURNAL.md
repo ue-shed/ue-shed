@@ -57,3 +57,22 @@ SUCCESS: The process with PID 29468 (child process of PID 36692) has been termin
 - 2026-10-09T09:46:36.174642+07:00 T07 build 5.8 exit=0; log=D:\git\ue-shed-sync-research\out\sync-research\5.8\build-1791513981.log
 
 - 2026-10-09T09:47:06.966993+07:00 T07 final probe builds succeeded on UE 5.7 and UE 5.8. 5.7 smoke reports 12 watched DataTables, game-thread RC call, empty undo queue, background throttle false. First smoke editor PID29468 and child tree closed; final 5.7 editor PID41876 now running.
+
+- 2026-10-09T09:50:10.115672+07:00 matrix 5.7 finished; raw D:\git\ue-shed-sync-research\out\sync-research\5.7\matrix-summary.json; 19 records
+
+- 2026-10-09T09:50:23.892269+07:00 Cleanup 5.7 PID=41876: SUCCESS: The process with PID 31224 (child process of PID 40604) has been terminated.
+SUCCESS: The process with PID 40604 (child process of PID 41876) has been terminated.
+SUCCESS: The process with PID 3576 (child process of PID 41876) has been terminated.
+SUCCESS: The process with PID 24324 (child process of PID 41876) has been terminated.
+SUCCESS: The process with PID 31008 (child process of PID 41876) has been terminated.
+SUCCESS: The process with PID 33236 (child process of PID 41876) has been terminated.
+SUCCESS: The process with PID 21616 (child process of PID 41876) has been terminated.
+SUCCESS: The process with PID 41876 (child process of PID 20840) has been terminated. 
+
+- 2026-10-09T09:50:23.972614+07:00 T07 launched 5.8 UnrealEditor PID=45744; command=D:\git\ue-shed-sync-research\out\sync-research\5.8\launch-command.json
+
+- 2026-10-09T09:50:24.041625+07:00 T08 UE5.7 matrix ran all scripted rows. Saved only out/sync-research/5.7/fixture/Content/Fixture/Authoring/DT_Scalars.uasset; tracked fixtures remain untouched. Copy will be restored from tracked original after editor closure. UE5.8 launched for matching matrix.
+
+- 2026-10-09T09:51:13.164723+07:00 matrix 5.8 finished; raw D:\git\ue-shed-sync-research\out\sync-research\5.8\matrix-summary.json; 19 records
+
+- 2026-10-09T09:52:01.792255+07:00 T08 both engines complete: matching hook counts, Apply no DataTableChanged or PropertyChanged, transaction events expose coarse row-struct field names but no row IDs. Saved only disposable 5.7/5.8 DT_Scalars.uasset copies. Actual UI/modal/PIE and dirty reload remain NEEDS HUMAN. Task docs and CSV/sample evidence committed.

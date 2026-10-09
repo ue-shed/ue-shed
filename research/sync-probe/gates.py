@@ -34,6 +34,9 @@ def processes():
 
 mode = sys.argv[1]
 env = dict(os.environ)
+temporary = OUT / "temp"
+temporary.mkdir(parents=True, exist_ok=True)
+for variable in ["TEMP", "TMP", "TMPDIR"]: env[variable] = str(temporary)
 if mode == "authoring":
     version = sys.argv[2]
     env["UE_SHED_UNREAL_ENGINE_ROOT"] = str(engine(version))

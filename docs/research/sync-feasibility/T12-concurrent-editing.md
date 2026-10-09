@@ -1,9 +1,21 @@
 # T12 — Concurrent editing
-Question: Pending investigation.
-Why it matters for the sync layer: Pending investigation.
-Method: Pending investigation.
-Results: UNVERIFIED — task not yet run.
-Evidence: None yet.
-Confidence: low — no investigation yet.
-Surprises / risks found: Pending investigation.
-Open follow-ups: Complete this task.
+Question: Does an open DataTable editor reflect external Apply, and are stale writes rejected?
+Why it matters for the sync layer: Mutation correctness alone is insufficient if editor views stay stale or overwrite concurrent changes.
+Method: Final `python research/sync-probe/live.py 5.7 concurrent`, then 5.8 on fresh normal editors. Open UAssetEditorSubsystem editor for DT_Scalars; FindEditorForAsset confirms open. Read cached Slate STextBlock text for first row, Count column (SListPanel[0]/SDataTableListViewRow/SHorizontalBox[4]), with row-name/header bindings validating identity. Apply Count7→8, read same binding, send only FDataTableEditorUtils pre/post RowData notifications (no value edit), read again, then editor-style Count33 write and stale-fingerprint Apply. Read source DataTableEditor.cpp 5.7:249–269 / 5.8:252–272 refresh on editor-manager PostChange. Initial reader only traversed top-level windows and returned empty; corrected to GetAllVisibleWindowsOrdered including child asset window. Initial run preserved separately and never interpreted as stale UI. This checks widget text bindings, not pixels. Supplement: dirty package reload AssumePositive and baseline fingerprint; tagged context undo/redo; FText dataasset edit; editor-style String Table transaction and raw core mutation.
+Results:
+
+| Engine | Editor found | Initial UI Count | Apply confirmed | UI after Apply | UI after notify only | UI after native-style edit | Stale Apply |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 5.7 | true | 7 | 8 | 7 | 8 | 33 | rejected, fingerprint_mismatch |
+| 5.8 | true | 7 | 8 | 7 | 8 | 33 | rejected, fingerprint_mismatch |
+
+**Current Apply leaves the open table row-list view stale.** Public editor-manager notifications refresh it to the confirmed value without another edit. This isolates a notification gap on both versions. No product change made. Row removal/rename while a row editor is actively editing, pixel repaint, tab selection changes and keyboard focus behavior remain UNVERIFIED.
+
+Stale result is a rejected mutation with errors[0].code=fingerprint_mismatch, retrySafe=false, objectPath, expected/live hash message, snapshots=[] and request operationId. HTTP itself succeeds; domain result is rejected.
+
+Dirty revert succeeded and restored original scalar fingerprint on both engines, with dirty=false. Replacement object subscriptions need reattachment; old per-table delegate is not a lifecycle-complete observer. Tagged custom context survives finalization, Undo and Redo; IDs behave as T09 described. FText property edit emits named Text property + finalized object event. String Table scoped Modify write is undoable: key exists after write, absent after Undo, restored after Redo. Its events have no key identity. Raw SetSourceString changes source but produces no requested hook. All recorded hooks were on game thread.
+
+Evidence: [UI binding/value/error proof](evidence/T12-concurrent-proof.json), [5.7 supplement events](evidence/T12-5.7-events.jsonl), [5.8 supplement events](evidence/T12-5.8-events.jsonl), [tagged-context proof](evidence/T09-tagged-context-supplement.json). Raw `out/sync-research/VERSION/concurrent-summary.json`, concurrent-events.jsonl, T12-rpc.jsonl and T12-final-driver.log; 5.7 initial/before-refresh attempts preserved separately.
+Confidence: high for cached widget values, notification fix, stale rejection, scripted undo/revert; low for active real-user controls and pixels, not exercised.
+Surprises / risks found: Apply updates memory yet UI cache stays old. Supporting add/remove/rename may require correct prechange notifications to release row-editor pointers, not just repaint after mutation. 5.8 String Table editor builds require three SetSourceString args under WITH_EDITORONLY_DATA: initial C2660 corrected after reading conditional header, both final builds pass. Raw core writes are invisible.
+Open follow-ups: Reviewer manual: open DT_Scalars, select Scalar_Alpha, leave its row editor active; exercise external add/remove/rename/interactive overlap, Undo/Redo and reload, checking crashes and retained selection. Spike product-side public notifications and scoped provenance; validate row-key diff strategy.

@@ -104,6 +104,8 @@ elif task == "concurrent":
     stale = client.snapshot(scalar)
     record("apply-with-editor-open", lambda: apply([stale], field_name="Count")[0])
     record("ui-after-apply", lambda: client.scenario("ui-text"))
+    record("notify-refresh", lambda: client.scenario("refresh", table=scalar))
+    record("ui-after-refresh", lambda: client.scenario("ui-text"))
     stale = client.snapshot(scalar)
     record("editor-cell", lambda: client.scenario("cell", table=scalar, row="Scalar_Alpha", field="Count", value=33))
     record("ui-after-editor-cell", lambda: client.scenario("ui-text"))
@@ -113,6 +115,13 @@ elif task == "concurrent":
     record("tagged-redo", lambda: client.probe("Redo"))
     record("dirty-revert", lambda: client.scenario("revert", table=scalar))
     record("after-revert-snapshot", lambda: client.snapshot(scalar))
+    record("text-property", lambda: client.scenario("text-property"))
+    record("stringtable-write", lambda: client.scenario("stringtable-write", value="SyncProbe source"))
+    record("stringtable-undo", lambda: client.probe("Undo"))
+    record("stringtable-after-undo", lambda: client.scenario("stringtable-read"))
+    record("stringtable-redo", lambda: client.probe("Redo"))
+    record("stringtable-after-redo", lambda: client.scenario("stringtable-read"))
+    record("stringtable-raw", lambda: client.scenario("stringtable-raw", value="Raw source"))
 elif task == "perf":
     from windows import state
     window_start = state(version)

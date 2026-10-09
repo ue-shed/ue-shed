@@ -1,0 +1,430 @@
+{
+  "5.7": {
+    "open": {
+      "hook": "ScenarioResult",
+      "utc": "2026-10-09T03:29:18.832Z",
+      "seconds": 17177782.5195509,
+      "threadId": 41428,
+      "gameThread": true,
+      "action": "open",
+      "editorFound": true,
+      "success": true,
+      "dirty": false
+    },
+    "uiCells": {
+      "ui-before": {
+        "widgetPath": "DT_Scalars/SWindow[0]/SOverlay[3]/SVerticalBox[0]/SVerticalBox[0]/SDockingArea[0]/SOverlay[0]/SHorizontalBox[1]/SOverlay[0]/SSplitter[0]/SDockingTabStack[0]/SVerticalBox[1]/SOverlay[0]/SBorder[0]/SStandaloneAssetEditorToolkitHost[0]/SVerticalBox[0]/UE::Slate::Private::SPanelDrawerArea[0]/SVerticalBox[1]/SDockingArea[0]/SOverlay[0]/SHorizontalBox[1]/SOverlay[0]/SSplitter[0]/SDockingTabStack[0]/SVerticalBox[1]/SOverlay[0]/SBorder[0]/SBorder[0]/SVerticalBox[1]/SHorizontalBox[0]/SScrollBox[0]/SVerticalBox[0]/SOverlay[0]/SScrollPanel[0]/SListView<FDataTableEditorRowListViewDataPtr>[0]/SVerticalBox[1]/SListPanel[0]/SDataTableListViewRow[0]/SHorizontalBox[4]/SBox[0]/SBox[0]/STextBlock",
+        "text": "7"
+      },
+      "ui-after-apply": {
+        "widgetPath": "DT_Scalars/SWindow[0]/SOverlay[3]/SVerticalBox[0]/SVerticalBox[0]/SDockingArea[0]/SOverlay[0]/SHorizontalBox[1]/SOverlay[0]/SSplitter[0]/SDockingTabStack[0]/SVerticalBox[1]/SOverlay[0]/SBorder[0]/SStandaloneAssetEditorToolkitHost[0]/SVerticalBox[0]/UE::Slate::Private::SPanelDrawerArea[0]/SVerticalBox[1]/SDockingArea[0]/SOverlay[0]/SHorizontalBox[1]/SOverlay[0]/SSplitter[0]/SDockingTabStack[0]/SVerticalBox[1]/SOverlay[0]/SBorder[0]/SBorder[0]/SVerticalBox[1]/SHorizontalBox[0]/SScrollBox[0]/SVerticalBox[0]/SOverlay[0]/SScrollPanel[0]/SListView<FDataTableEditorRowListViewDataPtr>[0]/SVerticalBox[1]/SListPanel[0]/SDataTableListViewRow[0]/SHorizontalBox[4]/SBox[0]/SBox[0]/STextBlock",
+        "text": "7"
+      },
+      "ui-after-refresh": {
+        "widgetPath": "DT_Scalars/SWindow[0]/SOverlay[3]/SVerticalBox[0]/SVerticalBox[0]/SDockingArea[0]/SOverlay[0]/SHorizontalBox[1]/SOverlay[0]/SSplitter[0]/SDockingTabStack[0]/SVerticalBox[1]/SOverlay[0]/SBorder[0]/SStandaloneAssetEditorToolkitHost[0]/SVerticalBox[0]/UE::Slate::Private::SPanelDrawerArea[0]/SVerticalBox[1]/SDockingArea[0]/SOverlay[0]/SHorizontalBox[1]/SOverlay[0]/SSplitter[0]/SDockingTabStack[0]/SVerticalBox[1]/SOverlay[0]/SBorder[0]/SBorder[0]/SVerticalBox[1]/SHorizontalBox[0]/SScrollBox[0]/SVerticalBox[0]/SOverlay[0]/SScrollPanel[0]/SListView<FDataTableEditorRowListViewDataPtr>[0]/SVerticalBox[1]/SListPanel[0]/SDataTableListViewRow[0]/SHorizontalBox[4]/SBox[0]/SBox[0]/STextBlock",
+        "text": "8"
+      },
+      "ui-after-editor-cell": {
+        "widgetPath": "DT_Scalars/SWindow[0]/SOverlay[3]/SVerticalBox[0]/SVerticalBox[0]/SDockingArea[0]/SOverlay[0]/SHorizontalBox[1]/SOverlay[0]/SSplitter[0]/SDockingTabStack[0]/SVerticalBox[1]/SOverlay[0]/SBorder[0]/SStandaloneAssetEditorToolkitHost[0]/SVerticalBox[0]/UE::Slate::Private::SPanelDrawerArea[0]/SVerticalBox[1]/SDockingArea[0]/SOverlay[0]/SHorizontalBox[1]/SOverlay[0]/SSplitter[0]/SDockingTabStack[0]/SVerticalBox[1]/SOverlay[0]/SBorder[0]/SBorder[0]/SVerticalBox[1]/SHorizontalBox[0]/SScrollBox[0]/SVerticalBox[0]/SOverlay[0]/SScrollPanel[0]/SListView<FDataTableEditorRowListViewDataPtr>[0]/SVerticalBox[1]/SListPanel[0]/SDataTableListViewRow[0]/SHorizontalBox[4]/SBox[0]/SBox[0]/STextBlock",
+        "text": "33"
+      }
+    },
+    "confirmedValue": {
+      "kind": "int",
+      "value": "8"
+    },
+    "staleResult": {
+      "contract": {
+        "name": "unreal-authoring-apply",
+        "version": {
+          "major": 1,
+          "minor": 2
+        }
+      },
+      "operationId": "22a0a528-9c8b-49b6-a139-f8892f43a0ec",
+      "status": "rejected",
+      "errors": [
+        {
+          "code": "fingerprint_mismatch",
+          "message": "expected sha256-v1:8f5669775be52e9b50a9ebf534f3007c751e76a96b044827f0e0a62002bceb92 but live state is sha256-v1:cc747cac0a53021e92bc73c19c43e60da1885fdc60c27fdc745e9cd427692ed8",
+          "retrySafe": false,
+          "objectPath": "/Game/Fixture/Authoring/DT_Scalars.DT_Scalars"
+        }
+      ],
+      "snapshots": []
+    },
+    "dirtyRevert": {
+      "hook": "ScenarioResult",
+      "utc": "2026-10-09T03:29:19.838Z",
+      "seconds": 17177783.5255335,
+      "threadId": 41428,
+      "gameThread": true,
+      "action": "revert",
+      "error": "",
+      "success": true,
+      "dirty": false
+    },
+    "revertFingerprint": {
+      "status": "available",
+      "algorithm": "sha256",
+      "version": 1,
+      "value": "sha256-v1:1ca8a88da0613d351503a71bb923e4b5d8d8275a9a14fc10fcc80c73aadace36"
+    },
+    "supplemental": {
+      "stringtable-write": {
+        "hook": "ScenarioResult",
+        "utc": "2026-10-09T03:29:21.120Z",
+        "seconds": 17177784.8077215,
+        "threadId": 41428,
+        "gameThread": true,
+        "action": "stringtable-write",
+        "found": true,
+        "source": "SyncProbe source",
+        "object": "/Game/Fixture/Authoring/ProbeStringTable.ProbeStringTable"
+      },
+      "stringtable-after-undo": {
+        "hook": "ScenarioResult",
+        "utc": "2026-10-09T03:29:21.216Z",
+        "seconds": 17177784.9034934,
+        "threadId": 41428,
+        "gameThread": true,
+        "action": "stringtable-read",
+        "found": false,
+        "source": "",
+        "object": "/Game/Fixture/Authoring/ProbeStringTable.ProbeStringTable"
+      },
+      "stringtable-after-redo": {
+        "hook": "ScenarioResult",
+        "utc": "2026-10-09T03:29:21.330Z",
+        "seconds": 17177785.0177034,
+        "threadId": 41428,
+        "gameThread": true,
+        "action": "stringtable-read",
+        "found": true,
+        "source": "SyncProbe source",
+        "object": "/Game/Fixture/Authoring/ProbeStringTable.ProbeStringTable"
+      },
+      "stringtable-raw": {
+        "hook": "ScenarioResult",
+        "utc": "2026-10-09T03:29:21.368Z",
+        "seconds": 17177785.0567765,
+        "threadId": 41428,
+        "gameThread": true,
+        "action": "stringtable-raw",
+        "found": true,
+        "source": "Raw source",
+        "object": "/Game/Fixture/Authoring/ProbeStringTable.ProbeStringTable"
+      }
+    },
+    "hooks": {
+      "open": {},
+      "ui-before": {},
+      "apply-with-editor-open": {
+        "TransactionState": 4,
+        "PackageDirtyStateChanged": 1,
+        "PackageMarkedDirty": 1,
+        "ObjectModified": 1,
+        "ObjectTransacted": 1
+      },
+      "ui-after-apply": {},
+      "notify-refresh": {
+        "DataTableChanged": 3
+      },
+      "ui-after-refresh": {},
+      "editor-cell": {
+        "TransactionState": 4,
+        "PackageMarkedDirty": 1,
+        "ObjectModified": 1,
+        "MutationStart": 1,
+        "DataTableChanged": 3,
+        "ObjectTransacted": 1
+      },
+      "ui-after-editor-cell": {},
+      "stale-apply": {},
+      "tagged-property": {
+        "TransactionState": 4,
+        "PackageDirtyStateChanged": 1,
+        "PackageMarkedDirty": 2,
+        "ObjectModified": 1,
+        "MutationStart": 1,
+        "PropertyChanged": 1,
+        "ObjectTransacted": 1
+      },
+      "tagged-undo": {
+        "TransactionState": 2,
+        "PackageDirtyStateChanged": 1,
+        "ObjectModified": 2,
+        "PropertyChanged": 2,
+        "ObjectTransacted": 1,
+        "UndoMatchesContext": 1,
+        "PostUndo": 1
+      },
+      "tagged-redo": {
+        "TransactionState": 2,
+        "PackageDirtyStateChanged": 1,
+        "ObjectModified": 2,
+        "PropertyChanged": 2,
+        "ObjectTransacted": 1,
+        "UndoMatchesContext": 1,
+        "PostRedo": 1
+      },
+      "dirty-revert": {
+        "PackageDirtyStateChanged": 1,
+        "PropertyChanged": 4,
+        "DataTableChanged": 1,
+        "ObjectModified": 3
+      },
+      "after-revert-snapshot": {},
+      "text-property": {
+        "TransactionState": 4,
+        "PackageMarkedDirty": 2,
+        "ObjectModified": 1,
+        "MutationStart": 1,
+        "PropertyChanged": 1,
+        "ObjectTransacted": 1
+      },
+      "stringtable-write": {
+        "TransactionState": 4,
+        "PackageDirtyStateChanged": 1,
+        "PackageMarkedDirty": 1,
+        "ObjectModified": 1,
+        "ObjectTransacted": 1
+      },
+      "stringtable-undo": {
+        "TransactionState": 2,
+        "PackageDirtyStateChanged": 1,
+        "ObjectModified": 2,
+        "PropertyChanged": 2,
+        "ObjectTransacted": 1,
+        "UndoMatchesContext": 1,
+        "PostUndo": 1
+      },
+      "stringtable-after-undo": {},
+      "stringtable-redo": {
+        "TransactionState": 2,
+        "PackageDirtyStateChanged": 1,
+        "ObjectModified": 2,
+        "PropertyChanged": 2,
+        "ObjectTransacted": 1,
+        "UndoMatchesContext": 1,
+        "PostRedo": 1
+      },
+      "stringtable-after-redo": {},
+      "stringtable-raw": {}
+    }
+  },
+  "5.8": {
+    "open": {
+      "hook": "ScenarioResult",
+      "utc": "2026-10-09T03:31:08.283Z",
+      "seconds": 17177891.9706384,
+      "threadId": 12744,
+      "gameThread": true,
+      "action": "open",
+      "editorFound": true,
+      "success": true,
+      "dirty": false
+    },
+    "uiCells": {
+      "ui-before": {
+        "widgetPath": "DT_Scalars/SWindow[0]/SOverlay[3]/SVerticalBox[0]/SVerticalBox[0]/SDockingArea[0]/SOverlay[0]/SHorizontalBox[1]/SOverlay[0]/SSplitter[0]/SDockingTabStack[0]/SVerticalBox[1]/SOverlay[0]/SBorder[0]/SStandaloneAssetEditorToolkitHost[0]/SVerticalBox[0]/UE::Slate::Private::SPanelDrawerArea[0]/SVerticalBox[1]/SDockingArea[0]/SOverlay[0]/SHorizontalBox[1]/SOverlay[0]/SSplitter[0]/SDockingTabStack[0]/SVerticalBox[1]/SOverlay[0]/SBorder[0]/SBorder[0]/SVerticalBox[1]/SHorizontalBox[0]/SScrollBox[0]/SVerticalBox[0]/SOverlay[0]/SScrollPanel[0]/SListView<FDataTableEditorRowListViewDataPtr>[0]/SVerticalBox[1]/SListPanel[0]/SDataTableListViewRow[0]/SHorizontalBox[4]/SBox[0]/SBox[0]/STextBlock",
+        "text": "7"
+      },
+      "ui-after-apply": {
+        "widgetPath": "DT_Scalars/SWindow[0]/SOverlay[3]/SVerticalBox[0]/SVerticalBox[0]/SDockingArea[0]/SOverlay[0]/SHorizontalBox[1]/SOverlay[0]/SSplitter[0]/SDockingTabStack[0]/SVerticalBox[1]/SOverlay[0]/SBorder[0]/SStandaloneAssetEditorToolkitHost[0]/SVerticalBox[0]/UE::Slate::Private::SPanelDrawerArea[0]/SVerticalBox[1]/SDockingArea[0]/SOverlay[0]/SHorizontalBox[1]/SOverlay[0]/SSplitter[0]/SDockingTabStack[0]/SVerticalBox[1]/SOverlay[0]/SBorder[0]/SBorder[0]/SVerticalBox[1]/SHorizontalBox[0]/SScrollBox[0]/SVerticalBox[0]/SOverlay[0]/SScrollPanel[0]/SListView<FDataTableEditorRowListViewDataPtr>[0]/SVerticalBox[1]/SListPanel[0]/SDataTableListViewRow[0]/SHorizontalBox[4]/SBox[0]/SBox[0]/STextBlock",
+        "text": "7"
+      },
+      "ui-after-refresh": {
+        "widgetPath": "DT_Scalars/SWindow[0]/SOverlay[3]/SVerticalBox[0]/SVerticalBox[0]/SDockingArea[0]/SOverlay[0]/SHorizontalBox[1]/SOverlay[0]/SSplitter[0]/SDockingTabStack[0]/SVerticalBox[1]/SOverlay[0]/SBorder[0]/SStandaloneAssetEditorToolkitHost[0]/SVerticalBox[0]/UE::Slate::Private::SPanelDrawerArea[0]/SVerticalBox[1]/SDockingArea[0]/SOverlay[0]/SHorizontalBox[1]/SOverlay[0]/SSplitter[0]/SDockingTabStack[0]/SVerticalBox[1]/SOverlay[0]/SBorder[0]/SBorder[0]/SVerticalBox[1]/SHorizontalBox[0]/SScrollBox[0]/SVerticalBox[0]/SOverlay[0]/SScrollPanel[0]/SListView<FDataTableEditorRowListViewDataPtr>[0]/SVerticalBox[1]/SListPanel[0]/SDataTableListViewRow[0]/SHorizontalBox[4]/SBox[0]/SBox[0]/STextBlock",
+        "text": "8"
+      },
+      "ui-after-editor-cell": {
+        "widgetPath": "DT_Scalars/SWindow[0]/SOverlay[3]/SVerticalBox[0]/SVerticalBox[0]/SDockingArea[0]/SOverlay[0]/SHorizontalBox[1]/SOverlay[0]/SSplitter[0]/SDockingTabStack[0]/SVerticalBox[1]/SOverlay[0]/SBorder[0]/SStandaloneAssetEditorToolkitHost[0]/SVerticalBox[0]/UE::Slate::Private::SPanelDrawerArea[0]/SVerticalBox[1]/SDockingArea[0]/SOverlay[0]/SHorizontalBox[1]/SOverlay[0]/SSplitter[0]/SDockingTabStack[0]/SVerticalBox[1]/SOverlay[0]/SBorder[0]/SBorder[0]/SVerticalBox[1]/SHorizontalBox[0]/SScrollBox[0]/SVerticalBox[0]/SOverlay[0]/SScrollPanel[0]/SListView<FDataTableEditorRowListViewDataPtr>[0]/SVerticalBox[1]/SListPanel[0]/SDataTableListViewRow[0]/SHorizontalBox[4]/SBox[0]/SBox[0]/STextBlock",
+        "text": "33"
+      }
+    },
+    "confirmedValue": {
+      "kind": "int",
+      "value": "8"
+    },
+    "staleResult": {
+      "contract": {
+        "name": "unreal-authoring-apply",
+        "version": {
+          "major": 1,
+          "minor": 2
+        }
+      },
+      "operationId": "39bc03d1-123f-4c74-b3e9-24cfd78d3c01",
+      "status": "rejected",
+      "errors": [
+        {
+          "code": "fingerprint_mismatch",
+          "message": "expected sha256-v1:8f5669775be52e9b50a9ebf534f3007c751e76a96b044827f0e0a62002bceb92 but live state is sha256-v1:cc747cac0a53021e92bc73c19c43e60da1885fdc60c27fdc745e9cd427692ed8",
+          "retrySafe": false,
+          "objectPath": "/Game/Fixture/Authoring/DT_Scalars.DT_Scalars"
+        }
+      ],
+      "snapshots": []
+    },
+    "dirtyRevert": {
+      "hook": "ScenarioResult",
+      "utc": "2026-10-09T03:31:09.403Z",
+      "seconds": 17177893.0906994,
+      "threadId": 12744,
+      "gameThread": true,
+      "action": "revert",
+      "error": "",
+      "success": true,
+      "dirty": false
+    },
+    "revertFingerprint": {
+      "status": "available",
+      "algorithm": "sha256",
+      "version": 1,
+      "value": "sha256-v1:1ca8a88da0613d351503a71bb923e4b5d8d8275a9a14fc10fcc80c73aadace36"
+    },
+    "supplemental": {
+      "stringtable-write": {
+        "hook": "ScenarioResult",
+        "utc": "2026-10-09T03:31:10.967Z",
+        "seconds": 17177894.6549694,
+        "threadId": 12744,
+        "gameThread": true,
+        "action": "stringtable-write",
+        "found": true,
+        "source": "SyncProbe source",
+        "object": "/Game/Fixture/Authoring/ProbeStringTable.ProbeStringTable"
+      },
+      "stringtable-after-undo": {
+        "hook": "ScenarioResult",
+        "utc": "2026-10-09T03:31:11.075Z",
+        "seconds": 17177894.7621804,
+        "threadId": 12744,
+        "gameThread": true,
+        "action": "stringtable-read",
+        "found": false,
+        "source": "",
+        "object": "/Game/Fixture/Authoring/ProbeStringTable.ProbeStringTable"
+      },
+      "stringtable-after-redo": {
+        "hook": "ScenarioResult",
+        "utc": "2026-10-09T03:31:11.156Z",
+        "seconds": 17177894.84384,
+        "threadId": 12744,
+        "gameThread": true,
+        "action": "stringtable-read",
+        "found": true,
+        "source": "SyncProbe source",
+        "object": "/Game/Fixture/Authoring/ProbeStringTable.ProbeStringTable"
+      },
+      "stringtable-raw": {
+        "hook": "ScenarioResult",
+        "utc": "2026-10-09T03:31:11.178Z",
+        "seconds": 17177894.8662217,
+        "threadId": 12744,
+        "gameThread": true,
+        "action": "stringtable-raw",
+        "found": true,
+        "source": "Raw source",
+        "object": "/Game/Fixture/Authoring/ProbeStringTable.ProbeStringTable"
+      }
+    },
+    "hooks": {
+      "open": {},
+      "ui-before": {},
+      "apply-with-editor-open": {
+        "TransactionState": 4,
+        "PackageDirtyStateChanged": 1,
+        "PackageMarkedDirty": 1,
+        "ObjectModified": 1,
+        "ObjectTransacted": 1
+      },
+      "ui-after-apply": {},
+      "notify-refresh": {
+        "DataTableChanged": 3
+      },
+      "ui-after-refresh": {},
+      "editor-cell": {
+        "TransactionState": 4,
+        "PackageMarkedDirty": 1,
+        "ObjectModified": 1,
+        "MutationStart": 1,
+        "DataTableChanged": 3,
+        "ObjectTransacted": 1
+      },
+      "ui-after-editor-cell": {},
+      "stale-apply": {},
+      "tagged-property": {
+        "TransactionState": 4,
+        "PackageDirtyStateChanged": 1,
+        "PackageMarkedDirty": 2,
+        "ObjectModified": 1,
+        "MutationStart": 1,
+        "PropertyChanged": 1,
+        "ObjectTransacted": 1
+      },
+      "tagged-undo": {
+        "TransactionState": 2,
+        "PackageDirtyStateChanged": 1,
+        "ObjectModified": 2,
+        "PropertyChanged": 2,
+        "ObjectTransacted": 1,
+        "UndoMatchesContext": 1,
+        "PostUndo": 1
+      },
+      "tagged-redo": {
+        "TransactionState": 2,
+        "PackageDirtyStateChanged": 1,
+        "ObjectModified": 2,
+        "PropertyChanged": 2,
+        "ObjectTransacted": 1,
+        "UndoMatchesContext": 1,
+        "PostRedo": 1
+      },
+      "dirty-revert": {
+        "PackageDirtyStateChanged": 1,
+        "PropertyChanged": 4,
+        "DataTableChanged": 1,
+        "ObjectModified": 3
+      },
+      "after-revert-snapshot": {},
+      "text-property": {
+        "TransactionState": 4,
+        "PackageMarkedDirty": 2,
+        "ObjectModified": 1,
+        "MutationStart": 1,
+        "PropertyChanged": 1,
+        "ObjectTransacted": 1
+      },
+      "stringtable-write": {
+        "TransactionState": 4,
+        "PackageDirtyStateChanged": 1,
+        "PackageMarkedDirty": 1,
+        "ObjectModified": 1,
+        "ObjectTransacted": 1
+      },
+      "stringtable-undo": {
+        "TransactionState": 2,
+        "PackageDirtyStateChanged": 1,
+        "ObjectModified": 2,
+        "PropertyChanged": 2,
+        "ObjectTransacted": 1,
+        "UndoMatchesContext": 1,
+        "PostUndo": 1
+      },
+      "stringtable-after-undo": {},
+      "stringtable-redo": {
+        "TransactionState": 2,
+        "PackageDirtyStateChanged": 1,
+        "ObjectModified": 2,
+        "PropertyChanged": 2,
+        "ObjectTransacted": 1,
+        "UndoMatchesContext": 1,
+        "PostRedo": 1
+      },
+      "stringtable-after-redo": {},
+      "stringtable-raw": {}
+    }
+  }
+}

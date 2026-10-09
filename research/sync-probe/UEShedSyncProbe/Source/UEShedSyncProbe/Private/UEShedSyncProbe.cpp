@@ -30,6 +30,9 @@
 #include "Widgets/SWindow.h"
 #include "Widgets/Text/STextBlock.h"
 #include "Layout/Children.h"
+#include "Internationalization/StringTable.h"
+#include "Internationalization/StringTableCore.h"
+#include "Runtime/Launch/Resources/Version.h"
 
 namespace Probe
 {
@@ -99,7 +102,7 @@ void WatchTables()
 void ReadCells(const TSharedRef<SWidget>& Widget, const FString& ParentPath, TArray<TSharedPtr<FJsonValue>>& Cells)
 {
 	FString Path = ParentPath + TEXT("/") + Widget->GetType().ToString();
-	if (Widget->GetType() == FName(TEXT("STextBlock")) && Path.Contains(TEXT("SDataTableListViewRow")))
+	if (Widget->GetType() == FName(TEXT("STextBlock")))
 	{
 		auto Json = MakeShared<FJsonObject>();
 		Json->SetStringField(TEXT("widgetPath"), Path);
@@ -108,6 +111,14 @@ void ReadCells(const TSharedRef<SWidget>& Widget, const FString& ParentPath, TAr
 	}
 	if (FChildren* Children = Widget->GetChildren())
 		for (int32 Index = 0; Index < Children->Num(); ++Index) ReadCells(Children->GetChildAt(Index), Path + FString::Printf(TEXT("[%d]"), Index), Cells);
+}
+void SetSource(UStringTable* Table, const FString& Source)
+{
+#if ENGINE_MAJOR_VERSION > 5 || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 8)
+	Table->GetMutableStringTable()->SetSourceString(FTextKey(TEXT("ProbeKey")), Source, FString());
+#else
+	Table->GetMutableStringTable()->SetSourceString(FTextKey(TEXT("ProbeKey")), Source);
+#endif
 }
 }
 
@@ -233,8 +244,28 @@ void UUEShedSyncProbeLibrary::Scenario(const FString& RequestJson, FString& Resu
 	if (Action == TEXT("ui-text"))
 	{
 		TArray<TSharedPtr<FJsonValue>> Cells;
-		for (const auto& Window : FSlateApplication::Get().GetTopLevelWindows()) Probe::ReadCells(Window, Window->GetTitle().ToString(), Cells);
+		TArray<TSharedRef<SWindow>> Windows;
+		FSlateApplication::Get().GetAllVisibleWindowsOrdered(Windows);
+		for (const auto& Window : Windows) Probe::ReadCells(Window, Window->GetTitle().ToString(), Cells);
+		Result->SetNumberField(TEXT("windowCount"), Windows.Num());
 		Result->SetArrayField(TEXT("cells"), Cells);
+		ResultJson = Probe::Encode(Result); return;
+	}
+	if (Action.StartsWith(TEXT("stringtable-")))
+	{
+		static TStrongObjectPtr<UStringTable> Strings;
+		if (!Strings.IsValid()) Strings.Reset(NewObject<UStringTable>(CreatePackage(TEXT("/Game/Fixture/Authoring/ProbeStringTable")), TEXT("ProbeStringTable"), RF_Public | RF_Standalone | RF_Transactional));
+		if (Action == TEXT("stringtable-write"))
+		{
+			FScopedTransaction Transaction(TEXT("UEShedSyncProbe"), FText::FromString(Action), Strings.Get());
+			Strings->Modify();
+			Probe::SetSource(Strings.Get(), Request->GetStringField(TEXT("value")));
+		}
+		else if (Action == TEXT("stringtable-raw")) Probe::SetSource(Strings.Get(), Request->GetStringField(TEXT("value")));
+		FString Source;
+		Result->SetBoolField(TEXT("found"), Strings->GetStringTable()->GetSourceString(FTextKey(TEXT("ProbeKey")), Source));
+		Result->SetStringField(TEXT("source"), Source);
+		Result->SetStringField(TEXT("object"), Strings->GetPathName());
 		ResultJson = Probe::Encode(Result); return;
 	}
 	if (Action == TEXT("actor"))
@@ -250,11 +281,11 @@ void UUEShedSyncProbeLibrary::Scenario(const FString& RequestJson, FString& Resu
 		Result->SetStringField(TEXT("object"), Actor->GetPathName());
 		ResultJson = Probe::Encode(Result); return;
 	}
-	if (Action == TEXT("property") || Action == TEXT("interactive"))
+	if (Action == TEXT("property") || Action == TEXT("interactive") || Action == TEXT("text-property"))
 	{
 		static TStrongObjectPtr<UUEShedSyncProbeDataAsset> Asset;
 		if (!Asset.IsValid()) Asset.Reset(NewObject<UUEShedSyncProbeDataAsset>(CreatePackage(TEXT("/Game/Fixture/Authoring/ProbeDataAsset")), TEXT("ProbeDataAsset"), RF_Public | RF_Standalone | RF_Transactional));
-		FProperty* Property = FindFProperty<FProperty>(Asset->GetClass(), TEXT("Value"));
+		FProperty* Property = FindFProperty<FProperty>(Asset->GetClass(), Action == TEXT("text-property") ? TEXT("Text") : TEXT("Value"));
 		FScopedTransaction Transaction(TEXT("UEShedSyncProbe"), FText::FromString(Action), Asset.Get());
 		Asset->Modify(); Asset->PreEditChange(Property);
 		Probe::Write(Probe::Event(TEXT("MutationStart"), Asset.Get()));
@@ -262,7 +293,8 @@ void UUEShedSyncProbeLibrary::Scenario(const FString& RequestJson, FString& Resu
 		{
 			for (int32 Index = 0; Index < 3; ++Index) { Asset->Value += 1; FPropertyChangedEvent E(Property, EPropertyChangeType::Interactive); Asset->PostEditChangeProperty(E); SnapshotTransactionBuffer(Asset.Get()); }
 		}
-		Asset->Value += 1;
+		if (Action == TEXT("text-property")) Asset->Text = FText::FromString(TEXT("SyncProbe text"));
+		else Asset->Value += 1;
 		FPropertyChangedEvent E(Property, EPropertyChangeType::ValueSet); Asset->PostEditChangeProperty(E);
 		Result->SetStringField(TEXT("object"), Asset->GetPathName());
 		Result->SetNumberField(TEXT("value"), Asset->Value);
@@ -280,6 +312,7 @@ void UUEShedSyncProbeLibrary::Scenario(const FString& RequestJson, FString& Resu
 	else if (Action == TEXT("row-rename")) Success = FDataTableEditorUtils::RenameRow(Table, Row, FName(*Request->GetStringField(TEXT("newRow"))));
 	else if (Action == TEXT("row-reorder")) Success = FDataTableEditorUtils::MoveRow(Table, Row, FDataTableEditorUtils::ERowMoveDirection::Down);
 	else if (Action == TEXT("open")) { auto* Editors = GEditor->GetEditorSubsystem<UAssetEditorSubsystem>(); Success = Editors->OpenEditorForAsset(Table); Result->SetBoolField(TEXT("editorFound"), Editors->FindEditorForAsset(Table, false) != nullptr); }
+	else if (Action == TEXT("refresh")) { FDataTableEditorUtils::BroadcastPreChange(Table, FDataTableEditorUtils::EDataTableChangeInfo::RowData); FDataTableEditorUtils::BroadcastPostChange(Table, FDataTableEditorUtils::EDataTableChangeInfo::RowData); }
 	else if (Action == TEXT("save"))
 	{
 		FString Filename = FPackageName::LongPackageNameToFilename(Table->GetOutermost()->GetName(), FPackageName::GetAssetPackageExtension());

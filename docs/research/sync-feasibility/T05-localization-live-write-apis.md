@@ -1,4 +1,4 @@
-# T05 — Localization live-write APIs
+# T05 â€” Localization live-write APIs
 Question: Can a Level 3 writer change translations/preview in memory, and are String Table source edits transacted/observable?
 Why it matters for the sync layer: Translations are not ordinary dirty asset properties; preview, archive/PO persistence, and compile must have distinct outcomes.
 Method: `query T05 VERSION Engine/Source 'UpdateFromLocalizationResource|UpdateDisplayString|AddDisplayString|RefreshResources|PreviewLanguage|SetSourceString|SetStringTableId|WriteTranslationData|SaveSelectedTranslations'`; read listed implementations/public APIs and compare files between engines. Code reading ONLY as requested. Repository product evidence levels at `docs/products/game-text.md:365-371`, optional editor writer `:569-581`. No probe.
@@ -18,7 +18,7 @@ Results:
 | Localization service | Provider Execute is synchronous/asynchronous service operation, not a generic editor UObject transaction API | Same API family; runtime UNVERIFIED | Developer/LocalizationService/Public/ILocalizationServiceProvider.h `:120-130,169-174` |
 | Dashboard execution | Commandlet process spawned via CreateProc | Same call at same line | Editor/LocalizationCommandletExecution/Private/LocalizationCommandletExecution.cpp `:764` |
 | String Table editor SetEntry | Scoped transaction, UStringTable::Modify, FStringTable::SetSourceString, local refresh | Same, includes developer notes | Editor/StringTableEditor/Private/StringTableEditor.cpp `:540-549` / `:586-595` |
-| Raw string source mutation | SetSourceString updates keyed string entry under lock; no UObject Modify/PostEditChange by itself | Same core, new notes overload; old overload retained | Runtime/Core/Private/Internationalization/StringTableCore.cpp `:171-185` / `:184` onward; Public/StringTableCore.h `:123` / `:145-148` |
+| Raw string source mutation | SetSourceString updates keyed string entry under lock; no UObject Modify/PostEditChange by itself | Same core; editor-only-data builds require key/source/dev-notes (three args); two-arg form exists only without editor-only data | Runtime/Core/Private/Internationalization/StringTableCore.cpp `:171-185` / `:184` onward; Public/StringTableCore.h `:123` / `:145-148` |
 
 Source-derived conclusion: immediate translation **preview** is feasible without launching import/compile, using live-table override or an in-memory localization resource. That does not persist translations, update PO/archive provenance, or provide Unreal undo/package dirty semantics. Live display overrides can be replaced by resource/culture reload. Which cultures/targets a writer updates needs explicit scope, source-hash and fallback handling. Runtime success, visual refresh latency and durability are UNVERIFIED because this task is source-only.
 

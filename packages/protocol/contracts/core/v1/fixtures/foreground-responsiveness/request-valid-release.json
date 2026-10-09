@@ -1,0 +1,6 @@
+{
+	"operation": "release",
+	"expectedProcessId": 4242,
+	"clientProcessId": 5151,
+	"leaseId": "0123456789abcdef0123456789abcdef"
+}

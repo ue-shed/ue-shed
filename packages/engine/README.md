@@ -41,6 +41,27 @@ process identity selects the target; no window-title or first-Unreal-process heu
 No editor launch or map/camera mutation is implied. See the shared
 [Core window contract](../protocol/contracts/core/v1/WINDOW-ACTIVATION.md).
 
+`EditorForegroundResponsiveness` keeps a local editor out of Unreal's background throttling while
+the host's own window is the foreground window. `hold` is a scoped resource: it acquires a lease
+for `clientProcessId`, renews at a third of the TTL, and releases when the scope closes.
+
+```ts
+const keepResponsive = Effect.gen(function* () {
+	const service = yield* EditorForegroundResponsiveness;
+	const lease = yield* service.hold({ endpoint, clientProcessId: process.pid });
+	yield* Effect.never; // held until the surrounding scope closes
+}).pipe(Effect.scoped, Effect.provide(EditorForegroundResponsivenessLive));
+```
+
+Pass the process that owns the host's windows; for Electron that is the main process. A
+non-loopback endpoint fails with `remote_endpoint` before anything is sent. Only the first acquire
+can fail; afterwards, failed renewals back off and report `Lapsed` through `lease.state` while
+Unreal's normal policy applies, and an ended lease or restarted editor is acquired again. A CLI
+host cannot use this yet: its console window belongs to the terminal, not to Node. See the
+[Core foreground responsiveness contract](../protocol/contracts/core/v1/FOREGROUND-RESPONSIVENESS.md);
+its "Integrating a client" section covers other languages, which process to name, and the UE 5.8
+Remote Control allowlist.
+
 `SupervisedEditorSession` is a separate caller-owned launch path for bounded one-shot work. It
 validates explicit project and plugin descriptors before launch, owns a process tree inside
 an Effect scope, and reports readiness only after the expected Remote Control capability manifest

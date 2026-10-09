@@ -23,6 +23,8 @@ export const workbenchInvokeChannels = {
 		activate: "editor-window:activate",
 		settings: "editor-session:settings",
 		setPort: "editor-session:set-port",
+		responsiveness: "editor-responsiveness:settings",
+		setResponsiveness: "editor-responsiveness:set-enabled",
 		status: "editor-session:status",
 		execute: "editor-session:execute"
 	},

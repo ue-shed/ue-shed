@@ -654,6 +654,26 @@ Feedback remains visible across status polls, clears after a successful handoff 
 and ignores notifications from a previously selected endpoint. Actor navigation also retains its
 separate activation result in the public Observatory response.
 
+### Keeping Unreal responsive while Workbench is in front
+
+Unreal throttles a background or minimised editor to about 3 frames a second, so every request
+from Workbench to it would wait about a third of a second. While Workbench is connected to a local
+editor that offers `editor.foreground-responsiveness.v1` (UE Shed Core, Windows), the main process
+holds a lease that keeps that editor at full speed **only while a Workbench window is the
+foreground window**. Switch to another application and Unreal's own policy applies again at once;
+no focus messages are sent, because Unreal checks the foreground itself.
+
+The lease is acquired when the editor is reachable, renewed every few seconds, moved when the port
+changes, and released when Workbench closes or the setting is turned off. A remote endpoint is never
+leased. Workbench never changes Unreal's **Use Less CPU when in Background** setting.
+
+The setting is the **Keep Unreal responsive while Workbench is in front** checkbox in the Unreal
+target settings (the `:port` control beside the session status). It is on by default and saved on
+the device; the line beneath it says whether the lease is active, waiting for an editor, lapsed,
+or unavailable. The first request after switching to Workbench can still wait for the end of
+Unreal's current throttled frame; requests after that are fast. See the
+[Core contract](../packages/protocol/contracts/core/v1/FOREGROUND-RESPONSIVENESS.md).
+
 To validate this flow, keep two editors open and connect Workbench to one. Try Show Unreal,
 locating an asset, opening a map, and editing a camera, including with the connected editor
 minimized. The other editor must remain untouched. Then capture, adjust cameras, load views,

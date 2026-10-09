@@ -1,4 +1,5 @@
 import { makeWorkbenchEditorHandoffTestLayer } from "../services/editor-handoff.js";
+import { makeWorkbenchEditorResponsivenessTestLayer } from "../services/editor-responsiveness.js";
 import { makeWorkbenchTestConfigurationLayer as makeWorkbenchConfigurationLayer } from "../test-configuration.js";
 import { makeWorkbenchUnrealConnectionLayer } from "../services/unreal-connection.js";
 import { it } from "@effect/vitest";
@@ -737,6 +738,7 @@ function buildRegistrationLayer(recorder: Recorder, options: RegistrationOptions
 
 	return Layer.mergeAll(
 		makeWorkbenchEditorHandoffTestLayer(),
+		makeWorkbenchEditorResponsivenessTestLayer(),
 		assetReader,
 		dialog,
 		showcase,
@@ -942,6 +944,21 @@ it.effect("changes the selected Remote Control port through editor-session setti
 			})
 		);
 		expect(result).toEqual({ endpoint: "http://127.0.0.1:31001/", port: 31001 });
+	})
+);
+
+it.effect("reads and changes the Unreal responsiveness preference", () =>
+	Effect.gen(function* () {
+		const { result } = yield* runRegistered((ipc) =>
+			Effect.gen(function* () {
+				expect(yield* ipc.invoke("editor-responsiveness:settings")).toMatchObject({
+					enabled: true,
+					state: "active"
+				});
+				return yield* ipc.invoke("editor-responsiveness:set-enabled", false);
+			})
+		);
+		expect(result).toMatchObject({ enabled: false, state: "off" });
 	})
 );
 

@@ -8,6 +8,7 @@ import {
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { Exit } from "effect";
 import { For, Show, createMemo, createSignal, onSettled } from "solid-js";
+import type { EditorResponsivenessSettings } from "../shared/ipc-contracts.js";
 import type { WorkbenchRendererClient } from "./workbench-client.js";
 import {
 	editorSessionTransportActions,
@@ -27,6 +28,8 @@ export function EditorSessionTransport(props: {
 		| "executeEditorSessionCommand"
 		| "editorHandoffs"
 		| "activateEditorWindow"
+		| "editorResponsiveness"
+		| "setEditorResponsiveness"
 	>;
 	readonly onTargetChanged?: () => void;
 }) {
@@ -46,6 +49,32 @@ export function EditorSessionTransport(props: {
 	const [portDraft, setPortDraft] = createSignal("");
 	const [portMessage, setPortMessage] = createSignal<string>();
 	const settings = createDismissibleDetails();
+	// Separate owners: a refresh must never interrupt a pending change, and a change supersedes
+	// any refresh still in flight so a stale read cannot overwrite the settled preference.
+	const responsivenessRead = createEffectAction();
+	const responsivenessChange = createEffectAction();
+	const [responsiveness, setResponsiveness] = createSignal<EditorResponsivenessSettings>();
+	const [responsivenessPending, setResponsivenessPending] = createSignal(false);
+	const refreshResponsiveness = () => {
+		if (responsivenessPending()) return;
+		responsivenessRead.run(props.client.editorResponsiveness(), {
+			onSuccess: setResponsiveness
+		});
+	};
+	const changeResponsiveness = (enabled: boolean) => {
+		responsivenessRead.cancel();
+		setResponsivenessPending(true);
+		responsivenessChange.run(props.client.setEditorResponsiveness(enabled), {
+			onFailure: () => {
+				setResponsivenessPending(false);
+				refreshResponsiveness();
+			},
+			onSuccess: (next) => {
+				setResponsivenessPending(false);
+				setResponsiveness(next);
+			}
+		});
+	};
 	const actions = createMemo(() => editorSessionTransportActions(state()));
 	const subscribeStatus = () =>
 		subscription.subscribe(props.client.editorSessionStatuses, {
@@ -174,7 +203,13 @@ export function EditorSessionTransport(props: {
 				)}
 			/>
 			<span {...stylex.attrs(styles.label)}>{editorSessionTransportLabel(state())}</span>
-			<details ref={(element) => settings.ref(element)} {...stylex.attrs(styles.settings)}>
+			<details
+				ref={(element) => settings.ref(element)}
+				onToggle={(event) => {
+					if (event.currentTarget.open) refreshResponsiveness();
+				}}
+				{...stylex.attrs(styles.settings)}
+			>
 				<summary
 					aria-label="Change Unreal target port"
 					title="Unreal target port"
@@ -218,6 +253,23 @@ export function EditorSessionTransport(props: {
 						)}
 					</Show>
 					<small {...stylex.attrs(styles.storageNote)}>Saved on this device.</small>
+					<label {...stylex.attrs(styles.responsiveness)}>
+						<input
+							type="checkbox"
+							checked={responsiveness()?.enabled ?? false}
+							disabled={!responsiveness() || responsivenessPending()}
+							onChange={(event) => changeResponsiveness(event.currentTarget.checked)}
+							{...stylex.attrs(styles.checkbox)}
+						/>
+						Keep Unreal responsive while Workbench is in front
+					</label>
+					<Show when={responsiveness()?.detail}>
+						{(detail) => (
+							<small role="status" {...stylex.attrs(styles.storageNote)}>
+								{detail()}
+							</small>
+						)}
+					</Show>
 				</section>
 			</details>
 			<div {...stylex.attrs(styles.actions)}>
@@ -369,6 +421,20 @@ const styles = stylex.create({
 		color: tokens.colorTextSubtle,
 		fontSize: 11
 	},
+	responsiveness: {
+		display: "flex",
+		alignItems: "center",
+		gap: 8,
+		marginTop: 14,
+		paddingTop: 12,
+		borderTopColor: tokens.colorBorder,
+		borderTopStyle: "solid",
+		borderTopWidth: 1,
+		color: tokens.colorText,
+		fontSize: 12,
+		cursor: "pointer"
+	},
+	checkbox: { margin: 0, accentColor: tokens.colorAccent },
 	actions: { display: "flex", gap: 4, width: "100%" },
 	button: {
 		minWidth: 42,

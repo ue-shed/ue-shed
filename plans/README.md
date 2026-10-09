@@ -22,6 +22,7 @@ the status row when done.
 | [052](052-text-identity-and-scope-tools.md)              | Text identity and scope tools for Game Text                     | P1       | L      | 051, Map History Perforce | IN PROGRESS — Phase 3 not started |
 | [053](053-game-text-review-workspace.md)                 | Game Text review workspace                                      | P1       | XL     | 052                       | IN PROGRESS — done, PR #58 open   |
 | [054](054-check-text-before-submit.md)                   | Check a change's text before it is submitted                    | P1       | M      | 052, 053                  | IN PROGRESS — done, PR #58 open   |
+| [055](055-editor-foreground-responsiveness.md)           | Keep Unreal responsive while UE Shed is in the foreground       | P1       | L      | Core window activation    | IN PROGRESS                       |
 
 Status values: `TODO`, `IN PROGRESS`, `DONE`, `BLOCKED` with a one-line reason, or `REJECTED` with a
 one-line rationale. When a plan is `DONE`, move it into [`archive/`](archive/) and update both this

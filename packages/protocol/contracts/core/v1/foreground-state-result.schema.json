@@ -1,0 +1,181 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$defs": {},
+	"anyOf": [
+		{
+			"type": "object",
+			"properties": {
+				"status": {
+					"type": "string",
+					"enum": ["reported"]
+				},
+				"schemaVersion": {
+					"type": "number",
+					"enum": [1]
+				},
+				"processId": {
+					"type": "integer",
+					"allOf": [
+						{
+							"exclusiveMinimum": 0
+						},
+						{
+							"exclusiveMaximum": 4294967295
+						}
+					]
+				},
+				"message": {
+					"type": "string"
+				},
+				"recovery": {
+					"type": "string"
+				},
+				"registered": {
+					"type": "boolean"
+				},
+				"activeLeases": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 0,
+							"maximum": 8
+						}
+					]
+				},
+				"maxLeases": {
+					"type": "integer",
+					"allOf": [
+						{
+							"exclusiveMinimum": 0
+						}
+					]
+				},
+				"exemptionActive": {
+					"type": "boolean"
+				},
+				"editorThrottling": {
+					"type": "boolean"
+				},
+				"throttleWhenNotForeground": {
+					"type": "boolean"
+				},
+				"minTtlMs": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 2000,
+							"maximum": 30000
+						}
+					]
+				},
+				"defaultTtlMs": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 2000,
+							"maximum": 30000
+						}
+					]
+				},
+				"maxTtlMs": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 2000,
+							"maximum": 30000
+						}
+					]
+				}
+			},
+			"required": [
+				"status",
+				"schemaVersion",
+				"processId",
+				"message",
+				"recovery",
+				"registered",
+				"activeLeases",
+				"maxLeases",
+				"exemptionActive",
+				"editorThrottling",
+				"throttleWhenNotForeground",
+				"minTtlMs",
+				"defaultTtlMs",
+				"maxTtlMs"
+			],
+			"additionalProperties": false
+		},
+		{
+			"type": "object",
+			"properties": {
+				"status": {
+					"type": "string",
+					"enum": ["rejected"]
+				},
+				"schemaVersion": {
+					"type": "number",
+					"enum": [1]
+				},
+				"processId": {
+					"type": "integer",
+					"allOf": [
+						{
+							"exclusiveMinimum": 0
+						},
+						{
+							"exclusiveMaximum": 4294967295
+						}
+					]
+				},
+				"message": {
+					"type": "string"
+				},
+				"recovery": {
+					"type": "string"
+				},
+				"reason": {
+					"type": "string",
+					"enum": ["invalid_request", "target_changed"]
+				}
+			},
+			"required": ["status", "schemaVersion", "processId", "message", "recovery", "reason"],
+			"additionalProperties": false
+		},
+		{
+			"type": "object",
+			"properties": {
+				"status": {
+					"type": "string",
+					"enum": ["unsupported"]
+				},
+				"schemaVersion": {
+					"type": "number",
+					"enum": [1]
+				},
+				"processId": {
+					"type": "integer",
+					"allOf": [
+						{
+							"exclusiveMinimum": 0
+						},
+						{
+							"exclusiveMaximum": 4294967295
+						}
+					]
+				},
+				"message": {
+					"type": "string"
+				},
+				"recovery": {
+					"type": "string"
+				},
+				"reason": {
+					"type": "string",
+					"enum": ["platform", "editor_unavailable"]
+				}
+			},
+			"required": ["status", "schemaVersion", "processId", "message", "recovery", "reason"],
+			"additionalProperties": false
+		}
+	]
+}

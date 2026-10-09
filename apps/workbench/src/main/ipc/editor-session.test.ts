@@ -1,4 +1,5 @@
 import { makeWorkbenchEditorHandoffTestLayer } from "../services/editor-handoff.js";
+import { makeWorkbenchEditorResponsivenessTestLayer } from "../services/editor-responsiveness.js";
 import { it } from "@effect/vitest";
 import { EditorPlaySessionError, makeEditorPlaySessionTestLayer } from "@ue-shed/engine";
 import { Effect, Exit, Layer } from "effect";
@@ -38,6 +39,7 @@ it.effect(
 					return yield* ElectronIpcTest;
 				}),
 				Layer.mergeAll(
+					makeWorkbenchEditorResponsivenessTestLayer(),
 					makeElectronIpcTestLayer(),
 					makeWorkbenchUnrealConnectionLayer(endpoint),
 					makeWorkbenchEditorHandoffTestLayer((target) =>
@@ -95,6 +97,7 @@ it.effect("returns unavailable status without rejecting while command failures r
 				return yield* ElectronIpcTest;
 			}),
 			Layer.mergeAll(
+				makeWorkbenchEditorResponsivenessTestLayer(),
 				makeWorkbenchEditorHandoffTestLayer(),
 				makeElectronIpcTestLayer(),
 				editorSession,

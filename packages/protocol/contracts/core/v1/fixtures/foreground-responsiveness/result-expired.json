@@ -1,0 +1,10 @@
+{
+	"status": "expired",
+	"schemaVersion": 1,
+	"processId": 4242,
+	"message": "The lease ended before it was renewed.",
+	"recovery": "Acquire a new lease.",
+	"activeLeases": 0,
+	"leaseId": "0123456789abcdef0123456789abcdef",
+	"reason": "lease_ended"
+}

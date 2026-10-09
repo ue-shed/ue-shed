@@ -21,6 +21,7 @@ import { TextCorpusServiceLive } from "@ue-shed/game-text";
 import {
 	EditorWindowActivationLive,
 	EditorForegroundPermissionLive,
+	EditorForegroundResponsivenessLive,
 	EditorPlaySessionLive,
 	EditorWorldControlLive,
 	EngineInstallationDiscoveryLive,
@@ -51,6 +52,7 @@ import { offlineTexturePreviewHostLayer } from "./adapters/offline-texture-previ
 import { register as registerWorkbenchIpc } from "./ipc/register.js";
 import { WorkbenchAssetAuditsLive } from "./services/asset-audits.js";
 import { WorkbenchEditorHandoffLive } from "./services/editor-handoff.js";
+import { WorkbenchEditorResponsivenessLive } from "./services/editor-responsiveness.js";
 import { WorkbenchAssetNavigationLive } from "./services/asset-navigation.js";
 import { WorkbenchAuthoringLive } from "./services/authoring.js";
 import { CameraPresentationLive } from "./services/camera-presentation.js";
@@ -111,6 +113,9 @@ function baseLayer(hosts: WorkbenchHosts) {
 		Layer.provide(remoteControl)
 	);
 	const editorWorldControl = EditorWorldControlLive.pipe(Layer.provide(remoteControl));
+	const editorForegroundResponsiveness = EditorForegroundResponsivenessLive.pipe(
+		Layer.provide(remoteControl)
+	);
 	const scenarioRunner = ScenarioRunnerLive.pipe(
 		Layer.provide(Layer.merge(remoteControl, editorPlaySession))
 	);
@@ -126,6 +131,7 @@ function baseLayer(hosts: WorkbenchHosts) {
 		remoteControl,
 		editorPlaySession,
 		editorWindowActivation,
+		editorForegroundResponsiveness,
 		scenarioRunner,
 		ReviewRepositoryLive,
 		MapCaptureRepositoryLive,
@@ -169,6 +175,7 @@ function domainCatalogLayer(hosts: WorkbenchHosts) {
 	return Layer.mergeAll(
 		ElectronDialogLive,
 		WorkbenchEditorHandoffLive,
+		WorkbenchEditorResponsivenessLive,
 		TextureAuditLive,
 		TextCorpusServiceLive,
 		LocalizationEvidenceNodeLive,
@@ -239,7 +246,9 @@ function featureLayer(hosts: WorkbenchHosts) {
  * startup with a typed error.
  *
  * Acquiring this layer never launches Unreal and never polls fixture health; it only builds
- * services, forks scoped presentation/camera workers, and registers IPC handlers.
+ * services, forks scoped presentation/camera workers, and registers IPC handlers. The one
+ * exception to "no Unreal traffic" is the foreground responsiveness lease: while its preference
+ * is on, it tries the selected local endpoint with backoff and releases the lease on dispose.
  * Observatory named-pipe observation starts only when Map Review subscribes and stops when that
  * subscription scope closes — Workbench never begins actor sampling at layer acquisition.
  */

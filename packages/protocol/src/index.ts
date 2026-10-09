@@ -160,4 +160,5 @@ export * from "./saved-world.js";
 export * from "./uasset-io.js";
 export * from "./uasset-inspection.js";
 export * from "./editor-window-activation.js";
+export * from "./editor-foreground-responsiveness.js";
 export * from "./level-sequence.js";

@@ -133,6 +133,11 @@ void UUEShedCoreLibrary::GetCapabilityManifest(FString& ResultJson)
 		Root->SetStringField(TEXT("windowActivationObjectPath"),
 			TEXT("/Script/UEShedCoreEditor.Default__UEShedEditorWindowLibrary"));
 		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("editor.window-activation.v1")));
+#if PLATFORM_WINDOWS
+		Root->SetStringField(TEXT("foregroundResponsivenessObjectPath"),
+			TEXT("/Script/UEShedCoreEditor.Default__UEShedEditorResponsivenessLibrary"));
+		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("editor.foreground-responsiveness.v1")));
+#endif
 	}
 	if (FModuleManager::Get().IsModuleLoaded(TEXT("UEShedScenariosEditor")))
 	{

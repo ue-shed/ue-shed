@@ -58,7 +58,12 @@ const tests = [
 	"UEShed.Cameras.Streaming.DeliveryScope",
 	"UEShed.Cameras.Streaming.CadenceUpdates",
 	"UEShed.Niagara.IndependentCamera",
-	"UEShed.Core.EditorWorld.AsyncOpen"
+	"UEShed.Core.EditorWorld.AsyncOpen",
+	"UEShed.Core.ForegroundResponsiveness.Leases",
+	"UEShed.Core.ForegroundResponsiveness.Contract",
+	"UEShed.Core.ForegroundResponsiveness.NativeProcess",
+	"UEShed.Core.ForegroundResponsiveness.PredicateCost",
+	"UEShed.Core.ForegroundResponsiveness.DelegateEntry"
 ];
 const report = join(root, "automation");
 const result = spawnSync(
@@ -74,6 +79,7 @@ const result = spawnSync(
 		`-UEShedWorldContractFixtures=${join(repositoryRoot, "packages/protocol/contracts/world/preparation/v1/fixtures")}`,
 		`-UEShedAutomationContractFixtures=${join(repositoryRoot, "packages/protocol/contracts/automation/v1/fixtures")}`,
 		`-UEShedAuthoringContractFixtures=${join(repositoryRoot, "packages/protocol/contracts/authoring/v1/fixtures")}`,
+		`-UEShedCoreContractFixtures=${join(repositoryRoot, "packages/protocol/contracts/core/v1/fixtures")}`,
 		`-abslog=${join(root, "editor.log")}`,
 		"-unattended",
 		"-nop4",

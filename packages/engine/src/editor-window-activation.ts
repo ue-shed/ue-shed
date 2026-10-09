@@ -8,6 +8,7 @@ import {
 } from "@ue-shed/protocol";
 import { RemoteControlClient } from "@ue-shed/unreal-connection";
 import { Context, Effect, Layer, Schema } from "effect";
+import { isLoopbackEndpoint } from "./loopback-endpoint.js";
 
 export class EditorWindowActivationError extends Schema.TaggedErrorClass<EditorWindowActivationError>()(
 	"EditorWindowActivationError",
@@ -102,11 +103,7 @@ export const EditorWindowActivationLive = Layer.effect(
 					);
 				}
 				const processId = manifest.identity.processId;
-				const url = yield* Effect.try({
-					try: () => new URL(endpoint),
-					catch: (cause) => failure("endpoint", cause)
-				});
-				if (["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)) {
+				if (isLoopbackEndpoint(endpoint)) {
 					yield* permission
 						.grant(processId)
 						.pipe(

@@ -1,0 +1,16 @@
+{
+	"status": "reported",
+	"schemaVersion": 1,
+	"processId": 4242,
+	"message": "",
+	"recovery": "",
+	"registered": true,
+	"activeLeases": 1,
+	"maxLeases": 8,
+	"exemptionActive": false,
+	"editorThrottling": true,
+	"throttleWhenNotForeground": true,
+	"minTtlMs": 2000,
+	"defaultTtlMs": 5000,
+	"maxTtlMs": 30000
+}

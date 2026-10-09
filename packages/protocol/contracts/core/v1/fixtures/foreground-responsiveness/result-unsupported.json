@@ -1,0 +1,8 @@
+{
+	"status": "unsupported",
+	"schemaVersion": 1,
+	"processId": 4242,
+	"message": "Foreground responsiveness is not implemented on this platform.",
+	"recovery": "Unreal's normal background policy applies.",
+	"reason": "platform"
+}

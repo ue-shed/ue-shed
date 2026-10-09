@@ -35,6 +35,7 @@ import type {
 	CameraStatusResult,
 	ConfigExplorerQuery,
 	ConfigExplorerQueryResult,
+	EditorResponsivenessSettings,
 	EditorSessionStatusResult,
 	FixtureLaunchResult,
 	RendererCameraFrame,
@@ -60,6 +61,7 @@ export type {
 	CameraStatusResult,
 	ConfigExplorerQuery,
 	ConfigExplorerQueryResult,
+	EditorResponsivenessSettings,
 	EditorSessionStatusResult,
 	FixtureLaunchResult,
 	RendererCameraFrame,
@@ -95,6 +97,10 @@ const workbenchRendererApi = {
 			ipcRenderer.invoke("editor-session:settings"),
 		setPort: (port: number): Promise<UnrealConnectionSettings> =>
 			ipcRenderer.invoke("editor-session:set-port", port),
+		responsiveness: (): Promise<EditorResponsivenessSettings> =>
+			ipcRenderer.invoke("editor-responsiveness:settings"),
+		setResponsiveness: (enabled: boolean): Promise<EditorResponsivenessSettings> =>
+			ipcRenderer.invoke("editor-responsiveness:set-enabled", enabled),
 		status: (): Promise<EditorSessionStatusResult> =>
 			ipcRenderer.invoke("editor-session:status"),
 		execute: (command: EditorPlaySessionCommand): Promise<EditorPlaySessionCommandResponse> =>

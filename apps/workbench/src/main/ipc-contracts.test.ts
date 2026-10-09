@@ -204,6 +204,8 @@ const validArgsByChannel = {
 	"editor-window:activate": [],
 	"editor-session:settings": [],
 	"editor-session:set-port": [31001],
+	"editor-responsiveness:settings": [],
+	"editor-responsiveness:set-enabled": [false],
 	"editor-session:status": [],
 	"editor-session:execute": ["start_play"],
 	"scenario:open-document": [],
@@ -503,6 +505,16 @@ const validResultByChannel = {
 	"editor-window:activate": { endpoint: "http://127.0.0.1:30001", message: null },
 	"editor-session:settings": { port: 30001 },
 	"editor-session:set-port": { port: 31001 },
+	"editor-responsiveness:settings": {
+		enabled: true,
+		state: "active",
+		detail: "Unreal stays responsive while Workbench is in front."
+	},
+	"editor-responsiveness:set-enabled": {
+		enabled: false,
+		state: "off",
+		detail: "Unreal's own background setting applies."
+	},
 	"editor-session:status": {
 		session: {
 			contract: { name: "unreal-editor-play-session", version: { major: 1, minor: 0 } },
@@ -941,9 +953,9 @@ const malformedArgsByChannel = {
 	"map-capture:tile": [{ manifestPath: "", relativePath: "../outside.png" }]
 } satisfies Partial<Record<InvokeChannel, IpcFixtureValue>>;
 
-it("registers exactly 143 invoke channels plus renderer events", () => {
-	expect(invokeChannelNames).toHaveLength(143);
-	expect(new Set(invokeChannelNames).size).toBe(143);
+it("registers exactly 145 invoke channels plus renderer events", () => {
+	expect(invokeChannelNames).toHaveLength(145);
+	expect(new Set(invokeChannelNames).size).toBe(145);
 	expect(invokeChannelNames).toEqual(
 		expect.arrayContaining([
 			"game-text:localization:quality-search",

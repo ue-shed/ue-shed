@@ -11,3 +11,5 @@
 - 2026-10-09T09:31:54.250138+07:00 T04 complete: signature survey on 4.27, 5.3, 5.7, 5.8. 5.5/5.6 registry entries stale, roots do not exist; FileNotFoundError recorded and survey fixed to continue with UNVERIFIED rows. Next T05.
 
 - 2026-10-09T09:32:21.664477+07:00 Housekeeping: Python import generated a pyc inadvertently staged in T04. Removed it, added probe-local __pycache__ ignore, and amended that research commit so no binary remains in branch history.
+
+- 2026-10-09T09:33:46.710828+07:00 T05 complete source-only: in-memory translation display/resource update APIs present in both engines; persistence/compile separate. String Table native editor transaction observed in source, local refresh does not emit property event. Automatic checkout in private TranslationDataManager is unsuitable for UE Shed policy. Next T06.

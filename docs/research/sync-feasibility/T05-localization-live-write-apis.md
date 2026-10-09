@@ -1,9 +1,32 @@
 # T05 — Localization live-write APIs
-Question: Pending investigation.
-Why it matters for the sync layer: Pending investigation.
-Method: Pending investigation.
-Results: UNVERIFIED — task not yet run.
-Evidence: None yet.
-Confidence: low — no investigation yet.
-Surprises / risks found: Pending investigation.
-Open follow-ups: Complete this task.
+Question: Can a Level 3 writer change translations/preview in memory, and are String Table source edits transacted/observable?
+Why it matters for the sync layer: Translations are not ordinary dirty asset properties; preview, archive/PO persistence, and compile must have distinct outcomes.
+Method: `query T05 VERSION Engine/Source 'UpdateFromLocalizationResource|UpdateDisplayString|AddDisplayString|RefreshResources|PreviewLanguage|SetSourceString|SetStringTableId|WriteTranslationData|SaveSelectedTranslations'`; read listed implementations/public APIs and compare files between engines. Code reading ONLY as requested. Repository product evidence levels at `docs/products/game-text.md:365-371`, optional editor writer `:569-581`. No probe.
+Results:
+
+| Capability | 5.7 | 5.8 | Evidence (Engine/Source relative) |
+| --- | --- | --- | --- |
+| Direct display-string preview | AddOrUpdateDisplayStringInLiveTable updates existing display entry and dirties local text revision; can create entry if source supplied | Same public signature/core behavior | Runtime/Core/Public/Internationalization/TextLocalizationManager.h `:146-157` both; Private equivalent `:816-850` / `:827-866` |
+| Availability | ENABLE_LOC_TESTING; Debug/Development/Test, never Shipping | Same | Runtime/Core/Public/Internationalization/LocTesting.h `:7-11` |
+| Existing user flow | Translation Picker SaveAndPreview calls SaveSelectedTranslations THEN live-table override; separate Slate invalidation | Same picker file (hash-identical) | Developer/TranslationEditor/Private/TranslationPickerEditWindow.cpp `:646-668` |
+| In-memory resource refresh | UpdateFromLocalizationResource accepts FTextLocalizationResource, updates live table without requiring file import | Same, offsets +20 | Runtime/Core/Private/Internationalization/TextLocalizationManager.cpp `:1184-1194` / `:1204-1214`; public header `:219-220` / `:225-226` |
+| Resource generation in process | Load manifest/archive into FLocTextHelper, GenerateLocRes, update manager | Same core sequence | Developer/Localization/Private/TextLocalizationResourceGenerator.cpp `:341-375` / corresponding ending `:385`; exported generator API in Public/TextLocalizationResourceGenerator.h |
+| Refresh existing compiled resources | RefreshResources schedules async resource load for current language; not a translation archive writer | Same | Manager cpp `:1223-1232` / `:1243-1252` |
+| Game localization preview | EnableGameLocalizationPreview loads game culture resources; Configure... stores preview language config | Same API | Manager cpp `:1795-1867` / `:1851-1930`; public header `:327-332` / `:333-338` |
+| Persistent translation editing | TranslationDataManager modifies archive entries and writes archive JSON; private implementation | Same; line offsets +3 then +7 | Developer/TranslationEditor/Private/TranslationDataManager.cpp `:248-286`; 5.8 `:251-289` |
+| PO pipeline | Public import/export into/from FLocTextHelper; file pipeline distinct from runtime display strings | Same header (hash-identical) | Developer/Localization/Public/PortableObjectPipeline.h `:64-76` |
+| Localization service | Provider Execute is synchronous/asynchronous service operation, not a generic editor UObject transaction API | Same API family; runtime UNVERIFIED | Developer/LocalizationService/Public/ILocalizationServiceProvider.h `:120-130,169-174` |
+| Dashboard execution | Commandlet process spawned via CreateProc | Same call at same line | Editor/LocalizationCommandletExecution/Private/LocalizationCommandletExecution.cpp `:764` |
+| String Table editor SetEntry | Scoped transaction, UStringTable::Modify, FStringTable::SetSourceString, local refresh | Same, includes developer notes | Editor/StringTableEditor/Private/StringTableEditor.cpp `:540-549` / `:586-595` |
+| Raw string source mutation | SetSourceString updates keyed string entry under lock; no UObject Modify/PostEditChange by itself | Same core, new notes overload; old overload retained | Runtime/Core/Private/Internationalization/StringTableCore.cpp `:171-185` / `:184` onward; Public/StringTableCore.h `:123` / `:145-148` |
+
+Source-derived conclusion: immediate translation **preview** is feasible without launching import/compile, using live-table override or an in-memory localization resource. That does not persist translations, update PO/archive provenance, or provide Unreal undo/package dirty semantics. Live display overrides can be replaced by resource/culture reload. Which cultures/targets a writer updates needs explicit scope, source-hash and fallback handling. Runtime success, visual refresh latency and durability are UNVERIFIED because this task is source-only.
+
+String Table caveat: HandlePostChange only refreshes the editor's cache (`StringTableEditor.cpp:168-183` / `:190-205`), not UObject::PostEditChangeProperty. Therefore source predicts Modify + finalized opaque transaction notifications for native table data, and does NOT promise a field/key-bearing property event. UStringTable serializes native table data (`Runtime/Engine/Private/Internationalization/StringTable.cpp:432-437` in 5.7). Arbitrary FStringTable mutations bypass owner transactions unless the caller wraps them. Text UPROPERTY edits should follow ordinary object transaction/property hooks when edited through Details; runtime confirmation remains UNVERIFIED.
+
+Do not reuse private TranslationDataManager writing blindly: its WriteJSONToTextFile automatically tries source-control checkout/add (`:301-336`), contrary to UE Shed's no-checkout product policy. Use public localization data APIs with a separately designed writer/status contract. The current product contract says Level 3 exports/compiles in editor; the source establishes ingredients, not a ready transactional multi-culture writer.
+
+Evidence: [Source comparison](evidence/T05-source-comparison.txt); raw `out/sync-research/T05-{5.7,5.8}-source.txt` and diffs. TranslationPickerEditWindow.cpp and PortableObjectPipeline.h identical; primary localization manager and StringTable editor regions inspected in each engine.
+Confidence: high for API availability and source flow; low for runtime preview correctness/durability/undo because intentionally not executed.
+Surprises / risks found: Preview API explicitly non-shipping; String Table UI does not emit a field property event; translation manager performs automatic checkout; default editor/dashboard operations still spawn commandlets.
+Open follow-ups: Small separately authorized Level 3 preview experiment comparing archive write, generated resource, visible text and culture switch; transactional source/key edits on UStringTable/text assets; source-policy-safe archive/PO writer.

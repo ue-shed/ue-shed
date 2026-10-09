@@ -27,6 +27,7 @@ import {
 	BlueprintGraphReadResult as BlueprintGraphReadResultSchema,
 	BlueprintAssetSearchResult as BlueprintAssetSearchResultSchema,
 	ConfigExplorerQueryResult as ConfigExplorerQueryResultSchema,
+	EditorResponsivenessSettings,
 	EditorSessionStatusResult as EditorSessionStatusResultSchema
 } from "../shared/ipc-contracts.js";
 import {
@@ -93,6 +94,7 @@ const decodeUnrealConnectionSettings = Schema.decodeUnknownEffect(
 		port: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(65_535))
 	})
 );
+const decodeEditorResponsivenessSettings = Schema.decodeUnknownEffect(EditorResponsivenessSettings);
 const decodeCameraStatusResult = Schema.decodeUnknownEffect(
 	Schema.Union([
 		Schema.Struct({ camera: CameraStatus, status: Schema.Literal("ready") }),
@@ -176,6 +178,13 @@ export interface WorkbenchRendererClient {
 	readonly setUnrealConnectionPort: (
 		port: number
 	) => Effect.Effect<UnrealConnectionSettings, WorkbenchRendererError>;
+	readonly editorResponsiveness: () => Effect.Effect<
+		EditorResponsivenessSettings,
+		WorkbenchRendererError
+	>;
+	readonly setEditorResponsiveness: (
+		enabled: boolean
+	) => Effect.Effect<EditorResponsivenessSettings, WorkbenchRendererError>;
 	readonly editorSessionStatus: () => Effect.Effect<
 		EditorPlaySessionStateResponse,
 		WorkbenchRendererError
@@ -299,6 +308,20 @@ export const workbenchRendererClient: WorkbenchRendererClient = {
 			decode: decodeUnrealConnectionSettings,
 			invoke: () => window.ueShed.editorSession.setPort(port),
 			operation: "editorSession.setPort"
+		})
+	),
+	editorResponsiveness: Effect.fn("WorkbenchRenderer.editorResponsiveness")(() =>
+		request({
+			decode: decodeEditorResponsivenessSettings,
+			invoke: () => window.ueShed.editorSession.responsiveness(),
+			operation: "editorSession.responsiveness"
+		})
+	),
+	setEditorResponsiveness: Effect.fn("WorkbenchRenderer.setEditorResponsiveness")((enabled) =>
+		request({
+			decode: decodeEditorResponsivenessSettings,
+			invoke: () => window.ueShed.editorSession.setResponsiveness(enabled),
+			operation: "editorSession.setResponsiveness"
 		})
 	),
 	showcaseContext: Effect.fn("WorkbenchRenderer.showcaseContext")(() =>

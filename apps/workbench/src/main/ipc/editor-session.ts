@@ -4,6 +4,7 @@ import { Effect, Option } from "effect";
 import { WorkbenchMapReview } from "../services/map-review.js";
 import { ElectronIpc } from "../adapters/electron-ipc.js";
 import { invokeContracts } from "../ipc-contracts.js";
+import { WorkbenchEditorResponsiveness } from "../services/editor-responsiveness.js";
 import { WorkbenchUnrealConnection } from "../services/unreal-connection.js";
 
 export const register = Effect.gen(function* () {
@@ -11,6 +12,7 @@ export const register = Effect.gen(function* () {
 	const editorSession = yield* EditorPlaySession;
 	const connection = yield* WorkbenchUnrealConnection;
 	const handoff = yield* WorkbenchEditorHandoff;
+	const responsiveness = yield* WorkbenchEditorResponsiveness;
 	yield* ipc.register(invokeContracts["editor-window:activate"], () =>
 		connection.endpoint().pipe(Effect.flatMap(handoff.activate))
 	);
@@ -53,6 +55,13 @@ export const register = Effect.gen(function* () {
 		);
 	});
 	yield* ipc.register(invokeContracts["editor-session:settings"], () => connection.settings());
+	yield* ipc.register(invokeContracts["editor-responsiveness:settings"], () =>
+		responsiveness.settings()
+	);
+	yield* ipc.register(invokeContracts["editor-responsiveness:set-enabled"], (...args) => {
+		const [enabled] = args;
+		return responsiveness.setEnabled(enabled);
+	});
 	yield* ipc.register(invokeContracts["editor-session:set-port"], (...args) => {
 		const [port] = args;
 		return Effect.gen(function* () {

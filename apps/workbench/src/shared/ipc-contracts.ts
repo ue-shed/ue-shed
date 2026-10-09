@@ -237,6 +237,16 @@ export interface UnrealConnectionSettings extends Schema.Schema.Type<
 	typeof UnrealConnectionSettings
 > {}
 
+/** Whether Workbench keeps the selected local editor responsive while Workbench is in front. */
+export const EditorResponsivenessSettings = Schema.Struct({
+	enabled: Schema.Boolean,
+	state: Schema.Literals(["off", "connecting", "active", "lapsed", "remote", "unsupported"]),
+	detail: Schema.String
+});
+export interface EditorResponsivenessSettings extends Schema.Schema.Type<
+	typeof EditorResponsivenessSettings
+> {}
+
 /** `/Game/` object paths accepted by preview and catalog-table IPC. */
 export const GameObjectPath = Schema.String.check(
 	Schema.isMinLength(1),
@@ -515,6 +525,16 @@ export const invokeContracts = {
 		channel: "editor-session:set-port",
 		args: Schema.Tuple([RemoteControlPort]),
 		result: UnrealConnectionSettings
+	}),
+	"editor-responsiveness:settings": invoke({
+		channel: "editor-responsiveness:settings",
+		args: EmptyArgs,
+		result: EditorResponsivenessSettings
+	}),
+	"editor-responsiveness:set-enabled": invoke({
+		channel: "editor-responsiveness:set-enabled",
+		args: Schema.Tuple([Schema.Boolean]),
+		result: EditorResponsivenessSettings
 	}),
 	"editor-session:status": invoke({
 		channel: "editor-session:status",

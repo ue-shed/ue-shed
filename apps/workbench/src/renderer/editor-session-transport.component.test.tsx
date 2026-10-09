@@ -39,7 +39,9 @@ it("offers Show Unreal and retains focus feedback independently of session statu
 					),
 					unrealConnectionSettings: () => Effect.succeed({ endpoint, port: 30001 }),
 					setUnrealConnectionPort: () => Effect.die("unused"),
-					executeEditorSessionCommand: () => Effect.die("unused")
+					executeEditorSessionCommand: () => Effect.die("unused"),
+					editorResponsiveness: () => Effect.die("unused"),
+					setEditorResponsiveness: () => Effect.die("unused")
 				}}
 			/>
 		</EffectRuntimeProvider>
@@ -54,4 +56,47 @@ it("offers Show Unreal and retains focus feedback independently of session statu
 	await userEvent.setup().click(button);
 	expect(activate).toHaveBeenCalledTimes(1);
 	await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
+});
+
+it("turns Unreal responsiveness off from the target settings and shows its state", async () => {
+	const endpoint = "http://127.0.0.1:30001";
+	const setEditorResponsiveness = vi.fn((enabled: boolean) =>
+		Effect.succeed({
+			enabled,
+			state: enabled ? ("active" as const) : ("off" as const),
+			detail: enabled ? "Kept responsive." : "Unreal's own background setting applies."
+		})
+	);
+	render(() => (
+		<EffectRuntimeProvider runtime={runtime}>
+			<EditorSessionTransport
+				client={{
+					activateEditorWindow: () => Effect.die("unused"),
+					editorHandoffs: Stream.empty,
+					editorSessionStatuses: Stream.empty,
+					unrealConnectionSettings: () => Effect.succeed({ endpoint, port: 30001 }),
+					setUnrealConnectionPort: () => Effect.die("unused"),
+					executeEditorSessionCommand: () => Effect.die("unused"),
+					editorResponsiveness: () =>
+						Effect.succeed({
+							enabled: true,
+							state: "active",
+							detail: "Kept responsive."
+						}),
+					setEditorResponsiveness
+				}}
+			/>
+		</EffectRuntimeProvider>
+	));
+	const user = userEvent.setup();
+	await user.click(await screen.findByLabelText("Change Unreal target port"));
+	const checkbox = await screen.findByRole<HTMLInputElement>("checkbox", {
+		name: "Keep Unreal responsive while Workbench is in front"
+	});
+	await waitFor(() => expect(checkbox.checked).toBe(true));
+	expect(screen.getByText("Kept responsive.")).toBeTruthy();
+	await user.click(checkbox);
+	expect(setEditorResponsiveness).toHaveBeenCalledWith(false);
+	await waitFor(() => expect(checkbox.checked).toBe(false));
+	expect(screen.getByText("Unreal's own background setting applies.")).toBeTruthy();
 });

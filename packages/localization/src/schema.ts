@@ -325,6 +325,13 @@ export const PODocument = Schema.Struct({
 	blocks: Schema.Array(POBlock)
 });
 export type PODocument = typeof PODocument.Type;
+/** Read-only evidence keeps decoded context; byte-exact editing reads a full document separately. */
+export const POEvidence = PODocument.mapFields(({ format, hasSourceText }) => ({
+	format,
+	hasSourceText,
+	entries: Schema.Array(POEntry)
+}));
+export type POEvidence = typeof POEvidence.Type;
 export const POParseOptions = Schema.Struct({
 	format: Schema.optionalKey(POFormat),
 	collapseMode: Schema.optionalKey(LocalizationCollapseMode),
@@ -378,7 +385,7 @@ const fileEvidence = <S extends Schema.Constraint>(schema: S) =>
 	]);
 export const ManifestFileEvidence = fileEvidence(LocalizationManifest);
 export const ArchiveFileEvidence = fileEvidence(LocalizationArchive);
-export const POFileEvidence = fileEvidence(PODocument);
+export const POFileEvidence = fileEvidence(POEvidence);
 export const LocalizationTargetEvidence = Schema.Struct({
 	schemaVersion: Schema.Literal(1),
 	target: LocalizationTarget,

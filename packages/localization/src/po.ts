@@ -1,4 +1,3 @@
-import { Schema } from "effect";
 import {
 	checkSize,
 	immutable,
@@ -8,14 +7,17 @@ import {
 	validate
 } from "./decode.js";
 import {
-	LocalizationIdentity,
+	type LocalizationIdentity,
 	LocalizationError,
 	PODocument,
 	POEntry,
-	POFormat,
+	type POFormat,
 	POParseOptions,
-	POLine,
+	type POLine,
+	TextKey,
+	TextNamespace,
 	type POBlock,
+	type POEvidence,
 	type POStringField
 } from "./schema.js";
 
@@ -44,12 +46,13 @@ export function parsePOIdentity(value: string) {
 			}
 			if (value[index] === "\\") escaped = true;
 		}
-		return immutable(
-			validate(LocalizationIdentity, {
-				namespace: (comma === -1 ? value : value.slice(0, comma)).replaceAll("\\,", ","),
-				key: (comma === -1 ? "" : value.slice(comma + 1)).replaceAll("\\,", ",")
-			})
-		);
+		const identity: LocalizationIdentity = {
+			namespace: TextNamespace.make(
+				(comma === -1 ? value : value.slice(0, comma)).replaceAll("\\,", ",")
+			),
+			key: TextKey.make((comma === -1 ? "" : value.slice(comma + 1)).replaceAll("\\,", ","))
+		};
+		return immutable(identity);
 	});
 }
 
@@ -82,16 +85,14 @@ function quoted(input: string, lineNumber: number): string {
 }
 
 function rawLines(text: string): POLine[] {
-	return [...text.matchAll(/([^\r\n]*)(\r\n|\r|\n|$)/gu)]
-		.filter((match) => match[0] !== "")
-		.map((match, index) => {
-			const decoded = Schema.decodeUnknownResult(POLine)({
-				text: match[1],
-				ending: match[2]
-			});
-			if (decoded._tag === "Failure") throw malformedPO(index + 1);
-			return decoded.success;
-		});
+	const lines: POLine[] = [];
+	for (const match of text.matchAll(/([^\r\n]*)(\r\n|\r|\n|$)/gu)) {
+		if (match[0] !== "") {
+			// SAFETY: the ending capture enumerates exactly POLine's four endings.
+			lines.push({ text: match[1] ?? "", ending: match[2] as POLine["ending"] });
+		}
+	}
+	return lines;
 }
 
 function blocksFromLines(lines: readonly POLine[]): POLine[][] {
@@ -162,7 +163,8 @@ function decodeBlock(lines: readonly POLine[], lineOffset: number): POBlock {
 		}
 		const match = /^(msgctxt|msgid_plural|msgid|msgstr)(?:\[(\d+)\])?\s+(.*)$/su.exec(trimmed);
 		if (match === null) throw malformedPO(lineNumber);
-		const name = validate(POStringFieldName, match[1], "malformed_po");
+		// SAFETY: the keyword capture enumerates exactly the four PO field names.
+		const name = match[1] as POStringField["name"];
 		const fieldIndex = match[2] === undefined ? undefined : Number(match[2]);
 		if (fieldIndex !== undefined && (name !== "msgstr" || !Number.isSafeInteger(fieldIndex)))
 			throw malformedPO(lineNumber);
@@ -197,16 +199,13 @@ function decodeBlock(lines: readonly POLine[], lineOffset: number): POBlock {
 	};
 	if (context !== undefined) Object.assign(decoded, { msgctxt: decodePOEscapes(context.raw) });
 	if (plural !== undefined) Object.assign(decoded, { msgidPlural: decodePOEscapes(plural.raw) });
-	const entry = validate(POEntry, decoded, "malformed_po");
 	return {
 		kind: id.raw === "" && context === undefined && plural === undefined ? "header" : "entry",
 		lines,
 		fields: fields.map(({ raw, ...field }) => ({ ...field, value: decodePOEscapes(raw) })),
-		entry
+		entry: decoded
 	};
 }
-
-const POStringFieldName = Schema.Literals(["msgctxt", "msgid", "msgid_plural", "msgstr"]);
 
 export function parsePO(bytes: Uint8Array, input: POParseOptions = {}) {
 	return parseResult(() => {
@@ -231,11 +230,9 @@ export function parsePO(bytes: Uint8Array, input: POParseOptions = {}) {
 			return block;
 		});
 		const header = blocks.find((block) => block.kind === "header")?.entry?.msgstr["0"] ?? "";
-		const format = validate(
-			POFormat,
+		const format: POFormat =
 			options.format ??
-				(/^X-Crowdin-SourceKey:\s*msgstr\s*$/imu.test(header) ? "Crowdin" : "Unreal")
-		);
+			(/^X-Crowdin-SourceKey:\s*msgstr\s*$/imu.test(header) ? "Crowdin" : "Unreal");
 		const keyedCrowdin =
 			format === "Crowdin" &&
 			(options.collapseMode ?? "IdenticalTextIdAndSource") === "IdenticalTextIdAndSource";
@@ -247,14 +244,54 @@ export function parsePO(bytes: Uint8Array, input: POParseOptions = {}) {
 			if (identity._tag === "Failure") throw identity.failure;
 			return { ...block, entry: { ...block.entry, identity: identity.success } };
 		});
-		return immutable(
-			validate(
-				PODocument,
-				{ bom, format, hasSourceText: !keyedCrowdin, blocks: identified },
-				"malformed_po"
-			)
-		);
+		const document: PODocument = {
+			bom,
+			format,
+			hasSourceText: !keyedCrowdin,
+			blocks: identified
+		};
+		return immutable(document);
 	});
+}
+
+export function projectPOEvidence(document: PODocument): POEvidence {
+	// Copy strings so short comments and identities cannot retain the entire decoded file.
+	return immutable({
+		format: document.format,
+		hasSourceText: document.hasSourceText,
+		entries: document.blocks.flatMap((block) =>
+			block.kind === "entry" && block.entry !== undefined ? [copyPOEntry(block.entry)] : []
+		)
+	});
+}
+
+const emptyComments: readonly string[] = Object.freeze([]);
+const copyString = (value: string) => (" " + value).slice(1);
+function copyPOEntry(entry: POEntry): POEntry {
+	const comments = (values: readonly string[]) =>
+		values.length === 0 ? emptyComments : values.map(copyString);
+	const result: POEntry = {
+		msgid: copyString(entry.msgid),
+		msgstr: Object.fromEntries(
+			Object.entries(entry.msgstr).map(([key, value]) => [key, copyString(value)])
+		),
+		translatorComments: comments(entry.translatorComments),
+		extractedComments: comments(entry.extractedComments),
+		referenceComments: comments(entry.referenceComments),
+		flags: comments(entry.flags),
+		previousMsgidLines: comments(entry.previousMsgidLines),
+		identity:
+			entry.identity === null
+				? null
+				: {
+						namespace: TextNamespace.make(copyString(entry.identity.namespace)),
+						key: TextKey.make(copyString(entry.identity.key))
+					}
+	};
+	if (entry.msgctxt !== undefined) Object.assign(result, { msgctxt: copyString(entry.msgctxt) });
+	if (entry.msgidPlural !== undefined)
+		Object.assign(result, { msgidPlural: copyString(entry.msgidPlural) });
+	return result;
 }
 
 /** Serialization uses preserved lines, never regenerated decoded strings. No file write API. */

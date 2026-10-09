@@ -11,7 +11,7 @@ import {
 	reviewLocalizationChangeSet
 } from "./change-set-review.js";
 import { LocalizationFileAccess } from "./file-access.js";
-import { serializePO } from "./po.js";
+import { parsePO, serializePO } from "./po.js";
 import { replacePOTranslations, type POEditError } from "./po-writer.js";
 import { CultureCode, LocalizationError, LocalizationLimits } from "./schema.js";
 import { LocalizationEvidence } from "./service.js";
@@ -136,7 +136,24 @@ export const applyLocalizationChangeSet = Effect.fn("Localization.applyChangeSet
 				identity: identityOf(change),
 				translation: change.translation
 			}));
-		const rewritten = replacePOTranslations(culture.po.value, edits);
+		const fresh = yield* files
+			.read(request.projectRoot, file.relativePath, limits)
+			.pipe(Effect.result);
+		const document = Result.isFailure(fresh)
+			? Result.fail(fresh.failure)
+			: fresh.success.provenance.contentHash !== file.contentHash
+				? Result.fail(localizationError("file_changed"))
+				: parsePO(fresh.success.bytes, {
+						format: target.poFormat,
+						collapseMode: target.collapseMode,
+						limits
+					});
+		if (Result.isFailure(document)) {
+			if (written.length === 0) return yield* Effect.fail(document.failure);
+			written.push(failedFile(file, document.failure));
+			break;
+		}
+		const rewritten = replacePOTranslations(document.success, edits);
 		if (Result.isFailure(rewritten)) {
 			if (written.length > 0) {
 				written.push(failedFile(file, localizationError("file_unwritable")));

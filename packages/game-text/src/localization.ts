@@ -354,10 +354,8 @@ export function joinLocalizationTarget(
 		),
 		pos: groupByIdentity(
 			culture.po.status === "read"
-				? culture.po.value.blocks.flatMap((block) =>
-						block.kind === "entry" && block.entry?.identity
-							? [{ ...block.entry.identity, entry: block.entry }]
-							: []
+				? culture.po.value.entries.flatMap((entry) =>
+						entry.identity ? [{ ...entry.identity, entry }] : []
 					)
 				: []
 		)

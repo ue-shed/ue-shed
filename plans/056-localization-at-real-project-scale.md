@@ -10,7 +10,8 @@
 
 ## Status
 
-- **State**: IN PROGRESS. Phase 1 is next.
+- **State**: IN PROGRESS. Phase 4 is implemented and targeted checks pass. Real-project checks and
+  unrelated full-gate failures remain open.
 - **Priority**: P1
 - **Effort**: M
 - **Risk**: MEDIUM. Changing how gather filters match changes which lines count as inside a target,
@@ -190,3 +191,11 @@ read-only: no gathers, no writes.
 ## Evidence
 
 Recorded per phase as it lands.
+
+### Phase 4: read speed and memory
+
+The generated 132,606-entry, ten-culture target reduced PO parse time from 7.08 s to 1.88 s,
+archive parsing from 2.14 s to 0.98 s and manifest parsing from 1.85 s to 0.91 s. Evidence retained
+heap fell from 4,169 MiB to 1,121 MiB after GC; the final read completes on Node's default heap.
+See the [measurement and consumer audit](../docs/research/localization-read-performance-2026-10-09.md)
+for profiling attribution, compact evidence, reproduction and verification results.

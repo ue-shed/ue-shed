@@ -169,7 +169,7 @@ it.effect("reads files whose combined entries exceed the per-file limit", () =>
 				total += culture.archive.value.entries.length;
 			}
 			if (culture.po.status === "read") {
-				const entries = culture.po.value.blocks.filter((block) => block.kind === "entry");
+				const entries = culture.po.value.entries;
 				expect(entries.length).toBeLessThanOrEqual(20);
 				total += entries.length;
 			}

@@ -6,6 +6,7 @@ import {
 	LocalizationTarget,
 	ManifestEntry,
 	parsePO,
+	projectPOEvidence,
 	discoverLocalizationTargets,
 	type LocalizationTargetEvidence,
 	type PODocument
@@ -109,7 +110,7 @@ export function evidence(
 				provenance,
 				value: { formatVersion: 2, entries: archives, diagnostics: [] }
 			},
-			po: { status: "read", provenance, value: po }
+			po: { status: "read", provenance, value: projectPOEvidence(po) }
 		})),
 		locmeta: failed,
 		wordCount: failed

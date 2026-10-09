@@ -34,6 +34,12 @@ Pure decoders return `Result<value, LocalizationError>`. Their output schemas ow
 Lists and opaque JSON metadata are frozen. Duplicate manifest/archive identities remain separate
 entries with diagnostics; no text matching or conflict resolution happens here.
 
+Target evidence retains compact PO entries with decoded comments and format/source flags, rather
+than raw lines and field offsets. Repeated source context is shared within a read. `parsePO` still
+returns a full byte-exact document for `serializePO` and the PO writer. Change-set apply rereads each
+PO and checks its hash against the reviewed evidence before rewriting it. Hosts constructing target
+evidence themselves can convert a parsed document with `projectPOEvidence`.
+
 ## Headless Unreal operations
 
 `LocalizationOperations` / `LocalizationOperationsNodeLive` add an optional engine capability.

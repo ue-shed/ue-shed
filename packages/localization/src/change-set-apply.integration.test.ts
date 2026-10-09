@@ -8,7 +8,11 @@ import { afterEach, expect } from "vitest";
 import { applyLocalizationChangeSet } from "./change-set-apply.js";
 import { reviewLocalizationChangeSet } from "./change-set-review.js";
 import { LocalizationChange, LocalizationChangeSet } from "./change-sets.js";
-import { LocalizationFileAccess, LocalizationFileAccessLive } from "./file-access.js";
+import {
+	LocalizationFileAccess,
+	LocalizationFileAccessLive,
+	makeLocalizationFileAccessTestLayer
+} from "./file-access.js";
 import { parsePO } from "./po.js";
 import { CultureCode, defaultLocalizationLimits, LocalizationTargetName } from "./schema.js";
 import { TextKey, TextNamespace } from "./schema.js";
@@ -217,4 +221,33 @@ it.effect("refuses to replace a PO file that changed after it was read", () =>
 			"changed by a translator\n"
 		);
 	}).pipe(Effect.provide(layer))
+);
+
+it.effect("rejects a PO changed between evidence review and the full-fidelity reread", () =>
+	Effect.gen(function* () {
+		const root = yield* Effect.promise(project);
+		const files = yield* LocalizationFileAccess;
+		let reads = 0;
+		const updated = "# Changed after review\n";
+		const port = makeLocalizationFileAccessTestLayer({
+			...files,
+			read: (base, path, limits) =>
+				Effect.gen(function* () {
+					if (path === dePO && ++reads === 2) {
+						yield* Effect.promise(() => writeFile(join(root, dePO), updated));
+					}
+					return yield* files.read(base, path, limits);
+				})
+		});
+		const result = yield* applyLocalizationChangeSet({
+			projectRoot: root,
+			changeSet: changeSet(named)
+		}).pipe(
+			Effect.provide(LocalizationEvidenceLive.pipe(Layer.provideMerge(port))),
+			Effect.result
+		);
+		expect(Result.isFailure(result) && result.failure.code).toBe("file_changed");
+		expect(reads).toBe(2);
+		expect(yield* Effect.promise(() => readFile(join(root, dePO), "utf8"))).toBe(updated);
+	}).pipe(Effect.provide(LocalizationFileAccessLive))
 );

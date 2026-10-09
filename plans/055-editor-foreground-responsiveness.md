@@ -268,6 +268,11 @@ Contract document; Workbench behaviour and setting in `docs/showcase.md` and
 | Live       | latency table and first-wake measurement on 5.7 and 5.8, attended, minimised |
 | Repository | `pnpm run check:precommit`; `pnpm check:unreal` (5.7 fixture gate)           |
 
+**Repository evidence (2026-10-09)**: `pnpm run check:precommit` passes. `pnpm test` passes
+(299 files, 1,973 tests; 14 environment-gated files skipped). `pnpm check:unreal` passes on UE
+5.7 (its fixture gate is 5.7-only by design). `pnpm check` (full gate) was not run: its UAsset,
+release and adoption lanes are untouched by this plan.
+
 ## STOP conditions
 
 Stop and report rather than working around it if:

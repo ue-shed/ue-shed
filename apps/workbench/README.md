@@ -14,7 +14,10 @@ The catalog exposes each slice's runtime mode and readiness instead of assuming 
 Camera Load Lab can drive and observe up to 32 camera sources while presenting eight tiles at once
 behind an independent display-byte budget. The editor status in the header shows the Remote Control
 port Workbench is monitoring; its adjacent port control changes that target immediately and saves
-the choice on the device.
+the choice on the device. The same panel holds **Keep Unreal responsive while Workbench is in
+front** (on by default), which leases a local editor out of background throttling only while a
+Workbench window is the foreground window; see
+[Editor handoffs](../../docs/showcase.md#keeping-unreal-responsive-while-workbench-is-in-front).
 
 Niagara Preview is available at `#/niagara-preview`. It runs the public `@ue-shed/niagara` service
 against the selected project and returns only validated run metadata and manifest-owned PNG bytes to

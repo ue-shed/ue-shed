@@ -14,7 +14,9 @@
 
 ## Status
 
-- **State**: IN PROGRESS
+- **State**: IN PROGRESS. Phases 1–6 are done on `feat/editor-foreground-responsiveness`. Open:
+  owner confirmation of the assumed decisions, and a first-wake measurement with a real foreground
+  switch, which this machine's desktop blocked (Phase 5).
 - **Priority**: P1
 - **Effort**: L
 - **Risk**: MEDIUM. The Unreal side runs inside every connected editor's frame loop and holds
@@ -126,6 +128,10 @@ and shown in the existing "Unreal target settings" popover.
 
 **Gate**: `pnpm vitest run packages/protocol`, `pnpm contract:check`.
 
+**Evidence (2026-10-09)**: done. Four schemas generated from the Effect Schemas, 14 request
+fixtures (4 valid, 10 invalid) and 5 result fixtures; the alignment and fixture tests pass. The
+Unreal automation test parses the same request fixtures.
+
 ## Phase 2 — Unreal
 
 1. `UEShedForegroundLeases.{h,cpp}`, `UEShedEditorResponsivenessLibrary.{h,cpp}`, module
@@ -137,6 +143,15 @@ and shown in the existing "Unreal target settings" popover.
 
 **Gate**: `pnpm test:unreal-plugins` on UE 5.7 and UE 5.8, both green.
 
+**Evidence (2026-10-09)**: done. All 11 plugins build and all 34 tests pass on both engines, five
+of them new (`Leases`, `Contract`, `NativeProcess`, `PredicateCost`, `DelegateEntry`). Predicate
+cost over 200,000 calls: no lease 15.2 ns (5.7) and 9.6 ns (5.8); 8 leases with none foreground
+64.1 ns (5.7) and 61.2 ns (5.8). At 200 calls a second while throttled, that is under 13 µs of
+CPU a second. Every engine caller of `ShouldThrottleCPUUsage` is on the game thread, and Remote
+Control invokes library functions there, so the lease table needs no lock; both entry points
+return early off the game thread. `SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION` was enough
+to open, time and watch a same-user child process.
+
 ## Phase 3 — Engine service
 
 1. Service, errors, metrics and spans; loopback rule shared with window activation.
@@ -146,17 +161,30 @@ and shown in the existing "Unreal target settings" popover.
 
 **Gate**: `pnpm vitest run packages/engine`.
 
+**Evidence (2026-10-09)**: done. Nine TestClock tests: renewal at TTL/3, release on scope close
+and nothing after it, re-acquire after `expired`, a restarted editor followed to its new process,
+`Lapsed` once failed renewals outlast the TTL and recovery afterwards, remote refusal with nothing
+sent (hold and state), missing capability, refused lease and unreachable editor as typed errors.
+Window activation now shares `isLoopbackEndpoint`; its tests still pass.
+
 ## Phase 4 — Workbench
 
 1. Preference store, supervisor service, IPC, preload, renderer checkbox; tests for each.
 
 **Gate**: Workbench unit and component tests; `pnpm run check:precommit`.
 
+**Evidence (2026-10-09)**: done. `WorkbenchEditorResponsiveness` reconciles once a second (and
+at once when the setting changes): one lease for the selected loopback endpoint, named with
+`process.pid`, moved on a port change and released when turned off or when the runtime closes.
+Eight TestClock tests cover those, the remote and non-Windows refusals, backoff on an
+unreachable editor and the slow retry for an editor without the capability. IPC contract and
+registration tests cover the two new channels; a component test covers the checkbox and its
+status line. The preference lives in `editor-responsiveness-v1.json` in Electron's user data.
+
 ## Phase 5 — Live measurement (UE 5.7 and UE 5.8)
 
 Disposable copies of the fixture project under `out/`, built per engine, launched attended (no
-`-unattended`) with the throttle setting forced on by a launch-time `-ini:` override (nothing is
-saved) and every editor window minimised. For each engine:
+`-unattended`) with the throttle setting on and every editor window minimised. For each engine:
 
 1. RC p50/p95/max for a no-op call and a one-cell DataTable Apply in three states: no lease; lease
    whose client owns the foreground; lease whose client does not.
@@ -166,10 +194,68 @@ saved) and every editor window minimised. For each engine:
 3. The owner of a real Workbench window (`GetWindowThreadProcessId`) against the main process ID.
 4. Predicate cost from the automation test.
 
+**Evidence (2026-10-09)**: done, except the real-switch first wake (item 2). Harness (uncommitted,
+`out/foreground-live/`): disposable copies of `fixtures/unreal-project` per engine, built, launched
+with UE Shed Core and Authoring from the plugin host, no `-unattended`, throttle setting on, the
+single editor window minimised. Each state: 40 sequential no-op calls (`GetCapabilityManifest`)
+and 40 one-cell Applies on `DT_Scalars` (bool toggle, no Save), with `GetForegroundResponsivenessState`
+confirming `exemptionActive` and `editorThrottling` before, every 10 samples and after. Nearest-rank
+quantiles in ms:
+
+| State                        | Engine | No-op p50 | No-op p95 | No-op max | Apply p50 | Apply p95 | Apply max |
+| ---------------------------- | ------ | --------- | --------- | --------- | --------- | --------- | --------- |
+| No lease                     | 5.7    | 331.9     | 333.6     | 336.3     | 334.6     | 337.0     | 338.1     |
+| Lease, client foreground     | 5.7    | 5.9       | 25.4      | 32.1      | 10.5      | 14.3      | 20.2      |
+| Lease, client not foreground | 5.7    | 332.0     | 333.2     | 333.7     | 334.4     | 336.9     | 347.8     |
+| No lease                     | 5.8    | 332.0     | 333.3     | 333.6     | 334.4     | 335.0     | 335.1     |
+| Lease, client foreground     | 5.8    | 15.4      | 32.2      | 33.6      | 17.5      | 34.3      | 34.4      |
+| Lease, client not foreground | 5.8    | 332.0     | 333.1     | 333.2     | 334.4     | 334.8     | 334.9     |
+
+What was exercised: the predicate against the real foreground window. Background processes could
+not take the foreground on this desktop: Windows Search (`SearchHost`) held it and refused
+`SetForegroundWindow`, `AttachThreadInput` and `SwitchToThisWindow` from the harness, as in T15.
+So, as in T15, the "client foreground" lease named `SearchHost` (the actual foreground owner,
+opened with the minimal rights) and the "not foreground" lease named a live, visible harness
+window process. The state held in every check on both engines.
+
+First wake: **not exercised.** No foreground change could be produced. Acquiring a lease while
+throttled took 333.6 ms (5.7) and 333.5 ms (5.8), the T15 cost; the first request after that
+grant took 8.7 ms and 8.2 ms. Source analysis (Engine facts above) predicts the remaining
+throttled frame, 0–333 ms, for the first request after a real switch with the lease held, not
+about 5 ms; it still needs measuring on an interactive desktop.
+
+Workbench: the built app, started with a throwaway `--user-data-dir` against each live editor,
+held one lease within seconds. Its only top-level window belongs to the Electron main process
+(`GetWindowThreadProcessId` = main PID on both runs), so `process.pid` is the right client.
+Closing the window released the lease in 0.66 s on both engines. It was not the foreground
+window, so the exemption correctly stayed off.
+
+Harness findings: the fixture's own `UEShedFixtureEditor` module sets the throttle setting to false
+at startup, overriding any config, so the fixture always runs with "Use Less CPU when in
+Background" off. The copies patched that line out and set the copy's `DefaultEditorSettings.ini`
+to true; the tracked fixture is unchanged. The new state report's `throttleWhenNotForeground`
+exposed it.
+
 ## Phase 6 — Documentation
 
 Contract document; Workbench behaviour and setting in `docs/showcase.md` and
 `apps/workbench/README.md`; changesets for `@ue-shed/protocol` and `@ue-shed/engine`.
+
+## Deviations from the brief
+
+- Two library functions, not four: `UpdateForegroundLease` takes an `operation` union
+  (`acquire | renew | release`) and `GetForegroundResponsivenessState` is separate. Results are
+  discriminated by `status`; state results add `reported`.
+- Releasing an unknown or ended lease returns `released` (idempotent); a lease named with another
+  client returns `rejected` / `lease_mismatch`.
+- The held handle already pins the process ID, so the creation-time check on renew (through a fresh
+  handle) is defence in depth; the fake-platform test covers it.
+- The state report adds `editorThrottling` (Unreal's own decision now) and `registered`.
+- The Workbench preference is a main-process file, not renderer storage, so the lease never starts
+  before a saved "off" is known.
+- The engine service re-acquires after a lost lease or a restarted editor instead of failing; only
+  the first acquire fails.
+- First wake with a real foreground switch was not measured (Phase 5).
 
 ## Verification matrix
 

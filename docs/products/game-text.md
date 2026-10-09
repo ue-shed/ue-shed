@@ -15,6 +15,13 @@ game text or localization resources.
 
 ## Shipped read-only corpus
 
+Localization evidence defaults to 320 MiB and 1,000,000 entries per file, 2,560 files per target
+read, and nesting depth 64. Library hosts can pass explicit `LocalizationLimits` through the
+evidence request's `limits` field. Entry counts are independent for the manifest and each culture
+file. The saved-asset reader allows 10 GiB of cumulative protocol output and defaults catalog
+scans to 50 minutes. A failed read names its cause and recovery; only a missing manifest asks for
+an Unreal gather.
+
 Tagged-property text extraction supports classic, uncooked, versioned editor packages from UE 4.27
 and UE 5.0–5.3, alongside the existing UE 5.4+ reader. The legacy window includes String Tables,
 DataTable and CompositeDataTable rows, data assets, and generic UObject text with nested containers.

@@ -2,6 +2,7 @@ import { LocalizationEvidence, LocalizationEvidenceNodeLive } from "@ue-shed/loc
 import { Effect, Metric, Result, Schema } from "effect";
 import {
 	GameTextLocalizationError,
+	localizationManifestFailure,
 	applyLocalizationKeyChanges,
 	joinLocalizationTarget,
 	localizationGateFailures,
@@ -124,17 +125,30 @@ const loadGate = Effect.fn("Cli.localization.gate")(function* (command: Localiza
 			})
 		);
 	const checked = evidence.filter((item) => !ungathered.includes(item));
+	for (const item of checked) {
+		if (item.manifest.status === "failed")
+			return yield* Effect.fail(localizationManifestFailure(item.manifest.error));
+	}
 	// Files that exist but cannot be read make translations unknown, never absent.
 	const unread = checked.flatMap(localizationGateUnreadEvidence);
-	if (unread.length > 0)
+	if (unread.length > 0) {
+		const errors = checked.flatMap((item) =>
+			item.cultures.flatMap((culture) =>
+				[culture.archive, culture.po].flatMap((file) =>
+					file.status === "failed" && file.error.code !== "file_missing"
+						? [file.error]
+						: []
+				)
+			)
+		);
 		return yield* Effect.fail(
 			new LocalizationGateError({
 				code: "unreadable_evidence",
-				message: `Localization files could not be read: ${unread.join(", ")}.`,
-				recovery:
-					"Repair or restore those files, for example by running the target's Unreal gather and export, then check again."
+				message: `Localization files could not be read: ${unread.join(", ")}. ${errors.map((error) => error.message).join(" ")}`,
+				recovery: [...new Set(errors.map((error) => error.recovery))].join(" ")
 			})
 		);
+	}
 	const skipped = ungathered.map((item) => ({
 		target: item.target.name,
 		reason: "It has no manifest; Unreal has not gathered it."

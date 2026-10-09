@@ -23,6 +23,36 @@ import { canonicalLocalizationJson, localizationFingerprint } from "./localizati
 import { LocalizationError } from "@ue-shed/localization/browser";
 
 describe("localization progress and manifest baselines", () => {
+	it.each(["file_missing", "limit_exceeded", "malformed_json"] as const)(
+		"baseline errors preserve the manifest cause %s",
+		(code) => {
+			const files = {
+				...evidence(),
+				manifest: {
+					status: "failed" as const,
+					relativePath: "Content/Localization/Game/Game.manifest",
+					error: new LocalizationError({
+						code,
+						message: `Manifest failed (${code}).`,
+						recovery: "Resolve the reader cause."
+					})
+				}
+			};
+			expect(() =>
+				createLocalizationBaseline(corpus(), files, "2026-10-07T00:00:00Z")
+			).toThrowError(
+				expect.objectContaining({
+					code: code === "file_missing" ? "missing_manifest" : "unreadable_manifest",
+					...(code === "file_missing"
+						? { recovery: expect.stringContaining("gather") }
+						: {
+								message: expect.stringContaining(code),
+								recovery: "Resolve the reader cause."
+							})
+				})
+			);
+		}
+	);
 	it("fingerprints the corpus JSON encoding including optional diagnostic fields", () => {
 		const text = {
 			...corpus(),

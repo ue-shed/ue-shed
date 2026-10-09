@@ -118,8 +118,9 @@ checks can report reduced checking. The legacy namespace collapse mode retains s
 formats and may carry a namespace without a key. Pass `collapseMode` when decoding that layout.
 Unreal's replacement-order escape decoding is preserved, including its literal-backslash caveat.
 
-Defaults cap each file at 32 MiB, decoded files and total target evidence at 100,000 entries,
-nesting at 64, and a target read at 256 files. Pass an explicit `limits` value to change them.
+Defaults cap each file at 320 MiB and 1,000,000 entries, nesting at 64, and a target read at
+2,560 files. Entry limits apply per file, independently of other cultures and evidence files.
+Pass an explicit `limits` value to change them.
 Node reads reject project-root
 escapes, external symlinks, and unresolved engine-root tokens. Conflicting output locations return
 an `ambiguous_config` diagnostic rather than selecting one implicitly.

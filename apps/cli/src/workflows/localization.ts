@@ -11,6 +11,7 @@ import {
 import { Effect, FileSystem, Metric, Result, Schema } from "effect";
 import {
 	GameTextLocalizationError,
+	localizationManifestFailure,
 	LocalizationSelection,
 	applyLocalizationKeyChanges,
 	applyLocalizationReview,
@@ -46,12 +47,14 @@ export const scanProjectText = Effect.fn("Cli.localization.scan")(function* (
 		Effect.provide(TextCorpusServiceLive),
 		Effect.provide(readerLayer(reader)),
 		Effect.mapError(
-			() =>
+			(error) =>
 				new GameTextLocalizationError({
 					code: "reader_failure",
-					message: "The saved-package text reader could not complete the scan.",
+					message: error.message,
 					recovery:
-						"Verify that the project root is readable and configure UE_SHED_UASSET_EXECUTABLE or --reader with a supported saved-asset reader, then retry."
+						"recovery" in error
+							? error.recovery
+							: "Configure UE_SHED_UASSET_EXECUTABLE or --reader and valid reader timeout settings, then retry."
 				})
 		)
 	);
@@ -115,14 +118,7 @@ export const loadLocalizationContext = Effect.fn("Cli.localization.load_context"
 		);
 	const evidence = yield* service.read({ projectRoot: command.projectRoot, target });
 	if (evidence.manifest.status === "failed")
-		return yield* Effect.fail(
-			new GameTextLocalizationError({
-				code: "missing_manifest",
-				message: "The target manifest could not be read.",
-				recovery:
-					"Run the target's Unreal gather configuration, or repair the manifest file."
-			})
-		);
+		return yield* Effect.fail(localizationManifestFailure(evidence.manifest.error));
 	const corpus = yield* scanProjectText(command.projectRoot, command.reader);
 	const joined = yield* joinProjectTarget(command.projectRoot, evidence, corpus);
 	return { corpus, evidence, selection, ...joined };
@@ -169,14 +165,7 @@ export const loadTargetQuery = Effect.fn("Cli.localization.target_query")(functi
 		);
 	const evidence = yield* service.read({ projectRoot, target });
 	if (evidence.manifest.status === "failed")
-		return yield* Effect.fail(
-			new GameTextLocalizationError({
-				code: "missing_manifest",
-				message: "The target manifest could not be read.",
-				recovery:
-					"Run the target's Unreal gather configuration, or repair the manifest file."
-			})
-		);
+		return yield* Effect.fail(localizationManifestFailure(evidence.manifest.error));
 	const { join } = yield* joinProjectTarget(projectRoot, evidence, corpus);
 	return textCorpusQuery(corpus, undefined, join);
 }, Effect.provide(LocalizationEvidenceNodeLive));

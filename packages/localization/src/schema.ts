@@ -52,10 +52,10 @@ export const LocalizationLimits = Schema.Struct({
 });
 export type LocalizationLimits = typeof LocalizationLimits.Type;
 export const defaultLocalizationLimits: LocalizationLimits = Object.freeze({
-	maxFileBytes: 32 * 1024 * 1024,
-	maxEntries: 100_000,
+	maxFileBytes: 320 * 1024 * 1024,
+	maxEntries: 1_000_000,
 	maxDepth: 64,
-	maxFiles: 256
+	maxFiles: 2_560
 });
 
 export const OpaqueRecord = Schema.Record(Schema.String, Schema.Json);

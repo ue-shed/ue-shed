@@ -190,8 +190,6 @@ export const LocalizationEvidenceLive = Layer.effect(
 					if (Result.isFailure(parsed))
 						return failed(parsed.failure, file.success.provenance);
 					const entries = count(parsed.success);
-					if (entries + entryCount > limits.maxEntries)
-						return failed(localizationError("limit_exceeded"), file.success.provenance);
 					entryCount += entries;
 					return {
 						status: "read" as const,

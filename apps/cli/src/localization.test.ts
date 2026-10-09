@@ -2,9 +2,16 @@ import { resolve } from "node:path";
 import { it } from "@effect/vitest";
 import { Effect, Layer, Ref, Schema } from "effect";
 import { LocalizationTargetsReport } from "@ue-shed/localization/browser";
+import {
+	LocalizationEvidence,
+	LocalizationEvidenceNodeLive,
+	defaultLocalizationLimits,
+	makeLocalizationEvidenceTestLayer
+} from "@ue-shed/localization";
 import { expect } from "vitest";
 import { CliRuntime } from "./cli-runtime.js";
 import { runCli } from "./command.js";
+import { loadLocalizationContext } from "./workflows/localization.js";
 
 const Failure = Schema.Struct({
 	schemaVersion: Schema.Literal(1),
@@ -49,10 +56,39 @@ it.effect("loc status provides safe recovery for missing manifests and reader fa
 			yield* Ref.get(output)
 		);
 		expect(failed.error.code).toBe("reader_failure");
-		expect(failed.error.message).not.toContain("missing-private-reader");
-		expect(failed.error.recovery).toContain("UE_SHED_UASSET_EXECUTABLE");
+		expect(failed.error.message).toContain("ENOENT");
+		expect(failed.error.recovery).toBe(
+			"Choose an Unreal project directory containing a Content folder."
+		);
 		expect(yield* Ref.get(exitCode)).toBe(2);
 	})
+);
+
+it.effect("a manifest over the byte limit keeps its cause and recovery before scanning", () =>
+	Effect.gen(function* () {
+		const reader = yield* LocalizationEvidence;
+		const limited = makeLocalizationEvidenceTestLayer({
+			...reader,
+			read: (request) =>
+				reader.read({
+					...request,
+					limits: { ...defaultLocalizationLimits, maxFileBytes: 1 }
+				})
+		});
+		const error = yield* loadLocalizationContext({
+			_tag: "LocalizationStatus",
+			projectRoot: resolve("fixtures/unreal-427-localization"),
+			target: "Fixture427",
+			reader: "must-not-start",
+			limit: 5
+		}).pipe(Effect.provide(limited), Effect.flip);
+		expect(error).toMatchObject({
+			code: "unreadable_manifest",
+			message: expect.stringContaining("limit_exceeded"),
+			recovery: "Reduce the input or explicitly increase the localization reader limits."
+		});
+		expect(error.recovery).not.toContain("gather");
+	}).pipe(Effect.provide(LocalizationEvidenceNodeLive))
 );
 
 it.effect("loc status rejects an unknown target before opening the saved reader", () =>

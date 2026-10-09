@@ -145,13 +145,21 @@ describe.skipIf(!executable)("loc gate with the real reader", () => {
 			expect(damagedArchive.exit).toBe(2);
 			expect(damagedArchive.text).toContain("unreadable_evidence");
 			expect(damagedArchive.text).toContain("de/FixtureGame.archive");
+			expect(damagedArchive.text).toContain("malformed_json");
+			expect(damagedArchive.text).toContain(
+				"Check the target configuration and regenerate its evidence through Unreal if needed."
+			);
 			// A damaged manifest is not a target Unreal never gathered.
 			yield* Effect.promise(() =>
 				writeFile(join(localization, "FixtureGame.manifest"), "not a manifest")
 			);
 			const damagedManifest = yield* gate("--files", table);
 			expect(damagedManifest.exit).toBe(2);
-			expect(damagedManifest.text).toContain("FixtureGame.manifest");
+			expect(damagedManifest.text).toContain("unreadable_manifest");
+			expect(damagedManifest.text).toContain("malformed_json");
+			expect(damagedManifest.text).toContain(
+				"Check the target configuration and regenerate its evidence through Unreal if needed."
+			);
 		})
 	);
 });

@@ -22,11 +22,11 @@ Results:
 | row-reorder | 1 | 0 | 1 | 3 | 0 | 1 | 0 | 0 | 4 | game | — / Count;Enabled;Key;Notes;Ratio |
 | row-remove | 1 | 0 | 1 | 3 | 0 | 1 | 0 | 0 | 4 | game | — / Count;Enabled;Key;Notes;Ratio |
 | cancel | 1 | 0 | 0 | 3 | 0 | 1 | 0 | 0 | 2 | game | — / — |
-| raw-cell | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | game | — / — |
+| raw-cell | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | — | — / — |
 | interactive | 1 | 4 | 4 | 0 | 0 | 2 | 0 | 0 | 4 | game | Value / Value |
 | save | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | game | — / — |
 | reload | 3 | 4 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | game | None / — |
-| counts | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | game | — / — |
+| counts | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | — | — / — |
 
 **UE 5.8: counts across all observed objects in each scenario window**
 
@@ -46,11 +46,11 @@ Results:
 | row-reorder | 1 | 0 | 1 | 3 | 0 | 1 | 0 | 0 | 4 | game | — / Count;Enabled;Key;Notes;Ratio |
 | row-remove | 1 | 0 | 1 | 3 | 0 | 1 | 0 | 0 | 4 | game | — / Count;Enabled;Key;Notes;Ratio |
 | cancel | 1 | 0 | 0 | 3 | 0 | 1 | 0 | 0 | 2 | game | — / — |
-| raw-cell | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | game | — / — |
+| raw-cell | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | — | — / — |
 | interactive | 1 | 4 | 4 | 0 | 0 | 2 | 0 | 0 | 4 | game | Value / Value |
 | save | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | game | — / — |
 | reload | 3 | 4 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | game | None / — |
-| counts | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | game | — / — |
+| counts | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | — | — / — |
 
 All recorded hooks in both runs were on the game thread. Event type integers: UndoRedo=0, Finalized=1, Snapshot=2. Property Changed `None` means the event carried no property. A raw pointer cell mutation fired zero requested hooks. Apply itself fired transaction notifications but **zero per-table change delegates and zero property-change events**. Save only produced a dirty transition among these hooks. Cancel generated TransactionStarted/Canceled and table events, but no finalized transaction; it leaves mutated bytes (confirmed separately in T10). Reload has no transaction and the old per-table subscription does not transfer to the replacement object.
 

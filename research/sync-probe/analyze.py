@@ -26,7 +26,7 @@ def matrix(version):
         counts = collections.Counter(item["hook"] for item in items)
         props = sorted(set(item.get("property", "") for item in items if item["hook"] == "PropertyChanged"))
         txprops = sorted(set(p for item in items for p in item.get("properties", [])))
-        rows.append([label] + [counts[h] for h in HOOKS] + [all(item["gameThread"] for item in items), ";".join(props), ";".join(txprops), ";".join(sorted(set(str(item["eventType"]) for item in items if "eventType" in item)))])
+        rows.append([label] + [counts[h] for h in HOOKS] + [all(item["gameThread"] for item in items) if items else None, ";".join(props), ";".join(txprops), ";".join(sorted(set(str(item["eventType"]) for item in items if "eventType" in item)))])
     with (DOCS / f"evidence/T08-{version}-matrix.csv").open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
         writer.writerow(["scenario"] + HOOKS + ["allGameThread", "propertyChangedNames", "transactedProperties", "transactedEventTypes"])

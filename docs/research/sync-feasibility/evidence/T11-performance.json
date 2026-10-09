@@ -1,0 +1,1408 @@
+{
+  "5.7": {
+    "focused": {
+      "label": "focused",
+      "windowStart": {
+        "editorPid": 32716,
+        "editorWindows": [
+          {
+            "handle": 52300870,
+            "pid": 32716,
+            "title": "UEShedFixture - Unreal Editor",
+            "minimized": false,
+            "visible": true
+          }
+        ],
+        "foreground": {
+          "handle": 131698,
+          "pid": 18488,
+          "title": "Search",
+          "minimized": false,
+          "visible": true
+        },
+        "editorForeground": false
+      },
+      "windowEnd": {
+        "editorPid": 32716,
+        "editorWindows": [
+          {
+            "handle": 52300870,
+            "pid": 32716,
+            "title": "UEShedFixture - Unreal Editor",
+            "minimized": false,
+            "visible": true
+          }
+        ],
+        "foreground": {
+          "handle": 131698,
+          "pid": 18488,
+          "title": "Search",
+          "minimized": false,
+          "visible": true
+        },
+        "editorForeground": false
+      },
+      "stats": {
+        "noop": {
+          "n": 40,
+          "p50": 7.5879000360146165,
+          "p95": 30.58489999966696,
+          "max": 37.21789998235181
+        },
+        "one": {
+          "n": 40,
+          "p50": 18.602499971166253,
+          "p95": 33.35089999018237,
+          "max": 36.953600007109344
+        },
+        "five": {
+          "n": 40,
+          "p50": 29.76830000989139,
+          "p95": 36.02820000378415,
+          "max": 38.633699994534254
+        },
+        "large-snapshot": {
+          "n": 40,
+          "p50": 891.5091999806464,
+          "p95": 928.1000000191852,
+          "max": 979.2297999956645
+        },
+        "large-apply": {
+          "n": 40,
+          "p50": 2000.5946999881417,
+          "p95": 2049.098799994681,
+          "max": 2224.6370000066236
+        }
+      },
+      "sequential": {
+        "n": 200,
+        "p50": 20.487200003117323,
+        "p95": 35.68899998208508,
+        "max": 38.175800000317395
+      },
+      "before": {
+        "hook": "Counts",
+        "utc": "2026-10-09T02:58:22.648Z",
+        "seconds": 17175926.3369707,
+        "threadId": 29468,
+        "gameThread": true,
+        "counts": {
+          "Mark": 1,
+          "TransactionState": 480,
+          "PackageMarkedDirty": 280,
+          "ObjectModified": 280,
+          "ObjectTransacted": 280,
+          "PackageDirtyStateChanged": 5
+        },
+        "tablesWatched": 12,
+        "processPhysicalBytes": 6758965248,
+        "throttleCPUWhenNotForeground": false,
+        "queueLength": 121,
+        "undoCount": 0,
+        "undoBytes": 58949573
+      },
+      "after": {
+        "hook": "Counts",
+        "utc": "2026-10-09T02:58:27.172Z",
+        "seconds": 17175930.8599765,
+        "threadId": 29468,
+        "gameThread": true,
+        "counts": {
+          "Mark": 1,
+          "TransactionState": 1280,
+          "PackageMarkedDirty": 480,
+          "ObjectModified": 480,
+          "ObjectTransacted": 480,
+          "PackageDirtyStateChanged": 5
+        },
+        "tablesWatched": 12,
+        "processPhysicalBytes": 5926379520,
+        "throttleCPUWhenNotForeground": false,
+        "queueLength": 321,
+        "undoCount": 0,
+        "undoBytes": 59072173
+      },
+      "largeRows": 10000
+    },
+    "minimized-throttle-off": {
+      "label": "minimized-throttle-off",
+      "windowStart": {
+        "editorPid": 32716,
+        "editorWindows": [
+          {
+            "handle": 52300870,
+            "pid": 32716,
+            "title": "UEShedFixture - Unreal Editor",
+            "minimized": true,
+            "visible": true
+          }
+        ],
+        "foreground": {
+          "handle": 131698,
+          "pid": 18488,
+          "title": "Search",
+          "minimized": false,
+          "visible": true
+        },
+        "editorForeground": false
+      },
+      "windowEnd": {
+        "editorPid": 32716,
+        "editorWindows": [
+          {
+            "handle": 52300870,
+            "pid": 32716,
+            "title": "UEShedFixture - Unreal Editor",
+            "minimized": true,
+            "visible": true
+          }
+        ],
+        "foreground": {
+          "handle": 131698,
+          "pid": 18488,
+          "title": "Search",
+          "minimized": false,
+          "visible": true
+        },
+        "editorForeground": false
+      },
+      "stats": {
+        "noop": {
+          "n": 40,
+          "p50": 5.645900033414364,
+          "p95": 19.48459999402985,
+          "max": 31.142199994064867
+        },
+        "one": {
+          "n": 40,
+          "p50": 11.890400026459247,
+          "p95": 34.670299966819584,
+          "max": 37.02270000940189
+        },
+        "five": {
+          "n": 40,
+          "p50": 11.95349998306483,
+          "p95": 37.775900040287524,
+          "max": 38.17389998584986
+        },
+        "large-snapshot": {
+          "n": 40,
+          "p50": 887.5252999714576,
+          "p95": 934.2017999733798,
+          "max": 955.6736999657005
+        },
+        "large-apply": {
+          "n": 40,
+          "p50": 2012.0873000123538,
+          "p95": 2108.9162999996915,
+          "max": 2149.707100004889
+        }
+      },
+      "sequential": {
+        "n": 200,
+        "p50": 10.823699994944036,
+        "p95": 33.4588999976404,
+        "max": 37.834900023881346
+      },
+      "before": {
+        "hook": "Counts",
+        "utc": "2026-10-09T03:00:46.452Z",
+        "seconds": 17176070.1401748,
+        "threadId": 29468,
+        "gameThread": true,
+        "counts": {
+          "Mark": 1,
+          "TransactionState": 480,
+          "PackageMarkedDirty": 280,
+          "ObjectModified": 280,
+          "ObjectTransacted": 280
+        },
+        "tablesWatched": 12,
+        "processPhysicalBytes": 8567537664,
+        "throttleCPUWhenNotForeground": false,
+        "queueLength": 441,
+        "undoCount": 0,
+        "undoBytes": 118020853
+      },
+      "after": {
+        "hook": "Counts",
+        "utc": "2026-10-09T03:00:49.973Z",
+        "seconds": 17176073.661377,
+        "threadId": 29468,
+        "gameThread": true,
+        "counts": {
+          "Mark": 1,
+          "TransactionState": 1280,
+          "PackageMarkedDirty": 480,
+          "ObjectModified": 480,
+          "ObjectTransacted": 480
+        },
+        "tablesWatched": 12,
+        "processPhysicalBytes": 7736377344,
+        "throttleCPUWhenNotForeground": false,
+        "queueLength": 641,
+        "undoCount": 0,
+        "undoBytes": 118143453
+      },
+      "largeRows": 10000
+    },
+    "minimized-throttle-on": {
+      "label": "minimized-throttle-on",
+      "windowStart": {
+        "editorPid": 32716,
+        "editorWindows": [
+          {
+            "handle": 52300870,
+            "pid": 32716,
+            "title": "UEShedFixture - Unreal Editor",
+            "minimized": true,
+            "visible": true
+          }
+        ],
+        "foreground": {
+          "handle": 131698,
+          "pid": 18488,
+          "title": "Search",
+          "minimized": false,
+          "visible": true
+        },
+        "editorForeground": false
+      },
+      "windowEnd": {
+        "editorPid": 32716,
+        "editorWindows": [
+          {
+            "handle": 52300870,
+            "pid": 32716,
+            "title": "UEShedFixture - Unreal Editor",
+            "minimized": true,
+            "visible": true
+          }
+        ],
+        "foreground": {
+          "handle": 131698,
+          "pid": 18488,
+          "title": "Search",
+          "minimized": false,
+          "visible": true
+        },
+        "editorForeground": false
+      },
+      "stats": {
+        "noop": {
+          "n": 40,
+          "p50": 7.003200007602572,
+          "p95": 27.074099984019995,
+          "max": 34.47509999386966
+        },
+        "one": {
+          "n": 40,
+          "p50": 18.427299975883216,
+          "p95": 27.05400000559166,
+          "max": 27.509800042025745
+        },
+        "five": {
+          "n": 40,
+          "p50": 19.55139997880906,
+          "p95": 36.84610000345856,
+          "max": 37.66119998181239
+        },
+        "large-snapshot": {
+          "n": 40,
+          "p50": 890.1624000282027,
+          "p95": 969.1877000150271,
+          "max": 997.0041000051424
+        },
+        "large-apply": {
+          "n": 40,
+          "p50": 2018.1854999973439,
+          "p95": 2110.970800044015,
+          "max": 2341.576300037559
+        }
+      },
+      "sequential": {
+        "n": 200,
+        "p50": 23.684000014327466,
+        "p95": 33.30499998992309,
+        "max": 34.038999991025776
+      },
+      "before": {
+        "hook": "Counts",
+        "utc": "2026-10-09T03:03:28.693Z",
+        "seconds": 17176232.381082,
+        "threadId": 29468,
+        "gameThread": true,
+        "counts": {
+          "Mark": 1,
+          "TransactionState": 480,
+          "PackageMarkedDirty": 280,
+          "ObjectModified": 280,
+          "ObjectTransacted": 280
+        },
+        "tablesWatched": 12,
+        "processPhysicalBytes": 10396618752,
+        "throttleCPUWhenNotForeground": true,
+        "queueLength": 761,
+        "undoCount": 0,
+        "undoBytes": 177092133
+      },
+      "after": {
+        "hook": "Counts",
+        "utc": "2026-10-09T03:03:32.852Z",
+        "seconds": 17176236.5394964,
+        "threadId": 29468,
+        "gameThread": true,
+        "counts": {
+          "Mark": 1,
+          "TransactionState": 1280,
+          "PackageMarkedDirty": 480,
+          "ObjectModified": 480,
+          "ObjectTransacted": 480
+        },
+        "tablesWatched": 12,
+        "processPhysicalBytes": 9565458432,
+        "throttleCPUWhenNotForeground": true,
+        "queueLength": 961,
+        "undoCount": 0,
+        "undoBytes": 177214733
+      },
+      "largeRows": 10000
+    },
+    "eventLatency": [
+      {
+        "scenario": "cell",
+        "hook": "DataTableChanged",
+        "ms": 0.3956034779548645,
+        "startCounter": 179,
+        "eventCounter": 182
+      },
+      {
+        "scenario": "dataasset-property",
+        "hook": "PropertyChanged",
+        "ms": 0.23860111832618713,
+        "startCounter": 140,
+        "eventCounter": 141
+      },
+      {
+        "scenario": "actor-property",
+        "hook": "PropertyChanged",
+        "ms": 0.15379860997200012,
+        "startCounter": 152,
+        "eventCounter": 153
+      },
+      {
+        "scenario": "interactive",
+        "hook": "PropertyChanged",
+        "ms": 0.1117996871471405,
+        "startCounter": 249,
+        "eventCounter": 250
+      }
+    ],
+    "normalPolicy": {
+      "visible-off": {
+        "mode": "visible-off",
+        "before": {
+          "hook": "Counts",
+          "utc": "2026-10-09T03:14:48.950Z",
+          "seconds": 17176912.6380644,
+          "threadId": 33884,
+          "gameThread": true,
+          "counts": {
+            "Mark": 1
+          },
+          "tablesWatched": 12,
+          "processPhysicalBytes": 3687329792,
+          "throttleCPUWhenNotForeground": false,
+          "appHasFocus": false,
+          "nativeForeground": false,
+          "effectiveShouldThrottle": false,
+          "unattended": false,
+          "queueLength": 0,
+          "undoCount": 0,
+          "undoBytes": 0
+        },
+        "after": {
+          "hook": "Counts",
+          "utc": "2026-10-09T03:14:50.353Z",
+          "seconds": 17176914.0401406,
+          "threadId": 33884,
+          "gameThread": true,
+          "counts": {
+            "Mark": 1,
+            "TransactionState": 160,
+            "PackageDirtyStateChanged": 1,
+            "PackageMarkedDirty": 40,
+            "ObjectModified": 40,
+            "ObjectTransacted": 40
+          },
+          "tablesWatched": 12,
+          "processPhysicalBytes": 3688882176,
+          "throttleCPUWhenNotForeground": false,
+          "appHasFocus": false,
+          "nativeForeground": false,
+          "effectiveShouldThrottle": false,
+          "unattended": false,
+          "queueLength": 40,
+          "undoCount": 0,
+          "undoBytes": 24553
+        },
+        "nativeStart": {
+          "editorPid": 38332,
+          "editorWindows": [
+            {
+              "handle": 1114254,
+              "pid": 38332,
+              "title": "UEShedFixture - Unreal Editor",
+              "minimized": false,
+              "visible": true
+            }
+          ],
+          "foreground": {
+            "handle": 131698,
+            "pid": 18488,
+            "title": "Search",
+            "minimized": false,
+            "visible": true
+          },
+          "editorForeground": false
+        },
+        "nativeEnd": {
+          "editorPid": 38332,
+          "editorWindows": [
+            {
+              "handle": 1114254,
+              "pid": 38332,
+              "title": "UEShedFixture - Unreal Editor",
+              "minimized": false,
+              "visible": true
+            }
+          ],
+          "foreground": {
+            "handle": 131698,
+            "pid": 18488,
+            "title": "Search",
+            "minimized": false,
+            "visible": true
+          },
+          "editorForeground": false
+        },
+        "stats": {
+          "noop": {
+            "n": 40,
+            "p50": 15.862200001720339,
+            "p95": 26.45870001288131,
+            "max": 33.53469999274239
+          },
+          "one": {
+            "n": 40,
+            "p50": 11.593999981414527,
+            "p95": 34.44890002720058,
+            "max": 36.466200021095574
+          }
+        }
+      },
+      "visible-on": {
+        "mode": "visible-on",
+        "before": {
+          "hook": "Counts",
+          "utc": "2026-10-09T03:14:50.837Z",
+          "seconds": 17176914.5249924,
+          "threadId": 33884,
+          "gameThread": true,
+          "counts": {
+            "Mark": 2,
+            "TransactionState": 160,
+            "PackageDirtyStateChanged": 1,
+            "PackageMarkedDirty": 40,
+            "ObjectModified": 40,
+            "ObjectTransacted": 40
+          },
+          "tablesWatched": 12,
+          "processPhysicalBytes": 3688882176,
+          "throttleCPUWhenNotForeground": true,
+          "appHasFocus": false,
+          "nativeForeground": false,
+          "effectiveShouldThrottle": true,
+          "unattended": false,
+          "queueLength": 40,
+          "undoCount": 0,
+          "undoBytes": 24553
+        },
+        "after": {
+          "hook": "Counts",
+          "utc": "2026-10-09T03:15:18.172Z",
+          "seconds": 17176941.8594861,
+          "threadId": 33884,
+          "gameThread": true,
+          "counts": {
+            "Mark": 2,
+            "TransactionState": 320,
+            "PackageDirtyStateChanged": 1,
+            "PackageMarkedDirty": 80,
+            "ObjectModified": 80,
+            "ObjectTransacted": 80
+          },
+          "tablesWatched": 12,
+          "processPhysicalBytes": 3688873984,
+          "throttleCPUWhenNotForeground": true,
+          "appHasFocus": false,
+          "nativeForeground": false,
+          "effectiveShouldThrottle": true,
+          "unattended": false,
+          "queueLength": 80,
+          "undoCount": 0,
+          "undoBytes": 49073
+        },
+        "nativeStart": {
+          "editorPid": 38332,
+          "editorWindows": [
+            {
+              "handle": 1114254,
+              "pid": 38332,
+              "title": "UEShedFixture - Unreal Editor",
+              "minimized": false,
+              "visible": true
+            }
+          ],
+          "foreground": {
+            "handle": 131698,
+            "pid": 18488,
+            "title": "Search",
+            "minimized": false,
+            "visible": true
+          },
+          "editorForeground": false
+        },
+        "nativeEnd": {
+          "editorPid": 38332,
+          "editorWindows": [
+            {
+              "handle": 1114254,
+              "pid": 38332,
+              "title": "UEShedFixture - Unreal Editor",
+              "minimized": false,
+              "visible": true
+            }
+          ],
+          "foreground": {
+            "handle": 131698,
+            "pid": 18488,
+            "title": "Search",
+            "minimized": false,
+            "visible": true
+          },
+          "editorForeground": false
+        },
+        "stats": {
+          "noop": {
+            "n": 40,
+            "p50": 330.68110002204776,
+            "p95": 331.3739000004716,
+            "max": 332.6602999586612
+          },
+          "one": {
+            "n": 40,
+            "p50": 335.199500026647,
+            "p95": 336.2201999989338,
+            "max": 336.36079996358603
+          }
+        }
+      },
+      "minimized-off": {
+        "mode": "minimized-off",
+        "before": {
+          "hook": "Counts",
+          "utc": "2026-10-09T03:15:19.169Z",
+          "seconds": 17176942.8570929,
+          "threadId": 33884,
+          "gameThread": true,
+          "counts": {
+            "Mark": 3,
+            "TransactionState": 320,
+            "PackageDirtyStateChanged": 1,
+            "PackageMarkedDirty": 80,
+            "ObjectModified": 80,
+            "ObjectTransacted": 80
+          },
+          "tablesWatched": 12,
+          "processPhysicalBytes": 3688878080,
+          "throttleCPUWhenNotForeground": false,
+          "appHasFocus": false,
+          "nativeForeground": false,
+          "effectiveShouldThrottle": true,
+          "unattended": false,
+          "queueLength": 80,
+          "undoCount": 0,
+          "undoBytes": 49073
+        },
+        "after": {
+          "hook": "Counts",
+          "utc": "2026-10-09T03:15:46.505Z",
+          "seconds": 17176970.1926315,
+          "threadId": 33884,
+          "gameThread": true,
+          "counts": {
+            "Mark": 3,
+            "TransactionState": 480,
+            "PackageDirtyStateChanged": 1,
+            "PackageMarkedDirty": 120,
+            "ObjectModified": 120,
+            "ObjectTransacted": 120
+          },
+          "tablesWatched": 12,
+          "processPhysicalBytes": 3675906048,
+          "throttleCPUWhenNotForeground": false,
+          "appHasFocus": false,
+          "nativeForeground": false,
+          "effectiveShouldThrottle": true,
+          "unattended": false,
+          "queueLength": 120,
+          "undoCount": 0,
+          "undoBytes": 73593
+        },
+        "nativeStart": {
+          "editorPid": 38332,
+          "editorWindows": [
+            {
+              "handle": 1114254,
+              "pid": 38332,
+              "title": "UEShedFixture - Unreal Editor",
+              "minimized": true,
+              "visible": true
+            }
+          ],
+          "foreground": {
+            "handle": 131698,
+            "pid": 18488,
+            "title": "Search",
+            "minimized": false,
+            "visible": true
+          },
+          "editorForeground": false
+        },
+        "nativeEnd": {
+          "editorPid": 38332,
+          "editorWindows": [
+            {
+              "handle": 1114254,
+              "pid": 38332,
+              "title": "UEShedFixture - Unreal Editor",
+              "minimized": true,
+              "visible": true
+            }
+          ],
+          "foreground": {
+            "handle": 131698,
+            "pid": 18488,
+            "title": "Search",
+            "minimized": false,
+            "visible": true
+          },
+          "editorForeground": false
+        },
+        "stats": {
+          "noop": {
+            "n": 40,
+            "p50": 330.5687000392936,
+            "p95": 331.4503000001423,
+            "max": 332.16340001672506
+          },
+          "one": {
+            "n": 40,
+            "p50": 335.2533000288531,
+            "p95": 335.7199000311084,
+            "max": 337.43800001684576
+          }
+        }
+      },
+      "minimized-on": {
+        "mode": "minimized-on",
+        "before": {
+          "hook": "Counts",
+          "utc": "2026-10-09T03:15:47.503Z",
+          "seconds": 17176971.1910125,
+          "threadId": 33884,
+          "gameThread": true,
+          "counts": {
+            "Mark": 4,
+            "TransactionState": 480,
+            "PackageDirtyStateChanged": 1,
+            "PackageMarkedDirty": 120,
+            "ObjectModified": 120,
+            "ObjectTransacted": 120
+          },
+          "tablesWatched": 12,
+          "processPhysicalBytes": 3675906048,
+          "throttleCPUWhenNotForeground": true,
+          "appHasFocus": false,
+          "nativeForeground": false,
+          "effectiveShouldThrottle": true,
+          "unattended": false,
+          "queueLength": 120,
+          "undoCount": 0,
+          "undoBytes": 73593
+        },
+        "after": {
+          "hook": "Counts",
+          "utc": "2026-10-09T03:16:14.837Z",
+          "seconds": 17176998.5246785,
+          "threadId": 33884,
+          "gameThread": true,
+          "counts": {
+            "Mark": 4,
+            "TransactionState": 640,
+            "PackageDirtyStateChanged": 1,
+            "PackageMarkedDirty": 160,
+            "ObjectModified": 160,
+            "ObjectTransacted": 160
+          },
+          "tablesWatched": 12,
+          "processPhysicalBytes": 3672702976,
+          "throttleCPUWhenNotForeground": true,
+          "appHasFocus": false,
+          "nativeForeground": false,
+          "effectiveShouldThrottle": true,
+          "unattended": false,
+          "queueLength": 160,
+          "undoCount": 0,
+          "undoBytes": 98113
+        },
+        "nativeStart": {
+          "editorPid": 38332,
+          "editorWindows": [
+            {
+              "handle": 1114254,
+              "pid": 38332,
+              "title": "UEShedFixture - Unreal Editor",
+              "minimized": true,
+              "visible": true
+            }
+          ],
+          "foreground": {
+            "handle": 131698,
+            "pid": 18488,
+            "title": "Search",
+            "minimized": false,
+            "visible": true
+          },
+          "editorForeground": false
+        },
+        "nativeEnd": {
+          "editorPid": 38332,
+          "editorWindows": [
+            {
+              "handle": 1114254,
+              "pid": 38332,
+              "title": "UEShedFixture - Unreal Editor",
+              "minimized": true,
+              "visible": true
+            }
+          ],
+          "foreground": {
+            "handle": 131698,
+            "pid": 18488,
+            "title": "Search",
+            "minimized": false,
+            "visible": true
+          },
+          "editorForeground": false
+        },
+        "stats": {
+          "noop": {
+            "n": 40,
+            "p50": 330.65380004700273,
+            "p95": 331.0742999892682,
+            "max": 332.50399999087676
+          },
+          "one": {
+            "n": 40,
+            "p50": 335.26440005516633,
+            "p95": 335.81260003848,
+            "max": 338.7555000372231
+          }
+        }
+      }
+    }
+  },
+  "5.8": {
+    "focused": {
+      "label": "focused",
+      "windowStart": {
+        "editorPid": 43452,
+        "editorWindows": [
+          {
+            "handle": 10027398,
+            "pid": 43452,
+            "title": "UEShedFixture - Unreal Editor",
+            "minimized": false,
+            "visible": true
+          }
+        ],
+        "foreground": {
+          "handle": 131698,
+          "pid": 18488,
+          "title": "Search",
+          "minimized": false,
+          "visible": true
+        },
+        "editorForeground": false
+      },
+      "windowEnd": {
+        "editorPid": 43452,
+        "editorWindows": [
+          {
+            "handle": 10027398,
+            "pid": 43452,
+            "title": "UEShedFixture - Unreal Editor",
+            "minimized": false,
+            "visible": true
+          }
+        ],
+        "foreground": {
+          "handle": 131698,
+          "pid": 18488,
+          "title": "Search",
+          "minimized": false,
+          "visible": true
+        },
+        "editorForeground": false
+      },
+      "stats": {
+        "noop": {
+          "n": 40,
+          "p50": 9.03200003085658,
+          "p95": 31.186899985186756,
+          "max": 39.40190002322197
+        },
+        "one": {
+          "n": 40,
+          "p50": 17.206599994096905,
+          "p95": 33.78100000554696,
+          "max": 36.99020005296916
+        },
+        "five": {
+          "n": 40,
+          "p50": 21.135999995749444,
+          "p95": 38.77629997441545,
+          "max": 43.81689999718219
+        },
+        "large-snapshot": {
+          "n": 40,
+          "p50": 856.5917999949306,
+          "p95": 905.8521999977529,
+          "max": 933.8728000293486
+        },
+        "large-apply": {
+          "n": 40,
+          "p50": 2020.563400001265,
+          "p95": 2101.8333999672905,
+          "max": 2164.2246999545023
+        }
+      },
+      "sequential": {
+        "n": 200,
+        "p50": 25.292999984230846,
+        "p95": 34.87279999535531,
+        "max": 36.153400025796145
+      },
+      "before": {
+        "hook": "Counts",
+        "utc": "2026-10-09T03:07:34.480Z",
+        "seconds": 17176478.1690003,
+        "threadId": 39588,
+        "gameThread": true,
+        "counts": {
+          "Mark": 1,
+          "TransactionState": 480,
+          "PackageDirtyStateChanged": 6,
+          "PackageMarkedDirty": 280,
+          "ObjectModified": 280,
+          "ObjectTransacted": 280
+        },
+        "tablesWatched": 12,
+        "processPhysicalBytes": 6996168704,
+        "throttleCPUWhenNotForeground": false,
+        "queueLength": 120,
+        "undoCount": 0,
+        "undoBytes": 58949124
+      },
+      "after": {
+        "hook": "Counts",
+        "utc": "2026-10-09T03:07:39.010Z",
+        "seconds": 17176482.6979447,
+        "threadId": 39588,
+        "gameThread": true,
+        "counts": {
+          "Mark": 1,
+          "TransactionState": 1280,
+          "PackageDirtyStateChanged": 6,
+          "PackageMarkedDirty": 480,
+          "ObjectModified": 480,
+          "ObjectTransacted": 480
+        },
+        "tablesWatched": 12,
+        "processPhysicalBytes": 6165000192,
+        "throttleCPUWhenNotForeground": false,
+        "queueLength": 320,
+        "undoCount": 0,
+        "undoBytes": 59071724
+      },
+      "largeRows": 10000
+    },
+    "eventLatency": [
+      {
+        "scenario": "cell",
+        "hook": "DataTableChanged",
+        "ms": 0.12649968266487122,
+        "startCounter": 179,
+        "eventCounter": 180
+      },
+      {
+        "scenario": "dataasset-property",
+        "hook": "PropertyChanged",
+        "ms": 0.10709837079048157,
+        "startCounter": 140,
+        "eventCounter": 141
+      },
+      {
+        "scenario": "actor-property",
+        "hook": "PropertyChanged",
+        "ms": 0.14160200953483582,
+        "startCounter": 152,
+        "eventCounter": 153
+      },
+      {
+        "scenario": "interactive",
+        "hook": "PropertyChanged",
+        "ms": 0.11259689927101135,
+        "startCounter": 249,
+        "eventCounter": 250
+      }
+    ],
+    "normalPolicy": {
+      "visible-off": {
+        "mode": "visible-off",
+        "before": {
+          "hook": "Counts",
+          "utc": "2026-10-09T03:18:00.008Z",
+          "seconds": 17177103.6960313,
+          "threadId": 44756,
+          "gameThread": true,
+          "counts": {
+            "Mark": 1
+          },
+          "tablesWatched": 12,
+          "processPhysicalBytes": 3911520256,
+          "throttleCPUWhenNotForeground": false,
+          "appHasFocus": false,
+          "nativeForeground": false,
+          "effectiveShouldThrottle": false,
+          "unattended": false,
+          "queueLength": 0,
+          "undoCount": 0,
+          "undoBytes": 0
+        },
+        "after": {
+          "hook": "Counts",
+          "utc": "2026-10-09T03:18:01.297Z",
+          "seconds": 17177104.9849483,
+          "threadId": 44756,
+          "gameThread": true,
+          "counts": {
+            "Mark": 1,
+            "TransactionState": 160,
+            "PackageDirtyStateChanged": 1,
+            "PackageMarkedDirty": 40,
+            "ObjectModified": 40,
+            "ObjectTransacted": 40
+          },
+          "tablesWatched": 12,
+          "processPhysicalBytes": 3910660096,
+          "throttleCPUWhenNotForeground": false,
+          "appHasFocus": false,
+          "nativeForeground": false,
+          "effectiveShouldThrottle": false,
+          "unattended": false,
+          "queueLength": 40,
+          "undoCount": 0,
+          "undoBytes": 24553
+        },
+        "nativeStart": {
+          "editorPid": 33320,
+          "editorWindows": [
+            {
+              "handle": 2754692,
+              "pid": 33320,
+              "title": "UEShedFixture - Unreal Editor",
+              "minimized": false,
+              "visible": true
+            }
+          ],
+          "foreground": {
+            "handle": 131698,
+            "pid": 18488,
+            "title": "Search",
+            "minimized": false,
+            "visible": true
+          },
+          "editorForeground": false
+        },
+        "nativeEnd": {
+          "editorPid": 33320,
+          "editorWindows": [
+            {
+              "handle": 2754692,
+              "pid": 33320,
+              "title": "UEShedFixture - Unreal Editor",
+              "minimized": false,
+              "visible": true
+            }
+          ],
+          "foreground": {
+            "handle": 131698,
+            "pid": 18488,
+            "title": "Search",
+            "minimized": false,
+            "visible": true
+          },
+          "editorForeground": false
+        },
+        "stats": {
+          "noop": {
+            "n": 40,
+            "p50": 8.40499997138977,
+            "p95": 32.2112999856472,
+            "max": 34.66220002155751
+          },
+          "one": {
+            "n": 40,
+            "p50": 10.903600021265447,
+            "p95": 28.55050005018711,
+            "max": 30.591499991714954
+          }
+        }
+      },
+      "visible-on": {
+        "mode": "visible-on",
+        "before": {
+          "hook": "Counts",
+          "utc": "2026-10-09T03:18:01.789Z",
+          "seconds": 17177105.4766386,
+          "threadId": 44756,
+          "gameThread": true,
+          "counts": {
+            "Mark": 2,
+            "TransactionState": 160,
+            "PackageDirtyStateChanged": 1,
+            "PackageMarkedDirty": 40,
+            "ObjectModified": 40,
+            "ObjectTransacted": 40
+          },
+          "tablesWatched": 12,
+          "processPhysicalBytes": 3910672384,
+          "throttleCPUWhenNotForeground": true,
+          "appHasFocus": false,
+          "nativeForeground": false,
+          "effectiveShouldThrottle": true,
+          "unattended": false,
+          "queueLength": 40,
+          "undoCount": 0,
+          "undoBytes": 24553
+        },
+        "after": {
+          "hook": "Counts",
+          "utc": "2026-10-09T03:18:29.122Z",
+          "seconds": 17177132.8104941,
+          "threadId": 44756,
+          "gameThread": true,
+          "counts": {
+            "Mark": 2,
+            "TransactionState": 320,
+            "PackageDirtyStateChanged": 1,
+            "PackageMarkedDirty": 80,
+            "ObjectModified": 80,
+            "ObjectTransacted": 80
+          },
+          "tablesWatched": 12,
+          "processPhysicalBytes": 3905662976,
+          "throttleCPUWhenNotForeground": true,
+          "appHasFocus": false,
+          "nativeForeground": false,
+          "effectiveShouldThrottle": true,
+          "unattended": false,
+          "queueLength": 80,
+          "undoCount": 0,
+          "undoBytes": 49073
+        },
+        "nativeStart": {
+          "editorPid": 33320,
+          "editorWindows": [
+            {
+              "handle": 2754692,
+              "pid": 33320,
+              "title": "UEShedFixture - Unreal Editor",
+              "minimized": false,
+              "visible": true
+            }
+          ],
+          "foreground": {
+            "handle": 131698,
+            "pid": 18488,
+            "title": "Search",
+            "minimized": false,
+            "visible": true
+          },
+          "editorForeground": false
+        },
+        "nativeEnd": {
+          "editorPid": 33320,
+          "editorWindows": [
+            {
+              "handle": 2754692,
+              "pid": 33320,
+              "title": "UEShedFixture - Unreal Editor",
+              "minimized": false,
+              "visible": true
+            }
+          ],
+          "foreground": {
+            "handle": 131698,
+            "pid": 18488,
+            "title": "Search",
+            "minimized": false,
+            "visible": true
+          },
+          "editorForeground": false
+        },
+        "stats": {
+          "noop": {
+            "n": 40,
+            "p50": 330.5444000288844,
+            "p95": 331.656499998644,
+            "max": 335.40000003995374
+          },
+          "one": {
+            "n": 40,
+            "p50": 335.45829996000975,
+            "p95": 340.50599997863173,
+            "max": 344.0337000065483
+          }
+        }
+      },
+      "minimized-off": {
+        "mode": "minimized-off",
+        "before": {
+          "hook": "Counts",
+          "utc": "2026-10-09T03:18:30.120Z",
+          "seconds": 17177133.8084015,
+          "threadId": 44756,
+          "gameThread": true,
+          "counts": {
+            "Mark": 3,
+            "TransactionState": 320,
+            "PackageDirtyStateChanged": 1,
+            "PackageMarkedDirty": 80,
+            "ObjectModified": 80,
+            "ObjectTransacted": 80
+          },
+          "tablesWatched": 12,
+          "processPhysicalBytes": 3905671168,
+          "throttleCPUWhenNotForeground": false,
+          "appHasFocus": false,
+          "nativeForeground": false,
+          "effectiveShouldThrottle": true,
+          "unattended": false,
+          "queueLength": 80,
+          "undoCount": 0,
+          "undoBytes": 49073
+        },
+        "after": {
+          "hook": "Counts",
+          "utc": "2026-10-09T03:18:57.454Z",
+          "seconds": 17177161.1415455,
+          "threadId": 44756,
+          "gameThread": true,
+          "counts": {
+            "Mark": 3,
+            "TransactionState": 480,
+            "PackageDirtyStateChanged": 1,
+            "PackageMarkedDirty": 120,
+            "ObjectModified": 120,
+            "ObjectTransacted": 120
+          },
+          "tablesWatched": 12,
+          "processPhysicalBytes": 3869908992,
+          "throttleCPUWhenNotForeground": false,
+          "appHasFocus": false,
+          "nativeForeground": false,
+          "effectiveShouldThrottle": true,
+          "unattended": false,
+          "queueLength": 120,
+          "undoCount": 0,
+          "undoBytes": 73593
+        },
+        "nativeStart": {
+          "editorPid": 33320,
+          "editorWindows": [
+            {
+              "handle": 2754692,
+              "pid": 33320,
+              "title": "UEShedFixture - Unreal Editor",
+              "minimized": true,
+              "visible": true
+            }
+          ],
+          "foreground": {
+            "handle": 131698,
+            "pid": 18488,
+            "title": "Search",
+            "minimized": false,
+            "visible": true
+          },
+          "editorForeground": false
+        },
+        "nativeEnd": {
+          "editorPid": 33320,
+          "editorWindows": [
+            {
+              "handle": 2754692,
+              "pid": 33320,
+              "title": "UEShedFixture - Unreal Editor",
+              "minimized": true,
+              "visible": true
+            }
+          ],
+          "foreground": {
+            "handle": 131698,
+            "pid": 18488,
+            "title": "Search",
+            "minimized": false,
+            "visible": true
+          },
+          "editorForeground": false
+        },
+        "stats": {
+          "noop": {
+            "n": 40,
+            "p50": 330.6686999858357,
+            "p95": 331.337200012058,
+            "max": 332.0155999972485
+          },
+          "one": {
+            "n": 40,
+            "p50": 335.2771000354551,
+            "p95": 336.407299968414,
+            "max": 337.40179997403175
+          }
+        }
+      },
+      "minimized-on": {
+        "mode": "minimized-on",
+        "before": {
+          "hook": "Counts",
+          "utc": "2026-10-09T03:18:58.451Z",
+          "seconds": 17177162.1396799,
+          "threadId": 44756,
+          "gameThread": true,
+          "counts": {
+            "Mark": 4,
+            "TransactionState": 480,
+            "PackageDirtyStateChanged": 1,
+            "PackageMarkedDirty": 120,
+            "ObjectModified": 120,
+            "ObjectTransacted": 120
+          },
+          "tablesWatched": 12,
+          "processPhysicalBytes": 3869913088,
+          "throttleCPUWhenNotForeground": true,
+          "appHasFocus": false,
+          "nativeForeground": false,
+          "effectiveShouldThrottle": true,
+          "unattended": false,
+          "queueLength": 120,
+          "undoCount": 0,
+          "undoBytes": 73593
+        },
+        "after": {
+          "hook": "Counts",
+          "utc": "2026-10-09T03:19:25.785Z",
+          "seconds": 17177189.4732824,
+          "threadId": 44756,
+          "gameThread": true,
+          "counts": {
+            "Mark": 4,
+            "TransactionState": 640,
+            "PackageDirtyStateChanged": 1,
+            "PackageMarkedDirty": 160,
+            "ObjectModified": 160,
+            "ObjectTransacted": 160
+          },
+          "tablesWatched": 12,
+          "processPhysicalBytes": 3870117888,
+          "throttleCPUWhenNotForeground": true,
+          "appHasFocus": false,
+          "nativeForeground": false,
+          "effectiveShouldThrottle": true,
+          "unattended": false,
+          "queueLength": 160,
+          "undoCount": 0,
+          "undoBytes": 98113
+        },
+        "nativeStart": {
+          "editorPid": 33320,
+          "editorWindows": [
+            {
+              "handle": 2754692,
+              "pid": 33320,
+              "title": "UEShedFixture - Unreal Editor",
+              "minimized": true,
+              "visible": true
+            }
+          ],
+          "foreground": {
+            "handle": 131698,
+            "pid": 18488,
+            "title": "Search",
+            "minimized": false,
+            "visible": true
+          },
+          "editorForeground": false
+        },
+        "nativeEnd": {
+          "editorPid": 33320,
+          "editorWindows": [
+            {
+              "handle": 2754692,
+              "pid": 33320,
+              "title": "UEShedFixture - Unreal Editor",
+              "minimized": true,
+              "visible": true
+            }
+          ],
+          "foreground": {
+            "handle": 131698,
+            "pid": 18488,
+            "title": "Search",
+            "minimized": false,
+            "visible": true
+          },
+          "editorForeground": false
+        },
+        "stats": {
+          "noop": {
+            "n": 40,
+            "p50": 330.40139998774976,
+            "p95": 331.008400011342,
+            "max": 332.67189998878166
+          },
+          "one": {
+            "n": 40,
+            "p50": 335.37330001126975,
+            "p95": 335.9307000064291,
+            "max": 336.94670000113547
+          }
+        }
+      }
+    }
+  }
+}

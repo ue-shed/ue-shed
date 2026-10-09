@@ -1,5 +1,6 @@
 """Research-only RC client. No retries for mutation calls; raw exchanges retained."""
 import json
+import hashlib
 import os
 import time
 import urllib.request
@@ -25,7 +26,11 @@ class Client:
             status, raw = error.code, error.read().decode()
         elapsed = (time.perf_counter() - started) * 1000
         result = json.loads(raw) if raw else {}
-        record = {"seconds": time.perf_counter(), "route": route, "request": body, "status": status, "ms": elapsed, "response": result}
+        logged = result
+        # Throughput evidence needs timing/byte size, not hundreds of copies of 10k rows.
+        if self.log.name.startswith("T11") and len(raw) > 100_000:
+            logged = {"omittedLargeResponse": True, "bytes": len(raw.encode()), "sha256": hashlib.sha256(raw.encode()).hexdigest()}
+        record = {"seconds": time.perf_counter(), "route": route, "request": body, "status": status, "ms": elapsed, "response": logged}
         with self.log.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(record, ensure_ascii=False) + "\n")
         if status != 200:

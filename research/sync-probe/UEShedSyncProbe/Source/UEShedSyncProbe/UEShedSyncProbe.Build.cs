@@ -7,7 +7,7 @@ public class UEShedSyncProbe : ModuleRules
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 		PublicDependencyModuleNames.AddRange(new[] { "Core", "CoreUObject", "Engine" });
 		PrivateDependencyModuleNames.AddRange(new[] {
-			"AssetRegistry", "Json", "UnrealEd", "Slate", "SlateCore"
+			"AssetRegistry", "Json", "UnrealEd", "Slate", "SlateCore", "ApplicationCore"
 		});
 	}
 }

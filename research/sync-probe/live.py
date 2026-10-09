@@ -33,9 +33,9 @@ def record(label, function):
         print(label, "ERROR", error, flush=True)
         return None
 
-def change(snapshot, serial=1):
+def change(snapshot, serial=1, field_name=None):
     row = snapshot["table"]["rows"][0]
-    field = next(f for f in row["fields"] if f["value"]["kind"] in ["int", "bool", "string", "text"])
+    field = next(f for f in row["fields"] if (f["name"] == field_name if field_name else f["value"]["kind"] in ["int", "bool", "string", "text"]))
     old = field["value"]
     new = copy.deepcopy(old)
     kind = old["kind"]
@@ -45,8 +45,8 @@ def change(snapshot, serial=1):
     elif kind == "text": new = {"kind": "text", "value": f"SyncProbe {serial}", "identity": {"kind": "culture_invariant"}}
     return {"id": str(uuid.uuid4()), "tableObjectPath": snapshot["table"]["objectPath"], "body": {"kind": "set_cell", "rowId": row["id"], "fieldName": field["name"], "oldValue": old, "newValue": new}}
 
-def apply(snapshots, serial=1):
-    request = {"contract": {"name": "unreal-authoring-apply", "version": {"major": 1, "minor": 2}}, "operationId": str(uuid.uuid4()), "tables": [{"objectPath": s["table"]["objectPath"], "expectedFingerprint": s["fingerprint"]["value"]} for s in snapshots], "commands": [change(s, serial) for s in snapshots]}
+def apply(snapshots, serial=1, field_name=None):
+    request = {"contract": {"name": "unreal-authoring-apply", "version": {"major": 1, "minor": 2}}, "operationId": str(uuid.uuid4()), "tables": [{"objectPath": s["table"]["objectPath"], "expectedFingerprint": s["fingerprint"]["value"]} for s in snapshots], "commands": [change(s, serial, field_name) for s in snapshots]}
     response, elapsed = client.call(AUTHORING, "Apply", RequestJson=json.dumps(request))
     if response["status"] != "committed": raise RuntimeError(json.dumps(response))
     return response, elapsed
@@ -100,11 +100,19 @@ elif task == "undo":
     results.append({"label": "cancel-proof", "beforeFingerprint": cancel_before["fingerprint"]["value"], "afterSnapshot": client.snapshot(scalar), "countsBefore": cancel_counts, "countsAfter": client.probe("GetCounts")})
 elif task == "concurrent":
     record("open", lambda: client.scenario("open", table=scalar))
+    record("ui-before", lambda: client.scenario("ui-text"))
     stale = client.snapshot(scalar)
-    record("apply-with-editor-open", lambda: apply([stale])[0]["status"])
+    record("apply-with-editor-open", lambda: apply([stale], field_name="Count")[0])
+    record("ui-after-apply", lambda: client.scenario("ui-text"))
     stale = client.snapshot(scalar)
     record("editor-cell", lambda: client.scenario("cell", table=scalar, row="Scalar_Alpha", field="Count", value=33))
+    record("ui-after-editor-cell", lambda: client.scenario("ui-text"))
     record("stale-apply", lambda: apply([stale])[0])
+    record("tagged-property", lambda: client.scenario("property"))
+    record("tagged-undo", lambda: client.probe("Undo"))
+    record("tagged-redo", lambda: client.probe("Redo"))
+    record("dirty-revert", lambda: client.scenario("revert", table=scalar))
+    record("after-revert-snapshot", lambda: client.snapshot(scalar))
 elif task == "perf":
     from windows import state
     window_start = state(version)
@@ -122,10 +130,12 @@ elif task == "perf":
         response, elapsed = apply(five_state, index + 200); samples["five"].append(elapsed); five_state = response["snapshots"]; one_state = [five_state[0]]
         response, elapsed = client.call(AUTHORING, "GetTableSnapshot", TableObjectPath=large); samples["large-snapshot"].append(elapsed); large_state = [response]
         response, elapsed = apply(large_state, index + 300); samples["large-apply"].append(elapsed); large_state = response["snapshots"]
+        if index % 10 == 9: print(f"{mode}: {index + 1}/40 sample rounds", flush=True)
     start = client.probe("GetCounts")
     sequential = []
     for index in range(200):
         response, elapsed = apply(one_state, index + 1000); sequential.append(elapsed); one_state = response["snapshots"]
+        if index % 50 == 49: print(f"{mode}: {index + 1}/200 sequential edits", flush=True)
     end = client.probe("GetCounts")
     def stats(values):
         values = sorted(values)

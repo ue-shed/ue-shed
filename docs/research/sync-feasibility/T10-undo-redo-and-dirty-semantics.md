@@ -6,8 +6,8 @@ Results:
 
 | Engine | Queue before → after Apply | Undo matches baseline | Redo matches edited state | Save+Undo matches baseline | Dirty after Save+Undo |
 | --- | --- | --- | --- | --- | --- |
-| 5.7 | 0 → 1 | True (5/5) | True (5/5 changed) | True (5/5) | scalar dirty=true; others false |
-| 5.8 | 0 → 1 | True (5/5) | True (5/5 changed) | True (5/5) | scalar dirty=true; others false |
+| 5.7 | 0 → 1 | True (5/5) | True (5/5) | True (5/5) | scalar dirty=true; others false |
+| 5.8 | 0 → 1 | True (5/5) | True (5/5) | True (5/5) | scalar dirty=true; others false |
 
 Before Save, all five packages became clean on Undo and dirty on Redo. Save did not clear history: queueLength stayed 1 and buffer bytes stayed 3042 on both engines; Undo remained available. Initial undoBytes=0, after Apply=3042, after Undo=2954; bytes differ with captured state. Runtime logs report **256 MB** undo buffer on each engine. Source uses configurable `[Undo] UndoBufferSize` with 256 MB fallback and memory eviction; saturation/old-entry eviction not forced here.
 

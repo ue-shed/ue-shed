@@ -43,19 +43,28 @@ elif action == "build":
     print(f"exit={result.returncode} log={log}")
     raise SystemExit(result.returncode)
 elif action == "launch":
+    stamp = int(time.time())
+    editor_log = base / f"editor-{stamp}.log"
     command = [str(engine(version) / "Engine/Binaries/Win64/UnrealEditor.exe"), str(project), "/Game/Fixture/Cameras/L_CameraLoad", "-unattended", "-nop4", "-nosplash", "-NoLiveCoding", "-RCWebControlEnable", "-RCWebInterfaceEnable", "-RemoteControlIsHeadless", "-ini:RemoteControl:[/Script/RemoteControlCommon.RemoteControlSettings]:RemoteControlHttpServerPort=30001", "-ini:RemoteControl:[/Script/RemoteControlCommon.RemoteControlSettings]:RemoteControlWebSocketServerPort=30002", "-ini:RemoteControl:[/Script/RemoteControlCommon.RemoteControlSettings]:bAutoStartWebServer=True", "-ini:EditorSettings:[/Script/UnrealEd.EditorPerformanceSettings]:bThrottleCPUWhenNotForeground=False", f"-abslog={base / 'editor.log'}"]
+    command[-1] = f"-abslog={editor_log}"
+    if os.environ.get("UE_SHED_RESEARCH_EDITOR_UNATTENDED", "1") == "0": command.remove("-unattended")
     for remote_class in ["UEShedAuthoring.UEShedAuthoringLibrary", "UEShedSyncProbe.UEShedSyncProbeLibrary"]:
         command.append(f"-ini:RemoteControl:[/Script/RemoteControlCommon.RemoteControlSettings]:+CustomAllowedRemoteFunctionCalls=(ClassPath=/Script/{remote_class},bAllowChildClasses=False)")
-    log = (base / "launch-command.json")
+    log = (base / f"launch-{stamp}.json")
     log.write_text(json.dumps(command, indent=2), encoding="utf-8")
     process = subprocess.Popen(command, creationflags=subprocess.CREATE_NO_WINDOW)
     (base / "editor.pid").write_text(str(process.pid))
+    (base / "current-launch.json").write_text(json.dumps({"pid": process.pid, "log": str(editor_log), "command": str(log)}), encoding="utf-8")
     journal(f"T07 launched {version} UnrealEditor PID={process.pid}; command={log}")
     print(f"PID={process.pid}")
 elif action == "stop":
     pid = int((base / "editor.pid").read_text())
     # Only the exact process started by this script (and its child process tree).
     result = subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, text=True)
+    metadata = base / "current-launch.json"
+    if metadata.exists():
+        source = Path(json.loads(metadata.read_text())["log"])
+        if source.exists(): shutil.copy2(source, base / "editor.log")
     journal(f"Cleanup {version} PID={pid}: {result.stdout.strip()} {result.stderr.strip()}")
     print(result.stdout, result.stderr)
 elif action == "restore-assets":

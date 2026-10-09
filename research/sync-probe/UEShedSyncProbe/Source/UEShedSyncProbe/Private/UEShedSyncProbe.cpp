@@ -24,6 +24,12 @@
 #include "PackageTools.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Editor/EditorPerformanceSettings.h"
+#include "Misc/App.h"
+#include "HAL/PlatformApplicationMisc.h"
+#include "Framework/Application/SlateApplication.h"
+#include "Widgets/SWindow.h"
+#include "Widgets/Text/STextBlock.h"
+#include "Layout/Children.h"
 
 namespace Probe
 {
@@ -89,6 +95,19 @@ void WatchTables()
 			Tables.Emplace(Weak, Handle);
 		}
 	}
+}
+void ReadCells(const TSharedRef<SWidget>& Widget, const FString& ParentPath, TArray<TSharedPtr<FJsonValue>>& Cells)
+{
+	FString Path = ParentPath + TEXT("/") + Widget->GetType().ToString();
+	if (Widget->GetType() == FName(TEXT("STextBlock")) && Path.Contains(TEXT("SDataTableListViewRow")))
+	{
+		auto Json = MakeShared<FJsonObject>();
+		Json->SetStringField(TEXT("widgetPath"), Path);
+		Json->SetStringField(TEXT("text"), StaticCastSharedRef<STextBlock>(Widget)->GetText().ToString());
+		Cells.Add(MakeShared<FJsonValueObject>(Json));
+	}
+	if (FChildren* Children = Widget->GetChildren())
+		for (int32 Index = 0; Index < Children->Num(); ++Index) ReadCells(Children->GetChildAt(Index), Path + FString::Printf(TEXT("[%d]"), Index), Cells);
 }
 }
 
@@ -187,6 +206,10 @@ void UUEShedSyncProbeLibrary::GetCounts(FString& ResultJson)
 	Json->SetNumberField(TEXT("tablesWatched"), Probe::Tables.Num());
 	Json->SetNumberField(TEXT("processPhysicalBytes"), FPlatformMemory::GetStats().UsedPhysical);
 	Json->SetBoolField(TEXT("throttleCPUWhenNotForeground"), GetDefault<UEditorPerformanceSettings>()->bThrottleCPUWhenNotForeground);
+	Json->SetBoolField(TEXT("appHasFocus"), FApp::HasFocus());
+	Json->SetBoolField(TEXT("nativeForeground"), FPlatformApplicationMisc::IsThisApplicationForeground());
+	Json->SetBoolField(TEXT("effectiveShouldThrottle"), GEditor->ShouldThrottleCPUUsage());
+	Json->SetBoolField(TEXT("unattended"), FApp::IsUnattended());
 	if (auto* Buffer = Cast<UTransBuffer>(GEditor->Trans))
 	{
 		Json->SetNumberField(TEXT("queueLength"), Buffer->GetQueueLength());
@@ -207,6 +230,13 @@ void UUEShedSyncProbeLibrary::Scenario(const FString& RequestJson, FString& Resu
 	Result->SetStringField(TEXT("action"), Action);
 	if (Action == TEXT("noop")) { ResultJson = Probe::Encode(Result); return; }
 	if (Action == TEXT("throttle")) { GetMutableDefault<UEditorPerformanceSettings>()->bThrottleCPUWhenNotForeground = Request->GetBoolField(TEXT("value")); ResultJson = Probe::Encode(Result); return; }
+	if (Action == TEXT("ui-text"))
+	{
+		TArray<TSharedPtr<FJsonValue>> Cells;
+		for (const auto& Window : FSlateApplication::Get().GetTopLevelWindows()) Probe::ReadCells(Window, Window->GetTitle().ToString(), Cells);
+		Result->SetArrayField(TEXT("cells"), Cells);
+		ResultJson = Probe::Encode(Result); return;
+	}
 	if (Action == TEXT("actor"))
 	{
 		UWorld* World = GEditor->GetEditorWorldContext().World();
@@ -257,7 +287,7 @@ void UUEShedSyncProbeLibrary::Scenario(const FString& RequestJson, FString& Resu
 		Success = UPackage::SavePackage(Table->GetOutermost(), Table, *Filename, Args);
 		Result->SetStringField(TEXT("saved"), Filename);
 	}
-	else if (Action == TEXT("reload")) { FText Error; Success = UPackageTools::ReloadPackages({Table->GetOutermost()}, Error, false); Result->SetStringField(TEXT("error"), Error.ToString()); Table = LoadObject<UDataTable>(nullptr, *Path); }
+	else if (Action == TEXT("reload") || Action == TEXT("revert")) { FText Error; Success = UPackageTools::ReloadPackages({Table->GetOutermost()}, Error, Action == TEXT("revert") ? EReloadPackagesInteractionMode::AssumePositive : EReloadPackagesInteractionMode::AssumeNegative); Result->SetStringField(TEXT("error"), Error.ToString()); Table = LoadObject<UDataTable>(nullptr, *Path); }
 	else if (Action == TEXT("cell") || Action == TEXT("raw-cell") || Action == TEXT("cancel"))
 	{
 		uint8* Bytes = Table->FindRowUnchecked(Row);

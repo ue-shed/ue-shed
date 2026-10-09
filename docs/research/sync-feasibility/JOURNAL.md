@@ -123,3 +123,98 @@ SUCCESS: The process with PID 40340 (child process of PID 34972) has been termin
 - 2026-10-09T09:55:45.619929+07:00 Native window 5.7 minimize: {'editorPid': 32716, 'editorWindows': [{'handle': 52300870, 'pid': 32716, 'title': 'UEShedFixture - Unreal Editor', 'minimized': True, 'visible': True}], 'foreground': {'handle': 131698, 'pid': 18488, 'title': 'Search', 'minimized': False, 'visible': True}, 'editorForeground': False}
 
 - 2026-10-09T09:55:45.959834+07:00 T10 fresh UE5.7 minimized Apply committed, Undo true, Redo true; both engines verified focus-independent Undo. Completed compact proof and task report.
+
+- 2026-10-09T09:56:06.091630+07:00 T10 report generation wrote artifacts successfully but console printing hit cp1252 UnicodeEncodeError on an arrow. Corrected console output to JSON; artifact contents unaffected.
+
+- 2026-10-09T09:56:06.181758+07:00 Native window 5.7 focus: {'editorPid': 32716, 'editorWindows': [{'handle': 52300870, 'pid': 32716, 'title': 'UEShedFixture - Unreal Editor', 'minimized': False, 'visible': True}], 'foreground': {'handle': 131698, 'pid': 18488, 'title': 'Search', 'minimized': False, 'visible': True}, 'editorForeground': False}
+
+- 2026-10-09T09:58:20.625763+07:00 T11 focus request failed native foreground verification (foreground remains Search). Focused performance UNVERIFIED; attempted-focused run is actual unfocused visible. Large response logging revised to hash/byte summary for later runs to avoid retaining repeated entire tables; first run raw RPC log retains full payloads. Instrumentation/log overhead excluded only after urllib read timing stops, engine logging remains enabled.
+
+- 2026-10-09T09:58:27.177503+07:00 perf 5.7 finished; raw D:\git\ue-shed-sync-research\out\sync-research\5.7\perf-summary.json; 1 records
+
+- 2026-10-09T09:58:35.284118+07:00 Native window 5.7 minimize: {'editorPid': 32716, 'editorWindows': [{'handle': 52300870, 'pid': 32716, 'title': 'UEShedFixture - Unreal Editor', 'minimized': True, 'visible': True}], 'foreground': {'handle': 131698, 'pid': 18488, 'title': 'Search', 'minimized': False, 'visible': True}, 'editorForeground': False}
+
+- 2026-10-09T10:00:08.810825+07:00 T01 extended using T08 payload: DataTable native row fields named but HasNonPropertyChanges=false. Concert resolves names on UObject class (both util.cpp492-519); potential omitted capture inferred, not tested Multi-User behavior. Distinguish prior-art patterns from reusable DataTable serializer.
+
+- 2026-10-09T10:00:49.979003+07:00 perf 5.7 finished; raw D:\git\ue-shed-sync-research\out\sync-research\5.7\perf-summary.json; 1 records
+
+- 2026-10-09T10:03:32.856095+07:00 perf 5.7 finished; raw D:\git\ue-shed-sync-research\out\sync-research\5.7\perf-summary.json; 1 records
+
+- 2026-10-09T10:04:59.124012+07:00 Cleanup 5.7 PID=32716: SUCCESS: The process with PID 24384 (child process of PID 24524) has been terminated.
+SUCCESS: The process with PID 24524 (child process of PID 32716) has been terminated.
+SUCCESS: The process with PID 14900 (child process of PID 32716) has been terminated.
+SUCCESS: The process with PID 35400 (child process of PID 32716) has been terminated.
+SUCCESS: The process with PID 42660 (child process of PID 32716) has been terminated.
+SUCCESS: The process with PID 26592 (child process of PID 32716) has been terminated.
+SUCCESS: The process with PID 43732 (child process of PID 32716) has been terminated.
+SUCCESS: The process with PID 32716 (child process of PID 35392) has been terminated. 
+
+- 2026-10-09T10:04:59.189251+07:00 T07 launched 5.8 UnrealEditor PID=43452; command=D:\git\ue-shed-sync-research\out\sync-research\5.8\launch-command.json
+
+- 2026-10-09T10:04:59.248769+07:00 T11 UE5.7 three modes complete. Actual focused state unavailable (native activation failed). Source throttle conditions additionally reviewed; no ShaderCompileWorker process present during enabled-setting run. Next UE5.8 performance.
+
+- 2026-10-09T10:05:25.374889+07:00 Native window 5.8 focus: {'editorPid': 43452, 'editorWindows': [{'handle': 10027398, 'pid': 43452, 'title': 'UEShedFixture - Unreal Editor', 'minimized': False, 'visible': True}], 'foreground': {'handle': 131698, 'pid': 18488, 'title': 'Search', 'minimized': False, 'visible': True}, 'editorForeground': False}
+
+- 2026-10-09T10:06:15.596924+07:00 Prepared T12 throwaway probe extension to inspect cached Slate DataTable cell text and report actual engine focus/throttle policy. Source APIs checked on both engines. Not rebuilt into running T11 editor; no performance code or authority mutations changed during measurements.
+
+- 2026-10-09T10:07:39.014989+07:00 perf 5.8 finished; raw D:\git\ue-shed-sync-research\out\sync-research\5.8\perf-summary.json; 1 records
+
+- 2026-10-09T10:09:47.217074+07:00 Cleanup 5.8 PID=43452: SUCCESS: The process with PID 23828 (child process of PID 44696) has been terminated.
+SUCCESS: The process with PID 44696 (child process of PID 43452) has been terminated.
+SUCCESS: The process with PID 43452 (child process of PID 17928) has been terminated. 
+
+- 2026-10-09T10:09:47.294532+07:00 T07 build 5.7: ['D:\\ue5\\UE_5.7\\Engine\\Build\\BatchFiles\\Build.bat', 'UEShedFixtureEditor', 'Win64', 'Development', 'D:\\git\\ue-shed-sync-research\\out\\sync-research\\5.7\\fixture\\UEShedFixture.uproject', '-NoUBTMakefiles', '-WaitMutex', '-NoHotReloadFromIDE']; raw log D:\git\ue-shed-sync-research\out\sync-research\5.7\build-1791515387.log
+
+- 2026-10-09T10:09:57.295211+07:00 T07 build 5.7 exit=0; log=D:\git\ue-shed-sync-research\out\sync-research\5.7\build-1791515387.log
+
+- 2026-10-09T10:10:59.873487+07:00 T07 build 5.8: ['D:\\ue5\\UE_5.8\\Engine\\Build\\BatchFiles\\Build.bat', 'UEShedFixtureEditor', 'Win64', 'Development', 'D:\\git\\ue-shed-sync-research\\out\\sync-research\\5.8\\fixture\\UEShedFixture.uproject', '-NoUBTMakefiles', '-WaitMutex', '-NoHotReloadFromIDE']; raw log D:\git\ue-shed-sync-research\out\sync-research\5.8\build-1791515459.log
+
+- 2026-10-09T10:11:12.324463+07:00 T07 build 5.8 exit=0; log=D:\git\ue-shed-sync-research\out\sync-research\5.8\build-1791515459.log
+
+- 2026-10-09T10:12:51.834919+07:00 T11 source cause verified both engines: EditorEngine.cpp5.7:5014-5023 /5.8:5305-5314 returns false when FApp::IsUnattended. All existing performance runs passed -unattended. Short normal-editor policy runs added. Probe extension builds succeeded; deprecated reload bool changed to exact equivalent AssumeNegative, plus explicit disposable dirty-revert AssumePositive for supplemental coverage. Previous T11 editor logs archived; subsequent launches use unique log/command files.
+
+- 2026-10-09T10:12:51.895867+07:00 T07 build 5.7: ['D:\\ue5\\UE_5.7\\Engine\\Build\\BatchFiles\\Build.bat', 'UEShedFixtureEditor', 'Win64', 'Development', 'D:\\git\\ue-shed-sync-research\\out\\sync-research\\5.7\\fixture\\UEShedFixture.uproject', '-NoUBTMakefiles', '-WaitMutex', '-NoHotReloadFromIDE']; raw log D:\git\ue-shed-sync-research\out\sync-research\5.7\build-1791515571.log
+
+- 2026-10-09T10:12:58.183697+07:00 T07 build 5.7 exit=0; log=D:\git\ue-shed-sync-research\out\sync-research\5.7\build-1791515571.log
+
+- 2026-10-09T10:12:58.254928+07:00 T07 build 5.8: ['D:\\ue5\\UE_5.8\\Engine\\Build\\BatchFiles\\Build.bat', 'UEShedFixtureEditor', 'Win64', 'Development', 'D:\\git\\ue-shed-sync-research\\out\\sync-research\\5.8\\fixture\\UEShedFixture.uproject', '-NoUBTMakefiles', '-WaitMutex', '-NoHotReloadFromIDE']; raw log D:\git\ue-shed-sync-research\out\sync-research\5.8\build-1791515578.log
+
+- 2026-10-09T10:13:05.408833+07:00 T07 build 5.8 exit=0; log=D:\git\ue-shed-sync-research\out\sync-research\5.8\build-1791515578.log
+
+- 2026-10-09T10:13:29.073944+07:00 T07 launched 5.7 UnrealEditor PID=38332; command=D:\git\ue-shed-sync-research\out\sync-research\5.7\launch-1791515609.json
+
+- 2026-10-09T10:14:50.355852+07:00 T11 non-unattended 5.7 policy visible-off: {'noop': {'n': 40, 'p50': 15.862200001720339, 'p95': 26.45870001288131, 'max': 33.53469999274239}, 'one': {'n': 40, 'p50': 11.593999981414527, 'p95': 34.44890002720058, 'max': 36.466200021095574}}; effective=False; raw=D:\git\ue-shed-sync-research\out\sync-research\5.7\policy-visible-off.json
+
+- 2026-10-09T10:15:18.174899+07:00 T11 non-unattended 5.7 policy visible-on: {'noop': {'n': 40, 'p50': 330.68110002204776, 'p95': 331.3739000004716, 'max': 332.6602999586612}, 'one': {'n': 40, 'p50': 335.199500026647, 'p95': 336.2201999989338, 'max': 336.36079996358603}}; effective=True; raw=D:\git\ue-shed-sync-research\out\sync-research\5.7\policy-visible-on.json
+
+- 2026-10-09T10:15:18.297755+07:00 Native window 5.7 minimize: {'editorPid': 38332, 'editorWindows': [{'handle': 1114254, 'pid': 38332, 'title': 'UEShedFixture - Unreal Editor', 'minimized': True, 'visible': True}], 'foreground': {'handle': 131698, 'pid': 18488, 'title': 'Search', 'minimized': False, 'visible': True}, 'editorForeground': False}
+
+- 2026-10-09T10:15:46.508112+07:00 T11 non-unattended 5.7 policy minimized-off: {'noop': {'n': 40, 'p50': 330.5687000392936, 'p95': 331.4503000001423, 'max': 332.16340001672506}, 'one': {'n': 40, 'p50': 335.2533000288531, 'p95': 335.7199000311084, 'max': 337.43800001684576}}; effective=True; raw=D:\git\ue-shed-sync-research\out\sync-research\5.7\policy-minimized-off.json
+
+- 2026-10-09T10:16:14.839811+07:00 T11 non-unattended 5.7 policy minimized-on: {'noop': {'n': 40, 'p50': 330.65380004700273, 'p95': 331.0742999892682, 'max': 332.50399999087676}, 'one': {'n': 40, 'p50': 335.26440005516633, 'p95': 335.81260003848, 'max': 338.7555000372231}}; effective=True; raw=D:\git\ue-shed-sync-research\out\sync-research\5.7\policy-minimized-on.json
+
+- 2026-10-09T10:16:47.488375+07:00 Cleanup 5.7 PID=38332: SUCCESS: The process with PID 34368 (child process of PID 38956) has been terminated.
+SUCCESS: The process with PID 38956 (child process of PID 38332) has been terminated.
+SUCCESS: The process with PID 28520 (child process of PID 38332) has been terminated.
+SUCCESS: The process with PID 10016 (child process of PID 38332) has been terminated.
+SUCCESS: The process with PID 7716 (child process of PID 38332) has been terminated.
+SUCCESS: The process with PID 29036 (child process of PID 38332) has been terminated.
+SUCCESS: The process with PID 31072 (child process of PID 38332) has been terminated.
+SUCCESS: The process with PID 30964 (child process of PID 38332) has been terminated.
+SUCCESS: The process with PID 38332 (child process of PID 32764) has been terminated. 
+
+- 2026-10-09T10:16:47.559584+07:00 T07 launched 5.8 UnrealEditor PID=33320; command=D:\git\ue-shed-sync-research\out\sync-research\5.8\launch-1791515807.json
+
+- 2026-10-09T10:16:47.625272+07:00 T11 normal UE5.7 confirmed source policy: visible/off Apply p95 34.45ms; visible/on 336.22ms; minimized/off 335.72ms, effectiveShouldThrottle true despite checkbox false. -unattended bypass and all-windows-minimized branch are material feasibility findings. Repeating normal modes on 5.8.
+
+- 2026-10-09T10:18:01.300244+07:00 T11 non-unattended 5.8 policy visible-off: {'noop': {'n': 40, 'p50': 8.40499997138977, 'p95': 32.2112999856472, 'max': 34.66220002155751}, 'one': {'n': 40, 'p50': 10.903600021265447, 'p95': 28.55050005018711, 'max': 30.591499991714954}}; effective=False; raw=D:\git\ue-shed-sync-research\out\sync-research\5.8\policy-visible-off.json
+
+- 2026-10-09T10:18:29.126321+07:00 T11 non-unattended 5.8 policy visible-on: {'noop': {'n': 40, 'p50': 330.5444000288844, 'p95': 331.656499998644, 'max': 335.40000003995374}, 'one': {'n': 40, 'p50': 335.45829996000975, 'p95': 340.50599997863173, 'max': 344.0337000065483}}; effective=True; raw=D:\git\ue-shed-sync-research\out\sync-research\5.8\policy-visible-on.json
+
+- 2026-10-09T10:18:29.255441+07:00 Native window 5.8 minimize: {'editorPid': 33320, 'editorWindows': [{'handle': 2754692, 'pid': 33320, 'title': 'UEShedFixture - Unreal Editor', 'minimized': True, 'visible': True}], 'foreground': {'handle': 131698, 'pid': 18488, 'title': 'Search', 'minimized': False, 'visible': True}, 'editorForeground': False}
+
+- 2026-10-09T10:18:57.456820+07:00 T11 non-unattended 5.8 policy minimized-off: {'noop': {'n': 40, 'p50': 330.6686999858357, 'p95': 331.337200012058, 'max': 332.0155999972485}, 'one': {'n': 40, 'p50': 335.2771000354551, 'p95': 336.407299968414, 'max': 337.40179997403175}}; effective=True; raw=D:\git\ue-shed-sync-research\out\sync-research\5.8\policy-minimized-off.json
+
+- 2026-10-09T10:19:25.789400+07:00 T11 non-unattended 5.8 policy minimized-on: {'noop': {'n': 40, 'p50': 330.40139998774976, 'p95': 331.008400011342, 'max': 332.67189998878166}, 'one': {'n': 40, 'p50': 335.37330001126975, 'p95': 335.9307000064291, 'max': 336.94670000113547}}; effective=True; raw=D:\git\ue-shed-sync-research\out\sync-research\5.8\policy-minimized-on.json
+
+- 2026-10-09T10:20:08.784102+07:00 T11 complete both engines. Normal visible/off one-cell p95 34.45/28.55ms; normal visible/on 336.22/340.51ms; minimized/off 335.72/336.41ms. 10k-row unattended large Apply p95 2049.10/2101.83ms. Actual focused performance unavailable; full profiling/peak allocations unverified. Added normal effective-policy evidence and clarified untested modes. T08 zero-event thread cells corrected to no thread rather than vacuous all(true).

@@ -100,3 +100,61 @@ it("turns Unreal responsiveness off from the target settings and shows its state
 	await waitFor(() => expect(checkbox.checked).toBe(false));
 	expect(screen.getByText("Unreal's own background setting applies.")).toBeTruthy();
 });
+
+it("keeps a pending responsiveness change usable when the settings are reopened", async () => {
+	const endpoint = "http://127.0.0.1:30001";
+	let saved = true;
+	let settle = () => {};
+	const settings = (enabled: boolean) => ({
+		enabled,
+		state: enabled ? ("active" as const) : ("off" as const),
+		detail: enabled ? "Kept responsive." : "Unreal's own background setting applies."
+	});
+	render(() => (
+		<EffectRuntimeProvider runtime={runtime}>
+			<EditorSessionTransport
+				client={{
+					activateEditorWindow: () => Effect.die("unused"),
+					editorHandoffs: Stream.empty,
+					editorSessionStatuses: Stream.empty,
+					unrealConnectionSettings: () => Effect.succeed({ endpoint, port: 30001 }),
+					setUnrealConnectionPort: () => Effect.die("unused"),
+					executeEditorSessionCommand: () => Effect.die("unused"),
+					editorResponsiveness: () => Effect.sync(() => settings(saved)),
+					setEditorResponsiveness: (enabled) =>
+						Effect.promise(
+							() =>
+								new Promise<ReturnType<typeof settings>>((resolve) => {
+									settle = () => {
+										saved = enabled;
+										resolve(settings(enabled));
+									};
+								})
+						)
+				}}
+			/>
+		</EffectRuntimeProvider>
+	));
+	const user = userEvent.setup();
+	const summary = await screen.findByLabelText("Change Unreal target port");
+	await user.click(summary);
+	const checkbox = await screen.findByRole<HTMLInputElement>("checkbox", {
+		name: "Keep Unreal responsive while Workbench is in front"
+	});
+	await waitFor(() => expect(checkbox.checked).toBe(true));
+	await user.click(checkbox);
+	await waitFor(() => expect(checkbox.disabled).toBe(true));
+	// Close and reopen the settings while the change is still in flight.
+	await user.click(summary);
+	await user.click(summary);
+	settle();
+	await waitFor(() => expect(checkbox.disabled).toBe(false));
+	expect(checkbox.checked).toBe(false);
+	await user.click(summary);
+	await user.click(summary);
+	await waitFor(() =>
+		expect(screen.getByText("Unreal's own background setting applies.")).toBeTruthy()
+	);
+	expect(checkbox.checked).toBe(false);
+	expect(checkbox.disabled).toBe(false);
+});

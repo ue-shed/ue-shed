@@ -49,16 +49,22 @@ export function EditorSessionTransport(props: {
 	const [portDraft, setPortDraft] = createSignal("");
 	const [portMessage, setPortMessage] = createSignal<string>();
 	const settings = createDismissibleDetails();
-	const responsivenessAction = createEffectAction();
+	// Separate owners: a refresh must never interrupt a pending change, and a change supersedes
+	// any refresh still in flight so a stale read cannot overwrite the settled preference.
+	const responsivenessRead = createEffectAction();
+	const responsivenessChange = createEffectAction();
 	const [responsiveness, setResponsiveness] = createSignal<EditorResponsivenessSettings>();
 	const [responsivenessPending, setResponsivenessPending] = createSignal(false);
-	const refreshResponsiveness = () =>
-		responsivenessAction.run(props.client.editorResponsiveness(), {
+	const refreshResponsiveness = () => {
+		if (responsivenessPending()) return;
+		responsivenessRead.run(props.client.editorResponsiveness(), {
 			onSuccess: setResponsiveness
 		});
+	};
 	const changeResponsiveness = (enabled: boolean) => {
+		responsivenessRead.cancel();
 		setResponsivenessPending(true);
-		responsivenessAction.run(props.client.setEditorResponsiveness(enabled), {
+		responsivenessChange.run(props.client.setEditorResponsiveness(enabled), {
 			onFailure: () => {
 				setResponsivenessPending(false);
 				refreshResponsiveness();

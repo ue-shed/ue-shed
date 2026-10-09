@@ -23,6 +23,7 @@ the status row when done.
 | [053](053-game-text-review-workspace.md)                 | Game Text review workspace                                      | P1       | XL     | 052                       | IN PROGRESS — done, PR #58 open   |
 | [054](054-check-text-before-submit.md)                   | Check a change's text before it is submitted                    | P1       | M      | 052, 053                  | IN PROGRESS — done, PR #58 open   |
 | [056](056-localization-at-real-project-scale.md)         | Game Text localization at real-project scale                    | P1       | M      | 051, 052, 054             | IN PROGRESS — Phase 1             |
+| [057](057-game-text-compact-index.md)                    | A compact, persistent Game Text index                           | P1       | XL     | 056, 037                  | TODO                              |
 
 Status values: `TODO`, `IN PROGRESS`, `DONE`, `BLOCKED` with a one-line reason, or `REJECTED` with a
 one-line rationale. When a plan is `DONE`, move it into [`archive/`](archive/) and update both this

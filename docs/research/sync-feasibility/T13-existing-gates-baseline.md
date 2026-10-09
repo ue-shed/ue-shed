@@ -29,6 +29,8 @@ Evidence: [Baseline summaries and receipt timings](evidence/T13-baseline.json); 
 
 Confidence: high for exit status and retained receipt durations; medium for completeness of save inventory (only actual save logs/differences recorded), low for any extrapolation to live preview.
 
+Final cleanup also restored the six saved disposable localization package copies from their git-restored tracked counterparts using `research/sync-probe/restore.py`; retained process receipts, PO/archive/resource outputs and logs are unaffected. Copies under ignored out have no git history, so they cannot themselves be restored with checkout.
+
 Surprises / risks found: Authoring gate requires built package exports and pins 5.7. Import + compile is tens of seconds, far beyond per-edit live latency. Fixture regeneration can save packages whose bytes do not change, so `git diff` alone undercounts saves.
 
 Open follow-ups: Support a separately configured 5.8 authoring gate upstream; benchmark larger localization targets and in-editor resource refresh separately; use creation-time-aware process ownership when extending the throwaway harness.

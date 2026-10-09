@@ -10,6 +10,137 @@ resynchronization and fenced engine dispatch. Domains supply command meaning and
 adapters supply storage and transport. The next package supplies its reducer and ports instead of
 writing another polling/reconciliation loop.
 
+## Direction revision (2026-10-09)
+
+This revision restates the goal and supersedes the sections below where they conflict. Those
+sections, the HTML reading edition and the [implementation plan](../../plans/standalone-sync.md)
+still describe the 2026-10-02 coordinator-centric design. The direction stays parked: it is a large
+undertaking and no implementation is authorized.
+
+### Goal: editing in UE Shed is editing in Unreal
+
+The layer is worth building only if it makes UE Shed feel like editor tooling. An edit in UE Shed
+mutates the editor's in-memory objects immediately: packages become dirty and the edit is one entry
+on Unreal's undo stack. An edit made in Unreal (Details panel, asset editors, Undo/Redo, scripts)
+appears in UE Shed. Saving stays a separate, explicit step because it is separate in Unreal. One UE
+Shed edit that touches five DataTables mutates those five tables in Unreal as one transaction.
+
+### TanStack DB model, applied properly
+
+TanStack DB is the precedent for the interaction model, not only the read model:
+
+- Clients read and write local collections synchronously. A mutation shows at once as an optimistic
+  overlay over confirmed state.
+- Persistence, transport and confirmation are the engine's job. Users do not perform "write, then
+  sync" steps; those become the mutation's status.
+- Failure is a mutation state. A rejected mutation rolls its overlay back with a reason. Success means
+  the authority's state arrives and the overlay retires.
+- Deliberate checkpoints are transactions held open until an explicit commit, not workflow steps.
+
+Status replaces steps. A translation edit, for example, reads as `pending`, `written to PO`, `synced
+into Unreal`, `rejected: stale` or `blocked: check out <file>`, while the line already shows the new
+text.
+
+| Step                                                | Classification                                                      |
+| --------------------------------------------------- | ------------------------------------------------------------------- |
+| Persisting a pending edit and showing it to clients | Engine plumbing                                                     |
+| Applying an edit to the editor's in-memory objects  | Engine plumbing                                                     |
+| Headless PO write                                   | Engine plumbing; may be blocked because UE Shed never checks out    |
+| Unreal localization import/compile                  | Engine plumbing, batched and debounced because it is a slow process |
+| Saving packages                                     | Explicit decision, as in Unreal                                     |
+| Reviewing a change set before it is written         | Explicit decision today; could become team policy                   |
+| Camera approval and Review Set publication          | Explicit decision                                                   |
+
+Which explicit decisions may become team policy (for example writing translations without a staged
+review) is a product decision recorded in the owning docs and ADRs, not an engine decision.
+
+### Authority and topology
+
+- **The editor is the authority** for native resources: its in-memory objects own revisions and
+  outcomes while it is connected. Unreal's transactions and dirty packages replace a UE Shed-owned
+  durable draft store during live editing.
+- **Node is a relay**: fan-out to multiple clients, caching, reconnect and resynchronization, and the
+  offline fallback. It does not become a second authority over native resources.
+- **Every tier has the same shape** (a client of its upstream, a synchronous optimistic view for its
+  downstream), but **only the authority confirms**. Relays forward commands with the original
+  mutation ID and forward snapshots unchanged. The same end-to-end mutation ID resolves at every tier,
+  so optimism does not stack and retries stay at-most-once at the authority.
+- **Undo is Unreal's undo.** The editor's undo stack is global, so undo from UE Shed may undo an edit
+  made in another editor window. That is ordinary editor behavior. Data Authoring's own draft
+  undo/redo remains for offline mode.
+- **Offline behavior is open**: read-only over saved packages, or the existing draft session replayed
+  as one Apply when an editor connects.
+
+### What already exists
+
+`UUEShedAuthoringLibrary::Apply` in the `UEShedAuthoring` plugin is the write half of the authority
+for DataTables. It checks each table's fingerprint against live state and rejects stale plans, wraps
+every table in one `FScopedTransaction` (one undo entry), cancels the transaction and restores
+backups if any command fails, caches results by operation ID (`LookupApplyResult`), and returns table
+snapshots. Today it runs once at the end of a draft session; live editing runs it per edit or short
+batch.
+
+The reverse stream has engine hooks in both UE 5.7 and UE 5.8 (checked against each engine's
+`Engine/Source` on 2026-10-09): `FCoreUObjectDelegates::OnObjectTransacted`,
+`OnObjectPropertyChanged` and `OnObjectModified`; `UDataTable::OnDataTableChangedDelegate`;
+`FEditorUndoClient::PostUndo`/`PostRedo`; and `UPackage::PackageDirtyStateChangedEvent`.
+`FOnDataTableChanged` is a thread-safe multicast delegate in 5.8 and an ordinary one in 5.7. Observed
+changes must suppress echoes of UE Shed's own transactions. Other supported engines are unverified.
+
+### Engine split
+
+- **Client side, target-agnostic**: optimistic overlay, mutation IDs and status, subscriptions,
+  relay, reconnect and framework adapters such as Solid.
+- **Authority adapter, editor-shaped from day one**: `apply(mutation)` returning an outcome and
+  snapshot, `observe()` returning a change stream, fingerprints or revisions chosen by the adapter,
+  and optional dirty-state and undo hooks.
+- **Generic C++ bridge**: transaction wrapping, fingerprints, operation-ID cache, observation, echo
+  suppression and dirty tracking, extracted from what `UEShedAuthoring` already does for DataTables.
+  Domains register object kinds (DataTable rows, camera actors, text properties, String Tables).
+- **Shared outcome vocabulary and operation journal**, useful without any live client: one outcome
+  union (`committed`, `rejected_stale`, `partial`, `indeterminate`), receipts with recovery guidance,
+  and record-intent/run/record-outcome/reconcile. Data Authoring's
+  `prepareApply`/`markApplyIndeterminate`/`completeApply`/`reconcileApply` and camera projection
+  recovery already hand-roll this; localization's `partially_written` cannot be resumed today.
+
+Commands stay domain-typed. The engine does not merge, does not offer generic JSON patches, and does
+not provide multi-authority transactions; domain validation and policy stay in domains.
+
+### Consumers
+
+| Domain         | Live fit                                                    | Notes                                                                                           |
+| -------------- | ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Data Authoring | Full: DataTables are editor objects                         | Apply already provides the transaction, fingerprint check, rollback and operation cache         |
+| Localization   | Source text and key fixes in assets and String Tables: full | Translations live in archives and PO files, so they stay a file-backed collection with a status |
+| Camera         | Already live through its bridge                             | Moves onto the shared bridge; its arrangement store is one adapter, not the model               |
+
+Localization needs from its plans: staged edits that survive a Workbench restart and are visible to
+the CLI and agents (deferred in archived Plan 051), the Level 3 editor writer, a faster
+Unreal-to-writing round trip (Plan 052's interview deliverables), key fixes applied in Unreal (ADR
+0009 addendum), and review edits that serialize instead of refusing concurrent local writers.
+
+### First target
+
+Camera was chosen first because UE Shed controls both of its interfaces, which keeps the protocol
+testable without fighting Unreal's own editors. It is not the final vision, and it hides the hard
+parts: a UE Shed-owned document makes Node the natural authority, cooperative panels never require
+inferring mutations from transaction events, and there is no dirty state or undo to mirror. Use camera
+to prove the client side only. While doing so, sketch the DataTable adapter against the authority
+interface; if the interface cannot express `Apply` and the observation hooks above, it is
+camera-shaped and must change.
+
+The alternative first target is a live Data Authoring spike: edit one cell in Workbench and see it in
+Unreal's DataTable editor, edit in Unreal and see it in Workbench, and undo from either side. It is
+about as small as camera's first slice and exercises the real authority model.
+
+### Open questions
+
+- Offline mode: read-only, or a draft session replayed on connect.
+- Which explicit decisions may become team policy.
+- Whether translations become live objects through the Level 3 editor writer.
+- Whether camera arrangements stay UE Shed-owned or move into Unreal-owned data.
+- Engine coverage for the bridge beyond UE 5.7 and UE 5.8.
+
 ## Standing boundaries and recommendations
 
 | Standing boundary                                                                          | Basis                                                                                                                                |

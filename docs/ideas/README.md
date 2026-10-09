@@ -6,10 +6,10 @@ through vertical slices and engine-source verification.
 
 ## Shared infrastructure
 
-- [Authoring synchronization layer](authoring-sync-layer.md) — standalone primitive proposal:
-  Node authority, revisioned commands, recovery, reactive clients and optional native bridge;
-  linked implementation plan awaits review
-  ([standalone HTML reading edition](authoring-sync-layer.html))
+- [Authoring synchronization layer](authoring-sync-layer.md) — parked: editing in UE Shed mirrors
+  editing in Unreal, with the editor as authority, Node as relay and a generic native bridge; the
+  implementation plan must be re-planned against the 2026-10-09 revision
+  ([HTML reading edition](authoring-sync-layer.html) predates that revision)
 
 ## Running-world products
 

@@ -2,6 +2,11 @@
 
 Status: `TODO` — architecture and implementation plan for review; implementation is not authorized.
 
+Parked 2026-10-09. The concept's
+[direction revision](../docs/ideas/authoring-sync-layer.md#direction-revision-2026-10-09) makes the
+editor the authority for native resources and Node a relay. The phases below still follow the earlier
+coordinator-centric design and must be re-planned against that revision before review.
+
 Design authority for this proposal remains the existing
 [authoring synchronization concept](../docs/ideas/authoring-sync-layer.md). This plan is the sole status
 source. It elaborates that proposal rather than creating a second architecture document.

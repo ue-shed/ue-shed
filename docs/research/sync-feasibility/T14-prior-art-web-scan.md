@@ -1,9 +1,17 @@
 # T14 — Prior art web scan
-Question: Pending investigation.
-Why it matters for the sync layer: Pending investigation.
-Method: Pending investigation.
-Results: UNVERIFIED — task not yet run.
-Evidence: None yet.
-Confidence: low — no investigation yet.
-Surprises / risks found: Pending investigation.
-Open follow-ups: Complete this task.
+Question: Which existing systems solve similar synchronization and mutation problems?
+Why it matters for the sync layer: Borrow tested boundaries without assuming another system provides immediate native DataTable synchronization.
+Method: Web searches and direct primary-document reads on 2026-10-09; queries/URLs recorded in evidence/T14-web-sources.csv. Compared Epic's current 5.8 documentation with both installed engines in T01/T02. Read TanStack's current mutations guide and one OSS repository README. No Concert session, Live Link deployment, OSS installation or TanStack experiment.
+Results:
+
+- **Concert / Multi-User:** Levels and Sequencer synchronize immediately; most other assets propagate saved packages and hot-reload on Save. Users undo their own operations; locks protect drags/assets and clients must start from common content. These are useful provenance, replay and recovery patterns, but do not establish unsaved DataTable row sync. [Epic overview](https://dev.epicgames.com/documentation/en-us/unreal-engine/multi-user-editing-overview-for-unreal-engine), [both-engine source study](T01-concert-prior-art.md).
+- **Remote Control:** `preset.register` subscribes to preset events; `PresetFieldsChanged` identifies exposed properties with object paths and values. Default WebSocket port is 30020; Shed overrides it to 30002. A push transport exists, but arbitrary native row observation requires additional integration. Public documentation currently resolves to 5.8; 5.7 behavior was checked independently in source. [Epic WebSocket reference](https://dev.epicgames.com/documentation/en-us/unreal-engine/remote-control-api-websocket-reference-for-unreal-engine), [T02](T02-remote-control-push-and-transactions.md).
+- **Live Link:** External sources stream subject static/frame data into editor preview through roles and buffering. Inference: useful for transient camera/animation previews; this documentation does not establish persistent asset editing, Unreal undo or reverse row synchronization. [Epic Live Link](https://dev.epicgames.com/documentation/en-us/unreal-engine/live-link-in-unreal-engine).
+- **OSS external control:** Experimental `unreal-mcp` connects a Python MCP server to a native editor TCP plugin, offering actor/Blueprint commands and responses. Its README declares MIT licensing. Full two-way asset observation and transaction correctness remain UNVERIFIED; no runtime test performed. [Repository README](https://github.com/chongdashu/unreal-mcp).
+- **TanStack DB:** Collection writes add optimistic state immediately. A mutation handler determines settlement; successful return proves engine confirmation only if the handler waits for authority read-back/sync. Errors roll back optimistic state. Manual transactions/custom actions can group collections; Electric's example waits on returned `txid` with `awaitTxId`. Concurrent optimistic writes layer whole-row snapshots, not independently merged fields or proof of server execution order. Current docs prefer `tx.when('settled')`; `tx.isPersisted.promise` is deprecated. Inference for Shed: distinguish request ID, engine transaction ID, undo/redo operation ID and observed revision, and settle after correlated authority confirmation. [Mutations guide](https://tanstack.com/db/latest/docs/guides/mutations).
+- **Reuse constraint:** Epic's EULA limits public Engine Tools distribution channels and defines relevant Editor/Developer code broadly; private/public C++ visibility does not grant an OSS license. Review Concert/editor dependency distribution before adoption. This is a cited constraint, not a determination of Shed's legal classification. [EULA §§5(a),6(c–d)](https://www.unrealengine.com/eula/unreal).
+
+Evidence: [Queries, retrieval outcomes and primary URLs](evidence/T14-web-sources.csv); local source hashes/line references in T01/T02; runtime limits in T08–T12.
+Confidence: high for documented scope; low for untested reuse and OSS transaction/observation coverage. Current web docs are not version-pinned release artifacts.
+Surprises / risks found: Multi-User's saved-asset model differs from the requested immediate in-memory authority. TanStack handler completion is not inherently sync confirmation. Repeated Electric collection page fetches failed/time out; the successfully retrieved mutations guide contains the needed confirmation example.
+Open follow-ups: Test Concert DataTable capture/replay before adopting it; design an explicit native operation confirmation barrier; assess module distribution constraints.

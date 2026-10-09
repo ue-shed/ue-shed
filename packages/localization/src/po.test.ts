@@ -110,6 +110,74 @@ msgstr "translated"`);
 		expect(serializePO(document)).toEqual(input);
 	});
 
+	for (const separator of ["\u2028", "\u2029"]) {
+		it(`preserves separator U+${separator.charCodeAt(0).toString(16)} in a singular msgstr`, () => {
+			const input = bytes(`msgid "Source"\nmsgstr "${separator}Translation${separator}"`);
+			const document = success(parsePO(input));
+			expect(document.blocks[0]?.entry?.msgstr["0"]).toBe(
+				`${separator}Translation${separator}`
+			);
+			expect(serializePO(document)).toEqual(input);
+		});
+		it(`preserves separator U+${separator.charCodeAt(0).toString(16)} in every field`, () => {
+			const input = bytes(
+				[
+					`msgctxt "NS,Key${separator}"`,
+					`msgid "${separator}Source${separator}"`,
+					`msgid_plural "${separator}Sources${separator}"`,
+					`msgstr[0] "${separator}Translation${separator}"`,
+					`msgstr[1] "${separator}"`
+				].join("\r\n")
+			);
+			const document = success(parsePO(input));
+			expect(document.blocks[0]?.entry).toMatchObject({
+				msgctxt: `NS,Key${separator}`,
+				msgid: `${separator}Source${separator}`,
+				msgidPlural: `${separator}Sources${separator}`,
+				msgstr: { "0": `${separator}Translation${separator}`, "1": separator }
+			});
+			expect(serializePO(document)).toEqual(input);
+		});
+		it(`preserves separator U+${separator.charCodeAt(0).toString(16)} in continuations`, () => {
+			const input = bytes(
+				[
+					'msgctxt "NS,Key"',
+					'msgid ""',
+					`"${separator}"`,
+					'"Source"',
+					'msgstr ""',
+					`"${separator}"`,
+					'"Translation"'
+				].join("\n") + "\n"
+			);
+			const document = success(parsePO(input));
+			expect(document.blocks[0]?.entry?.msgid).toBe(`${separator}Source`);
+			expect(document.blocks[0]?.entry?.msgstr["0"]).toBe(`${separator}Translation`);
+			expect(serializePO(document)).toEqual(input);
+		});
+	}
+
+	it.each([
+		['invalid "syntax"', 6],
+		['msgid "unterminated', 6],
+		['"orphan continuation"', 6],
+		['msgid "Source"\nmsgstr[bad] "Translation"', 7],
+		['msgid "Source"\nmsgstr "Translation" trailing', 7],
+		['msgid "Source"\nmsgstr "Translation"\n"unterminated', 8],
+		['msgid "Source"\nmsgid "Duplicate"', 7]
+	])("reports the file line for %s", (invalid, lineNumber) => {
+		const input = bytes('msgid "First"\r\nmsgstr "Translation"\n\n# Next\r\n\n' + invalid);
+		const result = parsePO(input);
+		expect(Result.isFailure(result)).toBe(true);
+		if (Result.isFailure(result)) {
+			expect(result.failure.code).toBe("malformed_po");
+			expect(result.failure.message).toBe(
+				`Line ${lineNumber} of the PO file is not valid PO syntax.`
+			);
+			expect(result.failure.recovery).toContain("Repair the PO syntax");
+		}
+	});
+
 	it("detects Crowdin headers or explicit format and reports absence of source text", () => {
 		const input = bytes(
 			'msgid ""\nmsgstr ""\n"X-Crowdin-SourceKey: msgstr\\n"\n\nmsgid "Namespace,Key"\nmsgstr "Translated"\n'

@@ -1,9 +1,11 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { Schema } from "effect";
 import {
 	LocalizationError,
 	LocalizationTarget,
-	LocalizationTargetEvidence
+	LocalizationTargetEvidence,
+	parseDashboardTargets
 } from "@ue-shed/localization/browser";
 import {
 	joinLocalizationTarget,
@@ -18,6 +20,7 @@ import {
 	evidence,
 	manifestEntry,
 	poDocument,
+	success,
 	target,
 	unit
 } from "./localization.test-support.js";
@@ -28,6 +31,23 @@ function mark(textCorpus = corpus(), files = evidence()) {
 	const result = join.lines[0]?.cultures[0];
 	if (!result) throw new Error("Expected one localization state.");
 	return result;
+}
+
+function configureGather(includes: readonly string[], excludes: readonly string[]) {
+	return Schema.decodeUnknownSync(LocalizationTarget)({
+		...target,
+		configs: target.configs.map((config) => ({
+			...config,
+			steps: config.steps.map((step) => ({
+				...step,
+				fields: {
+					...step.fields,
+					IncludePathFilters: includes,
+					ExcludePathFilters: excludes
+				}
+			}))
+		}))
+	});
 }
 
 describe("localization identity join and precedence", () => {
@@ -258,6 +278,114 @@ describe("localization identity join and precedence", () => {
 
 describe("Unreal gather wildcard coverage", () => {
 	it.each([
+		["Content/Text/Table.uasset", "inside"],
+		["Content/Text/Excluded/Table.uasset", "outside"],
+		["Content/Localization/Table.uasset", "outside"],
+		["Content/L10N/de/Table.uasset", "outside"]
+	])("resolves Dashboard token filters for %s", (packageFile, status) => {
+		const configured = configureGather(
+			["%LOCPROJECTROOT%Content/*"],
+			[
+				"%LOCPROJECTROOT%Content/Text/Excluded/*",
+				"Content/Localization/*",
+				"%LOCPROJECTROOT%Content/L10N/*"
+			]
+		);
+		const occurrence = unit("K", "Source", packageFile).occurrences[0];
+		if (!occurrence) throw new Error("Missing test occurrence.");
+		expect(localizationGatherCoverage(configured, occurrence)).toEqual({ status });
+	});
+	it.each(["%LOCPROJECTROOT%/", "%locprojectroot%\\"])(
+		"resolves case and slash direction in %s",
+		(prefix) => {
+			const configured = configureGather([`${prefix}Content\\Text\\*`], []);
+			const occurrence = unit().occurrences[0];
+			if (!occurrence) throw new Error("Missing test occurrence.");
+			expect(localizationGatherCoverage(configured, occurrence)).toEqual({
+				status: "inside"
+			});
+			expect(
+				joinLocalizationTarget(corpus(), evidence(), configured).lines[0]?.cultures[0]
+					?.state
+			).toBe("translated");
+		}
+	);
+	it.each([
+		[["%LOCENGINEROOT%Content/*"], [], "outside"],
+		[["%LOCENGINEROOT%Content/*", "Content/Text/*"], [], "inside"],
+		[["Content/Text/*"], ["%LOCENGINEROOT%Content/Text/*"], "inside"]
+	] satisfies readonly [readonly string[], readonly string[], string][])(
+		"ignores engine tokens in includes %j and excludes %j",
+		(includes, excludes, status) => {
+			const occurrence = unit().occurrences[0];
+			if (!occurrence) throw new Error("Missing test occurrence.");
+			expect(
+				localizationGatherCoverage(configureGather(includes, excludes), occurrence)
+			).toEqual({
+				status
+			});
+		}
+	);
+	it.each([
+		[["%FOO%Content/*"], []],
+		[["Content/*"], ["%FOO%Content/Excluded/*"]],
+		[["Content/%FOO%/*"], []],
+		[["%LOCPROJECTROOT%../Content/*"], []],
+		[["%LOCPROJECTROOT%/D:/Content/*"], []]
+	] satisfies readonly [readonly string[], readonly string[]][])(
+		"qualifies unresolved includes %j and excludes %j",
+		(includes, excludes) => {
+			const occurrence = unit().occurrences[0];
+			if (!occurrence) throw new Error("Missing test occurrence.");
+			expect(
+				localizationGatherCoverage(configureGather(includes, excludes), occurrence)
+			).toEqual({
+				status: "unknown",
+				reason: "gather_settings_unavailable"
+			});
+		}
+	);
+	it("preserves Dashboard settings coverage and its Engine-root uncertainty", () => {
+		const parsed = success(
+			parseDashboardTargets(
+				readFileSync(
+					new URL(
+						"../../../fixtures/unreal-project/Config/DefaultEditor.ini",
+						import.meta.url
+					),
+					"utf8"
+				)
+			)
+		);
+		const dashboard = parsed.targets.find((item) => item.name === "FixtureGame");
+		const occurrence = unit("K", "Source", "Content/Fixture/Localization/Table.uasset")
+			.occurrences[0];
+		if (!dashboard || !occurrence) throw new Error("Missing test Dashboard or occurrence.");
+		const configured = Schema.decodeUnknownSync(LocalizationTarget)({
+			...target,
+			configs: [],
+			dashboard
+		});
+		expect(localizationGatherCoverage(configured, occurrence)).toEqual({ status: "inside" });
+		const engineRoot = Schema.decodeUnknownSync(LocalizationTarget)({
+			...configured,
+			dashboard: {
+				...dashboard,
+				settings: {
+					...dashboard.settings,
+					GatherFromPackages: {
+						...dashboard.settings.GatherFromPackages,
+						ExcludePathWildcards: [{ PathRoot: "Engine", Pattern: "Content/*" }]
+					}
+				}
+			}
+		});
+		expect(localizationGatherCoverage(engineRoot, occurrence)).toEqual({
+			status: "unknown",
+			reason: "gather_settings_unavailable"
+		});
+	});
+	it.each([
 		["Content/Text/A.uasset", "content/*", true],
 		["Content/Text/A.uasset", "Content/*.uasset", true],
 		["AB", "A?B", true],
@@ -272,30 +400,17 @@ describe("Unreal gather wildcard coverage", () => {
 		}
 	);
 	it("narrow includes outrank broad excludes, and excludes win ties", () => {
-		const configure = (includes: readonly string[], excludes: readonly string[]) =>
-			Schema.decodeUnknownSync(LocalizationTarget)({
-				...target,
-				configs: target.configs.map((config) => ({
-					...config,
-					steps: config.steps.map((step) => ({
-						...step,
-						fields: {
-							...step.fields,
-							IncludePathFilters: includes,
-							ExcludePathFilters: excludes
-						}
-					}))
-				}))
-			});
 		const occurrence = unit().occurrences[0];
 		if (!occurrence) throw new Error("Missing test occurrence.");
 		expect(
-			localizationGatherCoverage(configure(["Content/Text/*"], ["Content/*"]), occurrence)
-				.status
+			localizationGatherCoverage(
+				configureGather(["Content/Text/*"], ["Content/*"]),
+				occurrence
+			).status
 		).toBe("inside");
 		expect(
 			localizationGatherCoverage(
-				configure(["Content/Text/*"], ["Content/Text/*"]),
+				configureGather(["Content/Text/*"], ["Content/Text/*"]),
 				occurrence
 			).status
 		).toBe("outside");

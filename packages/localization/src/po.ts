@@ -9,6 +9,7 @@ import {
 } from "./decode.js";
 import {
 	LocalizationIdentity,
+	LocalizationError,
 	PODocument,
 	POEntry,
 	POFormat,
@@ -52,8 +53,16 @@ export function parsePOIdentity(value: string) {
 	});
 }
 
-function quoted(input: string): string {
-	if (!input.startsWith('"')) throw localizationError("malformed_po");
+function malformedPO(lineNumber: number): LocalizationError {
+	return new LocalizationError({
+		code: "malformed_po",
+		message: `Line ${lineNumber} of the PO file is not valid PO syntax.`,
+		recovery: localizationError("malformed_po").recovery
+	});
+}
+
+function quoted(input: string, lineNumber: number): string {
+	if (!input.startsWith('"')) throw malformedPO(lineNumber);
 	let escaped = false;
 	for (let index = 1; index < input.length; index++) {
 		if (escaped) {
@@ -65,22 +74,22 @@ function quoted(input: string): string {
 			continue;
 		}
 		if (input[index] === '"') {
-			if (input.slice(index + 1).trim() !== "") throw localizationError("malformed_po");
+			if (input.slice(index + 1).trim() !== "") throw malformedPO(lineNumber);
 			return input.slice(1, index);
 		}
 	}
-	throw localizationError("malformed_po");
+	throw malformedPO(lineNumber);
 }
 
 function rawLines(text: string): POLine[] {
 	return [...text.matchAll(/([^\r\n]*)(\r\n|\r|\n|$)/gu)]
 		.filter((match) => match[0] !== "")
-		.map((match) => {
+		.map((match, index) => {
 			const decoded = Schema.decodeUnknownResult(POLine)({
 				text: match[1],
 				ending: match[2]
 			});
-			if (decoded._tag === "Failure") throw localizationError("malformed_po");
+			if (decoded._tag === "Failure") throw malformedPO(index + 1);
 			return decoded.success;
 		});
 }
@@ -108,7 +117,7 @@ function blocksFromLines(lines: readonly POLine[]): POLine[][] {
 	return blocks;
 }
 
-function decodeBlock(lines: readonly POLine[]): POBlock {
+function decodeBlock(lines: readonly POLine[], lineOffset: number): POBlock {
 	const fields: {
 		name: POStringField["name"];
 		index?: number;
@@ -122,6 +131,7 @@ function decodeBlock(lines: readonly POLine[]): POBlock {
 	const previousMsgidLines: string[] = [];
 	let current: (typeof fields)[number] | undefined;
 	for (const [index, line] of lines.entries()) {
+		const lineNumber = lineOffset + index + 1;
 		const trimmed = line.text.trim();
 		if (trimmed === "") {
 			current = undefined;
@@ -145,22 +155,22 @@ function decodeBlock(lines: readonly POLine[]): POBlock {
 			continue;
 		}
 		if (trimmed.startsWith('"')) {
-			if (current === undefined) throw localizationError("malformed_po");
-			current.raw += quoted(trimmed);
+			if (current === undefined) throw malformedPO(lineNumber);
+			current.raw += quoted(trimmed, lineNumber);
 			current.lineIndices.push(index);
 			continue;
 		}
-		const match = /^(msgctxt|msgid_plural|msgid|msgstr)(?:\[(\d+)\])?\s+(.*)$/u.exec(trimmed);
-		if (match === null) throw localizationError("malformed_po");
+		const match = /^(msgctxt|msgid_plural|msgid|msgstr)(?:\[(\d+)\])?\s+(.*)$/su.exec(trimmed);
+		if (match === null) throw malformedPO(lineNumber);
 		const name = validate(POStringFieldName, match[1], "malformed_po");
 		const fieldIndex = match[2] === undefined ? undefined : Number(match[2]);
 		if (fieldIndex !== undefined && (name !== "msgstr" || !Number.isSafeInteger(fieldIndex)))
-			throw localizationError("malformed_po");
+			throw malformedPO(lineNumber);
 		if (fields.some((field) => field.name === name && (field.index ?? 0) === (fieldIndex ?? 0)))
-			throw localizationError("malformed_po");
+			throw malformedPO(lineNumber);
 		current = {
 			name,
-			raw: quoted(match[3] ?? ""),
+			raw: quoted(match[3] ?? "", lineNumber),
 			lineIndices: [index]
 		};
 		if (fieldIndex !== undefined) current.index = fieldIndex;
@@ -171,7 +181,8 @@ function decodeBlock(lines: readonly POLine[]): POBlock {
 	const context = fields.find((field) => field.name === "msgctxt");
 	const plural = fields.find((field) => field.name === "msgid_plural");
 	const translations = fields.filter((field) => field.name === "msgstr");
-	if (id === undefined || translations.length === 0) throw localizationError("malformed_po");
+	if (id === undefined || translations.length === 0)
+		throw malformedPO(lineOffset + (fields[0]?.lineIndices[0] ?? 0) + 1);
 	const decoded: POEntry = {
 		msgid: decodePOEscapes(id.raw),
 		msgstr: Object.fromEntries(
@@ -213,7 +224,12 @@ export function parsePO(bytes: Uint8Array, input: POParseOptions = {}) {
 		}
 		const rawBlocks = blocksFromLines(rawLines(text));
 		if (rawBlocks.length > limits.maxEntries) throw localizationError("limit_exceeded");
-		const blocks = rawBlocks.map(decodeBlock);
+		let lineOffset = 0;
+		const blocks = rawBlocks.map((lines) => {
+			const block = decodeBlock(lines, lineOffset);
+			lineOffset += lines.length;
+			return block;
+		});
 		const header = blocks.find((block) => block.kind === "header")?.entry?.msgstr["0"] ?? "";
 		const format = validate(
 			POFormat,

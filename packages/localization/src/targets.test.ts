@@ -77,6 +77,16 @@ describe("Unreal target settings and recipes", () => {
 		const target = discovery.targets.find((item) => item.name === "FixtureGame");
 		expect(target?.source).toBe("dashboard_settings");
 		expect(target?.configs).toHaveLength(5);
+		const assetGather = target?.configs
+			.find((recipe) => recipe.relativePath.endsWith("_Gather.ini"))
+			?.steps.find((step) => step.commandletClass === "GatherTextFromAssets");
+		expect(assetGather?.fields.IncludePathFilters).toEqual([
+			"%LOCPROJECTROOT%Content/Fixture/Localization/*"
+		]);
+		expect(assetGather?.fields.ExcludePathFilters).toEqual([
+			"Content/Localization/*",
+			"%LOCPROJECTROOT%Content/L10N/*"
+		]);
 		expect(
 			target?.configs
 				.find((recipe) => recipe.relativePath.endsWith("_Gather.ini"))

@@ -1,5 +1,6 @@
 import {
 	LocalizationIdentity,
+	resolveLocalizationGatherPath,
 	type ArchiveEntry,
 	type LocalizationTarget,
 	type LocalizationTargetEvidence,
@@ -103,6 +104,25 @@ function pathRating(pattern: string): number {
 	);
 }
 
+function resolveGatherFilters(patterns: readonly string[]) {
+	const paths: string[] = [];
+	let uncertain = false;
+	for (const pattern of patterns) {
+		const resolved = resolveLocalizationGatherPath(pattern);
+		if (resolved.root === "engine") continue;
+		const path = normalizePath(resolved.path);
+		if (
+			resolved.root === "unknown" ||
+			/%[^%]+%/u.test(path) ||
+			/^(?:\/|[a-z]:)/iu.test(path) ||
+			path.split("/").includes("..")
+		)
+			uncertain = true;
+		else paths.push(path);
+	}
+	return { paths, uncertain };
+}
+
 function includedPath(path: string, rule: GatherRule): boolean {
 	const filters = [
 		...rule.includes.map((pattern) => ({ pattern: normalizePath(pattern), included: true })),
@@ -138,17 +158,14 @@ export function localizationGatherCoverage(
 	if (!rules) return { status: "unknown", reason: "gather_settings_unavailable" };
 	let uncertain: LocalizationUnknownReason | undefined;
 	for (const rule of rules) {
-		if (
-			[...rule.includes, ...rule.excludes].some(
-				(pattern) =>
-					/^(?:\/|[a-z]:)/iu.test(normalizePath(pattern)) ||
-					normalizePath(pattern).split("/").includes("..")
-			)
-		) {
+		const includes = resolveGatherFilters(rule.includes);
+		const excludes = resolveGatherFilters(rule.excludes);
+		if (includes.uncertain || excludes.uncertain) {
 			uncertain = "gather_settings_unavailable";
 			continue;
 		}
-		if (!includedPath(path, rule)) continue;
+		if (!includedPath(path, { ...rule, includes: includes.paths, excludes: excludes.paths }))
+			continue;
 		if (
 			!rule.filenames.some((pattern) =>
 				matchesUnrealWildcard(path.split("/").at(-1) ?? "", pattern)

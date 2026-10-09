@@ -85,6 +85,21 @@ describe("PO translation writer", () => {
 		);
 	});
 
+	it("writes raw Unicode separators and round-trips them through the parser", () => {
+		const document = parsed(encoder.encode('msgctxt "NS,Key"\nmsgid "Source"\nmsgstr "Old"\n'));
+		const translation = "\u2028First\u2029Second\u2028";
+		expect(escapePOString(translation)).toBe(translation);
+		const output = serializePO(
+			rewrite(document, [{ identity: identity("NS", "Key"), translation }])
+		);
+		expect(decoder.decode(output)).toBe(
+			`msgctxt "NS,Key"\nmsgid "Source"\nmsgstr "${translation}"\n`
+		);
+		const reparsed = parsed(output);
+		expect(reparsed.blocks[0]?.entry?.msgstr["0"]).toBe(translation);
+		expect(serializePO(reparsed)).toEqual(output);
+	});
+
 	it("identifies Crowdin entries by their msgid key", () => {
 		const input = encoder.encode(
 			'msgid ""\nmsgstr "X-Crowdin-SourceKey: msgstr\\n"\n\nmsgid "NS,Key"\nmsgstr "Old"\n'

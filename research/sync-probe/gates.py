@@ -21,6 +21,17 @@ kernel.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
 kernel.Process32FirstW.argtypes = [wintypes.HANDLE, ctypes.POINTER(Entry)]
 kernel.Process32NextW.argtypes = [wintypes.HANDLE, ctypes.POINTER(Entry)]
 kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+kernel.OpenProcess.restype = wintypes.HANDLE
+kernel.GetProcessTimes.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.FILETIME), ctypes.POINTER(wintypes.FILETIME), ctypes.POINTER(wintypes.FILETIME), ctypes.POINTER(wintypes.FILETIME)]
+
+def creation_ticks(pid):
+    handle = kernel.OpenProcess(0x1000, False, pid)
+    if not handle: return None
+    created, exited, system, user = [wintypes.FILETIME() for _ in range(4)]
+    valid = kernel.GetProcessTimes(handle, ctypes.byref(created), ctypes.byref(exited), ctypes.byref(system), ctypes.byref(user))
+    kernel.CloseHandle(handle)
+    return (created.dwHighDateTime << 32) | created.dwLowDateTime if valid else None
 
 def processes():
     handle = kernel.CreateToolhelp32Snapshot(2, 0)
@@ -28,7 +39,7 @@ def processes():
     items = {}
     more = kernel.Process32FirstW(handle, ctypes.byref(entry))
     while more:
-        items[entry.pid] = {"pid": entry.pid, "parent": entry.parent, "exe": entry.exe}
+        items[entry.pid] = {"pid": entry.pid, "parent": entry.parent, "exe": entry.exe, "creationTicks": creation_ticks(entry.pid)}
         more = kernel.Process32NextW(handle, ctypes.byref(entry))
     kernel.CloseHandle(handle)
     return items
@@ -60,14 +71,16 @@ started = time.time()
 observed = {}
 with log.open("w", encoding="utf-8") as output:
     process = subprocess.Popen(command, cwd=ROOT, env=env, stdout=output, stderr=subprocess.STDOUT)
-    owned = {process.pid}
+    owned = {process.pid: creation_ticks(process.pid)}
     journal(f"T13 {label} started root PID={process.pid}; command={command}; log={log}; configured engines from manifest")
     timeout = False
     while process.poll() is None:
         current = processes()
+        # Remove expired identities before following ancestry; Windows can reuse PIDs.
+        owned = {pid: born for pid, born in owned.items() if pid in current and born is not None and current[pid]["creationTicks"] == born}
         for _ in range(8):
             for pid, item in current.items():
-                if item["parent"] in owned: owned.add(pid)
+                if item["parent"] in owned and item["creationTicks"] is not None and item["creationTicks"] >= owned[item["parent"]]: owned[pid] = item["creationTicks"]
         for pid in owned:
             item = current.get(pid)
             if item and pid not in observed and ("unreal" in item["exe"].lower() or item["exe"].lower() in ["ue4editor-cmd.exe", "shadercompileworker.exe", "crashreportclient.exe"]):
@@ -79,7 +92,7 @@ with log.open("w", encoding="utf-8") as output:
             break
         time.sleep(0.25)
     code = process.wait()
-result = {"label": label, "command": command, "exit": code, "timedOut": timeout, "elapsedSeconds": time.time() - started, "log": str(log), "observed": list(observed.values()), "remainingOwned": [item for pid,item in processes().items() if pid in owned]}
+result = {"label": label, "command": command, "exit": code, "timedOut": timeout, "elapsedSeconds": time.time() - started, "log": str(log), "observed": list(observed.values()), "remainingOwned": [item for pid,item in processes().items() if pid in owned and item["creationTicks"] == owned[pid]]}
 (OUT / f"T13-{label}-result.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
 journal(f"T13 {label} finished exit={code}, seconds={result['elapsedSeconds']:.2f}, timedOut={timeout}, remainingOwned={result['remainingOwned']}")
 print(json.dumps(result, indent=2))

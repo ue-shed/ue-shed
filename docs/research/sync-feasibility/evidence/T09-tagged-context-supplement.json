@@ -22,9 +22,7 @@
         "context": "UEShedSyncProbe",
         "title": "property",
         "eventType": 1,
-        "properties": [
-          "Value"
-        ],
+        "properties": ["Value"],
         "nonProperty": false,
         "object": "/Game/Fixture/Authoring/ProbeDataAsset.ProbeDataAsset"
       },
@@ -58,9 +56,7 @@
         "context": "UEShedSyncProbe",
         "title": "property",
         "eventType": 0,
-        "properties": [
-          "Value"
-        ],
+        "properties": ["Value"],
         "nonProperty": false,
         "object": "/Game/Fixture/Authoring/ProbeDataAsset.ProbeDataAsset"
       },
@@ -87,9 +83,7 @@
         "context": "UEShedSyncProbe",
         "title": "property",
         "eventType": 0,
-        "properties": [
-          "Value"
-        ],
+        "properties": ["Value"],
         "nonProperty": false,
         "object": "/Game/Fixture/Authoring/ProbeDataAsset.ProbeDataAsset"
       },
@@ -125,9 +119,7 @@
         "context": "UEShedSyncProbe",
         "title": "property",
         "eventType": 1,
-        "properties": [
-          "Value"
-        ],
+        "properties": ["Value"],
         "nonProperty": false,
         "object": "/Game/Fixture/Authoring/ProbeDataAsset.ProbeDataAsset"
       },
@@ -161,9 +153,7 @@
         "context": "UEShedSyncProbe",
         "title": "property",
         "eventType": 0,
-        "properties": [
-          "Value"
-        ],
+        "properties": ["Value"],
         "nonProperty": false,
         "object": "/Game/Fixture/Authoring/ProbeDataAsset.ProbeDataAsset"
       },
@@ -190,9 +180,7 @@
         "context": "UEShedSyncProbe",
         "title": "property",
         "eventType": 0,
-        "properties": [
-          "Value"
-        ],
+        "properties": ["Value"],
         "nonProperty": false,
         "object": "/Game/Fixture/Authoring/ProbeDataAsset.ProbeDataAsset"
       },

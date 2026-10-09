@@ -1,0 +1,23 @@
+{
+  "recorded": "2026-10-09T11:02:31.2795575+07:00",
+  "cpu": [
+    {
+      "Name": "AMD Ryzen 9 5950X 16-Core Processor            ",
+      "NumberOfCores": 16,
+      "NumberOfLogicalProcessors": 32,
+      "MaxClockSpeed": 3401
+    }
+  ],
+  "memoryKiB": 67015940,
+  "gpu": [
+    {
+      "Name": "Virtual Display Driver",
+      "DriverVersion": "11.30.4.434"
+    },
+    {
+      "Name": "NVIDIA GeForce RTX 3060 Ti",
+      "DriverVersion": "32.0.16.1664"
+    }
+  ],
+  "powerScheme": "Power Scheme GUID: 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c  (High performance)"
+}

@@ -1,7 +1,11 @@
 # T14 — Prior art web scan
+
 Question: Which existing systems solve similar synchronization and mutation problems?
+
 Why it matters for the sync layer: Borrow tested boundaries without assuming another system provides immediate native DataTable synchronization.
+
 Method: Web searches and direct primary-document reads on 2026-10-09; queries/URLs recorded in evidence/T14-web-sources.csv. Compared Epic's current 5.8 documentation with both installed engines in T01/T02. Read TanStack's current mutations guide and one OSS repository README. No Concert session, Live Link deployment, OSS installation or TanStack experiment.
+
 Results:
 
 - **Concert / Multi-User:** Levels and Sequencer synchronize immediately; most other assets propagate saved packages and hot-reload on Save. Users undo their own operations; locks protect drags/assets and clients must start from common content. These are useful provenance, replay and recovery patterns, but do not establish unsaved DataTable row sync. [Epic overview](https://dev.epicgames.com/documentation/en-us/unreal-engine/multi-user-editing-overview-for-unreal-engine), [both-engine source study](T01-concert-prior-art.md).
@@ -12,6 +16,9 @@ Results:
 - **Reuse constraint:** Epic's EULA limits public Engine Tools distribution channels and defines relevant Editor/Developer code broadly; private/public C++ visibility does not grant an OSS license. Review Concert/editor dependency distribution before adoption. This is a cited constraint, not a determination of Shed's legal classification. [EULA §§5(a),6(c–d)](https://www.unrealengine.com/eula/unreal).
 
 Evidence: [Queries, retrieval outcomes and primary URLs](evidence/T14-web-sources.csv); local source hashes/line references in T01/T02; runtime limits in T08–T12.
+
 Confidence: high for documented scope; low for untested reuse and OSS transaction/observation coverage. Current web docs are not version-pinned release artifacts.
+
 Surprises / risks found: Multi-User's saved-asset model differs from the requested immediate in-memory authority. TanStack handler completion is not inherently sync confirmation. Repeated Electric collection page fetches failed/time out; the successfully retrieved mutations guide contains the needed confirmation example.
+
 Open follow-ups: Test Concert DataTable capture/replay before adopting it; design an explicit native operation confirmation barrier; assess module distribution constraints.

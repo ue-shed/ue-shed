@@ -1,0 +1,1 @@
+Engine/Source/Editor/UnrealEd/Private/ScopedTransaction.cpp: 5.7=71bdafcad7bdc64168e3ee75a3d34f70dc91be0abe68589721a57955121974e1 5.8=71bdafcad7bdc64168e3ee75a3d34f70dc91be0abe68589721a57955121974e1 identical=True

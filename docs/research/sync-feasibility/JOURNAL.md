@@ -15,3 +15,45 @@
 - 2026-10-09T09:33:46.710828+07:00 T05 complete source-only: in-memory translation display/resource update APIs present in both engines; persistence/compile separate. String Table native editor transaction observed in source, local refresh does not emit property event. Automatic checkout in private TranslationDataManager is unsuitable for UE Shed policy. Next T06.
 
 - 2026-10-09T09:36:07.046277+07:00 T06 complete: source lifecycle map, five AuthoringCommand variants, shared-open versus unsafe cross-process updates, camera mechanism classification/LOC, UI-memory localization staging documented. Phase A complete; next throwaway probe build T07.
+
+- 2026-10-09T09:43:25.867790+07:00 T07 prepared disposable 5.7 fixture: D:\git\ue-shed-sync-research\out\sync-research\5.7\fixture\UEShedFixture.uproject; source fixture untouched
+
+- 2026-10-09T09:43:26.048068+07:00 T07 prepared disposable 5.8 fixture: D:\git\ue-shed-sync-research\out\sync-research\5.8\fixture\UEShedFixture.uproject; source fixture untouched
+
+- 2026-10-09T09:43:26.118260+07:00 T07 build 5.7: ['D:\\ue5\\UE_5.7\\Engine\\Build\\BatchFiles\\Build.bat', 'UEShedFixtureEditor', 'Win64', 'Development', 'D:\\git\\ue-shed-sync-research\\out\\sync-research\\5.7\\fixture\\UEShedFixture.uproject', '-NoUBTMakefiles', '-WaitMutex', '-NoHotReloadFromIDE']; raw log D:\git\ue-shed-sync-research\out\sync-research\5.7\build-1791513806.log
+
+- 2026-10-09T09:44:26.484021+07:00 T07 build 5.7 exit=6; log=D:\git\ue-shed-sync-research\out\sync-research\5.7\build-1791513806.log
+
+- 2026-10-09T09:44:35.300034+07:00 T07 first 5.7 compile failed: C1083 Settings/EditorPerformanceSettings.h missing. Located actual Editor/EditorPerformanceSettings.h and corrected throwaway probe. No product changes.
+
+- 2026-10-09T09:44:35.358505+07:00 T07 build 5.7: ['D:\\ue5\\UE_5.7\\Engine\\Build\\BatchFiles\\Build.bat', 'UEShedFixtureEditor', 'Win64', 'Development', 'D:\\git\\ue-shed-sync-research\\out\\sync-research\\5.7\\fixture\\UEShedFixture.uproject', '-NoUBTMakefiles', '-WaitMutex', '-NoHotReloadFromIDE']; raw log D:\git\ue-shed-sync-research\out\sync-research\5.7\build-1791513875.log
+
+- 2026-10-09T09:44:41.484366+07:00 T07 build 5.7 exit=0; log=D:\git\ue-shed-sync-research\out\sync-research\5.7\build-1791513875.log
+
+- 2026-10-09T09:44:50.457799+07:00 T07 build 5.8: ['D:\\ue5\\UE_5.8\\Engine\\Build\\BatchFiles\\Build.bat', 'UEShedFixtureEditor', 'Win64', 'Development', 'D:\\git\\ue-shed-sync-research\\out\\sync-research\\5.8\\fixture\\UEShedFixture.uproject', '-NoUBTMakefiles', '-WaitMutex', '-NoHotReloadFromIDE']; raw log D:\git\ue-shed-sync-research\out\sync-research\5.8\build-1791513890.log
+
+- 2026-10-09T09:45:00.652113+07:00 T07 launched 5.7 UnrealEditor PID=29468; command=D:\git\ue-shed-sync-research\out\sync-research\5.7\launch-command.json
+
+- 2026-10-09T09:45:55.890166+07:00 T07 build 5.8 exit=0; log=D:\git\ue-shed-sync-research\out\sync-research\5.8\build-1791513890.log
+
+- 2026-10-09T09:46:04.413834+07:00 Cleanup 5.7 PID=29468: SUCCESS: The process with PID 43708 (child process of PID 35128) has been terminated.
+SUCCESS: The process with PID 35128 (child process of PID 29468) has been terminated.
+SUCCESS: The process with PID 43568 (child process of PID 29468) has been terminated.
+SUCCESS: The process with PID 33548 (child process of PID 29468) has been terminated.
+SUCCESS: The process with PID 29844 (child process of PID 29468) has been terminated.
+SUCCESS: The process with PID 41092 (child process of PID 29468) has been terminated.
+SUCCESS: The process with PID 41700 (child process of PID 29468) has been terminated.
+SUCCESS: The process with PID 20816 (child process of PID 29468) has been terminated.
+SUCCESS: The process with PID 29468 (child process of PID 36692) has been terminated. 
+
+- 2026-10-09T09:46:04.484050+07:00 T07 build 5.7: ['D:\\ue5\\UE_5.7\\Engine\\Build\\BatchFiles\\Build.bat', 'UEShedFixtureEditor', 'Win64', 'Development', 'D:\\git\\ue-shed-sync-research\\out\\sync-research\\5.7\\fixture\\UEShedFixture.uproject', '-NoUBTMakefiles', '-WaitMutex', '-NoHotReloadFromIDE']; raw log D:\git\ue-shed-sync-research\out\sync-research\5.7\build-1791513964.log
+
+- 2026-10-09T09:46:10.773760+07:00 T07 build 5.7 exit=0; log=D:\git\ue-shed-sync-research\out\sync-research\5.7\build-1791513964.log
+
+- 2026-10-09T09:46:15.336777+07:00 T07 launched 5.7 UnrealEditor PID=41876; command=D:\git\ue-shed-sync-research\out\sync-research\5.7\launch-command.json
+
+- 2026-10-09T09:46:21.557905+07:00 T07 build 5.8: ['D:\\ue5\\UE_5.8\\Engine\\Build\\BatchFiles\\Build.bat', 'UEShedFixtureEditor', 'Win64', 'Development', 'D:\\git\\ue-shed-sync-research\\out\\sync-research\\5.8\\fixture\\UEShedFixture.uproject', '-NoUBTMakefiles', '-WaitMutex', '-NoHotReloadFromIDE']; raw log D:\git\ue-shed-sync-research\out\sync-research\5.8\build-1791513981.log
+
+- 2026-10-09T09:46:36.174642+07:00 T07 build 5.8 exit=0; log=D:\git\ue-shed-sync-research\out\sync-research\5.8\build-1791513981.log
+
+- 2026-10-09T09:47:06.966993+07:00 T07 final probe builds succeeded on UE 5.7 and UE 5.8. 5.7 smoke reports 12 watched DataTables, game-thread RC call, empty undo queue, background throttle false. First smoke editor PID29468 and child tree closed; final 5.7 editor PID41876 now running.

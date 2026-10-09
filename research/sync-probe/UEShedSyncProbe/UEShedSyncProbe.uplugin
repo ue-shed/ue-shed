@@ -1,0 +1,11 @@
+{
+  "FileVersion": 3,
+  "Version": 1,
+  "VersionName": "research",
+  "FriendlyName": "UE Shed Sync Observation Probe",
+  "Description": "Throwaway editor-only feasibility evidence recorder.",
+  "Category": "Research",
+  "EnabledByDefault": false,
+  "CanContainContent": false,
+  "Modules": [{ "Name": "UEShedSyncProbe", "Type": "Editor", "LoadingPhase": "PostEngineInit" }]
+}

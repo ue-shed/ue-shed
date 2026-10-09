@@ -76,3 +76,5 @@ SUCCESS: The process with PID 41876 (child process of PID 20840) has been termin
 - 2026-10-09T09:51:13.164723+07:00 matrix 5.8 finished; raw D:\git\ue-shed-sync-research\out\sync-research\5.8\matrix-summary.json; 19 records
 
 - 2026-10-09T09:52:01.792255+07:00 T08 both engines complete: matching hook counts, Apply no DataTableChanged or PropertyChanged, transaction events expose coarse row-struct field names but no row IDs. Saved only disposable 5.7/5.8 DT_Scalars.uasset copies. Actual UI/modal/PIE and dirty reload remain NEEDS HUMAN. Task docs and CSV/sample evidence committed.
+
+- 2026-10-09T09:52:42.788210+07:00 T09 completed using both T08 runs: stable transaction ID across undo/redo, new operation IDs; current Apply context empty and no request operationId in events. Collision-safe suppression remains unverified; scoped authority provenance is a proposed workaround, not a tested result.

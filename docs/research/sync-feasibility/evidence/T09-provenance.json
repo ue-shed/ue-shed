@@ -1,0 +1,624 @@
+[
+  {
+    "engine": "5.7",
+    "scenario": "apply-one",
+    "events": [
+      {
+        "hook": "TransactionState",
+        "transactionId": "1FE1F84143624EF78AE853BBCD572D5E",
+        "operationId": "40C31CFB46944148CC3C9EA9171775D8",
+        "context": "",
+        "title": "Apply authoring draft",
+        "state": 0
+      },
+      {
+        "hook": "TransactionState",
+        "transactionId": "1FE1F84143624EF78AE853BBCD572D5E",
+        "operationId": "40C31CFB46944148CC3C9EA9171775D8",
+        "context": "",
+        "title": "Apply authoring draft",
+        "state": 2
+      },
+      {
+        "hook": "ObjectTransacted",
+        "transactionId": "1FE1F84143624EF78AE853BBCD572D5E",
+        "operationId": "40C31CFB46944148CC3C9EA9171775D8",
+        "context": "",
+        "title": "Apply authoring draft",
+        "eventType": 1,
+        "object": "/Game/Fixture/Authoring/DT_Scalars.DT_Scalars"
+      },
+      {
+        "hook": "TransactionState",
+        "transactionId": "1FE1F84143624EF78AE853BBCD572D5E",
+        "operationId": "40C31CFB46944148CC3C9EA9171775D8",
+        "context": "",
+        "title": "Apply authoring draft",
+        "state": 3
+      },
+      {
+        "hook": "TransactionState",
+        "transactionId": "1FE1F84143624EF78AE853BBCD572D5E",
+        "operationId": "00000000000000000000000000000000",
+        "context": "",
+        "title": "",
+        "state": 4
+      }
+    ]
+  },
+  {
+    "engine": "5.7",
+    "scenario": "apply-five",
+    "events": [
+      {
+        "hook": "TransactionState",
+        "transactionId": "DE9F7E4D41115C910E841992B05A26B7",
+        "operationId": "5760861C483656074A38A08AD35875B8",
+        "context": "",
+        "title": "Apply authoring draft",
+        "state": 0
+      },
+      {
+        "hook": "TransactionState",
+        "transactionId": "DE9F7E4D41115C910E841992B05A26B7",
+        "operationId": "5760861C483656074A38A08AD35875B8",
+        "context": "",
+        "title": "Apply authoring draft",
+        "state": 2
+      },
+      {
+        "hook": "ObjectTransacted",
+        "transactionId": "DE9F7E4D41115C910E841992B05A26B7",
+        "operationId": "5760861C483656074A38A08AD35875B8",
+        "context": "",
+        "title": "Apply authoring draft",
+        "eventType": 1,
+        "object": "/Game/Fixture/Authoring/DT_Scalars.DT_Scalars"
+      },
+      {
+        "hook": "ObjectTransacted",
+        "transactionId": "DE9F7E4D41115C910E841992B05A26B7",
+        "operationId": "5760861C483656074A38A08AD35875B8",
+        "context": "",
+        "title": "Apply authoring draft",
+        "eventType": 1,
+        "object": "/Game/Fixture/Authoring/DT_ScalarsOverride.DT_ScalarsOverride"
+      },
+      {
+        "hook": "ObjectTransacted",
+        "transactionId": "DE9F7E4D41115C910E841992B05A26B7",
+        "operationId": "5760861C483656074A38A08AD35875B8",
+        "context": "",
+        "title": "Apply authoring draft",
+        "eventType": 1,
+        "object": "/Game/Fixture/Authoring/DT_Structs.DT_Structs"
+      },
+      {
+        "hook": "ObjectTransacted",
+        "transactionId": "DE9F7E4D41115C910E841992B05A26B7",
+        "operationId": "5760861C483656074A38A08AD35875B8",
+        "context": "",
+        "title": "Apply authoring draft",
+        "eventType": 1,
+        "object": "/Game/Fixture/Authoring/DT_RightReferences.DT_RightReferences"
+      },
+      {
+        "hook": "ObjectTransacted",
+        "transactionId": "DE9F7E4D41115C910E841992B05A26B7",
+        "operationId": "5760861C483656074A38A08AD35875B8",
+        "context": "",
+        "title": "Apply authoring draft",
+        "eventType": 1,
+        "object": "/Game/Fixture/Authoring/DT_Text.DT_Text"
+      },
+      {
+        "hook": "TransactionState",
+        "transactionId": "DE9F7E4D41115C910E841992B05A26B7",
+        "operationId": "5760861C483656074A38A08AD35875B8",
+        "context": "",
+        "title": "Apply authoring draft",
+        "state": 3
+      },
+      {
+        "hook": "TransactionState",
+        "transactionId": "DE9F7E4D41115C910E841992B05A26B7",
+        "operationId": "00000000000000000000000000000000",
+        "context": "",
+        "title": "",
+        "state": 4
+      }
+    ]
+  },
+  {
+    "engine": "5.7",
+    "scenario": "undo-five",
+    "events": [
+      {
+        "hook": "TransactionState",
+        "transactionId": "DE9F7E4D41115C910E841992B05A26B7",
+        "operationId": "ABAFD18A4A781C8012DEF0ACB9F8DE4B",
+        "context": "",
+        "title": "Apply authoring draft",
+        "state": 5
+      },
+      {
+        "hook": "ObjectTransacted",
+        "transactionId": "DE9F7E4D41115C910E841992B05A26B7",
+        "operationId": "ABAFD18A4A781C8012DEF0ACB9F8DE4B",
+        "context": "",
+        "title": "Apply authoring draft",
+        "eventType": 0,
+        "object": "/Game/Fixture/Authoring/DT_Text.DT_Text"
+      },
+      {
+        "hook": "ObjectTransacted",
+        "transactionId": "DE9F7E4D41115C910E841992B05A26B7",
+        "operationId": "ABAFD18A4A781C8012DEF0ACB9F8DE4B",
+        "context": "",
+        "title": "Apply authoring draft",
+        "eventType": 0,
+        "object": "/Game/Fixture/Authoring/DT_RightReferences.DT_RightReferences"
+      },
+      {
+        "hook": "ObjectTransacted",
+        "transactionId": "DE9F7E4D41115C910E841992B05A26B7",
+        "operationId": "ABAFD18A4A781C8012DEF0ACB9F8DE4B",
+        "context": "",
+        "title": "Apply authoring draft",
+        "eventType": 0,
+        "object": "/Game/Fixture/Authoring/DT_Structs.DT_Structs"
+      },
+      {
+        "hook": "ObjectTransacted",
+        "transactionId": "DE9F7E4D41115C910E841992B05A26B7",
+        "operationId": "ABAFD18A4A781C8012DEF0ACB9F8DE4B",
+        "context": "",
+        "title": "Apply authoring draft",
+        "eventType": 0,
+        "object": "/Game/Fixture/Authoring/DT_ScalarsOverride.DT_ScalarsOverride"
+      },
+      {
+        "hook": "ObjectTransacted",
+        "transactionId": "DE9F7E4D41115C910E841992B05A26B7",
+        "operationId": "ABAFD18A4A781C8012DEF0ACB9F8DE4B",
+        "context": "",
+        "title": "Apply authoring draft",
+        "eventType": 0,
+        "object": "/Game/Fixture/Authoring/DT_Scalars.DT_Scalars"
+      },
+      {
+        "hook": "TransactionState",
+        "transactionId": "DE9F7E4D41115C910E841992B05A26B7",
+        "operationId": "ABAFD18A4A781C8012DEF0ACB9F8DE4B",
+        "context": "",
+        "title": "Apply authoring draft",
+        "state": 6
+      }
+    ]
+  },
+  {
+    "engine": "5.7",
+    "scenario": "redo-five",
+    "events": [
+      {
+        "hook": "TransactionState",
+        "transactionId": "DE9F7E4D41115C910E841992B05A26B7",
+        "operationId": "E734A5F44EC4C6DFA0E0ECB0AA9C9991",
+        "context": "",
+        "title": "Apply authoring draft",
+        "state": 5
+      },
+      {
+        "hook": "ObjectTransacted",
+        "transactionId": "DE9F7E4D41115C910E841992B05A26B7",
+        "operationId": "E734A5F44EC4C6DFA0E0ECB0AA9C9991",
+        "context": "",
+        "title": "Apply authoring draft",
+        "eventType": 0,
+        "object": "/Game/Fixture/Authoring/DT_Scalars.DT_Scalars"
+      },
+      {
+        "hook": "ObjectTransacted",
+        "transactionId": "DE9F7E4D41115C910E841992B05A26B7",
+        "operationId": "E734A5F44EC4C6DFA0E0ECB0AA9C9991",
+        "context": "",
+        "title": "Apply authoring draft",
+        "eventType": 0,
+        "object": "/Game/Fixture/Authoring/DT_ScalarsOverride.DT_ScalarsOverride"
+      },
+      {
+        "hook": "ObjectTransacted",
+        "transactionId": "DE9F7E4D41115C910E841992B05A26B7",
+        "operationId": "E734A5F44EC4C6DFA0E0ECB0AA9C9991",
+        "context": "",
+        "title": "Apply authoring draft",
+        "eventType": 0,
+        "object": "/Game/Fixture/Authoring/DT_Structs.DT_Structs"
+      },
+      {
+        "hook": "ObjectTransacted",
+        "transactionId": "DE9F7E4D41115C910E841992B05A26B7",
+        "operationId": "E734A5F44EC4C6DFA0E0ECB0AA9C9991",
+        "context": "",
+        "title": "Apply authoring draft",
+        "eventType": 0,
+        "object": "/Game/Fixture/Authoring/DT_RightReferences.DT_RightReferences"
+      },
+      {
+        "hook": "ObjectTransacted",
+        "transactionId": "DE9F7E4D41115C910E841992B05A26B7",
+        "operationId": "E734A5F44EC4C6DFA0E0ECB0AA9C9991",
+        "context": "",
+        "title": "Apply authoring draft",
+        "eventType": 0,
+        "object": "/Game/Fixture/Authoring/DT_Text.DT_Text"
+      },
+      {
+        "hook": "TransactionState",
+        "transactionId": "DE9F7E4D41115C910E841992B05A26B7",
+        "operationId": "E734A5F44EC4C6DFA0E0ECB0AA9C9991",
+        "context": "",
+        "title": "Apply authoring draft",
+        "state": 6
+      }
+    ]
+  },
+  {
+    "engine": "5.7",
+    "scenario": "cell",
+    "events": [
+      {
+        "hook": "TransactionState",
+        "transactionId": "8D82A84F41015AA34E7EFABD71597145",
+        "operationId": "28C99D4F400C2775950C9F89357ACC96",
+        "context": "UEShedSyncProbe",
+        "title": "cell",
+        "state": 0
+      },
+      {
+        "hook": "TransactionState",
+        "transactionId": "8D82A84F41015AA34E7EFABD71597145",
+        "operationId": "28C99D4F400C2775950C9F89357ACC96",
+        "context": "UEShedSyncProbe",
+        "title": "cell",
+        "state": 2
+      },
+      {
+        "hook": "ObjectTransacted",
+        "transactionId": "8D82A84F41015AA34E7EFABD71597145",
+        "operationId": "28C99D4F400C2775950C9F89357ACC96",
+        "context": "UEShedSyncProbe",
+        "title": "cell",
+        "eventType": 1,
+        "object": "/Game/Fixture/Authoring/DT_Scalars.DT_Scalars"
+      },
+      {
+        "hook": "TransactionState",
+        "transactionId": "8D82A84F41015AA34E7EFABD71597145",
+        "operationId": "28C99D4F400C2775950C9F89357ACC96",
+        "context": "UEShedSyncProbe",
+        "title": "cell",
+        "state": 3
+      },
+      {
+        "hook": "TransactionState",
+        "transactionId": "8D82A84F41015AA34E7EFABD71597145",
+        "operationId": "00000000000000000000000000000000",
+        "context": "",
+        "title": "",
+        "state": 4
+      }
+    ]
+  },
+  {
+    "engine": "5.8",
+    "scenario": "apply-one",
+    "events": [
+      {
+        "hook": "TransactionState",
+        "transactionId": "1D62DA15412E23A1ECC4148CBB702CCD",
+        "operationId": "81A5CE8C48F305C5F7E418907BA383FE",
+        "context": "",
+        "title": "Apply authoring draft",
+        "state": 0
+      },
+      {
+        "hook": "TransactionState",
+        "transactionId": "1D62DA15412E23A1ECC4148CBB702CCD",
+        "operationId": "81A5CE8C48F305C5F7E418907BA383FE",
+        "context": "",
+        "title": "Apply authoring draft",
+        "state": 2
+      },
+      {
+        "hook": "ObjectTransacted",
+        "transactionId": "1D62DA15412E23A1ECC4148CBB702CCD",
+        "operationId": "81A5CE8C48F305C5F7E418907BA383FE",
+        "context": "",
+        "title": "Apply authoring draft",
+        "eventType": 1,
+        "object": "/Game/Fixture/Authoring/DT_Scalars.DT_Scalars"
+      },
+      {
+        "hook": "TransactionState",
+        "transactionId": "1D62DA15412E23A1ECC4148CBB702CCD",
+        "operationId": "81A5CE8C48F305C5F7E418907BA383FE",
+        "context": "",
+        "title": "Apply authoring draft",
+        "state": 3
+      },
+      {
+        "hook": "TransactionState",
+        "transactionId": "1D62DA15412E23A1ECC4148CBB702CCD",
+        "operationId": "00000000000000000000000000000000",
+        "context": "",
+        "title": "",
+        "state": 4
+      }
+    ]
+  },
+  {
+    "engine": "5.8",
+    "scenario": "apply-five",
+    "events": [
+      {
+        "hook": "TransactionState",
+        "transactionId": "3F1A4CD34EFE87F213C960BDD3A73FEA",
+        "operationId": "BDF74C5A4EFBC7460977E99A10A4DA0F",
+        "context": "",
+        "title": "Apply authoring draft",
+        "state": 0
+      },
+      {
+        "hook": "TransactionState",
+        "transactionId": "3F1A4CD34EFE87F213C960BDD3A73FEA",
+        "operationId": "BDF74C5A4EFBC7460977E99A10A4DA0F",
+        "context": "",
+        "title": "Apply authoring draft",
+        "state": 2
+      },
+      {
+        "hook": "ObjectTransacted",
+        "transactionId": "3F1A4CD34EFE87F213C960BDD3A73FEA",
+        "operationId": "BDF74C5A4EFBC7460977E99A10A4DA0F",
+        "context": "",
+        "title": "Apply authoring draft",
+        "eventType": 1,
+        "object": "/Game/Fixture/Authoring/DT_Scalars.DT_Scalars"
+      },
+      {
+        "hook": "ObjectTransacted",
+        "transactionId": "3F1A4CD34EFE87F213C960BDD3A73FEA",
+        "operationId": "BDF74C5A4EFBC7460977E99A10A4DA0F",
+        "context": "",
+        "title": "Apply authoring draft",
+        "eventType": 1,
+        "object": "/Game/Fixture/Authoring/DT_ScalarsOverride.DT_ScalarsOverride"
+      },
+      {
+        "hook": "ObjectTransacted",
+        "transactionId": "3F1A4CD34EFE87F213C960BDD3A73FEA",
+        "operationId": "BDF74C5A4EFBC7460977E99A10A4DA0F",
+        "context": "",
+        "title": "Apply authoring draft",
+        "eventType": 1,
+        "object": "/Game/Fixture/Authoring/DT_Structs.DT_Structs"
+      },
+      {
+        "hook": "ObjectTransacted",
+        "transactionId": "3F1A4CD34EFE87F213C960BDD3A73FEA",
+        "operationId": "BDF74C5A4EFBC7460977E99A10A4DA0F",
+        "context": "",
+        "title": "Apply authoring draft",
+        "eventType": 1,
+        "object": "/Game/Fixture/Authoring/DT_RightReferences.DT_RightReferences"
+      },
+      {
+        "hook": "ObjectTransacted",
+        "transactionId": "3F1A4CD34EFE87F213C960BDD3A73FEA",
+        "operationId": "BDF74C5A4EFBC7460977E99A10A4DA0F",
+        "context": "",
+        "title": "Apply authoring draft",
+        "eventType": 1,
+        "object": "/Game/Fixture/Authoring/DT_Text.DT_Text"
+      },
+      {
+        "hook": "TransactionState",
+        "transactionId": "3F1A4CD34EFE87F213C960BDD3A73FEA",
+        "operationId": "BDF74C5A4EFBC7460977E99A10A4DA0F",
+        "context": "",
+        "title": "Apply authoring draft",
+        "state": 3
+      },
+      {
+        "hook": "TransactionState",
+        "transactionId": "3F1A4CD34EFE87F213C960BDD3A73FEA",
+        "operationId": "00000000000000000000000000000000",
+        "context": "",
+        "title": "",
+        "state": 4
+      }
+    ]
+  },
+  {
+    "engine": "5.8",
+    "scenario": "undo-five",
+    "events": [
+      {
+        "hook": "TransactionState",
+        "transactionId": "3F1A4CD34EFE87F213C960BDD3A73FEA",
+        "operationId": "D0055D0747928492387DE3A9A88BCDE0",
+        "context": "",
+        "title": "Apply authoring draft",
+        "state": 5
+      },
+      {
+        "hook": "ObjectTransacted",
+        "transactionId": "3F1A4CD34EFE87F213C960BDD3A73FEA",
+        "operationId": "D0055D0747928492387DE3A9A88BCDE0",
+        "context": "",
+        "title": "Apply authoring draft",
+        "eventType": 0,
+        "object": "/Game/Fixture/Authoring/DT_Text.DT_Text"
+      },
+      {
+        "hook": "ObjectTransacted",
+        "transactionId": "3F1A4CD34EFE87F213C960BDD3A73FEA",
+        "operationId": "D0055D0747928492387DE3A9A88BCDE0",
+        "context": "",
+        "title": "Apply authoring draft",
+        "eventType": 0,
+        "object": "/Game/Fixture/Authoring/DT_RightReferences.DT_RightReferences"
+      },
+      {
+        "hook": "ObjectTransacted",
+        "transactionId": "3F1A4CD34EFE87F213C960BDD3A73FEA",
+        "operationId": "D0055D0747928492387DE3A9A88BCDE0",
+        "context": "",
+        "title": "Apply authoring draft",
+        "eventType": 0,
+        "object": "/Game/Fixture/Authoring/DT_Structs.DT_Structs"
+      },
+      {
+        "hook": "ObjectTransacted",
+        "transactionId": "3F1A4CD34EFE87F213C960BDD3A73FEA",
+        "operationId": "D0055D0747928492387DE3A9A88BCDE0",
+        "context": "",
+        "title": "Apply authoring draft",
+        "eventType": 0,
+        "object": "/Game/Fixture/Authoring/DT_ScalarsOverride.DT_ScalarsOverride"
+      },
+      {
+        "hook": "ObjectTransacted",
+        "transactionId": "3F1A4CD34EFE87F213C960BDD3A73FEA",
+        "operationId": "D0055D0747928492387DE3A9A88BCDE0",
+        "context": "",
+        "title": "Apply authoring draft",
+        "eventType": 0,
+        "object": "/Game/Fixture/Authoring/DT_Scalars.DT_Scalars"
+      },
+      {
+        "hook": "TransactionState",
+        "transactionId": "3F1A4CD34EFE87F213C960BDD3A73FEA",
+        "operationId": "D0055D0747928492387DE3A9A88BCDE0",
+        "context": "",
+        "title": "Apply authoring draft",
+        "state": 6
+      }
+    ]
+  },
+  {
+    "engine": "5.8",
+    "scenario": "redo-five",
+    "events": [
+      {
+        "hook": "TransactionState",
+        "transactionId": "3F1A4CD34EFE87F213C960BDD3A73FEA",
+        "operationId": "6FC3760445C22C71336D7CBE989BA592",
+        "context": "",
+        "title": "Apply authoring draft",
+        "state": 5
+      },
+      {
+        "hook": "ObjectTransacted",
+        "transactionId": "3F1A4CD34EFE87F213C960BDD3A73FEA",
+        "operationId": "6FC3760445C22C71336D7CBE989BA592",
+        "context": "",
+        "title": "Apply authoring draft",
+        "eventType": 0,
+        "object": "/Game/Fixture/Authoring/DT_Scalars.DT_Scalars"
+      },
+      {
+        "hook": "ObjectTransacted",
+        "transactionId": "3F1A4CD34EFE87F213C960BDD3A73FEA",
+        "operationId": "6FC3760445C22C71336D7CBE989BA592",
+        "context": "",
+        "title": "Apply authoring draft",
+        "eventType": 0,
+        "object": "/Game/Fixture/Authoring/DT_ScalarsOverride.DT_ScalarsOverride"
+      },
+      {
+        "hook": "ObjectTransacted",
+        "transactionId": "3F1A4CD34EFE87F213C960BDD3A73FEA",
+        "operationId": "6FC3760445C22C71336D7CBE989BA592",
+        "context": "",
+        "title": "Apply authoring draft",
+        "eventType": 0,
+        "object": "/Game/Fixture/Authoring/DT_Structs.DT_Structs"
+      },
+      {
+        "hook": "ObjectTransacted",
+        "transactionId": "3F1A4CD34EFE87F213C960BDD3A73FEA",
+        "operationId": "6FC3760445C22C71336D7CBE989BA592",
+        "context": "",
+        "title": "Apply authoring draft",
+        "eventType": 0,
+        "object": "/Game/Fixture/Authoring/DT_RightReferences.DT_RightReferences"
+      },
+      {
+        "hook": "ObjectTransacted",
+        "transactionId": "3F1A4CD34EFE87F213C960BDD3A73FEA",
+        "operationId": "6FC3760445C22C71336D7CBE989BA592",
+        "context": "",
+        "title": "Apply authoring draft",
+        "eventType": 0,
+        "object": "/Game/Fixture/Authoring/DT_Text.DT_Text"
+      },
+      {
+        "hook": "TransactionState",
+        "transactionId": "3F1A4CD34EFE87F213C960BDD3A73FEA",
+        "operationId": "6FC3760445C22C71336D7CBE989BA592",
+        "context": "",
+        "title": "Apply authoring draft",
+        "state": 6
+      }
+    ]
+  },
+  {
+    "engine": "5.8",
+    "scenario": "cell",
+    "events": [
+      {
+        "hook": "TransactionState",
+        "transactionId": "6ACA9ABA44FB4107DEF8A4BD58612DBB",
+        "operationId": "8D7897EB49A859C8CD3C418CDB4568C8",
+        "context": "UEShedSyncProbe",
+        "title": "cell",
+        "state": 0
+      },
+      {
+        "hook": "TransactionState",
+        "transactionId": "6ACA9ABA44FB4107DEF8A4BD58612DBB",
+        "operationId": "8D7897EB49A859C8CD3C418CDB4568C8",
+        "context": "UEShedSyncProbe",
+        "title": "cell",
+        "state": 2
+      },
+      {
+        "hook": "ObjectTransacted",
+        "transactionId": "6ACA9ABA44FB4107DEF8A4BD58612DBB",
+        "operationId": "8D7897EB49A859C8CD3C418CDB4568C8",
+        "context": "UEShedSyncProbe",
+        "title": "cell",
+        "eventType": 1,
+        "object": "/Game/Fixture/Authoring/DT_Scalars.DT_Scalars"
+      },
+      {
+        "hook": "TransactionState",
+        "transactionId": "6ACA9ABA44FB4107DEF8A4BD58612DBB",
+        "operationId": "8D7897EB49A859C8CD3C418CDB4568C8",
+        "context": "UEShedSyncProbe",
+        "title": "cell",
+        "state": 3
+      },
+      {
+        "hook": "TransactionState",
+        "transactionId": "6ACA9ABA44FB4107DEF8A4BD58612DBB",
+        "operationId": "00000000000000000000000000000000",
+        "context": "",
+        "title": "",
+        "state": 4
+      }
+    ]
+  }
+]

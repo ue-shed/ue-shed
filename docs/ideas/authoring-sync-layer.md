@@ -133,6 +133,27 @@ The alternative first target is a live Data Authoring spike: edit one cell in Wo
 Unreal's DataTable editor, edit in Unreal and see it in Workbench, and undo from either side. It is
 about as small as camera's first slice and exercises the real authority model.
 
+### Feasibility status
+
+Overnight research on UE 5.7.4 and 5.8.3 (branch `research/sync-feasibility`,
+`docs/research/sync-feasibility/FINDINGS.md`) found the direction feasible for DataTables:
+
+- **Proven**: a five-table Apply is one undo entry; dirty state can be mirrored; stale writes are
+  rejected; editor edits, Undo/Redo, save and reload are observable; a custom transaction context
+  survives Undo/Redo; small one-cell edits take about 35 ms p95.
+- **Solved by a separate capability**: background throttling. A foreground-scoped
+  `ShouldDisableCPUThrottlingDelegates` lease cut a minimised editor's p95 from about 336 ms to about
+  35 ms, and it is being built as its own core feature.
+- **Product bug found**: an open DataTable editor stays stale after Apply until the DataTable editor
+  notifications are sent. A fix is prepared separately.
+- **Open**: a one-cell Apply on a 10,000-row table takes about 2 s because every step is O(table).
+  Hooks carry no row identity, Apply has no request provenance, raw writes are invisible, cancelled
+  transactions leave changes, and overlap with an active editor transaction is unexercised.
+
+The [implementation plan](../../plans/standalone-sync.md) turns these into a parked DataTable
+slice: shadow rows with native struct comparison, a composable `sha256-v2` fingerprint, delta Apply
+results, transaction-context provenance, a change-record stream, and an active-transaction fence.
+
 ### Open questions
 
 - Offline mode: read-only, or a draft session replayed on connect.

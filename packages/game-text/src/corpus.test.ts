@@ -214,7 +214,14 @@ describe("game text corpus", () => {
 				units: corpus.units.map((unit, index) =>
 					index === 0 || unit.identity.status !== "resolved"
 						? unit
-						: { ...unit, identity: { ...unit.identity, key: "OtherKey" } }
+						: {
+								...unit,
+								identity: { ...unit.identity, key: "OtherKey" },
+								occurrences: unit.occurrences.map((occurrence) => ({
+									...occurrence,
+									identity: { ...unit.identity, key: "OtherKey" }
+								}))
+							}
 				)
 			};
 			expect(

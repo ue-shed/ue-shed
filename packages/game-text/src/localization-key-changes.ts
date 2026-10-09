@@ -1,4 +1,5 @@
 import { Schema } from "effect";
+import { localizationLineUnits } from "./gathered-text.js";
 import {
 	LocalizationCarriedTranslation,
 	LocalizationKeyChangeMatch,
@@ -239,7 +240,7 @@ export function localizationKeyChanges(
 	const fresh = join.lines.flatMap((line): Candidate[] => {
 		if (line.origin.kind !== "corpus" || line.identity === null) return [];
 		if (!hasState(line, "not_gathered")) return [];
-		const occurrences = line.origin.unitIds.flatMap((id) => units.get(id)?.occurrences ?? []);
+		const occurrences = localizationLineUnits(line, units).flatMap((unit) => unit.occurrences);
 		return [
 			{
 				line,

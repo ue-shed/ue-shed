@@ -163,8 +163,8 @@ read-only: no gathers, no writes.
 ## Phase 5: Saved package namespaces
 
 - Match saved FText identities to manifests, archives and PO files after stripping Unreal's
-  trailing package namespace marker once for asset properties and DataTable cells. Keep String
-  Table definitions and references in their exact authored namespace. Export the pure helper from
+  trailing package namespace marker once per occurrence for asset properties and DataTable cells.
+  Keep String Table definitions and references in their exact authored namespace. Export the pure helper from
   browser-safe localization.
 - Keep full saved namespaces in corpus units and occurrences, and use gathered identities for
   localization lines, key changes, review fingerprints and gates.
@@ -217,13 +217,16 @@ for profiling attribution, compact evidence, reproduction and verification resul
 `stripPackageNamespace` lives in browser-safe `@ue-shed/localization`. The join strips each saved
 FText namespace once for asset properties and DataTable cells before grouping against manifest,
 archive and PO identities. String Table definitions and references keep namespaces exactly as
-authored. Units mixing String Table entries with FText locations also preserve the namespace,
-avoiding loss of authored table identity. Key-change pairing, review fingerprints, gates and
+authored. Units mixing String Table entries with FText locations join each gathered identity
+independently, with only its own occurrences supplying source, coverage, findings and context. Key-change pairing, review fingerprints, gates and
 translation editing consume those gathered line identities.
 Localization files are not stripped again, preserving namespaces such as `[A]` after `[A] [B]`
 is cleaned. Corpus units, occurrence identities and asset focus/export keep full saved namespaces.
-Query findings count distinct gathered identities, including shared text and source conflicts
-across package variants. A navigation test now uses distinct keys for its distinct lines.
+Corpus grouping and unit IDs stay unchanged, preserving persisted reviews, presets, CLI JSON
+schemas, exports and Workbench selection IDs. Review fingerprint algorithms and gathered line ID
+formats are unchanged; mixed units now expose both lines. Query findings count per-occurrence
+gathered identities, including shared text and source conflicts across package variants. A navigation
+test now uses distinct keys for its distinct lines.
 
 Verified the stripping algorithm and asset-gather call against installed UE 5.7 and UE 5.8 source,
 and the algorithm against UE 4.27 source. This phase changes no parser, fixture or Unreal process

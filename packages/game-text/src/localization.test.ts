@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { Schema } from "effect";
 import {
 	LocalizationError,
+	localizationEvidenceFingerprint,
 	LocalizationTarget,
 	LocalizationTargetEvidence,
 	parseDashboardTargets,
@@ -15,6 +16,11 @@ import {
 } from "./localization.js";
 import { LocalizationJoin } from "./localization-schema.js";
 import { TextUnit } from "./schema.js";
+import { buildTextCorpus } from "./corpus.js";
+import type { SavedAssetInspection } from "@ue-shed/unreal-assets";
+import { localizationLinesCsv } from "./localization-export.js";
+import { localizationLineUnits } from "./gathered-text.js";
+import { localizationLineFingerprint } from "./localization-review.js";
 import { textCorpusQuery } from "./query.js";
 import {
 	archiveEntry,
@@ -51,6 +57,67 @@ function configureGather(includes: readonly string[], excludes: readonly string[
 			}))
 		}))
 	});
+}
+
+function mixedCorpus(
+	reverse: boolean,
+	kind: "asset_property" | "data_table_cell",
+	savedSource = "Source"
+) {
+	const property = {
+		name: "Label",
+		type: "TextProperty",
+		value_kind: "text" as const,
+		value: savedSource,
+		history: "base" as const,
+		namespace: "UI [Beta]",
+		key: "K"
+	};
+	const table: SavedAssetInspection["assets"][number] = {
+		kind: "StringTable",
+		object_path: "/Game/Text/Table.Table",
+		string_table_namespace: "UI [Beta]",
+		string_table_metadata: {},
+		string_table_entries: [{ key: "K", source: "Source", dev_notes: "" }]
+	};
+	const saved: SavedAssetInspection["assets"][number] =
+		kind === "asset_property"
+			? {
+					kind: "UObject",
+					object_path: "/Game/Text/Base.Base",
+					class_path: "/Script/Engine.DataAsset",
+					properties: [property]
+				}
+			: {
+					kind: "DataTable",
+					object_path: "/Game/Text/Base.Base",
+					row_struct: "/Script/Test.TextRow",
+					row_count: 1,
+					rows: [{ name: "Greeting", properties: [property] }]
+				};
+	const inspections = [table, saved].map(
+		(asset): SavedAssetInspection => ({
+			schema_version: 8,
+			status: "ok",
+			path: `Content/Text/${asset.kind === "StringTable" ? "Table" : "Base"}.uasset`,
+			package: {
+				name: asset.object_path.split(".")[0] ?? "",
+				version: { legacy_file: -9, legacy_ue3: 0, ue4: 522, ue5: 1018, licensee: 0 },
+				package_flags: 0,
+				summary_size: 1,
+				total_header_size: 1
+			},
+			assets: [asset],
+			decode_errors: []
+		})
+	);
+	return buildTextCorpus(
+		(reverse ? inspections.reverse() : inspections).map((inspection) => ({
+			status: "inspected",
+			packageFile: inspection.path,
+			inspection
+		}))
+	);
 }
 
 describe("localization identity join and precedence", () => {
@@ -141,43 +208,176 @@ describe("localization identity join and precedence", () => {
 		}
 	);
 
-	it.each([false, true])(
-		"preserves mixed units regardless of occurrence order (%s)",
-		(reverse) => {
-			const table = unit("K", "Source", "Content/Text/Table.uasset", "UI [Beta]");
-			const saved = ftextUnit("K", "Source", "Content/Text/Table.uasset", "UI [Beta]");
-			const occurrences = [...table.occurrences, ...saved.occurrences];
-			const mixed = TextUnit.make({
-				...table,
-				occurrences: reverse ? occurrences.reverse() : occurrences
-			});
-			const other = TextUnit.make({
-				...ftextUnit("K", "Other", "Content/Text/Other.uasset", "UI [Other]"),
-				id: TextUnit.fields.id.make("unit:other")
-			});
-			const text = corpus([mixed, other]);
-			const joined = joinLocalizationTarget(
-				text,
-				evidence(
-					[manifestEntry("K", "Source", "/Game/Text/Table.Table", "UI [Beta]")],
-					[archiveEntry("K", "Source", "Translation", "UI [Beta]")],
-					poDocument("Translation", "Unreal", "UI [Beta]")
+	it.each([
+		[false, "asset_property"],
+		[true, "asset_property"],
+		[false, "data_table_cell"],
+		[true, "data_table_cell"]
+	] as const)("joins each identity in a mixed unit (%s, %s)", (reverse, kind) => {
+		const text = mixedCorpus(reverse, kind);
+		const mixed = text.units[0];
+		if (!mixed) throw new Error("Missing mixed unit.");
+		expect(text.units).toHaveLength(1);
+		expect(mixed.id).toBe("unreal:UI%20%5BBeta%5D:K");
+		expect(mixed.identity).toEqual({ status: "resolved", namespace: "UI [Beta]", key: "K" });
+		const namespaces = ["UI [Beta]", "UI"];
+		const po = poDocument("Translation", "Unreal", "UI [Beta]");
+		const files = evidence(
+			namespaces.map((namespace) =>
+				manifestEntry(
+					"K",
+					"Source",
+					namespace === "UI" ? "/Game/Text/Base.Base" : "/Game/Text/Table.Table",
+					namespace
+				)
+			),
+			namespaces.map((namespace) => archiveEntry("K", "Source", "Translation", namespace)),
+			{ ...po, blocks: [...po.blocks, ...poDocument("Translation", "Unreal", "UI").blocks] }
+		);
+		const joined = joinLocalizationTarget(text, files);
+		Schema.decodeUnknownSync(LocalizationJoin)(joined);
+		expect(joined.lines).toHaveLength(2);
+		const units = new Map(text.units.map((unit) => [unit.id, unit]));
+		for (const line of joined.lines) {
+			expect(line.origin).toEqual({ kind: "corpus", unitIds: [mixed.id] });
+			expect(line.cultures.map((culture) => culture.state)).toEqual([
+				"translated",
+				"translated"
+			]);
+			expect(localizationLineUnits(line, units).flatMap((unit) => unit.occurrences)).toEqual(
+				mixed.occurrences.filter((occurrence) =>
+					line.identity?.namespace === "UI"
+						? occurrence.location.kind === kind
+						: occurrence.location.kind === "string_table_entry"
 				)
 			);
-			expect(joined.lines).toHaveLength(2);
-			expect(
-				joined.lines.find((line) => line.identity?.namespace === "UI [Beta]")?.cultures[0]
-					?.state
-			).toBe("translated");
-			const page = textCorpusQuery(text).search({
-				capability: "all",
-				query: "",
-				pageSize: 50
+			for (const culture of line.cultures) {
+				expect(culture.facts).not.toContain("not_found");
+				expect(culture.facts).not.toContain("not_gathered");
+				expect(culture.archive?.namespace).toBe(line.identity?.namespace);
+				expect(culture.po?.identity?.namespace).toBe(line.identity?.namespace);
+				if (!line.identity) throw new Error("Missing gathered identity.");
+				expect(localizationLineFingerprint(line, culture)).toBe(
+					localizationEvidenceFingerprint(files, culture.culture, line.identity)
+				);
+			}
+		}
+		const query = textCorpusQuery(text, undefined, joined);
+		const request = { capability: "all" as const, query: "", pageSize: 50 };
+		expect(query.search(request).counts).toMatchObject({
+			shared: 0,
+			conflicting: 0,
+			duplicate_source: 1
+		});
+		for (const line of joined.lines) {
+			const page = query.search({
+				...request,
+				localization: { target: target.name },
+				lines: [line.id]
 			});
-			expect(page.counts.shared).toBe(1);
-			expect(page.counts.conflicting).toBe(0);
+			expect(page.units[0]?.id).toBe(mixed.id);
+			expect(page.units[0]?.occurrenceCount).toBe(1);
+			expect(page.units[0]?.locationKinds).toEqual([
+				line.identity?.namespace === "UI" ? kind : "string_table_entry"
+			]);
+			expect(page.counts).toMatchObject({ shared: 0, conflicting: 0, duplicate_source: 1 });
+		}
+		const { csv } = localizationLinesCsv({ join: joined, lines: joined.lines, corpus: text });
+		expect(csv).toContain('"UI [Beta]","K","Source","/Game/Text/Table.Table","String table"');
+		expect(csv).toContain(
+			`"UI","K","Source","/Game/Text/Base.Base","${kind === "asset_property" ? "Asset" : "Data table"}"`
+		);
+		expect(query.export({ ...request, localization: { target: target.name } }).units).toEqual(
+			text.units
+		);
+	});
+
+	it("keeps sources on different gathered identities from conflicting within a mixed unit", () => {
+		const text = mixedCorpus(false, "asset_property", "Other");
+		const page = textCorpusQuery(text).search({ capability: "all", query: "", pageSize: 50 });
+		expect(page.counts).toMatchObject({ shared: 0, conflicting: 0, duplicate_source: 0 });
+		const joined = joinLocalizationTarget(
+			text,
+			evidence([
+				manifestEntry("K", "Source", "/Game/Text/Table.Table", "UI [Beta]"),
+				manifestEntry("K", "Other", "/Game/Text/Base.Base", "UI")
+			])
+		);
+		for (const line of joined.lines) {
+			expect(line.source).toBe(line.identity?.namespace === "UI" ? "Other" : "Source");
+			expect(line.cultures[0]?.unknownReasons).not.toContain("conflicting_source");
+			expect(line.cultures[0]?.facts).not.toContain("changed_since_gather");
+		}
+	});
+
+	it.each([false, true])(
+		"resolves a mixed unit's table reference by authored identity (%s)",
+		(reverse) => {
+			const text = mixedCorpus(reverse, "asset_property");
+			const saved = ftextUnit("Ref", "", "Content/Text/Reference.uasset");
+			const identity = {
+				status: "string_table" as const,
+				tableId: "/Game/Text/Table.Table",
+				key: "K"
+			};
+			const reference = TextUnit.make({
+				...saved,
+				identity,
+				occurrences: saved.occurrences.map((occurrence) => ({ ...occurrence, identity }))
+			});
+			const joined = joinLocalizationTarget(
+				{ ...text, units: [...text.units, reference] },
+				evidence([
+					manifestEntry("K", "Source", "/Game/Text/Table.Table", "UI [Beta]"),
+					manifestEntry("K", "Source", "/Game/Text/Base.Base", "UI")
+				])
+			);
+			expect(joined.lines).toHaveLength(2);
+			for (const line of joined.lines) {
+				if (line.origin.kind !== "corpus") throw new Error("Missing corpus origin.");
+				expect(line.origin.unitIds.includes(reference.id)).toBe(
+					line.identity?.namespace === "UI [Beta]"
+				);
+				expect(line.source).toBe("Source");
+				expect(line.cultures[0]?.unknownReasons).not.toContain("conflicting_source");
+			}
 		}
 	);
+
+	it("finds shared and conflicting FText across a mixed unit and a package variant", () => {
+		const text = mixedCorpus(false, "data_table_cell");
+		const other = TextUnit.make({
+			...ftextUnit("K", "Other", "Content/Text/Other.uasset", "UI [Other]"),
+			id: TextUnit.fields.id.make("unit:other")
+		});
+		const joined = joinLocalizationTarget(
+			{ ...text, units: [...text.units, other] },
+			evidence()
+		);
+		const query = textCorpusQuery(
+			{ ...text, units: [...text.units, other] },
+			undefined,
+			joined
+		);
+		const request = { capability: "all" as const, query: "", pageSize: 50 };
+		expect(query.search(request).counts).toMatchObject({
+			shared: 2,
+			conflicting: 2,
+			duplicate_source: 1
+		});
+		expect(query.focus({ id: other.id, pageSize: 50 })?.unit.reviewSignals).not.toContain(
+			"duplicate_source"
+		);
+		for (const line of joined.lines.filter((line) => line.origin.kind === "corpus")) {
+			const page = query.search({
+				...request,
+				localization: { target: target.name },
+				lines: [line.id]
+			});
+			expect(page.counts.shared).toBe(line.identity?.namespace === "UI" ? 1 : 0);
+			expect(page.counts.conflicting).toBe(line.identity?.namespace === "UI" ? 1 : 0);
+		}
+	});
 
 	it("evaluates translated and native cultures from the archive", () => {
 		expect(mark().state).toBe("translated");
@@ -327,7 +527,11 @@ describe("localization identity join and precedence", () => {
 		).toContain("duplicate_po_identity");
 		const unresolved = Schema.decodeUnknownSync(TextUnit)({
 			...unit(),
-			identity: { status: "unresolved", reason: "culture_invariant" }
+			identity: { status: "unresolved", reason: "culture_invariant" },
+			occurrences: unit().occurrences.map((occurrence) => ({
+				...occurrence,
+				identity: { status: "unresolved", reason: "culture_invariant" }
+			}))
 		});
 		expect(
 			joinLocalizationTarget(corpus([unresolved]), evidence([])).lines[0]?.cultures[0]
@@ -335,7 +539,11 @@ describe("localization identity join and precedence", () => {
 		).toContain("unresolved_identity");
 		const reference = Schema.decodeUnknownSync(TextUnit)({
 			...unit(),
-			identity: { status: "string_table", tableId: "/Game/Missing.Missing", key: "K" }
+			identity: { status: "string_table", tableId: "/Game/Missing.Missing", key: "K" },
+			occurrences: unit().occurrences.map((occurrence) => ({
+				...occurrence,
+				identity: { status: "string_table", tableId: "/Game/Missing.Missing", key: "K" }
+			}))
 		});
 		expect(
 			joinLocalizationTarget(corpus([reference]), evidence([])).lines[0]?.cultures[0]

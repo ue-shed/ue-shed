@@ -1,7 +1,6 @@
 import {
 	LocalizationIdentity,
 	resolveLocalizationGatherPath,
-	stripPackageNamespace,
 	type ArchiveEntry,
 	type LocalizationTarget,
 	type LocalizationTargetEvidence,
@@ -20,6 +19,11 @@ import {
 	type LocalizationState
 } from "./localization-schema.js";
 import type { TextCorpus, TextOccurrence, TextUnit } from "./schema.js";
+import {
+	gatheredIdentityKey,
+	gatheredTextGroups,
+	gatheredTextOccurrenceIdentity
+} from "./gathered-text.js";
 
 /** FString matching is case insensitive; ? consumes zero or one character, * any number. */
 export function matchesUnrealWildcard(value: string, pattern: string): boolean {
@@ -201,29 +205,19 @@ export function localizationGatherCoverage(
 	return uncertain ? { status: "unknown", reason: uncertain } : { status: "outside" };
 }
 
-// Built once: joins and queries decode an identity per saved unit, tens of thousands in a game.
-const decodeLocalizationIdentity = Schema.decodeUnknownSync(LocalizationIdentity);
-
+/** A unit has one gathered identity only when all its occurrences agree. */
 export function gatheredTextIdentity(unit: TextUnit): typeof LocalizationIdentity.Type | null {
-	if (unit.identity.status !== "resolved") return null;
-	// Mixed units keep the authored namespace so String Table definitions are never stripped.
-	const savedFText =
-		unit.occurrences.length > 0 &&
-		unit.occurrences.every(
-			(occurrence) =>
-				occurrence.location.kind === "asset_property" ||
-				occurrence.location.kind === "data_table_cell"
-		);
-	return decodeLocalizationIdentity({
-		...unit.identity,
-		namespace: savedFText
-			? stripPackageNamespace(unit.identity.namespace)
-			: unit.identity.namespace
-	});
-}
-
-function identityKey(identity: typeof LocalizationIdentity.Type): string {
-	return JSON.stringify([identity.namespace, identity.key]);
+	let identity: typeof LocalizationIdentity.Type | null = null;
+	for (const occurrence of unit.occurrences) {
+		const gathered = gatheredTextOccurrenceIdentity(occurrence);
+		if (
+			!gathered ||
+			(identity && gatheredIdentityKey(identity) !== gatheredIdentityKey(gathered))
+		)
+			return null;
+		identity = gathered;
+	}
+	return identity;
 }
 
 /**
@@ -296,13 +290,13 @@ function groupByIdentity<A extends typeof LocalizationIdentity.Type>(
 ): Map<string, A[]> {
 	const grouped = new Map<string, A[]>();
 	for (const entry of entries) {
-		const key = identityKey(entry);
+		const key = gatheredIdentityKey(entry);
 		grouped.set(key, [...(grouped.get(key) ?? []), entry]);
 	}
 	return grouped;
 }
 
-/** Join gathered namespace/key, stripping package markers only from saved FText units. */
+/** Join gathered namespace/key, stripping package markers only from saved FText occurrences. */
 export function joinLocalizationTarget(
 	corpus: TextCorpus,
 	evidence: LocalizationTargetEvidence,
@@ -311,37 +305,7 @@ export function joinLocalizationTarget(
 	const manifest = groupByIdentity(
 		evidence.manifest.status === "read" ? evidence.manifest.value.entries : []
 	);
-	const resolved = new Map<TextUnit["id"], typeof LocalizationIdentity.Type>();
-	const tables = new Map<string, typeof LocalizationIdentity.Type>();
-	for (const unit of corpus.units) {
-		const identity = gatheredTextIdentity(unit);
-		if (!identity) continue;
-		resolved.set(unit.id, identity);
-		for (const occurrence of unit.occurrences) {
-			if (occurrence.location.kind === "string_table_entry")
-				tables.set(
-					JSON.stringify([occurrence.location.objectPath, occurrence.location.entryKey]),
-					identity
-				);
-		}
-	}
-	const rows = new Map<
-		string,
-		{ identity: typeof LocalizationIdentity.Type | null; units: TextUnit[] }
-	>();
-	for (const unit of corpus.units) {
-		const identity =
-			unit.identity.status === "resolved"
-				? (resolved.get(unit.id) ?? null)
-				: unit.identity.status === "string_table"
-					? (tables.get(JSON.stringify([unit.identity.tableId, unit.identity.key])) ??
-						null)
-					: null;
-		const key = identity ? identityKey(identity) : `unresolved:${unit.id}`;
-		const row = rows.get(key) ?? { identity, units: [] };
-		row.units.push(unit);
-		rows.set(key, row);
-	}
+	const rows = gatheredTextGroups(corpus);
 	for (const [key, entries] of manifest) {
 		const entry = entries[0];
 		if (entry && !rows.has(key))

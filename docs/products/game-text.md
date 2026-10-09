@@ -51,9 +51,10 @@ The corpus includes decoded String Table entries, DataTable `FText` cells, and s
 properties. Every text unit retains its resolved or unresolved Unreal identity and one or more
 occurrences with package, object, row/entry/property, and edit-capability evidence.
 
-Localization lines use Unreal's gathered identity: saved FText in asset properties and DataTable
-cells has its trailing package namespace marker removed; String Table definitions and references
-keep the namespace exactly as authored. Saved corpus units and occurrences retain the full namespace
+Localization lines use each occurrence's gathered identity: saved FText in asset properties and
+DataTable cells has its trailing package namespace marker removed; String Table definitions and
+references keep the namespace exactly as authored. A mixed corpus unit joins both identities with
+their own occurrences. Saved corpus units and occurrences retain the full namespace and unit IDs
 for asset inspection.
 Package variants of one namespace and key share a localization line, including source conflicts.
 

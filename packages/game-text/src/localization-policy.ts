@@ -10,6 +10,7 @@ import type {
 } from "./localization-quality-schema.js";
 import { localizationShippedTranslation } from "./localization-shipped-translation.js";
 import { matchesTextRole, termMatches } from "./quality.js";
+import { localizationLineUnits } from "./gathered-text.js";
 
 export function evaluateLocalizationPolicy(
 	corpus: TextCorpus,
@@ -41,8 +42,8 @@ export function evaluateLocalizationPolicy(
 		if (!role) continue;
 		for (const line of lines) {
 			if (!line.identity || !line.source.trim() || line.origin.kind !== "corpus") continue;
-			const occurrences = line.origin.unitIds
-				.flatMap((id) => units.get(id)?.occurrences ?? [])
+			const occurrences = localizationLineUnits(line, units)
+				.flatMap((unit) => unit.occurrences)
 				.filter((occurrence) => matchesTextRole(occurrence, role))
 				.sort((a, b) => a.id.localeCompare(b.id));
 			if (!occurrences.length) continue;

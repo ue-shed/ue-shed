@@ -1,4 +1,5 @@
 import { Schema } from "effect";
+import { localizationLineUnits } from "./gathered-text.js";
 import type { LocalizationJoin, LocalizationLine } from "./localization-schema.js";
 import { localizationShippedTranslation } from "./localization-shipped-translation.js";
 import type { TextCorpusQuery } from "./query.js";
@@ -192,17 +193,12 @@ export function localizationGateTarget(input: {
 	// gathered paths, the first one in the list.
 	const scope = textFileScope(input.files);
 	const listedFile = (path: string) => scope?.keys.has(textFileKey(path)) ?? false;
-	const packages = new Map(
-		input.corpus.units.map(
-			(unit) =>
-				[unit.id, unit.occurrences.map((occurrence) => occurrence.packageFile)] as const
-		)
-	);
+	const units = new Map(input.corpus.units.map((unit) => [unit.id, unit]));
 	const lineFile = (line: LocalizationLine) => {
 		const places = [
-			...(line.origin.kind === "corpus"
-				? line.origin.unitIds.flatMap((id) => packages.get(id) ?? [])
-				: []),
+			...localizationLineUnits(line, units).flatMap((unit) =>
+				unit.occurrences.map((occurrence) => occurrence.packageFile)
+			),
 			...line.manifest.map((entry) => entry.path)
 		];
 		return textFileLabel(places.find(listedFile) ?? places[0] ?? "");

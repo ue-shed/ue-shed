@@ -57,7 +57,8 @@ import type {
 	LocalizationSelection
 } from "./localization-schema.js";
 import { GameTextLocalizationError } from "./localization-schema.js";
-import { gatheredTextIdentity, localizationManifestNotes } from "./localization.js";
+import { localizationManifestNotes } from "./localization.js";
+import { gatheredTextGroups, localizationLineUnits } from "./gathered-text.js";
 import {
 	localizationQueryPage,
 	matchesLocalizationLine,
@@ -82,7 +83,7 @@ function wordCount(value: string): number {
 function searchResult(
 	unit: TextUnit,
 	duplicateSources: ReadonlySet<string>,
-	group: { readonly occurrences: number; readonly sources: ReadonlySet<string> }
+	groups: readonly { readonly occurrences: number; readonly sources: ReadonlySet<string> }[]
 ): TextUnitSearchResult {
 	const contexts = unit.occurrences.slice(0, 3).map((occurrence) => ({
 		editCapability: occurrence.editCapability,
@@ -90,12 +91,18 @@ function searchResult(
 	}));
 	const value = sourceValue(unit);
 	const reviewSignals: TextReviewSignal[] = [];
-	if (group.occurrences > 1) reviewSignals.push("shared");
-	if (unit.source.status === "consistent" && duplicateSources.has(unit.source.value))
+	if (groups.some((group) => group.occurrences > 1)) reviewSignals.push("shared");
+	if (
+		unit.occurrences.some(
+			(occurrence) =>
+				occurrence.identity.status !== "string_table" &&
+				duplicateSources.has(occurrence.source)
+		)
+	)
 		reviewSignals.push("duplicate_source");
 	if (value.length >= LONG_SOURCE_THRESHOLD) reviewSignals.push("long");
 	if (unit.identity.status === "unresolved") reviewSignals.push("unresolved");
-	if (group.sources.size > 1) reviewSignals.push("conflicting");
+	if (groups.some((group) => group.sources.size > 1)) reviewSignals.push("conflicting");
 	if (unit.occurrences.every((occurrence) => occurrence.editCapability === "read_only"))
 		reviewSignals.push("evidence_only");
 	return {
@@ -145,35 +152,37 @@ export function textCorpusQuery(
 ): TextCorpusQuery {
 	const units = [...corpus.units].sort((left, right) => left.id.localeCompare(right.id));
 	// Units retain saved identities; findings count the localization identities Unreal gathers.
-	const identities = new Map<TextUnit["id"], string>();
+	const identities = new Map<TextUnit["id"], string[]>();
 	const groups = new Map<string, { occurrences: number; sources: Set<string> }>();
 	const sourceFrequency = new Map<string, Set<string>>();
-	for (const unit of units) {
-		const gathered = gatheredTextIdentity(unit);
-		const identity = gathered ? JSON.stringify([gathered.namespace, gathered.key]) : unit.id;
-		identities.set(unit.id, identity);
-		const group = groups.get(identity) ?? { occurrences: 0, sources: new Set<string>() };
-		group.occurrences += unit.occurrences.length;
-		for (const source of unit.source.status === "consistent"
-			? [unit.source.value]
-			: unit.source.values)
-			group.sources.add(source);
+	for (const [identity, row] of gatheredTextGroups(corpus)) {
+		const group = { occurrences: 0, sources: new Set<string>() };
+		for (const unit of row.units) {
+			identities.set(unit.id, [...(identities.get(unit.id) ?? []), identity]);
+			group.occurrences += unit.occurrences.length;
+			for (const occurrence of unit.occurrences)
+				if (occurrence.identity.status !== "string_table")
+					group.sources.add(occurrence.source);
+		}
 		groups.set(identity, group);
-		if (unit.source.status === "consistent") {
-			const keys = sourceFrequency.get(unit.source.value) ?? new Set<string>();
+		for (const source of group.sources) {
+			const keys = sourceFrequency.get(source) ?? new Set<string>();
 			keys.add(identity);
-			sourceFrequency.set(unit.source.value, keys);
+			sourceFrequency.set(source, keys);
 		}
 	}
 	const duplicateSources = new Set(
 		[...sourceFrequency].filter(([, keys]) => keys.size > 1).map(([source]) => source)
 	);
-	const indexed = units.filter(hasSearchableSource).map((unit) => {
-		const group = groups.get(identities.get(unit.id) ?? "") ?? {
-			occurrences: unit.occurrences.length,
-			sources: new Set<string>()
-		};
-		const presentation = searchResult(unit, duplicateSources, group);
+	const indexUnit = (unit: TextUnit, keys = identities.get(unit.id) ?? []) => {
+		const presentation = searchResult(
+			unit,
+			duplicateSources,
+			keys.flatMap((key) => {
+				const group = groups.get(key);
+				return group ? [group] : [];
+			})
+		);
 		const hasEditable = unit.occurrences.some(
 			(occurrence) => occurrence.editCapability === "source_editable"
 		);
@@ -223,8 +232,28 @@ export function textCorpusQuery(
 			fileKeys: unitFileKeys(unit),
 			unit
 		};
-	});
+	};
+	const indexed = units.filter(hasSearchableSource).map((unit) => indexUnit(unit));
 	const byId = new Map(indexed.map((entry) => [entry.unit.id, entry]));
+	const byUnit = new Map(units.map((unit) => [unit.id, unit]));
+	const entriesByLine = new Map(
+		localization?.lines.map((line) => [
+			line.id,
+			localizationLineUnits(line, byUnit)
+				.filter(hasSearchableSource)
+				.map((unit) => {
+					const indexed = byId.get(unit.id);
+					if (indexed?.unit === unit) return indexed;
+					return indexUnit(
+						unit,
+						line.identity
+							? [JSON.stringify([line.identity.namespace, line.identity.key])]
+							: [`unresolved:${unit.id}`]
+					);
+				})
+		]) ?? []
+	);
+	const localizationEntries = [...entriesByLine.values()].flat();
 	const localizationByUnit = new Map(
 		localization?.lines.flatMap((line) =>
 			line.origin.kind === "corpus"
@@ -241,7 +270,10 @@ export function textCorpusQuery(
 			diagnostic
 		]);
 	}
-	const matching = (request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">) => {
+	const matching = (
+		request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">,
+		entries = indexed
+	) => {
 		const terms = normalizedTerms(request.query);
 		const counts = {
 			all: 0,
@@ -257,7 +289,7 @@ export function textCorpusQuery(
 		} satisfies TextCorpusSearchCounts;
 		const matched: typeof indexed = [];
 		const files = textFileScope(request.where?.files);
-		for (const entry of indexed) {
+		for (const entry of entries) {
 			const { presentation, searchable, unit, hasEditable, hasReadOnly } = entry;
 			if (!terms.every((term) => searchable.includes(term))) continue;
 			if (!matchesTextFilter(entry.facts, request.filter)) continue;
@@ -302,7 +334,7 @@ export function textCorpusQuery(
 		// Filter clauses ask about lines, so units qualify without them.
 		const { filter, ...unfiltered } = request;
 		const eligible = new Set(
-			matching({ ...unfiltered, query: "" }).matched.map(({ unit }) => unit.id)
+			matching({ ...unfiltered, query: "" }, localizationEntries).matched
 		);
 		const files = textFileScope(request.where?.files);
 		const picked = request.lines === undefined ? undefined : new Set(request.lines);
@@ -313,7 +345,7 @@ export function textCorpusQuery(
 			if (line.source.trim() === "") return false;
 			if (
 				line.origin.kind === "corpus" &&
-				!line.origin.unitIds.some((id) => eligible.has(id))
+				!lineEntries(line).some((entry) => eligible.has(entry))
 			)
 				return false;
 			if (
@@ -347,7 +379,7 @@ export function textCorpusQuery(
 	const lineFileKeys = (line: LocalizationLine) =>
 		line.origin.kind === "evidence"
 			? manifestFileKeys(line.manifest.map((entry) => entry.path))
-			: line.origin.unitIds.flatMap((id) => byId.get(id)?.fileKeys ?? []);
+			: lineEntries(line).flatMap((entry) => entry.fileKeys);
 	const scannedPackages = corpus.packageCoverage?.map((coverage) => coverage.packageFile);
 	const fileScopeField = (where: TextWhere | undefined, keys: () => Iterable<string>) => {
 		const scope = textFileScope(where?.files);
@@ -358,14 +390,8 @@ export function textCorpusQuery(
 	const lineOrigins = (line: LocalizationLine) =>
 		line.origin.kind === "evidence"
 			? manifestOrigins(line.manifest.map((entry) => entry.path))
-			: [...new Set(line.origin.unitIds.flatMap((id) => byId.get(id)?.origins ?? []))];
-	const lineEntries = (line: LocalizationLine) =>
-		line.origin.kind === "evidence"
-			? []
-			: line.origin.unitIds.flatMap((id) => {
-					const entry = byId.get(id);
-					return entry ? [entry] : [];
-				});
+			: [...new Set(lineEntries(line).flatMap((entry) => entry.origins))];
+	const lineEntries = (line: Pick<LocalizationLine, "id">) => entriesByLine.get(line.id) ?? [];
 	const lineSignals = (entries: ReturnType<typeof lineEntries>) => [
 		...new Set(entries.flatMap((entry) => entry.presentation.reviewSignals))
 	];
@@ -595,10 +621,7 @@ export function textCorpusQuery(
 							counts.withoutNotes++;
 						continue;
 					}
-					const entries = line.origin.unitIds.flatMap((id) => {
-						const entry = byId.get(id);
-						return entry ? [entry] : [];
-					});
+					const entries = lineEntries(line);
 					if (entries.some((entry) => entry.hasEditable)) counts.editable++;
 					if (entries.some((entry) => entry.hasReadOnly)) counts.readOnly++;
 					if (entries.every((entry) => entry.withoutNotes)) counts.withoutNotes++;
@@ -617,12 +640,7 @@ export function textCorpusQuery(
 					...fileScopeField(request.where, () => matched.flatMap(lineFileKeys)),
 					units: page.lines.flatMap((line) => {
 						if (line.origin.kind === "evidence") return [];
-						const entry = line.origin.unitIds
-							.flatMap((id) => {
-								const item = byId.get(id);
-								return item ? [item] : [];
-							})
-							.at(0);
+						const entry = lineEntries(line).at(0);
 						return entry
 							? [{ ...entry.presentation, localization: line.cultures }]
 							: [];

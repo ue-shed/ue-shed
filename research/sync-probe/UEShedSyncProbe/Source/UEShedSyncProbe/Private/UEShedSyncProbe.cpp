@@ -33,6 +33,10 @@
 #include "Internationalization/StringTable.h"
 #include "Internationalization/StringTableCore.h"
 #include "Runtime/Launch/Resources/Version.h"
+#include "HAL/PlatformProcess.h"
+#if PLATFORM_WINDOWS
+#include "Windows/WindowsHWrapper.h"
+#endif
 
 namespace Probe
 {
@@ -42,6 +46,47 @@ bool Enabled = false;
 TMap<FString, int32> Counts;
 TMap<FGuid, FTransactionContext> Contexts;
 TArray<TPair<TWeakObjectPtr<UDataTable>, FDelegateHandle>> Tables;
+FDelegateHandle FocusThrottleDelegate;
+FProcHandle FocusClientProcess;
+uint32 FocusClientPID = 0;
+double FocusLeaseExpires = 0;
+
+uint32 ForegroundProcessID()
+{
+#if PLATFORM_WINDOWS
+	DWORD PID = 0;
+	::GetWindowThreadProcessId(::GetForegroundWindow(), &PID);
+	return uint32(PID);
+#else
+	return 0;
+#endif
+}
+void ReleaseFocusLease()
+{
+	if (FocusClientProcess.IsValid()) FPlatformProcess::CloseProc(FocusClientProcess);
+	FocusClientPID = 0;
+	FocusLeaseExpires = 0;
+}
+bool FocusLeaseDisablesThrottle()
+{
+	return FocusClientPID != 0 && FocusClientProcess.IsValid()
+		&& FPlatformTime::Seconds() < FocusLeaseExpires
+		&& FPlatformProcess::IsProcRunning(FocusClientProcess)
+		&& ForegroundProcessID() == FocusClientPID;
+}
+void RegisterFocusThrottleOverride()
+{
+	if (!GEditor || FocusThrottleDelegate.IsValid()) return;
+	auto Delegate = UEditorEngine::FShouldDisableCPUThrottling::CreateStatic(&FocusLeaseDisablesThrottle);
+	FocusThrottleDelegate = Delegate.GetHandle();
+	GEditor->ShouldDisableCPUThrottlingDelegates.Add(Delegate);
+}
+void RemoveFocusThrottleOverride()
+{
+	if (GEditor) GEditor->ShouldDisableCPUThrottlingDelegates.RemoveAll([](const UEditorEngine::FShouldDisableCPUThrottling& Delegate) { return Delegate.GetHandle() == FocusThrottleDelegate; });
+	FocusThrottleDelegate.Reset();
+	ReleaseFocusLease();
+}
 
 FString Encode(const TSharedRef<FJsonObject>& Json)
 {
@@ -157,6 +202,7 @@ public:
 		});
 		if (GEditor)
 		{
+			Probe::RegisterFocusThrottleOverride();
 			GEditor->RegisterForUndo(this);
 			if (UTransBuffer* Buffer = Cast<UTransBuffer>(GEditor->Trans))
 				State = Buffer->OnTransactionStateChanged().AddLambda([](const FTransactionContext& Context, ETransactionStateEventType Type) {
@@ -181,6 +227,7 @@ public:
 	virtual void PostRedo(bool Success) override { auto Json = Probe::Event(TEXT("PostRedo")); Json->SetBoolField(TEXT("success"), Success); Probe::Write(Json); }
 	virtual void ShutdownModule() override
 	{
+		Probe::RemoveFocusThrottleOverride();
 		Probe::Enabled = false;
 		FCoreUObjectDelegates::OnObjectTransacted.Remove(Transacted);
 		FCoreUObjectDelegates::OnObjectPropertyChanged.Remove(Property);
@@ -221,6 +268,12 @@ void UUEShedSyncProbeLibrary::GetCounts(FString& ResultJson)
 	Json->SetBoolField(TEXT("nativeForeground"), FPlatformApplicationMisc::IsThisApplicationForeground());
 	Json->SetBoolField(TEXT("effectiveShouldThrottle"), GEditor->ShouldThrottleCPUUsage());
 	Json->SetBoolField(TEXT("unattended"), FApp::IsUnattended());
+	Json->SetNumberField(TEXT("foregroundProcessId"), Probe::ForegroundProcessID());
+	Json->SetNumberField(TEXT("focusClientPID"), Probe::FocusClientPID);
+	Json->SetBoolField(TEXT("focusProcessHandleValid"), Probe::FocusClientProcess.IsValid());
+	Json->SetBoolField(TEXT("focusOverrideRegistered"), Probe::FocusThrottleDelegate.IsValid());
+	Json->SetBoolField(TEXT("focusLeaseDisablesThrottle"), Probe::FocusLeaseDisablesThrottle());
+	Json->SetNumberField(TEXT("focusLeaseRemainingSeconds"), FMath::Max(0.0, Probe::FocusLeaseExpires - FPlatformTime::Seconds()));
 	if (auto* Buffer = Cast<UTransBuffer>(GEditor->Trans))
 	{
 		Json->SetNumberField(TEXT("queueLength"), Buffer->GetQueueLength());
@@ -241,6 +294,21 @@ void UUEShedSyncProbeLibrary::Scenario(const FString& RequestJson, FString& Resu
 	Result->SetStringField(TEXT("action"), Action);
 	if (Action == TEXT("noop")) { ResultJson = Probe::Encode(Result); return; }
 	if (Action == TEXT("throttle")) { GetMutableDefault<UEditorPerformanceSettings>()->bThrottleCPUWhenNotForeground = Request->GetBoolField(TEXT("value")); ResultJson = Probe::Encode(Result); return; }
+	if (Action == TEXT("focus-lease"))
+	{
+		Probe::ReleaseFocusLease();
+		const double PID = Request->GetNumberField(TEXT("pid"));
+		if (PID > 0 && PID <= double(MAX_uint32) && FMath::FloorToDouble(PID) == PID)
+		{
+			Probe::FocusClientPID = uint32(PID);
+			Probe::FocusClientProcess = FPlatformProcess::OpenProcess(Probe::FocusClientPID);
+			Probe::FocusLeaseExpires = FPlatformTime::Seconds() + FMath::Clamp(Request->GetNumberField(TEXT("ttl")), 0.1, 10.0);
+		}
+		Result->SetBoolField(TEXT("overrideActive"), Probe::FocusLeaseDisablesThrottle());
+		Result->SetBoolField(TEXT("processHandleValid"), Probe::FocusClientProcess.IsValid());
+		ResultJson = Probe::Encode(Result); return;
+	}
+	if (Action == TEXT("focus-override-remove")) { Probe::RemoveFocusThrottleOverride(); ResultJson = Probe::Encode(Result); return; }
 	if (Action == TEXT("ui-text"))
 	{
 		TArray<TSharedPtr<FJsonValue>> Cells;

@@ -19,7 +19,7 @@ DOCS = ROOT / "docs/research/sync-feasibility"
 
 def journal(message):
     with (DOCS / "JOURNAL.md").open("a", encoding="utf-8") as handle:
-        handle.write(f"\n- {datetime.datetime.now().astimezone().isoformat()} {message}\n")
+        handle.write(f"\n- {datetime.datetime.now().astimezone().isoformat()} {message.rstrip()}\n")
 
 
 def engine(version):

@@ -451,3 +451,50 @@ SUCCESS: The process with PID 21020 (child process of PID 37932) has been termin
 - 2026-10-09T11:06:28.023295+07:00 Publication: git push -u origin research/sync-feasibility succeeded for 845bdb39; branch tracking established; no PR opened. Final cleanup restored six localization package copies and two live scalar copies from git-restored originals; raw logs and receipts preserved. Final research format/artifact/git diff checks pass, tracked fixture diff empty, independent engine/service PID inventory empty. Final journal/cleanup commit will be pushed to the same research branch.
 
 DONE 2026-10-09T11:06:28.061008+07:00
+
+- 2026-10-09T12:49:50.623559+07:00 Follow-up T15 begins after DONE: user asks whether background throttling can be disabled only while UE Shed is focused. Authorized research extension only, product sources remain untouched. Read engine override before focus/minimized branches on 5.7/5.8 and public delegate declarations. Plan compile/runtime scoped foreground-PID + expiring lease override in throwaway probe, then document host focus integration boundary.
+
+- 2026-10-09T12:51:11.582766+07:00 T07 build 5.7: ['D:\\ue5\\UE_5.7\\Engine\\Build\\BatchFiles\\Build.bat', 'UEShedFixtureEditor', 'Win64', 'Development', 'D:\\git\\ue-shed-sync-research\\out\\sync-research\\5.7\\fixture\\UEShedFixture.uproject', '-NoUBTMakefiles', '-WaitMutex', '-NoHotReloadFromIDE']; raw log D:\git\ue-shed-sync-research\out\sync-research\5.7\build-1791525071.log
+
+- 2026-10-09T12:51:16.142770+07:00 T07 build 5.7 exit=6; log=D:\git\ue-shed-sync-research\out\sync-research\5.7\build-1791525071.log
+
+- 2026-10-09T12:51:45.984781+07:00 T15 first 5.7 build failed C2039/C3861: CloseProcHandle does not exist (build-1791525071.log). Corrected to verified CloseProc in WindowsPlatformProcess.cpp 5.7:734-740 / 5.8:742-748. OpenProcess implementation requests PROCESS_ALL_ACCESS; final product should use minimal process rights or validated identity registration. No editor started yet.
+
+- 2026-10-09T12:51:46.043041+07:00 T07 build 5.7: ['D:\\ue5\\UE_5.7\\Engine\\Build\\BatchFiles\\Build.bat', 'UEShedFixtureEditor', 'Win64', 'Development', 'D:\\git\\ue-shed-sync-research\\out\\sync-research\\5.7\\fixture\\UEShedFixture.uproject', '-NoUBTMakefiles', '-WaitMutex', '-NoHotReloadFromIDE']; raw log D:\git\ue-shed-sync-research\out\sync-research\5.7\build-1791525106.log
+
+- 2026-10-09T12:51:52.534939+07:00 T07 build 5.7 exit=0; log=D:\git\ue-shed-sync-research\out\sync-research\5.7\build-1791525106.log
+
+- 2026-10-09T12:51:52.597855+07:00 T07 build 5.8: ['D:\\ue5\\UE_5.8\\Engine\\Build\\BatchFiles\\Build.bat', 'UEShedFixtureEditor', 'Win64', 'Development', 'D:\\git\\ue-shed-sync-research\\out\\sync-research\\5.8\\fixture\\UEShedFixture.uproject', '-NoUBTMakefiles', '-WaitMutex', '-NoHotReloadFromIDE']; raw log D:\git\ue-shed-sync-research\out\sync-research\5.8\build-1791525112.log
+
+- 2026-10-09T12:52:02.399448+07:00 T07 build 5.8 exit=0; log=D:\git\ue-shed-sync-research\out\sync-research\5.8\build-1791525112.log
+
+- 2026-10-09T12:53:22.237577+07:00 T07 launched 5.7 UnrealEditor PID=12764; command=D:\git\ue-shed-sync-research\out\sync-research\5.7\launch-1791525202.json
+
+- 2026-10-09T12:54:54.814970+07:00 T15 5.7 runtime completed 4 measured cases; raw=D:\git\ue-shed-sync-research\out\sync-research\5.7\T15-focus-policy.json; native foreground stand-in (not Workbench)={'handle': 131698, 'pid': 18488, 'title': 'Search', 'minimized': False, 'visible': True}
+
+- 2026-10-09T12:55:16.261940+07:00 Cleanup 5.7 PID=12764: SUCCESS: The process with PID 36720 (child process of PID 36908) has been terminated.
+SUCCESS: The process with PID 36908 (child process of PID 12764) has been terminated.
+SUCCESS: The process with PID 30240 (child process of PID 12764) has been terminated.
+SUCCESS: The process with PID 24120 (child process of PID 12764) has been terminated.
+SUCCESS: The process with PID 29712 (child process of PID 12764) has been terminated.
+SUCCESS: The process with PID 31104 (child process of PID 12764) has been terminated.
+SUCCESS: The process with PID 26472 (child process of PID 12764) has been terminated.
+SUCCESS: The process with PID 22392 (child process of PID 12764) has been terminated.
+SUCCESS: The process with PID 12764 (child process of PID 36620) has been terminated. 
+
+- 2026-10-09T12:55:16.333751+07:00 T07 launched 5.8 UnrealEditor PID=41060; command=D:\git\ue-shed-sync-research\out\sync-research\5.8\launch-1791525316.json
+
+- 2026-10-09T12:56:36.733531+07:00 T15 5.8 runtime completed 4 measured cases; raw=D:\git\ue-shed-sync-research\out\sync-research\5.8\T15-focus-policy.json; native foreground stand-in (not Workbench)={'handle': 131698, 'pid': 18488, 'title': 'Search', 'minimized': False, 'visible': True}
+
+- 2026-10-09T12:58:16.897108+07:00 Cleanup 5.8 PID=41060: SUCCESS: The process with PID 22252 (child process of PID 21072) has been terminated.
+SUCCESS: The process with PID 21072 (child process of PID 41060) has been terminated.
+SUCCESS: The process with PID 40064 (child process of PID 41060) has been terminated.
+SUCCESS: The process with PID 41060 (child process of PID 3580) has been terminated. 
+
+- 2026-10-09T12:58:16.963495+07:00 T15 5.7 no asset Save called; scalar package bytes still equal git-restored tracked original; archived events to D:\git\ue-shed-sync-research\out\sync-research\5.7\T15-events.jsonl
+
+- 2026-10-09T12:58:16.964004+07:00 T15 5.8 no asset Save called; scalar package bytes still equal git-restored tracked original; archived events to D:\git\ue-shed-sync-research\out\sync-research\5.8\T15-events.jsonl
+
+- 2026-10-09T13:00:20.618047+07:00 T15 follow-up complete on both engines: normal checkbox true, minimized no-lease Apply p95 335.59/335.43 ms, matched foreground-process lease 34.94/34.98 ms, released 335.50/335.85 ms. Wrong owner, expiry and delegate removal assertions pass. Stand-in is actual foreground Search process, not Workbench; product focus integration and OS transition timing untested. First RC lease acquisition about 333 ms. Both editor PID trees terminated; immediate 5.8 process inventory briefly showed terminating editor and sponsored trace daemon, later independent inventory empty without additional termination. Scalar package bytes unchanged; no asset saves. Next format/audit/commit/push.
+
+- 2026-10-09T13:01:44.781545+07:00 T15 validation: both final Unreal builds pass; 15-task artifact audit and targeted research formatter pass. git diff --check reports two trailing spaces in newly appended raw taskkill cleanup lines; preserve those entries under user append-only journal rule, rather than rewriting history. Non-journal diff whitespace check passes. Journal helper now strips trailing whitespace on future appended messages. This is a journal transcript exception, not a C++ build/test failure.

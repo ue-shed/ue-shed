@@ -1,0 +1,570 @@
+{
+  "engine": "5.8",
+  "standInForegroundProcess": {
+    "handle": 131698,
+    "pid": 18488,
+    "title": "Search",
+    "minimized": false,
+    "visible": true
+  },
+  "clientPID": 42068,
+  "cases": [
+    {
+      "label": "visible-match",
+      "leaseResult": {
+        "hook": "ScenarioResult",
+        "utc": "2026-10-09T05:55:34.464Z",
+        "seconds": 17186558.152552,
+        "threadId": 45084,
+        "gameThread": true,
+        "action": "focus-lease",
+        "overrideActive": true,
+        "processHandleValid": true
+      },
+      "before": {
+        "hook": "Counts",
+        "utc": "2026-10-09T05:55:34.478Z",
+        "seconds": 17186558.1662057,
+        "threadId": 45084,
+        "gameThread": true,
+        "counts": {
+          "Mark": 2
+        },
+        "tablesWatched": 12,
+        "processPhysicalBytes": 3998941184,
+        "throttleCPUWhenNotForeground": true,
+        "appHasFocus": false,
+        "nativeForeground": false,
+        "effectiveShouldThrottle": false,
+        "unattended": false,
+        "foregroundProcessId": 18488,
+        "focusClientPID": 18488,
+        "focusProcessHandleValid": true,
+        "focusOverrideRegistered": true,
+        "focusLeaseDisablesThrottle": true,
+        "focusLeaseRemainingSeconds": 9.986349299550056,
+        "queueLength": 0,
+        "undoCount": 0,
+        "undoBytes": 0
+      },
+      "after": {
+        "hook": "Counts",
+        "utc": "2026-10-09T05:55:35.757Z",
+        "seconds": 17186559.4452247,
+        "threadId": 45084,
+        "gameThread": true,
+        "counts": {
+          "Mark": 2,
+          "TransactionState": 160,
+          "PackageDirtyStateChanged": 1,
+          "PackageMarkedDirty": 40,
+          "ObjectModified": 40,
+          "ObjectTransacted": 40
+        },
+        "tablesWatched": 12,
+        "processPhysicalBytes": 3968770048,
+        "throttleCPUWhenNotForeground": true,
+        "appHasFocus": false,
+        "nativeForeground": false,
+        "effectiveShouldThrottle": false,
+        "unattended": false,
+        "foregroundProcessId": 18488,
+        "focusClientPID": 18488,
+        "focusProcessHandleValid": true,
+        "focusOverrideRegistered": true,
+        "focusLeaseDisablesThrottle": true,
+        "focusLeaseRemainingSeconds": 9.658730998635292,
+        "queueLength": 40,
+        "undoCount": 0,
+        "undoBytes": 24553
+      },
+      "native": {
+        "editorPid": 41060,
+        "editorWindows": [
+          {
+            "handle": 11601550,
+            "pid": 41060,
+            "title": "UEShedFixture - Unreal Editor",
+            "minimized": false,
+            "visible": true
+          }
+        ],
+        "foreground": {
+          "handle": 131698,
+          "pid": 18488,
+          "title": "Search",
+          "minimized": false,
+          "visible": true
+        },
+        "editorForeground": false
+      },
+      "stats": {
+        "noop": {
+          "n": 40,
+          "p50": 6.65250001475215,
+          "p95": 30.339699995238334,
+          "max": 32.410699990577996
+        },
+        "one": {
+          "n": 40,
+          "p50": 10.504300007596612,
+          "p95": 27.497700008098036,
+          "max": 34.68570002587512
+        }
+      }
+    },
+    {
+      "label": "minimized-no-lease",
+      "leaseResult": {
+        "hook": "ScenarioResult",
+        "utc": "2026-10-09T05:55:35.838Z",
+        "seconds": 17186559.5255103,
+        "threadId": 45084,
+        "gameThread": true,
+        "action": "focus-lease",
+        "overrideActive": false,
+        "processHandleValid": false
+      },
+      "before": {
+        "hook": "Counts",
+        "utc": "2026-10-09T05:55:36.172Z",
+        "seconds": 17186559.8599269,
+        "threadId": 45084,
+        "gameThread": true,
+        "counts": {
+          "Mark": 3,
+          "TransactionState": 160,
+          "PackageDirtyStateChanged": 1,
+          "PackageMarkedDirty": 40,
+          "ObjectModified": 40,
+          "ObjectTransacted": 40
+        },
+        "tablesWatched": 12,
+        "processPhysicalBytes": 3968823296,
+        "throttleCPUWhenNotForeground": true,
+        "appHasFocus": false,
+        "nativeForeground": false,
+        "effectiveShouldThrottle": true,
+        "unattended": false,
+        "foregroundProcessId": 18488,
+        "focusClientPID": 0,
+        "focusProcessHandleValid": false,
+        "focusOverrideRegistered": true,
+        "focusLeaseDisablesThrottle": false,
+        "focusLeaseRemainingSeconds": 0,
+        "queueLength": 40,
+        "undoCount": 0,
+        "undoBytes": 24553
+      },
+      "after": {
+        "hook": "Counts",
+        "utc": "2026-10-09T05:56:03.172Z",
+        "seconds": 17186586.8599042,
+        "threadId": 45084,
+        "gameThread": true,
+        "counts": {
+          "Mark": 3,
+          "TransactionState": 320,
+          "PackageDirtyStateChanged": 1,
+          "PackageMarkedDirty": 80,
+          "ObjectModified": 80,
+          "ObjectTransacted": 80
+        },
+        "tablesWatched": 12,
+        "processPhysicalBytes": 3857330176,
+        "throttleCPUWhenNotForeground": true,
+        "appHasFocus": false,
+        "nativeForeground": false,
+        "effectiveShouldThrottle": true,
+        "unattended": false,
+        "foregroundProcessId": 18488,
+        "focusClientPID": 0,
+        "focusProcessHandleValid": false,
+        "focusOverrideRegistered": true,
+        "focusLeaseDisablesThrottle": false,
+        "focusLeaseRemainingSeconds": 0,
+        "queueLength": 80,
+        "undoCount": 0,
+        "undoBytes": 49073
+      },
+      "native": {
+        "editorPid": 41060,
+        "editorWindows": [
+          {
+            "handle": 11601550,
+            "pid": 41060,
+            "title": "UEShedFixture - Unreal Editor",
+            "minimized": true,
+            "visible": true
+          }
+        ],
+        "foreground": {
+          "handle": 131698,
+          "pid": 18488,
+          "title": "Search",
+          "minimized": false,
+          "visible": true
+        },
+        "editorForeground": false
+      },
+      "stats": {
+        "noop": {
+          "n": 40,
+          "p50": 330.82849998027086,
+          "p95": 331.1735999886878,
+          "max": 333.12079997267574
+        },
+        "one": {
+          "n": 40,
+          "p50": 335.0222000153735,
+          "p95": 335.4316999902949,
+          "max": 335.7484000152908
+        }
+      }
+    },
+    {
+      "label": "minimized-match",
+      "leaseResult": {
+        "hook": "ScenarioResult",
+        "utc": "2026-10-09T05:56:03.839Z",
+        "seconds": 17186587.5266203,
+        "threadId": 45084,
+        "gameThread": true,
+        "action": "focus-lease",
+        "overrideActive": true,
+        "processHandleValid": true
+      },
+      "before": {
+        "hook": "Counts",
+        "utc": "2026-10-09T05:56:03.862Z",
+        "seconds": 17186587.5502331,
+        "threadId": 45084,
+        "gameThread": true,
+        "counts": {
+          "Mark": 4,
+          "TransactionState": 320,
+          "PackageDirtyStateChanged": 1,
+          "PackageMarkedDirty": 80,
+          "ObjectModified": 80,
+          "ObjectTransacted": 80
+        },
+        "tablesWatched": 12,
+        "processPhysicalBytes": 3857395712,
+        "throttleCPUWhenNotForeground": true,
+        "appHasFocus": false,
+        "nativeForeground": false,
+        "effectiveShouldThrottle": false,
+        "unattended": false,
+        "foregroundProcessId": 18488,
+        "focusClientPID": 18488,
+        "focusProcessHandleValid": true,
+        "focusOverrideRegistered": true,
+        "focusLeaseDisablesThrottle": true,
+        "focusLeaseRemainingSeconds": 9.976394400000572,
+        "queueLength": 80,
+        "undoCount": 0,
+        "undoBytes": 49073
+      },
+      "after": {
+        "hook": "Counts",
+        "utc": "2026-10-09T05:56:05.621Z",
+        "seconds": 17186589.3083437,
+        "threadId": 45084,
+        "gameThread": true,
+        "counts": {
+          "Mark": 4,
+          "TransactionState": 480,
+          "PackageDirtyStateChanged": 1,
+          "PackageMarkedDirty": 120,
+          "ObjectModified": 120,
+          "ObjectTransacted": 120
+        },
+        "tablesWatched": 12,
+        "processPhysicalBytes": 3859030016,
+        "throttleCPUWhenNotForeground": true,
+        "appHasFocus": false,
+        "nativeForeground": false,
+        "effectiveShouldThrottle": false,
+        "unattended": false,
+        "foregroundProcessId": 18488,
+        "focusClientPID": 18488,
+        "focusProcessHandleValid": true,
+        "focusOverrideRegistered": true,
+        "focusLeaseDisablesThrottle": true,
+        "focusLeaseRemainingSeconds": 9.542480301111937,
+        "queueLength": 120,
+        "undoCount": 0,
+        "undoBytes": 73593
+      },
+      "native": {
+        "editorPid": 41060,
+        "editorWindows": [
+          {
+            "handle": 11601550,
+            "pid": 41060,
+            "title": "UEShedFixture - Unreal Editor",
+            "minimized": true,
+            "visible": true
+          }
+        ],
+        "foreground": {
+          "handle": 131698,
+          "pid": 18488,
+          "title": "Search",
+          "minimized": false,
+          "visible": true
+        },
+        "editorForeground": false
+      },
+      "stats": {
+        "noop": {
+          "n": 40,
+          "p50": 16.42050000373274,
+          "p95": 31.249099993146956,
+          "max": 31.43650002311915
+        },
+        "one": {
+          "n": 40,
+          "p50": 18.40569998603314,
+          "p95": 34.97659997083247,
+          "max": 35.05820001009852
+        }
+      }
+    },
+    {
+      "label": "minimized-release",
+      "leaseResult": {
+        "hook": "ScenarioResult",
+        "utc": "2026-10-09T05:56:08.397Z",
+        "seconds": 17186592.0852062,
+        "threadId": 45084,
+        "gameThread": true,
+        "action": "focus-lease",
+        "overrideActive": false,
+        "processHandleValid": false
+      },
+      "before": {
+        "hook": "Counts",
+        "utc": "2026-10-09T05:56:08.731Z",
+        "seconds": 17186592.4183378,
+        "threadId": 45084,
+        "gameThread": true,
+        "counts": {
+          "Mark": 5,
+          "TransactionState": 480,
+          "PackageDirtyStateChanged": 1,
+          "PackageMarkedDirty": 120,
+          "ObjectModified": 120,
+          "ObjectTransacted": 120
+        },
+        "tablesWatched": 12,
+        "processPhysicalBytes": 3858907136,
+        "throttleCPUWhenNotForeground": true,
+        "appHasFocus": false,
+        "nativeForeground": false,
+        "effectiveShouldThrottle": true,
+        "unattended": false,
+        "foregroundProcessId": 18488,
+        "focusClientPID": 0,
+        "focusProcessHandleValid": false,
+        "focusOverrideRegistered": true,
+        "focusLeaseDisablesThrottle": false,
+        "focusLeaseRemainingSeconds": 0,
+        "queueLength": 120,
+        "undoCount": 0,
+        "undoBytes": 73593
+      },
+      "after": {
+        "hook": "Counts",
+        "utc": "2026-10-09T05:56:35.731Z",
+        "seconds": 17186619.4182786,
+        "threadId": 45084,
+        "gameThread": true,
+        "counts": {
+          "Mark": 5,
+          "TransactionState": 640,
+          "PackageDirtyStateChanged": 1,
+          "PackageMarkedDirty": 160,
+          "ObjectModified": 160,
+          "ObjectTransacted": 160
+        },
+        "tablesWatched": 12,
+        "processPhysicalBytes": 3860750336,
+        "throttleCPUWhenNotForeground": true,
+        "appHasFocus": false,
+        "nativeForeground": false,
+        "effectiveShouldThrottle": true,
+        "unattended": false,
+        "foregroundProcessId": 18488,
+        "focusClientPID": 0,
+        "focusProcessHandleValid": false,
+        "focusOverrideRegistered": true,
+        "focusLeaseDisablesThrottle": false,
+        "focusLeaseRemainingSeconds": 0,
+        "queueLength": 160,
+        "undoCount": 0,
+        "undoBytes": 98113
+      },
+      "native": {
+        "editorPid": 41060,
+        "editorWindows": [
+          {
+            "handle": 11601550,
+            "pid": 41060,
+            "title": "UEShedFixture - Unreal Editor",
+            "minimized": true,
+            "visible": true
+          }
+        ],
+        "foreground": {
+          "handle": 131698,
+          "pid": 18488,
+          "title": "Search",
+          "minimized": false,
+          "visible": true
+        },
+        "editorForeground": false
+      },
+      "stats": {
+        "noop": {
+          "n": 40,
+          "p50": 330.7111000176519,
+          "p95": 331.0817999881692,
+          "max": 332.99810002790764
+        },
+        "one": {
+          "n": 40,
+          "p50": 335.11549996910617,
+          "p95": 335.84670000709593,
+          "max": 336.6038999520242
+        }
+      }
+    }
+  ],
+  "mismatchedForeground": {
+    "hook": "Counts",
+    "utc": "2026-10-09T05:56:05.971Z",
+    "seconds": 17186589.6599045,
+    "threadId": 45084,
+    "gameThread": true,
+    "counts": {
+      "Mark": 4,
+      "TransactionState": 480,
+      "PackageDirtyStateChanged": 1,
+      "PackageMarkedDirty": 120,
+      "ObjectModified": 120,
+      "ObjectTransacted": 120
+    },
+    "tablesWatched": 12,
+    "processPhysicalBytes": 3859140608,
+    "throttleCPUWhenNotForeground": true,
+    "appHasFocus": false,
+    "nativeForeground": false,
+    "effectiveShouldThrottle": true,
+    "unattended": false,
+    "foregroundProcessId": 18488,
+    "focusClientPID": 42068,
+    "focusProcessHandleValid": true,
+    "focusOverrideRegistered": true,
+    "focusLeaseDisablesThrottle": false,
+    "focusLeaseRemainingSeconds": 9.66595819965005,
+    "queueLength": 120,
+    "undoCount": 0,
+    "undoBytes": 73593
+  },
+  "expiry": {
+    "live": {
+      "hook": "Counts",
+      "utc": "2026-10-09T05:56:06.329Z",
+      "seconds": 17186590.016705,
+      "threadId": 45084,
+      "gameThread": true,
+      "counts": {
+        "Mark": 4,
+        "TransactionState": 480,
+        "PackageDirtyStateChanged": 1,
+        "PackageMarkedDirty": 120,
+        "ObjectModified": 120,
+        "ObjectTransacted": 120
+      },
+      "tablesWatched": 12,
+      "processPhysicalBytes": 3859144704,
+      "throttleCPUWhenNotForeground": true,
+      "appHasFocus": false,
+      "nativeForeground": false,
+      "effectiveShouldThrottle": false,
+      "unattended": false,
+      "foregroundProcessId": 18488,
+      "focusClientPID": 18488,
+      "focusProcessHandleValid": true,
+      "focusOverrideRegistered": true,
+      "focusLeaseDisablesThrottle": true,
+      "focusLeaseRemainingSeconds": 0.7267894968390465,
+      "queueLength": 120,
+      "undoCount": 0,
+      "undoBytes": 73593
+    },
+    "after": {
+      "hook": "Counts",
+      "utc": "2026-10-09T05:56:07.730Z",
+      "seconds": 17186591.4183627,
+      "threadId": 45084,
+      "gameThread": true,
+      "counts": {
+        "Mark": 4,
+        "TransactionState": 480,
+        "PackageDirtyStateChanged": 1,
+        "PackageMarkedDirty": 120,
+        "ObjectModified": 120,
+        "ObjectTransacted": 120
+      },
+      "tablesWatched": 12,
+      "processPhysicalBytes": 3858882560,
+      "throttleCPUWhenNotForeground": true,
+      "appHasFocus": false,
+      "nativeForeground": false,
+      "effectiveShouldThrottle": true,
+      "unattended": false,
+      "foregroundProcessId": 18488,
+      "focusClientPID": 18488,
+      "focusProcessHandleValid": true,
+      "focusOverrideRegistered": true,
+      "focusLeaseDisablesThrottle": false,
+      "focusLeaseRemainingSeconds": 0,
+      "queueLength": 120,
+      "undoCount": 0,
+      "undoBytes": 73593
+    }
+  },
+  "removed": {
+    "hook": "Counts",
+    "utc": "2026-10-09T05:56:36.397Z",
+    "seconds": 17186620.0852337,
+    "threadId": 45084,
+    "gameThread": true,
+    "counts": {
+      "Mark": 5,
+      "TransactionState": 640,
+      "PackageDirtyStateChanged": 1,
+      "PackageMarkedDirty": 160,
+      "ObjectModified": 160,
+      "ObjectTransacted": 160
+    },
+    "tablesWatched": 12,
+    "processPhysicalBytes": 3860754432,
+    "throttleCPUWhenNotForeground": true,
+    "appHasFocus": false,
+    "nativeForeground": false,
+    "effectiveShouldThrottle": true,
+    "unattended": false,
+    "foregroundProcessId": 18488,
+    "focusClientPID": 0,
+    "focusProcessHandleValid": false,
+    "focusOverrideRegistered": false,
+    "focusLeaseDisablesThrottle": false,
+    "focusLeaseRemainingSeconds": 0,
+    "queueLength": 160,
+    "undoCount": 0,
+    "undoBytes": 98113
+  }
+}

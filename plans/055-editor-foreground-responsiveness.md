@@ -14,9 +14,8 @@
 
 ## Status
 
-- **State**: IN PROGRESS. Phases 1–6 are done on `feat/editor-foreground-responsiveness`. Open:
-  owner confirmation of the assumed decisions, and a first-wake measurement with a real foreground
-  switch, which this machine's desktop blocked (Phase 5).
+- **State**: IN PROGRESS. Phases 1–6 are done on `feat/editor-foreground-responsiveness`, including
+  real foreground switches on UE 5.7 and 5.8. Open: owner confirmation of the assumed decisions.
 - **Priority**: P1
 - **Effort**: L
 - **Risk**: MEDIUM. The Unreal side runs inside every connected editor's frame loop and holds
@@ -218,11 +217,45 @@ So, as in T15, the "client foreground" lease named `SearchHost` (the actual fore
 opened with the minimal rights) and the "not foreground" lease named a live, visible harness
 window process. The state held in every check on both engines.
 
-First wake: **not exercised.** No foreground change could be produced. Acquiring a lease while
-throttled took 333.6 ms (5.7) and 333.5 ms (5.8), the T15 cost; the first request after that
-grant took 8.7 ms and 8.2 ms. Source analysis (Engine facts above) predicts the remaining
-throttled frame, 0–333 ms, for the first request after a real switch with the lease held, not
-about 5 ms; it still needs measuring on an interactive desktop.
+First wake (real switches, 2026-10-09, both engines). The desktop's Windows Search flyout held the
+foreground at first; the harness pressed Escape once, clicked a stand-in once, and from then on
+stand-ins handed the foreground to each other with `AllowSetForegroundWindow` and
+`SetForegroundWindow`, as real applications do. Each round: stand-in B in front for a random
+1.2–1.54 s (so the switch lands at a random point in a throttled frame), switch to stand-in A, then
+two sequential no-op requests; samples where another app took the foreground were discarded (none
+were). 30 rounds each, ms:
+
+| Engine | Lease for A | First request after switch p50 / p95 / range | Second request p50 / max |
+| ------ | ----------- | -------------------------------------------- | ------------------------ |
+| 5.7    | held        | 133.1 / 311.9 / 5.6–321.9                    | 16.1 / 24.7              |
+| 5.7    | none        | 125.2 / 305.9 / 3.2–328.9                    | 333.4 / 415.6            |
+| 5.8    | held        | 156.0 / 327.4 / 7.2–329.1                    | 15.6 / 32.7              |
+| 5.8    | none        | 169.6 / 297.8 / 17.6–303.4                   | 333.3 / 334.8            |
+
+So the first request after the switch waits for the rest of the current throttled frame whether or
+not a lease is held, as the source predicted; the lease makes every later request fast. A fixed
+1.2 s delay first phase-locked the switch to the renewal reply (which returns on a frame boundary)
+and gave a misleading 96–115 ms; the random delay fixed that. The real-switch steady-state cases
+matched the stand-in tables above (5.7: 7.1–15.0 ms no-op p50 with the leaseholder in front).
+
+Camera screenshot capture (`editor_viewport` / `high_resolution_screenshot`, 320×180, 4 settling
+frames, fixture map), the reason hosts brought Unreal to the front:
+
+| Editor state                                | 5.7 frame ms | 5.8 frame ms | Mean RGB (5.7)      |
+| ------------------------------------------- | ------------ | ------------ | ------------------- |
+| Behind, no lease                            | 2,076.8      | 2,078.6      | 99.5, 107.5, 118.7  |
+| Behind, lease, client in front              | 107.7        | 169.5        | 99.5, 107.5, 118.7  |
+| Behind, lease, client not in front          | 1,720.4      | 1,721.9      | 99.5, 107.5, 118.7  |
+| Minimised, lease, client in front           | 125.8        | 102.5        | 99.5, 107.5, 118.7  |
+| Minimised, no lease                         | 1,708.0      | 1,711.0      | 99.5, 107.5, 118.7  |
+| Unreal focused (control, window activation) | 154.2        | 130.0        | 100.7, 108.6, 119.6 |
+
+Every capture completed, including minimised without a lease: the capture never needed Unreal in
+front, it was only throttled. The lease brings background captures to focused speed. Background
+captures are identical to each other and about 1% darker than the focused one, consistent with the
+editor's "Background Process" non-realtime viewport override (it follows `FApp::HasFocus`, not the
+throttle), which the lease does not change; `RequestRealTimeFrames` during settling is a possible
+follow-up. An earlier source-only prediction that a minimised editor would never capture was wrong.
 
 Workbench: the built app, started with a throwaway `--user-data-dir` against each live editor,
 held one lease within seconds. Its only top-level window belongs to the Electron main process
@@ -255,7 +288,6 @@ Contract document; Workbench behaviour and setting in `docs/showcase.md` and
   before a saved "off" is known.
 - The engine service re-acquires after a lost lease or a restarted editor instead of failing; only
   the first acquire fails.
-- First wake with a real foreground switch was not measured (Phase 5).
 
 ## Verification matrix
 

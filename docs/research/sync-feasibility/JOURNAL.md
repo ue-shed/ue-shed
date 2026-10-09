@@ -13,3 +13,5 @@
 - 2026-10-09T09:32:21.664477+07:00 Housekeeping: Python import generated a pyc inadvertently staged in T04. Removed it, added probe-local __pycache__ ignore, and amended that research commit so no binary remains in branch history.
 
 - 2026-10-09T09:33:46.710828+07:00 T05 complete source-only: in-memory translation display/resource update APIs present in both engines; persistence/compile separate. String Table native editor transaction observed in source, local refresh does not emit property event. Automatic checkout in private TranslationDataManager is unsuitable for UE Shed policy. Next T06.
+
+- 2026-10-09T09:36:07.046277+07:00 T06 complete: source lifecycle map, five AuthoringCommand variants, shared-open versus unsafe cross-process updates, camera mechanism classification/LOC, UI-memory localization staging documented. Phase A complete; next throwaway probe build T07.

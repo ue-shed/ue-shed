@@ -1,0 +1,13 @@
+path,physical_lines
+packages/authoring/src/session-service.ts,1268
+packages/authoring/src/draft.ts,769
+packages/authoring/src/live.ts,347
+packages/protocol/src/authoring.ts,602
+packages/cameras/src/camera-authoring-store.ts,512
+packages/cameras/src/camera-authoring-bridge.ts,505
+packages/cameras/src/camera-authoring-panel.ts,481
+apps/workbench/src/main/services/camera-workspace.ts,442
+unreal/Plugins/UEShedCameraAuthoringBridge/Source/UEShedCameraAuthoringBridge/Private/UEShedCameraAuthoringBridge.cpp,1019
+apps/workbench/src/main/services/game-text-localization.ts,714
+packages/game-text/src/localization-edits.ts,115
+extensions/game-text/src/game-text-translation-edits.tsx,446

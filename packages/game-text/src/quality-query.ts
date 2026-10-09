@@ -265,7 +265,7 @@ export function textQualityQuery(report: TextQualityReport): TextQualityQuery {
 		characterBudgetCount: indexed.filter(({ finding }) => finding.kind === "character_budget")
 			.length,
 		coverage: report.coverage,
-		diagnosticCount: report.diagnostics.length,
+		diagnosticCount: report.diagnosticCount,
 		findingCount: indexed.length,
 		roles: report.roles,
 		rules: report.rules,

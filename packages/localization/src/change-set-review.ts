@@ -81,13 +81,9 @@ export function reviewLocalizationChangeSet(
 		if (source === undefined) return review("not_in_manifest");
 		if (source !== change.source) return review("stale_source");
 		const document = culture.po.value;
-		const po = document.blocks.find(
-			(block) =>
-				block.kind === "entry" &&
-				block.entry?.identity !== null &&
-				block.entry?.identity !== undefined &&
-				same(block.entry.identity, identity)
-		)?.entry;
+		const po = document.entries.find(
+			(entry) => entry.identity !== null && same(entry.identity, identity)
+		);
 		const archive =
 			culture.archive.status === "read"
 				? (culture.archive.value.entries.find((entry) => same(entry, identity))?.translation

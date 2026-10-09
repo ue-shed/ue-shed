@@ -512,7 +512,10 @@ export const WorkbenchGameTextLive = Layer.effect(
 
 		const focus = Effect.fn("Workbench.WorkbenchGameText.focus")(
 			(request: TextCorpusFocusRequest) =>
-				currentModel(queryModel).pipe(
+				(request.localization
+					? localization.targetQuery(request.localization.target)
+					: currentModel(queryModel)
+				).pipe(
 					Effect.map((model) => {
 						if (model === undefined) return { status: "not_ready" as const };
 						const result = model.focus(request);
@@ -897,7 +900,10 @@ export const WorkbenchGameTextLive = Layer.effect(
 								format === "json"
 									? JSON.stringify(document, null, "\t") + "\n"
 									: document.result.mode === "corpus"
-										? gameTextCsv(document.result.corpus, corpus)
+										? gameTextCsv(
+												{ ...corpus, units: document.result.corpus.units },
+												corpus
+											)
 										: gameTextQualityCsv(document.result.report, corpus),
 							extension: format,
 							rowCount:

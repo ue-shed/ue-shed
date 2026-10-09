@@ -13,6 +13,7 @@ import {
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { Context, Effect, Layer, Result, Schema } from "effect";
 import { localizationError, validate } from "./decode.js";
+import { resolveLocalizationGatherPath } from "./gather-path.js";
 import { FileProvenance, LocalizationError, type LocalizationLimits } from "./schema.js";
 
 export const LocalizationFileRead = Schema.Struct({
@@ -83,7 +84,8 @@ const projectPath = Effect.fn("LocalizationFileAccess.projectPath")(function* (
 	path: string
 ) {
 	// Output paths remain project-relative. Neither traversal nor symlinks grant outside authority.
-	const normalized = path.replace(/^%LOCPROJECTROOT%[/\\]?/iu, "");
+	const resolved = resolveLocalizationGatherPath(path);
+	const normalized = resolved.root === "project" ? resolved.path : path;
 	if (isAbsolute(normalized) || normalized.includes("\u0000") || normalized.includes("%"))
 		return yield* Effect.fail(localizationError("unsafe_path"));
 	const base = resolve(root);

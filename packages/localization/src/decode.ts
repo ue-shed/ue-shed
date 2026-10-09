@@ -1,4 +1,4 @@
-import { Result, Schema } from "effect";
+import { Predicate, Result, Schema } from "effect";
 import { defaultLocalizationLimits, LocalizationError, LocalizationLimits } from "./schema.js";
 
 export function localizationError(code: LocalizationError["code"]): LocalizationError {
@@ -92,7 +92,8 @@ function checkJsonNesting(text: string, limits: LocalizationLimits): void {
 	let depth = 0;
 	let quoted = false;
 	let escaped = false;
-	for (const character of text) {
+	for (let index = 0; index < text.length; index++) {
+		const character = text[index];
 		if (quoted) {
 			if (escaped) escaped = false;
 			else if (character === "\\") escaped = true;
@@ -133,7 +134,7 @@ export function checkDepth(value: Schema.Json, limits: LocalizationLimits): void
 		const item = pending.pop();
 		if (item === undefined) break;
 		if (item.depth > limits.maxDepth) throw localizationError("limit_exceeded");
-		if (Schema.is(Schema.ObjectKeyword)(item.value)) {
+		if (Predicate.isObjectKeyword(item.value)) {
 			for (const child of Object.values(item.value)) {
 				pending.push({ value: child, depth: item.depth + 1 });
 			}
@@ -143,8 +144,12 @@ export function checkDepth(value: Schema.Json, limits: LocalizationLimits): void
 
 /** Freeze ordinary decoded values, including opaque metadata, without exposing mutable lists. */
 export function immutable<A>(value: A): A {
-	if (Schema.is(Schema.ObjectKeyword)(value) && !Object.isFrozen(value)) {
-		for (const child of Object.values(value)) immutable(child);
+	if (Predicate.isObjectKeyword(value) && !Object.isFrozen(value)) {
+		if (Array.isArray(value)) {
+			for (const child of value) immutable(child);
+		} else {
+			for (const child of Object.values(value)) immutable(child);
+		}
 		Object.freeze(value);
 	}
 	return value;

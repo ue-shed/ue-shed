@@ -40,19 +40,24 @@ export function GameTextResultRows(props: {
 		const page = props.page;
 		if (!page) return [];
 		if (!page.localization) return page.units.map((unit) => ({ unit, line: undefined }));
-		const units = new Map(page.units.map((unit) => [unit.id, unit]));
-		return page.localization.lines.map((line) => ({
-			line,
-			unit:
-				line.origin.kind === "corpus"
-					? line.origin.unitIds.map((id) => units.get(id)).find(Boolean)
-					: undefined
-		}));
+		// Query previews follow corpus lines in order; two lines can share a saved unit ID, so a
+		// preview is taken in turn, and only by a line it belongs to.
+		let next = 0;
+		return page.localization.lines.map((line) => {
+			const unit = page.units[next];
+			const owned =
+				line.origin.kind === "corpus" &&
+				unit !== undefined &&
+				line.origin.unitIds.includes(unit.id);
+			if (owned) next++;
+			return { line, unit: owned ? unit : undefined };
+		});
 	};
 	const selected = (row: ResultRow) =>
 		row.line
-			? row.line.id === props.selectedLocalizationId ||
-				(row.unit !== undefined && row.unit.id === props.selectedId)
+			? props.selectedLocalizationId !== undefined
+				? row.line.id === props.selectedLocalizationId
+				: row.unit !== undefined && row.unit.id === props.selectedId
 			: row.unit !== undefined && row.unit.id === props.selectedId;
 	return (
 		<For each={rows()}>

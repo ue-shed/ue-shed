@@ -138,7 +138,16 @@ it.effect("reports a typed failure for an unavailable project root", () =>
 	}).pipe(Effect.provide(LocalizationEvidenceNodeLive))
 );
 
-it.effect("caps total target entries and keeps per-file limit failures with provenance", () =>
+it("defaults to larger per-file limits and a bounded target file count", () => {
+	expect(defaultLocalizationLimits).toEqual({
+		maxFileBytes: 320 * 1024 * 1024,
+		maxEntries: 1_000_000,
+		maxDepth: 64,
+		maxFiles: 2_560
+	});
+});
+
+it.effect("reads files whose combined entries exceed the per-file limit", () =>
 	Effect.gen(function* () {
 		const reader = yield* LocalizationEvidence;
 		const discovery = yield* reader.discover({ projectRoot: legacyRoot });
@@ -150,7 +159,37 @@ it.effect("caps total target entries and keeps per-file limit failures with prov
 			limits: { ...defaultLocalizationLimits, maxEntries: 20 }
 		});
 		expect(evidence.manifest.status).toBe("read");
-		expect(evidence.cultures.at(-1)?.po).toMatchObject({
+		let total =
+			evidence.manifest.status === "read" ? evidence.manifest.value.entries.length : 0;
+		for (const culture of evidence.cultures) {
+			expect(culture.archive.status).toBe("read");
+			expect(culture.po.status).toBe("read");
+			if (culture.archive.status === "read") {
+				expect(culture.archive.value.entries.length).toBeLessThanOrEqual(20);
+				total += culture.archive.value.entries.length;
+			}
+			if (culture.po.status === "read") {
+				const entries = culture.po.value.entries;
+				expect(entries.length).toBeLessThanOrEqual(20);
+				total += entries.length;
+			}
+		}
+		expect(total).toBeGreaterThan(20);
+	}).pipe(Effect.provide(LocalizationEvidenceNodeLive))
+);
+
+it.effect("keeps a single file's entry limit failure with provenance", () =>
+	Effect.gen(function* () {
+		const reader = yield* LocalizationEvidence;
+		const discovery = yield* reader.discover({ projectRoot: legacyRoot });
+		const target = discovery.targets[0];
+		if (target === undefined) throw new Error("Fixture target missing.");
+		const evidence = yield* reader.read({
+			projectRoot: legacyRoot,
+			target,
+			limits: { ...defaultLocalizationLimits, maxEntries: 1 }
+		});
+		expect(evidence.manifest).toMatchObject({
 			status: "failed",
 			error: { code: "limit_exceeded" },
 			provenance: { size: expect.any(Number) }

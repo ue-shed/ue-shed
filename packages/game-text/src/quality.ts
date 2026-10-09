@@ -1,3 +1,4 @@
+import { textCorpusDiagnosticSummary } from "./corpus-summary.js";
 import type { TextCorpus, TextLocation, TextOccurrence, TextUnit } from "./schema.js";
 import { hasSearchableSource } from "./search.js";
 import type {
@@ -194,7 +195,7 @@ export function evaluateTextQuality(
 
 	return {
 		coverage: corpus.coverage,
-		diagnostics: corpus.diagnostics,
+		...textCorpusDiagnosticSummary(corpus.diagnostics),
 		findings,
 		roles: roles.map((role) => {
 			const matchedUnits = units.filter((unit) =>

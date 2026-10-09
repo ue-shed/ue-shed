@@ -29,10 +29,10 @@ import {
 	Stream
 } from "effect";
 
-export const MAX_PROTOCOL_OUTPUT_BYTES = 1024 * 1024 * 1024;
+export const MAX_PROTOCOL_OUTPUT_BYTES = 10 * 1024 * 1024 * 1024;
 export const MAX_CAPTURED_STDERR_BYTES = 64 * 1024 * 1024;
 export const DEFAULT_TIMEOUT_MS = 30_000;
-export const DEFAULT_CATALOG_TIMEOUT_MS = 5 * 60_000;
+export const DEFAULT_CATALOG_TIMEOUT_MS = 50 * 60_000;
 
 export const assetReaderQueueDuration = Metric.histogram("ue_shed_asset_reader_queue_duration_ms", {
 	boundaries: [0, 1, 5, 10, 25, 50, 100, 250, 1_000, 5_000],

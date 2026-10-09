@@ -1,5 +1,6 @@
 import {
 	emptyLocalizationReviewFile,
+	localizationEvidenceFingerprint,
 	updateLocalizationReviewFile,
 	type LocalizationReviewFile,
 	type LocalizationReviewFlag
@@ -18,6 +19,7 @@ import {
 	corpus,
 	cultureCode,
 	evidence,
+	ftextUnit,
 	manifestEntry,
 	poDocument,
 	target,
@@ -61,6 +63,20 @@ const stateOf = (file: LocalizationReviewFile, key: string, join = base) =>
 		?.cultures.find((culture) => culture.culture === de)?.review;
 
 describe("localization review state", () => {
+	it("uses the gathered identity for saved package namespaces and evidence fingerprints", () => {
+		const saved = corpus([ftextUnit("K", "Source", "Content/Text/Table.uasset", "NS [PKG]")]);
+		const joined = joinLocalizationTarget(saved, files);
+		const line = joined.lines.find((item) => item.identity?.key === "K");
+		const culture = line?.cultures.find((item) => item.culture === de);
+		if (!line?.identity || !culture) throw new Error("Missing fixture line.");
+		expect(localizationLineFingerprint(line, culture)).toBe(
+			localizationEvidenceFingerprint(files, de, line.identity)
+		);
+		const file = reviewOf("K", ["reviewed"], joined);
+		expect(file.records[0]?.namespace).toBe("NS");
+		expect(stateOf(file, "K", joined)?.status).toBe("current");
+	});
+
 	it("is current for the reviewed text and changed when the translation or source moves on", () => {
 		const file = reviewOf("K", ["reviewed", "proofread"]);
 		expect(stateOf(file, "K")).toMatchObject({

@@ -66,7 +66,7 @@ measurement, then records `readerBuild: "performed"`; setup time is excluded fro
 selects a prebuilt native artifact while still rebuilding the TypeScript package, and records
 `readerBuild: "skipped"`.
 
-The paired TypeScript/native legacy protocol uses a 1 GiB cumulative output ceiling. This remains a
+The paired TypeScript/native legacy protocol uses a 10 GiB cumulative output ceiling. This remains a
 finite compatibility guard for generic v1 scans, not a target payload size; the bounded Project
 Index operations are expected to remain far below it. Individual protocol frames remain measured
 separately so a large cumulative result is not confused with one oversized frame.

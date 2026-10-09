@@ -106,7 +106,11 @@ synthesized.
 
 `localizationStatusReport` exposes schema-versioned counts, coverage, file provenance and diagnostics.
 State counts and source word counts intersect every search filter, including the state filter,
-before pagination. Every culture receives zero counts when no lines match.
+before pagination. Every culture receives zero counts when no lines match. Diagnostics are capped at 200, with
+`diagnosticCount`, `diagnosticCounts` by code and `diagnosticsOmitted` retaining whole-scan totals.
+`packageCoverage` contains `counts` by status, at most 200 non-complete `packages`, and `omitted`.
+Progress reports share both bounds; quality reports and investigations share the diagnostic bound.
+`--limit` controls only the matching-line page. `text scan` returns the entire corpus by design.
 
 ```sh
 ue-shed loc status <project-root> --target <name> [--culture <c>] [--state <s>] [--limit 50]
@@ -121,8 +125,7 @@ the saved-package reader. These surfaces never write project files or run locali
 `checkLocalizationTarget(corpus, joined, evidence, options?, ruleDocument?)` is browser-safe and
 pure. It returns `LocalizationQualityReport`, an additive variant of the existing quality report
 with culture and identity findings, structured evidence, saved occurrences, manifest locations,
-file provenance/diagnostics and unchanged corpus coverage. Existing source-quality reports retain
-their contract. Gathered-only findings have empty saved-occurrence lists and evidence line IDs.
+file provenance/diagnostics and unchanged corpus coverage. Source-quality reports share the bounded corpus diagnostics and their totals. Gathered-only findings have empty saved-occurrence lists and evidence line IDs.
 
 The checks are `format_arguments`, `argument_modifiers`, `rich_text`, `po_escape_safety`,
 `whitespace`, `empty_translation`, `missing_translator_notes`, and `duplicate_source`. Pass

@@ -1,9 +1,11 @@
+import { textCorpusDiagnosticSummary } from "./corpus-summary.js";
 import type {
 	LocalizationChangeSet,
 	LocalizationTargetEvidence
 } from "@ue-shed/localization/browser";
 import { LocalizationCheckId } from "./localization-check-ids.js";
 import { localizationManifestNotes } from "./localization.js";
+import { localizationLineUnits } from "./gathered-text.js";
 import {
 	GameTextLocalizationError,
 	type LocalizationJoin,
@@ -178,13 +180,7 @@ export function checkLocalizationTarget(
 				});
 		}
 		if (!line.identity || line.source.trim().length === 0) continue;
-		const units =
-			line.origin.kind === "corpus"
-				? line.origin.unitIds.flatMap((id) => {
-						const unit = byUnit.get(id);
-						return unit ? [unit] : [];
-					})
-				: [];
+		const units = localizationLineUnits(line, byUnit);
 		const affectedOccurrences: TextQualityAffectedOccurrence[] = units
 			.flatMap((unit) =>
 				unit.occurrences.map((occurrence) => ({
@@ -446,7 +442,7 @@ export function checkLocalizationTarget(
 		ruleDocumentVersion: ruleDocument?.schemaVersion ?? 1,
 		status: corpus.status,
 		coverage: corpus.coverage,
-		diagnostics: corpus.diagnostics,
+		...textCorpusDiagnosticSummary(corpus.diagnostics),
 		target: join.target,
 		gatherEvidence: files,
 		findings: combined,

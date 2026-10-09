@@ -12,6 +12,7 @@ import {
 	investigationTable
 } from "@ue-shed/unreal-assets/investigation";
 import { TextCorpus, TextCorpusSearchRequest } from "./schema.js";
+import { TextCorpusReport, textCorpusReport } from "./corpus-summary.js";
 import { TextQualityReport } from "./quality-schema.js";
 import { textCorpusQuery, type TextCorpusQuery } from "./query.js";
 import { textQualityQuery, TextQualityFilter } from "./quality-query.js";
@@ -63,7 +64,7 @@ export const GameTextInvestigationExport = Schema.Struct({
 	preset: GameTextInvestigationPreset,
 	coverageScope: Schema.Literal("whole_scan"),
 	result: Schema.Union([
-		Schema.Struct({ mode: Schema.Literal("corpus"), corpus: TextCorpus }),
+		Schema.Struct({ mode: Schema.Literal("corpus"), corpus: TextCorpusReport }),
 		Schema.Struct({ mode: Schema.Literal("quality"), report: TextQualityReport })
 	])
 });
@@ -133,7 +134,7 @@ export function exportGameTextInvestigation(
 								evaluateGameTextSourceQuality(corpus, rules)
 							).export(preset.query.qualityFilter)
 						}
-					: { mode: "corpus", corpus: yield* corpusExport }
+					: { mode: "corpus", corpus: textCorpusReport(yield* corpusExport) }
 		} satisfies GameTextInvestigationExport;
 	});
 }

@@ -1,3 +1,9 @@
+import {
+	TextCorpusDiagnosticSummary,
+	TextPackageCoverageSummary,
+	textCorpusDiagnosticSummary,
+	textPackageCoverageSummary
+} from "./corpus-summary.js";
 import { Result, Schema } from "effect";
 import {
 	CultureCode,
@@ -8,10 +14,11 @@ import {
 	type ManifestEntry,
 	type LocalizationTargetEvidence
 } from "@ue-shed/localization/browser";
-import { TextCorpus, TextCorpusDiagnostic } from "./schema.js";
+import { TextCorpus } from "./schema.js";
 import {
 	LocalizationState,
 	LocalizationUnknownReason,
+	localizationManifestFailure,
 	type LocalizationJoin
 } from "./localization-schema.js";
 import { LocalizationFileStatus, localizationEvidenceFileStatuses } from "./localization-status.js";
@@ -55,6 +62,7 @@ export class LocalizationReportError extends Schema.TaggedErrorClass<Localizatio
 			"invalid_baseline",
 			"baseline_target_mismatch",
 			"missing_manifest",
+			"unreadable_manifest",
 			"ambiguous_manifest",
 			"word_count_unavailable",
 			"invalid_report_context"
@@ -71,6 +79,7 @@ function reportError(code: LocalizationReportError["code"]): LocalizationReportE
 			"Choose a baseline recorded for the selected localization target.",
 		missing_manifest:
 			"Run the target's Unreal gather configuration and refresh its manifest evidence.",
+		unreadable_manifest: "Repair the manifest evidence and retry.",
 		ambiguous_manifest:
 			"Resolve conflicting sources for duplicate identities in Unreal, then gather again.",
 		word_count_unavailable:
@@ -100,7 +109,14 @@ export function decodeLocalizationBaselineJson(
 }
 /** Deduplicate locations, exclude optional contexts, and reject conflicting sources per identity. */
 function manifestEntries(evidence: LocalizationTargetEvidence): readonly ManifestEntry[] {
-	if (evidence.manifest.status !== "read") throw reportError("missing_manifest");
+	if (evidence.manifest.status === "failed") {
+		const error = localizationManifestFailure(evidence.manifest.error);
+		throw new LocalizationReportError({
+			code: error.code === "missing_manifest" ? "missing_manifest" : "unreadable_manifest",
+			message: error.message,
+			recovery: error.recovery
+		});
+	}
 	const entries = new Map<string, ManifestEntry>();
 	for (const entry of evidence.manifest.value.entries) {
 		if (entry.optional) continue;
@@ -336,8 +352,8 @@ export const LocalizationProgressReport = Schema.Struct({
 	),
 	cultures: Schema.Array(LocalizationProgressCulture),
 	coverage: TextCorpus.fields.coverage,
-	packageCoverage: TextCorpus.fields.packageCoverage,
-	diagnostics: Schema.Array(TextCorpusDiagnostic),
+	packageCoverage: Schema.optionalKey(TextPackageCoverageSummary),
+	...TextCorpusDiagnosticSummary.fields,
 	gatherEvidence: Schema.Array(LocalizationFileStatus)
 });
 export type LocalizationProgressReport = typeof LocalizationProgressReport.Type;
@@ -507,10 +523,12 @@ export function localizationProgressReport(
 				: []
 		),
 		coverage: corpus.coverage,
-		diagnostics: corpus.diagnostics,
+		...textCorpusDiagnosticSummary(corpus.diagnostics),
 		gatherEvidence: localizationEvidenceFileStatuses(evidence)
 	};
 	if (corpus.packageCoverage !== undefined)
-		Object.assign(report, { packageCoverage: corpus.packageCoverage });
+		Object.assign(report, {
+			packageCoverage: textPackageCoverageSummary(corpus.packageCoverage)
+		});
 	return report;
 }

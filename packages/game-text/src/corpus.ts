@@ -8,6 +8,7 @@ import {
 	type SavedAssetScan,
 	type SavedAssetTextExtractionEvent,
 	type SavedAssetTextOccurrence,
+	SavedAssetTextCoverageGap,
 	type SavedProperty,
 	type SavedPropertyValue
 } from "@ue-shed/unreal-assets";
@@ -17,6 +18,7 @@ import {
 	TextUnitId,
 	type TextCorpus,
 	type TextCorpusDiagnostic,
+	type TextCoverageGapCounts,
 	type TextIdentity,
 	type TextLocation,
 	type TextOccurrence,
@@ -429,6 +431,7 @@ export function textPackagePathsFromProjectIndex(index: SavedAssetScan): readonl
 }
 
 function unitKey(occurrence: TextOccurrence): string {
+	// Keep the saved namespace for asset inspection; localization joins strip the package marker.
 	if (occurrence.identity.status === "resolved") {
 		return `unreal:${encodeURIComponent(occurrence.identity.namespace)}:${encodeURIComponent(occurrence.identity.key)}`;
 	}
@@ -563,31 +566,52 @@ export function buildTextCorpus(
 	};
 }
 
+interface PackageTextGaps {
+	readonly counts: Record<SavedAssetTextCoverageGap["reason"], number>;
+	readonly samples: SavedAssetTextCoverageGap[];
+	total: number;
+}
+
 interface TextExtractionAccumulator {
-	readonly packageCoverage: NonNullable<TextCorpus["packageCoverage"]>[number][];
-	readonly coverageGaps: Array<{
-		readonly objectPath: string;
-		readonly packageFile: string;
-		readonly propertyPath: string;
-	}>;
+	readonly packageCoverage: TextPackageCoverage[];
+	readonly coverageGaps: Map<string, PackageTextGaps>;
+	readonly partialPackages: Map<string, number>;
 	readonly diagnostics: TextCorpusDiagnostic[];
 	failedPackages: number;
 	inspectedPackages: number;
 	readonly occurrences: TextOccurrence[];
-	partialPackages: number;
+	unsupportedTextProperties: number;
 	summary?: Extract<SavedAssetTextExtractionEvent, { readonly event: "text_summary" }>;
 }
 
 function emptyTextExtractionAccumulator(): TextExtractionAccumulator {
 	return {
 		packageCoverage: [],
-		coverageGaps: [],
+		coverageGaps: new Map(),
+		partialPackages: new Map(),
 		diagnostics: [],
 		failedPackages: 0,
 		inspectedPackages: 0,
 		occurrences: [],
-		partialPackages: 0
+		unsupportedTextProperties: 0
 	};
+}
+
+function gapMessage(total: number, counts: TextCoverageGapCounts): string {
+	const descriptions = {
+		property_decoder_rejected: "rejected by their decoder",
+		feature_unavailable_for_engine_version: "unavailable for this engine version",
+		legacy_container_element_without_type_information:
+			"container elements without type information",
+		unsupported_text_history: "with unsupported text histories"
+	} satisfies Record<SavedAssetTextCoverageGap["reason"], string>;
+	const reasons = SavedAssetTextCoverageGap.fields.reason.literals
+		.toReversed()
+		.flatMap((reason) => {
+			const count = counts[reason];
+			return count > 0 ? [`${count} ${descriptions[reason]}`] : [];
+		});
+	return `${total} ${total === 1 ? "property was" : "properties were"} not decoded: ${reasons.join(", ")}.`;
 }
 
 function foldTextExtractionEvent(
@@ -605,11 +629,33 @@ function foldTextExtractionEvent(
 		return accumulator;
 	}
 	if (event.event === "text_coverage_gap") {
-		accumulator.coverageGaps.push({
-			objectPath: event.coverage_gap.object_path,
-			packageFile: relative(projectRoot, event.path),
-			propertyPath: event.coverage_gap.property_path
-		});
+		const packageFile = relative(projectRoot, event.path);
+		let gaps = accumulator.coverageGaps.get(packageFile);
+		if (gaps === undefined) {
+			gaps = {
+				counts: {
+					unsupported_text_history: 0,
+					legacy_container_element_without_type_information: 0,
+					feature_unavailable_for_engine_version: 0,
+					property_decoder_rejected: 0
+				},
+				samples: [],
+				total: 0
+			};
+			accumulator.coverageGaps.set(packageFile, gaps);
+		}
+		gaps.counts[event.coverage_gap.reason] += 1;
+		gaps.total += 1;
+		accumulator.unsupportedTextProperties += 1;
+		if (gaps.samples.length < 3) {
+			gaps.samples.push(event.coverage_gap);
+		} else if (event.coverage_gap.reason === "unsupported_text_history") {
+			// Keep the first location, then prefer history samples for their specific diagnostics.
+			const index = gaps.samples.findIndex(
+				(sample, index) => index > 0 && sample.reason !== "unsupported_text_history"
+			);
+			if (index > 0) gaps.samples[index] = event.coverage_gap;
+		}
 		return accumulator;
 	}
 	if (event.event === "text_package") {
@@ -619,12 +665,10 @@ function foldTextExtractionEvent(
 		});
 		accumulator.inspectedPackages += 1;
 		if (event.status === "partial") {
-			accumulator.partialPackages += 1;
-			accumulator.diagnostics.push({
-				code: "package_partially_decoded",
-				message: `${event.diagnostics.length} decode error(s) limit this package's coverage.`,
-				packageFile: relative(projectRoot, event.path)
-			});
+			accumulator.partialPackages.set(
+				relative(projectRoot, event.path),
+				event.diagnostics.length
+			);
 		}
 		return accumulator;
 	}
@@ -674,19 +718,56 @@ function buildTextCorpusFromExtraction(options: {
 			};
 		})
 		.sort((left, right) => left.id.localeCompare(right.id));
-	const diagnostics = [
-		...accumulator.diagnostics,
-		...accumulator.coverageGaps.map(
-			(gap): TextCorpusDiagnostic => ({
+	const diagnostics = [...accumulator.diagnostics];
+	const partialFiles = new Set([
+		...accumulator.partialPackages.keys(),
+		...accumulator.coverageGaps.keys()
+	]);
+	for (const packageFile of partialFiles) {
+		const gaps = accumulator.coverageGaps.get(packageFile);
+		const sample = gaps?.samples[0];
+		const decodeErrors = accumulator.partialPackages.get(packageFile) ?? 0;
+		diagnostics.push({
+			code: "package_partially_decoded",
+			message:
+				gaps === undefined
+					? decodeErrors > 0
+						? `${decodeErrors} decode error(s) limit this package's coverage.`
+						: "The saved-package reader reported incomplete coverage for this package."
+					: gapMessage(gaps.total, gaps.counts),
+			packageFile,
+			...(gaps === undefined ? undefined : { coverageGapCounts: gaps.counts }),
+			...(sample === undefined
+				? undefined
+				: {
+						objectPath: sample.object_path,
+						propertyPath: sample.property_path
+					})
+		});
+		for (const gap of gaps?.samples ?? []) {
+			if (gap.reason !== "unsupported_text_history") continue;
+			diagnostics.push({
 				code: "unsupported_text_history",
 				message:
 					"This FText history is visible but not decoded by the saved-package reader.",
-				packageFile: gap.packageFile,
-				objectPath: gap.objectPath,
-				propertyPath: gap.propertyPath
-			})
-		)
-	];
+				packageFile,
+				objectPath: gap.object_path,
+				propertyPath: gap.property_path
+			});
+		}
+	}
+	const packageCoverage = accumulator.packageCoverage.map(
+		(coverage): TextPackageCoverage => ({
+			...coverage,
+			status:
+				coverage.status === "complete" && partialFiles.has(coverage.packageFile)
+					? "partial"
+					: coverage.status
+		})
+	);
+	const partialPackages = packageCoverage.filter(
+		(coverage) => coverage.status === "partial"
+	).length;
 	const resolvedOccurrences = accumulator.occurrences.filter(
 		(occurrence) => occurrence.identity.status !== "unresolved"
 	).length;
@@ -702,33 +783,24 @@ function buildTextCorpusFromExtraction(options: {
 	return {
 		schemaVersion: 1,
 		status:
-			accumulator.partialPackages > 0 ||
+			partialFiles.size > 0 ||
 			accumulator.failedPackages > 0 ||
-			accumulator.coverageGaps.length > 0
+			accumulator.unsupportedTextProperties > 0
 				? "partial"
 				: "complete",
 		coverage: {
 			discoveredPackages,
 			inspectedPackages,
-			partialPackages: accumulator.partialPackages,
+			partialPackages,
 			failedPackages: accumulator.failedPackages,
 			textUnits: units.length,
 			textOccurrences: accumulator.occurrences.length,
 			resolvedOccurrences,
 			unresolvedOccurrences: accumulator.occurrences.length - resolvedOccurrences,
-			unsupportedTextProperties: accumulator.coverageGaps.length
+			unsupportedTextProperties: accumulator.unsupportedTextProperties
 		},
 		units,
-		packageCoverage: accumulator.packageCoverage.map(
-			(coverage): NonNullable<TextCorpus["packageCoverage"]>[number] => ({
-				...coverage,
-				status:
-					coverage.status === "complete" &&
-					accumulator.coverageGaps.some((gap) => gap.packageFile === coverage.packageFile)
-						? "partial"
-						: coverage.status
-			})
-		),
+		packageCoverage,
 		diagnostics
 	};
 }

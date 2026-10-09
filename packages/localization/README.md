@@ -34,6 +34,12 @@ Pure decoders return `Result<value, LocalizationError>`. Their output schemas ow
 Lists and opaque JSON metadata are frozen. Duplicate manifest/archive identities remain separate
 entries with diagnostics; no text matching or conflict resolution happens here.
 
+Target evidence retains compact PO entries with decoded comments and format/source flags, rather
+than raw lines and field offsets. Repeated source context is shared within a read. `parsePO` still
+returns a full byte-exact document for `serializePO` and the PO writer. Change-set apply rereads each
+PO and checks its hash against the reviewed evidence before rewriting it. Hosts constructing target
+evidence themselves can convert a parsed document with `projectPOEvidence`.
+
 ## Headless Unreal operations
 
 `LocalizationOperations` / `LocalizationOperationsNodeLive` add an optional engine capability.
@@ -118,8 +124,9 @@ checks can report reduced checking. The legacy namespace collapse mode retains s
 formats and may carry a namespace without a key. Pass `collapseMode` when decoding that layout.
 Unreal's replacement-order escape decoding is preserved, including its literal-backslash caveat.
 
-Defaults cap each file at 32 MiB, decoded files and total target evidence at 100,000 entries,
-nesting at 64, and a target read at 256 files. Pass an explicit `limits` value to change them.
+Defaults cap each file at 320 MiB and 1,000,000 entries, nesting at 64, and a target read at
+2,560 files. Entry limits apply per file, independently of other cultures and evidence files.
+Pass an explicit `limits` value to change them.
 Node reads reject project-root
 escapes, external symlinks, and unresolved engine-root tokens. Conflicting output locations return
 an `ambiguous_config` diagnostic rather than selecting one implicitly.

@@ -32,3 +32,4 @@ export * from "./csv.js";
 export * from "./starter-rules.js";
 export * from "./rules-file.js";
 export * from "./operation-query.js";
+export * from "./corpus-summary.js";

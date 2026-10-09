@@ -3,7 +3,8 @@ import {
 	CultureCode,
 	LocalizationTarget,
 	LocalizationTargetEvidence,
-	parsePO
+	parsePO,
+	projectPOEvidence
 } from "@ue-shed/localization";
 import { Result, Schema } from "effect";
 
@@ -124,7 +125,7 @@ export function evidence(po = poDocument()): LocalizationTargetEvidence {
 					]
 				}
 			},
-			po: { status: "read", provenance, value: po }
+			po: { status: "read", provenance, value: projectPOEvidence(po) }
 		})),
 		locmeta: {
 			status: "failed",

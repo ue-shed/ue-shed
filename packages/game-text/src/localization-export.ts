@@ -1,5 +1,6 @@
 import { Schema } from "effect";
 import { spreadsheetCsv } from "./csv.js";
+import { localizationLineUnits } from "./gathered-text.js";
 import type {
 	LocalizationJoin,
 	LocalizationLine,
@@ -59,26 +60,17 @@ export function localizationLinesCsv(input: {
 	const placesOf = (line: LocalizationLine) =>
 		line.manifest.length > 0
 			? line.manifest.map((entry) => entry.path)
-			: line.origin.kind === "corpus"
-				? line.origin.unitIds.flatMap(
-						(id) =>
-							units
-								.get(id)
-								?.occurrences.map((occurrence) => occurrence.location.objectPath) ??
-							[]
-					)
-				: [];
+			: localizationLineUnits(line, units).flatMap((unit) =>
+					unit.occurrences.map((occurrence) => occurrence.location.objectPath)
+				);
 	const kindsOf = (line: LocalizationLine) =>
 		line.origin.kind === "corpus" && units.size > 0
 			? [
 					...new Set(
-						line.origin.unitIds.flatMap(
-							(id) =>
-								units
-									.get(id)
-									?.occurrences.map((occurrence) =>
-										textLocationOrigin(occurrence.location)
-									) ?? []
+						localizationLineUnits(line, units).flatMap((unit) =>
+							unit.occurrences.map((occurrence) =>
+								textLocationOrigin(occurrence.location)
+							)
 						)
 					)
 				]

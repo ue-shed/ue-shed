@@ -16,6 +16,7 @@ import {
 	archiveEntry,
 	corpus,
 	evidence,
+	ftextUnit,
 	manifestEntry,
 	unit
 } from "./localization.test-support.js";
@@ -78,6 +79,42 @@ function gate(
 }
 
 describe("checking a change's text", () => {
+	it("recognizes translated saved package namespaces without reporting a new or removed key", () => {
+		const result = gate(
+			corpus([ftextUnit("K", "Source", "Content/Text/Table.uasset", "NS [PKG]")]),
+			evidence(),
+			["Content/Text/Table.uasset"]
+		);
+		expect(result.status).toBe("passed");
+		expect(result.lines).toBe(1);
+		expect(result.checks.not_gathered).toBe(0);
+		expect(result.checks.removed).toBe(0);
+		expect(result.items).toEqual([]);
+	});
+
+	it.each(["Source", "Other"])("judges package variants as one identity (%s)", (source) => {
+		const first = ftextUnit("K", "Source", "Content/Text/Table.uasset", "NS [A]");
+		const second = TextUnit.make({
+			...ftextUnit("K", source, "Content/Text/Other.uasset", "NS [B]"),
+			id: TextUnit.fields.id.make("unit:other")
+		});
+		const text = corpus([first, second]);
+		const result = gate(text, evidence(), ["Content/Text/Table.uasset"]);
+		expect(result.lines).toBe(1);
+		expect(result.status).toBe(source === "Source" ? "passed" : "failed");
+		expect(result.checks.conflicting_source).toBe(source === "Source" ? 0 : 1);
+		expect(result.checks.not_gathered).toBe(0);
+		const join = joinLocalizationTarget(text, evidence());
+		const page = textCorpusQuery(text, undefined, join).search({
+			capability: "all",
+			query: "",
+			pageSize: 50,
+			localization: { target: join.target }
+		});
+		expect(page.counts.shared).toBe(1);
+		expect(page.counts.duplicate_source).toBe(0);
+	});
+
 	it("fails a key change whose earlier key has translations, and names the way forward", () => {
 		const result = gate(
 			scanned([cell("Start", "Start game")]),

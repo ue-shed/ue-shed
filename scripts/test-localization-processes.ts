@@ -430,11 +430,11 @@ for (const engine of configured) {
 		const proposal = (identity: NonNullable<typeof first.identity>, translation: string) => {
 			const entry =
 				culture.po.status === "read"
-					? culture.po.value.blocks.find(
-							(block) =>
-								block.entry?.identity?.namespace === identity.namespace &&
-								block.entry.identity.key === identity.key
-						)?.entry
+					? culture.po.value.entries.find(
+							(entry) =>
+								entry.identity?.namespace === identity.namespace &&
+								entry.identity.key === identity.key
+						)
 					: undefined;
 			const archive =
 				culture.archive.status === "read"

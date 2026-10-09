@@ -8,8 +8,9 @@ import {
 	validate
 } from "./decode.js";
 import { LocalizationFileAccess, LocalizationFileAccessLive } from "./file-access.js";
+import { makeEvidenceProjection } from "./evidence-projection.js";
 import { parseArchive, parseManifest } from "./json-formats.js";
-import { parsePO } from "./po.js";
+import { parsePO, projectPOEvidence } from "./po.js";
 import { parseLocmeta, parseWordCountCSV } from "./reports.js";
 import {
 	LocalizationError,
@@ -190,8 +191,6 @@ export const LocalizationEvidenceLive = Layer.effect(
 					if (Result.isFailure(parsed))
 						return failed(parsed.failure, file.success.provenance);
 					const entries = count(parsed.success);
-					if (entries + entryCount > limits.maxEntries)
-						return failed(localizationError("limit_exceeded"), file.success.provenance);
 					entryCount += entries;
 					return {
 						status: "read" as const,
@@ -201,16 +200,17 @@ export const LocalizationEvidenceLive = Layer.effect(
 				}).pipe(Effect.withSpan("LocalizationEvidence.readFile"));
 			}
 			const target = request.target;
+			const projection = makeEvidenceProjection();
 			const manifest = yield* readEvidence(
 				target.outputPaths.manifest,
-				(bytes) => parseManifest(bytes, limits),
+				(bytes) => parseManifest(bytes, limits).pipe(Result.map(projection.manifest)),
 				(value) => value.entries.length
 			);
 			const cultures: LocalizationTargetEvidence["cultures"][number][] = [];
 			for (const culture of target.cultures) {
 				const archive = yield* readEvidence(
 					target.outputPaths.archives[culture],
-					(bytes) => parseArchive(bytes, limits),
+					(bytes) => parseArchive(bytes, limits).pipe(Result.map(projection.archive)),
 					(value) => value.entries.length
 				);
 				const po = yield* readEvidence(
@@ -220,8 +220,15 @@ export const LocalizationEvidenceLive = Layer.effect(
 							format: target.poFormat,
 							collapseMode: target.collapseMode,
 							limits
-						}),
-					(value) => value.blocks.filter((block) => block.kind === "entry").length
+						}).pipe(
+							Result.map((document) =>
+								projection.po(
+									projectPOEvidence(document),
+									archive.status === "read" ? archive.value : undefined
+								)
+							)
+						),
+					(value) => value.entries.length
 				);
 				cultures.push({ culture, archive, po });
 			}
@@ -238,16 +245,15 @@ export const LocalizationEvidenceLive = Layer.effect(
 				"localization.failures": failedCount,
 				"localization.entries": entryCount
 			});
-			return immutable(
-				validate(LocalizationTargetEvidence, {
-					schemaVersion: 1,
-					target,
-					manifest,
-					cultures,
-					locmeta,
-					wordCount
-				})
-			);
+			const evidence: LocalizationTargetEvidence = {
+				schemaVersion: 1,
+				target,
+				manifest,
+				cultures,
+				locmeta,
+				wordCount
+			};
+			return immutable(evidence);
 		});
 		return LocalizationEvidence.of({ discover, targets, read });
 	})

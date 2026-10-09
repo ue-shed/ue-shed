@@ -5,7 +5,8 @@ import {
 	LocalizationReviewFlag,
 	LocalizationTargetName,
 	ManifestEntry,
-	POEntry
+	POEntry,
+	type LocalizationError
 } from "@ue-shed/localization/browser";
 import { Schema } from "effect";
 import { TextUnitId } from "./identifiers.js";
@@ -214,6 +215,7 @@ export class GameTextLocalizationError extends Schema.TaggedErrorClass<GameTextL
 		code: Schema.Literals([
 			"target_not_found",
 			"missing_manifest",
+			"unreadable_manifest",
 			"reader_failure",
 			"invalid_selection"
 		]),
@@ -221,3 +223,21 @@ export class GameTextLocalizationError extends Schema.TaggedErrorClass<GameTextL
 		recovery: Schema.String
 	}
 ) {}
+
+/** Only a missing manifest needs a gather; other failures keep the reader's cause and recovery. */
+export function localizationManifestFailure(error: LocalizationError): GameTextLocalizationError {
+	return new GameTextLocalizationError(
+		error.code === "file_missing"
+			? {
+					code: "missing_manifest",
+					message: "The target manifest could not be read.",
+					recovery:
+						"Run the target's Unreal gather configuration, or repair the manifest file."
+				}
+			: {
+					code: "unreadable_manifest",
+					message: `The target manifest could not be read (${error.code}): ${error.message}`,
+					recovery: error.recovery
+				}
+	);
+}

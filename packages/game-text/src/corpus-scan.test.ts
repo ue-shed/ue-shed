@@ -244,3 +244,132 @@ it.effect("maps a reader asset limit onto scan_limit_exceeded", () =>
 		expect(error.retrySafe).toBe(false);
 	})
 );
+
+function* syntheticGaps(): Generator<SavedAssetTextExtractionEvent> {
+	for (let packageIndex = 0; packageIndex < 5_000; packageIndex += 1) {
+		const path = `C:/Fixture/Content/Text/Package${packageIndex}.uasset`;
+		yield {
+			event: "text_package",
+			schema_version: 1,
+			path,
+			fileBytes: 1,
+			status: packageIndex % 2 === 0 ? "partial" : "complete",
+			occurrences: 0,
+			coverage_gaps: 10,
+			diagnostics: []
+		};
+		for (let propertyIndex = 0; propertyIndex < 10; propertyIndex += 1) {
+			yield {
+				event: "text_coverage_gap",
+				schema_version: 1,
+				path,
+				coverage_gap: {
+					object_path: `/Game/Text/Package${packageIndex}.Asset`,
+					property_path: `Label${propertyIndex}`,
+					reason:
+						propertyIndex < 4
+							? "property_decoder_rejected"
+							: propertyIndex < 7
+								? "feature_unavailable_for_engine_version"
+								: propertyIndex < 9
+									? "legacy_container_element_without_type_information"
+									: "unsupported_text_history"
+				}
+			};
+		}
+	}
+}
+
+it.effect(
+	"folds 50,000 gaps in linear time and keeps package reason totals and bounded samples",
+	() =>
+		Effect.gen(function* () {
+			const reader = readerOffering(() => Stream.fromIterable(syntheticGaps()));
+			const started = performance.now();
+			const corpus = yield* Effect.flatMap(TextCorpusService, (service) =>
+				service.scan({ projectRoot: "C:/Fixture" })
+			).pipe(Effect.provide(TextCorpusServiceLive), Effect.provide(reader));
+			const elapsed = performance.now() - started;
+			expect(elapsed).toBeLessThan(900);
+			expect(corpus.coverage.unsupportedTextProperties).toBe(50_000);
+			expect(corpus.coverage.partialPackages).toBe(5_000);
+			expect(corpus.status).toBe("partial");
+			expect(corpus.packageCoverage).toHaveLength(5_000);
+			expect(corpus.packageCoverage?.every((item) => item.status === "partial")).toBe(true);
+			const partial = corpus.diagnostics.filter(
+				(item) => item.code === "package_partially_decoded"
+			);
+			expect(partial).toHaveLength(5_000);
+			for (const diagnostic of partial) {
+				expect(diagnostic.coverageGapCounts).toEqual({
+					property_decoder_rejected: 4,
+					feature_unavailable_for_engine_version: 3,
+					legacy_container_element_without_type_information: 2,
+					unsupported_text_history: 1
+				});
+				expect(diagnostic.propertyPath).toBe("Label0");
+				expect(diagnostic.message).toBe(
+					"10 properties were not decoded: 4 rejected by their decoder, " +
+						"3 unavailable for this engine version, 2 container elements without type information, " +
+						"1 with unsupported text histories."
+				);
+			}
+			const histories = corpus.diagnostics.filter(
+				(item) => item.code === "unsupported_text_history"
+			);
+			expect(histories).toHaveLength(5_000);
+			expect(histories.every((item) => item.propertyPath === "Label9")).toBe(true);
+		})
+);
+
+it.effect("caps history samples and explains partial packages without decode errors", () =>
+	Effect.gen(function* () {
+		const path = "C:/Fixture/Content/Text/History.uasset";
+		const events: SavedAssetTextExtractionEvent[] = Array.from({ length: 50 }, (_, index) => ({
+			event: "text_coverage_gap",
+			schema_version: 1,
+			path,
+			coverage_gap: {
+				object_path: "/Game/Text/History.Asset",
+				property_path: `Label${index}`,
+				reason: "unsupported_text_history"
+			}
+		}));
+		events.push(
+			{
+				event: "text_package",
+				schema_version: 1,
+				path,
+				fileBytes: 1,
+				status: "complete",
+				occurrences: 0,
+				coverage_gaps: 50,
+				diagnostics: []
+			},
+			{
+				event: "text_package",
+				schema_version: 1,
+				path: "C:/Fixture/Content/Text/Partial.uasset",
+				fileBytes: 1,
+				status: "partial",
+				occurrences: 0,
+				coverage_gaps: 0,
+				diagnostics: []
+			}
+		);
+		const corpus = yield* Effect.flatMap(TextCorpusService, (service) =>
+			service.scan({ projectRoot: "C:/Fixture" })
+		).pipe(
+			Effect.provide(TextCorpusServiceLive),
+			Effect.provide(readerOffering(() => Stream.fromIterable(events)))
+		);
+		expect(
+			corpus.diagnostics.filter((item) => item.code === "unsupported_text_history")
+		).toHaveLength(3);
+		expect(
+			corpus.diagnostics.filter((item) => item.code === "package_partially_decoded")
+		).toHaveLength(2);
+		expect(corpus.diagnostics.every((item) => !item.message.includes("0 decode"))).toBe(true);
+		expect(corpus.coverage.partialPackages).toBe(2);
+	})
+);

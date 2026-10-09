@@ -75,7 +75,16 @@ describe("text corpus query context", () => {
 					...corpus.units[0]!,
 					id: makeTextUnitId("unreal:UI:ContinueAlternate"),
 					identity: { key: "ContinueAlternate", namespace: "UI", status: "resolved" },
-					occurrences: [occurrence(5)]
+					occurrences: [
+						{
+							...occurrence(5),
+							identity: {
+								key: "ContinueAlternate",
+								namespace: "UI",
+								status: "resolved"
+							}
+						}
+					]
 				}
 			]
 		};

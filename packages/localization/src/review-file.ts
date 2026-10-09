@@ -31,12 +31,9 @@ export function localizationEvidenceFingerprint(
 			: null;
 	const po =
 		files.po.status === "read"
-			? files.po.value.blocks.find(
-					(block) =>
-						block.entry?.identity !== undefined &&
-						block.entry.identity !== null &&
-						same(block.entry.identity)
-				)?.entry
+			? files.po.value.entries.find(
+					(entry) => entry.identity !== null && same(entry.identity)
+				)
 			: undefined;
 	return localizationReviewFingerprint(source, currentLocalizationTranslation(archive, po));
 }

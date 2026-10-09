@@ -1,5 +1,9 @@
 # `@ue-shed/unreal-assets`
 
+The paired TypeScript/native reader caps cumulative protocol output at 10 GiB. Catalog scans
+default to a 50-minute timeout; single-asset operations keep their 30-second timeout. Hosts can
+configure `catalogTimeoutMs` and `timeoutMs` explicitly.
+
 Saved Blueprint and Level Sequence review works offline through `readSavedBlueprint` and
 `readSavedLevelSequence`. Both return diagnostics and an explicit `complete`/`partial` outcome.
 Native review reads are limited to 64 MiB. Sequence schema 5 includes bindings, tracks, section

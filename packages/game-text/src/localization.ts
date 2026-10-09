@@ -1,5 +1,6 @@
 import {
 	LocalizationIdentity,
+	resolveLocalizationGatherPath,
 	type ArchiveEntry,
 	type LocalizationTarget,
 	type LocalizationTargetEvidence,
@@ -18,6 +19,11 @@ import {
 	type LocalizationState
 } from "./localization-schema.js";
 import type { TextCorpus, TextOccurrence, TextUnit } from "./schema.js";
+import {
+	gatheredIdentityKey,
+	gatheredTextGroups,
+	gatheredTextOccurrenceIdentity
+} from "./gathered-text.js";
 
 /** FString matching is case insensitive; ? consumes zero or one character, * any number. */
 export function matchesUnrealWildcard(value: string, pattern: string): boolean {
@@ -103,6 +109,25 @@ function pathRating(pattern: string): number {
 	);
 }
 
+function resolveGatherFilters(patterns: readonly string[]) {
+	const paths: string[] = [];
+	let uncertain = false;
+	for (const pattern of patterns) {
+		const resolved = resolveLocalizationGatherPath(pattern);
+		if (resolved.root === "engine") continue;
+		const path = normalizePath(resolved.path);
+		if (
+			resolved.root === "unknown" ||
+			/%[^%]+%/u.test(path) ||
+			/^(?:\/|[a-z]:)/iu.test(path) ||
+			path.split("/").includes("..")
+		)
+			uncertain = true;
+		else paths.push(path);
+	}
+	return { paths, uncertain };
+}
+
 function includedPath(path: string, rule: GatherRule): boolean {
 	const filters = [
 		...rule.includes.map((pattern) => ({ pattern: normalizePath(pattern), included: true })),
@@ -138,17 +163,14 @@ export function localizationGatherCoverage(
 	if (!rules) return { status: "unknown", reason: "gather_settings_unavailable" };
 	let uncertain: LocalizationUnknownReason | undefined;
 	for (const rule of rules) {
-		if (
-			[...rule.includes, ...rule.excludes].some(
-				(pattern) =>
-					/^(?:\/|[a-z]:)/iu.test(normalizePath(pattern)) ||
-					normalizePath(pattern).split("/").includes("..")
-			)
-		) {
+		const includes = resolveGatherFilters(rule.includes);
+		const excludes = resolveGatherFilters(rule.excludes);
+		if (includes.uncertain || excludes.uncertain) {
 			uncertain = "gather_settings_unavailable";
 			continue;
 		}
-		if (!includedPath(path, rule)) continue;
+		if (!includedPath(path, { ...rule, includes: includes.paths, excludes: excludes.paths }))
+			continue;
 		if (
 			!rule.filenames.some((pattern) =>
 				matchesUnrealWildcard(path.split("/").at(-1) ?? "", pattern)
@@ -183,11 +205,19 @@ export function localizationGatherCoverage(
 	return uncertain ? { status: "unknown", reason: uncertain } : { status: "outside" };
 }
 
-// Built once: the join decodes an identity per saved unit, tens of thousands in a shipping game.
-const decodeLocalizationIdentity = Schema.decodeUnknownSync(LocalizationIdentity);
-
-function identityKey(identity: typeof LocalizationIdentity.Type): string {
-	return JSON.stringify([identity.namespace, identity.key]);
+/** A unit has one gathered identity only when all its occurrences agree. */
+export function gatheredTextIdentity(unit: TextUnit): typeof LocalizationIdentity.Type | null {
+	let identity: typeof LocalizationIdentity.Type | null = null;
+	for (const occurrence of unit.occurrences) {
+		const gathered = gatheredTextOccurrenceIdentity(occurrence);
+		if (
+			!gathered ||
+			(identity && gatheredIdentityKey(identity) !== gatheredIdentityKey(gathered))
+		)
+			return null;
+		identity = gathered;
+	}
+	return identity;
 }
 
 /**
@@ -260,13 +290,13 @@ function groupByIdentity<A extends typeof LocalizationIdentity.Type>(
 ): Map<string, A[]> {
 	const grouped = new Map<string, A[]>();
 	for (const entry of entries) {
-		const key = identityKey(entry);
+		const key = gatheredIdentityKey(entry);
 		grouped.set(key, [...(grouped.get(key) ?? []), entry]);
 	}
 	return grouped;
 }
 
-/** Join namespace/key only. Source comparisons classify already-joined evidence. */
+/** Join gathered namespace/key, stripping package markers only from saved FText occurrences. */
 export function joinLocalizationTarget(
 	corpus: TextCorpus,
 	evidence: LocalizationTargetEvidence,
@@ -275,37 +305,7 @@ export function joinLocalizationTarget(
 	const manifest = groupByIdentity(
 		evidence.manifest.status === "read" ? evidence.manifest.value.entries : []
 	);
-	const resolved = new Map<TextUnit["id"], typeof LocalizationIdentity.Type>();
-	const tables = new Map<string, typeof LocalizationIdentity.Type>();
-	for (const unit of corpus.units) {
-		if (unit.identity.status !== "resolved") continue;
-		const identity = decodeLocalizationIdentity(unit.identity);
-		resolved.set(unit.id, identity);
-		for (const occurrence of unit.occurrences) {
-			if (occurrence.location.kind === "string_table_entry")
-				tables.set(
-					JSON.stringify([occurrence.location.objectPath, occurrence.location.entryKey]),
-					identity
-				);
-		}
-	}
-	const rows = new Map<
-		string,
-		{ identity: typeof LocalizationIdentity.Type | null; units: TextUnit[] }
-	>();
-	for (const unit of corpus.units) {
-		const identity =
-			unit.identity.status === "resolved"
-				? (resolved.get(unit.id) ?? null)
-				: unit.identity.status === "string_table"
-					? (tables.get(JSON.stringify([unit.identity.tableId, unit.identity.key])) ??
-						null)
-					: null;
-		const key = identity ? identityKey(identity) : `unresolved:${unit.id}`;
-		const row = rows.get(key) ?? { identity, units: [] };
-		row.units.push(unit);
-		rows.set(key, row);
-	}
+	const rows = gatheredTextGroups(corpus);
 	for (const [key, entries] of manifest) {
 		const entry = entries[0];
 		if (entry && !rows.has(key))
@@ -337,10 +337,8 @@ export function joinLocalizationTarget(
 		),
 		pos: groupByIdentity(
 			culture.po.status === "read"
-				? culture.po.value.blocks.flatMap((block) =>
-						block.kind === "entry" && block.entry?.identity
-							? [{ ...block.entry.identity, entry: block.entry }]
-							: []
+				? culture.po.value.entries.flatMap((entry) =>
+						entry.identity ? [{ ...entry.identity, entry }] : []
 					)
 				: []
 		)

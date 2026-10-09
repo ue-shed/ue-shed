@@ -224,9 +224,12 @@ export function GameTextRoute(props: {
 
 	const requestFocus = (id: TextUnitId, cursor?: TextCorpusFocus["nextOccurrenceCursor"]) => {
 		const generation = ++focusGeneration;
+		const target = localization.target();
+		const line = localization.selectedId();
 		focusAction.run(
 			props.client.focus({
 				id,
+				...(target && line ? { localization: { target, id: line } } : undefined),
 				pageSize: 50,
 				...(cursor ? { occurrenceCursor: cursor } : undefined)
 			}),
@@ -681,7 +684,13 @@ export function GameTextRoute(props: {
 		}
 	);
 	createEffect(
-		() => ({ summary: summary(), id: selectedId() }),
+		() => ({
+			summary: summary(),
+			id: selectedId(),
+			line: localization.selectedId(),
+			target: localization.target(),
+			ready: localization.ready()
+		}),
 		({ summary: current, id }) => {
 			if (current && id) requestFocus(id);
 			else {

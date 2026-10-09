@@ -15,6 +15,11 @@ import {
 	type SavedWorld
 } from "./index.js";
 import {
+	DEFAULT_CATALOG_TIMEOUT_MS,
+	DEFAULT_TIMEOUT_MS,
+	MAX_PROTOCOL_OUTPUT_BYTES
+} from "./asset-reader.js";
+import {
 	ProtocolLineDecoder,
 	collectProtocolSingleEvents,
 	ProtocolStreamFailure,
@@ -24,6 +29,12 @@ import {
 } from "./protocol-transport.js";
 
 const unexpected = (operation: string) => Effect.die(new Error(`Unexpected ${operation} call`));
+
+it("defaults to a 10 GiB output budget and 50 minute catalog timeout", () => {
+	expect(MAX_PROTOCOL_OUTPUT_BYTES).toBe(10 * 1024 * 1024 * 1024);
+	expect(DEFAULT_CATALOG_TIMEOUT_MS).toBe(50 * 60_000);
+	expect(DEFAULT_TIMEOUT_MS).toBe(30_000);
+});
 
 effectIt.effect("preserves an unavailable reader as a typed process failure", () =>
 	Effect.gen(function* () {

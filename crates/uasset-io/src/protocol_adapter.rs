@@ -28,7 +28,7 @@ use crate::protocol_result::{
 const EXIT_SUCCESS: u8 = 0;
 const EXIT_MALFORMED: u8 = 2;
 const EXIT_INTERNAL: u8 = 5;
-const DEFAULT_MAX_OUTPUT_BYTES: u64 = 1024 * 1024 * 1024;
+const DEFAULT_MAX_OUTPUT_BYTES: u64 = 10 * 1024 * 1024 * 1024;
 const MAX_REQUEST_BYTES: usize = 4 * 1024 * 1024;
 
 pub fn run() -> u8 {
@@ -141,8 +141,8 @@ struct Emitter {
     contract: Contract,
     request_id: String,
     sequence: u64,
-    maximum_output_bytes: usize,
-    emitted_output_bytes: usize,
+    maximum_output_bytes: u64,
+    emitted_output_bytes: u64,
     cancellation: CancellationToken,
 }
 
@@ -165,7 +165,7 @@ impl Emitter {
             maximum_output_bytes: request
                 .limits
                 .maximum_output_bytes
-                .unwrap_or(DEFAULT_MAX_OUTPUT_BYTES) as usize,
+                .unwrap_or(DEFAULT_MAX_OUTPUT_BYTES),
             emitted_output_bytes: 0,
             cancellation,
         }
@@ -201,8 +201,8 @@ impl Emitter {
     }
 
     fn write_frame(&mut self, bytes: &[u8]) -> Result<(), String> {
-        let frame_bytes = bytes
-            .len()
+        let frame_bytes = u64::try_from(bytes.len())
+            .map_err(|_| "protocol output size overflowed".to_owned())?
             .checked_add(1)
             .ok_or_else(|| "protocol output size overflowed".to_owned())?;
         let output_bytes = self
@@ -1202,12 +1202,12 @@ mod tests {
     );
 
     #[test]
-    fn event_emission_defaults_to_one_gibibyte_cumulative_output() {
+    fn event_emission_defaults_to_ten_gibibytes_cumulative_output() {
         let mut request = decode_request(VALID_REQUEST.as_bytes()).expect("valid request");
         request.limits.maximum_output_bytes = None;
         let emitter = Emitter::new(&request, CancellationToken::new());
 
-        assert_eq!(emitter.maximum_output_bytes, 1024 * 1024 * 1024);
+        assert_eq!(emitter.maximum_output_bytes, 10 * 1024 * 1024 * 1024);
     }
 
     #[test]

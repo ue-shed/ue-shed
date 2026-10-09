@@ -12,6 +12,7 @@ import {
 	corpus,
 	cultureCode,
 	evidence,
+	ftextUnit,
 	manifestEntry,
 	target,
 	unit
@@ -54,6 +55,31 @@ function scanned(units: readonly TextUnit[]): TextCorpus {
 }
 
 describe("localization key changes", () => {
+	it("pairs saved package namespaces using the gathered identity", () => {
+		const text = scanned([
+			ftextUnit("Renamed", "Welcome back", "Content/Text/Table.uasset", "NS [PKG]")
+		]);
+		const joined = joinLocalizationTarget(
+			text,
+			evidence(
+				[manifestEntry("Welcome", "Welcome back")],
+				[archiveEntry("Welcome", "Welcome back", "Willkommen zurück")]
+			)
+		);
+		const { pairs } = localizationKeyChanges(joined, text);
+		expect(pairs).toHaveLength(1);
+		expect(pairs[0]).toMatchObject({
+			from: { namespace: "NS", key: "Welcome" },
+			to: { namespace: "NS", key: "Renamed" },
+			translations: [{ culture: "de", translation: "Willkommen zurück" }]
+		});
+		expect(
+			applyLocalizationKeyChanges(joined, pairs).lines.find(
+				(line) => line.identity?.key === "Renamed"
+			)?.keyChange?.direction
+		).toBe("to");
+	});
+
 	it("pairs a DataTable cell whose key changed by its saved place, even when the text changed", () => {
 		const text = scanned([cell("NewKey", "Start the game")]);
 		const joined = joinLocalizationTarget(

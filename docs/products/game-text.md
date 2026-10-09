@@ -15,6 +15,18 @@ game text or localization resources.
 
 ## Shipped read-only corpus
 
+Localization evidence defaults to 320 MiB and 1,000,000 entries per file, 2,560 files per target
+read, and nesting depth 64. Library hosts can pass explicit `LocalizationLimits` through the
+evidence request's `limits` field. Entry counts are independent for the manifest and each culture
+file. The saved-asset reader allows 10 GiB of cumulative protocol output and defaults catalog
+scans to 50 minutes. A failed read names its cause and recovery; only a missing manifest asks for
+an Unreal gather.
+
+Every localization command still builds the corpus and join in memory. A target of about 130,000
+keys and 10 cultures in a project of 166,000 packages needs about 7 GB of Node heap, more than
+Node's default; run the CLI with `NODE_OPTIONS=--max-old-space-size=8192` for projects of that
+size. A compact, persistent index that refreshes only changed files replaces this in-memory build.
+
 Tagged-property text extraction supports classic, uncooked, versioned editor packages from UE 4.27
 and UE 5.0–5.3, alongside the existing UE 5.4+ reader. The legacy window includes String Tables,
 DataTable and CompositeDataTable rows, data assets, and generic UObject text with nested containers.
@@ -28,11 +40,23 @@ Blueprint pins, Sequencer, animation/Skeleton, property bags, InstancedStruct, a
 native records retain their current version gates. Legacy native struct map/set elements without
 type information report `legacy_container_element_without_type_information`; unsupported histories
 and unavailable engine features retain their own gap reasons. Partial coverage stays visible in
-the corpus.
+the corpus. Each package with gaps has one `package_partially_decoded` diagnostic with
+`coverageGapCounts`, using the reader's reason literals, and its first gap's location. The scan
+retains at most three gap samples per package, preserving the first and preferring unsupported
+history samples for the remaining slots. Only those history samples produce
+`unsupported_text_history` diagnostics. `coverage.unsupportedTextProperties` counts every gap,
+including rejected decoders, unavailable engine features and legacy containers.
 
 The corpus includes decoded String Table entries, DataTable `FText` cells, and supported asset
 properties. Every text unit retains its resolved or unresolved Unreal identity and one or more
 occurrences with package, object, row/entry/property, and edit-capability evidence.
+
+Localization lines use each occurrence's gathered identity: saved FText in asset properties and
+DataTable cells has its trailing package namespace marker removed; String Table definitions and
+references keep the namespace exactly as authored. A mixed corpus unit joins both identities with
+their own occurrences. Saved corpus units and occurrences retain the full namespace and unit IDs
+for asset inspection.
+Package variants of one namespace and key share a localization line, including source conflicts.
 
 Coverage is part of every corpus result. Complete and partial results distinguish discovered,
 inspected, partial, and failed packages; resolved and unresolved occurrences; and unsupported text
@@ -336,7 +360,7 @@ The first quality slice must prove:
 - malformed documents and semantic errors produce typed failures with recovery guidance;
 - invalid or empty role configuration cannot broaden matching to the whole corpus;
 - character budgets and forbidden/preferred terminology retain role and occurrence evidence;
-- complete and partial corpus coverage and diagnostics survive unchanged in reports;
+- complete and partial corpus coverage and diagnostic totals survive in bounded reports;
 - the CLI uses the existing `TextCorpusService` scan and emits the public report schema;
 - browser imports remain free of Node, filesystem, process, Electron, and Workbench dependencies;
 - invalid Workbench drafts leave the prior valid rules and report active;
@@ -449,7 +473,16 @@ remain visible in diagnostics and coverage reasons. Unreadable files cannot supp
 
 `ue-shed loc status <project-root> --target <name> [--culture <c>] [--state <s>] [--kind <origin>]... [--path <prefix>] [--limit 50]`
 reports schema-versioned per-culture counts of lines and source words, coverage and unknown reasons,
-file provenance and diagnostics, and a bounded page of matching lines. Localization-aware
+file provenance and diagnostics, and a bounded page of matching lines. `diagnostics` contains at
+most 200 entries; `diagnosticCount` is the full total, `diagnosticCounts` holds totals by diagnostic
+code, and `diagnosticsOmitted` counts entries not listed. When package evidence is available,
+`packageCoverage.counts` totals `complete`, `partial` and `failed` packages;
+`packageCoverage.packages` lists at most 200 non-complete packages and `packageCoverage.omitted`
+counts the remaining non-complete packages. These bounds do not depend on `--limit`, which controls
+only the matching-line page. Localization progress and quality reports, quality investigations,
+and plain `text search` use the same diagnostic bounds and totals; progress reports also use the
+same package coverage summary. `text scan` intentionally returns the full corpus and can produce
+large JSON output. Localization-aware
 `ue-shed text search` accepts the same selection; translation search additionally requires
 `--search-translations` and a culture. `--kind` (`string_table`, `data_table`, `asset`, `cpp`,
 `other_source`, repeatable), `--path` and `--files <list-file>` filter both commands, including

@@ -31,6 +31,10 @@
 			"types": "./dist/investigation.d.ts",
 			"import": "./dist/investigation.js"
 		},
+		"./text-extraction": {
+			"types": "./dist/text-extraction.d.ts",
+			"import": "./dist/text-extraction.js"
+		},
 		"./investigation-files": {
 			"types": "./dist/investigation-files.d.ts",
 			"import": "./dist/investigation-files.js"

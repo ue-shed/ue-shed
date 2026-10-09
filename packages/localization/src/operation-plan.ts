@@ -1,4 +1,5 @@
 import { Schema } from "effect";
+import { resolveLocalizationGatherPath } from "./gather-path.js";
 import type { LocalizationRecipe, RecipeFields } from "./schema.js";
 import {
 	LocalizationOperationError,
@@ -68,7 +69,8 @@ export function localizationOperationError(
 
 /** Paths inside a plan are project-relative; absolute paths occur only in process arguments. */
 export function localizationRelativePath(path: string): string {
-	const normalized = path.replaceAll("\\", "/").replace(/^%LOCPROJECTROOT%\/?/iu, "");
+	const resolved = resolveLocalizationGatherPath(path);
+	const normalized = (resolved.root === "project" ? resolved.path : path).replaceAll("\\", "/");
 	if (
 		!normalized ||
 		/[\u0000\r\n";%:]/u.test(normalized) ||

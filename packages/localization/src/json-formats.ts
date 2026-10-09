@@ -9,10 +9,10 @@ import {
 } from "./decode.js";
 import {
 	ArchiveEntry,
-	LocalizationArchive,
-	LocalizationManifest,
+	type LocalizationArchive,
+	type LocalizationManifest,
 	LocalizationText,
-	ManifestEntry,
+	type ManifestEntry,
 	OpaqueRecord,
 	TextKey,
 	TextNamespace,
@@ -22,7 +22,7 @@ import {
 } from "./schema.js";
 
 const ManifestKey = Schema.Struct({
-	Key: Schema.String,
+	Key: TextKey,
 	Path: Schema.String,
 	Optional: Schema.optionalKey(Schema.Boolean),
 	MetaData: Schema.optionalKey(OpaqueRecord),
@@ -32,12 +32,12 @@ const ManifestChild = Schema.Struct({ Source: LocalizationText, Keys: Schema.Arr
 const ArchiveChild = Schema.Struct({
 	Source: LocalizationText,
 	Translation: LocalizationText,
-	Key: Schema.String,
+	Key: TextKey,
 	Optional: Schema.optionalKey(Schema.Boolean),
 	MetaData: Schema.optionalKey(OpaqueRecord)
 });
 const NamespaceFields = Schema.Struct({ Namespace: Schema.String });
-function treeFields<Child extends Schema.Json>(child: Schema.Codec<Child>) {
+function treeFields<Child extends Schema.Json>(child: Schema.Codec<Child, unknown>) {
 	return NamespaceFields.pipe(
 		Schema.fieldsAssign({ Children: Schema.optionalKey(Schema.Array(child)) })
 	);
@@ -47,9 +47,9 @@ type TreeNode<Child extends Schema.Json> = ReturnType<typeof treeFields<Child>>[
 	readonly Subnamespaces?: readonly TreeNode<Child>[];
 };
 function treeSchema<Child extends Schema.Json>(
-	child: Schema.Codec<Child>
-): Schema.Codec<TreeNode<Child>> {
-	const node: Schema.Codec<TreeNode<Child>> = Schema.suspend(() =>
+	child: Schema.Codec<Child, unknown>
+): Schema.Codec<TreeNode<Child>, unknown> {
+	const node: Schema.Codec<TreeNode<Child>, unknown> = Schema.suspend(() =>
 		treeFields(child).pipe(
 			Schema.fieldsAssign({
 				Subnamespaces: Schema.optionalKey(Schema.Array(node))
@@ -136,7 +136,7 @@ export function parseManifest(bytes: Uint8Array, options?: LocalizationLimits) {
 				child.Keys.map((key): ManifestEntry => {
 					const entry: ManifestEntry = {
 						namespace,
-						key: validate(TextKey, key.Key),
+						key: key.Key,
 						source: child.Source,
 						path: key.Path
 					};
@@ -149,13 +149,12 @@ export function parseManifest(bytes: Uint8Array, options?: LocalizationLimits) {
 					return entry;
 				})
 		).sort(compareIdentity);
-		return immutable(
-			validate(LocalizationManifest, {
-				formatVersion: 1,
-				entries,
-				diagnostics: diagnostics(entries)
-			})
-		);
+		const manifest: LocalizationManifest = {
+			formatVersion: 1,
+			entries,
+			diagnostics: diagnostics(entries)
+		};
+		return immutable(manifest);
 	});
 }
 
@@ -169,7 +168,7 @@ export function parseArchive(bytes: Uint8Array, options?: LocalizationLimits) {
 			(child, namespace) => {
 				const entry: ArchiveEntry = {
 					namespace,
-					key: validate(TextKey, child.Key),
+					key: child.Key,
 					source: child.Source,
 					translation: child.Translation
 				};
@@ -180,12 +179,11 @@ export function parseArchive(bytes: Uint8Array, options?: LocalizationLimits) {
 				return [entry];
 			}
 		).sort(compareIdentity);
-		return immutable(
-			validate(LocalizationArchive, {
-				formatVersion: 2,
-				entries,
-				diagnostics: diagnostics(entries)
-			})
-		);
+		const archive: LocalizationArchive = {
+			formatVersion: 2,
+			entries,
+			diagnostics: diagnostics(entries)
+		};
+		return immutable(archive);
 	});
 }

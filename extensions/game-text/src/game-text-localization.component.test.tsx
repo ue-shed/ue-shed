@@ -30,6 +30,7 @@ import {
 	archiveEntry,
 	manifestEntry,
 	poDocument,
+	splitUnit,
 	cultureCode,
 	target
 } from "../../../packages/game-text/src/localization.test-support.js";
@@ -166,7 +167,14 @@ function client(
 				).search(request)
 			}),
 		focus: (request) => {
-			const focus = plain.focus(request);
+			const focus = (
+				request.localization
+					? textCorpusQuery(text, undefined, {
+							...joined,
+							target: request.localization.target
+						})
+					: plain
+			).focus(request);
 			return Effect.succeed(focus ? { status: "found", focus } : { status: "not_found" });
 		},
 		progress: () =>
@@ -795,6 +803,79 @@ describe("Game Text localization", () => {
 });
 
 describe("Game Text line page", () => {
+	it("switches between split lines sharing a unit without mixing their saved details", async () => {
+		const mixed = splitUnit();
+		const saved = corpus([mixed]);
+		const join = joinLocalizationTarget(saved, evidence([], [], poDocument("")));
+		const query = textCorpusQuery(saved, undefined, join);
+		const user = userEvent.setup();
+		mount({
+			...client(),
+			loadConfiguredProject: () =>
+				Effect.succeed({ status: "completed", summary: query.summary() }),
+			localizationTarget: () =>
+				Effect.succeed({
+					status: "ready",
+					target: {
+						name: join.target,
+						nativeCulture: join.nativeCulture,
+						cultures: join.cultures
+					},
+					lines: 2,
+					notSynced: 0
+				}),
+			search: (request) => Effect.succeed({ status: "ready", page: query.search(request) }),
+			focus: (request) => {
+				const focus = query.focus(request);
+				return Effect.succeed(focus ? { status: "found", focus } : { status: "not_found" });
+			},
+			localizationFocus: (request) => {
+				const line =
+					request.selection.kind === "line"
+						? query.localizationFocus(request.selection.id)
+						: undefined;
+				return Effect.succeed(
+					line
+						? { status: "found", focus: localizationFocusPage(join, line, request) }
+						: { status: "not_found" }
+				);
+			}
+		});
+		await screen.findByText("2 matches");
+		const results = screen.getByRole("region", { name: "Results" });
+		const rows = within(results)
+			.getAllByRole("button")
+			.filter((row) => row.hasAttribute("data-row"));
+		expect(rows).toHaveLength(2);
+		const firstIsTable = rows[0]?.textContent?.includes("Table label");
+		await user.click(rows[0]!);
+		const page = screen.getByRole("complementary", { name: "Text focus" });
+		const check = async (table: boolean) => {
+			await waitFor(() => {
+				expect(page.textContent).toContain(table ? "Table label" : "Base label");
+				expect(page.textContent).not.toContain(table ? "Base label" : "Table label");
+				expect(page.textContent).toContain(
+					table ? "/Game/Text/Table.Table" : "/Game/Text/Base.Base"
+				);
+				expect(page.textContent).not.toContain(
+					table ? "/Game/Text/Base.Base" : "/Game/Text/Table.Table"
+				);
+			});
+			const properties = within(page).getByRole("region", { name: "Properties" });
+			expect(properties.textContent).toContain(table ? "Table note" : "Base note");
+			expect(properties.textContent).not.toContain(table ? "Base note" : "Table note");
+			expect(properties.textContent).toContain(table ? "Editable" : "Read only");
+			expect(properties.textContent).not.toContain("Shared");
+			expect(page.textContent).not.toContain("Conflicting");
+			expect(page.textContent).toContain("1 location");
+		};
+		await check(!!firstIsTable);
+		await user.click(within(page).getByRole("button", { name: "Next line" }));
+		await check(!firstIsTable);
+		await user.click(within(page).getByRole("button", { name: "Previous line" }));
+		await check(!!firstIsTable);
+	});
+
 	it.each([["without grouping", true] as const, ["grouped", false] as const])(
 		"does not reopen a line only in the gather when the list is back first, %s",
 		async (_name, flat) => {

@@ -1,9 +1,27 @@
-# T01 — Concert prior art
-Question: Pending investigation.
-Why it matters for the sync layer: Pending investigation.
-Method: Pending investigation.
-Results: UNVERIFIED — task not yet run.
-Evidence: None yet.
-Confidence: low — no investigation yet.
-Surprises / risks found: Pending investigation.
-Open follow-ups: Complete this task.
+# T01 — Concert / Multi-User Editing prior art
+Question: How does Concert capture/replay transactions, and what can an external sync adapter learn or reuse?
+Why it matters for the sync layer: Closest engine-owned example of observing editor authority and handling echoes, cancellation, and object lifecycles.
+Method: `python research/sync-probe/evidence.py query T01 VERSION Engine/Plugins/Developer/Concert 'TransactionBridge|OnObjectTransacted|DataTable|SnapshotTransaction|FinalizedTransaction|OnPackageSaved|PackageDirtyState'` for each engine; read files with `read`; compare complete files with difflib (raw diffs preserved). Below, `C` = `Engine/Plugins/Developer/Concert/ConcertSync/ConcertSyncClient/Source/ConcertSyncClient/`. Line numbers apply to BOTH engines. Probe: none, source only.
+Results:
+
+| Aspect | UE 5.7.4 | UE 5.8.3 | Source evidence |
+| --- | --- | --- | --- |
+| Capture | Transaction-buffer state + object transacted + end frame | Same | `C/Private/ConcertClientTransactionBridge.cpp:791-799,1355-1425`: UTransBuffer::OnTransactionStateChanged, OnObjectTransacted, OnEndFrame; init via OnFEngineLoopInitComplete. |
+| Grouping | TransactionId = history entry; OperationId keys individual apply/undo/redo | Same | Bridge `:863-925,1274-1288`; starts on TransactionStarted/UndoRedoStarted, finalizes on TransactionFinalized/UndoRedoFinalized. |
+| Reflected changes | Resolve GetChangedProperties, serialize values using Concert writers | Same | Bridge `:1093,1124-1139,1177-1179`; reflected root properties, not arbitrary nested patches. |
+| Native/custom changes | Object serializer handles non-property data when enabled | Same | Bridge `:1097,1163-1175`; custom formats are opaque: serializer cannot know which part changed. |
+| Echo suppression | Scoped ignore bool for local capture; remote replay synthesizes notifications | Same | Public `IConcertClientTransactionBridge.h:113-120`; bridge `:865-868,1244-1249`; rejected local undo guarded in `ConcertClientTransactionManager.cpp:236-241`. Remote context/notifications at bridge `:556-562,742-754`. Precedent, not proof blanket suppression is sufficient for UE Shed. |
+| Interactive edits | Collect snapshots, coalesce and emit at end frame; final payload separate | Same | Bridge `:1312-1352,1427-1458`; manager `:793-831` rate limits snapshots, default 30/s (`ConcertSyncCore/Source/ConcertSyncCore/Public/ConcertSyncSettings.h:69,105`). Snapshot sends use EConcertMessageFlags::None (`manager:790`). |
+| Cancel | Compensate if snapshots were sent; otherwise discard | Same | Bridge `:907-924`; canceled flag included with finalized compensation. |
+| Undo/redo replay | PreEditUndo, deserialize, PostEditUndo, explicit property/transaction notifications | Same | Bridge `:365-375,592-624,652-665,707-754`; property change type Interactive for snapshots, Unspecified for finalized remote changes (`:722`). |
+| Creation/deletion/rename | Identity/pending-kill flags, create/reset, factories, component restrictions | Same | Bridge `:439-531,1017-1029,1071-1089,1142-1154`; `ConcertSyncClientUtil.cpp:119-145`; explicit GC deadlock TODO at bridge `:766-769`. |
+| Package lifecycle | Separate save/reload/registry/map hooks and dirty manager | Same | `ConcertClientPackageBridge.cpp:68-84,142-178,199-230,319-357`; `ConcertClientPackageManager.cpp:90,470`. |
+| Replay fence | Avoid active GUndo, saving packages, GC | Same core tests | `ConcertSyncClientUtil.cpp:112-116`; bridge `:832-835`. |
+| DataTables | No DataTable-specific match in queried tree | No match | Raw search; not proof of DataTable runtime support. Opaque serialization is a candidate, row-level coverage UNVERIFIED. |
+
+Public reuse: exported `IConcertClientTransactionBridge::NewInstance()` (`Public/IConcertClientTransactionBridge.h:111`), capture delegates, filters, inclusion controls, remote apply, StartBridge/StopBridge (`:227-237`). Concrete implementation and serializer utilities are private. Dependencies include Concert, ConcertClient, ConcertSyncCore and editor modules (`ConcertSyncClient.Build.cs:9-27,63-91`). Plugin is hidden, disabled by default, beta, UncookedOnly module (`ConcertSyncClient.uplugin:15-30`). No public-interface build/reuse experiment performed. Reviewed diffs show bridge behavior unchanged; 5.8 moves TransactionCommon include to Misc and changes logging. Package bridge diff changes logging only. Public interface is byte-identical after decoding.
+
+Evidence: [Source hashes/comparison](evidence/T01-source-comparison.txt); raw searches `out/sync-research/T01-5.7-source.txt`, `T01-5.8-source.txt`, per-file diffs alongside. Engine headers say Epic Games / All Rights Reserved; exported headers do not imply an OSS license. Distribution needs EULA review (T14), not copying private implementation. One rg call used an unsupported Windows filename wildcard and failed with os error 123; corrected to `rg -g 'ConcertClientTransaction*.cpp' DIRECTORY`.
+Confidence: high for reviewed source; low for runtime DataTable coverage or public-interface adoption, neither executed.
+Surprises / risks found: Native data can remain opaque; cancellation needs compensation; package lifecycle and transactions are separate; remote replay manually synthesizes ordinary undo notifications.
+Open follow-ups: Probe DataTable events and distinguish opaque payload from row deltas; weigh Concert dependency closure against direct transaction-buffer/UObject hooks; confirm replay fencing.

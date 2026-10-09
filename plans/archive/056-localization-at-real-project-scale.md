@@ -10,8 +10,8 @@
 
 ## Status
 
-- **State**: IN PROGRESS. Phases 1–5 are done; the plan closes when PR #61 merges. Memory at this
-  scale moves to Plan 057 (a compact, persistent Game Text index).
+- **State**: DONE. PR #61 merged with Phases 1–5 and three review fixes. Memory at this scale moves
+  to [Plan 057](../057-game-text-compact-index.md), a compact, persistent Game Text index.
 - **Priority**: P1
 - **Effort**: M
 - **Risk**: MEDIUM. Changing how gather filters match changes which lines count as inside a target,
@@ -209,7 +209,7 @@ Recorded per phase as it lands.
 The generated 132,606-entry, ten-culture target reduced PO parse time from 7.08 s to 1.88 s,
 archive parsing from 2.14 s to 0.98 s and manifest parsing from 1.85 s to 0.91 s. Evidence retained
 heap fell from 4,169 MiB to 1,121 MiB after GC; the final read completes on Node's default heap.
-See the [measurement and consumer audit](../docs/research/localization-read-performance-2026-10-09.md)
+See the [measurement and consumer audit](../../docs/research/localization-read-performance-2026-10-09.md)
 for profiling attribution, compact evidence, reproduction and verification results.
 
 ### Phase 5: saved package namespaces

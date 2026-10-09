@@ -22,7 +22,6 @@ the status row when done.
 | [052](052-text-identity-and-scope-tools.md)              | Text identity and scope tools for Game Text                     | P1       | L      | 051, Map History Perforce | IN PROGRESS — Phase 3 not started |
 | [053](053-game-text-review-workspace.md)                 | Game Text review workspace                                      | P1       | XL     | 052                       | IN PROGRESS — done, PR #58 open   |
 | [054](054-check-text-before-submit.md)                   | Check a change's text before it is submitted                    | P1       | M      | 052, 053                  | IN PROGRESS — done, PR #58 open   |
-| [056](056-localization-at-real-project-scale.md)         | Game Text localization at real-project scale                    | P1       | M      | 051, 052, 054             | IN PROGRESS — Phase 1             |
 | [057](057-game-text-compact-index.md)                    | A compact, persistent Game Text index                           | P1       | XL     | 056, 037                  | TODO                              |
 
 Status values: `TODO`, `IN PROGRESS`, `DONE`, `BLOCKED` with a one-line reason, or `REJECTED` with a
@@ -30,6 +29,12 @@ one-line rationale. When a plan is `DONE`, move it into [`archive/`](archive/) a
 table and the archive index.
 
 ## Notes for active work
+
+- Plan 056 completed and is archived under
+  [`archive/056-localization-at-real-project-scale.md`](archive/056-localization-at-real-project-scale.md)
+  after dashboard gather filters, PO line separators, tenfold limits, bounded diagnostics, faster
+  evidence reads and gathered package namespaces passed the portable gate and the UE 5.7/5.8
+  localization lane, and a 132,606-key UE 4.27 project read with correct states.
 
 - Plan 055 completed and is archived under
   [`archive/055-editor-foreground-responsiveness.md`](archive/055-editor-foreground-responsiveness.md)

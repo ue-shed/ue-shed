@@ -2,7 +2,7 @@
 
 > **Executor instructions**: Follow this plan in order. Before editing, read `AGENTS.md`,
 > `docs/README.md`, `docs/products/game-text.md`, ADR 0007, `docs/engineering/binary-project-index.md`,
-> Plans 033, 037 (archived) and 056, and `docs/engineering/testing.md`. Run targeted checks while
+> Plan 033, and Plans 037 and 056 (archived), and `docs/engineering/testing.md`. Run targeted checks while
 > iterating and `pnpm check` before handoff. Honour the STOP conditions.
 >
 > **Drift check (run before each phase)**:

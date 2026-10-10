@@ -1475,7 +1475,7 @@ where
         },
         contract: SavedWorldContract {
             name: SavedWorldContractName,
-            version: SavedWorldContractVersion { major: 2, minor: 1 },
+            version: SavedWorldContractVersion::CURRENT,
         },
         diagnostics,
         external_actor_root: roots

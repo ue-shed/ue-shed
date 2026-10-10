@@ -307,15 +307,45 @@ fn decode_typed_value(
         }
         "ArrayProperty" => {
             let path = path.to_string();
-            decode_array_value(source, type_spec.tree, payload, package, &path, depth).map(Some)
+            let serializer = ContainerSerializer::from_tag(package, flags);
+            decode_array_value(
+                source,
+                type_spec.tree,
+                payload,
+                package,
+                &path,
+                depth,
+                serializer,
+            )
+            .map(Some)
         }
         "SetProperty" => {
             let path = path.to_string();
-            decode_set_value(source, type_spec.tree, payload, package, &path, depth).map(Some)
+            let serializer = ContainerSerializer::from_tag(package, flags);
+            decode_set_value(
+                source,
+                type_spec.tree,
+                payload,
+                package,
+                &path,
+                depth,
+                serializer,
+            )
+            .map(Some)
         }
         "MapProperty" => {
             let path = path.to_string();
-            decode_map_value(source, type_spec.tree, payload, package, &path, depth).map(Some)
+            let serializer = ContainerSerializer::from_tag(package, flags);
+            decode_map_value(
+                source,
+                type_spec.tree,
+                payload,
+                package,
+                &path,
+                depth,
+                serializer,
+            )
+            .map(Some)
         }
         "StructProperty" => {
             let path = path.to_string();
@@ -546,6 +576,7 @@ fn decode_array_value(
     package: &Package,
     path: &str,
     depth: usize,
+    serializer: ContainerSerializer,
 ) -> Result<PropertyValue, PropertyError> {
     let (inner_type, inner_name) = resolve_inner_type(package, type_tree, path, "ArrayProperty")?;
 
@@ -582,6 +613,7 @@ fn decode_array_value(
             path,
             depth,
             count,
+            serializer,
         )?;
         if inner_payload.remaining() != 0 {
             return Err(unsupported_container_type(
@@ -605,9 +637,11 @@ fn decode_array_value(
         path,
         depth,
         count,
+        serializer,
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn decode_array_elements(
     source: &[u8],
     inner: TypeSpec<'_>,
@@ -616,6 +650,7 @@ fn decode_array_elements(
     path: &str,
     depth: usize,
     count: usize,
+    serializer: ContainerSerializer,
 ) -> Result<PropertyValue, PropertyError> {
     let capacity = payload.checked_vec_capacity::<PropertyValue>(
         count,
@@ -626,10 +661,18 @@ fn decode_array_elements(
     for index in 0..count {
         let element_path = format!("{path}[{index}]");
         values.push(
-            decode_container_element(source, inner, payload, package, &element_path, depth)?
-                .ok_or_else(|| {
-                    unsupported_container_type(payload, &element_path, "array element", inner.name)
-                })?,
+            decode_container_element(
+                source,
+                inner,
+                payload,
+                package,
+                &element_path,
+                depth,
+                serializer,
+            )?
+            .ok_or_else(|| {
+                unsupported_container_type(payload, &element_path, "array element", inner.name)
+            })?,
         );
     }
     Ok(PropertyValue::Array(values))
@@ -642,6 +685,7 @@ fn decode_set_value(
     package: &Package,
     path: &str,
     depth: usize,
+    serializer: ContainerSerializer,
 ) -> Result<PropertyValue, PropertyError> {
     let (element_type, element_name) = resolve_inner_type(package, type_tree, path, "SetProperty")?;
 
@@ -672,6 +716,7 @@ fn decode_set_value(
             package,
             &element_path,
             depth,
+            serializer,
         )?
         .ok_or_else(|| {
             unsupported_container_type(payload, &element_path, "set element", &element_name)
@@ -699,6 +744,7 @@ fn decode_set_value(
                 package,
                 &element_path,
                 depth,
+                serializer,
             )?
             .ok_or_else(|| {
                 unsupported_container_type(payload, &element_path, "set element", &element_name)
@@ -715,6 +761,7 @@ fn decode_map_value(
     package: &Package,
     path: &str,
     depth: usize,
+    serializer: ContainerSerializer,
 ) -> Result<PropertyValue, PropertyError> {
     let (key_type, key_name) = resolve_map_key_type(package, type_tree, path)?;
     let (value_type, value_name) = resolve_map_value_type(package, type_tree, path)?;
@@ -739,6 +786,7 @@ fn decode_map_value(
                 package,
                 &key_path,
                 depth,
+                serializer,
             )?
             .ok_or_else(|| unsupported_container_type(payload, &key_path, "map key", &key_name))?;
         }
@@ -775,6 +823,7 @@ fn decode_map_value(
             package,
             &key_path,
             depth,
+            serializer,
         )?
         .ok_or_else(|| unsupported_container_type(payload, &key_path, "map key", &key_name))?;
         let value = decode_container_element(
@@ -788,6 +837,7 @@ fn decode_map_value(
             package,
             &value_path,
             depth,
+            serializer,
         )?
         .ok_or_else(|| {
             unsupported_container_type(payload, &value_path, "map value", &value_name)
@@ -804,6 +854,7 @@ fn decode_container_element(
     package: &Package,
     path: &str,
     depth: usize,
+    serializer: ContainerSerializer,
 ) -> Result<Option<PropertyValue>, PropertyError> {
     if type_spec.is_user_defined_struct() {
         return decode_struct_value(source, type_spec, payload, package, path, depth).map(Some);
@@ -904,31 +955,51 @@ fn decode_container_element(
     if type_spec.name == "StructProperty"
         && let Some(struct_name) = unknown_layout_struct_name(package, type_spec.tree)
     {
-        // Container elements carry no per-element tag, so nothing says whether this struct was
-        // written as a tagged stream or with a native/binary serializer the reader does not know.
-        // A failed tagged attempt therefore marks the owning property as skipped instead of
-        // failing the export; the record's bounded span keeps the rest of the stream aligned.
-        return decode_typed_value(
-            source,
-            type_spec,
-            PropertyTagFlags::default(),
-            payload,
-            package,
-            path,
-            depth,
-        )
-        .map_err(|error| {
-            if error.raw_reason.is_some()
-                || error.kind() == crate::property::PropertyErrorKind::ResourceLimit
-            {
-                return error;
+        match serializer {
+            // The owning tag (or a content-package struct identity) proves a tagged stream, so a
+            // failure below is malformed data and propagates like any other modern payload.
+            ContainerSerializer::Tagged => {}
+            _ if is_user_defined_struct_identity(package, type_spec.tree)
+                || is_tagged_fallback_native_struct(package, type_spec.tree) => {}
+            // Some element type is binary or native and this one has no recipe. A tagged parse
+            // could succeed on native bytes by accident (an int64 equal to the `None` name index
+            // reads as an empty struct), so the property is skipped without guessing.
+            ContainerSerializer::BinaryOrNative => {
+                return Err(PropertyError::new(
+                    crate::property::PropertyErrorKind::UnsupportedCapability,
+                    Some(payload.tell()),
+                    path,
+                    format!("struct {struct_name} has no known binary or native layout"),
+                )
+                .with_raw_reason(RawReason::DecoderRejected(format!(
+                    "skipped: struct {struct_name} in a container is binary or native \
+                     serialized and has no known layout"
+                ))));
             }
-            let reason = RawReason::DecoderRejected(format!(
-                "skipped: struct {struct_name} in a container has no known layout and did not \
+            // Legacy tags carry no serializer evidence. Keep the tagged attempt they always had,
+            // but a failure marks the owning property as skipped instead of failing the export.
+            ContainerSerializer::Unknown => return decode_typed_value(
+                source,
+                type_spec,
+                PropertyTagFlags::default(),
+                payload,
+                package,
+                path,
+                depth,
+            )
+            .map_err(|error| {
+                if error.raw_reason.is_some()
+                    || error.kind() == crate::property::PropertyErrorKind::ResourceLimit
+                {
+                    return error;
+                }
+                let reason = RawReason::DecoderRejected(format!(
+                    "skipped: struct {struct_name} in a container has no known layout and did not \
                  decode as a tagged stream ({error})"
-            ));
-            error.with_raw_reason(reason)
-        });
+                ));
+                error.with_raw_reason(reason)
+            }),
+        }
     }
 
     decode_typed_value(
@@ -940,6 +1011,70 @@ fn decode_container_element(
         path,
         depth,
     )
+}
+
+/// How a container's struct elements were written, as recorded by the container's own tag.
+///
+/// UE 5.7/5.8 `FArrayProperty`, `FSetProperty` and `FMapProperty::UseBinaryOrNativeSerialization`
+/// delegate to the inner, element, key and value properties, and `FPropertyTag` saves the result
+/// as `HasBinaryOrNativeSerialize` from `PROPERTY_TAG_COMPLETE_TYPE_NAME` (1012). Scalars never
+/// set it, so a clear flag proves every struct element is a tagged stream. A set flag does not
+/// prove the opposite: a native `Serialize` may return `false` and fall back to tagged data.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ContainerSerializer {
+    /// Complete-type-name tag without the flag.
+    Tagged,
+    /// The flag is set: some element type (for maps, the key or the value) is binary or native.
+    BinaryOrNative,
+    /// Legacy tags record no serializer evidence.
+    Unknown,
+}
+
+impl ContainerSerializer {
+    fn from_tag(package: &Package, flags: PropertyTagFlags) -> Self {
+        if package.summary.versions.uses_legacy_property_tags() {
+            Self::Unknown
+        } else if flags.is_binary_or_native() {
+            Self::BinaryOrNative
+        } else {
+            Self::Tagged
+        }
+    }
+}
+
+/// Native structs whose `WithSerializer` sets the container flag but whose `Serialize` returns
+/// `false`, so `UScriptStruct::SerializeItem` falls back to tagged properties. Each entry is
+/// checked against the UE 5.7 and 5.8 source; the bytes alone cannot show the fallback.
+///
+/// - `FAnimNotifyEvent::Serialize` (AnimTypes.cpp) only records a custom version.
+const TAGGED_FALLBACK_NATIVE_STRUCTS: &[(&str, &str)] = &[("/Script/Engine", "AnimNotifyEvent")];
+
+fn is_tagged_fallback_native_struct(package: &Package, type_tree: &PropertyTypeName) -> bool {
+    let Some(identity) = type_tree.parameters.first() else {
+        return false;
+    };
+    let name = package.resolve_name_cow(identity.name);
+    let module = identity
+        .parameters
+        .first()
+        .and_then(|module| package.resolve_name_cow(module.name));
+    match (module, name) {
+        (Some(module), Some(name)) => TAGGED_FALLBACK_NATIVE_STRUCTS
+            .iter()
+            .any(|(known_module, known_name)| module == *known_module && name == *known_name),
+        _ => false,
+    }
+}
+
+/// Whether a complete struct identity names a struct saved in a content package. Only
+/// `UserDefinedStruct`s live outside `/Script/` modules, and they always serialize tagged.
+fn is_user_defined_struct_identity(package: &Package, type_tree: &PropertyTypeName) -> bool {
+    type_tree
+        .parameters
+        .first()
+        .and_then(|identity| identity.parameters.first())
+        .and_then(|module| package.resolve_name_cow(module.name))
+        .is_some_and(|module| module.starts_with('/') && !module.starts_with("/Script/"))
 }
 
 /// Decodes `/Script/CoreUObject` structs that have no per-element tag inside containers.
@@ -2188,7 +2323,7 @@ mod tests {
                 project,
                 0,
                 vec![type_tree(1, vec![type_tree(2, vec![type_tree(3, vec![])])])],
-                PropertyTagFlags(0),
+                PropertyTagFlags(0x08),
                 &set,
             )
             .unwrap();
@@ -2196,48 +2331,83 @@ mod tests {
         }
     }
 
-    fn unknown_struct_stream(element: &[u8]) -> (Package, Vec<u8>) {
+    const UNKNOWN_STRUCT_NAMES: &[&str] = &[
+        "None",
+        "Values",
+        "SetProperty",
+        "StructProperty",
+        "Mystery",
+        "/Script/Project",
+        "IntProperty",
+        "Next",
+        "MapProperty",
+        "Holder",
+        "IntPoint",
+        "/Script/CoreUObject",
+        "S_Row",
+        "/Game/Data/S_Row",
+        "AnimNotifyEvent",
+        "/Script/Engine",
+    ];
+
+    fn struct_param(name: i32, module: i32) -> crate::test_support::TypeParam {
         use crate::test_support::TypeParam;
-        let package = versioned_package(
-            &[
-                "None",
-                "Values",
-                "SetProperty",
-                "StructProperty",
-                "Mystery",
-                "/Script/Project",
-                "IntProperty",
-                "Next",
-            ],
-            1018,
-        );
-        let mut payload = Vec::new();
-        push_i32(&mut payload, 0);
-        push_i32(&mut payload, 1);
-        payload.extend_from_slice(element);
-        let mut bytes = Vec::new();
-        write_property_tag(
-            &mut bytes,
-            1,
-            &TypeParam {
-                type_index: 2,
+        TypeParam {
+            type_index: 3,
+            parameters: vec![TypeParam {
+                type_index: name,
                 parameters: vec![TypeParam {
-                    type_index: 3,
-                    parameters: vec![TypeParam {
-                        type_index: 4,
-                        parameters: vec![TypeParam {
-                            type_index: 5,
-                            parameters: vec![],
-                        }],
-                    }],
+                    type_index: module,
+                    parameters: vec![],
                 }],
-            },
-            0,
-            &payload,
-        );
+            }],
+        }
+    }
+
+    fn int_param() -> crate::test_support::TypeParam {
+        crate::test_support::TypeParam {
+            type_index: 6,
+            parameters: vec![],
+        }
+    }
+
+    /// A stream holding one container property `Values` with `flags`, then `Next = 99`.
+    fn container_stream(
+        container: crate::test_support::TypeParam,
+        flags: u8,
+        payload: &[u8],
+    ) -> (Package, Vec<u8>) {
+        let package = versioned_package(UNKNOWN_STRUCT_NAMES, 1018);
+        let mut bytes = Vec::new();
+        write_property_tag(&mut bytes, 1, &container, flags, payload);
         crate::test_support::write_int_property_tag(&mut bytes, 7, 6, 99);
         write_property_terminator(&mut bytes, 0);
         (package, bytes)
+    }
+
+    /// `TSet<Mystery>` with the given elements and container tag flags.
+    fn unknown_struct_set(flags: u8, elements: &[&[u8]]) -> (Package, Vec<u8>) {
+        let mut payload = Vec::new();
+        push_i32(&mut payload, 0);
+        push_i32(&mut payload, i32::try_from(elements.len()).unwrap());
+        for element in elements {
+            payload.extend_from_slice(element);
+        }
+        container_stream(
+            crate::test_support::TypeParam {
+                type_index: 2,
+                parameters: vec![struct_param(4, 5)],
+            },
+            flags,
+            &payload,
+        )
+    }
+
+    fn tagged_int_struct(value: i32) -> Vec<u8> {
+        let mut element = Vec::new();
+        crate::test_support::write_int_property_tag(&mut element, 7, 6, value);
+        write_property_terminator(&mut element, 0);
+        element
     }
 
     fn decode_unknown_struct_stream(
@@ -2255,11 +2425,7 @@ mod tests {
         Ok(stream)
     }
 
-    #[test]
-    fn complete_tags_skip_unknown_container_structs_with_a_reason() {
-        // A native-serialized element of an unknown struct: the tagged attempt fails.
-        let (package, bytes) = unknown_struct_stream(&[0xFF; 24]);
-        let stream = decode_unknown_struct_stream(&package, &bytes).expect("export survives");
+    fn assert_skipped(stream: &PropertyStream) {
         let PropertyValue::Raw {
             reason: RawReason::DecoderRejected(reason),
         } = &stream.records[0].value
@@ -2269,38 +2435,156 @@ mod tests {
                 stream.records[0].value
             );
         };
-        assert!(
-            reason.starts_with("skipped: struct Mystery in a container has no known layout"),
-            "{reason}"
-        );
-        assert_eq!(stream.records[1].value, PropertyValue::Int(99));
-
-        // A tagged element of the same unknown struct still decodes.
-        let mut element = Vec::new();
-        crate::test_support::write_int_property_tag(&mut element, 7, 6, 5);
-        write_property_terminator(&mut element, 0);
-        let (package, bytes) = unknown_struct_stream(&element);
-        let stream = decode_unknown_struct_stream(&package, &bytes).expect("tagged element");
-        let PropertyValue::Set(values) = &stream.records[0].value else {
-            panic!("expected a set, got {:?}", stream.records[0].value);
-        };
-        let [PropertyValue::Struct(inner)] = values.as_slice() else {
-            panic!("expected one tagged struct element, got {values:?}");
-        };
-        assert_eq!(inner.records[0].value, PropertyValue::Int(5));
+        assert!(reason.starts_with("skipped: struct "), "{reason}");
         assert_eq!(stream.records[1].value, PropertyValue::Int(99));
     }
 
     #[test]
-    fn unknown_container_struct_inside_a_tagged_struct_skips_only_the_inner_property() {
+    fn complete_tags_skip_native_container_structs_without_guessing() {
+        // Native bytes that fail as a tagged stream.
+        let (package, bytes) = unknown_struct_set(0x08, &[&[0xFF; 24]]);
+        assert_skipped(&decode_unknown_struct_stream(&package, &bytes).expect("export survives"));
+
+        // A native int64 equal to the `None` name index is also a valid empty tagged struct.
+        // Only the container's binary-or-native flag tells the two apart.
+        let native_none = 0_i64.to_le_bytes();
+        let (package, bytes) = unknown_struct_set(0x08, &[&native_none]);
+        assert_skipped(&decode_unknown_struct_stream(&package, &bytes).expect("export survives"));
+        let (package, bytes) = unknown_struct_set(0x00, &[&native_none]);
+        let stream = decode_unknown_struct_stream(&package, &bytes).expect("tagged evidence");
+        assert!(
+            matches!(&stream.records[0].value, PropertyValue::Set(values)
+                if matches!(values.as_slice(), [PropertyValue::Struct(inner)] if inner.records.is_empty())),
+            "{:?}",
+            stream.records[0].value
+        );
+
+        // Several native elements: the whole property is skipped, the stream stays aligned.
+        let (package, bytes) = unknown_struct_set(0x08, &[&native_none, &7_i64.to_le_bytes()]);
+        assert_skipped(&decode_unknown_struct_stream(&package, &bytes).expect("export survives"));
+    }
+
+    #[test]
+    fn complete_tags_decode_unknown_container_structs_only_with_tagged_evidence() {
+        let (first, second) = (tagged_int_struct(5), tagged_int_struct(6));
+        let (package, bytes) = unknown_struct_set(0x00, &[&first, &second]);
+        let stream = decode_unknown_struct_stream(&package, &bytes).expect("tagged elements");
+        let PropertyValue::Set(values) = &stream.records[0].value else {
+            panic!("expected a set, got {:?}", stream.records[0].value);
+        };
+        let ints: Vec<_> = values
+            .iter()
+            .map(|value| match value {
+                PropertyValue::Struct(inner) => inner.records[0].value.clone(),
+                other => panic!("expected a tagged struct, got {other:?}"),
+            })
+            .collect();
+        assert_eq!(ints, vec![PropertyValue::Int(5), PropertyValue::Int(6)]);
+        assert_eq!(stream.records[1].value, PropertyValue::Int(99));
+
+        // With tagged evidence, bytes that are not a tagged stream are malformed data.
+        let (package, bytes) = unknown_struct_set(0x00, &[&[0xFF; 24]]);
+        assert!(decode_unknown_struct_stream(&package, &bytes).is_err());
+
+        // A source-checked native struct whose Serialize falls back to tagged data decodes
+        // under the binary-or-native flag; the same short name in another module does not.
+        let set_of = |name: i32, module: i32| crate::test_support::TypeParam {
+            type_index: 2,
+            parameters: vec![struct_param(name, module)],
+        };
+        let mut payload = Vec::new();
+        push_i32(&mut payload, 0);
+        push_i32(&mut payload, 1);
+        payload.extend_from_slice(&tagged_int_struct(5));
+        let (package, bytes) = container_stream(set_of(14, 15), 0x08, &payload);
+        let stream = decode_unknown_struct_stream(&package, &bytes).expect("tagged fallback");
+        assert!(
+            matches!(&stream.records[0].value, PropertyValue::Set(values)
+                if matches!(values.as_slice(), [PropertyValue::Struct(_)])),
+            "{:?}",
+            stream.records[0].value
+        );
+        let (package, bytes) = container_stream(set_of(14, 5), 0x08, &payload);
+        assert_skipped(&decode_unknown_struct_stream(&package, &bytes).expect("export survives"));
+    }
+
+    #[test]
+    fn complete_map_tags_gate_unknown_keys_and_values_on_the_shared_flag() {
         use crate::test_support::TypeParam;
-        // Niagara's OverrideParameters shape: a tagged struct holding a map keyed by a
-        // natively serialized struct. Only the map is skipped; the struct and stream survive.
-        let (package, inner) = unknown_struct_stream(&[0xFF; 24]);
-        let mut package = package;
-        package
-            .names
-            .extend(["Holder".to_owned(), "Outer".to_owned()]);
+        let map = |key: TypeParam, value: TypeParam| TypeParam {
+            type_index: 8,
+            parameters: vec![key, value],
+        };
+        let entries = |pairs: &[(&[u8], &[u8])]| {
+            let mut payload = Vec::new();
+            push_i32(&mut payload, 0);
+            push_i32(&mut payload, i32::try_from(pairs.len()).unwrap());
+            for (key, value) in pairs {
+                payload.extend_from_slice(key);
+                payload.extend_from_slice(value);
+            }
+            payload
+        };
+        let decode = |container: TypeParam, flags: u8, payload: &[u8]| {
+            let (package, bytes) = container_stream(container, flags, payload);
+            decode_unknown_struct_stream(&package, &bytes).expect("export survives")
+        };
+        let native = 0_i64.to_le_bytes();
+        let seven = 7_i32.to_le_bytes();
+
+        // TMap<Mystery, int32>: a set flag can only come from the struct key.
+        assert_skipped(&decode(
+            map(struct_param(4, 5), int_param()),
+            0x08,
+            &entries(&[(&native, &seven), (&native, &seven)]),
+        ));
+
+        // TMap<FIntPoint, Mystery>: the binary key sets the flag, so the value is unproven.
+        let point = [1_i32.to_le_bytes(), 2_i32.to_le_bytes()].concat();
+        let value = tagged_int_struct(5);
+        assert_skipped(&decode(
+            map(struct_param(10, 11), struct_param(4, 5)),
+            0x08,
+            &entries(&[(&point, &value)]),
+        ));
+
+        // A user-defined struct is always tagged, even next to a binary key.
+        let stream = decode(
+            map(struct_param(10, 11), struct_param(12, 13)),
+            0x08,
+            &entries(&[(&point, &value)]),
+        );
+        let PropertyValue::Map(decoded) = &stream.records[0].value else {
+            panic!("expected a map, got {:?}", stream.records[0].value);
+        };
+        assert_eq!(
+            decoded[0].key,
+            PropertyValue::IntPoint(IntPointValue { x: 1, y: 2 })
+        );
+        assert!(matches!(&decoded[0].value, PropertyValue::Struct(inner)
+            if inner.records[0].value == PropertyValue::Int(5)));
+
+        // TMap<int32, Mystery> without the flag: every value is a tagged stream.
+        let (five, six) = (tagged_int_struct(5), tagged_int_struct(6));
+        let stream = decode(
+            map(int_param(), struct_param(4, 5)),
+            0x00,
+            &entries(&[(&seven, &five), (&seven, &six)]),
+        );
+        assert!(
+            matches!(&stream.records[0].value, PropertyValue::Map(entries) if entries.len() == 2),
+            "{:?}",
+            stream.records[0].value
+        );
+        assert_eq!(stream.records[1].value, PropertyValue::Int(99));
+    }
+
+    #[test]
+    fn native_container_struct_inside_a_tagged_struct_skips_only_the_inner_property() {
+        use crate::test_support::TypeParam;
+        // A tagged struct holding a binary-flagged container of a natively serialized struct.
+        // Only the container is skipped; the struct and the outer stream survive.
+        let (package, inner) = unknown_struct_set(0x08, &[&[0xFF; 24]]);
         let mut bytes = Vec::new();
         write_property_tag(
             &mut bytes,
@@ -2308,7 +2592,7 @@ mod tests {
             &TypeParam {
                 type_index: 3,
                 parameters: vec![TypeParam {
-                    type_index: 8,
+                    type_index: 9,
                     parameters: vec![TypeParam {
                         type_index: 5,
                         parameters: vec![],

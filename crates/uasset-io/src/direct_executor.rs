@@ -40,10 +40,11 @@ pub(crate) use project_index_io::{
     query_project_id, refresh as project_index_refresh_protocol,
     status as project_index_status_protocol,
 };
+pub(crate) use project_io::{SavedWorldReadOptions, SkippedPropertyDetail};
 pub(crate) use project_io::{
     extract_text, extract_text_with_cancellation, extract_texture,
-    extract_texture_with_cancellation, saved_world, saved_world_with_cancellation_and_progress,
-    scan, scan_with_cancellation,
+    extract_texture_with_cancellation, saved_world_with_cancellation_and_progress,
+    saved_world_with_options, scan, scan_with_cancellation,
 };
 
 #[derive(Debug, Default)]

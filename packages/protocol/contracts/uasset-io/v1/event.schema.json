@@ -8776,6 +8776,22 @@
 							"detail": {
 								"type": "string"
 							},
+							"count": {
+								"type": "integer",
+								"allOf": [
+									{
+										"minimum": 0
+									}
+								]
+							},
+							"exports": {
+								"type": "integer",
+								"allOf": [
+									{
+										"minimum": 0
+									}
+								]
+							},
 							"actorDropped": {
 								"type": "boolean"
 							}

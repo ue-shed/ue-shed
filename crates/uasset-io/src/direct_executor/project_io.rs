@@ -1316,10 +1316,19 @@ fn package_error_code(error: &PackageError) -> &'static str {
     }
 }
 
-pub(crate) fn saved_world(request: &Request) -> Result<SavedWorldOutput, Failure> {
-    saved_world_with_cancellation(request, &CancellationToken::new())
+pub(crate) fn saved_world_with_options(
+    request: &Request,
+    options: SavedWorldReadOptions,
+) -> Result<SavedWorldOutput, Failure> {
+    saved_world_with_cancellation_progress_and_options(
+        request,
+        &CancellationToken::new(),
+        &|_, _| {},
+        options,
+    )
 }
 
+#[cfg(test)]
 pub(crate) fn saved_world_with_cancellation(
     request: &Request,
     cancellation: &CancellationToken,
@@ -1331,6 +1340,23 @@ pub(crate) fn saved_world_with_cancellation_and_progress<F>(
     request: &Request,
     cancellation: &CancellationToken,
     on_progress: &F,
+) -> Result<SavedWorldOutput, Failure>
+where
+    F: Fn(u64, u64) + Sync,
+{
+    saved_world_with_cancellation_progress_and_options(
+        request,
+        cancellation,
+        on_progress,
+        SavedWorldReadOptions::default(),
+    )
+}
+
+fn saved_world_with_cancellation_progress_and_options<F>(
+    request: &Request,
+    cancellation: &CancellationToken,
+    on_progress: &F,
+    options: SavedWorldReadOptions,
 ) -> Result<SavedWorldOutput, Failure>
 where
     F: Fn(u64, u64) + Sync,
@@ -1408,7 +1434,8 @@ where
                     let Some(path) = paths.get(index) else {
                         break;
                     };
-                    let result = read_saved_world_package(path, content_root, &cancellation);
+                    let result =
+                        read_saved_world_package(path, content_root, options, &cancellation);
                     slots
                         .lock()
                         .expect("saved-world slots must not be poisoned")[index] = Some(result);
@@ -1645,6 +1672,8 @@ impl SavedWorldPackageRead {
                 category: code.to_owned(),
                 detail,
                 actor_dropped: true,
+                count: None,
+                exports: None,
             }],
             failure_code: Some(code.to_owned()),
             fragment: None,
@@ -1670,31 +1699,106 @@ fn package_name_from_path(path: &Path, content_root: &Path) -> String {
     )
 }
 
-/// `packageErrors` category for an export that decoded with property values kept raw.
+/// `packageErrors` category for decoded exports that kept property values raw.
 const SKIPPED_PROPERTY_CATEGORY: &str = "skipped_property";
-const SKIPPED_PROPERTY_DETAIL_LIMIT: usize = 3;
+/// Types named in an aggregated `skipped_property` detail; the rest are counted.
+const SKIPPED_PROPERTY_TYPE_LIMIT: usize = 5;
+/// Property paths named in a per-export `skipped_property` detail.
+const SKIPPED_PROPERTY_PATH_LIMIT: usize = 3;
 
-fn skipped_property_detail(
-    properties: &[uasset_inspection::saved_world::SavedWorldUndecodedProperty],
-) -> String {
-    let listed = properties
-        .iter()
-        .take(SKIPPED_PROPERTY_DETAIL_LIMIT)
-        .map(|property| format!("{} ({})", property.path, property.reason))
-        .collect::<Vec<_>>()
-        .join("; ");
-    let more = properties
-        .len()
-        .saturating_sub(SKIPPED_PROPERTY_DETAIL_LIMIT);
-    let suffix = if more > 0 {
-        format!("; and {more} more")
-    } else {
-        String::new()
+/// How saved-world reports exports that decoded with raw property values.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) enum SkippedPropertyDetail {
+    /// One `skipped_property` entry per package, with counts and the most frequent types.
+    #[default]
+    Package,
+    /// One entry per affected export, naming its first property paths. Opt-in: large maps can
+    /// have thousands of such exports.
+    Export,
+}
+
+/// Options for a saved-world read that are not part of the protocol request.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct SavedWorldReadOptions {
+    pub(crate) skipped_property_detail: SkippedPropertyDetail,
+}
+
+fn skipped_property_errors(
+    package: &str,
+    exports: &[uasset_inspection::saved_world::SavedWorldIncompleteExport],
+    detail: SkippedPropertyDetail,
+) -> Vec<SavedWorldPackageError> {
+    let entry = |export: Option<String>, count: usize, exports: usize, detail: String| {
+        SavedWorldPackageError {
+            package: package.to_owned(),
+            export,
+            category: SKIPPED_PROPERTY_CATEGORY.to_owned(),
+            detail,
+            actor_dropped: false,
+            count: Some(count as u64),
+            exports: Some(exports as u64),
+        }
     };
-    format!(
-        "{} property value(s) not decoded: {listed}{suffix}",
-        properties.len()
-    )
+    match detail {
+        _ if exports.is_empty() => Vec::new(),
+        SkippedPropertyDetail::Export => exports
+            .iter()
+            .map(|export| {
+                let properties = &export.properties;
+                let listed = properties
+                    .iter()
+                    .take(SKIPPED_PROPERTY_PATH_LIMIT)
+                    .map(|property| format!("{} ({})", property.path, property.reason))
+                    .collect::<Vec<_>>()
+                    .join("; ");
+                let more = properties.len().saturating_sub(SKIPPED_PROPERTY_PATH_LIMIT);
+                let suffix = if more > 0 {
+                    format!("; and {more} more")
+                } else {
+                    String::new()
+                };
+                entry(
+                    Some(export.object_path.to_string()),
+                    properties.len(),
+                    1,
+                    format!(
+                        "{} property value(s) not decoded: {listed}{suffix}",
+                        properties.len()
+                    ),
+                )
+            })
+            .collect(),
+        SkippedPropertyDetail::Package => {
+            let mut by_type = BTreeMap::<&str, usize>::new();
+            for property in exports.iter().flat_map(|export| &export.properties) {
+                *by_type.entry(property.type_name.as_str()).or_default() += 1;
+            }
+            let count = by_type.values().sum::<usize>();
+            let mut ranked: Vec<_> = by_type.into_iter().collect();
+            ranked.sort_by(|left, right| right.1.cmp(&left.1).then(left.0.cmp(right.0)));
+            let listed = ranked
+                .iter()
+                .take(SKIPPED_PROPERTY_TYPE_LIMIT)
+                .map(|(name, count)| format!("{name} {count}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let more = ranked.len().saturating_sub(SKIPPED_PROPERTY_TYPE_LIMIT);
+            let suffix = if more > 0 {
+                format!(", and {more} more type(s)")
+            } else {
+                String::new()
+            };
+            vec![entry(
+                None,
+                count,
+                exports.len(),
+                format!(
+                    "{count} property value(s) in {} export(s) not decoded; by type: {listed}{suffix}",
+                    exports.len()
+                ),
+            )]
+        }
+    }
 }
 
 fn export_error_category(kind: AssetErrorKind) -> &'static str {
@@ -1760,6 +1864,7 @@ fn outer_is_level(package: &Package, export: &Export) -> bool {
 fn read_saved_world_package(
     path: &Path,
     content_root: &Path,
+    options: SavedWorldReadOptions,
     cancellation: &CancellationToken,
 ) -> Result<SavedWorldPackageRead, Failure> {
     checkpoint(cancellation, "read")?;
@@ -1806,6 +1911,8 @@ fn read_saved_world_package(
                     category: export_error_category(error.kind()).to_owned(),
                     detail: error.message().to_owned(),
                     actor_dropped: may_be_actor_export(&package, export),
+                    count: None,
+                    exports: None,
                 });
                 failed_exports.push(export.object_path.clone());
             }
@@ -1814,18 +1921,11 @@ fn read_saved_world_package(
     }
     let mut fragment = project_saved_world_package(&package, &decoded);
     fragment.failed_exports = failed_exports;
-    errors.extend(
-        fragment
-            .incomplete_exports
-            .iter()
-            .map(|export| SavedWorldPackageError {
-                package: package.summary.package_name.clone(),
-                export: Some(export.object_path.to_string()),
-                category: SKIPPED_PROPERTY_CATEGORY.to_owned(),
-                detail: skipped_property_detail(&export.properties),
-                actor_dropped: false,
-            }),
-    );
+    errors.extend(skipped_property_errors(
+        &package.summary.package_name,
+        &fragment.incomplete_exports,
+        options.skipped_property_detail,
+    ));
     checkpoint(cancellation, "inspection")?;
     // Skipped property values mark their actors partial and are listed, but the export itself
     // was read, so they do not make the package partial.
@@ -1939,6 +2039,20 @@ mod tests {
     }
 
     fn read_fixture_world(project_root: &std::path::Path, map: &str) -> super::SavedWorldOutput {
+        read_fixture_world_with(
+            project_root,
+            map,
+            super::SkippedPropertyDetail::Package,
+            true,
+        )
+    }
+
+    fn read_fixture_world_with(
+        project_root: &std::path::Path,
+        map: &str,
+        skipped_property_detail: super::SkippedPropertyDetail,
+        remove: bool,
+    ) -> super::SavedWorldOutput {
         let request: Request = serde_json::from_value(serde_json::json!({
             "contract": { "name": "uasset-io", "version": { "major": 1, "minor": 0 } },
             "limits": { "concurrency": 2 },
@@ -1950,8 +2064,16 @@ mod tests {
             "requestId": "saved-world-package-errors"
         }))
         .expect("saved-world request");
-        let output = super::saved_world(&request).expect("partial saved world still succeeds");
-        std::fs::remove_dir_all(project_root).expect("remove copied project");
+        let output = super::saved_world_with_options(
+            &request,
+            super::SavedWorldReadOptions {
+                skipped_property_detail,
+            },
+        )
+        .expect("partial saved world still succeeds");
+        if remove {
+            std::fs::remove_dir_all(project_root).expect("remove copied project");
+        }
         output
     }
 
@@ -2022,22 +2144,57 @@ mod tests {
         bytes[flags_offset] |= 0x08;
         std::fs::write(target, bytes).expect("flag property");
 
-        let output = read_fixture_world(&project_root, map);
-        let world = output.world;
-        assert!(
-            !output.partial,
-            "a skipped property does not make the package partial"
-        );
-        assert_eq!(world.summary.partial_packages, 0);
-        let [error] = world.package_errors.as_slice() else {
-            panic!(
-                "expected one package error, got {:#?}",
-                world.package_errors
+        let package_name = package.summary.package_name.clone();
+        let read = |detail| {
+            let output = read_fixture_world_with(&project_root, map, detail, false);
+            assert!(
+                !output.partial,
+                "a skipped property does not make the package partial"
             );
+            assert_eq!(output.world.summary.partial_packages, 0);
+            for actor in &output.world.actors {
+                let expected = if actor.actor_path == actor_path {
+                    SavedWorldActorDecode::Partial
+                } else {
+                    SavedWorldActorDecode::Complete
+                };
+                assert_eq!(actor.decode, Some(expected), "{}", actor.actor_path);
+            }
+            assert!(
+                output
+                    .world
+                    .actors
+                    .iter()
+                    .any(|actor| actor.actor_path == actor_path)
+            );
+            output.world.package_errors
+        };
+
+        // By default: one entry for the package, counting values and exports by type.
+        let errors = read(super::SkippedPropertyDetail::Package);
+        let [error] = errors.as_slice() else {
+            panic!("expected one package error, got {errors:#?}");
         };
         assert_eq!(error.category, "skipped_property");
-        assert_eq!(error.export.as_deref(), Some(component_path.as_str()));
+        assert_eq!(error.package, package_name);
+        assert_eq!(error.export, None);
+        assert_eq!((error.count, error.exports), (Some(1), Some(1)));
         assert!(!error.actor_dropped);
+        assert!(
+            error
+                .detail
+                .starts_with("1 property value(s) in 1 export(s) not decoded; by type: "),
+            "{}",
+            error.detail
+        );
+
+        // Opt-in: one entry per affected export, naming the property.
+        let errors = read(super::SkippedPropertyDetail::Export);
+        let [error] = errors.as_slice() else {
+            panic!("expected one export error, got {errors:#?}");
+        };
+        assert_eq!(error.export.as_deref(), Some(component_path.as_str()));
+        assert_eq!((error.count, error.exports), (Some(1), Some(1)));
         assert!(
             error.detail.starts_with(&format!(
                 "1 property value(s) not decoded: {property_name} ("
@@ -2045,20 +2202,54 @@ mod tests {
             "{}",
             error.detail
         );
-        assert!(
-            world
-                .actors
-                .iter()
-                .any(|actor| actor.actor_path == actor_path)
+        std::fs::remove_dir_all(&project_root).expect("remove copied project");
+    }
+
+    #[test]
+    fn skipped_property_aggregation_ranks_types_and_truncates() {
+        use uasset_inspection::saved_world::{
+            SavedWorldIncompleteExport, SavedWorldUndecodedProperty,
+        };
+        let property = |type_name: &str| SavedWorldUndecodedProperty {
+            path: "P".to_owned(),
+            reason: "unsupported type".to_owned(),
+            type_name: type_name.to_owned(),
+        };
+        let export = |path: &str, types: &[&str]| SavedWorldIncompleteExport {
+            object_path: ObjectPath::new(path),
+            properties: types.iter().map(|name| property(name)).collect(),
+        };
+        let exports = [
+            export("A", &["F", "A", "A", "B"]),
+            export("B", &["A", "C", "D", "E", "G", "B"]),
+        ];
+        let errors = super::skipped_property_errors(
+            "/Game/P",
+            &exports,
+            super::SkippedPropertyDetail::Package,
         );
-        for actor in &world.actors {
-            let expected = if actor.actor_path == actor_path {
-                SavedWorldActorDecode::Partial
-            } else {
-                SavedWorldActorDecode::Complete
-            };
-            assert_eq!(actor.decode, Some(expected), "{}", actor.actor_path);
-        }
+        let [error] = errors.as_slice() else {
+            panic!("one aggregated entry");
+        };
+        assert_eq!((error.count, error.exports), (Some(10), Some(2)));
+        assert_eq!(
+            error.detail,
+            "10 property value(s) in 2 export(s) not decoded; by type: A 3, B 2, C 1, D 1, E 1, \
+             and 2 more type(s)"
+        );
+        assert!(
+            super::skipped_property_errors("/Game/P", &[], super::SkippedPropertyDetail::Package)
+                .is_empty()
+        );
+        assert_eq!(
+            super::skipped_property_errors(
+                "/Game/P",
+                &exports,
+                super::SkippedPropertyDetail::Export
+            )
+            .len(),
+            2
+        );
     }
 
     #[test]

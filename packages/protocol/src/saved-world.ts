@@ -99,6 +99,10 @@ export const SavedWorldPackageError = Schema.Struct({
 	 */
 	category: Schema.String,
 	detail: Schema.String,
+	/** `skipped_property` only: how many property values were not decoded. */
+	count: Schema.optionalKey(NonNegativeInt),
+	/** `skipped_property` only: how many exports those values belong to. */
+	exports: Schema.optionalKey(NonNegativeInt),
 	/**
 	 * Whether an actor may be missing: a failed level child that is not a known non-actor (an
 	 * unclassifiable class counts as possible), or, by convention, a package that could not be

@@ -11,7 +11,7 @@ use uasset_parser::archive::Guid;
 use uasset_parser::asset::{DecodedAsset, DecodedUObject};
 use uasset_parser::package::{ObjectPath, Package, PackageIndex};
 use uasset_parser::property::{
-    PropertyRecord, PropertyStream, PropertyValue, RotatorValue, VectorValue,
+    PropertyRecord, PropertyStream, PropertyTypeName, PropertyValue, RotatorValue, VectorValue,
 };
 
 /// A double-precision Unreal vector retained from a saved property.
@@ -149,6 +149,9 @@ pub struct SavedWorldIncompleteExport {
 pub struct SavedWorldUndecodedProperty {
     pub path: String,
     pub reason: String,
+    /// The struct or property type that could not be decoded: the skipped struct for a container
+    /// element, otherwise the innermost struct (or property type) of the owning record.
+    pub type_name: String,
 }
 
 /// Whether an actor's export and all of its subobject exports decoded.
@@ -314,7 +317,37 @@ fn collect_undecoded_stream(
         if record.array_index > 0 {
             path = format!("{path}[{}]", record.array_index);
         }
-        collect_undecoded_value(package, &record.value, &path, found);
+        let label = type_label(package, &record.type_name);
+        collect_undecoded_value(package, &record.value, &path, &label, found);
+    }
+}
+
+/// The innermost struct name of a property type, or the property type itself: `SplineCurves` for
+/// `StructProperty(SplineCurves(...))` and `ArrayProperty(StructProperty(SplineCurves(...)))`.
+fn type_label(package: &Package, type_name: &PropertyTypeName) -> String {
+    let name = package
+        .resolve_name_cow(type_name.name)
+        .map_or_else(|| "?".to_owned(), |name| name.into_owned());
+    let parameter = |index: usize| type_name.parameters.get(index);
+    match name.as_str() {
+        "StructProperty" => parameter(0)
+            .and_then(|identity| package.resolve_name_cow(identity.name))
+            .map_or(name.clone(), |name| name.into_owned()),
+        "ArrayProperty" | "SetProperty" | "OptionalProperty" => {
+            parameter(0).map_or(name.clone(), |inner| type_label(package, inner))
+        }
+        "MapProperty" => match (parameter(0), parameter(1)) {
+            (Some(key), Some(value)) => {
+                let value_label = type_label(package, value);
+                if value_label.ends_with("Property") {
+                    type_label(package, key)
+                } else {
+                    value_label
+                }
+            }
+            _ => name,
+        },
+        _ => name,
     }
 }
 
@@ -322,17 +355,27 @@ fn collect_undecoded_value(
     package: &Package,
     value: &PropertyValue,
     path: &str,
+    label: &str,
     found: &mut Vec<SavedWorldUndecodedProperty>,
 ) {
     match value {
-        PropertyValue::Raw { reason } => found.push(SavedWorldUndecodedProperty {
-            path: path.to_owned(),
-            reason: reason.detail().into_owned(),
-        }),
+        PropertyValue::Raw { reason } => {
+            let reason = reason.detail().into_owned();
+            let type_name = reason
+                .strip_prefix("skipped: struct ")
+                .and_then(|rest| rest.split_whitespace().next())
+                .unwrap_or(label)
+                .to_owned();
+            found.push(SavedWorldUndecodedProperty {
+                path: path.to_owned(),
+                reason,
+                type_name,
+            });
+        }
         PropertyValue::Struct(stream) => collect_undecoded_stream(package, stream, path, found),
         PropertyValue::Array(values) | PropertyValue::Set(values) => {
             for (index, value) in values.iter().enumerate() {
-                collect_undecoded_value(package, value, &format!("{path}[{index}]"), found);
+                collect_undecoded_value(package, value, &format!("{path}[{index}]"), label, found);
             }
         }
         PropertyValue::Map(entries) => {
@@ -341,12 +384,14 @@ fn collect_undecoded_value(
                     package,
                     &entry.key,
                     &format!("{path}[{index}].Key"),
+                    label,
                     found,
                 );
                 collect_undecoded_value(
                     package,
                     &entry.value,
                     &format!("{path}[{index}].Value"),
+                    label,
                     found,
                 );
             }
@@ -357,13 +402,14 @@ fn collect_undecoded_value(
                     package,
                     &field.value,
                     &format!("{path}.{}", field.name),
+                    label,
                     found,
                 );
             }
         }
         PropertyValue::InstancedStruct {
             value: Some(value), ..
-        } => collect_undecoded_value(package, value, path, found),
+        } => collect_undecoded_value(package, value, path, label, found),
         _ => {}
     }
 }
@@ -1195,6 +1241,7 @@ mod tests {
             properties: vec![SavedWorldUndecodedProperty {
                 path: "Parameters".to_owned(),
                 reason: "unsupported type".to_owned(),
+                type_name: "ParameterStore".to_owned(),
             }],
         }];
         let skipped = decode(&package);
@@ -1278,10 +1325,12 @@ mod tests {
                 SavedWorldUndecodedProperty {
                     path: format!("{}.{}[0].Value", text(1), text(3)),
                     reason: "skipped: struct X".to_owned(),
+                    type_name: "X".to_owned(),
                 },
                 SavedWorldUndecodedProperty {
                     path: format!("{}[1]", text(4)),
                     reason: "unsupported type".to_owned(),
+                    type_name: text(0),
                 },
             ]
         );

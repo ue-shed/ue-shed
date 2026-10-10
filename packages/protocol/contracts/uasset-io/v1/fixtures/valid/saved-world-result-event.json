@@ -27,6 +27,14 @@
 					"category": "export_malformed_data",
 					"detail": "name index must be non-negative, got -1",
 					"actorDropped": false
+				},
+				{
+					"package": "/Game/Maps/Example",
+					"category": "skipped_property",
+					"detail": "3 property value(s) in 2 export(s) not decoded; by type: SplineCurves 2, SoftClassPath 1",
+					"count": 3,
+					"exports": 2,
+					"actorDropped": false
 				}
 			],
 			"sourceKind": "level",

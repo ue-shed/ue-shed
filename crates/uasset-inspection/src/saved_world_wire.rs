@@ -44,6 +44,12 @@ pub struct SavedWorldPackageError {
     /// `skipped_property` (export decoded with raw property values).
     pub category: String,
     pub detail: String,
+    /// `skipped_property` only: the number of property values that were not decoded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub count: Option<u64>,
+    /// `skipped_property` only: the number of exports those values belong to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exports: Option<u64>,
     /// Whether an actor may be missing. True for a failed level child that is not a known
     /// non-actor (class unknown to the reader counts as possible), and by convention for a package
     /// that could not be read at all. Always false for `skipped_property`.
@@ -513,6 +519,37 @@ mod tests {
     }
 
     #[test]
+    fn skipped_property_counts_round_trip_and_stay_optional() {
+        let aggregated = SavedWorldPackageError {
+            package: "/Game/Fixture/L".to_owned(),
+            export: None,
+            category: "skipped_property".to_owned(),
+            detail: "3 property value(s) in 2 export(s) not decoded; by type: A 2, B 1".to_owned(),
+            count: Some(3),
+            exports: Some(2),
+            actor_dropped: false,
+        };
+        let json = serde_json::to_string(&aggregated).expect("error JSON");
+        assert_eq!(
+            json,
+            concat!(
+                r#"{"package":"/Game/Fixture/L","category":"skipped_property","#,
+                r#""detail":"3 property value(s) in 2 export(s) not decoded; by type: A 2, B 1","#,
+                r#""count":3,"exports":2,"actorDropped":false}"#
+            )
+        );
+        assert_eq!(
+            serde_json::from_str::<SavedWorldPackageError>(&json).expect("error wire"),
+            aggregated
+        );
+        let without: SavedWorldPackageError = serde_json::from_str(
+            r#"{"package":"P","category":"asset_io","detail":"d","actorDropped":true}"#,
+        )
+        .expect("no counts");
+        assert_eq!((without.count, without.exports), (None, None));
+    }
+
+    #[test]
     fn contract_2_0_actor_and_world_documents_still_deserialize() {
         let actor: SavedWorldActor = serde_json::from_str(concat!(
             r#"{"actorPath":"A","classPath":"/Script/Engine.Actor","packageName":"/Game/P","#,
@@ -587,6 +624,8 @@ mod tests {
                     export: Some("/Game/Fixture/L.L:PersistentLevel.A".to_owned()),
                     category: "malformed_data".to_owned(),
                     detail: "bad".to_owned(),
+                    count: None,
+                    exports: None,
                     actor_dropped: true,
                 },
                 SavedWorldPackageError {
@@ -594,6 +633,8 @@ mod tests {
                     export: None,
                     category: "asset_io".to_owned(),
                     detail: "unreadable".to_owned(),
+                    count: None,
+                    exports: None,
                     actor_dropped: true,
                 },
             ],

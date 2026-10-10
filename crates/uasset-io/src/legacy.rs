@@ -95,6 +95,7 @@ struct SavedWorldOptions {
     format: OutputFormat,
     concurrency: usize,
     maximum_assets: usize,
+    skipped_property_detail: direct_executor::SkippedPropertyDetail,
 }
 
 #[derive(Debug, Default, Eq, PartialEq)]
@@ -308,6 +309,7 @@ impl Command {
         let mut format = OutputFormat::Json;
         let mut concurrency = std::thread::available_parallelism().map_or(4, usize::from);
         let mut maximum_assets = DEFAULT_SAVED_WORLD_MAXIMUM_ASSETS;
+        let mut skipped_property_detail = direct_executor::SkippedPropertyDetail::default();
         let mut positional = Vec::new();
         let mut index = 0;
         while index < arguments.len() {
@@ -337,6 +339,18 @@ impl Command {
                         .ok_or_else(|| "--maximum-assets requires a positive integer".to_owned())?;
                     maximum_assets = parse_concurrency(value)?;
                 }
+                Some("--skipped-properties") => {
+                    index += 1;
+                    skipped_property_detail = match arguments.get(index).and_then(|v| v.to_str()) {
+                        Some("package") => direct_executor::SkippedPropertyDetail::Package,
+                        Some("export") => direct_executor::SkippedPropertyDetail::Export,
+                        _ => {
+                            return Err(
+                                "--skipped-properties requires package or export".to_owned()
+                            );
+                        }
+                    };
+                }
                 Some(value) if value.starts_with('-') => {
                     return Err(format!("unknown saved-world option {value:?}"));
                 }
@@ -356,6 +370,7 @@ impl Command {
             format,
             concurrency,
             maximum_assets,
+            skipped_property_detail,
         }))
     }
 }
@@ -626,7 +641,10 @@ fn saved_world(options: &SavedWorldOptions) -> u8 {
             return EXIT_USAGE;
         }
     };
-    match direct_executor::saved_world(&request) {
+    let read_options = direct_executor::SavedWorldReadOptions {
+        skipped_property_detail: options.skipped_property_detail,
+    };
+    match direct_executor::saved_world_with_options(&request, read_options) {
         Ok(output) => {
             let result = write_json_line(&output.world);
             if result == EXIT_SUCCESS && output.partial {
@@ -895,7 +913,9 @@ Commands:\n\
   authoring   Emit the typed authoring snapshot for one DataTable package.\n\
   animation   Summarize saved animation timing, tracks, curves and notifies (--format json).\n\
   scan        Scan selected project packages, optionally at header depth.\n\
-  saved-world Read one saved map and resolve actor transforms.\n\n\
+  saved-world Read one saved map and resolve actor transforms.\n\
+              --skipped-properties package|export (default package): one\n\
+              skipped_property entry per package, or one per affected export.\n\n\
 Protocol operations use the same native direct executors as these human adapters.\n";
 
 #[cfg(test)]
@@ -980,6 +1000,28 @@ mod tests {
         };
         assert_eq!(options.maximum_assets, 10);
         assert_eq!(options.map_path, PathBuf::from("map.umap"));
+        assert_eq!(
+            options.skipped_property_detail,
+            direct_executor::SkippedPropertyDetail::Package
+        );
+
+        let parse = |value: &str| {
+            Command::parse(vec![
+                "saved-world".into(),
+                "project".into(),
+                "map.umap".into(),
+                "--skipped-properties".into(),
+                value.into(),
+            ])
+        };
+        let Ok(Command::SavedWorld(options)) = parse("export") else {
+            panic!("saved-world command")
+        };
+        assert_eq!(
+            options.skipped_property_detail,
+            direct_executor::SkippedPropertyDetail::Export
+        );
+        assert!(parse("everything").is_err());
     }
 
     #[test]

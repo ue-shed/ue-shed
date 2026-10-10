@@ -410,23 +410,25 @@ fn protocol_process_emits_saved_world_with_deterministic_actor_order() {
     let skipped = &package_errors[0];
     assert_eq!(skipped["category"], "skipped_property");
     assert_eq!(skipped["actorDropped"], false);
-    let skipped_export = skipped["export"].as_str().expect("skipped export");
+    assert_eq!(skipped["count"], 1);
+    assert_eq!(skipped["exports"], 1);
+    assert!(skipped.get("export").is_none(), "aggregated per package");
+    assert!(
+        skipped["detail"]
+            .as_str()
+            .is_some_and(|detail| detail.ends_with("by type: SoftClassPath 1")),
+        "{skipped}"
+    );
     assert_eq!(one_world["result"]["world"]["completeness"], "complete");
     let conventional_actors = one_world["result"]["world"]["actors"]
         .as_array()
         .expect("conventional actors");
-    for actor in conventional_actors {
-        let path = actor["actorPath"].as_str().expect("actor path");
-        let owns_skipped = skipped_export.starts_with(&format!("{path}."));
-        assert_eq!(
-            actor["decode"],
-            if owns_skipped { "partial" } else { "complete" },
-            "{path}"
-        );
-    }
+    // World settings has no root component, so it is not a saved-world actor and no listed
+    // actor turns partial.
     assert!(
-        skipped_export.contains(".WorldSettings."),
-        "world settings has no root component, so it is listed but is not a saved-world actor"
+        conventional_actors
+            .iter()
+            .all(|actor| actor["decode"] == "complete")
     );
     let conventional_camera = conventional_actors
         .iter()

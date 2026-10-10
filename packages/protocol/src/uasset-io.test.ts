@@ -103,7 +103,8 @@ describe("uasset IO protocol v1", () => {
 					"invalid/project-index-query-oversize-limit.json",
 					"invalid/project-index-page-unbounded.json",
 					"invalid/project-index-count-empty-filters.json",
-					"invalid/project-index-dictionary-page-negative-index.json"
+					"invalid/project-index-dictionary-page-negative-index.json",
+					"invalid/saved-world-unknown-actor-decode.json"
 				]) {
 					const value = yield* Effect.promise(() => fixture(name));
 					const decoded =

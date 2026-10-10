@@ -1055,6 +1055,7 @@ mod tests {
     #[test]
     fn rejects_shared_invalid_fixtures() {
         assert!(decode_event(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/level-sequence-version.json")).is_err());
+        assert!(decode_event(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/saved-world-unknown-actor-decode.json")).is_err());
         assert!(decode_request(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/project-index-count-empty-filters.json")).is_err());
         assert!(decode_request(INVALID_MAJOR.as_bytes()).is_err());
         assert!(decode_event(INVALID_KIND.as_bytes()).is_err());

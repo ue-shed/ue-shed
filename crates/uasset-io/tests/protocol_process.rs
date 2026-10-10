@@ -399,11 +399,22 @@ fn protocol_process_emits_saved_world_with_deterministic_actor_order() {
     );
     assert_eq!(
         one_world["result"]["world"]["contract"]["version"],
-        serde_json::json!({ "major": 2, "minor": 0 })
+        serde_json::json!({ "major": 2, "minor": 1 })
+    );
+    assert_eq!(
+        one_world["result"]["world"]["packageErrors"],
+        serde_json::json!([]),
+        "a fully read map reports no package errors"
     );
     let conventional_actors = one_world["result"]["world"]["actors"]
         .as_array()
         .expect("conventional actors");
+    assert!(
+        conventional_actors
+            .iter()
+            .all(|actor| actor["decode"] == "complete"),
+        "every actor of a fully read map is completely decoded"
+    );
     let conventional_camera = conventional_actors
         .iter()
         .find(|actor| actor["label"] == "Camera 01")
@@ -508,6 +519,15 @@ fn protocol_process_exposes_world_partition_transform_and_attachment_evidence() 
     assert_eq!(
         attachment["transform"]["rotation"],
         serde_json::json!({ "w": 1.0, "x": 0.0, "y": 0.0, "z": 0.0 })
+    );
+    assert_eq!(attachment["decode"], "complete");
+    assert!(
+        attachment.get("heldBy").is_none(),
+        "a plain attachment is not a child-actor hold"
+    );
+    assert_eq!(
+        world["result"]["world"]["packageErrors"],
+        serde_json::json!([])
     );
 }
 

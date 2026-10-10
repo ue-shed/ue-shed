@@ -73,6 +73,8 @@ pub struct SavedWorldComponentFragment {
     pub absolute_location: bool,
     pub absolute_rotation: bool,
     pub absolute_scale: bool,
+    /// `UChildActorComponent::ChildActor`: the actor this component spawned and holds.
+    pub child_actor: Option<ObjectPath>,
     pub object_path: ObjectPath,
     pub relative_location: SavedWorldVector,
     pub relative_rotation: SavedWorldRotator,
@@ -116,6 +118,8 @@ pub struct SavedWorldActorFragment {
     pub actor_path: ObjectPath,
     pub class_path: ObjectPath,
     pub label: Option<String>,
+    /// `AActor::ParentComponent`: the child-actor component that spawned this actor, if any.
+    pub parent_component: Option<ObjectPath>,
     pub root_component: Option<ObjectPath>,
 }
 
@@ -124,7 +128,17 @@ pub struct SavedWorldActorFragment {
 pub struct SavedWorldPackageFragment {
     pub actors: Vec<SavedWorldActorFragment>,
     pub components: Vec<SavedWorldComponentFragment>,
+    /// Exports in this package that failed to decode. An actor whose own export or any of its
+    /// subobjects is listed here is reported as [`SavedWorldDecode::Partial`].
+    pub failed_exports: Vec<ObjectPath>,
     pub package_name: String,
+}
+
+/// Whether an actor's export and all of its subobject exports decoded.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SavedWorldDecode {
+    Complete,
+    Partial,
 }
 
 /// A direct saved attachment between an actor root component and its parent component.
@@ -144,9 +158,15 @@ pub struct SavedWorldActorEvidence {
     pub actor_path: ObjectPath,
     pub attachment: Option<SavedWorldAttachment>,
     pub class_path: ObjectPath,
+    pub decode: SavedWorldDecode,
+    /// The actor that holds this one through a child-actor component. Present only when the
+    /// component's owner is a saved actor and that component's `ChildActor` names this actor.
+    pub held_by: Option<ObjectPath>,
     pub label: Option<String>,
     /// The external actor package which contains this actor's serialized export.
     pub package_name: String,
+    /// The saved `ParentComponent` reference, kept even when `held_by` cannot be proven.
+    pub parent_component: Option<ObjectPath>,
     pub transform: SavedWorldTransform,
 }
 
@@ -206,6 +226,7 @@ pub fn project_saved_world_package(
             actor_path: object.object_path.clone(),
             class_path: object.class_path.clone(),
             label: string_property(package, &object.properties, "ActorLabel"),
+            parent_component: object_reference(package, &object.properties, "ParentComponent"),
             root_component: object_reference(package, &object.properties, "RootComponent"),
         })
         .collect();
@@ -215,6 +236,7 @@ pub fn project_saved_world_package(
         .filter(|object| {
             root_component_paths.contains(&object.object_path)
                 || has_scene_transform_property(package, &object.properties)
+                || has_property(package, &object.properties, "ChildActor")
         })
         .map(|object| component_fragment(package, object))
         .collect();
@@ -222,6 +244,7 @@ pub fn project_saved_world_package(
     SavedWorldPackageFragment {
         actors,
         components,
+        failed_exports: Vec::new(),
         package_name: package.summary.package_name.clone(),
     }
 }
@@ -244,6 +267,12 @@ pub fn resolve_saved_world_actors(
             duplicates.insert(key);
         }
     }
+
+    let actor_paths: BTreeSet<&str> = fragments
+        .iter()
+        .flat_map(|fragment| &fragment.actors)
+        .map(|actor| actor.actor_path.as_str())
+        .collect();
 
     let mut cache = BTreeMap::new();
     let mut actors = Vec::new();
@@ -300,18 +329,77 @@ pub fn resolve_saved_world_actors(
                     }
                 },
             };
+            let held_by = actor
+                .parent_component
+                .as_ref()
+                .and_then(|parent_component| {
+                    held_by(
+                        actor,
+                        parent_component.as_str(),
+                        &components,
+                        &duplicates,
+                        &actor_paths,
+                    )
+                });
+            let decode = if fragment
+                .failed_exports
+                .iter()
+                .any(|failed| is_same_or_subobject(failed.as_str(), actor.actor_path.as_str()))
+            {
+                SavedWorldDecode::Partial
+            } else {
+                SavedWorldDecode::Complete
+            };
             actors.push(SavedWorldActorEvidence {
                 actor_guid: actor.actor_guid,
                 actor_path: actor.actor_path.clone(),
                 attachment,
                 class_path: actor.class_path.clone(),
+                decode,
+                held_by,
                 label: actor.label.clone(),
                 package_name: fragment.package_name.clone(),
+                parent_component: actor.parent_component.clone(),
                 transform,
             });
         }
     }
     actors
+}
+
+/// Resolves the actor holding `actor` through its saved `ParentComponent`.
+///
+/// The component's owner is its nearest outer that is a saved actor. The link is reported only
+/// when that component is uniquely known and its own `ChildActor` points back at `actor`, so a
+/// stale or one-sided reference never invents ownership.
+fn held_by(
+    actor: &SavedWorldActorFragment,
+    parent_component: &str,
+    components: &BTreeMap<String, &SavedWorldComponentFragment>,
+    duplicates: &BTreeSet<String>,
+    actor_paths: &BTreeSet<&str>,
+) -> Option<ObjectPath> {
+    if duplicates.contains(parent_component) {
+        return None;
+    }
+    let component = components.get(parent_component)?;
+    if component.child_actor.as_ref() != Some(&actor.actor_path) {
+        return None;
+    }
+    let mut outer = parent_component;
+    while let Some(index) = outer.rfind(['.', ':']) {
+        outer = &outer[..index];
+        if actor_paths.contains(outer) {
+            return (outer != actor.actor_path.as_str()).then(|| ObjectPath::new(outer));
+        }
+    }
+    None
+}
+
+/// Whether `path` is `actor_path` itself or an object nested beneath it.
+fn is_same_or_subobject(path: &str, actor_path: &str) -> bool {
+    path.strip_prefix(actor_path)
+        .is_some_and(|rest| rest.is_empty() || rest.starts_with(['.', ':']))
 }
 
 #[derive(Clone, Debug)]
@@ -482,6 +570,7 @@ fn component_fragment(package: &Package, object: &DecodedUObject) -> SavedWorldC
         absolute_location: bool_property(package, &object.properties, "bAbsoluteLocation"),
         absolute_rotation: bool_property(package, &object.properties, "bAbsoluteRotation"),
         absolute_scale: bool_property(package, &object.properties, "bAbsoluteScale"),
+        child_actor: object_reference(package, &object.properties, "ChildActor"),
         object_path: object.object_path.clone(),
         relative_location: vector_property(package, &object.properties, "RelativeLocation")
             .unwrap_or(SavedWorldVector::ZERO),
@@ -588,6 +677,7 @@ mod tests {
             actor_path: ObjectPath::new(path),
             class_path: ObjectPath::new("/Script/Engine.Actor"),
             label: None,
+            parent_component: None,
             root_component: root_component.map(ObjectPath::new),
         }
     }
@@ -604,6 +694,7 @@ mod tests {
             absolute_location: false,
             absolute_rotation: false,
             absolute_scale: false,
+            child_actor: None,
             object_path: ObjectPath::new(path),
             relative_location: location,
             relative_rotation: rotation,
@@ -618,6 +709,7 @@ mod tests {
         SavedWorldPackageFragment {
             actors,
             components,
+            failed_exports: Vec::new(),
             package_name: "/Game/Maps/Fixture".to_owned(),
         }
     }
@@ -872,5 +964,99 @@ mod tests {
             evidence["NonFinite"],
             SavedWorldTransform::NonFiniteTransform { .. }
         ));
+    }
+
+    #[test]
+    fn held_by_requires_the_owner_actor_and_a_matching_child_actor() {
+        let level = "/Game/L.L:PersistentLevel";
+        let holder_path = format!("{level}.Volume");
+        let preview = format!("{holder_path}.Preview");
+        let chest_path = format!("{level}.Chest");
+        let mut held = actor(&chest_path, Some(&format!("{chest_path}.Root")));
+        held.parent_component = Some(ObjectPath::new(&preview));
+        let mut preview_component = component(
+            &preview,
+            Some(&format!("{holder_path}.Root")),
+            SavedWorldVector::ZERO,
+            SavedWorldRotator::ZERO,
+            SavedWorldVector::ONE,
+        );
+        preview_component.child_actor = Some(ObjectPath::new(&chest_path));
+        let root = |path: &str| {
+            component(
+                path,
+                None,
+                SavedWorldVector::ZERO,
+                SavedWorldRotator::ZERO,
+                SavedWorldVector::ONE,
+            )
+        };
+        let package = |held: SavedWorldActorFragment, preview: SavedWorldComponentFragment| {
+            fragment(
+                vec![
+                    actor(&holder_path, Some(&format!("{holder_path}.Root"))),
+                    held,
+                ],
+                vec![
+                    root(&format!("{holder_path}.Root")),
+                    root(&format!("{chest_path}.Root")),
+                    preview,
+                ],
+            )
+        };
+        let chest = |fragments: &[SavedWorldPackageFragment]| {
+            resolve_saved_world_actors(fragments)
+                .into_iter()
+                .find(|actor| actor.actor_path.as_str() == chest_path)
+                .expect("chest actor")
+        };
+
+        let resolved = chest(&[package(held.clone(), preview_component.clone())]);
+        assert_eq!(resolved.held_by, Some(ObjectPath::new(&holder_path)));
+        assert_eq!(resolved.parent_component, Some(ObjectPath::new(&preview)));
+
+        // A component whose ChildActor names someone else does not prove ownership.
+        let mut other = preview_component.clone();
+        other.child_actor = Some(ObjectPath::new(format!("{level}.Other")));
+        let resolved = chest(&[package(held.clone(), other)]);
+        assert_eq!(resolved.held_by, None);
+        assert_eq!(resolved.parent_component, Some(ObjectPath::new(&preview)));
+
+        // Neither does a parent component that was not saved, or one with no actor outer.
+        let mut missing = held.clone();
+        missing.parent_component = Some(ObjectPath::new(format!("{holder_path}.Absent")));
+        assert_eq!(
+            chest(&[package(missing, preview_component.clone())]).held_by,
+            None
+        );
+        let mut orphan_component = preview_component.clone();
+        orphan_component.object_path = ObjectPath::new("/Game/L.L:PersistentLevel.Gone.Preview");
+        let mut orphan = held;
+        orphan.parent_component = Some(orphan_component.object_path.clone());
+        assert_eq!(chest(&[package(orphan, orphan_component)]).held_by, None);
+    }
+
+    #[test]
+    fn decode_is_partial_only_for_actors_whose_own_exports_failed() {
+        let mut package = fragment(
+            vec![
+                actor("/Game/L.L:PersistentLevel.Chest", None),
+                actor("/Game/L.L:PersistentLevel.ChestB", None),
+            ],
+            vec![],
+        );
+        package.failed_exports = vec![ObjectPath::new("/Game/L.L:PersistentLevel.Chest.Mesh")];
+        let decode: BTreeMap<_, _> = resolve_saved_world_actors(&[package])
+            .into_iter()
+            .map(|actor| (actor.actor_path.to_string(), actor.decode))
+            .collect();
+        assert_eq!(
+            decode["/Game/L.L:PersistentLevel.Chest"],
+            SavedWorldDecode::Partial
+        );
+        assert_eq!(
+            decode["/Game/L.L:PersistentLevel.ChestB"],
+            SavedWorldDecode::Complete
+        );
     }
 }

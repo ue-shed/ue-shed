@@ -67,11 +67,33 @@ export const SavedWorldActor = Schema.Struct({
 	actorPath: Schema.String,
 	attachment: Schema.optionalKey(SavedWorldAttachment),
 	classPath: Schema.String,
+	/** Contract 2.1: whether the actor's export and its subobjects decoded. Absent in 2.0. */
+	decode: Schema.optionalKey(Schema.Literals(["complete", "partial"])),
+	/**
+	 * Contract 2.1: the actor holding this one through a child-actor component. Present only when
+	 * that component's owner is a saved actor and its `ChildActor` names this actor.
+	 */
+	heldBy: Schema.optionalKey(Schema.NonEmptyString),
 	label: Schema.optionalKey(Schema.String),
 	packageName: Schema.String,
+	/** Contract 2.1: the saved `AActor::ParentComponent` reference. */
+	parentComponent: Schema.optionalKey(Schema.NonEmptyString),
 	transform: SavedWorldTransform
 });
 export type SavedWorldActor = Schema.Schema.Type<typeof SavedWorldActor>;
+
+/** Contract 2.1: a package, or one export in it, that the reader could not decode. */
+export const SavedWorldPackageError = Schema.Struct({
+	/** Long package name, or the package path implied by the file when its header is unreadable. */
+	package: Schema.String,
+	/** The failed export's object path; absent when the whole package could not be read. */
+	export: Schema.optionalKey(Schema.String),
+	category: Schema.String,
+	detail: Schema.String,
+	/** Whether an actor was lost: the failed export is an actor, or the whole package failed. */
+	actorDropped: Schema.Boolean
+});
+export type SavedWorldPackageError = Schema.Schema.Type<typeof SavedWorldPackageError>;
 
 /** The outcome of choosing an in-app project and reading its discovered saved maps. */
 export const SavedWorldChoice = Schema.Union([
@@ -97,7 +119,8 @@ export const SavedWorld = Schema.Struct({
 	completeness: Schema.Literals(["complete", "partial"]),
 	contract: Schema.Struct({
 		name: Schema.Literal("unreal-saved-world"),
-		version: Schema.Struct({ major: Schema.Literal(2), minor: Schema.Literal(0) })
+		/** 2.1 only adds optional fields, so 2.0 documents still decode. */
+		version: Schema.Struct({ major: Schema.Literal(2), minor: Schema.Literals([0, 1]) })
 	}),
 	diagnostics: Schema.Array(
 		Schema.Struct({ code: Schema.String, message: Schema.String, retrySafe: Schema.Boolean })
@@ -105,6 +128,8 @@ export const SavedWorld = Schema.Struct({
 	/** Present only when the map stores its actors as World Partition external packages. */
 	externalActorRoot: Schema.optionalKey(Schema.String),
 	mapPath: Schema.String,
+	/** Contract 2.1: every package or export that could not be read. Absent in 2.0. */
+	packageErrors: Schema.optionalKey(Schema.Array(SavedWorldPackageError)),
 	sourceKind: Schema.Literals(["level", "world_partition"]),
 	actors: Schema.Array(SavedWorldActor),
 	summary: Schema.Struct({

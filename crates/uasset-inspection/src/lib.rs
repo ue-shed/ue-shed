@@ -39,7 +39,8 @@ pub use projection::{
     project_texture_asset,
 };
 pub use saved_world::{
-    SavedWorldActorEvidence, SavedWorldAttachment, SavedWorldDecode, SavedWorldPackageFragment,
-    SavedWorldQuaternion, SavedWorldTransform, project_saved_world_package,
-    resolve_saved_world_actors,
+    SavedWorldActorEvidence, SavedWorldAttachment, SavedWorldDecode, SavedWorldIncompleteExport,
+    SavedWorldPackageFragment, SavedWorldQuaternion, SavedWorldTransform,
+    SavedWorldUndecodedProperty, project_saved_world_package, resolve_saved_world_actors,
+    undecoded_properties,
 };

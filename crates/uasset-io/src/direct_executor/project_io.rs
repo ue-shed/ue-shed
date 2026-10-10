@@ -1669,6 +1669,33 @@ fn package_name_from_path(path: &Path, content_root: &Path) -> String {
     )
 }
 
+/// `packageErrors` category for an export that decoded with property values kept raw.
+const SKIPPED_PROPERTY_CATEGORY: &str = "skipped_property";
+const SKIPPED_PROPERTY_DETAIL_LIMIT: usize = 3;
+
+fn skipped_property_detail(
+    properties: &[uasset_inspection::saved_world::SavedWorldUndecodedProperty],
+) -> String {
+    let listed = properties
+        .iter()
+        .take(SKIPPED_PROPERTY_DETAIL_LIMIT)
+        .map(|property| format!("{} ({})", property.path, property.reason))
+        .collect::<Vec<_>>()
+        .join("; ");
+    let more = properties
+        .len()
+        .saturating_sub(SKIPPED_PROPERTY_DETAIL_LIMIT);
+    let suffix = if more > 0 {
+        format!("; and {more} more")
+    } else {
+        String::new()
+    };
+    format!(
+        "{} property value(s) not decoded: {listed}{suffix}",
+        properties.len()
+    )
+}
+
 fn export_error_category(kind: AssetErrorKind) -> &'static str {
     match kind {
         AssetErrorKind::MalformedData => "export_malformed_data",
@@ -1682,6 +1709,11 @@ fn export_error_category(kind: AssetErrorKind) -> &'static str {
 /// Whether `export` is an actor: its outer is a `Level` (the persistent level of the map, or of
 /// the map an external actor package belongs to).
 fn is_level_actor_export(package: &Package, export: &Export) -> bool {
+    outer_is_level(package, export)
+}
+
+/// Whether `export`'s outer is a `Level` export or import.
+fn outer_is_level(package: &Package, export: &Export) -> bool {
     let outer_class = match export.outer_index {
         PackageIndex::Import(index) => usize::try_from(index)
             .ok()
@@ -1754,8 +1786,22 @@ fn read_saved_world_package(
     }
     let mut fragment = project_saved_world_package(&package, &decoded);
     fragment.failed_exports = failed_exports;
+    errors.extend(
+        fragment
+            .incomplete_exports
+            .iter()
+            .map(|export| SavedWorldPackageError {
+                package: package.summary.package_name.clone(),
+                export: Some(export.object_path.to_string()),
+                category: SKIPPED_PROPERTY_CATEGORY.to_owned(),
+                detail: skipped_property_detail(&export.properties),
+                actor_dropped: false,
+            }),
+    );
     checkpoint(cancellation, "inspection")?;
-    let partial = !errors.is_empty();
+    // Skipped property values mark their actors partial and are listed, but the export itself
+    // was read, so they do not make the package partial.
+    let partial = !fragment.failed_exports.is_empty();
     Ok(SavedWorldPackageRead {
         errors,
         failure_code: partial.then_some("export_decode".to_owned()),
@@ -1831,10 +1877,9 @@ mod tests {
         std::fs::write(path, bytes).expect("corrupt export");
     }
 
-    #[test]
-    fn saved_world_reports_each_package_error_and_marks_affected_actors_partial() {
-        use uasset_parser::package::Package;
-
+    /// Copies one fixture map (and its external actors, when it has them) into a temporary
+    /// project, returning the project root and its sorted package paths.
+    fn copy_fixture_map(map: &str, label: &str) -> (std::path::PathBuf, Vec<std::path::PathBuf>) {
         let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../fixtures/unreal-project/Content");
         let suffix = std::time::SystemTime::now()
@@ -1842,19 +1887,18 @@ mod tests {
             .expect("system time after epoch")
             .as_nanos();
         let project_root =
-            std::env::temp_dir().join(format!("ue-shed-saved-world-errors-{suffix}"));
+            std::env::temp_dir().join(format!("ue-shed-saved-world-{label}-{suffix}"));
         let content = project_root.join("Content");
-        std::fs::create_dir_all(content.join("Fixture/Offline")).expect("create map directory");
-        std::fs::copy(
-            fixture.join("Fixture/Offline/L_OfflineWorld.umap"),
-            content.join("Fixture/Offline/L_OfflineWorld.umap"),
-        )
-        .expect("copy map");
-        let actors_root = content.join("__ExternalActors__/Fixture/Offline/L_OfflineWorld");
-        copy_tree(
-            &fixture.join("__ExternalActors__/Fixture/Offline/L_OfflineWorld"),
-            &actors_root,
-        );
+        let map_file = content.join(format!("{map}.umap"));
+        std::fs::create_dir_all(map_file.parent().expect("map directory"))
+            .expect("create map directory");
+        std::fs::copy(fixture.join(format!("{map}.umap")), &map_file).expect("copy map");
+        let actors = fixture.join("__ExternalActors__").join(map);
+        if !actors.is_dir() {
+            return (project_root, vec![map_file]);
+        }
+        let actors_root = content.join("__ExternalActors__").join(map);
+        copy_tree(&actors, &actors_root);
         let (mut packages, _) = super::scanner::discover_paths(
             std::slice::from_ref(&actors_root),
             false,
@@ -1862,30 +1906,148 @@ mod tests {
         )
         .expect("discover copied actors");
         packages.sort();
-        let read = |path: &std::path::Path| {
-            Package::parse(&std::fs::read(path).expect("read package")).expect("parse package")
+        (project_root, packages)
+    }
+
+    fn read_fixture_world(project_root: &std::path::Path, map: &str) -> super::SavedWorldOutput {
+        let request: Request = serde_json::from_value(serde_json::json!({
+            "contract": { "name": "uasset-io", "version": { "major": 1, "minor": 0 } },
+            "limits": { "concurrency": 2 },
+            "operation": {
+                "kind": "saved_world",
+                "projectRoot": project_root.to_string_lossy(),
+                "mapPath": format!("Content/{map}.umap")
+            },
+            "requestId": "saved-world-package-errors"
+        }))
+        .expect("saved-world request");
+        let output = super::saved_world(&request).expect("partial saved world still succeeds");
+        std::fs::remove_dir_all(project_root).expect("remove copied project");
+        output
+    }
+
+    fn read_package(path: &std::path::Path) -> uasset_parser::package::Package {
+        uasset_parser::package::Package::parse(&std::fs::read(path).expect("read package"))
+            .expect("parse package")
+    }
+
+    /// The first export whose outer is a Level, which in an external actor package is its actor.
+    fn level_child_export(
+        package: &uasset_parser::package::Package,
+    ) -> &uasset_parser::package::Export {
+        package
+            .exports
+            .iter()
+            .find(|export| super::outer_is_level(package, export))
+            .expect("actor export")
+    }
+
+    #[test]
+    fn saved_world_marks_actors_with_skipped_property_values_partial() {
+        use uasset_parser::property::read_uobject_tagged_property_stream;
+
+        let map = "Fixture/Offline/L_OfflineWorld";
+        let (project_root, packages) = copy_fixture_map(map, "skipped");
+        // Flag one scalar property of an actor subobject as binary-or-native serialized. Its
+        // value can no longer be decoded, but the export and its other properties still are.
+        let target = &packages[0];
+        let package = read_package(target);
+        let actor_path = level_child_export(&package).object_path.to_string();
+        let mut bytes = std::fs::read(target).expect("read package");
+        let (component_path, property) = package
+            .exports
+            .iter()
+            .filter(|export| {
+                export
+                    .object_path
+                    .as_str()
+                    .starts_with(&format!("{actor_path}."))
+            })
+            .find_map(|export| {
+                let mut reader = package.export_reader(&bytes, export).ok()?;
+                let stream = read_uobject_tagged_property_stream(
+                    &mut reader,
+                    &package.summary.versions,
+                    &package.names,
+                    "fixture",
+                )
+                .ok()?;
+                let record = stream.records.iter().find(|record| {
+                    record.property_guid.is_none()
+                        && record.extensions.is_none()
+                        && matches!(
+                            package.resolve_name(record.type_name.name).as_deref(),
+                            Some("ObjectProperty" | "IntProperty" | "FloatProperty")
+                        )
+                })?;
+                Some((
+                    export.object_path.to_string(),
+                    (
+                        package.resolve_name(record.name).expect("property name"),
+                        usize::try_from(record.payload.offset()).expect("offset fits") - 1,
+                    ),
+                ))
+            })
+            .expect("a scalar property on an actor subobject");
+        let (property_name, flags_offset) = property;
+        bytes[flags_offset] |= 0x08;
+        std::fs::write(target, bytes).expect("flag property");
+
+        let output = read_fixture_world(&project_root, map);
+        let world = output.world;
+        assert!(
+            !output.partial,
+            "a skipped property does not make the package partial"
+        );
+        assert_eq!(world.summary.partial_packages, 0);
+        let [error] = world.package_errors.as_slice() else {
+            panic!(
+                "expected one package error, got {:#?}",
+                world.package_errors
+            );
         };
+        assert_eq!(error.category, "skipped_property");
+        assert_eq!(error.export.as_deref(), Some(component_path.as_str()));
+        assert!(!error.actor_dropped);
+        assert!(
+            error.detail.starts_with(&format!(
+                "1 property value(s) not decoded: {property_name} ("
+            )),
+            "{}",
+            error.detail
+        );
+        assert!(
+            world
+                .actors
+                .iter()
+                .any(|actor| actor.actor_path == actor_path)
+        );
+        for actor in &world.actors {
+            let expected = if actor.actor_path == actor_path {
+                SavedWorldActorDecode::Partial
+            } else {
+                SavedWorldActorDecode::Complete
+            };
+            assert_eq!(actor.decode, Some(expected), "{}", actor.actor_path);
+        }
+    }
+
+    #[test]
+    fn saved_world_reports_each_package_error_and_marks_affected_actors_partial() {
+        let map = "Fixture/Offline/L_OfflineWorld";
+        let (project_root, packages) = copy_fixture_map(map, "errors");
+        let read = |path: &std::path::Path| read_package(path);
 
         // One package loses its actor export, another one of its actor's subobjects, and a third
         // cannot be parsed at all.
         let (lost_actor, damaged_component, unreadable) =
             (&packages[0], &packages[1], &packages[2]);
         let package = read(lost_actor);
-        let actor = package
-            .exports
-            .iter()
-            .find(|export| super::is_level_actor_export(&package, export))
-            .expect("actor export");
+        let actor = level_child_export(&package);
         let lost_actor_path = actor.object_path.to_string();
         overwrite_export_head(lost_actor, actor);
         let package = read(damaged_component);
-        let actor_path = package
-            .exports
-            .iter()
-            .find(|export| super::is_level_actor_export(&package, export))
-            .expect("actor export")
-            .object_path
-            .to_string();
+        let actor_path = level_child_export(&package).object_path.to_string();
         let component = package
             .exports
             .iter()
@@ -1902,19 +2064,7 @@ mod tests {
         let unreadable_name = read(unreadable).summary.package_name.clone();
         std::fs::write(unreadable, [0_u8; 16]).expect("truncate package");
 
-        let request: Request = serde_json::from_value(serde_json::json!({
-            "contract": { "name": "uasset-io", "version": { "major": 1, "minor": 0 } },
-            "limits": { "concurrency": 2 },
-            "operation": {
-                "kind": "saved_world",
-                "projectRoot": project_root.to_string_lossy(),
-                "mapPath": "Content/Fixture/Offline/L_OfflineWorld.umap"
-            },
-            "requestId": "saved-world-package-errors"
-        }))
-        .expect("saved-world request");
-        let output = super::saved_world(&request).expect("partial saved world still succeeds");
-        std::fs::remove_dir_all(&project_root).expect("remove copied project");
+        let output = read_fixture_world(&project_root, map);
         let world = output.world;
         assert!(output.partial);
         assert_eq!(world.summary.partial_packages, 2);

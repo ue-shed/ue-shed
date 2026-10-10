@@ -40,6 +40,8 @@ pub struct SavedWorldPackageError {
     /// The failed export's object path; absent when the whole package could not be read.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub export: Option<String>,
+    /// `asset_io` / `asset_<kind>` (package unreadable), `export_<kind>` (export failed) or
+    /// `skipped_property` (export decoded with raw property values).
     pub category: String,
     pub detail: String,
     /// Whether an actor export was lost: the failed export is an actor, or the whole package.
@@ -148,7 +150,8 @@ pub struct SavedWorldActor {
     pub attachment: Option<SavedWorldAttachment>,
     #[serde(rename = "classPath")]
     pub class_path: String,
-    /// Whether the actor's export and its subobjects decoded (contract 2.1). Absent in 2.0.
+    /// `partial` when the actor's export or a subobject export failed, or kept a property value
+    /// raw (contract 2.1). Absent in 2.0.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub decode: Option<SavedWorldActorDecode>,
     /// The actor holding this one through a child-actor component (contract 2.1).

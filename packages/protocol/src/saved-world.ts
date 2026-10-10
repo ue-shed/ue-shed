@@ -67,7 +67,11 @@ export const SavedWorldActor = Schema.Struct({
 	actorPath: Schema.String,
 	attachment: Schema.optionalKey(SavedWorldAttachment),
 	classPath: Schema.String,
-	/** Contract 2.1: whether the actor's export and its subobjects decoded. Absent in 2.0. */
+	/**
+	 * Contract 2.1: `partial` when the actor's export or a subobject export failed to decode, or
+	 * decoded with a property value kept raw (listed as a `skipped_property` package error).
+	 * Absent in 2.0.
+	 */
 	decode: Schema.optionalKey(Schema.Literals(["complete", "partial"])),
 	/**
 	 * Contract 2.1: the actor holding this one through a child-actor component. Present only when
@@ -88,9 +92,17 @@ export const SavedWorldPackageError = Schema.Struct({
 	package: Schema.String,
 	/** The failed export's object path; absent when the whole package could not be read. */
 	export: Schema.optionalKey(Schema.String),
+	/**
+	 * `asset_io` or `asset_<kind>` for a package that could not be read, `export_<kind>` for an
+	 * export that failed to decode, and `skipped_property` for an export that decoded with raw
+	 * property values. Only failures make the package partial.
+	 */
 	category: Schema.String,
 	detail: Schema.String,
-	/** Whether an actor was lost: the failed export is an actor, or the whole package failed. */
+	/**
+	 * Whether an actor may have been lost: the failed export is an actor, or the whole package
+	 * failed. Always false for `skipped_property`.
+	 */
 	actorDropped: Schema.Boolean
 });
 export type SavedWorldPackageError = Schema.Schema.Type<typeof SavedWorldPackageError>;

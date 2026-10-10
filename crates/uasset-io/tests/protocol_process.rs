@@ -401,19 +401,32 @@ fn protocol_process_emits_saved_world_with_deterministic_actor_order() {
         one_world["result"]["world"]["contract"]["version"],
         serde_json::json!({ "major": 2, "minor": 1 })
     );
-    assert_eq!(
-        one_world["result"]["world"]["packageErrors"],
-        serde_json::json!([]),
-        "a fully read map reports no package errors"
-    );
+    // The fixture's world settings keep one native struct (a soft class path) the reader has no
+    // layout for. It is listed without losing an actor; only an owning actor would turn partial.
+    let package_errors = one_world["result"]["world"]["packageErrors"]
+        .as_array()
+        .expect("package errors");
+    assert_eq!(package_errors.len(), 1, "{package_errors:#?}");
+    let skipped = &package_errors[0];
+    assert_eq!(skipped["category"], "skipped_property");
+    assert_eq!(skipped["actorDropped"], false);
+    let skipped_export = skipped["export"].as_str().expect("skipped export");
+    assert_eq!(one_world["result"]["world"]["completeness"], "complete");
     let conventional_actors = one_world["result"]["world"]["actors"]
         .as_array()
         .expect("conventional actors");
+    for actor in conventional_actors {
+        let path = actor["actorPath"].as_str().expect("actor path");
+        let owns_skipped = skipped_export.starts_with(&format!("{path}."));
+        assert_eq!(
+            actor["decode"],
+            if owns_skipped { "partial" } else { "complete" },
+            "{path}"
+        );
+    }
     assert!(
-        conventional_actors
-            .iter()
-            .all(|actor| actor["decode"] == "complete"),
-        "every actor of a fully read map is completely decoded"
+        skipped_export.contains(".WorldSettings."),
+        "world settings has no root component, so it is listed but is not a saved-world actor"
     );
     let conventional_camera = conventional_actors
         .iter()

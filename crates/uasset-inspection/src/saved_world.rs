@@ -131,10 +131,29 @@ pub struct SavedWorldPackageFragment {
     /// Exports in this package that failed to decode. An actor whose own export or any of its
     /// subobjects is listed here is reported as [`SavedWorldDecode::Partial`].
     pub failed_exports: Vec<ObjectPath>,
+    /// Exports that decoded but kept at least one property value raw (an unsupported type or a
+    /// skipped layout). They mark their actor partial just like failed exports.
+    pub incomplete_exports: Vec<SavedWorldIncompleteExport>,
     pub package_name: String,
 }
 
+/// A decoded export holding property values the reader kept raw instead of decoding.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SavedWorldIncompleteExport {
+    pub object_path: ObjectPath,
+    pub properties: Vec<SavedWorldUndecodedProperty>,
+}
+
+/// One raw property value, addressed from the export (`Outer.Inner[2].Key`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SavedWorldUndecodedProperty {
+    pub path: String,
+    pub reason: String,
+}
+
 /// Whether an actor's export and all of its subobject exports decoded.
+///
+/// `Partial` means one of them failed to decode, or decoded with a property value kept raw.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SavedWorldDecode {
     Complete,
@@ -241,11 +260,111 @@ pub fn project_saved_world_package(
         .map(|object| component_fragment(package, object))
         .collect();
 
+    let incomplete_exports = objects
+        .iter()
+        .filter_map(|object| {
+            let properties = undecoded_properties(package, &object.properties);
+            (!properties.is_empty()).then(|| SavedWorldIncompleteExport {
+                object_path: object.object_path.clone(),
+                properties,
+            })
+        })
+        .collect();
+
     SavedWorldPackageFragment {
         actors,
         components,
         failed_exports: Vec::new(),
+        incomplete_exports,
         package_name: package.summary.package_name.clone(),
+    }
+}
+
+/// Lists every property value in `properties`, at any nesting depth, that was kept raw.
+///
+/// Records Unreal itself saved as skipped carry no value to lose and are not listed.
+#[must_use]
+pub fn undecoded_properties(
+    package: &Package,
+    properties: &PropertyStream,
+) -> Vec<SavedWorldUndecodedProperty> {
+    let mut found = Vec::new();
+    collect_undecoded_stream(package, properties, "", &mut found);
+    found
+}
+
+fn collect_undecoded_stream(
+    package: &Package,
+    stream: &PropertyStream,
+    prefix: &str,
+    found: &mut Vec<SavedWorldUndecodedProperty>,
+) {
+    for record in &stream.records {
+        if record.flags.is_skipped() {
+            continue;
+        }
+        let name = package
+            .resolve_name_cow(record.name)
+            .map_or_else(|| "?".to_owned(), |name| name.into_owned());
+        let mut path = if prefix.is_empty() {
+            name
+        } else {
+            format!("{prefix}.{name}")
+        };
+        if record.array_index > 0 {
+            path = format!("{path}[{}]", record.array_index);
+        }
+        collect_undecoded_value(package, &record.value, &path, found);
+    }
+}
+
+fn collect_undecoded_value(
+    package: &Package,
+    value: &PropertyValue,
+    path: &str,
+    found: &mut Vec<SavedWorldUndecodedProperty>,
+) {
+    match value {
+        PropertyValue::Raw { reason } => found.push(SavedWorldUndecodedProperty {
+            path: path.to_owned(),
+            reason: reason.detail().into_owned(),
+        }),
+        PropertyValue::Struct(stream) => collect_undecoded_stream(package, stream, path, found),
+        PropertyValue::Array(values) | PropertyValue::Set(values) => {
+            for (index, value) in values.iter().enumerate() {
+                collect_undecoded_value(package, value, &format!("{path}[{index}]"), found);
+            }
+        }
+        PropertyValue::Map(entries) => {
+            for (index, entry) in entries.iter().enumerate() {
+                collect_undecoded_value(
+                    package,
+                    &entry.key,
+                    &format!("{path}[{index}].Key"),
+                    found,
+                );
+                collect_undecoded_value(
+                    package,
+                    &entry.value,
+                    &format!("{path}[{index}].Value"),
+                    found,
+                );
+            }
+        }
+        PropertyValue::NativeStruct { fields } => {
+            for field in fields {
+                collect_undecoded_value(
+                    package,
+                    &field.value,
+                    &format!("{path}.{}", field.name),
+                    found,
+                );
+            }
+        }
+        PropertyValue::InstancedStruct {
+            value: Some(value), ..
+        } => collect_undecoded_value(package, value, path, found),
+        _ => {}
     }
 }
 
@@ -344,6 +463,12 @@ pub fn resolve_saved_world_actors(
             let decode = if fragment
                 .failed_exports
                 .iter()
+                .chain(
+                    fragment
+                        .incomplete_exports
+                        .iter()
+                        .map(|export| &export.object_path),
+                )
                 .any(|failed| is_same_or_subobject(failed.as_str(), actor.actor_path.as_str()))
             {
                 SavedWorldDecode::Partial
@@ -710,6 +835,7 @@ mod tests {
             actors,
             components,
             failed_exports: Vec::new(),
+            incomplete_exports: Vec::new(),
             package_name: "/Game/Maps/Fixture".to_owned(),
         }
     }
@@ -1046,17 +1172,122 @@ mod tests {
             vec![],
         );
         package.failed_exports = vec![ObjectPath::new("/Game/L.L:PersistentLevel.Chest.Mesh")];
-        let decode: BTreeMap<_, _> = resolve_saved_world_actors(&[package])
-            .into_iter()
-            .map(|actor| (actor.actor_path.to_string(), actor.decode))
-            .collect();
+        let decode = |package: &SavedWorldPackageFragment| -> BTreeMap<_, _> {
+            resolve_saved_world_actors(std::slice::from_ref(package))
+                .into_iter()
+                .map(|actor| (actor.actor_path.to_string(), actor.decode))
+                .collect()
+        };
+        let failed = decode(&package);
         assert_eq!(
-            decode["/Game/L.L:PersistentLevel.Chest"],
+            failed["/Game/L.L:PersistentLevel.Chest"],
             SavedWorldDecode::Partial
         );
         assert_eq!(
-            decode["/Game/L.L:PersistentLevel.ChestB"],
+            failed["/Game/L.L:PersistentLevel.ChestB"],
             SavedWorldDecode::Complete
+        );
+
+        // A decoded subobject with a raw property value makes its own actor partial too.
+        package.failed_exports.clear();
+        package.incomplete_exports = vec![SavedWorldIncompleteExport {
+            object_path: ObjectPath::new("/Game/L.L:PersistentLevel.ChestB.Effect"),
+            properties: vec![SavedWorldUndecodedProperty {
+                path: "Parameters".to_owned(),
+                reason: "unsupported type".to_owned(),
+            }],
+        }];
+        let skipped = decode(&package);
+        assert_eq!(
+            skipped["/Game/L.L:PersistentLevel.Chest"],
+            SavedWorldDecode::Complete
+        );
+        assert_eq!(
+            skipped["/Game/L.L:PersistentLevel.ChestB"],
+            SavedWorldDecode::Partial
+        );
+    }
+
+    #[test]
+    fn undecoded_properties_lists_raw_values_at_every_depth_except_unreal_skips() {
+        use uasset_parser::archive::{Reader, Span};
+        use uasset_parser::property::{
+            MapEntry, PropertyRecord, PropertyTagFlags, PropertyTypeName, RawReason,
+        };
+
+        let package = Package::parse(include_bytes!(
+            "../../../fixtures/unreal-project/Content/Fixture/ParserNative/DA_Native.uasset"
+        ))
+        .expect("fixture package");
+        let name = |index: i32| {
+            let mut bytes = index.to_le_bytes().to_vec();
+            bytes.extend_from_slice(&0_i32.to_le_bytes());
+            Reader::new(&bytes).read_name_ref("test").expect("name ref")
+        };
+        let text = |index: i32| package.resolve_name(name(index)).expect("fixture name");
+        let raw = |reason: RawReason| PropertyValue::Raw { reason };
+        let record = |index: i32, flags: u8, value: PropertyValue| PropertyRecord {
+            name: name(index),
+            type_name: PropertyTypeName {
+                name: name(0),
+                parameters: Vec::new(),
+            },
+            array_index: 0,
+            flags: PropertyTagFlags(flags),
+            property_guid: None,
+            struct_guid: None,
+            extensions: None,
+            payload: Span::new(0, 0).expect("span"),
+            value,
+        };
+        let stream = |records| PropertyStream {
+            class_extensions: None,
+            records,
+            terminator: Span::new(0, 0).expect("span"),
+        };
+        let nested = stream(vec![
+            record(2, 0, PropertyValue::Int(1)),
+            record(
+                3,
+                0,
+                PropertyValue::Map(vec![MapEntry {
+                    key: PropertyValue::Int(1),
+                    value: raw(RawReason::DecoderRejected("skipped: struct X".to_owned())),
+                }]),
+            ),
+        ]);
+        let properties = stream(vec![
+            record(1, 0, PropertyValue::Struct(nested)),
+            record(
+                4,
+                0,
+                PropertyValue::Array(vec![PropertyValue::Int(0), raw(RawReason::UnsupportedType)]),
+            ),
+            // Unreal skipped this property's serialization; there is no value to lose.
+            record(
+                5,
+                0x20,
+                raw(RawReason::DecoderRejected("skipped".to_owned())),
+            ),
+            record(6, 0, PropertyValue::Bool(true)),
+        ]);
+
+        assert_eq!(
+            undecoded_properties(&package, &properties),
+            vec![
+                SavedWorldUndecodedProperty {
+                    path: format!("{}.{}[0].Value", text(1), text(3)),
+                    reason: "skipped: struct X".to_owned(),
+                },
+                SavedWorldUndecodedProperty {
+                    path: format!("{}[1]", text(4)),
+                    reason: "unsupported type".to_owned(),
+                },
+            ]
+        );
+        assert!(
+            undecoded_properties(&package, &stream(vec![record(6, 0, PropertyValue::Int(2))]))
+                .is_empty()
         );
     }
 }

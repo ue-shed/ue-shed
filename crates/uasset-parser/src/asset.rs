@@ -53,6 +53,21 @@ const SKIP_UOBJECT_DECODE_CLASSES: &[&str] = &[
     "/Script/Engine.AssetImportData",
 ];
 
+/// Classes whose `Serialize` writes only native binary and never calls `UObject::Serialize`, so
+/// their export has no tagged-property stream. They are skipped rather than reported as decode
+/// failures; nothing generic can be read from them.
+///
+/// - `ULandscapeHeightmapTextureEdgeFixup::Serialize` (UE 5.7/5.8 LandscapeEdgeFixup.cpp) writes
+///   only its `FHeightmapTextureEdgeSnapshot`.
+const BINARY_ONLY_EXPORT_CLASSES: &[&str] =
+    &["/Script/Landscape.LandscapeHeightmapTextureEdgeFixup"];
+
+/// Returns whether an export of `class_path` holds only native binary with no tagged properties.
+#[must_use]
+pub fn is_binary_only_export_class(class_path: &str) -> bool {
+    BINARY_ONLY_EXPORT_CLASSES.contains(&class_path)
+}
+
 /// Returns whether `class_path` names a UObject Data Asset type.
 ///
 /// Matches engine base classes and native subclasses whose UClass name ends in
@@ -78,6 +93,7 @@ pub fn is_generic_uobject_class(class_path: &str) -> bool {
         && class_path != ANIM_SEQUENCE_CLASS
         && !is_data_asset_class(class_path)
         && !SKIP_UOBJECT_DECODE_CLASSES.contains(&class_path)
+        && !is_binary_only_export_class(class_path)
 }
 
 /// Returns whether a class uses UE 5.7's optimized `UEdGraphNode` pin serialization.
@@ -2295,9 +2311,9 @@ impl AssetDecoder for UObjectDecoder {
 
 /// Attempts to decode one export with the first matching asset adapter.
 ///
-/// Returns `Ok(None)` when the export has no class, zero serial payload, or no
-/// adapter applies. Returns an error when a matching adapter rejects malformed
-/// payload data.
+/// Returns `Ok(None)` when the export has no class, zero serial payload, a binary-only class
+/// ([`is_binary_only_export_class`]), or no adapter applies. Returns an error when a matching
+/// adapter rejects malformed payload data.
 pub fn decode_export(
     export: &Export,
     context: &AssetDecodeContext<'_>,
@@ -2308,6 +2324,9 @@ pub fn decode_export(
     let Some(class_path) = export.class_path.as_ref() else {
         return Ok(None);
     };
+    if is_binary_only_export_class(class_path.as_str()) {
+        return Ok(None);
+    }
 
     if let Some(decoded) = decode_modeled_export(export, context)? {
         return Ok(Some(decoded));
@@ -2364,7 +2383,9 @@ pub fn decode_modeled_export(
     let Some(class_path) = export.class_path.as_ref() else {
         return Ok(None);
     };
-    if context.schemas.find_class(class_path).is_none() {
+    if is_binary_only_export_class(class_path.as_str())
+        || context.schemas.find_class(class_path).is_none()
+    {
         return Ok(None);
     }
 
@@ -3719,6 +3740,40 @@ mod tests {
 
         assert_eq!(object.class_path, export.class_path.expect("class path"));
         assert!(object.tail.is_empty());
+    }
+
+    #[test]
+    fn binary_only_exports_are_skipped_instead_of_failing_the_tagged_stream() {
+        // The saved head of a landscape edge-fixup snapshot: no tag, a negative "name index".
+        let mut export_bytes = vec![0x00, 0x02, 0x00, 0x00, 0xb0, 0x0f, 0x00, 0x00];
+        export_bytes.extend_from_slice(&[0x7f, 0xec, 0x86, 0x7f].repeat(8));
+        let package = test_package(vec!["None".into()]);
+        let fixup_class = "/Script/Landscape.LandscapeHeightmapTextureEdgeFixup";
+        let path =
+            "/Game/L.L:PersistentLevel.Proxy.Heightmap_0.LandscapeHeightmapTextureEdgeFixup_0";
+        let context = AssetDecodeContext {
+            source: &export_bytes,
+            package: &package,
+            schemas: &EmptySchemas,
+        };
+
+        assert!(is_binary_only_export_class(fixup_class));
+        assert!(!is_generic_uobject_class(fixup_class));
+        let export = test_export(export_bytes.len() as u64, path, fixup_class);
+        assert!(decode_export(&export, &context).expect("skipped").is_none());
+        assert!(
+            decode_modeled_export(&export, &context)
+                .expect("skipped")
+                .is_none()
+        );
+
+        // The same bytes under an ordinary class still report the broken stream.
+        let export = test_export(
+            export_bytes.len() as u64,
+            path,
+            "/Script/Landscape.LandscapeComponent",
+        );
+        assert!(decode_export(&export, &context).is_err());
     }
 
     fn write_anim_sequence_export(raw_track_count: i32, serialize_compressed_data: u32) -> Vec<u8> {

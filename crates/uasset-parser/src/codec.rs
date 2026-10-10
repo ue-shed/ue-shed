@@ -809,14 +809,15 @@ fn decode_container_element(
         return decode_struct_value(source, type_spec, payload, package, path, depth).map(Some);
     }
     if type_spec.name == "StructProperty" {
-        if let Some(value) = native_values::math_struct(
-            resolve_math_struct_name(package, type_spec.tree)
-                .as_deref()
-                .unwrap_or(""),
-            payload,
-            package,
-            path,
-        )? {
+        let math_name = resolve_math_struct_name(package, type_spec.tree);
+        if let Some(value) =
+            native_values::math_struct(math_name.as_deref().unwrap_or(""), payload, package, path)?
+        {
+            return Ok(Some(value));
+        }
+        if let Some(value) =
+            decode_container_binary_struct(math_name.as_deref().unwrap_or(""), payload, path)?
+        {
             return Ok(Some(value));
         }
         // UE 4.27/5.3 PropertyMap.cpp and PropertySet.cpp omit struct identities.
@@ -900,6 +901,36 @@ fn decode_container_element(
         );
     }
 
+    if type_spec.name == "StructProperty"
+        && let Some(struct_name) = unknown_layout_struct_name(package, type_spec.tree)
+    {
+        // Container elements carry no per-element tag, so nothing says whether this struct was
+        // written as a tagged stream or with a native/binary serializer the reader does not know.
+        // A failed tagged attempt therefore marks the owning property as skipped instead of
+        // failing the export; the record's bounded span keeps the rest of the stream aligned.
+        return decode_typed_value(
+            source,
+            type_spec,
+            PropertyTagFlags::default(),
+            payload,
+            package,
+            path,
+            depth,
+        )
+        .map_err(|error| {
+            if error.raw_reason.is_some()
+                || error.kind() == crate::property::PropertyErrorKind::ResourceLimit
+            {
+                return error;
+            }
+            let reason = RawReason::DecoderRejected(format!(
+                "skipped: struct {struct_name} in a container has no known layout and did not \
+                 decode as a tagged stream ({error})"
+            ));
+            error.with_raw_reason(reason)
+        });
+    }
+
     decode_typed_value(
         source,
         type_spec,
@@ -909,6 +940,44 @@ fn decode_container_element(
         path,
         depth,
     )
+}
+
+/// Decodes `/Script/CoreUObject` structs that have no per-element tag inside containers.
+///
+/// FIntPoint, FColor and FLinearColor are `immutable` in UE 5.7/5.8 NoExportTypes.h, so
+/// UScriptStruct::SerializeItem writes them with SerializeBin: X/Y as `int32`, B/G/R/A bytes,
+/// and R/G/B/A `float`. A top-level tag says so with its binary flag; container elements do not.
+fn decode_container_binary_struct(
+    name: &str,
+    payload: &mut Reader<'_>,
+    path: &str,
+) -> Result<Option<PropertyValue>, PropertyError> {
+    let size = match name {
+        "IntPoint" => 8,
+        "Color" => 4,
+        "LinearColor" => 16,
+        _ => return Ok(None),
+    };
+    let mut element = payload.take_bounded(size, path)?;
+    Ok(Some(match name {
+        "IntPoint" => PropertyValue::IntPoint(decode_int_point_value(&mut element, path)?),
+        "Color" => PropertyValue::Color(decode_color_value(&mut element, path)?),
+        _ => PropertyValue::LinearColor(decode_linear_color_value(&mut element, path)?),
+    }))
+}
+
+/// Returns the struct name of a container element whose layout the reader has no recipe for.
+///
+/// Math and core binary structs, source-generated layouts and handwritten native structs are
+/// known; anything else is attempted as a tagged stream.
+fn unknown_layout_struct_name(package: &Package, type_tree: &PropertyTypeName) -> Option<String> {
+    let name = resolve_struct_type_name(package, type_tree)?;
+    if resolve_struct_type_path(package, type_tree).is_some()
+        || native_values::is_known_struct(&name)
+    {
+        return None;
+    }
+    Some(name.into_owned())
 }
 
 fn unsupported_container_type(
@@ -1492,6 +1561,8 @@ mod tests {
                 ("Quat", 4),
                 ("Plane", 4),
                 ("Box", 6),
+                ("Box2D", 4),
+                ("Matrix", 16),
             ] {
                 let package = versioned_package(
                     &["None", "Value", "StructProperty", "ArrayProperty", name],
@@ -1505,7 +1576,7 @@ mod tests {
                         push_f32(&mut element, index as f32 + 0.25);
                     }
                 }
-                if name == "Box" {
+                if matches!(name, "Box" | "Box2D") {
                     element.push(1);
                 }
                 let struct_type = PropertyTypeName {
@@ -1582,7 +1653,7 @@ mod tests {
 
     #[test]
     fn complete_math_identities_do_not_match_a_project_module() {
-        for name in ["Vector", "Quat", "Box"] {
+        for name in ["Vector", "Quat", "Box", "Box2D", "Matrix"] {
             let package = versioned_package(&["StructProperty", name, "/Script/Fixture"], 1012);
             let value = decode_record_with_package(
                 package,
@@ -1995,6 +2066,268 @@ mod tests {
             .unwrap_err();
             assert_eq!(error.kind(), PropertyErrorKind::MalformedData);
         }
+    }
+
+    fn type_tree(index: i32, parameters: Vec<PropertyTypeName>) -> PropertyTypeName {
+        PropertyTypeName {
+            name: crate::test_support::name_ref(index, 0),
+            parameters,
+        }
+    }
+
+    #[test]
+    fn complete_container_elements_decode_core_binary_structs() {
+        for ue5 in [1012, 1018] {
+            let package = versioned_package(
+                &[
+                    "SetProperty",
+                    "ArrayProperty",
+                    "MapProperty",
+                    "StructProperty",
+                    "IntPoint",
+                    "Color",
+                    "LinearColor",
+                    "/Script/CoreUObject",
+                    "IntProperty",
+                ],
+                ue5,
+            );
+            let core = |index| type_tree(3, vec![type_tree(index, vec![type_tree(7, vec![])])]);
+            let decode = |kind, parameters, payload: &[u8]| {
+                decode_record_with_package(
+                    package.clone(),
+                    kind,
+                    parameters,
+                    PropertyTagFlags(0),
+                    payload,
+                )
+            };
+
+            // TSet<FIntPoint>: ElementsToRemove, Elements, then 8 bytes per element.
+            let mut set = Vec::new();
+            for value in [0, 2, 1, -2, 3, 4] {
+                push_i32(&mut set, value);
+            }
+            assert_eq!(
+                decode(0, vec![core(4)], &set).unwrap(),
+                PropertyValue::Set(vec![
+                    PropertyValue::IntPoint(IntPointValue { x: 1, y: -2 }),
+                    PropertyValue::IntPoint(IntPointValue { x: 3, y: 4 }),
+                ])
+            );
+            set.pop();
+            assert!(decode(0, vec![core(4)], &set).is_err(), "truncated set");
+
+            // TArray<FColor> keeps the B, G, R, A byte order.
+            let mut colors = Vec::new();
+            push_i32(&mut colors, 1);
+            colors.extend_from_slice(&[1, 2, 3, 4]);
+            assert_eq!(
+                decode(1, vec![core(5)], &colors).unwrap(),
+                PropertyValue::Array(vec![PropertyValue::Color(ColorValue {
+                    r: 3,
+                    g: 2,
+                    b: 1,
+                    a: 4
+                })])
+            );
+
+            // TArray<FLinearColor> is four floats per element, never a tagged stream.
+            let mut linear = Vec::new();
+            push_i32(&mut linear, 2);
+            for value in [0.25_f32, 0.5, 0.75, 1.0, -1.0, 2.0, 0.0, 0.5] {
+                push_f32(&mut linear, value);
+            }
+            assert_eq!(
+                decode(1, vec![core(6)], &linear).unwrap(),
+                PropertyValue::Array(vec![
+                    PropertyValue::LinearColor(LinearColorValue {
+                        r: 0.25,
+                        g: 0.5,
+                        b: 0.75,
+                        a: 1.0
+                    }),
+                    PropertyValue::LinearColor(LinearColorValue {
+                        r: -1.0,
+                        g: 2.0,
+                        b: 0.0,
+                        a: 0.5
+                    }),
+                ])
+            );
+
+            // TMap<FIntPoint, int32>: the binary key leaves the value aligned.
+            let mut map = Vec::new();
+            for value in [0, 1, 5, 6, 7] {
+                push_i32(&mut map, value);
+            }
+            assert_eq!(
+                decode(2, vec![core(4), type_tree(8, vec![])], &map).unwrap(),
+                PropertyValue::Map(vec![MapEntry {
+                    key: PropertyValue::IntPoint(IntPointValue { x: 5, y: 6 }),
+                    value: PropertyValue::Int(7),
+                }])
+            );
+
+            // The same short names from another module are not guessed as binary.
+            let project = versioned_package(
+                &[
+                    "SetProperty",
+                    "StructProperty",
+                    "IntPoint",
+                    "/Script/Project",
+                    "None",
+                ],
+                ue5,
+            );
+            let mut set = Vec::new();
+            for value in [0, 1, 1, 2] {
+                push_i32(&mut set, value);
+            }
+            let value = decode_record_with_package(
+                project,
+                0,
+                vec![type_tree(1, vec![type_tree(2, vec![type_tree(3, vec![])])])],
+                PropertyTagFlags(0),
+                &set,
+            )
+            .unwrap();
+            assert!(matches!(value, PropertyValue::Raw { .. }), "{value:?}");
+        }
+    }
+
+    fn unknown_struct_stream(element: &[u8]) -> (Package, Vec<u8>) {
+        use crate::test_support::TypeParam;
+        let package = versioned_package(
+            &[
+                "None",
+                "Values",
+                "SetProperty",
+                "StructProperty",
+                "Mystery",
+                "/Script/Project",
+                "IntProperty",
+                "Next",
+            ],
+            1018,
+        );
+        let mut payload = Vec::new();
+        push_i32(&mut payload, 0);
+        push_i32(&mut payload, 1);
+        payload.extend_from_slice(element);
+        let mut bytes = Vec::new();
+        write_property_tag(
+            &mut bytes,
+            1,
+            &TypeParam {
+                type_index: 2,
+                parameters: vec![TypeParam {
+                    type_index: 3,
+                    parameters: vec![TypeParam {
+                        type_index: 4,
+                        parameters: vec![TypeParam {
+                            type_index: 5,
+                            parameters: vec![],
+                        }],
+                    }],
+                }],
+            },
+            0,
+            &payload,
+        );
+        crate::test_support::write_int_property_tag(&mut bytes, 7, 6, 99);
+        write_property_terminator(&mut bytes, 0);
+        (package, bytes)
+    }
+
+    fn decode_unknown_struct_stream(
+        package: &Package,
+        bytes: &[u8],
+    ) -> Result<PropertyStream, PropertyError> {
+        let mut reader = Reader::new(bytes);
+        let mut stream = read_tagged_property_stream(
+            &mut reader,
+            &package.summary.versions,
+            &package.names,
+            "Test",
+        )?;
+        decode_property_stream_values(bytes, &mut stream, package)?;
+        Ok(stream)
+    }
+
+    #[test]
+    fn complete_tags_skip_unknown_container_structs_with_a_reason() {
+        // A native-serialized element of an unknown struct: the tagged attempt fails.
+        let (package, bytes) = unknown_struct_stream(&[0xFF; 24]);
+        let stream = decode_unknown_struct_stream(&package, &bytes).expect("export survives");
+        let PropertyValue::Raw {
+            reason: RawReason::DecoderRejected(reason),
+        } = &stream.records[0].value
+        else {
+            panic!(
+                "expected a skipped property, got {:?}",
+                stream.records[0].value
+            );
+        };
+        assert!(
+            reason.starts_with("skipped: struct Mystery in a container has no known layout"),
+            "{reason}"
+        );
+        assert_eq!(stream.records[1].value, PropertyValue::Int(99));
+
+        // A tagged element of the same unknown struct still decodes.
+        let mut element = Vec::new();
+        crate::test_support::write_int_property_tag(&mut element, 7, 6, 5);
+        write_property_terminator(&mut element, 0);
+        let (package, bytes) = unknown_struct_stream(&element);
+        let stream = decode_unknown_struct_stream(&package, &bytes).expect("tagged element");
+        let PropertyValue::Set(values) = &stream.records[0].value else {
+            panic!("expected a set, got {:?}", stream.records[0].value);
+        };
+        let [PropertyValue::Struct(inner)] = values.as_slice() else {
+            panic!("expected one tagged struct element, got {values:?}");
+        };
+        assert_eq!(inner.records[0].value, PropertyValue::Int(5));
+        assert_eq!(stream.records[1].value, PropertyValue::Int(99));
+    }
+
+    #[test]
+    fn unknown_container_struct_inside_a_tagged_struct_skips_only_the_inner_property() {
+        use crate::test_support::TypeParam;
+        // Niagara's OverrideParameters shape: a tagged struct holding a map keyed by a
+        // natively serialized struct. Only the map is skipped; the struct and stream survive.
+        let (package, inner) = unknown_struct_stream(&[0xFF; 24]);
+        let mut package = package;
+        package
+            .names
+            .extend(["Holder".to_owned(), "Outer".to_owned()]);
+        let mut bytes = Vec::new();
+        write_property_tag(
+            &mut bytes,
+            9,
+            &TypeParam {
+                type_index: 3,
+                parameters: vec![TypeParam {
+                    type_index: 8,
+                    parameters: vec![TypeParam {
+                        type_index: 5,
+                        parameters: vec![],
+                    }],
+                }],
+            },
+            0,
+            &inner,
+        );
+        write_property_terminator(&mut bytes, 0);
+        let stream = decode_unknown_struct_stream(&package, &bytes).expect("export survives");
+        let PropertyValue::Struct(holder) = &stream.records[0].value else {
+            panic!(
+                "expected the holder struct, got {:?}",
+                stream.records[0].value
+            );
+        };
+        assert!(matches!(holder.records[0].value, PropertyValue::Raw { .. }));
+        assert_eq!(holder.records[1].value, PropertyValue::Int(99));
     }
 
     #[test]

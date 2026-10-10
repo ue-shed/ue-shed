@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { constants, zstdCompressSync, zstdDecompressSync } from "node:zlib";
 import { join } from "node:path";
+import { performance } from "node:perf_hooks";
 import { Schema } from "effect";
 import {
 	encodeStringBlock,
@@ -27,6 +28,7 @@ import {
 	encodeA64,
 	a64Cursor,
 	decodeA64,
+	decodeA64Into,
 	packedStrings,
 	type PackedStrings
 } from "./shared-string-codec.js";
@@ -48,6 +50,64 @@ interface SparseIndex {
 	offsets: Uint32Array;
 	frames: Uint32Array;
 	masks: Uint32Array;
+}
+export interface SharedLoadedDomain extends SnapshotLoadedDomain {
+	/** Native bulk representation. Legacy raw-block getters expand only when explicitly accessed. */
+	readonly utf8: Uint8Array;
+	readonly offsets: Uint32Array | Float64Array;
+}
+
+function scanPacked(strings: PackedStrings, needle: string) {
+	const count = strings.offsets.length - 1,
+		lower = needle.toLowerCase();
+	if (!lower.length) return count;
+	const query = Buffer.from(lower),
+		bytes = strings.bytes;
+	let matches = 0;
+	const ascii = query.every((byte) => byte < 128);
+	if (ascii && !/[a-z]/u.test(lower)) {
+		let row = 0,
+			start = 0;
+		for (
+			let found = bytes.indexOf(query, start);
+			found >= 0;
+			found = bytes.indexOf(query, start)
+		) {
+			while (row < count && strings.offsets[row + 1]! <= found) row++;
+			if (row === count) break;
+			if (found + query.length <= strings.offsets[row + 1]!) {
+				matches++;
+				start = strings.offsets[row + 1]!;
+			} else start = found + 1;
+		}
+		return matches;
+	}
+	const fold = (byte: number) => (byte >= 65 && byte <= 90 ? byte + 32 : byte);
+	for (let row = 0; row < count; row++) {
+		const start = strings.offsets[row]!,
+			end = strings.offsets[row + 1]!;
+		let found = false,
+			unicode = false;
+		for (let position = start; position < end; position++) {
+			if (bytes[position]! >= 128) unicode = true;
+			if (!ascii || fold(bytes[position]!) !== query[0] || position + query.length > end)
+				continue;
+			let equal = true;
+			for (let i = 1; i < query.length; i++)
+				if (fold(bytes[position + i]!) !== query[i]) {
+					equal = false;
+					break;
+				}
+			if (equal) {
+				found = true;
+				break;
+			}
+		}
+		// Unicode lowercase can change byte lengths (for example İ -> i plus combining dot).
+		if (found || (unicode && bytes.toString("utf8", start, end).toLowerCase().includes(lower)))
+			matches++;
+	}
+	return matches;
 }
 function containing(starts: readonly number[], id: number) {
 	let low = 0,
@@ -146,9 +206,32 @@ export class SharedStringFiles {
 	lookupStrings = 0;
 	reusedStrings = 0;
 	probePasses = 0;
+	sortMs = 0;
+	probeMs = 0;
+	appendMs = 0;
+	readonly timings = {
+		collectMs: 0,
+		reuseMs: 0,
+		layerEncodeMs: 0,
+		layerVerifyMs: 0,
+		garbageMs: 0,
+		rootPublishMs: 0
+	};
 	private readonly indexes = new Map<number, SparseIndex>();
 	private readonly frames = new Map<string, Buffer>();
 	private frameBytes = 0;
+	private readonly decoded = new Map<string, PackedStrings>();
+	private decodedBytes = 0;
+	private decodedHits = 0;
+	private decodedMisses = 0;
+	cacheMetrics() {
+		return {
+			decodedBlocks: this.decoded.size,
+			decodedBytes: this.decodedBytes,
+			decodedHits: this.decodedHits,
+			decodedMisses: this.decodedMisses
+		};
+	}
 	private closed = false;
 	private readonly trackRead = (bytes: number) => {
 		this.readBytes += bytes;
@@ -330,15 +413,39 @@ export class SharedStringFiles {
 		const output: Buffer[] = [];
 		output.length = ids.length;
 		for (const group of groups.values()) {
-			const values = decodeA64(await this.block(group.segment, group.block));
+			const key = `${group.segment}:${group.block}`;
+			let values = this.decoded.get(key);
+			if (!values) {
+				this.decodedMisses++;
+				const cursor = a64Cursor(await this.block(group.segment, group.block)),
+					arena = new StringArena(1024, 64);
+				for (let value = cursor.next(); value; value = cursor.next()) arena.add(value);
+				values = arena.finish();
+				const size = values.bytes.buffer.byteLength + values.offsets.buffer.byteLength;
+				if (size <= 32 * 1024 ** 2) {
+					while (this.decodedBytes + size > 32 * 1024 ** 2) {
+						const oldest = this.decoded.keys().next().value!;
+						const entry = this.decoded.get(oldest)!;
+						this.decodedBytes -=
+							entry.bytes.buffer.byteLength + entry.offsets.buffer.byteLength;
+						this.decoded.delete(oldest);
+					}
+					this.decoded.set(key, values);
+					this.decodedBytes += size;
+				}
+			} else {
+				this.decodedHits++;
+				this.decoded.delete(key);
+				this.decoded.set(key, values);
+			}
 			snapshotCheck(
-				values.length ===
+				values.offsets.length - 1 ===
 					Math.min(64, this.segments[group.segment]!.count - group.block * 64),
 				"front",
 				"Block count differs"
 			);
 			for (const row of group.rows)
-				output[row] = values[(ids[row]! - starts[group.segment]!) & 63]!;
+				output[row] = stringBytes(values, (ids[row]! - starts[group.segment]!) & 63);
 		}
 		return output;
 	}
@@ -352,7 +459,9 @@ export class SharedStringFiles {
 			if (output[id] === absentId) pending[pendingCount++] = id;
 		this.reusedStrings += output.length - pendingCount;
 		if (!pendingCount) return output;
+		const sortStarted = performance.now();
 		const order = sortBytes(values, pending.subarray(0, pendingCount));
+		this.sortMs += performance.now() - sortStarted;
 		const unique = new Uint32Array(order.length);
 		let size = 0,
 			previousId = -1;
@@ -370,6 +479,7 @@ export class SharedStringFiles {
 				Number(this.segments[b]!.domains.includes(domain)) -
 					Number(this.segments[a]!.domains.includes(domain)) || b - a
 		);
+		const probeStarted = performance.now();
 		for (const segment of segments) {
 			if (!requests.some((id) => output[id] === absentId)) break;
 			const index = await this.index(segment);
@@ -431,6 +541,7 @@ export class SharedStringFiles {
 					output[id] = this.segments[segment]!.start + fence * 64 + rank;
 			}
 		}
+		this.probeMs += performance.now() - probeStarted;
 		const missing = new Uint32Array(order.length);
 		let count = 0;
 		const base = this.count;
@@ -439,7 +550,9 @@ export class SharedStringFiles {
 			missing[count] = id;
 			output[id] = base + count++;
 		}
-		if (count) await this.append(domain, values, missing.subarray(0, count));
+		if (count) {
+			await this.append(domain, values, missing.subarray(0, count));
+		}
 		let representative = 0;
 		for (const id of order) {
 			while (
@@ -477,12 +590,25 @@ export class SharedStringFiles {
 			snapshotCheck(owner < this.segments[segment]!.domains.length, "front", "Invalid owner");
 		return owners;
 	}
-	/** Compaction supplies every live value and its owning domain, sorted globally. */
+	/** Compaction preserves one sorted segment per owning domain. Borrowed IDs remain shared. */
 	async merged(values: PackedStrings, owners: Uint32Array, domains: readonly string[]) {
-		const order = sortBytes(values),
-			inverse = new Uint32Array(order.length);
-		for (let rank = 0; rank < order.length; rank++) inverse[order[rank]!] = rank;
-		if (order.length) await this.append("mixed", values, order, owners, domains);
+		const count = values.offsets.length - 1,
+			counts = new Uint32Array(domains.length),
+			starts = new Uint32Array(domains.length + 1);
+		for (let row = 0; row < count; row++) counts[owners[row]!]!++;
+		for (let domain = 0; domain < domains.length; domain++)
+			starts[domain + 1] = starts[domain]! + counts[domain]!;
+		const positions = starts.slice(),
+			order = new Uint32Array(count),
+			inverse = new Uint32Array(count);
+		for (let row = 0; row < count; row++) order[positions[owners[row]!]!++] = row;
+		for (let domain = 0; domain < domains.length; domain++) {
+			const selected = sortBytes(values, order.subarray(starts[domain], starts[domain + 1])),
+				base = this.count;
+			for (let rank = 0; rank < selected.length; rank++)
+				inverse[selected[rank]!] = base + rank;
+			if (selected.length) await this.append(domains[domain]!, values, selected);
+		}
 		return inverse;
 	}
 	private async append(
@@ -492,14 +618,28 @@ export class SharedStringFiles {
 		owners?: Uint32Array,
 		domains: readonly string[] = [domain]
 	) {
+		async function* keys() {
+			for (const id of order)
+				yield { bytes: stringBytes(values, id), owner: owners?.[id] ?? 0 };
+		}
+		return this.appendOrdered(domain, order.length, keys(), domains);
+	}
+	/** Cold sorting already assigned the ranks; encode the disk merge without collecting it. */
+	async appendOrdered(
+		domain: string,
+		count: number,
+		keys: AsyncIterable<{ bytes: Buffer; owner: number }>,
+		domains: readonly string[] = [domain]
+	) {
+		const appendStarted = performance.now();
 		snapshotCheck(!this.closed, "append", "Shared string scope is closed");
 		snapshotCheck(
-			this.count + order.length < absentId && domains.length <= 4096,
+			this.count + count < absentId && domains.length <= 4096,
 			"segments",
 			"Dictionary bounds exceeded"
 		);
 		const start = this.count,
-			blocks = Math.ceil(order.length / 64),
+			blocks = Math.ceil(count / 64),
 			offsets = new Uint32Array(blocks),
 			frames = new Uint32Array(blocks),
 			masks = new Uint32Array(blocks),
@@ -538,17 +678,12 @@ export class SharedStringFiles {
 			group = [];
 			frameBytes = 0;
 		};
-		for (let block = 0; block < blocks; block++) {
-			const keys: Buffer[] = [];
-			let mask = 0;
-			for (let row = block * 64; row < Math.min(order.length, (block + 1) * 64); row++) {
-				const id = order[row]!,
-					key = stringBytes(values, id);
-				keys.push(key);
-				utf8Bytes += key.length;
-				mask |= 1 << (owners?.[id] ?? 0);
-			}
-			const encoded = encodeA64(keys);
+		let block = 0,
+			seen = 0,
+			mask = 0;
+		let blockKeys: Buffer[] = [];
+		const finishBlock = () => {
+			const encoded = encodeA64(blockKeys);
 			if (frameBytes && frameBytes + encoded.length > 256 * 1024) {
 				flushFrame();
 			}
@@ -557,18 +692,32 @@ export class SharedStringFiles {
 			masks[block] = mask >>> 0;
 			frameBytes += encoded.length;
 			group.push(encoded);
-			fences.push(keys[0]!.toString("utf8"));
+			fences.push(blockKeys[0]!.toString("utf8"));
+			block++;
+			blockKeys = [];
+			mask = 0;
+		};
+		const ownerRanks = domains.length > 1 ? new Uint32Array(count) : undefined;
+		for await (const key of keys) {
+			snapshotCheck(seen < count, "front", "Too many sorted keys");
+			blockKeys.push(Buffer.from(key.bytes));
+			utf8Bytes += key.bytes.length;
+			mask |= 1 << key.owner;
+			if (ownerRanks) ownerRanks[seen] = key.owner;
+			seen++;
+			if (blockKeys.length === 64) finishBlock();
 		}
+		snapshotCheck(seen === count, "front", "Missing sorted keys");
+		if (blockKeys.length) finishBlock();
 		flushFrame();
-		if (owners)
-			for (let start = 0; start < order.length; start += 8 * 1024 ** 2) {
+		if (ownerRanks)
+			for (let start = 0; start < count; start += 8 * 1024 ** 2) {
 				const begin = start,
-					end = Math.min(order.length, start + 8 * 1024 ** 2);
+					end = Math.min(count, start + 8 * 1024 ** 2);
 				columns.push({
 					name: `front.o${start / (8 * 1024 ** 2)}`,
 					kind: "u32",
-					load: async () =>
-						Uint32Array.from(order.subarray(begin, end), (id) => owners[id]!)
+					load: async () => ownerRanks.subarray(begin, end)
 				});
 			}
 		columns.push(
@@ -596,25 +745,50 @@ export class SharedStringFiles {
 		this.segments.push({
 			file,
 			start,
-			count: order.length,
+			count,
 			domain,
 			domains: [...domains],
 			utf8Bytes,
 			bytes: result.fileLength
 		});
 		this.appendedBytes += result.fileLength;
+		this.appendMs += performance.now() - appendStarted;
 	}
-	async domain(domain: string): Promise<readonly SnapshotLoadedDomain[]> {
+	async domain(domain: string): Promise<readonly SharedLoadedDomain[]> {
 		snapshotCheck(!this.closed, "domain", "Shared string scope is closed");
-		const result: SnapshotLoadedDomain[] = [];
+		const result: SharedLoadedDomain[] = [];
 		for (let segment = 0; segment < this.segments.length; segment++) {
 			const meta = this.segments[segment]!,
 				owner = meta.domains.indexOf(domain);
 			if (owner < 0) continue;
 			const index = await this.index(segment),
-				arena = new StringArena(),
+				arena = new StringArena(0, 0),
 				before = this.readBytes,
 				ownership = await this.ownership(segment);
+			if (!ownership) {
+				snapshotCheck(
+					meta.utf8Bytes + (meta.count + 1) * (meta.utf8Bytes < 0xffffffff ? 4 : 8) <=
+						MAX_SNAPSHOT_BYTES,
+					"domain",
+					"Raw domain exceeds bulk load cap; use pages"
+				);
+				const packed: PackedStrings = {
+					bytes: Buffer.allocUnsafe(meta.utf8Bytes),
+					offsets:
+						meta.utf8Bytes < 0xffffffff
+							? new Uint32Array(meta.count + 1)
+							: new Float64Array(meta.count + 1)
+				};
+				for (let block = 0; block < index.masks.length; block++)
+					decodeA64Into(await this.block(segment, block), packed, block * 64);
+				snapshotCheck(
+					packed.offsets[meta.count] === meta.utf8Bytes,
+					"front",
+					"Domain UTF-8 size differs"
+				);
+				result.push(this.loadedDomain(packed, this.readBytes - before));
+				continue;
+			}
 			for (let block = 0; block < index.masks.length; block++) {
 				if (!(index.masks[block]! & (1 << owner))) continue;
 				const cursor = a64Cursor(await this.block(segment, block));
@@ -624,20 +798,44 @@ export class SharedStringFiles {
 					row++;
 				}
 			}
-			const packed = arena.finish();
-			result.push({
-				...expandDomain(packed),
-				timings: {
-					storedBytes: this.readBytes - before,
-					readMs: 0,
-					decompressMs: 0,
-					verifyMs: 0,
-					copyMs: 0,
-					readBatches: 0
-				}
-			});
+			result.push(this.loadedDomain(arena.finish(), this.readBytes - before));
 		}
 		return result;
+	}
+	private loadedDomain(packed: PackedStrings, storedBytes: number): SharedLoadedDomain {
+		let legacy: ReturnType<typeof expandDomain> | undefined;
+		const compatibility = () => (legacy ??= expandDomain(packed));
+		return {
+			utf8: packed.bytes,
+			offsets: packed.offsets,
+			get bytes() {
+				return compatibility().bytes;
+			},
+			get blockOffsets() {
+				return compatibility().blockOffsets;
+			},
+			get blockStarts() {
+				return compatibility().blockStarts;
+			},
+			count: packed.offsets.length - 1,
+			string: (id) => {
+				snapshotCheck(
+					Number.isInteger(id) && id >= 0 && id < packed.offsets.length - 1,
+					"domain",
+					"Invalid domain ID"
+				);
+				return packed.bytes.toString("utf8", packed.offsets[id], packed.offsets[id + 1]);
+			},
+			scanSubstring: (needle) => scanPacked(packed, needle),
+			timings: {
+				storedBytes,
+				readMs: 0,
+				decompressMs: 0,
+				verifyMs: 0,
+				copyMs: 0,
+				readBatches: 0
+			}
+		};
 	}
 	async range(prefix: string) {
 		snapshotCheck(!this.closed, "range", "Shared string scope is closed");
@@ -676,5 +874,6 @@ export class SharedStringFiles {
 		for (const file of this.files) await file.close();
 		this.indexes.clear();
 		this.frames.clear();
+		this.decoded.clear();
 	}
 }

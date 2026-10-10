@@ -19,11 +19,8 @@ import {
 	sharedIndexDirectory,
 	type SharedIndexManifest
 } from "../packages/game-text/src/shared-index.ts";
-import {
-	openSnapshotFile,
-	type SnapshotSource,
-	type SnapshotLoadedDomain
-} from "../packages/game-text/src/snapshot-file.ts";
+import { openSnapshotFile, type SnapshotSource } from "../packages/game-text/src/snapshot-file.ts";
+import type { SharedLoadedDomain } from "../packages/game-text/src/shared-string-file.ts";
 import { readScaleRecipe } from "./game-text-scale-options.ts";
 
 type Measure = <A>(
@@ -105,9 +102,37 @@ export async function measureSharedIndex(
 		}
 		return;
 	}
-	if (task === "all" || task === "cold" || task === "refresh" || task === "cold-po") {
-		if (task !== "refresh")
-			for (const file of files) {
+	if (["all", "cold", "refresh", "cold-po", "cold-probe"].includes(task)) {
+		if (task === "all" || task === "cold") {
+			await measure(
+				"cold:target",
+				async () => {
+					const result = await Effect.runPromise(
+						importLocalizationTarget({
+							projectRoot: project,
+							cacheRoot: cache,
+							targetName: target.name
+						}).pipe(Effect.provide(LocalizationEvidenceNodeLive))
+					);
+					if (
+						result.diagnostics.length ||
+						result.files.length !== files.length ||
+						result.files.some((file) => !file.parsed)
+					)
+						throw new Error(
+							"Cold measurement requires every target file freshly parsed."
+						);
+					return result;
+				},
+				(result) => ({
+					files: result.files.length,
+					parsed: result.files.filter((file) => file.parsed).length,
+					diagnostics: result.diagnostics,
+					profile: result.profile
+				})
+			);
+		} else if (task !== "refresh")
+			for (const file of task === "cold-probe" ? files.slice(0, 7) : files) {
 				if (task === "cold-po" && !(file.format === "po" && file.path?.includes("/en/")))
 					continue;
 				if (!file.path) throw new Error("Missing input path");
@@ -128,7 +153,7 @@ export async function measureSharedIndex(
 					(result) => ({ ...result })
 				);
 			}
-		if (task === "cold-po") return;
+		if (task === "cold-po" || task === "cold-probe") return;
 		if (task === "refresh")
 			await measure(
 				"prepare-stat-hints",
@@ -220,7 +245,10 @@ export async function measureSharedIndex(
 					),
 					lookupStrings: result.files.reduce((n, file) => n + file.lookupStrings, 0),
 					reusedStrings: result.files.reduce((n, file) => n + file.reusedStrings, 0),
-					probePasses: result.files.reduce((n, file) => n + file.probePasses, 0)
+					probePasses: result.files.reduce((n, file) => n + file.probePasses, 0),
+					profiles: result.files
+						.filter((file) => file.parsed)
+						.map((file) => ({ path: file.relativePath, ...file.profile }))
 				})
 			);
 		} finally {
@@ -445,13 +473,13 @@ export async function measureSharedIndex(
 							(result) => result
 						)
 					);
-					const retained: (readonly SnapshotLoadedDomain[])[] = [];
+					const retained: (readonly SharedLoadedDomain[])[] = [];
 					for (const [domain, owners] of [
 						["source", ["source"]],
 						["culture", ["culture.en", "c0"]],
 						["paths", ["paths"]]
 					] as const) {
-						let loaded: readonly SnapshotLoadedDomain[] = [];
+						let loaded: readonly SharedLoadedDomain[] = [];
 						yield* Effect.promise(() =>
 							measure(
 								`reader:domain:${domain}`,
@@ -466,7 +494,8 @@ export async function measureSharedIndex(
 								},
 								(result) => ({
 									rawBytes: result.reduce(
-										(n, domain) => n + domain.bytes.length,
+										(n, domain) =>
+											n + domain.utf8.length + domain.offsets.byteLength,
 										0
 									),
 									storedBytes: result.reduce(
@@ -578,13 +607,25 @@ export async function measureSharedIndex(
 							() => Effect.runPromise(index.strings(ids)),
 							(result) => ({
 								strings: result.length,
+								cache: index.metrics(),
 								blocksLoaded:
 									index.metrics().blocksLoaded - beforePage.blocksLoaded,
 								readBytes: index.metrics().readBytes - beforePage.readBytes,
 								retainedColdBytes: retained
 									.flat()
-									.reduce((sum, domain) => sum + domain.bytes.length, 0)
+									.reduce(
+										(sum, domain) =>
+											sum + domain.utf8.length + domain.offsets.byteLength,
+										0
+									)
 							})
+						)
+					);
+					yield* Effect.promise(() =>
+						measure(
+							"reader:page-hot",
+							() => Effect.runPromise(index.strings(ids)),
+							(result) => ({ strings: result.length, cache: index.metrics() })
 						)
 					);
 				})

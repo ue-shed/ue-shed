@@ -27,6 +27,8 @@ const catalogOwned = new Set([
 ]);
 
 const approvedRuntimeExits = new Set([
+	// Node worker messages are foreign callbacks; the target scope owns and terminates the pool.
+	"packages/game-text/src/localization-import-worker.ts",
 	// The browser worker is a foreign entrypoint; each read's scope terminates its runtime.
 	"apps/site/src/blueprints/blueprint.worker.ts",
 	"apps/cli/src/index.ts",
@@ -55,6 +57,8 @@ const approvedRuntimeExits = new Set([
 	"packages/unreal-assets/src/protocol-transport.ts"
 ]);
 const approvedPromiseAdapters = new Set([
+	// The cold importer adapts worker messages and staged snapshot handles below SharedIndex.
+	"packages/game-text/src/localization-cold-import.ts",
 	// Shared immutable string segments and ID layers adapt positioned Node IO below the Effect store.
 	"packages/game-text/src/shared-string-file.ts",
 	"packages/game-text/src/shared-index.ts",
@@ -146,6 +150,10 @@ const approvedRawFetchAdapters = new Set([
 	"packages/unreal-connection/src/remote-control-client.ts"
 ]);
 const approvedResourceAdapters = new Set([
+	// Parser workers and their listeners are closed on success, failure and scope cancellation.
+	"packages/game-text/src/localization-cold-import.ts",
+	// RSS sampling belongs to one worker message and is cleared before its reply completes.
+	"packages/game-text/src/localization-import-worker.ts",
 	// Site navigation owns click/popstate listeners through onSettled cleanup.
 	"apps/site/src/navigation.ts",
 	// Popover DOM listeners and animation frames are released by Solid effect/onSettled cleanup;

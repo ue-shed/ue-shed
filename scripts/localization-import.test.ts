@@ -11,7 +11,7 @@ import {
 } from "node:fs/promises";
 import { resolve, relative } from "node:path";
 import { Effect } from "effect";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
 	LocalizationEvidenceNodeLive,
 	defaultLocalizationLimits
@@ -24,6 +24,7 @@ import {
 } from "../packages/game-text/src/localization-import.ts";
 import { expectLocalizationImportMatchesParser } from "./localization-import-oracle.test-support.ts";
 import { generateGameTextScale } from "./localization-scale-data.ts";
+import { SharedIndex, sharedIndexNodeLayer } from "../packages/game-text/src/shared-index.ts";
 
 let temporary: string;
 beforeAll(async () => {
@@ -60,6 +61,39 @@ const manifest = JSON.stringify({
 });
 
 describe("localization snapshot parser oracle", () => {
+	it("reuses unchanged local blocks after compaction and matches every refreshed PO entry", async () => {
+		const file = "block-reuse.po";
+		const text = Array.from(
+			{ length: 20000 },
+			(_, row) =>
+				`msgctxt "namespace,key-${row}"\nmsgid "source-${row}-${"text".repeat(45)}"\nmsgstr "source-${row}-${"text".repeat(45)}"\n`
+		).join("\n");
+		const options = request(file, "po", { cacheRoot: resolve(temporary, "block-cache") });
+		await writeFile(resolve(temporary, file), text);
+		await Effect.runPromise(importLocalizationFile(options));
+		await Effect.runPromise(
+			Effect.scoped(
+				Effect.gen(function* () {
+					const index = yield* SharedIndex;
+					const writer = yield* index.writer();
+					yield* writer.compact(true);
+				})
+			).pipe(
+				Effect.provide(
+					sharedIndexNodeLayer({
+						cacheRoot: options.cacheRoot,
+						projectKey: resolve(temporary),
+						targetKey: "localization"
+					})
+				)
+			)
+		);
+		await writeFile(resolve(temporary, file), text.replace("source-0-", "Source-0-"));
+		const refreshed = await expectLocalizationImportMatchesParser(options);
+		expect(refreshed.parsed).toBe(true);
+		expect(refreshed.lookupStrings).toBe(1);
+		expect(refreshed.reusedStrings).toBeGreaterThan(39000);
+	}, 60000);
 	it("matches every committed manifest, archive and PO fixture, including UE 5.7/5.8 outputs", async () => {
 		const root = resolve(".");
 		const files = await localizationFiles(resolve("fixtures"));
@@ -265,6 +299,20 @@ describe("localization import cache and failures", () => {
 		expect(first.diagnostics).toEqual([]);
 		expect(first.files).toHaveLength(21);
 		expect(first.files.every((file) => file.parsed)).toBe(true);
+		expect(first.profile?.workerCount).toBeGreaterThan(1);
+		expect(first.profile?.probePasses).toBe(0);
+		for (const file of first.files) {
+			const checked = await expectLocalizationImportMatchesParser({
+				projectRoot: root,
+				cacheRoot: resolve(temporary, "refresh-cache"),
+				relativePath: file.relativePath,
+				format: file.format,
+				sharedTargetKey: "Generated",
+				poFormat: first.target.poFormat,
+				collapseMode: first.target.collapseMode
+			});
+			expect(checked.statHit).toBe(true);
+		}
 		const second = await run();
 		expect(second.files.map((file) => file.key)).toEqual(first.files.map((file) => file.key));
 		expect(second.files.every((file) => !file.parsed)).toBe(true);
@@ -287,6 +335,65 @@ describe("localization import cache and failures", () => {
 			)
 		).toHaveLength(1);
 	});
+	it("keeps authored-file diagnostics and closes worker staging after a cold parser failure", async () => {
+		const root = resolve(temporary, "cold-failure");
+		await generateGameTextScale({ root, scale: 0.0001, seed: 57 });
+		const file = "Content/Localization/Generated/en/Generated.po";
+		await writeFile(resolve(root, file), 'msgid "source"\ninvalid syntax\n');
+		const cacheRoot = resolve(temporary, "cold-failure-cache");
+		const result = await Effect.runPromise(
+			importLocalizationTarget({
+				projectRoot: root,
+				cacheRoot,
+				targetName: "Generated"
+			}).pipe(Effect.provide(LocalizationEvidenceNodeLive))
+		);
+		expect(result.files).toHaveLength(20);
+		expect(result.diagnostics).toHaveLength(1);
+		expect(result.diagnostics[0]!.error.code).toBe("malformed_po");
+		expect(result.diagnostics[0]!.relativePath).toBe(file);
+		expect(await readdir(resolve(cacheRoot, "localization-import-staging"))).toEqual([]);
+	}, 60000);
+	it("cancels cold worker preparation, cleans staging and releases the writer for retry", async () => {
+		const root = resolve(temporary, "cold-cancel");
+		await generateGameTextScale({ root, scale: 0.0001, seed: 57 });
+		const cacheRoot = resolve(temporary, "cold-cancel-cache");
+		const controller = new AbortController();
+		const run = () =>
+			importLocalizationTarget({
+				projectRoot: root,
+				cacheRoot,
+				targetName: "Generated"
+			}).pipe(Effect.provide(LocalizationEvidenceNodeLive));
+		const pending = Effect.runPromiseExit(run(), { signal: controller.signal });
+		await vi.waitFor(
+			async () => {
+				const target = (
+					await readdir(resolve(cacheRoot, "localization-import-staging"))
+				)[0];
+				expect(target).toBeDefined();
+				expect(
+					(await readdir(resolve(cacheRoot, "localization-import-staging", target!)))
+						.length
+				).toBeGreaterThan(0);
+			},
+			{ timeout: 10000 }
+		);
+		controller.abort();
+		expect((await pending)._tag).toBe("Failure");
+		await vi.waitFor(
+			async () => {
+				expect(await readdir(resolve(cacheRoot, "localization-import-staging"))).toEqual(
+					[]
+				);
+			},
+			{ timeout: 10000 }
+		);
+		const retry = await Effect.runPromise(run());
+		expect(retry.diagnostics).toEqual([]);
+		expect(retry.files).toHaveLength(21);
+		expect(retry.files.every((file) => file.parsed)).toBe(true);
+	}, 60000);
 	it("never invokes a tokenizer on unchanged input, even with limits too small to parse it", async () => {
 		await writeFile(resolve(temporary, "reuse.manifest"), utf16(manifest));
 		const first = await Effect.runPromise(

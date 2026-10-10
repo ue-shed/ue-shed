@@ -1,6 +1,6 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import { join } from "node:path";
-import { readdir, unlink } from "node:fs/promises";
+import { readdir, unlink, mkdtemp, rm } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
 import { Context, Effect, Layer, Schema, Result, Semaphore, type Scope } from "effect";
 import {
@@ -25,6 +25,7 @@ import {
 	type SnapshotReader
 } from "./snapshot-store.js";
 import { SharedStringFiles, SharedSegment, maximumSharedSegments } from "./shared-string-file.js";
+import { sortColdStrings, FileReuse, type ColdLayerSource } from "./shared-string-sort.js";
 import {
 	StringArena,
 	absentId,
@@ -90,6 +91,10 @@ export interface SharedIndexReader {
 		columnLoadMs: number;
 		idDecodeMs: number;
 		idValidateMs: number;
+		decodedBlocks: number;
+		decodedBytes: number;
+		decodedHits: number;
+		decodedMisses: number;
 	};
 	readonly layer: (
 		name: string
@@ -107,6 +112,10 @@ export interface SharedIndexReader {
 	) => Effect.Effect<Awaited<ReturnType<SharedStringFiles["range"]>>, Failure>;
 }
 export interface SharedIndexWriter {
+	/** One atomic cold target publication, with a single external dictionary sort. */
+	readonly publishCold: (
+		entries: readonly ColdLayerSource[]
+	) => Effect.Effect<readonly SharedLayerRecord[], Failure>;
 	readonly manifest: () => SharedIndexManifest;
 	readonly metrics: () => {
 		readBytes: number;
@@ -115,6 +124,11 @@ export interface SharedIndexWriter {
 		lookupStrings: number;
 		reusedStrings: number;
 		probePasses: number;
+		sortMs: number;
+		probeMs: number;
+		appendMs: number;
+		segments: number;
+		timings: SharedStringFiles["timings"];
 	};
 	readonly publish: (
 		name: string,
@@ -273,7 +287,8 @@ export function sharedIndexNodeLayer(options: SnapshotStoreOptions) {
 					metrics: () => ({
 						readBytes: files.readBytes,
 						blocksLoaded: files.blocksLoaded,
-						...columnTimings
+						...columnTimings,
+						...files.cacheMetrics()
 					}),
 					layer,
 					strings: Effect.fn("SharedIndex.strings")((ids: readonly number[]) =>
@@ -335,6 +350,7 @@ export function sharedIndexNodeLayer(options: SnapshotStoreOptions) {
 				const publishRoot = Effect.fn("SharedIndex.publishRoot")(function* (
 					next: SharedIndexManifest
 				) {
+					const started = performance.now();
 					yield* Schema.decodeUnknownEffect(Index)(next).pipe(
 						Effect.mapError((cause) => snapshotFailure("index.meta", String(cause)))
 					);
@@ -354,6 +370,7 @@ export function sharedIndexNodeLayer(options: SnapshotStoreOptions) {
 					);
 					manifest = next;
 					uncertain = false;
+					files.timings.rootPublishMs += performance.now() - started;
 				});
 				const guard = () =>
 					snapshotCheck(
@@ -589,8 +606,63 @@ export function sharedIndexNodeLayer(options: SnapshotStoreOptions) {
 							}).pipe(Effect.uninterruptible)
 						)
 				);
+				const publishCold = Effect.fn("SharedIndex.publishCold")(
+					(entries: readonly ColdLayerSource[]) =>
+						mutex.withPermits(1)(
+							Effect.gen(function* () {
+								yield* boundary("writer", async () => {
+									guard();
+									snapshotCheck(
+										files.count === 0 &&
+											Object.keys(manifest.layers).length === 0,
+										"cold",
+										"Cold target requires an empty index"
+									);
+								});
+								const staging = yield* boundary("cold.sort", () =>
+									mkdtemp(join(directory, "sort-"))
+								);
+								try {
+									const maps = yield* boundary("cold.sort", () =>
+										sortColdStrings(entries, files, staging)
+									);
+									const layers: Record<string, SharedLayerRecord> = {},
+										active: Record<string, string> = {};
+									for (let row = 0; row < entries.length; row++) {
+										const entry = entries[row]!;
+										layers[entry.key] = yield* boundary("cold.layer", () =>
+											convertLayer(
+												directory,
+												files,
+												entry.name,
+												entry.key,
+												manifest.generation,
+												entry.source,
+												undefined,
+												maps[row]!.maps,
+												maps[row]!.hashes
+											)
+										);
+										active[entry.name] = entry.key;
+									}
+									yield* publishRoot({
+										...manifest,
+										active,
+										layers,
+										segments: [...files.segments]
+									});
+									return entries.map((entry) => layers[entry.key]!);
+								} finally {
+									yield* boundary("cold.cleanup", () =>
+										rm(staging, { recursive: true, force: true })
+									);
+								}
+							}).pipe(Effect.uninterruptible)
+						)
+				);
 				// Immutable files are retained until explicit retirement; open handles survive unlink.
 				return {
+					publishCold,
 					publish,
 					compact,
 					manifest: () => manifest,
@@ -600,7 +672,12 @@ export function sharedIndexNodeLayer(options: SnapshotStoreOptions) {
 						appendedBytes: retiredMetrics.appendedBytes + files.appendedBytes,
 						lookupStrings: retiredMetrics.lookupStrings + files.lookupStrings,
 						reusedStrings: retiredMetrics.reusedStrings + files.reusedStrings,
-						probePasses: retiredMetrics.probePasses + files.probePasses
+						probePasses: retiredMetrics.probePasses + files.probePasses,
+						sortMs: files.sortMs,
+						probeMs: files.probeMs,
+						appendMs: files.appendMs,
+						segments: files.segments.length,
+						timings: { ...files.timings }
 					})
 				};
 			});
@@ -611,6 +688,7 @@ export function sharedIndexNodeLayer(options: SnapshotStoreOptions) {
 				old: SharedLayerRecord,
 				next: SharedLayerRecord
 			) {
+				const started = performance.now();
 				const referenced = new Uint8Array(Math.ceil(files.count / 8));
 				const newer = await openSnapshotFile(join(directory, next.file), {
 					onRead: (bytes) => {
@@ -646,6 +724,7 @@ export function sharedIndexNodeLayer(options: SnapshotStoreOptions) {
 				for (let start = 0; start < candidates.length; start += 8192)
 					for (const value of await files.bytes(candidates.slice(start, start + 8192)))
 						bytes += value.length;
+				files.timings.garbageMs += performance.now() - started;
 				return bytes;
 			}
 			return { open, writer, inspect: read, cached };
@@ -660,13 +739,19 @@ async function convertLayer(
 	key: string,
 	generation: string,
 	source: SnapshotSource,
-	previous?: SharedLayerRecord
+	previous?: SharedLayerRecord,
+	coldMaps?: Map<string, Uint32Array>,
+	coldHashes?: typeof FileReuse.Type
 ): Promise<SharedLayerRecord> {
+	const collectStarted = performance.now();
 	const arenas = new Map<string, StringArena>(),
 		packed = new Map<string, PackedStrings>();
-	const maps = new Map<string, Uint32Array>();
+	const maps = coldMaps ?? new Map<string, Uint32Array>();
+	const reusable = source.columns.some((column) => column.name === "file.meta");
+	const reuseBlocks: typeof FileReuse.Type = coldHashes ?? {};
 	const input = new Map<string, Uint8Array | Uint32Array>();
 	for (const column of source.columns) {
+		if (coldMaps) break;
 		if (column.kind !== "strings") continue;
 		const domain = column.domain!,
 			arena = arenas.get(domain) ?? new StringArena();
@@ -674,9 +759,38 @@ async function convertLayer(
 		const bytes = await column.load();
 		snapshotCheck(bytes instanceof Uint8Array, column.name, "Invalid string block");
 		const block = decodeStringBlock(bytes);
+		if (reusable) {
+			const blocks = reuseBlocks[domain] ?? [],
+				last = blocks.at(-1);
+			blocks.push({
+				start: last ? last.start + last.count : 0,
+				count: block.count,
+				hash: createHash("sha256").update(bytes).digest("hex")
+			});
+			reuseBlocks[domain] = blocks;
+		}
 		for (let row = 0; row < block.count; row++) arena.add(block.bytes(row));
 	}
 	for (const [domain, arena] of arenas) packed.set(domain, arena.finish());
+	if (coldMaps && reusable && !coldHashes) {
+		for (const column of source.columns) {
+			if (column.kind !== "strings") continue;
+			const bytes = await column.load();
+			snapshotCheck(bytes instanceof Uint8Array, column.name, "Invalid local string block");
+			const block = decodeStringBlock(bytes),
+				domain = column.domain!,
+				blocks = reuseBlocks[domain] ?? [],
+				last = blocks.at(-1);
+			blocks.push({
+				start: last ? last.start + last.count : 0,
+				count: block.count,
+				hash: createHash("sha256").update(bytes).digest("hex")
+			});
+			reuseBlocks[domain] = blocks;
+		}
+	}
+	files.timings.collectMs += performance.now() - collectStarted;
+	const reuseStarted = performance.now();
 	// The prior publication is indexed by file path, independent of the new content hash.
 	// Its own strings already have IDs. Merge sorted local strings with that mapping;
 	// only new/changed values enter the project dictionary's segment probe passes.
@@ -697,155 +811,312 @@ async function convertLayer(
 			throw cause;
 		});
 		try {
-			const oldColumns = new Map<string, Uint32Array>();
-			const emptyId =
-				reader && files.count && (await files.strings([0]))[0] === "" ? 0 : undefined;
-			if (reader)
-				for (const column of Object.keys(previous.stringColumns)) {
+			let seeded = false;
+			if (reader && reusable && reader.directory.entries.has("reuse.meta")) {
+				snapshotCheck(
+					reader.directory.entries.get("reuse.meta")!.rawLength <= 16 * 1024 ** 2,
+					"reuse",
+					"Reuse metadata exceeds cap"
+				);
+				const oldBlocks = Schema.decodeUnknownSync(Schema.fromJsonString(FileReuse))(
+					new TextDecoder().decode(await reader.load("reuse.meta"))
+				);
+				let total = 0,
+					unresolved = 0;
+				for (const [domain, values] of packed) {
+					const column = `reuse.${domain}`,
+						prior = oldBlocks[domain];
+					if (!prior || !previous.stringColumns[column]) {
+						unresolved = Infinity;
+						break;
+					}
 					const ids = await readLayerColumn(reader, previous, column);
-					snapshotCheck(ids instanceof Uint32Array, column, "Invalid previous ID column");
 					const dependency = files.segments[previous.segmentCount - 1];
 					for (const id of ids)
 						snapshotCheck(
 							id < (dependency ? dependency.start + dependency.count : 0),
 							column,
-							"Previous ID outside dependency"
+							"Previous reuse ID outside dependency"
 						);
-					oldColumns.set(column, ids);
-				}
-			for (const column of source.columns)
-				if (column.kind === "stringIds") input.set(column.name, await column.load());
-			let matched: Int32Array | undefined;
-			let priorSource:
-				| { values: PackedStrings; order: Uint32Array; ids: Uint32Array }
-				| undefined;
-			const priority = (domain: string) =>
-				domain === "identity" ? 0 : domain === "source" ? 1 : 2;
-			const domains = [...packed.keys()].sort((a, b) => priority(a) - priority(b));
-			if (reader)
-				for (const domain of domains) {
-					const values = packed.get(domain)!;
-					const columns: Uint32Array[] = [];
-					for (const [column, owner] of Object.entries(previous.stringColumns)) {
-						if (owner !== domain) continue;
-						const ids = oldColumns.get(column)!;
-						if (matched && domain !== "identity") {
-							const candidates = new Uint32Array(matched.length);
-							let count = 0;
-							for (const row of matched)
-								if (row >= 0) candidates[count++] = ids[row]!;
-							columns.push(candidates.subarray(0, count));
-						} else columns.push(ids);
-					}
-					const known = new Uint32Array(
-						columns.reduce((n, column) => n + column.length, 0)
-					);
-					let position = 0;
-					for (const column of columns) {
-						known.set(column, position);
-						position += column.length;
-					}
-					known.sort();
-					let count = 0;
-					for (const id of known)
-						if (!count || known[count - 1] !== id) known[count++] = id;
-					const oldIds = known.subarray(0, count),
-						oldArena = new StringArena();
-					for (let start = 0; start < count; start += 8192)
-						await files.collectSorted(oldIds.subarray(start, start + 8192), oldArena);
-					const old = oldArena.finish(),
-						oldOrder = priorStringOrder(old, oldIds, files.segments),
-						order = sortBytes(values),
-						reuse = new Uint32Array(order.length).fill(absentId);
-					let prior = 0;
-					for (const id of order) {
-						if (
-							values.offsets[id] === values.offsets[id + 1] &&
-							emptyId !== undefined
-						) {
-							reuse[id] = emptyId;
+					const reuse = new Uint32Array(values.offsets.length - 1).fill(absentId);
+					for (let block = 0; block < reuseBlocks[domain]!.length; block++) {
+						const current = reuseBlocks[domain]![block]!,
+							old = prior[block];
+						if (!old || old.hash !== current.hash || old.count !== current.count)
 							continue;
-						}
-						let comparison = 1;
-						while (prior < oldOrder.length) {
-							comparison = comparePacked(old, oldOrder[prior]!, values, id);
-							if (comparison >= 0) break;
-							prior++;
-						}
-						if (prior < oldOrder.length && comparison === 0)
-							reuse[id] = oldIds[oldOrder[prior]!]!;
+						snapshotCheck(
+							old.start + old.count <= ids.length &&
+								current.start + current.count <= reuse.length,
+							column,
+							"Reuse block outside map"
+						);
+						reuse.set(ids.subarray(old.start, old.start + old.count), current.start);
 					}
-					if (domain === "source")
-						priorSource = { values: old, order: oldOrder, ids: oldIds };
-					// Equal-to-source translations were implicit; their original source IDs are known.
-					if (domain === "translation" && priorSource)
-						for (const id of order) {
-							if (reuse[id] !== absentId) continue;
-							let low = 0,
-								high = priorSource.order.length;
-							while (low < high) {
-								const middle = (low + high) >>> 1;
-								if (
-									comparePacked(
-										priorSource.values,
-										priorSource.order[middle]!,
-										values,
-										id
-									) < 0
-								)
-									low = middle + 1;
-								else high = middle;
-							}
-							if (
-								low < priorSource.order.length &&
-								comparePacked(
-									priorSource.values,
-									priorSource.order[low]!,
-									values,
-									id
-								) === 0
-							)
-								reuse[id] = priorSource.ids[priorSource.order[low]!]!;
-						}
+					for (const id of reuse) if (id === absentId) unresolved++;
+					total += reuse.length;
 					maps.set(domain, reuse);
-					if (domain === "identity") {
-						const ns = input.get("entry.namespace"),
-							keys = input.get("entry.key"),
-							oldNs = oldColumns.get("entry.namespace"),
-							oldKeys = oldColumns.get("entry.key");
-						if (ns && keys && oldNs && oldKeys) {
-							matched = new Int32Array(ns.length).fill(-1);
-							const oldRows = identityRows(oldNs, oldKeys),
-								newRows = identityRows(ns, keys, reuse);
-							let priorRow = 0;
-							for (const row of newRows) {
-								const namespace = reuse[ns[row]!]!,
-									key = reuse[keys[row]!]!;
-								if (namespace === absentId || key === absentId) continue;
-								while (
-									priorRow < oldRows.length &&
-									(oldNs[oldRows[priorRow]!]! < namespace ||
-										(oldNs[oldRows[priorRow]!] === namespace &&
-											oldKeys[oldRows[priorRow]!]! < key))
-								)
-									priorRow++;
-								const oldRow = oldRows[priorRow];
+				}
+				// Sparse changes benefit from block reuse; broad changes retain exact identity matching.
+				seeded = unresolved * 20 <= total;
+				if (!seeded) maps.clear();
+				else {
+					// Decode only prior blocks whose local SHA changed. Exact byte matching reuses
+					// their unchanged neighbours without expanding the complete previous file.
+					const sparseKnown: {
+						values: PackedStrings;
+						order: Uint32Array;
+						ids: Uint32Array;
+					}[] = [];
+					for (const [domain, values] of packed) {
+						const reuse = maps.get(domain)!,
+							current = reuseBlocks[domain]!,
+							prior = oldBlocks[domain]!,
+							ids = await readLayerColumn(reader, previous, `reuse.${domain}`);
+						snapshotCheck(ids instanceof Uint32Array, "reuse", "Invalid reuse column");
+						const candidates: Uint32Array[] = [];
+						for (let block = 0; block < current.length; block++) {
+							const old = prior[block];
+							if (!old || old.hash === current[block]!.hash) continue;
+							snapshotCheck(
+								old.start + old.count <= ids.length,
+								"reuse",
+								"Prior block outside map"
+							);
+							candidates.push(ids.subarray(old.start, old.start + old.count));
+						}
+						if (!candidates.length) continue;
+						const known = new Uint32Array(
+							candidates.reduce((n, part) => n + part.length, 0)
+						);
+						let count = 0;
+						for (const part of candidates) {
+							known.set(part, count);
+							count += part.length;
+						}
+						known.sort();
+						count = 0;
+						for (const id of known)
+							if (!count || known[count - 1] !== id) known[count++] = id;
+						const oldIds = known.subarray(0, count),
+							arena = new StringArena(0, count);
+						await files.collectSorted(oldIds, arena);
+						const old = arena.finish(),
+							oldOrder = sortBytes(old),
+							missing = new Uint32Array(
+								reuse.reduce((n, id) => n + Number(id === absentId), 0)
+							);
+						let position = 0;
+						for (let id = 0; id < reuse.length; id++)
+							if (reuse[id] === absentId) missing[position++] = id;
+						const order = sortBytes(values, missing);
+						sparseKnown.push({ values: old, order: oldOrder, ids: oldIds });
+						let cursor = 0;
+						for (const id of order) {
+							let comparison = 1;
+							while (cursor < oldOrder.length) {
+								comparison = comparePacked(old, oldOrder[cursor]!, values, id);
+								if (comparison >= 0) break;
+								cursor++;
+							}
+							if (cursor < oldOrder.length && comparison === 0)
+								reuse[id] = oldIds[oldOrder[cursor]!]!;
+						}
+					}
+					// An implicit source-equal translation becomes explicit when its source changes.
+					// Its old bytes are still in the sparse source candidates and keep their ID.
+					for (const [domain, values] of packed) {
+						const reuse = maps.get(domain)!;
+						for (let id = 0; id < reuse.length; id++) {
+							if (reuse[id] !== absentId) continue;
+							for (const known of sparseKnown) {
+								let low = 0,
+									high = known.order.length;
+								while (low < high) {
+									const middle = (low + high) >>> 1;
+									if (
+										comparePacked(
+											known.values,
+											known.order[middle]!,
+											values,
+											id
+										) < 0
+									)
+										low = middle + 1;
+									else high = middle;
+								}
 								if (
-									oldRow !== undefined &&
-									oldNs[oldRow] === namespace &&
-									oldKeys[oldRow] === key
+									low < known.order.length &&
+									comparePacked(known.values, known.order[low]!, values, id) === 0
 								) {
-									matched[row] = oldRow;
-									priorRow++;
+									reuse[id] = known.ids[known.order[low]!]!;
+									break;
 								}
 							}
 						}
 					}
 				}
+			}
+			if (!seeded) {
+				const oldColumns = new Map<string, Uint32Array>();
+				const emptyId =
+					reader && files.count && (await files.strings([0]))[0] === "" ? 0 : undefined;
+				if (reader)
+					for (const column of Object.keys(previous.stringColumns)) {
+						if (column.startsWith("reuse.")) continue;
+						const ids = await readLayerColumn(reader, previous, column);
+						snapshotCheck(
+							ids instanceof Uint32Array,
+							column,
+							"Invalid previous ID column"
+						);
+						const dependency = files.segments[previous.segmentCount - 1];
+						for (const id of ids)
+							snapshotCheck(
+								id < (dependency ? dependency.start + dependency.count : 0),
+								column,
+								"Previous ID outside dependency"
+							);
+						oldColumns.set(column, ids);
+					}
+				for (const column of source.columns)
+					if (column.kind === "stringIds") input.set(column.name, await column.load());
+				let matched: Int32Array | undefined;
+				let priorSource:
+					| { values: PackedStrings; order: Uint32Array; ids: Uint32Array }
+					| undefined;
+				const priority = (domain: string) =>
+					domain === "identity" ? 0 : domain === "source" ? 1 : 2;
+				const domains = [...packed.keys()].sort((a, b) => priority(a) - priority(b));
+				if (reader)
+					for (const domain of domains) {
+						const values = packed.get(domain)!;
+						const columns: Uint32Array[] = [];
+						for (const [column, owner] of Object.entries(previous.stringColumns)) {
+							if (column.startsWith("reuse.")) continue;
+							if (owner !== domain) continue;
+							const ids = oldColumns.get(column)!;
+							if (matched && domain !== "identity") {
+								const candidates = new Uint32Array(matched.length);
+								let count = 0;
+								for (const row of matched)
+									if (row >= 0) candidates[count++] = ids[row]!;
+								columns.push(candidates.subarray(0, count));
+							} else columns.push(ids);
+						}
+						const known = new Uint32Array(
+							columns.reduce((n, column) => n + column.length, 0)
+						);
+						let position = 0;
+						for (const column of columns) {
+							known.set(column, position);
+							position += column.length;
+						}
+						known.sort();
+						let count = 0;
+						for (const id of known)
+							if (!count || known[count - 1] !== id) known[count++] = id;
+						const oldIds = known.subarray(0, count),
+							oldArena = new StringArena();
+						for (let start = 0; start < count; start += 8192)
+							await files.collectSorted(
+								oldIds.subarray(start, start + 8192),
+								oldArena
+							);
+						const old = oldArena.finish(),
+							oldOrder = priorStringOrder(old, oldIds, files.segments),
+							order = sortBytes(values),
+							reuse = new Uint32Array(order.length).fill(absentId);
+						let prior = 0;
+						for (const id of order) {
+							if (
+								values.offsets[id] === values.offsets[id + 1] &&
+								emptyId !== undefined
+							) {
+								reuse[id] = emptyId;
+								continue;
+							}
+							let comparison = 1;
+							while (prior < oldOrder.length) {
+								comparison = comparePacked(old, oldOrder[prior]!, values, id);
+								if (comparison >= 0) break;
+								prior++;
+							}
+							if (prior < oldOrder.length && comparison === 0)
+								reuse[id] = oldIds[oldOrder[prior]!]!;
+						}
+						if (domain === "source")
+							priorSource = { values: old, order: oldOrder, ids: oldIds };
+						// Equal-to-source translations were implicit; their original source IDs are known.
+						if (domain === "translation" && priorSource)
+							for (const id of order) {
+								if (reuse[id] !== absentId) continue;
+								let low = 0,
+									high = priorSource.order.length;
+								while (low < high) {
+									const middle = (low + high) >>> 1;
+									if (
+										comparePacked(
+											priorSource.values,
+											priorSource.order[middle]!,
+											values,
+											id
+										) < 0
+									)
+										low = middle + 1;
+									else high = middle;
+								}
+								if (
+									low < priorSource.order.length &&
+									comparePacked(
+										priorSource.values,
+										priorSource.order[low]!,
+										values,
+										id
+									) === 0
+								)
+									reuse[id] = priorSource.ids[priorSource.order[low]!]!;
+							}
+						maps.set(domain, reuse);
+						if (domain === "identity") {
+							const ns = input.get("entry.namespace"),
+								keys = input.get("entry.key"),
+								oldNs = oldColumns.get("entry.namespace"),
+								oldKeys = oldColumns.get("entry.key");
+							if (ns && keys && oldNs && oldKeys) {
+								matched = new Int32Array(ns.length).fill(-1);
+								const oldRows = identityRows(oldNs, oldKeys),
+									newRows = identityRows(ns, keys, reuse);
+								let priorRow = 0;
+								for (const row of newRows) {
+									const namespace = reuse[ns[row]!]!,
+										key = reuse[keys[row]!]!;
+									if (namespace === absentId || key === absentId) continue;
+									while (
+										priorRow < oldRows.length &&
+										(oldNs[oldRows[priorRow]!]! < namespace ||
+											(oldNs[oldRows[priorRow]!] === namespace &&
+												oldKeys[oldRows[priorRow]!]! < key))
+									)
+										priorRow++;
+									const oldRow = oldRows[priorRow];
+									if (
+										oldRow !== undefined &&
+										oldNs[oldRow] === namespace &&
+										oldKeys[oldRow] === key
+									) {
+										matched[row] = oldRow;
+										priorRow++;
+									}
+								}
+							}
+						}
+					}
+			}
 		} finally {
 			await reader?.close();
 		}
 	}
+	files.timings.reuseMs += performance.now() - reuseStarted;
 	const culture = name
 		.replaceAll("\\", "/")
 		.match(/\/([A-Za-z]{2,3}(?:-[A-Za-z0-9]{1,8})*)\/[^/]+\.(?:archive|po)$/u)?.[1];
@@ -884,6 +1155,18 @@ async function convertLayer(
 				}
 			});
 		} else columns.push(column);
+	}
+	if (reusable) {
+		for (const [domain, map] of maps) {
+			const name = `reuse.${domain}`;
+			stringColumns[name] = domain;
+			columns.push({ name, kind: "u32", load: async () => map });
+		}
+		columns.push({
+			name: "reuse.meta",
+			kind: "bytes",
+			load: async () => new TextEncoder().encode(JSON.stringify(reuseBlocks))
+		});
 	}
 	return writeLayer(directory, files, key, generation, stringColumns, columns);
 }
@@ -988,6 +1271,7 @@ async function writeLayer(
 	stringColumns: Record<string, string>,
 	columns: SnapshotSourceColumn[]
 ) {
+	const encodeStarted = performance.now();
 	const file = `layer-${randomUUID()}.snapshot`;
 	const record = {
 		file,
@@ -1024,6 +1308,8 @@ async function writeLayer(
 					}
 	);
 	const result = await writeSnapshotFile(join(directory, file), { columns: encoded }, 1);
+	files.timings.layerEncodeMs += performance.now() - encodeStarted;
+	const verifyStarted = performance.now();
 	const reader = await openSnapshotFile(join(directory, file), {
 		onRead: (bytes) => {
 			files.readBytes += bytes;
@@ -1034,6 +1320,7 @@ async function writeLayer(
 	} finally {
 		await reader.close();
 	}
+	files.timings.layerVerifyMs += performance.now() - verifyStarted;
 	return { ...record, bytes: result.fileLength };
 }
 async function liveStrings(

@@ -113,16 +113,20 @@ not the project. The design is proven on a generated project ten times the measu
   active layers into a new store generation. Readers retain every opened layer and segment handle.
 - **Final dictionary decision: A64**, sorted byte strings front-coded in 64-string blocks,
   zstd over groups up to 256 KiB, and a sparse first-key index. Immutable segment IDs are byte
-  sort ranks plus the segment base. Compaction must remap active layers together. Cold builds
-  collect/sort typed byte/occurrence arrays; changed files sort once and merge through segments.
+  sort ranks plus the segment base. Compaction must remap active layers together. Cold targets
+  parse with a bounded worker pool, externally sort all strings once in 64 MiB runs, then write
+  one segment per domain and the layers. Changed files sort unresolved strings once and probe segments.
   Canonical GUID keys use 16-byte storage, a case mask and a noncanonical tag for exact text recovery.
   Root version 2 and importer version 5 rebuild the disposable prior hash-page cache.
-  At most 256 immutable segments accumulate before compaction merges every segment into one,
+  At most 256 immutable segments accumulate before compaction merges them into one per domain,
   remaps every active layer and publishes one generation; existing readers retain their old handles.
-  Refresh matches rows by identity against the prior file found by path, reuses unchanged IDs and
-  probes only unresolved sorted strings, once per relevant segment. Matching domains and newer
+  Refresh reuses native local-block SHA-256 stamps and remappable ID vectors from the prior file
+  found by path; only changed blocks hydrate old candidates. Broad edits and older layers match
+  rows by identity. Only unresolved sorted strings enter probes, once per relevant segment. Matching domains and newer
   segments go first, with exact cross-domain lookup and byte bounds excluding impossible requests.
   No FST is justified by the measured 8.88 MiB A64 sparse index at 10×; no native dependency is added.
+  Bulk reads expand each owned segment into contiguous UTF-8 plus typed offsets; page reads decode
+  touched blocks with a bounded 32 MiB decoded-block cache.
 
     Final saved-section experiment, cells **1× / 10×**; sizes include encoded lookup metadata.
     Modeled append/page probes use compressed payloads in memory, not production file refreshes.
@@ -468,81 +472,73 @@ All scale children ran singly with 16,384 MiB heap, 20 GB RSS and 1,200 s stage 
 
 ### Phase 3: A64 shared-store integration
 
-Recorded 2026-10-10, Windows / Node 26.11.1. **A64 is integrated; size/stat-hit acceptance passes,
-cold import and 10× PO refresh acceptance fails.** The Design A/B/C comparison remains above.
-Retained projects and saved Phase 2 sections were reused, with no regeneration, 1× join rebuild
-or legacy 10× pipeline. One heavy process at a time, 16,384 MiB heap, 20 GB OS RSS, 1,200 s/stage;
-every 10× run has one absolute **900 s end-to-end deadline**, including startup and cleanup.
-Expiry kills the tree and records failure. A parent guard restores PO bytes even after a worker kill.
+Recorded 2026-10-10, Windows / Node 26.11.1. Cold import, ordinary PO refresh and size targets
+pass; the reader reference gaps remain explicit. Retained projects/saved joins were reused;
+no regeneration, 1× join rebuild or legacy 10× pipeline. Heap cap 16,384 MiB/process, total RSS
+20 GB; one heavy child at a time. Every 10× command has one absolute 900 s startup-to-cleanup
+deadline; expiry is failure. Cold plus stat/edit/restore completed in 677.76 s.
+Times are single runs without OS cache eviction; cold means an empty derived store.
+Largest child RSS was 8.58 GiB during projection; observed concurrent verification stayed below
+20 GB. Content-hash keys, stat fast path, CRCs, oracle comparisons and atomic generations remain.
 
-Immutable A64 IDs are segment base + UTF-8 sort rank. Typed external byte/offset/radix arrays
-replace the hash build; 64-string front-coded blocks, sparse fences and bounded compressed frames
-are written once with persisted CRC checks. Canonical 32-hex GUIDs use 16 bytes and optional case
-masks; tagged noncanonical strings preserve exact text. The maximum is **256 segments**.
-Sorted unresolved requests make one ordered probe per relevant segment, matching domains/newer
-segments first, then exact cross-domain confirmation; sparse seeks and byte bounds skip gaps.
-Compaction merges every segment into one, remaps every active layer and atomically publishes one
-generation; old readers retain their handles. Ownership pages/masks preserve lazy domains and the
-Phase 2 page-decode representation. Root v2/importer v5 rebuild the disposable old hash cache.
+Profiled in the required order. Cold per-file probes grew with existing segments: en/de/fr
+PO at 10× spent 2.980/3.944/3.778 s probing 4/7/9 previous segments. Cold now parses eight workers,
+then externally sorts 64 MiB runs once and publishes one sorted segment per domain with every
+layer atomically: zero segment probes. Measured largest-worker incremental RSS 248/692 MiB;
+2 GB minimum worker budget and 4 GB coordinator reserve; peak cold RSS 2.45/6.77 GiB.
 
-Previous files are found by path in the active publication or stat hints. Identity matching handles
-reordering/duplicates, reuses old IDs and only probes unresolved strings. Implicit unchanged
-translations also reuse the old source ID when the source changes. Missing prior files fall back
-to full sorted lookup. Exact GUID recovery, multi-segment ordering, the segment ceiling, old readers,
-reuse and implicit-source changes have oracles. Full details and commands:
-[measurements](../docs/engineering/game-text-shared-index-measurements.md).
+Mixed-domain expansion dominated the reader profile. Domains now decode straight into contiguous
+UTF-8 plus typed offsets; scans fold bytes, with Unicode casing fallback only where needed.
+Source has 933.74 MB/6.96 million owned strings including native input; front-code reconstruction
+adds CPU over Phase 2's direct zstd buffers. First-page ranks touch 243 frames instead of four.
+8 MiB decoded caching thrashes; 32 MiB retains 249 blocks/16,399,140 bytes and restores repeat
+pages to 0.88 ms. First-page and bulk reference gaps remain explicit.
 
-| Whole index MiB                            |     1× measured | 10× full-width before compact |     10× compacted | 10× after four edits | 10× full-width forecast |
-| ------------------------------------------ | --------------: | ----------------------------: | ----------------: | -------------------: | ----------------------: |
-| Dictionary, including sparse/owner indexes |           10.80 |                        128.99 |            101.38 |               101.38 |                  152.25 |
-| Active localization/join layers            |           15.32 |                        263.61 |            292.72 |               292.72 |                  292.72 |
-| Package proxy/publications/stat hints      |            2.88 |                         28.36 |             39.84 |                39.84 |                   39.85 |
-| Retained inactive layers                   |            0.00 |                          4.42 |              0.00 |                18.33 |                   18.33 |
-| **Whole / target**                         | **29.00 / 100** |             **425.37 / 1024** | **433.94 / 1024** |    **452.27 / 1024** |       **503.14 / 1024** |
+Refresh profile: prior ID reuse 7.043 s, parse/finish 10.963 s, verification 0.045 s. SHA-256
+local-block stamps and remappable ID vectors skip unchanged-block hydration; changed blocks
+reuse exact old bytes, including now-explicit source-equal translations. Reuse falls to
+0.504 s. Identity fallback covers broad edits/old stores. Hash/parse already share one read;
+verification remains because it is cheap. Ordinary edits pass; the CPU-profiled 21.41 s run misses
+20 s (13.573 s parse/1.248 s finish). Entry-boundary parse workers could add margin; not measured.
 
-Pre-compaction production preserves all 78,066,945 strings / 7,707,973,974 UTF-8 bytes;
-owner counts and widths match the historical census. Compaction prunes 26,085,533 strings /
-1,974,125,709 bytes. The forecast restores full widths using the larger of per-owner measured
-scaling and complete mixed dictionary × max(count ratio, UTF-8 ratio), 1.501824, plus the largest
-measured layers/proxy/metadata/retained bytes. No pruning credit. Global ranks increase ID stream
-sizes, so whole size grows after compaction despite a smaller dictionary. Synthetic compression
-and the existing package proxy cannot establish complete Phase 4 fields or real-content size.
+| Whole index MiB                          |    1× compacted |    10× full width |     10× compacted |    10× four edits | 10× full-width forecast |
+| ---------------------------------------- | --------------: | ----------------: | ----------------: | ----------------: | ----------------------: |
+| Dictionary / indexes / directory         |           11.06 |            129.93 |             95.14 |             95.14 |                  150.60 |
+| Active localization / join layers        |           18.81 |            335.68 |            335.63 |            335.63 |                  335.68 |
+| Package proxy / publication / stat hints |            2.87 |             28.35 |             27.26 |             27.26 |                   28.36 |
+| Retained inactive layers                 |            0.00 |              5.43 |              0.00 |             21.79 |                   21.79 |
+| **Whole / target**                       | **32.74 / 100** | **499.40 / 1024** | **458.03 / 1024** | **479.82 / 1024** |       **536.43 / 1024** |
 
-| Operation                              |                        1× |                                 10× | Acceptance                              |
-| -------------------------------------- | ------------------------: | ----------------------------------: | --------------------------------------- |
-| Cold target files                      |         52.89 s, 21 files | **failed at 900.14 s**, 35/41 files | ≤38 / ≤696 s: fail; >900 s always fails |
-| Stat-hit target                        |                   0.095 s |                             0.178 s | ≤5 / ≤30 s: pass                        |
-| One-byte PO                            |                    2.45 s |                             27.49 s | 10× ≤20 s: fail                         |
-| Edit lookups / reuses / segment passes |           1 / 396,093 / 2 |                   1 / 3,960,855 / 1 | only new string looked up               |
-| Forced compaction / saved projection   |           25.95 / 23.85 s |                   175.63 / 298.22 s | one segment; no join rebuilt            |
-| Directory / hot columns                |           9.91 / 49.95 ms |                   27.28 / 384.61 ms | comparable 10× open                     |
-| Source / culture / paths load          |   0.337 / 0.144 / 0.811 s |           10.995 / 8.420 / 10.037 s | explained bulk regression               |
-| Page columns / 300 strings             |           39.29 / 4.93 ms |                   381.28 / 68.64 ms | explained page regression               |
-| Folder range                           | 71.24 ms; 1,159,763 paths |      367.50 ms; 1,315,580 basenames | independent scan oracles pass           |
+The full census exactly matches 78,066,945 strings / 7,707,973,974 UTF-8 bytes; compaction
+leaves 51,981,412 / 5,733,848,265. Forecast takes the largest of full measured dictionary bytes,
+per-owner payload×UTF-8 and index×count scaling, or compact dictionary×1.501824, then the largest
+measured layers/proxy/metadata/retained bytes. No pruning credit. Package proxy remains an
+estimate; synthetic compression does not establish real-content or complete Phase 4 size.
 
-The 431.46 s resume completed the failed cold store for later probes; it cannot establish a cold
-pass. A final profiled fresh edit took 26.49 s with one lookup; cached repeated edits are excluded
-and now fail the benchmark. Peak OS RSS stayed below about 8.6 GiB. 10× globally sorted synthetic
-prefixes interleave owners, forcing almost every block through selected-domain expansion: historical
-hash loads were 1.180/0.146/0.564 s. Scattered ranks touch 188 frames/2.44 MiB versus four frames/
-68,988 bytes historically (5.75 ms page). Lazy buffers and the 32 MiB frame cache remain bounded.
-Folder prefixes are stored `/Game/` at 1× and `Package` at 10×; native PO folder metadata must be
-combined with suffix ranges. Empty `/Game/` and `1/` 10× diagnostics are excluded from folder claims.
-The native PO folder query, including columns/ranges/row intersection, takes 62.05 / 387.90 ms
-for 131,558 / 1,315,580 references; bounded independent hydration oracles agree at both scales.
+| Operation                                     |                      1× |                     10× | Target / result                                           |
+| --------------------------------------------- | ----------------------: | ----------------------: | --------------------------------------------------------- |
+| Cold target                                   |          29.18 s; 21/21 |         647.36 s; 41/41 | ≤38 / ≤696 s: pass                                        |
+| Stat-hit target                               |                 0.088 s |                 0.190 s | ≤5 / ≤30 s: pass; zero authored bytes                     |
+| Fresh one-byte PO                             |                  1.95 s |  16.04–17.67 s ordinary | 10× ≤20 s: ordinary pass                                  |
+| Fresh PO with CPU profiler                    |                       — |                 21.41 s | misses 20 s; retained diagnostic                          |
+| Edit lookup / reused local strings            |             1 / 396,093 |           1 / 3,960,855 | only one new string looked up                             |
+| Compaction / saved projection                 |         17.27 / 19.60 s |       220.73 / 333.66 s | 14 / 26 domain segments; no join rebuilt                  |
+| Directory / hot columns                       |        12.75 / 57.95 ms |       41.79 / 383.01 ms | 10× query/open ≤1 s: pass                                 |
+| Reader peak V8 heap, sampled and pre-GC trace |               71.82 MiB |               99.93 MiB | ≤128 / ≤256 MiB: pass                                     |
+| Source / culture / paths load                 | 0.125 / 0.001 / 0.399 s | 2.638 / 0.274 / 1.573 s | 10× references 0.83 / 0.20 / 1.40 s: gaps explained above |
+| Source / culture / paths scan                 | 0.057 / 0.002 / 0.081 s | 0.858 / 0.050 / 0.451 s | 10× ≤1 s: pass                                            |
+| Page columns / 300 strings                    |         40.63 / 5.44 ms |      385.55 / 106.51 ms | 5.75 ms reference first-page gap explained                |
+| Repeat 300-string page                        |                 0.45 ms |                 0.88 ms | faster than 5.75 ms reference                             |
+| Page frames / bytes                           |              2 / 18,800 |         243 / 1,765,028 | only touched blocks decoded                               |
+| Native folder query / hydration oracle        |       82.51 / 154.21 ms |     439.62 / 1167.20 ms | 131,558 / 1,315,580 matches; oracle agrees                |
+| Saved folder range / scan oracle              |       66.56 / 273.32 ms |      378.17 / 815.56 ms | /Game/: 1,159,763; Package: 1,315,580                     |
 
-The 632 MB / 1,326,060-row PO `--cpu-prof` probe takes 12.56 → 12.01 s (48.00 → 50.19 MiB/s).
-Top self costs after fixes: arena additions 1.824 s, PO blocks 1.687 s, identity IDs 1.351 s,
-simple entries 0.776 s, feed 0.696 s and GC 0.524 s. Cheap fixes trim once, fast-path `msgstr`
-and simple unescaped Unreal contexts; the single before/after pair improves 4.4%, with no statistical
-claim. Remaining acceptance work is cold/refresh speed and mixed-domain bulk/page costs; Phases 4–7
-remain open. This pass completes production integration, not performance acceptance.
-
-Verification: focused new tests **63/0**; requested Vitest **504/0**, four existing skips; Node 26
-importer/store/shared/format/file/scale/dictionary **169/0**. Changed-file oxfmt **22/0**; final
-precommit **6 stages/0**, including **43/0** architecture tests and four contract packages. Its
-first attempt passed two stages and failed one typecheck error in the new folder probe; fixed.
-Benchmark command counts and failed development attempts are in the measurements. UE 5.7 and UE 5.8
-committed localization output oracles pass; live editor/UAsset checks were not run because
-no engine integration, UAsset parser or codegen changed. Full `pnpm check` was not run. No commits,
-pushes, branch switches or stashes were made.
+Verification: focused **69/0**; requested Vitest **510/0**, four skips; Node 26 **175/0**;
+builds **2/0**, compiled worker smoke **3/0**; oxfmt **15/0**; precommit **6 stages/0**, including
+**43/0** architecture tests and four contract packages. Final benchmark commands **10/0**;
+11 earlier diagnostic/iteration commands **11/0**, excluded from final acceptance. Initial
+focused **59/1** and type/lint errors were fixed. UE 5.7 output oracle **7/0**; UE 5.8 **7/0**.
+No live editor/UAsset matrix or full `pnpm check`: no engine API, UAsset parser, codegen or fixture
+changed. Remaining work: first-page locality, bulk reference gaps and refresh profiling margin,
+complete package fields and Phases 4–7. This passes cold/ordinary-refresh/size acceptance, not
+every reader reference. [Stage profiles and commands](../docs/engineering/game-text-shared-index-measurements.md).

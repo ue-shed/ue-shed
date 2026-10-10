@@ -305,3 +305,71 @@ export function decodeA64(bytes: Buffer) {
 	for (let value = cursor.next(); value; value = cursor.next()) values.push(Buffer.from(value));
 	return values;
 }
+
+/** Decode directly into a caller's contiguous arena; validate UTF-8 once per block and its boundaries. */
+export function decodeA64Into(bytes: Buffer, output: PackedStrings, first: number) {
+	const cursor = { position: 0 },
+		count = get(bytes, cursor);
+	snapshotCheck(
+		count > 0 && count <= 64 && first + count < output.offsets.length,
+		"front",
+		"Invalid output block count"
+	);
+	let position = output.offsets[first]!,
+		previous = position,
+		length = 0;
+	const begin = position;
+	for (let row = 0; row < count; row++) {
+		snapshotCheck(cursor.position < bytes.length, "front", "Missing value tag");
+		const tag = bytes[cursor.position++]!;
+		snapshotCheck(tag <= 2, "front", "Invalid value tag");
+		if (tag) {
+			const end = cursor.position + 16 + (tag === 2 ? 4 : 0);
+			snapshotCheck(
+				end <= bytes.length && position + 32 <= output.bytes.length,
+				"front",
+				"Truncated GUID or output"
+			);
+			const mask = tag === 2 ? bytes.readUInt32LE(cursor.position + 16) : 0;
+			for (let i = 0; i < 32; i++) {
+				const value = bytes[cursor.position + (i >>> 1)]!,
+					digit = i & 1 ? value & 15 : value >>> 4;
+				snapshotCheck(!(mask & (1 << i)) || digit >= 10, "front", "Invalid GUID case mask");
+				output.bytes[position + i] =
+					digit < 10 ? digit + 48 : digit + (mask & (1 << i) ? 55 : 87);
+			}
+			cursor.position = end;
+			length = 32;
+		} else {
+			const prefix = get(bytes, cursor),
+				suffix = get(bytes, cursor);
+			snapshotCheck(
+				prefix <= length &&
+					prefix + suffix <= 1024 ** 2 &&
+					cursor.position + suffix <= bytes.length &&
+					position + prefix + suffix <= output.bytes.length,
+				"front",
+				"Invalid front-code bounds"
+			);
+			output.bytes.copy(output.bytes, position, previous, previous + prefix);
+			bytes.copy(output.bytes, position + prefix, cursor.position, cursor.position + suffix);
+			cursor.position += suffix;
+			length = prefix + suffix;
+		}
+		// A continuation byte cannot start an entry, even if adjacent invalid entries form valid UTF-8 together.
+		snapshotCheck(
+			!length || (output.bytes[position]! & 0xc0) !== 0x80,
+			"front",
+			"Invalid UTF-8 boundary"
+		);
+		previous = position;
+		position += length;
+		output.offsets[first + row + 1] = position;
+	}
+	snapshotCheck(
+		cursor.position === bytes.length && isUtf8(output.bytes.subarray(begin, position)),
+		"front",
+		"Trailing bytes or invalid UTF-8"
+	);
+	return count;
+}

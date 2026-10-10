@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
 	encodeA64,
 	decodeA64,
+	decodeA64Into,
 	sortBytes,
 	packedStrings,
 	stringBytes
@@ -9,6 +10,27 @@ import {
 import { SnapshotFormatError } from "./snapshot-format.js";
 
 describe("A64 byte dictionary", () => {
+	it("expands directly into contiguous UTF-8 and rejects invalid entry boundaries", () => {
+		const values = ["", "café", "caféteria", "ABCDEF0123456789abcdef0123456789", "😀", "tail"];
+		const packed = packedStrings(values),
+			output = {
+				bytes: Buffer.alloc(packed.bytes.length),
+				offsets: new Uint32Array(values.length + 1)
+			};
+		expect(decodeA64Into(encodeA64(values.map((value) => Buffer.from(value))), output, 0)).toBe(
+			values.length
+		);
+		expect(output.bytes).toEqual(packed.bytes);
+		expect(Array.from(output.offsets)).toEqual(Array.from(packed.offsets));
+		// Concatenation would be valid UTF-8, but neither entry is valid by itself.
+		expect(() =>
+			decodeA64Into(
+				Buffer.of(2, 0, 0, 1, 0xc3, 0, 0, 1, 0xa9),
+				{ bytes: Buffer.alloc(2), offsets: new Uint32Array(3) },
+				0
+			)
+		).toThrow(SnapshotFormatError);
+	});
 	it("round trips GUID bytes with exact mixed case and noncanonical keys", () => {
 		const values = [
 			"",
@@ -34,14 +56,19 @@ describe("A64 byte dictionary", () => {
 		const packed = packedStrings(values),
 			order = sortBytes(packed);
 		const expected = values.map((s) => Buffer.from(s)).sort(Buffer.compare);
+		const contiguous = {
+			bytes: Buffer.alloc(packed.bytes.length),
+			offsets: new Uint32Array(values.length + 1)
+		};
 		for (let start = 0; start < order.length; start += 64) {
-			const actual = decodeA64(
-				encodeA64(
-					Array.from(order.subarray(start, start + 64), (id) => stringBytes(packed, id))
-				)
+			const block = encodeA64(
+				Array.from(order.subarray(start, start + 64), (id) => stringBytes(packed, id))
 			);
+			const actual = decodeA64(block);
+			decodeA64Into(block, contiguous, start);
 			expect(actual).toEqual(expected.slice(start, start + 64));
 		}
+		expect(contiguous.bytes).toEqual(Buffer.concat(expected));
 	});
 	it("reports typed failures for counts, tags, varints, suffixes, UTF-8 and case masks", () => {
 		for (const bytes of [
@@ -55,7 +82,11 @@ describe("A64 byte dictionary", () => {
 			Buffer.of(1, 0, 128, 128, 128, 128, 128, 0),
 			Buffer.concat([Buffer.of(1, 2), Buffer.alloc(16), Buffer.of(1, 0, 0, 0)]),
 			Buffer.concat([encodeA64([Buffer.from("ok")]), Buffer.of(0)])
-		])
+		]) {
 			expect(() => decodeA64(bytes)).toThrow(SnapshotFormatError);
+			expect(() =>
+				decodeA64Into(bytes, { bytes: Buffer.alloc(1024), offsets: new Uint32Array(65) }, 0)
+			).toThrow(SnapshotFormatError);
+		}
 	});
 });

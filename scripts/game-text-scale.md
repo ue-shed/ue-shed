@@ -98,13 +98,18 @@ failed cold run can complete the store for later probes, but cannot establish a 
 Projection reads the saved Phase 2 snapshot directly; it does not regenerate a project or join.
 Cold acceptance requires a fresh cache: reusing the same cache after failure is a diagnostic
 resume, even if the process succeeds. Per-file reports expose `parsed` and `statHit` for this reason.
+The cold target stage rejects cached or incomplete imports. It profiles the largest file in one
+parser thread, chooses up to eight workers within the measured RSS budget, then externally sorts
+64 MiB runs once and publishes domain segments together. `--select cold-probe` is a seven-file
+serial diagnostic of segment probing; it is excluded from cold acceptance.
 
 ```powershell
 $node26 = "./test-results/game-text-scale/runtime/node-v26.11.1-win-x64/node.exe"
-& $node26 --import tsx scripts/benchmark-localization-import.ts --project test-results/game-text-scale/project-1x --cache test-results/game-text-scale/a64-production-1x --output test-results/game-text-scale/a64-production-1x.json --mode shared --select all
-& $node26 --import tsx scripts/benchmark-localization-import.ts --project test-results/game-text-scale/project-10x-final --cache test-results/game-text-scale/a64-accepted-10x --output test-results/game-text-scale/a64-accepted-cold-10x.json --mode shared --select cold
+& $node26 --import tsx scripts/benchmark-localization-import.ts --project test-results/game-text-scale/project-1x --cache test-results/game-text-scale/speed-final-1x --output test-results/game-text-scale/speed-final-1x.json --mode shared --select all
+& $node26 --import tsx scripts/benchmark-localization-import.ts --project test-results/game-text-scale/project-10x-final --cache test-results/game-text-scale/speed-final-10x --output test-results/game-text-scale/speed-final-cold-10x.json --mode shared --select cold
 # Subsequent serial runs use --select projection, compact, reader, folder, refresh, with separate output files.
-& $node26 --import tsx scripts/benchmark-localization-import.ts --project test-results/game-text-scale/project-10x-final --cache test-results/game-text-scale/a64-accepted-10x --output test-results/game-text-scale/a64-production-refresh-10x.json --mode shared --select refresh --po-change-byte 112
+# The four-edit size census uses fresh bytes 112, 113, 114, 115 after compaction; only the first is CPU-profiled.
+& $node26 --import tsx scripts/benchmark-localization-import.ts --project test-results/game-text-scale/project-10x-final --cache test-results/game-text-scale/speed-final-10x --output test-results/game-text-scale/speed-final-refresh-10x.json --mode shared --select refresh --po-change-byte 112
 & $node26 --import tsx scripts/benchmark-localization-import.ts --project test-results/game-text-scale/project-10x-final --cache test-results/game-text-scale/a64-accepted-10x --output test-results/game-text-scale/a64-parse-after-10x.json --mode shared --select parse --profile
 ```
 
@@ -117,6 +122,11 @@ The reader independently scans the loaded path domain to verify range counts. Th
 saved paths use `/Game/`; the compacted 10× width probe uses the nonempty `Package` basename prefix.
 PO common folder prefixes are held once in file metadata, so callers compose metadata with
 dictionary suffix ranges when selecting native source folders.
+Domain timers use contiguous UTF-8 buffers and typed offsets without the legacy block view. Page
+timers separate the first 300-string decode from a repeat using the bounded 32 MiB decoded-block
+cache. JSON includes frame reads, actual retained cache bytes, hits and misses. Refresh profiles
+separate read, hash, text decode, parse, finish, ID reuse, dictionary probe, layer encode/verify,
+garbage estimation and publication; these stages are exclusive, while external sort includes IO.
 `--select folder` measures this native PO operation separately: load path/flag columns, combine
 full and suffix ranges, count every reference under the file's actual common folder, then verify
 against bounded batches of independently hydrated full paths.
@@ -131,10 +141,17 @@ including absent values; repeated old local values contribute to `reusedStrings`
 Integration verification uses these commands, with one test worker:
 
 ```powershell
-pnpm exec vitest run scripts/game-text-dictionary.test.ts --maxWorkers=1
+pnpm exec vitest run packages/game-text/src/shared-string-codec.test.ts packages/game-text/src/shared-string-sort.test.ts packages/game-text/src/shared-index.test.ts scripts/localization-import.test.ts --maxWorkers=1
 pnpm exec vitest run packages/localization packages/game-text scripts/game-text-scale.test.ts scripts/localization-import.test.ts scripts/game-text-dictionary.test.ts --maxWorkers=1
-& $node26 node_modules/vitest/vitest.mjs run packages/game-text/src/shared-string-codec.test.ts packages/game-text/src/snapshot-format.test.ts packages/game-text/src/snapshot-file.test.ts packages/game-text/src/snapshot-store.test.ts packages/game-text/src/shared-index.test.ts scripts/localization-import.test.ts scripts/game-text-scale.test.ts scripts/game-text-dictionary.test.ts --maxWorkers=1
+& $node26 node_modules/vitest/vitest.mjs run packages/game-text/src/shared-string-codec.test.ts packages/game-text/src/shared-string-sort.test.ts packages/game-text/src/snapshot-format.test.ts packages/game-text/src/snapshot-file.test.ts packages/game-text/src/snapshot-store.test.ts packages/game-text/src/shared-index.test.ts scripts/localization-import.test.ts scripts/game-text-scale.test.ts scripts/game-text-dictionary.test.ts --maxWorkers=1
+pnpm --filter @ue-shed/localization build
+pnpm --filter @ue-shed/game-text build
+pnpm --filter @ue-shed/game-text typecheck
+pnpm exec tsc -p tsconfig.scripts.json --noEmit
+pnpm run effect:architecture
 $changedFiles = @(git diff --name-only) + @(git ls-files --others --exclude-standard)
+$changedTypeScriptFiles = @($changedFiles | Where-Object { $_ -match '\.ts$' })
+pnpm exec oxlint @changedTypeScriptFiles
 pnpm exec oxfmt @changedFiles
 $env:npm_config_workspace_concurrency = "1"
 pnpm run check:precommit
@@ -143,3 +160,7 @@ pnpm run check:precommit
 The Node 26 path is the retained ignored runtime; an explicitly configured Node 26 executable also
 works. Broad/new tests and precommit used the current default Node 24.21.0; the separately invoked
 Node 26 suite verifies import, store, shared-index and benchmark behavior on 26.11.1.
+The speed pass runs precommit with the Node 26 directory prepended to `PATH`. Its compiled-worker
+smoke is `& $node26 test-results/game-text-scale/speed-compiled-smoke.mjs`: three committed UE 5.8
+localization files imported through emitted JS with three parser workers and zero probes. The
+ignored smoke script belongs to this local evidence run, rather than the portable gate.

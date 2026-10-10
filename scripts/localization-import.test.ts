@@ -212,6 +212,44 @@ describe("localization snapshot parser oracle", () => {
 });
 
 describe("localization import cache and failures", () => {
+	it("reuses an implicit translation's old source ID when only the source changes", async () => {
+		const file = "derived-translation.po";
+		await writeFile(resolve(temporary, file), 'msgctxt "n,k"\nmsgid "one"\nmsgstr "one"\n');
+		const input = request(file, "po", { poFormat: "Unreal" as const });
+		await expectLocalizationImportMatchesParser(input);
+		await writeFile(resolve(temporary, file), 'msgctxt "n,k"\nmsgid "two"\nmsgstr "one"\n');
+		const refreshed = await expectLocalizationImportMatchesParser(input);
+		expect(refreshed.lookupStrings).toBe(1);
+		expect(refreshed.reusedStrings).toBeGreaterThan(0);
+	});
+	it("diffs by identity across reordering, insertion and deletion, retaining GUID case", async () => {
+		const file = "identity-diff.po";
+		const row = (key: string, source: string) =>
+			`msgctxt "Namespace,${key}"\nmsgid "${source}"\nmsgstr "translated"\n\n`;
+		const keys = [
+			"0123456789abcdefABCDEF0123456789ab",
+			"abcdef0123456789ABCDEF0123456789ab",
+			"removed"
+		];
+		await writeFile(
+			resolve(temporary, file),
+			keys.map((key, i) => row(key, `source-${i}`)).join("")
+		);
+		const input = request(file, "po", { poFormat: "Unreal" as const });
+		const first = await expectLocalizationImportMatchesParser(input);
+		expect(first.reusedStrings).toBe(0);
+		await writeFile(
+			resolve(temporary, file),
+			row(keys[1]!, "source-1") + row(keys[0]!, "source-0!") + row("new", "new-source")
+		);
+		const refreshed = await expectLocalizationImportMatchesParser(input);
+		expect(refreshed.lookupStrings).toBe(3);
+		expect(refreshed.reusedStrings).toBeGreaterThan(3);
+		expect(refreshed.parsed).toBe(true);
+		const statHit = await Effect.runPromise(importLocalizationFile(input));
+		expect(statHit.lookupStrings).toBe(0);
+		expect(statHit.statHit).toBe(true);
+	});
 	it("a second import does no parsing, and a one-byte change only reimports that file", async () => {
 		const root = resolve(temporary, "refresh");
 		await generateGameTextScale({ root, scale: 0.0001, seed: 57 });

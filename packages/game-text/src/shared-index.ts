@@ -24,7 +24,14 @@ import {
 	type SnapshotStoreOptions,
 	type SnapshotReader
 } from "./snapshot-store.js";
-import { SharedStringFiles, SharedSegment } from "./shared-string-file.js";
+import { SharedStringFiles, SharedSegment, maximumSharedSegments } from "./shared-string-file.js";
+import {
+	StringArena,
+	absentId,
+	sortBytes,
+	comparePacked,
+	type PackedStrings
+} from "./shared-string-codec.js";
 
 const Natural = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 const LayerRecord = Schema.Struct({
@@ -38,11 +45,11 @@ const LayerRecord = Schema.Struct({
 });
 export type SharedLayerRecord = typeof LayerRecord.Type;
 const Index = Schema.Struct({
-	version: Schema.Literal(1),
+	version: Schema.Literal(2),
 	generation: Schema.String,
 	garbageUpperBytes: Schema.optionalKey(Natural),
 	active: Schema.Record(Schema.String, Schema.String),
-	segments: Schema.Array(SharedSegment).check(Schema.isMaxLength(4096)),
+	segments: Schema.Array(SharedSegment).check(Schema.isMaxLength(maximumSharedSegments)),
 	layers: Schema.Record(Schema.String, LayerRecord)
 });
 export type SharedIndexManifest = typeof Index.Type;
@@ -61,7 +68,7 @@ const boundary = <A>(operation: string, run: () => Promise<A>) =>
 					})
 	}).pipe(Effect.uninterruptible);
 const initial = (): SharedIndexManifest => ({
-	version: 1,
+	version: 2,
 	generation: randomUUID(),
 	garbageUpperBytes: 0,
 	active: {},
@@ -70,7 +77,7 @@ const initial = (): SharedIndexManifest => ({
 });
 const configuration = (options: SnapshotStoreOptions) => ({
 	...options,
-	targetKey: `shared-index-v1:${options.targetKey}`
+	targetKey: `shared-index-v2:${options.targetKey}`
 });
 export const sharedIndexDirectory = (options: SnapshotStoreOptions) =>
 	snapshotStoreDirectory(configuration(options));
@@ -95,14 +102,25 @@ export interface SharedIndexReader {
 	readonly domain: (
 		domain: string
 	) => Effect.Effect<Awaited<ReturnType<SharedStringFiles["domain"]>>, Failure>;
+	readonly range: (
+		prefix: string
+	) => Effect.Effect<Awaited<ReturnType<SharedStringFiles["range"]>>, Failure>;
 }
 export interface SharedIndexWriter {
 	readonly manifest: () => SharedIndexManifest;
-	readonly metrics: () => { readBytes: number; indexReadBytes: number; appendedBytes: number };
+	readonly metrics: () => {
+		readBytes: number;
+		indexReadBytes: number;
+		appendedBytes: number;
+		lookupStrings: number;
+		reusedStrings: number;
+		probePasses: number;
+	};
 	readonly publish: (
 		name: string,
 		key: string,
-		source: SnapshotSource
+		source: SnapshotSource,
+		previousKey?: string
 	) => Effect.Effect<SharedLayerRecord, Failure>;
 	readonly compact: (
 		force?: boolean
@@ -263,6 +281,9 @@ export function sharedIndexNodeLayer(options: SnapshotStoreOptions) {
 					),
 					domain: Effect.fn("SharedIndex.domain")((domain: string) =>
 						boundary("domain", () => files.domain(domain))
+					),
+					range: Effect.fn("SharedIndex.range")((prefix: string) =>
+						boundary("range", () => files.range(prefix))
 					)
 				};
 			});
@@ -296,7 +317,14 @@ export function sharedIndexNodeLayer(options: SnapshotStoreOptions) {
 					() => Effect.promise(() => files.close())
 				);
 				const mutex = yield* Semaphore.make(1);
-				const retiredMetrics = { readBytes: 0, indexReadBytes: 0, appendedBytes: 0 };
+				const retiredMetrics = {
+					readBytes: 0,
+					indexReadBytes: 0,
+					appendedBytes: 0,
+					lookupStrings: 0,
+					reusedStrings: 0,
+					probePasses: 0
+				};
 				let active = true,
 					uncertain = false;
 				yield* Effect.addFinalizer(() =>
@@ -334,10 +362,10 @@ export function sharedIndexNodeLayer(options: SnapshotStoreOptions) {
 						"Writer is closed or publication outcome is uncertain"
 					);
 				const publishOne = Effect.fn("SharedIndex.publish")(
-					(name: string, key: string, source: SnapshotSource) =>
+					(name: string, key: string, source: SnapshotSource, previousKey?: string) =>
 						Effect.gen(function* () {
 							yield* boundary("writer", async () => guard());
-							const old = manifest.layers[manifest.active[name] ?? ""];
+							const old = manifest.layers[manifest.active[name] ?? previousKey ?? ""];
 							const existing = Object.hasOwn(manifest.layers, key)
 								? yield* boundary("cached", () =>
 										validateCachedLayer(
@@ -376,7 +404,8 @@ export function sharedIndexNodeLayer(options: SnapshotStoreOptions) {
 									name,
 									key,
 									manifest.generation,
-									source
+									source,
+									old
 								)
 							);
 							const possible =
@@ -405,7 +434,8 @@ export function sharedIndexNodeLayer(options: SnapshotStoreOptions) {
 							(sum, segment) => sum + segment.utf8Bytes,
 							0
 						);
-						if (!force && (upper < 8 * 1024 ** 2 || upper < total / 4))
+						const segmentLimit = files.segments.length >= maximumSharedSegments;
+						if (!force && !segmentLimit && (upper < 8 * 1024 ** 2 || upper < total / 4))
 							return { compacted: false, deadBytes: 0, totalBytes: total };
 						const usage = yield* boundary("compaction.census", () =>
 							liveStrings(directory, manifest, (bytes) => {
@@ -417,35 +447,28 @@ export function sharedIndexNodeLayer(options: SnapshotStoreOptions) {
 							async () => {
 								let deadBytes = 0,
 									totalBytes = 0;
-								for (let segment = 0; segment < files.segments.length; segment++) {
-									const meta = files.segments[segment]!;
-									for (const entry of files.files[
-										segment
-									]!.directory.entries.values()) {
-										if (entry.kind !== "strings") continue;
-										const bytes = await files.files[segment]!.load(entry.name);
-										snapshotCheck(
-											bytes instanceof Uint8Array,
-											"compact",
-											"Invalid strings"
-										);
-										const block = decodeStringBlock(bytes),
-											starts =
-												await files.files[segment]!.load("text.starts");
-										const blockId = Number(entry.name.slice("text.b".length));
-										for (let id = 0; id < block.count; id++) {
-											const length = Buffer.byteLength(block.string(id));
-											totalBytes += length;
-											const global = meta.start + starts[blockId]! + id;
-											if (!(usage[global >>> 3]! & (1 << (global & 7))))
-												deadBytes += length;
-										}
+								for (let begin = 0; begin < files.count; begin += 8192) {
+									const ids = Array.from(
+										{ length: Math.min(8192, files.count - begin) },
+										(_, row) => begin + row
+									);
+									const strings = await files.bytes(ids);
+									for (let row = 0; row < ids.length; row++) {
+										const id = ids[row]!,
+											length = strings[row]!.length;
+										totalBytes += length;
+										if (!(usage[id >>> 3]! & (1 << (id & 7))))
+											deadBytes += length;
 									}
 								}
 								return { deadBytes, totalBytes };
 							}
 						);
-						if (!force && (deadBytes < 8 * 1024 ** 2 || deadBytes < totalBytes / 4)) {
+						if (
+							!force &&
+							!segmentLimit &&
+							(deadBytes < 8 * 1024 ** 2 || deadBytes < totalBytes / 4)
+						) {
 							yield* publishRoot({ ...manifest, garbageUpperBytes: deadBytes });
 							return { compacted: false, deadBytes, totalBytes };
 						}
@@ -455,37 +478,45 @@ export function sharedIndexNodeLayer(options: SnapshotStoreOptions) {
 						try {
 							const next = initial();
 							const mapping = yield* boundary("compaction.strings", async () => {
-								const map = new Uint32Array(files.count);
+								const map = new Uint32Array(files.count),
+									arena = new StringArena(totalBytes - deadBytes, files.count),
+									live = new Uint32Array(files.count),
+									owners = new Uint32Array(files.count);
+								const domains = [
+									...new Set(files.segments.flatMap((segment) => segment.domains))
+								];
+								let count = 0;
 								for (let segment = 0; segment < files.segments.length; segment++) {
 									const meta = files.segments[segment]!,
-										reader = files.files[segment]!;
-									const starts = await reader.load("text.starts");
-									for (const entry of reader.directory.entries.values()) {
-										if (entry.kind !== "strings") continue;
-										const bytes = await reader.load(entry.name);
-										snapshotCheck(
-											bytes instanceof Uint8Array,
-											"compact",
-											"Invalid block"
-										);
-										const block = decodeStringBlock(bytes),
-											base =
-												meta.start + starts[Number(entry.name.slice(6))]!;
-										const live: number[] = [],
-											strings: string[] = [];
-										for (let id = 0; id < block.count; id++) {
-											const global = base + id;
-											if (usage[global >>> 3]! & (1 << (global & 7))) {
-												live.push(global);
-												strings.push(block.string(id));
-											}
+										ownership = await files.ownership(segment);
+									for (let begin = 0; begin < meta.count; begin += 8192) {
+										const ids: number[] = [];
+										for (
+											let row = begin;
+											row < Math.min(meta.count, begin + 8192);
+											row++
+										) {
+											const id = meta.start + row;
+											if (usage[id >>> 3]! & (1 << (id & 7))) ids.push(id);
 										}
-										const ids = await fresh.copyUnique(meta.domain, strings);
-										for (let row = 0; row < live.length; row++)
-											map[live[row]!] = ids[row]!;
+										const strings = await files.bytes(ids);
+										for (let row = 0; row < ids.length; row++) {
+											const id = ids[row]!;
+											arena.add(strings[row]!);
+											live[count] = id;
+											owners[count++] = domains.indexOf(
+												meta.domains[ownership?.[id - meta.start] ?? 0]!
+											);
+										}
 									}
 								}
-								await fresh.flush();
+								const inverse = await fresh.merged(
+									arena.finish(),
+									owners.subarray(0, count),
+									domains
+								);
+								for (let row = 0; row < count; row++)
+									map[live[row]!] = inverse[row]!;
 								return map;
 							});
 							const layers: Record<string, SharedLayerRecord> = {};
@@ -526,6 +557,9 @@ export function sharedIndexNodeLayer(options: SnapshotStoreOptions) {
 							retiredMetrics.readBytes += files.readBytes;
 							retiredMetrics.indexReadBytes += files.indexReadBytes;
 							retiredMetrics.appendedBytes += files.appendedBytes;
+							retiredMetrics.lookupStrings += files.lookupStrings;
+							retiredMetrics.reusedStrings += files.reusedStrings;
+							retiredMetrics.probePasses += files.probePasses;
 							files = fresh;
 							yield* retireSharedIndexFiles(directory, manifest);
 						} finally {
@@ -539,10 +573,17 @@ export function sharedIndexNodeLayer(options: SnapshotStoreOptions) {
 					mutex.withPermits(1)(compactOne(force))
 				);
 				const publish = Effect.fn("SharedIndex.publishAndCompact")(
-					(name: string, key: string, source: SnapshotSource) =>
+					(name: string, key: string, source: SnapshotSource, previousKey?: string) =>
 						mutex.withPermits(1)(
 							Effect.gen(function* () {
-								yield* publishOne(name, key, source);
+								const domains = new Set(
+									source.columns
+										.filter((column) => column.kind === "strings")
+										.map((column) => column.domain)
+								);
+								if (files.segments.length + domains.size > maximumSharedSegments)
+									yield* compactOne(true);
+								yield* publishOne(name, key, source, previousKey);
 								yield* compactOne();
 								return manifest.layers[key]!;
 							}).pipe(Effect.uninterruptible)
@@ -556,7 +597,10 @@ export function sharedIndexNodeLayer(options: SnapshotStoreOptions) {
 					metrics: () => ({
 						readBytes: retiredMetrics.readBytes + files.readBytes,
 						indexReadBytes: retiredMetrics.indexReadBytes + files.indexReadBytes,
-						appendedBytes: retiredMetrics.appendedBytes + files.appendedBytes
+						appendedBytes: retiredMetrics.appendedBytes + files.appendedBytes,
+						lookupStrings: retiredMetrics.lookupStrings + files.lookupStrings,
+						reusedStrings: retiredMetrics.reusedStrings + files.reusedStrings,
+						probePasses: retiredMetrics.probePasses + files.probePasses
 					})
 				};
 			});
@@ -600,8 +644,8 @@ export function sharedIndexNodeLayer(options: SnapshotStoreOptions) {
 				}
 				let bytes = 0;
 				for (let start = 0; start < candidates.length; start += 8192)
-					for (const value of await files.strings(candidates.slice(start, start + 8192)))
-						bytes += Buffer.byteLength(value);
+					for (const value of await files.bytes(candidates.slice(start, start + 8192)))
+						bytes += value.length;
 				return bytes;
 			}
 			return { open, writer, inspect: read, cached };
@@ -612,39 +656,208 @@ export function sharedIndexNodeLayer(options: SnapshotStoreOptions) {
 async function convertLayer(
 	directory: string,
 	files: SharedStringFiles,
-	_name: string,
+	name: string,
 	key: string,
 	generation: string,
-	source: SnapshotSource
+	source: SnapshotSource,
+	previous?: SharedLayerRecord
 ): Promise<SharedLayerRecord> {
+	const arenas = new Map<string, StringArena>(),
+		packed = new Map<string, PackedStrings>();
 	const maps = new Map<string, Uint32Array>();
-	const positions = new Map<string, number>();
+	const input = new Map<string, Uint8Array | Uint32Array>();
 	for (const column of source.columns) {
 		if (column.kind !== "strings") continue;
-		const domain = column.domain!;
-		let map = maps.get(domain);
-		if (!map) {
-			map = new Uint32Array(column.stringCount!);
-			maps.set(domain, map);
-		}
+		const domain = column.domain!,
+			arena = arenas.get(domain) ?? new StringArena();
+		arenas.set(domain, arena);
 		const bytes = await column.load();
 		snapshotCheck(bytes instanceof Uint8Array, column.name, "Invalid string block");
-		const block = decodeStringBlock(bytes),
-			start = positions.get(domain) ?? 0;
-		const values = Array.from({ length: block.count }, (_, id) => block.string(id));
-		const culture = _name
-			.replaceAll("\\", "/")
-			.match(/\/([A-Za-z]{2,3}(?:-[A-Za-z0-9]{1,8})*)\/[^/]+\.(?:archive|po)$/u)?.[1];
+		const block = decodeStringBlock(bytes);
+		for (let row = 0; row < block.count; row++) arena.add(block.bytes(row));
+	}
+	for (const [domain, arena] of arenas) packed.set(domain, arena.finish());
+	// The prior publication is indexed by file path, independent of the new content hash.
+	// Its own strings already have IDs. Merge sorted local strings with that mapping;
+	// only new/changed values enter the project dictionary's segment probe passes.
+	if (previous) {
+		snapshotCheck(
+			previous.storeGeneration === generation &&
+				previous.segmentCount <= files.segments.length,
+			"layer",
+			"Previous layer dependency differs"
+		);
+		const reader = await openSnapshotFile(join(directory, previous.file), {
+			onRead: (bytes) => {
+				files.readBytes += bytes;
+			}
+		}).catch((cause: unknown) => {
+			if (cause instanceof Error && "code" in cause && cause.code === "ENOENT")
+				return undefined;
+			throw cause;
+		});
+		try {
+			const oldColumns = new Map<string, Uint32Array>();
+			const emptyId =
+				reader && files.count && (await files.strings([0]))[0] === "" ? 0 : undefined;
+			if (reader)
+				for (const column of Object.keys(previous.stringColumns)) {
+					const ids = await readLayerColumn(reader, previous, column);
+					snapshotCheck(ids instanceof Uint32Array, column, "Invalid previous ID column");
+					const dependency = files.segments[previous.segmentCount - 1];
+					for (const id of ids)
+						snapshotCheck(
+							id < (dependency ? dependency.start + dependency.count : 0),
+							column,
+							"Previous ID outside dependency"
+						);
+					oldColumns.set(column, ids);
+				}
+			for (const column of source.columns)
+				if (column.kind === "stringIds") input.set(column.name, await column.load());
+			let matched: Int32Array | undefined;
+			let priorSource:
+				| { values: PackedStrings; order: Uint32Array; ids: Uint32Array }
+				| undefined;
+			const priority = (domain: string) =>
+				domain === "identity" ? 0 : domain === "source" ? 1 : 2;
+			const domains = [...packed.keys()].sort((a, b) => priority(a) - priority(b));
+			if (reader)
+				for (const domain of domains) {
+					const values = packed.get(domain)!;
+					const columns: Uint32Array[] = [];
+					for (const [column, owner] of Object.entries(previous.stringColumns)) {
+						if (owner !== domain) continue;
+						const ids = oldColumns.get(column)!;
+						if (matched && domain !== "identity") {
+							const candidates = new Uint32Array(matched.length);
+							let count = 0;
+							for (const row of matched)
+								if (row >= 0) candidates[count++] = ids[row]!;
+							columns.push(candidates.subarray(0, count));
+						} else columns.push(ids);
+					}
+					const known = new Uint32Array(
+						columns.reduce((n, column) => n + column.length, 0)
+					);
+					let position = 0;
+					for (const column of columns) {
+						known.set(column, position);
+						position += column.length;
+					}
+					known.sort();
+					let count = 0;
+					for (const id of known)
+						if (!count || known[count - 1] !== id) known[count++] = id;
+					const oldIds = known.subarray(0, count),
+						oldArena = new StringArena();
+					for (let start = 0; start < count; start += 8192)
+						await files.collectSorted(oldIds.subarray(start, start + 8192), oldArena);
+					const old = oldArena.finish(),
+						oldOrder = priorStringOrder(old, oldIds, files.segments),
+						order = sortBytes(values),
+						reuse = new Uint32Array(order.length).fill(absentId);
+					let prior = 0;
+					for (const id of order) {
+						if (
+							values.offsets[id] === values.offsets[id + 1] &&
+							emptyId !== undefined
+						) {
+							reuse[id] = emptyId;
+							continue;
+						}
+						let comparison = 1;
+						while (prior < oldOrder.length) {
+							comparison = comparePacked(old, oldOrder[prior]!, values, id);
+							if (comparison >= 0) break;
+							prior++;
+						}
+						if (prior < oldOrder.length && comparison === 0)
+							reuse[id] = oldIds[oldOrder[prior]!]!;
+					}
+					if (domain === "source")
+						priorSource = { values: old, order: oldOrder, ids: oldIds };
+					// Equal-to-source translations were implicit; their original source IDs are known.
+					if (domain === "translation" && priorSource)
+						for (const id of order) {
+							if (reuse[id] !== absentId) continue;
+							let low = 0,
+								high = priorSource.order.length;
+							while (low < high) {
+								const middle = (low + high) >>> 1;
+								if (
+									comparePacked(
+										priorSource.values,
+										priorSource.order[middle]!,
+										values,
+										id
+									) < 0
+								)
+									low = middle + 1;
+								else high = middle;
+							}
+							if (
+								low < priorSource.order.length &&
+								comparePacked(
+									priorSource.values,
+									priorSource.order[low]!,
+									values,
+									id
+								) === 0
+							)
+								reuse[id] = priorSource.ids[priorSource.order[low]!]!;
+						}
+					maps.set(domain, reuse);
+					if (domain === "identity") {
+						const ns = input.get("entry.namespace"),
+							keys = input.get("entry.key"),
+							oldNs = oldColumns.get("entry.namespace"),
+							oldKeys = oldColumns.get("entry.key");
+						if (ns && keys && oldNs && oldKeys) {
+							matched = new Int32Array(ns.length).fill(-1);
+							const oldRows = identityRows(oldNs, oldKeys),
+								newRows = identityRows(ns, keys, reuse);
+							let priorRow = 0;
+							for (const row of newRows) {
+								const namespace = reuse[ns[row]!]!,
+									key = reuse[keys[row]!]!;
+								if (namespace === absentId || key === absentId) continue;
+								while (
+									priorRow < oldRows.length &&
+									(oldNs[oldRows[priorRow]!]! < namespace ||
+										(oldNs[oldRows[priorRow]!] === namespace &&
+											oldKeys[oldRows[priorRow]!]! < key))
+								)
+									priorRow++;
+								const oldRow = oldRows[priorRow];
+								if (
+									oldRow !== undefined &&
+									oldNs[oldRow] === namespace &&
+									oldKeys[oldRow] === key
+								) {
+									matched[row] = oldRow;
+									priorRow++;
+								}
+							}
+						}
+					}
+				}
+		} finally {
+			await reader?.close();
+		}
+	}
+	const culture = name
+		.replaceAll("\\", "/")
+		.match(/\/([A-Za-z]{2,3}(?:-[A-Za-z0-9]{1,8})*)\/[^/]+\.(?:archive|po)$/u)?.[1];
+	for (const [domain, values] of packed) {
 		const storageDomain =
 			domain === "translation" && culture && culture.length <= 16
 				? `culture.${culture}`
 				: domain;
-		map.set(await files.intern(storageDomain, values), start);
-		positions.set(domain, start + block.count);
+		maps.set(domain, await files.internPacked(storageDomain, values, maps.get(domain)));
 	}
-	await files.flush();
-	const stringColumns: Record<string, string> = {};
-	const columns: SnapshotSourceColumn[] = [];
+	const stringColumns: Record<string, string> = {},
+		columns: SnapshotSourceColumn[] = [];
 	for (const column of source.columns) {
 		if (
 			column.kind === "strings" ||
@@ -655,7 +868,7 @@ async function convertLayer(
 			stringColumns[column.name] = column.domain!;
 			const map = maps.get(column.domain!);
 			snapshotCheck(
-				map !== undefined && positions.get(column.domain!) === map.length,
+				map !== undefined && map.length === column.stringCount,
 				column.name,
 				"Incomplete string domain"
 			);
@@ -663,7 +876,7 @@ async function convertLayer(
 				name: column.name,
 				kind: "u32",
 				load: async () => {
-					const values = await column.load();
+					const values = input.get(column.name) ?? (await column.load());
 					return Uint32Array.from(values, (id) => {
 						snapshotCheck(id < map.length, column.name, "Invalid local ID");
 						return map[id]!;
@@ -675,6 +888,41 @@ async function convertLayer(
 	return writeLayer(directory, files, key, generation, stringColumns, columns);
 }
 
+/** Numeric IDs are byte ranks inside a segment; only segment joins can break byte order. */
+function priorStringOrder(
+	values: PackedStrings,
+	ids: Uint32Array,
+	segments: readonly SharedSegment[]
+) {
+	for (const segment of segments.slice(1)) {
+		let low = 0,
+			high = ids.length;
+		while (low < high) {
+			const middle = (low + high) >>> 1;
+			if (ids[middle]! < segment.start) low = middle + 1;
+			else high = middle;
+		}
+		if (low > 0 && low < ids.length && comparePacked(values, low - 1, values, low) > 0)
+			return sortBytes(values);
+	}
+	return Uint32Array.from(ids, (_, row) => row);
+}
+
+/** Most parser rows already follow identity ID order; validate before avoiding a second sort. */
+function identityRows(
+	namespace: Uint8Array | Uint32Array,
+	keys: Uint8Array | Uint32Array,
+	map?: Uint32Array
+) {
+	const order = Uint32Array.from(namespace, (_, row) => row);
+	const compare = (a: number, b: number) =>
+		(map?.[namespace[a]!] ?? namespace[a]!) - (map?.[namespace[b]!] ?? namespace[b]!) ||
+		(map?.[keys[a]!] ?? keys[a]!) - (map?.[keys[b]!] ?? keys[b]!) ||
+		a - b;
+	for (let row = 1; row < namespace.length; row++)
+		if (compare(row - 1, row) > 0) return order.sort(compare);
+	return order;
+}
 async function validateCachedLayer(
 	directory: string,
 	manifest: SharedIndexManifest,

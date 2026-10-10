@@ -85,19 +85,57 @@ node --import tsx scripts/benchmark-game-text-dictionary.ts --input test-results
 ```
 
 Candidates are `A16`, `A32`, `A64`, `B` (BBHash gamma 1, sampled rank, fingerprint and insertion-ID
-mapping) and `C` (current hash pages). The script verifies declared scale against the saved line
+mapping) and `C` (historical hash pages). Production now uses the A64 codec with binary GUID tags.
+The script verifies declared scale against the saved line
 count. Results separate input loading, dictionary encoding, a modeled file append, scattered-page
 decode and prefix ranges. Lookup/page probes start with compressed payloads in memory; they are
 not end-to-end importer or production reader measurements. Method, comparisons and remaining work
 are in [the measurements](../docs/engineering/game-text-shared-index-measurements.md).
 
-Final experiment verification used these commands, with one test worker:
+Integration measurements use the retained projects and saved snapshots. Run commands serially;
+the 10× cold run includes all 41 files and refresh checks under one 900-second deadline. A resumed
+failed cold run can complete the store for later probes, but cannot establish a cold-import pass.
+Projection reads the saved Phase 2 snapshot directly; it does not regenerate a project or join.
+Cold acceptance requires a fresh cache: reusing the same cache after failure is a diagnostic
+resume, even if the process succeeds. Per-file reports expose `parsed` and `statHit` for this reason.
+
+```powershell
+$node26 = "./test-results/game-text-scale/runtime/node-v26.11.1-win-x64/node.exe"
+& $node26 --import tsx scripts/benchmark-localization-import.ts --project test-results/game-text-scale/project-1x --cache test-results/game-text-scale/a64-production-1x --output test-results/game-text-scale/a64-production-1x.json --mode shared --select all
+& $node26 --import tsx scripts/benchmark-localization-import.ts --project test-results/game-text-scale/project-10x-final --cache test-results/game-text-scale/a64-accepted-10x --output test-results/game-text-scale/a64-accepted-cold-10x.json --mode shared --select cold
+# Subsequent serial runs use --select projection, compact, reader, folder, refresh, with separate output files.
+& $node26 --import tsx scripts/benchmark-localization-import.ts --project test-results/game-text-scale/project-10x-final --cache test-results/game-text-scale/a64-accepted-10x --output test-results/game-text-scale/a64-production-refresh-10x.json --mode shared --select refresh --po-change-byte 112
+& $node26 --import tsx scripts/benchmark-localization-import.ts --project test-results/game-text-scale/project-10x-final --cache test-results/game-text-scale/a64-accepted-10x --output test-results/game-text-scale/a64-parse-after-10x.json --mode shared --select parse --profile
+```
+
+`--profile` applies `--cpu-prof` to the supervised worker, with profiles beside its JSON report.
+The parse probe includes UTF-8 streaming, PO parsing, column collection, spill writes and finish,
+including identity order; it excludes dictionary publication. Refresh counters distinguish unique
+dictionary lookups, reused local strings (which can recur in spill blocks) and segment probe passes.
+Range measurements return dictionary ID intervals; callers intersect them with path columns.
+The reader independently scans the loaded path domain to verify range counts. The retained 1×
+saved paths use `/Game/`; the compacted 10× width probe uses the nonempty `Package` basename prefix.
+PO common folder prefixes are held once in file metadata, so callers compose metadata with
+dictionary suffix ranges when selecting native source folders.
+`--select folder` measures this native PO operation separately: load path/flag columns, combine
+full and suffix ranges, count every reference under the file's actual common folder, then verify
+against bounded batches of independently hydrated full paths.
+
+Refresh first warms restored stat hints, records a separate stat-hit pass, edits one PO byte,
+publishes and restores the original. `--po-change-byte` accepts lowercase ASCII bytes 97–122,
+default 110. Use a fresh cache, compact to retire historical content keys, or choose an unseen
+replacement on later runs. The edit must yield `parsed: 1`; an already cached replacement fails
+the benchmark. `lookupStrings` counts distinct unresolved requests entering the shared store,
+including absent values; repeated old local values contribute to `reusedStrings`.
+
+Integration verification uses these commands, with one test worker:
 
 ```powershell
 pnpm exec vitest run scripts/game-text-dictionary.test.ts --maxWorkers=1
-pnpm exec vitest run packages/localization packages/game-text scripts/game-text-scale.test.ts scripts/localization-import.test.ts --maxWorkers=1
-& test-results/game-text-scale/runtime/node-v26.11.1-win-x64/node.exe node_modules/vitest/vitest.mjs run packages/game-text/src/snapshot-format.test.ts packages/game-text/src/snapshot-file.test.ts packages/game-text/src/snapshot-store.test.ts packages/game-text/src/shared-index.test.ts scripts/localization-import.test.ts scripts/game-text-scale.test.ts scripts/game-text-dictionary.test.ts --maxWorkers=1
-pnpm exec oxfmt scripts/game-text-dictionary.ts scripts/game-text-dictionary.test.ts scripts/benchmark-game-text-dictionary.ts scripts/benchmark-localization-import.ts scripts/game-text-scale-safety.ts scripts/localization-benchmark-byte.ts scripts/game-text-scale.test.ts scripts/game-text-scale.md vitest.node.config.ts docs/engineering/game-text-shared-index-measurements.md plans/057-game-text-compact-index.md
+pnpm exec vitest run packages/localization packages/game-text scripts/game-text-scale.test.ts scripts/localization-import.test.ts scripts/game-text-dictionary.test.ts --maxWorkers=1
+& $node26 node_modules/vitest/vitest.mjs run packages/game-text/src/shared-string-codec.test.ts packages/game-text/src/snapshot-format.test.ts packages/game-text/src/snapshot-file.test.ts packages/game-text/src/snapshot-store.test.ts packages/game-text/src/shared-index.test.ts scripts/localization-import.test.ts scripts/game-text-scale.test.ts scripts/game-text-dictionary.test.ts --maxWorkers=1
+$changedFiles = @(git diff --name-only) + @(git ls-files --others --exclude-standard)
+pnpm exec oxfmt @changedFiles
 $env:npm_config_workspace_concurrency = "1"
 pnpm run check:precommit
 ```

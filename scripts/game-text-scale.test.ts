@@ -335,6 +335,58 @@ describe("generated scale harness", () => {
 			await closed;
 		}
 	});
+	it("rejects a cached edit as a fresh PO measurement and restores the source bytes", async () => {
+		const cache = resolve(temporary, "refresh-cache"),
+			po = resolve(first, "Content/Localization/Generated/en/Generated.po"),
+			original = await readFile(po);
+		const command = (task: string, byte = 110) =>
+			promisify(execFile)(
+				process.execPath,
+				[
+					"--import",
+					"tsx",
+					resolve("scripts/benchmark-localization-import.ts"),
+					"--project",
+					first,
+					"--cache",
+					cache,
+					"--output",
+					resolve(temporary, `${task}-${byte}.json`),
+					"--mode",
+					"shared",
+					"--select",
+					task,
+					"--po-change-byte",
+					String(byte)
+				],
+				{ windowsHide: true, timeout: 20000 }
+			);
+		await command("cold");
+		await command("folder");
+		const folder = JSON.parse(await readFile(resolve(temporary, "folder-110.json"), "utf8"));
+		const nativeFolder = folder.results.find(
+			(stage: { stage: string }) => stage.stage === "reader:native-folder"
+		);
+		expect(folder.outcome.kind).toBe("done");
+		expect(nativeFolder.references).toBeGreaterThan(0);
+		expect(
+			folder.results.find(
+				(stage: { stage: string }) => stage.stage === "reader:native-folder-oracle"
+			)
+		).toMatchObject({ references: nativeFolder.references, prefix: nativeFolder.prefix });
+		await expect(command("refresh")).rejects.toThrow();
+		const cached = JSON.parse(await readFile(resolve(temporary, "refresh-110.json"), "utf8"));
+		expect(cached.outcome.kind).toBe("failed");
+		expect(cached.outcome.error).toContain("already cached");
+		expect(await readFile(po)).toEqual(original);
+		await command("refresh", 111);
+		const fresh = JSON.parse(await readFile(resolve(temporary, "refresh-111.json"), "utf8"));
+		expect(fresh.outcome.kind).toBe("done");
+		expect(
+			fresh.results.find((stage: { stage: string }) => stage.stage === "one-byte-po:target")
+		).toMatchObject({ parsed: 1, lookupStrings: 1 });
+		expect(await readFile(po)).toEqual(original);
+	}, 60000);
 	it("records a run deadline as failure, including worker startup, and permits only lower caps", async () => {
 		const report = resolve(temporary, "deadline.json");
 		const benchmark = resolve("scripts/benchmark-localization-import.ts");

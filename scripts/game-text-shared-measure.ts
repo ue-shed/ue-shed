@@ -1,7 +1,10 @@
-import { open, readFile, stat, readdir } from "node:fs/promises";
+import { open, readFile, stat, readdir, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { localizationColumnsBuilder } from "../packages/game-text/src/localization-columns.ts";
+import { defaultLocalizationImportLimits } from "../packages/game-text/src/localization-stream.ts";
 import { join, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import {
 	LocalizationEvidence,
 	LocalizationEvidenceNodeLive
@@ -21,7 +24,6 @@ import {
 	type SnapshotSource,
 	type SnapshotLoadedDomain
 } from "../packages/game-text/src/snapshot-file.ts";
-import { reblockSnapshot } from "./game-text-snapshot-reblock.ts";
 import { readScaleRecipe } from "./game-text-scale-options.ts";
 
 type Measure = <A>(
@@ -33,7 +35,8 @@ export async function measureSharedIndex(
 	project: string,
 	cache: string,
 	measure: Measure,
-	task = "all"
+	task = "all",
+	changedPoByte = 110
 ) {
 	const recipe = await readScaleRecipe(project);
 	const target = await Effect.runPromise(
@@ -56,9 +59,57 @@ export async function measureSharedIndex(
 			{ path: target.outputPaths.portableObjects[culture], format: "po" as const }
 		])
 	];
-	if (task === "all" || task === "cold" || task === "refresh") {
+	if (task === "parse") {
+		const po = files.find((file) => file.format === "po")!;
+		const staging = await mkdtemp(join(tmpdir(), "ue-shed-po-profile-"));
+		const handle = await open(resolve(project, po.path!), "r");
+		const builder = localizationColumnsBuilder(
+			po.path!,
+			join(staging, "columns"),
+			{
+				format: "po",
+				poFormat: target.poFormat,
+				collapseMode: target.collapseMode
+			},
+			defaultLocalizationImportLimits
+		);
+		try {
+			await measure(
+				"parse:po",
+				async () => {
+					const decoder = new TextDecoder("utf-8", { fatal: true });
+					const buffer = Buffer.allocUnsafe(256 * 1024);
+					let bytes = 0;
+					for (;;) {
+						const { bytesRead } = await handle.read(buffer, 0, buffer.length, bytes);
+						if (!bytesRead) break;
+						bytes += bytesRead;
+						builder.feed(
+							decoder.decode(buffer.subarray(0, bytesRead), { stream: true })
+						);
+					}
+					builder.feed(decoder.decode());
+					const source = await builder.finish();
+					return {
+						inputBytes: bytes,
+						rows: (await source.columns.find((c) => c.name === "entry.key")!.load())
+							.length
+					};
+				},
+				(result) => result
+			);
+		} finally {
+			builder.close();
+			await handle.close();
+			await rm(staging, { recursive: true, force: true });
+		}
+		return;
+	}
+	if (task === "all" || task === "cold" || task === "refresh" || task === "cold-po") {
 		if (task !== "refresh")
 			for (const file of files) {
+				if (task === "cold-po" && !(file.format === "po" && file.path?.includes("/en/")))
+					continue;
 				if (!file.path) throw new Error("Missing input path");
 				await measure(
 					`cold:${file.path}`,
@@ -77,6 +128,23 @@ export async function measureSharedIndex(
 					(result) => ({ ...result })
 				);
 			}
+		if (task === "cold-po") return;
+		if (task === "refresh")
+			await measure(
+				"prepare-stat-hints",
+				() =>
+					Effect.runPromise(
+						importLocalizationTarget({
+							projectRoot: project,
+							cacheRoot: cache,
+							targetName: target.name
+						}).pipe(Effect.provide(LocalizationEvidenceNodeLive))
+					),
+				(result) => ({
+					files: result.files.length,
+					readBytes: result.files.reduce((n, file) => n + file.readBytes, 0)
+				})
+			);
 		await measure(
 			"stat-hit:target",
 			() =>
@@ -100,6 +168,9 @@ export async function measureSharedIndex(
 					(n, file) => n + file.sharedBytesAppended,
 					0
 				),
+				lookupStrings: result.files.reduce((n, file) => n + file.lookupStrings, 0),
+				reusedStrings: result.files.reduce((n, file) => n + file.reusedStrings, 0),
+				probePasses: result.files.reduce((n, file) => n + file.probePasses, 0),
 				diagnostics: result.diagnostics.length
 			})
 		);
@@ -113,7 +184,10 @@ export async function measureSharedIndex(
 			offset = bytes.indexOf("mirava");
 			if (offset < 0) throw new Error("Change word absent");
 			original = bytes[offset]!;
-			await handle.write(Uint8Array.of(original === 109 ? 110 : 109), 0, 1, offset);
+			const replacement = original === changedPoByte ? 109 : changedPoByte;
+			if (replacement === original)
+				throw new Error("PO replacement byte must change the input.");
+			await handle.write(Uint8Array.of(replacement), 0, 1, offset);
 			await handle.sync();
 			await measure(
 				"one-byte-po:target",
@@ -124,7 +198,13 @@ export async function measureSharedIndex(
 							cacheRoot: cache,
 							targetName: target.name
 						}).pipe(Effect.provide(LocalizationEvidenceNodeLive))
-					),
+					).then((result) => {
+						if (result.files.filter((file) => file.parsed).length !== 1)
+							throw new Error(
+								"PO change is already cached: compact first or choose an unseen --po-change-byte."
+							);
+						return result;
+					}),
 				(result) => ({
 					files: result.files.length,
 					parsed: result.files.filter((file) => file.parsed).length,
@@ -137,7 +217,10 @@ export async function measureSharedIndex(
 					sharedBytesAppended: result.files.reduce(
 						(n, file) => n + file.sharedBytesAppended,
 						0
-					)
+					),
+					lookupStrings: result.files.reduce((n, file) => n + file.lookupStrings, 0),
+					reusedStrings: result.files.reduce((n, file) => n + file.reusedStrings, 0),
+					probePasses: result.files.reduce((n, file) => n + file.probePasses, 0)
 				})
 			);
 		} finally {
@@ -159,19 +242,8 @@ export async function measureSharedIndex(
 	if (task === "all" || task === "projection") {
 		const reference =
 			recipe.scale === 1
-				? join(cache, "joined-replay.snapshot")
+				? resolve("test-results/game-text-scale/snapshot-v3-final-1x-256.snapshot")
 				: resolve("test-results/game-text-scale/snapshot-v3-final-10x-256.snapshot");
-		if (recipe.scale === 1)
-			await measure(
-				"replay-phase2-raw",
-				() =>
-					reblockSnapshot(
-						resolve("test-results/game-text-scale/snapshot-v2-1x.raw"),
-						reference,
-						256 * 1024
-					),
-				(result) => ({ fileBytes: result.fileLength })
-			);
 		const reader = await openSnapshotFile(reference);
 		try {
 			const source: SnapshotSource = {
@@ -231,6 +303,88 @@ export async function measureSharedIndex(
 		() => componentSizes(sharedIndexDirectory(options), manifest),
 		(result) => result
 	);
+	if (task === "all" || task === "reader" || task === "folder")
+		await run(
+			Effect.scoped(
+				Effect.gen(function* () {
+					const index = yield* (yield* SharedIndex).open();
+					const po = yield* index.layer(
+						target.outputPaths.portableObjects[target.cultures[0]!]!
+					);
+					const metadata = Schema.decodeUnknownSync(
+						Schema.fromJsonString(Schema.Struct({ pathPrefix: Schema.String }))
+					)(new TextDecoder().decode(yield* po.section("file.meta")));
+					const prefix = metadata.pathPrefix;
+					if (!prefix.endsWith("/")) throw new Error("Native folder prefix absent.");
+					let paths: Uint32Array = new Uint32Array(),
+						flags: Uint32Array = new Uint32Array(),
+						matches = 0;
+					yield* Effect.promise(() =>
+						measure(
+							"reader:native-folder",
+							async () => {
+								const pathColumn = await Effect.runPromise(
+									po.section("entry.path")
+								);
+								const flagColumn = await Effect.runPromise(
+									po.section("entry.options")
+								);
+								if (
+									!(pathColumn instanceof Uint32Array) ||
+									!(flagColumn instanceof Uint32Array)
+								)
+									throw new Error("Native folder columns are not u32.");
+								paths = pathColumn;
+								flags = flagColumn;
+								const suffixRanges = await Effect.runPromise(index.range(""));
+								const fullRanges = await Effect.runPromise(index.range(prefix));
+								for (let row = 0; row < paths.length; row++) {
+									const ranges = flags[row]! & 1024 ? suffixRanges : fullRanges;
+									if (
+										ranges.some(
+											(range) =>
+												paths[row]! >= range.start &&
+												paths[row]! < range.end
+										)
+									)
+										matches++;
+								}
+								return { prefix, references: matches, rows: paths.length };
+							},
+							(result) => result
+						)
+					);
+					yield* Effect.promise(() =>
+						measure(
+							"reader:native-folder-oracle",
+							async () => {
+								const order = Uint32Array.from(paths, (_, row) => row).sort(
+									(a, b) => paths[a]! - paths[b]!
+								);
+								let oracle = 0;
+								for (let start = 0; start < order.length; start += 8192) {
+									const rows = order.subarray(start, start + 8192);
+									const strings = await Effect.runPromise(
+										index.strings(Array.from(rows, (row) => paths[row]!))
+									);
+									for (let id = 0; id < strings.length; id++) {
+										const path =
+											(flags[rows[id]!]! & 1024 ? prefix : "") + strings[id]!;
+										if (path.startsWith(prefix)) oracle++;
+									}
+								}
+								if (oracle !== matches)
+									throw new Error(
+										"Native folder range differs from hydrated paths."
+									);
+								return { prefix, references: oracle };
+							},
+							(result) => result
+						)
+					);
+				})
+			)
+		);
 	if (task === "all" || task === "reader")
 		await run(
 			Effect.scoped(
@@ -240,6 +394,25 @@ export async function measureSharedIndex(
 						index = yield* store.open();
 					const openedMs = performance.now() - started;
 					const joined = yield* index.layer("joined");
+					const folderPrefix = recipe.scale === 1 ? "/Game/" : "Package";
+					let folderMatches = 0;
+					yield* Effect.promise(() =>
+						measure(
+							"reader:folder-range",
+							() => Effect.runPromise(index.range(folderPrefix)),
+							(ranges) => {
+								folderMatches = ranges.reduce(
+									(n, range) => n + range.end - range.start,
+									0
+								);
+								return {
+									ranges: ranges.length,
+									prefix: folderPrefix,
+									matches: folderMatches
+								};
+							}
+						)
+					);
 					const hot = [
 						"culture.names",
 						"line.id",
@@ -334,6 +507,25 @@ export async function measureSharedIndex(
 							)
 						);
 						retained.push(loaded);
+						if (domain === "paths")
+							yield* Effect.promise(() =>
+								measure(
+									"reader:folder-oracle",
+									async () => {
+										let matches = 0;
+										for (const block of loaded)
+											for (let id = 0; id < block.count; id++)
+												if (block.string(id).startsWith(folderPrefix))
+													matches++;
+										if (matches !== folderMatches)
+											throw new Error(
+												"Folder range differs from the path-domain oracle."
+											);
+										return matches;
+									},
+									(matches) => ({ matches, prefix: folderPrefix })
+								)
+							);
 					}
 					const names = [
 						"line.id",
@@ -408,10 +600,7 @@ async function componentSizes(directory: string, manifest: SharedIndexManifest) 
 			rawUtf8Bytes: number;
 			stringBytes: number;
 			indexBytes: number;
-			fingerprintBytes: number;
-			pointerBytes: number;
-			prefilterBytes: number;
-			fenceBytes: number;
+			ownershipBytes: number;
 			directoryBytes: number;
 		}
 	> = {};
@@ -423,10 +612,7 @@ async function componentSizes(directory: string, manifest: SharedIndexManifest) 
 				rawUtf8Bytes: 0,
 				stringBytes: 0,
 				indexBytes: 0,
-				fingerprintBytes: 0,
-				pointerBytes: 0,
-				prefilterBytes: 0,
-				fenceBytes: 0,
+				ownershipBytes: 0,
 				directoryBytes: 0
 			});
 			domain.strings += segment.count;
@@ -434,11 +620,9 @@ async function componentSizes(directory: string, manifest: SharedIndexManifest) 
 			let payload = 0;
 			for (const entry of reader.directory.entries.values()) {
 				payload += entry.storedLength;
-				if (entry.name.startsWith("hash.p")) domain.fingerprintBytes += entry.storedLength;
-				if (entry.name.startsWith("id.p")) domain.pointerBytes += entry.storedLength;
-				if (entry.name === "hash.bloom") domain.prefilterBytes += entry.storedLength;
-				if (entry.name === "hash.fences") domain.fenceBytes += entry.storedLength;
-				if (entry.name.startsWith("hash.") || entry.name.startsWith("id."))
+				if (entry.name.startsWith("front.o") && entry.name !== "front.offsets")
+					domain.ownershipBytes += entry.storedLength;
+				if (entry.name.startsWith("front.") && !entry.name.startsWith("front.b"))
 					domain.indexBytes += entry.storedLength;
 				else domain.stringBytes += entry.storedLength;
 			}

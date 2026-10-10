@@ -1,5 +1,6 @@
 import { mkdir, mkdtemp, open, rm, writeFile } from "node:fs/promises";
 import { resolve, join } from "node:path";
+import { zstdCompressSync } from "node:zlib";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	encodeStringBlock,
@@ -53,6 +54,60 @@ async function damage(path: string, offset: number, bytes = new Uint8Array([255]
 }
 
 describe("file-backed lazy sections", () => {
+	it("writes prepared A64 byte frames once and verifies their persisted checksum", async () => {
+		const raw = Buffer.from("bounded frame ".repeat(1000)),
+			data = zstdCompressSync(raw),
+			path = join(directory, "prepared.snapshot");
+		await writeSnapshotFile(path, {
+			columns: [
+				{
+					name: "front.b0",
+					kind: "bytes",
+					preparedBytes: {
+						data,
+						rawLength: raw.length,
+						checksum: snapshotChecksum(raw),
+						codec: 1
+					},
+					load: async () => {
+						throw new Error("Prepared frames must not be regenerated");
+					}
+				}
+			]
+		});
+		const reader = await openSnapshotFile(path);
+		try {
+			expect(Buffer.from(await reader.load("front.b0"))).toEqual(raw);
+			await reader.verify();
+		} finally {
+			await reader.close();
+		}
+	});
+	it("rejects prepared frames with invalid kinds or byte bounds", async () => {
+		for (const [kind, rawLength] of [
+			["u32", 1],
+			["bytes", MAX_SNAPSHOT_SECTION_BYTES + 1],
+			["bytes", 2]
+		] as const) {
+			await expect(
+				writeSnapshotFile(join(directory, `invalid-${kind}-${rawLength}.snapshot`), {
+					columns: [
+						{
+							name: "bad",
+							kind,
+							preparedBytes: {
+								data: Uint8Array.of(0),
+								rawLength,
+								checksum: 0,
+								codec: 0
+							},
+							load: async () => Uint8Array.of(0)
+						}
+					]
+				})
+			).rejects.toBeInstanceOf(SnapshotFormatError);
+		}
+	});
 	it("bounds decoded domain allocation before touching compressed frames", async () => {
 		const starts = Uint32Array.from({ length: 129 }, (_, id) => id);
 		const payload = new Uint8Array(starts.buffer);

@@ -356,8 +356,14 @@ export function localizationColumnsBuilder(
 				if (key !== "0") (otherTranslations ??= {})[key] = msgstr[key]!;
 			if (otherTranslations) extras.msgstr = otherTranslations;
 			if (Object.hasOwn(msgstr, "0")) column.options[count]! |= 64;
-			const canonicalContext = `${parsedId.success.namespace.replaceAll(",", "\\,")},${parsedId.success.key.replaceAll(",", "\\,")}`;
 			if (msgctxt !== undefined) {
+				const canonicalContext =
+					keyed ||
+					msgctxt.includes("\\") ||
+					msgctxt.indexOf(",") < 0 ||
+					msgctxt.indexOf(",", msgctxt.indexOf(",") + 1) >= 0
+						? `${parsedId.success.namespace.replaceAll(",", "\\,")},${parsedId.success.key.replaceAll(",", "\\,")}`
+						: msgctxt;
 				if (options.poFormat && msgctxt === canonicalContext) column.options[count]! |= 32;
 				else extras.msgctxt = msgctxt;
 			}

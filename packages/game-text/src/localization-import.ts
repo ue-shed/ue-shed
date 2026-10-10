@@ -42,7 +42,7 @@ export {
 	defaultLocalizationImportLimits,
 	type LocalizationImportLimits
 } from "./localization-stream.js";
-export const LOCALIZATION_IMPORT_VERSION = 4;
+export const LOCALIZATION_IMPORT_VERSION = 5;
 export interface LocalizationImportSourceFile {
 	readonly read: (
 		bytes: Uint8Array,
@@ -72,7 +72,8 @@ export const LocalizationImportSource = Context.Reference<{
 export const localizationImportMetrics = {
 	bytes: Metric.counter("game_text.localization_import.bytes"),
 	parsed: Metric.counter("game_text.localization_import.parsed"),
-	reused: Metric.counter("game_text.localization_import.reused")
+	reused: Metric.counter("game_text.localization_import.reused"),
+	lookupStrings: Metric.counter("game_text.localization_import.dictionary_lookup_strings")
 };
 const Positive = Schema.Int.check(Schema.isGreaterThan(0));
 const Options = Schema.Struct({
@@ -112,6 +113,9 @@ export interface LocalizationFileSnapshotKey {
 	readonly sharedBytesAppended: number;
 	readonly sharedReadBytes: number;
 	readonly sharedIndexReadBytes: number;
+	readonly lookupStrings: number;
+	readonly reusedStrings: number;
+	readonly probePasses: number;
 }
 function contained(root: string, path: string) {
 	const child = relative(root, path);
@@ -262,6 +266,9 @@ export const importLocalizationFile = Effect.fn("LocalizationSnapshot.importFile
 	let sharedBytesAppended = 0,
 		sharedReadBytes = 0,
 		sharedIndexReadBytes = 0;
+	let lookupStrings = 0,
+		reusedStrings = 0,
+		probePasses = 0;
 	const hit =
 		cached && cached.key === contentKey(cached.contentHash) && sameStamp(cached.stamp, observed)
 			? yield* existing(cached.contentHash)
@@ -392,7 +399,12 @@ export const importLocalizationFile = Effect.fn("LocalizationSnapshot.importFile
 				const bytes = yield* Effect.gen(function* () {
 					const store = yield* SharedIndex;
 					const writer = yield* store.writer();
-					const layer = yield* writer.publish(file, contentKey(content.hash), source);
+					const layer = yield* writer.publish(
+						file,
+						contentKey(content.hash),
+						source,
+						cached?.key
+					);
 					return { bytes: layer.bytes, ...writer.metrics() };
 				}).pipe(Effect.provide(sharedIndexNodeLayer(storeOptions())));
 				return { hash: content.hash, parsed: true, bytes: bytes.bytes, shared: bytes };
@@ -405,6 +417,9 @@ export const importLocalizationFile = Effect.fn("LocalizationSnapshot.importFile
 			sharedBytesAppended = result.shared.appendedBytes;
 			sharedReadBytes = result.shared.readBytes;
 			sharedIndexReadBytes = result.shared.indexReadBytes;
+			lookupStrings = result.shared.lookupStrings;
+			reusedStrings = result.shared.reusedStrings;
+			probePasses = result.shared.probePasses;
 		}
 		yield* io(file, async () => {
 			await mkdir(stateRoot, { recursive: true });
@@ -431,6 +446,7 @@ export const importLocalizationFile = Effect.fn("LocalizationSnapshot.importFile
 	const configuration = storeOptions();
 	const key = contentKey(contentHash);
 	yield* Metric.update(localizationImportMetrics.bytes, readBytes);
+	yield* Metric.update(localizationImportMetrics.lookupStrings, lookupStrings);
 	yield* Metric.update(
 		parsed ? localizationImportMetrics.parsed : localizationImportMetrics.reused,
 		1
@@ -439,7 +455,10 @@ export const importLocalizationFile = Effect.fn("LocalizationSnapshot.importFile
 		"localization.import.bytes": observed.size,
 		"localization.import.parsed": parsed,
 		"localization.import.statHit": statHit,
-		"localization.import.readBytes": readBytes
+		"localization.import.readBytes": readBytes,
+		"localization.import.lookupStrings": lookupStrings,
+		"localization.import.reusedStrings": reusedStrings,
+		"localization.import.probePasses": probePasses
 	});
 	yield* Effect.logDebug("Localization file snapshot imported", {
 		file,
@@ -449,6 +468,9 @@ export const importLocalizationFile = Effect.fn("LocalizationSnapshot.importFile
 		sharedBytesAppended,
 		sharedReadBytes,
 		sharedIndexReadBytes,
+		lookupStrings,
+		reusedStrings,
+		probePasses,
 		parsed
 	});
 	return {
@@ -464,7 +486,10 @@ export const importLocalizationFile = Effect.fn("LocalizationSnapshot.importFile
 		directory: sharedIndexDirectory(configuration),
 		sharedBytesAppended,
 		sharedReadBytes,
-		sharedIndexReadBytes
+		sharedIndexReadBytes,
+		lookupStrings,
+		reusedStrings,
+		probePasses
 	} satisfies LocalizationFileSnapshotKey;
 });
 

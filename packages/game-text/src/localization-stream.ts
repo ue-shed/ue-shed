@@ -370,7 +370,8 @@ export function localizationPOStream(
 		lines.push({ text: value, ending });
 		blockBytes += (value.length + ending.length) * 2;
 		blank = trimmed === "";
-		if (/^msgstr(?:\[\d+\])?\s/u.test(trimmed)) finished = true;
+		if (trimmed.startsWith("msgstr ") || /^msgstr(?:\[\d+\])?\s/u.test(trimmed))
+			finished = true;
 		line++;
 		if (blockBytes > limits.maxRecordBytes)
 			throw importFailure(file, "limit_exceeded", ` at line ${firstLine}`);

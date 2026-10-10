@@ -92,7 +92,7 @@ one bounded read; an existing hash discards that parse. Before/after handle and 
 in-place writes and replacement, returning typed `file_changed` retry guidance. There is no input
 spool. Bounded column string blocks still spill while building a changed file. Stat records are
 validated, atomically replaced disposable hints; content keys remain SHA-256 over importer version,
-format/PO options and the authored content hash. Importer version 4 separates shared ID layers.
+format/PO options and the authored content hash. Importer version 5 separates shared ID layers.
 `sharedTargetKey` selects the target store; target discovery supplies the target name. Standalone
 file imports default to the explicit `localization` target store. Content hashes remain independent
 of other files and the manifest, and a changed-then-restored file can reuse its older cache key.
@@ -126,7 +126,7 @@ The 512 MiB dictionary allowance was chosen after 10× exceeded the tentative 25
 The 16 GiB byte allowance limits disk work and spill usage; the record, dictionary, tree and row
 limits bound memory directly.
 
-Each file uses layout version 3, with the following logical localization columns (importer version 4):
+Each file uses layout version 3, with the following logical localization columns (importer version 5):
 
 | Sections                                        | Domain / meaning                                                                                                                                                                                                                                                                |
 | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -165,87 +165,83 @@ node --import tsx --max-old-space-size=256 scripts/benchmark-localization-import
 ## Shared strings, generations and compaction
 
 `sharedIndexNodeLayer` supplies the same scoped Effect service to libraries, CLI and Workbench.
-Its versioned target key uses `shared-index-v1:<target>` inside `game-text-v1`. One existing
-`SnapshotStore` writer lock publishes a checksummed `index.meta` root atomically. The root contains
-the store generation, immutable segment descriptors, independent content-keyed layers and the
-active path-to-key mapping. Root JSON is capped at 16 MiB and segments at 4,096. Layers carry the
-store generation and segment count on which their IDs depend. Readers retain all layer and segment
-handles before returning; an open racing retirement retries against the new root.
+The target key is `shared-index-v2:<target>` inside `game-text-v1`; importer version 5 and root
+version 2 rebuild the disposable prior hash-page cache. One writer lock publishes a checksummed
+`index.meta` root atomically. The root names every immutable segment, independent content-keyed
+layer and active file path. Layers declare their generation and segment dependency. Readers open
+all handles before returning and retain the generation across compaction and retirement.
 
-All string content shares one u32 ID space, including identical text used across domains. An
-append-only `strings-<nonce>.snapshot` contains only new strings, in 256 KiB blocks, allocated
-contiguously from the next project-wide ID. First-use domains own storage: source, identity,
-`culture.<culture>`, paths and comments. A cross-domain ID reads its owning block; it does not
-require another copy. Culture folder recognition includes three-letter and regional/script tags
-such as `fil`, `es-419` and `sr-Latn-RS`; names beyond the snapshot domain-name limit use the
-generic culture owner. Bulk `domain()` loads physical ownership segments; complete semantic text
-searches must also follow cross-domain IDs (native translations can reuse source IDs). Each bulk
-result exposes its existing Phase 2 timings and byte buffer.
+**A64 dictionary.** Each immutable segment stores distinct UTF-8 strings in byte sort order.
+The ID is the segment base plus sort rank. Blocks restart front coding every 64 strings. Zstd
+frames target 256 KiB; an individually large block can exceed that target while retaining the
+existing 1 MiB/string and 128 MiB/section bounds. Four sparse columns contain first keys, frame
+numbers, block offsets and ownership masks. There are no persisted hash pages or Bloom filters.
+Canonical 32-hex strings use a tag plus 16 GUID bytes; uppercase hex digits add a 32-bit case mask.
+The noncanonical tag uses the normal front-coded suffix. Every decoded value retains exact text.
 
-Content addresses use SHA-256's 32-bit prefix plus exact UTF-8 string equality. A real prefix
-collision test proves distinct strings remain distinct. Each segment has sorted 8,192-row hash
-pages, a small fence column and a Bloom prefilter (20 bits/string, seven probes). Fingerprints use
-unsigned deltas; IDs occupy a parallel compressed u32 page. Append reads bounded matching pages
-rather than loading the complete hash index. The decoded page budget is 64 MiB, prefilters 128 MiB
-and string blocks 32 MiB; pending new strings flush at 250,000 strings or 64 MiB of accounted
-UTF-8/UTF-16/container storage. An initial 8 MiB page budget thrashed in the 1× probe. The stronger
-prefilter reduced that probe's one-file hash reads from 714 MB to 11.9 MB.
-Same-domain segments are searched first, then other domains for exact cross-domain deduplication.
-Segment minimum/maximum UTF-8 lengths reject impossible batches before reading filters. At 10×,
-the earlier 16 MiB filter cache repeatedly cleared itself and reread 7.18–11.6 GB/file. The larger
-bounded cache evicts individual segments, retaining the filters needed for repeated file strings.
+A batch sorts unresolved strings once and removes duplicate requests. Matching ownership domains
+are probed first, newest segment first, followed by other segments for exact cross-domain reuse.
+Each segment receives one ordered pass after a sparse seek to its first unresolved key. Key bounds exclude
+impossible requests. Equality compares complete bytes. Positioned frames have a 32 MiB decode
+cache; sparse indexes contain no per-string pointers. Prefix range queries perform two lower
+bounds per segment and return half-open ID ranges for callers to intersect with their path columns.
 
-Retained read callbacks live outside segment producer scopes. Keeping a callback beside the
-producer closures retained their completed string arrays: the 1× joined rebase sampled 722 MiB of
-heap. Moving the callback to the adapter instance reduced sampled heap to 171 MiB (189 MiB
-including pre-GC traces). A multiple-segment regression test checks resident heap after releasing
-producer arrays.
+The maximum is **256 segments**. A publication that could exceed it first compacts. Reaching the
+ceiling also compacts after publication. Ordinary small edits retain the existing conservative
+obsolete-byte check: 8 MiB and 25% must both be exceeded before an exact live census is warranted.
+Explicit `compact(true)` performs the full remap regardless of garbage. Compaction collects all
+live strings into an exactly sized byte arena, sorts them globally, writes **one segment**, remaps
+every active layer and publishes one generation under the existing lock. Interrupted publication
+leaves the old root readable. Historical content keys retired by compaction can be reconstructed.
 
-Localization and joined layers contain no string blocks or per-domain dictionaries. Their logical
-string columns are modular u32 deltas with zigzag encoding, independently compressed at zstd 1.
-The reader verifies checksums, reconstructs the IDs in place, checks their segment dependency and
-retains the decoded columns. Sorting makes adjacent differences small: the measured 1× manifest
-shrinks from 1.34 to 0.34 MiB. Plain independent IDs preserve file-cache reuse; manifest-row
-references were rejected because they would require validating another layer. Each layer's
-`shared.meta` describes its ID columns, encoding and store dependency.
-Bounds validation uses indexed typed-array iteration, keeping identical dependency guards:
-10× validation falls from 571 to 167 ms and page-column loading from 825 to 453 ms.
+First-use domains remain source, identity, `culture.<culture>`, paths and comments. Cross-domain
+IDs read their owner without a second stored copy. A compacted segment carries per-string owner
+pages and block masks. Masks are conservative for more than 32 owners; exact owner pages filter
+any collisions. A domain request expands only matching blocks, with bounded shared-frame reads,
+into the Phase 2 byte-buffer/block-index representation. Page decoding and localization hydration
+keep their existing APIs. Front-code expansion adds CPU work to bulk loads; the measured report
+records that cost separately from hot column loads and page reads.
 
-For changed files, old/new ID-column comparison records a conservative upper bound on obsolete
-string bytes without scanning other layers. Once the bound exceeds both 8 MiB and 25% of total
-UTF-8 bytes, the writer takes an exact live-ID census. Only an exact threshold crossing rebuilds
-the store; false candidates reset the bound. Explicit `compact(true)` measures the complete
-operation even for a one-string change, demonstrating why tiny edits should not trigger it.
-Compaction streams live strings once, builds an old-to-new u32 mapping, remaps every active layer,
-verifies persisted files, and publishes the new root under the same lock. Content keys stay
-unchanged; stale historical keys can be rebuilt. Old readers keep their handles through retirement.
-Interruption before the root rename leaves the old generation visible; tests include a killed
-compaction child and dead-lock recovery. Retired and interrupted candidates are deleted after a
-successful compaction. Temporary disk occupancy includes both generations until publication;
-readers' old handles can retain their files' allocation until scope release.
+Cold conversion collects domain byte/offset arrays outside V8, radix-sorts typed occurrence IDs,
+assigns ranks and encodes each block once. The producer keeps one raw frame and its compressed
+copy, retains compressed frames outside the heap and writes the final snapshot in one pass.
+Prepared byte-frame metadata preserves CRC checks and bounds; persisted verification still runs
+before publication. Byte offsets widen to exact float64 integers above 4 GiB; IDs remain u32.
+Compaction preallocates from its census rather than doubling a multi-gigabyte arena. These choices
+stay within the supervised heap/RSS limits on the retained workloads; larger workloads can fail
+the explicit 16 GiB arena cap rather than silently wrap offsets.
 
-The shared measurement mode reads the retained projects sequentially under the existing heap,
-RSS and stage watchdog. `--select cold|projection|compact|reader|refresh` can isolate stages. Cold
-build is the sum of separately bounded file stages; it is not a single unbounded target stage. At 1× the
-joined projection replays the saved Phase 2 raw sections, without corpus construction or a join.
-At 10× it rebases the already-retained Phase 2 synthetic width probe; it remains a format-size
-projection, not a semantic 10× join or a real-project compression forecast. The index forecast
-must also preserve the declared widths: the saved probe's repeated ID pattern leaves dictionary
-variants unreferenced. Compaction prunes 26,085,533 strings / 1.84 GiB UTF-8, so its 883.62 MiB
-total cannot establish the 1 GiB forecast target. Keeping all declared widths costs 1,202.12 MiB;
-the measured compacted 1× total is 92.36 MiB. The package estimate uses the projected occurrence
-and identity/source columns; it charges no second string copy,
-and still omits package headers, additional coverage and full origins. Component sizes include
-hash pages, prefilters, directories, stat hints and both retained root publications. Total disk
-occupancy also includes historical layer files. Reader probes run in fresh children, retain bulk
-buffers cumulatively, and use the same hot/page columns and picked native culture as Phase 2.
-Native translations borrowed from the already-loaded source domain add no second bulk buffer.
-The synthetic 10× projection has separate invented translations, which are explicitly loaded too.
-The [shared index measurements](game-text-shared-index-measurements.md) record full component
-sizes, per-file cold imports, refresh IO, compaction and the Phase 2 reader comparison.
+**File refresh.** The previous key comes from the active path publication or the file's validated
+stat hint. Sorted identity mappings match old/new rows, including duplicates and reordering.
+The prior file's byte-to-ID mapping reuses unchanged content; only unresolved new/changed strings
+are sorted and probed against the project segments. Missing previous layers fall back to full
+sorted lookup. Bounded byte batches avoid decoding old strings to JavaScript text and encoding them
+again during reuse and compaction. Import metrics expose `lookupStrings`, `reusedStrings` and `probePasses`; stat hits
+perform zero dictionary probes. Shared IDs still use reversible modular deltas with zigzag encoding
+and zstd level 1. Reader checksums, dependency bounds and scoped column caching remain in place.
+An unchanged translation previously represented by its source also reuses that source's old ID,
+including when the new source changes. GUID case, reordered identities and these implicit references
+have round-trip oracles.
+Numeric old IDs already follow byte order inside each segment. Reuse validates ordering at segment
+joins before skipping an old-string sort, and validates row identity order before skipping row sorts.
+Mixed ordering, new identities and reordered rows retain the full sorting fallback.
+
+The measurement mode uses retained projects and saved Phase 2 snapshots, without rebuilding the
+1× join. `--select cold|projection|compact|reader|folder|refresh|parse` isolates operations. All children
+run singly with 16,384 MiB heap, 20 GB OS RSS and 1,200 s/stage. **Every 10× run has one absolute
+900 s deadline**, including startup, discovery and cleanup. Expired or interrupted runs fail;
+per-file stages cannot reset the deadline. The parent restores a PO edit even after worker death.
+`--po-change-byte` selects a fresh lowercase ASCII replacement. A refresh measurement must parse
+one file; an already cached replacement fails rather than being reported as fresh-edit performance.
+PO common folder prefixes live in file metadata; dictionary ranges operate on stored suffixes.
+The 10× joined layer remains a synthetic width probe, not a semantic join or a real-content
+compression forecast. The full-width forecast charges every declared historical domain width,
+including unused variants that the live census prunes. Package proxies omit headers, coverage
+and complete origin membership. Full evidence: [shared measurements](game-text-shared-index-measurements.md).
 
 ```powershell
-node --import tsx scripts/benchmark-localization-import.ts --project test-results/game-text-scale/project-1x --cache test-results/game-text-scale/shared-final4-1x --output test-results/game-text-scale/shared-final4-1x.json --mode shared
+node --import tsx scripts/benchmark-localization-import.ts --project test-results/game-text-scale/project-1x --cache test-results/game-text-scale/a64-accepted-1x --output test-results/game-text-scale/a64-accepted-1x.json --mode shared --select all
+node --import tsx scripts/benchmark-localization-import.ts --project test-results/game-text-scale/project-10x-final --cache test-results/game-text-scale/a64-accepted-10x --output test-results/game-text-scale/a64-accepted-cold-10x.json --mode shared --select cold
 ```
 
 ## Snapshot format measurements

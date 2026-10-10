@@ -212,8 +212,9 @@ function simpleEntry(lines: readonly POLine[]): POEntry | undefined {
 	let fields = false;
 	for (const line of lines) {
 		const text = line.text;
-		if (!text.trim()) continue;
-		if (text !== text.trim()) return undefined;
+		const trimmed = text.trim();
+		if (!trimmed) continue;
+		if (text !== trimmed) return undefined;
 		if (!fields && text.startsWith("#. ")) {
 			extractedComments.push(text.slice(3).trimStart());
 			continue;

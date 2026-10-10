@@ -6,7 +6,8 @@ import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import { Effect } from "effect";
 import { afterEach, describe, expect, it } from "vitest";
-import { encodeStringBlock } from "./snapshot-format.js";
+import { encodeStringBlock, decodeStringBlock } from "./snapshot-format.js";
+import { maximumSharedSegments } from "./shared-string-file.js";
 import { snapshotColumnsSource } from "./snapshot-file.js";
 import {
 	SharedIndex,
@@ -51,6 +52,113 @@ function source(values: string[], domain = "source") {
 }
 
 describe("shared project string index", () => {
+	it("uses segment ranks, probes multiple segments and returns exact folder ranges", async () => {
+		const { run } = await setup();
+		await run(
+			Effect.scoped(
+				Effect.gen(function* () {
+					const store = yield* SharedIndex,
+						writer = yield* store.writer();
+					yield* writer.publish(
+						"a",
+						"a",
+						source(["/Game/B/2", "/Game/A/1", "/Game/A/2", "é"])
+					);
+					yield* writer.publish("b", "b", source(["/Game/A/1", "/Game/A/3", "😀"]));
+					const index = yield* store.open(),
+						a = yield* index.layer("a");
+					expect(Array.from(yield* a.section("entry.source"))).toEqual([2, 0, 1, 3]);
+					const ranges = yield* index.range("/Game/A/");
+					const ids = ranges.flatMap(({ start, end }) =>
+						Array.from({ length: end - start }, (_, row) => start + row)
+					);
+					expect((yield* index.strings(ids)).sort()).toEqual([
+						"/Game/A/1",
+						"/Game/A/2",
+						"/Game/A/3"
+					]);
+					const generation = index.manifest.generation;
+					yield* writer.compact(true);
+					expect(writer.manifest().segments).toHaveLength(1);
+					expect(writer.manifest().generation).not.toBe(generation);
+					expect(yield* index.strings([0, 1, 2, 3])).toEqual([
+						"/Game/A/1",
+						"/Game/A/2",
+						"/Game/B/2",
+						"é"
+					]);
+					const compacted = yield* store.open(),
+						b = yield* compacted.layer("b");
+					expect(
+						yield* b.strings("source", Array.from(yield* b.section("entry.source")))
+					).toEqual(["/Game/A/1", "/Game/A/3", "😀"]);
+					const domains = yield* compacted.domain("source");
+					for (const domain of domains) {
+						const block = decodeStringBlock(
+							domain.bytes.subarray(domain.blockOffsets[0], domain.blockOffsets[1])
+						);
+						expect(block.string(0)).toBe(domain.string(0));
+					}
+				})
+			)
+		);
+	});
+	it("compacts at the segment ceiling before another publication", async () => {
+		const { run } = await setup();
+		await run(
+			Effect.scoped(
+				Effect.gen(function* () {
+					const store = yield* SharedIndex,
+						writer = yield* store.writer(),
+						generation = writer.manifest().generation;
+					for (let i = 0; i <= maximumSharedSegments; i++) {
+						yield* writer.publish(`file-${i}`, `key-${i}`, source([`value-${i}`]));
+						expect(writer.manifest().segments.length).toBeLessThanOrEqual(
+							maximumSharedSegments
+						);
+					}
+					expect(writer.manifest().generation).not.toBe(generation);
+					expect(writer.manifest().segments).toHaveLength(2);
+					const index = yield* store.open(),
+						layer = yield* index.layer("file-0");
+					expect(
+						yield* layer.strings(
+							"source",
+							Array.from(yield* layer.section("entry.source"))
+						)
+					).toEqual(["value-0"]);
+				})
+			)
+		);
+	}, 30000);
+	it("reuses a prior file mapping and probes only changed strings", async () => {
+		const { run } = await setup();
+		await run(
+			Effect.scoped(
+				Effect.gen(function* () {
+					const writer = yield* (yield* SharedIndex).writer();
+					yield* writer.publish("same-path", "v1", source(["alpha", "beta", "gamma"]));
+					const before = writer.metrics();
+					yield* writer.publish("same-path", "v2", source(["gamma", "beta!", "alpha"]));
+					expect(writer.metrics().lookupStrings - before.lookupStrings).toBe(1);
+					expect(writer.metrics().reusedStrings - before.reusedStrings).toBe(2);
+					const store = yield* SharedIndex,
+						index = yield* store.open(),
+						layer = yield* index.layer("same-path");
+					expect(
+						yield* layer.strings(
+							"source",
+							Array.from(yield* layer.section("entry.source"))
+						)
+					).toEqual(["gamma", "beta!", "alpha"]);
+					const reused = writer.metrics();
+					yield* writer.publish("same-path", "v3", source(["alpha", "beta!", "gamma"]));
+					expect(writer.metrics().lookupStrings - reused.lookupStrings).toBe(0);
+					expect(writer.metrics().reusedStrings - reused.reusedStrings).toBe(3);
+				})
+			)
+		);
+	});
 	it("keeps three-letter, numeric-region and script cultures in lazy ownership domains", async () => {
 		const { run } = await setup();
 		await run(
@@ -389,7 +497,7 @@ describe("shared project string index", () => {
 			)
 		);
 	});
-	it("uses bounded hash pages on reopening and appends only the changed string", async () => {
+	it("uses a bounded sparse index on reopening and appends only the changed string", async () => {
 		const { run } = await setup();
 		const values = Array.from({ length: 20000 }, (_, i) => `invented-${i}`);
 		await run(

@@ -1,55 +1,141 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
+import { constants, zstdCompressSync, zstdDecompressSync } from "node:zlib";
 import { join } from "node:path";
 import { Schema } from "effect";
-import { decodeStringBlock, encodeStringBlock, snapshotCheck } from "./snapshot-format.js";
+import {
+	encodeStringBlock,
+	decodeStringBlock,
+	snapshotCheck,
+	MAX_SNAPSHOT_BYTES
+} from "./snapshot-format.js";
 import {
 	openSnapshotFile,
 	writeSnapshotFile,
+	snapshotNodeChecksum,
 	type SnapshotFileReader,
 	type SnapshotSourceColumn,
 	type SnapshotLoadedDomain
 } from "./snapshot-file.js";
+import {
+	absentId,
+	StringArena,
+	sortBytes,
+	stringBytes,
+	compareBytes,
+	comparePacked,
+	comparePackedKey,
+	encodeA64,
+	a64Cursor,
+	decodeA64,
+	packedStrings,
+	type PackedStrings
+} from "./shared-string-codec.js";
 
 const Natural = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
+export const maximumSharedSegments = 256;
 export const SharedSegment = Schema.Struct({
 	file: Schema.String.check(Schema.isPattern(/^strings-[a-f0-9-]+\.snapshot$/u)),
 	start: Natural,
 	count: Natural,
 	domain: Schema.String.check(Schema.isMaxLength(23)),
+	domains: Schema.Array(Schema.String.check(Schema.isMaxLength(23))),
 	utf8Bytes: Natural,
-	bytes: Natural,
-	hashProbes: Schema.optionalKey(Schema.Literals([3, 7])),
-	minBytes: Schema.optionalKey(Natural),
-	maxBytes: Schema.optionalKey(Natural)
+	bytes: Natural
 });
 export type SharedSegment = typeof SharedSegment.Type;
-const hash = (value: string) => createHash("sha256").update(value).digest().readUInt32LE(0);
-const pageRows = 8192;
-const maximumPendingBytes = 64 * 1024 ** 2;
-const maximumPendingStrings = 250000;
-
-function lowerBound(values: Uint32Array, id: number) {
+interface SparseIndex {
+	fences: PackedStrings;
+	offsets: Uint32Array;
+	frames: Uint32Array;
+	masks: Uint32Array;
+}
+function containing(starts: readonly number[], id: number) {
 	let low = 0,
-		high = values.length;
+		high = starts.length;
 	while (low < high) {
 		const middle = (low + high) >>> 1;
-		if (values[middle]! < id) low = middle + 1;
+		if (starts[middle]! <= id) low = middle + 1;
 		else high = middle;
 	}
-	return low;
-}
-function containing(values: readonly number[] | Uint32Array, id: number) {
-	let low = 0,
-		high = values.length;
-	while (low + 1 < high) {
-		const middle = (low + high) >>> 1;
-		if (values[middle]! <= id) low = middle;
-		else high = middle;
-	}
-	return low;
+	return low - 1;
 }
 
-/** Positioned Node adapter. The owning Effect scope closes all immutable segment handles. */
+/** Bulk callers retain the Phase 2 block/offset representation after A64 expansion. */
+function expandDomain(packed: PackedStrings) {
+	const starts: number[] = [],
+		offsets: number[] = [0],
+		count = packed.offsets.length - 1;
+	let size = 0;
+	for (let start = 0; start < count; ) {
+		let end = start + 1;
+		while (
+			end < count &&
+			8 + (end - start + 1) * 4 + packed.offsets[end + 1]! - packed.offsets[start]! <=
+				256 * 1024
+		)
+			end++;
+		starts.push(start);
+		size += 8 + (end - start) * 4 + packed.offsets[end]! - packed.offsets[start]!;
+		offsets.push(size);
+		start = end;
+	}
+	snapshotCheck(
+		size <= MAX_SNAPSHOT_BYTES,
+		"domain",
+		"Raw domain exceeds bulk load cap; use page reads"
+	);
+	const bytes = Buffer.allocUnsafe(size),
+		view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength),
+		blockStarts = Uint32Array.from(starts),
+		blockOffsets = Float64Array.from(offsets);
+	for (let block = 0; block < starts.length; block++) {
+		const start = starts[block]!,
+			end = starts[block + 1] ?? count,
+			position = offsets[block]!,
+			rows = end - start;
+		view.setUint32(position, rows, true);
+		for (let row = 0; row <= rows; row++)
+			view.setUint32(
+				position + 4 + row * 4,
+				packed.offsets[start + row]! - packed.offsets[start]!,
+				true
+			);
+		packed.bytes.copy(
+			bytes,
+			position + 8 + rows * 4,
+			packed.offsets[start],
+			packed.offsets[end]
+		);
+	}
+	const string = (id: number) => {
+		snapshotCheck(Number.isInteger(id) && id >= 0 && id < count, "domain", "Invalid domain ID");
+		const block = containing(starts, id),
+			position = offsets[block]!,
+			local = id - starts[block]!,
+			payload = position + 8 + view.getUint32(position, true) * 4;
+		return bytes.toString(
+			"utf8",
+			payload + view.getUint32(position + 4 + local * 4, true),
+			payload + view.getUint32(position + 8 + local * 4, true)
+		);
+	};
+	return {
+		bytes,
+		blockOffsets,
+		blockStarts,
+		count,
+		string,
+		scanSubstring: (needle: string) => {
+			let matches = 0;
+			const lower = needle.toLowerCase();
+			for (let id = 0; id < count; id++)
+				if (string(id).toLowerCase().includes(lower)) matches++;
+			return matches;
+		}
+	};
+}
+
+/** Immutable A64 segments; positioned reads retain the generation's physical handles. */
 export class SharedStringFiles {
 	readonly files: SnapshotFileReader[] = [];
 	readonly segments: SharedSegment[];
@@ -57,22 +143,16 @@ export class SharedStringFiles {
 	indexReadBytes = 0;
 	appendedBytes = 0;
 	blocksLoaded = 0;
-	// Keep this callback outside producer scopes: sibling load closures capture pending arrays.
+	lookupStrings = 0;
+	reusedStrings = 0;
+	probePasses = 0;
+	private readonly indexes = new Map<number, SparseIndex>();
+	private readonly frames = new Map<string, Buffer>();
+	private frameBytes = 0;
+	private closed = false;
 	private readonly trackRead = (bytes: number) => {
 		this.readBytes += bytes;
 	};
-	private readonly indexes = new Map<number, Uint32Array>();
-	private readonly fences = new Map<number, Uint32Array>();
-	private readonly blooms = new Map<number, Uint8Array>();
-	private bloomBytes = 0;
-	private readonly pages = new Map<string, { hashes: Uint32Array; ids: Uint32Array }>();
-	private readonly blocks = new Map<string, ReturnType<typeof decodeStringBlock>>();
-	private blockBytes = 0;
-	private pending = new Map<string, number>();
-	private stringsPending: string[] = [];
-	private pendingBytes = 0;
-	private pendingDomain = "";
-	private closed = false;
 	readonly directory: string;
 	constructor(directory: string, segments: readonly SharedSegment[]) {
 		this.directory = directory;
@@ -80,14 +160,14 @@ export class SharedStringFiles {
 	}
 	get count() {
 		const last = this.segments.at(-1);
-		return (last ? last.start + last.count : 0) + this.stringsPending.length;
+		return last ? last.start + last.count : 0;
 	}
 	async open() {
 		try {
 			let next = 0;
 			for (const segment of this.segments) {
 				snapshotCheck(
-					segment.start === next && segment.count > 0,
+					segment.start === next && segment.count > 0 && next + segment.count < absentId,
 					"segments",
 					"Invalid ID range"
 				);
@@ -96,14 +176,10 @@ export class SharedStringFiles {
 				});
 				this.files.push(reader);
 				snapshotCheck(
-					reader.directory.fileLength === segment.bytes,
+					reader.directory.fileLength === segment.bytes &&
+						reader.directory.entries.has("front.fences"),
 					"segments",
-					"Segment size differs"
-				);
-				snapshotCheck(
-					reader.directory.entries.get("text.b0")?.stringCount === segment.count,
-					"segments",
-					"Segment count differs"
+					"Segment size or codec differs"
 				);
 				next += segment.count;
 			}
@@ -113,22 +189,130 @@ export class SharedStringFiles {
 			throw cause;
 		}
 	}
-	private async load(segment: number, name: string, index = false) {
-		snapshotCheck(!this.closed, name, "Shared string scope is closed");
+	private async index(segment: number) {
+		snapshotCheck(!this.closed, "front", "Shared string scope is closed");
+		let index = this.indexes.get(segment);
+		if (index) return index;
 		const reader = this.files[segment]!;
-		const bytes = reader.directory.entries.get(name)?.storedLength ?? 0;
-		if (index) this.indexReadBytes += bytes;
-		return reader.load(name);
+		const load = async (name: string) => {
+			this.indexReadBytes += reader.directory.entries.get(name)?.storedLength ?? 0;
+			return reader.load(name);
+		};
+		const fences = await load("front.fences"),
+			offsets = await load("front.offsets"),
+			frames = await load("front.frames"),
+			masks = await load("front.masks");
+		snapshotCheck(
+			fences instanceof Uint8Array &&
+				offsets instanceof Uint32Array &&
+				frames instanceof Uint32Array &&
+				masks instanceof Uint32Array,
+			"front",
+			"Invalid index kinds"
+		);
+		const block = decodeStringBlock(fences),
+			arena = new StringArena();
+		for (let i = 0; i < block.count; i++) arena.add(block.bytes(i));
+		const keys = arena.finish(),
+			count = Math.ceil(this.segments[segment]!.count / 64);
+		snapshotCheck(
+			block.count === count &&
+				offsets.length === count &&
+				frames.length === count &&
+				masks.length === count,
+			"front",
+			"Invalid sparse index length"
+		);
+		for (let i = 0; i < count; i++) {
+			snapshotCheck(
+				i
+					? frames[i] === frames[i - 1] || frames[i] === frames[i - 1]! + 1
+					: frames[i] === 0,
+				"front",
+				"Invalid frame sequence"
+			);
+			snapshotCheck(
+				reader.directory.entries.has(`front.b${frames[i]}`) &&
+					(i > 0 && frames[i] === frames[i - 1]
+						? offsets[i]! > offsets[i - 1]!
+						: offsets[i] === 0),
+				"front",
+				"Invalid frame boundary"
+			);
+			if (i)
+				snapshotCheck(
+					compareBytes(stringBytes(keys, i - 1), stringBytes(keys, i)) < 0,
+					"front",
+					"Unsorted fences"
+				);
+		}
+		index = { fences: keys, offsets, frames, masks };
+		this.indexes.set(segment, index);
+		return index;
+	}
+	private async block(segment: number, block: number) {
+		const index = await this.index(segment);
+		snapshotCheck(block >= 0 && block < index.offsets.length, "front", "Invalid block ID");
+		const frame = index.frames[block]!,
+			key = `${segment}:${frame}`;
+		let bytes = this.frames.get(key);
+		if (!bytes) {
+			const loaded = await this.files[segment]!.load(`front.b${frame}`);
+			snapshotCheck(loaded instanceof Uint8Array, "front", "Invalid frame");
+			bytes = Buffer.from(loaded.buffer, loaded.byteOffset, loaded.byteLength);
+			this.blocksLoaded++;
+			if (this.frameBytes + bytes.length > 32 * 1024 ** 2) {
+				this.frames.clear();
+				this.frameBytes = 0;
+			}
+			this.frames.set(key, bytes);
+			this.frameBytes += bytes.length;
+		}
+		const start = index.offsets[block]!,
+			end = index.frames[block + 1] === frame ? index.offsets[block + 1]! : bytes.length;
+		snapshotCheck(start < end && end <= bytes.length, "front", "Invalid block bounds");
+		const payload = bytes.subarray(start, end);
+		snapshotCheck(
+			payload[0] === Math.min(64, this.segments[segment]!.count - block * 64),
+			"front",
+			"Block count differs"
+		);
+		return payload;
 	}
 	async strings(ids: readonly number[]): Promise<string[]> {
+		return (await this.bytes(ids)).map((value) => value.toString("utf8"));
+	}
+	/** Prior IDs are sorted ranks: decode each block directly into the external byte arena. */
+	async collectSorted(ids: Uint32Array, arena: StringArena) {
 		snapshotCheck(!this.closed, "strings", "Shared string scope is closed");
-		const groups = new Map<
-			string,
-			{ segment: number; block: number; rows: number[]; local: number[] }
-		>();
-		const output: string[] = [];
-		output.length = ids.length;
+		for (let row = 0; row < ids.length; row++)
+			snapshotCheck(
+				ids[row]! < this.count && (!row || ids[row - 1]! <= ids[row]!),
+				"strings",
+				"Invalid sorted shared IDs"
+			);
 		const starts = this.segments.map((segment) => segment.start);
+		let position = 0;
+		while (position < ids.length) {
+			const segment = containing(starts, ids[position]!),
+				block = (ids[position]! - starts[segment]!) >>> 6,
+				base = starts[segment]! + block * 64,
+				cursor = a64Cursor(await this.block(segment, block));
+			let rank = 0;
+			for (let value = cursor.next(); value; value = cursor.next()) {
+				while (ids[position] === base + rank) {
+					arena.add(value);
+					position++;
+				}
+				rank++;
+			}
+		}
+	}
+	/** Bounded batches reuse exact bytes without a UTF-8 decode/re-encode round trip. */
+	async bytes(ids: readonly number[]): Promise<Buffer[]> {
+		snapshotCheck(!this.closed, "strings", "Shared string scope is closed");
+		const starts = this.segments.map((s) => s.start),
+			groups = new Map<string, { segment: number; block: number; rows: number[] }>();
 		for (let row = 0; row < ids.length; row++) {
 			const id = ids[row]!;
 			snapshotCheck(
@@ -137,353 +321,360 @@ export class SharedStringFiles {
 				"Invalid shared ID"
 			);
 			const segment = containing(starts, id),
-				meta = this.segments[segment];
-			if (!meta || id >= meta.start + meta.count) {
-				output[row] = this.stringsPending[id - (this.count - this.stringsPending.length)]!;
-				continue;
-			}
-			let index = this.indexes.get(segment);
-			if (!index) {
-				const value = await this.load(segment, "text.starts");
-				snapshotCheck(
-					value instanceof Uint32Array && value[0] === 0,
-					"strings",
-					"Invalid block index"
-				);
-				index = value;
-				this.indexes.set(segment, index);
-			}
-			const local = id - meta.start,
-				block = containing(index, local);
-			const key = `${segment}:${block}`;
-			let group = groups.get(key);
-			if (!group) {
-				group = { segment, block, rows: [], local: [] };
-				groups.set(key, group);
-			}
+				block = (id - starts[segment]!) >>> 6,
+				key = `${segment}:${block}`;
+			const group = groups.get(key) ?? { segment, block, rows: [] };
 			group.rows.push(row);
-			group.local.push(local - index[block]!);
+			groups.set(key, group);
 		}
-		for (const [key, group] of groups) {
-			let block = this.blocks.get(key);
-			if (!block) {
-				const bytes = await this.load(group.segment, `text.b${group.block}`);
-				this.blocksLoaded++;
-				snapshotCheck(bytes instanceof Uint8Array, "strings", "Invalid string block");
-				block = decodeStringBlock(bytes);
-				if (this.blockBytes + bytes.length > 32 * 1024 ** 2) {
-					this.blocks.clear();
-					this.blockBytes = 0;
-				}
-				this.blocks.set(key, block);
-				this.blockBytes += bytes.length;
-			}
-			for (let row = 0; row < group.rows.length; row++)
-				output[group.rows[row]!] = block.string(group.local[row]!);
-		}
-		return output;
-	}
-	async domain(domain: string): Promise<readonly SnapshotLoadedDomain[]> {
-		snapshotCheck(!this.closed, "domain", "Shared string scope is closed");
-		const result: SnapshotLoadedDomain[] = [];
-		for (let i = 0; i < this.segments.length; i++)
-			if (this.segments[i]!.domain === domain)
-				result.push(await this.files[i]!.domain("text"));
-		return result;
-	}
-	/** Batched exact lookup: small fence column, bounded hash pages, then string equality. */
-	async intern(domain: string, values: readonly string[]) {
-		snapshotCheck(!this.closed, "intern", "Shared string scope is closed");
-		if (this.pendingDomain !== domain) await this.flush();
-		this.pendingDomain = domain;
-		const output = new Uint32Array(values.length);
-		const missing = new Map<string, { hash: number; bytes: number; rows: number[] }>();
-		for (let row = 0; row < values.length; row++) {
-			const value = values[row]!;
-			const existing = this.pending.get(value);
-			if (existing !== undefined) output[row] = existing;
-			else {
-				const group = missing.get(value);
-				if (group) group.rows.push(row);
-				else
-					missing.set(value, {
-						hash: hash(value),
-						bytes: Buffer.byteLength(value),
-						rows: [row]
-					});
-			}
-		}
-		const order = Array.from({ length: this.segments.length }, (_, index) => index).sort(
-			(a, b) =>
-				Number(this.segments[b]!.domain === domain) -
-					Number(this.segments[a]!.domain === domain) || b - a
-		);
-		for (const segment of order) {
-			if (!missing.size) break;
-			const meta = this.segments[segment]!;
-			let possible = false;
-			for (const request of missing.values())
-				if (
-					request.bytes >= (meta.minBytes ?? 0) &&
-					request.bytes <= (meta.maxBytes ?? 1024 ** 2)
-				) {
-					possible = true;
-					break;
-				}
-			if (!possible) continue;
-			let bloom = this.blooms.get(segment);
-			if (!bloom) {
-				const value = await this.load(segment, "hash.bloom", true);
-				snapshotCheck(value instanceof Uint8Array, "hash", "Invalid bloom");
-				bloom = value;
-				while (this.bloomBytes + bloom.length > 128 * 1024 ** 2 && this.blooms.size) {
-					const oldest = this.blooms.keys().next().value!;
-					this.bloomBytes -= this.blooms.get(oldest)!.length;
-					this.blooms.delete(oldest);
-				}
-				this.blooms.set(segment, bloom);
-				this.bloomBytes += bloom.length;
-			}
-			let fenceValue = this.fences.get(segment);
-			if (!fenceValue) {
-				const value = await this.load(segment, "hash.fences", true);
-				snapshotCheck(value instanceof Uint32Array, "hash", "Invalid fences");
-				fenceValue = value;
-				this.fences.set(segment, fenceValue);
-			}
-			const requests = new Map<number, { value: string; hash: number }[]>();
-			for (const [value, request] of missing) {
-				if (
-					request.bytes < (this.segments[segment]!.minBytes ?? 0) ||
-					request.bytes > (this.segments[segment]!.maxBytes ?? 1024 ** 2)
-				)
-					continue;
-				const probes = this.segments[segment]!.hashProbes ?? 3;
-				if (!bloomContains(request.hash, bloom, probes)) continue;
-				// Equal hashes can straddle a page; search every page with the matching range.
-				let page = Math.max(0, lowerBound(fenceValue, request.hash) - 1);
-				for (; page < fenceValue.length && fenceValue[page]! <= request.hash; page++) {
-					const group = requests.get(page) ?? [];
-					group.push({ value, hash: request.hash });
-					requests.set(page, group);
-				}
-			}
-			for (const [page, requestsInPage] of requests) {
-				const key = `${segment}:${page}`;
-				let payload = this.pages.get(key);
-				if (!payload) {
-					const hashes = await this.load(segment, `hash.p${page}`, true);
-					const ids = await this.load(segment, `id.p${page}`, true);
-					snapshotCheck(
-						hashes instanceof Uint32Array &&
-							ids instanceof Uint32Array &&
-							hashes.length === ids.length,
-						"hash",
-						"Invalid hash page"
-					);
-					for (let row = 1; row < hashes.length; row++)
-						hashes[row] = hashes[row]! + hashes[row - 1]!;
-					payload = { hashes, ids };
-					if (this.pages.size >= 1024) this.pages.delete(this.pages.keys().next().value!);
-					this.pages.set(key, payload);
-				}
-				const candidates: { value: string; id: number }[] = [];
-				for (const request of requestsInPage) {
-					let index = lowerBound(payload.hashes, request.hash);
-					while (
-						index < payload.hashes.length &&
-						payload.hashes[index] === request.hash
-					) {
-						const id = payload.ids[index++]!;
-						snapshotCheck(
-							id >= this.segments[segment]!.start &&
-								id < this.segments[segment]!.start + this.segments[segment]!.count,
-							"hash",
-							"Hash ID outside segment"
-						);
-						candidates.push({ value: request.value, id });
-					}
-				}
-				const decoded = await this.strings(candidates.map((candidate) => candidate.id));
-				for (let row = 0; row < candidates.length; row++) {
-					const candidate = candidates[row]!,
-						request = missing.get(candidate.value);
-					if (request && decoded[row] === candidate.value) {
-						for (const index of request.rows) output[index] = candidate.id;
-						missing.delete(candidate.value);
-					}
-				}
-			}
-		}
-		for (const [value, request] of missing) {
-			const bytes = Buffer.byteLength(value);
+		const output: Buffer[] = [];
+		output.length = ids.length;
+		for (const group of groups.values()) {
+			const values = decodeA64(await this.block(group.segment, group.block));
 			snapshotCheck(
-				bytes <= 1024 * 1024 && this.count < 0xffffffff,
-				"strings",
-				"String or ID exceeds cap"
+				values.length ===
+					Math.min(64, this.segments[group.segment]!.count - group.block * 64),
+				"front",
+				"Block count differs"
 			);
-			if (
-				this.pendingBytes + bytes + value.length * 2 + 128 > maximumPendingBytes ||
-				this.pending.size >= maximumPendingStrings
-			) {
-				await this.flush();
-				this.pendingDomain = domain;
-			}
-			const id = this.count;
-			this.stringsPending.push(value);
-			this.pending.set(value, id);
-			this.pendingBytes += bytes + value.length * 2 + 128;
-			for (const row of request.rows) output[row] = id;
+			for (const row of group.rows)
+				output[row] = values[(ids[row]! - starts[group.segment]!) & 63]!;
 		}
 		return output;
+	}
+	/** One sorted probe pass per immutable segment. Exact byte equality, no fingerprints. */
+	async internPacked(domain: string, values: PackedStrings, reuse?: Uint32Array) {
+		snapshotCheck(!this.closed, "intern", "Shared string scope is closed");
+		const output = reuse ?? new Uint32Array(values.offsets.length - 1).fill(absentId);
+		const pending = new Uint32Array(output.length);
+		let pendingCount = 0;
+		for (let id = 0; id < output.length; id++)
+			if (output[id] === absentId) pending[pendingCount++] = id;
+		this.reusedStrings += output.length - pendingCount;
+		if (!pendingCount) return output;
+		const order = sortBytes(values, pending.subarray(0, pendingCount));
+		const unique = new Uint32Array(order.length);
+		let size = 0,
+			previousId = -1;
+		for (const id of order) {
+			if (previousId < 0 || comparePacked(values, previousId, values, id) !== 0) {
+				unique[size++] = id;
+				previousId = id;
+			}
+		}
+		const requests = unique.subarray(0, size);
+		const requested = requests.reduce((n, id) => n + Number(output[id] === absentId), 0);
+		this.lookupStrings += requested;
+		const segments = Array.from({ length: this.segments.length }, (_, segment) => segment).sort(
+			(a, b) =>
+				Number(this.segments[b]!.domains.includes(domain)) -
+					Number(this.segments[a]!.domains.includes(domain)) || b - a
+		);
+		for (const segment of segments) {
+			if (!requests.some((id) => output[id] === absentId)) break;
+			const index = await this.index(segment);
+			const first = stringBytes(index.fences, 0);
+			const tail = decodeA64(await this.block(segment, index.offsets.length - 1));
+			const last = tail.at(-1)!;
+			let low = 0,
+				high = requests.length;
+			while (low < high) {
+				const middle = (low + high) >>> 1;
+				if (comparePackedKey(values, requests[middle]!, first) < 0) low = middle + 1;
+				else high = middle;
+			}
+			const begin = low;
+			low = begin;
+			high = requests.length;
+			while (low < high) {
+				const middle = (low + high) >>> 1;
+				if (comparePackedKey(values, requests[middle]!, last) <= 0) low = middle + 1;
+				else high = middle;
+			}
+			const selected = requests.subarray(begin, low);
+			if (!selected.length) continue;
+			const firstPending = selected.find((id) => output[id] === absentId);
+			if (firstPending === undefined) continue;
+			low = 0;
+			high = index.offsets.length;
+			while (low < high) {
+				const middle = (low + high) >>> 1;
+				if (comparePacked(index.fences, middle, values, firstPending) <= 0)
+					low = middle + 1;
+				else high = middle;
+			}
+			this.probePasses++;
+			let fence = low - 1,
+				blockId = -1,
+				cursor: ReturnType<typeof a64Cursor> | undefined,
+				current: Buffer | undefined,
+				rank = 0;
+			for (const id of selected) {
+				if (output[id] !== absentId) continue;
+				while (
+					fence + 1 < index.offsets.length &&
+					comparePacked(index.fences, fence + 1, values, id) <= 0
+				)
+					fence++;
+				if (fence < 0) continue;
+				if (blockId !== fence) {
+					cursor = a64Cursor(await this.block(segment, fence));
+					blockId = fence;
+					rank = 0;
+					current = cursor.next();
+				}
+				while (current && comparePackedKey(values, id, current) > 0) {
+					current = cursor!.next();
+					rank++;
+				}
+				if (current && comparePackedKey(values, id, current) === 0)
+					output[id] = this.segments[segment]!.start + fence * 64 + rank;
+			}
+		}
+		const missing = new Uint32Array(order.length);
+		let count = 0;
+		const base = this.count;
+		for (const id of requests) {
+			if (output[id] !== absentId) continue;
+			missing[count] = id;
+			output[id] = base + count++;
+		}
+		if (count) await this.append(domain, values, missing.subarray(0, count));
+		let representative = 0;
+		for (const id of order) {
+			while (
+				representative + 1 < requests.length &&
+				comparePacked(values, requests[representative + 1]!, values, id) <= 0
+			)
+				representative++;
+			output[id] = output[requests[representative]!]!;
+		}
+		return output;
+	}
+	async intern(domain: string, values: readonly string[]) {
+		return this.internPacked(domain, packedStrings(values));
+	}
+	async copyUnique(domain: string, values: readonly string[]) {
+		return this.intern(domain, values);
 	}
 	async flush() {
-		if (!this.stringsPending.length) return;
-		const strings = this.stringsPending;
-		const start = this.count - strings.length;
-		const columns: SnapshotSourceColumn[] = [];
-		const starts: number[] = [];
-		let utf8Bytes = 0,
-			minBytes = Infinity,
-			maxBytes = 0;
-		for (let row = 0; row < strings.length; ) {
-			const begin = row;
-			let bytes = 8;
-			while (row < strings.length) {
-				const length = Buffer.byteLength(strings[row]!);
-				if (row > begin && bytes + length + 4 > 256 * 1024) break;
-				bytes += length + 4;
-				utf8Bytes += length;
-				minBytes = Math.min(minBytes, length);
-				maxBytes = Math.max(maxBytes, length);
-				row++;
-			}
-			const end = row;
-			starts.push(begin);
-			columns.push({
-				name: `text.b${starts.length - 1}`,
-				kind: "strings",
-				domain: "text",
-				stringCount: strings.length,
-				compressionLevel:
-					this.pendingDomain === "paths" ? 9 : this.pendingDomain === "identity" ? 6 : 3,
-				load: async () => encodeStringBlock(strings.slice(begin, end))
-			});
+		/* Every call publishes immutable sorted ranks immediately. */
+	}
+	async ownership(segment: number) {
+		if (this.segments[segment]!.domains.length === 1) return undefined;
+		const owners = new Uint32Array(this.segments[segment]!.count);
+		for (let start = 0; start < owners.length; start += 8 * 1024 ** 2) {
+			const page = await this.files[segment]!.load(`front.o${start / (8 * 1024 ** 2)}`);
+			snapshotCheck(
+				page instanceof Uint32Array &&
+					page.length === Math.min(8 * 1024 ** 2, owners.length - start),
+				"front",
+				"Invalid owner page"
+			);
+			owners.set(page, start);
 		}
-		columns.push({
-			name: "text.starts",
-			kind: "u32",
-			load: async () => Uint32Array.from(starts)
-		});
-		const hashes = Uint32Array.from(strings, hash);
-		const bloom = new Uint8Array(Math.max(8, Math.ceil((strings.length * 20) / 8)));
-		for (const value of hashes) {
-			const second = bloomStep(value);
-			for (let index = 0; index < 7; index++) {
-				const bit = ((value + Math.imul(second, index)) >>> 0) % (bloom.length * 8);
-				bloom[bit >>> 3]! |= 1 << (bit & 7);
-			}
-		}
-		columns.push({ name: "hash.bloom", kind: "u8", load: async () => bloom });
-		const order = Uint32Array.from({ length: strings.length }, (_, row) => row).sort(
-			(a, b) => hashes[a]! - hashes[b]!
+		for (const owner of owners)
+			snapshotCheck(owner < this.segments[segment]!.domains.length, "front", "Invalid owner");
+		return owners;
+	}
+	/** Compaction supplies every live value and its owning domain, sorted globally. */
+	async merged(values: PackedStrings, owners: Uint32Array, domains: readonly string[]) {
+		const order = sortBytes(values),
+			inverse = new Uint32Array(order.length);
+		for (let rank = 0; rank < order.length; rank++) inverse[order[rank]!] = rank;
+		if (order.length) await this.append("mixed", values, order, owners, domains);
+		return inverse;
+	}
+	private async append(
+		domain: string,
+		values: PackedStrings,
+		order: Uint32Array,
+		owners?: Uint32Array,
+		domains: readonly string[] = [domain]
+	) {
+		snapshotCheck(!this.closed, "append", "Shared string scope is closed");
+		snapshotCheck(
+			this.count + order.length < absentId && domains.length <= 4096,
+			"segments",
+			"Dictionary bounds exceeded"
 		);
-		const fences: number[] = [];
-		for (let row = 0; row < order.length; row += pageRows) {
-			const begin = row,
-				end = Math.min(order.length, row + pageRows),
-				page = fences.length;
-			fences.push(hashes[order[row]!]!);
+		const start = this.count,
+			blocks = Math.ceil(order.length / 64),
+			offsets = new Uint32Array(blocks),
+			frames = new Uint32Array(blocks),
+			masks = new Uint32Array(blocks),
+			fences: string[] = [],
+			columns: SnapshotSourceColumn[] = [];
+		let frameBytes = 0,
+			frameId = 0,
+			utf8Bytes = 0;
+		let group: Buffer[] = [];
+		const flushFrame = () => {
+			if (!group.length) return;
+			const raw = Buffer.concat(group, frameBytes);
+			const compressed = zstdCompressSync(raw, {
+				params: {
+					[constants.ZSTD_c_compressionLevel]:
+						domain === "paths" ? 9 : domain === "identity" ? 6 : 3
+				}
+			});
+			const data = compressed.length < raw.length ? compressed : raw;
+			const codec: 0 | 1 = data === raw ? 0 : 1;
+			const preparedBytes = {
+				data,
+				rawLength: raw.length,
+				checksum: snapshotNodeChecksum(raw),
+				codec
+			};
 			columns.push({
-				name: `hash.p${page}`,
-				kind: "u32",
+				name: `front.b${frameId++}`,
+				kind: "bytes",
+				preparedBytes,
 				load: async () =>
-					Uint32Array.from(order.subarray(begin, end), (id, index) =>
-						index
-							? (hashes[id]! - hashes[order[begin + index - 1]!]!) >>> 0
-							: hashes[id]!
-					)
+					preparedBytes.codec
+						? zstdDecompressSync(preparedBytes.data)
+						: preparedBytes.data
 			});
-			columns.push({
-				name: `id.p${page}`,
-				kind: "u32",
-				load: async () => Uint32Array.from(order.subarray(begin, end), (id) => start + id)
-			});
+			group = [];
+			frameBytes = 0;
+		};
+		for (let block = 0; block < blocks; block++) {
+			const keys: Buffer[] = [];
+			let mask = 0;
+			for (let row = block * 64; row < Math.min(order.length, (block + 1) * 64); row++) {
+				const id = order[row]!,
+					key = stringBytes(values, id);
+				keys.push(key);
+				utf8Bytes += key.length;
+				mask |= 1 << (owners?.[id] ?? 0);
+			}
+			const encoded = encodeA64(keys);
+			if (frameBytes && frameBytes + encoded.length > 256 * 1024) {
+				flushFrame();
+			}
+			offsets[block] = frameBytes;
+			frames[block] = frameId;
+			masks[block] = mask >>> 0;
+			frameBytes += encoded.length;
+			group.push(encoded);
+			fences.push(keys[0]!.toString("utf8"));
 		}
-		columns.push({
-			name: "hash.fences",
-			kind: "u32",
-			load: async () => Uint32Array.from(fences)
-		});
-		const file = `strings-${randomUUID()}.snapshot`;
-		const directory = await writeSnapshotFile(
-			join(this.directory, file),
-			{ columns },
-			(column) => column.compressionLevel ?? 1
+		flushFrame();
+		if (owners)
+			for (let start = 0; start < order.length; start += 8 * 1024 ** 2) {
+				const begin = start,
+					end = Math.min(order.length, start + 8 * 1024 ** 2);
+				columns.push({
+					name: `front.o${start / (8 * 1024 ** 2)}`,
+					kind: "u32",
+					load: async () =>
+						Uint32Array.from(order.subarray(begin, end), (id) => owners[id]!)
+				});
+			}
+		columns.push(
+			{ name: "front.fences", kind: "bytes", load: async () => encodeStringBlock(fences) },
+			{ name: "front.offsets", kind: "u32", load: async () => offsets },
+			{ name: "front.frames", kind: "u32", load: async () => frames },
+			{ name: "front.masks", kind: "u32", load: async () => masks }
 		);
+		const file = `strings-${randomUUID()}.snapshot`,
+			result = await writeSnapshotFile(
+				join(this.directory, file),
+				{ columns },
+				(column) => column.compressionLevel ?? 1
+			);
 		const reader = await openSnapshotFile(join(this.directory, file), {
 			onRead: this.trackRead
 		});
-		await reader.verify();
+		try {
+			await reader.verify();
+		} catch (cause) {
+			await reader.close();
+			throw cause;
+		}
 		this.files.push(reader);
 		this.segments.push({
 			file,
 			start,
-			count: strings.length,
-			domain: this.pendingDomain,
+			count: order.length,
+			domain,
+			domains: [...domains],
 			utf8Bytes,
-			bytes: directory.fileLength,
-			hashProbes: 7,
-			minBytes,
-			maxBytes
+			bytes: result.fileLength
 		});
-		this.appendedBytes += directory.fileLength;
-		this.pending.clear();
-		this.stringsPending = [];
-		this.pendingBytes = 0;
+		this.appendedBytes += result.fileLength;
 	}
-	/** Compaction copies a proven unique old store; no hash probes are needed for that copy. */
-	async copyUnique(domain: string, values: readonly string[]) {
-		if (this.pendingDomain !== domain) await this.flush();
-		this.pendingDomain = domain;
-		const ids = new Uint32Array(values.length);
-		for (let row = 0; row < values.length; row++) {
-			const value = values[row]!,
-				bytes = Buffer.byteLength(value);
-			if (
-				this.pendingBytes + bytes + value.length * 2 + 128 > maximumPendingBytes ||
-				this.stringsPending.length >= maximumPendingStrings
-			) {
-				await this.flush();
-				this.pendingDomain = domain;
+	async domain(domain: string): Promise<readonly SnapshotLoadedDomain[]> {
+		snapshotCheck(!this.closed, "domain", "Shared string scope is closed");
+		const result: SnapshotLoadedDomain[] = [];
+		for (let segment = 0; segment < this.segments.length; segment++) {
+			const meta = this.segments[segment]!,
+				owner = meta.domains.indexOf(domain);
+			if (owner < 0) continue;
+			const index = await this.index(segment),
+				arena = new StringArena(),
+				before = this.readBytes,
+				ownership = await this.ownership(segment);
+			for (let block = 0; block < index.masks.length; block++) {
+				if (!(index.masks[block]! & (1 << owner))) continue;
+				const cursor = a64Cursor(await this.block(segment, block));
+				let row = 0;
+				for (let value = cursor.next(); value; value = cursor.next()) {
+					if (!ownership || ownership[block * 64 + row] === owner) arena.add(value);
+					row++;
+				}
 			}
-			ids[row] = this.count;
-			this.stringsPending.push(value);
-			this.pendingBytes += bytes + value.length * 2 + 128;
+			const packed = arena.finish();
+			result.push({
+				...expandDomain(packed),
+				timings: {
+					storedBytes: this.readBytes - before,
+					readMs: 0,
+					decompressMs: 0,
+					verifyMs: 0,
+					copyMs: 0,
+					readBatches: 0
+				}
+			});
 		}
-		return ids;
+		return result;
+	}
+	async range(prefix: string) {
+		snapshotCheck(!this.closed, "range", "Shared string scope is closed");
+		const lower = Buffer.from(prefix),
+			upper = Buffer.from(lower);
+		let last = upper.length - 1;
+		while (last >= 0 && upper[last] === 255) last--;
+		if (last >= 0) upper[last]!++;
+		const ranges: { start: number; end: number }[] = [];
+		for (let segment = 0; segment < this.segments.length; segment++) {
+			const index = await this.index(segment),
+				meta = this.segments[segment]!;
+			const bound = async (key: Buffer) => {
+				let low = 0,
+					high = index.offsets.length;
+				while (low < high) {
+					const mid = (low + high) >>> 1;
+					if (compareBytes(stringBytes(index.fences, mid), key) <= 0) low = mid + 1;
+					else high = mid;
+				}
+				const block = Math.max(0, low - 1),
+					values = decodeA64(await this.block(segment, block));
+				let row = 0;
+				while (row < values.length && compareBytes(values[row]!, key) < 0) row++;
+				return meta.start + Math.min(meta.count, block * 64 + row);
+			};
+			ranges.push({
+				start: await bound(lower),
+				end: last < 0 ? meta.start + meta.count : await bound(upper.subarray(0, last + 1))
+			});
+		}
+		return ranges;
 	}
 	async close() {
 		this.closed = true;
 		for (const file of this.files) await file.close();
-		this.pages.clear();
-		this.blocks.clear();
-		this.pending.clear();
-		this.blooms.clear();
-		this.fences.clear();
 		this.indexes.clear();
-		this.stringsPending = [];
+		this.frames.clear();
 	}
-}
-
-function bloomStep(hash: number) {
-	return (Math.imul(hash ^ (hash >>> 16), 0x85ebca6b) >>> 0) | 1;
-}
-function bloomContains(hash: number, bloom: Uint8Array, probes: number) {
-	const second = bloomStep(hash);
-	for (let index = 0; index < probes; index++) {
-		const bit = ((hash + Math.imul(second, index)) >>> 0) % (bloom.length * 8);
-		if (!(bloom[bit >>> 3]! & (1 << (bit & 7)))) return false;
-	}
-	return true;
 }

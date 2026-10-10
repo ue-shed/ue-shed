@@ -7,6 +7,7 @@ import {
 	decodeSnapshotSection,
 	encodeSnapshotDirectory,
 	MAX_SNAPSHOT_BYTES,
+	MAX_SNAPSHOT_SECTION_BYTES,
 	MAX_SNAPSHOT_SECTIONS,
 	snapshotAligned,
 	snapshotCheck,
@@ -41,6 +42,13 @@ function verifiedString(bytes: Uint8Array, id: number) {
 export interface SnapshotSourceColumn extends Omit<SnapshotColumn, "values"> {
 	/** A measured producer policy for cold domains; omitted uses the store default. */
 	readonly compressionLevel?: number;
+	/** Already encoded byte frames from a bounded streaming producer. */
+	readonly preparedBytes?: {
+		readonly data: Uint8Array;
+		readonly rawLength: number;
+		readonly checksum: number;
+		readonly codec: 0 | 1;
+	};
 	readonly load: () => Promise<Uint8Array | Uint32Array>;
 }
 export interface SnapshotSource {
@@ -113,17 +121,49 @@ export async function writeSnapshotFile(
 		await handle.close();
 	}
 	async function writeColumn(column: SnapshotSourceColumn) {
-		const values = await column.load();
-		const raw = snapshotPayload({ ...column, values });
-		const compressionLevel = Schema.is(Schema.Number)(level) ? level : level(column);
-		const compressed =
-			compressionLevel === 0
-				? raw
-				: zlib.zstdCompressSync(raw, {
-						params: { [zlib.constants.ZSTD_c_compressionLevel]: compressionLevel }
-					});
+		const prepared = column.preparedBytes;
+		snapshotCheck(
+			!prepared || (column.kind === "bytes" && !column.domain && !column.stringCount),
+			column.name,
+			"Prepared payload requires a plain byte column"
+		);
+		let stored: Uint8Array, rawLength: number, count: number, checksum: number, codec: 0 | 1;
+		if (prepared) {
+			snapshotCheck(
+				Number.isSafeInteger(prepared.rawLength) &&
+					Number.isInteger(prepared.checksum) &&
+					prepared.checksum >= 0 &&
+					prepared.checksum <= 0xffffffff &&
+					prepared.rawLength > 0 &&
+					prepared.rawLength <= MAX_SNAPSHOT_SECTION_BYTES &&
+					prepared.data.length <= MAX_SNAPSHOT_SECTION_BYTES &&
+					(prepared.codec === 0 || prepared.codec === 1) &&
+					(prepared.codec === 1 || prepared.data.length === prepared.rawLength),
+				column.name,
+				"Prepared frame exceeds bounds"
+			);
+			stored = prepared.data;
+			rawLength = prepared.rawLength;
+			count = rawLength;
+			checksum = prepared.checksum;
+			codec = prepared.codec;
+		} else {
+			const values = await column.load(),
+				raw = snapshotPayload({ ...column, values });
+			const compressionLevel = Schema.is(Schema.Number)(level) ? level : level(column);
+			const compressed =
+				compressionLevel === 0
+					? raw
+					: zlib.zstdCompressSync(raw, {
+							params: { [zlib.constants.ZSTD_c_compressionLevel]: compressionLevel }
+						});
+			stored = compressed.length < raw.length ? compressed : raw;
+			rawLength = raw.length;
+			count = values.length;
+			checksum = snapshotNodeChecksum(raw);
+			codec = stored === raw ? 0 : 1;
+		}
 		sample?.();
-		const stored = compressed.length < raw.length ? compressed : raw;
 		snapshotCheck(
 			position + snapshotAligned(stored.length) <= MAX_SNAPSHOT_BYTES,
 			column.name,
@@ -132,12 +172,12 @@ export async function writeSnapshotFile(
 		const entry: SnapshotEntry = {
 			name: column.name,
 			kind: column.kind,
-			codec: stored === raw ? 0 : 1,
+			codec,
 			offset: position,
 			storedLength: stored.length,
-			rawLength: raw.length,
-			count: values.length,
-			checksum: snapshotNodeChecksum(raw),
+			rawLength,
+			count,
+			checksum,
 			domain: column.domain ?? "",
 			stringCount: column.stringCount ?? 0
 		};

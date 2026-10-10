@@ -38,6 +38,7 @@ const { values } = parseArgs({
 		worker: { type: "boolean" },
 		select: { type: "string" },
 		profile: { type: "boolean" },
+		"po-change-byte": { type: "string" },
 		report: { type: "string" },
 		domain: { type: "string" },
 		"run-timeout-seconds": { type: "string" }
@@ -51,6 +52,9 @@ const project = repositoryPath(values.project),
 const mode = Schema.decodeUnknownSync(Schema.Literals(["files", "target", "size", "shared"]))(
 	values.mode
 );
+const changedPoByte = boundedNumber(values["po-change-byte"] ?? "110", "--po-change-byte", 122);
+if (!Number.isInteger(changedPoByte) || changedPoByte < 97)
+	throw new Error("--po-change-byte must be a lowercase ASCII letter's byte (97–122).");
 const Memory = Schema.Struct({
 	heapUsed: Schema.Number,
 	arrayBuffers: Schema.Number,
@@ -117,7 +121,13 @@ if (values.worker) {
 		];
 		if (mode === "shared") {
 			const { measureSharedIndex } = await import("./game-text-shared-measure.ts");
-			await measureSharedIndex(project, cache, measure, values.select ?? "all");
+			await measureSharedIndex(
+				project,
+				cache,
+				measure,
+				values.select ?? "all",
+				changedPoByte
+			);
 		}
 		if (mode === "size") {
 			await measure(
@@ -309,6 +319,8 @@ if (values.worker) {
 			output,
 			"--mode",
 			mode,
+			"--po-change-byte",
+			String(changedPoByte),
 			...(values.select ? ["--select", values.select] : []),
 			...(values.report ? ["--report", values.report] : []),
 			...(values.domain ? ["--domain", values.domain] : [])

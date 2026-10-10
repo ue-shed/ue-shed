@@ -50,6 +50,9 @@ translation or path domain; `reader.strings()` keeps page reads limited to touch
 `SharedIndex` with `sharedIndexNodeLayer` stores one deduplicated string ID space per project and
 target. Localization imports use independent content keys, immutable string segments and atomic
 generation publication; compaction remaps active layers while existing readers retain their handles.
+Strings use immutable A64 segments: byte-sorted ranks, front coding in 64-string blocks, a sparse
+index and binary GUIDs with exact case recovery. Refresh reuses the previous file's string IDs and
+probes only unresolved strings. `reader.range(prefix)` returns matching ID ranges per segment.
 
 Search pages include fixed-size `counts` for the current source query, capability, review filter,
 and `withoutNotes` toggle. `counts.all` equals the page's full `total`, independent of pagination.

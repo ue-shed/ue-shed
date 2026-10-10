@@ -175,6 +175,13 @@ export function decodeStringBlock(
 	}
 	return {
 		count,
+		bytes(id: number) {
+			bounded(id, count - 1, section);
+			return bytes.subarray(
+				start + view.getUint32(4 + id * 4, true),
+				start + view.getUint32(8 + id * 4, true)
+			);
+		},
 		string(id: number) {
 			bounded(id, count - 1, section);
 			return decoder.decode(

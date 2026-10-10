@@ -367,7 +367,11 @@ function observeProtocolResult(result: UAssetIoResult, telemetry: ProtocolTeleme
 			);
 			return;
 		case "extract_text":
-			if (result.event.event === "text_package") {
+		case "extract_text_packages":
+			if (
+				result.event.event === "text_package" ||
+				result.event.event === "text_package_record"
+			) {
 				telemetry.inspectedFiles += 1;
 				telemetry.readBytes += result.event.fileBytes;
 				if (result.event.status === "partial") telemetry.partialFailures += 1;
@@ -547,15 +551,17 @@ export function makeProtocolRequest(
 	options?: { readonly contractMinor?: number }
 ): UAssetIoRequest {
 	protocolRequestCounter += 1;
-	return {
+	const fields = {
 		contract: {
-			name: "uasset-io",
-			version: { major: 1, minor: options?.contractMinor ?? 0 }
+			name: "uasset-io" as const,
+			version: { major: 1 as const, minor: options?.contractMinor ?? 0 }
 		},
 		limits,
-		operation,
 		requestId: `unreal-assets-${process.pid}-${protocolRequestCounter}`
 	};
+	// Narrow each branch to preserve the request union's operation/version correlation.
+	if (operation.kind === "extract_text_packages") return { ...fields, operation };
+	return { ...fields, operation };
 }
 
 function protocolPhase(
@@ -1427,11 +1433,16 @@ export function invokeProtocolSingle<A>(options: {
 export function protocolProjectionStream<A>(options: {
 	readonly configuration: AssetReaderConfiguration;
 	readonly extraction: SavedAssetExtractionOptions;
-	readonly projection: "text" | "texture";
+	readonly projection: "text" | "text_packages" | "texture";
 	readonly scanStore: ScanProgressStore;
 	readonly decode: (event: UAssetIoResult) => A | undefined;
 }): Stream.Stream<A, AssetReaderError> {
-	const operation = options.projection === "text" ? "extract_text" : "extract_texture";
+	const operation =
+		options.projection === "text"
+			? "extract_text"
+			: options.projection === "text_packages"
+				? "extract_text_packages"
+				: "extract_texture";
 	const request = makeProtocolRequest(
 		{
 			kind: operation,
@@ -1449,7 +1460,8 @@ export function protocolProjectionStream<A>(options: {
 				: { maximumAssets: options.extraction.maximumAssets }),
 			maximumOutputBytes: MAX_PROTOCOL_OUTPUT_BYTES,
 			timeoutMs: options.configuration.catalogTimeoutMs
-		}
+		},
+		{ contractMinor: options.projection === "text_packages" ? 8 : 0 }
 	);
 	const telemetry = makeProtocolTelemetry(false, options.configuration.protocolObserver);
 	const controller = new AbortController();
@@ -1480,6 +1492,7 @@ export function protocolProjectionStream<A>(options: {
 				if (event.kind === "result") {
 					if (
 						(event.result.kind === "extract_text" ||
+							event.result.kind === "extract_text_packages" ||
 							event.result.kind === "extract_texture") &&
 						(event.result.event.event === "text_summary" ||
 							event.result.event.event === "texture_summary")

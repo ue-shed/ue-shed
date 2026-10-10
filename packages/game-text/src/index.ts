@@ -1,4 +1,5 @@
 export * from "./corpus.js";
+export * from "./package-text-record.js";
 export * from "./snapshot-format.js";
 export * from "./localization-import.js";
 export * from "./shared-index.js";

@@ -8,6 +8,7 @@ import {
 	SavedAssetScanEntry,
 	SavedAssetScanProgress,
 	SavedAssetTextExtractionEvent,
+	SavedAssetPackageTextEvent,
 	SavedAssetTextureExtractionEvent,
 	SavedTableCatalog,
 	SavedTableCatalogProgress,
@@ -140,6 +141,7 @@ export class AssetReaderError extends Schema.TaggedErrorClass<AssetReaderError>(
 			"level_sequence",
 			"catalog",
 			"extract_text",
+			"extract_text_packages",
 			"extract_texture",
 			"inspect",
 			"discovery",
@@ -264,6 +266,10 @@ export interface AssetReaderApi {
 	readonly extractProjectText: (
 		options: SavedAssetExtractionOptions
 	) => Stream.Stream<SavedAssetTextExtractionEvent, AssetReaderError>;
+	/** Requires the opt-in uasset-io v1.8 package-text capability. */
+	readonly extractProjectTextPackages?: (
+		options: SavedAssetExtractionOptions
+	) => Stream.Stream<SavedAssetPackageTextEvent, AssetReaderError>;
 	/** Streams compact Texture2D facts without generic inspection payloads. */
 	readonly extractProjectTextures: (
 		options: SavedAssetExtractionOptions
@@ -302,6 +308,7 @@ type AssetReaderTestDefaults =
 	| "catalogProgress"
 	| "configuration"
 	| "extractProjectText"
+	| "extractProjectTextPackages"
 	| "extractProjectTextures"
 	| "readBlueprint"
 	| "readLevelSequence"
@@ -555,6 +562,17 @@ function makeAssetReader(
 					scanStore,
 					decode: (result) => (result.kind === "extract_text" ? result.event : undefined)
 				});
+	const extractProjectTextPackages = (options: SavedAssetExtractionOptions) =>
+		options.paths?.length === 0
+			? Stream.empty
+			: protocolProjectionStream({
+					configuration,
+					extraction: options,
+					projection: "text_packages",
+					scanStore,
+					decode: (result) =>
+						result.kind === "extract_text_packages" ? result.event : undefined
+				});
 	const extractProjectTextures = (options: SavedAssetExtractionOptions) =>
 		options.paths?.length === 0
 			? Stream.empty
@@ -717,6 +735,7 @@ function makeAssetReader(
 		discoverAssets,
 		discoverTables,
 		extractProjectText,
+		extractProjectTextPackages,
 		extractProjectTextures,
 		readAsset,
 		readBlueprint,
@@ -824,6 +843,19 @@ export function makeAssetReaderTestLayer(service: AssetReaderTestApi): Layer.Lay
 							kind: "process",
 							operation: "extract_text",
 							message: "This test asset reader does not stub extractProjectText.",
+							path: options.projectRoot,
+							retrySafe: false
+						})
+					)),
+			extractProjectTextPackages:
+				service.extractProjectTextPackages ??
+				((options) =>
+					Stream.fail(
+						new AssetReaderError({
+							kind: "process",
+							operation: "extract_text_packages",
+							message:
+								"This test asset reader does not stub extractProjectTextPackages.",
 							path: options.projectRoot,
 							retrySafe: false
 						})
@@ -938,6 +970,28 @@ export function extractProjectText(
 	options: SavedAssetExtractionOptions
 ): Stream.Stream<SavedAssetTextExtractionEvent, AssetReaderError, AssetReader> {
 	return Stream.unwrap(Effect.map(AssetReader, (reader) => reader.extractProjectText(options)));
+}
+
+export function extractProjectTextPackages(
+	options: SavedAssetExtractionOptions
+): Stream.Stream<SavedAssetPackageTextEvent, AssetReaderError, AssetReader> {
+	return Stream.unwrap(
+		Effect.map(
+			AssetReader,
+			(reader) =>
+				reader.extractProjectTextPackages?.(options) ??
+				Stream.fail(
+					new AssetReaderError({
+						kind: "contract",
+						code: "unsupported_capability",
+						operation: "extract_text_packages",
+						message: "This AssetReader does not provide the package-text capability.",
+						path: options.projectRoot,
+						retrySafe: false
+					})
+				)
+		)
+	);
 }
 
 /** Streams compact Texture2D evidence for an explicit candidate list or a header-filtered project. */

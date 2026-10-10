@@ -1,0 +1,18 @@
+{
+	"contract": {
+		"name": "uasset-io",
+		"version": {
+			"major": 1,
+			"minor": 7
+		}
+	},
+	"limits": {
+		"concurrency": 1
+	},
+	"operation": {
+		"kind": "extract_text_packages",
+		"paths": [],
+		"projectRoot": "C:/Fixture"
+	},
+	"requestId": "package-text"
+}

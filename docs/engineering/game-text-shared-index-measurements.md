@@ -111,3 +111,123 @@ refresh margin under profiling, full package fields and Phases 4–7. No commits
 switches or stashes. Evidence is `speed-final-*.json`, `speed-profile-before-{1,10}x.json`,
 `speed-reader-{before,after,cache8,cache32}-10x.json`, `speed-refresh-profile-before-10x.json`
 and `speed-full-width-forecast.json` under `test-results/game-text-scale` (ignored).
+
+## Phase 4 reader step, incomplete package layer
+
+Recorded 2026-10-10, Node 26.11.1, release native reader. The opt-in v1.8 operation aggregates
+occurrences and coverage before transport; corpus fields and the legacy operation are preserved.
+Shared-store column encoding, package signatures, removal and cold sorting remain open. Existing
+TextCorpusService/localization/CLI/Workbench/scale consumers still use the legacy stream.
+ADR 0007 explains why the reader emits records while TypeScript owns derived storage.
+
+These measurements use explicit Git-tracked Content packages. Ignored copies from other test
+lanes are excluded, and source-only roots have an explicit empty selection. They measure native
+projection/serialization/transport rather than candidate discovery or refresh. Full NDJSON bytes
+include accepted/result/completed control frames. Wall time includes startup but excludes schema
+decoding and the corpus oracle; each capture has a 120-second deadline and 128 MiB output limit.
+Timings are individual runs without OS cache eviction. New package frames are capped at 64 MiB.
+
+| Committed fixture root                                          | Packages | Units / occurrences / gaps | Old / new bytes |    Old / new ms | Old / new frames |
+| --------------------------------------------------------------- | -------: | -------------------------: | --------------: | --------------: | ---------------: |
+| `unreal-project`                                                |       83 |                62 / 71 / 1 | 93,731 / 83,720 | 116.22 / 106.59 |         161 / 89 |
+| `legacy-unreal-project` (source only)                           |        0 |                  0 / 0 / 0 |       785 / 803 |   12.70 / 12.65 |            3 / 3 |
+| `legacy-unreal-project/Generated/4.27`                          |        3 |                27 / 33 / 1 | 24,702 / 12,908 |   14.88 / 14.67 |           43 / 9 |
+| `legacy-unreal-project/Generated/5.3`                           |        3 |                27 / 33 / 1 | 25,579 / 13,819 |   14.40 / 14.70 |           43 / 9 |
+| `unreal-427-localization` (no saved packages)                   |        0 |                  0 / 0 / 0 |       787 / 805 |   13.47 / 12.52 |            3 / 3 |
+| `perforce-map-history/revisions/baseline`                       |        7 |                  0 / 0 / 0 |   5,881 / 7,194 |   15.59 / 15.10 |          13 / 13 |
+| `perforce-map-history/revisions/add-arrival`                    |        1 |                  0 / 0 / 0 |   2,020 / 2,223 |   13.80 / 13.56 |            7 / 7 |
+| `perforce-map-history/revisions/conventional-baseline`          |        1 |                  0 / 0 / 0 |   1,959 / 2,162 |   14.17 / 14.62 |            7 / 7 |
+| `perforce-map-history/revisions/conventional-move-actor`        |        1 |                  0 / 0 / 0 |   1,965 / 2,168 |   13.88 / 14.84 |            7 / 7 |
+| `perforce-map-history/revisions/label-north`                    |        1 |                  0 / 0 / 0 |   2,020 / 2,223 |   13.90 / 14.16 |            7 / 7 |
+| `perforce-map-history/revisions/move-east`                      |        1 |                  0 / 0 / 0 |   2,014 / 2,217 |   13.69 / 13.40 |            7 / 7 |
+| `perforce-map-history/revisions/two-unclassified-package-edits` |        2 |                  0 / 0 / 0 |   2,783 / 3,171 |   14.99 / 13.49 |            8 / 8 |
+
+All twelve old/new corpus and outcome comparisons pass. Empty packages are larger because their
+record adds complete gap counters. Current and legacy text fixtures benefit from fewer envelopes.
+The reusable corpus oracle compares every unit/occurrence field and diagnostic, preserving evidence
+multiplicity. It passes at generated recipe scales 0.0001, 0.001 and 0.002. It also passes through
+the public reader on the existing generated UE 5.7 and UE 5.8 matrix fixtures: each has 62 text units
+and 71 occurrences. These are reader-record oracles; no persistent package layer has been hydrated.
+
+The projected reader output uses Context counts, prior Plan 056 byte totals and measured fixture
+sample widths. No real project or real content was accessed:
+
+| Projection input / result                             |                                Value |
+| ----------------------------------------------------- | -----------------------------------: |
+| Packages / occurrences / gaps                         |      166,518 / 1,028,205 / 4,800,000 |
+| Prior total / gap output                              |                      3.26 / 2.50 GiB |
+| Maximum retained samples                              |          499,554 (three per package) |
+| Mean raw gap sample JSON                              | 137.33 bytes (three fixture samples) |
+| Worst-width counters + empty sample field per package |                            234 bytes |
+| Retained prior non-gap output                         |                           778.24 MiB |
+| Samples, separators and counters                      |                           103.06 MiB |
+| **Projected output / reduction**                      |           **881.30 MiB / about 74%** |
+
+The estimate retains all previous non-gap output, including per-occurrence envelopes and
+diagnostics, so it claims no occurrence-grouping savings. The sample width is conditional on
+fixture content; real widths can differ. This forecast is neither a native real-project measurement
+nor an index-size acceptance result. Full scale acceptance remains unmeasured:
+
+| Package layer operation | 1×           | 10×          | Target                            |
+| ----------------------- | ------------ | ------------ | --------------------------------- |
+| Cold build / layer size | Not run      | Not run      | Actual package columns required   |
+| No-change refresh       | Not run      | Not run      | ≤5 / ≤30 s                        |
+| One-package refresh     | Not run      | Not run      | Combined package + PO ≤10 / ≤60 s |
+| Whole shared index      | Not measured | Not measured | ≤100 MiB / ≤1 GiB                 |
+
+Commands run serially with the retained Node 26 runtime on PATH, `NODE_OPTIONS=--max-old-space-size=16384`
+and `npm_config_workspace_concurrency=1`. Test TEMP/TMP point inside repository test-results.
+Only the explicitly configured UE 5.7/5.8 roots were used for live engine lanes. No retained
+scale project was regenerated; no legacy 10× run or real-project run occurred.
+
+```powershell
+cargo test --locked -p uasset-io
+cargo clippy --locked -p uasset-io --all-targets -- -D warnings
+cargo fmt --all -- --check
+pnpm --filter @ue-shed/protocol contract:generate
+pnpm --filter @ue-shed/protocol build
+pnpm --filter @ue-shed/unreal-assets build
+pnpm --filter @ue-shed/game-text build
+pnpm exec vitest run packages/protocol/src/uasset-io.test.ts scripts/package-text-record.test.ts scripts/package-text-reader.test.ts --maxWorkers=1
+pnpm exec vitest run packages/unreal-assets packages/game-text packages/localization scripts/game-text-scale.test.ts scripts/localization-import.test.ts scripts/game-text-dictionary.test.ts scripts/package-text-record.test.ts scripts/package-text-reader.test.ts apps/cli/src/index.e2e.test.ts apps/cli/src/localization-status.integration.test.ts apps/cli/src/localization-report.integration.test.ts apps/cli/src/localization-gate.integration.test.ts apps/cli/src/localization-check.integration.test.ts --maxWorkers=1
+pnpm test:uasset-engine-matrix
+node --import tsx scripts/verify-package-text-engine.ts out/uasset-engine-matrix-9IShIm
+pnpm test:localization-processes
+cargo build --locked --release -p uasset-io
+node --import tsx scripts/benchmark-package-text-reader.ts
+pnpm exec tsc -p tsconfig.scripts.json --noEmit
+pnpm exec oxfmt <changed-files>
+pnpm run check:precommit
+```
+
+| Verification command                                              |                                                                                         Passed |         Failed / skipped |
+| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------: | -----------------------: |
+| Cargo test, final                                                 |                                                                   95 (78 library + 17 process) |            0 / 1 ignored |
+| Cargo clippy / fmt check / release build                          |                                                                                 1 / 1 / 1 gate |                        0 |
+| Protocol generation + protocol/reader/game-text builds            |                                                                                     4 commands |                        0 |
+| Focused protocol/record/reader Vitest                             |                                                                                             35 |                        0 |
+| Broad requested package/scale/import/dictionary/native CLI Vitest |                                                                                            621 | 0 / 42 skipped; 13 files |
+| Native release benchmark/oracle                                   |                                                                               12 fixture roots |                        0 |
+| UE engine matrix, 5.7                                             | 1 lane; 13 native tests; WASM 23 inspection / 12 authoring / 8 compact fixtures + review gates |                        0 |
+| UE engine matrix, 5.8                                             | 1 lane; 13 native tests; WASM 23 inspection / 12 authoring / 8 compact fixtures + review gates |                        0 |
+| Final public reader corpus oracle, 5.7 / 5.8                      |                                                                                          1 / 1 |                    0 / 0 |
+| Localization processes, 5.7                                       |                                                             1 lane; seven supported operations |                        0 |
+| Localization processes, 5.8                                       |                                                             1 lane; seven supported operations |                        0 |
+| Final scripts typecheck                                           |                                                                                      1 command |                        0 |
+| Changed-file oxfmt                                                |                                                                    All supported changed files |                        0 |
+| UAsset / Effect architecture checks                               |                                                                                     1 / 1 gate |                        0 |
+| Final precommit                                                   |                                           6 stages; 43 architecture tests; 4 contract packages |                        0 |
+
+Initial explicit fixture selection, sample mutation, type-narrowing, lint and encoding failures
+were corrected before final passing checks. UE 4.27/5.3 live matrix
+checks were skipped because those installations are outside this run's authorization; their
+committed saved fixtures were verified. Full `pnpm check` was not run. Engine-matrix fixtures are
+repository-owned disposable copies; the final native reader oracle ran after the serialization-cap
+change against both already-generated fixtures.
+
+Remaining: signature refresh/removal, TextProperty candidate policy, shared-domain occurrence IDs,
+one cold sort, layer oracle and all scale measurements. The existing String Table exception has
+not changed: committed `ST_Game` has text but no TextProperty header name, so strict TextProperty-only
+selection conflicts with oracle equality. `phase4-reader.json`, `phase4-engine-text.json`,
+`phase4-vitest.log`, `phase4-localization-processes.log` and `phase4-precommit.log` retain ignored
+evidence under test-results. Matrix results are retained under repository `out/`.

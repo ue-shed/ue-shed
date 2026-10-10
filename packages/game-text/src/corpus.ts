@@ -7,6 +7,7 @@ import {
 	type SavedAssetInspection,
 	type SavedAssetScan,
 	type SavedAssetTextExtractionEvent,
+	type SavedAssetPackageTextEvent,
 	type SavedAssetTextOccurrence,
 	SavedAssetTextCoverageGap,
 	type SavedProperty,
@@ -617,8 +618,28 @@ function gapMessage(total: number, counts: TextCoverageGapCounts): string {
 function foldTextExtractionEvent(
 	projectRoot: string,
 	accumulator: TextExtractionAccumulator,
-	event: SavedAssetTextExtractionEvent
+	event: SavedAssetTextExtractionEvent | SavedAssetPackageTextEvent
 ): TextExtractionAccumulator {
+	if (event.event === "text_package_record") {
+		const packageFile = relative(projectRoot, event.path);
+		for (const occurrence of event.occurrences) {
+			accumulator.occurrences.push(textOccurrenceFromExtraction({ occurrence, packageFile }));
+		}
+		const total = Object.values(event.gapCounts).reduce((sum, count) => sum + count, 0);
+		if (total > 0) {
+			accumulator.coverageGaps.set(packageFile, {
+				counts: { ...event.gapCounts },
+				samples: [...event.gapSamples],
+				total
+			});
+			accumulator.unsupportedTextProperties += total;
+		}
+		accumulator.packageCoverage.push({ packageFile, status: event.status });
+		accumulator.inspectedPackages += 1;
+		if (event.status === "partial")
+			accumulator.partialPackages.set(packageFile, event.decodeErrors);
+		return accumulator;
+	}
 	if (event.event === "text_occurrence") {
 		accumulator.occurrences.push(
 			textOccurrenceFromExtraction({
@@ -803,6 +824,21 @@ function buildTextCorpusFromExtraction(options: {
 		packageCoverage,
 		diagnostics
 	};
+}
+
+/** Bounded package inputs may be hydrated for the legacy oracle and explicit small callers. */
+export function textCorpusFromExtractionEvents(options: {
+	readonly projectRoot: string;
+	readonly discoveredPackages?: number;
+	readonly events: Iterable<SavedAssetTextExtractionEvent | SavedAssetPackageTextEvent>;
+}): TextCorpus {
+	const accumulator = emptyTextExtractionAccumulator();
+	for (const event of options.events)
+		foldTextExtractionEvent(options.projectRoot, accumulator, event);
+	return buildTextCorpusFromExtraction({
+		accumulator,
+		discoveredPackages: options.discoveredPackages ?? 0
+	});
 }
 
 function extractTextCorpusWith(

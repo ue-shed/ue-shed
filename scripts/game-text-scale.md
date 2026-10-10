@@ -164,3 +164,35 @@ The speed pass runs precommit with the Node 26 directory prepended to `PATH`. It
 smoke is `& $node26 test-results/game-text-scale/speed-compiled-smoke.mjs`: three committed UE 5.8
 localization files imported through emitted JS with three parser workers and zero probes. The
 ignored smoke script belongs to this local evidence run, rather than the portable gate.
+
+Plan 057 Phase 4 reader measurements use explicit Git-tracked package paths, including committed
+map-history revisions. Source-only projects with no committed Content packages use an empty
+selection. This isolates aggregation/transport from candidate discovery and avoids ignored assets
+left by other repository test lanes. Run with Node 26 after building protocol, unreal-assets,
+game-text and the release native reader, with no other heavy process active:
+
+```powershell
+$env:NODE_OPTIONS = "--max-old-space-size=16384"
+cargo build --locked --release -p uasset-io
+node --import tsx scripts/benchmark-package-text-reader.ts
+pnpm exec vitest run scripts/package-text-record.test.ts scripts/package-text-reader.test.ts --maxWorkers=1
+# Use the actual directory printed by test:uasset-engine-matrix:
+node --import tsx scripts/verify-package-text-engine.ts out/uasset-engine-matrix-<run>
+```
+
+The benchmark writes `test-results/game-text-scale/phase4-reader.json`. Process milliseconds end
+before schema decoding and the corpus oracle; bytes include the complete NDJSON stream and its
+control frames. Each fixture process has a 128 MiB capture/output cap and a 120-second deadline.
+Timings are single runs without OS cache eviction. The projection keeps all prior non-gap bytes,
+adds worst-width counters for every package and up to three samples per package using measured
+fixture sample widths. It takes no occurrence-grouping credit and does not measure real content.
+The engine verifier only accepts a repository `out/` matrix directory and reads its existing
+fixtures through the public old/new readers. It does not regenerate projects.
+
+`compareTextCorpora` in `package-text-oracle.test-support.ts` matches units by ID and compares every
+unit/occurrence field, coverage and diagnostics. Occurrences, package coverage and diagnostics
+are multisets; duplicate evidence remains significant. Reports are bounded, while difference
+counts are complete. Phase 5 can hydrate its layer into a small fixture corpus and reuse this
+helper alongside the localization-join oracle. `packageTextRecordsFromEvents` retains pending
+occurrences for small-input migration/tests and must not be used at 10×. Signature refresh,
+persistent package columns and their 1×/10× benchmark are unfinished.

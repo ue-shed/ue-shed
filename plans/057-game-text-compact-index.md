@@ -10,12 +10,14 @@
 
 ## Status
 
-- **State**: IN PROGRESS. Phases 1–3 include lazy sections, streaming publication,
+- **State**: IN PROGRESS. Phase 4's opt-in package-record reader and corpus oracle are implemented;
+  signature refresh, candidate-only package columns and 1×/10× layer measurements remain unfinished.
+  Phases 1–3 include lazy sections, streaming publication,
   localization imports and the integrated A64 project/target string store. The measured 1× index
-  is 29.00 MiB. Immutable ranks, typed cold sorting, exact binary GUID recovery and previous-file
+  is 32.74 MiB including the package proxy. Immutable ranks, typed cold sorting, exact binary GUID recovery and previous-file
   reuse are implemented. Phase 3 evidence below records acceptance misses as well as passes;
   import throughput and Phases 4–7 remain open. The committed UE 5.7/5.8 localization fixture oracles pass;
-  this storage revision changes no Unreal API, native reader, UAsset parser or integration.
+  Phase 4 adds an opt-in native reader contract; Unreal APIs and the UAsset parser are unchanged.
 - **Priority**: P1
 - **Effort**: XL
 - **Risk**: HIGH. This replaces how every Game Text and localization host holds its data, and adds
@@ -227,7 +229,9 @@ join must produce exactly the same line states, unknown reasons, problems, key c
   ADR 0007's versioning, and keep the existing event stream until no consumer uses it.
 - Keyed by package signature; only `TextProperty` candidates are read; a refresh re-reads only
   changed packages.
-- Measure full and no-change refreshes at 1× and on the real project.
+- Measure cold, no-change and one-package refreshes at 1× and 10× using the retained generated
+  saved-text stream. Measure old/new native output on committed fixtures. No real-project scan
+  occurs in this phase; the owner confirms real-project behavior after Phase 7.
 
 ## Phase 5: Columnar join
 
@@ -542,3 +546,80 @@ No live editor/UAsset matrix or full `pnpm check`: no engine API, UAsset parser,
 changed. Remaining work: first-page locality, bulk reference gaps and refresh profiling margin,
 complete package fields and Phases 4–7. This passes cold/ordinary-refresh/size acceptance, not
 every reader reference. [Stage profiles and commands](../docs/engineering/game-text-shared-index-measurements.md).
+
+### Phase 4: package-record reader and corpus oracle (partial)
+
+Recorded 2026-10-10, Windows / Node 26.11.1: a completed reader/protocol step, with columns
+unfinished. No retained scale project was regenerated or real project read. Heavy lanes ran
+serially with 16,384 MiB Node heaps; sampled aggregate working set stayed below 20 GB.
+
+**Decision.** Native extraction aggregates one record per decoded package over the existing
+protocol. TypeScript owns corpus normalization, shared domains, sorting and publication;
+native shared-store writes would duplicate these formats and couple IO to product storage.
+`extract_text_packages` requires negotiated **uasset-io v1.8**;
+older minors reject it before streaming. The old `extract_text` request/events remain unchanged.
+Each record retains every occurrence field, status, exact counts for all four gap reasons and
+the decode-error count used by corpus diagnostics. It retains at most three samples, preserving
+the first gap and preferring unsupported histories as today's fold does. Serialization rejects
+frames above 64 MiB before emission. ADR 0007 and reader docs record the decision; protocol,
+reader, game-text and native distribution packages have changesets.
+
+**Consumers.** TextCorpusService, localization/CLI and Workbench consumers, scale replay and the
+diagnostic native text command still use the old stream. The public reader is opt-in; custom
+readers keep their existing API. Small old/new inputs hydrate the same corpus. The event-to-record
+test adapter retains pending occurrences and must not replay 10× inputs.
+
+**Oracle.** The reusable `scripts/package-text-oracle.test-support.ts` compares units by ID,
+every occurrence field, coverage, package coverage and diagnostics. Evidence arrays are multisets,
+including duplicates; reports are bounded while counts remain complete. Mutation, ordering,
+partial/failure and unfinished-stream tests pass. Three generated recipe
+scales (0.0001, 0.001, 0.002), all 12 committed fixture roots and both generated engine fixtures
+match the legacy corpus with zero differences. Layer hydration/oracle remains unfinished.
+
+**Native output.** Release reader; explicit Git-tracked package paths exclude ignored test
+assets and isolate projection/transport from candidate discovery. Bytes include control frames;
+milliseconds measure the process before schema decoding/oracle. Single timings, no cache eviction.
+
+| Fixture selection                   | Packages | Old / new bytes |    Old / new ms | Old / new frames |
+| ----------------------------------- | -------: | --------------: | --------------: | ---------------: |
+| Current Unreal fixture              |       83 | 93,731 / 83,720 | 116.22 / 106.59 |         161 / 89 |
+| Legacy 4.27 saved fixture           |        3 | 24,702 / 12,908 |   14.88 / 14.67 |           43 / 9 |
+| Legacy 5.3 saved fixture            |        3 | 25,579 / 13,819 |   14.40 / 14.70 |           43 / 9 |
+| Seven map-history revisions, summed |       14 | 18,642 / 21,358 |  100.02 / 99.17 |          56 / 56 |
+| Two source-only roots, summed       |        0 |   1,572 / 1,608 |   26.17 / 25.17 |            6 / 6 |
+
+Records reduce repeated occurrence envelopes; empty-text packages add coverage fields. For the
+Context's 166,518 packages, 1,028,205 occurrences and 4.8 million gaps, at most 499,554 samples
+replace 4.8 million gap events. Using prior Plan 056's 3.26 GiB total / 2.5 GiB gaps, fixture sample
+width 137.33 bytes and 234 bytes of worst-width counters per package gives **881.30 MiB** projected
+output, about **74% less**. This retains all 0.76 GiB of prior non-gap output and takes no occurrence
+grouping credit. Fixture widths are an assumption, not a real-content measurement or size pass.
+
+| Package-layer acceptance                         | 1×           | 10×          | Result                                |
+| ------------------------------------------------ | ------------ | ------------ | ------------------------------------- |
+| Cold build / actual layer size                   | Not run      | Not run      | Column layer absent                   |
+| No-change refresh, ≤5 / ≤30 s                    | Not run      | Not run      | Signature refresh absent              |
+| One-package refresh, combined target ≤10 / ≤60 s | Not run      | Not run      | Not established                       |
+| Whole index, ≤100 MiB / ≤1 GiB                   | Not measured | Not measured | Phase 3 proxy is not Phase 4 evidence |
+
+**Verification.** Final `cargo test --locked -p uasset-io`: **95 passed / 0 failed / 1 ignored**
+(78 library + 17 protocol-process tests). Clippy with `--all-targets -- -D warnings` and Rust fmt
+check pass. Focused protocol/record/native-reader Vitest: **35/0**; requested package, scale/import,
+dictionary and native-reader CLI suites: **621/0**, 42 skips in 13 environment-gated files.
+Release build and fixture benchmarks pass. Final precommit passes **6 stages/0**,
+including **43/0** architecture tests and four contract packages. Commands are recorded in the
+[measurement guide](../docs/engineering/game-text-shared-index-measurements.md).
+`pnpm test:uasset-engine-matrix`: **UE 5.7: 1 lane/0 failures; UE 5.8: 1 lane/0 failures**;
+each native coverage suite has 13 passing tests plus successful WASM and saved-review checks.
+The final reader corpus oracle passes on each engine's existing matrix fixture (62 units / 71
+occurrences). `pnpm test:localization-processes`: **UE 5.7: 1 lane/0; UE 5.8: 1 lane/0**, covering
+seven operations, audit, cancellation and PO/review/key carry. Live 4.27/5.3 checks were unavailable;
+committed saved fixtures were tested. Initial lint/type/fixture-selection failures were fixed.
+Full `pnpm check` was not run.
+
+**Remaining.** Implement signature-keyed package refresh/removal and shared-domain ID columns,
+one cold sort, then generated 1×/10× size/cold/no-change/one-package measurements and the layer
+oracle. Candidate policy needs resolution: the existing selector includes String Table exports;
+committed `ST_Game` holds text but its header does not name `TextProperty`. Strict TextProperty-only
+selection would lose that text and fail the required oracle. Existing selection is unchanged.
+Ignored evidence is `test-results/game-text-scale/phase4-*`; matrix output is under repository `out/`.

@@ -248,3 +248,10 @@ APIs never write PO, manifests, archives, locres or locmeta. Workbench policy/re
 - Required: a project root containing saved packages and a configured saved-asset reader.
 - Optional: a separate host capability may locate a selected occurrence in Unreal.
 - Not required: Workbench, Perforce, a running editor, or any UE Shed Unreal plugin.
+
+Plan 057's opt-in package-text reader preserves today's occurrence fields and aggregated coverage.
+`textCorpusFromExtractionEvents` can hydrate either legacy events or v1.8 package records for
+small callers and semantic oracles. `packageTextRecordsFromEvents` is a small-input migration/test
+adapter; it retains pending occurrences and must not replay the 10× stream in memory. Production
+native aggregation happens before transport. TextCorpusService still uses the legacy reader.
+Signature refresh, shared package ID columns and scale acceptance remain unfinished.

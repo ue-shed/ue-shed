@@ -40,6 +40,27 @@ fn base_request(operation: Value) -> Value {
     })
 }
 
+#[test]
+fn package_text_requires_minor_eight_and_preserves_empty_selection() {
+    let root =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/unreal-project");
+    let operation =
+        serde_json::json!({ "kind": "extract_text_packages", "paths": [], "projectRoot": root });
+    let request = base_request(operation);
+    let (success, events, stderr) = run_request(request.clone());
+    assert!(!success);
+    assert!(events.is_empty());
+    assert!(stderr.contains("v1.8"));
+    let mut request = request;
+    request["contract"]["version"]["minor"] = serde_json::json!(8);
+    let (success, events, stderr) = run_request(request);
+    assert!(success, "{stderr}");
+    assert_valid_events(&events);
+    assert_eq!(events[1]["result"]["kind"], "extract_text_packages");
+    assert_eq!(events[1]["result"]["event"]["scannedAssets"], 0);
+    assert_eq!(events.last().unwrap()["kind"], "completed");
+}
+
 fn write_session_request(writer: &mut impl Write, request: &Value) {
     serde_json::to_writer(&mut *writer, request).expect("session request serializes");
     writer.write_all(b"\n").expect("session request writes");

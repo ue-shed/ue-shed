@@ -93,6 +93,11 @@ pub enum Operation {
         #[serde(flatten)]
         selection: ProjectSelection,
     },
+    #[serde(rename = "extract_text_packages")]
+    ExtractTextPackages {
+        #[serde(flatten)]
+        selection: ProjectSelection,
+    },
     #[serde(rename = "extract_texture")]
     ExtractTexture {
         #[serde(flatten)]
@@ -250,6 +255,8 @@ pub enum OperationKind {
     Scan,
     #[serde(rename = "extract_text")]
     ExtractText,
+    #[serde(rename = "extract_text_packages")]
+    ExtractTextPackages,
     #[serde(rename = "extract_texture")]
     ExtractTexture,
     #[serde(rename = "saved_world")]
@@ -607,7 +614,16 @@ fn validate_request(request: &Request) -> Result<(), ProtocolError> {
             }
             Ok(())
         }
-        Operation::ExtractText { selection } | Operation::ExtractTexture { selection } => {
+        Operation::ExtractText { selection }
+        | Operation::ExtractTexture { selection }
+        | Operation::ExtractTextPackages { selection } => {
+            if matches!(request.operation, Operation::ExtractTextPackages { .. })
+                && request.contract.version.minor < 8
+            {
+                return Err(ProtocolError(
+                    "extract_text_packages requires uasset-io v1.8".to_owned(),
+                ));
+            }
             validate_non_empty(&selection.project_root, "projectRoot")?;
             validate_optional_paths(&selection.paths)
         }
@@ -780,6 +796,16 @@ fn validate_event(event: &Event) -> Result<(), ProtocolError> {
 
 fn validate_result_frame(result: &ResultFrame) -> Result<(), ProtocolError> {
     match result {
+        ResultFrame::ExtractTextPackages {
+            event: crate::protocol_result::SavedAssetPackageTextEvent::Package { record },
+        } => {
+            if record.schema_version != 1 || record.gap_samples.len() > 3 {
+                return Err(ProtocolError(
+                    "invalid package-text version or sample bound".into(),
+                ));
+            }
+            Ok(())
+        }
         ResultFrame::Blueprint { blueprint } => {
             if blueprint.schema_version != 2 {
                 return Err(ProtocolError(
@@ -1013,6 +1039,10 @@ mod tests {
 
     #[test]
     fn accepts_shared_valid_fixtures() {
+        assert!(decode_request(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/extract-text-packages-request-old-minor.json")).is_err());
+        decode_request(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/extract-text-packages-request.json")).unwrap();
+        decode_event(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/extract-text-packages-result-event.json")).unwrap();
+        assert!(decode_event(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/extract-text-packages-unbounded-samples.json")).is_err());
         decode_request(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/level-sequence-request.json")).unwrap();
         decode_event(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/level-sequence-result-event.json")).unwrap();
         decode_request(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/project-index-count-request.json")).unwrap();

@@ -44,7 +44,9 @@ pub struct SavedWorldPackageError {
     /// `skipped_property` (export decoded with raw property values).
     pub category: String,
     pub detail: String,
-    /// Whether an actor export was lost: the failed export is an actor, or the whole package.
+    /// Whether an actor may be missing. True for a failed level child that is not a known
+    /// non-actor (class unknown to the reader counts as possible), and by convention for a package
+    /// that could not be read at all. Always false for `skipped_property`.
     #[serde(rename = "actorDropped")]
     pub actor_dropped: bool,
 }

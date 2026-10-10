@@ -100,8 +100,9 @@ export const SavedWorldPackageError = Schema.Struct({
 	category: Schema.String,
 	detail: Schema.String,
 	/**
-	 * Whether an actor may have been lost: the failed export is an actor, or the whole package
-	 * failed. Always false for `skipped_property`.
+	 * Whether an actor may be missing: a failed level child that is not a known non-actor (an
+	 * unclassifiable class counts as possible), or, by convention, a package that could not be
+	 * read at all. Always false for `skipped_property`.
 	 */
 	actorDropped: Schema.Boolean
 });

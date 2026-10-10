@@ -21,7 +21,7 @@ use uasset_parser::asset::{AssetDecodeContext, AssetErrorKind, decode_export};
 use uasset_parser::package::{
     Export, ObjectPath, Package, PackageError, PackageErrorKind, PackageIndex,
 };
-use uasset_parser::schema::embedded_source_model;
+use uasset_parser::schema::{SchemaProvider, embedded_source_model};
 
 use super::scanner;
 use super::{
@@ -1635,7 +1635,8 @@ struct SavedWorldPackageRead {
 }
 
 impl SavedWorldPackageRead {
-    /// A package that could not be read at all: every actor it holds is missing.
+    /// A package that could not be read at all. Its contents are unknown, so by convention it is
+    /// reported as possibly dropping an actor (every external actor package holds one).
     fn failed(package: String, code: &str, detail: String) -> Self {
         Self {
             errors: vec![SavedWorldPackageError {
@@ -1706,10 +1707,37 @@ fn export_error_category(kind: AssetErrorKind) -> &'static str {
     }
 }
 
-/// Whether `export` is an actor: its outer is a `Level` (the persistent level of the map, or of
-/// the map an external actor package belongs to).
-fn is_level_actor_export(package: &Package, export: &Export) -> bool {
-    outer_is_level(package, export)
+/// Classes Unreal saves directly under a `Level` (or under its brush model) that are not actors:
+/// UE 5.7/5.8 `UWorld::InitializeNewWorld` and `AddDefaultBrush` create `UModel`s with the level
+/// as outer, `ULevel::UpdateModelComponents` creates `UModelComponent`s, and a model owns `UPolys`.
+const NON_ACTOR_LEVEL_CHILD_CLASSES: &[&str] = &[
+    "/Script/Engine.Model",
+    "/Script/Engine.ModelComponent",
+    "/Script/Engine.Polys",
+];
+
+/// Whether a failed export may have been an actor, for `packageErrors.actorDropped`.
+///
+/// Actors are saved with a `Level` as their outer, so anything else is not an actor. Known
+/// non-actor level children are rejected, and a class the source model knows answers by its
+/// inheritance. A level child of a class the reader cannot classify (typically a project or
+/// Blueprint class) is conservatively reported as a possibly dropped actor: the flag means "an
+/// actor may be missing", not proof that one was.
+fn may_be_actor_export(package: &Package, export: &Export) -> bool {
+    if !outer_is_level(package, export) {
+        return false;
+    }
+    let Some(class_path) = export.class_path.as_ref() else {
+        return true;
+    };
+    if NON_ACTOR_LEVEL_CHILD_CLASSES.contains(&class_path.as_str()) {
+        return false;
+    }
+    let schemas = embedded_source_model();
+    if schemas.find_class(class_path).is_some() {
+        return schemas.class_is_a(class_path, "/Script/Engine.Actor");
+    }
+    true
 }
 
 /// Whether `export`'s outer is a `Level` export or import.
@@ -1777,7 +1805,7 @@ fn read_saved_world_package(
                     export: Some(export.object_path.to_string()),
                     category: export_error_category(error.kind()).to_owned(),
                     detail: error.message().to_owned(),
-                    actor_dropped: is_level_actor_export(&package, export),
+                    actor_dropped: may_be_actor_export(&package, export),
                 });
                 failed_exports.push(export.object_path.clone());
             }
@@ -1816,6 +1844,7 @@ mod tests {
     use crate::cancellation::CancellationToken;
     use crate::protocol::Request;
     use crate::protocol_result::SavedWorldActorDecode;
+    use uasset_parser::package::ObjectPath;
 
     #[test]
     fn legacy_text_protocol_frames_preserve_occurrences_and_each_gap_reason() {
@@ -2106,6 +2135,109 @@ mod tests {
             };
             assert_eq!(actor.decode, Some(expected), "{}", actor.actor_path);
         }
+    }
+
+    #[test]
+    fn failed_level_models_are_not_reported_as_dropped_actors() {
+        let map = "Fixture/Cameras/L_CameraLoad";
+        let (project_root, packages) = copy_fixture_map(map, "models");
+        let [map_file] = packages.as_slice() else {
+            panic!("a conventional map is one package");
+        };
+        let package = read_package(map_file);
+        let level_child = |class: &str| {
+            package
+                .exports
+                .iter()
+                .filter(|export| {
+                    super::outer_is_level(&package, export)
+                        && export.class_path.as_ref().map(|path| path.as_str()) == Some(class)
+                        && export.serial_size >= 8
+                })
+                .collect::<Vec<_>>()
+        };
+        let models = level_child("/Script/Engine.Model");
+        let model_components = level_child("/Script/Engine.ModelComponent");
+        assert!(!models.is_empty(), "the fixture level saves its BSP models");
+        let actor = package
+            .exports
+            .iter()
+            .find(|export| {
+                super::outer_is_level(&package, export)
+                    && export
+                        .class_path
+                        .as_ref()
+                        .is_some_and(|path| path.as_str().ends_with("Actor"))
+                    && export.serial_size >= 8
+            })
+            .expect("a level actor");
+        for export in models.iter().chain(&model_components).chain([&actor]) {
+            overwrite_export_head(map_file, export);
+        }
+        let not_actors: Vec<String> = models
+            .iter()
+            .chain(&model_components)
+            .map(|export| export.object_path.to_string())
+            .collect();
+        let actor_path = actor.object_path.to_string();
+
+        let world = read_fixture_world(&project_root, map).world;
+        for path in &not_actors {
+            let error = world
+                .package_errors
+                .iter()
+                .find(|error| error.export.as_deref() == Some(path.as_str()))
+                .unwrap_or_else(|| panic!("no package error for {path}"));
+            assert!(error.category.starts_with("export_"), "{}", error.category);
+            assert!(!error.actor_dropped, "{path} is not an actor");
+        }
+        let lost = world
+            .package_errors
+            .iter()
+            .find(|error| error.export.as_deref() == Some(actor_path.as_str()))
+            .expect("actor error");
+        assert!(lost.actor_dropped);
+    }
+
+    #[test]
+    fn actor_classification_rejects_known_non_actors_and_keeps_unknown_level_children() {
+        let package = read_package(
+            &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../fixtures/unreal-project/Content/Fixture/Cameras/L_CameraLoad.umap"),
+        );
+        let level_child = package
+            .exports
+            .iter()
+            .find(|export| super::outer_is_level(&package, export))
+            .expect("a level child")
+            .clone();
+        let with_class = |class: &str| {
+            let mut export = level_child.clone();
+            export.class_path = Some(ObjectPath::new(class));
+            export
+        };
+        for class in super::NON_ACTOR_LEVEL_CHILD_CLASSES {
+            assert!(
+                !super::may_be_actor_export(&package, &with_class(class)),
+                "{class}"
+            );
+        }
+        // The source model knows `Actor`, and an unclassifiable project class stays possible.
+        assert!(super::may_be_actor_export(
+            &package,
+            &with_class("/Script/Engine.Actor")
+        ));
+        assert!(super::may_be_actor_export(
+            &package,
+            &with_class("/Script/Project.MysteryActor")
+        ));
+        // Anything not saved under a level is never an actor.
+        let nested = package
+            .exports
+            .iter()
+            .find(|export| !super::outer_is_level(&package, export))
+            .expect("a nested export");
+        assert!(!super::may_be_actor_export(&package, nested));
     }
 
     #[test]

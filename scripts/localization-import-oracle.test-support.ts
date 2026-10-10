@@ -15,7 +15,7 @@ import {
 	decodeLocalizationSnapshot,
 	type LocalizationFileImportRequest
 } from "../packages/game-text/src/localization-import.ts";
-import { SnapshotStore, snapshotStoreNodeLayer } from "../packages/game-text/src/snapshot-store.ts";
+import { SharedIndex, sharedIndexNodeLayer } from "../packages/game-text/src/shared-index.ts";
 
 /** Reusable parser oracle for any small committed or generated localization file. */
 export async function expectLocalizationImportMatchesParser(
@@ -39,8 +39,9 @@ export async function expectLocalizationImportMatchesParser(
 	const decoded = await Effect.runPromise(
 		Effect.scoped(
 			Effect.gen(function* () {
-				const store = yield* SnapshotStore;
-				const reader = yield* store.open();
+				const store = yield* SharedIndex;
+				const index = yield* store.open();
+				const reader = yield* index.layer(imported.key);
 				const entries: unknown[] = [];
 				const ordinals: number[] = [];
 				let start = 0;
@@ -64,10 +65,10 @@ export async function expectLocalizationImportMatchesParser(
 			})
 		).pipe(
 			Effect.provide(
-				snapshotStoreNodeLayer({
+				sharedIndexNodeLayer({
 					cacheRoot: request.cacheRoot,
 					projectKey: resolve(request.projectRoot),
-					targetKey: `localization-file:${imported.key}`
+					targetKey: request.sharedTargetKey ?? "localization"
 				})
 			)
 		)

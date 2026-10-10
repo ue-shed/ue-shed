@@ -86,7 +86,12 @@ const hasCode = (cause: unknown, code: string) =>
 	cause instanceof Error && "code" in cause && cause.code === code;
 
 /** Bound reads through the opened handle, including growth after stat. Never readFile an input. */
-async function readBounded(path: string, maximum: number, section: string) {
+async function readBounded(
+	path: string,
+	maximum: number,
+	section: string,
+	onRead?: (bytes: number) => void
+) {
 	const handle = await open(path, "r");
 	try {
 		const size = (await handle.stat()).size;
@@ -102,6 +107,7 @@ async function readBounded(path: string, maximum: number, section: string) {
 				position
 			);
 			if (bytesRead === 0) throw snapshotFailure(section, "File truncated during read");
+			onRead?.(bytesRead);
 			position += bytesRead;
 		}
 		const extra = new Uint8Array(1);
@@ -241,6 +247,8 @@ export interface SnapshotStoreOptions {
 	readonly cacheRoot: string;
 	readonly projectKey: string;
 	readonly targetKey: string;
+	/** Physical read instrumentation, including directories and persisted verification. */
+	readonly onRead?: (bytes: number) => void;
 	/** Deterministic fault injection at the two rename boundaries; useful for process-crash tests. */
 	readonly beforeRename?: (kind: "snapshot" | "manifest") => Promise<void>;
 }
@@ -296,7 +304,8 @@ function makeNodeLayer(options: SnapshotStoreOptions): Layer.Layer<SnapshotStore
 			bytes = await readBounded(
 				join(directory, "manifest.json"),
 				maximumManifestBytes,
-				"manifest"
+				"manifest",
+				options.onRead
 			);
 		} catch (cause) {
 			if (hasCode(cause, "ENOENT")) return null;
@@ -325,7 +334,10 @@ function makeNodeLayer(options: SnapshotStoreOptions): Layer.Layer<SnapshotStore
 		try {
 			return {
 				manifest: value,
-				file: await openSnapshotFile(join(directory, value.physicalSnapshot))
+				file: await openSnapshotFile(
+					join(directory, value.physicalSnapshot),
+					options.onRead ? { onRead: options.onRead } : undefined
+				)
 			};
 		} catch (cause) {
 			if (hasCode(cause, "ENOENT"))
@@ -517,7 +529,10 @@ function makeNodeLayer(options: SnapshotStoreOptions): Layer.Layer<SnapshotStore
 										await options.beforeRename?.("snapshot");
 										await rename(temporary, snapshotPath);
 										await syncDirectory(directory);
-										const persisted = await openSnapshotFile(snapshotPath);
+										const persisted = await openSnapshotFile(
+											snapshotPath,
+											options.onRead ? { onRead: options.onRead } : undefined
+										);
 										try {
 											await persisted.verify();
 										} finally {

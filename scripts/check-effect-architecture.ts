@@ -55,6 +55,9 @@ const approvedRuntimeExits = new Set([
 	"packages/unreal-assets/src/protocol-transport.ts"
 ]);
 const approvedPromiseAdapters = new Set([
+	// Shared immutable string segments and ID layers adapt positioned Node IO below the Effect store.
+	"packages/game-text/src/shared-string-file.ts",
+	"packages/game-text/src/shared-index.ts",
 	// Localization import owns bounded stat/hash/parse IO behind scoped Effect operations.
 	"packages/game-text/src/localization-import.ts",
 	// Column producers adapt bounded spill blocks to the snapshot writer's Promise load port.

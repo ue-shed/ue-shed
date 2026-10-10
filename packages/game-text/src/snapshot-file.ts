@@ -52,7 +52,13 @@ export function snapshotColumnsSource(columns: readonly SnapshotColumn[]): Snaps
 		columns: columns.map(({ values, ...column }) => ({ ...column, load: async () => values }))
 	};
 }
-async function readAt(handle: FileHandle, length: number, position: number, section: string) {
+async function readAt(
+	handle: FileHandle,
+	length: number,
+	position: number,
+	section: string,
+	onRead?: (bytes: number) => void
+) {
 	const bytes = new Uint8Array(length);
 	for (let offset = 0; offset < length; ) {
 		const { bytesRead } = await handle.read(
@@ -62,6 +68,7 @@ async function readAt(handle: FileHandle, length: number, position: number, sect
 			position + offset
 		);
 		snapshotCheck(bytesRead > 0, section, "File truncated during positioned read");
+		onRead?.(bytesRead);
 		offset += bytesRead;
 	}
 	return bytes;
@@ -179,7 +186,11 @@ export interface SnapshotFileReader {
 /** Caller owns the handle lifetime; the Effect store binds it to a Scope. */
 export async function openSnapshotFile(
 	path: string,
-	options: { readonly allowLegacy?: boolean; readonly bulkReadBytes?: number } = {}
+	options: {
+		readonly allowLegacy?: boolean;
+		readonly bulkReadBytes?: number;
+		readonly onRead?: (bytes: number) => void;
+	} = {}
 ): Promise<SnapshotFileReader> {
 	const handle = await open(path, "r");
 	let closed = false;
@@ -190,13 +201,13 @@ export async function openSnapshotFile(
 			"header",
 			"File length exceeds cap"
 		);
-		const header = await readAt(handle, 48, 0, "header");
+		const header = await readAt(handle, 48, 0, "header", options.onRead);
 		const readOptions = { ...codecOptions, ...options };
 		const length = snapshotDirectoryLength(header, readOptions);
 		snapshotCheck(length <= size, "directory", "Truncated directory");
 		const bytes = new Uint8Array(length);
 		bytes.set(header);
-		bytes.set(await readAt(handle, length - 48, 48, "directory"), 48);
+		bytes.set(await readAt(handle, length - 48, 48, "directory", options.onRead), 48);
 		const directory = decodeSnapshotDirectory(bytes, size, readOptions);
 		const entry = (name: string) => {
 			snapshotCheck(!closed, name, "Reader scope is closed");
@@ -231,7 +242,8 @@ export async function openSnapshotFile(
 				handle,
 				snapshotAligned(value.storedLength),
 				value.offset,
-				name
+				name,
+				options.onRead
 			);
 			checkPadding(value, stored);
 			return decodeSnapshotSection(
@@ -356,7 +368,7 @@ export async function openSnapshotFile(
 					const end =
 						blocks[last - 1]!.offset + snapshotAligned(blocks[last - 1]!.storedLength);
 					let tick = performance.now();
-					const stored = await readAt(handle, end - begin, begin, domain);
+					const stored = await readAt(handle, end - begin, begin, domain, options.onRead);
 					timings.readMs += performance.now() - tick;
 					timings.storedBytes += stored.length;
 					timings.readBatches++;

@@ -47,6 +47,9 @@ upcoming persistent corpus layers; current query hosts still use the in-memory m
 [snapshot engineering guide](../../docs/engineering/game-text-snapshots.md) for the format, caps,
 immutable publication and recovery behavior. `reader.domain()` bulk-loads one source, identity,
 translation or path domain; `reader.strings()` keeps page reads limited to touched blocks.
+`SharedIndex` with `sharedIndexNodeLayer` stores one deduplicated string ID space per project and
+target. Localization imports use independent content keys, immutable string segments and atomic
+generation publication; compaction remaps active layers while existing readers retain their handles.
 
 Search pages include fixed-size `counts` for the current source query, capability, review filter,
 and `withoutNotes` toggle. `counts.all` equals the page's full `total`, independent of pagination.

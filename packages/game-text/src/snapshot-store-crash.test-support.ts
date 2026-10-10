@@ -25,6 +25,8 @@ await Effect.runPromise(
 				targetKey: "test-target",
 				beforeRename: async (kind) => {
 					if (kind === "manifest") {
+						// An unresolved Promise alone does not keep Node alive at the crash barrier.
+						process.channel?.ref();
 						process.send?.("before-rename");
 						await new Promise<void>(() => {});
 					}

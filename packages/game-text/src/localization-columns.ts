@@ -516,7 +516,7 @@ export function localizationColumnsBuilder(
 
 /** Explicit bounded hydration for tests and consumers; ordinal restores PO parser order. */
 export const decodeLocalizationSnapshot = Effect.fn("LocalizationSnapshot.decode")(function* (
-	reader: SnapshotReader,
+	reader: Pick<SnapshotReader, "section" | "strings">,
 	start = 0,
 	maximum = 50
 ) {

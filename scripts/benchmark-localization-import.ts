@@ -40,7 +40,9 @@ if (!values.project || !values.cache || !values.output)
 const project = repositoryPath(values.project),
 	cache = repositoryPath(values.cache),
 	output = repositoryPath(values.output);
-const mode = Schema.decodeUnknownSync(Schema.Literals(["files", "target", "size"]))(values.mode);
+const mode = Schema.decodeUnknownSync(Schema.Literals(["files", "target", "size", "shared"]))(
+	values.mode
+);
 const Memory = Schema.Struct({
 	heapUsed: Schema.Number,
 	arrayBuffers: Schema.Number,
@@ -104,6 +106,10 @@ if (values.worker) {
 				{ path: target.outputPaths.portableObjects[culture], format: "po" as const }
 			])
 		];
+		if (mode === "shared") {
+			const { measureSharedIndex } = await import("./game-text-shared-measure.ts");
+			await measureSharedIndex(project, cache, measure, values.select ?? "all");
+		}
 		if (mode === "size") {
 			await measure(
 				"size",
@@ -116,7 +122,7 @@ if (values.worker) {
 			);
 		}
 		const passes: readonly ("cold" | "touched" | "unchanged" | "changed")[] =
-			mode === "size" ? [] : ["cold", "touched", "unchanged", "changed"];
+			mode === "size" || mode === "shared" ? [] : ["cold", "touched", "unchanged", "changed"];
 		for (const pass of passes) {
 			if (pass === "changed" && mode === "files") continue;
 			if (pass === "touched") {

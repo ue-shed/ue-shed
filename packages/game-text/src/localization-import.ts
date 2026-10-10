@@ -29,12 +29,8 @@ import {
 	importFailure,
 	LocalizationImportLimits
 } from "./localization-stream.js";
-import {
-	SnapshotStore,
-	SnapshotStoreError,
-	snapshotStoreNodeLayer,
-	snapshotStoreDirectory
-} from "./snapshot-store.js";
+import { SnapshotStoreError } from "./snapshot-store.js";
+import { SharedIndex, sharedIndexNodeLayer, sharedIndexDirectory } from "./shared-index.js";
 import { SnapshotFormatError } from "./snapshot-format.js";
 
 export {
@@ -46,7 +42,7 @@ export {
 	defaultLocalizationImportLimits,
 	type LocalizationImportLimits
 } from "./localization-stream.js";
-export const LOCALIZATION_IMPORT_VERSION = 3;
+export const LOCALIZATION_IMPORT_VERSION = 4;
 export interface LocalizationImportSourceFile {
 	readonly read: (
 		bytes: Uint8Array,
@@ -96,7 +92,8 @@ const FileRequest = Options.pipe(
 		relativePath: Schema.NonEmptyString,
 		cacheRoot: Schema.NonEmptyString,
 		limits: Schema.optionalKey(LocalizationImportLimits),
-		chunkBytes: Schema.optionalKey(Positive)
+		chunkBytes: Schema.optionalKey(Positive),
+		sharedTargetKey: Schema.optionalKey(Schema.NonEmptyString)
 	})
 );
 export type LocalizationFileImportRequest = typeof FileRequest.Type;
@@ -112,6 +109,9 @@ export interface LocalizationFileSnapshotKey {
 	readonly inputBytes: number;
 	readonly snapshotBytes: number;
 	readonly directory: string;
+	readonly sharedBytesAppended: number;
+	readonly sharedReadBytes: number;
+	readonly sharedIndexReadBytes: number;
 }
 function contained(root: string, path: string) {
 	const child = relative(root, path);
@@ -206,6 +206,7 @@ export const importLocalizationFile = Effect.fn("LocalizationSnapshot.importFile
 	if (before.size > limits.maxFileBytes)
 		return yield* Effect.fail(importFailure(file, "limit_exceeded"));
 	const observed = stamp(before);
+	let rootReadBytes = 0;
 	const stateRoot = join(request.cacheRoot, "localization-file-stats");
 	const statePath = join(
 		stateRoot,
@@ -216,9 +217,9 @@ export const importLocalizationFile = Effect.fn("LocalizationSnapshot.importFile
 	const cached = yield* io(file, async () => {
 		try {
 			if ((await stat(statePath)).size > 4096) return undefined;
-			const decoded = Schema.decodeUnknownResult(Schema.fromJsonString(CachedFile))(
-				await readFile(statePath, "utf8")
-			);
+			const bytes = await readFile(statePath, "utf8");
+			rootReadBytes += Buffer.byteLength(bytes);
+			const decoded = Schema.decodeUnknownResult(Schema.fromJsonString(CachedFile))(bytes);
 			return Result.isSuccess(decoded) ? decoded.success : undefined;
 		} catch (cause) {
 			if (cause instanceof Error && "code" in cause && cause.code === "ENOENT")
@@ -226,32 +227,43 @@ export const importLocalizationFile = Effect.fn("LocalizationSnapshot.importFile
 			throw cause;
 		}
 	});
-	function storeOptions(hash: string) {
+	function contentKey(hash: string) {
 		const key = createHash("sha256")
 			.update(JSON.stringify([LOCALIZATION_IMPORT_VERSION, options, hash]))
 			.digest("hex");
+		return key;
+	}
+	function storeOptions() {
 		return {
 			cacheRoot: request.cacheRoot,
 			projectKey: actualRoot,
-			targetKey: `localization-file:${key}`
+			targetKey: request.sharedTargetKey ?? "localization",
+			onRead: (bytes: number) => {
+				rootReadBytes += bytes;
+			}
 		};
 	}
 	const existing = (hash: string) =>
 		Effect.scoped(
 			Effect.gen(function* () {
-				const store = yield* SnapshotStore;
-				const reader = yield* store.open();
-				return reader.directory.fileLength;
+				const store = yield* SharedIndex;
+				const manifest = yield* store.inspect();
+				const record = yield* store.cached(contentKey(hash));
+				if (manifest.active[file] !== record.key) {
+					const writer = yield* store.writer();
+					yield* writer.publish(file, record.key, { columns: [] });
+				}
+				return record.bytes;
 			})
-		).pipe(Effect.provide(snapshotStoreNodeLayer(storeOptions(hash))), Effect.result);
+		).pipe(Effect.provide(sharedIndexNodeLayer(storeOptions())), Effect.result);
 	let contentHash: string;
 	let snapshotBytes: number;
 	let parsed = false;
+	let sharedBytesAppended = 0,
+		sharedReadBytes = 0,
+		sharedIndexReadBytes = 0;
 	const hit =
-		cached &&
-		cached.key ===
-			storeOptions(cached.contentHash).targetKey.slice("localization-file:".length) &&
-		sameStamp(cached.stamp, observed)
+		cached && cached.key === contentKey(cached.contentHash) && sameStamp(cached.stamp, observed)
 			? yield* existing(cached.contentHash)
 			: undefined;
 	if (hit && Result.isSuccess(hit)) {
@@ -378,21 +390,22 @@ export const importLocalizationFile = Effect.fn("LocalizationSnapshot.importFile
 					return yield* Effect.fail(fileError(file, content.parseError));
 				const source = yield* io(file, () => builder.finish());
 				const bytes = yield* Effect.gen(function* () {
-					const store = yield* SnapshotStore;
+					const store = yield* SharedIndex;
 					const writer = yield* store.writer();
-					yield* writer.publish(source, {
-						contentHash: content.hash,
-						importerVersion: String(LOCALIZATION_IMPORT_VERSION)
-					});
-					const reader = yield* store.open();
-					return reader.directory.fileLength;
-				}).pipe(Effect.provide(snapshotStoreNodeLayer(storeOptions(content.hash))));
-				return { hash: content.hash, parsed: true, bytes };
+					const layer = yield* writer.publish(file, contentKey(content.hash), source);
+					return { bytes: layer.bytes, ...writer.metrics() };
+				}).pipe(Effect.provide(sharedIndexNodeLayer(storeOptions())));
+				return { hash: content.hash, parsed: true, bytes: bytes.bytes, shared: bytes };
 			})
 		);
 		contentHash = result.hash;
 		snapshotBytes = result.bytes;
 		parsed = result.parsed;
+		if ("shared" in result && result.shared) {
+			sharedBytesAppended = result.shared.appendedBytes;
+			sharedReadBytes = result.shared.readBytes;
+			sharedIndexReadBytes = result.shared.indexReadBytes;
+		}
 		yield* io(file, async () => {
 			await mkdir(stateRoot, { recursive: true });
 			const temporary = `${statePath}.${randomUUID()}.tmp`;
@@ -402,7 +415,7 @@ export const importLocalizationFile = Effect.fn("LocalizationSnapshot.importFile
 					JSON.stringify({
 						stamp: observed,
 						contentHash,
-						key: storeOptions(contentHash).targetKey.slice("localization-file:".length)
+						key: contentKey(contentHash)
 					}),
 					{ flag: "wx" }
 				);
@@ -413,9 +426,10 @@ export const importLocalizationFile = Effect.fn("LocalizationSnapshot.importFile
 		});
 	}
 	const statHit = Boolean(hit && Result.isSuccess(hit));
+	sharedReadBytes += rootReadBytes;
 	const readBytes = statHit ? 0 : observed.size;
-	const configuration = storeOptions(contentHash);
-	const key = configuration.targetKey.slice("localization-file:".length);
+	const configuration = storeOptions();
+	const key = contentKey(contentHash);
 	yield* Metric.update(localizationImportMetrics.bytes, readBytes);
 	yield* Metric.update(
 		parsed ? localizationImportMetrics.parsed : localizationImportMetrics.reused,
@@ -432,6 +446,9 @@ export const importLocalizationFile = Effect.fn("LocalizationSnapshot.importFile
 		format: options.format,
 		inputBytes: observed.size,
 		snapshotBytes,
+		sharedBytesAppended,
+		sharedReadBytes,
+		sharedIndexReadBytes,
 		parsed
 	});
 	return {
@@ -444,7 +461,10 @@ export const importLocalizationFile = Effect.fn("LocalizationSnapshot.importFile
 		readBytes,
 		inputBytes: observed.size,
 		snapshotBytes,
-		directory: snapshotStoreDirectory(configuration)
+		directory: sharedIndexDirectory(configuration),
+		sharedBytesAppended,
+		sharedReadBytes,
+		sharedIndexReadBytes
 	} satisfies LocalizationFileSnapshotKey;
 });
 
@@ -497,7 +517,8 @@ export const importLocalizationTarget = Effect.fn("LocalizationSnapshot.importTa
 			relativePath,
 			format,
 			poFormat: target.poFormat,
-			collapseMode: target.collapseMode
+			collapseMode: target.collapseMode,
+			sharedTargetKey: target.name
 		};
 		if (request.importLimits) Object.assign(fileRequest, { limits: request.importLimits });
 		const result = yield* importLocalizationFile(fileRequest).pipe(Effect.result);

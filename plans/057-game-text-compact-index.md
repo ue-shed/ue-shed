@@ -11,8 +11,10 @@
 ## Status
 
 - **State**: IN PROGRESS. Phases 1–3 are implemented, including lazy sections, streaming publication,
-  localization file imports and revised 1×/10× evidence. Throughput/whole-index size targets and Phases 4–7 remain. Phase 3 live UE 5.7/5.8 checks
-  are unavailable under repository-only access; their committed fixture oracles pass.
+  localization imports and a shared project/target string store. The measured 1× index is 92.36 MiB;
+  the 10× width-preserving projection is 1,202.12 MiB, 178.12 MiB over target. Import throughput
+  and Phases 4–7 remain open. The committed UE 5.7/5.8 localization fixture oracles pass;
+  this storage revision changes no Unreal API, native reader, parser or integration.
 - **Priority**: P1
 - **Effort**: XL
 - **Risk**: HIGH. This replaces how every Game Text and localization host holds its data, and adds
@@ -101,8 +103,39 @@ not the project. The design is proven on a generated project ten times the measu
 
 **One snapshot format for all three.**
 
-- Deduplicated UTF-8 tables by domain (source/identity, each culture, paths and comments), split
-  into independently loaded blocks with local offsets. A page reads only the blocks it touches.
+- One content-addressed string store per project and target; localization, package and joined
+  layers contain project-wide u32 IDs. Identical UTF-8 content gets one ID even across domains.
+  First-use domains (source, identity, each culture, paths, comments) own independently loaded
+  256 KiB blocks. Cross-domain references read their owning blocks without duplicating strings.
+- Immutable append-only segments publish with the layers that use them. A layer records its store
+  generation and segment count; existing IDs stay valid until a coordinated compaction remaps all
+  active layers into a new store generation. Readers retain every opened layer and segment handle.
+- SHA-256's 32-bit prefix indexes content, with exact string comparison on every match, so hash
+  collisions never merge text. Sorted hash pages delta-code fingerprints separately from IDs;
+  8,192-row pages and a 20-bit/string, seven-probe Bloom prefilter bound append IO. Decoded hash
+  pages retain at most 64 MiB and Bloom filters 128 MiB; string blocks retain at most 32 MiB.
+  The initial 8 MiB page cache thrashed in the 1× probe, motivating the larger bounded cache.
+  Search same-domain segments first and reject impossible UTF-8 lengths before loading filters.
+  The initial 16 MiB filter cache cleared itself repeatedly at 10×, reading 7.18–11.6 GB/file;
+  the larger bounded filter cache evicts individual segments rather than clearing everything.
+  Retained read callbacks live outside segment producer scopes: otherwise sibling closures keep
+  completed string arrays alive. Sampled 1× rebase heap falls from 722 to 171 MiB after this fix;
+  a multiple-segment memory test guards the lifetime.
+- Keep independent u32 identity IDs rather than manifest-row references: a file's content-keyed cache
+  remains independently reusable, including after manifest changes. Zstd level 1 compresses all
+  layer columns. Shared IDs use reversible modular deltas with zigzag encoding before compression;
+  namespace/key ordering produces small differences and cuts the 1× manifest from 1.34 to 0.34 MiB.
+  Shared identities/paths retain the measured levels 6/9 and other strings level 3.
+  Use an indexed typed-array bounds-validation loop: identical dependency guards take 167 ms
+  rather than 571 ms on the 10× page columns, reducing total column load from 825 to 453 ms.
+  Keep physical-domain reader probes separate from semantic searches: borrowed IDs do not add
+  bytes to the borrowing domain. Preserve all declared Phase 2 dictionary widths in the forecast;
+  compaction of unused synthetic variants cannot establish the 1 GiB acceptance target.
+- Refresh compares only the replaced layer's old/new ID columns to accumulate a conservative
+  obsolete-byte bound. Once it exceeds both 8 MiB and 25% of store UTF-8 bytes, an exact live-ID
+  census decides compaction. This avoids a whole-index scan for tiny edits; rebuilding all layers
+  to reclaim one changed string is disproportionate to the measured compaction cost. A forced
+  compaction probe measures the full remap and interrupted publication, retaining the old root.
 - Columns as little-endian typed arrays, 4-byte aligned, so a reader views them without copying.
 - Sparse columns where a dense one wastes space. For example, a PO translation is stored only where it
   differs from the archive's, and unknown reasons are stored per line when every culture shares them.
@@ -414,81 +447,75 @@ All scale children ran singly with 16,384 MiB heap, 20 GB RSS and 1,200 s stage 
 
 ### Phase 3: localization files as columns
 
-Recorded 2026-10-10 on Windows / Node 24.21.0, using the retained invented 1×/10× projects.
-No regeneration or 10× in-memory reader. The Phase 1 supervisor retains one child, 16,384 MiB
-heap, 20 GB OS RSS and 1,200 seconds per stage.
+Recorded 2026-10-10, Windows / Node 24.21.0; importer/store verification also uses Node 26.11.1.
+Retained projects and saved Phase 2 sections only: no regeneration, 1× join rebuild or today's
+pipeline at 10×. One child at a time, 16,384 MiB heap, 20 GB RSS and 1,200 seconds per file/stage.
+Full per-domain/per-file tables and commands: [shared index measurements](../docs/engineering/game-text-shared-index-measurements.md);
+API/format: [snapshot guide](../docs/engineering/game-text-snapshots.md).
 
-**Profiles.** PO: escape/block decoding led the first 1× CPU profile (447/281 ms self), followed by insertion and UTF-8 encoding (388/337 ms). Archive: record scanning led (276 ms), followed by insertion and UTF-8 encoding (202/201 ms).
-Native bounded decoding/scanning, shared PO fast decoding, per-entry dictionaries and encodeInto
-replace the profiled character/encoding costs. The revised profile is dominated by entry/schema,
-dictionary, string allocation and GC work; decoder/hash take 1.59/1.39 s of the 1× file passes.
-The 150 MiB/s goal remains unmet and needs further entry-pipeline optimization.
+Decisions, with reasons: one exact-content store owns strings across every layer/domain;
+immutable segments preserve IDs through appends and layers declare generation/segment dependencies.
+Sorted 8,192-row hash pages plus 20-bit/string prefilters avoid whole-index loading for an edit.
+Measured thrashing motivated 64 MiB decoded pages / 128 MiB individually evicted prefilters.
+Independent delta/zigzag u32 columns preserve content-key reuse without manifest dependencies
+(1× manifest 1.34 → 0.34 MiB). Indexed bounds validation retains guards and cuts 10× page-column
+time from 825 to 453 ms. Callbacks outside producer scopes cut sampled rebase heap 722 → 171 MiB.
+Compaction requires both 8 MiB and 25% obsolete UTF-8 bytes, confirmed by an exact live census:
+remapping every active layer to reclaim 133 bytes costs 26.67 / 261.42 seconds, so tiny edits append.
+Root publication holds the writer lock; old readers survive retirement. Tests cover collisions,
+segments, generations, independent reuse, thresholds, memory retention and killed/interrupted compaction.
 
-**Decisions.** Stats record size, exact mtime/ctime nanoseconds and inode/device beside the content key; Windows tests verify stable identity across stats and rewrites. Stat hits open no source. Changed stats hash and parse once; existing hashes discard the parse, and before/after handle/path stats return typed retry failures on mutation. Input spooling is removed; only bounded column blocks spill. Importer version 3 revises the layout while retaining SHA-256(version, normalized options, raw content hash).
-Canonical PO context/key comments, empty arrays, zero-msgstr duplication, source-equal translations
-and repeated reference prefixes are derived within each file. Measured zstd levels 3/6/9/19 select
-identity 6, paths 9, source/translation/comments 3; numerics retain 1. Source 19 costs 184–193 s/file,
-identity 19 costs 33–39 s/file, paths 19 costs 9.08 s versus 0.87 s at 9.
-The [snapshot guide](../docs/engineering/game-text-snapshots.md#localization-file-import) records
-columns/bits and unchanged limits: 16 GiB input/spill, 4 M rows/nodes, depth 64, 4 MiB records,
-2,560 files and 512 MiB identities. Existing reader defaults remain unchanged.
+Disk includes lookup pages/filters, stat hints, both retained roots and the package-column proxy.
+The compacted 10× probe prunes 26,085,533 unreferenced synthetic dictionary strings / 1.84 GiB UTF-8.
+That is not a forecast saving: the saved width probe's repeating ID pattern omits declared variants.
+The width-preserving projection therefore keeps those strings and remains **178.12 MiB over target**.
+It already uses the smaller compacted package proxy and excludes missing package headers/full origins.
 
-**Measurements.** Warm disk, fresh separate file/target caches. Times include all import work
-through persisted verification; touched inputs rewrite the same bytes before timing. Memory is
-heap / buffers / RSS MiB, using pre-GC/OS peaks; buffers are lower bounds and RSS retains pages.
-The [measurements](../docs/engineering/game-text-localization-import-measurements.md) contain
-all operations per format, every file's CSV, exact column/domain bytes and every codec result.
+| Component (MiB)              |    1× compacted | 10× compacted probe | 10× width-preserving |
+| ---------------------------- | --------------: | ------------------: | -------------------: |
+| Shared source                |            7.30 |               94.95 |                94.94 |
+| Shared identities            |           27.84 |              157.61 |               270.02 |
+| Shared paths                 |           31.08 |               89.13 |               292.60 |
+| Shared cultures/comments     |           14.13 |              331.15 |               331.54 |
+| Localization ID layers       |            7.73 |              156.24 |               156.24 |
+| Joined ID layer              |            2.33 |               33.39 |                35.63 |
+| Package proxy                |            1.93 |               21.10 |                21.10 |
+| Root publications/stat hints |            0.01 |                0.04 |                 0.05 |
+| **Total / target**           | **92.36 / 100** |   **883.62 / 1024** |   **1202.12 / 1024** |
 
-| Scale / format (files) |     Seconds |     MiB/s | Heap / buffers / RSS MiB | Snapshot MiB |
-| ---------------------- | ----------: | --------: | -----------------------: | -----------: |
-| 1× manifest (1)        |        2.14 |      39.8 |     170.3 / 52.3 / 386.2 |         3.26 |
-| 1× archive (10)        |   1.55–1.81 | 46.6–58.0 |     168.6 / 95.7 / 433.4 |    2.22–3.15 |
-| 1× po (10)             |   1.63–2.00 | 28.5–36.6 |     161.3 / 90.6 / 441.8 |    3.28–4.25 |
-| 10× manifest (1)       |       24.09 |      35.8 |   632.4 / 386.3 / 1027.5 |        32.77 |
-| 10× archive (20)       | 16.51–18.53 | 48.7–51.5 |   403.9 / 427.9 / 1265.3 |  22.59–32.20 |
-| 10× po (20)            | 16.99–18.64 | 30.9–35.5 |   454.7 / 432.3 / 1234.7 |  32.99–42.79 |
+| Operation                  |   1× seconds |     10× seconds | Authored / index read MiB (1×; 10×)  |  New segment bytes |
+| -------------------------- | -----------: | --------------: | ------------------------------------ | -----------------: |
+| Cold files, sum (max file) | 67.61 (4.13) | 1631.67 (59.17) | 1507.45 / 154.75; 29466.57 / 7968.31 | 18.95 / 349.92 MiB |
+| Stat-hit target refresh    |         0.11 |            0.25 | 0 / 0.23; 0 / 1.35                   |              0 / 0 |
+| One-byte PO edit           |         3.41 |           39.52 | 59.61 / 25.44; 602.91 / 124.38       |          728 / 728 |
+| Saved joined rebase        |        39.32 |         1037.36 | 0 / 130.83; 0 / 12656.50             | 61.41 / 639.18 MiB |
+| Forced steady compaction   |        26.67 |          261.42 | 0 / 174.35; 0 / 1671.92              | 80.35 / 672.84 MiB |
 
-Complete target including discovery; stat-hit logical throughput is skipped bytes, not physical IO:
+| Reader (ms)                    |      Phase 2 1× |       Shared 1× |       Phase 2 10× |        Shared 10× |
+| ------------------------------ | --------------: | --------------: | ----------------: | ----------------: |
+| Directory / retained handles   |           11.76 |           24.61 |             74.00 |            137.81 |
+| Hot columns                    |           63.17 |           37.07 |            578.57 |            369.76 |
+| Source bulk / ownership scan   |  78.29 / 108.48 |  86.74 / 118.05 |  832.99 / 1020.12 | 1179.54 / 1956.08 |
+| Native extra bulk / scan       |   15.26 / 25.87 |     1.16 / 0.34 |   203.28 / 241.95 |   146.27 / 194.95 |
+| Paths bulk / ownership scan    | 146.51 / 380.26 | 167.77 / 399.51 | 1398.50 / 4124.67 |  563.87 / 1503.94 |
+| Page columns / 300-string page |    73.67 / 2.39 |    39.83 / 4.81 |     470.89 / 3.43 |     453.08 / 5.75 |
 
-| Target / operation | Read MiB |  Seconds | Logical MiB/s | Heap / buffers / RSS MiB | Snapshot MiB | Published / stat hits |
-| ------------------ | -------: | -------: | ------------: | -----------------------: | -----------: | --------------------: |
-| 1× cold            |  1507.45 |  37.6353 |          40.1 |     187.3 / 79.7 / 422.7 |        75.38 |                21 / 0 |
-| 1× touched         |  1507.45 |  37.2835 |          40.4 |     213.8 / 66.9 / 442.4 |        75.38 |                 0 / 0 |
-| 1× stat hit        |     0.00 |   0.0536 |       28118.2 |       63.5 / 3.9 / 353.8 |        75.38 |                0 / 21 |
-| 1× one-byte PO     |    59.61 |   1.6336 |         922.8 |     140.2 / 60.2 / 410.2 |        75.38 |                1 / 20 |
-| 10× cold           | 29466.57 | 695.3285 |          42.4 |   590.8 / 460.2 / 1222.5 |      1513.06 |                41 / 0 |
-| 10× touched        | 29466.57 | 524.6622 |          56.2 |   668.8 / 203.0 / 1047.0 |      1513.06 |                 0 / 0 |
-| 10× stat hit       |     0.00 |   0.2014 |      146337.9 |      377.8 / 4.8 / 655.8 |      1513.06 |                0 / 41 |
-| 10× one-byte PO    |   602.91 |  15.5483 |        1895.2 |   455.4 / 421.7 / 1033.0 |      1513.06 |                1 / 40 |
+Extra opened handles explain directory cost; 23% more source bytes, authored Unicode and segmented
+copy/verification explain the 10× source regression. Native translations borrow source IDs, so the
+extra-domain operation excludes borrowed bytes. These are physical-domain probes, not equivalent
+semantic searches. Reader heap peaks 67.82 / 74.22 MiB; buffers 280.36 / 1909.76 MiB; RSS 441 / 2085.63 MiB.
+Cold throughput 22.30 / 18.06 MiB/s misses 150 MiB/s. All measured stages stay below caps.
 
-10× cold falls from 1,140.91 to 695.33 s; localization size falls from 1,886.05 to 1513.06 MiB.
-Stat hits read zero bytes/publish zero snapshots; touched imports read/parse all files/publish zero.
-The one-byte change reads/publishes one PO and changes exactly one key.
-10× projection: **1513.06 MiB localization + 684.41 MiB joined + 332.98 MiB package estimate = 2530.45 MiB (2.47 GiB)**. The optimistic package proxy uses Phase 2's source (36.63), identity (114.46) and paths/occurrence IDs (181.89); package headers and extra coverage evidence would increase it. The measured independent complete-file layers exceed 1 GiB before joining. Reaching the target needs shared strings across files/layers or sparse evidence overlays and a smaller joined/package representation; no such design change is made here.
+Verification: shared-store vitest **13 passed / 0 failed**; requested broad vitest **478 / 0**, four
+existing skips; Node 26 importer/format/file/store/shared-store **127 / 0**; Game Text build **1 / 0**;
+Effect architecture **1 / 0**; changed-file oxfmt **20 / 0**; precommit **6 stages / 0**, including
+**43 / 0** architecture tests and four contract checks. Eight final benchmark commands **8 / 0**.
+UE 5.7 **7/7**, UE 5.8 **7/7**, UE 4.27 **7/7** committed fixture oracles match. Live UE 5.7/5.8
+checks and full `pnpm check` were not run for this storage-only revision.
 
-**Oracle and verification.** Reusable parser comparison covers all 21 committed fixture files,
-including UE 5.7/5.8, every file at scales 0.0001/0.001, one-byte chunks, escapes/continuations,
-late Crowdin headers, limits, typed failures, stat identity, mutation/retry and cleanup.
-Abandoned import benchmark directories were removed with repository-local ordinary file deletion.
-
-| Final verification command                                                                                                                         |                          Passed | Failed |
-| -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------: | -----: |
-| `pnpm exec vitest run scripts/localization-import.test.ts packages/localization packages/game-text scripts/game-text-scale.test.ts --maxWorkers 1` |           465 tests (4 skipped) |      0 |
-| `node26 node_modules/vitest/vitest.mjs run scripts/localization-import.test.ts --maxWorkers 1`                                                     |                        42 tests |      0 |
-| pnpm --filter @ue-shed/localization build                                                                                                          |                         1 build |      0 |
-| pnpm --filter @ue-shed/game-text build                                                                                                             |                         1 build |      0 |
-| Benchmark CPU profiles, selected 1× PO/archive                                                                                                     |                          2 runs |      0 |
-| Benchmark files / target, both scales                                                                                                              |                          4 runs |      0 |
-| Benchmark size before / after / prefix / final directory                                                                                           |                          4 runs |      0 |
-| pnpm exec tsc -p tsconfig.scripts.json --noEmit                                                                                                    |                         1 check |      0 |
-| pnpm run lint                                                                                                                                      |                         1 check |      0 |
-| pnpm run effect:architecture                                                                                                                       |                          1 gate |      0 |
-| pnpm exec oxfmt, changed files                                                                                                                     |                        17 files |      0 |
-| pnpm run check:precommit                                                                                                                           | 6 stages; 43 architecture tests |      0 |
-
-node26 denotes the retained Node 26.11.1 executable under test-results/game-text-scale/runtime.
-
-Live UE 5.7: unavailable under repository-only access; committed fixture oracle passed.
-Live UE 5.8: unavailable under repository-only access; committed fixture oracle passed.
-No native integration changed. Full pnpm check was not run; the requested portable gate is
-check:precommit. Phases 4–7 and the whole-index size target remain outstanding.
+Remaining: 10× full-width strings/lookups cost 989.10 MiB, layers 191.88 MiB, the package proxy
+21.10 MiB and publications 0.05 MiB. A shared sorted hash index with append tiers could remove
+segment filters and shrink fingerprint storage; constituent-based paths/occurrence identities
+could remove string payload and lookup entries. Neither saving is implemented/measured.
+Real-content compression, the 150 MiB/s import target, actual package layer/join/query/host adoption
+and Phases 4–7 remain open.

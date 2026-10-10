@@ -1,0 +1,68 @@
+{
+	"contract": {
+		"name": "uasset-io",
+		"version": {
+			"major": 1,
+			"minor": 8
+		}
+	},
+	"requestId": "package-text",
+	"sequence": 1,
+	"kind": "result",
+	"result": {
+		"kind": "extract_text_packages",
+		"event": {
+			"event": "text_package_record",
+			"fileBytes": 4096,
+			"path": "C:/Fixture/Content/Text.uasset",
+			"schema_version": 1,
+			"status": "partial",
+			"decodeErrors": 2,
+			"occurrences": [
+				{
+					"source": "Hello",
+					"identity": {
+						"status": "resolved",
+						"namespace": "Example",
+						"key": "Hello"
+					},
+					"location": {
+						"kind": "asset_property",
+						"object_path": "/Game/Example.Example",
+						"class_path": "/Script/Example.Example",
+						"property_path": "Title"
+					},
+					"edit_capability": "source_editable"
+				}
+			],
+			"gapCounts": {
+				"unsupported_text_history": 1,
+				"legacy_container_element_without_type_information": 0,
+				"feature_unavailable_for_engine_version": 2,
+				"property_decoder_rejected": 3
+			},
+			"gapSamples": [
+				{
+					"object_path": "/Game/Text.Text",
+					"property_path": "Label",
+					"reason": "property_decoder_rejected"
+				},
+				{
+					"object_path": "/Game/Text.Text",
+					"property_path": "History",
+					"reason": "unsupported_text_history"
+				},
+				{
+					"object_path": "/Game/Text.Text",
+					"property_path": "Label",
+					"reason": "property_decoder_rejected"
+				},
+				{
+					"object_path": "/Game/Text.Text",
+					"property_path": "History",
+					"reason": "unsupported_text_history"
+				}
+			]
+		}
+	}
+}

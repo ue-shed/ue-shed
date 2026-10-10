@@ -49,6 +49,8 @@ describe("uasset IO protocol v1", () => {
 			Effect.gen(function* () {
 				for (const name of [
 					"valid/scan-request.json",
+					"valid/extract-text-packages-request.json",
+					"valid/extract-text-packages-result-event.json",
 					"valid/blueprint-request.json",
 					"valid/level-sequence-request.json",
 					"valid/accepted-event.json",
@@ -94,6 +96,8 @@ describe("uasset IO protocol v1", () => {
 			Effect.gen(function* () {
 				for (const name of [
 					"invalid/request-wrong-major.json",
+					"invalid/extract-text-packages-request-old-minor.json",
+					"invalid/extract-text-packages-unbounded-samples.json",
 					"invalid/event-unknown-kind.json",
 					"invalid/level-sequence-version.json",
 					"invalid/negative-instanced-size.json",

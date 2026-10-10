@@ -30,6 +30,27 @@ const EXIT_MALFORMED: u8 = 2;
 const EXIT_INTERNAL: u8 = 5;
 const DEFAULT_MAX_OUTPUT_BYTES: u64 = 10 * 1024 * 1024 * 1024;
 const MAX_REQUEST_BYTES: usize = 4 * 1024 * 1024;
+const MAX_PACKAGE_TEXT_FRAME_BYTES: usize = 64 * 1024 * 1024;
+
+struct BoundedJsonFrame {
+    bytes: Vec<u8>,
+    maximum: usize,
+    exceeded: bool,
+}
+
+impl Write for BoundedJsonFrame {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        if bytes.len() > self.maximum.saturating_sub(self.bytes.len()) {
+            self.exceeded = true;
+            return Err(io::Error::other("package-text frame exceeds 64 MiB"));
+        }
+        self.bytes.extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
 
 pub fn run() -> u8 {
     let mut request_bytes = Vec::new();
@@ -244,12 +265,32 @@ impl Emitter {
             sequence: self.sequence,
             result,
         };
-        let bytes = serde_json::to_vec(&event).map_err(|error| Failure {
-            code: "contract".to_owned(),
-            message: format!("could not serialize typed result: {error}"),
-            retry_safe: false,
-            ..Default::default()
-        })?;
+        let bytes = if matches!(result, ResultFrame::ExtractTextPackages { .. }) {
+            let mut frame = BoundedJsonFrame {
+                bytes: Vec::new(),
+                maximum: MAX_PACKAGE_TEXT_FRAME_BYTES,
+                exceeded: false,
+            };
+            if let Err(error) = serde_json::to_writer(&mut frame, &event) {
+                return Err(Failure::new(
+                    if frame.exceeded {
+                        "resource_limit"
+                    } else {
+                        "contract"
+                    },
+                    format!("could not serialize package-text frame: {error}"),
+                    false,
+                ));
+            }
+            frame.bytes
+        } else {
+            serde_json::to_vec(&event).map_err(|error| Failure {
+                code: "contract".to_owned(),
+                message: format!("could not serialize typed result: {error}"),
+                retry_safe: false,
+                ..Default::default()
+            })?
+        };
         self.write_frame(&bytes).map_err(emission_failure)
     }
 }
@@ -269,6 +310,7 @@ fn operation_kind(operation: &Operation) -> &'static str {
         Operation::Authoring { .. } => "authoring",
         Operation::Scan { .. } => "scan",
         Operation::ExtractText { .. } => "extract_text",
+        Operation::ExtractTextPackages { .. } => "extract_text_packages",
         Operation::ExtractTexture { .. } => "extract_texture",
         Operation::SavedWorld { .. } => "saved_world",
         Operation::ProjectIndexStatus { .. } => "project_index_status",
@@ -377,7 +419,7 @@ fn execute_direct(
             }
             Ok(output.partial)
         }
-        Operation::ExtractText { selection } => {
+        Operation::ExtractText { selection } | Operation::ExtractTextPackages { selection } => {
             let empty_paths = selection.paths.as_deref() == Some(&[]);
             if !empty_paths {
                 emit_progress(emitter, 0, "discovering", None)?;
@@ -1200,6 +1242,28 @@ mod tests {
     const VALID_REQUEST: &str = include_str!(
         "../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/scan-request.json"
     );
+
+    #[test]
+    fn package_text_json_writer_never_retains_bytes_above_its_limit() {
+        let value = json!({ "source": "Fixture" });
+        let expected = serde_json::to_vec(&value).unwrap();
+        let mut frame = super::BoundedJsonFrame {
+            bytes: Vec::new(),
+            maximum: expected.len(),
+            exceeded: false,
+        };
+        serde_json::to_writer(&mut frame, &value).unwrap();
+        assert_eq!(frame.bytes, expected);
+        assert!(!frame.exceeded);
+        let mut frame = super::BoundedJsonFrame {
+            bytes: Vec::new(),
+            maximum: expected.len() - 1,
+            exceeded: false,
+        };
+        assert!(serde_json::to_writer(&mut frame, &value).is_err());
+        assert!(frame.exceeded);
+        assert!(frame.bytes.len() <= frame.maximum);
+    }
 
     #[test]
     fn event_emission_defaults_to_ten_gibibytes_cumulative_output() {

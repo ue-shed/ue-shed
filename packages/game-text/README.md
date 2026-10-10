@@ -41,6 +41,19 @@ guidance.
 The `@ue-shed/game-text/browser` entry point contains only schemas and pure query helpers. It does
 not expose filesystem, process, Electron, Perforce, or Unreal authority.
 
+The package also exports a pure compact snapshot codec from both entry points and the Effect
+`SnapshotStore` with `snapshotStoreNodeLayer` from the Node entry point. These support the
+upcoming persistent corpus layers; current query hosts still use the in-memory model. See the
+[snapshot engineering guide](../../docs/engineering/game-text-snapshots.md) for the format, caps,
+immutable publication and recovery behavior. `reader.domain()` bulk-loads one source, identity,
+translation or path domain; `reader.strings()` keeps page reads limited to touched blocks.
+`SharedIndex` with `sharedIndexNodeLayer` stores one deduplicated string ID space per project and
+target. Localization imports use independent content keys, immutable string segments and atomic
+generation publication; compaction remaps active layers while existing readers retain their handles.
+Strings use immutable A64 segments: byte-sorted ranks, front coding in 64-string blocks, a sparse
+index and binary GUIDs with exact case recovery. Refresh reuses the previous file's string IDs and
+probes only unresolved strings. `reader.range(prefix)` returns matching ID ranges per segment.
+
 Search pages include fixed-size `counts` for the current source query, capability, review filter,
 and `withoutNotes` toggle. `counts.all` equals the page's full `total`, independent of pagination.
 Review counts intersect every active filter; a toggle's count excludes that toggle itself so callers
@@ -235,3 +248,10 @@ APIs never write PO, manifests, archives, locres or locmeta. Workbench policy/re
 - Required: a project root containing saved packages and a configured saved-asset reader.
 - Optional: a separate host capability may locate a selected occurrence in Unreal.
 - Not required: Workbench, Perforce, a running editor, or any UE Shed Unreal plugin.
+
+Plan 057's opt-in package-text reader preserves today's occurrence fields and aggregated coverage.
+`textCorpusFromExtractionEvents` can hydrate either legacy events or v1.8 package records for
+small callers and semantic oracles. `packageTextRecordsFromEvents` is a small-input migration/test
+adapter; it retains pending occurrences and must not replay the 10× stream in memory. Production
+native aggregation happens before transport. TextCorpusService still uses the legacy reader.
+Signature refresh, shared package ID columns and scale acceptance remain unfinished.

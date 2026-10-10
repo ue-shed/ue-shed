@@ -1,6 +1,6 @@
 # Localization evidence read performance (2026-10-09)
 
-Phase 4 of [Plan 056](../../plans/056-localization-at-real-project-scale.md), measured on
+Phase 4 of [Plan 056](../../plans/archive/056-localization-at-real-project-scale.md), measured on
 Windows with an AMD Ryzen 9 5950X and Node 24.21.0. All inputs are generated; no real-project
 content or paths are included.
 
@@ -134,4 +134,4 @@ Changed files:
   `scripts/test-localization-processes.ts`.
 - Measurement: `scripts/{profile-localization,localization-scale-data}.ts`.
 - Docs/release: `packages/localization/README.md`, this report,
-  `plans/056-localization-at-real-project-scale.md`, `.changeset/quick-localization-evidence.md`.
+  `plans/archive/056-localization-at-real-project-scale.md`, `.changeset/quick-localization-evidence.md`.

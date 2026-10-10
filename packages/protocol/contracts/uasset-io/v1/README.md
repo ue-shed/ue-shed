@@ -56,6 +56,19 @@ validate these record versions; older result shapes are rejected at the boundary
 retains source-checked actor/component instance records separately from tagged properties in generic
 inspection and Blueprint saved objects. Unknown subclass bytes remain explicit gaps.
 
+Minor version 1.8 adds the opt-in `extract_text_packages` operation and result kind. Its selection
+and limits match `extract_text`; hosts request minor 8 and validate that result kind. Older
+workers reject the new operation before acceptance, and new workers reject it below minor 8.
+Each `text_package_record` preserves all occurrence fields, carries package status and
+`decodeErrors`, and replaces individual gaps with `gapCounts` by all four existing reasons plus
+at most three `gapSamples`. The sampling rule preserves the first gap, then prefers unsupported
+histories for the two remaining slots, matching today's corpus diagnostics. `text_summary` and
+outer scan diagnostics retain their existing meaning. `extract_text` continues to emit each
+occurrence, gap and package event for existing consumers. Cumulative output limits still apply.
+The native producer bounds an encoded package-text frame to 64 MiB and reports `resource_limit`
+before emitting an oversized frame. Consumers can explicitly retain the legacy stream for such
+packages. This producer limit supplements structural schema validation.
+
 Result frames use an explicit result kind. Generic inspection, authoring, scan, compact text,
 compact texture, Blueprint graph, and saved-world values each have a named schema; there is no
 untyped result field.

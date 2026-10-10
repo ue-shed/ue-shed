@@ -106,6 +106,17 @@ import {
 
 ## Saved translator notes
 
+`extractProjectTextPackages(options)` is an opt-in stream for paired `uasset-io` v1.8 workers.
+It emits one `text_package_record` per decoded package and a `text_summary`. Records retain
+source, identity, location, notes and edit capability for every occurrence, plus status,
+decode-error count, all gap counts by reason, and at most three gap samples. An explicit empty
+`paths` list starts no process. Older workers reject the operation; callers can keep using
+`extractProjectText` until they migrate. The existing TextCorpusService, localization/CLI and
+Workbench workflows, scale replay, and diagnostic native text command still use the legacy
+event stream. No consumer has been switched to persistent package columns yet.
+The method is optional on custom `AssetReaderApi` implementations, preserving existing service
+implementations; the public accessor returns a typed `unsupported_capability` error when absent.
+
 Keyed FText (`history: "base"`) and StringTable entries saved by UE 5.8 retain translator
 notes as `dev_notes` in `readSavedAsset` inspection output. Empty notes stay `""`.
 The parser reads this field only at FortniteMain custom version 260 or later, when

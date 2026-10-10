@@ -54,6 +54,22 @@ filesystem enumeration and progress. These operations frame or describe native I
 Projection diagnostics, error vocabulary and failure mapping remain here because they report
 native execution failures; the WASM adapter does not need these mappings.
 
+Protocol v1.8 adds the opt-in `extract_text_packages` operation. It returns one
+`text_package_record` per decoded package, preserving every occurrence field while aggregating
+coverage gaps into four reason counts and at most three samples. The first sample survives;
+later unsupported-history samples replace non-history samples in slots two and three. Decode
+diagnostics become `decodeErrors`, the count the corpus uses. The text summary and outer scan
+diagnostics retain their existing meaning. Aggregation happens while projecting exports, before
+creating protocol frames; millions of gap frames are never retained in this mode.
+Encoded package-text frames are capped at 64 MiB during serialization; overflow is a typed
+`resource_limit` terminal failure, with no partial JSON frame written.
+
+The reader still owns the package read and projection; Game Text owns normalization and the
+shared string/column store. The existing `extract_text` operation and human text projection
+remain compatible. A host opts in by requesting minor 8 and the new operation; an older worker
+rejects the unknown operation before acceptance. No fallback silently changes the requested
+result shape. Candidate and signature-aware shared-store refresh remain separate work.
+
 The remaining adapter audit found:
 
 - `project_index_io::to_protocol_*` and dictionary-page encoding adapt Catalog query/refresh results,

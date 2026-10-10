@@ -36,6 +36,8 @@ pub enum ResultFrame {
     ExtractText {
         event: SavedAssetTextExtractionEvent,
     },
+    #[serde(rename = "extract_text_packages")]
+    ExtractTextPackages { event: SavedAssetPackageTextEvent },
     #[serde(rename = "extract_texture")]
     ExtractTexture {
         event: SavedAssetTextureExtractionEvent,
@@ -313,6 +315,85 @@ pub enum ProjectionStatus {
     Partial,
 }
 
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct TextGapCounts {
+    pub unsupported_text_history: u64,
+    pub legacy_container_element_without_type_information: u64,
+    pub feature_unavailable_for_engine_version: u64,
+    pub property_decoder_rejected: u64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SavedAssetPackageTextRecord {
+    pub file_bytes: u64,
+    pub path: String,
+    #[serde(rename = "schema_version")]
+    pub schema_version: u8,
+    pub status: ProjectionStatus,
+    pub decode_errors: u64,
+    pub occurrences: Vec<SavedAssetTextOccurrence>,
+    pub gap_counts: TextGapCounts,
+    pub gap_samples: Vec<SavedAssetTextCoverageGap>,
+}
+
+impl SavedAssetPackageTextRecord {
+    pub fn push_gap(&mut self, gap: SavedAssetTextCoverageGap) {
+        match gap.reason {
+            TextCoverageGapReason::UnsupportedTextHistory => {
+                self.gap_counts.unsupported_text_history += 1
+            }
+            TextCoverageGapReason::LegacyContainerElementWithoutTypeInformation => {
+                self.gap_counts
+                    .legacy_container_element_without_type_information += 1
+            }
+            TextCoverageGapReason::FeatureUnavailableForEngineVersion => {
+                self.gap_counts.feature_unavailable_for_engine_version += 1
+            }
+            TextCoverageGapReason::PropertyDecoderRejected => {
+                self.gap_counts.property_decoder_rejected += 1
+            }
+        }
+        if self.gap_samples.len() < 3 {
+            self.gap_samples.push(gap);
+        } else if gap.reason == TextCoverageGapReason::UnsupportedTextHistory
+            && let Some(index) = self
+                .gap_samples
+                .iter()
+                .enumerate()
+                .position(|(index, sample)| {
+                    index > 0 && sample.reason != TextCoverageGapReason::UnsupportedTextHistory
+                })
+        {
+            self.gap_samples[index] = gap;
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(tag = "event", deny_unknown_fields)]
+pub enum SavedAssetPackageTextEvent {
+    #[serde(rename = "text_package_record")]
+    Package {
+        #[serde(flatten)]
+        record: SavedAssetPackageTextRecord,
+    },
+    #[serde(rename = "text_summary")]
+    Summary {
+        #[serde(flatten)]
+        summary: SavedAssetScanSummary,
+    },
+    #[serde(rename = "error")]
+    Error {
+        code: String,
+        message: String,
+        path: String,
+        #[serde(rename = "retrySafe")]
+        retry_safe: bool,
+    },
+}
+
 pub use uasset_inspection::text_wire::{
     EditCapability, SavedAssetTextCoverageGap, SavedAssetTextOccurrence, TextCoverageGapReason,
     TextExtractionIdentity, TextExtractionLocation, TextUnresolvedReason,
@@ -385,3 +466,56 @@ pub use uasset_inspection::authoring::{
     AuthoringTableSnapshotV1, AuthoringTableSnapshotV2, AuthoringTableV1, AuthoringTableV2,
     AuthoringTypeDescriptor, AuthoringValue, Completeness,
 };
+
+#[cfg(test)]
+mod package_text_tests {
+    use super::*;
+
+    #[test]
+    fn counts_every_gap_but_keeps_first_and_two_preferred_history_samples() {
+        let mut record = SavedAssetPackageTextRecord {
+            file_bytes: 0,
+            path: "Fixture.uasset".into(),
+            schema_version: 1,
+            status: ProjectionStatus::Partial,
+            decode_errors: 0,
+            occurrences: Vec::new(),
+            gap_counts: TextGapCounts::default(),
+            gap_samples: Vec::new(),
+        };
+        for (index, reason) in [
+            TextCoverageGapReason::PropertyDecoderRejected,
+            TextCoverageGapReason::FeatureUnavailableForEngineVersion,
+            TextCoverageGapReason::LegacyContainerElementWithoutTypeInformation,
+            TextCoverageGapReason::UnsupportedTextHistory,
+            TextCoverageGapReason::UnsupportedTextHistory,
+            TextCoverageGapReason::UnsupportedTextHistory,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            record.push_gap(SavedAssetTextCoverageGap {
+                object_path: "Fixture".into(),
+                property_path: index.to_string(),
+                reason,
+            });
+        }
+        assert_eq!(
+            record
+                .gap_samples
+                .iter()
+                .map(|gap| gap.property_path.as_str())
+                .collect::<Vec<_>>(),
+            vec!["0", "3", "4"]
+        );
+        assert_eq!(
+            record.gap_counts,
+            TextGapCounts {
+                property_decoder_rejected: 1,
+                feature_unavailable_for_engine_version: 1,
+                legacy_container_element_without_type_information: 1,
+                unsupported_text_history: 3,
+            }
+        );
+    }
+}

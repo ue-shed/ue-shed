@@ -55,6 +55,10 @@ const approvedRuntimeExits = new Set([
 	"packages/unreal-assets/src/protocol-transport.ts"
 ]);
 const approvedPromiseAdapters = new Set([
+	// Localization import owns bounded stat/hash/parse IO behind scoped Effect operations.
+	"packages/game-text/src/localization-import.ts",
+	// Column producers adapt bounded spill blocks to the snapshot writer's Promise load port.
+	"packages/game-text/src/localization-columns.ts",
 	// Game Text owns bounded Node filesystem, zstd and cross-process locks behind an Effect store.
 	"packages/game-text/src/snapshot-store.ts",
 	// Positioned section reads and streaming publication are the Node adapter below that store.

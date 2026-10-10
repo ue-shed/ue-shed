@@ -1,5 +1,6 @@
 export * from "./corpus.js";
 export * from "./snapshot-format.js";
+export * from "./localization-import.js";
 export type { SnapshotLoadedDomain } from "./snapshot-file.js";
 export {
 	snapshotColumnsSource,

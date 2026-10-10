@@ -112,30 +112,27 @@ export function encodeStringBlock(values: readonly string[]): Uint8Array {
 		"strings",
 		"Invalid block count"
 	);
-	let payloadLength = 0;
 	const start = 4 + (values.length + 1) * 4;
-	const chunks = values.map((value) => {
+	let upper = start;
+	for (const value of values) {
 		snapshotCheck(isString(value), "strings", "Expected a string");
 		bounded(value.length, MAX_SNAPSHOT_STRING_BYTES, "strings");
-		const bytes = encoder.encode(value);
-		bounded(bytes.length, MAX_SNAPSHOT_STRING_BYTES, "strings");
-		payloadLength += bytes.length;
-		bounded(start + payloadLength, MAX_SNAPSHOT_SECTION_BYTES, "strings");
-		return bytes;
-	});
-	const length = start + payloadLength;
-	bounded(length, MAX_SNAPSHOT_SECTION_BYTES, "strings");
-	const bytes = new Uint8Array(length);
+		upper += value.length * 3;
+	}
+	const bytes = new Uint8Array(Math.min(upper, MAX_SNAPSHOT_SECTION_BYTES));
 	const view = new DataView(bytes.buffer);
 	view.setUint32(0, values.length, true);
 	let position = 0;
-	for (let i = 0; i < chunks.length; i++) {
+	for (let i = 0; i < values.length; i++) {
 		view.setUint32(4 + i * 4, position, true);
-		bytes.set(chunks[i]!, start + position);
-		position += chunks[i]!.length;
+		const value = values[i]!;
+		const result = encoder.encodeInto(value, bytes.subarray(start + position));
+		snapshotCheck(result.read === value.length, "strings", "String block exceeds section cap");
+		bounded(result.written, MAX_SNAPSHOT_STRING_BYTES, "strings");
+		position += result.written;
 	}
 	view.setUint32(4 + values.length * 4, position, true);
-	return bytes;
+	return bytes.slice(0, start + position);
 }
 export function decodeStringBlock(
 	bytes: Uint8Array,

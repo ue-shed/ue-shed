@@ -23,6 +23,7 @@ import {
 
 /** Unreal's pipeline applies replacements in this order, including its literal-backslash caveat. */
 export function decodePOEscapes(value: string): string {
+	if (!value.includes("\\")) return value;
 	return value
 		.replaceAll("\\t", "\t")
 		.replaceAll("\\n", "\n")
@@ -34,8 +35,9 @@ export function decodePOEscapes(value: string): string {
 export function parsePOIdentity(value: string) {
 	return parseResult(() => {
 		let escaped = false;
-		let comma = -1;
-		for (let index = 0; index < value.length; index++) {
+		const hasEscapes = value.includes("\\");
+		let comma = hasEscapes ? -1 : value.indexOf(",");
+		for (let index = 0; hasEscapes && comma === -1 && index < value.length; index++) {
 			if (escaped) {
 				escaped = false;
 				continue;
@@ -66,21 +68,13 @@ function malformedPO(lineNumber: number): LocalizationError {
 
 function quoted(input: string, lineNumber: number): string {
 	if (!input.startsWith('"')) throw malformedPO(lineNumber);
-	let escaped = false;
-	for (let index = 1; index < input.length; index++) {
-		if (escaped) {
-			escaped = false;
-			continue;
-		}
-		if (input[index] === "\\") {
-			escaped = true;
-			continue;
-		}
-		if (input[index] === '"') {
-			if (input.slice(index + 1).trim() !== "") throw malformedPO(lineNumber);
-			return input.slice(1, index);
-		}
+	const closing = input.indexOf('"', 1);
+	if (closing > 0 && !input.slice(1, closing).includes("\\")) {
+		if (input.slice(closing + 1).trim() !== "") throw malformedPO(lineNumber);
+		return input.slice(1, closing);
 	}
+	const match = /^"((?:[^"\\]|\\[\s\S])*)"\s*$/u.exec(input);
+	if (match) return match[1]!;
 	throw malformedPO(lineNumber);
 }
 
@@ -118,7 +112,7 @@ function blocksFromLines(lines: readonly POLine[]): POLine[][] {
 	return blocks;
 }
 
-function decodeBlock(lines: readonly POLine[], lineOffset: number): POBlock {
+function decodeBlock(lines: readonly POLine[], lineOffset: number, detailed = true): POBlock {
 	const fields: {
 		name: POStringField["name"];
 		index?: number;
@@ -202,9 +196,86 @@ function decodeBlock(lines: readonly POLine[], lineOffset: number): POBlock {
 	return {
 		kind: id.raw === "" && context === undefined && plural === undefined ? "header" : "entry",
 		lines,
-		fields: fields.map(({ raw, ...field }) => ({ ...field, value: decodePOEscapes(raw) })),
+		fields: detailed
+			? fields.map(({ raw, ...field }) => ({ ...field, value: decodePOEscapes(raw) }))
+			: [],
 		entry: decoded
 	};
+}
+
+/** Common single-line entry form; richer blocks keep the full shared grammar below. */
+function simpleEntry(lines: readonly POLine[]): POEntry | undefined {
+	const translatorComments: string[] = [],
+		extractedComments: string[] = [],
+		referenceComments: string[] = [];
+	let msgctxt: string | undefined, msgid: string | undefined, msgstr: string | undefined;
+	let fields = false;
+	for (const line of lines) {
+		const text = line.text;
+		if (!text.trim()) continue;
+		if (text !== text.trim()) return undefined;
+		if (!fields && text.startsWith("#. ")) {
+			extractedComments.push(text.slice(3).trimStart());
+			continue;
+		}
+		if (!fields && text.startsWith("#: ")) {
+			referenceComments.push(text.slice(3).trimStart());
+			continue;
+		}
+		if (!fields && text.startsWith("# ")) {
+			translatorComments.push(text.slice(2));
+			continue;
+		}
+		fields = true;
+		let name: "msgctxt" | "msgid" | "msgstr", prefix: number;
+		if (text.startsWith('msgctxt "')) {
+			name = "msgctxt";
+			prefix = 9;
+		} else if (text.startsWith('msgid "')) {
+			name = "msgid";
+			prefix = 7;
+		} else if (text.startsWith('msgstr "')) {
+			name = "msgstr";
+			prefix = 8;
+		} else return undefined;
+		if (!text.endsWith('"')) return undefined;
+		const value = text.slice(prefix, -1);
+		if (value.includes('"') || value.includes("\\")) return undefined;
+		if (name === "msgctxt") {
+			if (msgctxt !== undefined) return undefined;
+			msgctxt = value;
+		} else if (name === "msgid") {
+			if (msgid !== undefined) return undefined;
+			msgid = value;
+		} else {
+			if (msgstr !== undefined) return undefined;
+			msgstr = value;
+		}
+	}
+	if (msgid === undefined || msgstr === undefined || msgid === "") return undefined;
+	const entry: POEntry = {
+		msgid,
+		msgstr: { "0": msgstr },
+		translatorComments,
+		extractedComments,
+		referenceComments,
+		flags: [],
+		previousMsgidLines: [],
+		identity: null
+	};
+	if (msgctxt !== undefined) Object.assign(entry, { msgctxt });
+	return entry;
+}
+
+/** Decode one already bounded block from a streaming scanner. Offset is zero-based physical lines. */
+export function parsePOBlock(lines: readonly POLine[], lineOffset = 0, detailed = true) {
+	return parseResult(() => {
+		if (!detailed) {
+			const entry = simpleEntry(lines);
+			if (entry) return { kind: "entry" as const, lines, fields: [], entry };
+		}
+		return decodeBlock(lines, lineOffset, detailed);
+	});
 }
 
 export function parsePO(bytes: Uint8Array, input: POParseOptions = {}) {

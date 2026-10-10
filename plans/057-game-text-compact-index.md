@@ -10,8 +10,9 @@
 
 ## Status
 
-- **State**: IN PROGRESS. Phases 1–2 are done, including lazy sections, streaming publication
-  and 1×/10× format evidence. Phases 3–7 remain.
+- **State**: IN PROGRESS. Phases 1–3 are implemented, including lazy sections, streaming publication,
+  localization file imports and revised 1×/10× evidence. Throughput/whole-index size targets and Phases 4–7 remain. Phase 3 live UE 5.7/5.8 checks
+  are unavailable under repository-only access; their committed fixture oracles pass.
 - **Priority**: P1
 - **Effort**: XL
 - **Risk**: HIGH. This replaces how every Game Text and localization host holds its data, and adds
@@ -410,3 +411,84 @@ hydration remain Phases 3–6. RSS is separate from the V8 targets; identity byt
 No Rust, parser, reader contract, codegen, fixture or Unreal integration changed: Rust and UE
 5.7/5.8 checks do not apply. Full `pnpm check` was not run; the requested gate is `check:precommit`.
 All scale children ran singly with 16,384 MiB heap, 20 GB RSS and 1,200 s stage caps.
+
+### Phase 3: localization files as columns
+
+Recorded 2026-10-10 on Windows / Node 24.21.0, using the retained invented 1×/10× projects.
+No regeneration or 10× in-memory reader. The Phase 1 supervisor retains one child, 16,384 MiB
+heap, 20 GB OS RSS and 1,200 seconds per stage.
+
+**Profiles.** PO: escape/block decoding led the first 1× CPU profile (447/281 ms self), followed by insertion and UTF-8 encoding (388/337 ms). Archive: record scanning led (276 ms), followed by insertion and UTF-8 encoding (202/201 ms).
+Native bounded decoding/scanning, shared PO fast decoding, per-entry dictionaries and encodeInto
+replace the profiled character/encoding costs. The revised profile is dominated by entry/schema,
+dictionary, string allocation and GC work; decoder/hash take 1.59/1.39 s of the 1× file passes.
+The 150 MiB/s goal remains unmet and needs further entry-pipeline optimization.
+
+**Decisions.** Stats record size, exact mtime/ctime nanoseconds and inode/device beside the content key; Windows tests verify stable identity across stats and rewrites. Stat hits open no source. Changed stats hash and parse once; existing hashes discard the parse, and before/after handle/path stats return typed retry failures on mutation. Input spooling is removed; only bounded column blocks spill. Importer version 3 revises the layout while retaining SHA-256(version, normalized options, raw content hash).
+Canonical PO context/key comments, empty arrays, zero-msgstr duplication, source-equal translations
+and repeated reference prefixes are derived within each file. Measured zstd levels 3/6/9/19 select
+identity 6, paths 9, source/translation/comments 3; numerics retain 1. Source 19 costs 184–193 s/file,
+identity 19 costs 33–39 s/file, paths 19 costs 9.08 s versus 0.87 s at 9.
+The [snapshot guide](../docs/engineering/game-text-snapshots.md#localization-file-import) records
+columns/bits and unchanged limits: 16 GiB input/spill, 4 M rows/nodes, depth 64, 4 MiB records,
+2,560 files and 512 MiB identities. Existing reader defaults remain unchanged.
+
+**Measurements.** Warm disk, fresh separate file/target caches. Times include all import work
+through persisted verification; touched inputs rewrite the same bytes before timing. Memory is
+heap / buffers / RSS MiB, using pre-GC/OS peaks; buffers are lower bounds and RSS retains pages.
+The [measurements](../docs/engineering/game-text-localization-import-measurements.md) contain
+all operations per format, every file's CSV, exact column/domain bytes and every codec result.
+
+| Scale / format (files) |     Seconds |     MiB/s | Heap / buffers / RSS MiB | Snapshot MiB |
+| ---------------------- | ----------: | --------: | -----------------------: | -----------: |
+| 1× manifest (1)        |        2.14 |      39.8 |     170.3 / 52.3 / 386.2 |         3.26 |
+| 1× archive (10)        |   1.55–1.81 | 46.6–58.0 |     168.6 / 95.7 / 433.4 |    2.22–3.15 |
+| 1× po (10)             |   1.63–2.00 | 28.5–36.6 |     161.3 / 90.6 / 441.8 |    3.28–4.25 |
+| 10× manifest (1)       |       24.09 |      35.8 |   632.4 / 386.3 / 1027.5 |        32.77 |
+| 10× archive (20)       | 16.51–18.53 | 48.7–51.5 |   403.9 / 427.9 / 1265.3 |  22.59–32.20 |
+| 10× po (20)            | 16.99–18.64 | 30.9–35.5 |   454.7 / 432.3 / 1234.7 |  32.99–42.79 |
+
+Complete target including discovery; stat-hit logical throughput is skipped bytes, not physical IO:
+
+| Target / operation | Read MiB |  Seconds | Logical MiB/s | Heap / buffers / RSS MiB | Snapshot MiB | Published / stat hits |
+| ------------------ | -------: | -------: | ------------: | -----------------------: | -----------: | --------------------: |
+| 1× cold            |  1507.45 |  37.6353 |          40.1 |     187.3 / 79.7 / 422.7 |        75.38 |                21 / 0 |
+| 1× touched         |  1507.45 |  37.2835 |          40.4 |     213.8 / 66.9 / 442.4 |        75.38 |                 0 / 0 |
+| 1× stat hit        |     0.00 |   0.0536 |       28118.2 |       63.5 / 3.9 / 353.8 |        75.38 |                0 / 21 |
+| 1× one-byte PO     |    59.61 |   1.6336 |         922.8 |     140.2 / 60.2 / 410.2 |        75.38 |                1 / 20 |
+| 10× cold           | 29466.57 | 695.3285 |          42.4 |   590.8 / 460.2 / 1222.5 |      1513.06 |                41 / 0 |
+| 10× touched        | 29466.57 | 524.6622 |          56.2 |   668.8 / 203.0 / 1047.0 |      1513.06 |                 0 / 0 |
+| 10× stat hit       |     0.00 |   0.2014 |      146337.9 |      377.8 / 4.8 / 655.8 |      1513.06 |                0 / 41 |
+| 10× one-byte PO    |   602.91 |  15.5483 |        1895.2 |   455.4 / 421.7 / 1033.0 |      1513.06 |                1 / 40 |
+
+10× cold falls from 1,140.91 to 695.33 s; localization size falls from 1,886.05 to 1513.06 MiB.
+Stat hits read zero bytes/publish zero snapshots; touched imports read/parse all files/publish zero.
+The one-byte change reads/publishes one PO and changes exactly one key.
+10× projection: **1513.06 MiB localization + 684.41 MiB joined + 332.98 MiB package estimate = 2530.45 MiB (2.47 GiB)**. The optimistic package proxy uses Phase 2's source (36.63), identity (114.46) and paths/occurrence IDs (181.89); package headers and extra coverage evidence would increase it. The measured independent complete-file layers exceed 1 GiB before joining. Reaching the target needs shared strings across files/layers or sparse evidence overlays and a smaller joined/package representation; no such design change is made here.
+
+**Oracle and verification.** Reusable parser comparison covers all 21 committed fixture files,
+including UE 5.7/5.8, every file at scales 0.0001/0.001, one-byte chunks, escapes/continuations,
+late Crowdin headers, limits, typed failures, stat identity, mutation/retry and cleanup.
+Abandoned import benchmark directories were removed with repository-local ordinary file deletion.
+
+| Final verification command                                                                                                                         |                          Passed | Failed |
+| -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------: | -----: |
+| `pnpm exec vitest run scripts/localization-import.test.ts packages/localization packages/game-text scripts/game-text-scale.test.ts --maxWorkers 1` |           465 tests (4 skipped) |      0 |
+| `node26 node_modules/vitest/vitest.mjs run scripts/localization-import.test.ts --maxWorkers 1`                                                     |                        42 tests |      0 |
+| pnpm --filter @ue-shed/localization build                                                                                                          |                         1 build |      0 |
+| pnpm --filter @ue-shed/game-text build                                                                                                             |                         1 build |      0 |
+| Benchmark CPU profiles, selected 1× PO/archive                                                                                                     |                          2 runs |      0 |
+| Benchmark files / target, both scales                                                                                                              |                          4 runs |      0 |
+| Benchmark size before / after / prefix / final directory                                                                                           |                          4 runs |      0 |
+| pnpm exec tsc -p tsconfig.scripts.json --noEmit                                                                                                    |                         1 check |      0 |
+| pnpm run lint                                                                                                                                      |                         1 check |      0 |
+| pnpm run effect:architecture                                                                                                                       |                          1 gate |      0 |
+| pnpm exec oxfmt, changed files                                                                                                                     |                        17 files |      0 |
+| pnpm run check:precommit                                                                                                                           | 6 stages; 43 architecture tests |      0 |
+
+node26 denotes the retained Node 26.11.1 executable under test-results/game-text-scale/runtime.
+
+Live UE 5.7: unavailable under repository-only access; committed fixture oracle passed.
+Live UE 5.8: unavailable under repository-only access; committed fixture oracle passed.
+No native integration changed. Full pnpm check was not run; the requested portable gate is
+check:precommit. Phases 4–7 and the whole-index size target remain outstanding.

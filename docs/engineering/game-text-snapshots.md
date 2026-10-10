@@ -4,7 +4,7 @@
 snapshots. The pure format is available from both entry points; the Effect Node store and its
 source adapter are available from the main entry. Libraries and CLI provide the same layer as
 Workbench. This domain storage stays outside the native Catalog and needs no Rust protocol change
-or new dependency. Importer and join semantics remain Phases 3–5.
+or new dependency. Localization import is available now; package import and joins remain Phases 4–5.
 
 The Node adapter uses built-in zstd and CRC32, verified on Node 24 and 26. Store activation on a
 runtime without zstd fails with typed upgrade guidance. Other package exports remain loadable.
@@ -84,7 +84,79 @@ writer scopes reject later use. POSIX also syncs directories; Windows Node provi
 and rename. Tests establish process-crash visibility, not a power-loss guarantee. Operations have
 named spans, structured logs, metrics and typed filesystem failures.
 
-## Measurement
+## Localization file import
+
+`importLocalizationFile` records size, mtime, ctime, inode and device beside its content key.
+Matching stats reuse the snapshot without opening authored bytes. A changed stat hashes and parses
+one bounded read; an existing hash discards that parse. Before/after handle and path stats detect
+in-place writes and replacement, returning typed `file_changed` retry guidance. There is no input
+spool. Bounded column string blocks still spill while building a changed file. Stat records are
+validated, atomically replaced disposable hints; content keys remain SHA-256 over importer version,
+format/PO options and the authored content hash. Importer version 3 separates the revised layout.
+
+The JSON tokenizer accepts UTF-16LE BOM or the existing reader's UTF-8 JSON encoding, checks syntax
+and nesting across chunks, and decodes only one bounded `Children` element with the native JSON
+parser. Namespace nodes retain
+parent/name data; namespaces resolve after EOF, so property order does not change identities.
+Manifest keys expand directly into numeric columns. Stable sorting preserves the oracle's duplicate
+identity order, including root children appearing after subnamespaces in the JSON text.
+The PO scanner splits only physical CR/LF lines, preserving U+2028/U+2029 inside strings. It sends
+bounded blocks to the localization package's shared `parsePOBlock` decoder, then resolves identities
+using the target's format/collapse mode or the first header. Errors carry file and line/offset context.
+The document reader and its existing callers keep their original limits and behavior.
+
+The importer defaults to 16 GiB input/spill bytes, 4 million entries or namespace nodes, depth 64,
+2,560 target files, 4 MiB per materialized record/block and 512 MiB of accounted identity dictionary
+storage (128 bytes plus UTF-8 bytes and two bytes per code unit per unique string). Retained and
+resolved namespace trees each have the same allowance, charging 128 bytes per node plus five bytes
+per code unit. Reads are at most
+1 MiB, normally 256 KiB. Each string remains limited to the format's 1 MiB UTF-8 cap. These bounds
+allow the retained 10× files without admitting unbounded strings, trees, dictionaries or row arrays;
+320 MiB input and 1 million rows no longer describe the importer's memory use. They remain the
+unchanged `LocalizationEvidence.read` defaults. Source, translation, path and comment domains dedup
+within 256 KiB blocks and spill immediately. Path rows factor a prefix stored only in that file’s
+metadata; mixed prefixes retain their full value under a row flag. Identity blocks use measured
+zstd level 6, paths level 9, and source/translation/comments level 3. Only identity strings remain globally deduplicated for
+sorting. The 512 MiB dictionary allowance was chosen after 10× exceeded the tentative 256 MiB cap.
+The 16 GiB byte allowance limits disk work and spill usage; the record, dictionary, tree and row
+limits bound memory directly.
+
+Each file uses layout version 3, with the following localization layer (importer version 3):
+
+| Sections                                        | Domain / meaning                                                                                                                                                                                                                                                                |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `entry.namespace`, `entry.key`                  | Identity string IDs, rows sorted by namespace/key text                                                                                                                                                                                                                          |
+| `entry.source`, `entry.translation`             | Separate text domains; equal-to-source translation is derived                                                                                                                                                                                                                   |
+| `entry.path`                                    | Manifest path or first PO reference in the paths domain                                                                                                                                                                                                                         |
+| `entry.notes`, `entry.metadata`                 | Manifest notes and optional opaque metadata JSON, comments domain                                                                                                                                                                                                               |
+| `entry.source-extra`, `entry.translation-extra` | Non-Text fields of the complete localization text objects, comments domain                                                                                                                                                                                                      |
+| `entry.po-extra`                                | Noncanonical context/plural, nonzero msgstr values and nonempty comment/flag arrays as JSON                                                                                                                                                                                     |
+| `entry.options`                                 | u32 bits: optional present/true (1/2), notes present (4), metadata present (8), null PO identity (16), canonical context (32), translation zero present (64), translation equals source (128), leading key comment (256), leading reference (512), path uses file prefix (1024) |
+| `entry.ordinal`                                 | u32 original flattened order; restores PO parser order and stabilizes duplicates                                                                                                                                                                                                |
+| `file.meta`                                     | Bounded JSON: file format, row count, PO format and source-presence boolean and independent path prefix                                                                                                                                                                         |
+
+Optional absence differs from empty or false. Full source/translation objects matter to source
+matching; `metadata.Info.Comment`, developer notes and paths matter to origins and translator notes.
+Plural translations and every comment array round-trip; empty arrays and canonical context/key
+comments are derived, and translation zero lives only in its text domain. Duplicate diagnostics are derivable from adjacent identities rather than another object tree.
+`decodeLocalizationSnapshot` hydrates an explicit bounded page (default 50, maximum 10,000).
+`importLocalizationTarget` uses `LocalizationEvidence.discover`, imports manifest/archive/PO files
+sequentially, and returns independent snapshot keys plus typed per-file diagnostics. Locmeta and
+reports remain outside this layer. Missing evidence does not suppress successfully imported files.
+
+The opt-in `scripts/benchmark-localization-import.ts` measures cold, rewritten-same-bytes, stat-hit and one-file-change imports, per file
+and through target discovery, in one supervised child at a time. It uses the scale safety module's
+16,384 MiB heap, OS-polled 20 GB RSS and 20 minute stage caps. It records timer/checkpoint heap and
+buffers, pre-GC traced heap, OS RSS, input bytes, snapshot bytes, elapsed time and parsed/reused status.
+Both retained scale projects are read without regeneration or the 10× in-memory reader. Complete
+per-file and target tables are in
+[the localization import measurements](game-text-localization-import-measurements.md).
+
+```powershell
+node --import tsx --max-old-space-size=256 scripts/benchmark-localization-import.ts --project test-results/game-text-scale/project-1x --cache test-results/game-text-scale/import-files-1x --output test-results/game-text-scale/import-files-1x.json --mode files
+```
+
+## Snapshot format measurements
 
 The opt-in `scripts/benchmark-game-text-snapshot.ts` runs one child at a time with the Phase 1
 safety module: 16,384 MiB heap, 20 GB OS-polled RSS and 20 minutes per stage. `reblock1` replays

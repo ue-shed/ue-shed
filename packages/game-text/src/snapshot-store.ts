@@ -17,8 +17,11 @@ export { snapshotNodeChecksum } from "./snapshot-file.js";
 export const GAME_TEXT_SNAPSHOT_NAMESPACE = "game-text-v1";
 export const SNAPSHOT_ZSTD_LEVEL = 1;
 export const SNAPSHOT_STRING_ZSTD_LEVEL = 3;
-export const snapshotCompressionLevel = (column: Pick<SnapshotSource["columns"][number], "kind">) =>
-	column.kind === "strings" ? SNAPSHOT_STRING_ZSTD_LEVEL : SNAPSHOT_ZSTD_LEVEL;
+export const snapshotCompressionLevel = (
+	column: Pick<SnapshotSource["columns"][number], "kind" | "compressionLevel">
+) =>
+	column.compressionLevel ??
+	(column.kind === "strings" ? SNAPSHOT_STRING_ZSTD_LEVEL : SNAPSHOT_ZSTD_LEVEL);
 export const snapshotStoreMetrics = {
 	opens: Metric.counter("ue_shed_game_text_snapshot_open_total", { incremental: true }),
 	publishes: Metric.counter("ue_shed_game_text_snapshot_publish_total", { incremental: true }),

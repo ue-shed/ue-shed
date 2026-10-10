@@ -39,6 +39,8 @@ function verifiedString(bytes: Uint8Array, id: number) {
 	);
 }
 export interface SnapshotSourceColumn extends Omit<SnapshotColumn, "values"> {
+	/** A measured producer policy for cold domains; omitted uses the store default. */
+	readonly compressionLevel?: number;
 	readonly load: () => Promise<Uint8Array | Uint32Array>;
 }
 export interface SnapshotSource {

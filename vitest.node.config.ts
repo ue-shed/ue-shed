@@ -11,7 +11,8 @@ export default defineProject({
 			"scripts/localization-import.test.ts",
 			"scripts/package-text-reader.test.ts",
 			"scripts/package-text-record.test.ts",
-			"scripts/package-text-layer.test.ts"
+			"scripts/package-text-layer.test.ts",
+			"scripts/columnar-join.test.ts"
 		],
 		name: "node"
 	}

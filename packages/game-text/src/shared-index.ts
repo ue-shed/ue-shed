@@ -84,6 +84,7 @@ export const sharedIndexDirectory = (options: SnapshotStoreOptions) =>
 	snapshotStoreDirectory(configuration(options));
 
 export interface SharedIndexReader {
+	readonly packedSegment: (segment: number) => Effect.Effect<PackedStrings, Failure>;
 	readonly manifest: SharedIndexManifest;
 	readonly metrics: () => {
 		readBytes: number;
@@ -112,6 +113,21 @@ export interface SharedIndexReader {
 	) => Effect.Effect<Awaited<ReturnType<SharedStringFiles["range"]>>, Failure>;
 }
 export interface SharedIndexWriter {
+	readonly strings: (ids: readonly number[]) => Effect.Effect<string[], Failure>;
+	/** Intern a bounded rule-derived string batch before publishing its ID columns. */
+	readonly intern: (
+		domain: string,
+		values: readonly string[]
+	) => Effect.Effect<Uint32Array, Failure>;
+	/** Columns already use this writer's global IDs; reject a stale reader generation. */
+	readonly publishIds: (
+		name: string,
+		key: string,
+		source: SnapshotSource,
+		generation: string,
+		retained?: Readonly<Record<string, string>>,
+		removed?: readonly string[]
+	) => Effect.Effect<SharedLayerRecord, Failure>;
 	/** Replace several active layers and remove retired names in one root publication. */
 	readonly publishBatch: (
 		entries: readonly ColdLayerSource[],
@@ -289,6 +305,9 @@ export function sharedIndexNodeLayer(options: SnapshotStoreOptions) {
 					};
 				});
 				return {
+					packedSegment: Effect.fn("SharedIndex.packedSegment")((segment: number) =>
+						boundary("segment", () => files.packedSegment(segment))
+					),
 					manifest,
 					metrics: () => ({
 						readBytes: files.readBytes,
@@ -733,6 +752,96 @@ export function sharedIndexNodeLayer(options: SnapshotStoreOptions) {
 				);
 				// Immutable files are retained until explicit retirement; open handles survive unlink.
 				return {
+					intern: Effect.fn("SharedIndex.intern")(
+						(domain: string, values: readonly string[]) =>
+							mutex.withPermits(1)(
+								boundary("intern", async () => {
+									guard();
+									snapshotCheck(
+										values.length <= 8192,
+										"intern",
+										"Batch exceeds bound"
+									);
+									const arena = new StringArena();
+									for (const value of values) arena.add(Buffer.from(value));
+									const ids = await files.internPacked(domain, arena.finish());
+									await files.flush();
+									return ids;
+								})
+							)
+					),
+					strings: Effect.fn("SharedIndex.writerStrings")((ids: readonly number[]) =>
+						boundary("strings", () => files.strings(ids))
+					),
+					publishIds: Effect.fn("SharedIndex.publishIds")(
+						(
+							name: string,
+							key: string,
+							source: SnapshotSource,
+							generation: string,
+							retained: Readonly<Record<string, string>> = {},
+							removed: readonly string[] = []
+						) =>
+							mutex.withPermits(1)(
+								Effect.gen(function* () {
+									const record = yield* boundary("id-layer", async () => {
+										guard();
+										snapshotCheck(
+											generation === manifest.generation,
+											"id-layer",
+											"Stale generation"
+										);
+										const stringColumns: Record<string, string> = {};
+										const columns: SnapshotSourceColumn[] = [];
+										for (const column of source.columns) {
+											snapshotCheck(
+												column.kind !== "strings",
+												column.name,
+												"Expected global IDs"
+											);
+											if (column.kind === "stringIds") {
+												stringColumns[column.name] = column.domain!;
+												const ids = await column.load();
+												for (const id of ids)
+													snapshotCheck(
+														id < files.count,
+														column.name,
+														"ID outside store"
+													);
+												columns.push({
+													name: column.name,
+													kind: "u32",
+													load: async () => ids
+												});
+											} else columns.push(column);
+										}
+										return await writeLayer(
+											directory,
+											files,
+											key,
+											generation,
+											stringColumns,
+											columns
+										);
+									});
+									const active = { ...manifest.active, ...retained, [name]: key };
+									for (const retainedKey of Object.values(retained))
+										snapshotCheck(
+											manifest.layers[retainedKey] !== undefined,
+											"id-layer",
+											"Missing retained layer"
+										);
+									for (const removedName of removed) delete active[removedName];
+									yield* publishRoot({
+										...manifest,
+										active,
+										layers: { ...manifest.layers, [key]: record },
+										segments: [...files.segments]
+									});
+									return record;
+								}).pipe(Effect.uninterruptible)
+							)
+					),
 					publishCold,
 					publishBatch,
 					publish,

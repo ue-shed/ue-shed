@@ -1,6 +1,11 @@
 # Shared Game Text index measurements
 
-Recorded 2026-10-10, Windows / Node 26.11.1. Cold import, ordinary PO refresh and size targets
+Phase 5 adds the joined layer, saved-oracle equality and bounded incremental refresh; its
+measurements and command ledger follow the retained Phase 3/4 evidence below. Hosts and the
+production query migration remain Phase 6 work.
+
+The following opening measurements are the retained **Phase 3** baseline, recorded
+2026-10-10, Windows / Node 26.11.1. Cold import, ordinary PO refresh and size targets
 pass; the reader reference gaps remain explicit. Retained projects/saved joins were reused;
 no regeneration, 1× join rebuild or legacy 10× pipeline. Heap cap 16,384 MiB/process, total RSS
 20 GB; one heavy child at a time. Every 10× command has one absolute 900 s startup-to-cleanup
@@ -413,3 +418,277 @@ uasset-io`, UE 5.7 matrix/process lanes and UE 5.8 matrix/process lanes are not 
 engine's prior 13 native passes / 0 failures remain recorded above; no new engine result is
 claimed. No commit, push, branch switch or stash occurred. Prior logs:
 `test-results/codex/057-gather-*`.
+
+## Phase 5: columnar join and incremental refresh
+
+Recorded 2026-10-10–11, Windows; measurement runtime Node 24.21.0. Existing generated projects,
+stream records and Phase 4 caches were reused. Only temporary tiny test targets were constructed;
+retained projects and native assets were not regenerated. No real project or Git history operation
+was used. One heavy process ran at a time, with a 16,384 MiB heap cap per process and a 20 GB
+parent-plus-child RSS guard. Every 10× command had an absolute 900-second startup-through-cleanup
+watchdog. No 10× command expired, and the object join never ran at 10×.
+
+The new library APIs are `refreshJoinedTarget`, `openJoinedTarget`, `hydrateJoinedTarget` and
+`inspectJoinedTarget`. Manifest, archive, PO and package occurrence permutations sort by shared
+namespace/key IDs and merge with bounded cursors. Unit membership, row references, source/state/
+reason/problem/review columns and facet memberships use external buffers and typed arrays.
+Packed A64 segments expand to UTF-8 buffers plus typed offsets, avoiding a JavaScript string per
+dictionary entry. Normal identities and translation equality stay on IDs. Strings are decoded
+for package-namespace stripping, literal String Table ownership, gather/path rules, source
+metadata comparison, conflicting-source ordering, key-change places, notes/long-text signals,
+review fingerprints and bounded hydration. Folder facets use IDs in the shared A64 path domain;
+file/folder labels are interned in batches. Equal physical columns share aliases. Original
+manifest/archive/PO row references preserve metadata during hydration, capped at 10,000 lines.
+Raw-unit facets survive slices into different gathered identities. The cache key includes the
+project root and string-ID generation; generation/dependency checks reject stale reads, and a
+generation change triggers a full rebuild. The compaction regression verifies rejection,
+full rebuild equality and the subsequent no-change fast path. Host migration is Phase 6.
+
+### Equality and construction checks
+
+Each fixture imports localization through the parser/import oracle and checks package records
+through the package-layer oracle before invoking the Phase 1 line oracle. Comparisons include
+identity, source, origin, original metadata, every culture's state/facts/reasons, pending PO text,
+review and key changes. Tiny/fixture tests also compare problem bits and file/folder/origin/
+editing/notes facets with today's query behavior. The final focused suite has 16 tests:
+
+| Input                                     |   Passed / failed | Evidence                                                                                                                                                          |
+| ----------------------------------------- | ----------------: | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `fixtures/unreal-project`                 |             1 / 0 | Every configured target equal                                                                                                                                     |
+| `fixtures/legacy-unreal-project`          |             1 / 0 | Every configured target equal                                                                                                                                     |
+| Legacy `Generated/4.27`                   |             1 / 0 | Every configured target equal                                                                                                                                     |
+| Legacy `Generated/5.3`                    |             1 / 0 | Every configured target equal                                                                                                                                     |
+| `fixtures/unreal-427-localization`        |             1 / 0 | Every configured target equal                                                                                                                                     |
+| Perforce `baseline`                       |             1 / 0 | Every configured target equal                                                                                                                                     |
+| Perforce `add-arrival`                    |             1 / 0 | Every configured target equal                                                                                                                                     |
+| Perforce `conventional-baseline`          |             1 / 0 | Every configured target equal                                                                                                                                     |
+| Perforce `conventional-move-actor`        |             1 / 0 | Every configured target equal                                                                                                                                     |
+| Perforce `label-north`                    |             1 / 0 | Every configured target equal                                                                                                                                     |
+| Perforce `move-east`                      |             1 / 0 | Every configured target equal                                                                                                                                     |
+| Perforce `two-unclassified-package-edits` |             1 / 0 | Every configured target equal                                                                                                                                     |
+| Seed 57, 0.0001                           |             1 / 0 | No/current/changed review; every line equal                                                                                                                       |
+| Seed 57, 0.001                            |             1 / 0 | No/current/changed review; every line equal                                                                                                                       |
+| Targeted semantic construction            |             1 / 0 | All three pairing tiers, ambiguity, literal/ref String Tables, keyless, outside, gathered-only, not-found, partial/excluded packages, metadata, split-unit facets |
+| Two successive package/PO edits           |             1 / 0 | Object oracle equality; flat overlay equals every full-rebuild column                                                                                             |
+| Saved 1× object oracle                    | 583,507 / 0 lines | Exact line comparison; frozen file reused                                                                                                                         |
+
+The single authorized object-join run saved `phase5-oracle/oracle-1x.ndjson`
+(2,786,473,773 bytes). Evidence loading / corpus / join-and-save took 50.125 / 73.509 /
+44.477 seconds. Peak heap including pre-GC was 5,781,535,240 bytes; RSS 6,130,487,296 bytes. The first complete
+comparison took 802.693 seconds, heap including pre-GC 7,540,871,872, array buffers 1,079,018,638 and RSS
+9,111,605,248 bytes. The final-layout comparison reuses the same saved file and
+passes 583,507 / 583,507 lines with zero differences in 525.928 seconds (537.999 seconds
+startup through cleanup). Peak heap including pre-GC is 7,142,057,120 bytes, array buffers
+1,093,978,163 and RSS 8,239,452,160, taking the greater of Node samples and OS polling. No second object join is authorized or performed.
+
+The generator's Phase 4 header selection excludes apparent old-key packages. Those excluded
+packages cannot prove absence: compared with the original raw Phase 1 census, 203 / 2,030
+lines become unknown rather than not-found, with zero provable key-change pairs. The saved
+1× object oracle confirms this behavior; no oracle correction is claimed. True not-found and
+all pairing tiers are checked independently in tiny semantic cases.
+
+The recipe verifier derives identities' categories from the seed construction, not the joined
+output. The 1× target has 10 cultures and the 10× target has 20; every culture has these counts:
+
+| State                                           |        1× |       10× |
+| ----------------------------------------------- | --------: | --------: |
+| translated                                      |   128,539 | 1,285,401 |
+| not_translated                                  |     1,340 |    13,390 |
+| not_synced                                      |     1,476 |    14,759 |
+| not_gathered                                    |    60,769 |   607,690 |
+| gathered_only                                   |     1,048 |    10,480 |
+| outside_target                                  |     4,132 |    41,320 |
+| unknown                                         |   386,203 | 3,862,030 |
+| needs_update / changed_since_gather / not_found | 0 / 0 / 0 | 0 / 0 / 0 |
+| Total                                           |   583,507 | 5,835,070 |
+
+Keyless counts are 386,000 / 3,860,000; key-change pairs and ambiguities are zero. Every
+culture has complete columns. Checks validate dictionary IDs, state/reason/problem bits,
+input/review/pair references, both pairing directions and permutations exhausting all
+occurrence/manifest rows. File and folder memberships cover each line once in this generated
+construction. Folder counts sum to all lines: Content 578,327 / 5,783,270, Source and Config
+each 524 / 5,240, L10N 4,132 / 41,320. These checks prove construction counts and structural
+integrity. They do not prove arbitrary 10× identity/content equality with the object join.
+
+### Full versus incremental decision
+
+Initial full rebuilds after one changed package and one freshly parsed PO took 11.0029451 /
+167.986709 seconds: **both fail** the 10 / 60 second refresh targets. A stable edit now patches
+affected identities into one flat overlay over a retained full layer. There is no overlay chain;
+the accumulated patch is capped at 8,192 rows. Structural identity/coverage, manifest/archive,
+review/generation, short-source, conflicting-source and absence-candidate changes fall back to
+a full rebuild. The measured package source edit plus PO edit affects one line. This satisfies
+the specified refresh workload; it does not establish the same latency for every fallback.
+
+Two successive tiny edits equal both today's object oracle and a full rebuild. At 1× and 10×,
+the benchmark forces a full rebuild after the measured incremental refresh and compares
+SHA-256 of **every logical column**, including aliases, row references and facets: 94 / 164
+columns match, with zero differences across 583,507 / 5,835,070 lines. No-change refresh
+stat-checks inputs, parses zero files, reads zero authored bytes and does not rebuild the join.
+
+### Final measurements
+
+Single runs without OS cache eviction. Cold means a fresh joined layer over already present
+localization/package layers, not an empty project index. Heap peaks take the greater of sampled
+heap and pre-GC trace peak. Array/RSS peaks are measured separately, not necessarily at one
+instant. The RSS supervisor checks parent plus child; the child peaks below leave room for
+the approximately 115 MB supervisor. All byte columns below are exact; MiB means 1,048,576 bytes.
+
+| Operation                                       | 1× seconds | 10× seconds | Target / result                                       |
+| ----------------------------------------------- | ---------: | ----------: | ----------------------------------------------------- |
+| Cold join                                       | 11.1433659 |  99.9888654 | Measured; query/build acceptance remains later phases |
+| No-change package + localization + join         |  0.5782796 |   2.1728796 | ≤5 / ≤30 s: pass; zero rebuilds                       |
+| One package + fresh PO parse + incremental join |  4.4895785 |  44.0198648 | ≤10 / ≤60 s: pass; exactly one package and one PO     |
+| Forced full rebuild for equality proof          |  7.5698603 |  94.0102752 | All logical columns equal                             |
+| Complete final command, cleanup included        | 30.5247498 | 295.4457347 | Every 10× command ≤900 s: pass                        |
+
+| Operation / metric               |      1× bytes |      10× bytes |
+| -------------------------------- | ------------: | -------------: |
+| Cold heap, pre-GC included       |   185,915,288 |    717,517,384 |
+| Cold array buffers               | 1,193,168,714 | 15,198,570,998 |
+| Cold child RSS                   | 1,465,794,560 | 15,780,085,760 |
+| Refresh heap, pre-GC included    |   212,435,456 |    900,460,232 |
+| Refresh array buffers            |   183,227,083 |  2,385,867,629 |
+| Refresh child RSS                |   545,636,352 |  3,162,517,504 |
+| Full-proof heap, pre-GC included |   187,918,984 |    736,702,872 |
+| Full-proof array buffers         | 1,170,228,753 | 15,245,061,065 |
+| Full-proof child RSS             | 1,468,178,432 | 15,898,247,168 |
+
+Cold joined layers are 11,244,048 / 117,888,712 bytes (10.723 / 112.427 MiB). The following
+whole-index table is captured **after the measured refresh, before retaining the full proof**.
+The joined row includes its full base and active overlay. Physical accounting includes all
+retained files and publication records, every declared Phase 2 dictionary width, plus stat
+hints. No compaction or pruning credit is taken; staging files are excluded as in prior phases.
+
+| Component                             |       1× bytes |           1× MiB |       10× bytes |             10× MiB |
+| ------------------------------------- | -------------: | ---------------: | --------------: | ------------------: |
+| Package layers                        |      4,687,352 |            4.470 |      30,987,100 |              29.552 |
+| Manifest/archive/PO layers            |     15,398,828 |           14.685 |     303,046,592 |             289.008 |
+| Joined full base + overlay            |     11,264,720 |           10.743 |     117,944,176 |             112.480 |
+| Shared strings                        |     11,701,596 |           11.160 |     175,280,744 |             167.161 |
+| Retained files, publication and hints |     10,513,417 |           10.026 |     132,642,521 |             126.498 |
+| **Physical total / target**           | **53,565,913** | **51.084 / 100** | **759,901,133** | **724.698 / 1,024** |
+
+The validation proof retains an additional immutable full joined layer. Physical totals
+immediately after that proof are **64,810,089 / 877,789,965 bytes** (61.808 / 837.126 MiB),
+still below both targets. These are separate accounting checkpoints, preserved in
+`phase5-accepted-physical-after-proof.json`. After final oracle verification retains another
+immutable layer, the 1× physical total is 76,075,037 bytes (72.551 MiB), still below 100 MiB;
+see `phase5-accepted-physical-after-oracle.json`. The 10× total remains 837.126 MiB.
+
+### Phase 5 command ledger
+
+Commands use `NODE_OPTIONS=--max-old-space-size=16384`, serial heavy execution and the benchmark
+supervisor. Replace `S` with `1` or `10`; existing inputs are
+`test-results/game-text-scale/project-1x` / `project-10x-final`, records `phase4-records-Sx`.
+Final cache names are `phase5-accepted-Sx`; the accepted runs use the uncached byte 122.
+The harness's `--mode join --select all` performs inventory, input
+restore, cold join, recipe/invariants, no-change refresh, changed refresh, size and full proof.
+
+```text
+node --import tsx scripts/benchmark-localization-import.ts --project <project-1x-or-project-10x-final> --cache test-results/game-text-scale/phase5-accepted-Sx --records test-results/game-text-scale/phase4-records-Sx --mode join --select all --po-change-byte 122 --output test-results/game-text-scale/phase5-accepted-Sx.json
+```
+
+The requested broad Vitest filter is exactly:
+
+```text
+packages/localization packages/game-text packages/unreal-assets apps/cli extensions/game-text scripts/game-text-scale.test.ts scripts/localization-import.test.ts scripts/game-text-dictionary.test.ts scripts/package-text-record.test.ts scripts/package-text-reader.test.ts scripts/package-text-layer.test.ts scripts/columnar-join.test.ts --maxWorkers=1
+```
+
+| Command                                                                   | Passed / failed / skipped                                                                                 |
+| ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Benchmark join `--select oracle`, 1×                                      | 3 stages / 0 failed; one object join saved                                                                |
+| Benchmark join `--select compare`, first 1× comparison                    | 583,507 lines / 0 differences; 1 stage / 0 failed; command 818.10 s                                       |
+| Benchmark join `--select all`, initial full 1× and 10×                    | Each command completed; refresh target fails at 11.00 / 167.99 s                                          |
+| Benchmark join `--select all`, before generation guard 1×                 | 8 stages / 0 failed; 94 logical columns equal                                                             |
+| Benchmark join `--select all`, before generation guard 10×                | 8 stages / 0 failed; 164 logical columns equal; 305.39 / 900 s                                            |
+| `pnpm exec vitest run scripts/columnar-join.test.ts --maxWorkers=1`       | 16 / 0; one file; 26.10 s                                                                                 |
+| `pnpm --filter @ue-shed/game-text build`                                  | 1 build / 0 failures                                                                                      |
+| `pnpm exec vitest run <broad filter>` — Node 24.21.0                      | 835 / 0 / 44; 93 files pass, 14 skipped; 294.97 s                                                         |
+| Explicit Node 26.11.1 `node_modules/vitest/vitest.mjs run <broad filter>` | 835 / 0 / 44; 93 files pass, 14 skipped; 298.25 s                                                         |
+| `pnpm test <broad filter>` — native enabled, Node 24.21.0                 | 872 / 0 / 7; 104 files pass, three skipped; 321.08 s; before generation guard                             |
+| Explicit Node 26.11.1 `scripts/test.ts <broad filter>` — native enabled   | 872 / 0 / 7; 104 files pass, three skipped; 282.26 s                                                      |
+| Benchmark join `--select compare`, final-layout 1×                        | 583,507 lines / 0 differences; 1 stage / 0 failed; 537.999 s end to end                                   |
+| Changed-file `pnpm exec oxfmt`                                            | 19 paths / 0 errors; includes final generation guard                                                      |
+| `pnpm run check:precommit`                                                | 6 stages / 0 failed; architecture 43 / 0; contracts in all four packages pass; first gate on Node 26.11.1 |
+| Benchmark join `--select all --po-change-byte 122`, accepted 1×           | 8 stages / 0 failed; 94 logical columns equal; 30.52 s                                                    |
+| Benchmark join `--select all --po-change-byte 122`, accepted 10×          | 8 stages / 0 failed; 164 logical columns equal; 295.45 / 900 s                                            |
+
+| `pnpm test <broad filter>` — final native-enabled Node 24.21.0 | 872 / 0 / 7; 104 files pass, three skipped; 299.93 s |
+
+| `pnpm run check:precommit` — final Node 26.11.1, workspace concurrency 1 | 6 stages / 0 failed; architecture 43 / 0; contracts in all four packages pass |
+| `pnpm run format:check` after final status edits | 1 gate / 0 errors |
+| `git diff --check` | 1 gate / 0 whitespace errors |
+
+The broad filter includes all requested CLI workflows, not just the earlier Phase 4 five-file
+CLI filter. Direct Vitest skipped 44 cases, including native CLI cases whose executable was
+not supplied to the harness. Final native-enabled wrappers pass 872 / 0 / 7 on both Node 24.21.0 and Node 26.11.1.
+The seven skips require live snapshots, commandlet evidence or an optional Blueprint sample. The 16 portable join tests are not skipped.
+Measurement artifacts are `phase5-*.json`; test,
+format/lint and benchmark logs are `phase5-*.log` in `test-results/game-text-scale`.
+
+Iteration failures were corrected before final verification. The join sequence had 12/4,
+14/2, 15/1 and 13/3 intermediate results; focused diagnostics had 0/1 with 15 skipped, then
+1/0 with 15 skipped. Strategy guards and test harness errors were fixed. In particular, one
+edited-PO comparison awaited an Effect without executing its importer, so object and columnar
+joins received different PO versions. Running the reusable import oracle makes the inputs
+equal and the comparison passes. A query-problem helper omitted `op: "is"` and assumed all
+empty text was a missing table reference; it now derives empty-text signals from actual raw
+units. These are demonstrated unequal-input/helper failures, not same-input semantic
+differences or oracle corrections. Final focused comparisons pass 16/0. Initial lint found
+13 errors and two new warnings, fixed with schema boundary decoding, explicit safety comments,
+defined conditional spreads and `isDeepStrictEqual` for canonical input comparison. Initial
+TypeScript errors were corrected; `tsc` package/scripts checks then passed. One command used
+the nonexistent `scripts/tsconfig.json` (TS5058); corrected to `tsconfig.scripts.json`.
+
+The focused suite after the generation guard passes 16 / 0 in 30.32 s; the compaction case
+rejects a stale read, rebuilds exactly and restores the no-change fast path. Effect architecture
+also passes / 0 errors. The first fresh-copy final-code measurement completed five stages,
+then failed the fresh-parse precondition because the default PO mutation already existed in
+the copied cache (23.37 s). The accepted rerun uses `--po-change-byte 122`; no semantic
+comparison failed. A 10× startup attempt used nonexistent `project-10x/scale.json` and failed
+before any stage; the actual retained input is `project-10x-final`. The first precommit passed,
+but pnpm 11 ignored the initial `npm_config_workspace_concurrency` setting and used its default
+typecheck fan-out. Final gate execution uses `pnpm_config_workspace_concurrency=1`, verified
+with `pnpm config get workspace-concurrency`; no large benchmark overlapped either gate.
+
+The repeated command is `pnpm exec vitest run scripts/columnar-join.test.ts --maxWorkers=1`;
+`increment-*` diagnostic runs add a test-name filter for the incremental case. Log stems below
+are under `test-results/game-text-scale`, with `.log` appended.
+
+| Iteration log                        | Passed / failed / skipped |
+| ------------------------------------ | ------------------------- |
+| `phase5-increment-diagnostic-2`      | 0 / 1 / 15                |
+| `phase5-increment-diagnostic`        | 0 / 1 / 15                |
+| `phase5-increment-oracle-diagnostic` | 0 / 1 / 15                |
+| `phase5-increment-proof-2`           | 1 / 0 / 15                |
+| `phase5-increment-proof`             | 0 / 1 / 15                |
+| `phase5-join-cases`                  | 15 / 0 / 0                |
+| `phase5-join-facets`                 | 16 / 0 / 0                |
+| `phase5-join-final-cases`            | 13 / 3 / 0                |
+| `phase5-join-first`                  | 14 / 0 / 0                |
+| `phase5-join-generation`             | 16 / 0 / 0                |
+| `phase5-join-incremental-2`          | 14 / 2 / 0                |
+| `phase5-join-incremental-3`          | 15 / 1 / 0                |
+| `phase5-join-incremental-4`          | 15 / 1 / 0                |
+| `phase5-join-incremental`            | 12 / 4 / 0                |
+| `phase5-join-inputs-matched`         | 16 / 0 / 0                |
+| `phase5-join-v3`                     | 15 / 0 / 0                |
+
+| Additional command                                                       | Passed / failed                                                  |
+| ------------------------------------------------------------------------ | ---------------------------------------------------------------- |
+| `pnpm run lint`, initial                                                 | 0 gate passes / 1 failed gate; 13 errors, two new warnings       |
+| `pnpm run lint`, precommit                                               | 1 gate / 0 failed; 11 existing warnings                          |
+| Package / scripts `pnpm exec tsc -p ... --noEmit`, final targeted checks | Each gate passes / 0 errors                                      |
+| `pnpm exec tsc -p scripts/tsconfig.json --noEmit`                        | 0 / 1 setup error (TS5058); correct file passes                  |
+| `pnpm run effect:architecture`                                           | 1 gate / 0 errors                                                |
+| Benchmark final-code fresh-copy 1×, default cached PO byte               | 5 completed stages / 1 fresh-parse precondition failure; 23.37 s |
+| Benchmark startup with nonexistent `project-10x`                         | 0 stages / 1 path setup failure; corrected input passes          |
+
+Native reader, parser, committed fixtures and Unreal integration are unchanged. UE 5.7 and
+UE 5.8 engine lanes were not needed or rerun; prior results above are retained, not new claims.
+Full `pnpm check` was not run. Changeset: `columnar-localization-join` (Game Text patch).
+Saved-oracle, recipe, invariant and column proofs pass with no STOP condition. Final serial
+precommit passes all six stages on Node 26.11.1, architecture 43 / 0 and contracts in all four
+packages; workspace concurrency is verified as 1. Changed-file oxfmt covers 19 paths, and final
+format/whitespace checks pass. Phase 5 is complete; host/query adoption remains Phases 6–7.

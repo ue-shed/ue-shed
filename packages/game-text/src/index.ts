@@ -63,3 +63,10 @@ export * from "./corpus-summary.js";
 export * from "./package-text-columns.js";
 export * from "./package-text-layer.js";
 export * from "./package-text-cold.js";
+export { refreshJoinedTarget, type JoinedTargetInput } from "./joined-target.js";
+export {
+	openJoinedTarget,
+	hydrateJoinedTarget,
+	inspectJoinedTarget,
+	type JoinedTargetReader
+} from "./joined-target-reader.js";

@@ -10,12 +10,10 @@
 
 ## Status
 
-- **State**: IN PROGRESS. Phase 4 done; Phase 5 next. Package occurrence and coverage columns,
-  signature-keyed refresh, the reusable layer oracle and every requested 1×/10× measurement
-  pass. The whole index is 39.73 / 606.31 MiB; package-plus-PO refresh is 3.52 / 39.13 s.
-  The reader v1.8 and gather rule v1.9 remain unchanged. The saved Phase 2 joined layer is a
-  size reference; Phase 5 implements the join. Hosts still use the existing corpus path;
-  Phases 5–7 remain open.
+- **State**: IN PROGRESS. Phase 5 is complete: columnar join equality, both scale measurements,
+  incremental/full proofs and Node 24/26 verification pass. Full refresh missed 10 / 60 s,
+  so stable edits use the bounded incremental join. Reader v1.8 and gather rule v1.9 are
+  unchanged. Hosts still use the existing corpus path; Phases 6–7 remain open.
 - **Priority**: P1
 - **Effort**: XL
 - **Risk**: HIGH. This replaces how every Game Text and localization host holds its data, and adds
@@ -631,3 +629,88 @@ Full `pnpm check` was not run. Changeset: `package-text-shared-layer` (Game Text
 
 **Complete.** Phase 4 done; Phase 5 next. Joined-layer implementation and joined refresh,
 host and query acceptance remain later work.
+
+### Phase 5: columnar merge join and incremental refresh
+
+Recorded 2026-10-10–11, Windows / Node 24.21.0. Retained generated projects and Phase 4 caches
+were reused; no real project, regeneration or Git history operation. One heavy process at a
+time, 16,384 MiB heap/process, 20 GB parent-plus-child RSS. Initial full and final incremental
+10× commands take 332.55 / 295.45 s, below the absolute 900-second startup-to-cleanup cap.
+The object join never runs at 10×. Detailed input, byte, peak and command tables are in
+[`game-text-shared-index-measurements.md`](../docs/engineering/game-text-shared-index-measurements.md#phase-5-columnar-join-and-incremental-refresh).
+
+**Implementation.** Sorted numeric namespace/key permutations merge package occurrences,
+manifest and culture rows. Bulk UTF-8, offsets, permutations, unit memberships and output
+columns use external buffers/typed arrays. Decode strings for namespace stripping, literal
+String Table ownership, gather/path rules, source metadata/conflict ordering, key-change
+places, notes/long-text signals, review fingerprints and bounded hydration; ordinary identity
+and translation comparisons stay on IDs. Gathered occurrence identity follows `gathered-text.ts`;
+`%LOCPROJECTROOT%` and `not_gatherable` use today's coverage/diagnostic precedence. Snapshot
+columns retain original manifest/archive/PO references, states/facts/reasons, problems, review,
+pairs and namespace/file/folder/origin/editing/notes facets. Full raw-unit facets survive
+identity slicing. The cache key includes project root and string-ID generation; compaction
+rejects stale reads and forces an equal full rebuild. Folder IDs use shared A64 path ranks; labels are interned in batches and
+equal physical columns share aliases. Hydration is capped at 10,000 lines. Hosts remain Phase 6.
+
+**Equality.** Import and package-layer oracles first validate identical inputs; the Phase 1
+line oracle then compares every field, including metadata, pending PO, review and key changes.
+Tiny/fixture cases also compare problem bits and all facets with today's query behavior.
+
+| Input                                                                                           | Result                                                             |
+| ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `fixtures/unreal-project`, `fixtures/legacy-unreal-project`, `fixtures/unreal-427-localization` | Each equal, every target                                           |
+| Legacy `Generated/4.27`, `Generated/5.3`                                                        | Each equal, every target                                           |
+| Perforce baseline, add-arrival, conventional-baseline, conventional-move-actor                  | Each equal, every target                                           |
+| Perforce label-north, move-east, two-unclassified-package-edits                                 | Each equal, every target                                           |
+| Seed 57, 0.0001 / 0.001; no/current/changed review                                              | Every line equal in each case                                      |
+| Semantic absence/partial/excluded/table/keyless/outside/gathered-only cases                     | Equal; all three key-change tiers, ambiguity and split-unit facets |
+| Two successive package/PO edits                                                                 | Object oracle equal; flat overlay equals every full column         |
+| Saved 1× oracle                                                                                 | 583,507 / 583,507 lines equal; zero differences                    |
+
+Today's 1× object join ran once, saving a 2,786,473,773-byte NDJSON oracle. Evidence/corpus/
+join-and-save take 50.13 / 73.51 / 44.48 s, peak heap 5.38 GiB / RSS 5.71 GiB. The first
+comparison reuses that file: 802.69 s, heap 7.02 GiB / RSS 8.49 GiB. Final-layout reuse passes all 583,507 lines in
+525.93 s (538.00 s end to end), heap 6.65 GiB / RSS 7.67 GiB; zero differences. No oracle correction is claimed: Phase 4 header exclusions move 203 raw-baseline
+not-found lines to unknown and remove provable key pairs, as the saved object oracle confirms.
+
+**10× checks.** All 20 cultures equal the independent seeded census: translated 1,285,401;
+not_translated 13,390; not_synced 14,759; not_gathered 607,690; gathered_only 10,480;
+outside_target 41,320; unknown 3,862,030; other states zero. Total 5,835,070; keyless
+3,860,000; zero pairs/ambiguities because old-key packages are header-excluded. Every culture
+column is complete; IDs, input/review/pair references and bit masks are valid; permutations
+exhaust occurrence/manifest rows. File/folder memberships cover every line once. Folder counts
+sum to all lines: Content 5,783,270, Source and Config each 5,240, L10N 41,320. This proves
+construction counts and structural integrity, not arbitrary 10× object-model content equality;
+true absence/review/pair semantics are covered separately by the line oracle.
+
+**Decision.** Full package-plus-PO refresh takes **11.00 / 167.99 s**, failing ≤10 / ≤60 s.
+Stable source/PO edits now recompute changed identities in one flat overlay, bounded to 8,192
+accumulated rows over one retained full layer. Structural/coverage, manifest/archive, review,
+generation, short-source, conflicting-source and absence-candidate changes fall back to full
+rebuilds; measured latency does not cover every fallback. Forced full proofs equal SHA-256 of
+all **94 / 164 logical columns** at 1× / 10×, including row references/facets: zero differences.
+No-change refresh parses no files, reads no authored bytes and does not rebuild the join.
+
+| Measurement                                 |                           1× |                            10× | Target / result                        |
+| ------------------------------------------- | ---------------------------: | -----------------------------: | -------------------------------------- |
+| Cold join                                   |                      11.14 s |                        99.99 s | Input layers already present           |
+| Peak cold heap / array buffers / RSS, MiB   | 177.30 / 1,137.89 / 1,397.89 | 684.28 / 14,494.49 / 15,049.06 | Pre-GC heap included; total RSS <20 GB |
+| Cold joined layer                           |                   10.723 MiB |                    112.427 MiB | Included in whole index                |
+| Package + fresh PO parse + incremental join |                       4.49 s |                        44.02 s | ≤10 / ≤60 s: pass                      |
+| No-change refresh                           |                       0.58 s |                         2.17 s | ≤5 / ≤30 s: pass; zero rebuilds        |
+| Whole index after refresh                   |                    51.08 MiB |                     724.70 MiB | ≤100 / ≤1,024 MiB: pass                |
+| Physical index after retaining full proof   |                    61.81 MiB |                     837.13 MiB | Both still pass                        |
+| Final command including proof/cleanup       |                      30.52 s |                       295.45 s | Every 10× run ≤900 s: pass             |
+
+Physical accounting retains every Phase 2 width, layer, shared string file, publication and
+stat hint; no pruning credit. After final oracle verification the 1× physical index is 72.55
+MiB, still within 100 MiB. Single runs without OS cache eviction; cold is a fresh joined layer.
+
+**Verification.** Native-enabled Vitest passes **872 / 0 / 7 skipped** on Node 24.21.0
+and Node 26.11.1 (104 files pass, three skip), including all 16 join tests and compaction.
+Oxfmt on 19 paths and all **six serial precommit stages pass / 0 fail**: architecture **43 / 0**,
+contracts in all four packages. Effect architecture passes. The guide records corrected
+iteration failures, including unequal PO inputs and query-helper mistakes; no same-input
+semantic difference or STOP. Native reader/parser/fixtures/integration are unchanged:
+UE 5.7/5.8 lanes are not needed or rerun. Full `pnpm check` was not run. Changeset:
+`columnar-localization-join` (Game Text patch). **Phase 5 complete; Phases 6–7 remain open.**

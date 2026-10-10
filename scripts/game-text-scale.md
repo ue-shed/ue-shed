@@ -226,3 +226,25 @@ reader receives exactly one changed package and restores the PO byte, including 
 Sizes include actual package/localization/join layers, shared strings, inactive retained files,
 publication metadata and stat hints. Every 10× command uses the parent's absolute 900-second
 startup-to-cleanup watchdog; all commands run serially under the heap and total-RSS caps.
+
+Phase 5 uses `--mode join --select all` on a new copy of the accepted Phase 4 integrated cache.
+It restores original layer inputs, times a cold join, validates the seeded census and all column
+references, measures no-change and one-package-plus-one-PO refresh, records physical size, then
+compares every logical column's SHA-256 with a forced full rebuild. `--select refresh` repeats
+refresh/proof on an existing cache; choose a fresh `--po-change-byte` so the PO importer parses one
+uncached edit. Cold here means the joined layer is absent; package and localization inputs exist.
+
+```powershell
+$env:NODE_OPTIONS = "--max-old-space-size=16384"
+node --import tsx scripts/benchmark-localization-import.ts --project test-results/game-text-scale/project-1x --cache test-results/game-text-scale/phase5-measured-1x --records test-results/game-text-scale/phase4-records-1x --mode join --select refresh --po-change-byte 120 --output test-results/game-text-scale/phase5-refresh-proof-1x.json
+```
+
+`--select oracle` is guarded against 10× and reserves `oracle-1x.ndjson` exclusively before the
+single authorized object join. `--select compare` restores original input layers and compares
+bounded hydrated pages with that saved file through the Phase 1 oracle; it never repeats the
+object join. The 10× check derives state counts independently from the retained seed recipe and
+Phase 4 header selection. Excluded old-key packages provide no absence proof, so expected
+`not_found` and key-change pairs are zero. Tiny/committed semantic cases cover actual absence,
+all pairing tiers and ambiguity. Recipe counts and column invariants at 10× do not prove arbitrary
+line identity/content equality with the object model. Every 10× command, including full-rebuild
+proof and cleanup, retains the absolute 900-second deadline and parent-plus-child RSS cap.

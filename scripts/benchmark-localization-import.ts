@@ -51,7 +51,7 @@ const project = repositoryPath(values.project),
 	cache = repositoryPath(values.cache),
 	output = repositoryPath(values.output);
 const mode = Schema.decodeUnknownSync(
-	Schema.Literals(["files", "target", "size", "shared", "package"])
+	Schema.Literals(["files", "target", "size", "shared", "package", "join"])
 )(values.mode);
 const changedPoByte = boundedNumber(values["po-change-byte"] ?? "110", "--po-change-byte", 122);
 if (!Number.isInteger(changedPoByte) || changedPoByte < 97)
@@ -142,7 +142,7 @@ if (values.worker) {
 			);
 		}
 		const passes: readonly ("cold" | "touched" | "unchanged" | "changed")[] =
-			mode === "size" || mode === "shared" || mode === "package"
+			mode === "size" || mode === "shared" || mode === "package" || mode === "join"
 				? []
 				: ["cold", "touched", "unchanged", "changed"];
 		if (mode === "package") {
@@ -154,6 +154,17 @@ if (values.worker) {
 				repositoryPath(values.records),
 				measure,
 				values.select ?? "all"
+			);
+		}
+		if (mode === "join") {
+			const { measureColumnarJoin } = await import("./columnar-join-measure.ts");
+			await measureColumnarJoin(
+				project,
+				cache,
+				values.records ? repositoryPath(values.records) : "",
+				measure,
+				values.select ?? "all",
+				changedPoByte
 			);
 		}
 		for (const pass of passes) {
@@ -313,6 +324,7 @@ if (values.worker) {
 	const changedByte =
 		mode === "target" ||
 		mode === "package" ||
+		(mode === "join" && ["all", "refresh"].includes(values.select ?? "all")) ||
 		(mode === "shared" && ["all", "cold", "refresh"].includes(values.select ?? "all"))
 			? await captureBenchmarkByte(
 					resolve(project, "Content/Localization/Generated/en/Generated.po"),
@@ -452,7 +464,8 @@ if (values.worker) {
 			.then((rss) => {
 				const current = (stages[sampledStage] ??= { osPeakRss: 0, tracePeakHeap: 0 });
 				current.osPeakRss = Math.max(current.osPeakRss, rss);
-				if (rss > maximumRssBytes) stop("RSS exceeded 20 GB.");
+				if (rss + process.memoryUsage().rss > maximumRssBytes)
+					stop("Total parent and child RSS exceeded 20 GB.");
 			})
 			.catch((cause) => {
 				if (child.exitCode === null && child.signalCode === null) stop(String(cause));

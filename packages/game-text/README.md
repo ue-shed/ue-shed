@@ -261,5 +261,15 @@ package-and-sidecar signature and header evidence from the same generation. It r
 eligible packages, reuses unchanged records, drops removed paths, and updates exclusions when
 eligibility changes. All affected shards publish under one shared root. Occurrences and coverage
 samples use shared source, identity and path IDs; excluded packages retain `not_gatherable` status.
-`textCorpusFromPackageTextLayer` is the bounded fixture/Phase 5 oracle adapter. Host query migration
-and the columnar join remain later phases.
+`textCorpusFromPackageTextLayer` is the bounded fixture/Phase 5 oracle adapter.
+
+`refreshJoinedTarget({ projectRoot, target, review?, fileErrors? })` runs under `SharedIndex` and
+merges package and localization identities as shared IDs. It publishes line/culture state, review,
+key-change, problem and facet columns. A matching dependency key returns `rebuilt: false`. Stable
+source/PO edits update at most 8,192 affected lines in one flat overlay over a retained full layer;
+identity, coverage, manifest/archive, review, generation and absence-candidate changes use a full
+merge. `force: true` requests a full rebuild for validation. No authored file is written.
+`openJoinedTarget` rejects stale inputs; `hydrateJoinedTarget(reader, start, maximum)` reconstructs
+at most 10,000 oracle-shaped lines from their original file row references. `inspectJoinedTarget`
+checks column references, culture completeness, key-change pairs and folder coverage. These APIs
+are independent of Workbench. Existing host queries migrate in Phase 6.

@@ -815,6 +815,23 @@ export class SharedStringFiles {
 		}
 		return result;
 	}
+	/** A full segment retains global rank offsets, including mixed-domain ownership. */
+	async packedSegment(segment: number): Promise<PackedStrings> {
+		const meta = this.segments[segment];
+		snapshotCheck(!this.closed && meta !== undefined, "segment", "Invalid segment");
+		const index = await this.index(segment);
+		const packed: PackedStrings = {
+			bytes: Buffer.allocUnsafe(meta.utf8Bytes),
+			offsets:
+				meta.utf8Bytes < 0xffffffff
+					? new Uint32Array(meta.count + 1)
+					: new Float64Array(meta.count + 1)
+		};
+		for (let block = 0; block < index.masks.length; block++)
+			decodeA64Into(await this.block(segment, block), packed, block * 64);
+		snapshotCheck(packed.offsets[meta.count] === meta.utf8Bytes, "segment", "Size differs");
+		return packed;
+	}
 	private loadedDomain(packed: PackedStrings, storedBytes: number): SharedLoadedDomain {
 		let legacy: ReturnType<typeof expandDomain> | undefined;
 		const compatibility = () => (legacy ??= expandDomain(packed));

@@ -59,6 +59,9 @@ const approvedRuntimeExits = new Set([
 const approvedPromiseAdapters = new Set([
 	// The cold importer adapts worker messages and staged snapshot handles below SharedIndex.
 	"packages/game-text/src/localization-cold-import.ts",
+	// Package cold import owns the same worker-message Promise bridge under Effect.acquireRelease;
+	// callers receive only a scoped Effect, and workers/readers/staging close on every exit.
+	"packages/game-text/src/package-text-cold.ts",
 	// Shared immutable string segments and ID layers adapt positioned Node IO below the Effect store.
 	"packages/game-text/src/shared-string-file.ts",
 	"packages/game-text/src/shared-index.ts",
@@ -152,6 +155,10 @@ const approvedRawFetchAdapters = new Set([
 const approvedResourceAdapters = new Set([
 	// Parser workers and their listeners are closed on success, failure and scope cancellation.
 	"packages/game-text/src/localization-cold-import.ts",
+	// Package workers, reply/abort listeners, readers and staging belong to the cold-import scope.
+	"packages/game-text/src/package-text-cold.ts",
+	// The worker's parentPort listener lives only until that owning scope terminates the worker.
+	"packages/game-text/src/package-text-worker.ts",
 	// RSS sampling belongs to one worker message and is cleared before its reply completes.
 	"packages/game-text/src/localization-import-worker.ts",
 	// Site navigation owns click/popstate listeners through onSettled cleanup.

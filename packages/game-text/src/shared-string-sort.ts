@@ -114,7 +114,9 @@ export interface ColdLayerSource {
 	readonly source: SnapshotSource;
 }
 
-/** Global deduplication in 64 MiB byte runs; no old-segment probes and no all-target arena. */
+/** Global deduplication in 64 MiB byte runs. Empty stores need no probes. Existing stores
+ * resolve the sorted domain keys once, preserving shared IDs without another sort.
+ */
 export async function sortColdStrings(
 	entries: readonly ColdLayerSource[],
 	files: SharedStringFiles,
@@ -306,6 +308,8 @@ export async function sortColdStrings(
 	}
 	files.sortMs += performance.now() - started;
 	const bases = new Uint32Array(domains.length);
+	const existingStore = files.count > 0;
+	const resolved: Uint32Array[] = [];
 	for (let owner = 0; owner < domains.length; owner++) {
 		bases[owner] = files.count;
 		if (!counts[owner]) continue;
@@ -318,12 +322,24 @@ export async function sortColdStrings(
 				reader.close();
 			}
 		}
-		await files.appendOrdered(domains[owner]!, counts[owner]!, keys());
+		if (existingStore) {
+			const arena = new StringArena(0, counts[owner]!);
+			for await (const key of keys()) arena.add(key.bytes);
+			resolved[owner] = await files.internPacked(
+				domains[owner]!,
+				arena.finish(),
+				undefined,
+				true
+			);
+		} else await files.appendOrdered(domains[owner]!, counts[owner]!, keys());
 	}
 	for (let rank = 0; rank < uniqueCount; rank++) {
 		const chunk = Math.floor(rank / rankChunk),
 			local = rank % rankChunk;
-		ranks[chunk]![local]! += bases[rankOwners[chunk]![local]!]!;
+		const owner = rankOwners[chunk]![local]!;
+		ranks[chunk]![local] = existingStore
+			? resolved[owner]![ranks[chunk]![local]!]!
+			: ranks[chunk]![local]! + bases[owner]!;
 	}
 	for (let id = 0; id < mapping.length; id++) {
 		const rank = mapping[id]!;

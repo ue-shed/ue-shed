@@ -112,7 +112,7 @@ switches or stashes. Evidence is `speed-final-*.json`, `speed-profile-before-{1,
 `speed-reader-{before,after,cache8,cache32}-10x.json`, `speed-refresh-profile-before-10x.json`
 and `speed-full-width-forecast.json` under `test-results/game-text-scale` (ignored).
 
-## Phase 4: Unreal gather eligibility, measured fixture audit; layer unfinished
+## Phase 4: package-text layer complete; Phase 5 next
 
 Recorded 2026-10-10, Windows / Node 26.9.0, debug native reader. This continuation completes
 source verification, header evidence, eligibility/exclusion helpers and the committed-fixture
@@ -204,21 +204,169 @@ packages and excluding 42; each moves the same single native gap to exclusion ev
 **12 committed + 2 engine audits pass** the documented mapping. Raw per-root timings, byte counts,
 excluded paths and gap coordinates: `test-results/game-text-scale/phase4-candidate-audit.json`.
 
-| Package layer / whole index measurement    | 1×           | 10×          | Target                              |
-| ------------------------------------------ | ------------ | ------------ | ----------------------------------- |
-| Actual package layer size                  | Not measured | Not measured | Included in whole index             |
-| Whole index including actual package layer | Not measured | Not measured | ≤100 / ≤1,024 MiB                   |
-| Cold package build                         | Not run      | Not run      | Bounded run; no forecast acceptance |
-| No-change package refresh                  | Not run      | Not run      | ≤5 / ≤30 s                          |
-| One changed package                        | Not run      | Not run      | Changed package only                |
-| One package + one PO file                  | Not run      | Not run      | ≤10 / ≤60 s                         |
+### Package layer implementation and final measurements
 
-Phase 3's size table above still contains an estimated package proxy. It does not establish
-Phase 4 size or refresh acceptance and gets no candidate-pruning credit. The generated event
-stream has no package flags; its future layer conversion must explicitly mark generated text
-packages flagged and other packages unflagged, without regenerating the stream.
+This final pass changes Game Text storage only. The v1.8 reader, v1.9 header evidence and
+candidate rule above are frozen; their source and engine audits are retained prior evidence.
+Measurements use Node 24.21.0; final checks also run on supported Node 26.5.0. All inputs are
+retained generated files or committed saved fixtures. No real project or regeneration.
 
-**Verification command ledger.** All commands use the heap cap and serial heavy execution.
+Occurrence/source/identity/location/notes and gap coordinates are u32 shared-domain IDs.
+Coverage columns retain complete/partial/not_gatherable/error status, bytes, decode failures,
+reason counts and bounded samples. The caller supplies the Project Index's opaque signature
+and header evidence from a complete, path-sorted inventory. Fixed 256 path shards hash these
+signatures plus eligibility into versioned keys. A refresh opens only changed shards, reuses
+unchanged package records, reads only changed/new selected payloads, drops removed packages,
+and atomically publishes all affected shards under the writer lock. Rename and gather-flag
+transitions are tested, as are external-package add/remove transitions with an unchanged outer
+signature. An unchanged refresh performs no payload reads and publishes no generation.
+
+Eight workers prepare cold shard snapshots, followed by the Phase 3 target-wide external
+64 MiB string sort. Existing-store adoption resolves that sorted stream against existing IDs
+without a second sort. Batch publication replaces small updates; broad updates use one cold
+publication to avoid a segment per shard. This remains a Node library/CLI capability, with no
+Workbench dependency. No native dependency or alternative package scanner is introduced.
+
+The reusable `scripts/package-text-layer-oracle.test-support.ts` decodes the layer and compares
+with today's complete event corpus and the documented selected-events/not_gatherable mapping.
+All twelve committed roots and scales 0.0001, 0.001 and 0.002 pass. A separate tiny retained
+stream conversion passes the same oracle. Excluded payloads are never claimed as inspected;
+the full oracle rejects any lost unit or occurrence and checks the exact excluded set.
+
+Conversion streams the retained saved-text NDJSON, folding package gaps into full reason counts
+and bounded samples. It explicitly flags generated text packages (16,500 / 165,000) and leaves
+all others unflagged (150,018 / 1,500,180). Original input has no flags. Counts are 166,518 /
+1,665,180 packages, 1,028,205 / 10,282,050 occurrences and 4,800,000 / 48,000,000 gaps. Synthetic
+signatures encode generated package byte metadata; production callers supply Project Index
+signatures. LF-only framing is necessary: Node 24 readline splits authored U+2028/U+2029.
+
+The whole-index measurement adopts actual package columns plus the retained Phase 2 joined
+snapshot into a copy of the retained Phase 3 localization store. It imports every declared
+Phase 2 dictionary width, including unused synthetic variants. No compaction is used to establish
+size acceptance. The joined columns are a **saved size reference**, not a Phase 5 join build.
+These refresh timings cover package and localization inputs; joined refresh remains Phase 5.
+Cold adoption includes the saved joined snapshot's string resolution, which is why it costs
+more than an empty-store package build. No OS cache eviction; each cell is one measured run.
+
+All sizes are MiB (2^20 bytes), measured after package and PO edits. Physical totals include
+inactive retained layer files, generations, publication metadata and importer stat hints.
+
+| Whole-index component                     |   1× bytes |   1× MiB |   10× bytes |    10× MiB |
+| ----------------------------------------- | ---------: | -------: | ----------: | ---------: |
+| Package occurrence/coverage layers        |  4,687,352 |    4.470 |  30,987,100 |     29.552 |
+| Localization layers                       | 15,398,832 |   14.685 | 303,046,588 |    289.008 |
+| Joined saved-size reference               |  4,321,892 |    4.122 |  48,890,592 |     46.626 |
+| Shared strings/lookup metadata            | 11,680,824 |   11.140 | 175,061,868 |    166.952 |
+| Active subtotal                           | 36,088,900 |   34.417 | 557,986,148 |    532.137 |
+| Physical store incl. retained/publication | 41,653,249 |   39.724 | 635,749,848 |    606.298 |
+| Stat hints                                |      6,048 |    0.006 |      11,849 |      0.011 |
+| **Total**                                 | 41,659,297 |   39.729 | 635,761,697 |    606.310 |
+| **Target**                                |            | **≤100** |             | **≤1,024** |
+
+Standalone package columns after one edit are 4,698,252 / 32,758,464 bytes (4.481 / 31.241 MiB),
+plus shared strings 2,464,312 / 23,751,196 bytes (2.350 / 22.651 MiB). Different shared IDs change
+column compression; the whole-store table uses the actual adopted layers, not these added twice.
+
+Heap is max(sampled heap, pre-GC trace heap) **per V8 isolate**, not the sum of worker isolates.
+RSS is max(internal sample, OS working-set polling), including all threads in the supervised
+process. RSS is a conservative upper bound on aggregate resident heaps. Array buffers are outside
+V8 heap and included in RSS. All processes have 16,384 MiB old-space caps; all observed RSS stays
+below the 20 GB limit. The largest cold adoption is 1,188.02 MiB heap/isolate and 6,039.36 MiB RSS.
+
+| Operation                        |   1× s | 1× peak heap / RSS MiB |   10× s | 10× peak heap / RSS MiB | Target / result          |
+| -------------------------------- | -----: | ---------------------: | ------: | ----------------------: | ------------------------ |
+| Convert retained events          | 36.396 |       230.74 / 2498.11 | 481.950 |        390.36 / 3504.40 | Counts exact             |
+| Inventory read, whole run        |  0.654 |        139.18 / 299.19 |   7.204 |         480.07 / 646.44 | Included in command wall |
+| Cold package, empty store        | 21.630 |       316.15 / 2658.57 | 191.346 |        899.16 / 4059.38 | Bounded; pass            |
+| No-change, empty store           |  0.179 |        136.00 / 566.32 |   1.864 |        510.35 / 1336.55 | Zero payload reads       |
+| One package, empty store         |  1.079 |        144.85 / 678.43 |  17.736 |        610.59 / 2056.07 | One payload read         |
+| Size, empty store                |  0.038 |         87.34 / 674.76 |   0.072 |        467.97 / 1480.82 | Measured                 |
+| Cold whole-store adoption        | 41.295 |       363.37 / 2647.88 | 700.389 |       1188.02 / 6039.36 | ≤900 s command; pass     |
+| No-change package, whole store   |  0.235 |        136.78 / 651.50 |   1.807 |        492.39 / 2073.98 | Zero payload reads       |
+| One package, whole store         |  1.186 |        147.25 / 695.45 |  19.517 |        602.63 / 2452.93 | One payload read         |
+| Prepare localization stat hints  |  0.295 |        130.48 / 691.40 |   0.527 |        536.70 / 1975.63 | Zero files parsed        |
+| No-change package + localization |  0.432 |        141.71 / 681.43 |   2.182 |        533.67 / 1467.25 | ≤5 / ≤30 s; pass         |
+| One package + one-byte PO        |  3.517 |        193.37 / 763.78 |  39.133 |        805.98 / 2494.13 | ≤10 / ≤60 s; pass        |
+| Whole-store size census          |  0.054 |        137.70 / 659.47 |   0.050 |        588.57 / 1833.10 | ≤100 / ≤1,024 MiB; pass  |
+
+Combined refresh reads exactly one package and parses exactly one PO file: 62,510,683 /
+632,193,682 bytes. Unchanged localization files are not read. The byte is restored in the
+worker and the parent cleanup guard. No-change package + localization reads zero PO bytes.
+One-package whole-store updates reuse 15,832 / 139,136 existing strings and resolve only two
+new strings. All measurements include checksum verification and atomic root publication.
+
+### Final-pass command ledger
+
+Benchmark prefix `B` below is exactly
+`node --import tsx scripts/benchmark-localization-import.ts --mode package`.
+Paths are relative to `test-results/game-text-scale/` unless written otherwise. `--project`
+is `project-1x` or `project-10x-final`; `--records` is `phase4-records-1x` or `phase4-records-10x`.
+Each row is a separate serial supervised command, with absolute 900 s startup-to-cleanup
+10× timeout and the same memory caps. Conversion is measured separately; cold builds consume
+converted reader records. No 10× command combines conversion with whole-store adoption.
+
+| Command arguments after B                                                                                                                        | Passed stages / failed | End-to-end seconds | JSON artifact                |
+| ------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------: | -----------------: | ---------------------------- |
+| `--project project-1x --records phase4-records-1x --cache phase4-layer-1x --select convert --output phase4-convert-1x.json`                      |                  1 / 0 |             38.076 | `phase4-convert-1x.json`     |
+| `--project project-10x-final --records phase4-records-10x --cache phase4-layer-10x --select convert --output phase4-convert-10x.json`            |                  1 / 0 |            483.713 | `phase4-convert-10x.json`    |
+| `--project project-1x --records phase4-records-1x --cache phase4-layer-1x --select cold --output phase4-cold-1x.json`                            |                  5 / 0 |             25.169 | `phase4-cold-1x.json`        |
+| `--project project-10x-final --records phase4-records-10x --cache phase4-layer-10x --select cold --output phase4-cold-10x.json`                  |                  5 / 0 |            219.930 | `phase4-cold-10x.json`       |
+| `--project project-1x --records phase4-records-1x --cache phase4-integrated-1x --select integrated --output phase4-integrated-1x.json`           |                  8 / 0 |             49.230 | `phase4-integrated-1x.json`  |
+| `--project project-10x-final --records phase4-records-10x --cache phase4-integrated-10x --select integrated --output phase4-integrated-10x.json` |                  8 / 0 |            772.777 | `phase4-integrated-10x.json` |
+
+`Copy-Item -LiteralPath .../speed-final-1x -Destination .../phase4-integrated-1x -Recurse`
+and the equivalent `speed-final-10x` copy each pass 1/0; retained originals are unchanged.
+Saved joined inputs are `snapshot-v3-final-1x-256.snapshot` (57,003,132 bytes) and
+`snapshot-v3-final-10x-256.snapshot` (717,660,668 bytes).
+
+The broad test filter is exactly:
+
+```text
+packages/protocol packages/unreal-assets packages/game-text packages/localization extensions/game-text scripts/game-text-scale.test.ts scripts/localization-import.test.ts scripts/game-text-dictionary.test.ts scripts/package-text-reader.test.ts scripts/package-text-record.test.ts scripts/package-text-layer.test.ts apps/cli/src/index.e2e.test.ts apps/cli/src/localization-status.integration.test.ts apps/cli/src/localization-check.integration.test.ts apps/cli/src/localization-report.integration.test.ts apps/cli/src/localization-gate.integration.test.ts --maxWorkers=1
+```
+
+| Command                                                                                                   | Passed / failed / skipped                                                                                                                 |
+| --------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm test <broad filter above>` (Node 24.21.0)                                                           | 849 / 0 / 7; 95 files pass, three skip; 229.93 s                                                                                          |
+| `node scripts/test.ts <same broad filter>` (explicit installed Node 26.5.0, PATH set to the same runtime) | 849 / 0 / 7; 95 files pass, three skip; 222.92 s                                                                                          |
+| `pnpm exec oxfmt <changed paths>`                                                                         | 22 changed files formatted / 0 errors (21-file pass, one adapter file, then final 22-file pass)                                           |
+| `pnpm run check:precommit` (Node 26.5.0, workspace concurrency 1)                                         | 6 stages / 0 failures; 43 architecture tests / 0 failures; contract checks pass in all four packages; repeated after adapter declarations |
+| `pnpm run effect:architecture`                                                                            | First check: 3 errors (unregistered Promise/resource adapters); scoped adapter declarations added; final check passes / 0 errors          |
+| `pnpm run format:check` after the final ledger update                                                     | Gate passes / 0 errors                                                                                                                    |
+| `git diff --check`                                                                                        | Gate passes / 0 whitespace errors                                                                                                         |
+
+The broad commands both include native CLI index/status/check/report/gate integration tests;
+the wrapper uses the existing native executable after a successful incremental cargo build.
+They include all 21 layer tests. The seven skips require optional live snapshots, commandlet
+evidence or a Blueprint sample; three files skip. No requested portable layer test is skipped.
+The shell default Node 24 is below the repository's declared >=26 engine; final verification
+was repeated on installed Node 26.5.0. Measurement runtime is recorded separately above.
+
+Iteration ledger (these failures were corrected before final checks):
+
+| Command                                                                                                                                                                                                                   | Passed / failed / skipped                                                            |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `pnpm exec vitest run scripts/package-text-layer.test.ts` before adding the file to Vitest config                                                                                                                         | 0 / 0; harness exit 1, no tests found                                                |
+| Same command, first and second codec iterations                                                                                                                                                                           | 0 / 17 each; fixed empty-domain sentinels and lower-case/length-limited column names |
+| Same command, third iteration                                                                                                                                                                                             | 14 / 3; fixed LF-only NDJSON framing                                                 |
+| Same command with `-t 'parallel cold'`                                                                                                                                                                                    | 0 / 3 / 14; framing diagnosis                                                        |
+| Same command after framing fix                                                                                                                                                                                            | 17 / 0                                                                               |
+| `pnpm exec vitest run scripts/package-text-layer.test.ts packages/game-text/src/shared-index.test.ts packages/game-text/src/shared-string-sort.test.ts packages/game-text/src/shared-string-codec.test.ts --maxWorkers=1` | 40 / 0; four files                                                                   |
+| `pnpm exec tsc -p packages/game-text/tsconfig.build.json --noEmit`                                                                                                                                                        | Gate passes / 0 errors                                                               |
+| `pnpm exec tsc -p tsconfig.scripts.json --noEmit`                                                                                                                                                                         | First run fails on Scope typing; final gate passes / 0 errors                        |
+| `pnpm exec oxlint .`                                                                                                                                                                                                      | First run 12 errors; final 0 errors / 11 existing warnings                           |
+| `pnpm --filter @ue-shed/game-text build`                                                                                                                                                                                  | 1 build gate / 0 failures; compiled workers available                                |
+
+The three late regressions (actual tiny conversion, external-package transitions, empty
+inventory no-change) are included in the final 21 package-layer tests. Logs are
+`test-results/game-text-scale/phase4-layer-*`, `phase4-lint-*` and `phase4-format-*`.
+No unresolved failures, STOP condition or cap hit. Full `pnpm check` was not run.
+Phase 4 is complete; Phase 5 must build the joined layer and compare its behavior with the
+existing full corpus/join oracles. Hosts and production query acceptance remain later work.
+
+### Prior reader/gather-step verification (retained; not rerun)
+
+**Prior verification command ledger.** All commands used the heap cap and serial heavy execution.
 The matrix uses `UE_SHED_UASSET_ENGINE_MATRIX_RETAINED_ROOT` for fresh VerifyOnly reflection,
 source checks, native/WASM/review parity against existing saves. Legacy generator lanes are
 skipped by this no-regeneration mode; committed 4.27/5.3 saved fixtures are audited above.
@@ -259,7 +407,9 @@ export/compile/reports/sync/prepare, audit, cancellation, review state and PO wr
 engine process lane failed. Fresh matrix evidence is `out/uasset-engine-matrix-rFiayA`; process
 evidence is `out/loc-processes-ad6d5c`. Full `pnpm check` was not run.
 
-Remaining: signature-keyed refresh (new, changed, removed, renamed and gains/losses of eligibility),
-shared-store occurrence/coverage columns with one cold sort, the reusable layer-to-corpus oracle,
-and all six 1×/10× measurements above. Keep the current full corpus oracle for Phase 5.
-No commit, push, branch switch or stash occurred. Logs: `test-results/codex/057-gather-*`.
+The final layer pass above completes the formerly remaining Phase 4 work. Rust, reader,
+fixture and Unreal integration sources did not change in this pass: `cargo test --locked -p
+uasset-io`, UE 5.7 matrix/process lanes and UE 5.8 matrix/process lanes are not rerun. Each
+engine's prior 13 native passes / 0 failures remain recorded above; no new engine result is
+claimed. No commit, push, branch switch or stash occurred. Prior logs:
+`test-results/codex/057-gather-*`.

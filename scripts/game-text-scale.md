@@ -194,5 +194,35 @@ unit/occurrence field, coverage and diagnostics. Occurrences, package coverage a
 are multisets; duplicate evidence remains significant. Reports are bounded, while difference
 counts are complete. Phase 5 can hydrate its layer into a small fixture corpus and reuse this
 helper alongside the localization-join oracle. `packageTextRecordsFromEvents` retains pending
-occurrences for small-input migration/tests and must not be used at 10×. Signature refresh,
-persistent package columns and their 1×/10× benchmark are unfinished.
+occurrences for small-input migration/tests and must not be used at 10×.
+
+The final Phase 4 layer harness converts the retained event bytes into bounded record shards. It
+assigns the gather flag to the recipe's text packages and leaves every other package unflagged.
+It folds complete gap counts and at most three samples, and preserves every occurrence. NDJSON
+framing splits LF only, preserving authored U+2028/U+2029 that Node 24+ readline treats as line ends.
+Cold preparation uses eight worker threads; the shared store externally sorts all strings once.
+Refresh compares the complete signature/header inventory, re-reads changed selected packages and
+publishes affected shards together. `comparePackageTextLayerWithEvents` is the reusable Phase 5
+layer oracle, including explicit exclusions and full text equality.
+
+Use a new record destination for conversion and an empty cache for the standalone cold build:
+
+```powershell
+$scale = "1x" # For 10× use project-10x-final and enforce the same 900-second absolute deadline.
+$project = "test-results/game-text-scale/project-$scale"
+$records = "test-results/game-text-scale/phase4-records-$scale"
+$cache = "test-results/game-text-scale/phase4-layer-$scale"
+node --import tsx scripts/benchmark-localization-import.ts --project $project --cache $cache --records $records --mode package --select convert --output "test-results/game-text-scale/phase4-convert-$scale.json"
+node --import tsx scripts/benchmark-localization-import.ts --project $project --cache $cache --records $records --mode package --select cold --output "test-results/game-text-scale/phase4-cold-$scale.json"
+```
+
+For `--select integrated`, first copy the retained Phase 3 `speed-final-{1,10}x` cache to a new
+cache directory. It adopts the actual package records and the retained Phase 2 joined snapshot into
+the same string store. The joined snapshot is a size reference; Phase 5 still owns the new join.
+Its declared dictionary widths remain present, including unused variants; no compaction/pruning
+credit establishes the whole-index size. `--select integrated` measures no-change package and
+whole-index refreshes, one changed package, and a package plus one-byte PO change. It verifies the
+reader receives exactly one changed package and restores the PO byte, including after worker kills.
+Sizes include actual package/localization/join layers, shared strings, inactive retained files,
+publication metadata and stat hints. Every 10× command uses the parent's absolute 900-second
+startup-to-cleanup watchdog; all commands run serially under the heap and total-RSS caps.

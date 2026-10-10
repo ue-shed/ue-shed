@@ -450,7 +450,12 @@ export class SharedStringFiles {
 		return output;
 	}
 	/** One sorted probe pass per immutable segment. Exact byte equality, no fingerprints. */
-	async internPacked(domain: string, values: PackedStrings, reuse?: Uint32Array) {
+	async internPacked(
+		domain: string,
+		values: PackedStrings,
+		reuse?: Uint32Array,
+		ordered = false
+	) {
 		snapshotCheck(!this.closed, "intern", "Shared string scope is closed");
 		const output = reuse ?? new Uint32Array(values.offsets.length - 1).fill(absentId);
 		const pending = new Uint32Array(output.length);
@@ -460,7 +465,15 @@ export class SharedStringFiles {
 		this.reusedStrings += output.length - pendingCount;
 		if (!pendingCount) return output;
 		const sortStarted = performance.now();
-		const order = sortBytes(values, pending.subarray(0, pendingCount));
+		const pendingIds = pending.subarray(0, pendingCount);
+		if (ordered)
+			for (let row = 1; row < pendingIds.length; row++)
+				snapshotCheck(
+					comparePacked(values, pendingIds[row - 1]!, values, pendingIds[row]!) <= 0,
+					"intern",
+					"Ordered input is not byte sorted"
+				);
+		const order = ordered ? pendingIds : sortBytes(values, pendingIds);
 		this.sortMs += performance.now() - sortStarted;
 		const unique = new Uint32Array(order.length);
 		let size = 0,

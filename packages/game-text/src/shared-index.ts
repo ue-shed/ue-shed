@@ -112,9 +112,15 @@ export interface SharedIndexReader {
 	) => Effect.Effect<Awaited<ReturnType<SharedStringFiles["range"]>>, Failure>;
 }
 export interface SharedIndexWriter {
+	/** Replace several active layers and remove retired names in one root publication. */
+	readonly publishBatch: (
+		entries: readonly ColdLayerSource[],
+		removedNames?: readonly string[]
+	) => Effect.Effect<readonly SharedLayerRecord[], Failure>;
 	/** One atomic cold target publication, with a single external dictionary sort. */
 	readonly publishCold: (
-		entries: readonly ColdLayerSource[]
+		entries: readonly ColdLayerSource[],
+		removedNames?: readonly string[]
 	) => Effect.Effect<readonly SharedLayerRecord[], Failure>;
 	readonly manifest: () => SharedIndexManifest;
 	readonly metrics: () => {
@@ -607,16 +613,16 @@ export function sharedIndexNodeLayer(options: SnapshotStoreOptions) {
 						)
 				);
 				const publishCold = Effect.fn("SharedIndex.publishCold")(
-					(entries: readonly ColdLayerSource[]) =>
+					(entries: readonly ColdLayerSource[], removedNames: readonly string[] = []) =>
 						mutex.withPermits(1)(
 							Effect.gen(function* () {
 								yield* boundary("writer", async () => {
 									guard();
+									const names = new Set(entries.map((entry) => entry.name));
 									snapshotCheck(
-										files.count === 0 &&
-											Object.keys(manifest.layers).length === 0,
+										names.size === entries.length,
 										"cold",
-										"Cold target requires an empty index"
+										"Duplicate cold layer names"
 									);
 								});
 								const staging = yield* boundary("cold.sort", () =>
@@ -626,8 +632,8 @@ export function sharedIndexNodeLayer(options: SnapshotStoreOptions) {
 									const maps = yield* boundary("cold.sort", () =>
 										sortColdStrings(entries, files, staging)
 									);
-									const layers: Record<string, SharedLayerRecord> = {},
-										active: Record<string, string> = {};
+									const layers = { ...manifest.layers },
+										active = { ...manifest.active };
 									for (let row = 0; row < entries.length; row++) {
 										const entry = entries[row]!;
 										layers[entry.key] = yield* boundary("cold.layer", () =>
@@ -645,6 +651,7 @@ export function sharedIndexNodeLayer(options: SnapshotStoreOptions) {
 										);
 										active[entry.name] = entry.key;
 									}
+									for (const name of removedNames) delete active[name];
 									yield* publishRoot({
 										...manifest,
 										active,
@@ -660,9 +667,74 @@ export function sharedIndexNodeLayer(options: SnapshotStoreOptions) {
 							}).pipe(Effect.uninterruptible)
 						)
 				);
+				const publishBatch = Effect.fn("SharedIndex.publishBatch")(
+					(entries: readonly ColdLayerSource[], removedNames: readonly string[] = []) =>
+						mutex.withPermits(1)(
+							Effect.gen(function* () {
+								yield* boundary("writer", async () => guard());
+								const domains = new Set(
+									entries.flatMap((entry) =>
+										entry.source.columns
+											.filter((column) => column.kind === "strings")
+											.map((column) => column.domain)
+									)
+								);
+								if (
+									files.segments.length + domains.size * entries.length >
+									maximumSharedSegments
+								)
+									yield* compactOne(true);
+								const active = { ...manifest.active },
+									layers = { ...manifest.layers };
+								let garbage = manifest.garbageUpperBytes ?? 0;
+								const records: SharedLayerRecord[] = [];
+								for (const entry of entries) {
+									if (
+										files.segments.length + domains.size >
+										maximumSharedSegments
+									)
+										return yield* Effect.fail(
+											snapshotFailure(
+												"batch",
+												"Batch exceeds segment cap; use cold publication"
+											)
+										);
+									const old = layers[active[entry.name] ?? ""];
+									const record = yield* boundary("batch.layer", () =>
+										convertLayer(
+											directory,
+											files,
+											entry.name,
+											entry.key,
+											manifest.generation,
+											entry.source,
+											old
+										)
+									);
+									if (old)
+										garbage += yield* boundary("batch.garbage", () =>
+											obsoleteBytes(directory, files, old, record)
+										);
+									layers[entry.key] = record;
+									active[entry.name] = entry.key;
+									records.push(record);
+								}
+								for (const name of removedNames) delete active[name];
+								yield* publishRoot({
+									...manifest,
+									active,
+									layers,
+									garbageUpperBytes: garbage,
+									segments: [...files.segments]
+								});
+								return records;
+							}).pipe(Effect.uninterruptible)
+						)
+				);
 				// Immutable files are retained until explicit retirement; open handles survive unlink.
 				return {
 					publishCold,
+					publishBatch,
 					publish,
 					compact,
 					manifest: () => manifest,

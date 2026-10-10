@@ -254,4 +254,12 @@ Plan 057's opt-in package-text reader preserves today's occurrence fields and ag
 small callers and semantic oracles. `packageTextRecordsFromEvents` is a small-input migration/test
 adapter; it retains pending occurrences and must not replay the 10× stream in memory. Production
 native aggregation happens before transport. TextCorpusService still uses the legacy reader.
-Signature refresh, shared package ID columns and scale acceptance remain unfinished.
+`importColdPackageTextLayer` prepares bounded record shards in workers and sorts their strings once
+with the other shared-store inputs. `refreshPackageTextLayer` takes a complete, sorted signature
+inventory and a selected-package reader stream. The caller supplies the Project Index's exact opaque
+package-and-sidecar signature and header evidence from the same generation. It reads changed/new
+eligible packages, reuses unchanged records, drops removed paths, and updates exclusions when
+eligibility changes. All affected shards publish under one shared root. Occurrences and coverage
+samples use shared source, identity and path IDs; excluded packages retain `not_gatherable` status.
+`textCorpusFromPackageTextLayer` is the bounded fixture/Phase 5 oracle adapter. Host query migration
+and the columnar join remain later phases.

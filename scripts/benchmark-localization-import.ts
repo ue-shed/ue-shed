@@ -41,6 +41,7 @@ const { values } = parseArgs({
 		"po-change-byte": { type: "string" },
 		report: { type: "string" },
 		domain: { type: "string" },
+		records: { type: "string" },
 		"run-timeout-seconds": { type: "string" }
 	}
 });
@@ -49,9 +50,9 @@ if (!values.project || !values.cache || !values.output)
 const project = repositoryPath(values.project),
 	cache = repositoryPath(values.cache),
 	output = repositoryPath(values.output);
-const mode = Schema.decodeUnknownSync(Schema.Literals(["files", "target", "size", "shared"]))(
-	values.mode
-);
+const mode = Schema.decodeUnknownSync(
+	Schema.Literals(["files", "target", "size", "shared", "package"])
+)(values.mode);
 const changedPoByte = boundedNumber(values["po-change-byte"] ?? "110", "--po-change-byte", 122);
 if (!Number.isInteger(changedPoByte) || changedPoByte < 97)
 	throw new Error("--po-change-byte must be a lowercase ASCII letter's byte (97–122).");
@@ -141,7 +142,20 @@ if (values.worker) {
 			);
 		}
 		const passes: readonly ("cold" | "touched" | "unchanged" | "changed")[] =
-			mode === "size" || mode === "shared" ? [] : ["cold", "touched", "unchanged", "changed"];
+			mode === "size" || mode === "shared" || mode === "package"
+				? []
+				: ["cold", "touched", "unchanged", "changed"];
+		if (mode === "package") {
+			const { measurePackageTextLayer } = await import("./package-text-measure.ts");
+			if (!values.records) throw new Error("Package measurements require --records");
+			await measurePackageTextLayer(
+				project,
+				cache,
+				repositoryPath(values.records),
+				measure,
+				values.select ?? "all"
+			);
+		}
 		for (const pass of passes) {
 			if (pass === "changed" && mode === "files") continue;
 			if (pass === "touched") {
@@ -298,6 +312,7 @@ if (values.worker) {
 	// A forced kill bypasses the worker's finally block. Parent owns the authored-byte guard.
 	const changedByte =
 		mode === "target" ||
+		mode === "package" ||
 		(mode === "shared" && ["all", "cold", "refresh"].includes(values.select ?? "all"))
 			? await captureBenchmarkByte(
 					resolve(project, "Content/Localization/Generated/en/Generated.po"),
@@ -323,7 +338,8 @@ if (values.worker) {
 			String(changedPoByte),
 			...(values.select ? ["--select", values.select] : []),
 			...(values.report ? ["--report", values.report] : []),
-			...(values.domain ? ["--domain", values.domain] : [])
+			...(values.domain ? ["--domain", values.domain] : []),
+			...(values.records ? ["--records", values.records] : [])
 		],
 		{
 			execArgv: [

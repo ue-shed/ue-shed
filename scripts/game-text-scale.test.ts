@@ -335,6 +335,57 @@ describe("generated scale harness", () => {
 			await closed;
 		}
 	});
+	it("records a run deadline as failure, including worker startup, and permits only lower caps", async () => {
+		const report = resolve(temporary, "deadline.json");
+		const benchmark = resolve("scripts/benchmark-localization-import.ts");
+		await expect(
+			promisify(execFile)(
+				process.execPath,
+				[
+					"--import",
+					"tsx",
+					benchmark,
+					"--project",
+					first,
+					"--cache",
+					resolve(temporary, "deadline-cache"),
+					"--output",
+					report,
+					"--mode",
+					"shared",
+					"--select",
+					"cold",
+					"--run-timeout-seconds",
+					"0.05"
+				],
+				{ windowsHide: true, timeout: 15000 }
+			)
+		).rejects.toThrow();
+		const result = JSON.parse(await readFile(report, "utf8"));
+		expect(result.outcome.kind).toBe("failed");
+		expect(result.outcome.error).toContain("exceeded");
+		expect(result.limits.runSeconds).toBe(0.05);
+		expect(result.results).toEqual([]);
+		await expect(
+			promisify(execFile)(
+				process.execPath,
+				[
+					"--import",
+					"tsx",
+					benchmark,
+					"--project",
+					first,
+					"--cache",
+					resolve(temporary, "deadline-cache"),
+					"--output",
+					report,
+					"--run-timeout-seconds",
+					"1201"
+				],
+				{ windowsHide: true, timeout: 15000 }
+			)
+		).rejects.toThrow("cannot exceed");
+	});
 });
 
 describe("localization join oracle", () => {

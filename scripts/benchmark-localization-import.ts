@@ -13,14 +13,21 @@ import {
 	importLocalizationFile,
 	importLocalizationTarget
 } from "../packages/game-text/src/localization-import.ts";
-import { repositoryPath } from "./game-text-scale-options.ts";
+import { repositoryPath, readScaleRecipe } from "./game-text-scale-options.ts";
 import {
 	childWorkingSet,
 	killBenchmarkTree,
 	maximumHeapMiB,
 	maximumRssBytes,
-	maximumStageSeconds
+	maximumStageSeconds,
+	benchmarkRunSeconds,
+	benchmarkRunExpired,
+	boundedNumber
 } from "./game-text-scale-safety.ts";
+import { captureBenchmarkByte, restoreBenchmarkByte } from "./localization-benchmark-byte.ts";
+
+// Includes Node startup and module loading, discovery and every file in the cold import.
+const runStarted = 0;
 
 const { values } = parseArgs({
 	options: {
@@ -32,7 +39,8 @@ const { values } = parseArgs({
 		select: { type: "string" },
 		profile: { type: "boolean" },
 		report: { type: "string" },
-		domain: { type: "string" }
+		domain: { type: "string" },
+		"run-timeout-seconds": { type: "string" }
 	}
 });
 if (!values.project || !values.cache || !values.output)
@@ -61,6 +69,7 @@ const memory = () => {
 };
 
 if (values.worker) {
+	if (!process.send) throw new Error("Localization worker requires its supervised parent.");
 	const results: unknown[] = [];
 	let peak = memory();
 	let stage = "startup";
@@ -266,6 +275,25 @@ if (values.worker) {
 		process.disconnect?.();
 	}
 } else {
+	const hardRunSeconds = benchmarkRunSeconds((await readScaleRecipe(project)).scale);
+	const runSeconds =
+		values["run-timeout-seconds"] === undefined
+			? hardRunSeconds
+			: boundedNumber(
+					values["run-timeout-seconds"],
+					"run-timeout-seconds",
+					hardRunSeconds ?? maximumStageSeconds
+				);
+	const runFailure = `Whole run exceeded ${runSeconds} seconds (10× hard maximum: 15 minutes, including cold target import).`;
+	// A forced kill bypasses the worker's finally block. Parent owns the authored-byte guard.
+	const changedByte =
+		mode === "target" ||
+		(mode === "shared" && ["all", "cold", "refresh"].includes(values.select ?? "all"))
+			? await captureBenchmarkByte(
+					resolve(project, "Content/Localization/Generated/en/Generated.po"),
+					"mirava"
+				)
+			: undefined;
 	await mkdir(resolve(output, ".."), { recursive: true });
 	const environment: NodeJS.ProcessEnv = { ...process.env, TSX_DISABLE_CACHE: "1" };
 	delete environment.NODE_OPTIONS;
@@ -310,7 +338,7 @@ if (values.worker) {
 	const stages: Record<string, { osPeakRss: number; tracePeakHeap: number }> = {};
 	const results: Schema.Json[] = [];
 	const stop = (error: string) => {
-		if (outcome) return;
+		if (outcome?.kind === "failed") return;
 		outcome = { kind: "failed", error };
 		termination = killBenchmarkTree(child);
 	};
@@ -339,14 +367,21 @@ if (values.worker) {
 					limits: {
 						heapMiB: maximumHeapMiB,
 						rssBytes: maximumRssBytes,
-						stageSeconds: maximumStageSeconds
-					}
+						stageSeconds: maximumStageSeconds,
+						runSeconds: runSeconds ?? null
+					},
+					wallSeconds: (performance.now() - runStarted) / 1000
 				},
 				null,
 				"\t"
 			) + "\n"
 		);
 	child.on("message", (input) => {
+		if (benchmarkRunExpired(runStarted, performance.now(), runSeconds)) {
+			stop(runFailure);
+			return;
+		}
+		if (outcome?.kind === "failed") return;
 		const decoded = Schema.decodeUnknownResult(Message)(input);
 		if (decoded._tag === "Failure") {
 			stop("Invalid worker message.");
@@ -363,6 +398,13 @@ if (values.worker) {
 			console.log(JSON.stringify(message.result));
 		} else if (message.kind === "done" || message.kind === "failed") outcome = message;
 	});
+	const deadline =
+		runSeconds === undefined
+			? undefined
+			: setTimeout(
+					() => stop(runFailure),
+					Math.max(0, runSeconds * 1000 - (performance.now() - runStarted))
+				);
 	const watchdog = setInterval(() => {
 		if (performance.now() >= progressAt && !outcome) {
 			const current = stages[stage];
@@ -396,7 +438,15 @@ if (values.worker) {
 		child.once("close", () => done());
 	});
 	clearInterval(watchdog);
+	clearTimeout(deadline);
 	await termination;
+	try {
+		await restoreBenchmarkByte(changedByte);
+	} catch (cause) {
+		outcome = { kind: "failed", error: `Authored-byte restoration failed: ${String(cause)}` };
+	}
+	if (benchmarkRunExpired(runStarted, performance.now(), runSeconds))
+		outcome = { kind: "failed", error: runFailure };
 	if (!outcome) outcome = { kind: "failed", error: stderr };
 	await save();
 	console.log(`Finished ${mode}: ${outcome.kind}`);

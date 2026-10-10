@@ -7,6 +7,7 @@ export default defineProject({
 		include: [
 			"{apps,extensions,fixtures,packages,tools}/**/*.{test,spec}.{ts,tsx}",
 			"scripts/game-text-scale.test.ts",
+			"scripts/game-text-dictionary.test.ts",
 			"scripts/localization-import.test.ts"
 		],
 		name: "node"

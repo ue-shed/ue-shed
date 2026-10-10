@@ -69,3 +69,39 @@ CI only uses scale 0.001 (133 keys, 1,028 occurrences, 4,800 gaps):
 ```powershell
 pnpm exec vitest run scripts/game-text-scale.test.ts packages/localization packages/game-text
 ```
+
+The localization import benchmark enforces an absolute 900-second limit for every 10× run,
+including startup, discovery, all cold files and cleanup. File/stage changes do not reset it.
+Expired runs kill the worker tree, exit nonzero and record `outcome.kind: "failed"`, with any
+completed stages retained for diagnosis. `--run-timeout-seconds` can only lower the applicable
+limit. A parent-owned byte guard restores the PO edit even after forced termination.
+
+The dictionary experiment reads retained Phase 2 sections without importing projects or rebuilding
+the join. Run each candidate separately and serially; the same heap/RSS/stage and 10× run caps apply:
+
+```powershell
+node --import tsx scripts/benchmark-game-text-dictionary.ts --input test-results/game-text-scale/snapshot-v3-final-1x-256.snapshot --output test-results/game-text-scale/dictionary-A64-1x.json --scale 1 --candidate A64
+node --import tsx scripts/benchmark-game-text-dictionary.ts --input test-results/game-text-scale/snapshot-v3-final-10x-256.snapshot --output test-results/game-text-scale/dictionary-A64-10x.json --scale 10 --candidate A64
+```
+
+Candidates are `A16`, `A32`, `A64`, `B` (BBHash gamma 1, sampled rank, fingerprint and insertion-ID
+mapping) and `C` (current hash pages). The script verifies declared scale against the saved line
+count. Results separate input loading, dictionary encoding, a modeled file append, scattered-page
+decode and prefix ranges. Lookup/page probes start with compressed payloads in memory; they are
+not end-to-end importer or production reader measurements. Method, comparisons and remaining work
+are in [the measurements](../docs/engineering/game-text-shared-index-measurements.md).
+
+Final experiment verification used these commands, with one test worker:
+
+```powershell
+pnpm exec vitest run scripts/game-text-dictionary.test.ts --maxWorkers=1
+pnpm exec vitest run packages/localization packages/game-text scripts/game-text-scale.test.ts scripts/localization-import.test.ts --maxWorkers=1
+& test-results/game-text-scale/runtime/node-v26.11.1-win-x64/node.exe node_modules/vitest/vitest.mjs run packages/game-text/src/snapshot-format.test.ts packages/game-text/src/snapshot-file.test.ts packages/game-text/src/snapshot-store.test.ts packages/game-text/src/shared-index.test.ts scripts/localization-import.test.ts scripts/game-text-scale.test.ts scripts/game-text-dictionary.test.ts --maxWorkers=1
+pnpm exec oxfmt scripts/game-text-dictionary.ts scripts/game-text-dictionary.test.ts scripts/benchmark-game-text-dictionary.ts scripts/benchmark-localization-import.ts scripts/game-text-scale-safety.ts scripts/localization-benchmark-byte.ts scripts/game-text-scale.test.ts scripts/game-text-scale.md vitest.node.config.ts docs/engineering/game-text-shared-index-measurements.md plans/057-game-text-compact-index.md
+$env:npm_config_workspace_concurrency = "1"
+pnpm run check:precommit
+```
+
+The Node 26 path is the retained ignored runtime; an explicitly configured Node 26 executable also
+works. Broad/new tests and precommit used the current default Node 24.21.0; the separately invoked
+Node 26 suite verifies import, store, shared-index and benchmark behavior on 26.11.1.

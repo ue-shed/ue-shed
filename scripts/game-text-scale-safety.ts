@@ -5,6 +5,16 @@ import { positiveNumber } from "./game-text-scale-options.ts";
 export const maximumHeapMiB = 16384;
 export const maximumRssBytes = 20_000_000_000;
 export const maximumStageSeconds = 1200;
+export const maximumTenfoldRunSeconds = 900;
+
+/** Absolute run budget; changing stages must never restart the 10× deadline. */
+export function benchmarkRunSeconds(scale: number): number | undefined {
+	return scale >= 10 ? maximumTenfoldRunSeconds : undefined;
+}
+
+export function benchmarkRunExpired(started: number, now: number, seconds: number | undefined) {
+	return seconds !== undefined && now - started >= seconds * 1000;
+}
 
 export function boundedNumber(value: string, name: string, maximum: number): number {
 	const number = positiveNumber(value, name);

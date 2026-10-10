@@ -1,5 +1,9 @@
 # Shared Game Text index measurements
 
+Source order is fixed, with independent fixture/tiny/targeted and saved 1× equality re-runs.
+Phase 6 is stopped on a new findings mismatch for split gathered identities. See the
+[continuation evidence](#phase-6-continuation-source-order-fixed-new-findings-stop).
+
 Phase 5 adds the joined layer, saved-oracle equality and bounded incremental refresh; its
 measurements and command ledger follow the retained Phase 3/4 evidence below. Hosts and the
 production query migration remain Phase 6 work.
@@ -692,3 +696,211 @@ Saved-oracle, recipe, invariant and column proofs pass with no STOP condition. F
 precommit passes all six stages on Node 26.11.1, architecture 43 / 0 and contracts in all four
 packages; workspace concurrency is verified as 1. Changed-file oxfmt covers 19 paths, and final
 format/whitespace checks pass. Phase 5 is complete; host/query adoption remains Phases 6–7.
+
+## Phase 6 STOP: conflicting-source order (historical, resolved below)
+
+Recorded 2026-10-11, Windows. The first Plan 057 STOP condition applies: a columnar line
+differs from the original-event oracle, which has not been shown to be wrong. The Phase 5
+results above remain historical results on their inputs; this case reopens its equality
+prerequisite. Phase 6 host adoption has not been implemented.
+
+Two path-ordered, complete package records share namespace `UI` and key `Shared`.
+`Content/Probe/Package00.uasset` has source `Alpha`, shard 247;
+`Content/Probe/Package01.uasset` has source `Beta`, shard 230. The same records feed the
+object corpus and package refresh. The original-event oracle's `Cases:["UI","Shared"]`
+line has source **`Alpha Beta`**. The index hydrates **`Beta Alpha`**. Of sixteen matched
+lines, exactly one differs, in exactly one field (`source`). All other line fields agree.
+
+`loadJoinPackages` visits shard names in lexical order. The conflicting-source sort compares
+unit ID then global occurrence row, preserving shard order when unit IDs match. The object
+join instead retains original occurrence/source order. An oracle hydrated from the package
+layers already shares their reordering and reports equality: the regression verifies this
+blind spot separately, before asserting equality with the independent event oracle.
+
+The regression is in `scripts/columnar-join.test.ts`. Preparation is in `beforeAll`, outside
+the expected-failure wrapper, so setup failures fail the suite. Only the equality assertion
+is `it.fails`; remove the annotation after fixing source order. Temporarily running that
+assertion as an ordinary test produces the exact source mismatch, not a setup failure.
+Raw evidence is `test-results/codex/phase6-order-probe.json` and `phase6-*.log` (ignored).
+
+No real project, retained-project regeneration, 10× run or heavy-process overlap occurred.
+Tiny invented test inputs are disposable. No package/app behavior or public contract changed;
+no changeset is appropriate for the test/evidence changes alone. Both CLI and headless
+Workbench cold/warm/query/heap/refresh measurements are not run at either scale because of
+STOP; the target comparison table is in [the Phase 6 plan evidence](../../plans/057-game-text-compact-index.md#phase-6-stopped-on-conflicting-source-order).
+No new UE 5.7/5.8 process or engine result is claimed. The requested broad host/component/e2e
+tests and full `pnpm check` are not run after STOP; the known Data Authoring adoption failure
+is prior evidence, not a failure measured in this pass.
+
+### Commands in this pass
+
+`V` means `node_modules/vitest/vitest.mjs run scripts/columnar-join.test.ts --maxWorkers=1`.
+Node 24 uses `pnpm exec vitest run` with the same arguments; Node 26 uses the explicit
+installed `C:/Users/denny/scoop/apps/nodejs/current/node.exe` (26.5.0).
+The unwrapped/focused runs add `-t 'preserves conflicting source order'`.
+
+| Command                                                                 |           Passed | Failed / expected failure        | Evidence                            |
+| ----------------------------------------------------------------------- | ---------------: | -------------------------------- | ----------------------------------- |
+| Standalone `node --import tsx test-results/codex/phase6-order-probe.ts` | 16 matched lines | 1 line / 1 source difference     | `phase6-order-probe.json`           |
+| Unwrapped focused Vitest, Node 24.21.0                                  |                0 | 1 failed; 16 skipped             | `phase6-order-unwrapped-node24.log` |
+| Corrected focused Vitest, Node 24.21.0                                  |       0 ordinary | 1 expected failure; 16 skipped   | `phase6-order-node24.log`           |
+| Final V, Node 24.21.0                                                   |               16 | 0 unexpected; 1 expected failure | `phase6-join-node24-final.log`      |
+| Final V, Node 26.5.0                                                    |               16 | 0 unexpected; 1 expected failure | `phase6-join-node26-final.log`      |
+
+Final `pnpm exec oxfmt` on the three changed files passes **3 files / 0 errors**.
+Final `pnpm run check:precommit` on Node 26.5.0 with workspace concurrency 1 passes
+**6 stages / 0 failures**, including **43 architecture tests / 0 failures** and contract
+checks in **4 packages / 0 failures**; lint retains eleven existing warnings.
+Final `git diff --check` passes **1 gate / 0 whitespace errors**.
+Final `pnpm run format:check`, after the evidence updates, passes **1 gate / 0 errors**.
+Precommit evidence: `test-results/codex/phase6-precommit-final.log`.
+
+Iteration/setup failures are excluded from acceptance: the first standalone probe held a
+package writer open while acquiring a joined writer and failed with typed `busy`; separate
+scopes corrected that. A separate new script was outside Vitest's include list (0 tests,
+exit 1); the case moved into the existing join suite. The initial regression omitted its
+record-factory import; first precommit passed format/lint, then failed scripts typecheck with
+TS2304. Initial full suites each passed the sixteen existing tests, but their expected-failure
+annotation hid the new setup error. The import was fixed, setup moved to `beforeAll`, and
+the unwrapped run verified that the remaining failure is precisely the oracle difference.
+**Phase 6 is incomplete; source-order equality must be restored before continuing.**
+
+## Phase 6 continuation: source order fixed, new findings STOP
+
+Recorded 2026-10-11 on Windows / Node 24.21.0 and 26.11.1. The source-order STOP above is
+resolved. Native scanning sorts path components (`scanner.rs:251`); parallel extraction retains
+path-indexed slots (`project_io.rs:568–637`) and saved export/property traversal (`:793`). The
+TypeScript reader does not reorder them (`asset-reader.ts:557–576`). The corpus preserves unit
+occurrences, sorts distinct unit source values and unit IDs (`corpus.ts:713–741`), while the
+localization source fold preserves distinct occurrence sources in insertion order
+(`localization.ts:355–360`). Sorting source-value sets does not sort a localization line's source;
+the final line-ID sort (`localization.ts:519`) does not change the fold either.
+
+The index now ranks paths by Rust's component comparison, uses that rank and occurrence ordinal
+independently of shards, and sorts package records before oracle hydration. In particular,
+`Content/A/B.uasset` precedes `Content/A.uasset`. Within a package, native traversal remains the
+order even when object/property names sort differently. `joined-v5` invalidates older joins and
+overlays. Changeset `preserve-package-source-order` records the Game Text bug fix; today's corpus
+and public contract behavior do not change.
+
+All twelve fixture projects, both tiny scales (0.0001× / 0.001×), both existing targeted cases,
+and four source-order regressions pass on both Nodes: **20 ordinary passes / 0 failures**.
+Fixture, tiny and semantic comparisons now use independent original events rather than the
+already reordered layer oracle. The source cases also compare the entire hydrated corpus,
+including ordered occurrences, directly with the independent event corpus.
+
+The saved 1× oracle was reused twice; no object oracle or retained inputs were regenerated:
+
+| Saved 1× comparison               | Seconds | Matched lines / differences | Peak heap / array buffers / RSS, MiB |
+| --------------------------------- | ------: | --------------------------- | ------------------------------------ |
+| Initial corrected fold            |  453.38 | 583,507 / 0                 | 7,826.85 / 926.94 / 9,117.75         |
+| Final native component comparator |  363.74 | 583,507 / 0                 | 4,933.42 / 1,087.85 / 5,518.55       |
+
+Both runs count **0 conflicting-source lines and 0 conflicting sources across packages**. The
+generated duplicate sources do not create conflicting sources for one gathered identity, so
+the earlier 583,507-line match could not expose this defect. These supervised oracle checks
+use the Phase 5 16 GiB heap cap, not the Phase 6 default-heap host query measurement. No 10×
+object oracle or benchmark was run. Total RSS stayed below 20 GB; heavy commands ran serially.
+An independent streaming search of the saved oracle also finds zero `conflicting_source` values
+(`phase6-saved-oracle-conflicts.log`), corroborating the joined-column census.
+
+**New STOP: findings for split gathered identities.** A saved identity `UI [literal] / T`
+contributes an asset property to gathered `UI / T` and a string-table entry to gathered
+`UI [literal] / T`. The two sources are individually short (24 / 23 characters), but the
+columnar raw-unit pass measures their combined length, 48 characters. Today's query slices
+the saved unit per gathered line before deriving its findings; both line findings are false.
+The columns mark both true. `joined-target.ts:313–334,799–825` must match the actual sliced query
+behavior in `query.ts:238–255,83–105`. Raw-unit facet expectations also need an audit against that
+API. This is the first plan STOP condition (a same-input per-line problem difference); there is
+no evidence that today's oracle is wrong.
+
+The unwrapped reproduction fails on both Nodes. The permanent test checks corpus/unit shape,
+line-schema equality and the exact two oracle negatives/columnar positives in `beforeAll`,
+outside `.fails`; only problem equality remains an expected failure. The previous source-order
+regression has no expected-failure annotation. A passing gate does not establish full join
+equality while this known semantic failure remains.
+
+The query backend, shared refresh service, host migration and write invalidation remain pending.
+The existing product heap guidance remains applicable. No public schema changed; no host/app
+changeset is added. Complete inventory/signature access is an implementation prerequisite, not
+the new STOP. No real project, retained regeneration, commit, push, branch switch or stash was
+used. Disposable fixture copies used by verification are separate from retained inputs.
+
+### Phase 6 target comparison
+
+Each result below applies separately to CLI and headless Workbench main, at both scales.
+
+| Measurement                                    | 1× target    | 10× target | Result after STOP |
+| ---------------------------------------------- | ------------ | ---------- | ----------------- |
+| First query after cold build                   | Record       | Record     | Not measured      |
+| First query with warm index                    | Record       | Record     | Not measured      |
+| Count / filter / facet / page / search / focus | ≤100 ms each | ≤1 s each  | Not measured      |
+| Peak query heap at default heap                | ≤128 MiB     | ≤256 MiB   | Not measured      |
+| No-change refresh                              | ≤5 s         | ≤30 s      | Not measured      |
+| One package + one PO refresh                   | ≤10 s        | ≤60 s      | Not measured      |
+
+### Continuation command ledger
+
+Logs are under ignored `test-results/codex`. `V` is `node_modules/vitest/vitest.mjs run`;
+Node 26 uses `test-results/game-text-scale/runtime/node-v26.11.1-win-x64/node.exe`.
+Every Vitest run uses `--maxWorkers=1` and the existing native `uasset` executable.
+
+| Command                                                                                                                                                                                                                                                                                                                   | Node / engine |        Passed | Failed / skipped                 | Log or result                                   |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ------------: | -------------------------------- | ----------------------------------------------- |
+| `V scripts/columnar-join.test.ts`, source-order fix                                                                                                                                                                                                                                                                       | 24.21.0       |            20 | 0                                | `phase6-native-order-node24.log`                |
+| Same, source-order fix                                                                                                                                                                                                                                                                                                    | 26.11.1       |            20 | 0                                | `phase6-final-order-node26.log`                 |
+| Same, final code with new STOP regression                                                                                                                                                                                                                                                                                 | 24.21.0       |            20 | 0 unexpected; 1 expected failure | `phase6-order-and-stop-final-node24.log`        |
+| Same, with new STOP regression                                                                                                                                                                                                                                                                                            | 26.11.1       |            20 | 0 unexpected; 1 expected failure | `phase6-order-and-stop-final-node26.log`        |
+| Unwrapped new STOP, focused                                                                                                                                                                                                                                                                                               | 24.21.0       |             0 | 1 failed; 20 skipped             | `phase6-split-findings-reproduction-node24.log` |
+| Unwrapped new STOP, focused                                                                                                                                                                                                                                                                                               | 26.11.1       |             0 | 1 failed; 20 skipped             | `phase6-split-findings-reproduction-node26.log` |
+| `node --import tsx scripts/benchmark-localization-import.ts --project test-results/game-text-scale/project-1x --cache test-results/game-text-scale/phase5-final-verified-1x --records test-results/game-text-scale/phase4-records-1x --mode join --select compare --output test-results/codex/phase6-final-order-1x.json` | 24.21.0       | 583,507 lines | 0 differences                    | `phase6-final-order-1x.json`                    |
+| `V apps/cli apps/workbench extensions/game-text packages/game-text packages/localization packages/unreal-assets`                                                                                                                                                                                                          | 24.21.0       |           990 | 0 failed; 7 skipped              | `phase6-hosts-node24.log`                       |
+
+The requested host suites include the native CLI integrations and all six Game Text component
+files. Node 26 also passes **990 / 0 / 7 skipped**, in 259.25 s (`phase6-hosts-node26.log`);
+the separate `V --project component extensions/game-text` run passes **88 / 0**, six files,
+in 50.15 s (`phase6-game-text-components.log`). UE 5.7's `pnpm test:localization-processes`
+passes **1 engine lane / 0 failed lanes**, including review persistence, apply/PO writes, sync,
+audit, cancellation and carrying a key across gather (`phase6-localization-processes-57.log`).
+Its disposable output is `out/loc-processes-beeb2d`; it does not rewrite the retained fixture.
+
+UE 5.8's separate `pnpm test:localization-processes` also passes **1 engine lane / 0 failed
+lanes**, including the same write/cancellation/carry checks (`phase6-localization-processes-58.log`,
+disposable output `out/loc-processes-6e6b09`). Engine roots were discovered from the local install
+inventory and confirmed with `Engine/Build/Build.version`: 5.7.4 and 5.8.3. Native reader/parser,
+codegen and retained fixtures were not changed, so no new `test:uasset-engine-matrix` result is
+claimed.
+
+`pnpm test:e2e:workbench showcase-improvements.e2e.ts --grep 'Game Text'` builds Workbench
+and runs **0 passed / 3 failed** (`phase6-game-text-e2e.log`). These existing scenarios ask for
+the old `Quality` tab and assume an immediate search/export view. The unchanged UI instead shows
+`Quality checks` and an initial `Scan project` action. The same incompatible selectors and idle
+UI are present at `HEAD`; neither the e2e file nor renderer/main host implementation changed in
+this pass. This is separate from the new columnar findings STOP. The run used only the synthetic
+fixture root, isolated Electron profiles and disposable rule/export files, with an offline
+Remote Control endpoint; no live or real project was accessed.
+
+Final changed-file oxfmt passes **9 files / 0 errors** (`phase6-oxfmt-final.log`).
+`pnpm run check:precommit`, Node 26.11.1, passes **6 stages / 0 failures**, including
+**43 architecture tests / 0 failures**, contracts in **4 packages / 0 failures**, typecheck,
+StyleX checks and repository formatting (**1,966 files**). Lint has zero errors and eleven
+existing warnings (`phase6-precommit-continuation.log`). `git diff --check` also passes.
+
+Full `pnpm check`, Node 26.11.1, passes **10 top-level stages / 1 failed stage**, then exits
+at Data Authoring adoption (`phase6-full-check.log`). Completed stages include native/libraries/
+WASM UAsset checks, package builds, engine supervisor checks, typecheck, Effect architecture,
+license, StyleX, **43 architecture tests / 0 failures**, **42 release tests / 0 failures**, and
+packed-package conformance (**20 tarballs / 0 failures**). The Rust test commands total
+**356 passed / 0 failed / 4 ignored**. Browser WASM smoke, packed-consumer exports, native/WASM
+fixture parity and saved review also pass.
+
+The failed adoption stage reports TS2307 in its copied `packages/protocol/src/index.ts:163`:
+`./editor-foreground-responsiveness.js` is missing. At committed `HEAD`, the protocol index
+already exports that module while `extensions/data-authoring/adoption.manifest.json` omits it;
+neither file changed in this pass. This is the brief's known pre-existing adoption failure,
+separate from the semantic STOP and existing e2e failures. The subsequent full-gate lint,
+format, contract and whole-repository test stages do not execute after that failure; precommit
+and the requested host suites supply their separately reported checks, not a full-gate pass.
+
+Final evidence updates are included in the changed-file formatting and whitespace checks.
+**Phase 6 is incomplete.**

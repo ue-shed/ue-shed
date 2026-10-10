@@ -16,6 +16,7 @@ import {
 } from "./package-text-columns.js";
 import type { ColdLayerSource } from "./shared-string-sort.js";
 import { textCorpusFromExtractionEvents } from "./corpus.js";
+import { comparePackageTextPathBytes } from "./package-text-order.js";
 
 /** The caller supplies the Project Index's opaque package-and-sidecar signature, never a layer hash.
  * Header evidence and signatures must come from the same complete inventory generation.
@@ -217,6 +218,8 @@ export const textCorpusFromPackageTextLayer = Effect.fn("PackageText.oracleCorpu
 		name.startsWith("package-text.")
 	))
 		records.push(...(yield* decodePackageTextColumns(yield* reader.layer(name))));
+	// Shards are a storage partition, not the native reader's package emission order.
+	records.sort((a, b) => comparePackageTextPathBytes(Buffer.from(a.path), Buffer.from(b.path)));
 	const corpus = textCorpusFromExtractionEvents({
 		projectRoot,
 		discoveredPackages: records.length,

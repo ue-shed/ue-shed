@@ -26,6 +26,7 @@ import {
 } from "./joined-target-input.js";
 import { finishJoinedTarget } from "./joined-target-marks.js";
 import { incrementJoinedTarget } from "./joined-target-incremental.js";
+import { comparePackageTextPathBytes } from "./package-text-order.js";
 
 const noteMetadata = Schema.decodeUnknownOption(
 	Schema.fromJsonString(
@@ -95,7 +96,7 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 			.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
 	);
 	const key =
-		"joined-v4:" +
+		"joined-v5:" +
 		createHash("sha256")
 			.update(
 				JSON.stringify([
@@ -120,7 +121,7 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 	}
 	const reader = yield* store.open();
 	let incrementalFallback: string | undefined;
-	if (!input.force && root.active.joined?.startsWith("joined-v4:")) {
+	if (!input.force && root.active.joined?.startsWith("joined-v5:")) {
 		const incremental = yield* incrementJoinedTarget(
 			input,
 			key,
@@ -157,6 +158,19 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 	const packages = yield* loadJoinPackages(reader, strings, input.projectRoot, input.target);
 	const c = packages.occurrence,
 		occurrenceCount = c.source.length;
+	// The native projection emits sorted package paths and preserves traversal order
+	// within each package. Shared IDs and shard rows do not encode that order.
+	const pathOrder = Uint32Array.from(packages.paths, (_, row) => row);
+	pathOrder.sort((a, b) =>
+		comparePackageTextPathBytes(
+			strings.bytes(packages.paths[a]!),
+			strings.bytes(packages.paths[b]!)
+		)
+	);
+	const pathRank = new Uint32Array(pathOrder.length);
+	for (let rank = 0; rank < pathOrder.length; rank++) pathRank[pathOrder[rank]!] = rank;
+	const emissionOrder = (a: number, b: number) =>
+		pathRank[packages.packageRow[a]!]! - pathRank[packages.packageRow[b]!]! || a - b;
 	yield* strings.need([
 		c.source,
 		c.notes,
@@ -276,16 +290,16 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 					: packages.packageRow[a]! - packages.packageRow[b]!)
 			: 0);
 	const order = Uint32Array.from({ length: occurrenceCount }, (_, row) => row);
-	order.sort((a, b) => compareOccurrence(a, b) || a - b);
-	// A saved unit can contribute to several gathered identities. Presentation facets and
-	// findings belong to the entire saved unit, as in TextCorpusQuery, rather than its slice.
+	order.sort((a, b) => compareOccurrence(a, b) || emissionOrder(a, b));
+	// A saved unit can contribute to several gathered identities. This pass groups raw units;
+	// the split-identity STOP regression records its remaining line-scoped findings mismatch.
 	const rawOrder = Uint32Array.from(order);
 	const rawCompare = (a: number, b: number) =>
 		compareUnit(c, a, b, empty) ||
 		(c.identity[a]! < 2 && c.key[a] !== empty
 			? 0
 			: packages.packageRow[a]! - packages.packageRow[b]!);
-	rawOrder.sort((a, b) => rawCompare(a, b) || a - b);
+	rawOrder.sort((a, b) => rawCompare(a, b) || emissionOrder(a, b));
 	const unit = new Uint32Array(occurrenceCount),
 		next = new Uint32Array(occurrenceCount).fill(absent);
 	const unitOrigins = new Uint8Array(occurrenceCount),
@@ -618,7 +632,8 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 					)
 				);
 			occurrenceRows.sort(
-				(a, b) => unitStrings.get(a)!.localeCompare(unitStrings.get(b)!) || a - b
+				(a, b) =>
+					unitStrings.get(a)!.localeCompare(unitStrings.get(b)!) || emissionOrder(a, b)
 			);
 			const orderedSources = new Set<number>();
 			for (const i of occurrenceRows)

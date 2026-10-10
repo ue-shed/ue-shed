@@ -10,10 +10,12 @@
 
 ## Status
 
-- **State**: IN PROGRESS. Phase 5 is complete: columnar join equality, both scale measurements,
-  incremental/full proofs and Node 24/26 verification pass. Full refresh missed 10 / 60 s,
-  so stable edits use the bounded incremental join. Reader v1.8 and gather rule v1.9 are
-  unchanged. Hosts still use the existing corpus path; Phases 6–7 remain open.
+- **State**: STOPPED at Phase 6 on a new findings mismatch for a saved identity split across
+  gathered lines. Source order is fixed; the original 20 equality/regression tests and saved
+  583,507-line 1× comparison pass. The new case incorrectly marks both short gathered sources
+  as findings because the columns use the whole saved unit's combined length. The first STOP
+  condition applies. Reader v1.8 and gather rule v1.9 are unchanged; hosts still use the corpus
+  path and Phases 6–7 are incomplete. See the latest Phase 5/6 evidence below.
 - **Priority**: P1
 - **Effort**: XL
 - **Risk**: HIGH. This replaces how every Game Text and localization host holds its data, and adds
@@ -714,3 +716,161 @@ iteration failures, including unequal PO inputs and query-helper mistakes; no sa
 semantic difference or STOP. Native reader/parser/fixtures/integration are unchanged:
 UE 5.7/5.8 lanes are not needed or rerun. Full `pnpm check` was not run. Changeset:
 `columnar-localization-join` (Game Text patch). **Phase 5 complete; Phases 6–7 remain open.**
+
+### Phase 6: stopped on conflicting-source order (historical, resolved below)
+
+Recorded 2026-10-11, Windows / Node 24.21.0 and 26.5.0. This pass stops before host adoption.
+The applicable condition is **"The columnar join differs from the oracle on any line, and the
+oracle is not shown to be wrong."** A new comparison supplies the original path-ordered package
+records to the object oracle, rather than hydrating the oracle corpus from the package layers.
+No real project, retained-project regeneration, 1× object build or 10× run occurs. Small test
+inputs use invented text and disposable temporary files. No Git history operation occurs.
+
+**Same-input reproduction.** Two complete, gather-flagged packages each contain one read-only
+asset property, namespace `UI`, key `Shared`. The event order is the inventory's path order.
+The package signatures and all occurrence fields supplied to the layer are identical to those
+supplied to the object corpus. Neither package has a localization manifest row; the semantic
+test target supplies fifteen other manifest identities, giving sixteen lines in each join.
+
+| Original event / inventory order | Package                          | Shard | Source |
+| -------------------------------- | -------------------------------- | ----: | ------ |
+| First                            | `Content/Probe/Package00.uasset` |   247 | Alpha  |
+| Second                           | `Content/Probe/Package01.uasset` |   230 | Beta   |
+
+| Comparison                      | Matched lines | Different lines | Differences | Result                           |
+| ------------------------------- | ------------: | --------------: | ----------: | -------------------------------- |
+| Original events → object oracle |            16 |               1 |           1 | STOP                             |
+| Layer-hydrated corpus → oracle  |            16 |               0 |           0 | Equal, but shares the reordering |
+
+The differing field is `LocalizationLine.source` on `Cases:["UI","Shared"]`:
+the event oracle returns **`Alpha Beta`**, while the index returns **`Beta Alpha`**.
+All other compared fields agree. `loadJoinPackages` concatenates shard names in lexical order,
+putting shard 230 before 247. Conflicting-source construction sorts by unit ID and then global
+occurrence row; both occurrences share a unit ID, so shard order becomes source order.
+The existing object join preserves first-seen source order within a unit. There is no evidence
+that the oracle is wrong, and no contract change is authorized to hide the difference.
+
+**Regression and recovery.** `scripts/columnar-join.test.ts` now retains this exact comparison
+and demonstrates that an oracle hydrated from the layers misses it. The case is explicitly
+`it.fails`: its final assertion still demands equality. An unexpected pass fails the test,
+requiring removal of that annotation after the defect is fixed. Earlier sixteen join tests
+retain their ordinary assertions. Resolve source ordering against the original event oracle,
+then rerun Phase 5 equality before resuming Phase 6. The standalone reproduction result is
+`test-results/codex/phase6-order-probe.json` (ignored).
+
+**Contract finding.** The existing `LocalizationLine.source` value must survive host migration;
+no public schema or host implementation changed. No index-backed host is claimed, no changeset
+is added for unchanged package/app behavior, and the product's existing heap guidance remains
+accurate for the still-unmigrated hosts. Refresh service, query scans, write invalidation and
+host migration remain required.
+
+Both CLI and headless Workbench measurements are **not run because of STOP**, at both scales:
+
+| Measurement                      | 1× target | 10× target | This pass, both hosts |
+| -------------------------------- | --------- | ---------- | --------------------- |
+| First query after cold build     | Recorded  | Recorded   | Not measured          |
+| First query with warm index      | Recorded  | Recorded   | Not measured          |
+| Count / filter / facet / page    | ≤100 ms   | ≤1 s       | Not measured          |
+| Search / focus                   | ≤100 ms   | ≤1 s       | Not measured          |
+| Peak query V8 heap, default heap | ≤128 MiB  | ≤256 MiB   | Not measured          |
+| No-change refresh                | ≤5 s      | ≤30 s      | Not measured          |
+| One package + one PO refresh     | ≤10 s     | ≤60 s      | Not measured          |
+
+**Verification.** Corrected join suites on Node 24.21.0 and 26.5.0 each pass the sixteen
+existing tests and report one expected failure for this STOP. The unwrapped regression is
+0 passed / 1 failed / 16 skipped, with the exact source difference. All six final precommit
+stages pass, including 43 architecture tests and contract checks in four packages. Oxfmt on
+all three changed paths and whitespace checks pass. An initial missing test import/typecheck
+failure was corrected; setup now runs outside the expected-failure wrapper. The command ledger is in the
+[shared-index measurement guide](../docs/engineering/game-text-shared-index-measurements.md#phase-6-stop-conflicting-source-order).
+No new UE 5.7 or UE 5.8 check is claimed: integration/write/reader code is unchanged.
+The requested full host/CLI/component/e2e and localization-process verification and the full
+`pnpm check` are not run after this semantic STOP. Prior Data Authoring adoption failures are
+retained history, not a new result. **Phase 6 is incomplete.**
+
+### Phase 5: source-order correction and equality re-run
+
+Recorded 2026-10-11 on Windows, Node 24.21.0 and 26.11.1. Today's ordering is deterministic:
+`scanner.rs:251` sorts `PathBuf`s, `project_io.rs:568–637` assigns parallel work to path-indexed
+slots and emits those slots in order, and `protocol_adapter.rs:482` retains that result order.
+`project_io.rs:793` traverses exports in saved order; `asset-reader.ts:557–576` does not reorder
+the stream. `corpus.ts:713–741` preserves occurrences within units, sorts distinct unit source
+values, then sorts unit IDs with `localeCompare`. `gathered-text.ts:46–90` preserves the unit
+and occurrence sequence. `localization.ts:355–360` folds distinct occurrence sources in insertion
+order; it does not sort them or conflicts. The raw unit source-value sort does not order the
+joined line's source. Final localization lines sort by line ID (`localization.ts:519`),
+which does not reorder that fold.
+
+Rust compares path components: `Content/A/B.uasset` precedes `Content/A.uasset`. The canonical
+order reproduces that existing behavior, followed by saved traversal ordinal within each package;
+it does not introduce an object/property re-sort. `package-text-order.ts` supplies the comparison.
+The join ranks package paths independently of shard order and uses that rank plus occurrence
+ordinal after unit ID ordering for conflicting-source folds. Layer hydration also sorts packages
+before folding. Joined cache keys advance to `joined-v5` so old joins and overlays are rebuilt.
+Changeset `preserve-package-source-order` records the Game Text patch; today's corpus behavior
+and public schemas are unchanged.
+
+The former `.fails` source-order assertion now passes ordinarily. Independent event oracles replace
+layer-hydrated oracles for fixture, tiny-scale and targeted comparisons. Four source-order cases
+cover two packages, four distinct shards, path-component ordering, and three occurrences inside
+one package with object/property names deliberately reversed from traversal order. These four
+cases compare the entire hydrated corpus directly, including ordered occurrence arrays.
+
+| Equality surface                                            | Result on Node 24 / 26                |
+| ----------------------------------------------------------- | ------------------------------------- |
+| All twelve retained fixture projects                        | 12 / 0 each                           |
+| Tiny generated scales 0.0001× and 0.001×                    | 2 / 0 each                            |
+| Targeted semantics and incremental/full/compaction equality | 2 / 0 each                            |
+| Independent source-order regressions                        | 4 / 0 each                            |
+| Saved 1× oracle, final comparator, Node 24                  | 583,507 matched lines / 0 differences |
+
+The final saved-file comparison took 363.74 s, with peak sampled V8 heap 4,933.42 MiB,
+array buffers 1,087.85 MiB and RSS 5,518.55 MiB, within the 16 GiB heap / 20 GB RSS caps.
+It reused `phase5-oracle/oracle-1x.ndjson`; no new object oracle or retained input was generated.
+**Conflicting-source lines: 0; conflicting sources across packages: 0.** Duplicate sources in
+that target belong to different identities; its prior 583,507-line equality could not expose
+this source-order defect. This comparison is oracle verification, not a default-heap host query
+measurement. Raw results: `test-results/codex/phase6-final-order-1x.json` and `.log`.
+
+### Phase 6: stopped on findings for split gathered identities
+
+The first STOP condition now applies to a different same-input case. Two complete packages share
+saved identity `UI [literal] / T`. The property occurrence strips the package namespace and gathers
+as `UI / T`; the string-table entry keeps `UI [literal] / T`. Their sources, `Alpha source twenty four`
+and `Beta source twenty four`, are each below the 40-character long-text threshold. Today's query
+uses `localizationLineUnits` to slice the saved unit per gathered line (`query.ts:238–255`), then
+computes length from that slice (`query.ts:83–105`). Neither line has a finding.
+
+The join's raw-unit pass combines both sources (`joined-target.ts:313–334`), marks its representative
+as a finding, and copies that bit to both lines (`joined-target.ts:799–825`). Both `line.problems`
+values incorrectly include `finding`. Hydrated states, sources, key changes and translations still
+match, so a line-schema-only equality check misses this column/API discrepancy. The unwrapped
+Node 24 reproduction fails explicitly on `Cases:["UI","T"]`: expected `false`, received `true`.
+The retained test prepares and validates both oracle negatives and both columnar positives in
+`beforeAll`; only the equality assertion is `.fails`. It is independent of the four now-passing
+source-order regressions. Existing raw-unit facet expectations also need review against the
+actual sliced query API before migration.
+
+No host/query refresh service or write invalidation is claimed. No public contract changed and
+no CLI/Workbench/extension changeset is added. The product heap note remains because hosts still
+build the corpus. The complete-inventory/signature capability is a refresh prerequisite to address
+when work resumes, not the STOP condition. Measurements for both CLI and headless Workbench are
+not run at either scale after this semantic STOP:
+
+| Measurement                                    | 1× target    | 10× target  | CLI / Workbench at both scales |
+| ---------------------------------------------- | ------------ | ----------- | ------------------------------ |
+| First query, cold / warm                       | Record both  | Record both | Not measured                   |
+| Count / filter / facet / page / search / focus | ≤100 ms each | ≤1 s each   | Not measured                   |
+| Peak query heap, default heap                  | ≤128 MiB     | ≤256 MiB    | Not measured                   |
+| No-change refresh                              | ≤5 s         | ≤30 s       | Not measured                   |
+| One package + one PO refresh                   | ≤10 s        | ≤60 s       | Not measured                   |
+
+Verification command counts and engine results are recorded in the
+[measurement ledger](../docs/engineering/game-text-shared-index-measurements.md#phase-6-continuation-source-order-fixed-new-findings-stop).
+Both Node host runs pass 990 tests with seven skipped; Game Text components pass 88.
+Localization process verification passes separately on UE 5.7.4 and 5.8.3. Precommit passes
+all six stages. Full `pnpm check` passes ten stages, then fails the pre-existing Data Authoring
+adoption omission; the unchanged Game Text e2e scenarios fail all three stale UI expectations.
+These failures are separate from the new semantic STOP, and no full-verification claim is made.
+No real project, retained-input regeneration, commit, push, branch switch or stash was used.
+**Phase 6 is incomplete; resolve the gathered-slice findings mismatch before host adoption.**

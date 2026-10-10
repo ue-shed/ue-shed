@@ -9,7 +9,8 @@ import {
 	sharedIndexNodeLayer,
 	sharedIndexDirectory
 } from "../packages/game-text/src/shared-index.ts";
-import { refreshJoinedTarget } from "../packages/game-text/src/joined-target.ts";
+import { refreshJoinedTarget, reasonBit } from "../packages/game-text/src/joined-target.ts";
+import { u32 } from "../packages/game-text/src/joined-target-input.ts";
 import {
 	openJoinedTarget,
 	inspectJoinedTarget,
@@ -143,6 +144,46 @@ export async function measureColumnarJoin(
 				return await run(
 					Effect.gen(function* () {
 						const joined = yield* openJoinedTarget();
+						const reasons = yield* u32(joined.layer, "line.reasons");
+						let conflictingSourceLines = 0;
+						for (const bits of reasons)
+							if (bits & reasonBit("conflicting_source")) conflictingSourceLines++;
+						let conflictingSourcesAcrossPackages = 0;
+						if (conflictingSourceLines) {
+							const rows = yield* u32(joined.layer, "occurrence.rows");
+							const starts = yield* u32(joined.layer, "line.occ_start");
+							const ends = yield* u32(joined.layer, "line.occ_end");
+							const packageRows = new Uint32Array(rows.length);
+							const identities = new Uint32Array(rows.length);
+							let packageBase = 0;
+							for (let shard = 0; shard < joined.meta.packageNames.length; shard++) {
+								const layer = yield* joined.reader.layer(
+									joined.meta.packageNames[shard]!
+								);
+								const ranges = yield* u32(layer, "package.occurrence_start");
+								const offset = joined.meta.packageStarts[shard]!;
+								identities.set(yield* u32(layer, "occurrence.identity"), offset);
+								for (let pkg = 0; pkg + 1 < ranges.length; pkg++)
+									packageRows.fill(
+										packageBase + pkg,
+										offset + ranges[pkg]!,
+										offset + ranges[pkg + 1]!
+									);
+								packageBase += ranges.length - 1;
+							}
+							for (let row = 0; row < reasons.length; row++) {
+								if (!(reasons[row]! & reasonBit("conflicting_source"))) continue;
+								const occurrences = rows.subarray(starts[row]!, ends[row]!);
+								const authored = occurrences.some(
+									(occurrence) => identities[occurrence] !== 1
+								);
+								const packages = new Set<number>();
+								for (const occurrence of occurrences)
+									if (!authored || identities[occurrence] !== 1)
+										packages.add(packageRows[occurrence]!);
+								if (packages.size > 1) conflictingSourcesAcrossPackages++;
+							}
+						}
 						if (
 							joined.meta.count !== header.lines ||
 							joined.meta.input.target.name !== header.target ||
@@ -179,7 +220,15 @@ export async function measureColumnarJoin(
 							throw new Error(
 								`STOP: saved oracle has ${expected.size} missing lines`
 							);
-						return { equal: true, expectedLines, matchedLines, differences: 0, oracle };
+						return {
+							equal: true,
+							expectedLines,
+							matchedLines,
+							differences: 0,
+							oracle,
+							conflictingSourceLines,
+							conflictingSourcesAcrossPackages
+						};
 					})
 				);
 			},

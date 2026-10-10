@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import { readFile, writeFile } from "node:fs/promises";
 import { Effect, Stream } from "effect";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import {
 	assetReaderLayer,
 	scanSavedProject,
@@ -13,6 +13,7 @@ import {
 	joinLocalizationTarget,
 	localizationKeyChanges
 } from "../packages/game-text/src/index.ts";
+import { textCorpusFromExtractionEvents } from "../packages/game-text/src/corpus.ts";
 import { refreshJoinedTarget } from "../packages/game-text/src/joined-target.ts";
 import { SharedIndex } from "../packages/game-text/src/shared-index.ts";
 import {
@@ -22,11 +23,15 @@ import {
 } from "../packages/game-text/src/joined-target-reader.ts";
 import {
 	refreshPackageTextLayer,
+	packageTextShard,
 	textCorpusFromPackageTextLayer,
 	type PackageTextInventoryEntry
 } from "../packages/game-text/src/package-text-layer.ts";
 import { compareLocalizationJoins } from "./localization-join-oracle.test-support.ts";
-import { comparePackageTextLayerWithEvents } from "./package-text-layer-oracle.test-support.ts";
+import {
+	comparePackageTextLayerWithEvents,
+	candidateCorpusFromEvents
+} from "./package-text-layer-oracle.test-support.ts";
 import {
 	withJoinCache,
 	tinyJoinInput,
@@ -48,7 +53,10 @@ import {
 	projectPOEvidence
 } from "../packages/localization/dist/index.js";
 import { success } from "../packages/game-text/src/localization.test-support.ts";
-import { packageTextRecordsFromEvents } from "../packages/game-text/src/package-text-record.ts";
+import {
+	emptyPackageTextRecord,
+	packageTextRecordsFromEvents
+} from "../packages/game-text/src/package-text-record.ts";
 import { textCorpusQuery } from "../packages/game-text/src/query.ts";
 import {
 	TextProblem,
@@ -244,6 +252,227 @@ const expectFacetOracle = Effect.fn("JoinOracle.facets")(function* (
 
 const executable = ensureUassetExecutable();
 
+describe("conflicting source order regression", () => {
+	it.each([
+		["two packages", 2, 1],
+		["four packages across shards", 4, 1],
+		["native path component order", 2, 1],
+		["reader traversal inside one package", 1, 3]
+	] as const)("preserves source order: %s", async (name, packageCount, occurrenceCount) => {
+		await withJoinCache(async (cache) => {
+			const { projectRoot, evidence } = await semanticJoinInput(cache);
+			const records = Array.from({ length: packageCount }, (_, index) => {
+				const path =
+					name === "native path component order"
+						? ["Content/Probe/A/B.uasset", "Content/Probe/A.uasset"][index]!
+						: `Content/Probe/Package${String(index).padStart(2, "0")}.uasset`;
+				return {
+					...emptyPackageTextRecord(path),
+					occurrences: Array.from({ length: occurrenceCount }, (_, occurrence) => ({
+						source: ["Alpha", "Beta", "Gamma", "Delta"][index + occurrence]!,
+						dev_notes: "",
+						identity: {
+							status: "resolved" as const,
+							namespace: "UI",
+							key: "Shared"
+						},
+						location: {
+							kind: "asset_property" as const,
+							object_path: `/Game/Probe/Package${index}.Object${occurrenceCount - occurrence}`,
+							property_path: `Label${occurrenceCount - occurrence}`,
+							class_path: "/Script/Engine.DataAsset"
+						},
+						edit_capability: "read_only" as const
+					}))
+				};
+			});
+			const inventory = records
+				.map((record) => ({
+					path: record.path,
+					signature: "order-oracle:1",
+					headerData: {
+						packageFlags: 0x00040000,
+						gatherableTextDataCount: 0,
+						gatherableTextDataOffset: 0,
+						hasTextProperty: false
+					}
+				}))
+				.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+			if (packageCount > 1 && name !== "native path component order") {
+				expect(inventory.slice(0, 2).map((entry) => packageTextShard(entry.path))).toEqual([
+					247, 230
+				]);
+				expect(new Set(inventory.map((entry) => packageTextShard(entry.path))).size).toBe(
+					packageCount
+				);
+			}
+			// The oracle must receive original events, rather than the layer's already reordered fold.
+			const corpus = textCorpusFromExtractionEvents({
+				projectRoot,
+				discoveredPackages: records.length,
+				events: records.map((record) => ({
+					...record,
+					path: resolve(projectRoot, record.path)
+				}))
+			});
+			const expected = joinLocalizationTarget(corpus, evidence);
+			await runJoinIn(
+				projectRoot,
+				cache,
+				"Cases",
+				refreshPackageTextLayer({
+					inventory,
+					read: (paths) =>
+						Stream.fromIterable(records.filter((record) => paths.includes(record.path)))
+				})
+			);
+			await runJoinIn(
+				projectRoot,
+				cache,
+				"Cases",
+				refreshJoinedTarget({ projectRoot, target: evidence.target })
+			);
+			const { actual, layerCorpus } = await runJoinIn(
+				projectRoot,
+				cache,
+				"Cases",
+				Effect.gen(function* () {
+					return {
+						actual: yield* hydrateJoinedTarget(yield* openJoinedTarget(), 0, 10000),
+						layerCorpus: yield* textCorpusFromPackageTextLayer(projectRoot)
+					};
+				})
+			);
+			// Hydration and the join must both match the independent original-event oracle.
+			expect(layerCorpus).toEqual(corpus);
+			const layerOracle = joinLocalizationTarget(layerCorpus, evidence);
+			expect(compareLocalizationJoins(layerOracle, actual).equal).toBe(true);
+			const comparison = compareLocalizationJoins(expected, actual);
+			expect(comparison.equal, comparison.message).toBe(true);
+			const hydratedComparison = compareLocalizationJoins(expected, layerOracle);
+			expect(hydratedComparison.equal, hydratedComparison.message).toBe(true);
+		});
+	});
+});
+
+describe("STOP: split saved identity findings", () => {
+	let findings: readonly { id: string; oracle: boolean; columnar: boolean }[];
+	beforeAll(async () => {
+		await withJoinCache(async (cache) => {
+			const { projectRoot, evidence } = await semanticJoinInput(cache);
+			const identity = { status: "resolved" as const, namespace: "UI [literal]", key: "T" };
+			const records = [
+				{
+					...emptyPackageTextRecord("Content/Text/Property.uasset"),
+					occurrences: [
+						{
+							identity,
+							source: "Alpha source twenty four",
+							dev_notes: "",
+							location: {
+								kind: "asset_property" as const,
+								object_path: "/Game/Text/Property.Property",
+								property_path: "Label",
+								class_path: "/Script/Engine.DataAsset"
+							},
+							edit_capability: "read_only" as const
+						}
+					]
+				},
+				{
+					...emptyPackageTextRecord("Content/Text/ST.uasset"),
+					occurrences: [
+						{
+							identity,
+							source: "Beta source twenty four",
+							dev_notes: "",
+							location: {
+								kind: "string_table_entry" as const,
+								object_path: "/Game/Text/ST.ST",
+								entry_key: "T"
+							},
+							edit_capability: "source_editable" as const
+						}
+					]
+				}
+			];
+			const inventory = records.map((record) => ({
+				path: record.path,
+				signature: "split-findings:1",
+				headerData: {
+					packageFlags: 0x00040000,
+					gatherableTextDataCount: 0,
+					gatherableTextDataOffset: 0,
+					hasTextProperty: false
+				}
+			}));
+			const corpus = candidateCorpusFromEvents({ projectRoot, inventory, events: records });
+			expect(corpus.units).toHaveLength(1);
+			const expected = joinLocalizationTarget(corpus, evidence);
+			await runJoinIn(
+				projectRoot,
+				cache,
+				"Cases",
+				refreshPackageTextLayer({
+					inventory,
+					read: (paths) =>
+						Stream.fromIterable(records.filter((record) => paths.includes(record.path)))
+				})
+			);
+			await runJoinIn(
+				projectRoot,
+				cache,
+				"Cases",
+				refreshJoinedTarget({ projectRoot, target: evidence.target })
+			);
+			const actual = await runJoinIn(
+				projectRoot,
+				cache,
+				"Cases",
+				Effect.gen(function* () {
+					const joined = yield* openJoinedTarget();
+					return {
+						join: yield* hydrateJoinedTarget(joined, 0, 10000),
+						problems: yield* u32(joined.layer, "line.problems")
+					};
+				})
+			);
+			expect(compareLocalizationJoins(expected, actual.join).equal).toBe(true);
+			const oracle = new Set(
+				textCorpusQuery(corpus, undefined, expected)
+					.localizationLines({
+						query: "",
+						capability: "all",
+						localization: { target: expected.target },
+						filter: [{ field: "problem", op: "is", values: ["finding"] }]
+					})
+					.map((line) => line.id)
+			);
+			const findingBit = 1 << TextProblem.literals.indexOf("finding");
+			findings = actual.join.lines.flatMap((line, row) =>
+				line.origin.kind === "corpus"
+					? [
+							{
+								id: line.id,
+								oracle: oracle.has(line.id),
+								columnar: Boolean(actual.problems[row]! & findingBit)
+							}
+						]
+					: []
+			);
+			expect(findings).toHaveLength(2);
+			expect(findings.map((line) => line.oracle)).toEqual([false, false]);
+			expect(findings.map((line) => line.columnar)).toEqual([true, true]);
+		});
+	});
+	// Setup must succeed independently: only the known equality defect is expected to fail.
+	it.fails("findings match each gathered slice rather than the whole saved unit", () => {
+		expect(findings.map(({ id, columnar }) => ({ id, finding: columnar }))).toEqual(
+			findings.map(({ id, oracle }) => ({ id, finding: oracle }))
+		);
+	});
+});
+
 describe("columnar join", () => {
 	it("stable package/PO edits and compaction equal full rebuilds; overlays do not chain", async () => {
 		await withJoinCache(async (cache) => {
@@ -388,10 +617,16 @@ describe("columnar join", () => {
 	}, 60000);
 	it("key-change tiers, literal table namespaces, keyless, outside, absence and metadata cases", async () => {
 		await withJoinCache(async (cache) => {
-			const { projectRoot, evidence } = await semanticJoinInput(cache);
+			const { projectRoot, evidence, records, inventory } = await semanticJoinInput(cache);
 			const run = <A, E>(effect: Parameters<typeof runJoinIn<A, E>>[3]) =>
 				runJoinIn(projectRoot, cache, "Cases", effect);
-			const corpus = await run(textCorpusFromPackageTextLayer(projectRoot)),
+			const corpus = candidateCorpusFromEvents({
+					projectRoot,
+					inventory,
+					events: [...records].sort((a, b) =>
+						a.path < b.path ? -1 : a.path > b.path ? 1 : 0
+					)
+				}),
 				joined = joinLocalizationTarget(corpus, evidence);
 			const changes = localizationKeyChanges(joined, corpus);
 			const expected = applyLocalizationKeyChanges(joined, changes.pairs);
@@ -438,7 +673,7 @@ describe("columnar join", () => {
 				expect(
 					await run(comparePackageTextLayerWithEvents({ projectRoot, inventory, events }))
 				).toMatchObject({ equal: true, differenceCount: 0 });
-				const corpus = await run(textCorpusFromPackageTextLayer(projectRoot));
+				const corpus = candidateCorpusFromEvents({ projectRoot, inventory, events });
 				const first =
 					evidence.manifest.status === "read"
 						? evidence.manifest.value.entries[0]
@@ -612,7 +847,7 @@ describe("columnar join", () => {
 							comparePackageTextLayerWithEvents({ projectRoot, inventory, events })
 						)
 					).toMatchObject({ equal: true, differenceCount: 0 });
-					const corpus = await run(textCorpusFromPackageTextLayer(projectRoot));
+					const corpus = candidateCorpusFromEvents({ projectRoot, inventory, events });
 					const joined = joinLocalizationTarget(corpus, evidence);
 					const expected = applyLocalizationKeyChanges(
 						joined,

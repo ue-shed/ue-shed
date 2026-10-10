@@ -1,6 +1,9 @@
 import { relative, resolve } from "node:path";
 import { Effect } from "effect";
-import type { SavedAssetTextExtractionEvent } from "../packages/unreal-assets/dist/index.js";
+import type {
+	SavedAssetTextExtractionEvent,
+	SavedAssetPackageTextEvent
+} from "../packages/unreal-assets/dist/index.js";
 import {
 	textCorpusFromExtractionEvents,
 	textCorpusWithExcludedPackages
@@ -11,6 +14,34 @@ import {
 	type PackageTextInventoryEntry
 } from "../packages/game-text/src/package-text-layer.ts";
 import { compareTextCandidateCorpora } from "./package-text-oracle.test-support.ts";
+
+/** Independent path-ordered reader events; never hydrate the join oracle from its input layer. */
+export function candidateCorpusFromEvents(input: {
+	projectRoot: string;
+	inventory: readonly PackageTextInventoryEntry[];
+	events: readonly (SavedAssetTextExtractionEvent | SavedAssetPackageTextEvent)[];
+}) {
+	const selection = packageTextSelection(input.inventory).flatMap((shard) => shard.entries);
+	const selected = new Set(
+		selection
+			.filter((entry) => entry.selected)
+			.map((entry) => resolve(input.projectRoot, entry.entry.path))
+	);
+	const excluded = selection
+		.filter((entry) => !entry.selected)
+		.map((entry) => relative(input.projectRoot, resolve(input.projectRoot, entry.entry.path)));
+	return textCorpusWithExcludedPackages(
+		textCorpusFromExtractionEvents({
+			projectRoot: input.projectRoot,
+			discoveredPackages: input.inventory.length,
+			events: input.events
+				.filter((event) => event.event !== "text_summary")
+				.map((event) => ({ ...event, path: resolve(input.projectRoot, event.path) }))
+				.filter((event) => selected.has(event.path))
+		}),
+		excluded
+	);
+}
 
 /** Phase 5 can reuse this without changing the event-stream or eligibility oracles. */
 export const comparePackageTextLayerWithEvents = Effect.fn("PackageText.layerOracle")(

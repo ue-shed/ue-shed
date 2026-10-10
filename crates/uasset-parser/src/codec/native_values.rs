@@ -75,6 +75,19 @@ pub(crate) fn property(value: NativeValue) -> PropertyValue {
     }
 }
 
+/// Whether [`known_struct`] has a handwritten recipe for this struct name in any package revision.
+pub(super) fn is_known_struct(name: &str) -> bool {
+    matches!(
+        name,
+        "RichCurveKey"
+            | "MovieSceneFloatChannel"
+            | "MovieSceneDoubleChannel"
+            | "InstancedStruct"
+            | "InstancedPropertyBag"
+            | "EdGraphPinType"
+    )
+}
+
 pub(super) fn known_struct(
     source: &[u8],
     name: &str,
@@ -178,6 +191,9 @@ pub(super) fn math_struct(
 ) -> Result<Option<PropertyValue>, PropertyError> {
     // UE 5.7/5.8 Math/{Vector,Vector2D,Vector4,Rotator,Quat,Plane}.h,
     // LARGE_WORLD_COORDINATES (1004); Box.h composes two vectors.
+    // FBox2D and FMatrix are `immutable` in NoExportTypes.h, so UScriptStruct::SerializeItem
+    // always writes them with SerializeBin: Box2D is Min, Max (FVector2D) and a one-byte
+    // bIsValid; Matrix is XPlane..WPlane (FPlane).
     let double = package.summary.versions.is_at_least_ue5(1004);
     let component = |reader: &mut Reader<'_>, field: &str| -> Result<f64, PropertyError> {
         Ok(if double {
@@ -213,10 +229,15 @@ pub(super) fn math_struct(
         }),
         "Vector2D" => fields(reader, &["X", "Y"])?,
         "Vector4" | "Quat" | "Plane" => fields(reader, &["X", "Y", "Z", "W"])?,
-        "Box" => {
-            let min = fields(reader, &["X", "Y", "Z"])?;
-            let max = fields(reader, &["X", "Y", "Z"])?;
-            let valid = reader.read_u8(&format_args!("{path}.IsValid"))?;
+        "Box" | "Box2D" => {
+            let (components, valid_name) = if name == "Box" {
+                (&["X", "Y", "Z"][..], "IsValid")
+            } else {
+                (&["X", "Y"][..], "bIsValid")
+            };
+            let min = fields(reader, components)?;
+            let max = fields(reader, components)?;
+            let valid = reader.read_u8(&format_args!("{path}.{valid_name}"))?;
             if valid > 1 {
                 return Err(error(
                     reader,
@@ -236,12 +257,23 @@ pub(super) fn math_struct(
                         value: max,
                     },
                     NativeProperty {
-                        name: "IsValid".into(),
+                        name: valid_name.into(),
                         value: PropertyValue::UInt(u64::from(valid)),
                     },
                 ],
             }
         }
+        "Matrix" => PropertyValue::NativeStruct {
+            fields: ["XPlane", "YPlane", "ZPlane", "WPlane"]
+                .iter()
+                .map(|plane| {
+                    Ok(NativeProperty {
+                        name: (*plane).to_owned(),
+                        value: fields(reader, &["X", "Y", "Z", "W"])?,
+                    })
+                })
+                .collect::<Result<Vec<_>, PropertyError>>()?,
+        },
         _ => return Ok(None),
     };
     Ok(Some(value))

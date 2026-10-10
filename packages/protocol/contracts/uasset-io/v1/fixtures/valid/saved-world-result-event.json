@@ -7,13 +7,36 @@
 		"kind": "saved_world",
 		"world": {
 			"authority": { "kind": "project_files", "mapPackage": "/Game/Maps/Example" },
-			"completeness": "complete",
+			"completeness": "partial",
 			"contract": {
 				"name": "unreal-saved-world",
-				"version": { "major": 2, "minor": 0 }
+				"version": { "major": 2, "minor": 1 }
 			},
-			"diagnostics": [],
+			"diagnostics": [
+				{
+					"code": "export_decode",
+					"message": "1 saved map package(s) could not be fully read",
+					"retrySafe": true
+				}
+			],
 			"mapPath": "Content/Maps/Example.umap",
+			"packageErrors": [
+				{
+					"package": "/Game/Maps/Example",
+					"export": "/Game/Maps/Example.Example:PersistentLevel.Held.Mesh.Decal",
+					"category": "export_malformed_data",
+					"detail": "name index must be non-negative, got -1",
+					"actorDropped": false
+				},
+				{
+					"package": "/Game/Maps/Example",
+					"category": "skipped_property",
+					"detail": "3 property value(s) in 2 export(s) not decoded; by type: SplineCurves 2, SoftClassPath 1",
+					"count": 3,
+					"exports": 2,
+					"actorDropped": false
+				}
+			],
 			"sourceKind": "level",
 			"actors": [
 				{
@@ -23,9 +46,28 @@
 						"parentComponentPath": "/Game/Maps/Example.Example:PersistentLevel.Parent.Root"
 					},
 					"classPath": "/Script/Engine.StaticMeshActor",
+					"decode": "complete",
 					"packageName": "/Game/Maps/Example",
 					"transform": {
 						"location": { "x": 125.5, "y": -42.25, "z": 0 },
+						"rotation": { "w": 1, "x": 0, "y": 0, "z": 0 },
+						"scale": { "x": 1, "y": 1, "z": 1 },
+						"status": "resolved"
+					}
+				},
+				{
+					"actorPath": "/Game/Maps/Example.Example:PersistentLevel.Held",
+					"attachment": {
+						"componentPath": "/Game/Maps/Example.Example:PersistentLevel.Held.Root",
+						"parentComponentPath": "/Game/Maps/Example.Example:PersistentLevel.Parent.ChildActor"
+					},
+					"classPath": "/Game/Blueprints/BP_Chest.BP_Chest_C",
+					"decode": "partial",
+					"heldBy": "/Game/Maps/Example.Example:PersistentLevel.Parent",
+					"packageName": "/Game/Maps/Example",
+					"parentComponent": "/Game/Maps/Example.Example:PersistentLevel.Parent.ChildActor",
+					"transform": {
+						"location": { "x": 10, "y": 20, "z": 30 },
 						"rotation": { "w": 1, "x": 0, "y": 0, "z": 0 },
 						"scale": { "x": 1, "y": 1, "z": 1 },
 						"status": "resolved"
@@ -34,8 +76,8 @@
 			],
 			"summary": {
 				"failedPackages": 0,
-				"partialPackages": 0,
-				"resolvedActors": 1,
+				"partialPackages": 1,
+				"resolvedActors": 2,
 				"scannedPackages": 1
 			}
 		}

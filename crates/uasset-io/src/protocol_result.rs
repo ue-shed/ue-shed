@@ -367,10 +367,10 @@ pub use uasset_inspection::texture_wire::{
 };
 
 pub use uasset_inspection::saved_world_wire::{
-    ProjectFilesKind, SavedWorld, SavedWorldActor, SavedWorldAttachment, SavedWorldAuthority,
-    SavedWorldContract, SavedWorldContractName, SavedWorldContractVersion, SavedWorldDiagnostic,
-    SavedWorldQuaternion, SavedWorldSourceKind, SavedWorldSummary, SavedWorldTransform,
-    SavedWorldVector,
+    ProjectFilesKind, SavedWorld, SavedWorldActor, SavedWorldActorDecode, SavedWorldAttachment,
+    SavedWorldAuthority, SavedWorldContract, SavedWorldContractName, SavedWorldContractVersion,
+    SavedWorldDiagnostic, SavedWorldPackageError, SavedWorldQuaternion, SavedWorldSourceKind,
+    SavedWorldSummary, SavedWorldTransform, SavedWorldVector,
 };
 
 pub use uasset_inspection::authoring::{

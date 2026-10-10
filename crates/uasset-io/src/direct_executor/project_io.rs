@@ -18,8 +18,10 @@ use uasset_inspection::saved_world_wire::saved_world_actor;
 use uasset_inspection::text_wire::{text_coverage_gap, text_occurrence};
 use uasset_inspection::texture_wire::texture_record;
 use uasset_parser::asset::{AssetDecodeContext, AssetErrorKind, decode_export};
-use uasset_parser::package::{Package, PackageError, PackageErrorKind};
-use uasset_parser::schema::embedded_source_model;
+use uasset_parser::package::{
+    Export, ObjectPath, Package, PackageError, PackageErrorKind, PackageIndex,
+};
+use uasset_parser::schema::{SchemaProvider, embedded_source_model};
 
 use super::scanner;
 use super::{
@@ -34,7 +36,8 @@ use crate::protocol_result::{
     SavedAssetProjectionDiagnostic, SavedAssetScanEntry, SavedAssetScanSummary,
     SavedAssetTextExtractionEvent, SavedAssetTextureExtractionEvent, SavedWorld,
     SavedWorldAuthority, SavedWorldContract, SavedWorldContractName, SavedWorldContractVersion,
-    SavedWorldDiagnostic, SavedWorldSourceKind, SavedWorldSummary, ScanSummaryDepth,
+    SavedWorldDiagnostic, SavedWorldPackageError, SavedWorldSourceKind, SavedWorldSummary,
+    ScanSummaryDepth,
 };
 
 const SCHEMA_VERSION: u8 = 8;
@@ -1313,10 +1316,19 @@ fn package_error_code(error: &PackageError) -> &'static str {
     }
 }
 
-pub(crate) fn saved_world(request: &Request) -> Result<SavedWorldOutput, Failure> {
-    saved_world_with_cancellation(request, &CancellationToken::new())
+pub(crate) fn saved_world_with_options(
+    request: &Request,
+    options: SavedWorldReadOptions,
+) -> Result<SavedWorldOutput, Failure> {
+    saved_world_with_cancellation_progress_and_options(
+        request,
+        &CancellationToken::new(),
+        &|_, _| {},
+        options,
+    )
 }
 
+#[cfg(test)]
 pub(crate) fn saved_world_with_cancellation(
     request: &Request,
     cancellation: &CancellationToken,
@@ -1328,6 +1340,23 @@ pub(crate) fn saved_world_with_cancellation_and_progress<F>(
     request: &Request,
     cancellation: &CancellationToken,
     on_progress: &F,
+) -> Result<SavedWorldOutput, Failure>
+where
+    F: Fn(u64, u64) + Sync,
+{
+    saved_world_with_cancellation_progress_and_options(
+        request,
+        cancellation,
+        on_progress,
+        SavedWorldReadOptions::default(),
+    )
+}
+
+fn saved_world_with_cancellation_progress_and_options<F>(
+    request: &Request,
+    cancellation: &CancellationToken,
+    on_progress: &F,
+    options: SavedWorldReadOptions,
 ) -> Result<SavedWorldOutput, Failure>
 where
     F: Fn(u64, u64) + Sync,
@@ -1389,6 +1418,7 @@ where
             .collect::<Vec<_>>(),
     );
     let paths = &package_paths;
+    let content_root = roots.content_root.as_path();
     std::thread::scope(|scope| {
         for _ in 0..worker_count.min(package_paths.len().max(1)) {
             let next_path = &next_path;
@@ -1404,7 +1434,8 @@ where
                     let Some(path) = paths.get(index) else {
                         break;
                     };
-                    let result = read_saved_world_package(path, &cancellation);
+                    let result =
+                        read_saved_world_package(path, content_root, options, &cancellation);
                     slots
                         .lock()
                         .expect("saved-world slots must not be poisoned")[index] = Some(result);
@@ -1418,6 +1449,7 @@ where
 
     let mut fragments = Vec::new();
     let mut diagnostic_counts = BTreeMap::<String, u64>::new();
+    let mut package_errors = Vec::new();
     let mut partial_packages = 0_u64;
     let mut failed_packages = 0_u64;
     for result in slots
@@ -1439,6 +1471,7 @@ where
         if let Some(code) = result.failure_code {
             *diagnostic_counts.entry(code).or_default() += 1;
         }
+        package_errors.extend(result.errors);
     }
     checkpoint(cancellation, "inspection")?;
     let actors = resolve_saved_world_actors(&fragments);
@@ -1469,7 +1502,7 @@ where
         },
         contract: SavedWorldContract {
             name: SavedWorldContractName,
-            version: SavedWorldContractVersion { major: 2, minor: 0 },
+            version: SavedWorldContractVersion::CURRENT,
         },
         diagnostics,
         external_actor_root: roots
@@ -1477,6 +1510,7 @@ where
             .external_actor_root()
             .map(|path| path.to_string_lossy().into_owned()),
         map_path: roots.map_path.to_string_lossy().into_owned(),
+        package_errors,
         source_kind: roots.source.kind(),
         actors: actors.into_iter().map(saved_world_actor).collect(),
         summary: SavedWorldSummary {
@@ -1490,6 +1524,7 @@ where
 }
 
 struct SavedWorldRoots {
+    content_root: PathBuf,
     map_package: String,
     map_path: PathBuf,
     source: SavedWorldSource,
@@ -1572,6 +1607,7 @@ fn resolve_saved_world_roots(
         .join(external_actor_relative);
     checkpoint(cancellation, "discovery")?;
     Ok(SavedWorldRoots {
+        content_root: content_root.clone(),
         map_package: format!(
             "/Game/{}",
             relative_map_path
@@ -1619,24 +1655,227 @@ fn external_actor_relative_path(relative_map_path: &Path) -> Result<PathBuf, Fai
 }
 
 struct SavedWorldPackageRead {
+    errors: Vec<SavedWorldPackageError>,
     failure_code: Option<String>,
     fragment: Option<SavedWorldPackageFragment>,
     partial: bool,
 }
 
+impl SavedWorldPackageRead {
+    /// A package that could not be read at all. Its contents are unknown, so by convention it is
+    /// reported as possibly dropping an actor (every external actor package holds one).
+    fn failed(package: String, code: &str, detail: String) -> Self {
+        Self {
+            errors: vec![SavedWorldPackageError {
+                package,
+                export: None,
+                category: code.to_owned(),
+                detail,
+                actor_dropped: true,
+                count: None,
+                exports: None,
+            }],
+            failure_code: Some(code.to_owned()),
+            fragment: None,
+            partial: false,
+        }
+    }
+}
+
+/// The long package name implied by a file path beneath `Content`, for packages whose header
+/// could not be read. Falls back to the file path when it is outside `Content`.
+fn package_name_from_path(path: &Path, content_root: &Path) -> String {
+    path.strip_prefix(content_root).map_or_else(
+        |_| path.to_string_lossy().into_owned(),
+        |relative| {
+            format!(
+                "/Game/{}",
+                relative
+                    .with_extension("")
+                    .to_string_lossy()
+                    .replace('\\', "/")
+            )
+        },
+    )
+}
+
+/// `packageErrors` category for decoded exports that kept property values raw.
+const SKIPPED_PROPERTY_CATEGORY: &str = "skipped_property";
+/// Types named in an aggregated `skipped_property` detail; the rest are counted.
+const SKIPPED_PROPERTY_TYPE_LIMIT: usize = 5;
+/// Property paths named in a per-export `skipped_property` detail.
+const SKIPPED_PROPERTY_PATH_LIMIT: usize = 3;
+
+/// How saved-world reports exports that decoded with raw property values.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) enum SkippedPropertyDetail {
+    /// One `skipped_property` entry per package, with counts and the most frequent types.
+    #[default]
+    Package,
+    /// One entry per affected export, naming its first property paths. Opt-in: large maps can
+    /// have thousands of such exports.
+    Export,
+}
+
+/// Options for a saved-world read that are not part of the protocol request.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct SavedWorldReadOptions {
+    pub(crate) skipped_property_detail: SkippedPropertyDetail,
+}
+
+fn skipped_property_errors(
+    package: &str,
+    exports: &[uasset_inspection::saved_world::SavedWorldIncompleteExport],
+    detail: SkippedPropertyDetail,
+) -> Vec<SavedWorldPackageError> {
+    let entry = |export: Option<String>, count: usize, exports: usize, detail: String| {
+        SavedWorldPackageError {
+            package: package.to_owned(),
+            export,
+            category: SKIPPED_PROPERTY_CATEGORY.to_owned(),
+            detail,
+            actor_dropped: false,
+            count: Some(count as u64),
+            exports: Some(exports as u64),
+        }
+    };
+    match detail {
+        _ if exports.is_empty() => Vec::new(),
+        SkippedPropertyDetail::Export => exports
+            .iter()
+            .map(|export| {
+                let properties = &export.properties;
+                let listed = properties
+                    .iter()
+                    .take(SKIPPED_PROPERTY_PATH_LIMIT)
+                    .map(|property| format!("{} ({})", property.path, property.reason))
+                    .collect::<Vec<_>>()
+                    .join("; ");
+                let more = properties.len().saturating_sub(SKIPPED_PROPERTY_PATH_LIMIT);
+                let suffix = if more > 0 {
+                    format!("; and {more} more")
+                } else {
+                    String::new()
+                };
+                entry(
+                    Some(export.object_path.to_string()),
+                    properties.len(),
+                    1,
+                    format!(
+                        "{} property value(s) not decoded: {listed}{suffix}",
+                        properties.len()
+                    ),
+                )
+            })
+            .collect(),
+        SkippedPropertyDetail::Package => {
+            let mut by_type = BTreeMap::<&str, usize>::new();
+            for property in exports.iter().flat_map(|export| &export.properties) {
+                *by_type.entry(property.type_name.as_str()).or_default() += 1;
+            }
+            let count = by_type.values().sum::<usize>();
+            let mut ranked: Vec<_> = by_type.into_iter().collect();
+            ranked.sort_by(|left, right| right.1.cmp(&left.1).then(left.0.cmp(right.0)));
+            let listed = ranked
+                .iter()
+                .take(SKIPPED_PROPERTY_TYPE_LIMIT)
+                .map(|(name, count)| format!("{name} {count}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let more = ranked.len().saturating_sub(SKIPPED_PROPERTY_TYPE_LIMIT);
+            let suffix = if more > 0 {
+                format!(", and {more} more type(s)")
+            } else {
+                String::new()
+            };
+            vec![entry(
+                None,
+                count,
+                exports.len(),
+                format!(
+                    "{count} property value(s) in {} export(s) not decoded; by type: {listed}{suffix}",
+                    exports.len()
+                ),
+            )]
+        }
+    }
+}
+
+fn export_error_category(kind: AssetErrorKind) -> &'static str {
+    match kind {
+        AssetErrorKind::MalformedData => "export_malformed_data",
+        AssetErrorKind::ResourceLimit => "export_resource_limit",
+        AssetErrorKind::UnsupportedFormat => "export_unsupported_format",
+        AssetErrorKind::UnsupportedVersion => "export_unsupported_version",
+        AssetErrorKind::UnsupportedCapability => "export_unsupported_capability",
+    }
+}
+
+/// Classes Unreal saves directly under a `Level` (or under its brush model) that are not actors:
+/// UE 5.7/5.8 `UWorld::InitializeNewWorld` and `AddDefaultBrush` create `UModel`s with the level
+/// as outer, `ULevel::UpdateModelComponents` creates `UModelComponent`s, and a model owns `UPolys`.
+const NON_ACTOR_LEVEL_CHILD_CLASSES: &[&str] = &[
+    "/Script/Engine.Model",
+    "/Script/Engine.ModelComponent",
+    "/Script/Engine.Polys",
+];
+
+/// Whether a failed export may have been an actor, for `packageErrors.actorDropped`.
+///
+/// Actors are saved with a `Level` as their outer, so anything else is not an actor. Known
+/// non-actor level children are rejected, and a class the source model knows answers by its
+/// inheritance. A level child of a class the reader cannot classify (typically a project or
+/// Blueprint class) is conservatively reported as a possibly dropped actor: the flag means "an
+/// actor may be missing", not proof that one was.
+fn may_be_actor_export(package: &Package, export: &Export) -> bool {
+    if !outer_is_level(package, export) {
+        return false;
+    }
+    let Some(class_path) = export.class_path.as_ref() else {
+        return true;
+    };
+    if NON_ACTOR_LEVEL_CHILD_CLASSES.contains(&class_path.as_str()) {
+        return false;
+    }
+    let schemas = embedded_source_model();
+    if schemas.find_class(class_path).is_some() {
+        return schemas.class_is_a(class_path, "/Script/Engine.Actor");
+    }
+    true
+}
+
+/// Whether `export`'s outer is a `Level` export or import.
+fn outer_is_level(package: &Package, export: &Export) -> bool {
+    let outer_class = match export.outer_index {
+        PackageIndex::Import(index) => usize::try_from(index)
+            .ok()
+            .and_then(|index| package.imports.get(index))
+            .map(|import| import.class_path.as_str()),
+        PackageIndex::Export(index) => usize::try_from(index)
+            .ok()
+            .and_then(|index| package.exports.get(index))
+            .and_then(|outer| outer.class_path.as_ref().map(ObjectPath::as_str)),
+        PackageIndex::Null => None,
+    };
+    // Import class paths are rendered as `//Script/Engine.Level` by the header parser.
+    outer_class.is_some_and(|class| class.trim_start_matches('/') == "Script/Engine.Level")
+}
+
 fn read_saved_world_package(
     path: &Path,
+    content_root: &Path,
+    options: SavedWorldReadOptions,
     cancellation: &CancellationToken,
 ) -> Result<SavedWorldPackageRead, Failure> {
     checkpoint(cancellation, "read")?;
     let source = match fs::read(path) {
         Ok(source) => source,
-        Err(_) => {
-            return Ok(SavedWorldPackageRead {
-                failure_code: Some("asset_io".to_owned()),
-                fragment: None,
-                partial: false,
-            });
+        Err(error) => {
+            return Ok(SavedWorldPackageRead::failed(
+                package_name_from_path(path, content_root),
+                "asset_io",
+                error.to_string(),
+            ));
         }
     };
     checkpoint(cancellation, "read")?;
@@ -1644,11 +1883,11 @@ fn read_saved_world_package(
     let package = match Package::parse(&source) {
         Ok(package) => package,
         Err(error) => {
-            return Ok(SavedWorldPackageRead {
-                failure_code: Some(package_error_code(&error).to_owned()),
-                fragment: None,
-                partial: false,
-            });
+            return Ok(SavedWorldPackageRead::failed(
+                package_name_from_path(path, content_root),
+                package_error_code(&error),
+                error.to_string(),
+            ));
         }
     };
     checkpoint(cancellation, "parsing")?;
@@ -1658,19 +1897,41 @@ fn read_saved_world_package(
         schemas: embedded_source_model(),
     };
     let mut decoded = Vec::new();
-    let mut partial = false;
+    let mut errors = Vec::new();
+    let mut failed_exports = Vec::new();
     for export in &package.exports {
         checkpoint(cancellation, "parsing")?;
         match decode_export(export, &context) {
             Ok(Some(asset)) => decoded.push(asset),
             Ok(None) => {}
-            Err(_) => partial = true,
+            Err(error) => {
+                errors.push(SavedWorldPackageError {
+                    package: package.summary.package_name.clone(),
+                    export: Some(export.object_path.to_string()),
+                    category: export_error_category(error.kind()).to_owned(),
+                    detail: error.message().to_owned(),
+                    actor_dropped: may_be_actor_export(&package, export),
+                    count: None,
+                    exports: None,
+                });
+                failed_exports.push(export.object_path.clone());
+            }
         }
         checkpoint(cancellation, "inspection")?;
     }
-    let fragment = project_saved_world_package(&package, &decoded);
+    let mut fragment = project_saved_world_package(&package, &decoded);
+    fragment.failed_exports = failed_exports;
+    errors.extend(skipped_property_errors(
+        &package.summary.package_name,
+        &fragment.incomplete_exports,
+        options.skipped_property_detail,
+    ));
     checkpoint(cancellation, "inspection")?;
+    // Skipped property values mark their actors partial and are listed, but the export itself
+    // was read, so they do not make the package partial.
+    let partial = !fragment.failed_exports.is_empty();
     Ok(SavedWorldPackageRead {
+        errors,
         failure_code: partial.then_some("export_decode".to_owned()),
         fragment: Some(fragment),
         partial,
@@ -1682,6 +1943,8 @@ mod tests {
     use super::{saved_world_with_cancellation, scan_header_cache_needs_write};
     use crate::cancellation::CancellationToken;
     use crate::protocol::Request;
+    use crate::protocol_result::SavedWorldActorDecode;
+    use uasset_parser::package::ObjectPath;
 
     #[test]
     fn legacy_text_protocol_frames_preserve_occurrences_and_each_gap_reason() {
@@ -1721,6 +1984,467 @@ mod tests {
                 ]
             );
         }
+    }
+
+    fn copy_tree(from: &std::path::Path, to: &std::path::Path) {
+        std::fs::create_dir_all(to).expect("create copy directory");
+        for entry in std::fs::read_dir(from).expect("read fixture directory") {
+            let entry = entry.expect("fixture entry");
+            let target = to.join(entry.file_name());
+            if entry.file_type().expect("fixture entry type").is_dir() {
+                copy_tree(&entry.path(), &target);
+            } else {
+                std::fs::copy(entry.path(), &target).expect("copy fixture file");
+            }
+        }
+    }
+
+    fn overwrite_export_head(path: &std::path::Path, export: &uasset_parser::package::Export) {
+        let mut bytes = std::fs::read(path).expect("read package");
+        let start = usize::try_from(export.serial_offset.get()).expect("offset fits");
+        bytes[start..start + 8].fill(0xFF);
+        std::fs::write(path, bytes).expect("corrupt export");
+    }
+
+    /// Copies one fixture map (and its external actors, when it has them) into a temporary
+    /// project, returning the project root and its sorted package paths.
+    fn copy_fixture_map(map: &str, label: &str) -> (std::path::PathBuf, Vec<std::path::PathBuf>) {
+        let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/unreal-project/Content");
+        let suffix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system time after epoch")
+            .as_nanos();
+        let project_root =
+            std::env::temp_dir().join(format!("ue-shed-saved-world-{label}-{suffix}"));
+        let content = project_root.join("Content");
+        let map_file = content.join(format!("{map}.umap"));
+        std::fs::create_dir_all(map_file.parent().expect("map directory"))
+            .expect("create map directory");
+        std::fs::copy(fixture.join(format!("{map}.umap")), &map_file).expect("copy map");
+        let actors = fixture.join("__ExternalActors__").join(map);
+        if !actors.is_dir() {
+            return (project_root, vec![map_file]);
+        }
+        let actors_root = content.join("__ExternalActors__").join(map);
+        copy_tree(&actors, &actors_root);
+        let (mut packages, _) = super::scanner::discover_paths(
+            std::slice::from_ref(&actors_root),
+            false,
+            &CancellationToken::new(),
+        )
+        .expect("discover copied actors");
+        packages.sort();
+        (project_root, packages)
+    }
+
+    fn read_fixture_world(project_root: &std::path::Path, map: &str) -> super::SavedWorldOutput {
+        read_fixture_world_with(
+            project_root,
+            map,
+            super::SkippedPropertyDetail::Package,
+            true,
+        )
+    }
+
+    fn read_fixture_world_with(
+        project_root: &std::path::Path,
+        map: &str,
+        skipped_property_detail: super::SkippedPropertyDetail,
+        remove: bool,
+    ) -> super::SavedWorldOutput {
+        let request: Request = serde_json::from_value(serde_json::json!({
+            "contract": { "name": "uasset-io", "version": { "major": 1, "minor": 0 } },
+            "limits": { "concurrency": 2 },
+            "operation": {
+                "kind": "saved_world",
+                "projectRoot": project_root.to_string_lossy(),
+                "mapPath": format!("Content/{map}.umap")
+            },
+            "requestId": "saved-world-package-errors"
+        }))
+        .expect("saved-world request");
+        let output = super::saved_world_with_options(
+            &request,
+            super::SavedWorldReadOptions {
+                skipped_property_detail,
+            },
+        )
+        .expect("partial saved world still succeeds");
+        if remove {
+            std::fs::remove_dir_all(project_root).expect("remove copied project");
+        }
+        output
+    }
+
+    fn read_package(path: &std::path::Path) -> uasset_parser::package::Package {
+        uasset_parser::package::Package::parse(&std::fs::read(path).expect("read package"))
+            .expect("parse package")
+    }
+
+    /// The first export whose outer is a Level, which in an external actor package is its actor.
+    fn level_child_export(
+        package: &uasset_parser::package::Package,
+    ) -> &uasset_parser::package::Export {
+        package
+            .exports
+            .iter()
+            .find(|export| super::outer_is_level(package, export))
+            .expect("actor export")
+    }
+
+    #[test]
+    fn saved_world_marks_actors_with_skipped_property_values_partial() {
+        use uasset_parser::property::read_uobject_tagged_property_stream;
+
+        let map = "Fixture/Offline/L_OfflineWorld";
+        let (project_root, packages) = copy_fixture_map(map, "skipped");
+        // Flag one scalar property of an actor subobject as binary-or-native serialized. Its
+        // value can no longer be decoded, but the export and its other properties still are.
+        let target = &packages[0];
+        let package = read_package(target);
+        let actor_path = level_child_export(&package).object_path.to_string();
+        let mut bytes = std::fs::read(target).expect("read package");
+        let (component_path, property) = package
+            .exports
+            .iter()
+            .filter(|export| {
+                export
+                    .object_path
+                    .as_str()
+                    .starts_with(&format!("{actor_path}."))
+            })
+            .find_map(|export| {
+                let mut reader = package.export_reader(&bytes, export).ok()?;
+                let stream = read_uobject_tagged_property_stream(
+                    &mut reader,
+                    &package.summary.versions,
+                    &package.names,
+                    "fixture",
+                )
+                .ok()?;
+                let record = stream.records.iter().find(|record| {
+                    record.property_guid.is_none()
+                        && record.extensions.is_none()
+                        && matches!(
+                            package.resolve_name(record.type_name.name).as_deref(),
+                            Some("ObjectProperty" | "IntProperty" | "FloatProperty")
+                        )
+                })?;
+                Some((
+                    export.object_path.to_string(),
+                    (
+                        package.resolve_name(record.name).expect("property name"),
+                        usize::try_from(record.payload.offset()).expect("offset fits") - 1,
+                    ),
+                ))
+            })
+            .expect("a scalar property on an actor subobject");
+        let (property_name, flags_offset) = property;
+        bytes[flags_offset] |= 0x08;
+        std::fs::write(target, bytes).expect("flag property");
+
+        let package_name = package.summary.package_name.clone();
+        let read = |detail| {
+            let output = read_fixture_world_with(&project_root, map, detail, false);
+            assert!(
+                !output.partial,
+                "a skipped property does not make the package partial"
+            );
+            assert_eq!(output.world.summary.partial_packages, 0);
+            for actor in &output.world.actors {
+                let expected = if actor.actor_path == actor_path {
+                    SavedWorldActorDecode::Partial
+                } else {
+                    SavedWorldActorDecode::Complete
+                };
+                assert_eq!(actor.decode, Some(expected), "{}", actor.actor_path);
+            }
+            assert!(
+                output
+                    .world
+                    .actors
+                    .iter()
+                    .any(|actor| actor.actor_path == actor_path)
+            );
+            output.world.package_errors
+        };
+
+        // By default: one entry for the package, counting values and exports by type.
+        let errors = read(super::SkippedPropertyDetail::Package);
+        let [error] = errors.as_slice() else {
+            panic!("expected one package error, got {errors:#?}");
+        };
+        assert_eq!(error.category, "skipped_property");
+        assert_eq!(error.package, package_name);
+        assert_eq!(error.export, None);
+        assert_eq!((error.count, error.exports), (Some(1), Some(1)));
+        assert!(!error.actor_dropped);
+        assert!(
+            error
+                .detail
+                .starts_with("1 property value(s) in 1 export(s) not decoded; by type: "),
+            "{}",
+            error.detail
+        );
+
+        // Opt-in: one entry per affected export, naming the property.
+        let errors = read(super::SkippedPropertyDetail::Export);
+        let [error] = errors.as_slice() else {
+            panic!("expected one export error, got {errors:#?}");
+        };
+        assert_eq!(error.export.as_deref(), Some(component_path.as_str()));
+        assert_eq!((error.count, error.exports), (Some(1), Some(1)));
+        assert!(
+            error.detail.starts_with(&format!(
+                "1 property value(s) not decoded: {property_name} ("
+            )),
+            "{}",
+            error.detail
+        );
+        std::fs::remove_dir_all(&project_root).expect("remove copied project");
+    }
+
+    #[test]
+    fn skipped_property_aggregation_ranks_types_and_truncates() {
+        use uasset_inspection::saved_world::{
+            SavedWorldIncompleteExport, SavedWorldUndecodedProperty,
+        };
+        let property = |type_name: &str| SavedWorldUndecodedProperty {
+            path: "P".to_owned(),
+            reason: "unsupported type".to_owned(),
+            type_name: type_name.to_owned(),
+        };
+        let export = |path: &str, types: &[&str]| SavedWorldIncompleteExport {
+            object_path: ObjectPath::new(path),
+            properties: types.iter().map(|name| property(name)).collect(),
+        };
+        let exports = [
+            export("A", &["F", "A", "A", "B"]),
+            export("B", &["A", "C", "D", "E", "G", "B"]),
+        ];
+        let errors = super::skipped_property_errors(
+            "/Game/P",
+            &exports,
+            super::SkippedPropertyDetail::Package,
+        );
+        let [error] = errors.as_slice() else {
+            panic!("one aggregated entry");
+        };
+        assert_eq!((error.count, error.exports), (Some(10), Some(2)));
+        assert_eq!(
+            error.detail,
+            "10 property value(s) in 2 export(s) not decoded; by type: A 3, B 2, C 1, D 1, E 1, \
+             and 2 more type(s)"
+        );
+        assert!(
+            super::skipped_property_errors("/Game/P", &[], super::SkippedPropertyDetail::Package)
+                .is_empty()
+        );
+        assert_eq!(
+            super::skipped_property_errors(
+                "/Game/P",
+                &exports,
+                super::SkippedPropertyDetail::Export
+            )
+            .len(),
+            2
+        );
+    }
+
+    #[test]
+    fn saved_world_reports_each_package_error_and_marks_affected_actors_partial() {
+        let map = "Fixture/Offline/L_OfflineWorld";
+        let (project_root, packages) = copy_fixture_map(map, "errors");
+        let read = |path: &std::path::Path| read_package(path);
+
+        // One package loses its actor export, another one of its actor's subobjects, and a third
+        // cannot be parsed at all.
+        let (lost_actor, damaged_component, unreadable) =
+            (&packages[0], &packages[1], &packages[2]);
+        let package = read(lost_actor);
+        let actor = level_child_export(&package);
+        let lost_actor_path = actor.object_path.to_string();
+        overwrite_export_head(lost_actor, actor);
+        let package = read(damaged_component);
+        let actor_path = level_child_export(&package).object_path.to_string();
+        let component = package
+            .exports
+            .iter()
+            .find(|export| {
+                export
+                    .object_path
+                    .as_str()
+                    .starts_with(&format!("{actor_path}."))
+                    && export.serial_size >= 8
+            })
+            .expect("actor subobject export");
+        let component_path = component.object_path.to_string();
+        overwrite_export_head(damaged_component, component);
+        let unreadable_name = read(unreadable).summary.package_name.clone();
+        std::fs::write(unreadable, [0_u8; 16]).expect("truncate package");
+
+        let output = read_fixture_world(&project_root, map);
+        let world = output.world;
+        assert!(output.partial);
+        assert_eq!(world.summary.partial_packages, 2);
+        assert_eq!(world.summary.failed_packages, 1);
+
+        let errors = &world.package_errors;
+        assert_eq!(errors.len(), 3, "{errors:#?}");
+        let lost = errors
+            .iter()
+            .find(|error| error.export.as_deref() == Some(lost_actor_path.as_str()))
+            .expect("lost actor error");
+        assert!(lost.category.starts_with("export_"), "{}", lost.category);
+        assert!(lost.actor_dropped);
+        assert!(!lost.detail.is_empty());
+        let damaged = errors
+            .iter()
+            .find(|error| error.export.as_deref() == Some(component_path.as_str()))
+            .expect("damaged component error");
+        assert!(!damaged.actor_dropped);
+        let whole = errors
+            .iter()
+            .find(|error| error.export.is_none())
+            .expect("unreadable package error");
+        assert_eq!(whole.package, unreadable_name);
+        assert!(whole.category.starts_with("asset_"), "{}", whole.category);
+        assert!(whole.actor_dropped);
+
+        assert!(
+            world
+                .actors
+                .iter()
+                .all(|actor| actor.actor_path != lost_actor_path)
+        );
+        for actor in &world.actors {
+            let expected = if actor.actor_path == actor_path {
+                SavedWorldActorDecode::Partial
+            } else {
+                SavedWorldActorDecode::Complete
+            };
+            assert_eq!(actor.decode, Some(expected), "{}", actor.actor_path);
+        }
+    }
+
+    #[test]
+    fn failed_level_models_are_not_reported_as_dropped_actors() {
+        let map = "Fixture/Cameras/L_CameraLoad";
+        let (project_root, packages) = copy_fixture_map(map, "models");
+        let [map_file] = packages.as_slice() else {
+            panic!("a conventional map is one package");
+        };
+        let package = read_package(map_file);
+        let level_child = |class: &str| {
+            package
+                .exports
+                .iter()
+                .filter(|export| {
+                    super::outer_is_level(&package, export)
+                        && export.class_path.as_ref().map(|path| path.as_str()) == Some(class)
+                        && export.serial_size >= 8
+                })
+                .collect::<Vec<_>>()
+        };
+        let models = level_child("/Script/Engine.Model");
+        let model_components = level_child("/Script/Engine.ModelComponent");
+        assert!(!models.is_empty(), "the fixture level saves its BSP models");
+        let actor = package
+            .exports
+            .iter()
+            .find(|export| {
+                super::outer_is_level(&package, export)
+                    && export
+                        .class_path
+                        .as_ref()
+                        .is_some_and(|path| path.as_str().ends_with("Actor"))
+                    && export.serial_size >= 8
+            })
+            .expect("a level actor");
+        for export in models.iter().chain(&model_components).chain([&actor]) {
+            overwrite_export_head(map_file, export);
+        }
+        let not_actors: Vec<String> = models
+            .iter()
+            .chain(&model_components)
+            .map(|export| export.object_path.to_string())
+            .collect();
+        let actor_path = actor.object_path.to_string();
+
+        let world = read_fixture_world(&project_root, map).world;
+        for path in &not_actors {
+            let error = world
+                .package_errors
+                .iter()
+                .find(|error| error.export.as_deref() == Some(path.as_str()))
+                .unwrap_or_else(|| panic!("no package error for {path}"));
+            assert!(error.category.starts_with("export_"), "{}", error.category);
+            assert!(!error.actor_dropped, "{path} is not an actor");
+        }
+        let lost = world
+            .package_errors
+            .iter()
+            .find(|error| error.export.as_deref() == Some(actor_path.as_str()))
+            .expect("actor error");
+        assert!(lost.actor_dropped);
+    }
+
+    #[test]
+    fn actor_classification_rejects_known_non_actors_and_keeps_unknown_level_children() {
+        let package = read_package(
+            &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../fixtures/unreal-project/Content/Fixture/Cameras/L_CameraLoad.umap"),
+        );
+        let level_child = package
+            .exports
+            .iter()
+            .find(|export| super::outer_is_level(&package, export))
+            .expect("a level child")
+            .clone();
+        let with_class = |class: &str| {
+            let mut export = level_child.clone();
+            export.class_path = Some(ObjectPath::new(class));
+            export
+        };
+        for class in super::NON_ACTOR_LEVEL_CHILD_CLASSES {
+            assert!(
+                !super::may_be_actor_export(&package, &with_class(class)),
+                "{class}"
+            );
+        }
+        // The source model knows `Actor`, and an unclassifiable project class stays possible.
+        assert!(super::may_be_actor_export(
+            &package,
+            &with_class("/Script/Engine.Actor")
+        ));
+        assert!(super::may_be_actor_export(
+            &package,
+            &with_class("/Script/Project.MysteryActor")
+        ));
+        // Anything not saved under a level is never an actor.
+        let nested = package
+            .exports
+            .iter()
+            .find(|export| !super::outer_is_level(&package, export))
+            .expect("a nested export");
+        assert!(!super::may_be_actor_export(&package, nested));
+    }
+
+    #[test]
+    fn package_names_for_unreadable_files_follow_the_content_root() {
+        let content = std::path::Path::new("C:/Project/Content");
+        assert_eq!(
+            super::package_name_from_path(
+                &content.join("__ExternalActors__/Maps/L/0/AB/CDEF.uasset"),
+                content
+            ),
+            "/Game/__ExternalActors__/Maps/L/0/AB/CDEF"
+        );
+        assert_eq!(
+            super::package_name_from_path(std::path::Path::new("D:/Elsewhere/X.uasset"), content),
+            "D:/Elsewhere/X.uasset"
+        );
     }
 
     #[test]

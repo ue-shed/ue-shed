@@ -8724,7 +8724,7 @@
 								},
 								"minor": {
 									"type": "number",
-									"enum": [0]
+									"enum": [0, 1]
 								}
 							},
 							"required": ["major", "minor"],
@@ -8758,6 +8758,47 @@
 				},
 				"mapPath": {
 					"type": "string"
+				},
+				"packageErrors": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"properties": {
+							"package": {
+								"type": "string"
+							},
+							"export": {
+								"type": "string"
+							},
+							"category": {
+								"type": "string"
+							},
+							"detail": {
+								"type": "string"
+							},
+							"count": {
+								"type": "integer",
+								"allOf": [
+									{
+										"minimum": 0
+									}
+								]
+							},
+							"exports": {
+								"type": "integer",
+								"allOf": [
+									{
+										"minimum": 0
+									}
+								]
+							},
+							"actorDropped": {
+								"type": "boolean"
+							}
+						},
+						"required": ["package", "category", "detail", "actorDropped"],
+						"additionalProperties": false
+					}
 				},
 				"sourceKind": {
 					"type": "string",
@@ -8800,11 +8841,31 @@
 							"classPath": {
 								"type": "string"
 							},
+							"decode": {
+								"type": "string",
+								"enum": ["complete", "partial"]
+							},
+							"heldBy": {
+								"type": "string",
+								"allOf": [
+									{
+										"minLength": 1
+									}
+								]
+							},
 							"label": {
 								"type": "string"
 							},
 							"packageName": {
 								"type": "string"
+							},
+							"parentComponent": {
+								"type": "string",
+								"allOf": [
+									{
+										"minLength": 1
+									}
+								]
 							},
 							"transform": {
 								"anyOf": [

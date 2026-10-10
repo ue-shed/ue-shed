@@ -968,6 +968,9 @@ mod tests {
     const VALID_SAVED_WORLD_RESULT: &str = include_str!(
         "../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/saved-world-result-event.json"
     );
+    const VALID_SAVED_WORLD_2_0_RESULT: &str = include_str!(
+        "../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/saved-world-2-0-result-event.json"
+    );
     const VALID_PROJECT_INDEX_STATUS_REQUEST: &str = include_str!(
         "../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/project-index-status-request.json"
     );
@@ -1033,6 +1036,7 @@ mod tests {
             VALID_EXTRACT_TEXTURE_RESULT,
             VALID_EXTRACT_TEXTURE_RECORD_RESULT,
             VALID_SAVED_WORLD_RESULT,
+            VALID_SAVED_WORLD_2_0_RESULT,
             VALID_PROJECT_INDEX_ACCEPTED,
             VALID_PROJECT_INDEX_PROGRESS,
             VALID_PROJECT_INDEX_STATUS_RESULT,
@@ -1055,6 +1059,14 @@ mod tests {
     #[test]
     fn rejects_shared_invalid_fixtures() {
         assert!(decode_event(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/level-sequence-version.json")).is_err());
+        assert!(decode_event(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/saved-world-unknown-actor-decode.json")).is_err());
+        for fixture in [
+            include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/saved-world-unsupported-minor.json").as_slice(),
+            include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/saved-world-unsupported-major.json").as_slice(),
+            include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/saved-world-negative-minor.json").as_slice(),
+        ] {
+            assert!(decode_event(fixture).is_err(), "saved-world version must be 2.0 or 2.1");
+        }
         assert!(decode_request(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/project-index-count-empty-filters.json")).is_err());
         assert!(decode_request(INVALID_MAJOR.as_bytes()).is_err());
         assert!(decode_event(INVALID_KIND.as_bytes()).is_err());

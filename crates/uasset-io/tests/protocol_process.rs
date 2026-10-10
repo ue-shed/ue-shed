@@ -399,11 +399,37 @@ fn protocol_process_emits_saved_world_with_deterministic_actor_order() {
     );
     assert_eq!(
         one_world["result"]["world"]["contract"]["version"],
-        serde_json::json!({ "major": 2, "minor": 0 })
+        serde_json::json!({ "major": 2, "minor": 1 })
     );
+    // The fixture's world settings keep one native struct (a soft class path) the reader has no
+    // layout for. It is listed without losing an actor; only an owning actor would turn partial.
+    let package_errors = one_world["result"]["world"]["packageErrors"]
+        .as_array()
+        .expect("package errors");
+    assert_eq!(package_errors.len(), 1, "{package_errors:#?}");
+    let skipped = &package_errors[0];
+    assert_eq!(skipped["category"], "skipped_property");
+    assert_eq!(skipped["actorDropped"], false);
+    assert_eq!(skipped["count"], 1);
+    assert_eq!(skipped["exports"], 1);
+    assert!(skipped.get("export").is_none(), "aggregated per package");
+    assert!(
+        skipped["detail"]
+            .as_str()
+            .is_some_and(|detail| detail.ends_with("by type: SoftClassPath 1")),
+        "{skipped}"
+    );
+    assert_eq!(one_world["result"]["world"]["completeness"], "complete");
     let conventional_actors = one_world["result"]["world"]["actors"]
         .as_array()
         .expect("conventional actors");
+    // World settings has no root component, so it is not a saved-world actor and no listed
+    // actor turns partial.
+    assert!(
+        conventional_actors
+            .iter()
+            .all(|actor| actor["decode"] == "complete")
+    );
     let conventional_camera = conventional_actors
         .iter()
         .find(|actor| actor["label"] == "Camera 01")
@@ -508,6 +534,15 @@ fn protocol_process_exposes_world_partition_transform_and_attachment_evidence() 
     assert_eq!(
         attachment["transform"]["rotation"],
         serde_json::json!({ "w": 1.0, "x": 0.0, "y": 0.0, "z": 0.0 })
+    );
+    assert_eq!(attachment["decode"], "complete");
+    assert!(
+        attachment.get("heldBy").is_none(),
+        "a plain attachment is not a child-actor hold"
+    );
+    assert_eq!(
+        world["result"]["world"]["packageErrors"],
+        serde_json::json!([])
     );
 }
 

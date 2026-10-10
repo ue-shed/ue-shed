@@ -3,7 +3,9 @@
 use serde::{Deserialize, Serialize};
 
 use crate::authoring::Completeness;
-use crate::saved_world::{SavedWorldActorEvidence, SavedWorldTransform as ProjectedWorldTransform};
+use crate::saved_world::{
+    SavedWorldActorEvidence, SavedWorldDecode, SavedWorldTransform as ProjectedWorldTransform,
+};
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -20,10 +22,39 @@ pub struct SavedWorld {
     pub external_actor_root: Option<String>,
     #[serde(rename = "mapPath")]
     pub map_path: String,
+    /// One entry per package or export that could not be read (contract 2.1). Absent in 2.0.
+    #[serde(default, rename = "packageErrors")]
+    pub package_errors: Vec<SavedWorldPackageError>,
     #[serde(rename = "sourceKind")]
     pub source_kind: SavedWorldSourceKind,
     pub actors: Vec<SavedWorldActor>,
     pub summary: SavedWorldSummary,
+}
+
+/// A package, or one export in it, that the reader could not decode.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct SavedWorldPackageError {
+    /// The long package name, or the project-relative package path when the header is unreadable.
+    pub package: String,
+    /// The failed export's object path; absent when the whole package could not be read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub export: Option<String>,
+    /// `asset_io` / `asset_<kind>` (package unreadable), `export_<kind>` (export failed) or
+    /// `skipped_property` (export decoded with raw property values).
+    pub category: String,
+    pub detail: String,
+    /// `skipped_property` only: the number of property values that were not decoded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub count: Option<u64>,
+    /// `skipped_property` only: the number of exports those values belong to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exports: Option<u64>,
+    /// Whether an actor may be missing. True for a failed level child that is not a known
+    /// non-actor (class unknown to the reader counts as possible), and by convention for a package
+    /// that could not be read at all. Always false for `skipped_property`.
+    #[serde(rename = "actorDropped")]
+    pub actor_dropped: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -93,11 +124,45 @@ impl Serialize for SavedWorldContractName {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 pub struct SavedWorldContractVersion {
     pub major: u8,
     pub minor: i64,
+}
+
+impl SavedWorldContractVersion {
+    /// The version this producer writes.
+    pub const CURRENT: Self = Self { major: 2, minor: 1 };
+
+    /// Whether a reader of [`Self::CURRENT`] accepts `self`: 2.1 only adds optional fields, so
+    /// 2.0 documents remain valid; any other major or a newer minor is rejected.
+    #[must_use]
+    pub const fn is_supported(&self) -> bool {
+        self.major == Self::CURRENT.major && self.minor >= 0 && self.minor <= Self::CURRENT.minor
+    }
+}
+
+impl<'de> Deserialize<'de> for SavedWorldContractVersion {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Version {
+            major: u8,
+            minor: i64,
+        }
+        let Version { major, minor } = Version::deserialize(deserializer)?;
+        let version = Self { major, minor };
+        if version.is_supported() {
+            Ok(version)
+        } else {
+            Err(serde::de::Error::custom(format!(
+                "unsupported unreal-saved-world version {major}.{minor}; expected 2.0 or 2.1"
+            )))
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -127,11 +192,32 @@ pub struct SavedWorldActor {
     pub attachment: Option<SavedWorldAttachment>,
     #[serde(rename = "classPath")]
     pub class_path: String,
+    /// `partial` when the actor's export or a subobject export failed, or kept a property value
+    /// raw (contract 2.1). Absent in 2.0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decode: Option<SavedWorldActorDecode>,
+    /// The actor holding this one through a child-actor component (contract 2.1).
+    #[serde(default, rename = "heldBy", skip_serializing_if = "Option::is_none")]
+    pub held_by: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
     #[serde(rename = "packageName")]
     pub package_name: String,
+    /// The saved `AActor::ParentComponent` reference (contract 2.1).
+    #[serde(
+        default,
+        rename = "parentComponent",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub parent_component: Option<String>,
     pub transform: SavedWorldTransform,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SavedWorldActorDecode {
+    Complete,
+    Partial,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
@@ -220,8 +306,14 @@ pub fn saved_world_actor(actor: SavedWorldActorEvidence) -> SavedWorldActor {
             parent_component_path: attachment.parent_component_path.to_string(),
         }),
         class_path: actor.class_path.to_string(),
+        decode: Some(match actor.decode {
+            SavedWorldDecode::Complete => SavedWorldActorDecode::Complete,
+            SavedWorldDecode::Partial => SavedWorldActorDecode::Partial,
+        }),
+        held_by: actor.held_by.map(|path| path.to_string()),
         label: actor.label,
         package_name: actor.package_name,
+        parent_component: actor.parent_component.map(|path| path.to_string()),
         transform: saved_world_transform(actor.transform),
     }
 }
@@ -291,8 +383,11 @@ mod tests {
             actor_path: ObjectPath::new("/Game/Fixture/L.L:Actor"),
             attachment: None,
             class_path: ObjectPath::new("/Script/Engine.Actor"),
+            decode: SavedWorldDecode::Complete,
+            held_by: None,
             label: None,
             package_name: "/Game/Fixture/L".to_owned(),
+            parent_component: None,
             transform,
         }
     }
@@ -365,7 +460,7 @@ mod tests {
             let expected = format!(
                 concat!(
                     r#"{{"actorPath":"/Game/Fixture/L.L:Actor","classPath":"/Script/Engine.Actor","#,
-                    r#""packageName":"/Game/Fixture/L","transform":{}}}"#
+                    r#""decode":"complete","packageName":"/Game/Fixture/L","transform":{}}}"#
                 ),
                 expected_transform
             );
@@ -376,7 +471,10 @@ mod tests {
             );
             let explicit_nulls = expected.replacen(
                 "{",
-                r#"{"actorGuid":null,"attachment":null,"label":null,"#,
+                concat!(
+                    r#"{"actorGuid":null,"attachment":null,"heldBy":null,"label":null,"#,
+                    r#""parentComponent":null,"#
+                ),
                 1,
             );
             let from_nulls: SavedWorldActor =
@@ -402,16 +500,103 @@ mod tests {
             parent_component_path: ObjectPath::new("Parent"),
         });
         actor.label = Some(String::new());
+        actor.decode = SavedWorldDecode::Partial;
+        actor.held_by = Some(ObjectPath::new("/Game/Fixture/L.L:Holder"));
+        actor.parent_component = Some(ObjectPath::new("/Game/Fixture/L.L:Holder.Child"));
         let wire = saved_world_actor(actor);
         assert_eq!(
             serde_json::to_string(&wire).expect("actor JSON"),
             concat!(
                 r#"{"actorGuid":"00000001-00000002-00000003-00000004","#,
                 r#""actorPath":"/Game/Fixture/L.L:Actor","attachment":{"componentPath":"Root","#,
-                r#""parentComponentPath":"Parent"},"classPath":"/Script/Engine.Actor","label":"","#,
-                r#""packageName":"/Game/Fixture/L","transform":{"status":"missing_root_component"}}"#
+                r#""parentComponentPath":"Parent"},"classPath":"/Script/Engine.Actor","#,
+                r#""decode":"partial","heldBy":"/Game/Fixture/L.L:Holder","label":"","#,
+                r#""packageName":"/Game/Fixture/L","#,
+                r#""parentComponent":"/Game/Fixture/L.L:Holder.Child","#,
+                r#""transform":{"status":"missing_root_component"}}"#
             )
         );
+    }
+
+    #[test]
+    fn skipped_property_counts_round_trip_and_stay_optional() {
+        let aggregated = SavedWorldPackageError {
+            package: "/Game/Fixture/L".to_owned(),
+            export: None,
+            category: "skipped_property".to_owned(),
+            detail: "3 property value(s) in 2 export(s) not decoded; by type: A 2, B 1".to_owned(),
+            count: Some(3),
+            exports: Some(2),
+            actor_dropped: false,
+        };
+        let json = serde_json::to_string(&aggregated).expect("error JSON");
+        assert_eq!(
+            json,
+            concat!(
+                r#"{"package":"/Game/Fixture/L","category":"skipped_property","#,
+                r#""detail":"3 property value(s) in 2 export(s) not decoded; by type: A 2, B 1","#,
+                r#""count":3,"exports":2,"actorDropped":false}"#
+            )
+        );
+        assert_eq!(
+            serde_json::from_str::<SavedWorldPackageError>(&json).expect("error wire"),
+            aggregated
+        );
+        let without: SavedWorldPackageError = serde_json::from_str(
+            r#"{"package":"P","category":"asset_io","detail":"d","actorDropped":true}"#,
+        )
+        .expect("no counts");
+        assert_eq!((without.count, without.exports), (None, None));
+    }
+
+    #[test]
+    fn contract_2_0_actor_and_world_documents_still_deserialize() {
+        let actor: SavedWorldActor = serde_json::from_str(concat!(
+            r#"{"actorPath":"A","classPath":"/Script/Engine.Actor","packageName":"/Game/P","#,
+            r#""transform":{"status":"missing_root_component"}}"#
+        ))
+        .expect("2.0 actor");
+        assert_eq!(actor.decode, None);
+        assert_eq!(actor.held_by, None);
+        assert_eq!(actor.parent_component, None);
+        let world = |version: &str| {
+            serde_json::from_str::<SavedWorld>(&format!(
+                concat!(
+                    r#"{{"authority":{{"kind":"project_files","mapPackage":"/Game/L"}},"#,
+                    r#""completeness":"complete","contract":{{"name":"unreal-saved-world","#,
+                    r#""version":{}}},"diagnostics":[],"mapPath":"L.umap","#,
+                    r#""sourceKind":"level","actors":[],"summary":{{"failedPackages":0,"#,
+                    r#""partialPackages":0,"resolvedActors":0,"scannedPackages":1}}}}"#
+                ),
+                version
+            ))
+        };
+        for supported in [r#"{"major":2,"minor":0}"#, r#"{"major":2,"minor":1}"#] {
+            assert!(world(supported).is_ok(), "{supported}");
+        }
+        for unsupported in [
+            r#"{"major":2,"minor":2}"#,
+            r#"{"major":2,"minor":-1}"#,
+            r#"{"major":3,"minor":0}"#,
+            r#"{"major":1,"minor":0}"#,
+            r#"{"major":2,"minor":1,"patch":0}"#,
+        ] {
+            let error = world(unsupported).expect_err(unsupported).to_string();
+            assert!(
+                error.contains("unsupported unreal-saved-world version")
+                    || error.contains("unknown field"),
+                "{unsupported}: {error}"
+            );
+        }
+        let world: SavedWorld = serde_json::from_str(concat!(
+            r#"{"authority":{"kind":"project_files","mapPackage":"/Game/L"},"#,
+            r#""completeness":"complete","contract":{"name":"unreal-saved-world","#,
+            r#""version":{"major":2,"minor":0}},"diagnostics":[],"mapPath":"L.umap","#,
+            r#""sourceKind":"level","actors":[],"summary":{"failedPackages":0,"#,
+            r#""partialPackages":0,"resolvedActors":0,"scannedPackages":1}}"#
+        ))
+        .expect("2.0 world");
+        assert!(world.package_errors.is_empty());
     }
 
     #[test]
@@ -424,7 +609,7 @@ mod tests {
             completeness: Completeness::Complete,
             contract: SavedWorldContract {
                 name: SavedWorldContractName,
-                version: SavedWorldContractVersion { major: 2, minor: 0 },
+                version: SavedWorldContractVersion { major: 2, minor: 1 },
             },
             diagnostics: vec![SavedWorldDiagnostic {
                 code: "unsupported".to_owned(),
@@ -433,6 +618,26 @@ mod tests {
             }],
             external_actor_root: None,
             map_path: "Content/Fixture/L.umap".to_owned(),
+            package_errors: vec![
+                SavedWorldPackageError {
+                    package: "/Game/Fixture/L".to_owned(),
+                    export: Some("/Game/Fixture/L.L:PersistentLevel.A".to_owned()),
+                    category: "malformed_data".to_owned(),
+                    detail: "bad".to_owned(),
+                    count: None,
+                    exports: None,
+                    actor_dropped: true,
+                },
+                SavedWorldPackageError {
+                    package: "/Game/Fixture/M".to_owned(),
+                    export: None,
+                    category: "asset_io".to_owned(),
+                    detail: "unreadable".to_owned(),
+                    count: None,
+                    exports: None,
+                    actor_dropped: true,
+                },
+            ],
             source_kind: SavedWorldSourceKind::Level,
             actors: Vec::new(),
             summary: SavedWorldSummary {
@@ -450,8 +655,12 @@ mod tests {
                 concat!(
                     r#"{"authority":{"kind":"project_files","mapPackage":"/Game/Fixture/L"},"#,
                     r#""completeness":"complete","contract":{"name":"unreal-saved-world","#,
-                    r#""version":{"major":2,"minor":0}},"diagnostics":[{"code":"unsupported","#,
+                    r#""version":{"major":2,"minor":1}},"diagnostics":[{"code":"unsupported","#,
                     r#""message":"Partial package","retrySafe":true}],"mapPath":"Content/Fixture/L.umap","#,
+                    r#""packageErrors":[{"package":"/Game/Fixture/L","#,
+                    r#""export":"/Game/Fixture/L.L:PersistentLevel.A","category":"malformed_data","#,
+                    r#""detail":"bad","actorDropped":true},{"package":"/Game/Fixture/M","#,
+                    r#""category":"asset_io","detail":"unreadable","actorDropped":true}],"#,
                     r#""sourceKind":"level","actors":[],"summary":{"failedPackages":1,"#,
                     r#""partialPackages":2,"resolvedActors":3,"scannedPackages":4}}"#
                 ),
@@ -463,9 +672,14 @@ mod tests {
                 concat!(
                     r#"{"authority":{"kind":"project_files","mapPackage":"/Game/Fixture/L"},"#,
                     r#""completeness":"partial","contract":{"name":"unreal-saved-world","#,
-                    r#""version":{"major":2,"minor":0}},"diagnostics":[{"code":"unsupported","#,
+                    r#""version":{"major":2,"minor":1}},"diagnostics":[{"code":"unsupported","#,
                     r#""message":"Partial package","retrySafe":true}],"externalActorRoot":"","#,
-                    r#""mapPath":"Content/Fixture/L.umap","sourceKind":"world_partition","actors":[],"#,
+                    r#""mapPath":"Content/Fixture/L.umap","#,
+                    r#""packageErrors":[{"package":"/Game/Fixture/L","#,
+                    r#""export":"/Game/Fixture/L.L:PersistentLevel.A","category":"malformed_data","#,
+                    r#""detail":"bad","actorDropped":true},{"package":"/Game/Fixture/M","#,
+                    r#""category":"asset_io","detail":"unreadable","actorDropped":true}],"#,
+                    r#""sourceKind":"world_partition","actors":[],"#,
                     r#""summary":{"failedPackages":1,"partialPackages":2,"resolvedActors":3,"#,
                     r#""scannedPackages":4}}"#
                 ),

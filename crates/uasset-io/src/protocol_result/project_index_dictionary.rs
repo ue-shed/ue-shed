@@ -17,6 +17,12 @@ pub enum ProjectIndexDictionaryItem {
     },
     #[serde(rename = "header")]
     Header {
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            rename = "headerData"
+        )]
+        header_data: Option<uasset_inspection::package_header::PackageHeaderData>,
         classes: Vec<u32>,
         #[serde(rename = "packageName")]
         package_name: String,
@@ -71,11 +77,13 @@ impl From<ProjectIndexPage> for ProjectIndexDictionaryPage {
                     package_name,
                 },
                 ProjectIndexItem::Header {
+                    header_data,
                     classes,
                     package_name,
                     package_path,
                     serialized_names,
                 } => ProjectIndexDictionaryItem::Header {
+                    header_data,
                     classes: intern(classes),
                     package_name,
                     package_path,
@@ -135,6 +143,12 @@ mod tests {
             next_cursor: Some("next".into()),
             items: (0..1024)
                 .map(|i| ProjectIndexItem::Header {
+                    header_data: Some(uasset_inspection::package_header::PackageHeaderData {
+                        package_flags: 0x0004_0000,
+                        gatherable_text_data_count: 2,
+                        gatherable_text_data_offset: 1234,
+                        has_text_property: true,
+                    }),
                     package_name: format!("/Game/A{i}"),
                     package_path: format!("Content/A{i}.uasset"),
                     classes: vec!["名前".into(), "Café".into(), "名前".into()],
@@ -147,6 +161,7 @@ mod tests {
         assert_eq!(compact.next_cursor, page.next_cursor);
         for (original, item) in page.items.iter().zip(&compact.items) {
             let ProjectIndexItem::Header {
+                header_data: original_data,
                 classes,
                 serialized_names,
                 package_name,
@@ -156,6 +171,7 @@ mod tests {
                 panic!("header");
             };
             let ProjectIndexDictionaryItem::Header {
+                header_data: compact_data,
                 classes: c,
                 serialized_names: n,
                 package_name: name,
@@ -164,6 +180,7 @@ mod tests {
             else {
                 panic!("header");
             };
+            assert_eq!(original_data, compact_data);
             assert_eq!(
                 classes,
                 &c.iter()

@@ -4,6 +4,7 @@ import { BlueprintGraphProjection } from "./blueprint-graph.js";
 import { LevelSequenceProjection } from "./level-sequence.js";
 import { SavedWorld } from "./saved-world.js";
 import {
+	PackageHeaderData,
 	SavedAssetInspection,
 	SavedAssetManifestEntry,
 	SavedAssetScanEntry,
@@ -170,6 +171,7 @@ export interface UAssetIoProjectIndexMap extends Schema.Schema.Type<
 > {}
 
 export const UAssetIoProjectIndexHeader = Schema.Struct({
+	headerData: Schema.optionalKey(PackageHeaderData),
 	classes: Schema.Array(NonEmptyString).check(Schema.isMaxLength(64)),
 	kind: Schema.Literal("header"),
 	packageName: NonEmptyString,

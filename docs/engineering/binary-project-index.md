@@ -6,10 +6,17 @@ CLI, and Workbench use the same adapter; there is no runtime backend selector.
 
 ## Format and lifecycle
 
-The disposable cache lives under `catalogs-v4/<project-hash>`. An atomic JSON manifest selects a
+The disposable cache lives under `catalogs-v5/<project-hash>`. An atomic JSON manifest selects a
 physical snapshot and retains the previous snapshot. Existing SQLite and DuckDB caches are ignored;
 the first refresh builds the new format from source. Old cache directories are not deleted or
 converted automatically.
+
+Header profile 2 includes raw package flags, gatherable-text summary count/offset, and an exact
+`TextProperty` probe over the complete name map. Plain and dictionary header pages expose this
+optional evidence as `headerData` using uasset-io minor 9; older minors omit these fields.
+Older workers must be upgraded before using candidate pruning. The saved-header scan opts in
+with `headerData: true` and exposes the projection in `package.header_data`. These fields
+require no payload read, and remain generic inspection evidence rather than Game Text policy.
 
 The snapshot contains five length-delimited sections: compact inventory, shared strings and a
 sorted lexicon, posting directory, posting lists, and packed header records. Integers are

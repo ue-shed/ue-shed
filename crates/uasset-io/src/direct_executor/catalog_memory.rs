@@ -336,6 +336,7 @@ fn header_items(
                 return None;
             }
             Some(QueryItem::Header {
+                header_data: header.header_data.clone(),
                 package_path: row.signature.relative_path.clone(),
                 package_name: header.package_name.clone(),
                 classes: header.classes.clone(),

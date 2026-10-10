@@ -472,11 +472,13 @@ fn to_protocol_item(item: QueryItem) -> ProjectIndexItem {
             package_name,
         },
         QueryItem::Header {
+            header_data,
             package_path,
             package_name,
             classes,
             serialized_names,
         } => ProjectIndexItem::Header {
+            header_data,
             classes,
             package_name,
             package_path,

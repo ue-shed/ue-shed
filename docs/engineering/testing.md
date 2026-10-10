@@ -52,6 +52,13 @@ hosted release and adoption flows are being redesigned.
 outside a worktree, including the legacy fixture generator; it defaults to the repository's `out`
 directory.
 
+When saved-asset regeneration is prohibited, set
+`UE_SHED_UASSET_ENGINE_MATRIX_RETAINED_ROOT` to a completed matrix output containing both
+`5.7/fixture` and `5.8/fixture`. This mode checks configured engine sources, runs fresh
+`-VerifyOnly` reflection, and runs native/WASM/saved-review parity against those saves. It does
+not build or regenerate the retained projects, or run the legacy generators. It reports those
+legacy generation lanes as skipped; ordinary saved legacy regression tests still apply.
+
 Run the conditional UAsset lanes independently with:
 
 ```powershell

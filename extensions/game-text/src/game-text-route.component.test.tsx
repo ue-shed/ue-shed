@@ -745,6 +745,33 @@ describe("Game Text writing workspace", () => {
 		expect(within(results).queryByText("Continue")).toBeNull();
 	});
 
+	it("shows excluded packages as outside Unreal gather coverage", async () => {
+		const user = userEvent.setup();
+		mount(
+			makeClient({
+				...corpus,
+				coverage: { ...corpus.coverage, discoveredPackages: 3 },
+				packageCoverage: [
+					{ packageFile: "Content/Native.uasset", status: "not_gatherable" }
+				],
+				diagnostics: [
+					{
+						code: "package_not_gatherable",
+						packageFile: "Content/Native.uasset",
+						message: "Excluded because Unreal does not gather this package."
+					}
+				]
+			})
+		);
+		await screen.findByText("2 matches");
+		const trigger = screen.getByRole("button", { name: "Read problems" });
+		expect(trigger.textContent).toBe("1 asset excluded from gather");
+		await user.click(trigger);
+		expect(screen.getByRole("dialog", { name: "Read problems" }).textContent).toContain(
+			"excluded because Unreal does not gather"
+		);
+	});
+
 	it("keeps partial coverage, unsupported fields and related read problems inspectable", async () => {
 		const user = userEvent.setup();
 		mount(

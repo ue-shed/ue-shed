@@ -64,21 +64,19 @@ export function decodeProjectIndexWireSummary(
 }
 
 export function decodeProjectIndexWirePage(page: UAssetIoProjectIndexPage): ProjectIndexPage {
-	const items = page.items.map((item): ProjectIndexMap | ProjectIndexHeader =>
-		item.kind === "map"
-			? {
-					kind: "map",
-					mapPath: item.mapPath,
-					packageName: item.packageName
-				}
-			: {
-					classes: [...item.classes],
-					kind: "header",
-					packageName: item.packageName,
-					packagePath: item.packagePath,
-					serializedNames: [...item.serializedNames]
-				}
-	);
+	const items = page.items.map((item): ProjectIndexMap | ProjectIndexHeader => {
+		if (item.kind === "map")
+			return { kind: "map", mapPath: item.mapPath, packageName: item.packageName };
+		const header: ProjectIndexHeader = {
+			classes: [...item.classes],
+			kind: "header",
+			packageName: item.packageName,
+			packagePath: item.packagePath,
+			serializedNames: [...item.serializedNames]
+		};
+		if (item.headerData !== undefined) Object.assign(header, { headerData: item.headerData });
+		return header;
+	});
 	return {
 		generation: ProjectIndexGeneration.make(page.generation),
 		items,

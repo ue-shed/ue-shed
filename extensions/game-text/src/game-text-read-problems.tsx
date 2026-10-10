@@ -11,7 +11,8 @@ import { styles } from "./game-text-styles.js";
 const diagnosticLabels = {
 	package_inspection_failed: "Asset could not be read",
 	package_partially_decoded: "Asset not fully read",
-	unsupported_text_history: "Text field not decoded"
+	unsupported_text_history: "Text field not decoded",
+	package_not_gatherable: "Excluded because Unreal does not gather it"
 };
 
 /** Scan-wide coverage stays available from either view without a summary strip. */
@@ -19,8 +20,10 @@ export function ReadProblems(props: { readonly summary: TextCorpusQuerySummary }
 	const id = createUniqueId();
 	const unread = () =>
 		props.summary.coverage.partialPackages + props.summary.coverage.failedPackages;
+	const excluded = () => props.summary.notGatherablePackages ?? 0;
 	const label = () => {
 		if (unread() > 0) return textCountLabel(unread(), "asset") + " not fully read";
+		if (excluded() > 0) return textCountLabel(excluded(), "asset") + " excluded from gather";
 		const unsupported = props.summary.coverage.unsupportedTextProperties;
 		return unsupported > 0
 			? textCountLabel(unsupported, "text field") + " not decoded"
@@ -30,6 +33,7 @@ export function ReadProblems(props: { readonly summary: TextCorpusQuerySummary }
 		<Show
 			when={
 				props.summary.status === "partial" ||
+				excluded() > 0 ||
 				props.summary.diagnosticCount > 0 ||
 				props.summary.coverage.unsupportedTextProperties > 0
 			}
@@ -45,7 +49,7 @@ export function ReadProblems(props: { readonly summary: TextCorpusQuerySummary }
 						{...triggerProps}
 						type="button"
 						aria-label="Read problems"
-						title="Inspect incomplete reads and text fields that could not be decoded."
+						title="Inspect excluded assets, incomplete reads and text fields that could not be decoded."
 						{...stylex.attrs(styles.readProblemsTrigger)}
 					>
 						{label()}
@@ -58,6 +62,12 @@ export function ReadProblems(props: { readonly summary: TextCorpusQuerySummary }
 							"Writing checks cover the lines that were read."
 						: "Saved text was read with warnings."}
 				</p>
+				<Show when={excluded() > 0}>
+					<p {...stylex.attrs(styles.problemMessage)}>
+						{textCountLabel(excluded(), "asset")} excluded because Unreal does not
+						gather them. Their text payloads were not inspected.
+					</p>
+				</Show>
 				<p {...stylex.attrs(styles.problemMessage)}>
 					{props.summary.coverage.inspectedPackages.toLocaleString()} of{" "}
 					{textCountLabel(props.summary.coverage.discoveredPackages, "asset")} read ·{" "}

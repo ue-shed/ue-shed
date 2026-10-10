@@ -1,4 +1,5 @@
 import { Config, Context, Effect, Layer, Option, Schema, Stream } from "effect";
+import { PackageHeaderData } from "@ue-shed/protocol";
 import { findValidatedPage, retainValidatedPage } from "./project-index-page-validation.js";
 
 export const PROJECT_INDEX_MAX_PAGE_SIZE = 1024;
@@ -127,6 +128,7 @@ export const ProjectIndexMap = Schema.Struct({
 export interface ProjectIndexMap extends Schema.Schema.Type<typeof ProjectIndexMap> {}
 
 export const ProjectIndexHeader = Schema.Struct({
+	headerData: Schema.optionalKey(PackageHeaderData),
 	classes: Schema.Array(QueryValue).check(Schema.isMaxLength(64)),
 	kind: Schema.Literal("header"),
 	packageName: BoundedPath,

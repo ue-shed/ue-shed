@@ -421,12 +421,23 @@ export const SavedAssetHeaderExport = Schema.Struct({
 }).annotate({ identifier: "SavedAssetHeaderExport" });
 export type SavedAssetHeaderExport = Schema.Schema.Type<typeof SavedAssetHeaderExport>;
 
+export const PackageHeaderData = Schema.Struct({
+	packageFlags: NonNegativeInt,
+	gatherableTextDataCount: NonNegativeInt,
+	gatherableTextDataOffset: NonNegativeInt,
+	hasTextProperty: Schema.Boolean
+}).annotate({ identifier: "PackageHeaderData" });
+export type PackageHeaderData = typeof PackageHeaderData.Type;
+
 export const SavedAssetHeader = Schema.Struct({
 	exports: Schema.Array(SavedAssetHeaderExport).pipe(
 		Schema.withDecodingDefaultKey(Effect.succeed([]))
 	),
 	matched_names: Schema.optionalKey(Schema.Array(Schema.String)),
-	package: Schema.Struct({ name: Schema.String }),
+	package: Schema.Struct({
+		name: Schema.String,
+		header_data: Schema.optionalKey(PackageHeaderData)
+	}),
 	path: Schema.String,
 	schema_version: Schema.Literal(8)
 }).annotate({ identifier: "SavedAssetHeader" });

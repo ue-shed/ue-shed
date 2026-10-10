@@ -10,6 +10,7 @@ export function retainValidatedPage(page: ProjectIndexPage): ProjectIndexPage {
 		if (item.kind === "header") {
 			Object.freeze(item.classes);
 			Object.freeze(item.serializedNames);
+			if (item.headerData !== undefined) Object.freeze(item.headerData);
 		}
 		Object.freeze(item);
 	}

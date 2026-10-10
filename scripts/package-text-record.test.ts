@@ -2,10 +2,46 @@ import { describe, expect, it } from "vitest";
 import { textCorpusFromExtractionEvents } from "../packages/game-text/dist/index.js";
 import { packageTextRecordsFromEvents } from "../packages/game-text/dist/index.js";
 import { gameTextScaleEvents, gameTextScaleRecipe } from "./localization-scale-data.ts";
-import { compareTextCorpora } from "./package-text-oracle.test-support.ts";
+import {
+	compareTextCorpora,
+	compareTextCandidateCorpora
+} from "./package-text-oracle.test-support.ts";
 import type { SavedAssetTextExtractionEvent } from "../packages/unreal-assets/dist/index.js";
 
 describe("package text records", () => {
+	it("the eligibility oracle rejects lost text, selected coverage gaps and unreported exclusions", () => {
+		const full = textCorpusFromExtractionEvents({
+			projectRoot: ".",
+			events: gameTextScaleEvents(gameTextScaleRecipe(0.0001), 57)
+		});
+		expect(compareTextCandidateCorpora(full, full, full, []).equal).toBe(true);
+		expect(
+			compareTextCandidateCorpora(full, full, { ...full, units: full.units.slice(1) }, [])
+				.equal
+		).toBe(false);
+		expect(
+			compareTextCandidateCorpora(
+				full,
+				full,
+				{
+					...full,
+					coverage: {
+						...full.coverage,
+						unsupportedTextProperties: full.coverage.unsupportedTextProperties - 1
+					}
+				},
+				[]
+			).equal
+		).toBe(false);
+		expect(
+			compareTextCandidateCorpora(
+				full,
+				full,
+				{ ...full, packageCoverage: [{ packageFile: "hidden", status: "not_gatherable" }] },
+				[]
+			).excludedEqual
+		).toBe(false);
+	});
 	it.each([0.0001, 0.001, 0.002])("equals the legacy corpus at scale %s", (scale) => {
 		const recipe = gameTextScaleRecipe(scale);
 		const events = [...gameTextScaleEvents(recipe, 57)];

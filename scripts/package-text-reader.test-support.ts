@@ -24,8 +24,7 @@ export const packageTextFixtureProjects = [
 ] as const;
 
 /** Only bounded committed fixtures use whole-output capture. Process time excludes schema decoding. */
-export function measureNativeText(executable: string, project: string, packages: boolean) {
-	const operation = packages ? "extract_text_packages" : "extract_text";
+export function committedPackagePaths(project: string) {
 	const files = spawnSync(
 		"git",
 		["ls-files", "--", `${project}/Content/**/*.uasset`, `${project}/Content/**/*.umap`],
@@ -33,11 +32,21 @@ export function measureNativeText(executable: string, project: string, packages:
 	);
 	if (files.error || files.status !== 0)
 		throw files.error ?? new Error("Could not list committed fixture packages");
-	const paths = files.stdout
+	return files.stdout
 		.trim()
 		.split("\n")
 		.filter(Boolean)
 		.map((path) => resolve(path));
+}
+
+export function measureNativeText(
+	executable: string,
+	project: string,
+	packages: boolean,
+	selection?: readonly string[]
+) {
+	const operation = packages ? "extract_text_packages" : "extract_text";
+	const paths = selection ?? committedPackagePaths(project);
 	const request = {
 		contract: { name: "uasset-io", version: { major: 1, minor: packages ? 8 : 0 } },
 		limits: { concurrency: 1, maximumOutputBytes: 128 * 1024 ** 2 },

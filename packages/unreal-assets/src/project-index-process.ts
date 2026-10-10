@@ -169,7 +169,7 @@ const makeRequest = (
 				operation.kind === "project_index_count"
 					? 4
 					: operation.kind === "project_index_query"
-						? 3
+						? 9
 						: 1
 		}
 	);

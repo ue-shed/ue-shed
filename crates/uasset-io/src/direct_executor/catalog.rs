@@ -6,7 +6,7 @@
 use std::fmt;
 
 /// Versioned set of package-header probes shared by current Project Index consumers.
-pub const INDEX_PROFILE_VERSION: u32 = 1;
+pub const INDEX_PROFILE_VERSION: u32 = 2;
 /// Bounded page size shared by Rust, TypeScript, and the language-neutral protocol contract.
 pub const PROJECT_INDEX_MAX_PAGE_SIZE: usize = 1024;
 pub const PROJECT_INDEX_MAX_DIAGNOSTICS: usize = 64;
@@ -65,6 +65,7 @@ pub struct PackageSignature {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HeaderEvidence {
+    pub header_data: Option<uasset_inspection::package_header::PackageHeaderData>,
     pub profile_version: u32,
     pub package_name: String,
     pub classes: Vec<String>,
@@ -159,6 +160,7 @@ pub enum QueryItem {
         package_name: String,
     },
     Header {
+        header_data: Option<uasset_inspection::package_header::PackageHeaderData>,
         package_path: String,
         package_name: String,
         classes: Vec<String>,

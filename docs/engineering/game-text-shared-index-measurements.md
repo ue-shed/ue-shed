@@ -112,122 +112,154 @@ switches or stashes. Evidence is `speed-final-*.json`, `speed-profile-before-{1,
 `speed-reader-{before,after,cache8,cache32}-10x.json`, `speed-refresh-profile-before-10x.json`
 and `speed-full-width-forecast.json` under `test-results/game-text-scale` (ignored).
 
-## Phase 4 reader step, incomplete package layer
+## Phase 4: Unreal gather eligibility, measured fixture audit; layer unfinished
 
-Recorded 2026-10-10, Node 26.11.1, release native reader. The opt-in v1.8 operation aggregates
-occurrences and coverage before transport; corpus fields and the legacy operation are preserved.
-Shared-store column encoding, package signatures, removal and cold sorting remain open. Existing
-TextCorpusService/localization/CLI/Workbench/scale consumers still use the legacy stream.
-ADR 0007 explains why the reader emits records while TypeScript owns derived storage.
+Recorded 2026-10-10, Windows / Node 26.9.0, debug native reader. This continuation completes
+source verification, header evidence, eligibility/exclusion helpers and the committed-fixture
+audit. No real project or saved fixture was regenerated. No 1× or 10× layer experiment ran.
+Heap is capped at 16,384 MiB/process; heavy lanes run serially, including one compile action at
+a time in the localization process lane. Any future 10× command retains a single 900-second
+startup-to-cleanup deadline and the 20 GB total RSS cap; exceeding the deadline is failure.
 
-These measurements use explicit Git-tracked Content packages. Ignored copies from other test
-lanes are excluded, and source-only roots have an explicit empty selection. They measure native
-projection/serialization/transport rather than candidate discovery or refresh. Full NDJSON bytes
-include accepted/result/completed control frames. Wall time includes startup but excludes schema
-decoding and the corpus oracle; each capture has a 120-second deadline and 128 MiB output limit.
-Timings are individual runs without OS cache eviction. New package frames are capped at 64 MiB.
+**Rule and source evidence.** Select raw `PKG_RequiresLocalizationGather` (`0x00040000`), or a
+positive gatherable-text count and offset, or external actor/package relationships. No class
+whitelist. `TextProperty` adds **zero** candidates beyond the flag on every committed root and
+both retained engines, so drop that clause. Summary evidence is necessary: each legacy save root
+has three selected packages but only two flagged packages. `FText` serialization marks the
+archive only when `ShouldGatherForLocalization()`; save propagates the linker's archive state
+into the package flag, then writes it into the summary. Cached gather data can avoid loading a
+package: the selected set is eligibility for text inspection, not a claim that every candidate
+is loaded by Unreal on every cached gather.
 
-| Committed fixture root                                          | Packages | Units / occurrences / gaps | Old / new bytes |    Old / new ms | Old / new frames |
-| --------------------------------------------------------------- | -------: | -------------------------: | --------------: | --------------: | ---------------: |
-| `unreal-project`                                                |       83 |                62 / 71 / 1 | 93,731 / 83,720 | 116.22 / 106.59 |         161 / 89 |
-| `legacy-unreal-project` (source only)                           |        0 |                  0 / 0 / 0 |       785 / 803 |   12.70 / 12.65 |            3 / 3 |
-| `legacy-unreal-project/Generated/4.27`                          |        3 |                27 / 33 / 1 | 24,702 / 12,908 |   14.88 / 14.67 |           43 / 9 |
-| `legacy-unreal-project/Generated/5.3`                           |        3 |                27 / 33 / 1 | 25,579 / 13,819 |   14.40 / 14.70 |           43 / 9 |
-| `unreal-427-localization` (no saved packages)                   |        0 |                  0 / 0 / 0 |       787 / 805 |   13.47 / 12.52 |            3 / 3 |
-| `perforce-map-history/revisions/baseline`                       |        7 |                  0 / 0 / 0 |   5,881 / 7,194 |   15.59 / 15.10 |          13 / 13 |
-| `perforce-map-history/revisions/add-arrival`                    |        1 |                  0 / 0 / 0 |   2,020 / 2,223 |   13.80 / 13.56 |            7 / 7 |
-| `perforce-map-history/revisions/conventional-baseline`          |        1 |                  0 / 0 / 0 |   1,959 / 2,162 |   14.17 / 14.62 |            7 / 7 |
-| `perforce-map-history/revisions/conventional-move-actor`        |        1 |                  0 / 0 / 0 |   1,965 / 2,168 |   13.88 / 14.84 |            7 / 7 |
-| `perforce-map-history/revisions/label-north`                    |        1 |                  0 / 0 / 0 |   2,020 / 2,223 |   13.90 / 14.16 |            7 / 7 |
-| `perforce-map-history/revisions/move-east`                      |        1 |                  0 / 0 / 0 |   2,014 / 2,217 |   13.69 / 13.40 |            7 / 7 |
-| `perforce-map-history/revisions/two-unclassified-package-edits` |        2 |                  0 / 0 / 0 |   2,783 / 3,171 |   14.99 / 13.49 |            8 / 8 |
+All paths below are relative to each configured engine's `Engine/Source`. Source reads were
+read-only. `node scripts/check-text-gather-rule.ts` checks twelve probes per version plus the
+FText/gather conditions; the full line ledger is `test-results/codex/057-gather-source.log`.
 
-All twelve old/new corpus and outcome comparisons pass. Empty packages are larger because their
-record adds complete gap counters. Current and legacy text fixtures benefit from fewer envelopes.
-The reusable corpus oracle compares every unit/occurrence field and diagnostic, preserving evidence
-multiplicity. It passes at generated recipe scales 0.0001, 0.001 and 0.002. It also passes through
-the public reader on the existing generated UE 5.7 and UE 5.8 matrix fixtures: each has 62 text units
-and 71 occurrences. These are reader-record oracles; no persistent package layer has been hydrated.
+| Source file / evidence                                                                                                          | UE 4.27 lines |    UE 5.7 lines |        UE 5.8 lines |
+| ------------------------------------------------------------------------------------------------------------------------------- | ------------: | --------------: | ------------------: |
+| `Runtime/CoreUObject/Public/UObject/ObjectMacros.h`: flag                                                                       |           123 |             148 |                 151 |
+| `Runtime/Core/Private/Internationalization/Text.cpp`: FText marks archive                                                       |     1022–1024 |       1058–1060 |           1101–1103 |
+| `Runtime/CoreUObject/Public/UObject/Package.h`: sets/reads package flag                                                         |       379–398 |         754–773 |             752–771 |
+| `Runtime/CoreUObject/Private/UObject/SavePackage.cpp` (4.27) / `SavePackage2.cpp` (5.x): linker state → package → summary flags |     4455–4458 |       3130–3151 |           3177–3198 |
+| Same save file: gatherable-text offset/count and records                                                                        |     3271–3280 |       2294–2300 |           2330–2336 |
+| `Runtime/CoreUObject/Private/UObject/PackageFileSummary.cpp`: count/offset serialization                                        |           206 |             297 |                 297 |
+| `Runtime/CoreUObject/Private/UObject/LinkerLoad.cpp`: seeks and reads table count                                               |     1572–1585 |       2048–2061 |           2108–2121 |
+| `Editor/UnrealEd/Private/Commandlets/GatherTextFromAssetsCommandlet.cpp`: summary/cache flags                                   |  634, 650–695 | 1384, 1749–1806 |     1444, 1897–1962 |
+| Same commandlet: cached table read / loaded-package gather condition                                                            | 705–714 / 779 | 1390–1397 / 382 | 1470–1477 / 388–389 |
 
-The projected reader output uses Context counts, prior Plan 056 byte totals and measured fixture
-sample widths. No real project or real content was accessed:
+5.7's loaded-package condition is flag **or external actors**. 5.8 adds external packages to
+`bHasExternalObjects`. In 5.8 the commandlet discovers external-to-outer relationships through
+Asset Registry optional outer paths at 1381–1392. The fixture helper resolves saved external
+actors/objects and their outer packages from the complete inventory, without another traversal:
+`Runtime/Engine/Private/Level.cpp:4151–4183` defines external actor roots, and
+`Runtime/Engine/Private/ExternalPackageHelper.cpp:145–178,192–215` defines external object roots
+and their two-level hash layout. The predicate also accepts explicit external relationship
+evidence; inventory layout is the fixture audit's representation of that condition. Absolute saved paths
+and relative Project Index `Content/...` paths are both covered by the helper regression.
 
-| Projection input / result                             |                                Value |
-| ----------------------------------------------------- | -----------------------------------: |
-| Packages / occurrences / gaps                         |      166,518 / 1,028,205 / 4,800,000 |
-| Prior total / gap output                              |                      3.26 / 2.50 GiB |
-| Maximum retained samples                              |          499,554 (three per package) |
-| Mean raw gap sample JSON                              | 137.33 bytes (three fixture samples) |
-| Worst-width counters + empty sample field per package |                            234 bytes |
-| Retained prior non-gap output                         |                           778.24 MiB |
-| Samples, separators and counters                      |                           103.06 MiB |
-| **Projected output / reduction**                      |           **881.30 MiB / about 74%** |
+**Reader and coverage decisions.** The parser already reads flags at
+`crates/uasset-parser/src/package.rs:630` and the version-gated gather table at 645, including
+4.27. A portable inspection projection now exposes them, plus an exact complete-name-map probe.
+Saved scans opt into **uasset-io v1.9** with `headerData: true`; Project Index header queries use
+minor 9. Workers omit added fields below minor 9. Both page encodings retain `headerData`;
+profile 2 / `catalogs-v5` and scan-cache version 3 rebuild incompatible derived evidence. Missing
+header evidence requires an upgrade before pruning. The v1.8 package-record stream and legacy
+text stream keep their semantics. Game Text retains normalization/publication ownership under
+ADR 0007; native writes would duplicate dictionary/storage ownership.
 
-The estimate retains all previous non-gap output, including per-occurrence envelopes and
-diagnostics, so it claims no occurrence-grouping savings. The sample width is conditional on
-fixture content; real widths can differ. This forecast is neither a native real-project measurement
-nor an index-size acceptance result. Full scale acceptance remains unmeasured:
+`packageCoverage` remains optional and can now contain `not_gatherable`. Exclusions get
+`package_not_gatherable` diagnostics, not `complete` records. `loc status` keeps a bounded excluded
+package list and optional count; Game Text's Read problems shows the count and reason. These
+helpers prepare the new layer; production hosts still use their existing corpus path.
 
-| Package layer operation | 1×           | 10×          | Target                            |
-| ----------------------- | ------------ | ------------ | --------------------------------- |
-| Cold build / layer size | Not run      | Not run      | Actual package columns required   |
-| No-change refresh       | Not run      | Not run      | ≤5 / ≤30 s                        |
-| One-package refresh     | Not run      | Not run      | Combined package + PO ≤10 / ≤60 s |
-| Whole shared index      | Not measured | Not measured | ≤100 MiB / ≤1 GiB                 |
+**Oracle mapping.** `compareTextCandidateCorpora` separately enforces full-corpus unit/occurrence
+equality, selected-package coverage/diagnostic equality, and the exact excluded set. Fold the
+legacy events for eligible packages, replacing excluded completion with `not_gatherable` rows
+and reasons; do not assert their payloads were inspected. Discovered count remains the full
+inventory; inspected/partial/gap counters describe selected payloads. Preserve excluded baseline
+gaps separately in the audit's `gapsMovedToExcluded`. Thus `DA_Native`'s `OpaqueValue.Value`
+remains named as **excluded because Unreal does not gather it**, instead of silently disappearing.
+Text loss or selected-coverage divergence is a STOP. Regression tests reject both and an
+unreported excluded set. No candidate-specific fixtures or assets were regenerated.
 
-Commands run serially with the retained Node 26 runtime on PATH, `NODE_OPTIONS=--max-old-space-size=16384`
-and `npm_config_workspace_concurrency=1`. Test TEMP/TMP point inside repository test-results.
-Only the explicitly configured UE 5.7/5.8 roots were used for live engine lanes. No retained
-scale project was regenerated; no legacy 10× run or real-project run occurred.
+| Committed root                                                  | Packages | Flag / summary / external / TextProperty | Selected / excluded | Units / occurrences retained | Full / selected gaps |
+| --------------------------------------------------------------- | -------: | ---------------------------------------: | ------------------: | ---------------------------: | -------------------: |
+| `unreal-project`                                                |       83 |                          34 / 7 / 7 / 32 |             41 / 42 |                      62 / 71 |                1 / 0 |
+| `legacy-unreal-project`                                         |        0 |                            0 / 0 / 0 / 0 |               0 / 0 |                        0 / 0 |                0 / 0 |
+| `legacy-unreal-project/Generated/4.27`                          |        3 |                            2 / 3 / 0 / 2 |               3 / 0 |                      27 / 33 |                1 / 1 |
+| `legacy-unreal-project/Generated/5.3`                           |        3 |                            2 / 3 / 0 / 2 |               3 / 0 |                      27 / 33 |                1 / 1 |
+| `unreal-427-localization`                                       |        0 |                            0 / 0 / 0 / 0 |               0 / 0 |                        0 / 0 |                0 / 0 |
+| `perforce-map-history/revisions/baseline`                       |        7 |                            0 / 0 / 7 / 0 |               7 / 0 |                        0 / 0 |                0 / 0 |
+| `perforce-map-history/revisions/add-arrival`                    |        1 |                            0 / 0 / 1 / 0 |               1 / 0 |                        0 / 0 |                0 / 0 |
+| `perforce-map-history/revisions/conventional-baseline`          |        1 |                            0 / 0 / 0 / 0 |               0 / 1 |                        0 / 0 |                0 / 0 |
+| `perforce-map-history/revisions/conventional-move-actor`        |        1 |                            0 / 0 / 0 / 0 |               0 / 1 |                        0 / 0 |                0 / 0 |
+| `perforce-map-history/revisions/label-north`                    |        1 |                            0 / 0 / 1 / 0 |               1 / 0 |                        0 / 0 |                0 / 0 |
+| `perforce-map-history/revisions/move-east`                      |        1 |                            0 / 0 / 1 / 0 |               1 / 0 |                        0 / 0 |                0 / 0 |
+| `perforce-map-history/revisions/two-unclassified-package-edits` |        2 |                            0 / 0 / 2 / 0 |               2 / 0 |                        0 / 0 |                0 / 0 |
 
-```powershell
-cargo test --locked -p uasset-io
-cargo clippy --locked -p uasset-io --all-targets -- -D warnings
-cargo fmt --all -- --check
-pnpm --filter @ue-shed/protocol contract:generate
-pnpm --filter @ue-shed/protocol build
-pnpm --filter @ue-shed/unreal-assets build
-pnpm --filter @ue-shed/game-text build
-pnpm exec vitest run packages/protocol/src/uasset-io.test.ts scripts/package-text-record.test.ts scripts/package-text-reader.test.ts --maxWorkers=1
-pnpm exec vitest run packages/unreal-assets packages/game-text packages/localization scripts/game-text-scale.test.ts scripts/localization-import.test.ts scripts/game-text-dictionary.test.ts scripts/package-text-record.test.ts scripts/package-text-reader.test.ts apps/cli/src/index.e2e.test.ts apps/cli/src/localization-status.integration.test.ts apps/cli/src/localization-report.integration.test.ts apps/cli/src/localization-gate.integration.test.ts apps/cli/src/localization-check.integration.test.ts --maxWorkers=1
-pnpm test:uasset-engine-matrix
-node --import tsx scripts/verify-package-text-engine.ts out/uasset-engine-matrix-9IShIm
-pnpm test:localization-processes
-cargo build --locked --release -p uasset-io
-node --import tsx scripts/benchmark-package-text-reader.ts
-pnpm exec tsc -p tsconfig.scripts.json --noEmit
-pnpm exec oxfmt <changed-files>
-pnpm run check:precommit
-```
+Across twelve roots: **103 packages, 59 candidates, 44 exclusions, 116 units and 137 occurrences,
+zero text loss**. Three baseline gaps become two selected gaps plus one explicitly excluded gap.
+Both retained 5.7 and 5.8 fixtures also retain **62 units / 71 occurrences**, selecting **41/83**
+packages and excluding 42; each moves the same single native gap to exclusion evidence. All
+**12 committed + 2 engine audits pass** the documented mapping. Raw per-root timings, byte counts,
+excluded paths and gap coordinates: `test-results/game-text-scale/phase4-candidate-audit.json`.
 
-| Verification command                                              |                                                                                         Passed |         Failed / skipped |
-| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------: | -----------------------: |
-| Cargo test, final                                                 |                                                                   95 (78 library + 17 process) |            0 / 1 ignored |
-| Cargo clippy / fmt check / release build                          |                                                                                 1 / 1 / 1 gate |                        0 |
-| Protocol generation + protocol/reader/game-text builds            |                                                                                     4 commands |                        0 |
-| Focused protocol/record/reader Vitest                             |                                                                                             35 |                        0 |
-| Broad requested package/scale/import/dictionary/native CLI Vitest |                                                                                            621 | 0 / 42 skipped; 13 files |
-| Native release benchmark/oracle                                   |                                                                               12 fixture roots |                        0 |
-| UE engine matrix, 5.7                                             | 1 lane; 13 native tests; WASM 23 inspection / 12 authoring / 8 compact fixtures + review gates |                        0 |
-| UE engine matrix, 5.8                                             | 1 lane; 13 native tests; WASM 23 inspection / 12 authoring / 8 compact fixtures + review gates |                        0 |
-| Final public reader corpus oracle, 5.7 / 5.8                      |                                                                                          1 / 1 |                    0 / 0 |
-| Localization processes, 5.7                                       |                                                             1 lane; seven supported operations |                        0 |
-| Localization processes, 5.8                                       |                                                             1 lane; seven supported operations |                        0 |
-| Final scripts typecheck                                           |                                                                                      1 command |                        0 |
-| Changed-file oxfmt                                                |                                                                    All supported changed files |                        0 |
-| UAsset / Effect architecture checks                               |                                                                                     1 / 1 gate |                        0 |
-| Final precommit                                                   |                                           6 stages; 43 architecture tests; 4 contract packages |                        0 |
+| Package layer / whole index measurement    | 1×           | 10×          | Target                              |
+| ------------------------------------------ | ------------ | ------------ | ----------------------------------- |
+| Actual package layer size                  | Not measured | Not measured | Included in whole index             |
+| Whole index including actual package layer | Not measured | Not measured | ≤100 / ≤1,024 MiB                   |
+| Cold package build                         | Not run      | Not run      | Bounded run; no forecast acceptance |
+| No-change package refresh                  | Not run      | Not run      | ≤5 / ≤30 s                          |
+| One changed package                        | Not run      | Not run      | Changed package only                |
+| One package + one PO file                  | Not run      | Not run      | ≤10 / ≤60 s                         |
 
-Initial explicit fixture selection, sample mutation, type-narrowing, lint and encoding failures
-were corrected before final passing checks. UE 4.27/5.3 live matrix
-checks were skipped because those installations are outside this run's authorization; their
-committed saved fixtures were verified. Full `pnpm check` was not run. Engine-matrix fixtures are
-repository-owned disposable copies; the final native reader oracle ran after the serialization-cap
-change against both already-generated fixtures.
+Phase 3's size table above still contains an estimated package proxy. It does not establish
+Phase 4 size or refresh acceptance and gets no candidate-pruning credit. The generated event
+stream has no package flags; its future layer conversion must explicitly mark generated text
+packages flagged and other packages unflagged, without regenerating the stream.
 
-Remaining: signature refresh/removal, TextProperty candidate policy, shared-domain occurrence IDs,
-one cold sort, layer oracle and all scale measurements. The existing String Table exception has
-not changed: committed `ST_Game` has text but no TextProperty header name, so strict TextProperty-only
-selection conflicts with oracle equality. `phase4-reader.json`, `phase4-engine-text.json`,
-`phase4-vitest.log`, `phase4-localization-processes.log` and `phase4-precommit.log` retain ignored
-evidence under test-results. Matrix results are retained under repository `out/`.
+**Verification command ledger.** All commands use the heap cap and serial heavy execution.
+The matrix uses `UE_SHED_UASSET_ENGINE_MATRIX_RETAINED_ROOT` for fresh VerifyOnly reflection,
+source checks, native/WASM/review parity against existing saves. Legacy generator lanes are
+skipped by this no-regeneration mode; committed 4.27/5.3 saved fixtures are audited above.
+
+| Command                                                                                                                                                                                       | Passed / failed / skipped                                                                                                                                                   |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `node --import tsx scripts/check-text-gather-rule.ts`                                                                                                                                         | 12 source probes per engine, 36 / 0; gather-condition assertions pass in 4.27, 5.7 and 5.8                                                                                  |
+| `node --import tsx scripts/benchmark-package-text-candidates.ts out/uasset-engine-matrix-qqwSSf`                                                                                              | 12 committed + 2 retained-engine audits / 0 / 0; no text loss                                                                                                               |
+| `pnpm run build:typescript-packages`                                                                                                                                                          | Build gate passes / 0 failed                                                                                                                                                |
+| `cargo test --locked -p uasset-io`                                                                                                                                                            | 96 / 0 / 1 ignored (78 library + 18 native process tests)                                                                                                                   |
+| `cargo test --locked -p uasset-io --features catalog-oracle`                                                                                                                                  | 121 / 0 / 1 ignored (103 library + 18 process tests)                                                                                                                        |
+| `cargo test --locked -p uasset-inspection --lib package_header`                                                                                                                               | 1 / 0; 18 unrelated tests filtered                                                                                                                                          |
+| `cargo clippy --locked -p uasset-parser -p uasset-inspection -p uasset-io --all-targets --features uasset-io/catalog-oracle -- -D warnings`                                                   | Gate passes / 0 errors                                                                                                                                                      |
+| `cargo fmt --all -- --check`                                                                                                                                                                  | Gate passes / 0 errors                                                                                                                                                      |
+| `pnpm exec vitest run … --maxWorkers=1` (scope below)                                                                                                                                         | 727 / 0 / 7 skipped; 85 files pass, 3 skipped                                                                                                                               |
+| `pnpm --filter @ue-shed/game-text build`                                                                                                                                                      | Query-summary fix builds / 0 failed                                                                                                                                         |
+| `pnpm exec vitest run extensions/game-text/src/game-text-route.component.test.tsx packages/game-text/src/query.test.ts --maxWorkers=1`                                                        | 36 / 0 / 0; initial component-only run had 32 passed / 1 failed, corrected by retaining the optional exclusion count in the validated query summary                         |
+| `pnpm exec vitest run extensions/game-text/src/game-text-route.component.test.tsx packages/game-text/src/query.test.ts packages/game-text/src/package-text-candidates.test.ts --maxWorkers=1` | 39 / 0 / 0; final UI/query/helper checks, including relative Project Index external-package paths                                                                           |
+| `pnpm test:uasset-engine-matrix` — UE 5.7                                                                                                                                                     | 13 native tests / 0; 2 source codegen gates, 2 fresh reflection gates, WASM parity (23 inspection + 12 authoring + 8 compact fixtures, guards) and saved-review parity pass |
+| `pnpm test:uasset-engine-matrix` — UE 5.8                                                                                                                                                     | 13 native tests / 0; 3 source codegen gates, 2 fresh reflection gates, the same WASM and saved-review parity gates pass                                                     |
+| `pnpm test:localization-processes` — UE 5.7                                                                                                                                                   | 1 complete process journey / 0 failed                                                                                                                                       |
+| `pnpm test:localization-processes` — UE 5.8                                                                                                                                                   | 1 complete process journey / 0 failed                                                                                                                                       |
+| `pnpm exec oxfmt <changed files>`                                                                                                                                                             | Changed-file formatting passes / 0 errors                                                                                                                                   |
+| `pnpm run format:check` (after final evidence edits)                                                                                                                                          | Gate passes / 0 formatting errors                                                                                                                                           |
+| `pnpm run check:precommit`                                                                                                                                                                    | 6 stages pass / 0 failed; architecture tests 43 / 0; contract checks pass in all 4 packages                                                                                 |
+
+The broad Vitest command includes all of `packages/protocol`, `packages/unreal-assets`,
+`packages/game-text`, `packages/localization`; `scripts/game-text-scale.test.ts`,
+`localization-import.test.ts`, `game-text-dictionary.test.ts`, `package-text-record.test.ts`,
+`package-text-reader.test.ts`; and CLI `index.e2e`, localization status/report/gate/check
+integration files. Seven tests needing optional live snapshots, commandlet evidence or a
+Blueprint sample are skipped there (three files); both engine matrix lanes run independently.
+Earlier precommit attempts found three new lint errors and a missing query-summary field;
+these were fixed, then package declarations rebuilt before the passing run. The final exclusion
+regression also decodes the public query summary, so the count survives validation.
+The localization journey checks plans, gather/import/
+export/compile/reports/sync/prepare, audit, cancellation, review state and PO writes. Neither
+engine process lane failed. Fresh matrix evidence is `out/uasset-engine-matrix-rFiayA`; process
+evidence is `out/loc-processes-ad6d5c`. Full `pnpm check` was not run.
+
+Remaining: signature-keyed refresh (new, changed, removed, renamed and gains/losses of eligibility),
+shared-store occurrence/coverage columns with one cold sort, the reusable layer-to-corpus oracle,
+and all six 1×/10× measurements above. Keep the current full corpus oracle for Phase 5.
+No commit, push, branch switch or stash occurred. Logs: `test-results/codex/057-gather-*`.

@@ -4,8 +4,10 @@ import { expect, it } from "vitest";
 import {
 	AssetReader,
 	assetReaderLayer,
-	extractProjectTextPackages
+	extractProjectTextPackages,
+	scanSavedProject
 } from "../packages/unreal-assets/dist/index.js";
+import { auditPackageTextCandidates } from "./package-text-candidates.test-support.ts";
 import { textCorpusFromExtractionEvents } from "../packages/game-text/dist/index.js";
 import { compareTextCorpora } from "./package-text-oracle.test-support.ts";
 import {
@@ -15,6 +17,61 @@ import {
 import { ensureUassetExecutable } from "./native-tools.ts";
 
 const executable = ensureUassetExecutable();
+it("StringTable and the opaque native fixture have no TextProperty header name", async () => {
+	const scan = await Effect.runPromise(
+		scanSavedProject({
+			projectRoot: resolve("fixtures/unreal-project"),
+			paths: [
+				"Content/Fixture/Text/ST_Game.uasset",
+				"Content/Fixture/ParserNative/DA_Native.uasset"
+			],
+			depth: "header",
+			names: ["TextProperty"],
+			classes: ["StringTable", "UEShedNativeCoverageAsset"]
+		}).pipe(Effect.provide(assetReaderLayer({ executable })))
+	);
+	expect(scan.failures).toEqual([]);
+	expect(scan.assets).toHaveLength(2);
+	for (const entry of scan.assets) {
+		if (entry.depth !== "header") throw new Error("Expected header");
+		expect(entry.header.matched_names ?? []).not.toContain("TextProperty");
+	}
+});
+it.each(packageTextFixtureProjects)(
+	"audit Unreal gather candidates against the full corpus for %s",
+	async (project) => {
+		const {
+			expected,
+			actual,
+			measurement: { oracle, gapsMovedToExcluded, clauses }
+		} = await auditPackageTextCandidates(executable, project);
+		expect(oracle, JSON.stringify(oracle)).toMatchObject({ equal: true, differenceCount: 0 });
+		expect(compareTextCorpora({ ...actual, units: expected.units }, actual).equal).toBe(true);
+		expect(clauses.textPropertyBeyondFlag).toBe(0);
+		if (project === "fixtures/unreal-project") {
+			expect(expected.coverage.unsupportedTextProperties).toBe(1);
+			expect(actual.coverage.unsupportedTextProperties).toBe(0);
+			expect(gapsMovedToExcluded).toContainEqual(
+				expect.objectContaining({
+					propertyPath: "OpaqueValue.Value",
+					message: expect.stringContaining("Excluded because Unreal does not gather it")
+				})
+			);
+			expect(actual.packageCoverage).toContainEqual(
+				expect.objectContaining({
+					packageFile: expect.stringContaining("DA_Native.uasset"),
+					status: "not_gatherable"
+				})
+			);
+			expect(actual.diagnostics).toContainEqual(
+				expect.objectContaining({
+					code: "package_not_gatherable",
+					packageFile: expect.stringContaining("DA_Native.uasset")
+				})
+			);
+		}
+	}
+);
 it.each(packageTextFixtureProjects)(
 	"native package records equal the legacy corpus for %s",
 	(project) => {

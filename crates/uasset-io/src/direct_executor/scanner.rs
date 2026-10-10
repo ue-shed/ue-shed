@@ -83,6 +83,9 @@ impl ProjectScanner for FilesystemProjectScanner {
             PROJECT_INDEX_MAX_NAMES,
         );
         Ok(HeaderEvidence {
+            header_data: Some(
+                uasset_inspection::package_header::PackageHeaderData::from_package(&package),
+            ),
             profile_version: INDEX_PROFILE_VERSION,
             package_name: package.summary.package_name.clone(),
             classes,

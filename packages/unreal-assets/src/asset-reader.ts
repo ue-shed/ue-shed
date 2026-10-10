@@ -171,6 +171,8 @@ export interface SavedTableCatalogOptions {
  * when it matches any rule; with no rules every package is selected.
  */
 export interface SavedAssetScanOptions {
+	/** Request uasset-io v1.9 saved package flags and gatherable-text summary evidence. */
+	readonly headerData?: boolean;
 	/** Select packages exporting a class under this path prefix, e.g. `/Script/EnhancedInput.`. */
 	readonly classPrefixes?: readonly string[];
 	/**

@@ -4,6 +4,35 @@ use std::process::{Command, Stdio};
 use serde_json::Value;
 use uasset_io::protocol::{Event, decode_event, validate_event_sequence};
 
+#[test]
+fn header_gather_evidence_is_negotiated_and_legacy_output_stays_unchanged() {
+    let project_root =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/unreal-project");
+    for minor in [0, 8, 9] {
+        let mut request = base_request(serde_json::json!({
+            "kind": "scan", "depth": "header", "paths": ["Content/Fixture/Text/ST_Game.uasset"],
+            "projectRoot": project_root.to_string_lossy()
+        }));
+        request["contract"]["version"]["minor"] = minor.into();
+        let (success, events, stderr) = run_request(request);
+        assert!(success, "header scan failed: {stderr}");
+        assert_valid_events(&events);
+        let header = &events
+            .iter()
+            .find(|event| event["result"]["kind"] == "scan_asset")
+            .unwrap()["result"]["entry"]["header"];
+        let data = header["package"].get("header_data");
+        if minor < 9 {
+            assert!(data.is_none());
+        } else {
+            let data = data.unwrap();
+            assert!(data["gatherableTextDataCount"].as_u64().unwrap() > 0);
+            assert!(data["gatherableTextDataOffset"].as_u64().unwrap() > 0);
+            assert_eq!(data["hasTextProperty"], false);
+        }
+    }
+}
+
 fn run_request(request: Value) -> (bool, Vec<Value>, String) {
     let mut child = Command::new(env!("CARGO_BIN_EXE_uasset"))
         .arg("protocol")

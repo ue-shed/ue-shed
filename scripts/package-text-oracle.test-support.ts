@@ -69,3 +69,34 @@ export function compareTextCorpora(
 		omittedDifferences: differenceCount - differences.length
 	};
 }
+
+/** Eligibility mapping keeps full text equality, selected-package coverage equality and
+ * an exact, explicit excluded set. Baseline gaps in excluded packages are audit evidence,
+ * not claims that the selected reader inspected their payloads.
+ */
+export function compareTextCandidateCorpora(
+	full: TextCorpus,
+	selectedExpected: TextCorpus,
+	actual: TextCorpus,
+	excludedPackages: readonly string[]
+) {
+	const text = compareTextCorpora({ ...actual, units: full.units }, actual);
+	const coverage = compareTextCorpora(selectedExpected, actual);
+	const declared = (corpus: TextCorpus) =>
+		(corpus.packageCoverage ?? [])
+			.filter((item) => item.status === "not_gatherable")
+			.map((item) => item.packageFile)
+			.sort();
+	const expectedExcluded = [...new Set(excludedPackages)].sort();
+	const excludedEqual =
+		canonical(declared(selectedExpected)) === canonical(expectedExcluded) &&
+		canonical(declared(actual)) === canonical(expectedExcluded);
+	return {
+		equal: text.equal && coverage.equal && excludedEqual,
+		differenceCount: text.differenceCount + coverage.differenceCount + Number(!excludedEqual),
+		text,
+		coverage,
+		excludedEqual,
+		excludedPackages: expectedExcluded
+	};
+}

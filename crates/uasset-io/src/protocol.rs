@@ -866,6 +866,7 @@ fn validate_result_frame(result: &ResultFrame) -> Result<(), ProtocolError> {
                         validate_non_empty(package_name, "packageName")?;
                     }
                     ProjectIndexDictionaryItem::Header {
+                        header_data: _,
                         classes,
                         package_name,
                         package_path,

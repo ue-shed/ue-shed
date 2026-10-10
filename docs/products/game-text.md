@@ -64,6 +64,14 @@ properties. Unsupported evidence and diagnostics remain visible in search/focus 
 reports. A zero-finding report never implies complete project coverage unless its attached corpus
 coverage does.
 
+The optional `packageCoverage` evidence also accepts `not_gatherable`: excluded because Unreal's
+gather flag, saved gatherable-text summary and external-package relationships do not select the
+package. This status does not prove absence of text. Candidate-layer helpers report the excluded
+set with `package_not_gatherable` diagnostics; `loc status` includes an optional exclusion count
+and bounded package rows, and Game Text shows the reason in Read problems. Fixture audits retain
+the full reader's excluded gap locations separately, so `OpaqueValue.Value` is reported as
+excluded because Unreal does not gather it rather than as an inspected, empty package.
+
 The compact corpus path is governed by Plan 033:
 
 - the shared project index performs the only project-wide enumeration;

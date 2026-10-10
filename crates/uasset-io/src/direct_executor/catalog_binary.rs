@@ -12,12 +12,12 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-const CATALOG_DIRECTORY: &str = "catalogs-v4";
+const CATALOG_DIRECTORY: &str = "catalogs-v5";
 const MANIFEST_FILE: &str = "manifest.json";
 const MANIFEST_SCHEMA_VERSION: u32 = 1;
-const SNAPSHOT_SCHEMA_VERSION: u32 = 1;
+const SNAPSHOT_SCHEMA_VERSION: u32 = 2;
 const MAX_QUARANTINE_SLOTS: u32 = 64;
-const MAGIC: &[u8; 8] = b"UESHC002";
+const MAGIC: &[u8; 8] = b"UESHC003";
 const HEADER_BYTES: u64 = 88;
 const MAX_SECTION_BYTES: u64 = 512 * 1024 * 1024;
 
@@ -214,6 +214,7 @@ impl Dictionary {
 }
 
 struct PackedHeader {
+    header_data: Option<uasset_inspection::package_header::PackageHeaderData>,
     package_name: String,
     classes: Vec<u32>,
     names: Vec<u32>,
@@ -231,6 +232,7 @@ impl PackedRecord {
             .header
             .map(|h| -> Result<_, CatalogError> {
                 Ok(PackedHeader {
+                    header_data: h.header_data,
                     package_name: h.package_name,
                     classes: h
                         .classes
@@ -256,6 +258,13 @@ impl PackedRecord {
         out.push(u8::from(self.header.is_some()));
         if let Some(header) = &self.header {
             put_string(out, &header.package_name)?;
+            out.push(u8::from(header.header_data.is_some()));
+            if let Some(data) = &header.header_data {
+                out.extend_from_slice(&data.package_flags.to_le_bytes());
+                out.extend_from_slice(&data.gatherable_text_data_count.to_le_bytes());
+                out.extend_from_slice(&data.gatherable_text_data_offset.to_le_bytes());
+                out.push(u8::from(data.has_text_property));
+            }
             out.push(u8::from(header.failure_code.is_some()));
             if let Some(code) = &header.failure_code {
                 put_string(out, code)?;
@@ -517,6 +526,16 @@ impl Snapshot {
         let mut d = Decoder::new(bytes);
         let header = if d.boolean()? {
             let package_name = d.string()?;
+            let header_data = if d.boolean()? {
+                Some(uasset_inspection::package_header::PackageHeaderData {
+                    package_flags: d.u32()?,
+                    gatherable_text_data_count: d.u32()?,
+                    gatherable_text_data_offset: d.u64()?,
+                    has_text_property: d.boolean()?,
+                })
+            } else {
+                None
+            };
             let failure_code = if d.boolean()? {
                 Some(d.string()?)
             } else {
@@ -538,6 +557,7 @@ impl Snapshot {
             let names = lists.pop().unwrap();
             let classes = lists.pop().unwrap();
             Some(PackedHeader {
+                header_data,
                 package_name,
                 classes,
                 names,
@@ -560,6 +580,7 @@ impl Snapshot {
     }
     fn expand_header(&self, packed: PackedRecord) -> Option<HeaderEvidence> {
         packed.header.map(|h| HeaderEvidence {
+            header_data: h.header_data,
             profile_version: packed.profile.unwrap(),
             package_name: h.package_name,
             failure_code: h.failure_code,
@@ -1106,6 +1127,7 @@ impl Catalog for BinaryCatalog {
             } else {
                 let header = header.ok_or_else(|| corrupt("posting refers to missing header"))?;
                 QueryItem::Header {
+                    header_data: header.header_data,
                     package_path: path,
                     package_name: header.package_name,
                     classes: header.classes,

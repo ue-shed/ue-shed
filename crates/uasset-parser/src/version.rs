@@ -6,6 +6,7 @@ pub struct PackageFlags(u32);
 impl PackageFlags {
     pub const COOKED: u32 = 0x0000_0200;
     pub const UNVERSIONED_PROPERTIES: u32 = 0x0000_2000;
+    pub const REQUIRES_LOCALIZATION_GATHER: u32 = 0x0004_0000;
     pub const FILTER_EDITOR_ONLY: u32 = 0x8000_0000;
 
     #[must_use]

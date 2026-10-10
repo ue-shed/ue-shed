@@ -10,14 +10,14 @@
 
 ## Status
 
-- **State**: IN PROGRESS. Phase 4's opt-in package-record reader and corpus oracle are implemented;
-  signature refresh, candidate-only package columns and 1×/10× layer measurements remain unfinished.
-  Phases 1–3 include lazy sections, streaming publication,
-  localization imports and the integrated A64 project/target string store. The measured 1× index
-  is 32.74 MiB including the package proxy. Immutable ranks, typed cold sorting, exact binary GUID recovery and previous-file
-  reuse are implemented. Phase 3 evidence below records acceptance misses as well as passes;
-  import throughput and Phases 4–7 remain open. The committed UE 5.7/5.8 localization fixture oracles pass;
-  Phase 4 adds an opt-in native reader contract; Unreal APIs and the UAsset parser are unchanged.
+- **State**: IN PROGRESS. Phase 4's package-record reader and Unreal gather-rule fixture audit
+  pass. Package flags and gatherable-text summary fields are exposed in Project Index headers;
+  excluded packages have explicit `not_gatherable` coverage. TextProperty adds no fixture
+  candidates and is dropped. Signature-keyed package refresh, shared occurrence columns and
+  1×/10× layer measurements remain unfinished. Phases 1–3 include lazy sections, streaming
+  publication, localization imports and the shared A64 string store. Their measured package
+  proxy is still an estimate, not acceptance of the package layer. Hosts still use the existing
+  corpus path; Phases 4–7 remain open.
 - **Priority**: P1
 - **Effort**: XL
 - **Risk**: HIGH. This replaces how every Game Text and localization host holds its data, and adds
@@ -94,8 +94,9 @@ not the project. The design is proven on a generated project ten times the measu
 
 1. **Package text.** Per package: its occurrences (identity, source, object path, property path,
    location kind) and its coverage (status, gap counts by reason). Keyed by the package signature
-   the Project Index already computes. Only packages whose headers name `TextProperty` (an existing
-   Project Index query) are extracted; the rest are known to hold no text.
+   the Project Index already computes. Candidates have Unreal's localization-gather flag,
+   non-empty summary gather data, or external actor/package relationships. Other packages receive
+   `not_gatherable` coverage; exclusion does not prove that they contain no FText.
 2. **Localization files.** Per manifest, archive and PO file: its entries as columns of string IDs,
    sorted by identity. Keyed by the file's content hash. Unreal's files are imported with streaming
    parsers, never decoded whole.
@@ -227,8 +228,8 @@ join must produce exactly the same line states, unknown reasons, problems, key c
 - The reader emits compact per-package text records instead of one JSON event per occurrence, or the
   native side writes the package-text layer itself. This changes the `uasset-io` contract: follow
   ADR 0007's versioning, and keep the existing event stream until no consumer uses it.
-- Keyed by package signature; only `TextProperty` candidates are read; a refresh re-reads only
-  changed packages.
+- Keyed by package signature; only candidates under Unreal's gather rule are read; a refresh
+  re-reads changed packages and updates packages that gain or lose eligibility.
 - Measure cold, no-change and one-package refreshes at 1× and 10× using the retained generated
   saved-text stream. Measure old/new native output on committed fixtures. No real-project scan
   occurs in this phase; the owner confirms real-project behavior after Phase 7.
@@ -547,79 +548,92 @@ changed. Remaining work: first-page locality, bulk reference gaps and refresh pr
 complete package fields and Phases 4–7. This passes cold/ordinary-refresh/size acceptance, not
 every reader reference. [Stage profiles and commands](../docs/engineering/game-text-shared-index-measurements.md).
 
-### Phase 4: package-record reader and corpus oracle (partial)
+### Phase 4: Unreal gather rule and header evidence; package layer unfinished
 
-Recorded 2026-10-10, Windows / Node 26.11.1: a completed reader/protocol step, with columns
-unfinished. No retained scale project was regenerated or real project read. Heavy lanes ran
-serially with 16,384 MiB Node heaps; sampled aggregate working set stayed below 20 GB.
+Recorded 2026-10-10, Windows / Node 26.9.0. This completed step replaces the rejected stock-class
+proposal with Unreal's own saved gather evidence, preserves the useful fixture audit/regressions,
+and leaves the tree ready for the package layer. No real project, fixture regeneration or 10×
+experiment. Heavy lanes run serially; heap cap 16,384 MiB/process, total RSS cap 20 GB. Future
+10× runs retain one absolute 900-second startup-to-cleanup limit; expiry is failure.
 
-**Decision.** Native extraction aggregates one record per decoded package over the existing
-protocol. TypeScript owns corpus normalization, shared domains, sorting and publication;
-native shared-store writes would duplicate these formats and couple IO to product storage.
-`extract_text_packages` requires negotiated **uasset-io v1.8**;
-older minors reject it before streaming. The old `extract_text` request/events remain unchanged.
-Each record retains every occurrence field, status, exact counts for all four gap reasons and
-the decode-error count used by corpus diagnostics. It retains at most three samples, preserving
-the first gap and preferring unsupported histories as today's fold does. Serialization rejects
-frames above 64 MiB before emission. ADR 0007 and reader docs record the decision; protocol,
-reader, game-text and native distribution packages have changesets.
+**Rule.** Read text when the saved package has `PKG_RequiresLocalizationGather` (`0x00040000`),
+non-empty gatherable-text summary data, or external actor/package relationships. TextProperty
+adds **zero packages** beyond the flag across every committed root and both retained engines;
+drop it as requested. Keep the summary clause: the legacy StringTable is selected despite its
+absent flag. No class whitelist, project/plugin class assumptions or extra payload read.
 
-**Consumers.** TextCorpusService, localization/CLI and Workbench consumers, scale replay and the
-diagnostic native text command still use the old stream. The public reader is opt-in; custom
-readers keep their existing API. Small old/new inputs hydrate the same corpus. The event-to-record
-test adapter retains pending occurrences and must not replay 10× inputs.
+**Source evidence, read only.** All paths below start at each engine's `Engine/Source`.
+`Runtime/CoreUObject/Public/UObject/ObjectMacros.h` defines the flag at **123 / 148 / 151** in
+4.27 / 5.7 / 5.8. `Runtime/Core/Private/Internationalization/Text.cpp` marks the archive during
+FText serialization at **1024 / 1060 / 1103** when `ShouldGatherForLocalization()` is true.
+`Runtime/CoreUObject/Private/UObject/SavePackage.cpp:4455–4458` (4.27) and
+`SavePackage2.cpp:3130–3151 / 3177–3198` (5.7/5.8) propagate linker state into the package and
+saved summary flags. The same files write gather table offset/count at **3271/3274,
+2294/2295, 2330/2331**; `PackageFileSummary.cpp` serializes both at **206 / 297 / 297**, and
+`LinkerLoad.cpp` reads the table at **1572–1585 / 2048–2061 / 2108–2121**.
+`Editor/UnrealEd/Private/Commandlets/GatherTextFromAssetsCommandlet.cpp` reads cached summary data
+at **705–714 / 1390–1397 / 1470–1477**. Its loaded-package gather condition is **779** (4.27 flag),
+**382** (5.7 flag or external actors), **388–389** (5.8 flag or external actors/packages).
+Cache fallback flags and saved external relationship paths are recorded with full source names
+in the [measurement guide](../docs/engineering/game-text-shared-index-measurements.md).
 
-**Oracle.** The reusable `scripts/package-text-oracle.test-support.ts` compares units by ID,
-every occurrence field, coverage, package coverage and diagnostics. Evidence arrays are multisets,
-including duplicates; reports are bounded while counts remain complete. Mutation, ordering,
-partial/failure and unfinished-stream tests pass. Three generated recipe
-scales (0.0001, 0.001, 0.002), all 12 committed fixture roots and both generated engine fixtures
-match the legacy corpus with zero differences. Layer hydration/oracle remains unfinished.
+**Decisions.** Parsing of flags and the version-gated summary table already exists, including
+4.27. Expose a portable header projection through opt-in **uasset-io v1.9** saved scans and both
+Project Index page encodings. Older minors omit new fields; missing evidence requires an upgrade
+before pruning. Bump header profile to 2, binary cache namespace to `catalogs-v5`, scan cache to 3.
+The v1.8 package-record reader and legacy stream stay available. Game Text owns normalization,
+shared dictionaries and atomic publication; native writes would duplicate product storage.
 
-**Native output.** Release reader; explicit Git-tracked package paths exclude ignored test
-assets and isolate projection/transport from candidate discovery. Bytes include control frames;
-milliseconds measure the process before schema decoding/oracle. Single timings, no cache eviction.
+Exclusions have optional corpus `packageCoverage` status **not_gatherable**, never complete.
+The oracle separately checks all full-corpus units/occurrences, selected coverage/diagnostics,
+and the exact excluded set. Inspected/partial/gap counts describe eligible payloads; excluded
+baseline gaps are explicitly retained as audit evidence. `DA_Native.OpaqueValue.Value` is named
+as **excluded because Unreal does not gather it**. `loc status` retains the optional count and
+bounded excluded package rows; Game Text shows the count and reason in Read problems. Tests
+reject lost text, selected coverage drift and unreported exclusions. Host migration is still later.
 
-| Fixture selection                   | Packages | Old / new bytes |    Old / new ms | Old / new frames |
-| ----------------------------------- | -------: | --------------: | --------------: | ---------------: |
-| Current Unreal fixture              |       83 | 93,731 / 83,720 | 116.22 / 106.59 |         161 / 89 |
-| Legacy 4.27 saved fixture           |        3 | 24,702 / 12,908 |   14.88 / 14.67 |           43 / 9 |
-| Legacy 5.3 saved fixture            |        3 | 25,579 / 13,819 |   14.40 / 14.70 |           43 / 9 |
-| Seven map-history revisions, summed |       14 | 18,642 / 21,358 |  100.02 / 99.17 |          56 / 56 |
-| Two source-only roots, summed       |        0 |   1,572 / 1,608 |   26.17 / 25.17 |            6 / 6 |
+| Fixture audit     | Packages | Flag / summary / external / TextProperty | Candidates / excluded | Units / occurrences retained | Gaps selected / excluded |
+| ----------------- | -------: | ---------------------------------------: | --------------------: | ---------------------------: | -----------------------: |
+| Current committed |       83 |                          34 / 7 / 7 / 32 |               41 / 42 |                      62 / 71 |                    0 / 1 |
+| Saved 4.27        |        3 |                            2 / 3 / 0 / 2 |                 3 / 0 |                      27 / 33 |                    1 / 0 |
+| Saved 5.3         |        3 |                            2 / 3 / 0 / 2 |                 3 / 0 |                      27 / 33 |                    1 / 0 |
+| Other nine roots  |       14 |                           0 / 0 / 12 / 0 |                12 / 2 |                        0 / 0 |                    0 / 0 |
+| Retained UE 5.7   |       83 |                          34 / 7 / 7 / 32 |               41 / 42 |                      62 / 71 |                    0 / 1 |
+| Retained UE 5.8   |       83 |                          34 / 7 / 7 / 32 |               41 / 42 |                      62 / 71 |                    0 / 1 |
 
-Records reduce repeated occurrence envelopes; empty-text packages add coverage fields. For the
-Context's 166,518 packages, 1,028,205 occurrences and 4.8 million gaps, at most 499,554 samples
-replace 4.8 million gap events. Using prior Plan 056's 3.26 GiB total / 2.5 GiB gaps, fixture sample
-width 137.33 bytes and 234 bytes of worst-width counters per package gives **881.30 MiB** projected
-output, about **74% less**. This retains all 0.76 GiB of prior non-gap output and takes no occurrence
-grouping credit. Fixture widths are an assumption, not a real-content measurement or size pass.
+All twelve committed roots and both retained engines pass: **103 committed packages, 59 selected,
+44 excluded; 116 units / 137 occurrences retained, no text lost**. The complete per-root table,
+excluded paths, baseline gap coordinates, native startup times and bytes are in the guide and
+`test-results/game-text-scale/phase4-candidate-audit.json`. Audit uses Git-tracked saved Content
+only; source-only roots are explicit empty selections. Cached gather eligibility is distinct
+from whether Unreal happens to load an already cached candidate on a particular run.
 
-| Package-layer acceptance                         | 1×           | 10×          | Result                                |
-| ------------------------------------------------ | ------------ | ------------ | ------------------------------------- |
-| Cold build / actual layer size                   | Not run      | Not run      | Column layer absent                   |
-| No-change refresh, ≤5 / ≤30 s                    | Not run      | Not run      | Signature refresh absent              |
-| One-package refresh, combined target ≤10 / ≤60 s | Not run      | Not run      | Not established                       |
-| Whole index, ≤100 MiB / ≤1 GiB                   | Not measured | Not measured | Phase 3 proxy is not Phase 4 evidence |
+| Remaining package layer measurement | 1×           | 10×          | Target                   |
+| ----------------------------------- | ------------ | ------------ | ------------------------ |
+| Package layer / whole index         | Not measured | Not measured | Whole ≤100 / ≤1,024 MiB  |
+| Cold build                          | Not run      | Not run      | Bounded cold publication |
+| No-change refresh                   | Not run      | Not run      | ≤5 / ≤30 s               |
+| One changed package                 | Not run      | Not run      | Changed package only     |
+| One package + one PO                | Not run      | Not run      | ≤10 / ≤60 s              |
 
-**Verification.** Final `cargo test --locked -p uasset-io`: **95 passed / 0 failed / 1 ignored**
-(78 library + 17 protocol-process tests). Clippy with `--all-targets -- -D warnings` and Rust fmt
-check pass. Focused protocol/record/native-reader Vitest: **35/0**; requested package, scale/import,
-dictionary and native-reader CLI suites: **621/0**, 42 skips in 13 environment-gated files.
-Release build and fixture benchmarks pass. Final precommit passes **6 stages/0**,
-including **43/0** architecture tests and four contract packages. Commands are recorded in the
-[measurement guide](../docs/engineering/game-text-shared-index-measurements.md).
-`pnpm test:uasset-engine-matrix`: **UE 5.7: 1 lane/0 failures; UE 5.8: 1 lane/0 failures**;
-each native coverage suite has 13 passing tests plus successful WASM and saved-review checks.
-The final reader corpus oracle passes on each engine's existing matrix fixture (62 units / 71
-occurrences). `pnpm test:localization-processes`: **UE 5.7: 1 lane/0; UE 5.8: 1 lane/0**, covering
-seven operations, audit, cancellation and PO/review/key carry. Live 4.27/5.3 checks were unavailable;
-committed saved fixtures were tested. Initial lint/type/fixture-selection failures were fixed.
-Full `pnpm check` was not run.
+The Phase 3 package proxy is still an estimate, without pruning credit. Generated text conversion
+must assign the gather flag to generated text packages and leave the rest unflagged, explicitly:
+the retained stream has no flags. No regenerated input or legacy 10× corpus build is needed.
 
-**Remaining.** Implement signature-keyed package refresh/removal and shared-domain ID columns,
-one cold sort, then generated 1×/10× size/cold/no-change/one-package measurements and the layer
-oracle. Candidate policy needs resolution: the existing selector includes String Table exports;
-committed `ST_Game` holds text but its header does not name `TextProperty`. Strict TextProperty-only
-selection would lose that text and fail the required oracle. Existing selection is unchanged.
-Ignored evidence is `test-results/game-text-scale/phase4-*`; matrix output is under repository `out/`.
+**Verification.** IO tests **96 passed / 0 failed / 1 ignored**; SQL-oracle IO tests
+**121 / 0 / 1 ignored**; legacy/current header test **1 / 0**. Clippy and Rust fmt pass.
+Broad Vitest **727 passed / 0 failed / 7 skipped**, including protocol, assets, Game Text,
+localization, scale/import/package-reader and native CLI integration. The final component/query/helper rerun
+passes **39 / 0**, after fixing the initial excluded-count failure in the validated query summary.
+Source probes pass **12 per engine**, and all **14 audits** pass. Both localization process
+journeys pass **1 / 0 each**. Engine matrix **5.7: 13 native / 0 failed; 5.8: 13 / 0**, with source codegen,
+fresh reflection, WASM and saved-review gates passing on each. No-regeneration mode skips the
+4.27/5.3 generator lanes; their saved fixtures pass the portable audit. Changed-file oxfmt and all six
+precommit stages pass, including **43 architecture tests / 0 failed** and all contract checks.
+The [measurement guide](../docs/engineering/game-text-shared-index-measurements.md) records each
+command, per-engine gates, skips and artifact paths. Full `pnpm check` was not run.
+
+**Left.** Signature refresh for changed/new/removed/renamed packages and candidacy transitions;
+shared occurrence/coverage columns, one cold sort and the reusable layer oracle; all requested
+1×/10× size/build/refresh measurements. The gather-rule step is accepted on these fixtures, while
+Phase 4 remains incomplete. Changesets cover reader/header evidence and optional exclusion output.

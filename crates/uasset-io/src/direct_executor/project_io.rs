@@ -39,7 +39,7 @@ use crate::protocol_result::{
 };
 
 const SCHEMA_VERSION: u8 = 8;
-const SCAN_CACHE_VERSION: u32 = 2;
+const SCAN_CACHE_VERSION: u32 = 3;
 const DEFAULT_SAVED_WORLD_MAXIMUM_ASSETS: u64 = 100_000;
 
 #[derive(Clone)]
@@ -60,6 +60,8 @@ struct ScanHeaderExport {
 
 #[derive(Clone, Deserialize, Serialize)]
 struct ScanHeaderCacheEntry {
+    #[serde(default)]
+    header_data: Option<uasset_inspection::package_header::PackageHeaderData>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     failure_code: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -1075,6 +1077,7 @@ fn read_scan_header(
         Ok(package) => package,
         Err(error) if error.code != "cancelled" => {
             return Ok(ScanHeaderCacheEntry {
+                header_data: None,
                 failure_code: Some(error.code),
                 exports: Vec::new(),
                 matched_names: Vec::new(),
@@ -1120,6 +1123,9 @@ fn read_scan_header(
         .collect::<Vec<_>>();
     checkpoint(cancellation, "inspection")?;
     Ok(ScanHeaderCacheEntry {
+        header_data: Some(
+            uasset_inspection::package_header::PackageHeaderData::from_package(&package),
+        ),
         failure_code: None,
         matched: filters_empty(filters) || !exports.is_empty() || !matched_names.is_empty(),
         exports,
@@ -1166,6 +1172,7 @@ fn header_result(entry: &ScanHeaderCacheEntry) -> SavedAssetHeader {
         matched_names: Some(entry.matched_names.clone()),
         package: SavedAssetHeaderPackage {
             name: entry.package_name.clone(),
+            header_data: entry.header_data.clone(),
         },
         path: entry.path.clone(),
         schema_version: SCHEMA_VERSION,

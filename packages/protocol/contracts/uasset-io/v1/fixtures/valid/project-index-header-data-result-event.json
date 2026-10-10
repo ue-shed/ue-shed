@@ -1,0 +1,35 @@
+{
+	"contract": {
+		"name": "uasset-io",
+		"version": {
+			"major": 1,
+			"minor": 9
+		}
+	},
+	"kind": "result",
+	"requestId": "header-data",
+	"sequence": 0,
+	"result": {
+		"kind": "project_index_dictionary_page",
+		"page": {
+			"generation": 1,
+			"projectId": "fixture",
+			"strings": ["/Script/Engine.DataTable", "TextProperty"],
+			"items": [
+				{
+					"kind": "header",
+					"classes": [0],
+					"serializedNames": [1],
+					"packageName": "/Game/Fixture/Text",
+					"packagePath": "Content/Fixture/Text.uasset",
+					"headerData": {
+						"packageFlags": 262144,
+						"gatherableTextDataCount": 2,
+						"gatherableTextDataOffset": 512,
+						"hasTextProperty": true
+					}
+				}
+			]
+		}
+	}
+}

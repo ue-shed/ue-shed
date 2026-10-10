@@ -69,6 +69,14 @@ The native producer bounds an encoded package-text frame to 64 MiB and reports `
 before emitting an oversized frame. Consumers can explicitly retain the legacy stream for such
 packages. This producer limit supplements structural schema validation.
 
+Minor version 1.9 adds optional package-header gather evidence to saved header scans and both
+Project Index header page encodings. `PackageHeaderData` retains raw `packageFlags`,
+`gatherableTextDataCount`, `gatherableTextDataOffset`, and an exact `hasTextProperty` name-map
+probe. New workers suppress these fields below minor 9 so strict old decoders retain their
+existing shapes. Saved scans request this minor through `headerData: true`; public Project Index
+queries request minor 9. A missing optional field is an upgrade requirement before pruning,
+not evidence that the package contains no text. The package-record operation remains minor 8.
+
 Result frames use an explicit result kind. Generic inspection, authoring, scan, compact text,
 compact texture, Blueprint graph, and saved-world values each have a named schema; there is no
 untyped result field.

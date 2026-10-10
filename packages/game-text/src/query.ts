@@ -518,6 +518,13 @@ export function textCorpusQuery(
 			).length
 		}
 	};
+	if (corpus.packageCoverage !== undefined)
+		Object.assign(summary, {
+			notGatherablePackages: corpus.packageCoverage.reduce(
+				(count, item) => count + Number(item.status === "not_gatherable"),
+				0
+			)
+		});
 	return {
 		localizationFocus: (id) => localization?.lines.find((line) => line.id === id),
 		localizationLines: (request) => localizedMatching(request),

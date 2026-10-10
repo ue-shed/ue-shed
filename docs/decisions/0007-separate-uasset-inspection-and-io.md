@@ -187,3 +187,12 @@ Phase 3 shared domains, cold sort and atomic publication; duplicating that stora
 couple IO to product storage and require coordinating two dictionary writers. Signature-aware
 candidate refresh and persistent ID columns are unfinished. The reader/corpus oracles cover
 this completed transport step; they do not establish column-layer or scale acceptance.
+
+Phase 4's gather-rule continuation exposes already-decoded raw package flags and gatherable-text
+summary fields through a portable `PackageHeaderData` projection, saved-header scans and optional
+`headerData` on both Project Index page encodings. The exact TextProperty probe uses the complete
+name map. IO owns persistence and rebuilds incompatible disposable caches (`catalogs-v5`, header
+profile 2); Game Text owns eligibility and excluded-package coverage. These fields require minor
+9 and are suppressed for older minors, preserving strict old wire decoding. Candidate pruning
+requires paired workers with this evidence; its absence is
+an upgrade failure, never permission to assume an empty package. No Unreal save behavior changes.

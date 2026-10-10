@@ -7588,6 +7588,30 @@
 			"required": ["object_path"],
 			"additionalProperties": false
 		},
+		"PackageHeaderData": {
+			"type": "object",
+			"properties": {
+				"packageFlags": {
+					"$ref": "#/$defs/UAssetInspectionNonNegativeInt"
+				},
+				"gatherableTextDataCount": {
+					"$ref": "#/$defs/UAssetInspectionNonNegativeInt"
+				},
+				"gatherableTextDataOffset": {
+					"$ref": "#/$defs/UAssetInspectionNonNegativeInt"
+				},
+				"hasTextProperty": {
+					"type": "boolean"
+				}
+			},
+			"required": [
+				"packageFlags",
+				"gatherableTextDataCount",
+				"gatherableTextDataOffset",
+				"hasTextProperty"
+			],
+			"additionalProperties": false
+		},
 		"SavedAssetHeader": {
 			"type": "object",
 			"properties": {
@@ -7608,6 +7632,9 @@
 					"properties": {
 						"name": {
 							"type": "string"
+						},
+						"header_data": {
+							"$ref": "#/$defs/PackageHeaderData"
 						}
 					},
 					"required": ["name"],
@@ -9350,6 +9377,9 @@
 		"UAssetIoProjectIndexHeader": {
 			"type": "object",
 			"properties": {
+				"headerData": {
+					"$ref": "#/$defs/PackageHeaderData"
+				},
 				"classes": {
 					"type": "array",
 					"items": {
@@ -9426,6 +9456,9 @@
 		"UAssetIoProjectIndexDictionaryHeader": {
 			"type": "object",
 			"properties": {
+				"headerData": {
+					"$ref": "#/$defs/PackageHeaderData"
+				},
 				"classes": {
 					"type": "array",
 					"items": {

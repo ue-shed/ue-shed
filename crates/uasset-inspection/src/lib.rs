@@ -9,6 +9,7 @@ pub mod authoring;
 pub mod blueprint;
 pub mod generic;
 pub mod level_sequence;
+pub mod package_header;
 pub mod projection;
 pub mod saved_inspection;
 pub mod saved_world;

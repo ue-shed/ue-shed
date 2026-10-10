@@ -466,6 +466,7 @@ fn stage_with_initial_header<S: ProjectScanner>(
                 return Ok(StagedPackage {
                     signature: current,
                     header: Some(HeaderEvidence {
+                        header_data: None,
                         profile_version: INDEX_PROFILE_VERSION,
                         package_name: String::new(),
                         classes: Vec::new(),
@@ -579,6 +580,7 @@ mod tests {
         };
         let first = Ok(HeaderObservation {
             evidence: HeaderEvidence {
+                header_data: None,
                 profile_version: INDEX_PROFILE_VERSION,
                 package_name: "/Game/A".to_owned(),
                 classes: Vec::new(),

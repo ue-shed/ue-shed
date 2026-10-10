@@ -324,7 +324,8 @@ for (const engine of configured) {
 			descriptorPath,
 			"-NoUBTMakefiles",
 			"-WaitMutex",
-			"-NoHotReloadFromIDE"
+			"-NoHotReloadFromIDE",
+			"-MaxParallelActions=1"
 		]);
 	}
 	const target = await Effect.runPromise(

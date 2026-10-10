@@ -1175,7 +1175,8 @@ async function collectProtocolScan(
 				: { maximumAssets: options.maximumAssets }),
 			maximumOutputBytes: MAX_PROTOCOL_OUTPUT_BYTES,
 			timeoutMs: configuration.catalogTimeoutMs
-		}
+		},
+		{ contractMinor: options.headerData ? 9 : 0 }
 	);
 	const assets: SavedAssetScanEntry[] = [];
 	const failures: SavedAssetScanFailure[] = [];

@@ -117,6 +117,12 @@ pub enum ProjectIndexItem {
     },
     #[serde(rename = "header")]
     Header {
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            rename = "headerData"
+        )]
+        header_data: Option<uasset_inspection::package_header::PackageHeaderData>,
         classes: Vec<String>,
         #[serde(rename = "packageName")]
         package_name: String,
@@ -190,6 +196,8 @@ pub struct SavedAssetHeaderExport {
 #[serde(deny_unknown_fields)]
 pub struct SavedAssetHeaderPackage {
     pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub header_data: Option<uasset_inspection::package_header::PackageHeaderData>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]

@@ -8,7 +8,7 @@ import { textQualityQuery } from "./quality-query.js";
 import { evaluateTextQuality } from "./quality.js";
 import { joinLocalizationTarget } from "./localization.js";
 import { corpus, evidence } from "./localization.test-support.js";
-import { TextCorpusDiagnostic, TextPackageCoverage } from "./schema.js";
+import { TextCorpusDiagnostic, TextPackageCoverage, type TextCorpus } from "./schema.js";
 import { TextCorpusDiagnosticSummary, textCorpusDiagnosticSummary } from "./corpus-summary.js";
 import {
 	GameTextInvestigationExport,
@@ -32,6 +32,26 @@ const packageCoverage = Array.from({ length: 1_200 }, (_, index) =>
 const text = { ...corpus(), diagnostics, packageCoverage };
 
 describe("bounded corpus reports", () => {
+	it("loc status retains not_gatherable status and its optional count", () => {
+		const text: TextCorpus = {
+			...corpus(),
+			packageCoverage: [{ packageFile: "Content/Native.uasset", status: "not_gatherable" }],
+			diagnostics: [
+				{
+					code: "package_not_gatherable",
+					packageFile: "Content/Native.uasset",
+					message: "Excluded because Unreal does not gather this package."
+				}
+			]
+		};
+		const page = textCorpusQuery(text).search({ capability: "all", pageSize: 5, query: "" });
+		const report = Schema.decodeUnknownSync(LocalizationStatusReport)(
+			localizationStatusReport(text, evidence(), page)
+		);
+		expect(report.packageCoverage?.counts.not_gatherable).toBe(1);
+		expect(report.packageCoverage?.packages[0]?.status).toBe("not_gatherable");
+		expect(report.diagnostics[0]?.code).toBe("package_not_gatherable");
+	});
 	it("keeps total diagnostics by code and bounds status and progress package evidence", () => {
 		const files = evidence();
 		const join = joinLocalizationTarget(text, files);

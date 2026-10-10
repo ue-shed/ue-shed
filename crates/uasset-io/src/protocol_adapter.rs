@@ -258,6 +258,21 @@ impl Emitter {
         self.cancellation
             .checkpoint("event emission")
             .map_err(cancellation_failure)?;
+        // Strict old clients must never receive newly introduced nested header keys.
+        let compatible;
+        let result = if self.contract.version.minor < 9
+            && matches!(
+                result,
+                ResultFrame::ScanAsset {
+                    entry: crate::protocol_result::SavedAssetScanEntry::Header { .. }
+                } | ResultFrame::ProjectIndexPage { .. }
+                    | ResultFrame::ProjectIndexDictionaryPage { .. }
+            ) {
+            compatible = legacy_header_result(result);
+            &compatible
+        } else {
+            result
+        };
         let event = ResultEvent {
             contract: &self.contract,
             kind: "result",
@@ -293,6 +308,34 @@ impl Emitter {
         };
         self.write_frame(&bytes).map_err(emission_failure)
     }
+}
+
+fn legacy_header_result(result: &ResultFrame) -> ResultFrame {
+    use crate::protocol_result::{
+        ProjectIndexDictionaryItem, ProjectIndexItem, SavedAssetScanEntry,
+    };
+    let mut result = result.clone();
+    match &mut result {
+        ResultFrame::ScanAsset {
+            entry: SavedAssetScanEntry::Header { header, .. },
+        } => header.package.header_data = None,
+        ResultFrame::ProjectIndexPage { page } => {
+            for item in &mut page.items {
+                if let ProjectIndexItem::Header { header_data, .. } = item {
+                    *header_data = None;
+                }
+            }
+        }
+        ResultFrame::ProjectIndexDictionaryPage { page } => {
+            for item in &mut page.items {
+                if let ProjectIndexDictionaryItem::Header { header_data, .. } = item {
+                    *header_data = None;
+                }
+            }
+        }
+        _ => {}
+    }
+    result
 }
 
 fn contract_value(contract: &Contract) -> Value {

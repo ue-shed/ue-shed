@@ -3,7 +3,8 @@ import { mkdir, writeFile, open } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { monitorEventLoopDelay, performance } from "node:perf_hooks";
+import { performance } from "node:perf_hooks";
+import { trackBenchmarkEventLoop } from "./benchmark-event-loop.ts";
 import { Effect, Schema } from "effect";
 import {
 	LocalizationEvidence,
@@ -88,32 +89,34 @@ if (values.worker) {
 		process.send?.({ kind: "sample", stage, memory: peak });
 	};
 	const timer = setInterval(sample, 25);
-	const loop = monitorEventLoopDelay({ resolution: 10 });
-	loop.enable();
 	async function measure<A>(name: string, run: () => Promise<A>, summary: (value: A) => object) {
 		globalThis.gc?.();
 		stage = name;
 		peak = memory();
 		process.send?.({ kind: "stage", stage });
 		const started = performance.now();
-		loop.reset();
 		const loopStart = performance.eventLoopUtilization();
 		const profileStarted = values.profile ? Number(process.hrtime.bigint() / 1000n) : 0;
-		const value = await run();
-		const finished = performance.now();
-		const profileFinished = values.profile ? Number(process.hrtime.bigint() / 1000n) : 0;
-		const utilization = performance.eventLoopUtilization(loopStart).utilization;
+		const probe = trackBenchmarkEventLoop();
+		let value: A;
+		let finished: number;
+		let profileFinished: number;
+		let utilization: number;
+		let eventLoop: ReturnType<typeof probe.stop>;
+		try {
+			value = await run();
+			finished = performance.now();
+			profileFinished = values.profile ? Number(process.hrtime.bigint() / 1000n) : 0;
+			utilization = performance.eventLoopUtilization(loopStart).utilization;
+		} finally {
+			eventLoop = probe.stop();
+		}
 		sample();
-		// Let the 10 ms histogram timer observe a synchronous stall before reading/resetting it.
-		// An immediate can run before that timer and falsely report zero for a blocked operation.
-		// This drain is outside the timed operation and its utilization/profile window.
-		await new Promise<void>((resolve) => setTimeout(resolve, 20));
 		const result = {
 			stage,
 			seconds: (finished - started) / 1000,
 			eventLoop: {
-				maximumDelayMs: loop.max / 1e6,
-				p99DelayMs: loop.percentile(99) / 1e6,
+				...eventLoop,
 				utilization
 			},
 			...(values.profile
@@ -354,7 +357,6 @@ if (values.worker) {
 		process.exitCode = 1;
 	} finally {
 		clearInterval(timer);
-		loop.disable();
 		process.disconnect?.();
 	}
 } else {

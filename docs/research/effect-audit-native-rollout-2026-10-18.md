@@ -52,8 +52,9 @@ are diagnostic evidence and are excluded from final production-configuration tim
 
 Memory artifacts distinguish sampled worker-plus-native-descendant RSS from JavaScript worker
 heap/ArrayBuffer samples. Samples are not exact peaks. Stage records include event-loop maximum/p99
-delay and utilization. The histogram drains for 20 ms after each timed operation so a synchronous
-stall is observed before reading it; that drain is excluded from operation duration/utilization.
+delay and utilization. A 10 ms callback-gap probe also records the unfinished gap at operation
+completion, covering synchronous stalls that prevent even the first scheduled timer from firing.
+A real blocking Atomics.wait regression test verifies that case; timer cleanup occurs in finally.
 Warm reopen uses a new process immediately after its matching cold/edit sample, before another
 sample can change the shared generated PO's modification time.
 

@@ -20,12 +20,15 @@ you own that boundary. Ordinary unknown-field compatibility is preserved; this m
 make every wire schema strict.
 
 Errors expose `message`, `recovery`, `retrySafe` and `nextStep`; match their stable code, kind, reason
-or typed tag. Causes remain structured diagnostic evidence and do not become message text. A retry
+or typed tag. TypeScript causes remain structured diagnostic evidence. Native protocol messages
+also include underlying IO/parse details for operators; classification uses the stable code, never
+that diagnostic prose. A retry
 requires both a safe replay and a recovery action that calls for retrying. Native failed/terminated
 write sessions require reopening and reconciling the last committed state before more work.
 
 Game Text corpus and Enhanced Input scans now distinguish `reader_failed` from `invalid_project`;
-Game Text workspace index operations use `index_failed`. Match these codes when handling reader or
+Game Text workspace preserves classified scan errors and uses `index_failed` for other index
+preparation failures. Match these codes when handling reader or
 index failures, and follow their retained reader guidance instead of always asking for another
 project. Portable localization errors retain safe classified causes while excluding private engine
 installation candidates, authored evidence and secret configuration.

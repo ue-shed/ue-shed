@@ -1,7 +1,7 @@
 {
 	"sourceHead": "10b1b92aa3e4aa7d469c5fbe006cdc949cdf8f8c",
 	"completedAtUtc": "2026-10-17T23:27:54.822124+00:00",
-	"sourceState": "Full portable gate and fresh retained-fixture engine matrix completed on this source. Subsequent changes only record acceptance documentation.",
+	"sourceState": "Full native gate and fresh retained-fixture engine matrix completed on this source. A later CLI-only diagnostic routing fix is covered by the separately recorded postAcceptance verification; native/parser/engine implementations are unchanged.",
 	"portable": {
 		"command": "pnpm check",
 		"status": "passed",
@@ -143,5 +143,53 @@
 			"bytes": 175,
 			"sha256": "820c34578d8c07ad7ca4a76faeca391a6225d57d2d619020433217b998cd982a"
 		}
-	]
+	],
+	"postAcceptance": {
+		"sourceHead": "df301c71e82ce7d51c399612d2a55f6aa64b5dca",
+		"completedAtUtc": "2026-10-17T23:47:04.410682+00:00",
+		"scope": "CLI diagnostics route to stderr without corrupting JSON receipts. Regression forces cache invalidation to fail after a successful physical PO write and retains recovery details.",
+		"repository": {
+			"command": "pnpm run check:repository",
+			"status": "passed",
+			"runtimeFilesPassed": 379,
+			"runtimeFilesSkipped": 34,
+			"runtimeTestsPassed": 2894,
+			"runtimeTestsSkipped": 123
+		},
+		"focusedCli": {
+			"status": "passed",
+			"nativeFreeTestsPassed": 21,
+			"nativeEnabledTestsPassed": 21,
+			"filesPerRun": 4
+		},
+		"nativeCliE2e": {
+			"command": "pnpm test:e2e:cli",
+			"status": "passed",
+			"filesPassed": 4,
+			"testsPassed": 16
+		},
+		"carriedForward": "Full native, packed-consumer, adoption and UE 5.7/5.8 acceptance from 10b1b92a. These surfaces were unchanged by this CLI-only fix and were not rerun.",
+		"localLogs": [
+			{
+				"path": "E:\\us-audit-work\\repository-check-10.log",
+				"bytes": 27173,
+				"sha256": "a8ce0fa996ddc495dd640b1b4967bec34bbfc550953063e6b52c426de2516a1a"
+			},
+			{
+				"path": "E:\\us-audit-work\\cli-output-fixed-10b.log",
+				"bytes": 414,
+				"sha256": "5131840076f294ce0ae075e6ff84db80feefee57d396e07c9da74495bd2b383f"
+			},
+			{
+				"path": "E:\\us-audit-work\\cli-native-focused-10.log",
+				"bytes": 357,
+				"sha256": "d4300a81fef7de25454d02daa64a21aba3404a730dc6514a6e397604f652dde1"
+			},
+			{
+				"path": "E:\\us-audit-work\\cli-native-e2e-10.log",
+				"bytes": 334,
+				"sha256": "98a01aa72a39fc94fe396e13721d51937d15ef8a22f96dc04ea01bfd1063bd86"
+			}
+		]
+	}
 }

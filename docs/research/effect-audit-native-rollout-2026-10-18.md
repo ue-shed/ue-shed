@@ -1,8 +1,9 @@
 # Effect audit and native index rollout evidence
 
 This records the October 18 implementation and acceptance evidence for the TypeScript Effect/error
-audit and production native Game Text builder. Full local acceptance passed on `10b1b92a`;
-PR #129 tracks the final hosted CI, review and merge state. Package publication remains separate.
+audit and production native Game Text builder. Full native acceptance passed on `10b1b92a`;
+the subsequent CLI diagnostic fix has separate verification below. PR #129 tracks the final hosted
+CI, review and merge state. Package publication remains separate.
 
 ## Scope
 
@@ -142,6 +143,19 @@ small fixture there is no end-to-end native speedup; IO/discovery and fixed over
 
 [Validation record](evidence/effect-native-2026-10-18/validation.json) retains the exact source,
 engine builds, result counts and local log hashes.
+
+Hosted native-free repository checks exposed an additional CLI boundary bug: a cache-invalidation
+warning after a successful PO write was appended to the JSON receipt on stdout. `df301c71` routes
+Effect diagnostics to stderr, preserves structured recovery details and flushes warnings on success
+as well as failure. A deterministic regression forces invalidation to fail, verifies the actual PO
+write and parses the complete stdout receipt independently of native-reader availability. The
+native/parser/engine implementation is unchanged from the full acceptance source above.
+
+Follow-up verification on `df301c71` passed the full native-free `pnpm run check:repository`
+lane: 379 files and 2894 tests passed; 34 files and 123 capability-gated tests skipped. All 21
+focused CLI tests passed both without and with the native reader, and all 16 separate-process CLI
+end-to-end tests passed. Native, packed-consumer, adoption and paired-engine acceptance below is
+carried forward from `10b1b92a`, rather than claimed as rerun for this CLI-only change.
 
 - Full `pnpm check`: passed on `10b1b92a`, including 397 runtime test files and 2961 tests.
   Capability-gated integrations remain explicit: 16 files and 55 tests skipped; missing live

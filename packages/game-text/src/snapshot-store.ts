@@ -75,6 +75,7 @@ export class SnapshotStoreError extends Schema.TaggedError<SnapshotStoreError>()
 		operation: Schema.String,
 		code: Schema.Literals([
 			"unavailable",
+			"executable_missing",
 			"busy",
 			"missing",
 			"invalid_input",
@@ -109,7 +110,9 @@ export function snapshotStoreGuidance(
 					  code === "timeout" ||
 					  code === "native_failed"
 					? "reconcile"
-					: code === "invalid_input" || code === "resource_limit"
+					: code === "invalid_input" ||
+						  code === "resource_limit" ||
+						  code === "executable_missing"
 						? "fix_input"
 						: "escalate"
 	};

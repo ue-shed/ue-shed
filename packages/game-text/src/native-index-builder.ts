@@ -41,6 +41,9 @@ const unavailable = (operation: string, cause: unknown) =>
 const nativeFailure = (cause: AssetReaderError) => {
 	let code: SnapshotStoreError["code"];
 	switch (cause.code) {
+		case "executable_missing":
+			code = "executable_missing";
+			break;
 		case "busy":
 			code = "busy";
 			break;
@@ -76,16 +79,21 @@ const nativeFailure = (cause: AssetReaderError) => {
 		operation: "native-index-builder",
 		code,
 		...snapshotStoreGuidance(code),
-		message: cause.message,
+		message:
+			code === "executable_missing"
+				? "The native Game Text index executable is unavailable."
+				: cause.message,
 		cause,
 		recovery:
-			code === "busy"
-				? "Wait for the current Game Text writer to finish, then open a new build session."
-				: code === "invalid_cache" || code === "stale_generation" || code === "missing"
-					? "Close the failed session and rebuild the disposable Game Text index from its inputs."
-					: code === "timeout" || code === "native_failed"
-						? "Reopen the index to inspect its last published state before starting a new build session."
-						: cause.recovery
+			code === "executable_missing"
+				? "Install the matching @ue-shed/uasset runtime provider or configure an existing compatible reader executable."
+				: code === "busy"
+					? "Wait for the current Game Text writer to finish, then open a new build session."
+					: code === "invalid_cache" || code === "stale_generation" || code === "missing"
+						? "Close the failed session and rebuild the disposable Game Text index from its inputs."
+						: code === "timeout" || code === "native_failed"
+							? "Reopen the index to inspect its last published state before starting a new build session."
+							: cause.recovery
 	});
 };
 const io = <A>(operation: string, action: (signal: AbortSignal) => Promise<A>) =>

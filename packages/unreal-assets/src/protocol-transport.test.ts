@@ -125,6 +125,15 @@ async function drainProtocolEvents(
 	return undefined;
 }
 
+function expectInputFailure(failure: AssetReaderError, originalMessage: string) {
+	expect(failure.kind).toBe("process");
+	expect(failure.message).toBe("The native protocol session could not write its request");
+	expect(failure.cause).toBeInstanceOf(ProtocolStreamFailure);
+	if (!(failure.cause instanceof ProtocolStreamFailure))
+		throw new Error("Expected protocol evidence");
+	expect(failure.cause.cause).toMatchObject({ code: "EPIPE", message: originalMessage });
+}
+
 class RejectingProtocolInput {
 	destroyed = false;
 
@@ -239,7 +248,7 @@ it("terminates a session when stdin rejects while the worker remains alive", asy
 	expect(failure).toBeInstanceOf(AssetReaderError);
 	if (!(failure instanceof AssetReaderError)) return;
 	expect(failure.kind).toBe("process");
-	expect(failure.message).toContain("protocol input closed");
+	expectInputFailure(failure, "protocol input closed");
 	expect(worker.killCalls).toBe(1);
 	expect(worker.killed).toBe(true);
 	await session.close();
@@ -272,7 +281,7 @@ it("bounds termination when a worker ignores kill and never closes", async () =>
 	expect(failure).toBeInstanceOf(AssetReaderError);
 	if (!(failure instanceof AssetReaderError)) return;
 	expect(failure.kind).toBe("process");
-	expect(failure.message).toContain("protocol input closed");
+	expectInputFailure(failure, "protocol input closed");
 	expect(worker.killCalls).toBe(1);
 	expect(worker.killed).toBe(false);
 	await Effect.runPromise(
@@ -339,7 +348,7 @@ it("ignores delayed events from a terminated worker after its replacement starts
 
 	expect(failure).toBeInstanceOf(AssetReaderError);
 	if (!(failure instanceof AssetReaderError)) return;
-	expect(failure.message).toContain("replacement input closed");
+	expectInputFailure(failure, "replacement input closed");
 	expect(failure.message).not.toContain("stale worker error");
 	await session.close();
 });
@@ -373,7 +382,7 @@ it("fails a session request when stdin emits a closed-pipe error", async () => {
 	expect(failure).toBeInstanceOf(AssetReaderError);
 	if (!(failure instanceof AssetReaderError)) return;
 	expect(failure.kind).toBe("process");
-	expect(failure.message).toContain("write EPIPE");
+	expectInputFailure(failure, "write EPIPE");
 	await session.close();
 });
 
@@ -390,7 +399,8 @@ it("fails a one-shot request when the worker closes stdin before reading", async
 
 	expect(spawner.spawns).toBe(1);
 	expect(failure?.kind).toBe("process");
-	expect(failure?.message).toBe("write EPIPE");
+	expect(failure?.message).toBe("The native protocol worker could not process its request.");
+	expect(failure?.cause).toMatchObject({ code: "EPIPE", message: "write EPIPE" });
 });
 
 it("rejects a one-shot request over the native 4 MiB frame limit before spawning", async () => {

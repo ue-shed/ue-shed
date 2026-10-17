@@ -100,15 +100,12 @@ export const loadLocalizationContext = Effect.fn("Cli.localization.load_context"
 			"localizationError" in cause && cause.localizationError
 				? localizationManifestFailure(cause.localizationError, target.outputPaths.manifest)
 				: new GameTextLocalizationError({
-						retrySafe: false,
-						nextStep: "fix_input",
+						cause,
+						retrySafe: cause.retrySafe,
+						nextStep: cause.nextStep,
 						code: "reader_failure",
 						message: cause.message,
-						// Keep the established CLI reader-failure output at this boundary.
-						recovery:
-							"operation" in cause && cause.operation === "reader_failure"
-								? "Choose an Unreal project directory containing a Content folder."
-								: cause.recovery
+						recovery: cause.recovery
 					})
 		)
 	);

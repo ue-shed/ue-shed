@@ -101,6 +101,13 @@ const connectionLost = new RemoteControlClientError({
 	nextStep: "escalate"
 });
 
+function restorationContext(error: WorldPreparationError) {
+	if (!Cause.isCause(error.cause)) throw new Error("Expected structured restoration cause");
+	const defect = error.cause.reasons.filter(Cause.isDieReason)[0]?.defect;
+	if (!(defect instanceof Error)) throw new Error("Expected restoration context");
+	return defect.cause;
+}
+
 it.effect("reports failed restoration even when the work succeeds", () =>
 	Effect.gen(function* () {
 		const h = harness((r) =>
@@ -116,7 +123,12 @@ it.effect("reports failed restoration even when the work succeeds", () =>
 		);
 		if (result._tag !== "Failure") throw new Error("Expected restoration failure");
 		expect(result.failure.code).toBe("restoration_failed");
-		expect(result.failure.message).toContain("Response lost after dispatch");
+		expect(result.failure.message).toBe(
+			"The owned world lease could not restore editor state."
+		);
+		expect(restorationContext(result.failure)).toMatchObject({
+			error: { cause: connectionLost }
+		});
 	})
 );
 
@@ -256,22 +268,32 @@ it.effect("reports work and restoration failures through the scoped public bound
 			...h.api,
 			acquire: (input) => h.api.acquire(input, { leaseId: id })
 		});
-		const result = yield* withPreparedWorld(requirements, () =>
-			Effect.fail(
-				new WorldPreparationError({
-					code: "work_failed",
-					operation: "test",
-					message: "Work failed",
-					recovery: "Inspect work",
-					retrySafe: false,
-					nextStep: "escalate"
-				})
-			)
-		).pipe(Effect.provideService(WorldPreparation, service), Effect.result);
+		const workError = new WorldPreparationError({
+			code: "work_failed",
+			operation: "test",
+			message: "Work failed",
+			recovery: "Inspect work",
+			retrySafe: false,
+			nextStep: "escalate"
+		});
+		const result = yield* withPreparedWorld(requirements, () => Effect.fail(workError)).pipe(
+			Effect.provideService(WorldPreparation, service),
+			Effect.result
+		);
 		if (result._tag !== "Failure") throw new Error("Expected a typed restoration failure");
 		expect(result.failure.code).toBe("restoration_failed");
-		expect(result.failure.message).toContain("Work failed");
-		expect(result.failure.message).toContain("External layer change");
+		if (!Cause.isCause(result.failure.cause)) throw new Error("Expected combined failures");
+		expect(
+			result.failure.cause.reasons.some(
+				(reason) => Cause.isFailReason(reason) && reason.error === workError
+			)
+		).toBe(true);
+		expect(restorationContext(result.failure)).toMatchObject({
+			error: {
+				code: "restoration_conflict",
+				message: "External layer change"
+			}
+		});
 	})
 );
 

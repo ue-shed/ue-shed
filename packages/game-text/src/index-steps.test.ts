@@ -15,6 +15,20 @@ import { GameTextIndexProgressReporter, type GameTextIndexProgress } from "./ind
 import { HostSliceScheduler } from "./host-slices.js";
 import { performance } from "node:perf_hooks";
 
+it.live("invalid project input retains its cause and requires input correction", () =>
+	Effect.gen(function* () {
+		const fixture = yield* makeIndexRegressionFixture();
+		yield* Effect.gen(function* () {
+			const steps = yield* GameTextIndexSteps;
+			for (const projectRoot of ["", join(fixture.projectRoot, "missing")]) {
+				const error = yield* steps.openProject({ projectRoot }).pipe(Effect.flip);
+				expect(error).toMatchObject({ nextStep: "fix_input", retrySafe: false });
+				expect(error.cause).toBeDefined();
+			}
+		}).pipe(Effect.provide(fixture.layer()));
+	}).pipe(Effect.scoped)
+);
+
 it.live(
 	"falls back when a ready worker terminates before the host can dispatch its exit",
 	() => {
@@ -604,7 +618,9 @@ it.live("rejects an import superseded by another localization publication", () =
 			const current = yield* steps.importTarget(project, fixture.request);
 			expect(yield* steps.buildTarget(project, old).pipe(Effect.flip)).toMatchObject({
 				_tag: "GameTextIndexError",
-				operation: "localization"
+				operation: "localization",
+				nextStep: "reconcile",
+				retrySafe: true
 			});
 			const result = yield* steps.openTarget(yield* steps.buildTarget(project, current));
 			expect(

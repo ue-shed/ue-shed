@@ -21,6 +21,9 @@ import {
 	emptyLocalizationReviewFile,
 	defaultLocalizationReviewPath,
 	LocalizationFileAccessLive,
+	LocalizationFileAccess,
+	localizationError,
+	type LocalizationError,
 	LocalizationEvidence,
 	LocalizationTarget
 } from "@ue-shed/localization";
@@ -187,22 +190,43 @@ const hostQueryPreparations = Metric.counter("game_text.index.host_query_prepara
 const queryRevisionFor = (project: GameTextProject, generation: string, joinedKey: string) =>
 	JSON.stringify([project.cacheRoot, project.projectRoot, generation, joinedKey]);
 
-const failure = (operation: string, message: string, recovery: string, cause?: unknown) =>
+const failure = (
+	operation: string,
+	message: string,
+	recovery: string,
+	cause?: unknown,
+	guidance: Pick<GameTextIndexError, "nextStep" | "retrySafe"> = {
+		nextStep: operation === "request" || operation === "project" ? "fix_input" : "escalate",
+		retrySafe: false
+	}
+) =>
 	new GameTextIndexError({
-		nextStep: "escalate",
+		...guidance,
 		code: "index_failed",
 		operation,
 		message,
 		recovery,
-		retrySafe: true,
 		...(cause === undefined ? undefined : { cause })
 	});
 const stale = (operation: string) =>
 	failure(
 		operation,
 		"The Game Text index inputs changed between steps.",
-		"Refresh the project index and prepare the selected target again."
+		"Refresh the project index and prepare the selected target again.",
+		undefined,
+		{ nextStep: "reconcile", retrySafe: true }
 	);
+const manifestIndexFailure = (cause: LocalizationError) =>
+	new GameTextIndexError({
+		code: "index_failed",
+		operation: "manifest",
+		message: cause.message,
+		recovery: cause.recovery,
+		nextStep: cause.nextStep,
+		retrySafe: cause.retrySafe,
+		cause,
+		localizationError: cause
+	});
 const packageKey = (manifest: SharedIndexManifest) =>
 	createHash("sha256")
 		.update(
@@ -563,12 +587,37 @@ export const makeGameTextIndexSteps = (
 					)
 				)
 			);
+			if (project.cacheRoot !== cacheRoot) return yield* Effect.fail(stale("project"));
+			if (request.requireManifest && request.targetName !== undefined) {
+				// Validate required authored evidence before acquiring a native writer/process.
+				// The importer still validates current bytes; this presence check is not a cache hit.
+				const discovery = yield* evidence
+					.discover({ projectRoot: project.projectRoot })
+					.pipe(Effect.mapError(manifestIndexFailure));
+				const target = discovery.targets.find((item) => item.name === request.targetName);
+				if (!target)
+					return yield* Effect.fail(
+						manifestIndexFailure(localizationError("target_not_found"))
+					);
+				const path = target.outputPaths.manifest;
+				const present =
+					path !== null &&
+					path !== undefined &&
+					(yield* Effect.flatMap(LocalizationFileAccess, (files) =>
+						files.presence(project.projectRoot, path)
+					).pipe(
+						Effect.provide(LocalizationFileAccessLive),
+						Effect.mapError(manifestIndexFailure)
+					));
+				if (!present)
+					return yield* Effect.fail(
+						manifestIndexFailure(localizationError("file_missing"))
+					);
+			}
 			return yield* withSession(
 				configurationFor(cacheRoot, project.projectRoot, request.targetName),
 				Effect.gen(function* () {
 					const index = yield* SharedIndex;
-					if (project.cacheRoot !== cacheRoot)
-						return yield* Effect.fail(stale("project"));
 					let fileErrors: MutableFileErrors = {};
 					let fileProvenances: MutableFileProvenances = {};
 					let fileDiagnostics: MutableFileDiagnostics = {};
@@ -606,17 +655,7 @@ export const makeGameTextIndexSteps = (
 						(item) => item.relativePath === imported.target.outputPaths.manifest
 					);
 					if (request.requireManifest && manifestFailure)
-						return yield* Effect.fail(
-							new GameTextIndexError({
-								nextStep: "escalate",
-								retrySafe: false,
-								code: "index_failed",
-								operation: "manifest",
-								message: manifestFailure.error.message,
-								recovery: manifestFailure.error.recovery,
-								localizationError: manifestFailure.error
-							})
-						);
+						return yield* Effect.fail(manifestIndexFailure(manifestFailure.error));
 					for (const file of imported.files) {
 						delete fileErrors[file.relativePath];
 						delete fileDiagnostics[file.relativePath];

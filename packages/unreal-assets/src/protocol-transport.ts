@@ -671,6 +671,7 @@ export function mapProtocolFailure(
 		const retrySafe =
 			cause.kind === "timeout" || cause.kind === "discovery" || cause.kind === "process";
 		return new AssetReaderError({
+			cause,
 			...(cause.protocolCode === undefined ? undefined : { code: cause.protocolCode }),
 			kind,
 			operation,
@@ -1036,7 +1037,8 @@ export class UassetProtocolSession {
 					"The native protocol session could not write its request",
 					undefined,
 					undefined,
-					processFailureCode(processCause)
+					processFailureCode(processCause),
+					processCause ?? cause
 				);
 			}
 			const deadline = nowMs() + options.timeoutMs;
@@ -1193,10 +1195,11 @@ async function* protocolEvents(options: {
 		if (processError !== undefined)
 			throw new ProtocolStreamFailure(
 				"process",
-				processError.message,
+				"The native protocol worker could not process its request.",
 				undefined,
 				undefined,
-				processFailureCode(processError)
+				processFailureCode(processError),
+				processError
 			);
 		if (closedResult.code !== 0) {
 			throw new ProtocolStreamFailure(

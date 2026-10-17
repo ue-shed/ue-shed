@@ -374,12 +374,22 @@ describe("AssetReader protocol boundary validation", () => {
 
 	it("retains exact schema validation on the large-frame type-side path", () => {
 		const malformedJson = new ProtocolStreamValidator(protocolContract, "protocol-test");
-		expect(() => malformedJson.pushLine("{")).toThrow("Invalid protocol event");
+		expect(() => malformedJson.pushLine("{")).toThrow(
+			expect.objectContaining({
+				kind: "contract",
+				cause: expect.any(SyntaxError)
+			})
+		);
 
 		const unknownField = new ProtocolStreamValidator(protocolContract, "protocol-test");
 		expect(() =>
 			unknownField.pushLine(JSON.stringify({ ...acceptedEvent(), unexpected: true }))
-		).toThrow("Invalid protocol event");
+		).toThrow(
+			expect.objectContaining({
+				kind: "contract",
+				cause: expect.objectContaining({ _tag: "SchemaError" })
+			})
+		);
 
 		const invalidNestedContract = new ProtocolStreamValidator(
 			protocolContract,
@@ -392,7 +402,12 @@ describe("AssetReader protocol boundary validation", () => {
 					contract: { name: "uasset-io", version: { major: -1, minor: 0 } }
 				})
 			)
-		).toThrow("Invalid protocol event");
+		).toThrow(
+			expect.objectContaining({
+				kind: "contract",
+				cause: expect.objectContaining({ _tag: "SchemaError" })
+			})
+		);
 	});
 
 	it("validates small and large frames through their measured paths", () => {

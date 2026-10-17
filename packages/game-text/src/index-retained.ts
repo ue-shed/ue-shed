@@ -7,7 +7,9 @@ import {
 } from "./index-refresh.js";
 
 /**
- * Index model with explicit host and operation pins. Borrow it in each operation's scope before lazy reads; retain transfers publication ownership while outstanding users keep the old generation alive.
+ * Index model with explicit host and operation pins. Borrow it in each operation's scope before
+ * lazy reads; retain transfers publication ownership while outstanding users keep the old
+ * generation alive.
  */
 export interface RetainedGameTextIndexResult extends GameTextIndexRefreshResult {
 	/** Pin this generation in the calling operation's scope before using its lazy projections. */

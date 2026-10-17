@@ -61,7 +61,9 @@ const requiredCapabilities = [
 ] as const;
 
 /**
- * A connection, producer refusal or result-contract failure. Stable code and recovery guidance distinguish invalid requests from uncertain editor mutations; cause retains transport or parser evidence.
+ * A connection, producer refusal or result-contract failure. Stable code and recovery guidance
+ * distinguish invalid requests from uncertain editor mutations; cause retains transport or
+ * parser evidence.
  */
 export class UnrealConnectionError extends Schema.TaggedError<UnrealConnectionError>()(
 	"UnrealConnectionError",
@@ -77,7 +79,8 @@ export class UnrealConnectionError extends Schema.TaggedError<UnrealConnectionEr
 ) {}
 
 /**
- * The editor manifest cannot satisfy the requested capability or endpoint contract. Install matching enabled plugins or choose an advertised capability before retrying.
+ * The editor manifest cannot satisfy the requested capability or endpoint contract. Install
+ * matching enabled plugins or choose an advertised capability before retrying.
  */
 export class UnrealCapabilityError extends Schema.TaggedError<UnrealCapabilityError>()(
 	"UnrealCapabilityError",
@@ -85,7 +88,9 @@ export class UnrealCapabilityError extends Schema.TaggedError<UnrealCapabilityEr
 ) {}
 
 /**
- * Negotiated live table authoring port. After an uncertain Apply, use its operation ID with lookupApplyResult before deciding whether to issue another mutation. Saving is a separate explicit operation.
+ * Negotiated live table authoring port. After an uncertain Apply, use its operation ID with
+ * lookupApplyResult before deciding whether to issue another mutation. Saving is a separate
+ * explicit operation.
  */
 export interface UnrealAuthoringConnection {
 	readonly endpoint: string;
@@ -106,7 +111,9 @@ export interface UnrealAuthoringConnection {
 }
 
 /**
- * Negotiated PIE automation port for player inspection, input injection and the owned CSV profiler. Each operation checks its capability and request/result correlation; input injection may change the live editor session.
+ * Negotiated PIE automation port for player inspection, input injection and the owned CSV
+ * profiler. Each operation checks its capability and request/result correlation; input
+ * injection may change the live editor session.
  */
 export interface UnrealAutomationConnection {
 	readonly endpoint: string;
@@ -484,7 +491,9 @@ function decodeAuthoringResult<A, DecodeError>(
 }
 
 /**
- * Asks a capable connected editor to reveal a top-level asset in its Content Browser. Missing assets return an unavailable result; connection and capability negotiation failures remain typed errors. Does not select a project or launch an editor.
+ * Asks a capable connected editor to reveal a top-level asset in its Content Browser. Missing
+ * assets return an unavailable result; connection and capability negotiation failures remain
+ * typed errors. Does not select a project or launch an editor.
  */
 export function locateUnrealAsset(options: {
 	readonly bringToFront: boolean;
@@ -539,7 +548,9 @@ export function locateUnrealAsset(options: {
 }
 
 /**
- * Negotiates all required authoring capabilities and producer limits before returning the live port. Requires a RemoteControlClient layer; does not launch Unreal or change the host's selected project.
+ * Negotiates all required authoring capabilities and producer limits before returning the live
+ * port. Requires a RemoteControlClient layer; does not launch Unreal or change the host's
+ * selected project.
  */
 export function connectUnrealAuthoring(
 	configuredEndpoint: string

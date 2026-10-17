@@ -6,6 +6,9 @@ import { writeSnapshotFile } from "./snapshot-file.js";
 import { mkdir } from "node:fs/promises";
 import { prepareColdStringRuns } from "./shared-string-sort.js";
 import { encodeWtf8 } from "./wtf8.js";
+import { PackageTextWorkerReply } from "./package-text-worker-protocol.js";
+import { snapshotStoreFailure } from "./snapshot-store.js";
+import { snapshotFailure } from "./snapshot-format.js";
 
 const Request = Schema.Struct({
 	input: Schema.String,
@@ -33,7 +36,10 @@ parentPort?.on("message", async (request: typeof Request.Encoded) => {
 				);
 			})
 		)
-			throw new Error("Cold records differ from their signature/header inventory");
+			throw snapshotFailure(
+				"package-text.inventory",
+				"Cold records differ from their signature/header inventory."
+			);
 		const source = packageTextColumns(records);
 		const staging = `${output}.strings`;
 		await mkdir(staging);
@@ -41,6 +47,13 @@ parentPort?.on("message", async (request: typeof Request.Encoded) => {
 		await writeSnapshotFile(output, source, 1);
 		parentPort?.postMessage({ ok: true, preparedStrings });
 	} catch (cause) {
-		parentPort?.postMessage({ ok: false, error: String(cause) });
+		const error = snapshotStoreFailure(
+			"package-text.worker",
+			cause,
+			"Rebuild the derived package layer from its validated inventory."
+		);
+		parentPort?.postMessage(
+			Schema.encodeUnknownSync(PackageTextWorkerReply)({ ok: false, error })
+		);
 	}
 });

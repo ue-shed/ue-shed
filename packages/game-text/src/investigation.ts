@@ -18,6 +18,10 @@ import { TextQualityReport } from "./quality-schema.js";
 import { textCorpusQuery, type TextCorpusQuery } from "./query.js";
 import { textQualityQuery, TextQualityFilter } from "./quality-query.js";
 
+/**
+ * Serializable corpus or quality query for a reusable investigation. Localization quality
+ * filters require quality mode and a selected localization target.
+ */
 export const GameTextInvestigationQuery = Schema.Struct({
 	withoutNotes: TextCorpusSearchRequest.fields.withoutNotes,
 	mode: Schema.Literals(["corpus", "quality"]),
@@ -45,6 +49,10 @@ export const GameTextInvestigationQuery = Schema.Struct({
 	)
 );
 export type GameTextInvestigationQuery = Schema.Schema.Type<typeof GameTextInvestigationQuery>;
+/**
+ * Versioned reusable query with domain ordering and optional embedded rules. Source quality
+ * needs rules; localization quality requires schema version 2.
+ */
 export const GameTextInvestigationPreset = Schema.Struct({
 	schemaVersion: Schema.Literals([1, 2]),
 	kind: Schema.Literal("game_text"),
@@ -63,6 +71,10 @@ export const GameTextInvestigationPreset = Schema.Struct({
 	})
 );
 export type GameTextInvestigationPreset = Schema.Schema.Type<typeof GameTextInvestigationPreset>;
+/**
+ * Preset-open outcome with validated document/path, cancellation or investigation failure.
+ * Opening a preset must not change the shell's selected project.
+ */
 export const GameTextInvestigationPresetResult = Schema.Union([
 	Schema.Struct({
 		status: Schema.Literal("opened"),
@@ -75,6 +87,10 @@ export const GameTextInvestigationPresetResult = Schema.Union([
 export type GameTextInvestigationPresetResult = Schema.Schema.Type<
 	typeof GameTextInvestigationPresetResult
 >;
+/**
+ * Version-matched preset and exported corpus/source-quality/localization-quality result.
+ * coverageScope records whole-scan provenance even when the query filters presentation rows.
+ */
 export const GameTextInvestigationExport = Schema.Struct({
 	schemaVersion: GameTextInvestigationPreset.fields.schemaVersion,
 	kind: Schema.Literal("game_text_export"),
@@ -222,6 +238,10 @@ export function exportGameTextInvestigation(
 	});
 }
 
+/**
+ * Formats an investigation's selected result as spreadsheet-safe CSV. It preserves the
+ * domain-specific corpus or quality columns rather than flattening raw snapshot storage.
+ */
 export function gameTextInvestigationCsv(document: GameTextInvestigationExport): string {
 	const base = {
 		schemaVersion: document.schemaVersion,

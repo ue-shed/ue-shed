@@ -318,6 +318,11 @@ export function reportableInvariantText(
 
 const BYTECODE_MANIFEST_PATH = "[Script Bytecode]";
 
+/**
+ * Findings and supporting diagnostics for one checked localization line. Policy-dependent
+ * findings remain separate from unread or unsupported evidence, which cannot establish a clean
+ * result.
+ */
 export interface LocalizationLineCheckOutput {
 	readonly findings: LocalizationQualityFinding[];
 	readonly checkDiagnostics: LocalizationCheckDiagnostic[];

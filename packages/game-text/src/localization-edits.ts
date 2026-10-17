@@ -11,6 +11,10 @@ import {
 	type LocalizationTargetEvidence
 } from "@ue-shed/localization/browser";
 
+/**
+ * Maximum staged translation edits accepted in one public request/result. Larger edits must be
+ * split into explicit batches so review and write outcomes stay bounded.
+ */
 export const MAX_LOCALIZATION_EDITS = 500;
 
 /**
@@ -26,6 +30,10 @@ export const LocalizationEdit = Schema.Struct({
 });
 export type LocalizationEdit = typeof LocalizationEdit.Type;
 
+/**
+ * Target-scoped batch of staged translations in review or write mode. Each edit carries the
+ * translation previously seen so concurrent changes can be rejected.
+ */
 export const LocalizationEditRequest = Schema.Struct({
 	target: LocalizationTargetName,
 	mode: Schema.Literals(["review", "write"]),
@@ -36,6 +44,10 @@ export const LocalizationEditRequest = Schema.Struct({
 });
 export type LocalizationEditRequest = typeof LocalizationEditRequest.Type;
 
+/**
+ * Per-identity/culture edit judgment with current and proposed translation. A rejected or
+ * conflicting edit remains visible instead of being counted as written.
+ */
 export const LocalizationEditOutcome = Schema.Struct({
 	culture: CultureCode,
 	namespace: TextNamespace,
@@ -46,6 +58,10 @@ export const LocalizationEditOutcome = Schema.Struct({
 });
 export type LocalizationEditOutcome = typeof LocalizationEditOutcome.Type;
 
+/**
+ * Batch edit outcome distinguishing reviewed, written, partially written, rejected, unavailable
+ * and failed states. File evidence identifies planned/replaced project-relative PO files.
+ */
 export const LocalizationEditResult = Schema.Union([
 	Schema.Struct({ status: Schema.Literal("not_ready") }),
 	Schema.Struct({
@@ -101,6 +117,10 @@ export function localizationEditChangeSet(
 	});
 }
 
+/**
+ * Projects change-set review into per-edit results while preserving each outcome, current
+ * translation and proposed text. It does not write PO files.
+ */
 export function localizationEditOutcomes(
 	review: LocalizationChangeSetReview
 ): LocalizationEditOutcome[] {

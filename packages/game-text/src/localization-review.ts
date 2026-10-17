@@ -82,6 +82,10 @@ export function applyLocalizationReview(
 /** Cultures with a translation to review. Missing or out-of-scope lines are not review work. */
 const reviewable = new Set(["translated", "not_synced", "needs_update"]);
 
+/**
+ * Tests a culture mark against review-file scope. Missing review/proofread work includes only
+ * reviewable translation states; changed fingerprints invalidate previous current flags.
+ */
 export function matchesLocalizationReview(
 	mark: LocalizationCultureMark,
 	lens: LocalizationReviewLens
@@ -114,6 +118,10 @@ interface AcceptableFinding {
 	readonly identity: { readonly namespace: string; readonly key: string } | null;
 }
 
+/**
+ * Filters only findings accepted for the exact retained source/translation fingerprint. Changed
+ * evidence makes a finding reappear; returns the number removed alongside retained findings.
+ */
 export function withoutAcceptedFindings<F extends AcceptableFinding>(
 	join: LocalizationJoin,
 	findings: readonly F[],
@@ -173,6 +181,10 @@ export const LocalizationReviewChange = Schema.Union([
 	})
 ]);
 export type LocalizationReviewChange = typeof LocalizationReviewChange.Type;
+/**
+ * Bounded target-scoped review flag or finding-acceptance changes. The host supplies current
+ * evidence fingerprints rather than trusting fingerprints from the caller.
+ */
 export const LocalizationReviewRequest = Schema.Struct({
 	target: LocalizationTargetName,
 	changes: Schema.Array(LocalizationReviewChange).check(
@@ -181,6 +193,10 @@ export const LocalizationReviewRequest = Schema.Struct({
 	)
 });
 export type LocalizationReviewRequest = typeof LocalizationReviewRequest.Type;
+/**
+ * Review-file write outcome with project-relative destination or explicit unavailable/failure
+ * state. A failed write must not be displayed as persisted review progress.
+ */
 export const LocalizationReviewResult = Schema.Union([
 	Schema.Struct({ status: Schema.Literal("not_ready") }),
 	Schema.Struct({ status: Schema.Literal("written"), relativePath: Schema.String }),

@@ -58,9 +58,12 @@ operation-scoped `GameTextIndexProgressReporter`.
 Staged translation review keeps its edit list in a bounded, keyboard-scrollable area. Close,
 check and write controls stay visible; closing the panel preserves the staged drafts.
 
-`GameTextIndexBuilder` is the build capability supplied by each host. The TypeScript layer remains
-the tested oracle and fallback; the native layer is being developed as the default. Queries are
-independent of the chosen builder. Refresh measurements currently use the TypeScript builder.
+`GameTextIndexBuilder` is the build capability supplied by each host. `GameTextIndexBuilderLive`
+uses the configured native reader and is composed by both CLI and Workbench. The TypeScript layer
+remains an explicitly selectable reference implementation; native failures retain typed recovery
+and never silently switch writers. Queries are independent of the chosen builder. See
+[native preparation](../engineering/native-game-text-index.md) for composition, compatibility,
+recovery and measurement limits.
 
 Tagged-property text extraction supports classic, uncooked, versioned editor packages from UE 4.27
 and UE 5.0–5.3, alongside the existing UE 5.4+ reader. The legacy window includes String Tables,

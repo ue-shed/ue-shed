@@ -14,16 +14,36 @@ import { gameTextResponseParser } from "./response-parser.js";
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 const PageSize = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 50 }));
 
+/**
+ * Opaque evidence-based source-quality finding identifier. It survives unrelated finding
+ * reordering; changing relevant evidence produces a different identity.
+ */
 export const TextQualityFindingId = Schema.String.pipe(Schema.brand("TextQualityFindingId"));
 export type TextQualityFindingId = Schema.Schema.Type<typeof TextQualityFindingId>;
+/**
+ * Brands an already constructed finding ID. Use textQualityFindingId to derive the canonical
+ * identity from finding evidence.
+ */
 export const makeTextQualityFindingId = TextQualityFindingId.make;
 
+/**
+ * Source quality finding categories supported by the focused quality query. Localization
+ * built-in/custom categories use their separate report contracts.
+ */
 export const TextQualityFindingKind = Schema.Literals(["character_budget", "terminology"]);
 export type TextQualityFindingKind = Schema.Schema.Type<typeof TextQualityFindingKind>;
 
+/**
+ * All source findings or a single supported source finding kind. The filter scopes
+ * search/export without changing authored rule evaluation.
+ */
 export const TextQualityFilter = Schema.Literals(["all", "character_budget", "terminology"]);
 export type TextQualityFilter = Schema.Schema.Type<typeof TextQualityFilter>;
 
+/**
+ * Retained source-quality totals with coverage, role/rule counts and policy document version.
+ * Findings themselves are hydrated by bounded search/focus or explicit export.
+ */
 export const TextQualityQuerySummary = Schema.Struct({
 	characterBudgetCount: Count,
 	coverage: TextCorpus.fields.coverage,
@@ -45,6 +65,10 @@ export type TextQualityQuerySummary = Schema.Schema.Type<typeof TextQualityQuery
 export const TextQualityRuleFile = Schema.Literals(["attached", "none"]);
 export type TextQualityRuleFile = Schema.Schema.Type<typeof TextQualityRuleFile>;
 
+/**
+ * Quality policy load/preparation outcome. Completed includes the document and summary;
+ * unavailable, cancelled and failed states remain distinct.
+ */
 export const TextQualityQueryRunResult = Schema.Union([
 	Schema.Struct({
 		document: GameTextRuleDocument,
@@ -71,11 +95,19 @@ export const TextQualityQueryRunResult = Schema.Union([
 	})
 ]);
 export type TextQualityQueryRunResult = Schema.Schema.Type<typeof TextQualityQueryRunResult>;
+/**
+ * Validates a host quality-load response while preserving failed/cancelled/unavailable outcomes
+ * as domain values. Invalid response contracts fail with typed guidance.
+ */
 export const parseTextQualityQueryRunResult = gameTextResponseParser(
 	TextQualityQueryRunResult,
 	"quality rule load result"
 );
 
+/**
+ * Policy-save outcome with updated document/summary only on completion. Validation and write
+ * failures remain explicit so hosts do not display an unsaved policy as persisted.
+ */
 export const TextQualityRuleUpdateResult = Schema.Union([
 	Schema.Struct({
 		document: GameTextRuleDocument,
@@ -95,11 +127,19 @@ export const TextQualityRuleUpdateResult = Schema.Union([
 	})
 ]);
 export type TextQualityRuleUpdateResult = Schema.Schema.Type<typeof TextQualityRuleUpdateResult>;
+/**
+ * Validates a host policy-save response before replacing displayed policy state. A valid failed
+ * result remains failure evidence rather than a decoder failure.
+ */
 export const parseTextQualityRuleUpdateResult = gameTextResponseParser(
 	TextQualityRuleUpdateResult,
 	"quality rule update result"
 );
 
+/**
+ * Bounded finding preview with excerpts, labels and occurrence count. Use focus for complete
+ * evidence and paged affected places rather than parsing the display labels.
+ */
 export const TextQualityFindingSummary = Schema.Struct({
 	actual: Schema.String.check(Schema.isMaxLength(512)),
 	expectation: Schema.String.check(Schema.isMaxLength(512)),
@@ -115,6 +155,10 @@ export const TextQualityFindingSummary = Schema.Struct({
 });
 export type TextQualityFindingSummary = Schema.Schema.Type<typeof TextQualityFindingSummary>;
 
+/**
+ * Source-quality search scope, optional evidence cursor and bounded page size. The cursor
+ * belongs to the retained report that issued it.
+ */
 export const TextQualitySearchRequest = Schema.Struct({
 	cursor: Schema.optional(TextQualityFindingId),
 	filter: TextQualityFilter,
@@ -122,6 +166,10 @@ export const TextQualitySearchRequest = Schema.Struct({
 });
 export type TextQualitySearchRequest = Schema.Schema.Type<typeof TextQualitySearchRequest>;
 
+/**
+ * Bounded source finding page with whole-filter total and continuation cursor. Finding excerpts
+ * are presentation summaries, not the canonical evidence used for identity.
+ */
 export const TextQualitySearchPage = Schema.Struct({
 	findings: Schema.Array(TextQualityFindingSummary).check(Schema.isMaxLength(50)),
 	nextCursor: Schema.optional(TextQualityFindingId),
@@ -129,16 +177,28 @@ export const TextQualitySearchPage = Schema.Struct({
 });
 export type TextQualitySearchPage = Schema.Schema.Type<typeof TextQualitySearchPage>;
 
+/**
+ * Ready quality search page or explicit not-ready state. An unavailable quality query is not
+ * equivalent to zero findings.
+ */
 export const TextQualitySearchResult = Schema.Union([
 	Schema.Struct({ status: Schema.Literal("ready"), page: TextQualitySearchPage }),
 	Schema.Struct({ status: Schema.Literal("not_ready") })
 ]);
 export type TextQualitySearchResult = Schema.Schema.Type<typeof TextQualitySearchResult>;
+/**
+ * Validates a host's bounded quality-search page or not-ready response. Contract mismatches
+ * retain response guidance instead of becoming zero matches.
+ */
 export const parseTextQualitySearchResult = gameTextResponseParser(
 	TextQualitySearchResult,
 	"quality search result"
 );
 
+/**
+ * Evidence finding ID and bounded occurrence page request. occurrenceCursor pages saved places
+ * within that finding.
+ */
 export const TextQualityFocusRequest = Schema.Struct({
 	id: TextQualityFindingId,
 	occurrenceCursor: Schema.optional(TextOccurrenceId),
@@ -160,6 +220,10 @@ const FocusBase = {
 	totalOccurrences: Count
 };
 
+/**
+ * Focused source finding with structured actual/expected evidence and bounded saved places.
+ * sourceOffset and sourceTruncated locate excerpts within the original source.
+ */
 export const TextQualityFocus = Schema.Union([
 	Schema.Struct({
 		...FocusBase,
@@ -191,12 +255,20 @@ export const TextQualityFocus = Schema.Union([
 ]);
 export type TextQualityFocus = Schema.Schema.Type<typeof TextQualityFocus>;
 
+/**
+ * Focus result distinguishing found evidence, unknown ID and unavailable quality state. A
+ * missing ID can follow relevant source/policy changes.
+ */
 export const TextQualityFocusResult = Schema.Union([
 	Schema.Struct({ status: Schema.Literal("found"), focus: TextQualityFocus }),
 	Schema.Struct({ status: Schema.Literal("not_found") }),
 	Schema.Struct({ status: Schema.Literal("not_ready") })
 ]);
 export type TextQualityFocusResult = Schema.Schema.Type<typeof TextQualityFocusResult>;
+/**
+ * Validates a host quality-focus response, including bounded occurrences and structured finding
+ * evidence. Well-formed not-found and not-ready outcomes remain values.
+ */
 export const parseTextQualityFocusResult = gameTextResponseParser(
 	TextQualityFocusResult,
 	"quality finding focus result"

@@ -52,6 +52,10 @@ const Base = {
 const SourceBase = { ...Base, identity: Schema.NullOr(LocalizationIdentity) };
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 const Side = Schema.Literals(["source", "translation"]);
+/**
+ * Built-in source/translation check finding with actual and expected evidence. Severity is
+ * policy and is deliberately excluded from finding identity.
+ */
 export const LocalizationQualityFinding = Schema.Union([
 	Schema.Struct({
 		...Base,
@@ -292,6 +296,10 @@ export const LocalizationCustomFinding = Schema.Struct({
 });
 export type LocalizationCustomFinding = typeof LocalizationCustomFinding.Type;
 
+/**
+ * Role-scoped character-budget or terminology finding for a translation. Its rule identity and
+ * authored recovery belong to project policy rather than Unreal's parser contract.
+ */
 export const LocalizationPolicyFinding = Schema.Union([
 	Schema.Struct({
 		...Base,
@@ -315,6 +323,10 @@ export const LocalizationPolicyFinding = Schema.Union([
 	})
 ]);
 export type LocalizationPolicyFinding = typeof LocalizationPolicyFinding.Type;
+/**
+ * Warning that a rule references a culture absent from the selected target. The rule is
+ * retained for correction instead of silently being applied to another culture.
+ */
 export const LocalizationRuleDiagnostic = Schema.Struct({
 	code: Schema.Literal("rule_culture_not_in_target"),
 	severity: Schema.Literal("warning"),
@@ -324,6 +336,10 @@ export const LocalizationRuleDiagnostic = Schema.Struct({
 });
 export type LocalizationRuleDiagnostic = typeof LocalizationRuleDiagnostic.Type;
 
+/**
+ * Optional culture/check inclusion, disabled checks and accepted-review evidence. Hosts can
+ * change policy without changing the saved text reader.
+ */
 export const LocalizationCheckOptions = Schema.Struct({
 	culture: Schema.optionalKey(CultureCode),
 	checks: Schema.optionalKey(Schema.Array(BuiltInCheckId)),
@@ -332,6 +348,10 @@ export const LocalizationCheckOptions = Schema.Struct({
 	review: Schema.optionalKey(LocalizationReviewFile)
 });
 export type LocalizationCheckOptions = typeof LocalizationCheckOptions.Type;
+/**
+ * Line/culture evidence that limits a check, including unavailable source/translation or
+ * unsupported syntax/culture. A diagnostic does not mean the check passed.
+ */
 export const LocalizationCheckDiagnostic = Schema.Struct({
 	lineId: LocalizationLineId,
 	culture: CultureCode,

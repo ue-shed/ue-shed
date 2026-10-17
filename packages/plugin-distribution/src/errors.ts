@@ -85,6 +85,7 @@ export class ArtifactDigestMismatch extends Schema.TaggedError<ArtifactDigestMis
 export class MalformedOrUnsafeArchive extends Schema.TaggedError<MalformedOrUnsafeArchive>()(
 	"MalformedOrUnsafeArchive",
 	{
+		...CauseFields,
 		...PluginErrorGuidanceFields,
 		entry: Schema.optional(Schema.String),
 		releaseVersion: Schema.String

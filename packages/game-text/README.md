@@ -36,6 +36,12 @@ producer. The reader library never downloads an executable or falls back to a so
 
 ## Host usage
 
+For persistent indexing, compose `GameTextIndexBuilderLive` from `@ue-shed/game-text/index` with
+the host's existing `AssetReader` layer. This is the native production builder used by CLI and
+Workbench. It uses a scoped process/lease and reports missing capability or worker failures with
+typed recovery. `typeScriptIndexBuilderLayer` remains an explicit reference choice. See the
+[native preparation guide](../../docs/engineering/native-game-text-index.md).
+
 Compose `TextCorpusServiceLive` with one scoped `AssetReader` layer in the trusted Node host. Keep
 the resulting corpus and `textCorpusQuery(corpus)` model in that host, and send only bounded summary,
 search, and focus results over the host's validated transport.

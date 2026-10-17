@@ -12,8 +12,9 @@ import { adaptWasmInspectionResult } from "@ue-shed/extension-asset-inspector/wa
 import { Effect, Schema } from "effect";
 import { BlueprintBrowserError, BlueprintWorkerResponse } from "./worker-contract.js";
 
-function browserError(operation: string, message: string): BlueprintBrowserError {
+function browserError(operation: string, message: string, cause?: unknown): BlueprintBrowserError {
 	return new BlueprintBrowserError({
+		...(cause === undefined ? undefined : { cause }),
 		recovery:
 			"Check the selected saved asset and parser limits. Use a supported package or report the retained parser failure.",
 		retrySafe: false,
@@ -38,7 +39,8 @@ const decodeBytes = Effect.fn("Website.Blueprints.decodeBytes")(function* (
 				new Worker(new URL("./blueprint.worker.ts", import.meta.url), {
 					type: "module"
 				}),
-			catch: () => browserError("worker", "The browser could not start the asset decoder.")
+			catch: (cause) =>
+				browserError("worker", "The browser could not start the asset decoder.", cause)
 		}),
 		(worker) =>
 			Effect.sync(() => {
@@ -62,10 +64,14 @@ const decodeBytes = Effect.fn("Website.Blueprints.decodeBytes")(function* (
 			);
 		try {
 			worker.postMessage({ path, bytes, operation }, [bytes]);
-		} catch {
+		} catch (cause) {
 			resume(
 				Effect.fail(
-					browserError("transport", "The browser could not send the file to its decoder.")
+					browserError(
+						"transport",
+						"The browser could not send the file to its decoder.",
+						cause
+					)
 				)
 			);
 		}
@@ -76,11 +82,13 @@ const decodeBytes = Effect.fn("Website.Blueprints.decodeBytes")(function* (
 		});
 	}).pipe(
 		Effect.timeout("30 seconds"),
-		Effect.mapError((error) => browserError("transport", error.message))
+		Effect.mapError((error) =>
+			browserError("transport", "The asset decoder request failed or timed out.", error)
+		)
 	);
 	const response = yield* Schema.decodeUnknownEffect(BlueprintWorkerResponse)(reply.data).pipe(
-		Effect.mapError(() =>
-			browserError("transport", "The decoder returned an invalid response.")
+		Effect.mapError((cause) =>
+			browserError("transport", "The decoder returned an invalid response.", cause)
 		)
 	);
 	if (response.status === "failed") {

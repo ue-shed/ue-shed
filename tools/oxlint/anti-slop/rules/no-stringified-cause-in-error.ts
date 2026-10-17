@@ -69,6 +69,13 @@ export const noStringifiedCauseInErrorRule = defineRule({
 	},
 	createOnce(context) {
 		return {
+			CallExpression(node) {
+				if (!isErrorConstruction(node)) return;
+				for (const argument of node.arguments) {
+					if (argument.type !== "SpreadElement" && containsStringifiedCause(argument))
+						context.report({ node: argument, messageId: "stringifiedCause" });
+				}
+			},
 			Property(node) {
 				if (node.key.type !== "Identifier" || node.key.name !== "message") return;
 				const object = node.parent;

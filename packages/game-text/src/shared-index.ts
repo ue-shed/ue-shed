@@ -200,7 +200,15 @@ function readIndex(reader: SnapshotReader) {
 			Effect.flatMap((bytes) =>
 				Schema.decodeUnknownEffect(Schema.fromJsonString(SharedIndexManifestSchema))(
 					new TextDecoder().decode(bytes)
-				).pipe(Effect.mapError((cause) => snapshotFailure("index.meta", String(cause))))
+				).pipe(
+					Effect.mapError((cause) =>
+						snapshotFailure(
+							"index.meta",
+							"The shared index metadata is invalid.",
+							cause
+						)
+					)
+				)
 			)
 		);
 }
@@ -449,7 +457,13 @@ function makeSharedIndexNodeLayer(options: SharedIndexOptions) {
 				) {
 					const started = performance.now();
 					yield* Schema.decodeUnknownEffect(SharedIndexManifestSchema)(next).pipe(
-						Effect.mapError((cause) => snapshotFailure("index.meta", String(cause)))
+						Effect.mapError((cause) =>
+							snapshotFailure(
+								"index.meta",
+								"The shared index metadata is invalid.",
+								cause
+							)
+						)
 					);
 					const bytes = new TextEncoder().encode(JSON.stringify(next));
 					if (bytes.length > 16 * 1024 ** 2)

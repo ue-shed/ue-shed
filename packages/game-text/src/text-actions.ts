@@ -40,7 +40,9 @@ export class GameTextActionsError extends Schema.TaggedError<GameTextActionsErro
 ) {}
 
 /**
- * Explicit editor endpoint and guarded action request. The caller owns project/editor selection and expected saved identity; merely constructing these options neither loads nor writes a package.
+ * Explicit editor endpoint and guarded action request. The caller owns project/editor selection
+ * and expected saved identity; merely constructing these options neither loads nor writes a
+ * package.
  */
 export interface GameTextActionsOptions {
 	/** Remote Control HTTP endpoint of the running editor, for example `http://127.0.0.1:30010`. */
@@ -209,7 +211,9 @@ export interface GameTextActionMismatch {
 }
 
 /**
- * Saved-file verification after an editor apply. verified counts matching results, mismatches retain provenance, and complete is false when a re-read package supplied only partial evidence.
+ * Saved-file verification after an editor apply. verified counts matching results, mismatches
+ * retain provenance, and complete is false when a re-read package supplied only partial
+ * evidence.
  */
 export interface GameTextActionsVerification {
 	readonly verified: number;

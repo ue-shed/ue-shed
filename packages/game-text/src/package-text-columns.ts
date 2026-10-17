@@ -520,6 +520,7 @@ export const decodePackageTextColumns = Effect.fn("PackageText.decodeColumns")(f
 			snapshotCheck(copyRow === copyCount, "copy", "Copy outside its place");
 			return records;
 		},
-		catch: (cause) => snapshotFailure("package-text", String(cause))
+		catch: (cause) =>
+			snapshotFailure("package-text", "The saved package text columns are invalid.", cause)
 	});
 });

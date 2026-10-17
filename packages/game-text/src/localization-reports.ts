@@ -31,6 +31,10 @@ const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 const Words = Schema.NullOr(Count);
 const Fingerprint = Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/u));
 const Counts = Schema.Struct({ lines: Count, sourceWords: Words });
+/**
+ * Localization identity with canonical source fingerprint, source-word count and optional
+ * manifest place. These facts support source changes and conservative key-change pairing.
+ */
 export const LocalizationBaselineEntry = Schema.Struct({
 	...LocalizationIdentity.fields,
 	sourceFingerprint: Fingerprint,
@@ -39,6 +43,10 @@ export const LocalizationBaselineEntry = Schema.Struct({
 	path: Schema.optionalKey(Schema.String)
 });
 export type LocalizationBaselineEntry = typeof LocalizationBaselineEntry.Type;
+/**
+ * Versioned target baseline with algorithm identities and corpus/evidence/file provenance.
+ * Entries are bounded and identities must be unique before comparison.
+ */
 export const LocalizationBaseline = Schema.Struct({
 	schemaVersion: Schema.Literal(1),
 	target: LocalizationTargetName,
@@ -55,6 +63,11 @@ export const LocalizationBaseline = Schema.Struct({
 	entries: Schema.Array(LocalizationBaselineEntry).check(Schema.isMaxLength(100_000))
 });
 export type LocalizationBaseline = typeof LocalizationBaseline.Type;
+/**
+ * Typed invalid baseline, unavailable/ambiguous evidence or reporting-context failure. Code and
+ * recovery explain required correction; cause retains original schema/manifest evidence when
+ * available.
+ */
 export class LocalizationReportError extends Schema.TaggedError<LocalizationReportError>()(
 	"LocalizationReportError",
 	{
@@ -74,7 +87,10 @@ export class LocalizationReportError extends Schema.TaggedError<LocalizationRepo
 		recovery: Schema.String
 	}
 ) {}
-function reportError(code: LocalizationReportError["code"]): LocalizationReportError {
+function reportError(
+	code: LocalizationReportError["code"],
+	cause?: unknown
+): LocalizationReportError {
 	const recovery = {
 		invalid_baseline:
 			"Regenerate a version-1 baseline with loc report --save-baseline using a new JSON destination.",
@@ -91,6 +107,7 @@ function reportError(code: LocalizationReportError["code"]): LocalizationReportE
 			"Load current corpus and localization evidence for the same target and cultures."
 	} satisfies Record<LocalizationReportError["code"], string>;
 	return new LocalizationReportError({
+		...(cause === undefined ? undefined : { cause }),
 		retrySafe: false,
 		nextStep: "fix_input",
 		code,
@@ -104,12 +121,17 @@ function identityKey(identity: LocalizationIdentity): string {
 function baselineValid(document: LocalizationBaseline): boolean {
 	return new Set(document.entries.map(identityKey)).size === document.entries.length;
 }
+/**
+ * Parses baseline JSON into a Result with domain report errors. Invalid JSON/schema evidence is
+ * retained; duplicate identities also reject the baseline.
+ */
 export function decodeLocalizationBaselineJson(
 	input: string
 ): Result.Result<LocalizationBaseline, LocalizationReportError> {
 	const result = Schema.decodeUnknownResult(Schema.fromJsonString(LocalizationBaseline))(input);
-	if (Result.isFailure(result) || !baselineValid(result.success))
-		return Result.fail(reportError("invalid_baseline"));
+	if (Result.isFailure(result))
+		return Result.fail(reportError("invalid_baseline", result.failure));
+	if (!baselineValid(result.success)) return Result.fail(reportError("invalid_baseline"));
 	return Result.succeed(result.success);
 }
 /** Deduplicate locations, exclude optional contexts, and reject conflicting sources per identity. */
@@ -141,6 +163,11 @@ function manifestEntries(evidence: LocalizationTargetEvidence): readonly Manifes
 		(a, b) => a.namespace.localeCompare(b.namespace) || a.key.localeCompare(b.key)
 	);
 }
+/**
+ * Creates a target baseline from current corpus and manifest evidence with canonical
+ * fingerprints. Missing/ambiguous manifests or unavailable portable word counts fail with
+ * LocalizationReportError.
+ */
 export function createLocalizationBaseline(
 	corpus: TextCorpus,
 	evidence: LocalizationTargetEvidence,
@@ -198,6 +225,10 @@ export const LocalizationBaselineKeyChange = Schema.Struct({
 	match: Schema.Literals(["same_place", "same_text"])
 });
 export type LocalizationBaselineKeyChange = typeof LocalizationBaselineKeyChange.Type;
+/**
+ * Added, changed, removed and conservatively paired key-change entries with separate line/word
+ * totals. Paired old/new keys are not double-counted as removal/addition.
+ */
 export const LocalizationBaselineDelta = Schema.Struct({
 	added: Schema.Array(LocalizationBaselineEntry),
 	changed: Schema.Array(LocalizationBaselineEntry),
@@ -216,6 +247,10 @@ function entryCounts(entries: readonly LocalizationBaselineEntry[]) {
 		sourceWords: entries.reduce((total, entry) => total + entry.sourceWords, 0)
 	};
 }
+/**
+ * Compares unique-identity baselines for the same target, preserving conservative key-change
+ * pairing. Invalid baselines or target mismatch raise LocalizationReportError directly.
+ */
 export function diffLocalizationBaselines(
 	previous: LocalizationBaseline,
 	current: LocalizationBaseline
@@ -334,6 +369,11 @@ const ReviewProgress = Schema.Union([
 	Schema.Literal("not_tracked"),
 	Schema.Struct({ lines: Count, percent: Schema.NullOr(Schema.Number) })
 ]);
+/**
+ * Per-culture state, translation and review progress with explicit unknown totals. Null
+ * percentages/counts and not_tracked review preserve unavailable evidence instead of inventing
+ * zero progress.
+ */
 export const LocalizationProgressCulture = Schema.Struct({
 	culture: CultureCode,
 	states: Schema.Record(LocalizationState, Counts),
@@ -351,6 +391,10 @@ export const LocalizationProgressCulture = Schema.Struct({
 	baselineDelta: Schema.optionalKey(LocalizationBaselineDelta)
 });
 export type LocalizationProgressCulture = typeof LocalizationProgressCulture.Type;
+/**
+ * Versioned target progress report with culture totals, word-count diagnostics and
+ * package/gather coverage. Pending PO edits remain separate from archive/shipping progress.
+ */
 export const LocalizationProgressReport = Schema.Struct({
 	schemaVersion: Schema.Literal(1),
 	target: LocalizationTargetName,

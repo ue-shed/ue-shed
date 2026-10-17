@@ -1,4 +1,4 @@
-import { Schema } from "effect";
+import { Result, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import {
 	archiveEntry,
@@ -23,6 +23,14 @@ import { canonicalLocalizationJson, localizationFingerprint } from "./localizati
 import { LocalizationError } from "@ue-shed/localization/browser";
 
 describe("localization progress and manifest baselines", () => {
+	it("retains schema issues when a baseline JSON document is invalid", () => {
+		const result = decodeLocalizationBaselineJson('{"schemaVersion":1,"target":42}');
+		expect(Result.isFailure(result)).toBe(true);
+		if (Result.isFailure(result)) {
+			expect(result.failure.code).toBe("invalid_baseline");
+			expect(Schema.isSchemaError(result.failure.cause)).toBe(true);
+		}
+	});
 	it.each(["file_missing", "limit_exceeded", "malformed_json"] as const)(
 		"baseline errors preserve the manifest cause %s",
 		(code) => {

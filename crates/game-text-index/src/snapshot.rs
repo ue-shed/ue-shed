@@ -392,8 +392,13 @@ impl Reader {
         self.file.read_exact(&mut pad[..n])?;
         require(pad[..n].iter().all(|&x| x == 0), "padding")?;
         if e.kind == 4 {
-            strings_bytes(&raw)
-                .map_err(|error| format!("SnapshotFormatError: {}: {error}", e.name))?;
+            strings_bytes(&raw).map_err(|error| {
+                crate::Error::with_source(
+                    crate::ErrorCode::InvalidCache,
+                    format!("Invalid snapshot string section {}.", e.name),
+                    error,
+                )
+            })?;
         }
         if e.kind == 3 {
             require(

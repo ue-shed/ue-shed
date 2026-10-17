@@ -133,7 +133,12 @@ export const packageTextSelectionInSlices = Effect.fn("PackageText.selection")(f
 				do selection.add(inventory[next++]!);
 				while (next < inventory.length && !clock.step());
 			},
-			catch: (cause) => snapshotFailure("package-text.inventory", String(cause))
+			catch: (cause) =>
+				snapshotFailure(
+					"package-text.inventory",
+					"The package inventory could not be prepared.",
+					cause
+				)
 		});
 		if (next < inventory.length) yield* Effect.yieldNow;
 	}
@@ -275,7 +280,12 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 					await mkdir(root, { recursive: true });
 					return mkdtemp(join(root, "package-cold-"));
 				},
-				catch: (cause) => snapshotFailure("package-text.stage", String(cause))
+				catch: (cause) =>
+					snapshotFailure(
+						"package-text.stage",
+						"The package text staging operation failed.",
+						cause
+					)
 			}),
 			(value) => Effect.promise(() => rm(value, { recursive: true, force: true }))
 		);
@@ -298,7 +308,12 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 					buffer.bytes += Buffer.byteLength(line);
 					if (buffer.bytes >= 64 * 1024) await flush(name);
 				},
-				catch: (cause) => snapshotFailure("package-text.stage", String(cause))
+				catch: (cause) =>
+					snapshotFailure(
+						"package-text.stage",
+						"The package text staging operation failed.",
+						cause
+					)
 			});
 		const requested = new Map<string, PackageTextInventoryEntry>();
 		for (const shard of changed)
@@ -347,7 +362,12 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 			try: async () => {
 				for (const name of buffers.keys()) await flush(name);
 			},
-			catch: (cause) => snapshotFailure("package-text.stage", String(cause))
+			catch: (cause) =>
+				snapshotFailure(
+					"package-text.stage",
+					"The package text staging operation failed.",
+					cause
+				)
 		});
 		// Reading includes the reader's own work and staging the records it returns.
 		stages.mark("read");
@@ -397,7 +417,12 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 								readers
 							};
 						},
-						catch: (cause) => snapshotFailure("package-text.stage", String(cause))
+						catch: (cause) =>
+							snapshotFailure(
+								"package-text.stage",
+								"The package text staging operation failed.",
+								cause
+							)
 					}),
 					(value) =>
 						Effect.promise(async () => {
@@ -474,7 +499,12 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 					await writeSnapshotFile(path, packageTextColumns(next), 1);
 					return openSnapshotFile(path);
 				},
-				catch: (cause) => snapshotFailure("package-text.stage", String(cause))
+				catch: (cause) =>
+					snapshotFailure(
+						"package-text.stage",
+						"The package text staging operation failed.",
+						cause
+					)
 			});
 			staged.readers.push(file);
 			sources.push({

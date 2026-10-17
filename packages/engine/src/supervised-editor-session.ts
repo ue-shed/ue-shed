@@ -321,8 +321,11 @@ function windowsSupervisorExecutable(): Effect.Effect<string, SupervisedEditorSe
 			sessionError(
 				"process_tree_supervision_unavailable",
 				"launch",
-				`The Windows Job Object supervisor is unavailable: ${String(cause)}`,
-				`Install the matching optional ${WINDOWS_SUPERVISOR_PACKAGE} package and retry.`
+				`The Windows Job Object supervisor is unavailable.`,
+				`Install the matching optional ${WINDOWS_SUPERVISOR_PACKAGE} package and retry.`,
+				undefined,
+				undefined,
+				cause
 			)
 	});
 }
@@ -353,9 +356,11 @@ function makeWindowsHandle(
 				sessionError(
 					"termination_failed",
 					"termination",
-					`Could not request termination of owned Windows Job Object ${pid}: ${String(cause)}`,
+					`Could not request termination of owned Windows Job Object ${pid}.`,
 					"Terminate the owned editor process tree manually before retrying.",
-					true
+					true,
+					undefined,
+					cause
 				)
 		});
 		const completed = yield* awaitExit.pipe(Effect.timeoutOption(terminationTimeout));
@@ -397,18 +402,20 @@ function launchWindowsProcessTree(
 		const completion = new Promise<SupervisorCompletion>((complete) => {
 			finishCompletion = complete;
 		});
-		const supervisorFailure = (message: string) =>
+		const supervisorFailure = (message: string, cause?: unknown) =>
 			sessionError(
 				"supervisor_failed",
 				launched ? "operation" : "launch",
 				message,
 				"Inspect the supervisor error and editor logs, then retry.",
-				true
+				true,
+				undefined,
+				cause
 			);
-		const fail = (message: string) => {
+		const fail = (message: string, cause?: unknown) => {
 			if (settled) return;
 			settled = true;
-			const error = supervisorFailure(message);
+			const error = supervisorFailure(message, cause);
 			if (launched) finishCompletion({ error, ok: false });
 			else resume(Effect.fail(error));
 		};
@@ -459,9 +466,7 @@ function launchWindowsProcessTree(
 				try {
 					processMessage(Schema.decodeUnknownSync(SupervisorMessage)(JSON.parse(line)));
 				} catch (cause) {
-					fail(
-						`The Windows supervisor emitted an invalid protocol message: ${String(cause)}`
-					);
+					fail("The Windows supervisor emitted an invalid protocol message.", cause);
 					helper.stdin?.end();
 				}
 			}
@@ -471,9 +476,7 @@ function launchWindowsProcessTree(
 			if (stderr.length >= SUPERVISOR_OUTPUT_LIMIT) return;
 			stderr = `${stderr}${chunk}`.slice(0, SUPERVISOR_OUTPUT_LIMIT);
 		});
-		helper.on("error", (cause) =>
-			fail(`Could not start the Windows supervisor: ${cause.message}`)
-		);
+		helper.on("error", (cause) => fail("Could not start the Windows supervisor.", cause));
 		helper.on("close", (code) => {
 			if (settled) return;
 			const detail = stderr.trim().length > 0 ? `: ${stderr.trim()}` : "";
@@ -522,8 +525,11 @@ function makePosixHandle(
 			sessionError(
 				"process_tree_supervision_unavailable",
 				"operation",
-				`Could not inspect owned process group ${pid}: ${String(cause)}`,
-				"Install a readable procfs or terminate the owned editor process group manually."
+				`Could not inspect owned process group ${pid}.`,
+				"Install a readable procfs or terminate the owned editor process group manually.",
+				undefined,
+				undefined,
+				cause
 			)
 	});
 	const terminate = Effect.fn("OwnedProcessTree.terminate")(function* (
@@ -539,9 +545,11 @@ function makePosixHandle(
 				sessionError(
 					"termination_failed",
 					"termination",
-					`Could not terminate owned process group ${pid}: ${String(cause)}`,
+					`Could not terminate owned process group ${pid}.`,
 					"Terminate the owned editor process group manually before retrying.",
-					true
+					true,
+					undefined,
+					cause
 				)
 		});
 		const completed = yield* awaitExit.pipe(Effect.timeoutOption(terminationTimeout));
@@ -593,10 +601,11 @@ export const OwnedProcessTreeLive = Layer.succeed(
 										: sessionError(
 												"spawn_failed",
 												"launch",
-												`Could not retain the supervised process identity: ${String(cause)}`,
+												`Could not retain the supervised process identity.`,
 												"Check operating-system process limits and retry.",
 												false,
-												"escalate"
+												"escalate",
+												cause
 											)
 								)
 							);

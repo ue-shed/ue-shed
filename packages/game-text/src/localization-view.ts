@@ -15,6 +15,10 @@ import { TextUnitId } from "./identifiers.js";
 
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 const Page = Schema.Array(Schema.String).check(Schema.isMaxLength(50));
+/**
+ * Bounded target name/native-culture/culture list for host pickers. A null native culture
+ * records missing configuration instead of choosing a default language.
+ */
 export const LocalizationTargetPreview = Schema.Struct({
 	name: LocalizationTargetName,
 	nativeCulture: Schema.NullOr(CultureCode),
@@ -28,6 +32,10 @@ const Failure = Schema.Struct({
 	recovery: Schema.String
 });
 const NotReady = Schema.Struct({ status: Schema.Literal("not_ready") });
+/**
+ * Target-list outcome separating ready previews, unavailable workspace and explicit failure.
+ * Hosts retain shell project selection while choosing a localization target.
+ */
 export const LocalizationTargetsResult = Schema.Union([
 	NotReady,
 	Failure,
@@ -37,6 +45,10 @@ export const LocalizationTargetsResult = Schema.Union([
 	})
 ]);
 export type LocalizationTargetsResult = typeof LocalizationTargetsResult.Type;
+/**
+ * Selected-target metadata outcome with ready, unavailable or failed state. Missing evidence
+ * remains visible in the returned metadata rather than triggering a project change.
+ */
 export const LocalizationTargetResult = Schema.Union([
 	NotReady,
 	Failure,
@@ -56,6 +68,10 @@ export const LocalizationTargetResult = Schema.Union([
 	})
 ]);
 export type LocalizationTargetResult = typeof LocalizationTargetResult.Type;
+/**
+ * Target/line focus request with culture/location offsets. Paging bounds the evidence crossing
+ * the host boundary while the retained join owns full data.
+ */
 export const LocalizationFocusRequest = Schema.Struct({
 	target: LocalizationTargetName,
 	selection: Schema.Union([
@@ -74,6 +90,10 @@ const CultureTranslationState = Schema.Literals([
 	"not_translated",
 	"translated"
 ]);
+/**
+ * Focused per-culture translation and state evidence. Missing translations remain null and are
+ * distinguished from a present empty string.
+ */
 export const LocalizationTranslation = LocalizationCultureMark.pipe(
 	Schema.fieldsAssign({
 		gameTranslation: Schema.NullOr(Schema.String),
@@ -105,6 +125,10 @@ const LocalizationScopeSummary = Schema.Struct({
 	]),
 	message: Schema.String
 });
+/**
+ * Bounded line detail including saved locations, translator notes and culture translations.
+ * Total counts and continuation offsets describe evidence beyond each returned page.
+ */
 export const LocalizationFocus = Schema.Struct({
 	id: LocalizationLineId,
 	origin: LocalizationLine.fields.origin,
@@ -121,6 +145,10 @@ export const LocalizationFocus = Schema.Struct({
 	nextLocationOffset: Schema.optionalKey(Count)
 });
 export type LocalizationFocus = typeof LocalizationFocus.Type;
+/**
+ * Localization line focus outcome distinguishing found, not found and unavailable. Only found
+ * includes detailed retained line evidence.
+ */
 export const LocalizationFocusResult = Schema.Union([
 	NotReady,
 	Schema.Struct({ status: Schema.Literal("not_found") }),

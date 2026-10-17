@@ -15,6 +15,10 @@ function matchesValue(actual: string, expected: string, operator: "exact" | "pre
 	return operator === "exact" ? actual === expected : actual.startsWith(expected);
 }
 
+/**
+ * Tests one location against one authored role condition. Matching is exact or prefix-based
+ * according to the matcher; role assignment remains policy and does not alter saved provenance.
+ */
 export function matchesTextRoleMatcher(location: TextLocation, matcher: TextRoleMatcher): boolean {
 	switch (matcher.kind) {
 		case "location_kind":
@@ -108,6 +112,10 @@ function terminologyExpression(term: string, caseSensitive: boolean): RegExp {
 	);
 }
 
+/**
+ * Finds literal terminology matches at Unicode letter/mark/number boundaries. Case sensitivity
+ * is explicit; start/end are JavaScript UTF-16 offsets with an exclusive end.
+ */
 export function termMatches(
 	source: string,
 	term: string,

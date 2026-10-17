@@ -63,7 +63,9 @@ const StoreConfiguration = Schema.Struct({
 	targetKey: Schema.NonEmptyString.check(Schema.isMaxLength(4096))
 });
 /**
- * Classified cache filesystem, lease, native-process or generation failure. retrySafe and nextStep distinguish waiting for another writer from reopening an uncertain session or rebuilding invalid disposable data.
+ * Classified cache filesystem, lease, native-process or generation failure. retrySafe and
+ * nextStep distinguish waiting for another writer from reopening an uncertain session or
+ * rebuilding invalid disposable data.
  */
 export class SnapshotStoreError extends Schema.TaggedError<SnapshotStoreError>()(
 	"SnapshotStoreError",
@@ -445,7 +447,7 @@ function makeNodeLayer(options: SnapshotStoreOptions): Layer.Layer<SnapshotStore
 				throw snapshotFailure("manifest", "Target identity mismatch");
 			return value;
 		} catch (cause) {
-			throw snapshotFailure("manifest", `Invalid manifest: ${String(cause)}`);
+			throw snapshotFailure("manifest", "The snapshot manifest is invalid.", cause);
 		}
 	}
 	async function openReader(): Promise<{ manifest: SnapshotManifest; file: SnapshotFileReader }> {

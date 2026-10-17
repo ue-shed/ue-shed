@@ -16,6 +16,10 @@ export const TextGatherScope = Schema.Union([
 ]);
 export type TextGatherScope = typeof TextGatherScope.Type;
 
+/**
+ * Audience judgment with its evidence reason and optional matched policy rule. A classification
+ * may remain unknown; it is independent of whether a selected target gathers the text.
+ */
 export type TextAudienceClassification = {
 	readonly audience: TextAudience;
 	readonly reason: TextAudienceReason;
@@ -52,6 +56,10 @@ export type TextAudienceMatch =
 			readonly value: "data_table_cell" | "string_table_entry";
 	  };
 
+/**
+ * One configurable audience policy row. All match conditions must hold; the rule records a
+ * human explanation, audience and reason without changing Unreal's saved gather-table evidence.
+ */
 export type TextAudienceRule = {
 	readonly id: string;
 	readonly audience: Exclude<TextAudience, "unknown">;
@@ -340,6 +348,10 @@ export const TEXT_AUDIENCE_POLICY = [
 	}
 ] as const satisfies readonly TextAudienceRule[];
 
+/**
+ * Identifier of a matched audience policy row. It explains a policy-derived classification;
+ * authoritative gather-table results and unknown classifications need not carry one.
+ */
 export type TextAudienceRuleId = (typeof TEXT_AUDIENCE_POLICY)[number]["id"];
 
 /** The parts of an occurrence the policy reads, split once. */
@@ -415,6 +427,10 @@ function subject(input: {
 	};
 }
 
+/**
+ * Normalizes occurrence facts for audience policy matching. This is a pure projection of saved
+ * provenance and does not inspect a running editor or decide gather inclusion.
+ */
 export function textAudienceSubject(occurrence: TextOccurrence): TextAudienceSubject {
 	const location = occurrence.location;
 	return subject({
@@ -561,6 +577,10 @@ function firstRule<const Rule extends TextAudienceRule>(
 	return policy.find((rule) => rule.when.every((match) => matches(prepared, match)));
 }
 
+/**
+ * Authoritative saved gather-table evidence available for one occurrence. A matched editor-only
+ * bit outranks configurable audience heuristics; absence preserves uncertainty.
+ */
 export type TextAudienceEvidence = {
 	/**
 	 * The site's editor-only bit from the package's saved gather table, when the reader matched the
@@ -595,6 +615,11 @@ function policyResult(subject: TextAudienceSubject): TextAudienceClassification 
 	return rule === undefined ? NO_EVIDENCE : RULE_RESULTS.get(rule)!;
 }
 
+/**
+ * Classifies an occurrence from gather evidence and a policy table. Authoritative saved
+ * editor-only bits take precedence; absent matching evidence remains unknown instead of
+ * becoming a runtime assumption.
+ */
 export function classifyTextAudience(
 	occurrence: TextOccurrence,
 	evidence: TextAudienceEvidence = {}
@@ -669,6 +694,11 @@ export function lineTextAudience(audiences: Iterable<TextAudience>): TextAudienc
 const AUDIENCES = TextAudienceSchema.literals;
 const REASONS = TextAudienceReasonSchema.literals;
 
+/**
+ * Encodes an audience classification into compact persisted bits. The rule position belongs to
+ * the current policy table, so persisted consumers must keep policy version identity with their
+ * data.
+ */
 export function encodeTextAudience(classification: TextAudienceClassification): number {
 	const rule =
 		classification.rule === undefined
@@ -681,6 +711,11 @@ export function encodeTextAudience(classification: TextAudienceClassification): 
 	);
 }
 
+/**
+ * Decodes the compact persisted audience/reason/policy-row code. Use the same policy
+ * table/version that produced the code; it is not a durable substitute for authored policy
+ * identities.
+ */
 export function decodeTextAudience(code: number): TextAudienceClassification {
 	const audience = AUDIENCES[code & 3];
 	const reason = REASONS[(code >>> 2) & 15];
@@ -710,4 +745,9 @@ export function textAudienceOfMask(mask: number): TextAudience {
 	return mask & 1 ? "player" : mask & 4 || !(mask & 2) ? "unknown" : "editor";
 }
 
+/**
+ * Stable explanations for a selected target excluding saved text. Unknown gather scope remains
+ * separate from an explicit exclusion, so hosts do not treat missing evidence as a negative
+ * result.
+ */
 export const TEXT_OUT_OF_SCOPE_REASONS = TextOutOfScopeReason.literals;

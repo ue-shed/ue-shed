@@ -5,6 +5,10 @@ import { hasSearchableSource } from "./search.js";
 import { TEXT_AUDIENCE_LABELS } from "./text-audience-schema.js";
 import { occurrenceTextAudience } from "./text-audience.js";
 
+/**
+ * Human review copy for a stable signal code. Labels are presentation text; persisted filters
+ * and integrations should retain the signal code instead.
+ */
 export function textReviewSignalLabel(signal: TextReviewSignal): string {
 	switch (signal) {
 		case "shared":
@@ -24,6 +28,10 @@ export function textReviewSignalLabel(signal: TextReviewSignal): string {
 	}
 }
 
+/**
+ * Human label for a saved occurrence's location kind. The original discriminated location
+ * remains the machine-readable contract for navigation and editing decisions.
+ */
 export function textLocationLabel(location: TextLocation): string {
 	switch (location.kind) {
 		case "data_table_cell":
@@ -47,6 +55,10 @@ export function textAssetName(objectPath: string): string {
 	return leaf.split(".").at(-1) ?? leaf;
 }
 
+/**
+ * Locale-formatted display count with simple singular/plural labeling. Use the numeric count
+ * and stable domain codes for data processing rather than parsing this UI text.
+ */
 export function textCountLabel(count: number, singular: string): string {
 	return `${count.toLocaleString()} ${singular}${count === 1 ? "" : "s"}`;
 }
@@ -138,6 +150,10 @@ export function gameTextCsv(corpus: TextCorpus, reviewCorpus: TextCorpus = corpu
 	);
 }
 
+/**
+ * Formats a source finding's observed and expected values for display/CSV. Use the original
+ * structured evidence and rule ID for programmatic decisions.
+ */
 export function textQualityProblem(finding: TextQualityFinding): string {
 	if (finding.kind === "character_budget") {
 		const limit = textCountLabel(finding.expectation.maximumCharacters, "character");

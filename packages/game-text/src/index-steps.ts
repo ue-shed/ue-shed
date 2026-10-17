@@ -77,7 +77,8 @@ import {
 } from "./index-import-observation.js";
 
 /**
- * Project-only refresh options shared with the full index request. A saved package inventory can be supplied by the host; changedFiles distinguishes full refresh from reuse.
+ * Project-only refresh options shared with the full index request. A saved package inventory
+ * can be supplied by the host; changedFiles distinguishes full refresh from reuse.
  */
 export const GameTextProjectRefreshRequest = Schema.Struct(
 	Struct.pick(GameTextIndexRefreshRequest.fields, [
@@ -88,7 +89,9 @@ export const GameTextProjectRefreshRequest = Schema.Struct(
 );
 export type GameTextProjectRefreshRequest = typeof GameTextProjectRefreshRequest.Type;
 /**
- * Target selection and evidence-refresh options. requireManifest controls whether missing gathered text fails preparation; changedFiles preserves the same full-refresh versus reuse semantics as project refresh.
+ * Target selection and evidence-refresh options. requireManifest controls whether missing
+ * gathered text fails preparation; changedFiles preserves the same full-refresh versus reuse
+ * semantics as project refresh.
  */
 export const GameTextTargetImportRequest = Schema.Struct(
 	Struct.pick(GameTextIndexRefreshRequest.fields, [
@@ -99,7 +102,8 @@ export const GameTextTargetImportRequest = Schema.Struct(
 );
 export type GameTextTargetImportRequest = typeof GameTextTargetImportRequest.Type;
 /**
- * Explicit key-change choices and review-error tolerance for building a target. These policy choices affect the derived join without changing authored assets or the selected project.
+ * Explicit key-change choices and review-error tolerance for building a target. These policy
+ * choices affect the derived join without changing authored assets or the selected project.
  */
 export const GameTextTargetBuildRequest = Schema.Struct(
 	Struct.pick(GameTextIndexRefreshRequest.fields, ["keyChangePairs", "tolerateReviewErrors"])
@@ -130,7 +134,8 @@ export interface GameTextProject {
 	readonly cacheRoot: string;
 }
 /**
- * Verified package revision reusable across localization targets. Its generation and package key establish dependency identity; the value itself holds no reader pin or writer lease.
+ * Verified package revision reusable across localization targets. Its generation and package
+ * key establish dependency identity; the value itself holds no reader pin or writer lease.
  */
 export interface GameTextProjectIndex extends GameTextProject {
 	readonly generation: string;
@@ -139,7 +144,8 @@ export interface GameTextProjectIndex extends GameTextProject {
 	readonly changedFiles?: readonly string[];
 }
 /**
- * Prepared localization inputs tied to a project revision and target view. File keys establish which retained evidence a later build consumes; importing does not publish a query model.
+ * Prepared localization inputs tied to a project revision and target view. File keys establish
+ * which retained evidence a later build consumes; importing does not publish a query model.
  */
 export interface GameTextTargetImport {
 	readonly project: GameTextProject;
@@ -152,7 +158,8 @@ export interface GameTextTargetImport {
 	readonly fileDiagnostics: NonNullable<JoinedTargetInput["fileDiagnostics"]>;
 }
 /**
- * Built target and its exact project/input identities, before opening readers. A queryRevision is opaque and comparable only within the same project, cache and backend.
+ * Built target and its exact project/input identities, before opening readers. A queryRevision
+ * is opaque and comparable only within the same project, cache and backend.
  */
 export interface GameTextTargetIndex {
 	readonly project: GameTextProjectIndex;
@@ -166,7 +173,9 @@ export interface GameTextTargetIndex {
 	readonly fileKeys: GameTextTargetImport["fileKeys"];
 }
 /**
- * Opened target model with its validated project inventory attached. Queries and quality operations refer to that immutable revision and require the model's owning scope to remain open.
+ * Opened target model with its validated project inventory attached. Queries and quality
+ * operations refer to that immutable revision and require the model's owning scope to remain
+ * open.
  */
 export interface GameTextIndexModel extends GameTextIndexRefreshResult {
 	readonly project: GameTextProjectIndex;
@@ -228,7 +237,12 @@ const normalizeFailure = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
 			isSnapshotStoreError(cause) ||
 			isSnapshotFormatError(cause)
 				? cause
-				: failure("index", String(cause), "Refresh the Game Text index and retry.")
+				: failure(
+						"index",
+						"The Game Text index operation failed.",
+						"Refresh the Game Text index and retry.",
+						cause
+					)
 		)
 	);
 const savedTarget = Schema.decodeUnknownSync(LocalizationTarget)({
@@ -323,7 +337,9 @@ export interface GameTextIndexStepsOptions {
 }
 
 /**
- * Constructs the independently usable step port in the caller's Effect scope. Its service requirements supply policy-neutral evidence and the selected builder; it does not own project selection.
+ * Constructs the independently usable step port in the caller's Effect scope. Its service
+ * requirements supply policy-neutral evidence and the selected builder; it does not own project
+ * selection.
  */
 export const makeGameTextIndexSteps = (
 	cacheRoot: string,
@@ -350,7 +366,12 @@ export const makeGameTextIndexSteps = (
 					)
 				)(key).pipe(
 					Effect.mapError((cause) =>
-						failure("search-worker", String(cause), "Rescan the project.")
+						failure(
+							"search-worker",
+							"The Game Text query worker failed.",
+							"Rescan the project.",
+							cause
+						)
 					),
 					Effect.flatMap(({ input }) =>
 						makeGameTextSearchWorkerResource(input, {
@@ -432,15 +453,23 @@ export const makeGameTextIndexSteps = (
 			const request = yield* Schema.decodeUnknownEffect(
 				Schema.Struct({ projectRoot: GameTextIndexRefreshRequest.fields.projectRoot })
 			)(input).pipe(
-				Effect.mapError((cause) => failure("request", String(cause), "Choose a project."))
+				Effect.mapError((cause) =>
+					failure(
+						"request",
+						"The Game Text index request is invalid.",
+						"Choose a project.",
+						cause
+					)
+				)
 			);
 			const projectRoot = yield* Effect.tryPromise({
 				try: () => realpath(request.projectRoot),
 				catch: (cause) =>
 					failure(
 						"project",
-						String(cause),
-						"Choose an accessible Unreal project directory."
+						"The project directory could not be resolved.",
+						"Choose an accessible Unreal project directory.",
+						cause
 					)
 			});
 			return { projectRoot, cacheRoot } satisfies GameTextProject;
@@ -453,7 +482,14 @@ export const makeGameTextIndexSteps = (
 			const request = yield* Schema.decodeUnknownEffect(GameTextProjectRefreshRequest)(
 				input
 			).pipe(
-				Effect.mapError((cause) => failure("request", String(cause), "Choose a project."))
+				Effect.mapError((cause) =>
+					failure(
+						"request",
+						"The Game Text index request is invalid.",
+						"Choose a project.",
+						cause
+					)
+				)
 			);
 			const { projectRoot } = yield* openProject(request);
 			return yield* withSession(
@@ -519,7 +555,12 @@ export const makeGameTextIndexSteps = (
 				input
 			).pipe(
 				Effect.mapError((cause) =>
-					failure("request", String(cause), "Choose a localization target.")
+					failure(
+						"request",
+						"The Game Text index request is invalid.",
+						"Choose a localization target.",
+						cause
+					)
 				)
 			);
 			return yield* withSession(
@@ -619,7 +660,12 @@ export const makeGameTextIndexSteps = (
 				input
 			).pipe(
 				Effect.mapError((cause) =>
-					failure("request", String(cause), "Check the target build options.")
+					failure(
+						"request",
+						"The Game Text index request is invalid.",
+						"Check the target build options.",
+						cause
+					)
 				)
 			);
 			const { imported } = target;
@@ -712,8 +758,9 @@ export const makeGameTextIndexSteps = (
 				catch: (cause) =>
 					failure(
 						"query",
-						String(cause),
-						"Clear the disposable Game Text index and refresh."
+						"The retained Game Text query could not be prepared or searched.",
+						"Clear the disposable Game Text index and refresh.",
+						cause
 					)
 			});
 			yield* Cache.set(projections, projectionKey, projection);
@@ -769,7 +816,12 @@ export const makeGameTextIndexSteps = (
 			const indexedEvidence = yield* readIndexedLocalizationEvidence(joined).pipe(
 				Effect.provide(LocalizationFileAccessLive),
 				Effect.mapError((cause) =>
-					failure("evidence", String(cause), "Refresh the Game Text index and retry.")
+					failure(
+						"evidence",
+						"The retained localization evidence could not be read.",
+						"Refresh the Game Text index and retry.",
+						cause
+					)
 				)
 			);
 			const workerInput = {
@@ -809,8 +861,9 @@ export const makeGameTextIndexSteps = (
 										catch: (cause) =>
 											failure(
 												"query",
-												String(cause),
-												"Refresh the Game Text index and retry."
+												"The retained Game Text query could not be prepared or searched.",
+												"Refresh the Game Text index and retry.",
+												cause
 											)
 									})
 							)
@@ -882,7 +935,12 @@ export const makeGameTextIndexSteps = (
 			const projectRoot = yield* Effect.tryPromise({
 				try: () => realpath(request.projectRoot),
 				catch: (cause) =>
-					failure("project", String(cause), "Choose an accessible project directory.")
+					failure(
+						"project",
+						"The project directory could not be resolved.",
+						"Choose an accessible project directory.",
+						cause
+					)
 			});
 			yield* withSession(
 				configurationFor(cacheRoot, projectRoot, request.targetName),
@@ -925,7 +983,9 @@ export const makeGameTextIndexSteps = (
 	});
 
 /**
- * Headless project, target-import, build and open workflow. Steps reject stale input generations and own scoped writers/readers; hosts compose them without copying Workbench orchestration.
+ * Headless project, target-import, build and open workflow. Steps reject stale input
+ * generations and own scoped writers/readers; hosts compose them without copying Workbench
+ * orchestration.
  */
 export class GameTextIndexSteps extends Context.Service<
 	GameTextIndexSteps,
@@ -933,7 +993,9 @@ export class GameTextIndexSteps extends Context.Service<
 >()("@ue-shed/game-text/GameTextIndexSteps") {}
 
 /**
- * Layer for the headless step service. Provide a builder, project-index source and localization evidence; worker options move query/quality preparation off the host thread while retaining scope ownership.
+ * Layer for the headless step service. Provide a builder, project-index source and localization
+ * evidence; worker options move query/quality preparation off the host thread while retaining
+ * scope ownership.
  */
 export const gameTextIndexStepsLayer = (
 	cacheRoot: string,

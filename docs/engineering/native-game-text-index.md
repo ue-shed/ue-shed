@@ -1,24 +1,22 @@
 # Native Game Text preparation
 
-`@ue-shed/game-text` exports an opt-in `nativeIndexBuilderLayer(readerConfiguration)` implementing
-the existing `GameTextIndexBuilder` service. Replace `typeScriptIndexBuilderLayer` in the host's
-composition to select it. The default remains TypeScript. Both implementations work headlessly;
-Workbench has no special role in selecting or running the writer.
+`GameTextIndexBuilderLive` from `@ue-shed/game-text/index` is the production builder used by the
+CLI and Workbench. It derives the native worker configuration from the host's existing
+`AssetReader`. Library hosts compose the same layer; Workbench has no additional authority.
 
 ```ts
 import { Layer } from "effect";
-import { gameTextIndexRefreshLayer, nativeIndexBuilderLayer } from "@ue-shed/game-text";
-import type { AssetReaderConfiguration } from "@ue-shed/unreal-assets";
+import { gameTextIndexRefreshLayer, GameTextIndexBuilderLive } from "@ue-shed/game-text/index";
 
 declare const cacheRoot: string;
-declare const readerConfiguration: AssetReaderConfiguration;
 
-const refresh = gameTextIndexRefreshLayer(cacheRoot).pipe(
-	Layer.provide(nativeIndexBuilderLayer(readerConfiguration))
-);
+const refresh = gameTextIndexRefreshLayer(cacheRoot).pipe(Layer.provide(GameTextIndexBuilderLive));
 ```
 
-Supply the ordinary source and localization evidence layers as usual. The native reader must
+Supply the ordinary `AssetReader`, source and localization evidence layers as usual. An explicit
+`nativeIndexBuilderLayer(readerConfiguration)` remains available when a host intentionally configures
+a different compatible worker. `typeScriptIndexBuilderLayer` selects the reference implementation;
+selection is explicit and a native failure never silently switches writers. The native reader must
 support `game_text_index` in uasset-io protocol 1.13. The adapter uses the existing scoped protocol
 session, configured deadlines, cancellation and bounded output transport. It has no environment
 switch or second executable, and does not silently switch writers after a session failure.
@@ -81,5 +79,13 @@ includes the host's 120 ms debounce. These numbers make no native query-speed cl
 
 Production checks cover cold and eligible incremental builds, structural fallback, PO updates,
 query/facet parity, arbitrary UTF-16, pinned readers, compaction, failed sessions, lease exclusion
-and generated join-policy cases. Broader policy/data-shape coverage and cancellation soak testing
-remain appropriate before considering a change to the default builder.
+and generated join-policy cases. The production rollout additionally exercises 32 real process
+cancellation/termination cycles: startup, suspended staging, publication and worker death. Each cycle
+reopens the last committed state, writes again, and verifies process, lease and staging cleanup.
+Changing a PO fingerprint retains the new provenance without disqualifying a structurally eligible
+incremental join. Structural and other eligibility guards still select a full native rebuild.
+
+Current public-adapter host measurements and their limits are recorded in the
+[rollout evidence](../research/effect-audit-native-rollout-2026-10-18.md). Generated reader evidence
+isolates production preparation, model publication and queries; it does not measure Unreal asset
+discovery/extraction. Saved-fixture runs exercise that separate path. Queries remain JavaScript.

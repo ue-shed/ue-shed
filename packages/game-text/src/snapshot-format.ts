@@ -19,7 +19,9 @@ const isString = Schema.is(Schema.String);
 const kinds = ["bytes", "u8", "u32", "stringIds", "strings"] as const;
 export type SnapshotKind = (typeof kinds)[number];
 /**
- * A disposable index section violates its format or relationships. section identifies the failed boundary; rebuild from authored inputs before trusting the cache, retaining any original decoder cause for diagnosis.
+ * A disposable index section violates its format or relationships. section identifies the
+ * failed boundary; rebuild from authored inputs before trusting the cache, retaining any
+ * original decoder cause for diagnosis.
  */
 export class SnapshotFormatError extends Schema.TaggedError<SnapshotFormatError>()(
 	"SnapshotFormatError",

@@ -79,6 +79,14 @@ describe.skipIf(!executable)("native index build capability", () => {
 								const builder = yield* GameTextIndexBuilder;
 								const snapshots = [];
 								for (const translation of ["Shipped", "Updated translation"]) {
+									const provenance = {
+										relativePath: "de.po",
+										size: translation.length,
+										modifiedTime: "2026-10-18T00:00:00.000Z",
+										contentHash: (translation === "Shipped" ? "0" : "1").repeat(
+											64
+										)
+									};
 									yield* Effect.promise(() =>
 										writeFile(
 											join(projectRoot, "de.po"),
@@ -143,7 +151,8 @@ describe.skipIf(!executable)("native index build capability", () => {
 											});
 											return yield* builder.refreshJoinedTarget({
 												projectRoot,
-												target: authored
+												target: authored,
+												fileProvenances: { "de.po": provenance }
 											});
 										})
 									);
@@ -155,6 +164,9 @@ describe.skipIf(!executable)("native index build capability", () => {
 									const query = columnarTextCorpusQuery(
 										joined,
 										"2026-10-17T00:00:00.000Z"
+									);
+									expect(joined.meta.input.fileProvenances?.["de.po"]).toEqual(
+										provenance
 									);
 									snapshots.push(
 										query.search({

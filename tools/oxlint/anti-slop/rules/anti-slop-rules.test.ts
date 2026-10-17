@@ -170,6 +170,10 @@ ruleTester.run("no-stringified-cause-in-error", noStringifiedCauseInErrorRule, {
 	],
 	invalid: [
 		{
+			code: 'snapshotFailure("manifest", `Invalid: ${String(cause)}`);',
+			errors: [{ messageId: "stringifiedCause" }]
+		},
+		{
 			code: "new ReaderError({ message: String(cause) });",
 			errors: [{ messageId: "stringifiedCause" }]
 		},

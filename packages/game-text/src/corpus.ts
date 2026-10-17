@@ -56,7 +56,9 @@ const reportExtraction = (progress: ExtractionProgress): Effect.Effect<void> =>
 	});
 
 /**
- * A project, scan-option or asset-limit failure before a complete corpus can be returned. The code identifies the category; recovery and nextStep describe the required change, and cause retains reader evidence.
+ * A project, scan-option or asset-limit failure before a complete corpus can be returned. The
+ * code identifies the category; recovery and nextStep describe the required change, and cause
+ * retains reader evidence.
  */
 export class TextCorpusScanError extends Schema.TaggedError<TextCorpusScanError>()(
 	"TextCorpusScanError",
@@ -80,7 +82,8 @@ export const TextCorpusScanLimit = Schema.Int.check(Schema.isGreaterThanOrEqualT
 export type TextCorpusScanLimit = typeof TextCorpusScanLimit.Type;
 
 /**
- * Untrusted corpus scan request. Parse it once with parseTextCorpusScanOptions so positive concurrency and asset limits carry their validation brands into the service.
+ * Untrusted corpus scan request. Parse it once with parseTextCorpusScanOptions so positive
+ * concurrency and asset limits carry their validation brands into the service.
  */
 export const TextCorpusScanOptions = Schema.Struct({
 	concurrency: Schema.optional(TextCorpusScanLimit),
@@ -108,7 +111,8 @@ export const parseTextCorpusScanOptions = (encoded: typeof TextCorpusScanOptions
 	);
 
 /**
- * Unreal's saved StringTable class path used to distinguish table entries from ordinary FText properties. A reference to an entry is not a second editable copy of that entry.
+ * Unreal's saved StringTable class path used to distinguish table entries from ordinary FText
+ * properties. A reference to an entry is not a second editable copy of that entry.
  */
 export const STRING_TABLE_CLASS = "/Script/Engine.StringTable";
 
@@ -142,7 +146,8 @@ function textCorpusScanFailure(error: AssetReaderError): TextCorpusScanError {
 export type ScanTextCorpusOptions = TextCorpusScanOptions;
 
 /**
- * Saved inspection input to corpus construction. Failed packages retain file provenance and a diagnostic instead of disappearing from coverage counts.
+ * Saved inspection input to corpus construction. Failed packages retain file provenance and a
+ * diagnostic instead of disappearing from coverage counts.
  */
 export type TextPackageOutcome =
 	| {
@@ -208,7 +213,9 @@ function addTextOccurrence(options: {
 }
 
 /**
- * Projects one native saved-text occurrence into corpus provenance using the caller's physical package file. It preserves reader location and editing evidence without inferring that the editor has loaded this package.
+ * Projects one native saved-text occurrence into corpus provenance using the caller's physical
+ * package file. It preserves reader location and editing evidence without inferring that the
+ * editor has loaded this package.
  */
 export function textOccurrenceFromExtraction(options: {
 	readonly occurrence: PackageTextOccurrence;
@@ -420,7 +427,8 @@ function isPropertyBearingAsset(
 }
 
 /**
- * Projects decoded inspection evidence into saved-text occurrences. Unsupported histories remain coverage gaps; this does not resolve live objects or make a saved package writable.
+ * Projects decoded inspection evidence into saved-text occurrences. Unsupported histories
+ * remain coverage gaps; this does not resolve live objects or make a saved package writable.
  */
 export function textOccurrencesFromInspection(options: {
 	readonly inspection: SavedAssetInspection;
@@ -535,7 +543,9 @@ export interface TextPackageCounts {
 }
 
 /**
- * Builds a deterministic corpus from saved inspection outcomes. Failed and partially decoded packages remain coverage evidence; this transformation neither connects to Unreal nor writes assets.
+ * Builds a deterministic corpus from saved inspection outcomes. Failed and partially decoded
+ * packages remain coverage evidence; this transformation neither connects to Unreal nor writes
+ * assets.
  */
 export function buildTextCorpus(
 	outcomes: readonly TextPackageOutcome[],
@@ -1110,7 +1120,8 @@ export class TextCorpusService extends Context.Service<TextCorpusService, TextCo
 ) {}
 
 /**
- * Saved-package corpus adapter requiring AssetReader. It consumes already validated scan limits and retains partial package coverage rather than presenting unsupported saved text as absent.
+ * Saved-package corpus adapter requiring AssetReader. It consumes already validated scan limits
+ * and retains partial package coverage rather than presenting unsupported saved text as absent.
  */
 export const TextCorpusServiceLive = Layer.effect(
 	TextCorpusService,
@@ -1131,7 +1142,9 @@ export const TextCorpusServiceLive = Layer.effect(
 );
 
 /**
- * Corpus test port with a required scan handler. The optional indexed-scan handler explicitly uses scan when absent; provide it when a test needs to distinguish inventory reuse from a fresh scan.
+ * Corpus test port with a required scan handler. The optional indexed-scan handler explicitly
+ * uses scan when absent; provide it when a test needs to distinguish inventory reuse from a
+ * fresh scan.
  */
 export type TextCorpusServiceTestApi = Omit<TextCorpusServiceApi, "scanFromProjectIndex"> &
 	Partial<Pick<TextCorpusServiceApi, "scanFromProjectIndex">>;
@@ -1140,7 +1153,9 @@ export type TextCorpusServiceTestApi = Omit<TextCorpusServiceApi, "scanFromProje
 export type TextCorpusServiceTestShape = TextCorpusServiceTestApi;
 
 /**
- * Provides a complete corpus service for tests. Supply scanFromProjectIndex to assert indexed-scan behavior; the compatibility default deliberately delegates that method to the supplied scan handler.
+ * Provides a complete corpus service for tests. Supply scanFromProjectIndex to assert
+ * indexed-scan behavior; the compatibility default deliberately delegates that method to the
+ * supplied scan handler.
  */
 export function makeTextCorpusServiceTestLayer(
 	service: TextCorpusServiceTestApi

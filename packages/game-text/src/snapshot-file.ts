@@ -296,7 +296,8 @@ export async function openSnapshotFile(
 			} catch (cause) {
 				throw snapshotFailure(
 					value.name,
-					`Cannot decompress bounded section: ${String(cause)}`
+					"The bounded snapshot section could not be decompressed.",
+					cause
 				);
 			}
 		};

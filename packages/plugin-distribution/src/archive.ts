@@ -99,8 +99,9 @@ function storageFailure(releaseVersion: string, operation: string, cause: unknow
 	});
 }
 
-function archiveFailure(releaseVersion: string, message: string, entry?: string) {
+function archiveFailure(releaseVersion: string, message: string, entry?: string, cause?: unknown) {
 	return new MalformedOrUnsafeArchive({
+		...(cause === undefined ? undefined : { cause }),
 		...(entry === undefined ? undefined : { entry }),
 		message,
 		recovery: "Discard the artifact and install it again from a trusted exact release.",
@@ -560,7 +561,9 @@ export async function extractPluginArchiveToDirectory(
 			abortError(options.signal, options.manifest.releaseVersion, "extraction") ??
 			archiveFailure(
 				options.manifest.releaseVersion,
-				cause instanceof Error ? cause.message : String(cause)
+				cause instanceof Error ? cause.message : "The plugin archive is malformed.",
+				undefined,
+				cause
 			)
 		);
 	}
@@ -577,6 +580,10 @@ export const extractPluginArchive = (
 				? cause
 				: archiveFailure(
 						options.manifest.releaseVersion,
-						cause instanceof Error ? cause.message : String(cause)
+						cause instanceof Error
+							? cause.message
+							: "The plugin archive could not be extracted.",
+						undefined,
+						cause
 					)
 	});

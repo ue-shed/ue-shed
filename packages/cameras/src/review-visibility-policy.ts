@@ -15,6 +15,7 @@ import {
 export class ReviewVisibilityPolicyError extends Schema.TaggedError<ReviewVisibilityPolicyError>()(
 	"ReviewVisibilityPolicyError",
 	{
+		cause: Schema.optionalKey(Schema.Defect()),
 		code: Schema.Literals([
 			"duplicate_view",
 			"empty_selection",
@@ -64,9 +65,11 @@ export function inspectReviewVisibilityPolicies(
 function invalidAssignment(
 	message: string,
 	policyId: VisibilityPolicyIdType,
-	viewIds: ReadonlyArray<ReviewViewIdType>
+	viewIds: ReadonlyArray<ReviewViewIdType>,
+	cause?: unknown
 ): ReviewVisibilityPolicyError {
 	return new ReviewVisibilityPolicyError({
+		...(cause === undefined ? undefined : { cause }),
 		code: "invalid_assignment",
 		message,
 		policyId,
@@ -124,7 +127,14 @@ export function replaceViewVisibilityPolicy(args: {
 		visibilityPolicies: [...args.reviewSet.visibilityPolicies, args.policy]
 	};
 	return decodeReviewSet(candidate).pipe(
-		Effect.mapError((cause) => invalidAssignment(String(cause), args.policy.id, [args.viewId]))
+		Effect.mapError((cause) =>
+			invalidAssignment(
+				"The replacement visibility policy violates the Review Set contract.",
+				args.policy.id,
+				[args.viewId],
+				cause
+			)
+		)
 	);
 }
 
@@ -197,7 +207,14 @@ export function applyVisibilityPolicyToViews(args: {
 		)
 	};
 	return decodeReviewSet(candidate).pipe(
-		Effect.mapError((cause) => invalidAssignment(String(cause), args.policyId, args.viewIds))
+		Effect.mapError((cause) =>
+			invalidAssignment(
+				"The visibility policy assignment violates the Review Set contract.",
+				args.policyId,
+				args.viewIds,
+				cause
+			)
+		)
 	);
 }
 

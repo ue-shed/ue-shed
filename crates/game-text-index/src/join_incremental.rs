@@ -219,7 +219,6 @@ pub(crate) fn refresh(
         "review",
         "keyChangePairs",
         "fileErrors",
-        "fileProvenances",
         "fileDiagnostics",
     ] {
         let old = crate::join::policy_view(&meta["input"][field], &BTreeMap::new());
@@ -228,6 +227,9 @@ pub(crate) fn refresh(
             return fallback("input-policy");
         }
     }
+    // Provenance is descriptive evidence, not a join predicate. A changed PO's fingerprint
+    // must advance in the new metadata without forcing a full join. Errors/diagnostics above
+    // still guard availability semantics; metadata["input"] below retains the new provenance.
     let prior = meta["dependencies"].as_object().ok_or("old dependencies")?;
     let next = dependencies.as_object().ok_or("new dependencies")?;
     if prior.len() != next.len() || next.keys().any(|name| !prior.contains_key(name)) {

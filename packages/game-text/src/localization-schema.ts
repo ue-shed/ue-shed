@@ -12,6 +12,10 @@ import { Schema } from "effect";
 import { TextUnitId } from "./identifiers.js";
 import { TextAudience, TextOutOfScopeReason } from "./text-audience-schema.js";
 
+/**
+ * Primary localization state derived from saved corpus and gathered/archive/PO evidence.
+ * Unknown remains distinct from a confirmed missing or untranslated line.
+ */
 export const LocalizationState = Schema.Literals([
 	"translated",
 	"not_translated",
@@ -24,10 +28,22 @@ export const LocalizationState = Schema.Literals([
 	"outside_target",
 	"unknown"
 ]);
+/**
+ * Ordered localization state values used to initialize complete state counters. Persist the
+ * string values rather than their positions in this array.
+ */
 export const localizationStates = LocalizationState.literals;
+/**
+ * Public bound on cultures carried by selections and localization previews. Larger target sets
+ * must be scoped before crossing these host response boundaries.
+ */
 export const MAX_LOCALIZATION_CULTURES = 256;
 export type LocalizationState = typeof LocalizationState.Type;
 
+/**
+ * Missing or ambiguous evidence preventing a definite localization judgment. These reasons
+ * should accompany unknown state instead of being converted into a clean result.
+ */
 export const LocalizationUnknownReason = Schema.Literals([
 	"missing_manifest",
 	"missing_archive",
@@ -48,10 +64,18 @@ export const LocalizationUnknownReason = Schema.Literals([
 	"ambiguous_po_identity"
 ]);
 export type LocalizationUnknownReason = typeof LocalizationUnknownReason.Type;
+/**
+ * Opaque identifier for a gathered-only evidence line, distinct from a saved corpus unit ID. It
+ * supports evidence that has no matching decoded package occurrence.
+ */
 export const LocalizationEvidenceLineId = Schema.String.pipe(
 	Schema.brand("LocalizationEvidenceLineId")
 );
 export type LocalizationEvidenceLineId = typeof LocalizationEvidenceLineId.Type;
+/**
+ * Opaque joined localization line identifier for query and focus. Keep it with its target and
+ * retained join generation.
+ */
 export const LocalizationLineId = Schema.String.pipe(Schema.brand("LocalizationLineId"));
 export type LocalizationLineId = typeof LocalizationLineId.Type;
 /**
@@ -68,6 +92,10 @@ export const LocalizationReviewState = Schema.Union([
 	})
 ]);
 export type LocalizationReviewState = typeof LocalizationReviewState.Type;
+/**
+ * Review-file filter for current, missing, changed or machine-translated review evidence.
+ * Review status is independent of the translation's Unreal synchronization state.
+ */
 export const LocalizationReviewLens = Schema.Literals([
 	"reviewed",
 	"not_reviewed",
@@ -76,6 +104,10 @@ export const LocalizationReviewLens = Schema.Literals([
 	"machine_translated"
 ]);
 export type LocalizationReviewLens = typeof LocalizationReviewLens.Type;
+/**
+ * Compact culture state, supporting facts, unknown reasons and optional review state.
+ * reducedSourceChecking records when evidence permits only a weaker comparison.
+ */
 export const LocalizationCultureMark = Schema.Struct({
 	culture: CultureCode,
 	state: LocalizationState,
@@ -85,6 +117,10 @@ export const LocalizationCultureMark = Schema.Struct({
 	review: Schema.optionalKey(LocalizationReviewState)
 });
 export type LocalizationCultureMark = typeof LocalizationCultureMark.Type;
+/**
+ * Culture mark expanded with archive and PO evidence. Null fields preserve missing evidence; a
+ * present empty translation is different from an absent entry.
+ */
 export const LocalizationCultureState = LocalizationCultureMark.pipe(
 	Schema.fieldsAssign({
 		archive: Schema.NullOr(ArchiveEntry),
@@ -124,6 +160,11 @@ export const LocalizationKeyChange = Schema.Struct({
 	)
 });
 export type LocalizationKeyChange = typeof LocalizationKeyChange.Type;
+/**
+ * One corpus-backed or gathered-only line joined with manifest and per-culture evidence. Null
+ * identity and unknown state preserve unresolved saved text without inventing localization
+ * keys.
+ */
 export const LocalizationLine = Schema.Struct({
 	id: LocalizationLineId,
 	origin: Schema.Union([
@@ -148,6 +189,10 @@ export const LocalizationLine = Schema.Struct({
 	outOfScope: Schema.optionalKey(TextOutOfScopeReason)
 });
 export type LocalizationLine = typeof LocalizationLine.Type;
+/**
+ * Versioned target join with its native culture, culture list and lines. All line/culture
+ * judgments derive from this target's retained evidence.
+ */
 export const LocalizationJoin = Schema.Struct({
 	schemaVersion: Schema.Literal(1),
 	target: LocalizationTargetName,
@@ -156,6 +201,10 @@ export const LocalizationJoin = Schema.Struct({
 	lines: Schema.Array(LocalizationLine)
 });
 export type LocalizationJoin = typeof LocalizationJoin.Type;
+/**
+ * Target/culture and state/review scope for a query. Omitted cultures selects all target
+ * cultures; an explicit culture set must be nonempty and bounded.
+ */
 export const LocalizationSelection = Schema.Struct({
 	target: LocalizationTargetName,
 	culture: Schema.optionalKey(CultureCode),
@@ -177,11 +226,19 @@ export const LocalizationSelection = Schema.Struct({
 });
 export type LocalizationSelection = typeof LocalizationSelection.Type;
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
+/**
+ * Nonnegative line and source-word totals for every localization state. Word counts may be
+ * limited by available language evidence rather than a whitespace-only guess.
+ */
 export const LocalizationStateCounts = Schema.Record(
 	LocalizationState,
 	Schema.Struct({ lines: Count, sourceWords: Count })
 );
 export type LocalizationStateCounts = typeof LocalizationStateCounts.Type;
+/**
+ * Per-culture state totals, unknown-reason counts and reduced-source-checking count. Keep the
+ * uncertainty totals visible alongside translated counts.
+ */
 export const LocalizationCultureCounts = Schema.Struct({
 	culture: CultureCode,
 	states: LocalizationStateCounts,
@@ -189,6 +246,10 @@ export const LocalizationCultureCounts = Schema.Struct({
 	reducedSourceChecking: Count
 });
 export type LocalizationCultureCounts = typeof LocalizationCultureCounts.Type;
+/**
+ * Bounded localization line preview with up to three manifest locations and remaining-location
+ * count. Full archive/PO objects remain in the retained join, outside the page.
+ */
 export const LocalizationLinePreview = Schema.Struct({
 	id: LocalizationLineId,
 	origin: LocalizationLine.fields.origin,
@@ -208,6 +269,10 @@ export const LocalizationLinePreview = Schema.Struct({
 	).check(Schema.isMaxLength(MAX_LOCALIZATION_CULTURES))
 });
 export type LocalizationLinePreview = typeof LocalizationLinePreview.Type;
+/**
+ * Bounded joined-line page with culture/state/review totals and continuation cursor. Counts
+ * describe the whole selected scope, not only returned lines.
+ */
 export const LocalizationQueryPage = Schema.Struct({
 	target: LocalizationTargetName,
 	nextCursor: Schema.optionalKey(LocalizationLineId),
@@ -223,6 +288,10 @@ export const LocalizationQueryPage = Schema.Struct({
 	lines: Schema.Array(LocalizationLinePreview).check(Schema.isMaxLength(50))
 });
 export type LocalizationQueryPage = typeof LocalizationQueryPage.Type;
+/**
+ * Typed target lookup, manifest read or selection failure. Stable code controls recovery; cause
+ * preserves reader/decoder evidence for diagnostics.
+ */
 export class GameTextLocalizationError extends Schema.TaggedError<GameTextLocalizationError>()(
 	"GameTextLocalizationError",
 	{

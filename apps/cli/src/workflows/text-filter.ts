@@ -36,14 +36,15 @@ export const parseTextFilter = Effect.fn("Cli.text_filter.parse")(function* (
 				field,
 				op: op === "is" ? "is" : "is_not",
 				values
-			}).pipe(Effect.mapError(() => invalidClause(text)))
+			}).pipe(Effect.mapError((cause) => invalidClause(text, cause)))
 		);
 	}
 	return filter;
 });
 
-function invalidClause(text: string) {
+function invalidClause(text: string, cause?: unknown) {
 	return new GameTextLocalizationError({
+		...(cause === undefined ? undefined : { cause }),
 		retrySafe: false,
 		nextStep: "fix_input",
 		code: "invalid_selection",

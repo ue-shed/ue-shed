@@ -1,5 +1,9 @@
 import { type TextQualityRuleDocument, TextQualityRuleId, TextRoleId } from "./quality-schema.js";
 
+/**
+ * Default project-relative starter-policy location. Hosts may choose another rules file; this
+ * location is a composition default rather than an Unreal requirement.
+ */
 export const GAME_TEXT_RULES_RELATIVE_PATH = "Config/UEShed/GameTextRules.json";
 
 /** Examples to replace with a project's own scopes, budgets and vocabulary. */

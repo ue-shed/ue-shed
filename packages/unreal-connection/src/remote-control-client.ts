@@ -6,7 +6,9 @@ const RemoteCallEnvelope = Schema.Struct({ ResultJson: Schema.String });
 const decodeRemoteCallEnvelope = Schema.decodeUnknownEffect(RemoteCallEnvelope);
 
 /**
- * Classified HTTP, connection or response-contract failure with endpoint/function context and the original cause. An interrupted or malformed mutation reply can follow an applied change: honor nextStep before sending it again.
+ * Classified HTTP, connection or response-contract failure with endpoint/function context and
+ * the original cause. An interrupted or malformed mutation reply can follow an applied change:
+ * honor nextStep before sending it again.
  */
 export class RemoteControlClientError extends Schema.TaggedError<RemoteControlClientError>()(
 	"RemoteControlClientError",
@@ -30,7 +32,9 @@ export class RemoteControlClientError extends Schema.TaggedError<RemoteControlCl
 ) {}
 
 /**
- * One UFUNCTION call at an explicit editor endpoint. Timeout overrides the client's default; idempotent is an explicit caller guarantee used for recovery guidance. The adapter never retries automatically.
+ * One UFUNCTION call at an explicit editor endpoint. Timeout overrides the client's default;
+ * idempotent is an explicit caller guarantee used for recovery guidance. The adapter never
+ * retries automatically.
  */
 export interface RemoteControlRequest {
 	readonly endpoint: string;
@@ -44,7 +48,9 @@ export interface RemoteControlRequest {
 }
 
 /**
- * Effect port for one Remote Control call. It validates the ResultJson envelope and JSON result, scopes the upstream HTTP client, and reports expected failures as RemoteControlClientError.
+ * Effect port for one Remote Control call. It validates the ResultJson envelope and JSON
+ * result, scopes the upstream HTTP client, and reports expected failures as
+ * RemoteControlClientError.
  */
 export interface RemoteControlClientApi {
 	readonly request: (
@@ -56,7 +62,8 @@ export interface RemoteControlClientApi {
 export type RemoteControlClientShape = RemoteControlClientApi;
 
 /**
- * Transport service required by live Unreal domain layers. Provide a production or complete test layer; obtaining the service does not start an editor or send a request.
+ * Transport service required by live Unreal domain layers. Provide a production or complete
+ * test layer; obtaining the service does not start an editor or send a request.
  */
 export class RemoteControlClient extends Context.Service<
 	RemoteControlClient,
@@ -157,7 +164,9 @@ function transportError(request: RemoteControlRequest, cause: unknown): RemoteCo
 }
 
 /**
- * Creates the Effect HTTP adapter with an explicit default timeout. Each request scopes its upstream client, validates both JSON boundaries, and disables upstream retries, including for idempotent calls.
+ * Creates the Effect HTTP adapter with an explicit default timeout. Each request scopes its
+ * upstream client, validates both JSON boundaries, and disables upstream retries, including for
+ * idempotent calls.
  */
 export function makeRemoteControlClient(options: {
 	readonly defaultTimeout: Duration.Input;
@@ -250,7 +259,9 @@ const defaultTimeout = Config.Duration("UE_SHED_REMOTE_CONTROL_TIMEOUT").pipe(
 );
 
 /**
- * Production HTTP transport. Reads UE_SHED_REMOTE_CONTROL_TIMEOUT as an Effect duration (default 10 seconds); per-request timeouts override it. Each call owns and disposes its transport resources.
+ * Production HTTP transport. Reads UE_SHED_REMOTE_CONTROL_TIMEOUT as an Effect duration
+ * (default 10 seconds); per-request timeouts override it. Each call owns and disposes its
+ * transport resources.
  */
 export const RemoteControlClientLive = Layer.effect(
 	RemoteControlClient,
@@ -260,7 +271,8 @@ export const RemoteControlClientLive = Layer.effect(
 );
 
 /**
- * Complete test implementation of the request port. The supplied handler owns responses, typed failures and synchronization; no unstubbed production operation is used as a fallback.
+ * Complete test implementation of the request port. The supplied handler owns responses, typed
+ * failures and synchronization; no unstubbed production operation is used as a fallback.
  */
 export function makeRemoteControlClientTestLayer(
 	handle: RemoteControlClientApi["request"]

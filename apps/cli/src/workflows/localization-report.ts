@@ -31,8 +31,12 @@ export class LocalizationBaselineIOError extends Schema.TaggedError<Localization
 		recovery: Schema.String
 	}
 ) {}
-function ioError(code: LocalizationBaselineIOError["code"]): LocalizationBaselineIOError {
+function ioError(
+	code: LocalizationBaselineIOError["code"],
+	cause?: unknown
+): LocalizationBaselineIOError {
 	return new LocalizationBaselineIOError({
+		...(cause === undefined ? undefined : { cause }),
 		retrySafe: false,
 		nextStep: "fix_input",
 		code,
@@ -50,7 +54,7 @@ export const writeLocalizationBaseline = Effect.fn("Cli.localization.write_basel
 	const fs = yield* FileSystem.FileSystem;
 	const json = yield* Schema.encodeEffect(Schema.fromJsonString(LocalizationBaseline))(
 		baseline
-	).pipe(Effect.mapError(() => ioError("baseline_unwritable")));
+	).pipe(Effect.mapError((cause) => ioError("baseline_unwritable", cause)));
 	if (new TextEncoder().encode(json).length > 32 * 1024 * 1024)
 		return yield* Effect.fail(ioError("baseline_limit"));
 	yield* fs
@@ -60,7 +64,8 @@ export const writeLocalizationBaseline = Effect.fn("Cli.localization.write_basel
 				ioError(
 					error.reason._tag === "AlreadyExists"
 						? "baseline_exists"
-						: "baseline_unwritable"
+						: "baseline_unwritable",
+					error
 				)
 			)
 		);
@@ -69,16 +74,19 @@ export const readLocalizationBaseline = Effect.fn("Cli.localization.read_baselin
 	path: string
 ) {
 	const fs = yield* FileSystem.FileSystem;
-	const stat = yield* fs.stat(path).pipe(Effect.mapError(() => ioError("baseline_unreadable")));
+	const stat = yield* fs
+		.stat(path)
+		.pipe(Effect.mapError((cause) => ioError("baseline_unreadable", cause)));
 	if (stat.size > 32 * 1024 * 1024) return yield* Effect.fail(ioError("baseline_limit"));
 	const bytes = yield* fs
 		.readFile(path)
-		.pipe(Effect.mapError(() => ioError("baseline_unreadable")));
+		.pipe(Effect.mapError((cause) => ioError("baseline_unreadable", cause)));
 	if (bytes.length > 32 * 1024 * 1024) return yield* Effect.fail(ioError("baseline_limit"));
 	const text = yield* Effect.try({
 		try: () => new TextDecoder("utf-8", { fatal: true }).decode(bytes),
-		catch: () =>
+		catch: (cause) =>
 			new LocalizationReportError({
+				cause,
 				retrySafe: false,
 				nextStep: "fix_input",
 				code: "invalid_baseline",

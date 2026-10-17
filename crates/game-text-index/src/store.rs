@@ -268,15 +268,17 @@ pub fn open_root(configuration: &Configuration) -> Result<(Value, Value)> {
     )?;
     let segments = root["segments"].as_array().ok_or("invalid segments")?;
     require(segments.len() <= 256, "segment count exceeds limit")?;
-    let mut end = 0;
+    let mut end = 0u64;
     for segment in segments {
         require(
             segment["start"].as_u64() == Some(end),
             "noncontiguous dictionary",
         )?;
-        end += segment["count"]
+        let count = segment["count"]
             .as_u64()
             .ok_or("invalid dictionary count")?;
+        end = end.checked_add(count).ok_or("dictionary range overflow")?;
+        require(end <= u64::from(u32::MAX), "dictionary exceeds ID range")?;
         let file = segment["file"].as_str().ok_or("invalid segment name")?;
         filename(file, "strings-")?;
         Reader::open(&directory.join(file))?;
@@ -434,7 +436,13 @@ pub fn dictionary_bytes(directory: &Path, root: &Value) -> Result<Vec<Vec<u8>>> 
                     data.get(offsets[block] as usize..end)
                         .ok_or("front block bounds")?,
                 )
-                .map_err(|error| format!("SnapshotFormatError: front.b{frame}: {error}"))?,
+                .map_err(|error| {
+                    crate::Error::with_source(
+                        crate::ErrorCode::InvalidCache,
+                        format!("Invalid dictionary section front.b{frame}."),
+                        error,
+                    )
+                })?,
             );
         }
         require(
@@ -500,7 +508,13 @@ pub fn dictionary_selected_strings(
                     data.get(offsets[block] as usize..end)
                         .ok_or("front block bounds")?,
                 )
-                .map_err(|error| format!("SnapshotFormatError: front.b{frame}: {error}"))?;
+                .map_err(|error| {
+                    crate::Error::with_source(
+                        crate::ErrorCode::InvalidCache,
+                        format!("Invalid dictionary section front.b{frame}."),
+                        error,
+                    )
+                })?;
                 current_block = block;
             }
             let bytes = values
@@ -1355,6 +1369,19 @@ mod tests {
             shared_project: false,
             view_prefix: None,
         }
+    }
+    #[test]
+    fn malformed_dictionary_counts_are_typed_errors_without_overflow() {
+        let config = configuration();
+        let mut store = Store::writer(config.clone()).unwrap();
+        store.intern("identity", &["".into()]).unwrap();
+        store.root["segments"][0]["count"] = json!(u64::MAX);
+        store.publish_root().unwrap();
+        drop(store);
+        let error = open_root(&config).unwrap_err();
+        assert_eq!(error.code, crate::ErrorCode::InvalidCache);
+        assert!(error.to_string().contains("ID range"));
+        fs::remove_dir_all(config.cache_root).unwrap();
     }
     #[test]
     fn writer_exclusion_atomic_roots_and_reader_generations() {

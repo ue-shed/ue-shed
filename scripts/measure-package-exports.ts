@@ -10,11 +10,11 @@
  * count the whole entry point, since member attribution is conservative. Uses inside the package itself, and
  * uses in other repositories (downstream hosts), are not visible here.
  */
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Schema, SchemaGetter } from "effect";
 import ts from "typescript";
+import { publicPackageEntries } from "./public-package-entries.ts";
 import { packageImportUsages } from "./package-import-usages.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -32,51 +32,6 @@ const json = args.includes("--json");
 const selected = args.filter((argument) => !argument.startsWith("--"));
 const packages = selected.length ? selected : defaults;
 
-/** The parts of a `package.json` this measurement reads. */
-const PackageJson = Schema.Struct({
-	name: Schema.String,
-	exports: Schema.optionalKey(
-		Schema.Record(
-			Schema.String,
-			Schema.Union([
-				Schema.String.pipe(
-					Schema.decodeTo(Schema.Struct({ import: Schema.String }), {
-						decode: SchemaGetter.transform((path: string) => ({ import: path })),
-						encode: SchemaGetter.transform(({ import: path }) => path)
-					})
-				),
-				Schema.Struct({
-					import: Schema.optionalKey(Schema.String),
-					default: Schema.optionalKey(Schema.String)
-				})
-			])
-		)
-	)
-});
-
-/** Each entry point's subpath and source file, from the package's `exports` map. */
-function entryPoints(directory: string) {
-	const manifest = Schema.decodeUnknownSync(Schema.fromJsonString(PackageJson))(
-		readFileSync(join(directory, "package.json"), "utf8")
-	);
-	const entries = new Map<string, string>();
-	for (const [subpath, target] of Object.entries(manifest.exports ?? {})) {
-		const file = target.import ?? ("default" in target ? target.default : undefined);
-		if (!file || !/\.(?:js|ts)$/u.test(file)) continue;
-		// Published packages point at `dist/*.js`; private ones point straight at `src/*.ts`.
-		const source = join(
-			directory,
-			file.replace(/^\.\/dist\//u, "src/").replace(/\.js$/u, ".ts")
-		);
-		try {
-			if (statSync(source).isFile()) entries.set(subpath, source);
-		} catch {
-			// A non-TypeScript export (JSON schema, assets) has no names to measure.
-		}
-	}
-	return { name: manifest.name, entries };
-}
-
 function sourceFiles(directory: string, found: string[] = []): string[] {
 	for (const entry of readdirSync(directory, { withFileTypes: true })) {
 		if (entry.name === "node_modules" || entry.name === "dist" || entry.name.startsWith("."))
@@ -91,7 +46,7 @@ function sourceFiles(directory: string, found: string[] = []): string[] {
 
 const measured = packages.map((folder) => ({
 	folder,
-	...entryPoints(join(root, "packages", folder))
+	...publicPackageEntries(join(root, "packages", folder))
 }));
 const program = ts.createProgram(
 	measured.flatMap(({ entries }) => [...entries.values()]),

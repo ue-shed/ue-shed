@@ -114,7 +114,10 @@ export async function measureGameTextHosts(
 			`${host}:${task}`,
 			() => Effect.runPromise(preparation),
 			(file) => ({
-				builder: "TypeScript builder; native builder pending",
+				builder:
+					backend === "native"
+						? "Native public protocol adapter"
+						: "TypeScript reference builder",
 				path: file.relativePath,
 				parsed: file.parsed,
 				bytes: file.snapshotBytes
@@ -225,7 +228,10 @@ export async function measureGameTextHosts(
 			`${host}:${task}`,
 			() => Effect.runPromise(preparation),
 			(value) => ({
-				builder: "TypeScript builder; native builder pending",
+				builder:
+					backend === "native"
+						? "Native public protocol adapter"
+						: "TypeScript reference builder",
 				readPackages: value.readPackages,
 				changedShards: value.changedShards,
 				published: value.published

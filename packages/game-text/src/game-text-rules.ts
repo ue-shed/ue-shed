@@ -20,6 +20,10 @@ import type { TextCorpus } from "./schema.js";
 import { evaluateTextQuality } from "./quality.js";
 
 const [Budget, Terminology] = TextQualityRule.members;
+/**
+ * An authored localization rule with its own identity, scope, severity and recovery guidance.
+ * Hosts can extend or remove policy without changing saved-text parsing behavior.
+ */
 export const LocalizationProjectRule = Schema.Union([
 	Budget.mapFields(({ maximumCharacters, ...fields }) => ({
 		...fields,
@@ -186,6 +190,11 @@ export const TextQualityRuleDocumentV3 = TextQualityRuleDocumentV2.mapFields(
 }));
 export type TextQualityRuleDocumentV3 = typeof TextQualityRuleDocumentV3.Type;
 
+/**
+ * Versioned authored policy document accepted as v1, v2 or v3. Parse JSON with
+ * decodeGameTextRuleDocumentJson to catch duplicate keys and version-specific unknown settings
+ * before resolving checks.
+ */
 export const GameTextRuleDocument = Schema.Union([
 	TextQualityRuleDocument,
 	TextQualityRuleDocumentV2,
@@ -193,6 +202,10 @@ export const GameTextRuleDocument = Schema.Union([
 ]);
 export type GameTextRuleDocument = typeof GameTextRuleDocument.Type;
 
+/**
+ * Invalid rule JSON, structure or referenced policy identities. The stable code guides
+ * correction; the original JSON/schema cause remains available when parsing failed.
+ */
 export class GameTextRuleDocumentError extends Schema.TaggedError<GameTextRuleDocumentError>()(
 	"GameTextRuleDocumentError",
 	{
@@ -268,6 +281,11 @@ function duplicateCultureKey(input: string): boolean {
 	return false;
 }
 
+/**
+ * Validates authored rule JSON, including duplicate culture keys, declared roles and unique
+ * rule IDs. Version 3 rejects unknown settings; failures retain GameTextRuleDocumentError and
+ * the original parse issue.
+ */
 export function decodeGameTextRuleDocumentJson(
 	input: string
 ): Effect.Effect<GameTextRuleDocument, GameTextRuleDocumentError> {
@@ -317,6 +335,10 @@ export function decodeGameTextRuleDocumentJson(
 	});
 }
 
+/**
+ * Source-quality report retaining the version of the rule document that produced it. Findings
+ * describe configurable policy, not a claim that Unreal rejected the saved text.
+ */
 export const GameTextSourceQualityReport = TextQualityReport.mapFields((fields) => ({
 	...fields,
 	ruleDocumentVersion: Schema.Literals([1, 2, 3])

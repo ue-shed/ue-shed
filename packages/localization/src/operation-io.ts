@@ -16,7 +16,9 @@ export function isLocalizationFileMissing(cause: unknown): boolean {
 	return Result.isSuccess(result) && result.success.code === "ENOENT";
 }
 export function localizationIOFailure(cause: unknown): LocalizationOperationError {
-	return isLocalizationOperationError(cause) ? cause : localizationOperationError("io_failed");
+	return isLocalizationOperationError(cause)
+		? cause
+		: localizationOperationError("io_failed", cause);
 }
 function contained(root: string, candidate: string): boolean {
 	const child = relative(root, candidate);

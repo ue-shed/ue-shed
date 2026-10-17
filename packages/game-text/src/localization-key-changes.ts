@@ -23,6 +23,10 @@ export const LocalizationKeyChangePair = Schema.Struct({
 });
 export type LocalizationKeyChangePair = typeof LocalizationKeyChangePair.Type;
 
+/**
+ * One-to-one old/new localization key pairs plus ambiguous candidate count. Ambiguous changes
+ * remain unpaired so callers do not silently carry translations to an uncertain identity.
+ */
 export interface LocalizationKeyChanges {
 	readonly pairs: readonly LocalizationKeyChangePair[];
 	/** Changed keys left unpaired because more than one candidate matched. */

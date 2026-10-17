@@ -1,5 +1,9 @@
 import type { TextLocation, TextOriginKind, TextUnit, TextWhere } from "./schema.js";
 
+/**
+ * Origin categories used by saved-text discovery and file filters. Origin describes where text
+ * came from; audience and localization/gather status are separate judgments.
+ */
 export const TEXT_ORIGIN_KINDS = [
 	"string_table",
 	"data_table",
@@ -43,6 +47,10 @@ export function manifestPathOrigin(path: string): TextOriginKind {
 	return normalized.startsWith("/") ? "asset" : "other_source";
 }
 
+/**
+ * Returns the distinct saved-text origins represented by a unit's occurrences. Multiple origin
+ * kinds can contribute to one identity/source group.
+ */
 export function unitOrigins(unit: TextUnit): readonly TextOriginKind[] {
 	return [
 		...new Set(unit.occurrences.map((occurrence) => textLocationOrigin(occurrence.location)))
@@ -57,6 +65,10 @@ export function unitPaths(unit: TextUnit): readonly string[] {
 	]);
 }
 
+/**
+ * Derives all represented origin kinds from a manifest entry's recorded paths. A manifest
+ * location remains gather evidence rather than proof that the matching saved package exists.
+ */
 export function manifestOrigins(paths: readonly string[]): readonly TextOriginKind[] {
 	return [...new Set(paths.map(manifestPathOrigin))];
 }
@@ -164,6 +176,11 @@ export interface TextFileScope {
 	readonly outside: number;
 }
 
+/**
+ * Prepares normalized changed-file keys once for a query. Omitted files means unrestricted
+ * scope; absolute paths remaining after project-relative conversion are counted as outside the
+ * project.
+ */
 export function textFileScope(files: TextWhere["files"]): TextFileScope | undefined {
 	if (files === undefined) return undefined;
 	const keys = new Set<string>();
@@ -178,6 +195,10 @@ export function textFileScope(files: TextWhere["files"]): TextFileScope | undefi
 	return { keys, outside };
 }
 
+/**
+ * Tests whether any unit file key belongs to a prepared changed-file scope. An absent scope
+ * accepts all files; a present empty scope matches none.
+ */
 export function matchesTextFiles(
 	fileKeys: readonly string[],
 	scope: TextFileScope | undefined
@@ -218,6 +239,10 @@ export function unitMatchesTextWhere(unit: TextUnit, where: TextWhere | undefine
 	);
 }
 
+/**
+ * Creates a fresh zero counter for every known origin kind. Callers can accumulate their own
+ * report without sharing mutable counts between scans.
+ */
 export function emptyTextOriginCounts() {
 	return {
 		string_table: 0,

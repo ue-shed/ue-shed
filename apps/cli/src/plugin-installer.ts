@@ -241,9 +241,8 @@ async function assertOwnedFilesUnmodified(
 			if (!details.isFile())
 				fail(`Installer-owned path is no longer a regular file: ${relativePath}`);
 		} catch (cause) {
-			if (cause instanceof Error && cause.message.startsWith("Installer-owned path"))
-				throw cause;
-			fail(`Installer-owned file is missing or inaccessible: ${relativePath}`);
+			if (cause instanceof PluginInstallRejected) throw cause;
+			fail(`Installer-owned file is missing or inaccessible: ${relativePath}`, cause);
 		}
 		if ((await digestFile(path)) !== expectedDigest)
 			fail(
@@ -444,9 +443,7 @@ async function install(options: PluginInstallOptions): Promise<PluginInstallRepo
 				);
 		}
 	} catch (cause) {
-		if (cause instanceof Error && cause.message.startsWith("Refusing to install")) throw cause;
-		if (cause instanceof Error && cause.message.startsWith("Plugin destination")) throw cause;
-		if (cause instanceof Error && cause.message.startsWith("Malformed plugin")) throw cause;
+		if (cause instanceof PluginInstallRejected) throw cause;
 		destinationExists = false;
 	}
 	if (existingOwnership) await assertOwnedFilesUnmodified(destination, existingOwnership);

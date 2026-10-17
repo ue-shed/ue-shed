@@ -176,6 +176,10 @@ function includedPath(path: string, rule: GatherRule): boolean {
 	);
 }
 
+/**
+ * Evidence describing whether a saved text place belongs to a target's gather scope.
+ * Unavailable settings or hierarchy preserve unknown rather than an inferred exclusion.
+ */
 export const LocalizationGatherCoverage = Schema.Union([
 	Schema.Struct({ status: Schema.Literals(["inside", "outside"]) }),
 	Schema.Struct({ status: Schema.Literal("unknown"), reason: LocalizationUnknownReason })
@@ -301,12 +305,20 @@ function sameJson(left: typeof Schema.Json.Type, right: typeof Schema.Json.Type)
 	);
 }
 
+/**
+ * Compares source text with Unreal-compatible newline normalization. Matching text is evidence
+ * for synchronization, distinct from localization identity equality.
+ */
 export function localizationTextMatches(left: LocalizationText, right: LocalizationText): boolean {
 	return sameJson(left, right);
 }
 
 const CommentMetadata = Schema.Struct({ Comment: Schema.optionalKey(Schema.String) });
 
+/**
+ * Collects manifest developer/translator note text for presentation. It reads retained manifest
+ * evidence and does not mutate authored or gathered notes.
+ */
 export function localizationManifestNotes(entry: ManifestEntry): readonly string[] {
 	const info = Schema.decodeUnknownOption(CommentMetadata)(entry.metadata?.Info);
 	const comment = Option.isSome(info) ? (info.value.Comment ?? "") : "";

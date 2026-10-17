@@ -224,8 +224,9 @@ export const EditorWorldControlLive = Layer.effect(
 			);
 			const target = yield* objectPath(endpoint);
 			if (target.capabilities.includes("editor.world-control.async.v1")) {
-				const indeterminate = (message: string, recovery: string) =>
+				const indeterminate = (message: string, recovery: string, cause?: unknown) =>
 					failure({
+						...(cause === undefined ? undefined : { cause }),
 						code: "operation_indeterminate",
 						endpoint,
 						operation,
@@ -270,8 +271,9 @@ export const EditorWorldControlLive = Layer.effect(
 					).pipe(
 						Effect.mapError((cause) =>
 							indeterminate(
-								String(cause),
-								"Update UE Shed to matching client and plugin versions."
+								"The editor returned an invalid map-open operation status.",
+								"Update UE Shed to matching client and plugin versions.",
+								cause
 							)
 						)
 					);

@@ -10,11 +10,44 @@ import {
 	ProjectIdentity,
 	ProjectIndexGeneration,
 	ProjectIndexRefreshEvent,
+	ProjectIndexUnavailable,
+	assetReaderLayer,
 	type ProjectIndexSummary
 } from "@ue-shed/unreal-assets";
 import { GameTextIndexSource } from "./index-refresh.js";
 import { gameTextIndexSourceNodeLayer, packageTextReadBatches } from "./index-source-node.js";
 import { emptyPackageTextRecord } from "./package-text-record.js";
+
+it("preserves the Project Index failure and its recovery decision", async () => {
+	const cause = new ProjectIndexUnavailable({
+		message: "The configured catalogue cannot be opened.",
+		recovery: "Choose a writable catalogue location.",
+		retrySafe: false,
+		nextStep: "fix_input"
+	});
+	const catalog = makeProjectIndexTestLayer({
+		rebuild: () => Stream.fail(cause),
+		refresh: () => Stream.fail(cause),
+		status: () => Effect.fail(cause),
+		query: () => Effect.fail(cause)
+	});
+	const layer = gameTextIndexSourceNodeLayer("unused-cache", { refreshProjectIndex: false }).pipe(
+		Layer.provide(catalog),
+		Layer.provide(assetReaderLayer({ executable: "unused-reader" }))
+	);
+	const failure = await Effect.runPromise(
+		Effect.gen(function* () {
+			const source = yield* GameTextIndexSource;
+			return yield* source.inventory({ projectRoot: "unused-project" }).pipe(Effect.flip);
+		}).pipe(Effect.provide(layer))
+	);
+	expect(failure.cause).toBe(cause);
+	expect(failure).toMatchObject({
+		recovery: cause.recovery,
+		nextStep: "fix_input",
+		retrySafe: false
+	});
+});
 
 it.each(["before", "during"] as const)(
 	"rejects a changed bundle %s a concurrent multi-package read",

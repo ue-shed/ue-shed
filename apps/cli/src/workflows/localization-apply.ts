@@ -177,7 +177,7 @@ const syncAfterWrite = Effect.fn("Cli.localization.sync_after_write")(function* 
 	if (command.engineRoot !== undefined)
 		Object.assign(input, { explicitEngineRoot: command.engineRoot });
 	const request = yield* Schema.decodeUnknownEffect(LocalizationRunRequest)(input).pipe(
-		Effect.mapError(() => localizationOperationError("invalid_request"))
+		Effect.mapError((cause) => localizationOperationError("invalid_request", cause))
 	);
 	const operations = yield* LocalizationOperations;
 	yield* operations.run(request).pipe(

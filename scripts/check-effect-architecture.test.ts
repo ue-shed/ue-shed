@@ -116,6 +116,8 @@ test("browser import scanning distinguishes module syntax from strings and comme
 				'export const isImport = (operation: string) => operation === "import" || operation === "export";',
 				'export const label = \'import("node:fs") from ","\';',
 				'export const template = `import("node:fs")`;',
+				"/** Runs in a browser process. No Node API is required. */",
+				'export const processExample = "process.env.EXAMPLE";',
 				'// import { readFile } from "node:fs/promises";',
 				'/* export * from "electron"; */'
 			].join("\n")

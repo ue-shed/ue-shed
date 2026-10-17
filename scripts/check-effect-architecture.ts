@@ -176,6 +176,9 @@ const approvedRawFetchAdapters = new Set([
 	"packages/unreal-connection/src/remote-control-client.ts"
 ]);
 const approvedResourceAdapters = new Set([
+	// Bounded snapshot producer cancellation removes its abort listener in finally; the owning
+	// native build scope closes staging handles. Verified by native-index-lifecycle.integration.test.ts.
+	"packages/game-text/src/snapshot-file.ts",
 	// Ctrl+K, page-hide and the preference save timer belong to the Solid owner; onSettled cleanup
 	// removes them and flushes the pending save.
 	"extensions/game-text/src/game-text-query-route.tsx",
@@ -867,8 +870,19 @@ export async function checkLocalizationBoundaries(root: string = repositoryRoot)
 		visited.add(path);
 		const text = await readFile(path, "utf8");
 		const label = relative(root, path).replaceAll("\\", "/");
-		if (/\bprocess\s*\./u.test(text))
-			failures.push(`${label}: browser closure must not use process`);
+		const browserSource = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true);
+		let usesProcess = false;
+		const findProcess = (node: ts.Node): void => {
+			if (
+				(ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) &&
+				ts.isIdentifier(node.expression) &&
+				node.expression.text === "process"
+			)
+				usesProcess = true;
+			ts.forEachChild(node, findProcess);
+		};
+		findProcess(browserSource);
+		if (usesProcess) failures.push(`${label}: browser closure must not use process`);
 		const imports = moduleSpecifiers(path, text);
 		for (const specifier of imports) {
 			if (specifier === undefined) continue;
@@ -1119,7 +1133,7 @@ function objectFieldNames(
 }
 
 /**
- * Every `Schema.TaggedError` in a migrated package has `message`, `recovery`, `retrySafe` and
+ * Every production `Schema.TaggedError` has `message`, `recovery`, `retrySafe` and
  * `nextStep`, so hosts can decide what to do without parsing prose.
  */
 export async function checkErrorGuidance(root: string = repositoryRoot) {

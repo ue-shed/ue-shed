@@ -162,6 +162,10 @@ export interface TextCorpusQuery {
 	readonly summary: () => TextCorpusQuerySummary;
 }
 
+/**
+ * Creates a retained in-memory query over a corpus and optional localization join.
+ * Search/focus/export share this evidence; caller owns replacing it after a new scan.
+ */
 export function textCorpusQuery(
 	corpus: TextCorpus,
 	scannedAt?: string,

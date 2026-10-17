@@ -37,9 +37,11 @@ class LocalizationReviewCommandError extends Schema.TaggedError<LocalizationRevi
 const commandError = (
 	code: LocalizationReviewCommandError["code"],
 	message: string,
-	recovery: string
+	recovery: string,
+	cause?: unknown
 ) =>
 	new LocalizationReviewCommandError({
+		...(cause === undefined ? undefined : { cause }),
 		retrySafe: false,
 		nextStep: "fix_input",
 		code,
@@ -54,11 +56,12 @@ function parseLine(value: string) {
 		namespace: comma < 0 ? "" : value.slice(0, comma),
 		key: comma < 0 ? value : value.slice(comma + 1)
 	}).pipe(
-		Effect.mapError(() =>
+		Effect.mapError((cause) =>
 			commandError(
 				"invalid_line",
 				"A --line value is not a namespace and key.",
-				"Pass lines as Namespace,Key (an empty namespace is ,Key)."
+				"Pass lines as Namespace,Key (an empty namespace is ,Key).",
+				cause
 			)
 		)
 	);
@@ -87,11 +90,12 @@ export const runLocalizationReview = Effect.fn("Cli.workflow.localization_review
 					const culture = yield* Schema.decodeUnknownEffect(CultureCode)(
 						command.culture
 					).pipe(
-						Effect.mapError(() =>
+						Effect.mapError((cause) =>
 							commandError(
 								"invalid_selection",
 								"The culture is invalid.",
-								"Choose a culture listed by loc targets."
+								"Choose a culture listed by loc targets.",
+								cause
 							)
 						)
 					);

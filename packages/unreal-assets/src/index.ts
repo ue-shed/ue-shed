@@ -181,6 +181,7 @@ export {
 
 export {
 	NativeGameTextIndexClient,
+	type NativeGameTextIndexOutcome,
 	nativeGameTextIndexClientLayer
 } from "./game-text-index-client.js";
 export { encodeGameTextJoinInput } from "@ue-shed/protocol";

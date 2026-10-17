@@ -377,7 +377,8 @@ const makeWriter = Effect.fn("NativeIndexBuilder.writer")(function* (
 				signal
 			})
 		);
-		const result = (yield* command({ action: "join", configuration, file })).join;
+		const response = yield* command({ action: "join", configuration, file });
+		const result = response.join;
 		if (!result)
 			return yield* Effect.fail(unavailable("native-index-join", "Missing join result"));
 		if (!result.rebuilt)
@@ -408,7 +409,7 @@ const makeWriter = Effect.fn("NativeIndexBuilder.writer")(function* (
 		return {
 			rebuilt: true,
 			strategy: "full" as const,
-			incrementalFallback: undefined,
+			incrementalFallback: response.incrementalFallback,
 			key: result.key,
 			bytes: result.bytes,
 			count: result.count,

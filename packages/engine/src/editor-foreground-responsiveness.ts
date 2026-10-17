@@ -28,6 +28,7 @@ export type EditorForegroundResponsivenessFailure =
 export class EditorForegroundResponsivenessError extends Schema.TaggedError<EditorForegroundResponsivenessError>()(
 	"EditorForegroundResponsivenessError",
 	{
+		cause: Schema.optionalKey(Schema.Defect()),
 		reason: EditorForegroundResponsivenessFailure,
 		operation: Schema.String,
 		endpoint: Schema.String,
@@ -101,7 +102,8 @@ const failure = (
 	message: string,
 	recovery: string,
 	retrySafe: boolean,
-	nextStep: ErrorNextStep
+	nextStep: ErrorNextStep,
+	cause?: unknown
 ) =>
 	new EditorForegroundResponsivenessError({
 		endpoint,
@@ -110,7 +112,8 @@ const failure = (
 		message,
 		recovery,
 		retrySafe,
-		nextStep
+		nextStep,
+		...(cause === undefined ? undefined : { cause })
 	});
 
 /**
@@ -169,10 +172,11 @@ export const EditorForegroundResponsivenessLive = Layer.effect(
 							endpoint,
 							"negotiate",
 							"transport",
-							`Could not read the editor capability manifest: ${String(cause)}`,
+							`Could not read the editor capability manifest.`,
 							"Start the editor with UE Shed Core and Remote Control, then retry.",
 							true,
-							"retry"
+							"retry",
+							cause
 						)
 					)
 				);
@@ -222,10 +226,11 @@ export const EditorForegroundResponsivenessLive = Layer.effect(
 							target.endpoint,
 							request.operation,
 							"transport",
-							`The ${request.operation} request did not complete: ${String(cause)}`,
+							`The ${request.operation} request did not complete.`,
 							"Check that the editor is still running; the lease is retried automatically.",
 							true,
-							"retry"
+							"retry",
+							cause
 						)
 					)
 				);
@@ -237,10 +242,11 @@ export const EditorForegroundResponsivenessLive = Layer.effect(
 							target.endpoint,
 							request.operation,
 							"invalid_response",
-							`The editor returned an unrecognised lease result: ${String(cause)}`,
+							`The editor returned an unrecognised lease result.`,
 							"Update UE Shed Core or this client so their contracts match.",
 							false,
-							"escalate"
+							"escalate",
+							cause
 						)
 					)
 				);
@@ -461,10 +467,11 @@ export const EditorForegroundResponsivenessLive = Layer.effect(
 							endpoint,
 							"state",
 							"transport",
-							String(cause),
+							"The editor foreground state request failed.",
 							"Check that the editor is still running.",
 							true,
-							"retry"
+							"retry",
+							cause
 						)
 					),
 					Effect.flatMap((json) =>
@@ -474,10 +481,11 @@ export const EditorForegroundResponsivenessLive = Layer.effect(
 									endpoint,
 									"state",
 									"invalid_response",
-									String(cause),
+									"The editor foreground state response is invalid.",
 									"Update UE Shed Core or this client so their contracts match.",
 									false,
-									"escalate"
+									"escalate",
+									cause
 								)
 							)
 						)

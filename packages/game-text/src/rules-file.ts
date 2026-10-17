@@ -4,7 +4,9 @@ import { Effect, Schema } from "effect";
 import { GAME_TEXT_RULES_RELATIVE_PATH, STARTER_GAME_TEXT_RULES } from "./starter-rules.js";
 
 /**
- * Starter-rule creation was rejected or could not write its destination. Existing files are never overwritten; the code distinguishes that refusal from an invalid project or filesystem failure.
+ * Starter-rule creation was rejected or could not write its destination. Existing files are
+ * never overwritten; the code distinguishes that refusal from an invalid project or filesystem
+ * failure.
  */
 export class TextRulesFileError extends Schema.TaggedError<TextRulesFileError>()(
 	"TextRulesFileError",
@@ -19,7 +21,9 @@ export class TextRulesFileError extends Schema.TaggedError<TextRulesFileError>()
 ) {}
 
 /**
- * Exclusively creates the starter rule document in the selected project or explicit output path. Refuses to overwrite existing rules and reports invalid-project or write failures with recovery guidance.
+ * Exclusively creates the starter rule document in the selected project or explicit output
+ * path. Refuses to overwrite existing rules and reports invalid-project or write failures with
+ * recovery guidance.
  */
 export const createStarterTextRules = Effect.fn("GameText.createStarterTextRules")(function* (
 	projectRoot: string,
@@ -28,8 +32,9 @@ export const createStarterTextRules = Effect.fn("GameText.createStarterTextRules
 	const root = resolve(projectRoot);
 	const directory = yield* Effect.tryPromise({
 		try: () => stat(root),
-		catch: () =>
+		catch: (cause) =>
 			new TextRulesFileError({
+				cause,
 				retrySafe: false,
 				nextStep: "fix_input",
 				code: "invalid_project",
@@ -60,6 +65,7 @@ export const createStarterTextRules = Effect.fn("GameText.createStarterTextRules
 		catch: (cause) => {
 			const exists = cause instanceof Object && "code" in cause && cause.code === "EEXIST";
 			return new TextRulesFileError({
+				cause,
 				retrySafe: false,
 				nextStep: "fix_input",
 				code: exists ? "already_exists" : "write_failed",

@@ -45,19 +45,23 @@ The largest remaining gaps are the cameras browser entry (254 of 279 names witho
 consumer) and the localization browser entry (86 of 124). These numbers exclude downstream
 hosts and do not prove a name is safe to remove.
 
-Several published entry points use `export *`, so newly exported module members can become
-public without an explicit entry-point decision.
+The October 18 audit converted all reviewed entry points to explicit named exports. The public
+API guard rejects wildcard/namespace exports in these eight packages, so an internal module export
+cannot silently enlarge their public entry points.
 
 ## Cuts
 
 - **`@ue-shed/host`**: a private package with one consumer (decision 9). Its entry point now
   lists its 13 used names; the other 13 (configuration value types, the file-picker layer, the
   saved-table index layer and test layer, the sessions layer) are private.
-- **`unreal-connection`, `unreal-assets` and `cameras`**: measurement only. Their published
-  export lists and entry points remain unchanged; any cut needs a separate compatibility review.
+- **`unreal-connection`, `unreal-assets` and `cameras`**: named exports preserve the intended
+  surface; 14 obsolete `*Shape` aliases are removed in favor of their existing `*Api` names. The
+  migration guide lists them. Signature types and downstream-use candidates remain available.
 - **`protocol`, `localization` and `engine`**: published packages with downstream hosts
-  whose imports are not visible here. Their unused names are candidates, not cuts. The next step
-  for each is the D1 pattern:
-    - named-export entry points instead of `export *`;
-    - checked against the downstream host's actual imports;
-    - private schemas and helpers dropped in the same release.
+  whose imports are not visible here. Their unused names remain candidates for a separate host
+  review. Named exports now freeze the deliberate surface without speculative removals.
+
+Protocol, Unreal connection and the focused Game Text entry points now require caller-facing
+documentation for every exported symbol. Deprecated transition aliases retain their migration
+tags. The check does not claim that the other published SDKs have completed their documentation
+tier; their named surfaces are enforced while later documentation rollout remains explicit.

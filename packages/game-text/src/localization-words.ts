@@ -1,6 +1,11 @@
 import LineBreaker from "linebreak";
 import { Schema } from "effect";
 
+/**
+ * Unreal-style word-count evidence. counted uses non-empty ICU line-break spans; unknown
+ * explicitly preserves scripts that need dictionary breaking rather than guessing a numeric
+ * count.
+ */
 export const LocalizationWordCount = Schema.Union([
 	Schema.Struct({
 		status: Schema.Literal("counted"),

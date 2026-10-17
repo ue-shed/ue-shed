@@ -78,8 +78,14 @@ Every tagged error carries the same guidance fields, spread from `ErrorGuidanceF
 - `nextStep`: `fix_input`, `retry`, `reconcile` (state changed underneath; re-read first) or
   `escalate` (the caller cannot fix it). `retry` is only valid when `retrySafe` is true.
 
-`pnpm effect:architecture` enforces the fields in each package listed in its error-guidance check;
-packages join that list as their errors are migrated.
+`pnpm effect:architecture` discovers and enforces the guidance fields across all production
+packages, apps and extensions. Error matching uses tags/guards rather than tagged-class
+`instanceof`. Exported raw schema-decoder factories have no grandfathered exceptions: public
+boundaries expose unary domain parsers, retaining the original schema issues in their typed cause.
+
+The public API check also requires named entry-point exports in the eight reviewed host-facing
+packages and caller-facing documentation for protocol, Unreal connection and every focused Game
+Text entry point. Adding an internal export no longer automatically enlarges these public surfaces.
 
 UI and CLI code must not parse error text to make decisions. Translate library errors at the service
 that owns the library. Keep the useful cause.

@@ -10,7 +10,9 @@ import type { SnapshotStoreError } from "./snapshot-store.js";
 type IndexFailure = SnapshotFormatError | SnapshotStoreError;
 
 /**
- * Cache identity and optional changed files for one scoped writer lease. An absent changed-file list requests full discovery; hosts must not share a writer outside the enclosing build session.
+ * Cache identity and optional changed files for one scoped writer lease. An absent changed-file
+ * list requests full discovery; hosts must not share a writer outside the enclosing build
+ * session.
  */
 export interface GameTextIndexBuildSessionRequest {
 	readonly configuration: SharedIndexOptions;

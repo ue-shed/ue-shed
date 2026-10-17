@@ -75,10 +75,16 @@ export function gameTextIndexSourceNodeLayer(
 		Effect.gen(function* () {
 			const reader = yield* AssetReader;
 			const projectIndex = yield* ProjectIndex;
-			const mapError = (cause: { readonly message: string; readonly recovery: string }) =>
+			const mapError = (cause: {
+				readonly message: string;
+				readonly recovery: string;
+				readonly nextStep: GameTextIndexError["nextStep"];
+				readonly retrySafe: boolean;
+			}) =>
 				new GameTextIndexError({
-					nextStep: "escalate",
-					retrySafe: false,
+					cause,
+					nextStep: cause.nextStep,
+					retrySafe: cause.retrySafe,
 					code: "index_failed",
 					operation: "reader_failure",
 					message: cause.message,

@@ -22,6 +22,9 @@ function clientError(
 ): NiagaraPreviewClientError {
 	const detail = transportMessage(cause);
 	return new NiagaraPreviewClientError({
+		retrySafe: false,
+		nextStep: "reconcile",
+		code: "niagara_preview_client_failed",
 		cause,
 		message: detail === "" ? `${label} failed.` : `${label} failed: ${detail}`,
 		operation,

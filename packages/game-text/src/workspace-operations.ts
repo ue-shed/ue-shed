@@ -103,11 +103,7 @@ function failure(error: LocalizationOperationError): GameTextOperationFailure {
 	return {
 		status: "failed",
 		code: error.code,
-		message: safeLocalizationLogLine(
-			error.message === localizationOperationError(error.code).message
-				? failureMessages[error.code]
-				: error.message
-		),
+		message: failureMessages[error.code],
 		recovery: safeLocalizationLogLine(recovery),
 		details: error.logExcerpt.slice(-40).map(safeLocalizationLogLine)
 	};
@@ -269,7 +265,9 @@ export const makeGameTextOperations = Effect.fn("GameText.workspace.operations.m
 							yield* Schema.decodeUnknownEffect(OperationRelativePath)(
 								file.relativePath
 							).pipe(
-								Effect.mapError(() => localizationOperationError("unsafe_path"))
+								Effect.mapError((cause) =>
+									localizationOperationError("unsafe_path", cause)
+								)
 							);
 						const view: GameTextOperationPlan = {
 							id: randomUUID(),

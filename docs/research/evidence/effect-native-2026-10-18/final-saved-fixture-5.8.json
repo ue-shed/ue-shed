@@ -1,0 +1,193 @@
+{
+	"schemaVersion": 1,
+	"node": "v26.5.0",
+	"method": "Alternating fresh processes; warm OS caches; checkpoint memory after GC, not sampled peak RSS; first 50-line page hash parity.",
+	"results": [
+		{
+			"variant": "before",
+			"round": 0,
+			"prepareMs": 3110.4311,
+			"firstPageMs": 4.902700000000095,
+			"readyMs": 3115.3341,
+			"rssBytes": 616828928,
+			"heapBytes": 50966024,
+			"arrayBufferBytes": 12755985,
+			"readPackages": 65,
+			"parsedFiles": 7,
+			"total": 143,
+			"rows": 50,
+			"sha256": "cf7a6d8c496c3a22008784ac02e3435c5002b39d8c70d173b5a7019ece90fccb",
+			"stages": [
+				{
+					"name": "localization",
+					"ms": 896.7162000000001,
+					"sortMs": 5.979900000000043
+				},
+				{
+					"name": "packages",
+					"ms": 1775.92,
+					"sortMs": 33.42760000000044
+				},
+				{
+					"name": "join",
+					"ms": 221.3218999999999
+				}
+			]
+		},
+		{
+			"variant": "after",
+			"round": 0,
+			"prepareMs": 3159.9968999999996,
+			"firstPageMs": 5.752899999999954,
+			"readyMs": 3165.7500999999997,
+			"rssBytes": 615862272,
+			"heapBytes": 49645440,
+			"arrayBufferBytes": 5867813,
+			"readPackages": 65,
+			"parsedFiles": 7,
+			"total": 143,
+			"rows": 50,
+			"sha256": "cf7a6d8c496c3a22008784ac02e3435c5002b39d8c70d173b5a7019ece90fccb",
+			"stages": [
+				{
+					"name": "localization",
+					"ms": 870.2487,
+					"sortMs": 0
+				},
+				{
+					"name": "packages",
+					"ms": 1969.5429,
+					"sortMs": 0
+				},
+				{
+					"name": "join",
+					"ms": 36.80380000000014
+				}
+			]
+		},
+		{
+			"variant": "after",
+			"round": 1,
+			"prepareMs": 3191.608,
+			"firstPageMs": 5.1039999999998145,
+			"readyMs": 3196.7123,
+			"rssBytes": 606240768,
+			"heapBytes": 49547928,
+			"arrayBufferBytes": 13761578,
+			"readPackages": 65,
+			"parsedFiles": 7,
+			"total": 143,
+			"rows": 50,
+			"sha256": "cf7a6d8c496c3a22008784ac02e3435c5002b39d8c70d173b5a7019ece90fccb",
+			"stages": [
+				{
+					"name": "localization",
+					"ms": 873.207,
+					"sortMs": 0
+				},
+				{
+					"name": "packages",
+					"ms": 1991.2065000000002,
+					"sortMs": 0
+				},
+				{
+					"name": "join",
+					"ms": 37.461399999999685
+				}
+			]
+		},
+		{
+			"variant": "before",
+			"round": 1,
+			"prepareMs": 3097.8106,
+			"firstPageMs": 5.050499999999829,
+			"readyMs": 3102.8615,
+			"rssBytes": 643198976,
+			"heapBytes": 51012608,
+			"arrayBufferBytes": 12677162,
+			"readPackages": 65,
+			"parsedFiles": 7,
+			"total": 143,
+			"rows": 50,
+			"sha256": "cf7a6d8c496c3a22008784ac02e3435c5002b39d8c70d173b5a7019ece90fccb",
+			"stages": [
+				{
+					"name": "localization",
+					"ms": 894.1012999999999,
+					"sortMs": 5.765300000000025
+				},
+				{
+					"name": "packages",
+					"ms": 1780.0336,
+					"sortMs": 32.58510000000024
+				},
+				{
+					"name": "join",
+					"ms": 211.99599999999964
+				}
+			]
+		},
+		{
+			"variant": "before",
+			"round": 2,
+			"prepareMs": 3066.9564,
+			"firstPageMs": 5.13149999999996,
+			"readyMs": 3072.0883999999996,
+			"rssBytes": 624631808,
+			"heapBytes": 50986504,
+			"arrayBufferBytes": 12168522,
+			"readPackages": 65,
+			"parsedFiles": 7,
+			"total": 143,
+			"rows": 50,
+			"sha256": "cf7a6d8c496c3a22008784ac02e3435c5002b39d8c70d173b5a7019ece90fccb",
+			"stages": [
+				{
+					"name": "localization",
+					"ms": 892.6126,
+					"sortMs": 7.52189999999996
+				},
+				{
+					"name": "packages",
+					"ms": 1745.9254999999998,
+					"sortMs": 33.233900000000176
+				},
+				{
+					"name": "join",
+					"ms": 214.9616000000001
+				}
+			]
+		},
+		{
+			"variant": "after",
+			"round": 2,
+			"prepareMs": 3163.2236000000003,
+			"firstPageMs": 4.9474999999997635,
+			"readyMs": 3168.1714,
+			"rssBytes": 616370176,
+			"heapBytes": 49488880,
+			"arrayBufferBytes": 9591638,
+			"readPackages": 65,
+			"parsedFiles": 7,
+			"total": 143,
+			"rows": 50,
+			"sha256": "cf7a6d8c496c3a22008784ac02e3435c5002b39d8c70d173b5a7019ece90fccb",
+			"stages": [
+				{
+					"name": "localization",
+					"ms": 861.0581,
+					"sortMs": 0
+				},
+				{
+					"name": "packages",
+					"ms": 1983.4164,
+					"sortMs": 0
+				},
+				{
+					"name": "join",
+					"ms": 35.22029999999995
+				}
+			]
+		}
+	]
+}

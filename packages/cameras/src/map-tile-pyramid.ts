@@ -1,3 +1,7 @@
+/**
+ * Planar Unreal world bounds with min/max X and Y. Grid construction requires finite positive
+ * spans; Z/capture height is configured separately.
+ */
 export interface MapWorldBounds {
 	readonly minX: number;
 	readonly minY: number;
@@ -5,12 +9,20 @@ export interface MapWorldBounds {
 	readonly maxY: number;
 }
 
+/**
+ * Zero-based zoom, row and column addressing a tile. Zoom zero is coarsest; rows run from
+ * maximum X downward and columns from minimum Y upward.
+ */
 export interface MapTileKey {
 	readonly zoom: number;
 	readonly row: number;
 	readonly column: number;
 }
 
+/**
+ * One pyramid level's zoom, world-units-per-pixel, tile world size and grid dimensions. Each
+ * finer level doubles rows/columns while halving world-units-per-pixel.
+ */
 export interface MapTileLevel {
 	readonly zoom: number;
 	readonly unitsPerPixel: number;
@@ -19,6 +31,10 @@ export interface MapTileLevel {
 	readonly columns: number;
 }
 
+/**
+ * Requested/snapped planar bounds, fixed orientation, pixel tile size and pyramid levels.
+ * Snapped bounds can exceed the requested area to maintain regular parent/child alignment.
+ */
 export interface MapTileGrid {
 	readonly requestedBounds: MapWorldBounds;
 	readonly snappedBounds: MapWorldBounds;
@@ -28,6 +44,10 @@ export interface MapTileGrid {
 	readonly levels: ReadonlyArray<MapTileLevel>;
 }
 
+/**
+ * Explicit planar bounds, positive pixel tile size, coarsest world-units-per-pixel and level
+ * count. Grid construction validates numeric ranges before calculating coverage.
+ */
 export interface CreateMapTileGridOptions {
 	readonly requestedBounds: MapWorldBounds;
 	readonly tilePixelSize: number;
@@ -35,6 +55,10 @@ export interface CreateMapTileGridOptions {
 	readonly levelCount: number;
 }
 
+/**
+ * Viewport/world scale and optional hysteresis, prefetch and cache policy for one grid.
+ * Screen scale is pixels per world unit, the inverse of a level's unitsPerPixel.
+ */
 export interface MapTileSelectionOptions {
 	readonly grid: MapTileGrid;
 	readonly viewportBounds: MapWorldBounds;
@@ -45,6 +69,10 @@ export interface MapTileSelectionOptions {
 	readonly maximumCacheEntries?: number;
 }
 
+/**
+ * Chosen level, visible tiles, fallback ancestors and prefetch candidates with a bounded
+ * cache recommendation. This is a pure plan; it does not fetch images.
+ */
 export interface MapTileSelection {
 	readonly level: number;
 	readonly visible: ReadonlyArray<MapTileKey>;
@@ -80,6 +108,10 @@ function tileCountForSpan(span: number, tileWorldSize: number): number {
 	return Math.abs(quotient - nearestInteger) <= tolerance ? nearestInteger : Math.ceil(quotient);
 }
 
+/**
+ * Builds a centered snapped pyramid with a consistent Unreal XY orientation. Throws
+ * RangeError for invalid bounds/dimensions/scale rather than producing an unusable grid.
+ */
 export function createMapTileGrid(options: CreateMapTileGridOptions): MapTileGrid {
 	requireBounds(options.requestedBounds, "requestedBounds");
 	requirePositiveInteger(options.tilePixelSize, "tilePixelSize");
@@ -139,10 +171,18 @@ function levelAt(grid: MapTileGrid, zoom: number): MapTileLevel {
 	return level;
 }
 
+/**
+ * Formats a tile's stable zoom/row/column lookup key. This pure formatter assumes a valid
+ * key; use assertMapTileKey when accepting untrusted coordinates.
+ */
 export function mapTileKeyId(key: MapTileKey): string {
 	return `${key.zoom}/${key.row}/${key.column}`;
 }
 
+/**
+ * Formats a tile PNG path as Z{zoom}/R{row}_C{column} with minimum numeric padding. Does not
+ * access storage or validate that the key is inside a grid.
+ */
 export function mapTileRelativePath(key: MapTileKey): string {
 	const zoom = String(key.zoom).padStart(2, "0");
 	const row = String(key.row).padStart(3, "0");
@@ -150,6 +190,10 @@ export function mapTileRelativePath(key: MapTileKey): string {
 	return `Z${zoom}/R${row}_C${column}.png`;
 }
 
+/**
+ * Throws RangeError unless the zoom/row/column belongs to the supplied grid. Use before
+ * accessing level-dependent tile bounds.
+ */
 export function assertMapTileKey(grid: MapTileGrid, key: MapTileKey): void {
 	const level = levelAt(grid, key.zoom);
 	if (
@@ -164,6 +208,10 @@ export function assertMapTileKey(grid: MapTileGrid, key: MapTileKey): void {
 	}
 }
 
+/**
+ * Returns a validated tile's planar world footprint using the grid's fixed row/column
+ * orientation. Throws for an out-of-grid key; Z is not part of this footprint.
+ */
 export function mapTileWorldBounds(grid: MapTileGrid, key: MapTileKey): MapWorldBounds {
 	assertMapTileKey(grid, key);
 	const span = grid.levels[key.zoom]!.tileWorldSize;
@@ -172,6 +220,10 @@ export function mapTileWorldBounds(grid: MapTileGrid, key: MapTileKey): MapWorld
 	return { minX: maxX - span, minY, maxX, maxY: minY + span };
 }
 
+/**
+ * Maps a finite world XY point to a tile at an existing level, or undefined outside snapped
+ * bounds. Includes outer grid edges by clamping the final row/column index.
+ */
 export function worldToMapTile(
 	grid: MapTileGrid,
 	zoom: number,
@@ -199,6 +251,10 @@ export function worldToMapTile(
 	};
 }
 
+/**
+ * Returns the coarser parent by halving row/column, or undefined at zoom zero. This pure
+ * addressing helper does not prove the input belongs to a particular grid.
+ */
 export function mapTileParent(key: MapTileKey): MapTileKey | undefined {
 	if (key.zoom === 0) return undefined;
 	return {
@@ -208,6 +264,10 @@ export function mapTileParent(key: MapTileKey): MapTileKey | undefined {
 	};
 }
 
+/**
+ * Returns four next-level children in row-major order. Callers must check the grid's finest
+ * level before requesting children beyond its coverage.
+ */
 export function mapTileChildren(
 	key: MapTileKey
 ): readonly [MapTileKey, MapTileKey, MapTileKey, MapTileKey] {
@@ -222,6 +282,11 @@ export function mapTileChildren(
 	];
 }
 
+/**
+ * Selects the nearest supported level for screen pixels per world unit, optionally retaining
+ * the current level within a hysteresis band. Throws on non-positive scale or invalid
+ * hysteresis.
+ */
 export function chooseMapTileLevel(args: {
 	readonly grid: MapTileGrid;
 	readonly screenPixelsPerWorldUnit: number;
@@ -252,6 +317,10 @@ export function chooseMapTileLevel(args: {
 	return current;
 }
 
+/**
+ * Returns tiles intersecting the viewport at one grid level. Clips to snapped bounds, returns
+ * empty for no overlap and validates the viewport before enumeration.
+ */
 export function visibleMapTiles(
 	grid: MapTileGrid,
 	zoom: number,
@@ -288,6 +357,10 @@ function uniqueTiles(tiles: Iterable<MapTileKey>): ReadonlyArray<MapTileKey> {
 	return [...new Map([...tiles].map((tile) => [mapTileKeyId(tile), tile])).values()];
 }
 
+/**
+ * Returns successive parents from nearest to zoom zero. This is used for image fallback while
+ * finer tiles load; it does not fetch or validate availability.
+ */
 export function mapTileAncestorChain(key: MapTileKey): ReadonlyArray<MapTileKey> {
 	const ancestors: MapTileKey[] = [];
 	let current = mapTileParent(key);
@@ -322,6 +395,10 @@ function prefetchMapTiles(args: {
 	return result;
 }
 
+/**
+ * Computes visible, ancestor and bounded prefetch/cache recommendations from explicit
+ * viewport policy. Throws for invalid scale/ring/cache inputs and performs no image IO.
+ */
 export function selectMapTiles(options: MapTileSelectionOptions): MapTileSelection {
 	const level = chooseMapTileLevel(options);
 	const visible = visibleMapTiles(options.grid, level, options.viewportBounds);
@@ -345,6 +422,10 @@ export function selectMapTiles(options: MapTileSelectionOptions): MapTileSelecti
 	};
 }
 
+/**
+ * Chooses each desired tile or its nearest available ancestor by lookup key. Returns missing
+ * desired tiles explicitly and deduplicates fallback render tiles.
+ */
 export function resolveAvailableMapTiles(args: {
 	readonly desired: ReadonlyArray<MapTileKey>;
 	readonly available: ReadonlySet<string>;

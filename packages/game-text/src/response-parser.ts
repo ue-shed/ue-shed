@@ -8,6 +8,7 @@ import { Effect, Schema } from "effect";
 export class GameTextResponseError extends Schema.TaggedError<GameTextResponseError>()(
 	"GameTextResponseError",
 	{
+		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
 		code: Schema.Literal("invalid_response"),
 		message: Schema.String,
 		recovery: Schema.String,
@@ -33,6 +34,7 @@ export function gameTextResponseParser<S extends Schema.Codec<unknown, unknown>>
 			Effect.mapError(
 				(cause) =>
 					new GameTextResponseError({
+						nextStep: "escalate",
 						code: "invalid_response",
 						message: `The ${subject} does not match the Game Text contract.`,
 						recovery:

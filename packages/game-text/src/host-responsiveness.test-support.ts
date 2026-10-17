@@ -177,6 +177,45 @@ export const makeSyntheticHostFixture = Effect.fn("Test.GameText.hostFixture")(f
 	});
 	// Reader records arrive in pipe-sized groups on separate macrotasks.
 	const reader = makeAssetReaderTestLayer({
+		configuration: () =>
+			Effect.succeed({
+				executable: "uasset",
+				timeoutMs: 30_000,
+				catalogTimeoutMs: 50 * 60_000
+			}),
+		catalogProgress: () =>
+			Effect.succeed({
+				phase: "idle",
+				cacheHits: 0,
+				processedAssets: 0,
+				tablesFound: 0,
+				totalAssets: 0
+			}),
+		scanProgress: () =>
+			Effect.succeed({
+				phase: "idle",
+				cacheHits: 0,
+				emittedAssets: 0,
+				processedAssets: 0,
+				totalAssets: 0
+			}),
+		savedWorldProgress: () =>
+			Effect.succeed({
+				phase: "idle",
+				actorsFound: 0,
+				processedPackages: 0,
+				totalPackages: 0
+			}),
+		readBlueprint: () =>
+			Effect.die(new Error("Unexpected readBlueprint in this reader fixture")),
+		readLevelSequence: () =>
+			Effect.die(new Error("Unexpected readLevelSequence in this reader fixture")),
+		readSavedWorld: () =>
+			Effect.die(new Error("Unexpected readSavedWorld in this reader fixture")),
+		extractProjectText: () =>
+			Stream.die(new Error("Unexpected extractProjectText in this reader fixture")),
+		extractProjectTextures: () =>
+			Stream.die(new Error("Unexpected extractProjectTextures in this reader fixture")),
 		discoverAssets: () => Effect.die("unused"),
 		discoverTables: () => Effect.die("unused"),
 		readAsset: () => Effect.die("unused"),

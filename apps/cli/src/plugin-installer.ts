@@ -33,7 +33,14 @@ export type PluginReleaseManifest = PluginBundleManifest;
 
 export class PluginInstallerError extends Schema.TaggedError<PluginInstallerError>()(
 	"PluginInstallerError",
-	{ message: Schema.String, ...ErrorCauseFields }
+	{
+		recovery: Schema.String,
+		retrySafe: Schema.Boolean,
+		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		code: Schema.Literal("plugin_installer_failed"),
+		message: Schema.String,
+		...ErrorCauseFields
+	}
 ) {}
 
 export interface PluginVerificationReport {
@@ -234,9 +241,8 @@ async function assertOwnedFilesUnmodified(
 			if (!details.isFile())
 				fail(`Installer-owned path is no longer a regular file: ${relativePath}`);
 		} catch (cause) {
-			if (cause instanceof Error && cause.message.startsWith("Installer-owned path"))
-				throw cause;
-			fail(`Installer-owned file is missing or inaccessible: ${relativePath}`);
+			if (cause instanceof PluginInstallRejected) throw cause;
+			fail(`Installer-owned file is missing or inaccessible: ${relativePath}`, cause);
 		}
 		if ((await digestFile(path)) !== expectedDigest)
 			fail(
@@ -437,9 +443,7 @@ async function install(options: PluginInstallOptions): Promise<PluginInstallRepo
 				);
 		}
 	} catch (cause) {
-		if (cause instanceof Error && cause.message.startsWith("Refusing to install")) throw cause;
-		if (cause instanceof Error && cause.message.startsWith("Plugin destination")) throw cause;
-		if (cause instanceof Error && cause.message.startsWith("Malformed plugin")) throw cause;
+		if (cause instanceof PluginInstallRejected) throw cause;
 		destinationExists = false;
 	}
 	if (existingOwnership) await assertOwnedFilesUnmodified(destination, existingOwnership);
@@ -585,12 +589,22 @@ function fromPromise<A>(
 		catch: (cause) => {
 			if (cause instanceof PluginInstallRejected) {
 				return new PluginInstallerError({
+					recovery:
+						"Inspect the plugin destination and retained cause, then repair the installation before retrying.",
+					retrySafe: false,
+					nextStep: "escalate",
+					code: "plugin_installer_failed",
 					message: cause.message,
-					...(cause.cause === undefined ? undefined : { cause: cause.cause })
+					cause
 				});
 			}
 			const code = errnoCode(cause);
 			return new PluginInstallerError({
+				recovery:
+					"Inspect the plugin destination and retained cause, then repair the installation before retrying.",
+				retrySafe: false,
+				nextStep: "escalate",
+				code: "plugin_installer_failed",
 				message:
 					code === "EACCES" || code === "EPERM"
 						? `Permission was denied while trying to ${operation}.`

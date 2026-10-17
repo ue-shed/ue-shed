@@ -111,6 +111,7 @@ export type ContentObservatoryState = Schema.Schema.Type<typeof ContentObservato
 export class ContentObservatoryContractError extends Schema.TaggedError<ContentObservatoryContractError>()(
 	"ContentObservatoryContractError",
 	{
+		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
 		code: Schema.Literal("invalid_contract"),
 		message: Schema.String,
 		recovery: Schema.String,
@@ -136,6 +137,7 @@ function contentObservatoryContractParser<S extends Schema.Codec<unknown, unknow
 			Effect.mapError(
 				(cause) =>
 					new ContentObservatoryContractError({
+						nextStep: "escalate",
 						code: "invalid_contract",
 						message: `The ${subject} does not match the Content Observatory contract.`,
 						recovery:
@@ -155,6 +157,10 @@ export const parseContentObservatoryState = contentObservatoryContractParser(
 export class ContentObservatoryClientError extends Schema.TaggedError<ContentObservatoryClientError>()(
 	"ContentObservatoryClientError",
 	{
+		message: Schema.String,
+		retrySafe: Schema.Boolean,
+		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		code: Schema.Literal("content_observatory_client_failed"),
 		cause: Schema.Defect(),
 		operation: Schema.String,
 		recovery: Schema.String

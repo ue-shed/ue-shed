@@ -32,6 +32,8 @@ const decodePreviewRequest = Schema.decodeUnknownEffect(PreviewRequest);
 export class OfflineTexturePreviewError extends Schema.TaggedError<OfflineTexturePreviewError>()(
 	"Workbench.OfflineTexturePreviewError",
 	{
+		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		cause: Schema.optionalKey(Schema.Defect()),
 		code: Schema.Literals([
 			"cache_failure",
 			"commandlet_failed",
@@ -78,9 +80,17 @@ function previewError(
 	code: OfflineTexturePreviewError["code"],
 	message: string,
 	recovery: string,
-	retrySafe: boolean
+	retrySafe: boolean,
+	cause?: unknown
 ): OfflineTexturePreviewError {
-	return new OfflineTexturePreviewError({ code, message, recovery, retrySafe });
+	return new OfflineTexturePreviewError({
+		nextStep: "escalate",
+		code,
+		message,
+		recovery,
+		retrySafe,
+		...(cause === undefined ? undefined : { cause })
+	});
 }
 
 function commandletExecutable(engineRoot: string): string {
@@ -233,9 +243,10 @@ function readPreview(
 			catch: (cause) =>
 				previewError(
 					"contract_failure",
-					`Saved texture preview was not JSON: ${String(cause)}`,
+					`Saved texture preview was not JSON.`,
 					"Regenerate the saved preview.",
-					true
+					true,
+					cause
 				)
 		});
 		return yield* decodeTexturePreviewResult(json);
@@ -245,9 +256,10 @@ function readPreview(
 				? cause
 				: previewError(
 						"contract_failure",
-						`Unreal returned an invalid texture preview: ${String(cause)}`,
+						`Unreal returned an invalid texture preview.`,
 						"Update UE Shed so Workbench and the Unreal plugin use compatible contracts.",
-						false
+						false,
+						cause
 					)
 		)
 	);
@@ -290,9 +302,10 @@ export const OfflineTexturePreviewLive = Layer.effect(
 				Effect.mapError((cause) =>
 					previewError(
 						"contract_failure",
-						`Invalid internal preview request: ${String(cause)}`,
+						`Invalid internal preview request.`,
 						"Restart Workbench.",
-						false
+						false,
+						cause
 					)
 				)
 			);

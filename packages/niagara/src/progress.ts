@@ -39,11 +39,12 @@ export const readNiagaraPreviewProgress = Effect.fn("NiagaraPreview.readProgress
 				throw error;
 			}
 		},
-		catch: () =>
+		catch: (cause) =>
 			progressError(
 				"Could not read bounded Niagara progress.",
 				"retry",
-				"Read progress again; the preview run does not depend on it."
+				"Read progress again; the preview run does not depend on it.",
+				cause
 			)
 	});
 	if (text === undefined) return undefined;

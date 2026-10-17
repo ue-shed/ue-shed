@@ -82,6 +82,7 @@ const decodeScanOptions = Schema.decodeUnknownEffect(EnhancedInputScanOptions);
 function enhancedInputScanFailure(error: AssetReaderError): EnhancedInputScanError {
 	if (error.kind === "resource_limit") {
 		return new EnhancedInputScanError({
+			cause: error,
 			code: "scan_limit_exceeded",
 			message: error.message,
 			recovery: "Narrow the project or raise the explicit maximum asset limit.",
@@ -90,9 +91,10 @@ function enhancedInputScanFailure(error: AssetReaderError): EnhancedInputScanErr
 		});
 	}
 	return new EnhancedInputScanError({
-		code: "invalid_project",
+		cause: error,
+		code: error.kind === "discovery" ? "invalid_project" : "reader_failed",
 		message: error.message,
-		recovery: "Choose an Unreal project directory containing a Content folder.",
+		recovery: error.recovery,
 		retrySafe: error.retrySafe,
 		nextStep: error.nextStep
 	});
@@ -481,6 +483,7 @@ function inspectEnhancedInputPathWith(
 			Effect.mapError(
 				(error) =>
 					new EnhancedInputScanError({
+						cause: error,
 						code: "invalid_path",
 						message: error.message,
 						recovery: "Provide a readable .uasset path or Unreal project root.",

@@ -57,6 +57,11 @@ function readJsonDocument(path: string): Effect.Effect<unknown, CliCommandError>
 			Schema.decodeUnknownSync(Schema.Json)(JSON.parse(await readFile(path, "utf8"))),
 		catch: (cause) =>
 			new CliCommandError({
+				recovery:
+					"Inspect the command context and original cause before deciding whether to retry.",
+				retrySafe: false,
+				nextStep: "escalate",
+				code: "cli_command_failed",
 				message: jsonInputFileMessage("JSON document", path, cause),
 				cause
 			})
@@ -69,6 +74,11 @@ function invalidDocument(label: string, path: string) {
 		isCliCommandError(cause)
 			? cause
 			: new CliCommandError({
+					recovery:
+						"Inspect the command context and original cause before deciding whether to retry.",
+					retrySafe: false,
+					nextStep: "escalate",
+					code: "cli_command_failed",
 					message: `${label} ${path} does not match the ${label} schema.`,
 					cause
 				});
@@ -196,6 +206,11 @@ export const runReviewFraming = Effect.fn("Cli.workflow.review_framing")(
 					if (selection.status === "failed") {
 						return yield* Effect.fail(
 							new CliCommandError({
+								recovery:
+									"Inspect the command context and original cause before deciding whether to retry.",
+								retrySafe: false,
+								nextStep: "escalate",
+								code: "cli_command_failed",
 								message: `${selection.message} ${selection.recovery}`
 							})
 						);
@@ -225,6 +240,11 @@ export const runReviewFraming = Effect.fn("Cli.workflow.review_framing")(
 					if (!candidate) {
 						return yield* Effect.fail(
 							new CliCommandError({
+								recovery:
+									"Inspect the command context and original cause before deciding whether to retry.",
+								retrySafe: false,
+								nextStep: "escalate",
+								code: "cli_command_failed",
 								message: `Unknown framing candidate: ${command.candidateId}`
 							})
 						);
@@ -244,6 +264,11 @@ export const runReviewFraming = Effect.fn("Cli.workflow.review_framing")(
 					if (approved.status === "view_not_found") {
 						return yield* Effect.fail(
 							new CliCommandError({
+								recovery:
+									"Inspect the command context and original cause before deciding whether to retry.",
+								retrySafe: false,
+								nextStep: "escalate",
+								code: "cli_command_failed",
 								message: `Review View ${approved.viewId} was not found`
 							})
 						);
@@ -344,6 +369,11 @@ export const runReviewAuthoring = Effect.fn("Cli.workflow.review_authoring")(
 					if (selection.status === "failed") {
 						return yield* Effect.fail(
 							new CliCommandError({
+								recovery:
+									"Inspect the command context and original cause before deciding whether to retry.",
+								retrySafe: false,
+								nextStep: "escalate",
+								code: "cli_command_failed",
 								message: `${selection.message} ${selection.recovery}`
 							})
 						);

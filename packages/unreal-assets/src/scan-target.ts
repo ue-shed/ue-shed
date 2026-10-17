@@ -3,6 +3,10 @@ import { dirname, extname, join, resolve } from "node:path";
 import { Effect } from "effect";
 import { AssetReaderError, assetReaderGuidance } from "./asset-reader.js";
 
+/**
+ * Explicit owning project root and restricted enumeration paths resolved from a caller's
+ * path. An empty paths list means the project's Content directory, not the whole filesystem.
+ */
 export interface ResolvedScanTarget {
 	/** Roots to enumerate. Empty means the project's whole `Content` directory. */
 	readonly paths: readonly string[];
@@ -35,8 +39,8 @@ export function resolveScanTarget(
 	return Effect.tryPromise({
 		try: async (): Promise<ResolvedScanTarget> => {
 			const target = resolve(path);
-			const details = await stat(target).catch(() => {
-				throw new ScanTargetError(`Scan target does not exist: ${target}`);
+			const details = await stat(target).catch((cause) => {
+				throw new ScanTargetError(`Scan target does not exist: ${target}`, { cause });
 			});
 			if (details.isFile() && extname(target).toLowerCase() === ".uproject") {
 				return { paths: [], projectRoot: dirname(target) };
@@ -79,7 +83,7 @@ export function resolveScanTarget(
 				path,
 				retrySafe: false,
 				...assetReaderGuidance("discovery", false),
-				...(cause instanceof ScanTargetError ? undefined : { cause })
+				cause
 			})
 	}).pipe(Effect.withSpan("unreal_assets.resolve_scan_target"));
 }

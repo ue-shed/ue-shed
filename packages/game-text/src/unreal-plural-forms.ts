@@ -45,6 +45,10 @@ const ordinal = [
 	}
 ];
 
+/**
+ * Returns plural-category evidence for a culture's Unreal format modifiers. Unsupported
+ * cultures remain explicit instead of substituting another culture's grammar.
+ */
 export function unrealPluralForms(
 	culture: CultureCode,
 	type: "cardinal" | "ordinal"

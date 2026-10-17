@@ -1,6 +1,8 @@
 //! Game Text column encoding and shared-store mechanics, used by the native IO build capability.
 //! Native IO owns transport; this library never reads Unreal projects or launches editors.
 mod bounded_intern;
+mod error;
+pub use error::{Error, ErrorCode};
 pub mod builder;
 pub mod dictionary;
 pub mod join;
@@ -17,9 +19,9 @@ pub mod snapshot;
 pub mod store;
 pub mod wtf8;
 
-pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
+pub type Result<T> = std::result::Result<T, Error>;
 
-pub fn require(ok: bool, message: &str) -> Result<()> {
+pub fn require(ok: bool, message: impl Into<Error>) -> Result<()> {
     if ok { Ok(()) } else { Err(message.into()) }
 }
 

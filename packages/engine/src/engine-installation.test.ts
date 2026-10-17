@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { it } from "@effect/vitest";
@@ -8,6 +8,32 @@ import {
 	EngineInstallationDiscovery,
 	EngineInstallationDiscoveryLive
 } from "./engine-installation.js";
+
+it.effect("preserves JSON and filesystem causes during explicit discovery", () =>
+	Effect.gen(function* () {
+		const root = yield* Effect.acquireRelease(
+			Effect.promise(() => mkdtemp(join(tmpdir(), "ue-shed-engine-cause-"))),
+			(root) => Effect.promise(() => rm(root, { recursive: true, force: true }))
+		);
+		const build = join(root, "Engine", "Build");
+		yield* Effect.promise(() => mkdir(build, { recursive: true }));
+		yield* Effect.promise(() => writeFile(join(build, "Build.version"), "not-json"));
+		const discovery = yield* EngineInstallationDiscovery;
+		const invalid = yield* Effect.flip(
+			discovery.resolve({
+				explicitRoot: root,
+				projectDescriptor: join(root, "Game.uproject")
+			})
+		);
+		expect(invalid.code).toBe("invalid_engine_root");
+		expect(invalid.cause).toBeInstanceOf(SyntaxError);
+		const absent = yield* Effect.flip(
+			discovery.resolve({ projectDescriptor: join(root, "Missing.uproject") })
+		);
+		expect(absent.code).toBe("invalid_project_descriptor");
+		expect(absent.cause).toMatchObject({ code: "ENOENT" });
+	}).pipe(Effect.scoped, Effect.provide(EngineInstallationDiscoveryLive))
+);
 
 it.effect("resolves an explicitly selected engine without a machine default", () =>
 	Effect.gen(function* () {

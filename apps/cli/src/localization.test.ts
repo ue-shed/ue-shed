@@ -66,10 +66,8 @@ it.effect("loc status provides safe recovery for missing manifests and reader fa
 			yield* Ref.get(output)
 		);
 		expect(failed.error.code).toBe("reader_failure");
-		expect(failed.error.message).toContain("ENOENT");
-		expect(failed.error.recovery).toBe(
-			"Choose an Unreal project directory containing a Content folder."
-		);
+		expect(failed.error.message).toBe("The native Game Text index executable is unavailable.");
+		expect(failed.error.recovery).toContain("@ue-shed/uasset");
 		expect(yield* Ref.get(exitCode)).toBe(2);
 	})
 );
@@ -83,6 +81,9 @@ it.effect("a manifest over the byte limit keeps its cause and recovery before sc
 				refresh: () =>
 					Effect.fail(
 						new GameTextIndexError({
+							nextStep: "escalate",
+							retrySafe: false,
+							code: "index_failed",
 							operation: "manifest",
 							message: "Localization evidence could not be read (limit_exceeded).",
 							recovery:

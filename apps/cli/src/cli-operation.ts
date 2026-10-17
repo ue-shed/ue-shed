@@ -17,7 +17,17 @@ export function observeCliOperation<A, E, R>(
 			attributes: { "cli.command": command }
 		}),
 		Effect.mapError((cause) =>
-			isCliCommandError(cause) ? cause : new CliCommandError({ message: messageOf(cause) })
+			isCliCommandError(cause)
+				? cause
+				: new CliCommandError({
+						cause: cause,
+						recovery:
+							"Inspect the command context and original cause before deciding whether to retry.",
+						retrySafe: false,
+						nextStep: "escalate",
+						code: "cli_command_failed",
+						message: messageOf(cause)
+					})
 		)
 	);
 }

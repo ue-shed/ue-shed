@@ -77,6 +77,10 @@ describe("BlueprintGraphsRoute", () => {
 		host.readBlueprint.mockReturnValue(
 			Effect.fail(
 				new WorkbenchRendererError({
+					message: "The WorkbenchRenderer operation failed.",
+					retrySafe: false,
+					nextStep: "reconcile",
+					code: "workbench_renderer_failed",
 					cause: "IPC unavailable",
 					operation: "blueprintGraphs.read",
 					recovery: "Retry"

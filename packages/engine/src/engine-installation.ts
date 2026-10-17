@@ -4,6 +4,10 @@ import { basename, dirname, extname, join, resolve } from "node:path";
 import { ErrorCauseFields, ErrorGuidanceFields } from "@ue-shed/protocol";
 import { Config, Context, Effect, Layer, Schema } from "effect";
 
+/**
+ * Non-negative Unreal major, minor and patch numbers read from Build.version. This identifies
+ * an installed engine version, not compatibility of compiled project/plugin binaries.
+ */
 export const EngineVersion = Schema.Struct({
 	major: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 	minor: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
@@ -17,9 +21,19 @@ const EngineBuildVersion = Schema.Struct({
 	PatchVersion: Schema.optional(Schema.Int)
 });
 
+/**
+ * Engine association projected from a .uproject descriptor. Other descriptor fields are
+ * outside this discovery model; use Unreal's full descriptor contract for editing project
+ * files.
+ */
 export const ProjectDescriptor = Schema.Struct({
 	EngineAssociation: Schema.optional(Schema.String)
 });
+/**
+ * Engine association projected from a .uproject descriptor. Other descriptor fields are
+ * outside this discovery model; use Unreal's full descriptor contract for editing project
+ * files.
+ */
 export interface ProjectDescriptor extends Schema.Schema.Type<typeof ProjectDescriptor> {}
 
 const registeredBuildsKey = "HKCU\\Software\\Epic Games\\Unreal Engine\\Builds";
@@ -31,17 +45,30 @@ const LauncherInstalled = Schema.Struct({
 	)
 });
 
+/**
+ * Discovered or explicitly configured engine root with its Build.version identity. Discovery
+ * does not imply that required editor/plugin binaries are present or build-compatible.
+ */
 export const EngineInstallation = Schema.Struct({
 	root: Schema.NonEmptyString,
 	version: EngineVersion
 });
 export type EngineInstallation = typeof EngineInstallation.Type;
 
+/**
+ * Project descriptor and optional explicit engine root for discovery. An explicit root
+ * overrides association discovery; the resolver does not choose or mutate the host's active
+ * project.
+ */
 export interface EngineInstallationRequest {
 	readonly projectDescriptor: string;
 	readonly explicitRoot?: string;
 }
 
+/**
+ * Invalid descriptor/root, missing installation or ambiguous engine selection. Candidate
+ * labels and original parse/IO causes support recovery; ambiguity requires an explicit root.
+ */
 export class EngineInstallationError extends Schema.TaggedError<EngineInstallationError>()(
 	"EngineInstallationError",
 	{
@@ -57,12 +84,20 @@ export class EngineInstallationError extends Schema.TaggedError<EngineInstallati
 	}
 ) {}
 
+/**
+ * Resolves one engine installation from an explicit root or project association. Multiple
+ * matching candidates are reported rather than choosing an arbitrary engine.
+ */
 export interface EngineInstallationDiscoveryApi {
 	readonly resolve: (
 		request: EngineInstallationRequest
 	) => Effect.Effect<EngineInstallation, EngineInstallationError>;
 }
 
+/**
+ * Replaceable engine-installation resolution port. Headless hosts can supply explicit
+ * discovery without any Workbench dependency.
+ */
 export class EngineInstallationDiscovery extends Context.Service<
 	EngineInstallationDiscovery,
 	EngineInstallationDiscoveryApi
@@ -91,7 +126,7 @@ function failure(
 function readJson(path: string, code: EngineInstallationError["code"]) {
 	return Effect.tryPromise({
 		try: (signal) => readFile(path, { encoding: "utf8", signal }).then(JSON.parse),
-		catch: () =>
+		catch: (cause) =>
 			failure(
 				code,
 				code === "invalid_project_descriptor"
@@ -100,7 +135,9 @@ function readJson(path: string, code: EngineInstallationError["code"]) {
 				code === "invalid_project_descriptor"
 					? "Choose a readable Unreal .uproject descriptor."
 					: "Choose an Unreal installation root containing Engine/Build/Build.version.",
-				false
+				false,
+				undefined,
+				cause
 			)
 	});
 }
@@ -176,6 +213,11 @@ function withoutTrailingCommas(contents: string): string {
 	return result;
 }
 
+/**
+ * Parses .uproject JSON with supported comments and trailing commas, then validates the
+ * engine-association projection. This synchronous boundary throws on malformed JSON or an
+ * invalid projected field.
+ */
 export function parseUnrealProjectDescriptor(contents: string): ProjectDescriptor {
 	const withoutBom = contents.charCodeAt(0) === 0xfeff ? contents.slice(1) : contents;
 	return Schema.decodeUnknownSync(ProjectDescriptor)(
@@ -192,14 +234,16 @@ function installationAt(root: string): Effect.Effect<EngineInstallation, EngineI
 		).pipe(
 			Effect.flatMap(Schema.decodeUnknownEffect(EngineBuildVersion)),
 			Effect.mapError((cause) =>
-				failure(
-					"invalid_engine_root",
-					"The selected Unreal Build.version has an invalid version contract.",
-					"Choose a complete Unreal installation root.",
-					false,
-					undefined,
-					cause
-				)
+				Schema.is(EngineInstallationError)(cause)
+					? cause
+					: failure(
+							"invalid_engine_root",
+							"The selected Unreal Build.version has an invalid version contract.",
+							"Choose a complete Unreal installation root.",
+							false,
+							undefined,
+							cause
+						)
 			)
 		);
 		return {
@@ -230,12 +274,14 @@ function associationOf(
 				readFile(projectDescriptor, { encoding: "utf8", signal }).then(
 					parseUnrealProjectDescriptor
 				),
-			catch: () =>
+			catch: (cause) =>
 				failure(
 					"invalid_project_descriptor",
 					"The selected .uproject descriptor is unreadable or invalid JSON.",
 					"Choose a readable Unreal .uproject descriptor.",
-					false
+					false,
+					undefined,
+					cause
 				)
 		});
 		return value.EngineAssociation?.trim() || undefined;
@@ -335,6 +381,10 @@ function discoverStandardInstallations(options: {
 const programFiles = Config.String("ProgramFiles").pipe(Config.withDefault("C:\\Program Files"));
 const programData = Config.String("ProgramData").pipe(Config.withDefault("C:\\ProgramData"));
 
+/**
+ * Reads explicit engine roots and Windows registered/Launcher installations using project
+ * association. Rejects missing or ambiguous matches; it does not download or build an engine.
+ */
 export const EngineInstallationDiscoveryLive = Layer.effect(
 	EngineInstallationDiscovery,
 	Effect.gen(function* () {
@@ -379,6 +429,10 @@ export const EngineInstallationDiscoveryLive = Layer.effect(
 	})
 );
 
+/**
+ * Provides engine resolution from a supplied Effect function. Tests control installations and
+ * discovery errors without consulting machine registry or filesystem discovery.
+ */
 export function makeEngineInstallationDiscoveryTestLayer(
 	resolveInstallation: EngineInstallationDiscoveryApi["resolve"]
 ): Layer.Layer<EngineInstallationDiscovery> {
@@ -388,10 +442,18 @@ export function makeEngineInstallationDiscoveryTestLayer(
 	);
 }
 
+/**
+ * Returns the descriptor's filename without its extension for display. This performs no IO
+ * and does not establish a unique or validated project identity.
+ */
 export function projectLabel(projectDescriptor: string): string {
 	return basename(projectDescriptor, extname(projectDescriptor));
 }
 
+/**
+ * Returns the descriptor's parent directory without filesystem discovery. Supply the intended
+ * descriptor explicitly; this helper does not search ambient directories.
+ */
 export function projectRootOf(projectDescriptor: string): string {
 	return dirname(projectDescriptor);
 }

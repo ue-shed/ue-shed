@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { it } from "@effect/vitest";
 import { Effect, Layer, Ref, Schema } from "effect";
 import { afterEach, expect } from "vitest";
+import { GameTextIndexError, GameTextIndexRefresh } from "@ue-shed/game-text/index";
 import { CliRuntime } from "./cli-runtime.js";
 import { runCli } from "./command.js";
 
@@ -40,19 +41,24 @@ const Line = Schema.fromJsonString(
 const apply = (root: string, changes: string, ...flags: string[]) =>
 	Effect.gen(function* () {
 		const output = yield* Ref.make("");
+		const errors = yield* Ref.make("");
 		const exitCode = yield* Ref.make(0);
 		const runtime = Layer.succeed(
 			CliRuntime,
 			CliRuntime.of({
 				print: (text) => Ref.update(output, (value) => value + text),
-				printError: () => Effect.void,
+				printError: (text) => Ref.update(errors, (value) => value + text),
 				setExitCode: (code) => Ref.set(exitCode, code)
 			})
 		);
 		yield* runCli(["loc", "apply", root, "--changes", changes, "--json", ...flags]).pipe(
 			Effect.provide(runtime)
 		);
-		return { text: yield* Ref.get(output), code: yield* Ref.get(exitCode) };
+		return {
+			text: yield* Ref.get(output),
+			errors: yield* Ref.get(errors),
+			code: yield* Ref.get(exitCode)
+		};
 	});
 
 it.effect("loc apply reviews, writes only the PO msgstr, and rejects a stale re-apply", () =>
@@ -102,5 +108,56 @@ it.effect("loc apply reports an unreadable change set without echoing it", () =>
 		expect(result.code).toBe(2);
 		expect(result.text).toContain('"code":"invalid_change_set"');
 		expect(result.text).not.toContain("secret translation");
+	})
+);
+
+it.effect("loc apply keeps its JSON receipt clean when cache invalidation warns", () =>
+	Effect.gen(function* () {
+		const root = yield* Effect.promise(project);
+		const changes = join(root, "changes.json");
+		yield* Effect.promise(() =>
+			writeFile(
+				changes,
+				JSON.stringify({
+					schemaVersion: 1,
+					provenance: { producer: "test", files: [] },
+					changes: [change]
+				})
+			)
+		);
+		const invalidations = yield* Ref.make(0);
+		const result = yield* apply(root, changes).pipe(
+			Effect.provideService(
+				GameTextIndexRefresh,
+				GameTextIndexRefresh.of({
+					refresh: () => Effect.die("refresh is not used by localization apply"),
+					invalidate: () =>
+						Ref.update(invalidations, (count) => count + 1).pipe(
+							Effect.andThen(
+								Effect.fail(
+									new GameTextIndexError({
+										code: "index_failed",
+										operation: "invalidate",
+										message: "cache unavailable",
+										recovery: "Reopen the index before scanning again.",
+										retrySafe: false,
+										nextStep: "reconcile"
+									})
+								)
+							)
+						)
+				})
+			)
+		);
+		expect(yield* Ref.get(invalidations)).toBe(1);
+		expect(result.code).toBe(0);
+		const receipt = yield* Schema.decodeUnknownEffect(Line)(result.text.trim());
+		expect(receipt.type).toBe("receipt");
+		expect(JSON.stringify(receipt.receipt)).toContain('"status":"written"');
+		expect(result.errors).toContain("Game Text write succeeded but cache invalidation failed");
+		expect(result.errors).toContain("Reopen the index before scanning again.");
+		expect(yield* Effect.promise(() => readFile(join(root, dePO), "utf8"))).toContain(
+			'msgstr "Gespräch mit {PlayerName}"'
+		);
 	})
 );

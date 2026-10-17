@@ -298,7 +298,7 @@ export const WorkbenchNiagaraPreviewLive = Layer.effect(
 				}).pipe(
 					Effect.flatMap(decodeNiagaraPreviewRunManifest),
 					Effect.mapError((cause) =>
-						"code" in cause
+						"stage" in cause
 							? cause
 							: failure(
 									"artifact_invalid",
@@ -359,7 +359,7 @@ export const WorkbenchNiagaraPreviewLive = Layer.effect(
 			Effect.catch((cause) =>
 				Effect.succeed(
 					frameFailure(
-						"code" in cause
+						"stage" in cause
 							? cause
 							: failure(
 									"artifact_invalid",

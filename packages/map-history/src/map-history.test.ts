@@ -5,7 +5,7 @@ import { basename, resolve, win32 } from "node:path";
 import type { SavedWorld } from "@ue-shed/protocol";
 import { makeAssetReaderTestLayer } from "@ue-shed/unreal-assets";
 import { describe, expect, it } from "@effect/vitest";
-import { Deferred, Effect, Fiber, Layer, Schema } from "effect";
+import { Stream, Deferred, Effect, Fiber, Layer, Schema } from "effect";
 import { TestClock } from "effect/testing";
 import {
 	mapHistoryLayer,
@@ -78,6 +78,46 @@ const actor: SavedWorld["actors"][number] = {
 
 function readerLayer(observedHistoricalRoots: string[]) {
 	return makeAssetReaderTestLayer({
+		configuration: () =>
+			Effect.succeed({
+				executable: "uasset",
+				timeoutMs: 30_000,
+				catalogTimeoutMs: 50 * 60_000
+			}),
+		catalogProgress: () =>
+			Effect.succeed({
+				phase: "idle",
+				cacheHits: 0,
+				processedAssets: 0,
+				tablesFound: 0,
+				totalAssets: 0
+			}),
+		scanProgress: () =>
+			Effect.succeed({
+				phase: "idle",
+				cacheHits: 0,
+				emittedAssets: 0,
+				processedAssets: 0,
+				totalAssets: 0
+			}),
+		savedWorldProgress: () =>
+			Effect.succeed({
+				phase: "idle",
+				actorsFound: 0,
+				processedPackages: 0,
+				totalPackages: 0
+			}),
+		readBlueprint: () =>
+			Effect.die(new Error("Unexpected readBlueprint in this reader fixture")),
+		readLevelSequence: () =>
+			Effect.die(new Error("Unexpected readLevelSequence in this reader fixture")),
+		scanProject: () => Effect.die(new Error("Unexpected scanProject in this reader fixture")),
+		extractProjectText: () =>
+			Stream.die(new Error("Unexpected extractProjectText in this reader fixture")),
+		extractProjectTextPackages: () =>
+			Stream.die(new Error("Unexpected extractProjectTextPackages in this reader fixture")),
+		extractProjectTextures: () =>
+			Stream.die(new Error("Unexpected extractProjectTextures in this reader fixture")),
 		discoverAssets: () => Effect.die("Map History must not discover arbitrary assets."),
 		discoverTables: () => Effect.die("Map History must not discover tables."),
 		readAsset: () => Effect.die("Map History must not read individual assets."),
@@ -236,6 +276,46 @@ function relocatedHistoryLayer(materializedRoot: string, observedMapPaths: strin
 		}
 	});
 	const reader = makeAssetReaderTestLayer({
+		configuration: () =>
+			Effect.succeed({
+				executable: "uasset",
+				timeoutMs: 30_000,
+				catalogTimeoutMs: 50 * 60_000
+			}),
+		catalogProgress: () =>
+			Effect.succeed({
+				phase: "idle",
+				cacheHits: 0,
+				processedAssets: 0,
+				tablesFound: 0,
+				totalAssets: 0
+			}),
+		scanProgress: () =>
+			Effect.succeed({
+				phase: "idle",
+				cacheHits: 0,
+				emittedAssets: 0,
+				processedAssets: 0,
+				totalAssets: 0
+			}),
+		savedWorldProgress: () =>
+			Effect.succeed({
+				phase: "idle",
+				actorsFound: 0,
+				processedPackages: 0,
+				totalPackages: 0
+			}),
+		readBlueprint: () =>
+			Effect.die(new Error("Unexpected readBlueprint in this reader fixture")),
+		readLevelSequence: () =>
+			Effect.die(new Error("Unexpected readLevelSequence in this reader fixture")),
+		scanProject: () => Effect.die(new Error("Unexpected scanProject in this reader fixture")),
+		extractProjectText: () =>
+			Stream.die(new Error("Unexpected extractProjectText in this reader fixture")),
+		extractProjectTextPackages: () =>
+			Stream.die(new Error("Unexpected extractProjectTextPackages in this reader fixture")),
+		extractProjectTextures: () =>
+			Stream.die(new Error("Unexpected extractProjectTextures in this reader fixture")),
 		discoverAssets: () => Effect.die("Map History must not discover arbitrary assets."),
 		discoverTables: () => Effect.die("Map History must not discover tables."),
 		readAsset: () => Effect.die("Map History must not read individual assets."),

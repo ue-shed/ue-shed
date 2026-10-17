@@ -461,6 +461,7 @@ describe("replaceable camera bridge coordinator", () => {
 				request: () =>
 					Effect.fail(
 						new RemoteControlClientError({
+							code: "transport_failed",
 							endpoint: "http://localhost:30010",
 							functionName: "ExecuteCameraAuthoring",
 							operation: "discover",

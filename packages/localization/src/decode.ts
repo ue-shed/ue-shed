@@ -8,6 +8,11 @@ import {
 } from "./schema.js";
 import { validateUnrealJsonEscapes } from "./unreal-json.js";
 
+/**
+ * Constructs a sanitized evidence failure and code-specific guidance. Changed files require a
+ * fresh read; other failures require corrected inputs, paths or limits. It does not attach
+ * authored evidence or raw decoder errors.
+ */
 export function localizationError(code: LocalizationError["code"]): LocalizationError {
 	const regenerate =
 		"Check the target configuration and regenerate its evidence through Unreal if needed.";

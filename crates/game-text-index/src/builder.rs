@@ -133,7 +133,7 @@ impl BuildRequest {
             } => {
                 require(
                     inputs.len() <= 2560 && removed_names.len() <= 2560,
-                    "invalid_input: layer batch limit",
+                    crate::Error::new(crate::ErrorCode::InvalidInput, "layer batch limit"),
                 )?;
                 for input in inputs {
                     require(
@@ -141,7 +141,7 @@ impl BuildRequest {
                             && input.name.len() <= 1024
                             && !input.key.is_empty()
                             && input.key.len() <= 1024,
-                        "invalid_input: layer name or key",
+                        crate::Error::new(crate::ErrorCode::InvalidInput, "layer name or key"),
                     )?;
                 }
             }
@@ -155,19 +155,23 @@ impl BuildRequest {
             } => {
                 require(
                     !name.is_empty() && name.len() <= 1024 && !key.is_empty() && key.len() <= 1024,
-                    "invalid_input: layer name or key",
+                    crate::Error::new(crate::ErrorCode::InvalidInput, "layer name or key"),
                 )?;
                 require(
                     string_columns.len() <= 8192 && retained.len() <= 2560 && removed.len() <= 2560,
-                    "invalid_input: column or retained layer limit",
+                    crate::Error::new(
+                        crate::ErrorCode::InvalidInput,
+                        "column or retained layer limit",
+                    ),
                 )?;
             }
-            Self::Strings { ids, .. } => {
-                require(ids.len() <= 8192, "invalid_input: string request limit")?
-            }
+            Self::Strings { ids, .. } => require(
+                ids.len() <= 8192,
+                crate::Error::new(crate::ErrorCode::InvalidInput, "string request limit"),
+            )?,
             Self::Intern { domain, .. } => require(
                 !domain.is_empty() && domain.len() <= 23,
-                "invalid_input: string domain",
+                crate::Error::new(crate::ErrorCode::InvalidInput, "string domain"),
             )?,
             _ => {}
         }
@@ -187,40 +191,47 @@ impl BuildSession {
         if matches!(request, BuildRequest::Capabilities) {
             return Ok(BuildOutcome::new("capabilities"));
         }
-        let config = request
-            .configuration()
-            .ok_or("invalid_input: missing configuration")?;
+        let config = request.configuration().ok_or(crate::Error::new(
+            crate::ErrorCode::InvalidInput,
+            "missing configuration",
+        ))?;
         if let Some((active, _)) = &self.leased {
             require(
                 active == config,
-                "invalid_input: request belongs to another build lease",
+                crate::Error::new(
+                    crate::ErrorCode::InvalidInput,
+                    "request belongs to another build lease",
+                ),
             )?;
         }
         if matches!(request, BuildRequest::Begin { .. }) {
             require(
                 self.leased.is_none(),
-                "busy: build session already owns a writer lease",
+                crate::Error::new(
+                    crate::ErrorCode::Busy,
+                    "build session already owns a writer lease",
+                ),
             )?;
             let mut store = Store::writer(config.clone())?;
             if !store.directory.join("manifest.json").exists() {
                 store.publish_root()?;
             }
             let mut outcome = BuildOutcome::new("begin");
-            outcome.root = Some(response_root(&store));
+            outcome.root = Some(response_root(&store)?);
             self.leased = Some((config.clone(), store));
             return Ok(outcome);
         }
         if matches!(request, BuildRequest::End { .. }) {
             require(
                 self.leased.take().is_some(),
-                "invalid_input: no writer lease",
+                crate::Error::new(crate::ErrorCode::InvalidInput, "no writer lease"),
             )?;
             return Ok(BuildOutcome::new("end"));
         }
-        let (_, store) = self
-            .leased
-            .as_mut()
-            .ok_or("invalid_input: call begin in a protocol session first")?;
+        let (_, store) = self.leased.as_mut().ok_or(crate::Error::new(
+            crate::ErrorCode::InvalidInput,
+            "call begin in a protocol session first",
+        ))?;
         let result = execute(store, request);
         // A failed publication may have staged files or remapped IDs. Reopen before further work.
         if result.is_err() {
@@ -230,15 +241,15 @@ impl BuildSession {
     }
 }
 
-fn response_root(store: &Store) -> Value {
+fn response_root(store: &Store) -> Result<Value> {
     let mut root = store.root.clone();
     if store.configuration_view_prefix().is_some() {
         root["active"]
             .as_object_mut()
-            .unwrap()
+            .ok_or("invalid shared root object")?
             .retain(|name, _| !name.starts_with("target-join."));
     }
-    root
+    Ok(root)
 }
 
 fn execute(store: &mut Store, request: &BuildRequest) -> Result<BuildOutcome> {
@@ -253,7 +264,12 @@ fn execute(store: &mut Store, request: &BuildRequest) -> Result<BuildOutcome> {
             ..
         } => {
             outcome.action = "publish".into();
-            if *cold && store.root["active"].as_object().unwrap().is_empty() {
+            if *cold
+                && store.root["active"]
+                    .as_object()
+                    .ok_or("invalid shared root object")?
+                    .is_empty()
+            {
                 store.publish_cold(inputs)?;
             } else {
                 if *cold {
@@ -266,7 +282,10 @@ fn execute(store: &mut Store, request: &BuildRequest) -> Result<BuildOutcome> {
                 }
             }
             for name in removed_names {
-                store.root["active"].as_object_mut().unwrap().remove(name);
+                store.root["active"]
+                    .as_object_mut()
+                    .ok_or("invalid shared root object")?
+                    .remove(name);
             }
             store.publish_root()?;
             outcome.records = inputs
@@ -305,13 +324,24 @@ fn execute(store: &mut Store, request: &BuildRequest) -> Result<BuildOutcome> {
                 let length = u32::from_le_bytes(
                     bytes
                         .get(cursor..cursor + 4)
-                        .ok_or("invalid_input: truncated string length")?
+                        .ok_or(crate::Error::new(
+                            crate::ErrorCode::InvalidInput,
+                            "truncated string length",
+                        ))?
                         .try_into()?,
                 ) as usize;
                 cursor += 4;
-                let value = bytes
-                    .get(cursor..cursor + length)
-                    .ok_or("invalid_input: truncated string")?;
+                let value = bytes.get(cursor..cursor + length).ok_or(crate::Error::new(
+                    crate::ErrorCode::InvalidInput,
+                    "truncated string",
+                ))?;
+                crate::wtf8::validate(value).map_err(|cause| {
+                    crate::Error::with_source(
+                        crate::ErrorCode::InvalidInput,
+                        "An intern request contains invalid WTF-8.",
+                        cause,
+                    )
+                })?;
                 values.push(value.to_vec());
                 cursor += length;
             }
@@ -327,12 +357,15 @@ fn execute(store: &mut Store, request: &BuildRequest) -> Result<BuildOutcome> {
             let mut offsets = vec![0u32];
             let mut bytes = Vec::new();
             for id in ids {
-                let value = crate::wtf8::Wtf8Buf::from_view(
-                    selected.get(id).ok_or("invalid_input: string ID")?,
-                );
+                let value = crate::wtf8::Wtf8Buf::from_view(selected.get(id).ok_or(
+                    crate::Error::new(crate::ErrorCode::InvalidInput, "string ID"),
+                )?);
                 require(
                     bytes.len() + value.as_bytes().len() <= 32 * 1024 * 1024,
-                    "limit_exceeded: string response exceeds 32 MiB",
+                    crate::Error::new(
+                        crate::ErrorCode::LimitExceeded,
+                        "string response exceeds 32 MiB",
+                    ),
                 )?;
                 bytes.extend_from_slice(value.as_bytes());
                 offsets.push(bytes.len() as u32);
@@ -350,17 +383,28 @@ fn execute(store: &mut Store, request: &BuildRequest) -> Result<BuildOutcome> {
         BuildRequest::Join { file, .. } => {
             outcome.action = "join".into();
             let input: crate::join::JoinInput =
-                serde_json::from_slice(&bounded(file, 32 * 1024 * 1024)?)?;
+                serde_json::from_slice(&bounded(file, 32 * 1024 * 1024)?).map_err(|cause| {
+                    crate::Error::with_source(
+                        crate::ErrorCode::InvalidInput,
+                        "The native Game Text join request file is invalid.",
+                        cause,
+                    )
+                })?;
             outcome.join = Some(crate::join::refresh(store, &input)?);
         }
         BuildRequest::Compact { force, .. } => {
             outcome.action = "compact".into();
             outcome.compaction = Some(store.compact(*force)?);
         }
-        _ => return Err("invalid_input: invalid leased operation".into()),
+        _ => {
+            return Err(crate::Error::new(
+                crate::ErrorCode::InvalidInput,
+                "invalid leased operation",
+            ));
+        }
     }
     outcome.io = crate::snapshot::io_metrics();
-    outcome.root = Some(response_root(store));
+    outcome.root = Some(response_root(store)?);
     outcome
         .stage_seconds
         .insert(outcome.action.clone(), started.elapsed().as_secs_f64());
@@ -375,7 +419,10 @@ fn bounded(path: &Path, maximum: u64) -> Result<Vec<u8>> {
         .read_to_end(&mut bytes)?;
     require(
         bytes.len() as u64 <= maximum,
-        "limit_exceeded: staged input exceeds 32 MiB",
+        crate::Error::new(
+            crate::ErrorCode::LimitExceeded,
+            "staged input exceeds 32 MiB",
+        ),
     )?;
     Ok(bytes)
 }
@@ -393,12 +440,15 @@ fn publish_ids(
 ) -> Result<Value> {
     require(
         store.root["generation"] == generation,
-        "stale_generation: global ID publication uses another dictionary",
+        crate::Error::new(
+            crate::ErrorCode::StaleGeneration,
+            "global ID publication uses another dictionary",
+        ),
     )?;
     for hash in retained.values() {
         require(
             store.root["layers"].get(hash).is_some(),
-            "invalid_input: retained layer absent",
+            crate::Error::new(crate::ErrorCode::InvalidInput, "retained layer absent"),
         )?;
     }
     let mut reader = Reader::open(file)?;
@@ -407,11 +457,16 @@ fn publish_ids(
     let mut columns = serde_json::Map::new();
     let maximum = store.root["segments"]
         .as_array()
-        .unwrap()
+        .ok_or("invalid shared root array")?
         .last()
-        .map_or(0, |segment| {
-            segment["start"].as_u64().unwrap() + segment["count"].as_u64().unwrap()
-        });
+        .map(|segment| {
+            Ok::<_, crate::Error>(
+                segment["start"].as_u64().ok_or("invalid segment start")?
+                    + segment["count"].as_u64().ok_or("invalid segment count")?,
+            )
+        })
+        .transpose()?
+        .unwrap_or(0);
     for id in 0..reader.entries.len() {
         let entry = reader.entries[id].clone();
         let mut bytes = reader.load(id)?;
@@ -420,7 +475,10 @@ fn publish_ids(
             let ids = integers(&bytes)?;
             require(
                 ids.iter().all(|id| u64::from(*id) < maximum),
-                "invalid_input: global ID outside dictionary",
+                crate::Error::new(
+                    crate::ErrorCode::InvalidInput,
+                    "global ID outside dictionary",
+                ),
             )?;
             bytes = crate::store::encode_ids(&ids);
             kind = 2;
@@ -432,14 +490,17 @@ fn publish_ids(
         string_columns
             .keys()
             .all(|name| reader.entries.iter().any(|entry| &entry.name == name)),
-        "invalid_input: missing string column",
+        crate::Error::new(crate::ErrorCode::InvalidInput, "missing string column"),
     )?;
     let file = format!("layer-{}.snapshot", token());
-    let mut record = json!({"file":file,"key":key,"storeGeneration":store.root["generation"],"segmentCount":store.root["segments"].as_array().unwrap().len(),"bytes":0,"stringColumns":columns,"idEncoding":"delta32"});
+    let mut record = json!({"file":file,"key":key,"storeGeneration":store.root["generation"],"segmentCount":store.root["segments"].as_array().ok_or("invalid shared root array")?.len(),"bytes":0,"stringColumns":columns,"idEncoding":"delta32"});
     order.push(writer.add("shared.meta", 0, "", &serde_json::to_vec(&record)?, 1)?);
     record["bytes"] = json!(writer.finish(&store.directory.join(file), &order)?);
     for name in removed {
-        store.root["active"].as_object_mut().unwrap().remove(name);
+        store.root["active"]
+            .as_object_mut()
+            .ok_or("invalid shared root object")?
+            .remove(name);
     }
     for (name, hash) in retained {
         store.root["active"][name] = json!(hash);
@@ -450,24 +511,115 @@ fn publish_ids(
     Ok(record)
 }
 
-pub fn failure_code(error: &(dyn std::error::Error + Send + Sync + 'static)) -> &'static str {
-    let message = error.to_string();
-    for code in [
-        "busy",
-        "invalid_input",
-        "limit_exceeded",
-        "stale_generation",
-    ] {
-        if message.starts_with(code) {
-            return code;
-        }
-    }
-    if let Some(error) = error.downcast_ref::<std::io::Error>() {
-        return if error.kind() == std::io::ErrorKind::NotFound {
-            "not_found"
-        } else {
-            "io_error"
+pub fn failure_code(error: &crate::Error) -> &'static str {
+    error.code.as_str()
+}
+
+#[cfg(test)]
+mod validation_tests {
+    use super::*;
+
+    #[test]
+    fn malformed_request_files_are_input_errors_and_leave_the_cache_usable() {
+        let root = crate::test_directory("invalid-request");
+        let configuration = Configuration {
+            cache_root: root.clone(),
+            project_key: "request-fixture".into(),
+            target_key: "source".into(),
+            shared_project: false,
+            view_prefix: None,
         };
+        let mut session = BuildSession::default();
+        session
+            .execute(&BuildRequest::Begin {
+                configuration: configuration.clone(),
+            })
+            .unwrap();
+        let file = root.join("bad-join.json");
+        fs::write(&file, b"{bad").unwrap();
+        let error = session
+            .execute(&BuildRequest::Join {
+                configuration: configuration.clone(),
+                file,
+            })
+            .unwrap_err();
+        assert_eq!(error.code, crate::ErrorCode::InvalidInput);
+        assert!(
+            std::error::Error::source(&error)
+                .unwrap()
+                .is::<serde_json::Error>()
+        );
+        crate::store::open_root(&configuration).unwrap();
+        session
+            .execute(&BuildRequest::Begin {
+                configuration: configuration.clone(),
+            })
+            .unwrap();
+        let file = root.join("bad-intern.bin");
+        fs::write(&file, [1, 0, 0, 0, 0xff]).unwrap();
+        let error = session
+            .execute(&BuildRequest::Intern {
+                configuration: configuration.clone(),
+                domain: "source".into(),
+                file,
+            })
+            .unwrap_err();
+        assert_eq!(error.code, crate::ErrorCode::InvalidInput);
+        assert!(std::error::Error::source(&error).is_some());
+        session
+            .execute(&BuildRequest::Begin {
+                configuration: configuration.clone(),
+            })
+            .unwrap();
+        session
+            .execute(&BuildRequest::End {
+                configuration: configuration.clone(),
+            })
+            .unwrap();
+        crate::store::open_root(&configuration).unwrap();
+        drop(session);
+        fs::remove_dir_all(root).unwrap();
     }
-    "invalid_cache"
+
+    #[test]
+    fn rejects_unicode_view_prefix_without_panicking() {
+        // The byte length is valid, but a view prefix accepts only lowercase ASCII hex digits.
+        let prefix = format!("target-join.{}é.", "a".repeat(62));
+        assert_eq!(prefix.len(), 77);
+        let request = BuildRequest::Begin {
+            configuration: Configuration {
+                cache_root: std::env::temp_dir(),
+                project_key: "validation-fixture".into(),
+                target_key: "source".into(),
+                shared_project: true,
+                view_prefix: Some(prefix),
+            },
+        };
+        let error = request.validate().unwrap_err();
+        assert_eq!(error.code, crate::ErrorCode::InvalidInput);
+    }
+
+    #[test]
+    fn invalid_requests_and_invalid_session_order_have_stable_codes() {
+        let configuration = Configuration {
+            cache_root: std::env::temp_dir(),
+            project_key: "validation-fixture".into(),
+            target_key: "source".into(),
+            shared_project: false,
+            view_prefix: None,
+        };
+        let invalid = BuildRequest::Intern {
+            configuration: configuration.clone(),
+            domain: "".into(),
+            file: "unused".into(),
+        };
+        assert_eq!(
+            invalid.validate().unwrap_err().code,
+            crate::ErrorCode::InvalidInput
+        );
+        let error = BuildSession::default()
+            .execute(&BuildRequest::Status { configuration })
+            .unwrap_err();
+        assert_eq!(failure_code(&error), "invalid_input");
+    }
 }

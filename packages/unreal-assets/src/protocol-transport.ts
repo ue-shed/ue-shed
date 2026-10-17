@@ -146,7 +146,14 @@ export class ProtocolStreamValidator {
 		try {
 			event = validateProtocolEvent(JSON.parse(line), line.length);
 		} catch (cause) {
-			throw new ProtocolStreamFailure("contract", `Invalid protocol event: ${String(cause)}`);
+			throw new ProtocolStreamFailure(
+				"contract",
+				"A native protocol event is not valid JSON or does not match its negotiated contract.",
+				undefined,
+				undefined,
+				undefined,
+				cause
+			);
 		}
 		this.push(event);
 		return event;
@@ -235,9 +242,10 @@ export class ProtocolStreamFailure extends Error {
 		message: string,
 		readonly exitCode?: number,
 		readonly stderr?: string,
-		readonly protocolCode?: string
+		readonly protocolCode?: string,
+		cause?: unknown
 	) {
-		super(message);
+		super(message, { cause });
 	}
 }
 
@@ -663,6 +671,7 @@ export function mapProtocolFailure(
 		const retrySafe =
 			cause.kind === "timeout" || cause.kind === "discovery" || cause.kind === "process";
 		return new AssetReaderError({
+			cause,
 			...(cause.protocolCode === undefined ? undefined : { code: cause.protocolCode }),
 			kind,
 			operation,
@@ -1025,10 +1034,11 @@ export class UassetProtocolSession {
 					this.processError ?? (cause instanceof Error ? cause : undefined);
 				throw new ProtocolStreamFailure(
 					"process",
-					processCause?.message ?? String(cause),
+					"The native protocol session could not write its request",
 					undefined,
 					undefined,
-					processFailureCode(processCause)
+					processFailureCode(processCause),
+					processCause ?? cause
 				);
 			}
 			const deadline = nowMs() + options.timeoutMs;
@@ -1185,10 +1195,11 @@ async function* protocolEvents(options: {
 		if (processError !== undefined)
 			throw new ProtocolStreamFailure(
 				"process",
-				processError.message,
+				"The native protocol worker could not process its request.",
 				undefined,
 				undefined,
-				processFailureCode(processError)
+				processFailureCode(processError),
+				processError
 			);
 		if (closedResult.code !== 0) {
 			throw new ProtocolStreamFailure(

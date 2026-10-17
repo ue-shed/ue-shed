@@ -1180,3 +1180,61 @@ fn protocol_process_emits_native_values_with_the_public_discriminators() {
     );
     assert_eq!(inspection["metadata"]["root"]["EmptyRoot"], "");
 }
+
+#[test]
+fn native_join_failure_preserves_parse_details_over_the_process_boundary() {
+    let root = std::env::temp_dir().join(format!("ue-shed-native-error-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    let input = root.join("invalid-join.json");
+    std::fs::write(&input, b"{\ninvalid").unwrap();
+    let configuration = serde_json::json!({
+        "cacheRoot": root.join("cache"),
+        "projectKey": "protocol-error-fixture",
+        "targetKey": "source",
+        "sharedProject": false
+    });
+    let mut child = Command::new(env!("CARGO_BIN_EXE_uasset"))
+        .arg("protocol-session")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("native index session starts");
+    let mut stdin = child.stdin.take().unwrap();
+    let mut stdout = BufReader::new(child.stdout.take().unwrap());
+    for action in ["begin", "join"] {
+        let mut build = serde_json::json!({"action": action, "configuration": configuration});
+        if action == "join" {
+            build["file"] = serde_json::json!(input);
+        }
+        let mut request = base_request(serde_json::json!({
+            "kind": "game_text_index", "request": build
+        }));
+        request["contract"]["version"]["minor"] = 13.into();
+        write_session_request(&mut stdin, &request);
+        let events = read_session_events(&mut stdout);
+        assert_valid_events(&events);
+        let terminal = events.last().unwrap();
+        if action == "begin" {
+            assert_eq!(terminal["kind"], "completed");
+        } else {
+            assert_eq!(terminal["kind"], "failed");
+            assert_eq!(terminal["code"], "invalid_input");
+            assert_eq!(terminal["retrySafe"], false);
+            let message = terminal["message"].as_str().unwrap();
+            assert!(
+                message.contains("join request file is invalid"),
+                "{message}"
+            );
+            assert!(message.contains("line 2 column"), "{message}");
+        }
+    }
+    drop(stdin);
+    let output = child.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    std::fs::remove_dir_all(root).unwrap();
+}

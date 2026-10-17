@@ -25,6 +25,10 @@ export interface ShedHostConfigurationValues {
 	readonly remoteControlEndpoint: string;
 }
 
+/**
+ * Host-owned selection and connection configuration. Reading this service neither selects a
+ * project nor launches an editor; features consume the shell's existing selection.
+ */
 export class ShedHostConfiguration extends Context.Service<
 	ShedHostConfiguration,
 	ShedHostConfigurationApi
@@ -44,6 +48,10 @@ export function makeShedHostConfiguration(
 	});
 }
 
+/**
+ * Provides fixed host configuration values. Hosts with a changing selection can supply their
+ * own ShedHostConfiguration implementation instead of mutating these captured values.
+ */
 export function shedHostConfigurationLayer(
 	configuration: ShedHostConfigurationValues
 ): Layer.Layer<ShedHostConfiguration> {

@@ -24,6 +24,10 @@ function request<A, HostValue, DecodeError>(args: {
 		try: args.invoke,
 		catch: (cause) =>
 			new MapCaptureClientError({
+				message: "Map capture could not complete the host operation.",
+				retrySafe: false,
+				nextStep: "reconcile",
+				code: "map_capture_client_failed",
 				cause,
 				operation: args.operation,
 				recovery: "Restart Workbench and verify the selected project and package versions."
@@ -33,6 +37,10 @@ function request<A, HostValue, DecodeError>(args: {
 		Effect.mapError(
 			(cause) =>
 				new MapCaptureClientError({
+					message: "Map capture could not complete the host operation.",
+					retrySafe: false,
+					nextStep: "reconcile",
+					code: "map_capture_client_failed",
 					cause,
 					operation: args.operation,
 					recovery:

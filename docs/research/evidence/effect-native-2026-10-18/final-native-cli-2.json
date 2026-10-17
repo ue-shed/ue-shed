@@ -1,0 +1,645 @@
+{
+	"measurementVersion": 2,
+	"node": "v26.5.0",
+	"platform": "win32",
+	"architecture": "x64",
+	"scenario": {
+		"mode": "hosts",
+		"builder": "native",
+		"host": "cli",
+		"select": "all"
+	},
+	"eventLoopScope": "10 ms callback gaps, including the unfinished gap at operation completion.",
+	"outcome": {
+		"kind": "done",
+		"result": {
+			"node": "v26.5.0",
+			"mode": "hosts",
+			"results": [
+				{
+					"stage": "cli:cold-build",
+					"seconds": 55.1201581,
+					"eventLoop": {
+						"maximumDelayMs": 2211.796599999994,
+						"p99DelayMs": 19.228899999998248,
+						"utilization": 0.18300330635553677
+					},
+					"peak": {
+						"heapUsed": 425803112,
+						"arrayBuffers": 733095577,
+						"rss": 2561527808
+					},
+					"builder": "Native public protocol adapter",
+					"joinPolicy": "production incremental",
+					"readPackages": 16500,
+					"parsedFiles": 21,
+					"rebuilt": true,
+					"strategy": "full",
+					"incrementalFallback": "no-base"
+				},
+				{
+					"stage": "cli:first-query",
+					"seconds": 0.0010976999999984401,
+					"eventLoop": {
+						"maximumDelayMs": 0.9775999999983469,
+						"p99DelayMs": 0.9775999999983469,
+						"utilization": 1
+					},
+					"peak": {
+						"heapUsed": 54951320,
+						"arrayBuffers": 733035280,
+						"rss": 909967360
+					},
+					"total": 583507,
+					"displayed": 1,
+					"lines": 1,
+					"sha256": "38fa7b4e861ae30940bb4b6acba46a86b02175e3a041ab8624071a99073471d6"
+				},
+				{
+					"stage": "cli:count",
+					"seconds": 0.001106500000001688,
+					"eventLoop": {
+						"maximumDelayMs": 1.0890999999974156,
+						"p99DelayMs": 1.0890999999974156,
+						"utilization": 1
+					},
+					"peak": {
+						"heapUsed": 54705632,
+						"arrayBuffers": 733033246,
+						"rss": 909680640
+					},
+					"total": 583507,
+					"displayed": 1,
+					"lines": 1,
+					"sha256": "38fa7b4e861ae30940bb4b6acba46a86b02175e3a041ab8624071a99073471d6"
+				},
+				{
+					"stage": "cli:filter",
+					"seconds": 0.047706399999995486,
+					"eventLoop": {
+						"maximumDelayMs": 47.68789999999717,
+						"p99DelayMs": 47.68789999999717,
+						"utilization": 1
+					},
+					"peak": {
+						"heapUsed": 56489760,
+						"arrayBuffers": 735370177,
+						"rss": 909815808
+					},
+					"total": 2830,
+					"displayed": 1,
+					"lines": 1,
+					"sha256": "a5220f87e652fe564f72e11c4427e43e00e0657b5cb6279e1b6a4a75f10762eb"
+				},
+				{
+					"stage": "cli:facet",
+					"seconds": 0.04120760000000155,
+					"eventLoop": {
+						"maximumDelayMs": 41.20730000000185,
+						"p99DelayMs": 41.20730000000185,
+						"utilization": 1
+					},
+					"peak": {
+						"heapUsed": 63238792,
+						"arrayBuffers": 751789507,
+						"rss": 925392896
+					},
+					"total": 583507,
+					"displayed": 1,
+					"lines": 1,
+					"sha256": "065850d3957ab0515f793fc51e0607166d583cbb68ce1dd0637ee2a4848ba9cd"
+				},
+				{
+					"stage": "cli:page",
+					"seconds": 0.019483500000002096,
+					"eventLoop": {
+						"maximumDelayMs": 19.44100000000617,
+						"p99DelayMs": 19.44100000000617,
+						"utilization": 1
+					},
+					"peak": {
+						"heapUsed": 64534656,
+						"arrayBuffers": 741914421,
+						"rss": 925167616
+					},
+					"total": 583507,
+					"displayed": 50,
+					"lines": 50,
+					"sha256": "e962ee1667d49eeaccb8fafcb55cc07f6c5115a21a600eab395bac6725618475"
+				},
+				{
+					"stage": "cli:search",
+					"seconds": 0.06099990000000253,
+					"eventLoop": {
+						"maximumDelayMs": 60.9829000000027,
+						"p99DelayMs": 60.9829000000027,
+						"utilization": 1
+					},
+					"peak": {
+						"heapUsed": 58746232,
+						"arrayBuffers": 742783780,
+						"rss": 927215616
+					},
+					"total": 583507,
+					"displayed": 1,
+					"lines": 1,
+					"sha256": "38fa7b4e861ae30940bb4b6acba46a86b02175e3a041ab8624071a99073471d6"
+				},
+				{
+					"stage": "cli:focus",
+					"seconds": 0.2323477000000057,
+					"eventLoop": {
+						"maximumDelayMs": 232.33920000000217,
+						"p99DelayMs": 232.33920000000217,
+						"utilization": 1
+					},
+					"peak": {
+						"heapUsed": 55410024,
+						"arrayBuffers": 881692911,
+						"rss": 1043017728
+					},
+					"found": true
+				},
+				{
+					"stage": "cli:refresh-no-change",
+					"seconds": 1.788330900000001,
+					"eventLoop": {
+						"maximumDelayMs": 655.0565999999963,
+						"p99DelayMs": 655.0565999999963,
+						"utilization": 0.8790652763131764
+					},
+					"peak": {
+						"heapUsed": 143626728,
+						"arrayBuffers": 867472150,
+						"rss": 1062096896
+					},
+					"builder": "Native public protocol adapter",
+					"joinPolicy": "production incremental",
+					"readPackages": 0,
+					"parsedFiles": 0,
+					"rebuilt": false
+				},
+				{
+					"stage": "cli:loc-status-command",
+					"seconds": 2.1728758000000017,
+					"eventLoop": {
+						"maximumDelayMs": 1043.0405000000028,
+						"p99DelayMs": 1043.0405000000028,
+						"utilization": 0.9030747666984609
+					},
+					"peak": {
+						"heapUsed": 179206480,
+						"arrayBuffers": 776518673,
+						"rss": 1097416704
+					},
+					"total": 583507,
+					"exitCode": 0
+				},
+				{
+					"stage": "cli:refresh-one-package-one-po",
+					"seconds": 22.080878500000008,
+					"eventLoop": {
+						"maximumDelayMs": 2359.7369000000035,
+						"p99DelayMs": 20.146999999997206,
+						"utilization": 0.23575444725626643
+					},
+					"peak": {
+						"heapUsed": 204822168,
+						"arrayBuffers": 1457656468,
+						"rss": 1580077056
+					},
+					"builder": "Native public protocol adapter",
+					"joinPolicy": "production incremental",
+					"readPackages": 1,
+					"parsedFiles": 1,
+					"rebuilt": true,
+					"strategy": "full",
+					"incrementalFallback": "reference-source"
+				},
+				{
+					"stage": "cli:query-after-refresh",
+					"seconds": 0.0011612000000022818,
+					"eventLoop": {
+						"maximumDelayMs": 1.1578000000008615,
+						"p99DelayMs": 1.1578000000008615,
+						"utilization": 1
+					},
+					"peak": {
+						"heapUsed": 85527040,
+						"arrayBuffers": 1457151215,
+						"rss": 1579769856
+					},
+					"total": 583507,
+					"displayed": 1,
+					"lines": 1,
+					"sha256": "6864450f8d824c76bad4731c49139aa1315daf98c1da54c16e2a70142224730a"
+				},
+				{
+					"stage": "cli:search-after-refresh",
+					"seconds": 0.054733999999996744,
+					"eventLoop": {
+						"maximumDelayMs": 54.73220000001311,
+						"p99DelayMs": 54.73220000001311,
+						"utilization": 1
+					},
+					"peak": {
+						"heapUsed": 99039272,
+						"arrayBuffers": 1455316359,
+						"rss": 1579384832
+					},
+					"total": 1,
+					"displayed": 1,
+					"lines": 1,
+					"sha256": "98b8afc363bb7207cbc221560da5975b4635384c368f7a055cba40fc8ca67738"
+				},
+				{
+					"stage": "cli:proof-incremental-full",
+					"seconds": 17.1113413,
+					"eventLoop": {
+						"maximumDelayMs": 1463.4622999999992,
+						"p99DelayMs": 45.382199999992736,
+						"utilization": 0.2457625038549964
+					},
+					"peak": {
+						"heapUsed": 154718248,
+						"arrayBuffers": 2106134249,
+						"rss": 2366476288
+					},
+					"equal": true,
+					"columns": 171,
+					"lines": 583507,
+					"differences": 0
+				},
+				{
+					"stage": "cli:restore-derived-index",
+					"seconds": 18.253983499999986,
+					"eventLoop": {
+						"maximumDelayMs": 2400.641499999998,
+						"p99DelayMs": 18.680000000007567,
+						"utilization": 0.2716990792618613
+					},
+					"peak": {
+						"heapUsed": 195616928,
+						"arrayBuffers": 2008309562,
+						"rss": 2306879488
+					},
+					"builder": "Native public protocol adapter",
+					"joinPolicy": "production incremental",
+					"readPackages": 1,
+					"parsedFiles": 0,
+					"rebuilt": true,
+					"strategy": "full",
+					"incrementalFallback": "reference-source"
+				}
+			]
+		}
+	},
+	"results": [
+		{
+			"stage": "cli:cold-build",
+			"seconds": 55.1201581,
+			"eventLoop": {
+				"maximumDelayMs": 2211.796599999994,
+				"p99DelayMs": 19.228899999998248,
+				"utilization": 0.18300330635553677
+			},
+			"peak": {
+				"heapUsed": 425803112,
+				"arrayBuffers": 733095577,
+				"rss": 2561527808
+			},
+			"builder": "Native public protocol adapter",
+			"joinPolicy": "production incremental",
+			"readPackages": 16500,
+			"parsedFiles": 21,
+			"rebuilt": true,
+			"strategy": "full",
+			"incrementalFallback": "no-base"
+		},
+		{
+			"stage": "cli:first-query",
+			"seconds": 0.0010976999999984401,
+			"eventLoop": {
+				"maximumDelayMs": 0.9775999999983469,
+				"p99DelayMs": 0.9775999999983469,
+				"utilization": 1
+			},
+			"peak": {
+				"heapUsed": 54951320,
+				"arrayBuffers": 733035280,
+				"rss": 909967360
+			},
+			"total": 583507,
+			"displayed": 1,
+			"lines": 1,
+			"sha256": "38fa7b4e861ae30940bb4b6acba46a86b02175e3a041ab8624071a99073471d6"
+		},
+		{
+			"stage": "cli:count",
+			"seconds": 0.001106500000001688,
+			"eventLoop": {
+				"maximumDelayMs": 1.0890999999974156,
+				"p99DelayMs": 1.0890999999974156,
+				"utilization": 1
+			},
+			"peak": {
+				"heapUsed": 54705632,
+				"arrayBuffers": 733033246,
+				"rss": 909680640
+			},
+			"total": 583507,
+			"displayed": 1,
+			"lines": 1,
+			"sha256": "38fa7b4e861ae30940bb4b6acba46a86b02175e3a041ab8624071a99073471d6"
+		},
+		{
+			"stage": "cli:filter",
+			"seconds": 0.047706399999995486,
+			"eventLoop": {
+				"maximumDelayMs": 47.68789999999717,
+				"p99DelayMs": 47.68789999999717,
+				"utilization": 1
+			},
+			"peak": {
+				"heapUsed": 56489760,
+				"arrayBuffers": 735370177,
+				"rss": 909815808
+			},
+			"total": 2830,
+			"displayed": 1,
+			"lines": 1,
+			"sha256": "a5220f87e652fe564f72e11c4427e43e00e0657b5cb6279e1b6a4a75f10762eb"
+		},
+		{
+			"stage": "cli:facet",
+			"seconds": 0.04120760000000155,
+			"eventLoop": {
+				"maximumDelayMs": 41.20730000000185,
+				"p99DelayMs": 41.20730000000185,
+				"utilization": 1
+			},
+			"peak": {
+				"heapUsed": 63238792,
+				"arrayBuffers": 751789507,
+				"rss": 925392896
+			},
+			"total": 583507,
+			"displayed": 1,
+			"lines": 1,
+			"sha256": "065850d3957ab0515f793fc51e0607166d583cbb68ce1dd0637ee2a4848ba9cd"
+		},
+		{
+			"stage": "cli:page",
+			"seconds": 0.019483500000002096,
+			"eventLoop": {
+				"maximumDelayMs": 19.44100000000617,
+				"p99DelayMs": 19.44100000000617,
+				"utilization": 1
+			},
+			"peak": {
+				"heapUsed": 64534656,
+				"arrayBuffers": 741914421,
+				"rss": 925167616
+			},
+			"total": 583507,
+			"displayed": 50,
+			"lines": 50,
+			"sha256": "e962ee1667d49eeaccb8fafcb55cc07f6c5115a21a600eab395bac6725618475"
+		},
+		{
+			"stage": "cli:search",
+			"seconds": 0.06099990000000253,
+			"eventLoop": {
+				"maximumDelayMs": 60.9829000000027,
+				"p99DelayMs": 60.9829000000027,
+				"utilization": 1
+			},
+			"peak": {
+				"heapUsed": 58746232,
+				"arrayBuffers": 742783780,
+				"rss": 927215616
+			},
+			"total": 583507,
+			"displayed": 1,
+			"lines": 1,
+			"sha256": "38fa7b4e861ae30940bb4b6acba46a86b02175e3a041ab8624071a99073471d6"
+		},
+		{
+			"stage": "cli:focus",
+			"seconds": 0.2323477000000057,
+			"eventLoop": {
+				"maximumDelayMs": 232.33920000000217,
+				"p99DelayMs": 232.33920000000217,
+				"utilization": 1
+			},
+			"peak": {
+				"heapUsed": 55410024,
+				"arrayBuffers": 881692911,
+				"rss": 1043017728
+			},
+			"found": true
+		},
+		{
+			"stage": "cli:refresh-no-change",
+			"seconds": 1.788330900000001,
+			"eventLoop": {
+				"maximumDelayMs": 655.0565999999963,
+				"p99DelayMs": 655.0565999999963,
+				"utilization": 0.8790652763131764
+			},
+			"peak": {
+				"heapUsed": 143626728,
+				"arrayBuffers": 867472150,
+				"rss": 1062096896
+			},
+			"builder": "Native public protocol adapter",
+			"joinPolicy": "production incremental",
+			"readPackages": 0,
+			"parsedFiles": 0,
+			"rebuilt": false
+		},
+		{
+			"stage": "cli:loc-status-command",
+			"seconds": 2.1728758000000017,
+			"eventLoop": {
+				"maximumDelayMs": 1043.0405000000028,
+				"p99DelayMs": 1043.0405000000028,
+				"utilization": 0.9030747666984609
+			},
+			"peak": {
+				"heapUsed": 179206480,
+				"arrayBuffers": 776518673,
+				"rss": 1097416704
+			},
+			"total": 583507,
+			"exitCode": 0
+		},
+		{
+			"stage": "cli:refresh-one-package-one-po",
+			"seconds": 22.080878500000008,
+			"eventLoop": {
+				"maximumDelayMs": 2359.7369000000035,
+				"p99DelayMs": 20.146999999997206,
+				"utilization": 0.23575444725626643
+			},
+			"peak": {
+				"heapUsed": 204822168,
+				"arrayBuffers": 1457656468,
+				"rss": 1580077056
+			},
+			"builder": "Native public protocol adapter",
+			"joinPolicy": "production incremental",
+			"readPackages": 1,
+			"parsedFiles": 1,
+			"rebuilt": true,
+			"strategy": "full",
+			"incrementalFallback": "reference-source"
+		},
+		{
+			"stage": "cli:query-after-refresh",
+			"seconds": 0.0011612000000022818,
+			"eventLoop": {
+				"maximumDelayMs": 1.1578000000008615,
+				"p99DelayMs": 1.1578000000008615,
+				"utilization": 1
+			},
+			"peak": {
+				"heapUsed": 85527040,
+				"arrayBuffers": 1457151215,
+				"rss": 1579769856
+			},
+			"total": 583507,
+			"displayed": 1,
+			"lines": 1,
+			"sha256": "6864450f8d824c76bad4731c49139aa1315daf98c1da54c16e2a70142224730a"
+		},
+		{
+			"stage": "cli:search-after-refresh",
+			"seconds": 0.054733999999996744,
+			"eventLoop": {
+				"maximumDelayMs": 54.73220000001311,
+				"p99DelayMs": 54.73220000001311,
+				"utilization": 1
+			},
+			"peak": {
+				"heapUsed": 99039272,
+				"arrayBuffers": 1455316359,
+				"rss": 1579384832
+			},
+			"total": 1,
+			"displayed": 1,
+			"lines": 1,
+			"sha256": "98b8afc363bb7207cbc221560da5975b4635384c368f7a055cba40fc8ca67738"
+		},
+		{
+			"stage": "cli:proof-incremental-full",
+			"seconds": 17.1113413,
+			"eventLoop": {
+				"maximumDelayMs": 1463.4622999999992,
+				"p99DelayMs": 45.382199999992736,
+				"utilization": 0.2457625038549964
+			},
+			"peak": {
+				"heapUsed": 154718248,
+				"arrayBuffers": 2106134249,
+				"rss": 2366476288
+			},
+			"equal": true,
+			"columns": 171,
+			"lines": 583507,
+			"differences": 0
+		},
+		{
+			"stage": "cli:restore-derived-index",
+			"seconds": 18.253983499999986,
+			"eventLoop": {
+				"maximumDelayMs": 2400.641499999998,
+				"p99DelayMs": 18.680000000007567,
+				"utilization": 0.2716990792618613
+			},
+			"peak": {
+				"heapUsed": 195616928,
+				"arrayBuffers": 2008309562,
+				"rss": 2306879488
+			},
+			"builder": "Native public protocol adapter",
+			"joinPolicy": "production incremental",
+			"readPackages": 1,
+			"parsedFiles": 0,
+			"rebuilt": true,
+			"strategy": "full",
+			"incrementalFallback": "reference-source"
+		}
+	],
+	"stages": {
+		"startup": {
+			"osPeakRss": 242540544,
+			"tracePeakHeap": 123973624
+		},
+		"cli:cold-build": {
+			"osPeakRss": 2469552128,
+			"tracePeakHeap": 434627848
+		},
+		"cli:count": {
+			"osPeakRss": 0,
+			"tracePeakHeap": 64539520
+		},
+		"cli:filter": {
+			"osPeakRss": 0,
+			"tracePeakHeap": 65136720
+		},
+		"cli:facet": {
+			"osPeakRss": 0,
+			"tracePeakHeap": 65414624
+		},
+		"cli:page": {
+			"osPeakRss": 0,
+			"tracePeakHeap": 63325272
+		},
+		"cli:search": {
+			"osPeakRss": 0,
+			"tracePeakHeap": 65315968
+		},
+		"cli:focus": {
+			"osPeakRss": 0,
+			"tracePeakHeap": 65324968
+		},
+		"cli:refresh-no-change": {
+			"osPeakRss": 1091371008,
+			"tracePeakHeap": 161304112
+		},
+		"cli:loc-status-command": {
+			"osPeakRss": 1111322624,
+			"tracePeakHeap": 198768616
+		},
+		"cli:refresh-one-package-one-po": {
+			"osPeakRss": 2743316480,
+			"tracePeakHeap": 204823416
+		},
+		"cli:query-after-refresh": {
+			"osPeakRss": 0,
+			"tracePeakHeap": 96164704
+		},
+		"cli:search-after-refresh": {
+			"osPeakRss": 0,
+			"tracePeakHeap": 102284552
+		},
+		"cli:proof-incremental-full": {
+			"osPeakRss": 3344191488,
+			"tracePeakHeap": 182471880
+		},
+		"cli:restore-derived-index": {
+			"osPeakRss": 3494416384,
+			"tracePeakHeap": 213963240
+		}
+	},
+	"memoryScope": "Sampled benchmark process and descendants RSS, including query threads/native children; JS heap/ArrayBuffers are benchmark main-thread only.",
+	"limits": {
+		"heapMiB": null,
+		"defaultHeap": true,
+		"rssBytes": 20000000000,
+		"stageSeconds": 1200,
+		"runSeconds": null
+	},
+	"wallSeconds": 120.3917406
+}

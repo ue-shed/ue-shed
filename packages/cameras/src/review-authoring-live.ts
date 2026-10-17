@@ -37,6 +37,11 @@ function pureStagingPath(
 	return artifact.stagingPath;
 }
 
+/**
+ * Selection, subject inspection or candidate preview failure with endpoint/operation and
+ * original cause. Correct capability/connection state before treating a candidate as
+ * realized.
+ */
 export class ReviewAuthoringConnectionError extends Schema.TaggedError<ReviewAuthoringConnectionError>()(
 	"ReviewAuthoringConnectionError",
 	{
@@ -98,6 +103,10 @@ function remoteReviewCall(
 		);
 }
 
+/**
+ * Candidate image bytes/dimensions with current subject projection and optional realized
+ * render evidence. This is a preview, separate from approval and immutable run publication.
+ */
 export interface ReviewCandidatePreview {
 	readonly renderEvidence?: CameraFrameEvidence;
 	readonly bytes: Uint8Array;
@@ -106,6 +115,10 @@ export interface ReviewCandidatePreview {
 	readonly width: number;
 }
 
+/**
+ * Explicit candidate, endpoint, expected map, profile and subject for preview. The host
+ * supplies selected-project context; preview does not select a different project.
+ */
 export interface PreviewReviewCandidateArgs {
 	readonly candidate: FramingCandidate;
 	readonly endpoint: string;
@@ -114,6 +127,10 @@ export interface PreviewReviewCandidateArgs {
 	readonly subject: typeof SubjectLocator.Type;
 }
 
+/**
+ * Editor selection/subject inspection and candidate preview port. Generation and persistence
+ * remain separate so headless hosts can reuse the authoring workflow.
+ */
 export interface ReviewAuthoringApi {
 	readonly inspectSelection: (
 		endpoint: string
@@ -130,10 +147,18 @@ export interface ReviewAuthoringApi {
 /** @deprecated Use `ReviewAuthoringApi`. */
 export type ReviewAuthoringShape = ReviewAuthoringApi;
 
+/**
+ * Review authoring editor boundary. Requires an explicit endpoint per operation rather than
+ * retaining a feature-owned active project.
+ */
 export class ReviewAuthoring extends Context.Service<ReviewAuthoring, ReviewAuthoringApi>()(
 	"@ue-shed/cameras/ReviewAuthoring"
 ) {}
 
+/**
+ * RemoteControlClient-backed selection/subject inspection and rendered candidate previews
+ * with contract validation. Preserves connection/parser causes and framing evidence.
+ */
 export const ReviewAuthoringLive = Layer.effect(
 	ReviewAuthoring,
 	Effect.gen(function* () {
@@ -336,6 +361,10 @@ export function inspectReviewSelection(
 	);
 }
 
+/**
+ * Runs the production candidate-preview adapter using the caller's RemoteControlClient layer.
+ * Does not approve the pose or persist a capture run.
+ */
 export function previewReviewCandidate(
 	args: PreviewReviewCandidateArgs
 ): Effect.Effect<ReviewCandidatePreview, ReviewAuthoringConnectionError, RemoteControlClient> {

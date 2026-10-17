@@ -268,6 +268,9 @@ describe("ScenarioStudioRoute", () => {
 			start: () =>
 				Effect.fail(
 					new ScenarioStudioClientError({
+						retrySafe: false,
+						nextStep: "reconcile",
+						code: "scenario_studio_client_failed",
 						cause: "capability_unavailable",
 						message: "The selected editor does not advertise scenario execution.",
 						operation: "scenario.run",

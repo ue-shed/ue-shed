@@ -1,5 +1,4 @@
 ---
-"@ue-shed/host": minor
 "@ue-shed/game-text": minor
 "@ue-shed/localization": minor
 "@ue-shed/unreal-assets": minor

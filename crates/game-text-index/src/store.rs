@@ -44,7 +44,7 @@ impl Configuration {
                 && !self.cache_root.as_os_str().is_empty()
                 && self.project_key.encode_utf16().count() <= 32767
                 && self.target_key.encode_utf16().count() <= 32767,
-            "invalid_input: empty store identity",
+            crate::Error::new(crate::ErrorCode::InvalidInput, "empty store identity"),
         )?;
         if let Some(prefix) = &self.view_prefix {
             require(
@@ -52,10 +52,11 @@ impl Configuration {
                     && prefix.len() == 77
                     && prefix.starts_with("target-join.")
                     && prefix.ends_with('.')
-                    && prefix[12..76]
-                        .bytes()
+                    && prefix.as_bytes()[12..76]
+                        .iter()
+                        .copied()
                         .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()),
-                "invalid_input: invalid joined view prefix",
+                crate::Error::new(crate::ErrorCode::InvalidInput, "invalid joined view prefix"),
             )?;
         }
         Ok(serde_json::to_string(&[
@@ -86,7 +87,10 @@ fn host() -> Result<String> {
         return Ok(name);
     }
     let output = std::process::Command::new("hostname").output()?;
-    require(output.status.success(), "unavailable: hostname")?;
+    require(
+        output.status.success(),
+        crate::Error::new(crate::ErrorCode::Unavailable, "hostname"),
+    )?;
     Ok(String::from_utf8(output.stdout)?.trim().into())
 }
 fn alive(pid: u32) -> Result<bool> {
@@ -95,7 +99,10 @@ fn alive(pid: u32) -> Result<bool> {
         let output = std::process::Command::new("tasklist")
             .args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"])
             .output()?;
-        require(output.status.success(), "busy: cannot inspect lock owner")?;
+        require(
+            output.status.success(),
+            crate::Error::new(crate::ErrorCode::Busy, "cannot inspect lock owner"),
+        )?;
         Ok(String::from_utf8(output.stdout)?.contains(&format!("\"{pid}\"")))
     }
     #[cfg(not(windows))]
@@ -133,7 +140,10 @@ impl WriterLock {
                 let entries = fs::read_dir(&lock)?.collect::<std::io::Result<Vec<_>>>()?;
                 require(
                     entries.len() == 1,
-                    "busy: another Game Text writer owns this target",
+                    crate::Error::new(
+                        crate::ErrorCode::Busy,
+                        "another Game Text writer owns this target",
+                    ),
                 )?;
                 let path = entries[0].path();
                 let owner: Owner = serde_json::from_slice(&bounded(&path, 4096)?)?;
@@ -141,16 +151,23 @@ impl WriterLock {
                     owner.host == host()?
                         && path.file_name().and_then(|s| s.to_str())
                             == Some(&format!("owner-{}.json", owner.token)),
-                    "busy: foreign or unreadable writer lock",
+                    crate::Error::new(crate::ErrorCode::Busy, "foreign or unreadable writer lock"),
                 )?;
                 require(
                     !alive(owner.pid)?,
-                    "busy: another Game Text writer owns this target",
+                    crate::Error::new(
+                        crate::ErrorCode::Busy,
+                        "another Game Text writer owns this target",
+                    ),
                 )?;
                 fs::remove_file(path)?;
                 fs::remove_dir(&lock)?;
-                fs::rename(&candidate, &lock)
-                    .map_err(|_| "busy: another Game Text writer acquired this target")?;
+                fs::rename(&candidate, &lock).map_err(|_| {
+                    crate::Error::new(
+                        crate::ErrorCode::Busy,
+                        "another Game Text writer acquired this target",
+                    )
+                })?;
             }
             Ok(Self {
                 directory: lock,
@@ -251,15 +268,17 @@ pub fn open_root(configuration: &Configuration) -> Result<(Value, Value)> {
     )?;
     let segments = root["segments"].as_array().ok_or("invalid segments")?;
     require(segments.len() <= 256, "segment count exceeds limit")?;
-    let mut end = 0;
+    let mut end = 0u64;
     for segment in segments {
         require(
             segment["start"].as_u64() == Some(end),
             "noncontiguous dictionary",
         )?;
-        end += segment["count"]
+        let count = segment["count"]
             .as_u64()
             .ok_or("invalid dictionary count")?;
+        end = end.checked_add(count).ok_or("dictionary range overflow")?;
+        require(end <= u64::from(u32::MAX), "dictionary exceeds ID range")?;
         let file = segment["file"].as_str().ok_or("invalid segment name")?;
         filename(file, "strings-")?;
         Reader::open(&directory.join(file))?;
@@ -417,7 +436,13 @@ pub fn dictionary_bytes(directory: &Path, root: &Value) -> Result<Vec<Vec<u8>>> 
                     data.get(offsets[block] as usize..end)
                         .ok_or("front block bounds")?,
                 )
-                .map_err(|error| format!("SnapshotFormatError: front.b{frame}: {error}"))?,
+                .map_err(|error| {
+                    crate::Error::with_source(
+                        crate::ErrorCode::InvalidCache,
+                        format!("Invalid dictionary section front.b{frame}."),
+                        error,
+                    )
+                })?,
             );
         }
         require(
@@ -483,7 +508,13 @@ pub fn dictionary_selected_strings(
                     data.get(offsets[block] as usize..end)
                         .ok_or("front block bounds")?,
                 )
-                .map_err(|error| format!("SnapshotFormatError: front.b{frame}: {error}"))?;
+                .map_err(|error| {
+                    crate::Error::with_source(
+                        crate::ErrorCode::InvalidCache,
+                        format!("Invalid dictionary section front.b{frame}."),
+                        error,
+                    )
+                })?;
                 current_block = block;
             }
             let bytes = values
@@ -539,9 +570,7 @@ impl Store {
             Err(error) => {
                 let missing = !directory.join("manifest.json").exists();
                 if !missing {
-                    if let Some(io) = error.downcast_ref::<std::io::Error>()
-                        && io.kind() != std::io::ErrorKind::NotFound
-                    {
+                    if error.code == crate::ErrorCode::Io {
                         return Err(error);
                     }
                     let quarantine =
@@ -1340,6 +1369,19 @@ mod tests {
             shared_project: false,
             view_prefix: None,
         }
+    }
+    #[test]
+    fn malformed_dictionary_counts_are_typed_errors_without_overflow() {
+        let config = configuration();
+        let mut store = Store::writer(config.clone()).unwrap();
+        store.intern("identity", &["".into()]).unwrap();
+        store.root["segments"][0]["count"] = json!(u64::MAX);
+        store.publish_root().unwrap();
+        drop(store);
+        let error = open_root(&config).unwrap_err();
+        assert_eq!(error.code, crate::ErrorCode::InvalidCache);
+        assert!(error.to_string().contains("ID range"));
+        fs::remove_dir_all(config.cache_root).unwrap();
     }
     #[test]
     fn writer_exclusion_atomic_roots_and_reader_generations() {

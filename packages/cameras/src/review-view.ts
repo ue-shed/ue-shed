@@ -9,6 +9,10 @@ import {
 	type ReviewViewDefinition
 } from "./review-schema.js";
 
+/**
+ * Approved view definition/revision validation failure with view identity and original cause.
+ * Area-relative poses and invalid referenced definitions require corrected input.
+ */
 export class ReviewViewDefinitionError extends Schema.TaggedError<ReviewViewDefinitionError>()(
 	"ReviewViewDefinitionError",
 	{
@@ -18,12 +22,21 @@ export class ReviewViewDefinitionError extends Schema.TaggedError<ReviewViewDefi
 	}
 ) {}
 
+/**
+ * Created, revised or unchanged approved view with the resulting set. Status records whether
+ * approved meaning changed; persistence remains a separate caller action.
+ */
 export interface PutReviewViewResult {
 	readonly reviewSet: ReviewSet;
 	readonly status: "created" | "revised" | "unchanged";
 	readonly view: ReviewView;
 }
 
+/**
+ * Pure Effect insertion/update of a validated approved view with revision semantics.
+ * Unchanged definitions retain their revision; incompatible target/viewpoint definitions fail
+ * before persistence.
+ */
 export function putReviewView(args: {
 	readonly reviewSet: ReviewSet;
 	readonly view: ReviewView;
@@ -90,6 +103,11 @@ export function putReviewView(args: {
 	);
 }
 
+/**
+ * Loads a set, validates/inserts/revises the explicit view and saves through
+ * ReviewRepository. Returns created/revised/unchanged evidence; does not capture a frame or
+ * select a project.
+ */
 export function putReviewViewAtPath(args: {
 	readonly path: string;
 	readonly view: ReviewView;

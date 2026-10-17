@@ -60,6 +60,14 @@
 			"native-reader"
 		]
 	},
+	"indexing": {
+		"productionLayer": "GameTextIndexBuilderLive",
+		"referenceLayer": "typeScriptIndexBuilderLayer",
+		"configurationSource": "AssetReader.configuration",
+		"readerCapability": "game_text_index",
+		"minimumProtocolMinor": 13,
+		"automaticWriterFallback": false
+	},
 	"capabilities": {
 		"required": ["saved-project", "saved-asset-reader"],
 		"optional": ["locate-occurrence-in-unreal"],

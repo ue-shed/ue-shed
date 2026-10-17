@@ -32,6 +32,10 @@ export interface TextFacts {
 	readonly audience: TextAudience;
 }
 
+/**
+ * Display labels for stable text-problem categories. Hosts may present different wording
+ * without changing stored problem codes or the policy that reports them.
+ */
 export const TEXT_PROBLEM_LABELS = {
 	key_changed: "Key changed",
 	conflicting_source: "Same key, different text",
@@ -99,6 +103,10 @@ export function textProblems(input: {
 	return TextProblem.literals.filter((problem) => found.has(problem));
 }
 
+/**
+ * Keeps the actionable TextFinding subset of review signals. Conflicting, evidence-only and
+ * compiled-copy signals remain available separately and are not converted into this subset.
+ */
 export function textFindings(signals: readonly TextReviewSignal[]): readonly TextFinding[] {
 	return signals.filter(isFinding);
 }

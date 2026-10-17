@@ -20,6 +20,10 @@ import type { TextCorpus } from "./schema.js";
 import { evaluateTextQuality } from "./quality.js";
 
 const [Budget, Terminology] = TextQualityRule.members;
+/**
+ * An authored localization rule with its own identity, scope, severity and recovery guidance.
+ * Hosts can extend or remove policy without changing saved-text parsing behavior.
+ */
 export const LocalizationProjectRule = Schema.Union([
 	Budget.mapFields(({ maximumCharacters, ...fields }) => ({
 		...fields,
@@ -186,6 +190,11 @@ export const TextQualityRuleDocumentV3 = TextQualityRuleDocumentV2.mapFields(
 }));
 export type TextQualityRuleDocumentV3 = typeof TextQualityRuleDocumentV3.Type;
 
+/**
+ * Versioned authored policy document accepted as v1, v2 or v3. Parse JSON with
+ * decodeGameTextRuleDocumentJson to catch duplicate keys and version-specific unknown settings
+ * before resolving checks.
+ */
 export const GameTextRuleDocument = Schema.Union([
 	TextQualityRuleDocument,
 	TextQualityRuleDocumentV2,
@@ -193,9 +202,16 @@ export const GameTextRuleDocument = Schema.Union([
 ]);
 export type GameTextRuleDocument = typeof GameTextRuleDocument.Type;
 
+/**
+ * Invalid rule JSON, structure or referenced policy identities. The stable code guides
+ * correction; the original JSON/schema cause remains available when parsing failed.
+ */
 export class GameTextRuleDocumentError extends Schema.TaggedError<GameTextRuleDocumentError>()(
 	"GameTextRuleDocumentError",
 	{
+		retrySafe: Schema.Boolean,
+		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		cause: Schema.optionalKey(Schema.Defect()),
 		code: Schema.Literals([
 			"invalid_json",
 			"invalid_structure",
@@ -209,15 +225,24 @@ export class GameTextRuleDocumentError extends Schema.TaggedError<GameTextRuleDo
 	}
 ) {}
 
-function invalid(code: GameTextRuleDocumentError["code"]): GameTextRuleDocumentError {
+function invalid(
+	code: GameTextRuleDocumentError["code"],
+	cause?: unknown
+): GameTextRuleDocumentError {
 	if (code === "invalid_json")
 		return new GameTextRuleDocumentError({
+			...(cause === undefined ? undefined : { cause }),
+			retrySafe: false,
+			nextStep: "fix_input",
 			code,
 			message: "The Game Text quality rule file is not valid JSON.",
 			recovery:
 				"Correct the JSON syntax and retry with a version-1, version-2 or version-3 rule document."
 		});
 	return new GameTextRuleDocumentError({
+		...(cause === undefined ? undefined : { cause }),
+		retrySafe: false,
+		nextStep: "fix_input",
 		code,
 		message: "The Game Text rule document could not be validated.",
 		recovery:
@@ -256,26 +281,31 @@ function duplicateCultureKey(input: string): boolean {
 	return false;
 }
 
+/**
+ * Validates authored rule JSON, including duplicate culture keys, declared roles and unique
+ * rule IDs. Version 3 rejects unknown settings; failures retain GameTextRuleDocumentError and
+ * the original parse issue.
+ */
 export function decodeGameTextRuleDocumentJson(
 	input: string
 ): Effect.Effect<GameTextRuleDocument, GameTextRuleDocumentError> {
 	return Effect.gen(function* () {
 		const json = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Json))(
 			input
-		).pipe(Effect.mapError(() => invalid("invalid_json")));
+		).pipe(Effect.mapError((cause) => invalid("invalid_json", cause)));
 		const decoded = yield* Schema.decodeUnknownEffect(GameTextRuleDocument)(json).pipe(
-			Effect.mapError(() => invalid("invalid_structure"))
+			Effect.mapError((cause) => invalid("invalid_structure", cause))
 		);
 		// Version 3 rejects unknown keys, so a misspelt check or parameter is not ignored.
 		const document =
 			decoded.schemaVersion === 3
 				? yield* Schema.decodeUnknownEffect(TextQualityRuleDocumentV3)(json, {
 						onExcessProperty: "error"
-					}).pipe(Effect.mapError(() => invalid("invalid_structure")))
+					}).pipe(Effect.mapError((cause) => invalid("invalid_structure", cause)))
 				: decoded;
 		if (document.schemaVersion === 1)
 			return yield* decodeTextQualityRuleDocument(document).pipe(
-				Effect.mapError((error) => invalid(error.code))
+				Effect.mapError((error) => invalid(error.code, error))
 			);
 		if (duplicateCultureKey(input)) return yield* Effect.fail(invalid("duplicate_culture_key"));
 		const custom = document.schemaVersion === 3 ? (document.customChecks ?? []) : [];
@@ -305,6 +335,10 @@ export function decodeGameTextRuleDocumentJson(
 	});
 }
 
+/**
+ * Source-quality report retaining the version of the rule document that produced it. Findings
+ * describe configurable policy, not a claim that Unreal rejected the saved text.
+ */
 export const GameTextSourceQualityReport = TextQualityReport.mapFields((fields) => ({
 	...fields,
 	ruleDocumentVersion: Schema.Literals([1, 2, 3])

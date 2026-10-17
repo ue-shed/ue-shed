@@ -12,7 +12,7 @@ const read = <A>(operation: string, run: () => A) =>
 		catch: (cause) =>
 			isSnapshotFormatError(cause) || isSnapshotStoreError(cause)
 				? cause
-				: snapshotFailure(operation, String(cause))
+				: snapshotFailure(operation, `The joined index could not read ${operation}.`, cause)
 	});
 
 const synchronousViews = new WeakMap<JoinedTargetReader, JoinedTargetReader>();

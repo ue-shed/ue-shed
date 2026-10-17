@@ -34,6 +34,11 @@ export interface GameTextWorkspaceHostFailure {
 	readonly recovery: string;
 }
 
+/**
+ * Host-owned selected-project port. Workspace reads and refreshes this selection, checks its
+ * generation before publication, and uses its committed candidates and progress without
+ * introducing a second project picker.
+ */
 export interface GameTextWorkspaceProject {
 	/** The selected project, as the host last published it. */
 	readonly current: () => Effect.Effect<GameTextWorkspaceProjectState>;
@@ -48,10 +53,18 @@ export interface GameTextWorkspaceProject {
 	readonly progress: () => Effect.Effect<GameTextWorkspaceProgress>;
 }
 
+/**
+ * A host file-selection result. cancelled is an ordinary outcome; a selected path does not
+ * change the workspace's active project.
+ */
 export type GameTextWorkspaceFileChoice =
 	| { readonly status: "selected"; readonly path: string }
 	| { readonly status: "cancelled" };
 
+/**
+ * Host-facing file-dialog filter. Extensions omit the dot; a filter guides selection and does
+ * not replace format validation at the read boundary.
+ */
 export interface GameTextWorkspaceFileFilter {
 	readonly name: string;
 	readonly extensions: readonly string[];

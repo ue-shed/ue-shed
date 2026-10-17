@@ -56,7 +56,16 @@ export {
 	defaultLocalizationImportLimits,
 	type LocalizationImportLimits
 } from "./localization-stream.js";
+/**
+ * Version of retained localization import semantics used in snapshot keys. Changes invalidate
+ * disposable parsed inputs independently of authored localization file versions.
+ */
 export const LOCALIZATION_IMPORT_VERSION = 6;
+/**
+ * Owned positioned-read handle for localization evidence. Reads may be partial; stat uses
+ * bigint filesystem metadata and close releases the handle independently of any derived
+ * snapshot.
+ */
 export interface LocalizationImportSourceFile {
 	readonly read: (
 		bytes: Uint8Array,
@@ -78,11 +87,20 @@ const nodeSource = {
 		};
 	}
 };
+/**
+ * Positioned source-file adapter used by localization import. Its Node default owns real
+ * handles; alternate hosts must preserve stat/read consistency and close resources when the
+ * import ends.
+ */
 export const LocalizationImportSource = Context.Reference<{
 	readonly open: (path: string) => Promise<LocalizationImportSourceFile>;
 }>("@ue-shed/game-text/LocalizationImportSource", {
 	defaultValue: () => nodeSource
 });
+/**
+ * Import counters for bytes read, parsed versus reused files, and dictionary lookups. They
+ * describe actual work at the import boundary rather than end-to-end query or UI latency.
+ */
 export const localizationImportMetrics = {
 	bytes: Metric.counter("game_text.localization_import.bytes"),
 	parsed: Metric.counter("game_text.localization_import.parsed"),
@@ -112,7 +130,15 @@ const FileRequest = Options.pipe(
 		projectScoped: Schema.optionalKey(Schema.Boolean)
 	})
 );
+/**
+ * One localization file's project/cache identity, format and import limits. Paths identify
+ * authored evidence; derived snapshots remain disposable and must not replace those files.
+ */
 export type LocalizationFileImportRequest = typeof FileRequest.Type;
+/**
+ * Validated identity and provenance of a retained parsed localization file. It identifies reuse
+ * evidence, not a durable authored-file ID or permission to mutate the source.
+ */
 export interface LocalizationFileSnapshotKey {
 	readonly key: string;
 	readonly contentHash: string;
@@ -146,9 +172,9 @@ function contained(root: string, path: string) {
 }
 function fileError(file: string, cause: unknown) {
 	if (
-		cause instanceof LocalizationError ||
-		cause instanceof SnapshotStoreError ||
-		cause instanceof SnapshotFormatError
+		Schema.is(LocalizationError)(cause) ||
+		Schema.is(SnapshotStoreError)(cause) ||
+		Schema.is(SnapshotFormatError)(cause)
 	)
 		return cause;
 	return importFailure(
@@ -328,7 +354,7 @@ const importFile = Effect.fn("LocalizationSnapshot.importFile")(function* (
 		if (
 			hit &&
 			Result.isFailure(hit) &&
-			(!(hit.failure instanceof SnapshotStoreError) || hit.failure.code !== "missing")
+			(!Schema.is(SnapshotStoreError)(hit.failure) || hit.failure.code !== "missing")
 		)
 			return yield* Effect.fail(hit.failure);
 		const result = yield* Effect.scoped(
@@ -450,7 +476,7 @@ const importFile = Effect.fn("LocalizationSnapshot.importFile")(function* (
 					return { hash: content.hash, parsed: false, bytes: opened.success };
 				if (
 					opened &&
-					(!(opened.failure instanceof SnapshotStoreError) ||
+					(!Schema.is(SnapshotStoreError)(opened.failure) ||
 						opened.failure.code !== "missing")
 				)
 					return yield* Effect.fail(opened.failure);
@@ -569,6 +595,11 @@ const importFile = Effect.fn("LocalizationSnapshot.importFile")(function* (
 	} satisfies LocalizationFileSnapshotKey;
 });
 
+/**
+ * Parses or reuses one localization input within the selected builder's scoped session. It
+ * verifies source provenance around reads and reports typed localization/cache failures;
+ * authored bytes are never rewritten.
+ */
 export const importLocalizationFile = Effect.fn("LocalizationSnapshot.importFileRequest")(
 	(input: LocalizationFileImportRequest) => importFile(input)
 );
@@ -590,6 +621,11 @@ const TargetRequest = LocalizationProjectRequest.pipe(
 		importLimits: Schema.optionalKey(LocalizationImportLimits)
 	})
 );
+/**
+ * One discovered localization target and its import configuration. Import retains
+ * manifest/archive/PO evidence and reports file failures instead of silently dropping
+ * unreadable cultures.
+ */
 export type LocalizationTargetImportRequest = typeof TargetRequest.Type;
 /** Discovery remains the localization service's authority. Each file has an independent key. */
 export const importLocalizationTarget = Effect.fn("LocalizationSnapshot.importTarget")(function* (
@@ -655,7 +691,7 @@ export const importLocalizationTarget = Effect.fn("LocalizationSnapshot.importTa
 	).pipe(
 		Effect.provide(indexLayer),
 		Effect.catch((cause) =>
-			cause instanceof SnapshotStoreError && cause.code === "missing"
+			Schema.is(SnapshotStoreError)(cause) && cause.code === "missing"
 				? Effect.succeed(true)
 				: Effect.fail(cause)
 		)
@@ -702,7 +738,7 @@ export const importLocalizationTarget = Effect.fn("LocalizationSnapshot.importTa
 				diagnostics,
 				profile: result.success.profile
 			};
-		if (!(result.failure instanceof LocalizationError))
+		if (!Schema.is(LocalizationError)(result.failure))
 			return yield* Effect.fail(result.failure);
 		// Preserve per-file diagnostics when an invalid authored file prevents the atomic cold build.
 	}
@@ -731,7 +767,7 @@ export const importLocalizationTarget = Effect.fn("LocalizationSnapshot.importTa
 		if (request.importLimits) Object.assign(fileRequest, { limits: request.importLimits });
 		const result = yield* importLocalizationFile(fileRequest).pipe(Effect.result);
 		if (Result.isFailure(result)) {
-			if (!(result.failure instanceof LocalizationError))
+			if (!Schema.is(LocalizationError)(result.failure))
 				return yield* Effect.fail(result.failure);
 			diagnostics.push({ relativePath, error: result.failure });
 		} else files.push(result.success);

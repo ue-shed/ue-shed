@@ -177,6 +177,10 @@ export function targetRelativeViewpointFromWorldPose(args: {
 	};
 }
 
+/**
+ * Editor-selected actor, bounds, map and optional current perspective pose used to generate
+ * candidates. A snapshot can become stale; approval must reconcile current subject evidence.
+ */
 export interface ReviewSelection {
 	readonly actorPath: string;
 	readonly bounds: SubjectBounds;
@@ -185,10 +189,26 @@ export interface ReviewSelection {
 	readonly mapPath: string;
 }
 
+/**
+ * Stable built-in context group identifier. Hosts can configure or replace the group's policy
+ * without changing its descriptive display name.
+ */
 export const contextThreeQuarterGroupId = FramingGroupId.make("context_three_quarter");
+/**
+ * Stable built-in facade group identifier used by candidate recipes and overrides. It does
+ * not encode a project-specific actor class.
+ */
 export const facadeFrontGroupId = FramingGroupId.make("facade_front");
+/**
+ * Stable built-in orbit group identifier. Group identity is separate from configurable count,
+ * angular offset and distance policy.
+ */
 export const cardinalOrbitGroupId = FramingGroupId.make("cardinal_orbit");
 
+/**
+ * Optional candidate count, distance/elevation, enabled state and angular arc policy. Omitted
+ * fields use the selected helper's defaults rather than a universal project requirement.
+ */
 export interface ArcFramingPresetOptions {
 	readonly count?: number;
 	readonly distanceScale?: number;
@@ -198,6 +218,10 @@ export interface ArcFramingPresetOptions {
 	readonly yawOffsetDegrees?: number;
 }
 
+/**
+ * Builds the configurable context arc preset, initially one candidate at 42 degrees and
+ * distance scale 1.8. This pure policy helper does not move a camera.
+ */
 export function contextThreeQuarterGroup(options: ArcFramingPresetOptions = {}): FramingGroup {
 	return FramingGroup.make({
 		displayName: "Context three-quarter",
@@ -214,6 +238,10 @@ export function contextThreeQuarterGroup(options: ArcFramingPresetOptions = {}):
 	});
 }
 
+/**
+ * Builds the configurable facade arc preset, initially one front-facing candidate at distance
+ * scale 1.25. Hosts can override framing policy without editing the generator.
+ */
 export function facadeFrontGroup(options: ArcFramingPresetOptions = {}): FramingGroup {
 	return FramingGroup.make({
 		displayName: "Facade front",
@@ -230,6 +258,10 @@ export function facadeFrontGroup(options: ArcFramingPresetOptions = {}): Framing
 	});
 }
 
+/**
+ * Builds the configurable ring preset, initially four candidates with 90-degree offset.
+ * Returns policy rather than generating or approving world poses.
+ */
 export function cardinalOrbitGroup(
 	options: {
 		readonly count?: number;
@@ -253,6 +285,11 @@ export function cardinalOrbitGroup(
 	});
 }
 
+/**
+ * Creates the default context, facade and orbit groups with shared FOV/margin policy.
+ * Hosts/projects may replace groups and thresholds; this is not a fixed acceptance
+ * constraint.
+ */
 export function defaultFramingParameters(): FramingParametersDocument {
 	return FramingParameters.make({
 		fieldOfViewDegrees: defaultFieldOfViewDegrees,
@@ -318,6 +355,10 @@ function groupYaw(args: {
 	);
 }
 
+/**
+ * Builds a deterministic preset/group/index candidate identity. Preserve group identity and
+ * one-based generation index when storing overrides or recipes.
+ */
 export function generateFramingCandidateId(args: {
 	readonly groupId: FramingGroupId;
 	readonly index: number;
@@ -383,6 +424,11 @@ function candidateFromGroup(args: {
 	});
 }
 
+/**
+ * Pure candidate generation from subject bounds and configurable groups, optionally including
+ * the current editor pose. Invalid/non-finite bounds return no candidates rather than
+ * invented camera positions.
+ */
 export function generateFramingCandidates(
 	selection: ReviewSelection,
 	parameters: FramingParametersDocument = defaultFramingParameters()
@@ -425,6 +471,11 @@ export function generateFramingCandidates(
 	];
 }
 
+/**
+ * Regenerates a version-2 preset candidate with explicit overrides while preserving its
+ * identity. Unsupported legacy recipes or missing groups remain unchanged rather than
+ * guessing lost provenance.
+ */
 export function applyCandidateOverrides(
 	candidate: typeof FramingCandidate.Type,
 	overrides: FramingCandidateOverrides
@@ -463,6 +514,10 @@ function maximumDelta(left: SubjectBounds, right: SubjectBounds): number {
 	);
 }
 
+/**
+ * Reports subject-bounds change beyond an explicit tolerance, default one world unit. Retains
+ * the approved camera pose; reframing remains an explicit caller action.
+ */
 export function framingDriftDiagnostics(args: {
 	readonly approvedBounds: SubjectBounds;
 	readonly currentBounds: SubjectBounds;
@@ -544,6 +599,10 @@ export function realizationFramingDiagnostics(args: {
 	];
 }
 
+/**
+ * Approved updated review set or explicit missing-view outcome. Pure approval results still
+ * require repository persistence and do not imply a frame was captured.
+ */
 export type ApproveFramingCandidateResult =
 	| { readonly status: "approved"; readonly reviewSet: ReviewSet }
 	| { readonly status: "view_not_found"; readonly viewId: string };
@@ -558,6 +617,11 @@ function revisionMeaning(view: ReviewView): string {
 	});
 }
 
+/**
+ * Keeps the revision for equivalent approved meaning, otherwise increments it.
+ * Presentation-only or unchanged submissions must not fabricate a new capture definition
+ * revision.
+ */
 export function revisedReviewViewRevision(args: {
 	readonly current: ReviewView;
 	readonly next: ReviewView;
@@ -567,6 +631,10 @@ export function revisedReviewViewRevision(args: {
 		: nextReviewViewRevision(args.current.id, args.current.revision);
 }
 
+/**
+ * Revised, unchanged or missing-view outcome for a pure view update. The caller decides
+ * persistence and presentation using the explicit status.
+ */
 export type ReviseReviewViewResult =
 	| { readonly reviewSet: ReviewSet; readonly status: "revised" }
 	| { readonly reviewSet: ReviewSet; readonly status: "unchanged" }
@@ -605,6 +673,11 @@ export function reviseReviewView(args: {
 	};
 }
 
+/**
+ * Creates an approved view with configurable world-fixed or actor-relative anchoring and
+ * retained framing provenance. Records manual adjustments/reasons; does not write the review
+ * set or move an editor camera.
+ */
 export function createReviewViewFromCandidate(args: {
 	readonly anchoring?:
 		| { readonly mode: "world_fixed" }
@@ -700,6 +773,10 @@ export function createAreaReviewView(args: {
 	});
 }
 
+/**
+ * Purely updates an existing actor view from a chosen candidate, preserving referenced
+ * policies and revision semantics. Returns view_not_found when the target cannot be approved.
+ */
 export function approveFramingCandidate(args: {
 	readonly candidate: typeof FramingCandidate.Type;
 	readonly manualPose?: typeof ApprovedPose.Type;

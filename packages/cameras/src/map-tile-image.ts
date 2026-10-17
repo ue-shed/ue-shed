@@ -28,10 +28,15 @@ export const MapTileParentImages = Schema.Tuple([
 ]);
 export type MapTileParentImages = typeof MapTileParentImages.Type;
 
+/**
+ * Map source PNG decode/crop/encode failure with actionable recovery guidance. A failed image
+ * must not be published as a valid tile artifact.
+ */
 export class MapTileImageError extends Schema.TaggedError<MapTileImageError>()(
 	"MapTileImageError",
 	{
 		code: Schema.Literals(["invalid_image", "invalid_crop", "invalid_children"]),
+		cause: Schema.optionalKey(Schema.Defect()),
 		...ErrorGuidanceFields
 	}
 ) {}
@@ -42,9 +47,10 @@ const decodeChildren = Schema.decodeUnknownResult(MapTileParentImages, {
 	onExcessProperty: "error"
 });
 
-function failure(code: MapTileImageError["code"], message: string) {
+function failure(code: MapTileImageError["code"], message: string, cause?: unknown) {
 	return Result.fail(
 		new MapTileImageError({
+			...(cause === undefined ? undefined : { cause }),
 			code,
 			message,
 			nextStep: "fix_input",
@@ -61,9 +67,15 @@ export function cropMapTileImage(
 	rect: PixelRect
 ): Result.Result<MapTileImage, MapTileImageError> {
 	const input = decodeImage(image);
-	if (Result.isFailure(input)) return failure("invalid_image", String(input.failure));
+	if (Result.isFailure(input))
+		return failure(
+			"invalid_image",
+			"The map tile image buffer or dimensions are invalid.",
+			input.failure
+		);
 	const crop = decodeRect(rect);
-	if (Result.isFailure(crop)) return failure("invalid_crop", String(crop.failure));
+	if (Result.isFailure(crop))
+		return failure("invalid_crop", "The map tile crop rectangle is invalid.", crop.failure);
 	const area = crop.success;
 	if (
 		area.left + area.width > input.success.width ||
@@ -99,7 +111,12 @@ export function deriveMapTileParent(
 	children: MapTileParentImages
 ): Result.Result<MapTileImage, MapTileImageError> {
 	const decoded = decodeChildren(children);
-	if (Result.isFailure(decoded)) return failure("invalid_children", String(decoded.failure));
+	if (Result.isFailure(decoded))
+		return failure(
+			"invalid_children",
+			"The map tile child image layout is invalid.",
+			decoded.failure
+		);
 	const [first] = decoded.success;
 	const { width, height } = first;
 	if (

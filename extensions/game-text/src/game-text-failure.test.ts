@@ -5,6 +5,10 @@ import { failureText } from "./game-text-failure.js";
 
 it("preserves domain recovery from the Cause supplied by Effect actions", () => {
 	const error = new GameTextClientError({
+		message: "The GameTextClient operation failed.",
+		retrySafe: false,
+		nextStep: "reconcile",
+		code: "game_text_client_failed",
 		operation: "search",
 		cause: "The saved text index is unavailable.",
 		recovery: "Rescan the project to rebuild its saved text index."

@@ -15,6 +15,10 @@ import { Schema } from "effect";
 import { LocalizationCultureCounts } from "./localization-schema.js";
 import { TextCorpus, TextCorpusSearchPage } from "./schema.js";
 
+/**
+ * Read/failure evidence for one manifest, archive, PO, locmeta or word-count file. Null path
+ * and typed errors preserve files absent from the working copy.
+ */
 export const LocalizationFileStatus = Schema.Struct({
 	kind: Schema.Literals(["manifest", "archive", "po", "locmeta", "word_count"]),
 	culture: Schema.optionalKey(CultureCode),
@@ -24,6 +28,10 @@ export const LocalizationFileStatus = Schema.Struct({
 	error: Schema.optionalKey(LocalizationError)
 });
 export type LocalizationFileStatus = typeof LocalizationFileStatus.Type;
+/**
+ * Target status combining culture counts, bounded corpus diagnostics, gather-file evidence and
+ * a query page. Partial coverage remains visible beside translation totals.
+ */
 export const LocalizationStatusReport = Schema.Struct({
 	schemaVersion: Schema.Literal(1),
 	target: LocalizationTargetName,
@@ -59,6 +67,10 @@ function fileStatus(
 	return value;
 }
 
+/**
+ * Projects all retained target evidence files into read/failure status rows, including absent
+ * files and their original typed reader errors.
+ */
 export function localizationEvidenceFileStatuses(
 	evidence: LocalizationTargetEvidence
 ): readonly LocalizationFileStatus[] {
@@ -73,6 +85,10 @@ export function localizationEvidenceFileStatuses(
 	];
 }
 
+/**
+ * Combines a corpus, target evidence and selected query page into a bounded status report. It
+ * retains scan/gather failures rather than treating unavailable files as empty data.
+ */
 export function localizationStatusReport(
 	corpus: TextCorpus,
 	evidence: LocalizationTargetEvidence,
@@ -196,6 +212,10 @@ export interface LocalizationTargetFiles {
 	readonly localizationFolder?: string;
 }
 
+/**
+ * Collects project-relative localization evidence paths for a target. The result reflects
+ * retained evidence and supports file scoping without selecting another project.
+ */
 export function localizationTargetFiles(
 	files: readonly LocalizationFileStatus[]
 ): LocalizationTargetFiles {

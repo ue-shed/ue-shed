@@ -11,6 +11,46 @@ import {
 import { runCli } from "./command.js";
 import { CliRuntime } from "./cli-runtime.js";
 
+it.effect(
+	"loc run classifies invalid target input before discovery and keeps parser evidence",
+	() =>
+		Effect.gen(function* () {
+			const output = yield* Ref.make("");
+			const exit = yield* Ref.make(0);
+			const runtime = Layer.succeed(
+				CliRuntime,
+				CliRuntime.of({
+					print: (value) => Ref.update(output, (text) => text + value),
+					printError: () => Effect.void,
+					setExitCode: (value) => Ref.set(exit, value)
+				})
+			);
+			yield* runCli([
+				"loc",
+				"run",
+				"gather",
+				resolve("fixtures/unreal-427-localization"),
+				"--target",
+				"../outside",
+				"--plan",
+				"--json"
+			]).pipe(Effect.provide(runtime));
+			const failure = Schema.decodeUnknownSync(
+				Schema.fromJsonString(
+					Schema.Struct({
+						schemaVersion: Schema.Literal(1),
+						type: Schema.Literal("failure"),
+						error: LocalizationOperationError
+					})
+				)
+			)(yield* Ref.get(output));
+			expect(failure.error.code).toBe("invalid_request");
+			expect(failure.error.nextStep).toBe("fix_input");
+			expect(failure.error.cause).toBeDefined();
+			expect(yield* Ref.get(exit)).toBe(2);
+		})
+);
+
 it.effect("loc run --plan returns validated recipe writes without a commandlet or reader", () =>
 	Effect.gen(function* () {
 		const root = yield* Effect.promise(() => mkdtemp(join(tmpdir(), "ue-shed-loc-run-cli-")));

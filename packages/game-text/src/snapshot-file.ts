@@ -82,8 +82,14 @@ async function readAt(
 	}
 	return bytes;
 }
-async function writeAt(handle: FileHandle, bytes: Uint8Array, position: number) {
+async function writeAt(
+	handle: FileHandle,
+	bytes: Uint8Array,
+	position: number,
+	signal?: AbortSignal
+) {
 	for (let offset = 0; offset < bytes.length; ) {
+		signal?.throwIfAborted();
 		const { bytesWritten } = await handle.write(
 			bytes,
 			offset,
@@ -99,8 +105,10 @@ export async function writeSnapshotFile(
 	path: string,
 	source: SnapshotSource,
 	level: SnapshotCompressionLevel = 1,
-	sample?: () => void
+	sample?: () => void,
+	signal?: AbortSignal
 ) {
+	signal?.throwIfAborted();
 	const entries: SnapshotEntry[] = [];
 	let position = 48 + source.columns.length * 96;
 	snapshotCheck(
@@ -110,12 +118,13 @@ export async function writeSnapshotFile(
 	);
 	const handle = await open(path, "wx");
 	try {
-		await writeAt(handle, new Uint8Array(position), 0);
+		await writeAt(handle, new Uint8Array(position), 0, signal);
 		for (const column of source.columns) {
+			signal?.throwIfAborted();
 			await writeColumn(column);
 		}
 		const directory = encodeSnapshotDirectory(entries, position, codecOptions);
-		await writeAt(handle, directory, 0);
+		await writeAt(handle, directory, 0, signal);
 		await handle.sync();
 		return decodeSnapshotDirectory(directory, position, codecOptions);
 	} finally {
@@ -149,7 +158,7 @@ export async function writeSnapshotFile(
 			checksum = prepared.checksum;
 			codec = prepared.codec;
 		} else {
-			const values = await column.load(),
+			const values = await loadColumn(column, signal),
 				raw = snapshotPayload({ ...column, values });
 			const compressionLevel = Schema.is(Schema.Number)(level) ? level : level(column);
 			const compressed =
@@ -183,10 +192,29 @@ export async function writeSnapshotFile(
 			stringCount: column.stringCount ?? 0
 		};
 		entries.push(entry);
-		await writeAt(handle, stored, position);
+		await writeAt(handle, stored, position, signal);
 		const padding = snapshotAligned(stored.length) - stored.length;
-		if (padding) await writeAt(handle, new Uint8Array(padding), position + stored.length);
+		if (padding)
+			await writeAt(handle, new Uint8Array(padding), position + stored.length, signal);
 		position += snapshotAligned(stored.length);
+	}
+}
+
+/** Stop awaiting a producer on cancellation; its eventual result cannot write into a closed file. */
+async function loadColumn(column: SnapshotSourceColumn, signal?: AbortSignal) {
+	if (!signal) return column.load();
+	signal.throwIfAborted();
+	let abort: (() => void) | undefined;
+	try {
+		return await Promise.race([
+			new Promise<never>((_, reject) => {
+				abort = () => reject(signal.reason);
+				signal.addEventListener("abort", abort, { once: true });
+			}),
+			column.load()
+		]);
+	} finally {
+		if (abort) signal.removeEventListener("abort", abort);
 	}
 }
 export interface SnapshotLoadedDomain {
@@ -268,7 +296,8 @@ export async function openSnapshotFile(
 			} catch (cause) {
 				throw snapshotFailure(
 					value.name,
-					`Cannot decompress bounded section: ${String(cause)}`
+					"The bounded snapshot section could not be decompressed.",
+					cause
 				);
 			}
 		};

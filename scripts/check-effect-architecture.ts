@@ -176,6 +176,9 @@ const approvedRawFetchAdapters = new Set([
 	"packages/unreal-connection/src/remote-control-client.ts"
 ]);
 const approvedResourceAdapters = new Set([
+	// Bounded snapshot producer cancellation removes its abort listener in finally; the owning
+	// native build scope closes staging handles. Verified by native-index-lifecycle.integration.test.ts.
+	"packages/game-text/src/snapshot-file.ts",
 	// Ctrl+K, page-hide and the preference save timer belong to the Solid owner; onSettled cleanup
 	// removes them and flushes the pending save.
 	"extensions/game-text/src/game-text-query-route.tsx",
@@ -867,8 +870,19 @@ export async function checkLocalizationBoundaries(root: string = repositoryRoot)
 		visited.add(path);
 		const text = await readFile(path, "utf8");
 		const label = relative(root, path).replaceAll("\\", "/");
-		if (/\bprocess\s*\./u.test(text))
-			failures.push(`${label}: browser closure must not use process`);
+		const browserSource = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true);
+		let usesProcess = false;
+		const findProcess = (node: ts.Node): void => {
+			if (
+				(ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) &&
+				ts.isIdentifier(node.expression) &&
+				node.expression.text === "process"
+			)
+				usesProcess = true;
+			ts.forEachChild(node, findProcess);
+		};
+		findProcess(browserSource);
+		if (usesProcess) failures.push(`${label}: browser closure must not use process`);
 		const imports = moduleSpecifiers(path, text);
 		for (const specifier of imports) {
 			if (specifier === undefined) continue;
@@ -1074,32 +1088,20 @@ export async function checkCompositionPolicy(root: string) {
 	return failures;
 }
 
-/**
- * Packages whose tagged errors all carry the shared guidance fields (Plan 058 D4). A package joins
- * this list once every one of its `Schema.TaggedError` classes is migrated; it never leaves it.
- */
-const errorGuidancePackages = [
-	"packages/asset-audits",
-	"packages/authoring",
-	"packages/authoring-sdk",
-	"packages/cameras",
-	"packages/config-explorer",
-	"packages/engine",
-	"packages/enhanced-input",
-	"packages/host",
-	"packages/localization",
-	"packages/map-history",
-	"packages/niagara",
-	"packages/observatory",
-	"packages/plugin-distribution",
-	"packages/project-custodian",
-	"packages/protocol",
-	"packages/scenarios",
-	"packages/ui",
-	"packages/unreal-assets",
-	"packages/unreal-connection",
-	"packages/world"
-];
+/** Source packages and applications all share the error guidance contract. */
+async function errorGuidanceDirectories(root: string) {
+	const directories: string[] = [];
+	for (const parent of sourceRoots) {
+		try {
+			for (const entry of await readdir(join(root, parent), { withFileTypes: true }))
+				if (entry.isDirectory()) directories.push(`${parent}/${entry.name}`);
+		} catch (cause) {
+			if (!(cause instanceof Error && "code" in cause && cause.code === "ENOENT"))
+				throw cause;
+		}
+	}
+	return directories;
+}
 const errorGuidanceFieldNames = ["message", "recovery", "retrySafe", "nextStep"];
 
 /** Property names of an object literal, following `...Identifier` spreads declared in the file. */
@@ -1131,12 +1133,12 @@ function objectFieldNames(
 }
 
 /**
- * Every `Schema.TaggedError` in a migrated package has `message`, `recovery`, `retrySafe` and
+ * Every production `Schema.TaggedError` has `message`, `recovery`, `retrySafe` and
  * `nextStep`, so hosts can decide what to do without parsing prose.
  */
 export async function checkErrorGuidance(root: string = repositoryRoot) {
 	const failures: string[] = [];
-	for (const directory of errorGuidancePackages) {
+	for (const directory of await errorGuidanceDirectories(root)) {
 		let files: readonly string[];
 		try {
 			files = await filesUnder(root, join(directory, "src"));
@@ -1181,14 +1183,6 @@ export async function checkErrorGuidance(root: string = repositoryRoot) {
 	return failures;
 }
 
-/** Files owned by open Plan 058 lane B and C branches; those branches convert their matches. */
-const taggedErrorMatchingPending = new Set([
-	"packages/game-text/src/localization-cold-import.ts",
-	"packages/game-text/src/localization-import.ts",
-	"packages/game-text/src/search-worker-node.ts",
-	"packages/game-text/src/search-worker-protocol.ts"
-]);
-
 /**
  * Tagged errors are matched by tag (`Effect.catchTag`/`catchTags`, `Schema.is(ErrorClass)` or
  * `Predicate.isTagged`), never with `instanceof`, which fails across package copies and after a
@@ -1208,7 +1202,6 @@ export async function checkTaggedErrorMatching(root: string = repositoryRoot) {
 		}
 	}
 	for (const { label, text } of sources) {
-		if (taggedErrorMatchingPending.has(label)) continue;
 		for (const match of text.matchAll(/\binstanceof\s+(?:\w+\.)?(\w+)/gu)) {
 			const name = match[1];
 			if (name === undefined || !tagged.has(name)) continue;
@@ -1221,6 +1214,125 @@ export async function checkTaggedErrorMatching(root: string = repositoryRoot) {
 	return failures;
 }
 
+/** Optional causes may be absent; unrelated conditional metadata must not waive retention. */
+function optionalCauseSpread(
+	expression: ts.Expression,
+	locals: ReadonlyMap<string, ts.Expression>
+): boolean {
+	if (ts.isParenthesizedExpression(expression))
+		return optionalCauseSpread(expression.expression, locals);
+	if (!ts.isConditionalExpression(expression)) return false;
+	const condition = expression.condition;
+	if (
+		!ts.isBinaryExpression(condition) ||
+		condition.operatorToken.kind !== ts.SyntaxKind.EqualsEqualsEqualsToken ||
+		!(
+			(ts.isIdentifier(condition.left) && condition.left.text === "undefined") ||
+			(ts.isIdentifier(condition.right) && condition.right.text === "undefined")
+		) ||
+		!ts.isIdentifier(expression.whenTrue) ||
+		expression.whenTrue.text !== "undefined"
+	)
+		return false;
+	return objectFieldNames(expression.whenFalse, locals)?.has("cause") ?? false;
+}
+
+/** Error adapters retain source failures, including helpers and objects with spread fields. */
+export async function checkErrorTranslationCauses(root: string = repositoryRoot) {
+	const failures: string[] = [];
+	const tagged = new Set<string>();
+	const sources: { path: string; text: string }[] = [];
+	for (const directory of sourceRoots)
+		for (const path of await filesUnder(root, directory)) {
+			if (!/\.tsx?$/u.test(path) || testSourcePattern.test(path)) continue;
+			const text = await readFile(path, "utf8");
+			sources.push({ path, text });
+			for (const match of text.matchAll(/class\s+(\w+)\s+extends\s+Schema\.TaggedError\b/gu))
+				if (match[1]) tagged.add(match[1]);
+		}
+	for (const { path, text } of sources) {
+		const source = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true);
+		const label = relative(root, path).replaceAll("\\", "/");
+		const visit = (node: ts.Node): void => {
+			if (
+				(ts.isArrowFunction(node) ||
+					ts.isFunctionExpression(node) ||
+					ts.isFunctionDeclaration(node) ||
+					ts.isMethodDeclaration(node)) &&
+				node.body
+			) {
+				const carrying = new Set(
+					node.parameters
+						.filter(
+							(parameter) =>
+								parameter.type &&
+								ts.isTypeLiteralNode(parameter.type) &&
+								parameter.type.members.some(
+									(member) => member.name?.getText(source) === "cause"
+								)
+						)
+						.map((parameter) => parameter.name.getText(source))
+				);
+				const sourceParameter = node.parameters.some((parameter) =>
+					/^(?:cause|error|err|failure|defect)$/u.test(parameter.name.getText(source))
+				);
+				const parent = node.parent;
+				const callback =
+					(ts.isPropertyAssignment(parent) && parent.name.getText(source) === "catch") ||
+					(ts.isCallExpression(parent) &&
+						parent.expression.getText(source) === "Effect.mapError");
+				if (sourceParameter || carrying.size || callback) {
+					const locals = new Map<string, ts.Expression>();
+					const collect = (entry: ts.Node): void => {
+						if (ts.isFunctionLike(entry)) return;
+						if (
+							ts.isVariableDeclaration(entry) &&
+							ts.isIdentifier(entry.name) &&
+							entry.initializer
+						)
+							locals.set(entry.name.text, entry.initializer);
+						ts.forEachChild(entry, collect);
+					};
+					collect(node.body);
+					const inspect = (entry: ts.Node): void => {
+						if (ts.isFunctionLike(entry)) return;
+						if (
+							ts.isNewExpression(entry) &&
+							(entry.expression.getText(source).endsWith("Error") ||
+								tagged.has(
+									entry.expression.getText(source).split(".").at(-1) ?? ""
+								))
+						) {
+							const fields = entry.arguments?.[0];
+							if (fields && ts.isObjectLiteralExpression(fields)) {
+								const retained = fields.properties.some((property) =>
+									ts.isSpreadAssignment(property)
+										? (ts.isIdentifier(property.expression) &&
+												carrying.has(property.expression.text)) ||
+											objectFieldNames(property.expression, locals)?.has(
+												"cause"
+											) ||
+											optionalCauseSpread(property.expression, locals)
+										: property.name?.getText(source) === "cause"
+								);
+								if (!retained)
+									failures.push(
+										`${label}:${lineOf(text, entry.getStart(source))}: error translation must retain its original cause`
+									);
+							}
+						}
+						ts.forEachChild(entry, inspect);
+					};
+					inspect(node.body);
+				}
+			}
+			ts.forEachChild(node, visit);
+		};
+		visit(source);
+	}
+	return failures;
+}
+
 export async function checkArchitecture(root: string = repositoryRoot) {
 	return [
 		...(await checkCatalogUsage(root)),
@@ -1229,6 +1341,7 @@ export async function checkArchitecture(root: string = repositoryRoot) {
 		...(await checkDomainServices(root)),
 		...(await checkLocalizationBoundaries(root)),
 		...(await checkErrorGuidance(root)),
+		...(await checkErrorTranslationCauses(root)),
 		...(await checkTaggedErrorMatching(root)),
 		...(await checkGameTextEntryPoints(root)),
 		...(await checkWorkbenchBoundaries(root)),

@@ -1,4 +1,4 @@
-import { Result } from "effect";
+import { Result, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { cropMapTileImage, deriveMapTileParent, type MapTileImage } from "./map-tile-image.js";
 
@@ -14,6 +14,20 @@ function solid(rgba: readonly number[]): MapTileImage {
 }
 
 describe("map tile pixels", () => {
+	it("classifies invalid pixel input while retaining the failing schema field", () => {
+		const result = cropMapTileImage(image([], 0, 2), {
+			left: 0,
+			top: 0,
+			width: 1,
+			height: 1
+		});
+		if (!Result.isFailure(result)) throw new Error("Expected invalid image input");
+		expect(result.failure.code).toBe("invalid_image");
+		expect(Schema.isSchemaError(result.failure.cause)).toBe(true);
+		expect(String(result.failure.cause)).toContain("width");
+		expect(result.failure.message).toBe("The map tile image buffer or dimensions are invalid.");
+	});
+
 	it("crops every RGBA byte across rows and offset views without sharing source storage", () => {
 		const buffer = new Uint8Array(80);
 		const pixels = buffer.subarray(7, 71);

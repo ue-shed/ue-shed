@@ -114,12 +114,20 @@ export function workspaceQualitySeverity(
 	return localizationCheckCatalogue[filter].severity;
 }
 const Selection = { target: LocalizationTargetName, culture: Schema.optionalKey(CultureCode) };
+/**
+ * Target/culture quality-list request with a filter and offset. The workspace retains complete
+ * findings while each host page stays bounded.
+ */
 export const WorkspaceQualityRequest = Schema.Struct({
 	...Selection,
 	filter: WorkspaceQualityFilter,
 	offset: Offset
 });
 export type WorkspaceQualityRequest = typeof WorkspaceQualityRequest.Type;
+/**
+ * Finding focus request with separate occurrence and PO-context offsets. Offsets belong to the
+ * retained target/culture quality generation.
+ */
 export const WorkspaceQualityFocusRequest = Schema.Struct({
 	...Selection,
 	id: TextQualityFindingId,
@@ -131,6 +139,10 @@ const SourceVariants = Schema.Array(Schema.String.check(Schema.isMaxLength(512))
 	Schema.isMinLength(2),
 	Schema.isMaxLength(16)
 );
+/**
+ * Bounded host finding preview with policy severity, source/problem/context and optional first
+ * saved location. Full structured evidence remains available through focus/report operations.
+ */
 export const WorkspaceFinding = Schema.Struct({
 	id: TextQualityFindingId,
 	filter: WorkspaceQualityFilter,
@@ -147,6 +159,10 @@ export const WorkspaceFinding = Schema.Struct({
 	locations: Schema.optionalKey(Count)
 });
 export type WorkspaceFinding = typeof WorkspaceFinding.Type;
+/**
+ * Bounded quality findings plus exact filter/severity totals, custom filter labels and
+ * check-limit counts. Unsupported evidence remains separate from a clean check result.
+ */
 export const WorkspaceQualityPage = Schema.Struct({
 	findings: Schema.Array(WorkspaceFinding).check(Schema.isMaxLength(50)),
 	total: Count,
@@ -186,6 +202,10 @@ const Failure = Schema.Struct({
 	recovery: Schema.String
 });
 const NotReady = Schema.Struct({ status: Schema.Literal("not_ready") });
+/**
+ * Quality page outcome separating ready data, unavailable state and recoverable host failure.
+ * An unavailable page is not an empty successful audit.
+ */
 export const WorkspaceQualityResult = Schema.Union([
 	NotReady,
 	Failure,
@@ -206,6 +226,10 @@ const Changes = LocalizationChangeSet.mapFields((fields) => ({
 	})),
 	changes: Schema.Array(BoundedChange).check(Schema.isMaxLength(100))
 }));
+/**
+ * Bounded proposed localization change document with remaining-change count. Ready means the
+ * proposal is available; it does not mean any file has been written.
+ */
 export const WorkspaceChangesResult = Schema.Union([
 	NotReady,
 	Failure,
@@ -217,6 +241,10 @@ export const WorkspaceChangesResult = Schema.Union([
 ]);
 export type WorkspaceChangesResult = typeof WorkspaceChangesResult.Type;
 const Range = Schema.Struct({ start: Count, end: Count });
+/**
+ * Focused localization finding with bounded source/translation ranges, occurrences and PO
+ * context. Suggested changes remain proposals requiring the localization write workflow.
+ */
 export const WorkspaceLocalizationFindingFocus = Schema.Struct({
 	kind: Schema.Literal("localization"),
 	id: TextQualityFindingId,
@@ -242,6 +270,10 @@ export const WorkspaceLocalizationFindingFocus = Schema.Struct({
 	suggestedChange: Schema.optionalKey(BoundedChange)
 });
 export type WorkspaceLocalizationFindingFocus = typeof WorkspaceLocalizationFindingFocus.Type;
+/**
+ * Quality focus outcome for source or localization findings, including explicit not-found,
+ * unavailable and failed states. Branch on kind before reading domain-specific evidence.
+ */
 export const WorkspaceQualityFocusResult = Schema.Union([
 	NotReady,
 	Failure,
@@ -269,6 +301,10 @@ export interface WorkspaceQualityItem {
 	readonly line: LocalizationLine | undefined;
 	readonly summary: WorkspaceFinding;
 }
+/**
+ * Maps structured finding kind to its workspace filter key, including project rules and custom
+ * checks. Policy severity does not affect the filter identity.
+ */
 export function workspaceQualityFilterOf(
 	finding: Finding | SourceFinding
 ): Exclude<WorkspaceQualityFilter, "all"> {
@@ -483,6 +519,10 @@ export function localizationFindingHash(
 	}
 	return [first >>> 0, second >>> 0];
 }
+/**
+ * Derives a localization finding identity from stable evidence fields. Severity/display labels
+ * are not identity, so adjusting policy presentation does not erase accepted-review matching.
+ */
 export function localizationFindingId([first, second]: readonly [number, number]) {
 	return TextQualityFindingId.make(
 		"localization-finding:" +
@@ -515,6 +555,10 @@ function findingSource(finding: Finding, line: LocalizationLine | undefined): st
 	const variants = "sourceVariants" in finding ? finding.sourceVariants : undefined;
 	return line?.manifest[0]?.source.Text ?? variants?.[0] ?? line?.source ?? "";
 }
+/**
+ * Builds a bounded workspace finding preview from structured evidence and an optional joined
+ * line. Keeps the original finding/line available alongside presentation text.
+ */
 export function workspaceQualityItem(
 	finding: Finding | SourceFinding,
 	line: LocalizationLine | undefined,
@@ -671,6 +715,10 @@ export interface LocalizationFindingList {
 		culture: CultureCode | undefined
 	): ReadonlyArray<{ code: LocalizationCheckDiagnostic["code"]; count: number }>;
 }
+/**
+ * Retained localization quality report metadata used with lazily hydrated findings. Counts,
+ * diagnostics and provenance survive without materializing every finding at once.
+ */
 export interface LocalizationQualityMetadata {
 	readonly join: Pick<LocalizationJoin, "target" | "nativeCulture" | "cultures">;
 	readonly rules: readonly RuleId[];
@@ -1231,12 +1279,20 @@ export function localizationQualityWorkspaceOf(
 	};
 }
 
+/**
+ * Target progress report request with optional culture-page offset. The request scopes
+ * presentation and does not change project or target evidence.
+ */
 export const WorkspaceReportRequest = Schema.Struct({
 	target: LocalizationTargetName,
 	offset: Offset
 });
 export type WorkspaceReportRequest = typeof WorkspaceReportRequest.Type;
 const Words = Schema.NullOr(Count);
+/**
+ * Per-culture progress row for a bounded host report. Unknown word/count evidence remains
+ * explicit rather than being shown as confirmed translated work.
+ */
 export const WorkspaceReportRow = Schema.Struct({
 	culture: CultureCode,
 	translatedLines: Words,
@@ -1252,6 +1308,10 @@ export const WorkspaceReportRow = Schema.Struct({
 	changedWords: Schema.optionalKey(Words)
 });
 export type WorkspaceReportRow = typeof WorkspaceReportRow.Type;
+/**
+ * Bounded progress rows plus corpus/gather coverage, unknown reasons and optional baseline
+ * summary. Failed and missing evidence counts qualify the displayed completion totals.
+ */
 export const WorkspaceReportPage = Schema.Struct({
 	target: LocalizationTargetName,
 	rows: Schema.Array(WorkspaceReportRow).check(Schema.isMaxLength(50)),
@@ -1283,17 +1343,29 @@ export const WorkspaceReportPage = Schema.Struct({
 	)
 });
 export type WorkspaceReportPage = typeof WorkspaceReportPage.Type;
+/**
+ * Progress report outcome with ready page, unavailable state or failure. Unavailable evidence
+ * must not be rendered as a complete zero-line report.
+ */
 export const WorkspaceReportResult = Schema.Union([
 	NotReady,
 	Failure,
 	Schema.Struct({ status: Schema.Literal("ready"), page: WorkspaceReportPage })
 ]);
 export type WorkspaceReportResult = typeof WorkspaceReportResult.Type;
+/**
+ * Target-scoped save-baseline, compare-baseline or CSV-export operation. The host owns
+ * destination selection and writable-file policy.
+ */
 export const WorkspaceReportFileRequest = Schema.Struct({
 	target: LocalizationTargetName,
 	operation: Schema.Literals(["save_baseline", "compare_baseline", "export_csv"])
 });
 export type WorkspaceReportFileRequest = typeof WorkspaceReportFileRequest.Type;
+/**
+ * Report-file operation outcome including cancellation, save confirmation or compared page.
+ * Failed/unavailable operations retain guidance without claiming a file was persisted.
+ */
 export const WorkspaceReportFileResult = Schema.Union([
 	NotReady,
 	Failure,
@@ -1302,6 +1374,10 @@ export const WorkspaceReportFileResult = Schema.Union([
 	Schema.Struct({ status: Schema.Literal("compared"), page: WorkspaceReportPage })
 ]);
 export type WorkspaceReportFileResult = typeof WorkspaceReportFileResult.Type;
+/**
+ * Projects a progress report into native-culture-first bounded rows and aggregate evidence
+ * totals. Optional baseline metadata is retained for comparison presentation.
+ */
 export function localizationReportPage(
 	report: LocalizationProgressReport,
 	native: string | null,
@@ -1381,6 +1457,10 @@ export function localizationReportPage(
 			: undefined)
 	};
 }
+/**
+ * Formats the retained localization progress report as spreadsheet-safe CSV. Explicit unknown
+ * metrics remain distinguishable from numeric zero.
+ */
 export function localizationReportCsv(
 	pages: readonly WorkspaceReportRow[],
 	baseline = false

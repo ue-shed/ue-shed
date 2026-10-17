@@ -20,6 +20,30 @@ import {
 
 const unexpected = (operation: string) => Effect.die(new Error(`Unexpected ${operation} call`));
 
+it.effect("keeps a failed reader distinct from an invalid project and retains its cause", () =>
+	Effect.gen(function* () {
+		const original = new AssetReaderError({
+			code: "executable_missing",
+			kind: "process",
+			operation: "extract_text",
+			message: "The configured reader is unavailable.",
+			recovery: "Install the paired reader.",
+			retrySafe: false,
+			nextStep: "fix_input"
+		});
+		const failure = yield* Effect.flatMap(TextCorpusService, (service) =>
+			service.scan({ projectRoot: "C:/Fixture" })
+		).pipe(
+			Effect.flip,
+			Effect.provide(TextCorpusServiceLive),
+			Effect.provide(readerOffering(() => Stream.fail(original)))
+		);
+		expect(failure.code).toBe("reader_failed");
+		expect(failure.recovery).toBe(original.recovery);
+		expect(failure.cause).toBe(original);
+	})
+);
+
 const textEvents = (options: {
 	readonly failed?: boolean;
 	readonly path: string;
@@ -85,6 +109,46 @@ const readerOffering = (
 	) => Stream.Stream<SavedAssetTextExtractionEvent, AssetReaderError>
 ) =>
 	makeAssetReaderTestLayer({
+		configuration: () =>
+			Effect.succeed({
+				executable: "uasset",
+				timeoutMs: 30_000,
+				catalogTimeoutMs: 50 * 60_000
+			}),
+		catalogProgress: () =>
+			Effect.succeed({
+				phase: "idle",
+				cacheHits: 0,
+				processedAssets: 0,
+				tablesFound: 0,
+				totalAssets: 0
+			}),
+		scanProgress: () =>
+			Effect.succeed({
+				phase: "idle",
+				cacheHits: 0,
+				emittedAssets: 0,
+				processedAssets: 0,
+				totalAssets: 0
+			}),
+		savedWorldProgress: () =>
+			Effect.succeed({
+				phase: "idle",
+				actorsFound: 0,
+				processedPackages: 0,
+				totalPackages: 0
+			}),
+		readBlueprint: () =>
+			Effect.die(new Error("Unexpected readBlueprint in this reader fixture")),
+		readLevelSequence: () =>
+			Effect.die(new Error("Unexpected readLevelSequence in this reader fixture")),
+		readSavedWorld: () =>
+			Effect.die(new Error("Unexpected readSavedWorld in this reader fixture")),
+		scanProject: () => Effect.die(new Error("Unexpected scanProject in this reader fixture")),
+		extractProjectTextPackages: () =>
+			Stream.die(new Error("Unexpected extractProjectTextPackages in this reader fixture")),
+		extractProjectTextures: () =>
+			Stream.die(new Error("Unexpected extractProjectTextures in this reader fixture")),
 		discoverAssets: () => unexpected("discoverAssets"),
 		discoverTables: () => unexpected("discoverTables"),
 		readAsset: () => unexpected("readAsset"),

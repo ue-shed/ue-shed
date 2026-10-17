@@ -5,7 +5,10 @@ import { it } from "@effect/vitest";
 import { Effect, Layer, Ref } from "effect";
 import { expect } from "vitest";
 import { unrealRemoteControlPermissions } from "./remote-control-permissions.js";
-import { makeEngineInstallationDiscoveryTestLayer } from "./engine-installation.js";
+import {
+	EngineInstallationError,
+	makeEngineInstallationDiscoveryTestLayer
+} from "./engine-installation.js";
 import {
 	UnrealProjectLauncher,
 	UnrealProjectLauncherLive,
@@ -17,6 +20,35 @@ import {
 	validateUnrealRemoteControlBuild,
 	type UnrealProjectProcessLaunchOptions
 } from "./project-launcher.js";
+
+it.effect("keeps discovery identity and its nested IO cause through launch translation", () => {
+	const original = new Error("fixture IO failure");
+	const discovery = new EngineInstallationError({
+		code: "engine_not_found",
+		message: "The configured engine is unavailable.",
+		recovery: "Choose an installed engine.",
+		retrySafe: false,
+		nextStep: "fix_input",
+		cause: original
+	});
+	const layer = UnrealProjectLauncherLive.pipe(
+		Layer.provide(
+			Layer.merge(
+				makeEngineInstallationDiscoveryTestLayer(() => Effect.fail(discovery)),
+				makeUnrealProjectProcessTestLayer(() => Effect.die("must not spawn"))
+			)
+		)
+	);
+	return Effect.gen(function* () {
+		const launcher = yield* UnrealProjectLauncher;
+		const failure = yield* Effect.flip(
+			launcher.launch({ mode: { kind: "normal" }, projectDescriptor: "Game.uproject" })
+		);
+		expect(failure.code).toBe("engine_discovery_failed");
+		expect(failure.cause).toBe(discovery);
+		expect(discovery.cause).toBe(original);
+	}).pipe(Effect.provide(layer));
+});
 
 it("rejects different builds of the same engine before launch and accepts matching identities", async () => {
 	const root = await mkdtemp(join(tmpdir(), "ue-shed-build-identity-"));
@@ -52,7 +84,7 @@ it("rejects different builds of the same engine before launch and accepts matchi
 		);
 		expect(invalid).toMatchObject({
 			_tag: "Failure",
-			failure: { code: "invalid_module_manifest" }
+			failure: { code: "invalid_module_manifest", cause: expect.any(SyntaxError) }
 		});
 	} finally {
 		await rm(root, { recursive: true, force: true });

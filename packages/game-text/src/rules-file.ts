@@ -3,15 +3,28 @@ import { dirname, resolve } from "node:path";
 import { Effect, Schema } from "effect";
 import { GAME_TEXT_RULES_RELATIVE_PATH, STARTER_GAME_TEXT_RULES } from "./starter-rules.js";
 
+/**
+ * Starter-rule creation was rejected or could not write its destination. Existing files are
+ * never overwritten; the code distinguishes that refusal from an invalid project or filesystem
+ * failure.
+ */
 export class TextRulesFileError extends Schema.TaggedError<TextRulesFileError>()(
 	"TextRulesFileError",
 	{
+		retrySafe: Schema.Boolean,
+		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		cause: Schema.optionalKey(Schema.Defect()),
 		code: Schema.Literals(["already_exists", "write_failed", "invalid_project"]),
 		message: Schema.String,
 		recovery: Schema.String
 	}
 ) {}
 
+/**
+ * Exclusively creates the starter rule document in the selected project or explicit output
+ * path. Refuses to overwrite existing rules and reports invalid-project or write failures with
+ * recovery guidance.
+ */
 export const createStarterTextRules = Effect.fn("GameText.createStarterTextRules")(function* (
 	projectRoot: string,
 	output?: string
@@ -19,8 +32,11 @@ export const createStarterTextRules = Effect.fn("GameText.createStarterTextRules
 	const root = resolve(projectRoot);
 	const directory = yield* Effect.tryPromise({
 		try: () => stat(root),
-		catch: () =>
+		catch: (cause) =>
 			new TextRulesFileError({
+				cause,
+				retrySafe: false,
+				nextStep: "fix_input",
 				code: "invalid_project",
 				message: "The project directory could not be read.",
 				recovery: "Choose an existing project directory and retry."
@@ -29,6 +45,8 @@ export const createStarterTextRules = Effect.fn("GameText.createStarterTextRules
 	if (!directory.isDirectory()) {
 		return yield* Effect.fail(
 			new TextRulesFileError({
+				retrySafe: false,
+				nextStep: "fix_input",
 				code: "invalid_project",
 				message: "The project root must be a directory.",
 				recovery: "Choose an existing project directory and retry."
@@ -47,6 +65,9 @@ export const createStarterTextRules = Effect.fn("GameText.createStarterTextRules
 		catch: (cause) => {
 			const exists = cause instanceof Object && "code" in cause && cause.code === "EEXIST";
 			return new TextRulesFileError({
+				cause,
+				retrySafe: false,
+				nextStep: "fix_input",
 				code: exists ? "already_exists" : "write_failed",
 				message: exists
 					? "The Game Text rules file already exists."

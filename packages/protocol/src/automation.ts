@@ -1,3 +1,4 @@
+import { contractParser } from "./contract-parser.js";
 import { Schema } from "effect";
 
 const version = Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literal(0) });
@@ -145,15 +146,30 @@ export const AutomationCsvResult = Schema.Struct({
 }).annotate({ identifier: "AutomationCsvResult" });
 export type AutomationCsvResult = typeof AutomationCsvResult.Type;
 
-/** Validates unknown input against the players request contract; fails with a SchemaError. */
-export const decodeAutomationPlayersRequest = Schema.decodeUnknownEffect(AutomationPlayersRequest);
-/** Validates a plugin response against the players result contract; fails with a SchemaError. */
-export const decodeAutomationPlayersResult = Schema.decodeUnknownEffect(AutomationPlayersResult);
-/** Validates unknown input against the input request contract; fails with a SchemaError. */
-export const decodeAutomationInputRequest = Schema.decodeUnknownEffect(AutomationInputRequest);
-/** Validates a plugin response against the input result contract; fails with a SchemaError. */
-export const decodeAutomationInputResult = Schema.decodeUnknownEffect(AutomationInputResult);
-/** Validates unknown input against the CSV request contract; fails with a SchemaError. */
-export const decodeAutomationCsvRequest = Schema.decodeUnknownEffect(AutomationCsvRequest);
-/** Validates a plugin response against the CSV result contract; fails with a SchemaError. */
-export const decodeAutomationCsvResult = Schema.decodeUnknownEffect(AutomationCsvResult);
+/** Validates unknown input against the players request contract; fails with a ContractParseError. */
+export const decodeAutomationPlayersRequest = contractParser(
+	AutomationPlayersRequest,
+	"AutomationPlayersRequest"
+);
+/** Validates a plugin response against the players result contract; fails with a ContractParseError. */
+export const decodeAutomationPlayersResult = contractParser(
+	AutomationPlayersResult,
+	"AutomationPlayersResult"
+);
+/** Validates unknown input against the input request contract; fails with a ContractParseError. */
+export const decodeAutomationInputRequest = contractParser(
+	AutomationInputRequest,
+	"AutomationInputRequest"
+);
+/** Validates a plugin response against the input result contract; fails with a ContractParseError. */
+export const decodeAutomationInputResult = contractParser(
+	AutomationInputResult,
+	"AutomationInputResult"
+);
+/** Validates unknown input against the CSV request contract; fails with a ContractParseError. */
+export const decodeAutomationCsvRequest = contractParser(
+	AutomationCsvRequest,
+	"AutomationCsvRequest"
+);
+/** Validates a plugin response against the CSV result contract; fails with a ContractParseError. */
+export const decodeAutomationCsvResult = contractParser(AutomationCsvResult, "AutomationCsvResult");

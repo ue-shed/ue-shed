@@ -48,6 +48,7 @@
 			"packages/protocol/src/game-text-index.ts",
 			"packages/protocol/src/game-text-actions.ts",
 			"packages/protocol/src/error-guidance.ts",
+			"packages/protocol/src/contract-parser.ts",
 			"packages/protocol/src/level-sequence.ts",
 			"packages/protocol/src/cameras.ts",
 			"packages/protocol/src/companion.ts",

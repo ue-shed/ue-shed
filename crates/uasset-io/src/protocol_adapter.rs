@@ -467,11 +467,26 @@ fn execute_direct(
             }
             .map_err(|error| {
                 Failure::new(
-                    game_text_index::builder::failure_code(error.as_ref()),
+                    game_text_index::builder::failure_code(&error),
                     error.to_string(),
-                    true,
+                    false,
                 )
             })?;
+            if matches!(build, game_text_index::builder::BuildRequest::Join { .. })
+                && outcome
+                    .join
+                    .as_ref()
+                    .is_some_and(|join| join.strategy.as_deref() == Some("full"))
+            {
+                let diagnostics = game_text_index::join_incremental::diagnostics();
+                if let Some(reason) = diagnostics["fallback"].as_str() {
+                    emitter.emit("diagnostic", json!({
+                        "code": format!("game_text_index_join_fallback.{reason}"),
+                        "message": "The native join selected a full rebuild because incremental eligibility was not satisfied.",
+                        "severity": "info"
+                    })).map_err(emission_failure)?;
+                }
+            }
             emit_typed_result(emitter, &ResultFrame::GameTextIndex { outcome })?;
             Ok(false)
         }

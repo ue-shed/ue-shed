@@ -1,3 +1,6 @@
+import { AssetReaderError } from "@ue-shed/unreal-assets";
+import { TextCorpusScanError } from "./corpus.js";
+import { isGameTextIndexError, type IndexFailure } from "./index-contract.js";
 import {
 	GameTextInvestigationPreset,
 	type GameTextInvestigationQuery,
@@ -61,6 +64,7 @@ import {
 import { decodeGameTextRuleDocumentJson, type GameTextRuleDocument } from "./entry-rules.js";
 import {
 	type TextCorpus,
+	type TextCorpusPublicError,
 	type LocalizationJoin,
 	type TextCorpusFocusRequest,
 	type TextCorpusFocusResult,
@@ -72,7 +76,17 @@ import {
 import { makeGameTextWorkspaceLocalization } from "./workspace-localization.js";
 import type { LocalizationTarget } from "@ue-shed/localization";
 import { LocalizationFileAccessLive } from "@ue-shed/localization";
-import { Cache, Data, Deferred, Duration, Effect, Ref, Semaphore, type Scope } from "effect";
+import {
+	Cache,
+	Data,
+	Deferred,
+	Duration,
+	Effect,
+	Ref,
+	Schema,
+	Semaphore,
+	type Scope
+} from "effect";
 import type {
 	GameTextWorkspaceHost,
 	GameTextWorkspaceProgress,
@@ -170,6 +184,38 @@ export interface GameTextWorkspaceApi {
 	readonly qualitySearch: (
 		request: TextQualitySearchRequest
 	) => Effect.Effect<TextQualitySearchResult>;
+}
+
+const isCorpusScanError = Schema.is(TextCorpusScanError);
+const isReaderError = Schema.is(AssetReaderError);
+
+/** Preserve classified scan/reader failures; other preparation failures belong to the index. */
+function indexPublicFailure(error: IndexFailure): TextCorpusPublicError {
+	const cause = isGameTextIndexError(error) ? error.cause : undefined;
+	const source =
+		isCorpusScanError(cause) ||
+		(isGameTextIndexError(error) &&
+			error.operation === "reader_failure" &&
+			isReaderError(cause))
+			? cause
+			: error;
+	const code = isCorpusScanError(source)
+		? source.code
+		: isReaderError(source)
+			? source.kind === "discovery"
+				? "invalid_project"
+				: source.kind === "resource_limit"
+					? "scan_limit_exceeded"
+					: "reader_failed"
+			: isGameTextIndexError(error) && error.operation === "reader_failure"
+				? "reader_failed"
+				: "index_failed";
+	return {
+		code,
+		message: source.message,
+		recovery: source.recovery,
+		retrySafe: source.retrySafe
+	};
 }
 
 function unavailableProject(message: string, recovery: string): TextCorpusRunResult {
@@ -304,12 +350,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 			Effect.map((corpus) => ({ corpus, status: "completed" as const })),
 			Effect.catch((error) =>
 				Effect.succeed({
-					error: {
-						code: "invalid_project" as const,
-						message: error.message,
-						recovery: error.recovery,
-						retrySafe: "retrySafe" in error ? (error.retrySafe ?? true) : true
-					},
+					error: indexPublicFailure(error),
 					status: "failed" as const
 				})
 			)
@@ -475,12 +516,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 				),
 				Effect.catch((error) =>
 					Effect.succeed({
-						error: {
-							code: "invalid_project" as const,
-							message: error.message,
-							recovery: error.recovery,
-							retrySafe: "retrySafe" in error ? (error.retrySafe ?? true) : true
-						},
+						error: indexPublicFailure(error),
 						status: "failed" as const
 					})
 				)

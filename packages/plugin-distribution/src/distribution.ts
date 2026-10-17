@@ -95,6 +95,7 @@ function mapManifestError(
 ): PluginDistributionError {
 	if (error.code === "schema_invalid") {
 		return new UnsupportedManifestVersion({
+			cause: error,
 			message: error.message,
 			recovery: error.recovery,
 			releaseVersion,
@@ -104,6 +105,7 @@ function mapManifestError(
 	}
 	if (error.code === "unsupported_unreal") {
 		return new IncompatibleUnrealVersion({
+			cause: error,
 			message: error.message,
 			recovery: error.recovery,
 			releaseVersion,
@@ -113,6 +115,7 @@ function mapManifestError(
 		});
 	}
 	return new PluginDistributionValidationError({
+		cause: error,
 		field: "manifest",
 		message: error.message,
 		recovery: error.recovery,
@@ -437,6 +440,7 @@ export const pluginDistributionLayer = (
 						Effect.mapError(
 							(error) =>
 								new PluginDistributionValidationError({
+									cause: error,
 									field: "pluginIds",
 									message: error.message,
 									recovery: error.recovery,

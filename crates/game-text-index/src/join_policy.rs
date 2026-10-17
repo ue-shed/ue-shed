@@ -35,6 +35,10 @@ pub(crate) fn strip_namespace(value: &str) -> &str {
     }
     value
 }
+#[expect(
+    clippy::expect_used,
+    reason = "fmt::Write on an owned String cannot return an error"
+)]
 pub(crate) fn uri_component(value: &str) -> String {
     let mut result = String::new();
     for byte in crate::wtf8::Wtf8Buf::from_view(value)

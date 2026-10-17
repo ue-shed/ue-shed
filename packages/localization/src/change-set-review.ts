@@ -25,6 +25,10 @@ export const LocalizationChangeOutcome = Schema.Literals([
 ]);
 export type LocalizationChangeOutcome = typeof LocalizationChangeOutcome.Type;
 
+/**
+ * One proposal classified against current evidence, including the effective translation
+ * before writing. Only a ready outcome is eligible for replacement.
+ */
 export const LocalizationChangeReview = Schema.Struct({
 	change: LocalizationChange,
 	outcome: LocalizationChangeOutcome,
@@ -33,6 +37,10 @@ export const LocalizationChangeReview = Schema.Struct({
 });
 export type LocalizationChangeReview = typeof LocalizationChangeReview.Type;
 
+/**
+ * Currentness review and PO files a proposed write would replace. Hosts can check these files
+ * out before applying; review itself neither writes nor reserves them against later changes.
+ */
 export const LocalizationChangeSetReview = Schema.Struct({
 	target: LocalizationTargetName,
 	changes: Schema.Array(LocalizationChangeReview),

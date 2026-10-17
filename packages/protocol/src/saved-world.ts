@@ -1,10 +1,11 @@
+import { contractParser } from "./contract-parser.js";
 import { Schema } from "effect";
 
 const NonNegativeInt = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 
 /**
  * An Unreal vector from a resolved saved transform: world units (centimetres) for a location, a
- * per-axis factor for a scale. Decoding fails with a SchemaError on a NaN or infinite component.
+ * per-axis factor for a scale. Decoding fails with a ContractParseError on a NaN or infinite component.
  */
 export const SavedWorldVector = Schema.Struct({
 	x: Schema.Finite,
@@ -15,7 +16,7 @@ export type SavedWorldVector = Schema.Schema.Type<typeof SavedWorldVector>;
 
 /**
  * A rotation quaternion converted from saved component rotators and composed up the attachment
- * chain. Decoding fails with a SchemaError on a NaN or infinite component.
+ * chain. Decoding fails with a ContractParseError on a NaN or infinite component.
  */
 export const SavedWorldQuaternion = Schema.Struct({
 	w: Schema.Finite,
@@ -147,8 +148,8 @@ export const SavedWorldChoice = Schema.Union([
 	})
 ]);
 export type SavedWorldChoice = Schema.Schema.Type<typeof SavedWorldChoice>;
-/** Decodes a project-choice reply; fails with a SchemaError for an unknown status or shape. */
-export const decodeSavedWorldChoice = Schema.decodeUnknownEffect(SavedWorldChoice);
+/** Decodes a project-choice reply; fails with a ContractParseError for an unknown status or shape. */
+export const decodeSavedWorldChoice = contractParser(SavedWorldChoice, "SavedWorldChoice");
 
 /** A map projection from saved project files, independent of a running Unreal Editor. */
 export const SavedWorld = Schema.Struct({
@@ -189,11 +190,11 @@ export const SavedWorldProgress = Schema.Struct({
 	totalPackages: NonNegativeInt
 });
 export type SavedWorldProgress = Schema.Schema.Type<typeof SavedWorldProgress>;
-/** Decodes a progress snapshot; fails with a SchemaError for an unknown phase or negative count. */
-export const decodeSavedWorldProgress = Schema.decodeUnknownEffect(SavedWorldProgress);
+/** Decodes a progress snapshot; fails with a ContractParseError for an unknown phase or negative count. */
+export const decodeSavedWorldProgress = contractParser(SavedWorldProgress, "SavedWorldProgress");
 
 /**
- * Decodes a saved-world document; fails with a SchemaError for any contract other than
+ * Decodes a saved-world document; fails with a ContractParseError for any contract other than
  * `unreal-saved-world` 2.0 or 2.1, or a malformed shape.
  */
-export const decodeSavedWorld = Schema.decodeUnknownEffect(SavedWorld);
+export const decodeSavedWorld = contractParser(SavedWorld, "SavedWorld");

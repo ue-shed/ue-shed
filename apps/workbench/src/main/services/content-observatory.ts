@@ -58,6 +58,7 @@ function errorState(error: MapHistoryError) {
 function targetCatalogError(operation: string, error: AssetReaderError): MapHistoryError {
 	const kind = error.kind === "resource_limit" ? "resource_limit" : "saved_world_decode";
 	return new MapHistoryError({
+		cause: error,
 		kind,
 		message: `${operation}: ${error.message}`,
 		recovery:
@@ -144,8 +145,9 @@ export const WorkbenchContentObservatoryLive = Layer.effect(
 		) {
 			const selectedProject = yield* project.savedProject().pipe(
 				Effect.mapError(
-					() =>
+					(cause) =>
 						new MapHistoryError({
+							cause: cause,
 							kind: "invalid_target",
 							message:
 								"No Workbench project is configured for current actor discovery.",

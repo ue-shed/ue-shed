@@ -7,6 +7,8 @@ import { Context, Effect, Layer, Schema } from "effect";
 export class LocalFilesError extends Schema.TaggedError<LocalFilesError>()(
 	"Workbench.LocalFilesError",
 	{
+		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		cause: Schema.optionalKey(Schema.Defect()),
 		causeText: Schema.String,
 		code: Schema.optionalKey(Schema.Literal("already_exists")),
 		message: Schema.String,
@@ -59,6 +61,7 @@ function filesError(
 	retrySafe = true
 ): LocalFilesError {
 	const fields = {
+		cause,
 		causeText: cause instanceof Error ? cause.message : String(cause),
 		message: `Local file ${operation} failed.`,
 		operation,
@@ -68,8 +71,12 @@ function filesError(
 	};
 
 	if (cause instanceof Object && "code" in cause && cause.code === "EEXIST")
-		return new LocalFilesError({ ...fields, code: "already_exists" });
-	return new LocalFilesError(fields);
+		return new LocalFilesError({
+			nextStep: "escalate",
+			...fields,
+			code: "already_exists"
+		});
+	return new LocalFilesError({ nextStep: "escalate", ...fields });
 }
 
 export const LocalFilesLive = Layer.succeed(

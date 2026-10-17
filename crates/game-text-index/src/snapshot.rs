@@ -206,6 +206,10 @@ impl Drop for Writer {
 fn put(b: &mut [u8], p: usize, n: u32) {
     b[p..p + 4].copy_from_slice(&n.to_le_bytes());
 }
+#[expect(
+    clippy::unwrap_used,
+    reason = "only fixed-size 48-byte headers and 96-byte directory entries reach get; every constant offset fits"
+)]
 fn get(b: &[u8], p: usize) -> u32 {
     u32::from_le_bytes(b[p..p + 4].try_into().unwrap())
 }
@@ -388,8 +392,13 @@ impl Reader {
         self.file.read_exact(&mut pad[..n])?;
         require(pad[..n].iter().all(|&x| x == 0), "padding")?;
         if e.kind == 4 {
-            strings_bytes(&raw)
-                .map_err(|error| format!("SnapshotFormatError: {}: {error}", e.name))?;
+            strings_bytes(&raw).map_err(|error| {
+                crate::Error::with_source(
+                    crate::ErrorCode::InvalidCache,
+                    format!("Invalid snapshot string section {}.", e.name),
+                    error,
+                )
+            })?;
         }
         if e.kind == 3 {
             require(

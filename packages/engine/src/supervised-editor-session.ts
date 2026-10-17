@@ -40,6 +40,11 @@ type SupervisorMessage = typeof SupervisorMessage.Type;
 const WINDOWS_SUPERVISOR_PACKAGE = "@ue-shed/engine-win32-x64";
 const SUPERVISOR_OUTPUT_LIMIT = 16_384;
 
+/**
+ * Bounded explicit project/plugin launch with readiness, capability and termination
+ * requirements. The HTTP port determines the local endpoint; optional timeouts are
+ * milliseconds, not Effect duration strings.
+ */
 export const SupervisedEditorSessionRequest = Schema.Struct({
 	explicitEngineRoot: Schema.optional(BoundedString),
 	expectedProjectName: Schema.optional(Schema.NonEmptyString.check(Schema.isMaxLength(256))),
@@ -55,6 +60,11 @@ export const SupervisedEditorSessionRequest = Schema.Struct({
 });
 export type SupervisedEditorSessionRequest = typeof SupervisedEditorSessionRequest.Type;
 
+/**
+ * Observed process-tree outcome. Exited records natural termination; Terminated additionally
+ * records whether cancellation, failure or scope release requested shutdown. Exit codes and
+ * signals can be unavailable.
+ */
 export const OwnedProcessExit = Schema.Union([
 	Schema.Struct({
 		exitCode: Schema.NullOr(Schema.Int),
@@ -69,11 +79,20 @@ export const OwnedProcessExit = Schema.Union([
 	})
 ]);
 export type OwnedProcessExit = typeof OwnedProcessExit.Type;
+/**
+ * Reason an owning scope requests process-tree termination: cancellation, operation failure
+ * or normal release. It is distinct from the child's exit status.
+ */
 export type OwnedProcessTerminationReason = Extract<
 	OwnedProcessExit,
 	{ readonly kind: "terminated" }
 >["reason"];
 
+/**
+ * Validation, spawn, supervisor, readiness, capability or termination failure with an
+ * explicit lifecycle stage. Cause preserves the underlying error; failed termination requires
+ * operator reconciliation.
+ */
 export class SupervisedEditorSessionError extends Schema.TaggedError<SupervisedEditorSessionError>()(
 	"SupervisedEditorSessionError",
 	{
@@ -98,6 +117,10 @@ export class SupervisedEditorSessionError extends Schema.TaggedError<SupervisedE
 ) {}
 const isSupervisedEditorSessionError = Schema.is(SupervisedEditorSessionError);
 
+/**
+ * Literal executable/arguments, working directory and termination deadline for an owned
+ * process tree. The implementation must terminate descendants as well as the initial process.
+ */
 export interface OwnedProcessTreeLaunchOptions {
 	readonly args: ReadonlyArray<string>;
 	readonly cwd: string;
@@ -105,6 +128,10 @@ export interface OwnedProcessTreeLaunchOptions {
 	readonly terminationTimeout: Duration.Input;
 }
 
+/**
+ * Owned process identity with wait and explicit tree termination effects. Termination returns
+ * the observed exit outcome and may fail if the supervisor cannot confirm cleanup.
+ */
 export interface OwnedProcessTreeHandle {
 	readonly awaitExit: Effect.Effect<OwnedProcessExit, SupervisedEditorSessionError>;
 	readonly pid: number;
@@ -113,16 +140,30 @@ export interface OwnedProcessTreeHandle {
 	) => Effect.Effect<OwnedProcessExit, SupervisedEditorSessionError>;
 }
 
+/**
+ * Starts a supervised process tree and returns its lifecycle handle. Implementations must
+ * report supervision unavailability rather than silently degrading to an unowned detached
+ * process.
+ */
 export interface OwnedProcessTreeApi {
 	readonly launch: (
 		options: OwnedProcessTreeLaunchOptions
 	) => Effect.Effect<OwnedProcessTreeHandle, SupervisedEditorSessionError>;
 }
 
+/**
+ * Process-tree ownership port used by supervised editor sessions. Hosts may replace
+ * supervision, but must preserve descendant termination and truthful exit reporting.
+ */
 export class OwnedProcessTree extends Context.Service<OwnedProcessTree, OwnedProcessTreeApi>()(
 	"@ue-shed/engine/OwnedProcessTree"
 ) {}
 
+/**
+ * Ready editor session with negotiated manifest, resolved paths, endpoint and owned PID.
+ * Valid only while its acquisition scope remains open; terminating it ends the owned process
+ * tree.
+ */
 export interface SupervisedEditorSessionHandle {
 	readonly awaitExit: Effect.Effect<OwnedProcessExit, SupervisedEditorSessionError>;
 	readonly engineRoot: string;
@@ -136,12 +177,21 @@ export interface SupervisedEditorSessionHandle {
 	) => Effect.Effect<OwnedProcessExit, SupervisedEditorSessionError>;
 }
 
+/**
+ * Acquires a ready editor inside the caller's Scope. Validation/readiness failures and scope
+ * release terminate the owned process tree; required capabilities must be advertised before
+ * acquisition succeeds.
+ */
 export interface SupervisedEditorSessionApi {
 	readonly acquire: (
 		request: SupervisedEditorSessionRequest
 	) => Effect.Effect<SupervisedEditorSessionHandle, SupervisedEditorSessionError, Scope.Scope>;
 }
 
+/**
+ * Scope-owned editor launch and readiness service. Use for disposable conformance or
+ * automation sessions that must not leave an editor and its descendants running.
+ */
 export class SupervisedEditorSession extends Context.Service<
 	SupervisedEditorSession,
 	SupervisedEditorSessionApi
@@ -193,7 +243,8 @@ function engineDiscoveryError(cause: EngineInstallationError): SupervisedEditorS
 		cause.message,
 		cause.recovery,
 		cause.retrySafe,
-		cause.nextStep
+		cause.nextStep,
+		cause
 	);
 }
 
@@ -204,7 +255,8 @@ function readinessError(cause: EditorConnectionError): SupervisedEditorSessionEr
 		cause.message,
 		cause.recovery,
 		cause.retrySafe,
-		cause.nextStep
+		cause.nextStep,
+		cause
 	);
 }
 
@@ -215,12 +267,15 @@ function filesystemEntry(
 ): Effect.Effect<void, SupervisedEditorSessionError> {
 	return Effect.tryPromise({
 		try: () => access(path),
-		catch: () =>
+		catch: (cause) =>
 			sessionError(
 				code,
 				"validation",
 				`${label} does not exist: ${path}`,
-				`Choose an existing ${label.toLowerCase()} and retry.`
+				`Choose an existing ${label.toLowerCase()} and retry.`,
+				false,
+				"fix_input",
+				cause
 			)
 	});
 }
@@ -321,8 +376,11 @@ function windowsSupervisorExecutable(): Effect.Effect<string, SupervisedEditorSe
 			sessionError(
 				"process_tree_supervision_unavailable",
 				"launch",
-				`The Windows Job Object supervisor is unavailable: ${String(cause)}`,
-				`Install the matching optional ${WINDOWS_SUPERVISOR_PACKAGE} package and retry.`
+				`The Windows Job Object supervisor is unavailable.`,
+				`Install the matching optional ${WINDOWS_SUPERVISOR_PACKAGE} package and retry.`,
+				undefined,
+				undefined,
+				cause
 			)
 	});
 }
@@ -353,9 +411,11 @@ function makeWindowsHandle(
 				sessionError(
 					"termination_failed",
 					"termination",
-					`Could not request termination of owned Windows Job Object ${pid}: ${String(cause)}`,
+					`Could not request termination of owned Windows Job Object ${pid}.`,
 					"Terminate the owned editor process tree manually before retrying.",
-					true
+					true,
+					undefined,
+					cause
 				)
 		});
 		const completed = yield* awaitExit.pipe(Effect.timeoutOption(terminationTimeout));
@@ -397,18 +457,20 @@ function launchWindowsProcessTree(
 		const completion = new Promise<SupervisorCompletion>((complete) => {
 			finishCompletion = complete;
 		});
-		const supervisorFailure = (message: string) =>
+		const supervisorFailure = (message: string, cause?: unknown) =>
 			sessionError(
 				"supervisor_failed",
 				launched ? "operation" : "launch",
 				message,
 				"Inspect the supervisor error and editor logs, then retry.",
-				true
+				true,
+				undefined,
+				cause
 			);
-		const fail = (message: string) => {
+		const fail = (message: string, cause?: unknown) => {
 			if (settled) return;
 			settled = true;
-			const error = supervisorFailure(message);
+			const error = supervisorFailure(message, cause);
 			if (launched) finishCompletion({ error, ok: false });
 			else resume(Effect.fail(error));
 		};
@@ -459,9 +521,7 @@ function launchWindowsProcessTree(
 				try {
 					processMessage(Schema.decodeUnknownSync(SupervisorMessage)(JSON.parse(line)));
 				} catch (cause) {
-					fail(
-						`The Windows supervisor emitted an invalid protocol message: ${String(cause)}`
-					);
+					fail("The Windows supervisor emitted an invalid protocol message.", cause);
 					helper.stdin?.end();
 				}
 			}
@@ -471,9 +531,7 @@ function launchWindowsProcessTree(
 			if (stderr.length >= SUPERVISOR_OUTPUT_LIMIT) return;
 			stderr = `${stderr}${chunk}`.slice(0, SUPERVISOR_OUTPUT_LIMIT);
 		});
-		helper.on("error", (cause) =>
-			fail(`Could not start the Windows supervisor: ${cause.message}`)
-		);
+		helper.on("error", (cause) => fail("Could not start the Windows supervisor.", cause));
 		helper.on("close", (code) => {
 			if (settled) return;
 			const detail = stderr.trim().length > 0 ? `: ${stderr.trim()}` : "";
@@ -522,8 +580,11 @@ function makePosixHandle(
 			sessionError(
 				"process_tree_supervision_unavailable",
 				"operation",
-				`Could not inspect owned process group ${pid}: ${String(cause)}`,
-				"Install a readable procfs or terminate the owned editor process group manually."
+				`Could not inspect owned process group ${pid}.`,
+				"Install a readable procfs or terminate the owned editor process group manually.",
+				undefined,
+				undefined,
+				cause
 			)
 	});
 	const terminate = Effect.fn("OwnedProcessTree.terminate")(function* (
@@ -539,9 +600,11 @@ function makePosixHandle(
 				sessionError(
 					"termination_failed",
 					"termination",
-					`Could not terminate owned process group ${pid}: ${String(cause)}`,
+					`Could not terminate owned process group ${pid}.`,
 					"Terminate the owned editor process group manually before retrying.",
-					true
+					true,
+					undefined,
+					cause
 				)
 		});
 		const completed = yield* awaitExit.pipe(Effect.timeoutOption(terminationTimeout));
@@ -559,6 +622,11 @@ function makePosixHandle(
 	return { awaitExit, pid, terminate };
 }
 
+/**
+ * Native process-tree supervision: uses the packaged supervisor on Windows and process-group
+ * ownership on supported POSIX hosts. Reports unavailable supervision instead of falling back
+ * to an unmanaged launch.
+ */
 export const OwnedProcessTreeLive = Layer.succeed(
 	OwnedProcessTree,
 	OwnedProcessTree.of({
@@ -593,10 +661,11 @@ export const OwnedProcessTreeLive = Layer.succeed(
 										: sessionError(
 												"spawn_failed",
 												"launch",
-												`Could not retain the supervised process identity: ${String(cause)}`,
+												`Could not retain the supervised process identity.`,
 												"Check operating-system process limits and retry.",
 												false,
-												"escalate"
+												"escalate",
+												cause
 											)
 								)
 							);
@@ -636,6 +705,11 @@ function releaseReason(exit: Exit.Exit<unknown, unknown>): OwnedProcessTerminati
 	return Exit.isFailure(exit) ? "failed" : "released";
 }
 
+/**
+ * Combines EngineInstallationDiscovery, OwnedProcessTree and EditorConnection. Validates
+ * inputs, launches, awaits readiness/capabilities and attaches process-tree termination to
+ * scope release.
+ */
 export const SupervisedEditorSessionLive = Layer.effect(
 	SupervisedEditorSession,
 	Effect.gen(function* () {
@@ -769,12 +843,21 @@ export const SupervisedEditorSessionLive = Layer.effect(
 	})
 );
 
+/**
+ * Provides a complete explicit OwnedProcessTree test port. The supplied implementation owns
+ * outcomes and synchronization; no missing operation falls back to the production service.
+ */
 export function makeOwnedProcessTreeTestLayer(
 	launch: OwnedProcessTreeApi["launch"]
 ): Layer.Layer<OwnedProcessTree> {
 	return Layer.succeed(OwnedProcessTree, OwnedProcessTree.of({ launch }));
 }
 
+/**
+ * Provides a complete explicit SupervisedEditorSession test port. The supplied implementation
+ * owns outcomes and synchronization; no missing operation falls back to the production
+ * service.
+ */
 export function makeSupervisedEditorSessionTestLayer(
 	service: SupervisedEditorSessionApi
 ): Layer.Layer<SupervisedEditorSession> {

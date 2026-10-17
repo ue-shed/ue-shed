@@ -20,13 +20,30 @@ import { nonNegativeIntegerFlag, optionalFlag, optionalValue, readerFields } fro
 function parseJsonFlag<A>(label: string, value: string, schema: Schema.Decoder<A>) {
 	return Effect.try({
 		try: () => Schema.decodeUnknownSync(Schema.Json)(JSON.parse(value)),
-		catch: (cause) => new CliCommandError({ message: `${label} is not valid JSON.`, cause })
+		catch: (cause) =>
+			new CliCommandError({
+				recovery:
+					"Inspect the command context and original cause before deciding whether to retry.",
+				retrySafe: false,
+				nextStep: "escalate",
+				code: "cli_command_failed",
+				message: `${label} is not valid JSON.`,
+				cause
+			})
 	}).pipe(
 		Effect.flatMap(Schema.decodeUnknownEffect(schema)),
 		Effect.mapError((cause) =>
 			isCliCommandError(cause)
 				? cause
-				: new CliCommandError({ message: `${label} does not match its schema.`, cause })
+				: new CliCommandError({
+						recovery:
+							"Inspect the command context and original cause before deciding whether to retry.",
+						retrySafe: false,
+						nextStep: "escalate",
+						code: "cli_command_failed",
+						message: `${label} does not match its schema.`,
+						cause
+					})
 		)
 	);
 }

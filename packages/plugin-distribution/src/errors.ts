@@ -40,12 +40,17 @@ export class OfflineCacheMiss extends Schema.TaggedError<OfflineCacheMiss>()("Of
 
 export class UnsupportedManifestVersion extends Schema.TaggedError<UnsupportedManifestVersion>()(
 	"UnsupportedManifestVersion",
-	{ ...PluginErrorGuidanceFields, releaseVersion: Schema.String }
+	{ ...PluginErrorGuidanceFields, releaseVersion: Schema.String, ...CauseFields }
 ) {}
 
 export class IncompatibleUnrealVersion extends Schema.TaggedError<IncompatibleUnrealVersion>()(
 	"IncompatibleUnrealVersion",
-	{ ...PluginErrorGuidanceFields, releaseVersion: Schema.String, unrealVersion: Schema.String }
+	{
+		...PluginErrorGuidanceFields,
+		releaseVersion: Schema.String,
+		unrealVersion: Schema.String,
+		...CauseFields
+	}
 ) {}
 
 export class CompatiblePluginBuildUnavailable extends Schema.TaggedError<CompatiblePluginBuildUnavailable>()(
@@ -85,6 +90,7 @@ export class ArtifactDigestMismatch extends Schema.TaggedError<ArtifactDigestMis
 export class MalformedOrUnsafeArchive extends Schema.TaggedError<MalformedOrUnsafeArchive>()(
 	"MalformedOrUnsafeArchive",
 	{
+		...CauseFields,
 		...PluginErrorGuidanceFields,
 		entry: Schema.optional(Schema.String),
 		releaseVersion: Schema.String

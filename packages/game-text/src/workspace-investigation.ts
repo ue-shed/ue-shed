@@ -73,6 +73,7 @@ export const openWorkspaceInvestigation = Effect.fn("GameText.workspace.investig
 				Effect.mapError(
 					(error) =>
 						new InvestigationError({
+							cause: error,
 							retrySafe: true,
 							nextStep: "fix_input",
 							message: error.message,
@@ -85,6 +86,7 @@ export const openWorkspaceInvestigation = Effect.fn("GameText.workspace.investig
 			Effect.mapError(
 				(error) =>
 					new InvestigationError({
+						cause: error,
 						retrySafe: true,
 						nextStep: "fix_input",
 						message: error.message,
@@ -98,6 +100,7 @@ export const openWorkspaceInvestigation = Effect.fn("GameText.workspace.investig
 			Effect.mapError(
 				(error) =>
 					new InvestigationError({
+						cause: error,
 						retrySafe: true,
 						nextStep: "fix_input",
 						message: `Invalid investigation preset: ${error.message}`,

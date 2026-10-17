@@ -7,6 +7,10 @@ import { Context, Effect, Exit, Layer, Schema } from "effect";
 export class OfflineTexturePreviewHostError extends Schema.TaggedError<OfflineTexturePreviewHostError>()(
 	"Workbench.OfflineTexturePreviewHostError",
 	{
+		recovery: Schema.String,
+		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		code: Schema.Literal("offline_texture_preview_host_failed"),
+		cause: Schema.optionalKey(Schema.Defect()),
 		causeText: Schema.String,
 		message: Schema.String,
 		operation: Schema.Literals([
@@ -78,8 +82,13 @@ function hostError(
 ): OfflineTexturePreviewHostError {
 	const causeText = cause instanceof Error ? cause.message : String(cause);
 	return new OfflineTexturePreviewHostError({
+		cause: cause,
+		recovery:
+			"Check the preview worker installation and inspect its retained failure before retrying.",
+		nextStep: "escalate",
+		code: "offline_texture_preview_host_failed",
 		causeText,
-		message: `${operation.replaceAll("_", " ")} failed for ${path}: ${causeText}`,
+		message: `${operation.replaceAll("_", " ")} failed for ${path}.`,
 		operation,
 		path,
 		retrySafe

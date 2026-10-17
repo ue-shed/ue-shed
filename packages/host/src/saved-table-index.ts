@@ -13,6 +13,10 @@ export interface SavedTableIndexApi {
 	readonly savedTables: () => Effect.Effect<SavedTableCatalog, AssetReaderError>;
 }
 
+/**
+ * Host-replaceable saved DataTable inventory. A host can serve its existing project index;
+ * SavedTableIndexLive reads through AssetReader when no shared inventory is supplied.
+ */
 export class SavedTableIndex extends Context.Service<SavedTableIndex, SavedTableIndexApi>()(
 	"@ue-shed/host/SavedTableIndex"
 ) {}

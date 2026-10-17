@@ -8,12 +8,8 @@ import { SharedIndex } from "./shared-index.js";
 import { openSnapshotFile, type SnapshotFileReader } from "./snapshot-file.js";
 import { snapshotStoreFailure } from "./snapshot-store.js";
 import { packageTextSelection, type PackageTextInventoryEntry } from "./package-text-layer.js";
-import { PreparedColdStrings, type ColdLayerSource } from "./shared-string-sort.js";
-
-const Reply = Schema.Union([
-	Schema.Struct({ ok: Schema.Literal(true), preparedStrings: PreparedColdStrings }),
-	Schema.Struct({ ok: Schema.Literal(false), error: Schema.String })
-]);
+import { type PreparedColdStrings, type ColdLayerSource } from "./shared-string-sort.js";
+import { PackageTextWorkerReply as Reply } from "./package-text-worker-protocol.js";
 
 function worker() {
 	const compiled = new URL("./package-text-worker.js", import.meta.url);
@@ -88,7 +84,7 @@ export const importColdPackageTextShards = Effect.fn("PackageText.importCold")(f
 													reply.preparedStrings
 												);
 												resolve();
-											} else reject(new Error(reply.error));
+											} else reject(reply.error);
 										} catch (cause) {
 											reject(cause);
 										}

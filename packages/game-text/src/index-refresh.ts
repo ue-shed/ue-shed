@@ -34,6 +34,9 @@ export const gameTextIndexRefreshLayer = (
 					Effect.mapError(
 						(cause) =>
 							new GameTextIndexError({
+								nextStep: "escalate",
+								retrySafe: false,
+								code: "index_failed",
 								operation: "request",
 								message:
 									"The Game Text index refresh request does not match its schema.",

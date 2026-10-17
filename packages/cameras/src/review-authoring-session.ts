@@ -35,6 +35,10 @@ import {
 	type VisibilityPolicyId
 } from "./review-schema.js";
 
+/**
+ * Project review-root subdirectory for persisted candidate authoring sessions. Sessions are
+ * drafts/recovery evidence rather than immutable approved capture history.
+ */
 export const REVIEW_AUTHORING_SESSIONS_DIRECTORY = "authoring-sessions";
 type ReviewSessionStaleReason = Extract<
 	ReviewAuthoringSessionRecovery,
@@ -75,10 +79,15 @@ function candidatesForRevision(args: {
 	return [current, ...args.candidates.filter((_, candidateIndex) => candidateIndex !== index)];
 }
 
+/**
+ * Persisted session create/load/patch/reframe/resume/approve/discard failure with operation
+ * and path. Recovery distinguishes corrupt/stale inputs from resumable authoring work.
+ */
 export class ReviewAuthoringSessionError extends Schema.TaggedError<ReviewAuthoringSessionError>()(
 	"ReviewAuthoringSessionError",
 	{
 		...ErrorGuidanceFields,
+		cause: Schema.optionalKey(Schema.Defect()),
 		operation: Schema.Literals([
 			"approve",
 			"create",
@@ -98,6 +107,10 @@ function sessionRoot(projectRoot: string): string {
 	return join(projectRoot, ".ue-shed", "review", REVIEW_AUTHORING_SESSIONS_DIRECTORY);
 }
 
+/**
+ * Builds a project-local draft session JSON path from an already validated ID. Does not
+ * validate untrusted IDs, create a file or select a project.
+ */
 export function reviewAuthoringSessionPath(args: {
 	readonly id: string;
 	readonly projectRoot: string;
@@ -160,7 +173,8 @@ function sessionError(args: {
 	readonly nextStep: ReviewAuthoringSessionError["nextStep"];
 }): ReviewAuthoringSessionError {
 	return new ReviewAuthoringSessionError({
-		message: String(args.cause),
+		message: `Could not ${args.operation.replaceAll("_", " ")} the review authoring session at ${args.path}.`,
+		cause: args.cause,
 		nextStep: args.nextStep,
 		operation: args.operation,
 		path: args.path,
@@ -374,6 +388,11 @@ function staleRecovery(args: {
 	};
 }
 
+/**
+ * Persists and recovers candidate-authoring sessions through explicit project/set identities.
+ * Resume/approval recheck current subject and review-set evidence instead of trusting an old
+ * draft.
+ */
 export interface ReviewAuthoringSessionsApi {
 	readonly approve: (args: {
 		readonly endpoint: string;
@@ -435,11 +454,20 @@ export interface ReviewAuthoringSessionsApi {
 /** @deprecated Use `ReviewAuthoringSessionsApi`. */
 export type ReviewAuthoringSessionsShape = ReviewAuthoringSessionsApi;
 
+/**
+ * Headless persisted authoring-session port, separate from ephemeral editor preview and
+ * immutable review history.
+ */
 export class ReviewAuthoringSessions extends Context.Service<
 	ReviewAuthoringSessions,
 	ReviewAuthoringSessionsApi
 >()("@ue-shed/cameras/ReviewAuthoringSessions") {}
 
+/**
+ * Repository/editor-backed session lifecycle with persisted drafts, current-world recovery
+ * and explicit approval. Requires ReviewRepository and ReviewAuthoring; does not silently
+ * approve stale candidates.
+ */
 export const ReviewAuthoringSessionsLive = Layer.effect(
 	ReviewAuthoringSessions,
 	Effect.gen(function* () {
@@ -1218,6 +1246,10 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 	})
 );
 
+/**
+ * Provides all persisted authoring-session operations from a complete test implementation.
+ * Tests own recovery and write outcomes without implicit filesystem/editor fallback.
+ */
 export function makeReviewAuthoringSessionsTestLayer(
 	service: ReviewAuthoringSessionsApi
 ): Layer.Layer<ReviewAuthoringSessions> {

@@ -1,3 +1,4 @@
+import { snapshotStoreGuidance } from "./snapshot-store.js";
 import { existsSync } from "node:fs";
 import { MessageChannel, Worker, type MessagePort } from "node:worker_threads";
 import { performance } from "node:perf_hooks";
@@ -51,6 +52,8 @@ function launch(input: SearchWorkerInput, calls: MessagePort, signal: SharedArra
 
 const callFailure = (message: string) =>
 	new SnapshotStoreError({
+		retrySafe: snapshotStoreGuidance("unavailable").retrySafe,
+		nextStep: snapshotStoreGuidance("unavailable").nextStep,
 		operation: "search.worker.call",
 		code: "unavailable",
 		message,
@@ -99,7 +102,7 @@ function workerQuery(
 		try {
 			return callSync(calls, failed, call, value);
 		} catch (cause) {
-			if (cause instanceof SnapshotStoreError && cause.operation === "search.worker.call")
+			if (Schema.is(SnapshotStoreError)(cause) && cause.operation === "search.worker.call")
 				unavailable(cause);
 			throw cause;
 		}
@@ -304,7 +307,7 @@ export const makeGameTextSearchWorkerResource = Effect.fn("GameTextIndex.searchW
 				),
 				Effect.catchIf(
 					(cause) =>
-						cause instanceof SnapshotStoreError &&
+						Schema.is(SnapshotStoreError)(cause) &&
 						cause.operation === "search.superseded",
 					() => Effect.interrupt
 				),

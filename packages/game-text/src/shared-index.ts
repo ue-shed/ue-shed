@@ -1,3 +1,4 @@
+import { snapshotStoreGuidance } from "./snapshot-store.js";
 import { encodeWtf8 } from "./wtf8.js";
 import { projectIndexViewLayer, type GameTextProjectView } from "./project-index-view.js";
 import { randomUUID, createHash } from "node:crypto";
@@ -199,7 +200,15 @@ function readIndex(reader: SnapshotReader) {
 			Effect.flatMap((bytes) =>
 				Schema.decodeUnknownEffect(Schema.fromJsonString(SharedIndexManifestSchema))(
 					new TextDecoder().decode(bytes)
-				).pipe(Effect.mapError((cause) => snapshotFailure("index.meta", String(cause))))
+				).pipe(
+					Effect.mapError((cause) =>
+						snapshotFailure(
+							"index.meta",
+							"The shared index metadata is invalid.",
+							cause
+						)
+					)
+				)
 			)
 		);
 }
@@ -285,6 +294,8 @@ function makeSharedIndexNodeLayer(options: SharedIndexOptions) {
 					if (!record)
 						return yield* Effect.fail(
 							new SnapshotStoreError({
+								retrySafe: snapshotStoreGuidance("missing").retrySafe,
+								nextStep: snapshotStoreGuidance("missing").nextStep,
 								operation: "layer",
 								code: "missing",
 								message: `Layer ${name} (${key}) is absent.`,
@@ -335,6 +346,8 @@ function makeSharedIndexNodeLayer(options: SharedIndexOptions) {
 					snapshotCheck(active, name, "Shared reader scope is closed");
 					if (!record)
 						throw new SnapshotStoreError({
+							retrySafe: snapshotStoreGuidance("missing").retrySafe,
+							nextStep: snapshotStoreGuidance("missing").nextStep,
 							operation: "layer",
 							code: "missing",
 							message: `Layer ${name} (${key}) is absent.`,
@@ -444,7 +457,13 @@ function makeSharedIndexNodeLayer(options: SharedIndexOptions) {
 				) {
 					const started = performance.now();
 					yield* Schema.decodeUnknownEffect(SharedIndexManifestSchema)(next).pipe(
-						Effect.mapError((cause) => snapshotFailure("index.meta", String(cause)))
+						Effect.mapError((cause) =>
+							snapshotFailure(
+								"index.meta",
+								"The shared index metadata is invalid.",
+								cause
+							)
+						)
 					);
 					const bytes = new TextEncoder().encode(JSON.stringify(next));
 					if (bytes.length > 16 * 1024 ** 2)
@@ -1521,6 +1540,8 @@ async function validateCachedLayer(
 	const record = Object.hasOwn(manifest.layers, key) ? manifest.layers[key] : undefined;
 	if (!record)
 		throw new SnapshotStoreError({
+			retrySafe: snapshotStoreGuidance("missing").retrySafe,
+			nextStep: snapshotStoreGuidance("missing").nextStep,
 			operation: "cached",
 			code: "missing",
 			message: "File content is not cached.",
@@ -1541,6 +1562,8 @@ async function validateCachedLayer(
 	} catch (cause) {
 		if (cause instanceof Error && "code" in cause && cause.code === "ENOENT")
 			throw new SnapshotStoreError({
+				retrySafe: snapshotStoreGuidance("missing").retrySafe,
+				nextStep: snapshotStoreGuidance("missing").nextStep,
 				operation: "cached",
 				code: "missing",
 				message: "Cached layer is absent.",

@@ -37,6 +37,10 @@ impl Wtf8Buf {
     pub fn into_bytes(self) -> Vec<u8> {
         self.0
     }
+    #[expect(
+        clippy::expect_used,
+        reason = "Wtf8Buf bytes are private and all constructors validate or encode canonical WTF-8"
+    )]
     pub fn to_utf16(&self) -> Vec<u16> {
         let mut units = Vec::new();
         let mut i = 0;
@@ -58,6 +62,10 @@ impl Wtf8Buf {
     }
     /// A reversible scalar view for Rust's string policies. Reserved scalars are escaped;
     /// no replacement characters are introduced. Only `from_view` may encode this view.
+    #[expect(
+        clippy::expect_used,
+        reason = "private canonical WTF-8 bytes decode into valid scalars or the reserved surrogate scalar range"
+    )]
     pub fn to_view(&self) -> String {
         if let Ok(text) = std::str::from_utf8(&self.0)
             && !self.0.contains(&0xf3)
@@ -88,7 +96,11 @@ impl Wtf8Buf {
             Err(error) => Self(error.into_bytes()).to_view(),
         }
     }
-    pub fn from_view(view: &str) -> Self {
+    #[expect(
+        clippy::expect_used,
+        reason = "callers pass only views produced by to_view or json_value; literal reserved scalars are escaped there"
+    )]
+    pub(crate) fn from_view(view: &str) -> Self {
         if !view.as_bytes().contains(&0xf3) {
             return Self::from_utf8(view);
         }
@@ -115,6 +127,10 @@ impl Wtf8Buf {
         Self::from_utf16(&units)
     }
     /// JSON spelling that preserves each UTF-16 code unit, including lone surrogates.
+    #[expect(
+        clippy::expect_used,
+        reason = "canonical private WTF-8 bytes decode into scalars; writing to String is infallible"
+    )]
     pub fn json_string(&self) -> String {
         let mut out = String::from("\"");
         let mut at = 0;

@@ -9,6 +9,10 @@ function request<A, HostValue, E>(
 ): Effect.Effect<A, WorkbenchRendererError> {
 	const failure = (cause: unknown) =>
 		new WorkbenchRendererError({
+			message: "Workbench could not complete the host operation.",
+			retrySafe: false,
+			nextStep: "reconcile",
+			code: "workbench_renderer_failed",
 			cause,
 			operation,
 			recovery:

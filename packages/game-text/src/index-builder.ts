@@ -9,6 +9,11 @@ import type { SnapshotStoreError } from "./snapshot-store.js";
 
 type IndexFailure = SnapshotFormatError | SnapshotStoreError;
 
+/**
+ * Cache identity and optional changed files for one scoped writer lease. An absent changed-file
+ * list requests full discovery; hosts must not share a writer outside the enclosing build
+ * session.
+ */
 export interface GameTextIndexBuildSessionRequest {
 	readonly configuration: SharedIndexOptions;
 	readonly files?: readonly string[];
@@ -68,7 +73,7 @@ export class GameTextIndexBuilder extends Context.Service<
 	}
 >()("@ue-shed/game-text/GameTextIndexBuilder") {}
 
-/** Correctness oracle and fallback when the native build capability is unavailable. */
+/** Explicit TypeScript reference implementation for hosts and parity checks; never selected silently after a native failure. */
 export const typeScriptIndexBuilderLayer = Layer.effect(
 	GameTextIndexBuilder,
 	Effect.sync(() =>

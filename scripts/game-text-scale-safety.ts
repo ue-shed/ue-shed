@@ -23,9 +23,55 @@ export function boundedNumber(value: string, name: string, maximum: number): num
 }
 
 /** OS sampling works while the child's JavaScript thread is blocked in parsing or GC. */
-export async function childWorkingSet(pid: number): Promise<number> {
+export async function childWorkingSet(pid: number, includeDescendants = false): Promise<number> {
 	if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error("Invalid child PID.");
 	const run = promisify(execFile);
+	if (includeDescendants) {
+		if (process.platform === "win32") {
+			const { stdout } = await run(
+				"powershell.exe",
+				[
+					"-NoProfile",
+					"-NonInteractive",
+					"-Command",
+					`$ErrorActionPreference = 'Stop'; $all = @(Get-CimInstance Win32_Process); ` +
+						`$owned = [System.Collections.Generic.HashSet[uint32]]::new(); [void]$owned.Add(${pid}); ` +
+						`do { $added = $false; foreach ($item in $all) { if ($owned.Contains($item.ParentProcessId) -and $owned.Add($item.ProcessId)) { $added = $true } } } while ($added); ` +
+						`$total = 0L; foreach ($item in $all) { if ($owned.Contains($item.ProcessId)) { $total += [long]$item.WorkingSetSize } }; $total`
+				],
+				{ windowsHide: true, timeout: 5000 }
+			);
+			const rss = Number(stdout.trim());
+			if (!Number.isFinite(rss) || rss <= 0)
+				throw new Error("Invalid process-tree memory sample.");
+			return rss;
+		}
+		const { stdout } = await run("ps", ["-eo", "pid=,ppid=,rss="], { timeout: 3000 });
+		const processes = stdout
+			.trim()
+			.split("\n")
+			.map((line) => line.trim().split(/\s+/u).map(Number));
+		const owned = new Set([pid]);
+		let added: boolean;
+		do {
+			added = false;
+			for (const [child, parent] of processes)
+				if (
+					child !== undefined &&
+					parent !== undefined &&
+					owned.has(parent) &&
+					!owned.has(child)
+				) {
+					owned.add(child);
+					added = true;
+				}
+		} while (added);
+		return processes.reduce(
+			(total, [child, , rss]) =>
+				total + (child !== undefined && owned.has(child) ? (rss ?? 0) * 1024 : 0),
+			0
+		);
+	}
 	const { stdout } =
 		process.platform === "win32"
 			? await run(

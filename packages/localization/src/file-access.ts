@@ -21,11 +21,19 @@ import {
 	type LocalizationLimits
 } from "./schema.js";
 
+/**
+ * Evidence bytes paired with their actual project-relative provenance. The content hash is
+ * used for guarded writes; callers should not synthesize provenance from an unrelated file.
+ */
 export const LocalizationFileRead = Schema.Struct({
 	bytes: Schema.Uint8Array,
 	provenance: FileProvenance
 });
 export type LocalizationFileRead = typeof LocalizationFileRead.Type;
+/**
+ * Bounded project-contained evidence IO and atomic guarded replacement/creation. Replacements
+ * compare the expected content hash; missing files and concurrent edits are typed failures.
+ */
 export interface LocalizationFileAccessApi {
 	readonly read: (
 		root: string,
@@ -56,6 +64,10 @@ export interface LocalizationFileAccessApi {
 		limits: LocalizationLimits
 	) => Effect.Effect<FileProvenance, LocalizationError>;
 }
+/**
+ * Replaceable localization filesystem boundary. Browser/headless hosts can provide their own
+ * implementation while preserving containment, size limits and stale-write detection.
+ */
 export class LocalizationFileAccess extends Context.Service<
 	LocalizationFileAccess,
 	LocalizationFileAccessApi
@@ -134,6 +146,10 @@ const newProjectPath = Effect.fn("LocalizationFileAccess.newProjectPath")(functi
 	return candidate;
 });
 
+/**
+ * Node filesystem adapter enforcing project containment and evidence limits. Replacement
+ * writes a sibling temporary file and renames it only behind the expected-hash guard.
+ */
 export const LocalizationFileAccessLive = Layer.succeed(
 	LocalizationFileAccess,
 	LocalizationFileAccess.of({
@@ -276,6 +292,10 @@ export const LocalizationFileAccessLive = Layer.succeed(
 	})
 );
 
+/**
+ * Provides a complete explicit localization IO port. Tests control bytes, provenance and
+ * write races without falling back to the host filesystem.
+ */
 export function makeLocalizationFileAccessTestLayer(api: LocalizationFileAccessApi) {
 	return Layer.succeed(LocalizationFileAccess, LocalizationFileAccess.of(api));
 }

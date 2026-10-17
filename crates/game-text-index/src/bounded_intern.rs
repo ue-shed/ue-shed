@@ -86,11 +86,16 @@ pub(crate) fn intern(store: &mut Store, domain: &str, values: &[Vec<u8>]) -> Res
         )?;
         let base = store.root["segments"]
             .as_array()
-            .unwrap()
+            .ok_or("invalid shared root array")?
             .last()
-            .map_or(0, |s| {
-                s["start"].as_u64().unwrap() + s["count"].as_u64().unwrap()
-            }) as u32;
+            .map(|s| {
+                Ok::<_, crate::Error>(
+                    s["start"].as_u64().ok_or("invalid segment start")?
+                        + s["count"].as_u64().ok_or("invalid segment count")?,
+                )
+            })
+            .transpose()?
+            .unwrap_or(0) as u32;
         let raw = store.directory.join(format!("{}.tmp", token()));
         let result = (|| {
             let mut stream = BufWriter::with_capacity(
@@ -113,12 +118,12 @@ pub(crate) fn intern(store: &mut Store, domain: &str, values: &[Vec<u8>]) -> Res
             )?;
             store.root["segments"]
                 .as_array_mut()
-                .unwrap()
+                .ok_or("invalid shared root array")?
                 .push(serde_json::to_value(segment)?);
             for (index, value) in pending.into_iter().enumerate() {
                 found.insert(value, base + index as u32);
             }
-            Ok::<_, Box<dyn std::error::Error + Send + Sync>>(())
+            Ok::<_, crate::Error>(())
         })();
         let _ = fs::remove_file(raw);
         result?;

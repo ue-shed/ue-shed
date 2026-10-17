@@ -1,3 +1,4 @@
+import { contractParser } from "@ue-shed/protocol";
 import { Schema } from "effect";
 import { CameraVisibilityList } from "./camera-visibility.js";
 import { CameraFrameEvidence } from "./camera-render-schema.js";
@@ -19,20 +20,43 @@ const IsoTimestamp = Schema.String.check(
 	Schema.isPattern(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/u)
 );
 
+/**
+ * Branded safe identifier for a persisted map capture plan. Preserve it through related
+ * requests/results; validation does not prove the resource exists or that a mutation
+ * completed.
+ */
 export const MapCapturePlanId = SafeIdentifier.pipe(Schema.brand("MapCapturePlanId"));
 export type MapCapturePlanId = typeof MapCapturePlanId.Type;
 
+/**
+ * Branded safe identifier for a immutable capture run. Preserve it through related
+ * requests/results; validation does not prove the resource exists or that a mutation
+ * completed.
+ */
 export const MapCaptureRunId = SafeIdentifier.pipe(Schema.brand("MapCaptureRunId"));
 export type MapCaptureRunId = typeof MapCaptureRunId.Type;
 
+/**
+ * Branded safe identifier for a correlated editor tile operation. Preserve it through related
+ * requests/results; validation does not prove the resource exists or that a mutation
+ * completed.
+ */
 export const MapCaptureOperationId = SafeIdentifier.pipe(Schema.brand("MapCaptureOperationId"));
 export type MapCaptureOperationId = typeof MapCaptureOperationId.Type;
 
+/**
+ * Supported map-capture contract major 1 and minor 0 through 2. Version-dependent rendering
+ * evidence remains explicit when reading older plans/results.
+ */
 export const MapCaptureContractVersion = Schema.Struct({
 	major: Schema.Literal(1),
 	minor: Schema.Literals([0, 1, 2])
 });
 
+/**
+ * Finite planar Unreal XY bounds with strictly positive spans. Capture height and downward
+ * orientation are configured separately by the plan.
+ */
 export const MapCaptureWorldBounds = Schema.Struct({
 	minX: Schema.Finite,
 	minY: Schema.Finite,
@@ -49,12 +73,20 @@ export const MapCaptureWorldBounds = Schema.Struct({
 );
 export type MapCaptureWorldBounds = typeof MapCaptureWorldBounds.Type;
 
+/**
+ * Explicit project identifier and Unreal map package path. This identifies capture inputs
+ * rather than changing the host's selected project.
+ */
 export const MapCaptureProject = Schema.Struct({
 	id: SafeIdentifier,
 	mapPath: Schema.String.check(Schema.isPattern(/^\/[A-Za-z0-9_./-]+$/u))
 });
 export type MapCaptureProject = typeof MapCaptureProject.Type;
 
+/**
+ * Preserve current data-layer state or request at most 64 explicit unloaded/loaded/activated
+ * states. Changes are scoped capture preparation rather than persistent project policy edits.
+ */
 export const MapCaptureDataLayerPolicy = Schema.Union([
 	Schema.Struct({ mode: Schema.Literal("unchanged") }),
 	Schema.Struct({
@@ -68,6 +100,10 @@ export const MapCaptureDataLayerPolicy = Schema.Union([
 	})
 ]);
 
+/**
+ * Scene-capture profile, effects, exposure and LOD policy. Per-level distance scaling
+ * requires a bounded scale array; other LOD modes reject that extra policy.
+ */
 export const MapCaptureRenderPolicy = Schema.Struct({
 	exposureEV100: Schema.optionalKey(
 		Schema.Finite.check(Schema.isBetween({ minimum: -20, maximum: 30 }))
@@ -103,6 +139,10 @@ export const MapCaptureRenderPolicy = Schema.Struct({
 	)
 );
 
+/**
+ * Versioned top-down map pyramid plan with bounds, tile/level dimensions, capture policy and
+ * immutable local publication. Validation does not launch Unreal or reserve output storage.
+ */
 export const MapCapturePlan = Schema.Struct({
 	capture: Schema.Struct({
 		visibility: Schema.optionalKey(CameraVisibilityList),
@@ -152,19 +192,35 @@ export const MapCapturePlan = Schema.Struct({
 );
 export type MapCapturePlan = typeof MapCapturePlan.Type;
 
+/**
+ * Runtime boundary for non-negative integer zoom/row/column coordinates. Membership in a
+ * particular grid still requires assertMapTileKey.
+ */
 export const MapTileKeySchema = Schema.Struct({
 	zoom: NonNegativeInteger,
 	row: NonNegativeInteger,
 	column: NonNegativeInteger
 });
+/**
+ * Decoded tile-key value for map-capture wire/artifact contracts. Non-negative coordinates
+ * still need a grid-membership check before indexing a pyramid.
+ */
 export type MapTileKeyValue = typeof MapTileKeySchema.Type;
 
+/**
+ * One tile's key, positive world-units-per-pixel and world footprint. The containing request
+ * supplies the shared render policy and capture height.
+ */
 export const MapTileCaptureTileRequest = Schema.Struct({
 	key: MapTileKeySchema,
 	unitsPerPixel: PositiveFinite,
 	worldBounds: MapCaptureWorldBounds
 });
 
+/**
+ * Explicit lit-camera, scene-capture tile or high-resolution viewport backend. The connected
+ * editor must advertise/support the requested strategy.
+ */
 export const MapCaptureBackend = Schema.Literals([
 	"lit_camera_tiles",
 	"scene_capture_tiles",
@@ -172,6 +228,11 @@ export const MapCaptureBackend = Schema.Literals([
 ]);
 export type MapCaptureBackend = typeof MapCaptureBackend.Type;
 
+/**
+ * Correlated bounded tile batch bound to plan/run/operation identities and expected map.
+ * Shared capture policy remains explicit; optional backend selection does not bypass
+ * capability/readiness checks.
+ */
 export const MapTileCaptureRequest = Schema.Struct({
 	capture: Schema.Struct({
 		visibility: Schema.optionalKey(CameraVisibilityList),
@@ -269,6 +330,11 @@ const MapTileCaptureResult = Schema.Union([
 	})
 ]);
 
+/**
+ * Completed, partial, cancelled or failed tile batch with correlated operation, per-tile
+ * outcomes and dirty-state evidence. Count validation prevents an apparently complete
+ * response from hiding missing results.
+ */
 export const MapTileCaptureResponse = Schema.Struct({
 	actualMapPath: Schema.optionalKey(MapCaptureProject.fields.mapPath),
 	contract: Schema.Struct({
@@ -303,6 +369,10 @@ export const MapTileCaptureResponse = Schema.Struct({
 );
 export type MapTileCaptureResponse = typeof MapTileCaptureResponse.Type;
 
+/**
+ * Exposure warmup, tile warmup or capture progress with elapsed milliseconds and optional
+ * current key. A progress event is not evidence that a tile artifact has been committed.
+ */
 export const MapTileCaptureProgress = Schema.Struct({
 	phase: Schema.Literals(["exposure_warmup", "tile_warmup", "capturing"]),
 	elapsedMs: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)),
@@ -310,6 +380,10 @@ export const MapTileCaptureProgress = Schema.Struct({
 	currentTile: Schema.optionalKey(MapTileKeySchema)
 });
 export type MapTileCaptureProgress = typeof MapTileCaptureProgress.Type;
+/**
+ * Running correlated operation or finished tile response. Reconcile by the original operation
+ * ID instead of replaying an uncertain capture request.
+ */
 export const MapTileCaptureOperation = Schema.Union([
 	Schema.Struct({
 		...Schema.Struct({
@@ -325,6 +399,10 @@ export const MapTileCaptureOperation = Schema.Union([
 	Schema.Struct({ state: Schema.Literal("finished"), response: MapTileCaptureResponse })
 ]);
 
+/**
+ * Persisted level geometry with positive row/column counts, tile world size and
+ * world-units-per-pixel. Zoom is zero-based and coarsest first.
+ */
 export const MapTilePyramidLevel = Schema.Struct({
 	columns: PositiveInteger,
 	rows: PositiveInteger,
@@ -333,11 +411,19 @@ export const MapTilePyramidLevel = Schema.Struct({
 	zoom: NonNegativeInteger
 });
 
+/**
+ * Whether a run was released and whether temporary editor state was restored.
+ * restoration=failed must not be treated as successful cleanup even if released is true.
+ */
 export const MapTileReleaseResult = Schema.Struct({
 	released: Schema.Boolean,
 	restoration: Schema.Literals(["restored", "failed"])
 });
 
+/**
+ * PNG tile metadata with relative pyramid path, hash, byte size, pixel dimensions and world
+ * footprint. Optional render evidence is retained for newer capture backends.
+ */
 export const MapTileArtifact = Schema.Struct({
 	renderEvidence: Schema.optionalKey(CameraFrameEvidence),
 	bytes: PositiveInteger,
@@ -349,11 +435,20 @@ export const MapTileArtifact = Schema.Struct({
 	worldBounds: MapCaptureWorldBounds
 });
 
+/**
+ * Typed capture failure bound to a tile key. Failed tiles remain explicit in a
+ * partial/retained run rather than being replaced by an empty successful image.
+ */
 export const MapTilePyramidFailure = Schema.Struct({
 	failure: MapTileCaptureFailure,
 	key: MapTileKeySchema
 });
 
+/**
+ * Versioned immutable pyramid evidence: grid orientation/addressing, capture policy,
+ * artifacts, failures and run provenance. Historical missing evidence must not be inferred
+ * from current defaults.
+ */
 export const MapTilePyramidManifest = Schema.Struct({
 	addressing: Schema.Struct({
 		children: Schema.Literal("z+1: (2r,2c),(2r,2c+1),(2r+1,2c),(2r+1,2c+1)"),
@@ -519,7 +614,36 @@ export const MapTilePyramidManifest = Schema.Struct({
 );
 export type MapTilePyramidManifest = typeof MapTilePyramidManifest.Type;
 
-export const decodeMapCapturePlan = Schema.decodeUnknownEffect(MapCapturePlan);
-export const decodeMapTileCaptureRequest = Schema.decodeUnknownEffect(MapTileCaptureRequest);
-export const decodeMapTileCaptureResponse = Schema.decodeUnknownEffect(MapTileCaptureResponse);
-export const decodeMapTilePyramidManifest = Schema.decodeUnknownEffect(MapTilePyramidManifest);
+/**
+ * Validates an untrusted map capture plan, failing with ContractParseError and the original
+ * schema cause. A parsed partial/failed outcome remains ordinary evidence for the caller to
+ * inspect.
+ */
+export const decodeMapCapturePlan = contractParser(MapCapturePlan, "MapCapturePlan");
+/**
+ * Validates an untrusted tile batch request, failing with ContractParseError and the original
+ * schema cause. A parsed partial/failed outcome remains ordinary evidence for the caller to
+ * inspect.
+ */
+export const decodeMapTileCaptureRequest = contractParser(
+	MapTileCaptureRequest,
+	"MapTileCaptureRequest"
+);
+/**
+ * Validates an untrusted tile batch response, failing with ContractParseError and the
+ * original schema cause. A parsed partial/failed outcome remains ordinary evidence for the
+ * caller to inspect.
+ */
+export const decodeMapTileCaptureResponse = contractParser(
+	MapTileCaptureResponse,
+	"MapTileCaptureResponse"
+);
+/**
+ * Validates an untrusted persisted pyramid manifest, failing with ContractParseError and the
+ * original schema cause. A parsed partial/failed outcome remains ordinary evidence for the
+ * caller to inspect.
+ */
+export const decodeMapTilePyramidManifest = contractParser(
+	MapTilePyramidManifest,
+	"MapTilePyramidManifest"
+);

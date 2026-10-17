@@ -66,7 +66,7 @@ real transport, a non-disk rules store, refused/recovery writes and disconnect/r
 
 For a desktop host using the compact index, compose
 `gameTextIndexStepsLayer(cacheRoot, { searchWorker: true, latestSearchOnly: true })` with
-`gameTextIndexSourceNodeLayer`, `typeScriptIndexBuilderLayer`, one reader, and
+`gameTextIndexSourceNodeLayer`, `GameTextIndexBuilderLive`, one reader, and
 `LocalizationEvidenceNodeLive`. Use `refreshProject` once for the chosen package revision, then
 `importTarget`, `buildTarget`, and `openTarget` for each requested localization view. Source queries
 use `importTarget(project)` without a target name. Target steps reuse the verified project handle;
@@ -77,9 +77,12 @@ ordering, requested views, progress presentation, and cancellation; the package 
 leases, cache validity, immutable publication, and query reader resources.
 `gameTextIndexRefreshLayer` remains a compatible convenience workflow and also exposes the steps.
 
-For opt-in native preparation, replace `typeScriptIndexBuilderLayer` with
-`nativeIndexBuilderLayer(readerConfiguration)` and supply a reader supporting uasset-io protocol
-1.13. Keep the same source, evidence and query layers. Verify cold preparation, an incremental
+`GameTextIndexBuilderLive` derives configuration from the existing reader and requires its
+`game_text_index` capability (uasset-io protocol 1.13). CLI and Workbench use this same layer.
+`nativeIndexBuilderLayer(readerConfiguration)` supports explicit worker configuration, and
+`typeScriptIndexBuilderLayer` intentionally selects the reference implementation. A native failure
+never switches writers automatically. Keep the same source, evidence and query layers. Verify cold
+preparation, an incremental
 edit, failure recovery and pinned-reader queries in the adopting host. See the
 [native preparation guide](../../docs/engineering/native-game-text-index.md) for limits and
 supported incremental cases.
@@ -127,7 +130,8 @@ retainer's `release()` when clearing a view. The host's outer scope releases eve
 Raw `corpus.units` preserves empty and whitespace-only source evidence. Search and query exports
 retain their existing visibility filters. Failed current localization reads never use a previous
 successful layer as current evidence; missing and malformed inputs keep their distinct states.
-Joined cache keys use `joined-v14` and package shards `package-text-v5`, rebuilding older layers while preserving snapshot format v4.
+Native joined keys use `joined-native-v1`; the TypeScript reference uses `joined-v18`. Switching
+builders rebuilds the joined view while reusing compatible inputs and preserving snapshot format 4.
 
 The core audit requires saved project packages and a configured reader. It does not require a
 running editor, Perforce, `UEShedCore`, or any other UE Shed Unreal plugin.

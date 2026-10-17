@@ -368,6 +368,7 @@ it.effect("reports live preview unavailable when Remote Control fails", () =>
 						makeRemoteControlClientTestLayer(() =>
 							Effect.fail(
 								new RemoteControlClientError({
+									code: "transport_failed",
 									endpoint: "http://127.0.0.1:30001",
 									functionName: "GetCapabilityManifest",
 									message: "Remote Control unreachable",

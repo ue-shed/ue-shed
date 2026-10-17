@@ -56,17 +56,17 @@
 | D1   | `game-text` entry points                       | D    | DONE — #115                             |
 | D2   | Reader batching inside the index source        | D    | DONE — #108                             |
 | D3   | Unreal path module                             | D    | TODO                                    |
-| D4   | One error shape                                | D    | IN PROGRESS — #118 merged; slice 2 #122 |
-| D5   | Classified causes instead of prose             | D    | IN PROGRESS — #122                      |
-| D6   | Deliberate error translation                   | D    | IN PROGRESS — #122                      |
-| D7   | Domain parsers instead of raw decoders         | D    | IN PROGRESS — #127                      |
-| D8   | Layers and test layers                         | D    | IN PROGRESS — #125                      |
+| D4   | One error shape                                | D    | DONE — #118, #122, #129                 |
+| D5   | Classified causes instead of prose             | D    | DONE — #122, #129                       |
+| D6   | Deliberate error translation                   | D    | DONE — #122, #129                       |
+| D7   | Domain parsers instead of raw decoders         | D    | DONE — #127, #129                       |
+| D8   | Layers and test layers                         | D    | DONE — #125, #129                       |
 | D9   | One progress mechanism, one completeness shape | D    | IN PROGRESS — #125                      |
 | D10  | Workspace orchestration as a package           | D    | DONE — #124                             |
-| D11  | JSDoc on public exports                        | D    | IN PROGRESS — #123; two packages        |
-| D12  | Small cleanups                                 | D    | IN PROGRESS — #107                      |
-| D13  | API surface of the other host-facing packages  | D    | IN PROGRESS — #123; measured            |
-| D14  | Native error audit                             | D    | IN PROGRESS — #123; Rust subset         |
+| D11  | JSDoc on public exports                        | D    | DONE — #123, #129; all eight SDKs       |
+| D12  | Small cleanups                                 | D    | DONE — #107, #129                       |
+| D13  | API surface of the other host-facing packages  | D    | DONE — #123, #129; named/public docs    |
+| D14  | Native error audit                             | D    | DONE — #123, #126, #129                 |
 | R    | 0.17.0 release preparation                     | —    | TODO                                    |
 
 ## Context

@@ -11,8 +11,14 @@ const decode = Effect.fn("Website.Blueprints.workerDecode")(function* (
 ) {
 	const request = yield* Schema.decodeUnknownEffect(BlueprintWorkerRequest)(event.data).pipe(
 		Effect.mapError(
-			() =>
+			(cause) =>
 				new BlueprintBrowserError({
+					cause,
+					recovery:
+						"Check the selected saved asset and parser limits. Use a supported package or report the retained parser failure.",
+					retrySafe: false,
+					nextStep: "escalate",
+					code: "blueprint_browser_failed",
 					operation: "request",
 					message: "The browser sent an invalid file request."
 				})
@@ -20,8 +26,14 @@ const decode = Effect.fn("Website.Blueprints.workerDecode")(function* (
 	);
 	const runtime = yield* Effect.tryPromise({
 		try: () => createBrowserRuntime(),
-		catch: () =>
+		catch: (cause) =>
 			new BlueprintBrowserError({
+				cause,
+				recovery:
+					"Check the selected saved asset and parser limits. Use a supported package or report the retained parser failure.",
+				retrySafe: false,
+				nextStep: "escalate",
+				code: "blueprint_browser_failed",
 				operation: "initialize",
 				message: "The browser could not initialize the asset decoder."
 			})
@@ -78,8 +90,14 @@ const decode = Effect.fn("Website.Blueprints.workerDecode")(function* (
 			}
 			return { status: "ok", output: runtime.extractBlueprints(request.path, bytes) };
 		},
-		catch: () =>
+		catch: (cause) =>
 			new BlueprintBrowserError({
+				cause,
+				recovery:
+					"Check the selected saved asset and parser limits. Use a supported package or report the retained parser failure.",
+				retrySafe: false,
+				nextStep: "escalate",
+				code: "blueprint_browser_failed",
 				operation: "decode",
 				message: "The browser decoder could not read this file."
 			})

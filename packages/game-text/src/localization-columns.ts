@@ -212,10 +212,20 @@ export function localizationColumnsBuilder(
 		])
 	);
 	for (const table of Object.values(tables)) table.add("");
-	// SAFETY: The closed field list initializes every property with a Uint32Array.
-	const column = Object.fromEntries(
-		fields.map((name) => [name, new Uint32Array(4096)])
-	) as Record<Field, Uint32Array>;
+	const column = {
+		namespace: new Uint32Array(4096),
+		key: new Uint32Array(4096),
+		source: new Uint32Array(4096),
+		translation: new Uint32Array(4096),
+		path: new Uint32Array(4096),
+		notes: new Uint32Array(4096),
+		metadata: new Uint32Array(4096),
+		"source-extra": new Uint32Array(4096),
+		"translation-extra": new Uint32Array(4096),
+		"po-extra": new Uint32Array(4096),
+		options: new Uint32Array(4096),
+		ordinal: new Uint32Array(4096)
+	} satisfies Record<Field, Uint32Array>;
 	let capacity = 4096;
 	let count = 0;
 	let poFormat = options.poFormat ?? "Unreal";
@@ -390,15 +400,17 @@ export function localizationColumnsBuilder(
 	}
 	const parser =
 		options.format === "po"
-			? localizationPOStream(file, limits, poBlock)
-			: localizationJsonStream(file, limits, jsonChild, options.format);
+			? { kind: "po" as const, parser: localizationPOStream(file, limits, poBlock) }
+			: {
+					kind: "json" as const,
+					parser: localizationJsonStream(file, limits, jsonChild, options.format)
+				};
 	return {
-		feed: (text: string) => parser.feed(text),
+		feed: (text: string) => parser.parser.feed(text),
 		close: () => closeSync(handle),
 		async finish(): Promise<SnapshotSource> {
-			if (options.format === "po") {
-				// SAFETY: The format branch selects the same PO constructor used above.
-				(parser as ReturnType<typeof localizationPOStream>).feed("", true);
+			if (parser.kind === "po") {
+				parser.parser.feed("", true);
 				// Explicit target formats are normal. Auto-detected Crowdin identities are resolved
 				// after the header, including files whose header follows their entries.
 				if (
@@ -429,8 +441,7 @@ export function localizationColumnsBuilder(
 					});
 				}
 			} else {
-				// SAFETY: Non-PO formats select the JSON constructor used above.
-				const namespaces = (parser as ReturnType<typeof localizationJsonStream>)
+				const namespaces = parser.parser
 					.finish(options.format === "manifest" ? 1 : 2)
 					.map(id);
 				if (invalidChildOffset !== undefined)

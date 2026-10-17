@@ -45,19 +45,27 @@ The largest remaining gaps are the cameras browser entry (254 of 279 names witho
 consumer) and the localization browser entry (86 of 124). These numbers exclude downstream
 hosts and do not prove a name is safe to remove.
 
-Several published entry points use `export *`, so newly exported module members can become
-public without an explicit entry-point decision.
+The October 18 audit converted all reviewed entry points to explicit named exports. The public
+API guard rejects wildcard/namespace exports in these eight packages, so an internal module export
+cannot silently enlarge their public entry points.
 
 ## Cuts
 
 - **`@ue-shed/host`**: a private package with one consumer (decision 9). Its entry point now
   lists its 13 used names; the other 13 (configuration value types, the file-picker layer, the
   saved-table index layer and test layer, the sessions layer) are private.
-- **`unreal-connection`, `unreal-assets` and `cameras`**: measurement only. Their published
-  export lists and entry points remain unchanged; any cut needs a separate compatibility review.
+- **`unreal-connection`, `unreal-assets` and `cameras`**: named exports preserve the intended
+  surface; 14 obsolete `*Shape` aliases are removed in favor of their existing `*Api` names. The
+  migration guide lists them. Signature types and downstream-use candidates remain available.
+- **`unreal-assets` protocol internals**: `ProtocolOutputBudget`, `ProtocolStreamFailure`,
+  `ProtocolStreamValidator` and `protocolCacheOutcome` are private to the transport adapter.
+  Library consumers use the scoped AssetReader/native index clients; internal conformance tests
+  import transport implementation directly rather than making it part of the published root.
 - **`protocol`, `localization` and `engine`**: published packages with downstream hosts
-  whose imports are not visible here. Their unused names are candidates, not cuts. The next step
-  for each is the D1 pattern:
-    - named-export entry points instead of `export *`;
-    - checked against the downstream host's actual imports;
-    - private schemas and helpers dropped in the same release.
+  whose imports are not visible here. Their unused names remain candidates for a separate host
+  review. Named exports now freeze the deliberate surface without speculative removals.
+
+All eight reviewed SDKs now require caller-facing documentation for every exported symbol across
+their manifest entry points. Deprecated transition aliases retain their migration tags. Documentation
+describes ownership, failure/recovery, units, version compatibility and policy choices; a type
+signature alone is insufficient. Guard regression fixtures cover every SDK and focused entry point.

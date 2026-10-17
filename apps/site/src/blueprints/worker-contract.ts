@@ -26,5 +26,13 @@ export type BlueprintWorkerResponse = Schema.Schema.Type<typeof BlueprintWorkerR
 
 export class BlueprintBrowserError extends Schema.TaggedError<BlueprintBrowserError>()(
 	"BlueprintBrowserError",
-	{ operation: Schema.String, message: Schema.String }
+	{
+		recovery: Schema.String,
+		retrySafe: Schema.Boolean,
+		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		code: Schema.Literal("blueprint_browser_failed"),
+		cause: Schema.optionalKey(Schema.Defect()),
+		operation: Schema.String,
+		message: Schema.String
+	}
 ) {}

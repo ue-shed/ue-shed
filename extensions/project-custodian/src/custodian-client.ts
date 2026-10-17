@@ -32,6 +32,7 @@ export type CustodianRunResult = typeof CustodianRunResult.Type;
 export class CustodianClientContractError extends Schema.TaggedError<CustodianClientContractError>()(
 	"CustodianClientContractError",
 	{
+		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
 		code: Schema.Literal("invalid_contract"),
 		message: Schema.String,
 		recovery: Schema.String,
@@ -57,6 +58,7 @@ function custodianClientContractParser<S extends Schema.Codec<unknown, unknown>>
 			Effect.mapError(
 				(cause) =>
 					new CustodianClientContractError({
+						nextStep: "escalate",
 						code: "invalid_contract",
 						message: `The ${subject} does not match the Project Custodian client contract.`,
 						recovery:
@@ -125,6 +127,10 @@ export const parseCustodianCancelRunResult = custodianClientContractParser(
 export class CustodianClientError extends Schema.TaggedError<CustodianClientError>()(
 	"ProjectCustodian.ClientError",
 	{
+		message: Schema.String,
+		retrySafe: Schema.Boolean,
+		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		code: Schema.Literal("custodian_client_failed"),
 		cause: Schema.Defect(),
 		operation: Schema.String,
 		recovery: Schema.String

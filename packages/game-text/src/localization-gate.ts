@@ -51,6 +51,10 @@ export const MAX_GATE_ITEMS = 200;
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 const Outcome = Schema.Literals(["passed", "failed"]);
 
+/**
+ * One gate finding with authored fail/warn policy and file/identity context. guidance is for
+ * people; callers branch on check and severity rather than parsing that prose.
+ */
 export const LocalizationGateItem = Schema.Struct({
 	check: LocalizationGateCheck,
 	severity: Schema.Literals(["fail", "warn"]),
@@ -62,6 +66,10 @@ export const LocalizationGateItem = Schema.Struct({
 });
 export type LocalizationGateItem = typeof LocalizationGateItem.Type;
 
+/**
+ * Target gate outcome with full check counts and a bounded item preview. omitted counts
+ * findings beyond MAX_GATE_ITEMS; lines counts text in the requested file scope.
+ */
 export const LocalizationGateTarget = Schema.Struct({
 	target: Schema.String,
 	status: Outcome,
@@ -83,6 +91,11 @@ export const LocalizationGateTarget = Schema.Struct({
 });
 export type LocalizationGateTarget = typeof LocalizationGateTarget.Type;
 
+/**
+ * Aggregate gate outcome plus per-target results and skipped targets. failOn records the active
+ * host policy, and skipped targets retain reasons instead of being counted as checked
+ * successes.
+ */
 export const LocalizationGateResult = Schema.Struct({
 	schemaVersion: Schema.Literal(1),
 	status: Outcome,

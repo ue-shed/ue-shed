@@ -9,24 +9,50 @@ const AssetPath = Schema.String.check(
 );
 const integer = (minimum: number, maximum: number) =>
 	Schema.Int.check(Schema.isBetween({ minimum, maximum }));
+/**
+ * Branded identifier for a scoped render session. Construct from validated input and preserve
+ * it across related requests; an identifier alone does not prove that the resource exists or
+ * is still current.
+ */
 export const CameraRenderSessionId = Id.pipe(Schema.brand("CameraRenderSessionId"));
 export type CameraRenderSessionId = typeof CameraRenderSessionId.Type;
+/**
+ * Branded identifier for a correlated frame operation. Construct from validated input and
+ * preserve it across related requests; an identifier alone does not prove that the resource
+ * exists or is still current.
+ */
 export const CameraFrameOperationId = Id.pipe(Schema.brand("CameraFrameOperationId"));
 export type CameraFrameOperationId = typeof CameraFrameOperationId.Type;
+/**
+ * Finite Unreal world-space XYZ coordinates. Values use Unreal world units; this schema does
+ * not transform coordinate systems or infer a project origin.
+ */
 export const CameraWorldVector = Schema.Struct({
 	x: Schema.Finite,
 	y: Schema.Finite,
 	z: Schema.Finite
 });
+/**
+ * Finite Unreal pitch, yaw and roll in degrees. Rotation ordering and handedness follow
+ * Unreal rather than a browser camera convention.
+ */
 export const CameraWorldRotation = Schema.Struct({
 	pitch: Schema.Finite,
 	roll: Schema.Finite,
 	yaw: Schema.Finite
 });
+/**
+ * Requested frame width/height in pixels, each from 16 through 16,384. Backend preflight can
+ * impose stricter capability-dependent limits.
+ */
 export const CameraOutputSize = Schema.Struct({
 	width: integer(16, 16384),
 	height: integer(16, 16384)
 });
+/**
+ * Explicit world location/rotation with perspective horizontal FOV in degrees or positive
+ * orthographic width in world units. No editor viewport or subject is inferred.
+ */
 export const AbsoluteCamera = Schema.Struct({
 	location: CameraWorldVector,
 	rotation: CameraWorldRotation,
@@ -44,6 +70,10 @@ export const AbsoluteCamera = Schema.Struct({
 	])
 });
 export type AbsoluteCamera = typeof AbsoluteCamera.Type;
+/**
+ * World-space preparation region defined by center and non-negative axis extents. Each extent
+ * is bounded to ten million world units; this is a loading request, not a camera crop.
+ */
 export const CameraRenderRegion = Schema.Struct({
 	center: CameraWorldVector,
 	extent: Schema.Struct({
@@ -57,6 +87,11 @@ export const CameraRenderRegion = Schema.Struct({
  * false. Requires the `editorPreviews` render capability; older plugins reject the field.
  */
 const EditorPreviews = Schema.optionalKey(Schema.Boolean);
+/**
+ * Explicit editor-viewport or scene-capture backend and its rendering settings. Backend
+ * support must be negotiated; viewport screenshot and scene-capture profiles have different
+ * fidelity/settling behavior.
+ */
 export const CameraRendererPolicy = Schema.Union([
 	Schema.Struct({
 		kind: Schema.Literal("editor_viewport"),
@@ -84,6 +119,11 @@ export const CameraRendererPolicy = Schema.Union([
 	})
 ]);
 export type CameraRendererPolicy = Schema.Schema.Type<typeof CameraRendererPolicy>;
+/**
+ * Project auto exposure, explicit EV100 or one-time metering from a reference camera.
+ * Metering includes a reference size and minimum rendered-frame budget; it is not a fixed
+ * sleep.
+ */
 export const CameraExposurePolicy = Schema.Union([
 	Schema.Struct({ mode: Schema.Literal("project_auto") }),
 	Schema.Struct({
@@ -98,6 +138,11 @@ export const CameraExposurePolicy = Schema.Union([
 		minimumFrames: integer(1, 4096)
 	})
 ]);
+/**
+ * Geometry-loading and explicit data-layer preparation policy. preserve_loading retains
+ * current loading; camera_regions bounds held regions, and data-layer changes are scoped to
+ * rendering.
+ */
 export const CameraPreparationPolicy = Schema.Struct({
 	geometry: Schema.Union([
 		Schema.Struct({ mode: Schema.Literal("preserve_loading") }),
@@ -115,6 +160,11 @@ export const CameraPreparationPolicy = Schema.Struct({
 		})
 	).check(Schema.isMaxLength(64))
 });
+/**
+ * Complete rendering policy: backend, exposure, frame settling, time behavior and
+ * preparation, with optional authored visibility. Hosts own these choices; the renderer
+ * validates support before applying them.
+ */
 export const CameraRenderPolicy = Schema.Struct({
 	visibility: Schema.optionalKey(CameraVisibilityList),
 	renderer: CameraRendererPolicy,
@@ -134,10 +184,19 @@ export const CameraRenderPolicy = Schema.Struct({
 	preparation: CameraPreparationPolicy
 });
 export type CameraRenderPolicy = typeof CameraRenderPolicy.Type;
+/**
+ * Camera-render wire contract identifier and version 1.0. This version is independent of
+ * review-set, review-capture and map-tile contracts.
+ */
 export const CameraRenderContract = Schema.Struct({
 	name: Schema.Literal("ue-shed-camera-render"),
 	version: Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literal(0) })
 });
+/**
+ * Explicit rendering session identity, expected map/project, policy, lease in milliseconds
+ * and frame budget. Opening a session acquires temporary editor state that must be restored
+ * on close.
+ */
 export const CameraRenderSessionRequest = Schema.Struct({
 	contract: CameraRenderContract,
 	sessionId: CameraRenderSessionId,
@@ -148,6 +207,10 @@ export const CameraRenderSessionRequest = Schema.Struct({
 	maximumFrames: integer(1, 1000000)
 });
 export type CameraRenderSessionRequest = typeof CameraRenderSessionRequest.Type;
+/**
+ * Correlated frame operation within an open render session, including absolute camera and
+ * pixel size. Optional preparation region does not change the requested projection.
+ */
 export const CameraFrameRequest = Schema.Struct({
 	contract: CameraRenderContract,
 	sessionId: CameraRenderSessionId,
@@ -157,6 +220,10 @@ export const CameraFrameRequest = Schema.Struct({
 	region: Schema.optionalKey(CameraRenderRegion)
 });
 export type CameraFrameRequest = typeof CameraFrameRequest.Type;
+/**
+ * Structured preflight/runtime issue with code, policy path, message and recovery. Hosts can
+ * surface actionable validation without parsing prose for the failing field.
+ */
 export const CameraRenderIssue = Schema.Struct({
 	code: Text,
 	path: Text,
@@ -164,6 +231,10 @@ export const CameraRenderIssue = Schema.Struct({
 	recovery: Text
 });
 export type CameraRenderIssue = typeof CameraRenderIssue.Type;
+/**
+ * Stable rendering failure categories covering validation, capability, editor state, budgets,
+ * capture, restoration and operation/session identity. Match code rather than message text.
+ */
 export const CameraRenderFailureCode = Schema.Literals([
 	"invalid_policy",
 	"invalid_frame",
@@ -196,6 +267,10 @@ export const CameraRenderFailureCode = Schema.Literals([
 	"operation_expired",
 	"operation_conflict"
 ]);
+/**
+ * Failed rendering outcome retaining session/operation context and restoration status.
+ * restoration=failed requires reconciliation of editor state before beginning another render.
+ */
 export const CameraRenderFailure = Schema.Struct({
 	status: Schema.Literal("failed"),
 	code: CameraRenderFailureCode,
@@ -207,6 +282,10 @@ export const CameraRenderFailure = Schema.Struct({
 	restoration: Schema.Literals(["not_acquired", "restored", "failed"])
 });
 export type CameraRenderFailure = typeof CameraRenderFailure.Type;
+/**
+ * Ready or blocked policy assessment with structured issues. A ready assessment is validation
+ * evidence rather than a guarantee that world state cannot change before capture.
+ */
 export const CameraRenderPreflight = Schema.Struct({
 	status: Schema.Literals(["ready", "blocked"]),
 	issues: Schema.Array(CameraRenderIssue)
@@ -276,6 +355,11 @@ export const CameraRenderCapabilities = CameraRenderCapabilitiesV1.mapFields((fi
 	)
 }));
 export type CameraRenderCapabilities = typeof CameraRenderCapabilities.Type;
+/**
+ * Running frame operation with preparation/exposure/warmup/capture phase, rendered-frame
+ * count and elapsed milliseconds. Poll by the same session/operation identities rather than
+ * replaying capture.
+ */
 export const CameraRenderProgress = Schema.Struct({
 	status: Schema.Literal("running"),
 	sessionId: CameraRenderSessionId,
@@ -285,6 +369,11 @@ export const CameraRenderProgress = Schema.Struct({
 	elapsedMs: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0))
 });
 export type CameraRenderProgress = typeof CameraRenderProgress.Type;
+/**
+ * Realized camera, size, policy, exposure, preparation/settling and editor dirty-state
+ * evidence for a frame. Preserve limitations and visibility diagnostics when presenting
+ * capture fidelity.
+ */
 export const CameraFrameEvidence = Schema.Struct({
 	visibilityDiagnostics: Schema.optionalKey(Schema.Array(CameraVisibilityDiagnostic)),
 	/** Present when the policy enables editor previews: preview child actors shown in the loaded world. */
@@ -312,6 +401,11 @@ export const CameraFrameEvidence = Schema.Struct({
 	pluginVersion: Text
 });
 export type CameraFrameEvidence = typeof CameraFrameEvidence.Type;
+/**
+ * Captured PNG artifact metadata and realized frame evidence, correlated to
+ * session/operation. The artifact path is relative to the capture root; byte count and
+ * dimensions must be verified when ingesting it.
+ */
 export const CameraFrameResult = Schema.Struct({
 	status: Schema.Literal("captured"),
 	sessionId: CameraRenderSessionId,
@@ -329,12 +423,20 @@ export const CameraFrameResult = Schema.Struct({
 	evidence: CameraFrameEvidence
 });
 export type CameraFrameResult = typeof CameraFrameResult.Type;
+/**
+ * Discriminated running, captured or failed frame outcome. Polling can continue only while
+ * running; failures include restoration guidance rather than an implicit retry.
+ */
 export const CameraFrameStatus = Schema.Union([
 	CameraRenderProgress,
 	CameraFrameResult,
 	CameraRenderFailure
 ]);
 export type CameraFrameStatus = typeof CameraFrameStatus.Type;
+/**
+ * Opened render session with its resolved policy or a typed failed outcome. Only opened
+ * grants a session whose temporary editor state needs explicit/scoped release.
+ */
 export const CameraRenderBeginResult = Schema.Union([
 	Schema.Struct({
 		status: Schema.Literal("opened"),
@@ -343,6 +445,10 @@ export const CameraRenderBeginResult = Schema.Union([
 	}),
 	CameraRenderFailure
 ]);
+/**
+ * Closed session with confirmed restoration or a failed outcome. A failed restoration must
+ * remain visible instead of being treated as successful cleanup.
+ */
 export const CameraRenderEndResult = Schema.Union([
 	Schema.Struct({
 		status: Schema.Literal("closed"),
@@ -352,6 +458,10 @@ export const CameraRenderEndResult = Schema.Union([
 	CameraRenderFailure
 ]);
 
+/**
+ * Literal camera-render 1.0 header for request construction. Capability support and
+ * per-request validation remain required before using the renderer.
+ */
 export const cameraRenderContract = {
 	name: "ue-shed-camera-render",
 	version: { major: 1, minor: 0 }
@@ -372,6 +482,11 @@ export const legacyReviewRenderPolicy: CameraRenderPolicy = {
 	preparation: { geometry: { mode: "preserve_loading" }, dataLayers: [] }
 };
 
+/**
+ * Default lit editor-viewport high-resolution screenshot policy, preserving project vignette
+ * and enabling fog. Hosts can replace this policy; backend availability still requires
+ * preflight.
+ */
 export const highResolutionReviewRenderer = {
 	kind: "editor_viewport",
 	strategy: "high_resolution_screenshot",

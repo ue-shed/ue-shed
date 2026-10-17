@@ -37,6 +37,11 @@ import {
 
 const isCameraArrangementError = Schema.is(CameraArrangementError);
 
+/**
+ * Projects the authoring document into resolved poses, inherited visibility, approval state
+ * and optional regeneration proposal. Uses the review profile's policy when no arrangement
+ * override exists; performs no mutation.
+ */
 export function cameraAuthoringPanelState(
 	document: CameraAuthoringDocument,
 	activeCameraId: ArrangementCameraId,
@@ -120,7 +125,11 @@ export const makeCameraAuthoringPanelSession = Effect.fn("CameraAuthoringPanel.m
 				catch: (cause) =>
 					isCameraArrangementError(cause)
 						? cause
-						: arrangementFailure("invalid", String(cause))
+						: arrangementFailure(
+								"invalid",
+								"The saved arrangement could not reconcile the requested camera change.",
+								cause
+							)
 			});
 		const processEvent = Effect.fn("CameraAuthoringPanel.event")(function* (
 			event: CameraPanelEvent,
@@ -192,7 +201,11 @@ export const makeCameraAuthoringPanelSession = Effect.fn("CameraAuthoringPanel.m
 					catch: (cause) =>
 						isCameraArrangementError(cause)
 							? cause
-							: arrangementFailure("invalid", String(cause))
+							: arrangementFailure(
+									"invalid",
+									"The saved arrangement could not reconcile the requested camera change.",
+									cause
+								)
 				});
 				active = action.cameraId;
 			} else if (action.kind === "approve") {

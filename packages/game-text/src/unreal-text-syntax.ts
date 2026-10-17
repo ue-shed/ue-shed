@@ -3,8 +3,17 @@ import type { CultureCode } from "@ue-shed/localization/browser";
 import { unrealPluralForms } from "./unreal-plural-forms.js";
 export { unrealPluralForms } from "./unreal-plural-forms.js";
 
+/**
+ * Modifier families understood by the Unreal format-pattern analyzer. Recognition is separate
+ * from culture-specific validation of the required forms.
+ */
 export const UnrealModifierName = Schema.Literals(["plural", "ordinal", "gender", "hpp"]);
 export type UnrealModifierName = typeof UnrealModifierName.Type;
+/**
+ * A format-pattern diagnostic with a stable category, source position and any affected
+ * argument/modifier/forms. Unsupported culture and parser-limit evidence remain distinct from
+ * malformed syntax.
+ */
 export const UnrealFormatIssue = Schema.Struct({
 	code: Schema.Literals([
 		"malformed_modifier",
@@ -21,6 +30,10 @@ export const UnrealFormatIssue = Schema.Struct({
 	position: Schema.Int
 });
 export type UnrealFormatIssue = typeof UnrealFormatIssue.Type;
+/**
+ * One parsed format argument with UTF-16 source offsets. Names identify the argument's
+ * spelling; finding an argument does not prove that a runtime caller supplies a value for it.
+ */
 export const UnrealArgument = Schema.Struct({
 	name: Schema.String,
 	start: Schema.Int,
@@ -29,6 +42,11 @@ export const UnrealArgument = Schema.Struct({
 export type UnrealArgument = typeof UnrealArgument.Type;
 const ModifierForm = Schema.Struct({ name: Schema.String, value: Schema.String });
 type ModifierForm = typeof ModifierForm.Type;
+/**
+ * One parsed Unreal format modifier, including its forms, UTF-16 offsets and nesting depth.
+ * Retain issues alongside it rather than treating every recognized modifier as valid for every
+ * culture.
+ */
 export const UnrealModifier = Schema.Struct({
 	name: UnrealModifierName,
 	argument: Schema.NullOr(Schema.String),
@@ -38,11 +56,19 @@ export const UnrealModifier = Schema.Struct({
 	depth: Schema.Int
 });
 export type UnrealModifier = typeof UnrealModifier.Type;
+/**
+ * Modifier name and associated argument used for correspondence checks. Form values and source
+ * positions are deliberately outside this identity.
+ */
 export const UnrealModifierIdentity = UnrealModifier.mapFields((fields) => ({
 	argument: fields.argument,
 	name: fields.name
 }));
 export type UnrealModifierIdentity = typeof UnrealModifierIdentity.Type;
+/**
+ * Parsed arguments, modifiers and issues for an Unreal text pattern. compiled can remain
+ * unknown; this analysis does not invoke the editor or compile an owning Blueprint.
+ */
 export const UnrealFormatPattern = Schema.Struct({
 	compiled: Schema.NullOr(Schema.Boolean),
 	arguments: Schema.Array(UnrealArgument),
@@ -318,6 +344,10 @@ function parsePattern(text: string, culture: CultureCode, depth: number): Unreal
 	};
 }
 
+/**
+ * Raw opening/closing delimiter counts used by the compile-style RichText check. These counts
+ * are taken before Slate entity unescaping or rendering and are not a DOM tree.
+ */
 export const UnrealRichTextCounts = Schema.Struct({ opening: Schema.Int, closing: Schema.Int });
 export type UnrealRichTextCounts = typeof UnrealRichTextCounts.Type;
 
@@ -338,6 +368,11 @@ export function unrealRichTextCounts(text: string): UnrealRichTextCounts {
 	return { opening, closing };
 }
 
+/**
+ * Checks translation RichText delimiter balance against the source's raw delimiter counts. It
+ * accepts balanced translations or the same imbalance as the source; it does not render Slate
+ * markup.
+ */
 export function unrealRichTextValid(source: string, translation: string): boolean {
 	const actual = unrealRichTextCounts(translation);
 	const expected = unrealRichTextCounts(source);
@@ -347,6 +382,10 @@ export function unrealRichTextValid(source: string, translation: string): boolea
 	);
 }
 
+/**
+ * Boundary whitespace and line-break evidence using Unreal's character semantics. lineBreaks
+ * treats CRLF as one break; leading/trailing strings preserve the actual characters.
+ */
 export const UnrealWhitespace = Schema.Struct({
 	leading: Schema.String,
 	trailing: Schema.String,
@@ -355,6 +394,11 @@ export const UnrealWhitespace = Schema.Struct({
 export type UnrealWhitespace = typeof UnrealWhitespace.Type;
 
 // FTextChar uses ICU's Java-style whitespace, which excludes the three non-breaking spaces.
+/**
+ * Extracts leading/trailing Unreal whitespace and counts CRLF, CR or LF breaks. The character
+ * set deliberately excludes the non-breaking spaces that Unreal's FTextChar does not classify
+ * as whitespace.
+ */
 export function unrealWhitespace(text: string): UnrealWhitespace {
 	return {
 		leading:
@@ -369,6 +413,11 @@ export function unrealWhitespace(text: string): UnrealWhitespace {
 	};
 }
 
+/**
+ * Detects Unreal-style non-line-break whitespace at either text boundary. CR/LF are handled as
+ * line-break evidence separately; non-breaking spaces follow Unreal's distinct whitespace
+ * treatment.
+ */
 export function unrealUnsafeWhitespace(text: string): boolean {
 	const boundary = (char: string) =>
 		char !== "\r" &&

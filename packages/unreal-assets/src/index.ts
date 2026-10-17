@@ -1,6 +1,78 @@
-export * from "./project-index.js";
-export * from "./project-index-memory.js";
-export * from "./project-index-process.js";
+export {
+	countProjectIndex,
+	countProjectIndexPages,
+	decodeProjectIndexCount,
+	decodeProjectIndexPage,
+	decodeProjectIndexQuery,
+	decodeProjectIndexTarget,
+	foldProjectIndexRefresh,
+	getProjectIndexCacheRoot,
+	getProjectIndexStatus,
+	isProjectIndexError,
+	makeProjectIndexTestLayer,
+	PROJECT_INDEX_CACHE_ROOT_ENV,
+	PROJECT_INDEX_MAX_DIAGNOSTICS,
+	PROJECT_INDEX_MAX_PAGE_SIZE,
+	ProjectIdentity,
+	ProjectIndex,
+	type ProjectIndexApi,
+	ProjectIndexCacheRoot,
+	projectIndexCacheRootConfig,
+	ProjectIndexConfig,
+	projectIndexConfigLayer,
+	ProjectIndexConfigLive,
+	type ProjectIndexConfiguration,
+	ProjectIndexCorruptCatalog,
+	ProjectIndexCount,
+	ProjectIndexCountResult,
+	ProjectIndexCursor,
+	ProjectIndexDiagnostic,
+	type ProjectIndexError,
+	ProjectIndexFilter,
+	ProjectIndexGeneration,
+	ProjectIndexHeader,
+	ProjectIndexIncompatibleWorker,
+	ProjectIndexInvalidRequest,
+	ProjectIndexInventory,
+	ProjectIndexItem,
+	ProjectIndexMap,
+	ProjectIndexPage,
+	ProjectIndexQuery,
+	ProjectIndexRefreshEvent,
+	ProjectIndexRefreshFailed,
+	ProjectIndexStaleGeneration,
+	ProjectIndexStatus,
+	ProjectIndexSummary,
+	ProjectIndexTarget,
+	ProjectIndexUnavailable,
+	queryProjectIndex,
+	rebuildProjectIndex,
+	refreshProjectIndex,
+	requireProjectIndexCacheRoot
+} from "./project-index.js";
+export {
+	projectIndexMemoryLayer,
+	projectIndexMemoryLayerWithConfig,
+	type ProjectIndexMemoryOptions,
+	type ProjectIndexMemorySeed
+} from "./project-index-memory.js";
+export {
+	projectIndexCacheBytes,
+	projectIndexChangedPackages,
+	projectIndexEvidenceWrites,
+	projectIndexGeneration,
+	projectIndexMetrics,
+	type ProjectIndexProcessConfiguration,
+	projectIndexProcessLayer,
+	projectIndexProcessLayerFromConfig,
+	projectIndexProcessLayerFromReader,
+	projectIndexProcessLayerWithConfig,
+	projectIndexQuarantines,
+	projectIndexQueryDuration,
+	projectIndexRefreshDuration,
+	projectIndexRemovedPackages,
+	projectIndexTerminalState
+} from "./project-index-process.js";
 export {
 	decodeProjectIndexWirePage,
 	decodeProjectIndexWireSummary,
@@ -43,24 +115,11 @@ export type {
 	SavedTableCatalogOptions,
 	SavedWorldReadOptions
 } from "./asset-reader.js";
-
-/** @deprecated Use `AssetReaderApi`. */
-export type AssetReaderShape = import("./asset-reader.js").AssetReaderApi;
-/** @deprecated Use `AssetReaderTestApi`. */
-export type AssetReaderTestShape = import("./asset-reader.js").AssetReaderTestApi;
-/** @deprecated Use `ProjectIndexApi`. */
-export type ProjectIndexShape = import("./project-index.js").ProjectIndexApi;
 export {
 	batchProtocolPaths,
 	MAX_PROTOCOL_PATH_BYTES,
 	MAX_PROTOCOL_REQUEST_BYTES
 } from "./protocol-request-limit.js";
-export {
-	ProtocolOutputBudget,
-	ProtocolStreamFailure,
-	ProtocolStreamValidator,
-	protocolCacheOutcome
-} from "./protocol-transport.js";
 export { resolveScanTarget, type ResolvedScanTarget } from "./scan-target.js";
 export {
 	BlueprintGraphDiagnostic,
@@ -100,10 +159,23 @@ export {
 } from "@ue-shed/protocol";
 export type { SavedProperty, SavedPropertyValue } from "@ue-shed/protocol";
 
-export * from "./saved-review.js";
+export {
+	blueprintReferences,
+	compareSavedBlueprints,
+	compareSavedSequences,
+	resolveSavedReference,
+	SavedReferenceResolution,
+	SavedReviewAsset,
+	SavedReviewChange,
+	SavedReviewComparison,
+	SavedReviewOutput,
+	SavedReviewReference,
+	sequenceReferences
+} from "./saved-review.js";
 
 export {
 	NativeGameTextIndexClient,
+	type NativeGameTextIndexOutcome,
 	nativeGameTextIndexClientLayer
 } from "./game-text-index-client.js";
 export { encodeGameTextJoinInput } from "@ue-shed/protocol";

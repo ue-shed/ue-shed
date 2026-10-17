@@ -12,8 +12,17 @@ import { adaptWasmInspectionResult } from "@ue-shed/extension-asset-inspector/wa
 import { Effect, Schema } from "effect";
 import { BlueprintBrowserError, BlueprintWorkerResponse } from "./worker-contract.js";
 
-function browserError(operation: string, message: string): BlueprintBrowserError {
-	return new BlueprintBrowserError({ operation, message });
+function browserError(operation: string, message: string, cause?: unknown): BlueprintBrowserError {
+	return new BlueprintBrowserError({
+		...(cause === undefined ? undefined : { cause }),
+		recovery:
+			"Check the selected saved asset and parser limits. Use a supported package or report the retained parser failure.",
+		retrySafe: false,
+		nextStep: "escalate",
+		code: "blueprint_browser_failed",
+		operation,
+		message
+	});
 }
 
 const decodeBytes = Effect.fn("Website.Blueprints.decodeBytes")(function* (
@@ -30,7 +39,8 @@ const decodeBytes = Effect.fn("Website.Blueprints.decodeBytes")(function* (
 				new Worker(new URL("./blueprint.worker.ts", import.meta.url), {
 					type: "module"
 				}),
-			catch: () => browserError("worker", "The browser could not start the asset decoder.")
+			catch: (cause) =>
+				browserError("worker", "The browser could not start the asset decoder.", cause)
 		}),
 		(worker) =>
 			Effect.sync(() => {
@@ -54,10 +64,14 @@ const decodeBytes = Effect.fn("Website.Blueprints.decodeBytes")(function* (
 			);
 		try {
 			worker.postMessage({ path, bytes, operation }, [bytes]);
-		} catch {
+		} catch (cause) {
 			resume(
 				Effect.fail(
-					browserError("transport", "The browser could not send the file to its decoder.")
+					browserError(
+						"transport",
+						"The browser could not send the file to its decoder.",
+						cause
+					)
 				)
 			);
 		}
@@ -68,11 +82,13 @@ const decodeBytes = Effect.fn("Website.Blueprints.decodeBytes")(function* (
 		});
 	}).pipe(
 		Effect.timeout("30 seconds"),
-		Effect.mapError((error) => browserError("transport", error.message))
+		Effect.mapError((error) =>
+			browserError("transport", "The asset decoder request failed or timed out.", error)
+		)
 	);
 	const response = yield* Schema.decodeUnknownEffect(BlueprintWorkerResponse)(reply.data).pipe(
-		Effect.mapError(() =>
-			browserError("transport", "The decoder returned an invalid response.")
+		Effect.mapError((cause) =>
+			browserError("transport", "The decoder returned an invalid response.", cause)
 		)
 	);
 	if (response.status === "failed") {
@@ -100,7 +116,8 @@ export const readBlueprintFile = Effect.fn("Website.Blueprints.readFile")(functi
 	}
 	const bytes = yield* Effect.tryPromise({
 		try: () => file.arrayBuffer(),
-		catch: () => browserError("file", "The browser could not read the selected file.")
+		catch: (cause) =>
+			browserError("file", "The browser could not read the selected file.", cause)
 	});
 	const response = yield* decodeBytes(file.name, bytes);
 	return yield* adaptWasmBlueprintResult(file.name, response.output);
@@ -112,14 +129,16 @@ export const readBlueprintSample = Effect.fn("Website.Blueprints.readSample")(fu
 	// This is the only network read: a public fixture served with the site. User files stay local.
 	const response = yield* Effect.tryPromise({
 		try: (signal) => fetch(url, { signal }),
-		catch: () => browserError("sample", "The sample Blueprint could not be downloaded.")
+		catch: (cause) =>
+			browserError("sample", "The sample Blueprint could not be downloaded.", cause)
 	});
 	if (!response.ok) {
 		return yield* Effect.fail(browserError("sample", "The sample Blueprint is unavailable."));
 	}
 	const bytes = yield* Effect.tryPromise({
 		try: () => response.arrayBuffer(),
-		catch: () => browserError("sample", "The sample Blueprint download was interrupted.")
+		catch: (cause) =>
+			browserError("sample", "The sample Blueprint download was interrupted.", cause)
 	});
 	const decoded = yield* decodeBytes("BP_GraphFixture.uasset", bytes);
 	return yield* adaptWasmBlueprintResult("BP_GraphFixture.uasset", decoded.output);
@@ -156,7 +175,8 @@ export const readAssetFile = Effect.fn("Website.Inspector.readFile")(function* (
 	}
 	const bytes = yield* Effect.tryPromise({
 		try: () => file.arrayBuffer(),
-		catch: () => browserError("file", "The browser could not read the selected file.")
+		catch: (cause) =>
+			browserError("file", "The browser could not read the selected file.", cause)
 	});
 	return yield* inspectBytes(file.name, bytes);
 });
@@ -167,13 +187,14 @@ export const readAssetSample = Effect.fn("Website.Inspector.readSample")(functio
 ): Effect.fn.Return<SiteAssetRead, BlueprintBrowserError> {
 	const response = yield* Effect.tryPromise({
 		try: (signal) => fetch(url, { signal }),
-		catch: () => browserError("sample", "The sample asset could not be downloaded.")
+		catch: (cause) => browserError("sample", "The sample asset could not be downloaded.", cause)
 	});
 	if (!response.ok)
 		return yield* Effect.fail(browserError("sample", "The sample asset is unavailable."));
 	const bytes = yield* Effect.tryPromise({
 		try: () => response.arrayBuffer(),
-		catch: () => browserError("sample", "The sample asset download was interrupted.")
+		catch: (cause) =>
+			browserError("sample", "The sample asset download was interrupted.", cause)
 	});
 	return yield* inspectBytes(fileName, bytes);
 });
@@ -186,7 +207,8 @@ export const readSequenceFile = Effect.fn("Website.Sequencer.readFile")(function
 	}
 	const bytes = yield* Effect.tryPromise({
 		try: () => file.arrayBuffer(),
-		catch: () => browserError("file", "The browser could not read the selected file.")
+		catch: (cause) =>
+			browserError("file", "The browser could not read the selected file.", cause)
 	});
 	const response = yield* decodeBytes(file.name, bytes, "sequencer");
 	return yield* adaptWasmSequenceResult(file.name, response.output);
@@ -197,7 +219,8 @@ export const readSequenceSample = Effect.fn("Website.Sequencer.readSample")(func
 ): Effect.fn.Return<SequenceReadResult, BlueprintBrowserError> {
 	const response = yield* Effect.tryPromise({
 		try: (signal) => fetch(url, { signal }),
-		catch: () => browserError("sample", "The sample Level Sequence could not be downloaded.")
+		catch: (cause) =>
+			browserError("sample", "The sample Level Sequence could not be downloaded.", cause)
 	});
 	if (!response.ok) {
 		return yield* Effect.fail(
@@ -206,7 +229,7 @@ export const readSequenceSample = Effect.fn("Website.Sequencer.readSample")(func
 	}
 	const bytes = yield* Effect.tryPromise({
 		try: () => response.arrayBuffer(),
-		catch: () => browserError("sample", "The sample download was interrupted.")
+		catch: (cause) => browserError("sample", "The sample download was interrupted.", cause)
 	});
 	const decoded = yield* decodeBytes("LS_SavedDetails.uasset", bytes, "sequencer");
 	return yield* adaptWasmSequenceResult("LS_SavedDetails.uasset", decoded.output);
@@ -220,7 +243,8 @@ export const readAuthoringFile = Effect.fn("Website.DataTables.readFile")(functi
 	}
 	const bytes = yield* Effect.tryPromise({
 		try: () => file.arrayBuffer(),
-		catch: () => browserError("file", "The browser could not read the selected file.")
+		catch: (cause) =>
+			browserError("file", "The browser could not read the selected file.", cause)
 	});
 	const response = yield* decodeBytes(file.name, bytes, "authoring");
 	return yield* adaptWasmAuthoringTable(file.name, response.output);
@@ -231,14 +255,15 @@ export const readAuthoringSample = Effect.fn("Website.DataTables.readSample")(fu
 ): Effect.fn.Return<AuthoringReadResult, BlueprintBrowserError> {
 	const response = yield* Effect.tryPromise({
 		try: (signal) => fetch(url, { signal }),
-		catch: () => browserError("sample", "The sample DataTable could not be downloaded.")
+		catch: (cause) =>
+			browserError("sample", "The sample DataTable could not be downloaded.", cause)
 	});
 	if (!response.ok) {
 		return yield* Effect.fail(browserError("sample", "The sample DataTable is unavailable."));
 	}
 	const bytes = yield* Effect.tryPromise({
 		try: () => response.arrayBuffer(),
-		catch: () => browserError("sample", "The sample download was interrupted.")
+		catch: (cause) => browserError("sample", "The sample download was interrupted.", cause)
 	});
 	const decoded = yield* decodeBytes("DT_Scalars.uasset", bytes, "authoring");
 	return yield* adaptWasmAuthoringTable("DT_Scalars.uasset", decoded.output);

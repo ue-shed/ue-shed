@@ -1,0 +1,425 @@
+{
+	"measurementVersion": 2,
+	"node": "v26.5.0",
+	"platform": "win32",
+	"architecture": "x64",
+	"scenario": {
+		"mode": "hosts",
+		"builder": "typescript",
+		"host": "cli",
+		"select": "warm"
+	},
+	"eventLoopScope": "10 ms callback gaps, including the unfinished gap at operation completion.",
+	"outcome": {
+		"kind": "done",
+		"result": {
+			"node": "v26.5.0",
+			"mode": "hosts",
+			"results": [
+				{
+					"stage": "cli:warm-open",
+					"seconds": 2.2593366,
+					"eventLoop": {
+						"maximumDelayMs": 1367.6116000000002,
+						"p99DelayMs": 1367.6116000000002,
+						"utilization": 0.9731501811106276
+					},
+					"peak": {
+						"heapUsed": 132792488,
+						"arrayBuffers": 795150978,
+						"rss": 1040375808
+					},
+					"builder": "TypeScript reference builder",
+					"joinPolicy": "production incremental",
+					"readPackages": 0,
+					"parsedFiles": 0,
+					"rebuilt": false
+				},
+				{
+					"stage": "cli:first-query",
+					"seconds": 0.0012732999999998356,
+					"eventLoop": {
+						"maximumDelayMs": 1.194999999999709,
+						"p99DelayMs": 1.194999999999709,
+						"utilization": 1
+					},
+					"peak": {
+						"heapUsed": 52760056,
+						"arrayBuffers": 794734723,
+						"rss": 1040408576
+					},
+					"total": 583507,
+					"displayed": 1,
+					"lines": 1,
+					"sha256": "38fa7b4e861ae30940bb4b6acba46a86b02175e3a041ab8624071a99073471d6"
+				},
+				{
+					"stage": "cli:count",
+					"seconds": 0.000970600000000104,
+					"eventLoop": {
+						"maximumDelayMs": 0.9546999999997752,
+						"p99DelayMs": 0.9546999999997752,
+						"utilization": 1
+					},
+					"peak": {
+						"heapUsed": 52517448,
+						"arrayBuffers": 794730945,
+						"rss": 1040408576
+					},
+					"total": 583507,
+					"displayed": 1,
+					"lines": 1,
+					"sha256": "38fa7b4e861ae30940bb4b6acba46a86b02175e3a041ab8624071a99073471d6"
+				},
+				{
+					"stage": "cli:filter",
+					"seconds": 0.05056849999999986,
+					"eventLoop": {
+						"maximumDelayMs": 50.565599999999904,
+						"p99DelayMs": 50.565599999999904,
+						"utilization": 1
+					},
+					"peak": {
+						"heapUsed": 72336272,
+						"arrayBuffers": 797067878,
+						"rss": 1040453632
+					},
+					"total": 2830,
+					"displayed": 1,
+					"lines": 1,
+					"sha256": "a5220f87e652fe564f72e11c4427e43e00e0657b5cb6279e1b6a4a75f10762eb"
+				},
+				{
+					"stage": "cli:facet",
+					"seconds": 0.04532259999999996,
+					"eventLoop": {
+						"maximumDelayMs": 45.321899999999914,
+						"p99DelayMs": 45.321899999999914,
+						"utilization": 1
+					},
+					"peak": {
+						"heapUsed": 64465456,
+						"arrayBuffers": 813487211,
+						"rss": 1054945280
+					},
+					"total": 583507,
+					"displayed": 1,
+					"lines": 1,
+					"sha256": "065850d3957ab0515f793fc51e0607166d583cbb68ce1dd0637ee2a4848ba9cd"
+				},
+				{
+					"stage": "cli:page",
+					"seconds": 0.019096000000000005,
+					"eventLoop": {
+						"maximumDelayMs": 19.055699999999888,
+						"p99DelayMs": 19.055699999999888,
+						"utilization": 1
+					},
+					"peak": {
+						"heapUsed": 63378192,
+						"arrayBuffers": 805917443,
+						"rss": 1050705920
+					},
+					"total": 583507,
+					"displayed": 50,
+					"lines": 50,
+					"sha256": "e962ee1667d49eeaccb8fafcb55cc07f6c5115a21a600eab395bac6725618475"
+				},
+				{
+					"stage": "cli:search",
+					"seconds": 0.06230139999999983,
+					"eventLoop": {
+						"maximumDelayMs": 62.28809999999976,
+						"p99DelayMs": 62.28809999999976,
+						"utilization": 1
+					},
+					"peak": {
+						"heapUsed": 77548544,
+						"arrayBuffers": 806766467,
+						"rss": 1043386368
+					},
+					"total": 583507,
+					"displayed": 1,
+					"lines": 1,
+					"sha256": "38fa7b4e861ae30940bb4b6acba46a86b02175e3a041ab8624071a99073471d6"
+				},
+				{
+					"stage": "cli:focus",
+					"seconds": 0.23576869999999964,
+					"eventLoop": {
+						"maximumDelayMs": 235.76079999999956,
+						"p99DelayMs": 235.76079999999956,
+						"utilization": 1
+					},
+					"peak": {
+						"heapUsed": 53410112,
+						"arrayBuffers": 955429963,
+						"rss": 1160970240
+					},
+					"found": true
+				},
+				{
+					"stage": "cli:refresh-no-change",
+					"seconds": 1.7058633999999993,
+					"eventLoop": {
+						"maximumDelayMs": 690.7018000000007,
+						"p99DelayMs": 690.7018000000007,
+						"utilization": 0.948703394107369
+					},
+					"peak": {
+						"heapUsed": 136920664,
+						"arrayBuffers": 926990498,
+						"rss": 1162629120
+					},
+					"builder": "TypeScript reference builder",
+					"joinPolicy": "production incremental",
+					"readPackages": 0,
+					"parsedFiles": 0,
+					"rebuilt": false
+				},
+				{
+					"stage": "cli:loc-status-command",
+					"seconds": 2.0812022999999997,
+					"eventLoop": {
+						"maximumDelayMs": 1101.2329999999993,
+						"p99DelayMs": 1101.2329999999993,
+						"utilization": 0.9614956903726264
+					},
+					"peak": {
+						"heapUsed": 175767752,
+						"arrayBuffers": 842238589,
+						"rss": 1097838592
+					},
+					"total": 583507,
+					"exitCode": 0
+				}
+			]
+		}
+	},
+	"results": [
+		{
+			"stage": "cli:warm-open",
+			"seconds": 2.2593366,
+			"eventLoop": {
+				"maximumDelayMs": 1367.6116000000002,
+				"p99DelayMs": 1367.6116000000002,
+				"utilization": 0.9731501811106276
+			},
+			"peak": {
+				"heapUsed": 132792488,
+				"arrayBuffers": 795150978,
+				"rss": 1040375808
+			},
+			"builder": "TypeScript reference builder",
+			"joinPolicy": "production incremental",
+			"readPackages": 0,
+			"parsedFiles": 0,
+			"rebuilt": false
+		},
+		{
+			"stage": "cli:first-query",
+			"seconds": 0.0012732999999998356,
+			"eventLoop": {
+				"maximumDelayMs": 1.194999999999709,
+				"p99DelayMs": 1.194999999999709,
+				"utilization": 1
+			},
+			"peak": {
+				"heapUsed": 52760056,
+				"arrayBuffers": 794734723,
+				"rss": 1040408576
+			},
+			"total": 583507,
+			"displayed": 1,
+			"lines": 1,
+			"sha256": "38fa7b4e861ae30940bb4b6acba46a86b02175e3a041ab8624071a99073471d6"
+		},
+		{
+			"stage": "cli:count",
+			"seconds": 0.000970600000000104,
+			"eventLoop": {
+				"maximumDelayMs": 0.9546999999997752,
+				"p99DelayMs": 0.9546999999997752,
+				"utilization": 1
+			},
+			"peak": {
+				"heapUsed": 52517448,
+				"arrayBuffers": 794730945,
+				"rss": 1040408576
+			},
+			"total": 583507,
+			"displayed": 1,
+			"lines": 1,
+			"sha256": "38fa7b4e861ae30940bb4b6acba46a86b02175e3a041ab8624071a99073471d6"
+		},
+		{
+			"stage": "cli:filter",
+			"seconds": 0.05056849999999986,
+			"eventLoop": {
+				"maximumDelayMs": 50.565599999999904,
+				"p99DelayMs": 50.565599999999904,
+				"utilization": 1
+			},
+			"peak": {
+				"heapUsed": 72336272,
+				"arrayBuffers": 797067878,
+				"rss": 1040453632
+			},
+			"total": 2830,
+			"displayed": 1,
+			"lines": 1,
+			"sha256": "a5220f87e652fe564f72e11c4427e43e00e0657b5cb6279e1b6a4a75f10762eb"
+		},
+		{
+			"stage": "cli:facet",
+			"seconds": 0.04532259999999996,
+			"eventLoop": {
+				"maximumDelayMs": 45.321899999999914,
+				"p99DelayMs": 45.321899999999914,
+				"utilization": 1
+			},
+			"peak": {
+				"heapUsed": 64465456,
+				"arrayBuffers": 813487211,
+				"rss": 1054945280
+			},
+			"total": 583507,
+			"displayed": 1,
+			"lines": 1,
+			"sha256": "065850d3957ab0515f793fc51e0607166d583cbb68ce1dd0637ee2a4848ba9cd"
+		},
+		{
+			"stage": "cli:page",
+			"seconds": 0.019096000000000005,
+			"eventLoop": {
+				"maximumDelayMs": 19.055699999999888,
+				"p99DelayMs": 19.055699999999888,
+				"utilization": 1
+			},
+			"peak": {
+				"heapUsed": 63378192,
+				"arrayBuffers": 805917443,
+				"rss": 1050705920
+			},
+			"total": 583507,
+			"displayed": 50,
+			"lines": 50,
+			"sha256": "e962ee1667d49eeaccb8fafcb55cc07f6c5115a21a600eab395bac6725618475"
+		},
+		{
+			"stage": "cli:search",
+			"seconds": 0.06230139999999983,
+			"eventLoop": {
+				"maximumDelayMs": 62.28809999999976,
+				"p99DelayMs": 62.28809999999976,
+				"utilization": 1
+			},
+			"peak": {
+				"heapUsed": 77548544,
+				"arrayBuffers": 806766467,
+				"rss": 1043386368
+			},
+			"total": 583507,
+			"displayed": 1,
+			"lines": 1,
+			"sha256": "38fa7b4e861ae30940bb4b6acba46a86b02175e3a041ab8624071a99073471d6"
+		},
+		{
+			"stage": "cli:focus",
+			"seconds": 0.23576869999999964,
+			"eventLoop": {
+				"maximumDelayMs": 235.76079999999956,
+				"p99DelayMs": 235.76079999999956,
+				"utilization": 1
+			},
+			"peak": {
+				"heapUsed": 53410112,
+				"arrayBuffers": 955429963,
+				"rss": 1160970240
+			},
+			"found": true
+		},
+		{
+			"stage": "cli:refresh-no-change",
+			"seconds": 1.7058633999999993,
+			"eventLoop": {
+				"maximumDelayMs": 690.7018000000007,
+				"p99DelayMs": 690.7018000000007,
+				"utilization": 0.948703394107369
+			},
+			"peak": {
+				"heapUsed": 136920664,
+				"arrayBuffers": 926990498,
+				"rss": 1162629120
+			},
+			"builder": "TypeScript reference builder",
+			"joinPolicy": "production incremental",
+			"readPackages": 0,
+			"parsedFiles": 0,
+			"rebuilt": false
+		},
+		{
+			"stage": "cli:loc-status-command",
+			"seconds": 2.0812022999999997,
+			"eventLoop": {
+				"maximumDelayMs": 1101.2329999999993,
+				"p99DelayMs": 1101.2329999999993,
+				"utilization": 0.9614956903726264
+			},
+			"peak": {
+				"heapUsed": 175767752,
+				"arrayBuffers": 842238589,
+				"rss": 1097838592
+			},
+			"total": 583507,
+			"exitCode": 0
+		}
+	],
+	"stages": {
+		"startup": {
+			"osPeakRss": 239407104,
+			"tracePeakHeap": 123917040
+		},
+		"cli:warm-open": {
+			"osPeakRss": 795406336,
+			"tracePeakHeap": 183370664
+		},
+		"cli:first-query": {
+			"osPeakRss": 0,
+			"tracePeakHeap": 72183896
+		},
+		"cli:filter": {
+			"osPeakRss": 0,
+			"tracePeakHeap": 85864744
+		},
+		"cli:facet": {
+			"osPeakRss": 0,
+			"tracePeakHeap": 86224896
+		},
+		"cli:search": {
+			"osPeakRss": 1163886592,
+			"tracePeakHeap": 64516120
+		},
+		"cli:focus": {
+			"osPeakRss": 0,
+			"tracePeakHeap": 77572128
+		},
+		"cli:refresh-no-change": {
+			"osPeakRss": 1071034368,
+			"tracePeakHeap": 171714496
+		},
+		"cli:loc-status-command": {
+			"osPeakRss": 1085403136,
+			"tracePeakHeap": 180748920
+		}
+	},
+	"memoryScope": "Sampled benchmark process and descendants RSS, including query threads/native children; JS heap/ArrayBuffers are benchmark main-thread only.",
+	"limits": {
+		"heapMiB": null,
+		"defaultHeap": true,
+		"rssBytes": 20000000000,
+		"stageSeconds": 1200,
+		"runSeconds": null
+	},
+	"wallSeconds": 9.814299199999999
+}

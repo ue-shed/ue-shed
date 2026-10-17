@@ -12,7 +12,14 @@ import {
 	unit as localizationUnit,
 	target as localizationTarget
 } from "./game-text-localization.test-support.js";
-import { makeTextCorpusServiceTestLayer, TextCorpusScanError } from "@ue-shed/game-text/index";
+import {
+	makeTextCorpusServiceTestLayer,
+	TextCorpusScanError,
+	GameTextIndexError,
+	GameTextIndexSteps,
+	SnapshotStoreError,
+	type IndexFailure
+} from "@ue-shed/game-text/index";
 import { STARTER_GAME_TEXT_RULES, GAME_TEXT_RULES_RELATIVE_PATH } from "@ue-shed/game-text/rules";
 import {
 	makeTextUnitId,
@@ -22,10 +29,13 @@ import {
 	TextQualityRuleDocument,
 	TextRoleId
 } from "@ue-shed/game-text/schema";
-import type { SavedAssetScan } from "@ue-shed/unreal-assets";
+import { AssetReaderError, type SavedAssetScan } from "@ue-shed/unreal-assets";
 import { Deferred, Effect, Fiber, Layer, Ref } from "effect";
 import { expect } from "vitest";
-import { workbenchGameTextIndexOracleLayer } from "./game-text-index.test-support.js";
+import {
+	oracleGameTextIndexLayer,
+	workbenchGameTextIndexOracleLayer
+} from "./game-text-index.test-support.js";
 import {
 	WorkbenchGameText,
 	WorkbenchGameTextLive as indexedWorkbenchGameTextLive
@@ -852,44 +862,49 @@ it.effect("keeps refreshed corpus data in main and serves bounded query results"
 	)
 );
 
-it.effect("translates a typed scan failure into the failed result variant", () =>
-	Effect.gen(function* () {
-		const service = yield* WorkbenchGameText;
-		const result = yield* service.configuredScan();
-		expect(result).toEqual({
-			error: {
-				code: "invalid_project",
-				message: "boom",
-				recovery: "retry",
-				retrySafe: false
-			},
-			status: "failed"
-		});
-	}).pipe(
-		Effect.provide(
-			gameTextLive.pipe(
-				Layer.provide(
-					Layer.mergeAll(
-						configuration,
-						makeTextCorpusServiceTestLayer({
-							scan: () => Effect.die("full project scan is not used"),
-							scanFromProjectIndex: () =>
-								Effect.fail(
-									new TextCorpusScanError({
-										code: "invalid_project",
-										message: "boom",
-										recovery: "retry",
-										retrySafe: false
-									})
-								)
-						}),
-						selectedProject
+for (const code of ["invalid_project", "reader_failed", "scan_limit_exceeded"] as const) {
+	for (const operation of ["configuredScan", "configuredRefresh"] as const) {
+		it.effect(`preserves ${code} in ${operation} failures`, () =>
+			Effect.gen(function* () {
+				const service = yield* WorkbenchGameText;
+				const result = yield* service[operation]();
+				expect(result).toEqual({
+					error: {
+						code,
+						message: "boom",
+						recovery: "retry",
+						retrySafe: false
+					},
+					status: "failed"
+				});
+			}).pipe(
+				Effect.provide(
+					gameTextLive.pipe(
+						Layer.provide(
+							Layer.mergeAll(
+								configuration,
+								makeTextCorpusServiceTestLayer({
+									scan: () => Effect.die("full project scan is not used"),
+									scanFromProjectIndex: () =>
+										Effect.fail(
+											new TextCorpusScanError({
+												nextStep: "fix_input",
+												code,
+												message: "boom",
+												recovery: "retry",
+												retrySafe: false
+											})
+										)
+								}),
+								selectedProject
+							)
+						)
 					)
 				)
 			)
-		)
-	)
-);
+		);
+	}
+}
 
 it.effect(
 	"returns typed actionable rule failures without replacing the retained corpus query",
@@ -1316,3 +1331,161 @@ it("restores embedded rules without retaining another rule file's write destinat
 		await rm(root, { recursive: true, force: true });
 	}
 });
+
+function failedIndexSteps(failure: IndexFailure) {
+	return Layer.effect(
+		GameTextIndexSteps,
+		Effect.gen(function* () {
+			const steps = yield* GameTextIndexSteps;
+			return GameTextIndexSteps.of({ ...steps, refreshProject: () => Effect.fail(failure) });
+		})
+	).pipe(Layer.provide(oracleGameTextIndexLayer(() => Effect.succeed(emptyCorpus))));
+}
+
+for (const failure of [
+	{
+		code: "reader_failed",
+		error: new AssetReaderError({
+			kind: "process",
+			operation: "scan",
+			message: "reader exited",
+			recovery: "Reopen the reader.",
+			retrySafe: false,
+			nextStep: "reconcile"
+		})
+	},
+	{
+		code: "index_failed",
+		error: new GameTextIndexError({
+			code: "index_failed",
+			operation: "join",
+			message: "writer lost publication",
+			recovery: "Reopen the committed state before publishing again.",
+			retrySafe: false,
+			nextStep: "reconcile",
+			cause: new AssetReaderError({
+				kind: "process",
+				operation: "game_text_index",
+				message: "transport stopped",
+				recovery: "Retry the process.",
+				retrySafe: true,
+				nextStep: "retry"
+			})
+		})
+	},
+	{
+		code: "index_failed",
+		error: new GameTextIndexError({
+			code: "index_failed",
+			operation: "cache",
+			message: "cache read failed",
+			recovery: "Rebuild the cache.",
+			retrySafe: false,
+			nextStep: "reconcile"
+		})
+	}
+] as const) {
+	for (const operation of ["configuredScan", "configuredRefresh"] as const) {
+		it.effect(`reports ${failure.code} in ${operation} without blaming the project`, () =>
+			Effect.gen(function* () {
+				const service = yield* WorkbenchGameText;
+				expect(yield* service[operation]()).toEqual({
+					status: "failed",
+					error: {
+						code: failure.code,
+						message: failure.error.message,
+						recovery: failure.error.recovery,
+						retrySafe: false
+					}
+				});
+			}).pipe(
+				Effect.provide(
+					indexedWorkbenchGameTextLive.pipe(
+						Layer.provide(
+							failedIndexSteps(
+								failure.error._tag === "AssetReaderError"
+									? new GameTextIndexError({
+											code: "index_failed",
+											operation: "reader_failure",
+											cause: failure.error,
+											message: failure.error.message,
+											recovery: failure.error.recovery,
+											retrySafe: failure.error.retrySafe,
+											nextStep: failure.error.nextStep
+										})
+									: failure.error
+							)
+						),
+						Layer.provide(noLocalization),
+						Layer.provide(gameTextAdapters),
+						Layer.provide(configuration),
+						Layer.provide(selectedProject)
+					)
+				)
+			)
+		);
+	}
+}
+
+for (const native of [
+	{
+		code: "invalid_cache",
+		recovery: "Close the failed session and rebuild the disposable index.",
+		retrySafe: false,
+		nextStep: "reconcile"
+	},
+	{
+		code: "timeout",
+		recovery: "Reopen the last committed state before a new build session.",
+		retrySafe: false,
+		nextStep: "reconcile"
+	},
+	{
+		code: "busy",
+		recovery: "Wait for the writer before opening another session.",
+		retrySafe: true,
+		nextStep: "retry"
+	}
+] as const) {
+	for (const operation of ["configuredScan", "configuredRefresh"] as const) {
+		it.effect(`retains native ${native.code} recovery in ${operation}`, () => {
+			const failure = new SnapshotStoreError({
+				...native,
+				operation: "native-index-builder",
+				message: "native writer failed",
+				cause: new AssetReaderError({
+					code: native.code,
+					kind: "process",
+					operation: "game_text_index",
+					message: "native writer failed",
+					recovery: "Check the executable and retry.",
+					retrySafe: true,
+					nextStep: "retry"
+				})
+			});
+			const failedSteps = failedIndexSteps(failure);
+			return Effect.gen(function* () {
+				const service = yield* WorkbenchGameText;
+				expect(yield* service[operation]()).toEqual({
+					status: "failed",
+					error: {
+						code: "index_failed",
+						message: failure.message,
+						recovery: native.recovery,
+						retrySafe: native.retrySafe
+					}
+				});
+			}).pipe(
+				Effect.provide(
+					indexedWorkbenchGameTextLive.pipe(
+						Layer.provide(failedSteps),
+						Layer.provide(noLocalization),
+						Layer.provide(gameTextAdapters),
+						Layer.provide(configuration),
+						Layer.provide(selectedProject)
+					)
+				)
+			);
+		});
+	}
+}

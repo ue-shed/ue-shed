@@ -67,6 +67,7 @@ const decodeScanOptions = Schema.decodeUnknownEffect(TextureAuditScanOptions);
 function textureScanFailure(error: AssetReaderError): TextureAuditScanError {
 	if (error.kind === "resource_limit") {
 		return new TextureAuditScanError({
+			cause: error,
 			code: "scan_failed",
 			message: error.message,
 			recovery: "Narrow the project or raise the explicit maximum asset limit.",
@@ -76,6 +77,7 @@ function textureScanFailure(error: AssetReaderError): TextureAuditScanError {
 	}
 	if (error.kind === "discovery") {
 		return new TextureAuditScanError({
+			cause: error,
 			code: "invalid_project",
 			message: error.message,
 			recovery: "Choose an Unreal project directory containing a Content folder.",
@@ -84,6 +86,7 @@ function textureScanFailure(error: AssetReaderError): TextureAuditScanError {
 		});
 	}
 	return new TextureAuditScanError({
+		cause: error,
 		code: "scan_failed",
 		message: error.message,
 		recovery: "Retry the scan, then verify the saved-asset reader is installed.",

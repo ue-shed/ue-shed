@@ -70,10 +70,30 @@ function invokeRequest<A, HostValue, DecodeError>(
 ): Effect.Effect<A, GameTextClientError> {
 	return Effect.tryPromise({
 		try: invoke,
-		catch: (cause) => new GameTextClientError({ cause, operation, recovery })
+		catch: (cause) =>
+			new GameTextClientError({
+				message: "Game Text could not complete the host operation.",
+				retrySafe: false,
+				nextStep: "reconcile",
+				code: "game_text_client_failed",
+				cause,
+				operation,
+				recovery
+			})
 	}).pipe(
 		Effect.flatMap(decode),
-		Effect.mapError((cause) => new GameTextClientError({ cause, operation, recovery }))
+		Effect.mapError(
+			(cause) =>
+				new GameTextClientError({
+					message: "Game Text could not complete the host operation.",
+					retrySafe: false,
+					nextStep: "reconcile",
+					code: "game_text_client_failed",
+					cause,
+					operation,
+					recovery
+				})
+		)
 	);
 }
 
@@ -127,6 +147,10 @@ export const gameTextClient: GameTextClientApi = GameTextClient.of({
 			Stream.mapError(
 				(cause) =>
 					new GameTextClientError({
+						message: "Game Text could not complete the host operation.",
+						retrySafe: false,
+						nextStep: "reconcile",
+						code: "game_text_client_failed",
 						cause,
 						operation: "gameText.operationProgress",
 						recovery

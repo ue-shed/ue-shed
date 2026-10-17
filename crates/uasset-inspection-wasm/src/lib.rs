@@ -275,11 +275,9 @@ pub fn extract_textures(path: &str, bytes: &[u8]) -> String {
                 }
                 match decode_export(export, &context) {
                     Ok(Some(asset)) => {
-                        if let Some(record) = project_texture_asset(
-                            &package,
-                            &asset,
-                            u64::try_from(bytes.len()).expect("usize fits u64"),
-                        ) {
+                        if let Some(record) =
+                            project_texture_asset(&package, &asset, bytes.len() as u64)
+                        {
                             if records.len() >= MAX_PROJECTION_ITEMS {
                                 return serialize_projection_limit_error(
                                     path,
@@ -906,6 +904,10 @@ impl CappedWriter {
         }
     }
 
+    #[expect(
+        clippy::expect_used,
+        reason = "only serde_json writes into this private buffer, producing valid UTF-8"
+    )]
     fn finish(self) -> String {
         String::from_utf8(self.bytes).expect("serde_json writes valid UTF-8")
     }
@@ -962,11 +964,10 @@ fn input_limit_error(schema_version: u8, path: &str, bytes: &[u8]) -> Option<Str
 
 fn export_limit_error(schema_version: u8, path: &str, bytes: &[u8]) -> Option<String> {
     let summary = PackageSummary::parse(bytes).ok()?;
-    let export_count = usize::try_from(summary.exports.count).expect("u32 fits in usize");
-    (export_count > MAX_EXPORTS).then(|| {
+    (u64::from(summary.exports.count) > MAX_EXPORTS as u64).then(|| {
         let message = format!(
             "export count {} exceeds the WASM limit of {}",
-            export_count, MAX_EXPORTS
+            summary.exports.count, MAX_EXPORTS
         );
         if schema_version == 8 {
             serialize_generic_error(path, "resource_limit", message)

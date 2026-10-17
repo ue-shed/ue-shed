@@ -43,6 +43,10 @@ import {
 	runUassetProtocolEvents
 } from "./protocol-transport.js";
 
+/**
+ * Effect histogram of native refresh/rebuild wall time in milliseconds. Export with the
+ * host's metrics layer to observe catalog update latency.
+ */
 export const projectIndexRefreshDuration = Metric.histogram(
 	"ue_shed_project_index_refresh_duration_ms",
 	{
@@ -50,6 +54,10 @@ export const projectIndexRefreshDuration = Metric.histogram(
 		description: "Wall time for a Project Index refresh or rebuild worker"
 	}
 );
+/**
+ * Effect histogram of bounded native catalog query wall time in milliseconds. This measures
+ * the adapter operation rather than renderer presentation latency.
+ */
 export const projectIndexQueryDuration = Metric.histogram(
 	"ue_shed_project_index_query_duration_ms",
 	{
@@ -57,6 +65,10 @@ export const projectIndexQueryDuration = Metric.histogram(
 		description: "Wall time for a bounded Project Index query"
 	}
 );
+/**
+ * Cumulative count of packages whose header evidence was rebuilt during refresh. It does not
+ * count unchanged packages reused from the catalog.
+ */
 export const projectIndexChangedPackages = Metric.counter(
 	"ue_shed_project_index_changed_packages_total",
 	{
@@ -64,6 +76,10 @@ export const projectIndexChangedPackages = Metric.counter(
 		incremental: true
 	}
 );
+/**
+ * Cumulative packages removed by committed refreshes. A refresh that never commits does not
+ * establish a new inventory.
+ */
 export const projectIndexRemovedPackages = Metric.counter(
 	"ue_shed_project_index_removed_packages_total",
 	{
@@ -71,12 +87,24 @@ export const projectIndexRemovedPackages = Metric.counter(
 		incremental: true
 	}
 );
+/**
+ * Gauge of the latest committed catalog generation observed by this process. Query
+ * correctness still requires the explicit generation carried by each request/result.
+ */
 export const projectIndexGeneration = Metric.gauge("ue_shed_project_index_generation", {
 	description: "Latest committed Project Index generation observed by this process"
 });
+/**
+ * Gauge of catalog storage bytes reported after successful refresh. It measures persistent
+ * cache size rather than JS heap or process RSS.
+ */
 export const projectIndexCacheBytes = Metric.gauge("ue_shed_project_index_cache_bytes", {
 	description: "Catalog storage bytes reported after a successful refresh"
 });
+/**
+ * Cumulative native catalog evidence-row writes reported after refresh. This is
+ * worker-reported work rather than an estimate based on package count.
+ */
 export const projectIndexEvidenceWrites = Metric.counter(
 	"ue_shed_project_index_evidence_writes_total",
 	{
@@ -84,14 +112,26 @@ export const projectIndexEvidenceWrites = Metric.counter(
 		incremental: true
 	}
 );
+/**
+ * Cumulative corrupt/incompatible catalog quarantines observed before refresh. Hosts can
+ * surface recurring corruption without parsing diagnostic prose.
+ */
 export const projectIndexQuarantines = Metric.counter("ue_shed_project_index_quarantine_total", {
 	description: "Corrupt or incompatible Catalog quarantines observed before refresh",
 	incremental: true
 });
+/**
+ * Effect frequency metric for native catalog protocol terminal states. A partial result
+ * remains distinct from complete success or cancellation.
+ */
 export const projectIndexTerminalState = Metric.frequency("ue_shed_project_index_terminal_total", {
 	description: "Project Index protocol terminal states"
 });
 
+/**
+ * Named collection of Project Index timing, storage, generation and outcome metrics. Hosts
+ * choose their own Effect metrics exporter.
+ */
 export const projectIndexMetrics = {
 	cacheBytes: projectIndexCacheBytes,
 	changedPackages: projectIndexChangedPackages,
@@ -104,6 +144,10 @@ export const projectIndexMetrics = {
 	terminalState: projectIndexTerminalState
 };
 
+/**
+ * Native executable, request timeout in milliseconds and optional path-free observer hooks.
+ * The host owns configuration; benchmark hooks must not be mistaken for product evidence.
+ */
 export interface ProjectIndexProcessConfiguration {
 	readonly executable: string;
 	/** Path-free native diagnostics used by benchmark and host attribution hooks. */
@@ -183,7 +227,8 @@ const mapStreamFailure = (cause: unknown, sawAccepted: boolean): ProjectIndexErr
 	}
 	if (isProjectIndexError(cause)) return cause;
 	return new ProjectIndexRefreshFailed({
-		message: cause instanceof Error ? cause.message : String(cause),
+		message: "The Project Index operation failed outside its protocol contract.",
+		cause,
 		recovery: "Retry the Project Index operation, or rebuild the Catalog if it persists.",
 		retrySafe: true,
 		nextStep: "retry"
@@ -624,6 +669,11 @@ export function projectIndexProcessLayerFromConfig(
 	);
 }
 
+/**
+ * Provides native process-backed catalog operations with explicit worker/cache configuration.
+ * Owns protocol sessions and validates committed generations; requires a compatible installed
+ * worker.
+ */
 export function projectIndexProcessLayerWithConfig(
 	configuration: ProjectIndexProcessConfiguration & { readonly cacheRoot: string }
 ): Layer.Layer<ProjectIndex | ProjectIndexConfig> {

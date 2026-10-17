@@ -59,8 +59,11 @@ export const loadLocalizationContext = Effect.fn("Cli.localization.load_context"
 			: undefined)
 	}).pipe(
 		Effect.mapError(
-			() =>
+			(cause) =>
 				new GameTextLocalizationError({
+					cause: cause,
+					retrySafe: false,
+					nextStep: "fix_input",
 					code: "invalid_selection",
 					message: "The localization selection is invalid.",
 					recovery: "Use loc targets to list target names and cultures."
@@ -73,6 +76,8 @@ export const loadLocalizationContext = Effect.fn("Cli.localization.load_context"
 	if (!target)
 		return yield* Effect.fail(
 			new GameTextLocalizationError({
+				retrySafe: false,
+				nextStep: "fix_input",
 				code: "target_not_found",
 				message: "The selected localization target was not found.",
 				recovery: "Run loc targets and choose a listed target."
@@ -81,6 +86,8 @@ export const loadLocalizationContext = Effect.fn("Cli.localization.load_context"
 	if (selection.culture !== undefined && !target.cultures.includes(selection.culture))
 		return yield* Effect.fail(
 			new GameTextLocalizationError({
+				retrySafe: false,
+				nextStep: "fix_input",
 				code: "invalid_selection",
 				message: "The selected culture is not supported by the target.",
 				recovery: "Choose a culture listed by loc targets."
@@ -94,13 +101,12 @@ export const loadLocalizationContext = Effect.fn("Cli.localization.load_context"
 			"localizationError" in cause && cause.localizationError
 				? localizationManifestFailure(cause.localizationError, target.outputPaths.manifest)
 				: new GameTextLocalizationError({
+						cause,
+						retrySafe: cause.retrySafe,
+						nextStep: cause.nextStep,
 						code: "reader_failure",
 						message: cause.message,
-						// Keep the established CLI reader-failure output at this boundary.
-						recovery:
-							"operation" in cause && cause.operation === "reader_failure"
-								? "Choose an Unreal project directory containing a Content folder."
-								: cause.recovery
+						recovery: cause.recovery
 					})
 		)
 	);
@@ -135,6 +141,8 @@ export const loadTargetQuery = Effect.fn("Cli.localization.target_query")(functi
 	if (!target)
 		return yield* Effect.fail(
 			new GameTextLocalizationError({
+				retrySafe: false,
+				nextStep: "fix_input",
 				code: "target_not_found",
 				message: `The localization target ${targetName} was not found.`,
 				recovery: "Run loc targets and choose a listed target, or edit the preset."
@@ -212,6 +220,9 @@ export const runLocalizationStatus = Effect.fn("Cli.workflow.localization_status
 class LocalizationExportError extends Schema.TaggedError<LocalizationExportError>()(
 	"LocalizationExportError",
 	{
+		retrySafe: Schema.Boolean,
+		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		cause: Schema.optionalKey(Schema.Defect()),
 		code: Schema.Literals(["invalid_destination", "destination_exists", "unwritable"]),
 		message: Schema.String,
 		recovery: Schema.String
@@ -228,6 +239,8 @@ export const runLocalizationExport = Effect.fn("Cli.workflow.localization_export
 					if (!command.output.toLowerCase().endsWith(".csv"))
 						return yield* Effect.fail(
 							new LocalizationExportError({
+								retrySafe: false,
+								nextStep: "fix_input",
 								code: "invalid_destination",
 								message: "The export destination must be a CSV file.",
 								recovery: "Choose a new .csv file."
@@ -260,12 +273,16 @@ export const runLocalizationExport = Effect.fn("Cli.workflow.localization_export
 								new LocalizationExportError(
 									error.reason._tag === "AlreadyExists"
 										? {
+												retrySafe: false,
+												nextStep: "fix_input",
 												code: "destination_exists",
 												message: "The export destination already exists.",
 												recovery:
 													"Choose a new file; existing files are never overwritten."
 											}
 										: {
+												retrySafe: false,
+												nextStep: "fix_input",
 												code: "unwritable",
 												message: "The export file could not be created.",
 												recovery:

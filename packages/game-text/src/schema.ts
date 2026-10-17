@@ -13,23 +13,39 @@ import { gameTextResponseParser } from "./response-parser.js";
 export * from "./identifiers.js";
 export * from "./text-audience-schema.js";
 
+/**
+ * Resolved namespace/key identity saved by Unreal. An empty namespace is allowed; a missing key
+ * belongs to UnresolvedTextIdentity instead.
+ */
 export const UnrealTextIdentity = Schema.Struct({
 	status: Schema.Literal("resolved"),
 	namespace: Schema.String,
 	key: Schema.NonEmptyString
 });
 
+/**
+ * Saved text without a usable localization key, distinguishing culture-invariant text from
+ * missing-key evidence. It must not be joined by an invented key.
+ */
 export const UnresolvedTextIdentity = Schema.Struct({
 	status: Schema.Literal("unresolved"),
 	reason: Schema.Literals(["culture_invariant", "missing_key"])
 });
 
+/**
+ * String Table reference by table ID and entry key. Resolving its localization namespace
+ * requires table evidence rather than assuming table ID equals namespace.
+ */
 export const StringTableTextIdentity = Schema.Struct({
 	status: Schema.Literal("string_table"),
 	tableId: Schema.String,
 	key: Schema.NonEmptyString
 });
 
+/**
+ * Discriminated saved-text identity. Branch on status before accessing namespace/key or String
+ * Table fields; unresolved text still belongs in the corpus.
+ */
 export const TextIdentity = Schema.Union([
 	UnrealTextIdentity,
 	StringTableTextIdentity,
@@ -37,6 +53,10 @@ export const TextIdentity = Schema.Union([
 ]);
 export type TextIdentity = Schema.Schema.Type<typeof TextIdentity>;
 
+/**
+ * Authored saved-text place: a DataTable cell, String Table entry or asset property. Location
+ * supplies navigation evidence; editCapability separately controls supported mutation.
+ */
 export const TextLocation = Schema.Union([
 	Schema.Struct({
 		kind: Schema.Literal("data_table_cell"),
@@ -83,6 +103,10 @@ export const TextRepresentationCopy = Schema.Struct({
 });
 export type TextRepresentationCopy = Schema.Schema.Type<typeof TextRepresentationCopy>;
 
+/**
+ * One saved text place with source, identity, location and edit capability. Optional audience
+ * and representation copies preserve richer reader evidence while accepting older snapshots.
+ */
 export const TextOccurrence = Schema.Struct({
 	devNotes: Schema.String.pipe(Schema.withDecodingDefaultKey(Effect.succeed(""))),
 	id: TextOccurrenceId,
@@ -107,6 +131,10 @@ export const TextOccurrence = Schema.Struct({
 });
 export type TextOccurrence = Schema.Schema.Type<typeof TextOccurrence>;
 
+/**
+ * Occurrences grouped by text identity with either one consistent source or conflicting source
+ * variants. A grouped unit is not proof that all occurrences share one editable owner.
+ */
 export const TextUnit = Schema.Struct({
 	id: TextUnitId,
 	source: Schema.Union([
@@ -121,12 +149,20 @@ export const TextUnit = Schema.Struct({
 });
 export type TextUnit = Schema.Schema.Type<typeof TextUnit>;
 
+/**
+ * Nonnegative counts keyed by saved-reader coverage-gap reason. Retain these with partial
+ * results so unsupported text is not mistaken for an empty package.
+ */
 export const TextCoverageGapCounts = Schema.Record(
 	SavedAssetTextCoverageGap.fields.reason,
 	Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 );
 export type TextCoverageGapCounts = typeof TextCoverageGapCounts.Type;
 
+/**
+ * Saved-package inspection or gather-coverage diagnostic with file and optional object/property
+ * context. Diagnostics qualify corpus completeness separately from authored quality policy.
+ */
 export const TextCorpusDiagnostic = Schema.Struct({
 	code: Schema.Literals([
 		"package_inspection_failed",
@@ -150,6 +186,10 @@ export const TextPackageCoverage = Schema.Struct({
 });
 export type TextPackageCoverage = typeof TextPackageCoverage.Type;
 
+/**
+ * Versioned saved-text corpus including grouped units, package coverage and diagnostics.
+ * Partial status prevents unread or unsupported packages from proving absence of text.
+ */
 export const TextCorpus = Schema.Struct({
 	schemaVersion: Schema.Literal(1),
 	status: Schema.Literals(["complete", "partial"]),
@@ -174,12 +214,18 @@ export const TextCorpus = Schema.Struct({
 });
 export type TextCorpus = Schema.Schema.Type<typeof TextCorpus>;
 
+/**
+ * Serializable corpus failure for host responses. Branch on code and retrySafe; message and
+ * recovery are human guidance and do not expose process-local causes.
+ */
 export const TextCorpusPublicError = Schema.Struct({
 	code: Schema.Literals([
 		"invalid_project",
 		"invalid_options",
 		"scan_limit_exceeded",
-		"contract_failure"
+		"contract_failure",
+		"reader_failed",
+		"index_failed"
 	]),
 	message: Schema.String,
 	recovery: Schema.String,
@@ -187,6 +233,10 @@ export const TextCorpusPublicError = Schema.Struct({
 });
 export type TextCorpusPublicError = Schema.Schema.Type<typeof TextCorpusPublicError>;
 
+/**
+ * Corpus scan outcome distinguishing completion, cancellation, missing configuration and
+ * failure. Only completed carries a corpus; partial coverage is recorded inside that corpus.
+ */
 export const TextCorpusRunResult = Schema.Union([
 	Schema.Struct({ status: Schema.Literal("completed"), corpus: TextCorpus }),
 	Schema.Struct({ status: Schema.Literal("not_configured") }),
@@ -195,6 +245,10 @@ export const TextCorpusRunResult = Schema.Union([
 ]);
 export type TextCorpusRunResult = Schema.Schema.Type<typeof TextCorpusRunResult>;
 
+/**
+ * Validates an untrusted host scan response and retains response-contract failures as typed
+ * Game Text errors. A valid failed outcome remains a successful parse of that outcome.
+ */
 export const parseTextCorpusRunResult = gameTextResponseParser(
 	TextCorpusRunResult,
 	"corpus scan result"
@@ -212,6 +266,10 @@ export const MAX_TEXT_SCOPE_FILES = 5000;
 /** The most localization lines a request can pick out by id, such as a selection. */
 export const MAX_TEXT_PICKED_LINES = 5000;
 
+/**
+ * Query scope for all text or occurrences with a supported source edit capability. Read-only is
+ * a capability fact, not a source-control permission check.
+ */
 export const TextCapabilityFilter = Schema.Literals(["all", "source_editable", "read_only"]);
 export type TextCapabilityFilter = Schema.Schema.Type<typeof TextCapabilityFilter>;
 
@@ -263,6 +321,10 @@ export const TextFileScopeSummary = Schema.Struct({
 });
 export type TextFileScopeSummary = Schema.Schema.Type<typeof TextFileScopeSummary>;
 
+/**
+ * Convenience review filter for shared, duplicate, long, unresolved or conflicting text. These
+ * review categories do not decide whether Unreal can read the asset.
+ */
 export const TextReviewLens = Schema.Literals([
 	"all",
 	"shared",
@@ -273,6 +335,10 @@ export const TextReviewLens = Schema.Literals([
 ]);
 export type TextReviewLens = Schema.Schema.Type<typeof TextReviewLens>;
 
+/**
+ * Review evidence attached to a text unit, including compiled-copy differences and
+ * evidence-only lines. Signals are distinct from the smaller actionable TextFinding subset.
+ */
 export const TextReviewSignal = Schema.Literals([
 	"shared",
 	"duplicate_source",
@@ -313,9 +379,17 @@ export type TextFinding = Schema.Schema.Type<typeof TextFinding>;
 export const TextTranslationState = Schema.Literals(["missing", "to_update", "not_synced"]);
 export type TextTranslationState = Schema.Schema.Type<typeof TextTranslationState>;
 
+/**
+ * Presentation filter for lines with supported editing or read-only evidence. It does not grant
+ * filesystem or editor permissions.
+ */
 export const TextEditing = Schema.Literals(["editable", "read_only"]);
 export type TextEditing = Schema.Schema.Type<typeof TextEditing>;
 
+/**
+ * Presentation filter for the presence of developer notes. Missing notes is a policy concern
+ * rather than a saved-package parser error.
+ */
 export const TextNotes = Schema.Literals(["missing", "present"]);
 export type TextNotes = Schema.Schema.Type<typeof TextNotes>;
 
@@ -349,12 +423,20 @@ export const TextFilterClause = Schema.Union([
 	clause("audience", TextAudience, TextAudience.literals.length)
 ]);
 export type TextFilterClause = Schema.Schema.Type<typeof TextFilterClause>;
+/**
+ * Discriminant of a supported TextFilterClause. Each field determines the allowed values and
+ * its own facet-count behavior.
+ */
 export type TextFilterField = TextFilterClause["field"];
 
 /** Every clause must match. */
 export const TextFilter = Schema.Array(TextFilterClause).check(Schema.isMaxLength(32));
 export type TextFilter = Schema.Schema.Type<typeof TextFilter>;
 
+/**
+ * Line counts for each shipping-work category. These are presentation totals over the selected
+ * query scope, separate from raw package and occurrence coverage.
+ */
 export const TextProblemCounts = Schema.Struct({
 	key_changed: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 	conflicting_source: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
@@ -366,8 +448,16 @@ export const TextProblemCounts = Schema.Struct({
 });
 export type TextProblemCounts = Schema.Schema.Type<typeof TextProblemCounts>;
 
+/**
+ * Maximum group/facet entries returned in a page; TextGroupList.more reports omitted groups so
+ * a bounded preview is not interpreted as exhaustive.
+ */
 export const MAX_TEXT_GROUPS = 200;
 
+/**
+ * Supported line grouping dimensions. Folder and asset keys use normalized project-relative
+ * paths; namespace and audience retain their distinct domain meanings.
+ */
 export const TextGroupBy = Schema.Literals([
 	"problem",
 	"folder",
@@ -421,6 +511,10 @@ export const TextCultureFacet = Schema.Struct({
 });
 export type TextCultureFacet = Schema.Schema.Type<typeof TextCultureFacet>;
 
+/**
+ * Requested facet results with bounded groups and optional culture totals. Each facet excludes
+ * its own filter clauses so the host can offer meaningful alternative selections.
+ */
 export const TextFacets = Schema.Struct({
 	folders: Schema.optionalKey(Schema.Struct({ under: Schema.String, ...TextGroupList.fields })),
 	assets: Schema.optionalKey(TextGroupList),
@@ -438,6 +532,11 @@ export const TextUnitContext = Schema.Struct({
 });
 export interface TextUnitContext extends Schema.Schema.Type<typeof TextUnitContext> {}
 
+/**
+ * Bounded unit preview with at most three saved locations, occurrence counts and review
+ * evidence. Use focus to page the remaining places instead of treating the preview as the full
+ * unit.
+ */
 export const TextUnitSearchResult = Schema.Struct({
 	localization: Schema.optionalKey(
 		Schema.Array(
@@ -467,6 +566,10 @@ export const TextUnitSearchResult = Schema.Struct({
 });
 export type TextUnitSearchResult = Schema.Schema.Type<typeof TextUnitSearchResult>;
 
+/**
+ * Search and toggle totals. Review counts intersect the request; editing, notes and origin
+ * toggles exclude their own filter to show alternative selections.
+ */
 export const TextCorpusSearchCounts = Schema.Struct({
 	// Review counts intersect the whole request. Toggle counts exclude their own toggle.
 	all: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
@@ -489,6 +592,10 @@ export const TextCorpusSearchCounts = Schema.Struct({
 });
 export type TextCorpusSearchCounts = Schema.Schema.Type<typeof TextCorpusSearchCounts>;
 
+/**
+ * Searchable totals and raw scan coverage for a retained corpus query. Blank source
+ * presentation filtering does not change underlying package/occurrence provenance.
+ */
 export const TextCorpusQuerySummary = Schema.Struct({
 	counts: TextCorpusSearchCounts,
 	scannedAt: Schema.optional(Schema.String),
@@ -519,6 +626,10 @@ export const TextCorpusQuerySummary = Schema.Struct({
 });
 export type TextCorpusQuerySummary = Schema.Schema.Type<typeof TextCorpusQuerySummary>;
 
+/**
+ * Query preparation outcome with summary only when completed. Cancellation, unavailable state
+ * and failure remain explicit rather than presenting an empty successful corpus.
+ */
 export const TextCorpusQueryRunResult = Schema.Union([
 	Schema.Struct({ status: Schema.Literal("not_scanned") }),
 	Schema.Struct({ status: Schema.Literal("completed"), summary: TextCorpusQuerySummary }),
@@ -527,11 +638,19 @@ export const TextCorpusQueryRunResult = Schema.Union([
 	Schema.Struct({ status: Schema.Literal("failed"), error: TextCorpusPublicError })
 ]);
 export type TextCorpusQueryRunResult = Schema.Schema.Type<typeof TextCorpusQueryRunResult>;
+/**
+ * Validates the host query-preparation response. Contract mismatches fail with typed response
+ * guidance while valid domain failure outcomes remain values.
+ */
 export const parseTextCorpusQueryRunResult = gameTextResponseParser(
 	TextCorpusQueryRunResult,
 	"corpus refresh result"
 );
 
+/**
+ * Bounded text search request with cursor, filter, localization selection and optional
+ * facets/grouping. Cursors belong to the retained query generation that issued them.
+ */
 export const TextCorpusSearchRequest = Schema.Struct({
 	localization: Schema.optionalKey(LocalizationSelection),
 	localizationCursor: Schema.optionalKey(LocalizationLineId),
@@ -558,6 +677,10 @@ export const TextCorpusSearchRequest = Schema.Struct({
 });
 export type TextCorpusSearchRequest = Schema.Schema.Type<typeof TextCorpusSearchRequest>;
 
+/**
+ * One bounded search page plus counts, optional facets/groups and continuation cursor. Counts
+ * cover matches beyond the returned preview rows.
+ */
 export const TextCorpusSearchPage = Schema.Struct({
 	localization: Schema.optionalKey(LocalizationQueryPage),
 	fileScope: Schema.optionalKey(TextFileScopeSummary),
@@ -573,16 +696,28 @@ export const TextCorpusSearchPage = Schema.Struct({
 });
 export type TextCorpusSearchPage = Schema.Schema.Type<typeof TextCorpusSearchPage>;
 
+/**
+ * Host search result separating a ready page from an unavailable query. A not-ready result does
+ * not establish that the project has no text.
+ */
 export const TextCorpusSearchResult = Schema.Union([
 	Schema.Struct({ status: Schema.Literal("ready"), page: TextCorpusSearchPage }),
 	Schema.Struct({ status: Schema.Literal("not_ready") })
 ]);
 export type TextCorpusSearchResult = Schema.Schema.Type<typeof TextCorpusSearchResult>;
+/**
+ * Validates a host search response before presentation. Invalid envelopes fail as typed
+ * response-contract errors rather than becoming empty search results.
+ */
 export const parseTextCorpusSearchResult = gameTextResponseParser(
 	TextCorpusSearchResult,
 	"text search result"
 );
 
+/**
+ * Unit focus request with bounded occurrence pagination. Reuse the unit and occurrence
+ * identifiers from the same retained query generation.
+ */
 export const TextCorpusFocusRequest = Schema.Struct({
 	id: TextUnitId,
 	localization: Schema.optionalKey(
@@ -593,6 +728,10 @@ export const TextCorpusFocusRequest = Schema.Struct({
 });
 export type TextCorpusFocusRequest = Schema.Schema.Type<typeof TextCorpusFocusRequest>;
 
+/**
+ * Focused unit evidence with a bounded occurrence page and continuation cursor.
+ * totalOccurrences describes the full unit even when only some places are hydrated.
+ */
 export const TextCorpusFocus = Schema.Struct({
 	localization: Schema.optionalKey(LocalizationLine),
 	diagnostics: Schema.Array(TextCorpusDiagnostic),
@@ -603,12 +742,20 @@ export const TextCorpusFocus = Schema.Struct({
 });
 export type TextCorpusFocus = Schema.Schema.Type<typeof TextCorpusFocus>;
 
+/**
+ * Focus outcome distinguishing a found unit, an absent identifier and an unavailable query.
+ * Only found carries focused source and occurrence evidence.
+ */
 export const TextCorpusFocusResult = Schema.Union([
 	Schema.Struct({ status: Schema.Literal("found"), focus: TextCorpusFocus }),
 	Schema.Struct({ status: Schema.Literal("not_found") }),
 	Schema.Struct({ status: Schema.Literal("not_ready") })
 ]);
 export type TextCorpusFocusResult = Schema.Schema.Type<typeof TextCorpusFocusResult>;
+/**
+ * Validates an untrusted focus response and preserves typed contract guidance. A well-formed
+ * not-found result is an ordinary domain outcome.
+ */
 export const parseTextCorpusFocusResult = gameTextResponseParser(
 	TextCorpusFocusResult,
 	"text focus result"

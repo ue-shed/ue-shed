@@ -10,11 +10,44 @@ import {
 	ProjectIdentity,
 	ProjectIndexGeneration,
 	ProjectIndexRefreshEvent,
+	ProjectIndexUnavailable,
+	assetReaderLayer,
 	type ProjectIndexSummary
 } from "@ue-shed/unreal-assets";
 import { GameTextIndexSource } from "./index-refresh.js";
 import { gameTextIndexSourceNodeLayer, packageTextReadBatches } from "./index-source-node.js";
 import { emptyPackageTextRecord } from "./package-text-record.js";
+
+it("preserves the Project Index failure and its recovery decision", async () => {
+	const cause = new ProjectIndexUnavailable({
+		message: "The configured catalogue cannot be opened.",
+		recovery: "Choose a writable catalogue location.",
+		retrySafe: false,
+		nextStep: "fix_input"
+	});
+	const catalog = makeProjectIndexTestLayer({
+		rebuild: () => Stream.fail(cause),
+		refresh: () => Stream.fail(cause),
+		status: () => Effect.fail(cause),
+		query: () => Effect.fail(cause)
+	});
+	const layer = gameTextIndexSourceNodeLayer("unused-cache", { refreshProjectIndex: false }).pipe(
+		Layer.provide(catalog),
+		Layer.provide(assetReaderLayer({ executable: "unused-reader" }))
+	);
+	const failure = await Effect.runPromise(
+		Effect.gen(function* () {
+			const source = yield* GameTextIndexSource;
+			return yield* source.inventory({ projectRoot: "unused-project" }).pipe(Effect.flip);
+		}).pipe(Effect.provide(layer))
+	);
+	expect(failure.cause).toBe(cause);
+	expect(failure).toMatchObject({
+		recovery: cause.recovery,
+		nextStep: "fix_input",
+		retrySafe: false
+	});
+});
 
 it.each(["before", "during"] as const)(
 	"rejects a changed bundle %s a concurrent multi-package read",
@@ -45,6 +78,47 @@ it.each(["before", "during"] as const)(
 			if (when === "before") await writeFile(changed, "new sidecar");
 			let reads = 0;
 			const reader = makeAssetReaderTestLayer({
+				configuration: () =>
+					Effect.succeed({
+						executable: "uasset",
+						timeoutMs: 30_000,
+						catalogTimeoutMs: 50 * 60_000
+					}),
+				catalogProgress: () =>
+					Effect.succeed({
+						phase: "idle",
+						cacheHits: 0,
+						processedAssets: 0,
+						tablesFound: 0,
+						totalAssets: 0
+					}),
+				scanProgress: () =>
+					Effect.succeed({
+						phase: "idle",
+						cacheHits: 0,
+						emittedAssets: 0,
+						processedAssets: 0,
+						totalAssets: 0
+					}),
+				savedWorldProgress: () =>
+					Effect.succeed({
+						phase: "idle",
+						actorsFound: 0,
+						processedPackages: 0,
+						totalPackages: 0
+					}),
+				readBlueprint: () =>
+					Effect.die(new Error("Unexpected readBlueprint in this reader fixture")),
+				readLevelSequence: () =>
+					Effect.die(new Error("Unexpected readLevelSequence in this reader fixture")),
+				readSavedWorld: () =>
+					Effect.die(new Error("Unexpected readSavedWorld in this reader fixture")),
+				extractProjectText: () =>
+					Stream.die(new Error("Unexpected extractProjectText in this reader fixture")),
+				extractProjectTextures: () =>
+					Stream.die(
+						new Error("Unexpected extractProjectTextures in this reader fixture")
+					),
 				discoverAssets: () => Effect.die("unused"),
 				discoverTables: () => Effect.die("unused"),
 				readAsset: () => Effect.die("unused"),
@@ -145,6 +219,47 @@ it.each([true, false])(
 				}
 			});
 			const reader = makeAssetReaderTestLayer({
+				configuration: () =>
+					Effect.succeed({
+						executable: "uasset",
+						timeoutMs: 30_000,
+						catalogTimeoutMs: 50 * 60_000
+					}),
+				catalogProgress: () =>
+					Effect.succeed({
+						phase: "idle",
+						cacheHits: 0,
+						processedAssets: 0,
+						tablesFound: 0,
+						totalAssets: 0
+					}),
+				scanProgress: () =>
+					Effect.succeed({
+						phase: "idle",
+						cacheHits: 0,
+						emittedAssets: 0,
+						processedAssets: 0,
+						totalAssets: 0
+					}),
+				savedWorldProgress: () =>
+					Effect.succeed({
+						phase: "idle",
+						actorsFound: 0,
+						processedPackages: 0,
+						totalPackages: 0
+					}),
+				readBlueprint: () =>
+					Effect.die(new Error("Unexpected readBlueprint in this reader fixture")),
+				readLevelSequence: () =>
+					Effect.die(new Error("Unexpected readLevelSequence in this reader fixture")),
+				readSavedWorld: () =>
+					Effect.die(new Error("Unexpected readSavedWorld in this reader fixture")),
+				extractProjectText: () =>
+					Stream.die(new Error("Unexpected extractProjectText in this reader fixture")),
+				extractProjectTextures: () =>
+					Stream.die(
+						new Error("Unexpected extractProjectTextures in this reader fixture")
+					),
 				discoverAssets: () => Effect.die("second enumeration"),
 				discoverTables: () => Effect.die("unused"),
 				readAsset: () => Effect.die("unused"),

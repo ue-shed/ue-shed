@@ -198,7 +198,7 @@ function pluginArtifactBuildError(
 ) {
 	return isPluginInstallCancelled(cause)
 		? cancelled(stage)
-		: invalid(stage, cause.message, cause.recovery);
+		: invalid(stage, cause.message, cause.recovery, "fix_input", cause);
 }
 
 function within(parent: string, child: string) {
@@ -683,15 +683,23 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 							catch: (cause) =>
 								invalid(
 									"validation",
-									`Compiled plugin build validation failed: ${String(cause)}`,
-									"Correct the engine root, exact source pins, graph, or output directory before invoking UAT."
+									"Compiled plugin build validation failed.",
+									"Correct the engine root, exact source pins, graph, or output directory before invoking UAT.",
+									"fix_input",
+									cause
 								)
 						});
 						const sourceManifest = yield* validatePluginBundleManifest(
 							validatedFiles.manifestInput
 						).pipe(
 							Effect.mapError((cause) =>
-								invalid("validation", cause.message, cause.recovery)
+								invalid(
+									"validation",
+									cause.message,
+									cause.recovery,
+									"fix_input",
+									cause
+								)
 							)
 						);
 						if (!isSourcePluginBundleManifest(sourceManifest)) {
@@ -715,7 +723,13 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 							request.pluginIds
 						).pipe(
 							Effect.mapError((cause) =>
-								invalid("validation", cause.message, cause.recovery)
+								invalid(
+									"validation",
+									cause.message,
+									cause.recovery,
+									"fix_input",
+									cause
+								)
 							)
 						);
 						const stage = join(outputRoot, `.compiled-plugin-${randomUUID()}`);
@@ -724,8 +738,10 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 							catch: (cause) =>
 								invalid(
 									"validation",
-									`Could not create the private build stage: ${String(cause)}`,
-									"Choose a writable caller-owned output directory."
+									"Could not create the private build stage.",
+									"Choose a writable caller-owned output directory.",
+									"fix_input",
+									cause
 								)
 						});
 						const prepared = { graph, sourceManifest, stage };
@@ -772,8 +788,10 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 										catch: (cause) =>
 											invalid(
 												"staging",
-												`Could not stage the plugin graph: ${String(cause)}`,
-												"Fix the portable source bundle and retry."
+												"Could not stage the plugin graph.",
+												"Fix the portable source bundle and retry.",
+												"fix_input",
+												cause
 											)
 									});
 									const packageRoot = join(state.stage, "uat-package");
@@ -895,9 +913,10 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 												? cancelled("validation")
 												: invalid(
 														"validation",
-														`RunUAT output is invalid: ${String(cause)}`,
+														"RunUAT output is invalid.",
 														"Inspect UAT products and rebuild; invalid output is never published.",
-														"escalate"
+														"escalate",
+														cause
 													)
 									});
 									yield* Effect.sync(() =>
@@ -913,8 +932,10 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 										catch: (cause) =>
 											invalid(
 												"publication",
-												String(cause),
-												"Check output permissions."
+												"Compiled plugin output could not be published.",
+												"Check output permissions.",
+												"fix_input",
+												cause
 											)
 									});
 									const artifactPath = join(publishStage, names.artifact);
@@ -932,8 +953,10 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 												? cancelled("archive")
 												: invalid(
 														"archive",
-														`Could not create compiled archive: ${String(cause)}`,
-														"Check output limits and retry."
+														"Could not create compiled archive.",
+														"Check output limits and retry.",
+														"fix_input",
+														cause
 													)
 									});
 									const nativeFiles = artifact.files.filter((file) =>
@@ -951,9 +974,10 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 										catch: (cause) =>
 											invalid(
 												"validation",
-												`Could not attest compiled modules: ${String(cause)}`,
+												"Could not attest compiled modules.",
 												"Inspect UAT module output and rebuild.",
-												"escalate"
+												"escalate",
+												cause
 											)
 									});
 									if (state.sourceManifest.schemaVersion !== 3) {
@@ -1036,8 +1060,10 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 										catch: (cause) =>
 											invalid(
 												"publication",
-												String(cause),
-												"Check output permissions."
+												"Compiled plugin output could not be published.",
+												"Check output permissions.",
+												"fix_input",
+												cause
 											)
 									});
 									const validationRoot = join(state.stage, "validation");
@@ -1084,8 +1110,10 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 												? cancelled("publication")
 												: invalid(
 														"publication",
-														String(cause),
-														"Choose a new empty immutable output identity."
+														"Compiled plugin output could not be published.",
+														"Choose a new empty immutable output identity.",
+														"fix_input",
+														cause
 													)
 									});
 									return CompiledPluginBuildResult.make({

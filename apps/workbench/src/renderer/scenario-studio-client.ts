@@ -18,7 +18,12 @@ function clientError(options: {
 	readonly operation: string;
 	readonly recovery: string;
 }): ScenarioStudioClientError {
-	return new ScenarioStudioClientError(options);
+	return new ScenarioStudioClientError({
+		retrySafe: false,
+		nextStep: "reconcile",
+		code: "scenario_studio_client_failed",
+		...options
+	});
 }
 
 const decodeHandle = Schema.decodeUnknownEffect(ScenarioRunHandle);

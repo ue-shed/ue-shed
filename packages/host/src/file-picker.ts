@@ -10,6 +10,10 @@ export interface AuthoringFilePickerOptions {
 	readonly title: string;
 }
 
+/**
+ * The host file picker failed. The original cause and recovery guidance distinguish a picker
+ * failure from an ordinary user cancellation.
+ */
 export class AuthoringFilePickerError extends Schema.TaggedError<AuthoringFilePickerError>()(
 	"AuthoringFilePickerError",
 	{
@@ -24,6 +28,10 @@ export interface AuthoringFilePickerApi {
 	) => Effect.Effect<AuthoringFilePickerChoice, AuthoringFilePickerError>;
 }
 
+/**
+ * Optional host file-selection port used by explicit choose-table actions. A headless host
+ * can provide AuthoringFilePickerCancelled; ordinary scans do not need a picker.
+ */
 export class AuthoringFilePicker extends Context.Service<
 	AuthoringFilePicker,
 	AuthoringFilePickerApi
@@ -35,6 +43,10 @@ export function authoringFilePickerLayer(
 	return Layer.succeed(AuthoringFilePicker, AuthoringFilePicker.of(service));
 }
 
+/**
+ * Headless picker implementation that always returns a cancelled choice. Cancellation is a
+ * successful value, so it leaves the current project and table selection unchanged.
+ */
 export const AuthoringFilePickerCancelled = authoringFilePickerLayer({
 	chooseFile: Effect.fn("AuthoringFilePicker.cancelled")(() =>
 		Effect.succeed({ status: "cancelled" as const })

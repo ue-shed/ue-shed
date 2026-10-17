@@ -1,3 +1,4 @@
+import { contractParser } from "@ue-shed/protocol";
 import { ProvisionedCameraBinding } from "./provisioned-cameras-live.js";
 import { CameraPanelAction, CameraPanelState } from "./camera-authoring-panel-schema.js";
 import { CameraRecoveryChoice, CameraRecoveryProposal } from "./camera-authoring-recovery.js";
@@ -33,6 +34,11 @@ const IpcPose = Schema.Struct({
 	rotation: Schema.Struct({ pitch: Schema.Number, roll: Schema.Number, yaw: Schema.Number })
 });
 
+/**
+ * UI-neutral captured-view payload with image bytes, view revision, invocation and visibility
+ * evidence. Retains pure/clear/authored variants rather than replacing history with a single
+ * thumbnail.
+ */
 export const MapReviewRunCapture = Schema.Struct({
 	artifacts: Schema.Array(
 		Schema.Struct({
@@ -53,6 +59,10 @@ export const MapReviewRunCapture = Schema.Struct({
 });
 export type MapReviewRunCapture = Schema.Schema.Type<typeof MapReviewRunCapture>;
 
+/**
+ * Failed view message tied to view identity and captured revision. Hosts retain these
+ * alongside successful views when a run only partially succeeds.
+ */
 export const MapReviewRunFailure = Schema.Struct({
 	message: Schema.NonEmptyString,
 	viewId: Schema.NonEmptyString,
@@ -60,6 +70,10 @@ export const MapReviewRunFailure = Schema.Struct({
 });
 export type MapReviewRunFailure = Schema.Schema.Type<typeof MapReviewRunFailure>;
 
+/**
+ * Capture-run presentation with complete capture/failure collections and aggregate status.
+ * Legacy first-capture/preview fields remain optional for older consumers.
+ */
 export const MapReviewRunView = Schema.Struct({
 	/** First capture retained for older consumers; new UI uses the complete captures collection. */
 	capture: Schema.optional(MapReviewRunCapture),
@@ -81,6 +95,10 @@ export const MapReviewRunView = Schema.Struct({
 });
 export type MapReviewRunView = Schema.Schema.Type<typeof MapReviewRunView>;
 
+/**
+ * Resolved view capture plan including pixel resolution and optional pose/policy/subject
+ * evidence. This is planned work rather than confirmation that the editor can capture it.
+ */
 export const MapReviewCapturePlanView = Schema.Struct({
 	renderPolicy: Schema.optionalKey(CameraRenderPolicy),
 	actorPath: Schema.optional(Schema.String),
@@ -111,6 +129,10 @@ const MapReviewReadyResult = Schema.Struct({
 	runs: Schema.Array(MapReviewRunView)
 });
 
+/**
+ * Host review state: unconfigured, setup required, blocked, failed or ready. Features render
+ * the discriminated state and use the shell's project rather than adding another picker.
+ */
 export const MapReviewResult = Schema.Union([
 	Schema.Struct({ status: Schema.Literal("not_configured") }),
 	Schema.Struct({ status: Schema.Literal("setup_required") }),
@@ -120,6 +142,10 @@ export const MapReviewResult = Schema.Union([
 ]);
 export type MapReviewResult = Schema.Schema.Type<typeof MapReviewResult>;
 
+/**
+ * Review-set listing with ID, display name, map and view count. Loading the set remains
+ * necessary to inspect its approved definitions and policies.
+ */
 export const MapReviewSetSummary = Schema.Struct({
 	displayName: Schema.NonEmptyString,
 	id: Schema.NonEmptyString,
@@ -128,6 +154,10 @@ export const MapReviewSetSummary = Schema.Struct({
 });
 export type MapReviewSetSummary = Schema.Schema.Type<typeof MapReviewSetSummary>;
 
+/**
+ * Unconfigured, failed or ready review-set library with optional active set ID. Selecting a
+ * review set is separate from selecting a host project.
+ */
 export const MapReviewSetLibraryResult = Schema.Union([
 	Schema.Struct({ status: Schema.Literal("not_configured") }),
 	Schema.Struct({ status: Schema.Literal("failed"), error: IpcFailure }),
@@ -139,20 +169,36 @@ export const MapReviewSetLibraryResult = Schema.Union([
 ]);
 export type MapReviewSetLibraryResult = Schema.Schema.Type<typeof MapReviewSetLibraryResult>;
 
+/**
+ * Explicit display name, bounded to 80 characters, for creating a review set. The host
+ * supplies selected-project/map context; no project path is accepted from the feature UI.
+ */
 export const MapReviewSetCreateIntent = Schema.Struct({
 	displayName: Schema.NonEmptyString.pipe(Schema.check(Schema.isMaxLength(80)))
 });
 export type MapReviewSetCreateIntent = Schema.Schema.Type<typeof MapReviewSetCreateIntent>;
 
+/**
+ * Identity of a review set to activate within the host's current project. The handler must
+ * validate membership rather than changing project selection to follow the ID.
+ */
 export const MapReviewSetSelectIntent = Schema.Struct({ reviewSetId: Schema.NonEmptyString });
 export type MapReviewSetSelectIntent = Schema.Schema.Type<typeof MapReviewSetSelectIntent>;
 
+/**
+ * Non-empty view subset and optional renderer policy for an explicit capture action. This
+ * intent does not silently capture every view or select a project.
+ */
 export const MapReviewCaptureIntent = Schema.Struct({
 	renderer: Schema.optionalKey(CameraRendererPolicy),
 	viewIds: Schema.Array(Schema.NonEmptyString).check(Schema.isMinLength(1))
 });
 export type MapReviewCaptureIntent = Schema.Schema.Type<typeof MapReviewCaptureIntent>;
 
+/**
+ * Explicit view and replacement visibility policy with optional overrides. The host validates
+ * membership/current state before writing an approved definition.
+ */
 export const MapReviewReplaceVisibilityPolicyIntent = Schema.Struct({
 	policy: VisibilityPolicy,
 	viewId: Schema.NonEmptyString,
@@ -162,6 +208,10 @@ export type MapReviewReplaceVisibilityPolicyIntent = Schema.Schema.Type<
 	typeof MapReviewReplaceVisibilityPolicyIntent
 >;
 
+/**
+ * Applies an existing policy ID to one through 64 explicit view IDs. The policy and views
+ * must belong to the current review set.
+ */
 export const MapReviewApplyVisibilityPolicyIntent = Schema.Struct({
 	policyId: Schema.NonEmptyString,
 	viewIds: Schema.Array(Schema.NonEmptyString).check(
@@ -183,6 +233,10 @@ const CaptureJobFields = {
 	viewIds: Schema.Array(Schema.NonEmptyString).check(Schema.isMinLength(1))
 };
 
+/**
+ * Completed host capture job with run ID, completion time and successful/failed view counts.
+ * Completed can still include per-view failures; inspect the run evidence.
+ */
 export const MapReviewCaptureCompletedJob = Schema.Struct({
 	...CaptureJobFields,
 	status: Schema.Literal("completed"),
@@ -193,6 +247,10 @@ export const MapReviewCaptureCompletedJob = Schema.Struct({
 });
 export type MapReviewCaptureCompletedJob = Schema.Schema.Type<typeof MapReviewCaptureCompletedJob>;
 
+/**
+ * Queued, running, cancelling, cancelled, completed or failed capture job. Cancellation is a
+ * lifecycle state, not evidence that a potentially applied editor mutation was rolled back.
+ */
 export const MapReviewCaptureJobState = Schema.Union([
 	Schema.Struct({ ...CaptureJobFields, status: Schema.Literal("queued") }),
 	Schema.Struct({ ...CaptureJobFields, status: Schema.Literal("running") }),
@@ -207,6 +265,10 @@ export const MapReviewCaptureJobState = Schema.Union([
 ]);
 export type MapReviewCaptureJobState = Schema.Schema.Type<typeof MapReviewCaptureJobState>;
 
+/**
+ * Unconfigured, blocked, failed or completed capture action outcome. A completed response
+ * includes the resulting job and refreshed review state.
+ */
 export const MapReviewCaptureResult = Schema.Union([
 	Schema.Struct({ status: Schema.Literal("not_configured") }),
 	Schema.Struct({ status: Schema.Literal("blocked"), policy: ReviewCaptureBlock }),
@@ -219,9 +281,17 @@ export const MapReviewCaptureResult = Schema.Union([
 ]);
 export type MapReviewCaptureResult = Schema.Schema.Type<typeof MapReviewCaptureResult>;
 
+/**
+ * Serializable approved perspective pose for review IPC. Shares the validated pose contract
+ * rather than accepting arbitrary untyped camera coordinates.
+ */
 export const MapReviewPose = IpcPose;
 export type MapReviewPose = Schema.Schema.Type<typeof MapReviewPose>;
 
+/**
+ * Candidate pose/recipe diagnostics with pending, ready or failed preview state. Ready bytes
+ * retain format/context metadata so BGRA previews are not mistaken for PNG artifacts.
+ */
 export const MapReviewAuthoringCandidate = Schema.Struct({
 	diagnostics: Schema.Array(FramingDiagnostic),
 	displayName: Schema.String,
@@ -244,6 +314,10 @@ export const MapReviewAuthoringCandidate = Schema.Struct({
 });
 export type MapReviewAuthoringCandidate = Schema.Schema.Type<typeof MapReviewAuthoringCandidate>;
 
+/**
+ * Ready candidate image with optional render/projection diagnostics, or typed host failure.
+ * Preview is authoring evidence rather than an approved historical capture.
+ */
 export const MapReviewCandidatePreviewResult = Schema.Union([
 	Schema.Struct({
 		renderEvidence: Schema.optionalKey(CameraFrameEvidence),
@@ -263,6 +337,10 @@ export type MapReviewCandidatePreviewResult = Schema.Schema.Type<
 	typeof MapReviewCandidatePreviewResult
 >;
 
+/**
+ * Ready candidate/session state, explicit map mismatch or failure. A mismatch exposes
+ * matching set/recovery context; it must not silently switch the host's selected project.
+ */
 export const MapReviewAuthoringResult = Schema.Union([
 	Schema.Struct({ status: Schema.Literal("failed"), error: IpcFailure }),
 	Schema.Struct({
@@ -292,6 +370,10 @@ export const MapReviewAuthoringResult = Schema.Union([
 ]);
 export type MapReviewAuthoringResult = Schema.Schema.Type<typeof MapReviewAuthoringResult>;
 
+/**
+ * Append or revise a named view using current editor selection, with explicit review-set
+ * mode. Selection-derived map context must remain separate from host project ownership.
+ */
 export const MapReviewAuthorFromSelectionIntent = Schema.Struct({
 	destination: Schema.Union([
 		Schema.Struct({ kind: Schema.Literal("append_view") }),
@@ -303,11 +385,19 @@ export type MapReviewAuthorFromSelectionIntent = Schema.Schema.Type<
 	typeof MapReviewAuthorFromSelectionIntent
 >;
 
+/**
+ * Persisted authoring-session identity for an explicit recovery/session action. The host
+ * validates it against the current project and review set.
+ */
 export const MapReviewAuthoringSessionIntent = Schema.Struct({ sessionId: Schema.NonEmptyString });
 export type MapReviewAuthoringSessionIntent = Schema.Schema.Type<
 	typeof MapReviewAuthoringSessionIntent
 >;
 
+/**
+ * Session identity plus an explicit draft/candidate patch. Patching does not itself approve a
+ * view or trigger capture.
+ */
 export const MapReviewAuthoringPatchIntent = Schema.Struct({
 	patch: ReviewAuthoringSessionPatch,
 	sessionId: Schema.NonEmptyString
@@ -316,6 +406,10 @@ export type MapReviewAuthoringPatchIntent = Schema.Schema.Type<
 	typeof MapReviewAuthoringPatchIntent
 >;
 
+/**
+ * Session/candidate identities for one preview request. The handler resolves current session
+ * evidence rather than trusting a UI-supplied arbitrary camera pose.
+ */
 export const MapReviewAuthoringPreviewIntent = Schema.Struct({
 	candidateId: Schema.NonEmptyString,
 	sessionId: Schema.NonEmptyString
@@ -324,6 +418,10 @@ export type MapReviewAuthoringPreviewIntent = Schema.Schema.Type<
 	typeof MapReviewAuthoringPreviewIntent
 >;
 
+/**
+ * Explicit candidate/view/actor and proposed pose, with optional manual adjustment/reason.
+ * Approval reconciles these inputs against current authoring state before persisting.
+ */
 export const MapReviewApproveCandidateIntent = Schema.Struct({
 	candidateId: Schema.String,
 	candidatePose: IpcPose,
@@ -336,38 +434,120 @@ export type MapReviewApproveCandidateIntent = Schema.Schema.Type<
 	typeof MapReviewApproveCandidateIntent
 >;
 
+/**
+ * Approved candidate identity or typed host failure. A successful approval records a view
+ * definition, not a rendered capture artifact.
+ */
 export const MapReviewApprovalResult = Schema.Union([
 	Schema.Struct({ status: Schema.Literal("approved"), candidateId: Schema.String }),
 	Schema.Struct({ status: Schema.Literal("failed"), error: IpcFailure })
 ]);
 export type MapReviewApprovalResult = Schema.Schema.Type<typeof MapReviewApprovalResult>;
 
-export const decodeMapReviewResult = Schema.decodeUnknownEffect(MapReviewResult);
-export const decodeMapReviewSetLibraryResult =
-	Schema.decodeUnknownEffect(MapReviewSetLibraryResult);
-export const decodeMapReviewCaptureResult = Schema.decodeUnknownEffect(MapReviewCaptureResult);
-export const decodeMapReviewReplaceVisibilityPolicyIntent = Schema.decodeUnknownEffect(
-	MapReviewReplaceVisibilityPolicyIntent
+/**
+ * Validates untrusted host review state at an IPC/host boundary. Invalid shapes fail with
+ * ContractParseError retaining the schema cause; successful blocked/failed variants remain
+ * ordinary lifecycle values.
+ */
+export const decodeMapReviewResult = contractParser(MapReviewResult, "MapReviewResult");
+/**
+ * Validates untrusted review-set library state at an IPC/host boundary. Invalid shapes fail
+ * with ContractParseError retaining the schema cause; successful blocked/failed variants
+ * remain ordinary lifecycle values.
+ */
+export const decodeMapReviewSetLibraryResult = contractParser(
+	MapReviewSetLibraryResult,
+	"MapReviewSetLibraryResult"
 );
-export const decodeMapReviewApplyVisibilityPolicyIntent = Schema.decodeUnknownEffect(
-	MapReviewApplyVisibilityPolicyIntent
+/**
+ * Validates untrusted capture action result at an IPC/host boundary. Invalid shapes fail with
+ * ContractParseError retaining the schema cause; successful blocked/failed variants remain
+ * ordinary lifecycle values.
+ */
+export const decodeMapReviewCaptureResult = contractParser(
+	MapReviewCaptureResult,
+	"MapReviewCaptureResult"
 );
-export const decodeMapReviewAuthoringResult = Schema.decodeUnknownEffect(MapReviewAuthoringResult);
-export const decodeMapReviewAuthoringSessionIntent = Schema.decodeUnknownEffect(
-	MapReviewAuthoringSessionIntent
+/**
+ * Validates untrusted view policy replacement intent at an IPC/host boundary. Invalid shapes
+ * fail with ContractParseError retaining the schema cause; successful blocked/failed variants
+ * remain ordinary lifecycle values.
+ */
+export const decodeMapReviewReplaceVisibilityPolicyIntent = contractParser(
+	MapReviewReplaceVisibilityPolicyIntent,
+	"MapReviewReplaceVisibilityPolicyIntent"
 );
-export const decodeMapReviewAuthoringPatchIntent = Schema.decodeUnknownEffect(
-	MapReviewAuthoringPatchIntent
+/**
+ * Validates untrusted batch policy assignment intent at an IPC/host boundary. Invalid shapes
+ * fail with ContractParseError retaining the schema cause; successful blocked/failed variants
+ * remain ordinary lifecycle values.
+ */
+export const decodeMapReviewApplyVisibilityPolicyIntent = contractParser(
+	MapReviewApplyVisibilityPolicyIntent,
+	"MapReviewApplyVisibilityPolicyIntent"
 );
-export const decodeMapReviewAuthoringPreviewIntent = Schema.decodeUnknownEffect(
-	MapReviewAuthoringPreviewIntent
+/**
+ * Validates untrusted candidate authoring state at an IPC/host boundary. Invalid shapes fail
+ * with ContractParseError retaining the schema cause; successful blocked/failed variants
+ * remain ordinary lifecycle values.
+ */
+export const decodeMapReviewAuthoringResult = contractParser(
+	MapReviewAuthoringResult,
+	"MapReviewAuthoringResult"
 );
-export const decodeMapReviewCandidatePreviewResult = Schema.decodeUnknownEffect(
-	MapReviewCandidatePreviewResult
+/**
+ * Validates untrusted authoring session intent at an IPC/host boundary. Invalid shapes fail
+ * with ContractParseError retaining the schema cause; successful blocked/failed variants
+ * remain ordinary lifecycle values.
+ */
+export const decodeMapReviewAuthoringSessionIntent = contractParser(
+	MapReviewAuthoringSessionIntent,
+	"MapReviewAuthoringSessionIntent"
 );
-export const decodeMapReviewApprovalResult = Schema.decodeUnknownEffect(MapReviewApprovalResult);
-export const decodeMapReviewApproveCandidateIntent = Schema.decodeUnknownEffect(
-	MapReviewApproveCandidateIntent
+/**
+ * Validates untrusted authoring patch intent at an IPC/host boundary. Invalid shapes fail
+ * with ContractParseError retaining the schema cause; successful blocked/failed variants
+ * remain ordinary lifecycle values.
+ */
+export const decodeMapReviewAuthoringPatchIntent = contractParser(
+	MapReviewAuthoringPatchIntent,
+	"MapReviewAuthoringPatchIntent"
+);
+/**
+ * Validates untrusted candidate preview intent at an IPC/host boundary. Invalid shapes fail
+ * with ContractParseError retaining the schema cause; successful blocked/failed variants
+ * remain ordinary lifecycle values.
+ */
+export const decodeMapReviewAuthoringPreviewIntent = contractParser(
+	MapReviewAuthoringPreviewIntent,
+	"MapReviewAuthoringPreviewIntent"
+);
+/**
+ * Validates untrusted candidate preview result at an IPC/host boundary. Invalid shapes fail
+ * with ContractParseError retaining the schema cause; successful blocked/failed variants
+ * remain ordinary lifecycle values.
+ */
+export const decodeMapReviewCandidatePreviewResult = contractParser(
+	MapReviewCandidatePreviewResult,
+	"MapReviewCandidatePreviewResult"
+);
+/**
+ * Validates untrusted candidate approval result at an IPC/host boundary. Invalid shapes fail
+ * with ContractParseError retaining the schema cause; successful blocked/failed variants
+ * remain ordinary lifecycle values.
+ */
+export const decodeMapReviewApprovalResult = contractParser(
+	MapReviewApprovalResult,
+	"MapReviewApprovalResult"
+);
+/**
+ * Validates untrusted candidate approval intent at an IPC/host boundary. Invalid shapes fail
+ * with ContractParseError retaining the schema cause; successful blocked/failed variants
+ * remain ordinary lifecycle values.
+ */
+export const decodeMapReviewApproveCandidateIntent = contractParser(
+	MapReviewApproveCandidateIntent,
+	"MapReviewApproveCandidateIntent"
 );
 
 /** Host-facing camera workspace protocol; transport and presentation are replaceable. */
@@ -407,6 +587,11 @@ export const CameraWorkspaceRequest = Schema.Union([
 	})
 ]);
 export type CameraWorkspaceRequest = typeof CameraWorkspaceRequest.Type;
+/**
+ * Host camera workspace projection with panel/sets, optional preview/recovery and saved
+ * revisions. Nullable/error states remain explicit; the shell continues to own active project
+ * selection.
+ */
 export const CameraWorkspaceResult = Schema.Struct({
 	preview: Schema.optionalKey(Schema.NullOr(ProvisionedCameraBinding)),
 	recovery: Schema.optionalKey(Schema.NullOr(CameraRecoveryProposal)),

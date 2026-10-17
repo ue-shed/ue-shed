@@ -3,6 +3,10 @@ import { randomUUID } from "node:crypto";
 import { Effect } from "effect";
 import { InvestigationError } from "./investigation.js";
 
+/**
+ * Reads at most 4 MiB and parses investigation preset JSON with an owned file handle. Returns
+ * untrusted JSON for domain validation; closes the handle on success or failure.
+ */
 export const readInvestigationPresetJson = Effect.fn("Investigation.readPreset")(function* (
 	path: string
 ) {
@@ -36,6 +40,10 @@ export const readInvestigationPresetJson = Effect.fn("Investigation.readPreset")
 	});
 });
 
+/**
+ * Writes a UTF-8 export of at most 512 MiB through a sibling temporary file, sync and rename.
+ * Cleans temporary output on failure and reports the original IO cause.
+ */
 export const writeInvestigationFile = Effect.fn("Investigation.writeFile")(function* (
 	path: string,
 	contents: string

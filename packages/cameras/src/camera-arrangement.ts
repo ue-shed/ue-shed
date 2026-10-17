@@ -28,9 +28,24 @@ import {
 } from "./review-schema.js";
 
 const Identifier = Schema.String.check(Schema.isPattern(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/u));
+/**
+ * Branded identifier for a revisioned camera arrangement. Preserve ownership and revision
+ * context with the value; validation alone does not establish that an editor session or
+ * persisted object exists.
+ */
 export const CameraArrangementId = Identifier.pipe(Schema.brand("CameraArrangementId"));
+/**
+ * Branded identifier for a camera within an arrangement. Preserve ownership and revision
+ * context with the value; validation alone does not establish that an editor session or
+ * persisted object exists.
+ */
 export const ArrangementCameraId = Identifier.pipe(Schema.brand("ArrangementCameraId"));
 export type ArrangementCameraId = typeof ArrangementCameraId.Type;
+/**
+ * Branded identifier for a replay-correlated camera operation. Preserve ownership and
+ * revision context with the value; validation alone does not establish that an editor session
+ * or persisted object exists.
+ */
 export const CameraOperationId = Identifier.pipe(Schema.brand("CameraOperationId"));
 const Revision = Schema.Int.check(
 	Schema.isBetween({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })
@@ -39,6 +54,10 @@ const FOV = Schema.Finite.check(Schema.isBetween({ minimum: 5, maximum: 170 }));
 const Scale = Schema.Finite.check(Schema.isBetween({ minimum: 0.01, maximum: 100 }));
 const Margin = Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 0.45 }));
 const Vector = Schema.Struct({ x: Schema.Finite, y: Schema.Finite, z: Schema.Finite });
+/**
+ * Base lens/framing settings for an arrangement, including distance, height, margin and
+ * optional angular/aim offsets. Group and camera overrides are applied in that order.
+ */
 export const CameraArrangementSettings = Schema.Struct({
 	fieldOfViewDegrees: FOV,
 	distanceScale: Scale,
@@ -50,6 +69,10 @@ export const CameraArrangementSettings = Schema.Struct({
 	yawOffset: Schema.optionalKey(Schema.Finite),
 	aimOffset: Schema.optionalKey(Vector)
 });
+/**
+ * Optional lens/framing fields layered over inherited arrangement settings. Missing fields
+ * inherit policy rather than resetting a customized camera.
+ */
 export const CameraArrangementOverrides = CameraArrangementSettings.mapFields((fields) => ({
 	fieldOfViewDegrees: Schema.optionalKey(fields.fieldOfViewDegrees),
 	distanceScale: Schema.optionalKey(fields.distanceScale),
@@ -59,12 +82,20 @@ export const CameraArrangementOverrides = CameraArrangementSettings.mapFields((f
 	yawOffset: fields.yawOffset,
 	aimOffset: fields.aimOffset
 }));
+/**
+ * Named camera group with framing overrides and optional authored visibility. A group's
+ * identity determines membership and batch edit scope.
+ */
 export const CameraArrangementGroup = Schema.Struct({
 	id: Identifier,
 	name: Schema.NonEmptyString,
 	overrides: CameraArrangementOverrides,
 	visibility: Schema.optionalKey(CameraVisibilityList)
 });
+/**
+ * Single, orbit or arc layout with one through 256 cameras and explicit angular
+ * span/orientation. Regeneration must review customized cameras before removing them.
+ */
 export const CameraLayout = Schema.Struct({
 	kind: Schema.Literals(["single", "orbit", "arc"]),
 	count: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 256 })),
@@ -73,6 +104,10 @@ export const CameraLayout = Schema.Struct({
 	orientation: Schema.Literals(["world", "subject"])
 });
 export type CameraLayout = typeof CameraLayout.Type;
+/**
+ * Stable arrangement camera/view identities with yaw, optional group, per-camera overrides
+ * and optional manual pose/visibility. Manual pose remains distinct from generated framing.
+ */
 export const ArrangementCamera = Schema.Struct({
 	id: ArrangementCameraId,
 	displayName: Schema.NonEmptyString,
@@ -84,6 +119,11 @@ export const ArrangementCamera = Schema.Struct({
 	visibility: Schema.optionalKey(CameraVisibilityList)
 });
 export type ArrangementCamera = typeof ArrangementCamera.Type;
+/**
+ * Version-1 revisioned camera collection bound to explicit project/map/subject evidence.
+ * Retains retired IDs and host-selected render/visibility policy for recovery and controlled
+ * regeneration.
+ */
 export const CameraArrangement = Schema.Struct({
 	version: Schema.Literal(1),
 	id: CameraArrangementId,
@@ -124,6 +164,10 @@ export const CameraArrangement = Schema.Struct({
 );
 export type CameraArrangement = typeof CameraArrangement.Type;
 
+/**
+ * Merges base, matching group and camera framing settings in precedence order. This pure
+ * helper does not mutate the arrangement or update an editor camera.
+ */
 export function effectiveCameraArrangementSettings(
 	arrangement: CameraArrangement,
 	camera: ArrangementCamera
@@ -134,6 +178,11 @@ export function effectiveCameraArrangementSettings(
 		...camera.overrides
 	};
 }
+/**
+ * Merges arrangement/group/camera hide/protect policy and protects the capture subject when
+ * hiding is active. Retains explicit locators instead of inferring project-specific actor
+ * classes.
+ */
 export function effectiveCameraArrangementVisibility(
 	arrangement: CameraArrangement,
 	camera: ArrangementCamera
@@ -163,6 +212,10 @@ export function effectiveCameraArrangementVisibility(
 			})
 		: result;
 }
+/**
+ * Resolves arrangement, group or explicit camera edit scope. Throws CameraArrangementError
+ * for foreign/duplicate identities rather than applying an ambiguous batch edit.
+ */
 export function cameraIdsInScope(
 	arrangement: CameraArrangement,
 	scope: CameraEditScope
@@ -451,6 +504,11 @@ export const CameraArrangementRecipe = Schema.Struct({
 	).check(Schema.isMinLength(1), Schema.isMaxLength(256))
 });
 export type CameraArrangementRecipe = typeof CameraArrangementRecipe.Type;
+/**
+ * Projects reusable framing/group settings and cameras, expressing manual positions relative
+ * to subject center. Does not export the original project/map identity or reserve new camera
+ * IDs.
+ */
 export function exportCameraArrangementRecipe(
 	arrangement: CameraArrangement,
 	name: string
@@ -484,6 +542,11 @@ export function exportCameraArrangementRecipe(
 		}))
 	});
 }
+/**
+ * Applies a reusable recipe to the target arrangement with fresh supplied camera/view
+ * identities. Reconstructs relative manual positions at its bounds center; throws when
+ * identity count does not match.
+ */
 export function importCameraArrangementRecipe(
 	arrangement: CameraArrangement,
 	recipe: CameraArrangementRecipe,
@@ -586,6 +649,10 @@ const Scope = {
 	expectedRevision: Revision,
 	operationId: CameraOperationId
 };
+/**
+ * Explicit whole-arrangement, group or non-empty bounded camera subset for edits. Scope must
+ * be resolved against the current arrangement rather than trusted by name alone.
+ */
 export const CameraEditScope = Schema.Union([
 	Schema.Struct({ kind: Schema.Literal("arrangement") }),
 	Schema.Struct({ kind: Schema.Literal("group"), groupId: Identifier }),
@@ -598,6 +665,11 @@ export const CameraEditScope = Schema.Union([
 	})
 ]);
 export type CameraEditScope = typeof CameraEditScope.Type;
+/**
+ * Revision/operation-correlated arrangement mutation with explicit edit scope. Commands
+ * retain the distinction between native pose updates, batch policy changes and potentially
+ * destructive regeneration.
+ */
 export const CameraArrangementCommand = Schema.Union([
 	Schema.Struct({
 		...Scope,
@@ -736,6 +808,11 @@ export const CameraArrangementCommand = Schema.Union([
 	})
 ]);
 export type CameraArrangementCommand = typeof CameraArrangementCommand.Type;
+/**
+ * Stable arrangement validation, stale-revision, ownership, customization, busy or storage
+ * failure with original cause. Reconcile latest revision and explicit scope before replaying
+ * uncertain edits.
+ */
 export class CameraArrangementError extends Schema.TaggedError<CameraArrangementError>()(
 	"CameraArrangementError",
 	{
@@ -774,13 +851,20 @@ function arrangementNextStep(
 			return "fix_input";
 	}
 }
+/**
+ * Constructs an arrangement failure with code-specific next step and optional original cause.
+ * A replay-safe operation may still require current-state reconciliation before another
+ * attempt.
+ */
 export function arrangementFailure(
 	code: (typeof CameraArrangementError.Type)["code"],
-	message: string
+	message: string,
+	cause?: unknown
 ) {
 	return new CameraArrangementError({
 		code,
 		message,
+		...(cause === undefined ? undefined : { cause }),
 		nextStep: arrangementNextStep(code),
 		recovery:
 			"Inspect the latest arrangement and retry with its revision and an explicit camera scope.",
@@ -804,6 +888,10 @@ export function arrangementFitDistance(
 		(Math.sin(Math.min(horizontal, vertical)) * (1 - margin * 2))
 	);
 }
+/**
+ * Computes the effective approved camera pose from inherited framing policy or a manual pose.
+ * Throws a typed arrangement error for an unknown camera; performs no editor IO.
+ */
 export function resolveArrangementCamera(
 	arrangement: CameraArrangement,
 	cameraId: string
@@ -850,6 +938,10 @@ export function resolveArrangementCamera(
 		}
 	});
 }
+/**
+ * Reports added/removed cameras and customized cameras at risk before replacing a layout.
+ * This pure preview does not remove anything or implicitly approve customization loss.
+ */
 export function previewArrangementRegeneration(
 	arrangement: CameraArrangement,
 	cameras: readonly ArrangementCamera[]
@@ -1008,6 +1100,10 @@ export function applyCameraArrangementCommand(
 /** Materialize exact approved poses into the existing capture-only Review Set contract. */
 const sameCaptureProfile = Schema.toEquivalence(CaptureProfile);
 
+/**
+ * Projects one arrangement camera into the matching review set as an approved view. Validates
+ * map/ownership/subject compatibility and revisions; does not write files or capture imagery.
+ */
 export function approveArrangementCamera(
 	arrangement: CameraArrangement,
 	cameraId: string,

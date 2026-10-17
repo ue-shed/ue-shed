@@ -14,6 +14,10 @@ export const POTranslationEdit = Schema.Struct({
 });
 export type POTranslationEdit = typeof POTranslationEdit.Type;
 
+/**
+ * Stable reasons a singular PO edit cannot be prepared: absent/ambiguous identity, plural
+ * entry, duplicate edit, unsafe escape or failed round-trip verification.
+ */
 export const POEditFailureCode = Schema.Literals([
 	"entry_not_found",
 	"ambiguous_entry",
@@ -24,6 +28,11 @@ export const POEditFailureCode = Schema.Literals([
 ]);
 export type POEditFailureCode = typeof POEditFailureCode.Type;
 
+/**
+ * A pure PO edit was refused before writing. Includes the affected identity when known and
+ * recovery guidance; unverifiable round trips require escalation rather than blindly
+ * rewriting the file.
+ */
 export class POEditError extends Schema.TaggedError<POEditError>()("POEditError", {
 	code: POEditFailureCode,
 	identity: Schema.NullOr(LocalizationIdentity),

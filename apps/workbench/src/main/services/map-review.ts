@@ -225,6 +225,10 @@ interface ReviewFailure {
 export class SavedWorldUnavailable extends Schema.TaggedError<SavedWorldUnavailable>()(
 	"SavedWorldUnavailable",
 	{
+		retrySafe: Schema.Boolean,
+		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		code: Schema.Literal("saved_world_unavailable"),
+		cause: Schema.optionalKey(Schema.Defect()),
 		message: Schema.String,
 		recovery: Schema.String
 	}
@@ -939,6 +943,10 @@ export const WorkbenchMapReviewLive = Layer.effect(
 			Effect.mapError(
 				(error) =>
 					new SavedWorldUnavailable({
+						cause: error,
+						retrySafe: false,
+						nextStep: "escalate",
+						code: "saved_world_unavailable",
 						message: error.message,
 						recovery: error.recovery
 					})
@@ -956,6 +964,9 @@ export const WorkbenchMapReviewLive = Layer.effect(
 			};
 			if (!world.projectRoot || normalize(world.projectRoot) !== normalize(projectRoot))
 				return yield* new SavedWorldUnavailable({
+					retrySafe: false,
+					nextStep: "escalate",
+					code: "saved_world_unavailable",
 					message: world.projectRoot
 						? "The connected Unreal editor belongs to a different project."
 						: "The editor cannot confirm its project identity.",
@@ -979,6 +990,9 @@ export const WorkbenchMapReviewLive = Layer.effect(
 			if (!resolved.maps.some((map) => map.mapPath === mapPath)) {
 				return yield* Effect.fail(
 					new SavedWorldUnavailable({
+						retrySafe: false,
+						nextStep: "escalate",
+						code: "saved_world_unavailable",
 						message: `Saved map ${mapPath} is not configured for offline review.`,
 						recovery: "Choose one of the configured maps, then retry."
 					})

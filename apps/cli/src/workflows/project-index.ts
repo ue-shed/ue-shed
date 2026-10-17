@@ -37,7 +37,15 @@ function projectIndexLayer(command: TargetCommand) {
 }
 
 function mapError(cause: unknown): CliCommandError {
-	return new CliCommandError({ message: messageOf(cause) });
+	return new CliCommandError({
+		cause: cause,
+		recovery:
+			"Inspect the command context and original cause before deciding whether to retry.",
+		retrySafe: false,
+		nextStep: "escalate",
+		code: "cli_command_failed",
+		message: messageOf(cause)
+	});
 }
 
 function withIndex<A, E>(command: TargetCommand, effect: Effect.Effect<A, E, ProjectIndex>) {
@@ -49,6 +57,11 @@ const readySummary = Effect.fn("Cli.project_index.ready_summary")(function* (pro
 	const status = yield* index.status({ projectRoot });
 	if (status.status === "absent") {
 		return yield* new CliCommandError({
+			recovery:
+				"Inspect the command context and original cause before deciding whether to retry.",
+			retrySafe: false,
+			nextStep: "escalate",
+			code: "cli_command_failed",
 			message: "Project Index is absent; run project-index refresh first."
 		});
 	}
@@ -129,6 +142,11 @@ function pageBase(command: Command<"ProjectIndexMaps"> | Command<"ProjectIndexQu
 	if (command.limit > PROJECT_INDEX_MAX_PAGE_SIZE) {
 		return Effect.fail(
 			new CliCommandError({
+				recovery:
+					"Inspect the command context and original cause before deciding whether to retry.",
+				retrySafe: false,
+				nextStep: "escalate",
+				code: "cli_command_failed",
 				message: `--limit cannot exceed ${PROJECT_INDEX_MAX_PAGE_SIZE}.`
 			})
 		);

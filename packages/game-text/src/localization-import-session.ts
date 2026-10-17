@@ -1,3 +1,4 @@
+import { snapshotStoreGuidance } from "./snapshot-store.js";
 import { Context, Effect, Layer, Option } from "effect";
 import { SharedIndex, sharedIndexDirectory, type SharedIndexOptions } from "./shared-index.js";
 import { SnapshotStoreError } from "./snapshot-store.js";
@@ -20,6 +21,8 @@ export const localizationImportLayer = Effect.fn("LocalizationImport.sessionLaye
 	if (sharedIndexDirectory(configuration) !== sharedIndexDirectory(session.value.configuration))
 		return yield* Effect.fail(
 			new SnapshotStoreError({
+				retrySafe: snapshotStoreGuidance("unavailable").retrySafe,
+				nextStep: snapshotStoreGuidance("unavailable").nextStep,
 				operation: "localization-import-session",
 				code: "unavailable",
 				message: "The localization import belongs to a different project or target.",

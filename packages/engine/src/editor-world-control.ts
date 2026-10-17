@@ -5,6 +5,7 @@ import {
 	decodeCompanionCapabilityManifest,
 	decodeEditorWorldOpenResponse,
 	ErrorGuidanceFields,
+	ErrorCauseFields,
 	type EditorWorldOpenResponse,
 	type ErrorNextStep
 } from "@ue-shed/protocol";
@@ -14,6 +15,11 @@ import { Clock, Context, Duration, Effect, Layer, Schedule, Schema } from "effec
 const coreObjectPath = "/Script/UEShedCore.Default__UEShedCoreLibrary";
 const capability = "editor.world-control.v1";
 
+/**
+ * World negotiation, request, transport or indeterminate-operation failure. Preserve
+ * operation identity and honor reconciliation guidance because an open may already have
+ * reached Unreal.
+ */
 export class EditorWorldControlError extends Schema.TaggedError<EditorWorldControlError>()(
 	"EditorWorldControlError",
 	{
@@ -26,10 +32,16 @@ export class EditorWorldControlError extends Schema.TaggedError<EditorWorldContr
 		]),
 		endpoint: Schema.String,
 		operation: Schema.String,
-		...ErrorGuidanceFields
+		...ErrorGuidanceFields,
+		...ErrorCauseFields
 	}
 ) {}
 
+/**
+ * Explicit endpoint, operation ID and map package path for opening an editor world. The ID
+ * identifies the editor mutation; interrupting the wait does not cancel or replay that
+ * mutation.
+ */
 export interface OpenEditorWorldOptions {
 	readonly endpoint: string;
 	readonly operationId: string;
@@ -39,6 +51,10 @@ export interface OpenEditorWorldOptions {
 	readonly pollInterval?: Duration.Input;
 }
 
+/**
+ * Snapshots editor world state and opens a map through a correlated editor operation. A
+ * timed-out or interrupted wait requires reconciliation of the operation before another open.
+ */
 export interface EditorWorldControlApi {
 	readonly snapshot: (
 		endpoint: string
@@ -48,6 +64,10 @@ export interface EditorWorldControlApi {
 	) => Effect.Effect<EditorWorldOpenResponse, EditorWorldControlError>;
 }
 
+/**
+ * Capability-negotiated editor-world control port. It operates on the caller's endpoint and
+ * does not change the host's selected project.
+ */
 export class EditorWorldControl extends Context.Service<
 	EditorWorldControl,
 	EditorWorldControlApi
@@ -58,6 +78,7 @@ function normalizedEndpoint(endpoint: string): string {
 }
 
 function failure(args: {
+	readonly cause?: unknown;
 	readonly code: EditorWorldControlError["code"];
 	readonly endpoint: string;
 	readonly message: string;
@@ -69,6 +90,11 @@ function failure(args: {
 	return new EditorWorldControlError(args);
 }
 
+/**
+ * RemoteControlClient-backed world snapshots and map opens. Validates contracts and
+ * correlates the operation while polling; stopping the wait does not repeat the editor
+ * mutation.
+ */
 export const EditorWorldControlLive = Layer.effect(
 	EditorWorldControl,
 	Effect.gen(function* () {
@@ -94,6 +120,7 @@ export const EditorWorldControlLive = Layer.effect(
 							code: "transport_failure",
 							endpoint,
 							message: cause.message,
+							cause,
 							operation,
 							recovery:
 								"Confirm that Unreal Editor and Remote Control are reachable, then retry.",
@@ -107,7 +134,9 @@ export const EditorWorldControlLive = Layer.effect(
 					failure({
 						code: "contract_failure",
 						endpoint,
-						message: `The editor returned an invalid capability manifest: ${String(cause)}`,
+						message:
+							"The editor returned a capability manifest that does not match its contract.",
+						cause,
 						operation,
 						recovery:
 							"Update UE Shed so the client and Unreal companion use compatible contracts.",
@@ -165,6 +194,7 @@ export const EditorWorldControlLive = Layer.effect(
 							endpoint,
 							operation,
 							message: cause.message,
+							cause,
 							recovery:
 								"The editor may be loading. Waiting for its next state update.",
 							retrySafe: true,
@@ -178,7 +208,9 @@ export const EditorWorldControlLive = Layer.effect(
 						code: "contract_failure",
 						endpoint,
 						operation,
-						message: String(cause),
+						message:
+							"The editor returned a world state that does not match its contract.",
+						cause,
 						recovery: "Update the UE Shed Core plugin and reconnect.",
 						retrySafe: false,
 						nextStep: "escalate"
@@ -204,7 +236,8 @@ export const EditorWorldControlLive = Layer.effect(
 					failure({
 						code: "request_invalid",
 						endpoint,
-						message: `Editor world-control request is invalid: ${String(cause)}`,
+						message: "The editor world-control request does not match its contract.",
+						cause,
 						operation,
 						recovery: "Use a /Game/ map package path and a safe operation identity.",
 						retrySafe: false,
@@ -214,8 +247,9 @@ export const EditorWorldControlLive = Layer.effect(
 			);
 			const target = yield* objectPath(endpoint);
 			if (target.capabilities.includes("editor.world-control.async.v1")) {
-				const indeterminate = (message: string, recovery: string) =>
+				const indeterminate = (message: string, recovery: string, cause?: unknown) =>
 					failure({
+						...(cause === undefined ? undefined : { cause }),
 						code: "operation_indeterminate",
 						endpoint,
 						operation,
@@ -260,8 +294,9 @@ export const EditorWorldControlLive = Layer.effect(
 					).pipe(
 						Effect.mapError((cause) =>
 							indeterminate(
-								String(cause),
-								"Update UE Shed to matching client and plugin versions."
+								"The editor returned an invalid map-open operation status.",
+								"Update UE Shed to matching client and plugin versions.",
+								cause
 							)
 						)
 					);
@@ -328,6 +363,7 @@ export const EditorWorldControlLive = Layer.effect(
 							code: "transport_failure",
 							endpoint: target.endpoint,
 							message: cause.message,
+							cause,
 							operation,
 							recovery:
 								"Check Unreal's current map before trying again. Losing the response does not cancel the load.",
@@ -341,7 +377,9 @@ export const EditorWorldControlLive = Layer.effect(
 					failure({
 						code: "contract_failure",
 						endpoint: target.endpoint,
-						message: `The editor returned an invalid world-control response: ${String(cause)}`,
+						message:
+							"The editor returned a world-control response that does not match its contract.",
+						cause,
 						operation,
 						recovery:
 							"Update UE Shed so the client and Unreal companion use compatible contracts.",
@@ -356,6 +394,10 @@ export const EditorWorldControlLive = Layer.effect(
 	})
 );
 
+/**
+ * Provides a complete explicit EditorWorldControl test port. The supplied implementation owns
+ * outcomes and synchronization; no missing operation falls back to the production service.
+ */
 export function makeEditorWorldControlTestLayer(
 	service: EditorWorldControlApi
 ): Layer.Layer<EditorWorldControl> {

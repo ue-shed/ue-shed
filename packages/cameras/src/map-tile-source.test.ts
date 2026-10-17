@@ -28,6 +28,15 @@ const options: MapTileSourceLayoutOptions = {
 };
 
 describe("caller-owned map source planning", () => {
+	it("keeps invalid grid schema issues behind a classified source error", () => {
+		const result = planMapTileSources({ grid: { ...grid, levels: [] }, options });
+		if (!Result.isFailure(result)) throw new Error("Expected invalid grid input");
+		expect(result.failure.code).toBe("invalid_grid");
+		expect(Schema.isSchemaError(result.failure.cause)).toBe(true);
+		expect(String(result.failure.cause)).toContain("levels");
+		expect(result.failure.message).toBe("The map tile grid is invalid.");
+	});
+
 	it("captures a stable planning snapshot for lazy consumers", () => {
 		const mutable = { ...options, limits: { ...options.limits } };
 		const supplied = { ...grid, origin: { ...grid.origin }, levels: [...grid.levels] };

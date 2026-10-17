@@ -451,6 +451,11 @@ export const localizationCheckCatalogue = {
 } as const satisfies {
 	readonly [Id in BuiltInCheckId]: LocalizationCheckDescriptor<Id, object, unknown>;
 };
+/**
+ * Built-in check definitions, defaults, parameter schemas, evidence basis and recovery
+ * guidance. Hosts can disable, reconfigure, scope or supplement checks; the catalogue is
+ * policy, not a parser constraint.
+ */
 export type LocalizationCheckCatalogue = typeof localizationCheckCatalogue;
 
 /** Each built-in check's resolved parameters. */

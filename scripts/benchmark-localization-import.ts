@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { performance } from "node:perf_hooks";
+import { trackBenchmarkEventLoop } from "./benchmark-event-loop.ts";
 import { Effect, Schema } from "effect";
 import {
 	LocalizationEvidence,
@@ -35,6 +36,7 @@ const { values } = parseArgs({
 		cache: { type: "string" },
 		output: { type: "string" },
 		mode: { type: "string", default: "files" },
+		builder: { type: "string", default: "native" },
 		host: { type: "string", default: "cli" },
 		worker: { type: "boolean" },
 		select: { type: "string" },
@@ -93,17 +95,35 @@ if (values.worker) {
 		peak = memory();
 		process.send?.({ kind: "stage", stage });
 		const started = performance.now();
+		const loopStart = performance.eventLoopUtilization();
 		const profileStarted = values.profile ? Number(process.hrtime.bigint() / 1000n) : 0;
-		const value = await run();
+		const probe = trackBenchmarkEventLoop();
+		let value: A;
+		let finished: number;
+		let profileFinished: number;
+		let utilization: number;
+		let eventLoop: ReturnType<typeof probe.stop>;
+		try {
+			value = await run();
+			finished = performance.now();
+			profileFinished = values.profile ? Number(process.hrtime.bigint() / 1000n) : 0;
+			utilization = performance.eventLoopUtilization(loopStart).utilization;
+		} finally {
+			eventLoop = probe.stop();
+		}
 		sample();
 		const result = {
 			stage,
-			seconds: (performance.now() - started) / 1000,
+			seconds: (finished - started) / 1000,
+			eventLoop: {
+				...eventLoop,
+				utilization
+			},
 			...(values.profile
 				? {
 						profileWindowMicros: {
 							start: profileStarted,
-							end: Number(process.hrtime.bigint() / 1000n)
+							end: profileFinished
 						}
 					}
 				: undefined),
@@ -182,7 +202,8 @@ if (values.worker) {
 				values.host!,
 				values.select ?? "all",
 				changedPoByte,
-				values["force-changed-join"]
+				values["force-changed-join"],
+				Schema.decodeUnknownSync(Schema.Literals(["native", "typescript"]))(values.builder)
 			);
 		}
 		if (mode === "join") {
@@ -380,6 +401,8 @@ if (values.worker) {
 			String(changedPoByte),
 			...(values.select ? ["--select", values.select] : []),
 			...(values.host ? ["--host", values.host] : []),
+			"--builder",
+			values.builder!,
 			...(values.report ? ["--report", values.report] : []),
 			...(values.domain ? ["--domain", values.domain] : []),
 			...(values.records ? ["--records", values.records] : []),
@@ -434,9 +457,25 @@ if (values.worker) {
 			output,
 			JSON.stringify(
 				{
+					measurementVersion: 2,
+					node: process.version,
+					platform: process.platform,
+					architecture: process.arch,
+					scenario: {
+						mode,
+						builder: values.builder,
+						host: values.host,
+						select: values.select
+					},
+					eventLoopScope:
+						"10 ms callback gaps, including the unfinished gap at operation completion.",
 					outcome,
 					results,
 					stages,
+					memoryScope:
+						mode === "hosts"
+							? "Sampled benchmark process and descendants RSS, including query threads/native children; JS heap/ArrayBuffers are benchmark main-thread only."
+							: "Sampled worker process RSS.",
 					limits: {
 						heapMiB: mode === "hosts" ? null : maximumHeapMiB,
 						defaultHeap: mode === "hosts",
@@ -494,7 +533,7 @@ if (values.worker) {
 		if (polling || !child.pid || outcome) return;
 		polling = true;
 		const sampledStage = stage;
-		void childWorkingSet(child.pid)
+		void childWorkingSet(child.pid, mode === "hosts")
 			.then((rss) => {
 				const current = (stages[sampledStage] ??= { osPeakRss: 0, tracePeakHeap: 0 });
 				current.osPeakRss = Math.max(current.osPeakRss, rss);

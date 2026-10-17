@@ -447,6 +447,8 @@ export function columnarTextCorpusQuery(
 			request.filter?.some((clause) => clause.field === "translation")
 		)
 			throw new GameTextLocalizationError({
+				retrySafe: false,
+				nextStep: "fix_input",
 				code: "invalid_selection",
 				message: "Translation filters need a localization target.",
 				recovery: "Select a localization target, or remove the translation filter."
@@ -1535,6 +1537,8 @@ export function columnarTextCorpusQuery(
 	const localizationRows = (request: Request) => {
 		if (!request.localization)
 			throw new GameTextLocalizationError({
+				retrySafe: false,
+				nextStep: "fix_input",
 				code: "invalid_selection",
 				message: "Localization evidence has not been supplied to this query.",
 				recovery:

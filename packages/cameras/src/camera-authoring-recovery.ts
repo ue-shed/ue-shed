@@ -17,6 +17,10 @@ import type { CameraAuthoringStore } from "./camera-authoring-store.js";
 
 const isCameraArrangementError = Schema.is(CameraArrangementError);
 
+/**
+ * Saved/native divergence evidence bound to expected revision and optional native commit
+ * revision. Hosts present both camera states before choosing which authority to restore.
+ */
 export const CameraRecoveryProposal = Schema.Struct({
 	version: Schema.Literal(1),
 	nativeCommitRevision: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
@@ -28,6 +32,10 @@ export const CameraRecoveryProposal = Schema.Struct({
 	)
 });
 export type CameraRecoveryProposal = typeof CameraRecoveryProposal.Type;
+/**
+ * Explicit saved or native authority choice for reconciling divergent camera edits. No
+ * default silently overwrites one side's customization.
+ */
 export const CameraRecoveryChoice = Schema.Literals(["saved", "native"]);
 export type CameraRecoveryChoice = typeof CameraRecoveryChoice.Type;
 
@@ -217,7 +225,11 @@ export const restoreCameraRecovery = Effect.fn("CameraAuthoring.restoreRecovery"
 			catch: (cause) =>
 				isCameraArrangementError(cause)
 					? cause
-					: arrangementFailure("invalid", String(cause))
+					: arrangementFailure(
+							"invalid",
+							"The saved arrangement could not reconcile the requested camera change.",
+							cause
+						)
 		});
 		document = yield* store.mutate({
 			kind: "poses",

@@ -80,6 +80,8 @@ const makeGatedRecordingWindow = () =>
 			if (yield* Ref.get(destroyed)) {
 				return yield* Effect.fail(
 					new WorkbenchWindowError({
+						nextStep: "escalate",
+						code: "workbench_window_failed",
 						causeText: "Window is destroyed",
 						message: "Workbench window send failed.",
 						operation: "send",

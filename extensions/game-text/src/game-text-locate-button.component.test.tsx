@@ -105,6 +105,10 @@ describe("Show in Unreal", () => {
 		mount(() =>
 			Effect.fail(
 				new GameTextClientError({
+					message: "The GameTextClient operation failed.",
+					retrySafe: false,
+					nextStep: "reconcile",
+					code: "game_text_client_failed",
 					cause: new Error("Navigation failed"),
 					operation: "locateAsset",
 					recovery: "Reconnect."

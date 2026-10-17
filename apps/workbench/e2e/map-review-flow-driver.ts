@@ -97,6 +97,11 @@ export interface MapReviewFlowHarness {
 
 function flowError(operation: string, cause: unknown): MapReviewFlowExecutionError {
 	return new MapReviewFlowExecutionError({
+		recovery:
+			"Inspect the recording checkpoints and cleanup evidence before starting another editor run.",
+		retrySafe: false,
+		nextStep: "reconcile",
+		code: "map_review_flow_execution_failed",
 		message: `Map Review flow step ${operation} failed.`,
 		operation,
 		cause

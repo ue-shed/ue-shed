@@ -53,8 +53,9 @@ function temporaryStorageError(operation: string, path: string, cause: unknown):
 	});
 }
 
-function invalidTarget(path: string, message: string): MapHistoryError {
+function invalidTarget(path: string, message: string, cause?: unknown): MapHistoryError {
 	return new MapHistoryError({
+		...(cause === undefined ? undefined : { cause }),
 		kind: "invalid_target",
 		message,
 		recovery: "Use a non-empty project-relative path contained by the historical project.",
@@ -128,7 +129,7 @@ function makeHistoricalProjectTree(operationRoot: string): HistoricalProjectTree
 			catch: (cause) =>
 				isMapHistoryError(cause)
 					? cause
-					: invalidTarget("", `Historical revision targets are invalid: ${String(cause)}`)
+					: invalidTarget("", "The historical revision targets are invalid.", cause)
 		});
 		for (const { mutation, target } of validated) {
 			if (mutation.action === "delete") {

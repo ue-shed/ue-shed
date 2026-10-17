@@ -1,8 +1,9 @@
+import { format } from "node:util";
 import { investigationsCommand } from "./commands/investigation.js";
 import { NodeServices } from "@effect/platform-node";
 import { CURRENT_PROTOCOL_VERSION } from "@ue-shed/protocol";
 import { CliError, CliOutput, Command } from "effect/cli";
-import { Cause, Console, Effect, Exit, Layer, Option } from "effect";
+import { Cause, Console, Effect, Exit, Layer, Logger, Option } from "effect";
 import { CliCommandError, CliRuntime, isCliCommandError } from "./cli-runtime.js";
 import {
 	CliCommand as CliCommandSchema,
@@ -71,8 +72,8 @@ const cliFormatter = (() => {
 function makeBufferedConsole(help: string[], errors: string[]): Console.Console {
 	return {
 		...globalThis.console,
-		log: (...args) => help.push(args.map(String).join(" ")),
-		error: (...args) => errors.push(args.map(String).join(" "))
+		log: (...args) => help.push(format(...args)),
+		error: (...args) => errors.push(format(...args))
 	};
 }
 
@@ -90,18 +91,18 @@ export function runCli(args: readonly string[]): Effect.Effect<void, CliCommandE
 			Command.runWith(cliCommand, { version })(normalizeArgs(args)).pipe(
 				Effect.provide(cliFormatter),
 				Effect.provide(consoleLayer),
+				Effect.provideService(Logger.LogToStderr, true),
 				Effect.provide(NodeServices.layer)
 			)
 		);
+		if (errors.length > 0) yield* runtime.printError(`${errors.join("\n")}\n`);
 		if (Exit.isSuccess(result)) {
 			for (const message of help) yield* runtime.print(`${message}\n`);
 			return;
 		}
 		const error = Cause.findErrorOption(result.cause);
 		if (Option.isSome(error) && CliError.isCliError(error.value)) {
-			if (errors.length > 0) {
-				yield* runtime.printError(`${errors.join("\n")}\n`);
-			} else {
+			if (errors.length === 0) {
 				yield* runtime.printError(`ue-shed: ${error.value.message}\n`);
 			}
 			yield* runtime.setExitCode(2);

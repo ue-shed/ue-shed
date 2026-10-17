@@ -64,6 +64,10 @@ const maximumTilesPerRequest = 64;
 const litCameraTilesPerBatch = 4;
 const maximumEnumeratedTiles = 1_000_000;
 
+/**
+ * Map plan inspection, preparation, capture or publication failure with run context and
+ * original cause. Recovery must account for editor state and retained partial output.
+ */
 export class MapCaptureRunError extends Schema.TaggedError<MapCaptureRunError>()(
 	"MapCaptureRunError",
 	{
@@ -74,6 +78,10 @@ export class MapCaptureRunError extends Schema.TaggedError<MapCaptureRunError>()
 	}
 ) {}
 
+/**
+ * Editor tile-batch capture port with optional progress and release. Implementations that
+ * acquire temporary editor state must release it on success, failure and interruption.
+ */
 export interface MapTileCapturePortApi {
 	/** Release a run's viewport, camera and scene freeze on completion or interruption. */
 	readonly release?: (runId: string) => Effect.Effect<void, unknown>;
@@ -86,11 +94,20 @@ export interface MapTileCapturePortApi {
 /** @deprecated Use `MapTileCapturePortApi`. */
 export type MapTileCapturePortShape = MapTileCapturePortApi;
 
+/**
+ * Host-supplied editor tile capture capability, separate from repository storage. Provide a
+ * remote or test layer for the caller's explicit endpoint.
+ */
 export class MapTileCapturePort extends Context.Service<
 	MapTileCapturePort,
 	MapTileCapturePortApi
 >()("@ue-shed/cameras/MapTileCapturePort") {}
 
+/**
+ * Builds a Remote Control tile adapter with correlated operation polling and owned-run
+ * release. Uses the supplied client/endpoint and verifies restoration when ending a started
+ * run.
+ */
 export function makeMapTileCaptureRemotePort(
 	client: RemoteControlClientApi,
 	endpoint: string
@@ -245,6 +262,10 @@ export function makeMapTileCaptureRemotePort(
 	};
 }
 
+/**
+ * Provides the Remote Control tile port for an explicit endpoint. Requires
+ * RemoteControlClient; layer construction does not itself begin a capture.
+ */
 export function mapTileCaptureRemotePortLayer(
 	endpoint: string
 ): Layer.Layer<MapTileCapturePort, never, RemoteControlClient> {
@@ -257,18 +278,30 @@ export function mapTileCaptureRemotePortLayer(
 	);
 }
 
+/**
+ * Provides an explicit tile capture/release implementation. Useful for hosts and tests that
+ * do not use the default Remote Control transport.
+ */
 export function mapTileCapturePortLayer(
 	service: MapTileCapturePortApi
 ): Layer.Layer<MapTileCapturePort> {
 	return Layer.succeed(MapTileCapturePort, MapTileCapturePort.of(service));
 }
 
+/**
+ * Validated plan expansion with snapped grid and total tile count. It describes planned work
+ * rather than a successful editor preflight or completed capture.
+ */
 export interface InspectMapCapturePlanResult {
 	readonly grid: MapTileGrid;
 	readonly plan: MapCapturePlan;
 	readonly tileCount: number;
 }
 
+/**
+ * Pure Effect validation/expansion of a map plan with bounded tile enumeration. Invalid
+ * geometry or excessive work returns MapCaptureRunError before starting editor capture.
+ */
 export function inspectMapCapturePlan(
 	plan: MapCapturePlan
 ): Effect.Effect<InspectMapCapturePlanResult, MapCaptureRunError> {
@@ -311,6 +344,11 @@ export function inspectMapCapturePlan(
 	);
 }
 
+/**
+ * Explicit project, endpoint and saved plan path with optional level/tile subset, output
+ * destination, run identity and progress callback. These options do not change the host's
+ * selected project.
+ */
 export interface RunMapCaptureOptions {
 	readonly captureBackend?: MapCaptureBackend;
 	readonly correlationId?: string;
@@ -328,16 +366,28 @@ export interface RunMapCaptureOptions {
 	readonly tiles?: ReadonlyArray<MapTileKey>;
 }
 
+/**
+ * Map-capture run configuration carrying an already loaded plan instead of a plan path. The
+ * runner still inspects work and validates editor/storage boundaries.
+ */
 export interface RunMapCapturePlanOptions extends Omit<RunMapCaptureOptions, "planPath"> {
 	readonly plan: MapCapturePlan;
 }
 
+/**
+ * Final manifest/path plus explicit publication status. A retained partial attempt can have a
+ * manifest while published remains false.
+ */
 export interface MapCaptureRunOutcome {
 	readonly manifest: MapTilePyramidManifestValue;
 	readonly manifestPath: string;
 	readonly published: boolean;
 }
 
+/**
+ * Host orchestration progress with processed/failed/total tiles and capture/publication
+ * phase. Optional producer progress reports the editor's finer-grained current activity.
+ */
 export interface MapCaptureRunProgress {
 	readonly producer?: MapTileCaptureProgress;
 	readonly failedTiles: number;
@@ -591,11 +641,12 @@ function runMapCaptureWith(args: {
 						Effect.catchCause((cleanup) =>
 							Effect.die(
 								new Error(
-									Cause.pretty(
-										Exit.isFailure(exit)
+									"Map capture release failed; reconcile editor state before another capture.",
+									{
+										cause: Exit.isFailure(exit)
 											? Cause.combine(exit.cause, cleanup)
 											: cleanup
-									)
+									}
 								)
 							)
 						)
@@ -938,6 +989,10 @@ function runMapCaptureWith(args: {
 	);
 }
 
+/**
+ * Inspects plans and runs explicit map capture through supplied editor/storage ports.
+ * Publication and retained partial outcomes remain visible to the caller.
+ */
 export interface MapCaptureApi {
 	readonly inspect: (
 		plan: MapCapturePlan
@@ -950,10 +1005,19 @@ export interface MapCaptureApi {
 /** @deprecated Use `MapCaptureApi`. */
 export type MapCaptureShape = MapCaptureApi;
 
+/**
+ * Headless map-pyramid capture orchestration service. Requires repository and capture ports
+ * rather than owning an editor endpoint or project picker.
+ */
 export class MapCapture extends Context.Service<MapCapture, MapCaptureApi>()(
 	"@ue-shed/cameras/MapCapture"
 ) {}
 
+/**
+ * Combines MapCaptureRepository and MapTileCapturePort for bounded capture, verified artifact
+ * ingestion and publication. Releases editor resources on completion/interruption and
+ * preserves partial failures.
+ */
 export const MapCaptureLive = Layer.effect(
 	MapCapture,
 	Effect.gen(function* () {
@@ -968,6 +1032,11 @@ export const MapCaptureLive = Layer.effect(
 	})
 );
 
+/**
+ * Runs a saved plan with the Node repository and a Remote Control client for the explicit
+ * endpoint. Owns operation resources and returns manifest/publication evidence; does not
+ * select or launch a project.
+ */
 export function runMapCapture(
 	options: RunMapCaptureOptions
 ): Effect.Effect<MapCaptureRunOutcome, MapCaptureRunError | MapCaptureStorageError> {
@@ -982,6 +1051,10 @@ export function runMapCapture(
 	);
 }
 
+/**
+ * Runs an in-memory plan using the production Node repository/Remote Control composition.
+ * Explicit destination and subset policy remain configurable by the caller.
+ */
 export function runMapCapturePlan(
 	options: RunMapCapturePlanOptions
 ): Effect.Effect<MapCaptureRunOutcome, MapCaptureRunError | MapCaptureStorageError> {

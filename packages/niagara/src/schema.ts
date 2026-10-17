@@ -1,3 +1,4 @@
+import { contractParser } from "@ue-shed/protocol";
 import { Schema } from "effect";
 
 const PositiveInt = Schema.Int.check(Schema.isGreaterThan(0));
@@ -228,11 +229,15 @@ export const NiagaraPreviewRunManifest = Schema.Struct({
 });
 export type NiagaraPreviewRunManifest = typeof NiagaraPreviewRunManifest.Type;
 
-export const decodeNiagaraPreviewProducerRequest = Schema.decodeUnknownEffect(
-	NiagaraPreviewProducerRequest
+export const decodeNiagaraPreviewProducerRequest = contractParser(
+	NiagaraPreviewProducerRequest,
+	"NiagaraPreviewProducerRequest"
 );
-export const decodeNiagaraPreviewProducerReceipt = Schema.decodeUnknownEffect(
-	NiagaraPreviewProducerReceipt
+export const decodeNiagaraPreviewProducerReceipt = contractParser(
+	NiagaraPreviewProducerReceipt,
+	"NiagaraPreviewProducerReceipt"
 );
-export const decodeNiagaraPreviewRunManifest =
-	Schema.decodeUnknownEffect(NiagaraPreviewRunManifest);
+export const decodeNiagaraPreviewRunManifest = contractParser(
+	NiagaraPreviewRunManifest,
+	"NiagaraPreviewRunManifest"
+);

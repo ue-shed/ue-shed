@@ -133,6 +133,7 @@ it.effect("FixtureHealth reports not_running when Remote Control is unreachable"
 						makeRemoteControlClientTestLayer(() =>
 							Effect.fail(
 								new RemoteControlClientError({
+									code: "transport_failed",
 									endpoint: "http://127.0.0.1:30001",
 									functionName: "GetCapabilityManifest",
 									message: "Editor is not connected",
@@ -192,6 +193,7 @@ it.effect(
 									? Effect.succeed(manifestOf({}))
 									: Effect.fail(
 											new RemoteControlClientError({
+												code: "transport_failed",
 												endpoint: "http://127.0.0.1:30001",
 												functionName: request.functionName,
 												message: "Map Review capture is not available",

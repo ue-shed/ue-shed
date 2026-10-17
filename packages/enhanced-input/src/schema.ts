@@ -1,3 +1,4 @@
+import { contractParser } from "@ue-shed/protocol";
 import { Schema } from "effect";
 
 export const InputObjectPath = Schema.String.pipe(Schema.brand("InputObjectPath"));
@@ -100,7 +101,12 @@ export const EnhancedInputReport = Schema.Struct({
 export type EnhancedInputReport = Schema.Schema.Type<typeof EnhancedInputReport>;
 
 export const EnhancedInputPublicError = Schema.Struct({
-	code: Schema.Literals(["invalid_project", "scan_limit_exceeded", "invalid_path"]),
+	code: Schema.Literals([
+		"invalid_project",
+		"scan_limit_exceeded",
+		"invalid_path",
+		"reader_failed"
+	]),
 	message: Schema.String,
 	recovery: Schema.String,
 	retrySafe: Schema.Boolean
@@ -122,4 +128,7 @@ export const EnhancedInputRunResult = Schema.Union([
 ]);
 export type EnhancedInputRunResult = Schema.Schema.Type<typeof EnhancedInputRunResult>;
 
-export const decodeEnhancedInputRunResult = Schema.decodeUnknownEffect(EnhancedInputRunResult);
+export const decodeEnhancedInputRunResult = contractParser(
+	EnhancedInputRunResult,
+	"EnhancedInputRunResult"
+);

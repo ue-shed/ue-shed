@@ -20,6 +20,10 @@ const locmetaMagic = [
 	0x4f, 0xee, 0x4c, 0xa1, 0x68, 0x48, 0x55, 0x83, 0x6c, 0x4c, 0x46, 0xbd, 0x70, 0xda, 0x50, 0x7c
 ];
 
+/**
+ * Decodes bounded compiled localization metadata, including supported version checks. Returns
+ * a typed Result; it does not regenerate missing or stale compiled output.
+ */
 export function parseLocmeta(bytes: Uint8Array, options?: LocalizationLimits) {
 	return parseResult(() => {
 		const limits = limitsFor(options);
@@ -121,6 +125,10 @@ function csvRows(text: string): string[][] {
 	return rows;
 }
 
+/**
+ * Parses Unreal's word-count CSV bytes with resource limits and per-culture counts. Returns
+ * typed format failures rather than silently dropping malformed report rows.
+ */
 export function parseWordCountCSV(bytes: Uint8Array, options?: LocalizationLimits) {
 	return parseResult(() => {
 		const limits = limitsFor(options);

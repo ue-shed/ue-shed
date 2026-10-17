@@ -318,6 +318,11 @@ export function reportableInvariantText(
 
 const BYTECODE_MANIFEST_PATH = "[Script Bytecode]";
 
+/**
+ * Findings and supporting diagnostics for one checked localization line. Policy-dependent
+ * findings remain separate from unread or unsupported evidence, which cannot establish a clean
+ * result.
+ */
 export interface LocalizationLineCheckOutput {
 	readonly findings: LocalizationQualityFinding[];
 	readonly checkDiagnostics: LocalizationCheckDiagnostic[];
@@ -468,6 +473,8 @@ export function enabledLocalizationChecks(
 		(options.culture !== undefined && !join.cultures.includes(options.culture))
 	)
 		throw new GameTextLocalizationError({
+			retrySafe: false,
+			nextStep: "fix_input",
 			code: "invalid_selection",
 			message: "The localization check selection is invalid.",
 			recovery: "Choose a loaded target and one of its listed cultures."
@@ -533,6 +540,7 @@ export function localizationDuplicateSources() {
 			for (const [source, group] of groups) {
 				if (group.length < 6) continue;
 				// SAFETY: `add` is the only writer and pushes an identity, its position and row.
+				// Verified by: localization-checks.test.ts — shared-source groups preserve identity ordering and finding ownership.
 				let identities = Array.from({ length: group.length / 3 }, (_, index) => ({
 					identity: group[index * 3] as LocalizationIdentity,
 					position: group[index * 3 + 1] as number,

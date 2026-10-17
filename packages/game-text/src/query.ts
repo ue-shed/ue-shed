@@ -162,6 +162,10 @@ export interface TextCorpusQuery {
 	readonly summary: () => TextCorpusQuerySummary;
 }
 
+/**
+ * Creates a retained in-memory query over a corpus and optional localization join.
+ * Search/focus/export share this evidence; caller owns replacing it after a new scan.
+ */
 export function textCorpusQuery(
 	corpus: TextCorpus,
 	scannedAt?: string,
@@ -358,6 +362,8 @@ export function textCorpusQuery(
 	const localizedMatching = (request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">) => {
 		if (!localization || !request.localization)
 			throw new GameTextLocalizationError({
+				retrySafe: false,
+				nextStep: "fix_input",
 				code: "invalid_selection",
 				message: "Localization evidence has not been supplied to this query.",
 				recovery:
@@ -517,6 +523,8 @@ export function textCorpusQuery(
 			request.filter?.some((clause) => clause.field === "translation")
 		)
 			throw new GameTextLocalizationError({
+				retrySafe: false,
+				nextStep: "fix_input",
 				code: "invalid_selection",
 				message: "Translation filters need a localization target.",
 				recovery: "Select a localization target, or remove the translation filter."
@@ -585,6 +593,8 @@ export function textCorpusQuery(
 			if (selection) {
 				if (!localization)
 					throw new GameTextLocalizationError({
+						retrySafe: false,
+						nextStep: "fix_input",
 						code: "invalid_selection",
 						message: "Localization evidence has not been supplied to this query.",
 						recovery:

@@ -1,3 +1,4 @@
+import { contractParser } from "./contract-parser.js";
 import { Schema } from "effect";
 
 /**
@@ -72,6 +73,7 @@ export type CompanionCapabilityManifest = Schema.Schema.Type<typeof CompanionCap
  * Decodes a manifest; fails with a schema error when the producer speaks another schema version
  * or the reply is malformed, which hosts treat as an incompatible or missing UEShedCore.
  */
-export const decodeCompanionCapabilityManifest = Schema.decodeUnknownEffect(
-	CompanionCapabilityManifest
+export const decodeCompanionCapabilityManifest = contractParser(
+	CompanionCapabilityManifest,
+	"CompanionCapabilityManifest"
 );

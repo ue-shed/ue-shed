@@ -491,7 +491,6 @@ export {
 } from "./entry-corpus.js";
 
 export {
-	columnarTextCorpusQuery,
 	STRING_TABLE_CLASS,
 	type ScanTextCorpusOptions,
 	TEXT_PROPERTY_NAME,
@@ -562,7 +561,6 @@ export {
 	type GameTextProjectView,
 	TextRulesFileError,
 	createStarterTextRules,
-	makeGameTextSearchWorker,
 	indexedSourceQuality,
 	SnapshotFormatError,
 	SnapshotStoreError,

@@ -12,6 +12,11 @@ import {
 } from "./review-file.js";
 import type { LocalizationLimits, LocalizationTargetName } from "./schema.js";
 
+/**
+ * Project/target and optional project-relative review path with evidence limits. The default
+ * stores metadata beside localization configuration; paths remain subject to project
+ * containment checks.
+ */
 export interface LocalizationReviewLocation {
 	readonly projectRoot: string;
 	readonly target: LocalizationTargetName;
@@ -20,6 +25,10 @@ export interface LocalizationReviewLocation {
 	readonly limits?: LocalizationLimits | undefined;
 }
 
+/**
+ * Read review document and its content hash, or null when absent. Pass this snapshot to
+ * guarded updates so concurrent external edits are detected rather than overwritten.
+ */
 export interface LocalizationReviewSnapshot {
 	readonly file: LocalizationReviewFile;
 	readonly relativePath: string;

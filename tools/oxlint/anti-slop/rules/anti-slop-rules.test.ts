@@ -165,11 +165,36 @@ ruleTester.run("no-stringified-cause-in-error", noStringifiedCauseInErrorRule, {
 	valid: [
 		'new ReaderError({ message: "The reader failed.", cause });',
 		"new ReaderError({ message: `Could not read ${path}.`, cause: error });",
-		"report({ message: String(cause) });"
+		"report({ message: String(cause) });",
+		"setOperationFailure({ message: Cause.pretty(cause) });"
 	],
 	invalid: [
 		{
+			code: 'snapshotFailure("manifest", `Invalid: ${String(cause)}`);',
+			errors: [{ messageId: "stringifiedCause" }]
+		},
+		{
 			code: "new ReaderError({ message: String(cause) });",
+			errors: [{ messageId: "stringifiedCause" }]
+		},
+		{
+			code: "new ReaderError({ message: String(args.cause) });",
+			errors: [{ messageId: "stringifiedCause" }]
+		},
+		{
+			code: 'snapshotFailure("input", String(decoded.failure));',
+			errors: [{ messageId: "stringifiedCause" }]
+		},
+		{
+			code: 'new ReaderError({ message: String(args["cause"]) });',
+			errors: [{ messageId: "stringifiedCause" }]
+		},
+		{
+			code: "new Error(Cause.pretty(failure));",
+			errors: [{ messageId: "stringifiedCause" }]
+		},
+		{
+			code: 'invalid("validation", `Invalid build: ${String(cause)}`);',
 			errors: [{ messageId: "stringifiedCause" }]
 		},
 		{
@@ -178,6 +203,10 @@ ruleTester.run("no-stringified-cause-in-error", noStringifiedCauseInErrorRule, {
 		},
 		{
 			code: "new ReaderFailure({ message: Cause.pretty(cause) });",
+			errors: [{ messageId: "stringifiedCause" }]
+		},
+		{
+			code: "clientError(request, { message: `Request failed: ${String(cause)}` });",
 			errors: [{ messageId: "stringifiedCause" }]
 		}
 	]

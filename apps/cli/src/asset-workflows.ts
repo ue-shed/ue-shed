@@ -72,6 +72,12 @@ export const runTextRulesInit = Effect.fn("Cli.workflow.text_rules_init")(
 					Effect.mapError(
 						(error) =>
 							new CliCommandError({
+								recovery:
+									"Inspect the command context and original cause before deciding whether to retry.",
+								retrySafe: false,
+								nextStep: "escalate",
+								code: "cli_command_failed",
+								cause: error,
 								message: `${error.message} ${error.recovery}`
 							})
 					)
@@ -103,7 +109,18 @@ export const runAssetsScan = Effect.fn("Cli.workflow.assets_scan")((command: Ass
 				});
 			}).pipe(
 				Effect.provide(readerLayer(command.reader)),
-				Effect.mapError((error) => new CliCommandError({ message: messageOf(error) }))
+				Effect.mapError(
+					(error) =>
+						new CliCommandError({
+							cause: error,
+							recovery:
+								"Inspect the command context and original cause before deciding whether to retry.",
+							retrySafe: false,
+							nextStep: "escalate",
+							code: "cli_command_failed",
+							message: messageOf(error)
+						})
+				)
 			);
 			return yield* printJson(command.full ? scan : summarizeScan(scan));
 		})
@@ -129,7 +146,14 @@ export const runTextSearch = Effect.fn("Cli.workflow.text_search")((command: Tex
 		Effect.gen(function* () {
 			if (command.query.length === 0) {
 				return yield* Effect.fail(
-					new CliCommandError({ message: "text search requires a non-empty query" })
+					new CliCommandError({
+						recovery:
+							"Inspect the command context and original cause before deciding whether to retry.",
+						retrySafe: false,
+						nextStep: "escalate",
+						code: "cli_command_failed",
+						message: "text search requires a non-empty query"
+					})
 				);
 			}
 			if (command.target !== undefined) {
@@ -152,6 +176,11 @@ export const runTextSearch = Effect.fn("Cli.workflow.text_search")((command: Tex
 			) {
 				return yield* Effect.fail(
 					new CliCommandError({
+						recovery:
+							"Inspect the command context and original cause before deciding whether to retry.",
+						retrySafe: false,
+						nextStep: "escalate",
+						code: "cli_command_failed",
 						message: "Localization search options require --target."
 					})
 				);
@@ -193,8 +222,14 @@ export const runTextReview = Effect.fn("Cli.workflow.text_review")((command: Tex
 				yield* Effect.promise(() => import("@ue-shed/game-text/rules"));
 			const ruleJson = yield* Effect.tryPromise({
 				try: () => readFile(command.ruleFile, "utf8"),
-				catch: () =>
+				catch: (cause) =>
 					new CliCommandError({
+						cause,
+						recovery:
+							"Inspect the command context and original cause before deciding whether to retry.",
+						retrySafe: false,
+						nextStep: "escalate",
+						code: "cli_command_failed",
 						message:
 							"Could not read the Game Text quality rule file. Confirm it exists and is readable, then retry."
 					})
@@ -203,6 +238,12 @@ export const runTextReview = Effect.fn("Cli.workflow.text_review")((command: Tex
 				Effect.mapError(
 					(error) =>
 						new CliCommandError({
+							recovery:
+								"Inspect the command context and original cause before deciding whether to retry.",
+							retrySafe: false,
+							nextStep: "escalate",
+							code: "cli_command_failed",
+							cause: error,
 							message: `${error.message} ${error.recovery}`
 						})
 				)
@@ -228,6 +269,11 @@ export const runInputInspect = Effect.fn("Cli.workflow.input_inspect")(
 						catch: (cause) => {
 							const code = errnoCode(cause);
 							return new CliCommandError({
+								recovery:
+									"Inspect the command context and original cause before deciding whether to retry.",
+								retrySafe: false,
+								nextStep: "escalate",
+								code: "cli_command_failed",
 								message:
 									code === "ENOENT"
 										? `Path ${command.path} does not exist.`
@@ -252,7 +298,15 @@ export const runInputInspect = Effect.fn("Cli.workflow.input_inspect")(
 					Effect.mapError((error) =>
 						isCliCommandError(error)
 							? error
-							: new CliCommandError({ message: messageOf(error) })
+							: new CliCommandError({
+									cause: error,
+									recovery:
+										"Inspect the command context and original cause before deciding whether to retry.",
+									retrySafe: false,
+									nextStep: "escalate",
+									code: "cli_command_failed",
+									message: messageOf(error)
+								})
 					)
 				);
 				return yield* printJson(report);

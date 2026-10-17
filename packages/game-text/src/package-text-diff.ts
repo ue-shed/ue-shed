@@ -57,6 +57,10 @@ export const PackageTextChange = Schema.Union([
 ]).annotate({ identifier: "PackageTextChange" });
 export type PackageTextChange = typeof PackageTextChange.Type;
 
+/**
+ * Saved text comparison result with changes and inspection/coverage evidence. Unsupported or
+ * failed reads cannot establish that a package's text is unchanged.
+ */
 export const PackageTextDiff = Schema.Struct({
 	changes: Schema.Array(PackageTextChange),
 	counts: Schema.Struct({

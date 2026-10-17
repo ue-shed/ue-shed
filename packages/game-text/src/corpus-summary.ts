@@ -1,9 +1,17 @@
 import { Schema } from "effect";
 import { TextCorpusDiagnostic, TextPackageCoverage, TextCorpus } from "./schema.js";
 
+/**
+ * Maximum diagnostic and non-complete-package previews in a corpus report. Separate omitted
+ * counts preserve the extent of evidence beyond this bound.
+ */
 export const MAX_CORPUS_REPORT_ITEMS = 200;
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 
+/**
+ * Bounded diagnostic preview with exact total, per-code counts and omitted count. A truncated
+ * preview must not be interpreted as the complete set of inspection failures.
+ */
 export const TextCorpusDiagnosticSummary = Schema.Struct({
 	diagnostics: Schema.Array(TextCorpusDiagnostic).check(
 		Schema.isMaxLength(MAX_CORPUS_REPORT_ITEMS)
@@ -23,6 +31,10 @@ type DiagnosticCounts = {
 	-readonly [K in keyof TextCorpusDiagnosticSummary["diagnosticCounts"]]: TextCorpusDiagnosticSummary["diagnosticCounts"][K];
 };
 
+/**
+ * Counts for all package completion states plus a bounded preview of non-complete packages.
+ * Complete packages contribute to counts but do not occupy the problem preview.
+ */
 export const TextPackageCoverageSummary = Schema.Struct({
 	counts: Schema.Struct({
 		complete: Count,
@@ -40,6 +52,10 @@ export const TextPackageCoverageSummary = Schema.Struct({
 });
 export type TextPackageCoverageSummary = typeof TextPackageCoverageSummary.Type;
 
+/**
+ * Export corpus with bounded diagnostic and package-coverage previews. Unit data remains
+ * complete for the supplied corpus; omitted preview counts retain uncertainty.
+ */
 export const TextCorpusReport = TextCorpus.mapFields((fields) => ({
 	...fields,
 	...TextCorpusDiagnosticSummary.fields,
@@ -47,6 +63,10 @@ export const TextCorpusReport = TextCorpus.mapFields((fields) => ({
 }));
 export type TextCorpusReport = typeof TextCorpusReport.Type;
 
+/**
+ * Projects a corpus into its report form, bounding diagnostics and non-complete-package
+ * previews without changing unit data or aggregate coverage.
+ */
 export function textCorpusReport(corpus: TextCorpus): TextCorpusReport {
 	const { packageCoverage, ...rest } = corpus;
 	return {
@@ -58,6 +78,10 @@ export function textCorpusReport(corpus: TextCorpus): TextCorpusReport {
 	};
 }
 
+/**
+ * Counts every supplied diagnostic by code while retaining only the first
+ * MAX_CORPUS_REPORT_ITEMS as a preview. diagnosticsOmitted records the remaining items.
+ */
 export function textCorpusDiagnosticSummary(
 	diagnostics: readonly TextCorpusDiagnostic[]
 ): TextCorpusDiagnosticSummary {
@@ -82,6 +106,10 @@ export function textCorpusDiagnosticSummary(
 	};
 }
 
+/**
+ * Counts every package state and previews only partial, failed and not-gatherable packages.
+ * Reports the number of additional problem packages beyond the preview bound.
+ */
 export function textPackageCoverageSummary(
 	coverage: NonNullable<TextCorpus["packageCoverage"]>
 ): TextPackageCoverageSummary {

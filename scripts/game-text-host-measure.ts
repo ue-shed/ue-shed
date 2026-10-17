@@ -1,4 +1,5 @@
 /// <reference path="../apps/workbench/node_modules/electron/electron.d.ts" />
+import { GameTextIndexBuilderLive } from "../packages/game-text/dist/entry-index.js";
 import { join, basename } from "node:path";
 import { createHash } from "node:crypto";
 import { Context, Effect, Exit, Layer, Schema, Scope, Stream } from "effect";
@@ -25,12 +26,17 @@ import { readGeneratedPackageInventory } from "./package-text-generated.ts";
 import { captureBenchmarkByte, restoreBenchmarkByte } from "./localization-benchmark-byte.ts";
 import { readScaleRecipe } from "./game-text-scale-options.ts";
 import type { WorkbenchGameTextApi } from "../apps/workbench/src/main/services/game-text.ts";
-import { refreshJoinedTarget } from "../packages/game-text/src/joined-target.ts";
+import { AssetReaderLive } from "../packages/unreal-assets/dist/index.js";
 import { sharedIndexNodeLayer } from "../packages/game-text/src/shared-index.ts";
 import {
 	openJoinedTarget,
 	type JoinedTargetReader
 } from "../packages/game-text/src/joined-target-reader.ts";
+import { JoinedQueryData } from "../packages/game-text/src/joined-query-data.ts";
+import {
+	addSourceTrigrams,
+	simpleSourceBytes
+} from "../packages/game-text/src/joined-source-cache.ts";
 
 type Measure = <A>(
 	name: string,
@@ -48,7 +54,8 @@ export async function measureGameTextHosts(
 	host: string,
 	task: string,
 	changedByte: number,
-	forceChangedJoin = false
+	forceChangedJoin = false,
+	backend: "native" | "typescript" = "native"
 ) {
 	if (host !== "cli" && host !== "workbench") throw new Error("Choose cli or workbench.");
 	if (
@@ -57,6 +64,11 @@ export async function measureGameTextHosts(
 	)
 		throw new Error("Host measurements require Node's default heap.");
 	const recipe = await readScaleRecipe(project);
+	const selectedBuilder =
+		backend === "native"
+			? GameTextIndexBuilderLive.pipe(Layer.provide(AssetReaderLive))
+			: typeScriptIndexBuilderLayer;
+
 	// A capped cold build may publish nothing. Prepare disposable file layers in separately
 	// capped runs so query measurements remain available; this is never a cold-build success.
 	if (task.startsWith("prepare-file:")) {
@@ -97,15 +109,15 @@ export async function measureGameTextHosts(
 					collapseMode: target.collapseMode
 				})
 			);
-		}).pipe(
-			Effect.provide(typeScriptIndexBuilderLayer),
-			Effect.provide(LocalizationEvidenceNodeLive)
-		);
+		}).pipe(Effect.provide(selectedBuilder), Effect.provide(LocalizationEvidenceNodeLive));
 		await measure(
 			`${host}:${task}`,
 			() => Effect.runPromise(preparation),
 			(file) => ({
-				builder: "TypeScript builder; native builder pending",
+				builder:
+					backend === "native"
+						? "Native public protocol adapter"
+						: "TypeScript reference builder",
 				path: file.relativePath,
 				parsed: file.parsed,
 				bytes: file.snapshotBytes
@@ -131,9 +143,9 @@ export async function measureGameTextHosts(
 								force: input.force || version !== ""
 							})
 					});
-				}).pipe(Effect.provide(typeScriptIndexBuilderLayer))
+				}).pipe(Effect.provide(selectedBuilder))
 			)
-		: typeScriptIndexBuilderLayer;
+		: selectedBuilder;
 	const source = Layer.succeed(
 		GameTextIndexSource,
 		GameTextIndexSource.of({
@@ -211,12 +223,15 @@ export async function measureGameTextHosts(
 						)
 				})
 			);
-		}).pipe(Effect.provide(source), Effect.provide(typeScriptIndexBuilderLayer));
+		}).pipe(Effect.provide(source), Effect.provide(selectedBuilder));
 		await measure(
 			`${host}:${task}`,
 			() => Effect.runPromise(preparation),
 			(value) => ({
-				builder: "TypeScript builder; native builder pending",
+				builder:
+					backend === "native"
+						? "Native public protocol adapter"
+						: "TypeScript reference builder",
 				readPackages: value.readPackages,
 				changedShards: value.changedShards,
 				published: value.published
@@ -224,7 +239,16 @@ export async function measureGameTextHosts(
 		);
 		return;
 	}
-	const indexLayer = gameTextIndexRefreshLayer(cache).pipe(
+	const indexLayer = gameTextIndexRefreshLayer(
+		cache,
+		host === "workbench"
+			? {
+					searchWorker: true,
+					latestSearchOnly: true,
+					qualityWorker: true
+				}
+			: {}
+	).pipe(
 		Layer.provide(source),
 		Layer.provide(builderLayer),
 		Layer.provide(LocalizationEvidenceNodeLive)
@@ -234,7 +258,8 @@ export async function measureGameTextHosts(
 	const targetName = LocalizationTargetName.make("Generated");
 	const cli =
 		host === "cli" ? await import("../apps/cli/src/workflows/game-text-index.ts") : undefined;
-	const builderLabel = "TypeScript builder; native builder pending";
+	const builderLabel =
+		backend === "native" ? "Native public protocol adapter" : "TypeScript reference builder";
 	let readerScope: Scope.Closeable | undefined;
 	let result: GameTextIndexRefreshResult | undefined;
 	let workbench: WorkbenchGameTextApi | undefined;
@@ -368,7 +393,8 @@ export async function measureGameTextHosts(
 	const pageSummary = (page: TextCorpusSearchPage) => ({
 		total: page.total,
 		displayed: page.units.length,
-		lines: page.localization?.lines.length ?? 0
+		lines: page.localization?.lines.length ?? 0,
+		sha256: createHash("sha256").update(JSON.stringify(page)).digest("hex")
 	});
 	const columnProof = (joined: JoinedTargetReader) =>
 		run(
@@ -382,12 +408,59 @@ export async function measureGameTextHosts(
 						...Object.keys(joined.meta.patches ?? {})
 					])
 				].sort()) {
-					if (name === "join.meta" || name === "shared.meta") continue;
+					if (
+						name === "join.meta" ||
+						name === "shared.meta" ||
+						name.startsWith("query.source.")
+					)
+						continue;
 					const values = yield* joined.layer.section(name);
 					hashes[name] = createHash("sha256")
 						.update(Buffer.from(values.buffer, values.byteOffset, values.byteLength))
 						.digest("hex");
 				}
+				// Incremental generations intentionally retain the base source accelerator. Compare
+				// its effective current sources, not the obsolete bytes that its reader can reuse.
+				const data = new JoinedQueryData(joined);
+				data.prepareSources();
+				const sources = data.projection.sources;
+				if (!sources)
+					throw new Error("The production reader did not prepare source search.");
+				const selected = [
+					...new Set([...data.column("line.source"), ...data.column("query.raw.sources")])
+				].sort((a, b) => a - b);
+				const sourceHash = createHash("sha256");
+				const requiredTrigrams = sources.trigrams
+					? new Uint8Array(sources.trigrams.length)
+					: undefined;
+				for (const id of selected) {
+					const row = sources.index[id]! - 1;
+					if (row < 0 || row >= sources.ids.length)
+						throw new Error("An active source is missing from the search accelerator.");
+					const bytes = sources.packed.bytes.subarray(
+						sources.packed.offsets[row],
+						sources.packed.offsets[row + 1]
+					);
+					if (sources.simple[row] !== Number(simpleSourceBytes(bytes)))
+						throw new Error("An active source has incorrect search flags.");
+					const header = Buffer.alloc(9);
+					header.writeUInt32LE(id, 0);
+					header.writeUInt32LE(bytes.length, 4);
+					header[8] = sources.simple[row]!;
+					sourceHash.update(header).update(bytes);
+					if (requiredTrigrams && sources.simple[row])
+						addSourceTrigrams(requiredTrigrams, bytes);
+				}
+				if (requiredTrigrams && sources.trigrams)
+					for (let byte = 0; byte < requiredTrigrams.length; byte++)
+						if (
+							(sources.trigrams[byte]! & requiredTrigrams[byte]!) !==
+							requiredTrigrams[byte]
+						)
+							throw new Error(
+								"The source accelerator can falsely reject a current search term."
+							);
+				hashes["query.source.active"] = sourceHash.digest("hex");
 				return {
 					hashes,
 					count: joined.meta.count,
@@ -550,11 +623,26 @@ export async function measureGameTextHosts(
 							const full = await Effect.runPromise(
 								Effect.scoped(
 									Effect.gen(function* () {
-										yield* refreshJoinedTarget({ ...input, force: true });
+										const builder = yield* GameTextIndexBuilder;
+										yield* builder.withSession(
+											{
+												configuration: {
+													cacheRoot: cache,
+													projectKey: project,
+													targetKey: "Generated",
+													projectView: {
+														kind: "localization",
+														target: "Generated"
+													}
+												}
+											},
+											builder.refreshJoinedTarget({ ...input, force: true })
+										);
 										const joined = yield* openJoinedTarget();
 										return yield* Effect.promise(() => columnProof(joined));
 									})
 								).pipe(
+									Effect.provide(selectedBuilder),
 									Effect.provide(
 										sharedIndexNodeLayer({
 											cacheRoot: cache,
@@ -568,10 +656,22 @@ export async function measureGameTextHosts(
 									)
 								)
 							);
-							if (JSON.stringify(incremental) !== JSON.stringify(full))
-								throw new Error(
-									"STOP: measured incremental columns differ from full rebuild"
+							if (JSON.stringify(incremental) !== JSON.stringify(full)) {
+								const names = [
+									...new Set([
+										...Object.keys(incremental.hashes),
+										...Object.keys(full.hashes)
+									])
+								].filter((name) => incremental.hashes[name] !== full.hashes[name]);
+								const { writeFile } = await import("node:fs/promises");
+								await writeFile(
+									join(cache, "join-proof-failure.json"),
+									JSON.stringify({ incremental, full, names }, null, "\t")
 								);
+								throw new Error(
+									`STOP: measured incremental columns differ from full rebuild: ${names.join(", ")}`
+								);
+							}
 							return {
 								equal: true,
 								columns: Object.keys(full.hashes).length,

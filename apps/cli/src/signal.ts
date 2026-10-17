@@ -1,6 +1,12 @@
 import { Effect, Schema } from "effect";
 
 export class CliSignalError extends Schema.TaggedError<CliSignalError>()("CliSignalError", {
+	message: Schema.String,
+	recovery: Schema.String,
+	retrySafe: Schema.Boolean,
+	nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+	code: Schema.Literal("cli_signal_failed"),
+	cause: Schema.optionalKey(Schema.Defect()),
 	signal: Schema.Literals(["SIGINT", "SIGTERM"])
 }) {}
 
@@ -16,12 +22,36 @@ function awaitCliSignal(): Effect.Effect<never, CliSignalError> {
 			SIGINT: () => {
 				if (resumed) return;
 				resumed = true;
-				resume(Effect.fail(new CliSignalError({ signal: "SIGINT" })));
+				resume(
+					Effect.fail(
+						new CliSignalError({
+							message: "The command was interrupted by a process signal.",
+							recovery:
+								"Inspect any command output and saved state before starting the command again.",
+							retrySafe: false,
+							nextStep: "reconcile",
+							code: "cli_signal_failed",
+							signal: "SIGINT"
+						})
+					)
+				);
 			},
 			SIGTERM: () => {
 				if (resumed) return;
 				resumed = true;
-				resume(Effect.fail(new CliSignalError({ signal: "SIGTERM" })));
+				resume(
+					Effect.fail(
+						new CliSignalError({
+							message: "The command was interrupted by a process signal.",
+							recovery:
+								"Inspect any command output and saved state before starting the command again.",
+							retrySafe: false,
+							nextStep: "reconcile",
+							code: "cli_signal_failed",
+							signal: "SIGTERM"
+						})
+					)
+				);
 			}
 		};
 		const removeListeners = () => {

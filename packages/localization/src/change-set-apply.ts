@@ -16,6 +16,10 @@ import { replacePOTranslations, type POEditError } from "./po-writer.js";
 import { CultureCode, LocalizationError, LocalizationLimits } from "./schema.js";
 import { LocalizationEvidence } from "./service.js";
 
+/**
+ * Explicit project and proposed translation set. By default stale proposals reject the write;
+ * skipStale permits current changes while reporting stale ones, with limits still enforced.
+ */
 export const ApplyLocalizationChangeSetRequest = Schema.Struct({
 	projectRoot: Schema.NonEmptyString,
 	changeSet: LocalizationChangeSet,
@@ -25,6 +29,11 @@ export const ApplyLocalizationChangeSetRequest = Schema.Struct({
 });
 export type ApplyLocalizationChangeSetRequest = typeof ApplyLocalizationChangeSetRequest.Type;
 
+/**
+ * Write outcome listing reviewed proposals and individual file hashes/errors.
+ * partially_written means earlier files changed before a later failure; inspect the receipt
+ * before retrying.
+ */
 export const LocalizationChangeSetReceipt = Schema.Struct({
 	schemaVersion: Schema.Literal(1),
 	/**
@@ -55,7 +64,8 @@ function poEditFailure(error: POEditError): LocalizationChangeSetError {
 		message: error.message,
 		recovery: error.recovery,
 		retrySafe: error.retrySafe,
-		nextStep: error.nextStep
+		nextStep: error.nextStep,
+		cause: error
 	});
 }
 

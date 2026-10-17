@@ -27,6 +27,10 @@ function words(source: string): number {
 	return source.trim() ? source.trim().split(/\s+/u).length : 0;
 }
 
+/**
+ * Projects a joined line into bounded manifest-location and culture evidence for a query page.
+ * remainingLocationCount preserves locations omitted from the preview.
+ */
 export function localizationLinePreview(line: LocalizationLine): LocalizationLinePreview {
 	return {
 		id: line.id,
@@ -136,6 +140,10 @@ export function scopedLocalizationMarks<Mark extends Pick<LocalizationCultureMar
 	return line.cultures.filter((mark) => scope.includes(mark.culture));
 }
 
+/**
+ * Validates a selection against its retained target join. Invalid target/culture selections
+ * fail with GameTextLocalizationError rather than silently choosing another target.
+ */
 export function validateLocalizationSelection(
 	join: LocalizationJoin,
 	selection: LocalizationSelection
@@ -146,6 +154,8 @@ export function validateLocalizationSelection(
 		selection.cultures?.some((culture) => !join.cultures.includes(culture))
 	) {
 		throw new GameTextLocalizationError({
+			retrySafe: false,
+			nextStep: "fix_input",
 			code: "invalid_selection",
 			message: "The localization selection is not available in this target.",
 			recovery: "List the target's cultures and select an available target and culture."
@@ -153,6 +163,10 @@ export function validateLocalizationSelection(
 	}
 }
 
+/**
+ * Tests joined-line state, culture and review scope for a validated selection. It reads
+ * retained evidence and does not refresh localization files.
+ */
 export function matchesLocalizationLine(
 	line: LocalizationLine,
 	request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">

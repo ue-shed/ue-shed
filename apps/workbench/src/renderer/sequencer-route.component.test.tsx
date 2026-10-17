@@ -107,6 +107,10 @@ describe("Workbench Sequencer route", () => {
 				readSequence: () =>
 					Effect.fail(
 						new WorkbenchRendererError({
+							message: "The WorkbenchRenderer operation failed.",
+							retrySafe: false,
+							nextStep: "reconcile",
+							code: "workbench_renderer_failed",
 							cause: "IPC unavailable",
 							operation: "readSequence",
 							recovery: "Retry"

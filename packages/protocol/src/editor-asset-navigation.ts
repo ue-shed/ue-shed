@@ -1,3 +1,4 @@
+import { contractParser } from "./contract-parser.js";
 import { Schema } from "effect";
 
 /** The asset-navigation contract the UEShedCore plugin implements; only version 1.0 decodes. */
@@ -50,4 +51,7 @@ export type EditorAssetLocateResult = Schema.Schema.Type<typeof EditorAssetLocat
  * Decodes a locate reply; fails with a schema error when the reply is malformed or speaks another
  * contract version. A refusal decodes successfully as `status: "unavailable"`.
  */
-export const decodeEditorAssetLocateResult = Schema.decodeUnknownEffect(EditorAssetLocateResult);
+export const decodeEditorAssetLocateResult = contractParser(
+	EditorAssetLocateResult,
+	"EditorAssetLocateResult"
+);

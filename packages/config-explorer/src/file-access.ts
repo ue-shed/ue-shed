@@ -11,7 +11,11 @@ export const ConfigErrorGuidanceFields = {
 
 export class ConfigFileAccessError extends Schema.TaggedError<ConfigFileAccessError>()(
 	"ConfigFileAccessError",
-	{ operation: Schema.Literals(["read", "list", "stat"]), ...ConfigErrorGuidanceFields }
+	{
+		operation: Schema.Literals(["read", "list", "stat"]),
+		...ConfigErrorGuidanceFields,
+		cause: Schema.optionalKey(Schema.Defect())
+	}
 ) {}
 
 export interface ConfigDirectoryEntry {
@@ -35,9 +39,11 @@ export class ConfigFileAccess extends Context.Service<ConfigFileAccess, ConfigFi
 /** Filesystem reads are repeatable; a transient lock or share violation may clear. */
 function fileError(
 	operation: ConfigFileAccessError["operation"],
-	message: string
+	message: string,
+	cause?: unknown
 ): ConfigFileAccessError {
 	return new ConfigFileAccessError({
+		...(cause === undefined ? undefined : { cause }),
 		operation,
 		message,
 		recovery: "Check that the path exists and is readable, then read it again.",
@@ -57,7 +63,8 @@ export const ConfigFileAccessLive = Layer.succeed(
 		isFile: Effect.fn("ConfigFileAccess.isFile")((path: string) =>
 			Effect.tryPromise({
 				try: () => stat(path).then((value) => value.isFile()),
-				catch: () => fileError("stat", "The selected project path could not be inspected.")
+				catch: (cause) =>
+					fileError("stat", "The selected project path could not be inspected.", cause)
 			})
 		),
 		list: Effect.fn("ConfigFileAccess.list")((path: string) =>
@@ -73,13 +80,15 @@ export const ConfigFileAccessLive = Layer.succeed(
 									: ("other" as const)
 						}))
 					),
-				catch: () => fileError("list", "A required config directory could not be listed.")
+				catch: (cause) =>
+					fileError("list", "A required config directory could not be listed.", cause)
 			})
 		),
 		readText: Effect.fn("ConfigFileAccess.readText")((path: string) =>
 			Effect.tryPromise({
 				try: (signal) => readFile(path, { encoding: "utf8", signal }),
-				catch: () => fileError("read", "A selected config file could not be read.")
+				catch: (cause) =>
+					fileError("read", "A selected config file could not be read.", cause)
 			})
 		)
 	})

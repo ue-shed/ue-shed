@@ -109,7 +109,7 @@ export class InvalidSessionIdError extends Schema.TaggedError<InvalidSessionIdEr
 
 export class SessionNotFoundError extends Schema.TaggedError<SessionNotFoundError>()(
 	"SessionNotFoundError",
-	{ sessionId: Schema.String, ...ErrorGuidanceFields }
+	{ sessionId: Schema.String, ...ErrorGuidanceFields, ...ErrorCauseFields }
 ) {}
 
 export class SessionCorruptError extends Schema.TaggedError<SessionCorruptError>()(
@@ -547,6 +547,7 @@ export function authoringSessionRepositoryLayer(
 					catch: (cause) =>
 						hasErrorCode(cause, "ENOENT")
 							? new SessionNotFoundError({
+									cause: cause,
 									message: `Authoring session ${sessionId} does not exist`,
 									recovery: "List project sessions or create a new one.",
 									retrySafe: false,
@@ -669,6 +670,7 @@ export function authoringSessionRepositoryLayer(
 					catch: (cause) =>
 						hasErrorCode(cause, "ENOENT")
 							? new SessionNotFoundError({
+									cause: cause,
 									message: `Authoring session ${sessionId} does not exist`,
 									recovery: "List project sessions or create a new one.",
 									retrySafe: false,
@@ -1035,6 +1037,7 @@ function makeAuthoringSessionServiceEffect(): Effect.Effect<
 											? Effect.succeed({ error, kind: "diagnostic" as const })
 											: Effect.fail(
 													new AuthoringSessionStorageError({
+														cause: error,
 														message: error.message,
 														operation: "list_entry",
 														recovery: error.recovery,

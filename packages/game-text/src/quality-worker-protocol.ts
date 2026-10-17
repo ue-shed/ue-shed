@@ -1,3 +1,4 @@
+import { snapshotStoreGuidance } from "./snapshot-store.js";
 import { Schema } from "effect";
 import { CultureCode, LocalizationTargetName } from "@ue-shed/localization/browser";
 import { TextCorpus, TextUnitId } from "./schema.js";
@@ -163,6 +164,8 @@ export function qualityWorkerFailure(operation: string, cause: unknown): Quality
 	return Schema.is(SnapshotStoreError)(cause) || Schema.is(SnapshotFormatError)(cause)
 		? cause
 		: new SnapshotStoreError({
+				retrySafe: snapshotStoreGuidance("unavailable").retrySafe,
+				nextStep: snapshotStoreGuidance("unavailable").nextStep,
 				operation,
 				code: "unavailable",
 				message: `The Game Text quality worker could not complete ${operation}.`,

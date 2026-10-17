@@ -24,12 +24,21 @@ import {
 	type CaptureRun
 } from "./review-schema.js";
 
+/**
+ * Default project-relative .ue-shed/review storage for review sets and immutable runs.
+ * Host-provided capture destinations can replace publication storage.
+ */
 export const DEFAULT_REVIEW_ROOT = ".ue-shed/review";
 
 function hasErrorCode(cause: unknown, code: string): boolean {
 	return cause instanceof Object && "code" in cause && cause.code === code;
 }
 
+/**
+ * Review repository operation/path failure retaining original IO/parser cause and recovery.
+ * Partial publication/cleanup failures must be reconciled before claiming a run was
+ * finalized.
+ */
 export class ReviewStorageError extends Schema.TaggedError<ReviewStorageError>()(
 	"ReviewStorageError",
 	{
@@ -52,6 +61,10 @@ export class ReviewStorageError extends Schema.TaggedError<ReviewStorageError>()
 	}
 ) {}
 
+/**
+ * Capture source is not authorized beneath the declared artifact root. Reject arbitrary
+ * producer paths rather than copying them into trusted run history.
+ */
 export class ReviewArtifactSourceRejected extends Schema.TaggedError<ReviewArtifactSourceRejected>()(
 	"ReviewArtifactSourceRejected",
 	{
@@ -166,6 +179,10 @@ function saveReviewSetWithNode(args: {
 	}).pipe(Effect.withSpan("camera.review.set.save", { attributes: { path: args.path } }));
 }
 
+/**
+ * Saved review-set listing with ID, display name, map, path and view count. Load the set for
+ * full approved poses and policy definitions.
+ */
 export interface ReviewSetSummary {
 	readonly displayName: string;
 	readonly id: ReviewSet["id"];
@@ -174,6 +191,10 @@ export interface ReviewSetSummary {
 	readonly viewCount: number;
 }
 
+/**
+ * Resolves the project-local review-set directory from an explicit project root. This pure
+ * path helper does not discover a project or create directories.
+ */
 export function reviewSetsRoot(projectRoot: string): string {
 	return resolve(projectRoot, DEFAULT_REVIEW_ROOT, "sets");
 }
@@ -276,6 +297,11 @@ function reviewSetSlug(displayName: string): string {
 	);
 }
 
+/**
+ * Loads a template through ReviewRepository, assigns a fresh ID and persists a named set
+ * under the explicit project. Does not change the host's active project or review-set
+ * selection automatically.
+ */
 export function createReviewSetFromTemplate(args: {
 	readonly displayName: string;
 	readonly projectRoot: string;
@@ -315,10 +341,18 @@ export function createReviewSetFromTemplate(args: {
 	);
 }
 
+/**
+ * Resolves the immutable capture-run root beneath an explicit project. Does not create a run
+ * or establish filesystem source authorization.
+ */
 export function captureRunsRoot(projectRoot: string): string {
 	return resolve(projectRoot, DEFAULT_REVIEW_ROOT, "runs");
 }
 
+/**
+ * Prepared staged run with authorized artifact ingestion, document writing, finalization and
+ * discard. A run is trusted history only after verified artifacts and finalization succeed.
+ */
 export interface ReviewCaptureAttempt {
 	readonly discard: () => Effect.Effect<void, ReviewStorageError>;
 	readonly finalize: (run: CaptureRun) => Effect.Effect<void, ReviewStorageError>;
@@ -337,6 +371,10 @@ export interface ReviewCaptureAttempt {
 	}) => Effect.Effect<void, ReviewStorageError>;
 }
 
+/**
+ * Host-owned run preparation and document-path policy. Enables alternative publication
+ * storage without coupling capture to Workbench or project picker state.
+ */
 export interface ReviewCaptureDestination {
 	readonly prepare: (
 		runId: CaptureRun["id"]
@@ -376,7 +414,8 @@ function destinationStorageError(args: {
 	readonly nextStep: ReviewStorageError["nextStep"];
 }): ReviewStorageError {
 	return new ReviewStorageError({
-		message: String(args.cause),
+		message: `Could not ${args.operation.replaceAll("_", " ")} review data at ${args.path}.`,
+		cause: args.cause,
 		nextStep: args.nextStep,
 		operation: args.operation,
 		path: args.path,
@@ -709,6 +748,10 @@ function loadCaptureRunWithNode(path: string): Effect.Effect<CaptureRun, ReviewS
 	);
 }
 
+/**
+ * Saved run listing with set/run identity, completion/status and success/failure counts. A
+ * completed_with_failures run retains useful successful artifacts and explicit failures.
+ */
 export interface CaptureRunSummary {
 	readonly completedAt: string;
 	readonly failedViews: number;
@@ -793,19 +836,37 @@ function listCaptureRunsWithNode(
 	);
 }
 
+/**
+ * Lexically checks strict path containment after resolution, excluding the root itself. This
+ * is not symlink/realpath authorization; IO boundaries must validate actual filesystem
+ * ownership separately.
+ */
 export function isPathWithin(root: string, path: string): boolean {
 	const child = relative(resolve(root), resolve(path));
 	return child !== "" && child !== ".." && !child.startsWith(`..${sep}`) && !isAbsolute(child);
 }
 
+/**
+ * Builds the default run.json destination from explicit project and already validated run ID.
+ * Does not reserve storage or validate arbitrary untrusted path components.
+ */
 export function captureRunPath(projectRoot: string, runId: string): string {
 	return join(captureRunsRoot(projectRoot), runId, "run.json");
 }
 
+/**
+ * Returns the parent directory name of a run document for display/lookup. Does not parse the
+ * document or validate that the directory is an authorized capture run.
+ */
 export function runIdFromPath(path: string): string {
 	return basename(dirname(path));
 }
 
+/**
+ * Review-set and immutable run storage with staged publication and verified artifact copying.
+ * Hosts may replace IO while preserving source authorization, migration and partial-write
+ * recovery.
+ */
 export interface ReviewRepositoryApi {
 	readonly discardStaging: (stagingRoot: string) => Effect.Effect<void, ReviewStorageError>;
 	readonly findSet: (path: string) => Effect.Effect<ReviewSet | undefined, ReviewStorageError>;
@@ -843,6 +904,10 @@ export interface ReviewRepositoryApi {
 /** @deprecated Use `ReviewRepositoryApi`. */
 export type ReviewRepositoryShape = ReviewRepositoryApi;
 
+/**
+ * Headless review persistence boundary. No operation requires a Workbench shell or maintains
+ * a separate active project.
+ */
 export class ReviewRepository extends Context.Service<ReviewRepository, ReviewRepositoryApi>()(
 	"@ue-shed/cameras/ReviewRepository"
 ) {}
@@ -966,6 +1031,11 @@ const makeReviewRepository = (): ReviewRepositoryApi => {
 	});
 };
 
+/**
+ * Node review repository with validated/migrated documents, scoped artifact-source checks and
+ * staged run finalization. Methods perform IO; construction does not create a project or
+ * capture.
+ */
 export const ReviewRepositoryLive = Layer.sync(ReviewRepository, makeReviewRepository);
 
 /** A test layer over a complete fake repository; the test decides every operation. */
@@ -975,18 +1045,30 @@ export function makeReviewRepositoryTestLayer(
 	return Layer.succeed(ReviewRepository, ReviewRepository.of(service));
 }
 
+/**
+ * Loads and validates/migrates a saved set through ReviewRepository. Missing or invalid input
+ * is a typed storage failure rather than an empty set.
+ */
 export function loadReviewSet(
 	path: string
 ): Effect.Effect<ReviewSet, ReviewStorageError, ReviewRepository> {
 	return Effect.flatMap(ReviewRepository, (repository) => repository.loadSet(path));
 }
 
+/**
+ * Looks up a set through ReviewRepository, returning undefined when absent.
+ * Corrupt/unreadable data remains a typed failure rather than being treated as absence.
+ */
 export function findReviewSet(
 	path: string
 ): Effect.Effect<ReviewSet | undefined, ReviewStorageError, ReviewRepository> {
 	return Effect.flatMap(ReviewRepository, (repository) => repository.findSet(path));
 }
 
+/**
+ * Persists a validated set at an explicit destination through ReviewRepository. Does not
+ * capture frames or change host project/set selection.
+ */
 export function saveReviewSet(args: {
 	readonly path: string;
 	readonly reviewSet: ReviewSet;
@@ -994,18 +1076,30 @@ export function saveReviewSet(args: {
 	return Effect.flatMap(ReviewRepository, (repository) => repository.saveSet(args));
 }
 
+/**
+ * Loads and validates/migrates immutable run history through ReviewRepository. Legacy missing
+ * realization remains explicit instead of being filled from today's approved pose.
+ */
 export function loadCaptureRun(
 	path: string
 ): Effect.Effect<CaptureRun, ReviewStorageError, ReviewRepository> {
 	return Effect.flatMap(ReviewRepository, (repository) => repository.loadRun(path));
 }
 
+/**
+ * Lists saved run summaries beneath an explicit project via ReviewRepository. Consumers load
+ * a run for its per-view artifacts and failure details.
+ */
 export function listCaptureRuns(
 	projectRoot: string
 ): Effect.Effect<readonly CaptureRunSummary[], ReviewStorageError, ReviewRepository> {
 	return Effect.flatMap(ReviewRepository, (repository) => repository.listRuns(projectRoot));
 }
 
+/**
+ * Lists saved set summaries beneath an explicit project via ReviewRepository. The result does
+ * not implicitly activate the first set.
+ */
 export function listReviewSets(
 	projectRoot: string
 ): Effect.Effect<readonly ReviewSetSummary[], ReviewStorageError, ReviewRepository> {

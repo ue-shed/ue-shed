@@ -2,10 +2,14 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { Effect, Schema } from "effect";
+import { ContractParseError } from "@ue-shed/protocol";
+import { decodeProvisionedCameraRequest } from "./provisioned-cameras-live.js";
 import {
 	decodeReviewAssessmentCapabilities,
 	decodeReviewCaptureRequest,
 	decodeReviewCaptureResponse,
+	decodeCaptureRunWithMigration,
+	decodeReviewSetWithMigration,
 	decodeReviewSelectionResponse,
 	decodeReviewSubjectInspectionResponse,
 	ReviewSubjectActorGuid,
@@ -31,6 +35,26 @@ const decodeSubject = (input: Schema.Json) =>
 	Effect.runSync(decodeReviewSubjectInspectionResponse(input));
 
 describe("Map Review language-neutral wire contracts", () => {
+	it("retains schema issues behind domain failures for strict and migrating parsers", async () => {
+		const failures = [
+			decodeReviewCaptureRequest(null).pipe(Effect.asVoid),
+			decodeReviewCaptureResponse(null).pipe(Effect.asVoid),
+			decodeReviewSetWithMigration(null).pipe(Effect.asVoid),
+			decodeCaptureRunWithMigration(null).pipe(Effect.asVoid),
+			decodeProvisionedCameraRequest(null).pipe(Effect.asVoid)
+		];
+		for (const parse of failures) {
+			const failure = await Effect.runPromise(Effect.flip(parse));
+			expect(Schema.is(ContractParseError)(failure)).toBe(true);
+			expect(failure).toMatchObject({
+				code: "invalid_contract",
+				retrySafe: false,
+				nextStep: "fix_input"
+			});
+			expect(Schema.isSchemaError(failure.cause)).toBe(true);
+		}
+	});
+
 	it("keeps operation UUIDs and actor GUID locators exact", () => {
 		// SAFETY: this checked-in schema document owns the properties inspected by the test.
 		const contract = json("capture-request.schema.json") as {

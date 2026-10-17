@@ -1,7 +1,5 @@
 // Named exports only. Modules not listed in an entry point are private to the package.
 
-export { columnarTextCorpusQuery } from "./columnar-query.js";
-
 export {
 	STRING_TABLE_CLASS,
 	type ScanTextCorpusOptions,
@@ -99,15 +97,13 @@ export { type GameTextProjectView } from "./project-index-view.js";
 
 export { TextRulesFileError, createStarterTextRules } from "./rules-file.js";
 
-export { makeGameTextSearchWorker } from "./search-worker-node.js";
-
 export { indexedSourceQuality } from "./source-quality-index.js";
 
 export { SnapshotFormatError } from "./snapshot-format.js";
 
 export { SnapshotStoreError } from "./snapshot-store.js";
 
-export { nativeIndexBuilderLayer } from "./native-index-builder.js";
+export { GameTextIndexBuilderLive, nativeIndexBuilderLayer } from "./native-index-builder.js";
 
 export {
 	GAME_TEXT_ACTIONS_CAPABILITY,

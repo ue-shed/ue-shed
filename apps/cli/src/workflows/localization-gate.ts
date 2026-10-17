@@ -62,6 +62,9 @@ export function localizationGateSummary(result: LocalizationGateResult): string 
 class LocalizationGateError extends Schema.TaggedError<LocalizationGateError>()(
 	"LocalizationGateError",
 	{
+		retrySafe: Schema.Boolean,
+		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		cause: Schema.optionalKey(Schema.Defect()),
 		code: Schema.Literals(["unreadable_evidence", "unreadable_package"]),
 		message: Schema.String,
 		recovery: Schema.String
@@ -73,6 +76,11 @@ const loadGate = Effect.fn("Cli.localization.gate")(function* (command: Localiza
 	if (both.length > 0)
 		return yield* Effect.fail(
 			new CliCommandError({
+				recovery:
+					"Inspect the command context and original cause before deciding whether to retry.",
+				retrySafe: false,
+				nextStep: "escalate",
+				code: "cli_command_failed",
 				message: `${both.join(", ")} cannot both fail and warn. Pass each check to --fail-on or --warn-on, not both.`
 			})
 		);
@@ -85,6 +93,8 @@ const loadGate = Effect.fn("Cli.localization.gate")(function* (command: Localiza
 	if (unknown.length > 0)
 		return yield* Effect.fail(
 			new GameTextLocalizationError({
+				retrySafe: false,
+				nextStep: "fix_input",
 				code: "target_not_found",
 				message: `The localization target ${unknown.join(", ")} was not found.`,
 				recovery: "Run loc targets and choose a listed target."
@@ -97,6 +107,8 @@ const loadGate = Effect.fn("Cli.localization.gate")(function* (command: Localiza
 	if (targets.length === 0)
 		return yield* Effect.fail(
 			new GameTextLocalizationError({
+				retrySafe: false,
+				nextStep: "fix_input",
 				code: "target_not_found",
 				message: "The project has no localization targets to check.",
 				recovery: "Set up a localization target in Unreal, or check the project root."
@@ -118,6 +130,8 @@ const loadGate = Effect.fn("Cli.localization.gate")(function* (command: Localiza
 	if (named !== undefined || ungathered.length === evidence.length)
 		return yield* Effect.fail(
 			new GameTextLocalizationError({
+				retrySafe: false,
+				nextStep: "fix_input",
 				code: "missing_manifest",
 				message: `${(named ?? ungathered[0])?.target.name ?? "The target"} has no manifest; Unreal has not gathered it.`,
 				recovery: "Run the target's Unreal gather configuration first."
@@ -144,6 +158,8 @@ const loadGate = Effect.fn("Cli.localization.gate")(function* (command: Localiza
 		);
 		return yield* Effect.fail(
 			new LocalizationGateError({
+				retrySafe: false,
+				nextStep: "fix_input",
 				code: "unreadable_evidence",
 				message: `Localization files could not be read: ${unread.join(", ")}. ${errors.map((error) => error.message).join(" ")}`,
 				recovery: [...new Set(errors.map((error) => error.recovery))].join(" ")
@@ -159,6 +175,8 @@ const loadGate = Effect.fn("Cli.localization.gate")(function* (command: Localiza
 	if (unscanned.length > 0)
 		return yield* Effect.fail(
 			new LocalizationGateError({
+				retrySafe: false,
+				nextStep: "fix_input",
 				code: "unreadable_package",
 				message: `Changed packages could not be read completely: ${unscanned.slice(0, 200).join(", ")}.${unscanned.length > 200 ? ` ${unscanned.length - 200} more packages omitted.` : ""}`,
 				recovery:

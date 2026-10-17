@@ -1,3 +1,4 @@
+import { ContractParseError } from "@ue-shed/protocol";
 import { Effect, Schema } from "effect";
 import {
 	decodeCompanionCapabilityManifest,
@@ -7,6 +8,11 @@ import {
 import { RemoteControlClient, RemoteControlClientError } from "@ue-shed/unreal-connection";
 import { MapCaptureSelection, MapCaptureReadiness } from "./map-capture-tools-schema.js";
 export * from "./map-capture-tools-schema.js";
+/**
+ * Capability, transport, map or response failure while inspecting capture
+ * selection/readiness. Carries original cause and guidance; inspection does not mutate or
+ * launch an editor.
+ */
 export class MapCaptureInspectionError extends Schema.TaggedError<MapCaptureInspectionError>()(
 	"MapCaptureInspectionError",
 	{ ...ErrorGuidanceFields, ...ErrorCauseFields }
@@ -24,7 +30,7 @@ const failure = (cause: unknown) =>
 					retrySafe: cause.retrySafe,
 					cause
 				})
-			: Schema.isSchemaError(cause)
+			: Schema.isSchemaError(cause) || Schema.is(ContractParseError)(cause)
 				? new MapCaptureInspectionError({
 						message:
 							"The editor returned a map capture inspection response that does not match this package.",
@@ -67,6 +73,11 @@ const negotiate = Effect.fn("MapCapture.inspect.negotiate")(function* (
 		);
 	return client;
 });
+/**
+ * Negotiates selection-inspection capability and reads selected actors/map bounds at an
+ * explicit endpoint. Returns unavailable selection explicitly rather than substituting
+ * another project or world.
+ */
 export const inspectMapCaptureSelection = Effect.fn("MapCapture.inspect.selection")(function* (
 	endpoint: string
 ) {
@@ -82,6 +93,10 @@ export const inspectMapCaptureSelection = Effect.fn("MapCapture.inspect.selectio
 		})
 		.pipe(Effect.flatMap(Schema.decodeUnknownEffect(MapCaptureSelection)));
 }, Effect.mapError(failure));
+/**
+ * Negotiates readiness capability for an expected /Game/ map path. Reports blockers from the
+ * actual connected editor before capture; it does not repair or switch maps automatically.
+ */
 export const inspectMapCaptureReadiness = Effect.fn("MapCapture.inspect.readiness")(function* (
 	endpoint: string,
 	expectedMapPath: string

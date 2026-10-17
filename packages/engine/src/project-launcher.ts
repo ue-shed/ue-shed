@@ -13,12 +13,21 @@ import {
 const PluginId = Schema.NonEmptyString.check(Schema.isPattern(/^[A-Za-z0-9_]+$/u));
 const HttpPort = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 65_534 }));
 
+/**
+ * Explicit plugin descriptor path and plugin ID for a launch. IDs are restricted to letters,
+ * digits and underscores; descriptor existence and binary compatibility are checked by the
+ * launcher.
+ */
 export const UnrealLaunchPlugin = Schema.Struct({
 	descriptor: Schema.NonEmptyString,
 	id: PluginId
 });
 export type UnrealLaunchPlugin = typeof UnrealLaunchPlugin.Type;
 
+/**
+ * Normal launch or explicit plugin-enabled launch, optionally with a Remote Control HTTP
+ * port. Plugin enablement is per launch rather than a persistent project-descriptor edit.
+ */
 export const UnrealProjectLaunchMode = Schema.Union([
 	Schema.Struct({ kind: Schema.Literal("normal") }),
 	Schema.Struct({
@@ -29,6 +38,10 @@ export const UnrealProjectLaunchMode = Schema.Union([
 ]);
 export type UnrealProjectLaunchMode = typeof UnrealProjectLaunchMode.Type;
 
+/**
+ * Explicit .uproject descriptor, launch mode and optional engine root. The launcher validates
+ * the request and installed binaries before spawning the editor.
+ */
 export const UnrealProjectLaunchRequest = Schema.Struct({
 	explicitEngineRoot: Schema.optional(Schema.NonEmptyString),
 	mode: UnrealProjectLaunchMode,
@@ -36,6 +49,10 @@ export const UnrealProjectLaunchRequest = Schema.Struct({
 });
 export type UnrealProjectLaunchRequest = typeof UnrealProjectLaunchRequest.Type;
 
+/**
+ * Spawned editor PID and resolved engine/executable/project paths. Successful spawning is not
+ * editor readiness; use EditorConnection or a supervised session for readiness evidence.
+ */
 export const UnrealProjectLaunchResult = Schema.Struct({
 	engineRoot: Schema.NonEmptyString,
 	executable: Schema.NonEmptyString,
@@ -45,6 +62,10 @@ export const UnrealProjectLaunchResult = Schema.Struct({
 });
 export type UnrealProjectLaunchResult = typeof UnrealProjectLaunchResult.Type;
 
+/**
+ * Launch validation, engine discovery, binary compatibility or spawn failure. Guidance
+ * identifies repairable input and uncertain spawning; cause retains the originating failure.
+ */
 export class UnrealProjectLaunchError extends Schema.TaggedError<UnrealProjectLaunchError>()(
 	"UnrealProjectLaunchError",
 	{
@@ -72,29 +93,49 @@ export class UnrealProjectLaunchError extends Schema.TaggedError<UnrealProjectLa
 ) {}
 const isUnrealProjectLaunchError = Schema.is(UnrealProjectLaunchError);
 
+/**
+ * Executable, working directory and literal argument array for an editor spawn. No shell
+ * command is constructed; these options do not themselves validate the project or engine.
+ */
 export interface UnrealProjectProcessLaunchOptions {
 	readonly args: readonly string[];
 	readonly cwd: string;
 	readonly executable: string;
 }
 
+/**
+ * Detached editor-spawn port returning its PID. For scope-owned termination and readiness,
+ * use SupervisedEditorSession rather than treating this PID as a managed session.
+ */
 export interface UnrealProjectProcessApi {
 	readonly launch: (
 		options: UnrealProjectProcessLaunchOptions
 	) => Effect.Effect<number, UnrealProjectLaunchError>;
 }
 
+/**
+ * Replaceable low-level detached editor launcher. Its lifecycle ends at spawning; it does not
+ * own the editor process tree after a successful launch.
+ */
 export class UnrealProjectProcess extends Context.Service<
 	UnrealProjectProcess,
 	UnrealProjectProcessApi
 >()("@ue-shed/engine/UnrealProjectProcess") {}
 
+/**
+ * Validates an explicit launch request, resolves the engine and starts the editor. A
+ * successful result proves spawn, not connection readiness or capability availability.
+ */
 export interface UnrealProjectLauncherApi {
 	readonly launch: (
 		request: UnrealProjectLaunchRequest
 	) => Effect.Effect<UnrealProjectLaunchResult, UnrealProjectLaunchError>;
 }
 
+/**
+ * High-level detached editor-launch port requiring engine discovery and a process-spawn
+ * implementation. It does not own host project selection.
+ */
 export class UnrealProjectLauncher extends Context.Service<
 	UnrealProjectLauncher,
 	UnrealProjectLauncherApi
@@ -124,7 +165,8 @@ function fromEngineDiscovery(cause: EngineInstallationError): UnrealProjectLaunc
 		cause.message,
 		cause.recovery,
 		cause.retrySafe,
-		cause.nextStep
+		cause.nextStep,
+		cause
 	);
 }
 
@@ -163,11 +205,14 @@ export const validateUnrealProjectBuildId = Effect.fn("UnrealProjectLauncher.val
 						throw cause;
 					}
 				},
-				catch: () =>
+				catch: (cause) =>
 					launchError(
 						"invalid_module_manifest",
 						`Cannot read module identity: ${path}`,
-						"Repair the engine or project build before launching."
+						"Repair the engine or project build before launching.",
+						false,
+						"fix_input",
+						cause
 					)
 			})
 		);
@@ -332,6 +377,7 @@ export const validateUnrealRemoteControlBuild = Effect.fn(
 			isUnrealProjectLaunchError(cause)
 				? cause
 				: new UnrealProjectLaunchError({
+						cause: cause,
 						code: "plugin_unavailable",
 						message: "Could not verify this engine's Remote Control installation.",
 						recovery:
@@ -343,6 +389,10 @@ export const validateUnrealRemoteControlBuild = Effect.fn(
 	})
 );
 
+/**
+ * Builds the platform-specific editor executable path under an engine root, using UE4Editor
+ * for UE4 and UnrealEditor for UE5. This pure helper does not check file existence.
+ */
 export function unrealEditorExecutable(
 	engineRoot: string,
 	platform = process.platform,
@@ -376,6 +426,11 @@ export function unrealEditorCommandletExecutable(
 	return join(engineRoot, "Engine", "Binaries", "Linux", name);
 }
 
+/**
+ * Builds per-launch plugin and Remote Control arguments, including HTTP and adjacent
+ * WebSocket ports. Accepts already validated input; does not persist settings or start a
+ * process.
+ */
 export function unrealRemoteControlArguments(
 	plugins: readonly UnrealLaunchPlugin[],
 	httpPort: number
@@ -392,6 +447,11 @@ export function unrealRemoteControlArguments(
 	];
 }
 
+/**
+ * Builds literal editor arguments for a validated normal or plugin-enabled request. Resolves
+ * descriptor paths and adds Remote Control configuration only when its port is explicitly
+ * requested.
+ */
 export function unrealProjectLaunchArguments(
 	request: UnrealProjectLaunchRequest
 ): readonly string[] {
@@ -411,6 +471,10 @@ export function unrealProjectLaunchArguments(
 	return args;
 }
 
+/**
+ * Spawns the editor without a shell, detaches it and returns its PID. Cancellation before
+ * settlement kills the pending child; a successfully detached editor remains running.
+ */
 export const UnrealProjectProcessLive = Layer.succeed(
 	UnrealProjectProcess,
 	UnrealProjectProcess.of({
@@ -449,7 +513,10 @@ export const UnrealProjectProcessLive = Layer.succeed(
 							launchError(
 								"spawn_failed",
 								`Unreal Editor could not be started: ${cause.message}`,
-								"Verify the selected engine installation and project descriptor."
+								"Verify the selected engine installation and project descriptor.",
+								false,
+								"fix_input",
+								cause
 							)
 						)
 					);
@@ -462,6 +529,11 @@ export const UnrealProjectProcessLive = Layer.succeed(
 	})
 );
 
+/**
+ * Validates project/plugin build identities and executable availability before delegating to
+ * UnrealProjectProcess. Requires EngineInstallationDiscovery and the process port; does not
+ * silently rebuild stale binaries.
+ */
 export const UnrealProjectLauncherLive = Layer.effect(
 	UnrealProjectLauncher,
 	Effect.gen(function* () {
@@ -499,11 +571,14 @@ export const UnrealProjectLauncherLive = Layer.effect(
 			);
 			yield* Effect.tryPromise({
 				try: () => access(executable),
-				catch: () =>
+				catch: (cause) =>
 					launchError(
 						"editor_missing",
 						"The selected Unreal installation has no runnable editor executable.",
-						"Choose a complete Unreal Editor installation."
+						"Choose a complete Unreal Editor installation.",
+						false,
+						"fix_input",
+						cause
 					)
 			});
 			const projectDescriptor = resolve(request.projectDescriptor);
@@ -539,12 +614,22 @@ export const UnrealProjectLauncherLive = Layer.effect(
 	})
 );
 
+/**
+ * Provides a complete explicit UnrealProjectProcess test port. The supplied implementation
+ * owns outcomes and synchronization; no missing operation falls back to the production
+ * service.
+ */
 export function makeUnrealProjectProcessTestLayer(
 	launch: UnrealProjectProcessApi["launch"]
 ): Layer.Layer<UnrealProjectProcess> {
 	return Layer.succeed(UnrealProjectProcess, UnrealProjectProcess.of({ launch }));
 }
 
+/**
+ * Provides a complete explicit UnrealProjectLauncher test port. The supplied implementation
+ * owns outcomes and synchronization; no missing operation falls back to the production
+ * service.
+ */
 export function makeUnrealProjectLauncherTestLayer(
 	service: UnrealProjectLauncherApi
 ): Layer.Layer<UnrealProjectLauncher> {

@@ -24,6 +24,11 @@ import {
 } from "./schema.js";
 import { discoverLocalizationTargets } from "./targets.js";
 
+/**
+ * Discovers targets, reports output presence and reads saved localization evidence. Partial
+ * per-file failures are retained in evidence; no operation runs an editor or modifies project
+ * files.
+ */
 export interface LocalizationEvidenceApi {
 	readonly discover: (
 		request: LocalizationProjectRequest
@@ -35,6 +40,10 @@ export interface LocalizationEvidenceApi {
 		request: LocalizationEvidenceRequest
 	) => Effect.Effect<LocalizationTargetEvidence, LocalizationError>;
 }
+/**
+ * Saved localization evidence service independent of Workbench and editor connectivity. Hosts
+ * supply the filesystem boundary and explicit project request.
+ */
 export class LocalizationEvidence extends Context.Service<
 	LocalizationEvidence,
 	LocalizationEvidenceApi
@@ -49,6 +58,11 @@ function boundary<S extends Schema.ConstraintDecoder<unknown>>(schema: S, input:
 	return Result.isFailure(parsed) ? Effect.fail(parsed.failure) : Effect.succeed(parsed.success);
 }
 
+/**
+ * Evidence parsing and target discovery over LocalizationFileAccess. Keeps per-file
+ * provenance and typed failures, instruments reads, and requires an explicit file-access
+ * layer.
+ */
 export const LocalizationEvidenceLive = Layer.effect(
 	LocalizationEvidence,
 	Effect.gen(function* () {
@@ -265,9 +279,17 @@ export const LocalizationEvidenceLive = Layer.effect(
 	})
 );
 
+/**
+ * Ready-to-use saved-evidence layer composed with Node project-contained file access. Reads
+ * project files only; commandlet execution is supplied by LocalizationOperations separately.
+ */
 export const LocalizationEvidenceNodeLive = LocalizationEvidenceLive.pipe(
 	Layer.provide(LocalizationFileAccessLive)
 );
+/**
+ * Provides all evidence operations from a supplied implementation. Tests must explicitly
+ * define discovery, presence and read behavior; there is no implicit production fallback.
+ */
 export function makeLocalizationEvidenceTestLayer(api: LocalizationEvidenceApi) {
 	return Layer.succeed(LocalizationEvidence, LocalizationEvidence.of(api));
 }

@@ -1,0 +1,195 @@
+{
+	"sourceHead": "10b1b92aa3e4aa7d469c5fbe006cdc949cdf8f8c",
+	"completedAtUtc": "2026-10-17T23:27:54.822124+00:00",
+	"sourceState": "Full native gate and fresh retained-fixture engine matrix completed on this source. A later CLI-only diagnostic routing fix is covered by the separately recorded postAcceptance verification; native/parser/engine implementations are unchanged.",
+	"portable": {
+		"command": "pnpm check",
+		"status": "passed",
+		"runtimeFilesPassed": 397,
+		"runtimeFilesSkipped": 16,
+		"runtimeTestsPassed": 2961,
+		"runtimeTestsSkipped": 55,
+		"responsivenessTestsPassed": 3,
+		"architectureTestsPassed": 65,
+		"releaseTestsPassed": 52,
+		"packedTarballs": 20,
+		"dataAuthoringDeclaredEntries": 131
+	},
+	"engineMatrix": {
+		"command": "pnpm test:uasset-engine-matrix",
+		"status": "passed",
+		"mode": "Fresh reflection verification of retained fixtures, codegen, native/WASM and saved-review parity. Saved assets and legacy fixtures were not regenerated.",
+		"results": [
+			{
+				"version": "5.7",
+				"status": "passed"
+			},
+			{
+				"version": "5.8",
+				"status": "passed"
+			},
+			{
+				"version": "4.27",
+				"status": "skipped",
+				"message": "No regeneration requested; saved legacy fixtures covered by portable audit."
+			},
+			{
+				"version": "5.3",
+				"status": "skipped",
+				"message": "No regeneration requested; saved legacy fixtures covered by portable audit."
+			}
+		],
+		"engineBuilds": {
+			"5.7": {
+				"MajorVersion": 5,
+				"MinorVersion": 7,
+				"PatchVersion": 4,
+				"Changelist": 51494982,
+				"CompatibleChangelist": 47537391,
+				"IsLicenseeVersion": 0,
+				"IsPromotedBuild": 1,
+				"BranchName": "++UE5+Release-5.7"
+			},
+			"5.8": {
+				"MajorVersion": 5,
+				"MinorVersion": 8,
+				"PatchVersion": 3,
+				"Changelist": 58210709,
+				"CompatibleChangelist": 55116800,
+				"IsLicenseeVersion": 0,
+				"IsPromotedBuild": 1,
+				"BranchName": "++UE5+Release-5.8"
+			}
+		}
+	},
+	"localLogs": [
+		{
+			"path": "E:\\us-audit-work\\full-check-9.log",
+			"bytes": 80584,
+			"sha256": "02aa9966dadfc035b5f100750f6c902591d545ea0c26adcc756e8ac7decb66be"
+		},
+		{
+			"path": "E:\\us-audit-work\\engine-matrix-9.log",
+			"bytes": 735,
+			"sha256": "43d42ba930cbb38c1af9834cc65ffccafb68783fc8468181ac827ebf9e1fdab0"
+		},
+		{
+			"path": "E:\\us-audit-work\\engine-checks\\uasset-engine-matrix-YOZ1Nr\\5.7\\engine-codegen.log",
+			"bytes": 2775,
+			"sha256": "0ac44ff2884ab4bba41fb69496daed46582cae23d7b982a715d43febdb9cbe1b"
+		},
+		{
+			"path": "E:\\us-audit-work\\engine-checks\\uasset-engine-matrix-YOZ1Nr\\5.7\\fixture-codegen.log",
+			"bytes": 2777,
+			"sha256": "5e02bd02671e7c40ae538a2ce031d01efeb58c1faf605e3acb564e7dac613586"
+		},
+		{
+			"path": "E:\\us-audit-work\\engine-checks\\uasset-engine-matrix-YOZ1Nr\\5.7\\verify-native.log",
+			"bytes": 33785,
+			"sha256": "b427793789f764412a1693f525d81f935ef4a79893943bf0a0141bda658ed6f0"
+		},
+		{
+			"path": "E:\\us-audit-work\\engine-checks\\uasset-engine-matrix-YOZ1Nr\\5.7\\verify-review.log",
+			"bytes": 33137,
+			"sha256": "cc2e469869bb883a69d03301cc8b395bd160d369551446f34836a299f76277ff"
+		},
+		{
+			"path": "E:\\us-audit-work\\engine-checks\\uasset-engine-matrix-YOZ1Nr\\5.7\\native-parity.log",
+			"bytes": 1329,
+			"sha256": "dd22aef38934f67c689612bdb8386f243e0248b996ce2032fe2e3fe99fb899e9"
+		},
+		{
+			"path": "E:\\us-audit-work\\engine-checks\\uasset-engine-matrix-YOZ1Nr\\5.7\\wasm-parity.log",
+			"bytes": 208,
+			"sha256": "f820b73dd9fbb212820a9e4ad1a9dba56990e17dc0738df6189adc628d222b4a"
+		},
+		{
+			"path": "E:\\us-audit-work\\engine-checks\\uasset-engine-matrix-YOZ1Nr\\5.7\\saved-review-parity.log",
+			"bytes": 175,
+			"sha256": "0447c0fe92aa66369cf9bac5d4e3c20afd3879707337904474cd0bd4bb848c08"
+		},
+		{
+			"path": "E:\\us-audit-work\\engine-checks\\uasset-engine-matrix-YOZ1Nr\\5.8\\engine-codegen.log",
+			"bytes": 2775,
+			"sha256": "7416e0e5af5fb186fe19522b4310ed4b11e12f488e50c3b17f3fd6bd04104618"
+		},
+		{
+			"path": "E:\\us-audit-work\\engine-checks\\uasset-engine-matrix-YOZ1Nr\\5.8\\fixture-codegen.log",
+			"bytes": 2777,
+			"sha256": "69cf9481c55d1f267593d38bce16548b66fc5beba9cba0b3dfccb5b4c86b25a2"
+		},
+		{
+			"path": "E:\\us-audit-work\\engine-checks\\uasset-engine-matrix-YOZ1Nr\\5.8\\verify-native.log",
+			"bytes": 30677,
+			"sha256": "0352c377a99c6263c59017b76cbaca31a1b6b88db7afad4d14e9a84c6e328135"
+		},
+		{
+			"path": "E:\\us-audit-work\\engine-checks\\uasset-engine-matrix-YOZ1Nr\\5.8\\verify-review.log",
+			"bytes": 30431,
+			"sha256": "39b4231e0ffe20cc03b24d3e9a1e649f7fcd7c398a0e3931ec90b3f0e06c69c5"
+		},
+		{
+			"path": "E:\\us-audit-work\\engine-checks\\uasset-engine-matrix-YOZ1Nr\\5.8\\native-parity.log",
+			"bytes": 1329,
+			"sha256": "4d5e48b11353a2576a48860885dfcf7fcb5448e58551d1def6a2017f2b463b63"
+		},
+		{
+			"path": "E:\\us-audit-work\\engine-checks\\uasset-engine-matrix-YOZ1Nr\\5.8\\wasm-parity.log",
+			"bytes": 208,
+			"sha256": "f820b73dd9fbb212820a9e4ad1a9dba56990e17dc0738df6189adc628d222b4a"
+		},
+		{
+			"path": "E:\\us-audit-work\\engine-checks\\uasset-engine-matrix-YOZ1Nr\\5.8\\saved-review-parity.log",
+			"bytes": 175,
+			"sha256": "820c34578d8c07ad7ca4a76faeca391a6225d57d2d619020433217b998cd982a"
+		}
+	],
+	"postAcceptance": {
+		"sourceHead": "df301c71e82ce7d51c399612d2a55f6aa64b5dca",
+		"completedAtUtc": "2026-10-17T23:47:04.410682+00:00",
+		"scope": "CLI diagnostics route to stderr without corrupting JSON receipts. Regression forces cache invalidation to fail after a successful physical PO write and retains recovery details.",
+		"repository": {
+			"command": "pnpm run check:repository",
+			"status": "passed",
+			"runtimeFilesPassed": 379,
+			"runtimeFilesSkipped": 34,
+			"runtimeTestsPassed": 2894,
+			"runtimeTestsSkipped": 123
+		},
+		"focusedCli": {
+			"status": "passed",
+			"nativeFreeTestsPassed": 21,
+			"nativeEnabledTestsPassed": 21,
+			"filesPerRun": 4
+		},
+		"nativeCliE2e": {
+			"command": "pnpm test:e2e:cli",
+			"status": "passed",
+			"filesPassed": 4,
+			"testsPassed": 16
+		},
+		"carriedForward": "Full native, packed-consumer, adoption and UE 5.7/5.8 acceptance from 10b1b92a. These surfaces were unchanged by this CLI-only fix and were not rerun.",
+		"localLogs": [
+			{
+				"path": "E:\\us-audit-work\\repository-check-10.log",
+				"bytes": 27173,
+				"sha256": "a8ce0fa996ddc495dd640b1b4967bec34bbfc550953063e6b52c426de2516a1a"
+			},
+			{
+				"path": "E:\\us-audit-work\\cli-output-fixed-10b.log",
+				"bytes": 414,
+				"sha256": "5131840076f294ce0ae075e6ff84db80feefee57d396e07c9da74495bd2b383f"
+			},
+			{
+				"path": "E:\\us-audit-work\\cli-native-focused-10.log",
+				"bytes": 357,
+				"sha256": "d4300a81fef7de25454d02daa64a21aba3404a730dc6514a6e397604f652dde1"
+			},
+			{
+				"path": "E:\\us-audit-work\\cli-native-e2e-10.log",
+				"bytes": 334,
+				"sha256": "98a01aa72a39fc94fe396e13721d51937d15ef8a22f96dc04ea01bfd1063bd86"
+			}
+		]
+	}
+}

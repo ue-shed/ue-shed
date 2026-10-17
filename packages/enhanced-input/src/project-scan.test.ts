@@ -6,7 +6,7 @@ import {
 	type SavedAssetScan,
 	type SavedAssetScanOptions
 } from "@ue-shed/unreal-assets";
-import { Effect, Ref } from "effect";
+import { Stream, Effect, Ref } from "effect";
 import { expect } from "vitest";
 import {
 	ENHANCED_INPUT_CLASS_PREFIX,
@@ -18,6 +18,30 @@ import {
 } from "./project.js";
 
 const unexpected = (operation: string) => Effect.die(new Error(`Unexpected ${operation} call`));
+
+it.effect("preserves reader failures without blaming the selected project", () =>
+	Effect.gen(function* () {
+		const original = new AssetReaderError({
+			code: "executable_missing",
+			kind: "process",
+			operation: "scan",
+			message: "The configured reader is unavailable.",
+			recovery: "Install the paired reader.",
+			retrySafe: false,
+			nextStep: "fix_input"
+		});
+		const failure = yield* Effect.flatMap(EnhancedInputService, (service) =>
+			service.scan({ projectRoot: "C:/Fixture" })
+		).pipe(
+			Effect.flip,
+			Effect.provide(EnhancedInputServiceLive),
+			Effect.provide(readerOffering(() => Effect.fail(original)))
+		);
+		expect(failure.code).toBe("reader_failed");
+		expect(failure.recovery).toBe(original.recovery);
+		expect(failure.cause).toBe(original);
+	})
+);
 
 const actionInspection: SavedAssetInspection = {
 	assets: [
@@ -52,6 +76,47 @@ const readerOffering = (
 	scanProject: (options: SavedAssetScanOptions) => Effect.Effect<SavedAssetScan, AssetReaderError>
 ) =>
 	makeAssetReaderTestLayer({
+		configuration: () =>
+			Effect.succeed({
+				executable: "uasset",
+				timeoutMs: 30_000,
+				catalogTimeoutMs: 50 * 60_000
+			}),
+		catalogProgress: () =>
+			Effect.succeed({
+				phase: "idle",
+				cacheHits: 0,
+				processedAssets: 0,
+				tablesFound: 0,
+				totalAssets: 0
+			}),
+		scanProgress: () =>
+			Effect.succeed({
+				phase: "idle",
+				cacheHits: 0,
+				emittedAssets: 0,
+				processedAssets: 0,
+				totalAssets: 0
+			}),
+		savedWorldProgress: () =>
+			Effect.succeed({
+				phase: "idle",
+				actorsFound: 0,
+				processedPackages: 0,
+				totalPackages: 0
+			}),
+		readBlueprint: () =>
+			Effect.die(new Error("Unexpected readBlueprint in this reader fixture")),
+		readLevelSequence: () =>
+			Effect.die(new Error("Unexpected readLevelSequence in this reader fixture")),
+		readSavedWorld: () =>
+			Effect.die(new Error("Unexpected readSavedWorld in this reader fixture")),
+		extractProjectText: () =>
+			Stream.die(new Error("Unexpected extractProjectText in this reader fixture")),
+		extractProjectTextPackages: () =>
+			Stream.die(new Error("Unexpected extractProjectTextPackages in this reader fixture")),
+		extractProjectTextures: () =>
+			Stream.die(new Error("Unexpected extractProjectTextures in this reader fixture")),
 		discoverAssets: () => unexpected("discoverAssets"),
 		discoverTables: () => unexpected("discoverTables"),
 		readAsset: () => unexpected("readAsset"),

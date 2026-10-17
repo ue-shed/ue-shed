@@ -85,6 +85,10 @@ function candidateFilters(kind: WorkbenchProjectCandidateKind): readonly Project
 export class WorkbenchProjectUnavailable extends Schema.TaggedError<WorkbenchProjectUnavailable>()(
 	"WorkbenchProjectUnavailable",
 	{
+		retrySafe: Schema.Boolean,
+		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		code: Schema.Literal("workbench_project_unavailable"),
+		cause: Schema.optionalKey(Schema.Defect()),
 		message: Schema.String,
 		recovery: Schema.String
 	}
@@ -190,6 +194,9 @@ export const WorkbenchProjectLive = Layer.effect(
 							) {
 								return Effect.fail(
 									new WorkbenchProjectUnavailable({
+										retrySafe: false,
+										nextStep: "escalate",
+										code: "workbench_project_unavailable",
 										message:
 											"Project Index returned a page from a different generation.",
 										recovery:
@@ -212,6 +219,10 @@ export const WorkbenchProjectLive = Layer.effect(
 						error._tag === "ProjectIndexStaleGeneration"
 							? error
 							: new WorkbenchProjectUnavailable({
+									cause: error,
+									retrySafe: false,
+									nextStep: "escalate",
+									code: "workbench_project_unavailable",
 									message: error.message,
 									recovery: error.recovery
 								})
@@ -237,6 +248,9 @@ export const WorkbenchProjectLive = Layer.effect(
 					.sort((left, right) => left.localeCompare(right));
 				if (paths.length !== summary.mapCount) {
 					return yield* new WorkbenchProjectUnavailable({
+						retrySafe: false,
+						nextStep: "escalate",
+						code: "workbench_project_unavailable",
 						message: "Project Index returned an incomplete map page set.",
 						recovery: "Refresh the Project Index, then retry the project summary."
 					});
@@ -373,6 +387,10 @@ export const WorkbenchProjectLive = Layer.effect(
 				Effect.mapError(
 					(error) =>
 						new WorkbenchProjectUnavailable({
+							cause: error,
+							retrySafe: false,
+							nextStep: "escalate",
+							code: "workbench_project_unavailable",
 							message: error.message,
 							recovery: error.recovery
 						})
@@ -380,12 +398,18 @@ export const WorkbenchProjectLive = Layer.effect(
 			);
 			if (Option.isNone(summary)) {
 				return yield* new WorkbenchProjectUnavailable({
+					retrySafe: false,
+					nextStep: "escalate",
+					code: "workbench_project_unavailable",
 					message: "Project Index refresh ended without a summary.",
 					recovery: "Retry the refresh. If it keeps failing, rebuild the Project Index."
 				});
 			}
 			if (summary.value.completeness !== "complete") {
 				return yield* new WorkbenchProjectUnavailable({
+					retrySafe: false,
+					nextStep: "escalate",
+					code: "workbench_project_unavailable",
 					message: "Project Index refresh completed with incomplete package coverage.",
 					recovery:
 						"Retry after resolving the Project Index diagnostics, then refresh again."
@@ -436,6 +460,10 @@ export const WorkbenchProjectLive = Layer.effect(
 							Effect.mapError(
 								(error) =>
 									new WorkbenchProjectUnavailable({
+										cause: error,
+										retrySafe: false,
+										nextStep: "escalate",
+										code: "workbench_project_unavailable",
 										message: error.message,
 										recovery: error.recovery
 									})
@@ -455,6 +483,10 @@ export const WorkbenchProjectLive = Layer.effect(
 						error._tag === "WorkbenchProjectUnavailable"
 							? error
 							: new WorkbenchProjectUnavailable({
+									cause: error,
+									retrySafe: false,
+									nextStep: "escalate",
+									code: "workbench_project_unavailable",
 									message: error.message,
 									recovery: error.recovery
 								})
@@ -469,6 +501,10 @@ export const WorkbenchProjectLive = Layer.effect(
 					Effect.mapError(
 						(error) =>
 							new WorkbenchProjectUnavailable({
+								cause: error,
+								retrySafe: false,
+								nextStep: "escalate",
+								code: "workbench_project_unavailable",
 								message: error.message,
 								recovery: error.recovery
 							})
@@ -521,6 +557,9 @@ export const WorkbenchProjectLive = Layer.effect(
 			const summary = yield* currentInventory(projectRoot);
 			if (summary.indexSummary === undefined) {
 				return yield* new WorkbenchProjectUnavailable({
+					retrySafe: false,
+					nextStep: "escalate",
+					code: "workbench_project_unavailable",
 					message: "Project Index summary is unavailable.",
 					recovery: "Refresh the Project Index, then retry Input Atlas."
 				});
@@ -535,6 +574,10 @@ export const WorkbenchProjectLive = Layer.effect(
 				Effect.mapError(
 					(error) =>
 						new WorkbenchProjectUnavailable({
+							cause: error,
+							retrySafe: false,
+							nextStep: "escalate",
+							code: "workbench_project_unavailable",
 							message: error.message,
 							recovery: error.recovery
 						})
@@ -692,6 +735,9 @@ export const WorkbenchProjectLive = Layer.effect(
 			const root = yield* Ref.get(selectedRoot);
 			if (Option.isNone(root))
 				return yield* new WorkbenchProjectUnavailable({
+					retrySafe: false,
+					nextStep: "escalate",
+					code: "workbench_project_unavailable",
 					message: "No Workbench project is selected.",
 					recovery: "Choose a project from the Workbench header, then retry."
 				});
@@ -703,6 +749,9 @@ export const WorkbenchProjectLive = Layer.effect(
 				const root = yield* Ref.get(selectedRoot);
 				if (Option.isNone(root)) {
 					return yield* new WorkbenchProjectUnavailable({
+						retrySafe: false,
+						nextStep: "escalate",
+						code: "workbench_project_unavailable",
 						message: "No Workbench project is selected.",
 						recovery: "Choose a project from the Workbench header, then retry."
 					});
@@ -749,6 +798,9 @@ export const WorkbenchProjectLive = Layer.effect(
 				const summary = yield* selected();
 				if (summary.indexSummary === undefined) {
 					return yield* new WorkbenchProjectUnavailable({
+						retrySafe: false,
+						nextStep: "escalate",
+						code: "workbench_project_unavailable",
 						message: "Project Index summary is unavailable.",
 						recovery: "Refresh the Project Index, then retry the feature."
 					});
@@ -762,6 +814,10 @@ export const WorkbenchProjectLive = Layer.effect(
 								Effect.mapError(
 									(error) =>
 										new WorkbenchProjectUnavailable({
+											cause: error,
+											retrySafe: false,
+											nextStep: "escalate",
+											code: "workbench_project_unavailable",
 											message: error.message,
 											recovery: error.recovery
 										})
@@ -775,6 +831,9 @@ export const WorkbenchProjectLive = Layer.effect(
 							if (latest.indexSummary === undefined) {
 								return yield* Effect.fail(
 									new WorkbenchProjectUnavailable({
+										retrySafe: false,
+										nextStep: "escalate",
+										code: "workbench_project_unavailable",
 										message: "Project Index summary is unavailable.",
 										recovery:
 											"Refresh the Project Index, then retry the feature."
@@ -788,6 +847,10 @@ export const WorkbenchProjectLive = Layer.effect(
 						error._tag === "WorkbenchProjectUnavailable"
 							? error
 							: new WorkbenchProjectUnavailable({
+									cause: error,
+									retrySafe: false,
+									nextStep: "escalate",
+									code: "workbench_project_unavailable",
 									message: error.message,
 									recovery: error.recovery
 								})
@@ -822,6 +885,9 @@ export const WorkbenchProjectLive = Layer.effect(
 			const root = yield* Ref.get(selectedRoot);
 			if (Option.isNone(root)) {
 				return yield* new WorkbenchProjectUnavailable({
+					retrySafe: false,
+					nextStep: "escalate",
+					code: "workbench_project_unavailable",
 					message: "No Workbench project is selected.",
 					recovery: "Choose a project from the Workbench header, then retry."
 				});
@@ -833,7 +899,12 @@ export const WorkbenchProjectLive = Layer.effect(
 		const savedTables = Effect.fn("Workbench.WorkbenchProject.savedTables")(function* () {
 			const refreshed = yield* refresh();
 			if (refreshed.status === "failed")
-				return yield* new WorkbenchProjectUnavailable(refreshed.error);
+				return yield* new WorkbenchProjectUnavailable({
+					retrySafe: false,
+					nextStep: "escalate",
+					code: "workbench_project_unavailable",
+					...refreshed.error
+				});
 			const summary = yield* selected();
 			const index = yield* candidates("saved_tables");
 			const paths = index.assets.map((entry) => entry.header.path);
@@ -848,6 +919,10 @@ export const WorkbenchProjectLive = Layer.effect(
 					Effect.mapError(
 						(error) =>
 							new WorkbenchProjectUnavailable({
+								cause: error,
+								retrySafe: false,
+								nextStep: "escalate",
+								code: "workbench_project_unavailable",
 								message: error.message,
 								recovery:
 									"Retry after checking that the saved-asset worker can read the candidate tables."
@@ -908,6 +983,9 @@ export function makeWorkbenchProjectTestLayer(
 	const unindexed = () =>
 		Effect.fail(
 			new WorkbenchProjectUnavailable({
+				retrySafe: false,
+				nextStep: "escalate",
+				code: "workbench_project_unavailable",
 				message: "This project has no Project Index.",
 				recovery: "Refresh the project to build its Project Index."
 			})
@@ -953,6 +1031,9 @@ export function makeWorkbenchProjectTestLayer(
 							};
 						return yield* Effect.fail(
 							new WorkbenchProjectUnavailable({
+								retrySafe: false,
+								nextStep: "escalate",
+								code: "workbench_project_unavailable",
 								message: "No Workbench project is selected.",
 								recovery: "Choose a project from the Workbench header, then retry."
 							})

@@ -17,6 +17,9 @@ const isLocalizationReportError = Schema.is(LocalizationReportError);
 export class LocalizationBaselineIOError extends Schema.TaggedError<LocalizationBaselineIOError>()(
 	"LocalizationBaselineIOError",
 	{
+		retrySafe: Schema.Boolean,
+		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		cause: Schema.optionalKey(Schema.Defect()),
 		code: Schema.Literals([
 			"baseline_exists",
 			"baseline_unreadable",
@@ -28,8 +31,14 @@ export class LocalizationBaselineIOError extends Schema.TaggedError<Localization
 		recovery: Schema.String
 	}
 ) {}
-function ioError(code: LocalizationBaselineIOError["code"]): LocalizationBaselineIOError {
+function ioError(
+	code: LocalizationBaselineIOError["code"],
+	cause?: unknown
+): LocalizationBaselineIOError {
 	return new LocalizationBaselineIOError({
+		...(cause === undefined ? undefined : { cause }),
+		retrySafe: false,
+		nextStep: "fix_input",
 		code,
 		message: "The localization baseline file operation could not complete.",
 		recovery:
@@ -45,7 +54,7 @@ export const writeLocalizationBaseline = Effect.fn("Cli.localization.write_basel
 	const fs = yield* FileSystem.FileSystem;
 	const json = yield* Schema.encodeEffect(Schema.fromJsonString(LocalizationBaseline))(
 		baseline
-	).pipe(Effect.mapError(() => ioError("baseline_unwritable")));
+	).pipe(Effect.mapError((cause) => ioError("baseline_unwritable", cause)));
 	if (new TextEncoder().encode(json).length > 32 * 1024 * 1024)
 		return yield* Effect.fail(ioError("baseline_limit"));
 	yield* fs
@@ -55,7 +64,8 @@ export const writeLocalizationBaseline = Effect.fn("Cli.localization.write_basel
 				ioError(
 					error.reason._tag === "AlreadyExists"
 						? "baseline_exists"
-						: "baseline_unwritable"
+						: "baseline_unwritable",
+					error
 				)
 			)
 		);
@@ -64,16 +74,21 @@ export const readLocalizationBaseline = Effect.fn("Cli.localization.read_baselin
 	path: string
 ) {
 	const fs = yield* FileSystem.FileSystem;
-	const stat = yield* fs.stat(path).pipe(Effect.mapError(() => ioError("baseline_unreadable")));
+	const stat = yield* fs
+		.stat(path)
+		.pipe(Effect.mapError((cause) => ioError("baseline_unreadable", cause)));
 	if (stat.size > 32 * 1024 * 1024) return yield* Effect.fail(ioError("baseline_limit"));
 	const bytes = yield* fs
 		.readFile(path)
-		.pipe(Effect.mapError(() => ioError("baseline_unreadable")));
+		.pipe(Effect.mapError((cause) => ioError("baseline_unreadable", cause)));
 	if (bytes.length > 32 * 1024 * 1024) return yield* Effect.fail(ioError("baseline_limit"));
 	const text = yield* Effect.try({
 		try: () => new TextDecoder("utf-8", { fatal: true }).decode(bytes),
-		catch: () =>
+		catch: (cause) =>
 			new LocalizationReportError({
+				cause,
+				retrySafe: false,
+				nextStep: "fix_input",
 				code: "invalid_baseline",
 				message: "The baseline is not valid UTF-8.",
 				recovery: "Regenerate a version-1 baseline as UTF-8 JSON."
@@ -99,6 +114,9 @@ export const runLocalizationReport = Effect.fn("Cli.workflow.localization_report
 							isLocalizationReportError(error)
 								? error
 								: new LocalizationReportError({
+										cause: error,
+										retrySafe: false,
+										nextStep: "fix_input",
 										code: "invalid_report_context",
 										message:
 											"The localization report could not be constructed.",
@@ -118,6 +136,9 @@ export const runLocalizationReport = Effect.fn("Cli.workflow.localization_report
 								isLocalizationReportError(error)
 									? error
 									: new LocalizationReportError({
+											cause: error,
+											retrySafe: false,
+											nextStep: "fix_input",
 											code: "invalid_baseline",
 											message: "The baseline could not be constructed.",
 											recovery: "Refresh manifest evidence and retry."

@@ -9,7 +9,7 @@ import {
 	type OwnedProcessTreeHandle,
 	type OwnedProcessTreeLaunchOptions
 } from "@ue-shed/engine";
-import { Deferred, Effect, Fiber, Layer } from "effect";
+import { Deferred, Effect, Fiber, Layer, Schema } from "effect";
 import { afterEach, describe, expect, it } from "vitest";
 import {
 	CompiledPluginBuildCancelled,
@@ -547,7 +547,10 @@ describe("compiled plugin builder", () => {
 		);
 		expect(error).toBeInstanceOf(InvalidCompiledPluginBuild);
 		expect(error.stage).toBe("archive");
-		expect(error.message).toContain("file-size limit");
+		expect(error).toHaveProperty("cause");
+		if (!Schema.is(InvalidCompiledPluginBuild)(error))
+			throw new Error("Expected invalid build");
+		expect(error.cause).toMatchObject({ message: expect.stringContaining("file-size limit") });
 		expect(await readdir(source.request.outputDirectory)).toEqual([]);
 	});
 });

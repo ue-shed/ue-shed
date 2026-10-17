@@ -1,4 +1,9 @@
 import { Schema } from "effect";
+/**
+ * Unavailable selection or ready map bounds with selected actor identities and skipped paths.
+ * Ready requires at least one supported actor; selection remains editor evidence, not a host
+ * project choice.
+ */
 export const MapCaptureSelection = Schema.Union([
 	Schema.Struct({
 		schemaVersion: Schema.Literal(1),
@@ -33,6 +38,10 @@ export const MapCaptureSelection = Schema.Union([
 	})
 ]);
 export type MapCaptureSelection = typeof MapCaptureSelection.Type;
+/**
+ * Lit-camera backend readiness with actual map and blockers. Validation requires ready to
+ * agree with the absence of blockers so callers cannot ignore contradictory evidence.
+ */
 export const MapCaptureReadiness = Schema.Struct({
 	schemaVersion: Schema.Literal(1),
 	backend: Schema.Literal("lit_camera_tiles"),

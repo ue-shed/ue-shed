@@ -1,3 +1,4 @@
+import { ContractParseError } from "@ue-shed/protocol";
 import { createHash } from "node:crypto";
 import { readFile, realpath, stat } from "node:fs/promises";
 import { resolve, relative, isAbsolute } from "node:path";
@@ -81,6 +82,11 @@ export function cameraRenderReuseIdentity(args: {
 		.digest("hex")}`;
 }
 
+/**
+ * Rendering capability, policy, session/correlation, artifact or restoration failure with
+ * original cause and optional native failure evidence. Lost mutation replies require
+ * reconciliation rather than automatic replay.
+ */
 export class CameraRenderError extends Schema.TaggedError<CameraRenderError>()(
 	"CameraRenderError",
 	{
@@ -138,7 +144,7 @@ function renderError(
 	if (isCameraRenderError(cause)) return cause;
 	// Capability and preflight reads hold no editor state; later operations may have acquired it.
 	const readOnly = operation === "capabilities" || operation === "preflight";
-	if (Schema.isSchemaError(cause))
+	if (Schema.isSchemaError(cause) || Schema.is(ContractParseError)(cause))
 		return new CameraRenderError({
 			code: "render_response_invalid",
 			operation,
@@ -228,6 +234,7 @@ function nativeError(
 	return new CameraRenderError({
 		...failure,
 		...nativeRenderGuidance(operation, failure),
+		cause: failure,
 		operation,
 		nativeFailure: failure
 	});
@@ -291,6 +298,11 @@ function unsupportedRendererPolicy(
 	});
 }
 
+/**
+ * Scope-owned render session with resolved policy, progress stream and correlated frame
+ * capture. Its validity ends with the acquisition scope; closing restores temporary editor
+ * state.
+ */
 export interface CameraRenderSession {
 	readonly id: CameraRenderSessionId;
 	readonly resolvedPolicy: CameraRenderPolicy;
@@ -299,6 +311,10 @@ export interface CameraRenderSession {
 		request: CameraFrameRequest
 	) => Effect.Effect<CameraFrameResult, CameraRenderError>;
 }
+/**
+ * Capability/preflight reads and scoped render-session acquisition. An opened session must be
+ * kept inside its Scope so success, failure and interruption all trigger restoration.
+ */
 export interface CameraRendererApi {
 	readonly capabilities: () => Effect.Effect<CameraRenderCapabilities, CameraRenderError>;
 	readonly preflight: (
@@ -308,10 +324,18 @@ export interface CameraRendererApi {
 		request: CameraRenderSessionRequest
 	) => Effect.Effect<CameraRenderSession, CameraRenderError, Scope.Scope>;
 }
+/**
+ * Backend-neutral scoped camera rendering port. Host composition supplies transport and
+ * endpoint without making Workbench privileged.
+ */
 export class CameraRenderer extends Context.Service<CameraRenderer, CameraRendererApi>()(
 	"@ue-shed/cameras/CameraRenderer"
 ) {}
 
+/**
+ * Provides a camera renderer for an explicit endpoint using RemoteControlClient. Construction
+ * does not open a render session or mutate editor state.
+ */
 export function cameraRendererLayer(
 	endpoint: string
 ): Layer.Layer<CameraRenderer, never, RemoteControlClient> {
@@ -323,10 +347,19 @@ export function cameraRendererLayer(
 		})
 	);
 }
+/**
+ * Provides all renderer capability, preflight and session-acquisition behavior explicitly.
+ * Tests must model scoped lifecycle and failures rather than falling back to a live editor.
+ */
 export function cameraRendererTestLayer(api: CameraRendererApi): Layer.Layer<CameraRenderer> {
 	return Layer.succeed(CameraRenderer, CameraRenderer.of(api));
 }
 
+/**
+ * Builds the validated Remote Control renderer, including capability negotiation, correlated
+ * polling and artifact identity/PNG checks. Session acquisition attaches close/restoration to
+ * the owning scope.
+ */
 export function makeCameraRenderer(
 	client: RemoteControlClientApi,
 	endpoint: string

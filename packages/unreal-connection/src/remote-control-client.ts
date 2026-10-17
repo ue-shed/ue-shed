@@ -1,21 +1,41 @@
 import { Config, Context, Duration, Effect, Layer, Schema } from "effect";
-import { ErrorGuidanceFields, type ErrorNextStep } from "@ue-shed/protocol";
+import { ErrorCauseFields, ErrorGuidanceFields, type ErrorNextStep } from "@ue-shed/protocol";
 import { TransportRequestError, UnrealRC } from "unreal-rc";
 
 const RemoteCallEnvelope = Schema.Struct({ ResultJson: Schema.String });
 const decodeRemoteCallEnvelope = Schema.decodeUnknownEffect(RemoteCallEnvelope);
 
+/**
+ * Classified HTTP, connection or response-contract failure with endpoint/function context and
+ * the original cause. An interrupted or malformed mutation reply can follow an applied change:
+ * honor nextStep before sending it again.
+ */
 export class RemoteControlClientError extends Schema.TaggedError<RemoteControlClientError>()(
 	"RemoteControlClientError",
 	{
+		code: Schema.Literals([
+			"transport_failed",
+			"http_decode_failed",
+			"http_refused",
+			"connection_failed",
+			"request_timeout",
+			"invalid_envelope",
+			"invalid_result_json"
+		]),
 		endpoint: Schema.String,
 		functionName: Schema.String,
 		operation: Schema.String,
 		status: Schema.optional(Schema.Number),
-		...ErrorGuidanceFields
+		...ErrorGuidanceFields,
+		...ErrorCauseFields
 	}
 ) {}
 
+/**
+ * One UFUNCTION call at an explicit editor endpoint. Timeout overrides the client's default;
+ * idempotent is an explicit caller guarantee used for recovery guidance. The adapter never
+ * retries automatically.
+ */
 export interface RemoteControlRequest {
 	readonly endpoint: string;
 	readonly functionName: string;
@@ -27,6 +47,11 @@ export interface RemoteControlRequest {
 	readonly idempotent?: boolean;
 }
 
+/**
+ * Effect port for one Remote Control call. It validates the ResultJson envelope and JSON
+ * result, scopes the upstream HTTP client, and reports expected failures as
+ * RemoteControlClientError.
+ */
 export interface RemoteControlClientApi {
 	readonly request: (
 		request: RemoteControlRequest
@@ -36,6 +61,10 @@ export interface RemoteControlClientApi {
 /** @deprecated Use `RemoteControlClientApi`. */
 export type RemoteControlClientShape = RemoteControlClientApi;
 
+/**
+ * Transport service required by live Unreal domain layers. Provide a production or complete
+ * test layer; obtaining the service does not start an editor or send a request.
+ */
 export class RemoteControlClient extends Context.Service<
 	RemoteControlClient,
 	RemoteControlClientApi
@@ -51,6 +80,8 @@ function normalizedEndpoint(endpoint: string): string {
 function clientError(
 	request: RemoteControlRequest,
 	fields: {
+		readonly code: RemoteControlClientError["code"];
+		readonly cause: unknown;
 		readonly message: string;
 		readonly recovery: string;
 		readonly retrySafe: boolean;
@@ -59,6 +90,8 @@ function clientError(
 	}
 ): RemoteControlClientError {
 	return new RemoteControlClientError({
+		code: fields.code,
+		cause: fields.cause,
 		endpoint: normalizedEndpoint(request.endpoint),
 		functionName: request.functionName,
 		message: fields.message,
@@ -73,7 +106,9 @@ function clientError(
 function transportError(request: RemoteControlRequest, cause: unknown): RemoteControlClientError {
 	if (!(cause instanceof TransportRequestError)) {
 		return clientError(request, {
-			message: `Remote Control transport failed: ${String(cause)}`,
+			code: "transport_failed",
+			cause,
+			message: `Remote Control could not complete ${request.functionName} at ${request.endpoint}.`,
 			recovery:
 				request.idempotent === true
 					? "Confirm the editor is running with the Remote Control API enabled; report the error if it persists."
@@ -85,7 +120,9 @@ function transportError(request: RemoteControlRequest, cause: unknown): RemoteCo
 
 	if (cause.kind === "decode") {
 		return clientError(request, {
-			message: `Invalid Remote Control HTTP JSON: ${cause.message}`,
+			code: "http_decode_failed",
+			cause,
+			message: `The editor at ${request.endpoint} returned malformed HTTP JSON for ${request.functionName}.`,
 			recovery:
 				request.idempotent === true
 					? malformedResponseRecovery
@@ -103,10 +140,17 @@ function transportError(request: RemoteControlRequest, cause: unknown): RemoteCo
 		cause.kind === "timeout" ||
 		(status !== undefined && status >= 500);
 	return clientError(request, {
+		code:
+			cause.kind === "timeout"
+				? "request_timeout"
+				: status !== undefined
+					? "http_refused"
+					: "connection_failed",
+		cause,
 		message:
 			status === undefined
-				? cause.message
-				: `Remote Control returned HTTP ${status}: ${cause.message}`,
+				? `Remote Control ${request.functionName} at ${request.endpoint} failed (${cause.kind}).`
+				: `Remote Control ${request.functionName} at ${request.endpoint} returned HTTP ${status}.`,
 		recovery:
 			!request.idempotent && transient
 				? "The editor may have applied this request. Inspect the current editor state and reconcile the outcome before sending it again."
@@ -119,6 +163,11 @@ function transportError(request: RemoteControlRequest, cause: unknown): RemoteCo
 	});
 }
 
+/**
+ * Creates the Effect HTTP adapter with an explicit default timeout. Each request scopes its
+ * upstream client, validates both JSON boundaries, and disables upstream retries, including for
+ * idempotent calls.
+ */
 export function makeRemoteControlClient(options: {
 	readonly defaultTimeout: Duration.Input;
 }): RemoteControlClientApi {
@@ -163,7 +212,9 @@ export function makeRemoteControlClient(options: {
 			const envelope = yield* decodeRemoteCallEnvelope(response).pipe(
 				Effect.mapError((cause) =>
 					clientError(request, {
-						message: `Invalid Remote Control envelope: ${String(cause)}`,
+						code: "invalid_envelope",
+						cause,
+						message: `The editor's ${request.functionName} reply has no valid ResultJson envelope.`,
 						recovery:
 							request.idempotent === true
 								? malformedResponseRecovery
@@ -177,7 +228,9 @@ export function makeRemoteControlClient(options: {
 				try: () => Schema.decodeUnknownSync(Schema.Json)(JSON.parse(envelope.ResultJson)),
 				catch: (cause) =>
 					clientError(request, {
-						message: `Invalid Remote Control JSON: ${String(cause)}`,
+						code: "invalid_result_json",
+						cause,
+						message: `The ResultJson returned by ${request.functionName} is not valid JSON.`,
 						recovery:
 							request.idempotent === true
 								? malformedResponseRecovery
@@ -205,6 +258,11 @@ const defaultTimeout = Config.Duration("UE_SHED_REMOTE_CONTROL_TIMEOUT").pipe(
 	Config.withDefault(Duration.seconds(10))
 );
 
+/**
+ * Production HTTP transport. Reads UE_SHED_REMOTE_CONTROL_TIMEOUT as an Effect duration
+ * (default 10 seconds); per-request timeouts override it. Each call owns and disposes its
+ * transport resources.
+ */
 export const RemoteControlClientLive = Layer.effect(
 	RemoteControlClient,
 	Effect.gen(function* () {
@@ -212,6 +270,10 @@ export const RemoteControlClientLive = Layer.effect(
 	})
 );
 
+/**
+ * Complete test implementation of the request port. The supplied handler owns responses, typed
+ * failures and synchronization; no unstubbed production operation is used as a fallback.
+ */
 export function makeRemoteControlClientTestLayer(
 	handle: RemoteControlClientApi["request"]
 ): Layer.Layer<RemoteControlClient> {

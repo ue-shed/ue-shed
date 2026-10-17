@@ -6,6 +6,7 @@ import { after, before, test } from "node:test";
 import {
 	checkCatalogUsage,
 	checkErrorGuidance,
+	checkErrorTranslationCauses,
 	checkGameTextEntryPoints,
 	checkCompositionPolicy,
 	checkDecoderExports,
@@ -17,6 +18,44 @@ import {
 } from "./check-effect-architecture.ts";
 
 let root = "";
+
+test("error translation retains the original failure in mapError and IO catches", async () => {
+	const fixtureRoot = await mkdtemp(join(tmpdir(), "ue-shed-error-causes-"));
+	try {
+		const source = join(fixtureRoot, "packages/example/src");
+		await mkdir(source, { recursive: true });
+		await mkdir(join(fixtureRoot, "apps"));
+		await mkdir(join(fixtureRoot, "extensions"));
+		await writeFile(
+			join(source, "use.ts"),
+			[
+				"const a = Effect.mapError((error) => new ReadError({message: error.message}));",
+				"const b = Effect.tryPromise({try: read, catch: () => new ReadError({message: 'failed'})});",
+				"const c = Effect.mapError((cause) => new ReadError({message: 'failed', cause}));",
+				"const d = Effect.tryPromise({try: read, catch: (cause) => new ReadError({message: 'failed', cause})});",
+				"const expected = () => new ReadError({message: 'no selection'});",
+				"const spread = Effect.mapError((cause) => new ReadError({...guidance, message: cause.message}));",
+				"function helper(error: ReadError) { return new ReadError({message: error.message}); }",
+				"function complete(options: {readonly cause: unknown}) { return new ReadError({...options,message: 'failed'}); }",
+				"function local(cause: unknown) { const fields = {cause}; return new ReadError({...fields,message: 'failed'}); }",
+				"function optional(cause?: unknown) { return new ReadError({...(cause === undefined ? undefined : {cause}), message: 'failed'}); }",
+				"const status = Effect.mapError((cause) => new ReadError({...(cause.status === undefined ? undefined : {status: cause.status}), message: cause.message}));",
+				'class ReaderUnavailable extends Schema.TaggedError<ReaderUnavailable>()("ReaderUnavailable", {}) {}',
+				"const tagged = Effect.mapError((cause) => new ReaderUnavailable({message: cause.message}));"
+			].join("\n")
+		);
+		assert.deepEqual(await checkErrorTranslationCauses(fixtureRoot), [
+			"packages/example/src/use.ts:1: error translation must retain its original cause",
+			"packages/example/src/use.ts:2: error translation must retain its original cause",
+			"packages/example/src/use.ts:6: error translation must retain its original cause",
+			"packages/example/src/use.ts:7: error translation must retain its original cause",
+			"packages/example/src/use.ts:11: error translation must retain its original cause",
+			"packages/example/src/use.ts:13: error translation must retain its original cause"
+		]);
+	} finally {
+		await rm(fixtureRoot, { recursive: true, force: true });
+	}
+});
 
 test("the localization browser entry and Config Explorer dependency are browser-safe", async () => {
 	assert.deepEqual(await checkLocalizationBoundaries(), []);
@@ -116,6 +155,8 @@ test("browser import scanning distinguishes module syntax from strings and comme
 				'export const isImport = (operation: string) => operation === "import" || operation === "export";',
 				'export const label = \'import("node:fs") from ","\';',
 				'export const template = `import("node:fs")`;',
+				"/** Runs in a browser process. No Node API is required. */",
+				'export const processExample = "process.env.EXAMPLE";',
 				'// import { readFile } from "node:fs/promises";',
 				'/* export * from "electron"; */'
 			].join("\n")

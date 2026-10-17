@@ -1,8 +1,10 @@
+import { snapshotStoreGuidance } from "./snapshot-store.js";
 import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { Context, Effect, Layer, Option, Schema } from "effect";
+import { Context, Effect, Exit, Layer, Option, Schema } from "effect";
 import {
+	AssetReader,
 	NativeGameTextIndexClient,
 	nativeGameTextIndexClientLayer,
 	encodeGameTextJoinInput,
@@ -21,7 +23,7 @@ import {
 	type SharedIndexOptions,
 	type SharedIndexWriter
 } from "./shared-index.js";
-import { SnapshotStoreError } from "./snapshot-store.js";
+import { SnapshotStoreError, snapshotStoreFailure } from "./snapshot-store.js";
 import { writeSnapshotFile, type SnapshotSource } from "./snapshot-file.js";
 import { snapshotCheck } from "./snapshot-format.js";
 import { decodeWtf8, encodeWtf8 } from "./wtf8.js";
@@ -29,26 +31,96 @@ import { decodeWtf8, encodeWtf8 } from "./wtf8.js";
 const unavailable = (operation: string, cause: unknown) =>
 	new SnapshotStoreError({
 		operation,
-		code: "unavailable",
-		message: `The native Game Text index could not complete ${operation}.`,
+		code: "invalid_response",
+		...snapshotStoreGuidance("invalid_response"),
+		message: `The native Game Text index returned an invalid result for ${operation}.`,
 		cause,
-		recovery: "Check the paired native reader and disposable Game Text cache, then retry."
+		recovery: "Install matching host and native reader versions, then open a new build session."
 	});
-const nativeFailure = (cause: AssetReaderError) =>
-	new SnapshotStoreError({
+
+const nativeFailure = (cause: AssetReaderError) => {
+	let code: SnapshotStoreError["code"];
+	switch (cause.code) {
+		case "executable_missing":
+			code = "executable_missing";
+			break;
+		case "busy":
+			code = "busy";
+			break;
+		case "invalid_input":
+			code = "invalid_input";
+			break;
+		case "invalid_cache":
+			code = "invalid_cache";
+			break;
+		case "stale_generation":
+			code = "stale_generation";
+			break;
+		case "limit_exceeded":
+			code = "resource_limit";
+			break;
+		case "not_found":
+			code = "missing";
+			break;
+		case "io_error":
+			code = "io_error";
+			break;
+		default:
+			code =
+				cause.kind === "timeout"
+					? "timeout"
+					: cause.kind === "resource_limit"
+						? "resource_limit"
+						: cause.kind === "contract"
+							? "invalid_response"
+							: "native_failed";
+	}
+	return new SnapshotStoreError({
 		operation: "native-index-builder",
-		code:
-			cause.code === "busy"
-				? "busy"
-				: cause.code === "invalid_input"
-					? "invalid_input"
-					: "unavailable",
-		message: cause.message,
+		code,
+		...snapshotStoreGuidance(code),
+		message:
+			code === "executable_missing"
+				? "The native Game Text index executable is unavailable."
+				: cause.message,
 		cause,
-		recovery: "Resolve the native reader or cache failure and open a new build session."
+		recovery:
+			code === "executable_missing"
+				? "Install the matching @ue-shed/uasset runtime provider or configure an existing compatible reader executable."
+				: code === "busy"
+					? "Wait for the current Game Text writer to finish, then open a new build session."
+					: code === "invalid_cache" || code === "stale_generation" || code === "missing"
+						? "Close the failed session and rebuild the disposable Game Text index from its inputs."
+						: code === "timeout" || code === "native_failed"
+							? "Reopen the index to inspect its last published state before starting a new build session."
+							: cause.recovery
 	});
-const io = <A>(operation: string, action: () => Promise<A>) =>
-	Effect.tryPromise({ try: action, catch: (cause) => unavailable(operation, cause) });
+};
+const io = <A>(operation: string, action: (signal: AbortSignal) => Promise<A>) =>
+	Effect.callback<A, ReturnType<typeof snapshotStoreFailure>>((resume, signal) => {
+		const pending = Promise.resolve().then(() => action(signal));
+		pending.then(
+			(value) => resume(Effect.succeed(value)),
+			(cause) =>
+				resume(
+					Effect.fail(
+						snapshotStoreFailure(
+							operation,
+							cause,
+							"Inspect the cache filesystem failure before opening a new build session."
+						)
+					)
+				)
+		);
+		// Interruption aborts the operation, then waits for its owned file handles to close before
+		// the enclosing scope removes the staging directory (important on Windows).
+		return Effect.promise(() =>
+			pending.then(
+				() => undefined,
+				() => undefined
+			)
+		);
+	});
 
 class NativeBuildSession extends Context.Service<
 	NativeBuildSession,
@@ -91,30 +163,35 @@ const makeWriter = Effect.fn("NativeIndexBuilder.writer")(function* (
 	let manifest = yield* Schema.decodeUnknownEffect(SharedIndexManifestSchema)(begin.root).pipe(
 		Effect.mapError((cause) => unavailable("native-index-root", cause))
 	);
-	const command = Effect.fn("NativeIndexBuilder.execute")(function* (
-		request: GameTextIndexBuildRequest
-	) {
-		if (closed)
-			return yield* Effect.fail(
-				unavailable("native-index-session", "The build session is closed.")
-			);
-		const result = yield* client.execute(request).pipe(Effect.mapError(nativeFailure));
-		nativeIo = result.io;
-		for (const [name, seconds] of Object.entries(result.stageSeconds))
-			stageTimes[name] = (stageTimes[name] ?? 0) + seconds * 1000;
-		if (result.root !== null)
-			manifest = yield* Schema.decodeUnknownEffect(SharedIndexManifestSchema)(
-				result.root
-			).pipe(Effect.mapError((cause) => unavailable("native-index-root", cause)));
-		return result;
-	});
+	const command = Effect.fn("NativeIndexBuilder.execute")(
+		function* (request: GameTextIndexBuildRequest) {
+			if (closed)
+				return yield* Effect.fail(
+					unavailable("native-index-session", "The build session is closed.")
+				);
+			const result = yield* client.execute(request).pipe(Effect.mapError(nativeFailure));
+			nativeIo = result.io;
+			for (const [name, seconds] of Object.entries(result.stageSeconds))
+				stageTimes[name] = (stageTimes[name] ?? 0) + seconds * 1000;
+			if (result.root !== null)
+				manifest = yield* Schema.decodeUnknownEffect(SharedIndexManifestSchema)(
+					result.root
+				).pipe(Effect.mapError((cause) => unavailable("native-index-root", cause)));
+			return result;
+		},
+		Effect.onExit((exit) =>
+			Effect.sync(() => {
+				if (Exit.isFailure(exit)) closed = true;
+			})
+		)
+	);
 	let sequence = 0;
 	const staged = (source: SnapshotSource, existing?: string) =>
 		existing
 			? Effect.succeed(existing)
-			: io("native-index-stage", async () => {
+			: io("native-index-stage", async (signal) => {
 					const file = join(stage, `${++sequence}.snapshot`);
-					await writeSnapshotFile(file, source);
+					await writeSnapshotFile(file, source, 1, undefined, signal);
 					return file;
 				});
 	const publish: SharedIndexWriter["publishBatch"] = Effect.fn("NativeIndexBuilder.publish")(
@@ -232,7 +309,9 @@ const makeWriter = Effect.fn("NativeIndexBuilder.writer")(function* (
 					end++;
 				}
 				const file = join(stage, `${++sequence}.strings`);
-				yield* io("native-index-intern", () => writeFile(file, Buffer.concat(chunks)));
+				yield* io("native-index-intern", (signal) =>
+					writeFile(file, Buffer.concat(chunks), { signal })
+				);
 				const previousCount = manifest.segments.reduce(
 					(sum, segment) => sum + segment.count,
 					0
@@ -262,7 +341,9 @@ const makeWriter = Effect.fn("NativeIndexBuilder.writer")(function* (
 					ids: [...selected],
 					output
 				});
-				const bytes = yield* io("native-index-strings", () => readFile(output));
+				const bytes = yield* io("native-index-strings", (signal) =>
+					readFile(output, { signal })
+				);
 				const size = (selected.length + 1) * 4;
 				snapshotCheck(
 					result.stringCount === selected.length && bytes.length >= size,
@@ -299,10 +380,13 @@ const makeWriter = Effect.fn("NativeIndexBuilder.writer")(function* (
 		"NativeIndexBuilder.join"
 	)(function* (input) {
 		const file = join(stage, `${++sequence}.join.json`);
-		yield* io("native-index-join-stage", () =>
-			writeFile(file, JSON.stringify(encodeGameTextJoinInput(JSON.stringify(input))))
+		yield* io("native-index-join-stage", (signal) =>
+			writeFile(file, JSON.stringify(encodeGameTextJoinInput(JSON.stringify(input))), {
+				signal
+			})
 		);
-		const result = (yield* command({ action: "join", configuration, file })).join;
+		const response = yield* command({ action: "join", configuration, file });
+		const result = response.join;
 		if (!result)
 			return yield* Effect.fail(unavailable("native-index-join", "Missing join result"));
 		if (!result.rebuilt)
@@ -333,7 +417,7 @@ const makeWriter = Effect.fn("NativeIndexBuilder.writer")(function* (
 		return {
 			rebuilt: true,
 			strategy: "full" as const,
-			incrementalFallback: undefined,
+			incrementalFallback: response.incrementalFallback,
 			key: result.key,
 			bytes: result.bytes,
 			count: result.count,
@@ -343,25 +427,28 @@ const makeWriter = Effect.fn("NativeIndexBuilder.writer")(function* (
 	return {
 		writer,
 		refreshJoinedTarget,
-		close: () =>
-			command({ action: "end", configuration }).pipe(
-				Effect.ensuring(
-					Effect.sync(() => {
-						closed = true;
-					})
-				)
-			)
+		close: (): Effect.Effect<void, SnapshotStoreError> =>
+			closed
+				? Effect.void
+				: command({ action: "end", configuration }).pipe(
+						Effect.asVoid,
+						Effect.ensuring(
+							Effect.sync(() => {
+								closed = true;
+							})
+						)
+					)
 	};
 });
 
-/** Opt-in native storage and joins. Current TS producers retain extraction and localization policy. */
+/** Native storage and joins with explicit worker configuration; TS producers own extraction policy. */
 export const nativeIndexBuilderLayer = (configuration: AssetReaderConfiguration) =>
 	Layer.effect(
 		GameTextIndexBuilder,
 		Effect.gen(function* () {
-			const fallback = yield* GameTextIndexBuilder;
+			const producers = yield* GameTextIndexBuilder;
 			return GameTextIndexBuilder.of({
-				...fallback,
+				...producers,
 				withSession: (request, effect) =>
 					Effect.scoped(
 						Effect.gen(function* () {
@@ -390,7 +477,8 @@ export const nativeIndexBuilderLayer = (configuration: AssetReaderConfiguration)
 													cause
 												)
 											)
-										)
+										),
+								{ interruptible: true }
 							);
 							const leased = SharedIndex.of({
 								...backing,
@@ -429,3 +517,15 @@ export const nativeIndexBuilderLayer = (configuration: AssetReaderConfiguration)
 			});
 		})
 	).pipe(Layer.provide(typeScriptIndexBuilderLayer));
+
+/**
+ * Production index builder, using the host's existing AssetReader configuration. Each build owns
+ * a scoped native process and writer lease. Capability or process failures are reported to the
+ * caller; selecting the TypeScript implementation remains an explicit host composition choice.
+ */
+export const GameTextIndexBuilderLive = Layer.unwrap(
+	Effect.gen(function* () {
+		const reader = yield* AssetReader;
+		return nativeIndexBuilderLayer(yield* reader.configuration());
+	})
+);

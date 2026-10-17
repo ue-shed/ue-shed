@@ -3,10 +3,15 @@ import { GameTextIndexBuildRequest, type GameTextIndexBuildOutcome } from "@ue-s
 import { Schema } from "effect";
 import { AssetReaderError, type AssetReaderConfiguration } from "./asset-reader.js";
 import {
-	invokeProtocolSessionSingle,
+	invokeProtocolSessionSingleWithEvidence,
 	makeProtocolRequest,
 	UassetProtocolSession
 } from "./protocol-transport.js";
+
+/** Validated native outcome plus the stable incremental eligibility reason from diagnostic frames. */
+export type NativeGameTextIndexOutcome = GameTextIndexBuildOutcome & {
+	readonly incrementalFallback?: string;
+};
 
 /** Uses the existing scoped process transport, including framing, cancellation and telemetry. */
 export class NativeGameTextIndexClient extends Context.Service<
@@ -14,10 +19,15 @@ export class NativeGameTextIndexClient extends Context.Service<
 	{
 		readonly execute: (
 			request: GameTextIndexBuildRequest
-		) => Effect.Effect<GameTextIndexBuildOutcome, AssetReaderError>;
+		) => Effect.Effect<NativeGameTextIndexOutcome, AssetReaderError>;
 	}
 >()("@ue-shed/unreal-assets/NativeGameTextIndexClient") {}
 
+/**
+ * Creates a scoped serialized native Game Text index client from the host reader
+ * configuration. Negotiated commands use the catalog timeout; failures close the owned
+ * session and do not silently invoke the TypeScript builder.
+ */
 export const nativeGameTextIndexClientLayer = (configuration: AssetReaderConfiguration) =>
 	Layer.effect(
 		NativeGameTextIndexClient,
@@ -54,8 +64,8 @@ export const nativeGameTextIndexClientLayer = (configuration: AssetReaderConfigu
 						)
 					);
 					const request = decoded;
-					const outcome = yield* mutex.withPermits(1)(
-						invokeProtocolSessionSingle({
+					const evidence = yield* mutex.withPermits(1)(
+						invokeProtocolSessionSingleWithEvidence({
 							session,
 							configuration,
 							operation: "game_text_index",
@@ -76,6 +86,25 @@ export const nativeGameTextIndexClientLayer = (configuration: AssetReaderConfigu
 								result.kind === "game_text_index" ? result.outcome : undefined
 						})
 					);
+					const outcome = evidence.value;
+					let incrementalFallback: string | undefined;
+					for (const diagnostic of evidence.diagnostics) {
+						const prefix = "game_text_index_join_fallback.";
+						if (!diagnostic.code.startsWith(prefix)) continue;
+						const reason = diagnostic.code.slice(prefix.length);
+						incrementalFallback = reason;
+						yield* Effect.annotateCurrentSpan({
+							"game_text.build.join_fallback": reason
+						});
+						if (reason !== "no-base" && reason !== "forced")
+							yield* Effect.logDebug(
+								"Native Game Text join requires a full rebuild",
+								{
+									code: diagnostic.code,
+									reason
+								}
+							);
+					}
 					yield* Effect.annotateCurrentSpan({
 						"game_text.build.action": request.action,
 						...Object.fromEntries(
@@ -85,7 +114,9 @@ export const nativeGameTextIndexClientLayer = (configuration: AssetReaderConfigu
 							])
 						)
 					});
-					return outcome;
+					return incrementalFallback === undefined
+						? outcome
+						: { ...outcome, incrementalFallback };
 				})
 			});
 		})

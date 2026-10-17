@@ -26,6 +26,7 @@ const { values } = parseArgs({
 		"before-module": { type: "string" },
 		output: { type: "string" },
 		cache: { type: "string" },
+		"native-after": { type: "boolean", default: false },
 		records: { type: "string" },
 		target: { type: "string" },
 		runs: { type: "string", default: "3" },
@@ -116,6 +117,9 @@ if (values.worker) {
 							})(),
 							(cause) =>
 								new module.GameTextIndexError({
+									code: "index_failed",
+									retrySafe: false,
+									nextStep: "fix_input",
 									operation: "records",
 									message: "The retained package records could not be read.",
 									recovery: "Choose complete retained package records.",
@@ -154,7 +158,17 @@ if (values.worker) {
 				refreshJoinedTarget: (request) =>
 					measure("join", original.refreshJoinedTarget(request), () => ({}))
 			});
-		}).pipe(Effect.provide(module.typeScriptIndexBuilderLayer))
+		}).pipe(
+			Effect.provide(
+				values["native-after"] && variant === "after"
+					? module.nativeIndexBuilderLayer({
+							executable: resolve(values.reader!),
+							timeoutMs: 30_000,
+							catalogTimeoutMs: 120_000
+						})
+					: module.typeScriptIndexBuilderLayer
+			)
+		)
 	);
 	const layer = module.gameTextIndexRefreshLayer(cacheRoot).pipe(
 		Layer.provide(source),

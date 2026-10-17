@@ -1,3 +1,4 @@
+import { snapshotStoreGuidance } from "./snapshot-store.js";
 import { describe, expect, it } from "vitest";
 import { SnapshotFormatError } from "./snapshot-format.js";
 import { SnapshotStoreError, snapshotStoreFailure } from "./snapshot-store.js";
@@ -31,6 +32,8 @@ describe("snapshotStoreFailure", () => {
 
 	it("passes typed snapshot failures through unchanged", () => {
 		const typed = new SnapshotStoreError({
+			retrySafe: snapshotStoreGuidance("busy").retrySafe,
+			nextStep: snapshotStoreGuidance("busy").nextStep,
 			operation: "writer",
 			code: "busy",
 			message: "Another writer owns this target.",
@@ -38,6 +41,9 @@ describe("snapshotStoreFailure", () => {
 		});
 		expect(snapshotStoreFailure("open", typed, "fallback")).toBe(typed);
 		const format = new SnapshotFormatError({
+			retrySafe: false,
+			nextStep: "reconcile",
+			code: "invalid_snapshot",
 			section: "header",
 			message: "bad",
 			recovery: "Rebuild."

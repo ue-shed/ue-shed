@@ -1,3 +1,4 @@
+import { contractParser } from "./contract-parser.js";
 import { Schema } from "effect";
 
 /**
@@ -11,7 +12,7 @@ export type CameraId = Schema.Schema.Type<typeof CameraId>;
  * The capture schedule sent to the UEShedCameras `Configure` call and echoed in its status. The
  * focused camera captures at `focusedFps` and the rest at `backgroundFps` (frames per second);
  * `focusedCameraIndex: null` focuses none. An omitted `editorBackgroundTicking` means `inherit`.
- * Decoding fails with a SchemaError when a value leaves its bound or a literal is unknown.
+ * Decoding fails with a ContractParseError when a value leaves its bound or a literal is unknown.
  */
 export const CameraScheduleConfig = Schema.Struct({
 	editorBackgroundTicking: Schema.optional(Schema.Literals(["inherit", "while_streaming"])),
@@ -111,10 +112,13 @@ export const CameraStatus = Schema.Struct({
 }).annotate({ identifier: "CameraStatus" });
 export type CameraStatus = Schema.Schema.Type<typeof CameraStatus>;
 
-/** Validates a schedule before it is sent; fails with a SchemaError for any out-of-bound value. */
-export const decodeCameraScheduleConfig = Schema.decodeUnknownEffect(CameraScheduleConfig);
-/** Decodes a plugin status reply; fails with a SchemaError for another schema version or shape. */
-export const decodeCameraStatus = Schema.decodeUnknownEffect(CameraStatus);
+/** Validates a schedule before it is sent; fails with a ContractParseError for any out-of-bound value. */
+export const decodeCameraScheduleConfig = contractParser(
+	CameraScheduleConfig,
+	"CameraScheduleConfig"
+);
+/** Decodes a plugin status reply; fails with a ContractParseError for another schema version or shape. */
+export const decodeCameraStatus = contractParser(CameraStatus, "CameraStatus");
 
 /**
  * A failed camera status or configure call: `error` is a stable code (for example

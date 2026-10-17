@@ -4,6 +4,9 @@ import { decodeInvokeArgs, encodeInvokeResult, type InvokeContract } from "../ip
 export class ElectronIpcError extends Schema.TaggedError<ElectronIpcError>()(
 	"Workbench.ElectronIpcError",
 	{
+		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		code: Schema.Literal("electron_ipc_failed"),
+		cause: Schema.optionalKey(Schema.Defect()),
 		causeText: Schema.String,
 		channel: Schema.String,
 		message: Schema.String,
@@ -65,6 +68,9 @@ function ipcError(
 	recovery: string
 ): ElectronIpcError {
 	return new ElectronIpcError({
+		cause: cause,
+		nextStep: "escalate",
+		code: "electron_ipc_failed",
 		causeText: cause instanceof Error ? cause.message : String(cause),
 		channel,
 		message: `Electron IPC ${operation} failed for ${channel}.`,

@@ -21,6 +21,11 @@ export const LocalizationChange = Schema.Struct({
 });
 export type LocalizationChange = typeof LocalizationChange.Type;
 
+/**
+ * Version-1 proposed translations with producer/file provenance. Applying a set rechecks
+ * source, previous translation and file hashes; decoding the proposal does not authorize a
+ * write.
+ */
 export const LocalizationChangeSet = Schema.Struct({
 	schemaVersion: Schema.Literal(1),
 	provenance: Schema.Struct({
@@ -31,6 +36,10 @@ export const LocalizationChangeSet = Schema.Struct({
 });
 export type LocalizationChangeSet = typeof LocalizationChangeSet.Type;
 
+/**
+ * Invalid, duplicate, multi-target or unwritable translation proposal. Code and guidance
+ * identify the correction; optional cause retains a domain failure when available.
+ */
 export class LocalizationChangeSetError extends Schema.TaggedError<LocalizationChangeSetError>()(
 	"LocalizationChangeSetError",
 	{
@@ -45,6 +54,11 @@ export class LocalizationChangeSetError extends Schema.TaggedError<LocalizationC
 	}
 ) {}
 
+/**
+ * Parses a version-1 JSON translation proposal and rejects duplicate
+ * target/culture/namespace/key changes. Returns a typed Result without reading current
+ * evidence or writing PO files.
+ */
 export function decodeLocalizationChangeSet(
 	input: string
 ): Result.Result<LocalizationChangeSet, LocalizationChangeSetError> {

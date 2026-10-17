@@ -9,18 +9,38 @@ export const InvestigationSource = Schema.Struct({
 });
 export interface InvestigationSource extends Schema.Schema.Type<typeof InvestigationSource> {}
 
+/**
+ * Supported investigation export formats, JSON and CSV. Format selection changes presentation
+ * rather than the authoritative project-file evidence.
+ */
 export const InvestigationFormat = Schema.Literals(["json", "csv"]);
 export type InvestigationFormat = Schema.Schema.Type<typeof InvestigationFormat>;
+/**
+ * Investigation preset/read/export failure with original cause and recovery guidance. Correct
+ * the supplied preset or destination before retrying unchanged input.
+ */
 export class InvestigationError extends Schema.TaggedError<InvestigationError>()(
 	"InvestigationError",
 	{ ...ErrorGuidanceFields, ...ErrorCauseFields }
 ) {}
+/**
+ * Serializable failed export outcome for a host, carrying message and recovery. It does not
+ * represent a saved file or a user cancellation.
+ */
 export const InvestigationFailure = Schema.Struct({
 	status: Schema.Literal("failed"),
 	message: Schema.String,
 	recovery: Schema.String
 });
+/**
+ * User cancelled investigation export. This is an ordinary outcome and does not imply the
+ * underlying investigation failed.
+ */
 export const InvestigationCancelled = Schema.Struct({ status: Schema.Literal("cancelled") });
+/**
+ * Saved, cancelled or failed investigation export outcome. Only saved includes a destination
+ * and row count; optional replay command reproduces the investigation inputs.
+ */
 export const InvestigationFileResult = Schema.Union([
 	Schema.Struct({
 		status: Schema.Literal("saved"),
@@ -36,6 +56,10 @@ export type InvestigationFileResult = Schema.Schema.Type<typeof InvestigationFil
 /** RFC 4180 quoting; text cells cannot become spreadsheet formulas when opened interactively. */
 const isTextCell = Schema.is(Schema.String);
 
+/**
+ * Serializes RFC 4180 quoted rows with CRLF and a final newline. Prefixes formula-like text
+ * cells for spreadsheet safety while preserving numeric/boolean values as data.
+ */
 export function investigationCsv(
 	rows: Iterable<readonly (string | number | boolean | null | undefined)[]>
 ): string {

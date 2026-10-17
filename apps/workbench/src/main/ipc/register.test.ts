@@ -20,7 +20,7 @@ import {
 	scenarioWireContract,
 	type ScenarioRunnerApi
 } from "@ue-shed/scenarios";
-import { Effect, Layer, Ref } from "effect";
+import { Stream, Effect, Layer, Ref } from "effect";
 import { resolve } from "node:path";
 import { expect } from "vitest";
 import { ElectronIpcTest, makeElectronIpcTestLayer } from "../adapters/electron-ipc.js";
@@ -115,6 +115,44 @@ interface RegistrationOptions {
 /** Builds the full fake feature-service graph that `register.ts` depends on. */
 function buildRegistrationLayer(recorder: Recorder, options: RegistrationOptions = {}) {
 	const assetReader = makeAssetReaderTestLayer({
+		configuration: () =>
+			Effect.succeed({
+				executable: "uasset",
+				timeoutMs: 30_000,
+				catalogTimeoutMs: 50 * 60_000
+			}),
+		catalogProgress: () =>
+			Effect.succeed({
+				phase: "idle",
+				cacheHits: 0,
+				processedAssets: 0,
+				tablesFound: 0,
+				totalAssets: 0
+			}),
+		scanProgress: () =>
+			Effect.succeed({
+				phase: "idle",
+				cacheHits: 0,
+				emittedAssets: 0,
+				processedAssets: 0,
+				totalAssets: 0
+			}),
+		savedWorldProgress: () =>
+			Effect.succeed({
+				phase: "idle",
+				actorsFound: 0,
+				processedPackages: 0,
+				totalPackages: 0
+			}),
+		readSavedWorld: () =>
+			Effect.die(new Error("Unexpected readSavedWorld in this reader fixture")),
+		scanProject: () => Effect.die(new Error("Unexpected scanProject in this reader fixture")),
+		extractProjectText: () =>
+			Stream.die(new Error("Unexpected extractProjectText in this reader fixture")),
+		extractProjectTextPackages: () =>
+			Stream.die(new Error("Unexpected extractProjectTextPackages in this reader fixture")),
+		extractProjectTextures: () =>
+			Stream.die(new Error("Unexpected extractProjectTextures in this reader fixture")),
 		discoverAssets: () => Effect.succeed([]),
 		discoverTables: () =>
 			Effect.succeed({ diagnostics: [], projectRoot: "", scannedAssets: 0, tables: [] }),
@@ -536,6 +574,9 @@ function buildRegistrationLayer(recorder: Recorder, options: RegistrationOptions
 				Effect.andThen(
 					Effect.fail(
 						new SavedWorldUnavailable({
+							retrySafe: false,
+							nextStep: "escalate",
+							code: "saved_world_unavailable",
 							message: "No saved map is configured.",
 							recovery: "Choose a map."
 						})

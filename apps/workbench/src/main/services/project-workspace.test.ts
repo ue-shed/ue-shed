@@ -213,6 +213,53 @@ it.effect(
 					})
 			});
 			const reader = makeAssetReaderTestLayer({
+				configuration: () =>
+					Effect.succeed({
+						executable: "uasset",
+						timeoutMs: 30_000,
+						catalogTimeoutMs: 50 * 60_000
+					}),
+				catalogProgress: () =>
+					Effect.succeed({
+						phase: "idle",
+						cacheHits: 0,
+						processedAssets: 0,
+						tablesFound: 0,
+						totalAssets: 0
+					}),
+				scanProgress: () =>
+					Effect.succeed({
+						phase: "idle",
+						cacheHits: 0,
+						emittedAssets: 0,
+						processedAssets: 0,
+						totalAssets: 0
+					}),
+				savedWorldProgress: () =>
+					Effect.succeed({
+						phase: "idle",
+						actorsFound: 0,
+						processedPackages: 0,
+						totalPackages: 0
+					}),
+				readBlueprint: () =>
+					Effect.die(new Error("Unexpected readBlueprint in this reader fixture")),
+				readLevelSequence: () =>
+					Effect.die(new Error("Unexpected readLevelSequence in this reader fixture")),
+				readSavedWorld: () =>
+					Effect.die(new Error("Unexpected readSavedWorld in this reader fixture")),
+				scanProject: () =>
+					Effect.die(new Error("Unexpected scanProject in this reader fixture")),
+				extractProjectText: () =>
+					Stream.die(new Error("Unexpected extractProjectText in this reader fixture")),
+				extractProjectTextPackages: () =>
+					Stream.die(
+						new Error("Unexpected extractProjectTextPackages in this reader fixture")
+					),
+				extractProjectTextures: () =>
+					Stream.die(
+						new Error("Unexpected extractProjectTextures in this reader fixture")
+					),
 				discoverAssets: () => Effect.die("unused"),
 				discoverTables: () => Effect.die("unused"),
 				readAsset: () => Effect.die("unused"),
@@ -299,6 +346,48 @@ it.effect("restores recent selection only when no explicit project is configured
 		textureAuditRules: { status: "not_configured" }
 	});
 	const unusedReader = makeAssetReaderTestLayer({
+		configuration: () =>
+			Effect.succeed({
+				executable: "uasset",
+				timeoutMs: 30_000,
+				catalogTimeoutMs: 50 * 60_000
+			}),
+		catalogProgress: () =>
+			Effect.succeed({
+				phase: "idle",
+				cacheHits: 0,
+				processedAssets: 0,
+				tablesFound: 0,
+				totalAssets: 0
+			}),
+		scanProgress: () =>
+			Effect.succeed({
+				phase: "idle",
+				cacheHits: 0,
+				emittedAssets: 0,
+				processedAssets: 0,
+				totalAssets: 0
+			}),
+		savedWorldProgress: () =>
+			Effect.succeed({
+				phase: "idle",
+				actorsFound: 0,
+				processedPackages: 0,
+				totalPackages: 0
+			}),
+		readBlueprint: () =>
+			Effect.die(new Error("Unexpected readBlueprint in this reader fixture")),
+		readLevelSequence: () =>
+			Effect.die(new Error("Unexpected readLevelSequence in this reader fixture")),
+		readSavedWorld: () =>
+			Effect.die(new Error("Unexpected readSavedWorld in this reader fixture")),
+		scanProject: () => Effect.die(new Error("Unexpected scanProject in this reader fixture")),
+		extractProjectText: () =>
+			Stream.die(new Error("Unexpected extractProjectText in this reader fixture")),
+		extractProjectTextPackages: () =>
+			Stream.die(new Error("Unexpected extractProjectTextPackages in this reader fixture")),
+		extractProjectTextures: () =>
+			Stream.die(new Error("Unexpected extractProjectTextures in this reader fixture")),
 		discoverAssets: () => Effect.die("not used"),
 		discoverTables: () => Effect.die("not used"),
 		readAsset: () => Effect.die("not used"),
@@ -413,6 +502,49 @@ it.effect("uses bounded Project Index pages without loading a legacy inventory",
 			ProjectIndexRefreshEvent.cases.Completed.make({ summary })
 		]);
 		const assetReader = makeAssetReaderTestLayer({
+			configuration: () =>
+				Effect.succeed({
+					executable: "uasset",
+					timeoutMs: 30_000,
+					catalogTimeoutMs: 50 * 60_000
+				}),
+			catalogProgress: () =>
+				Effect.succeed({
+					phase: "idle",
+					cacheHits: 0,
+					processedAssets: 0,
+					tablesFound: 0,
+					totalAssets: 0
+				}),
+			scanProgress: () =>
+				Effect.succeed({
+					phase: "idle",
+					cacheHits: 0,
+					emittedAssets: 0,
+					processedAssets: 0,
+					totalAssets: 0
+				}),
+			savedWorldProgress: () =>
+				Effect.succeed({
+					phase: "idle",
+					actorsFound: 0,
+					processedPackages: 0,
+					totalPackages: 0
+				}),
+			readBlueprint: () =>
+				Effect.die(new Error("Unexpected readBlueprint in this reader fixture")),
+			readLevelSequence: () =>
+				Effect.die(new Error("Unexpected readLevelSequence in this reader fixture")),
+			readSavedWorld: () =>
+				Effect.die(new Error("Unexpected readSavedWorld in this reader fixture")),
+			extractProjectText: () =>
+				Stream.die(new Error("Unexpected extractProjectText in this reader fixture")),
+			extractProjectTextPackages: () =>
+				Stream.die(
+					new Error("Unexpected extractProjectTextPackages in this reader fixture")
+				),
+			extractProjectTextures: () =>
+				Stream.die(new Error("Unexpected extractProjectTextures in this reader fixture")),
 			discoverAssets: () => Effect.die("legacy inventory should not be loaded"),
 			discoverTables: () => Effect.die("legacy inventory should not be loaded"),
 			readAsset: () => Effect.die("legacy inventory should not be loaded"),
@@ -568,6 +700,49 @@ it.effect("recovers a candidate query when the committed generation changes", ()
 				}))
 		});
 		const assetReader = makeAssetReaderTestLayer({
+			configuration: () =>
+				Effect.succeed({
+					executable: "uasset",
+					timeoutMs: 30_000,
+					catalogTimeoutMs: 50 * 60_000
+				}),
+			catalogProgress: () =>
+				Effect.succeed({
+					phase: "idle",
+					cacheHits: 0,
+					processedAssets: 0,
+					tablesFound: 0,
+					totalAssets: 0
+				}),
+			scanProgress: () =>
+				Effect.succeed({
+					phase: "idle",
+					cacheHits: 0,
+					emittedAssets: 0,
+					processedAssets: 0,
+					totalAssets: 0
+				}),
+			savedWorldProgress: () =>
+				Effect.succeed({
+					phase: "idle",
+					actorsFound: 0,
+					processedPackages: 0,
+					totalPackages: 0
+				}),
+			readBlueprint: () =>
+				Effect.die(new Error("Unexpected readBlueprint in this reader fixture")),
+			readLevelSequence: () =>
+				Effect.die(new Error("Unexpected readLevelSequence in this reader fixture")),
+			readSavedWorld: () =>
+				Effect.die(new Error("Unexpected readSavedWorld in this reader fixture")),
+			extractProjectText: () =>
+				Stream.die(new Error("Unexpected extractProjectText in this reader fixture")),
+			extractProjectTextPackages: () =>
+				Stream.die(
+					new Error("Unexpected extractProjectTextPackages in this reader fixture")
+				),
+			extractProjectTextures: () =>
+				Stream.die(new Error("Unexpected extractProjectTextures in this reader fixture")),
 			discoverAssets: () => Effect.die("not used"),
 			discoverTables: () => Effect.die("not used"),
 			readAsset: () => Effect.die("not used"),

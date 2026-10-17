@@ -50,11 +50,29 @@ function resolvePluginPath(
 	const positionalValue = optionalValue(positional);
 	const flagValue = optionalValue(flag);
 	if (positionalValue !== undefined && flagValue !== undefined) {
-		return Effect.fail(new CliCommandError({ message }));
+		return Effect.fail(
+			new CliCommandError({
+				recovery:
+					"Inspect the command context and original cause before deciding whether to retry.",
+				retrySafe: false,
+				nextStep: "escalate",
+				code: "cli_command_failed",
+				message
+			})
+		);
 	}
 	const value = positionalValue ?? flagValue;
 	return value === undefined
-		? Effect.fail(new CliCommandError({ message }))
+		? Effect.fail(
+				new CliCommandError({
+					recovery:
+						"Inspect the command context and original cause before deciding whether to retry.",
+					retrySafe: false,
+					nextStep: "escalate",
+					code: "cli_command_failed",
+					message
+				})
+			)
 		: Effect.succeed(value);
 }
 
@@ -70,7 +88,14 @@ const pluginsListCommand = Command.make(
 		Effect.gen(function* () {
 			if (optionalValue(artifact) !== undefined || optionalValue(project) !== undefined) {
 				return yield* Effect.fail(
-					new CliCommandError({ message: "plugins list only accepts a manifest path" })
+					new CliCommandError({
+						recovery:
+							"Inspect the command context and original cause before deciding whether to retry.",
+						retrySafe: false,
+						nextStep: "escalate",
+						code: "cli_command_failed",
+						message: "plugins list only accepts a manifest path"
+					})
 				);
 			}
 			const manifestPath = yield* resolvePluginPath(
@@ -96,7 +121,14 @@ const pluginsVerifyCommand = Command.make(
 			const artifactValue = optionalValue(artifact);
 			if (projectValue !== undefined) {
 				return yield* Effect.fail(
-					new CliCommandError({ message: "plugins verify does not accept --project" })
+					new CliCommandError({
+						recovery:
+							"Inspect the command context and original cause before deciding whether to retry.",
+						retrySafe: false,
+						nextStep: "escalate",
+						code: "cli_command_failed",
+						message: "plugins verify does not accept --project"
+					})
 				);
 			}
 			const manifestPath = yield* resolvePluginPath(
@@ -239,6 +271,11 @@ const pluginsCacheInstallCommand = Command.make(
 			) {
 				return yield* Effect.fail(
 					new CliCommandError({
+						recovery:
+							"Inspect the command context and original cause before deciding whether to retry.",
+						retrySafe: false,
+						nextStep: "escalate",
+						code: "cli_command_failed",
 						message:
 							"compiled cache installs require exact --unreal and --build-id values"
 					})
@@ -247,6 +284,11 @@ const pluginsCacheInstallCommand = Command.make(
 			if (kind === "source" && buildIdValue !== undefined) {
 				return yield* Effect.fail(
 					new CliCommandError({
+						recovery:
+							"Inspect the command context and original cause before deciding whether to retry.",
+						retrySafe: false,
+						nextStep: "escalate",
+						code: "cli_command_failed",
 						message: "source cache installs do not accept --build-id"
 					})
 				);
@@ -254,6 +296,11 @@ const pluginsCacheInstallCommand = Command.make(
 			if (kind === "source" && engineSourceCommitValue !== undefined) {
 				return yield* Effect.fail(
 					new CliCommandError({
+						recovery:
+							"Inspect the command context and original cause before deciding whether to retry.",
+						retrySafe: false,
+						nextStep: "escalate",
+						code: "cli_command_failed",
 						message: "source cache installs do not accept --engine-source-commit"
 					})
 				);

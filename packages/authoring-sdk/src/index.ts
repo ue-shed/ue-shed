@@ -1,3 +1,4 @@
+import { contractParser } from "@ue-shed/protocol";
 import {
 	AuthoringSessionPipeline,
 	AuthoringSessionReview,
@@ -189,17 +190,31 @@ export const AuthoringCatalogProgress = Schema.Struct({
 }).annotate({ identifier: "AuthoringCatalogProgress" });
 export type AuthoringCatalogProgress = Schema.Schema.Type<typeof AuthoringCatalogProgress>;
 
-export const decodeAuthoringSessionResult = Schema.decodeUnknownEffect(AuthoringSessionResult);
-export const decodeAuthoringSessionReviewResult = Schema.decodeUnknownEffect(
-	AuthoringSessionReviewResult
+export const decodeAuthoringSessionResult = contractParser(
+	AuthoringSessionResult,
+	"AuthoringSessionResult"
 );
-export const decodeAuthoringSessionListResult = Schema.decodeUnknownEffect(
-	AuthoringSessionListResult
+export const decodeAuthoringSessionReviewResult = contractParser(
+	AuthoringSessionReviewResult,
+	"AuthoringSessionReviewResult"
 );
-export const decodeAuthoringSessionIntent = Schema.decodeUnknownEffect(AuthoringSessionIntent);
-export const decodeAuthoringLoadResult = Schema.decodeUnknownEffect(AuthoringLoadResult);
-export const decodeAuthoringCatalogResult = Schema.decodeUnknownEffect(AuthoringCatalogResult);
-export const decodeAuthoringCatalogProgress = Schema.decodeUnknownEffect(AuthoringCatalogProgress);
+export const decodeAuthoringSessionListResult = contractParser(
+	AuthoringSessionListResult,
+	"AuthoringSessionListResult"
+);
+export const decodeAuthoringSessionIntent = contractParser(
+	AuthoringSessionIntent,
+	"AuthoringSessionIntent"
+);
+export const decodeAuthoringLoadResult = contractParser(AuthoringLoadResult, "AuthoringLoadResult");
+export const decodeAuthoringCatalogResult = contractParser(
+	AuthoringCatalogResult,
+	"AuthoringCatalogResult"
+);
+export const decodeAuthoringCatalogProgress = contractParser(
+	AuthoringCatalogProgress,
+	"AuthoringCatalogProgress"
+);
 
 export class AuthoringClientError extends Schema.TaggedError<AuthoringClientError>()(
 	"AuthoringClientError",
@@ -295,10 +310,13 @@ export const AuthoringTransportResponse = Schema.Union([
 ]).annotate({ identifier: "AuthoringTransportResponse" });
 export type AuthoringTransportResponse = Schema.Schema.Type<typeof AuthoringTransportResponse>;
 
-export const decodeAuthoringTransportRequest =
-	Schema.decodeUnknownEffect(AuthoringTransportRequest);
-export const decodeAuthoringTransportResponse = Schema.decodeUnknownEffect(
-	AuthoringTransportResponse
+export const decodeAuthoringTransportRequest = contractParser(
+	AuthoringTransportRequest,
+	"AuthoringTransportRequest"
+);
+export const decodeAuthoringTransportResponse = contractParser(
+	AuthoringTransportResponse,
+	"AuthoringTransportResponse"
 );
 
 export function dispatchAuthoringTransportRequest(

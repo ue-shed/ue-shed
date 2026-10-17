@@ -323,6 +323,7 @@ describe("shared renderer lifecycle", () => {
 			name === "StartCameraFrame"
 				? Effect.fail(
 						new RemoteControlClientError({
+							code: "transport_failed",
 							endpoint: "http://fixture",
 							functionName: name,
 							operation: "capture",
@@ -842,6 +843,7 @@ for (const functionName of [
 for (const nextStep of ["escalate", "fix_input", "retry"] as const) {
 	it(`preserves ${nextStep} from typed renderer read failures`, async () => {
 		const cause = new RemoteControlClientError({
+			code: "transport_failed",
 			endpoint: "http://fixture",
 			functionName: "GetCapabilityManifest",
 			operation: "read",

@@ -1,3 +1,4 @@
+import { contractParseError, contractParser } from "@ue-shed/protocol";
 import { Effect, Schema } from "effect";
 import { CameraAuthoredVisibility } from "./camera-visibility.js";
 import {
@@ -22,6 +23,10 @@ const NonNegativeInteger = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 const PositiveInteger = Schema.Int.check(Schema.isGreaterThan(0));
 const Fraction = Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 1 }));
 
+/**
+ * Bounded /Game/ actor object path used by review subject locators. Path validity alone does
+ * not prove that the actor exists or remains the same across reconstruction.
+ */
 export const ReviewSubjectActorPath = Schema.String.check(
 	Schema.isMinCodePoints(7),
 	Schema.isMaxLength(4_096),
@@ -41,6 +46,10 @@ export const ReviewSubjectActorGuid = Schema.String.check(
 ).pipe(Schema.brand("ReviewSubjectActorGuid"));
 export type ReviewSubjectActorGuid = Schema.Schema.Type<typeof ReviewSubjectActorGuid>;
 
+/**
+ * Non-zero UUID correlating a review capture mutation. Preserve it while polling/reconciling
+ * an uncertain reply rather than issuing a new capture automatically.
+ */
 export const ReviewCaptureOperationId = Schema.String.check(
 	Schema.isPattern(
 		/^(?!00000000-0000-0000-0000-000000000000$)[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/u
@@ -48,9 +57,19 @@ export const ReviewCaptureOperationId = Schema.String.check(
 );
 export type ReviewCaptureOperationId = Schema.Schema.Type<typeof ReviewCaptureOperationId>;
 
+/**
+ * Branded identifier for a persisted review set. Construct from validated input and preserve
+ * it across related requests; an identifier alone does not prove that the resource exists or
+ * is still current.
+ */
 export const ReviewSetId = SafeIdentifier.pipe(Schema.brand("ReviewSetId"));
 export type ReviewSetId = Schema.Schema.Type<typeof ReviewSetId>;
 
+/**
+ * Branded identifier for a approved view. Construct from validated input and preserve it
+ * across related requests; an identifier alone does not prove that the resource exists or is
+ * still current.
+ */
 export const ReviewViewId = SafeIdentifier.pipe(Schema.brand("ReviewViewId"));
 export type ReviewViewId = Schema.Schema.Type<typeof ReviewViewId>;
 
@@ -61,23 +80,53 @@ export const ReviewAuthoringDestination = Schema.Union([
 ]);
 export type ReviewAuthoringDestination = Schema.Schema.Type<typeof ReviewAuthoringDestination>;
 
+/**
+ * Branded identifier for a authored view revision. Construct from validated input and
+ * preserve it across related requests; an identifier alone does not prove that the resource
+ * exists or is still current.
+ */
 export const ReviewViewRevisionId = SafeRevisionIdentifier.pipe(
 	Schema.brand("ReviewViewRevisionId")
 );
 export type ReviewViewRevisionId = Schema.Schema.Type<typeof ReviewViewRevisionId>;
 
+/**
+ * Branded identifier for a capture profile. Construct from validated input and preserve it
+ * across related requests; an identifier alone does not prove that the resource exists or is
+ * still current.
+ */
 export const CaptureProfileId = SafeIdentifier.pipe(Schema.brand("CaptureProfileId"));
 export type CaptureProfileId = Schema.Schema.Type<typeof CaptureProfileId>;
 
+/**
+ * Branded identifier for a visibility policy. Construct from validated input and preserve it
+ * across related requests; an identifier alone does not prove that the resource exists or is
+ * still current.
+ */
 export const VisibilityPolicyId = SafeIdentifier.pipe(Schema.brand("VisibilityPolicyId"));
 export type VisibilityPolicyId = Schema.Schema.Type<typeof VisibilityPolicyId>;
 
+/**
+ * Branded identifier for a capture invocation. Construct from validated input and preserve it
+ * across related requests; an identifier alone does not prove that the resource exists or is
+ * still current.
+ */
 export const CaptureInvocationId = SafeIdentifier.pipe(Schema.brand("CaptureInvocationId"));
 export type CaptureInvocationId = Schema.Schema.Type<typeof CaptureInvocationId>;
 
+/**
+ * Branded identifier for a provisioned editor camera. Construct from validated input and
+ * preserve it across related requests; an identifier alone does not prove that the resource
+ * exists or is still current.
+ */
 export const ProvisionedCameraId = SafeIdentifier.pipe(Schema.brand("ProvisionedCameraId"));
 export type ProvisionedCameraId = Schema.Schema.Type<typeof ProvisionedCameraId>;
 
+/**
+ * Branded identifier for a saved capture run. Construct from validated input and preserve it
+ * across related requests; an identifier alone does not prove that the resource exists or is
+ * still current.
+ */
 export const CaptureRunId = SafeIdentifier.pipe(Schema.brand("CaptureRunId"));
 export type CaptureRunId = Schema.Schema.Type<typeof CaptureRunId>;
 
@@ -86,25 +135,53 @@ const FramingCandidateIdentifier = NonEmptyString.check(
 	Schema.isPattern(/^[A-Za-z0-9][A-Za-z0-9._/-]*$/u)
 );
 
+/**
+ * Branded identifier for a generated framing candidate. Construct from validated input and
+ * preserve it across related requests; an identifier alone does not prove that the resource
+ * exists or is still current.
+ */
 export const FramingCandidateId = FramingCandidateIdentifier.pipe(
 	Schema.brand("FramingCandidateId")
 );
 export type FramingCandidateId = Schema.Schema.Type<typeof FramingCandidateId>;
 
+/**
+ * Branded identifier for a configurable framing group. Construct from validated input and
+ * preserve it across related requests; an identifier alone does not prove that the resource
+ * exists or is still current.
+ */
 export const FramingGroupId = SafeIdentifier.pipe(Schema.brand("FramingGroupId"));
 export type FramingGroupId = Schema.Schema.Type<typeof FramingGroupId>;
 
+/**
+ * Branded identifier for a persisted authoring session. Construct from validated input and
+ * preserve it across related requests; an identifier alone does not prove that the resource
+ * exists or is still current.
+ */
 export const ReviewAuthoringSessionId = SafeIdentifier.pipe(
 	Schema.brand("ReviewAuthoringSessionId")
 );
 export type ReviewAuthoringSessionId = Schema.Schema.Type<typeof ReviewAuthoringSessionId>;
 
+/**
+ * Branded identifier for a capture artifact. Construct from validated input and preserve it
+ * across related requests; an identifier alone does not prove that the resource exists or is
+ * still current.
+ */
 export const ArtifactId = NonEmptyString.pipe(Schema.brand("ArtifactId"));
 export type ArtifactId = Schema.Schema.Type<typeof ArtifactId>;
 
+/**
+ * Review world-space XYZ coordinates using the camera-render vector contract. Finite values
+ * remain in Unreal world units without coordinate conversion.
+ */
 export const ReviewVector = CameraWorldVector;
 export type ReviewVector = Schema.Schema.Type<typeof ReviewVector>;
 
+/**
+ * Review pitch/yaw/roll in Unreal degrees, shared with the camera-render contract. This is an
+ * orientation value rather than a transform matrix.
+ */
 export const ReviewRotation = CameraWorldRotation;
 export type ReviewRotation = Schema.Schema.Type<typeof ReviewRotation>;
 
@@ -114,6 +191,11 @@ const NonNegativeReviewVector = Schema.Struct({
 	z: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0))
 });
 
+/**
+ * Explicit perspective review camera at 16:9 with world location/rotation and FOV from 5
+ * through 170 degrees. Approval records a pose; it does not prove that the actor remains
+ * unchanged.
+ */
 export const ApprovedPose = Schema.Struct({
 	aspectRatio: Schema.Literal("16:9"),
 	fieldOfViewDegrees: Schema.Finite.check(Schema.isBetween({ minimum: 5, maximum: 170 })),
@@ -123,6 +205,10 @@ export const ApprovedPose = Schema.Struct({
 });
 export type ApprovedPose = Schema.Schema.Type<typeof ApprovedPose>;
 
+/**
+ * Review actor addressed by its saved /Game/ object path, with an optional diagnostic label.
+ * For durable World Partition identity prefer an authored actor GUID when available.
+ */
 export const ActorPathSubjectLocator = Schema.Struct({
 	actorPath: ReviewSubjectActorPath,
 	diagnosticLabel: Schema.optional(NonEmptyString),
@@ -130,6 +216,10 @@ export const ActorPathSubjectLocator = Schema.Struct({
 });
 export type ActorPathSubjectLocator = Schema.Schema.Type<typeof ActorPathSubjectLocator>;
 
+/**
+ * Review actor addressed by durable authored GUID, with optional last-known path and label.
+ * The last-known path is diagnostic evidence rather than a replacement identity.
+ */
 export const ActorGuidSubjectLocator = Schema.Struct({
 	actorGuid: ReviewSubjectActorGuid,
 	diagnosticLabel: Schema.optional(NonEmptyString),
@@ -138,6 +228,10 @@ export const ActorGuidSubjectLocator = Schema.Struct({
 });
 export type ActorGuidSubjectLocator = Schema.Schema.Type<typeof ActorGuidSubjectLocator>;
 
+/**
+ * Actor subject identified by durable authored GUID or explicit /Game/ actor path. Consumers
+ * must resolve the selected locator against the intended world.
+ */
 export const SubjectLocator = Schema.Union([ActorGuidSubjectLocator, ActorPathSubjectLocator]);
 export type SubjectLocator = Schema.Schema.Type<typeof SubjectLocator>;
 
@@ -145,6 +239,10 @@ export type SubjectLocator = Schema.Schema.Type<typeof SubjectLocator>;
 export const ObjectLocator = ActorPathSubjectLocator;
 export type ObjectLocator = Schema.Schema.Type<typeof ObjectLocator>;
 
+/**
+ * Oriented subject box with world center, non-negative half extents and rotation. Snapshot
+ * bounds are evidence for framing and drift checks, not a live actor handle.
+ */
 export const SubjectBounds = Schema.Struct({
 	center: ReviewVector,
 	extent: NonNegativeReviewVector,
@@ -152,18 +250,30 @@ export const SubjectBounds = Schema.Struct({
 });
 export type SubjectBounds = Schema.Schema.Type<typeof SubjectBounds>;
 
+/**
+ * Actor review target retaining its explicit subject locator. Camera pose is defined
+ * separately by the view's viewpoint.
+ */
 export const ActorTarget = Schema.Struct({
 	kind: Schema.Literal("actor"),
 	subject: SubjectLocator
 });
 export type ActorTarget = Schema.Schema.Type<typeof ActorTarget>;
 
+/**
+ * Actor-independent oriented-box review target. Area views use a world-fixed camera; they
+ * cannot inherit an actor-relative transform.
+ */
 export const AreaTarget = Schema.Struct({
 	bounds: SubjectBounds,
 	kind: Schema.Literal("oriented_box")
 });
 export type AreaTarget = Schema.Schema.Type<typeof AreaTarget>;
 
+/**
+ * Actor or oriented-area target for a review view. Narrow by kind before resolving actor
+ * identity or using explicit bounds.
+ */
 export const ReviewTarget = Schema.Union([ActorTarget, AreaTarget]);
 export type ReviewTarget = Schema.Schema.Type<typeof ReviewTarget>;
 
@@ -176,21 +286,37 @@ export type OrientedBoundsSubject = Schema.Schema.Type<typeof OrientedBoundsSubj
 
 const ReviewCaptureSubjectPrevious = Schema.Union([ActorPathSubjectLocator, OrientedBoundsSubject]);
 
+/**
+ * Wire capture subject supplied as actor locator or oriented bounds. It describes what is
+ * assessed, independently of the camera viewpoint.
+ */
 export const ReviewCaptureSubject = Schema.Union([SubjectLocator, OrientedBoundsSubject]);
 export type ReviewCaptureSubject = Schema.Schema.Type<typeof ReviewCaptureSubject>;
 
+/**
+ * World location/rotation captured when authoring an actor-relative view. Later realization
+ * uses this evidence to interpret relative pose and subject movement.
+ */
 export const ActorTransformSnapshot = Schema.Struct({
 	location: ReviewVector,
 	rotation: ReviewRotation
 });
 export type ActorTransformSnapshot = Schema.Schema.Type<typeof ActorTransformSnapshot>;
 
+/**
+ * Approved camera pose fixed in world space. Actor movement does not automatically move this
+ * viewpoint.
+ */
 export const WorldFixedViewpoint = Schema.Struct({
 	approvedPose: ApprovedPose,
 	kind: Schema.Literal("world_fixed")
 });
 export type WorldFixedViewpoint = Schema.Schema.Type<typeof WorldFixedViewpoint>;
 
+/**
+ * Camera pose relative to an actor target and the recorded target transform. Requires an
+ * actor target; oriented-area targets cannot use it.
+ */
 export const TargetRelativeViewpoint = Schema.Struct({
 	kind: Schema.Literal("target_relative"),
 	relativePose: ApprovedPose,
@@ -198,6 +324,10 @@ export const TargetRelativeViewpoint = Schema.Struct({
 });
 export type TargetRelativeViewpoint = Schema.Schema.Type<typeof TargetRelativeViewpoint>;
 
+/**
+ * Valid target/viewpoint pair: actor with world-fixed or relative pose, or oriented area with
+ * world-fixed pose. Invalid area-relative combinations are excluded by the model.
+ */
 export const ReviewViewDefinition = Schema.Union([
 	Schema.Struct({ target: ActorTarget, viewpoint: WorldFixedViewpoint }),
 	Schema.Struct({ target: ActorTarget, viewpoint: TargetRelativeViewpoint }),
@@ -205,6 +335,10 @@ export const ReviewViewDefinition = Schema.Union([
 ]);
 export type ReviewViewDefinition = Schema.Schema.Type<typeof ReviewViewDefinition>;
 
+/**
+ * Positive authored view revision with stable revision identity. Captures retain this
+ * revision so later view edits do not rewrite historical approval evidence.
+ */
 export const NumberedReviewViewRevision = Schema.Struct({
 	id: ReviewViewRevisionId,
 	number: PositiveInteger,
@@ -212,12 +346,21 @@ export const NumberedReviewViewRevision = Schema.Struct({
 });
 export type NumberedReviewViewRevision = Schema.Schema.Type<typeof NumberedReviewViewRevision>;
 
+/**
+ * Numbered view revision or explicit legacy_unversioned capture evidence. Migrated history
+ * must not invent a revision that was never recorded.
+ */
 export const CapturedReviewViewRevision = Schema.Union([
 	NumberedReviewViewRevision,
 	Schema.Struct({ status: Schema.Literal("legacy_unversioned") })
 ]);
 export type CapturedReviewViewRevision = Schema.Schema.Type<typeof CapturedReviewViewRevision>;
 
+/**
+ * Built-in named framing choices, including cardinal, facade, context and editor-view poses.
+ * Hosts may use configurable framing groups instead of treating these names as fixed project
+ * policy.
+ */
 export const FramingPreset = Schema.Literals([
 	"context_three_quarter",
 	"facade_front",
@@ -229,6 +372,10 @@ export const FramingPreset = Schema.Literals([
 ]);
 export type FramingPreset = Schema.Schema.Type<typeof FramingPreset>;
 
+/**
+ * Positive candidate count distributed over a yaw arc with explicit spread/offset in degrees.
+ * This is generation policy; it does not move an editor camera by itself.
+ */
 export const ArcFramingPattern = Schema.Struct({
 	count: PositiveInteger,
 	kind: Schema.Literal("arc"),
@@ -237,6 +384,10 @@ export const ArcFramingPattern = Schema.Struct({
 });
 export type ArcFramingPattern = Schema.Schema.Type<typeof ArcFramingPattern>;
 
+/**
+ * Positive candidate count distributed around a full ring with an angular offset in degrees.
+ * Candidate generation remains deterministic for the same subject and parameters.
+ */
 export const RingFramingPattern = Schema.Struct({
 	count: PositiveInteger,
 	kind: Schema.Literal("ring"),
@@ -244,9 +395,17 @@ export const RingFramingPattern = Schema.Struct({
 });
 export type RingFramingPattern = Schema.Schema.Type<typeof RingFramingPattern>;
 
+/**
+ * Arc or ring candidate-distribution policy. Narrow by kind to interpret spread/yaw-offset
+ * versus ring-offset fields.
+ */
 export const FramingPattern = Schema.Union([ArcFramingPattern, RingFramingPattern]);
 export type FramingPattern = Schema.Schema.Type<typeof FramingPattern>;
 
+/**
+ * Named enabled/disabled framing group with ID, distance scale, elevation and arc/ring
+ * pattern. Hosts configure groups rather than modifying the generator for each project.
+ */
 export const FramingGroup = Schema.Struct({
 	displayName: NonEmptyString,
 	distanceScale: Schema.Finite.check(Schema.isGreaterThan(0)),
@@ -257,6 +416,10 @@ export const FramingGroup = Schema.Struct({
 });
 export type FramingGroup = Schema.Schema.Type<typeof FramingGroup>;
 
+/**
+ * Candidate-generation policy with FOV, groups and normalized margin from zero through 0.45.
+ * These are host/project choices rather than Unreal format constraints.
+ */
 export const FramingParameters = Schema.Struct({
 	fieldOfViewDegrees: ApprovedPose.fields.fieldOfViewDegrees,
 	groups: Schema.Array(FramingGroup),
@@ -264,6 +427,10 @@ export const FramingParameters = Schema.Struct({
 });
 export type FramingParameters = Schema.Schema.Type<typeof FramingParameters>;
 
+/**
+ * Optional per-candidate distance, elevation, FOV, margin and yaw adjustments. Missing fields
+ * inherit the group's generation parameters.
+ */
 export const FramingCandidateOverrides = Schema.Struct({
 	distanceScale: Schema.optional(Schema.Finite.check(Schema.isGreaterThan(0))),
 	elevation: Schema.optional(Schema.Finite),
@@ -273,6 +440,10 @@ export const FramingCandidateOverrides = Schema.Struct({
 });
 export type FramingCandidateOverrides = Schema.Schema.Type<typeof FramingCandidateOverrides>;
 
+/**
+ * Overrides bound to one deterministic candidate ID. Unrelated candidates retain their
+ * inherited framing policy.
+ */
 export const FramingCandidateOverride = Schema.Struct({
 	candidateId: FramingCandidateId,
 	overrides: FramingCandidateOverrides
@@ -285,6 +456,11 @@ const ManualFramingRecipe = Schema.Struct({
 	version: Schema.Literal(1)
 });
 
+/**
+ * Legacy version-1 preset recipe retaining subject bounds, margin and optional
+ * manual-adjustment reason. Kept for migration; current recipes additionally retain group
+ * parameters.
+ */
 export const PresetFramingRecipeV1 = Schema.Struct({
 	kind: Schema.Literal("preset"),
 	margin: Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 0.45 })),
@@ -294,6 +470,11 @@ export const PresetFramingRecipeV1 = Schema.Struct({
 	version: Schema.Literal(1)
 });
 
+/**
+ * Version-2 recipe retaining group identity/index, full generation parameters, subject bounds
+ * and optional overrides/manual reason. This allows an approved pose's provenance to be
+ * inspected later.
+ */
 export const PresetFramingRecipeV2 = Schema.Struct({
 	candidateOverrides: Schema.optional(FramingCandidateOverrides),
 	groupId: FramingGroupId,
@@ -307,12 +488,25 @@ export const PresetFramingRecipeV2 = Schema.Struct({
 	version: Schema.Literal(2)
 });
 
+/**
+ * Supported legacy/current preset framing provenance. Consumers must discriminate version
+ * rather than assuming version-2 group fields exist in old saved reviews.
+ */
 export const PresetFramingRecipe = Schema.Union([PresetFramingRecipeV1, PresetFramingRecipeV2]);
 export type PresetFramingRecipe = Schema.Schema.Type<typeof PresetFramingRecipe>;
 
+/**
+ * Manual or generated-preset framing provenance. Manual adjustments require their recorded
+ * reason rather than being presented as an unchanged generated candidate.
+ */
 export const FramingRecipe = Schema.Union([ManualFramingRecipe, PresetFramingRecipe]);
 export type FramingRecipe = Schema.Schema.Type<typeof FramingRecipe>;
 
+/**
+ * Informational/warning framing evidence, including bounds drift, margin and
+ * viewport/near-plane conditions. Severity is diagnostic policy rather than an automatic
+ * capture refusal.
+ */
 export const FramingDiagnostic = Schema.Struct({
 	code: Schema.Literals([
 		"bounds_snapshot",
@@ -330,20 +524,30 @@ export const FramingDiagnostic = Schema.Struct({
 });
 export type FramingDiagnostic = Schema.Schema.Type<typeof FramingDiagnostic>;
 
+/**
+ * Finite projected subject bounds with min/max X/Y. Values can extend beyond the viewport;
+ * consumers use framing diagnostics to interpret clipping rather than clamping away evidence.
+ */
 const ReviewProjectedBounds = Schema.Struct({
 	maxX: Schema.Finite,
 	maxY: Schema.Finite,
 	minX: Schema.Finite,
 	minY: Schema.Finite
 });
+/** Normalized viewport bounds; out-of-frame coordinates are retained for clipping diagnostics. */
 export type ReviewProjectedBounds = Schema.Schema.Type<typeof ReviewProjectedBounds>;
 
+/**
+ * Finite projected margins on each viewport edge. Negative margins can express a subject
+ * extending outside the frame and must not be silently clamped.
+ */
 const ReviewProjectionMargins = Schema.Struct({
 	bottom: Schema.Finite,
 	left: Schema.Finite,
 	right: Schema.Finite,
 	top: Schema.Finite
 });
+/** Normalized viewport margins; negative values preserve evidence of framing outside an edge. */
 export type ReviewProjectionMargins = Schema.Schema.Type<typeof ReviewProjectionMargins>;
 
 const ReviewProjectedSubject = Schema.Struct({
@@ -374,6 +578,11 @@ export const ReviewSubjectProjection = Schema.Union([
 ]);
 export type ReviewSubjectProjection = Schema.Schema.Type<typeof ReviewSubjectProjection>;
 
+/**
+ * Deterministic candidate identity, proposed approved pose, generation recipe and
+ * diagnostics. A generated candidate is not an approved persisted review view until the
+ * explicit approval operation.
+ */
 export const FramingCandidate = Schema.Struct({
 	approvedPose: ApprovedPose,
 	diagnostics: Schema.Array(FramingDiagnostic),
@@ -411,6 +620,10 @@ const ReviewSelectionFailure = Schema.Struct({
 	status: Schema.Literal("failed")
 });
 
+/**
+ * Selected actor/bounds evidence or explicit selection failure from the editor. Failure is an
+ * ordinary response variant rather than an empty successful selection.
+ */
 export const ReviewSelectionResponse = Schema.Union([
 	ReviewSelectionSuccess,
 	ReviewSelectionFailure
@@ -426,6 +639,10 @@ const ReviewSubjectInspectionFailure = Schema.Struct({
 	status: Schema.Literal("failed")
 });
 
+/**
+ * Resolved subject evidence or typed inspection failure. The response preserves
+ * unavailable/missing subject state instead of fabricating bounds.
+ */
 export const ReviewSubjectInspectionResponse = Schema.Union([
 	ReviewSelectionSuccess,
 	ReviewSubjectInspectionFailure
@@ -452,6 +669,11 @@ export function subjectLocatorFromSelection(
 			});
 }
 
+/**
+ * Explicit candidate/view identity, source actor and proposed pose, with optional manually
+ * adjusted pose/reason. Approval must validate these against current authoring-session
+ * evidence.
+ */
 export const ApproveReviewCandidateIntent = Schema.Struct({
 	candidateId: FramingCandidateId,
 	candidatePose: ApprovedPose,
@@ -462,6 +684,10 @@ export const ApproveReviewCandidateIntent = Schema.Struct({
 });
 export type ApproveReviewCandidateIntent = Schema.Schema.Type<typeof ApproveReviewCandidateIntent>;
 
+/**
+ * Named PNG review output profile with bounded pixel resolution and optional complete render
+ * policy. Legacy full_fidelity remains explicit; it is not a guarantee of backend support.
+ */
 export const CaptureProfile = Schema.Struct({
 	renderPolicy: Schema.optionalKey(CameraRenderPolicy),
 	id: CaptureProfileId,
@@ -474,9 +700,17 @@ export const CaptureProfile = Schema.Struct({
 });
 export type CaptureProfile = Schema.Schema.Type<typeof CaptureProfile>;
 
+/**
+ * Sparse, standard or dense sampling policy for ray-based assessment. Hosts choose assessment
+ * cost/coverage rather than changing a fixed toolkit threshold.
+ */
 export const VisibilitySamplePreset = Schema.Literals(["sparse", "standard", "dense"]);
 export type VisibilitySamplePreset = Schema.Schema.Type<typeof VisibilitySamplePreset>;
 
+/**
+ * Requested assessment strategy, including automatic capability selection and explicit ray,
+ * mask or depth methods. Availability must be negotiated with the connected editor.
+ */
 export const ReviewAssessmentMethodName = Schema.Literals([
 	"automatic",
 	"ray_samples",
@@ -485,6 +719,10 @@ export const ReviewAssessmentMethodName = Schema.Literals([
 ]);
 export type ReviewAssessmentMethodName = Schema.Schema.Type<typeof ReviewAssessmentMethodName>;
 
+/**
+ * Automatic or explicit visibility measurement policy. Ray sampling additionally requires a
+ * sample preset; measurement strategy is independent of low-visibility acceptance thresholds.
+ */
 export const VisibilityAssessment = Schema.Union([
 	Schema.Struct({ method: Schema.Literal("automatic") }),
 	Schema.Struct({ method: Schema.Literal("ray_samples"), samplePreset: VisibilitySamplePreset }),
@@ -502,12 +740,20 @@ const NaturalAndClearVisibilityOutput = Schema.Struct({
 	mode: Schema.Literal("natural_and_clear")
 });
 
+/**
+ * Natural-only output or natural plus a clear companion according to its policy. Clear output
+ * is separately evidenced rather than replacing the naturally occluded frame.
+ */
 export const VisibilityOutput = Schema.Union([
 	NaturalOnlyVisibilityOutput,
 	NaturalAndClearVisibilityOutput
 ]);
 export type VisibilityOutput = Schema.Schema.Type<typeof VisibilityOutput>;
 
+/**
+ * Record, warn or fail policy, with a normalized threshold for warn/fail. Hosts configure
+ * acceptance; the underlying measurement remains observable regardless of policy.
+ */
 export const VisibilityLowThresholdAction = Schema.Union([
 	Schema.Struct({ action: Schema.Literal("record") }),
 	Schema.Struct({ action: Schema.Literal("warn"), threshold: Fraction }),
@@ -515,6 +761,10 @@ export const VisibilityLowThresholdAction = Schema.Union([
 ]);
 export type VisibilityLowThresholdAction = Schema.Schema.Type<typeof VisibilityLowThresholdAction>;
 
+/**
+ * Named assessment, output and low-visibility acceptance policy referenced by views. Projects
+ * can replace policy without modifying Unreal capture behavior.
+ */
 export const VisibilityPolicy = Schema.Struct({
 	assessment: VisibilityAssessment,
 	id: VisibilityPolicyId,
@@ -528,6 +778,10 @@ function locatorIdentity(locator: ObjectLocator): string {
 	return `${locator.kind}:${locator.actorPath}`;
 }
 
+/**
+ * Bounded explicit hide/protect locators for clear companions. Rejects duplicates and
+ * contradictions so an object cannot be both hidden and protected in the same request.
+ */
 export const VisibilityOverrides = Schema.Struct({
 	hideInClear: Schema.Array(ObjectLocator).check(Schema.isMaxLength(32)),
 	neverHide: Schema.Array(ObjectLocator).check(Schema.isMaxLength(32))
@@ -611,6 +865,10 @@ function boundedJsonIssue(value: Schema.Json, depth = 0): string | undefined {
 	return undefined;
 }
 
+/**
+ * Runtime-trigger provenance JSON with bounded keys, structure and encoded size. This retains
+ * trigger context without permitting an unbounded payload in saved capture history.
+ */
 export const BoundedJsonObject = Schema.Record(BoundedString, Schema.Json).pipe(
 	Schema.check(
 		Schema.makeFilter((value) => {
@@ -624,6 +882,11 @@ export const BoundedJsonObject = Schema.Record(BoundedString, Schema.Json).pipe(
 );
 export type BoundedJsonObject = Schema.Schema.Type<typeof BoundedJsonObject>;
 
+/**
+ * Manual, external automation or namespaced/versioned runtime-trigger provenance. Runtime
+ * triggers carry bounded JSON; this records why capture ran rather than granting editor
+ * authority.
+ */
 export const CaptureInvocationCause = Schema.Union([
 	Schema.Struct({ type: Schema.Literal("manual") }),
 	Schema.Struct({
@@ -639,6 +902,11 @@ export const CaptureInvocationCause = Schema.Union([
 ]);
 export type CaptureInvocationCause = Schema.Schema.Type<typeof CaptureInvocationCause>;
 
+/**
+ * Capture identity, review-set identity and optional non-empty bounded view subset. Omitting
+ * the subset means selection follows the review set; it does not change host project
+ * selection.
+ */
 export const CaptureInvocation = Schema.Struct({
 	cause: CaptureInvocationCause,
 	id: CaptureInvocationId,
@@ -649,6 +917,10 @@ export const CaptureInvocation = Schema.Struct({
 });
 export type CaptureInvocation = Schema.Schema.Type<typeof CaptureInvocation>;
 
+/**
+ * Observed occluder locator, normalized confidence and explanation. This is assessment
+ * evidence rather than permission to hide the object under every output policy.
+ */
 export const OccluderEvidence = Schema.Struct({
 	confidence: Fraction,
 	locator: ObjectLocator,
@@ -656,6 +928,10 @@ export const OccluderEvidence = Schema.Struct({
 });
 export type OccluderEvidence = Schema.Schema.Type<typeof OccluderEvidence>;
 
+/**
+ * Concrete non-automatic measurement method and algorithm version used for a result. Retain
+ * it with history so changes in assessment implementation remain inspectable.
+ */
 export const EffectiveVisibilityMethod = Schema.Struct({
 	method: Schema.Literals(["ray_samples", "subject_mask", "depth_compare"]),
 	version: PositiveInteger
@@ -675,6 +951,11 @@ const UnsupportedReviewAssessmentMethod = Schema.Struct({
 	status: Schema.Literal("unsupported")
 });
 
+/**
+ * Versioned editor assessment capabilities with supported/unsupported methods and
+ * depth-resolution limits. Negotiate this before selecting an automatic method or requesting
+ * a larger assessment.
+ */
 export const ReviewAssessmentCapabilities = Schema.Struct({
 	contract: Schema.Struct({
 		name: Schema.Literal("ue-shed-review-assessment-capabilities"),
@@ -716,6 +997,10 @@ const VisibilityAssessmentFailed = Schema.Struct({
 	status: Schema.Literal("assessment_failed")
 });
 
+/**
+ * Not-assessed, assessed or failed visibility outcome. Missing measurement is not zero
+ * visibility; preserve each variant when classifying or presenting results.
+ */
 export const VisibilityMeasurement = Schema.Union([
 	VisibilityNotAssessed,
 	VisibilityAssessedMeasurement,
@@ -723,6 +1008,10 @@ export const VisibilityMeasurement = Schema.Union([
 ]);
 export type VisibilityMeasurement = Schema.Schema.Type<typeof VisibilityMeasurement>;
 
+/**
+ * Clear, partial, blocked or not-visible presentation category. Classification depends on
+ * explicit thresholds and does not replace the measured visibility evidence.
+ */
 export const VisibilityClassification = Schema.Literals([
 	"clear",
 	"partial",
@@ -761,6 +1050,10 @@ export const VisibilityResult = Schema.Union([
 ]);
 export type VisibilityResult = Schema.Schema.Type<typeof VisibilityResult>;
 
+/**
+ * Normalized blocked/clear cutoffs, requiring blockedAtOrBelow to be lower than
+ * clearAtOrAbove. Projects can change classification policy without changing measurement.
+ */
 export const VisibilityClassificationThresholds = Schema.Struct({
 	blockedAtOrBelow: Fraction,
 	clearAtOrAbove: Fraction
@@ -830,6 +1123,11 @@ const PreviousReviewView = Schema.Struct({
 	)
 );
 
+/**
+ * Approved named view with revision, target/viewpoint, framing provenance and referenced
+ * capture/visibility policies. Area targets require world-fixed viewpoints; authored
+ * visibility remains explicit.
+ */
 export const ReviewView = Schema.Struct({
 	authoredVisibility: Schema.optionalKey(CameraAuthoredVisibility),
 	authoring: Schema.optionalKey(
@@ -1105,6 +1403,11 @@ const LegacyReviewSet = Schema.Struct({
 	views: Schema.Array(LegacyReviewView)
 });
 
+/**
+ * Creates the default automatic-assessment, natural-only policy that records low visibility.
+ * This pure helper does not require clear companions or impose a project-wide failure
+ * threshold.
+ */
 export function defaultNaturalOnlyVisibilityPolicy(): VisibilityPolicy {
 	return VisibilityPolicy.make({
 		assessment: { method: "automatic" },
@@ -1115,6 +1418,10 @@ export function defaultNaturalOnlyVisibilityPolicy(): VisibilityPolicy {
 	});
 }
 
+/**
+ * Creates numbered revision one with an ID derived from the view ID. Use revision updates
+ * after definition changes rather than reinitializing an existing approved view.
+ */
 export function initialReviewViewRevision(viewId: ReviewViewId): NumberedReviewViewRevision {
 	return NumberedReviewViewRevision.make({
 		id: ReviewViewRevisionId.make(`${viewId}-r1`),
@@ -1178,6 +1485,11 @@ function migratePreviousReviewSet(
 	});
 }
 
+/**
+ * Current persisted review-set contract with map, approved views and referenced
+ * policies/profiles. Load historical documents through the migration parser rather than
+ * assuming every saved file is current.
+ */
 export const ReviewSet = ReviewSetCurrent;
 export type ReviewSet = Schema.Schema.Type<typeof ReviewSet>;
 
@@ -1199,6 +1511,11 @@ type DecodedReviewSet =
 	| { readonly migrated: false; readonly reviewSet: ReviewSet }
 	| { readonly migrated: true; readonly reviewSet: ReviewSet };
 
+/**
+ * Validates supported review-set versions and migrates legacy definitions to the current
+ * model, returning an explicit migrated flag. Fails with ContractParseError on invalid/unsupported
+ * evidence and performs no file write.
+ */
 export function decodeReviewSetWithMigration<Input>(input: Input) {
 	return Schema.decodeUnknownEffect(ReviewSetContractHeader)(input).pipe(
 		Effect.flatMap(({ contract }) => {
@@ -1225,7 +1542,8 @@ export function decodeReviewSetWithMigration<Input>(input: Input) {
 					})
 				)
 			);
-		})
+		}),
+		Effect.mapError((cause) => contractParseError("ReviewSet", cause))
 	);
 }
 
@@ -1289,6 +1607,11 @@ const ReviewCaptureRequestLegacy = Schema.Struct({
 	viewId: ReviewViewId
 });
 
+/**
+ * Current correlated review-capture request with map, subject, viewpoint, assessment and
+ * bounded resolution. Version-specific render/visibility fields must agree with the contract
+ * minor version.
+ */
 export const ReviewCaptureRequestCurrent = Schema.Struct({
 	authoredVisibility: Schema.optionalKey(CameraAuthoredVisibility),
 	renderPolicy: Schema.optionalKey(CameraRenderPolicy),
@@ -1432,6 +1755,11 @@ const ReviewCaptureRequestPrevious = Schema.Struct({
 	)
 );
 
+/**
+ * Supported current and legacy review-capture wire requests. Strict parsing rejects
+ * incompatible extra fields; compatibility support does not imply every legacy request has
+ * current fidelity evidence.
+ */
 export const ReviewCaptureRequest = Schema.Union([
 	ReviewCaptureRequestCurrent,
 	ReviewCaptureRequestClearPrevious,
@@ -1463,6 +1791,10 @@ const ReviewCaptureSuccessLegacy = Schema.Struct({
 	width: PositiveInteger
 });
 
+/**
+ * Actor-path subject realized against the editor world, including its observed transform.
+ * Retain realization separately from the authored locator for historical comparisons.
+ */
 export const ResolvedActorSubject = Schema.Struct({
 	actorPath: ReviewSubjectActorPath,
 	kind: Schema.Literal("actor_path"),
@@ -1470,6 +1802,10 @@ export const ResolvedActorSubject = Schema.Struct({
 });
 export type ResolvedActorSubject = Schema.Schema.Type<typeof ResolvedActorSubject>;
 
+/**
+ * GUID subject resolved to its current object path and transform. The durable GUID remains
+ * the identity when the transient world path changes.
+ */
 export const ResolvedActorGuidSubject = Schema.Struct({
 	actorGuid: ReviewSubjectActorGuid,
 	actorPath: ReviewSubjectActorPath,
@@ -1480,6 +1816,10 @@ export type ResolvedActorGuidSubject = Schema.Schema.Type<typeof ResolvedActorGu
 
 const ResolvedReviewSubjectPrevious = Schema.Union([ResolvedActorSubject, OrientedBoundsSubject]);
 
+/**
+ * Resolved actor/area or explicit unresolved-actor evidence. A missing subject remains
+ * distinguishable from a successfully captured empty area.
+ */
 export const ResolvedReviewSubject = Schema.Union([
 	Schema.Struct({
 		kind: Schema.Literal("unresolved_actor"),
@@ -1597,6 +1937,10 @@ const ClearCompanionFailed = Schema.Struct({
 	)
 );
 
+/**
+ * Clear companion not requested, captured or failed, with its own realization evidence. A
+ * companion failure does not erase the naturally captured frame.
+ */
 export const ClearCompanionResult = Schema.Union([
 	ClearCompanionNotRequested,
 	ClearCompanionCaptured,
@@ -1807,6 +2151,11 @@ const ReviewCaptureFailure = Schema.Struct({
 	viewId: ReviewViewId
 });
 
+/**
+ * Supported review-capture success versions or explicit failure. Preserve per-version
+ * fidelity and restoration evidence rather than assuming legacy replies recorded current
+ * measurements.
+ */
 export const ReviewCaptureResponse = Schema.Union([
 	ReviewCaptureSuccessCurrent,
 	ReviewCaptureSuccessClearPrevious,
@@ -1817,6 +2166,10 @@ export const ReviewCaptureResponse = Schema.Union([
 ]);
 export type ReviewCaptureResponse = Schema.Schema.Type<typeof ReviewCaptureResponse>;
 
+/**
+ * Observed editor projection/render evidence for a framing candidate at a recorded time. It
+ * supplements the generated pose and can reveal current-world drift before approval.
+ */
 export const ReviewCandidateRealization = Schema.Struct({
 	renderEvidence: Schema.optionalKey(CameraFrameEvidence),
 	candidateId: FramingCandidateId,
@@ -1826,6 +2179,11 @@ export const ReviewCandidateRealization = Schema.Struct({
 });
 export type ReviewCandidateRealization = Schema.Schema.Type<typeof ReviewCandidateRealization>;
 
+/**
+ * Persisted candidate-authoring state with review-set/subject evidence, selection, overrides
+ * and realizations. Lifecycle records active, stale, approved or discarded instead of
+ * inferring readiness from file existence.
+ */
 export const ReviewAuthoringSession = Schema.Struct({
 	candidates: Schema.Array(FramingCandidate).check(Schema.isMinLength(1)),
 	candidateOverrides: Schema.optional(Schema.Array(FramingCandidateOverride)),
@@ -1861,6 +2219,10 @@ export const ReviewAuthoringSession = Schema.Struct({
 });
 export type ReviewAuthoringSession = Schema.Schema.Type<typeof ReviewAuthoringSession>;
 
+/**
+ * Explicit candidate selection/discards, framing overrides and draft-pose/reason changes for
+ * an authoring session. Updating a draft does not by itself approve or capture a review view.
+ */
 export const ReviewAuthoringSessionPatch = Schema.Struct({
 	candidateOverrides: Schema.optional(Schema.Array(FramingCandidateOverride)),
 	discardedCandidateIds: Schema.Array(FramingCandidateId),
@@ -1871,6 +2233,10 @@ export const ReviewAuthoringSessionPatch = Schema.Struct({
 });
 export type ReviewAuthoringSessionPatch = Schema.Schema.Type<typeof ReviewAuthoringSessionPatch>;
 
+/**
+ * Resumable, stale, missing-review-set or corrupt recovery outcome. Stale sessions retain
+ * reasons and evidence; hosts must reconcile them before approving an old candidate.
+ */
 export const ReviewAuthoringSessionRecovery = Schema.Union([
 	Schema.Struct({ status: Schema.Literal("resumable"), session: ReviewAuthoringSession }),
 	Schema.Struct({
@@ -1903,6 +2269,11 @@ export type ReviewAuthoringSessionRecovery = Schema.Schema.Type<
 	typeof ReviewAuthoringSessionRecovery
 >;
 
+/**
+ * Saved PNG identity, relative path, SHA-256 hash, dimensions and pure/clear/authored
+ * variant. Repository ingestion verifies source ownership and bytes before treating it as
+ * trusted history.
+ */
 export const CaptureArtifact = Schema.Struct({
 	byteLength: NonNegativeInteger,
 	contentHash: Schema.String.check(Schema.isPattern(/^sha256:[a-f0-9]{64}$/u)),
@@ -1915,6 +2286,10 @@ export const CaptureArtifact = Schema.Struct({
 });
 export type CaptureArtifact = Schema.Schema.Type<typeof CaptureArtifact>;
 
+/**
+ * Effective world pose/subject evidence for current captures or explicit legacy_not_recorded
+ * provenance. Migration does not invent a pose that older captures never recorded.
+ */
 export const CaptureRealization = Schema.Union([
 	Schema.Struct({
 		effectiveWorldPose: ApprovedPose,
@@ -2010,6 +2385,10 @@ const FailedViewResult = Schema.Struct({
 	viewRevision: CapturedReviewViewRevision
 });
 
+/**
+ * Captured or failed result for one requested review view. Batch capture can retain
+ * successful views alongside failures rather than discarding the whole run.
+ */
 export const ViewResult = Schema.Union([CapturedViewResult, FailedViewResult]);
 export type ViewResult = Schema.Schema.Type<typeof ViewResult>;
 
@@ -2324,9 +2703,18 @@ function migrateLegacyCaptureRun(legacy: Schema.Schema.Type<typeof LegacyCapture
 	});
 }
 
+/**
+ * Current saved capture-run contract with invocation, view outcomes and artifacts. Historical
+ * files require the migration parser so missing legacy evidence remains explicit.
+ */
 export const CaptureRun = CaptureRunCurrent;
 export type CaptureRun = Schema.Schema.Type<typeof CaptureRun>;
 
+/**
+ * Validates current or supported historical capture runs and returns the current model plus
+ * migrated flag. Invalid evidence fails with ContractParseError; migration preserves unknown legacy
+ * realization instead of inventing it.
+ */
 export function decodeCaptureRunWithMigration<Input>(input: Input) {
 	return Schema.decodeUnknownEffect(CaptureRunCurrent)(input).pipe(
 		Effect.map((run) => ({ migrated: false as const, run })),
@@ -2369,35 +2757,104 @@ export function decodeCaptureRunWithMigration<Input>(input: Input) {
 					run: migrateLegacyCaptureRun(run)
 				}))
 			)
-		)
+		),
+		Effect.mapError((cause) => contractParseError("CaptureRun", cause))
 	);
 }
 
+/**
+ * Returns an actor locator for actor-targeted views, otherwise undefined for oriented areas.
+ * This pure helper does not resolve the actor in an editor.
+ */
 export function reviewViewActorSubject(view: ReviewView): SubjectLocator | undefined {
 	return view.target.kind === "actor" ? view.target.subject : undefined;
 }
 
+/**
+ * Returns the authored world-fixed pose, or undefined for target-relative views. Relative
+ * views require current subject realization before a world camera pose can be computed.
+ */
 export function reviewViewApprovedPose(view: ReviewView): ApprovedPose | undefined {
 	return view.viewpoint.kind === "world_fixed" ? view.viewpoint.approvedPose : undefined;
 }
 
+/**
+ * Parses supported review-set versions and returns the normalized current model. Fails with
+ * ContractParseError; use decodeReviewSetWithMigration when the caller must know whether persistence
+ * should be upgraded.
+ */
 export const decodeReviewSet = <Input>(input: Input) =>
 	decodeReviewSetWithMigration(input).pipe(Effect.map(({ reviewSet }) => reviewSet));
+/**
+ * Strictly validates a supported review-capture wire request, failing with ContractParseError.
+ * Excess fields are rejected so incompatible version-specific policy is not silently ignored.
+ */
 export const decodeReviewCaptureRequest = <Input>(input: Input) =>
-	Schema.decodeUnknownEffect(ReviewCaptureRequest)(input, { onExcessProperty: "error" });
+	Schema.decodeUnknownEffect(ReviewCaptureRequest)(input, { onExcessProperty: "error" }).pipe(
+		Effect.mapError((cause) => contractParseError("ReviewCaptureRequest", cause))
+	);
+/**
+ * Strictly validates a supported review-capture wire response, failing with ContractParseError. A
+ * successfully parsed failed response remains a domain outcome rather than a parser failure.
+ */
 export const decodeReviewCaptureResponse = <Input>(input: Input) =>
-	Schema.decodeUnknownEffect(ReviewCaptureResponse)(input, { onExcessProperty: "error" });
-export const decodeReviewAssessmentCapabilities = Schema.decodeUnknownEffect(
-	ReviewAssessmentCapabilities
+	Schema.decodeUnknownEffect(ReviewCaptureResponse)(input, { onExcessProperty: "error" }).pipe(
+		Effect.mapError((cause) => contractParseError("ReviewCaptureResponse", cause))
+	);
+/**
+ * Validates untrusted editor visibility-assessment capabilities. Shape failures return
+ * ContractParseError retaining the schema issue; successful failure/stale variants remain
+ * ordinary values for the caller to reconcile.
+ */
+export const decodeReviewAssessmentCapabilities = contractParser(
+	ReviewAssessmentCapabilities,
+	"ReviewAssessmentCapabilities"
 );
-export const decodeReviewSelectionResponse = Schema.decodeUnknownEffect(ReviewSelectionResponse);
-export const decodeReviewSubjectInspectionResponse = Schema.decodeUnknownEffect(
-	ReviewSubjectInspectionResponse
+/**
+ * Validates untrusted editor selection outcome. Shape failures return ContractParseError
+ * retaining the schema issue; successful failure/stale variants remain ordinary values for
+ * the caller to reconcile.
+ */
+export const decodeReviewSelectionResponse = contractParser(
+	ReviewSelectionResponse,
+	"ReviewSelectionResponse"
 );
-export const decodeApproveReviewCandidateIntent = Schema.decodeUnknownEffect(
-	ApproveReviewCandidateIntent
+/**
+ * Validates untrusted subject inspection outcome. Shape failures return ContractParseError
+ * retaining the schema issue; successful failure/stale variants remain ordinary values for
+ * the caller to reconcile.
+ */
+export const decodeReviewSubjectInspectionResponse = contractParser(
+	ReviewSubjectInspectionResponse,
+	"ReviewSubjectInspectionResponse"
 );
-export const decodeCaptureInvocation = Schema.decodeUnknownEffect(CaptureInvocation);
+/**
+ * Validates untrusted candidate approval intent. Shape failures return ContractParseError
+ * retaining the schema issue; successful failure/stale variants remain ordinary values for
+ * the caller to reconcile.
+ */
+export const decodeApproveReviewCandidateIntent = contractParser(
+	ApproveReviewCandidateIntent,
+	"ApproveReviewCandidateIntent"
+);
+/**
+ * Validates untrusted capture invocation/provenance. Shape failures return ContractParseError
+ * retaining the schema issue; successful failure/stale variants remain ordinary values for
+ * the caller to reconcile.
+ */
+export const decodeCaptureInvocation = contractParser(CaptureInvocation, "CaptureInvocation");
+/**
+ * Parses supported capture-run versions and returns the normalized current model. Fails with
+ * ContractParseError; use the migration variant when upgrade status is needed.
+ */
 export const decodeCaptureRun = <Input>(input: Input) =>
 	decodeCaptureRunWithMigration(input).pipe(Effect.map(({ run }) => run));
-export const decodeReviewAuthoringSession = Schema.decodeUnknownEffect(ReviewAuthoringSession);
+/**
+ * Validates untrusted persisted authoring session. Shape failures return ContractParseError
+ * retaining the schema issue; successful failure/stale variants remain ordinary values for
+ * the caller to reconcile.
+ */
+export const decodeReviewAuthoringSession = contractParser(
+	ReviewAuthoringSession,
+	"ReviewAuthoringSession"
+);

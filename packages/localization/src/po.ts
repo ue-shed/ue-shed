@@ -33,6 +33,10 @@ export function decodePOEscapes(value: string): string {
 		.replaceAll("\\\\", "\\");
 }
 
+/**
+ * Interprets a PO context using Unreal's dialect and collapse policy. Returns no identity
+ * when the context cannot establish a namespace/key; never substitutes source text as a key.
+ */
 export function parsePOIdentity(value: string) {
 	return parseResult(() => {
 		let escaped = false;
@@ -285,6 +289,11 @@ export function parsePOBlock(lines: readonly POLine[], lineOffset = 0, detailed 
 	});
 }
 
+/**
+ * Parses bounded PO bytes into the full format-preserving document. Applies explicit
+ * dialect/collapse policy for identities and returns typed failures instead of a partially
+ * trusted editable document.
+ */
 export function parsePO(bytes: Uint8Array, input: POParseOptions = {}) {
 	return parseResult(() => {
 		const options = validate(POParseOptions, input);
@@ -332,6 +341,11 @@ export function parsePO(bytes: Uint8Array, input: POParseOptions = {}) {
 	});
 }
 
+/**
+ * Projects an editable PO document to read-only evidence entries. Drops formatting blocks
+ * intentionally to reduce retained data; the result cannot be used for byte-exact
+ * serialization.
+ */
 export function projectPOEvidence(document: PODocument): POEvidence {
 	// Copy strings so short comments and identities cannot retain the entire decoded file.
 	return immutable({

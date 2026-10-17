@@ -46,6 +46,17 @@ import {
 
 const decodeReviewSet = <Input>(input: Input) => Effect.runSync(decodeReviewSetEffect(input));
 
+function expectReviewSetIssue<Input>(input: Input, issue: RegExp): void {
+	const failure = Effect.runSync(Effect.flip(decodeReviewSetEffect(input)));
+	expect(failure).toMatchObject({
+		code: "invalid_contract",
+		contract: "ReviewSet",
+		nextStep: "fix_input"
+	});
+	expect(Schema.isSchemaError(failure.cause)).toBe(true);
+	expect(String(failure.cause)).toMatch(issue);
+}
+
 const temporaryDirectories: string[] = [];
 
 function operationId(sequence: number): string {
@@ -457,8 +468,8 @@ describe("Map Review contracts", () => {
 	it("rejects cross-policy combinations that would hide state without a Clear capture", () => {
 		const reviewSet = fixtureReviewSet();
 		const view = reviewSet.views[0]!;
-		expect(() =>
-			decodeReviewSet({
+		expectReviewSetIssue(
+			{
 				...reviewSet,
 				views: [
 					{
@@ -475,14 +486,15 @@ describe("Map Review contracts", () => {
 						}
 					}
 				]
-			})
-		).toThrow(/Natural-only policy/);
+			},
+			/Natural-only policy/
+		);
 	});
 
 	it("rejects unsupported detected-occluder intervention instead of advertising it", () => {
 		const reviewSet = fixtureReviewSet();
-		expect(() =>
-			decodeReviewSet({
+		expectReviewSetIssue(
+			{
 				...reviewSet,
 				visibilityPolicies: [
 					{
@@ -496,8 +508,9 @@ describe("Map Review contracts", () => {
 						}
 					}
 				]
-			})
-		).toThrow(/isolate_target|hide_explicit/);
+			},
+			/isolate_target|hide_explicit/
+		);
 	});
 
 	it("requires bounded quantitative evidence before visibility can be assessed", () => {

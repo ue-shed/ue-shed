@@ -167,6 +167,10 @@ try {
 	assert.equal(gameTextAdoption.release.versionSource, "package.json");
 	assert.equal(gameTextAdoption.release.nativeBinaryBundled, false);
 	assert.equal(gameTextAdoption.release.uiBundled, false);
+	assert.equal(gameTextAdoption.indexing.productionLayer, "GameTextIndexBuilderLive");
+	assert.equal(gameTextAdoption.indexing.referenceLayer, "typeScriptIndexBuilderLayer");
+	assert.equal(gameTextAdoption.indexing.readerCapability, "game_text_index");
+	assert.equal(gameTextAdoption.indexing.automaticWriterFallback, false);
 	assert.deepEqual(
 		gameTextAdoption.packageGraph.peerDependencies,
 		gameTextEntry.manifest.peerDependencies

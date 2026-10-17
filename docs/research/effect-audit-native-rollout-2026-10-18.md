@@ -50,8 +50,9 @@ the production Workbench service in Node, not an Electron renderer or browser in
 CLI samples retain its ordinary worker configuration. Earlier Workbench runs without those options
 are diagnostic evidence and are excluded from final production-configuration timing summaries.
 
-Memory artifacts distinguish sampled worker-plus-native-descendant RSS from JavaScript worker
-heap/ArrayBuffer samples. Samples are not exact peaks. Stage records include event-loop maximum/p99
+Memory artifacts distinguish sampled process-plus-native-descendant RSS from the benchmark process's
+main-thread JavaScript heap/ArrayBuffer samples. Search/quality thread heaps are included in process
+RSS, not those main-thread heap counters. Samples are not exact peaks. Stage records include event-loop maximum/p99
 delay and utilization. A 10 ms callback-gap probe also records the unfinished gap at operation
 completion, covering synchronous stalls that prevent even the first scheduled timer from firing.
 A real blocking Atomics.wait regression test verifies that case; timer cleanup occurs in finally.

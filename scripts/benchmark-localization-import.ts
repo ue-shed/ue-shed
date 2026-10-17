@@ -457,12 +457,24 @@ if (values.worker) {
 			output,
 			JSON.stringify(
 				{
+					measurementVersion: 2,
+					node: process.version,
+					platform: process.platform,
+					architecture: process.arch,
+					scenario: {
+						mode,
+						builder: values.builder,
+						host: values.host,
+						select: values.select
+					},
+					eventLoopScope:
+						"10 ms callback gaps, including the unfinished gap at operation completion.",
 					outcome,
 					results,
 					stages,
 					memoryScope:
 						mode === "hosts"
-							? "Sampled worker and descendant process RSS; JS heap counters are worker-only."
+							? "Sampled benchmark process and descendants RSS, including query threads/native children; JS heap/ArrayBuffers are benchmark main-thread only."
 							: "Sampled worker process RSS.",
 					limits: {
 						heapMiB: mode === "hosts" ? null : maximumHeapMiB,

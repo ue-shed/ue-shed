@@ -59,7 +59,11 @@ impl Error {
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.message)
+        f.write_str(&self.message)?;
+        if let Some(source) = &self.source {
+            write!(f, ": {source}")?;
+        }
+        Ok(())
     }
 }
 
@@ -138,6 +142,10 @@ mod tests {
         assert_eq!(cache.code, ErrorCode::InvalidCache);
         let io = Error::from(std::io::Error::from(std::io::ErrorKind::NotFound));
         assert_eq!(io.code, ErrorCode::NotFound);
+        assert!(
+            io.to_string()
+                .contains(&std::io::Error::from(std::io::ErrorKind::NotFound).to_string())
+        );
         assert!(
             std::error::Error::source(&io)
                 .unwrap()

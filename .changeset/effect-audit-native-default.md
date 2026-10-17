@@ -6,10 +6,10 @@
 "@ue-shed/cameras": minor
 "@ue-shed/game-text": minor
 "@ue-shed/localization": patch
-"@ue-shed/plugin-distribution": patch
+"@ue-shed/plugin-distribution": minor
 "@ue-shed/map-history": patch
-"@ue-shed/config-explorer": patch
-"@ue-shed/niagara": patch
+"@ue-shed/config-explorer": minor
+"@ue-shed/niagara": minor
 "@ue-shed/enhanced-input": minor
 ---
 

@@ -14,7 +14,10 @@ Unreal connection, localization, Unreal assets, engine, cameras, host and Game T
 entry points. Obsolete service Shape aliases, four transport internals and two private Game Text
 constructors are removed with migration notes. AssetReader test ports are complete and explicit;
 the seven hidden "not stubbed" operations and implicit configuration are removed. Direct error
-translations and nested stringified causes have regression guards. Schema-only camera migration
+translations, helper adapters and nested stringified causes have regression guards. Tagged errors
+without an `Error` suffix are included. Reader and index failures retain their classified codes and
+recovery guidance instead of being mislabeled as invalid projects. Portable localization boundaries
+retain safe classified causes while excluding private installation paths and authored evidence. Schema-only camera migration
 fallbacks translate their final failure to the same domain contract error as strict public parsers.
 
 The native rollout builds on the parser/IO audit in #123 and the C++ error-contract work merged
@@ -22,6 +25,20 @@ in #126, and closes the omitted index crate and WASM adapter. It classifies erro
 preserves causes and scopes cancellation; this change does not modify C++ plugins. A1/D3 physical
 package identity/path brands, graph pin support and other feature-policy roadmap items remain
 separate work.
+
+## Audit closure
+
+| Plan item | Integrated result                                                                                                                            | Regression enforcement                                                                        |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| D4–D6     | Guidance on every production tagged error; classified reader/index/transport failures; retained structured causes and cancellation guidance  | Global guidance, tag matching, nested cause and adapter/helper checks; recovery/privacy tests |
+| D7        | All 88 remaining raw-decoder exceptions replaced by domain parsers, including composed camera parsers                                        | Empty exception baseline; export-binding fixtures; contract parser tests                      |
+| D8        | Complete explicit AssetReader test ports; private implementation constructors; dependency requirements composed through layers               | Type checking of 30 migrated fixture ports; layer/factory architecture checks                 |
+| D11, D13  | Named manifest entry points and caller documentation across all eight reviewed SDKs; obsolete aliases and transport internals removed        | Public API guard and fixtures for every reviewed package and focused entry point              |
+| D12       | Builds on #107 cleanup, current archived Plans 053/054 and documented engineering decisions; errors and imports follow the final SDK surface | Formatting, lint, type checks, architecture and safety-comment rules                          |
+| D14       | Builds on #123 parser/IO and #126 C++ contracts; adds the previously omitted native index and WASM error/cancellation work                   | Stable-code/source tests, malformed input and lifecycle conformance, strict Clippy            |
+
+The TypeScript reference builder remains a supported explicit choice. Publication, A1/D3 physical
+identity and graph-pin support are not implied by this audit closure.
 
 ## Native integration
 

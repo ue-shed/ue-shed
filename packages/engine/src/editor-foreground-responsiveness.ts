@@ -12,8 +12,16 @@ import { RemoteControlClient } from "@ue-shed/unreal-connection";
 import { Clock, Context, Duration, Effect, Layer, Metric, Ref, Schema, Scope } from "effect";
 import { isLoopbackEndpoint } from "./loopback-endpoint.js";
 
+/**
+ * Capability name required for scoped local-editor foreground leases. Negotiate support
+ * before requesting an exemption from Unreal's normal background throttling policy.
+ */
 export const EDITOR_FOREGROUND_RESPONSIVENESS_CAPABILITY = "editor.foreground-responsiveness.v1";
 
+/**
+ * Classifies local-endpoint, capability, refusal, unsupported-platform, transport and
+ * response-validation failures when negotiating a foreground lease.
+ */
 export const EditorForegroundResponsivenessFailure = Schema.Literals([
 	"remote_endpoint",
 	"capability_missing",
@@ -25,6 +33,10 @@ export const EditorForegroundResponsivenessFailure = Schema.Literals([
 export type EditorForegroundResponsivenessFailure =
 	typeof EditorForegroundResponsivenessFailure.Type;
 
+/**
+ * Foreground lease failure with endpoint, operation, reason and recovery guidance. Initial
+ * acquisition can fail the caller; later renewal failures are reflected by the lease state.
+ */
 export class EditorForegroundResponsivenessError extends Schema.TaggedError<EditorForegroundResponsivenessError>()(
 	"EditorForegroundResponsivenessError",
 	{
@@ -53,10 +65,18 @@ export const EditorForegroundLeaseState = Schema.Union([
 ]);
 export type EditorForegroundLeaseState = typeof EditorForegroundLeaseState.Type;
 
+/**
+ * Handle for observing a scope-owned foreground lease. Only Held means an exemption is
+ * believed active; Lapsed and Released must not be presented as keeping Unreal responsive.
+ */
 export interface EditorForegroundLease {
 	readonly state: Effect.Effect<EditorForegroundLeaseState>;
 }
 
+/**
+ * Local endpoint, client process identity and optional lease TTL in milliseconds. The named
+ * client's foreground window is the condition for keeping the editor responsive.
+ */
 export interface EditorForegroundHoldOptions {
 	readonly endpoint: string;
 	/** The process whose window being in the foreground should keep Unreal responsive. */
@@ -64,6 +84,11 @@ export interface EditorForegroundHoldOptions {
 	readonly ttlMs?: number;
 }
 
+/**
+ * Acquires a renewing foreground lease in the caller's scope and reads editor lease
+ * diagnostics. Scope closure releases the lease; renewal failure is observable through its
+ * state.
+ */
 export interface EditorForegroundResponsivenessApi {
 	/**
 	 * Holds a lease for the life of the scope: acquire now, renew at a third of the TTL, release
@@ -79,6 +104,10 @@ export interface EditorForegroundResponsivenessApi {
 	) => Effect.Effect<EditorForegroundStateResult, EditorForegroundResponsivenessError>;
 }
 
+/**
+ * Local-editor background-throttling exemption port. Hosts opt into a bounded lease rather
+ * than permanently changing Unreal's global settings.
+ */
 export class EditorForegroundResponsiveness extends Context.Service<
 	EditorForegroundResponsiveness,
 	EditorForegroundResponsivenessApi
@@ -133,6 +162,10 @@ export function editorForegroundBackoffMs(failures: number): number {
 	return Math.min(maxBackoffMs, 1_000 * 2 ** Math.max(0, Math.min(failures - 1, 5)));
 }
 
+/**
+ * RemoteControlClient-backed local foreground leases. Negotiates capability, renews at one
+ * third of TTL, backs off after renewal failures and releases when the owning scope closes.
+ */
 export const EditorForegroundResponsivenessLive = Layer.effect(
 	EditorForegroundResponsiveness,
 	Effect.gen(function* () {

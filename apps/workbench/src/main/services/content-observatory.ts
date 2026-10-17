@@ -144,8 +144,9 @@ export const WorkbenchContentObservatoryLive = Layer.effect(
 		) {
 			const selectedProject = yield* project.savedProject().pipe(
 				Effect.mapError(
-					() =>
+					(cause) =>
 						new MapHistoryError({
+							cause: cause,
 							kind: "invalid_target",
 							message:
 								"No Workbench project is configured for current actor discovery.",

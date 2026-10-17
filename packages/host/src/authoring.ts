@@ -74,6 +74,11 @@ class AuthoringTarget extends Data.Class<{
 	readonly endpoint: string;
 }> {}
 
+/**
+ * Host authoring operations for saved-table discovery and persisted edit sessions. Applying
+ * edits and saving the Unreal package are separate actions; uncertain applies must be
+ * reconciled before replay.
+ */
 export interface ShedAuthoringApi {
 	readonly catalogProgress?: () => Effect.Effect<AuthoringCatalogProgress>;
 	readonly applySession: (sessionId: string) => Effect.Effect<AuthoringSessionResult>;
@@ -96,6 +101,11 @@ export interface ShedAuthoringApi {
 	readonly undoSession: (sessionId: string) => Effect.Effect<AuthoringSessionResult>;
 }
 
+/**
+ * Project-aware authoring service. The host supplies its selected project and connection
+ * through ShedHostConfiguration; callers must not maintain a second active project in a
+ * feature route.
+ */
 export class ShedAuthoring extends Context.Service<ShedAuthoring, ShedAuthoringApi>()(
 	"@ue-shed/host/ShedAuthoring"
 ) {}
@@ -840,6 +850,11 @@ export const ShedAuthoringLive = Layer.effect(
 	})
 );
 
+/**
+ * Provides all authoring operations from an explicit test implementation. Only optional
+ * catalog progress defaults to idle; session and mutation behavior must be supplied by the
+ * test.
+ */
 export function makeShedAuthoringTestLayer(
 	service: Omit<ShedAuthoringApi, "catalogProgress"> &
 		Partial<Pick<ShedAuthoringApi, "catalogProgress">>
@@ -862,6 +877,11 @@ export function makeShedAuthoringTestLayer(
 	);
 }
 
+/**
+ * Adapts ShedAuthoring to the UI-neutral AuthoringClient port. It delegates session
+ * operations and catalog progress to the host; it does not own project selection or open a
+ * file picker during construction.
+ */
 export const AuthoringClientLive = Layer.effect(
 	AuthoringClient,
 	Effect.map(

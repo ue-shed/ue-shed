@@ -78,6 +78,7 @@ export const fixtureProcessLayer = (
 							}),
 						catch: (cause) =>
 							new FixtureProcessError({
+								cause: cause,
 								nextStep: "escalate",
 								code: "fixture_process_failed",
 								causeText: cause instanceof Error ? cause.message : String(cause),
@@ -96,6 +97,7 @@ export const fixtureProcessLayer = (
 							},
 							catch: (cause) =>
 								new FixtureProcessError({
+									cause: cause,
 									nextStep: "escalate",
 									code: "fixture_process_failed",
 									causeText:
@@ -119,7 +121,8 @@ export const fixtureProcessLayer = (
 						resume(
 							Effect.succeed({
 								status: "failed",
-								message: `Could not start the fixture launcher: ${String(cause)}`,
+								message: "Could not start the fixture launcher.",
+								cause,
 								recovery:
 									"Verify the configured Unreal installation and source checkout."
 							})
@@ -144,6 +147,7 @@ export const fixtureProcessLayer = (
 						try: () => terminateChild(child),
 						catch: (cause) =>
 							new FixtureProcessError({
+								cause: cause,
 								nextStep: "escalate",
 								code: "fixture_process_failed",
 								causeText: cause instanceof Error ? cause.message : String(cause),

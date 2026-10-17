@@ -57,11 +57,15 @@ cannot silently enlarge their public entry points.
 - **`unreal-connection`, `unreal-assets` and `cameras`**: named exports preserve the intended
   surface; 14 obsolete `*Shape` aliases are removed in favor of their existing `*Api` names. The
   migration guide lists them. Signature types and downstream-use candidates remain available.
+- **`unreal-assets` protocol internals**: `ProtocolOutputBudget`, `ProtocolStreamFailure`,
+  `ProtocolStreamValidator` and `protocolCacheOutcome` are private to the transport adapter.
+  Library consumers use the scoped AssetReader/native index clients; internal conformance tests
+  import transport implementation directly rather than making it part of the published root.
 - **`protocol`, `localization` and `engine`**: published packages with downstream hosts
   whose imports are not visible here. Their unused names remain candidates for a separate host
   review. Named exports now freeze the deliberate surface without speculative removals.
 
-Protocol, Unreal connection and the focused Game Text entry points now require caller-facing
-documentation for every exported symbol. Deprecated transition aliases retain their migration
-tags. The check does not claim that the other published SDKs have completed their documentation
-tier; their named surfaces are enforced while later documentation rollout remains explicit.
+All eight reviewed SDKs now require caller-facing documentation for every exported symbol across
+their manifest entry points. Deprecated transition aliases retain their migration tags. Documentation
+describes ownership, failure/recovery, units, version compatibility and policy choices; a type
+signature alone is insufficient. Guard regression fixtures cover every SDK and focused entry point.

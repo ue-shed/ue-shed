@@ -501,8 +501,9 @@ export function makePerforceHistorySource(
 				}))
 			).pipe(
 				Effect.mapError(
-					() =>
+					(cause) =>
 						new MapHistoryError({
+							cause: cause,
 							kind: "materialization",
 							message:
 								"Map History received invalid exact Perforce revision metadata.",

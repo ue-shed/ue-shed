@@ -11,6 +11,10 @@ export const CameraSetupIntent = Schema.Struct({
 	layout: CameraLayout
 });
 export type CameraSetupIntent = typeof CameraSetupIntent.Type;
+/**
+ * Setup attempt identity with nullable error text. A null error represents no reported setup
+ * error rather than evidence of a ready/piloting camera session.
+ */
 export const CameraSetupOutcome = Schema.Struct({
 	id: CameraArrangementId,
 	error: Schema.NullOr(Schema.String)
@@ -72,6 +76,10 @@ export const CameraSetupRequest = Schema.Union([
 		sets: Schema.optionalKey(CameraSetupSavedSets)
 	})
 ]);
+/**
+ * Version-1 editor camera setup state with connection, selection and negotiated reopen
+ * options. It guides explicit setup; it does not own the host's selected project.
+ */
 export const CameraSetupState = Schema.Struct({
 	version: Schema.Literal(1),
 	status: Schema.Literal("setup"),

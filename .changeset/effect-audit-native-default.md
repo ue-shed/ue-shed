@@ -10,13 +10,15 @@
 "@ue-shed/map-history": patch
 "@ue-shed/config-explorer": patch
 "@ue-shed/niagara": patch
+"@ue-shed/enhanced-input": patch
 ---
 
 Complete the TypeScript Effect/error audit and integrate native Game Text indexing in production
 hosts. Public schema parsers now return domain errors with the original parse issues. All production
 tagged errors carry recovery, retry safety and next-step guidance, with deliberate classification
-and cause retention at adapter boundaries. Entry points list intentional exports and the first
-documented API tiers are enforced without grandfathered raw decoders.
+and cause retention at adapter boundaries. All eight reviewed SDKs enforce named public entry
+points and caller documentation, with no grandfathered raw decoder factories. Nested cause
+stringification and direct error translations are covered by regression guards.
 
 Use the new `GameTextIndexBuilderLive` layer with the host's `AssetReader`; CLI, Workbench and packed
 consumer conformance use the same native implementation. The TypeScript builder remains an explicit
@@ -28,3 +30,7 @@ Obsolete public `*Shape` aliases are removed from connection, asset reader/Proje
 entry points; use their `*Api` names. Private `columnarTextCorpusQuery` and
 `makeGameTextSearchWorker` constructors are no longer exported. See the
 [migration guide](../docs/engineering/effect-audit-migration.md) for error and composition changes.
+
+AssetReader test layers now require a complete explicit port, including configuration and projection
+operations; omitted operations no longer install runtime "not stubbed" failures. Protocol transport
+budget/validator helpers are private to the asset-reader adapter.

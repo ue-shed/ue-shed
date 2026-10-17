@@ -105,8 +105,9 @@ export const runMapHistory = Effect.fn("Cli.workflow.map_history")((command: Map
 					target
 				}).pipe(
 					Effect.mapError(
-						() =>
+						(cause) =>
 							new CliCommandError({
+								cause: cause,
 								recovery:
 									"Inspect the command context and original cause before deciding whether to retry.",
 								retrySafe: false,
@@ -124,8 +125,9 @@ export const runMapHistory = Effect.fn("Cli.workflow.map_history")((command: Map
 					history
 				).pipe(
 					Effect.mapError(
-						() =>
+						(cause) =>
 							new CliCommandError({
+								cause: cause,
 								recovery:
 									"Inspect the command context and original cause before deciding whether to retry.",
 								retrySafe: false,
@@ -153,8 +155,9 @@ export const runMapHistory = Effect.fn("Cli.workflow.map_history")((command: Map
 				range
 			}).pipe(
 				Effect.mapError(
-					() =>
+					(cause) =>
 						new CliCommandError({
+							cause: cause,
 							recovery:
 								"Inspect the command context and original cause before deciding whether to retry.",
 							retrySafe: false,
@@ -169,8 +172,9 @@ export const runMapHistory = Effect.fn("Cli.workflow.map_history")((command: Map
 			);
 			const encoded = yield* Schema.encodeUnknownEffect(PerforceMapHistory)(history).pipe(
 				Effect.mapError(
-					() =>
+					(cause) =>
 						new CliCommandError({
+							cause: cause,
 							recovery:
 								"Inspect the command context and original cause before deciding whether to retry.",
 							retrySafe: false,

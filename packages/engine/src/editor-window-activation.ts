@@ -14,6 +14,10 @@ import { RemoteControlClient, type RemoteControlClientError } from "@ue-shed/unr
 import { Context, Effect, Layer, Schema } from "effect";
 import { isLoopbackEndpoint } from "./loopback-endpoint.js";
 
+/**
+ * Foreground permission, negotiation or activation failure with operation context and
+ * original cause. A host may offer manual focusing using the supplied recovery guidance.
+ */
 export class EditorWindowActivationError extends Schema.TaggedError<EditorWindowActivationError>()(
 	"EditorWindowActivationError",
 	{
@@ -59,6 +63,11 @@ const failure = (operation: string, message: string, guidance: Guidance, cause?:
 		...guidance
 	});
 
+/**
+ * Windows process-supervisor adapter for foreground permission; other platforms complete
+ * without a grant. Requires the matching platform package and never launches or selects an
+ * editor.
+ */
 export const EditorForegroundPermissionLive = Layer.succeed(EditorForegroundPermission, {
 	grant: Effect.fn("EditorForegroundPermission.grant")(function* (processId: number) {
 		if (process.platform !== "win32") return;
@@ -109,17 +118,30 @@ export const EditorForegroundPermissionLive = Layer.succeed(EditorForegroundPerm
 	})
 });
 
+/**
+ * Raises the connected editor window after validating its process identity. Local OS
+ * permission handoff is optional and never grants a local PID to a remote endpoint.
+ */
 export interface EditorWindowActivationApi {
 	/** Call from an explicit user action. Does not select actors, move cameras, or change maps. */
 	readonly activate: (
 		endpoint: string
 	) => Effect.Effect<EditorWindowActivationResult, EditorWindowActivationError>;
 }
+/**
+ * Editor-window activation port. Window focus is an explicit host action, separate from
+ * project selection and editor launch.
+ */
 export class EditorWindowActivation extends Context.Service<
 	EditorWindowActivation,
 	EditorWindowActivationApi
 >()("@ue-shed/engine/EditorWindowActivation") {}
 
+/**
+ * Negotiates the editor window identity and requests activation through RemoteControlClient.
+ * Local foreground permission is provided separately; remote endpoints receive no local PID
+ * grant.
+ */
 export const EditorWindowActivationLive = Layer.effect(
 	EditorWindowActivation,
 	Effect.gen(function* () {

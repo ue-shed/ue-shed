@@ -51,8 +51,9 @@ export const writeLocalizationCheckChanges = Effect.fn("Cli.localization.write_c
 		document
 	).pipe(
 		Effect.mapError(
-			() =>
+			(cause) =>
 				new LocalizationCheckOutputError({
+					cause: cause,
 					retrySafe: false,
 					nextStep: "fix_input",
 					code: "changes_unwritable",
@@ -111,6 +112,7 @@ export const runLocalizationCheck = Effect.fn("Cli.workflow.localization_check")
 							isGameTextRuleDocumentError(error)
 								? error
 								: new LocalizationCheckOutputError({
+										cause: error,
 										retrySafe: false,
 										nextStep: "fix_input",
 										code: "rules_unreadable",

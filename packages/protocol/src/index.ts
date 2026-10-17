@@ -535,4 +535,9 @@ export {
 	GameTextIndexJoinOutcome
 } from "./game-text-index.js";
 
-export { ContractParseError, contractParser, contractParserSync } from "./contract-parser.js";
+export {
+	ContractParseError,
+	contractParseError,
+	contractParser,
+	contractParserSync
+} from "./contract-parser.js";

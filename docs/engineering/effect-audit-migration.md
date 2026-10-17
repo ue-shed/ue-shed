@@ -9,6 +9,9 @@ parsers. Match `ContractParseError` (`code: "invalid_contract"`) at protocol bou
 matching a top-level `SchemaError`. The original schema error remains in `cause`, including field
 issues. Domain-specific Game Text policy/response parsers retain their own domain errors. A valid
 failed response is still a response value; it is distinct from an invalid response contract.
+The strict review-capture and migrating review-set/run/preview parsers use the same domain error.
+Schema-only fallback stays inside the parser; its final failure is translated with
+`contractParseError(contract, cause)` after migration attempts finish.
 Plugin distribution preserves its protocol independence: its schema-only manifest parser returns
 `PluginBundleManifestValidationError` with `code: "schema_invalid"` and the original schema cause.
 
@@ -53,6 +56,17 @@ corresponding `*Api` names. This includes `RemoteControlClientShape`, `AssetRead
 `columnarTextCorpusQuery` and `makeGameTextSearchWorker` are private implementation constructors.
 Use `GameTextIndexRefresh` and its retained model/query; select `searchWorker: true` in the public
 refresh-layer options. The owning scope controls the worker and pinned reader lifetime.
+
+The asset-reader root no longer exposes `ProtocolOutputBudget`, `ProtocolStreamFailure`,
+`ProtocolStreamValidator` or `protocolCacheOutcome`. They belong to the private protocol adapter;
+hosts use AssetReader and the scoped native index client instead.
+
+`makeAssetReaderTestLayer` accepts a complete `AssetReaderTestApi` (the full `AssetReaderApi`).
+Supply configuration, progress and projection operations explicitly. The layer no longer fills
+omitted operations with runtime "not stubbed" failures or assumes a native executable for a test.
+Repository fixtures spell out unexpected operations as defects, so an unexpected call fails the
+test and adding a new required operation produces a type error. Existing complete derived test
+adapters and idle observational defaults in other SDKs remain documented behavior.
 
 Focused Game Text entry points remain `/schema`, `/rules`, `/checks`, `/labels`, `/corpus`, `/index`
 and `/workspace`. Deprecated root/browser aggregates remain for the previously promised transition;

@@ -84,8 +84,12 @@ packages, apps and extensions. Error matching uses tags/guards rather than tagge
 boundaries expose unary domain parsers, retaining the original schema issues in their typed cause.
 
 The public API check also requires named entry-point exports in the eight reviewed host-facing
-packages and caller-facing documentation for protocol, Unreal connection and every focused Game
-Text entry point. Adding an internal export no longer automatically enlarges these public surfaces.
+packages and caller-facing documentation for every public entry in protocol, Unreal connection,
+localization, Unreal assets, engine, cameras, host and Game Text. Adding an internal export no longer
+automatically enlarges these public surfaces. Direct `mapError`/IO-catch translations that construct
+an error object must retain its cause; expected refusals constructed without a preceding failure do
+not need a fabricated cause. Localization's portable evidence errors deliberately sanitize authored
+payloads; their code and guidance cross the boundary instead of raw parser/IO objects.
 
 UI and CLI code must not parse error text to make decisions. Translate library errors at the service
 that owns the library. Keep the useful cause.

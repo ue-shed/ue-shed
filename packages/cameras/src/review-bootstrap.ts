@@ -30,6 +30,10 @@ function mapDisplayName(mapPath: string): string {
 	return `${name} Map Review`;
 }
 
+/**
+ * Explicit initial review set, destination path and view identity produced by bootstrap.
+ * Callers retain shell project ownership and validate the destination before persistence.
+ */
 export interface MapReviewBootstrap {
 	readonly reviewSet: typeof ReviewSet.Type;
 	readonly reviewSetPath: string;

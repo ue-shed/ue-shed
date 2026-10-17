@@ -178,6 +178,26 @@ ruleTester.run("no-stringified-cause-in-error", noStringifiedCauseInErrorRule, {
 			errors: [{ messageId: "stringifiedCause" }]
 		},
 		{
+			code: "new ReaderError({ message: String(args.cause) });",
+			errors: [{ messageId: "stringifiedCause" }]
+		},
+		{
+			code: 'snapshotFailure("input", String(decoded.failure));',
+			errors: [{ messageId: "stringifiedCause" }]
+		},
+		{
+			code: 'new ReaderError({ message: String(args["cause"]) });',
+			errors: [{ messageId: "stringifiedCause" }]
+		},
+		{
+			code: "new Error(Cause.pretty(failure));",
+			errors: [{ messageId: "stringifiedCause" }]
+		},
+		{
+			code: 'invalid("validation", `Invalid build: ${String(cause)}`);',
+			errors: [{ messageId: "stringifiedCause" }]
+		},
+		{
 			code: "new errors.ReaderError({ message: `Read failed: ${String(error)}` });",
 			errors: [{ messageId: "stringifiedCause" }]
 		},

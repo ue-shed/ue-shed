@@ -12,6 +12,11 @@ import {
 } from "./camera-arrangement.js";
 import { CameraVisibilityDiagnostic, CameraVisibilityList } from "./camera-visibility.js";
 
+/**
+ * Explicit editor panel intent for scoped edits, activation, approval, layouts and policy
+ * import/export. Destructive regeneration remains a proposal/confirmation workflow tied to
+ * revision.
+ */
 export const CameraPanelAction = Schema.Union([
 	Schema.Struct({
 		kind: Schema.Literal("import_visibility"),
@@ -57,12 +62,20 @@ export const CameraPanelAction = Schema.Union([
 	Schema.Struct({ kind: Schema.Literal("cancel_proposal") })
 ]);
 export type CameraPanelAction = typeof CameraPanelAction.Type;
+/**
+ * Unique operation identity and expected revision wrapping one panel action. Replay handling
+ * and stale checks use these fields rather than timing or UI state.
+ */
 export const CameraPanelEvent = Schema.Struct({
 	id: CameraOperationId,
 	expectedRevision: Schema.Int,
 	action: CameraPanelAction
 });
 export type CameraPanelEvent = typeof CameraPanelEvent.Type;
+/**
+ * Revision-bound proposed camera replacement with added/removed/customized identities and
+ * optional recipe. Present customization risk before committing regeneration.
+ */
 export const CameraPanelProposal = Schema.Struct({
 	expectedRevision: Schema.Int,
 	cameras: CameraArrangement.fields.cameras,
@@ -72,6 +85,11 @@ export const CameraPanelProposal = Schema.Struct({
 	recipe: Schema.optionalKey(CameraArrangementRecipe)
 });
 export type CameraPanelProposal = typeof CameraPanelProposal.Type;
+/**
+ * Resolved panel model with arrangement, active camera, effective render/visibility policy
+ * and draft/approval paths. Hosts render this state without inventing a second project
+ * selection.
+ */
 export const CameraPanelState = Schema.Struct({
 	renderPolicy: CameraRenderPolicy,
 	arrangement: CameraArrangement,
@@ -91,6 +109,10 @@ export const CameraPanelState = Schema.Struct({
 	approvalPath: Schema.String
 });
 export type CameraPanelState = typeof CameraPanelState.Type;
+/**
+ * Versioned selected actor locators and resolution diagnostics from the editor. A selection
+ * result does not itself add actors to a hide/protect policy.
+ */
 export const CameraActorSelectionResult = Schema.Struct({
 	version: Schema.Literal(1),
 	status: Schema.Literal("selection"),
@@ -98,6 +120,10 @@ export const CameraActorSelectionResult = Schema.Struct({
 	diagnostics: Schema.Array(CameraVisibilityDiagnostic),
 	message: Schema.String
 });
+/**
+ * Versioned validity and per-locator diagnostics for authored visibility. Missing/unloaded or
+ * ambiguous actors remain explicit rather than silently removed from policy.
+ */
 export const CameraVisibilityResolutionResult = Schema.Struct({
 	version: Schema.Literal(1),
 	status: Schema.Literal("visibility"),
@@ -105,4 +131,8 @@ export const CameraVisibilityResolutionResult = Schema.Struct({
 	diagnostics: Schema.Array(CameraVisibilityDiagnostic),
 	message: Schema.String
 });
+/**
+ * Panel alias for explicit arrangement/group/camera edit scope. Resolve it against current
+ * arrangement ownership before executing a batch action.
+ */
 export const CameraPanelSelectionScope = CameraEditScope;

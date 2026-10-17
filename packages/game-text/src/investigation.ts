@@ -208,6 +208,7 @@ export function exportGameTextInvestigation(
 						Effect.mapError(
 							(error) =>
 								new InvestigationError({
+									cause: error,
 									message: error.message,
 									recovery: error.recovery,
 									retrySafe: true,

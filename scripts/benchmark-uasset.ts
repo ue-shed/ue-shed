@@ -545,7 +545,7 @@ function measureMemory(options: MemoryHelperOptions): MemoryMeasurement {
 		// SAFETY: the memory helper in this file emits the MemoryMeasurement JSON contract.
 		return JSON.parse(result.stdout) as MemoryMeasurement;
 	} catch (cause) {
-		throw new Error(`Memory helper returned invalid JSON: ${String(cause)}`);
+		throw new Error("Memory helper returned invalid JSON.", { cause });
 	}
 }
 
@@ -638,7 +638,7 @@ function parseJsonOutput(label: string, output: string): ParsedBenchmarkOutput {
 		// SAFETY: benchmark child processes emit the ParsedBenchmarkOutput contract consumed here.
 		return JSON.parse(output) as ParsedBenchmarkOutput;
 	} catch (cause) {
-		throw new Error(`${label} returned invalid JSON: ${String(cause)}`);
+		throw new Error(`${label} returned invalid JSON.`, { cause });
 	}
 }
 

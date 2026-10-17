@@ -20,6 +20,7 @@ export function observeCliOperation<A, E, R>(
 			isCliCommandError(cause)
 				? cause
 				: new CliCommandError({
+						cause: cause,
 						recovery:
 							"Inspect the command context and original cause before deciding whether to retry.",
 						retrySafe: false,

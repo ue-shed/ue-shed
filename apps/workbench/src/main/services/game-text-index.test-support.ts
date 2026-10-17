@@ -52,6 +52,7 @@ export function oracleGameTextIndexLayer<E>(
 									Effect.mapError(
 										(cause) =>
 											new GameTextIndexError({
+												cause: cause,
 												nextStep: "escalate",
 												code: "index_failed",
 												operation: "scan",
@@ -79,6 +80,7 @@ export function oracleGameTextIndexLayer<E>(
 									Effect.mapError(
 										(cause) =>
 											new GameTextIndexError({
+												cause: cause,
 												nextStep: "escalate",
 												retrySafe: false,
 												code: "index_failed",
@@ -93,6 +95,7 @@ export function oracleGameTextIndexLayer<E>(
 								Effect.mapError(
 									(cause) =>
 										new GameTextIndexError({
+											cause: cause,
 											nextStep: "escalate",
 											retrySafe: false,
 											code: "index_failed",
@@ -293,6 +296,7 @@ const oracleIndexStepsLayer = Layer.effect(
 						cause instanceof GameTextIndexError
 							? cause
 							: new GameTextIndexError({
+									cause: cause,
 									nextStep: "escalate",
 									retrySafe: false,
 									code: "index_failed",

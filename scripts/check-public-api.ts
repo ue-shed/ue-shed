@@ -15,9 +15,7 @@ const reviewedPackages = [
 	"host",
 	"game-text"
 ];
-const documentedPackages = new Set(["protocol", "unreal-connection", "game-text"]);
-
-/** Enforce intentional named entry points and documentation on the completed public API tiers. */
+/** Enforce intentional named entry points and caller documentation across the reviewed SDKs. */
 export function checkPublicApi(root: string = repositoryRoot): readonly string[] {
 	const failures: string[] = [];
 	const entries = reviewedPackages.flatMap((folder) => {
@@ -55,7 +53,6 @@ export function checkPublicApi(root: string = repositoryRoot): readonly string[]
 				failures.push(
 					`${relative(root, file).replaceAll("\\", "/")}: public entry points must list exports by name`
 				);
-		if (!documentedPackages.has(folder)) continue;
 		const module = checker.getSymbolAtLocation(source);
 		if (!module) continue;
 		for (const symbol of checker.getExportsOfModule(module)) {

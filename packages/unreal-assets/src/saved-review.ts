@@ -11,21 +11,42 @@ import {
 	LevelSequenceRead as SequenceReadSchema
 } from "@ue-shed/protocol";
 
+/**
+ * Reference from an owning object/property path to a saved target, optionally a DataTable
+ * row. The reference is evidence rather than proof that its target exists.
+ */
 export const SavedReviewReference = Schema.Struct({
 	ownerPath: Schema.String,
 	propertyPath: Schema.String,
 	targetPath: Schema.String,
 	targetRow: Schema.optionalKey(Schema.String)
 });
+/**
+ * Reference from an owning object/property path to a saved target, optionally a DataTable
+ * row. The reference is evidence rather than proof that its target exists.
+ */
 export interface SavedReviewReference extends Schema.Schema.Type<typeof SavedReviewReference> {}
 
+/**
+ * Minimal saved inventory entry used for reference resolution. Package/object identity is
+ * kept separate from the filesystem asset path and supported review kind.
+ */
 export const SavedReviewAsset = Schema.Struct({
 	packageName: Schema.String,
 	assetPath: Schema.String,
 	kind: Schema.Literals(["blueprint", "level_sequence", "other"])
 });
+/**
+ * Minimal saved inventory entry used for reference resolution. Package/object identity is
+ * kept separate from the filesystem asset path and supported review kind.
+ */
 export interface SavedReviewAsset extends Schema.Schema.Type<typeof SavedReviewAsset> {}
 
+/**
+ * Reference classified as internal, native, uniquely resolved, ambiguous or unavailable
+ * against an explicit inventory. Ambiguity is preserved rather than selecting the first
+ * candidate.
+ */
 export const SavedReferenceResolution = Schema.Union([
 	Schema.Struct({ status: Schema.Literal("internal"), targetPath: Schema.String }),
 	Schema.Struct({ status: Schema.Literal("native"), targetPath: Schema.String }),
@@ -63,6 +84,11 @@ export function resolveSavedReference(
 		: { status: "unavailable", targetPath };
 }
 
+/**
+ * Extracts canonical references from saved Blueprint definitions, graph nodes, pins and
+ * nested values. This pure traversal does not follow references or invent disk paths from
+ * object paths.
+ */
 export function blueprintReferences(read: BlueprintGraphRead): readonly SavedReviewReference[] {
 	const references: SavedReviewReference[] = [];
 	const add = (
@@ -161,6 +187,10 @@ export function blueprintReferences(read: BlueprintGraphRead): readonly SavedRev
 	return references.toSorted((a, b) => compareText(canonical(json(a)), canonical(json(b))));
 }
 
+/**
+ * Projects saved sequence references into the common review model. Does not resolve
+ * referenced assets or evaluate the sequence in a live editor.
+ */
 export function sequenceReferences(read: LevelSequenceRead): readonly SavedReviewReference[] {
 	return read.sequence.references.map((reference) => ({
 		ownerPath: reference.owner_path,
@@ -170,6 +200,10 @@ export function sequenceReferences(read: LevelSequenceRead): readonly SavedRevie
 	}));
 }
 
+/**
+ * Canonical saved-asset change with structural/value/layout/connection category and optional
+ * before/after JSON. Absence and explicit null remain distinct.
+ */
 export const SavedReviewChange = Schema.Struct({
 	path: Schema.String,
 	category: Schema.Literals(["structure", "value", "layout", "connection"]),
@@ -177,8 +211,16 @@ export const SavedReviewChange = Schema.Struct({
 	before: Schema.optionalKey(Schema.Json),
 	after: Schema.optionalKey(Schema.Json)
 });
+/**
+ * Canonical saved-asset change with structural/value/layout/connection category and optional
+ * before/after JSON. Absence and explicit null remain distinct.
+ */
 export interface SavedReviewChange extends Schema.Schema.Type<typeof SavedReviewChange> {}
 
+/**
+ * Versioned Blueprint/sequence comparison with object identities and classified changes. This
+ * compares saved evidence; it does not claim live runtime behavioral equivalence.
+ */
 export const SavedReviewComparison = Schema.Struct({
 	schemaVersion: Schema.Literal(1),
 	domain: Schema.Literals(["blueprint", "level_sequence"]),
@@ -189,6 +231,10 @@ export const SavedReviewComparison = Schema.Struct({
 	warnings: Schema.Array(Schema.String),
 	truncated: Schema.Boolean
 });
+/**
+ * Versioned Blueprint/sequence comparison with object identities and classified changes. This
+ * compares saved evidence; it does not claim live runtime behavioral equivalence.
+ */
 export interface SavedReviewComparison extends Schema.Schema.Type<typeof SavedReviewComparison> {}
 
 /** Versioned JSON output shared by the public CLI's saved inspection and comparison commands. */
@@ -638,6 +684,11 @@ function compare(
 	};
 }
 
+/**
+ * Compares saved Blueprint graph/definition evidence using canonical paths and change
+ * categories. Pure comparison excludes unrelated serialization ordering from meaningful
+ * changes.
+ */
 export function compareSavedBlueprints(
 	before: BlueprintGraphRead,
 	after: BlueprintGraphRead
@@ -666,6 +717,10 @@ export function compareSavedBlueprints(
 	);
 }
 
+/**
+ * Compares saved sequence evidence into categorized canonical changes. This is a saved-data
+ * review rather than an Unreal playback or rendered-frame comparison.
+ */
 export function compareSavedSequences(
 	before: LevelSequenceRead,
 	after: LevelSequenceRead

@@ -37,6 +37,10 @@ import {
 
 const isReviewArtifactSourceRejected = Schema.is(ReviewArtifactSourceRejected);
 
+/**
+ * Review preparation, capture or finalization failure with run identity and original cause.
+ * Partial view outcomes and cleanup/publication failures must remain visible.
+ */
 export class ReviewCaptureRunError extends Schema.TaggedError<ReviewCaptureRunError>()(
 	"ReviewCaptureRunError",
 	{
@@ -47,6 +51,10 @@ export class ReviewCaptureRunError extends Schema.TaggedError<ReviewCaptureRunEr
 	}
 ) {}
 
+/**
+ * Positive concurrency policy for a review run. Hosts choose parallelism explicitly; this
+ * does not override editor/backend capability or ownership limits.
+ */
 export const ReviewCaptureConcurrency = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1));
 export type ReviewCaptureConcurrency = Schema.Schema.Type<typeof ReviewCaptureConcurrency>;
 
@@ -59,6 +67,10 @@ export const defaultReviewCaptureConcurrency = ReviewCaptureConcurrency.make(1);
 
 type SchemaReviewCaptureRequest = typeof ReviewCaptureRequestCurrent.Type;
 
+/**
+ * Editor-facing capture port for one correlated request. Implementations return validated
+ * domain outcomes; orchestration owns repository publication and batch view accounting.
+ */
 export interface ReviewCapturePortApi {
 	readonly capture: (
 		request: SchemaReviewCaptureRequest
@@ -68,10 +80,18 @@ export interface ReviewCapturePortApi {
 /** @deprecated Use `ReviewCapturePortApi`. */
 export type ReviewCapturePortShape = ReviewCapturePortApi;
 
+/**
+ * Replaceable editor review-capture boundary. Hosts can provide Remote Control or a complete
+ * test implementation without coupling domain capture to the desktop shell.
+ */
 export class ReviewCapturePort extends Context.Service<ReviewCapturePort, ReviewCapturePortApi>()(
 	"@ue-shed/cameras/ReviewCapturePort"
 ) {}
 
+/**
+ * Effect port generating capture/invocation identities. Tests can supply deterministic values
+ * without replacing capture logic.
+ */
 export interface ReviewIdGeneratorApi {
 	readonly generate: () => Effect.Effect<string>;
 }
@@ -79,10 +99,18 @@ export interface ReviewIdGeneratorApi {
 /** @deprecated Use `ReviewIdGeneratorApi`. */
 export type ReviewIdGeneratorShape = ReviewIdGeneratorApi;
 
+/**
+ * Identity generation service for capture orchestration. IDs correlate operations/history;
+ * generation alone neither reserves storage nor proves uniqueness in an external producer.
+ */
 export class ReviewIdGenerator extends Context.Service<ReviewIdGenerator, ReviewIdGeneratorApi>()(
 	"@ue-shed/cameras/ReviewIdGenerator"
 ) {}
 
+/**
+ * Production identity layer using cryptographic random UUIDs. Invoked on demand rather than
+ * sharing one ID across captures.
+ */
 export const ReviewIdGeneratorLive = Layer.succeed(
 	ReviewIdGenerator,
 	ReviewIdGenerator.of({
@@ -90,6 +118,10 @@ export const ReviewIdGeneratorLive = Layer.succeed(
 	})
 );
 
+/**
+ * Provides ID generation from an explicit synchronous function evaluated per call. Useful for
+ * deterministic tests or host-owned identity policy.
+ */
 export function reviewIdGeneratorLayer(makeId: () => string): Layer.Layer<ReviewIdGenerator> {
 	return Layer.succeed(
 		ReviewIdGenerator,
@@ -99,6 +131,11 @@ export function reviewIdGeneratorLayer(makeId: () => string): Layer.Layer<Review
 	);
 }
 
+/**
+ * Explicit project, endpoint, review-set path and optional
+ * view/concurrency/renderer/destination policy. Invocation provenance is supplied or created
+ * as manual; renderer overrides never mutate saved profiles.
+ */
 export interface CaptureReviewSetOptions {
 	/** Explicit renderer for this run; no silent fallback or saved-profile mutation. */
 	readonly renderer?: CameraRendererPolicy;
@@ -119,6 +156,10 @@ export interface CaptureReviewSetOptions {
 	readonly viewIds?: ReadonlyArray<ReviewViewId>;
 }
 
+/**
+ * Constructs a manual invocation with explicit invocation/set identities and optional view
+ * subset. Pure construction does not schedule or start capture.
+ */
 export function manualCaptureInvocation(args: {
 	readonly id: CaptureInvocationId;
 	readonly reviewSetId: (typeof CaptureInvocation)["Type"]["reviewSetId"];
@@ -149,6 +190,11 @@ function remoteCapturePort(client: RemoteControlClientApi, endpoint: string): Re
 	};
 }
 
+/**
+ * Provides review capture through RemoteControlClient and an explicit or effectfully resolved
+ * endpoint. Resolves the selected endpoint per operation without owning host project
+ * selection.
+ */
 export function reviewCaptureRemotePortLayer(
 	endpoint: string | Effect.Effect<string>
 ): Layer.Layer<ReviewCapturePort, never, RemoteControlClient> {
@@ -167,6 +213,10 @@ export function reviewCaptureRemotePortLayer(
 	);
 }
 
+/**
+ * Provides an explicit single-view capture implementation. Tests/hosts own outcomes; no
+ * unimplemented operation silently falls back to Remote Control.
+ */
 export function reviewCapturePortLayer(
 	service: ReviewCapturePortApi
 ): Layer.Layer<ReviewCapturePort> {
@@ -377,14 +427,21 @@ function captureOneView(args: {
 			request,
 			view: args.view
 		}).pipe(
-			Effect.catch((cause) =>
+			Effect.tapError((cause) =>
+				Effect.logError("Review capture connection failed", {
+					cause,
+					operationId,
+					viewId: args.view.id
+				})
+			),
+			Effect.catch(() =>
 				Effect.succeed({
 					code: "capture_connection_failed",
-					message: String(cause),
+					message: "The connected editor did not return a valid capture result.",
 					operationId,
 					recovery:
-						"Verify the editor capability and Remote Control endpoint, then retry.",
-					retrySafe: true,
+						"Inspect the capture operation and partial artifacts, then verify the editor connection before another capture.",
+					retrySafe: false,
 					contract: {
 						name: "ue-shed-review-capture" as const,
 						version: { major: 1 as const, minor: 6 as const }
@@ -654,6 +711,10 @@ function captureReviewSetWith(args: {
 	);
 }
 
+/**
+ * Captures an explicit saved review set into a run with per-view outcomes. Uses separately
+ * supplied editor, ID and repository ports.
+ */
 export interface ReviewCaptureApi {
 	readonly captureSet: (
 		options: CaptureReviewSetOptions
@@ -663,10 +724,19 @@ export interface ReviewCaptureApi {
 /** @deprecated Use `ReviewCaptureApi`. */
 export type ReviewCaptureShape = ReviewCaptureApi;
 
+/**
+ * Headless review capture orchestration service. It does not own project selection,
+ * scheduling or an editor connection endpoint.
+ */
 export class ReviewCapture extends Context.Service<ReviewCapture, ReviewCaptureApi>()(
 	"@ue-shed/cameras/ReviewCapture"
 ) {}
 
+/**
+ * Combines ReviewRepository, ReviewIdGenerator and ReviewCapturePort for scoped capture and
+ * verified run publication. Preserves partial failures instead of discarding successful view
+ * evidence.
+ */
 export const ReviewCaptureLive = Layer.effect(
 	ReviewCapture,
 	Effect.gen(function* () {
@@ -688,6 +758,10 @@ export const ReviewCaptureLive = Layer.effect(
 	})
 );
 
+/**
+ * Provides the complete review capture operation from an explicit test implementation. No
+ * production editor or filesystem behavior is used implicitly.
+ */
 export function makeReviewCaptureTestLayer(service: ReviewCaptureApi): Layer.Layer<ReviewCapture> {
 	return Layer.succeed(ReviewCapture, ReviewCapture.of(service));
 }

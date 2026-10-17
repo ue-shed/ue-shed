@@ -16,7 +16,11 @@ export class ContractParseError extends Schema.TaggedError<ContractParseError>()
 	}
 ) {}
 
-const invalidContract = (contract: string, cause: Schema.SchemaError) =>
+/**
+ * Classifies a failed composed or version-migrating schema parser without losing its original
+ * issue tree. Use at the owning boundary after schema-only fallback/normalization has finished.
+ */
+export const contractParseError = (contract: string, cause: Schema.SchemaError) =>
 	new ContractParseError({
 		code: "invalid_contract",
 		contract,
@@ -42,7 +46,7 @@ export function contractParser<S extends Schema.Codec<unknown, unknown>>(
 		// oxlint-disable-next-line anti-slop/no-unknown-parameters -- This is the external value boundary.
 		input: unknown
 	): Effect.Effect<S["Type"], ContractParseError> =>
-		decode(input).pipe(Effect.mapError((cause) => invalidContract(contract, cause)));
+		decode(input).pipe(Effect.mapError((cause) => contractParseError(contract, cause)));
 }
 
 /**
@@ -59,7 +63,7 @@ export function contractParserSync<S extends Schema.Codec<unknown, unknown>>(
 		input: unknown
 	): S["Type"] => {
 		const result = decode(input);
-		if (Result.isFailure(result)) throw invalidContract(contract, result.failure);
+		if (Result.isFailure(result)) throw contractParseError(contract, result.failure);
 		return result.success;
 	};
 }

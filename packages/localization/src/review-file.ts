@@ -54,6 +54,11 @@ const Stamp = {
 	at: Schema.NonEmptyString
 };
 
+/**
+ * Review flags for one culture/namespace/key stamped with reviewer/time and
+ * source/translation fingerprint. A changed fingerprint invalidates the review rather than
+ * transferring approval to new text.
+ */
 export const LocalizationReviewRecord = Schema.Struct({
 	culture: CultureCode,
 	...LocalizationIdentity.fields,
@@ -75,6 +80,10 @@ export const LocalizationAcceptedFinding = Schema.Struct({
 });
 export type LocalizationAcceptedFinding = typeof LocalizationAcceptedFinding.Type;
 
+/**
+ * Version-1 project-owned review flags and accepted findings for one target. This supplements
+ * Unreal evidence; it does not alter Unreal's translation archive or compilation state.
+ */
 export const LocalizationReviewFile = Schema.Struct({
 	schemaVersion: Schema.Literal(1),
 	target: LocalizationTargetName,
@@ -83,6 +92,10 @@ export const LocalizationReviewFile = Schema.Struct({
 });
 export type LocalizationReviewFile = typeof LocalizationReviewFile.Type;
 
+/**
+ * Malformed, duplicate or wrong-target review metadata. Correct or reconcile the review
+ * document before retrying; errors do not expose authored text payloads.
+ */
 export class LocalizationReviewFileError extends Schema.TaggedError<LocalizationReviewFileError>()(
 	"LocalizationReviewFileError",
 	{
@@ -96,6 +109,10 @@ export function defaultLocalizationReviewPath(target: LocalizationTargetName): s
 	return `Config/UEShed/Localization/${target}.review.json`;
 }
 
+/**
+ * Creates an empty version-1 review document for an explicit target. This pure construction
+ * does not create a file or mark any translation as reviewed.
+ */
 export function emptyLocalizationReviewFile(
 	target: LocalizationTargetName
 ): LocalizationReviewFile {
@@ -124,6 +141,10 @@ const byKey =
 	(left: A, right: A) =>
 		key(left) < key(right) ? -1 : key(left) > key(right) ? 1 : 0;
 
+/**
+ * Parses review JSON for the expected target and rejects duplicate records. Returns a typed
+ * Result; fingerprint currentness must still be checked against fresh localization evidence.
+ */
 export function decodeLocalizationReviewFile(
 	text: string,
 	target: LocalizationTargetName
@@ -196,6 +217,11 @@ export function encodeLocalizationReviewFile(file: LocalizationReviewFile): stri
 	return `${JSON.stringify(normalized, null, "\t")}\n`;
 }
 
+/**
+ * Explicit review flag or accepted-finding update tied to identity and, when setting/accepting,
+ * an evidence fingerprint. The update operation supplies reviewer/time separately. Clearing a
+ * flag does not rewrite translation text.
+ */
 export const LocalizationReviewUpdate = Schema.Union([
 	Schema.Struct({
 		kind: Schema.Literal("set"),

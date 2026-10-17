@@ -1,6 +1,10 @@
 import type { EditorPlaySessionState } from "@ue-shed/protocol";
 import { Schema } from "effect";
 
+/**
+ * Explicit PIE active, transitioning or unavailable-state refusal with recovery guidance. The
+ * host surfaces the blocker instead of capturing a different world silently.
+ */
 export const ReviewCaptureBlock = Schema.Struct({
 	code: Schema.Literals([
 		"play_session_active",
@@ -12,6 +16,10 @@ export const ReviewCaptureBlock = Schema.Struct({
 });
 export type ReviewCaptureBlock = Schema.Schema.Type<typeof ReviewCaptureBlock>;
 
+/**
+ * Allowed editor-context capture or explicit blocked reason. A successful policy decision
+ * does not replace renderer capability and world-state validation.
+ */
 export type ReviewCapturePolicyDecision =
 	| { readonly status: "allowed"; readonly context: "editor" }
 	| ({ readonly status: "blocked" } & ReviewCaptureBlock);

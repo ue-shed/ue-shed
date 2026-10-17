@@ -437,6 +437,7 @@ export const pluginDistributionLayer = (
 						Effect.mapError(
 							(error) =>
 								new PluginDistributionValidationError({
+									cause: error,
 									field: "pluginIds",
 									message: error.message,
 									recovery: error.recovery,

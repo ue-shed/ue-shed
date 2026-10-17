@@ -28,12 +28,22 @@ import {
 
 const isCaptureArtifactSourceRejected = Schema.is(CaptureArtifactSourceRejected);
 
+/**
+ * Default project-relative map-capture storage root, .ue-shed/map-capture. Hosts can supply a
+ * destination rather than changing the shell's project selection.
+ */
 export const DEFAULT_MAP_CAPTURE_ROOT = ".ue-shed/map-capture";
 
+/**
+ * Repository operation/path failure with recovery guidance. Inspect partial staging or
+ * retained attempts before retrying publication; it is separate from an editor capture
+ * failure.
+ */
 export class MapCaptureStorageError extends Schema.TaggedError<MapCaptureStorageError>()(
 	"MapCaptureStorageError",
 	{
 		...ErrorGuidanceFields,
+		cause: Schema.optionalKey(Schema.Defect()),
 		operation: Schema.Literals([
 			"discard_staging",
 			"finalize",
@@ -50,6 +60,10 @@ export class MapCaptureStorageError extends Schema.TaggedError<MapCaptureStorage
 	}
 ) {}
 
+/**
+ * Artifact source lies outside the explicitly authorized capture root or fails source
+ * validation. Do not copy arbitrary editor-supplied paths into trusted run history.
+ */
 export class MapCaptureArtifactSourceRejected extends Schema.TaggedError<MapCaptureArtifactSourceRejected>()(
 	"MapCaptureArtifactSourceRejected",
 	{
@@ -82,26 +96,47 @@ function writeJsonAtomically<Value>(path: string, value: Value): Effect.Effect<v
 	});
 }
 
+/**
+ * Resolves the default map-capture directory beneath an explicit project root. This pure path
+ * helper performs no project or filesystem validation.
+ */
 export function mapCaptureRoot(projectRoot: string): string {
 	return resolve(projectRoot, DEFAULT_MAP_CAPTURE_ROOT);
 }
 
+/**
+ * Returns the default plan directory beneath an explicit project root. Does not create the
+ * directory or select a project.
+ */
 export function mapCapturePlansRoot(projectRoot: string): string {
 	return join(mapCaptureRoot(projectRoot), "plans");
 }
 
+/**
+ * Returns the immutable runs directory, optionally scoped to a plan ID. Callers accepting
+ * untrusted IDs must validate them before constructing storage paths.
+ */
 export function mapCaptureRunsRoot(projectRoot: string, planId?: string): string {
 	return planId === undefined
 		? join(mapCaptureRoot(projectRoot), "runs")
 		: join(mapCaptureRoot(projectRoot), "runs", planId);
 }
 
+/**
+ * Returns retained-attempt storage, optionally scoped to a validated plan ID. Attempts remain
+ * separate from successfully published immutable runs.
+ */
 export function mapCaptureAttemptsRoot(projectRoot: string, planId?: string): string {
 	return planId === undefined
 		? join(mapCaptureRoot(projectRoot), "attempts")
 		: join(mapCaptureRoot(projectRoot), "attempts", planId);
 }
 
+/**
+ * Prepared capture destination with verified tile ingestion, publish, retain and discard
+ * operations. Source authorization roots are explicit; retaining a failed attempt does not
+ * mark it published.
+ */
 export interface MapCaptureAttempt {
 	readonly discard: () => Effect.Effect<void, MapCaptureStorageError>;
 	readonly publish: (
@@ -118,6 +153,10 @@ export interface MapCaptureAttempt {
 	}) => Effect.Effect<Uint8Array, MapCaptureArtifactSourceRejected | MapCaptureStorageError>;
 }
 
+/**
+ * Host-provided preparation and manifest-path policy for plan/run output. Enables headless or
+ * custom storage without coupling capture to Workbench directories.
+ */
 export interface MapCaptureDestination {
 	readonly prepare: (args: {
 		readonly planId: MapCapturePlan["id"];
@@ -299,6 +338,10 @@ export function callerOwnedMapCaptureDestination(root: string): MapCaptureDestin
 	);
 }
 
+/**
+ * Checks that an explicit directory contains exactly one .uproject descriptor. Returns its
+ * resolved root or a typed storage failure; never chooses between ambiguous projects.
+ */
 export function validateMapCaptureProjectRoot(
 	projectRoot: string
 ): Effect.Effect<string, MapCaptureStorageError> {
@@ -331,6 +374,10 @@ export function validateMapCaptureProjectRoot(
 	}).pipe(Effect.withSpan("MapCaptureRepository.validateProjectRoot"));
 }
 
+/**
+ * Persisted map run listing with completion time, plan/run IDs, manifest path and tile count.
+ * Loading the manifest is still needed for per-tile failures and capture evidence.
+ */
 export interface MapCaptureRunSummary {
 	readonly completedAt: string;
 	readonly manifestPath: string;
@@ -339,6 +386,10 @@ export interface MapCaptureRunSummary {
 	readonly tileCount: number;
 }
 
+/**
+ * Plan, staging, artifact and immutable-run storage port. Implementations validate source
+ * ownership, preserve failed attempts and separate publication from capture execution.
+ */
 export interface MapCaptureRepositoryApi {
 	readonly discardStaging: (args: {
 		readonly stagingRoot: string;
@@ -375,6 +426,10 @@ export interface MapCaptureRepositoryApi {
 /** @deprecated Use `MapCaptureRepositoryApi`. */
 export type MapCaptureRepositoryShape = MapCaptureRepositoryApi;
 
+/**
+ * Replaceable filesystem/storage boundary for map capture. Capture orchestration supplies
+ * explicit project/run identities rather than relying on Workbench state.
+ */
 export class MapCaptureRepository extends Context.Service<
 	MapCaptureRepository,
 	MapCaptureRepositoryApi
@@ -389,7 +444,8 @@ function storageError(args: {
 	readonly nextStep: MapCaptureStorageError["nextStep"];
 }): MapCaptureStorageError {
 	return new MapCaptureStorageError({
-		message: String(args.cause),
+		message: `Could not ${args.operation.replaceAll("_", " ")} map capture data at ${args.path}.`,
+		cause: args.cause,
 		nextStep: args.nextStep,
 		operation: args.operation,
 		path: args.path,
@@ -591,8 +647,16 @@ const makeMapCaptureRepository = (): MapCaptureRepositoryApi => ({
 	})
 });
 
+/**
+ * Node map-capture repository with project validation, source authorization and staged
+ * immutable publication. Construction creates the port; individual operations perform IO.
+ */
 export const MapCaptureRepositoryLive = Layer.sync(MapCaptureRepository, makeMapCaptureRepository);
 
+/**
+ * Provides every map repository operation explicitly from a test implementation. No storage
+ * operation silently falls back to the real filesystem.
+ */
 export function makeMapCaptureRepositoryTestLayer(
 	service: MapCaptureRepositoryApi
 ): Layer.Layer<MapCaptureRepository> {

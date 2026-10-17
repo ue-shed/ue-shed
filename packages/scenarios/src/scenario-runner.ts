@@ -349,6 +349,7 @@ export const ScenarioRunnerLive = Layer.effect(
 				Effect.mapError((error) =>
 					isPollPending(error)
 						? new ScenarioRunnerError({
+								cause: error,
 								code: "pie_unavailable",
 								endpoint,
 								message:
@@ -523,6 +524,7 @@ export const ScenarioRunnerLive = Layer.effect(
 				Effect.mapError((error) =>
 					isPollPending(error)
 						? new ScenarioRunnerError({
+								cause: error,
 								code: "poll_timeout",
 								endpoint: handle.endpoint,
 								message:

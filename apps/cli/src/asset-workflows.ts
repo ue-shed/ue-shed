@@ -77,6 +77,7 @@ export const runTextRulesInit = Effect.fn("Cli.workflow.text_rules_init")(
 								retrySafe: false,
 								nextStep: "escalate",
 								code: "cli_command_failed",
+								cause: error,
 								message: `${error.message} ${error.recovery}`
 							})
 					)
@@ -111,6 +112,7 @@ export const runAssetsScan = Effect.fn("Cli.workflow.assets_scan")((command: Ass
 				Effect.mapError(
 					(error) =>
 						new CliCommandError({
+							cause: error,
 							recovery:
 								"Inspect the command context and original cause before deciding whether to retry.",
 							retrySafe: false,
@@ -220,8 +222,9 @@ export const runTextReview = Effect.fn("Cli.workflow.text_review")((command: Tex
 				yield* Effect.promise(() => import("@ue-shed/game-text/rules"));
 			const ruleJson = yield* Effect.tryPromise({
 				try: () => readFile(command.ruleFile, "utf8"),
-				catch: () =>
+				catch: (cause) =>
 					new CliCommandError({
+						cause,
 						recovery:
 							"Inspect the command context and original cause before deciding whether to retry.",
 						retrySafe: false,
@@ -240,6 +243,7 @@ export const runTextReview = Effect.fn("Cli.workflow.text_review")((command: Tex
 							retrySafe: false,
 							nextStep: "escalate",
 							code: "cli_command_failed",
+							cause: error,
 							message: `${error.message} ${error.recovery}`
 						})
 				)
@@ -295,6 +299,7 @@ export const runInputInspect = Effect.fn("Cli.workflow.input_inspect")(
 						isCliCommandError(error)
 							? error
 							: new CliCommandError({
+									cause: error,
 									recovery:
 										"Inspect the command context and original cause before deciding whether to retry.",
 									retrySafe: false,

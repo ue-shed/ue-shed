@@ -9,9 +9,13 @@ branch; the final gate and measurement results are recorded here before merge.
 The Effect audit follows Plan 058 D4–D8, D11 and D12. Guidance enforcement now covers all production
 packages/apps/extensions. All 88 remaining raw exported decoder exceptions are removed, preserving
 schema issues behind unary domain parsers. Tagged-class matching exceptions are removed. Public
-documentation is enforced for protocol, Unreal connection and focused Game Text APIs; the eight
-reviewed SDKs use named entry points. Obsolete service Shape aliases and two private Game Text
-constructors are removed with migration notes.
+documentation is enforced across all manifest entry points of the eight reviewed SDKs: protocol,
+Unreal connection, localization, Unreal assets, engine, cameras, host and Game Text. They use named
+entry points. Obsolete service Shape aliases, four transport internals and two private Game Text
+constructors are removed with migration notes. AssetReader test ports are complete and explicit;
+the seven hidden "not stubbed" operations and implicit configuration are removed. Direct error
+translations and nested stringified causes have regression guards. Schema-only camera migration
+fallbacks translate their final failure to the same domain contract error as strict public parsers.
 
 The native rollout builds on the parser/IO audit in #123 and the C++ error-contract work merged
 in #126, and closes the omitted index crate and WASM adapter. It classifies errors by stable codes,
@@ -69,7 +73,55 @@ The saved-fixture pipeline separately uses the public reader/source path for act
 discovery and extraction. Its first-page hashes are a narrower check than the generated canonical
 column proof and are reported separately.
 
-## Validation record
+## Measured host results
+
+The [raw samples, machine record and validated summary](evidence/effect-native-2026-10-18/summary.json)
+retain all 12 cold/edit samples, four new-process warm reopens and both engine fixture comparisons.
+The indexing/benchmark implementation is based on `8631c016`; documentation and unrelated error
+adapter fixes were applied between samples, and the complete test-port migration followed all
+measurements. No measured indexing/query success path changed during the run. Final integration
+checks below cover the resulting source, including those audit fixes.
+
+Three-sample median seconds (warm reopen is one additional new-process sample):
+
+| Host              | Builder    | Cold build | Unchanged refresh | One package + PO edit | Warm reopen |
+| ----------------- | ---------- | ---------: | ----------------: | --------------------: | ----------: |
+| CLI               | TypeScript |      75.30 |              1.64 |                  5.46 |        2.26 |
+| CLI               | Native     |      55.67 |              1.79 |                 22.08 |        3.14 |
+| Workbench service | TypeScript |      75.99 |              3.30 |                  6.61 |        3.35 |
+| Workbench service | Native     |      56.75 |              4.27 |                 22.77 |        4.26 |
+
+Cold native preparation is about 26% faster on this workload. The edited key mixes authored and
+StringTable-reference sources, so native eligibility deliberately chooses `reference-source` full
+join fallback; TypeScript performs an incremental join. This edit is slower with native and uses
+more sampled process-tree RSS. The structural fallback remains necessary for correct joins;
+these results do not claim a universal edit or memory improvement. PO-only eligible incremental
+behavior is covered by the dedicated regression suite.
+
+Median sampled cold process-tree RSS is 2,259/2,277 MiB for CLI TypeScript/native and 2,227/2,347 MiB
+for Workbench. Edit peaks are 1,387/2,642 MiB and 1,935/2,818 MiB respectively. Missing OS samples for
+very short query stages are recorded as null, never as zero memory consumption.
+
+Workbench cold-build maximum callback gaps improve from a 535 ms median to 155 ms. Focus still
+materializes synchronously in the JavaScript reader: median gaps are 1.82 seconds for TypeScript
+and 2.57 seconds for native. This is an observed remaining responsiveness problem, not evidence of
+native query acceleration. CLI native cold/edit publication can also block for roughly 2.2–2.4
+seconds even though native joining lowers overall event-loop utilization. Moving construction out
+of JavaScript does not remove all host-side publication/materialization work.
+
+All query hashes match within each host across builders, repeats and warm reopens. All six CLI
+cold/edit samples pass 171 canonical joined-data checks with zero differences; each reads 16,500
+text packages on cold construction. Both CLI warm reopens report no rebuild, zero package reads
+and zero parsed localization files. Workbench's public result does not expose those counters, so
+its warm evidence is successful new-process reopen/query parity and timing rather than an inferred
+zero-read count.
+
+The actual saved-engine pipeline reads 65 text packages and seven localization files, returning
+143 lines. Median ready times are 3.139/3.182 seconds (UE 5.7, TypeScript/native) and 3.103/3.168
+seconds (UE 5.8). Each engine's six alternating samples has one identical first-page hash. On this
+small fixture there is no end-to-end native speedup; IO/discovery and fixed overhead dominate.
+
+## Final integration checks
 
 - Native index Rust tests: 24 passed, including malformed dictionary count rejection and stable
   error-code/source evidence. Strict native and WASM Clippy checks run with warnings denied.

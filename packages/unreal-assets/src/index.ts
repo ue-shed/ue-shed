@@ -120,12 +120,6 @@ export {
 	MAX_PROTOCOL_PATH_BYTES,
 	MAX_PROTOCOL_REQUEST_BYTES
 } from "./protocol-request-limit.js";
-export {
-	ProtocolOutputBudget,
-	ProtocolStreamFailure,
-	ProtocolStreamValidator,
-	protocolCacheOutcome
-} from "./protocol-transport.js";
 export { resolveScanTarget, type ResolvedScanTarget } from "./scan-target.js";
 export {
 	BlueprintGraphDiagnostic,

@@ -46,6 +46,10 @@ import {
 	isLocalizationOperationError
 } from "./operation-schema.js";
 
+/**
+ * Plans and explicitly runs GatherText operations as an event stream. Execution revalidates
+ * inputs and owns process cleanup; consuming only a plan never launches Unreal.
+ */
 export interface LocalizationOperationsApi {
 	readonly plan: (
 		request: LocalizationRunRequest
@@ -54,11 +58,20 @@ export interface LocalizationOperationsApi {
 		request: LocalizationRunRequest
 	) => Stream.Stream<LocalizationRunEvent, LocalizationOperationError>;
 }
+/**
+ * Commandlet workflow service separate from saved-evidence reads. Hosts provide engine
+ * discovery and process-tree ownership without a Workbench dependency.
+ */
 export class LocalizationOperations extends Context.Service<
 	LocalizationOperations,
 	LocalizationOperationsApi
 >()("@ue-shed/localization/LocalizationOperations") {}
 
+/**
+ * GatherText planner/runner over EngineInstallationDiscovery and OwnedProcessTree. Owns logs,
+ * deadlines and termination, rechecks configs and audits actual writes against the reviewed
+ * plan.
+ */
 export const LocalizationOperationsLive = Layer.effect(
 	LocalizationOperations,
 	Effect.gen(function* () {
@@ -82,7 +95,8 @@ export const LocalizationOperationsLive = Layer.effect(
 				Effect.withTracerEnabled(false),
 				Effect.mapError((error) =>
 					localizationOperationError(
-						error.code === "engine_ambiguous" ? "engine_ambiguous" : "engine_not_found"
+						error.code === "engine_ambiguous" ? "engine_ambiguous" : "engine_not_found",
+						error
 					)
 				)
 			);
@@ -117,7 +131,7 @@ export const LocalizationOperationsLive = Layer.effect(
 							decodeText(bytes, defaultLocalizationLimits),
 							config
 						),
-					catch: () => localizationOperationError("unsupported_config")
+					catch: (cause) => localizationOperationError("unsupported_config", cause)
 				});
 				if (Result.isFailure(parsed))
 					return yield* Effect.fail(localizationOperationError("unsupported_config"));
@@ -168,7 +182,7 @@ export const LocalizationOperationsLive = Layer.effect(
 			);
 			yield* Effect.tryPromise({
 				try: () => access(executable),
-				catch: () => localizationOperationError("commandlet_missing")
+				catch: (cause) => localizationOperationError("commandlet_missing", cause)
 			});
 			// A private directory is retained for explicit receipts/failures; no project log writes.
 			yield* Effect.tryPromise({
@@ -274,6 +288,7 @@ export const LocalizationOperationsLive = Layer.effect(
 						Effect.mapError(
 							(error) =>
 								new LocalizationOperationError({
+									cause: error,
 									code: error.code,
 									message: error.message,
 									recovery: error.recovery,
@@ -387,6 +402,11 @@ export const LocalizationOperationsLive = Layer.effect(
 		});
 	})
 );
+/**
+ * Node production composition for explicit localization commandlet runs, including engine
+ * discovery and process-tree supervision. Requires a supported local engine and project; no
+ * commandlet runs during layer construction.
+ */
 export const LocalizationOperationsNodeLive = LocalizationOperationsLive.pipe(
 	Layer.provide(EngineInstallationDiscoveryLive),
 	Layer.provide(OwnedProcessTreeLive)

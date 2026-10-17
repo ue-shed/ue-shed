@@ -15,6 +15,11 @@ import { Clock, Context, Duration, Effect, Layer, Schedule, Schema } from "effec
 const coreObjectPath = "/Script/UEShedCore.Default__UEShedCoreLibrary";
 const capability = "editor.world-control.v1";
 
+/**
+ * World negotiation, request, transport or indeterminate-operation failure. Preserve
+ * operation identity and honor reconciliation guidance because an open may already have
+ * reached Unreal.
+ */
 export class EditorWorldControlError extends Schema.TaggedError<EditorWorldControlError>()(
 	"EditorWorldControlError",
 	{
@@ -32,6 +37,11 @@ export class EditorWorldControlError extends Schema.TaggedError<EditorWorldContr
 	}
 ) {}
 
+/**
+ * Explicit endpoint, operation ID and map package path for opening an editor world. The ID
+ * identifies the editor mutation; interrupting the wait does not cancel or replay that
+ * mutation.
+ */
 export interface OpenEditorWorldOptions {
 	readonly endpoint: string;
 	readonly operationId: string;
@@ -41,6 +51,10 @@ export interface OpenEditorWorldOptions {
 	readonly pollInterval?: Duration.Input;
 }
 
+/**
+ * Snapshots editor world state and opens a map through a correlated editor operation. A
+ * timed-out or interrupted wait requires reconciliation of the operation before another open.
+ */
 export interface EditorWorldControlApi {
 	readonly snapshot: (
 		endpoint: string
@@ -50,6 +64,10 @@ export interface EditorWorldControlApi {
 	) => Effect.Effect<EditorWorldOpenResponse, EditorWorldControlError>;
 }
 
+/**
+ * Capability-negotiated editor-world control port. It operates on the caller's endpoint and
+ * does not change the host's selected project.
+ */
 export class EditorWorldControl extends Context.Service<
 	EditorWorldControl,
 	EditorWorldControlApi
@@ -72,6 +90,11 @@ function failure(args: {
 	return new EditorWorldControlError(args);
 }
 
+/**
+ * RemoteControlClient-backed world snapshots and map opens. Validates contracts and
+ * correlates the operation while polling; stopping the wait does not repeat the editor
+ * mutation.
+ */
 export const EditorWorldControlLive = Layer.effect(
 	EditorWorldControl,
 	Effect.gen(function* () {
@@ -371,6 +394,10 @@ export const EditorWorldControlLive = Layer.effect(
 	})
 );
 
+/**
+ * Provides a complete explicit EditorWorldControl test port. The supplied implementation owns
+ * outcomes and synchronization; no missing operation falls back to the production service.
+ */
 export function makeEditorWorldControlTestLayer(
 	service: EditorWorldControlApi
 ): Layer.Layer<EditorWorldControl> {

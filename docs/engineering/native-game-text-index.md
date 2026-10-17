@@ -65,6 +65,18 @@ native phase attribution. Native operation spans carry the stage durations.
 
 ## Measurement scope
 
+The public-adapter rollout measures production CLI and Workbench service composition over a
+generated million-occurrence corpus. Median cold preparation improves from about 75–76 seconds to
+56–57 seconds. Native is not faster for every workload: the measured mixed-reference package/PO
+edit triggers a full native join (about 22–23 seconds versus 5–7 seconds for TypeScript), and warm
+reopen is roughly one second slower. Memory does not improve on that workload. The explicit
+TypeScript reference layer remains available for hosts whose workload favors it.
+
+Native joining also does not eliminate synchronous reader materialization: the measured Workbench
+focus operation still blocks for about 2.6 seconds at this scale. Full methodology, callback gaps,
+raw parity evidence and limits are in the [rollout report](../research/effect-audit-native-rollout-2026-10-18.md).
+
+Earlier prototype measurements below describe a different workload and narrower operation scope.
 The isolated prototype compared an owned-buffer TypeScript control, a first native writer and an
 incremental native writer. On the larger private dataset, one eligible source edit took 299 ms,
 13,311 ms and 186 ms respectively. These measurements exclude package discovery, extraction,

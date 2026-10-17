@@ -543,6 +543,7 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 					Schema.is(LocalizationReportError)(cause)
 						? cause
 						: new LocalizationReportError({
+								cause: cause,
 								retrySafe: false,
 								nextStep: "fix_input",
 								code: "invalid_report_context",
@@ -605,6 +606,7 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 							Schema.is(LocalizationReportError)(cause)
 								? cause
 								: new LocalizationReportError({
+										cause: cause,
 										retrySafe: false,
 										nextStep: "fix_input",
 										code: "invalid_baseline",
@@ -661,6 +663,7 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 						Schema.is(LocalizationReportError)(cause)
 							? cause
 							: new LocalizationReportError({
+									cause: cause,
 									retrySafe: false,
 									nextStep: "fix_input",
 									code: "invalid_report_context",

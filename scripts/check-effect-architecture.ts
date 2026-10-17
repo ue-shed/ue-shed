@@ -1214,6 +1214,52 @@ export async function checkTaggedErrorMatching(root: string = repositoryRoot) {
 	return failures;
 }
 
+/** Direct error translations retain the failure instead of copying only its displayed message. */
+export async function checkErrorTranslationCauses(root: string = repositoryRoot) {
+	const failures: string[] = [];
+	for (const directory of sourceRoots)
+		for (const path of await filesUnder(root, directory)) {
+			if (!/\.tsx?$/u.test(path) || testSourcePattern.test(path)) continue;
+			const text = await readFile(path, "utf8");
+			const source = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true);
+			const label = relative(root, path).replaceAll("\\", "/");
+			const inspectConstructor = (node: ts.Node): void => {
+				if (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) return;
+				if (ts.isNewExpression(node) && node.expression.getText(source).endsWith("Error")) {
+					const fields = node.arguments?.[0];
+					if (
+						fields &&
+						ts.isObjectLiteralExpression(fields) &&
+						!fields.properties.some(
+							(property) =>
+								ts.isSpreadAssignment(property) ||
+								property.name?.getText(source) === "cause"
+						)
+					)
+						failures.push(
+							`${label}:${lineOf(text, node.getStart(source))}: error translation must retain its original cause`
+						);
+				}
+				ts.forEachChild(node, inspectConstructor);
+			};
+			const visit = (node: ts.Node): void => {
+				if (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) {
+					const parent = node.parent;
+					if (
+						(ts.isPropertyAssignment(parent) &&
+							parent.name.getText(source) === "catch") ||
+						(ts.isCallExpression(parent) &&
+							parent.expression.getText(source) === "Effect.mapError")
+					)
+						inspectConstructor(node.body);
+				}
+				ts.forEachChild(node, visit);
+			};
+			visit(source);
+		}
+	return failures;
+}
+
 export async function checkArchitecture(root: string = repositoryRoot) {
 	return [
 		...(await checkCatalogUsage(root)),
@@ -1222,6 +1268,7 @@ export async function checkArchitecture(root: string = repositoryRoot) {
 		...(await checkDomainServices(root)),
 		...(await checkLocalizationBoundaries(root)),
 		...(await checkErrorGuidance(root)),
+		...(await checkErrorTranslationCauses(root)),
 		...(await checkTaggedErrorMatching(root)),
 		...(await checkGameTextEntryPoints(root)),
 		...(await checkWorkbenchBoundaries(root)),

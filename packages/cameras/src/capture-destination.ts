@@ -8,6 +8,7 @@ export class CaptureFilesystemError extends Schema.TaggedError<CaptureFilesystem
 	"CaptureFilesystemError",
 	{
 		...ErrorGuidanceFields,
+		cause: Schema.optionalKey(Schema.Defect()),
 		operation: Schema.Literals(["discard", "prepare", "promote", "store", "write"]),
 		path: Schema.String
 	}
@@ -111,7 +112,8 @@ function filesystemError(args: {
 	readonly nextStep: CaptureFilesystemError["nextStep"];
 }): CaptureFilesystemError {
 	return new CaptureFilesystemError({
-		message: String(args.cause),
+		message: `Could not ${args.operation.replaceAll("_", " ")} capture data at ${args.path}.`,
+		cause: args.cause,
 		nextStep: args.nextStep,
 		operation: args.operation,
 		path: args.path,

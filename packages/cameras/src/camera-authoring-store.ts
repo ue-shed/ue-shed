@@ -37,6 +37,11 @@ const Outcome = Schema.Struct({
 	fingerprint: Schema.String,
 	revision: Schema.Int
 });
+/**
+ * Version-1 recovery document containing arrangement, review set, operation outcomes and
+ * optional pending projection digest. The document retains approved state if destination
+ * publication is interrupted.
+ */
 export const CameraAuthoringDocument = Schema.Struct({
 	version: Schema.Literal(1),
 	arrangement: CameraArrangement,
@@ -52,6 +57,11 @@ const ApprovalScope = {
 	expectedRevision: Schema.Int,
 	destination: Schema.NonEmptyString
 };
+/**
+ * Revision-bound approval of one or multiple camera identities, with explicit retired-view
+ * removal for batch approval. Approval is scoped to the current arrangement rather than
+ * arbitrary review views.
+ */
 export const CameraApproval = Schema.Union([
 	Schema.Struct({ ...ApprovalScope, cameraId: ArrangementCameraId }),
 	Schema.Struct({
@@ -288,6 +298,11 @@ const storageError =
 				});
 	};
 
+/**
+ * Reads and strictly validates a recipe JSON file no larger than 4 MiB. Fails with
+ * CameraArrangementError retaining the read/parse cause; does not apply the recipe
+ * automatically.
+ */
 export const readCameraArrangementRecipe = Effect.fn("CameraAuthoringStore.readRecipe")(
 	(path: string) =>
 		Effect.tryPromise({
@@ -302,6 +317,10 @@ export const readCameraArrangementRecipe = Effect.fn("CameraAuthoringStore.readR
 			catch: storageError(`camera arrangement recipe ${path}`)
 		})
 );
+/**
+ * Validates and atomically writes a reusable arrangement recipe to an explicit path. This
+ * exports policy rather than changing the active arrangement or selected project.
+ */
 export const writeCameraArrangementRecipe = Effect.fn("CameraAuthoringStore.writeRecipe")(
 	(path: string, recipe: CameraArrangementRecipe) =>
 		Effect.tryPromise({
@@ -324,6 +343,11 @@ export interface CameraAuthoringStore {
 		approval: CameraApproval
 	) => Effect.Effect<CameraAuthoringDocument, CameraArrangementError>;
 }
+/**
+ * Creates a file-backed revision/operation-aware authoring store with atomic persistence and
+ * recoverable review-set projection. IO occurs in its methods; stale publication digests
+ * require reconciliation.
+ */
 export function makeCameraAuthoringStore(documentPath: string): CameraAuthoringStore {
 	const path = resolve(documentPath);
 	const load = async () =>
@@ -500,6 +524,11 @@ export function makeCameraAuthoringStore(documentPath: string): CameraAuthoringS
 	};
 }
 
+/**
+ * Reads and strictly validates a visibility preset JSON file bounded to 4 MiB. Imported
+ * policy remains an explicit host choice rather than automatically changing camera
+ * visibility.
+ */
 export const readCameraVisibilityPreset = Effect.fn("CameraAuthoringStore.readVisibilityPreset")(
 	(path: string) =>
 		Effect.tryPromise({
@@ -517,6 +546,10 @@ export const readCameraVisibilityPreset = Effect.fn("CameraAuthoringStore.readVi
 			catch: storageError(`camera visibility preset ${path}`)
 		})
 );
+/**
+ * Exports an immutable visibility preset under an explicit path. Repeating identical bytes
+ * succeeds; a different existing preset requires a new path and explicit adoption.
+ */
 export const writeCameraVisibilityPreset = Effect.fn("CameraAuthoringStore.writeVisibilityPreset")(
 	(path: string, preset: CameraVisibilityPreset) =>
 		Effect.tryPromise({

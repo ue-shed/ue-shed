@@ -114,6 +114,7 @@ export const runLocalizationReport = Effect.fn("Cli.workflow.localization_report
 							isLocalizationReportError(error)
 								? error
 								: new LocalizationReportError({
+										cause: error,
 										retrySafe: false,
 										nextStep: "fix_input",
 										code: "invalid_report_context",
@@ -135,6 +136,7 @@ export const runLocalizationReport = Effect.fn("Cli.workflow.localization_report
 								isLocalizationReportError(error)
 									? error
 									: new LocalizationReportError({
+											cause: error,
 											retrySafe: false,
 											nextStep: "fix_input",
 											code: "invalid_baseline",

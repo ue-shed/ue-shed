@@ -17,33 +17,57 @@ export const CameraActorReference = Schema.Union([
 	})
 ]);
 export type CameraActorReference = typeof CameraActorReference.Type;
+/**
+ * Actor locator and bounded display label for visibility policy. Labels are presentation;
+ * locator identity, preferably authored GUID, determines which actor is targeted.
+ */
 export const CameraActorEntry = Schema.Struct({
 	locator: CameraActorReference,
 	label: Schema.String.check(Schema.isMaxLength(256))
 });
 export type CameraActorEntry = typeof CameraActorEntry.Type;
+/**
+ * Bounded hide/protect actor lists for authored visibility. Merge/resolution logic handles
+ * precedence and diagnostics; a syntactically valid list does not prove actors are loaded.
+ */
 export const CameraVisibilityList = Schema.Struct({
 	hide: Schema.Array(CameraActorEntry).check(Schema.isMaxLength(256)),
 	protect: Schema.Array(CameraActorEntry).check(Schema.isMaxLength(256))
 });
 export type CameraVisibilityList = typeof CameraVisibilityList.Type;
+/**
+ * Natural-only, authored-only or paired natural/authored output policy. Authored visibility
+ * is distinct evidence and must not be presented as an unchanged natural frame.
+ */
 export const CameraVisibilityOutput = Schema.Literals([
 	"natural_only",
 	"authored_only",
 	"natural_and_authored"
 ]);
+/**
+ * Version-1 explicit visibility output and actor policy. Temporary editor hiding must be
+ * scoped/restored by capture rather than persisted into the map.
+ */
 export const CameraAuthoredVisibility = Schema.Struct({
 	version: Schema.Literal(1),
 	output: CameraVisibilityOutput,
 	actors: CameraVisibilityList
 });
 export type CameraAuthoredVisibility = typeof CameraAuthoredVisibility.Type;
+/**
+ * Per-locator resolved, missing/unloaded, ambiguous or unsupported outcome with observed
+ * path. Preserve failures when reporting capture fidelity.
+ */
 export const CameraVisibilityDiagnostic = Schema.Struct({
 	locator: CameraActorReference,
 	status: Schema.Literals(["resolved", "missing_or_unloaded", "ambiguous", "unsupported"]),
 	actorPath: Schema.String,
 	message: Schema.String
 });
+/**
+ * Returns a stable comparison key, lowercasing GUID identity while preserving path spelling.
+ * This pure helper does not resolve an actor or establish loaded-world ownership.
+ */
 export function cameraActorIdentity(locator: CameraActorReference): string {
 	return locator.kind === "actor_guid"
 		? `guid:${locator.actorGuid.toLowerCase()}`

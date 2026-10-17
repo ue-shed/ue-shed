@@ -12,6 +12,10 @@ const rounds = new Uint32Array([
 function rotate(value: number, bits: number): number {
 	return (value >>> bits) | (value << (32 - bits));
 }
+/**
+ * Computes a lowercase hexadecimal SHA-256 fingerprint from text. This pure helper provides
+ * content identity for evidence/reviews, not authentication or a signature.
+ */
 export function sha256Hex(text: string): string {
 	const source = new TextEncoder().encode(text);
 	const bytes = new Uint8Array(Math.ceil((source.length + 9) / 64) * 64);

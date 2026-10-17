@@ -59,8 +59,9 @@ export const loadLocalizationContext = Effect.fn("Cli.localization.load_context"
 			: undefined)
 	}).pipe(
 		Effect.mapError(
-			() =>
+			(cause) =>
 				new GameTextLocalizationError({
+					cause: cause,
 					retrySafe: false,
 					nextStep: "fix_input",
 					code: "invalid_selection",

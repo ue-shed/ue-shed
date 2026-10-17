@@ -706,11 +706,7 @@ async function runCliJourney(fixture: PerforceMapHistoryFixture): Promise<void> 
 		// SAFETY: the invoked UE Shed CLI emits the history contract asserted by this integration test.
 		history = JSON.parse(result.stdout) as typeof history;
 	} catch (error) {
-		throw new Error(
-			`The Map History CLI did not emit one JSON document: ${
-				error instanceof Error ? error.message : String(error)
-			}`
-		);
+		throw new Error("The Map History CLI did not emit one JSON document.", { cause: error });
 	}
 	assert(
 		history.baseline?.status === "available",

@@ -21,9 +21,10 @@ export class ActorUtilityError extends Schema.TaggedError<ActorUtilityError>()(
 	}
 ) {}
 /** Reading presets, writing the whole preset list and copying text are all repeatable. */
-const storageUnavailable = () =>
+const storageUnavailable = (cause?: unknown) =>
 	new ActorUtilityError({
 		message: "Preset storage is unavailable.",
+		...(cause === undefined ? undefined : { cause }),
 		recovery: "Enable browser local storage for the Workbench, then reload presets.",
 		retrySafe: true,
 		nextStep: "escalate"
@@ -34,7 +35,7 @@ export const readActorFilterPresets = Effect.fn("ActorFilters.read")(function* (
 ) {
 	const text = yield* Effect.try({
 		try: () => storage.getItem(actorFilterStorageKey),
-		catch: () => storageUnavailable()
+		catch: (cause) => storageUnavailable(cause)
 	});
 	if (text === null) return [];
 	return (yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Presets))(text).pipe(
@@ -83,8 +84,9 @@ export const writeActorFilterPreset = Effect.fn("ActorFilters.write")(function* 
 				];
 	yield* Effect.try({
 		try: () => storage.setItem(actorFilterStorageKey, JSON.stringify({ version: 1, presets })),
-		catch: () =>
+		catch: (cause) =>
 			new ActorUtilityError({
+				cause,
 				message: "Could not save presets. Check available browser storage.",
 				recovery: "Free browser storage, then save the preset again.",
 				retrySafe: true,
@@ -110,8 +112,9 @@ export function actorCopyDetails(
 export const copyActorText = Effect.fn("ActorDetails.copy")((text: string) =>
 	Effect.tryPromise({
 		try: () => navigator.clipboard.writeText(text),
-		catch: () =>
+		catch: (cause) =>
 			new ActorUtilityError({
+				cause,
 				message: "Clipboard unavailable. Select and copy the displayed value.",
 				recovery: "Select and copy the displayed value.",
 				retrySafe: true,
@@ -122,5 +125,5 @@ export const copyActorText = Effect.fn("ActorDetails.copy")((text: string) =>
 
 export const actorPresetStorage = Effect.try({
 	try: () => window.localStorage,
-	catch: () => storageUnavailable()
+	catch: (cause) => storageUnavailable(cause)
 });

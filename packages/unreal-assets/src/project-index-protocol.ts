@@ -38,6 +38,10 @@ const isRefreshPhase = (phase: ProtocolProgress["phase"]): phase is RefreshPhase
 	phase === "reading_headers" ||
 	phase === "committing";
 
+/**
+ * Projects recognized native refresh phases into domain progress events. Returns undefined
+ * for unrelated protocol phases rather than inventing catalog progress.
+ */
 export function mapProjectIndexProgress(
 	event: ProtocolProgress
 ): typeof ProjectIndexRefreshEvent.Type | undefined {
@@ -49,6 +53,11 @@ export function mapProjectIndexProgress(
 	});
 }
 
+/**
+ * Converts an already wire-validated summary to branded catalog identity/generation.
+ * Synchronous schema construction can throw on invalid input; use the protocol boundary for
+ * untrusted bytes.
+ */
 export function decodeProjectIndexWireSummary(
 	summary: UAssetIoProjectIndexSummary
 ): ProjectIndexSummary {
@@ -64,6 +73,11 @@ export function decodeProjectIndexWireSummary(
 	};
 }
 
+/**
+ * Converts an already validated native page into its domain map/header/inventory
+ * representation. This synchronous adapter is not a JSON parser or a substitute for protocol
+ * validation.
+ */
 export function decodeProjectIndexWirePage(page: UAssetIoProjectIndexPage): ProjectIndexPage {
 	const items = page.items.map(
 		(item): ProjectIndexMap | ProjectIndexHeader | ProjectIndexInventory => {

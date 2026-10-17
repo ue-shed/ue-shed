@@ -18,6 +18,11 @@ const isCameraRenderError = Schema.is(CameraRenderError);
 const isRemoteControlClientError = Schema.is(RemoteControlClientError);
 const reviewLibraryPath = "/Script/UEShedCamerasEditor.Default__UEShedCameraReviewLibrary";
 
+/**
+ * Remote review capture negotiation/transport/contract failure with original cause. An
+ * uncertain mutation may have applied; honor recovery guidance before issuing another
+ * capture.
+ */
 export class ReviewCaptureConnectionError extends Schema.TaggedError<ReviewCaptureConnectionError>()(
 	"ReviewCaptureConnectionError",
 	{ ...ErrorGuidanceFields, ...ErrorCauseFields, endpoint: Schema.String }
@@ -75,6 +80,11 @@ function recordVisibilityMeasurement(response: ReviewCaptureResponse): Effect.Ef
 	});
 }
 
+/**
+ * Captures one correlated review request through RemoteControlClient. Current rendered
+ * requests use the scoped renderer; supported legacy versions retain their distinct
+ * contract/evidence behavior.
+ */
 export function captureReviewView(args: {
 	readonly endpoint: string;
 	readonly request: ReviewCaptureRequest;

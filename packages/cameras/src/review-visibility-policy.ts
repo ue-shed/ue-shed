@@ -12,6 +12,10 @@ import {
 	type VisibilityPolicyId as VisibilityPolicyIdType
 } from "./review-schema.js";
 
+/**
+ * Invalid view/policy assignment, missing identity or conflicting policy ID. Correct explicit
+ * selection and policy ownership before retrying; original cause is retained when available.
+ */
 export class ReviewVisibilityPolicyError extends Schema.TaggedError<ReviewVisibilityPolicyError>()(
 	"ReviewVisibilityPolicyError",
 	{
@@ -30,6 +34,10 @@ export class ReviewVisibilityPolicyError extends Schema.TaggedError<ReviewVisibi
 	}
 ) {}
 
+/**
+ * Policies with assigned view IDs and per-view overrides. This pure inspection model makes
+ * shared policy reuse visible before editing a view's assignment.
+ */
 export interface ReviewVisibilityPolicyInspection {
 	readonly policies: ReadonlyArray<{
 		readonly assignedViewIds: ReadonlyArray<ReviewViewIdType>;
@@ -43,6 +51,10 @@ export interface ReviewVisibilityPolicyInspection {
 	}>;
 }
 
+/**
+ * Purely lists policy definitions, assignments and overrides from a review set. Does not
+ * resolve actors, evaluate visibility or modify any view.
+ */
 export function inspectReviewVisibilityPolicies(
 	reviewSet: ReviewSet
 ): ReviewVisibilityPolicyInspection {
@@ -81,6 +93,10 @@ function invalidAssignment(
 	});
 }
 
+/**
+ * Adds a new uniquely identified policy and assigns it to one existing view, with optional
+ * overrides. Returns a typed conflict instead of mutating an already shared policy in place.
+ */
 export function replaceViewVisibilityPolicy(args: {
 	readonly policy: VisibilityPolicy;
 	readonly reviewSet: ReviewSet;
@@ -138,6 +154,10 @@ export function replaceViewVisibilityPolicy(args: {
 	);
 }
 
+/**
+ * Assigns an existing policy to an explicit unique non-empty view subset. Validates
+ * policy/view membership and returns an updated set without writing files.
+ */
 export function applyVisibilityPolicyToViews(args: {
 	readonly policyId: VisibilityPolicyIdType;
 	readonly reviewSet: ReviewSet;
@@ -218,6 +238,10 @@ export function applyVisibilityPolicyToViews(args: {
 	);
 }
 
+/**
+ * Loads a set through ReviewRepository and returns policy assignments. This read operation
+ * does not update or evaluate visibility policy.
+ */
 export function inspectReviewVisibilityPoliciesAtPath(
 	path: string
 ): Effect.Effect<ReviewVisibilityPolicyInspection, ReviewStorageError, ReviewRepository> {
@@ -226,6 +250,10 @@ export function inspectReviewVisibilityPoliciesAtPath(
 	);
 }
 
+/**
+ * Loads a set, validates a new per-view policy and saves the updated set through
+ * ReviewRepository. Conflicting identities remain typed failures before persistence.
+ */
 export function replaceViewVisibilityPolicyAtPath(args: {
 	readonly path: string;
 	readonly policy: VisibilityPolicy;
@@ -240,6 +268,10 @@ export function replaceViewVisibilityPolicyAtPath(args: {
 	);
 }
 
+/**
+ * Loads a set, validates explicit view membership and saves assignment of an existing policy.
+ * No project selection or implicit all-view scope is introduced.
+ */
 export function applyVisibilityPolicyToViewsAtPath(args: {
 	readonly path: string;
 	readonly policyId: VisibilityPolicyIdType;
@@ -253,5 +285,13 @@ export function applyVisibilityPolicyToViewsAtPath(args: {
 	);
 }
 
+/**
+ * Synchronous constructor for a safe branded view identifier. Throws schema validation errors
+ * on invalid input; it does not generate or reserve a fresh ID.
+ */
 export const makeReviewViewId = ReviewViewId.make;
+/**
+ * Synchronous constructor for a safe branded policy identifier. Validation does not establish
+ * uniqueness within a review set or create a policy.
+ */
 export const makeVisibilityPolicyId = VisibilityPolicyId.make;

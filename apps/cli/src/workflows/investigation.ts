@@ -29,6 +29,7 @@ export const runInvestigation = Effect.fn("Cli.workflow.investigation")(
 					Effect.mapError(
 						(cause) =>
 							new InvestigationError({
+								cause: cause,
 								message: `Invalid investigation preset: ${cause.message}`,
 								recovery: "Use a version 1 Game Text or Texture Audit preset.",
 								retrySafe: true,

@@ -38,6 +38,11 @@ const Scope = {
 	sessionId: CameraArrangementId,
 	producerId: Schema.NonEmptyString
 };
+/**
+ * Camera identity, display name and realized pose sent to the editor bridge, optionally
+ * retaining its editable definition. Pose is computed for the arrangement's current subject
+ * evidence.
+ */
 export const CameraBridgeCamera = Schema.Struct({
 	id: ArrangementCameraId,
 	displayName: Schema.NonEmptyString,
@@ -53,6 +58,11 @@ const CameraBridgeCameras = Schema.Array(CameraBridgeCamera).check(
 			"Camera IDs must be unique."
 	)
 );
+/**
+ * Builds bridge camera definitions with effective poses from an arrangement. Pure
+ * transformation; unknown/invalid framing can throw a typed arrangement failure before
+ * transport.
+ */
 export function arrangementBridgeCameras(arrangement: CameraArrangement) {
 	return arrangement.cameras.map((camera) => ({
 		id: camera.id,
@@ -140,11 +150,19 @@ const CameraSessionRequest = Schema.Union([
 		pose: ApprovedPose
 	})
 ]).mapMembers(Tuple.map(withCodedFailures));
+/**
+ * Supported setup/session requests with coded failure negotiation. Callers preserve session,
+ * revision and operation identities instead of issuing uncorrelated editor mutations.
+ */
 export const CameraBridgeRequest = Schema.Union([
 	CameraSetupRequest.mapMembers(Tuple.map(withCodedFailures)),
 	...CameraSessionRequest.members
 ]);
 export type CameraBridgeRequest = typeof CameraBridgeRequest.Type;
+/**
+ * Ready editor-session snapshot with producer, revision/sequence, pending/piloting state and
+ * optional camera edits/panel data. Reconcile sequence/revision before adopting native edits.
+ */
 export const CameraBridgeSnapshot = Schema.Struct({
 	added: Schema.optionalKey(Schema.Array(ArrangementCamera).check(Schema.isMaxLength(256))),
 	removed: Schema.optionalKey(Schema.Array(ArrangementCameraId).check(Schema.isMaxLength(256))),
@@ -178,6 +196,10 @@ export const CameraBridgeFailureCode = Schema.String.check(
 	Schema.isMaxLength(64),
 	Schema.isPattern(/^[a-z][a-z0-9_]*$/u)
 );
+/**
+ * Negotiated setup, ready, viewport, selection, visibility, availability or refusal response.
+ * Older plugins can omit detailed refusal codes; coarse status still must be honored.
+ */
 export const CameraBridgeResponse = Schema.Union([
 	CameraSetupState,
 	CameraActorSelectionResult,
@@ -211,6 +233,11 @@ export const CameraBridgeResponse = Schema.Union([
 	})
 ]);
 export type CameraBridgeResponse = typeof CameraBridgeResponse.Type;
+/**
+ * Missing plugin, connection, contract or editor refusal with stable code and original cause.
+ * Stale/busy states require session reconciliation rather than treating a parsed reply as
+ * success.
+ */
 export class CameraBridgeError extends Schema.TaggedError<CameraBridgeError>()(
 	"CameraBridgeError",
 	{
@@ -229,6 +256,11 @@ export class CameraBridgeError extends Schema.TaggedError<CameraBridgeError>()(
 		...ErrorCauseFields
 	}
 ) {}
+/**
+ * Effect transport port for validated camera setup/session requests. The host supplies the
+ * endpoint/connection implementation; the domain arrangement remains independent of
+ * Workbench.
+ */
 export interface CameraAuthoringBridge {
 	readonly call: (
 		request: CameraBridgeRequest
@@ -369,6 +401,11 @@ function rejectedBridgeNextStep(code: "busy" | "stale" | "invalid" | "unavailabl
 			return "reconcile" as const;
 	}
 }
+/**
+ * Accepts only a ready bridge snapshot, mapping other response statuses to typed guidance.
+ * Retains an optional producer refusal code as cause rather than parsing the displayed
+ * message.
+ */
 export function readyCameraBridge(
 	response: CameraBridgeResponse
 ): Effect.Effect<CameraBridgeSnapshot, CameraBridgeError> {
@@ -391,6 +428,11 @@ export function readyCameraBridge(
 		})
 	);
 }
+/**
+ * Loads the persisted arrangement and attaches its explicit camera through the bridge with
+ * current revision/project/map evidence. Returns a ready snapshot or a typed refusal
+ * requiring reconciliation.
+ */
 export const attachArrangementCamera = Effect.fn("CameraAuthoring.attach")(function* (
 	store: CameraAuthoringStore,
 	bridge: CameraAuthoringBridge,

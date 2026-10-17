@@ -15,6 +15,11 @@ import { Context, Effect, Layer, Schema } from "effect";
 const coreObjectPath = "/Script/UEShedCore.Default__UEShedCoreLibrary";
 const capability = "editor.play-session.v1";
 
+/**
+ * PIE capability, response-contract or transport failure. Guidance distinguishes repeatable
+ * reads from commands that may already have changed the editor; the underlying cause is
+ * retained.
+ */
 export class EditorPlaySessionError extends Schema.TaggedError<EditorPlaySessionError>()(
 	"EditorPlaySessionError",
 	{
@@ -26,6 +31,10 @@ export class EditorPlaySessionError extends Schema.TaggedError<EditorPlaySession
 	}
 ) {}
 
+/**
+ * Reads PIE state and sends explicit start, stop, pause or resume commands. After an
+ * uncertain command reply, read status before issuing another mutation.
+ */
 export interface EditorPlaySessionApi {
 	readonly status: (
 		endpoint: string
@@ -49,6 +58,10 @@ export interface EditorPlaySessionApi {
 	) => Effect.Effect<EditorPlaySessionCommandResponse, EditorPlaySessionError>;
 }
 
+/**
+ * Capability-negotiated PIE lifecycle port. It controls the connected editor's play session
+ * without launching an editor or selecting a project.
+ */
 export class EditorPlaySession extends Context.Service<EditorPlaySession, EditorPlaySessionApi>()(
 	"@ue-shed/engine/EditorPlaySession"
 ) {}
@@ -116,6 +129,10 @@ const commandFunctions = {
 	stop: "StopPlaySession"
 } satisfies Readonly<Record<EditorPlaySessionCommand, string>>;
 
+/**
+ * RemoteControlClient-backed PIE control with capability and response validation. Mutations
+ * are not automatically replayed when a reply is lost or malformed.
+ */
 export const EditorPlaySessionLive = Layer.effect(
 	EditorPlaySession,
 	Effect.gen(function* () {
@@ -218,6 +235,10 @@ export const EditorPlaySessionLive = Layer.effect(
 	})
 );
 
+/**
+ * Provides a complete explicit EditorPlaySession test port. The supplied implementation owns
+ * outcomes and synchronization; no missing operation falls back to the production service.
+ */
 export function makeEditorPlaySessionTestLayer(
 	service: EditorPlaySessionApi
 ): Layer.Layer<EditorPlaySession> {

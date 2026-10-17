@@ -23,6 +23,11 @@ export class NativeGameTextIndexClient extends Context.Service<
 	}
 >()("@ue-shed/unreal-assets/NativeGameTextIndexClient") {}
 
+/**
+ * Creates a scoped serialized native Game Text index client from the host reader
+ * configuration. Negotiated commands use the catalog timeout; failures close the owned
+ * session and do not silently invoke the TypeScript builder.
+ */
 export const nativeGameTextIndexClientLayer = (configuration: AssetReaderConfiguration) =>
 	Layer.effect(
 		NativeGameTextIndexClient,

@@ -1,0 +1,883 @@
+{
+	"measurementVersion": 2,
+	"sourceHead": "8631c016d1f87b1d37f7c98327c395c137bf3668",
+	"sourceState": "Benchmark builder, host orchestration success paths and measurement implementation are from this base commit. Public documentation and error-adapter edits were applied between samples; complete test-port migration occurred only after all samples finished.",
+	"machine": {
+		"processors": {
+			"Name": "AMD Ryzen 9 5950X 16-Core Processor            ",
+			"NumberOfCores": 16,
+			"NumberOfLogicalProcessors": 32
+		},
+		"os": "Microsoft Windows NT 10.0.26200.0",
+		"validationAffinity": "0xFFFFFFCF",
+		"buildJobs": 4,
+		"memoryBytes": 68624322560,
+		"node": "v26.5.0"
+	},
+	"method": "Three alternating fresh-process/cache runs per backend/host, default Node heap, warm OS caches. Production Workbench worker options; warm reopen immediately follows its matching cold/edit sample. Callback gaps include unfinished synchronous stalls. Process-tree RSS is sampled, not an exact peak; main-thread JS counters exclude query-thread heaps.",
+	"parity": "All captured query hashes match within each host across both backends and all repeated/warm runs. Six CLI samples pass 171 canonical checks. Each engine's six real-fixture samples share one first-page hash.",
+	"rows": [
+		{
+			"host": "cli",
+			"backend": "typescript",
+			"samples": 3,
+			"timings": {
+				"cold-build": {
+					"medianSeconds": 75.2961424,
+					"rangeSeconds": [74.6813336, 75.5564624],
+					"medianMaximumCallbackGapMs": 1483.002999999997,
+					"medianP99CallbackGapMs": 33.10030000000552,
+					"medianEventLoopUtilization": 0.7168447166986214,
+					"sampledProcessTreeRssMiB": 2258.80078125,
+					"rssObservedSamples": 3,
+					"strategies": ["full"],
+					"fallbacks": []
+				},
+				"count": {
+					"medianSeconds": 0.0009395999999978812,
+					"rangeSeconds": [0.0009156999999977416, 0.0009997000000003028],
+					"medianMaximumCallbackGapMs": 0.9219000000011874,
+					"medianP99CallbackGapMs": 0.9219000000011874,
+					"medianEventLoopUtilization": 1,
+					"sampledProcessTreeRssMiB": null,
+					"rssObservedSamples": 0,
+					"strategies": [],
+					"fallbacks": []
+				},
+				"filter": {
+					"medianSeconds": 0.04541080000001239,
+					"rangeSeconds": [0.04366049999999814, 0.04605359999999928],
+					"medianMaximumCallbackGapMs": 45.39870000000519,
+					"medianP99CallbackGapMs": 45.39870000000519,
+					"medianEventLoopUtilization": 1,
+					"sampledProcessTreeRssMiB": null,
+					"rssObservedSamples": 0,
+					"strategies": [],
+					"fallbacks": []
+				},
+				"facet": {
+					"medianSeconds": 0.04073449999999139,
+					"rangeSeconds": [0.039347200000003794, 0.04174290000001201],
+					"medianMaximumCallbackGapMs": 40.72920000000158,
+					"medianP99CallbackGapMs": 40.72920000000158,
+					"medianEventLoopUtilization": 1,
+					"sampledProcessTreeRssMiB": null,
+					"rssObservedSamples": 0,
+					"strategies": [],
+					"fallbacks": []
+				},
+				"page": {
+					"medianSeconds": 0.016760699999998907,
+					"rangeSeconds": [0.016029600000008942, 0.026507499999992433],
+					"medianMaximumCallbackGapMs": 16.733800000001793,
+					"medianP99CallbackGapMs": 16.733800000001793,
+					"medianEventLoopUtilization": 1,
+					"sampledProcessTreeRssMiB": null,
+					"rssObservedSamples": 0,
+					"strategies": [],
+					"fallbacks": []
+				},
+				"search": {
+					"medianSeconds": 0.060120800000004235,
+					"rangeSeconds": [0.05751429999999527, 0.07821239999998943],
+					"medianMaximumCallbackGapMs": 60.107499999998254,
+					"medianP99CallbackGapMs": 60.107499999998254,
+					"medianEventLoopUtilization": 1,
+					"sampledProcessTreeRssMiB": null,
+					"rssObservedSamples": 0,
+					"strategies": [],
+					"fallbacks": []
+				},
+				"focus": {
+					"medianSeconds": 0.22161410000000614,
+					"rangeSeconds": [0.22041240000000106, 0.23237570000000415],
+					"medianMaximumCallbackGapMs": 221.607600000003,
+					"medianP99CallbackGapMs": 221.607600000003,
+					"medianEventLoopUtilization": 1,
+					"sampledProcessTreeRssMiB": 1078.77734375,
+					"rssObservedSamples": 2,
+					"strategies": [],
+					"fallbacks": []
+				},
+				"refresh-no-change": {
+					"medianSeconds": 1.6404673000000038,
+					"rangeSeconds": [1.617813799999989, 1.6556418000000122],
+					"medianMaximumCallbackGapMs": 661.5247999999992,
+					"medianP99CallbackGapMs": 661.5247999999992,
+					"medianEventLoopUtilization": 0.9509452218865799,
+					"sampledProcessTreeRssMiB": 1088.65234375,
+					"rssObservedSamples": 3,
+					"strategies": [],
+					"fallbacks": []
+				},
+				"refresh-one-package-one-po": {
+					"medianSeconds": 5.462180299999993,
+					"rangeSeconds": [5.390880099999995, 5.489037700000001],
+					"medianMaximumCallbackGapMs": 1092.4879000000074,
+					"medianP99CallbackGapMs": 81.64350000000559,
+					"medianEventLoopUtilization": 0.9594010622943179,
+					"sampledProcessTreeRssMiB": 1386.81640625,
+					"rssObservedSamples": 3,
+					"strategies": ["incremental"],
+					"fallbacks": []
+				}
+			},
+			"warmReopen": {
+				"seconds": 2.2593366,
+				"maximumCallbackGapMs": 1367.6116000000002,
+				"p99CallbackGapMs": 1367.6116000000002,
+				"rebuilt": false,
+				"readPackages": 0,
+				"parsedFiles": 0
+			}
+		},
+		{
+			"host": "cli",
+			"backend": "native",
+			"samples": 3,
+			"timings": {
+				"cold-build": {
+					"medianSeconds": 55.6698923,
+					"rangeSeconds": [55.1201581, 55.7580962],
+					"medianMaximumCallbackGapMs": 2211.796599999994,
+					"medianP99CallbackGapMs": 19.228899999998248,
+					"medianEventLoopUtilization": 0.18163960336689589,
+					"sampledProcessTreeRssMiB": 2276.69921875,
+					"rssObservedSamples": 3,
+					"strategies": ["full"],
+					"fallbacks": ["no-base"]
+				},
+				"count": {
+					"medianSeconds": 0.0009907999999995809,
+					"rangeSeconds": [0.0009476999999969848, 0.001106500000001688],
+					"medianMaximumCallbackGapMs": 0.9737999999997555,
+					"medianP99CallbackGapMs": 0.9737999999997555,
+					"medianEventLoopUtilization": 1,
+					"sampledProcessTreeRssMiB": null,
+					"rssObservedSamples": 0,
+					"strategies": [],
+					"fallbacks": []
+				},
+				"filter": {
+					"medianSeconds": 0.047384500000000114,
+					"rangeSeconds": [0.04472019999999611, 0.047706399999995486],
+					"medianMaximumCallbackGapMs": 47.37250000000495,
+					"medianP99CallbackGapMs": 47.37250000000495,
+					"medianEventLoopUtilization": 1,
+					"sampledProcessTreeRssMiB": 922.17578125,
+					"rssObservedSamples": 1,
+					"strategies": [],
+					"fallbacks": []
+				},
+				"facet": {
+					"medianSeconds": 0.0416252999999997,
+					"rangeSeconds": [0.04120760000000155, 0.04386250000000291],
+					"medianMaximumCallbackGapMs": 41.62069999999949,
+					"medianP99CallbackGapMs": 41.62069999999949,
+					"medianEventLoopUtilization": 1,
+					"sampledProcessTreeRssMiB": 949.0703125,
+					"rssObservedSamples": 1,
+					"strategies": [],
+					"fallbacks": []
+				},
+				"page": {
+					"medianSeconds": 0.018646899999999734,
+					"rangeSeconds": [0.018068100000004052, 0.019483500000002096],
+					"medianMaximumCallbackGapMs": 18.602899999998044,
+					"medianP99CallbackGapMs": 18.602899999998044,
+					"medianEventLoopUtilization": 1,
+					"sampledProcessTreeRssMiB": null,
+					"rssObservedSamples": 0,
+					"strategies": [],
+					"fallbacks": []
+				},
+				"search": {
+					"medianSeconds": 0.06099990000000253,
+					"rangeSeconds": [0.060858099999997646, 0.06177070000000094],
+					"medianMaximumCallbackGapMs": 60.9829000000027,
+					"medianP99CallbackGapMs": 60.9829000000027,
+					"medianEventLoopUtilization": 1,
+					"sampledProcessTreeRssMiB": null,
+					"rssObservedSamples": 0,
+					"strategies": [],
+					"fallbacks": []
+				},
+				"focus": {
+					"medianSeconds": 0.23999970000000032,
+					"rangeSeconds": [0.2323477000000057, 0.2450659999999989],
+					"medianMaximumCallbackGapMs": 239.9902000000002,
+					"medianP99CallbackGapMs": 239.9902000000002,
+					"medianEventLoopUtilization": 1,
+					"sampledProcessTreeRssMiB": null,
+					"rssObservedSamples": 0,
+					"strategies": [],
+					"fallbacks": []
+				},
+				"refresh-no-change": {
+					"medianSeconds": 1.7869846999999937,
+					"rangeSeconds": [1.7866030000000028, 1.788330900000001],
+					"medianMaximumCallbackGapMs": 642.5075999999972,
+					"medianP99CallbackGapMs": 642.5075999999972,
+					"medianEventLoopUtilization": 0.8831417223496898,
+					"sampledProcessTreeRssMiB": 1040.8125,
+					"rssObservedSamples": 3,
+					"strategies": [],
+					"fallbacks": []
+				},
+				"refresh-one-package-one-po": {
+					"medianSeconds": 22.080878500000008,
+					"rangeSeconds": [21.9815741, 22.22065959999999],
+					"medianMaximumCallbackGapMs": 2393.3062999999966,
+					"medianP99CallbackGapMs": 20.123599999998987,
+					"medianEventLoopUtilization": 0.23737287404742072,
+					"sampledProcessTreeRssMiB": 2641.78515625,
+					"rssObservedSamples": 3,
+					"strategies": ["full"],
+					"fallbacks": ["reference-source"]
+				}
+			},
+			"warmReopen": {
+				"seconds": 3.1351090000000004,
+				"maximumCallbackGapMs": 2095.7196,
+				"p99CallbackGapMs": 2095.7196,
+				"rebuilt": false,
+				"readPackages": 0,
+				"parsedFiles": 0
+			}
+		},
+		{
+			"host": "workbench",
+			"backend": "typescript",
+			"samples": 3,
+			"timings": {
+				"cold-build": {
+					"medianSeconds": 75.9886382,
+					"rangeSeconds": [75.92689250000001, 76.6085854],
+					"medianMaximumCallbackGapMs": 535.4102999999886,
+					"medianP99CallbackGapMs": 33.3070000000007,
+					"medianEventLoopUtilization": 0.6918371120353909,
+					"sampledProcessTreeRssMiB": 2227.0625,
+					"rssObservedSamples": 3,
+					"strategies": [],
+					"fallbacks": []
+				},
+				"count": {
+					"medianSeconds": 0.0030715999999956695,
+					"rangeSeconds": [0.0026487999999953897, 0.0031352999999944586],
+					"medianMaximumCallbackGapMs": 3.051899999991292,
+					"medianP99CallbackGapMs": 3.051899999991292,
+					"medianEventLoopUtilization": 0.4779380632328413,
+					"sampledProcessTreeRssMiB": 1030.23046875,
+					"rssObservedSamples": 1,
+					"strategies": [],
+					"fallbacks": []
+				},
+				"filter": {
+					"medianSeconds": 0.04894580000000133,
+					"rangeSeconds": [0.04893020000000251, 0.058341400000004796],
+					"medianMaximumCallbackGapMs": 15.28159999998752,
+					"medianP99CallbackGapMs": 15.28159999998752,
+					"medianEventLoopUtilization": 0.03726309905131791,
+					"sampledProcessTreeRssMiB": null,
+					"rssObservedSamples": 0,
+					"strategies": [],
+					"fallbacks": []
+				},
+				"facet": {
+					"medianSeconds": 0.04653540000000794,
+					"rangeSeconds": [0.04572060000000056, 0.04708490000000165],
+					"medianMaximumCallbackGapMs": 20.834400000007008,
+					"medianP99CallbackGapMs": 20.834400000007008,
+					"medianEventLoopUtilization": 0.057101777400034054,
+					"sampledProcessTreeRssMiB": null,
+					"rssObservedSamples": 0,
+					"strategies": [],
+					"fallbacks": []
+				},
+				"page": {
+					"medianSeconds": 0.029968399999997928,
+					"rangeSeconds": [0.02867349999998987, 0.03557390000000305],
+					"medianMaximumCallbackGapMs": 19.801999999996042,
+					"medianP99CallbackGapMs": 19.801999999996042,
+					"medianEventLoopUtilization": 0.20976884872781204,
+					"sampledProcessTreeRssMiB": null,
+					"rssObservedSamples": 0,
+					"strategies": [],
+					"fallbacks": []
+				},
+				"search": {
+					"medianSeconds": 0.06010439999999653,
+					"rangeSeconds": [0.05955339999998978, 0.07759270000000834],
+					"medianMaximumCallbackGapMs": 16.54529999999795,
+					"medianP99CallbackGapMs": 16.54529999999795,
+					"medianEventLoopUtilization": 0.02656726195919009,
+					"sampledProcessTreeRssMiB": null,
+					"rssObservedSamples": 0,
+					"strategies": [],
+					"fallbacks": []
+				},
+				"focus": {
+					"medianSeconds": 1.820204099999988,
+					"rangeSeconds": [1.7507544999999956, 1.82344690000001],
+					"medianMaximumCallbackGapMs": 1820.2289000000019,
+					"medianP99CallbackGapMs": 1820.2289000000019,
+					"medianEventLoopUtilization": 1,
+					"sampledProcessTreeRssMiB": 1094.87109375,
+					"rssObservedSamples": 3,
+					"strategies": [],
+					"fallbacks": []
+				},
+				"refresh-no-change": {
+					"medianSeconds": 3.2988270000000046,
+					"rangeSeconds": [3.291583400000003, 3.3085411999999925],
+					"medianMaximumCallbackGapMs": 74.38869999999588,
+					"medianP99CallbackGapMs": 17.195200000001932,
+					"medianEventLoopUtilization": 0.3174715037596966,
+					"sampledProcessTreeRssMiB": 1755.19140625,
+					"rssObservedSamples": 3,
+					"strategies": [],
+					"fallbacks": []
+				},
+				"refresh-one-package-one-po": {
+					"medianSeconds": 6.614137600000002,
+					"rangeSeconds": [6.583863799999992, 6.6732595],
+					"medianMaximumCallbackGapMs": 204.15320000000065,
+					"medianP99CallbackGapMs": 69.10150000000431,
+					"medianEventLoopUtilization": 0.625078829532916,
+					"sampledProcessTreeRssMiB": 1935.2890625,
+					"rssObservedSamples": 3,
+					"strategies": [],
+					"fallbacks": []
+				}
+			},
+			"warmReopen": {
+				"seconds": 3.3541337,
+				"maximumCallbackGapMs": 156.98580000000015,
+				"p99CallbackGapMs": 19.339500000000044,
+				"rebuilt": null,
+				"readPackages": null,
+				"parsedFiles": null
+			}
+		},
+		{
+			"host": "workbench",
+			"backend": "native",
+			"samples": 3,
+			"timings": {
+				"cold-build": {
+					"medianSeconds": 56.7541175,
+					"rangeSeconds": [56.6251951, 57.0366399],
+					"medianMaximumCallbackGapMs": 154.57439999999997,
+					"medianP99CallbackGapMs": 19.36869999999908,
+					"medianEventLoopUtilization": 0.1460741480722559,
+					"sampledProcessTreeRssMiB": 2347.015625,
+					"rssObservedSamples": 3,
+					"strategies": [],
+					"fallbacks": []
+				},
+				"count": {
+					"medianSeconds": 0.002876900000002934,
+					"rangeSeconds": [0.0026943000000028403, 0.0033702000000048428],
+					"medianMaximumCallbackGapMs": 2.844100000002072,
+					"medianP99CallbackGapMs": 2.844100000002072,
+					"medianEventLoopUtilization": 0.5039465906904639,
+					"sampledProcessTreeRssMiB": null,
+					"rssObservedSamples": 0,
+					"strategies": [],
+					"fallbacks": []
+				},
+				"filter": {
+					"medianSeconds": 0.04798440000000119,
+					"rangeSeconds": [0.04777470000000176, 0.06345620000000053],
+					"medianMaximumCallbackGapMs": 22.05059999999503,
+					"medianP99CallbackGapMs": 22.05059999999503,
+					"medianEventLoopUtilization": 0.04093170654845921,
+					"sampledProcessTreeRssMiB": 1036.88671875,
+					"rssObservedSamples": 1,
+					"strategies": [],
+					"fallbacks": []
+				},
+				"facet": {
+					"medianSeconds": 0.04293499999999767,
+					"rangeSeconds": [0.03978139999999985, 0.053658799999997425],
+					"medianMaximumCallbackGapMs": 23.56810000000405,
+					"medianP99CallbackGapMs": 23.56810000000405,
+					"medianEventLoopUtilization": 0.05742324383895849,
+					"sampledProcessTreeRssMiB": 1060.53515625,
+					"rssObservedSamples": 1,
+					"strategies": [],
+					"fallbacks": []
+				},
+				"page": {
+					"medianSeconds": 0.031116900000000898,
+					"rangeSeconds": [0.030544100000006437, 0.03834490000000369],
+					"medianMaximumCallbackGapMs": 16.33169999999518,
+					"medianP99CallbackGapMs": 16.33169999999518,
+					"medianEventLoopUtilization": 0.2104980481492314,
+					"sampledProcessTreeRssMiB": null,
+					"rssObservedSamples": 0,
+					"strategies": [],
+					"fallbacks": []
+				},
+				"search": {
+					"medianSeconds": 0.059845399999998335,
+					"rangeSeconds": [0.05935670000000391, 0.06489239999999699],
+					"medianMaximumCallbackGapMs": 15.868400000006659,
+					"medianP99CallbackGapMs": 15.868400000006659,
+					"medianEventLoopUtilization": 0.029022437281318193,
+					"sampledProcessTreeRssMiB": null,
+					"rssObservedSamples": 0,
+					"strategies": [],
+					"fallbacks": []
+				},
+				"focus": {
+					"medianSeconds": 2.567167699999998,
+					"rangeSeconds": [2.5127046000000046, 2.584524900000004],
+					"medianMaximumCallbackGapMs": 2567.202400000002,
+					"medianP99CallbackGapMs": 2567.202400000002,
+					"medianEventLoopUtilization": 1,
+					"sampledProcessTreeRssMiB": 955.62890625,
+					"rssObservedSamples": 3,
+					"strategies": [],
+					"fallbacks": []
+				},
+				"refresh-no-change": {
+					"medianSeconds": 4.265708500000001,
+					"rangeSeconds": [4.258553599999999, 4.293225899999998],
+					"medianMaximumCallbackGapMs": 69.82560000000376,
+					"medianP99CallbackGapMs": 19.32459999999992,
+					"medianEventLoopUtilization": 0.24861935609358546,
+					"sampledProcessTreeRssMiB": 1763.5078125,
+					"rssObservedSamples": 3,
+					"strategies": [],
+					"fallbacks": []
+				},
+				"refresh-one-package-one-po": {
+					"medianSeconds": 22.769122000000003,
+					"rangeSeconds": [22.613556499999998, 23.101403599999998],
+					"medianMaximumCallbackGapMs": 123.03810000000522,
+					"medianP99CallbackGapMs": 19.09979999999632,
+					"medianEventLoopUtilization": 0.1289165187476963,
+					"sampledProcessTreeRssMiB": 2818.2421875,
+					"rssObservedSamples": 3,
+					"strategies": [],
+					"fallbacks": []
+				}
+			},
+			"warmReopen": {
+				"seconds": 4.260799800000001,
+				"maximumCallbackGapMs": 155.68110000000001,
+				"p99CallbackGapMs": 23.82929999999942,
+				"rebuilt": null,
+				"readPackages": null,
+				"parsedFiles": null
+			}
+		}
+	],
+	"saved": [
+		{
+			"engine": "5.7",
+			"results": [
+				{
+					"variant": "before",
+					"round": 0,
+					"prepareMs": 3134.1039,
+					"firstPageMs": 4.942500000000109,
+					"readyMs": 3139.0467,
+					"rssBytes": 625348608,
+					"heapBytes": 51039352,
+					"arrayBufferBytes": 12891165,
+					"readPackages": 65,
+					"parsedFiles": 7,
+					"total": 143,
+					"rows": 50,
+					"sha256": "ea779a49a1bdadf8b0b38ba48dbe8544bd6515c0c23bcdcf497b0222e601bd56",
+					"stages": [
+						{
+							"name": "localization",
+							"ms": 920.1533,
+							"sortMs": 5.791099999999915
+						},
+						{
+							"name": "packages",
+							"ms": 1772.9592,
+							"sortMs": 35.671800000000076
+						},
+						{
+							"name": "join",
+							"ms": 225.37890000000016
+						}
+					]
+				},
+				{
+					"variant": "after",
+					"round": 0,
+					"prepareMs": 3145.8903,
+					"firstPageMs": 4.878900000000158,
+					"readyMs": 3150.7696,
+					"rssBytes": 621658112,
+					"heapBytes": 49632912,
+					"arrayBufferBytes": 5799897,
+					"readPackages": 65,
+					"parsedFiles": 7,
+					"total": 143,
+					"rows": 50,
+					"sha256": "ea779a49a1bdadf8b0b38ba48dbe8544bd6515c0c23bcdcf497b0222e601bd56",
+					"stages": [
+						{
+							"name": "localization",
+							"ms": 868.9445,
+							"sortMs": 0
+						},
+						{
+							"name": "packages",
+							"ms": 1953.8232,
+							"sortMs": 0
+						},
+						{
+							"name": "join",
+							"ms": 36.464400000000296
+						}
+					]
+				},
+				{
+					"variant": "after",
+					"round": 1,
+					"prepareMs": 3219.2073,
+					"firstPageMs": 4.972900000000209,
+					"readyMs": 3224.1806,
+					"rssBytes": 606048256,
+					"heapBytes": 49568192,
+					"arrayBufferBytes": 5319935,
+					"readPackages": 65,
+					"parsedFiles": 7,
+					"total": 143,
+					"rows": 50,
+					"sha256": "ea779a49a1bdadf8b0b38ba48dbe8544bd6515c0c23bcdcf497b0222e601bd56",
+					"stages": [
+						{
+							"name": "localization",
+							"ms": 863.0678000000001,
+							"sortMs": 0
+						},
+						{
+							"name": "packages",
+							"ms": 2033.5659,
+							"sortMs": 0
+						},
+						{
+							"name": "join",
+							"ms": 36.550500000000284
+						}
+					]
+				},
+				{
+					"variant": "before",
+					"round": 1,
+					"prepareMs": 3134.9352,
+					"firstPageMs": 6.603700000000117,
+					"readyMs": 3141.5392,
+					"rssBytes": 623837184,
+					"heapBytes": 51048416,
+					"arrayBufferBytes": 10965252,
+					"readPackages": 65,
+					"parsedFiles": 7,
+					"total": 143,
+					"rows": 50,
+					"sha256": "ea779a49a1bdadf8b0b38ba48dbe8544bd6515c0c23bcdcf497b0222e601bd56",
+					"stages": [
+						{
+							"name": "localization",
+							"ms": 893.5918,
+							"sortMs": 5.99799999999982
+						},
+						{
+							"name": "packages",
+							"ms": 1790.1252000000002,
+							"sortMs": 34.26860000000079
+						},
+						{
+							"name": "join",
+							"ms": 224.5059000000001
+						}
+					]
+				},
+				{
+					"variant": "before",
+					"round": 2,
+					"prepareMs": 3087.5167,
+					"firstPageMs": 6.382800000000316,
+					"readyMs": 3093.8998,
+					"rssBytes": 617799680,
+					"heapBytes": 51108712,
+					"arrayBufferBytes": 14326402,
+					"readPackages": 65,
+					"parsedFiles": 7,
+					"total": 143,
+					"rows": 50,
+					"sha256": "ea779a49a1bdadf8b0b38ba48dbe8544bd6515c0c23bcdcf497b0222e601bd56",
+					"stages": [
+						{
+							"name": "localization",
+							"ms": 908.4000000000001,
+							"sortMs": 5.7659000000001015
+						},
+						{
+							"name": "packages",
+							"ms": 1755.7786,
+							"sortMs": 33.08969999999999
+						},
+						{
+							"name": "join",
+							"ms": 211.55090000000018
+						}
+					]
+				},
+				{
+					"variant": "after",
+					"round": 2,
+					"prepareMs": 3176.6899000000003,
+					"firstPageMs": 5.170399999999972,
+					"readyMs": 3181.8606,
+					"rssBytes": 614068224,
+					"heapBytes": 51268200,
+					"arrayBufferBytes": 26106429,
+					"readPackages": 65,
+					"parsedFiles": 7,
+					"total": 143,
+					"rows": 50,
+					"sha256": "ea779a49a1bdadf8b0b38ba48dbe8544bd6515c0c23bcdcf497b0222e601bd56",
+					"stages": [
+						{
+							"name": "localization",
+							"ms": 862.7040999999999,
+							"sortMs": 0
+						},
+						{
+							"name": "packages",
+							"ms": 1989.1675999999998,
+							"sortMs": 0
+						},
+						{
+							"name": "join",
+							"ms": 37.05740000000014
+						}
+					]
+				}
+			],
+			"method": "Alternating fresh processes; warm OS caches; checkpoint memory after GC, not sampled peak RSS; first 50-line page hash parity."
+		},
+		{
+			"engine": "5.8",
+			"results": [
+				{
+					"variant": "before",
+					"round": 0,
+					"prepareMs": 3110.4311,
+					"firstPageMs": 4.902700000000095,
+					"readyMs": 3115.3341,
+					"rssBytes": 616828928,
+					"heapBytes": 50966024,
+					"arrayBufferBytes": 12755985,
+					"readPackages": 65,
+					"parsedFiles": 7,
+					"total": 143,
+					"rows": 50,
+					"sha256": "cf7a6d8c496c3a22008784ac02e3435c5002b39d8c70d173b5a7019ece90fccb",
+					"stages": [
+						{
+							"name": "localization",
+							"ms": 896.7162000000001,
+							"sortMs": 5.979900000000043
+						},
+						{
+							"name": "packages",
+							"ms": 1775.92,
+							"sortMs": 33.42760000000044
+						},
+						{
+							"name": "join",
+							"ms": 221.3218999999999
+						}
+					]
+				},
+				{
+					"variant": "after",
+					"round": 0,
+					"prepareMs": 3159.9968999999996,
+					"firstPageMs": 5.752899999999954,
+					"readyMs": 3165.7500999999997,
+					"rssBytes": 615862272,
+					"heapBytes": 49645440,
+					"arrayBufferBytes": 5867813,
+					"readPackages": 65,
+					"parsedFiles": 7,
+					"total": 143,
+					"rows": 50,
+					"sha256": "cf7a6d8c496c3a22008784ac02e3435c5002b39d8c70d173b5a7019ece90fccb",
+					"stages": [
+						{
+							"name": "localization",
+							"ms": 870.2487,
+							"sortMs": 0
+						},
+						{
+							"name": "packages",
+							"ms": 1969.5429,
+							"sortMs": 0
+						},
+						{
+							"name": "join",
+							"ms": 36.80380000000014
+						}
+					]
+				},
+				{
+					"variant": "after",
+					"round": 1,
+					"prepareMs": 3191.608,
+					"firstPageMs": 5.1039999999998145,
+					"readyMs": 3196.7123,
+					"rssBytes": 606240768,
+					"heapBytes": 49547928,
+					"arrayBufferBytes": 13761578,
+					"readPackages": 65,
+					"parsedFiles": 7,
+					"total": 143,
+					"rows": 50,
+					"sha256": "cf7a6d8c496c3a22008784ac02e3435c5002b39d8c70d173b5a7019ece90fccb",
+					"stages": [
+						{
+							"name": "localization",
+							"ms": 873.207,
+							"sortMs": 0
+						},
+						{
+							"name": "packages",
+							"ms": 1991.2065000000002,
+							"sortMs": 0
+						},
+						{
+							"name": "join",
+							"ms": 37.461399999999685
+						}
+					]
+				},
+				{
+					"variant": "before",
+					"round": 1,
+					"prepareMs": 3097.8106,
+					"firstPageMs": 5.050499999999829,
+					"readyMs": 3102.8615,
+					"rssBytes": 643198976,
+					"heapBytes": 51012608,
+					"arrayBufferBytes": 12677162,
+					"readPackages": 65,
+					"parsedFiles": 7,
+					"total": 143,
+					"rows": 50,
+					"sha256": "cf7a6d8c496c3a22008784ac02e3435c5002b39d8c70d173b5a7019ece90fccb",
+					"stages": [
+						{
+							"name": "localization",
+							"ms": 894.1012999999999,
+							"sortMs": 5.765300000000025
+						},
+						{
+							"name": "packages",
+							"ms": 1780.0336,
+							"sortMs": 32.58510000000024
+						},
+						{
+							"name": "join",
+							"ms": 211.99599999999964
+						}
+					]
+				},
+				{
+					"variant": "before",
+					"round": 2,
+					"prepareMs": 3066.9564,
+					"firstPageMs": 5.13149999999996,
+					"readyMs": 3072.0883999999996,
+					"rssBytes": 624631808,
+					"heapBytes": 50986504,
+					"arrayBufferBytes": 12168522,
+					"readPackages": 65,
+					"parsedFiles": 7,
+					"total": 143,
+					"rows": 50,
+					"sha256": "cf7a6d8c496c3a22008784ac02e3435c5002b39d8c70d173b5a7019ece90fccb",
+					"stages": [
+						{
+							"name": "localization",
+							"ms": 892.6126,
+							"sortMs": 7.52189999999996
+						},
+						{
+							"name": "packages",
+							"ms": 1745.9254999999998,
+							"sortMs": 33.233900000000176
+						},
+						{
+							"name": "join",
+							"ms": 214.9616000000001
+						}
+					]
+				},
+				{
+					"variant": "after",
+					"round": 2,
+					"prepareMs": 3163.2236000000003,
+					"firstPageMs": 4.9474999999997635,
+					"readyMs": 3168.1714,
+					"rssBytes": 616370176,
+					"heapBytes": 49488880,
+					"arrayBufferBytes": 9591638,
+					"readPackages": 65,
+					"parsedFiles": 7,
+					"total": 143,
+					"rows": 50,
+					"sha256": "cf7a6d8c496c3a22008784ac02e3435c5002b39d8c70d173b5a7019ece90fccb",
+					"stages": [
+						{
+							"name": "localization",
+							"ms": 861.0581,
+							"sortMs": 0
+						},
+						{
+							"name": "packages",
+							"ms": 1983.4164,
+							"sortMs": 0
+						},
+						{
+							"name": "join",
+							"ms": 35.22029999999995
+						}
+					]
+				}
+			],
+			"method": "Alternating fresh processes; warm OS caches; checkpoint memory after GC, not sampled peak RSS; first 50-line page hash parity."
+		}
+	],
+	"artifacts": [
+		"final-typescript-cli-0.json",
+		"final-typescript-cli-1.json",
+		"final-typescript-cli-2.json",
+		"final-typescript-cli-warm.json",
+		"final-native-cli-0.json",
+		"final-native-cli-1.json",
+		"final-native-cli-2.json",
+		"final-native-cli-warm.json",
+		"final-typescript-workbench-0.json",
+		"final-typescript-workbench-1.json",
+		"final-typescript-workbench-2.json",
+		"final-typescript-workbench-warm.json",
+		"final-native-workbench-0.json",
+		"final-native-workbench-1.json",
+		"final-native-workbench-2.json",
+		"final-native-workbench-warm.json",
+		"final-saved-fixture-5.7.json",
+		"final-saved-fixture-5.8.json"
+	]
+}

@@ -429,11 +429,24 @@ export {
 	ReviewViewDefinitionError
 } from "./review-view.js";
 
+/**
+ * Default local Windows named pipe for version-1 preview frames. Hosts can override pipeName;
+ * this is preview transport rather than a persistent capture artifact destination.
+ */
 export const CAMERA_PIPE_NAME = "\\\\.\\pipe\\ue-shed-cameras-v1";
+/**
+ * Fixed 128-byte preview frame header length. The frame decoder validates header/payload
+ * bounds before exposing BGRA pixels.
+ */
 export const CAMERA_FRAME_HEADER_BYTES = 128;
 const frameMagic = Buffer.from("USCF");
 const maximumPayloadBytes = 16 * 1024 * 1024;
 
+/**
+ * Received BGRA8 preview with pixel dimensions, camera/session/producer identities, sequence
+ * and timing/drop evidence. Preview frames are transient; use capture artifacts for immutable
+ * review history.
+ */
 export interface CameraFrame {
 	readonly cameraId: string;
 	readonly cameraIndex: number;
@@ -451,6 +464,11 @@ export interface CameraFrame {
 	readonly worldSeconds: number;
 }
 
+/**
+ * Cumulative received bytes/frames, malformed/transport errors and replacements at
+ * transport/receiver/delivery boundaries. Started time uses a monotonic clock rather than
+ * wall-clock UTC.
+ */
 export interface CameraFeedMetrics {
 	readonly bytesReceived: number;
 	readonly deliveryReplacements: number;
@@ -461,6 +479,10 @@ export interface CameraFeedMetrics {
 	readonly transportErrors: number;
 }
 
+/**
+ * Local preview listener acquisition failure with pipe identity, guidance and original cause.
+ * Correct pipe ownership/platform prerequisites before retrying.
+ */
 export class CameraFeedError extends Schema.TaggedError<CameraFeedError>()("CameraFeedError", {
 	...ErrorGuidanceFields,
 	...ErrorCauseFields,
@@ -479,6 +501,11 @@ function unrealGuidToDigits(buffer: Buffer, offset: number): string {
 		.join("");
 }
 
+/**
+ * Incremental bounded binary preview decoder accepting fragmented or combined pipe chunks.
+ * Validates header/dimensions/payload before emitting a frame; malformed input is tracked
+ * rather than trusted as pixels.
+ */
 export class CameraFrameDecoder {
 	private readonly chunks: Buffer[] = [];
 	private bufferedBytes = 0;
@@ -625,16 +652,28 @@ export class CameraFrameDecoder {
 	}
 }
 
+/**
+ * Live preview stream, latest frame per camera index and aggregate metrics. Latest frames
+ * replace older previews; consumers requiring immutable history must capture explicitly.
+ */
 export interface CameraFeedApi {
 	readonly frames: Stream.Stream<CameraFrame>;
 	readonly latestFrames: Effect.Effect<ReadonlyMap<number, CameraFrame>>;
 	readonly metrics: Effect.Effect<CameraFeedMetrics>;
 }
 
+/**
+ * Scope-owned local preview reception service independent of editor control. Opening the
+ * listener does not configure cameras or select a project.
+ */
 export class CameraFeed extends Context.Service<CameraFeed, CameraFeedApi>()(
 	"@ue-shed/cameras/CameraFeed"
 ) {}
 
+/**
+ * Optional listener pipe name and delivery capacity. Capacity bounds preview buffering;
+ * replacement metrics reveal frames skipped under backpressure.
+ */
 export interface CameraFeedOptions {
 	readonly capacity?: number;
 	readonly pipeName?: string;
@@ -794,6 +833,11 @@ function acquireCameraFeed(
 	});
 }
 
+/**
+ * Acquires a preview listener and attaches socket/server cleanup to layer scope release.
+ * Fails with CameraFeedError on acquisition rather than returning an apparently connected
+ * empty feed.
+ */
 export function cameraFeedLayer(
 	options: CameraFeedOptions = {}
 ): Layer.Layer<CameraFeed, CameraFeedError> {
@@ -805,8 +849,16 @@ export function cameraFeedLayer(
 	);
 }
 
+/**
+ * Default scoped named-pipe preview listener using CAMERA_PIPE_NAME. Host composition
+ * controls its lifetime; it does not start camera streaming in Unreal.
+ */
 export const CameraFeedLive = cameraFeedLayer();
 
+/**
+ * Provides explicit preview effects with empty stream/map and zero metrics for omitted
+ * observational fields. Does not open sockets or invoke an unstubbed editor operation.
+ */
 export function makeCameraFeedTestLayer(
 	feed: Partial<CameraFeedApi> = {}
 ): Layer.Layer<CameraFeed> {
@@ -827,6 +879,11 @@ export function makeCameraFeedTestLayer(
 	});
 }
 
+/**
+ * Camera configure/status failure with endpoint/operation, optional producer code and
+ * original cause. Unsupported options require a corrected request rather than an implicit
+ * fallback.
+ */
 export class CameraControlError extends Schema.TaggedError<CameraControlError>()(
 	"CameraControlError",
 	{
@@ -922,6 +979,10 @@ const cameraRemoteCall = Effect.fn("CameraControl.remoteCall")(function* (
 		.pipe(Effect.mapError((error) => cameraControlError(endpoint, operation, error)));
 });
 
+/**
+ * Reads the optional camera plugin's status at an explicit endpoint through
+ * RemoteControlClient. Validates response/failure envelopes and does not enable streaming.
+ */
 export function getCameraStatus(
 	endpoint: string
 ): Effect.Effect<CameraStatus, CameraControlError, RemoteControlClient> {
@@ -931,6 +992,11 @@ export function getCameraStatus(
 	);
 }
 
+/**
+ * Validates and explicitly applies camera scheduling policy through RemoteControlClient.
+ * Rejects unsupported requested background-ticking behavior instead of claiming the
+ * configuration was honored.
+ */
 export function configureCameras(
 	endpoint: string,
 	config: CameraScheduleConfig

@@ -29,6 +29,10 @@ import {
 	projectIndexConfigLayer
 } from "./project-index.js";
 
+/**
+ * Explicit maps, headers and inventory used to seed an in-memory catalog for a project
+ * identity. Omitted collections start empty rather than reading project files.
+ */
 export interface ProjectIndexMemorySeed {
 	readonly inventory?: readonly ProjectIndexInventory[];
 	readonly headers?: readonly ProjectIndexHeader[];
@@ -36,6 +40,10 @@ export interface ProjectIndexMemorySeed {
 	readonly projectId: ProjectIdentity;
 }
 
+/**
+ * In-memory catalog configuration and optional evidence seed. The cacheRoot identifies
+ * configuration only; this adapter does not persist a native catalog.
+ */
 export interface ProjectIndexMemoryOptions {
 	readonly cacheRoot: string;
 	readonly seed?: ProjectIndexMemorySeed;

@@ -4,13 +4,32 @@ import type { ESTree } from "@oxlint/plugins";
 
 const causeNames = new Set(["cause", "error", "err", "e", "failure", "reason", "defect"]);
 
+function isCauseReference(node: ESTree.Node): boolean {
+	if (node.type === "Identifier") return causeNames.has(node.name);
+	if (node.type !== "MemberExpression") return false;
+	return (
+		isCauseReference(node.object) ||
+		(!node.computed &&
+			node.property.type === "Identifier" &&
+			causeNames.has(node.property.name)) ||
+		(node.computed &&
+			node.property.type === "Literal" &&
+			typeof node.property.value === "string" &&
+			causeNames.has(node.property.value))
+	);
+}
+
 function isStringifiedCause(node: ESTree.Node): boolean {
 	if (node.type !== "CallExpression") return false;
 	const callee = node.callee;
 	// String(cause)
 	if (callee.type === "Identifier" && callee.name === "String") {
 		const [argument] = node.arguments;
-		return argument?.type === "Identifier" && causeNames.has(argument.name);
+		return (
+			argument !== undefined &&
+			argument.type !== "SpreadElement" &&
+			isCauseReference(argument)
+		);
 	}
 	// Cause.pretty(cause)
 	return (
@@ -50,7 +69,8 @@ function isErrorConstruction(node: ESTree.Node): boolean {
 	if (node.type === "CallExpression" && name !== undefined && /^set[A-Z]/u.test(name))
 		return false;
 	return (
-		name !== undefined && /(?:Error|Failure|Rejected|Unavailable|error|failure)$/u.test(name)
+		name !== undefined &&
+		(/(?:Error|Failure|Rejected|Unavailable|error|failure)$/u.test(name) || name === "invalid")
 	);
 }
 
@@ -69,6 +89,13 @@ export const noStringifiedCauseInErrorRule = defineRule({
 	},
 	createOnce(context) {
 		return {
+			NewExpression(node) {
+				if (!isErrorConstruction(node)) return;
+				for (const argument of node.arguments) {
+					if (argument.type !== "SpreadElement" && containsStringifiedCause(argument))
+						context.report({ node: argument, messageId: "stringifiedCause" });
+				}
+			},
 			CallExpression(node) {
 				if (!isErrorConstruction(node)) return;
 				for (const argument of node.arguments) {

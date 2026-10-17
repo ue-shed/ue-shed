@@ -6,6 +6,7 @@ import { after, before, test } from "node:test";
 import {
 	checkCatalogUsage,
 	checkErrorGuidance,
+	checkErrorTranslationCauses,
 	checkGameTextEntryPoints,
 	checkCompositionPolicy,
 	checkDecoderExports,
@@ -17,6 +18,32 @@ import {
 } from "./check-effect-architecture.ts";
 
 let root = "";
+
+test("error translation retains the original failure in mapError and IO catches", async () => {
+	const fixtureRoot = await mkdtemp(join(tmpdir(), "ue-shed-error-causes-"));
+	try {
+		const source = join(fixtureRoot, "packages/example/src");
+		await mkdir(source, { recursive: true });
+		await mkdir(join(fixtureRoot, "apps"));
+		await mkdir(join(fixtureRoot, "extensions"));
+		await writeFile(
+			join(source, "use.ts"),
+			[
+				"const a = Effect.mapError((error) => new ReadError({message: error.message}));",
+				"const b = Effect.tryPromise({try: read, catch: () => new ReadError({message: 'failed'})});",
+				"const c = Effect.mapError((cause) => new ReadError({message: 'failed', cause}));",
+				"const d = Effect.tryPromise({try: read, catch: (cause) => new ReadError({message: 'failed', cause})});",
+				"const expected = () => new ReadError({message: 'no selection'});"
+			].join("\n")
+		);
+		assert.deepEqual(await checkErrorTranslationCauses(fixtureRoot), [
+			"packages/example/src/use.ts:1: error translation must retain its original cause",
+			"packages/example/src/use.ts:2: error translation must retain its original cause"
+		]);
+	} finally {
+		await rm(fixtureRoot, { recursive: true, force: true });
+	}
+});
 
 test("the localization browser entry and Config Explorer dependency are browser-safe", async () => {
 	assert.deepEqual(await checkLocalizationBoundaries(), []);

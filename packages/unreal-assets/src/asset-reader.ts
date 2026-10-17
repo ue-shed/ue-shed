@@ -132,6 +132,11 @@ export {
 } from "@ue-shed/protocol";
 export type { SavedProperty, SavedPropertyValue } from "@ue-shed/protocol";
 
+/**
+ * Native reader discovery, process, timeout, contract or resource-limit failure. Carries
+ * operation/path context and original cause; honor nextStep before replaying a mutating index
+ * command.
+ */
 export class AssetReaderError extends Schema.TaggedError<AssetReaderError>()("AssetReaderError", {
 	code: Schema.optional(Schema.String),
 	kind: Schema.Literals(["timeout", "process", "contract", "discovery", "resource_limit"]),
@@ -197,10 +202,18 @@ export function assetReaderGuidance(
 	}
 }
 
+/**
+ * Explicit saved asset path for a single native-reader operation. The path is a filesystem
+ * input rather than an Unreal object-path locator.
+ */
 export interface AssetReaderOptions {
 	readonly assetPath: string;
 }
 
+/**
+ * Explicit project root with optional header cache and worker concurrency for DataTable
+ * discovery. Catalog results describe saved packages; open a table to resolve its row schema.
+ */
 export interface SavedTableCatalogOptions {
 	readonly cachePath?: string;
 	readonly projectRoot: string;
@@ -273,6 +286,11 @@ export interface SavedWorldReadOptions {
 	readonly projectRoot: string;
 }
 
+/**
+ * Native reader executable and ordinary/catalog timeouts in milliseconds, with optional
+ * aggregate protocol observation. Sibling adapters reuse these settings instead of choosing a
+ * separate executable.
+ */
 export interface AssetReaderConfiguration {
 	readonly catalogTimeoutMs: number;
 	readonly executable: string;
@@ -281,8 +299,17 @@ export interface AssetReaderConfiguration {
 	readonly timeoutMs: number;
 }
 
+/**
+ * Worker outcome observed at the protocol boundary: complete, partial, failed, rejected or
+ * cancelled. Partial evidence must remain distinguishable from a complete successful result.
+ */
 export type ProtocolTerminalState = "complete" | "partial" | "failed" | "rejected" | "cancelled";
 
+/**
+ * Path-free native worker start/completion evidence with PID, output/frame byte counts and
+ * terminal state. Intended for host telemetry and benchmark attribution, not asset-level
+ * diagnostics.
+ */
 export type AssetReaderProtocolObservation =
 	| {
 			readonly kind: "worker_started";
@@ -296,6 +323,11 @@ export type AssetReaderProtocolObservation =
 			readonly terminalState: ProtocolTerminalState;
 	  };
 
+/**
+ * Saved-package discovery, header/full scans, projections and asset reads. Production
+ * operations use the native reader; progress and configuration are available without
+ * requiring an editor connection.
+ */
 export interface AssetReaderApi {
 	readonly catalogProgress?: () => Effect.Effect<SavedTableCatalogProgress>;
 	/** Returns the native worker settings needed by sibling headless adapters. */
@@ -347,23 +379,13 @@ export interface AssetReaderApi {
 	readonly source: () => Effect.Effect<"configured" | "path">;
 }
 
-/** Optional members a test layer may omit; `makeAssetReaderTestLayer` supplies the defaults. */
-type AssetReaderTestDefaults =
-	| "catalogProgress"
-	| "configuration"
-	| "extractProjectText"
-	| "extractProjectTextPackages"
-	| "extractProjectTextures"
-	| "readBlueprint"
-	| "readLevelSequence"
-	| "readSavedWorld"
-	| "savedWorldProgress"
-	| "scanProgress"
-	| "scanProject";
+/** Complete reader port supplied to a test layer; omitted operations are type errors. */
+export type AssetReaderTestApi = AssetReaderApi;
 
-export type AssetReaderTestApi = Omit<AssetReaderApi, AssetReaderTestDefaults> &
-	Partial<Pick<AssetReaderApi, AssetReaderTestDefaults>>;
-
+/**
+ * Headless saved-package reader service. It reads project files through a paired native
+ * worker and does not use or require an active Unreal editor.
+ */
 export class AssetReader extends Context.Service<AssetReader, AssetReaderApi>()(
 	"@ue-shed/unreal-assets/AssetReader"
 ) {}
@@ -403,6 +425,11 @@ const idleSavedWorldProgress = (): SavedWorldProgress => ({
 	totalPackages: 0
 });
 
+/**
+ * Pure DataTable/CompositeDataTable projection from inspected saved exports. Retains
+ * project-file authority and partial completeness; unresolved row schemas remain explicitly
+ * unavailable.
+ */
 export function savedTableDescriptorsFromInspection(
 	inspection: SavedAssetCatalogInspection
 ): readonly SavedTableDescriptor[] {
@@ -460,6 +487,10 @@ function catalogProgressBridge(catalog: CatalogProgressStore): ScanProgressStore
 	};
 }
 
+/**
+ * Exact saved DataTable and CompositeDataTable class paths used by header discovery. Header
+ * matching does not resolve arbitrary project-specific inheritance.
+ */
 export const SAVED_TABLE_SCAN_CLASSES = [DATA_TABLE_CLASS, COMPOSITE_DATA_TABLE_CLASS] as const;
 
 /**
@@ -831,6 +862,10 @@ function makeScopedAssetReader(
 	});
 }
 
+/**
+ * Creates a scoped native reader with explicit executable/timeouts and optional observation.
+ * Defaults resolve uasset on PATH; the layer closes its owned session when released.
+ */
 export function assetReaderLayer(
 	configuration: Partial<AssetReaderConfiguration> = {}
 ): Layer.Layer<AssetReader> {
@@ -856,6 +891,10 @@ const readerCatalogTimeout = Config.Duration("UE_SHED_UASSET_CATALOG_TIMEOUT").p
 	Config.withDefault(Duration.millis(DEFAULT_CATALOG_TIMEOUT_MS))
 );
 
+/**
+ * Effect Config-backed scoped reader. Reads UE_SHED_UASSET_EXECUTABLE and ordinary/catalog
+ * timeout settings; defaults to uasset on PATH and owns its protocol session lifecycle.
+ */
 export const AssetReaderLive = Layer.effect(
 	AssetReader,
 	Effect.gen(function* () {
@@ -869,158 +908,74 @@ export const AssetReaderLive = Layer.effect(
 	})
 );
 
+/** Provides a complete explicit test reader. No operation or configuration is filled implicitly. */
 export function makeAssetReaderTestLayer(service: AssetReaderTestApi): Layer.Layer<AssetReader> {
-	return Layer.succeed(
-		AssetReader,
-		AssetReader.of({
-			catalogProgress:
-				service.catalogProgress ?? (() => Effect.succeed(idleCatalogProgress())),
-			configuration:
-				service.configuration ??
-				(() =>
-					Effect.succeed({
-						catalogTimeoutMs: DEFAULT_CATALOG_TIMEOUT_MS,
-						executable: "uasset",
-						timeoutMs: DEFAULT_TIMEOUT_MS
-					})),
-			extractProjectText:
-				service.extractProjectText ??
-				((options) =>
-					Stream.fail(
-						new AssetReaderError({
-							kind: "process",
-							operation: "extract_text",
-							message: "This test asset reader does not stub extractProjectText.",
-							path: options.projectRoot,
-							retrySafe: false,
-							recovery: "Pass this operation to makeAssetReaderTestLayer.",
-							nextStep: "escalate"
-						})
-					)),
-			extractProjectTextPackages:
-				service.extractProjectTextPackages ??
-				((options) =>
-					Stream.fail(
-						new AssetReaderError({
-							kind: "process",
-							operation: "extract_text_packages",
-							message:
-								"This test asset reader does not stub extractProjectTextPackages.",
-							path: options.projectRoot,
-							retrySafe: false,
-							recovery: "Pass this operation to makeAssetReaderTestLayer.",
-							nextStep: "escalate"
-						})
-					)),
-			extractProjectTextures:
-				service.extractProjectTextures ??
-				((options) =>
-					Stream.fail(
-						new AssetReaderError({
-							kind: "process",
-							operation: "extract_texture",
-							message: "This test asset reader does not stub extractProjectTextures.",
-							path: options.projectRoot,
-							retrySafe: false,
-							recovery: "Pass this operation to makeAssetReaderTestLayer.",
-							nextStep: "escalate"
-						})
-					)),
-			readBlueprint:
-				service.readBlueprint ??
-				((assetPath) =>
-					Effect.fail(
-						new AssetReaderError({
-							kind: "process",
-							operation: "blueprint",
-							message: "This test asset reader does not stub readBlueprint.",
-							path: assetPath,
-							retrySafe: false,
-							recovery: "Pass this operation to makeAssetReaderTestLayer.",
-							nextStep: "escalate"
-						})
-					)),
-			readLevelSequence:
-				service.readLevelSequence ??
-				((assetPath) =>
-					Effect.fail(
-						new AssetReaderError({
-							kind: "process",
-							operation: "level_sequence",
-							message: "This test asset reader does not stub readLevelSequence.",
-							path: assetPath,
-							retrySafe: false,
-							recovery: "Pass this operation to makeAssetReaderTestLayer.",
-							nextStep: "escalate"
-						})
-					)),
-			savedWorldProgress:
-				service.savedWorldProgress ?? (() => Effect.succeed(idleSavedWorldProgress())),
-			scanProgress: service.scanProgress ?? (() => Effect.succeed(idleScanProgress())),
-			readSavedWorld:
-				service.readSavedWorld ??
-				((options) =>
-					new AssetReaderError({
-						kind: "process",
-						operation: "saved_world",
-						message: "This test asset reader does not stub readSavedWorld.",
-						path: options.mapPath,
-						retrySafe: false,
-						recovery: "Pass this operation to makeAssetReaderTestLayer.",
-						nextStep: "escalate"
-					})),
-			scanProject:
-				service.scanProject ??
-				((options) =>
-					new AssetReaderError({
-						kind: "process",
-						operation: "scan",
-						message: "This test asset reader does not stub scanProject.",
-						path: options.projectRoot,
-						retrySafe: false,
-						recovery: "Pass this operation to makeAssetReaderTestLayer.",
-						nextStep: "escalate"
-					})),
-			...service
-		})
-	);
+	return Layer.succeed(AssetReader, AssetReader.of(service));
 }
 
+/**
+ * Reads a saved table snapshot through AssetReader using its explicit authority. It does not
+ * apply edits or save an Unreal package.
+ */
 export function readSavedTable(
 	options: AssetReaderOptions
 ): Effect.Effect<AuthoringTableSnapshot, AssetReaderError, AssetReader> {
 	return Effect.flatMap(AssetReader, (reader) => reader.readTable(options.assetPath));
 }
 
+/**
+ * Inspects one saved package through AssetReader. The result can be partial; consumers must
+ * preserve diagnostics and completeness rather than assuming every property decoded.
+ */
 export function readSavedAsset(
 	options: AssetReaderOptions
 ): Effect.Effect<SavedAssetInspection, AssetReaderError, AssetReader> {
 	return Effect.flatMap(AssetReader, (reader) => reader.readAsset(options.assetPath));
 }
 
+/**
+ * Reads saved Blueprint graph evidence through AssetReader. This does not compile or load the
+ * Blueprint in Unreal; unsupported saved evidence remains explicit.
+ */
 export function readSavedBlueprint(
 	options: AssetReaderOptions
 ): Effect.Effect<BlueprintGraphRead, AssetReaderError, AssetReader> {
 	return Effect.flatMap(AssetReader, (reader) => reader.readBlueprint(options.assetPath));
 }
+/**
+ * Reads saved LevelSequence evidence through AssetReader without an editor. Returned
+ * bindings/tracks describe disk state rather than a live sequencer evaluation.
+ */
 export function readSavedLevelSequence(
 	options: AssetReaderOptions
 ): Effect.Effect<LevelSequenceRead, AssetReaderError, AssetReader> {
 	return Effect.flatMap(AssetReader, (reader) => reader.readLevelSequence(options.assetPath));
 }
 
+/**
+ * Enumerates saved asset paths through AssetReader for an explicit project root. Uses native
+ * discovery rather than TypeScript filesystem recursion.
+ */
 export function discoverSavedAssets(
 	projectRoot: string
 ): Effect.Effect<readonly string[], AssetReaderError, AssetReader> {
 	return Effect.flatMap(AssetReader, (reader) => reader.discoverAssets(projectRoot));
 }
 
+/**
+ * Discovers saved DataTable descriptors through AssetReader with optional cache/concurrency.
+ * Header-only metadata does not establish a resolved editable row schema.
+ */
 export function discoverSavedTables(
 	options: SavedTableCatalogOptions
 ): Effect.Effect<SavedTableCatalog, AssetReaderError, AssetReader> {
 	return Effect.flatMap(AssetReader, (reader) => reader.discoverTables(options));
 }
 
+/**
+ * Runs one batched project scan through AssetReader. Prefer it to discovering then spawning
+ * one read per path; depth and filters determine how much package evidence is decoded.
+ */
 export function scanSavedProject(
 	options: SavedAssetScanOptions
 ): Effect.Effect<SavedAssetScan, AssetReaderError, AssetReader> {
@@ -1034,6 +989,10 @@ export function extractProjectText(
 	return Stream.unwrap(Effect.map(AssetReader, (reader) => reader.extractProjectText(options)));
 }
 
+/**
+ * Streams compact per-package FText/StringTable evidence through AssetReader. This is the
+ * saved-evidence input to indexing, separate from localization target joining.
+ */
 export function extractProjectTextPackages(
 	options: SavedAssetExtractionOptions
 ): Stream.Stream<SavedAssetPackageTextEvent, AssetReaderError, AssetReader> {
@@ -1075,6 +1034,10 @@ export function readSavedWorld(
 	return Effect.flatMap(AssetReader, (reader) => reader.readSavedWorld(options));
 }
 
+/**
+ * Reports whether the configured reader executable was explicit or resolved from PATH. It
+ * does not launch the worker or prove its protocol compatibility.
+ */
 export function getAssetReaderSource(): Effect.Effect<"configured" | "path", never, AssetReader> {
 	return Effect.flatMap(AssetReader, (reader) => reader.source());
 }

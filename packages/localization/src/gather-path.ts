@@ -1,3 +1,8 @@
+/**
+ * Gather path classified by a recognized project/engine root token, unknown token or plain
+ * path. Classification alone does not authorize filesystem access outside the selected
+ * project.
+ */
 export type LocalizationGatherPath = {
 	readonly root: "project" | "engine" | "unknown" | "plain";
 	readonly path: string;

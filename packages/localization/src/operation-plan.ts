@@ -46,6 +46,11 @@ export function localizationOperationNextStep(
 	}
 }
 
+/**
+ * Constructs code-specific operation guidance while retaining an optional cause. Commandlet,
+ * timeout, cancellation and IO failures can require partial-output reconciliation rather than
+ * automatic replay.
+ */
 export function localizationOperationError(
 	code: LocalizationOperationError["code"],
 	cause?: unknown
@@ -373,6 +378,10 @@ export function planLocalizationOperation(
 	});
 }
 
+/**
+ * Derives supported operations from a target's existing recipes. Does not generate missing
+ * Dashboard configs or assume arbitrary custom commandlets are safe to run.
+ */
 export function availableLocalizationOperations(
 	target: LocalizationPlanningRequest["target"]
 ): readonly LocalizationOperation[] {

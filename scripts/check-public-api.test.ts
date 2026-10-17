@@ -38,3 +38,43 @@ test("public contracts cannot grow through wildcard exports or lose caller docum
 		await rm(root, { recursive: true, force: true });
 	}
 });
+
+test("documentation enforcement covers every reviewed SDK and focused entry point", async () => {
+	const root = await mkdtemp(join(tmpdir(), "ue-shed-sdk-docs-"));
+	const packages = [
+		"protocol",
+		"unreal-connection",
+		"localization",
+		"unreal-assets",
+		"engine",
+		"cameras",
+		"host",
+		"game-text"
+	];
+	try {
+		for (const name of packages) {
+			const directory = join(root, "packages", name);
+			await mkdir(join(directory, "src"), { recursive: true });
+			await writeFile(
+				join(directory, "package.json"),
+				JSON.stringify({
+					name: `@ue-shed/${name}`,
+					type: "module",
+					exports: { ".": "./src/index.ts", "./focused": "./src/focused.ts" }
+				})
+			);
+			await writeFile(join(directory, "src/index.ts"), "export {};\n");
+			await writeFile(join(directory, "src/focused.ts"), "export const undocumented = 1;\n");
+		}
+		const failures = checkPublicApi(root);
+		assert.equal(failures.length, packages.length);
+		for (const name of packages)
+			assert(
+				failures.some((failure) =>
+					failure.includes(`${name}/focused needs caller-facing JSDoc`)
+				)
+			);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});

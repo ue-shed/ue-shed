@@ -1,4 +1,4 @@
-import { ContractParseError } from "@ue-shed/protocol";
+import { contractParseError, ContractParseError } from "@ue-shed/protocol";
 import { CameraVisibilityList } from "./camera-visibility.js";
 import { RemoteControlClient, RemoteControlClientError } from "@ue-shed/unreal-connection";
 import { ErrorCauseFields, ErrorGuidanceFields } from "@ue-shed/protocol";
@@ -17,6 +17,10 @@ const cameraLibraryPath = "/Script/UEShedCameras.Default__UEShedCameraLibrary";
 const positiveWidth = Schema.Int.check(Schema.isBetween({ minimum: 64, maximum: 2560 }));
 const positiveHeight = Schema.Int.check(Schema.isBetween({ minimum: 64, maximum: 1440 }));
 
+/**
+ * Temporary preview provisioning/configuration/frame-wait failure with original cause.
+ * Unsupported requested options fail explicitly rather than silently changing preview policy.
+ */
 export class ProvisionedCameraError extends Schema.TaggedError<ProvisionedCameraError>()(
 	"ProvisionedCameraError",
 	{
@@ -28,6 +32,11 @@ export class ProvisionedCameraError extends Schema.TaggedError<ProvisionedCamera
 	}
 ) {}
 
+/**
+ * Links a temporary editor camera to a framing candidate, approved review view or map plan.
+ * Correlation survives camera index changes and is separate from the producer's camera
+ * identity.
+ */
 export const ProvisionedCameraCorrelation = Schema.Union([
 	Schema.Struct({ candidateId: FramingCandidateId, type: Schema.Literal("framing_candidate") }),
 	Schema.Struct({ reviewViewId: ReviewViewId, type: Schema.Literal("review_view") }),
@@ -47,6 +56,11 @@ const ProvisionedCameraFields = {
 	width: positiveWidth
 };
 
+/**
+ * Perspective or orthographic temporary camera definition with explicit correlation and pose.
+ * Optional visibility depends on negotiated request version; no saved map actor is implicitly
+ * required.
+ */
 export const ProvisionedCameraSpec = Schema.Union([
 	Schema.Struct({
 		...ProvisionedCameraFields,
@@ -65,6 +79,11 @@ export const ProvisionedCameraSpec = Schema.Union([
 ]);
 export type ProvisionedCameraSpec = Schema.Schema.Type<typeof ProvisionedCameraSpec>;
 
+/**
+ * Bounded one-through-32 temporary cameras, expected map and preview FPS from one through
+ * ten. Visibility requires version 4+, editor-preview reveal requires version 5; incompatible
+ * fields are rejected.
+ */
 export const ProvisionedCameraRequest = Schema.Struct({
 	cameras: Schema.Array(ProvisionedCameraSpec).check(
 		Schema.isMinLength(1),
@@ -129,6 +148,11 @@ const LegacyProvisionedCameraRequest = Schema.Struct({
 	previewFps: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 10 })))
 });
 
+/**
+ * Validates current and supported legacy preview requests, normalizing legacy correlation.
+ * Invalid input fails with ContractParseError; retained legacy versions do not invent newer
+ * visibility capabilities.
+ */
 export function decodeProvisionedCameraRequest<Input>(input: Input) {
 	return Schema.decodeUnknownEffect(
 		Schema.Union([
@@ -155,7 +179,8 @@ export function decodeProvisionedCameraRequest<Input>(input: Input) {
 						previewFps: request.previewFps ?? 5,
 						schemaVersion: 2
 					})
-		)
+		),
+		Effect.mapError((cause) => contractParseError("ProvisionedCameraRequest", cause))
 	);
 }
 
@@ -186,6 +211,11 @@ const ProvisionedCameraStatus = Schema.Struct({
 	worldContext: Schema.optional(Schema.Literals(["editor", "play"]))
 });
 
+/**
+ * Producer-assigned temporary camera ID/index, dimensions and editor-live/play-live preview
+ * context. Use its ID as well as index when waiting so an old frame cannot satisfy a new
+ * binding.
+ */
 export const ProvisionedCameraBinding = Schema.Struct({
 	cameraId: ProvisionedCameraId,
 	correlation: ProvisionedCameraCorrelation,
@@ -196,6 +226,10 @@ export const ProvisionedCameraBinding = Schema.Struct({
 });
 export type ProvisionedCameraBinding = Schema.Schema.Type<typeof ProvisionedCameraBinding>;
 
+/**
+ * Latest preview BGRA bytes and dimensions indexed by camera, optionally carrying producer
+ * camera identity. Transient previews are not immutable PNG review artifacts.
+ */
 export const ProvisionedCameraFrame = Schema.Struct({
 	cameraId: Schema.optional(Schema.String),
 	cameraIndex: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
@@ -263,6 +297,11 @@ export function provisionedCameraRequest(
 	return { cameras, expectedMapPath, previewFps, schemaVersion };
 }
 
+/**
+ * Expected map, optional preview FPS and explicit editor-preview reveal policy. Unsupported
+ * reveal fails with unsupported_capability; a host may explicitly request a supported
+ * alternative.
+ */
 export interface ProvisionedCameraOptions {
 	readonly expectedMapPath: string;
 	readonly previewFps?: number;
@@ -274,6 +313,11 @@ export interface ProvisionedCameraOptions {
 	readonly editorPreviews?: boolean;
 }
 
+/**
+ * Validates/provisions temporary cameras at an explicit endpoint and verifies returned
+ * bindings. Requested options are honored or refused explicitly; requires
+ * RemoteControlClient.
+ */
 export function ensureProvisionedCameras(
 	endpoint: string,
 	cameras: ReadonlyArray<ProvisionedCameraSpec>,
@@ -401,6 +445,10 @@ export function ensureProvisionedCameras(
 	}).pipe(Effect.withSpan("camera.provisioned.ensure"));
 }
 
+/**
+ * Explicitly removes provisioned preview cameras through RemoteControlClient. Does not delete
+ * saved review definitions or immutable capture history.
+ */
 export function clearProvisionedCameras(
 	endpoint: string
 ): Effect.Effect<void, ProvisionedCameraError, RemoteControlClient> {
@@ -427,6 +475,11 @@ export function clearProvisionedCameras(
 	}).pipe(Effect.withSpan("camera.provisioned.clear"));
 }
 
+/**
+ * Polls latest frames every 50 milliseconds until the requested index and optional camera ID
+ * match. Defaults to eight seconds; timeout is a typed provisioning failure rather than an
+ * empty frame.
+ */
 export function awaitProvisionedCameraFrame(args: {
 	readonly cameraIndex: number;
 	readonly expectedCameraId?: string;

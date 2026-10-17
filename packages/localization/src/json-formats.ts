@@ -77,6 +77,10 @@ function compareIdentity(a: LocalizationIdentity, b: LocalizationIdentity): numb
 					: 0;
 }
 
+/**
+ * Counts duplicate namespace/key pairs in supplied entries. This pure diagnostic preserves
+ * caller policy about whether duplicates warn, fail or are accepted.
+ */
 export function localizationIdentityDiagnostics(
 	entries: readonly LocalizationIdentity[]
 ): DuplicateIdentityDiagnostic[] {
@@ -127,6 +131,11 @@ function flatten<Child extends Schema.Json, A>(
 	return entries;
 }
 
+/**
+ * Decodes bounded Unreal manifest bytes into flattened source entries and duplicate
+ * diagnostics. Returns a typed Result; rejects malformed or unsupported evidence without
+ * launching an editor.
+ */
 export function parseManifest(bytes: Uint8Array, options?: LocalizationLimits, file?: string) {
 	return parseResult(() => {
 		const limits = limitsFor(options);
@@ -160,6 +169,11 @@ export function parseManifest(bytes: Uint8Array, options?: LocalizationLimits, f
 	});
 }
 
+/**
+ * Decodes bounded Unreal archive bytes into source/translation entries and duplicate
+ * diagnostics. Returns sanitized typed failures rather than leaking raw authored decoder
+ * payloads.
+ */
 export function parseArchive(bytes: Uint8Array, options?: LocalizationLimits, file?: string) {
 	return parseResult(() => {
 		const limits = limitsFor(options);

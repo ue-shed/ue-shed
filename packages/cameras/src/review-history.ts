@@ -26,6 +26,10 @@ interface ReviewHistoryRun {
 	readonly results: ReadonlyArray<ReviewHistoryResult>;
 }
 
+/**
+ * Per-run missing, captured or failed view evidence with the recorded revision when
+ * available. Missing is distinct from a capture failure and from a legacy unversioned result.
+ */
 export type ReviewViewHistoryEntry =
 	| {
 			readonly completedAt: string;
@@ -46,6 +50,10 @@ export type ReviewViewHistoryEntry =
 			readonly viewRevision: CapturedReviewViewRevision;
 	  };
 
+/**
+ * History for one approved view with its current revision identity. Entries retain captured
+ * revisions so old images are not mislabeled as evidence for a newer definition.
+ */
 export interface ReviewViewHistory {
 	readonly currentRevisionId: ReviewViewRevisionId;
 	readonly entries: ReadonlyArray<ReviewViewHistoryEntry>;

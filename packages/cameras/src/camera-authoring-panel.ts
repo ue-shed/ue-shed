@@ -37,6 +37,11 @@ import {
 
 const isCameraArrangementError = Schema.is(CameraArrangementError);
 
+/**
+ * Projects the authoring document into resolved poses, inherited visibility, approval state
+ * and optional regeneration proposal. Uses the review profile's policy when no arrangement
+ * override exists; performs no mutation.
+ */
 export function cameraAuthoringPanelState(
 	document: CameraAuthoringDocument,
 	activeCameraId: ArrangementCameraId,

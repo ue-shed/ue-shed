@@ -74,6 +74,7 @@ export const openInvestigation = Effect.fn("Workbench.Investigation.open")(funct
 			Effect.mapError(
 				(error) =>
 					new InvestigationError({
+						cause: error,
 						message: error.message,
 						recovery: "Try opening the preset again.",
 						retrySafe: true,
@@ -87,6 +88,7 @@ export const openInvestigation = Effect.fn("Workbench.Investigation.open")(funct
 		Effect.mapError(
 			(error) =>
 				new InvestigationError({
+					cause: error,
 					message: `Invalid investigation preset: ${error.message}`,
 					recovery: "Choose a version 1 preset for this workspace.",
 					retrySafe: true,

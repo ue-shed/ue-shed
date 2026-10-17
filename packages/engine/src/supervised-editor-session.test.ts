@@ -7,7 +7,7 @@ import { it } from "@effect/vitest";
 import { Deferred, Duration, Effect, Fiber, Layer, Ref, Schema } from "effect";
 import { describe, expect, test } from "vitest";
 import { makeEngineInstallationDiscoveryTestLayer } from "./engine-installation.js";
-import { makeEditorConnectionTestLayer } from "./editor-connection.js";
+import { EditorConnectionError, makeEditorConnectionTestLayer } from "./editor-connection.js";
 import {
 	OwnedProcessTree,
 	OwnedProcessTreeLive,
@@ -106,6 +106,45 @@ function sessionLayer(options: {
 	);
 	return SupervisedEditorSessionLive.pipe(Layer.provide(dependencies));
 }
+
+it.effect("retains readiness cause while terminating a failed acquisition", () =>
+	Effect.gen(function* () {
+		const fixture = yield* installationFixture();
+		const terminations = yield* Ref.make<readonly OwnedProcessTerminationReason[]>([]);
+		const original = new Error("fixture transport failure");
+		const readiness = new EditorConnectionError({
+			code: "transport_failure",
+			endpoint: "http://127.0.0.1:30001",
+			message: "Readiness failed.",
+			recovery: "Repair the connection.",
+			retrySafe: false,
+			nextStep: "escalate",
+			cause: original
+		});
+		const layer = sessionLayer({
+			fixture,
+			connection: makeEditorConnectionTestLayer({
+				connect: () => Effect.fail(readiness),
+				waitUntilReady: () => Effect.fail(readiness)
+			}),
+			process: makeOwnedProcessTreeTestLayer(() =>
+				Effect.succeed(testHandle(57, terminations))
+			)
+		});
+		const failure = yield* Effect.flip(
+			Effect.scoped(
+				Effect.flatMap(SupervisedEditorSession, (sessions) =>
+					sessions.acquire(request(fixture))
+				)
+			).pipe(Effect.provide(layer))
+		);
+		expect(failure.code).toBe("readiness_failed");
+		expect(failure.cause).toBe(readiness);
+		expect(readiness.cause).toBe(original);
+		expect(yield* Ref.get(terminations)).toEqual(["failed"]);
+		yield* Effect.promise(() => rm(fixture.root, { recursive: true, force: true }));
+	})
+);
 
 it.effect("validates files before starting the owned process", () =>
 	Effect.gen(function* () {

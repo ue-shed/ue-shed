@@ -6,6 +6,10 @@ import {
 	type MapCapturePlan as MapCapturePlanValue
 } from "./map-tile-schema.js";
 
+/**
+ * Explains a plan/backend capability mismatch when present. A missing issue means this
+ * compatibility check passed, not that editor state and output storage are ready.
+ */
 export function mapCaptureBackendIssue(
 	plan: MapCapturePlanValue,
 	backend: MapCaptureBackend
@@ -26,6 +30,10 @@ export function mapCaptureBackendIssue(
 const safeIdentifierPattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const gameMapPathPattern = /^\/Game\/[A-Za-z0-9_./-]+$/;
 
+/**
+ * Converts a saved project Content map path to its /Game/ package path when possible. Does
+ * not load the map or change the editor's current world.
+ */
 export function savedMapPathToGameMapPath(savedMapPath: string): string | undefined {
 	const normalized = savedMapPath.replaceAll("\\", "/");
 	const lower = normalized.toLocaleLowerCase();
@@ -40,6 +48,10 @@ export function savedMapPathToGameMapPath(savedMapPath: string): string | undefi
 	return gameMapPathPattern.test(packagePath) ? packagePath : undefined;
 }
 
+/**
+ * Converts caller display input into a safe capture identifier. This pure naming helper does
+ * not reserve a unique plan/run or establish project identity.
+ */
 export function mapCaptureSafeIdentifier(value: string, fallback: string): string {
 	const normalized = value
 		.trim()
@@ -49,6 +61,11 @@ export function mapCaptureSafeIdentifier(value: string, fallback: string): strin
 	return safeIdentifierPattern.test(normalized) ? normalized : fallback;
 }
 
+/**
+ * Creates an initial editable plan from a project ID and optional map path. Bounds start at a
+ * two-thousand-unit square around the origin; fit them explicitly to selection or edit the
+ * plan before capture. Defaults are host-adjustable policy rather than readiness evidence.
+ */
 export function makeDefaultMapCapturePlan(args: {
 	readonly mapPath?: string;
 	readonly projectId: string;

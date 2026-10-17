@@ -481,6 +481,7 @@ function inspectEnhancedInputPathWith(
 			Effect.mapError(
 				(error) =>
 					new EnhancedInputScanError({
+						cause: error,
 						code: "invalid_path",
 						message: error.message,
 						recovery: "Provide a readable .uasset path or Unreal project root.",

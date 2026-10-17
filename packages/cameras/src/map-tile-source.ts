@@ -19,6 +19,10 @@ const Grid = Schema.Struct({
 	levels: Schema.Array(MapTilePyramidLevel).check(Schema.isMinLength(1), Schema.isMaxLength(24))
 });
 
+/**
+ * Source-image policy capped at 16,384 pixels per dimension and one GiB decoded RGBA8 bytes.
+ * The byte budget excludes GPU resources, codecs and cropped outputs.
+ */
 export const MapTileSourceLimits = Schema.Struct({
 	maximumDimension: Schema.Int.check(Schema.isBetween({ minimum: 16, maximum: 16384 })),
 	/** One decoded RGBA8 source, excluding GPU resources, codecs and output crops. */
@@ -26,6 +30,10 @@ export const MapTileSourceLimits = Schema.Struct({
 });
 export type MapTileSourceLimits = typeof MapTileSourceLimits.Type;
 
+/**
+ * Rectangular row/column tile block starting at an explicit key. Source layout uses this
+ * block to capture and crop multiple logical tiles together.
+ */
 export const MapTileSourceBlock = Schema.Struct({
 	firstTile: MapTileKeySchema,
 	rows: Count,
@@ -33,6 +41,10 @@ export const MapTileSourceBlock = Schema.Struct({
 });
 export type MapTileSourceBlock = typeof MapTileSourceBlock.Type;
 
+/**
+ * Capture height, gutter pixels and source decode limits for batched map imagery. These are
+ * host-configurable resource/render policies.
+ */
 export const MapTileSourceSettings = Schema.Struct({
 	captureZ: MapCapturePlan.fields.capture.fields.z,
 	gutterPixels: MapCapturePlan.fields.gutterPixels,
@@ -40,6 +52,10 @@ export const MapTileSourceSettings = Schema.Struct({
 });
 export type MapTileSourceSettings = typeof MapTileSourceSettings.Type;
 
+/**
+ * Source settings with an explicit zoom and tiles-per-source-side. Layout covers only that
+ * selected level rather than eagerly allocating the whole pyramid.
+ */
 export const MapTileSourceLayoutOptions = MapTileSourceSettings.mapFields((fields) => ({
 	...fields,
 	zoom: MapTileKeySchema.fields.zoom,
@@ -47,6 +63,10 @@ export const MapTileSourceLayoutOptions = MapTileSourceSettings.mapFields((field
 }));
 export type MapTileSourceLayoutOptions = typeof MapTileSourceLayoutOptions.Type;
 
+/**
+ * Non-negative pixel origin and positive bounded width/height for one crop. Coordinates
+ * address the decoded source image, not world XY space.
+ */
 export const MapTilePixelRect = Schema.Struct({
 	left: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 	top: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
@@ -55,6 +75,10 @@ export const MapTilePixelRect = Schema.Struct({
 });
 export type MapTilePixelRect = typeof MapTilePixelRect.Type;
 
+/**
+ * Logical tile key, source pixel crop and world footprint. Retains the mapping needed to
+ * verify that one large capture produces the intended tiles.
+ */
 export const MapTileSourceCrop = Schema.Struct({
 	key: MapTileKeySchema,
 	rect: MapTilePixelRect,
@@ -62,6 +86,10 @@ export const MapTileSourceCrop = Schema.Struct({
 });
 export type MapTileSourceCrop = typeof MapTileSourceCrop.Type;
 
+/**
+ * One absolute-camera source image with pixel size, decoded-byte budget and logical tile
+ * crops. Its camera footprint includes outer gutters beyond the logical worldBounds.
+ */
 export const MapTileSource = Schema.Struct({
 	block: MapTileSourceBlock,
 	camera: AbsoluteCamera,
@@ -73,6 +101,10 @@ export const MapTileSource = Schema.Struct({
 });
 export type MapTileSource = typeof MapTileSource.Type;
 
+/**
+ * Lazy row-major sources for an explicitly selected zoom, with total source/tile counts.
+ * Iterating the sources plans captures; it does not itself allocate decoded image buffers.
+ */
 export interface MapTileSourceLayout {
 	readonly sourceCount: number;
 	readonly tileCount: number;
@@ -80,10 +112,15 @@ export interface MapTileSourceLayout {
 	readonly sources: Iterable<MapTileSource>;
 }
 
+/**
+ * Invalid grid/source or exceeded source-image budget. Correct bounds, dimensions or resource
+ * policy before attempting the capture again.
+ */
 export class MapTileSourceError extends Schema.TaggedError<MapTileSourceError>()(
 	"MapTileSourceError",
 	{
 		code: Schema.Literals(["invalid_grid", "invalid_source", "source_limit_exceeded"]),
+		cause: Schema.optionalKey(Schema.Defect()),
 		...ErrorGuidanceFields
 	}
 ) {}
@@ -97,9 +134,10 @@ const decodeLayout = Schema.decodeUnknownResult(MapTileSourceLayoutOptions, {
 });
 const decodeBlock = Schema.decodeUnknownResult(MapTileSourceBlock, { onExcessProperty: "error" });
 
-function failure(code: MapTileSourceError["code"], message: string) {
+function failure(code: MapTileSourceError["code"], message: string, cause?: unknown) {
 	return Result.fail(
 		new MapTileSourceError({
+			...(cause === undefined ? undefined : { cause }),
 			code,
 			message,
 			nextStep: "fix_input",
@@ -121,7 +159,8 @@ function sameBounds(first: MapWorldBounds, second: MapWorldBounds): boolean {
 
 function validateGrid(input: MapTileGrid): Result.Result<MapTileGrid, MapTileSourceError> {
 	const decoded = decodeGrid(input);
-	if (Result.isFailure(decoded)) return failure("invalid_grid", String(decoded.failure));
+	if (Result.isFailure(decoded))
+		return failure("invalid_grid", "The map tile grid is invalid.", decoded.failure);
 	const grid = decoded.success;
 	const expected = createMapTileGrid({
 		requestedBounds: grid.requestedBounds,
@@ -263,8 +302,18 @@ export function createMapTileSource(args: {
 	if (Result.isFailure(grid)) return Result.fail(grid.failure);
 	const block = decodeBlock(args.block),
 		settings = decodeSettings(args.settings);
-	if (Result.isFailure(block)) return failure("invalid_source", String(block.failure));
-	if (Result.isFailure(settings)) return failure("invalid_source", String(settings.failure));
+	if (Result.isFailure(block))
+		return failure(
+			"invalid_source",
+			"The map tile source definition is invalid.",
+			block.failure
+		);
+	if (Result.isFailure(settings))
+		return failure(
+			"invalid_source",
+			"The map tile source definition is invalid.",
+			settings.failure
+		);
 	const ready = validateBlock(grid.success, block.success, settings.success);
 	if (Result.isFailure(ready)) return Result.fail(ready.failure);
 	return Result.succeed(buildSource(grid.success, block.success, settings.success));
@@ -278,7 +327,12 @@ export function planMapTileSources(args: {
 	const grid = validateGrid(args.grid);
 	if (Result.isFailure(grid)) return Result.fail(grid.failure);
 	const decoded = decodeLayout(args.options);
-	if (Result.isFailure(decoded)) return failure("invalid_source", String(decoded.failure));
+	if (Result.isFailure(decoded))
+		return failure(
+			"invalid_source",
+			"The map tile source definition is invalid.",
+			decoded.failure
+		);
 	const options = { ...decoded.success, limits: { ...decoded.success.limits } };
 	const level = grid.success.levels[options.zoom];
 	if (!level) return failure("invalid_source", "The selected zoom does not exist in this grid.");

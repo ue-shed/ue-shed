@@ -138,6 +138,11 @@ function values(commands: readonly ParsedConfigCommand[], repeated = false): rea
 			: [];
 }
 
+/**
+ * Parses serialized GameTargetsSettings from editor INI into normalized target settings.
+ * Returns typed Result failures and per-target diagnostics without executing any gather
+ * steps.
+ */
 export function parseDashboardTargets(text: string, options?: LocalizationLimits) {
 	return parseResult(() => {
 		const limits = limitsFor(options);
@@ -233,6 +238,11 @@ function recipeFields(text: string, section: string) {
 	return decoded.success;
 }
 
+/**
+ * Parses common and indexed GatherText sections from supplied INI text. Retains the caller's
+ * relative config path; operation support and safe output paths require a separate planning
+ * pass.
+ */
 export function parseLocalizationRecipe(
 	text: string,
 	relativePath: string,
@@ -396,12 +406,21 @@ function outputPaths(
 	};
 }
 
+/**
+ * Project-relative config name and decoded text supplied to pure target discovery. The caller
+ * owns IO and encoding validation before passing this input.
+ */
 export const LocalizationConfigInput = Schema.Struct({
 	relativePath: Schema.String,
 	text: Schema.String
 });
 export type LocalizationConfigInput = typeof LocalizationConfigInput.Type;
 
+/**
+ * Pure discovery from Dashboard text and GatherText configs. Returns a Result with normalized
+ * targets and per-config diagnostics; enforces limits and does not read files or launch
+ * Unreal.
+ */
 export function discoverLocalizationTargets(input: {
 	readonly dashboardText?: string;
 	readonly configs: readonly LocalizationConfigInput[];

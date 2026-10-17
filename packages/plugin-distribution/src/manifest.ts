@@ -1,4 +1,3 @@
-import { contractParser } from "@ue-shed/protocol";
 import { Effect, Schema } from "effect";
 import { PluginErrorGuidanceFields as ErrorGuidanceFields } from "./errors.js";
 
@@ -691,11 +690,20 @@ export const validatePluginBundleManifest = <Input>(
 		Effect.flatMap((manifest) => validatePluginBundleManifestValue(manifest, options))
 	);
 
-/** Schema-only decoder for callers that need to preserve parse diagnostics separately. */
-export const decodePluginBundleManifest = contractParser(
-	PluginBundleManifest,
-	"PluginBundleManifest"
-);
+/** Schema-only domain parser, preserving issues in cause without applying graph/version policy. */
+export const decodePluginBundleManifest = <Input>(
+	input: Input
+): Effect.Effect<PluginBundleManifest, PluginBundleManifestValidationError> =>
+	Schema.decodeUnknownEffect(PluginBundleManifest)(input).pipe(
+		Effect.mapError((cause) =>
+			validationError(
+				"schema_invalid",
+				"Plugin bundle manifest does not match the versioned manifest schema.",
+				"Use a manifest produced by the matching UE Shed release and check its JSON fields.",
+				cause
+			)
+		)
+	);
 
 /** Validates one artifact digest before any extraction takes place. */
 export const verifyPluginBundleArtifactChecksum = (

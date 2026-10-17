@@ -9,6 +9,8 @@ parsers. Match `ContractParseError` (`code: "invalid_contract"`) at protocol bou
 matching a top-level `SchemaError`. The original schema error remains in `cause`, including field
 issues. Domain-specific Game Text policy/response parsers retain their own domain errors. A valid
 failed response is still a response value; it is distinct from an invalid response contract.
+Plugin distribution preserves its protocol independence: its schema-only manifest parser returns
+`PluginBundleManifestValidationError` with `code: "schema_invalid"` and the original schema cause.
 
 Do not pass decoder options as a second argument. Configure a schema before creating a parser when
 you own that boundary. Ordinary unknown-field compatibility is preserved; this migration does not

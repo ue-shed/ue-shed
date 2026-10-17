@@ -335,6 +335,13 @@ fn execute(store: &mut Store, request: &BuildRequest) -> Result<BuildOutcome> {
                     crate::ErrorCode::InvalidInput,
                     "truncated string",
                 ))?;
+                crate::wtf8::validate(value).map_err(|cause| {
+                    crate::Error::with_source(
+                        crate::ErrorCode::InvalidInput,
+                        "An intern request contains invalid WTF-8.",
+                        cause,
+                    )
+                })?;
                 values.push(value.to_vec());
                 cursor += length;
             }
@@ -376,7 +383,13 @@ fn execute(store: &mut Store, request: &BuildRequest) -> Result<BuildOutcome> {
         BuildRequest::Join { file, .. } => {
             outcome.action = "join".into();
             let input: crate::join::JoinInput =
-                serde_json::from_slice(&bounded(file, 32 * 1024 * 1024)?)?;
+                serde_json::from_slice(&bounded(file, 32 * 1024 * 1024)?).map_err(|cause| {
+                    crate::Error::with_source(
+                        crate::ErrorCode::InvalidInput,
+                        "The native Game Text join request file is invalid.",
+                        cause,
+                    )
+                })?;
             outcome.join = Some(crate::join::refresh(store, &input)?);
         }
         BuildRequest::Compact { force, .. } => {
@@ -505,6 +518,68 @@ pub fn failure_code(error: &crate::Error) -> &'static str {
 #[cfg(test)]
 mod validation_tests {
     use super::*;
+
+    #[test]
+    fn malformed_request_files_are_input_errors_and_leave_the_cache_usable() {
+        let root = crate::test_directory("invalid-request");
+        let configuration = Configuration {
+            cache_root: root.clone(),
+            project_key: "request-fixture".into(),
+            target_key: "source".into(),
+            shared_project: false,
+            view_prefix: None,
+        };
+        let mut session = BuildSession::default();
+        session
+            .execute(&BuildRequest::Begin {
+                configuration: configuration.clone(),
+            })
+            .unwrap();
+        let file = root.join("bad-join.json");
+        fs::write(&file, b"{bad").unwrap();
+        let error = session
+            .execute(&BuildRequest::Join {
+                configuration: configuration.clone(),
+                file,
+            })
+            .unwrap_err();
+        assert_eq!(error.code, crate::ErrorCode::InvalidInput);
+        assert!(
+            std::error::Error::source(&error)
+                .unwrap()
+                .is::<serde_json::Error>()
+        );
+        crate::store::open_root(&configuration).unwrap();
+        session
+            .execute(&BuildRequest::Begin {
+                configuration: configuration.clone(),
+            })
+            .unwrap();
+        let file = root.join("bad-intern.bin");
+        fs::write(&file, [1, 0, 0, 0, 0xff]).unwrap();
+        let error = session
+            .execute(&BuildRequest::Intern {
+                configuration: configuration.clone(),
+                domain: "source".into(),
+                file,
+            })
+            .unwrap_err();
+        assert_eq!(error.code, crate::ErrorCode::InvalidInput);
+        assert!(std::error::Error::source(&error).is_some());
+        session
+            .execute(&BuildRequest::Begin {
+                configuration: configuration.clone(),
+            })
+            .unwrap();
+        session
+            .execute(&BuildRequest::End {
+                configuration: configuration.clone(),
+            })
+            .unwrap();
+        crate::store::open_root(&configuration).unwrap();
+        drop(session);
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn rejects_unicode_view_prefix_without_panicking() {

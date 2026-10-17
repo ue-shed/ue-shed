@@ -239,7 +239,16 @@ export async function measureGameTextHosts(
 		);
 		return;
 	}
-	const indexLayer = gameTextIndexRefreshLayer(cache).pipe(
+	const indexLayer = gameTextIndexRefreshLayer(
+		cache,
+		host === "workbench"
+			? {
+					searchWorker: true,
+					latestSearchOnly: true,
+					qualityWorker: true
+				}
+			: {}
+	).pipe(
 		Layer.provide(source),
 		Layer.provide(builderLayer),
 		Layer.provide(LocalizationEvidenceNodeLive)

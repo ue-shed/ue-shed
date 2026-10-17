@@ -100,21 +100,27 @@ if (values.worker) {
 		const loopStart = performance.eventLoopUtilization();
 		const profileStarted = values.profile ? Number(process.hrtime.bigint() / 1000n) : 0;
 		const value = await run();
-		await new Promise<void>((resolve) => setImmediate(resolve));
+		const finished = performance.now();
+		const profileFinished = values.profile ? Number(process.hrtime.bigint() / 1000n) : 0;
+		const utilization = performance.eventLoopUtilization(loopStart).utilization;
 		sample();
+		// Let the 10 ms histogram timer observe a synchronous stall before reading/resetting it.
+		// An immediate can run before that timer and falsely report zero for a blocked operation.
+		// This drain is outside the timed operation and its utilization/profile window.
+		await new Promise<void>((resolve) => setTimeout(resolve, 20));
 		const result = {
 			stage,
-			seconds: (performance.now() - started) / 1000,
+			seconds: (finished - started) / 1000,
 			eventLoop: {
 				maximumDelayMs: loop.max / 1e6,
 				p99DelayMs: loop.percentile(99) / 1e6,
-				utilization: performance.eventLoopUtilization(loopStart).utilization
+				utilization
 			},
 			...(values.profile
 				? {
 						profileWindowMicros: {
 							start: profileStarted,
-							end: Number(process.hrtime.bigint() / 1000n)
+							end: profileFinished
 						}
 					}
 				: undefined),

@@ -13,10 +13,11 @@ documentation is enforced for protocol, Unreal connection and focused Game Text 
 reviewed SDKs use named entry points. Obsolete service Shape aliases and two private Game Text
 constructors are removed with migration notes.
 
-The native rollout hardens the previously omitted index crate and WASM adapter, classifies errors
-by stable codes, preserves causes and scopes cancellation. It does not claim completion of the
-separate C++ portion of D14. A1/D3 physical package identity/path brands, graph pin support and
-other feature-policy roadmap items remain separate work.
+The native rollout builds on the parser/IO audit in #123 and the C++ error-contract work merged
+in #126, and closes the omitted index crate and WASM adapter. It classifies errors by stable codes,
+preserves causes and scopes cancellation; this change does not modify C++ plugins. A1/D3 physical
+package identity/path brands, graph pin support and other feature-policy roadmap items remain
+separate work.
 
 ## Native integration
 
@@ -44,9 +45,17 @@ generated reader evidence. This excludes native inventory discovery and package 
 cold sample owns a fresh cache and process under Node's default heap; repeated samples alternate
 backends and serialize heavy work. OS caches are warm and are not artificially flushed.
 
+Workbench samples enable production search/quality workers and latest-search ownership. They run
+the production Workbench service in Node, not an Electron renderer or browser interaction recording.
+CLI samples retain its ordinary worker configuration. Earlier Workbench runs without those options
+are diagnostic evidence and are excluded from final production-configuration timing summaries.
+
 Memory artifacts distinguish sampled worker-plus-native-descendant RSS from JavaScript worker
 heap/ArrayBuffer samples. Samples are not exact peaks. Stage records include event-loop maximum/p99
-delay and utilization. Warm reopen uses a new process with an existing derived cache.
+delay and utilization. The histogram drains for 20 ms after each timed operation so a synchronous
+stall is observed before reading it; that drain is excluded from operation duration/utilization.
+Warm reopen uses a new process immediately after its matching cold/edit sample, before another
+sample can change the shared generated PO's modification time.
 
 Parity requires complete query-result hashes plus 171 canonical joined-data checks. The physical
 source accelerator can retain obsolete base entries after incremental updates; its effective active
@@ -60,7 +69,7 @@ column proof and are reported separately.
 
 ## Validation record
 
-- Native index Rust tests: 23 passed, including malformed dictionary count rejection and stable
+- Native index Rust tests: 24 passed, including malformed dictionary count rejection and stable
   error-code/source evidence. Strict native and WASM Clippy checks run with warnings denied.
 - Targeted runtime tests: 110 passed, including 32 native lifecycle cycles, Remote Control decode
   recovery, editor foreground/map control and real owned-process fixtures.

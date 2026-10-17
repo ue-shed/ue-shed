@@ -7,8 +7,7 @@ on:
         branches:
             - main
     pull_request:
-        branches:
-            - main
+    workflow_dispatch:
 permissions:
     contents: read
 env:
@@ -19,9 +18,11 @@ concurrency:
     cancel-in-progress: true
 jobs:
     changes:
-        name: Detect UAsset changes
+        name: Validate CI inputs and select checks
         runs-on: blacksmith-2vcpu-ubuntu-2404
         outputs:
+            catalog_oracle: ${{ steps.scope.outputs.catalog_oracle }}
+            site: ${{ steps.scope.outputs.site }}
             uasset_io: ${{ steps.scope.outputs.uasset_io }}
             uasset_libraries: ${{ steps.scope.outputs.uasset_libraries }}
         steps:
@@ -30,68 +31,22 @@ jobs:
               with:
                   fetch-depth: 0
                   persist-credentials: false
-            - name: Detect UAsset parser changes
+            - name: Install Node.js
+              uses: actions/setup-node@v6
+              with:
+                  node-version: "26"
+            - name: Validate dependency paths before installation
+              run: node scripts/check-dependency-paths.ts
+            - name: Check CI selection and dependency regressions
+              run: node --test scripts/ci-scope.test.ts scripts/check-dependency-paths.test.ts
+            - name: Select affected checks
               id: scope
-              shell: bash
               env:
                   EVENT_NAME: ${{ github.event_name }}
                   BEFORE_SHA: ${{ github.event.before }}
                   BASE_SHA: ${{ github.event.pull_request.base.sha }}
                   HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-              run: |
-                  set -euo pipefail
-
-                  if [[ "$EVENT_NAME" == "pull_request" ]]; then
-                      range="$BASE_SHA...$HEAD_SHA"
-                  elif [[ -n "$BEFORE_SHA" && ! "$BEFORE_SHA" =~ ^0+$ ]]; then
-                      range="$BEFORE_SHA..$HEAD_SHA"
-                  else
-                      range="$HEAD_SHA^..$HEAD_SHA"
-                  fi
-
-                  mapfile -t changed_files < <(git diff --name-only "$range")
-                  printf 'Changed files:\n'
-                  printf '  %s\n' "${changed_files[@]}"
-
-                  uasset_io=false
-                  uasset_libraries=false
-                  for path in "${changed_files[@]}"; do
-                      case "$path" in
-                          .github/workflows/portable.yml | Cargo.toml | Cargo.lock | \
-                              crates/uasset-parser/* | crates/uasset-source-gen/* | crates/uasset-inspection/* | \
-                              crates/uasset-inspection-wasm/* | \
-                              scripts/*uasset* | \
-                              fixtures/unreal-project/*.uasset | \
-                              fixtures/unreal-project/*.umap)
-                              uasset_io=true
-                              uasset_libraries=true
-                              ;;
-                          packages/uasset-inspection-wasm/*)
-                              uasset_libraries=true
-                              ;;
-                          crates/uasset-io/* | \
-                              scripts/test-saved-review.ts | \
-                              apps/cli/src/*investigation* | \
-                              packages/uasset/* | packages/uasset-win32-x64/* | \
-                              packages/unreal-assets/* | packages/blueprints/* | \
-                              packages/protocol/contracts/uasset-io/* | \
-                              packages/protocol/src/uasset-* | \
-                              packages/protocol/src/blueprint-graph.ts | \
-                              packages/protocol/src/level-sequence.ts)
-                              uasset_io=true
-                              ;;
-                          package.json)
-                              if git diff --unified=0 "$range" -- package.json | \
-                                  grep -Eq '^[+-][[:space:]]*"(uasset:|test:uasset|test:saved-review)'; then
-                                  uasset_io=true
-                                  uasset_libraries=true
-                              fi
-                              ;;
-                      esac
-                  done
-
-                  echo "uasset_io=$uasset_io" | tee -a "$GITHUB_OUTPUT"
-                  echo "uasset_libraries=$uasset_libraries" | tee -a "$GITHUB_OUTPUT"
+              run: node scripts/ci-scope.ts
     repository:
         name: Repository checks
         needs: changes
@@ -121,13 +76,14 @@ jobs:
             - name: Install locked dependencies
               run: pnpm install --frozen-lockfile
             - name: Run repository gate
+              id: repository_gate
               shell: bash
               run: |
                   set -o pipefail
                   mkdir -p evidence
                   pnpm run check:repository 2>&1 | tee evidence/portable-check.log
             - name: Upload portable evidence
-              if: always()
+              if: always() && steps.repository_gate.outcome != 'skipped'
               uses: actions/upload-artifact@v7
               with:
                   name: portable-evidence-${{ github.run_id }}
@@ -306,7 +262,7 @@ jobs:
     catalog_oracle:
         name: SQLite Catalog oracle
         needs: changes
-        if: needs.changes.outputs.uasset_io == 'true'
+        if: needs.changes.outputs.catalog_oracle == 'true'
         runs-on: blacksmith-4vcpu-ubuntu-2404
         timeout-minutes: 20
         steps:
@@ -321,7 +277,11 @@ jobs:
               run: |
                   set -o pipefail
                   mkdir -p evidence
-                  cargo test --locked -p uasset-io --lib --features catalog-oracle 2>&1 | tee evidence/catalog-oracle.log
+                  cargo test --locked -p uasset-io --lib --features catalog-oracle catalog_sqlite:: \
+                      2>&1 | tee evidence/catalog-oracle.log
+                  cargo test --locked -p uasset-io --lib --features catalog-oracle \
+                      deterministic_mutation_sequences_match_sqlite_on_every_page \
+                      2>&1 | tee -a evidence/catalog-oracle.log
             - name: Upload Catalog oracle evidence
               if: always()
               uses: actions/upload-artifact@v7
@@ -332,6 +292,8 @@ jobs:
                   retention-days: 30
     site:
         name: Website and illustrated guides
+        needs: changes
+        if: needs.changes.outputs.site == 'true'
         runs-on: blacksmith-2vcpu-ubuntu-2404
         timeout-minutes: 30
         steps:
@@ -354,9 +316,11 @@ jobs:
                   fallback: none
             - run: pnpm install --frozen-lockfile
             - run: pnpm --filter @ue-shed/workbench exec playwright install --with-deps --only-shell chromium
-            - run: pnpm site:check
+            - name: Run website gate
+              id: site_gate
+              run: pnpm site:check
             - name: Upload desktop and mobile website captures
-              if: always()
+              if: always() && steps.site_gate.outcome != 'skipped'
               uses: actions/upload-artifact@v7
               with:
                   name: website-evidence-${{ github.run_id }}
@@ -366,6 +330,7 @@ jobs:
     gate:
         name: pnpm check
         needs:
+            - changes
             - repository
             - site
             - uasset_io
@@ -377,6 +342,7 @@ jobs:
             - name: Verify portable jobs
               shell: bash
               env:
+                  CHANGES_RESULT: ${{ needs.changes.result }}
                   REPOSITORY_RESULT: ${{ needs.repository.result }}
                   SITE_RESULT: ${{ needs.site.result }}
                   UASSET_IO_RESULT: ${{ needs.uasset_io.result }}
@@ -384,8 +350,9 @@ jobs:
                   CATALOG_ORACLE_RESULT: ${{ needs.catalog_oracle.result }}
               run: |
                   set -euo pipefail
+                  [[ "$CHANGES_RESULT" == "success" ]]
                   [[ "$REPOSITORY_RESULT" == "success" ]]
-                  [[ "$SITE_RESULT" == "success" ]]
+                  [[ "$SITE_RESULT" == "success" || "$SITE_RESULT" == "skipped" ]]
                   [[ "$UASSET_IO_RESULT" == "success" || "$UASSET_IO_RESULT" == "skipped" ]]
                   [[ "$UASSET_LIBRARIES_RESULT" == "success" || \
                       "$UASSET_LIBRARIES_RESULT" == "skipped" ]]

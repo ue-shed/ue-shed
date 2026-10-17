@@ -180,7 +180,9 @@ That journey creates two Capture Runs and verifies switching between them.
 
 ## Continuous checks and review artifacts
 
-The portable workflow's website job runs `site:check` on pull requests and `main`. It checks
+The portable workflow's website job runs `site:check` on pull requests affecting the site, its
+transitive workspace dependencies, saved fixtures, media, scripts or shared configuration. It runs
+unconditionally on `main` and manual workflow dispatches. It checks
 manifest/image integrity, builds the production site (including StyleX extraction), and uses
 Chromium to exercise direct guide URLs, navigation, image decoding, keyboard tabs, and narrow
 layouts. It uploads full-page desktop and mobile captures and failure traces under

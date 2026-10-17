@@ -9,7 +9,7 @@ const repositoryRoot = fileURLToPath(new URL("../..", import.meta.url));
 const sourceRoot = join(repositoryRoot, "fixtures", "unreal-project");
 
 /** Keep saved-package inventory assertions independent of locally generated stress fixtures. */
-export function useSavedFixtureProject() {
+export function useSavedFixtureProject(selectedPaths?: readonly string[]) {
 	let root: string | undefined;
 	beforeAll(async () => {
 		root = await mkdtemp(join(tmpdir(), "ue-shed-saved-fixture-"));
@@ -20,7 +20,9 @@ export function useSavedFixtureProject() {
 		}).split("\0");
 		for (const file of files.filter(Boolean)) {
 			const source = join(repositoryRoot, file);
-			const target = join(root, relative(sourceRoot, source));
+			const path = relative(sourceRoot, source);
+			if (selectedPaths && !selectedPaths.includes(path.replaceAll("\\", "/"))) continue;
+			const target = join(root, path);
 			await mkdir(dirname(target), { recursive: true });
 			await copyFile(source, target);
 		}

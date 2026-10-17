@@ -25,14 +25,16 @@ layer.
 ## Commands
 
 GitHub Actions runs the portable gate on Blacksmith runners. Repository checks run on every pull
-request. The UAsset library and IO lanes run only when their Rust, WASM, package, contract, script, or fixture inputs
-change; parser and inspection changes also trigger downstream IO conformance. Use `pnpm check`
+request. On PRs, the UAsset lanes follow their Rust, WASM, package, contract, script and fixture
+inputs; parser and inspection changes also trigger downstream IO conformance. Website and Catalog
+oracle checks have separate input scopes. Pushes to `main` and manual dispatches run all lanes. Use `pnpm check`
 for full local verification. During local iteration, use targeted checks for the surface you changed.
 Never describe a change as fully verified while a relevant targeted check or the portable CI gate is
 failing.
 
-`pnpm run check:precommit` runs the fast pre-commit subset (`format:check`, `lint`,
-`typecheck`, `test:architecture`, `contract:check`). Use it for broad TypeScript or contract changes.
+`pnpm run check:precommit` runs `check:static` (dependency paths, formatting, lint, Effect
+architecture, licenses, StyleX and architecture regressions), then type and contract checks. Use it
+for broad TypeScript or contract changes.
 For focused work, run the relevant individual command or test file. Do not leave formatting, lint,
 type, or test errors for the user to discover. Fix with `pnpm exec oxfmt .` when `format:check`
 fails, then rerun the failing command.

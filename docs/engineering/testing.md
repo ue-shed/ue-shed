@@ -34,11 +34,15 @@ codecs, errors, and recovery need deep coverage.
 
 ## Local verification
 
-GitHub Actions on Blacksmith runs the portable repository checks on pull requests and `main`.
-Separate UAsset library and IO lanes are added only when their Rust, WASM, package, contract, script, or fixture inputs
-change. Parser and inspection changes also trigger downstream IO conformance; WASM-package-only
-changes do not. Native-reader CLI and fixture integration tests run in the conditional IO lane, not
-in the always-on repository suite. Run the complete portable gate locally with:
+GitHub Actions on Blacksmith runs the portable repository checks on every pull request, including
+PRs targeting another feature branch. Pullfrog runs separately on GitHub-hosted Ubuntu 24.04 runners.
+On pull requests, separate UAsset library and IO lanes run when their Rust, WASM, package, contract,
+script, or fixture inputs change. Parser and inspection changes also trigger downstream IO
+conformance; WASM-package-only changes do not. The website browser lane follows the site's transitive workspace dependencies,
+saved fixtures, media, scripts and configuration. The SQLite Catalog oracle follows `crates/uasset-io`
+and shared build inputs instead of every IO consumer change. Pushes to `main` and manual workflow
+dispatches run all lanes as a backstop. Native-reader CLI and fixture integration tests run in the
+conditional IO lane, not in the always-on repository suite. Run the complete portable gate locally with:
 
 ```powershell
 pnpm check
@@ -81,12 +85,24 @@ layer and join tests reuse read-only header and extraction evidence for committe
 each test builds its own writable index. Reader protocol tests and benchmark measurements still
 perform fresh native reads.
 
-The hosted workflow is `.github/workflows/portable.yml`. Change detection and the aggregate
-`pnpm check` status use 2-vCPU Blacksmith Ubuntu 24.04 runners; repository, UAsset, and Catalog
+The hosted workflow is `.github/workflows/portable.yml`. `scripts/ci-scope.ts` selects PR lanes using
+a merge-base diff, includes deleted and renamed paths, and fails on an invalid Git range. Selection
+and local-dependency regression tests run before dependencies are installed. The dependency check
+rejects external, missing, absolute and untracked local references while allowing checked-in local
+dependencies. It also runs in `check:static` and `check:precommit`.
+
+`check:static` runs dependency, format, lint, Effect architecture, license, StyleX and architecture
+regression checks before compilation. Contract checks follow package builds because they import
+built protocol packages. `check:precommit` now runs the Effect architecture check on repository
+sources in addition to testing the checker.
+
+Change detection and the aggregate `pnpm check` status use 2-vCPU Blacksmith Ubuntu 24.04 runners; repository, UAsset, and Catalog
 oracle jobs use 4-vCPU runners. Changes to the workflow itself enable both conditional UAsset
 lanes. The aggregate status requires the repository job to succeed and accepts only success or
-an intentional skip from the conditional jobs. Rust compilation uses sccache with the GitHub
-Actions cache backend; pnpm uses the setup-node dependency cache. Evidence and failure diagnostics
+an intentional skip from the conditional jobs, including the website lane. A failed selection job
+blocks the aggregate gate. The Catalog job runs its SQLite-specific suite and differential oracle;
+ordinary IO library tests remain in the IO job instead of running twice. Rust compilation uses sccache
+with the GitHub Actions cache backend; pnpm uses the setup-node dependency cache. Evidence and failure diagnostics
 remain GitHub Actions artifacts.
 
 Hosted Rust is pinned by `RUSTUP_TOOLCHAIN` in the workflow, independently of the crates' minimum
@@ -177,7 +193,8 @@ the shared `WorkbenchPage`, and use the shared fixture for app launch, teardown,
 traces. Failure artifacts are written under `test-results/workbench`.
 
 Installing dependencies also installs the repository-managed pre-commit hook. It runs
-`pnpm check:precommit` (formatting, linting, type checks, architecture, and contract checks) before
+`pnpm check:precommit` (dependency paths, formatting, linting, Effect architecture, licenses, StyleX,
+architecture regressions, type checks and contracts) before
 Git creates a commit. The longer `pnpm check` gate is available for full local verification; the
 hosted workflow runs repository checks and the applicable UAsset lanes described above.
 

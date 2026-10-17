@@ -25,6 +25,12 @@ const uassetTestsEnabled = process.env.UE_SHED_UASSET_AUTO_BUILD !== "0";
 const nativeIt = it.skipIf(!uassetTestsEnabled);
 
 const fixture = useSavedFixtureProject();
+// Keep the relationship journey independent of unrelated DataTables added to the full fixture.
+const references = useSavedFixtureProject([
+	"UEShedFixture.uproject",
+	"Content/Fixture/Authoring/DT_LeftReferences.uasset",
+	"Content/Fixture/Authoring/DT_RightReferences.uasset"
+]);
 
 const scalarAsset = join(
 	repositoryRoot,
@@ -165,7 +171,9 @@ describe("ue-shed CLI process", () => {
 	);
 
 	nativeIt("resolves fixture row references through the public headless command", () => {
-		const report = parseRecord(runSuccessfulCli(["authoring", "relationships", fixture.root]));
+		const report = parseRecord(
+			runSuccessfulCli(["authoring", "relationships", references.root])
+		);
 		expect(report.contract).toEqual({
 			name: "unreal-authoring-row-references",
 			version: { major: 1, minor: 0 }
@@ -174,7 +182,7 @@ describe("ue-shed CLI process", () => {
 			issueCount: 0,
 			referenceCount: 2,
 			resolvedCount: 2,
-			snapshotCount: 18
+			snapshotCount: 2
 		});
 		expect(report.edges).toEqual(
 			expect.arrayContaining([

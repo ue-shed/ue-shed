@@ -28,7 +28,8 @@ write sessions require reopening and reconciling the last committed state before
 
 Game Text corpus and Enhanced Input scans now distinguish `reader_failed` from `invalid_project`;
 Game Text workspace preserves classified scan errors and uses `index_failed` for other index
-preparation failures. Match these codes when handling reader or
+preparation failures. Native store/format failures retain their outer recovery and retry safety;
+lower-level transport guidance does not replace the writer's classification. Match these codes when handling reader or
 index failures, and follow their retained reader guidance instead of always asking for another
 project. Portable localization errors retain safe classified causes while excluding private engine
 installation candidates, authored evidence and secret configuration.

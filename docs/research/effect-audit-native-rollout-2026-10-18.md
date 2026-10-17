@@ -1,7 +1,7 @@
 # Effect audit and native index rollout evidence
 
 This records the October 18 implementation and acceptance evidence for the TypeScript Effect/error
-audit and production native Game Text builder. Full local acceptance passed on `e348532c`;
+audit and production native Game Text builder. Full local acceptance passed on `10b1b92a`;
 PR #129 tracks the final hosted CI, review and merge state. Package publication remains separate.
 
 ## Scope
@@ -143,18 +143,21 @@ small fixture there is no end-to-end native speedup; IO/discovery and fixed over
 [Validation record](evidence/effect-native-2026-10-18/validation.json) retains the exact source,
 engine builds, result counts and local log hashes.
 
-- Full `pnpm check`: passed on `e348532c`, including 397 runtime test files and 2953 tests.
-  Capability-gated integrations remain explicit: 16 files and 55 tests skipped; a missing live
-  editor/render/Perforce environment is not counted as a conformance pass.
+- Full `pnpm check`: passed on `10b1b92a`, including 397 runtime test files and 2961 tests.
+  Capability-gated integrations remain explicit: 16 files and 55 tests skipped; missing live
+  editor/render/Perforce environments are not counted as conformance passes.
 - Game Text responsiveness: all three dedicated tests passed. These bounded regression tests do
   not waive the million-occurrence focus/publication stalls measured above.
-- Native index: 24 Rust tests passed; native and WASM Clippy deny warnings and production unwrap/expect.
-  Real process conformance verifies malformed join failures retain JSON line/column details with
-  stable `invalid_input` classification and unsafe-replay guidance.
-- Architecture: 65 tests passed; release checks: 50 passed. The guarded Changesets dry run resolves
-  the 20 public packages to 0.17.0 without versioning or publication. All eight SDK public documentation
-  guards, zero raw-decoder exceptions, complete test ports, classified causes and privacy regressions
-  are covered by the final gate.
+- Native index: 24 Rust tests passed; native index and WASM Clippy deny warnings and production
+  unwrap/expect. Real process conformance verifies malformed join failures retain JSON line/column
+  details with stable `invalid_input` classification and unsafe-replay guidance.
+- Workspace: 35 tests passed. Scan and refresh preserve classified source errors and outer native
+  writer recovery/retry safety for invalid-cache, timeout and busy failures. An index failure wrapping
+  a retry-safe reader cause also retains its outer index guidance.
+- Architecture: 65 tests passed; release checks: 52 passed. Changesets libraries resolve all notes
+  without Git history or a local `main` ref; history-free fixtures accept a valid public release and
+  reject mixed private/public notes. The plan advances the 20 public packages to 0.17.0 without
+  versioning or publication. SDK documentation, decoder, test-port, cause and privacy guards pass.
 - Packed packages: 20 tarballs passed clean offline consumer conformance, including production
   native indexing. Data Authoring source-copy adoption passed independently of repository modules.
 - UE 5.7 (5.7.4): passed. UE 5.8 (5.8.3): passed. The retained-fixture matrix performs fresh Unreal
@@ -162,5 +165,5 @@ engine builds, result counts and local log hashes.
   regenerate saved assets or legacy fixtures; no C++ plugin implementation changed in this PR.
 
 The measured slower mixed-reference edit and synchronous reader materialization remain explicit
-performance limits. Neither is hidden by fallback to a different writer, by dropped parity checks or
-by a native query-speed claim.
+performance limits. Neither is hidden by fallback to a different writer, dropped parity checks or
+a native query-speed claim.

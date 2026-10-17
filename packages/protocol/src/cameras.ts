@@ -1,8 +1,18 @@
 import { Schema } from "effect";
 
+/**
+ * A UEShedCameras camera source: its Unreal GUID as 32 lowercase hex digits, assigned by the
+ * plugin when the source is created. Decoding checks only that it is a string.
+ */
 export const CameraId = Schema.String.pipe(Schema.brand("CameraId"));
 export type CameraId = Schema.Schema.Type<typeof CameraId>;
 
+/**
+ * The capture schedule sent to the UEShedCameras `Configure` call and echoed in its status. The
+ * focused camera captures at `focusedFps` and the rest at `backgroundFps` (frames per second);
+ * `focusedCameraIndex: null` focuses none. An omitted `editorBackgroundTicking` means `inherit`.
+ * Decoding fails with a SchemaError when a value leaves its bound or a literal is unknown.
+ */
 export const CameraScheduleConfig = Schema.Struct({
 	editorBackgroundTicking: Schema.optional(Schema.Literals(["inherit", "while_streaming"])),
 	activeCameraCount: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 32 })),
@@ -28,6 +38,11 @@ export const CameraScheduleConfig = Schema.Struct({
 }).annotate({ identifier: "CameraScheduleConfig" });
 export type CameraScheduleConfig = Schema.Schema.Type<typeof CameraScheduleConfig>;
 
+/**
+ * Camera stream counters reported by the plugin. Plain counters run since the camera subsystem
+ * started; `experiment*` counters restart on every successful configure, which increments
+ * `experimentRevision`. `*Ms` fields are milliseconds and `*BytesSent` fields are bytes.
+ */
 export const CameraStreamStats = Schema.Struct({
 	bytesSent: Schema.Number,
 	captureBatchesSubmitted: Schema.Number,
@@ -62,6 +77,11 @@ export const CameraStreamStats = Schema.Struct({
 }).annotate({ identifier: "CameraStreamStats" });
 export type CameraStreamStats = Schema.Schema.Type<typeof CameraStreamStats>;
 
+/**
+ * One live camera source. `index` (0-31) matches the camera index in streamed frame headers and
+ * `width`/`height` are the capture size in pixels. `candidateId` is a compatibility copy, present
+ * only for cameras provisioned for a framing candidate.
+ */
 export const CameraDescriptor = Schema.Struct({
 	cameraId: CameraId,
 	displayName: Schema.String,
@@ -72,6 +92,10 @@ export const CameraDescriptor = Schema.Struct({
 }).annotate({ identifier: "CameraDescriptor" });
 export type CameraDescriptor = Schema.Schema.Type<typeof CameraDescriptor>;
 
+/**
+ * Schema-1 reply from the UEShedCameras `GetStatus` and `Configure` calls: the effective schedule
+ * after the plugin clamps it, the live cameras, stream counters, and the named pipe frames go to.
+ */
 export const CameraStatus = Schema.Struct({
 	cameras: Schema.Array(CameraDescriptor),
 	config: CameraScheduleConfig,
@@ -87,5 +111,7 @@ export const CameraStatus = Schema.Struct({
 }).annotate({ identifier: "CameraStatus" });
 export type CameraStatus = Schema.Schema.Type<typeof CameraStatus>;
 
+/** Validates a schedule before it is sent; fails with a SchemaError for any out-of-bound value. */
 export const decodeCameraScheduleConfig = Schema.decodeUnknownEffect(CameraScheduleConfig);
+/** Decodes a plugin status reply; fails with a SchemaError for another schema version or shape. */
 export const decodeCameraStatus = Schema.decodeUnknownEffect(CameraStatus);

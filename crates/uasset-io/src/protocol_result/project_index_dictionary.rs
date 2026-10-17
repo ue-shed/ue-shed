@@ -70,6 +70,10 @@ impl From<ProjectIndexPage> for ProjectIndexDictionaryPage {
                 .into_iter()
                 .map(|value| {
                     *ids.entry(value).or_insert_with_key(|value| {
+                        #[expect(
+                            clippy::expect_used,
+                            reason = "a Project Index page is bounded far below u32::MAX strings"
+                        )]
                         let id = u32::try_from(strings.len()).expect("bounded Project Index page");
                         strings.push(value.clone());
                         id

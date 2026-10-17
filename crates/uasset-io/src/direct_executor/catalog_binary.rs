@@ -108,6 +108,12 @@ impl ManifestSummary {
     }
 }
 
+fn no_staging() -> CatalogError {
+    CatalogError::InvalidRequest {
+        message: "no binary Catalog refresh is active".into(),
+    }
+}
+
 fn corrupt(message: impl Into<String>) -> CatalogError {
     CatalogError::Corrupt {
         message: message.into(),
@@ -162,10 +168,12 @@ impl<'a> Decoder<'a> {
         }
     }
     fn u32(&mut self) -> Result<u32, CatalogError> {
-        Ok(u32::from_le_bytes(self.take(4)?.try_into().unwrap()))
+        let bytes = self.take(4)?.try_into().map_err(|_| corrupt("short u32"))?;
+        Ok(u32::from_le_bytes(bytes))
     }
     fn u64(&mut self) -> Result<u64, CatalogError> {
-        Ok(u64::from_le_bytes(self.take(8)?.try_into().unwrap()))
+        let bytes = self.take(8)?.try_into().map_err(|_| corrupt("short u64"))?;
+        Ok(u64::from_le_bytes(bytes))
     }
     fn count(&mut self, minimum_width: usize) -> Result<usize, CatalogError> {
         let count = self.u32()? as usize;
@@ -541,8 +549,7 @@ impl Snapshot {
             } else {
                 None
             };
-            let mut lists = Vec::with_capacity(2);
-            for _ in 0..2 {
+            let mut string_ids = || {
                 let count = d.count(4)?;
                 let mut ids = Vec::with_capacity(count);
                 for _ in 0..count {
@@ -552,10 +559,10 @@ impl Snapshot {
                     }
                     ids.push(id);
                 }
-                lists.push(ids);
-            }
-            let names = lists.pop().unwrap();
-            let classes = lists.pop().unwrap();
+                Ok(ids)
+            };
+            let classes = string_ids()?;
+            let names = string_ids()?;
             Some(PackedHeader {
                 header_data,
                 package_name,
@@ -579,22 +586,26 @@ impl Snapshot {
         })
     }
     fn expand_header(&self, packed: PackedRecord) -> Option<HeaderEvidence> {
-        packed.header.map(|h| HeaderEvidence {
-            header_data: h.header_data,
-            profile_version: packed.profile.unwrap(),
-            package_name: h.package_name,
-            failure_code: h.failure_code,
-            classes: h
-                .classes
-                .into_iter()
-                .map(|id| self.strings[id as usize].clone())
-                .collect(),
-            serialized_names: h
-                .names
-                .into_iter()
-                .map(|id| self.strings[id as usize].clone())
-                .collect(),
-        })
+        // Decoding checked that a record has a header exactly when it has a profile.
+        packed
+            .header
+            .zip(packed.profile)
+            .map(|(h, profile_version)| HeaderEvidence {
+                header_data: h.header_data,
+                profile_version,
+                package_name: h.package_name,
+                failure_code: h.failure_code,
+                classes: h
+                    .classes
+                    .into_iter()
+                    .map(|id| self.strings[id as usize].clone())
+                    .collect(),
+                serialized_names: h
+                    .names
+                    .into_iter()
+                    .map(|id| self.strings[id as usize].clone())
+                    .collect(),
+            })
     }
     fn headers(&self, ids: &[usize]) -> Result<Vec<Option<HeaderEvidence>>, CatalogError> {
         let mut headers = Vec::with_capacity(ids.len());
@@ -797,8 +808,10 @@ impl BinaryCatalog {
         let directory = root
             .join(CATALOG_DIRECTORY)
             .join(catalog_directory_name(project_id));
-        fs::create_dir_all(directory.parent().unwrap())
-            .map_err(io_unavailable("create binary Catalog namespace"))?;
+        if let Some(namespace) = directory.parent() {
+            fs::create_dir_all(namespace)
+                .map_err(io_unavailable("create binary Catalog namespace"))?;
+        }
         let writer_lock = if verify {
             let lock = File::options()
                 .read(true)
@@ -899,6 +912,10 @@ impl BinaryCatalog {
         }
         Ok(())
     }
+    /// The active refresh, which `require_staging` has checked exists.
+    fn staging_mut(&mut self) -> Result<&mut Staging, CatalogError> {
+        self.staging.as_mut().ok_or_else(no_staging)
+    }
     fn require_staging(&self, token: &StagingToken) -> Result<(), CatalogError> {
         if self
             .staging
@@ -970,7 +987,7 @@ impl Catalog for BinaryCatalog {
     }
     fn observe_unchanged(&mut self, token: &StagingToken, path: &str) -> Result<(), CatalogError> {
         self.require_staging(token)?;
-        self.staging.as_mut().unwrap().observed.push(path.into());
+        self.staging_mut()?.observed.push(path.into());
         Ok(())
     }
     fn stage_observed(
@@ -981,16 +998,17 @@ impl Catalog for BinaryCatalog {
         self.require_staging(token)?;
         let started = Instant::now();
         self.load()?;
-        let staging = self.staging.as_mut().unwrap();
-        if staging.dictionary.is_none() {
-            staging.dictionary = Some(Dictionary::from_strings(
-                self.snapshot
+        let snapshot = &self.snapshot;
+        let staging = self.staging.as_mut().ok_or_else(no_staging)?;
+        let dictionary = staging.dictionary.get_or_insert_with(|| {
+            Dictionary::from_strings(
+                snapshot
                     .borrow()
                     .as_ref()
                     .map_or_else(Vec::new, |s| s.strings.clone()),
-            ));
-        }
-        let record = PackedRecord::pack(entry, staging.dictionary.as_mut().unwrap())?;
+            )
+        });
+        let record = PackedRecord::pack(entry, dictionary)?;
         staging
             .observed
             .push(record.signature.relative_path.clone());
@@ -1011,7 +1029,7 @@ impl Catalog for BinaryCatalog {
             });
         }
         self.load()?;
-        let mut staging = self.staging.take().unwrap();
+        let mut staging = self.staging.take().ok_or_else(no_staging)?;
         // Observations arrive in ordered runs. Sort once instead of allocating a tree node on
         // every observation; dedup retains the set semantics for repeated staging calls.
         staging.observed.sort_unstable();
@@ -1111,7 +1129,9 @@ impl Catalog for BinaryCatalog {
         let cursor = parse_page_cursor(request.cursor.as_deref())?;
         self.load()?;
         let cached = self.snapshot.borrow();
-        let snapshot = cached.as_ref().unwrap();
+        let snapshot = cached
+            .as_ref()
+            .ok_or_else(|| corrupt("binary Catalog snapshot is not loaded"))?;
         let after = snapshot
             .inventory
             .partition_point(|e| e.signature.relative_path <= cursor);
@@ -1192,7 +1212,9 @@ impl Catalog for BinaryCatalog {
         }
         self.load()?;
         let cached = self.snapshot.borrow();
-        let snapshot = cached.as_ref().unwrap();
+        let snapshot = cached
+            .as_ref()
+            .ok_or_else(|| corrupt("binary Catalog snapshot is not loaded"))?;
         // One byte per inventory entry bounds union memory independently of match count.
         let mut matched = vec![false; snapshot.inventory.len()];
         let mut count = 0;
@@ -1259,21 +1281,11 @@ fn write_snapshot(
                 .map(|i| (i, &p.inventory[i]))
         });
         let offset = payload.len();
-        let record = if changed
-            .peek()
-            .is_some_and(|r| r.signature.relative_path == *name)
-        {
-            let mut record = changed.next().unwrap();
-            while changed
-                .peek()
-                .is_some_and(|r| r.signature.relative_path == *name)
-            {
-                record = changed.next().unwrap();
-            }
-            Some(record)
-        } else {
-            None
-        };
+        // The last staged record for a path wins.
+        let mut record = None;
+        while let Some(next) = changed.next_if(|r| r.signature.relative_path == *name) {
+            record = Some(next);
+        }
         let (signature, profile, failure, hash) = if let Some(record) = record {
             record.encode(&mut payload)?;
             let hash = checksum(&payload[offset..]);
@@ -1284,8 +1296,8 @@ fn write_snapshot(
                         [entry.offset as usize..entry.offset as usize + entry.len as usize]
                         == payload[offset..]
             });
-            if same_evidence {
-                remap[old.unwrap().0] = Some(id as u32);
+            if let Some((old_id, _)) = old.filter(|_| same_evidence) {
+                remap[old_id] = Some(id as u32);
             } else if record.signature.kind == EntryKind::Package
                 && let Some(header) = &record.header
             {

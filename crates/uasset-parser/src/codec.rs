@@ -699,7 +699,7 @@ fn decode_set_value(
         ));
     }
     payload.checked_vec_capacity::<PropertyValue>(
-        usize::try_from(remove_count).expect("non-negative i32 fits in usize"),
+        crate::convert::usize_from_checked(remove_count),
         minimum_serialized_size(&element_name, element_type),
         &format!("{path}.ElementsToRemove.Count"),
     )?;
@@ -769,7 +769,7 @@ fn decode_map_value(
     let keys_to_remove = payload.read_i32(&format_args!("{path}.KeysToRemove.Count"))?;
     if keys_to_remove > 0 {
         payload.checked_vec_capacity::<PropertyValue>(
-            usize::try_from(keys_to_remove).expect("positive i32 fits in usize"),
+            crate::convert::usize_from_checked(keys_to_remove),
             minimum_serialized_size(&key_name, key_type),
             &format!("{path}.KeysToRemove.Count"),
         )?;
@@ -937,10 +937,8 @@ fn decode_container_element(
     }
 
     if let Some(byte_count) = fixed_serialized_size(type_spec.name, type_spec.tree) {
-        let mut element_payload = payload.take_bounded(
-            u64::try_from(byte_count).expect("fixed payload size fits in u64"),
-            path,
-        )?;
+        let mut element_payload =
+            payload.take_bounded(crate::convert::u64_from_usize(byte_count), path)?;
         return decode_typed_value(
             source,
             type_spec,

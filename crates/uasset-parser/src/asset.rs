@@ -19,7 +19,7 @@ pub use script::{DecodedFunction, FUNCTION_CLASS, FunctionDecoder};
 
 use crate::archive::{ArchiveError, ArchiveErrorKind, Guid, NameRef, Span};
 use crate::codec::decode_property_stream_values;
-use crate::package::{Export, ObjectPath, Package, PackageError, PackageIndex};
+use crate::package::{Export, ObjectPath, Package, PackageError, PackageErrorKind, PackageIndex};
 use crate::property::{
     NamedTextFormatArgument, PropertyError, PropertyErrorKind, PropertyStream, PropertyValue,
     TextFormatArgumentValue, TextHistory, TextValue, read_tagged_property_stream,
@@ -464,6 +464,8 @@ pub enum AssetErrorKind {
 pub struct AssetError {
     kind: AssetErrorKind,
     message: String,
+    offset: Option<u64>,
+    field: Option<String>,
     source: Option<Box<dyn std::error::Error + Send + Sync>>,
 }
 
@@ -472,6 +474,8 @@ impl AssetError {
         Self {
             kind,
             message: message.into(),
+            offset: None,
+            field: None,
             source: None,
         }
     }
@@ -484,6 +488,30 @@ impl AssetError {
     #[must_use]
     pub fn message(&self) -> &str {
         &self.message
+    }
+
+    /// The absolute byte offset in the package where decoding failed, when the failure has one.
+    #[must_use]
+    pub const fn offset(&self) -> Option<u64> {
+        self.offset
+    }
+
+    /// The logical field path being read when decoding failed, when the failure has one.
+    #[must_use]
+    pub fn field(&self) -> Option<&str> {
+        self.field.as_deref()
+    }
+}
+
+impl From<PackageErrorKind> for AssetErrorKind {
+    fn from(kind: PackageErrorKind) -> Self {
+        match kind {
+            PackageErrorKind::MalformedData => Self::MalformedData,
+            PackageErrorKind::ResourceLimit => Self::ResourceLimit,
+            PackageErrorKind::UnsupportedFormat => Self::UnsupportedFormat,
+            PackageErrorKind::UnsupportedVersion => Self::UnsupportedVersion,
+            PackageErrorKind::UnsupportedCapability => Self::UnsupportedCapability,
+        }
     }
 }
 
@@ -503,22 +531,11 @@ impl std::error::Error for AssetError {
 
 impl From<PackageError> for AssetError {
     fn from(source: PackageError) -> Self {
-        let kind = match source.kind() {
-            crate::package::PackageErrorKind::MalformedData => AssetErrorKind::MalformedData,
-            crate::package::PackageErrorKind::ResourceLimit => AssetErrorKind::ResourceLimit,
-            crate::package::PackageErrorKind::UnsupportedFormat => {
-                AssetErrorKind::UnsupportedFormat
-            }
-            crate::package::PackageErrorKind::UnsupportedVersion => {
-                AssetErrorKind::UnsupportedVersion
-            }
-            crate::package::PackageErrorKind::UnsupportedCapability => {
-                AssetErrorKind::UnsupportedCapability
-            }
-        };
         Self {
-            kind,
+            kind: source.kind().into(),
             message: source.to_string(),
+            offset: source.offset(),
+            field: Some(source.path().to_owned()),
             source: Some(Box::new(source)),
         }
     }
@@ -535,6 +552,8 @@ impl From<PropertyError> for AssetError {
         Self {
             kind,
             message: source.to_string(),
+            offset: source.offset(),
+            field: Some(source.path().to_owned()),
             source: Some(Box::new(source)),
         }
     }
@@ -556,6 +575,8 @@ impl From<ArchiveError> for AssetError {
         Self {
             kind,
             message: source.to_string(),
+            offset: Some(source.offset()),
+            field: Some(source.path().to_owned()),
             source: Some(Box::new(source)),
         }
     }
@@ -659,7 +680,7 @@ fn decode_data_table_rows(
         ));
     }
     let capacity = reader.checked_vec_capacity::<DataTableRow>(
-        usize::try_from(row_count).expect("i32 fits in usize"),
+        crate::convert::usize_from_checked(row_count),
         8,
         &format!("{object_path}.Rows.Count"),
     )?;
@@ -770,7 +791,7 @@ fn decode_curve_table_data(
         }
     };
     let capacity = reader.checked_vec_capacity::<CurveTableRow>(
-        usize::try_from(row_count).expect("i32 fits in usize"),
+        crate::convert::usize_from_checked(row_count),
         16,
         &format!("{object_path}.Rows.Count"),
     )?;
@@ -921,7 +942,7 @@ fn decode_string_table_data(
         ));
     }
     let capacity = reader.checked_vec_capacity::<StringTableEntry>(
-        usize::try_from(entry_count).expect("i32 fits in usize"),
+        crate::convert::usize_from_checked(entry_count),
         8,
         &format!("{object_path}.Entries.Count"),
     )?;
@@ -996,7 +1017,7 @@ fn decode_enum_data(
         ));
     }
     let capacity = reader.checked_vec_capacity::<(NameRef, i64)>(
-        usize::try_from(count).expect("i32 fits in usize"),
+        crate::convert::usize_from_checked(count),
         16,
         &format!("{object_path}.Names.Count"),
     )?;
@@ -1263,7 +1284,7 @@ fn decode_struct_members(
         ));
     }
     let capacity = reader.checked_vec_capacity::<StructField>(
-        usize::try_from(field_count).expect("fits in usize"),
+        crate::convert::usize_from_checked(field_count),
         1,
         &format!("{object_path}.ChildProperties.Count"),
     )?;
@@ -1590,7 +1611,7 @@ fn decode_skeleton_reference_bones(
         ));
     }
     let capacity = reader.checked_vec_capacity::<SkeletonBone>(
-        usize::try_from(count).expect("i32 fits in usize"),
+        crate::convert::usize_from_checked(count),
         if editor_data_present { 16 } else { 12 },
         &format!("{object_path}.ReferenceSkeleton.Num"),
     )?;
@@ -1731,7 +1752,7 @@ fn decode_anim_sequence_uncooked_data(
                 format!("negative legacy animation track count {count}"),
             ));
         }
-        u32::try_from(count).expect("non-negative i32 fits in u32")
+        crate::convert::u32_from_checked(count)
     } else {
         0
     };
@@ -3167,7 +3188,7 @@ fn decode_simple_curve_keys(
         ));
     }
     let capacity = payload.checked_vec_capacity::<CurveKey>(
-        usize::try_from(count).expect("i32 fits in usize"),
+        crate::convert::usize_from_checked(count),
         8,
         &format_args!("{path}.Keys.Count"),
     )?;
@@ -3222,7 +3243,7 @@ fn decode_rich_curve_keys(
         ));
     }
     let capacity = payload.checked_vec_capacity::<CurveKey>(
-        usize::try_from(count).expect("i32 fits in usize"),
+        crate::convert::usize_from_checked(count),
         27,
         &format_args!("{path}.Keys.Count"),
     )?;
@@ -5646,5 +5667,24 @@ mod tests {
                 .collect();
             assert_eq!(texts, ["Hello"], "UE5 {ue5}");
         }
+    }
+
+    #[test]
+    fn asset_errors_keep_the_field_and_byte_offset_of_their_cause() {
+        let mut reader = Reader::new(&[0, 0]);
+        let error = AssetError::from(
+            reader
+                .read_u32("Exports[2].Properties.Count")
+                .expect_err("two bytes cannot hold a u32"),
+        );
+        assert_eq!(error.kind(), AssetErrorKind::MalformedData);
+        assert_eq!(error.offset(), Some(0));
+        assert_eq!(error.field(), Some("Exports[2].Properties.Count"));
+        let unsupported = AssetError::new(AssetErrorKind::UnsupportedCapability, "layout");
+        assert_eq!((unsupported.offset(), unsupported.field()), (None, None));
+        assert_eq!(
+            AssetErrorKind::from(PackageErrorKind::UnsupportedVersion),
+            AssetErrorKind::UnsupportedVersion
+        );
     }
 }

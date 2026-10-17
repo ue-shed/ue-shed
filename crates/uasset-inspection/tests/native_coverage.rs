@@ -1,4 +1,9 @@
 //! Semantic evidence is produced by Unreal loading saved assets in a fresh process.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "test and benchmark helpers fail loudly on broken fixtures"
+)]
 use serde_json::{Value, json};
 use std::{fs, path::PathBuf};
 use uasset_inspection::generic::{inspect_bytes, inspect_bytes_json};

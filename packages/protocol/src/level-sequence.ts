@@ -3,24 +3,37 @@ import { Schema } from "effect";
 import { SavedProperty } from "./uasset-inspection.js";
 import { BlueprintGraphDiagnostic } from "./blueprint-graph.js";
 
+/**
+ * A saved Unreal `FFrameRate`: `numerator / denominator` frames per second. Decoding fails with a
+ * SchemaError when the denominator is below 1.
+ */
 export const SequenceRate = Schema.Struct({
 	numerator: Schema.Int,
 	denominator: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))
 }).annotate({ identifier: "SequenceRate" });
 export interface SequenceRate extends Schema.Schema.Type<typeof SequenceRate> {}
 
+/**
+ * One end of a saved frame range, in tick-resolution frames. An `open` bound is unbounded, so its
+ * `frame` carries no meaning.
+ */
 export const SequenceBound = Schema.Struct({
 	kind: Schema.Literals(["exclusive", "inclusive", "open"]),
 	frame: Schema.Int
 }).annotate({ identifier: "SequenceBound" });
 export interface SequenceBound extends Schema.Schema.Type<typeof SequenceBound> {}
 
+/** A saved frame range, such as a section's range or the playback range, as saved. */
 export const SequenceRange = Schema.Struct({
 	lower: SequenceBound,
 	upper: SequenceBound
 }).annotate({ identifier: "SequenceRange" });
 export interface SequenceRange extends Schema.Schema.Type<typeof SequenceRange> {}
 
+/**
+ * One timed-text key: its frame, the saved source string, and the text's localization namespace
+ * and key, or `unresolved` when the saved text carries no readable identity.
+ */
 export const SequenceTextKey = Schema.Struct({
 	frame: Schema.Int,
 	source: Schema.String,
@@ -37,6 +50,10 @@ export const SequenceTextKey = Schema.Struct({
 }).annotate({ identifier: "SequenceTextKey" });
 export interface SequenceTextKey extends Schema.Schema.Type<typeof SequenceTextKey> {}
 
+/**
+ * One saved scalar curve key at a section-local frame. Interpolation and tangent modes are the
+ * raw saved byte enum values (0-255); values and tangents must be finite or decoding fails.
+ */
 export const SequenceNumericKey = Schema.Struct({
 	frame: Schema.Int,
 	value: Schema.Finite,
@@ -59,6 +76,11 @@ export const SequenceNumericKey = Schema.Struct({
 }).annotate({ identifier: "SequenceNumericKey" });
 export interface SequenceNumericKey extends Schema.Schema.Type<typeof SequenceNumericKey> {}
 
+/**
+ * A saved float/double channel of a scalar or 3D transform section. Indexed paths such as
+ * `Translation[0]` keep axis identity; `enabled` is true for scalars or the saved transform mask
+ * bit, and null when unavailable. A null default means none was saved. At most 1,000,000 keys.
+ */
 export const SequenceNumericChannel = Schema.Struct({
 	property_path: Schema.String,
 	enabled: Schema.Union([Schema.Boolean, Schema.Null]),
@@ -101,6 +123,11 @@ const discreteChannel = <const K extends string, S extends Schema.Top>(kind: K, 
 		)
 	});
 
+/**
+ * A saved bool, integer or byte/enum channel, discriminated by `value_type`. Null flags and
+ * defaults mean absent or undecodable properties, and null `keys` differs from a saved empty
+ * array; no constructor or CDO defaults are inferred.
+ */
 export const SequenceDiscreteChannel = Schema.Union([
 	discreteChannel("bool", Schema.Boolean),
 	discreteChannel(
@@ -122,6 +149,10 @@ const SavedFrame = Schema.Int.check(
 	Schema.isLessThanOrEqualTo(2147483647)
 );
 
+/**
+ * A section's saved row, overlap priority, active/locked flags and frame pre/post-roll, with
+ * blend type and easing kept as reflected properties (schema 6). Null means not saved.
+ */
 export const SequenceSectionSettings = Schema.Struct({
 	row_index: Schema.NullOr(SavedFrame),
 	overlap_priority: Schema.NullOr(SavedFrame),
@@ -133,6 +164,7 @@ export const SequenceSectionSettings = Schema.Struct({
 	easing: Schema.NullOr(Schema.Array(SavedProperty).check(Schema.isMaxLength(1000000)))
 }).annotate({ identifier: "SequenceSectionSettings" });
 export type SequenceSectionSettings = Schema.Schema.Type<typeof SequenceSectionSettings>;
+/** An object-path channel value: its saved soft and hard reference paths, each null when absent. */
 export const SequenceObjectValue = Schema.Struct({
 	soft_path: Schema.NullOr(Schema.String),
 	hard_path: Schema.NullOr(Schema.String)
@@ -150,6 +182,11 @@ const valueKeys = <S extends Schema.Top>(value: S) =>
 			})
 		).check(Schema.isMaxLength(1000000))
 	);
+/**
+ * A saved string or object-path channel, discriminated by `value_type` (schema 6). Strings keep
+ * Unicode and empty values; a null `default_value` or `keys` means not saved, which differs from
+ * a saved empty key array.
+ */
 export const SequenceValueChannel = Schema.Union([
 	Schema.Struct({
 		value_type: Schema.Literal("string"),
@@ -167,6 +204,10 @@ export const SequenceValueChannel = Schema.Union([
 	})
 ]).annotate({ identifier: "SequenceValueChannel" });
 export type SequenceValueChannel = Schema.Schema.Type<typeof SequenceValueChannel>;
+/**
+ * A camera-cut section's saved camera binding (binding GUID, sequence ID and resolve parent
+ * index) and lock-previous-camera flag (schema 6). Null fields were not saved.
+ */
 export const SequenceCameraCut = Schema.Struct({
 	binding: Schema.NullOr(
 		Schema.Struct({
@@ -179,6 +220,10 @@ export const SequenceCameraCut = Schema.Struct({
 }).annotate({ identifier: "SequenceCameraCut" });
 export type SequenceCameraCut = Schema.Schema.Type<typeof SequenceCameraCut>;
 
+/**
+ * One saved section of a track with the keys and channels decoded for it. `camera_cut` is set
+ * only for camera-cut sections; each array holds at most 1,000,000 entries.
+ */
 export const SequenceSection = Schema.Struct({
 	object_path: Schema.String,
 	class_path: Schema.String,
@@ -194,6 +239,11 @@ export const SequenceSection = Schema.Struct({
 }).annotate({ identifier: "SequenceSection" });
 export interface SequenceSection extends Schema.Schema.Type<typeof SequenceSection> {}
 
+/**
+ * One saved Sequencer track. `content` is chosen from the track class; any other class is
+ * `structure_only` and also reported as an `unsupported_track_content` gap. `property_path` is
+ * the saved property binding path, null when none was saved.
+ */
 export const SequenceTrack = Schema.Struct({
 	object_path: Schema.String,
 	class_path: Schema.String,
@@ -213,6 +263,11 @@ export const SequenceTrack = Schema.Struct({
 }).annotate({ identifier: "SequenceTrack" });
 export interface SequenceTrack extends Schema.Schema.Type<typeof SequenceTrack> {}
 
+/**
+ * A saved object binding and its tracks. `kind` separates possessables from spawnables;
+ * `parent_id` is the parent binding's GUID and the template fields hold a spawnable's saved
+ * template identity and class. Sequencer bindings are not evaluated.
+ */
 export const SequenceBinding = Schema.Struct({
 	id: Schema.String,
 	name: Schema.Union([Schema.String, Schema.Null]),
@@ -225,6 +280,11 @@ export const SequenceBinding = Schema.Struct({
 }).annotate({ identifier: "SequenceBinding" });
 export interface SequenceBinding extends Schema.Schema.Type<typeof SequenceBinding> {}
 
+/**
+ * One object, soft-object or DataTable-row reference found anywhere in the package's decoded
+ * properties, with its owner, precise property path and target. `scope` says whether the target
+ * is inside this package; `target_row` is present only for row handles.
+ */
 export const SequenceReference = Schema.Struct({
 	owner_path: Schema.String,
 	owner_class_path: Schema.String,
@@ -236,6 +296,10 @@ export const SequenceReference = Schema.Struct({
 }).annotate({ identifier: "SequenceReference" });
 export interface SequenceReference extends Schema.Schema.Type<typeof SequenceReference> {}
 
+/**
+ * A place where a raw property value, native object tail or unresolved package index could hide
+ * or block a reference. No gaps means the reference inventory is complete for decoded properties.
+ */
 export const SequenceReferenceGap = Schema.Struct({
 	owner_path: Schema.String,
 	property_path: Schema.String,
@@ -247,6 +311,10 @@ export const SequenceReferenceGap = Schema.Struct({
 }).annotate({ identifier: "SequenceReferenceGap" });
 export interface SequenceReferenceGap extends Schema.Schema.Type<typeof SequenceReferenceGap> {}
 
+/**
+ * Sequence content the projection could not represent, such as a missing channel or unsupported
+ * section. Gaps stay explicit; no editor defaults or evaluated values are substituted.
+ */
 export const SequenceGap = Schema.Struct({
 	object_path: Schema.String,
 	property_path: Schema.String,
@@ -262,6 +330,11 @@ export const SequenceGap = Schema.Struct({
 }).annotate({ identifier: "SequenceGap" });
 export interface SequenceGap extends Schema.Schema.Type<typeof SequenceGap> {}
 
+/**
+ * The saved Level Sequence record, schema 6, read from package files without Unreal. Decoding
+ * fails with a SchemaError for any other `schema_version`. Rates and ranges are null when not
+ * saved; referenced packages are not loaded.
+ */
 export const LevelSequenceProjection = Schema.Struct({
 	schema_version: Schema.Literal(6),
 	object_path: Schema.String,
@@ -279,6 +352,10 @@ export interface LevelSequenceProjection extends Schema.Schema.Type<
 	typeof LevelSequenceProjection
 > {}
 
+/**
+ * One saved Level Sequence read: the projection plus the reader's diagnostics and outcome.
+ * `partial` means the reader finished but could not decode everything; see `diagnostics`.
+ */
 export const LevelSequenceRead = Schema.Struct({
 	sequence: LevelSequenceProjection,
 	diagnostics: Schema.Array(BlueprintGraphDiagnostic),

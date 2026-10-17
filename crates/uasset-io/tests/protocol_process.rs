@@ -1,8 +1,95 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "test and benchmark helpers fail loudly on broken fixtures"
+)]
+
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
 
 use serde_json::Value;
 use uasset_io::protocol::{Event, decode_event, validate_event_sequence};
+
+#[test]
+fn decode_error_context_requires_minor_14_and_preserves_strict_legacy_clients() {
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct LegacyError {
+        object_path: String,
+        class_path: Option<String>,
+        kind: String,
+        message: String,
+    }
+    let root = std::env::temp_dir().join(format!("ue-shed-decode-context-{}", std::process::id()));
+    std::fs::create_dir_all(root.join("Content")).unwrap();
+    let fixture =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/unreal-project");
+    std::fs::copy(
+        fixture.join("UEShedFixture.uproject"),
+        root.join("UEShedFixture.uproject"),
+    )
+    .unwrap();
+    let mut bytes =
+        std::fs::read(fixture.join("Content/Fixture/Text/DA_TextOccurrences.uasset")).unwrap();
+    let package = uasset_parser::Package::parse(&bytes).unwrap();
+    let export = package
+        .exports
+        .iter()
+        .find(|export| {
+            export
+                .object_path
+                .to_string()
+                .ends_with(".DA_TextOccurrences")
+        })
+        .unwrap();
+    let offset = usize::try_from(export.serial_offset.get()).unwrap();
+    bytes[offset..offset + 8].fill(0xff);
+    let file = root.join("Content/Bad.uasset");
+    std::fs::write(&file, bytes).unwrap();
+    for minor in [0, 13, 14] {
+        for operation in [
+            serde_json::json!({ "kind": "inspect", "assetPath": file.to_string_lossy() }),
+            serde_json::json!({
+                "kind": "scan", "depth": "full", "projectRoot": root.to_string_lossy(),
+                "paths": ["Content/Bad.uasset"]
+            }),
+        ] {
+            let mut request = base_request(operation);
+            request["contract"]["version"]["minor"] = minor.into();
+            let (success, events, stderr) = run_request(request);
+            assert!(success, "{stderr}");
+            assert_valid_events(&events);
+            let inspection = events
+                .iter()
+                .find_map(|event| {
+                    let result = &event["result"];
+                    match result["kind"].as_str() {
+                        Some("inspect") => Some(&result["inspection"]),
+                        Some("scan_asset") => Some(&result["entry"]["inspection"]),
+                        _ => None,
+                    }
+                })
+                .expect("inspection result");
+            let errors = inspection["decode_errors"].as_array().unwrap();
+            assert!(!errors.is_empty());
+            for error in errors {
+                let modern: uasset_io::protocol_result::SavedAssetDecodeError =
+                    serde_json::from_value(error.clone()).unwrap();
+                if minor < 14 {
+                    let old: LegacyError = serde_json::from_value(error.clone()).unwrap();
+                    assert!(!old.object_path.is_empty());
+                    assert!(old.class_path.is_some());
+                    assert!(!old.kind.is_empty() && !old.message.is_empty());
+                    assert!(modern.field.is_none() && modern.offset.is_none());
+                } else {
+                    assert!(modern.field.is_some() && modern.offset.is_some());
+                    assert!(serde_json::from_value::<LegacyError>(error.clone()).is_err());
+                }
+            }
+        }
+    }
+    std::fs::remove_dir_all(root).unwrap();
+}
 
 #[test]
 fn header_gather_evidence_is_negotiated_and_legacy_output_stays_unchanged() {

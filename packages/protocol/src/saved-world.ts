@@ -2,6 +2,10 @@ import { Schema } from "effect";
 
 const NonNegativeInt = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 
+/**
+ * An Unreal vector from a resolved saved transform: world units (centimetres) for a location, a
+ * per-axis factor for a scale. Decoding fails with a SchemaError on a NaN or infinite component.
+ */
 export const SavedWorldVector = Schema.Struct({
 	x: Schema.Finite,
 	y: Schema.Finite,
@@ -9,6 +13,10 @@ export const SavedWorldVector = Schema.Struct({
 });
 export type SavedWorldVector = Schema.Schema.Type<typeof SavedWorldVector>;
 
+/**
+ * A rotation quaternion converted from saved component rotators and composed up the attachment
+ * chain. Decoding fails with a SchemaError on a NaN or infinite component.
+ */
 export const SavedWorldQuaternion = Schema.Struct({
 	w: Schema.Finite,
 	x: Schema.Finite,
@@ -24,6 +32,12 @@ export const SavedWorldAttachment = Schema.Struct({
 });
 export type SavedWorldAttachment = Schema.Schema.Type<typeof SavedWorldAttachment>;
 
+/**
+ * An actor's world transform, composed from its root component's saved relative transforms up
+ * the attachment chain, or the `status` saying why it could not be: no root component, a missing
+ * or ambiguous parent, a cycle, an attached component with absolute rotation or scale, or
+ * non-finite saved values. The failing component or parent path is included when known.
+ */
 export const SavedWorldTransform = Schema.Union([
 	Schema.Struct({ status: Schema.Literal("missing_root_component") }),
 	Schema.Struct({
@@ -62,6 +76,11 @@ export const SavedWorldMap = Schema.Struct({
 });
 export type SavedWorldMap = Schema.Schema.Type<typeof SavedWorldMap>;
 
+/**
+ * One actor read from the map's saved packages: an export with a `RootComponent`. Optional keys
+ * are omitted when the saved data does not provide them; fields marked contract 2.1 are always
+ * absent from 2.0 documents.
+ */
 export const SavedWorldActor = Schema.Struct({
 	actorGuid: Schema.optionalKey(Schema.String),
 	actorPath: Schema.String,
@@ -128,6 +147,7 @@ export const SavedWorldChoice = Schema.Union([
 	})
 ]);
 export type SavedWorldChoice = Schema.Schema.Type<typeof SavedWorldChoice>;
+/** Decodes a project-choice reply; fails with a SchemaError for an unknown status or shape. */
 export const decodeSavedWorldChoice = Schema.decodeUnknownEffect(SavedWorldChoice);
 
 /** A map projection from saved project files, independent of a running Unreal Editor. */
@@ -158,6 +178,10 @@ export const SavedWorld = Schema.Struct({
 }).annotate({ identifier: "SavedWorld" });
 export type SavedWorld = Schema.Schema.Type<typeof SavedWorld>;
 
+/**
+ * A snapshot of the current saved-world read. `totalPackages` stays 0 until the reader reports a
+ * total, and `actorsFound` is filled in once the world has been read.
+ */
 export const SavedWorldProgress = Schema.Struct({
 	actorsFound: NonNegativeInt,
 	phase: Schema.Literals(["idle", "enumerating", "scanning", "resolving", "ready", "failed"]),
@@ -165,6 +189,11 @@ export const SavedWorldProgress = Schema.Struct({
 	totalPackages: NonNegativeInt
 });
 export type SavedWorldProgress = Schema.Schema.Type<typeof SavedWorldProgress>;
+/** Decodes a progress snapshot; fails with a SchemaError for an unknown phase or negative count. */
 export const decodeSavedWorldProgress = Schema.decodeUnknownEffect(SavedWorldProgress);
 
+/**
+ * Decodes a saved-world document; fails with a SchemaError for any contract other than
+ * `unreal-saved-world` 2.0 or 2.1, or a malformed shape.
+ */
 export const decodeSavedWorld = Schema.decodeUnknownEffect(SavedWorld);

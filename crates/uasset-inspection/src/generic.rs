@@ -100,6 +100,12 @@ pub struct DecodeErrorOutput {
     pub class_path: Option<String>,
     pub kind: &'static str,
     pub message: String,
+    /// The logical field being read when decoding failed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub field: Option<String>,
+    /// The absolute byte offset in the package where decoding failed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub offset: Option<u64>,
 }
 
 impl InspectOutput {
@@ -160,6 +166,8 @@ impl InspectOutput {
                     class_path: None,
                     kind: ErrorOutput::package(String::new(), &error).kind,
                     message: error.to_string(),
+                    field: Some(error.path().to_owned()),
+                    offset: error.offset(),
                 });
                 None
             }
@@ -183,6 +191,8 @@ impl InspectOutput {
                         class_path: export.class_path.as_ref().map(ToString::to_string),
                         kind: asset_error_kind_name(error.kind()),
                         message: error.message().to_owned(),
+                        field: error.field().map(ToOwned::to_owned),
+                        offset: error.offset(),
                     });
                 }
             }

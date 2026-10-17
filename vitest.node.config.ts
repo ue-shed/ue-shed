@@ -15,6 +15,7 @@ export default defineProject({
 			"scripts/game-text-dictionary.test.ts",
 			"scripts/localization-import.test.ts",
 			"scripts/package-text-reader.test.ts",
+			"scripts/package-import-usages.test.ts",
 			"scripts/package-text-record.test.ts",
 			"scripts/package-text-layer.test.ts",
 			"scripts/columnar-join.test.ts",

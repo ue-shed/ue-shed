@@ -35,3 +35,7 @@ unsafe_code = "forbid"
 
 [lints.clippy]
 all = "warn"
+# A malformed package or bad input must be a typed error, never a panic. Invariants that
+# genuinely hold use `#[expect]` with a reason; tests may unwrap (see clippy.toml).
+unwrap_used = "warn"
+expect_used = "warn"

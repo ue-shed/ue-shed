@@ -452,8 +452,7 @@ pub fn read_tagged_property_stream(
         // terminator check borrows instead of allocating: a name resolves to
         // exactly "None" only when its base is "None" and it is unnumbered.
         // `validate_name_ref` above already bounded the index.
-        if name.number() == 0
-            && names[usize::try_from(name.index().get()).expect("u32 fits in usize")] == "None"
+        if name.number() == 0 && names[crate::convert::usize_from_u32(name.index().get())] == "None"
         {
             return Ok(PropertyStream {
                 class_extensions: None,
@@ -481,7 +480,7 @@ pub fn read_tagged_property_stream(
                 format!("property payload size must be non-negative, got {size}"),
             ));
         }
-        let payload_size = u64::try_from(size).expect("size was checked as non-negative");
+        let payload_size = u64::from(crate::convert::u32_from_checked(size));
         let flags = PropertyTagFlags(reader.read_u8(&format_args!("{path}.Tag.Flags"))?);
         let array_index = if flags.contains(TAG_FLAG_HAS_ARRAY_INDEX) {
             reader.read_i32(&format_args!("{path}.Tag.ArrayIndex"))?
@@ -688,7 +687,7 @@ fn read_property_type_name_at_depth(
             format!("type-name inner count must be non-negative, got {inner_count}"),
         ));
     }
-    let inner_count = usize::try_from(inner_count).expect("non-negative i32 fits in usize");
+    let inner_count = crate::convert::usize_from_checked(inner_count);
     let capacity = reader.checked_vec_capacity::<PropertyTypeName>(
         inner_count,
         12,

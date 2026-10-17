@@ -888,6 +888,8 @@ mod tests {
             class_path: None,
             kind: SavedAssetDecodeErrorKind::UnsupportedCapability,
             message: "Unsupported saved evidence".to_owned(),
+            field: None,
+            offset: None,
         });
         let (snapshot, partial) =
             project_authoring_table(inspection, true, &|_| Ok(())).expect("partial snapshot");

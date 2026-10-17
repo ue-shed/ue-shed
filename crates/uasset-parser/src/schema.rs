@@ -122,6 +122,10 @@ impl SourceModel {
 /// The committed model contains engine declarations only. Project and fixture models remain
 /// explicit inputs to conformance or host code and are never silently baked into the parser.
 #[must_use]
+#[expect(
+    clippy::expect_used,
+    reason = "the model is compiled in and every parser test loads it, so a bad model fails CI"
+)]
 pub fn embedded_source_model() -> &'static SourceModel {
     static MODEL: Lazy<SourceModel> = Lazy::new(|| {
         serde_json::from_str(include_str!("../source-models/ue57-data-assets.json"))
@@ -132,6 +136,10 @@ pub fn embedded_source_model() -> &'static SourceModel {
 
 /// Source-derived UE 5.8 property-bag fragments whose framing differs from the baseline.
 #[must_use]
+#[expect(
+    clippy::expect_used,
+    reason = "the model is compiled in and the UE 5.8 property-bag tests load it, so a bad model fails CI"
+)]
 pub fn embedded_property_bag_ue58_model() -> &'static SourceModel {
     static MODEL: Lazy<SourceModel> = Lazy::new(|| {
         serde_json::from_str(include_str!("../source-models/ue58-property-bags.json"))

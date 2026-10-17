@@ -5,6 +5,7 @@ import { Schema } from "effect";
  * plugin applies through Unreal's own id rules, over Remote Control or its commandlet.
  */
 export const GAME_TEXT_ACTIONS_CONTRACT = "ue-shed-game-text-actions";
+/** Exact wire version accepted by the editor plugin; callers must send this value. */
 export const GAME_TEXT_ACTIONS_VERSION = "1.0";
 /** The most places one request may edit. */
 export const GAME_TEXT_ACTIONS_MAX_ACTIONS = 256;
@@ -33,6 +34,7 @@ export const GameTextActionPlace = Schema.Struct({
 }).annotate({ identifier: "GameTextActionPlace" });
 export type GameTextActionPlace = typeof GameTextActionPlace.Type;
 
+/** Identity or source edit; adopt_key also requires the source belonging to the adopted key. */
 export const GameTextActionEdit = Schema.Union([
 	Schema.Struct({ kind: Schema.Literal("change_key"), namespace: Field, key: NonEmptyField }),
 	Schema.Struct({ kind: Schema.Literal("regenerate_key") }),
@@ -46,6 +48,7 @@ export const GameTextActionEdit = Schema.Union([
 ]).annotate({ identifier: "GameTextActionEdit" });
 export type GameTextActionEdit = typeof GameTextActionEdit.Type;
 
+/** One edit guarded by the scanned identity and source; stale expectations reject the request. */
 export const GameTextAction = Schema.Struct({
 	id: NonEmptyField,
 	place: GameTextActionPlace,
@@ -54,6 +57,7 @@ export const GameTextAction = Schema.Struct({
 }).annotate({ identifier: "GameTextAction" });
 export type GameTextAction = typeof GameTextAction.Type;
 
+/** A bounded dry run or apply request; saving requires compilation and explicit opt-in. */
 export const GameTextActionsRequest = Schema.Struct({
 	contract: Schema.Literal(GAME_TEXT_ACTIONS_CONTRACT),
 	version: Schema.Literal(GAME_TEXT_ACTIONS_VERSION),
@@ -69,6 +73,7 @@ export const GameTextActionsRequest = Schema.Struct({
 }).annotate({ identifier: "GameTextActionsRequest" });
 export type GameTextActionsRequest = typeof GameTextActionsRequest.Type;
 
+/** Stable rejection and apply-failure categories; recovery fields determine safe follow-up. */
 export const GameTextActionErrorCode = Schema.Literals([
 	"invalid_request",
 	"package_mismatch",
@@ -85,6 +90,7 @@ export const GameTextActionErrorCode = Schema.Literals([
 ]);
 export type GameTextActionErrorCode = typeof GameTextActionErrorCode.Type;
 
+/** Required recovery action; reconcile requires inspecting editor state before resubmitting. */
 export const GameTextActionNextStep = Schema.Literals([
 	"fix_input",
 	"retry",
@@ -93,6 +99,7 @@ export const GameTextActionNextStep = Schema.Literals([
 ]);
 export type GameTextActionNextStep = typeof GameTextActionNextStep.Type;
 
+/** Action failure with replay guidance; retrySafe alone does not authorize automatic retries. */
 export const GameTextActionError = Schema.Struct({
 	code: GameTextActionErrorCode,
 	actionId: Schema.optionalKey(Schema.String),
@@ -112,6 +119,7 @@ export const GameTextActionOutcomeIdentity = Schema.Struct({
 }).annotate({ identifier: "GameTextActionOutcomeIdentity" });
 export type GameTextActionOutcomeIdentity = typeof GameTextActionOutcomeIdentity.Type;
 
+/** Per-action editor state; unknown outcomes require reconciliation even if the request failed. */
 export const GameTextActionOutcome = Schema.Struct({
 	id: Schema.String,
 	place: GameTextActionPlace,

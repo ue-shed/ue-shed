@@ -54,16 +54,12 @@ fn lower(
         "uint8" => NativeLayout::UInt8,
         _ => {
             if let Some(targets) = aliases.get(cpp_type) {
-                if targets.len() != 1 {
+                let (Some(target), 1) = (targets.first(), targets.len()) else {
                     return Err(GeneratorError::new(format!(
                         "ambiguous native alias {cpp_type} across configured sources"
                     )));
-                }
-                return lower(
-                    targets.first().expect("one alias target"),
-                    aliases,
-                    depth + 1,
-                );
+                };
+                return lower(target, aliases, depth + 1);
             }
             if let Some(inner) = super::generic_argument(cpp_type, "TArray") {
                 return Ok(NativeLayout::array(lower(inner, aliases, depth + 1)?));

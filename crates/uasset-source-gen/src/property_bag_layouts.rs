@@ -38,7 +38,11 @@ pub(super) fn verify_types(tokens: &[Token]) -> Result<(), GeneratorError> {
             .position(|t| t.text == "}")
             .ok_or_else(|| GeneratorError::new(format!("unclosed {name}")))?;
         let text: Vec<_> = body[..end].iter().map(|t| t.text.as_str()).collect();
-        let begin = text.iter().position(|t| *t == "{").unwrap() + 1;
+        let begin = text
+            .iter()
+            .position(|t| *t == "{")
+            .ok_or_else(|| GeneratorError::new(format!("{name} has no body")))?
+            + 1;
         let mut actual = Vec::new();
         let mut i = begin;
         while i < text.len() {

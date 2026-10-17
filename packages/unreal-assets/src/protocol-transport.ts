@@ -1241,7 +1241,7 @@ async function collectProtocolScan(
 			maximumOutputBytes: MAX_PROTOCOL_OUTPUT_BYTES,
 			timeoutMs: configuration.catalogTimeoutMs
 		},
-		{ contractMinor: options.headerData ? 9 : 0 }
+		{ contractMinor: options.depth === "header" ? (options.headerData ? 9 : 0) : 14 }
 	);
 	const assets: SavedAssetScanEntry[] = [];
 	const failures: SavedAssetScanFailure[] = [];

@@ -145,11 +145,11 @@ impl Package {
             else {
                 unreachable!()
             };
-            let PropertyValue::String(value) = fields.pop().unwrap().value else {
-                unreachable!()
-            };
-            let PropertyValue::Name(name) = fields.pop().unwrap().value else {
-                unreachable!()
+            let (Some(PropertyValue::String(value)), Some(PropertyValue::Name(name))) = (
+                fields.pop().map(|field| field.value),
+                fields.pop().map(|field| field.value),
+            ) else {
+                unreachable!("the generated FNameStringPair layout is a name then a string")
             };
             let name = self
                 .resolve_name(name)

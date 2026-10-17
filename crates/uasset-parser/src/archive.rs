@@ -230,7 +230,7 @@ impl<'a> Reader<'a> {
             source,
             span: Span {
                 offset: 0,
-                len: u64::try_from(source.len()).expect("usize always fits in u64"),
+                len: crate::convert::u64_from_usize(source.len()),
             },
             position: 0,
             limits,
@@ -484,8 +484,8 @@ impl<'a> Reader<'a> {
         }
 
         Ok(NameRef {
-            index: NameIndex(u32::try_from(index).expect("index was checked as non-negative")),
-            number: u32::try_from(number).expect("number was checked as non-negative"),
+            index: NameIndex(crate::convert::u32_from_checked(index)),
+            number: crate::convert::u32_from_checked(number),
         })
     }
 
@@ -513,7 +513,7 @@ impl<'a> Reader<'a> {
         match signed_length {
             0 => Ok(String::new()),
             1.. => self.read_ansi_string(
-                u32::try_from(signed_length).expect("positive i32 always fits in u32"),
+                crate::convert::u32_from_checked(signed_length),
                 length_offset,
                 path,
                 true,
@@ -545,7 +545,7 @@ impl<'a> Reader<'a> {
         match signed_length {
             0 => Ok(String::new()),
             1.. => self.read_ansi_string(
-                u32::try_from(signed_length).expect("positive i32 always fits in u32"),
+                crate::convert::u32_from_checked(signed_length),
                 length_offset,
                 path,
                 false,
@@ -634,7 +634,7 @@ impl<'a> Reader<'a> {
                 format!("count must be non-negative, got {count}"),
             ));
         }
-        let count = usize::try_from(count).expect("non-negative i32 always fits in usize");
+        let count = crate::convert::usize_from_checked(count);
         if count > self.limits.max_array_elements {
             return Err(ArchiveError::new(
                 ArchiveErrorKind::InvalidCount,
@@ -740,9 +740,7 @@ impl<'a> Reader<'a> {
         let to_string = |content: &[u8]| {
             if content.is_ascii() {
                 // ASCII is already UTF-8; copy it without encoding each character separately.
-                str::from_utf8(content)
-                    .expect("ASCII is valid UTF-8")
-                    .to_owned()
+                String::from_utf8_lossy(content).into_owned()
             } else {
                 content.iter().map(|byte| char::from(*byte)).collect()
             }

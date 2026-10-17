@@ -114,6 +114,12 @@ compiled representation copy of the Blueprint's authored text; consumers can fol
 authored site. The field is omitted when the package has no Blueprint, and the worker strips it
 below minor 12.
 
+Minor version 1.14 adds optional `field` and `offset` context to inspection decode errors, including
+full-depth scan results. The worker suppresses both keys for earlier protocol minors so existing
+strict consumers retain the original error shape. Current public inspection and full-scan readers
+request minor 14; their optional fields also accept older workers that omit this context. Header
+scans keep their existing minor negotiation. This does not alter decode-error counts or partial status.
+
 Result frames use an explicit result kind. Generic inspection, authoring, scan, compact text,
 compact texture, Blueprint graph, and saved-world values each have a named schema; there is no
 untyped result field.

@@ -63,10 +63,10 @@
 | D8   | Layers and test layers                         | D    | IN PROGRESS — #125                      |
 | D9   | One progress mechanism, one completeness shape | D    | IN PROGRESS — #125                      |
 | D10  | Workspace orchestration as a package           | D    | DONE — #124                             |
-| D11  | JSDoc on public exports                        | D    | TODO                                    |
+| D11  | JSDoc on public exports                        | D    | IN PROGRESS — #123; two packages        |
 | D12  | Small cleanups                                 | D    | IN PROGRESS — #107                      |
-| D13  | API surface of the other host-facing packages  | D    | TODO                                    |
-| D14  | Native error audit                             | D    | TODO                                    |
+| D13  | API surface of the other host-facing packages  | D    | IN PROGRESS — #123; measured            |
+| D14  | Native error audit                             | D    | IN PROGRESS — #123; Rust subset         |
 | R    | 0.17.0 release preparation                     | —    | TODO                                    |
 
 ## Context

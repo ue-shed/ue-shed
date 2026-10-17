@@ -5,6 +5,10 @@ const NonNegativeInt = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)).annota
 });
 const SavedFloatingPoint = Schema.NullOr(Schema.Number);
 
+/**
+ * One file in a scan's opt-in inventory: a package or one of its sidecar files. `size` is in
+ * bytes and `modifiedMs` is the file's modification time in (possibly fractional) milliseconds.
+ */
 export const SavedAssetManifestEntry = Schema.Struct({
 	kind: Schema.Literals(["package", "sidecar"]),
 	modifiedMs: Schema.Number,
@@ -99,9 +103,15 @@ export type SavedProperty = SavedPropertyValue & {
 	readonly type: string;
 };
 
+/**
+ * Recursive codec for one decoded saved property value, discriminated by `value_kind`.
+ * Floating-point fields are `null` when the saved value is not finite; `raw` marks bytes the
+ * decoder did not interpret, with their size and the reason.
+ */
 export const SavedPropertyValue: Schema.Codec<SavedPropertyValue> = Schema.suspend(
 	() => SavedPropertyValueUnion
 ).annotate({ identifier: "SavedPropertyValue" });
+/** A {@link SavedPropertyValue} plus the property's saved `name` and Unreal `type`. */
 export const SavedProperty: Schema.Codec<SavedProperty> = Schema.suspend(() =>
 	SavedPropertyValueUnion.mapMembers(
 		Tuple.map(Schema.fieldsAssign({ name: Schema.String, type: Schema.String }))
@@ -200,6 +210,10 @@ const SavedPropertyValueUnion = Schema.Union([
 	})
 ]);
 
+/**
+ * An export the inspector could not decode. Any decode error makes the inspection `partial`
+ * while the package's other exports are still reported.
+ */
 export const SavedAssetDecodeError = Schema.Struct({
 	object_path: Schema.String,
 	class_path: Schema.optional(Schema.String),
@@ -210,10 +224,19 @@ export const SavedAssetDecodeError = Schema.Struct({
 		"unsupported_version",
 		"unsupported_capability"
 	]),
-	message: Schema.String
+	message: Schema.String,
+	/** The logical field being read when decoding failed, such as `Exports[3].Properties.Name`. */
+	field: Schema.optional(Schema.String),
+	/** The absolute byte offset in the package where decoding failed. */
+	offset: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)))
 }).annotate({ identifier: "SavedAssetDecodeError" });
 export type SavedAssetDecodeError = Schema.Schema.Type<typeof SavedAssetDecodeError>;
 
+/**
+ * Schema-8 generic inspection of one saved package. `status` is `partial` exactly when
+ * `decode_errors` is non-empty; header sizes are in bytes, and a missing `decode_errors` or
+ * `properties` decodes as an empty array.
+ */
 export const SavedAssetInspection = Schema.Struct({
 	metadata: Schema.optionalKey(
 		Schema.Struct({
@@ -358,6 +381,11 @@ export const SavedAssetInspection = Schema.Struct({
 }).annotate({ identifier: "SavedAssetInspection" });
 export type SavedAssetInspection = Schema.Schema.Type<typeof SavedAssetInspection>;
 
+/**
+ * Narrow view of the same schema-8 inspection JSON that keeps only each asset's kind, object path
+ * and table parentage, so catalogs can list tables without decoding properties. Any asset kind
+ * string is accepted.
+ */
 export const SavedAssetCatalogInspection = Schema.Struct({
 	assets: Schema.Array(
 		Schema.Struct({
@@ -379,6 +407,11 @@ export const SavedAssetCatalogInspection = Schema.Struct({
 }).annotate({ identifier: "SavedAssetCatalogInspection" });
 export type SavedAssetCatalogInspection = Schema.Schema.Type<typeof SavedAssetCatalogInspection>;
 
+/**
+ * A DataTable or CompositeDataTable found in the project's saved files. `completeness` is
+ * `partial` when its package decoded partially, and `schema` is always `unavailable` with a
+ * reason because the row struct's schema is not resolved here.
+ */
 export const SavedTableDescriptor = Schema.Struct({
 	assetPath: Schema.String,
 	authority: Schema.Struct({ kind: Schema.Literal("project_files"), packageName: Schema.String }),
@@ -391,6 +424,10 @@ export const SavedTableDescriptor = Schema.Struct({
 }).annotate({ identifier: "SavedTableDescriptor" });
 export type SavedTableDescriptor = Schema.Schema.Type<typeof SavedTableDescriptor>;
 
+/**
+ * The tables found by one project scan, with per-path scan diagnostics. `retrySafe` says whether
+ * repeating the scan may succeed for that path.
+ */
 export const SavedTableCatalog = Schema.Struct({
 	diagnostics: Schema.Array(
 		Schema.Struct({
@@ -406,6 +443,10 @@ export const SavedTableCatalog = Schema.Struct({
 }).annotate({ identifier: "SavedTableCatalog" });
 export type SavedTableCatalog = Schema.Schema.Type<typeof SavedTableCatalog>;
 
+/**
+ * Polling snapshot of a table catalog build. Counts are packages; `tablesFound` advances once per
+ * emitted package, not per table, so it drives progress rather than a result count.
+ */
 export const SavedTableCatalogProgress = Schema.Struct({
 	cacheHits: NonNegativeInt,
 	phase: Schema.Literals(["idle", "enumerating", "scanning", "writing_cache", "ready", "failed"]),
@@ -415,6 +456,10 @@ export const SavedTableCatalogProgress = Schema.Struct({
 }).annotate({ identifier: "SavedTableCatalogProgress" });
 export type SavedTableCatalogProgress = Schema.Schema.Type<typeof SavedTableCatalogProgress>;
 
+/**
+ * One export from a package's export table. `class_path` is absent when the export's class could
+ * not be resolved; `class_name` is the segment of `class_path` after its last `.`.
+ */
 export const SavedAssetHeaderExport = Schema.Struct({
 	class_name: Schema.optional(Schema.String),
 	class_path: Schema.optional(Schema.String),
@@ -422,6 +467,11 @@ export const SavedAssetHeaderExport = Schema.Struct({
 }).annotate({ identifier: "SavedAssetHeaderExport" });
 export type SavedAssetHeaderExport = Schema.Schema.Type<typeof SavedAssetHeaderExport>;
 
+/**
+ * v1.9 package-summary evidence read without decoding payloads: the raw package flag bits, the
+ * gatherable text table's entry count and byte offset (both 0 when the summary has no table),
+ * and whether the complete name map contains `TextProperty`.
+ */
 export const PackageHeaderData = Schema.Struct({
 	packageFlags: NonNegativeInt,
 	gatherableTextDataCount: NonNegativeInt,
@@ -430,6 +480,11 @@ export const PackageHeaderData = Schema.Struct({
 }).annotate({ identifier: "PackageHeaderData" });
 export type PackageHeaderData = typeof PackageHeaderData.Type;
 
+/**
+ * Header-depth scan evidence for one package. `matched_names` lists the requested name filters
+ * found in its name map; `package.header_data` needs v1.9 and the scan's opt-in, and a missing
+ * `exports` decodes as an empty array.
+ */
 export const SavedAssetHeader = Schema.Struct({
 	exports: Schema.Array(SavedAssetHeaderExport).pipe(
 		Schema.withDecodingDefaultKey(Effect.succeed([]))
@@ -444,6 +499,10 @@ export const SavedAssetHeader = Schema.Struct({
 }).annotate({ identifier: "SavedAssetHeader" });
 export type SavedAssetHeader = Schema.Schema.Type<typeof SavedAssetHeader>;
 
+/**
+ * One package a scan emitted, shaped by the requested `depth`: a full inspection or header
+ * evidence. `fileBytes` is the package file's size in bytes.
+ */
 export const SavedAssetScanEntry = Schema.Union([
 	Schema.Struct({
 		depth: Schema.Literal("full"),
@@ -457,17 +516,25 @@ export const SavedAssetScanEntry = Schema.Union([
 	})
 ]).annotate({ identifier: "SavedAssetScanEntry" });
 export type SavedAssetScanEntry = Schema.Schema.Type<typeof SavedAssetScanEntry>;
+/** A scan entry from a `full` depth scan, carrying the complete inspection. */
 export type SavedAssetFullScanEntry = Extract<SavedAssetScanEntry, { readonly depth: "full" }>;
+/** A scan entry from a `header` depth scan, carrying header evidence only. */
 export type SavedAssetHeaderScanEntry = Extract<SavedAssetScanEntry, { readonly depth: "header" }>;
 
+/** Narrows a scan entry to a full inspection by its `depth`. */
 export function isFullScanEntry(entry: SavedAssetScanEntry): entry is SavedAssetFullScanEntry {
 	return entry.depth === "full";
 }
 
+/** Narrows a scan entry to header evidence by its `depth`. */
 export function isHeaderScanEntry(entry: SavedAssetScanEntry): entry is SavedAssetHeaderScanEntry {
 	return entry.depth === "header";
 }
 
+/**
+ * A package a scan could not read; the scan continues with the others. `retrySafe` says whether
+ * repeating the scan may succeed for that path.
+ */
 export const SavedAssetScanFailure = Schema.Struct({
 	code: Schema.String,
 	message: Schema.String,
@@ -485,6 +552,11 @@ const ScanDiagnostics = Schema.Array(
 	})
 );
 
+/**
+ * Totals for one scan. `scannedAssets` counts discovered packages and `emittedAssets` the entries
+ * sent; skipped packages, such as those not matching the filters, are counted separately.
+ * `inventoryComplete` is false when some inventory file's metadata could not be read.
+ */
 export const SavedAssetScanSummary = Schema.Struct({
 	cacheHits: NonNegativeInt,
 	depth: Schema.Literals(["header", "full"]),
@@ -502,6 +574,7 @@ export const SavedAssetScanSummary = Schema.Struct({
 }).annotate({ identifier: "SavedAssetScanSummary" });
 export type SavedAssetScanSummary = Schema.Schema.Type<typeof SavedAssetScanSummary>;
 
+/** Polling snapshot of a running scan; all counts are packages. */
 export const SavedAssetScanProgress = Schema.Struct({
 	cacheHits: NonNegativeInt,
 	emittedAssets: NonNegativeInt,
@@ -511,6 +584,10 @@ export const SavedAssetScanProgress = Schema.Struct({
 }).annotate({ identifier: "SavedAssetScanProgress" });
 export type SavedAssetScanProgress = Schema.Schema.Type<typeof SavedAssetScanProgress>;
 
+/**
+ * A completed scan gathered from the result stream: emitted entries, per-package failures, and the
+ * summary. `inventory` is present only when the scan requested it.
+ */
 export const SavedAssetScan = Schema.Struct({
 	assets: Schema.Array(SavedAssetScanEntry),
 	failures: Schema.Array(SavedAssetScanFailure),
@@ -555,6 +632,10 @@ const TextExtractionLocation = Schema.Union([
 	})
 ]);
 
+/**
+ * One saved text value and where it lives. `identity` is its namespace and key, its String Table
+ * reference, or why it has none; `dev_notes` from older producers decodes as `""`.
+ */
 export const SavedAssetTextOccurrence = Schema.Struct({
 	source: Schema.String,
 	dev_notes: Schema.String.pipe(Schema.withDecodingDefaultKey(Effect.succeed(""))),
@@ -570,6 +651,7 @@ export const SavedAssetTextOccurrence = Schema.Struct({
 }).annotate({ identifier: "SavedAssetTextOccurrence" });
 export type SavedAssetTextOccurrence = Schema.Schema.Type<typeof SavedAssetTextOccurrence>;
 
+/** A property whose text could not be extracted, so text there may be missing from the result. */
 export const SavedAssetTextCoverageGap = Schema.Struct({
 	object_path: Schema.String,
 	property_path: Schema.String,
@@ -609,6 +691,10 @@ const ScanFailureLine = Schema.Struct({
 	retrySafe: Schema.Boolean
 });
 
+/**
+ * One `extract_text` stream event, discriminated by `event`: an occurrence, a coverage gap, a
+ * per-package total, the closing `text_summary`, or an `error` line for a package that failed.
+ */
 export const SavedAssetTextExtractionEvent = Schema.Union([
 	Schema.Struct({
 		event: Schema.Literal("text_occurrence"),
@@ -640,6 +726,10 @@ export type SavedAssetTextExtractionEvent = Schema.Schema.Type<
 	typeof SavedAssetTextExtractionEvent
 >;
 
+/**
+ * v1.10: a runtime entry in the package's gatherable text table that no decoded occurrence
+ * matched by namespace and key. `site` is Unreal's description of where the text is used.
+ */
 export const SavedAssetMissingGatherableText = Schema.Struct({
 	namespace: Schema.String,
 	key: Schema.String,
@@ -696,6 +786,10 @@ export const SavedAssetPackageTextRecord = Schema.Struct({
 }).annotate({ identifier: "SavedAssetPackageTextRecord" });
 export type SavedAssetPackageTextRecord = typeof SavedAssetPackageTextRecord.Type;
 
+/**
+ * One v1.8 `extract_text_packages` stream event: a package text record, the closing
+ * `text_summary`, or an `error` line for a package that failed.
+ */
 export const SavedAssetPackageTextEvent = Schema.Union([
 	SavedAssetPackageTextRecord,
 	Schema.Struct({
@@ -724,6 +818,10 @@ const TextureExtractionDimensions = Schema.Struct({
 	height: NonNegativeInt
 });
 
+/**
+ * Saved evidence for one texture. Each field is either `available` with its source (`serialized`
+ * or `file`) or `unavailable` with a reason; sizes are in bytes and dimensions in pixels.
+ */
 export const SavedAssetTextureRecord = Schema.Struct({
 	object_path: Schema.String,
 	package_file_bytes: TextureExtractionEvidence(NonNegativeInt),
@@ -737,6 +835,10 @@ export const SavedAssetTextureRecord = Schema.Struct({
 }).annotate({ identifier: "SavedAssetTextureRecord" });
 export type SavedAssetTextureRecord = Schema.Schema.Type<typeof SavedAssetTextureRecord>;
 
+/**
+ * One `extract_texture` stream event: a texture record, a per-package total, the closing
+ * `texture_summary`, or an `error` line for a package that failed.
+ */
 export const SavedAssetTextureExtractionEvent = Schema.Union([
 	Schema.Struct({
 		event: Schema.Literal("texture_record"),
@@ -760,7 +862,15 @@ export type SavedAssetTextureExtractionEvent = Schema.Schema.Type<
 	typeof SavedAssetTextureExtractionEvent
 >;
 
+/**
+ * Decodes untrusted inspection JSON. Fails with a `SchemaError` when the shape does not match or
+ * `schema_version` is not 8.
+ */
 export const decodeSavedAssetInspection = Schema.decodeUnknownEffect(SavedAssetInspection);
+/**
+ * Decodes untrusted inspection JSON into the narrow catalog view. Fails with a `SchemaError` when
+ * the retained fields do not match or `schema_version` is not 8.
+ */
 export const decodeSavedAssetCatalogInspection = Schema.decodeUnknownEffect(
 	SavedAssetCatalogInspection
 );

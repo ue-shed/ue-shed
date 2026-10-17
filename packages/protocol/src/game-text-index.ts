@@ -4,6 +4,7 @@ const Text = Schema.NonEmptyString.check(Schema.isMaxLength(32767));
 const Natural = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 const Id = Natural.check(Schema.isLessThanOrEqualTo(0xffffffff));
 const ConfigurationIdentity = { cacheRoot: Text, projectKey: Text, targetKey: Text };
+/** Persistent index identity; shared projects may isolate target joins with a validated prefix. */
 export const GameTextIndexConfiguration = Schema.Union([
 	Schema.Struct({ ...ConfigurationIdentity, sharedProject: Schema.Literal(false) }),
 	Schema.Struct({
@@ -17,6 +18,7 @@ export const GameTextIndexConfiguration = Schema.Union([
 const Configuration = { configuration: GameTextIndexConfiguration };
 const Name = Schema.NonEmptyString.check(Schema.isMaxLength(1024));
 const Names = Schema.Array(Name).check(Schema.isMaxLength(2560));
+/** One native index operation; begin/end own its session, and publish/join mutate cached state. */
 export const GameTextIndexBuildRequest = Schema.Union([
 	Schema.Struct({ action: Schema.Literal("capabilities") }),
 	...(["begin", "end", "status"] as const).map((action) =>
@@ -63,6 +65,7 @@ export const GameTextIndexBuildRequest = Schema.Union([
 ]).annotate({ identifier: "GameTextIndexBuildRequest" });
 export type GameTextIndexBuildRequest = typeof GameTextIndexBuildRequest.Type;
 
+/** Join result sizes and counts; null metrics are unavailable, rather than zero work. */
 export const GameTextIndexJoinOutcome = Schema.Struct({
 	rebuilt: Schema.Boolean,
 	strategy: Schema.NullOr(Schema.Literals(["full", "incremental"])),

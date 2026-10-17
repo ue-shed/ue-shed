@@ -233,6 +233,10 @@ fn run_refresh<C: CatalogSnapshot, S: ProjectScanner>(
     prior_entries.sort_by(|a, b| a.signature.relative_path.cmp(&b.signature.relative_path));
     let mut token = Some(catalog.begin_refresh()?);
     let result = (|| {
+        #[expect(
+            clippy::expect_used,
+            reason = "the token is set above and taken only at commit, after this borrow ends"
+        )]
         let staging = token
             .as_ref()
             .expect("staging token present for refresh body");
@@ -408,6 +412,10 @@ fn run_refresh<C: CatalogSnapshot, S: ProjectScanner>(
             },
             diagnostics,
         };
+        #[expect(
+            clippy::expect_used,
+            reason = "the token is set before the refresh body and taken only here or on failure"
+        )]
         let staging = token.take().expect("staging token present for commit");
         catalog.commit_refresh(staging, summary.clone())?;
         events.push(RefreshEvent::Completed { summary });

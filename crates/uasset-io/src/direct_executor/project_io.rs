@@ -2,9 +2,9 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc;
+use std::sync::{Mutex, PoisonError};
 
 use serde::{Deserialize, Serialize};
 use uasset_inspection::blueprint_classes::blueprint_classes;
@@ -225,9 +225,7 @@ pub(crate) fn scan_with_cancellation(
                         None => match read_asset_signature_with_cancellation(path, &cancellation) {
                             Ok(signature) => signature,
                             Err(error) => {
-                                slots
-                                    .lock()
-                                    .expect("direct scan slots must not be poisoned")[index] =
+                                slots.lock().unwrap_or_else(PoisonError::into_inner)[index] =
                                     Some(Err(error));
                                 continue;
                             }
@@ -242,9 +240,7 @@ pub(crate) fn scan_with_cancellation(
                         collect_headers,
                         &cancellation,
                     );
-                    slots
-                        .lock()
-                        .expect("direct scan slots must not be poisoned")[index] = Some(result);
+                    slots.lock().unwrap_or_else(PoisonError::into_inner)[index] = Some(result);
                 }
             });
         }
@@ -256,9 +252,7 @@ pub(crate) fn scan_with_cancellation(
     let mut failed_assets = 0_u64;
     let mut partial_assets = 0_u64;
     let mut skipped_assets = 0_u64;
-    let results = slots
-        .into_inner()
-        .expect("direct scan slots must not be poisoned");
+    let results = slots.into_inner().unwrap_or_else(PoisonError::into_inner);
     for result in results.into_iter().flatten() {
         let result = result?;
         checkpoint(cancellation, "inspection")?;
@@ -686,14 +680,14 @@ fn projection(
                             break;
                         };
                         let result = project_one_path(path, kind, filters, cancellation);
-                        slots.lock().expect("projection slots poisoned")[index] = Some(result);
+                        slots.lock().unwrap_or_else(PoisonError::into_inner)[index] = Some(result);
                     }
                 });
             }
         });
         for result in slots
             .into_inner()
-            .expect("projection slots poisoned")
+            .unwrap_or_else(PoisonError::into_inner)
             .into_iter()
             .flatten()
         {
@@ -771,7 +765,10 @@ fn project_paths_bounded(
             let finished = finished.clone();
             scope.spawn(move || {
                 loop {
-                    let Ok(index) = receive_job.lock().expect("projection jobs poisoned").recv()
+                    let Ok(index) = receive_job
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner)
+                        .recv()
                     else {
                         break;
                     };
@@ -788,20 +785,20 @@ fn project_paths_bounded(
         let result = (|| {
             let mut scheduled = 0;
             for index in 0..window.min(paths.len()) {
-                jobs.send(index).expect("projection workers available");
+                jobs.send(index).map_err(|_| workers_stopped())?;
                 scheduled += 1;
             }
             let mut pending = BTreeMap::new();
             let mut next = 0;
             while next < paths.len() {
                 checkpoint(cancellation, "inspection")?;
-                let (index, result) = receive_result.recv().expect("projection result available");
+                let (index, result) = receive_result.recv().map_err(|_| workers_stopped())?;
                 pending.insert(index, result);
                 while let Some(result) = pending.remove(&next) {
                     consume(result)?;
                     next += 1;
                     if scheduled < paths.len() {
-                        jobs.send(scheduled).expect("projection workers available");
+                        jobs.send(scheduled).map_err(|_| workers_stopped())?;
                         scheduled += 1;
                     }
                 }
@@ -1466,7 +1463,7 @@ fn resolve_roots_with_concurrency(
                         break;
                     };
                     let result = resolve(path);
-                    resolved.lock().expect("resolved project paths poisoned")[index] = Some(result);
+                    resolved.lock().unwrap_or_else(PoisonError::into_inner)[index] = Some(result);
                 }
             });
         }
@@ -1474,10 +1471,19 @@ fn resolve_roots_with_concurrency(
     checkpoint(cancellation, "discovery")?;
     resolved
         .into_inner()
-        .expect("resolved project paths poisoned")
+        .unwrap_or_else(PoisonError::into_inner)
         .into_iter()
-        .map(|value| value.expect("requested path resolved"))
+        .map(|value| value.unwrap_or_else(|| Err(workers_stopped())))
         .collect()
+}
+
+/// Every projection worker stopped before the work was done, which only a worker panic causes.
+fn workers_stopped() -> Failure {
+    Failure::new(
+        "unavailable",
+        "the projection workers stopped before every package was read; retry the request",
+        true,
+    )
 }
 
 fn resolve_requested_root(
@@ -1707,9 +1713,7 @@ where
                     };
                     let result =
                         read_saved_world_package(path, content_root, options, &cancellation);
-                    slots
-                        .lock()
-                        .expect("saved-world slots must not be poisoned")[index] = Some(result);
+                    slots.lock().unwrap_or_else(PoisonError::into_inner)[index] = Some(result);
                     let completed_packages =
                         completed_packages.fetch_add(1, Ordering::Relaxed) as u64 + 1;
                     on_progress(completed_packages, total_packages);
@@ -1725,7 +1729,7 @@ where
     let mut failed_packages = 0_u64;
     for result in slots
         .into_inner()
-        .expect("saved-world slots must not be poisoned")
+        .unwrap_or_else(PoisonError::into_inner)
         .into_iter()
         .flatten()
     {

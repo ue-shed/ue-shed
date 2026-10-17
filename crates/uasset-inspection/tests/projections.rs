@@ -1,3 +1,9 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "test and benchmark helpers fail loudly on broken fixtures"
+)]
+
 use std::fs;
 
 use uasset_inspection::blueprint::{

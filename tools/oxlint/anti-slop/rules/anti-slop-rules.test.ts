@@ -1,3 +1,4 @@
+import { requireJsdocOnExportsRule } from "./require-jsdoc-on-exports.ts";
 import { noStringifiedCauseInErrorRule } from "./no-stringified-cause-in-error.ts";
 import { RuleTester } from "oxlint/plugins-dev";
 import { describe, it } from "vitest";
@@ -179,5 +180,32 @@ ruleTester.run("no-stringified-cause-in-error", noStringifiedCauseInErrorRule, {
 			code: "new ReaderFailure({ message: Cause.pretty(cause) });",
 			errors: [{ messageId: "stringifiedCause" }]
 		}
+	]
+});
+
+ruleTester.run("require-jsdoc-on-exports", requireJsdocOnExportsRule, {
+	valid: [
+		`/** Seconds the editor waits before it reports a stalled frame. */
+export const timeout = 5;`,
+		`/** A frame, decoded at the process boundary. */
+export const Frame = {};
+export type Frame = typeof Frame;`,
+		'export { helper } from "./helper.js";',
+		"const local = 1;"
+	],
+	invalid: [
+		{ code: "export const timeout = 5;", errors: [{ messageId: "missingJsdoc" }] },
+		{
+			code: `// A line comment is not documentation.
+export function open() {}`,
+			errors: [{ messageId: "missingJsdoc" }]
+		},
+		{
+			code: `/** Detached. */
+const gap = 1;
+export interface Request {}`,
+			errors: [{ messageId: "missingJsdoc" }]
+		},
+		{ code: "export type Alone = string;", errors: [{ messageId: "missingJsdoc" }] }
 	]
 });

@@ -643,7 +643,8 @@ function makeAssetReader(
 				{
 					maximumOutputBytes: MAX_PROTOCOL_OUTPUT_BYTES,
 					timeoutMs: configuration.timeoutMs
-				}
+				},
+				{ contractMinor: 14 }
 			),
 			expected: "inspect",
 			select: (result) => (result.kind === "inspect" ? result.inspection : undefined)

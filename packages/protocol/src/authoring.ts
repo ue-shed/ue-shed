@@ -1,9 +1,19 @@
 import { makeWireJsonSchemaDocument } from "./json-schema.js";
 import { Schema } from "effect";
 
+/**
+ * Newest `unreal-authoring` table snapshot version this package knows. Minor 1 added
+ * `row_reference` values and minor 3 added text identity.
+ */
 export const AUTHORING_SNAPSHOT_CONTRACT_VERSION = { major: 2, minor: 3 } as const;
+/**
+ * Newest `unreal-authoring-apply` version this package sends. Minor 1 added `row_reference` values
+ * and minor 2 added text identity.
+ */
 export const AUTHORING_MUTATION_CONTRACT_VERSION = { major: 1, minor: 2 } as const;
+/** Newest `unreal-authoring-save` version this package knows. */
 export const AUTHORING_SAVE_CONTRACT_VERSION = { major: 1, minor: 1 } as const;
+/** Newest `unreal-authoring-table-list` version this package knows. */
 export const AUTHORING_TABLE_LIST_CONTRACT_VERSION = { major: 1, minor: 0 } as const;
 
 /**
@@ -83,10 +93,16 @@ export interface AuthoringFieldValue {
 	readonly value: AuthoringValue;
 }
 
+/**
+ * A typed Unreal property value, recursive through containers and structs. `int` and `uint` carry
+ * decimal strings, floats spell non-finite values as `"nan"`, `"infinity"` or `"-infinity"`, and
+ * `unsupported` stands in for a property the producer cannot represent instead of dropping it.
+ */
 export const AuthoringValue: Schema.Codec<AuthoringValue> = Schema.suspend(
 	() => AuthoringValueUnion
 ).annotate({ identifier: "AuthoringValue" });
 
+/** One named property of a row or struct with its Unreal type name and value. */
 export const AuthoringFieldValue: Schema.Codec<AuthoringFieldValue> = Schema.Struct({
 	name: Schema.String,
 	typeName: Schema.String,
@@ -149,6 +165,10 @@ const _authoringValueConforms: _AuthoringValueConforms = true;
 const _authoringFieldValueConforms: _AuthoringFieldValueConforms = true;
 void _authoringValueConforms;
 void _authoringFieldValueConforms;
+/**
+ * One DataTable row. `id` is the row's stable identity that commands target; `name` is its Unreal
+ * row name, which a rename changes.
+ */
 export const AuthoringRow = Schema.Struct({
 	id: Schema.String,
 	name: Schema.String,
@@ -156,6 +176,10 @@ export const AuthoringRow = Schema.Struct({
 });
 export type AuthoringRow = Schema.Schema.Type<typeof AuthoringRow>;
 
+/**
+ * Live discovery of authorable tables as canonical object paths only; fetch a snapshot per table
+ * for its contents and schema. Decoding accepts any 1.x minor version.
+ */
 export const AuthoringTableList = Schema.Struct({
 	contract: Schema.Struct({
 		name: Schema.Literal("unreal-authoring-table-list"),
@@ -191,6 +215,10 @@ const AuthoringTable = Schema.Struct({
 	rows: Schema.Array(AuthoringRow)
 });
 
+/**
+ * Legacy 1.x table snapshot without field schema, producer, or fingerprint evidence. Hosts can show
+ * it but not edit it; see {@link classifyAuthoringSnapshot}.
+ */
 export const AuthoringTableSnapshotV1 = Schema.Struct({
 	contract: Schema.Struct({
 		name: Schema.Literal("unreal-authoring"),
@@ -206,6 +234,7 @@ export const AuthoringTableSnapshotV1 = Schema.Struct({
 }).annotate({ identifier: "AuthoringTableSnapshotV1" });
 export type AuthoringTableSnapshotV1 = Schema.Schema.Type<typeof AuthoringTableSnapshotV1>;
 
+/** One enumerator: `name` is the value written to an `enum` value, `displayName` is for display. */
 export type AuthoringEnumOption = {
 	readonly name: string;
 	readonly displayName?: string;
@@ -279,10 +308,19 @@ export interface AuthoringFieldDescriptor {
 		| { readonly status: "unknown" };
 }
 
+/**
+ * The shape of a field's Unreal property type, recursive through containers and structs, used to
+ * pick an editor and validate values. `unsupported` keeps the Unreal type name and a reason.
+ */
 export const AuthoringTypeDescriptor: Schema.Codec<AuthoringTypeDescriptor> = Schema.suspend(
 	() => AuthoringTypeDescriptorUnion
 ).annotate({ identifier: "AuthoringTypeDescriptor" });
 
+/**
+ * Schema evidence for one row-struct field: type, editability, presence, Unreal metadata
+ * annotations (clamp, step, and unit kept as their metadata strings), and default value. A default
+ * is `unknown` when the producer cannot know it, as with saved packages; never assume zero.
+ */
 export const AuthoringFieldDescriptor: Schema.Codec<AuthoringFieldDescriptor> = Schema.Struct({
 	annotations: Schema.Struct({
 		clampMax: Schema.optionalKey(Schema.String),
@@ -379,6 +417,11 @@ const _authoringTypeDescriptorConforms: _AuthoringTypeDescriptorConforms = true;
 const _authoringFieldDescriptorConforms: _AuthoringFieldDescriptorConforms = true;
 void _authoringTypeDescriptorConforms;
 void _authoringFieldDescriptorConforms;
+/**
+ * Current 2.x table snapshot with producer, package, field schema, and a versioned SHA-256 content
+ * fingerprint that Apply uses to detect drift. Schema and fingerprint report `unavailable` with a
+ * reason rather than being omitted. Decoding accepts any 2.x minor version.
+ */
 export const AuthoringTableSnapshotV2 = Schema.Struct({
 	contract: Schema.Struct({
 		name: Schema.Literal("unreal-authoring"),
@@ -415,12 +458,14 @@ export const AuthoringTableSnapshotV2 = Schema.Struct({
 }).annotate({ identifier: "AuthoringTableSnapshotV2" });
 export type AuthoringTableSnapshotV2 = Schema.Schema.Type<typeof AuthoringTableSnapshotV2>;
 
+/** A table snapshot of either major version, as Apply results may return during migration. */
 export const AuthoringTableSnapshot = Schema.Union([
 	AuthoringTableSnapshotV1,
 	AuthoringTableSnapshotV2
 ]).annotate({ identifier: "AuthoringTableSnapshot" });
 export type AuthoringTableSnapshot = Schema.Schema.Type<typeof AuthoringTableSnapshot>;
 
+/** Whether a snapshot can be edited, with recovery guidance when it is legacy and read-only. */
 export type AuthoringSnapshotCompatibility =
 	| { readonly status: "current"; readonly snapshot: AuthoringTableSnapshotV2 }
 	| {
@@ -429,6 +474,10 @@ export type AuthoringSnapshotCompatibility =
 			readonly recovery: string;
 	  };
 
+/**
+ * Marks a v2 snapshot `current` and a v1 snapshot `legacy_read_only`, with recovery text asking
+ * the user to refresh from a producer that supports v2.
+ */
 export function classifyAuthoringSnapshot(
 	snapshot: AuthoringTableSnapshot
 ): AuthoringSnapshotCompatibility {
@@ -456,10 +505,19 @@ export function editAuthoringText(
 	return identity ? { identity, kind: "text", value: content } : { kind: "text", value: content };
 }
 
+/** Decodes a v1 or v2 snapshot; fails with a `SchemaError` on any other version or shape. */
 export const decodeAuthoringTableSnapshot = Schema.decodeUnknownEffect(AuthoringTableSnapshot);
+/** Decodes a 1.x table list; fails with a `SchemaError` on any other version or shape. */
 export const decodeAuthoringTableList = Schema.decodeUnknownEffect(AuthoringTableList);
+/** Decodes one typed value; fails with a `SchemaError` when the input is not a valid value. */
 export const decodeAuthoringValue = Schema.decodeUnknownEffect(AuthoringValue);
 
+/**
+ * One table edit. Each command records the prior state it expects (old value, removed row and
+ * index, old name or order) so it can be inverted for undo and checked against the table it
+ * applies to.
+ * Rows are addressed by `id`; reorder orders list row ids.
+ */
 export const AuthoringCommand = Schema.Union([
 	Schema.Struct({
 		fieldName: Schema.String,
@@ -500,6 +558,11 @@ const ApplyContract = Schema.Struct({
 	})
 });
 
+/**
+ * One bounded Apply batch over one or more tables. Each table names the fingerprint its edits were
+ * based on so the producer can refuse drifted state; `operationId` stays stable so a lost reply can
+ * be looked up instead of replayed.
+ */
 export const AuthoringApplyRequest = Schema.Struct({
 	contract: ApplyContract,
 	operationId: Schema.String,
@@ -519,6 +582,10 @@ export const AuthoringApplyRequest = Schema.Struct({
 }).annotate({ identifier: "AuthoringApplyRequest" });
 export type AuthoringApplyRequest = Schema.Schema.Type<typeof AuthoringApplyRequest>;
 
+/**
+ * A problem reported by Apply, optionally tied to a command or table. `retrySafe` says whether the
+ * same request can be sent again.
+ */
 export const AuthoringOperationError = Schema.Struct({
 	code: Schema.String,
 	commandId: Schema.optionalKey(Schema.String),
@@ -539,6 +606,11 @@ export const AuthoringEndpointError = Schema.Struct({
 }).annotate({ identifier: "AuthoringEndpointError" });
 export type AuthoringEndpointError = Schema.Schema.Type<typeof AuthoringEndpointError>;
 
+/**
+ * Outcome of an Apply batch, all or nothing: `committed` returns fresh snapshots, `rolled_back`
+ * means the producer undid every change, and `rejected` means it refused the batch and returns no
+ * snapshots.
+ */
 export const AuthoringApplyResult = Schema.Struct({
 	contract: ApplyContract,
 	errors: Schema.Array(AuthoringOperationError),
@@ -556,6 +628,7 @@ const SaveContract = Schema.Struct({
 	})
 });
 
+/** Asks the editor to write the named tables' packages to disk; separate from Apply. */
 export const AuthoringSaveRequest = Schema.Struct({
 	contract: SaveContract,
 	objectPaths: Schema.Array(Schema.String),
@@ -563,6 +636,10 @@ export const AuthoringSaveRequest = Schema.Struct({
 }).annotate({ identifier: "AuthoringSaveRequest" });
 export type AuthoringSaveRequest = Schema.Schema.Type<typeof AuthoringSaveRequest>;
 
+/**
+ * Per-package Save outcome. `partial` means some packages saved and others failed; each failure
+ * says whether retrying it is safe.
+ */
 export const AuthoringSaveResult = Schema.Struct({
 	contract: SaveContract,
 	packages: Schema.Array(
@@ -579,11 +656,20 @@ export const AuthoringSaveResult = Schema.Struct({
 }).annotate({ identifier: "AuthoringSaveResult" });
 export type AuthoringSaveResult = Schema.Schema.Type<typeof AuthoringSaveResult>;
 
+/** Decodes a 1.x Apply request; fails with a `SchemaError` on any other version or shape. */
 export const decodeAuthoringApplyRequest = Schema.decodeUnknownEffect(AuthoringApplyRequest);
+/** Decodes a 1.x Apply result; fails with a `SchemaError` on any other version or shape. */
 export const decodeAuthoringApplyResult = Schema.decodeUnknownEffect(AuthoringApplyResult);
+/** Decodes a 1.x Save request; fails with a `SchemaError` on any other version or shape. */
 export const decodeAuthoringSaveRequest = Schema.decodeUnknownEffect(AuthoringSaveRequest);
+/** Decodes a 1.x Save result; fails with a `SchemaError` on any other version or shape. */
 export const decodeAuthoringSaveResult = Schema.decodeUnknownEffect(AuthoringSaveResult);
 
+/**
+ * Derives a JSON Schema (draft 2020-12) document from an authoring Effect schema, used to check it
+ * against the checked-in schemas. The checked-in JSON Schemas stay authoritative; this output is
+ * for comparison only.
+ */
 export function makeAuthoringJsonSchema(contract: Schema.Top) {
 	const document = makeWireJsonSchemaDocument(contract);
 	const definitions = { ...document.definitions };

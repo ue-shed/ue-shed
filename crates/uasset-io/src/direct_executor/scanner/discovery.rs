@@ -2,7 +2,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Condvar, Mutex};
+use std::sync::{Condvar, Mutex, PoisonError};
 
 use super::{
     CancellationToken, EntryKind, Failure, PackageSignature, checkpoint, discovery_failure,
@@ -29,7 +29,7 @@ struct DirectoryQueue {
 
 impl DirectoryQueue {
     fn take(&self) -> Option<PathBuf> {
-        let mut work = self.work.lock().expect("directory queue lock");
+        let mut work = self.work.lock().unwrap_or_else(PoisonError::into_inner);
         loop {
             if work.failure.is_some() {
                 return None;
@@ -41,13 +41,16 @@ impl DirectoryQueue {
             if work.active == 0 {
                 return None;
             }
-            work = self.changed.wait(work).expect("directory queue wait");
+            work = self
+                .changed
+                .wait(work)
+                .unwrap_or_else(PoisonError::into_inner);
         }
     }
 
     /// Never wait for queue capacity: a full queue is traversed locally, avoiding producer deadlock.
     fn offer(&self, path: PathBuf) -> Result<bool, PathBuf> {
-        let mut work = self.work.lock().expect("directory queue lock");
+        let mut work = self.work.lock().unwrap_or_else(PoisonError::into_inner);
         if work.pending.len() == self.capacity {
             return Err(path);
         }
@@ -63,7 +66,7 @@ impl DirectoryQueue {
     }
 
     fn finish(&self, result: Result<(), Failure>) {
-        let mut work = self.work.lock().expect("directory queue lock");
+        let mut work = self.work.lock().unwrap_or_else(PoisonError::into_inner);
         work.active -= 1;
         if let Err(error) = result
             && work.failure.is_none()
@@ -113,13 +116,13 @@ fn enumerate_with_limits(
     if let Some(error) = queue
         .work
         .into_inner()
-        .expect("directory queue lock")
+        .unwrap_or_else(PoisonError::into_inner)
         .failure
     {
         return Err(error);
     }
     checkpoint(cancellation, "discovery")?;
-    let mut signatures = output.into_inner().expect("discovery output lock");
+    let mut signatures = output.into_inner().unwrap_or_else(PoisonError::into_inner);
     signatures.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
     Ok(signatures)
 }
@@ -147,7 +150,7 @@ fn work_directories<'scope, 'env: 'scope>(
     }
     output
         .lock()
-        .expect("discovery output lock")
+        .unwrap_or_else(PoisonError::into_inner)
         .append(&mut signatures);
 }
 

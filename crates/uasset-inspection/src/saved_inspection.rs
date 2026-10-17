@@ -54,6 +54,8 @@ pub fn inspect_bytes_with_checkpoint(
                 class_path: export.class_path.as_ref().map(ToString::to_string),
                 kind: asset_error_kind(error.kind()),
                 message: error.message().to_owned(),
+                field: error.field().map(ToOwned::to_owned),
+                offset: error.offset(),
             }),
         }
     }
@@ -65,16 +67,10 @@ pub fn inspect_bytes_with_checkpoint(
             decode_errors.push(SavedAssetDecodeError {
                 object_path: package.summary.package_name.clone(),
                 class_path: None,
-                kind: asset_error_kind(match error.kind() {
-                    uasset_parser::package::PackageErrorKind::ResourceLimit => {
-                        uasset_parser::asset::AssetErrorKind::ResourceLimit
-                    }
-                    uasset_parser::package::PackageErrorKind::MalformedData => {
-                        uasset_parser::asset::AssetErrorKind::MalformedData
-                    }
-                    _ => uasset_parser::asset::AssetErrorKind::UnsupportedCapability,
-                }),
+                kind: asset_error_kind(error.kind().into()),
                 message: error.to_string(),
+                field: Some(error.path().to_owned()),
+                offset: error.offset(),
             });
             None
         }
@@ -518,16 +514,12 @@ fn f32_to_wire(value: f32) -> Option<f64> {
     if !value.is_finite() {
         return None;
     }
-    Some(
-        value
-            .to_string()
-            .parse()
-            .expect("a finite f32 must have a valid f64 representation"),
-    )
+    // The shortest decimal form round-trips, so the wire shows `0.1` rather than f32 noise.
+    value.to_string().parse().ok()
 }
 
 fn count(value: usize) -> u64 {
-    u64::try_from(value).expect("decoded collection length fits in u64")
+    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 fn package_error_kind(kind: PackageErrorKind) -> &'static str {
@@ -911,6 +903,12 @@ pub struct SavedAssetDecodeError {
     pub class_path: Option<String>,
     pub kind: SavedAssetDecodeErrorKind,
     pub message: String,
+    /// The logical field being read when decoding failed, such as `Exports[3].Properties.Name`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub field: Option<String>,
+    /// The absolute byte offset in the package where decoding failed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offset: Option<u64>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]

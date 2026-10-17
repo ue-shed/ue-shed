@@ -400,7 +400,19 @@ pub(crate) fn item_path(item: &QueryItem) -> &str {
 
 /// Opaque package plus sidecar stamps; consumers may verify selected bundles without enumerating.
 pub(crate) fn bundle_signature(parts: [Option<(u64, u64)>; 4]) -> String {
-    serde_json::to_string(&parts.map(|part| part.map(|(size, modified)| serde_json::json!({"size": size as f64, "modifiedMs": modified as f64 / 1_000_000.0})))).expect("finite signature stamps")
+    serde_json::Value::Array(
+        parts
+            .iter()
+            .map(|part| match part {
+                Some((size, modified)) => serde_json::json!({
+                    "size": *size as f64,
+                    "modifiedMs": *modified as f64 / 1_000_000.0
+                }),
+                None => serde_json::Value::Null,
+            })
+            .collect(),
+    )
+    .to_string()
 }
 
 #[cfg(test)]

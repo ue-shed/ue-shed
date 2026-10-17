@@ -1,5 +1,9 @@
 import { Schema } from "effect";
 
+/**
+ * Which Unreal process answered: its engine version, OS process ID, a per-launch session ID and
+ * the UE Shed plugins it loaded, so a host can tell a restarted or different editor apart.
+ */
 export const CompanionProducerIdentity = Schema.Struct({
 	engineVersion: Schema.NonEmptyString,
 	processId: Schema.Int.check(Schema.isGreaterThan(0)),
@@ -13,6 +17,12 @@ export const CompanionProducerIdentity = Schema.Struct({
 	)
 });
 export type CompanionProducerIdentity = Schema.Schema.Type<typeof CompanionProducerIdentity>;
+/**
+ * What a connected Unreal process offers, read from UEShedCore before any feature call. Each
+ * `*ObjectPath` is the Remote Control object to call for one plugin and is absent when that
+ * plugin is not loaded; hosts enable a feature only when its path and capability are present.
+ * The optional limits are the editor's own bounds for authoring, scenarios and map-tile capture.
+ */
 export const CompanionCapabilityManifest = Schema.Struct({
 	identity: Schema.optionalKey(CompanionProducerIdentity),
 	assetAuditsObjectPath: Schema.optional(Schema.String),
@@ -58,6 +68,10 @@ export const CompanionCapabilityManifest = Schema.Struct({
 }).annotate({ identifier: "CompanionCapabilityManifest" });
 export type CompanionCapabilityManifest = Schema.Schema.Type<typeof CompanionCapabilityManifest>;
 
+/**
+ * Decodes a manifest; fails with a schema error when the producer speaks another schema version
+ * or the reply is malformed, which hosts treat as an incompatible or missing UEShedCore.
+ */
 export const decodeCompanionCapabilityManifest = Schema.decodeUnknownEffect(
 	CompanionCapabilityManifest
 );

@@ -44,6 +44,7 @@ UE Shed code should be functional, typed, observable, and well tested.
 | [Plugin distribution](plugin-distribution.md)                         | Immutable Unreal plugin host caches                            |
 | [Private package ledger](private-packages.md)                         | Why excluded workspaces are not published                      |
 | [Agent adoption](agent-adoption.md)                                   | Agent-operated workflows and copied slices                     |
+| [API surface](api-surface.md)                                         | Measured exports of the host-facing packages                   |
 
 ## Stack
 

@@ -3793,6 +3793,31 @@
 				},
 				"message": {
 					"type": "string"
+				},
+				"field": {
+					"anyOf": [
+						{
+							"type": "string"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"offset": {
+					"anyOf": [
+						{
+							"type": "integer",
+							"allOf": [
+								{
+									"minimum": 0
+								}
+							]
+						},
+						{
+							"type": "null"
+						}
+					]
 				}
 			},
 			"required": ["object_path", "kind", "message"],

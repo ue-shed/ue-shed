@@ -234,7 +234,7 @@ impl PackageIndex {
     fn parse(value: i32) -> Self {
         match value.cmp(&0) {
             std::cmp::Ordering::Greater => {
-                Self::Export(u32::try_from(value - 1).expect("positive i32 minus one fits in u32"))
+                Self::Export(crate::convert::u32_from_checked(value - 1))
             }
             std::cmp::Ordering::Less => Self::Import(value.unsigned_abs() - 1),
             std::cmp::Ordering::Equal => Self::Null,
@@ -473,7 +473,7 @@ fn resolve_package_paths(
     let mut resolver = IndexPathResolver::new(package_name, names, imports, exports);
     for index in 0..imports.len() {
         resolver.ensure_resolved(
-            PackageIndex::Import(u32::try_from(index).expect("import index fits in u32")),
+            PackageIndex::Import(crate::convert::u32_from_table_index(index)),
             "Imports",
         )?;
     }
@@ -481,19 +481,22 @@ fn resolve_package_paths(
     let mut export_class_paths = Vec::with_capacity(exports.len());
     for (index, export) in exports.iter().enumerate() {
         resolver.ensure_resolved(
-            PackageIndex::Export(u32::try_from(index).expect("export index fits in u32")),
+            PackageIndex::Export(crate::convert::u32_from_table_index(index)),
             "Exports",
         )?;
         let class_path = match export.class_index {
             PackageIndex::Null => None,
             class_index => {
                 resolver.ensure_resolved(class_index, "Exports.ClassIndex")?;
-                Some(normalize_object_path(
-                    resolver
-                        .resolved_path(class_index)
-                        .expect("non-null class index was resolved")
-                        .clone(),
-                ))
+                let class_path = resolver.resolved_path(class_index).ok_or_else(|| {
+                    PackageError::new(
+                        PackageErrorKind::MalformedData,
+                        None,
+                        "Exports.ClassIndex",
+                        "export class index did not resolve to an object path",
+                    )
+                })?;
+                Some(normalize_object_path(class_path.clone()))
             }
         };
         export_class_paths.push(class_path);
@@ -859,7 +862,7 @@ impl PackageSummary {
     }
 
     fn validate(&self, file_len: usize) -> Result<(), PackageError> {
-        let file_len = u64::try_from(file_len).expect("usize always fits in u64");
+        let file_len = crate::convert::u64_from_usize(file_len);
         if self.total_header_size == 0 || u64::from(self.total_header_size) > file_len {
             return Err(PackageError::new(
                 PackageErrorKind::MalformedData,
@@ -1151,7 +1154,7 @@ fn read_optional_table(
     match count {
         -1 => Ok(None),
         0.. => Ok(Some(TableLocation {
-            count: u32::try_from(count).expect("count was checked as non-negative"),
+            count: crate::convert::u32_from_checked(count),
             offset,
         })),
         _ => Err(PackageError::new(
@@ -1362,7 +1365,7 @@ fn read_export_map(
         validate_export_span(
             serial_offset,
             serial_size,
-            u64::try_from(file_len).expect("usize always fits in u64"),
+            crate::convert::u64_from_usize(file_len),
             &path,
         )?;
 
@@ -1460,7 +1463,7 @@ fn resolve_name_ref_cow(
     name: crate::archive::NameRef,
 ) -> Result<Cow<'_, str>, PackageError> {
     validate_name_ref(names, name, "NameRef")?;
-    let base = &names[usize::try_from(name.index().get()).expect("u32 fits in usize")];
+    let base = &names[crate::convert::usize_from_u32(name.index().get())];
     if name.number() == 0 {
         Ok(Cow::Borrowed(base))
     } else {
@@ -1537,7 +1540,7 @@ impl<'a> IndexPathResolver<'a> {
     }
 
     fn resolve_import(&mut self, import_index: u32, path: &str) -> Result<(), PackageError> {
-        let slot = usize::try_from(import_index).expect("u32 fits in usize");
+        let slot = crate::convert::usize_from_u32(import_index);
         let Some(state) = self.import_paths.get(slot) else {
             return Err(PackageError::new(
                 PackageErrorKind::MalformedData,
@@ -1586,9 +1589,14 @@ impl<'a> IndexPathResolver<'a> {
             }
             outer => {
                 self.ensure_resolved(outer, path)?;
-                let (outer, outer_depth) = self
-                    .resolved(outer)
-                    .expect("non-null import outer was resolved");
+                let (outer, outer_depth) = self.resolved(outer).ok_or_else(|| {
+                    PackageError::new(
+                        PackageErrorKind::MalformedData,
+                        None,
+                        path,
+                        format!("import {import_index} outer did not resolve to an object path"),
+                    )
+                })?;
                 let depth = outer_depth + 1;
                 self.validate_outer_depth(depth, path)?;
                 if outer.as_str().is_empty() || outer.as_str() == "/None" {
@@ -1606,7 +1614,7 @@ impl<'a> IndexPathResolver<'a> {
     }
 
     fn resolve_export(&mut self, export_index: u32, path: &str) -> Result<(), PackageError> {
-        let slot = usize::try_from(export_index).expect("u32 fits in usize");
+        let slot = crate::convert::usize_from_u32(export_index);
         let Some(state) = self.export_paths.get(slot) else {
             return Err(PackageError::new(
                 PackageErrorKind::MalformedData,
@@ -1647,9 +1655,14 @@ impl<'a> IndexPathResolver<'a> {
             ),
             outer => {
                 self.ensure_resolved(outer, path)?;
-                let (outer, outer_depth) = self
-                    .resolved(outer)
-                    .expect("non-null export outer was resolved");
+                let (outer, outer_depth) = self.resolved(outer).ok_or_else(|| {
+                    PackageError::new(
+                        PackageErrorKind::MalformedData,
+                        None,
+                        path,
+                        format!("export {export_index} outer did not resolve to an object path"),
+                    )
+                })?;
                 let depth = outer_depth + 1;
                 self.validate_outer_depth(depth, path)?;
                 (ObjectPath(format!("{outer}.{object_name}")), depth)
@@ -1748,9 +1761,9 @@ fn read_offset(reader: &mut Reader<'_>, path: &str) -> Result<FileOffset, Packag
             format!("offset must be non-negative, got {value}"),
         ));
     }
-    Ok(FileOffset(u64::from(
-        u32::try_from(value).expect("value was checked as non-negative"),
-    )))
+    Ok(FileOffset(u64::from(crate::convert::u32_from_checked(
+        value,
+    ))))
 }
 
 fn read_optional_i32_offset(
@@ -1762,7 +1775,7 @@ fn read_optional_i32_offset(
     match value {
         -1 => Ok(None),
         0.. => Ok(Some(FileOffset(u64::from(
-            u32::try_from(value).expect("value was checked as non-negative"),
+            crate::convert::u32_from_checked(value),
         )))),
         _ => Err(PackageError::new(
             PackageErrorKind::MalformedData,
@@ -1781,9 +1794,7 @@ fn read_optional_offset(
     let value = reader.read_i64(path)?;
     match value {
         -1 => Ok(None),
-        0.. => Ok(Some(FileOffset(
-            u64::try_from(value).expect("value was checked as non-negative"),
-        ))),
+        0.. => Ok(Some(FileOffset(crate::convert::u64_from_checked(value)))),
         _ => Err(PackageError::new(
             PackageErrorKind::MalformedData,
             Some(offset),

@@ -58,18 +58,18 @@ impl ProjectIndexQuerySession {
                 || active.expected_generation != expected_generation
         });
         if requires_open {
-            self.active = Some(ActiveQueryCatalog {
+            self.active = None;
+        }
+        let active = match self.active.take() {
+            Some(active) => active,
+            None => ActiveQueryCatalog {
                 cache_root: cache_root.to_owned(),
                 expected_generation,
                 project_id: project_id.to_owned(),
                 catalog: open_catalog_for_project_id(cache_root, project_id)?,
-            });
-        }
-        Ok(&self
-            .active
-            .as_ref()
-            .expect("query Catalog was initialized")
-            .catalog)
+            },
+        };
+        Ok(&self.active.insert(active).catalog)
     }
 
     pub(crate) fn count(

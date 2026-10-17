@@ -1,3 +1,4 @@
+import { requireJsdocOnExportsRule } from "./rules/require-jsdoc-on-exports.ts";
 import { eslintCompatPlugin } from "@oxlint/plugins";
 
 import { noChainedEffectFlatMapRule } from "./rules/no-chained-effect-flat-map.ts";
@@ -27,6 +28,7 @@ import {
 const antiSlopPlugin = eslintCompatPlugin({
 	meta: { name: "anti-slop" },
 	rules: {
+		"require-jsdoc-on-exports": requireJsdocOnExportsRule,
 		"no-chained-effect-flat-map": noChainedEffectFlatMapRule,
 		"no-chained-type-assertions": noChainedTypeAssertionsRule,
 		"no-conditional-empty-object-spread": noConditionalEmptyObjectSpreadRule,

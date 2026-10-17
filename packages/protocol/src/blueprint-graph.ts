@@ -3,6 +3,11 @@ import { SavedProperty, SavedPropertyValue } from "./uasset-inspection.js";
 
 const NonNegativeInt = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 
+/**
+ * Something in the saved package that the projection could not fully represent. `object_path`
+ * names the Blueprint, graph or node the gap belongs to, and `detail` is human-readable. A gap
+ * marks the projection as incomplete; it is not a decoding failure.
+ */
 export const BlueprintGraphCoverageGap = Schema.Struct({
 	object_path: Schema.String,
 	reason: Schema.Literals([
@@ -21,12 +26,20 @@ export interface BlueprintGraphCoverageGap extends Schema.Schema.Type<
 	typeof BlueprintGraphCoverageGap
 > {}
 
+/**
+ * Identifies a pin by its owning node's object path and its saved `PinId` GUID. The node path is
+ * absent when the saved owning-node reference is null or does not resolve in the package.
+ */
 export const BlueprintPinReference = Schema.Struct({
 	node_object_path: Schema.optionalKey(Schema.String),
 	pin_id: Schema.String
 }).annotate({ identifier: "BlueprintPinReference" });
 export interface BlueprintPinReference extends Schema.Schema.Type<typeof BlueprintPinReference> {}
 
+/**
+ * A saved FText. `source` is the source-language string. `namespace` and `key` come from the
+ * text's localization identity; string-table texts and texts without history carry neither.
+ */
 export const BlueprintText = Schema.Struct({
 	source: Schema.String,
 	namespace: Schema.optionalKey(Schema.String),
@@ -34,6 +47,10 @@ export const BlueprintText = Schema.Struct({
 }).annotate({ identifier: "BlueprintText" });
 export interface BlueprintText extends Schema.Schema.Type<typeof BlueprintText> {}
 
+/**
+ * A saved `FMemberReference` naming the function, variable or delegate a pin type refers to.
+ * `parent` is present only when the owning class resolves; `guid` is omitted when it is all zero.
+ */
 export const BlueprintMemberReference = Schema.Struct({
 	parent: Schema.optionalKey(Schema.String),
 	name: Schema.String,
@@ -43,6 +60,10 @@ export interface BlueprintMemberReference extends Schema.Schema.Type<
 	typeof BlueprintMemberReference
 > {}
 
+/**
+ * A saved `FEdGraphTerminalType`: the value type of a map pin. Category names are Unreal's raw
+ * pin-category names, not normalized.
+ */
 export const BlueprintTerminalType = Schema.Struct({
 	category: Schema.String,
 	subcategory: Schema.String,
@@ -53,6 +74,10 @@ export const BlueprintTerminalType = Schema.Struct({
 }).annotate({ identifier: "BlueprintTerminalType" });
 export interface BlueprintTerminalType extends Schema.Schema.Type<typeof BlueprintTerminalType> {}
 
+/**
+ * A saved `FEdGraphPinType`. `category` and `subcategory` are Unreal's raw names (for example
+ * `exec` or `object`); `value_type` is present only for `map` containers.
+ */
 export const BlueprintPinType = Schema.Struct({
 	category: Schema.String,
 	subcategory: Schema.String,
@@ -68,6 +93,11 @@ export const BlueprintPinType = Schema.Struct({
 }).annotate({ identifier: "BlueprintPinType" });
 export interface BlueprintPinType extends Schema.Schema.Type<typeof BlueprintPinType> {}
 
+/**
+ * One saved `UEdGraphPin`. `id` is the pin GUID, `flags` the raw serialized bit field, and
+ * `linked_to` the links as stored on this pin; the graph's `links` hold each connection once.
+ * Optional fields are omitted when unsaved, empty, unresolved or an all-zero GUID.
+ */
 export const BlueprintPin = Schema.Struct({
 	id: Schema.String,
 	name: Schema.String,
@@ -89,6 +119,12 @@ export const BlueprintPin = Schema.Struct({
 }).annotate({ identifier: "BlueprintPin" });
 export interface BlueprintPin extends Schema.Schema.Type<typeof BlueprintPin> {}
 
+/**
+ * One saved `UEdGraphNode` export. `kind` recognizes only Unreal's K2 event, custom event,
+ * function call and variable get/set classes; everything else is `other`. `title` is the referenced
+ * member name, else the class name. `position` is NodePosX/NodePosY in editor graph coordinates
+ * (0 when unsaved). `subclass_tail_bytes` counts native bytes kept but not decoded.
+ */
 export const BlueprintNode = Schema.Struct({
 	object_path: Schema.String,
 	class_path: Schema.String,
@@ -102,12 +138,21 @@ export const BlueprintNode = Schema.Struct({
 }).annotate({ identifier: "BlueprintNode" });
 export interface BlueprintNode extends Schema.Schema.Type<typeof BlueprintNode> {}
 
+/**
+ * One connection between two pins, listed once per graph. It runs from the output pin to the input
+ * pin when both directions are known; otherwise the endpoints are in a stable sorted order.
+ */
 export const BlueprintLink = Schema.Struct({
 	from: BlueprintPinReference,
 	to: BlueprintPinReference
 }).annotate({ identifier: "BlueprintLink" });
 export interface BlueprintLink extends Schema.Schema.Type<typeof BlueprintLink> {}
 
+/**
+ * One saved `UEdGraph`, named by the last segment of its object path. Nodes follow the graph's
+ * saved `Nodes` array; when that yields none, decoded nodes directly beneath the graph are used,
+ * sorted by path. `links` are deduplicated and sorted.
+ */
 export const BlueprintGraph = Schema.Struct({
 	object_path: Schema.String,
 	name: Schema.String,
@@ -117,12 +162,22 @@ export const BlueprintGraph = Schema.Struct({
 }).annotate({ identifier: "BlueprintGraph" });
 export interface BlueprintGraph extends Schema.Schema.Type<typeof BlueprintGraph> {}
 
+/**
+ * A saved object export, such as the class default object or a component template, with its
+ * tagged properties (at most 1,000,000). `native_data` holds decoded native serialized data when
+ * the class has any.
+ */
 export const BlueprintSavedObject = Schema.Struct({
 	native_data: Schema.optionalKey(SavedPropertyValue),
 	object_path: Schema.String,
 	class_path: Schema.String,
 	properties: Schema.Array(SavedProperty).check(Schema.isMaxLength(1000000))
 }).annotate({ identifier: "BlueprintSavedObject" });
+/**
+ * One entry of the Blueprint's saved `NewVariables` array. Fields are null when the saved value is
+ * absent or unsupported. `property_flags` is a decimal string so all 64 flag bits survive
+ * JavaScript numbers.
+ */
 export const BlueprintVariable = Schema.Struct({
 	name: Schema.NullOr(Schema.String),
 	guid: Schema.NullOr(Schema.String),
@@ -132,6 +187,10 @@ export const BlueprintVariable = Schema.Struct({
 	default_value: Schema.NullOr(Schema.String),
 	properties: Schema.Array(SavedProperty).check(Schema.isMaxLength(1000000))
 }).annotate({ identifier: "BlueprintVariable" });
+/**
+ * One Simple Construction Script node: a component the Blueprint adds, with its template and the
+ * object paths of its child nodes. Fields are null when absent or unresolved in the saved node.
+ */
 export const BlueprintComponentNode = Schema.Struct({
 	object_path: Schema.String,
 	variable_name: Schema.NullOr(Schema.String),
@@ -144,6 +203,11 @@ export const BlueprintComponentNode = Schema.Struct({
 	parent_owner_class_name: Schema.NullOr(Schema.String),
 	parent_is_native: Schema.NullOr(Schema.Boolean)
 }).annotate({ identifier: "BlueprintComponentNode" });
+/**
+ * Saved Blueprint declarations outside the graphs: parent class, `NewVariables`, class default
+ * object and construction-script components. Null means the source was absent or unavailable;
+ * unavailable parts also add an `incomplete_definition` coverage gap.
+ */
 export const BlueprintDefinition = Schema.Struct({
 	parent_class: Schema.NullOr(Schema.String),
 	variables: Schema.NullOr(Schema.Array(BlueprintVariable).check(Schema.isMaxLength(1000000))),
@@ -160,6 +224,11 @@ export const BlueprintDefinition = Schema.Struct({
 }).annotate({ identifier: "BlueprintDefinition" });
 export type BlueprintDefinition = Schema.Schema.Type<typeof BlueprintDefinition>;
 
+/**
+ * Saved editor graphs and declarations of one Blueprint package, at projection schema version 2.
+ * It describes saved layout and wiring, not compiled or execution semantics; check
+ * `coverage_gaps` before treating it as complete.
+ */
 export const BlueprintGraphProjection = Schema.Struct({
 	schema_version: Schema.Literal(2),
 	object_path: Schema.String,
@@ -171,8 +240,16 @@ export interface BlueprintGraphProjection extends Schema.Schema.Type<
 	typeof BlueprintGraphProjection
 > {}
 
+/**
+ * Validates unknown input as a projection. The Effect fails with a SchemaError when the shape does
+ * not match, including any `schema_version` other than 2.
+ */
 export const decodeBlueprintGraphProjection = Schema.decodeUnknownEffect(BlueprintGraphProjection);
 
+/**
+ * A non-fatal message the reader emitted while reading a Blueprint. `code` is machine-readable and
+ * `message` is for people.
+ */
 export const BlueprintGraphDiagnostic = Schema.Struct({
 	code: Schema.NonEmptyString,
 	message: Schema.NonEmptyString,

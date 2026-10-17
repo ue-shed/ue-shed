@@ -10,11 +10,16 @@ export const EDITOR_FOREGROUND_LEASE_LIMITS = {
 
 const ProcessId = Schema.Int.check(Schema.isGreaterThan(0), Schema.isLessThan(4_294_967_295));
 
+/** Identifies one foreground lease: 32 lowercase hexadecimal characters chosen by the editor. */
 export const EditorForegroundLeaseId = Schema.String.check(
 	Schema.isPattern(/^[0-9a-f]{32}$/u)
 ).pipe(Schema.brand("EditorForegroundLeaseId"));
 export type EditorForegroundLeaseId = typeof EditorForegroundLeaseId.Type;
 
+/**
+ * How long a lease lasts without renewal, in milliseconds, within the editor's
+ * `EDITOR_FOREGROUND_LEASE_LIMITS`.
+ */
 export const EditorForegroundLeaseTtlMs = Schema.Int.check(
 	Schema.isBetween({
 		minimum: EDITOR_FOREGROUND_LEASE_LIMITS.minTtlMs,
@@ -28,6 +33,11 @@ const LeaseCount = Schema.Int.check(
 
 const leaseTarget = { expectedProcessId: ProcessId, clientProcessId: ProcessId };
 
+/**
+ * Acquires, renews or releases a lease that keeps the editor responsive while another process
+ * (`clientProcessId`) owns the foreground window. `expectedProcessId` guards against acting on a
+ * different editor than the host connected to.
+ */
 export const EditorForegroundLeaseRequest = Schema.Union([
 	Schema.Struct({
 		operation: Schema.Literal("acquire"),
@@ -61,6 +71,10 @@ const Unsupported = Schema.Struct({
 	reason: Schema.Literals(["platform", "editor_unavailable"])
 });
 
+/**
+ * What happened to a lease. `expired` means the lease ended, or its client exited or changed;
+ * `rejected` and `unsupported` carry a stable `reason` with prose and a recovery step.
+ */
 export const EditorForegroundLeaseResult = Schema.Union([
 	Schema.Struct({
 		status: Schema.Literal("granted"),
@@ -104,9 +118,11 @@ export const EditorForegroundLeaseResult = Schema.Union([
 ]);
 export type EditorForegroundLeaseResult = typeof EditorForegroundLeaseResult.Type;
 
+/** Asks the editor for its foreground-throttle state, guarded by the process ID the host expects. */
 export const EditorForegroundStateRequest = Schema.Struct({ expectedProcessId: ProcessId });
 export type EditorForegroundStateRequest = typeof EditorForegroundStateRequest.Type;
 
+/** The editor's throttle state and active leases, or `unsupported` with a stable reason. */
 export const EditorForegroundStateResult = Schema.Union([
 	Schema.Struct({
 		status: Schema.Literal("reported"),

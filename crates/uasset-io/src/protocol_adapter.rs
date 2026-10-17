@@ -300,6 +300,12 @@ impl Emitter {
         } else {
             result
         };
+        let error_compatible = if self.contract.version.minor < 14 {
+            legacy_decode_error_result(result)
+        } else {
+            None
+        };
+        let result = error_compatible.as_ref().unwrap_or(result);
         let event = ResultEvent {
             contract: &self.contract,
             kind: "result",
@@ -335,6 +341,36 @@ impl Emitter {
         };
         self.write_frame(&bytes).map_err(emission_failure)
     }
+}
+
+fn legacy_decode_error_result(result: &ResultFrame) -> Option<ResultFrame> {
+    use crate::protocol_result::SavedAssetScanEntry;
+    let (ResultFrame::Inspect { inspection }
+    | ResultFrame::ScanAsset {
+        entry: SavedAssetScanEntry::Full { inspection, .. },
+    }) = result
+    else {
+        return None;
+    };
+    if !inspection
+        .decode_errors
+        .iter()
+        .any(|error| error.field.is_some() || error.offset.is_some())
+    {
+        return None;
+    }
+    let mut compatible = result.clone();
+    if let ResultFrame::Inspect { inspection }
+    | ResultFrame::ScanAsset {
+        entry: SavedAssetScanEntry::Full { inspection, .. },
+    } = &mut compatible
+    {
+        for error in &mut inspection.decode_errors {
+            error.field = None;
+            error.offset = None;
+        }
+    }
+    Some(compatible)
 }
 
 fn legacy_header_result(result: &ResultFrame) -> ResultFrame {
@@ -962,6 +998,8 @@ fn adapt_decode_error(
         class_path: error.class_path,
         kind,
         message: error.message,
+        field: error.field,
+        offset: error.offset,
     })
 }
 

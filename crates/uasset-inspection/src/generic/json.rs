@@ -95,7 +95,8 @@ pub fn inspect_bytes_json(path: &str, bytes: &[u8]) -> String {
     let capacity = bytes.len().saturating_mul(2).min(MAX_INITIAL_JSON_CAPACITY);
     let mut output = Vec::with_capacity(capacity);
     match write_inspection_json(path, bytes, &mut output) {
-        Ok(_) => String::from_utf8(output).expect("serde_json writes valid UTF-8"),
+        Ok(_) => String::from_utf8(output)
+            .unwrap_or_else(|error| internal_error_json(path, error.to_string())),
         Err(InspectionJsonError::Inspection(error)) => serde_json::to_string(&*error)
             .unwrap_or_else(|error| internal_error_json(path, error.to_string())),
         Err(InspectionJsonError::Serialization(message)) => internal_error_json(path, message),
@@ -140,6 +141,8 @@ impl<'a> StreamingInspection<'a> {
                     class_path: None,
                     kind: ErrorOutput::package(String::new(), &error).kind,
                     message: error.to_string(),
+                    field: Some(error.path().to_owned()),
+                    offset: error.offset(),
                 });
                 None
             }
@@ -309,6 +312,8 @@ impl Serialize for StreamingAssetsView<'_> {
                     class_path: export.class_path.as_ref().map(ToString::to_string),
                     kind: asset_error_kind_name(error.kind()),
                     message: error.message().to_owned(),
+                    field: error.field().map(ToOwned::to_owned),
+                    offset: error.offset(),
                 }),
             }
         }

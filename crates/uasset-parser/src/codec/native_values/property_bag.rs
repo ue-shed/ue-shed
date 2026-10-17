@@ -18,17 +18,16 @@ pub(super) fn decode(
         ));
     }
     let version = custom_version(package, [0x134A157E, 0xD5E249A3, 0x8D4E843C, 0x98FE9E31]);
-    if package.summary.versions.ue5 != crate::version::VersionContext::LATEST_SUPPORTED_UE5
-        || !matches!(version, Some(3 | 5))
-    {
+    let Some(version @ (3 | 5)) = version.filter(|_| {
+        package.summary.versions.ue5 == crate::version::VersionContext::LATEST_SUPPORTED_UE5
+    }) else {
         return Err(error(
             reader,
             path,
             PropertyErrorKind::UnsupportedVersion,
             "property bags require verified custom version 3 (UE 5.7) or 5 (UE 5.8)",
         ));
-    }
-    let version = version.unwrap();
+    };
     let has_data = property(read_layout(reader, TYPE, path)?);
     let mut fields = vec![
         named("CustomVersion", PropertyValue::Int(i64::from(version))),
@@ -48,9 +47,7 @@ pub(super) fn decode(
             "FPropertyBagDescriptorPrefix",
             &desc_path,
         )?);
-        let name = field(&prefix, "Name")
-            .expect("generated descriptor name")
-            .clone();
+        let name = generated(&prefix, "Name", reader, &desc_path)?.clone();
         let PropertyValue::Name(name_ref) = name else {
             unreachable!()
         };
@@ -62,7 +59,9 @@ pub(super) fn decode(
                 "invalid or duplicate property-bag field name",
             ));
         }
-        let PropertyValue::NativeStruct { fields: id } = field(&prefix, "ID").unwrap() else {
+        let PropertyValue::NativeStruct { fields: id } =
+            generated(&prefix, "ID", reader, &desc_path)?
+        else {
             unreachable!()
         };
         let words: Vec<_> = id.iter().map(|f| integer(&f.value) as u32).collect();
@@ -80,7 +79,7 @@ pub(super) fn decode(
             named(
                 "ValueTypeObject",
                 object(
-                    integer(field(&prefix, "ValueTypeObject").unwrap()) as i32,
+                    integer(generated(&prefix, "ValueTypeObject", reader, &desc_path)?) as i32,
                     reader,
                     package,
                     &desc_path,
@@ -89,7 +88,7 @@ pub(super) fn decode(
             named(
                 "ValueType",
                 type_name(
-                    integer(field(&prefix, "ValueType").unwrap()),
+                    integer(generated(&prefix, "ValueType", reader, &desc_path)?),
                     version,
                     reader,
                     &desc_path,
@@ -150,7 +149,14 @@ pub(super) fn decode(
         if version == 5 {
             let layout = crate::schema::embedded_property_bag_ue58_model()
                 .native_layout("FPropertyBagDescriptorV5Suffix")
-                .expect("generated UE 5.8 suffix");
+                .ok_or_else(|| {
+                    error(
+                        reader,
+                        &desc_path,
+                        PropertyErrorKind::UnsupportedCapability,
+                        "the embedded UE 5.8 property-bag model has no descriptor suffix layout",
+                    )
+                })?;
             let suffix = decode_native(reader, layout, &desc_path)
                 .map(property)
                 .map_err(|failure| match failure {
@@ -164,12 +170,17 @@ pub(super) fn decode(
                 })?;
             desc.push(named(
                 "PropertyFlags",
-                PropertyValue::UInt(integer(field(&suffix, "PropertyFlags").unwrap()) as u64),
+                PropertyValue::UInt(integer(generated(
+                    &suffix,
+                    "PropertyFlags",
+                    reader,
+                    &desc_path,
+                )?) as u64),
             ));
             desc.push(named(
                 "KeyType",
                 type_name(
-                    integer(field(&suffix, "KeyType").unwrap()),
+                    integer(generated(&suffix, "KeyType", reader, &desc_path)?),
                     version,
                     reader,
                     &desc_path,
@@ -178,7 +189,7 @@ pub(super) fn decode(
             desc.push(named(
                 "KeyTypeObject",
                 object(
-                    integer(field(&suffix, "KeyTypeObject").unwrap()) as i32,
+                    integer(generated(&suffix, "KeyTypeObject", reader, &desc_path)?) as i32,
                     reader,
                     package,
                     &desc_path,
@@ -211,6 +222,24 @@ pub(super) fn decode(
     decode_property_stream_values_at_depth(source, &mut stream, package, depth + 1)?;
     fields.push(named("Value", PropertyValue::Struct(stream)));
     Ok(PropertyValue::NativeStruct { fields })
+}
+
+/// A field the generated layout always has; a missing one means the embedded model and this
+/// decoder disagree, which is reported instead of crashing the host.
+fn generated<'a>(
+    record: &'a PropertyValue,
+    name: &str,
+    reader: &Reader<'_>,
+    path: &str,
+) -> Result<&'a PropertyValue, PropertyError> {
+    field(record, name).ok_or_else(|| {
+        error(
+            reader,
+            path,
+            PropertyErrorKind::UnsupportedCapability,
+            format!("the generated property-bag layout has no {name} field"),
+        )
+    })
 }
 
 fn named(name: &str, value: PropertyValue) -> NativeProperty {

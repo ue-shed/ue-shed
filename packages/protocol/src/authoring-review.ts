@@ -6,6 +6,10 @@ import {
 	AuthoringValue
 } from "./authoring.js";
 
+/**
+ * Where a session sits on the Draft, Applied, Saved path. `indeterminate` means an Apply or Save
+ * reply was lost, so its outcome is unknown and must be reconciled rather than replayed.
+ */
 export const AuthoringSessionPipeline = Schema.Union([
 	Schema.Struct({ canApply: Schema.Boolean, kind: Schema.Literal("draft") }),
 	Schema.Struct({ kind: Schema.Literal("applying"), operationId: Schema.String }),
@@ -20,6 +24,10 @@ export const AuthoringSessionPipeline = Schema.Union([
 ]).annotate({ identifier: "AuthoringSessionPipeline" });
 export type AuthoringSessionPipeline = Schema.Schema.Type<typeof AuthoringSessionPipeline>;
 
+/**
+ * A validation finding on a session's working state, located by table and optionally by row and
+ * field. Any `error` makes its table and the session invalid; warnings do not.
+ */
 export const AuthoringReviewDiagnostic = Schema.Struct({
 	code: Schema.String,
 	fieldName: Schema.optionalKey(Schema.String),
@@ -34,6 +42,10 @@ export interface AuthoringReviewDiagnostic extends Schema.Schema.Type<
 	typeof AuthoringReviewDiagnostic
 > {}
 
+/**
+ * One difference between a table's base snapshot and its working state, derived by diffing rather
+ * than copied from the command log. Rows are identified by session-stable `rowId`.
+ */
 export const AuthoringTableChange = Schema.Union([
 	Schema.Struct({ kind: Schema.Literal("row_added"), row: AuthoringRow }),
 	Schema.Struct({ kind: Schema.Literal("row_removed"), row: AuthoringRow }),
@@ -59,6 +71,11 @@ export const AuthoringTableChange = Schema.Union([
 ]).annotate({ identifier: "AuthoringTableChange" });
 export type AuthoringTableChange = Schema.Schema.Type<typeof AuthoringTableChange>;
 
+/**
+ * Review of one table in a session: the base snapshot, the working state folded from active
+ * commands, their differences, and its diagnostics. `valid` is false when any diagnostic is an
+ * error.
+ */
 export const AuthoringTableReview = Schema.Struct({
 	base: AuthoringTableSnapshot,
 	changes: Schema.Array(AuthoringTableChange),
@@ -71,6 +88,10 @@ export const AuthoringTableReview = Schema.Struct({
 }).annotate({ identifier: "AuthoringTableReview" });
 export interface AuthoringTableReview extends Schema.Schema.Type<typeof AuthoringTableReview> {}
 
+/**
+ * Commands drafted by one gesture, possibly spanning several tables. `active` is false once the
+ * group has been undone; inactive groups remain listed so they can be redone.
+ */
 export const AuthoringCommandGroupReview = Schema.Struct({
 	active: Schema.Boolean,
 	author: Schema.optionalKey(Schema.String),
@@ -89,6 +110,10 @@ export interface AuthoringCommandGroupReview extends Schema.Schema.Type<
 	typeof AuthoringCommandGroupReview
 > {}
 
+/**
+ * Diagnostics from every table in a session with their error and warning counts. `valid` is false
+ * when any diagnostic is an error.
+ */
 export const AuthoringSessionValidation = Schema.Struct({
 	diagnostics: Schema.Array(AuthoringReviewDiagnostic),
 	errorCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
@@ -99,6 +124,10 @@ export interface AuthoringSessionValidation extends Schema.Schema.Type<
 	typeof AuthoringSessionValidation
 > {}
 
+/**
+ * A reviewable view of one authoring session: every table, command group, validation, undo and
+ * redo availability, and pipeline state. `activeCommandCount` is the command log's undo pointer.
+ */
 export const AuthoringSessionReview = Schema.Struct({
 	activeCommandCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 	canRedo: Schema.Boolean,

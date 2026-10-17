@@ -6,12 +6,18 @@ class OperationEndpoint extends Context.Service<
 	ReadonlyMap<Ref.Ref<string>, string>
 >()("@ue-shed/unreal-connection/OperationEndpoint") {}
 
+/**
+ * The Remote Control endpoint UE Shed talks to. `withCurrent` pins the endpoint selected when an
+ * operation starts for that operation and its children, so changing the selection mid-way only
+ * affects later work.
+ */
 export interface SelectedUnrealTargetApi {
 	readonly endpoint: () => Effect.Effect<string>;
 	readonly select: (endpoint: string) => Effect.Effect<void>;
 	readonly withCurrent: <A, E, R>(operation: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>;
 }
 
+/** The host-owned selection of which Unreal process to talk to. */
 export class SelectedUnrealTarget extends Context.Service<
 	SelectedUnrealTarget,
 	SelectedUnrealTargetApi
@@ -42,5 +48,9 @@ export const makeSelectedUnrealTarget = Effect.fn("SelectedUnrealTarget.make")(f
 	});
 });
 
+/**
+ * Provides `SelectedUnrealTarget` starting at `initialEndpoint`. The host validates endpoints and
+ * owns the UI or configuration that changes them; this layer never chooses one itself.
+ */
 export const selectedUnrealTargetLayer = (initialEndpoint: string) =>
 	Layer.effect(SelectedUnrealTarget, makeSelectedUnrealTarget(initialEndpoint));

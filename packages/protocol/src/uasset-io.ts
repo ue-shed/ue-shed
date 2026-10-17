@@ -26,6 +26,11 @@ const NonEmptyString = Schema.Trim.check(Schema.isNonEmpty()).annotate({
 	identifier: "UAssetIoNonEmptyString"
 });
 
+/**
+ * Contract identity repeated on every request and event frame. Major is always 1; the minor
+ * negotiates additive features, and a worker rejects an operation newer than the requested minor
+ * before `accepted` and strips result fields introduced after it.
+ */
 export const UAssetIoContract = Schema.Struct({
 	name: Schema.Literal("uasset-io"),
 	version: Schema.Struct({
@@ -35,6 +40,12 @@ export const UAssetIoContract = Schema.Struct({
 }).annotate({ identifier: "UAssetIoContract" });
 export type UAssetIoContract = Schema.Schema.Type<typeof UAssetIoContract>;
 
+/**
+ * Optional per-request limits; an omitted key uses the worker's default. `maximumOutputBytes`
+ * caps the cumulative bytes of every emitted NDJSON frame including its newline, `maximumAssets`
+ * caps discovered packages (exceeding it fails with code `resource_limit`), and `timeoutMs` is in
+ * milliseconds. Every limit except `maximumAssets` must be greater than zero.
+ */
 export const UAssetIoResourceLimits = Schema.Struct({
 	concurrency: Schema.optionalKey(PositiveInt),
 	maximumAssets: Schema.optionalKey(NonNegativeInt),
@@ -57,6 +68,10 @@ const UAssetIoScanFilters = Schema.Struct({
 
 /** Enforced below every Project Index caller; mirrored in `@ue-shed/unreal-assets`. */
 export const UASSET_IO_PROJECT_INDEX_MAX_PAGE_SIZE = 1024;
+/**
+ * Most diagnostics a Project Index summary carries. The worker keeps the first 64 and drops the
+ * rest, so a full list does not mean every problem was reported.
+ */
 export const UASSET_IO_PROJECT_INDEX_MAX_DIAGNOSTICS = 64;
 
 const ProjectIndexPageLimit = Schema.Int.check(
@@ -80,6 +95,12 @@ const UAssetIoProjectIndexQueryBase = {
 	projectId: NonEmptyString
 };
 
+/**
+ * One page request against a single Project Index generation. A generation other than
+ * `expectedGeneration` fails the request with a stale-generation failure. `limit` is 1 to 1,024
+ * items, `cursor` is the previous page's opaque `nextCursor`, and filtering kinds take 1 to 64
+ * non-empty values.
+ */
 export const UAssetIoProjectIndexQuery = Schema.Union([
 	Schema.Struct({ kind: Schema.Literal("inventory"), ...UAssetIoProjectIndexQueryBase }),
 	Schema.Struct({
@@ -109,6 +130,10 @@ export const UAssetIoProjectIndexQuery = Schema.Union([
 ]).annotate({ identifier: "UAssetIoProjectIndexQuery" });
 export type UAssetIoProjectIndexQuery = Schema.Schema.Type<typeof UAssetIoProjectIndexQuery>;
 
+/**
+ * One `project_index_count` filter (v1.4): a query kind without pagination fields. Kinds other
+ * than `maps` take 1 to 64 non-empty values.
+ */
 export const UAssetIoProjectIndexFilter = Schema.Union([
 	Schema.Struct({ kind: Schema.Literal("maps") }),
 	Schema.Struct({ kind: Schema.Literal("exact_classes"), values: ProjectIndexQueryValues }),
@@ -118,6 +143,10 @@ export const UAssetIoProjectIndexFilter = Schema.Union([
 ]);
 export type UAssetIoProjectIndexFilter = typeof UAssetIoProjectIndexFilter.Type;
 
+/**
+ * Body of a v1.4 `project_index_count` request: 1 to 16 filters evaluated against
+ * `expectedGeneration`. A stale generation fails with the same typed error as a query.
+ */
 export const UAssetIoProjectIndexCount = Schema.Struct({
 	projectId: UAssetIoProjectIndexQueryBase.projectId,
 	expectedGeneration: UAssetIoProjectIndexQueryBase.expectedGeneration,
@@ -127,12 +156,20 @@ export const UAssetIoProjectIndexCount = Schema.Struct({
 	)
 }).annotate({ identifier: "UAssetIoProjectIndexCount" });
 
+/**
+ * `count` is the number of distinct package paths in `generation` matching any filter; a package
+ * matching several filters counts once.
+ */
 export const UAssetIoProjectIndexCountResult = Schema.Struct({
 	projectId: UAssetIoProjectIndexQueryBase.projectId,
 	generation: PositiveInt,
 	count: NonNegativeInt
 }).annotate({ identifier: "UAssetIoProjectIndexCountResult" });
 
+/**
+ * A problem a Project Index refresh recorded without failing; any diagnostic makes the summary
+ * `partial`. `retrySafe` says whether repeating the refresh may succeed.
+ */
 export const UAssetIoProjectIndexDiagnostic = Schema.Struct({
 	code: NonEmptyString,
 	message: NonEmptyString,
@@ -142,6 +179,11 @@ export interface UAssetIoProjectIndexDiagnostic extends Schema.Schema.Type<
 	typeof UAssetIoProjectIndexDiagnostic
 > {}
 
+/**
+ * Outcome of the last committed refresh. `generation` is the immutable generation queries must
+ * name; `changedPackages` and `removedPackages` count differences from the prior generation.
+ * `completeness` is `partial` whenever a diagnostic was recorded, and at most 64 are kept.
+ */
 export const UAssetIoProjectIndexSummary = Schema.Struct({
 	changedPackages: NonNegativeInt,
 	completeness: Schema.Literals(["complete", "partial"]),
@@ -158,12 +200,20 @@ export interface UAssetIoProjectIndexSummary extends Schema.Schema.Type<
 	typeof UAssetIoProjectIndexSummary
 > {}
 
+/**
+ * Result of `project_index_status`: `absent` when no index has been committed for the project
+ * under the cache root, otherwise `ready` with the last refresh summary.
+ */
 export const UAssetIoProjectIndexStatus = Schema.Union([
 	Schema.Struct({ status: Schema.Literal("absent") }),
 	Schema.Struct({ status: Schema.Literal("ready"), summary: UAssetIoProjectIndexSummary })
 ]).annotate({ identifier: "UAssetIoProjectIndexStatus" });
 export type UAssetIoProjectIndexStatus = Schema.Schema.Type<typeof UAssetIoProjectIndexStatus>;
 
+/**
+ * A map package in a query page. `mapPath` is its project-relative path, which also orders the
+ * page and forms the cursor.
+ */
 export const UAssetIoProjectIndexMap = Schema.Struct({
 	kind: Schema.Literal("map"),
 	mapPath: NonEmptyString,
@@ -173,6 +223,11 @@ export interface UAssetIoProjectIndexMap extends Schema.Schema.Type<
 	typeof UAssetIoProjectIndexMap
 > {}
 
+/**
+ * Compact header evidence for a package in a query page, with at most 64 classes and 64
+ * serialized names. `headerData` needs minor 9 or later; its absence is an upgrade requirement,
+ * not evidence that the package holds no text.
+ */
 export const UAssetIoProjectIndexHeader = Schema.Struct({
 	headerData: Schema.optionalKey(PackageHeaderData),
 	classes: Schema.Array(NonEmptyString).check(Schema.isMaxLength(64)),
@@ -191,6 +246,10 @@ const UAssetIoProjectIndexInventory = Schema.Struct({
 	signature: NonEmptyString,
 	headerData: Schema.optionalKey(PackageHeaderData)
 });
+/**
+ * One query page item, discriminated by `kind`: `map`, `header`, or `inventory`. An inventory
+ * item carries the package path, an opaque change signature, and optional minor-9 `headerData`.
+ */
 export const UAssetIoProjectIndexItem = Schema.Union([
 	UAssetIoProjectIndexMap,
 	UAssetIoProjectIndexHeader,
@@ -198,6 +257,11 @@ export const UAssetIoProjectIndexItem = Schema.Union([
 ]).annotate({ identifier: "UAssetIoProjectIndexItem" });
 export type UAssetIoProjectIndexItem = Schema.Schema.Type<typeof UAssetIoProjectIndexItem>;
 
+/**
+ * One page of query results from a single generation: at most 1,024 items in project-relative
+ * path order. `nextCursor` is absent on the last page; pass it back unchanged with the same
+ * `expectedGeneration` to continue.
+ */
 export const UAssetIoProjectIndexPage = Schema.Struct({
 	generation: PositiveInt,
 	items: Schema.Array(UAssetIoProjectIndexItem).check(
@@ -230,6 +294,10 @@ export const UAssetIoProjectIndexDictionaryPage = Schema.Struct({
 		Schema.isMaxLength(UASSET_IO_PROJECT_INDEX_MAX_PAGE_SIZE * 128)
 	)
 }).annotate({ identifier: "UAssetIoProjectIndexDictionaryPage" });
+/**
+ * A decoded v1.3 dictionary page. Header `classes` and `serializedNames` are zero-based indices
+ * into this page's `strings`; schema decoding does not check them against its length.
+ */
 export interface UAssetIoProjectIndexDictionaryPage extends Schema.Schema.Type<
 	typeof UAssetIoProjectIndexDictionaryPage
 > {}
@@ -301,6 +369,10 @@ const GameTextIndexOperation = Schema.Struct({
 	kind: Schema.Literal("game_text_index"),
 	request: GameTextIndexBuildRequest
 });
+/**
+ * Every operation a request can carry, discriminated by `kind`. String fields are trimmed and
+ * must be non-empty; an explicit empty `paths` array selects zero work, not the project root.
+ */
 export const UAssetIoOperation = Schema.Union([
 	GameTextIndexOperation,
 	...ExistingOperation.members,
@@ -312,6 +384,10 @@ const RequestFields = {
 	limits: UAssetIoResourceLimits,
 	requestId: NonEmptyString
 };
+/**
+ * The single request a caller writes to the worker's stdin; `requestId` is echoed on every event.
+ * `extract_text_packages` decodes only with contract minor 8 or later.
+ */
 export const UAssetIoRequest = Schema.Union([
 	Schema.Struct({
 		...RequestFields,
@@ -358,6 +434,7 @@ const UAssetIoOperationKind = Schema.Literals([
 	"project_index_query",
 	"project_index_count"
 ]);
+/** Operation names the worker echoes in the `accepted` event. */
 export type UAssetIoOperationKind = Schema.Schema.Type<typeof UAssetIoOperationKind>;
 
 /** Typed result frames carried between the IO worker and its Effect consumer. */
@@ -409,6 +486,11 @@ const UAssetIoEventFields = {
 	sequence: NonNegativeInt
 };
 
+/**
+ * One NDJSON frame of the worker's stdout stream. Every frame repeats the contract and
+ * `requestId`, and `sequence` counts from zero without gaps. A supported request starts with
+ * `accepted` and ends with exactly one terminal `completed`, `failed`, or `rejected` frame.
+ */
 export const UAssetIoEvent = Schema.Union([
 	Schema.Struct({
 		...UAssetIoEventFields,
@@ -466,9 +548,21 @@ export const UAssetIoEvent = Schema.Union([
 ]).annotate({ identifier: "UAssetIoEvent" });
 export type UAssetIoEvent = Schema.Schema.Type<typeof UAssetIoEvent>;
 
+/**
+ * Decodes an untrusted request value. Fails with a `SchemaError` when the shape, bounds, or
+ * minor-version requirement is not met.
+ */
 export const decodeUAssetIoRequest = Schema.decodeUnknownEffect(UAssetIoRequest);
+/**
+ * Decodes one parsed stdout frame. Fails with a `SchemaError` when the frame does not match;
+ * stream ordering and dictionary-page index bounds are left to the caller.
+ */
 export const decodeUAssetIoEvent = Schema.decodeUnknownEffect(UAssetIoEvent);
 
+/**
+ * Builds the draft 2020-12 JSON Schema document for a uasset-io schema, in the form of the
+ * checked-in contract files; shared integer and string definitions are rewritten to match them.
+ */
 export function makeUAssetIoJsonSchema(contract: Schema.Top) {
 	const document = makeWireJsonSchemaDocument(contract, {
 		referencePolicy: ({ identifier }) =>

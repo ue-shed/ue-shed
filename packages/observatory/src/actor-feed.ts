@@ -386,8 +386,12 @@ const StartActorObservationNotSupported = Schema.Struct({
 
 const StartActorObservationFailed = Schema.Struct({
 	status: Schema.Literal("failed"),
+	/** Plugins from 0.17 name the cause (`world_unavailable`, `invalid_cadence`, ...). */
+	code: Schema.optionalKey(Schema.String),
 	message: Schema.String,
-	recovery: Schema.String
+	recovery: Schema.String,
+	/** Plugins from 0.17 say whether the same request can succeed later. */
+	retrySafe: Schema.optionalKey(Schema.Boolean)
 });
 
 const StartActorObservationResponse = Schema.Union([
@@ -768,7 +772,11 @@ function driveObservation(
 				return yield* runPollingFallback({ cadenceHz, endpoint, publish, remote });
 			}
 			if (startResponse.status === "failed") {
-				yield* attemptFailed(startResponse.message);
+				yield* attemptFailed(
+					startResponse.code === undefined
+						? startResponse.message
+						: `${startResponse.message} (${startResponse.code})`
+				);
 				continue;
 			}
 

@@ -101,11 +101,14 @@ TSharedPtr<FJsonObject> Child(const TSharedPtr<FJsonObject> &O, const TCHAR *Key
     const TSharedPtr<FJsonObject> *V;
     return O && O->TryGetObjectField(Key, V) ? *V : nullptr;
 }
-TSharedPtr<FJsonObject> Result(const TCHAR *Status, const TCHAR *Message = TEXT(""))
+/** `Code`, on a failure, names the cause; `Status` stays the coarse category older hosts read. */
+TSharedPtr<FJsonObject> Result(const TCHAR *Status, const TCHAR *Message = TEXT(""), const TCHAR *Code = nullptr)
 {
     auto R = Obj();
     R->SetStringField(TEXT("status"), Status);
     R->SetStringField(TEXT("message"), Message);
+    if (Code)
+        R->SetStringField(TEXT("code"), Code);
     R->SetNumberField(TEXT("version"), 1);
     return R;
 }
@@ -467,7 +470,7 @@ TSharedPtr<FJsonObject> FUEShedCameraAuthoringBridge::InspectActive()
                ? Snapshot()
                : Result(TEXT("unavailable"), LastRecoveryMessage.IsEmpty()
                                                  ? TEXT("Attach an arrangement camera from UE Shed or the CLI.")
-                                                 : *LastRecoveryMessage);
+                                                 : *LastRecoveryMessage, TEXT("not_attached"));
 }
 void FUEShedCameraAuthoringBridge::Shutdown()
 {
@@ -571,11 +574,22 @@ TSharedPtr<FJsonObject> FUEShedCameraAuthoringBridge::InspectSetup()
 }
 TSharedPtr<FJsonObject> FUEShedCameraAuthoringBridge::Execute(const TSharedPtr<FJsonObject> &Q)
 {
+    TSharedPtr<FJsonObject> Response = ExecuteRequest(Q);
+    bool CodedFailures = false;
+    if (Q) Q->TryGetBoolField(TEXT("codedFailures"), CodedFailures);
+    // Existing v1 clients decode failures strictly. This covers native setup replies as well.
+    if (!CodedFailures && Response) Response->RemoveField(TEXT("code"));
+    return Response;
+}
+TSharedPtr<FJsonObject> FUEShedCameraAuthoringBridge::ExecuteRequest(const TSharedPtr<FJsonObject> &Q)
+{
+    // An invariant input cannot reach: Remote Control runs function calls on the game thread, and the
+    // other callers are the arrangement panel (Slate) and automation tests, both on the same thread.
     check(IsInGameThread());
     Tick(0);
     double Version = 0;
     if (!Number(Q, TEXT("version"), Version) || Version != 1)
-        return Result(TEXT("invalid"), TEXT("Expected camera authoring version 1."));
+        return Result(TEXT("invalid"), TEXT("Expected camera authoring version 1."), TEXT("unsupported_version"));
     const FString Op = Str(Q, TEXT("operation")), Session = Str(Q, TEXT("sessionId"));
     if (Op == TEXT("setup_status"))
     {
@@ -597,32 +611,32 @@ TSharedPtr<FJsonObject> FUEShedCameraAuthoringBridge::Execute(const TSharedPtr<F
         return R;
     }
     if (!Identifier(Session))
-        return Result(TEXT("invalid"), TEXT("A bounded ASCII session identifier is required."));
+        return Result(TEXT("invalid"), TEXT("A bounded ASCII session identifier is required."), TEXT("invalid_session_id"));
     if (Op == TEXT("attach"))
     {
         UWorld *W = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
         if (!W || GEditor->PlayWorld)
-            return Result(TEXT("unavailable"), TEXT("Open an editor map outside Play or Simulate."));
+            return Result(TEXT("unavailable"), TEXT("Open an editor map outside Play or Simulate."), TEXT("no_editor_map"));
         if (Str(Q, TEXT("mapPath")) != W->GetOutermost()->GetName() ||
             Str(Q, TEXT("projectName")) != FApp::GetProjectName())
-            return Result(TEXT("stale"), TEXT("The editor project or map differs from the requested scope."));
+            return Result(TEXT("stale"), TEXT("The editor project or map differs from the requested scope."), TEXT("scope_mismatch"));
         if (AuthoringState)
             return AuthoringState->Session == Session && AuthoringState->CameraId == Str(Q, TEXT("cameraId"))
                        ? Snapshot()
-                       : Result(TEXT("busy"), TEXT("Detach the active camera first."));
+                       : Result(TEXT("busy"), TEXT("Detach the active camera first."), TEXT("camera_attached"));
         FVector L = FVector::ZeroVector;
         FRotator R = FRotator::ZeroRotator;
         double FOV = 0, Revision = 0;
         if (!Identifier(Str(Q, TEXT("cameraId"))) || !ReadPose(Child(Q, TEXT("pose")), L, R, FOV) ||
             !Number(Q, TEXT("revision"), Revision) || Revision < 0 || Revision > 9007199254740991.0 ||
             Revision != FMath::FloorToDouble(Revision))
-            return Result(TEXT("invalid"), TEXT("A camera ID, revision, and finite perspective pose are required."));
+            return Result(TEXT("invalid"), TEXT("A camera ID, revision, and finite perspective pose are required."), TEXT("invalid_attach_request"));
         TMap<FString, FAuthoringCamera> Entries;
         if (Q->HasField(TEXT("cameras")))
         {
             if (!ReadCameras(Q, Entries) || !Entries.Contains(Str(Q, TEXT("cameraId"))))
                 return Result(TEXT("invalid"),
-                              TEXT("Provide 1–256 unique camera IDs, names and poses, including the active camera."));
+                              TEXT("Provide 1–256 unique camera IDs, names and poses, including the active camera."), TEXT("invalid_camera_set"));
         }
         else
         {
@@ -634,7 +648,7 @@ TSharedPtr<FJsonObject> FUEShedCameraAuthoringBridge::Execute(const TSharedPtr<F
             Entries.Add(Str(Q, TEXT("cameraId")), Entry);
         }
         if (!FUEShedCameraEditorOwnership::TryAcquire(Session))
-            return Result(TEXT("busy"), TEXT("Capture or another tool owns the editor."));
+            return Result(TEXT("busy"), TEXT("Capture or another tool owns the editor."), TEXT("editor_owned"));
         AuthoringState = MakeUnique<FAuthoringState>();
         AuthoringState->Session = Session;
         AuthoringState->World = W;
@@ -644,7 +658,7 @@ TSharedPtr<FJsonObject> FUEShedCameraAuthoringBridge::Execute(const TSharedPtr<F
         if (!Materialize(MoveTemp(Entries)))
         {
             Shutdown();
-            return Result(TEXT("unavailable"), TEXT("Could not create the temporary camera."));
+            return Result(TEXT("unavailable"), TEXT("Could not create the temporary camera."), TEXT("camera_spawn_failed"));
         }
         AuthoringState->ObservedLocation = AuthoringState->Proxy->GetActorLocation();
         AuthoringState->ObservedRotation = AuthoringState->Proxy->GetActorRotation();
@@ -658,9 +672,9 @@ TSharedPtr<FJsonObject> FUEShedCameraAuthoringBridge::Execute(const TSharedPtr<F
     if (!AuthoringState)
         return Result(TEXT("unavailable"), LastRecoveryMessage.IsEmpty()
                                                ? TEXT("Attach a camera; the previous lease may have expired.")
-                                               : *LastRecoveryMessage);
+                                               : *LastRecoveryMessage, TEXT("not_attached"));
     if (AuthoringState->Session != Session || AuthoringState->Producer != Str(Q, TEXT("producerId")))
-        return Result(TEXT("stale"), TEXT("The session or editor producer changed. Inspect and reconnect."));
+        return Result(TEXT("stale"), TEXT("The session or editor producer changed. Inspect and reconnect."), TEXT("session_changed"));
     AuthoringState->Deadline = FPlatformTime::Seconds() + 30;
     if (Op == TEXT("panel"))
     {
@@ -670,14 +684,14 @@ TSharedPtr<FJsonObject> FUEShedCameraAuthoringBridge::Execute(const TSharedPtr<F
             Str(Arrangement, TEXT("mapPath")) != AuthoringState->World->GetOutermost()->GetName() ||
             !Number(Arrangement, TEXT("revision"), Revision) || Revision != AuthoringState->Revision ||
             Str(Panel, TEXT("activeCameraId")) != AuthoringState->CameraId)
-            return Result(TEXT("stale"), TEXT("Panel state must match this arrangement, revision, and active camera."));
+            return Result(TEXT("stale"), TEXT("Panel state must match this arrangement, revision, and active camera."), TEXT("panel_mismatch"));
         const auto Policy = Child(Panel, TEXT("renderPolicy")), Exposure = Child(Policy, TEXT("exposure"));
         TOptional<float> FixedEV;
         if (Str(Exposure, TEXT("mode")) == TEXT("fixed_ev100"))
         {
             double EV = 0;
             if (!Number(Exposure, TEXT("ev100"), EV) || EV < -20 || EV > 30)
-                return Result(TEXT("invalid"), TEXT("EV100 must be between -20 and 30."));
+                return Result(TEXT("invalid"), TEXT("EV100 must be between -20 and 30."), TEXT("invalid_exposure"));
             FixedEV = EV;
         }
         for (auto *Camera : Cameras())
@@ -695,13 +709,13 @@ TSharedPtr<FJsonObject> FUEShedCameraAuthoringBridge::Execute(const TSharedPtr<F
     {
         Observe();
         if (!AuthoringState->Panel)
-            return Result(TEXT("unavailable"), TEXT("Connect the arrangement host before editing its controls."));
+            return Result(TEXT("unavailable"), TEXT("Connect the arrangement host before editing its controls."), TEXT("host_not_connected"));
         if (AuthoringState->Event || AuthoringState->Sequence != AuthoringState->Acknowledged)
             return Result(TEXT("busy"),
-                          TEXT("Waiting for the previous edit to synchronize. Camera movement remains native."));
+                          TEXT("Waiting for the previous edit to synchronize. Camera movement remains native."), TEXT("edit_pending"));
         const auto Action = Child(Q, TEXT("action"));
         if (!Action)
-            return Result(TEXT("invalid"), TEXT("An explicit scoped panel action is required."));
+            return Result(TEXT("invalid"), TEXT("An explicit scoped panel action is required."), TEXT("missing_action"));
         AuthoringState->Event = Obj();
         AuthoringState->Event->SetObjectField(TEXT("action"), Action);
         AuthoringState->Event->SetNumberField(TEXT("expectedRevision"), AuthoringState->Revision);
@@ -724,11 +738,11 @@ TSharedPtr<FJsonObject> FUEShedCameraAuthoringBridge::Execute(const TSharedPtr<F
                     continue;
                 if (Actor->GetWorld() != AuthoringState->World.Get() ||
                     !Actor->GetPathName().StartsWith(TEXT("/Game/")))
-                    return Result(TEXT("invalid"), TEXT("Select actors in the attached editor map."));
+                    return Result(TEXT("invalid"), TEXT("Select actors in the attached editor map."), TEXT("selection_outside_map"));
                 Actors.Add(MakeShared<FJsonValueObject>(UEShedCameraActorEntry(Actor)));
                 if (Actors.Num() > 256)
                     return Result(TEXT("invalid"),
-                                  TEXT("Selection exceeds 256 actors. Nothing was imported; select a smaller batch."));
+                                  TEXT("Selection exceeds 256 actors. Nothing was imported; select a smaller batch."), TEXT("selection_too_large"));
             }
         auto Lists = Obj();
         Lists->SetArrayField(TEXT("hide"), Actors);
@@ -742,7 +756,7 @@ TSharedPtr<FJsonObject> FUEShedCameraAuthoringBridge::Execute(const TSharedPtr<F
     if (Op == TEXT("resolve_visibility") || Op == TEXT("preview_visibility"))
     {
         if (!Child(Q, TEXT("actors")))
-            return Result(TEXT("invalid"), TEXT("Explicit hide/protect actor lists are required."));
+            return Result(TEXT("invalid"), TEXT("Explicit hide/protect actor lists are required."), TEXT("missing_actor_lists"));
         const auto Resolved = UEShedResolveCameraVisibility(AuthoringState->World.Get(), Child(Q, TEXT("actors")));
         if (Op == TEXT("preview_visibility"))
         {
@@ -769,7 +783,7 @@ TSharedPtr<FJsonObject> FUEShedCameraAuthoringBridge::Execute(const TSharedPtr<F
     {
         auto *V = GCurrentLevelEditingViewportClient;
         if (!V || !V->IsPerspective())
-            return Result(TEXT("unavailable"), TEXT("Choose a perspective Level Editor viewport."));
+            return Result(TEXT("unavailable"), TEXT("Choose a perspective Level Editor viewport."), TEXT("no_perspective_viewport"));
         auto R = Result(TEXT("viewport_pose")), P = Obj(), L = Obj(), Rotation = Obj();
         const auto Location = V->GetViewLocation();
         const auto Angles = V->GetViewRotation();
@@ -796,11 +810,11 @@ TSharedPtr<FJsonObject> FUEShedCameraAuthoringBridge::Execute(const TSharedPtr<F
         if (!Number(Q, TEXT("expectedRevision"), Expected) || !Number(Q, TEXT("sequence"), Sequence) ||
             Expected != AuthoringState->Revision || Sequence != AuthoringState->Sequence ||
             AuthoringState->Sequence != AuthoringState->Acknowledged)
-            return Result(TEXT("stale"), TEXT("Synchronize the active camera before switching."));
+            return Result(TEXT("stale"), TEXT("Synchronize the active camera before switching."), TEXT("activate_out_of_sync"));
         if (!Identifier(Str(Q, TEXT("cameraId"))) || !ReadPose(Child(Q, TEXT("pose")), L, R, FOV))
-            return Result(TEXT("invalid"), TEXT("A valid camera identity and pose are required."));
+            return Result(TEXT("invalid"), TEXT("A valid camera identity and pose are required."), TEXT("invalid_activate_request"));
         if (AuthoringState->MultiCamera && !Camera(Str(Q, TEXT("cameraId"))))
-            return Result(TEXT("invalid"), TEXT("The camera is outside this arrangement."));
+            return Result(TEXT("invalid"), TEXT("The camera is outside this arrangement."), TEXT("camera_not_in_arrangement"));
         if (AuthoringState->Visibility)
             AuthoringState->Visibility->Enabled = false;
         if (!AuthoringState->MultiCamera)
@@ -851,13 +865,13 @@ TSharedPtr<FJsonObject> FUEShedCameraAuthoringBridge::Execute(const TSharedPtr<F
     {
         const TArray<TSharedPtr<FJsonValue>> *Ids;
         if (!Q->TryGetArrayField(TEXT("cameraIds"), Ids) || Ids->Num() > 256)
-            return Result(TEXT("invalid"), TEXT("Select up to 256 cameras in this arrangement."));
+            return Result(TEXT("invalid"), TEXT("Select up to 256 cameras in this arrangement."), TEXT("too_many_cameras"));
         TSet<FString> Unique;
         for (const auto &Id : *Ids)
         {
             FString Value;
             if (!Id->TryGetString(Value) || !Camera(Value) || Unique.Contains(Value))
-                return Result(TEXT("invalid"), TEXT("Select unique cameras in this arrangement."));
+                return Result(TEXT("invalid"), TEXT("Select unique cameras in this arrangement."), TEXT("duplicate_camera"));
             Unique.Add(Value);
         }
         Eject();
@@ -872,12 +886,12 @@ TSharedPtr<FJsonObject> FUEShedCameraAuthoringBridge::Execute(const TSharedPtr<F
     {
         const FString TargetId = Op == TEXT("pilot_camera") ? Str(Q, TEXT("cameraId")) : AuthoringState->CameraId;
         if (!Camera(TargetId))
-            return Result(TEXT("invalid"), TEXT("The camera is outside this arrangement."));
+            return Result(TEXT("invalid"), TEXT("The camera is outside this arrangement."), TEXT("camera_not_in_arrangement"));
         if ((Op == TEXT("pilot") || Op == TEXT("pilot_camera")) && !AuthoringState->Viewport)
         {
             auto *V = GCurrentLevelEditingViewportClient;
             if (!V || !V->Viewport || !V->IsPerspective() || V->IsAnyActorLocked())
-                return Result(TEXT("busy"), TEXT("Choose an unlocked perspective Level Editor viewport."));
+                return Result(TEXT("busy"), TEXT("Choose an unlocked perspective Level Editor viewport."), TEXT("viewport_locked"));
             AuthoringState->Viewport = V;
             AuthoringState->ViewLocation = V->GetViewLocation();
             AuthoringState->ViewRotation = V->GetViewRotation();
@@ -918,18 +932,18 @@ TSharedPtr<FJsonObject> FUEShedCameraAuthoringBridge::Execute(const TSharedPtr<F
         if (!Number(Q, TEXT("expectedRevision"), Expected) || !Number(Q, TEXT("sequence"), Sequence) ||
             !Number(Q, TEXT("revision"), Revision) || Revision < Expected || Revision > 9007199254740991.0 ||
             Revision != FMath::FloorToDouble(Revision) || !ReadPose(Child(Q, TEXT("pose")), L, R, FOV))
-            return Result(TEXT("invalid"), TEXT("Expected revision, observed sequence, and valid pose are required."));
+            return Result(TEXT("invalid"), TEXT("Expected revision, observed sequence, and valid pose are required."), TEXT("invalid_apply_request"));
         Observe();
         if (Expected != AuthoringState->Revision || Sequence != AuthoringState->Sequence)
             return Result(TEXT("stale"),
-                          TEXT("A newer native edit or host revision exists; reconcile before applying."));
+                          TEXT("A newer native edit or host revision exists; reconcile before applying."), TEXT("revision_conflict"));
         TMap<FString, FAuthoringCamera> Entries;
         const FString ActiveId = Q->HasField(TEXT("cameraId")) ? Str(Q, TEXT("cameraId")) : AuthoringState->CameraId;
         if (AuthoringState->MultiCamera)
         {
             if (!ReadCameras(Q, Entries) || !Entries.Contains(ActiveId))
                 return Result(TEXT("invalid"),
-                              TEXT("Apply must contain the complete camera set and its active camera."));
+                              TEXT("Apply must contain the complete camera set and its active camera."), TEXT("incomplete_camera_set"));
         }
         else
         {
@@ -946,7 +960,7 @@ TSharedPtr<FJsonObject> FUEShedCameraAuthoringBridge::Execute(const TSharedPtr<F
         {
             AuthoringState->CameraId = PreviousId;
             return Result(TEXT("unavailable"),
-                          TEXT("Could not materialize the camera set. Native changes remain pending."));
+                          TEXT("Could not materialize the camera set. Native changes remain pending."), TEXT("materialize_failed"));
         }
         AuthoringState->Revision = static_cast<int64>(Revision);
         AuthoringState->Acknowledged = AuthoringState->Sequence;
@@ -972,10 +986,10 @@ TSharedPtr<FJsonObject> FUEShedCameraAuthoringBridge::Execute(const TSharedPtr<F
         if (!Number(Q, TEXT("expectedRevision"), Expected) || !Number(Q, TEXT("sequence"), Sequence) ||
             !ReadPose(Child(Q, TEXT("pose")), L, R, FOV))
             return Result(TEXT("invalid"),
-                          TEXT("An editor gesture requires the observed revision, sequence, and pose."));
+                          TEXT("An editor gesture requires the observed revision, sequence, and pose."), TEXT("invalid_edit_request"));
         Observe();
         if (Expected != AuthoringState->Revision || Sequence != AuthoringState->Sequence)
-            return Result(TEXT("stale"), TEXT("Refresh before editing this camera."));
+            return Result(TEXT("stale"), TEXT("Refresh before editing this camera."), TEXT("edit_out_of_sync"));
         FScopedTransaction Transaction(NSLOCTEXT("UEShed", "EditCamera", "Edit UE Shed camera"));
         AuthoringState->Proxy->Modify();
         AuthoringState->Proxy->GetCameraComponent()->Modify();
@@ -984,7 +998,7 @@ TSharedPtr<FJsonObject> FUEShedCameraAuthoringBridge::Execute(const TSharedPtr<F
         AuthoringState->Proxy->PostEditMove(true);
         return Snapshot();
     }
-    return Result(TEXT("invalid"), TEXT("Unknown authoring operation."));
+    return Result(TEXT("invalid"), TEXT("Unknown authoring operation."), TEXT("unknown_operation"));
 }
 void UUEShedCameraAuthoringBridgeLibrary::ExecuteCameraAuthoring(const FString &RequestJson, FString &ResultJson)
 {

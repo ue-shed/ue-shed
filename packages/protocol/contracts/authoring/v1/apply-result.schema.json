@@ -50,6 +50,17 @@
 							},
 							"retrySafe": {
 								"type": "boolean"
+							},
+							"cause": {
+								"type": "string",
+								"allOf": [
+									{
+										"maxLength": 64
+									},
+									{
+										"pattern": "^[a-z][a-z0-9_]*$"
+									}
+								]
 							}
 						},
 						"additionalProperties": false

@@ -3,6 +3,12 @@
 The package and native bridge exchange bounded JSON requests, snapshots, panel events, and published
 panel state over unreal-rc. These checked-in schemas are checked against the public Effect decoders.
 
+Failure replies contain `version`, `status`, and `message`. A request can opt in to an additional
+stable snake-case `code` with `codedFailures: true`, including setup operations. Omitting the flag
+or setting it to `false` preserves exactly the three legacy fields for older strict decoders.
+`makeCameraAuthoringBridge` opts in by default and respects an explicit `false`. Older plugins ignore
+the new request field; the current decoder also accepts their replies without a code.
+
 The host owns durable arrangements and immutable saved Views. The optional native bridge owns a
 transient camera set and editor lease; the optional menu is a replaceable producer of `panel-event` actions.
 A command names the arrangement, expected revision, operation ID and explicit scope. Camera/group

@@ -65,9 +65,31 @@ void ClearAllProvisionedCameraSubsystems()
 	}
 }
 
+}
+
+/**
+ * A failed camera call: `error` is a stable code and `message`, when present, is prose for people.
+ * Written with the JSON writer so a quote, backslash or control character in either stays valid.
+ */
+FString UEShedCameraFailureJson(const int32 SchemaVersion, const FString& Code, const FString& Message)
+{
+	const TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
+	Root->SetNumberField(TEXT("schemaVersion"), SchemaVersion);
+	Root->SetStringField(TEXT("status"), TEXT("failed"));
+	Root->SetStringField(TEXT("error"), Code);
+	if (!Message.IsEmpty()) Root->SetStringField(TEXT("message"), Message);
+	FString Result;
+	const TSharedRef<TJsonWriter<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>> Writer =
+		TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&Result);
+	FJsonSerializer::Serialize(Root, Writer);
+	return Result;
+}
+
+namespace
+{
 FString ErrorJson(const TCHAR* Code)
 {
-	return FString::Printf(TEXT("{\"schemaVersion\":1,\"status\":\"failed\",\"error\":\"%s\"}"), Code);
+	return UEShedCameraFailureJson(1, Code, FString());
 }
 }
 
@@ -78,7 +100,7 @@ void UUEShedCameraLibrary::GetStatus(FString& ResultJson)
 		ResultJson = Subsystem->StatusJson();
 		return;
 	}
-	ResultJson = TEXT("{\"schemaVersion\":1,\"error\":\"no-renderable-world\"}");
+	ResultJson = ErrorJson(TEXT("no-renderable-world"));
 }
 
 void UUEShedCameraLibrary::Configure(const FString& ConfigJson, FString& ResultJson)
@@ -91,10 +113,10 @@ void UUEShedCameraLibrary::Configure(const FString& ConfigJson, FString& ResultJ
 			ResultJson = Subsystem->StatusJson();
 			return;
 		}
-		ResultJson = FString::Printf(TEXT("{\"schemaVersion\":1,\"error\":\"%s\"}"), *Error);
+		ResultJson = ErrorJson(*Error);
 		return;
 	}
-	ResultJson = TEXT("{\"schemaVersion\":1,\"error\":\"no-renderable-world\"}");
+	ResultJson = ErrorJson(TEXT("no-renderable-world"));
 }
 
 void UUEShedCameraLibrary::EnsureProvisionedCameras(
@@ -112,11 +134,9 @@ void UUEShedCameraLibrary::EnsureProvisionedCameras(
 	Root->TryGetNumberField(TEXT("schemaVersion"), RequestedVersion);
 	// Version 5 responses echo the version even on failure, so a client can tell a native failure
 	// from an older plugin that ignored editorPreviews.
-	auto Fail = [&ResultJson, RequestedVersion](const TCHAR* Code)
+	auto Fail = [&ResultJson, RequestedVersion](const TCHAR* Code, const FString& Message = FString())
 	{
-		ResultJson = RequestedVersion == 5
-			? FString::Printf(TEXT("{\"schemaVersion\":5,\"status\":\"failed\",\"error\":\"%s\"}"), Code)
-			: ErrorJson(Code);
+		ResultJson = UEShedCameraFailureJson(RequestedVersion == 5 ? 5 : 1, Code, Message);
 	};
 	UUEShedCameraSubsystem* Subsystem = FindCameraSubsystem();
 	if (Subsystem == nullptr)
@@ -187,7 +207,9 @@ void UUEShedCameraLibrary::EnsureProvisionedCameras(
             auto& Resolver = UEShedPreviewVisibilityResolver();
             if ((RequestedVersion != 4 && RequestedVersion != 5) || !Object->TryGetObjectField(TEXT("visibility"), Visibility) || !Resolver.IsBound() || !Resolver.Execute(Subsystem->GetWorld(), *Visibility, Spec.HiddenActors, VisibilityError))
             {
-                Fail(VisibilityError.IsEmpty() ? TEXT("authored-preview-unavailable") : *VisibilityError);
+                // The resolver explains in prose; the code says which kind of failure it is.
+                Fail(VisibilityError.IsEmpty() ? TEXT("authored-preview-unavailable") : TEXT("invalid-visibility"),
+                    VisibilityError);
                 return;
             }
         }

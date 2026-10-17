@@ -28,11 +28,40 @@ bool FUEShedCameraAuthoringTest::RunTest(const FString& Parameters)
 	const bool Dirty = W->GetOutermost()->IsDirty();
 	const auto Location = V->GetViewLocation(); const auto Rotation = V->GetViewRotation();
 	ON_SCOPE_EXIT { FUEShedCameraAuthoringBridge::Shutdown(); };
+	// Old packages reject unknown response fields. Exercise the native producer, including the
+	// setup delegate, with absent, false and true opt-in rather than only testing new decoders.
+	auto CheckFailure = [this](const TSharedPtr<FJsonObject>& Request, const TCHAR* Status, const TCHAR* Code)
+	{
+		for (int32 Mode = 0; Mode < 3; ++Mode)
+		{
+			if (Mode == 0) Request->RemoveField(TEXT("codedFailures"));
+			else Request->SetBoolField(TEXT("codedFailures"), Mode == 2);
+			const auto Response = FUEShedCameraAuthoringBridge::Execute(Request);
+			TestEqual(TEXT("Failure status preserved"), Response->GetStringField(TEXT("status")), FString(Status));
+			TestEqual(TEXT("Only negotiated failures add a field"), Response->Values.Num(), Mode == 2 ? 4 : 3);
+			TestEqual(TEXT("Failure code requires explicit opt-in"), Response->HasField(TEXT("code")), Mode == 2);
+			if (Mode == 2) TestEqual(TEXT("Stable failure cause"), Response->GetStringField(TEXT("code")), FString(Code));
+		}
+		Request->RemoveField(TEXT("codedFailures"));
+	};
+	auto InvalidVersion = MakeShared<FJsonObject>();
+	InvalidVersion->SetNumberField(TEXT("version"), 2);
+	CheckFailure(InvalidVersion, TEXT("invalid"), TEXT("unsupported_version"));
+	auto InvalidSetup = MakeShared<FJsonObject>();
+	InvalidSetup->SetNumberField(TEXT("version"), 1);
+	InvalidSetup->SetStringField(TEXT("operation"), TEXT("setup_poll"));
+	InvalidSetup->SetStringField(TEXT("projectName"), FApp::GetProjectName());
+	CheckFailure(InvalidSetup, TEXT("invalid"), TEXT("invalid_setup_host"));
+	InvalidSetup->SetStringField(TEXT("operation"), TEXT("setup_release"));
+	CheckFailure(InvalidSetup, TEXT("stale"), TEXT("setup_host_replaced"));
 	TSharedPtr<FJsonObject> Q;
 	FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(TEXT(R"({"version":1,"operation":"attach","sessionId":"native-test","cameraId":"camera-a","revision":0,"pose":{"projection":"perspective","aspectRatio":"16:9","fieldOfViewDegrees":60,"location":{"x":0,"y":0,"z":500},"rotation":{"pitch":0,"yaw":0,"roll":0}}})")), Q);
 	Q->SetStringField(TEXT("projectName"), FApp::GetProjectName()); Q->SetStringField(TEXT("mapPath"), W->GetOutermost()->GetName());
 	auto R = FUEShedCameraAuthoringBridge::Execute(Q);
 	TestEqual(TEXT("Attach"), R->GetStringField(TEXT("status")), FString(TEXT("ready")));
+	Q->SetStringField(TEXT("sessionId"), TEXT("another-session"));
+	CheckFailure(Q, TEXT("busy"), TEXT("camera_attached"));
+	Q->SetStringField(TEXT("sessionId"), TEXT("native-test"));
 	auto* C = FUEShedCameraAuthoringBridge::Camera(); if (!C) return false;
 	TestTrue(TEXT("Transient transactional camera"), C->HasAllFlags(RF_Transient | RF_Transactional));
 	TestTrue(TEXT("Transient lens"), C->GetCameraComponent()->HasAnyFlags(RF_Transient));
@@ -60,7 +89,7 @@ bool FUEShedCameraAuthoringTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Map dirty state preserved"), W->GetOutermost()->IsDirty(), Dirty);
 	Q->SetStringField(TEXT("operation"), TEXT("apply")); Q->SetNumberField(TEXT("expectedRevision"), 0);
 	Q->SetNumberField(TEXT("sequence"), FirstSequence); Q->SetNumberField(TEXT("revision"), 1);
-	TestEqual(TEXT("Stale acknowledgement rejected"), FUEShedCameraAuthoringBridge::Execute(Q)->GetStringField(TEXT("status")), FString(TEXT("stale")));
+	CheckFailure(Q, TEXT("stale"), TEXT("revision_conflict"));
 	Q->SetNumberField(TEXT("sequence"), R->GetNumberField(TEXT("sequence"))); Q->SetObjectField(TEXT("pose"), R->GetObjectField(TEXT("pose")));
 	R = FUEShedCameraAuthoringBridge::Execute(Q); TestFalse(TEXT("Confirmed state does not echo"), R->GetBoolField(TEXT("pending")));
 	Q->SetStringField(TEXT("operation"), TEXT("save")); R = FUEShedCameraAuthoringBridge::Execute(Q);

@@ -1,10 +1,10 @@
 import {
 	decodeCameraScheduleConfig,
-	decodeCameraStatus,
+	CameraControlFailure,
+	CameraStatus,
 	ErrorCauseFields,
 	ErrorGuidanceFields,
-	type CameraScheduleConfig,
-	type CameraStatus
+	type CameraScheduleConfig
 } from "@ue-shed/protocol";
 import { RemoteControlClient, RemoteControlClientError } from "@ue-shed/unreal-connection";
 import { Context, Effect, Layer, PubSub, Schema, Scope, Stream } from "effect";
@@ -441,17 +441,51 @@ export class CameraControlError extends Schema.TaggedError<CameraControlError>()
 		...ErrorCauseFields,
 		endpoint: Schema.String,
 		operation: Schema.Literals(["configure", "status"]),
+		/** Stable failure category reported by the optional native camera plugin. */
+		code: Schema.optionalKey(Schema.String),
 		status: Schema.optional(Schema.Number)
 	}
 ) {}
 
 const isRemoteControlClientError = Schema.is(RemoteControlClientError);
+const isCameraControlError = Schema.is(CameraControlError);
+const decodeCameraControlResponse = Schema.decodeUnknownEffect(
+	Schema.Union([CameraStatus, CameraControlFailure])
+);
+
+function cameraStatusOrFailure(endpoint: string, operation: "configure" | "status") {
+	return (value: Schema.Json) =>
+		decodeCameraControlResponse(value).pipe(
+			Effect.flatMap((response) => {
+				if (!("error" in response)) return Effect.succeed(response);
+				const retrySafe = response.error === "no-renderable-world";
+				const invalidInput = response.error.startsWith("invalid-");
+				return Effect.fail(
+					new CameraControlError({
+						endpoint,
+						operation,
+						code: response.error,
+						message:
+							response.message ?? `The camera plugin reported ${response.error}.`,
+						retrySafe,
+						nextStep: retrySafe ? "retry" : invalidInput ? "fix_input" : "escalate",
+						recovery: retrySafe
+							? "Open an editor world, then retry the camera request."
+							: invalidInput
+								? "Check the camera configuration before retrying."
+								: "Inspect the plugin failure and capability support before retrying."
+					})
+				);
+			})
+		);
+}
 
 function cameraControlError(
 	endpoint: string,
 	operation: "configure" | "status",
 	cause: RemoteControlClientError | unknown
 ): CameraControlError {
+	if (isCameraControlError(cause)) return cause;
 	if (isRemoteControlClientError(cause)) {
 		return new CameraControlError({
 			endpoint: cause.endpoint,
@@ -499,7 +533,7 @@ export function getCameraStatus(
 	endpoint: string
 ): Effect.Effect<CameraStatus, CameraControlError, RemoteControlClient> {
 	return cameraRemoteCall(endpoint, "GetStatus", "status", {}).pipe(
-		Effect.flatMap(decodeCameraStatus),
+		Effect.flatMap(cameraStatusOrFailure(endpoint, "status")),
 		Effect.mapError((error) => cameraControlError(endpoint, "status", error))
 	);
 }
@@ -515,7 +549,7 @@ export function configureCameras(
 		const response = yield* cameraRemoteCall(endpoint, "Configure", "configure", {
 			ConfigJson: JSON.stringify(validConfig)
 		});
-		const status = yield* decodeCameraStatus(response);
+		const status = yield* cameraStatusOrFailure(endpoint, "configure")(response);
 		if (
 			config.editorBackgroundTicking === "while_streaming" &&
 			status.config.editorBackgroundTicking !== "while_streaming"

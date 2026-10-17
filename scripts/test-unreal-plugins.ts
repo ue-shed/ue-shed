@@ -36,6 +36,7 @@ const tests = [
 	"UEShed.Cameras.Authoring.MultiCameraPreviews",
 	"UEShed.Cameras.Authoring.PreviewPanel",
 	"UEShed.Cameras.Rendering.ViewLocalVisibilityProof",
+	"UEShed.Cameras.FailureJson",
 	"UEShed.World.Preparation",
 	"UEShed.World.LeaseLifecycle",
 	"UEShed.Authoring.CanonicalJson",

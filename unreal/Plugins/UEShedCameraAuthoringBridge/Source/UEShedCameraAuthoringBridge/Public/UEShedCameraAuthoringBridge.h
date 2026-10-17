@@ -32,6 +32,8 @@ public:
 	static FSimpleMulticastDelegate& OnEditorFocusRequested();
 	static void Shutdown();
 	static bool Tick(float DeltaSeconds);
+private:
+	static TSharedPtr<FJsonObject> ExecuteRequest(const TSharedPtr<FJsonObject>& Request);
 };
 
 UCLASS()

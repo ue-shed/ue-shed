@@ -97,3 +97,5 @@ private:
 
 /** Module-owned singleton; created at startup and torn down at shutdown. */
 FUEShedObservatoryStreamService& GetObservatoryStreamService();
+/** The stream service, or null outside the module's lifetime (a Remote Control call during shutdown). */
+FUEShedObservatoryStreamService* FindObservatoryStreamService();

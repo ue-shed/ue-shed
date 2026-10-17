@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect";
+import { Effect, Schema, Tuple } from "effect";
 import { CameraSetupRequest, CameraSetupState } from "./camera-setup-schema.js";
 import {
 	decodeCompanionCapabilityManifest,
@@ -61,8 +61,11 @@ export function arrangementBridgeCameras(arrangement: CameraArrangement) {
 		pose: resolveArrangementCamera(arrangement, camera.id)
 	}));
 }
-export const CameraBridgeRequest = Schema.Union([
-	CameraSetupRequest,
+const withCodedFailures = Schema.fieldsAssign({
+	/** Opt in per request; older strict v1 clients must receive failures without code. */
+	codedFailures: Schema.optionalKey(Schema.Boolean)
+});
+const CameraSessionRequest = Schema.Union([
 	Schema.Struct({
 		...Scope,
 		operation: Schema.Literal("select_cameras"),
@@ -136,6 +139,10 @@ export const CameraBridgeRequest = Schema.Union([
 		sequence: Counter,
 		pose: ApprovedPose
 	})
+]).mapMembers(Tuple.map(withCodedFailures));
+export const CameraBridgeRequest = Schema.Union([
+	CameraSetupRequest.mapMembers(Tuple.map(withCodedFailures)),
+	...CameraSessionRequest.members
 ]);
 export type CameraBridgeRequest = typeof CameraBridgeRequest.Type;
 export const CameraBridgeSnapshot = Schema.Struct({
@@ -166,6 +173,11 @@ export const CameraBridgeSnapshot = Schema.Struct({
 	pose: ApprovedPose
 });
 export type CameraBridgeSnapshot = typeof CameraBridgeSnapshot.Type;
+/** A bridge failure cause: lower snake case, bounded. */
+export const CameraBridgeFailureCode = Schema.String.check(
+	Schema.isMaxLength(64),
+	Schema.isPattern(/^[a-z][a-z0-9_]*$/u)
+);
 export const CameraBridgeResponse = Schema.Union([
 	CameraSetupState,
 	CameraActorSelectionResult,
@@ -190,7 +202,12 @@ export const CameraBridgeResponse = Schema.Union([
 	Schema.Struct({
 		version: Version,
 		status: Schema.Literals(["busy", "stale", "unavailable", "invalid", "detached"]),
-		message: Schema.String
+		message: Schema.String,
+		/**
+		 * The specific cause behind the coarse status, for example `scope_mismatch` or
+		 * `revision_conflict`. Plugins before 0.17 omit it.
+		 */
+		code: Schema.optionalKey(CameraBridgeFailureCode)
 	})
 ]);
 export type CameraBridgeResponse = typeof CameraBridgeResponse.Type;
@@ -298,7 +315,12 @@ export function makeCameraAuthoringBridge(
 						"/Script/UEShedCameraAuthoringBridge.Default__UEShedCameraAuthoringBridgeLibrary",
 					functionName: "ExecuteCameraAuthoring",
 					operation: `camera.authoring.${request.operation}`,
-					parameters: { RequestJson: JSON.stringify(request) }
+					parameters: {
+						RequestJson: JSON.stringify({
+							...request,
+							codedFailures: request.codedFailures ?? true
+						})
+					}
 				})
 				.pipe(
 					Effect.mapError(
@@ -362,7 +384,10 @@ export function readyCameraBridge(
 			recovery:
 				"Inspect the camera session. Resolve ownership or revision conflicts before retrying.",
 			retrySafe: true,
-			nextStep: rejectedBridgeNextStep(code)
+			nextStep: rejectedBridgeNextStep(code),
+			...("code" in response && response.code !== undefined
+				? { cause: response.code }
+				: undefined)
 		})
 	);
 }

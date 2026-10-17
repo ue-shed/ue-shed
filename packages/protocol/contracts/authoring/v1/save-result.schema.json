@@ -51,6 +51,10 @@
 							"status": {
 								"type": "string",
 								"enum": ["saved", "failed"]
+							},
+							"code": {
+								"type": "string",
+								"enum": ["table_not_found", "save_failed"]
 							}
 						},
 						"additionalProperties": false

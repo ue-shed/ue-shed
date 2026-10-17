@@ -139,8 +139,8 @@ function bundleContracts(pluginIds: ReadonlySet<string>) {
 		contracts.push(
 			{ name: "unreal-authoring", version: { major: 2, minor: 3 } },
 			{ name: "unreal-authoring-table-list", version: { major: 1, minor: 0 } },
-			{ name: "unreal-authoring-apply", version: { major: 1, minor: 2 } },
-			{ name: "unreal-authoring-save", version: { major: 1, minor: 1 } },
+			{ name: "unreal-authoring-apply", version: { major: 1, minor: 3 } },
+			{ name: "unreal-authoring-save", version: { major: 1, minor: 2 } },
 			{ name: "unreal-authoring-actor-references", version: { major: 1, minor: 0 } }
 		);
 	}

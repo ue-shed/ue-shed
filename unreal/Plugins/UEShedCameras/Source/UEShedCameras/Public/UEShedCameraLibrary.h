@@ -3,6 +3,9 @@
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "UEShedCameraLibrary.generated.h"
 
+/** A failed camera call's JSON: stable `error` code, optional prose `message`, valid for any text. */
+UESHEDCAMERAS_API FString UEShedCameraFailureJson(int32 SchemaVersion, const FString& Code, const FString& Message);
+
 UCLASS()
 class UESHEDCAMERAS_API UUEShedCameraLibrary : public UBlueprintFunctionLibrary
 {

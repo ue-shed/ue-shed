@@ -115,3 +115,16 @@ export type CameraStatus = Schema.Schema.Type<typeof CameraStatus>;
 export const decodeCameraScheduleConfig = Schema.decodeUnknownEffect(CameraScheduleConfig);
 /** Decodes a plugin status reply; fails with a SchemaError for another schema version or shape. */
 export const decodeCameraStatus = Schema.decodeUnknownEffect(CameraStatus);
+
+/**
+ * A failed camera status or configure call: `error` is a stable code (for example
+ * `no-renderable-world`, `invalid-json`) and `message`, when present, is prose for people. Plugins
+ * before 0.17 omit `status` and `message`.
+ */
+export const CameraControlFailure = Schema.Struct({
+	schemaVersion: Schema.Literal(1),
+	status: Schema.optionalKey(Schema.Literal("failed")),
+	error: Schema.NonEmptyString,
+	message: Schema.optionalKey(Schema.String)
+}).annotate({ identifier: "CameraControlFailure" });
+export type CameraControlFailure = Schema.Schema.Type<typeof CameraControlFailure>;

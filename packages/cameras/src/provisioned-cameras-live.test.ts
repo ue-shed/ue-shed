@@ -310,4 +310,18 @@ describe("provisioned camera helpers", () => {
 			expect(error.retrySafe).toBe(true);
 		})
 	);
+
+	it.effect("keeps the visibility code beside its prose", () =>
+		Effect.gen(function* () {
+			const error = yield* provisionWith(() => ({
+				error: "invalid-visibility",
+				message: 'Actor "Door" is not loaded.',
+				schemaVersion: 5,
+				status: "failed"
+			}))
+				.run({ editorPreviews: true })
+				.pipe(Effect.flip);
+			expect(error.message).toBe('Actor "Door" is not loaded. (invalid-visibility)');
+		})
+	);
 });

@@ -27,12 +27,14 @@ bool Id(const FString& Value)
         if (!Alnum(C) && C != '-' && C != '_' && C != '.') return false;
     return Alnum(Value[0]);
 }
-TSharedPtr<FJsonObject> Failure(const TCHAR* Status, const TCHAR* Detail)
+/** `Code`, on a failure, names the cause; `Status` stays the coarse category older hosts read. */
+TSharedPtr<FJsonObject> Failure(const TCHAR* Status, const TCHAR* Detail, const TCHAR* Code = nullptr)
 {
     auto R = MakeShared<FJsonObject>();
     R->SetNumberField(TEXT("version"), 1);
     R->SetStringField(TEXT("status"), Status);
     R->SetStringField(TEXT("message"), Detail);
+    if (Code) R->SetStringField(TEXT("code"), Code);
     return R;
 }
 UWorld* World()
@@ -141,26 +143,26 @@ TSharedPtr<FJsonObject> FUEShedCameraSetup::Execute(const TSharedPtr<FJsonObject
     if (String(Q, TEXT("operation")) == TEXT("setup_release"))
     {
         if (!Id(String(Q, TEXT("hostId"))) || Host != String(Q, TEXT("hostId")))
-            return Failure(TEXT("stale"), TEXT("The setup host no longer owns this connection."));
+            return Failure(TEXT("stale"), TEXT("The setup host no longer owns this connection."), TEXT("setup_host_replaced"));
         Disconnect();
         return Inspect(false);
     }
     if (String(Q, TEXT("operation")) == TEXT("setup_poll"))
     {
         if (String(Q, TEXT("projectName")) != FApp::GetProjectName())
-            return Failure(TEXT("stale"), TEXT("The setup host belongs to another project."));
+            return Failure(TEXT("stale"), TEXT("The setup host belongs to another project."), TEXT("setup_host_other_project"));
         const FString RequestedHost = String(Q, TEXT("hostId"));
-        if (!Id(RequestedHost)) return Failure(TEXT("invalid"), TEXT("A valid setup host identity is required."));
+        if (!Id(RequestedHost)) return Failure(TEXT("invalid"), TEXT("A valid setup host identity is required."), TEXT("invalid_setup_host"));
         if (!Host.IsEmpty() && Host != RequestedHost)
-            return Failure(TEXT("busy"), TEXT("Another host owns camera setup."));
+            return Failure(TEXT("busy"), TEXT("Another host owns camera setup."), TEXT("setup_owned"));
         const TSharedPtr<FJsonObject>* Outcome = nullptr;
         if (Q->HasField(TEXT("outcome")))
         {
             if (!Q->TryGetObjectField(TEXT("outcome"), Outcome) || !Id(String(*Outcome, TEXT("id"))))
-                return Failure(TEXT("invalid"), TEXT("Provide a valid setup outcome."));
+                return Failure(TEXT("invalid"), TEXT("Provide a valid setup outcome."), TEXT("invalid_setup_outcome"));
             const auto Error = (*Outcome)->Values.Find(TEXT("error"));
             if (!Error || ((*Error)->Type != EJson::String && (*Error)->Type != EJson::Null))
-                return Failure(TEXT("invalid"), TEXT("Setup outcome error must be text or null."));
+                return Failure(TEXT("invalid"), TEXT("Setup outcome error must be text or null."), TEXT("invalid_setup_error"));
         }
         TArray<TSharedPtr<FJsonObject>> Listed;
         const TArray<TSharedPtr<FJsonValue>>* Values = nullptr;
@@ -168,12 +170,12 @@ TSharedPtr<FJsonObject> FUEShedCameraSetup::Execute(const TSharedPtr<FJsonObject
         if (HasSets)
         {
             if (!Q->TryGetArrayField(TEXT("sets"), Values) || Values->Num() > 256)
-                return Failure(TEXT("invalid"), TEXT("List at most 256 saved camera sets."));
+                return Failure(TEXT("invalid"), TEXT("List at most 256 saved camera sets."), TEXT("too_many_saved_sets"));
             for (const auto& Value : *Values)
             {
                 const TSharedPtr<FJsonObject>* Set = nullptr;
                 if (!Value->TryGetObject(Set) || !ValidSet(*Set))
-                    return Failure(TEXT("invalid"), TEXT("Each saved set needs an ID, name, map, subject and camera count."));
+                    return Failure(TEXT("invalid"), TEXT("Each saved set needs an ID, name, map, subject and camera count."), TEXT("invalid_saved_set"));
                 Listed.Add(*Set);
             }
         }
@@ -197,20 +199,20 @@ TSharedPtr<FJsonObject> FUEShedCameraSetup::Execute(const TSharedPtr<FJsonObject
         }
         return Inspect(Extended);
     }
-    if (Host.IsEmpty()) return Failure(TEXT("unavailable"), TEXT("Connect a camera host for this project. Workbench can run in the background."));
-    if (Pending) return Failure(TEXT("busy"), PendingOpen ? TEXT("Your camera set is still opening.") : TEXT("Your camera set is still being created."));
+    if (Host.IsEmpty()) return Failure(TEXT("unavailable"), TEXT("Connect a camera host for this project. Workbench can run in the background."), TEXT("no_setup_host"));
+    if (Pending) return Failure(TEXT("busy"), PendingOpen ? TEXT("Your camera set is still opening.") : TEXT("Your camera set is still being created."), TEXT("setup_pending"));
     const TSharedPtr<FJsonObject>* Intent;
     if (String(Q, TEXT("operation")) == TEXT("setup_open"))
     {
         if (!HostCanOpen)
-            return Failure(TEXT("unavailable"), TEXT("This camera host can't reopen saved sets. Open the set from the host app."));
+            return Failure(TEXT("unavailable"), TEXT("This camera host can't reopen saved sets. Open the set from the host app."), TEXT("reopen_unsupported"));
         if (!Q->TryGetObjectField(TEXT("intent"), Intent) || !Id(String(*Intent, TEXT("id"))) ||
             !Id(String(*Intent, TEXT("arrangementId"))))
-            return Failure(TEXT("invalid"), TEXT("Choose a saved camera set to open."));
+            return Failure(TEXT("invalid"), TEXT("Choose a saved camera set to open."), TEXT("missing_saved_set"));
         const FString Wanted = String(*Intent, TEXT("arrangementId"));
         auto W = World();
         if (!W || !Sets.ContainsByPredicate([&Wanted](const auto& Set) { return String(Set, TEXT("id")) == Wanted; }))
-            return Failure(TEXT("stale"), TEXT("That saved set is no longer listed. Choose it again."));
+            return Failure(TEXT("stale"), TEXT("That saved set is no longer listed. Choose it again."), TEXT("saved_set_not_listed"));
         Pending = MakeShared<FJsonObject>();
         Pending->SetStringField(TEXT("id"), String(*Intent, TEXT("id")));
         Pending->SetStringField(TEXT("arrangementId"), Wanted);
@@ -221,7 +223,7 @@ TSharedPtr<FJsonObject> FUEShedCameraSetup::Execute(const TSharedPtr<FJsonObject
     }
     const TSharedPtr<FJsonObject>* Layout;
     if (!Q->TryGetObjectField(TEXT("intent"), Intent) || !(*Intent)->TryGetObjectField(TEXT("layout"), Layout))
-        return Failure(TEXT("invalid"), TEXT("Choose an actor and camera preset."));
+        return Failure(TEXT("invalid"), TEXT("Choose an actor and camera preset."), TEXT("missing_subject_or_preset"));
     double Count, Start, Span;
     const FString Kind = String(*Layout, TEXT("kind")), Orientation = String(*Layout, TEXT("orientation"));
     if (!Id(String(*Intent, TEXT("id"))) || String(*Intent, TEXT("name")).TrimStartAndEnd().IsEmpty() ||
@@ -231,13 +233,13 @@ TSharedPtr<FJsonObject> FUEShedCameraSetup::Execute(const TSharedPtr<FJsonObject
         !(*Layout)->TryGetNumberField(TEXT("spanDegrees"), Span) || !FMath::IsFinite(Span) || Span < 0 || Span > 360 ||
         (Kind != TEXT("single") && Kind != TEXT("arc") && Kind != TEXT("orbit")) ||
         (Orientation != TEXT("world") && Orientation != TEXT("subject")))
-        return Failure(TEXT("invalid"), TEXT("Provide a name and a valid camera preset."));
+        return Failure(TEXT("invalid"), TEXT("Provide a name and a valid camera preset."), TEXT("invalid_set_request"));
     auto W = World();
     const FString Path = String(*Intent, TEXT("actorPath"));
     auto Actor = FindObject<AActor>(nullptr, *Path);
     if (!W || !Actor || Actor->GetWorld() != W || Actor->IsA<AUEShedAuthoringCamera>() ||
         String(*Intent, TEXT("mapPath")) != W->GetOutermost()->GetName() || Path.Len() > 4096)
-        return Failure(TEXT("stale"), TEXT("Select a subject actor in the current editor map."));
+        return Failure(TEXT("stale"), TEXT("Select a subject actor in the current editor map."), TEXT("subject_not_found"));
     Pending = MakeShared<FJsonObject>(**Intent);
     PendingOpen = false;
     SetupMap = W->GetOutermost()->GetName();

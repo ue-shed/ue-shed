@@ -178,6 +178,8 @@ const ProvisionedCameraStatus = Schema.Struct({
 		})
 	),
 	error: Schema.optional(Schema.String),
+	/** Prose beside the `error` code, for people; plugins before 0.17 put prose in `error`. */
+	message: Schema.optional(Schema.String),
 	schemaVersion: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 5 }))),
 	status: Schema.optional(Schema.String),
 	worldContext: Schema.optional(Schema.Literals(["editor", "play"]))
@@ -355,7 +357,10 @@ export function ensureProvisionedCameras(
 		if (status.error !== undefined || statusCameras.length === 0) {
 			return yield* Effect.fail(
 				new ProvisionedCameraError({
-					message: status.error ?? "No provisioned cameras were registered.",
+					message:
+						status.message !== undefined && status.error !== undefined
+							? `${status.message} (${status.error})`
+							: (status.error ?? "No provisioned cameras were registered."),
 					operation: "ensure_cameras",
 					recovery: "Open the expected map with UEShedCameras enabled, then retry.",
 					retrySafe: true,

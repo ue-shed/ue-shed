@@ -359,8 +359,8 @@ test("authoring automation source closure attests its contracts and passes relea
 		assert.deepEqual(result.manifest.contracts, [
 			{ name: "unreal-authoring", version: { major: 2, minor: 3 } },
 			{ name: "unreal-authoring-table-list", version: { major: 1, minor: 0 } },
-			{ name: "unreal-authoring-apply", version: { major: 1, minor: 2 } },
-			{ name: "unreal-authoring-save", version: { major: 1, minor: 1 } },
+			{ name: "unreal-authoring-apply", version: { major: 1, minor: 3 } },
+			{ name: "unreal-authoring-save", version: { major: 1, minor: 2 } },
 			{ name: "unreal-authoring-actor-references", version: { major: 1, minor: 0 } },
 			{ name: "unreal-automation-players", version: { major: 1, minor: 0 } },
 			{ name: "unreal-automation-input", version: { major: 1, minor: 0 } },

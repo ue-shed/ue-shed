@@ -17,6 +17,9 @@
 						},
 						"reopen": {
 							"type": "boolean"
+						},
+						"codedFailures": {
+							"type": "boolean"
 						}
 					},
 					"required": ["version", "operation"],
@@ -40,6 +43,9 @@
 									"pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$"
 								}
 							]
+						},
+						"codedFailures": {
+							"type": "boolean"
 						}
 					},
 					"required": ["version", "operation", "hostId"],
@@ -145,6 +151,9 @@
 							},
 							"required": ["id", "actorPath", "mapPath", "name", "layout"],
 							"additionalProperties": false
+						},
+						"codedFailures": {
+							"type": "boolean"
 						}
 					},
 					"required": ["version", "operation", "intent"],
@@ -183,6 +192,9 @@
 							},
 							"required": ["id", "arrangementId"],
 							"additionalProperties": false
+						},
+						"codedFailures": {
+							"type": "boolean"
 						}
 					},
 					"required": ["version", "operation", "intent"],
@@ -395,6 +407,9 @@
 									"maxItems": 256
 								}
 							]
+						},
+						"codedFailures": {
+							"type": "boolean"
 						}
 					},
 					"required": ["version", "operation", "hostId", "projectName"],
@@ -444,6 +459,9 @@
 							"maxItems": 256
 						}
 					]
+				},
+				"codedFailures": {
+					"type": "boolean"
 				}
 			},
 			"required": ["version", "sessionId", "producerId", "operation", "cameraIds"],
@@ -483,6 +501,9 @@
 							"pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$"
 						}
 					]
+				},
+				"codedFailures": {
+					"type": "boolean"
 				}
 			},
 			"required": ["version", "sessionId", "producerId", "operation", "cameraId"],
@@ -4257,6 +4278,9 @@
 				},
 				"acknowledgeEvent": {
 					"type": "string"
+				},
+				"codedFailures": {
+					"type": "boolean"
 				}
 			},
 			"required": ["version", "sessionId", "producerId", "operation", "state"],
@@ -9215,6 +9239,9 @@
 							"additionalProperties": false
 						}
 					]
+				},
+				"codedFailures": {
+					"type": "boolean"
 				}
 			},
 			"required": ["version", "sessionId", "producerId", "operation", "action"],
@@ -9246,6 +9273,9 @@
 				"operation": {
 					"type": "string",
 					"enum": ["selection", "viewport_pose", "cancel_event"]
+				},
+				"codedFailures": {
+					"type": "boolean"
 				}
 			},
 			"required": ["version", "sessionId", "producerId", "operation"],
@@ -9444,6 +9474,9 @@
 					},
 					"required": ["hide", "protect"],
 					"additionalProperties": false
+				},
+				"codedFailures": {
+					"type": "boolean"
 				}
 			},
 			"required": ["version", "sessionId", "producerId", "operation", "actors"],
@@ -9645,6 +9678,9 @@
 				},
 				"enabled": {
 					"type": "boolean"
+				},
+				"codedFailures": {
+					"type": "boolean"
 				}
 			},
 			"required": ["version", "sessionId", "producerId", "operation", "actors", "enabled"],
@@ -9764,6 +9800,9 @@
 							"maximum": 9007199254740991
 						}
 					]
+				},
+				"codedFailures": {
+					"type": "boolean"
 				}
 			},
 			"required": [
@@ -9788,6 +9827,9 @@
 				"operation": {
 					"type": "string",
 					"enum": ["discover"]
+				},
+				"codedFailures": {
+					"type": "boolean"
 				}
 			},
 			"required": ["version", "operation"],
@@ -10352,6 +10394,9 @@
 						"rotation"
 					],
 					"additionalProperties": false
+				},
+				"codedFailures": {
+					"type": "boolean"
 				}
 			},
 			"required": [
@@ -10392,6 +10437,9 @@
 				"operation": {
 					"type": "string",
 					"enum": ["inspect", "select", "pilot", "eject", "save", "detach"]
+				},
+				"codedFailures": {
+					"type": "boolean"
 				}
 			},
 			"required": ["version", "sessionId", "producerId", "operation"],
@@ -10503,6 +10551,9 @@
 						"rotation"
 					],
 					"additionalProperties": false
+				},
+				"codedFailures": {
+					"type": "boolean"
 				}
 			},
 			"required": [
@@ -11085,6 +11136,9 @@
 						"rotation"
 					],
 					"additionalProperties": false
+				},
+				"codedFailures": {
+					"type": "boolean"
 				}
 			},
 			"required": [

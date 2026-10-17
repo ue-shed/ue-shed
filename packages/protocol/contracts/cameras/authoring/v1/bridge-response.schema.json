@@ -10540,6 +10540,17 @@
 				},
 				"message": {
 					"type": "string"
+				},
+				"code": {
+					"type": "string",
+					"allOf": [
+						{
+							"maxLength": 64
+						},
+						{
+							"pattern": "^[a-z][a-z0-9_]*$"
+						}
+					]
 				}
 			},
 			"required": ["version", "status", "message"],

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import { CameraStreamStats } from "@ue-shed/protocol";
 import { RemoteControlClient } from "@ue-shed/unreal-connection";
-import { configureCameras } from "./index.js";
+import { configureCameras, getCameraStatus } from "./index.js";
 
 const config = {
 	activeCameraCount: 6,
@@ -55,5 +55,73 @@ describe("scoped editor ticking compatibility", () => {
 					operation: "configure"
 				});
 		}
+	});
+});
+
+describe("coded camera control failures", () => {
+	const respond = (value: Schema.Json) =>
+		Effect.provideService(RemoteControlClient, {
+			request: () => Effect.succeed(value)
+		});
+
+	it("carries the plugin's code and prose instead of a decode error", async () => {
+		const message = 'Actor "Door\\Left" is not loaded';
+		await expect(
+			Effect.runPromise(
+				getCameraStatus("http://localhost:30117").pipe(
+					respond({
+						schemaVersion: 1,
+						status: "failed",
+						error: "no-renderable-world",
+						message
+					})
+				)
+			)
+		).rejects.toMatchObject({ code: "no-renderable-world", message, retrySafe: true });
+	});
+
+	it("reads an older plugin's failure without status or message", async () => {
+		await expect(
+			Effect.runPromise(
+				configureCameras("http://localhost:30117", config).pipe(
+					respond({ schemaVersion: 1, error: "invalid-resolution" })
+				)
+			)
+		).rejects.toMatchObject({
+			code: "invalid-resolution",
+			operation: "configure",
+			retrySafe: false,
+			nextStep: "fix_input"
+		});
+	});
+
+	it("preserves an unfamiliar native cause without directing a blind retry", async () => {
+		await expect(
+			Effect.runPromise(
+				getCameraStatus("http://localhost:30117").pipe(
+					respond({ schemaVersion: 1, error: "future-native-failure" })
+				)
+			)
+		).rejects.toMatchObject({
+			code: "future-native-failure",
+			retrySafe: false,
+			nextStep: "escalate"
+		});
+	});
+
+	it("reports a malformed plugin reply through the camera domain error", async () => {
+		const error = await Effect.runPromise(
+			getCameraStatus("http://localhost:30117").pipe(
+				respond({ schemaVersion: 99, error: "no-renderable-world" }),
+				Effect.flip
+			)
+		);
+		expect(error).toMatchObject({
+			_tag: "CameraControlError",
+			operation: "status",
+			retrySafe: false,
+			nextStep: "escalate"
+		});
+		expect(error.code).toBeUndefined();
 	});
 });

@@ -123,6 +123,9 @@ TSharedRef<FJsonObject> ValueObject(const TCHAR* Kind)
 // The table that Apply is mutating. New localization keys are stamped with its package namespace,
 // matching the editor's own text property edits. Apply runs on the game thread.
 UObject* GTextKeyOwner = nullptr;
+// The stable cause of the latest Apply command error, set beside every message so Apply can report
+// a code instead of prose alone. Apply runs on the game thread and resets it per command.
+const TCHAR* GApplyErrorCause = nullptr;
 
 TSharedRef<FJsonObject> TextIdentity(const FText& Text, bool& bGenerated)
 {
@@ -756,7 +759,7 @@ bool TextFromIdentity(
 	FString Kind;
 	if (!Identity->TryGetStringField(TEXT("kind"), Kind))
 	{
-		Error = TEXT("text identity kind is missing");
+		GApplyErrorCause = TEXT("text_identity_missing"), Error = TEXT("text identity kind is missing");
 		return false;
 	}
 	bool bGenerated = false;
@@ -776,7 +779,7 @@ bool TextFromIdentity(
 		if (!Identity->TryGetStringField(TEXT("namespace"), Namespace)
 			|| !Identity->TryGetStringField(TEXT("sourceString"), SourceString))
 		{
-			Error = TEXT("localized text requires namespace and sourceString");
+			GApplyErrorCause = TEXT("invalid_localized_text"), Error = TEXT("localized text requires namespace and sourceString");
 			return false;
 		}
 		FString Key;
@@ -801,14 +804,14 @@ bool TextFromIdentity(
 		if (!Identity->TryGetStringField(TEXT("tableId"), TableId)
 			|| !Identity->TryGetStringField(TEXT("key"), Key))
 		{
-			Error = TEXT("string table text requires tableId and key");
+			GApplyErrorCause = TEXT("invalid_string_table_text"), Error = TEXT("string table text requires tableId and key");
 			return false;
 		}
 		Result = FText::FromStringTable(FName(TableId), FTextKey(Key), EStringTableLoadingPolicy::FindOrLoad);
 		const FStringTableConstPtr Table = FStringTableRegistry::Get().FindStringTable(FName(TableId));
 		if (!Table.IsValid() || !Table->FindEntry(FTextKey(Key)).IsValid())
 		{
-			Error = FString::Printf(
+			GApplyErrorCause = TEXT("string_table_entry_missing"), Error = FString::Printf(
 				TEXT("text_string_table_entry_missing: %s has no entry %s"), *TableId, *Key);
 			return false;
 		}
@@ -826,11 +829,11 @@ bool TextFromIdentity(
 	}
 	if (Kind == TEXT("generated"))
 	{
-		Error = TEXT("generated text cannot be written; choose a localized, string_table, "
+		GApplyErrorCause = TEXT("generated_text_read_only"), Error = TEXT("generated text cannot be written; choose a localized, string_table, "
 			"culture_invariant, or none identity");
 		return false;
 	}
-	Error = FString::Printf(TEXT("unsupported text identity %s"), *Kind);
+	GApplyErrorCause = TEXT("unsupported_text_identity"), Error = FString::Printf(TEXT("unsupported text identity %s"), *Kind);
 	return false;
 }
 
@@ -852,7 +855,7 @@ bool AssignPropertyValue(
 	FString Kind;
 	if (!Input.IsValid() || !Input->TryGetStringField(TEXT("kind"), Kind))
 	{
-		Error = TEXT("value kind is missing");
+		GApplyErrorCause = TEXT("value_kind_missing"), Error = TEXT("value kind is missing");
 		return false;
 	}
 	if (const FBoolProperty* Bool = CastField<FBoolProperty>(Property))
@@ -860,7 +863,7 @@ bool AssignPropertyValue(
 		bool Parsed;
 		if (Kind != TEXT("bool") || !Input->TryGetBoolField(TEXT("value"), Parsed))
 		{
-			Error = TEXT("expected bool value");
+			GApplyErrorCause = TEXT("expected_bool"), Error = TEXT("expected bool value");
 			return false;
 		}
 		Bool->SetPropertyValue(Value, Parsed);
@@ -871,13 +874,13 @@ bool AssignPropertyValue(
 		FString Parsed;
 		if (Kind != TEXT("enum") || !Input->TryGetStringField(TEXT("value"), Parsed))
 		{
-			Error = TEXT("expected enum value");
+			GApplyErrorCause = TEXT("expected_enum"), Error = TEXT("expected enum value");
 			return false;
 		}
 		const int64 Raw = Enum->GetEnum()->GetValueByNameString(Parsed);
 		if (Raw == INDEX_NONE)
 		{
-			Error = FString::Printf(TEXT("unknown enum value %s"), *Parsed);
+			GApplyErrorCause = TEXT("unknown_enum_value"), Error = FString::Printf(TEXT("unknown enum value %s"), *Parsed);
 			return false;
 		}
 		Enum->GetUnderlyingProperty()->SetIntPropertyValue(Value, Raw);
@@ -888,13 +891,13 @@ bool AssignPropertyValue(
 		FString Parsed;
 		if (Kind != TEXT("enum") || !Input->TryGetStringField(TEXT("value"), Parsed))
 		{
-			Error = TEXT("expected enum value");
+			GApplyErrorCause = TEXT("expected_enum"), Error = TEXT("expected enum value");
 			return false;
 		}
 		const int64 Raw = Byte->Enum->GetValueByNameString(Parsed);
 		if (Raw == INDEX_NONE || Raw > MAX_uint8)
 		{
-			Error = FString::Printf(TEXT("unknown enum value %s"), *Parsed);
+			GApplyErrorCause = TEXT("unknown_enum_value"), Error = FString::Printf(TEXT("unknown enum value %s"), *Parsed);
 			return false;
 		}
 		Byte->SetPropertyValue(Value, static_cast<uint8>(Raw));
@@ -907,7 +910,7 @@ bool AssignPropertyValue(
 			FString Parsed;
 			if (!Input->TryGetStringField(TEXT("value"), Parsed))
 			{
-				Error = TEXT("expected integer string");
+				GApplyErrorCause = TEXT("expected_integer_string"), Error = TEXT("expected integer string");
 				return false;
 			}
 			if (Kind == TEXT("uint"))
@@ -915,7 +918,7 @@ bool AssignPropertyValue(
 				uint64 Raw;
 				if (!LexTryParseString(Raw, *Parsed))
 				{
-					Error = TEXT("invalid unsigned integer");
+					GApplyErrorCause = TEXT("invalid_unsigned_integer"), Error = TEXT("invalid unsigned integer");
 					return false;
 				}
 				Number->SetIntPropertyValue(Value, Raw);
@@ -924,7 +927,7 @@ bool AssignPropertyValue(
 			int64 Raw;
 			if (Kind != TEXT("int") || !LexTryParseString(Raw, *Parsed))
 			{
-				Error = TEXT("invalid signed integer");
+				GApplyErrorCause = TEXT("invalid_signed_integer"), Error = TEXT("invalid signed integer");
 				return false;
 			}
 			Number->SetIntPropertyValue(Value, Raw);
@@ -934,7 +937,7 @@ bool AssignPropertyValue(
 		const TSharedPtr<FJsonValue> JsonValue = Input->TryGetField(TEXT("value"));
 		if (!JsonValue.IsValid() || (Kind != TEXT("float") && Kind != TEXT("double")))
 		{
-			Error = TEXT("expected floating point value");
+			GApplyErrorCause = TEXT("expected_float"), Error = TEXT("expected floating point value");
 			return false;
 		}
 		if (JsonValue->Type == EJson::String)
@@ -946,7 +949,7 @@ bool AssignPropertyValue(
 			if (Special != TEXT("nan") && Special != TEXT("infinity")
 				&& Special != TEXT("-infinity"))
 			{
-				Error = TEXT("invalid special floating point value");
+				GApplyErrorCause = TEXT("invalid_special_float"), Error = TEXT("invalid special floating point value");
 				return false;
 			}
 		}
@@ -962,7 +965,7 @@ bool AssignPropertyValue(
 	{
 		if (Kind != TEXT("name") || !Input->TryGetStringField(TEXT("value"), Text))
 		{
-			Error = TEXT("expected name value");
+			GApplyErrorCause = TEXT("expected_name"), Error = TEXT("expected name value");
 			return false;
 		}
 		Name->SetPropertyValue(Value, FName(Text));
@@ -972,7 +975,7 @@ bool AssignPropertyValue(
 	{
 		if (Kind != TEXT("string") || !Input->TryGetStringField(TEXT("value"), Text))
 		{
-			Error = TEXT("expected string value");
+			GApplyErrorCause = TEXT("expected_string"), Error = TEXT("expected string value");
 			return false;
 		}
 		String->SetPropertyValue(Value, Text);
@@ -982,7 +985,7 @@ bool AssignPropertyValue(
 	{
 		if (Kind != TEXT("text") || !Input->TryGetStringField(TEXT("value"), Text))
 		{
-			Error = TEXT("expected text value");
+			GApplyErrorCause = TEXT("expected_text"), Error = TEXT("expected text value");
 			return false;
 		}
 		const FText& Current = TextProperty->GetPropertyValue(Value);
@@ -1003,7 +1006,7 @@ bool AssignPropertyValue(
 	{
 		if (Kind != TEXT("soft_object_path") || !Input->TryGetStringField(TEXT("value"), Text))
 		{
-			Error = TEXT("expected soft object path");
+			GApplyErrorCause = TEXT("expected_soft_object_path"), Error = TEXT("expected soft object path");
 			return false;
 		}
 		Soft->SetPropertyValue(Value, FSoftObjectPtr(FSoftObjectPath(Text)));
@@ -1013,7 +1016,7 @@ bool AssignPropertyValue(
 	{
 		if (Kind != TEXT("object_ref"))
 		{
-			Error = TEXT("expected object reference");
+			GApplyErrorCause = TEXT("expected_object_reference"), Error = TEXT("expected object reference");
 			return false;
 		}
 		const TSharedPtr<FJsonValue> JsonValue = Input->TryGetField(TEXT("value"));
@@ -1023,7 +1026,7 @@ bool AssignPropertyValue(
 			Referenced = LoadObject<UObject>(nullptr, *JsonValue->AsString());
 			if (!Referenced)
 			{
-				Error = FString::Printf(TEXT("object not found: %s"), *JsonValue->AsString());
+				GApplyErrorCause = TEXT("object_not_found"), Error = FString::Printf(TEXT("object not found: %s"), *JsonValue->AsString());
 				return false;
 			}
 		}
@@ -1043,7 +1046,7 @@ bool AssignPropertyValue(
 				Handle.DataTable = LoadObject<UDataTable>(nullptr, *TableValue->AsString());
 				if (!Handle.DataTable)
 				{
-					Error = FString::Printf(
+					GApplyErrorCause = TEXT("row_reference_table_not_found"), Error = FString::Printf(
 						TEXT("data table not found: %s"), *TableValue->AsString());
 					return false;
 				}
@@ -1051,7 +1054,7 @@ bool AssignPropertyValue(
 			FString RowName;
 			if (!Input->TryGetStringField(TEXT("rowName"), RowName))
 			{
-				Error = TEXT("row reference is missing rowName");
+				GApplyErrorCause = TEXT("row_reference_missing_row_name"), Error = TEXT("row reference is missing rowName");
 				return false;
 			}
 			Handle.RowName = FName(RowName);
@@ -1064,14 +1067,14 @@ bool AssignPropertyValue(
 				|| !Input->TryGetNumberField(TEXT("y"), Vector.Y)
 				|| !Input->TryGetNumberField(TEXT("z"), Vector.Z))
 			{
-				Error = TEXT("invalid vector value");
+				GApplyErrorCause = TEXT("invalid_vector"), Error = TEXT("invalid vector value");
 				return false;
 			}
 			return true;
 		}
 		if (Kind != TEXT("struct"))
 		{
-			Error = TEXT("expected struct value");
+			GApplyErrorCause = TEXT("expected_struct"), Error = TEXT("expected struct value");
 			return false;
 		}
 		for (const TSharedPtr<FJsonValue>& FieldValue : Input->GetArrayField(TEXT("fields")))
@@ -1082,7 +1085,7 @@ bool AssignPropertyValue(
 			if (!Child || !AssignPropertyValue(Child, Child->ContainerPtrToValuePtr<void>(Value),
 				Field->GetObjectField(TEXT("value")), Error))
 			{
-				if (!Child) Error = FString::Printf(TEXT("unknown struct field %s"), *FieldName);
+				if (!Child) GApplyErrorCause = TEXT("unknown_struct_field"), Error = FString::Printf(TEXT("unknown struct field %s"), *FieldName);
 				return false;
 			}
 		}
@@ -1090,7 +1093,7 @@ bool AssignPropertyValue(
 	}
 	if (const FArrayProperty* Array = CastField<FArrayProperty>(Property))
 	{
-		if (Kind != TEXT("array")) { Error = TEXT("expected array value"); return false; }
+		if (Kind != TEXT("array")) { GApplyErrorCause = TEXT("expected_array"), Error = TEXT("expected array value"); return false; }
 		const TArray<TSharedPtr<FJsonValue>>& Values = Input->GetArrayField(TEXT("values"));
 		FScriptArrayHelper Helper(Array, Value);
 		Helper.Resize(Values.Num());
@@ -1103,7 +1106,7 @@ bool AssignPropertyValue(
 	}
 	if (const FSetProperty* Set = CastField<FSetProperty>(Property))
 	{
-		if (Kind != TEXT("set")) { Error = TEXT("expected set value"); return false; }
+		if (Kind != TEXT("set")) { GApplyErrorCause = TEXT("expected_set"), Error = TEXT("expected set value"); return false; }
 		FScriptSetHelper Helper(Set, Value);
 		Helper.EmptyElements();
 		for (const TSharedPtr<FJsonValue>& Item : Input->GetArrayField(TEXT("values")))
@@ -1117,7 +1120,7 @@ bool AssignPropertyValue(
 	}
 	if (const FMapProperty* Map = CastField<FMapProperty>(Property))
 	{
-		if (Kind != TEXT("map")) { Error = TEXT("expected map value"); return false; }
+		if (Kind != TEXT("map")) { GApplyErrorCause = TEXT("expected_map"), Error = TEXT("expected map value"); return false; }
 		FScriptMapHelper Helper(Map, Value);
 		Helper.EmptyValues();
 		for (const TSharedPtr<FJsonValue>& Item : Input->GetArrayField(TEXT("entries")))
@@ -1132,7 +1135,7 @@ bool AssignPropertyValue(
 		Helper.Rehash();
 		return true;
 	}
-	Error = FString::Printf(TEXT("unsupported property type %s"), *Property->GetClass()->GetName());
+	GApplyErrorCause = TEXT("unsupported_property_type"), Error = FString::Printf(TEXT("unsupported property type %s"), *Property->GetClass()->GetName());
 	return false;
 }
 
@@ -1290,8 +1293,8 @@ TSharedRef<FJsonObject> OperationContract(const TCHAR* Name, int32 Minor)
 	return Contract;
 }
 
-constexpr int32 ApplyContractMinor = 2;
-constexpr int32 SaveContractMinor = 1;
+constexpr int32 ApplyContractMinor = 3;
+constexpr int32 SaveContractMinor = 2;
 
 int32 ContractMinor(const TSharedPtr<FJsonObject>& Request)
 {
@@ -1324,10 +1327,13 @@ bool HasContract(const TSharedPtr<FJsonObject>& Request, const TCHAR* Name)
 
 TSharedPtr<FJsonValue> OperationError(
 	const FString& Code, const FString& Message, bool bRetrySafe,
-	const FString& ObjectPath = FString(), const FString& CommandId = FString())
+	const FString& ObjectPath = FString(), const FString& CommandId = FString(),
+	const TCHAR* Cause = nullptr)
 {
 	const TSharedRef<FJsonObject> Error = MakeShared<FJsonObject>();
 	Error->SetStringField(TEXT("code"), Code);
+	// Apply 1.3: the specific cause behind `command_failed`.
+	if (Cause) Error->SetStringField(TEXT("cause"), Cause);
 	Error->SetStringField(TEXT("message"), Message);
 	Error->SetBoolField(TEXT("retrySafe"), bRetrySafe);
 	if (!ObjectPath.IsEmpty()) Error->SetStringField(TEXT("objectPath"), ObjectPath);
@@ -1369,10 +1375,10 @@ bool ApplyCommand(
 		const FString RowId = Body->GetStringField(TEXT("rowId"));
 		const FName* RowName = RowNames.Find(RowId);
 		uint8* const* RowData = RowName ? Table->GetRowMap().Find(*RowName) : nullptr;
-		if (!RowData) { Error = FString::Printf(TEXT("unknown row %s"), *RowId); return false; }
+		if (!RowData) { GApplyErrorCause = TEXT("unknown_row"), Error = FString::Printf(TEXT("unknown row %s"), *RowId); return false; }
 		const FString FieldName = Body->GetStringField(TEXT("fieldName"));
 		FProperty* Property = FindRowProperty(Table->GetRowStruct(), FieldName);
-		if (!Property) { Error = FString::Printf(TEXT("unknown field %s"), *FieldName); return false; }
+		if (!Property) { GApplyErrorCause = TEXT("unknown_field"), Error = FString::Printf(TEXT("unknown field %s"), *FieldName); return false; }
 		bool bPartial = false;
 		TSharedPtr<FJsonValue> Current = SerializePropertyValue(
 			Property, Property->ContainerPtrToValuePtr<void>(*RowData), bPartial);
@@ -1387,7 +1393,7 @@ bool ApplyCommand(
 		if (bPartial
 			|| CanonicalJson(AsStoredFloats(Current)) != CanonicalJson(AsStoredFloats(Expected)))
 		{
-			Error = FString::Printf(TEXT("field %s no longer matches oldValue"), *FieldName);
+			GApplyErrorCause = TEXT("stale_cell"), Error = FString::Printf(TEXT("field %s no longer matches oldValue"), *FieldName);
 			return false;
 		}
 		return AssignPropertyValue(Property, Property->ContainerPtrToValuePtr<void>(*RowData),
@@ -1400,17 +1406,17 @@ bool ApplyCommand(
 		const FName RowName(Row->GetStringField(TEXT("name")));
 		if (RowNames.Contains(RowId) || Table->GetRowMap().Contains(RowName))
 		{
-			Error = TEXT("row identity or name already exists");
+			GApplyErrorCause = TEXT("row_exists"), Error = TEXT("row identity or name already exists");
 			return false;
 		}
 		const int32 AtIndex = Body->GetIntegerField(TEXT("atIndex"));
 		if (AtIndex < 0 || AtIndex > Table->GetRowMap().Num())
 		{
-			Error = TEXT("add row index is out of range");
+			GApplyErrorCause = TEXT("row_index_out_of_range"), Error = TEXT("add row index is out of range");
 			return false;
 		}
 		uint8* RowData = FDataTableEditorUtils::AddRow(Table, RowName);
-		if (!RowData) { Error = TEXT("Unreal rejected the new row"); return false; }
+		if (!RowData) { GApplyErrorCause = TEXT("row_add_rejected"), Error = TEXT("Unreal rejected the new row"); return false; }
 		for (const TSharedPtr<FJsonValue>& FieldValue : Row->GetArrayField(TEXT("fields")))
 		{
 			const TSharedPtr<FJsonObject> Field = FieldValue->AsObject();
@@ -1420,7 +1426,7 @@ bool ApplyCommand(
 				Property->ContainerPtrToValuePtr<void>(RowData),
 				Field->GetObjectField(TEXT("value")), Error))
 			{
-				if (!Property) Error = FString::Printf(TEXT("unknown field %s"), *FieldName);
+				if (!Property) GApplyErrorCause = TEXT("unknown_field"), Error = FString::Printf(TEXT("unknown field %s"), *FieldName);
 				return false;
 			}
 		}
@@ -1428,7 +1434,7 @@ bool ApplyCommand(
 		if (MoveBy > 0 && !FDataTableEditorUtils::MoveRow(
 			Table, RowName, FDataTableEditorUtils::ERowMoveDirection::Up, MoveBy))
 		{
-			Error = TEXT("Unreal rejected the requested row position");
+			GApplyErrorCause = TEXT("row_move_rejected"), Error = TEXT("Unreal rejected the requested row position");
 			return false;
 		}
 		RowNames.Add(RowId, RowName);
@@ -1443,7 +1449,7 @@ bool ApplyCommand(
 		if (!RowName || !Table->GetRowNames().IsValidIndex(AtIndex)
 			|| Table->GetRowNames()[AtIndex] != *RowName)
 		{
-			Error = TEXT("row moved or no longer exists before removal");
+			GApplyErrorCause = TEXT("row_missing_before_removal"), Error = TEXT("row moved or no longer exists before removal");
 			return false;
 		}
 		// The fingerprint leaves text identity out, so a removal compares the reviewed row itself,
@@ -1463,13 +1469,13 @@ bool ApplyCommand(
 				|| CanonicalJson(AsStoredFloats(MakeShared<FJsonValueArray>(Live)))
 					!= CanonicalJson(AsStoredFloats(MakeShared<FJsonValueArray>(*Reviewed))))
 			{
-				Error = TEXT("row changed since review, including its text identity");
+				GApplyErrorCause = TEXT("stale_row"), Error = TEXT("row changed since review, including its text identity");
 				return false;
 			}
 		}
 		if (!FDataTableEditorUtils::RemoveRow(Table, *RowName))
 		{
-			Error = TEXT("Unreal rejected row removal");
+			GApplyErrorCause = TEXT("row_remove_rejected"), Error = TEXT("Unreal rejected row removal");
 			return false;
 		}
 		RowNames.Remove(RowId);
@@ -1483,12 +1489,12 @@ bool ApplyCommand(
 		const FName NewName(Body->GetStringField(TEXT("newName")));
 		if (!Current || *Current != OldName || Table->GetRowMap().Contains(NewName))
 		{
-			Error = TEXT("row name drift or duplicate target name");
+			GApplyErrorCause = TEXT("rename_conflict"), Error = TEXT("row name drift or duplicate target name");
 			return false;
 		}
 		if (!FDataTableEditorUtils::RenameRow(Table, OldName, NewName))
 		{
-			Error = TEXT("Unreal rejected row rename");
+			GApplyErrorCause = TEXT("row_rename_rejected"), Error = TEXT("Unreal rejected row rename");
 			return false;
 		}
 		*Current = NewName;
@@ -1500,7 +1506,7 @@ bool ApplyCommand(
 		const TArray<TSharedPtr<FJsonValue>>& NewOrder = Body->GetArrayField(TEXT("newOrder"));
 		if (OldOrder.Num() != RowNames.Num() || NewOrder.Num() != RowNames.Num())
 		{
-			Error = TEXT("reorder must contain every row identity");
+			GApplyErrorCause = TEXT("incomplete_reorder"), Error = TEXT("reorder must contain every row identity");
 			return false;
 		}
 		TMap<FName, FString> IdByName;
@@ -1511,7 +1517,7 @@ bool ApplyCommand(
 			const FString* Id = IdByName.Find(CurrentNames[Index]);
 			if (!Id || OldOrder[Index]->AsString() != *Id)
 			{
-				Error = TEXT("row order drifted before reorder");
+				GApplyErrorCause = TEXT("stale_row_order"), Error = TEXT("row order drifted before reorder");
 				return false;
 			}
 		}
@@ -1521,7 +1527,7 @@ bool ApplyCommand(
 			const FString Id = IdValue->AsString();
 			if (!RowNames.Contains(Id) || Requested.Contains(Id))
 			{
-				Error = TEXT("new row order is not a permutation");
+				GApplyErrorCause = TEXT("invalid_reorder"), Error = TEXT("new row order is not a permutation");
 				return false;
 			}
 			Requested.Add(Id);
@@ -1534,13 +1540,13 @@ bool ApplyCommand(
 				Table, RowName, FDataTableEditorUtils::ERowMoveDirection::Up,
 				CurrentIndex - Target))
 			{
-				Error = TEXT("Unreal rejected row reorder");
+				GApplyErrorCause = TEXT("row_reorder_rejected"), Error = TEXT("Unreal rejected row reorder");
 				return false;
 			}
 		}
 		return true;
 	}
-	Error = FString::Printf(TEXT("unsupported command kind %s"), *Kind);
+	GApplyErrorCause = TEXT("unsupported_command_kind"), Error = FString::Printf(TEXT("unsupported command kind %s"), *Kind);
 	return false;
 }
 
@@ -1765,17 +1771,19 @@ void UUEShedAuthoringLibrary::Apply(const FString& RequestJson, FString& ResultJ
 		const FString ObjectPath = Command->GetStringField(TEXT("tableObjectPath"));
 		UDataTable* const* Table = Tables.Find(ObjectPath);
 		FString Error;
+		GApplyErrorCause = nullptr;
 		if (!Table || !ApplyCommand(
 			*Table, Command, RowNames.FindChecked(ObjectPath), Error, bTextIdentity))
 		{
-			if (!Table) Error = TEXT("command references a table outside the Apply plan");
+			if (!Table) GApplyErrorCause = TEXT("table_outside_plan"), Error = TEXT("command references a table outside the Apply plan");
 			Transaction.Cancel();
 			for (const TPair<FString, UDataTable*>& Pair : Tables)
 			{
 				RestoreTable(Pair.Value, Backups.FindChecked(Pair.Key));
 			}
 			for (const TPair<FString, UDataTable*>& Pair : Backups) Pair.Value->RemoveFromRoot();
-			Errors.Add(OperationError(TEXT("command_failed"), Error, false, ObjectPath, CommandId));
+			Errors.Add(OperationError(TEXT("command_failed"), Error, false, ObjectPath, CommandId,
+				GApplyErrorCause ? GApplyErrorCause : TEXT("command_rejected")));
 			Finish(TEXT("rolled_back"), Errors, true);
 			return;
 		}
@@ -1830,6 +1838,7 @@ void UUEShedAuthoringLibrary::Save(const FString& RequestJson, FString& ResultJs
 		{
 			PackageResult->SetStringField(TEXT("packageName"), FString());
 			PackageResult->SetStringField(TEXT("status"), TEXT("failed"));
+			PackageResult->SetStringField(TEXT("code"), TEXT("table_not_found"));
 			PackageResult->SetStringField(TEXT("message"), TEXT("DataTable could not be loaded"));
 			Packages.Add(MakeShared<FJsonValueObject>(PackageResult));
 			continue;
@@ -1850,6 +1859,7 @@ void UUEShedAuthoringLibrary::Save(const FString& RequestJson, FString& ResultJs
 		else
 		{
 			PackageResult->SetStringField(TEXT("status"), TEXT("failed"));
+			PackageResult->SetStringField(TEXT("code"), TEXT("save_failed"));
 			PackageResult->SetStringField(TEXT("message"), TEXT("Unreal failed to save the package"));
 		}
 		Packages.Add(MakeShared<FJsonValueObject>(PackageResult));

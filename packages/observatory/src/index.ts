@@ -33,8 +33,12 @@ const ObservationCadenceResponse = Schema.Union([
 	Schema.Struct({ status: Schema.Literal("ready"), cadenceHz: WorldScoutRefreshRate }),
 	Schema.Struct({
 		status: Schema.Literal("failed"),
+		/** Plugins from 0.17 name the cause (`stream_inactive`, `invalid_cadence`, ...). */
+		code: Schema.optionalKey(Schema.String),
 		message: Schema.String,
-		recovery: Schema.String
+		recovery: Schema.String,
+		/** Plugins from 0.17 say whether the same request can succeed later. */
+		retrySafe: Schema.optionalKey(Schema.Boolean)
 	})
 ]);
 
@@ -43,7 +47,9 @@ export class ObservatoryConnectionError extends Schema.TaggedError<ObservatoryCo
 	{
 		operation: Schema.String,
 		...ErrorGuidanceFields,
-		...ErrorCauseFields
+		...ErrorCauseFields,
+		/** Stable native category, when the Observatory plugin supplies one. */
+		code: Schema.optionalKey(Schema.String)
 	}
 ) {}
 
@@ -198,13 +204,15 @@ export const ObservatoryLive = Layer.effect(
 				)
 			);
 			if (response.status === "ready") return response.cadenceHz;
+			const retrySafe = response.retrySafe ?? true;
 			return yield* Effect.fail(
 				new ObservatoryConnectionError({
 					message: response.message,
 					operation: "set_actor_observation_cadence",
 					recovery: response.recovery,
-					retrySafe: true,
-					nextStep: "retry"
+					retrySafe,
+					nextStep: retrySafe ? "retry" : "fix_input",
+					...(response.code === undefined ? undefined : { code: response.code })
 				})
 			);
 		});

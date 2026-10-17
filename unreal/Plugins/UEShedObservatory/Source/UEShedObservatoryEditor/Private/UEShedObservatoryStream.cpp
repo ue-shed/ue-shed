@@ -229,6 +229,13 @@ struct FUEShedObservatoryStreamService::FCatalogActorEntry
 
 static FUEShedObservatoryStreamService* GStreamServiceInstance = nullptr;
 
+FUEShedObservatoryStreamService* FindObservatoryStreamService()
+{
+	return GStreamServiceInstance;
+}
+
+// Internal callers run only while the module owns the service; Remote Control entry points use
+// FindObservatoryStreamService and report `service_unavailable` instead.
 FUEShedObservatoryStreamService& GetObservatoryStreamService()
 {
 	check(GStreamServiceInstance != nullptr);
@@ -625,6 +632,26 @@ void FUEShedObservatoryStreamService::SampleIfDue(UWorld* World, bool bIsPie)
 	WriterImpl->Writer->Submit(Packet);
 }
 
+namespace
+{
+/**
+ * A failed stream request: `code` names the cause, `retrySafe` says whether the same request can
+ * succeed later without changes, and `message` and `recovery` are prose for people.
+ */
+FString StreamFailureJson(const TCHAR* Code, const TCHAR* Message, const TCHAR* Recovery, const bool bRetrySafe)
+{
+	const TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
+	Root->SetStringField(TEXT("status"), TEXT("failed"));
+	Root->SetStringField(TEXT("code"), Code);
+	Root->SetStringField(TEXT("message"), Message);
+	Root->SetStringField(TEXT("recovery"), Recovery);
+	Root->SetBoolField(TEXT("retrySafe"), bRetrySafe);
+	FString Result;
+	FJsonSerializer::Serialize(Root, TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&Result));
+	return Result;
+}
+}
+
 void FUEShedObservatoryStreamService::StartActorObservation(
 	const FString& RequestJson,
 	FString& ResultJson)
@@ -645,33 +672,24 @@ void FUEShedObservatoryStreamService::StartActorObservation(
 	const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(RequestJson);
 	if (!FJsonSerializer::Deserialize(Reader, Request) || !Request.IsValid())
 	{
-		const TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
-		Root->SetStringField(TEXT("status"), TEXT("failed"));
-		Root->SetStringField(TEXT("message"), TEXT("RequestJson is not valid JSON."));
-		Root->SetStringField(TEXT("recovery"), TEXT("Provide {\"cadenceHz\": 1-60}."));
-		SerializeJson(Root, ResultJson);
+		ResultJson = StreamFailureJson(TEXT("invalid_json"), TEXT("RequestJson is not valid JSON."),
+			TEXT("Provide {\"cadenceHz\": 1-60}."), false);
 		return;
 	}
 
 	double CadenceField = 0.0;
 	if (!Request->TryGetNumberField(TEXT("cadenceHz"), CadenceField))
 	{
-		const TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
-		Root->SetStringField(TEXT("status"), TEXT("failed"));
-		Root->SetStringField(TEXT("message"), TEXT("Missing cadenceHz."));
-		Root->SetStringField(TEXT("recovery"), TEXT("Provide an integer cadenceHz between 1 and 60."));
-		SerializeJson(Root, ResultJson);
+		ResultJson = StreamFailureJson(TEXT("missing_cadence"), TEXT("Missing cadenceHz."),
+			TEXT("Provide an integer cadenceHz between 1 and 60."), false);
 		return;
 	}
 	const int32 RequestedCadence = FMath::RoundToInt(CadenceField);
 	if (RequestedCadence < 1 || RequestedCadence > MaxCadenceHz
 		|| !FMath::IsNearlyEqual(CadenceField, static_cast<double>(RequestedCadence), KINDA_SMALL_NUMBER))
 	{
-		const TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
-		Root->SetStringField(TEXT("status"), TEXT("failed"));
-		Root->SetStringField(TEXT("message"), TEXT("cadenceHz must be an integer between 1 and 60."));
-		Root->SetStringField(TEXT("recovery"), TEXT("Provide an integer cadenceHz between 1 and 60."));
-		SerializeJson(Root, ResultJson);
+		ResultJson = StreamFailureJson(TEXT("invalid_cadence"), TEXT("cadenceHz must be an integer between 1 and 60."),
+			TEXT("Provide an integer cadenceHz between 1 and 60."), false);
 		return;
 	}
 
@@ -679,11 +697,8 @@ void FUEShedObservatoryStreamService::StartActorObservation(
 	UWorld* World = ObservedWorld(bIsPie);
 	if (World == nullptr)
 	{
-		const TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
-		Root->SetStringField(TEXT("status"), TEXT("failed"));
-		Root->SetStringField(TEXT("message"), TEXT("No editor world is available."));
-		Root->SetStringField(TEXT("recovery"), TEXT("Open a map in the Unreal editor and retry."));
-		SerializeJson(Root, ResultJson);
+		ResultJson = StreamFailureJson(TEXT("world_unavailable"), TEXT("No editor world is available."),
+			TEXT("Open a map in the Unreal editor and retry."), true);
 		return;
 	}
 
@@ -750,24 +765,14 @@ void FUEShedObservatoryStreamService::SetActorObservationCadence(
 	FString& ResultJson)
 {
 #if !PLATFORM_WINDOWS
-	const TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
-	Root->SetStringField(TEXT("status"), TEXT("failed"));
-	Root->SetStringField(
-		TEXT("message"),
-		TEXT("Actor transform streaming requires Windows named pipes."));
-	Root->SetStringField(TEXT("recovery"), TEXT("Use bounded snapshot polling fallback at \u226410 Hz."));
-	SerializeJson(Root, ResultJson);
+	ResultJson = StreamFailureJson(TEXT("platform_unsupported"), TEXT("Actor transform streaming requires Windows named pipes."),
+		TEXT("Use bounded snapshot polling fallback at \u226410 Hz."), false);
 	return;
 #else
 	if (!bActive || !WriterImpl.IsValid())
 	{
-		const TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
-		Root->SetStringField(TEXT("status"), TEXT("failed"));
-		Root->SetStringField(TEXT("message"), TEXT("No actor observation stream is active."));
-		Root->SetStringField(
-			TEXT("recovery"),
-			TEXT("Start actor observation before changing its sampling cadence."));
-		SerializeJson(Root, ResultJson);
+		ResultJson = StreamFailureJson(TEXT("stream_inactive"), TEXT("No actor observation stream is active."),
+			TEXT("Start actor observation before changing its sampling cadence."), false);
 		return;
 	}
 
@@ -775,33 +780,24 @@ void FUEShedObservatoryStreamService::SetActorObservationCadence(
 	const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(RequestJson);
 	if (!FJsonSerializer::Deserialize(Reader, Request) || !Request.IsValid())
 	{
-		const TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
-		Root->SetStringField(TEXT("status"), TEXT("failed"));
-		Root->SetStringField(TEXT("message"), TEXT("RequestJson is not valid JSON."));
-		Root->SetStringField(TEXT("recovery"), TEXT("Provide {\"cadenceHz\": 1-60}."));
-		SerializeJson(Root, ResultJson);
+		ResultJson = StreamFailureJson(TEXT("invalid_json"), TEXT("RequestJson is not valid JSON."),
+			TEXT("Provide {\"cadenceHz\": 1-60}."), false);
 		return;
 	}
 
 	double CadenceField = 0.0;
 	if (!Request->TryGetNumberField(TEXT("cadenceHz"), CadenceField))
 	{
-		const TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
-		Root->SetStringField(TEXT("status"), TEXT("failed"));
-		Root->SetStringField(TEXT("message"), TEXT("Missing cadenceHz."));
-		Root->SetStringField(TEXT("recovery"), TEXT("Provide an integer cadenceHz between 1 and 60."));
-		SerializeJson(Root, ResultJson);
+		ResultJson = StreamFailureJson(TEXT("missing_cadence"), TEXT("Missing cadenceHz."),
+			TEXT("Provide an integer cadenceHz between 1 and 60."), false);
 		return;
 	}
 	const int32 RequestedCadence = FMath::RoundToInt(CadenceField);
 	if (RequestedCadence < 1 || RequestedCadence > MaxCadenceHz
 		|| !FMath::IsNearlyEqual(CadenceField, static_cast<double>(RequestedCadence), KINDA_SMALL_NUMBER))
 	{
-		const TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
-		Root->SetStringField(TEXT("status"), TEXT("failed"));
-		Root->SetStringField(TEXT("message"), TEXT("cadenceHz must be an integer between 1 and 60."));
-		Root->SetStringField(TEXT("recovery"), TEXT("Provide an integer cadenceHz between 1 and 60."));
-		SerializeJson(Root, ResultJson);
+		ResultJson = StreamFailureJson(TEXT("invalid_cadence"), TEXT("cadenceHz must be an integer between 1 and 60."),
+			TEXT("Provide an integer cadenceHz between 1 and 60."), false);
 		return;
 	}
 

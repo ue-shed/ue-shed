@@ -587,6 +587,13 @@ export type AuthoringApplyRequest = Schema.Schema.Type<typeof AuthoringApplyRequ
  * same request can be sent again.
  */
 export const AuthoringOperationError = Schema.Struct({
+	/**
+	 * Apply 1.3: the specific cause behind `command_failed`, for example `stale_cell`,
+	 * `unknown_row` or `expected_enum`. Lower snake case.
+	 */
+	cause: Schema.optionalKey(
+		Schema.String.check(Schema.isMaxLength(64), Schema.isPattern(/^[a-z][a-z0-9_]*$/u))
+	),
 	code: Schema.String,
 	commandId: Schema.optionalKey(Schema.String),
 	message: Schema.String,
@@ -644,6 +651,8 @@ export const AuthoringSaveResult = Schema.Struct({
 	contract: SaveContract,
 	packages: Schema.Array(
 		Schema.Struct({
+			/** Save 1.2: why a package failed (`table_not_found` or `save_failed`). */
+			code: Schema.optionalKey(Schema.Literals(["table_not_found", "save_failed"])),
 			message: Schema.optionalKey(Schema.String),
 			objectPath: Schema.String,
 			packageName: Schema.String,

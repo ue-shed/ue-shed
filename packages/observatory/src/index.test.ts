@@ -1,6 +1,10 @@
+import { makeRemoteControlClientTestLayer } from "@ue-shed/unreal-connection";
+import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import {
 	ActorId,
+	Observatory,
+	ObservatoryLive,
 	actorInstanceKey,
 	type ObservedActor,
 	WorldScoutRefreshRate,
@@ -80,5 +84,39 @@ describe("world scout refresh rate", () => {
 		expect(WorldScoutRefreshRate.make(60)).toBe(60);
 		expect(() => WorldScoutRefreshRate.make(0)).toThrow();
 		expect(() => WorldScoutRefreshRate.make(61)).toThrow();
+	});
+});
+
+describe("coded stream failures", () => {
+	const cadence = (value: Schema.Json) =>
+		Effect.runPromise(
+			Effect.gen(function* () {
+				const observatory = yield* Observatory;
+				return yield* observatory.setObservationCadence(
+					"http://127.0.0.1:30010",
+					Schema.decodeUnknownSync(WorldScoutRefreshRate)(10)
+				);
+			}).pipe(
+				Effect.provide(ObservatoryLive),
+				Effect.provide(makeRemoteControlClientTestLayer(() => Effect.succeed(value)))
+			)
+		);
+
+	it("keeps the plugin's code and retry safety", async () => {
+		await expect(
+			cadence({
+				status: "failed",
+				code: "stream_inactive",
+				message: "No actor observation stream is active.",
+				recovery: "Start actor observation before changing its sampling cadence.",
+				retrySafe: false
+			})
+		).rejects.toMatchObject({ code: "stream_inactive", retrySafe: false });
+	});
+
+	it("reads an older plugin's prose-only failure as retry-safe", async () => {
+		await expect(
+			cadence({ status: "failed", message: "Missing cadenceHz.", recovery: "Provide one." })
+		).rejects.toMatchObject({ message: "Missing cadenceHz.", retrySafe: true });
 	});
 });

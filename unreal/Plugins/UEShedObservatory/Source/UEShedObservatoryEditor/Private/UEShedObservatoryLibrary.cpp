@@ -16,6 +16,23 @@ namespace
 {
 int64 SnapshotSequence = 0;
 
+/**
+ * The stream service for a Remote Control call, or null after writing a coded failure: the
+ * library class stays callable briefly while the module shuts down, after the service is gone.
+ */
+FUEShedObservatoryStreamService* StreamServiceFor(FString& ResultJson)
+{
+	if (FUEShedObservatoryStreamService* Service = FindObservatoryStreamService()) return Service;
+	const TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
+	Root->SetStringField(TEXT("status"), TEXT("failed"));
+	Root->SetStringField(TEXT("code"), TEXT("service_unavailable"));
+	Root->SetStringField(TEXT("message"), TEXT("The Observatory stream service is not running."));
+	Root->SetStringField(TEXT("recovery"), TEXT("Wait for the editor to finish starting, or restart it with UEShedObservatory enabled."));
+	Root->SetBoolField(TEXT("retrySafe"), true);
+	FJsonSerializer::Serialize(Root, TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&ResultJson));
+	return nullptr;
+}
+
 TSharedRef<FJsonObject> VectorJson(const FVector& Value)
 {
 	const TSharedRef<FJsonObject> Result = MakeShared<FJsonObject>();
@@ -121,24 +138,24 @@ void UUEShedObservatoryLibrary::StartActorObservation(
 	const FString& RequestJson,
 	FString& ResultJson)
 {
-	GetObservatoryStreamService().StartActorObservation(RequestJson, ResultJson);
+	if (FUEShedObservatoryStreamService* Service = StreamServiceFor(ResultJson)) Service->StartActorObservation(RequestJson, ResultJson);
 }
 
 void UUEShedObservatoryLibrary::StopActorObservation(FString& ResultJson)
 {
-	GetObservatoryStreamService().StopActorObservation(ResultJson);
+	if (FUEShedObservatoryStreamService* Service = StreamServiceFor(ResultJson)) Service->StopActorObservation(ResultJson);
 }
 
 void UUEShedObservatoryLibrary::SetActorObservationCadence(
 	const FString& RequestJson,
 	FString& ResultJson)
 {
-	GetObservatoryStreamService().SetActorObservationCadence(RequestJson, ResultJson);
+	if (FUEShedObservatoryStreamService* Service = StreamServiceFor(ResultJson)) Service->SetActorObservationCadence(RequestJson, ResultJson);
 }
 
 void UUEShedObservatoryLibrary::GetActorObservationStatus(FString& ResultJson)
 {
-	GetObservatoryStreamService().GetActorObservationStatus(ResultJson);
+	if (FUEShedObservatoryStreamService* Service = StreamServiceFor(ResultJson)) Service->GetActorObservationStatus(ResultJson);
 }
 
 void UUEShedObservatoryLibrary::FocusActor(

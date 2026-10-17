@@ -12,6 +12,7 @@ export function main(args: readonly string[]): Effect.Effect<void, CliError, Cli
 		Effect.catchTag("CliSignalError", (error) =>
 			Effect.fail(
 				new CliCommandError({
+					cause: error,
 					recovery:
 						"Inspect the command context and original cause before deciding whether to retry.",
 					retrySafe: false,

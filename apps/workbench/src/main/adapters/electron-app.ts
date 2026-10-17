@@ -68,6 +68,7 @@ function appError(
 	recovery: string
 ): ElectronAppError {
 	return new ElectronAppError({
+		cause: cause,
 		nextStep: "escalate",
 		code: "electron_app_failed",
 		causeText: cause instanceof Error ? cause.message : String(cause),

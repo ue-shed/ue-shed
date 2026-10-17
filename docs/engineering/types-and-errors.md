@@ -86,10 +86,16 @@ boundaries expose unary domain parsers, retaining the original schema issues in 
 The public API check also requires named entry-point exports in the eight reviewed host-facing
 packages and caller-facing documentation for every public entry in protocol, Unreal connection,
 localization, Unreal assets, engine, cameras, host and Game Text. Adding an internal export no longer
-automatically enlarges these public surfaces. Direct `mapError`/IO-catch translations that construct
-an error object must retain its cause; expected refusals constructed without a preceding failure do
-not need a fabricated cause. Localization's portable evidence errors deliberately sanitize authored
-payloads; their code and guidance cross the boundary instead of raw parser/IO objects.
+automatically enlarges these public surfaces. Direct `mapError`/IO-catch translations and helper
+adapters that construct error objects must retain their causes. The guard covers repository tagged
+errors even when their names do not end in `Error`, and checks spread fields rather than treating
+any spread as proof of retention. Expected refusals constructed without a preceding failure do not
+need a fabricated cause.
+
+Privacy boundaries deliberately sanitize evidence: portable localization failures exclude authored
+payloads, engine-installation candidates and private descriptor paths. Secret configuration values
+are also excluded from CLI errors. Keep a safe classified cause and recovery guidance at these
+boundaries instead of attaching raw private parser, IO or configuration objects.
 
 UI and CLI code must not parse error text to make decisions. Translate library errors at the service
 that owns the library. Keep the useful cause.

@@ -96,7 +96,8 @@ export const LocalizationOperationsLive = Layer.effect(
 				Effect.mapError((error) =>
 					localizationOperationError(
 						error.code === "engine_ambiguous" ? "engine_ambiguous" : "engine_not_found",
-						error
+						// The portable failure must not reveal installation candidates or private descriptor paths.
+						{ _tag: error._tag, code: error.code }
 					)
 				)
 			);

@@ -83,17 +83,17 @@ function carriedChanges(before: LocalizationJoin, after: LocalizationJoin) {
 function discoveryFailure(error: LocalizationError): LocalizationOperationError {
 	switch (error.code) {
 		case "file_missing":
-			return localizationOperationError("missing_config");
+			return localizationOperationError("missing_config", error);
 		case "file_unreadable":
 		case "directory_unreadable":
-			return localizationOperationError("io_failed");
+			return localizationOperationError("io_failed", error);
 		case "unsafe_path":
 		case "limit_exceeded":
-			return localizationOperationError(error.code);
+			return localizationOperationError(error.code, error);
 		case "file_changed":
-			return localizationOperationError("config_changed");
+			return localizationOperationError("config_changed", error);
 		default:
-			return localizationOperationError("unsupported_config");
+			return localizationOperationError("unsupported_config", error);
 	}
 }
 export const runLocalizationOperation = Effect.fn("Cli.workflow.localization_run")(
@@ -106,16 +106,8 @@ export const runLocalizationOperation = Effect.fn("Cli.workflow.localization_run
 					const name = yield* Schema.decodeUnknownEffect(LocalizationTargetName)(
 						command.target
 					).pipe(
-						Effect.mapError(
-							(cause) =>
-								new LocalizationOperationError({
-									...localizationOperationError("io_failed"),
-									message: cause.message,
-									recovery:
-										"Choose a listed target and a valid localization operation.",
-									retrySafe: true,
-									nextStep: "fix_input"
-								})
+						Effect.mapError((cause) =>
+							localizationOperationError("invalid_request", cause)
 						)
 					);
 					const reader = yield* LocalizationEvidence;
@@ -136,16 +128,8 @@ export const runLocalizationOperation = Effect.fn("Cli.workflow.localization_run
 					const request = yield* Schema.decodeUnknownEffect(LocalizationRunRequest)(
 						input
 					).pipe(
-						Effect.mapError(
-							(cause) =>
-								new LocalizationOperationError({
-									...localizationOperationError("io_failed"),
-									message: cause.message,
-									recovery:
-										"Choose a listed target and a valid localization operation.",
-									retrySafe: true,
-									nextStep: "fix_input"
-								})
+						Effect.mapError((cause) =>
+							localizationOperationError("invalid_request", cause)
 						)
 					);
 					const operations = yield* LocalizationOperations;
@@ -166,6 +150,7 @@ export const runLocalizationOperation = Effect.fn("Cli.workflow.localization_run
 									Effect.mapError(
 										(cause) =>
 											new LocalizationOperationError({
+												cause: cause,
 												...localizationOperationError("io_failed"),
 												message: cause.message,
 												recovery: cause.recovery,
@@ -228,6 +213,7 @@ export const runLocalizationOperation = Effect.fn("Cli.workflow.localization_run
 						Effect.mapError(
 							(cause) =>
 								new LocalizationOperationError({
+									cause: cause,
 									...localizationOperationError("io_failed"),
 									message: cause.message,
 									recovery: cause.recovery

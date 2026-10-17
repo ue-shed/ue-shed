@@ -223,7 +223,9 @@ export const TextCorpusPublicError = Schema.Struct({
 		"invalid_project",
 		"invalid_options",
 		"scan_limit_exceeded",
-		"contract_failure"
+		"contract_failure",
+		"reader_failed",
+		"index_failed"
 	]),
 	message: Schema.String,
 	recovery: Schema.String,

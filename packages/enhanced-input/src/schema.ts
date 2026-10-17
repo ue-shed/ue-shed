@@ -101,7 +101,12 @@ export const EnhancedInputReport = Schema.Struct({
 export type EnhancedInputReport = Schema.Schema.Type<typeof EnhancedInputReport>;
 
 export const EnhancedInputPublicError = Schema.Struct({
-	code: Schema.Literals(["invalid_project", "scan_limit_exceeded", "invalid_path"]),
+	code: Schema.Literals([
+		"invalid_project",
+		"scan_limit_exceeded",
+		"invalid_path",
+		"reader_failed"
+	]),
 	message: Schema.String,
 	recovery: Schema.String,
 	retrySafe: Schema.Boolean

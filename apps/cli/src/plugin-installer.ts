@@ -595,7 +595,7 @@ function fromPromise<A>(
 					nextStep: "escalate",
 					code: "plugin_installer_failed",
 					message: cause.message,
-					...(cause.cause === undefined ? undefined : { cause: cause.cause })
+					cause
 				});
 			}
 			const code = errnoCode(cause);

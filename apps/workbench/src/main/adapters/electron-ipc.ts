@@ -68,6 +68,7 @@ function ipcError(
 	recovery: string
 ): ElectronIpcError {
 	return new ElectronIpcError({
+		cause: cause,
 		nextStep: "escalate",
 		code: "electron_ipc_failed",
 		causeText: cause instanceof Error ? cause.message : String(cause),

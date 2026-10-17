@@ -16,6 +16,7 @@ import {
 import { Context, Effect, Layer, Schema, Stream } from "effect";
 import {
 	TextOccurrenceId,
+	TextCorpusPublicError,
 	TextUnitId,
 	type TextCorpus,
 	type TextCorpusDiagnostic,
@@ -56,7 +57,7 @@ const reportExtraction = (progress: ExtractionProgress): Effect.Effect<void> =>
 	});
 
 /**
- * A project, scan-option or asset-limit failure before a complete corpus can be returned. The
+ * A reader, project, scan-option or asset-limit failure before a complete corpus can be returned. The
  * code identifies the category; recovery and nextStep describe the required change, and cause
  * retains reader evidence.
  */
@@ -64,7 +65,7 @@ export class TextCorpusScanError extends Schema.TaggedError<TextCorpusScanError>
 	"TextCorpusScanError",
 	{
 		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
-		code: Schema.Literals(["invalid_project", "invalid_options", "scan_limit_exceeded"]),
+		code: TextCorpusPublicError.fields.code,
 		message: Schema.String,
 		recovery: Schema.String,
 		retrySafe: Schema.Boolean,
@@ -126,6 +127,7 @@ export const TEXT_PROPERTY_NAME = "TextProperty";
 function textCorpusScanFailure(error: AssetReaderError): TextCorpusScanError {
 	if (error.kind === "resource_limit") {
 		return new TextCorpusScanError({
+			cause: error,
 			nextStep: "fix_input",
 			code: "scan_limit_exceeded",
 			message: error.message,
@@ -134,10 +136,11 @@ function textCorpusScanFailure(error: AssetReaderError): TextCorpusScanError {
 		});
 	}
 	return new TextCorpusScanError({
-		nextStep: "fix_input",
-		code: "invalid_project",
+		cause: error,
+		nextStep: error.nextStep,
+		code: error.kind === "discovery" ? "invalid_project" : "reader_failed",
 		message: error.message,
-		recovery: "Choose an Unreal project directory containing a Content folder.",
+		recovery: error.recovery,
 		retrySafe: error.retrySafe
 	});
 }

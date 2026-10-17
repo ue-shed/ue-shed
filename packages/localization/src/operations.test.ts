@@ -84,6 +84,7 @@ it.effect("engine discovery failures are actionable and discard private candidat
 				if (Result.isSuccess(result)) throw new Error("Expected engine discovery failure.");
 				expect(result.failure.code).toBe(code);
 				expect(result.failure.recovery).toContain("--engine-root");
+				expect(result.failure.cause).toEqual({ _tag: "EngineInstallationError", code });
 				expect(JSON.stringify(result.failure)).not.toContain("private-installation");
 				expect(JSON.stringify(result.failure)).not.toContain("private-project");
 			}

@@ -943,6 +943,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 			Effect.mapError(
 				(error) =>
 					new SavedWorldUnavailable({
+						cause: error,
 						retrySafe: false,
 						nextStep: "escalate",
 						code: "saved_world_unavailable",

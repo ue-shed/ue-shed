@@ -33,12 +33,24 @@ test("error translation retains the original failure in mapError and IO catches"
 				"const b = Effect.tryPromise({try: read, catch: () => new ReadError({message: 'failed'})});",
 				"const c = Effect.mapError((cause) => new ReadError({message: 'failed', cause}));",
 				"const d = Effect.tryPromise({try: read, catch: (cause) => new ReadError({message: 'failed', cause})});",
-				"const expected = () => new ReadError({message: 'no selection'});"
+				"const expected = () => new ReadError({message: 'no selection'});",
+				"const spread = Effect.mapError((cause) => new ReadError({...guidance, message: cause.message}));",
+				"function helper(error: ReadError) { return new ReadError({message: error.message}); }",
+				"function complete(options: {readonly cause: unknown}) { return new ReadError({...options,message: 'failed'}); }",
+				"function local(cause: unknown) { const fields = {cause}; return new ReadError({...fields,message: 'failed'}); }",
+				"function optional(cause?: unknown) { return new ReadError({...(cause === undefined ? undefined : {cause}), message: 'failed'}); }",
+				"const status = Effect.mapError((cause) => new ReadError({...(cause.status === undefined ? undefined : {status: cause.status}), message: cause.message}));",
+				'class ReaderUnavailable extends Schema.TaggedError<ReaderUnavailable>()("ReaderUnavailable", {}) {}',
+				"const tagged = Effect.mapError((cause) => new ReaderUnavailable({message: cause.message}));"
 			].join("\n")
 		);
 		assert.deepEqual(await checkErrorTranslationCauses(fixtureRoot), [
 			"packages/example/src/use.ts:1: error translation must retain its original cause",
-			"packages/example/src/use.ts:2: error translation must retain its original cause"
+			"packages/example/src/use.ts:2: error translation must retain its original cause",
+			"packages/example/src/use.ts:6: error translation must retain its original cause",
+			"packages/example/src/use.ts:7: error translation must retain its original cause",
+			"packages/example/src/use.ts:11: error translation must retain its original cause",
+			"packages/example/src/use.ts:13: error translation must retain its original cause"
 		]);
 	} finally {
 		await rm(fixtureRoot, { recursive: true, force: true });

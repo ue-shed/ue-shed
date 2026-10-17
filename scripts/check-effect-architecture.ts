@@ -1214,49 +1214,122 @@ export async function checkTaggedErrorMatching(root: string = repositoryRoot) {
 	return failures;
 }
 
-/** Direct error translations retain the failure instead of copying only its displayed message. */
+/** Optional causes may be absent; unrelated conditional metadata must not waive retention. */
+function optionalCauseSpread(
+	expression: ts.Expression,
+	locals: ReadonlyMap<string, ts.Expression>
+): boolean {
+	if (ts.isParenthesizedExpression(expression))
+		return optionalCauseSpread(expression.expression, locals);
+	if (!ts.isConditionalExpression(expression)) return false;
+	const condition = expression.condition;
+	if (
+		!ts.isBinaryExpression(condition) ||
+		condition.operatorToken.kind !== ts.SyntaxKind.EqualsEqualsEqualsToken ||
+		!(
+			(ts.isIdentifier(condition.left) && condition.left.text === "undefined") ||
+			(ts.isIdentifier(condition.right) && condition.right.text === "undefined")
+		) ||
+		!ts.isIdentifier(expression.whenTrue) ||
+		expression.whenTrue.text !== "undefined"
+	)
+		return false;
+	return objectFieldNames(expression.whenFalse, locals)?.has("cause") ?? false;
+}
+
+/** Error adapters retain source failures, including helpers and objects with spread fields. */
 export async function checkErrorTranslationCauses(root: string = repositoryRoot) {
 	const failures: string[] = [];
+	const tagged = new Set<string>();
+	const sources: { path: string; text: string }[] = [];
 	for (const directory of sourceRoots)
 		for (const path of await filesUnder(root, directory)) {
 			if (!/\.tsx?$/u.test(path) || testSourcePattern.test(path)) continue;
 			const text = await readFile(path, "utf8");
-			const source = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true);
-			const label = relative(root, path).replaceAll("\\", "/");
-			const inspectConstructor = (node: ts.Node): void => {
-				if (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) return;
-				if (ts.isNewExpression(node) && node.expression.getText(source).endsWith("Error")) {
-					const fields = node.arguments?.[0];
-					if (
-						fields &&
-						ts.isObjectLiteralExpression(fields) &&
-						!fields.properties.some(
-							(property) =>
-								ts.isSpreadAssignment(property) ||
-								property.name?.getText(source) === "cause"
-						)
-					)
-						failures.push(
-							`${label}:${lineOf(text, node.getStart(source))}: error translation must retain its original cause`
-						);
-				}
-				ts.forEachChild(node, inspectConstructor);
-			};
-			const visit = (node: ts.Node): void => {
-				if (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) {
-					const parent = node.parent;
-					if (
-						(ts.isPropertyAssignment(parent) &&
-							parent.name.getText(source) === "catch") ||
-						(ts.isCallExpression(parent) &&
-							parent.expression.getText(source) === "Effect.mapError")
-					)
-						inspectConstructor(node.body);
-				}
-				ts.forEachChild(node, visit);
-			};
-			visit(source);
+			sources.push({ path, text });
+			for (const match of text.matchAll(/class\s+(\w+)\s+extends\s+Schema\.TaggedError\b/gu))
+				if (match[1]) tagged.add(match[1]);
 		}
+	for (const { path, text } of sources) {
+		const source = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true);
+		const label = relative(root, path).replaceAll("\\", "/");
+		const visit = (node: ts.Node): void => {
+			if (
+				(ts.isArrowFunction(node) ||
+					ts.isFunctionExpression(node) ||
+					ts.isFunctionDeclaration(node) ||
+					ts.isMethodDeclaration(node)) &&
+				node.body
+			) {
+				const carrying = new Set(
+					node.parameters
+						.filter(
+							(parameter) =>
+								parameter.type &&
+								ts.isTypeLiteralNode(parameter.type) &&
+								parameter.type.members.some(
+									(member) => member.name?.getText(source) === "cause"
+								)
+						)
+						.map((parameter) => parameter.name.getText(source))
+				);
+				const sourceParameter = node.parameters.some((parameter) =>
+					/^(?:cause|error|err|failure|defect)$/u.test(parameter.name.getText(source))
+				);
+				const parent = node.parent;
+				const callback =
+					(ts.isPropertyAssignment(parent) && parent.name.getText(source) === "catch") ||
+					(ts.isCallExpression(parent) &&
+						parent.expression.getText(source) === "Effect.mapError");
+				if (sourceParameter || carrying.size || callback) {
+					const locals = new Map<string, ts.Expression>();
+					const collect = (entry: ts.Node): void => {
+						if (ts.isFunctionLike(entry)) return;
+						if (
+							ts.isVariableDeclaration(entry) &&
+							ts.isIdentifier(entry.name) &&
+							entry.initializer
+						)
+							locals.set(entry.name.text, entry.initializer);
+						ts.forEachChild(entry, collect);
+					};
+					collect(node.body);
+					const inspect = (entry: ts.Node): void => {
+						if (ts.isFunctionLike(entry)) return;
+						if (
+							ts.isNewExpression(entry) &&
+							(entry.expression.getText(source).endsWith("Error") ||
+								tagged.has(
+									entry.expression.getText(source).split(".").at(-1) ?? ""
+								))
+						) {
+							const fields = entry.arguments?.[0];
+							if (fields && ts.isObjectLiteralExpression(fields)) {
+								const retained = fields.properties.some((property) =>
+									ts.isSpreadAssignment(property)
+										? (ts.isIdentifier(property.expression) &&
+												carrying.has(property.expression.text)) ||
+											objectFieldNames(property.expression, locals)?.has(
+												"cause"
+											) ||
+											optionalCauseSpread(property.expression, locals)
+										: property.name?.getText(source) === "cause"
+								);
+								if (!retained)
+									failures.push(
+										`${label}:${lineOf(text, entry.getStart(source))}: error translation must retain its original cause`
+									);
+							}
+						}
+						ts.forEachChild(entry, inspect);
+					};
+					inspect(node.body);
+				}
+			}
+			ts.forEachChild(node, visit);
+		};
+		visit(source);
+	}
 	return failures;
 }
 

@@ -101,6 +101,7 @@ function windowError(
 	recovery: string
 ): WorkbenchWindowError {
 	return new WorkbenchWindowError({
+		cause: cause,
 		nextStep: "escalate",
 		code: "workbench_window_failed",
 		causeText: cause instanceof Error ? cause.message : String(cause),

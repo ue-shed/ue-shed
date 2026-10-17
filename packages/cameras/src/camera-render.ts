@@ -234,6 +234,7 @@ function nativeError(
 	return new CameraRenderError({
 		...failure,
 		...nativeRenderGuidance(operation, failure),
+		cause: failure,
 		operation,
 		nativeFailure: failure
 	});

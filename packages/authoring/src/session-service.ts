@@ -1037,6 +1037,7 @@ function makeAuthoringSessionServiceEffect(): Effect.Effect<
 											? Effect.succeed({ error, kind: "diagnostic" as const })
 											: Effect.fail(
 													new AuthoringSessionStorageError({
+														cause: error,
 														message: error.message,
 														operation: "list_entry",
 														recovery: error.recovery,

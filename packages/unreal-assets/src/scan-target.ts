@@ -39,8 +39,8 @@ export function resolveScanTarget(
 	return Effect.tryPromise({
 		try: async (): Promise<ResolvedScanTarget> => {
 			const target = resolve(path);
-			const details = await stat(target).catch(() => {
-				throw new ScanTargetError(`Scan target does not exist: ${target}`);
+			const details = await stat(target).catch((cause) => {
+				throw new ScanTargetError(`Scan target does not exist: ${target}`, { cause });
 			});
 			if (details.isFile() && extname(target).toLowerCase() === ".uproject") {
 				return { paths: [], projectRoot: dirname(target) };
@@ -83,7 +83,7 @@ export function resolveScanTarget(
 				path,
 				retrySafe: false,
 				...assetReaderGuidance("discovery", false),
-				...(cause instanceof ScanTargetError ? undefined : { cause })
+				cause
 			})
 	}).pipe(Effect.withSpan("unreal_assets.resolve_scan_target"));
 }

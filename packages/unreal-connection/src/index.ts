@@ -301,6 +301,7 @@ export const connectUnrealAutomation = Effect.fn("UnrealConnection.connectAutoma
 						Effect.mapError((cause) =>
 							isMutation
 								? new UnrealConnectionError({
+										cause: cause,
 										endpoint: cause.endpoint,
 										operation: cause.operation,
 										message: cause.message,

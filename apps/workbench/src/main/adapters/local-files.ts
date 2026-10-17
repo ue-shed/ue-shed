@@ -61,6 +61,7 @@ function filesError(
 	retrySafe = true
 ): LocalFilesError {
 	const fields = {
+		cause,
 		causeText: cause instanceof Error ? cause.message : String(cause),
 		message: `Local file ${operation} failed.`,
 		operation,

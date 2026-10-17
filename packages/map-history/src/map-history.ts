@@ -68,6 +68,7 @@ function progress(
 function savedWorldError(operation: string, error: AssetReaderError): MapHistoryError {
 	const kind = error.kind === "resource_limit" ? "resource_limit" : "saved_world_decode";
 	return new MapHistoryError({
+		cause: error,
 		kind,
 		message: `${operation}: ${error.message}`,
 		recovery:

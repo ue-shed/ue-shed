@@ -183,7 +183,14 @@ describe("optional Unreal automation over real HTTP", () => {
 		const connection = await run(connectUnrealAutomation(`http://127.0.0.1:${address.port}`));
 		const error = await run(Effect.flip(connection.injectInput(input)));
 		expect(error).toBeInstanceOf(UnrealConnectionError);
-		if (error instanceof UnrealConnectionError) expect(error.retrySafe).toBe(false);
+		if (Schema.is(UnrealConnectionError)(error)) {
+			expect(error.retrySafe).toBe(false);
+			expect(error.nextStep).toBe("reconcile");
+			expect(error.cause).toMatchObject({
+				_tag: "UnrealConnectionError",
+				cause: { _tag: "RemoteControlClientError" }
+			});
+		}
 		expect(mutationCalls).toBe(1);
 	});
 

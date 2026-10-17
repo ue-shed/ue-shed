@@ -34,6 +34,7 @@ export const MAX_DIRECT_MAP_MOVES = 16;
 function savedWorldError(error: AssetReaderError): MapHistoryError {
 	const kind = error.kind === "resource_limit" ? "resource_limit" : "saved_world_decode";
 	return new MapHistoryError({
+		cause: error,
 		kind,
 		message: `Could not resolve the saved map scope: ${error.message}`,
 		recovery:

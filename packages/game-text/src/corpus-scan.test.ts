@@ -20,6 +20,30 @@ import {
 
 const unexpected = (operation: string) => Effect.die(new Error(`Unexpected ${operation} call`));
 
+it.effect("keeps a failed reader distinct from an invalid project and retains its cause", () =>
+	Effect.gen(function* () {
+		const original = new AssetReaderError({
+			code: "executable_missing",
+			kind: "process",
+			operation: "extract_text",
+			message: "The configured reader is unavailable.",
+			recovery: "Install the paired reader.",
+			retrySafe: false,
+			nextStep: "fix_input"
+		});
+		const failure = yield* Effect.flatMap(TextCorpusService, (service) =>
+			service.scan({ projectRoot: "C:/Fixture" })
+		).pipe(
+			Effect.flip,
+			Effect.provide(TextCorpusServiceLive),
+			Effect.provide(readerOffering(() => Stream.fail(original)))
+		);
+		expect(failure.code).toBe("reader_failed");
+		expect(failure.recovery).toBe(original.recovery);
+		expect(failure.cause).toBe(original);
+	})
+);
+
 const textEvents = (options: {
 	readonly failed?: boolean;
 	readonly path: string;

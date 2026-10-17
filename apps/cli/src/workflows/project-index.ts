@@ -38,6 +38,7 @@ function projectIndexLayer(command: TargetCommand) {
 
 function mapError(cause: unknown): CliCommandError {
 	return new CliCommandError({
+		cause: cause,
 		recovery:
 			"Inspect the command context and original cause before deciding whether to retry.",
 		retrySafe: false,

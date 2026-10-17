@@ -19,6 +19,30 @@ import {
 
 const unexpected = (operation: string) => Effect.die(new Error(`Unexpected ${operation} call`));
 
+it.effect("preserves reader failures without blaming the selected project", () =>
+	Effect.gen(function* () {
+		const original = new AssetReaderError({
+			code: "executable_missing",
+			kind: "process",
+			operation: "scan",
+			message: "The configured reader is unavailable.",
+			recovery: "Install the paired reader.",
+			retrySafe: false,
+			nextStep: "fix_input"
+		});
+		const failure = yield* Effect.flatMap(EnhancedInputService, (service) =>
+			service.scan({ projectRoot: "C:/Fixture" })
+		).pipe(
+			Effect.flip,
+			Effect.provide(EnhancedInputServiceLive),
+			Effect.provide(readerOffering(() => Effect.fail(original)))
+		);
+		expect(failure.code).toBe("reader_failed");
+		expect(failure.recovery).toBe(original.recovery);
+		expect(failure.cause).toBe(original);
+	})
+);
+
 const actionInspection: SavedAssetInspection = {
 	assets: [
 		{

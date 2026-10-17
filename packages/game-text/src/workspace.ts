@@ -305,7 +305,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 			Effect.catch((error) =>
 				Effect.succeed({
 					error: {
-						code: "invalid_project" as const,
+						code: "index_failed" as const,
 						message: error.message,
 						recovery: error.recovery,
 						retrySafe: "retrySafe" in error ? (error.retrySafe ?? true) : true
@@ -476,7 +476,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 				Effect.catch((error) =>
 					Effect.succeed({
 						error: {
-							code: "invalid_project" as const,
+							code: "index_failed" as const,
 							message: error.message,
 							recovery: error.recovery,
 							retrySafe: "retrySafe" in error ? (error.retrySafe ?? true) : true

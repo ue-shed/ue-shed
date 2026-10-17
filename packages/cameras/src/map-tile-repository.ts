@@ -68,6 +68,7 @@ export class MapCaptureArtifactSourceRejected extends Schema.TaggedError<MapCapt
 	"MapCaptureArtifactSourceRejected",
 	{
 		...ErrorGuidanceFields,
+		cause: Schema.optionalKey(Schema.Defect()),
 		path: Schema.String,
 		root: Schema.String
 	}
@@ -174,6 +175,7 @@ function mapDestinationStorageError(args: {
 	readonly recovery: string;
 }): MapCaptureStorageError {
 	return new MapCaptureStorageError({
+		cause: args.cause,
 		message: args.cause.message,
 		nextStep: args.cause.nextStep,
 		operation: args.operation,
@@ -288,6 +290,7 @@ function mapCaptureDestination(filesystem: FilesystemCaptureDestination): MapCap
 						Effect.mapError((cause) =>
 							isCaptureArtifactSourceRejected(cause)
 								? new MapCaptureArtifactSourceRejected({
+										cause: cause,
 										message: cause.message,
 										nextStep: cause.nextStep,
 										path: cause.path,

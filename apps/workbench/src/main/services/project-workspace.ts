@@ -219,6 +219,7 @@ export const WorkbenchProjectLive = Layer.effect(
 						error._tag === "ProjectIndexStaleGeneration"
 							? error
 							: new WorkbenchProjectUnavailable({
+									cause: error,
 									retrySafe: false,
 									nextStep: "escalate",
 									code: "workbench_project_unavailable",
@@ -386,6 +387,7 @@ export const WorkbenchProjectLive = Layer.effect(
 				Effect.mapError(
 					(error) =>
 						new WorkbenchProjectUnavailable({
+							cause: error,
 							retrySafe: false,
 							nextStep: "escalate",
 							code: "workbench_project_unavailable",
@@ -458,6 +460,7 @@ export const WorkbenchProjectLive = Layer.effect(
 							Effect.mapError(
 								(error) =>
 									new WorkbenchProjectUnavailable({
+										cause: error,
 										retrySafe: false,
 										nextStep: "escalate",
 										code: "workbench_project_unavailable",
@@ -480,6 +483,7 @@ export const WorkbenchProjectLive = Layer.effect(
 						error._tag === "WorkbenchProjectUnavailable"
 							? error
 							: new WorkbenchProjectUnavailable({
+									cause: error,
 									retrySafe: false,
 									nextStep: "escalate",
 									code: "workbench_project_unavailable",
@@ -497,6 +501,7 @@ export const WorkbenchProjectLive = Layer.effect(
 					Effect.mapError(
 						(error) =>
 							new WorkbenchProjectUnavailable({
+								cause: error,
 								retrySafe: false,
 								nextStep: "escalate",
 								code: "workbench_project_unavailable",
@@ -569,6 +574,7 @@ export const WorkbenchProjectLive = Layer.effect(
 				Effect.mapError(
 					(error) =>
 						new WorkbenchProjectUnavailable({
+							cause: error,
 							retrySafe: false,
 							nextStep: "escalate",
 							code: "workbench_project_unavailable",
@@ -808,6 +814,7 @@ export const WorkbenchProjectLive = Layer.effect(
 								Effect.mapError(
 									(error) =>
 										new WorkbenchProjectUnavailable({
+											cause: error,
 											retrySafe: false,
 											nextStep: "escalate",
 											code: "workbench_project_unavailable",
@@ -840,6 +847,7 @@ export const WorkbenchProjectLive = Layer.effect(
 						error._tag === "WorkbenchProjectUnavailable"
 							? error
 							: new WorkbenchProjectUnavailable({
+									cause: error,
 									retrySafe: false,
 									nextStep: "escalate",
 									code: "workbench_project_unavailable",
@@ -911,6 +919,7 @@ export const WorkbenchProjectLive = Layer.effect(
 					Effect.mapError(
 						(error) =>
 							new WorkbenchProjectUnavailable({
+								cause: error,
 								retrySafe: false,
 								nextStep: "escalate",
 								code: "workbench_project_unavailable",

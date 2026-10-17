@@ -51,7 +51,10 @@ describe("scan target resolution", () => {
 	});
 
 	it("refuses a path that does not exist", async () => {
-		const exit = await runExit(join(fixtureRoot, "Content", "NoSuchDirectory"));
-		expect(Exit.isFailure(exit)).toBe(true);
+		const failure = await Effect.runPromise(
+			Effect.flip(resolveScanTarget(join(fixtureRoot, "Content", "NoSuchDirectory")))
+		);
+		expect(failure.kind).toBe("discovery");
+		expect(failure.cause).toMatchObject({ cause: { code: "ENOENT" } });
 	});
 });

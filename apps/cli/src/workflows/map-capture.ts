@@ -10,6 +10,7 @@ type Command<Tag extends CliCommand["_tag"]> = Extract<CliCommand, { readonly _t
 
 function commandError(cause: unknown): CliCommandError {
 	return new CliCommandError({
+		cause: cause,
 		recovery:
 			"Inspect the command context and original cause before deciding whether to retry.",
 		retrySafe: false,

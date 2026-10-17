@@ -15,7 +15,10 @@ import {
 import {
 	makeTextCorpusServiceTestLayer,
 	TextCorpusScanError,
-	GameTextIndexError
+	GameTextIndexError,
+	GameTextIndexSteps,
+	SnapshotStoreError,
+	type IndexFailure
 } from "@ue-shed/game-text/index";
 import { STARTER_GAME_TEXT_RULES, GAME_TEXT_RULES_RELATIVE_PATH } from "@ue-shed/game-text/rules";
 import {
@@ -1329,6 +1332,16 @@ it("restores embedded rules without retaining another rule file's write destinat
 	}
 });
 
+function failedIndexSteps(failure: IndexFailure) {
+	return Layer.effect(
+		GameTextIndexSteps,
+		Effect.gen(function* () {
+			const steps = yield* GameTextIndexSteps;
+			return GameTextIndexSteps.of({ ...steps, refreshProject: () => Effect.fail(failure) });
+		})
+	).pipe(Layer.provide(oracleGameTextIndexLayer(() => Effect.succeed(emptyCorpus))));
+}
+
 for (const failure of [
 	{
 		code: "reader_failed",
@@ -1339,6 +1352,25 @@ for (const failure of [
 			recovery: "Reopen the reader.",
 			retrySafe: false,
 			nextStep: "reconcile"
+		})
+	},
+	{
+		code: "index_failed",
+		error: new GameTextIndexError({
+			code: "index_failed",
+			operation: "join",
+			message: "writer lost publication",
+			recovery: "Reopen the committed state before publishing again.",
+			retrySafe: false,
+			nextStep: "reconcile",
+			cause: new AssetReaderError({
+				kind: "process",
+				operation: "game_text_index",
+				message: "transport stopped",
+				recovery: "Retry the process.",
+				retrySafe: true,
+				nextStep: "retry"
+			})
 		})
 	},
 	{
@@ -1369,7 +1401,21 @@ for (const failure of [
 			}).pipe(
 				Effect.provide(
 					indexedWorkbenchGameTextLive.pipe(
-						Layer.provide(oracleGameTextIndexLayer(() => Effect.fail(failure.error))),
+						Layer.provide(
+							failedIndexSteps(
+								failure.error._tag === "AssetReaderError"
+									? new GameTextIndexError({
+											code: "index_failed",
+											operation: "reader_failure",
+											cause: failure.error,
+											message: failure.error.message,
+											recovery: failure.error.recovery,
+											retrySafe: failure.error.retrySafe,
+											nextStep: failure.error.nextStep
+										})
+									: failure.error
+							)
+						),
 						Layer.provide(noLocalization),
 						Layer.provide(gameTextAdapters),
 						Layer.provide(configuration),
@@ -1378,5 +1424,68 @@ for (const failure of [
 				)
 			)
 		);
+	}
+}
+
+for (const native of [
+	{
+		code: "invalid_cache",
+		recovery: "Close the failed session and rebuild the disposable index.",
+		retrySafe: false,
+		nextStep: "reconcile"
+	},
+	{
+		code: "timeout",
+		recovery: "Reopen the last committed state before a new build session.",
+		retrySafe: false,
+		nextStep: "reconcile"
+	},
+	{
+		code: "busy",
+		recovery: "Wait for the writer before opening another session.",
+		retrySafe: true,
+		nextStep: "retry"
+	}
+] as const) {
+	for (const operation of ["configuredScan", "configuredRefresh"] as const) {
+		it.effect(`retains native ${native.code} recovery in ${operation}`, () => {
+			const failure = new SnapshotStoreError({
+				...native,
+				operation: "native-index-builder",
+				message: "native writer failed",
+				cause: new AssetReaderError({
+					code: native.code,
+					kind: "process",
+					operation: "game_text_index",
+					message: "native writer failed",
+					recovery: "Check the executable and retry.",
+					retrySafe: true,
+					nextStep: "retry"
+				})
+			});
+			const failedSteps = failedIndexSteps(failure);
+			return Effect.gen(function* () {
+				const service = yield* WorkbenchGameText;
+				expect(yield* service[operation]()).toEqual({
+					status: "failed",
+					error: {
+						code: "index_failed",
+						message: failure.message,
+						recovery: native.recovery,
+						retrySafe: native.retrySafe
+					}
+				});
+			}).pipe(
+				Effect.provide(
+					indexedWorkbenchGameTextLive.pipe(
+						Layer.provide(failedSteps),
+						Layer.provide(noLocalization),
+						Layer.provide(gameTextAdapters),
+						Layer.provide(configuration),
+						Layer.provide(selectedProject)
+					)
+				)
+			);
+		});
 	}
 }

@@ -50,7 +50,7 @@
 		"test": "node scripts/test.ts",
 		"test:architecture": "node --test scripts/canonical-json-schema.test.ts scripts/check-effect-architecture.test.ts scripts/check-license-boundary.test.ts scripts/check-map-history-boundary.test.ts scripts/check-plugin-distribution-boundary.test.ts scripts/check-stylex-shorthands.test.ts scripts/unreal-project.test.ts scripts/localization-fixture.test.ts scripts/localization-fixture-output.test.ts scripts/ci-scope.test.ts scripts/check-dependency-paths.test.ts scripts/check-public-api.test.ts scripts/benchmark-event-loop.test.ts",
 		"test:localization-fixture": "node --test scripts/localization-fixture.test.ts scripts/localization-fixture-output.test.ts",
-		"test:release": "changeset status && node scripts/sync-native-versions.ts --check && node --test scripts/create-release-candidate.test.ts scripts/pack-public-packages.test.ts scripts/plugin-bundle.test.ts scripts/release-source.test.ts scripts/release.test.ts",
+		"test:release": "node scripts/check-release-plan.ts && node scripts/sync-native-versions.ts --check && node --test scripts/create-release-candidate.test.ts scripts/pack-public-packages.test.ts scripts/plugin-bundle.test.ts scripts/release-source.test.ts scripts/release.test.ts scripts/check-release-plan.test.ts",
 		"test:release:packages": "node scripts/test-public-packages.ts",
 		"test:repository": "node scripts/test.ts --without-uasset",
 		"release:status": "changeset status",
@@ -118,8 +118,13 @@
 		"dependency:check": "node scripts/check-dependency-paths.ts"
 	},
 	"devDependencies": {
+		"@changesets/assemble-release-plan": "7.0.0",
 		"@changesets/cli": "3.0.0",
+		"@changesets/config": "4.0.0",
+		"@changesets/pre": "3.0.0",
+		"@changesets/read": "1.0.0",
 		"@effect/vitest": "catalog:",
+		"@manypkg/get-packages": "3.1.0",
 		"@oxlint/plugins": "1.78.0",
 		"@solidjs/testing-library": "1.0.0-beta.3",
 		"@solidjs/web": "catalog:",

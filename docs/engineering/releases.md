@@ -45,7 +45,8 @@ applications, extensions, examples, or tooling. Exact internal workspace depende
 by Changesets. The protected allowlist in `scripts/pack-public-packages.ts` is the authoritative
 public set; [the private-package ledger](private-packages.md) explains every excluded workspace.
 
-`pnpm test:release` resolves the accumulated Changesets plan before its release tests, so mixed
+`pnpm test:release` resolves the accumulated plan with Changesets libraries before its release
+tests. This validates all notes without Git history or a local `main` ref, so mixed
 private/public entries and other invalid release metadata fail the portable gate. Private workspace
 changes may be described in a note, but only the directly affected public packages belong in its
 release front matter.

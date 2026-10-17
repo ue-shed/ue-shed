@@ -78,12 +78,27 @@ importers:
 
   .:
     devDependencies:
+      '@changesets/assemble-release-plan':
+        specifier: 7.0.0
+        version: 7.0.0
       '@changesets/cli':
         specifier: 3.0.0
         version: 3.0.0
+      '@changesets/config':
+        specifier: 4.0.0
+        version: 4.0.0
+      '@changesets/pre':
+        specifier: 3.0.0
+        version: 3.0.0
+      '@changesets/read':
+        specifier: 1.0.0
+        version: 1.0.0
       '@effect/vitest':
         specifier: 'catalog:'
         version: 4.0.4(effect@4.0.4)(vitest@5.0.4)
+      '@manypkg/get-packages':
+        specifier: 3.1.0
+        version: 3.1.0
       '@oxlint/plugins':
         specifier: 1.78.0
         version: 1.78.0

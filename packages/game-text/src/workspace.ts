@@ -191,8 +191,14 @@ const isReaderError = Schema.is(AssetReaderError);
 
 /** Preserve classified scan/reader failures; other preparation failures belong to the index. */
 function indexPublicFailure(error: IndexFailure): TextCorpusPublicError {
-	const cause = error.cause;
-	const source = isCorpusScanError(cause) || isReaderError(cause) ? cause : error;
+	const cause = isGameTextIndexError(error) ? error.cause : undefined;
+	const source =
+		isCorpusScanError(cause) ||
+		(isGameTextIndexError(error) &&
+			error.operation === "reader_failure" &&
+			isReaderError(cause))
+			? cause
+			: error;
 	const code = isCorpusScanError(source)
 		? source.code
 		: isReaderError(source)

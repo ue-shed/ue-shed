@@ -1,3 +1,4 @@
+import { contractParser } from "@ue-shed/protocol";
 import { Effect, Schema } from "effect";
 import { PluginErrorGuidanceFields as ErrorGuidanceFields } from "./errors.js";
 
@@ -691,7 +692,10 @@ export const validatePluginBundleManifest = <Input>(
 	);
 
 /** Schema-only decoder for callers that need to preserve parse diagnostics separately. */
-export const decodePluginBundleManifest = Schema.decodeUnknownEffect(PluginBundleManifest);
+export const decodePluginBundleManifest = contractParser(
+	PluginBundleManifest,
+	"PluginBundleManifest"
+);
 
 /** Validates one artifact digest before any extraction takes place. */
 export const verifyPluginBundleArtifactChecksum = (

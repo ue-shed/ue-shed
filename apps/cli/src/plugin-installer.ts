@@ -33,7 +33,14 @@ export type PluginReleaseManifest = PluginBundleManifest;
 
 export class PluginInstallerError extends Schema.TaggedError<PluginInstallerError>()(
 	"PluginInstallerError",
-	{ message: Schema.String, ...ErrorCauseFields }
+	{
+		recovery: Schema.String,
+		retrySafe: Schema.Boolean,
+		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		code: Schema.Literal("plugin_installer_failed"),
+		message: Schema.String,
+		...ErrorCauseFields
+	}
 ) {}
 
 export interface PluginVerificationReport {
@@ -585,12 +592,22 @@ function fromPromise<A>(
 		catch: (cause) => {
 			if (cause instanceof PluginInstallRejected) {
 				return new PluginInstallerError({
+					recovery:
+						"Inspect the plugin destination and retained cause, then repair the installation before retrying.",
+					retrySafe: false,
+					nextStep: "escalate",
+					code: "plugin_installer_failed",
 					message: cause.message,
 					...(cause.cause === undefined ? undefined : { cause: cause.cause })
 				});
 			}
 			const code = errnoCode(cause);
 			return new PluginInstallerError({
+				recovery:
+					"Inspect the plugin destination and retained cause, then repair the installation before retrying.",
+				retrySafe: false,
+				nextStep: "escalate",
+				code: "plugin_installer_failed",
 				message:
 					code === "EACCES" || code === "EPERM"
 						? `Permission was denied while trying to ${operation}.`

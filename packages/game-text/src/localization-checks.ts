@@ -468,6 +468,8 @@ export function enabledLocalizationChecks(
 		(options.culture !== undefined && !join.cultures.includes(options.culture))
 	)
 		throw new GameTextLocalizationError({
+			retrySafe: false,
+			nextStep: "fix_input",
 			code: "invalid_selection",
 			message: "The localization check selection is invalid.",
 			recovery: "Choose a loaded target and one of its listed cultures."

@@ -35,11 +35,28 @@ function request<A, HostValue, DecodeError>(args: {
 	return Effect.tryPromise({
 		try: args.invoke,
 		catch: (cause) =>
-			new TextureAuditClientError({ cause, operation: args.operation, recovery })
+			new TextureAuditClientError({
+				message: "Texture audit could not complete the host operation.",
+				retrySafe: false,
+				nextStep: "reconcile",
+				code: "texture_audit_client_failed",
+				cause,
+				operation: args.operation,
+				recovery
+			})
 	}).pipe(
 		Effect.flatMap(args.decode),
 		Effect.mapError(
-			(cause) => new TextureAuditClientError({ cause, operation: args.operation, recovery })
+			(cause) =>
+				new TextureAuditClientError({
+					message: "Texture audit could not complete the host operation.",
+					retrySafe: false,
+					nextStep: "reconcile",
+					code: "texture_audit_client_failed",
+					cause,
+					operation: args.operation,
+					recovery
+				})
 		)
 	);
 }

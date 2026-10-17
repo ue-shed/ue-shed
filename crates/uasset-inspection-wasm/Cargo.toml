@@ -23,3 +23,5 @@ unsafe_code = "forbid"
 
 [lints.clippy]
 all = "warn"
+unwrap_used = "warn"
+expect_used = "warn"

@@ -876,6 +876,7 @@ it.effect("translates a typed scan failure into the failed result variant", () =
 							scanFromProjectIndex: () =>
 								Effect.fail(
 									new TextCorpusScanError({
+										nextStep: "fix_input",
 										code: "invalid_project",
 										message: "boom",
 										recovery: "retry",

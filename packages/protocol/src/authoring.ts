@@ -1,3 +1,4 @@
+import { contractParser } from "./contract-parser.js";
 import { makeWireJsonSchemaDocument } from "./json-schema.js";
 import { Schema } from "effect";
 
@@ -505,12 +506,15 @@ export function editAuthoringText(
 	return identity ? { identity, kind: "text", value: content } : { kind: "text", value: content };
 }
 
-/** Decodes a v1 or v2 snapshot; fails with a `SchemaError` on any other version or shape. */
-export const decodeAuthoringTableSnapshot = Schema.decodeUnknownEffect(AuthoringTableSnapshot);
-/** Decodes a 1.x table list; fails with a `SchemaError` on any other version or shape. */
-export const decodeAuthoringTableList = Schema.decodeUnknownEffect(AuthoringTableList);
-/** Decodes one typed value; fails with a `SchemaError` when the input is not a valid value. */
-export const decodeAuthoringValue = Schema.decodeUnknownEffect(AuthoringValue);
+/** Decodes a v1 or v2 snapshot; fails with a `ContractParseError` on any other version or shape. */
+export const decodeAuthoringTableSnapshot = contractParser(
+	AuthoringTableSnapshot,
+	"AuthoringTableSnapshot"
+);
+/** Decodes a 1.x table list; fails with a `ContractParseError` on any other version or shape. */
+export const decodeAuthoringTableList = contractParser(AuthoringTableList, "AuthoringTableList");
+/** Decodes one typed value; fails with a `ContractParseError` when the input is not a valid value. */
+export const decodeAuthoringValue = contractParser(AuthoringValue, "AuthoringValue");
 
 /**
  * One table edit. Each command records the prior state it expects (old value, removed row and
@@ -665,14 +669,23 @@ export const AuthoringSaveResult = Schema.Struct({
 }).annotate({ identifier: "AuthoringSaveResult" });
 export type AuthoringSaveResult = Schema.Schema.Type<typeof AuthoringSaveResult>;
 
-/** Decodes a 1.x Apply request; fails with a `SchemaError` on any other version or shape. */
-export const decodeAuthoringApplyRequest = Schema.decodeUnknownEffect(AuthoringApplyRequest);
-/** Decodes a 1.x Apply result; fails with a `SchemaError` on any other version or shape. */
-export const decodeAuthoringApplyResult = Schema.decodeUnknownEffect(AuthoringApplyResult);
-/** Decodes a 1.x Save request; fails with a `SchemaError` on any other version or shape. */
-export const decodeAuthoringSaveRequest = Schema.decodeUnknownEffect(AuthoringSaveRequest);
-/** Decodes a 1.x Save result; fails with a `SchemaError` on any other version or shape. */
-export const decodeAuthoringSaveResult = Schema.decodeUnknownEffect(AuthoringSaveResult);
+/** Decodes a 1.x Apply request; fails with a `ContractParseError` on any other version or shape. */
+export const decodeAuthoringApplyRequest = contractParser(
+	AuthoringApplyRequest,
+	"AuthoringApplyRequest"
+);
+/** Decodes a 1.x Apply result; fails with a `ContractParseError` on any other version or shape. */
+export const decodeAuthoringApplyResult = contractParser(
+	AuthoringApplyResult,
+	"AuthoringApplyResult"
+);
+/** Decodes a 1.x Save request; fails with a `ContractParseError` on any other version or shape. */
+export const decodeAuthoringSaveRequest = contractParser(
+	AuthoringSaveRequest,
+	"AuthoringSaveRequest"
+);
+/** Decodes a 1.x Save result; fails with a `ContractParseError` on any other version or shape. */
+export const decodeAuthoringSaveResult = contractParser(AuthoringSaveResult, "AuthoringSaveResult");
 
 /**
  * Derives a JSON Schema (draft 2020-12) document from an authoring Effect schema, used to check it

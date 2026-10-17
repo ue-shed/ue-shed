@@ -3,7 +3,7 @@ import { mkdir, writeFile, open } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { performance } from "node:perf_hooks";
+import { monitorEventLoopDelay, performance } from "node:perf_hooks";
 import { Effect, Schema } from "effect";
 import {
 	LocalizationEvidence,
@@ -35,6 +35,7 @@ const { values } = parseArgs({
 		cache: { type: "string" },
 		output: { type: "string" },
 		mode: { type: "string", default: "files" },
+		builder: { type: "string", default: "native" },
 		host: { type: "string", default: "cli" },
 		worker: { type: "boolean" },
 		select: { type: "string" },
@@ -87,18 +88,28 @@ if (values.worker) {
 		process.send?.({ kind: "sample", stage, memory: peak });
 	};
 	const timer = setInterval(sample, 25);
+	const loop = monitorEventLoopDelay({ resolution: 10 });
+	loop.enable();
 	async function measure<A>(name: string, run: () => Promise<A>, summary: (value: A) => object) {
 		globalThis.gc?.();
 		stage = name;
 		peak = memory();
 		process.send?.({ kind: "stage", stage });
 		const started = performance.now();
+		loop.reset();
+		const loopStart = performance.eventLoopUtilization();
 		const profileStarted = values.profile ? Number(process.hrtime.bigint() / 1000n) : 0;
 		const value = await run();
+		await new Promise<void>((resolve) => setImmediate(resolve));
 		sample();
 		const result = {
 			stage,
 			seconds: (performance.now() - started) / 1000,
+			eventLoop: {
+				maximumDelayMs: loop.max / 1e6,
+				p99DelayMs: loop.percentile(99) / 1e6,
+				utilization: performance.eventLoopUtilization(loopStart).utilization
+			},
 			...(values.profile
 				? {
 						profileWindowMicros: {
@@ -182,7 +193,8 @@ if (values.worker) {
 				values.host!,
 				values.select ?? "all",
 				changedPoByte,
-				values["force-changed-join"]
+				values["force-changed-join"],
+				Schema.decodeUnknownSync(Schema.Literals(["native", "typescript"]))(values.builder)
 			);
 		}
 		if (mode === "join") {
@@ -336,6 +348,7 @@ if (values.worker) {
 		process.exitCode = 1;
 	} finally {
 		clearInterval(timer);
+		loop.disable();
 		process.disconnect?.();
 	}
 } else {
@@ -380,6 +393,8 @@ if (values.worker) {
 			String(changedPoByte),
 			...(values.select ? ["--select", values.select] : []),
 			...(values.host ? ["--host", values.host] : []),
+			"--builder",
+			values.builder!,
 			...(values.report ? ["--report", values.report] : []),
 			...(values.domain ? ["--domain", values.domain] : []),
 			...(values.records ? ["--records", values.records] : []),
@@ -437,6 +452,10 @@ if (values.worker) {
 					outcome,
 					results,
 					stages,
+					memoryScope:
+						mode === "hosts"
+							? "Sampled worker and descendant process RSS; JS heap counters are worker-only."
+							: "Sampled worker process RSS.",
 					limits: {
 						heapMiB: mode === "hosts" ? null : maximumHeapMiB,
 						defaultHeap: mode === "hosts",
@@ -494,7 +513,7 @@ if (values.worker) {
 		if (polling || !child.pid || outcome) return;
 		polling = true;
 		const sampledStage = stage;
-		void childWorkingSet(child.pid)
+		void childWorkingSet(child.pid, mode === "hosts")
 			.then((rss) => {
 				const current = (stages[sampledStage] ??= { osPeakRss: 0, tracePeakHeap: 0 });
 				current.osPeakRss = Math.max(current.osPeakRss, rss);

@@ -1,3 +1,4 @@
+import { contractParser } from "./contract-parser.js";
 import { Schema } from "effect";
 import { SavedProperty, SavedPropertyValue } from "./uasset-inspection.js";
 
@@ -241,10 +242,13 @@ export interface BlueprintGraphProjection extends Schema.Schema.Type<
 > {}
 
 /**
- * Validates unknown input as a projection. The Effect fails with a SchemaError when the shape does
+ * Validates unknown input as a projection. The Effect fails with a ContractParseError when the shape does
  * not match, including any `schema_version` other than 2.
  */
-export const decodeBlueprintGraphProjection = Schema.decodeUnknownEffect(BlueprintGraphProjection);
+export const decodeBlueprintGraphProjection = contractParser(
+	BlueprintGraphProjection,
+	"BlueprintGraphProjection"
+);
 
 /**
  * A non-fatal message the reader emitted while reading a Blueprint. `code` is machine-readable and

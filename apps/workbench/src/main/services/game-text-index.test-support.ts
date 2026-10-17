@@ -52,6 +52,8 @@ export function oracleGameTextIndexLayer<E>(
 									Effect.mapError(
 										(cause) =>
 											new GameTextIndexError({
+												nextStep: "escalate",
+												code: "index_failed",
 												operation: "scan",
 												retrySafe:
 													cause instanceof Object && "retrySafe" in cause
@@ -77,6 +79,9 @@ export function oracleGameTextIndexLayer<E>(
 									Effect.mapError(
 										(cause) =>
 											new GameTextIndexError({
+												nextStep: "escalate",
+												retrySafe: false,
+												code: "index_failed",
 												operation: cause.code,
 												message: cause.message,
 												recovery: cause.recovery
@@ -88,6 +93,9 @@ export function oracleGameTextIndexLayer<E>(
 								Effect.mapError(
 									(cause) =>
 										new GameTextIndexError({
+											nextStep: "escalate",
+											retrySafe: false,
+											code: "index_failed",
 											operation: cause.code,
 											message: cause.message,
 											recovery: cause.recovery
@@ -250,6 +258,9 @@ const oracleIndexStepsLayer = Layer.effect(
 					if (!target && request.targetName !== undefined)
 						return yield* Effect.fail(
 							new GameTextIndexError({
+								nextStep: "escalate",
+								retrySafe: false,
+								code: "index_failed",
 								operation: "target_not_found",
 								message: "Target not found",
 								recovery: "Select an available target."
@@ -282,6 +293,9 @@ const oracleIndexStepsLayer = Layer.effect(
 						cause instanceof GameTextIndexError
 							? cause
 							: new GameTextIndexError({
+									nextStep: "escalate",
+									retrySafe: false,
+									code: "index_failed",
 									operation: cause.code,
 									message: cause.message,
 									recovery: cause.recovery

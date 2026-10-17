@@ -20,7 +20,7 @@ import {
 import {
 	gameTextIndexRefreshLayer,
 	gameTextIndexSourceNodeLayer,
-	typeScriptIndexBuilderLayer
+	GameTextIndexBuilderLive
 } from "@ue-shed/game-text/index";
 import {
 	EditorWindowActivationLive,
@@ -195,7 +195,7 @@ function domainCatalogLayer(hosts: WorkbenchHosts) {
 							refreshProjectIndex: false
 						}).pipe(Layer.provide(projectIndexLive))
 					),
-					Layer.provide(typeScriptIndexBuilderLayer),
+					Layer.provide(GameTextIndexBuilderLive),
 					Layer.provide(LocalizationEvidenceNodeLive)
 				);
 			})

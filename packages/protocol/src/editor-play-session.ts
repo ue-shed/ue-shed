@@ -1,3 +1,4 @@
+import { contractParser } from "./contract-parser.js";
 import { makeWireJsonSchemaDocument } from "./json-schema.js";
 import { Schema } from "effect";
 
@@ -82,15 +83,17 @@ export type EditorPlaySessionCommandResponse = Schema.Schema.Type<
  * Decodes an editor reply; fails with a schema error when the plugin speaks another contract
  * version or the reply is malformed.
  */
-export const decodeEditorPlaySessionStateResponse = Schema.decodeUnknownEffect(
-	EditorPlaySessionStateResponse
+export const decodeEditorPlaySessionStateResponse = contractParser(
+	EditorPlaySessionStateResponse,
+	"EditorPlaySessionStateResponse"
 );
 /**
  * Decodes a command reply; fails with a schema error when the plugin speaks another contract
  * version or the reply is malformed. A rejection decodes successfully as `outcome: "rejected"`.
  */
-export const decodeEditorPlaySessionCommandResponse = Schema.decodeUnknownEffect(
-	EditorPlaySessionCommandResponse
+export const decodeEditorPlaySessionCommandResponse = contractParser(
+	EditorPlaySessionCommandResponse,
+	"EditorPlaySessionCommandResponse"
 );
 
 /**

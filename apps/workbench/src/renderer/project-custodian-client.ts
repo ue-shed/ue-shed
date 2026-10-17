@@ -16,6 +16,10 @@ function request<A, HostValue, DecodeError>(
 		try: options.invoke,
 		catch: (cause) =>
 			new CustodianClientError({
+				message: "Project Custodian could not complete the host operation.",
+				retrySafe: false,
+				nextStep: "reconcile",
+				code: "custodian_client_failed",
 				cause,
 				operation: options.operation,
 				recovery: "Restart Workbench and retry. No files were changed."
@@ -25,6 +29,10 @@ function request<A, HostValue, DecodeError>(
 		Effect.mapError(
 			(cause) =>
 				new CustodianClientError({
+					message: "Project Custodian could not complete the host operation.",
+					retrySafe: false,
+					nextStep: "reconcile",
+					code: "custodian_client_failed",
 					cause,
 					operation: options.operation,
 					recovery: "Update paired UE Shed packages and retry. No files were changed."

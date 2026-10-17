@@ -159,6 +159,8 @@ const queryRevisionFor = (project: GameTextProject, generation: string, joinedKe
 
 const failure = (operation: string, message: string, recovery: string, cause?: unknown) =>
 	new GameTextIndexError({
+		nextStep: "escalate",
+		code: "index_failed",
 		operation,
 		message,
 		recovery,
@@ -541,6 +543,9 @@ export const makeGameTextIndexSteps = (
 					if (request.requireManifest && manifestFailure)
 						return yield* Effect.fail(
 							new GameTextIndexError({
+								nextStep: "escalate",
+								retrySafe: false,
+								code: "index_failed",
 								operation: "manifest",
 								message: manifestFailure.error.message,
 								recovery: manifestFailure.error.recovery,

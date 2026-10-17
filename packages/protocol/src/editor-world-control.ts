@@ -1,3 +1,4 @@
+import { contractParser } from "./contract-parser.js";
 import { Schema } from "effect";
 
 const PackagePath = Schema.String.check(
@@ -83,12 +84,18 @@ export type EditorWorldOpenResponse = typeof EditorWorldOpenResponse.Type;
  * Decodes a world-open request; fails with a schema error for a path outside `/Game/`, an invalid
  * operation ID or another contract version.
  */
-export const decodeEditorWorldOpenRequest = Schema.decodeUnknownEffect(EditorWorldOpenRequest);
+export const decodeEditorWorldOpenRequest = contractParser(
+	EditorWorldOpenRequest,
+	"EditorWorldOpenRequest"
+);
 /**
  * Decodes a world-open reply; fails with a schema error when the reply is malformed or speaks
  * another contract version. A refusal decodes successfully as `outcome: "rejected"`.
  */
-export const decodeEditorWorldOpenResponse = Schema.decodeUnknownEffect(EditorWorldOpenResponse);
+export const decodeEditorWorldOpenResponse = contractParser(
+	EditorWorldOpenResponse,
+	"EditorWorldOpenResponse"
+);
 
 /** Acknowledgement/status of an asynchronous open; transport silence is not failure to load. */
 export const EditorWorldOperation = Schema.Union([

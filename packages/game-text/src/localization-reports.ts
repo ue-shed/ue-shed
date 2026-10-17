@@ -58,6 +58,9 @@ export type LocalizationBaseline = typeof LocalizationBaseline.Type;
 export class LocalizationReportError extends Schema.TaggedError<LocalizationReportError>()(
 	"LocalizationReportError",
 	{
+		retrySafe: Schema.Boolean,
+		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		cause: Schema.optionalKey(Schema.Defect()),
 		code: Schema.Literals([
 			"invalid_baseline",
 			"baseline_target_mismatch",
@@ -88,6 +91,8 @@ function reportError(code: LocalizationReportError["code"]): LocalizationReportE
 			"Load current corpus and localization evidence for the same target and cultures."
 	} satisfies Record<LocalizationReportError["code"], string>;
 	return new LocalizationReportError({
+		retrySafe: false,
+		nextStep: "fix_input",
 		code,
 		message: "The localization report evidence could not be validated.",
 		recovery: recovery[code]
@@ -115,6 +120,8 @@ function manifestEntries(evidence: LocalizationTargetEvidence): readonly Manifes
 			evidence.manifest.relativePath
 		);
 		throw new LocalizationReportError({
+			retrySafe: false,
+			nextStep: "fix_input",
 			code: error.code === "missing_manifest" ? "missing_manifest" : "unreadable_manifest",
 			message: error.message,
 			recovery: error.recovery

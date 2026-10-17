@@ -1,3 +1,4 @@
+import { snapshotStoreGuidance } from "./snapshot-store.js";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
@@ -161,6 +162,8 @@ export const importColdLocalizationTarget = Effect.fn("LocalizationSnapshot.impo
 					Schema.is(SnapshotStoreError)(cause)
 						? cause
 						: new SnapshotStoreError({
+								retrySafe: snapshotStoreGuidance("unavailable").retrySafe,
+								nextStep: snapshotStoreGuidance("unavailable").nextStep,
 								operation: "cold.parse",
 								code: "unavailable",
 								message:

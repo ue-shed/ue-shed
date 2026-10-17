@@ -1,3 +1,4 @@
+import { contractParser } from "./contract-parser.js";
 import { Effect, Schema } from "effect";
 import { ErrorCauseFields, ErrorGuidanceFields } from "./error-guidance.js";
 
@@ -153,8 +154,8 @@ export const ConnectionState = Schema.Union([
 ]);
 export type ConnectionState = Schema.Schema.Type<typeof ConnectionState>;
 
-export const decodeCapabilityManifest = Schema.decodeUnknownEffect(CapabilityManifest);
-export const decodeConnectionState = Schema.decodeUnknownEffect(ConnectionState);
+export const decodeCapabilityManifest = contractParser(CapabilityManifest, "CapabilityManifest");
+export const decodeConnectionState = contractParser(ConnectionState, "ConnectionState");
 
 export * from "./authoring.js";
 export * from "./authoring-actor-references.js";
@@ -178,3 +179,5 @@ export { ErrorCauseFields, ErrorGuidanceFields, ErrorNextStep } from "./error-gu
 export { makeWireJsonSchemaDocument, canonicalJsonSchemaReferences } from "./json-schema.js";
 
 export * from "./game-text-index.js";
+
+export { ContractParseError, contractParser, contractParserSync } from "./contract-parser.js";

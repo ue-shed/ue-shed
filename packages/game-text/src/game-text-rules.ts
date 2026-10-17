@@ -196,6 +196,9 @@ export type GameTextRuleDocument = typeof GameTextRuleDocument.Type;
 export class GameTextRuleDocumentError extends Schema.TaggedError<GameTextRuleDocumentError>()(
 	"GameTextRuleDocumentError",
 	{
+		retrySafe: Schema.Boolean,
+		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		cause: Schema.optionalKey(Schema.Defect()),
 		code: Schema.Literals([
 			"invalid_json",
 			"invalid_structure",
@@ -212,12 +215,16 @@ export class GameTextRuleDocumentError extends Schema.TaggedError<GameTextRuleDo
 function invalid(code: GameTextRuleDocumentError["code"]): GameTextRuleDocumentError {
 	if (code === "invalid_json")
 		return new GameTextRuleDocumentError({
+			retrySafe: false,
+			nextStep: "fix_input",
 			code,
 			message: "The Game Text quality rule file is not valid JSON.",
 			recovery:
 				"Correct the JSON syntax and retry with a version-1, version-2 or version-3 rule document."
 		});
 	return new GameTextRuleDocumentError({
+		retrySafe: false,
+		nextStep: "fix_input",
 		code,
 		message: "The Game Text rule document could not be validated.",
 		recovery:

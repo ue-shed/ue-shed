@@ -107,6 +107,9 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 				if (!project)
 					return yield* Effect.fail(
 						new GameTextIndexError({
+							nextStep: "escalate",
+							retrySafe: false,
+							code: "index_failed",
 							operation: "project",
 							message: "The project index is no longer selected.",
 							recovery: "Scan the selected project again."
@@ -540,6 +543,8 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 					Schema.is(LocalizationReportError)(cause)
 						? cause
 						: new LocalizationReportError({
+								retrySafe: false,
+								nextStep: "fix_input",
 								code: "invalid_report_context",
 								message: "Report evidence could not be read.",
 								recovery: "Rescan the selected project."
@@ -600,6 +605,8 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 							Schema.is(LocalizationReportError)(cause)
 								? cause
 								: new LocalizationReportError({
+										retrySafe: false,
+										nextStep: "fix_input",
 										code: "invalid_baseline",
 										message: "The baseline could not be compared.",
 										recovery: "Choose a baseline for this target."
@@ -654,6 +661,8 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 						Schema.is(LocalizationReportError)(cause)
 							? cause
 							: new LocalizationReportError({
+									retrySafe: false,
+									nextStep: "fix_input",
 									code: "invalid_report_context",
 									message: "The report could not be prepared.",
 									recovery: "Rescan and try again."

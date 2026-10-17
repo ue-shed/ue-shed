@@ -8,7 +8,7 @@ import {
 	GameTextIndexError,
 	gameTextIndexRefreshLayer,
 	gameTextIndexSourceNodeLayer,
-	typeScriptIndexBuilderLayer,
+	GameTextIndexBuilderLive,
 	type GameTextIndexRefreshRequest
 } from "@ue-shed/game-text/index";
 import { readerLayer } from "../cli-operation.js";
@@ -21,7 +21,7 @@ export function cliGameTextIndexLayer(reader?: string) {
 			);
 			return gameTextIndexRefreshLayer(cacheRoot).pipe(
 				Layer.provide(gameTextIndexSourceNodeLayer(cacheRoot)),
-				Layer.provide(typeScriptIndexBuilderLayer),
+				Layer.provide(GameTextIndexBuilderLive),
 				Layer.provide(readerLayer(reader)),
 				Layer.provide(LocalizationEvidenceNodeLive)
 			);
@@ -52,6 +52,9 @@ export const refreshCliGameTextIndex = Effect.fn("Cli.game_text.refresh")(
 			Effect.catchTag("ConfigError", (cause) =>
 				Effect.fail(
 					new GameTextIndexError({
+						nextStep: "escalate",
+						retrySafe: false,
+						code: "index_failed",
 						operation: "configuration",
 						cause,
 						message:
@@ -76,6 +79,9 @@ export const invalidateCliGameTextIndex = Effect.fn("Cli.game_text.invalidate")(
 		Effect.catchTag("ConfigError", (cause) =>
 			Effect.fail(
 				new GameTextIndexError({
+					nextStep: "escalate",
+					retrySafe: false,
+					code: "index_failed",
 					operation: "configuration",
 					cause,
 					message: "The game text index cache root or reader configuration is invalid.",

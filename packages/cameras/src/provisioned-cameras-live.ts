@@ -1,3 +1,4 @@
+import { ContractParseError } from "@ue-shed/protocol";
 import { CameraVisibilityList } from "./camera-visibility.js";
 import { RemoteControlClient, RemoteControlClientError } from "@ue-shed/unreal-connection";
 import { ErrorCauseFields, ErrorGuidanceFields } from "@ue-shed/protocol";
@@ -221,7 +222,7 @@ function provisionedCameraError(
 			cause
 		});
 	}
-	if (Schema.isSchemaError(cause))
+	if (Schema.isSchemaError(cause) || Schema.is(ContractParseError)(cause))
 		return subject === "request"
 			? new ProvisionedCameraError({
 					message: `The provisioned camera request for ${operation} does not match the provisioning contract.`,

@@ -17,6 +17,9 @@ const isLocalizationReportError = Schema.is(LocalizationReportError);
 export class LocalizationBaselineIOError extends Schema.TaggedError<LocalizationBaselineIOError>()(
 	"LocalizationBaselineIOError",
 	{
+		retrySafe: Schema.Boolean,
+		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		cause: Schema.optionalKey(Schema.Defect()),
 		code: Schema.Literals([
 			"baseline_exists",
 			"baseline_unreadable",
@@ -30,6 +33,8 @@ export class LocalizationBaselineIOError extends Schema.TaggedError<Localization
 ) {}
 function ioError(code: LocalizationBaselineIOError["code"]): LocalizationBaselineIOError {
 	return new LocalizationBaselineIOError({
+		retrySafe: false,
+		nextStep: "fix_input",
 		code,
 		message: "The localization baseline file operation could not complete.",
 		recovery:
@@ -74,6 +79,8 @@ export const readLocalizationBaseline = Effect.fn("Cli.localization.read_baselin
 		try: () => new TextDecoder("utf-8", { fatal: true }).decode(bytes),
 		catch: () =>
 			new LocalizationReportError({
+				retrySafe: false,
+				nextStep: "fix_input",
 				code: "invalid_baseline",
 				message: "The baseline is not valid UTF-8.",
 				recovery: "Regenerate a version-1 baseline as UTF-8 JSON."
@@ -99,6 +106,8 @@ export const runLocalizationReport = Effect.fn("Cli.workflow.localization_report
 							isLocalizationReportError(error)
 								? error
 								: new LocalizationReportError({
+										retrySafe: false,
+										nextStep: "fix_input",
 										code: "invalid_report_context",
 										message:
 											"The localization report could not be constructed.",
@@ -118,6 +127,8 @@ export const runLocalizationReport = Effect.fn("Cli.workflow.localization_report
 								isLocalizationReportError(error)
 									? error
 									: new LocalizationReportError({
+											retrySafe: false,
+											nextStep: "fix_input",
 											code: "invalid_baseline",
 											message: "The baseline could not be constructed.",
 											recovery: "Refresh manifest evidence and retry."

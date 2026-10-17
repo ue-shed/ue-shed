@@ -17,6 +17,9 @@ const isGameTextRuleDocumentError = Schema.is(GameTextRuleDocumentError);
 export class LocalizationCheckOutputError extends Schema.TaggedError<LocalizationCheckOutputError>()(
 	"LocalizationCheckOutputError",
 	{
+		retrySafe: Schema.Boolean,
+		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		cause: Schema.optionalKey(Schema.Defect()),
 		code: Schema.Literals([
 			"changes_exists",
 			"changes_unwritable",
@@ -36,6 +39,8 @@ export const writeLocalizationCheckChanges = Effect.fn("Cli.localization.write_c
 	if (!destination.toLowerCase().endsWith(".json"))
 		return yield* Effect.fail(
 			new LocalizationCheckOutputError({
+				retrySafe: false,
+				nextStep: "fix_input",
 				code: "invalid_changes_destination",
 				message: "The change-set destination must be a JSON file.",
 				recovery: "Choose a new .json file for the proposal."
@@ -48,6 +53,8 @@ export const writeLocalizationCheckChanges = Effect.fn("Cli.localization.write_c
 		Effect.mapError(
 			() =>
 				new LocalizationCheckOutputError({
+					retrySafe: false,
+					nextStep: "fix_input",
 					code: "changes_unwritable",
 					message: "The suggested changes could not be encoded.",
 					recovery: "Regenerate the check report and retry."
@@ -60,12 +67,16 @@ export const writeLocalizationCheckChanges = Effect.fn("Cli.localization.write_c
 				new LocalizationCheckOutputError(
 					error.reason._tag === "AlreadyExists"
 						? {
+								retrySafe: false,
+								nextStep: "fix_input",
 								code: "changes_exists",
 								message: "The change-set destination already exists.",
 								recovery:
 									"Choose a new JSON destination or retain the existing proposal."
 							}
 						: {
+								retrySafe: false,
+								nextStep: "fix_input",
 								code: "changes_unwritable",
 								message: "The change-set file could not be created.",
 								recovery: "Choose a writable directory and a new JSON filename."
@@ -100,6 +111,8 @@ export const runLocalizationCheck = Effect.fn("Cli.workflow.localization_check")
 							isGameTextRuleDocumentError(error)
 								? error
 								: new LocalizationCheckOutputError({
+										retrySafe: false,
+										nextStep: "fix_input",
 										code: "rules_unreadable",
 										message: "The project quality rules could not be read.",
 										recovery:

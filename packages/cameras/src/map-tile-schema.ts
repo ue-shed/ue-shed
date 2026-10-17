@@ -1,3 +1,4 @@
+import { contractParser } from "@ue-shed/protocol";
 import { Schema } from "effect";
 import { CameraVisibilityList } from "./camera-visibility.js";
 import { CameraFrameEvidence } from "./camera-render-schema.js";
@@ -519,7 +520,16 @@ export const MapTilePyramidManifest = Schema.Struct({
 );
 export type MapTilePyramidManifest = typeof MapTilePyramidManifest.Type;
 
-export const decodeMapCapturePlan = Schema.decodeUnknownEffect(MapCapturePlan);
-export const decodeMapTileCaptureRequest = Schema.decodeUnknownEffect(MapTileCaptureRequest);
-export const decodeMapTileCaptureResponse = Schema.decodeUnknownEffect(MapTileCaptureResponse);
-export const decodeMapTilePyramidManifest = Schema.decodeUnknownEffect(MapTilePyramidManifest);
+export const decodeMapCapturePlan = contractParser(MapCapturePlan, "MapCapturePlan");
+export const decodeMapTileCaptureRequest = contractParser(
+	MapTileCaptureRequest,
+	"MapTileCaptureRequest"
+);
+export const decodeMapTileCaptureResponse = contractParser(
+	MapTileCaptureResponse,
+	"MapTileCaptureResponse"
+);
+export const decodeMapTilePyramidManifest = contractParser(
+	MapTilePyramidManifest,
+	"MapTilePyramidManifest"
+);

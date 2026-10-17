@@ -1,3 +1,4 @@
+import { contractParser } from "@ue-shed/protocol";
 import { Schema } from "effect";
 
 export const ConfigPlatform = Schema.NonEmptyString.pipe(Schema.brand("ConfigPlatform"));
@@ -175,7 +176,13 @@ export const ConfigExplorerPublicError = Schema.Struct({
 });
 export type ConfigExplorerPublicError = typeof ConfigExplorerPublicError.Type;
 
-export const decodeConfigExplainRequest = Schema.decodeUnknownEffect(ConfigExplainRequest);
-export const decodeConfigCompareRequest = Schema.decodeUnknownEffect(ConfigCompareRequest);
-export const decodeConfigExplanation = Schema.decodeUnknownEffect(ConfigExplanation);
-export const decodeConfigComparison = Schema.decodeUnknownEffect(ConfigComparison);
+export const decodeConfigExplainRequest = contractParser(
+	ConfigExplainRequest,
+	"ConfigExplainRequest"
+);
+export const decodeConfigCompareRequest = contractParser(
+	ConfigCompareRequest,
+	"ConfigCompareRequest"
+);
+export const decodeConfigExplanation = contractParser(ConfigExplanation, "ConfigExplanation");
+export const decodeConfigComparison = contractParser(ConfigComparison, "ConfigComparison");

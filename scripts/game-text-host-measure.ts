@@ -1,4 +1,5 @@
 /// <reference path="../apps/workbench/node_modules/electron/electron.d.ts" />
+import { GameTextIndexBuilderLive } from "../packages/game-text/dist/entry-index.js";
 import { join, basename } from "node:path";
 import { createHash } from "node:crypto";
 import { Context, Effect, Exit, Layer, Schema, Scope, Stream } from "effect";
@@ -25,7 +26,7 @@ import { readGeneratedPackageInventory } from "./package-text-generated.ts";
 import { captureBenchmarkByte, restoreBenchmarkByte } from "./localization-benchmark-byte.ts";
 import { readScaleRecipe } from "./game-text-scale-options.ts";
 import type { WorkbenchGameTextApi } from "../apps/workbench/src/main/services/game-text.ts";
-import { refreshJoinedTarget } from "../packages/game-text/src/joined-target.ts";
+import { AssetReaderLive } from "../packages/unreal-assets/dist/index.js";
 import { sharedIndexNodeLayer } from "../packages/game-text/src/shared-index.ts";
 import {
 	openJoinedTarget,
@@ -48,7 +49,8 @@ export async function measureGameTextHosts(
 	host: string,
 	task: string,
 	changedByte: number,
-	forceChangedJoin = false
+	forceChangedJoin = false,
+	backend: "native" | "typescript" = "native"
 ) {
 	if (host !== "cli" && host !== "workbench") throw new Error("Choose cli or workbench.");
 	if (
@@ -57,6 +59,11 @@ export async function measureGameTextHosts(
 	)
 		throw new Error("Host measurements require Node's default heap.");
 	const recipe = await readScaleRecipe(project);
+	const selectedBuilder =
+		backend === "native"
+			? GameTextIndexBuilderLive.pipe(Layer.provide(AssetReaderLive))
+			: typeScriptIndexBuilderLayer;
+
 	// A capped cold build may publish nothing. Prepare disposable file layers in separately
 	// capped runs so query measurements remain available; this is never a cold-build success.
 	if (task.startsWith("prepare-file:")) {
@@ -97,10 +104,7 @@ export async function measureGameTextHosts(
 					collapseMode: target.collapseMode
 				})
 			);
-		}).pipe(
-			Effect.provide(typeScriptIndexBuilderLayer),
-			Effect.provide(LocalizationEvidenceNodeLive)
-		);
+		}).pipe(Effect.provide(selectedBuilder), Effect.provide(LocalizationEvidenceNodeLive));
 		await measure(
 			`${host}:${task}`,
 			() => Effect.runPromise(preparation),
@@ -131,9 +135,9 @@ export async function measureGameTextHosts(
 								force: input.force || version !== ""
 							})
 					});
-				}).pipe(Effect.provide(typeScriptIndexBuilderLayer))
+				}).pipe(Effect.provide(selectedBuilder))
 			)
-		: typeScriptIndexBuilderLayer;
+		: selectedBuilder;
 	const source = Layer.succeed(
 		GameTextIndexSource,
 		GameTextIndexSource.of({
@@ -211,7 +215,7 @@ export async function measureGameTextHosts(
 						)
 				})
 			);
-		}).pipe(Effect.provide(source), Effect.provide(typeScriptIndexBuilderLayer));
+		}).pipe(Effect.provide(source), Effect.provide(selectedBuilder));
 		await measure(
 			`${host}:${task}`,
 			() => Effect.runPromise(preparation),
@@ -234,7 +238,8 @@ export async function measureGameTextHosts(
 	const targetName = LocalizationTargetName.make("Generated");
 	const cli =
 		host === "cli" ? await import("../apps/cli/src/workflows/game-text-index.ts") : undefined;
-	const builderLabel = "TypeScript builder; native builder pending";
+	const builderLabel =
+		backend === "native" ? "Native public protocol adapter" : "TypeScript reference builder";
 	let readerScope: Scope.Closeable | undefined;
 	let result: GameTextIndexRefreshResult | undefined;
 	let workbench: WorkbenchGameTextApi | undefined;
@@ -550,11 +555,26 @@ export async function measureGameTextHosts(
 							const full = await Effect.runPromise(
 								Effect.scoped(
 									Effect.gen(function* () {
-										yield* refreshJoinedTarget({ ...input, force: true });
+										const builder = yield* GameTextIndexBuilder;
+										yield* builder.withSession(
+											{
+												configuration: {
+													cacheRoot: cache,
+													projectKey: project,
+													targetKey: "Generated",
+													projectView: {
+														kind: "localization",
+														target: "Generated"
+													}
+												}
+											},
+											builder.refreshJoinedTarget({ ...input, force: true })
+										);
 										const joined = yield* openJoinedTarget();
 										return yield* Effect.promise(() => columnProof(joined));
 									})
 								).pipe(
+									Effect.provide(selectedBuilder),
 									Effect.provide(
 										sharedIndexNodeLayer({
 											cacheRoot: cache,

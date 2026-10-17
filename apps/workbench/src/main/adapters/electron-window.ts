@@ -3,6 +3,9 @@ import { Context, Effect, Layer, Ref, Schema } from "effect";
 export class WorkbenchWindowError extends Schema.TaggedError<WorkbenchWindowError>()(
 	"Workbench.WorkbenchWindowError",
 	{
+		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		code: Schema.Literal("workbench_window_failed"),
+		cause: Schema.optionalKey(Schema.Defect()),
 		causeText: Schema.String,
 		message: Schema.String,
 		operation: Schema.Literals([
@@ -98,6 +101,8 @@ function windowError(
 	recovery: string
 ): WorkbenchWindowError {
 	return new WorkbenchWindowError({
+		nextStep: "escalate",
+		code: "workbench_window_failed",
 		causeText: cause instanceof Error ? cause.message : String(cause),
 		message: `Workbench window ${operation} failed.`,
 		operation,

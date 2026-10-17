@@ -146,9 +146,9 @@ function contained(root: string, path: string) {
 }
 function fileError(file: string, cause: unknown) {
 	if (
-		cause instanceof LocalizationError ||
-		cause instanceof SnapshotStoreError ||
-		cause instanceof SnapshotFormatError
+		Schema.is(LocalizationError)(cause) ||
+		Schema.is(SnapshotStoreError)(cause) ||
+		Schema.is(SnapshotFormatError)(cause)
 	)
 		return cause;
 	return importFailure(
@@ -328,7 +328,7 @@ const importFile = Effect.fn("LocalizationSnapshot.importFile")(function* (
 		if (
 			hit &&
 			Result.isFailure(hit) &&
-			(!(hit.failure instanceof SnapshotStoreError) || hit.failure.code !== "missing")
+			(!Schema.is(SnapshotStoreError)(hit.failure) || hit.failure.code !== "missing")
 		)
 			return yield* Effect.fail(hit.failure);
 		const result = yield* Effect.scoped(
@@ -450,7 +450,7 @@ const importFile = Effect.fn("LocalizationSnapshot.importFile")(function* (
 					return { hash: content.hash, parsed: false, bytes: opened.success };
 				if (
 					opened &&
-					(!(opened.failure instanceof SnapshotStoreError) ||
+					(!Schema.is(SnapshotStoreError)(opened.failure) ||
 						opened.failure.code !== "missing")
 				)
 					return yield* Effect.fail(opened.failure);
@@ -655,7 +655,7 @@ export const importLocalizationTarget = Effect.fn("LocalizationSnapshot.importTa
 	).pipe(
 		Effect.provide(indexLayer),
 		Effect.catch((cause) =>
-			cause instanceof SnapshotStoreError && cause.code === "missing"
+			Schema.is(SnapshotStoreError)(cause) && cause.code === "missing"
 				? Effect.succeed(true)
 				: Effect.fail(cause)
 		)
@@ -702,7 +702,7 @@ export const importLocalizationTarget = Effect.fn("LocalizationSnapshot.importTa
 				diagnostics,
 				profile: result.success.profile
 			};
-		if (!(result.failure instanceof LocalizationError))
+		if (!Schema.is(LocalizationError)(result.failure))
 			return yield* Effect.fail(result.failure);
 		// Preserve per-file diagnostics when an invalid authored file prevents the atomic cold build.
 	}
@@ -731,7 +731,7 @@ export const importLocalizationTarget = Effect.fn("LocalizationSnapshot.importTa
 		if (request.importLimits) Object.assign(fileRequest, { limits: request.importLimits });
 		const result = yield* importLocalizationFile(fileRequest).pipe(Effect.result);
 		if (Result.isFailure(result)) {
-			if (!(result.failure instanceof LocalizationError))
+			if (!Schema.is(LocalizationError)(result.failure))
 				return yield* Effect.fail(result.failure);
 			diagnostics.push({ relativePath, error: result.failure });
 		} else files.push(result.success);

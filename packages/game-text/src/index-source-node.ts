@@ -28,6 +28,9 @@ const bundlePaths = (path: string) => [
 ];
 const failure = (operation: string, message: string, cause?: unknown) =>
 	new GameTextIndexError({
+		nextStep: "escalate",
+		retrySafe: false,
+		code: "index_failed",
 		operation,
 		message,
 		recovery:
@@ -74,6 +77,9 @@ export function gameTextIndexSourceNodeLayer(
 			const projectIndex = yield* ProjectIndex;
 			const mapError = (cause: { readonly message: string; readonly recovery: string }) =>
 				new GameTextIndexError({
+					nextStep: "escalate",
+					retrySafe: false,
+					code: "index_failed",
 					operation: "reader_failure",
 					message: cause.message,
 					recovery: cause.recovery

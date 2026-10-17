@@ -66,6 +66,10 @@ export type {
 export class MapReviewClientError extends Schema.TaggedError<MapReviewClientError>()(
 	"MapReviewClientError",
 	{
+		message: Schema.String,
+		retrySafe: Schema.Boolean,
+		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		code: Schema.Literal("map_review_client_failed"),
 		cause: Schema.Defect(),
 		operation: Schema.String,
 		recovery: Schema.String

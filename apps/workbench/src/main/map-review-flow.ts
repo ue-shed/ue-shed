@@ -15,6 +15,10 @@ import type {
 export class MapReviewFlowExecutionError extends Schema.TaggedError<MapReviewFlowExecutionError>()(
 	"MapReviewFlowExecutionError",
 	{
+		recovery: Schema.String,
+		retrySafe: Schema.Boolean,
+		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		code: Schema.Literal("map_review_flow_execution_failed"),
 		message: Schema.NonEmptyString,
 		operation: Schema.NonEmptyString,
 		...ErrorCauseFields
@@ -161,6 +165,11 @@ export const runMapReviewAuthoringRoundtrip = Effect.fn("MapReviewFlow.runAuthor
 					});
 					if (cleanup.status === "failed") {
 						yield* new MapReviewFlowExecutionError({
+							recovery:
+								"Inspect the recording checkpoints and cleanup evidence before starting another editor run.",
+							retrySafe: false,
+							nextStep: "reconcile",
+							code: "map_review_flow_execution_failed",
 							message: cleanup.message,
 							operation: "cleanup"
 						});

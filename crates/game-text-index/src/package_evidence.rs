@@ -34,6 +34,10 @@ pub(crate) fn skips_editor(target: &serde_json::Value) -> bool {
             .as_bool()
             != Some(true)
 }
+#[expect(
+    clippy::unwrap_used,
+    reason = "serialization of tuples of strings to an owned JSON string is infallible"
+)]
 pub(crate) fn places(j: &Joined) -> Vec<u32> {
     let c = &j.packages.occurrence;
     let mut result = vec![0; j.order.len()];

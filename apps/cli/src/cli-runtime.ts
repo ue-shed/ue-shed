@@ -1,7 +1,12 @@
+import { ContractParseError } from "@ue-shed/protocol";
 import { ErrorCauseFields } from "@ue-shed/protocol";
 import { Context, Effect, Layer, Predicate, Schema } from "effect";
 
 export class CliCommandError extends Schema.TaggedError<CliCommandError>()("CliCommandError", {
+	recovery: Schema.String,
+	retrySafe: Schema.Boolean,
+	nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+	code: Schema.Literal("cli_command_failed"),
 	message: Schema.String,
 	...ErrorCauseFields
 }) {}
@@ -21,7 +26,11 @@ export function errnoCode(cause: unknown): string | undefined {
  * original failure stays in the error's `cause`.
  */
 export function jsonInputFileMessage(label: string, path: string, cause: unknown): string {
-	if (cause instanceof SyntaxError || Schema.isSchemaError(cause)) {
+	if (
+		cause instanceof SyntaxError ||
+		Schema.isSchemaError(cause) ||
+		Schema.is(ContractParseError)(cause)
+	) {
 		return `${label} ${path} is not valid JSON.`;
 	}
 	const code = errnoCode(cause);
@@ -35,7 +44,8 @@ export function jsonInputFileMessage(label: string, path: string, cause: unknown
 
 /** Issue detail the CLI prints under a classified message when the user's input failed a schema. */
 export function inputIssueDetail(error: { readonly cause?: unknown }): string | undefined {
-	return Schema.isSchemaError(error.cause) ? error.cause.message : undefined;
+	const cause = Schema.is(ContractParseError)(error.cause) ? error.cause.cause : error.cause;
+	return Schema.isSchemaError(cause) ? cause.message : undefined;
 }
 
 export interface CliRuntimeApi {

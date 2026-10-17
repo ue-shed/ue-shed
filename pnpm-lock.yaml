@@ -710,6 +710,9 @@ importers:
       '@ue-shed/niagara':
         specifier: workspace:*
         version: link:../../packages/niagara
+      '@ue-shed/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
       '@ue-shed/ui':
         specifier: workspace:*
         version: link:../../packages/ui
@@ -893,6 +896,9 @@ importers:
       '@ue-shed/engine':
         specifier: workspace:0.16.2
         version: link:../engine
+      '@ue-shed/protocol':
+        specifier: workspace:0.16.2
+        version: link:../protocol
     devDependencies:
       '@effect/vitest':
         specifier: 'catalog:'
@@ -925,6 +931,9 @@ importers:
 
   packages/enhanced-input:
     dependencies:
+      '@ue-shed/protocol':
+        specifier: workspace:*
+        version: link:../protocol
       '@ue-shed/unreal-assets':
         specifier: workspace:*
         version: link:../unreal-assets
@@ -1022,6 +1031,9 @@ importers:
       '@ue-shed/engine':
         specifier: workspace:0.16.2
         version: link:../engine
+      '@ue-shed/protocol':
+        specifier: workspace:0.16.2
+        version: link:../protocol
     devDependencies:
       '@effect/vitest':
         specifier: 'catalog:'
@@ -1094,6 +1106,9 @@ importers:
       '@ue-shed/engine':
         specifier: workspace:0.16.2
         version: link:../engine
+      '@ue-shed/protocol':
+        specifier: workspace:0.16.2
+        version: link:../protocol
     devDependencies:
       '@effect/vitest':
         specifier: 'catalog:'

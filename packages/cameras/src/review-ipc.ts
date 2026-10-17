@@ -1,3 +1,4 @@
+import { contractParser } from "@ue-shed/protocol";
 import { ProvisionedCameraBinding } from "./provisioned-cameras-live.js";
 import { CameraPanelAction, CameraPanelState } from "./camera-authoring-panel-schema.js";
 import { CameraRecoveryChoice, CameraRecoveryProposal } from "./camera-authoring-recovery.js";
@@ -342,32 +343,50 @@ export const MapReviewApprovalResult = Schema.Union([
 ]);
 export type MapReviewApprovalResult = Schema.Schema.Type<typeof MapReviewApprovalResult>;
 
-export const decodeMapReviewResult = Schema.decodeUnknownEffect(MapReviewResult);
-export const decodeMapReviewSetLibraryResult =
-	Schema.decodeUnknownEffect(MapReviewSetLibraryResult);
-export const decodeMapReviewCaptureResult = Schema.decodeUnknownEffect(MapReviewCaptureResult);
-export const decodeMapReviewReplaceVisibilityPolicyIntent = Schema.decodeUnknownEffect(
-	MapReviewReplaceVisibilityPolicyIntent
+export const decodeMapReviewResult = contractParser(MapReviewResult, "MapReviewResult");
+export const decodeMapReviewSetLibraryResult = contractParser(
+	MapReviewSetLibraryResult,
+	"MapReviewSetLibraryResult"
 );
-export const decodeMapReviewApplyVisibilityPolicyIntent = Schema.decodeUnknownEffect(
-	MapReviewApplyVisibilityPolicyIntent
+export const decodeMapReviewCaptureResult = contractParser(
+	MapReviewCaptureResult,
+	"MapReviewCaptureResult"
 );
-export const decodeMapReviewAuthoringResult = Schema.decodeUnknownEffect(MapReviewAuthoringResult);
-export const decodeMapReviewAuthoringSessionIntent = Schema.decodeUnknownEffect(
-	MapReviewAuthoringSessionIntent
+export const decodeMapReviewReplaceVisibilityPolicyIntent = contractParser(
+	MapReviewReplaceVisibilityPolicyIntent,
+	"MapReviewReplaceVisibilityPolicyIntent"
 );
-export const decodeMapReviewAuthoringPatchIntent = Schema.decodeUnknownEffect(
-	MapReviewAuthoringPatchIntent
+export const decodeMapReviewApplyVisibilityPolicyIntent = contractParser(
+	MapReviewApplyVisibilityPolicyIntent,
+	"MapReviewApplyVisibilityPolicyIntent"
 );
-export const decodeMapReviewAuthoringPreviewIntent = Schema.decodeUnknownEffect(
-	MapReviewAuthoringPreviewIntent
+export const decodeMapReviewAuthoringResult = contractParser(
+	MapReviewAuthoringResult,
+	"MapReviewAuthoringResult"
 );
-export const decodeMapReviewCandidatePreviewResult = Schema.decodeUnknownEffect(
-	MapReviewCandidatePreviewResult
+export const decodeMapReviewAuthoringSessionIntent = contractParser(
+	MapReviewAuthoringSessionIntent,
+	"MapReviewAuthoringSessionIntent"
 );
-export const decodeMapReviewApprovalResult = Schema.decodeUnknownEffect(MapReviewApprovalResult);
-export const decodeMapReviewApproveCandidateIntent = Schema.decodeUnknownEffect(
-	MapReviewApproveCandidateIntent
+export const decodeMapReviewAuthoringPatchIntent = contractParser(
+	MapReviewAuthoringPatchIntent,
+	"MapReviewAuthoringPatchIntent"
+);
+export const decodeMapReviewAuthoringPreviewIntent = contractParser(
+	MapReviewAuthoringPreviewIntent,
+	"MapReviewAuthoringPreviewIntent"
+);
+export const decodeMapReviewCandidatePreviewResult = contractParser(
+	MapReviewCandidatePreviewResult,
+	"MapReviewCandidatePreviewResult"
+);
+export const decodeMapReviewApprovalResult = contractParser(
+	MapReviewApprovalResult,
+	"MapReviewApprovalResult"
+);
+export const decodeMapReviewApproveCandidateIntent = contractParser(
+	MapReviewApproveCandidateIntent,
+	"MapReviewApproveCandidateIntent"
 );
 
 /** Host-facing camera workspace protocol; transport and presentation are replaceable. */

@@ -27,6 +27,9 @@ const maxChangeSetBytes = 8 * 1024 * 1024;
 class LocalizationApplyInputError extends Schema.TaggedError<LocalizationApplyInputError>()(
 	"LocalizationApplyInputError",
 	{
+		retrySafe: Schema.Boolean,
+		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		cause: Schema.optionalKey(Schema.Defect()),
 		code: Schema.Literals(["change_set_unreadable", "change_set_too_large"]),
 		message: Schema.String,
 		recovery: Schema.String
@@ -44,6 +47,8 @@ const readChangeSet = Effect.fn("Cli.localization.read_change_set")(function* (p
 	const fs = yield* FileSystem.FileSystem;
 	const unreadable = () =>
 		new LocalizationApplyInputError({
+			retrySafe: false,
+			nextStep: "fix_input",
 			code: "change_set_unreadable",
 			message: "The change-set file could not be read as UTF-8.",
 			recovery: "Pass an existing UTF-8 JSON change set produced by UE Shed."
@@ -52,6 +57,8 @@ const readChangeSet = Effect.fn("Cli.localization.read_change_set")(function* (p
 	if (stat.size > maxChangeSetBytes)
 		return yield* Effect.fail(
 			new LocalizationApplyInputError({
+				retrySafe: false,
+				nextStep: "fix_input",
 				code: "change_set_too_large",
 				message: "The change-set file is larger than 8 MB.",
 				recovery: "Split the change set into smaller files."

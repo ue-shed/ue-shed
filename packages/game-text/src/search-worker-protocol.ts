@@ -1,3 +1,4 @@
+import { snapshotStoreGuidance } from "./snapshot-store.js";
 import { Schema, Struct } from "effect";
 import {
 	TextCorpus,
@@ -102,6 +103,8 @@ export function searchWorkerFailure(operation: string, cause: unknown) {
 	return Schema.is(SnapshotStoreError)(cause) || Schema.is(SnapshotFormatError)(cause)
 		? cause
 		: new SnapshotStoreError({
+				retrySafe: snapshotStoreGuidance("unavailable").retrySafe,
+				nextStep: snapshotStoreGuidance("unavailable").nextStep,
 				operation,
 				code: "unavailable",
 				message: `The Game Text search worker could not complete ${operation}.`,

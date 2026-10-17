@@ -32,6 +32,8 @@ const decodePreviewRequest = Schema.decodeUnknownEffect(PreviewRequest);
 export class OfflineTexturePreviewError extends Schema.TaggedError<OfflineTexturePreviewError>()(
 	"Workbench.OfflineTexturePreviewError",
 	{
+		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		cause: Schema.optionalKey(Schema.Defect()),
 		code: Schema.Literals([
 			"cache_failure",
 			"commandlet_failed",
@@ -80,7 +82,13 @@ function previewError(
 	recovery: string,
 	retrySafe: boolean
 ): OfflineTexturePreviewError {
-	return new OfflineTexturePreviewError({ code, message, recovery, retrySafe });
+	return new OfflineTexturePreviewError({
+		nextStep: "escalate",
+		code,
+		message,
+		recovery,
+		retrySafe
+	});
 }
 
 function commandletExecutable(engineRoot: string): string {

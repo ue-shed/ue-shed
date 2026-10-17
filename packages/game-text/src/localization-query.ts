@@ -146,6 +146,8 @@ export function validateLocalizationSelection(
 		selection.cultures?.some((culture) => !join.cultures.includes(culture))
 	) {
 		throw new GameTextLocalizationError({
+			retrySafe: false,
+			nextStep: "fix_input",
 			code: "invalid_selection",
 			message: "The localization selection is not available in this target.",
 			recovery: "List the target's cultures and select an available target and culture."

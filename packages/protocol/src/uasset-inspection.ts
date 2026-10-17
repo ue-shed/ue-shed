@@ -1,3 +1,4 @@
+import { contractParser } from "./contract-parser.js";
 import { Effect, Schema, Tuple } from "effect";
 
 const NonNegativeInt = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)).annotate({
@@ -863,14 +864,18 @@ export type SavedAssetTextureExtractionEvent = Schema.Schema.Type<
 >;
 
 /**
- * Decodes untrusted inspection JSON. Fails with a `SchemaError` when the shape does not match or
+ * Decodes untrusted inspection JSON. Fails with a `ContractParseError` when the shape does not match or
  * `schema_version` is not 8.
  */
-export const decodeSavedAssetInspection = Schema.decodeUnknownEffect(SavedAssetInspection);
+export const decodeSavedAssetInspection = contractParser(
+	SavedAssetInspection,
+	"SavedAssetInspection"
+);
 /**
- * Decodes untrusted inspection JSON into the narrow catalog view. Fails with a `SchemaError` when
+ * Decodes untrusted inspection JSON into the narrow catalog view. Fails with a `ContractParseError` when
  * the retained fields do not match or `schema_version` is not 8.
  */
-export const decodeSavedAssetCatalogInspection = Schema.decodeUnknownEffect(
-	SavedAssetCatalogInspection
+export const decodeSavedAssetCatalogInspection = contractParser(
+	SavedAssetCatalogInspection,
+	"SavedAssetCatalogInspection"
 );

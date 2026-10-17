@@ -1,3 +1,4 @@
+import { ContractParseError } from "@ue-shed/protocol";
 import { Effect, Schema } from "effect";
 import {
 	decodeCompanionCapabilityManifest,
@@ -24,7 +25,7 @@ const failure = (cause: unknown) =>
 					retrySafe: cause.retrySafe,
 					cause
 				})
-			: Schema.isSchemaError(cause)
+			: Schema.isSchemaError(cause) || Schema.is(ContractParseError)(cause)
 				? new MapCaptureInspectionError({
 						message:
 							"The editor returned a map capture inspection response that does not match this package.",

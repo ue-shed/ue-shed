@@ -206,6 +206,10 @@ impl Drop for Writer {
 fn put(b: &mut [u8], p: usize, n: u32) {
     b[p..p + 4].copy_from_slice(&n.to_le_bytes());
 }
+#[expect(
+    clippy::unwrap_used,
+    reason = "only fixed-size 48-byte headers and 96-byte directory entries reach get; every constant offset fits"
+)]
 fn get(b: &[u8], p: usize) -> u32 {
     u32::from_le_bytes(b[p..p + 4].try_into().unwrap())
 }

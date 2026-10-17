@@ -8,6 +8,9 @@ it.effect("releases a failed retained acquisition before returning its typed err
 	Effect.gen(function* () {
 		let releases = 0;
 		const failure = new GameTextIndexError({
+			nextStep: "escalate",
+			retrySafe: false,
+			code: "index_failed",
 			operation: "prepare",
 			message: "Preparation failed.",
 			recovery: "Retry preparation."

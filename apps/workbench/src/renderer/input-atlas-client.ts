@@ -17,10 +17,30 @@ function request<HostValue>(
 ): Effect.Effect<EnhancedInputRunResult, InputAtlasClientError> {
 	return Effect.tryPromise({
 		try: invoke,
-		catch: (cause) => new InputAtlasClientError({ cause, operation, recovery })
+		catch: (cause) =>
+			new InputAtlasClientError({
+				message: "Input Atlas could not complete the host operation.",
+				retrySafe: false,
+				nextStep: "reconcile",
+				code: "input_atlas_client_failed",
+				cause,
+				operation,
+				recovery
+			})
 	}).pipe(
 		Effect.flatMap(decodeEnhancedInputRunResult),
-		Effect.mapError((cause) => new InputAtlasClientError({ cause, operation, recovery }))
+		Effect.mapError(
+			(cause) =>
+				new InputAtlasClientError({
+					message: "Input Atlas could not complete the host operation.",
+					retrySafe: false,
+					nextStep: "reconcile",
+					code: "input_atlas_client_failed",
+					cause,
+					operation,
+					recovery
+				})
+		)
 	);
 }
 

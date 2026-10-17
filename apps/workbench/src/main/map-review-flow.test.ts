@@ -110,6 +110,11 @@ describe("Map Review authoring round-trip flow", () => {
 						previewCandidate: () =>
 							Effect.fail(
 								new MapReviewFlowExecutionError({
+									recovery:
+										"Inspect the recording checkpoints and cleanup evidence before starting another editor run.",
+									retrySafe: false,
+									nextStep: "reconcile",
+									code: "map_review_flow_execution_failed",
 									message: "Preview failed",
 									operation: "previewCandidate"
 								})

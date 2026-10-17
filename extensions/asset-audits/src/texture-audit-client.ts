@@ -1,3 +1,4 @@
+import { contractParser } from "@ue-shed/protocol";
 import type {
 	TextureInvestigationQuery,
 	TextureInvestigationPresetResult,
@@ -30,6 +31,10 @@ export type TextureAuditLaunchResult = Schema.Schema.Type<typeof TextureAuditLau
 export class TextureAuditClientError extends Schema.TaggedError<TextureAuditClientError>()(
 	"TextureAuditClientError",
 	{
+		message: Schema.String,
+		retrySafe: Schema.Boolean,
+		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		code: Schema.Literal("texture_audit_client_failed"),
 		cause: Schema.Defect(),
 		operation: Schema.String,
 		recovery: Schema.String
@@ -80,4 +85,7 @@ export class TextureAuditClient extends Context.Service<
 	TextureAuditClientApi
 >()("@ue-shed/extension-asset-audits/TextureAuditClient") {}
 
-export const decodeTextureAuditLaunchResult = Schema.decodeUnknownEffect(TextureAuditLaunchResult);
+export const decodeTextureAuditLaunchResult = contractParser(
+	TextureAuditLaunchResult,
+	"TextureAuditLaunchResult"
+);

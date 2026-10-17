@@ -4,6 +4,9 @@ import { Context, Effect, Exit, Layer, Ref, Schema, type Scope } from "effect";
 export class FixtureProcessError extends Schema.TaggedError<FixtureProcessError>()(
 	"Workbench.FixtureProcessError",
 	{
+		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		code: Schema.Literal("fixture_process_failed"),
+		cause: Schema.optionalKey(Schema.Defect()),
 		causeText: Schema.String,
 		message: Schema.String,
 		operation: Schema.Literals(["spawn", "wait", "terminate"]),
@@ -75,6 +78,8 @@ export const fixtureProcessLayer = (
 							}),
 						catch: (cause) =>
 							new FixtureProcessError({
+								nextStep: "escalate",
+								code: "fixture_process_failed",
 								causeText: cause instanceof Error ? cause.message : String(cause),
 								message: "Could not spawn the fixture launcher.",
 								operation: "spawn",
@@ -91,6 +96,8 @@ export const fixtureProcessLayer = (
 							},
 							catch: (cause) =>
 								new FixtureProcessError({
+									nextStep: "escalate",
+									code: "fixture_process_failed",
 									causeText:
 										cause instanceof Error ? cause.message : String(cause),
 									message: "Could not terminate the fixture launcher.",
@@ -137,6 +144,8 @@ export const fixtureProcessLayer = (
 						try: () => terminateChild(child),
 						catch: (cause) =>
 							new FixtureProcessError({
+								nextStep: "escalate",
+								code: "fixture_process_failed",
 								causeText: cause instanceof Error ? cause.message : String(cause),
 								message: "Could not terminate the fixture launcher.",
 								operation: "terminate",

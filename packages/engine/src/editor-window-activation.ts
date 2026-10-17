@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import {
 	decodeCompanionCapabilityManifest,
+	ContractParseError,
 	EditorWindowActivationRequest,
 	EditorWindowActivationResult,
 	ErrorCauseFields,
@@ -43,8 +44,10 @@ const pluginMismatch: Guidance = {
 };
 
 /** Negotiation and activation only read state or raise a window, so repeating them is safe. */
-function requestGuidance(cause: RemoteControlClientError | Schema.SchemaError): Guidance {
-	if (Schema.isSchemaError(cause)) return pluginMismatch;
+function requestGuidance(
+	cause: RemoteControlClientError | ContractParseError | Schema.SchemaError
+): Guidance {
+	if (Schema.is(ContractParseError)(cause) || Schema.isSchemaError(cause)) return pluginMismatch;
 	return { recovery: cause.recovery, retrySafe: cause.retrySafe, nextStep: cause.nextStep };
 }
 
@@ -138,7 +141,7 @@ export const EditorWindowActivationLive = Layer.effect(
 						Effect.mapError((cause) =>
 							failure(
 								"negotiate",
-								Schema.isSchemaError(cause)
+								Schema.is(ContractParseError)(cause)
 									? `The editor at ${endpoint} returned a capability manifest that does not match the companion contract.`
 									: `Could not read the capability manifest from the editor at ${endpoint}.`,
 								requestGuidance(cause),

@@ -219,6 +219,11 @@ const reviewCaptureCommand = Command.make(
 		if (correlationValue !== undefined && causeValue === undefined) {
 			return Effect.fail(
 				new CliCommandError({
+					recovery:
+						"Inspect the command context and original cause before deciding whether to retry.",
+					retrySafe: false,
+					nextStep: "escalate",
+					code: "cli_command_failed",
 					message: "review capture --correlation requires --cause external_automation"
 				})
 			);

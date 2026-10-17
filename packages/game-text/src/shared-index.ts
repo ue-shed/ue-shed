@@ -1,3 +1,4 @@
+import { snapshotStoreGuidance } from "./snapshot-store.js";
 import { encodeWtf8 } from "./wtf8.js";
 import { projectIndexViewLayer, type GameTextProjectView } from "./project-index-view.js";
 import { randomUUID, createHash } from "node:crypto";
@@ -285,6 +286,8 @@ function makeSharedIndexNodeLayer(options: SharedIndexOptions) {
 					if (!record)
 						return yield* Effect.fail(
 							new SnapshotStoreError({
+								retrySafe: snapshotStoreGuidance("missing").retrySafe,
+								nextStep: snapshotStoreGuidance("missing").nextStep,
 								operation: "layer",
 								code: "missing",
 								message: `Layer ${name} (${key}) is absent.`,
@@ -335,6 +338,8 @@ function makeSharedIndexNodeLayer(options: SharedIndexOptions) {
 					snapshotCheck(active, name, "Shared reader scope is closed");
 					if (!record)
 						throw new SnapshotStoreError({
+							retrySafe: snapshotStoreGuidance("missing").retrySafe,
+							nextStep: snapshotStoreGuidance("missing").nextStep,
 							operation: "layer",
 							code: "missing",
 							message: `Layer ${name} (${key}) is absent.`,
@@ -1521,6 +1526,8 @@ async function validateCachedLayer(
 	const record = Object.hasOwn(manifest.layers, key) ? manifest.layers[key] : undefined;
 	if (!record)
 		throw new SnapshotStoreError({
+			retrySafe: snapshotStoreGuidance("missing").retrySafe,
+			nextStep: snapshotStoreGuidance("missing").nextStep,
 			operation: "cached",
 			code: "missing",
 			message: "File content is not cached.",
@@ -1541,6 +1548,8 @@ async function validateCachedLayer(
 	} catch (cause) {
 		if (cause instanceof Error && "code" in cause && cause.code === "ENOENT")
 			throw new SnapshotStoreError({
+				retrySafe: snapshotStoreGuidance("missing").retrySafe,
+				nextStep: snapshotStoreGuidance("missing").nextStep,
 				operation: "cached",
 				code: "missing",
 				message: "Cached layer is absent.",

@@ -62,6 +62,11 @@ export const localizationCommand = Command.make("loc").pipe(
 					if (operation !== "gather" && operation !== "prepare")
 						return Effect.fail(
 							new CliCommandError({
+								recovery:
+									"Inspect the command context and original cause before deciding whether to retry.",
+								retrySafe: false,
+								nextStep: "escalate",
+								code: "cli_command_failed",
 								message:
 									"--carry needs a run that gathers: use loc run gather or loc run prepare."
 							})

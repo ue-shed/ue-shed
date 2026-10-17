@@ -1074,32 +1074,20 @@ export async function checkCompositionPolicy(root: string) {
 	return failures;
 }
 
-/**
- * Packages whose tagged errors all carry the shared guidance fields (Plan 058 D4). A package joins
- * this list once every one of its `Schema.TaggedError` classes is migrated; it never leaves it.
- */
-const errorGuidancePackages = [
-	"packages/asset-audits",
-	"packages/authoring",
-	"packages/authoring-sdk",
-	"packages/cameras",
-	"packages/config-explorer",
-	"packages/engine",
-	"packages/enhanced-input",
-	"packages/host",
-	"packages/localization",
-	"packages/map-history",
-	"packages/niagara",
-	"packages/observatory",
-	"packages/plugin-distribution",
-	"packages/project-custodian",
-	"packages/protocol",
-	"packages/scenarios",
-	"packages/ui",
-	"packages/unreal-assets",
-	"packages/unreal-connection",
-	"packages/world"
-];
+/** Source packages and applications all share the error guidance contract. */
+async function errorGuidanceDirectories(root: string) {
+	const directories: string[] = [];
+	for (const parent of sourceRoots) {
+		try {
+			for (const entry of await readdir(join(root, parent), { withFileTypes: true }))
+				if (entry.isDirectory()) directories.push(`${parent}/${entry.name}`);
+		} catch (cause) {
+			if (!(cause instanceof Error && "code" in cause && cause.code === "ENOENT"))
+				throw cause;
+		}
+	}
+	return directories;
+}
 const errorGuidanceFieldNames = ["message", "recovery", "retrySafe", "nextStep"];
 
 /** Property names of an object literal, following `...Identifier` spreads declared in the file. */
@@ -1136,7 +1124,7 @@ function objectFieldNames(
  */
 export async function checkErrorGuidance(root: string = repositoryRoot) {
 	const failures: string[] = [];
-	for (const directory of errorGuidancePackages) {
+	for (const directory of await errorGuidanceDirectories(root)) {
 		let files: readonly string[];
 		try {
 			files = await filesUnder(root, join(directory, "src"));
@@ -1181,14 +1169,6 @@ export async function checkErrorGuidance(root: string = repositoryRoot) {
 	return failures;
 }
 
-/** Files owned by open Plan 058 lane B and C branches; those branches convert their matches. */
-const taggedErrorMatchingPending = new Set([
-	"packages/game-text/src/localization-cold-import.ts",
-	"packages/game-text/src/localization-import.ts",
-	"packages/game-text/src/search-worker-node.ts",
-	"packages/game-text/src/search-worker-protocol.ts"
-]);
-
 /**
  * Tagged errors are matched by tag (`Effect.catchTag`/`catchTags`, `Schema.is(ErrorClass)` or
  * `Predicate.isTagged`), never with `instanceof`, which fails across package copies and after a
@@ -1208,7 +1188,6 @@ export async function checkTaggedErrorMatching(root: string = repositoryRoot) {
 		}
 	}
 	for (const { label, text } of sources) {
-		if (taggedErrorMatchingPending.has(label)) continue;
 		for (const match of text.matchAll(/\binstanceof\s+(?:\w+\.)?(\w+)/gu)) {
 			const name = match[1];
 			if (name === undefined || !tagged.has(name)) continue;

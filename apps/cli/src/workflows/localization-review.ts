@@ -20,6 +20,9 @@ type LocalizationReviewCommand = Extract<CliCommand, { readonly _tag: "Localizat
 class LocalizationReviewCommandError extends Schema.TaggedError<LocalizationReviewCommandError>()(
 	"LocalizationReviewCommandError",
 	{
+		retrySafe: Schema.Boolean,
+		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		cause: Schema.optionalKey(Schema.Defect()),
 		code: Schema.Literals([
 			"invalid_line",
 			"invalid_selection",
@@ -35,7 +38,14 @@ const commandError = (
 	code: LocalizationReviewCommandError["code"],
 	message: string,
 	recovery: string
-) => new LocalizationReviewCommandError({ code, message, recovery });
+) =>
+	new LocalizationReviewCommandError({
+		retrySafe: false,
+		nextStep: "fix_input",
+		code,
+		message,
+		recovery
+	});
 
 /** `Namespace,Key`, splitting on the last unescaped comma so namespaces may contain dots. */
 function parseLine(value: string) {

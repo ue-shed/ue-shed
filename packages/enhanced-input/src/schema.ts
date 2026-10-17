@@ -1,3 +1,4 @@
+import { contractParser } from "@ue-shed/protocol";
 import { Schema } from "effect";
 
 export const InputObjectPath = Schema.String.pipe(Schema.brand("InputObjectPath"));
@@ -122,4 +123,7 @@ export const EnhancedInputRunResult = Schema.Union([
 ]);
 export type EnhancedInputRunResult = Schema.Schema.Type<typeof EnhancedInputRunResult>;
 
-export const decodeEnhancedInputRunResult = Schema.decodeUnknownEffect(EnhancedInputRunResult);
+export const decodeEnhancedInputRunResult = contractParser(
+	EnhancedInputRunResult,
+	"EnhancedInputRunResult"
+);

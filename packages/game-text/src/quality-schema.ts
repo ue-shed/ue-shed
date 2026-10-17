@@ -134,6 +134,9 @@ export type TextQualityRuleDocument = Schema.Schema.Type<typeof TextQualityRuleD
 export class TextQualityRuleDocumentError extends Schema.TaggedError<TextQualityRuleDocumentError>()(
 	"TextQualityRuleDocumentError",
 	{
+		retrySafe: Schema.Boolean,
+		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		cause: Schema.optionalKey(Schema.Defect()),
 		code: Schema.Literals([
 			"invalid_json",
 			"invalid_structure",
@@ -152,12 +155,16 @@ function ruleDocumentError(
 	switch (code) {
 		case "invalid_json":
 			return new TextQualityRuleDocumentError({
+				retrySafe: false,
+				nextStep: "fix_input",
 				code,
 				message: "The Game Text quality rule file is not valid JSON.",
 				recovery: "Correct the JSON syntax and retry with a version-1 rule document."
 			});
 		case "invalid_structure":
 			return new TextQualityRuleDocumentError({
+				retrySafe: false,
+				nextStep: "fix_input",
 				code,
 				message: "The Game Text quality rule document does not match the version-1 schema.",
 				recovery:
@@ -165,18 +172,24 @@ function ruleDocumentError(
 			});
 		case "duplicate_role_id":
 			return new TextQualityRuleDocumentError({
+				retrySafe: false,
+				nextStep: "fix_input",
 				code,
 				message: "The Game Text quality rule document contains a duplicate role ID.",
 				recovery: "Give every role a unique stable ID and retry."
 			});
 		case "duplicate_rule_id":
 			return new TextQualityRuleDocumentError({
+				retrySafe: false,
+				nextStep: "fix_input",
 				code,
 				message: "The Game Text quality rule document contains a duplicate rule ID.",
 				recovery: "Give every rule a unique stable ID and retry."
 			});
 		case "unknown_role_id":
 			return new TextQualityRuleDocumentError({
+				retrySafe: false,
+				nextStep: "fix_input",
 				code,
 				message: "A Game Text quality rule references a role that is not declared.",
 				recovery:

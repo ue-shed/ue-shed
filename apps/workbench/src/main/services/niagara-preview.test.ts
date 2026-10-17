@@ -409,6 +409,9 @@ it.effect("maps candidate failures to typed catalogue failures", () =>
 			candidates: () =>
 				Effect.fail(
 					new WorkbenchProjectUnavailable({
+						retrySafe: false,
+						nextStep: "escalate",
+						code: "workbench_project_unavailable",
 						message: "Project Index returned a page from a different generation.",
 						recovery: "Refresh the Project Index, then retry."
 					})

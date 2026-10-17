@@ -104,6 +104,10 @@ fn flush(items: &mut Vec<Item>, runs: &mut Vec<PathBuf>, staging: &Path) -> Resu
     runs.push(path);
     Ok(())
 }
+#[expect(
+    clippy::expect_used,
+    reason = "the culture regex is a source literal, exercised by dictionary tests"
+)]
 pub(crate) fn storage_domain(name: &str, domain: &str) -> String {
     if domain == "translation" {
         static CULTURE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
@@ -176,7 +180,10 @@ pub fn a64(keys: &[Vec<u8>]) -> Result<Vec<u8>> {
             }
             out.push(if mask == 0 { 1 } else { 2 });
             for pair in key.as_chunks::<2>().0 {
-                out.push((nibble(pair[0]).unwrap() << 4) | nibble(pair[1]).unwrap());
+                out.push(
+                    (nibble(pair[0]).ok_or("invalid GUID hexadecimal digit")? << 4)
+                        | nibble(pair[1]).ok_or("invalid GUID hexadecimal digit")?,
+                );
             }
             if mask != 0 {
                 out.extend_from_slice(&mask.to_le_bytes());

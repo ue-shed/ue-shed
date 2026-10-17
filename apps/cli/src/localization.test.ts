@@ -83,6 +83,9 @@ it.effect("a manifest over the byte limit keeps its cause and recovery before sc
 				refresh: () =>
 					Effect.fail(
 						new GameTextIndexError({
+							nextStep: "escalate",
+							retrySafe: false,
+							code: "index_failed",
 							operation: "manifest",
 							message: "Localization evidence could not be read (limit_exceeded).",
 							recovery:

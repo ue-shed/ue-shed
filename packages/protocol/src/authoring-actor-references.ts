@@ -1,3 +1,4 @@
+import { contractParser } from "./contract-parser.js";
 import { Schema } from "effect";
 import { AutomationError, AutomationObjectPath } from "./automation.js";
 
@@ -43,11 +44,13 @@ export const AuthoringActorReferencesResult = Schema.Struct({
 }).annotate({ identifier: "AuthoringActorReferencesResult" });
 export type AuthoringActorReferencesResult = typeof AuthoringActorReferencesResult.Type;
 
-/** Decodes untrusted input; fails with a `SchemaError` when it breaks the request's bounds. */
-export const decodeAuthoringActorReferencesRequest = Schema.decodeUnknownEffect(
-	AuthoringActorReferencesRequest
+/** Decodes untrusted input; fails with a `ContractParseError` when it breaks the request's bounds. */
+export const decodeAuthoringActorReferencesRequest = contractParser(
+	AuthoringActorReferencesRequest,
+	"AuthoringActorReferencesRequest"
 );
-/** Decodes a producer reply; fails with a `SchemaError` on another contract version or shape. */
-export const decodeAuthoringActorReferencesResult = Schema.decodeUnknownEffect(
-	AuthoringActorReferencesResult
+/** Decodes a producer reply; fails with a `ContractParseError` on another contract version or shape. */
+export const decodeAuthoringActorReferencesResult = contractParser(
+	AuthoringActorReferencesResult,
+	"AuthoringActorReferencesResult"
 );

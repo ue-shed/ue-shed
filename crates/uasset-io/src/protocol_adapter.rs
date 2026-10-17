@@ -467,7 +467,7 @@ fn execute_direct(
             }
             .map_err(|error| {
                 Failure::new(
-                    game_text_index::builder::failure_code(error.as_ref()),
+                    game_text_index::builder::failure_code(&error),
                     error.to_string(),
                     true,
                 )

@@ -20,11 +20,29 @@ function request<HostValue>(
 ): ReturnType<ContentObservatoryClientApi["status"]> {
 	return Effect.tryPromise({
 		try: invoke,
-		catch: (cause) => new ContentObservatoryClientError({ cause, operation, recovery })
+		catch: (cause) =>
+			new ContentObservatoryClientError({
+				message: "Content Observatory could not complete the host operation.",
+				retrySafe: false,
+				nextStep: "reconcile",
+				code: "content_observatory_client_failed",
+				cause,
+				operation,
+				recovery
+			})
 	}).pipe(
 		Effect.flatMap(parseContentObservatoryState),
 		Effect.mapError(
-			(cause) => new ContentObservatoryClientError({ cause, operation, recovery })
+			(cause) =>
+				new ContentObservatoryClientError({
+					message: "Content Observatory could not complete the host operation.",
+					retrySafe: false,
+					nextStep: "reconcile",
+					code: "content_observatory_client_failed",
+					cause,
+					operation,
+					recovery
+				})
 		)
 	);
 }
@@ -35,11 +53,29 @@ function targetRequest<HostValue>(
 ): Effect.Effect<ContentObservatoryTargetCatalog, ContentObservatoryClientError> {
 	return Effect.tryPromise({
 		try: invoke,
-		catch: (cause) => new ContentObservatoryClientError({ cause, operation, recovery })
+		catch: (cause) =>
+			new ContentObservatoryClientError({
+				message: "Content Observatory could not complete the host operation.",
+				retrySafe: false,
+				nextStep: "reconcile",
+				code: "content_observatory_client_failed",
+				cause,
+				operation,
+				recovery
+			})
 	}).pipe(
 		Effect.flatMap(decodeContentObservatoryTargetCatalog),
 		Effect.mapError(
-			(cause) => new ContentObservatoryClientError({ cause, operation, recovery })
+			(cause) =>
+				new ContentObservatoryClientError({
+					message: "Content Observatory could not complete the host operation.",
+					retrySafe: false,
+					nextStep: "reconcile",
+					code: "content_observatory_client_failed",
+					cause,
+					operation,
+					recovery
+				})
 		)
 	);
 }
@@ -54,6 +90,10 @@ export const contentObservatoryClient: ContentObservatoryClientApi = ContentObse
 				Effect.mapError(
 					(cause) =>
 						new ContentObservatoryClientError({
+							message: "Content Observatory could not complete the host operation.",
+							retrySafe: false,
+							nextStep: "reconcile",
+							code: "content_observatory_client_failed",
 							cause,
 							operation: "contentObservatory.start",
 							recovery
@@ -74,6 +114,10 @@ export const contentObservatoryClient: ContentObservatoryClientApi = ContentObse
 			Effect.mapError(
 				(cause) =>
 					new ContentObservatoryClientError({
+						message: "Content Observatory could not complete the host operation.",
+						retrySafe: false,
+						nextStep: "reconcile",
+						code: "content_observatory_client_failed",
 						cause,
 						operation: "contentObservatory.targets",
 						recovery

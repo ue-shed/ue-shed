@@ -72,6 +72,11 @@ const mapHistoryCommand = Command.make(
 		if ((modeValue ?? "deep") === "deep" && hasActorTarget) {
 			return Effect.fail(
 				new CliCommandError({
+					recovery:
+						"Inspect the command context and original cause before deciding whether to retry.",
+					retrySafe: false,
+					nextStep: "escalate",
+					code: "cli_command_failed",
 					message: "map history Investigation Target flags require --mode fast"
 				})
 			);
@@ -88,6 +93,11 @@ const mapHistoryCommand = Command.make(
 			if (targetKinds !== 1 || (hasPathTarget && !hasCompletePathTarget)) {
 				return Effect.fail(
 					new CliCommandError({
+						recovery:
+							"Inspect the command context and original cause before deciding whether to retry.",
+						retrySafe: false,
+						nextStep: "escalate",
+						code: "cli_command_failed",
 						message:
 							"map history --mode fast requires exactly one target: --actor-guid <guid>, --actor-package <package> with --actor-path <path>, or --actor-class <class-path>"
 					})

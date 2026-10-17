@@ -33,12 +33,32 @@ import { ErrorCauseFields } from "@ue-shed/protocol";
 
 export class CameraWorkspaceError extends Schema.TaggedError<CameraWorkspaceError>()(
 	"CameraWorkspaceError",
-	{ message: Schema.String, ...ErrorCauseFields }
+	{
+		recovery: Schema.String,
+		retrySafe: Schema.Boolean,
+		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		code: Schema.Literal("camera_workspace_failed"),
+		message: Schema.String,
+		...ErrorCauseFields
+	}
 ) {}
-const failure = (message: string) => new CameraWorkspaceError({ message });
+const failure = (message: string) =>
+	new CameraWorkspaceError({
+		recovery:
+			"Read the current editor and saved camera state before repeating a workspace action.",
+		retrySafe: false,
+		nextStep: "reconcile",
+		code: "camera_workspace_failed",
+		message
+	});
 const directoryReadFailure = (purpose: string, path: string) => (cause: unknown) => {
 	const code = Predicate.isObject(cause) && "code" in cause ? cause.code : undefined;
 	return new CameraWorkspaceError({
+		recovery:
+			"Read the current editor and saved camera state before repeating a workspace action.",
+		retrySafe: false,
+		nextStep: "reconcile",
+		code: "camera_workspace_failed",
 		message:
 			code === "EACCES" || code === "EPERM"
 				? `Permission was denied to list ${purpose} in ${path}.`

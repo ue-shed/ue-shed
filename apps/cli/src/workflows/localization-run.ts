@@ -26,6 +26,8 @@ type LocalizationRunCommand = Extract<CliCommand, { readonly _tag: "Localization
 class LocalizationRunConfigurationError extends Schema.TaggedError<LocalizationRunConfigurationError>()(
 	"LocalizationRunConfigurationError",
 	{
+		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		cause: Schema.optionalKey(Schema.Defect()),
 		code: Schema.Literal("invalid_configuration"),
 		message: Schema.String,
 		recovery: Schema.String,
@@ -264,6 +266,7 @@ export const runLocalizationOperation = Effect.fn("Cli.workflow.localization_run
 					Effect.catchTag("ConfigError", () =>
 						Effect.fail(
 							new LocalizationRunConfigurationError({
+								nextStep: "fix_input",
 								code: "invalid_configuration",
 								message: "Localization operation configuration could not be read.",
 								recovery:

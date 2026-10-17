@@ -98,11 +98,29 @@ function request<A, HostValue, DecodeError>(args: {
 }): Effect.Effect<A, MapReviewClientError> {
 	return Effect.tryPromise({
 		try: args.invoke,
-		catch: (cause) => new MapReviewClientError({ cause, operation: args.operation, recovery })
+		catch: (cause) =>
+			new MapReviewClientError({
+				message: "Map review could not complete the host operation.",
+				retrySafe: false,
+				nextStep: "reconcile",
+				code: "map_review_client_failed",
+				cause,
+				operation: args.operation,
+				recovery
+			})
 	}).pipe(
 		Effect.flatMap(args.decode),
 		Effect.mapError(
-			(cause) => new MapReviewClientError({ cause, operation: args.operation, recovery })
+			(cause) =>
+				new MapReviewClientError({
+					message: "Map review could not complete the host operation.",
+					retrySafe: false,
+					nextStep: "reconcile",
+					code: "map_review_client_failed",
+					cause,
+					operation: args.operation,
+					recovery
+				})
 		)
 	);
 }
@@ -296,6 +314,10 @@ export const mapReviewClient: MapReviewClientApi = MapReviewClient.of({
 								window.ueShed.mapReview.subscribeWorldObservations(refreshRate),
 							catch: (cause) =>
 								new MapReviewClientError({
+									message: "Map review could not complete the host operation.",
+									retrySafe: false,
+									nextStep: "reconcile",
+									code: "map_review_client_failed",
 									cause,
 									operation: "mapReview.subscribeWorldObservations",
 									recovery
@@ -313,6 +335,11 @@ export const mapReviewClient: MapReviewClientApi = MapReviewClient.of({
 								try: () => window.ueShed.mapReview.unsubscribeWorldObservations(),
 								catch: (cause) =>
 									new MapReviewClientError({
+										message:
+											"Map review could not complete the host operation.",
+										retrySafe: false,
+										nextStep: "reconcile",
+										code: "map_review_client_failed",
 										cause,
 										operation: "mapReview.unsubscribeWorldObservations",
 										recovery

@@ -1,3 +1,4 @@
+import { contractParser } from "@ue-shed/protocol";
 import { Effect, Schema } from "effect";
 import { CameraAuthoredVisibility } from "./camera-visibility.js";
 import {
@@ -2387,17 +2388,26 @@ export const decodeReviewCaptureRequest = <Input>(input: Input) =>
 	Schema.decodeUnknownEffect(ReviewCaptureRequest)(input, { onExcessProperty: "error" });
 export const decodeReviewCaptureResponse = <Input>(input: Input) =>
 	Schema.decodeUnknownEffect(ReviewCaptureResponse)(input, { onExcessProperty: "error" });
-export const decodeReviewAssessmentCapabilities = Schema.decodeUnknownEffect(
-	ReviewAssessmentCapabilities
+export const decodeReviewAssessmentCapabilities = contractParser(
+	ReviewAssessmentCapabilities,
+	"ReviewAssessmentCapabilities"
 );
-export const decodeReviewSelectionResponse = Schema.decodeUnknownEffect(ReviewSelectionResponse);
-export const decodeReviewSubjectInspectionResponse = Schema.decodeUnknownEffect(
-	ReviewSubjectInspectionResponse
+export const decodeReviewSelectionResponse = contractParser(
+	ReviewSelectionResponse,
+	"ReviewSelectionResponse"
 );
-export const decodeApproveReviewCandidateIntent = Schema.decodeUnknownEffect(
-	ApproveReviewCandidateIntent
+export const decodeReviewSubjectInspectionResponse = contractParser(
+	ReviewSubjectInspectionResponse,
+	"ReviewSubjectInspectionResponse"
 );
-export const decodeCaptureInvocation = Schema.decodeUnknownEffect(CaptureInvocation);
+export const decodeApproveReviewCandidateIntent = contractParser(
+	ApproveReviewCandidateIntent,
+	"ApproveReviewCandidateIntent"
+);
+export const decodeCaptureInvocation = contractParser(CaptureInvocation, "CaptureInvocation");
 export const decodeCaptureRun = <Input>(input: Input) =>
 	decodeCaptureRunWithMigration(input).pipe(Effect.map(({ run }) => run));
-export const decodeReviewAuthoringSession = Schema.decodeUnknownEffect(ReviewAuthoringSession);
+export const decodeReviewAuthoringSession = contractParser(
+	ReviewAuthoringSession,
+	"ReviewAuthoringSession"
+);

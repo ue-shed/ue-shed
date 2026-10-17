@@ -226,6 +226,9 @@ export type LocalizationQueryPage = typeof LocalizationQueryPage.Type;
 export class GameTextLocalizationError extends Schema.TaggedError<GameTextLocalizationError>()(
 	"GameTextLocalizationError",
 	{
+		retrySafe: Schema.Boolean,
+		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		cause: Schema.optionalKey(Schema.Defect()),
 		code: Schema.Literals([
 			"target_not_found",
 			"missing_manifest",
@@ -246,6 +249,8 @@ export function localizationManifestFailure(
 	return new GameTextLocalizationError(
 		error.code === "file_missing"
 			? {
+					retrySafe: false,
+					nextStep: "fix_input",
 					code: "missing_manifest",
 					message: relativePath
 						? `Not in this working copy: ${relativePath}`
@@ -254,6 +259,8 @@ export function localizationManifestFailure(
 						"Run the target's Gather step, or get the localization folder from source control."
 				}
 			: {
+					retrySafe: false,
+					nextStep: "fix_input",
 					code: "unreadable_manifest",
 					message: `The target manifest could not be read (${error.code}): ${error.message}`,
 					recovery: error.recovery

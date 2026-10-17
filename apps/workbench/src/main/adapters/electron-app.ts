@@ -3,6 +3,9 @@ import { Context, Effect, Layer, Ref, Schema } from "effect";
 export class ElectronAppError extends Schema.TaggedError<ElectronAppError>()(
 	"Workbench.ElectronAppError",
 	{
+		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		code: Schema.Literal("electron_app_failed"),
+		cause: Schema.optionalKey(Schema.Defect()),
 		causeText: Schema.String,
 		message: Schema.String,
 		operation: Schema.Literals(["whenReady", "getAppMetrics", "getPath", "quit", "on"]),
@@ -65,6 +68,8 @@ function appError(
 	recovery: string
 ): ElectronAppError {
 	return new ElectronAppError({
+		nextStep: "escalate",
+		code: "electron_app_failed",
 		causeText: cause instanceof Error ? cause.message : String(cause),
 		message: `Electron app ${operation} failed.`,
 		operation,

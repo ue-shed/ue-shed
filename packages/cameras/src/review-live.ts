@@ -1,3 +1,4 @@
+import { ContractParseError } from "@ue-shed/protocol";
 import { Effect, Schema } from "effect";
 import { ErrorCauseFields, ErrorGuidanceFields } from "@ue-shed/protocol";
 import { recordReviewAssessment } from "@ue-shed/observability";
@@ -39,7 +40,7 @@ function connectionError(
 	}
 	const recovery =
 		"Update the Core and Cameras plugins together so the capture response matches this UE Shed version.";
-	if (Schema.isSchemaError(cause))
+	if (Schema.isSchemaError(cause) || Schema.is(ContractParseError)(cause))
 		return new ReviewCaptureConnectionError({
 			endpoint,
 			message: `A review capture request or response at ${endpoint} does not match the review capture contract.`,

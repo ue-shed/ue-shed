@@ -1,3 +1,4 @@
+import { contractParser } from "@ue-shed/protocol";
 import {
 	NiagaraPreviewFailure,
 	NiagaraPreviewArtifact,
@@ -55,14 +56,25 @@ export const NiagaraCatalogueResult = Schema.Union([
 ]);
 export type NiagaraCatalogueResult = typeof NiagaraCatalogueResult.Type;
 
-export const decodeNiagaraPreviewRunResult = Schema.decodeUnknownEffect(NiagaraPreviewRunResult);
-export const decodeNiagaraPreviewFrameResult =
-	Schema.decodeUnknownEffect(NiagaraPreviewFrameResult);
-export const decodeNiagaraCatalogueResult = Schema.decodeUnknownEffect(NiagaraCatalogueResult);
+export const decodeNiagaraPreviewRunResult = contractParser(
+	NiagaraPreviewRunResult,
+	"NiagaraPreviewRunResult"
+);
+export const decodeNiagaraPreviewFrameResult = contractParser(
+	NiagaraPreviewFrameResult,
+	"NiagaraPreviewFrameResult"
+);
+export const decodeNiagaraCatalogueResult = contractParser(
+	NiagaraCatalogueResult,
+	"NiagaraCatalogueResult"
+);
 
 export class NiagaraPreviewClientError extends Schema.TaggedError<NiagaraPreviewClientError>()(
 	"NiagaraPreview.ClientError",
 	{
+		retrySafe: Schema.Boolean,
+		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		code: Schema.Literal("niagara_preview_client_failed"),
 		cause: Schema.Defect(),
 		message: Schema.String,
 		operation: Schema.String,

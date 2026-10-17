@@ -172,6 +172,10 @@ pub(crate) fn package_path_order(a: &[u8], b: &[u8]) -> Ordering {
             }
         }))
 }
+#[expect(
+    clippy::expect_used,
+    reason = "ICU ships compiled default collation data; no external locale or provider is accepted"
+)]
 pub(crate) fn locale(a: &str, b: &str) -> Ordering {
     static COLLATOR: std::sync::OnceLock<icu_collator::CollatorBorrowed<'static>> =
         std::sync::OnceLock::new();
@@ -344,7 +348,7 @@ fn expand_policy(input: &JoinInput) -> Result<JoinInput> {
     let fields = input.string_code_units.as_ref().unwrap_or(&empty);
     require(
         fields.keys().all(|key| !key.is_empty()),
-        "invalid_input: empty UTF-16 policy handle",
+        crate::Error::new(crate::ErrorCode::InvalidInput, "empty UTF-16 policy handle"),
     )?;
     let mut result = input.clone();
     result.review = input

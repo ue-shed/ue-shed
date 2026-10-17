@@ -44,6 +44,8 @@ export const parseTextFilter = Effect.fn("Cli.text_filter.parse")(function* (
 
 function invalidClause(text: string) {
 	return new GameTextLocalizationError({
+		retrySafe: false,
+		nextStep: "fix_input",
 		code: "invalid_selection",
 		message: `The filter "${text}" is not a valid clause.`,
 		recovery:

@@ -7,10 +7,22 @@ use crate::store::{Store, digest};
 use serde_json::{Value, json};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::LazyLock;
+#[expect(
+    clippy::expect_used,
+    reason = "the regex is a source literal tested by manifest place fixtures"
+)]
 static PLACE_NUMBER: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"\((\d+)\)").expect("constant regex"));
+#[expect(
+    clippy::expect_used,
+    reason = "the regex is a source literal tested by manifest place fixtures"
+)]
 static ASSET_PLACE: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"^/[^.]+\.[^.:]+[.:].+").expect("constant regex"));
+#[expect(
+    clippy::expect_used,
+    reason = "the regex is a source literal tested by manifest place fixtures"
+)]
 static SOURCE_PLACE: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"(?:\[\d+\]|:\d+)$").expect("constant regex"));
 

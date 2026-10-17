@@ -10,6 +10,9 @@ import { Effect, Schema, Stream } from "effect";
 export class ScenarioStudioClientError extends Schema.TaggedError<ScenarioStudioClientError>()(
 	"ScenarioStudioClientError",
 	{
+		retrySafe: Schema.Boolean,
+		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		code: Schema.Literal("scenario_studio_client_failed"),
 		cause: Schema.Defect(),
 		message: Schema.String,
 		operation: Schema.String,

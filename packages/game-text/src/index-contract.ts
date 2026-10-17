@@ -23,10 +23,12 @@ import type { GameTextProjectIndex } from "./index-steps.js";
 export class GameTextIndexError extends Schema.TaggedError<GameTextIndexError>()(
 	"GameTextIndexError",
 	{
+		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		code: Schema.Literal("index_failed"),
 		operation: Schema.String,
 		message: Schema.String,
 		recovery: Schema.String,
-		retrySafe: Schema.optionalKey(Schema.Boolean),
+		retrySafe: Schema.Boolean,
 		localizationError: Schema.optionalKey(LocalizationError),
 		cause: Schema.optionalKey(Schema.Defect())
 	}

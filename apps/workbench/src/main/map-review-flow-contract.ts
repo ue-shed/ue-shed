@@ -1,3 +1,4 @@
+import { contractParserSync } from "@ue-shed/protocol";
 import {
 	ArtifactId,
 	CaptureInvocationId,
@@ -145,6 +146,7 @@ export type MapReviewFlowRecordingManifest = Schema.Schema.Type<
 	typeof MapReviewFlowRecordingManifest
 >;
 
-export const decodeMapReviewFlowRecordingManifest = Schema.decodeUnknownSync(
-	MapReviewFlowRecordingManifest
+export const decodeMapReviewFlowRecordingManifest = contractParserSync(
+	MapReviewFlowRecordingManifest,
+	"MapReviewFlowRecordingManifest"
 );

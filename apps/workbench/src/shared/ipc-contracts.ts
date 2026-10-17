@@ -1,3 +1,4 @@
+import { contractParser } from "@ue-shed/protocol";
 import {
 	BlueprintAssetPath,
 	BlueprintAssetSearchRequest,
@@ -1255,10 +1256,15 @@ export const decodeInvokeArgs = <C extends InvokeContract>(contract: C) =>
 export const encodeInvokeResult = <C extends InvokeContract>(contract: C) =>
 	Schema.encodeUnknownEffect(contract.result);
 
-export const decodeCameraFrameEvent = Schema.decodeUnknownEffect(cameraFrameEvent.payload);
-export const decodeMapCaptureProgressEvent = Schema.decodeUnknownEffect(
-	mapCaptureProgressEvent.payload
+export const decodeCameraFrameEvent = contractParser(
+	cameraFrameEvent.payload,
+	"cameraFrameEvent.payload"
 );
-export const decodeWorldObservationEvent = Schema.decodeUnknownEffect(
-	worldObservationEvent.payload
+export const decodeMapCaptureProgressEvent = contractParser(
+	mapCaptureProgressEvent.payload,
+	"mapCaptureProgressEvent.payload"
+);
+export const decodeWorldObservationEvent = contractParser(
+	worldObservationEvent.payload,
+	"worldObservationEvent.payload"
 );

@@ -45,6 +45,10 @@ import {
 export class WorkbenchRendererError extends Schema.TaggedError<WorkbenchRendererError>()(
 	"WorkbenchRendererError",
 	{
+		message: Schema.String,
+		retrySafe: Schema.Boolean,
+		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		code: Schema.Literal("workbench_renderer_failed"),
 		cause: Schema.Defect(),
 		operation: Schema.String,
 		recovery: Schema.String
@@ -66,11 +70,29 @@ function request<A, HostValue, DecodeError>(args: {
 }): Effect.Effect<A, WorkbenchRendererError> {
 	return Effect.tryPromise({
 		try: args.invoke,
-		catch: (cause) => new WorkbenchRendererError({ cause, operation: args.operation, recovery })
+		catch: (cause) =>
+			new WorkbenchRendererError({
+				message: "Workbench could not complete the host operation.",
+				retrySafe: false,
+				nextStep: "reconcile",
+				code: "workbench_renderer_failed",
+				cause,
+				operation: args.operation,
+				recovery
+			})
 	}).pipe(
 		Effect.flatMap(args.decode),
 		Effect.mapError(
-			(cause) => new WorkbenchRendererError({ cause, operation: args.operation, recovery })
+			(cause) =>
+				new WorkbenchRendererError({
+					message: "Workbench could not complete the host operation.",
+					retrySafe: false,
+					nextStep: "reconcile",
+					code: "workbench_renderer_failed",
+					cause,
+					operation: args.operation,
+					recovery
+				})
 		)
 	);
 }
@@ -113,6 +135,10 @@ export function editorSessionStateFromResult(
 		? Effect.succeed(result.session)
 		: Effect.fail(
 				new WorkbenchRendererError({
+					message: "Workbench could not complete the host operation.",
+					retrySafe: false,
+					nextStep: "reconcile",
+					code: "workbench_renderer_failed",
 					cause: result.error,
 					operation: result.error.operation,
 					recovery: result.error.recovery
@@ -141,6 +167,10 @@ const getStatus = Effect.fn("WorkbenchRenderer.getStatus")(
 					? Effect.succeed(result.camera)
 					: Effect.fail(
 							new WorkbenchRendererError({
+								message: "Workbench could not complete the host operation.",
+								retrySafe: false,
+								nextStep: "reconcile",
+								code: "workbench_renderer_failed",
 								cause: result.message,
 								operation: "camera.getStatus",
 								recovery: result.recovery

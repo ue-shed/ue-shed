@@ -1,3 +1,4 @@
+import { ContractParseError } from "@ue-shed/protocol";
 import { createHash } from "node:crypto";
 import { readFile, realpath, stat } from "node:fs/promises";
 import { resolve, relative, isAbsolute } from "node:path";
@@ -138,7 +139,7 @@ function renderError(
 	if (isCameraRenderError(cause)) return cause;
 	// Capability and preflight reads hold no editor state; later operations may have acquired it.
 	const readOnly = operation === "capabilities" || operation === "preflight";
-	if (Schema.isSchemaError(cause))
+	if (Schema.isSchemaError(cause) || Schema.is(ContractParseError)(cause))
 		return new CameraRenderError({
 			code: "render_response_invalid",
 			operation,

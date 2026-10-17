@@ -222,6 +222,9 @@ describe("NiagaraPreviewRoute", () => {
 				catalogue: () =>
 					Effect.fail(
 						new NiagaraPreviewClientError({
+							retrySafe: false,
+							nextStep: "reconcile",
+							code: "niagara_preview_client_failed",
 							cause: new Error(
 								"Error invoking remote method 'niagara-preview:catalogue': Error: channel closed"
 							),
@@ -249,6 +252,9 @@ describe("NiagaraPreviewRoute", () => {
 				run: () =>
 					Effect.fail(
 						new NiagaraPreviewClientError({
+							retrySafe: false,
+							nextStep: "reconcile",
+							code: "niagara_preview_client_failed",
 							cause: new Error(
 								"Error invoking remote method 'niagara-preview:run': Error: renderer gone"
 							),

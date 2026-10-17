@@ -35,7 +35,14 @@ export const runMapHistory = Effect.fn("Cli.workflow.map_history")((command: Map
 					: Option.getOrElse(decodeUtcTimestamp(command.until), () => undefined);
 			if (until === undefined) {
 				return yield* Effect.fail(
-					new CliCommandError({ message: "--until must be an ISO-8601 UTC timestamp." })
+					new CliCommandError({
+						recovery:
+							"Inspect the command context and original cause before deciding whether to retry.",
+						retrySafe: false,
+						nextStep: "escalate",
+						code: "cli_command_failed",
+						message: "--until must be an ISO-8601 UTC timestamp."
+					})
 				);
 			}
 			const asTimestamp = decodeUtcTimestamp(command.since);
@@ -50,6 +57,11 @@ export const runMapHistory = Effect.fn("Cli.workflow.map_history")((command: Map
 			if (since === undefined) {
 				return yield* Effect.fail(
 					new CliCommandError({
+						recovery:
+							"Inspect the command context and original cause before deciding whether to retry.",
+						retrySafe: false,
+						nextStep: "escalate",
+						code: "cli_command_failed",
 						message:
 							"--since must be an ISO-8601 UTC timestamp or a positive Effect duration such as '7 days'."
 					})
@@ -95,6 +107,11 @@ export const runMapHistory = Effect.fn("Cli.workflow.map_history")((command: Map
 					Effect.mapError(
 						() =>
 							new CliCommandError({
+								recovery:
+									"Inspect the command context and original cause before deciding whether to retry.",
+								retrySafe: false,
+								nextStep: "escalate",
+								code: "cli_command_failed",
 								message:
 									"Fast History requires a valid range and Investigation Target."
 							})
@@ -109,6 +126,11 @@ export const runMapHistory = Effect.fn("Cli.workflow.map_history")((command: Map
 					Effect.mapError(
 						() =>
 							new CliCommandError({
+								recovery:
+									"Inspect the command context and original cause before deciding whether to retry.",
+								retrySafe: false,
+								nextStep: "escalate",
+								code: "cli_command_failed",
 								message: "Fast History produced an invalid output document."
 							})
 					)
@@ -133,6 +155,11 @@ export const runMapHistory = Effect.fn("Cli.workflow.map_history")((command: Map
 				Effect.mapError(
 					() =>
 						new CliCommandError({
+							recovery:
+								"Inspect the command context and original cause before deciding whether to retry.",
+							retrySafe: false,
+							nextStep: "escalate",
+							code: "cli_command_failed",
 							message: "Map History requires a range ending at or after its start."
 						})
 				)
@@ -144,6 +171,11 @@ export const runMapHistory = Effect.fn("Cli.workflow.map_history")((command: Map
 				Effect.mapError(
 					() =>
 						new CliCommandError({
+							recovery:
+								"Inspect the command context and original cause before deciding whether to retry.",
+							retrySafe: false,
+							nextStep: "escalate",
+							code: "cli_command_failed",
 							message: "Map History produced an invalid output document."
 						})
 				)

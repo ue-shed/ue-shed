@@ -27,6 +27,8 @@ export const checkRetainedImportObservations = Effect.fn("GameTextIndex.checkRet
 		const stale = () =>
 			Effect.fail(
 				new GameTextIndexError({
+					nextStep: "escalate",
+					code: "index_failed",
 					operation: "localization",
 					retrySafe: true,
 					message: "A retained localization input was superseded by another import.",

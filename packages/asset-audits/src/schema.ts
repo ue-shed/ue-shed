@@ -1,3 +1,4 @@
+import { contractParser } from "@ue-shed/protocol";
 import { Schema } from "effect";
 
 export const TextureObjectPath = Schema.String.pipe(Schema.brand("TextureObjectPath"));
@@ -91,7 +92,10 @@ export const TexturePreviewResult = Schema.Union([
 	})
 ]);
 export type TexturePreviewResult = Schema.Schema.Type<typeof TexturePreviewResult>;
-export const decodeTexturePreviewResult = Schema.decodeUnknownEffect(TexturePreviewResult);
+export const decodeTexturePreviewResult = contractParser(
+	TexturePreviewResult,
+	"TexturePreviewResult"
+);
 
 export const MAX_TEXTURE_PREVIEW_BATCH_SIZE = 100;
 export const TexturePreviewBatchRequest = Schema.Struct({
@@ -111,8 +115,10 @@ export const TexturePreviewBatchResult = Schema.Struct({
 	)
 });
 export type TexturePreviewBatchResult = Schema.Schema.Type<typeof TexturePreviewBatchResult>;
-export const decodeTexturePreviewBatchResult =
-	Schema.decodeUnknownEffect(TexturePreviewBatchResult);
+export const decodeTexturePreviewBatchResult = contractParser(
+	TexturePreviewBatchResult,
+	"TexturePreviewBatchResult"
+);
 
 export const DimensionsPowerOfTwoRule = Schema.Struct({
 	id: AuditRuleId,
@@ -212,8 +218,11 @@ export const TextureAuditRunResult = Schema.Union([
 ]);
 export type TextureAuditRunResult = Schema.Schema.Type<typeof TextureAuditRunResult>;
 
-export const decodeTextureAuditRuleSet = Schema.decodeUnknownEffect(TextureAuditRuleSet);
-export const decodeTextureAuditRunResult = Schema.decodeUnknownEffect(TextureAuditRunResult);
+export const decodeTextureAuditRuleSet = contractParser(TextureAuditRuleSet, "TextureAuditRuleSet");
+export const decodeTextureAuditRunResult = contractParser(
+	TextureAuditRunResult,
+	"TextureAuditRunResult"
+);
 
 /** Upper bound applied at the public query boundary, including Workbench IPC. */
 export const MAX_TEXTURE_QUERY_PAGE_SIZE = 100;
@@ -248,8 +257,9 @@ export const TextureAuditQueryRunResult = Schema.Union([
 	Schema.Struct({ status: Schema.Literal("failed"), error: TextureAuditPublicError })
 ]);
 export type TextureAuditQueryRunResult = Schema.Schema.Type<typeof TextureAuditQueryRunResult>;
-export const decodeTextureAuditQueryRunResult = Schema.decodeUnknownEffect(
-	TextureAuditQueryRunResult
+export const decodeTextureAuditQueryRunResult = contractParser(
+	TextureAuditQueryRunResult,
+	"TextureAuditQueryRunResult"
 );
 
 export const TextureAuditSearchRequest = Schema.Struct({
@@ -274,7 +284,10 @@ export const TextureAuditSearchResult = Schema.Union([
 	Schema.Struct({ status: Schema.Literal("not_ready") })
 ]);
 export type TextureAuditSearchResult = Schema.Schema.Type<typeof TextureAuditSearchResult>;
-export const decodeTextureAuditSearchResult = Schema.decodeUnknownEffect(TextureAuditSearchResult);
+export const decodeTextureAuditSearchResult = contractParser(
+	TextureAuditSearchResult,
+	"TextureAuditSearchResult"
+);
 
 export const TextureMetricComparison = Schema.Union([
 	Schema.Struct({
@@ -325,4 +338,7 @@ export const TextureAuditRecordResult = Schema.Union([
 	Schema.Struct({ status: Schema.Literal("not_ready") })
 ]);
 export type TextureAuditRecordResult = Schema.Schema.Type<typeof TextureAuditRecordResult>;
-export const decodeTextureAuditRecordResult = Schema.decodeUnknownEffect(TextureAuditRecordResult);
+export const decodeTextureAuditRecordResult = contractParser(
+	TextureAuditRecordResult,
+	"TextureAuditRecordResult"
+);

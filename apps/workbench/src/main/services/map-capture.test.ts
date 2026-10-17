@@ -195,7 +195,14 @@ it.effect("stops a capture before rendering when the open camera set will not cl
 							Effect.sync(() => calls.push("close")).pipe(
 								Effect.andThen(
 									Effect.fail(
-										new CameraWorkspaceError({ message: "detach refused" })
+										new CameraWorkspaceError({
+											recovery:
+												"Read the current editor and saved camera state before repeating a workspace action.",
+											retrySafe: false,
+											nextStep: "reconcile",
+											code: "camera_workspace_failed",
+											message: "detach refused"
+										})
 									)
 								)
 							)

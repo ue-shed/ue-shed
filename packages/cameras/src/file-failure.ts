@@ -1,3 +1,4 @@
+import { ContractParseError } from "@ue-shed/protocol";
 import { Predicate, Schema } from "effect";
 
 function hasCode(cause: unknown, ...codes: ReadonlyArray<string>): boolean {
@@ -11,7 +12,9 @@ function hasCode(cause: unknown, ...codes: ReadonlyArray<string>): boolean {
 
 /** The document was read but is not JSON or does not match its schema; retrying cannot help. */
 export const isMalformedDocument = (cause: unknown): boolean =>
-	cause instanceof SyntaxError || Schema.isSchemaError(cause);
+	cause instanceof SyntaxError ||
+	Schema.isSchemaError(cause) ||
+	Schema.is(ContractParseError)(cause);
 
 /**
  * Why a file read, write or parse failed, classified from the platform error code so a message can
@@ -19,7 +22,8 @@ export const isMalformedDocument = (cause: unknown): boolean =>
  */
 export function fileFailureReason(cause: unknown): string {
 	if (cause instanceof SyntaxError) return "it is not valid JSON";
-	if (Schema.isSchemaError(cause)) return "it does not match its schema";
+	if (Schema.isSchemaError(cause) || Schema.is(ContractParseError)(cause))
+		return "it does not match its schema";
 	if (hasCode(cause, "ENOENT", "ENOTDIR")) return "it or its directory does not exist";
 	if (hasCode(cause, "EACCES", "EPERM")) return "access was denied";
 	if (hasCode(cause, "EEXIST")) return "it already exists";

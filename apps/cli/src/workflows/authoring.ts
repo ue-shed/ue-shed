@@ -150,11 +150,21 @@ export const runAuthoringAnalyze = Effect.fn("Cli.workflow.authoring_analyze")(
 				);
 				if (matches.length === 0) {
 					return yield* new CliCommandError({
+						recovery:
+							"Inspect the command context and original cause before deciding whether to retry.",
+						retrySafe: false,
+						nextStep: "escalate",
+						code: "cli_command_failed",
 						message: `No saved DataTable ${command.tableObjectPath} in ${command.projectRoot}.`
 					});
 				}
 				if (matches.length > 1) {
 					return yield* new CliCommandError({
+						recovery:
+							"Inspect the command context and original cause before deciding whether to retry.",
+						retrySafe: false,
+						nextStep: "escalate",
+						code: "cli_command_failed",
 						message: `Multiple saved DataTables share ${command.tableObjectPath}.`
 					});
 				}
@@ -269,6 +279,11 @@ export const runAuthoringParity = Effect.fn("Cli.workflow.authoring_parity")(
 					if (status === "nonconformant") {
 						return yield* Effect.fail(
 							new CliCommandError({
+								recovery:
+									"Inspect the command context and original cause before deciding whether to retry.",
+								retrySafe: false,
+								nextStep: "escalate",
+								code: "cli_command_failed",
 								message: "Saved/live authoring parity did not pass"
 							})
 						);
@@ -454,6 +469,11 @@ function sessionProgram(command: SessionCommand) {
 						if (command._tag === "SessionsApply" && limits === undefined) {
 							return yield* Effect.fail(
 								new CliCommandError({
+									recovery:
+										"Inspect the command context and original cause before deciding whether to retry.",
+									retrySafe: false,
+									nextStep: "escalate",
+									code: "cli_command_failed",
 									message: "Editor did not negotiate authoring mutation limits"
 								})
 							);

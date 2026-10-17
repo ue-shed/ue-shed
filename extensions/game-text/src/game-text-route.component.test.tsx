@@ -1548,6 +1548,10 @@ describe("Game Text audit recovery", () => {
 				failed = true;
 				return Effect.fail(
 					new GameTextClientError({
+						message: "The GameTextClient operation failed.",
+						retrySafe: false,
+						nextStep: "reconcile",
+						code: "game_text_client_failed",
 						operation: "search",
 						cause: "temporary search failure",
 						recovery: "Retry the search."
@@ -1574,6 +1578,10 @@ describe("Game Text audit recovery", () => {
 					failed = true;
 					return Effect.fail(
 						new GameTextClientError({
+							message: "The GameTextClient operation failed.",
+							retrySafe: false,
+							nextStep: "reconcile",
+							code: "game_text_client_failed",
 							operation: "group",
 							cause: "temporary group failure",
 							recovery: "Retry this group."
@@ -1758,6 +1766,10 @@ it("retries a failed rescan while keeping the current search results", async () 
 			failed = true;
 			return Effect.fail(
 				new GameTextClientError({
+					message: "The GameTextClient operation failed.",
+					retrySafe: false,
+					nextStep: "reconcile",
+					code: "game_text_client_failed",
 					operation: "scan",
 					cause: "temporary scan failure",
 					recovery: "Retry the rescan."

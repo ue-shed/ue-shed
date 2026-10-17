@@ -149,6 +149,10 @@ export interface MapCaptureProgressEvent extends Schema.Schema.Type<
 export class MapCaptureClientError extends Schema.TaggedError<MapCaptureClientError>()(
 	"MapCaptureClientError",
 	{
+		message: Schema.String,
+		retrySafe: Schema.Boolean,
+		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		code: Schema.Literal("map_capture_client_failed"),
 		cause: Schema.Defect(),
 		operation: Schema.String,
 		recovery: Schema.String
@@ -187,6 +191,7 @@ export interface MapCaptureClientApi {
 export class MapCaptureContractError extends Schema.TaggedError<MapCaptureContractError>()(
 	"MapCaptureContractError",
 	{
+		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
 		code: Schema.Literal("invalid_contract"),
 		message: Schema.String,
 		recovery: Schema.String,
@@ -212,6 +217,7 @@ function mapCaptureContractParser<S extends Schema.Codec<unknown, unknown>>(
 			Effect.mapError(
 				(cause) =>
 					new MapCaptureContractError({
+						nextStep: "escalate",
 						code: "invalid_contract",
 						message: `The ${subject} does not match the Map Capture contract.`,
 						recovery:

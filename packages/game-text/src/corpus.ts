@@ -58,6 +58,7 @@ const reportExtraction = (progress: ExtractionProgress): Effect.Effect<void> =>
 export class TextCorpusScanError extends Schema.TaggedError<TextCorpusScanError>()(
 	"TextCorpusScanError",
 	{
+		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
 		code: Schema.Literals(["invalid_project", "invalid_options", "scan_limit_exceeded"]),
 		message: Schema.String,
 		recovery: Schema.String,
@@ -90,6 +91,7 @@ export const parseTextCorpusScanOptions = (encoded: typeof TextCorpusScanOptions
 		Effect.mapError(
 			(cause) =>
 				new TextCorpusScanError({
+					nextStep: "fix_input",
 					code: "invalid_options",
 					message: "The text corpus scan options do not match their schema.",
 					recovery: "Provide a project root and positive scan limits.",
@@ -111,6 +113,7 @@ export const TEXT_PROPERTY_NAME = "TextProperty";
 function textCorpusScanFailure(error: AssetReaderError): TextCorpusScanError {
 	if (error.kind === "resource_limit") {
 		return new TextCorpusScanError({
+			nextStep: "fix_input",
 			code: "scan_limit_exceeded",
 			message: error.message,
 			recovery: "Narrow the project or raise the explicit maximum asset limit.",
@@ -118,6 +121,7 @@ function textCorpusScanFailure(error: AssetReaderError): TextCorpusScanError {
 		});
 	}
 	return new TextCorpusScanError({
+		nextStep: "fix_input",
 		code: "invalid_project",
 		message: error.message,
 		recovery: "Choose an Unreal project directory containing a Content folder.",

@@ -51,7 +51,10 @@ impl Files {
                 layer(store, key)?.ok_or("missing update input")?,
             );
         }
-        Ok(self.opened.get_mut(key).unwrap())
+        Ok(self
+            .opened
+            .get_mut(key)
+            .ok_or("missing opened update input")?)
     }
     fn col(&mut self, store: &Store, key: &str, field: &str) -> Result<&[u32]> {
         let cache = (key.to_owned(), field.to_owned());

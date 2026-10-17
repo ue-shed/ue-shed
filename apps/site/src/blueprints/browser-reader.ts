@@ -13,7 +13,15 @@ import { Effect, Schema } from "effect";
 import { BlueprintBrowserError, BlueprintWorkerResponse } from "./worker-contract.js";
 
 function browserError(operation: string, message: string): BlueprintBrowserError {
-	return new BlueprintBrowserError({ operation, message });
+	return new BlueprintBrowserError({
+		recovery:
+			"Check the selected saved asset and parser limits. Use a supported package or report the retained parser failure.",
+		retrySafe: false,
+		nextStep: "escalate",
+		code: "blueprint_browser_failed",
+		operation,
+		message
+	});
 }
 
 const decodeBytes = Effect.fn("Website.Blueprints.decodeBytes")(function* (

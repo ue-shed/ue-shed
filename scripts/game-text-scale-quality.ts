@@ -25,6 +25,9 @@ export const stallIntervalMs = 10;
 function retainedPackageSource(records: string) {
 	const readFailure = (cause: unknown) =>
 		new GameTextIndexError({
+			nextStep: "escalate",
+			retrySafe: false,
+			code: "index_failed",
 			operation: "read",
 			message: "The generated project's package records could not be read.",
 			recovery: "Convert the generated project's package records again.",

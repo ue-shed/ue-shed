@@ -1,3 +1,4 @@
+import { contractParser } from "./contract-parser.js";
 import { Schema } from "effect";
 import { GameTextIndexBuildRequest, GameTextIndexBuildOutcome } from "./game-text-index.js";
 import { makeWireJsonSchemaDocument } from "./json-schema.js";
@@ -549,15 +550,15 @@ export const UAssetIoEvent = Schema.Union([
 export type UAssetIoEvent = Schema.Schema.Type<typeof UAssetIoEvent>;
 
 /**
- * Decodes an untrusted request value. Fails with a `SchemaError` when the shape, bounds, or
+ * Decodes an untrusted request value. Fails with a `ContractParseError` when the shape, bounds, or
  * minor-version requirement is not met.
  */
-export const decodeUAssetIoRequest = Schema.decodeUnknownEffect(UAssetIoRequest);
+export const decodeUAssetIoRequest = contractParser(UAssetIoRequest, "UAssetIoRequest");
 /**
- * Decodes one parsed stdout frame. Fails with a `SchemaError` when the frame does not match;
+ * Decodes one parsed stdout frame. Fails with a `ContractParseError` when the frame does not match;
  * stream ordering and dictionary-page index bounds are left to the caller.
  */
-export const decodeUAssetIoEvent = Schema.decodeUnknownEffect(UAssetIoEvent);
+export const decodeUAssetIoEvent = contractParser(UAssetIoEvent, "UAssetIoEvent");
 
 /**
  * Builds the draft 2020-12 JSON Schema document for a uasset-io schema, in the form of the

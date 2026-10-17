@@ -57,6 +57,10 @@ import type {
 export class GameTextClientError extends Schema.TaggedError<GameTextClientError>()(
 	"GameTextClientError",
 	{
+		message: Schema.String,
+		retrySafe: Schema.Boolean,
+		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		code: Schema.Literal("game_text_client_failed"),
 		cause: Schema.Defect(),
 		operation: Schema.String,
 		recovery: Schema.String

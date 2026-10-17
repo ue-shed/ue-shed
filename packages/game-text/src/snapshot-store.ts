@@ -65,8 +65,22 @@ const StoreConfiguration = Schema.Struct({
 export class SnapshotStoreError extends Schema.TaggedError<SnapshotStoreError>()(
 	"SnapshotStoreError",
 	{
+		retrySafe: Schema.Boolean,
+		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
 		operation: Schema.String,
-		code: Schema.Literals(["unavailable", "busy", "missing", "invalid_input"]),
+		code: Schema.Literals([
+			"unavailable",
+			"busy",
+			"missing",
+			"invalid_input",
+			"invalid_cache",
+			"stale_generation",
+			"resource_limit",
+			"invalid_response",
+			"io_error",
+			"timeout",
+			"native_failed"
+		]),
 		message: Schema.String,
 		recovery: Schema.String,
 		cause: Schema.optionalKey(Schema.Defect())
@@ -74,6 +88,27 @@ export class SnapshotStoreError extends Schema.TaggedError<SnapshotStoreError>()
 ) {}
 /** Tag guard for snapshot store failures; match by tag, not `instanceof`. */
 export const isSnapshotStoreError = Schema.is(SnapshotStoreError);
+
+/** Cache failure recovery is classified independently of human-readable diagnostic messages. */
+export function snapshotStoreGuidance(
+	code: SnapshotStoreError["code"]
+): Pick<SnapshotStoreError, "retrySafe" | "nextStep"> {
+	return {
+		retrySafe: code === "busy",
+		nextStep:
+			code === "busy"
+				? "retry"
+				: code === "missing" ||
+					  code === "invalid_cache" ||
+					  code === "stale_generation" ||
+					  code === "timeout" ||
+					  code === "native_failed"
+					? "reconcile"
+					: code === "invalid_input" || code === "resource_limit"
+						? "fix_input"
+						: "escalate"
+	};
+}
 type StoreFailure = SnapshotStoreError | SnapshotFormatError;
 const errnoCode = (cause: unknown) =>
 	cause instanceof Error && "code" in cause && Predicate.isString(cause.code)
@@ -94,6 +129,8 @@ export function snapshotStoreFailure(
 	switch (code) {
 		case "ENOENT":
 			return new SnapshotStoreError({
+				retrySafe: snapshotStoreGuidance("missing").retrySafe,
+				nextStep: snapshotStoreGuidance("missing").nextStep,
 				operation,
 				code: "missing",
 				message: `Game Text cache ${operation} failed: a cache file is missing (ENOENT).`,
@@ -103,6 +140,8 @@ export function snapshotStoreFailure(
 		case "EACCES":
 		case "EPERM":
 			return new SnapshotStoreError({
+				retrySafe: snapshotStoreGuidance("unavailable").retrySafe,
+				nextStep: snapshotStoreGuidance("unavailable").nextStep,
 				operation,
 				code: "unavailable",
 				message: `Game Text cache ${operation} failed: access to a cache file was denied (${code}).`,
@@ -112,6 +151,8 @@ export function snapshotStoreFailure(
 			});
 		case "EBUSY":
 			return new SnapshotStoreError({
+				retrySafe: snapshotStoreGuidance("busy").retrySafe,
+				nextStep: snapshotStoreGuidance("busy").nextStep,
 				operation,
 				code: "busy",
 				message: `Game Text cache ${operation} failed: a cache file is in use (EBUSY).`,
@@ -120,6 +161,8 @@ export function snapshotStoreFailure(
 			});
 		case "ENOSPC":
 			return new SnapshotStoreError({
+				retrySafe: snapshotStoreGuidance("unavailable").retrySafe,
+				nextStep: snapshotStoreGuidance("unavailable").nextStep,
 				operation,
 				code: "unavailable",
 				message: `Game Text cache ${operation} failed: the disk is full (ENOSPC).`,
@@ -128,6 +171,8 @@ export function snapshotStoreFailure(
 			});
 		default:
 			return new SnapshotStoreError({
+				retrySafe: snapshotStoreGuidance("unavailable").retrySafe,
+				nextStep: snapshotStoreGuidance("unavailable").nextStep,
 				operation,
 				code: "unavailable",
 				message:
@@ -148,6 +193,8 @@ function failure(operation: string, cause: unknown): StoreFailure {
 }
 const busy = () =>
 	new SnapshotStoreError({
+		retrySafe: snapshotStoreGuidance("busy").retrySafe,
+		nextStep: snapshotStoreGuidance("busy").nextStep,
 		operation: "writer",
 		code: "busy",
 		message: "Another Game Text snapshot writer owns this target.",
@@ -340,6 +387,8 @@ export function snapshotStoreNodeLayer(
 			Effect.mapError(
 				(cause) =>
 					new SnapshotStoreError({
+						retrySafe: snapshotStoreGuidance("invalid_input").retrySafe,
+						nextStep: snapshotStoreGuidance("invalid_input").nextStep,
 						operation: "configure",
 						code: "invalid_input",
 						message: "The snapshot store configuration does not match its schema.",
@@ -352,6 +401,8 @@ export function snapshotStoreNodeLayer(
 				if (!zlib.createZstdCompress || !zlib.createZstdDecompress)
 					return Effect.fail(
 						new SnapshotStoreError({
+							retrySafe: snapshotStoreGuidance("unavailable").retrySafe,
+							nextStep: snapshotStoreGuidance("unavailable").nextStep,
 							operation: "configure",
 							code: "unavailable",
 							message:
@@ -398,6 +449,8 @@ function makeNodeLayer(options: SnapshotStoreOptions): Layer.Layer<SnapshotStore
 		const value = await manifest();
 		if (value === null)
 			throw new SnapshotStoreError({
+				retrySafe: snapshotStoreGuidance("missing").retrySafe,
+				nextStep: snapshotStoreGuidance("missing").nextStep,
 				operation: "open",
 				code: "missing",
 				message: "No Game Text snapshot is published.",
@@ -549,6 +602,9 @@ function makeNodeLayer(options: SnapshotStoreOptions): Layer.Layer<SnapshotStore
 								boundary("publish", async () => {
 									if (!active)
 										throw new SnapshotStoreError({
+											retrySafe:
+												snapshotStoreGuidance("unavailable").retrySafe,
+											nextStep: snapshotStoreGuidance("unavailable").nextStep,
 											operation: "publish",
 											code: "unavailable",
 											message: "The writer scope is closed.",
@@ -556,6 +612,9 @@ function makeNodeLayer(options: SnapshotStoreOptions): Layer.Layer<SnapshotStore
 										});
 									if (uncertain)
 										throw new SnapshotStoreError({
+											retrySafe:
+												snapshotStoreGuidance("unavailable").retrySafe,
+											nextStep: snapshotStoreGuidance("unavailable").nextStep,
 											operation: "publish",
 											code: "unavailable",
 											message: "Manifest publication outcome is uncertain.",
@@ -567,6 +626,10 @@ function makeNodeLayer(options: SnapshotStoreOptions): Layer.Layer<SnapshotStore
 										keys = Schema.decodeUnknownSync(InputKeys)(inputKeys);
 									} catch (cause) {
 										throw new SnapshotStoreError({
+											retrySafe:
+												snapshotStoreGuidance("invalid_input").retrySafe,
+											nextStep:
+												snapshotStoreGuidance("invalid_input").nextStep,
 											operation: "publish",
 											code: "invalid_input",
 											message:

@@ -20,12 +20,23 @@ const kinds = ["bytes", "u8", "u32", "stringIds", "strings"] as const;
 export type SnapshotKind = (typeof kinds)[number];
 export class SnapshotFormatError extends Schema.TaggedError<SnapshotFormatError>()(
 	"SnapshotFormatError",
-	{ section: Schema.String, message: Schema.String, recovery: Schema.String }
+	{
+		retrySafe: Schema.Boolean,
+		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
+		code: Schema.Literal("invalid_snapshot"),
+		cause: Schema.optionalKey(Schema.Defect()),
+		section: Schema.String,
+		message: Schema.String,
+		recovery: Schema.String
+	}
 ) {}
 /** Tag guard for snapshot format failures; match by tag, not `instanceof`. */
 export const isSnapshotFormatError = Schema.is(SnapshotFormatError);
 export function snapshotFailure(section: string, message: string): SnapshotFormatError {
 	return new SnapshotFormatError({
+		retrySafe: false,
+		nextStep: "reconcile",
+		code: "invalid_snapshot",
 		section,
 		message,
 		recovery: "Rebuild this disposable Game Text snapshot from its inputs."

@@ -536,6 +536,9 @@ function buildRegistrationLayer(recorder: Recorder, options: RegistrationOptions
 				Effect.andThen(
 					Effect.fail(
 						new SavedWorldUnavailable({
+							retrySafe: false,
+							nextStep: "escalate",
+							code: "saved_world_unavailable",
 							message: "No saved map is configured.",
 							recovery: "Choose a map."
 						})

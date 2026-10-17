@@ -437,9 +437,9 @@ export const nativeIndexBuilderLayer = (configuration: AssetReaderConfiguration)
 	Layer.effect(
 		GameTextIndexBuilder,
 		Effect.gen(function* () {
-			const fallback = yield* GameTextIndexBuilder;
+			const producers = yield* GameTextIndexBuilder;
 			return GameTextIndexBuilder.of({
-				...fallback,
+				...producers,
 				withSession: (request, effect) =>
 					Effect.scoped(
 						Effect.gen(function* () {

@@ -103,6 +103,7 @@ const manifest = {
 
 const lostResponse = (functionName: string) =>
 	new RemoteControlClientError({
+		code: "transport_failed",
 		endpoint: "http://editor",
 		functionName,
 		message: "The request timed out.",

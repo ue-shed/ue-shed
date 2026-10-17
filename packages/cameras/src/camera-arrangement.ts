@@ -776,11 +776,13 @@ function arrangementNextStep(
 }
 export function arrangementFailure(
 	code: (typeof CameraArrangementError.Type)["code"],
-	message: string
+	message: string,
+	cause?: unknown
 ) {
 	return new CameraArrangementError({
 		code,
 		message,
+		...(cause === undefined ? undefined : { cause }),
 		nextStep: arrangementNextStep(code),
 		recovery:
 			"Inspect the latest arrangement and retry with its revision and an explicit camera scope.",

@@ -36,7 +36,7 @@ function containsStringifiedCause(node: ESTree.Node): boolean {
 }
 
 function isErrorConstruction(node: ESTree.Node): boolean {
-	if (node.type !== "NewExpression") return false;
+	if (node.type !== "NewExpression" && node.type !== "CallExpression") return false;
 	const callee = node.callee;
 	const name =
 		callee.type === "Identifier"
@@ -46,7 +46,12 @@ function isErrorConstruction(node: ESTree.Node): boolean {
 				  callee.property.type === "Identifier"
 				? callee.property.name
 				: undefined;
-	return name !== undefined && /(?:Error|Failure|Rejected|Unavailable)$/u.test(name);
+	// UI signal setters present diagnostics; they do not construct domain failures.
+	if (node.type === "CallExpression" && name !== undefined && /^set[A-Z]/u.test(name))
+		return false;
+	return (
+		name !== undefined && /(?:Error|Failure|Rejected|Unavailable|error|failure)$/u.test(name)
+	);
 }
 
 /** Require error messages to classify a failure instead of embedding its stringified cause. */

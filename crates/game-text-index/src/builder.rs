@@ -507,8 +507,8 @@ mod validation_tests {
     use super::*;
 
     #[test]
-    fn rejects_unicode_prefix_at_a_non_character_boundary_without_panicking() {
-        // Exactly 77 bytes, but byte 76 lies inside the final two-byte scalar.
+    fn rejects_unicode_view_prefix_without_panicking() {
+        // The byte length is valid, but a view prefix accepts only lowercase ASCII hex digits.
         let prefix = format!("target-join.{}é.", "a".repeat(62));
         assert_eq!(prefix.len(), 77);
         let request = BuildRequest::Begin {

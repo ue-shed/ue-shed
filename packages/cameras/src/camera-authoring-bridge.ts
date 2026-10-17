@@ -522,7 +522,11 @@ export const synchronizeArrangementCamera = Effect.fn("CameraAuthoring.synchroni
 				catch: (cause) =>
 					isCameraArrangementError(cause)
 						? cause
-						: arrangementFailure("invalid", String(cause))
+						: arrangementFailure(
+								"invalid",
+								"The saved arrangement could not reconcile the requested camera change.",
+								cause
+							)
 			});
 			if (cameras.length || added.length || removed.length)
 				document = yield* store.mutate({

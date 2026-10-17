@@ -77,6 +77,9 @@ export function indexedLocalizationLinesRequest(joined: JoinedTargetReader) {
 	};
 }
 
+/**
+ * Lazy localization view over a pinned joined index. Lines materialize on first access through the supplied query, so the owning reader scope must remain open while the view is used.
+ */
 export function indexedLocalizationJoin(
 	joined: JoinedTargetReader,
 	query: TextCorpusQuery
@@ -94,6 +97,9 @@ export function indexedLocalizationJoin(
 	};
 }
 
+/**
+ * Reads retained localization evidence from a pinned joined index using LocalizationFileAccess. Keep the reader scope alive for lazy entries; malformed or unavailable cache inputs retain their typed failures.
+ */
 export const readIndexedLocalizationEvidence = Effect.fn("GameTextIndex.evidence")(function* (
 	joined: JoinedTargetReader
 ) {

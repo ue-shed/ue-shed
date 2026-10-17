@@ -48,6 +48,7 @@ function fakeEditor() {
 		if (editor.down)
 			return Effect.fail(
 				new RemoteControlClientError({
+					code: "transport_failed",
 					endpoint: request.endpoint,
 					functionName: request.functionName,
 					message: "connect ECONNREFUSED",

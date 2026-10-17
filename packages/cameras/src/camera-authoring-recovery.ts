@@ -217,7 +217,11 @@ export const restoreCameraRecovery = Effect.fn("CameraAuthoring.restoreRecovery"
 			catch: (cause) =>
 				isCameraArrangementError(cause)
 					? cause
-					: arrangementFailure("invalid", String(cause))
+					: arrangementFailure(
+							"invalid",
+							"The saved arrangement could not reconcile the requested camera change.",
+							cause
+						)
 		});
 		document = yield* store.mutate({
 			kind: "poses",

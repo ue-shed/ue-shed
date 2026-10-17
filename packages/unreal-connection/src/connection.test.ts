@@ -236,7 +236,8 @@ describe("Remote Control authoring adapter", () => {
 			)
 		);
 
-		expect(error.message).toContain("Invalid Remote Control envelope");
+		expect(error.code).toBe("invalid_envelope");
+		expect(Schema.isSchemaError(error.cause)).toBe(true);
 		expect(error.retrySafe).toBe(false);
 	});
 
@@ -404,6 +405,8 @@ for (const status of [200, 503]) {
 			expect(error.retrySafe).toBe(idempotent);
 			expect(error.nextStep).toBe(idempotent ? "escalate" : "reconcile");
 			expect(error.recovery).toContain("malformed response");
+			expect(error.code).toBe("http_decode_failed");
+			expect(error.cause).toMatchObject({ kind: "decode" });
 			if (!idempotent) expect(error.recovery).toContain("may have applied");
 		});
 	}

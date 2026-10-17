@@ -62,6 +62,9 @@ const StoreConfiguration = Schema.Struct({
 	projectKey: Schema.NonEmptyString.check(Schema.isMaxLength(4096)),
 	targetKey: Schema.NonEmptyString.check(Schema.isMaxLength(4096))
 });
+/**
+ * Classified cache filesystem, lease, native-process or generation failure. retrySafe and nextStep distinguish waiting for another writer from reopening an uncertain session or rebuilding invalid disposable data.
+ */
 export class SnapshotStoreError extends Schema.TaggedError<SnapshotStoreError>()(
 	"SnapshotStoreError",
 	{

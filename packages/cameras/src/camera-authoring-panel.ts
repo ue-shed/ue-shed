@@ -120,7 +120,11 @@ export const makeCameraAuthoringPanelSession = Effect.fn("CameraAuthoringPanel.m
 				catch: (cause) =>
 					isCameraArrangementError(cause)
 						? cause
-						: arrangementFailure("invalid", String(cause))
+						: arrangementFailure(
+								"invalid",
+								"The saved arrangement could not reconcile the requested camera change.",
+								cause
+							)
 			});
 		const processEvent = Effect.fn("CameraAuthoringPanel.event")(function* (
 			event: CameraPanelEvent,
@@ -192,7 +196,11 @@ export const makeCameraAuthoringPanelSession = Effect.fn("CameraAuthoringPanel.m
 					catch: (cause) =>
 						isCameraArrangementError(cause)
 							? cause
-							: arrangementFailure("invalid", String(cause))
+							: arrangementFailure(
+									"invalid",
+									"The saved arrangement could not reconcile the requested camera change.",
+									cause
+								)
 				});
 				active = action.cameraId;
 			} else if (action.kind === "approve") {

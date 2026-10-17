@@ -76,6 +76,9 @@ import {
 	checkRetainedImportObservations
 } from "./index-import-observation.js";
 
+/**
+ * Project-only refresh options shared with the full index request. A saved package inventory can be supplied by the host; changedFiles distinguishes full refresh from reuse.
+ */
 export const GameTextProjectRefreshRequest = Schema.Struct(
 	Struct.pick(GameTextIndexRefreshRequest.fields, [
 		"projectRoot",
@@ -84,6 +87,9 @@ export const GameTextProjectRefreshRequest = Schema.Struct(
 	])
 );
 export type GameTextProjectRefreshRequest = typeof GameTextProjectRefreshRequest.Type;
+/**
+ * Target selection and evidence-refresh options. requireManifest controls whether missing gathered text fails preparation; changedFiles preserves the same full-refresh versus reuse semantics as project refresh.
+ */
 export const GameTextTargetImportRequest = Schema.Struct(
 	Struct.pick(GameTextIndexRefreshRequest.fields, [
 		"targetName",
@@ -92,6 +98,9 @@ export const GameTextTargetImportRequest = Schema.Struct(
 	])
 );
 export type GameTextTargetImportRequest = typeof GameTextTargetImportRequest.Type;
+/**
+ * Explicit key-change choices and review-error tolerance for building a target. These policy choices affect the derived join without changing authored assets or the selected project.
+ */
 export const GameTextTargetBuildRequest = Schema.Struct(
 	Struct.pick(GameTextIndexRefreshRequest.fields, ["keyChangePairs", "tolerateReviewErrors"])
 );
@@ -120,12 +129,18 @@ export interface GameTextProject {
 	readonly projectRoot: string;
 	readonly cacheRoot: string;
 }
+/**
+ * Verified package revision reusable across localization targets. Its generation and package key establish dependency identity; the value itself holds no reader pin or writer lease.
+ */
 export interface GameTextProjectIndex extends GameTextProject {
 	readonly generation: string;
 	readonly packageKey: string;
 	readonly packages: Packages;
 	readonly changedFiles?: readonly string[];
 }
+/**
+ * Prepared localization inputs tied to a project revision and target view. File keys establish which retained evidence a later build consumes; importing does not publish a query model.
+ */
 export interface GameTextTargetImport {
 	readonly project: GameTextProject;
 	readonly view: GameTextProjectView;
@@ -136,6 +151,9 @@ export interface GameTextTargetImport {
 	readonly fileProvenances: NonNullable<JoinedTargetInput["fileProvenances"]>;
 	readonly fileDiagnostics: NonNullable<JoinedTargetInput["fileDiagnostics"]>;
 }
+/**
+ * Built target and its exact project/input identities, before opening readers. A queryRevision is opaque and comparable only within the same project, cache and backend.
+ */
 export interface GameTextTargetIndex {
 	readonly project: GameTextProjectIndex;
 	readonly imported: Imported;
@@ -147,6 +165,9 @@ export interface GameTextTargetIndex {
 	readonly queryRevision?: string | undefined;
 	readonly fileKeys: GameTextTargetImport["fileKeys"];
 }
+/**
+ * Opened target model with its validated project inventory attached. Queries and quality operations refer to that immutable revision and require the model's owning scope to remain open.
+ */
 export interface GameTextIndexModel extends GameTextIndexRefreshResult {
 	readonly project: GameTextProjectIndex;
 }
@@ -301,6 +322,9 @@ export interface GameTextIndexStepsOptions {
 	readonly qualityWorker?: boolean;
 }
 
+/**
+ * Constructs the independently usable step port in the caller's Effect scope. Its service requirements supply policy-neutral evidence and the selected builder; it does not own project selection.
+ */
 export const makeGameTextIndexSteps = (
 	cacheRoot: string,
 	options: GameTextIndexStepsOptions = {}
@@ -900,11 +924,17 @@ export const makeGameTextIndexSteps = (
 		};
 	});
 
+/**
+ * Headless project, target-import, build and open workflow. Steps reject stale input generations and own scoped writers/readers; hosts compose them without copying Workbench orchestration.
+ */
 export class GameTextIndexSteps extends Context.Service<
 	GameTextIndexSteps,
 	Effect.Success<ReturnType<typeof makeGameTextIndexSteps>>
 >()("@ue-shed/game-text/GameTextIndexSteps") {}
 
+/**
+ * Layer for the headless step service. Provide a builder, project-index source and localization evidence; worker options move query/quality preparation off the host thread while retaining scope ownership.
+ */
 export const gameTextIndexStepsLayer = (
 	cacheRoot: string,
 	options: GameTextIndexStepsOptions = {}

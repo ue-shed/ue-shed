@@ -1,7 +1,5 @@
 // Named exports only. Modules not listed in an entry point are private to the package.
 
-export { columnarTextCorpusQuery } from "./columnar-query.js";
-
 export {
 	STRING_TABLE_CLASS,
 	type ScanTextCorpusOptions,
@@ -98,8 +96,6 @@ export {
 export { type GameTextProjectView } from "./project-index-view.js";
 
 export { TextRulesFileError, createStarterTextRules } from "./rules-file.js";
-
-export { makeGameTextSearchWorker } from "./search-worker-node.js";
 
 export { indexedSourceQuality } from "./source-quality-index.js";
 

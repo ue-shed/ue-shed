@@ -63,6 +63,7 @@ const unconfigured: WorkbenchConfigurationApi = {
 const failingRemoteControl = makeRemoteControlClientTestLayer(() =>
 	Effect.fail(
 		new RemoteControlClientError({
+			code: "transport_failed",
 			endpoint: "http://127.0.0.1:30001",
 			functionName: "GetCapabilityManifest",
 			message: "Editor is not connected",
@@ -203,6 +204,7 @@ it.effect(
 							Effect.flatMap(() =>
 								Effect.fail(
 									new RemoteControlClientError({
+										code: "transport_failed",
 										endpoint: "http://127.0.0.1:30001",
 										functionName: "GetCapabilityManifest",
 										message: "Editor is not connected",

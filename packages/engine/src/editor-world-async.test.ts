@@ -34,6 +34,7 @@ const manifest = {
 };
 const transportFailure = (functionName: string) =>
 	new RemoteControlClientError({
+		code: "transport_failed",
 		endpoint,
 		functionName,
 		operation: "test",

@@ -206,6 +206,7 @@ describe("Game Text actions API", () => {
 					makeRemoteControlClientTestLayer((call) =>
 						Effect.fail(
 							new RemoteControlClientError({
+								code: "transport_failed",
 								recovery: "Inspect editor state before retrying.",
 								nextStep: "reconcile",
 								endpoint: call.endpoint,
@@ -295,6 +296,7 @@ describe("Game Text mutation recovery", () => {
 							);
 						return Effect.fail(
 							new RemoteControlClientError({
+								code: "transport_failed",
 								recovery: "Inspect editor state before retrying.",
 								nextStep: "reconcile",
 								endpoint: call.endpoint,

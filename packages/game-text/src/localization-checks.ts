@@ -535,6 +535,7 @@ export function localizationDuplicateSources() {
 			for (const [source, group] of groups) {
 				if (group.length < 6) continue;
 				// SAFETY: `add` is the only writer and pushes an identity, its position and row.
+				// Verified by: localization-checks.test.ts — shared-source groups preserve identity ordering and finding ownership.
 				let identities = Array.from({ length: group.length / 3 }, (_, index) => ({
 					identity: group[index * 3] as LocalizationIdentity,
 					position: group[index * 3 + 1] as number,

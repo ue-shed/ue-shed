@@ -146,7 +146,14 @@ export class ProtocolStreamValidator {
 		try {
 			event = validateProtocolEvent(JSON.parse(line), line.length);
 		} catch (cause) {
-			throw new ProtocolStreamFailure("contract", `Invalid protocol event: ${String(cause)}`);
+			throw new ProtocolStreamFailure(
+				"contract",
+				"A native protocol event is not valid JSON or does not match its negotiated contract.",
+				undefined,
+				undefined,
+				undefined,
+				cause
+			);
 		}
 		this.push(event);
 		return event;
@@ -235,9 +242,10 @@ export class ProtocolStreamFailure extends Error {
 		message: string,
 		readonly exitCode?: number,
 		readonly stderr?: string,
-		readonly protocolCode?: string
+		readonly protocolCode?: string,
+		cause?: unknown
 	) {
-		super(message);
+		super(message, { cause });
 	}
 }
 
@@ -1025,7 +1033,7 @@ export class UassetProtocolSession {
 					this.processError ?? (cause instanceof Error ? cause : undefined);
 				throw new ProtocolStreamFailure(
 					"process",
-					processCause?.message ?? String(cause),
+					"The native protocol session could not write its request",
 					undefined,
 					undefined,
 					processFailureCode(processCause)

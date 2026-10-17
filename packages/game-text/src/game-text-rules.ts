@@ -212,9 +212,13 @@ export class GameTextRuleDocumentError extends Schema.TaggedError<GameTextRuleDo
 	}
 ) {}
 
-function invalid(code: GameTextRuleDocumentError["code"]): GameTextRuleDocumentError {
+function invalid(
+	code: GameTextRuleDocumentError["code"],
+	cause?: unknown
+): GameTextRuleDocumentError {
 	if (code === "invalid_json")
 		return new GameTextRuleDocumentError({
+			...(cause === undefined ? undefined : { cause }),
 			retrySafe: false,
 			nextStep: "fix_input",
 			code,
@@ -223,6 +227,7 @@ function invalid(code: GameTextRuleDocumentError["code"]): GameTextRuleDocumentE
 				"Correct the JSON syntax and retry with a version-1, version-2 or version-3 rule document."
 		});
 	return new GameTextRuleDocumentError({
+		...(cause === undefined ? undefined : { cause }),
 		retrySafe: false,
 		nextStep: "fix_input",
 		code,
@@ -269,20 +274,20 @@ export function decodeGameTextRuleDocumentJson(
 	return Effect.gen(function* () {
 		const json = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Json))(
 			input
-		).pipe(Effect.mapError(() => invalid("invalid_json")));
+		).pipe(Effect.mapError((cause) => invalid("invalid_json", cause)));
 		const decoded = yield* Schema.decodeUnknownEffect(GameTextRuleDocument)(json).pipe(
-			Effect.mapError(() => invalid("invalid_structure"))
+			Effect.mapError((cause) => invalid("invalid_structure", cause))
 		);
 		// Version 3 rejects unknown keys, so a misspelt check or parameter is not ignored.
 		const document =
 			decoded.schemaVersion === 3
 				? yield* Schema.decodeUnknownEffect(TextQualityRuleDocumentV3)(json, {
 						onExcessProperty: "error"
-					}).pipe(Effect.mapError(() => invalid("invalid_structure")))
+					}).pipe(Effect.mapError((cause) => invalid("invalid_structure", cause)))
 				: decoded;
 		if (document.schemaVersion === 1)
 			return yield* decodeTextQualityRuleDocument(document).pipe(
-				Effect.mapError((error) => invalid(error.code))
+				Effect.mapError((error) => invalid(error.code, error))
 			);
 		if (duplicateCultureKey(input)) return yield* Effect.fail(invalid("duplicate_culture_key"));
 		const custom = document.schemaVersion === 3 ? (document.customChecks ?? []) : [];

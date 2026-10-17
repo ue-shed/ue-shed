@@ -14,7 +14,11 @@ import {
 	Semaphore,
 	Stream
 } from "effect";
-import { decodeCompanionCapabilityManifest, ErrorGuidanceFields } from "@ue-shed/protocol";
+import {
+	decodeCompanionCapabilityManifest,
+	ErrorCauseFields,
+	ErrorGuidanceFields
+} from "@ue-shed/protocol";
 import { RemoteControlClient, type RemoteControlClientApi } from "@ue-shed/unreal-connection";
 import {
 	WorldLeaseId,
@@ -33,6 +37,7 @@ export class WorldPreparationError extends Schema.TaggedError<WorldPreparationEr
 		code: Schema.String,
 		operation: Schema.String,
 		...ErrorGuidanceFields,
+		...ErrorCauseFields,
 		snapshot: Schema.optionalKey(WorldSnapshot)
 	}
 ) {}
@@ -40,13 +45,9 @@ export class WorldPreparationError extends Schema.TaggedError<WorldPreparationEr
 // translated by withPreparedWorld; unrelated defects must retain their original cause.
 class WorldRestorationFailure extends Error {
 	constructor(error: WorldPreparationError, original: Exit.Exit<unknown, unknown>) {
-		super(
-			Cause.pretty(
-				Exit.isFailure(original)
-					? Cause.combine(original.cause, Cause.fail(error))
-					: Cause.fail(error)
-			)
-		);
+		super("The owned world lease could not restore editor state.", {
+			cause: { error, original }
+		});
 		this.name = "WorldRestorationFailure";
 	}
 }
@@ -87,18 +88,33 @@ export function worldPreparationGuidance(
 			return { retrySafe: false, nextStep: "escalate" };
 	}
 }
-const failure = (code: string, operation: string, message: string, snapshot?: WorldSnapshot) =>
+const failure = (
+	code: string,
+	operation: string,
+	message: string,
+	snapshot?: WorldSnapshot,
+	cause?: unknown
+) =>
 	new WorldPreparationError({
 		code,
 		operation,
 		message,
+		...(cause === undefined ? undefined : { cause }),
 		recovery: "Inspect world preparation evidence and the existing lease before retrying.",
 		...worldPreparationGuidance(code),
 		...(snapshot === undefined ? undefined : { snapshot })
 	});
 const decode = <S extends Schema.Top, Input>(schema: S, value: Input, operation: string) =>
 	Schema.decodeUnknownEffect(schema)(value, { onExcessProperty: "error" }).pipe(
-		Effect.mapError((cause) => failure("invalid_contract", operation, String(cause)))
+		Effect.mapError((cause) =>
+			failure(
+				"invalid_contract",
+				operation,
+				`The world preparation ${operation} value does not match its contract.`,
+				undefined,
+				cause
+			)
+		)
 	);
 const operations = Metric.frequency("ue_shed_world_preparation_operations", {
 	description: "World preparation requests by action"
@@ -176,7 +192,13 @@ export function makeWorldPreparation(
 			.pipe(
 				Effect.flatMap(decodeCompanionCapabilityManifest),
 				Effect.mapError((cause) =>
-					failure("connection_failed", request.action, String(cause))
+					failure(
+						"connection_failed",
+						request.action,
+						"The editor's world preparation capability could not be negotiated.",
+						undefined,
+						cause
+					)
 				)
 			);
 		if (
@@ -199,7 +221,13 @@ export function makeWorldPreparation(
 			})
 			.pipe(
 				Effect.mapError((cause) =>
-					failure("connection_failed", request.action, String(cause))
+					failure(
+						"connection_failed",
+						request.action,
+						`The editor's world preparation ${request.action} call failed.`,
+						undefined,
+						cause
+					)
 				),
 				Effect.flatMap((value) => decode(WorldResponse, value, request.action))
 			);
@@ -445,6 +473,12 @@ export const withPreparedWorld = Effect.fn("WorldPreparation.withPreparedWorld")
 		defects.length > 0 &&
 		defects.every((reason) => reason.defect instanceof WorldRestorationFailure)
 	)
-		return yield* failure("restoration_failed", "scope", Cause.pretty(outcome.cause));
+		return yield* failure(
+			"restoration_failed",
+			"scope",
+			"The owned world lease could not restore editor state.",
+			undefined,
+			outcome.cause
+		);
 	return yield* Effect.failCause(outcome.cause);
 });

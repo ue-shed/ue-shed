@@ -10,28 +10,424 @@ import { RemoteControlClient, RemoteControlClientError } from "@ue-shed/unreal-c
 import { Context, Effect, Layer, PubSub, Schema, Scope, Stream } from "effect";
 import { createServer, type Server, type Socket } from "node:net";
 
-export * from "./review-capture.js";
-export * from "./camera-render-schema.js";
-export * from "./camera-render.js";
-export * from "./map-tile-pyramid.js";
-export * from "./map-tile-source.js";
-export * from "./map-tile-image.js";
-export * from "./map-tile-authoring.js";
-export * from "./map-tile-schema.js";
-export * from "./map-tile-repository.js";
-export * from "./map-tile-capture.js";
-export * from "./review-authoring-live.js";
-export * from "./review-authoring-session.js";
-export * from "./review-bootstrap.js";
-export * from "./review-framing.js";
-export * from "./review-history.js";
-export * from "./review-live.js";
-export * from "./provisioned-cameras-live.js";
-export * from "./review-repository.js";
-export * from "./review-schema.js";
-export * from "./review-session-policy.js";
-export * from "./review-visibility-policy.js";
-export * from "./review-view.js";
+export {
+	captureReviewSet,
+	type CaptureReviewSetOptions,
+	defaultReviewCaptureConcurrency,
+	makeReviewCaptureTestLayer,
+	manualCaptureInvocation,
+	ReviewCapture,
+	type ReviewCaptureApi,
+	ReviewCaptureConcurrency,
+	ReviewCaptureLive,
+	ReviewCapturePort,
+	type ReviewCapturePortApi,
+	reviewCapturePortLayer,
+	reviewCaptureRemotePortLayer,
+	ReviewCaptureRunError,
+	ReviewIdGenerator,
+	type ReviewIdGeneratorApi,
+	reviewIdGeneratorLayer,
+	ReviewIdGeneratorLive
+} from "./review-capture.js";
+export {
+	AbsoluteCamera,
+	CameraExposurePolicy,
+	CameraFrameEvidence,
+	CameraFrameOperationId,
+	CameraFrameRequest,
+	CameraFrameResult,
+	CameraFrameStatus,
+	CameraOutputSize,
+	CameraPreparationPolicy,
+	CameraRenderBeginResult,
+	CameraRenderCapabilities,
+	CameraRenderCapabilitiesV1,
+	cameraRenderContract,
+	CameraRenderContract,
+	CameraRenderEndResult,
+	CameraRendererPolicy,
+	CameraRenderFailure,
+	CameraRenderFailureCode,
+	CameraRenderIssue,
+	CameraRenderPolicy,
+	CameraRenderPreflight,
+	CameraRenderProgress,
+	CameraRenderRegion,
+	CameraRenderSessionId,
+	CameraRenderSessionRequest,
+	CameraWorldRotation,
+	CameraWorldVector,
+	highResolutionReviewRenderer,
+	legacyReviewRenderPolicy,
+	reviewCaptureRenderPolicy
+} from "./camera-render-schema.js";
+export {
+	CameraRenderer,
+	type CameraRendererApi,
+	cameraRendererLayer,
+	CameraRenderError,
+	cameraRendererTestLayer,
+	cameraRenderReuseIdentity,
+	type CameraRenderSession,
+	isEditorOwnershipRejection,
+	makeCameraRenderer,
+	readCameraFrameArtifact,
+	renderCamera
+} from "./camera-render.js";
+export {
+	assertMapTileKey,
+	chooseMapTileLevel,
+	createMapTileGrid,
+	type CreateMapTileGridOptions,
+	mapTileAncestorChain,
+	mapTileChildren,
+	type MapTileGrid,
+	type MapTileKey,
+	mapTileKeyId,
+	type MapTileLevel,
+	mapTileParent,
+	mapTileRelativePath,
+	type MapTileSelection,
+	type MapTileSelectionOptions,
+	mapTileWorldBounds,
+	type MapWorldBounds,
+	resolveAvailableMapTiles,
+	selectMapTiles,
+	visibleMapTiles,
+	worldToMapTile
+} from "./map-tile-pyramid.js";
+export {
+	createMapTileSource,
+	MapTilePixelRect,
+	MapTileSource,
+	MapTileSourceBlock,
+	MapTileSourceCrop,
+	MapTileSourceError,
+	type MapTileSourceLayout,
+	MapTileSourceLayoutOptions,
+	MapTileSourceLimits,
+	MapTileSourceSettings,
+	planMapTileSources
+} from "./map-tile-source.js";
+export {
+	cropMapTileImage,
+	deriveMapTileParent,
+	MapTileImage,
+	MapTileImageError,
+	MapTileParentImages
+} from "./map-tile-image.js";
+export {
+	fitMapCapturePlanToSelection,
+	makeDefaultMapCapturePlan,
+	mapCaptureBackendIssue,
+	mapCaptureSafeIdentifier,
+	savedMapPathToGameMapPath
+} from "./map-tile-authoring.js";
+export {
+	decodeMapCapturePlan,
+	decodeMapTileCaptureRequest,
+	decodeMapTileCaptureResponse,
+	decodeMapTilePyramidManifest,
+	MapCaptureBackend,
+	MapCaptureContractVersion,
+	MapCaptureDataLayerPolicy,
+	MapCaptureOperationId,
+	MapCapturePlan,
+	MapCapturePlanId,
+	MapCaptureProject,
+	MapCaptureRenderPolicy,
+	MapCaptureRunId,
+	MapCaptureWorldBounds,
+	MapTileArtifact,
+	MapTileCaptureOperation,
+	MapTileCaptureProgress,
+	MapTileCaptureRequest,
+	MapTileCaptureResponse,
+	MapTileCaptureTileRequest,
+	MapTileKeySchema,
+	type MapTileKeyValue,
+	MapTilePyramidFailure,
+	MapTilePyramidLevel,
+	MapTilePyramidManifest,
+	MapTileReleaseResult
+} from "./map-tile-schema.js";
+export {
+	callerOwnedMapCaptureDestination,
+	DEFAULT_MAP_CAPTURE_ROOT,
+	makeMapCaptureRepositoryTestLayer,
+	MapCaptureArtifactSourceRejected,
+	type MapCaptureAttempt,
+	mapCaptureAttemptsRoot,
+	type MapCaptureDestination,
+	mapCapturePlansRoot,
+	MapCaptureRepository,
+	type MapCaptureRepositoryApi,
+	MapCaptureRepositoryLive,
+	mapCaptureRoot,
+	mapCaptureRunsRoot,
+	type MapCaptureRunSummary,
+	MapCaptureStorageError,
+	projectLocalMapCaptureDestination,
+	validateMapCaptureProjectRoot
+} from "./map-tile-repository.js";
+export {
+	inspectMapCapturePlan,
+	type InspectMapCapturePlanResult,
+	makeMapTileCaptureRemotePort,
+	MapCapture,
+	type MapCaptureApi,
+	MapCaptureLive,
+	MapCaptureRunError,
+	type MapCaptureRunOutcome,
+	type MapCaptureRunProgress,
+	MapTileCapturePort,
+	type MapTileCapturePortApi,
+	mapTileCapturePortLayer,
+	mapTileCaptureRemotePortLayer,
+	runMapCapture,
+	type RunMapCaptureOptions,
+	runMapCapturePlan,
+	type RunMapCapturePlanOptions
+} from "./map-tile-capture.js";
+export {
+	inspectReviewSelection,
+	makeReviewAuthoringTestLayer,
+	previewReviewCandidate,
+	type PreviewReviewCandidateArgs,
+	ReviewAuthoring,
+	type ReviewAuthoringApi,
+	ReviewAuthoringConnectionError,
+	ReviewAuthoringLive,
+	type ReviewCandidatePreview
+} from "./review-authoring-live.js";
+export {
+	makeReviewAuthoringSessionsTestLayer,
+	nextReviewViewId,
+	REVIEW_AUTHORING_SESSIONS_DIRECTORY,
+	ReviewAuthoringSessionError,
+	reviewAuthoringSessionPath,
+	ReviewAuthoringSessions,
+	type ReviewAuthoringSessionsApi,
+	ReviewAuthoringSessionsLive
+} from "./review-authoring-session.js";
+export {
+	bootstrapMapReviewSet,
+	createMapReviewSet,
+	type MapReviewBootstrap
+} from "./review-bootstrap.js";
+export {
+	applyCandidateOverrides,
+	approveFramingCandidate,
+	type ApproveFramingCandidateResult,
+	type ArcFramingPresetOptions,
+	cardinalOrbitGroup,
+	cardinalOrbitGroupId,
+	contextThreeQuarterGroup,
+	contextThreeQuarterGroupId,
+	createAreaReviewView,
+	createReviewViewFromCandidate,
+	defaultFramingParameters,
+	facadeFrontGroup,
+	facadeFrontGroupId,
+	framingDriftDiagnostics,
+	generateFramingCandidateId,
+	generateFramingCandidates,
+	realizationFramingDiagnostics,
+	realizeTargetRelativePose,
+	type ReviewSelection,
+	revisedReviewViewRevision,
+	reviseReviewView,
+	type ReviseReviewViewResult,
+	targetRelativePoseFromWorldPose,
+	targetRelativeViewpointFromWorldPose
+} from "./review-framing.js";
+export {
+	projectReviewViewHistory,
+	type ReviewViewHistory,
+	type ReviewViewHistoryEntry
+} from "./review-history.js";
+export {
+	captureReviewView,
+	getReviewAssessmentCapabilities,
+	ReviewCaptureConnectionError
+} from "./review-live.js";
+export {
+	awaitProvisionedCameraFrame,
+	clearProvisionedCameras,
+	decodeProvisionedCameraRequest,
+	ensureProvisionedCameras,
+	ProvisionedCameraBinding,
+	ProvisionedCameraCorrelation,
+	ProvisionedCameraError,
+	ProvisionedCameraFrame,
+	type ProvisionedCameraOptions,
+	provisionedCameraRequest,
+	ProvisionedCameraRequest,
+	ProvisionedCameraSpec
+} from "./provisioned-cameras-live.js";
+export {
+	callerOwnedReviewCaptureDestination,
+	captureRunPath,
+	captureRunsRoot,
+	type CaptureRunSummary,
+	createReviewSetFromTemplate,
+	DEFAULT_REVIEW_ROOT,
+	findReviewSet,
+	isPathWithin,
+	listCaptureRuns,
+	listReviewSets,
+	loadCaptureRun,
+	loadReviewSet,
+	makeReviewRepositoryTestLayer,
+	projectLocalReviewCaptureDestination,
+	ReviewArtifactSourceRejected,
+	type ReviewCaptureAttempt,
+	type ReviewCaptureDestination,
+	ReviewRepository,
+	type ReviewRepositoryApi,
+	ReviewRepositoryLive,
+	reviewSetsRoot,
+	type ReviewSetSummary,
+	ReviewStorageError,
+	runIdFromPath,
+	saveReviewSet
+} from "./review-repository.js";
+export {
+	ActorGuidSubjectLocator,
+	ActorPathSubjectLocator,
+	ActorTarget,
+	ActorTransformSnapshot,
+	ApprovedPose,
+	ApproveReviewCandidateIntent,
+	ArcFramingPattern,
+	AreaTarget,
+	ArtifactId,
+	BoundedJsonObject,
+	CaptureArtifact,
+	CapturedReviewViewRevision,
+	CaptureInvocation,
+	CaptureInvocationCause,
+	CaptureInvocationId,
+	CaptureProfile,
+	CaptureProfileId,
+	CaptureRealization,
+	CaptureRun,
+	CaptureRunId,
+	classifyVisibilityMeasurement,
+	ClearCompanionResult,
+	decodeApproveReviewCandidateIntent,
+	decodeCaptureInvocation,
+	decodeCaptureRun,
+	decodeCaptureRunWithMigration,
+	decodeReviewAssessmentCapabilities,
+	decodeReviewAuthoringSession,
+	decodeReviewCaptureRequest,
+	decodeReviewCaptureResponse,
+	decodeReviewSelectionResponse,
+	decodeReviewSet,
+	decodeReviewSetWithMigration,
+	decodeReviewSubjectInspectionResponse,
+	defaultNaturalOnlyVisibilityPolicy,
+	EffectiveVisibilityMethod,
+	FramingCandidate,
+	FramingCandidateId,
+	FramingCandidateOverride,
+	FramingCandidateOverrides,
+	FramingDiagnostic,
+	FramingGroup,
+	FramingGroupId,
+	FramingParameters,
+	FramingPattern,
+	FramingPreset,
+	FramingRecipe,
+	initialReviewViewRevision,
+	nextReviewViewRevision,
+	NumberedReviewViewRevision,
+	ObjectLocator,
+	OccluderEvidence,
+	OrientedBoundsSubject,
+	PresetFramingRecipe,
+	PresetFramingRecipeV1,
+	PresetFramingRecipeV2,
+	ProvisionedCameraId,
+	ResolvedActorGuidSubject,
+	ResolvedActorSubject,
+	ResolvedReviewSubject,
+	ReviewAssessmentCapabilities,
+	ReviewAssessmentMethodName,
+	ReviewAuthoringDestination,
+	ReviewAuthoringSession,
+	ReviewAuthoringSessionId,
+	ReviewAuthoringSessionPatch,
+	ReviewAuthoringSessionRecovery,
+	ReviewCandidateRealization,
+	ReviewCaptureOperationId,
+	ReviewCaptureRequest,
+	ReviewCaptureRequestCurrent,
+	ReviewCaptureResponse,
+	ReviewCaptureSubject,
+	ReviewClearCompanionRequest,
+	type ReviewProjectedBounds,
+	type ReviewProjectionMargins,
+	ReviewRotation,
+	ReviewSelectionResponse,
+	ReviewSet,
+	ReviewSetId,
+	ReviewSubjectActorGuid,
+	ReviewSubjectActorPath,
+	ReviewSubjectInspectionResponse,
+	ReviewSubjectProjection,
+	ReviewTarget,
+	ReviewVector,
+	ReviewView,
+	reviewViewActorSubject,
+	reviewViewApprovedPose,
+	ReviewViewDefinition,
+	ReviewViewId,
+	ReviewViewRevisionId,
+	RingFramingPattern,
+	SubjectBounds,
+	SubjectLocator,
+	subjectLocatorFromSelection,
+	TargetRelativeViewpoint,
+	ViewResult,
+	VisibilityAssessment,
+	VisibilityClassification,
+	VisibilityClassificationThresholds,
+	VisibilityLowThresholdAction,
+	VisibilityMeasurement,
+	VisibilityOutput,
+	VisibilityOverrides,
+	VisibilityPolicy,
+	VisibilityPolicyId,
+	VisibilityResult,
+	VisibilitySamplePreset,
+	WorldFixedViewpoint
+} from "./review-schema.js";
+export {
+	evaluateReviewCapturePolicy,
+	ReviewCaptureBlock,
+	type ReviewCapturePolicyDecision
+} from "./review-session-policy.js";
+export {
+	applyVisibilityPolicyToViews,
+	applyVisibilityPolicyToViewsAtPath,
+	inspectReviewVisibilityPolicies,
+	inspectReviewVisibilityPoliciesAtPath,
+	makeReviewViewId,
+	makeVisibilityPolicyId,
+	replaceViewVisibilityPolicy,
+	replaceViewVisibilityPolicyAtPath,
+	ReviewVisibilityPolicyError,
+	type ReviewVisibilityPolicyInspection
+} from "./review-visibility-policy.js";
+export {
+	putReviewView,
+	putReviewViewAtPath,
+	type PutReviewViewResult,
+	ReviewViewDefinitionError
+} from "./review-view.js";
 
 export const CAMERA_PIPE_NAME = "\\\\.\\pipe\\ue-shed-cameras-v1";
 export const CAMERA_FRAME_HEADER_BYTES = 128;
@@ -234,9 +630,6 @@ export interface CameraFeedApi {
 	readonly latestFrames: Effect.Effect<ReadonlyMap<number, CameraFrame>>;
 	readonly metrics: Effect.Effect<CameraFeedMetrics>;
 }
-
-/** @deprecated Use `CameraFeedApi`. */
-export type CameraFeedShape = CameraFeedApi;
 
 export class CameraFeed extends Context.Service<CameraFeed, CameraFeedApi>()(
 	"@ue-shed/cameras/CameraFeed"
@@ -569,16 +962,109 @@ export function configureCameras(
 	}).pipe(Effect.mapError((error) => cameraControlError(endpoint, "configure", error)));
 }
 
-export * from "./map-capture-tools.js";
-export * from "./camera-arrangement.js";
-export * from "./camera-authoring-store.js";
-export * from "./camera-authoring-recovery.js";
-export * from "./camera-authoring-bridge.js";
-export * from "./camera-setup-schema.js";
-export * from "./camera-setup-host.js";
-export * from "./camera-authoring-panel.js";
-export * from "./camera-authoring-panel-schema.js";
-export * from "./camera-visibility.js";
+export {
+	inspectMapCaptureReadiness,
+	inspectMapCaptureSelection,
+	MapCaptureInspectionError,
+	MapCaptureReadiness,
+	MapCaptureSelection
+} from "./map-capture-tools.js";
+export {
+	applyCameraArrangementCommand,
+	approveArrangementCamera,
+	ArrangementCamera,
+	ArrangementCameraId,
+	arrangementFailure,
+	arrangementFitDistance,
+	CameraArrangement,
+	CameraArrangementCommand,
+	CameraArrangementError,
+	CameraArrangementGroup,
+	CameraArrangementId,
+	CameraArrangementOverrides,
+	CameraArrangementRecipe,
+	CameraArrangementSettings,
+	CameraEditScope,
+	cameraIdsInScope,
+	CameraLayout,
+	CameraOperationId,
+	createCameraArrangementFromSelection,
+	effectiveCameraArrangementSettings,
+	effectiveCameraArrangementVisibility,
+	exportCameraArrangementRecipe,
+	importCameraArrangementRecipe,
+	migrateLegacyCameraArrangement,
+	previewArrangementRegeneration,
+	proposeCameraLayout,
+	resolveArrangementCamera
+} from "./camera-arrangement.js";
+export {
+	CameraApproval,
+	cameraApprovalBase,
+	CameraAuthoringDocument,
+	type CameraAuthoringStore,
+	makeCameraAuthoringStore,
+	readCameraArrangementRecipe,
+	readCameraVisibilityPreset,
+	writeCameraArrangementRecipe,
+	writeCameraVisibilityPreset
+} from "./camera-authoring-store.js";
+export {
+	CameraRecoveryChoice,
+	CameraRecoveryProposal,
+	inspectCameraRecovery,
+	prepareCameraRecovery,
+	resolveCameraRecovery,
+	restoreCameraRecovery
+} from "./camera-authoring-recovery.js";
+export {
+	arrangementBridgeCameras,
+	attachArrangementCamera,
+	type CameraAuthoringBridge,
+	CameraBridgeCamera,
+	CameraBridgeError,
+	CameraBridgeFailureCode,
+	CameraBridgeRequest,
+	CameraBridgeResponse,
+	CameraBridgeSnapshot,
+	makeCameraAuthoringBridge,
+	readyCameraBridge,
+	synchronizeArrangementCamera
+} from "./camera-authoring-bridge.js";
+export {
+	CameraSetupIntent,
+	CameraSetupOpenIntent,
+	CameraSetupOutcome,
+	CameraSetupRequest,
+	cameraSetupSavedSet,
+	CameraSetupSavedSet,
+	CameraSetupState
+} from "./camera-setup-schema.js";
+export { makeCameraSetupHost } from "./camera-setup-host.js";
+export {
+	cameraAuthoringPanelState,
+	makeCameraAuthoringPanelSession
+} from "./camera-authoring-panel.js";
+export {
+	CameraActorSelectionResult,
+	CameraPanelAction,
+	CameraPanelEvent,
+	CameraPanelProposal,
+	CameraPanelSelectionScope,
+	CameraPanelState,
+	CameraVisibilityResolutionResult
+} from "./camera-authoring-panel-schema.js";
+export {
+	CameraActorEntry,
+	cameraActorIdentity,
+	CameraActorReference,
+	CameraAuthoredVisibility,
+	CameraVisibilityDiagnostic,
+	CameraVisibilityList,
+	CameraVisibilityOutput,
+	CameraVisibilityPreset,
+	mergeCameraVisibility
+} from "./camera-visibility.js";
 
-export * from "./map-capture-visibility.js";
+export { mapCaptureVisibilityVariants } from "./map-capture-visibility.js";
 export { renderPreparedCamera } from "./prepared-camera.js";

@@ -183,7 +183,8 @@ const mapStreamFailure = (cause: unknown, sawAccepted: boolean): ProjectIndexErr
 	}
 	if (isProjectIndexError(cause)) return cause;
 	return new ProjectIndexRefreshFailed({
-		message: cause instanceof Error ? cause.message : String(cause),
+		message: "The Project Index operation failed outside its protocol contract.",
+		cause,
 		recovery: "Retry the Project Index operation, or rebuild the Catalog if it persists.",
 		retrySafe: true,
 		nextStep: "retry"

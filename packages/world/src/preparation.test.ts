@@ -91,6 +91,7 @@ function harness(
 	return { api: makeWorldPreparation(client, "http://fixture"), calls };
 }
 const connectionLost = new RemoteControlClientError({
+	code: "transport_failed",
 	endpoint: "http://fixture",
 	functionName: "ExecuteWorldPreparation",
 	operation: "world",

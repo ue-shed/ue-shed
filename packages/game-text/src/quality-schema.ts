@@ -150,11 +150,13 @@ export class TextQualityRuleDocumentError extends Schema.TaggedError<TextQuality
 ) {}
 
 function ruleDocumentError(
-	code: TextQualityRuleDocumentError["code"]
+	code: TextQualityRuleDocumentError["code"],
+	cause?: unknown
 ): TextQualityRuleDocumentError {
 	switch (code) {
 		case "invalid_json":
 			return new TextQualityRuleDocumentError({
+				...(cause === undefined ? undefined : { cause }),
 				retrySafe: false,
 				nextStep: "fix_input",
 				code,
@@ -163,6 +165,7 @@ function ruleDocumentError(
 			});
 		case "invalid_structure":
 			return new TextQualityRuleDocumentError({
+				...(cause === undefined ? undefined : { cause }),
 				retrySafe: false,
 				nextStep: "fix_input",
 				code,
@@ -172,6 +175,7 @@ function ruleDocumentError(
 			});
 		case "duplicate_role_id":
 			return new TextQualityRuleDocumentError({
+				...(cause === undefined ? undefined : { cause }),
 				retrySafe: false,
 				nextStep: "fix_input",
 				code,
@@ -180,6 +184,7 @@ function ruleDocumentError(
 			});
 		case "duplicate_rule_id":
 			return new TextQualityRuleDocumentError({
+				...(cause === undefined ? undefined : { cause }),
 				retrySafe: false,
 				nextStep: "fix_input",
 				code,
@@ -188,6 +193,7 @@ function ruleDocumentError(
 			});
 		case "unknown_role_id":
 			return new TextQualityRuleDocumentError({
+				...(cause === undefined ? undefined : { cause }),
 				retrySafe: false,
 				nextStep: "fix_input",
 				code,
@@ -222,7 +228,7 @@ export function decodeTextQualityRuleDocument<Input>(
 	input: Input
 ): Effect.Effect<TextQualityRuleDocument, TextQualityRuleDocumentError> {
 	return Schema.decodeUnknownEffect(TextQualityRuleDocument)(input).pipe(
-		Effect.mapError(() => ruleDocumentError("invalid_structure")),
+		Effect.mapError((cause) => ruleDocumentError("invalid_structure", cause)),
 		Effect.flatMap(validateRuleDocument)
 	);
 }
@@ -232,7 +238,7 @@ export function decodeTextQualityRuleDocumentJson(
 ): Effect.Effect<TextQualityRuleDocument, TextQualityRuleDocumentError> {
 	return Effect.try({
 		try: () => Schema.decodeUnknownSync(Schema.Json)(JSON.parse(input)),
-		catch: () => ruleDocumentError("invalid_json")
+		catch: (cause) => ruleDocumentError("invalid_json", cause)
 	}).pipe(Effect.flatMap(decodeTextQualityRuleDocument));
 }
 

@@ -20,6 +20,9 @@ import type { GameTextRuleDocument } from "./game-text-rules.js";
 import { LocalizationKeyChangePair } from "./localization-key-changes.js";
 import type { refreshJoinedTarget } from "./joined-target.js";
 import type { GameTextProjectIndex } from "./index-steps.js";
+/**
+ * Failure to discover, prepare or orchestrate an index operation. operation identifies the boundary, recovery guides the host, and the retained cause/localizationError preserves lower-level evidence.
+ */
 export class GameTextIndexError extends Schema.TaggedError<GameTextIndexError>()(
 	"GameTextIndexError",
 	{
@@ -36,6 +39,9 @@ export class GameTextIndexError extends Schema.TaggedError<GameTextIndexError>()
 /** Tag guard for Game Text index failures; match by tag, not `instanceof`. */
 export const isGameTextIndexError = Schema.is(GameTextIndexError);
 
+/**
+ * Inventory request for one selected project. changedFiles is a reuse hint: omitted means full discovery, and an empty array means no saved input was reported changed.
+ */
 export interface GameTextIndexSourceRequest {
 	readonly projectRoot: string;
 	/** Absent means a complete refresh; an empty list means reuse every saved input. */
@@ -57,6 +63,9 @@ export class GameTextIndexSource extends Context.Service<
 	}
 >()("@ue-shed/game-text/GameTextIndexSource") {}
 
+/**
+ * A project and optional localization target to prepare. changedFiles absent means full refresh, while an empty list permits reuse; review tolerance and key-change choices remain explicit host policy.
+ */
 export const GameTextIndexRefreshRequest = Schema.Struct({
 	projectRoot: Schema.NonEmptyString,
 	targetName: Schema.optionalKey(Schema.NonEmptyString),
@@ -69,6 +78,9 @@ export const GameTextIndexRefreshRequest = Schema.Struct({
 export type GameTextIndexRefreshRequest = typeof GameTextIndexRefreshRequest.Type;
 
 type ImportedTarget = Effect.Success<ReturnType<typeof importLocalizationTarget>>;
+/**
+ * Pinned corpus, localization and query views from one validated revision. Keep its scope open while reading lazy data; sourceQuality and localizationQuality are required, interruptible operations with the rule document first.
+ */
 export interface GameTextIndexRefreshResult {
 	/** Present on the steps implementation; optional for existing host-provided refresh adapters. */
 	readonly project?: GameTextProjectIndex | undefined;
@@ -108,7 +120,13 @@ export interface GameTextIndexRefreshResult {
 	readonly sourceQuality: (ruleDocument: GameTextRuleDocument) => Effect.Effect<TextQualityQuery>;
 }
 
+/**
+ * Expected index failures retain their domain identity: orchestration, cache filesystem/session, or cache format. Hosts use recovery guidance instead of flattening them into a generic retry.
+ */
 export type IndexFailure = SnapshotStoreError | SnapshotFormatError | GameTextIndexError;
+/**
+ * Complete project/target refresh and invalidation port. A refresh returns a scoped pinned model; invalidation affects disposable derived data, never the host's selected project or authored files.
+ */
 export class GameTextIndexRefresh extends Context.Service<
 	GameTextIndexRefresh,
 	{

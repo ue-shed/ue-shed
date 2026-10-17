@@ -46,6 +46,7 @@ const snapshot: AuthoringTableSnapshot = {
 const failingRemoteControl = makeRemoteControlClientTestLayer(() =>
 	Effect.fail(
 		new RemoteControlClientError({
+			code: "transport_failed",
 			endpoint: "http://127.0.0.1:30001",
 			functionName: "GetCapabilityManifest",
 			message: "Editor is not connected",
@@ -88,6 +89,7 @@ it.effect("reconciles a lost Apply acknowledgement without replaying the pending
 					});
 				return Effect.fail(
 					new RemoteControlClientError({
+						code: "transport_failed",
 						endpoint: request.endpoint,
 						functionName: request.functionName,
 						operation: "test.lost_reply",

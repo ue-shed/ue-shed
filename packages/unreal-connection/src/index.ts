@@ -34,8 +34,21 @@ import {
 	type RemoteControlClientApi
 } from "./remote-control-client.js";
 
-export * from "./remote-control-client.js";
-export * from "./selected-target.js";
+export {
+	makeRemoteControlClient,
+	makeRemoteControlClientTestLayer,
+	RemoteControlClient,
+	type RemoteControlClientApi,
+	RemoteControlClientError,
+	RemoteControlClientLive,
+	type RemoteControlRequest
+} from "./remote-control-client.js";
+export {
+	makeSelectedUnrealTarget,
+	SelectedUnrealTarget,
+	type SelectedUnrealTargetApi,
+	selectedUnrealTargetLayer
+} from "./selected-target.js";
 
 const coreObjectPath = "/Script/UEShedCore.Default__UEShedCoreLibrary";
 const assetNavigationCapability = "editor.asset-navigation.v1";
@@ -47,6 +60,9 @@ const requiredCapabilities = [
 	"authoring.save.v1"
 ] as const;
 
+/**
+ * A connection, producer refusal or result-contract failure. Stable code and recovery guidance distinguish invalid requests from uncertain editor mutations; cause retains transport or parser evidence.
+ */
 export class UnrealConnectionError extends Schema.TaggedError<UnrealConnectionError>()(
 	"UnrealConnectionError",
 	{
@@ -60,11 +76,17 @@ export class UnrealConnectionError extends Schema.TaggedError<UnrealConnectionEr
 	}
 ) {}
 
+/**
+ * The editor manifest cannot satisfy the requested capability or endpoint contract. Install matching enabled plugins or choose an advertised capability before retrying.
+ */
 export class UnrealCapabilityError extends Schema.TaggedError<UnrealCapabilityError>()(
 	"UnrealCapabilityError",
 	{ capability: Schema.String, ...ErrorGuidanceFields }
 ) {}
 
+/**
+ * Negotiated live table authoring port. After an uncertain Apply, use its operation ID with lookupApplyResult before deciding whether to issue another mutation. Saving is a separate explicit operation.
+ */
 export interface UnrealAuthoringConnection {
 	readonly endpoint: string;
 	readonly manifest: CompanionCapabilityManifest;
@@ -83,6 +105,9 @@ export interface UnrealAuthoringConnection {
 	) => Effect.Effect<AuthoringSaveResult, UnrealConnectionError>;
 }
 
+/**
+ * Negotiated PIE automation port for player inspection, input injection and the owned CSV profiler. Each operation checks its capability and request/result correlation; input injection may change the live editor session.
+ */
 export interface UnrealAutomationConnection {
 	readonly endpoint: string;
 	readonly manifest: CompanionCapabilityManifest;
@@ -367,6 +392,8 @@ function normalizedEndpoint(endpoint: string): string {
 
 function connectionError(error: RemoteControlClientError): UnrealConnectionError {
 	return new UnrealConnectionError({
+		code: error.code,
+		cause: error,
 		endpoint: error.endpoint,
 		message: error.message,
 		operation: error.operation,
@@ -456,6 +483,9 @@ function decodeAuthoringResult<A, DecodeError>(
 	return decodeResult(refusalChecked, endpoint, operation, decode);
 }
 
+/**
+ * Asks a capable connected editor to reveal a top-level asset in its Content Browser. Missing assets return an unavailable result; connection and capability negotiation failures remain typed errors. Does not select a project or launch an editor.
+ */
 export function locateUnrealAsset(options: {
 	readonly bringToFront: boolean;
 	readonly endpoint: string;
@@ -508,6 +538,9 @@ export function locateUnrealAsset(options: {
 	);
 }
 
+/**
+ * Negotiates all required authoring capabilities and producer limits before returning the live port. Requires a RemoteControlClient layer; does not launch Unreal or change the host's selected project.
+ */
 export function connectUnrealAuthoring(
 	configuredEndpoint: string
 ): Effect.Effect<

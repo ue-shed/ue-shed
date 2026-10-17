@@ -165,7 +165,8 @@ ruleTester.run("no-stringified-cause-in-error", noStringifiedCauseInErrorRule, {
 	valid: [
 		'new ReaderError({ message: "The reader failed.", cause });',
 		"new ReaderError({ message: `Could not read ${path}.`, cause: error });",
-		"report({ message: String(cause) });"
+		"report({ message: String(cause) });",
+		"setOperationFailure({ message: Cause.pretty(cause) });"
 	],
 	invalid: [
 		{
@@ -178,6 +179,10 @@ ruleTester.run("no-stringified-cause-in-error", noStringifiedCauseInErrorRule, {
 		},
 		{
 			code: "new ReaderFailure({ message: Cause.pretty(cause) });",
+			errors: [{ messageId: "stringifiedCause" }]
+		},
+		{
+			code: "clientError(request, { message: `Request failed: ${String(cause)}` });",
 			errors: [{ messageId: "stringifiedCause" }]
 		}
 	]

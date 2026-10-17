@@ -44,23 +44,8 @@ export default defineConfig({
 			rules: { "anti-slop/require-jsdoc-on-exports": "error" }
 		},
 		{
-			files: [
-				"packages/*/src/**/*.test.ts",
-				"packages/*/src/**/*.test-support.ts",
-				"packages/protocol/src/index.ts",
-				"packages/protocol/src/error-guidance.ts",
-				"packages/unreal-connection/src/index.ts",
-				"packages/unreal-connection/src/remote-control-client.ts"
-			],
+			files: ["packages/*/src/**/*.test.ts", "packages/*/src/**/*.test-support.ts"],
 			rules: { "anti-slop/require-jsdoc-on-exports": "off" }
-		},
-		{
-			// Plan 058 lane B rewrites these Quality check files; it adds their `Verified by:` lines.
-			files: [
-				"packages/game-text/src/localization-checks.ts",
-				"packages/game-text/src/localization-columns.ts"
-			],
-			rules: { "anti-slop/require-safety-verification": "off" }
 		},
 		{
 			// No test reaches these deck.gl casts without a Deck factory seam, which would change the

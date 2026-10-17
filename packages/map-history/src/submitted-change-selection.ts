@@ -25,10 +25,11 @@ interface TimedSubmittedChange {
 	readonly submittedAtMillis: number;
 }
 
-function selectionError(message: string, recovery: string): MapHistoryError {
+function selectionError(message: string, recovery: string, cause?: unknown): MapHistoryError {
 	return new MapHistoryError({
 		kind: "perforce_command",
 		message,
+		...(cause === undefined ? undefined : { cause }),
 		recovery,
 		retrySafe: false,
 		nextStep: "escalate"
@@ -61,10 +62,11 @@ function normalizeSubmittedChange(
 			change: { ...change, submittedAt },
 			submittedAtMillis: DateTime.toEpochMillis(submittedAt)
 		})),
-		Effect.mapError(() =>
+		Effect.mapError((cause) =>
 			selectionError(
 				`Submitted changelist ${change.change} has an invalid submission timestamp.`,
-				"Check the Perforce server response and retry."
+				"Check the Perforce server response and retry.",
+				cause
 			)
 		)
 	);

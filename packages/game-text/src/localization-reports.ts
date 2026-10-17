@@ -123,6 +123,7 @@ function manifestEntries(evidence: LocalizationTargetEvidence): readonly Manifes
 			retrySafe: false,
 			nextStep: "fix_input",
 			code: error.code === "missing_manifest" ? "missing_manifest" : "unreadable_manifest",
+			cause: error,
 			message: error.message,
 			recovery: error.recovery
 		});

@@ -5,6 +5,7 @@ import {
 	decodeCompanionCapabilityManifest,
 	decodeEditorWorldOpenResponse,
 	ErrorGuidanceFields,
+	ErrorCauseFields,
 	type EditorWorldOpenResponse,
 	type ErrorNextStep
 } from "@ue-shed/protocol";
@@ -26,7 +27,8 @@ export class EditorWorldControlError extends Schema.TaggedError<EditorWorldContr
 		]),
 		endpoint: Schema.String,
 		operation: Schema.String,
-		...ErrorGuidanceFields
+		...ErrorGuidanceFields,
+		...ErrorCauseFields
 	}
 ) {}
 
@@ -58,6 +60,7 @@ function normalizedEndpoint(endpoint: string): string {
 }
 
 function failure(args: {
+	readonly cause?: unknown;
 	readonly code: EditorWorldControlError["code"];
 	readonly endpoint: string;
 	readonly message: string;
@@ -94,6 +97,7 @@ export const EditorWorldControlLive = Layer.effect(
 							code: "transport_failure",
 							endpoint,
 							message: cause.message,
+							cause,
 							operation,
 							recovery:
 								"Confirm that Unreal Editor and Remote Control are reachable, then retry.",
@@ -107,7 +111,9 @@ export const EditorWorldControlLive = Layer.effect(
 					failure({
 						code: "contract_failure",
 						endpoint,
-						message: `The editor returned an invalid capability manifest: ${String(cause)}`,
+						message:
+							"The editor returned a capability manifest that does not match its contract.",
+						cause,
 						operation,
 						recovery:
 							"Update UE Shed so the client and Unreal companion use compatible contracts.",
@@ -165,6 +171,7 @@ export const EditorWorldControlLive = Layer.effect(
 							endpoint,
 							operation,
 							message: cause.message,
+							cause,
 							recovery:
 								"The editor may be loading. Waiting for its next state update.",
 							retrySafe: true,
@@ -178,7 +185,9 @@ export const EditorWorldControlLive = Layer.effect(
 						code: "contract_failure",
 						endpoint,
 						operation,
-						message: String(cause),
+						message:
+							"The editor returned a world state that does not match its contract.",
+						cause,
 						recovery: "Update the UE Shed Core plugin and reconnect.",
 						retrySafe: false,
 						nextStep: "escalate"
@@ -204,7 +213,8 @@ export const EditorWorldControlLive = Layer.effect(
 					failure({
 						code: "request_invalid",
 						endpoint,
-						message: `Editor world-control request is invalid: ${String(cause)}`,
+						message: "The editor world-control request does not match its contract.",
+						cause,
 						operation,
 						recovery: "Use a /Game/ map package path and a safe operation identity.",
 						retrySafe: false,
@@ -328,6 +338,7 @@ export const EditorWorldControlLive = Layer.effect(
 							code: "transport_failure",
 							endpoint: target.endpoint,
 							message: cause.message,
+							cause,
 							operation,
 							recovery:
 								"Check Unreal's current map before trying again. Losing the response does not cancel the load.",
@@ -341,7 +352,9 @@ export const EditorWorldControlLive = Layer.effect(
 					failure({
 						code: "contract_failure",
 						endpoint: target.endpoint,
-						message: `The editor returned an invalid world-control response: ${String(cause)}`,
+						message:
+							"The editor returned a world-control response that does not match its contract.",
+						cause,
 						operation,
 						recovery:
 							"Update UE Shed so the client and Unreal companion use compatible contracts.",

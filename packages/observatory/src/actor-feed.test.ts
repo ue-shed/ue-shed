@@ -219,6 +219,7 @@ function makeRemote(options: {
 				}
 				return Effect.fail(
 					new RemoteControlClientError({
+						code: "transport_failed",
 						endpoint: request.endpoint,
 						functionName: request.functionName,
 						message: `Unexpected function ${request.functionName}`,

@@ -1,6 +1,7 @@
 import {
 	AUTHORING_MUTATION_CONTRACT_VERSION,
 	ErrorGuidanceFields,
+	ErrorCauseFields,
 	type AuthoringApplyRequest,
 	type AuthoringApplyResult,
 	type AuthoringSaveRequest,
@@ -21,7 +22,8 @@ export class ApplyWorkflowError extends Schema.TaggedError<ApplyWorkflowError>()
 	{
 		code: Schema.String,
 		operationId: Schema.String,
-		...ErrorGuidanceFields
+		...ErrorGuidanceFields,
+		...ErrorCauseFields
 	}
 ) {}
 const isApplyWorkflowError = Schema.is(ApplyWorkflowError);
@@ -38,11 +40,17 @@ export const defaultAuthoringMutationLimits: AuthoringMutationLimits = {
 	maxTables: 16
 };
 
-function workflowError(operationId: string, code: string, message: string): ApplyWorkflowError {
+function workflowError(
+	operationId: string,
+	code: string,
+	message: string,
+	cause?: unknown
+): ApplyWorkflowError {
 	return new ApplyWorkflowError({
 		code,
 		message,
 		operationId,
+		...(cause === undefined ? undefined : { cause }),
 		recovery: "Refresh the live tables, review the draft, and start a new Apply operation.",
 		retrySafe: false,
 		nextStep: "reconcile"
@@ -240,7 +248,12 @@ export function dispatchApply<E>(args: {
 		catch: (cause) =>
 			isApplyWorkflowError(cause)
 				? cause
-				: workflowError(args.operationId, "invalid_apply", String(cause))
+				: workflowError(
+						args.operationId,
+						"invalid_apply",
+						"The draft could not form a valid Apply request.",
+						cause
+					)
 	}).pipe(
 		Effect.flatMap((request) =>
 			args.port.apply(request).pipe(
@@ -262,7 +275,8 @@ export function dispatchApply<E>(args: {
 								: workflowError(
 										args.operationId,
 										"invalid_apply_result",
-										String(cause)
+										"The editor Apply result could not be reconciled with this draft.",
+										cause
 									)
 					})
 				),

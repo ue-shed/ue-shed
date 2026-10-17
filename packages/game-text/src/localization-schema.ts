@@ -252,6 +252,7 @@ export function localizationManifestFailure(
 					retrySafe: false,
 					nextStep: "fix_input",
 					code: "missing_manifest",
+					cause: error,
 					message: relativePath
 						? `Not in this working copy: ${relativePath}`
 						: "The target has no gathered text file (manifest) in this working copy.",
@@ -262,6 +263,7 @@ export function localizationManifestFailure(
 					retrySafe: false,
 					nextStep: "fix_input",
 					code: "unreadable_manifest",
+					cause: error,
 					message: `The target manifest could not be read (${error.code}): ${error.message}`,
 					recovery: error.recovery
 				}

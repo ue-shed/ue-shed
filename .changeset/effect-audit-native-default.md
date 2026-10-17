@@ -10,7 +10,6 @@
 "@ue-shed/map-history": patch
 "@ue-shed/config-explorer": minor
 "@ue-shed/niagara": minor
-"@ue-shed/enhanced-input": minor
 ---
 
 Complete the TypeScript Effect/error audit and integrate native Game Text indexing in production

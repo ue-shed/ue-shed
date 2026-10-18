@@ -403,7 +403,22 @@ export async function measureGameTextHosts(
 		total: page.total,
 		displayed: page.units.length,
 		lines: page.localization?.lines.length ?? 0,
-		sha256: createHash("sha256").update(JSON.stringify(page)).digest("hex")
+		sha256: createHash("sha256").update(JSON.stringify(page)).digest("hex"),
+		// Historical synchronous CLI values and schema-decoded native values can have
+		// different object-key insertion order while carrying exactly the same response.
+		canonicalSha256: createHash("sha256")
+			.update(
+				JSON.stringify(page, (_key, value: Schema.Json | undefined) =>
+					value instanceof Object && !Array.isArray(value)
+						? Object.fromEntries(
+								Object.entries(value).sort(([a], [b]) =>
+									a < b ? -1 : a > b ? 1 : 0
+								)
+							)
+						: value
+				)
+			)
+			.digest("hex")
 	});
 	const columnProof = (joined: JoinedTargetReader) =>
 		run(

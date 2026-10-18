@@ -461,6 +461,9 @@ pub(crate) fn refresh(
             package_lines.insert(route.line as usize);
         }
     }
+    if !graph.within_move_bound() {
+        return fallback("dependency-source-overlay-bound");
+    }
     note(
         "changeKind",
         json!(if edits.is_empty() {

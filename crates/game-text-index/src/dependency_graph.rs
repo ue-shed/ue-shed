@@ -573,6 +573,9 @@ impl Graph {
         }
         Ok(())
     }
+    pub(crate) fn within_move_bound(&self) -> bool {
+        self.moves.borrow().members.len() <= MAX_MOVES
+    }
     pub(crate) fn consumers(&self, member: u32) -> Result<BTreeSet<u32>> {
         let table = self.get("occ.def_table", member as usize)?;
         let key = self.get("occ.def_key", member as usize)?;
@@ -767,6 +770,37 @@ mod tests {
             crate::ErrorCode::StaleGeneration
         );
         assert!(Graph::open(&store, "revision-3")?.is_none());
+        drop(store);
+        std::fs::remove_dir_all(config.cache_root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn accumulated_source_moves_request_rebuild_before_publication_and_undo_frees_capacity()
+    -> Result<()> {
+        let config = configuration();
+        let store = Store::writer(config.clone())?;
+        let count = MAX_MOVES + 1;
+        let graph = Graph::write(&store, count as u32, fixture(count))?;
+        graph.commit(&store, "published")?;
+        let graph = Graph::open(&store, "published")?.ok_or("Missing graph")?;
+        for member in 0..MAX_MOVES as u32 {
+            graph.move_source(member, graph.route(member)?.source, 99)?;
+        }
+        assert!(graph.within_move_bound());
+        graph.commit(&store, "at-capacity")?;
+        let graph = Graph::open(&store, "at-capacity")?.ok_or("Missing graph")?;
+        let last = MAX_MOVES as u32;
+        graph.move_source(last, graph.route(last)?.source, 99)?;
+        assert!(!graph.within_move_bound());
+        // Crossing the bound is disposable work, not a failed published edit.
+        drop(graph);
+        let graph = Graph::open(&store, "at-capacity")?.ok_or("Missing published graph")?;
+        assert_ne!(graph.route(last)?.source, 99);
+        graph.move_source(0, 99, 42)?;
+        graph.move_source(last, graph.route(last)?.source, 99)?;
+        assert!(graph.within_move_bound());
+        graph.commit(&store, "capacity-reused")?;
         drop(store);
         std::fs::remove_dir_all(config.cache_root)?;
         Ok(())

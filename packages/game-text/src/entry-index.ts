@@ -103,7 +103,8 @@ export { SnapshotFormatError } from "./snapshot-format.js";
 
 export { SnapshotStoreError } from "./snapshot-store.js";
 
-export { GameTextIndexBuilderLive, nativeIndexBuilderLayer } from "./native-index-builder.js";
+export { GameTextIndexBuilderLive } from "./index-builder.js";
+export { nativeIndexBuilderLayer } from "./native-index-builder.js";
 
 export {
 	GAME_TEXT_ACTIONS_CAPABILITY,

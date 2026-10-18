@@ -34,25 +34,26 @@ index failures, and follow their retained reader guidance instead of always aski
 project. Portable localization errors retain safe classified causes while excluding private engine
 installation candidates, authored evidence and secret configuration.
 
-## Native composition
+## Production composition
 
 ```ts
-import { Layer } from "effect";
-import { AssetReaderLive } from "@ue-shed/unreal-assets";
 import { GameTextIndexBuilderLive } from "@ue-shed/game-text/index";
 
-const builder = GameTextIndexBuilderLive.pipe(Layer.provide(AssetReaderLive));
+const builder = GameTextIndexBuilderLive;
 ```
 
-The host supplies its ordinary source and localization evidence layers to the index/workspace.
-`AssetReaderLive` uses the installed compatible reader; explicit `assetReaderLayer(configuration)`
-is supported too. No source-checkout auto-build or executable download is introduced by the library.
-Reader capability `game_text_index` requires uasset-io protocol 1.13 or newer.
+CLI, Workbench and library hosts use the complete TypeScript build/query implementation through
+this layer. The host supplies ordinary source and localization evidence layers; the separate
+AssetReader still performs saved-package extraction. No native Game Text writer configuration or
+`game_text_index` capability is required by the production builder. `typeScriptIndexBuilderLayer`
+names the same implementation.
 
-To select the reference implementation intentionally, provide `typeScriptIndexBuilderLayer` from
-the same `/index` entry point. There is no automatic writer fallback after failure. Existing cache
-format 4 remains readable; switching builder rebuilds its joined view once and reuses input layers.
-No authored assets, localization files, review state or rule documents are migrated by that switch.
+`nativeIndexBuilderLayer(configuration)` remains an explicit experimental writer for parity and
+measurement, requiring reader protocol 1.13. Its query engine still runs in JavaScript; it is not a
+complete native backend and is no longer selected by the production layer. There is no automatic
+writer fallback after failure. Existing cache format 4 remains readable; restoring the TypeScript
+builder rebuilds the joined view once and reuses compatible input layers. No authored assets,
+localization files, review state or rule documents are migrated by that switch.
 
 ## Public names
 

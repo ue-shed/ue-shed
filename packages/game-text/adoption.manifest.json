@@ -62,10 +62,13 @@
 	},
 	"indexing": {
 		"productionLayer": "GameTextIndexBuilderLive",
+		"backend": "typescript",
 		"referenceLayer": "typeScriptIndexBuilderLayer",
-		"configurationSource": "AssetReader.configuration",
-		"readerCapability": "game_text_index",
-		"minimumProtocolMinor": 13,
+		"experimentalNative": {
+			"layer": "nativeIndexBuilderLayer",
+			"readerCapability": "game_text_index",
+			"minimumProtocolMinor": 13
+		},
 		"automaticWriterFallback": false
 	},
 	"capabilities": {

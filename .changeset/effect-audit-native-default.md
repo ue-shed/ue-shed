@@ -12,16 +12,17 @@
 "@ue-shed/niagara": minor
 ---
 
-Complete the TypeScript Effect/error audit and integrate native Game Text indexing in production
-hosts. Public schema parsers now return domain errors with the original parse issues. All production
+Complete the TypeScript Effect/error audit and provide a shared Game Text builder composition for
+production hosts. Public schema parsers now return domain errors with the original parse issues. All production
 tagged errors carry recovery, retry safety and next-step guidance, with deliberate classification
 and cause retention at adapter boundaries. All eight reviewed SDKs enforce named public entry
 points and caller documentation, with no grandfathered raw decoder factories. Nested cause
 stringification, direct error translations and helper adapters are covered by regression guards.
 
-Use the new `GameTextIndexBuilderLive` layer with the host's `AssetReader`; CLI, Workbench and packed
-consumer conformance use the same native implementation. The TypeScript builder remains an explicit
-reference choice. Native worker/capability failures do not silently fall back. Scoped cancellation
+Use `GameTextIndexBuilderLive` with the host's source and localization evidence layers; CLI,
+Workbench and packed consumer conformance use the same complete TypeScript builder/query backend.
+Native saved-package extraction remains separate. The native writer is available only through
+explicit experimental composition, and its worker/capability failures do not silently fall back. Scoped cancellation
 releases staging, writer leases and processes; native failures use stable codes independent of prose.
 PO provenance changes no longer force an otherwise eligible native join to rebuild fully.
 

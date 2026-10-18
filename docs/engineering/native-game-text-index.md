@@ -1,25 +1,21 @@
 # Native Game Text preparation
 
-`GameTextIndexBuilderLive` from `@ue-shed/game-text/index` is the production builder used by the
-CLI and Workbench. It derives the native worker configuration from the host's existing
-`AssetReader`. Library hosts compose the same layer; Workbench has no additional authority.
+`GameTextIndexBuilderLive` from `@ue-shed/game-text/index` selects the complete TypeScript
+build/query backend used by CLI, Workbench and library hosts. Native saved-package extraction
+remains a separate AssetReader capability. The production layer does not require a native Game
+Text writer or its configuration. This restores the previous complete backend rather than shipping
+a native writer coupled to a JavaScript query engine.
 
-```ts
-import { Layer } from "effect";
-import { gameTextIndexRefreshLayer, GameTextIndexBuilderLive } from "@ue-shed/game-text/index";
+The owner requires a future native production backend to own both construction and query execution.
+TypeScript should contain contracts, transport, resource lifecycle and presentation, without a second
+query engine or reconstruction of the searchable corpus. Until that complete path is implemented and
+accepted for correctness, performance and recovery, the TypeScript backend stays in production.
 
-declare const cacheRoot: string;
-
-const refresh = gameTextIndexRefreshLayer(cacheRoot).pipe(Layer.provide(GameTextIndexBuilderLive));
-```
-
-Supply the ordinary `AssetReader`, source and localization evidence layers as usual. An explicit
-`nativeIndexBuilderLayer(readerConfiguration)` remains available when a host intentionally configures
-a different compatible worker. `typeScriptIndexBuilderLayer` selects the reference implementation;
-selection is explicit and a native failure never silently switches writers. The native reader must
-support `game_text_index` in uasset-io protocol 1.13. The adapter uses the existing scoped protocol
-session, configured deadlines, cancellation and bounded output transport. It has no environment
-switch or second executable, and does not silently switch writers after a session failure.
+`nativeIndexBuilderLayer(readerConfiguration)` remains an explicit experimental writer for parity
+and measurement. It requires `game_text_index` in uasset-io protocol 1.13 and still uses TypeScript
+producers and JavaScript query readers. It must not be described as a complete native backend.
+Native worker failures never switch writers automatically. The following sections describe this
+experimental writer, not the selected production implementation.
 
 ## Ownership and compatibility
 
@@ -63,9 +59,9 @@ Native outcomes expose actual section/index/write byte counters and named stage 
 Existing TypeScript-only substage metrics can be zero for this backend; they are not a complete
 native phase attribution. Native operation spans carry the stage durations.
 
-## Measurement scope
+## Historical hybrid measurements
 
-The public-adapter rollout measures production CLI and Workbench service composition over a
+The previous public-adapter rollout measured the hybrid CLI and Workbench service composition over a
 generated million-occurrence corpus. Median cold preparation improves from about 75–76 seconds to
 56–57 seconds. Native is not faster for every workload: the measured mixed-reference package/PO
 edit triggers a full native join (about 22–23 seconds versus 5–7 seconds for TypeScript), and warm

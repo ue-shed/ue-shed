@@ -77,15 +77,16 @@ ordering, requested views, progress presentation, and cancellation; the package 
 leases, cache validity, immutable publication, and query reader resources.
 `gameTextIndexRefreshLayer` remains a compatible convenience workflow and also exposes the steps.
 
-`GameTextIndexBuilderLive` derives configuration from the existing reader and requires its
-`game_text_index` capability (uasset-io protocol 1.13). CLI and Workbench use this same layer.
-`nativeIndexBuilderLayer(readerConfiguration)` supports explicit worker configuration, and
-`typeScriptIndexBuilderLayer` intentionally selects the reference implementation. A native failure
-never switches writers automatically. Keep the same source, evidence and query layers. Verify cold
-preparation, an incremental
-edit, failure recovery and pinned-reader queries in the adopting host. See the
-[native preparation guide](../../docs/engineering/native-game-text-index.md) for limits and
-supported incremental cases.
+`GameTextIndexBuilderLive` selects the complete TypeScript builder/query implementation used by
+CLI and Workbench. It does not acquire a native writer or require `game_text_index`; saved-package
+extraction continues to use the host's separate reader. `typeScriptIndexBuilderLayer` names the same
+implementation. Keep the ordinary source and localization evidence layers. Verify cold preparation,
+an incremental edit, failure recovery and pinned-reader queries in the adopting host.
+
+`nativeIndexBuilderLayer(readerConfiguration)` is an explicit experimental writer requiring
+`game_text_index` (uasset-io protocol 1.13). It still uses JavaScript queries and must not be presented
+as a complete native backend. There is no automatic backend switch after a failure. See the
+[native preparation guide](../../docs/engineering/native-game-text-index.md) for experimental limits.
 
 A localization index also supplies the complete raw source query and corpus. Prepare the chosen
 target first when both views are needed, and use that model for requests without `localization` as
@@ -130,7 +131,7 @@ retainer's `release()` when clearing a view. The host's outer scope releases eve
 Raw `corpus.units` preserves empty and whitespace-only source evidence. Search and query exports
 retain their existing visibility filters. Failed current localization reads never use a previous
 successful layer as current evidence; missing and malformed inputs keep their distinct states.
-Native joined keys use `joined-native-v1`; the TypeScript reference uses `joined-v18`. Switching
+Native joined keys use `joined-native-v1`; the production TypeScript backend uses `joined-v18`. Switching
 builders rebuilds the joined view while reusing compatible inputs and preserving snapshot format 4.
 
 The core audit requires saved project packages and a configured reader. It does not require a

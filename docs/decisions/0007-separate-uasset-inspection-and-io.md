@@ -210,3 +210,15 @@ format-4 store and JavaScript query readers. The TypeScript builder remains the 
 adds no Workbench authority, second executable or automatic backend switch after a write failure.
 The [native preparation guide](../engineering/native-game-text-index.md) records compatibility,
 limits and the scope of the prototype measurements.
+
+## Amendment: complete backend ownership for production Game Text
+
+The production `GameTextIndexBuilderLive` selects the complete TypeScript build/query backend.
+The experimental native writer above remains explicitly selectable for parity and measurement;
+it is not a complete native query engine and is no longer the production default.
+
+A future native production backend must own persistence, joining, query execution and bounded
+result hydration together. TypeScript owns typed transport, lifecycle and host presentation rather
+than retaining or rebuilding a parallel query engine. If that complete native path does not pass
+behavioral parity and end-to-end performance/recovery acceptance, retain the prior complete
+TypeScript backend. Native saved-package parsing and extraction remain separate capabilities.

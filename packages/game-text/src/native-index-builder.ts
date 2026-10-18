@@ -4,7 +4,6 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Context, Effect, Exit, Layer, Option, Schema } from "effect";
 import {
-	AssetReader,
 	NativeGameTextIndexClient,
 	nativeGameTextIndexClientLayer,
 	encodeGameTextJoinInput,
@@ -441,7 +440,7 @@ const makeWriter = Effect.fn("NativeIndexBuilder.writer")(function* (
 	};
 });
 
-/** Native storage and joins with explicit worker configuration; TS producers own extraction policy. */
+/** Experimental native writer with explicit configuration; production uses the complete TypeScript backend. */
 export const nativeIndexBuilderLayer = (configuration: AssetReaderConfiguration) =>
 	Layer.effect(
 		GameTextIndexBuilder,
@@ -517,15 +516,3 @@ export const nativeIndexBuilderLayer = (configuration: AssetReaderConfiguration)
 			});
 		})
 	).pipe(Layer.provide(typeScriptIndexBuilderLayer));
-
-/**
- * Production index builder, using the host's existing AssetReader configuration. Each build owns
- * a scoped native process and writer lease. Capability or process failures are reported to the
- * caller; selecting the TypeScript implementation remains an explicit host composition choice.
- */
-export const GameTextIndexBuilderLive = Layer.unwrap(
-	Effect.gen(function* () {
-		const reader = yield* AssetReader;
-		return nativeIndexBuilderLayer(yield* reader.configuration());
-	})
-);

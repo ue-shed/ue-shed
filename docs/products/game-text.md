@@ -59,9 +59,11 @@ Staged translation review keeps its edit list in a bounded, keyboard-scrollable 
 check and write controls stay visible; closing the panel preserves the staged drafts.
 
 `GameTextIndexBuilder` is the build capability supplied by each host. `GameTextIndexBuilderLive`
-uses the configured native reader and is composed by both CLI and Workbench. The TypeScript layer
-remains an explicitly selectable reference implementation; native failures retain typed recovery
-and never silently switch writers. Queries are independent of the chosen builder. See
+selects the complete TypeScript builder/query implementation for CLI, Workbench and library hosts.
+Native saved-package extraction remains a separate capability. The experimental native writer
+requires explicit selection and is not the production backend. A future native backend must own
+both build and query execution, with TypeScript limited to contracts, transport, lifecycle and
+presentation rather than maintaining another query engine. See
 [native preparation](../engineering/native-game-text-index.md) for composition, compatibility,
 recovery and measurement limits.
 

@@ -1,5 +1,5 @@
 /// <reference path="../apps/workbench/node_modules/electron/electron.d.ts" />
-import { GameTextIndexBuilderLive } from "../packages/game-text/dist/entry-index.js";
+import { nativeIndexBuilderLayer } from "../packages/game-text/dist/entry-index.js";
 import { join, basename } from "node:path";
 import { createHash } from "node:crypto";
 import { Context, Effect, Exit, Layer, Schema, Scope, Stream } from "effect";
@@ -26,7 +26,7 @@ import { readGeneratedPackageInventory } from "./package-text-generated.ts";
 import { captureBenchmarkByte, restoreBenchmarkByte } from "./localization-benchmark-byte.ts";
 import { readScaleRecipe } from "./game-text-scale-options.ts";
 import type { WorkbenchGameTextApi } from "../apps/workbench/src/main/services/game-text.ts";
-import { AssetReaderLive } from "../packages/unreal-assets/dist/index.js";
+import { AssetReader, AssetReaderLive } from "../packages/unreal-assets/dist/index.js";
 import { sharedIndexNodeLayer } from "../packages/game-text/src/shared-index.ts";
 import {
 	openJoinedTarget,
@@ -55,7 +55,7 @@ export async function measureGameTextHosts(
 	task: string,
 	changedByte: number,
 	forceChangedJoin = false,
-	backend: "native" | "typescript" = "native"
+	backend: "native" | "typescript" = "typescript"
 ) {
 	if (host !== "cli" && host !== "workbench") throw new Error("Choose cli or workbench.");
 	if (
@@ -66,7 +66,12 @@ export async function measureGameTextHosts(
 	const recipe = await readScaleRecipe(project);
 	const selectedBuilder =
 		backend === "native"
-			? GameTextIndexBuilderLive.pipe(Layer.provide(AssetReaderLive))
+			? Layer.unwrap(
+					Effect.gen(function* () {
+						const reader = yield* AssetReader;
+						return nativeIndexBuilderLayer(yield* reader.configuration());
+					})
+				).pipe(Layer.provide(AssetReaderLive))
 			: typeScriptIndexBuilderLayer;
 
 	// A capped cold build may publish nothing. Prepare disposable file layers in separately

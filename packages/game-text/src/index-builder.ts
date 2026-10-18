@@ -73,7 +73,7 @@ export class GameTextIndexBuilder extends Context.Service<
 	}
 >()("@ue-shed/game-text/GameTextIndexBuilder") {}
 
-/** Explicit TypeScript reference implementation for hosts and parity checks; never selected silently after a native failure. */
+/** Complete TypeScript builder used in production and parity checks; backend selection never changes after failure. */
 export const typeScriptIndexBuilderLayer = Layer.effect(
 	GameTextIndexBuilder,
 	Effect.sync(() =>
@@ -94,3 +94,9 @@ export const typeScriptIndexBuilderLayer = Layer.effect(
 		})
 	)
 );
+
+/**
+ * Production builder shared by library hosts, CLI and Workbench. Build and query use the complete
+ * TypeScript implementation; native saved-package extraction remains a separate reader capability.
+ */
+export const GameTextIndexBuilderLive = typeScriptIndexBuilderLayer;

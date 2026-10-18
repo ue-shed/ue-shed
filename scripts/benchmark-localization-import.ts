@@ -36,7 +36,7 @@ const { values } = parseArgs({
 		cache: { type: "string" },
 		output: { type: "string" },
 		mode: { type: "string", default: "files" },
-		builder: { type: "string", default: "native" },
+		builder: { type: "string", default: "typescript" },
 		host: { type: "string", default: "cli" },
 		worker: { type: "boolean" },
 		select: { type: "string" },

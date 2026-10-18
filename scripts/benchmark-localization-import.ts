@@ -444,6 +444,7 @@ if (values.worker) {
 		progressAt = stageStarted + 50000,
 		polling = false;
 	let outcome: typeof Message.Type | undefined;
+	let workerExit: { code: number | null; signal: NodeJS.Signals | null } | undefined;
 	let termination = Promise.resolve();
 	let stderr = "",
 		trace = "";
@@ -486,6 +487,7 @@ if (values.worker) {
 					eventLoopScope:
 						"10 ms callback gaps, including the unfinished gap at operation completion.",
 					outcome,
+					workerExit: workerExit ?? null,
 					results,
 					stages,
 					memoryScope:
@@ -565,7 +567,10 @@ if (values.worker) {
 	}, 1000);
 	await new Promise<void>((done) => {
 		child.once("error", (cause) => stop(String(cause)));
-		child.once("close", () => done());
+		child.once("close", (code, signal) => {
+			workerExit = { code, signal };
+			done();
+		});
 	});
 	clearInterval(watchdog);
 	clearTimeout(deadline);
@@ -577,7 +582,18 @@ if (values.worker) {
 	}
 	if (benchmarkRunExpired(runStarted, performance.now(), runSeconds))
 		outcome = { kind: "failed", error: runFailure };
-	if (!outcome) outcome = { kind: "failed", error: stderr };
+	if (!outcome)
+		outcome = {
+			kind: "failed",
+			error:
+				stderr ||
+				`Worker exited without reporting completion (code ${workerExit?.code ?? "unknown"}, signal ${workerExit?.signal ?? "none"}).`
+		};
+	if (outcome.kind === "done" && workerExit?.code !== 0)
+		outcome = {
+			kind: "failed",
+			error: `Worker reported completion but exited with code ${workerExit?.code ?? "unknown"} and signal ${workerExit?.signal ?? "none"}.`
+		};
 	await save();
 	console.log(`Finished ${mode}: ${outcome.kind}`);
 	if (outcome.kind !== "done") process.exitCode = 1;

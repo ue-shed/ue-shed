@@ -1,5 +1,5 @@
 import { Cache, Effect } from "effect";
-import type { JoinedQueryData } from "./joined-query-data.js";
+import type { JoinedQueryData } from "./joined-query-data.test-support.js";
 import { runJoinedQuery } from "./joined-query-node.js";
 import { decodeWtf8, encodeWtf8 } from "./wtf8.js";
 import { normalizeTextPath } from "./text-origin.js";

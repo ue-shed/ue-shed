@@ -349,12 +349,6 @@ export {
 	localizationKeyChangesAcross,
 	manifestPlace,
 	mergeLocalizationKeyChanges,
-	localizationCounts,
-	localizationLinePreview,
-	localizationQueryPage,
-	matchesLocalizationLine,
-	scopedLocalizationMarks,
-	validateLocalizationSelection,
 	LocalizationBaseline,
 	LocalizationBaselineDelta,
 	LocalizationBaselineEntry,
@@ -468,11 +462,7 @@ export {
 	textQualityFindingIdOf,
 	textQualityQuery,
 	textQualityQueryOf,
-	type TextCorpusQuery,
-	textCorpusQuery,
 	hasSearchableSource,
-	searchTextCorpus,
-	searchableSourceText,
 	RUNTIME_COPY_KINDS,
 	hasDifferingCopy,
 	staleRuntimeCopy,
@@ -514,11 +504,8 @@ export {
 	textPackagePathsFromProjectIndex,
 	type GameTextIndexBuildSessionRequest,
 	GameTextIndexBuilder,
-	typeScriptIndexBuilderLayer,
-	indexedLocalizationJoin,
 	indexedLocalizationLinesRequest,
 	indexedLocalizationStatusReport,
-	indexedTextCorpus,
 	readIndexedLocalizationEvidence,
 	GameTextIndexError,
 	GameTextIndexRefresh,
@@ -580,3 +567,6 @@ export {
 export type TextCorpusServiceShape = import("./entry-index.js").TextCorpusServiceApi;
 /** @deprecated Use `TextCorpusServiceTestApi`. */
 export type TextCorpusServiceTestShape = import("./entry-index.js").TextCorpusServiceTestApi;
+
+export { nativeIndexQueryLayer, GameTextIndexQuery } from "./index-query-native.js";
+export type { NativeTextQuery } from "./native-query.js";

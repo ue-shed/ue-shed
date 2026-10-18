@@ -12,6 +12,10 @@ pub use project_index_dictionary::{ProjectIndexDictionaryItem, ProjectIndexDicti
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(tag = "kind", deny_unknown_fields)]
 pub enum ResultFrame {
+    #[serde(rename = "game_text_engine")]
+    GameTextEngine {
+        outcome: game_text_index::engine::EngineOutcome,
+    },
     #[serde(rename = "game_text_index")]
     GameTextIndex {
         outcome: game_text_index::builder::BuildOutcome,

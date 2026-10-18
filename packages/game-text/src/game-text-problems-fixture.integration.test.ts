@@ -8,7 +8,8 @@ import { Effect, Layer, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import { useSavedFixtureProject } from "../../../fixtures/unreal-project/saved-project.test-support.js";
 import { textCorpusFromExtractionEvents } from "./corpus.js";
-import { typeScriptIndexBuilderLayer } from "./index-builder.js";
+import { typeScriptIndexBuilderLayer } from "./index-reference.test-support.js";
+
 import { GameTextIndexRefresh, gameTextIndexRefreshLayer } from "./index-refresh.js";
 import { gameTextIndexSourceNodeLayer } from "./index-source-node.js";
 import { joinLocalizationTarget } from "./localization.js";
@@ -21,7 +22,7 @@ import {
 	localizationQualityWorkspace,
 	localizationQualityWorkspaceOf
 } from "./localization-workspace.js";
-import { textCorpusQuery } from "./query.js";
+import { textCorpusQuery } from "./query.test-support.js";
 import {
 	decodeGameTextRuleDocumentJson,
 	evaluateGameTextSourceQuality
@@ -289,9 +290,9 @@ describe.skipIf(!executable)("Game Text problem cases in the saved fixture", () 
 						});
 						// The index inspects only packages with text; everything else agrees.
 						const { inspectedPackages: _indexed, ...indexedCoverage } =
-							result.corpus.coverage;
+							(yield* result.corpus).coverage;
 						const { inspectedPackages: _read, ...readCoverage } = corpus.coverage;
-						expect([result.corpus.status, indexedCoverage]).toEqual([
+						expect([(yield* result.corpus).status, indexedCoverage]).toEqual([
 							corpus.status,
 							readCoverage
 						]);
@@ -300,10 +301,12 @@ describe.skipIf(!executable)("Game Text problem cases in the saved fixture", () 
 							diagnostics
 								.filter((item) => item.code !== "package_not_gatherable")
 								.map((item) => [item.code, item.packageFile]);
-						expect(readProblems(result.corpus.diagnostics)).toEqual(
+						expect(readProblems((yield* result.corpus).diagnostics)).toEqual(
 							readProblems(corpus.diagnostics)
 						);
-						expect(lineFacts(result.localizationJoin)).toEqual(lineFacts(memoryJoin));
+						expect(lineFacts(yield* result.localizationJoin)).toEqual(
+							lineFacts(memoryJoin)
+						);
 						const memoryQuery = textCorpusQuery(corpus, undefined, memoryJoin);
 						const page = yield* result.search(search(memoryJoin.target));
 						expect(page.problems).toEqual(
@@ -317,17 +320,17 @@ describe.skipIf(!executable)("Game Text problem cases in the saved fixture", () 
 								)
 							)!;
 							expect(
-								result.query.focus({ id: unit.id, pageSize: 10 })?.unit
+								(yield* result.query.focus({ id: unit.id, pageSize: 10 }))?.unit
 									.reviewSignals
 							).toContain("compiled_copy_differs");
 						}
 						for (const ruleDocument of [undefined, rules]) {
 							const indexedSource = ruleDocument
-								? evaluateGameTextSourceQuality(result.corpus, ruleDocument)
+								? evaluateGameTextSourceQuality(yield* result.corpus, ruleDocument)
 								: undefined;
 							const report = checkLocalizationTarget(
-								result.corpus,
-								result.localizationJoin,
+								yield* result.corpus,
+								yield* result.localizationJoin,
 								result.evidence,
 								{},
 								ruleDocument
@@ -343,16 +346,19 @@ describe.skipIf(!executable)("Game Text problem cases in the saved fixture", () 
 							const memory = localizationQualityWorkspace(
 								indexedSource,
 								report,
-								result.localizationJoin
+								yield* result.localizationJoin
 							);
 							const indexed = localizationQualityWorkspaceOf(
 								indexedSource,
 								yield* result.localizationQuality(ruleDocument)
 							);
-							for (const culture of [undefined, ...result.localizationJoin.cultures])
+							for (const culture of [
+								undefined,
+								...(yield* result.localizationJoin).cultures
+							])
 								for (const filter of BuiltInQualityFilter.literals) {
 									const request = {
-										target: result.localizationJoin.target,
+										target: (yield* result.localizationJoin).target,
 										filter,
 										...(culture ? { culture } : undefined)
 									};

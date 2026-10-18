@@ -1,103 +1,80 @@
-# Native Game Text preparation
+# Native Game Text engine
 
-`GameTextIndexBuilderLive` from `@ue-shed/game-text/index` is the production builder used by the
-CLI and Workbench. It derives the native worker configuration from the host's existing
-`AssetReader`. Library hosts compose the same layer; Workbench has no additional authority.
+Rust owns the Game Text index: dictionaries, immutable storage, joins, incremental updates,
+compaction, search predicates, facets, grouping, counts, pagination, focus and bulk exports.
+It is a domain-specific embedded data engine. TypeScript owns host composition, extraction and
+localization input producers, configurable quality policy, typed process calls and presentation.
 
-```ts
-import { Layer } from "effect";
-import { gameTextIndexRefreshLayer, GameTextIndexBuilderLive } from "@ue-shed/game-text/index";
+CLI, Workbench and library hosts compose `GameTextIndexBuilderLive` from
+`@ue-shed/game-text/index` with their existing `AssetReader`, source and localization evidence
+layers. `nativeIndexBuilderLayer(configuration)` supplies the same builder and query capability
+with explicit reader configuration. The reader needs uasset-io protocol 1.15, `game_text_index`
+and `game_text_engine_v1`. Native failures remain typed failures with recovery guidance.
 
-declare const cacheRoot: string;
+## Reads and writes
 
-const refresh = gameTextIndexRefreshLayer(cacheRoot).pipe(Layer.provide(GameTextIndexBuilderLive));
-```
+Preparation is explicit. `refreshProject`, `importTarget` and `buildTarget` publish derived state;
+`openTarget` acquires an immutable native snapshot. Search does not discover packages, build a
+join or construct a JavaScript query model. Source and localization requests use the same native
+reader. The TypeScript in-memory and columnar implementations are independent test oracles,
+excluded from production package output and public entry points.
 
-Supply the ordinary `AssetReader`, source and localization evidence layers as usual. An explicit
-`nativeIndexBuilderLayer(readerConfiguration)` remains available when a host intentionally configures
-a different compatible worker. `typeScriptIndexBuilderLayer` selects the reference implementation;
-selection is explicit and a native failure never silently switches writers. The native reader must
-support `game_text_index` in uasset-io protocol 1.13. The adapter uses the existing scoped protocol
-session, configured deadlines, cancellation and bounded output transport. It has no environment
-switch or second executable, and does not silently switch writers after a session failure.
+All `model.query` operations return Effects. `model.summary` is cached metadata computed by Rust
+while opening the model. Interactive callers use bounded search and focus; `model.corpus` and
+`model.localizationJoin` are explicit asynchronous bulk reads. The full corpus retains blank
+source units as provenance; filtered exports retain their visibility rules. CSV formatting
+consumes native review signals rather than constructing another query engine.
 
-## Ownership and compatibility
+`model.localizationJoin` contains the visible lines used by policy/report views.
+`query.readLocalizationLines()` explicitly exports every joined line, including blank sources.
 
-One build session owns one native child and writer lease. Existing TypeScript package and
-localization producers supply prepared layers through a leased writer adapter. Rust publishes the
-shared dictionary, input layers, joined projections and compaction. Scope finalizers release the
-lease and process; an operation failure invalidates the lease and requires a new session. Search,
-facets, focus and lazy projections still use the existing JavaScript readers.
+`query.localizationDetail` selects a line or unit and pages locations, cultures and PO context
+in Rust. Ordinary text focus carries a compact localization preview. `localizationFocus` and
+`localizationLines` explicitly export complete provenance through scoped files; interactive
+handlers do not hydrate a full line and slice it in JavaScript.
 
-The writer uses the existing format-4 directory, atomic root publication, string generations and
-reader pins. Project views share input layers and retain independent joined pointers. Native
-joined keys start with `joined-native-v1:`. Switching between native and TypeScript builders
-rebuilds that joined view once while reusing inputs. This also prevents a reader's persisted
-physical column projections from colliding across builder layouts.
+Each opened model owns its native query process in the caller's scope. Native handles pin files
+and dictionary segments, including sections not yet read, across later publications and
+compaction. A query reader holds no writer lease. Canceling a caller skips its queued read or
+stops waiting for an admitted read; that read and its temporary files remain owned by the model
+until completion. Closing the model interrupts its active read. Losing a native process produces
+a typed failure. Open a new model to recover; other models own separate processes.
+Retained models require `borrow` around operations and `retain` when publishing a candidate.
 
-Root and consumed payload checksums remain verified. Selective reads validate segment metadata and
-touched sections rather than scanning every unused cached payload on each writer acquisition.
-This is ordinary cache validation, not a full integrity scrub. Corrupt disposable caches still
-require normal recovery.
+One write session owns one native process and writer lease. Existing TypeScript input producers
+send prepared layers through a leased native adapter. Rust publishes dictionaries, input layers,
+joins and compaction atomically. Changing the selected project remains exclusively the host's
+responsibility.
 
-## Incremental work and bounds
+## Incremental publication
 
-The native interner probes immutable A64 dictionary fences for unresolved strings. Full cold
-construction and full joins still allocate in proportion to their inputs; this is not a claim of
-constant memory for an arbitrary cold corpus.
+Source-only updates preserve row membership, identities, structure and visibility. Authored text
+and String Table references may share a gathered line. Variable source lists and conflict flags
+are updated in Rust, including duplicate-source signals on unchanged rows outside the edited
+package. Repeated patches flatten against one retained base. A stable PO translation can change
+in the same publication. Structural changes and eligibility failures rebuild the derived join.
 
-The narrow incremental join retains stable row identity, structure, cardinality and visibility.
-Source patches require both old and new strings to have at least 40 UTF-16 code units and reject
-sources shared outside the affected rows. PO patches require stable identity, order and context.
-The patch cap is 8,192 edits. Unsupported changes, generation changes, missing persisted source
-state, changed dependencies and other failed eligibility checks rebuild the joined layer. Numeric
-column scans still occur; eligible edits are not constant-time operations.
+Short and long sources use the same incremental path when their structure and visibility remain
+stable. Patches are bounded to 8,192 rows and source values. Numeric scans remain proportional to
+relevant index columns; incremental updates are not constant-time. Restoring the retained base's
+content key republishes the full base rather than creating a self-referencing overlay.
 
-The adapter stages at most 8,192 intern strings or 16 MiB per batch, with a 1 MiB per-string limit.
-Selected-string reads use batches of 32 and a 32 MiB response-file cap. Join input is capped at
-32 MiB. A code-unit sidecar preserves unpaired UTF-16 in text and policy keys across JSON/Rust;
-valid Unicode keeps its ordinary representation. Input files and results cross validated typed
-boundaries. Temporary staging is scoped to the cache operation.
+Storage remains snapshot format 4 with checked roots, sections, atomic publication and shared
+project inputs. Native joined keys use `joined-native-v2:`. Older derived views rebuild once to
+add the native source-search arena. Touched data is validated during reads; opening a writer
+does not scrub every unused payload.
 
-Native outcomes expose actual section/index/write byte counters and named stage durations.
-Existing TypeScript-only substage metrics can be zero for this backend; they are not a complete
-native phase attribution. Native operation spans carry the stage durations.
+## Boundaries and measurement
 
-## Measurement scope
+Requests and responses use validated domain schemas. UTF-16 code units, including lone
+surrogates, survive the wire and dictionary boundaries. Search returns at most 50 rows and
+200 group entries. Native response JSON is bounded to 16 MiB; bulk corpus exports use scoped
+files rather than a giant protocol frame. Native operations expose stage durations and actual
+section, index and write-byte counters.
 
-The public-adapter rollout measures production CLI and Workbench service composition over a
-generated million-occurrence corpus. Median cold preparation improves from about 75–76 seconds to
-56–57 seconds. Native is not faster for every workload: the measured mixed-reference package/PO
-edit triggers a full native join (about 22–23 seconds versus 5–7 seconds for TypeScript), and warm
-reopen is roughly one second slower. Memory does not improve on that workload. The explicit
-TypeScript reference layer remains available for hosts whose workload favors it.
-
-Native joining also does not eliminate synchronous reader materialization: the measured Workbench
-focus operation still blocks for about 2.6 seconds at this scale. Full methodology, callback gaps,
-raw parity evidence and limits are in the [rollout report](../research/effect-audit-native-rollout-2026-10-18.md).
-
-Earlier prototype measurements below describe a different workload and narrower operation scope.
-The isolated prototype compared an owned-buffer TypeScript control, a first native writer and an
-incremental native writer. On the larger private dataset, one eligible source edit took 299 ms,
-13,311 ms and 186 ms respectively. These measurements exclude package discovery, extraction,
-model publication and UI work. They are evidence for the implementation direction, not fresh
-measurements of this public protocol adapter.
-
-The prototype's three warm Workbench runs took 7.477, 8.931 and 7.480 seconds; reopen took 10.193,
-11.760 and 10.392 seconds. Inventory pagination, materialization and path sorting accounted for
-about 4.3 seconds outside the writer. Query execution remained JavaScript: distinct-query requests
-were about 39 ms, repeated queries about 2 ms, and repeated IPC requests about 3 ms. Typing also
-includes the host's 120 ms debounce. These numbers make no native query-speed claim.
-
-Production checks cover cold and eligible incremental builds, structural fallback, PO updates,
-query/facet parity, arbitrary UTF-16, pinned readers, compaction, failed sessions, lease exclusion
-and generated join-policy cases. The production rollout additionally exercises 32 real process
-cancellation/termination cycles: startup, suspended staging, publication and worker death. Each cycle
-reopens the last committed state, writes again, and verifies process, lease and staging cleanup.
-Changing a PO fingerprint retains the new provenance without disqualifying a structurally eligible
-incremental join. Structural and other eligibility guards still select a full native rebuild.
-
-Current public-adapter host measurements and their limits are recorded in the
-[rollout evidence](../research/effect-audit-native-rollout-2026-10-18.md). Generated reader evidence
-isolates production preparation, model publication and queries; it does not measure Unreal asset
-discovery/extraction. Saved-fixture runs exercise that separate path. Queries remain JavaScript.
+Full cold construction still allocates in proportion to input size. Measure production host
+preparation, first query, repeated query, mixed edits, warm reopen, focus, callback gaps and
+process memory separately. The earlier
+[hybrid rollout measurements](../research/effect-audit-native-rollout-2026-10-18.md) describe
+the superseded native-writer/JavaScript-query architecture and are not performance evidence
+for this engine.

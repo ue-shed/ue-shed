@@ -4,6 +4,7 @@ use std::fmt;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ErrorCode {
     Busy,
+    Cancelled,
     InvalidInput,
     InvalidCache,
     LimitExceeded,
@@ -17,6 +18,7 @@ impl ErrorCode {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Busy => "busy",
+            Self::Cancelled => "cancelled",
             Self::InvalidInput => "invalid_input",
             Self::InvalidCache => "invalid_cache",
             Self::LimitExceeded => "limit_exceeded",

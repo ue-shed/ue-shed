@@ -108,8 +108,8 @@ effectIt.live(
 				const source = yield* expectSameSourceQuality(indexed, fixture.raw(), document);
 				expect(source.report.findings).toHaveLength(6);
 				const report = checkLocalizationTarget(
-					indexed.corpus,
-					indexed.localizationJoin,
+					yield* indexed.corpus,
+					yield* indexed.localizationJoin,
 					indexed.evidence,
 					{ checks: [] },
 					document
@@ -117,11 +117,11 @@ effectIt.live(
 				expect(report.findings).toHaveLength(6);
 				const quality = yield* indexed.localizationQuality(document, { checks: [] });
 				expect(quality.findings.length).toBe(6);
-				const sourceReport = evaluateGameTextSourceQuality(indexed.corpus, document);
+				const sourceReport = evaluateGameTextSourceQuality(yield* indexed.corpus, document);
 				const memory = localizationQualityWorkspace(
 					sourceReport,
 					report,
-					indexed.localizationJoin
+					yield* indexed.localizationJoin
 				);
 				const columnar = localizationQualityWorkspaceOf(sourceReport, quality);
 				const request = {

@@ -54,15 +54,6 @@ export {
 } from "./localization-key-changes.js";
 
 export {
-	localizationCounts,
-	localizationLinePreview,
-	localizationQueryPage,
-	matchesLocalizationLine,
-	scopedLocalizationMarks,
-	validateLocalizationSelection
-} from "./localization-query.js";
-
-export {
 	LocalizationBaseline,
 	LocalizationBaselineDelta,
 	LocalizationBaselineEntry,
@@ -196,9 +187,7 @@ export {
 	textQualityQueryOf
 } from "./quality-query.js";
 
-export { type TextCorpusQuery, textCorpusQuery } from "./query.js";
-
-export { hasSearchableSource, searchTextCorpus, searchableSourceText } from "./search.js";
+export { hasSearchableSource } from "./search.js";
 
 export { RUNTIME_COPY_KINDS, hasDifferingCopy, staleRuntimeCopy } from "./text-copies.js";
 

@@ -83,7 +83,11 @@ export const makeRetainedGameTextIndexWith = Effect.fn("GameTextIndex.retain")(f
 							const previous = yield* Ref.getAndSet(current, { owner, retired });
 							if (previous) {
 								yield* Ref.set(previous.retired, true);
-								yield* Scope.close(previous.owner, Exit.void);
+								// Publication owns the new model now. Retire the old scope in the host
+								// scope so finalizers cannot hold the publication lock indefinitely.
+								yield* Scope.close(previous.owner, Exit.void).pipe(
+									Effect.forkIn(hostScope)
+								);
 							}
 						})
 					);
@@ -105,6 +109,10 @@ export const makeRetainedGameTextIndexWith = Effect.fn("GameTextIndex.retain")(f
 							return result.join;
 						},
 						query: result.query,
+						summary: result.summary,
+						get localization() {
+							return result.localization;
+						},
 						get corpus() {
 							return result.corpus;
 						},

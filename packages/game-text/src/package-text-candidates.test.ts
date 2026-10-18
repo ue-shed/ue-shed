@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import { Schema } from "effect";
 import { TextCorpus, TextCorpusQuerySummary } from "./schema.js";
-import { textCorpusQuery } from "./query.js";
+import { textCorpusQuery } from "./query.test-support.js";
 import { textPackageCoverageSummary } from "./corpus-summary.js";
 import {
 	isPackageTextCandidate,

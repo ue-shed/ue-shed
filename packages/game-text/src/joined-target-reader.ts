@@ -25,7 +25,7 @@ import {
 } from "./localization-schema.js";
 import { TextUnitId } from "./identifiers.js";
 import { TEXT_OUT_OF_SCOPE_REASONS, textAudienceOfMask } from "./text-audience.js";
-import { JoinedSourceCacheMeta } from "./joined-source-cache.js";
+import { JoinedSourceCacheMeta } from "./joined-source-cache-contract.js";
 import { u32, type ColumnReader } from "./joined-target-input.js";
 import type { SharedIndexReader } from "./shared-index.js";
 import {

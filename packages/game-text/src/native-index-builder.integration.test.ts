@@ -3,11 +3,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Effect, Exit, Stream } from "effect";
 import { describe, expect, it } from "vitest";
-import { GameTextIndexBuilder, typeScriptIndexBuilderLayer } from "./index-builder.js";
+import { typeScriptIndexBuilderLayer } from "./index-reference.test-support.js";
+import { GameTextIndexBuilder } from "./index-builder.js";
 import { nativeIndexBuilderLayer } from "./native-index-builder.js";
 import { SharedIndex, sharedIndexDirectory, sharedIndexNodeLayer } from "./shared-index.js";
 import { openJoinedTarget } from "./joined-target-reader.js";
-import { columnarTextCorpusQuery } from "./columnar-query.js";
+import { columnarTextCorpusQuery } from "./columnar-query.test-support.js";
 import { emptyPackageTextRecord } from "./package-text-record.js";
 import { target, cultureCode } from "./localization.test-support.js";
 

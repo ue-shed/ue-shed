@@ -24,17 +24,11 @@ export {
 	textPackagePathsFromProjectIndex
 } from "./corpus.js";
 
-export {
-	type GameTextIndexBuildSessionRequest,
-	GameTextIndexBuilder,
-	typeScriptIndexBuilderLayer
-} from "./index-builder.js";
+export { type GameTextIndexBuildSessionRequest, GameTextIndexBuilder } from "./index-builder.js";
 
 export {
-	indexedLocalizationJoin,
 	indexedLocalizationLinesRequest,
 	indexedLocalizationStatusReport,
-	indexedTextCorpus,
 	readIndexedLocalizationEvidence
 } from "./index-context.js";
 
@@ -116,3 +110,6 @@ export {
 	runGameTextActions,
 	verifyGameTextActions
 } from "./text-actions.js";
+
+export { nativeIndexQueryLayer, GameTextIndexQuery } from "./index-query-native.js";
+export type { NativeTextQuery } from "./native-query.js";

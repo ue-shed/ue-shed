@@ -1,3 +1,5 @@
+import { referenceNativeQuery } from "../../../../../packages/game-text/src/native-query.test-support.js";
+import { textCorpusQuery } from "../../../../../packages/game-text/src/query.test-support.js";
 import { Effect, Layer, Option, type Scope } from "effect";
 import {
 	GameTextIndexRefresh,
@@ -15,7 +17,6 @@ import {
 	applyLocalizationKeyChanges,
 	localizationKeyChanges,
 	mergeLocalizationKeyChanges,
-	textCorpusQuery,
 	localizationQuality,
 	textQualityQuery
 } from "@ue-shed/game-text/corpus";
@@ -129,12 +130,14 @@ export function oracleGameTextIndexLayer<E>(
 								)
 							)
 						: undefined;
-					const query = textCorpusQuery(corpus, undefined, join);
+					const reference = textCorpusQuery(corpus, undefined, join);
+					const query = referenceNativeQuery(reference, corpus);
 					return {
 						project: oracleProjectIndex(request.projectRoot),
-						corpus,
+						corpus: Effect.succeed(corpus),
+						summary: reference.summary(),
 						query,
-						search: (request) => Effect.sync(() => query.search(request)),
+						search: query.search,
 						// The in-memory checks are the oracle the indexed scans match.
 						localizationQuality: (ruleDocument, options) =>
 							Effect.sync(() => {
@@ -159,7 +162,12 @@ export function oracleGameTextIndexLayer<E>(
 							),
 						get localizationJoin(): GameTextIndexRefreshResult["localizationJoin"] {
 							if (!join) throw new Error("No target in this oracle request");
-							return join;
+							return Effect.succeed(join);
+						},
+						get localization(): GameTextIndexRefreshResult["localization"] {
+							if (!join) throw new Error("No target in this oracle request");
+							const { lines: _, ...header } = join;
+							return header;
 						},
 						get evidence(): GameTextIndexRefreshResult["evidence"] {
 							if (!files) throw new Error("No target in this oracle request");
@@ -213,20 +221,38 @@ export const workbenchGameTextIndexOracleLayer = Layer.unwrap(
 
 import { makeGameTextLocalization as indexedGameTextLocalization } from "./game-text-localization.js";
 export const makeGameTextLocalizationOracle = (
-	...args: Parameters<typeof indexedGameTextLocalization>
-) =>
-	indexedGameTextLocalization(...args).pipe(
+	currentCorpus: () => Effect.Effect<TextCorpus | undefined>,
+	currentProject: Parameters<typeof indexedGameTextLocalization>[1],
+	currentRules?: Parameters<typeof indexedGameTextLocalization>[2],
+	currentIndex?: Parameters<typeof indexedGameTextLocalization>[3]
+) => {
+	const reads = new WeakMap<TextCorpus, Effect.Effect<TextCorpus>>();
+	const marker = () =>
+		currentCorpus().pipe(
+			Effect.map((corpus) => {
+				if (!corpus) return undefined;
+				let read = reads.get(corpus);
+				if (!read) {
+					read = Effect.succeed(corpus);
+					reads.set(corpus, read);
+				}
+				return read;
+			})
+		);
+	return indexedGameTextLocalization(marker, currentProject, currentRules, currentIndex).pipe(
 		Effect.provide(
 			oracleGameTextIndexLayer(() =>
-				args[0]().pipe(
-					Effect.map((corpus) => {
-						if (!corpus) throw new Error("No corpus in this oracle request");
-						return corpus;
-					})
+				currentCorpus().pipe(
+					Effect.flatMap((corpus) =>
+						corpus
+							? Effect.succeed(corpus)
+							: Effect.die("No corpus in this oracle request")
+					)
 				)
 			)
 		)
 	);
+};
 
 /** Object-oracle handles model host ownership without exercising the compact store. */
 export function oracleProjectIndex(projectRoot: string): GameTextProjectIndex {

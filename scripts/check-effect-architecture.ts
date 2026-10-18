@@ -28,14 +28,11 @@ const catalogOwned = new Set([
 ]);
 
 const approvedRuntimeExits = new Set([
-	// The Node index adapter preserves the published synchronous TextCorpusQuery API over
-	// scoped pinned file handles and Effect.Cache. It rejects async work; hosts keep their
-	// existing Effect runtimes and never perform a runtime exit in query/focus handlers.
+	// Indexed quality-policy inputs use scoped synchronous cache reads on the policy worker.
+	// Corpus search and focus use the asynchronous native engine.
 	"packages/game-text/src/joined-query-node.ts",
 	// Node worker messages are foreign callbacks; the target scope owns and terminates the pool.
 	"packages/game-text/src/localization-import-worker.ts",
-	// Search messages are a Node boundary; the host scope terminates its pinned worker reader.
-	"packages/game-text/src/search-worker.ts",
 	// Quality scan messages are a Node boundary; the model scope terminates the worker and its
 	// pinned reader, and each scan runs as a fiber the host can cancel.
 	"packages/game-text/src/quality-worker.ts",
@@ -70,8 +67,6 @@ const approvedPromiseAdapters = new Set([
 	// Native build staging adapts Node filesystem/snapshot Promise ports below the scoped
 	// Effect builder; leases, temporary files and the protocol process share its scope.
 	"packages/game-text/src/native-index-builder.ts",
-	// The search adapter bridges Node worker messages once; callers receive scoped Effects.
-	"packages/game-text/src/search-worker-node.ts",
 	// The quality adapter bridges worker messages once; callers receive Effects in the model scope.
 	"packages/game-text/src/quality-worker-node.ts",
 	// The cold importer adapts worker messages and staged snapshot handles below SharedIndex.
@@ -182,9 +177,6 @@ const approvedResourceAdapters = new Set([
 	// Ctrl+K, page-hide and the preference save timer belong to the Solid owner; onSettled cleanup
 	// removes them and flushes the pending save.
 	"extensions/game-text/src/game-text-query-route.tsx",
-	// Search listeners and cancellation flags belong to the pinned reader's worker scope.
-	"packages/game-text/src/search-worker-node.ts",
-	"packages/game-text/src/search-worker.ts",
 	// Quality listeners and the finalization registry belong to the model's worker scope.
 	"packages/game-text/src/quality-worker-node.ts",
 	"packages/game-text/src/quality-worker.ts",
@@ -266,6 +258,13 @@ const approvedResourceAdapters = new Set([
 ]);
 const operationlessServices = new Set(["apps/workbench/src/main/workbench-config.ts"]);
 const externalServiceEvidence = new Map([
+	[
+		"packages/game-text/src/index-builder.ts",
+		[
+			"packages/game-text/src/native-index-builder.ts",
+			"packages/game-text/src/native-query.integration.test.ts"
+		]
+	],
 	[
 		// The public index ports and schemas are separate from the injected steps and Node adapter.
 		"packages/game-text/src/index-contract.ts",

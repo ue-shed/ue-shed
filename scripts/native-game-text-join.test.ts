@@ -1,3 +1,4 @@
+import { nativeEngineResponses } from "./native-game-text-engine.test-support.ts";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { Effect } from "effect";
@@ -40,7 +41,8 @@ it.skipIf(!executable)(
 									})
 								)
 							)
-						)
+						),
+					nativeEngineResponses(executable)
 				);
 				expect(differences, `seed ${seed}`).toEqual([]);
 			}

@@ -2,13 +2,8 @@ import { Schema } from "effect";
 import { localizationLineUnits } from "./gathered-text.js";
 import type { LocalizationJoin, LocalizationLine } from "./localization-schema.js";
 import { localizationShippedTranslation } from "./localization-shipped-translation.js";
-import type { TextCorpusQuery } from "./query.js";
-import {
-	TextFileScopeSummary,
-	type TextCorpus,
-	type TextFilterClause,
-	type TextWhere
-} from "./schema.js";
+import type { TextCorpusSearchPage } from "./schema.js";
+import { TextFileScopeSummary, type TextCorpus, type TextWhere } from "./schema.js";
 import type { LocalizationTargetEvidence } from "@ue-shed/localization/browser";
 import { textFileKey, textFileLabel, textFileScope } from "./text-origin.js";
 
@@ -154,25 +149,20 @@ function guidance(check: LocalizationGateCheck, line: LocalizationLine): string 
  */
 export function localizationGateTarget(input: {
 	readonly corpus: TextCorpus;
-	readonly query: TextCorpusQuery;
-	readonly join: LocalizationJoin;
+	readonly selection: {
+		readonly lines: readonly LocalizationLine[];
+		readonly conflicting: ReadonlySet<string>;
+		readonly changed: ReadonlySet<string>;
+		readonly notGathered: ReadonlySet<string>;
+		readonly unresolved: ReadonlySet<string>;
+		readonly fileScope?: TextCorpusSearchPage["fileScope"];
+	};
+	readonly join: Pick<LocalizationJoin, "target" | "nativeCulture">;
 	readonly files: NonNullable<TextWhere["files"]>;
 	readonly failOn: readonly LocalizationGateCheck[];
 }): LocalizationGateTarget {
-	const { query, join } = input;
-	const base = {
-		capability: "all" as const,
-		query: "",
-		localization: { target: join.target },
-		where: { files: input.files }
-	};
-	const lines = query.localizationLines(base);
-	const having = (clause: TextFilterClause) =>
-		new Set(query.localizationLines({ ...base, filter: [clause] }).map((line) => line.id));
-	const conflicting = having({ field: "problem", op: "is", values: ["conflicting_source"] });
-	const changed = having({ field: "problem", op: "is", values: ["changed_since_gather"] });
-	const notGathered = having({ field: "problem", op: "is", values: ["not_gathered"] });
-	const unresolved = having({ field: "finding", op: "is", values: ["unresolved"] });
+	const { join } = input;
+	const { lines, conflicting, changed, notGathered, unresolved, fileScope } = input.selection;
 	const identityKey = (identity: LocalizationLine["identity"]) =>
 		identity === null ? "" : JSON.stringify([identity.namespace, identity.key]);
 	const listed = new Set(lines.map((line) => identityKey(line.identity)));
@@ -248,7 +238,6 @@ export function localizationGateTarget(input: {
 		(item.severity === "fail" ? 0 : LocalizationGateCheck.literals.length) +
 		LocalizationGateCheck.literals.indexOf(item.check);
 	items.sort((left, right) => order(left) - order(right));
-	const fileScope = query.search({ ...base, pageSize: 1 }).fileScope;
 	return {
 		target: join.target,
 		status: items.some((item) => item.severity === "fail") ? "failed" : "passed",

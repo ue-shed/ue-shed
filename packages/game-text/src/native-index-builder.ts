@@ -1,5 +1,8 @@
+import { importLocalizationFile, importLocalizationTarget } from "./localization-import.js";
+import { refreshPackageTextLayer } from "./package-text-layer.js";
+import { nativeIndexConfiguration } from "./native-index-configuration.js";
+import { nativeIndexQueryLayer } from "./index-query-native.js";
 import { snapshotStoreGuidance } from "./snapshot-store.js";
-import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Context, Effect, Exit, Layer, Option, Schema } from "effect";
@@ -12,7 +15,7 @@ import {
 	type AssetReaderError,
 	type GameTextIndexBuildRequest
 } from "@ue-shed/unreal-assets";
-import { GameTextIndexBuilder, typeScriptIndexBuilderLayer } from "./index-builder.js";
+import { GameTextIndexBuilder } from "./index-builder.js";
 import { LocalizationImportSession } from "./localization-import-session.js";
 import {
 	SharedIndex,
@@ -125,7 +128,7 @@ const io = <A>(operation: string, action: (signal: AbortSignal) => Promise<A>) =
 class NativeBuildSession extends Context.Service<
 	NativeBuildSession,
 	{
-		readonly refreshJoinedTarget: typeof import("./joined-target.js").refreshJoinedTarget;
+		readonly refreshJoinedTarget: import("./joined-target.js").RefreshJoinedTarget;
 	}
 >()("@ue-shed/game-text/NativeBuildSession") {}
 
@@ -134,24 +137,7 @@ const makeWriter = Effect.fn("NativeIndexBuilder.writer")(function* (
 	stage: string
 ) {
 	const client = yield* NativeGameTextIndexClient;
-	const identity =
-		options.projectView?.kind === "source"
-			? ["source"]
-			: options.projectView
-				? ["localization", options.projectView.target]
-				: undefined;
-	const base = {
-		cacheRoot: options.cacheRoot,
-		projectKey: options.projectKey,
-		targetKey: options.targetKey
-	};
-	const configuration = identity
-		? {
-				...base,
-				sharedProject: true as const,
-				viewPrefix: `target-join.${createHash("sha256").update(JSON.stringify(identity)).digest("hex")}.`
-			}
-		: { ...base, sharedProject: false as const };
+	const configuration = nativeIndexConfiguration(options);
 	let closed = false;
 	const begin = yield* client
 		.execute({ action: "begin", configuration })
@@ -376,7 +362,7 @@ const makeWriter = Effect.fn("NativeIndexBuilder.writer")(function* (
 				)
 			)
 	};
-	const refreshJoinedTarget: typeof import("./joined-target.js").refreshJoinedTarget = Effect.fn(
+	const refreshJoinedTarget: import("./joined-target.js").RefreshJoinedTarget = Effect.fn(
 		"NativeIndexBuilder.join"
 	)(function* (input) {
 		const file = join(stage, `${++sequence}.join.json`);
@@ -443,89 +429,97 @@ const makeWriter = Effect.fn("NativeIndexBuilder.writer")(function* (
 
 /** Native storage and joins with explicit worker configuration; TS producers own extraction policy. */
 export const nativeIndexBuilderLayer = (configuration: AssetReaderConfiguration) =>
-	Layer.effect(
+	Layer.succeed(
 		GameTextIndexBuilder,
-		Effect.gen(function* () {
-			const producers = yield* GameTextIndexBuilder;
-			return GameTextIndexBuilder.of({
-				...producers,
-				withSession: (request, effect) =>
-					Effect.scoped(
-						Effect.gen(function* () {
-							const backing = yield* SharedIndex;
-							const stage = yield* Effect.acquireRelease(
-								io("native-index-stage", async () => {
-									await mkdir(request.configuration.cacheRoot, {
-										recursive: true
-									});
-									return mkdtemp(
-										join(request.configuration.cacheRoot, "native-build-")
-									);
-								}),
-								(path) =>
-									Effect.promise(() => rm(path, { recursive: true, force: true }))
-							);
-							const native = yield* Effect.acquireRelease(
-								makeWriter(request.configuration, stage),
-								(native) =>
-									native
-										.close()
-										.pipe(
-											Effect.catch((cause) =>
-												Effect.logWarning(
-													"Native index session cleanup failed",
-													cause
-												)
+		GameTextIndexBuilder.of({
+			importLocalizationFile,
+			importLocalizationTarget,
+			refreshPackageTextLayer,
+			intern: Effect.fn("NativeIndexBuilder.intern")(function* (domain, values) {
+				const index = yield* SharedIndex;
+				return yield* (yield* index.writer()).intern(domain, values);
+			}),
+			compact: Effect.fn("NativeIndexBuilder.compact")(function* (force) {
+				const index = yield* SharedIndex;
+				return yield* (yield* index.writer()).compact(force);
+			}),
+			withSession: (request, effect) =>
+				Effect.scoped(
+					Effect.gen(function* () {
+						const backing = yield* SharedIndex;
+						const stage = yield* Effect.acquireRelease(
+							io("native-index-stage", async () => {
+								await mkdir(request.configuration.cacheRoot, {
+									recursive: true
+								});
+								return mkdtemp(
+									join(request.configuration.cacheRoot, "native-build-")
+								);
+							}),
+							(path) =>
+								Effect.promise(() => rm(path, { recursive: true, force: true }))
+						);
+						const native = yield* Effect.acquireRelease(
+							makeWriter(request.configuration, stage),
+							(native) =>
+								native
+									.close()
+									.pipe(
+										Effect.catch((cause) =>
+											Effect.logWarning(
+												"Native index session cleanup failed",
+												cause
 											)
-										),
-								{ interruptible: true }
-							);
-							const leased = SharedIndex.of({
-								...backing,
-								inspect: () => Effect.succeed(native.writer.manifest()),
-								writer: () => Effect.succeed(native.writer)
-							});
-							return yield* effect.pipe(
-								Effect.provideService(SharedIndex, leased),
-								Effect.provideService(NativeBuildSession, native),
-								Effect.provideService(LocalizationImportSession, {
-									configuration: request.configuration,
-									index: leased,
-									...(request.files && native.writer.manifest().active.joined
-										? { files: request.files }
-										: undefined)
-								})
-							);
-						})
-					).pipe(
-						Effect.provide(sharedIndexNodeLayer(request.configuration)),
-						Effect.provide(nativeGameTextIndexClientLayer(configuration))
-					),
-				refreshJoinedTarget: Effect.fn("NativeIndexBuilder.refreshJoinedTarget")(
-					function* (input) {
-						const session = yield* Effect.serviceOption(NativeBuildSession);
-						if (Option.isNone(session))
-							return yield* Effect.fail(
-								unavailable(
-									"native-index-session",
-									"Call withSession around native build operations."
-								)
-							);
-						return yield* session.value.refreshJoinedTarget(input);
-					}
-				)
-			});
+										)
+									),
+							{ interruptible: true }
+						);
+						const leased = SharedIndex.of({
+							...backing,
+							inspect: () => Effect.succeed(native.writer.manifest()),
+							writer: () => Effect.succeed(native.writer)
+						});
+						return yield* effect.pipe(
+							Effect.provideService(SharedIndex, leased),
+							Effect.provideService(NativeBuildSession, native),
+							Effect.provideService(LocalizationImportSession, {
+								configuration: request.configuration,
+								index: leased,
+								...(request.files && native.writer.manifest().active.joined
+									? { files: request.files }
+									: undefined)
+							})
+						);
+					})
+				).pipe(
+					Effect.provide(sharedIndexNodeLayer(request.configuration)),
+					Effect.provide(nativeGameTextIndexClientLayer(configuration))
+				),
+			refreshJoinedTarget: Effect.fn("NativeIndexBuilder.refreshJoinedTarget")(
+				function* (input) {
+					const session = yield* Effect.serviceOption(NativeBuildSession);
+					if (Option.isNone(session))
+						return yield* Effect.fail(
+							unavailable(
+								"native-index-session",
+								"Call withSession around native build operations."
+							)
+						);
+					return yield* session.value.refreshJoinedTarget(input);
+				}
+			)
 		})
-	).pipe(Layer.provide(typeScriptIndexBuilderLayer));
+	).pipe(Layer.merge(nativeIndexQueryLayer(configuration)));
 
 /**
  * Production index builder, using the host's existing AssetReader configuration. Each build owns
  * a scoped native process and writer lease. Capability or process failures are reported to the
- * caller; selecting the TypeScript implementation remains an explicit host composition choice.
+ * caller and never select a JavaScript query backend.
  */
 export const GameTextIndexBuilderLive = Layer.unwrap(
 	Effect.gen(function* () {
 		const reader = yield* AssetReader;
-		return nativeIndexBuilderLayer(yield* reader.configuration());
+		const configuration = yield* reader.configuration();
+		return nativeIndexBuilderLayer(configuration);
 	})
 );

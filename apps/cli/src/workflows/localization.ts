@@ -27,7 +27,7 @@ export const scanProjectText = Effect.fn("Cli.localization.scan")(function* (
 	projectRoot: string,
 	reader: string | undefined
 ) {
-	return (yield* refreshCliGameTextIndex({ projectRoot }, reader)).corpus;
+	return yield* (yield* refreshCliGameTextIndex({ projectRoot }, reader)).corpus;
 });
 
 /** Decode CLI selections and read evidence before starting the saved-package reader. */
@@ -184,7 +184,7 @@ export const loadLocalizationStatus = Effect.fn("Cli.localization.load_status")(
 			? undefined
 			: yield* readChangedFiles(command.changedFiles, command.projectRoot);
 	const filter = yield* filterField(command);
-	const page = query.search({
+	const page = yield* query.search({
 		capability: "all",
 		pageSize: command.limit ?? 50,
 		query: command._tag === "TextSearch" ? command.query : "",
@@ -253,7 +253,7 @@ export const runLocalizationExport = Effect.fn("Cli.workflow.localization_export
 							? undefined
 							: yield* readChangedFiles(command.changedFiles, command.projectRoot);
 					const filter = yield* filterField(command);
-					const lines = query.localizationLines({
+					const lines = yield* query.localizationLines({
 						capability: "all",
 						query: "",
 						localization: selection,
@@ -261,9 +261,9 @@ export const runLocalizationExport = Effect.fn("Cli.workflow.localization_export
 						...filter
 					});
 					const { csv, rows } = localizationLinesCsv({
-						join,
+						join: yield* join,
 						lines,
-						corpus,
+						corpus: yield* corpus,
 						cultures: pickedLocalizationCultures(selection)
 					});
 					const fs = yield* FileSystem.FileSystem;

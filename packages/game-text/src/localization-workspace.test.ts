@@ -1,8 +1,8 @@
+import { exportGameTextInvestigation } from "./export-reference.test-support.js";
 import { Effect, Schema } from "effect";
 import {
 	GameTextInvestigationPreset,
 	GameTextInvestigationExport,
-	exportGameTextInvestigation,
 	gameTextInvestigationCsv
 } from "./investigation.js";
 import { describe, expect, it } from "vitest";
@@ -18,7 +18,7 @@ import {
 } from "./localization.test-support.js";
 import { joinLocalizationTarget } from "./localization.js";
 import { applyLocalizationKeyChanges, localizationKeyChanges } from "./localization-key-changes.js";
-import { textCorpusQuery } from "./query.js";
+import { textCorpusQuery } from "./query.test-support.js";
 import {
 	WorkspaceQualityPage,
 	WorkspaceQualityRequest,

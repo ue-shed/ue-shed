@@ -459,3 +459,57 @@ it("decodes worker stdout as UTF-8 text even when a character spans two chunks",
 
 	expect(messages).toEqual([message]);
 });
+
+it("keeps Unicode line and paragraph separators inside persistent NDJSON frames", async () => {
+	const request = makeProtocolRequest(
+		{ kind: "inspect", assetPath: "C:/Fixture/Unicode.uasset" },
+		{ timeoutMs: 1000, maximumOutputBytes: 4096 }
+	);
+	const frame = { contract: request.contract, requestId: request.requestId };
+	const message = "first\u2028second\u2029third ✓";
+	const bytes = Buffer.from(
+		[
+			{ ...frame, kind: "accepted", operation: "inspect", sequence: 0 },
+			{
+				...frame,
+				kind: "diagnostic",
+				code: "unicode",
+				message,
+				severity: "info",
+				sequence: 1
+			},
+			{ ...frame, kind: "completed", outcome: "complete", sequence: 2 }
+		]
+			.map((event) => JSON.stringify(event) + "\n")
+			.join("")
+	);
+	const split = bytes.indexOf(Buffer.from("\u2028")) + 1;
+	const worker = new StalledInputProcess(
+		true,
+		undefined,
+		undefined,
+		new Writable({
+			write(_chunk, _encoding, callback) {
+				setImmediate(() => {
+					worker.stdout.write(bytes.subarray(0, split));
+					setImmediate(() => worker.stdout.write(bytes.subarray(split)));
+				});
+				callback();
+			}
+		})
+	);
+	const session = new UassetProtocolSession(
+		{ executable: "unicode-session", timeoutMs: 1000 },
+		() => worker
+	);
+	try {
+		const events = [];
+		for await (const event of session.events({ request, signal: undefined, timeoutMs: 1000 }))
+			events.push(event);
+		expect(events).toHaveLength(3);
+		expect(events[1]).toMatchObject({ kind: "diagnostic", message });
+		expect(events[2]).toMatchObject({ kind: "completed" });
+	} finally {
+		await session.close();
+	}
+});

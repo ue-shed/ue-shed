@@ -10,7 +10,7 @@ import { textAudienceBit } from "./text-audience.js";
 import { OCCURRENCE_COPY_DIFFERS } from "./package-text-columns.js";
 import { longestSource } from "./source-metrics.js";
 import { DuplicateSources } from "./duplicate-sources.js";
-import { joinedDuplicatePlacesSteps } from "./joined-duplicate-places.js";
+import { joinedDuplicatePlacesSteps } from "./joined-duplicate-places.test-support.js";
 
 /** Canonical place IDs keep source overlays numeric without retaining decoded occurrences. */
 export function joinedDuplicateSources(

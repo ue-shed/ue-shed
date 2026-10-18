@@ -97,8 +97,11 @@ it.live(
 								progress.push(event)
 							)
 						);
-					const unit = result.query.search({ query: "", capability: "all", pageSize: 1 })
-						.units[0]!;
+					const unit = (yield* result.query.search({
+						query: "",
+						capability: "all",
+						pageSize: 1
+					})).units[0]!;
 					return {
 						read: readAll(quality),
 						line: quality.metadata.lineOfUnit(unit.id),
@@ -174,7 +177,11 @@ for (const mode of ["interrupt", "failure"] as const)
 					const scan = yield* Effect.forkChild(model.localizationQuality());
 					const abandoned = yield* Effect.promise(() => registered);
 					if (mode === "interrupt") yield* Fiber.interrupt(scan);
-					else yield* Fiber.join(scan); // Startup failure falls back to a host scan.
+					else
+						expect(yield* Fiber.join(scan).pipe(Effect.flip)).toMatchObject({
+							_tag: "SnapshotStoreError",
+							code: "unavailable"
+						});
 					expect(abandoned.threadId).toBe(-1);
 					const retried = yield* model.localizationQuality();
 					expect(retried.findings.length).toBeGreaterThan(0);

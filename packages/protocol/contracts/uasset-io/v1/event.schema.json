@@ -44,6 +44,216 @@
 			"title": "int",
 			"exclusiveMinimum": 0
 		},
+		"GameTextEngineOutcome": {
+			"type": "object",
+			"properties": {
+				"action": {
+					"type": "string",
+					"enum": [
+						"capabilities",
+						"open",
+						"close",
+						"summary",
+						"search",
+						"focus",
+						"export",
+						"corpus",
+						"rows",
+						"localization_focus",
+						"localization_detail",
+						"localization_export",
+						"localization_focus_export",
+						"localization_corpus",
+						"localization_page"
+					]
+				},
+				"capabilities": {
+					"type": "array",
+					"items": {
+						"type": "string",
+						"enum": ["game_text_engine_v1"]
+					}
+				},
+				"reader": {
+					"anyOf": [
+						{
+							"type": "string",
+							"allOf": [
+								{
+									"minLength": 1
+								},
+								{
+									"maxLength": 128
+								}
+							]
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"generation": {
+					"anyOf": [
+						{
+							"type": "string",
+							"allOf": [
+								{
+									"minLength": 1
+								},
+								{
+									"maxLength": 1024
+								}
+							]
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"joinedKey": {
+					"anyOf": [
+						{
+							"type": "string",
+							"allOf": [
+								{
+									"minLength": 1
+								},
+								{
+									"maxLength": 1024
+								}
+							]
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"payload": {
+					"anyOf": [
+						{
+							"type": "string",
+							"allOf": [
+								{
+									"maxLength": 16777216
+								}
+							]
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"io": {
+					"type": "object",
+					"properties": {
+						"opens": {
+							"type": "integer",
+							"allOf": [
+								{
+									"minimum": 0
+								}
+							]
+						},
+						"sectionLoads": {
+							"type": "integer",
+							"allOf": [
+								{
+									"minimum": 0
+								}
+							]
+						},
+						"storedBytes": {
+							"type": "integer",
+							"allOf": [
+								{
+									"minimum": 0
+								}
+							]
+						},
+						"rawBytes": {
+							"type": "integer",
+							"allOf": [
+								{
+									"minimum": 0
+								}
+							]
+						},
+						"fullVerifies": {
+							"type": "integer",
+							"allOf": [
+								{
+									"minimum": 0
+								}
+							]
+						},
+						"indexBytes": {
+							"type": "integer",
+							"allOf": [
+								{
+									"minimum": 0
+								}
+							]
+						},
+						"writtenBytes": {
+							"type": "integer",
+							"allOf": [
+								{
+									"minimum": 0
+								}
+							]
+						}
+					},
+					"required": [
+						"opens",
+						"sectionLoads",
+						"storedBytes",
+						"rawBytes",
+						"fullVerifies",
+						"indexBytes",
+						"writtenBytes"
+					],
+					"additionalProperties": false
+				},
+				"stageSeconds": {
+					"type": "object",
+					"additionalProperties": {
+						"anyOf": [
+							{
+								"type": "number"
+							},
+							{
+								"type": "string",
+								"enum": ["NaN"]
+							},
+							{
+								"type": "string",
+								"enum": ["Infinity"]
+							},
+							{
+								"type": "string",
+								"enum": ["-Infinity"]
+							}
+						],
+						"allOf": [
+							{
+								"minimum": 0
+							}
+						]
+					}
+				}
+			},
+			"required": [
+				"action",
+				"capabilities",
+				"reader",
+				"generation",
+				"joinedKey",
+				"payload",
+				"io",
+				"stageSeconds"
+			],
+			"additionalProperties": false
+		},
 		"GameTextIndexBuildOutcome": {
 			"type": "object",
 			"properties": {
@@ -10049,6 +10259,20 @@
 					"properties": {
 						"kind": {
 							"type": "string",
+							"enum": ["game_text_engine"]
+						},
+						"outcome": {
+							"$ref": "#/$defs/GameTextEngineOutcome"
+						}
+					},
+					"required": ["kind", "outcome"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"kind": {
+							"type": "string",
 							"enum": ["game_text_index"]
 						},
 						"outcome": {
@@ -10305,6 +10529,7 @@
 						"operation": {
 							"type": "string",
 							"enum": [
+								"game_text_engine",
 								"game_text_index",
 								"inspect",
 								"blueprint",

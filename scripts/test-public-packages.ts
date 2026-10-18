@@ -150,9 +150,25 @@ try {
 		.filter(Boolean);
 	assert.ok(gameTextFiles.includes("package/ADOPTING.md"));
 	assert.ok(gameTextFiles.includes("package/adoption.manifest.json"));
-	assert.ok(gameTextFiles.includes("package/dist/search-worker.js"));
-	assert.ok(gameTextFiles.includes("package/dist/search-worker-node.js"));
-	assert.ok(gameTextFiles.includes("package/dist/search-worker-protocol.js"));
+	assert.ok(gameTextFiles.includes("package/dist/native-query.js"));
+	assert.ok(gameTextFiles.includes("package/dist/index-query-native.js"));
+	for (const name of [
+		"search-worker",
+		"search-worker-node",
+		"search-worker-protocol",
+		"query",
+		"columnar-query",
+		"localization-query"
+	])
+		assert.equal(
+			gameTextFiles.includes(`package/dist/${name}.js`),
+			false,
+			`obsolete JS query runtime ${name} must not ship`
+		);
+	assert.equal(
+		gameTextFiles.some((name) => name.includes(".test-support.")),
+		false
+	);
 	assert.ok(gameTextFiles.includes("package/dist/quality-worker.js"));
 	assert.ok(gameTextFiles.includes("package/dist/quality-worker-node.js"));
 	const gameTextAdoption = JSON.parse(
@@ -168,7 +184,10 @@ try {
 	assert.equal(gameTextAdoption.release.nativeBinaryBundled, false);
 	assert.equal(gameTextAdoption.release.uiBundled, false);
 	assert.equal(gameTextAdoption.indexing.productionLayer, "GameTextIndexBuilderLive");
-	assert.equal(gameTextAdoption.indexing.referenceLayer, "typeScriptIndexBuilderLayer");
+	assert.equal(gameTextAdoption.indexing.queryEngine, "rust");
+	assert.equal(gameTextAdoption.indexing.queryCapability, "game_text_engine_v1");
+	assert.equal(gameTextAdoption.indexing.minimumProtocolMinor, 15);
+	assert.equal(gameTextAdoption.indexing.automaticQueryFallback, false);
 	assert.equal(gameTextAdoption.indexing.readerCapability, "game_text_index");
 	assert.equal(gameTextAdoption.indexing.automaticWriterFallback, false);
 	assert.deepEqual(
@@ -443,7 +462,7 @@ try {
 			"import { ConfigExplanation } from '@ue-shed/config-explorer/browser';",
 			"import { LocalizationEvidence, LocalizationEvidenceNodeLive } from '@ue-shed/localization';",
 			"import { LocalizationTargetEvidence, LocalizationChangeSet, decodeLocalizationChangeSet, parsePO, serializePO, planLocalizationOperation, LocalizationOperationPlan, availableLocalizationOperations } from '@ue-shed/localization/browser';",
-			"import { joinLocalizationTarget, textCorpusQuery, localizationProgressReport, LocalizationProgressReport, createLocalizationBaseline, decodeLocalizationBaselineJson, diffLocalizationBaselines } from '@ue-shed/game-text/corpus';",
+			"import { joinLocalizationTarget, localizationProgressReport, LocalizationProgressReport, createLocalizationBaseline, decodeLocalizationBaselineJson, diffLocalizationBaselines } from '@ue-shed/game-text/corpus';",
 			"import { checkLocalizationTarget } from '@ue-shed/game-text/checks';",
 			"import { decodeGameTextRuleDocumentJson } from '@ue-shed/game-text/rules';",
 			"import { LocalizationQualityReport, TextCorpus } from '@ue-shed/game-text/schema';",
@@ -567,8 +586,6 @@ try {
 			"    const changesJson = Schema.encodeSync(Schema.fromJsonString(LocalizationChangeSet))(checks.changes);",
 			"    const changes = decodeLocalizationChangeSet(changesJson);",
 			"    if (checks.target !== target.name || changes._tag !== 'Success') throw new Error('packed localization checks/change sets failed');",
-			"    const localized = textCorpusQuery(corpus, undefined, joined).search({ query: '', capability: 'all', pageSize: 50, localization: { target: target.name } });",
-			"    if (localized.total !== 3 || localized.localization?.lines.some(line => line.cultures.some(mark => mark.state !== 'gathered_only'))) throw new Error('packed localization join failed');",
 			'    const bytes = new TextEncoder().encode(\'msgctxt "NS,Key"\\r\\nmsgid "Source"\\r\\nmsgstr "Translation"\');',
 			"    const po = parsePO(bytes);",
 			"    if (po._tag !== 'Success' || !Buffer.from(serializePO(po.success)).equals(Buffer.from(bytes))) throw new Error('packed localization browser round trip failed');",
@@ -676,9 +693,8 @@ try {
 				"import { Effect, Layer } from 'effect';",
 				"import { resolveUassetExecutable } from '@ue-shed/uasset';",
 				"import { assetReaderLayer } from '@ue-shed/unreal-assets';",
-				"import { LocalizationEvidenceNodeLive } from '@ue-shed/localization';",
+				"import { LocalizationEvidence, LocalizationEvidenceNodeLive } from '@ue-shed/localization';",
 				"import { scanTextCorpus, GameTextIndexSteps, gameTextIndexStepsLayer, gameTextIndexSourceNodeLayer, GameTextIndexBuilderLive, nativeIndexBuilderLayer, gameTextActionsRequest } from '@ue-shed/game-text/index';",
-				"import { textCorpusQuery } from '@ue-shed/game-text/corpus';",
 				"import { makeGameTextWorkspace, makeGameTextOperations } from '@ue-shed/game-text/workspace';",
 				"import { GameTextOperationRequest, WorkbenchOperationRequest } from '@ue-shed/game-text/schema';",
 				"if (GameTextOperationRequest !== WorkbenchOperationRequest) throw new Error('packed deprecated operation alias differs');",
@@ -694,30 +710,20 @@ try {
 				"if (corpus.coverage.discoveredPackages !== 3 || corpus.coverage.textUnits < 1) {",
 				"  throw new Error('packed Game Text scan did not account for the fixture');",
 				"}",
-				"const query = textCorpusQuery(corpus);",
-				"const summary = query.summary();",
-				"if (summary.coverage.textUnits !== corpus.coverage.textUnits) {",
-				"  throw new Error('packed Game Text summary lost corpus coverage');",
-				"}",
-				"const page = query.search({ capability: 'all', pageSize: 50, query: '' });",
-				"if (page.total < 1 || page.units.length < 1) {",
-				"  throw new Error('packed Game Text search returned no fixture text');",
-				"}",
-				"const focus = query.focus({ id: page.units[0].id, pageSize: 50 });",
-				"if (focus === undefined || focus.totalOccurrences < 1) {",
-				"  throw new Error('packed Game Text focus returned no occurrence evidence');",
-				"}",
 				"const cache = resolve('./game-text-index-cache');",
 				"await Effect.runPromise(Effect.scoped(Effect.gen(function* () {",
 				"  const steps = yield* GameTextIndexSteps;",
 				"  const project = yield* steps.refreshProject({ projectRoot: resolve('./game-text-project') });",
 				"  const imported = yield* steps.importTarget(project);",
 				"  const built = yield* steps.buildTarget(project, imported);",
-				"  if (!built.join.key.startsWith('joined-native-v1:')) throw new Error('packed production builder is not native');",
+				"  if (!built.join.key.startsWith('joined-native-v2:')) throw new Error('packed production builder is not native');",
 				"  const model = yield* steps.openTarget(built);",
 				"  const indexedPage = yield* model.search({ capability: 'all', pageSize: 50, query: '' });",
-				"  if (indexedPage.total !== page.total || !model.query.focus({ id: indexedPage.units[0].id, pageSize: 50 })) {",
-				"    throw new Error('packed Game Text steps/worker differ from the saved-package oracle');",
+				"  const nativeSummary = model.summary;",
+				"  if (nativeSummary.coverage.textUnits !== corpus.coverage.textUnits) throw new Error('packed native summary lost coverage');",
+				"  const nativeFocus = yield* model.query.focus({ id: indexedPage.units[0].id, pageSize: 50 });",
+				"  if (indexedPage.total < 1 || !nativeFocus || nativeFocus.totalOccurrences < 1) {",
+				"    throw new Error('packed Game Text native queries lost saved-package evidence');",
 				"  }",
 				"  const projectRoot = resolve('./game-text-project');",
 				"  const ready = { status: 'ready', project: { projectRoot, generation: 1 } };",
@@ -729,10 +735,19 @@ try {
 				"  });",
 				"  const refreshed = yield* workspace.configuredRefresh();",
 				"  const searched = yield* workspace.search({ capability: 'all', pageSize: 50, query: '' });",
-				"  if (refreshed.status !== 'completed' || searched.status !== 'ready' || searched.page.total !== page.total) throw new Error('packed workspace scan/search differs from oracle');",
+				"  if (refreshed.status !== 'completed' || searched.status !== 'ready' || searched.page.total !== indexedPage.total) throw new Error('packed workspace scan/search differs from oracle');",
 				"  const focused = yield* workspace.focus({ id: searched.page.units[0].id, pageSize: 50 });",
 				"  if (focused.status !== 'found' || focused.focus.totalOccurrences < 1) throw new Error('packed workspace lost focus evidence');",
-				"})).pipe(Effect.provide(gameTextIndexStepsLayer(cache, { searchWorker: true }).pipe(",
+				"  const locRoot = resolve('./localization-project');",
+				"  const discovery = yield* (yield* LocalizationEvidence).discover({ projectRoot: locRoot });",
+				"  const target = discovery.targets[0];",
+				"  if (!target) throw new Error('packed localization target missing');",
+				"  const locProject = yield* steps.refreshProject({ projectRoot: locRoot });",
+				"  const locImport = yield* steps.importTarget(locProject, { targetName: target.name });",
+				"  const locModel = yield* steps.openTarget(yield* steps.buildTarget(locProject, locImport));",
+				"  const localized = yield* locModel.query.search({ query: '', capability: 'all', pageSize: 50, localization: { target: target.name } });",
+				"  if (localized.total !== 3 || localized.localization.lines.some(line => line.cultures.some(mark => mark.state !== 'gathered_only'))) throw new Error('packed native localization query differs from evidence');",
+				"})).pipe(Effect.provide(gameTextIndexStepsLayer(cache).pipe(",
 				"  Layer.provide(gameTextIndexSourceNodeLayer(cache)),",
 				"  Layer.provide(GameTextIndexBuilderLive),",
 				"  Layer.provideMerge(LocalizationEvidenceNodeLive),",

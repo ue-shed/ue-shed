@@ -34,7 +34,12 @@ import {
 	translationStates,
 	type TextFacts
 } from "./text-problems.js";
-import { hasSearchableSource, searchableSourceText } from "./search.js";
+import { hasSearchableSource, searchableSourceText } from "./search.test-support.js";
+import {
+	localizationFocusPage,
+	type LocalizationFocusRequest,
+	type LocalizationFocus
+} from "./localization-view.js";
 import { lineTextAudience, occurrenceTextAudience } from "./text-audience.js";
 import {
 	emptyTextOriginCounts,
@@ -66,10 +71,11 @@ import { longestSource } from "./source-metrics.js";
 import { DuplicateSources, duplicateOccurrencePlace } from "./duplicate-sources.js";
 import {
 	localizationQueryPage,
+	localizationLinePreview,
 	matchesLocalizationLine,
 	scopedLocalizationMarks,
 	validateLocalizationSelection
-} from "./localization-query.js";
+} from "./localization-query.test-support.js";
 
 function normalizedTerms(query: string): readonly string[] {
 	return query.toLocaleLowerCase().trim().split(/\s+/u).filter(Boolean);
@@ -152,6 +158,10 @@ function matchesLens(
  */
 export interface TextCorpusQuery {
 	readonly localizationFocus: (id: LocalizationLineId) => LocalizationLine | undefined;
+	readonly readLocalizationLines: () => readonly LocalizationLine[];
+	readonly localizationDetail: (
+		request: LocalizationFocusRequest
+	) => LocalizationFocus | undefined;
 	readonly focus: (request: TextCorpusFocusRequest) => TextCorpusFocus | undefined;
 	readonly search: (request: TextCorpusSearchRequest) => TextCorpusSearchPage;
 	readonly export: (request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">) => TextCorpus;
@@ -572,6 +582,15 @@ export function textCorpusQuery(
 		});
 	return {
 		localizationFocus: (id) => localization?.lines.find((line) => line.id === id),
+		readLocalizationLines: () => localization?.lines ?? [],
+		localizationDetail: (request) => {
+			if (!localization || localization.target !== request.target) return undefined;
+			const line =
+				request.selection.kind === "line"
+					? localizationById.get(request.selection.id)
+					: localizationByUnit.get(request.selection.id);
+			return line ? localizationFocusPage(localization, line, request) : undefined;
+		},
 		localizationLines: (request) => localizedMatching(request),
 		export: (request) => {
 			requireTarget(request);
@@ -785,7 +804,9 @@ export function textCorpusQuery(
 				occurrences,
 				totalOccurrences: unit.occurrences.length,
 				unit: presentation,
-				...(localized === undefined ? undefined : { localization: localized }),
+				...(localized === undefined
+					? undefined
+					: { localization: localizationLinePreview(localized) }),
 				...(final !== undefined &&
 				afterCursor + occurrences.length < unit.occurrences.length
 					? { nextOccurrenceCursor: final }

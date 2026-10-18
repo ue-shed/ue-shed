@@ -141,6 +141,7 @@ export class AssetReaderError extends Schema.TaggedError<AssetReaderError>()("As
 	code: Schema.optional(Schema.String),
 	kind: Schema.Literals(["timeout", "process", "contract", "discovery", "resource_limit"]),
 	operation: Schema.Literals([
+		"game_text_engine",
 		"game_text_index",
 		"authoring",
 		"blueprint",

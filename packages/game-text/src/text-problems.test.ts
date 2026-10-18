@@ -10,7 +10,7 @@ import {
 	target,
 	unit
 } from "./localization.test-support.js";
-import { textCorpusQuery } from "./query.js";
+import { textCorpusQuery } from "./query.test-support.js";
 import { TextProblem, type TextFilter } from "./schema.js";
 import { matchesTextFilter, textProblems, type TextFacts } from "./text-problems.js";
 

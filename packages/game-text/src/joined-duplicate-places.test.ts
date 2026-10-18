@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { duplicateOccurrencePlace } from "./duplicate-sources.js";
-import { joinedDuplicatePlaces } from "./joined-duplicate-places.js";
+import { joinedDuplicatePlaces } from "./joined-duplicate-places.test-support.js";
 import type { TextLocation, TextOccurrence } from "./schema.js";
 import { encodeWtf8 } from "./wtf8.js";
 

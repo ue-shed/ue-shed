@@ -1,9 +1,14 @@
 import { Cache, Duration, Effect, Exit, Schema } from "effect";
+import { localizationFocusPage } from "./localization-view.js";
 import { runJoinedQuery } from "./joined-query-node.js";
-import { QueryPlaces } from "./query-places.js";
+import { QueryPlaces } from "./query-places.test-support.js";
 import { encodeWtf8, decodeWtf8 } from "./wtf8.js";
-import type { TextCorpusQuery } from "./query.js";
-import { JoinedQueryData, querySignals, type JoinedQueryProjection } from "./joined-query-data.js";
+import type { TextCorpusQuery } from "./query.test-support.js";
+import {
+	JoinedQueryData,
+	querySignals,
+	type JoinedQueryProjection
+} from "./joined-query-data.test-support.js";
 import type { JoinedTargetReader } from "./joined-target-reader.js";
 import {
 	MAX_TEXT_GROUPS,
@@ -29,7 +34,7 @@ import {
 	textFileScope,
 	matchesTextKinds
 } from "./text-origin.js";
-import { validateLocalizationSelection } from "./localization-query.js";
+import { validateLocalizationSelection } from "./localization-query.test-support.js";
 import {
 	LocalizationReviewLens,
 	LocalizationUnknownReason,
@@ -1564,10 +1569,34 @@ export function columnarTextCorpusQuery(
 	};
 	return {
 		summary: () => summary,
+		readLocalizationLines: () => data.lines(data.column("query.line.order")),
 		search: cachedSearch,
 		localizationFocus: (id) => {
 			const row = findLine(id);
 			return row === undefined ? undefined : data.line(row);
+		},
+		localizationDetail: (request) => {
+			if (target.name !== request.target) return undefined;
+			const raw =
+				request.selection.kind === "unit" ? findRaw(request.selection.id) : undefined;
+			const candidate = raw === undefined ? undefined : rawLineRows()[raw];
+			const line =
+				request.selection.kind === "line"
+					? findLine(request.selection.id)
+					: candidate === 0xffffffff
+						? undefined
+						: candidate;
+			return line === undefined
+				? undefined
+				: localizationFocusPage(
+						{
+							target: target.name,
+							nativeCulture: target.nativeCulture,
+							cultures: target.cultures
+						},
+						data.line(line),
+						request
+					);
 		},
 		localizationRows,
 		localizationLines: (request) => data.lines(localizationRows(request)),
@@ -1626,7 +1655,7 @@ export function columnarTextCorpusQuery(
 				occurrences,
 				totalOccurrences: members.length,
 				unit: data.presentation(kind, row),
-				...(lineRow === undefined ? undefined : { localization: data.line(lineRow) }),
+				...(lineRow === undefined ? undefined : { localization: data.preview(lineRow) }),
 				...(occurrences.length && after + occurrences.length < members.length
 					? { nextOccurrenceCursor: occurrences[occurrences.length - 1]!.id }
 					: undefined)

@@ -15,7 +15,7 @@ import { LocalizationLine } from "./localization-schema.js";
 import { GameTextRuleDocument } from "./game-text-rules.js";
 import { CheckSeverity } from "./localization-check-ids.js";
 import { WorkspaceFinding, WorkspaceQualityFilter } from "./localization-workspace.js";
-import { SearchWorkerInput } from "./search-worker-protocol.js";
+import { IndexReaderDescriptor } from "./index-reader-descriptor.js";
 import { GameTextIndexProgress } from "./index-progress.js";
 import { SnapshotStoreError } from "./snapshot-store.js";
 import { SnapshotFormatError } from "./snapshot-format.js";
@@ -23,8 +23,8 @@ import { SnapshotFormatError } from "./snapshot-format.js";
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 const RuleId = TextQualityRuleSummary.fields.ruleId;
 
-/** The generation a quality worker opens; the same pin a search worker takes. */
-export const QualityWorkerInput = SearchWorkerInput;
+/** The generation a quality worker opens; the same immutable snapshot as the native query engine. */
+export const QualityWorkerInput = IndexReaderDescriptor;
 export type QualityWorkerInput = typeof QualityWorkerInput.Type;
 
 export const QualityWorkerFailure = Schema.Union([SnapshotStoreError, SnapshotFormatError]);

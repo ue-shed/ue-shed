@@ -35,8 +35,10 @@ it.live.skipIf(!enabled)(
 					Effect.tap((result) =>
 						Effect.gen(function* () {
 							yield* result.search({ query: "", capability: "all", pageSize: 50 });
-							// The synchronous query is the worker's prepared model, not a second build.
-							expect(result.query.summary().searchable.textUnits).toBeGreaterThan(0);
+							// Summary reads stay asynchronous through the native engine.
+							expect(
+								(yield* result.query.summary()).searchable.textUnits
+							).toBeGreaterThan(0);
 						})
 					)
 				)

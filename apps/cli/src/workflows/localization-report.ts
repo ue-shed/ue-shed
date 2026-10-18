@@ -104,7 +104,10 @@ export const runLocalizationReport = Effect.fn("Cli.workflow.localization_report
 			command._tag,
 			Effect.gen(function* () {
 				const result = yield* Effect.gen(function* () {
-					const { corpus, join, evidence } = yield* loadLocalizationContext(command);
+					const context = yield* loadLocalizationContext(command);
+					const corpus = yield* context.corpus;
+					const join = yield* context.join;
+					const evidence = context.evidence;
 					const baseline = command.baseline
 						? yield* readLocalizationBaseline(command.baseline)
 						: undefined;

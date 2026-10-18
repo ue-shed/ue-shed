@@ -1,6 +1,5 @@
 import { Context, Schema, type Effect, type Scope, type Stream } from "effect";
 import {
-	LocalizationError,
 	type LocalizationTargetEvidence,
 	type LocalizationReviewSnapshot
 } from "@ue-shed/localization";
@@ -10,7 +9,7 @@ import type { importLocalizationTarget } from "./localization-import.js";
 import type { SnapshotStoreError } from "./snapshot-store.js";
 import type { SnapshotFormatError } from "./snapshot-format.js";
 import type { JoinedTargetReader } from "./joined-target-reader.js";
-import type { TextCorpusQuery } from "./query.js";
+import type { NativeTextQuery } from "./native-query.js";
 import type { TextCorpus, TextCorpusSearchRequest, TextCorpusSearchPage } from "./schema.js";
 import type { LocalizationJoin } from "./localization-schema.js";
 import type { IndexedLocalizationQualityOptions } from "./localization-quality-index.js";
@@ -18,28 +17,10 @@ import type { LocalizationQuality } from "./localization-workspace.js";
 import type { TextQualityQuery } from "./quality-query.js";
 import type { GameTextRuleDocument } from "./game-text-rules.js";
 import { LocalizationKeyChangePair } from "./localization-key-changes.js";
-import type { refreshJoinedTarget } from "./joined-target.js";
+import type { RefreshJoinedTarget } from "./joined-target.js";
 import type { GameTextProjectIndex } from "./index-steps.js";
-/**
- * Failure to discover, prepare or orchestrate an index operation. operation identifies the
- * boundary, recovery guides the host, and the retained cause/localizationError preserves
- * lower-level evidence.
- */
-export class GameTextIndexError extends Schema.TaggedError<GameTextIndexError>()(
-	"GameTextIndexError",
-	{
-		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
-		code: Schema.Literal("index_failed"),
-		operation: Schema.String,
-		message: Schema.String,
-		recovery: Schema.String,
-		retrySafe: Schema.Boolean,
-		localizationError: Schema.optionalKey(LocalizationError),
-		cause: Schema.optionalKey(Schema.Defect())
-	}
-) {}
-/** Tag guard for Game Text index failures; match by tag, not `instanceof`. */
-export const isGameTextIndexError = Schema.is(GameTextIndexError);
+export { GameTextIndexError, isGameTextIndexError } from "./index-error.js";
+import type { GameTextIndexError } from "./index-error.js";
 
 /**
  * Inventory request for one selected project. changedFiles is a reuse hint: omitted means full
@@ -85,7 +66,7 @@ export type GameTextIndexRefreshRequest = typeof GameTextIndexRefreshRequest.Typ
 type ImportedTarget = Effect.Success<ReturnType<typeof importLocalizationTarget>>;
 /**
  * Pinned corpus, localization and query views from one validated revision. Keep its scope open
- * while reading lazy data; sourceQuality and localizationQuality are required, interruptible
+ * while executing asynchronous reads; sourceQuality and localizationQuality are required, interruptible
  * operations with the rule document first.
  */
 export interface GameTextIndexRefreshResult {
@@ -96,16 +77,18 @@ export interface GameTextIndexRefreshResult {
 	 */
 	readonly queryRevision?: string | undefined;
 	readonly joined: JoinedTargetReader;
-	readonly query: TextCorpusQuery;
-	/** Asynchronous search adapter; worker-backed when selected by the host's layer. */
+	readonly query: NativeTextQuery;
+	readonly summary: import("./schema.js").TextCorpusQuerySummary;
+	/** Asynchronous search through the pinned native snapshot. */
 	readonly search: (
 		request: TextCorpusSearchRequest
 	) => Effect.Effect<TextCorpusSearchPage, IndexFailure>;
 	readonly imported: ImportedTarget;
 	readonly packages: Effect.Success<ReturnType<typeof refreshPackageTextLayer>>;
-	readonly join: Effect.Success<ReturnType<typeof refreshJoinedTarget>>;
-	readonly corpus: TextCorpus;
-	readonly localizationJoin: LocalizationJoin;
+	readonly join: Effect.Success<ReturnType<RefreshJoinedTarget>>;
+	readonly corpus: Effect.Effect<TextCorpus, IndexFailure>;
+	readonly localizationJoin: Effect.Effect<LocalizationJoin, IndexFailure>;
+	readonly localization: Omit<LocalizationJoin, "lines">;
 	readonly evidence: LocalizationTargetEvidence;
 	readonly review: LocalizationReviewSnapshot;
 	/**
@@ -117,7 +100,7 @@ export interface GameTextIndexRefreshResult {
 	readonly localizationQuality: (
 		ruleDocument?: GameTextRuleDocument,
 		options?: IndexedLocalizationQualityOptions
-	) => Effect.Effect<LocalizationQuality>;
+	) => Effect.Effect<LocalizationQuality, IndexFailure>;
 	/**
 	 * Source quality rules evaluated over the index in bounded pages: the query
 	 * `textQualityQuery(evaluateGameTextSourceQuality(corpus, ruleDocument))` gives, without

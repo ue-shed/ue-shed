@@ -1,21 +1,7 @@
+import { GameTextIndexQuery } from "./index-query-native.js";
 import { randomUUID, createHash } from "node:crypto";
 import { realpath } from "node:fs/promises";
-import { performance } from "node:perf_hooks";
-import {
-	Cache,
-	Context,
-	Effect,
-	Exit,
-	Layer,
-	Metric,
-	Ref,
-	Schema,
-	Semaphore,
-	RcMap,
-	Stream,
-	Struct,
-	Scope
-} from "effect";
+import { Context, Effect, Layer, Schema, Semaphore, RcMap, Stream, Struct, Scope } from "effect";
 import {
 	readLocalizationReview,
 	emptyLocalizationReviewFile,
@@ -46,29 +32,18 @@ import {
 } from "./index-contract.js";
 import { isSnapshotStoreError } from "./snapshot-store.js";
 import { isSnapshotFormatError } from "./snapshot-format.js";
-import { reuseJoinedQueryProjection, type JoinedQueryProjection } from "./joined-query-data.js";
-import { instrumentIndexQuery } from "./index-query.js";
-import { columnarTextCorpusQuery, type ColumnarTextCorpusQuery } from "./columnar-query.js";
-import { makeGameTextSearchWorkerResource } from "./search-worker-node.js";
 import { makeGameTextQualityWorkerResource } from "./quality-worker-node.js";
-import { SearchWorkerInput } from "./search-worker-protocol.js";
+import { IndexReaderDescriptor } from "./index-reader-descriptor.js";
 import {
-	indexedTextCorpus,
-	indexedLocalizationJoin,
 	indexedLocalizationLinesRequest,
 	readIndexedLocalizationEvidence
 } from "./index-context.js";
 import { indexedLocalizationQuality } from "./localization-quality-index.js";
 import { indexedSourceQuality } from "./source-quality-index.js";
-import {
-	openJoinedTarget,
-	readJoinedTarget,
-	type JoinedTargetReader
-} from "./joined-target-reader.js";
-import type { TextCorpusSearchRequest } from "./schema.js";
+import { openJoinedTarget, readJoinedTarget } from "./joined-target-reader.js";
 import type { importLocalizationTarget } from "./localization-import.js";
 import type { refreshPackageTextLayer } from "./package-text-layer.js";
-import type { refreshJoinedTarget, JoinedTargetInput } from "./joined-target.js";
+import type { RefreshJoinedTarget, JoinedTargetInput } from "./joined-target.js";
 import type { LocalizationReviewSnapshot } from "@ue-shed/localization";
 import type { GameTextProjectView } from "./project-index-view.js";
 import { encodeWtf8 } from "./wtf8.js";
@@ -115,7 +90,7 @@ export type GameTextTargetBuildRequest = typeof GameTextTargetBuildRequest.Type;
 
 type Packages = Effect.Success<ReturnType<typeof refreshPackageTextLayer>>;
 type Imported = Effect.Success<ReturnType<typeof importLocalizationTarget>>;
-type Join = Effect.Success<ReturnType<typeof refreshJoinedTarget>>;
+type Join = Effect.Success<ReturnType<RefreshJoinedTarget>>;
 type MutableFileErrors = {
 	-readonly [K in keyof NonNullable<JoinedTargetInput["fileErrors"]>]: NonNullable<
 		JoinedTargetInput["fileErrors"]
@@ -183,9 +158,6 @@ export interface GameTextTargetIndex {
 export interface GameTextIndexModel extends GameTextIndexRefreshResult {
 	readonly project: GameTextProjectIndex;
 }
-
-/** Query preparations on the host's thread; with a search worker, the worker prepares instead. */
-const hostQueryPreparations = Metric.counter("game_text.index.host_query_preparations");
 
 const queryRevisionFor = (project: GameTextProject, generation: string, joinedKey: string) =>
 	JSON.stringify([project.cacheRoot, project.projectRoot, generation, joinedKey]);
@@ -289,7 +261,7 @@ const savedTarget = Schema.decodeUnknownSync(LocalizationTarget)({
 });
 
 /** Starts a quality worker in `scope` on first use, and again after one fails. */
-const qualityWorkerSlot = (input: SearchWorkerInput, scope: Scope.Scope) =>
+const qualityWorkerSlot = (input: IndexReaderDescriptor, scope: Scope.Scope) =>
 	Effect.gen(function* () {
 		const lock = yield* Semaphore.make(1);
 		let current:
@@ -311,51 +283,11 @@ const qualityWorkerSlot = (input: SearchWorkerInput, scope: Scope.Scope) =>
 		);
 	});
 
-/**
- * The worker's prepared query. If the worker has died, the model stays usable: its first later
- * call prepares the same immutable generation's query on this thread, once.
- */
-function borrowWorkerQuery(
-	worker: {
-		readonly query: ColumnarTextCorpusQuery;
-		readonly healthy: () => boolean;
-	},
-	joined: JoinedTargetReader
-): ColumnarTextCorpusQuery {
-	let local: ColumnarTextCorpusQuery | undefined;
-	const execute = <A>(call: (query: ColumnarTextCorpusQuery) => A): A => {
-		if (!worker.healthy()) return call((local ??= columnarTextCorpusQuery(joined)));
-		try {
-			return call(worker.query);
-		} catch (cause) {
-			// A transport deadline can discover loss during dispatch, before an exit callback runs.
-			// Only retry failed transport calls; typed query/selection errors retain their meaning.
-			if (worker.healthy()) throw cause;
-			return call((local ??= columnarTextCorpusQuery(joined)));
-		}
-	};
-	return {
-		summary: () => worker.query.summary(),
-		search: (request) => execute((query) => query.search(request)),
-		focus: (request) => execute((query) => query.focus(request)),
-		localizationFocus: (id) => execute((query) => query.localizationFocus(id)),
-		localizationLines: (request) => execute((query) => query.localizationLines(request)),
-		localizationRows: (request) => execute((query) => query.localizationRows(request)),
-		export: (request) => execute((query) => query.export(request))
-	};
-}
-
 /** How the index steps place their work. */
 export interface GameTextIndexStepsOptions {
-	/** Maximum worker wait before a synchronous query uses its pinned local fallback. */
-	readonly syncCallTimeoutMs?: number;
-	/** Prepare each generation's query in a worker and search there. */
-	readonly searchWorker?: boolean;
-	/** With a search worker, cancel replaced pages and older selections. */
-	readonly latestSearchOnly?: boolean;
 	/**
 	 * Run localization quality scans in a worker per opened model. The host keeps the findings'
-	 * facts and reads lines from the worker; a failed worker falls back to scanning on the host.
+	 * facts and reads policy findings from the worker; failures remain typed index failures.
 	 */
 	readonly qualityWorker?: boolean;
 }
@@ -373,76 +305,10 @@ export const makeGameTextIndexSteps = (
 		const source = yield* GameTextIndexSource;
 		const evidence = yield* LocalizationEvidence;
 		const builder = yield* GameTextIndexBuilder;
+		const queries = yield* GameTextIndexQuery;
 		const writers = yield* RcMap.make({
 			lookup: (_project: string) => Semaphore.make(1),
 			capacity: 8
-		});
-		const projections = yield* Cache.make({
-			capacity: 2,
-			lookup: (_key: string) => Effect.succeed<JoinedQueryProjection | undefined>(undefined)
-		});
-		const workers = yield* RcMap.make({
-			capacity: 8,
-			lookup: (key: string) =>
-				Schema.decodeUnknownEffect(
-					Schema.fromJsonString(
-						Schema.Struct({ input: SearchWorkerInput, instance: Schema.NonEmptyString })
-					)
-				)(key).pipe(
-					Effect.mapError((cause) =>
-						failure(
-							"search-worker",
-							"The Game Text query worker failed.",
-							"Rescan the project.",
-							cause
-						)
-					),
-					Effect.flatMap(({ input }) =>
-						makeGameTextSearchWorkerResource(input, {
-							latestOnly: options.latestSearchOnly ?? false,
-							...(options.syncCallTimeoutMs === undefined
-								? undefined
-								: { syncCallTimeoutMs: options.syncCallTimeoutMs })
-						})
-					)
-				)
-		});
-		const workerVersions = yield* RcMap.make({
-			capacity: 8,
-			lookup: (_key: string) => Ref.make(randomUUID())
-		});
-		const acquireWorker = Effect.fn("GameTextIndex.acquireHealthyWorker")(function* (
-			input: SearchWorkerInput
-		) {
-			const version = yield* RcMap.get(workerVersions, JSON.stringify(input));
-			const owner = yield* Effect.scope;
-			const rotate = (instance: string) =>
-				Ref.update(version, (current) => (current === instance ? randomUUID() : current));
-			for (let attempt = 0; attempt < 2; attempt++) {
-				const instance = yield* Ref.get(version);
-				const pin = yield* Scope.fork(owner);
-				const worker = yield* RcMap.get(workers, JSON.stringify({ input, instance })).pipe(
-					Effect.provideService(Scope.Scope, pin),
-					Effect.tapError((cause) =>
-						isSnapshotStoreError(cause) || isSnapshotFormatError(cause)
-							? rotate(instance)
-							: Effect.void
-					),
-					Effect.onError(() => Scope.close(pin, Exit.void))
-				);
-				if (worker.healthy()) return worker;
-				yield* Scope.close(pin, Exit.void);
-				// Failed instances retain their existing reader pins under a distinct key. Their
-				// eventual cleanup cannot evict the healthy replacement or affect other borrowers.
-				yield* rotate(instance);
-			}
-			return yield* Effect.fail(
-				failure(
-					"search-worker",
-					"The query worker could not stay ready.",
-					"Rescan and retry."
-				)
-			);
 		});
 		const withSession = <A, E, R>(
 			configuration: SharedIndexOptions,
@@ -778,40 +644,6 @@ export const makeGameTextIndexSteps = (
 			);
 		});
 
-		/** Prepares the query on this thread, reusing the previous generation's projection. */
-		const prepareQuery = Effect.fn("GameTextIndex.prepareQuery")(function* (
-			joined: JoinedTargetReader
-		) {
-			const projectionKey = `${joined.reader.manifest.generation}:${joined.meta.base ?? joined.reader.manifest.active.joined}`;
-			const previousProjection = yield* Cache.get(projections, projectionKey);
-			const projection =
-				previousProjection &&
-				previousProjection.key === joined.reader.manifest.active.joined
-					? previousProjection
-					: reuseJoinedQueryProjection(joined, previousProjection);
-			const reusedColumns = projection.columns.size;
-			const reusedSources = Boolean(projection.sourceSeed);
-			const queryStarted = performance.now();
-			const columnar = yield* Effect.try({
-				try: () => columnarTextCorpusQuery(joined, undefined, projection),
-				catch: (cause) =>
-					failure(
-						"query",
-						"The retained Game Text query could not be prepared or searched.",
-						"Clear the disposable Game Text index and refresh.",
-						cause
-					)
-			});
-			yield* Cache.set(projections, projectionKey, projection);
-			yield* Metric.update(hostQueryPreparations, 1);
-			yield* Effect.annotateCurrentSpan({
-				"game_text.index.query_columns_reused": reusedColumns,
-				"game_text.index.query_sources_reused": reusedSources,
-				"game_text.index.query_preparation_ms": performance.now() - queryStarted
-			});
-			return columnar;
-		});
-
 		const openTarget = Effect.fn("GameTextIndex.openTarget")(function* (
 			target: GameTextTargetIndex
 		): Effect.fn.Return<GameTextIndexModel, IndexFailure, Scope.Scope> {
@@ -850,7 +682,7 @@ export const makeGameTextIndexSteps = (
 				"game_text.index.packages_read": result.packages.readPackages,
 				"game_text.index.join_rebuilt": result.join.rebuilt,
 				"game_text.index.generation": joined.reader.manifest.generation,
-				"game_text.index.query_in_worker": Boolean(options.searchWorker)
+				"game_text.index.query_backend": "native"
 			});
 			const indexedEvidence = yield* readIndexedLocalizationEvidence(joined).pipe(
 				Effect.provide(LocalizationFileAccessLive),
@@ -868,53 +700,29 @@ export const makeGameTextIndexSteps = (
 				generation: joined.reader.manifest.generation,
 				joinedKey: joined.reader.manifest.active.joined!
 			};
-			// With a search worker, the worker prepares the generation's query once, off this
-			// thread, and the model borrows it; without one, the query is prepared here.
-			// Acquire the worker's reader before exposing the model: later compaction may unlink
-			// these files. Overlapping models pin one worker for the same immutable joined view.
-			const { columnar, search } = options.searchWorker
-				? yield* acquireWorker(workerInput).pipe(
-						Effect.map((worker) => ({
-							columnar: borrowWorkerQuery(worker, joined),
-							search: worker.search
-						})),
-						Effect.mapError((cause) =>
-							isGameTextIndexError(cause) ||
-							isSnapshotStoreError(cause) ||
-							isSnapshotFormatError(cause)
-								? cause
-								: failure(
-										"search-worker",
-										"Too many query workers are active.",
-										"Wait for active queries to finish and retry."
-									)
-						)
-					)
-				: yield* prepareQuery(joined).pipe(
-						Effect.map((columnar) => ({
-							columnar,
-							search: Effect.fn("GameTextIndex.search")(
-								(request: TextCorpusSearchRequest) =>
-									Effect.try({
-										try: () => query.search(request),
-										catch: (cause) =>
-											failure(
-												"query",
-												"The retained Game Text query could not be prepared or searched.",
-												"Refresh the Game Text index and retry.",
-												cause
-											)
-									})
-							)
-						}))
-					);
-			const query = instrumentIndexQuery(columnar);
+			const native = yield* queries.open({
+				configuration,
+				generation: target.generation,
+				joinedKey: target.join.key
+			});
+			const { localizationRows, ...query } = native;
+			const summary = yield* query.summary();
+			const search = query.search;
 			// One quality worker per model, started by its first scan and replaced if it fails.
 			const qualityWorker = options.qualityWorker
 				? yield* qualityWorkerSlot(workerInput, yield* Effect.scope)
 				: undefined;
 			reportProgress({ phase: "ready", completed: 0, total: 0 });
-			const corpus = indexedTextCorpus(joined, query);
+			const corpus = query.readCorpus();
+			const localization = {
+				schemaVersion: 1 as const,
+				target: joined.meta.input.target.name,
+				nativeCulture: joined.meta.input.target.nativeCulture,
+				cultures: joined.meta.input.target.cultures
+			};
+			const localizationJoin = query
+				.localizationLines(indexedLocalizationLinesRequest(joined))
+				.pipe(Effect.map((lines) => ({ ...localization, lines })));
 			return {
 				...result,
 				project: target.project,
@@ -925,47 +733,38 @@ export const makeGameTextIndexSteps = (
 				),
 				joined,
 				query,
+				summary,
+				localization,
 				search,
 				evidence: indexedEvidence,
 				corpus,
-				localizationJoin: indexedLocalizationJoin(joined, query),
+				localizationJoin,
 				// The scan checks exactly the join's lines, read as rows in the join's order.
-				localizationQuality: (ruleDocument, scanOptions) => {
-					const onHost = Effect.suspend(() =>
-						indexedLocalizationQuality(
+				localizationQuality: (ruleDocument, scanOptions) =>
+					Effect.gen(function* () {
+						const rows = yield* localizationRows(
+							indexedLocalizationLinesRequest(joined)
+						);
+						if (qualityWorker) {
+							const worker = yield* qualityWorker;
+							return yield* worker.scan({
+								corpus: summary,
+								rows,
+								options: scanOptions,
+								ruleDocument
+							});
+						}
+						return yield* indexedLocalizationQuality(
 							joined,
-							corpus,
+							summary,
 							indexedEvidence,
-							columnar.localizationRows(indexedLocalizationLinesRequest(joined)),
+							rows,
 							ruleDocument,
 							scanOptions
-						)
-					);
-					return qualityWorker
-						? qualityWorker.pipe(
-								Effect.flatMap((worker) =>
-									worker.scan({
-										corpus,
-										rows: columnar.localizationRows(
-											indexedLocalizationLinesRequest(joined)
-										),
-										options: scanOptions,
-										ruleDocument
-									})
-								),
-								Effect.catch((cause) =>
-									Effect.logWarning(
-										"The quality worker failed; scanning on the host instead."
-									).pipe(
-										Effect.annotateLogs({ cause: cause.message }),
-										Effect.andThen(onHost)
-									)
-								)
-							)
-						: onHost;
-				},
+						);
+					}),
 				sourceQuality: (ruleDocument) =>
-					Effect.suspend(() => indexedSourceQuality(joined, corpus, ruleDocument))
+					Effect.suspend(() => indexedSourceQuality(joined, summary, ruleDocument))
 			};
 		}, normalizeFailure);
 		const invalidate = Effect.fn("GameTextIndex.invalidate")(function* (

@@ -180,3 +180,8 @@ export {
 } from "./game-text-index-client.js";
 export { encodeGameTextJoinInput } from "@ue-shed/protocol";
 export type { GameTextIndexBuildRequest, GameTextIndexBuildOutcome } from "@ue-shed/protocol";
+
+export {
+	NativeGameTextEngineClient,
+	nativeGameTextEngineClientLayer
+} from "./game-text-engine-client.js";

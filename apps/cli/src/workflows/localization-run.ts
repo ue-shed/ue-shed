@@ -1,3 +1,8 @@
+import {
+	GameTextIndexError,
+	SnapshotStoreError,
+	SnapshotFormatError
+} from "@ue-shed/game-text/index";
 import { refreshCliGameTextIndex, invalidateCliGameTextIndex } from "./game-text-index.js";
 import { Effect, Metric, Schema, Stream } from "effect";
 import {
@@ -35,6 +40,9 @@ class LocalizationRunConfigurationError extends Schema.TaggedError<LocalizationR
 	}
 ) {}
 const LocalizationRunFailure = Schema.Union([
+	GameTextIndexError,
+	SnapshotStoreError,
+	SnapshotFormatError,
 	LocalizationOperationError,
 	LocalizationRunConfigurationError,
 	LocalizationCheckOutputError
@@ -139,7 +147,7 @@ export const runLocalizationOperation = Effect.fn("Cli.workflow.localization_run
 					const before =
 						command.carry === undefined
 							? undefined
-							: (yield* refreshCliGameTextIndex(
+							: yield* (yield* refreshCliGameTextIndex(
 									{
 										projectRoot: command.projectRoot,
 										targetName: target.name,
@@ -202,7 +210,7 @@ export const runLocalizationOperation = Effect.fn("Cli.workflow.localization_run
 							)
 						);
 					if (before === undefined || command.carry === undefined || !completed) return;
-					const after = (yield* refreshCliGameTextIndex(
+					const after = yield* (yield* refreshCliGameTextIndex(
 						{
 							projectRoot: command.projectRoot,
 							targetName: target.name,

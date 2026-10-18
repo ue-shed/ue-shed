@@ -78,10 +78,13 @@ it.live(
 			const { fixture, target } = yield* workspaceScaleFixture(2048, 4);
 			yield* Effect.gen(function* () {
 				const result = yield* (yield* GameTextIndexRefresh).refresh(fixture.request);
-				const join = result.localizationJoin;
-				const source = evaluateGameTextSourceQuality(result.corpus, workspaceScaleRules);
+				const join = yield* result.localizationJoin;
+				const source = evaluateGameTextSourceQuality(
+					yield* result.corpus,
+					workspaceScaleRules
+				);
 				const report = checkLocalizationTarget(
-					result.corpus,
+					yield* result.corpus,
 					join,
 					result.evidence,
 					{},

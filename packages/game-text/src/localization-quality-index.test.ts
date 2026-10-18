@@ -239,7 +239,7 @@ it.live(
 			]);
 			yield* Effect.gen(function* () {
 				const result = yield* (yield* GameTextIndexRefresh).refresh(fixture.request);
-				const join = result.localizationJoin;
+				const join = yield* result.localizationJoin;
 				const line = join.lines.find((item) => item.identity?.key === "K02")!;
 				const review = Schema.decodeUnknownSync(LocalizationReviewFile)({
 					schemaVersion: 1,
@@ -271,11 +271,11 @@ it.live(
 				});
 				const whitespace: number[] = [];
 				for (const options of [{}, { review }]) {
-					const source = evaluateGameTextSourceQuality(result.corpus, document);
+					const source = evaluateGameTextSourceQuality(yield* result.corpus, document);
 					const legacy = localizationQualityWorkspace(
 						source,
 						checkLocalizationTarget(
-							result.corpus,
+							yield* result.corpus,
 							join,
 							result.evidence,
 							options,
@@ -408,13 +408,21 @@ const expectSameQuality = Effect.fn("Test.GameText.sameQuality")(function* (
 	result: GameTextIndexRefreshResult,
 	optionSets: readonly LocalizationCheckOptions[] = [{}]
 ) {
-	const join = result.localizationJoin;
+	const join = yield* result.localizationJoin;
 	for (const rules of [undefined, document])
 		for (const options of optionSets) {
-			const source = rules ? evaluateGameTextSourceQuality(result.corpus, rules) : undefined;
+			const source = rules
+				? evaluateGameTextSourceQuality(yield* result.corpus, rules)
+				: undefined;
 			const legacy = localizationQualityWorkspace(
 				source,
-				checkLocalizationTarget(result.corpus, join, result.evidence, options, rules),
+				checkLocalizationTarget(
+					yield* result.corpus,
+					join,
+					result.evidence,
+					options,
+					rules
+				),
 				join
 			);
 			const indexed = localizationQualityWorkspaceOf(
@@ -485,8 +493,8 @@ it.live("checks report each place once, its compiled Blueprint copies folded in"
 		);
 		yield* Effect.gen(function* () {
 			const result = yield* (yield* GameTextIndexRefresh).refresh(fixture.request);
-			const join = result.localizationJoin;
-			const report = checkLocalizationTarget(result.corpus, join, result.evidence);
+			const join = yield* result.localizationJoin;
+			const report = checkLocalizationTarget(yield* result.corpus, join, result.evidence);
 			const found = (kind: string) =>
 				report.findings.filter((finding) => finding.kind === kind);
 			for (const kind of ["culture_invariant_text", "rich_text_tags_added"]) {
@@ -526,11 +534,11 @@ it.live("rows the query hides are neither checked nor counted in the limits", ()
 		);
 		yield* Effect.gen(function* () {
 			const result = yield* (yield* GameTextIndexRefresh).refresh(fixture.request);
-			const join = result.localizationJoin;
+			const join = yield* result.localizationJoin;
 			expect(join.lines.map((line) => line.identity?.key)).toEqual(["K"]);
 			const legacy = localizationQualityWorkspace(
 				undefined,
-				checkLocalizationTarget(result.corpus, join, result.evidence),
+				checkLocalizationTarget(yield* result.corpus, join, result.evidence),
 				join
 			);
 			expect(legacy.search({ target: join.target, filter: "all" }).limits).toContainEqual({
@@ -555,7 +563,7 @@ it.live("lines whose IDs compare equal keep the in-memory report's order", () =>
 		fixture.update(entries.map(({ key, source }, index) => occurrence(key, source, index * 4)));
 		yield* Effect.gen(function* () {
 			const result = yield* (yield* GameTextIndexRefresh).refresh(fixture.request);
-			const join = result.localizationJoin;
+			const join = yield* result.localizationJoin;
 			expect(join.lines[0]!.id).not.toBe(join.lines[1]!.id);
 			expect(join.lines[0]!.id.localeCompare(join.lines[1]!.id)).toBe(0);
 			// One accepted finding on each line; the other line's text has another fingerprint.
@@ -584,11 +592,12 @@ it.live("lines whose IDs compare equal keep the in-memory report's order", () =>
 					accept("e\u0301", "localization.duplicate_source", join.nativeCulture!)
 				]
 			});
+			const corpusForOracle = yield* result.corpus;
 			const total = (options: LocalizationCheckOptions) =>
 				localizationQualityWorkspace(
 					undefined,
 					checkLocalizationTarget(
-						result.corpus,
+						corpusForOracle,
 						join,
 						result.evidence,
 						options,
@@ -628,11 +637,11 @@ it.live("a scan across many pages equals the in-memory checks", () =>
 		);
 		yield* Effect.gen(function* () {
 			const result = yield* (yield* GameTextIndexRefresh).refresh(fixture.request);
-			const join = result.localizationJoin;
+			const join = yield* result.localizationJoin;
 			expect(join.lines.length).toBeGreaterThan(512);
 			const legacy = localizationQualityWorkspace(
 				undefined,
-				checkLocalizationTarget(result.corpus, join, result.evidence),
+				checkLocalizationTarget(yield* result.corpus, join, result.evidence),
 				join
 			);
 			const indexed = localizationQualityWorkspaceOf(
@@ -714,10 +723,10 @@ it.live("the indexed scan stores each finding's severity as the rule file rates 
 		});
 		yield* Effect.gen(function* () {
 			const result = yield* (yield* GameTextIndexRefresh).refresh(fixture.request);
-			const join = result.localizationJoin;
+			const join = yield* result.localizationJoin;
 			const legacy = localizationQualityWorkspace(
 				undefined,
-				checkLocalizationTarget(result.corpus, join, result.evidence, {}, rated),
+				checkLocalizationTarget(yield* result.corpus, join, result.evidence, {}, rated),
 				join
 			);
 			const quality = yield* result.localizationQuality(rated);
@@ -792,9 +801,9 @@ it.live("custom checks scan as the in-memory checks do, past the old filter and 
 		});
 		yield* Effect.gen(function* () {
 			const result = yield* (yield* GameTextIndexRefresh).refresh(fixture.request);
-			const join = result.localizationJoin;
+			const join = yield* result.localizationJoin;
 			const report = checkLocalizationTarget(
-				result.corpus,
+				yield* result.corpus,
 				join,
 				result.evidence,
 				{},
@@ -862,9 +871,9 @@ it.live("custom regex checks preserve whitespace and zero-width truth in indexed
 		});
 		yield* Effect.gen(function* () {
 			const result = yield* (yield* GameTextIndexRefresh).refresh(fixture.request);
-			const join = result.localizationJoin;
+			const join = yield* result.localizationJoin;
 			const report = checkLocalizationTarget(
-				result.corpus,
+				yield* result.corpus,
 				join,
 				result.evidence,
 				{},
@@ -928,10 +937,10 @@ it.live("proposals past the first 100 count the rest without reading their lines
 		fixture.update(fixable.map(({ key, source }, index) => occurrence(key, source, index)));
 		yield* Effect.gen(function* () {
 			const result = yield* (yield* GameTextIndexRefresh).refresh(fixture.request);
-			const join = result.localizationJoin;
+			const join = yield* result.localizationJoin;
 			const legacy = localizationQualityWorkspace(
 				undefined,
-				checkLocalizationTarget(result.corpus, join, result.evidence),
+				checkLocalizationTarget(yield* result.corpus, join, result.evidence),
 				join
 			);
 			const indexed = localizationQualityWorkspaceOf(

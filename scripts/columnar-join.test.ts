@@ -10,7 +10,7 @@ import {
 	localizationKeyChanges
 } from "../packages/game-text/src/index.ts";
 import { textCorpusFromExtractionEvents } from "../packages/game-text/src/corpus.ts";
-import { refreshJoinedTarget } from "../packages/game-text/src/joined-target.ts";
+import { refreshJoinedTarget } from "../packages/game-text/src/joined-target-reference.test-support.ts";
 import { SharedIndex } from "../packages/game-text/src/shared-index.ts";
 import {
 	hydrateJoinedTarget,
@@ -49,7 +49,7 @@ import {
 	emptyPackageTextRecord,
 	packageTextRecordsFromEvents
 } from "../packages/game-text/src/package-text-record.ts";
-import { textCorpusQuery } from "../packages/game-text/src/query.ts";
+import { textCorpusQuery } from "../packages/game-text/src/query.test-support.ts";
 import {
 	TextProblem,
 	TextCorpusSearchRequest,
@@ -74,8 +74,8 @@ import { localizationManifestNotes } from "../packages/game-text/src/localizatio
 import {
 	JoinedQueryData,
 	reuseJoinedQueryProjection
-} from "../packages/game-text/src/joined-query-data.ts";
-import { columnarTextCorpusQuery } from "../packages/game-text/src/columnar-query.ts";
+} from "../packages/game-text/src/joined-query-data.test-support.ts";
+import { columnarTextCorpusQuery } from "../packages/game-text/src/columnar-query.test-support.ts";
 import type { SnapshotSourceColumn } from "../packages/game-text/src/snapshot-file.ts";
 
 const expectProblemOracle = (

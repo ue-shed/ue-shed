@@ -12,11 +12,8 @@ import {
 	parseWordCountCSV,
 	type LocalizationTargetEvidence
 } from "@ue-shed/localization";
-import type { TextCorpus } from "./schema.js";
-import type { LocalizationJoin } from "./localization-schema.js";
-import type { TextCorpusQuery } from "./query.js";
 import type { JoinedTargetReader } from "./joined-target-reader.js";
-import { JoinedQueryData } from "./joined-query-data.js";
+import { IndexedPolicyData } from "./indexed-policy-data.js";
 import { decodeLocalizationSnapshot } from "./localization-columns.js";
 import { runJoinedQuery } from "./joined-query-node.js";
 import {
@@ -31,7 +28,7 @@ export function indexedLocalizationStatusReport(
 	evidence: LocalizationTargetEvidence,
 	page: TextCorpusSearchPage
 ): LocalizationStatusReport {
-	const data = new JoinedQueryData(joined);
+	const data = new IndexedPolicyData(joined);
 	return {
 		schemaVersion: 1,
 		target: evidence.target.name,
@@ -40,31 +37,6 @@ export function indexedLocalizationStatusReport(
 		...data.metadataReport(),
 		files: localizationEvidenceFileStatuses(evidence),
 		page
-	};
-}
-
-/** Legacy report inputs are projections of a pinned index; bulk fields decode on explicit access. */
-export function indexedTextCorpus(joined: JoinedTargetReader, query: TextCorpusQuery): TextCorpus {
-	const data = new JoinedQueryData(joined),
-		summary = query.summary();
-	let metadata: ReturnType<JoinedQueryData["exportMetadata"]> | undefined;
-	let units: TextCorpus["units"] | undefined;
-	const readMetadata = () => (metadata ??= data.exportMetadata());
-	return {
-		schemaVersion: 1,
-		status: summary.status,
-		coverage: summary.coverage,
-		get units() {
-			return (units ??= Array.from(data.column("query.raw.order"), (row) =>
-				data.unit("raw", row)
-			));
-		},
-		get diagnostics() {
-			return readMetadata().diagnostics;
-		},
-		get packageCoverage() {
-			return readMetadata().packageCoverage ?? [];
-		}
 	};
 }
 
@@ -78,27 +50,6 @@ export function indexedLocalizationLinesRequest(joined: JoinedTargetReader) {
 }
 
 /**
- * Lazy localization view over a pinned joined index. Lines materialize on first access through
- * the supplied query, so the owning reader scope must remain open while the view is used.
- */
-export function indexedLocalizationJoin(
-	joined: JoinedTargetReader,
-	query: TextCorpusQuery
-): LocalizationJoin {
-	const target = joined.meta.input.target;
-	let lines: LocalizationJoin["lines"] | undefined;
-	return {
-		schemaVersion: 1,
-		target: target.name,
-		nativeCulture: target.nativeCulture,
-		cultures: target.cultures,
-		get lines() {
-			return (lines ??= query.localizationLines(indexedLocalizationLinesRequest(joined)));
-		}
-	};
-}
-
-/**
  * Reads retained localization evidence from a pinned joined index using LocalizationFileAccess.
  * Keep the reader scope alive for lazy entries; malformed or unavailable cache inputs retain
  * their typed failures.
@@ -106,7 +57,7 @@ export function indexedLocalizationJoin(
 export const readIndexedLocalizationEvidence = Effect.fn("GameTextIndex.evidence")(function* (
 	joined: JoinedTargetReader
 ) {
-	const data = new JoinedQueryData(joined),
+	const data = new IndexedPolicyData(joined),
 		reader = data.joined.reader;
 	const target = joined.meta.input.target,
 		root = joined.meta.input.projectRoot;

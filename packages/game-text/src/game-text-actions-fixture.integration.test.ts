@@ -6,7 +6,7 @@ import { Effect, Result, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import { useSavedFixtureProject } from "../../../fixtures/unreal-project/saved-project.test-support.js";
 import { textCorpusFromExtractionEvents } from "./corpus.js";
-import { textCorpusQuery } from "./query.js";
+import { textCorpusQuery } from "./query.test-support.js";
 
 const ROOT = "/Game/Fixture/GameTextActions/";
 // World Partition external actors are saved in their own packages beside the content root.

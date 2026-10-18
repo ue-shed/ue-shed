@@ -1,3 +1,4 @@
+import { gameTextCsv } from "./export-reference.test-support.js";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { it } from "@effect/vitest";
@@ -9,8 +10,8 @@ import { GameTextIndexRefresh } from "./index-refresh.js";
 import { makeIndexRegressionFixture } from "./index-refresh-regressions.test-support.js";
 import { joinLocalizationTarget } from "./localization.js";
 import type { LocalizationJoin } from "./localization-schema.js";
-import { textCorpusQuery } from "./query.js";
-import { gameTextCsv } from "./csv.js";
+import { textCorpusQuery } from "./query.test-support.js";
+
 import type { TextCorpus, TextCorpusSearchPage, TextCorpusSearchRequest } from "./schema.js";
 
 type Occurrence = SavedAssetPackageTextRecord["occurrences"][number];
@@ -263,17 +264,17 @@ it.live("folded copies agree between the index and the in-memory corpus and join
 					.sort()
 			);
 			expect(memory.coverage).toMatchObject({ textUnits: 8, textOccurrences: 9 });
-			expect(result.corpus.coverage).toEqual(memory.coverage);
-			expect(result.corpus.units).toEqual(memory.units);
+			expect((yield* result.corpus).coverage).toEqual(memory.coverage);
+			expect((yield* result.corpus).units).toEqual(memory.units);
 
 			// Focus through the index decodes the same copies.
 			const title = memory.units.find(
 				(unit) => unit.identity.status === "resolved" && unit.identity.key === "Title"
 			)!;
-			const { localization: _line, ...focused } = result.query.focus({
+			const { localization: _line, ...focused } = (yield* result.query.focus({
 				id: title.id,
 				pageSize: 50
-			})!;
+			}))!;
 			expect(focused).toEqual(textCorpusQuery(memory).focus({ id: title.id, pageSize: 50 }));
 			expect(focused.unit.source).toEqual({ status: "consistent", value: "Play now" });
 			expect(focused.unit.reviewSignals).toContain("compiled_copy_differs");
@@ -300,9 +301,9 @@ it.live("folded copies agree between the index and the in-memory corpus and join
 				(unit) => unit.identity.status === "resolved" && unit.identity.key === "Quit"
 			)!;
 			expect(
-				result.query.focus({ id: quit.id, pageSize: 1 })!.unit.reviewSignals
+				(yield* result.query.focus({ id: quit.id, pageSize: 1 }))!.unit.reviewSignals
 			).not.toContain("compiled_copy_differs");
-			expect(lineFacts(result.localizationJoin)).toEqual(lines);
+			expect(lineFacts(yield* result.localizationJoin)).toEqual(lines);
 
 			// Search, lenses, problems, facets and groups agree, without a target and with one.
 			const inMemory = textCorpusQuery(memory, undefined, memoryJoin);
@@ -350,9 +351,9 @@ it.live("folded copies agree between the index and the in-memory corpus and join
 				capability: "all",
 				localization: { target: fixture.target.name }
 			} as const;
-			expect(result.query.localizationLines(exported).map((line) => line.id)).toEqual(
-				inMemory.localizationLines(exported).map((line) => line.id)
-			);
+			expect(
+				(yield* result.query.localizationLines(exported)).map((line) => line.id)
+			).toEqual(inMemory.localizationLines(exported).map((line) => line.id));
 			expect(gameTextCsv(memory).split("\r\n").filter(Boolean)).toHaveLength(1 + 9);
 
 			// Edit the authored title again, still without compiling: only place text changes, so
@@ -385,7 +386,7 @@ it.live("folded copies agree between the index and the in-memory corpus and join
 				const next = yield* (yield* GameTextIndexRefresh).refresh(fixture.request);
 				expect(next.join).toMatchObject({ strategy });
 				const nextMemory = fixture.raw();
-				expect(next.corpus.units).toEqual(nextMemory.units);
+				expect((yield* next.corpus).units).toEqual(nextMemory.units);
 				const page = yield* next.search(request);
 				expect(differing(page)).toEqual(expected);
 				expect(pageFacts(page)).toEqual(

@@ -6,12 +6,6 @@ import { performance } from "node:perf_hooks";
 import { parseArgs } from "node:util";
 import { getHeapStatistics } from "node:v8";
 import { Schema } from "effect";
-import {
-	readScaleEvidence,
-	readScaleCorpus,
-	joinScaleTarget,
-	scaleStatus
-} from "./game-text-scale-pipeline.ts";
 import { repositoryPath, readScaleRecipe } from "./game-text-scale-options.ts";
 import {
 	boundedNumber,
@@ -124,6 +118,8 @@ if (values.worker) {
 		return value;
 	}
 	async function pipelineStages() {
+		const { readScaleEvidence, readScaleCorpus, joinScaleTarget, scaleStatus } =
+			await import("./game-text-scale-pipeline.ts");
 		const evidence = await measure("evidence", () => readScaleEvidence(project));
 		const corpus = await measure("corpus", () => readScaleCorpus(project));
 		const joined = await measure("join", () => joinScaleTarget(project, corpus, evidence));
@@ -274,8 +270,9 @@ if (values.worker) {
 			],
 			{
 				execArgv: [
-					// The quality stage reads retained package records with the package's helpers.
-					...(overIndex ? ["--import", "tsx"] : []),
+					// Both retained-record stages and the independent object oracle import TS helpers.
+					"--import",
+					"tsx",
 					"--expose-gc",
 					"--trace-gc-nvp",
 					...(heap === "default" ? [] : [`--max-old-space-size=${heap}`]),

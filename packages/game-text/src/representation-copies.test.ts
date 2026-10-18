@@ -9,7 +9,7 @@ import {
 	representationSite,
 	staleRuntimeCopy
 } from "./representation-copies.js";
-import { textCorpusQuery } from "./query.js";
+import { textCorpusQuery } from "./query.test-support.js";
 
 type Occurrence = SavedAssetPackageTextRecord["occurrences"][number];
 

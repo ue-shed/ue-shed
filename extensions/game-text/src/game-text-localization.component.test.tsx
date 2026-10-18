@@ -1,10 +1,10 @@
+import { textCorpusQuery } from "../../../packages/game-text/src/query.test-support.js";
 // @vitest-environment jsdom
 import { cleanup, render, screen, waitFor, within } from "@solidjs/testing-library";
 import { userEvent } from "@testing-library/user-event";
 import {
 	joinLocalizationTarget,
 	localizationFocusPage,
-	textCorpusQuery,
 	GameTextInvestigationPreset,
 	type GameTextInvestigationQuery,
 	type LocalizationEditRequest,

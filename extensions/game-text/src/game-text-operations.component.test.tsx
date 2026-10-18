@@ -1,8 +1,9 @@
+import { textCorpusQuery } from "../../../packages/game-text/src/query.test-support.js";
 // @vitest-environment jsdom
 import { cleanup, render, screen, waitFor, within } from "@solidjs/testing-library";
 import { userEvent } from "@testing-library/user-event";
 import { Button, EffectRuntimeProvider } from "@ue-shed/ui";
-import { textCorpusQuery, localizationFocusPage } from "@ue-shed/game-text/corpus";
+import { localizationFocusPage } from "@ue-shed/game-text/corpus";
 import {
 	type WorkbenchOperationRequest,
 	type WorkbenchOperationResult,

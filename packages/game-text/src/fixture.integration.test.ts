@@ -3,7 +3,7 @@ import { Effect, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import { useSavedFixtureProject } from "../../../fixtures/unreal-project/saved-project.test-support.js";
 import { scanTextCorpus, textCorpusFromExtractionEvents } from "./corpus.js";
-import { searchTextCorpus } from "./search.js";
+import { searchTextCorpus } from "./search.test-support.js";
 
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
 const fixture = useSavedFixtureProject();

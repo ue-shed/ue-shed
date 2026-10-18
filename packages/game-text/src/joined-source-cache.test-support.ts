@@ -1,30 +1,23 @@
-import { Effect, Schema } from "effect";
+import { Effect } from "effect";
 import { constants, zstdCompressSync, zstdDecompressSync } from "node:zlib";
 import { encodeWtf8 } from "./wtf8.js";
 import { snapshotCheck } from "./snapshot-format.js";
 import { snapshotNodeChecksum, type SnapshotSourceColumn } from "./snapshot-file.js";
 import type { SharedIndexWriter } from "./shared-index.js";
 import type { JoinStrings } from "./joined-target-input.js";
-import { validatePackedStrings, type PackedStrings } from "./shared-string-codec.js";
+import { validatePackedStrings } from "./shared-string-codec.js";
 
-const maximumSourceCacheBytes = 96 * 1024 ** 2;
+import {
+	maximumSourceCacheBytes,
+	JoinedSourceCacheMeta,
+	type JoinedSourceCache
+} from "./joined-source-cache-contract.js";
+export {
+	maximumSourceCacheBytes,
+	JoinedSourceCacheMeta,
+	type JoinedSourceCache
+} from "./joined-source-cache-contract.js";
 const sourceTrigramBytes = 128 ** 3 / 8;
-const Natural = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
-export const JoinedSourceCacheMeta = Schema.Struct({
-	version: Schema.Literal(1),
-	count: Natural.check(Schema.isLessThanOrEqualTo(0xffffffff / 4 - 1)),
-	bytes: Natural.check(Schema.isLessThanOrEqualTo(maximumSourceCacheBytes)),
-	trigramVersion: Schema.optionalKey(Schema.Literal(1)),
-	flagsVersion: Schema.optionalKey(Schema.Literal(1))
-});
-export interface JoinedSourceCacheMeta extends Schema.Schema.Type<typeof JoinedSourceCacheMeta> {}
-export interface JoinedSourceCache {
-	readonly packed: PackedStrings;
-	readonly index: Uint32Array;
-	readonly ids: Uint32Array;
-	readonly simple: Uint8Array;
-	readonly trigrams?: Uint8Array;
-}
 
 export function simpleSourceBytes(bytes: Uint8Array): boolean {
 	for (const byte of bytes) if (byte >= 128 || (byte >= 65 && byte <= 90)) return false;

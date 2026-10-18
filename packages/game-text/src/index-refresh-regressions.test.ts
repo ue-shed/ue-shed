@@ -7,7 +7,7 @@ import { LocalizationEvidence } from "@ue-shed/localization";
 import { GameTextIndexRefresh } from "./index-refresh.js";
 import { makeIndexRegressionFixture } from "./index-refresh-regressions.test-support.js";
 import { joinLocalizationTarget } from "./localization.js";
-import { textCorpusQuery } from "./query.js";
+import { textCorpusQuery } from "./query.test-support.js";
 import { SharedIndex, sharedIndexDirectory, sharedIndexNodeLayer } from "./shared-index.js";
 
 // Facts are unordered flags; all evidence, primary states and unknown reasons compare exactly.
@@ -52,7 +52,7 @@ it.live(
 				).toBe(false);
 				expect((yield* service.refresh(fixture.request)).join.rebuilt).toBe(true);
 				const search = { query: "Source", capability: "all" as const, pageSize: 10 };
-				const pinned = source.query.search(search);
+				const pinned = yield* source.query.search(search);
 				fixture.setSource("Updated");
 				const changedTarget = yield* service.refresh(fixture.request);
 				expect(fixture.packageReads()).toBe(2);
@@ -60,10 +60,12 @@ it.live(
 				expect(fixture.packageReads()).toBe(2);
 				expect(changedSource.packages.readPackages).toBe(0);
 				expect(changedTarget.join.rebuilt).toBe(true);
-				expect(changedSource.query.search({ ...search, query: "Updated" }).total).toBe(1);
-				expect(source.query.search(search)).toEqual(pinned);
-				expect(localized.localizationJoin.target).toBe(fixture.target.name);
-				expect(secondTarget.localizationJoin.target).toBe(other.name);
+				expect(
+					(yield* changedSource.query.search({ ...search, query: "Updated" })).total
+				).toBe(1);
+				expect(yield* source.query.search(search)).toEqual(pinned);
+				expect((yield* localized.localizationJoin).target).toBe(fixture.target.name);
+				expect((yield* secondTarget.localizationJoin).target).toBe(other.name);
 				yield* Effect.scoped(
 					Effect.gen(function* () {
 						const store = yield* SharedIndex;
@@ -81,8 +83,8 @@ it.live(
 				);
 				const compacted = yield* service.refresh(fixture.request);
 				expect(fixture.packageReads()).toBe(2);
-				expect(compacted.localizationJoin.target).toBe(fixture.target.name);
-				expect(source.query.search(search)).toEqual(pinned);
+				expect((yield* compacted.localizationJoin).target).toBe(fixture.target.name);
+				expect(yield* source.query.search(search)).toEqual(pinned);
 			}).pipe(Effect.provide(fixture.layer()));
 			const configuration = {
 				cacheRoot: fixture.projectRoot,
@@ -114,7 +116,7 @@ it.live.each(["manifest", "archive", "po"] as const)(
 			yield* Effect.gen(function* () {
 				const index = yield* GameTextIndexRefresh;
 				const first = yield* index.refresh(fixture.request);
-				const pinned = first.localizationJoin.lines;
+				const pinned = (yield* first.localizationJoin).lines;
 				for (const broken of ["malformed", "missing"] as const) {
 					yield* Effect.promise(() =>
 						broken === "missing"
@@ -136,7 +138,9 @@ it.live.each(["manifest", "archive", "po"] as const)(
 						});
 					}).pipe(Effect.provide(fixture.evidence));
 					const expected = joinLocalizationTarget(fixture.raw(), oracle);
-					expect(orderedFacts(failed.localizationJoin)).toEqual(orderedFacts(expected));
+					expect(orderedFacts(yield* failed.localizationJoin)).toEqual(
+						orderedFacts(expected)
+					);
 					const search = {
 						query: "",
 						capability: "all" as const,
@@ -146,19 +150,21 @@ it.live.each(["manifest", "archive", "po"] as const)(
 							culture: fixture.target.cultures[1]!
 						}
 					};
-					expect(failed.query.search(search).localization?.counts).toEqual(
+					expect((yield* failed.query.search(search)).localization?.counts).toEqual(
 						textCorpusQuery(fixture.raw(), undefined, expected).search(search)
 							.localization?.counts
 					);
 					const reopened = yield* Effect.gen(function* () {
 						return yield* (yield* GameTextIndexRefresh).refresh(fixture.request);
 					}).pipe(Effect.provide(fixture.layer(), { local: true }));
-					expect(reopened.localizationJoin).toEqual(failed.localizationJoin);
-					expect(first.localizationJoin.lines).toEqual(pinned);
-					expect(first.corpus).toEqual(fixture.raw());
+					expect(yield* reopened.localizationJoin).toEqual(
+						yield* failed.localizationJoin
+					);
+					expect((yield* first.localizationJoin).lines).toEqual(pinned);
+					expect(yield* first.corpus).toEqual(fixture.raw());
 					yield* Effect.promise(() => writeFile(join(fixture.projectRoot, file), saved));
 					const repaired = yield* index.refresh(fixture.request);
-					expect(repaired.localizationJoin.lines).toEqual(pinned);
+					expect((yield* repaired.localizationJoin).lines).toEqual(pinned);
 				}
 			}).pipe(Effect.provide(fixture.layer()));
 		})
@@ -198,12 +204,12 @@ it.live("raw corpus retains invisible units and empty-source String Table eviden
 				projectRoot: fixture.projectRoot
 			});
 		}).pipe(Effect.provide(fixture.layer()));
-		expect(indexed.corpus).toEqual(fixture.raw());
-		expect(indexed.corpus.units).toHaveLength(4);
-		expect(indexed.corpus.coverage.textOccurrences).toBe(4);
+		expect(yield* indexed.corpus).toEqual(fixture.raw());
+		expect((yield* indexed.corpus).units).toHaveLength(4);
+		expect((yield* indexed.corpus).coverage.textOccurrences).toBe(4);
 		const search = { query: "", capability: "all" as const, pageSize: 10 };
 		const oracle = textCorpusQuery(fixture.raw());
-		expect(indexed.query.search(search).total).toBe(oracle.search(search).total);
-		expect(indexed.query.export(search)).toEqual(oracle.export(search));
+		expect((yield* indexed.query.search(search)).total).toBe(oracle.search(search).total);
+		expect(yield* indexed.query.export(search)).toEqual(oracle.export(search));
 	})
 );

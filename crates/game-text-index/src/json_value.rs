@@ -3,6 +3,13 @@ use crate::Result;
 use crate::wtf8::Wtf8Buf;
 use serde::Deserialize;
 
+/// A dictionary string wraps the entire JSON document in one scalar view. Remove that outer
+/// encoding before parsing, so literal reserved scalars in nested strings are escaped once.
+pub(crate) fn parse_stored(view: &str) -> Result<serde_json::Value> {
+    let text = Wtf8Buf::from_view(view);
+    parse(text.to_utf8()?)
+}
+
 pub(crate) fn parse(text: &str) -> Result<serde_json::Value> {
     let mut decoder = serde_json::Deserializer::from_str(text);
     serde::de::IgnoredAny::deserialize(&mut decoder)?;
@@ -58,6 +65,17 @@ pub(crate) fn parse(text: &str) -> Result<serde_json::Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn stored_json_removes_only_the_outer_scalar_view() {
+        let text = r#"{"󰀀":{"literal":"󰀁󰠀","units":"\ud800x\udfff","escaped":"\\ud800\n"}}"#;
+        let stored = Wtf8Buf::from_utf8(text).into_view();
+        assert_eq!(parse_stored(&stored).unwrap(), parse(text).unwrap());
+        assert_eq!(
+            crate::wtf8::view_json(&parse_stored(&stored).unwrap()).unwrap(),
+            text
+        );
+    }
+
     #[test]
     fn preserves_lone_units_pairs_object_keys_and_reserved_scalars() {
         let text = r#"{"\ud800":{"by":"lead\ud800","key":"\udfff","source":"𐀀","literal":"󰀁","escaped":"\\ud800\n"}}"#;

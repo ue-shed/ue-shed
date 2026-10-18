@@ -410,6 +410,7 @@ fn contract_value(contract: &Contract) -> Value {
 
 fn operation_kind(operation: &Operation) -> &'static str {
     match operation {
+        Operation::GameTextEngine { .. } => "game_text_engine",
         Operation::GameTextIndex { .. } => "game_text_index",
         Operation::Inspect { .. } => "inspect",
         Operation::Blueprint { .. } => "blueprint",
@@ -444,6 +445,7 @@ fn execute_direct(
                 | Operation::ProjectIndexQuery { .. }
                 | Operation::ProjectIndexCount { .. }
                 | Operation::GameTextIndex { .. }
+                | Operation::GameTextEngine { .. }
         )
     {
         return Err(Failure::new(
@@ -453,6 +455,31 @@ fn execute_direct(
         ));
     }
     match &request.operation {
+        Operation::GameTextEngine { request: engine } => {
+            let outcome = if let Some(session) = query_session {
+                session
+                    .game_text_engine
+                    .execute(engine, cancellation.flag())
+            } else if matches!(engine, game_text_index::engine::EngineRequest::Capabilities) {
+                game_text_index::engine::EngineSession::default()
+                    .execute(engine, cancellation.flag())
+            } else {
+                return Err(Failure::new(
+                    "unsupported_session_operation",
+                    "Game Text readers require protocol-session",
+                    false,
+                ));
+            }
+            .map_err(|error| {
+                Failure::new(
+                    format!("game_text_engine_{}", error.code.as_str()),
+                    error.to_string(),
+                    false,
+                )
+            })?;
+            emit_typed_result(emitter, &ResultFrame::GameTextEngine { outcome })?;
+            Ok(false)
+        }
         Operation::GameTextIndex { request: build } => {
             let outcome = if let Some(session) = query_session {
                 session.game_text.execute(build)

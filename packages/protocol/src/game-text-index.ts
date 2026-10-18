@@ -15,6 +15,7 @@ export const GameTextIndexConfiguration = Schema.Union([
 		)
 	})
 ]);
+export type GameTextIndexConfiguration = typeof GameTextIndexConfiguration.Type;
 const Configuration = { configuration: GameTextIndexConfiguration };
 const Name = Schema.NonEmptyString.check(Schema.isMaxLength(1024));
 const Names = Schema.Array(Name).check(Schema.isMaxLength(2560));

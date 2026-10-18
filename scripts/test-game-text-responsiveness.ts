@@ -7,7 +7,6 @@ const result = spawnSync(
 	process.execPath,
 	[
 		join(repositoryRoot, "scripts/test.ts"),
-		"--without-uasset",
 		"--config",
 		"vitest.node.config.ts",
 		"packages/game-text/src/host-responsiveness.test.ts",

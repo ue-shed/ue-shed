@@ -8,7 +8,6 @@ import {
 	GameTextIndexBuilder,
 	GameTextIndexSource,
 	gameTextIndexRefreshLayer,
-	typeScriptIndexBuilderLayer,
 	type GameTextIndexRefreshResult,
 	type TextCorpusSearchRequest,
 	type TextCorpusSearchPage
@@ -32,11 +31,11 @@ import {
 	openJoinedTarget,
 	type JoinedTargetReader
 } from "../packages/game-text/src/joined-target-reader.ts";
-import { JoinedQueryData } from "../packages/game-text/src/joined-query-data.ts";
+import { JoinedQueryData } from "../packages/game-text/src/joined-query-data.test-support.ts";
 import {
 	addSourceTrigrams,
 	simpleSourceBytes
-} from "../packages/game-text/src/joined-source-cache.ts";
+} from "../packages/game-text/src/joined-source-cache.test-support.ts";
 
 type Measure = <A>(
 	name: string,
@@ -64,10 +63,9 @@ export async function measureGameTextHosts(
 	)
 		throw new Error("Host measurements require Node's default heap.");
 	const recipe = await readScaleRecipe(project);
-	const selectedBuilder =
-		backend === "native"
-			? GameTextIndexBuilderLive.pipe(Layer.provide(AssetReaderLive))
-			: typeScriptIndexBuilderLayer;
+	if (backend !== "native")
+		throw new Error("Run the historical TypeScript baseline from its original checkout.");
+	const selectedBuilder = GameTextIndexBuilderLive.pipe(Layer.provide(AssetReaderLive));
 
 	// A capped cold build may publish nothing. Prepare disposable file layers in separately
 	// capped runs so query measurements remain available; this is never a cold-build success.
@@ -243,14 +241,13 @@ export async function measureGameTextHosts(
 		cache,
 		host === "workbench"
 			? {
-					searchWorker: true,
-					latestSearchOnly: true,
 					qualityWorker: true
 				}
 			: {}
 	).pipe(
 		Layer.provide(source),
 		Layer.provide(builderLayer),
+		Layer.provide(selectedBuilder),
 		Layer.provide(LocalizationEvidenceNodeLive)
 	);
 	const rootScope = await Effect.runPromise(Scope.make());
@@ -379,7 +376,7 @@ export async function measureGameTextHosts(
 		};
 	};
 	const query = async (request: TextCorpusSearchRequest): Promise<TextCorpusSearchPage> => {
-		if (host === "cli") return result!.query.search(request);
+		if (host === "cli") return run(result!.query.search(request));
 		const reply = await run(workbench!.search(request));
 		if (reply.status !== "ready") throw new Error(JSON.stringify(reply));
 		return reply.page;
@@ -531,11 +528,13 @@ export async function measureGameTextHosts(
 			`${host}:focus`,
 			async () =>
 				host === "cli"
-					? result!.query.focus({
-							id,
-							pageSize: 20,
-							localization: { target: targetName, id: lineId }
-						})
+					? run(
+							result!.query.focus({
+								id,
+								pageSize: 20,
+								localization: { target: targetName, id: lineId }
+							})
+						)
 					: run(
 							workbench!.focus({
 								id,
@@ -543,7 +542,21 @@ export async function measureGameTextHosts(
 								localization: { target: targetName, id: lineId }
 							})
 						),
-			(value) => ({ found: value !== undefined })
+			(value) => {
+				const focus =
+					value && "status" in value
+						? value.status === "found"
+							? value.focus
+							: undefined
+						: value;
+				if (!focus || focus.totalOccurrences < 1)
+					throw new Error("Focus did not return saved occurrence evidence.");
+				return {
+					found: true,
+					occurrences: focus.occurrences.length,
+					totalOccurrences: focus.totalOccurrences
+				};
+			}
 		);
 		await measure(`${host}:refresh-no-change`, refresh, (value) => value);
 		if (host === "cli") {

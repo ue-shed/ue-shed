@@ -1,7 +1,8 @@
+import { gameTextCsv } from "./export-reference.test-support.js";
 import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
-import { gameTextCsv, gameTextQualityCsv } from "./csv.js";
-import { textCorpusQuery } from "./query.js";
+import { gameTextQualityCsv } from "./csv.js";
+import { textCorpusQuery } from "./query.test-support.js";
 import { evaluateTextQuality } from "./quality.js";
 import { decodeTextQualityRuleDocument, TextQualityRuleDocument } from "./quality-schema.js";
 import { STARTER_GAME_TEXT_RULES } from "./starter-rules.js";

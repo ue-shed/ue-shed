@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { Effect, Exit, Fiber, Layer, Schema, Stream } from "effect";
+import { Effect, Layer, Schema, Stream } from "effect";
 import { expect, it } from "vitest";
 import {
 	LocalizationEvidence,
@@ -12,10 +12,10 @@ import {
 import { emptyPackageTextRecord } from "./package-text-record.js";
 import { target } from "./localization.test-support.js";
 import { hydrateJoinedTarget } from "./joined-target-reader.js";
-import { columnarTextCorpusQuery } from "./columnar-query.js";
-import { makeGameTextSearchWorker } from "./search-worker-node.js";
+import { columnarTextCorpusQuery } from "./columnar-query.test-support.js";
 import { TextCorpusSearchRequest } from "./schema.js";
-import { GameTextIndexBuilder, typeScriptIndexBuilderLayer } from "./index-builder.js";
+import { typeScriptIndexBuilderLayer } from "./index-reference.test-support.js";
+import { GameTextIndexBuilder } from "./index-builder.js";
 import { GameTextIndexProgressReporter, type GameTextIndexProgress } from "./index-progress.js";
 import {
 	GameTextIndexSource,
@@ -126,7 +126,7 @@ it("retains readers across refresh steps updating selected inputs and review", a
 					}
 				});
 			})
-		).pipe(Layer.provide(typeScriptIndexBuilderLayer));
+		).pipe(Layer.provideMerge(typeScriptIndexBuilderLayer));
 		await Effect.runPromise(
 			Effect.scoped(
 				Effect.gen(function* () {
@@ -162,7 +162,9 @@ it("retains readers across refresh steps updating selected inputs and review", a
 						}
 					].map((request) => Schema.decodeUnknownSync(TextCorpusSearchRequest)(request));
 					for (const search of searches)
-						expect(yield* first.search(search)).toEqual(first.query.search(search));
+						expect(yield* first.search(search)).toEqual(
+							yield* first.query.search(search)
+						);
 					let armed = false;
 					let checkpoints = 0;
 					const cancellable = columnarTextCorpusQuery(
@@ -186,32 +188,12 @@ it("retains readers across refresh steps updating selected inputs and review", a
 					armed = false;
 					checkpoints = 0;
 					expect(cancellable.search(searches[0]!)).toEqual(
-						first.query.search(searches[0]!)
+						yield* first.query.search(searches[0]!)
 					);
 					expect(checkpoints).toBe(1);
 					expect(cancellable.search(interruptedRequest)).toEqual(
-						first.query.search(interruptedRequest)
+						yield* first.query.search(interruptedRequest)
 					);
-					const latest = yield* makeGameTextSearchWorker(
-						{
-							configuration: {
-								cacheRoot: join(projectRoot, "cache"),
-								projectKey: projectRoot,
-								targetKey: authored.name,
-								projectView: { kind: "localization", target: authored.name }
-							},
-							generation: first.joined.reader.manifest.generation,
-							joinedKey: first.joined.reader.manifest.active.joined!
-						},
-						{ latestOnly: true }
-					);
-					const obsolete = yield* latest(searches[0]!).pipe(
-						Effect.forkChild({ startImmediately: true })
-					);
-					expect(yield* latest(searches[1]!)).toEqual(first.query.search(searches[1]!));
-					const obsoleteExit = yield* Fiber.await(obsolete);
-					expect(Exit.isFailure(obsoleteExit)).toBe(true);
-					expect(yield* latest(searches[0]!)).toEqual(first.query.search(searches[0]!));
 					const groupRequests = ["Content/Text", "Content/Other"].map((openGroup) =>
 						Schema.decodeUnknownSync(TextCorpusSearchRequest)({
 							...searches[0],
@@ -220,11 +202,20 @@ it("retains readers across refresh steps updating selected inputs and review", a
 						})
 					);
 					expect(
-						yield* Effect.all(groupRequests.map(latest), { concurrency: "unbounded" })
-					).toEqual(groupRequests.map((request) => first.query.search(request)));
+						yield* Effect.all(groupRequests.map(first.search), {
+							concurrency: "unbounded"
+						})
+					).toEqual(
+						yield* Effect.all(
+							groupRequests.map((request) => first.query.search(request))
+						)
+					);
 					expect(
-						first.query.search({ query: "Source", capability: "all", pageSize: 10 })
-							.total
+						(yield* first.query.search({
+							query: "Source",
+							capability: "all",
+							pageSize: 10
+						})).total
 					).toBe(1);
 					const before = yield* hydrateJoinedTarget(first.joined);
 					expect(before.lines[0]?.source).toBe("Source");
@@ -251,12 +242,18 @@ it("retains readers across refresh steps updating selected inputs and review", a
 					});
 					const after = yield* hydrateJoinedTarget(changed.joined);
 					expect(
-						changed.query.search({ query: "Changed", capability: "all", pageSize: 10 })
-							.total
+						(yield* changed.query.search({
+							query: "Changed",
+							capability: "all",
+							pageSize: 10
+						})).total
 					).toBe(1);
 					expect(
-						first.query.search({ query: "Changed", capability: "all", pageSize: 10 })
-							.total
+						(yield* first.query.search({
+							query: "Changed",
+							capability: "all",
+							pageSize: 10
+						})).total
 					).toBe(0);
 					expect(after.lines[0]?.source).toBe(value);
 					const marks = after.lines[0]?.cultures.find((mark) => mark.culture === "de");
@@ -264,12 +261,16 @@ it("retains readers across refresh steps updating selected inputs and review", a
 					expect(marks?.poTranslation).toBe("Pending");
 					expect(yield* hydrateJoinedTarget(first.joined)).toEqual(before);
 					expect(yield* first.search(searches[0]!)).toEqual(
-						first.query.search(searches[0]!)
+						yield* first.query.search(searches[0]!)
 					);
 					expect(
 						yield* changed.search({ query: "Changed", capability: "all", pageSize: 10 })
 					).toEqual(
-						changed.query.search({ query: "Changed", capability: "all", pageSize: 10 })
+						yield* changed.query.search({
+							query: "Changed",
+							capability: "all",
+							pageSize: 10
+						})
 					);
 					const reviewPath = defaultLocalizationReviewPath(authored.name);
 					yield* Effect.promise(async () => {
@@ -319,15 +320,18 @@ it("retains readers across refresh steps updating selected inputs and review", a
 					});
 					expect(incremental.join).toMatchObject({ strategy: "incremental" });
 					expect(
-						incremental.query.search({
+						(yield* incremental.query.search({
 							query: "Optimized",
 							capability: "all",
 							pageSize: 10
-						}).total
+						})).total
 					).toBe(1);
 					expect(
-						full.query.search({ query: "Optimized", capability: "all", pageSize: 10 })
-							.total
+						(yield* full.query.search({
+							query: "Optimized",
+							capability: "all",
+							pageSize: 10
+						})).total
 					).toBe(0);
 					expect(yield* hydrateJoinedTarget(full.joined)).toEqual(pinned);
 				})
@@ -336,9 +340,11 @@ it("retains readers across refresh steps updating selected inputs and review", a
 					progress.push(event);
 				}),
 				Effect.provide(
-					gameTextIndexRefreshLayer(join(projectRoot, "cache"), {
-						searchWorker: true
-					}).pipe(Layer.provide(source), Layer.provide(builder), Layer.provide(evidence))
+					gameTextIndexRefreshLayer(join(projectRoot, "cache"), {}).pipe(
+						Layer.provide(source),
+						Layer.provide(builder),
+						Layer.provide(evidence)
+					)
 				)
 			)
 		);

@@ -1,0 +1,20 @@
+{
+	"contract": {
+		"name": "uasset-io",
+		"version": {
+			"major": 1,
+			"minor": 15
+		}
+	},
+	"requestId": "engine-fixture",
+	"limits": {
+		"maximumOutputBytes": 4096,
+		"timeoutMs": 1000
+	},
+	"operation": {
+		"kind": "game_text_engine",
+		"request": {
+			"action": "capabilities"
+		}
+	}
+}

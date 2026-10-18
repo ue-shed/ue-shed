@@ -150,6 +150,7 @@ export type LocalizationFocus = typeof LocalizationFocus.Type;
  * includes detailed retained line evidence.
  */
 export const LocalizationFocusResult = Schema.Union([
+	Failure,
 	NotReady,
 	Schema.Struct({ status: Schema.Literal("not_found") }),
 	Schema.Struct({ status: Schema.Literal("found"), focus: LocalizationFocus })

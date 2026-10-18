@@ -13,7 +13,7 @@ import {
 	withoutAcceptedFindings
 } from "./localization-review.js";
 import { localizationProgressReport } from "./localization-reports.js";
-import { textCorpusQuery } from "./query.js";
+import { textCorpusQuery } from "./query.test-support.js";
 import {
 	archiveEntry,
 	corpus,

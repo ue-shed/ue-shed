@@ -1,0 +1,371 @@
+//! Native grouping and facet aggregation over matched rows.
+use crate::engine_match::{Kind, Projection, checkpoint};
+use crate::engine_places::Places;
+use crate::engine_query::{EngineQuery, audience};
+use crate::engine_types::*;
+use crate::wtf8::Wtf8Buf;
+use crate::{Result, require};
+use serde_json::{Value, json};
+use std::collections::{HashMap, HashSet};
+use std::sync::atomic::AtomicBool;
+
+const PROBLEM_LABELS: [&str; 7] = [
+    "Key changed",
+    "Same key, different text",
+    "Not gathered yet",
+    "Changed since gather",
+    "Translation work",
+    "Findings",
+    "Up to date",
+];
+const ORIGIN_LABELS: [&str; 5] = ["String table", "Data table", "Asset", "C++", "Other source"];
+const AUDIENCE_LABELS: [&str; 3] = ["Player text", "Editor text", "Unknown"];
+struct Tally {
+    count: usize,
+    work: usize,
+    worst: u32,
+    label: u32,
+    first: usize,
+    last: usize,
+}
+
+impl Places {
+    pub(crate) fn coordinate(
+        &self,
+        id: u32,
+        folder: bool,
+        depth: Option<usize>,
+        parent: Option<&[u8]>,
+    ) -> Result<(u32, u32)> {
+        let row = self.file_row(id)?;
+        if !folder {
+            return Ok((self.assets[row], self.file_values[row]));
+        }
+        let begin = *self.folder_starts.get(row).ok_or("Missing folder start.")? as usize;
+        let end = *self
+            .folder_starts
+            .get(row + 1)
+            .ok_or("Missing folder end.")? as usize;
+        require(
+            begin < end && end <= self.folder_keys.len() && end <= self.folder_labels.len(),
+            "Invalid folder range.",
+        )?;
+        let position = depth.map_or(end - 1, |depth| {
+            begin.saturating_add(depth.saturating_sub(1))
+        });
+        if position >= end
+            || parent.is_some_and(|parent| {
+                self.labels
+                    .get(self.folder_keys[end - 1])
+                    .map_or(true, |last| !last.starts_with(parent))
+            })
+        {
+            return Ok((0, 0));
+        }
+        Ok((self.folder_keys[position], self.folder_labels[position]))
+    }
+    fn display(&self, by: GroupBy, key: u32, label: u32) -> Result<(String, String)> {
+        let key = key as usize;
+        Ok(match by {
+            GroupBy::Problem => (
+                PROBLEMS
+                    .get(key)
+                    .ok_or("Unknown problem group.")?
+                    .to_string(),
+                PROBLEM_LABELS
+                    .get(key)
+                    .ok_or("Unknown problem label.")?
+                    .to_string(),
+            ),
+            GroupBy::Origin => {
+                if key == 0 {
+                    (String::new(), String::new())
+                } else {
+                    (
+                        ORIGINS
+                            .get(key - 1)
+                            .ok_or("Unknown origin group.")?
+                            .to_string(),
+                        ORIGIN_LABELS
+                            .get(key - 1)
+                            .ok_or("Unknown origin label.")?
+                            .to_string(),
+                    )
+                }
+            }
+            GroupBy::Audience => (
+                AUDIENCES
+                    .get(key)
+                    .ok_or("Unknown audience group.")?
+                    .to_string(),
+                AUDIENCE_LABELS
+                    .get(key)
+                    .ok_or("Unknown audience label.")?
+                    .to_string(),
+            ),
+            _ => (self.labels.text(key as u32)?, self.labels.text(label)?),
+        })
+    }
+    fn label_rank(&self, by: GroupBy, key: u32, label: u32) -> Result<u32> {
+        Ok(match by {
+            GroupBy::Problem => 0,
+            GroupBy::Origin => *[0, 5, 3, 1, 2, 4]
+                .get(key as usize)
+                .ok_or("Unknown origin rank.")?,
+            GroupBy::Audience => *[1, 0, 2]
+                .get(key as usize)
+                .ok_or("Unknown audience rank.")?,
+            _ => *self.rank.get(label as usize).ok_or("Unknown place rank.")?,
+        })
+    }
+}
+impl Projection {
+    pub(crate) fn row_problem(&self, localized: bool, row: usize, scope: &[usize]) -> u32 {
+        if localized {
+            return self.problem(row, scope);
+        }
+        let flags = self.raw.signals[row];
+        let bits = if flags & 16 != 0 { 2 } else { 0 } | if flags & 15 != 0 { 32 } else { 0 };
+        if bits == 0 { 64 } else { bits }
+    }
+    pub(crate) fn group_key(
+        &self,
+        places: &Places,
+        localized: bool,
+        row: usize,
+        scope: &[usize],
+        by: GroupBy,
+    ) -> Result<u32> {
+        let kind = if localized { Kind::Line } else { Kind::Raw };
+        Ok(match by {
+            GroupBy::Problem => self.row_problem(localized, row, scope).trailing_zeros(),
+            GroupBy::Origin => {
+                let bits = if localized {
+                    self.origins[row]
+                } else {
+                    self.raw.origins[row]
+                };
+                if bits == 0 {
+                    0
+                } else {
+                    bits.trailing_zeros() + 1
+                }
+            }
+            GroupBy::Audience => {
+                let value = audience(if localized {
+                    self.audience[row]
+                } else {
+                    self.raw.audience[row]
+                });
+                AUDIENCES
+                    .iter()
+                    .position(|label| *label == value)
+                    .ok_or("Unknown audience.")? as u32
+            }
+            GroupBy::Namespace => self.namespace(places, kind, row)?.unwrap_or(0),
+            GroupBy::Asset | GroupBy::Folder => {
+                let mut key = 0;
+                self.each_file(kind, row, &mut |file| {
+                    key = places
+                        .coordinate(file, by == GroupBy::Folder, None, None)?
+                        .0;
+                    Ok(true)
+                })?;
+                key
+            }
+        })
+    }
+}
+impl EngineQuery {
+    pub(crate) fn aggregate(
+        &mut self,
+        rows: &[u32],
+        request: &SearchRequest,
+        by: GroupBy,
+        facet: bool,
+        under: &str,
+        cancelled: &AtomicBool,
+    ) -> Result<Value> {
+        let projection = Projection::open(self, cancelled)?;
+        let places = Places::open(self)?;
+        let localized = request.localization.is_some();
+        let kind = if localized { Kind::Line } else { Kind::Raw };
+        let scope = self.culture_scope(request.localization.as_ref())?;
+        let parent = Self::normalized_path(under)
+            .trim_end_matches('/')
+            .to_owned();
+        let depth = if parent.is_empty() {
+            1
+        } else {
+            parent.split('/').count() + 1
+        };
+        let parent = if parent.is_empty() {
+            None
+        } else {
+            Some(Wtf8Buf::from_view(&(parent + "/")).into_bytes())
+        };
+        let mut tallies: HashMap<u32, Tally> = HashMap::new();
+        for (stamp, row) in rows.iter().enumerate() {
+            if stamp & 255 == 0 {
+                checkpoint(cancelled)?;
+            }
+            let row = *row as usize;
+            let bits = projection.row_problem(localized, row, &scope);
+            let worst = bits.trailing_zeros();
+            let mut visit = |key: u32, label: u32| {
+                let tally = tallies.entry(key).or_insert(Tally {
+                    count: 0,
+                    work: 0,
+                    worst,
+                    label,
+                    first: stamp,
+                    last: usize::MAX,
+                });
+                if tally.first == stamp {
+                    tally.label = label;
+                }
+                if tally.last != stamp {
+                    tally.count += 1;
+                    tally.work += usize::from(bits & 31 != 0);
+                    tally.worst = tally.worst.min(worst);
+                    tally.last = stamp;
+                }
+            };
+            match by {
+                GroupBy::Asset | GroupBy::Folder => {
+                    let mut found = false;
+                    projection.each_file(kind, row, &mut |file| {
+                        let (key, label) = places.coordinate(
+                            file,
+                            by == GroupBy::Folder,
+                            if facet && by == GroupBy::Folder {
+                                Some(depth)
+                            } else {
+                                None
+                            },
+                            parent.as_deref().filter(|_| facet && by == GroupBy::Folder),
+                        )?;
+                        if facet && label == 0 {
+                            return Ok(false);
+                        }
+                        visit(key, label);
+                        found = true;
+                        Ok(!facet)
+                    })?;
+                    if !facet && !found {
+                        visit(0, 0);
+                    }
+                }
+                GroupBy::Origin if facet => {
+                    let bits = if localized {
+                        projection.origins[row]
+                    } else {
+                        projection.raw.origins[row]
+                    };
+                    for bit in 0..ORIGINS.len() {
+                        if bits & (1 << bit) != 0 {
+                            visit(bit as u32 + 1, bit as u32 + 1);
+                        }
+                    }
+                }
+                _ => {
+                    let key = projection.group_key(&places, localized, row, &scope, by)?;
+                    visit(key, key);
+                }
+            }
+        }
+        let mut entries = tallies
+            .into_iter()
+            .map(|(key, tally)| Ok((places.label_rank(by, key, tally.label)?, key, tally)))
+            .collect::<Result<Vec<_>>>()?;
+        entries.sort_by(|(a_rank, _, a), (b_rank, _, b)| {
+            a.worst
+                .cmp(&b.worst)
+                .then_with(|| b.work.cmp(&a.work))
+                .then_with(|| b.count.cmp(&a.count))
+                .then_with(|| a_rank.cmp(b_rank))
+        });
+        let more = entries.len().saturating_sub(MAX_GROUPS);
+        let entries=entries.into_iter().take(MAX_GROUPS).map(|(_,key,tally)| {
+            let (key,label)=places.display(by,key,tally.label)?;
+            Ok(json!({"key":key,"label":label,"count":tally.count,"needWork":tally.work,"worst":PROBLEMS[tally.worst as usize]}))
+        }).collect::<Result<Vec<_>>>()?;
+        Ok(json!({"entries":entries,"more":more}))
+    }
+    pub(crate) fn file_scope(
+        &mut self,
+        rows: &[u32],
+        request: &SearchRequest,
+        cancelled: &AtomicBool,
+    ) -> Result<Option<Value>> {
+        let Some(files) = request
+            .location
+            .as_ref()
+            .and_then(|scope| scope.files.as_ref())
+        else {
+            return Ok(None);
+        };
+        let mut outside = 0;
+        let mut keys = HashSet::new();
+        for file in files {
+            let key = crate::join_policy::file_key(file);
+            if key.is_empty() {
+                continue;
+            }
+            let bytes = key.as_bytes();
+            if key.starts_with('/')
+                || (bytes.len() > 2
+                    && bytes[0].is_ascii_lowercase()
+                    && bytes[1] == b':'
+                    && bytes[2] == b'/')
+            {
+                outside += 1;
+            } else {
+                keys.insert(key);
+            }
+        }
+        let places = Places::open(self)?;
+        let projection = Projection::open(self, cancelled)?;
+        let labels = places.labels(&keys.iter().cloned().collect::<Vec<_>>(), false);
+        let mut seen = HashSet::new();
+        for (index, row) in rows.iter().enumerate() {
+            if index & 255 == 0 {
+                checkpoint(cancelled)?;
+            }
+            projection.each_file(
+                if request.localization.is_some() {
+                    Kind::Line
+                } else {
+                    Kind::Raw
+                },
+                *row as usize,
+                &mut |file| {
+                    let key = places.asset(file)?;
+                    if labels.contains(&key) {
+                        seen.insert(key);
+                    }
+                    Ok(false)
+                },
+            )?;
+        }
+        let scanned = places.scanned_keys.iter().copied().collect::<HashSet<_>>();
+        let mut missing = 0;
+        for key in &keys {
+            let basename = key.rsplit('/').next().unwrap_or("");
+            let extension = basename
+                .rsplit_once('.')
+                .is_some_and(|(_, suffix)| !suffix.is_empty());
+            if !extension
+                && places
+                    .labels(std::slice::from_ref(key), false)
+                    .iter()
+                    .all(|id| !scanned.contains(id))
+            {
+                missing += 1;
+            }
+        }
+        Ok(Some(
+            json!({"files":keys.len()+outside,"textFiles":seen.len(),"outside":outside,"notScanned":missing}),
+        ))
+    }
+}

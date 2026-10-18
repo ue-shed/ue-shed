@@ -1,3 +1,4 @@
+import type { JoinedTargetInput } from "./joined-target.js";
 import { Effect } from "effect";
 import {
 	LocalizationIdentity,
@@ -5,8 +6,8 @@ import {
 	TextKey,
 	localizationReviewFingerprint
 } from "@ue-shed/localization";
-import type { JoinedColumns, JoinedTargetInput } from "./joined-target.js";
-import { stateBit } from "./joined-target.js";
+import type { JoinedColumns } from "./joined-target-reference.test-support.js";
+import { stateBit } from "./joined-target-reference.test-support.js";
 import { absent, occurrenceLocation, packagePath } from "./joined-target-input.js";
 import type { SharedIndexReader, SharedIndexWriter } from "./shared-index.js";
 import {

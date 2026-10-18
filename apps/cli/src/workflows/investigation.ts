@@ -53,14 +53,14 @@ export const runInvestigation = Effect.fn("Cli.workflow.investigation")(
 							},
 							command.reader
 						);
-						const corpus = indexed.corpus;
+						const corpus = yield* indexed.corpus;
 						const localized = indexed.query;
 						// Replays the Workbench quality list: the same join, review file and rules.
 						const workspace =
 							preset.query.mode === "quality" &&
 							preset.query.workspaceFilter !== undefined &&
 							preset.query.localization &&
-							indexed.localizationJoin
+							(yield* indexed.localizationJoin)
 								? text
 										.localizationQualityWorkspace(
 											preset.rules
@@ -71,12 +71,12 @@ export const runInvestigation = Effect.fn("Cli.workflow.investigation")(
 												: undefined,
 											textChecks.checkLocalizationTarget(
 												corpus,
-												indexed.localizationJoin,
+												yield* indexed.localizationJoin,
 												indexed.evidence,
 												{ review: indexed.review.file },
 												preset.rules
 											),
-											indexed.localizationJoin
+											yield* indexed.localizationJoin
 										)
 										.export({
 											target: preset.query.localization.target,

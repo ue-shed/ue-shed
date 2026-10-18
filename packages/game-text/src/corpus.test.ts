@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildTextCorpus, textOccurrencesFromInspection } from "./corpus.js";
-import { textCorpusQuery } from "./query.js";
-import { searchTextCorpus } from "./search.js";
+import { textCorpusQuery } from "./query.test-support.js";
+import { searchTextCorpus } from "./search.test-support.js";
 import type { SavedAssetInspection } from "@ue-shed/unreal-assets";
 
 const inspection: SavedAssetInspection = {

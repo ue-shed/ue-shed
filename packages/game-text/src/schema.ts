@@ -3,7 +3,7 @@ import { SavedAssetTextCoverageGap } from "@ue-shed/unreal-assets/text-extractio
 import { TextUnitId, TextOccurrenceId } from "./identifiers.js";
 import {
 	LocalizationCultureMark,
-	LocalizationLine,
+	LocalizationLinePreview,
 	LocalizationLineId,
 	LocalizationQueryPage,
 	LocalizationSelection
@@ -701,6 +701,7 @@ export type TextCorpusSearchPage = Schema.Schema.Type<typeof TextCorpusSearchPag
  * not establish that the project has no text.
  */
 export const TextCorpusSearchResult = Schema.Union([
+	Schema.Struct({ status: Schema.Literal("failed"), error: TextCorpusPublicError }),
 	Schema.Struct({ status: Schema.Literal("ready"), page: TextCorpusSearchPage }),
 	Schema.Struct({ status: Schema.Literal("not_ready") })
 ]);
@@ -733,7 +734,7 @@ export type TextCorpusFocusRequest = Schema.Schema.Type<typeof TextCorpusFocusRe
  * totalOccurrences describes the full unit even when only some places are hydrated.
  */
 export const TextCorpusFocus = Schema.Struct({
-	localization: Schema.optionalKey(LocalizationLine),
+	localization: Schema.optionalKey(LocalizationLinePreview),
 	diagnostics: Schema.Array(TextCorpusDiagnostic),
 	nextOccurrenceCursor: Schema.optional(TextOccurrenceId),
 	occurrences: Schema.Array(TextOccurrence),
@@ -747,6 +748,7 @@ export type TextCorpusFocus = Schema.Schema.Type<typeof TextCorpusFocus>;
  * Only found carries focused source and occurrence evidence.
  */
 export const TextCorpusFocusResult = Schema.Union([
+	Schema.Struct({ status: Schema.Literal("failed"), error: TextCorpusPublicError }),
 	Schema.Struct({ status: Schema.Literal("found"), focus: TextCorpusFocus }),
 	Schema.Struct({ status: Schema.Literal("not_found") }),
 	Schema.Struct({ status: Schema.Literal("not_ready") })

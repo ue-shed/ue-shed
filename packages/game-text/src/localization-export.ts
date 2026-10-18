@@ -42,7 +42,7 @@ const byCodeUnit = (left: string, right: string) => (left < right ? -1 : left > 
  * native culture and those. The CSV is for reading and sharing; edits go through PO change sets.
  */
 export function localizationLinesCsv(input: {
-	readonly join: LocalizationJoin;
+	readonly join: Pick<LocalizationJoin, "nativeCulture" | "cultures">;
 	readonly lines: readonly LocalizationLine[];
 	readonly corpus?: TextCorpus | undefined;
 	readonly cultures?: readonly string[] | undefined;

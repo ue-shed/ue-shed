@@ -11,7 +11,8 @@ import type { SavedAssetPackageTextRecord } from "@ue-shed/unreal-assets";
 import { emptyPackageTextRecord } from "./package-text-record.js";
 import { target } from "./localization.test-support.js";
 import { GameTextIndexSource, gameTextIndexRefreshLayer } from "./index-refresh.js";
-import { typeScriptIndexBuilderLayer } from "./index-builder.js";
+import { typeScriptIndexBuilderLayer } from "./index-reference.test-support.js";
+
 import { textCorpusFromExtractionEvents } from "./corpus.js";
 
 export const makeIndexRegressionFixture = Effect.fn("Test.GameText.indexFixture")(function* (
@@ -111,13 +112,17 @@ export const makeIndexRegressionFixture = Effect.fn("Test.GameText.indexFixture"
 			});
 		})
 	).pipe(Layer.provide(LocalizationEvidenceNodeLive));
-	const layer = (worker = false, suppliedSource = source, qualityWorker = false) =>
+	const layer = (
+		_worker = false,
+		suppliedSource = source,
+		qualityWorker = false,
+		implementation = typeScriptIndexBuilderLayer
+	) =>
 		gameTextIndexRefreshLayer(join(projectRoot, "cache"), {
-			searchWorker: worker,
 			qualityWorker
 		}).pipe(
 			Layer.provide(suppliedSource),
-			Layer.provide(typeScriptIndexBuilderLayer),
+			Layer.provide(implementation),
 			Layer.provide(evidence)
 		);
 	return {

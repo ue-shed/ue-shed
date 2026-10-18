@@ -1,0 +1,108 @@
+{
+	"method": "Separate one-sample diagnostics, not accepted timing runs. Single-reader query diagnostics measure retained native RSS at explicit checkpoints. Finer Workbench process sampling shows old and replacement native readers overlapping during refresh; different samples catch different parts of the overlap. Do not interpret coarse peak differences as retained cache size or claim a memory improvement.",
+	"singleReader": {
+		"baseline": [
+			{
+				"name": "summary",
+				"native": {
+					"WorkingSet64": 359628800,
+					"PrivateMemorySize64": 356225024
+				},
+				"node": {
+					"rss": 124485632,
+					"heapTotal": 72126464,
+					"heapUsed": 41894592,
+					"external": 7038750,
+					"arrayBuffers": 2907247
+				}
+			},
+			{
+				"name": "after queries",
+				"native": {
+					"WorkingSet64": 698925056,
+					"PrivateMemorySize64": 696094720
+				},
+				"node": {
+					"rss": 130887680,
+					"heapTotal": 77758464,
+					"heapUsed": 61728016,
+					"external": 8120141,
+					"arrayBuffers": 3988598
+				}
+			}
+		],
+		"candidate": [
+			{
+				"name": "summary",
+				"native": {
+					"WorkingSet64": 365268992,
+					"PrivateMemorySize64": 362799104
+				},
+				"node": {
+					"rss": 123535360,
+					"heapTotal": 71602176,
+					"heapUsed": 41807560,
+					"external": 7038756,
+					"arrayBuffers": 2907253
+				}
+			},
+			{
+				"name": "after queries",
+				"native": {
+					"WorkingSet64": 704950272,
+					"PrivateMemorySize64": 703012864
+				},
+				"node": {
+					"rss": 130768896,
+					"heapTotal": 77594624,
+					"heapUsed": 61514000,
+					"external": 8120178,
+					"arrayBuffers": 3988635
+				}
+			}
+		]
+	},
+	"workbenchOverlap": {
+		"baseline": {
+			"stage": "workbench:refresh-no-change",
+			"treeRssBytes": 1576742912,
+			"nativeProcesses": [
+				{
+					"rssBytes": 701308928
+				},
+				{
+					"rssBytes": 452386816
+				}
+			],
+			"node": {
+				"rss": 298881024,
+				"heapTotal": 185720832,
+				"heapUsed": 127212024,
+				"external": 16368247,
+				"arrayBuffers": 12232524
+			}
+		},
+		"candidate": {
+			"stage": "workbench:refresh-no-change",
+			"treeRssBytes": 1499148288,
+			"nativeProcesses": [
+				{
+					"rssBytes": 707653632
+				},
+				{
+					"rssBytes": 365666304
+				},
+				{
+					"rssBytes": 8273920
+				}
+			],
+			"node": {
+				"rss": 299618304,
+				"heapTotal": 205754368,
+				"heapUsed": 144942496,
+				"external": 16599069,
+				"arrayBuffers": 12463298
+			}
+		}
+	}
+}

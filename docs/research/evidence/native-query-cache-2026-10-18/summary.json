@@ -1,0 +1,386 @@
+{
+	"cli": {
+		"baseline": {
+			"stages": {
+				"warm-open": {
+					"medianMs": 1535.5676,
+					"rangeMs": [1516.1447999999998, 1551.1204000000002],
+					"medianMaxGapMs": 73.82369999999992,
+					"nativeMedianMs": null
+				},
+				"first-query": {
+					"medianMs": 244.88529999999992,
+					"rangeMs": [242.1909999999998, 246.3708999999999],
+					"medianMaxGapMs": 18.58730000000014,
+					"nativeMedianMs": 241.2202
+				},
+				"count": {
+					"medianMs": 63.228700000000124,
+					"rangeMs": [63.06669999999985, 63.49319999999989],
+					"medianMaxGapMs": 22.47330000000011,
+					"nativeMedianMs": 60.8862
+				},
+				"filter": {
+					"medianMs": 32.70620000000008,
+					"rangeMs": [32.649999999999636, 32.99279999999999],
+					"medianMaxGapMs": 15.15119999999979,
+					"nativeMedianMs": 30.5383
+				},
+				"facet": {
+					"medianMs": 140.4312,
+					"rangeMs": [140.36979999999994, 140.48159999999962],
+					"medianMaxGapMs": 16.193899999999758,
+					"nativeMedianMs": 138.12099999999998
+				},
+				"page": {
+					"medianMs": 94.66039999999975,
+					"rangeMs": [94.47160000000031, 94.77959999999985],
+					"medianMaxGapMs": 19.2183,
+					"nativeMedianMs": 87.0761
+				},
+				"facet-repeat": {
+					"medianMs": 140.20149999999967,
+					"rangeMs": [139.35710000000017, 140.36139999999978],
+					"medianMaxGapMs": 23.658200000000306,
+					"nativeMedianMs": 137.6793
+				},
+				"page-repeat": {
+					"medianMs": 83.57899999999972,
+					"rangeMs": [83.11349999999993, 84.27489999999989],
+					"medianMaxGapMs": 15.56190000000015,
+					"nativeMedianMs": 76.973
+				},
+				"search": {
+					"medianMs": 193.0970000000002,
+					"rangeMs": [192.4671000000003, 193.64980000000014],
+					"medianMaxGapMs": 15.730999999999767,
+					"nativeMedianMs": 191.138
+				},
+				"search-repeat": {
+					"medianMs": 62.86809999999969,
+					"rangeMs": [62.6242000000002, 62.99160000000029],
+					"medianMaxGapMs": 21.141799999999876,
+					"nativeMedianMs": 60.818200000000004
+				},
+				"empty-search": {
+					"medianMs": 140.16730000000007,
+					"rangeMs": [140.04129999999986, 143.9448999999995],
+					"medianMaxGapMs": 16.27600000000075,
+					"nativeMedianMs": 138.61419999999998
+				},
+				"empty-search-repeat": {
+					"medianMs": 1.8968000000004395,
+					"rangeMs": [1.8357999999998356, 2.013699999999517],
+					"medianMaxGapMs": 1.893699999999626,
+					"nativeMedianMs": 0.6682
+				},
+				"focus": {
+					"medianMs": 3.1278000000002066,
+					"rangeMs": [3.1252999999996973, 3.3976000000002387],
+					"medianMaxGapMs": 3.1247999999995955,
+					"nativeMedianMs": null
+				},
+				"refresh-no-change": {
+					"medianMs": 1683.6603000000005,
+					"rangeMs": [1660.8166999999994, 1700.7416999999996],
+					"medianMaxGapMs": 76.53359999999975,
+					"nativeMedianMs": null
+				},
+				"loc-status-command": {
+					"medianMs": 2230.2166000000007,
+					"rangeMs": [2213.6276000000007, 2259.1189999999997],
+					"medianMaxGapMs": 284.83549999999923,
+					"nativeMedianMs": 271.3162
+				}
+			},
+			"processTreePeakMiB": {
+				"median": 1024.10546875,
+				"range": [944.3828125, 1280.92578125]
+			}
+		},
+		"candidate": {
+			"stages": {
+				"warm-open": {
+					"medianMs": 1577.2806,
+					"rangeMs": [1565.8927, 1592.7132000000001],
+					"medianMaxGapMs": 71.32759999999962,
+					"nativeMedianMs": null
+				},
+				"first-query": {
+					"medianMs": 238.48230000000012,
+					"rangeMs": [237.43020000000024, 239.98530000000028],
+					"medianMaxGapMs": 17.465000000000146,
+					"nativeMedianMs": 234.3856
+				},
+				"count": {
+					"medianMs": 2.928399999999783,
+					"rangeMs": [2.88149999999996, 2.9495999999999185],
+					"medianMaxGapMs": 2.907100000000355,
+					"nativeMedianMs": 1.0965
+				},
+				"filter": {
+					"medianMs": 33.295900000000074,
+					"rangeMs": [33.283600000000206, 33.59089999999969],
+					"medianMaxGapMs": 15.688200000000052,
+					"nativeMedianMs": 31.251300000000004
+				},
+				"facet": {
+					"medianMs": 81.0313000000001,
+					"rangeMs": [80.83539999999994, 81.72380000000021],
+					"medianMaxGapMs": 18.021099999999933,
+					"nativeMedianMs": 78.6451
+				},
+				"page": {
+					"medianMs": 36.627700000000004,
+					"rangeMs": [36.28659999999991, 36.68399999999974],
+					"medianMaxGapMs": 19.05119999999988,
+					"nativeMedianMs": 28.7568
+				},
+				"facet-repeat": {
+					"medianMs": 4.102899999999863,
+					"rangeMs": [4.07340000000022, 4.121000000000095],
+					"medianMaxGapMs": 4.086699999999837,
+					"nativeMedianMs": 2.0465
+				},
+				"page-repeat": {
+					"medianMs": 24.91840000000002,
+					"rangeMs": [24.618299999999635, 25.228300000000218],
+					"medianMaxGapMs": 16.096000000000004,
+					"nativeMedianMs": 18.503
+				},
+				"search": {
+					"medianMs": 190.24540000000025,
+					"rangeMs": [188.10739999999987, 190.4411],
+					"medianMaxGapMs": 16.128700000000208,
+					"nativeMedianMs": 188.3941
+				},
+				"search-repeat": {
+					"medianMs": 2.56230000000005,
+					"rangeMs": [2.43080000000009, 2.8761999999996988],
+					"medianMaxGapMs": 2.5575999999996384,
+					"nativeMedianMs": 1.1195000000000002
+				},
+				"empty-search": {
+					"medianMs": 129.67270000000008,
+					"rangeMs": [126.4913999999999, 130.2876000000001],
+					"medianMaxGapMs": 16.739000000000033,
+					"nativeMedianMs": 127.9809
+				},
+				"empty-search-repeat": {
+					"medianMs": 1.813300000000254,
+					"rangeMs": [1.8033999999997832, 1.866399999999885],
+					"medianMaxGapMs": 1.8085000000000946,
+					"nativeMedianMs": 0.5433
+				},
+				"focus": {
+					"medianMs": 3.145300000000134,
+					"rangeMs": [2.9451999999996588, 3.2481000000002496],
+					"medianMaxGapMs": 3.1424000000001797,
+					"nativeMedianMs": null
+				},
+				"refresh-no-change": {
+					"medianMs": 1707.6055000000001,
+					"rangeMs": [1701.7852999999996, 1736.9638000000004],
+					"medianMaxGapMs": 73.81959999999981,
+					"nativeMedianMs": null
+				},
+				"loc-status-command": {
+					"medianMs": 2288.5101000000013,
+					"rangeMs": [2279.3527999999988, 2303.2398999999987],
+					"medianMaxGapMs": 276.0537999999997,
+					"nativeMedianMs": 264.8901
+				}
+			},
+			"processTreePeakMiB": {
+				"median": 940.63671875,
+				"range": [935.0703125, 972.40234375]
+			}
+		}
+	},
+	"workbench": {
+		"baseline": {
+			"stages": {
+				"warm-open": {
+					"medianMs": 2224.8234,
+					"rangeMs": [2219.8000999999995, 2253.5819],
+					"medianMaxGapMs": 155.356,
+					"nativeMedianMs": 270.9869
+				},
+				"first-query": {
+					"medianMs": 71.42729999999983,
+					"rangeMs": [71.11490000000003, 71.43089999999984],
+					"medianMaxGapMs": 23.766599999999926,
+					"nativeMedianMs": 67.2811
+				},
+				"count": {
+					"medianMs": 62.90110000000004,
+					"rangeMs": [62.89260000000013, 62.944300000000105],
+					"medianMaxGapMs": 16.60530000000017,
+					"nativeMedianMs": 60.4235
+				},
+				"filter": {
+					"medianMs": 32.77419999999984,
+					"rangeMs": [32.37660000000005, 33.257800000000316],
+					"medianMaxGapMs": 19.65650000000005,
+					"nativeMedianMs": 30.0775
+				},
+				"facet": {
+					"medianMs": 140.56010000000015,
+					"rangeMs": [140.32699999999977, 140.98450000000003],
+					"medianMaxGapMs": 22.784900000000107,
+					"nativeMedianMs": 137.5659
+				},
+				"page": {
+					"medianMs": 95.8140000000003,
+					"rangeMs": [95.61870000000044, 96.06449999999995],
+					"medianMaxGapMs": 16.174799999999777,
+					"nativeMedianMs": 87.0267
+				},
+				"facet-repeat": {
+					"medianMs": 142.29719999999998,
+					"rangeMs": [141.8714, 142.59450000000015],
+					"medianMaxGapMs": 16.085000000000036,
+					"nativeMedianMs": 139.19480000000001
+				},
+				"page-repeat": {
+					"medianMs": 85.3135000000002,
+					"rangeMs": [84.52670000000035, 85.48970000000008],
+					"medianMaxGapMs": 15.871399999999994,
+					"nativeMedianMs": 78.29029999999999
+				},
+				"search": {
+					"medianMs": 194.2476999999999,
+					"rangeMs": [193.45330000000013, 195.09510000000046],
+					"medianMaxGapMs": 15.72609999999986,
+					"nativeMedianMs": 191.92159999999998
+				},
+				"search-repeat": {
+					"medianMs": 62.30609999999979,
+					"rangeMs": [62.24069999999938, 62.68460000000051],
+					"medianMaxGapMs": 20.896899999999732,
+					"nativeMedianMs": 60.0714
+				},
+				"empty-search": {
+					"medianMs": 137.15229999999974,
+					"rangeMs": [136.65670000000046, 140.51080000000002],
+					"medianMaxGapMs": 16.19840000000022,
+					"nativeMedianMs": 134.91559999999998
+				},
+				"empty-search-repeat": {
+					"medianMs": 2.3419000000003507,
+					"rangeMs": [2.161000000000058, 2.449999999999818],
+					"medianMaxGapMs": 2.3392000000003463,
+					"nativeMedianMs": 0.6216
+				},
+				"focus": {
+					"medianMs": 3.6041000000004715,
+					"rangeMs": [3.4663999999993393, 3.830699999999524],
+					"medianMaxGapMs": 3.6023000000004686,
+					"nativeMedianMs": null
+				},
+				"refresh-no-change": {
+					"medianMs": 2174.4717,
+					"rangeMs": [2124.4876999999997, 2189.4463000000005],
+					"medianMaxGapMs": 70.22400000000016,
+					"nativeMedianMs": 271.7224
+				}
+			},
+			"processTreePeakMiB": {
+				"median": 1146.9140625,
+				"range": [1097.78125, 1167.640625]
+			}
+		},
+		"candidate": {
+			"stages": {
+				"warm-open": {
+					"medianMs": 2249.4692999999997,
+					"rangeMs": [2238.0463, 2289.6883],
+					"medianMaxGapMs": 155.36720000000014,
+					"nativeMedianMs": 264.4859
+				},
+				"first-query": {
+					"medianMs": 68.8385000000003,
+					"rangeMs": [68.53290000000015, 68.89649999999983],
+					"medianMaxGapMs": 17.97360000000026,
+					"nativeMedianMs": 64.831
+				},
+				"count": {
+					"medianMs": 3.2314000000001215,
+					"rangeMs": [3.1480999999998858, 3.2656999999999243],
+					"medianMaxGapMs": 3.213999999999942,
+					"nativeMedianMs": 1.1202
+				},
+				"filter": {
+					"medianMs": 33.7186999999999,
+					"rangeMs": [33.51429999999982, 34.04440000000022],
+					"medianMaxGapMs": 17.398599999999988,
+					"nativeMedianMs": 31.0567
+				},
+				"facet": {
+					"medianMs": 81.53279999999995,
+					"rangeMs": [81.404, 83.11090000000013],
+					"medianMaxGapMs": 19.387900000000172,
+					"nativeMedianMs": 78.6254
+				},
+				"page": {
+					"medianMs": 38.20289999999977,
+					"rangeMs": [37.039900000000216, 38.209299999999985],
+					"medianMaxGapMs": 18.998599999999897,
+					"nativeMedianMs": 29.245
+				},
+				"facet-repeat": {
+					"medianMs": 4.809799999999996,
+					"rangeMs": [4.731399999999667, 4.967099999999846],
+					"medianMaxGapMs": 4.795600000000377,
+					"nativeMedianMs": 2.0502
+				},
+				"page-repeat": {
+					"medianMs": 25.060599999999795,
+					"rangeMs": [24.764799999999923, 26.265899999999874],
+					"medianMaxGapMs": 17.853100000000268,
+					"nativeMedianMs": 18.1388
+				},
+				"search": {
+					"medianMs": 195.6487000000002,
+					"rangeMs": [194.08499999999913, 196.08240000000023],
+					"medianMaxGapMs": 16.329499999999825,
+					"nativeMedianMs": 193.0877
+				},
+				"search-repeat": {
+					"medianMs": 2.9386999999996988,
+					"rangeMs": [2.9382000000005064, 3.295199999999568],
+					"medianMaxGapMs": 2.9351000000006024,
+					"nativeMedianMs": 1.1123999999999998
+				},
+				"empty-search": {
+					"medianMs": 127.58500000000004,
+					"rangeMs": [126.60360000000037, 128.29129999999986],
+					"medianMaxGapMs": 24.800999999999476,
+					"nativeMedianMs": 125.21950000000001
+				},
+				"empty-search-repeat": {
+					"medianMs": 2.2119999999995343,
+					"rangeMs": [2.1947000000000116, 2.6934000000001106],
+					"medianMaxGapMs": 2.2105000000001382,
+					"nativeMedianMs": 0.5344
+				},
+				"focus": {
+					"medianMs": 3.5045000000000073,
+					"rangeMs": [3.503899999999703, 3.542899999999463],
+					"medianMaxGapMs": 3.5021999999999025,
+					"nativeMedianMs": null
+				},
+				"refresh-no-change": {
+					"medianMs": 2197.317,
+					"rangeMs": [2195.9331999999995, 2216.2892],
+					"medianMaxGapMs": 81.36250000000018,
+					"nativeMedianMs": 266.0658
+				}
+			},
+			"processTreePeakMiB": {
+				"median": 1371.8671875,
+				"range": [1367.6171875, 1378.1328125]
+			}
+		}
+	}
+}

@@ -1,0 +1,42 @@
+{
+	"baseCommit": "a2039d831e8e6f4fe146f511617fe23589804261",
+	"method": "Serial alternating fresh processes; retained 1x inputs; separate prewarmed cache per host; default Node heap; fixed affinity; warm filesystem caches; identical production host harness and requests; no concurrent heavy work",
+	"candidateSha256": "A216A35F30BD53E2399E22ABE5A93CBBDCEE15A9991CCCF070779744A49486CB",
+	"samplesPerBackendPerHost": 3,
+	"candidateCommit": "dbdb40f82955eddc716dc897c0ce1693a6928661",
+	"baselineSha256": "10FDD499DBA3CC9D34B1AC21A3A0A235F4068B08A9AE72F8EA73A8F9FC29C0DA",
+	"measurementHarnessFollowupCommit": "4d84a506f46f8b3e29cb874955f28384426cf333",
+	"acceptedFiles": [
+		"final-cli-baseline-0.json",
+		"final-cli-baseline-1.json",
+		"final-cli-baseline-2.json",
+		"final-cli-candidate-0.json",
+		"final-cli-candidate-1.json",
+		"final-cli-candidate-3.json",
+		"final-workbench-baseline-0.json",
+		"final-workbench-baseline-1.json",
+		"final-workbench-baseline-2.json",
+		"final-workbench-candidate-0.json",
+		"final-workbench-candidate-1.json",
+		"final-workbench-candidate-2.json"
+	],
+	"excludedFiles": [
+		{
+			"file": "final-cli-candidate-2.json",
+			"reason": "Worker exited after stages without a completion frame; old harness did not record exit code. Excluded and replaced by candidate round 3, which reports exit code 0."
+		}
+	],
+	"warmups": ["final-cli-baseline-warmup.json", "final-workbench-baseline-warmup.json"],
+	"supersededSeries": "query-cache-*.json used a cache shared between hosts and sometimes rebuilt joined views on host switches; excluded from accepted results.",
+	"dataset": {
+		"scale": "1x",
+		"occurrences": 1028205,
+		"localizationKeys": 132606,
+		"textPackages": 16500,
+		"inventoryPackages": 166518,
+		"cultures": 10,
+		"visibleLines": 583507
+	},
+	"scope": "Query reuse and pagination through production CLI and Workbench hosts; warm filesystem caches and existing immutable joined indexes. A first predicate/facet can still scan input.",
+	"baseline": "Merged native graph implementation from PR #132, not the superseded hybrid or original TypeScript engine."
+}

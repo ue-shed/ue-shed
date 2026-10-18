@@ -187,6 +187,9 @@ pub(crate) fn refresh(
     let Some(previous_key) = store.root["active"]["joined"].as_str().map(str::to_owned) else {
         return fallback("no-base");
     };
+    if !previous_key.starts_with("joined-native-v2:") {
+        return fallback("native-format");
+    }
     let (mut header, _) = layer(store, &previous_key)?.ok_or("missing joined header")?;
     let candidate = parse(&section(&mut header, "join.meta")?)?;
     if candidate["generation"] != store.root["generation"]

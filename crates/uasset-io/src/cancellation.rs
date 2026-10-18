@@ -20,6 +20,10 @@ impl CancellationToken {
         self.cancelled.store(true, Ordering::Release);
     }
 
+    pub(crate) fn flag(&self) -> &AtomicBool {
+        &self.cancelled
+    }
+
     pub(crate) fn is_cancelled(&self) -> bool {
         self.cancelled.load(Ordering::Acquire)
     }

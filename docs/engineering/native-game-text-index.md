@@ -31,7 +31,7 @@ facets, focus and lazy projections still use the existing JavaScript readers.
 
 The writer uses the existing format-4 directory, atomic root publication, string generations and
 reader pins. Project views share input layers and retain independent joined pointers. Native
-joined keys start with `joined-native-v1:`. Switching between native and TypeScript builders
+joined keys start with `joined-native-v2:`. Switching between native and TypeScript builders
 rebuilds that joined view once while reusing inputs. This also prevents a reader's persisted
 physical column projections from colliding across builder layouts.
 

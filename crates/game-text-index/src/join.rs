@@ -430,7 +430,7 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
         dependencies.insert(name.clone(), store.root["active"][&name].clone());
     }
     let key = format!(
-        "joined-native-v1:{}",
+        "joined-native-v2:{}",
         digest(
             format!(
                 "[{}]",

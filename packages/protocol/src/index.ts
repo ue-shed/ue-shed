@@ -541,3 +541,5 @@ export {
 	contractParser,
 	contractParserSync
 } from "./contract-parser.js";
+
+export { GameTextEngineRequest, GameTextEngineOutcome } from "./game-text-engine.js";

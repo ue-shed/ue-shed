@@ -1,3 +1,4 @@
+import { GameTextEngineRequest, GameTextEngineOutcome } from "./game-text-engine.js";
 import { contractParser } from "./contract-parser.js";
 import { Schema } from "effect";
 import { GameTextIndexBuildRequest, GameTextIndexBuildOutcome } from "./game-text-index.js";
@@ -366,6 +367,10 @@ const ExistingOperation = Schema.Union([
 		query: UAssetIoProjectIndexQuery
 	})
 ]);
+const GameTextEngineOperation = Schema.Struct({
+	kind: Schema.Literal("game_text_engine"),
+	request: GameTextEngineRequest
+});
 const GameTextIndexOperation = Schema.Struct({
 	kind: Schema.Literal("game_text_index"),
 	request: GameTextIndexBuildRequest
@@ -375,6 +380,7 @@ const GameTextIndexOperation = Schema.Struct({
  * must be non-empty; an explicit empty `paths` array selects zero work, not the project root.
  */
 export const UAssetIoOperation = Schema.Union([
+	GameTextEngineOperation,
 	GameTextIndexOperation,
 	...ExistingOperation.members,
 	PackageTextOperation
@@ -390,6 +396,18 @@ const RequestFields = {
  * `extract_text_packages` decodes only with contract minor 8 or later.
  */
 export const UAssetIoRequest = Schema.Union([
+	Schema.Struct({
+		...RequestFields,
+		contract: UAssetIoContract.pipe(
+			Schema.fieldsAssign({
+				version: Schema.Struct({
+					major: Schema.Literal(1),
+					minor: Schema.Int.check(Schema.isGreaterThanOrEqualTo(15))
+				})
+			})
+		).annotate({ identifier: "UAssetIoGameTextEngineContract" }),
+		operation: GameTextEngineOperation
+	}),
 	Schema.Struct({
 		...RequestFields,
 		contract: UAssetIoContract.pipe(
@@ -419,6 +437,7 @@ export const UAssetIoRequest = Schema.Union([
 export type UAssetIoRequest = Schema.Schema.Type<typeof UAssetIoRequest>;
 
 const UAssetIoOperationKind = Schema.Literals([
+	"game_text_engine",
 	"game_text_index",
 	"inspect",
 	"blueprint",
@@ -440,6 +459,7 @@ export type UAssetIoOperationKind = Schema.Schema.Type<typeof UAssetIoOperationK
 
 /** Typed result frames carried between the IO worker and its Effect consumer. */
 export const UAssetIoResult = Schema.Union([
+	Schema.Struct({ kind: Schema.Literal("game_text_engine"), outcome: GameTextEngineOutcome }),
 	Schema.Struct({ kind: Schema.Literal("game_text_index"), outcome: GameTextIndexBuildOutcome }),
 	Schema.Struct({
 		kind: Schema.Literal("project_index_count"),

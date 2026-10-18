@@ -130,7 +130,7 @@ retainer's `release()` when clearing a view. The host's outer scope releases eve
 Raw `corpus.units` preserves empty and whitespace-only source evidence. Search and query exports
 retain their existing visibility filters. Failed current localization reads never use a previous
 successful layer as current evidence; missing and malformed inputs keep their distinct states.
-Native joined keys use `joined-native-v1`; the TypeScript reference uses `joined-v18`. Switching
+Native joined keys use `joined-native-v2`; the TypeScript reference uses `joined-v18`. Switching
 builders rebuilds the joined view while reusing compatible inputs and preserving snapshot format 4.
 
 The core audit requires saved project packages and a configured reader. It does not require a

@@ -3,7 +3,7 @@ use crate::join::{Joined, locale, ordinal};
 use crate::join_columns::*;
 use crate::join_policy::*;
 use crate::{Result, require};
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 const FIELDS: [&str; 19] = [
     "representative",
     "identity",
@@ -330,6 +330,23 @@ pub(crate) fn columns(j: &Joined, target: &str) -> Result<Vec<Column>> {
         )
     });
     result.push(("query.package.order".into(), String::new(), package_order));
+    // Query opens consume persisted folded bytes rather than rebuilding a source arena in JS.
+    // Keep IDs as real shared string columns so coordinated compaction remaps them atomically.
+    let source_ids = j.line[crate::join::L_SOURCE]
+        .iter()
+        .chain(c[O_SOURCE].iter())
+        .copied()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let folded = source_ids
+        .iter()
+        .map(|id| j.string(*id).to_lowercase())
+        .collect::<Vec<_>>();
+    let (bytes, starts) = packed(&folded)?;
+    result.push(("query.source.ids".into(), "source".into(), source_ids));
+    result.push(("query.source.starts".into(), String::new(), starts));
+    result.push(("query.source.folded".into(), String::new(), bytes));
     Ok(result)
 }
 

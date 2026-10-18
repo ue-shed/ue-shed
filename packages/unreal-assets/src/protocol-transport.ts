@@ -1,5 +1,4 @@
 import { spawn } from "node:child_process";
-import { createInterface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
 import {
 	SavedAssetManifestEntry,
@@ -570,6 +569,7 @@ export function makeProtocolRequest(
 		requestId: `unreal-assets-${process.pid}-${protocolRequestCounter}`
 	};
 	// Narrow each branch to preserve the request union's operation/version correlation.
+	if (operation.kind === "game_text_engine") return { ...fields, operation };
 	if (operation.kind === "game_text_index") return { ...fields, operation };
 	if (operation.kind === "extract_text_packages") return { ...fields, operation };
 	return { ...fields, operation };
@@ -880,7 +880,16 @@ export class UassetProtocolSession {
 		}
 		child.stdin.setDefaultEncoding("utf8");
 		child.stdout.setEncoding("utf8");
-		const lines = createInterface({ crlfDelay: Infinity, input: child.stdout });
+		// NDJSON is framed by LF bytes. Node 26 readline also splits U+2028/U+2029,
+		// which are valid literal characters inside a JSON string.
+		const lines = (async function* (output: NonNullable<ProtocolSessionProcess["stdout"]>) {
+			const decoder = new ProtocolLineDecoder();
+			for await (const chunk of output) {
+				const text = Schema.decodeUnknownSync(Schema.String)(chunk);
+				for (const line of decoder.push(text)) yield line;
+			}
+			decoder.finish();
+		})(child.stdout);
 		this.child = child;
 		this.iterator = lines[Symbol.asyncIterator]();
 		this.stderr = "";

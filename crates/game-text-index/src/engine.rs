@@ -1,0 +1,434 @@
+//! Scoped native engine handles. Queries own pinned read-only views, independent of writer leases.
+use crate::engine_match::checkpoint;
+use crate::engine_query::EngineQuery;
+use crate::engine_types::{invalid, parse_search_request};
+use crate::store::{Configuration, token};
+use crate::{Error, ErrorCode, Result, require};
+use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, HashMap};
+use std::sync::atomic::AtomicBool;
+use std::time::Instant;
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct EnginePolicy {
+    /// The identities belonging to persisted occurrence audience codes, in producer order.
+    /// These are caller policy data, never native hard-coded classification constraints.
+    pub audience_rules: Vec<String>,
+}
+impl EnginePolicy {
+    pub fn validate(&self) -> Result<()> {
+        require(
+            self.audience_rules.len() <= 255,
+            invalid("Too many audience rule identities."),
+        )?;
+        let mut seen = std::collections::HashSet::new();
+        for rule in &self.audience_rules {
+            require(
+                !rule.is_empty() && rule.len() <= 1024 && seen.insert(rule),
+                invalid("Audience rule identities must be bounded and unique."),
+            )?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
+pub enum EngineRequest {
+    Capabilities,
+    Open {
+        configuration: Configuration,
+        #[serde(rename = "expectedGeneration")]
+        expected_generation: String,
+        #[serde(rename = "expectedJoined")]
+        expected_joined: String,
+        policy: EnginePolicy,
+    },
+    Close {
+        reader: String,
+    },
+    Summary {
+        reader: String,
+    },
+    Search {
+        reader: String,
+        payload: String,
+    },
+    Focus {
+        reader: String,
+        payload: String,
+    },
+    Export {
+        reader: String,
+        payload: String,
+        output: std::path::PathBuf,
+    },
+    LocalizationFocus {
+        reader: String,
+        payload: String,
+    },
+    LocalizationPage {
+        reader: String,
+        payload: String,
+    },
+}
+impl EngineRequest {
+    pub fn validate(&self) -> Result<()> {
+        match self {
+            Self::Capabilities => {}
+            Self::Open {
+                configuration,
+                expected_generation,
+                expected_joined,
+                policy,
+            } => {
+                configuration.identity()?;
+                policy.validate()?;
+                for identity in [expected_generation, expected_joined] {
+                    require(
+                        !identity.is_empty() && identity.len() <= 1024,
+                        invalid("Invalid expected snapshot identity."),
+                    )?;
+                }
+            }
+            Self::Close { reader }
+            | Self::Summary { reader }
+            | Self::Search { reader, .. }
+            | Self::Focus { reader, .. }
+            | Self::Export { reader, .. }
+            | Self::LocalizationFocus { reader, .. }
+            | Self::LocalizationPage { reader, .. } => {
+                require(
+                    !reader.is_empty() && reader.len() <= 128,
+                    invalid("Invalid native reader handle."),
+                )?;
+            }
+        }
+        match self {
+            Self::Search { payload, .. }
+            | Self::Focus { payload, .. }
+            | Self::Export { payload, .. }
+            | Self::LocalizationPage { payload, .. }
+            | Self::LocalizationFocus { payload, .. } => {
+                require(
+                    payload.len() <= 512 * 1024,
+                    invalid("Native query payload exceeds its bound."),
+                )?;
+                if matches!(self, Self::LocalizationFocus { .. }) {
+                    let id = crate::json_value::parse(payload).map_err(|source| {
+                        Error::with_source(
+                            ErrorCode::InvalidInput,
+                            "Invalid localization focus JSON.",
+                            source,
+                        )
+                    })?;
+                    require(
+                        id.as_str().is_some_and(|id| {
+                            !id.is_empty() && crate::join_policy::characters(id) <= 32767
+                        }),
+                        invalid("Invalid localization line identity."),
+                    )?;
+                } else if matches!(self, Self::Focus { .. }) {
+                    crate::engine_types::parse_focus_request(payload)?;
+                } else {
+                    parse_search_request(payload)?;
+                }
+            }
+            _ => {}
+        }
+        if let Self::Export { output, .. } = self {
+            require(
+                output
+                    .to_str()
+                    .is_some_and(|path| !path.is_empty() && path.len() <= 32767),
+                invalid("Invalid native export output path."),
+            )?;
+        }
+        Ok(())
+    }
+}
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct EngineOutcome {
+    pub action: String,
+    pub capabilities: Vec<String>,
+    pub reader: Option<String>,
+    pub generation: Option<String>,
+    pub joined_key: Option<String>,
+    /// Bounded domain JSON text, preserving lone JavaScript UTF-16 code units exactly.
+    pub payload: Option<String>,
+    pub io: crate::snapshot::IoMetrics,
+    pub stage_seconds: BTreeMap<String, f64>,
+}
+#[derive(Default)]
+pub struct EngineSession {
+    readers: HashMap<String, EngineQuery>,
+}
+impl EngineSession {
+    pub fn execute(
+        &mut self,
+        request: &EngineRequest,
+        cancelled: &AtomicBool,
+    ) -> Result<EngineOutcome> {
+        request.validate()?;
+        checkpoint(cancelled)?;
+        let started = Instant::now();
+        let mut outcome = EngineOutcome {
+            action: String::new(),
+            capabilities: vec!["game_text_engine_v1".into()],
+            reader: None,
+            generation: None,
+            joined_key: None,
+            payload: None,
+            io: crate::snapshot::io_metrics(),
+            stage_seconds: BTreeMap::new(),
+        };
+        match request {
+            EngineRequest::Capabilities => outcome.action = "capabilities".into(),
+            EngineRequest::Open {
+                configuration,
+                expected_generation,
+                expected_joined,
+                policy,
+            } => {
+                require(
+                    self.readers.len() < 8,
+                    Error::new(
+                        ErrorCode::LimitExceeded,
+                        "Close a pinned reader before opening another native Game Text snapshot.",
+                    ),
+                )?;
+                let query =
+                    EngineQuery::open_with_policy(configuration, Some(expected_joined), policy)?;
+                require(
+                    query.reader.generation == *expected_generation,
+                    Error::new(
+                        ErrorCode::StaleGeneration,
+                        "Game Text dictionary changed before the reader opened.",
+                    ),
+                )?;
+                let reader = token();
+                outcome.action = "open".into();
+                outcome.reader = Some(reader.clone());
+                outcome.generation = Some(query.reader.generation.clone());
+                outcome.joined_key = Some(query.reader.joined_key.clone());
+                checkpoint(cancelled)?;
+                self.readers.insert(reader, query);
+            }
+            EngineRequest::Close { reader } => {
+                self.readers.remove(reader);
+                outcome.action = "close".into();
+            }
+            EngineRequest::Summary { reader }
+            | EngineRequest::Search { reader, .. }
+            | EngineRequest::Focus { reader, .. }
+            | EngineRequest::Export { reader, .. }
+            | EngineRequest::LocalizationFocus { reader, .. }
+            | EngineRequest::LocalizationPage { reader, .. } => {
+                let query=self.readers.get_mut(reader).ok_or_else(|| Error::new(ErrorCode::NotFound,"The native Game Text reader is closed or belongs to another session; reopen its snapshot."))?;
+                let (action, payload) = match request {
+                    EngineRequest::Summary { .. } => (
+                        "summary",
+                        crate::wtf8::view_json(&query.summary(cancelled)?)?,
+                    ),
+                    EngineRequest::Search { payload, .. } => {
+                        ("search", query.search_json(payload, cancelled)?)
+                    }
+                    EngineRequest::Export {
+                        payload, output, ..
+                    } => {
+                        let request = parse_search_request(payload)?;
+                        let bytes = query.export_to_path(&request, output, cancelled)?;
+                        (
+                            "export",
+                            serde_json::to_string(&serde_json::json!({"bytes":bytes}))?,
+                        )
+                    }
+                    EngineRequest::Focus { payload, .. } => {
+                        ("focus", query.focus_json(payload, cancelled)?)
+                    }
+                    EngineRequest::LocalizationFocus { payload, .. } => (
+                        "localization_focus",
+                        query.localization_focus_json(payload, cancelled)?,
+                    ),
+                    EngineRequest::LocalizationPage { payload, .. } => {
+                        let request = parse_search_request(payload)?;
+                        (
+                            "localization_page",
+                            crate::wtf8::view_json(&query.localization_page(&request, cancelled)?)?,
+                        )
+                    }
+                    _ => return Err("Invalid engine dispatch.".into()),
+                };
+                require(
+                    payload.len() <= 16 * 1024 * 1024,
+                    Error::new(
+                        ErrorCode::LimitExceeded,
+                        "Native Game Text response exceeds its byte bound; request a smaller evidence page.",
+                    ),
+                )?;
+                outcome.action = action.into();
+                outcome.payload = Some(payload);
+            }
+        }
+        checkpoint(cancelled)?;
+        outcome.io = crate::snapshot::io_metrics();
+        outcome
+            .stage_seconds
+            .insert(outcome.action.clone(), started.elapsed().as_secs_f64());
+        Ok(outcome)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::store::Store;
+    use serde_json::json;
+    use std::sync::atomic::Ordering;
+
+    fn snapshot() -> Result<(Configuration, String)> {
+        let configuration = Configuration {
+            cache_root: crate::test_directory("engine-session"),
+            project_key: "fixture".into(),
+            target_key: "Game".into(),
+            shared_project: false,
+            view_prefix: None,
+        };
+        let mut store = Store::writer(configuration.clone())?;
+        let generation = store.root["generation"]
+            .as_str()
+            .ok_or("generation")?
+            .to_owned();
+        let metadata = json!({"version":3,"generation":generation,"count":0,"dependencies":{},"input":{"target":{"name":"Game","cultures":[]}},"packageNames":[],"packageStarts":[0]});
+        store.publish_global(
+            "joined",
+            "joined-native-v2:fixture",
+            &[],
+            &serde_json::to_vec(&metadata)?,
+            &BTreeMap::new(),
+            &[],
+        )?;
+        Ok((configuration, generation))
+    }
+    #[test]
+    fn handles_are_session_owned_and_closed_reads_never_take_a_writer_lease() -> Result<()> {
+        let (configuration, generation) = snapshot()?;
+        let mut session = EngineSession::default();
+        let cancelled = AtomicBool::new(false);
+        let request = EngineRequest::Open {
+            configuration: configuration.clone(),
+            expected_generation: generation,
+            expected_joined: "joined-native-v2:fixture".into(),
+            policy: EnginePolicy::default(),
+        };
+        let opened = session.execute(&request, &cancelled)?;
+        let reader = opened.reader.ok_or("reader")?;
+        let writer = Store::writer(configuration.clone())?;
+        let mut other = EngineSession::default();
+        assert_eq!(
+            other
+                .execute(
+                    &EngineRequest::Summary {
+                        reader: reader.clone()
+                    },
+                    &cancelled
+                )
+                .err()
+                .ok_or("foreign reader")?
+                .code,
+            ErrorCode::NotFound
+        );
+        session.execute(
+            &EngineRequest::Close {
+                reader: reader.clone(),
+            },
+            &cancelled,
+        )?;
+        session.execute(
+            &EngineRequest::Close {
+                reader: reader.clone(),
+            },
+            &cancelled,
+        )?;
+        assert_eq!(
+            session
+                .execute(&EngineRequest::Summary { reader }, &cancelled)
+                .err()
+                .ok_or("closed reader")?
+                .code,
+            ErrorCode::NotFound
+        );
+        assert!(session.readers.is_empty());
+        drop(writer);
+        drop(session);
+        std::fs::remove_dir_all(configuration.cache_root)?;
+        Ok(())
+    }
+    #[test]
+    fn cancellation_and_bad_queries_are_typed_without_poisoning_the_session() -> Result<()> {
+        let mut session = EngineSession::default();
+        let cancelled = AtomicBool::new(true);
+        assert_eq!(
+            session
+                .execute(&EngineRequest::Capabilities, &cancelled)
+                .err()
+                .ok_or("cancelled")?
+                .code,
+            ErrorCode::Cancelled
+        );
+        cancelled.store(false, Ordering::Relaxed);
+        for payload in [
+            r#"{"query":"","capability":"all","pageSize":51}"#,
+            r#"{"query":"","capability":"all","pageSize":1,"where":null}"#,
+            r#"{"query":"","capability":"all","pageSize":1,"unknown":true}"#,
+        ] {
+            assert_eq!(
+                session
+                    .execute(
+                        &EngineRequest::Search {
+                            reader: "not-opened".into(),
+                            payload: payload.into()
+                        },
+                        &cancelled
+                    )
+                    .err()
+                    .ok_or("invalid request")?
+                    .code,
+                ErrorCode::InvalidInput
+            );
+        }
+        assert_eq!(
+            session
+                .execute(&EngineRequest::Capabilities, &cancelled)?
+                .capabilities,
+            ["game_text_engine_v1"]
+        );
+        assert!(session.readers.is_empty());
+        Ok(())
+    }
+    #[test]
+    fn stale_snapshot_open_does_not_consume_a_reader_slot() -> Result<()> {
+        let (configuration, _) = snapshot()?;
+        let mut session = EngineSession::default();
+        let cancelled = AtomicBool::new(false);
+        let request = EngineRequest::Open {
+            configuration: configuration.clone(),
+            expected_generation: "retired".into(),
+            expected_joined: "joined-native-v2:fixture".into(),
+            policy: EnginePolicy::default(),
+        };
+        assert_eq!(
+            session
+                .execute(&request, &cancelled)
+                .err()
+                .ok_or("stale generation")?
+                .code,
+            ErrorCode::StaleGeneration
+        );
+        assert!(session.readers.is_empty());
+        std::fs::remove_dir_all(configuration.cache_root)?;
+        Ok(())
+    }
+}

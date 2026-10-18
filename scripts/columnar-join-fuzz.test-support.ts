@@ -362,7 +362,28 @@ export async function compareJoinFuzzInput(
 			typeof import("./columnar-join.test-support.ts").joinStoreOptions
 		>,
 		input: import("../packages/game-text/src/joined-target.ts").JoinedTargetInput
-	) => Promise<void>
+	) => Promise<void>,
+	nativeSearch?: (
+		configuration: ReturnType<
+			typeof import("./columnar-join.test-support.ts").joinStoreOptions
+		>,
+		requests: readonly TextCorpusSearchRequest[],
+		lines: readonly string[],
+		focus: readonly import("../packages/game-text/src/schema.ts").TextCorpusFocusRequest[],
+		exports: readonly TextCorpusSearchRequest[]
+	) => Promise<{
+		readonly searches: readonly import("../packages/game-text/src/schema.ts").TextCorpusSearchPage[];
+		readonly lines: readonly (
+			| import("../packages/game-text/src/localization-schema.ts").LocalizationLine
+			| undefined
+		)[];
+		readonly summary: import("../packages/game-text/src/schema.ts").TextCorpusQuerySummary;
+		readonly exports: readonly import("../packages/game-text/src/schema.ts").TextCorpus[];
+		readonly focus: readonly (
+			| import("../packages/game-text/src/schema.ts").TextCorpusFocus
+			| null
+		)[];
+	}>
 ): Promise<FuzzDifference[]> {
 	const projectRoot = join(cache, "project");
 	if (persisted) await mkdir(projectRoot, { recursive: true });
@@ -785,7 +806,51 @@ export async function compareJoinFuzzInput(
 			slice.unit
 		);
 	}
+	const nativeFocus: import("../packages/game-text/src/schema.ts").TextCorpusFocusRequest[] = [
+		...actual.rawPresentations.map((unit) => ({ id: unit.id, pageSize: 2 })),
+		...expected.lines.flatMap((line) =>
+			line.origin.kind === "corpus"
+				? line.origin.unitIds.map((id) => ({
+						id,
+						pageSize: 2,
+						localization: { target: expected.target, id: line.id }
+					}))
+				: []
+		)
+	];
+	for (const request of nativeFocus.slice()) {
+		const cursor = oracle.focus(request)?.nextOccurrenceCursor;
+		if (cursor) nativeFocus.push({ ...request, occurrenceCursor: cursor });
+	}
+	const nativeResults = nativeSearch
+		? await nativeSearch(
+				{ projectKey: projectRoot, cacheRoot: cache, targetKey: "Fuzz" },
+				requests,
+				expected.lines.map((line) => line.id),
+				nativeFocus,
+				[base, unlocalized]
+			)
+		: undefined;
+	if (nativeResults) {
+		compare("native-engine.summary", oracle.summary(), nativeResults.summary);
+		compare("native-engine.export.localized", oracle.export(base), nativeResults.exports[0]);
+		compare("native-engine.export.raw", oracle.export(unlocalized), nativeResults.exports[1]);
+		for (const [index, request] of nativeFocus.entries())
+			compare(
+				"native-engine.focus",
+				oracle.focus(request) ?? null,
+				nativeResults.focus[index]
+			);
+		for (const [index, line] of expected.lines.entries())
+			compare(
+				"native-engine.line",
+				oracle.localizationFocus(line.id),
+				nativeResults.lines[index]
+			);
+	}
 	for (const [index, request] of requests.entries()) {
+		if (nativeResults)
+			compare("native-engine.search", oracle.search(request), nativeResults.searches[index]);
 		compare("query.search", oracle.search(request), hydrated.search(request));
 		compare("column-query.search", oracle.search(request), actual.query.searches[index]);
 	}

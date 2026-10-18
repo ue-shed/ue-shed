@@ -195,6 +195,7 @@ dependencies = [
  "icu_collator",
  "rayon",
  "regex",
+ "rusqlite",
  "serde",
  "serde_json",
  "sha2",

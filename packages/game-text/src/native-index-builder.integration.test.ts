@@ -216,7 +216,11 @@ describe.skipIf(!executable)("native index build capability", () => {
 							Effect.gen(function* () {
 								const builder = yield* GameTextIndexBuilder;
 								let revision = 0;
-								const refresh = (value: string, key = "Example") =>
+								const refresh = (
+									value: string,
+									key = "Example",
+									signature = String(++revision)
+								) =>
 									builder.withSession(
 										{ configuration: options },
 										Effect.gen(function* () {
@@ -224,7 +228,7 @@ describe.skipIf(!executable)("native index build capability", () => {
 												inventory: [
 													{
 														path,
-														signature: String(++revision),
+														signature,
 														headerData: {
 															packageFlags: 0x40000,
 															gatherableTextDataCount: 0,
@@ -310,10 +314,10 @@ describe.skipIf(!executable)("native index build capability", () => {
 										};
 									}
 								);
-								yield* refresh(firstSource);
+								const initial = yield* refresh(firstSource, "Example", "first");
 								const pinned = yield* snapshot(),
 									before = pinned.value;
-								const changed = yield* refresh(secondSource);
+								const changed = yield* refresh(secondSource, "Example", "second");
 								expect(changed.strategy).toBe("incremental");
 								expect(
 									pinned.query.search({
@@ -323,6 +327,15 @@ describe.skipIf(!executable)("native index build capability", () => {
 									}).total
 								).toBe(1);
 								const after = (yield* snapshot()).value;
+								const restored = yield* refresh(firstSource, "Example", "first");
+								expect(restored.key).toBe(initial.key);
+								if (backend === "native")
+									expect(restored.strategy).toBe("incremental");
+								expect((yield* snapshot()).value).toEqual(before);
+								const repeated = yield* refresh(secondSource, "Example", "second");
+								expect(repeated.key).toBe(changed.key);
+								expect(repeated.strategy).toBe("incremental");
+								expect((yield* snapshot()).value).toEqual(after);
 								yield* refresh("Short structural replacement", "NewIdentity");
 								const structural = (yield* snapshot()).value;
 								yield* builder.withSession(

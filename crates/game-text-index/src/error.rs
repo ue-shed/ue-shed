@@ -132,6 +132,27 @@ impl From<regex::Error> for Error {
     }
 }
 
+impl From<rusqlite::Error> for Error {
+    fn from(source: rusqlite::Error) -> Self {
+        let code = match source.sqlite_error_code() {
+            Some(rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked) => {
+                ErrorCode::Busy
+            }
+            Some(
+                rusqlite::ErrorCode::SystemIoFailure
+                | rusqlite::ErrorCode::DiskFull
+                | rusqlite::ErrorCode::CannotOpen,
+            ) => ErrorCode::Io,
+            _ => ErrorCode::InvalidCache,
+        };
+        Self::with_source(
+            code,
+            "The native dependency index operation failed.",
+            source,
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

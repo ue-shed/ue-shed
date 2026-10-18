@@ -55,7 +55,8 @@ export async function measureGameTextHosts(
 	changedByte: number,
 	forceChangedJoin = false,
 	backend: "native" | "typescript" = "native",
-	tracer?: Tracer.Tracer
+	tracer?: Tracer.Tracer,
+	packageEditId = "phase6-refresh"
 ) {
 	if (host !== "cli" && host !== "workbench") throw new Error("Choose cli or workbench.");
 	if (
@@ -280,6 +281,7 @@ export async function measureGameTextHosts(
 				? "force full join for changed inputs"
 				: "production incremental",
 			readPackages: result.packages.readPackages,
+			packageEditId: version || null,
 			parsedFiles: result.imported.files.filter((file) => file.parsed).length,
 			changedShards: result.packages.changedShards,
 			packageProfile: result.packages.profile,
@@ -612,7 +614,7 @@ export async function measureGameTextHosts(
 					)
 				: undefined;
 			try {
-				version = editPackage ? "phase6-refresh" : "";
+				version = editPackage ? packageEditId : "";
 				if (byte) {
 					const { open } = await import("node:fs/promises");
 					const file = await open(byte.path, "r+");

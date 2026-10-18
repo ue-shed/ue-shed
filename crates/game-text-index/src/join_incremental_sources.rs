@@ -10,7 +10,7 @@ pub(super) struct Sources<'a> {
     pub names: &'a [String],
     pub starts: &'a [u32],
     pub text: &'a mut BTreeMap<u32, String>,
-    pub occurrence_lines: Option<Vec<u32>>,
+    pub graph: &'a crate::dependency_graph::Graph,
     pub raw_ids: Option<Vec<u8>>,
 }
 
@@ -141,17 +141,9 @@ impl Sources<'_> {
                         continue;
                     }
                     let prefix = format!("query.{kind}.");
-                    let members = self.joined.col(&(prefix.clone() + "members"))?;
-                    let begin = self
-                        .joined
-                        .get(&(prefix.clone() + "member_start"), row as usize)?
-                        as usize;
-                    let end = self
-                        .joined
-                        .get(&(prefix.clone() + "member_end"), row as usize)?
-                        as usize;
+                    let members = self.graph.members(kind, row)?;
                     let mut values = BTreeSet::new();
-                    for member in members.get(begin..end).ok_or("query member range")? {
+                    for member in &members {
                         values.insert(self.package(*member as usize, "source")?);
                     }
                     if values.is_empty() || values.len() > 8192 {
@@ -204,10 +196,7 @@ impl Sources<'_> {
                             & (1 << 11)
                             != 0
                     } else {
-                        self.raw_conflict(
-                            members.get(begin..end).ok_or("query member range")?,
-                            hot,
-                        )?
+                        self.raw_conflict(&members, hot)?
                     };
                     set(
                         hot,
@@ -231,23 +220,8 @@ impl Sources<'_> {
     }
 
     fn raw_conflict(&mut self, members: &[u32], hot: &Hot) -> Result<bool> {
-        if self.occurrence_lines.is_none() {
-            let order = self.joined.col("occurrence.rows")?;
-            let ends = self.joined.col("line.occ_end")?;
-            let mut lines = vec![0; order.len()];
-            let mut line = 0;
-            for (position, member) in order.iter().enumerate() {
-                while ends.get(line).is_some_and(|end| *end <= position as u32) {
-                    line += 1;
-                }
-                require(line < ends.len(), "occurrence line range")?;
-                *lines.get_mut(*member as usize).ok_or("occurrence row")? = line as u32;
-            }
-            self.occurrence_lines = Some(lines);
-        }
-        let lines = self.occurrence_lines.as_ref().ok_or("occurrence lines")?;
         for member in members {
-            let line = *lines.get(*member as usize).ok_or("raw occurrence row")?;
+            let line = self.graph.route(*member)?.line;
             let reasons = hot
                 .get("line.reasons")
                 .and_then(|rows| rows.get(&line))
@@ -266,107 +240,87 @@ impl Sources<'_> {
         previous: &BTreeMap<usize, u32>,
         hot: &mut Hot,
     ) -> Result<()> {
-        let mut sources = self.joined.col("query.occurrence.sources")?.to_vec();
-        let places = self.joined.col("query.occurrence.places")?;
-        require(sources.len() == places.len(), "occurrence place length")?;
-        for (row, source) in edits {
-            *sources.get_mut(*row).ok_or("source row")? = *source;
-            set(hot, "query.occurrence.sources", *row, *source);
-        }
         let dirty = edits
             .values()
             .chain(previous.values())
             .copied()
-            .collect::<HashSet<_>>();
-        let mut queries = Vec::new();
-        let mut needed = HashSet::new();
-        for kind in ["raw", "slice"] {
-            let prefix = format!("query.{kind}.");
-            let identity = self.joined.col(&(prefix.clone() + "identity"))?;
-            let flags = self.joined.col(&(prefix.clone() + "signals"))?;
-            let starts = self.joined.col(&(prefix.clone() + "member_start"))?;
-            let ends = self.joined.col(&(prefix.clone() + "member_end"))?;
-            let members = self.joined.col(&(prefix.clone() + "members"))?;
-            let mut rows = Vec::new();
-            for row in 0..flags.len() {
-                if identity[row] != 0 || flags[row] & 8 != 0 {
-                    continue;
-                }
-                let selected = members
-                    .get(starts[row] as usize..ends[row] as usize)
-                    .ok_or("duplicate member range")?;
-                if selected.iter().any(|member| {
-                    sources
-                        .get(*member as usize)
-                        .is_some_and(|source| dirty.contains(source))
-                }) {
-                    rows.push(row);
-                    for member in selected {
-                        needed.insert(
-                            *sources
-                                .get(*member as usize)
-                                .ok_or("duplicate source row")?,
-                        );
-                    }
-                }
+            .collect::<BTreeSet<_>>();
+        let mut candidates = BTreeSet::new();
+        let mut visited = 0usize;
+        for source in &dirty {
+            for route in self.graph.source_members(*source)? {
+                candidates.insert(("raw", route.raw));
+                candidates.insert(("slice", route.slice));
+                visited += 1;
             }
-            queries.push((prefix, flags, starts, ends, members, rows));
         }
-        let mut lines = vec![0; sources.len()];
+        let mut queries = Vec::new();
+        let mut needed = BTreeSet::new();
+        for (kind, row) in candidates {
+            let prefix = format!("query.{kind}.");
+            let flags = self
+                .joined
+                .get(&(prefix.clone() + "signals"), row as usize)?;
+            if self
+                .joined
+                .get(&(prefix.clone() + "identity"), row as usize)?
+                != 0
+                || flags & 8 != 0
+            {
+                continue;
+            }
+            let mut routes = Vec::new();
+            for member in self.graph.members(kind, row)? {
+                let route = self.graph.route(member)?;
+                needed.insert(route.source);
+                routes.push(route);
+            }
+            queries.push((prefix, row, flags, routes));
+        }
         let mut count = HashMap::<u32, i64>::new();
         let mut identities = HashMap::<(u32, u32), i64>::new();
         let mut locations = HashMap::<(u32, u32), i64>::new();
         let mut pairs = HashMap::<(u32, u32, u32), i64>::new();
-        let slice_lines = self.joined.col("query.slice.line")?;
-        let slice_identity = self.joined.col("query.slice.identity")?;
-        let (_, flags, starts, ends, members, _) = &queries[1];
-        for row in 0..slice_lines.len() {
-            if slice_identity[row] != 0 || flags[row] & 8 != 0 {
-                continue;
-            }
-            let line = slice_lines[row];
-            for member in members
-                .get(starts[row] as usize..ends[row] as usize)
-                .ok_or("slice duplicate range")?
-            {
-                let member = *member as usize;
-                let source = *sources.get(member).ok_or("duplicate member")?;
-                lines[member] = line;
-                if !needed.contains(&source) {
+        for source in needed {
+            for route in self.graph.source_members(source)? {
+                visited += 1;
+                if !route.eligible {
                     continue;
                 }
-                let place = places[member];
                 *count.entry(source).or_default() += 1;
-                *identities.entry((source, line)).or_default() += 1;
-                *locations.entry((source, place)).or_default() += 1;
-                *pairs.entry((source, line, place)).or_default() += 1;
+                *identities.entry((source, route.line)).or_default() += 1;
+                *locations.entry((source, route.place)).or_default() += 1;
+                *pairs.entry((source, route.line, route.place)).or_default() += 1;
             }
         }
-        for (prefix, flags, starts, ends, members, rows) in queries {
-            for row in rows {
-                let duplicate = members[starts[row] as usize..ends[row] as usize]
-                    .iter()
-                    .any(|member| {
-                        let member = *member as usize;
-                        let source = sources[member];
-                        let line = lines[member];
-                        let place = places[member];
-                        count.get(&source).copied().unwrap_or(0)
-                            - identities.get(&(source, line)).copied().unwrap_or(0)
-                            - locations.get(&(source, place)).copied().unwrap_or(0)
-                            + pairs.get(&(source, line, place)).copied().unwrap_or(0)
-                            > 0
-                    });
-                let field = prefix.clone() + "signals";
-                let flags = hot
-                    .get(&field)
-                    .and_then(|rows| rows.get(&(row as u32)))
-                    .copied()
-                    .unwrap_or(flags[row]);
-                let updated = (flags & !2) | (u32::from(duplicate) * 2);
-                if updated != flags {
-                    set(hot, &field, row, updated);
-                }
+        note("dependencySourceMembersVisited", json!(visited));
+        note("dependencyQueryGroupsVisited", json!(queries.len()));
+        for (prefix, row, flags, routes) in queries {
+            let duplicate = routes.iter().any(|route| {
+                count.get(&route.source).copied().unwrap_or(0)
+                    - identities
+                        .get(&(route.source, route.line))
+                        .copied()
+                        .unwrap_or(0)
+                    - locations
+                        .get(&(route.source, route.place))
+                        .copied()
+                        .unwrap_or(0)
+                    + pairs
+                        .get(&(route.source, route.line, route.place))
+                        .copied()
+                        .unwrap_or(0)
+                    > 0
+            });
+            let field = prefix + "signals";
+            let flags = hot
+                .get(&field)
+                .and_then(|rows| rows.get(&row))
+                .copied()
+                .unwrap_or(flags);
+            let updated = (flags & !2) | (u32::from(duplicate) * 2);
+            if updated != flags {
+                set(hot, &field, row as usize, updated);
             }
         }
         Ok(())

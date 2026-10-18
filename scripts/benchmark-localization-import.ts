@@ -43,6 +43,7 @@ const { values } = parseArgs({
 		select: { type: "string" },
 		profile: { type: "boolean" },
 		trace: { type: "boolean" },
+		"package-edit-id": { type: "string", default: "phase6-refresh" },
 		"force-changed-join": { type: "boolean", default: false },
 		"po-change-byte": { type: "string" },
 		report: { type: "string" },
@@ -209,7 +210,13 @@ if (values.worker) {
 				changedPoByte,
 				values["force-changed-join"],
 				Schema.decodeUnknownSync(Schema.Literals(["native", "typescript"]))(values.builder),
-				trace?.tracer
+				trace?.tracer,
+				Schema.decodeUnknownSync(
+					Schema.String.check(
+						Schema.isPattern(/^phase6-refresh(?:-[a-z0-9]+)?$/u),
+						Schema.isMaxLength(64)
+					)
+				)(values["package-edit-id"])
 			);
 		}
 		if (mode === "join") {
@@ -405,6 +412,8 @@ if (values.worker) {
 			mode,
 			"--po-change-byte",
 			String(changedPoByte),
+			"--package-edit-id",
+			values["package-edit-id"]!,
 			...(values.select ? ["--select", values.select] : []),
 			...(values.host ? ["--host", values.host] : []),
 			"--builder",

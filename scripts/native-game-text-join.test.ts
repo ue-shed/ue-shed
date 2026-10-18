@@ -9,6 +9,30 @@ import { compareJoinFuzzInput, joinFuzzInput } from "./columnar-join-fuzz.test-s
 import { withJoinCache } from "./columnar-join.test-support.ts";
 
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
+const buildNativeJoin =
+	(executable: string): NonNullable<Parameters<typeof compareJoinFuzzInput>[3]> =>
+	(configuration, input) =>
+		Effect.runPromise(
+			Effect.scoped(
+				Effect.gen(function* () {
+					const builder = yield* GameTextIndexBuilder;
+					return yield* builder.withSession(
+						{ configuration },
+						builder.refreshJoinedTarget(input)
+					);
+				})
+			).pipe(
+				Effect.asVoid,
+				Effect.provide(
+					nativeIndexBuilderLayer({
+						executable,
+						timeoutMs: 30_000,
+						catalogTimeoutMs: 120_000
+					})
+				)
+			)
+		);
+
 it.skipIf(!executable)(
 	"native persisted joins and queries match the original event oracle",
 	async () => {
@@ -21,27 +45,7 @@ it.skipIf(!executable)(
 					joinFuzzInput(seed),
 					directory,
 					true,
-					(configuration, input) =>
-						Effect.runPromise(
-							Effect.scoped(
-								Effect.gen(function* () {
-									const builder = yield* GameTextIndexBuilder;
-									return yield* builder.withSession(
-										{ configuration },
-										builder.refreshJoinedTarget(input)
-									);
-								})
-							).pipe(
-								Effect.asVoid,
-								Effect.provide(
-									nativeIndexBuilderLayer({
-										executable,
-										timeoutMs: 30_000,
-										catalogTimeoutMs: 120_000
-									})
-								)
-							)
-						),
+					buildNativeJoin(executable),
 					nativeEngineResponses(executable)
 				);
 				expect(differences, `seed ${seed}`).toEqual([]);
@@ -49,4 +53,23 @@ it.skipIf(!executable)(
 		});
 	},
 	120_000
+);
+
+it.skipIf(!executable)(
+	"keeps namespace filters and groups correct when key zero is nonempty",
+	async () => {
+		if (!executable) throw new Error("Native reader is required");
+		await withJoinCache(async (cache) => {
+			const differences = await compareJoinFuzzInput(
+				{ ...joinFuzzInput(8), excluded: [] },
+				cache,
+				true,
+				buildNativeJoin(executable),
+				nativeEngineResponses(executable),
+				true
+			);
+			expect(differences).toEqual([]);
+		});
+	},
+	30_000
 );

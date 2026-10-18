@@ -111,6 +111,7 @@ const readerProjections = new WeakMap<JoinedTargetReader, JoinedQueryProjection>
 
 /** Numeric and bounded evidence inputs for configurable quality policies. No search predicates. */
 export class IndexedPolicyData {
+	private emptyStringIds: ReadonlySet<number> | undefined;
 	readonly joined: JoinedTargetReader;
 	private readonly columns: Map<string, Uint32Array>;
 	readonly projection: JoinedQueryProjection;
@@ -141,6 +142,15 @@ export class IndexedPolicyData {
 	}
 	strings(ids: readonly number[]) {
 		return this.joined.reader.stringsSync!(ids);
+	}
+	isEmptyString(id: number) {
+		if (!this.emptyStringIds) {
+			const starts = this.joined.reader.manifest.segments.map((segment) => segment.start);
+			const first = this.strings(starts);
+			// Sorted immutable segments put an empty string first, at that segment's global ID.
+			this.emptyStringIds = new Set(starts.filter((_, row) => first[row] === ""));
+		}
+		return this.emptyStringIds.has(id);
 	}
 	packageColumn(shard: number, field: string) {
 		const dependency = this.joined.meta.dependencies[this.joined.meta.packageNames[shard]!]!;
@@ -483,7 +493,7 @@ export class IndexedPolicyData {
 			const identities = this.packageColumn(shard, "occurrence.identity"),
 				keys = this.packageColumn(shard, "occurrence.key");
 			for (let row = 0; row < identities.length; row++)
-				if (identities[row]! < 2 && keys[row] !== 0) resolvedOccurrences++;
+				if (identities[row]! < 2 && !this.isEmptyString(keys[row]!)) resolvedOccurrences++;
 		}
 		const textOccurrences = this.column("query.raw.members").length;
 		return {

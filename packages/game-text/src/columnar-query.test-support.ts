@@ -850,11 +850,16 @@ export function columnarTextCorpusQuery(
 	const namespaceOf = (kind: "raw" | "slice" | "line", row: number) => {
 		const hasKey = () => {
 			const coordinate = data.occurrenceShard(c(`query.${kind}.representative`)[row]!);
-			return data.packageColumn(coordinate.shard, "occurrence.key")[coordinate.row] !== 0;
+			return !data.isEmptyString(
+				data.packageColumn(coordinate.shard, "occurrence.key")[coordinate.row]!
+			);
 		};
 		const defined =
 			kind === "line"
-				? !(lineStarts[row] !== lineStarts[row + 1] && c("line.key")[row] === 0)
+				? !(
+						lineStarts[row] !== lineStarts[row + 1] &&
+						data.isEmptyString(c("line.key")[row]!)
+					)
 				: c(`query.${kind}.identity`)[row]! < 2 && hasKey();
 		return defined
 			? places.namespaceValues[

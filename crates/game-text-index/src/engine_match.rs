@@ -160,6 +160,7 @@ impl Rows {
         let keys = (0..query.package_count())
             .map(|shard| query.package_column(shard, "occurrence.key"))
             .collect::<Result<Vec<_>>>()?;
+        let empty_ids = query.reader.empty_string_ids()?;
         for (row, member) in representatives.iter().enumerate() {
             if row & 255 == 0 {
                 checkpoint(cancelled)?;
@@ -169,7 +170,7 @@ impl Rows {
                 .get(occurrence)
                 .ok_or("Namespace occurrence row")?;
             rows.namespace_defined
-                .push(rows.identity[row] < 2 && *key != 0);
+                .push(rows.identity[row] < 2 && !empty_ids.contains(key));
         }
         Ok(rows)
     }
@@ -193,6 +194,7 @@ pub(crate) struct Culture {
 }
 
 pub(crate) struct Projection {
+    empty_ids: Arc<std::collections::BTreeSet<u32>>,
     pub raw: Rows,
     pub slice: Rows,
     pub starts: Column,
@@ -275,6 +277,7 @@ impl Projection {
             });
         }
         let result = Arc::new(Self {
+            empty_ids: query.reader.empty_string_ids()?,
             raw,
             slice,
             starts,
@@ -557,7 +560,8 @@ impl Projection {
     pub fn namespace(&self, places: &Places, kind: Kind, row: usize) -> Result<Option<u32>> {
         let (defined, id) = if matches!(kind, Kind::Line) {
             (
-                !(self.starts[row] != self.starts[row + 1] && self.key[row] == 0),
+                !(self.starts[row] != self.starts[row + 1]
+                    && self.empty_ids.contains(&self.key[row])),
                 self.namespace[row],
             )
         } else {

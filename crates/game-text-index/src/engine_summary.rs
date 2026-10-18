@@ -21,6 +21,7 @@ impl EngineQuery {
         let mut diagnostics = 0usize;
         let mut excluded = 0usize;
         let mut resolved = 0usize;
+        let empty_ids = self.reader.empty_string_ids()?;
         for shard in 0..self.package_count() {
             checkpoint(cancelled)?;
             let statuses = self.package_column(shard, "package.status")?;
@@ -81,7 +82,7 @@ impl EngineQuery {
                 if index & 255 == 0 {
                     checkpoint(cancelled)?;
                 }
-                if *identity < 2 && *key != 0 {
+                if *identity < 2 && !empty_ids.contains(key) {
                     resolved += 1;
                 }
             }

@@ -38,6 +38,7 @@ pub struct EngineReader {
     frames: HashMap<(usize, u32), Arc<[u8]>>,
     frame_order: VecDeque<(usize, u32)>,
     frame_bytes: usize,
+    empty_ids: Option<Arc<BTreeSet<u32>>>,
 }
 
 fn text(value: &Value, name: &str) -> Result<String> {
@@ -221,6 +222,7 @@ impl EngineReader {
             columns: HashMap::new(),
             byte_columns: HashMap::new(),
             frames: HashMap::new(),
+            empty_ids: None,
             frame_order: VecDeque::new(),
             frame_bytes: 0,
         })
@@ -495,6 +497,29 @@ impl EngineReader {
         ids.iter().map(|id| self.string(*id)).collect()
     }
 
+    pub(crate) fn empty_string_ids(&mut self) -> Result<Arc<BTreeSet<u32>>> {
+        if let Some(ids) = &self.empty_ids {
+            return Ok(Arc::clone(ids));
+        }
+        // Each immutable segment is sorted by WTF-8 bytes. If it contains an empty string,
+        // that string is first in the segment, at its own append-history-dependent global ID.
+        let starts = self
+            .segments
+            .iter()
+            .filter(|s| s.count > 0)
+            .map(|s| s.start)
+            .collect::<Vec<_>>();
+        let mut ids = BTreeSet::new();
+        for start in starts {
+            if self.string(start)?.is_empty() {
+                ids.insert(start);
+            }
+        }
+        let ids = Arc::new(ids);
+        self.empty_ids = Some(Arc::clone(&ids));
+        Ok(ids)
+    }
+
     pub fn dictionary_count(&self) -> Result<usize> {
         Ok(self
             .segments
@@ -571,6 +596,26 @@ mod tests {
         let writer = Store::writer(config.clone())?;
         drop(writer);
         drop(reader);
+        std::fs::remove_dir_all(config.cache_root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn empty_string_lookup_uses_segment_content_in_shifted_append_only_dictionaries() -> Result<()>
+    {
+        let config = configuration();
+        let (mut store, _) = fixture(&config)?;
+        // The fixture's initial segment contains only nonempty strings, starting at ID zero.
+        let empty = store.intern("identity", &[String::new()])?[0];
+        assert_ne!(empty, 0);
+        store.publish_root()?;
+        let mut reader = EngineReader::open(&config, None)?;
+        assert!(!reader.string(0)?.is_empty());
+        assert_eq!(&*reader.empty_string_ids()?, &BTreeSet::from([empty]));
+        assert_eq!(reader.string(empty)?, "");
+        assert_eq!(&*reader.empty_string_ids()?, &BTreeSet::from([empty]));
+        drop(reader);
+        drop(store);
         std::fs::remove_dir_all(config.cache_root)?;
         Ok(())
     }

@@ -54,10 +54,33 @@ are updated in Rust, including duplicate-source signals on unchanged rows outsid
 package. Repeated patches flatten against one retained base. A stable PO translation can change
 in the same publication. Structural changes and eligibility failures rebuild the derived join.
 
+The native writer maintains a paged dependency graph using the checked native snapshot codec. Logical
+sites retain package, object, property, row and location coordinates separately from text values
+and reference targets. Indexed edges map occurrences to localization lines and query groups;
+source-value indexes locate duplicate-source dependencies. String Table definitions and references
+have separate edge kinds, including references whose definitions are absent. Text equality never
+merges their identities. A definition edit follows its consumer edges without rereading consumers.
+Point lookups read selected 16,384-value pages through an 8 MiB cache. Ordinary edits publish a
+bounded source-value delta and reuse the immutable graph base.
+
+Graph updates are matched to an exact dictionary generation and joined revision. Uncommitted
+updates are discarded. Pages retain their section checksums; the atomic graph state has a checked
+digest and validates scoped base filenames. The state commits before the immutable root is
+published; an interrupted publication leaves a revision mismatch that requires reconstructing the
+disposable graph. Each
+target view owns its graph under the existing writer lease. Query readers continue to pin immutable
+snapshots and do not depend on the mutable writer graph.
+
+Text-value updates use indexed membership and source dependencies. Reference and identity changes
+remain a separate structural path that rebuilds the projection and rewires the graph. The current
+package producer still decodes and rewrites the affected shard, and opening a changed model still
+computes its summary. Those remaining costs are not eliminated by indexing dependency discovery.
+
 Short and long sources use the same incremental path when their structure and visibility remain
-stable. Patches are bounded to 8,192 rows and source values. Numeric scans remain proportional to
-relevant index columns; incremental updates are not constant-time. Restoring the retained base's
-content key republishes the full base rather than creating a self-referencing overlay.
+stable. Patches are bounded to 8,192 rows and source values. Reading and patching numeric columns
+still has costs proportional to their size; updates are not constant-time. Restoring the retained
+base's exact content key reactivates that base without reconstructing it or creating a
+self-referencing overlay.
 
 Storage remains snapshot format 4 with checked roots, sections, atomic publication and shared
 project inputs. Native joined keys use `joined-native-v2:`. Older derived views rebuild once to

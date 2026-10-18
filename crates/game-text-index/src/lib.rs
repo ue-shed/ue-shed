@@ -4,6 +4,7 @@ mod bounded_intern;
 mod error;
 pub use error::{Error, ErrorCode};
 pub mod builder;
+mod dependency_graph;
 pub mod dictionary;
 pub mod engine;
 mod engine_aggregate;

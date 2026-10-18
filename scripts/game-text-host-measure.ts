@@ -2,7 +2,7 @@
 import { GameTextIndexBuilderLive } from "../packages/game-text/dist/entry-index.js";
 import { join, basename } from "node:path";
 import { createHash } from "node:crypto";
-import { Context, Effect, Exit, Layer, Schema, Scope, Stream } from "effect";
+import { Context, Effect, Exit, Layer, Schema, Scope, Stream, type Tracer } from "effect";
 import {
 	GameTextIndexSteps,
 	GameTextIndexBuilder,
@@ -54,7 +54,9 @@ export async function measureGameTextHosts(
 	task: string,
 	changedByte: number,
 	forceChangedJoin = false,
-	backend: "native" | "typescript" = "native"
+	backend: "native" | "typescript" = "native",
+	tracer?: Tracer.Tracer,
+	packageEditId = "phase6-refresh"
 ) {
 	if (host !== "cli" && host !== "workbench") throw new Error("Choose cli or workbench.");
 	if (
@@ -128,6 +130,7 @@ export async function measureGameTextHosts(
 	);
 	if (!selected) throw new Error("Retained package 0 is absent.");
 	let version = "";
+	const packageBytesDelta = task === "refresh-package-size" ? 16 : 0;
 	const builderLayer = forceChangedJoin
 		? Layer.effect(
 				GameTextIndexBuilder,
@@ -151,7 +154,10 @@ export async function measureGameTextHosts(
 				Effect.promise(async () =>
 					(await readGeneratedPackageInventory(records)).map((entry) =>
 						version && entry.path === selected.path
-							? { ...entry, signature: `${selected.signature}:${version}` }
+							? {
+									...entry,
+									signature: `${selected.signature}:${version}${packageBytesDelta ? ":resized" : ""}`
+								}
 							: entry
 					)
 				),
@@ -179,6 +185,7 @@ export async function measureGameTextHosts(
 								event.event === "text_package_record"
 									? {
 											...event,
+											fileBytes: event.fileBytes + packageBytesDelta,
 											occurrences: event.occurrences.map((occurrence, row) =>
 												row === 0
 													? {
@@ -251,7 +258,9 @@ export async function measureGameTextHosts(
 		Layer.provide(LocalizationEvidenceNodeLive)
 	);
 	const rootScope = await Effect.runPromise(Scope.make());
-	const context = await Effect.runPromise(Layer.buildWithScope(indexLayer, rootScope));
+	const run = <A, E>(effect: Effect.Effect<A, E>) =>
+		Effect.runPromise(tracer ? Effect.withTracer(effect, tracer) : effect);
+	const context = await run(Layer.buildWithScope(indexLayer, rootScope));
 	const targetName = LocalizationTargetName.make("Generated");
 	const cli =
 		host === "cli" ? await import("../apps/cli/src/workflows/game-text-index.ts") : undefined;
@@ -260,7 +269,6 @@ export async function measureGameTextHosts(
 	let readerScope: Scope.Closeable | undefined;
 	let result: GameTextIndexRefreshResult | undefined;
 	let workbench: WorkbenchGameTextApi | undefined;
-	const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect);
 	const openCli = async () => {
 		if (readerScope) await run(Scope.close(readerScope, Exit.void));
 		readerScope = await run(Scope.make());
@@ -278,7 +286,11 @@ export async function measureGameTextHosts(
 				? "force full join for changed inputs"
 				: "production incremental",
 			readPackages: result.packages.readPackages,
+			packageEditId: version || null,
+			packageBytesDelta: version ? packageBytesDelta : 0,
 			parsedFiles: result.imported.files.filter((file) => file.parsed).length,
+			changedShards: result.packages.changedShards,
+			packageProfile: result.packages.profile,
 			rebuilt: result.join.rebuilt,
 			...("strategy" in result.join ? { strategy: result.join.strategy } : undefined),
 			...("affectedLines" in result.join
@@ -598,27 +610,44 @@ export async function measureGameTextHosts(
 				(value) => value
 			);
 		}
-		if (task === "all" || task === "refresh") {
-			const byte = await captureBenchmarkByte(
-				join(project, "Content/Localization/Generated/en/Generated.po"),
-				"mirava"
-			);
+		if (
+			["all", "refresh", "refresh-package", "refresh-package-size", "refresh-po"].includes(
+				task
+			)
+		) {
+			const editPackage = task !== "refresh-po";
+			const editPo = ["all", "refresh", "refresh-po"].includes(task);
+			const byte = editPo
+				? await captureBenchmarkByte(
+						join(project, "Content/Localization/Generated/en/Generated.po"),
+						"mirava"
+					)
+				: undefined;
 			try {
-				version = "phase6-refresh";
-				const { open } = await import("node:fs/promises");
-				const file = await open(byte.path, "r+");
-				try {
-					await file.write(
-						Uint8Array.of(changedByte === byte.byte ? 111 : changedByte),
-						0,
-						1,
-						byte.offset
-					);
-					await file.sync();
-				} finally {
-					await file.close();
+				version = editPackage ? packageEditId : "";
+				if (byte) {
+					const { open } = await import("node:fs/promises");
+					const file = await open(byte.path, "r+");
+					try {
+						await file.write(
+							Uint8Array.of(changedByte === byte.byte ? 111 : changedByte),
+							0,
+							1,
+							byte.offset
+						);
+						await file.sync();
+					} finally {
+						await file.close();
+					}
 				}
-				await measure(`${host}:refresh-one-package-one-po`, refresh, (value) => value);
+				const edit = editPackage
+					? editPo
+						? "one-package-one-po"
+						: packageBytesDelta
+							? "one-package-with-size-change"
+							: "one-package"
+					: "one-po";
+				await measure(`${host}:refresh-${edit}`, refresh, (value) => value);
 				if (host === "cli" && !forceChangedJoin) {
 					await measure("cli:query-after-refresh", () => query(base), pageSummary);
 					await measure(

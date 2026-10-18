@@ -1150,6 +1150,7 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
         &query_columns,
         &file_rows,
     )?);
+    let graph = crate::dependency_graph::Graph::rebuild(store, &joined, &query_columns)?;
     let first_folders = joined.line[16]
         .iter()
         .enumerate()
@@ -1245,6 +1246,7 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
         metadata.len() <= 16 * 1024 * 1024,
         "join metadata exceeds bound",
     )?;
+    graph.commit(store, &key)?;
     let record = store.publish_global(
         "joined",
         &key,

@@ -22,7 +22,7 @@ pub(crate) fn reset() {
 pub(crate) fn full() {
     note("fullJoin", json!(true));
 }
-fn note(key: &str, value: Value) {
+pub(crate) fn note(key: &str, value: Value) {
     DIAGNOSTICS.with(|state| state.borrow_mut()[key] = value);
 }
 fn fallback(reason: &str) -> Result<Option<JoinOutcome>> {
@@ -263,6 +263,9 @@ pub(crate) fn refresh(
     {
         return fallback("generation-or-key-matching");
     }
+    let Some(graph) = crate::dependency_graph::Graph::open(store, &previous_key)? else {
+        return fallback("dependency-index-revision");
+    };
     let current = serde_json::to_value(input)?;
     for field in [
         "projectRoot",
@@ -351,14 +354,27 @@ pub(crate) fn refresh(
                 .map(|e| e.name.clone())
                 .collect::<Vec<_>>();
             for field in fields {
+                // File size is retained input evidence, not a membership predicate. A text edit
+                // may change its serialized size while preserving every occurrence and edge.
                 if matches!(
                     field.as_str(),
-                    "shared.meta" | "package.signature" | "occurrence.source"
+                    "shared.meta"
+                        | "package.signature"
+                        | "package.bytes_low"
+                        | "package.bytes_high"
+                        | "occurrence.source"
                 ) {
                     continue;
                 }
                 let a = files.col(store, before, &field)?.to_vec();
                 if a != files.col(store, after, &field)? {
+                    if matches!(
+                        field.as_str(),
+                        "occurrence.namespace" | "occurrence.key" | "occurrence.identity"
+                    ) {
+                        note("changeKind", json!("reference-or-identity"));
+                        return fallback("reference-membership");
+                    }
                     return fallback("package-structure");
                 }
             }
@@ -430,42 +446,40 @@ pub(crate) fn refresh(
             changed_pos.insert(ci);
         }
     }
-    let order = joined.col("occurrence.rows")?;
-    let os = joined.col("line.occ_start")?;
-    let oe = joined.col("line.occ_end")?;
     let mut affected = BTreeSet::new();
     let mut package_lines = BTreeSet::new();
-    for (position, member) in order.iter().enumerate() {
-        if edits.contains_key(&(*member as usize)) {
-            let row = oe.partition_point(|end| *end <= position as u32);
-            if row >= os.len() || os[row] > position as u32 {
-                return fallback("occurrence-range");
-            }
-            affected.insert(row);
-            package_lines.insert(row);
+    let mut reference_consumers = BTreeSet::new();
+    for (member, source) in &edits {
+        let route = graph.route(*member as u32)?;
+        graph.move_source(*member as u32, previous_sources[member], *source)?;
+        affected.insert(route.line as usize);
+        package_lines.insert(route.line as usize);
+        for consumer in graph.consumers(*member as u32)? {
+            let route = graph.route(consumer)?;
+            reference_consumers.insert(consumer);
+            affected.insert(route.line as usize);
+            package_lines.insert(route.line as usize);
         }
     }
-    let line_ns = joined.col("line.namespace")?;
-    let line_key = joined.col("line.key")?;
+    if !graph.within_move_bound() {
+        return fallback("dependency-source-overlay-bound");
+    }
+    note(
+        "changeKind",
+        json!(if edits.is_empty() {
+            "localization-or-provenance"
+        } else {
+            "text-value"
+        }),
+    );
+    note(
+        "referenceConsumersVisited",
+        json!(reference_consumers.len()),
+    );
     let reasons = joined.col("line.reasons")?;
-    let mut resolved = line_ns.len();
-    while resolved > 0 && reasons[resolved - 1] & ((1 << 9) | (1 << 10)) != 0 {
-        resolved -= 1;
-    }
-    for (_, ns, key) in po_dirty {
-        let mut low = 0;
-        let mut high = resolved;
-        while low < high {
-            let middle = (low + high) / 2;
-            if (line_ns[middle], line_key[middle]) < (ns, key) {
-                low = middle + 1;
-            } else {
-                high = middle;
-            }
-        }
-        let row = low;
-        if row < resolved && line_ns[row] == ns && line_key[row] == key {
-            affected.insert(row);
+    for (_, namespace, key) in po_dirty {
+        if let Some(row) = graph.identity_line(namespace, key)? {
+            affected.insert(row as usize);
         }
     }
     if affected.len() > 8192 {
@@ -491,7 +505,7 @@ pub(crate) fn refresh(
             names: &names,
             starts: &starts,
             text: &mut text,
-            occurrence_lines: None,
+            graph: &graph,
             raw_ids: None,
         };
         for row in &package_lines {
@@ -500,12 +514,7 @@ pub(crate) fn refresh(
             {
                 return fallback("split-unit");
             }
-            let Some((source, count)) = sources.line(
-                *row,
-                order
-                    .get(os[*row] as usize..oe[*row] as usize)
-                    .ok_or("line member range")?,
-            )?
+            let Some((source, count)) = sources.line(*row, &graph.members("line", *row as u32)?)?
             else {
                 return fallback("source-group-structure");
             };
@@ -734,7 +743,7 @@ pub(crate) fn refresh(
             names: &names,
             starts: &starts,
             text: &mut text,
-            occurrence_lines: None,
+            graph: &graph,
             raw_ids: None,
         };
         let Some(edits) = sources.queries(&package_lines, &edits, &previous_sources, &mut hot)?
@@ -745,7 +754,28 @@ pub(crate) fn refresh(
     };
     let base = meta["base"].as_str().unwrap_or(&previous_key).to_owned();
     if key == base {
-        return fallback("base-key-reuse");
+        // Returning to a retained immutable base is an edge/value undo, not another build.
+        // The eligibility checks and graph edits above established the same memberships.
+        let bytes = store.root["layers"][&base]["bytes"]
+            .as_u64()
+            .ok_or("base bytes")?;
+        graph.commit(store, key)?;
+        let active = store.root["active"]
+            .as_object_mut()
+            .ok_or("active layers")?;
+        active.insert("joined".into(), json!(base));
+        active.remove("joined-base");
+        store.publish_root()?;
+        note("reusedBase", json!(true));
+        return Ok(Some(JoinOutcome {
+            rebuilt: true,
+            strategy: Some("incremental".into()),
+            key: key.into(),
+            bytes,
+            count: meta["count"].as_u64().map(|count| count as u32),
+            key_changes: Some(0),
+            affected_lines: Some(affected.len() as u32),
+        }));
     }
     let mut rows = affected
         .iter()
@@ -839,6 +869,7 @@ pub(crate) fn refresh(
     );
     note("decodedSourceStrings", json!(text.len()));
     note("fallback", Value::Null);
+    graph.commit(store, key)?;
     let record = store.publish_global(
         "joined",
         key,

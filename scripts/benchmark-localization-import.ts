@@ -26,6 +26,7 @@ import {
 	boundedNumber
 } from "./game-text-scale-safety.ts";
 import { captureBenchmarkByte, restoreBenchmarkByte } from "./localization-benchmark-byte.ts";
+import { makeGameTextBenchmarkTrace } from "./game-text-benchmark-trace.ts";
 
 // Includes Node startup and module loading, discovery and every file in the cold import.
 const runStarted = 0;
@@ -41,6 +42,8 @@ const { values } = parseArgs({
 		worker: { type: "boolean" },
 		select: { type: "string" },
 		profile: { type: "boolean" },
+		trace: { type: "boolean" },
+		"package-edit-id": { type: "string", default: "phase6-refresh" },
 		"force-changed-join": { type: "boolean", default: false },
 		"po-change-byte": { type: "string" },
 		report: { type: "string" },
@@ -82,6 +85,7 @@ if (values.worker) {
 	const results: unknown[] = [];
 	let peak = memory();
 	let stage = "startup";
+	const trace = values.trace ? makeGameTextBenchmarkTrace() : undefined;
 	const sample = () => {
 		const current = memory();
 		for (const key of ["heapUsed", "arrayBuffers", "rss"] as const)
@@ -91,6 +95,7 @@ if (values.worker) {
 	const timer = setInterval(sample, 25);
 	async function measure<A>(name: string, run: () => Promise<A>, summary: (value: A) => object) {
 		globalThis.gc?.();
+		trace?.clear();
 		stage = name;
 		peak = memory();
 		process.send?.({ kind: "stage", stage });
@@ -128,6 +133,7 @@ if (values.worker) {
 					}
 				: undefined),
 			peak,
+			...(trace ? { trace: trace.drain() } : undefined),
 			...summary(value)
 		};
 		results.push(result);
@@ -203,7 +209,14 @@ if (values.worker) {
 				values.select ?? "all",
 				changedPoByte,
 				values["force-changed-join"],
-				Schema.decodeUnknownSync(Schema.Literals(["native", "typescript"]))(values.builder)
+				Schema.decodeUnknownSync(Schema.Literals(["native", "typescript"]))(values.builder),
+				trace?.tracer,
+				Schema.decodeUnknownSync(
+					Schema.String.check(
+						Schema.isPattern(/^phase6-refresh(?:-[a-z0-9]+)?$/u),
+						Schema.isMaxLength(64)
+					)
+				)(values["package-edit-id"])
 			);
 		}
 		if (mode === "join") {
@@ -374,7 +387,7 @@ if (values.worker) {
 	const changedByte =
 		mode === "target" ||
 		mode === "package" ||
-		(mode === "hosts" && ["all", "refresh"].includes(values.select ?? "all")) ||
+		(mode === "hosts" && ["all", "refresh", "refresh-po"].includes(values.select ?? "all")) ||
 		(mode === "join" && ["all", "refresh"].includes(values.select ?? "all")) ||
 		(mode === "shared" && ["all", "cold", "refresh"].includes(values.select ?? "all"))
 			? await captureBenchmarkByte(
@@ -399,6 +412,8 @@ if (values.worker) {
 			mode,
 			"--po-change-byte",
 			String(changedPoByte),
+			"--package-edit-id",
+			values["package-edit-id"]!,
 			...(values.select ? ["--select", values.select] : []),
 			...(values.host ? ["--host", values.host] : []),
 			"--builder",
@@ -407,6 +422,7 @@ if (values.worker) {
 			...(values.domain ? ["--domain", values.domain] : []),
 			...(values.records ? ["--records", values.records] : []),
 			...(values.profile ? ["--profile"] : []),
+			...(values.trace ? ["--trace"] : []),
 			...(values["force-changed-join"] ? ["--force-changed-join"] : [])
 		],
 		{

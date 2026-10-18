@@ -391,6 +391,13 @@ fn execute(store: &mut Store, request: &BuildRequest) -> Result<BuildOutcome> {
                     )
                 })?;
             outcome.join = Some(crate::join::refresh(store, &input)?);
+            if let Some(seconds) =
+                crate::join_incremental::diagnostics()["dependencyGraphBuildSeconds"].as_f64()
+            {
+                outcome
+                    .stage_seconds
+                    .insert("dependency_graph_build".into(), seconds);
+            }
         }
         BuildRequest::Compact { force, .. } => {
             outcome.action = "compact".into();

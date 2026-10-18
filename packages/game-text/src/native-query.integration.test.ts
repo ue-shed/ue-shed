@@ -211,7 +211,135 @@ describe.skipIf(!executable)("production native Game Text queries", () => {
 			)
 		);
 	}, 120000);
-	it("keeps mixed reference edits incremental, preserves pinned readers and matches a fresh join", async () => {
+	it("retargets equal-text references, resolves late definitions, and keeps later value edits incremental", async () => {
+		if (!executable) throw new Error("Native reader required");
+		await Effect.runPromise(
+			Effect.scoped(
+				Effect.gen(function* () {
+					const fixture = yield* makeIndexRegressionFixture();
+					const shared = "The same displayed text belongs to distinct reference targets.";
+					const manifest = fixture.target.outputPaths.manifest;
+					if (!manifest) throw new Error("The reference fixture requires a manifest.");
+					yield* Effect.promise(() =>
+						writeFile(
+							join(fixture.projectRoot, manifest),
+							JSON.stringify({ FormatVersion: 1, Namespace: "", Children: [] })
+						)
+					);
+					const a = "/Game/Text/First.First";
+					const b = "/Game/Text/Second.Second";
+					const late = "/Game/Text/Late.Late";
+					const definition = (object: string, namespace: string, source = shared) => ({
+						source,
+						dev_notes: "",
+						identity: { status: "resolved" as const, namespace, key: "K" },
+						location: {
+							kind: "string_table_entry" as const,
+							object_path: object,
+							entry_key: "K"
+						},
+						edit_capability: "read_only" as const
+					});
+					const reference = (table: string) => ({
+						source: shared,
+						dev_notes: "",
+						identity: { status: "string_table" as const, table_id: table, key: "K" },
+						location: {
+							kind: "asset_property" as const,
+							object_path: "/Game/Text/Widget.Widget",
+							class_path: "/Script/Engine.DataAsset",
+							property_path: "Label"
+						},
+						edit_capability: "read_only" as const
+					});
+					const update = (table: string, includeLate: boolean, source = shared) =>
+						fixture.update([
+							definition(a, "First", source),
+							definition(b, "Second"),
+							...(includeLate ? [definition(late, "Late")] : []),
+							reference(table)
+						]);
+					yield* Effect.gen(function* () {
+						const index = yield* GameTextIndexRefresh;
+						const request = {
+							query: "",
+							capability: "all" as const,
+							pageSize: 50,
+							localization: { target: fixture.target.name }
+						};
+						update(a, false);
+						const pinned = yield* index.refresh(fixture.request);
+						const original = yield* pinned.query.search(request);
+						const verify = Effect.fn("Test.GameText.referenceParity")(function* (
+							model: Effect.Success<ReturnType<typeof index.refresh>>
+						) {
+							const raw = fixture.raw();
+							const oracle = textCorpusQuery(
+								raw,
+								undefined,
+								joinLocalizationTarget(raw, model.evidence)
+							);
+							expect(normalizePage(yield* model.query.search(request))).toEqual(
+								normalizePage(oracle.search(request))
+							);
+							expect(yield* model.corpus).toEqual(raw);
+							for (const unit of oracle.search(request).units) {
+								const focus = { id: unit.id, pageSize: 50 };
+								expect(normalizeFocus(yield* model.query.focus(focus))).toEqual(
+									normalizeFocus(oracle.focus(focus))
+								);
+							}
+							expect(yield* pinned.query.search(request)).toEqual(original);
+						});
+						yield* verify(pinned);
+						for (const stage of [
+							{ table: b, late: false },
+							{ table: late, late: false },
+							{ table: late, late: true },
+							{ table: a, late: true }
+						]) {
+							update(stage.table, stage.late);
+							const model = yield* index.refresh(fixture.request);
+							expect(model.join.strategy).toBe("full");
+							yield* verify(model);
+						}
+						update(
+							a,
+							true,
+							"An edited definition keeps the reference target and saved reference text."
+						);
+						fixture.patchRecord({ fileBytes: 1234 });
+						const edited = yield* index.refresh(fixture.request);
+						expect(edited.join.strategy, JSON.stringify(edited.join)).toBe(
+							"incremental"
+						);
+						yield* verify(edited);
+						fixture.patchRecord({ fileBytes: 2 ** 32 + 2048 });
+						const provenance = yield* index.refresh(fixture.request);
+						expect(provenance.join).toMatchObject({
+							strategy: "incremental",
+							affectedLines: 0
+						});
+						yield* verify(provenance);
+					}).pipe(
+						Effect.provide(
+							fixture.layer(
+								false,
+								fixture.source,
+								false,
+								nativeIndexBuilderLayer({
+									executable,
+									timeoutMs: 30000,
+									catalogTimeoutMs: 120000
+								})
+							)
+						)
+					);
+				})
+			)
+		);
+	}, 120000);
+	it("updates authored sources beside String Table references incrementally and preserves pinned readers", async () => {
 		if (!executable) throw new Error("Native reader required");
 		await Effect.runPromise(
 			Effect.scoped(

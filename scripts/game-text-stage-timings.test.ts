@@ -5,7 +5,7 @@ import { Effect, Layer } from "effect";
 import { expect, vi } from "vitest";
 import { GameTextIndexRefresh } from "../packages/game-text/src/index-refresh.ts";
 import { makeIndexRegressionFixture } from "../packages/game-text/src/index-refresh-regressions.test-support.ts";
-import { refreshJoinedTarget } from "../packages/game-text/src/joined-target.ts";
+import { refreshJoinedTarget } from "../packages/game-text/src/joined-target-reference.test-support.ts";
 import { SharedIndex, sharedIndexNodeLayer } from "../packages/game-text/src/shared-index.ts";
 import { coveredMs, makeStageRecorder } from "./game-text-stage-timings.ts";
 

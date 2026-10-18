@@ -10,7 +10,7 @@ import {
 	manifestEntry,
 	target
 } from "./localization.test-support.js";
-import { textCorpusQuery } from "./query.js";
+import { textCorpusQuery } from "./query.test-support.js";
 import { TextUnit, type TextCorpusSearchRequest, type TextGroupBy } from "./schema.js";
 import { textFileLabel, textFolderLabel } from "./text-origin.js";
 

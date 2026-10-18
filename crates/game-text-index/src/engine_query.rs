@@ -6,7 +6,7 @@ use crate::store::Configuration;
 use crate::wtf8::Wtf8Buf;
 use crate::{Result, require};
 use serde_json::{Value, json};
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 pub struct EngineQuery {
@@ -23,6 +23,7 @@ pub struct EngineQuery {
     pub(crate) projection: Option<Arc<crate::engine_match::Projection>>,
     package_names: Vec<String>,
     package_starts: Vec<u32>,
+    validated_ids: HashSet<String>,
 }
 
 struct SourceSearch {
@@ -132,6 +133,7 @@ impl EngineQuery {
             projection: None,
             package_names,
             package_starts,
+            validated_ids: HashSet::new(),
         })
     }
 
@@ -143,7 +145,7 @@ impl EngineQuery {
     }
 
     pub fn packed(&mut self, kind: &str, row: usize) -> Result<String> {
-        let starts = self.column(kind, "id_starts")?;
+        let starts = self.identity_starts(kind)?;
         let bytes = self.reader.bytes(&format!("query.{kind}.id_utf8"))?;
         let begin = *starts.get(row).ok_or("Identity row outside index.")? as usize;
         let end = *starts.get(row + 1).ok_or("Identity end outside index.")? as usize;
@@ -157,7 +159,7 @@ impl EngineQuery {
     }
 
     pub fn find_id(&mut self, kind: &str, id: &str) -> Result<Option<usize>> {
-        let starts = self.column(kind, "id_starts")?;
+        let starts = self.identity_starts(kind)?;
         let bytes = self.reader.bytes(&format!("query.{kind}.id_utf8"))?;
         let wanted = Wtf8Buf::from_view(id);
         for (row, range) in starts.windows(2).enumerate() {
@@ -170,6 +172,26 @@ impl EngineQuery {
             }
         }
         Ok(None)
+    }
+
+    fn identity_starts(&mut self, kind: &str) -> Result<Arc<[u32]>> {
+        let starts = self.column(kind, "id_starts")?;
+        if !self.validated_ids.contains(kind) {
+            let count = if kind == "line" {
+                self.reader.column("line.source")?.len()
+            } else {
+                require(kind == "raw", "Unknown identity projection.")?;
+                self.column(kind, "visible")?.len()
+            };
+            require(
+                starts.len() == count + 1
+                    && starts.first() == Some(&0)
+                    && starts.windows(2).all(|range| range[0] <= range[1]),
+                "Invalid query identity offsets.",
+            )?;
+            self.validated_ids.insert(kind.to_owned());
+        }
+        Ok(starts)
     }
 
     pub fn package_coordinate(&self, occurrence: usize) -> Result<(usize, usize)> {
@@ -425,10 +447,12 @@ impl EngineQuery {
             .get(row + 1)
             .ok_or("Invalid line slice range.")? as usize;
         let raws = self.column("slice", "raw")?;
-        let mut units = BTreeSet::new();
+        let mut units = Vec::new();
         for raw in raws.get(begin..end).ok_or("Invalid line slices.")? {
-            units.insert(self.packed("raw", *raw as usize)?);
+            units.push(self.packed("raw", *raw as usize)?);
         }
+        units.sort_by(|left, right| crate::join::ordinal(left, right));
+        units.dedup();
         let ns = self.reader.value("line.namespace", row)?;
         let key = self.reader.value("line.key", row)?;
         let namespace = self.reader.string(ns)?;

@@ -13,15 +13,16 @@ import {
 	GameTextIndexSource,
 	gameTextIndexRefreshLayer
 } from "./index-refresh.js";
-import { typeScriptIndexBuilderLayer } from "./index-builder.js";
-import { columnarTextCorpusQuery } from "./columnar-query.js";
+import { typeScriptIndexBuilderLayer } from "./index-reference.test-support.js";
+
+import { columnarTextCorpusQuery } from "./columnar-query.test-support.js";
 import { emptyPackageTextRecord } from "./package-text-record.js";
 import {
 	prepareJoinedSourceCache,
 	readJoinedSourceCache,
 	addSourceTrigrams,
 	rejectSourceTrigrams
-} from "./joined-source-cache.js";
+} from "./joined-source-cache.test-support.js";
 
 describe("persisted joined source cache", () => {
 	it("rejects missing ASCII trigrams without crossing sources or rejecting short terms", () => {
@@ -296,8 +297,8 @@ describe("persisted joined source cache", () => {
 							capability: "all" as const,
 							pageSize: 10
 						});
-						expect(first.query.search(search("originalsource")).total).toBe(1);
-						expect(first.query.search(search("novelcacheterm")).total).toBe(0);
+						expect((yield* first.query.search(search("originalsource"))).total).toBe(1);
+						expect((yield* first.query.search(search("novelcacheterm"))).total).toBe(0);
 						value =
 							"qzxwyv novelcacheterm with enough characters for a bounded source overlay";
 						signature = "ascii";
@@ -309,8 +310,8 @@ describe("persisted joined source cache", () => {
 						const fresh = columnarTextCorpusQuery(changed.joined);
 						expect(fresh.search(search("NOVELCACHETERM")).total).toBe(1);
 						expect(fresh.search(search("originalsource")).total).toBe(0);
-						expect(first.query.search(search("originalsource")).total).toBe(1);
-						expect(first.query.search(search("novelcacheterm")).total).toBe(0);
+						expect((yield* first.query.search(search("originalsource"))).total).toBe(1);
+						expect((yield* first.query.search(search("novelcacheterm"))).total).toBe(0);
 						value =
 							"\u0130STANBUL caf\u00e9 \ud800 with enough characters for a bounded source overlay";
 						signature = "unicode";

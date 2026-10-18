@@ -1,3 +1,4 @@
+import { textCorpusQuery } from "../packages/game-text/src/query.test-support.ts";
 import { createReadStream } from "node:fs";
 import { createInterface } from "node:readline";
 import { resolve } from "node:path";
@@ -21,7 +22,6 @@ import {
 	applyLocalizationKeyChanges,
 	joinLocalizationTarget,
 	localizationKeyChanges,
-	textCorpusQuery,
 	localizationStatusReport,
 	type TextCorpus
 } from "../packages/game-text/dist/index.js";

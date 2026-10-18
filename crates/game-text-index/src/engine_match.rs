@@ -39,6 +39,44 @@ fn length(values: &[u32], count: usize) -> Result<()> {
     require(values.len() == count, "Inconsistent query column lengths.")
 }
 
+fn permutation(values: &[u32], count: usize, cancelled: &AtomicBool) -> Result<()> {
+    length(values, count)?;
+    let mut seen = vec![false; count];
+    for (index, row) in values.iter().enumerate() {
+        if index & 255 == 0 {
+            checkpoint(cancelled)?;
+        }
+        let seen = seen
+            .get_mut(*row as usize)
+            .ok_or("Query order row outside projection.")?;
+        require(!*seen, "Query order contains duplicate rows.")?;
+        *seen = true;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod validation_tests {
+    use super::*;
+
+    #[test]
+    fn query_orders_are_complete_permutations_and_validate_cancellation() -> Result<()> {
+        let cancelled = AtomicBool::new(false);
+        permutation(&[2, 0, 1], 3, &cancelled)?;
+        for values in [&[0, 0, 2][..], &[0, 1][..], &[0, 1, 3][..]] {
+            assert!(permutation(values, 3, &cancelled).is_err());
+        }
+        assert_eq!(
+            permutation(&[0], 1, &AtomicBool::new(true))
+                .err()
+                .ok_or("Expected cancellation")?
+                .code,
+            ErrorCode::Cancelled
+        );
+        Ok(())
+    }
+}
+
 pub(crate) struct Rows {
     pub visible: Column,
     pub signals: Column,
@@ -60,7 +98,7 @@ pub(crate) struct Rows {
     pub order: Column,
 }
 impl Rows {
-    fn open(query: &mut EngineQuery, kind: &str) -> Result<Self> {
+    fn open(query: &mut EngineQuery, kind: &str, cancelled: &AtomicBool) -> Result<Self> {
         let rows = Self {
             visible: query.column(kind, "visible")?,
             signals: query.column(kind, "signals")?,
@@ -110,10 +148,9 @@ impl Rows {
             count,
         )?;
         ranges(&rows.file_start, &rows.file_end, rows.files.len(), count)?;
-        require(
-            rows.order.iter().all(|row| (*row as usize) < count),
-            "Invalid raw row order.",
-        )?;
+        if kind == "raw" {
+            permutation(&rows.order, count, cancelled)?;
+        }
         Ok(rows)
     }
     pub fn members(&self, row: usize) -> &[u32] {
@@ -165,8 +202,21 @@ impl Projection {
             return Ok(Arc::clone(value));
         }
         checkpoint(cancelled)?;
-        let raw = Rows::open(query, "raw")?;
-        let slice = Rows::open(query, "slice")?;
+        let raw = Rows::open(query, "raw", cancelled)?;
+        let slice = Rows::open(query, "slice", cancelled)?;
+        let slice_raw = query.column("slice", "raw")?;
+        let slice_line = query.column("slice", "line")?;
+        length(&slice_raw, slice.visible.len())?;
+        length(&slice_line, slice.visible.len())?;
+        for (index, row) in slice_raw.iter().enumerate() {
+            if index & 255 == 0 {
+                checkpoint(cancelled)?;
+            }
+            require(
+                (*row as usize) < raw.visible.len(),
+                "Slice points outside raw units.",
+            )?;
+        }
         let starts = query.column("line", "starts")?;
         let source = query.reader.column("line.source")?;
         let count = source.len();
@@ -184,6 +234,10 @@ impl Projection {
                 checkpoint(cancelled)?;
             }
             for sr in starts[row] as usize..starts[row + 1] as usize {
+                require(
+                    slice_line[sr] as usize == row,
+                    "Slice belongs to a different localization line.",
+                )?;
                 if slice.visible[sr] != 0 {
                     flags[row] |= slice.signals[sr];
                     saved_visible[row] = true;
@@ -236,10 +290,7 @@ impl Projection {
         ] {
             length(column, count)?;
         }
-        require(
-            result.order.iter().all(|row| (*row as usize) < count),
-            "Invalid localization row order.",
-        )?;
+        permutation(&result.order, count, cancelled)?;
         ranges(
             &result.file_start,
             &result.file_end,

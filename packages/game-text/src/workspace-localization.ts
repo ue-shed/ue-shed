@@ -1,3 +1,5 @@
+import { indexPublicFailure } from "./index-public-error.js";
+import type { IndexFailure } from "./index-contract.js";
 import { Schema } from "effect";
 import {
 	localizationQualityWorkspaceOf,
@@ -17,7 +19,6 @@ import {
 	type WorkspaceReportResult,
 	type WorkspaceReportFileRequest,
 	type WorkspaceReportFileResult,
-	localizationFocusPage,
 	localizationLinesCsv,
 	pickedLocalizationCultures,
 	type LocalizationLinesFileResult,
@@ -34,8 +35,7 @@ import {
 	type LocalizationFocusRequest,
 	type LocalizationFocusResult,
 	type LocalizationTargetResult,
-	type LocalizationTargetsResult,
-	type TextCorpusQuery
+	type LocalizationTargetsResult
 } from "./entry-corpus.js";
 import {
 	makeRetainedGameTextIndexWith,
@@ -49,7 +49,6 @@ import { type GameTextRuleDocument } from "./entry-rules.js";
 import {
 	MAX_LOCALIZATION_CULTURES,
 	type LocalizationJoin,
-	type TextCorpus,
 	type TextCorpusSearchRequest,
 	type TextCorpusSearchResult
 } from "./entry-schema.js";
@@ -82,7 +81,11 @@ function failure(code: string) {
 /** The retained corpus reference is also the scan revision: stale readers cannot publish results. */
 export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.localization")(
 	function* (
-		currentCorpus: () => Effect.Effect<TextCorpus | undefined, never, Scope.Scope>,
+		currentCorpus: () => Effect.Effect<
+			GameTextIndexRefreshResult["corpus"] | undefined,
+			never,
+			Scope.Scope
+		>,
 		currentProject: () => Effect.Effect<GameTextProjectIndex | undefined, never, Scope.Scope>,
 		currentRules?: () => Effect.Effect<GameTextRuleDocument | undefined, never, Scope.Scope>,
 		currentIndex?: () => Effect.Effect<
@@ -136,9 +139,12 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 		const baseline = yield* Ref.make<LocalizationBaseline | undefined>(undefined);
 		const qualityCache = yield* Ref.make<
 			| {
-					join: LocalizationJoin;
+					join: GameTextIndexRefreshResult["localization"];
 					document: GameTextRuleDocument | undefined;
-					scan: Fiber.Fiber<ReturnType<typeof localizationQualityWorkspaceOf>>;
+					scan: Fiber.Fiber<
+						ReturnType<typeof localizationQualityWorkspaceOf>,
+						IndexFailure
+					>;
 			  }
 			| undefined
 		>(undefined);
@@ -154,7 +160,7 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 		);
 		const discovery = yield* Ref.make<
 			| {
-					readonly corpus: TextCorpus;
+					readonly corpus: GameTextIndexRefreshResult["corpus"];
 					readonly targets: readonly LocalizationTarget[];
 					readonly result: LocalizationTargetsResult;
 			  }
@@ -163,13 +169,14 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 		const selected = yield* Ref.make<
 			| {
 					readonly projectRoot: string;
-					readonly corpus: TextCorpus;
-					readonly join: LocalizationJoin;
+					readonly corpus: GameTextIndexRefreshResult["corpus"];
+					readonly join: GameTextIndexRefreshResult["localization"];
+					readonly readJoin: GameTextIndexRefreshResult["localizationJoin"];
 					readonly quality: GameTextIndexRefreshResult["localizationQuality"];
 					readonly sourceQuality: GameTextIndexRefreshResult["sourceQuality"];
 					readonly evidence: LocalizationTargetEvidence;
 					readonly review: LocalizationReviewSnapshot | undefined;
-					readonly model: TextCorpusQuery;
+					readonly model: GameTextIndexRefreshResult["query"];
 					readonly search: GameTextIndexRefreshResult["search"];
 					readonly borrow: RetainedGameTextIndexResult["borrow"];
 					readonly result: LocalizationTargetResult;
@@ -229,7 +236,7 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 			yield* Ref.set(
 				gatherBaseline,
 				root && cached?.join.target === name
-					? { root, join: { ...cached.join, lines: cached.join.lines } }
+					? { root, join: yield* cached.readJoin }
 					: undefined
 			);
 		});
@@ -314,10 +321,15 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 				);
 			const before = yield* Ref.get(gatherBaseline);
 			if (before?.root === root && before.join.target === name) {
-				const across = localizationKeyChangesAcross(
-					before.join,
-					indexed.success.localizationJoin
-				);
+				const loaded = yield* indexed.success.localizationJoin.pipe(Effect.result);
+				if (Result.isFailure(loaded))
+					return {
+						status: "failed" as const,
+						code: "index_failed",
+						message: loaded.failure.message,
+						recovery: loaded.failure.recovery
+					};
+				const across = localizationKeyChangesAcross(before.join, loaded.success);
 				yield* Ref.set(gatherBaseline, undefined);
 				yield* Ref.set(acrossGather, { root, target: name, pairs: across.pairs });
 				indexed = yield* refreshIndex
@@ -335,11 +347,11 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 							: "invalid_project"
 					);
 			}
-			const join = indexed.success.localizationJoin,
+			const join = indexed.success.localization,
 				model = indexed.success.query,
 				review = indexed.success.review;
 			const evidence = indexed.success.evidence;
-			const textCounts = yield* indexed.success
+			const textCountsResult = yield* indexed.success
 				.search({
 					query: "",
 					capability: "all",
@@ -348,7 +360,15 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 					pageSize: 1,
 					localization: { target: name }
 				})
-				.pipe(Effect.orDie);
+				.pipe(Effect.result);
+			if (Result.isFailure(textCountsResult))
+				return {
+					status: "failed" as const,
+					code: "index_failed",
+					message: textCountsResult.failure.message,
+					recovery: textCountsResult.failure.recovery
+				};
+			const textCounts = textCountsResult.success;
 			if ((yield* currentCorpus()) !== corpus || (yield* Ref.get(revision)) !== version)
 				return { status: "not_ready" as const };
 			const result: LocalizationTargetResult = {
@@ -374,6 +394,7 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 						projectRoot: root,
 						corpus,
 						join,
+						readJoin: indexed.success.localizationJoin,
 						quality: indexed.success.localizationQuality,
 						sourceQuality: indexed.success.sourceQuality,
 						model,
@@ -419,7 +440,10 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 					!cached.join.cultures.includes(request.localization.culture))
 			)
 				return { status: "not_ready" };
-			const page = yield* cached.search(request).pipe(Effect.orDie);
+			const outcome = yield* cached.search(request).pipe(Effect.result);
+			if (Result.isFailure(outcome))
+				return { status: "failed", error: indexPublicFailure(outcome.failure) };
+			const page = outcome.success;
 			if ((yield* current(request.localization.target)) !== cached)
 				return { status: "not_ready" };
 			return { status: "ready", page };
@@ -429,14 +453,17 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 		): Effect.fn.Return<LocalizationFocusResult, never, Scope.Scope> {
 			const cached = yield* current(request.target);
 			if (!cached) return { status: "not_ready" };
-			const id =
-				request.selection.kind === "line"
-					? request.selection.id
-					: cached.model.focus({ id: request.selection.id, pageSize: 1 })?.localization
-							?.id;
-			const line = id ? cached.model.localizationFocus(id) : undefined;
-			return line
-				? { status: "found", focus: localizationFocusPage(cached.join, line, request) }
+			const outcome = yield* cached.model.localizationDetail(request).pipe(Effect.result);
+			if (Result.isFailure(outcome))
+				return {
+					status: "failed",
+					code: "index_failed",
+					message: outcome.failure.message,
+					recovery: outcome.failure.recovery
+				};
+			if ((yield* current(request.target)) !== cached) return { status: "not_ready" };
+			return outcome.success
+				? { status: "found", focus: outcome.success }
 				: { status: "not_found" };
 		});
 
@@ -485,7 +512,14 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 		const qualitySearch = Effect.fn("GameText.workspace.localization.qualitySearch")(function* (
 			request: WorkspaceQualityRequest
 		): Effect.fn.Return<WorkspaceQualityResult, never, Scope.Scope> {
-			const model = yield* quality(request);
+			const checked = yield* quality(request).pipe(Effect.result);
+			if (Result.isFailure(checked))
+				return {
+					status: "failed",
+					message: checked.failure.message,
+					recovery: checked.failure.recovery
+				};
+			const model = checked.success;
 			if (!model) return { status: "not_ready" };
 			const page = model.search(request);
 			yield* Effect.annotateCurrentSpan({
@@ -497,13 +531,27 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 		const qualityFocus = Effect.fn("GameText.workspace.localization.qualityFocus")(function* (
 			request: WorkspaceQualityFocusRequest
 		): Effect.fn.Return<WorkspaceQualityFocusResult, never, Scope.Scope> {
-			const model = yield* quality({ ...request, filter: "all" });
+			const checked = yield* quality({ ...request, filter: "all" }).pipe(Effect.result);
+			if (Result.isFailure(checked))
+				return {
+					status: "failed",
+					message: checked.failure.message,
+					recovery: checked.failure.recovery
+				};
+			const model = checked.success;
 			return model ? model.focus(request) : { status: "not_ready" };
 		});
 		const changes = Effect.fn("GameText.workspace.localization.changes")(function* (
 			request: WorkspaceQualityRequest
 		): Effect.fn.Return<WorkspaceChangesResult, never, Scope.Scope> {
-			const model = yield* quality(request);
+			const checked = yield* quality(request).pipe(Effect.result);
+			if (Result.isFailure(checked))
+				return {
+					status: "failed",
+					message: checked.failure.message,
+					recovery: checked.failure.recovery
+				};
+			const model = checked.success;
 			if (!model) return { status: "not_ready" };
 			const result = model.changes(request);
 			if (result.status === "ready")
@@ -513,7 +561,7 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 				});
 			return result;
 		});
-		const reportFailure = (error: LocalizationReportError) => ({
+		const reportFailure = (error: { readonly message: string; readonly recovery: string }) => ({
 			status: "failed" as const,
 			message: error.message,
 			recovery: error.recovery
@@ -523,17 +571,18 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 		): Effect.fn.Return<WorkspaceReportResult, never, Scope.Scope> {
 			const retained = yield* current(request.target);
 			if (!retained) return { status: "not_ready" };
+			const loaded = yield* Effect.all({
+				corpus: retained.corpus,
+				join: retained.readJoin
+			}).pipe(Effect.result);
+			if (Result.isFailure(loaded)) return reportFailure(loaded.failure);
+			const { corpus, join } = loaded.success;
 			const previous = yield* Ref.get(baseline);
 			return yield* Effect.try({
 				try: () => ({
 					status: "ready" as const,
 					page: localizationReportPage(
-						localizationProgressReport(
-							retained.corpus,
-							retained.join,
-							retained.evidence,
-							previous
-						),
+						localizationProgressReport(corpus, join, retained.evidence, previous),
 						retained.join.nativeCulture,
 						request,
 						previous
@@ -559,6 +608,12 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 		): Effect.fn.Return<WorkspaceReportFileResult, never, Scope.Scope> {
 			const retained = yield* current(request.target);
 			if (!retained) return { status: "not_ready" };
+			const loaded = yield* Effect.all({
+				corpus: retained.corpus,
+				join: retained.readJoin
+			}).pipe(Effect.result);
+			if (Result.isFailure(loaded)) return reportFailure(loaded.failure);
+			const { corpus, join } = loaded.success;
 			const previous = yield* Ref.get(baseline);
 			const result = yield* Effect.gen(function* () {
 				const choice =
@@ -597,8 +652,8 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 					const progress = yield* Effect.try({
 						try: () =>
 							localizationProgressReport(
-								retained.corpus,
-								retained.join,
+								corpus,
+								join,
 								retained.evidence,
 								decoded.success
 							),
@@ -633,7 +688,7 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 							return (
 								JSON.stringify(
 									createLocalizationBaseline(
-										retained.corpus,
+										corpus,
 										retained.evidence,
 										new Date().toISOString()
 									),
@@ -642,8 +697,8 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 								) + "\n"
 							);
 						const progress = localizationProgressReport(
-							retained.corpus,
-							retained.join,
+							corpus,
+							join,
 							retained.evidence,
 							previous
 						);
@@ -717,11 +772,13 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 				});
 				if (choice.status === "cancelled") return choice;
 				if ((yield* current(name)) !== retained) return { status: "not_ready" as const };
+				const corpus = yield* retained.corpus;
+				const lines = yield* retained.model.localizationLines(request);
 				const { csv, rows } = yield* Effect.try(() =>
 					localizationLinesCsv({
 						join: retained.join,
-						lines: retained.model.localizationLines(request),
-						corpus: retained.corpus,
+						lines,
+						corpus,
 						cultures: pickedLocalizationCultures(request.localization)
 					})
 				);

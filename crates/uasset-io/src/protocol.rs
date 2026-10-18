@@ -860,8 +860,13 @@ fn validate_result_frame(result: &ResultFrame) -> Result<(), ProtocolError> {
                     "search",
                     "focus",
                     "export",
+                    "rows",
+                    "corpus",
                     "localization_focus",
                     "localization_page",
+                    "localization_detail",
+                    "localization_export",
+                    "localization_focus_export",
                 ]
                 .contains(&outcome.action.as_str())
                 || outcome

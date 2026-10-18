@@ -31,27 +31,18 @@ const GAP_DESCRIPTIONS: [&str; 4] = [
 ];
 const COPY_KINDS: [&str; 4] = ["generated_class", "class_default", "skeleton", "instance"];
 impl EngineQuery {
-    fn package_position(&mut self, occurrence: usize) -> Result<(usize, usize, String)> {
+    fn package_row(&mut self, occurrence: usize) -> Result<(usize, usize)> {
         let (shard, row) = self.package_coordinate(occurrence)?;
         let starts = self.package_column(shard, "package.occurrence_start")?;
         let package = starts
             .partition_point(|start| *start as usize <= row)
             .checked_sub(1)
             .ok_or("Occurrence precedes package.")?;
-        let paths = self.package_column(shard, "package.path")?;
-        let path = self.reader.string(
-            *paths
-                .get(package)
-                .ok_or("Occurrence outside package rows.")?,
-        )?;
-        let project = self.reader.meta["input"]["projectRoot"]
-            .as_str()
-            .ok_or("Missing project identity.")?;
-        Ok((
-            shard,
-            package,
-            crate::join_policy::relative_package(project, &path),
-        ))
+        Ok((shard, package))
+    }
+    fn package_position(&mut self, occurrence: usize) -> Result<(usize, usize, String)> {
+        let (shard, package) = self.package_row(occurrence)?;
+        Ok((shard, package, self.package_file(shard, package)?))
     }
     fn occurrence_id(&mut self, occurrence: usize) -> Result<String> {
         let (_, _, package) = self.package_position(occurrence)?;
@@ -115,7 +106,8 @@ impl EngineQuery {
                     "Occurrence copies exceed a bounded focus response.",
                 ),
             )?;
-            if let std::collections::hash_map::Entry::Vacant(entry) = self.copy_starts.entry(shard) {
+            if let std::collections::hash_map::Entry::Vacant(entry) = self.copy_starts.entry(shard)
+            {
                 let mut starts = Vec::with_capacity(flags.len() + 1);
                 let mut offset = 0usize;
                 starts.push(offset);
@@ -349,10 +341,11 @@ impl EngineQuery {
             if diagnostics.len() >= request.page_size {
                 break;
             }
-            let (shard, package, file) = self.package_position(*member as usize)?;
+            let (shard, package) = self.package_row(*member as usize)?;
             if !seen.insert((shard, package)) {
                 continue;
             }
+            let file = self.package_file(shard, package)?;
             for diagnostic in
                 self.package_diagnostics(shard, package, &file, request.page_size, cancelled)?
             {
@@ -371,7 +364,7 @@ impl EngineQuery {
         diagnostics.truncate(request.page_size);
         let mut result = json!({"diagnostics":diagnostics,"occurrences":occurrences,"totalOccurrences":members.len(),"unit":self.presentation(kind,row)?});
         if let Some(line) = line {
-            result["localization"] = self.localization_line(line, cancelled)?;
+            result["localization"] = self.preview(line)?;
         }
         if end < members.len() {
             result["nextOccurrenceCursor"] = result["occurrences"]

@@ -1,8 +1,8 @@
 import { mkdir, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import { JoinedQueryData } from "../packages/game-text/src/joined-query-data.ts";
-import { columnarTextCorpusQuery } from "../packages/game-text/src/columnar-query.ts";
+import { JoinedQueryData } from "../packages/game-text/src/joined-query-data.test-support.ts";
+import { columnarTextCorpusQuery } from "../packages/game-text/src/columnar-query.test-support.ts";
 import { Effect, Option, Schema, Stream } from "effect";
 import {
 	LocalizationTarget,
@@ -20,7 +20,7 @@ import {
 	refreshPackageTextLayer,
 	textCorpusFromPackageTextLayer
 } from "../packages/game-text/src/package-text-layer.ts";
-import { refreshJoinedTarget } from "../packages/game-text/src/joined-target.ts";
+import { refreshJoinedTarget } from "../packages/game-text/src/joined-target-reference.test-support.ts";
 import {
 	openJoinedTarget,
 	hydrateJoinedTarget,
@@ -35,7 +35,7 @@ import {
 } from "../packages/game-text/src/index.ts";
 import { indexedLocalizationStatusReport } from "../packages/game-text/src/index-context.ts";
 import { localizationStatusReport } from "../packages/game-text/src/localization-status.ts";
-import { textCorpusQuery } from "../packages/game-text/src/query.ts";
+import { textCorpusQuery } from "../packages/game-text/src/query.test-support.ts";
 import { TextProblem, TextCorpusSearchRequest } from "../packages/game-text/src/schema.ts";
 import { localizationStates } from "../packages/game-text/src/localization-schema.ts";
 import {
@@ -370,7 +370,8 @@ export async function compareJoinFuzzInput(
 		requests: readonly TextCorpusSearchRequest[],
 		lines: readonly string[],
 		focus: readonly import("../packages/game-text/src/schema.ts").TextCorpusFocusRequest[],
-		exports: readonly TextCorpusSearchRequest[]
+		exports: readonly TextCorpusSearchRequest[],
+		details: readonly import("../packages/game-text/src/localization-view.ts").LocalizationFocusRequest[]
 	) => Promise<{
 		readonly searches: readonly import("../packages/game-text/src/schema.ts").TextCorpusSearchPage[];
 		readonly lines: readonly (
@@ -382,6 +383,10 @@ export async function compareJoinFuzzInput(
 		readonly focus: readonly (
 			| import("../packages/game-text/src/schema.ts").TextCorpusFocus
 			| null
+		)[];
+		readonly details: readonly (
+			| import("../packages/game-text/src/localization-view.ts").LocalizationFocus
+			| undefined
 		)[];
 	}>
 ): Promise<FuzzDifference[]> {
@@ -822,16 +827,27 @@ export async function compareJoinFuzzInput(
 		const cursor = oracle.focus(request)?.nextOccurrenceCursor;
 		if (cursor) nativeFocus.push({ ...request, occurrenceCursor: cursor });
 	}
+	const nativeDetails = expected.lines.map((line) => ({
+		target: expected.target,
+		selection: { kind: "line" as const, id: line.id }
+	}));
 	const nativeResults = nativeSearch
 		? await nativeSearch(
 				{ projectKey: projectRoot, cacheRoot: cache, targetKey: "Fuzz" },
 				requests,
 				expected.lines.map((line) => line.id),
 				nativeFocus,
-				[base, unlocalized]
+				[base, unlocalized],
+				nativeDetails
 			)
 		: undefined;
 	if (nativeResults) {
+		for (const [index, request] of nativeDetails.entries())
+			compare(
+				"native-engine.detail",
+				oracle.localizationDetail(request),
+				nativeResults.details[index]
+			);
 		compare("native-engine.summary", oracle.summary(), nativeResults.summary);
 		compare("native-engine.export.localized", oracle.export(base), nativeResults.exports[0]);
 		compare("native-engine.export.raw", oracle.export(unlocalized), nativeResults.exports[1]);

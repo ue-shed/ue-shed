@@ -3,8 +3,8 @@
 	"compilerOptions": {
 		"lib": ["ES2023", "DOM"],
 		"outDir": "dist/main",
-		"rootDir": "src",
+		"rootDir": "../..",
 		"types": ["node", "electron"]
 	},
-	"include": ["src/main/**/*.ts"]
+	"include": ["src/main/**/*.ts", "../../packages/game-text/src/**/*.d.ts"]
 }

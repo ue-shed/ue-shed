@@ -1,10 +1,12 @@
+import type { TextCorpusSearchPage } from "./schema.js";
+import type { GameTextIndexError } from "./index-contract.js";
 import { it } from "@effect/vitest";
 import { Effect } from "effect";
 import { expect } from "vitest";
 import { GameTextIndexRefresh } from "./index-refresh.js";
 import { makeIndexRegressionFixture } from "./index-refresh-regressions.test-support.js";
 import { joinLocalizationTarget } from "./localization.js";
-import { textCorpusQuery } from "./query.js";
+import { textCorpusQuery } from "./query.test-support.js";
 import { checkLocalizationTarget } from "./localization-checks.js";
 import { u32 } from "./joined-target-input.js";
 
@@ -52,7 +54,7 @@ for (const mixed of [false, true])
 								pageSize: 50,
 								...(localization ? { localization } : undefined)
 							};
-							const page = indexed.query.search(request);
+							const page = yield* indexed.query.search(request);
 							expect(page.counts.duplicate_source).toBe(expected);
 							expect(page.counts.unresolved).toBe(1);
 							expect(
@@ -82,15 +84,17 @@ for (const mixed of [false, true])
 								localization: { target: fixture.target.name }
 							}
 						];
-						const pages = requests.map((request) => indexed.query.search(request));
+						const pages = yield* Effect.all(
+							requests.map((request) => indexed.query.search(request))
+						);
 						yield* index.invalidate(fixture.request);
 						const full = yield* index.refresh(fixture.request);
 						expect(full.join.strategy).toBe("full");
 						for (const [i, field] of fields.entries())
 							expect(yield* u32(full.joined.layer, field)).toEqual(overlay[i]);
-						expect(requests.map((request) => full.query.search(request))).toEqual(
-							pages
-						);
+						expect(
+							yield* Effect.all(requests.map((request) => full.query.search(request)))
+						).toEqual(pages);
 					}
 				}).pipe(Effect.provide(fixture.layer()));
 			}).pipe(Effect.scoped)
@@ -119,10 +123,16 @@ it.live("does not pair a re-keyed place with its gathered or saved previous iden
 				expect(quality.findings.length).toBe(0);
 				for (const query of [textCorpusQuery(corpus, undefined, join), indexed.query]) {
 					const request = { query: "", capability: "all" as const, pageSize: 50 };
-					expect(query.search(request).counts.duplicate_source).toBe(0);
+					expect((yield* readPage(query.search(request))).counts.duplicate_source).toBe(
+						0
+					);
 					expect(
-						query.search({ ...request, localization: { target: fixture.target.name } })
-							.counts.duplicate_source
+						(yield* readPage(
+							query.search({
+								...request,
+								localization: { target: fixture.target.name }
+							})
+						)).counts.duplicate_source
 					).toBe(0);
 				}
 			}
@@ -156,13 +166,15 @@ it.live("keeps distinct-place duplicates and excludes old keys through source ov
 						...(localization ? { localization } : undefined)
 					};
 					expect(
-						indexed.query
-							.search(request)
-							.units.map(({ reviewSignals }) => reviewSignals)
+						(yield* indexed.query.search(request)).units.map(
+							({ reviewSignals }) => reviewSignals
+						)
 					).toEqual(
 						oracle.search(request).units.map(({ reviewSignals }) => reviewSignals)
 					);
-					expect(indexed.query.search(request).counts.duplicate_source).toBe(expected);
+					expect((yield* indexed.query.search(request)).counts.duplicate_source).toBe(
+						expected
+					);
 				}
 				const options = { checks: ["duplicate_source" as const] };
 				const report = checkLocalizationTarget(corpus, join, indexed.evidence, options);
@@ -201,7 +213,7 @@ it.live("does not transfer duplicate signals between identities sharing an occur
 			const request = { query: "", capability: "all" as const, pageSize: 50 };
 			const oracle = textCorpusQuery(fixture.raw()).search(request);
 			expect(oracle.counts.duplicate_source).toBe(2);
-			expect(indexed.query.search(request).units).toEqual(oracle.units);
+			expect((yield* indexed.query.search(request)).units).toEqual(oracle.units);
 		}).pipe(Effect.provide(fixture.layer()));
 	}).pipe(Effect.scoped)
 );
@@ -218,7 +230,7 @@ it.live("compares canonical place coordinates consistently in memory and the ind
 			const request = { query: "", capability: "all" as const, pageSize: 50 };
 			const oracle = textCorpusQuery(fixture.raw()).search(request);
 			expect(oracle.counts.duplicate_source).toBe(0);
-			expect(indexed.query.search(request).counts).toEqual(oracle.counts);
+			expect((yield* indexed.query.search(request)).counts).toEqual(oracle.counts);
 		}).pipe(Effect.provide(fixture.layer()));
 	}).pipe(Effect.scoped)
 );
@@ -240,7 +252,7 @@ it.live("keeps case-distinct String Table entries as different places", () =>
 			const indexed = yield* (yield* GameTextIndexRefresh).refresh(fixture.request);
 			const request = { query: "", capability: "all" as const, pageSize: 50 };
 			for (const query of [textCorpusQuery(fixture.raw()), indexed.query])
-				expect(query.search(request).counts.duplicate_source).toBe(2);
+				expect((yield* readPage(query.search(request))).counts.duplicate_source).toBe(2);
 		}).pipe(Effect.provide(fixture.layer()));
 	}).pipe(Effect.scoped)
 );
@@ -275,7 +287,7 @@ it.live("excludes unresolved text from both sides of duplicate-source matching",
 						...(localization ? { localization } : undefined)
 					};
 					for (const query of [oracle, indexed.query]) {
-						const page = query.search(request);
+						const page = yield* readPage(query.search(request));
 						expect(page.counts.duplicate_source).toBe(0);
 						expect(page.counts.unresolved).toBe(2);
 						expect(page.units.map(({ localization: _marks, ...unit }) => unit)).toEqual(
@@ -322,7 +334,7 @@ it.live("measures the longest conflicting source across memory, index and refres
 					};
 					const expected = oracle.search(request);
 					for (const query of [oracle, indexed.query]) {
-						const page = query.search(request);
+						const page = yield* readPage(query.search(request));
 						expect(page.units[0]?.characterCount).toBe(longest.length);
 						expect(page.units[0]?.wordCount).toBe(longest.trim().split(/\s+/u).length);
 						expect(page.units[0]?.reviewSignals.includes("long")).toBe(
@@ -336,3 +348,10 @@ it.live("measures the longest conflicting source across memory, index and refres
 		}).pipe(Effect.provide(fixture.layer()));
 	}).pipe(Effect.scoped)
 );
+
+/** Accept the independent memory oracle and the asynchronous native-shaped test port. */
+function readPage(
+	page: TextCorpusSearchPage | Effect.Effect<TextCorpusSearchPage, GameTextIndexError>
+) {
+	return Effect.isEffect(page) ? page : Effect.succeed(page);
+}

@@ -197,8 +197,9 @@ it.effect("selecting another target interrupts the previous target's abandoned s
 				});
 			})
 		).pipe(Layer.provide(oracleGameTextIndexLayer(() => Effect.succeed(fixture.text))));
+		const readCorpus = Effect.succeed(fixture.text);
 		const host = yield* indexedGameTextLocalization(
-			() => Effect.succeed(fixture.text),
+			() => Effect.succeed(readCorpus),
 			() => Effect.succeed(oracleProjectIndex("C:/Project"))
 		).pipe(Effect.provide(steps));
 		expect(yield* host.select(fixture.join.target)).toMatchObject({ status: "ready" });

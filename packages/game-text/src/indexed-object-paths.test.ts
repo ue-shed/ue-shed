@@ -263,8 +263,8 @@ it.live("units read from the index carry Unreal's object paths for every locatio
 			// The in-memory corpus is built from the reader's records without the index.
 			const memory = fixture.raw();
 			expect(locationsByKey(memory)).toEqual(expected);
-			expect(locationsByKey(result.corpus)).toEqual(expected);
-			expect(result.corpus.units).toEqual(memory.units);
+			expect(locationsByKey(yield* result.corpus)).toEqual(expected);
+			expect((yield* result.corpus).units).toEqual(memory.units);
 			expect(
 				memory.units.find((unit) => unit.identity.status === "unresolved")!.id
 			).toContain(":/Game/Text/Table.Table:");
@@ -300,7 +300,7 @@ it.live("object path, class path and row roles match through the index and in me
 		yield* Effect.gen(function* () {
 			const result = yield* (yield* GameTextIndexRefresh).refresh(fixture.request);
 			const memory = fixture.raw();
-			const source = evaluateGameTextSourceQuality(result.corpus, document);
+			const source = evaluateGameTextSourceQuality(yield* result.corpus, document);
 			expect(source.roles).toEqual([
 				{ role: "first_row", matchedOccurrences: 1, matchedTextUnits: 1 },
 				{ role: "menu", matchedOccurrences: 1, matchedTextUnits: 1 },

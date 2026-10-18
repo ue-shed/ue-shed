@@ -57,7 +57,7 @@ import {
 	type LocalizationQuality
 } from "./localization-workspace.js";
 import { gatheredIdentity, gatheredIdentityKey, localizationLineUnits } from "./gathered-text.js";
-import { JoinedQueryData } from "./joined-query-data.js";
+import { IndexedPolicyData } from "./indexed-policy-data.js";
 import { u32 } from "./joined-target-input.js";
 import { runJoinedQuery } from "./joined-query-node.js";
 import type { JoinedTargetReader } from "./joined-target-reader.js";
@@ -138,7 +138,7 @@ function fnv32(bytes: Uint8Array, start: number, end: number) {
 }
 
 /** Unit rows by ID through a hash of the ID column; never builds the unit list. */
-function unitIndex(data: JoinedQueryData) {
+function unitIndex(data: IndexedPolicyData) {
 	/** Strings of the occurrences the column predicates read, by ID. */
 	const decoded = new Map<number, string>();
 	/** Gathered identity keys by namespace, key and String Table entry. */
@@ -351,7 +351,7 @@ const CONFLICTING_SOURCE = 1 << LocalizationUnknownReason.literals.indexOf("conf
  * the rows of every shared line, for the translation pass.
  */
 const duplicateSources = Effect.fn("GameText.localizationQuality.duplicates")(function* (
-	data: JoinedQueryData,
+	data: IndexedPolicyData,
 	cultures: readonly CultureCode[],
 	joinPosition: Uint32Array
 ) {
@@ -416,7 +416,7 @@ const TRANSLATION_PAGE_ROWS = 4096;
  * `localizationShippedTranslation` picks it on a hydrated line.
  */
 const translationVariants = Effect.fn("GameText.localizationQuality.translations")(function* (
-	data: JoinedQueryData,
+	data: IndexedPolicyData,
 	shared: Parameters<typeof localizationTranslationVariants>[0],
 	rows: readonly number[],
 	rowSources: readonly string[],
@@ -487,7 +487,7 @@ const PROPERTY_PAGE_ROWS = 16_384;
  * each.
  */
 const localizableProperties = Effect.fn("GameText.localizationQuality.properties")(function* (
-	data: JoinedQueryData
+	data: IndexedPolicyData
 ) {
 	const starts = data.joined.meta.packageStarts;
 	const shardColumns = (shard: number) => ({
@@ -630,7 +630,7 @@ export const indexedLocalizationQuality = Effect.fn("GameText.localizationQualit
 		});
 	report(0, 0);
 	const stages = new StageClock();
-	const data = new JoinedQueryData(joined);
+	const data = new IndexedPolicyData(joined);
 	const target = data.joined.meta.input.target;
 	const join = {
 		target: target.name,

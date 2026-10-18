@@ -9,7 +9,8 @@ import {
 	TextNamespace,
 	TextKey
 } from "@ue-shed/localization";
-import { GameTextIndexBuilder, typeScriptIndexBuilderLayer } from "./index-builder.js";
+import { typeScriptIndexBuilderLayer } from "./index-reference.test-support.js";
+import { GameTextIndexBuilder } from "./index-builder.js";
 import { nativeIndexBuilderLayer } from "./native-index-builder.js";
 import { openJoinedTarget, hydrateJoinedTarget } from "./joined-target-reader.js";
 import { sharedIndexNodeLayer } from "./shared-index.js";

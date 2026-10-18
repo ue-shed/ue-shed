@@ -321,8 +321,17 @@ export const makeGameTextOperations = Effect.fn("GameText.workspace.operations.m
 					)
 						return stale();
 					const before = yield* gameText.localizationTarget(saved.view.target);
-					if (nextPlan.steps.some((step) => step.kind.startsWith("gather_")))
-						yield* gameText.localizationBeforeGather(saved.view.target);
+					if (nextPlan.steps.some((step) => step.kind.startsWith("gather_"))) {
+						const baseline = yield* gameText
+							.localizationBeforeGather(saved.view.target)
+							.pipe(Effect.result);
+						if (Result.isFailure(baseline))
+							return failed(
+								"index_failed",
+								baseline.failure.message,
+								baseline.failure.recovery
+							);
+					}
 					const received = yield* Ref.make<LocalizationOperationReceipt | undefined>(
 						undefined
 					);

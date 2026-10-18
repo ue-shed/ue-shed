@@ -8,6 +8,7 @@ import type {
 	TextCorpusFocusRequest
 } from "../packages/game-text/src/schema.ts";
 import type { joinStoreOptions } from "./columnar-join.test-support.ts";
+import type { LocalizationFocusRequest } from "../packages/game-text/src/localization-view.ts";
 
 /** Exercise the production typed client and process boundary against the independent oracle. */
 export function nativeEngineResponses(executable: string) {
@@ -16,7 +17,8 @@ export function nativeEngineResponses(executable: string) {
 		requests: readonly TextCorpusSearchRequest[],
 		lines: readonly string[],
 		focus: readonly TextCorpusFocusRequest[],
-		exports: readonly TextCorpusSearchRequest[]
+		exports: readonly TextCorpusSearchRequest[],
+		details: readonly LocalizationFocusRequest[]
 	) =>
 		Effect.runPromise(
 			Effect.scoped(
@@ -38,12 +40,14 @@ export function nativeEngineResponses(executable: string) {
 					);
 					const summary = yield* query.summary();
 					const exported = yield* Effect.forEach(exports, query.export);
+					const detailed = yield* Effect.forEach(details, query.localizationDetail);
 					return {
 						searches,
 						lines: localized,
 						focus: focused,
 						summary,
-						exports: exported
+						exports: exported,
+						details: detailed
 					};
 				})
 			).pipe(

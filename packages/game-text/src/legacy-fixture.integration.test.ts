@@ -12,7 +12,8 @@ import {
 	readLegacyEvidence
 } from "../../../fixtures/legacy-unreal-project/evidence.js";
 import { scanTextCorpus } from "./corpus.js";
-import { typeScriptIndexBuilderLayer } from "./index-builder.js";
+import { typeScriptIndexBuilderLayer } from "./index-reference.test-support.js";
+
 import { GameTextIndexRefresh, gameTextIndexRefreshLayer } from "./index-refresh.js";
 import { gameTextIndexSourceNodeLayer } from "./index-source-node.js";
 import { GameTextRuleDocument, evaluateGameTextSourceQuality } from "./game-text-rules.js";
@@ -131,15 +132,18 @@ for (const version of legacyVersions) {
 								projectRoot: root
 							});
 							// Rules check only units with source text; every one is under /Game/Legacy/.
-							const checked = result.corpus.units.filter(hasSearchableSource);
+							const checked = (yield* result.corpus).units.filter(
+								hasSearchableSource
+							);
 							return {
-								occurrences: result.corpus.units
+								occurrences: (yield* result.corpus).units
 									.flatMap((unit) => unit.occurrences)
 									.map(wireOccurrence),
 								checkedUnits: checked.length,
 								checkedOccurrences: checked.flatMap((unit) => unit.occurrences)
 									.length,
-								roles: evaluateGameTextSourceQuality(result.corpus, document).roles
+								roles: evaluateGameTextSourceQuality(yield* result.corpus, document)
+									.roles
 							};
 						})
 					).pipe(

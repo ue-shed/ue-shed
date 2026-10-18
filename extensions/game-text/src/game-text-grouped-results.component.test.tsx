@@ -1,6 +1,7 @@
+import { textCorpusQuery } from "../../../packages/game-text/src/query.test-support.js";
 import { cleanup, fireEvent, render, waitFor } from "@solidjs/testing-library";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
-import { textCorpusQuery } from "@ue-shed/game-text/corpus";
+
 import { type TextCorpusSearchRequest } from "@ue-shed/game-text/schema";
 import { Deferred, Effect, Layer, ManagedRuntime } from "effect";
 import { createSignal, flush } from "solid-js";

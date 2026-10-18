@@ -60,7 +60,10 @@ export const nativeGameTextEngineClientLayer = (configuration: AssetReaderConfig
 					const evidence = yield* mutex.withPermits(1)(
 						invokeProtocolSessionSingleWithEvidence({
 							session,
-							configuration,
+							configuration: {
+								...configuration,
+								timeoutMs: configuration.catalogTimeoutMs
+							},
 							operation: "game_text_engine",
 							path:
 								request.action === "open"
@@ -81,6 +84,19 @@ export const nativeGameTextEngineClientLayer = (configuration: AssetReaderConfig
 								result.kind === "game_text_engine" ? result.outcome : undefined
 						})
 					);
+					if (evidence.value.action !== request.action)
+						return yield* Effect.fail(
+							new AssetReaderError({
+								kind: "contract",
+								operation: "game_text_engine",
+								nextStep: "reconcile",
+								retrySafe: false,
+								message:
+									"The native Game Text response belongs to a different operation.",
+								recovery:
+									"Close this snapshot and install matching host and native reader versions before reopening it."
+							})
+						);
 					yield* Effect.annotateCurrentSpan({
 						"game_text.engine.action": request.action,
 						...Object.fromEntries(

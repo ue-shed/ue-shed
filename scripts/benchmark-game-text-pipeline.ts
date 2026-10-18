@@ -26,7 +26,7 @@ const { values } = parseArgs({
 		"before-module": { type: "string" },
 		output: { type: "string" },
 		cache: { type: "string" },
-		"native-after": { type: "boolean", default: false },
+		"native-after": { type: "boolean", default: true },
 		records: { type: "string" },
 		target: { type: "string" },
 		runs: { type: "string", default: "3" },
@@ -76,6 +76,27 @@ if (values.worker) {
 			)
 		).href
 	);
+	// The historical baseline is deliberately loaded from another checkout. Its synchronous
+	// query API and exported reference builder are not part of the current package.
+	const historical = module as unknown as {
+		readonly typeScriptIndexBuilderLayer?: Layer.Layer<
+			import("../packages/game-text/src/index-builder.ts").GameTextIndexBuilder
+		>;
+	};
+	if (variant === "before" && !historical.typeScriptIndexBuilderLayer)
+		throw new Error(
+			"--before-module must identify a built historical checkout with the TypeScript reference builder."
+		);
+	if (variant === "after" && !values["native-after"])
+		throw new Error("The current package requires the native query engine.");
+	const selectedBuilder =
+		variant === "before"
+			? historical.typeScriptIndexBuilderLayer!
+			: module.nativeIndexBuilderLayer({
+					executable: resolve(values.reader!),
+					timeoutMs: 30000,
+					catalogTimeoutMs: 120000
+				});
 	const output = resolve(values.output);
 	await mkdir(dirname(output), { recursive: true });
 	const cacheRoot = values.cache
@@ -158,21 +179,12 @@ if (values.worker) {
 				refreshJoinedTarget: (request) =>
 					measure("join", original.refreshJoinedTarget(request), () => ({}))
 			});
-		}).pipe(
-			Effect.provide(
-				values["native-after"] && variant === "after"
-					? module.nativeIndexBuilderLayer({
-							executable: resolve(values.reader!),
-							timeoutMs: 30_000,
-							catalogTimeoutMs: 120_000
-						})
-					: module.typeScriptIndexBuilderLayer
-			)
-		)
+		}).pipe(Effect.provide(selectedBuilder))
 	);
 	const layer = module.gameTextIndexRefreshLayer(cacheRoot).pipe(
 		Layer.provide(source),
 		Layer.provide(builder),
+		Layer.provide(variant === "before" ? Layer.empty : selectedBuilder),
 		Layer.provide(
 			assetReaderLayer({
 				executable: resolve(variant === "before" ? values["before-reader"] : values.reader)
@@ -194,12 +206,15 @@ if (values.worker) {
 				});
 				const prepareMs = performance.now() - started;
 				const queryStarted = performance.now();
-				const page = opened.query.search({
+				const searched = opened.query.search({
 					query: "",
 					capability: "all",
 					pageSize: 50,
 					...(targetName ? { localization: { target: targetName } } : undefined)
 				});
+				const page = Effect.isEffect(searched)
+					? yield* searched
+					: Schema.decodeUnknownSync(module.TextCorpusSearchPage)(searched);
 				const firstPageMs = performance.now() - queryStarted;
 				const readyMs = performance.now() - started;
 				globalThis.gc?.();

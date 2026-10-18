@@ -16,7 +16,7 @@ import {
 	manifestEntry,
 	success
 } from "./localization.test-support.js";
-import { textCorpusQuery } from "./query.js";
+import { textCorpusQuery } from "./query.test-support.js";
 import { TextUnit, type TextCorpusSearchRequest } from "./schema.js";
 
 const LINES = 50_000;
@@ -179,7 +179,48 @@ describe("Game Text at the scale of a shipping game", () => {
 		);
 		const gate = localizationGateTarget({
 			corpus: text,
-			query,
+			selection: {
+				lines: query.localizationLines({ ...request, where: { files } }),
+				conflicting: new Set(
+					query
+						.localizationLines({
+							...request,
+							where: { files },
+							filter: [{ field: "problem", op: "is", values: ["conflicting_source"] }]
+						})
+						.map((line) => line.id)
+				),
+				changed: new Set(
+					query
+						.localizationLines({
+							...request,
+							where: { files },
+							filter: [
+								{ field: "problem", op: "is", values: ["changed_since_gather"] }
+							]
+						})
+						.map((line) => line.id)
+				),
+				notGathered: new Set(
+					query
+						.localizationLines({
+							...request,
+							where: { files },
+							filter: [{ field: "problem", op: "is", values: ["not_gathered"] }]
+						})
+						.map((line) => line.id)
+				),
+				unresolved: new Set(
+					query
+						.localizationLines({
+							...request,
+							where: { files },
+							filter: [{ field: "finding", op: "is", values: ["unresolved"] }]
+						})
+						.map((line) => line.id)
+				),
+				fileScope: query.search({ ...request, where: { files }, pageSize: 1 }).fileScope
+			},
 			join: join.value,
 			files,
 			failOn: DEFAULT_GATE_FAILURES

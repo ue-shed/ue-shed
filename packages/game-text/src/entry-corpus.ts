@@ -196,9 +196,7 @@ export {
 	textQualityQueryOf
 } from "./quality-query.js";
 
-export { type TextCorpusQuery, textCorpusQuery } from "./query.js";
-
-export { hasSearchableSource, searchTextCorpus, searchableSourceText } from "./search.js";
+export { hasSearchableSource } from "./search.js";
 
 export { RUNTIME_COPY_KINDS, hasDifferingCopy, staleRuntimeCopy } from "./text-copies.js";
 

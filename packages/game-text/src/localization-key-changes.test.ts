@@ -17,7 +17,7 @@ import {
 	target,
 	unit
 } from "./localization.test-support.js";
-import { textCorpusQuery } from "./query.js";
+import { textCorpusQuery } from "./query.test-support.js";
 import { TextUnit, type TextCorpus } from "./schema.js";
 
 function cell(key: string, source: string, row = "Start"): TextUnit {

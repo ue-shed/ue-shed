@@ -275,6 +275,8 @@ export function createGameTextLocalizationState(props: {
 					});
 				else {
 					setDetail(undefined);
+					if (result.status === "failed")
+						setError(`${result.message} ${result.recovery}`);
 					if (result.status === "not_found") setSelectedId(undefined);
 				}
 			}

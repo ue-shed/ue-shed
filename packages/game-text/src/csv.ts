@@ -1,6 +1,5 @@
 import type { TextCorpus, TextIdentity, TextLocation, TextReviewSignal } from "./schema.js";
 import type { TextQualityFinding, TextQualityReport } from "./quality-schema.js";
-import { textCorpusQuery } from "./query.js";
 import { hasSearchableSource } from "./search.js";
 import { TEXT_AUDIENCE_LABELS } from "./text-audience-schema.js";
 import { occurrenceTextAudience } from "./text-audience.js";
@@ -96,8 +95,10 @@ export function spreadsheetCsv(rows: Iterable<readonly (string | number)[]>): st
 }
 
 /** One row per searchable line's saved location. Optional context keeps scan-wide review signals. */
-export function gameTextCsv(corpus: TextCorpus, reviewCorpus: TextCorpus = corpus): string {
-	const query = textCorpusQuery(reviewCorpus);
+export function gameTextCsv(
+	corpus: TextCorpus,
+	reviewSignals: ReadonlyMap<TextCorpus["units"][number]["id"], readonly TextReviewSignal[]>
+): string {
 	return spreadsheetCsv(
 		(function* () {
 			yield [
@@ -119,7 +120,11 @@ export function gameTextCsv(corpus: TextCorpus, reviewCorpus: TextCorpus = corpu
 				"Package file"
 			];
 			for (const unit of corpus.units.filter(hasSearchableSource)) {
-				const signals = query.focus({ id: unit.id, pageSize: 1 })?.unit.reviewSignals ?? [];
+				const signals = reviewSignals.get(unit.id);
+				if (signals === undefined)
+					throw new Error(
+						"CSV export is missing native review signals for a selected unit."
+					);
 				for (const occurrence of unit.occurrences) {
 					yield [
 						occurrence.source,

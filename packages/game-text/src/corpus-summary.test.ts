@@ -1,6 +1,7 @@
+import { exportGameTextInvestigation } from "./export-reference.test-support.js";
 import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
-import { textCorpusQuery } from "./query.js";
+import { textCorpusQuery } from "./query.test-support.js";
 import { LocalizationStatusReport, localizationStatusReport } from "./localization-status.js";
 import { localizationProgressReport, LocalizationProgressReport } from "./localization-reports.js";
 import { checkLocalizationTarget } from "./localization-checks.js";
@@ -10,11 +11,7 @@ import { joinLocalizationTarget } from "./localization.js";
 import { corpus, evidence } from "./localization.test-support.js";
 import { TextCorpusDiagnostic, TextPackageCoverage, type TextCorpus } from "./schema.js";
 import { TextCorpusDiagnosticSummary, textCorpusDiagnosticSummary } from "./corpus-summary.js";
-import {
-	GameTextInvestigationExport,
-	GameTextInvestigationPreset,
-	exportGameTextInvestigation
-} from "./investigation.js";
+import { GameTextInvestigationExport, GameTextInvestigationPreset } from "./investigation.js";
 
 const diagnostics = Array.from({ length: 1_000 }, (_, index) =>
 	TextCorpusDiagnostic.make({

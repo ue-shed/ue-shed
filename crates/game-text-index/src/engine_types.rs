@@ -179,6 +179,52 @@ pub struct FocusRequest {
     pub localization: Option<FocusSelection>,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct DetailSelection {
+    pub kind: String,
+    pub id: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct LocalizationDetailRequest {
+    pub target: String,
+    pub selection: DetailSelection,
+    pub culture_offset: Option<usize>,
+    pub location_offset: Option<usize>,
+    pub po_context_offset: Option<usize>,
+}
+
+pub fn parse_detail_request(payload: &str) -> Result<LocalizationDetailRequest> {
+    let value = crate::json_value::parse(payload).map_err(|source| {
+        Error::with_source(
+            ErrorCode::InvalidInput,
+            "Invalid localization detail JSON.",
+            source,
+        )
+    })?;
+    reject_nulls(&value)?;
+    let request: LocalizationDetailRequest = serde_json::from_value(value).map_err(|source| {
+        Error::with_source(
+            ErrorCode::InvalidInput,
+            "Invalid localization detail request.",
+            source,
+        )
+    })?;
+    require(
+        matches!(request.selection.kind.as_str(), "line" | "unit"),
+        invalid("Invalid localization selection kind."),
+    )?;
+    for value in [&request.target, &request.selection.id] {
+        require(
+            !value.is_empty() && characters(value) <= 32767,
+            invalid("Invalid localization selection identity."),
+        )?;
+    }
+    Ok(request)
+}
+
 pub fn invalid(message: &str) -> Error {
     Error::new(ErrorCode::InvalidInput, message)
 }
@@ -371,6 +417,29 @@ impl FocusRequest {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn detail_requests_reject_unknown_null_negative_and_invalid_selection_fields() -> Result<()> {
+        let valid =
+            r#"{"target":"Game","selection":{"kind":"line","id":"line:K"},"locationOffset":10000}"#;
+        assert_eq!(parse_detail_request(valid)?.location_offset, Some(10000));
+        for payload in [
+            r#"{"target":"Game","selection":{"kind":"sql","id":"K"}}"#,
+            r#"{"target":"Game","selection":{"kind":"unit","id":""}}"#,
+            r#"{"target":"Game","selection":{"kind":"unit","id":"K"},"cultureOffset":-1}"#,
+            r#"{"target":"Game","selection":{"kind":"line","id":"K"},"poContextOffset":null}"#,
+            r#"{"target":"Game","selection":{"kind":"line","id":"K"},"all":true}"#,
+        ] {
+            assert_eq!(
+                parse_detail_request(payload)
+                    .err()
+                    .ok_or("Expected invalid detail")?
+                    .code,
+                ErrorCode::InvalidInput
+            );
+        }
+        Ok(())
+    }
 
     #[test]
     fn rejects_unknown_fields_and_unbounded_or_unknown_clauses() -> Result<()> {

@@ -12,13 +12,12 @@ Workbench unless a named verification failure leaves the public package contract
 2. Install the exact `@ue-shed/game-text` version and supply one application-owned
    `effect@^4.0.0` installation satisfying its peer dependency. Reuse a compatible existing
    `@ue-shed/unreal-assets` and `@ue-shed/uasset` installation when present.
-3. In the target's trusted Node process, compose one scoped `AssetReader` layer and
-   `TextCorpusServiceLive`. Do not create a sidecar server or a reader layer per asset.
-4. Adapt the host's explicit project root or existing project index to `scan` or
-   `scanFromProjectIndex`.
-5. Keep the complete corpus and `textCorpusQuery` model in the trusted host. Add schema-validated
-   host operations for progress, summary, bounded search, and bounded focus using the target's
-   existing transport conventions.
+3. In the target's trusted Node process, compose `GameTextIndexBuilderLive` with the host's
+   existing `AssetReader`, source and localization evidence layers.
+4. Adapt the host's selected project to `gameTextIndexStepsLayer` or the convenience
+   `gameTextIndexRefreshLayer`. Prepare explicitly and retain the opened native model in a scope.
+5. Expose schema-validated progress, cached `model.summary`, asynchronous bounded native search and
+   focus using the host's transport. Keep full corpus exports behind explicit bulk operations.
 6. Add an adopter-owned view only if the host needs one. This bundle contains no maintained UI and
    requires no Solid, StyleX, Electron, or Workbench package.
 7. Prove the acceptance journey below and record the exact package versions, reader provider, target
@@ -64,55 +63,40 @@ real transport, a non-disk rules store, refused/recovery writes and disconnect/r
 
 ## Required and optional capabilities
 
-For a desktop host using the compact index, compose
-`gameTextIndexStepsLayer(cacheRoot, { searchWorker: true, latestSearchOnly: true })` with
-`gameTextIndexSourceNodeLayer`, `GameTextIndexBuilderLive`, one reader, and
-`LocalizationEvidenceNodeLive`. Use `refreshProject` once for the chosen package revision, then
-`importTarget`, `buildTarget`, and `openTarget` for each requested localization view. Source queries
-use `importTarget(project)` without a target name. Target steps reuse the verified project handle;
-they never start package inventory or extraction. For localization-first validation, use
-`openProject` and `importTarget` before refreshing packages, then pass the verified revision and
-the import to `buildTarget`. These handles stay in the trusted process. The adopting host chooses
-ordering, requested views, progress presentation, and cancellation; the package owns per-step
-leases, cache validity, immutable publication, and query reader resources.
-`gameTextIndexRefreshLayer` remains a compatible convenience workflow and also exposes the steps.
+Compose `gameTextIndexStepsLayer(cacheRoot)` with `gameTextIndexSourceNodeLayer`,
+`GameTextIndexBuilderLive`, the reader and `LocalizationEvidenceNodeLive`. Use `refreshProject`
+once for a package revision, then `importTarget`, `buildTarget` and `openTarget` for each requested
+view. Source queries use `importTarget(project)` without a target name. Importing localization
+never starts package inventory. The convenience refresh layer supplies the same steps.
 
-`GameTextIndexBuilderLive` derives configuration from the existing reader and requires its
-`game_text_index` capability (uasset-io protocol 1.13). CLI and Workbench use this same layer.
-`nativeIndexBuilderLayer(readerConfiguration)` supports explicit worker configuration, and
-`typeScriptIndexBuilderLayer` intentionally selects the reference implementation. A native failure
-never switches writers automatically. Keep the same source, evidence and query layers. Verify cold
-preparation, an incremental
-edit, failure recovery and pinned-reader queries in the adopting host. See the
-[native preparation guide](../../docs/engineering/native-game-text-index.md) for limits and
-supported incremental cases.
+`GameTextIndexBuilderLive` derives configuration from the existing reader. It requires
+`game_text_index`, `game_text_engine_v1` and uasset-io protocol 1.15. Library, CLI and Workbench
+hosts use this same native engine. `nativeIndexBuilderLayer(readerConfiguration)` supports
+explicit configuration. Storage, joins, incremental publication and all corpus queries run in
+Rust. TypeScript test oracles are excluded from package builds and public entry points.
 
-A localization index also supplies the complete raw source query and corpus. Prepare the chosen
-target first when both views are needed, and use that model for requests without `localization` as
-well. Keep source-only preparation as recovery when target discovery or import is unavailable.
-After validating a target with `importTarget` and `buildTarget`, a compact model's optional
-`queryRevision` is an opaque identity shared by the validated target handle and its opened model.
-Compare it only within the same project, cache and backend. Borrow a matching prepared model
-instead of opening it again. Never construct or parse the identity, persist it as a durable ID,
-or depend on its encoding across releases; adapters without it use normal preparation.
+A localization model serves source queries too: omit `localization` from the request. A compact
+model's `queryRevision` is an opaque identity comparable with its validated target handle in the
+same project and cache. Borrow an already opened matching model instead of opening another.
+Do not construct, parse or persist this identity.
 
-Call
-the retained refresh result's Effect-shaped `search(request)`. The host scope owns the worker
-and its pinned reader. `latestSearchOnly` fits a single search view and preserves concurrent group
-pages while cancelling replaced pages and older filter selections; leave it false for independent
-concurrent callers. Worker startup and searches have 30-second bounds. Bundled hosts must emit
-`dist/search-worker.js` from the installed package beside the bundle that resolves it through
-`import.meta.url`. Cold preparation also resolves `localization-import-worker.js`,
-`package-text-worker.js` and `cold-layer-worker.js` beside that bundle. Emit those worker entries
-with their dependencies, or leave the installed package unbundled. Verify a cold preparation that
-uses multiple layers through the packaged host, as well as worker-backed search. The synchronous
-`query.search` remains available for headless batch use and bounded direct queries.
+All `model.query` operations return Effects. `model.summary` is cached native metadata;
+`model.corpus` and `model.localizationJoin` are explicit asynchronous bulk reads. Search and focus
+return bounded pages. Each model owns a native process and pinned read-only snapshot in its
+caller's scope. The native read path holds no writer lease. Failures remain typed failures;
+refresh and open a new model to recover. Input preparation still uses
+`localization-import-worker.js`, `package-text-worker.js` and `cold-layer-worker.js`; optional
+quality scans use `quality-worker.js`. Bundled hosts must emit those entries with their
+package dependencies or leave the installed package unbundled. There is no search-worker bundle.
 
-Worker-enabled steps share at most eight scoped workers across overlapping models with the same
-configuration, physical generation and joined key. Each model acquires its worker before it is
-exposed, so later file retirement cannot invalidate its first search. Unchanged replacements
-acquire a pin before their predecessors release theirs. Changed joins acquire a separate worker;
-the final pin releases it. Worker starts, stops and retirement duration are observable metrics.
+Use `query.localizationDetail(request)` for interactive evidence, including culture, location and
+PO-context offsets. Text focus carries a localization preview. `localizationFocus(id)` and
+`localizationLines(request)` are explicit full-provenance exports through scoped files.
+
+Verify cold preparation, mixed package/PO edits, failure recovery and pinned-reader queries
+through the adopter's real packaged transport. The
+[native engine guide](../../docs/engineering/native-game-text-index.md) describes ownership,
+limits and incremental eligibility.
 
 Use `makeRetainedGameTextIndexWith(prepare)` when a host publishes models from its own step
 composition. `makeRetainedGameTextIndex()` retains the convenience workflow. Their `refresh(request)`
@@ -121,17 +105,16 @@ reference and run `candidate.retain` together in an uninterruptible publication 
 competing publications and validate the revision and project after asynchronous cleanup, before
 changing published state. Uninterruptibility alone does not provide mutual exclusion. A rejected
 candidate releases with its operation and leaves the published model usable. Before reading a
-published candidate's lazy corpus, join or synchronous query, run `candidate.borrow` inside the
+published candidate's asynchronous corpus, join or query, run `candidate.borrow` inside the
 scope covering the entire operation. The retained `search` adapter also borrows automatically.
 Replacing or releasing the published owner interrupts new work on the old model; existing borrowers
-keep its reader and worker alive until they finish. Remove the model reference before calling the
+keep its native reader alive until they finish. Remove the model reference before calling the
 retainer's `release()` when clearing a view. The host's outer scope releases everything on shutdown.
 
-Raw `corpus.units` preserves empty and whitespace-only source evidence. Search and query exports
+The explicit raw corpus read preserves empty and whitespace-only source evidence. Search and query exports
 retain their existing visibility filters. Failed current localization reads never use a previous
 successful layer as current evidence; missing and malformed inputs keep their distinct states.
-Native joined keys use `joined-native-v2`; the TypeScript reference uses `joined-v18`. Switching
-builders rebuilds the joined view while reusing compatible inputs and preserving snapshot format 4.
+Native joined keys use `joined-native-v2` and preserve snapshot format 4. Older disposable joined views rebuild once to add the native source-search arena.
 
 The core audit requires saved project packages and a configured reader. It does not require a
 running editor, Perforce, `UEShedCore`, or any other UE Shed Unreal plugin.

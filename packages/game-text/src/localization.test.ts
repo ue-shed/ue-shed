@@ -21,7 +21,7 @@ import type { SavedAssetInspection } from "@ue-shed/unreal-assets";
 import { localizationLinesCsv } from "./localization-export.js";
 import { localizationLineUnits } from "./gathered-text.js";
 import { localizationLineFingerprint } from "./localization-review.js";
-import { textCorpusQuery } from "./query.js";
+import { textCorpusQuery } from "./query.test-support.js";
 import {
 	archiveEntry,
 	corpus,

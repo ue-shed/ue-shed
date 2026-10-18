@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Schema } from "effect";
 import { joinLocalizationTarget } from "./localization.js";
-import { textCorpusQuery } from "./query.js";
+import { textCorpusQuery } from "./query.test-support.js";
 import { LocalizationState } from "./localization-schema.js";
 import {
 	LocalizationFocus,

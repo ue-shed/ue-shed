@@ -1,3 +1,5 @@
+import { GameTextIndexBuilderLive } from "../packages/game-text/dist/entry-index.js";
+import { AssetReaderLive } from "../packages/unreal-assets/dist/index.js";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { Context, Effect, Exit, Layer, Schema, Scope, Stream, type Tracer } from "effect";
@@ -9,7 +11,6 @@ import {
 	evaluateGameTextSourceQuality,
 	gameTextIndexRefreshLayer,
 	textQualityQuery,
-	typeScriptIndexBuilderLayer,
 	type GameTextIndexRefreshResult
 } from "../packages/game-text/dist/index.js";
 import { PackageTextStored } from "../packages/game-text/dist/package-text-columns.js";
@@ -84,7 +85,7 @@ export async function openScaleIndex(
 			Layer.buildWithScope(
 				gameTextIndexRefreshLayer(cache).pipe(
 					Layer.provide(retainedPackageSource(records)),
-					Layer.provide(typeScriptIndexBuilderLayer),
+					Layer.provide(GameTextIndexBuilderLive.pipe(Layer.provide(AssetReaderLive))),
 					Layer.provide(LocalizationEvidenceNodeLive)
 				),
 				scope
@@ -283,7 +284,12 @@ export async function scaleSourceQuality(
 		const query =
 			mode === "indexed"
 				? await Effect.runPromise(result.sourceQuality(scaleSourceRules))
-				: textQualityQuery(evaluateGameTextSourceQuality(result.corpus, scaleSourceRules));
+				: textQualityQuery(
+						evaluateGameTextSourceQuality(
+							await Effect.runPromise(result.corpus),
+							scaleSourceRules
+						)
+					);
 		const measured = stalls();
 		const summary = query.summary();
 		// A first page and its last finding's focus, as a host shows them.

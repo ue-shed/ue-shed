@@ -1,3 +1,4 @@
+import type { NativeTextQuery } from "./native-query-contract.js";
 import {
 	GameTextRuleDocument,
 	decodeGameTextRuleDocumentJson,
@@ -15,7 +16,6 @@ import { TextCorpus, TextCorpusSearchRequest } from "./schema.js";
 import { TextCorpusReport, textCorpusReport } from "./corpus-summary.js";
 import { WorkspaceQualityFilter, WorkspaceQualityReport } from "./localization-workspace.js";
 import { TextQualityReport } from "./quality-schema.js";
-import { textCorpusQuery, type TextCorpusQuery } from "./query.js";
 import { textQualityQuery, TextQualityFilter } from "./quality-query.js";
 
 /**
@@ -125,33 +125,34 @@ export function exportGameTextInvestigation(
 	corpus: TextCorpus,
 	preset: GameTextInvestigationPreset,
 	source: InvestigationSource,
-	localized?: TextCorpusQuery,
+	localized?: Pick<NativeTextQuery, "export">,
 	workspace?: WorkspaceQualityReport
 ): Effect.Effect<GameTextInvestigationExport, InvestigationError> {
 	const corpusExport = Effect.gen(function* () {
-		const target = preset.query.localization?.target;
-		if (target !== undefined && localized === undefined)
+		if (localized === undefined)
 			return yield* Effect.fail(
 				new InvestigationError({
-					message: `This export filters by the localization target ${target}, which is not loaded.`,
+					message: preset.query.localization
+						? `The localization target ${preset.query.localization.target} is not loaded.`
+						: "This export requires an open native Game Text snapshot.",
 					recovery:
-						"Select the target in Game Text, or remove its translation and problem filters.",
+						"Refresh the Game Text workspace, select its localization target when filtering translations, and pass its native query to the export.",
 					retrySafe: true,
 					nextStep: "fix_input"
 				})
 			);
-		return yield* Effect.try({
-			try: () => (localized ?? textCorpusQuery(corpus)).export(preset.query),
-			catch: (error) =>
-				new InvestigationError({
-					message:
-						"This export filters by localization state, which needs a loaded target.",
-					recovery: "Select a localization target, or remove its translation filters.",
-					cause: error,
-					retrySafe: true,
-					nextStep: "fix_input"
-				})
-		});
+		return yield* localized.export(preset.query).pipe(
+			Effect.mapError(
+				(cause) =>
+					new InvestigationError({
+						message: cause.message,
+						recovery: cause.recovery,
+						retrySafe: cause.retrySafe,
+						nextStep: cause.nextStep,
+						cause
+					})
+			)
+		);
 	});
 	return Effect.gen(function* () {
 		if (preset.schemaVersion === 1 && preset.query.workspaceFilter !== undefined)

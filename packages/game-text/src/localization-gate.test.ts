@@ -1,3 +1,4 @@
+import type { TextFilterClause } from "./schema.js";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { joinLocalizationTarget } from "./localization.js";
@@ -20,7 +21,7 @@ import {
 	manifestEntry,
 	unit
 } from "./localization.test-support.js";
-import { textCorpusQuery } from "./query.js";
+import { textCorpusQuery } from "./query.test-support.js";
 import { TextUnit, type TextCorpus } from "./schema.js";
 
 const MENU = "Content/Text/DT_Menu.uasset";
@@ -69,9 +70,25 @@ function gate(
 ) {
 	const joined = joinLocalizationTarget(text, evidenceFor);
 	const join = applyLocalizationKeyChanges(joined, localizationKeyChanges(joined, text).pairs);
+	const query = textCorpusQuery(text, undefined, join);
+	const base = {
+		query: "",
+		capability: "all" as const,
+		localization: { target: join.target },
+		where: { files }
+	};
+	const having = (clause: TextFilterClause) =>
+		new Set(query.localizationLines({ ...base, filter: [clause] }).map((line) => line.id));
 	return localizationGateTarget({
 		corpus: text,
-		query: textCorpusQuery(text, undefined, join),
+		selection: {
+			lines: query.localizationLines(base),
+			conflicting: having({ field: "problem", op: "is", values: ["conflicting_source"] }),
+			changed: having({ field: "problem", op: "is", values: ["changed_since_gather"] }),
+			notGathered: having({ field: "problem", op: "is", values: ["not_gathered"] }),
+			unresolved: having({ field: "finding", op: "is", values: ["unresolved"] }),
+			fileScope: query.search({ ...base, pageSize: 1 }).fileScope
+		},
 		join,
 		files,
 		failOn

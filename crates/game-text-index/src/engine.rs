@@ -59,6 +59,15 @@ pub enum EngineRequest {
         reader: String,
         payload: String,
     },
+    Rows {
+        reader: String,
+        payload: String,
+        output: std::path::PathBuf,
+    },
+    Corpus {
+        reader: String,
+        output: std::path::PathBuf,
+    },
     Export {
         reader: String,
         payload: String,
@@ -67,6 +76,20 @@ pub enum EngineRequest {
     LocalizationFocus {
         reader: String,
         payload: String,
+    },
+    LocalizationDetail {
+        reader: String,
+        payload: String,
+    },
+    LocalizationExport {
+        reader: String,
+        payload: String,
+        output: std::path::PathBuf,
+    },
+    LocalizationFocusExport {
+        reader: String,
+        payload: String,
+        output: std::path::PathBuf,
     },
     LocalizationPage {
         reader: String,
@@ -96,8 +119,13 @@ impl EngineRequest {
             | Self::Summary { reader }
             | Self::Search { reader, .. }
             | Self::Focus { reader, .. }
+            | Self::Corpus { reader, .. }
             | Self::Export { reader, .. }
+            | Self::Rows { reader, .. }
             | Self::LocalizationFocus { reader, .. }
+            | Self::LocalizationDetail { reader, .. }
+            | Self::LocalizationExport { reader, .. }
+            | Self::LocalizationFocusExport { reader, .. }
             | Self::LocalizationPage { reader, .. } => {
                 require(
                     !reader.is_empty() && reader.len() <= 128,
@@ -109,13 +137,18 @@ impl EngineRequest {
             Self::Search { payload, .. }
             | Self::Focus { payload, .. }
             | Self::Export { payload, .. }
+            | Self::Rows { payload, .. }
             | Self::LocalizationPage { payload, .. }
-            | Self::LocalizationFocus { payload, .. } => {
+            | Self::LocalizationFocus { payload, .. }
+            | Self::LocalizationFocusExport { payload, .. } => {
                 require(
                     payload.len() <= 512 * 1024,
                     invalid("Native query payload exceeds its bound."),
                 )?;
-                if matches!(self, Self::LocalizationFocus { .. }) {
+                if matches!(
+                    self,
+                    Self::LocalizationFocus { .. } | Self::LocalizationFocusExport { .. }
+                ) {
                     let id = crate::json_value::parse(payload).map_err(|source| {
                         Error::with_source(
                             ErrorCode::InvalidInput,
@@ -135,9 +168,28 @@ impl EngineRequest {
                     parse_search_request(payload)?;
                 }
             }
+            Self::LocalizationDetail { payload, .. } => {
+                require(
+                    payload.len() <= 512 * 1024,
+                    invalid("Native query payload exceeds its bound."),
+                )?;
+                crate::engine_types::parse_detail_request(payload)?;
+            }
+            Self::LocalizationExport { payload, .. } => {
+                require(
+                    payload.len() <= 512 * 1024,
+                    invalid("Native query payload exceeds its bound."),
+                )?;
+                parse_search_request(payload)?;
+            }
             _ => {}
         }
-        if let Self::Export { output, .. } = self {
+        if let Self::Corpus { output, .. }
+        | Self::Export { output, .. }
+        | Self::Rows { output, .. }
+        | Self::LocalizationExport { output, .. }
+        | Self::LocalizationFocusExport { output, .. } = self
+        {
             require(
                 output
                     .to_str()
@@ -223,8 +275,13 @@ impl EngineSession {
             EngineRequest::Summary { reader }
             | EngineRequest::Search { reader, .. }
             | EngineRequest::Focus { reader, .. }
+            | EngineRequest::Corpus { reader, .. }
             | EngineRequest::Export { reader, .. }
+            | EngineRequest::Rows { reader, .. }
             | EngineRequest::LocalizationFocus { reader, .. }
+            | EngineRequest::LocalizationDetail { reader, .. }
+            | EngineRequest::LocalizationExport { reader, .. }
+            | EngineRequest::LocalizationFocusExport { reader, .. }
             | EngineRequest::LocalizationPage { reader, .. } => {
                 let query=self.readers.get_mut(reader).ok_or_else(|| Error::new(ErrorCode::NotFound,"The native Game Text reader is closed or belongs to another session; reopen its snapshot."))?;
                 let (action, payload) = match request {
@@ -235,11 +292,56 @@ impl EngineSession {
                     EngineRequest::Search { payload, .. } => {
                         ("search", query.search_json(payload, cancelled)?)
                     }
+                    EngineRequest::Rows {
+                        payload, output, ..
+                    } => {
+                        let request = parse_search_request(payload)?;
+                        require(
+                            request.localization.is_some(),
+                            invalid("Localization rows require a selected target."),
+                        )?;
+                        let rows = query.matching(&request, cancelled)?;
+                        use std::io::Write;
+                        let file = std::fs::OpenOptions::new()
+                            .write(true)
+                            .create_new(true)
+                            .open(output)?;
+                        let mut writer = std::io::BufWriter::new(file);
+                        let result = (|| -> Result<()> {
+                            for (index, row) in rows.iter().enumerate() {
+                                if index & 255 == 0 {
+                                    checkpoint(cancelled)?;
+                                }
+                                writer.write_all(&row.to_le_bytes())?;
+                            }
+                            writer.flush()?;
+                            Ok(())
+                        })();
+                        drop(writer);
+                        if result.is_err() {
+                            let _ = std::fs::remove_file(output);
+                        }
+                        result?;
+                        (
+                            "rows",
+                            serde_json::to_string(&serde_json::json!({"count":rows.len()}))?,
+                        )
+                    }
+                    EngineRequest::Corpus { output, .. } => {
+                        let request = parse_search_request(
+                            r#"{"query":"","capability":"all","pageSize":50}"#,
+                        )?;
+                        let bytes = query.export_to_path(&request, output, true, cancelled)?;
+                        (
+                            "corpus",
+                            serde_json::to_string(&serde_json::json!({"bytes":bytes}))?,
+                        )
+                    }
                     EngineRequest::Export {
                         payload, output, ..
                     } => {
                         let request = parse_search_request(payload)?;
-                        let bytes = query.export_to_path(&request, output, cancelled)?;
+                        let bytes = query.export_to_path(&request, output, false, cancelled)?;
                         (
                             "export",
                             serde_json::to_string(&serde_json::json!({"bytes":bytes}))?,
@@ -252,6 +354,31 @@ impl EngineSession {
                         "localization_focus",
                         query.localization_focus_json(payload, cancelled)?,
                     ),
+                    EngineRequest::LocalizationDetail { payload, .. } => (
+                        "localization_detail",
+                        query.localization_detail_json(payload, cancelled)?,
+                    ),
+                    EngineRequest::LocalizationExport {
+                        payload, output, ..
+                    } => {
+                        let request = parse_search_request(payload)?;
+                        let bytes =
+                            query.export_localization_to_path(&request, output, cancelled)?;
+                        (
+                            "localization_export",
+                            serde_json::to_string(&serde_json::json!({"bytes":bytes}))?,
+                        )
+                    }
+                    EngineRequest::LocalizationFocusExport {
+                        payload, output, ..
+                    } => {
+                        let bytes =
+                            query.export_localization_focus_to_path(payload, output, cancelled)?;
+                        (
+                            "localization_focus_export",
+                            serde_json::to_string(&serde_json::json!({"bytes":bytes}))?,
+                        )
+                    }
                     EngineRequest::LocalizationPage { payload, .. } => {
                         let request = parse_search_request(payload)?;
                         (

@@ -6,7 +6,7 @@ use crate::{Result, require};
 use serde_json::{Value, json};
 use std::io::{BufWriter, Write};
 use std::path::Path;
-use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, atomic::AtomicBool};
 
 fn value(output: &mut impl Write, value: &Value) -> Result<()> {
     output.write_all(crate::wtf8::view_json(value)?.as_bytes())?;
@@ -20,10 +20,73 @@ fn separator(output: &mut impl Write, first: &mut bool) -> Result<()> {
     Ok(())
 }
 impl EngineQuery {
+    pub fn export_localization_focus_to_path(
+        &mut self,
+        payload: &str,
+        path: &Path,
+        cancelled: &AtomicBool,
+    ) -> Result<u64> {
+        // Full provenance is an explicit bulk read, independent of the bounded interactive detail.
+        let text = self.localization_focus_json(payload, cancelled)?;
+        let file = std::fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(path)?;
+        let mut output = BufWriter::new(file);
+        let result = (|| -> Result<u64> {
+            checkpoint(cancelled)?;
+            output.write_all(text.as_bytes())?;
+            output.flush()?;
+            Ok(output.get_ref().metadata()?.len())
+        })();
+        drop(output);
+        if result.is_err() {
+            let _ = std::fs::remove_file(path);
+        }
+        result
+    }
+    pub fn export_localization_to_path(
+        &mut self,
+        request: &SearchRequest,
+        path: &Path,
+        cancelled: &AtomicBool,
+    ) -> Result<u64> {
+        require(
+            request.localization.is_some(),
+            crate::engine_types::invalid("Localization export requires a selected target."),
+        )?;
+        let rows = self.matching(request, cancelled)?;
+        let file = std::fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(path)?;
+        let mut output = BufWriter::new(file);
+        let result = (|| -> Result<u64> {
+            output.write_all(b"[")?;
+            let mut first = true;
+            for row in rows.iter() {
+                checkpoint(cancelled)?;
+                separator(&mut output, &mut first)?;
+                value(
+                    &mut output,
+                    &self.localization_line(*row as usize, cancelled)?,
+                )?;
+            }
+            output.write_all(b"]")?;
+            output.flush()?;
+            Ok(output.get_ref().metadata()?.len())
+        })();
+        drop(output);
+        if result.is_err() {
+            let _ = std::fs::remove_file(path);
+        }
+        result
+    }
     pub fn export_to_path(
         &mut self,
         request: &SearchRequest,
         path: &Path,
+        include_invisible: bool,
         cancelled: &AtomicBool,
     ) -> Result<u64> {
         request.validate()?;
@@ -34,7 +97,7 @@ impl EngineQuery {
             .open(path)?;
         let mut output = BufWriter::new(file);
         let result = self
-            .write_corpus(request, &mut output, cancelled)
+            .write_corpus(request, &mut output, include_invisible, cancelled)
             .and_then(|()| {
                 output.flush()?;
                 Ok(output.get_ref().metadata()?.len())
@@ -73,11 +136,16 @@ impl EngineQuery {
         &mut self,
         request: &SearchRequest,
         output: &mut impl Write,
+        include_invisible: bool,
         cancelled: &AtomicBool,
     ) -> Result<()> {
-        let matched = self.matching(request, cancelled)?;
+        let matched = if include_invisible {
+            Arc::from([])
+        } else {
+            self.matching(request, cancelled)?
+        };
         let p = Projection::open(self, cancelled)?;
-        let mut chosen = vec![false; p.raw.visible.len()];
+        let mut chosen = vec![include_invisible; p.raw.visible.len()];
         if request.localization.is_some() {
             let raw = self.column("slice", "raw")?;
             require(
@@ -123,6 +191,8 @@ impl EngineQuery {
             value(output, &presentation["identity"])?;
             output.write_all(b",\"source\":")?;
             value(output, &presentation["source"])?;
+            output.write_all(b",\"reviewSignals\":")?;
+            value(output, &presentation["reviewSignals"])?;
             output.write_all(b",\"occurrences\":[")?;
             let mut first_occurrence = true;
             for member in p.raw.members(row) {

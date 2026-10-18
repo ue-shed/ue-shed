@@ -10,6 +10,17 @@
 
 ## Status
 
+**Architecture update, 2026-10-18:** The accepted direction is one Rust-native Game Text engine.
+Rust owns persisted storage, joins, incremental updates and query execution. TypeScript hosts
+compose services, submit asynchronous typed requests and present native results. They do not
+reconstruct a columnar query engine or select a JavaScript fallback. Independent in-memory and
+columnar implementations remain test oracles and are excluded from published package output.
+This decision supersedes the JavaScript reader/query implementation described in the historical
+phase notes below. See [the current engine contract](../docs/engineering/native-game-text-index.md).
+Production integration and its full performance acceptance are being verified; the old phase
+measurements do not establish acceptance for this engine. The restriction on further 10× runs
+still applies.
+
 - **State**: Phase 6 implementation and targeted verification are complete: canonical WTF-8
   format v4, cross-language goldens, host migration and direct column previews are implemented.
   The latest 1× changed-input refresh case meets 10 seconds; Workbench startup, facets and an

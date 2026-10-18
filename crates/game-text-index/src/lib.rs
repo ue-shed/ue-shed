@@ -7,6 +7,7 @@ pub mod builder;
 pub mod dictionary;
 pub mod engine;
 mod engine_aggregate;
+mod engine_detail;
 mod engine_evidence;
 mod engine_export;
 mod engine_focus;
@@ -46,3 +47,5 @@ pub(crate) fn test_directory(kind: &str) -> std::path::PathBuf {
         .join("test-results/rust-index")
         .join(format!("{kind}-{}", store::token()))
 }
+
+mod source_patch;

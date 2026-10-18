@@ -20,7 +20,7 @@ import { emptyPackageTextRecord } from "./package-text-record.js";
 import { target } from "./localization.test-support.js";
 import { gameTextIndexRefreshLayer } from "./index-refresh.js";
 import { gameTextIndexSourceNodeLayer } from "./index-source-node.js";
-import { typeScriptIndexBuilderLayer } from "./index-builder.js";
+import { GameTextIndexBuilderLive } from "./native-index-builder.js";
 
 /** A synthetic project shaped like a large server-hosted scan: most inventory rows are packages
  * without text, a minority carry many occurrences, and a two-culture target localizes them.
@@ -179,7 +179,7 @@ export const makeSyntheticHostFixture = Effect.fn("Test.GameText.hostFixture")(f
 	const reader = makeAssetReaderTestLayer({
 		configuration: () =>
 			Effect.succeed({
-				executable: "uasset",
+				executable: process.env.UE_SHED_UASSET_EXECUTABLE ?? "uasset",
 				timeoutMs: 30_000,
 				catalogTimeoutMs: 50 * 60_000
 			}),
@@ -251,16 +251,14 @@ export const makeSyntheticHostFixture = Effect.fn("Test.GameText.hostFixture")(f
 	).pipe(Layer.provide(LocalizationEvidenceNodeLive));
 	const cacheRoot = join(projectRoot, "cache");
 	const layer = gameTextIndexRefreshLayer(cacheRoot, {
-		searchWorker: true,
-		qualityWorker: true,
-		latestSearchOnly: true
+		qualityWorker: true
 	}).pipe(
 		Layer.provide(
 			gameTextIndexSourceNodeLayer(cacheRoot, { refreshProjectIndex: false }).pipe(
 				Layer.provide(Layer.merge(projectIndex, reader))
 			)
 		),
-		Layer.provide(typeScriptIndexBuilderLayer),
+		Layer.provide(GameTextIndexBuilderLive.pipe(Layer.provide(reader))),
 		Layer.provide(evidence)
 	);
 	return {

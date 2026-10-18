@@ -188,7 +188,7 @@ export const runTextSearch = Effect.fn("Cli.workflow.text_search")((command: Tex
 			const { textCorpusDiagnosticSummary } = yield* Effect.promise(
 				() => import("@ue-shed/game-text/corpus")
 			);
-			const { corpus, query } = yield* refreshCliGameTextIndex(
+			const { summary, query } = yield* refreshCliGameTextIndex(
 				{ projectRoot: command.projectRoot },
 				command.reader
 			);
@@ -198,17 +198,18 @@ export const runTextSearch = Effect.fn("Cli.workflow.text_search")((command: Tex
 					? undefined
 					: yield* readChangedFiles(command.changedFiles, command.projectRoot)
 			);
-			return yield* printJson({
-				schemaVersion: corpus.schemaVersion,
-				status: corpus.status,
+			const exported = yield* query.export({
 				query: command.query,
-				coverage: corpus.coverage,
-				matches: query.export({
-					query: command.query,
-					capability: "all",
-					...(where ? { where } : undefined)
-				}).units,
-				...textCorpusDiagnosticSummary(corpus.diagnostics)
+				capability: "all",
+				...(where ? { where } : undefined)
+			});
+			return yield* printJson({
+				schemaVersion: 1,
+				status: summary.status,
+				query: command.query,
+				coverage: summary.coverage,
+				matches: exported.units,
+				...textCorpusDiagnosticSummary(exported.diagnostics)
 			});
 		})
 	)
@@ -252,7 +253,7 @@ export const runTextReview = Effect.fn("Cli.workflow.text_review")((command: Tex
 				{ projectRoot: command.projectRoot },
 				command.reader
 			);
-			return yield* printJson(evaluateGameTextSourceQuality(corpus, document));
+			return yield* printJson(evaluateGameTextSourceQuality(yield* corpus, document));
 		})
 	)
 );

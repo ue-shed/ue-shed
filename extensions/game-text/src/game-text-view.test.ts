@@ -1,12 +1,7 @@
+import { filterTextUnits } from "./game-text-view.test-support.js";
 import { makeTextOccurrenceId, makeTextUnitId, type TextCorpus } from "@ue-shed/game-text/schema";
 import { describe, expect, it } from "vitest";
-import {
-	filterTextUnits,
-	identityLabel,
-	occurrenceContext,
-	sourceText,
-	textContext
-} from "./game-text-view.js";
+import { identityLabel, occurrenceContext, sourceText, textContext } from "./game-text-view.js";
 
 const corpus: TextCorpus = {
 	schemaVersion: 1,

@@ -9,7 +9,10 @@ import {
 	sharedIndexNodeLayer,
 	sharedIndexDirectory
 } from "../packages/game-text/src/shared-index.ts";
-import { refreshJoinedTarget, reasonBit } from "../packages/game-text/src/joined-target.ts";
+import {
+	refreshJoinedTarget,
+	reasonBit
+} from "../packages/game-text/src/joined-target-reference.test-support.ts";
 import { u32 } from "../packages/game-text/src/joined-target-input.ts";
 import {
 	openJoinedTarget,

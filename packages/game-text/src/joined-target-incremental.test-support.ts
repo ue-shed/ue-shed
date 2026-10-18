@@ -1,3 +1,4 @@
+import type { JoinedTargetInput } from "./joined-target.js";
 import { Effect, Schema } from "effect";
 import { isDeepStrictEqual } from "node:util";
 import { localizationReviewFingerprint } from "@ue-shed/localization";
@@ -6,7 +7,7 @@ import type { SnapshotSourceColumn } from "./snapshot-file.js";
 import { snapshotCheck } from "./snapshot-format.js";
 import { JoinedTargetMeta, readJoinedTarget } from "./joined-target-reader.js";
 import { loadJoinFile, u32, type ColumnReader } from "./joined-target-input.js";
-import { precedence, reasonBit, stateBit, type JoinedTargetInput } from "./joined-target.js";
+import { precedence, reasonBit, stateBit } from "./joined-target-reference.test-support.js";
 import { decodeWtf8 } from "./wtf8.js";
 import type { JoinedSourcePatches } from "./joined-source-patches.js";
 import { longestSource } from "./source-metrics.js";

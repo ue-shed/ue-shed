@@ -14,7 +14,7 @@ import {
 	localizationQualityWorkspaceOf
 } from "./localization-workspace.js";
 import type { LocalizationJoin } from "./localization-schema.js";
-import { textCorpusQuery } from "./query.js";
+import { textCorpusQuery } from "./query.test-support.js";
 import type { TextCorpus, TextCorpusSearchPage, TextCorpusSearchRequest } from "./schema.js";
 
 type Occurrence = SavedAssetPackageTextRecord["occurrences"][number];
@@ -203,8 +203,8 @@ it.live("audience is stored, filtered, faceted and grouped the same through the 
 				])
 			);
 			expect(occurrences(memory)).toEqual(expected);
-			expect(occurrences(result.corpus)).toEqual(expected);
-			expect(result.corpus.units).toEqual(memory.units);
+			expect(occurrences(yield* result.corpus)).toEqual(expected);
+			expect((yield* result.corpus).units).toEqual(memory.units);
 
 			// Lines: the rollup, and editor text the target skips is out of scope.
 			const evidence = yield* Effect.gen(function* () {
@@ -232,7 +232,7 @@ it.live("audience is stored, filtered, faceted and grouped the same through the 
 			});
 			// The index lists lines with visible text, as the in-memory query does.
 			const { Blank: _blank, ...visible } = lines;
-			expect(audienceByLine(result.localizationJoin)).toEqual(visible);
+			expect(audienceByLine(yield* result.localizationJoin)).toEqual(visible);
 
 			// Search, filters, facets and groups agree without a target and with one.
 			const inMemory = textCorpusQuery(memory, undefined, memoryJoin);
@@ -304,7 +304,10 @@ it.live("audience is stored, filtered, faceted and grouped the same through the 
 				"Plain"
 			]);
 			expect(
-				audienceByLine({ ...memoryJoin, lines: result.query.localizationLines(exported) })
+				audienceByLine({
+					...memoryJoin,
+					lines: yield* result.query.localizationLines(exported)
+				})
 			).toEqual(audienceByLine({ ...memoryJoin, lines: memoryLines }));
 
 			// The audience facet leaves out its own clause, and counts each line once.

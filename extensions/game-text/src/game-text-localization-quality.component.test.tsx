@@ -1,3 +1,4 @@
+import { textCorpusQuery } from "../../../packages/game-text/src/query.test-support.js";
 // @vitest-environment jsdom
 import { cleanup, render, screen, waitFor, within } from "@solidjs/testing-library";
 import { userEvent } from "@testing-library/user-event";
@@ -6,7 +7,6 @@ import { Effect, Layer, ManagedRuntime, Schema } from "effect";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { checkLocalizationTarget } from "@ue-shed/game-text/checks";
 import {
-	textCorpusQuery,
 	textQualityQuery,
 	localizationFocusPage,
 	localizationQualityWorkspace

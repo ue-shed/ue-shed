@@ -1,13 +1,16 @@
 //! Bounded source/PO updates over existing immutable numeric columns.
+#[path = "join_incremental_sources.rs"]
+mod sources;
 use crate::join::{JoinInput, JoinOutcome};
 use crate::join_columns::{column, layer};
-use crate::join_policy::{characters, trim, words};
+use crate::join_policy::words;
 use crate::snapshot::Reader;
 use crate::store::{Store, dictionary_selected_strings, digest, section};
 use crate::{Result, require};
 use serde_json::{Value, json};
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::sync::Arc;
 
 thread_local! {static DIAGNOSTICS:RefCell<Value>=const{RefCell::new(Value::Null)};}
 pub fn diagnostics() -> Value {
@@ -82,7 +85,7 @@ struct Joined {
     base: Reader,
     base_record: Value,
     meta: Value,
-    columns: HashMap<String, Vec<u32>>,
+    columns: HashMap<String, Arc<[u32]>>,
 }
 impl Joined {
     fn open(store: &Store, key: &str) -> Result<Self> {
@@ -99,7 +102,7 @@ impl Joined {
             columns: HashMap::new(),
         })
     }
-    fn col(&mut self, name: &str) -> Result<&[u32]> {
+    fn original_col(&mut self, name: &str) -> Result<Arc<[u32]>> {
         if !self.columns.contains_key(name) {
             let mut values = if let Some(parts) = self.meta["chunks"][name].as_array() {
                 let mut values = Vec::new();
@@ -134,9 +137,60 @@ impl Joined {
                     *value = patch[i];
                 }
             }
-            self.columns.insert(name.into(), values);
+            self.columns.insert(name.into(), values.into());
         }
-        Ok(&self.columns[name])
+        Ok(self.columns[name].clone())
+    }
+    fn col(&mut self, name: &str) -> Result<Arc<[u32]>> {
+        if !self.columns.contains_key(name) {
+            for kind in ["raw", "slice"] {
+                let prefix = format!("query.{kind}.");
+                if self.meta["sourcePatches"][kind].is_object()
+                    && ["source_start", "source_end", "sources"]
+                        .iter()
+                        .any(|field| name == format!("{prefix}{field}"))
+                {
+                    let patch = self.meta["sourcePatches"][kind].clone();
+                    let rows = column(
+                        &mut self.raw,
+                        &self.record,
+                        patch["rows"].as_str().ok_or("source patch rows")?,
+                    )?;
+                    let starts = column(
+                        &mut self.raw,
+                        &self.record,
+                        patch["starts"].as_str().ok_or("source patch starts")?,
+                    )?;
+                    let values = column(
+                        &mut self.raw,
+                        &self.record,
+                        patch["values"].as_str().ok_or("source patch values")?,
+                    )?;
+                    let original = [
+                        self.original_col(&(prefix.clone() + "source_start"))?
+                            .to_vec(),
+                        self.original_col(&(prefix.clone() + "source_end"))?
+                            .to_vec(),
+                        self.original_col(&(prefix.clone() + "sources"))?.to_vec(),
+                    ];
+                    let output = crate::source_patch::splice(
+                        [&original[0], &original[1], &original[2]],
+                        &rows,
+                        &starts,
+                        &values,
+                    )?;
+                    for (field, values) in ["source_start", "source_end", "sources"]
+                        .into_iter()
+                        .zip(output)
+                    {
+                        self.columns
+                            .insert(format!("{prefix}{field}"), values.into());
+                    }
+                    break;
+                }
+            }
+        }
+        self.original_col(name)
     }
     fn get(&mut self, name: &str, row: usize) -> Result<u32> {
         self.col(name)?
@@ -208,12 +262,6 @@ pub(crate) fn refresh(
         || meta["pairs"].as_array().is_some_and(|v| !v.is_empty())
     {
         return fallback("generation-or-key-matching");
-    }
-    if meta["sourcePatches"]
-        .as_object()
-        .is_some_and(|v| !v.is_empty())
-    {
-        return fallback("variable-source-overlay");
     }
     let current = serde_json::to_value(input)?;
     for field in [
@@ -383,9 +431,9 @@ pub(crate) fn refresh(
             changed_pos.insert(ci);
         }
     }
-    let order = joined.col("occurrence.rows")?.to_vec();
-    let os = joined.col("line.occ_start")?.to_vec();
-    let oe = joined.col("line.occ_end")?.to_vec();
+    let order = joined.col("occurrence.rows")?;
+    let os = joined.col("line.occ_start")?;
+    let oe = joined.col("line.occ_end")?;
     let mut affected = BTreeSet::new();
     let mut package_lines = BTreeSet::new();
     for (position, member) in order.iter().enumerate() {
@@ -398,9 +446,9 @@ pub(crate) fn refresh(
             package_lines.insert(row);
         }
     }
-    let line_ns = joined.col("line.namespace")?.to_vec();
-    let line_key = joined.col("line.key")?.to_vec();
-    let reasons = joined.col("line.reasons")?.to_vec();
+    let line_ns = joined.col("line.namespace")?;
+    let line_key = joined.col("line.key")?;
+    let reasons = joined.col("line.reasons")?;
     let mut resolved = line_ns.len();
     while resolved > 0 && reasons[resolved - 1] & ((1 << 9) | (1 << 10)) != 0 {
         resolved -= 1;
@@ -433,60 +481,43 @@ pub(crate) fn refresh(
         .chain(previous_sources.values())
         .copied()
         .collect::<BTreeSet<_>>();
-    let text = dictionary_selected_strings(&store.directory, &store.root, &wanted)?;
-    for value in text.values() {
-        if characters(value) < 40 {
-            return fallback("short-source");
-        }
-    }
-    let occurrence_sources = if edits.is_empty() {
-        Vec::new()
-    } else {
-        joined.col("query.occurrence.sources")?.to_vec()
-    };
-    let mut members = BTreeSet::new();
+    let mut text = dictionary_selected_strings(&store.directory, &store.root, &wanted)?;
     let mut replacements = BTreeMap::new();
-    for row in &package_lines {
-        if joined.get("line.split_unit", *row)? != 0
-            || reasons[*row] & ((1 << 9) | (1 << 10) | (1 << 11)) != 0
-        {
-            return fallback("split-or-conflicting-source");
-        }
-        let old = joined.get("line.source", *row)?;
-        let mut new = None;
-        for &member in &order[os[*row] as usize..oe[*row] as usize] {
-            let member = member as usize;
-            if package_value(store, &mut files, &names, &starts, member, "identity")? != 0 {
-                return fallback("reference-source");
+    let mut variants = BTreeMap::new();
+    {
+        let mut sources = sources::Sources {
+            store,
+            files: &mut files,
+            joined: &mut joined,
+            names: &names,
+            starts: &starts,
+            text: &mut text,
+            occurrence_lines: None,
+            raw_ids: None,
+        };
+        for row in &package_lines {
+            if sources.joined.get("line.split_unit", *row)? != 0
+                || reasons[*row] & ((1 << 9) | (1 << 10)) != 0
+            {
+                return fallback("split-unit");
             }
-            if occurrence_sources[member] != old {
-                return fallback("mixed-old-source");
-            }
-            let source = edits.get(&member).copied().unwrap_or(old);
-            if new.is_some_and(|current| current != source) {
-                return fallback("source-cardinality");
-            }
-            new = Some(source);
-            members.insert(member);
-        }
-        let new = new.ok_or("empty source group")?;
-        let value = text.get(&new).ok_or("new source absent")?;
-        if u32::from(!trim(value).is_empty()) != joined.get("line.source_visible", *row)? {
-            return fallback("source-visibility");
-        }
-        replacements.insert(*row, new);
-    }
-    if !edits.is_empty() {
-        for (member, source) in occurrence_sources.iter().enumerate() {
-            if wanted.contains(source) && !members.contains(&member) {
-                return fallback("source-shared-outside-edit");
-            }
+            let Some((source, count)) = sources.line(
+                *row,
+                order
+                    .get(os[*row] as usize..oe[*row] as usize)
+                    .ok_or("line member range")?,
+            )?
+            else {
+                return fallback("source-group-structure");
+            };
+            replacements.insert(*row, source);
+            variants.insert(*row, count);
         }
     }
     let manifest_name = input.target["outputPaths"]["manifest"]
         .as_str()
         .unwrap_or("<manifest>");
-    let manifest_rows = joined.col("manifest.rows")?.to_vec();
+    let manifest_rows = joined.col("manifest.rows")?;
     let mut hot = Hot::new();
     let mut reviews = Vec::new();
     for row in &affected {
@@ -508,17 +539,23 @@ pub(crate) fn refresh(
             empty
         };
         let mut structural = joined.get("line.facts", row)?;
+        let row_reasons = if replacements.contains_key(&row) {
+            (reasons[row] & !(1 << 11)) | if variants[&row] > 1 { 1 << 11 } else { 0 }
+        } else {
+            reasons[row]
+        };
         if replacements.contains_key(&row) {
             structural &= !(1 << 5);
-            if ms != me && source != manifest_source {
+            if ms != me && variants[&row] == 1 && source != manifest_source {
                 structural |= 1 << 5;
             }
             set(&mut hot, "line.source", row, source);
             set(&mut hot, "line.source_words", row, words(&text[&source]));
             set(&mut hot, "line.facts", row, structural);
+            set(&mut hot, "line.reasons", row, row_reasons);
         }
         let mut problems = joined.get("line.problems", row)? & (1 | 32);
-        if reasons[row] & (1 << 11) != 0 {
+        if row_reasons & (1 << 11) != 0 {
             problems |= 2;
         }
         let mut translation_problem = false;
@@ -527,7 +564,8 @@ pub(crate) fn refresh(
             let mut facts = (joined.get(&(prefix.clone() + "facts"), row)?
                 & !((1 << 5) | (1 << 3) | (1 << 9)))
                 | (structural & (1 << 5));
-            let unknown = joined.get(&(prefix.clone() + "reasons"), row)?;
+            let unknown = (joined.get(&(prefix.clone() + "reasons"), row)? & !(1 << 11))
+                | (row_reasons & (1 << 11));
             let archive_path = input.target["outputPaths"]["archives"][culture]
                 .as_str()
                 .map(str::to_owned)
@@ -689,43 +727,23 @@ pub(crate) fn refresh(
     for (member, source) in &edits {
         set(&mut hot, "query.occurrence.sources", *member, *source);
     }
-    let mut queries = HashSet::new();
-    for (row, source) in &replacements {
-        let start = joined.get("query.line.starts", *row)?;
-        let end = joined.get("query.line.starts", row + 1)?;
-        for slice in start..end {
-            for (kind, index) in [
-                ("slice", slice as usize),
-                (
-                    "raw",
-                    joined.get("query.slice.raw", slice as usize)? as usize,
-                ),
-            ] {
-                if !queries.insert((kind, index)) {
-                    continue;
-                }
-                let prefix = format!("query.{kind}.");
-                let begin = joined.get(&(prefix.clone() + "source_start"), index)?;
-                let finish = joined.get(&(prefix.clone() + "source_end"), index)?;
-                if finish - begin != 1 {
-                    return fallback("query-source-cardinality");
-                }
-                set(
-                    &mut hot,
-                    &(prefix.clone() + "sources"),
-                    begin as usize,
-                    *source,
-                );
-                set(
-                    &mut hot,
-                    &(prefix.clone() + "characters"),
-                    index,
-                    characters(&text[source]),
-                );
-                set(&mut hot, &(prefix + "words"), index, words(&text[source]));
-            }
-        }
-    }
+    let source_edits = {
+        let mut sources = sources::Sources {
+            store,
+            files: &mut files,
+            joined: &mut joined,
+            names: &names,
+            starts: &starts,
+            text: &mut text,
+            occurrence_lines: None,
+            raw_ids: None,
+        };
+        let Some(edits) = sources.queries(&package_lines, &edits, &previous_sources, &mut hot)?
+        else {
+            return fallback("query-source-overlay-bound");
+        };
+        edits
+    };
     let base = meta["base"].as_str().unwrap_or(&previous_key).to_owned();
     if key == base {
         return fallback("base-key-reuse");
@@ -749,6 +767,11 @@ pub(crate) fn refresh(
         fields.extend(prior.keys().cloned());
     }
     let mut physical = vec![("patch.rows".into(), String::new(), rows.clone())];
+    let Some(source_patches) =
+        sources::pack(&mut joined, &source_edits, &mut physical, &mut fields)?
+    else {
+        return fallback("source-overlay-bound");
+    };
     let mut patches = serde_json::Map::new();
     let mut patch_rows = serde_json::Map::new();
     for field in fields {
@@ -804,6 +827,13 @@ pub(crate) fn refresh(
     metadata["base"] = json!(base);
     metadata["patches"] = json!(patches);
     metadata["patchRows"] = json!(patch_rows);
+    if source_patches
+        .as_object()
+        .is_some_and(|patches| !patches.is_empty())
+    {
+        metadata["version"] = json!(4);
+    }
+    metadata["sourcePatches"] = source_patches;
     note(
         "numericColumnsLoaded",
         json!(joined.columns.len() + files.columns.len()),

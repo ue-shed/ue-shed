@@ -3,7 +3,7 @@ import { Effect } from "effect";
 import { expect } from "vitest";
 import { GameTextIndexRefresh } from "./index-refresh.js";
 import { makeIndexRegressionFixture } from "./index-refresh-regressions.test-support.js";
-import { JoinedQueryData } from "./joined-query-data.js";
+import { JoinedQueryData } from "./joined-query-data.test-support.js";
 
 const occurrence = (key: string, source: string) => ({
 	source,

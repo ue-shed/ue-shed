@@ -17,7 +17,18 @@ export const GameTextEngineRequest = Schema.Union([
 		})
 	}),
 	Schema.Struct({
-		action: Schema.Literal("export"),
+		action: Schema.Literal("corpus"),
+		reader: Reader,
+		output: Schema.NonEmptyString.check(Schema.isMaxLength(32767))
+	}),
+	Schema.Struct({
+		action: Schema.Literal("rows"),
+		reader: Reader,
+		payload: Payload,
+		output: Schema.NonEmptyString.check(Schema.isMaxLength(32767))
+	}),
+	Schema.Struct({
+		action: Schema.Literals(["export", "localization_export", "localization_focus_export"]),
 		reader: Reader,
 		payload: Payload,
 		output: Schema.NonEmptyString.check(Schema.isMaxLength(32767))
@@ -25,7 +36,15 @@ export const GameTextEngineRequest = Schema.Union([
 	...(["close", "summary"] as const).map((action) =>
 		Schema.Struct({ action: Schema.Literal(action), reader: Reader })
 	),
-	...(["search", "focus", "localization_focus", "localization_page"] as const).map((action) =>
+	...(
+		[
+			"search",
+			"focus",
+			"localization_focus",
+			"localization_page",
+			"localization_detail"
+		] as const
+	).map((action) =>
 		Schema.Struct({ action: Schema.Literal(action), reader: Reader, payload: Payload })
 	)
 ]).annotate({ identifier: "GameTextEngineRequest" });
@@ -42,7 +61,12 @@ export const GameTextEngineOutcome = Schema.Struct({
 		"search",
 		"focus",
 		"export",
+		"corpus",
+		"rows",
 		"localization_focus",
+		"localization_detail",
+		"localization_export",
+		"localization_focus_export",
 		"localization_page"
 	]),
 	capabilities: Schema.Array(Schema.Literal("game_text_engine_v1")),

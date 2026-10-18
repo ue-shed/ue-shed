@@ -1,10 +1,10 @@
+import { exportGameTextInvestigation } from "./export-reference.test-support.js";
 import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import {
 	GameTextInvestigationQuery,
 	GameTextInvestigationPreset,
-	GameTextInvestigationExport,
-	exportGameTextInvestigation
+	GameTextInvestigationExport
 } from "./investigation.js";
 import { qualityFixture } from "./localization-workspace.test-support.js";
 

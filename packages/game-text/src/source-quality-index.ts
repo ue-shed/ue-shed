@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import { textOccurrenceId } from "./corpus.js";
-import { JoinedQueryData } from "./joined-query-data.js";
+import { IndexedPolicyData } from "./indexed-policy-data.js";
 import type { JoinedTargetReader } from "./joined-target-reader.js";
 import {
 	matchesTextRole,
@@ -55,7 +55,7 @@ interface StoredOccurrence extends TextQualityOccurrence {
 }
 
 /** Reads occurrence locations and sources from the package columns, a batch of rows at once. */
-function occurrenceReader(data: JoinedQueryData) {
+function occurrenceReader(data: IndexedPolicyData) {
 	// A shard's columns, looked up once: every occurrence reads several.
 	const read = (shard: number) => ({
 		location: data.packageColumn(shard, "occurrence.location"),
@@ -81,7 +81,7 @@ function occurrenceReader(data: JoinedQueryData) {
 			const kind = column(shard, "location")[row]!;
 			kinds[index] = kind;
 			ids.push(column(shard, "object")[row]!);
-			// The same fields `JoinedQueryData.occurrence` reads for each location kind.
+			// The same fields `IndexedPolicyData.occurrence` reads for each location kind.
 			if (kind === 0) ids.push(column(shard, "class")[row]!, column(shard, "property")[row]!);
 			else if (kind === 1)
 				ids.push(column(shard, "row")[row]!, column(shard, "property")[row]!);
@@ -147,7 +147,7 @@ export const indexedSourceQuality = Effect.fn("GameText.sourceQuality")(function
 	// Progress goes to the reporter: a `source_quality` event before the scan with no units
 	// checked, then after each page of units, the last with every unit and the finding count.
 	const reportProgress = yield* GameTextIndexProgressReporter;
-	const data = new JoinedQueryData(joined);
+	const data = new IndexedPolicyData(joined);
 	const order = data.column("query.raw.order"),
 		visible = data.column("query.raw.visible"),
 		rawIds = data.column("query.raw.raw"),

@@ -12,7 +12,6 @@ export default defineConfig([
 				"../../packages/game-text/src/localization-import-worker.ts",
 			"package-text-worker": "../../packages/game-text/src/package-text-worker.ts",
 			"cold-layer-worker": "../../packages/game-text/src/cold-layer-worker.ts",
-			"search-worker": "../../packages/game-text/src/search-worker.ts",
 			"quality-worker": "../../packages/game-text/src/quality-worker.ts"
 		},
 		external: [/^electron(?:\/|$)/, "trash"],

@@ -1,6 +1,5 @@
-import { searchTextCorpus, textAssetName } from "@ue-shed/game-text/corpus";
+import { textAssetName } from "@ue-shed/game-text/corpus";
 import {
-	type TextCorpus,
 	type TextLocation,
 	type TextOccurrence,
 	type TextUnit,
@@ -79,16 +78,4 @@ export function locationDetail(location: TextLocation): string {
 		return `Row ${location.row} · ${location.propertyPath}`;
 	if (location.kind === "string_table_entry") return `Entry ${location.entryKey}`;
 	return location.propertyPath;
-}
-
-export function filterTextUnits(options: {
-	readonly corpus: TextCorpus;
-	readonly query: string;
-	readonly capability: CapabilityFilter;
-}): readonly TextUnit[] {
-	return searchTextCorpus(options.corpus, options.query).filter(
-		(unit) =>
-			options.capability === "all" ||
-			unit.occurrences.some((occurrence) => occurrence.editCapability === options.capability)
-	);
 }

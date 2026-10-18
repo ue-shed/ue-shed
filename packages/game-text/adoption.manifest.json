@@ -62,11 +62,13 @@
 	},
 	"indexing": {
 		"productionLayer": "GameTextIndexBuilderLive",
-		"referenceLayer": "typeScriptIndexBuilderLayer",
 		"configurationSource": "AssetReader.configuration",
 		"readerCapability": "game_text_index",
-		"minimumProtocolMinor": 13,
-		"automaticWriterFallback": false
+		"queryEngine": "rust",
+		"queryCapability": "game_text_engine_v1",
+		"minimumProtocolMinor": 15,
+		"automaticWriterFallback": false,
+		"automaticQueryFallback": false
 	},
 	"capabilities": {
 		"required": ["saved-project", "saved-asset-reader"],

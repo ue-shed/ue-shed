@@ -57,7 +57,12 @@
 						"search",
 						"focus",
 						"export",
+						"corpus",
+						"rows",
 						"localization_focus",
+						"localization_detail",
+						"localization_export",
+						"localization_focus_export",
 						"localization_page"
 					]
 				},

@@ -2,7 +2,7 @@
 use crate::engine_match::{Projection, checkpoint};
 use crate::engine_query::EngineQuery;
 use crate::engine_types::MAX_PAGE;
-use crate::{Error, ErrorCode, Result, require};
+use crate::{Result, require};
 use serde_json::{Value, json};
 use std::sync::atomic::AtomicBool;
 
@@ -146,13 +146,6 @@ impl EngineQuery {
             .remove("remainingLocationCount");
         let begin = p.manifest_start[row] as usize;
         let end = p.manifest_end[row] as usize;
-        require(
-            end - begin <= 10000,
-            Error::new(
-                ErrorCode::LimitExceeded,
-                "Localization evidence exceeds one line response; read its evidence pages.",
-            ),
-        )?;
         let mut manifest = Vec::new();
         if begin != end {
             let name = self.target["outputPaths"]["manifest"]

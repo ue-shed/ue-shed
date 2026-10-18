@@ -260,7 +260,81 @@
 					"properties": {
 						"action": {
 							"type": "string",
-							"enum": ["export"]
+							"enum": ["corpus"]
+						},
+						"reader": {
+							"type": "string",
+							"allOf": [
+								{
+									"minLength": 1
+								},
+								{
+									"maxLength": 128
+								}
+							]
+						},
+						"output": {
+							"type": "string",
+							"allOf": [
+								{
+									"minLength": 1
+								},
+								{
+									"maxLength": 32767
+								}
+							]
+						}
+					},
+					"required": ["action", "reader", "output"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"action": {
+							"type": "string",
+							"enum": ["rows"]
+						},
+						"reader": {
+							"type": "string",
+							"allOf": [
+								{
+									"minLength": 1
+								},
+								{
+									"maxLength": 128
+								}
+							]
+						},
+						"payload": {
+							"type": "string",
+							"allOf": [
+								{
+									"maxLength": 524288
+								}
+							]
+						},
+						"output": {
+							"type": "string",
+							"allOf": [
+								{
+									"minLength": 1
+								},
+								{
+									"maxLength": 32767
+								}
+							]
+						}
+					},
+					"required": ["action", "reader", "payload", "output"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"action": {
+							"type": "string",
+							"enum": ["export", "localization_export", "localization_focus_export"]
 						},
 						"reader": {
 							"type": "string",
@@ -436,6 +510,36 @@
 						"action": {
 							"type": "string",
 							"enum": ["localization_page"]
+						},
+						"reader": {
+							"type": "string",
+							"allOf": [
+								{
+									"minLength": 1
+								},
+								{
+									"maxLength": 128
+								}
+							]
+						},
+						"payload": {
+							"type": "string",
+							"allOf": [
+								{
+									"maxLength": 524288
+								}
+							]
+						}
+					},
+					"required": ["action", "reader", "payload"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"action": {
+							"type": "string",
+							"enum": ["localization_detail"]
 						},
 						"reader": {
 							"type": "string",

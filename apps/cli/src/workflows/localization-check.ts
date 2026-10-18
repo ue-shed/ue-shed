@@ -130,8 +130,8 @@ export const runLocalizationCheck = Effect.fn("Cli.workflow.localization_check")
 						review: review.file
 					};
 					const report = checkLocalizationTarget(
-						corpus,
-						joined,
+						yield* corpus,
+						yield* joined,
 						evidence,
 						options,
 						rules

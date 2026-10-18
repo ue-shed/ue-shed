@@ -6,42 +6,34 @@ import type { GameTextEngineRequest, GameTextIndexConfiguration } from "@ue-shed
 import { GameTextIndexError } from "./index-contract.js";
 import {
 	TextCorpus,
+	TextUnit,
+	TextReviewSignal,
 	TextCorpusFocus,
 	TextCorpusFocusRequest,
 	TextCorpusQuerySummary,
 	TextCorpusSearchPage,
 	TextCorpusSearchRequest
 } from "./schema.js";
-import { LocalizationLine, LocalizationLineId } from "./localization-schema.js";
+import { LocalizationLine } from "./localization-schema.js";
+import { LocalizationFocus, LocalizationFocusRequest } from "./localization-view.js";
 import { TEXT_AUDIENCE_POLICY } from "./text-audience.js";
 
-/** Native queries are asynchronous process calls; this interface owns no query or column data. */
-export interface NativeTextQuery {
-	readonly summary: () => Effect.Effect<TextCorpusQuerySummary, GameTextIndexError>;
-	readonly search: (
-		request: TextCorpusSearchRequest
-	) => Effect.Effect<TextCorpusSearchPage, GameTextIndexError>;
-	readonly focus: (
-		request: TextCorpusFocusRequest
-	) => Effect.Effect<TextCorpusFocus | undefined, GameTextIndexError>;
-	readonly localizationFocus: (
-		id: LocalizationLineId
-	) => Effect.Effect<LocalizationLine | undefined, GameTextIndexError>;
-	/** Explicit bulk read; interactive consumers use search and focus pages. */
-	readonly localizationLines: (
+import type { NativeTextQuery } from "./native-query-contract.js";
+export type { NativeTextQuery, NativeTextExport } from "./native-query-contract.js";
+
+const NativeExportFile = Schema.Struct({
+	...TextCorpus.fields,
+	units: Schema.Array(
+		Schema.Struct({ ...TextUnit.fields, reviewSignals: Schema.Array(TextReviewSignal) })
+	)
+});
+interface NativeIndexReader extends NativeTextQuery {
+	/** Internal row coordinates for a policy scan of this pinned native view. */
+	readonly localizationRows: (
 		request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">
-	) => Effect.Effect<readonly LocalizationLine[], GameTextIndexError>;
-	/** Explicit bulk export, assembled and serialized by Rust before the host decodes it. */
-	readonly export: (
-		request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">
-	) => Effect.Effect<TextCorpus, GameTextIndexError>;
+	) => Effect.Effect<Uint32Array, GameTextIndexError>;
 }
 
-const NativeLinePage = Schema.Struct({
-	lines: Schema.Array(LocalizationLine).check(Schema.isMaxLength(50)),
-	total: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
-	nextCursor: Schema.optionalKey(LocalizationLineId)
-});
 const failed = (operation: string, cause: unknown) =>
 	new GameTextIndexError({
 		code: "index_failed",
@@ -60,7 +52,7 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 	readonly generation: string;
 	readonly joinedKey: string;
 }): Effect.fn.Return<
-	NativeTextQuery,
+	NativeIndexReader,
 	GameTextIndexError,
 	NativeGameTextEngineClient | Scope.Scope
 > {
@@ -111,7 +103,96 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 			)
 		);
 	}
+	const withStage = <A>(use: (directory: string) => Effect.Effect<A, GameTextIndexError>) =>
+		Effect.scoped(
+			Effect.gen(function* () {
+				const directory = yield* Effect.acquireRelease(
+					Effect.tryPromise({
+						try: () => mkdtemp(join(input.configuration.cacheRoot, "native-read-")),
+						catch: (cause) => failed("staging", cause)
+					}),
+					(directory) =>
+						Effect.tryPromise({
+							try: () => rm(directory, { recursive: true, force: true }),
+							catch: (cause) => failed("staging_cleanup", cause)
+						}).pipe(
+							Effect.catch((cause) =>
+								Effect.logWarning("Native read staging cleanup failed", { cause })
+							)
+						)
+				);
+				return yield* use(directory);
+			})
+		);
+	const localizationLines = Effect.fn("GameTextIndex.nativeLocalizationExport")(
+		(request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">) =>
+			withStage((directory) =>
+				Effect.gen(function* () {
+					const decoded = yield* Schema.decodeUnknownEffect(TextCorpusSearchRequest)({
+						...request,
+						pageSize: 50
+					}).pipe(Effect.mapError((cause) => failed("localization_export", cause)));
+					const output = join(directory, "localization.json");
+					yield* execute({
+						action: "localization_export",
+						reader,
+						payload: JSON.stringify(decoded),
+						output
+					});
+					const text = yield* Effect.tryPromise({
+						try: (signal) => readFile(output, { encoding: "utf8", signal }),
+						catch: (cause) => failed("localization_export_read", cause)
+					});
+					return yield* Schema.decodeUnknownEffect(
+						Schema.fromJsonString(Schema.Array(LocalizationLine))
+					)(text).pipe(
+						Effect.mapError((cause) => failed("localization_export_decode", cause))
+					);
+				})
+			)
+	);
+	const exportWithSignals = Effect.fn("GameTextIndex.nativeExport")(function* (
+		request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize"> | undefined
+	) {
+		const decoded = yield* Schema.decodeUnknownEffect(TextCorpusSearchRequest)({
+			query: "",
+			capability: "all",
+			...request,
+			pageSize: 50
+		}).pipe(Effect.mapError((cause) => failed("export", cause)));
+		return yield* withStage((directory) =>
+			Effect.gen(function* () {
+				const output = join(directory, "corpus.json");
+				yield* execute(
+					request === undefined
+						? { action: "corpus", reader, output }
+						: {
+								action: "export",
+								reader,
+								payload: JSON.stringify(decoded),
+								output
+							}
+				);
+				const text = yield* Effect.tryPromise({
+					try: (signal) => readFile(output, { encoding: "utf8", signal }),
+					catch: (cause) => failed("export_read", cause)
+				});
+				const file = yield* Schema.decodeUnknownEffect(
+					Schema.fromJsonString(NativeExportFile)
+				)(text).pipe(Effect.mapError((cause) => failed("export_decode", cause)));
+				return {
+					corpus: {
+						...file,
+						units: file.units.map(({ reviewSignals: _, ...unit }) => unit)
+					},
+					reviewSignals: new Map(file.units.map((unit) => [unit.id, unit.reviewSignals]))
+				};
+			})
+		);
+	});
+
 	return {
+		readCorpus: () => exportWithSignals(undefined).pipe(Effect.map((result) => result.corpus)),
 		summary: Effect.fn("GameTextIndex.nativeSummary")(() =>
 			response({ action: "summary", reader }, TextCorpusQuerySummary)
 		),
@@ -135,76 +216,78 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 			return result ?? undefined;
 		}),
 		localizationFocus: Effect.fn("GameTextIndex.nativeLocalizationFocus")(function* (id) {
-			const result = yield* response(
-				{ action: "localization_focus", reader, payload: JSON.stringify(id) },
-				Schema.NullOr(LocalizationLine)
-			);
-			return result ?? undefined;
-		}),
-		localizationLines: Effect.fn("GameTextIndex.nativeLocalizationLines")(function* (request) {
-			const lines: LocalizationLine[] = [];
-			let cursor: LocalizationLineId | undefined;
-			while (true) {
-				const page = yield* response(
-					{
-						action: "localization_page",
-						reader,
-						payload: JSON.stringify({
-							...request,
-							pageSize: 50,
-							localizationCursor: cursor
-						})
-					},
-					NativeLinePage
-				);
-				lines.push(...page.lines);
-				if (page.nextCursor === undefined) return lines;
-				if (page.nextCursor === cursor)
-					return yield* Effect.fail(
-						failed("localization_page", "Native evidence pagination did not advance.")
-					);
-				cursor = page.nextCursor;
-			}
-		}),
-		export: Effect.fn("GameTextIndex.nativeExport")(function* (request) {
-			const decoded = yield* Schema.decodeUnknownEffect(TextCorpusSearchRequest)({
-				...request,
-				pageSize: 50
-			}).pipe(Effect.mapError((cause) => failed("export", cause)));
-			return yield* Effect.scoped(
+			return yield* withStage((directory) =>
 				Effect.gen(function* () {
-					const stage = yield* Effect.acquireRelease(
-						Effect.tryPromise({
-							try: () =>
-								mkdtemp(join(input.configuration.cacheRoot, "native-export-")),
-							catch: (cause) => failed("export", cause)
-						}),
-						(stage) =>
-							Effect.tryPromise({
-								try: () => rm(stage, { recursive: true, force: true }),
-								catch: (cause) => failed("export_cleanup", cause)
-							}).pipe(
-								Effect.catch((cause) =>
-									Effect.logWarning("Native export cleanup failed", { cause })
-								)
-							)
-					);
-					const output = join(stage, "corpus.json");
+					const output = join(directory, "line.json");
 					yield* execute({
-						action: "export",
+						action: "localization_focus_export",
 						reader,
-						payload: JSON.stringify(decoded),
+						payload: JSON.stringify(id),
 						output
 					});
 					const text = yield* Effect.tryPromise({
 						try: (signal) => readFile(output, { encoding: "utf8", signal }),
-						catch: (cause) => failed("export_read", cause)
+						catch: (cause) => failed("localization_focus_read", cause)
 					});
-					return yield* Schema.decodeUnknownEffect(Schema.fromJsonString(TextCorpus))(
-						text
-					).pipe(Effect.mapError((cause) => failed("export_decode", cause)));
+					const line = yield* Schema.decodeUnknownEffect(
+						Schema.fromJsonString(Schema.NullOr(LocalizationLine))
+					)(text).pipe(
+						Effect.mapError((cause) => failed("localization_focus_decode", cause))
+					);
+					return line ?? undefined;
 				})
 			);
-		})
+		}),
+		localizationDetail: Effect.fn("GameTextIndex.nativeLocalizationDetail")(
+			function* (request) {
+				const decoded = yield* Schema.decodeUnknownEffect(LocalizationFocusRequest)(
+					request
+				).pipe(Effect.mapError((cause) => failed("localization_detail", cause)));
+				const result = yield* response(
+					{ action: "localization_detail", reader, payload: JSON.stringify(decoded) },
+					Schema.NullOr(LocalizationFocus)
+				);
+				return result ?? undefined;
+			}
+		),
+		localizationLines,
+		localizationRows: Effect.fn("GameTextIndex.nativePolicyRows")((request) =>
+			withStage((directory) =>
+				Effect.gen(function* () {
+					const output = join(directory, "rows.u32");
+					const result = yield* response(
+						{
+							action: "rows",
+							reader,
+							output,
+							payload: JSON.stringify({ ...request, pageSize: 50 })
+						},
+						Schema.Struct({
+							count: Schema.Int.check(
+								Schema.isGreaterThanOrEqualTo(0),
+								Schema.isLessThanOrEqualTo(0xffffffff)
+							)
+						})
+					);
+					const bytes = yield* Effect.tryPromise({
+						try: (signal) => readFile(output, { signal }),
+						catch: (cause) => failed("policy_rows", cause)
+					});
+					if (bytes.length !== result.count * 4)
+						return yield* Effect.fail(
+							failed(
+								"policy_rows",
+								"Native row payload length differs from its declared count."
+							)
+						);
+					const rows = new Uint32Array(result.count);
+					for (let index = 0; index < rows.length; index++)
+						rows[index] = bytes.readUInt32LE(index * 4);
+					return rows;
+				})
+			)
+		),
+		exportWithSignals,
+		export: (request) => exportWithSignals(request).pipe(Effect.map((result) => result.corpus))
 	};
 });

@@ -393,6 +393,12 @@ export function GameTextRoute(props: {
 						);
 					} else {
 						setFocus(undefined);
+						if (result.status === "failed")
+							showError(
+								`${result.error.message} ${result.error.recovery}`,
+								() => load(true),
+								{ label: "Rescan" }
+							);
 						if (result.status === "not_found") setSelectedId(undefined);
 					}
 				}
@@ -677,7 +683,9 @@ export function GameTextRoute(props: {
 						);
 					} else {
 						showError(
-							"The saved assets changed since the last scan. Rescan to search again.",
+							result.status === "failed"
+								? `${result.error.message} ${result.error.recovery}`
+								: "The saved assets changed since the last scan. Rescan to search again.",
 							() => load(true),
 							{ search: true, label: "Rescan" }
 						);

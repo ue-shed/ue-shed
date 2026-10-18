@@ -33,8 +33,10 @@ const {
 }: typeof import("../packages/game-text/src/shared-index.js") = await import(
 	load("shared-index.ts")
 );
-const { refreshJoinedTarget }: typeof import("../packages/game-text/src/joined-target.js") =
-	await import(load("joined-target.ts"));
+const {
+	refreshJoinedTarget
+}: typeof import("../packages/game-text/src/joined-target-reference.test-support.js") =
+	await import(load("joined-target-reference.test-support.ts"));
 const { readJoinedTarget }: typeof import("../packages/game-text/src/joined-target-reader.js") =
 	await import(load("joined-target-reader.ts"));
 const {

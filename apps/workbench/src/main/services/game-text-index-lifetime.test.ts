@@ -1,11 +1,11 @@
 import { it } from "@effect/vitest";
-import { Deferred, Effect, Fiber, Layer, Metric, Ref } from "effect";
+import { Deferred, Effect, Fiber, Layer, Ref } from "effect";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect } from "vitest";
 import { GameTextIndexSteps } from "@ue-shed/game-text/index";
 import { STARTER_GAME_TEXT_RULES } from "@ue-shed/game-text/rules";
-import { makeIndexRegressionFixture } from "../../../../../packages/game-text/dist/index-refresh-regressions.test-support.js";
+import { makeIndexRegressionFixture } from "../../../../../packages/game-text/src/index-refresh-regressions.test-support.js";
 import { WorkbenchGameText, WorkbenchGameTextLive } from "./game-text.js";
 import { makeWorkbenchProjectTestLayer } from "./project-workspace.js";
 import { ElectronDialog } from "../adapters/electron-dialog.js";
@@ -215,10 +215,6 @@ it.live(
 			const test = yield* makeHost("pipeline");
 			yield* Effect.gen(function* () {
 				const host = yield* WorkbenchGameText;
-				const started = Metric.counter("game_text.index.search_workers_started");
-				const stopped = Metric.counter("game_text.index.search_workers_stopped");
-				const beforeStarted = (yield* Metric.value(started)).count;
-				const beforeStopped = (yield* Metric.value(stopped)).count;
 				expect((yield* host.configuredRefresh()).status).toBe("completed");
 				expect((yield* host.localizationTarget(test.fixture.target.name)).status).toBe(
 					"ready"
@@ -234,8 +230,6 @@ it.live(
 					"ready"
 				);
 				expect(test.modelOpens()).toBe(2);
-				expect((yield* Metric.value(started)).count - beforeStarted).toBe(1);
-				expect((yield* Metric.value(stopped)).count - beforeStopped).toBe(0);
 				yield* Effect.promise(() =>
 					writeFile(
 						join(test.fixture.projectRoot, "de.po"),
@@ -249,7 +243,6 @@ it.live(
 				});
 				expect(test.modelOpens()).toBe(3);
 				expect(test.fixture.packageReads()).toBe(1);
-				expect((yield* Metric.value(started)).count - beforeStarted).toBe(2);
 				expect(yield* host.search(request)).toEqual(original);
 			}).pipe(Effect.provide(test.layer));
 		})
@@ -286,7 +279,7 @@ it.live(
 );
 
 it.live(
-	"publishes the replacement before old reader and worker finalization completes",
+	"publishes the replacement before old native reader finalization completes",
 	() =>
 		Effect.gen(function* () {
 			const test = yield* makeHost("retirement");
@@ -346,7 +339,7 @@ it.live(
 );
 
 it.live(
-	"a rejected prepared refresh preserves the previously published reader and worker",
+	"a rejected prepared refresh preserves the previously published native reader",
 	() =>
 		Effect.gen(function* () {
 			const test = yield* makeHost("rejected");
@@ -414,8 +407,9 @@ it.live(
 				const raw = fixture.raw();
 				const steps = yield* GameTextIndexSteps;
 				const project = yield* steps.refreshProject({ projectRoot: fixture.projectRoot });
+				const readCorpus = Effect.succeed(raw);
 				const host = yield* makeGameTextLocalization(
-					() => Effect.succeed(raw),
+					() => Effect.succeed(readCorpus),
 					() => Effect.succeed(project)
 				);
 				expect((yield* Effect.scoped(host.select(fixture.target.name))).status).toBe(

@@ -9,8 +9,8 @@ import { synchronousJoinedTarget } from "../packages/game-text/src/joined-query-
 import {
 	JoinedQueryData,
 	reuseJoinedQueryProjection
-} from "../packages/game-text/src/joined-query-data.ts";
-import { incrementJoinedTarget } from "../packages/game-text/src/joined-target-incremental.ts";
+} from "../packages/game-text/src/joined-query-data.test-support.ts";
+import { incrementJoinedTarget } from "../packages/game-text/src/joined-target-incremental.test-support.ts";
 import { joinedPhysicalChunkName } from "../packages/game-text/src/joined-column-chunks.ts";
 import { withJoinCache, joinStoreOptions } from "./columnar-join.test-support.ts";
 import { target } from "../packages/game-text/src/localization.test-support.ts";

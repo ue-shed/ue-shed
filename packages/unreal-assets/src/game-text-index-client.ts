@@ -67,7 +67,10 @@ export const nativeGameTextIndexClientLayer = (configuration: AssetReaderConfigu
 					const evidence = yield* mutex.withPermits(1)(
 						invokeProtocolSessionSingleWithEvidence({
 							session,
-							configuration,
+							configuration: {
+								...configuration,
+								timeoutMs: configuration.catalogTimeoutMs
+							},
 							operation: "game_text_index",
 							path:
 								request.action === "capabilities"

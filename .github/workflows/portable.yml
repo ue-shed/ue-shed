@@ -231,6 +231,7 @@ jobs:
                       packages/game-text/src/fixture.integration.test.ts \
                       packages/game-text/src/native-index-builder.integration.test.ts \
                       packages/game-text/src/native-index-builder-regressions.integration.test.ts \
+                      packages/game-text/src/native-package-delta.integration.test.ts \
                       scripts/native-game-text-join.test.ts \
                       packages/enhanced-input/src/dogfood.integration.test.ts \
                       2>&1 | tee -a evidence/uasset-io-check.log

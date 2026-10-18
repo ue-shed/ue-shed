@@ -67,7 +67,7 @@ pub(crate) fn mappings(
             let mut ids = Vec::with_capacity(values.len());
             let domain = crate::dictionary::storage_domain(name, &entry.domain);
             for values in values.chunks(8192) {
-                ids.extend(crate::bounded_intern::intern(store, &domain, values)?);
+                ids.extend(store.intern_bytes(&domain, values)?);
             }
             ids
         };

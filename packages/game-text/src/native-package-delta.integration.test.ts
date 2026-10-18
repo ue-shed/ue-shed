@@ -17,6 +17,8 @@ import { columnarTextCorpusQuery } from "./columnar-query.test-support.js";
 import { openJoinedTarget } from "./joined-target-reader.js";
 import { target } from "./localization.test-support.js";
 import { TextCorpusSearchRequest } from "./schema.js";
+import { encodeStringBlock } from "./snapshot-format.js";
+import { snapshotColumnsSource } from "./snapshot-file.js";
 
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
 const sourceTarget = { ...target, cultures: [] };
@@ -61,6 +63,204 @@ const record = (
 };
 
 describe.skipIf(!executable)("native package record deltas", () => {
+	it("keeps dictionary IDs coherent in mixed leases and compacts repeated package and localization edits", async () => {
+		if (!executable) throw new Error("Native reader required");
+		const root = await mkdtemp(join(tmpdir(), "ue-shed-delta-capacity-"));
+		const configuration = {
+			cacheRoot: root,
+			projectKey: "capacity",
+			targetKey: "source",
+			projectView: { kind: "source" as const }
+		};
+		const path = "Content/Text/Capacity.uasset";
+		const local = (values: string[], localization = false) =>
+			snapshotColumnsSource([
+				{
+					name: "source.b0",
+					kind: "strings",
+					domain: "source",
+					stringCount: values.length,
+					values: encodeStringBlock(values)
+				},
+				{ name: "source.starts", kind: "u32", values: Uint32Array.of(0) },
+				{
+					name: "entry.source",
+					kind: "stringIds",
+					domain: "source",
+					stringCount: values.length,
+					values: Uint32Array.from(values, (_, i) => i)
+				},
+				...(localization
+					? [
+							{
+								name: "file.meta",
+								kind: "bytes" as const,
+								values: new TextEncoder().encode("{}")
+							}
+						]
+					: [])
+			]);
+		try {
+			await Effect.runPromise(
+				Effect.scoped(
+					Effect.gen(function* () {
+						const builder = yield* GameTextIndexBuilder;
+						const generations = new Set<string>();
+						for (let round = 0; round < 140; round++) {
+							yield* builder.withSession(
+								{ configuration },
+								Effect.scoped(
+									Effect.gen(function* () {
+										const store = yield* SharedIndex;
+										const writer = yield* store.writer();
+										if (round === 1)
+											yield* writer.publish(
+												"large",
+												"large",
+												local(
+													Array.from(
+														{ length: 8200 },
+														(_, i) => `large-${i}`
+													)
+												)
+											);
+										yield* builder.refreshPackageTextLayer({
+											inventory: [
+												{
+													path,
+													signature: `edit-${round}`,
+													headerData: header
+												}
+											],
+											read: () =>
+												Stream.succeed(record(path, `source-${round}`, "K"))
+										});
+										yield* writer.publish(
+											"probe.po",
+											`po-${round}`,
+											local(
+												["unchanged localization", `translation-${round}`],
+												true
+											)
+										);
+										const ids = yield* writer.intern("source", [
+											`after-${round}`
+										]);
+										yield* writer.publishIds(
+											"after",
+											`after-${round}`,
+											{
+												columns: [
+													{
+														name: "entry.source",
+														kind: "stringIds",
+														domain: "source",
+														load: async () => ids
+													}
+												]
+											},
+											writer.manifest().generation
+										);
+										yield* builder.refreshJoinedTarget({
+											projectRoot: root,
+											target: sourceTarget
+										});
+										const current = yield* store.open();
+										generations.add(current.manifest.generation);
+										expect(
+											current.manifest.segments.length
+										).toBeLessThanOrEqual(256);
+										const packages = yield* decodePackageTextColumns(
+											yield* current.layer(
+												`package-text.${packageTextShard(path)}`
+											)
+										);
+										expect(packages[0]!.evidence).toMatchObject({
+											occurrences: [{ source: `source-${round}` }]
+										});
+										for (const [name, expected] of [
+											[
+												"probe.po",
+												["unchanged localization", `translation-${round}`]
+											],
+											["after", [`after-${round}`]]
+										] as const) {
+											const layer = yield* current.layer(name);
+											const values = yield* layer.section("entry.source");
+											if (!(values instanceof Uint32Array))
+												throw new Error("Expected IDs");
+											expect(yield* current.strings([...values])).toEqual(
+												expected
+											);
+										}
+										let end = 0;
+										for (const segment of current.manifest.segments) {
+											expect(segment.start).toBe(end);
+											end += segment.count;
+										}
+									})
+								)
+							);
+						}
+						expect(generations.size).toBeGreaterThan(1);
+						const localizationGenerations = new Set<string>();
+						for (let round = 0; round < 270; round++) {
+							yield* builder.withSession(
+								{ configuration },
+								Effect.scoped(
+									Effect.gen(function* () {
+										const store = yield* SharedIndex;
+										const writer = yield* store.writer();
+										yield* writer.publish(
+											"probe.po",
+											`only-po-${round}`,
+											local(
+												[
+													"unchanged localization",
+													`only-translation-${round}`
+												],
+												true
+											)
+										);
+										localizationGenerations.add(writer.manifest().generation);
+										const reader = yield* store.open();
+										const layer = yield* reader.layer("probe.po");
+										const ids = yield* layer.section("entry.source");
+										if (!(ids instanceof Uint32Array))
+											throw new Error("Expected IDs");
+										expect(yield* reader.strings([...ids])).toEqual([
+											"unchanged localization",
+											`only-translation-${round}`
+										]);
+									})
+								)
+							);
+						}
+						expect(localizationGenerations.size).toBeGreaterThan(1);
+						// A new lease must retain all active layers rather than quarantine a broken dictionary.
+						yield* builder.withSession(
+							{ configuration },
+							Effect.gen(function* () {
+								const manifest = (yield* (yield* SharedIndex).writer()).manifest();
+								expect(manifest.active.large).toBe("large");
+								expect(manifest.active.after).toBe("after-139");
+							})
+						);
+					})
+				).pipe(
+					Effect.provide(
+						nativeIndexBuilderLayer({
+							executable,
+							timeoutMs: 30000,
+							catalogTimeoutMs: 120000
+						})
+					)
+				)
+			);
+		} finally {
+			await rm(root, { recursive: true, force: true });
+		}
+	}, 120000);
 	it("matches complete records and summaries across edits, copies, eligibility, deletion and undo", async () => {
 		if (!executable) throw new Error("Native reader required");
 		const root = await mkdtemp(join(tmpdir(), "ue-shed-package-delta-"));

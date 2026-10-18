@@ -40,9 +40,12 @@ export const refreshCliGameTextIndex = Effect.fn("Cli.game_text.refresh")(
 		if (Option.isSome(steps)) return yield* compose(steps.value);
 		const provided = yield* Effect.serviceOption(GameTextIndexRefresh);
 		if (Option.isSome(provided)) return yield* provided.value.refresh(request);
-		return yield* Effect.flatMap(GameTextIndexSteps, compose).pipe(
-			Effect.provide(cliGameTextIndexLayer(reader))
+		// The shared-reader map must remain alive while the command uses the returned model.
+		const services = yield* Layer.buildWithScope(
+			cliGameTextIndexLayer(reader),
+			yield* Effect.scope
 		);
+		return yield* Effect.flatMap(GameTextIndexSteps, compose).pipe(Effect.provide(services));
 	},
 	(effect) =>
 		effect.pipe(

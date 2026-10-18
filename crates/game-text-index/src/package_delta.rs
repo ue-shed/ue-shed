@@ -103,9 +103,10 @@ impl Records {
     }
 }
 
-fn authored(store: &mut Store, file: &std::path::Path) -> Result<Records> {
+fn authored(store: &mut Store, file: &std::path::Path, bounded: bool) -> Result<Records> {
     let mut reader = Reader::open(file)?;
     let mut maps = BTreeMap::<String, Vec<u32>>::new();
+    let mut bulk = BTreeMap::<String, Vec<Vec<u8>>>::new();
     for index in 0..reader.entries.len() {
         let entry = reader.entries[index].clone();
         if entry.kind != 4 {
@@ -113,9 +114,16 @@ fn authored(store: &mut Store, file: &std::path::Path) -> Result<Records> {
         }
         let values = crate::snapshot::strings_bytes(&reader.load(index)?)?;
         let ids = maps.entry(entry.domain.clone()).or_default();
-        for values in values.chunks(8192) {
-            ids.extend(crate::bounded_intern::intern(store, &entry.domain, values)?);
+        if bounded {
+            for values in values.chunks(8192) {
+                ids.extend(store.intern_bytes(&entry.domain, values)?);
+            }
+        } else {
+            bulk.entry(entry.domain).or_default().extend(values);
         }
+    }
+    for (domain, values) in bulk {
+        maps.insert(domain.clone(), store.intern_bytes(&domain, &values)?);
     }
     let mut columns = BTreeMap::new();
     for index in 0..reader.entries.len() {
@@ -152,6 +160,13 @@ pub(crate) fn publish(
             ),
         )?;
     }
+    // Compaction remaps every global ID. Complete it before loading any old record columns.
+    let files = inputs
+        .iter()
+        .filter(|input| store.root["layers"].get(&input.key).is_none())
+        .map(|input| input.file.as_path())
+        .collect::<Vec<_>>();
+    let bounded = store.reserve_local_segments(&files, None)?;
     let mut records = Vec::new();
     for input in inputs {
         if let Some(record) = store.root["layers"].get(&input.key).cloned() {
@@ -199,7 +214,7 @@ pub(crate) fn publish(
             columns.insert(entry.name, (domain, values));
         }
         let old = Records::new(columns)?;
-        let new = authored(store, &input.file)?;
+        let new = authored(store, &input.file, bounded)?;
         require(
             old.columns.keys().eq(new.columns.keys())
                 && old

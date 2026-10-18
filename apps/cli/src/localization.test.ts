@@ -66,8 +66,10 @@ it.effect("loc status provides safe recovery for missing manifests and reader fa
 			yield* Ref.get(output)
 		);
 		expect(failed.error.code).toBe("reader_failure");
-		expect(failed.error.message).toBe("The native Game Text index executable is unavailable.");
+		expect(failed.error.message).toBe("The saved-asset reader executable is unavailable.");
 		expect(failed.error.recovery).toContain("@ue-shed/uasset");
+		expect(failed.error.message).not.toContain("missing-private-reader");
+		expect(failed.error.recovery).not.toContain("missing-private-reader");
 		expect(yield* Ref.get(exitCode)).toBe(2);
 	})
 );

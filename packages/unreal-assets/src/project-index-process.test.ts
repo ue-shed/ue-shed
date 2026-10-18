@@ -19,6 +19,36 @@ import { projectIndexProcessLayerWithConfig } from "./project-index-process.js";
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
 const fixtureRoot = fileURLToPath(new URL("../../../fixtures/unreal-project", import.meta.url));
 
+effectIt.effect("missing reader configuration is unavailable, not an incompatible worker", () =>
+	Effect.gen(function* () {
+		const cacheRoot = yield* Effect.acquireRelease(
+			Effect.promise(() => mkdtemp(join(tmpdir(), "ue-shed-missing-index-reader-"))),
+			(directory) => Effect.promise(() => rm(directory, { recursive: true, force: true }))
+		);
+		const layer = projectIndexProcessLayerWithConfig({
+			cacheRoot,
+			executable: join(cacheRoot, "missing-private-reader"),
+			timeoutMs: 10_000
+		});
+		yield* Effect.gen(function* () {
+			for (const operation of [
+				getProjectIndexStatus({ projectRoot: fixtureRoot }),
+				Stream.runDrain(refreshProjectIndex({ projectRoot: fixtureRoot }))
+			]) {
+				const error = yield* operation.pipe(Effect.flip);
+				expect(error).toMatchObject({
+					_tag: "ProjectIndexUnavailable",
+					nextStep: "fix_input",
+					retrySafe: false,
+					cause: { protocolCode: "executable_missing", cause: { code: "ENOENT" } }
+				});
+				expect(error.message).not.toContain("missing-private-reader");
+				expect(error.recovery).toContain("@ue-shed/uasset");
+			}
+		}).pipe(Effect.provide(layer));
+	}).pipe(Effect.scoped)
+);
+
 describe.skipIf(!executable)("Project Index process adapter", () => {
 	effectIt.effect("refreshes and queries the fixture without inventory frames", () =>
 		Effect.gen(function* () {

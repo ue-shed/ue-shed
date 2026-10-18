@@ -219,6 +219,16 @@ const makeRequest = (
 
 const mapStreamFailure = (cause: unknown, sawAccepted: boolean): ProjectIndexError => {
 	if (cause instanceof ProtocolStreamFailure) {
+		if (cause.protocolCode === "executable_missing") {
+			return new ProjectIndexUnavailable({
+				cause,
+				message: "The saved-asset reader executable is unavailable.",
+				recovery:
+					"Install the matching @ue-shed/uasset runtime provider or configure an existing compatible reader executable.",
+				retrySafe: false,
+				nextStep: "fix_input"
+			});
+		}
 		return mapProjectIndexProtocolFailure({
 			sawAccepted,
 			stderr: cause.stderr ?? cause.message,

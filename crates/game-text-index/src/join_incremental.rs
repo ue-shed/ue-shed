@@ -297,9 +297,8 @@ pub(crate) fn refresh(
             ))
         })
         .collect::<Result<Vec<_>>>()?;
-    if changed.is_empty() {
-        return fallback("no-changed-input");
-    }
+    // A timestamp-only provenance update changes the join key without changing an input layer.
+    // Preserve the existing columns and patches through the same publication path with zero edits.
     let cultures = input.target["cultures"]
         .as_array()
         .ok_or("cultures")?

@@ -1,5 +1,5 @@
 import { Deferred, Effect, Fiber, Result, Schema } from "effect";
-import { writeFile } from "node:fs/promises";
+import { stat, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { LocalizationTarget } from "@ue-shed/localization";
 import { localizationFocusPage, LocalizationFocusRequest } from "./localization-view.js";
@@ -265,6 +265,22 @@ describe.skipIf(!executable)("production native Game Text queries", () => {
 						const request = { query: "", capability: "all" as const, pageSize: 50 };
 						const original = yield* first.query.search(request);
 						expect(yield* first.corpus).toEqual(fixture.raw());
+						yield* Effect.promise(() =>
+							advanceModificationTime(join(fixture.projectRoot, "de.po"))
+						);
+						const provenanceOnly = yield* index.refresh(fixture.request);
+						expect(provenanceOnly.join).toMatchObject({
+							rebuilt: true,
+							strategy: "incremental",
+							affectedLines: 0
+						});
+						expect(
+							provenanceOnly.joined.meta.input.fileProvenances?.["de.po"]
+								?.modifiedTime
+						).not.toBe(
+							first.joined.meta.input.fileProvenances?.["de.po"]?.modifiedTime
+						);
+						expect(yield* provenanceOnly.query.search(request)).toEqual(original);
 						for (const [a, b] of [
 							[changed, source],
 							[third, changed],
@@ -331,6 +347,24 @@ describe.skipIf(!executable)("production native Game Text queries", () => {
 							}
 							// Native handles retain unopened frames even after later publications.
 							expect(yield* first.query.search(request)).toEqual(original);
+							if (a === source && b === changed) {
+								yield* Effect.promise(() =>
+									advanceModificationTime(join(fixture.projectRoot, "de.po"))
+								);
+								const reobserved = yield* index.refresh(fixture.request);
+								expect(reobserved.join).toMatchObject({
+									rebuilt: true,
+									strategy: "incremental",
+									affectedLines: 0
+								});
+								for (const selected of [
+									request,
+									{ ...request, localization: { target: fixture.target.name } }
+								])
+									expect(
+										normalizePage(yield* reobserved.query.search(selected))
+									).toEqual(normalizePage(oracle.search(selected)));
+							}
 						}
 						const beforeRebuild = yield* (yield* index.refresh(
 							fixture.request
@@ -359,6 +393,11 @@ describe.skipIf(!executable)("production native Game Text queries", () => {
 		);
 	}, 120_000);
 });
+
+async function advanceModificationTime(path: string) {
+	const previous = await stat(path);
+	await utimes(path, previous.atime, new Date(previous.mtimeMs + 5000));
+}
 
 /** Facts, reasons, and review flags are sets in the wire contract. */
 function normalizeMark<A extends LocalizationCultureMark>(mark: A): A {

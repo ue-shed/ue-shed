@@ -21,6 +21,7 @@ export default defineProject({
 			"scripts/columnar-join.test.ts",
 			"scripts/columnar-join-fuzz.test.ts",
 			"scripts/native-game-text-join.test.ts",
+			"scripts/native-game-text-fixtures.integration.test.ts",
 			"scripts/columnar-join-regressions.test.ts",
 			"scripts/joined-column-chunks.test.ts"
 		],

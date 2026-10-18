@@ -803,6 +803,10 @@ impl EngineQuery {
         } else {
             Some(self.source_matches(&request.query, cancelled)?)
         };
+        let search_translations = request.localization.as_ref().is_some_and(|selection| {
+            selection.search_translations == Some(true)
+                && (selection.culture.is_some() || selection.cultures.is_some())
+        });
         let picked = if request.localization.is_some() {
             request
                 .lines
@@ -830,25 +834,33 @@ impl EngineQuery {
             }
             let row = *row as usize;
             let Some(selection) = &request.localization else {
+                let sources = projection.raw.sources(row);
+                if sources.len() == 1
+                    && source_matches
+                        .as_ref()
+                        .is_some_and(|matches| matches.get(sources[0] as usize) != Some(&1))
+                {
+                    continue;
+                }
                 if !projection.eligible(&places, Kind::Raw, row, request, &prepared, true)? {
                     continue;
                 }
-                if let Some(matches) = &source_matches {
-                    let sources = projection.raw.sources(row);
-                    if sources.len() == 1 {
-                        if matches.get(sources[0] as usize) != Some(&1) {
-                            continue;
-                        }
-                    } else {
-                        let source = self.reader.strings(sources)?.join(" ").to_lowercase();
-                        if !text_matches(&source, &wanted) {
-                            continue;
-                        }
+                if source_matches.is_some() && sources.len() != 1 {
+                    let source = self.reader.strings(sources)?.join(" ").to_lowercase();
+                    if !text_matches(&source, &wanted) {
+                        continue;
                     }
                 }
                 result.push(row as u32);
                 continue;
             };
+            if !search_translations
+                && source_matches
+                    .as_ref()
+                    .is_some_and(|matches| matches.get(projection.source[row] as usize) != Some(&1))
+            {
+                continue;
+            }
             if projection.source_visible[row] == 0
                 || picked.as_ref().is_some_and(|rows| !rows.contains(&row))
                 || !projection.filter(&places, Kind::Line, row, &scope, &prepared)?
@@ -920,26 +932,18 @@ impl EngineQuery {
             {
                 continue;
             }
-            if let Some(matches) = &source_matches {
-                if selection.search_translations != Some(true)
-                    || (selection.culture.is_none() && selection.cultures.is_none())
-                {
-                    if matches.get(projection.source[row] as usize) != Some(&1) {
-                        continue;
+            if source_matches.is_some() && search_translations {
+                let mut values = vec![self.reader.string(projection.source[row])?];
+                for ci in &scope {
+                    // Search includes archive translations and PO text that differs from it.
+                    values.push(self.translation_for_search(*ci, row, false)?);
+                    if projection.cultures[*ci].facts[row] & 8 != 0 {
+                        values.push(self.translation_for_search(*ci, row, true)?);
                     }
-                } else {
-                    let mut values = vec![self.reader.string(projection.source[row])?];
-                    for ci in &scope {
-                        // Search includes archive translations and PO text that differs from it.
-                        values.push(self.translation_for_search(*ci, row, false)?);
-                        if projection.cultures[*ci].facts[row] & 8 != 0 {
-                            values.push(self.translation_for_search(*ci, row, true)?);
-                        }
-                    }
-                    let text = values.join(" ").to_lowercase();
-                    if !text_matches(&text, &wanted) {
-                        continue;
-                    }
+                }
+                let text = values.join(" ").to_lowercase();
+                if !text_matches(&text, &wanted) {
+                    continue;
                 }
             }
             result.push(row as u32);

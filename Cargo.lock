@@ -193,6 +193,7 @@ dependencies = [
  "crc32fast",
  "file-id",
  "icu_collator",
+ "memchr",
  "rayon",
  "regex",
  "serde",

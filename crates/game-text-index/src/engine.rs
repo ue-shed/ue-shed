@@ -257,7 +257,7 @@ impl EngineSession {
                         "Close a pinned reader before opening another native Game Text snapshot.",
                     ),
                 )?;
-                let query =
+                let mut query =
                     EngineQuery::open_with_policy(configuration, Some(expected_joined), policy)?;
                 require(
                     query.reader.generation == *expected_generation,
@@ -266,6 +266,14 @@ impl EngineSession {
                         "Game Text dictionary changed before the reader opened.",
                     ),
                 )?;
+                // Load the persisted text-search arena before exposing a ready reader. This
+                // is measured as preparation, so the first typed term pays only matching work.
+                let source_started = Instant::now();
+                query.prepare_source_search(cancelled)?;
+                outcome.stage_seconds.insert(
+                    "source_search_prepare".into(),
+                    source_started.elapsed().as_secs_f64(),
+                );
                 let reader = token();
                 outcome.action = "open".into();
                 outcome.reader = Some(reader.clone());
@@ -450,7 +458,10 @@ mod tests {
         store.publish_global(
             "joined",
             "joined-native-v2:fixture",
-            &[],
+            &[
+                ("line.source".into(), String::new(), vec![]),
+                ("query.raw.sources".into(), String::new(), vec![]),
+            ],
             &serde_json::to_vec(&metadata)?,
             &BTreeMap::new(),
             &[],

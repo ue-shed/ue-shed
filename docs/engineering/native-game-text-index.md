@@ -33,6 +33,17 @@ in Rust. Ordinary text focus carries a compact localization preview. `localizati
 `localizationLines` explicitly export complete provenance through scoped files; interactive
 handlers do not hydrate a full line and slice it in JavaScript.
 
+Opening a native query reader loads its persisted folded source arena and resolves sources added
+by an incremental overlay once. This work is reported as `source_search_prepare` in native stage
+timings and belongs to opening, before the host presents a ready model. It does not discover
+packages or publish an index. Distinct search terms scan unique source entries with prepared
+substring matchers, then use numeric source matches to reject rows before expensive eligibility
+checks. Source-only rejection is disabled when the request also searches translations. Lone UTF-16
+units retain code-unit substring semantics, including matches inside a supplementary scalar.
+Localization totals visit set reason bits and scan one culture's columns at a time. Cache misses
+still scan source bytes and matching rows; these changes do not introduce a persisted substring
+index or turn first-use search into an indexed lookup.
+
 Each immutable native reader caches page-independent search metadata: counts, problems, groups,
 facets, file scope and localization totals. Counts are also shared across requests that differ
 only in grouping or requested facets. This reader-owned cache retains at most 64 entries and

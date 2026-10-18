@@ -1,0 +1,58 @@
+{
+	"method": "One diagnostic process per binary; one native reader; same pinned view and request sequence, fixed affinity; samples after summary and queries. These are not the three-run host timing samples.",
+	"observations": {
+		"baseline": [
+			{
+				"stage": "summary",
+				"nativeRssMiB": 352.32421875,
+				"nativePrivateMiB": 350.24609375,
+				"node": {
+					"rss": 119529472,
+					"heapTotal": 67514368,
+					"heapUsed": 46869064,
+					"external": 7038756,
+					"arrayBuffers": 2907253
+				}
+			},
+			{
+				"stage": "after queries",
+				"nativeRssMiB": 674.3828125,
+				"nativePrivateMiB": 672.703125,
+				"node": {
+					"rss": 133259264,
+					"heapTotal": 80322560,
+					"heapUsed": 66664256,
+					"external": 8120179,
+					"arrayBuffers": 3988636
+				}
+			}
+		],
+		"candidate": [
+			{
+				"stage": "summary",
+				"nativeRssMiB": 430.3828125,
+				"nativePrivateMiB": 428.0625,
+				"node": {
+					"rss": 123596800,
+					"heapTotal": 71340032,
+					"heapUsed": 41896464,
+					"external": 7038790,
+					"arrayBuffers": 2907287
+				}
+			},
+			{
+				"stage": "after queries",
+				"nativeRssMiB": 655.76171875,
+				"nativePrivateMiB": 653.8046875,
+				"node": {
+					"rss": 130490368,
+					"heapTotal": 77332480,
+					"heapUsed": 61731808,
+					"external": 8120213,
+					"arrayBuffers": 3988670
+				}
+			}
+		]
+	},
+	"interpretation": "The candidate eagerly loads the same persisted arena before summary/ready. After the same query sequence its single native reader uses about 18.6 MiB less RSS than #133 in this diagnostic. Whole-host sampled peaks nevertheless rise, including unsearched replacement/summary readers and reader overlap. Do not describe the whole-run change as a memory improvement."
+}

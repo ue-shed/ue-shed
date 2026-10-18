@@ -274,6 +274,14 @@ impl EngineSession {
                     "source_search_prepare".into(),
                     source_started.elapsed().as_secs_f64(),
                 );
+                // Summary counters no longer load the numeric query projection as a side effect.
+                // Keep that required preparation in opening instead of deferring it to page one.
+                let projection_started = Instant::now();
+                crate::engine_match::Projection::open(&mut query, cancelled)?;
+                outcome.stage_seconds.insert(
+                    "query_projection_prepare".into(),
+                    projection_started.elapsed().as_secs_f64(),
+                );
                 let reader = token();
                 outcome.action = "open".into();
                 outcome.reader = Some(reader.clone());
@@ -455,13 +463,60 @@ mod tests {
             .ok_or("generation")?
             .to_owned();
         let metadata = json!({"version":3,"generation":generation,"count":0,"dependencies":{},"input":{"target":{"name":"Game","cultures":[]}},"packageNames":[],"packageStarts":[0]});
+        let mut columns = Vec::new();
+        for kind in ["raw", "slice"] {
+            for field in [
+                "visible",
+                "signals",
+                "origins",
+                "editing",
+                "notes",
+                "audience",
+                "identity",
+                "namespace",
+                "member_start",
+                "member_end",
+                "members",
+                "source_start",
+                "source_end",
+                "sources",
+                "file_start",
+                "file_end",
+                "files",
+                "order",
+                "representative",
+                "raw",
+                "line",
+            ] {
+                columns.push((format!("query.{kind}.{field}"), String::new(), vec![]));
+            }
+        }
+        for field in [
+            "source",
+            "order",
+            "source_visible",
+            "notes",
+            "origins",
+            "editing",
+            "audience",
+            "key_change",
+            "key",
+            "namespace",
+            "file_start",
+            "file_end",
+            "manifest_start",
+            "manifest_end",
+        ] {
+            columns.push((format!("line.{field}"), String::new(), vec![]));
+        }
+        columns.push(("query.line.starts".into(), String::new(), vec![0]));
+        columns.push(("query.line.order".into(), String::new(), vec![]));
+        columns.push(("facet.files".into(), String::new(), vec![]));
+        columns.push(("manifest.rows".into(), String::new(), vec![]));
         store.publish_global(
             "joined",
             "joined-native-v2:fixture",
-            &[
-                ("line.source".into(), String::new(), vec![]),
-                ("query.raw.sources".into(), String::new(), vec![]),
-            ],
+            &columns,
             &serde_json::to_vec(&metadata)?,
             &BTreeMap::new(),
             &[],

@@ -621,6 +621,15 @@ fn validate_request(request: &Request) -> Result<(), ProtocolError> {
                 .map_err(|error| ProtocolError(error.to_string()))
         }
         Operation::GameTextIndex { request: build } => {
+            if matches!(
+                build,
+                game_text_index::builder::BuildRequest::PublishPackages { .. }
+            ) && request.contract.version.minor < 16
+            {
+                return Err(ProtocolError(
+                    "publish_packages requires uasset-io v1.16".into(),
+                ));
+            }
             if request.contract.version.minor < 13 {
                 return Err(ProtocolError(
                     "game_text_index requires uasset-io v1.13".into(),

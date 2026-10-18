@@ -1,6 +1,6 @@
 import { referenceNativeQuery } from "../../../../../packages/game-text/src/native-query.test-support.js";
 import { textCorpusQuery } from "../../../../../packages/game-text/src/query.test-support.js";
-import { Effect, Layer, Option, type Scope } from "effect";
+import { Effect, Layer, Option, Result, type Scope } from "effect";
 import {
 	GameTextIndexRefresh,
 	GameTextIndexSteps,
@@ -272,7 +272,21 @@ const oracleIndexStepsLayer = Layer.effect(
 		const legacy = yield* GameTextIndexRefresh;
 		const evidence = yield* LocalizationEvidence;
 		const requests = new WeakMap<GameTextTargetIndex, GameTextIndexRefreshRequest>();
-		return GameTextIndexSteps.of({
+		const steps: Effect.Success<typeof GameTextIndexSteps> = GameTextIndexSteps.of({
+			prepareTarget: (request, options) =>
+				Effect.gen(function* () {
+					const project = yield* steps.openProject(request);
+					const imported = yield* steps
+						.importTarget(project, request)
+						.pipe(Effect.result);
+					if (Result.isFailure(imported) && !options?.fallbackToSource)
+						return yield* Effect.fail(imported.failure);
+					const input = Result.isFailure(imported)
+						? yield* steps.importTarget(project)
+						: imported.success;
+					const refreshed = yield* steps.refreshProject(request);
+					return yield* steps.buildTarget(refreshed, input, request);
+				}),
 			openProject: (request) => Effect.succeed(oracleProjectIndex(request.projectRoot)),
 			refreshProject: (request) =>
 				legacy.invalidate(request).pipe(Effect.as(oracleProjectIndex(request.projectRoot))),
@@ -370,5 +384,6 @@ const oracleIndexStepsLayer = Layer.effect(
 			},
 			invalidate: legacy.invalidate
 		});
+		return steps;
 	})
 );

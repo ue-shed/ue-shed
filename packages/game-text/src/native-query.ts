@@ -51,6 +51,8 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 	readonly configuration: GameTextIndexConfiguration;
 	readonly generation: string;
 	readonly joinedKey: string;
+	readonly audienceRules?: readonly string[];
+	readonly onFailure?: Effect.Effect<void>;
 }): Effect.fn.Return<
 	NativeIndexReader,
 	GameTextIndexError,
@@ -87,7 +89,10 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 			})
 		);
 	const execute = Effect.fn("GameTextIndex.nativeCall")((request: GameTextEngineRequest) =>
-		engine.execute(request).pipe(Effect.mapError((cause) => failed(request.action, cause)))
+		engine.execute(request).pipe(
+			Effect.mapError((cause) => failed(request.action, cause)),
+			Effect.tapError(() => input.onFailure ?? Effect.void)
+		)
 	);
 	const opened = yield* Effect.acquireRelease(
 		execute({
@@ -95,7 +100,9 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 			configuration: input.configuration,
 			expectedGeneration: input.generation,
 			expectedJoined: input.joinedKey,
-			policy: { audienceRules: TEXT_AUDIENCE_POLICY.map((rule) => rule.id) }
+			policy: {
+				audienceRules: input.audienceRules ?? TEXT_AUDIENCE_POLICY.map((rule) => rule.id)
+			}
 		}),
 		(opened) =>
 			opened.reader === null

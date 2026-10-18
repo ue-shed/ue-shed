@@ -8,7 +8,7 @@ localization input producers, configurable quality policy, typed process calls a
 CLI, Workbench and library hosts compose `GameTextIndexBuilderLive` from
 `@ue-shed/game-text/index` with their existing `AssetReader`, source and localization evidence
 layers. `nativeIndexBuilderLayer(configuration)` supplies the same builder and query capability
-with explicit reader configuration. The reader needs uasset-io protocol 1.15, `game_text_index`
+with explicit reader configuration. Package delta publication needs uasset-io protocol 1.16; the reader needs 1.15, `game_text_index`
 and `game_text_engine_v1`. Native failures remain typed failures with recovery guidance.
 
 ## Reads and writes
@@ -19,8 +19,8 @@ join or construct a JavaScript query model. Source and localization requests use
 reader. The TypeScript in-memory and columnar implementations are independent test oracles,
 excluded from production package output and public entry points.
 
-All `model.query` operations return Effects. `model.summary` is cached metadata computed by Rust
-while opening the model. Interactive callers use bounded search and focus; `model.corpus` and
+All `model.query` operations return Effects. `model.summary` reads checked counters persisted by Rust
+with the joined revision. Interactive callers use bounded search and focus; `model.corpus` and
 `model.localizationJoin` are explicit asynchronous bulk reads. The full corpus retains blank
 source units as provenance; filtered exports retain their visibility rules. CSV formatting
 consumes native review signals rather than constructing another query engine.
@@ -35,7 +35,8 @@ handlers do not hydrate a full line and slice it in JavaScript.
 
 Opening a native query reader loads its persisted folded source arena and resolves sources added
 by an incremental overlay once. This work is reported as `source_search_prepare` in native stage
-timings and belongs to opening, before the host presents a ready model. It does not discover
+timings and belongs to opening, before the host presents a ready model. Numeric query columns are
+also prepared during opening, reported as `query_projection_prepare`. It does not discover
 packages or publish an index. Distinct search terms scan unique source entries with prepared
 substring matchers, then use numeric source matches to reject rows before expensive eligibility
 checks. Source-only rejection is disabled when the request also searches translations. Lone UTF-16
@@ -60,18 +61,25 @@ Each projection's rank vector is prepared lazily on its first cursor request and
 bytes per row. A first predicate, group or facet can still scan its input; subsequent pages do not
 reconstruct the entire result list. Only the requested page is hydrated into authored values.
 
-Each opened model owns its native query process in the caller's scope. Native handles pin files
+Models of the same validated configuration, dictionary generation, joined revision and audience
+policy share a native reader while their scopes are live. The final pin closes the process;
+unused readers are not retained. Native handles pin files
 and dictionary segments, including sections not yet read, across later publications and
 compaction. A query reader holds no writer lease. Canceling a caller skips its queued read or
 stops waiting for an admitted read; that read and its temporary files remain owned by the model
 until completion. Closing the model interrupts its active read. Losing a native process produces
-a typed failure. Open a new model to recover; other models own separate processes.
+a typed failure and invalidates the shared acquisition entry. Open a new model to recover;
+already pinned models retain their original reader.
 Retained models require `borrow` around operations and `retain` when publishing a candidate.
 
 One write session owns one native process and writer lease. Existing TypeScript input producers
 send prepared layers through a leased native adapter. Rust publishes dictionaries, input layers,
 joins and compaction atomically. Changing the selected project remains exclusively the host's
 responsibility.
+
+`prepareTarget` coordinates localization import, package refresh and target publication under
+one writer session. Individual steps still acquire their own session when called separately.
+Source-only recovery releases the failed target session before acquiring its source session.
 
 ## Incremental publication
 
@@ -100,8 +108,12 @@ snapshots and do not depend on the mutable writer graph.
 
 Text-value updates use indexed membership and source dependencies. Reference and identity changes
 remain a separate structural path that rebuilds the projection and rewires the graph. The current
-package producer still decodes and rewrites the affected shard, and opening a changed model still
-computes its summary. Those remaining costs are not eliminated by indexing dependency discovery.
+package delta producer reads package identity columns and sends only changed authored records.
+Rust preserves unchanged global string IDs and splices numeric ranges into an immutable replacement
+for the affected shard. This still reads and writes that shard's numeric columns; it is not a paged
+column overlay. Localization publication reuses checked dictionary blocks and interns only changed
+blocks. Joined revisions persist summary counters: full joins calculate them once, while eligible
+incremental joins subtract and add the affected rows, including duplicate-source dependents.
 
 Short and long sources use the same incremental path when their structure and visibility remain
 stable. Patches are bounded to 8,192 rows and source values. Reading and patching numeric columns
@@ -111,7 +123,8 @@ self-referencing overlay.
 
 Storage remains snapshot format 4 with checked roots, sections, atomic publication and shared
 project inputs. Native joined keys use `joined-native-v2:`. Older derived views rebuild once to
-add the native source-search arena. Touched data is validated during reads; opening a writer
+add the native source-search arena. Revisions without persisted summary counters upgrade their
+metadata on preparation; an eligible update can retain the incremental join path. Touched data is validated during reads; opening a writer
 does not scrub every unused payload.
 
 ## Boundaries and measurement

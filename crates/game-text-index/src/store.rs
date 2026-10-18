@@ -732,7 +732,7 @@ impl Store {
             .map(|_| self.root["layers"][key].clone())
             .unwrap_or(record))
     }
-    fn obsolete_bytes(&mut self, old: &Value, next: &Value) -> Result<u64> {
+    pub(crate) fn obsolete_bytes(&mut self, old: &Value, next: &Value) -> Result<u64> {
         fn ids(directory: &Path, record: &Value) -> Result<BTreeSet<u32>> {
             let mut reader =
                 Reader::open(&directory.join(record["file"].as_str().ok_or("layer file")?))?;
@@ -853,11 +853,16 @@ impl Store {
             return Ok(record);
         }
         let mut reader = Reader::open(input)?;
+        let reused = if let Some(old) = &old {
+            crate::layer_reuse::mappings(self, &mut reader, name, old)?
+        } else {
+            None
+        };
         let mut local = BTreeMap::<String, Vec<Vec<u8>>>::new();
         let mut local_order = Vec::new();
         for i in 0..reader.entries.len() {
             let e = reader.entries[i].clone();
-            if e.kind == 4 {
+            if e.kind == 4 && reused.is_none() {
                 if !local.contains_key(&e.domain) {
                     local_order.push(e.domain.clone());
                 }
@@ -874,7 +879,7 @@ impl Store {
             .as_str()
             .and_then(|key| self.root["layers"].get(key))
             .cloned();
-        let mut mapping = BTreeMap::new();
+        let mut mapping = reused.unwrap_or_default();
         for domain in local_order {
             let values = local.remove(&domain).ok_or("local domain absent")?;
             mapping.insert(
@@ -940,6 +945,20 @@ impl Store {
         retained: &BTreeMap<String, String>,
         removed: &[String],
     ) -> Result<Value> {
+        let record = self.prepare_global(name, key, columns, metadata, retained, removed)?;
+        self.publish_root()?;
+        Ok(record)
+    }
+    /// Stage global-ID columns while a coordinated batch retains the writer lease.
+    pub(crate) fn prepare_global(
+        &mut self,
+        name: &str,
+        key: &str,
+        columns: &[(String, String, Vec<u32>)],
+        metadata: &[u8],
+        retained: &BTreeMap<String, String>,
+        removed: &[String],
+    ) -> Result<Value> {
         let maximum = self.root["segments"]
             .as_array()
             .ok_or("segments")?
@@ -963,7 +982,9 @@ impl Store {
             };
             order.push(writer.add(field, 2, "", &bytes, 1)?);
         }
-        order.push(writer.add("join.meta", 0, "", metadata, 1)?);
+        if !metadata.is_empty() {
+            order.push(writer.add("join.meta", 0, "", metadata, 1)?);
+        }
         let file = format!("layer-{}.snapshot", token());
         let mut record = json!({"file":file,"key":key,"storeGeneration":self.root["generation"],"segmentCount":self.root["segments"].as_array().ok_or("segments")?.len(),"bytes":0,"stringColumns":string_columns,"idEncoding":"delta32"});
         order.push(writer.add("shared.meta", 0, "", &serde_json::to_vec(&record)?, 1)?);
@@ -983,7 +1004,6 @@ impl Store {
         }
         self.root["layers"][key] = record.clone();
         self.root["active"][name] = json!(key);
-        self.publish_root()?;
         Ok(record)
     }
     /// The external merge builds a cold batch without per-file dictionary probes or segment growth.

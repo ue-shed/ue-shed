@@ -30,10 +30,13 @@ mod join_places;
 mod join_policy;
 mod join_query;
 mod json_value;
+mod layer_reuse;
+mod package_delta;
 mod package_evidence;
 mod query_cache;
 pub mod snapshot;
 pub mod store;
+mod summary_state;
 pub mod wtf8;
 
 pub type Result<T> = std::result::Result<T, Error>;

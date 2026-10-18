@@ -12,6 +12,11 @@ impl EngineQuery {
         if let Some(summary) = &self.summary_cache {
             return Ok(summary.clone());
         }
+        if let Some(state) = self.reader.meta.get("engineSummary") {
+            let summary = crate::summary_state::SummaryState::parse(state)?.response()?;
+            self.summary_cache = Some(summary.clone());
+            return Ok(summary);
+        }
         let mut discovered = 0usize;
         let mut inspected = 0usize;
         let mut partial = 0usize;

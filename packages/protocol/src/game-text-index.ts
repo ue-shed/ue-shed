@@ -20,7 +20,7 @@ const Configuration = { configuration: GameTextIndexConfiguration };
 const Name = Schema.NonEmptyString.check(Schema.isMaxLength(1024));
 const Names = Schema.Array(Name).check(Schema.isMaxLength(2560));
 /** One native index operation; begin/end own its session, and publish/join mutate cached state. */
-export const GameTextIndexBuildRequest = Schema.Union([
+export const GameTextIndexPreviousBuildRequest = Schema.Union([
 	Schema.Struct({ action: Schema.Literal("capabilities") }),
 	...(["begin", "end", "status"] as const).map((action) =>
 		Schema.Struct({ action: Schema.Literal(action), ...Configuration })
@@ -63,6 +63,31 @@ export const GameTextIndexBuildRequest = Schema.Union([
 		...Configuration,
 		force: Schema.optionalKey(Schema.Boolean)
 	})
+]);
+const PackageLayerName = Name.check(Schema.isPattern(/^package-text\./u));
+/** Added in uasset-io 1.16; input snapshots contain only changed authored records. */
+export const GameTextIndexPackageReplacement = Schema.Struct({
+	action: Schema.Literal("publish_packages"),
+	...Configuration,
+	inputs: Schema.Array(
+		Schema.Struct({
+			name: PackageLayerName,
+			key: Name,
+			previousKey: Name,
+			file: Text,
+			rows: Schema.Array(
+				Schema.Int.check(Schema.isGreaterThanOrEqualTo(-64000000)).check(
+					Schema.isLessThanOrEqualTo(63999999)
+				)
+			).check(Schema.isMaxLength(64000000))
+		})
+	).check(Schema.isMaxLength(256)),
+	removedNames: Schema.optionalKey(Schema.Array(PackageLayerName).check(Schema.isMaxLength(256)))
+});
+/** Validated builder commands; package replacements require protocol minor 16 or later. */
+export const GameTextIndexBuildRequest = Schema.Union([
+	...GameTextIndexPreviousBuildRequest.members,
+	GameTextIndexPackageReplacement
 ]).annotate({ identifier: "GameTextIndexBuildRequest" });
 export type GameTextIndexBuildRequest = typeof GameTextIndexBuildRequest.Type;
 
@@ -85,6 +110,7 @@ export const GameTextIndexBuildOutcome = Schema.Struct({
 		"end",
 		"status",
 		"publish",
+		"publish_packages",
 		"publish_ids",
 		"intern",
 		"strings",

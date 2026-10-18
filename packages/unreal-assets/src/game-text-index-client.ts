@@ -82,7 +82,7 @@ export const nativeGameTextIndexClientLayer = (configuration: AssetReaderConfigu
 									maximumOutputBytes: 64 * 1024 ** 2,
 									timeoutMs: configuration.catalogTimeoutMs
 								},
-								{ contractMinor: 13 }
+								{ contractMinor: request.action === "publish_packages" ? 16 : 13 }
 							),
 							expected: "game_text_index",
 							select: (result) =>

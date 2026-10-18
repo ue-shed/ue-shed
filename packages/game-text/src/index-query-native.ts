@@ -1,4 +1,6 @@
-import { Context, Effect, Layer, type Scope } from "effect";
+import { Context, Effect, Layer, RcMap, Schema, type Scope } from "effect";
+import { GameTextIndexConfiguration } from "@ue-shed/protocol";
+import { TEXT_AUDIENCE_POLICY } from "./text-audience.js";
 import {
 	nativeGameTextEngineClientLayer,
 	type AssetReaderConfiguration
@@ -26,15 +28,52 @@ export class GameTextIndexQuery extends Context.Service<
 
 /** Each snapshot owns its native process in the caller's scope, including cancellation. */
 export const nativeIndexQueryLayer = (configuration: AssetReaderConfiguration) =>
-	Layer.succeed(
+	Layer.effect(
 		GameTextIndexQuery,
-		GameTextIndexQuery.of({
-			open: Effect.fn("GameTextIndexQuery.open")(function* (input) {
-				const services = yield* Layer.build(nativeGameTextEngineClientLayer(configuration));
-				return yield* openNativeTextQuery({
-					...input,
-					configuration: nativeIndexConfiguration(input.configuration)
-				}).pipe(Effect.provide(services));
-			})
+		Effect.gen(function* () {
+			const Request = Schema.Struct({
+				configuration: GameTextIndexConfiguration,
+				generation: Schema.String,
+				joinedKey: Schema.String,
+				audienceRules: Schema.Array(Schema.String)
+			});
+			// Only live caller pins retain entries. No idle timeout retains unused snapshots.
+			const readers: RcMap.RcMap<
+				string,
+				Effect.Success<ReturnType<typeof openNativeTextQuery>>,
+				GameTextIndexError
+			> = yield* RcMap.make({
+				lookup: (key: string) =>
+					Effect.gen(function* () {
+						let invalidated = false;
+						const input = yield* Schema.decodeUnknownEffect(
+							Schema.fromJsonString(Request)
+						)(key).pipe(Effect.orDie);
+						const services = yield* Layer.build(
+							nativeGameTextEngineClientLayer(configuration)
+						);
+						return yield* openNativeTextQuery({
+							...input,
+							onFailure: Effect.suspend(() => {
+								if (invalidated) return Effect.void;
+								invalidated = true;
+								return RcMap.invalidate(readers, key);
+							})
+						}).pipe(Effect.provide(services));
+					})
+			});
+			return GameTextIndexQuery.of({
+				open: Effect.fn("GameTextIndexQuery.open")(function* (input) {
+					return yield* RcMap.get(
+						readers,
+						JSON.stringify({
+							configuration: nativeIndexConfiguration(input.configuration),
+							generation: input.generation,
+							joinedKey: input.joinedKey,
+							audienceRules: TEXT_AUDIENCE_POLICY.map((rule) => rule.id)
+						})
+					);
+				})
+			});
 		})
 	);

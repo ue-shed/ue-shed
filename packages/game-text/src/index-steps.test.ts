@@ -13,6 +13,49 @@ import { makeIndexRegressionFixture } from "./index-refresh-regressions.test-sup
 import { GameTextIndexProgressReporter, type GameTextIndexProgress } from "./index-progress.js";
 import { HostSliceScheduler } from "./host-slices.js";
 import { performance } from "node:perf_hooks";
+import { GameTextIndexBuilder } from "./index-builder.js";
+import { GameTextIndexQuery } from "./index-query-native.js";
+
+it.live(
+	"prepares all inputs under one lease and releases a failed import before source recovery",
+	() =>
+		Effect.gen(function* () {
+			const fixture = yield* makeIndexRegressionFixture();
+			const underlying = yield* GameTextIndexBuilder.pipe(
+				Effect.provide(typeScriptIndexBuilderLayer)
+			);
+			const queries = yield* GameTextIndexQuery.pipe(
+				Effect.provide(typeScriptIndexBuilderLayer)
+			);
+			const sessions: string[] = [];
+			const implementation = Layer.succeed(
+				GameTextIndexBuilder,
+				GameTextIndexBuilder.of({
+					...underlying,
+					withSession: (request, effect) => {
+						sessions.push(JSON.stringify(request.configuration.projectView));
+						return underlying.withSession(request, effect);
+					}
+				})
+			).pipe(Layer.merge(Layer.succeed(GameTextIndexQuery, queries)));
+			yield* Effect.gen(function* () {
+				const steps = yield* GameTextIndexSteps;
+				const prepared = yield* steps.prepareTarget(fixture.request);
+				expect(prepared.view).toEqual({
+					kind: "localization",
+					target: fixture.target.name
+				});
+				expect(sessions).toHaveLength(1);
+				sessions.length = 0;
+				const recovered = yield* steps.prepareTarget(
+					{ ...fixture.request, targetName: "Missing" },
+					{ fallbackToSource: true }
+				);
+				expect(recovered.view).toEqual({ kind: "source" });
+				expect(sessions).toHaveLength(2);
+			}).pipe(Effect.provide(fixture.layer(false, fixture.source, false, implementation)));
+		}).pipe(Effect.scoped)
+);
 
 it.live("invalid project input retains its cause and requires input correction", () =>
 	Effect.gen(function* () {

@@ -34,10 +34,7 @@ export const refreshCliGameTextIndex = Effect.fn("Cli.game_text.refresh")(
 		const compose = Effect.fn("Cli.game_text.prepare")(function* (
 			steps: typeof GameTextIndexSteps.Service
 		) {
-			const selected = yield* steps.openProject(request);
-			const imported = yield* steps.importTarget(selected, request);
-			const project = yield* steps.refreshProject(request);
-			return yield* steps.openTarget(yield* steps.buildTarget(project, imported, request));
+			return yield* steps.openTarget(yield* steps.prepareTarget(request));
 		});
 		const steps = yield* Effect.serviceOption(GameTextIndexSteps);
 		if (Option.isSome(steps)) return yield* compose(steps.value);

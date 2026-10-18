@@ -262,7 +262,7 @@ impl EngineQuery {
                     3 => {
                         let id = self.package_value(shard, "package.error", row)?;
                         let text = self.reader.string(id)?;
-                        let error = crate::json_value::parse(&text)?;
+                        let error = crate::json_value::parse_stored(&text)?;
                         require(
                             error["message"].is_string(),
                             "Missing package failure message.",

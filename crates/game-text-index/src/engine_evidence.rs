@@ -32,7 +32,7 @@ impl EngineQuery {
         if text.is_empty() {
             return Ok(json!({}));
         }
-        let value = crate::json_value::parse(&text)?;
+        let value = crate::json_value::parse_stored(&text)?;
         require(
             value.is_object(),
             "Stored evidence extras must be an object.",

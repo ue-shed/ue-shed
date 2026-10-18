@@ -354,9 +354,15 @@ pub(crate) fn refresh(
                 .map(|e| e.name.clone())
                 .collect::<Vec<_>>();
             for field in fields {
+                // File size is retained input evidence, not a membership predicate. A text edit
+                // may change its serialized size while preserving every occurrence and edge.
                 if matches!(
                     field.as_str(),
-                    "shared.meta" | "package.signature" | "occurrence.source"
+                    "shared.meta"
+                        | "package.signature"
+                        | "package.bytes_low"
+                        | "package.bytes_high"
+                        | "occurrence.source"
                 ) {
                     continue;
                 }

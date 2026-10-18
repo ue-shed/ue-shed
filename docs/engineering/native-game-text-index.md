@@ -54,16 +54,20 @@ are updated in Rust, including duplicate-source signals on unchanged rows outsid
 package. Repeated patches flatten against one retained base. A stable PO translation can change
 in the same publication. Structural changes and eligibility failures rebuild the derived join.
 
-The native writer maintains a SQLite dependency graph alongside the immutable snapshots. Logical
+The native writer maintains a paged dependency graph using the checked native snapshot codec. Logical
 sites retain package, object, property, row and location coordinates separately from text values
 and reference targets. Indexed edges map occurrences to localization lines and query groups;
 source-value indexes locate duplicate-source dependencies. String Table definitions and references
 have separate edge kinds, including references whose definitions are absent. Text equality never
 merges their identities. A definition edit follows its consumer edges without rereading consumers.
+Point lookups read selected 16,384-value pages through an 8 MiB cache. Ordinary edits publish a
+bounded source-value delta and reuse the immutable graph base.
 
-Graph transactions are matched to an exact dictionary generation and joined revision. Uncommitted
-updates roll back. The graph commits before the immutable root is published; an interrupted
-publication leaves a revision mismatch that requires reconstructing the disposable graph. Each
+Graph updates are matched to an exact dictionary generation and joined revision. Uncommitted
+updates are discarded. Pages retain their section checksums; the atomic graph state has a checked
+digest and validates scoped base filenames. The state commits before the immutable root is
+published; an interrupted publication leaves a revision mismatch that requires reconstructing the
+disposable graph. Each
 target view owns its graph under the existing writer lease. Query readers continue to pin immutable
 snapshots and do not depend on the mutable writer graph.
 

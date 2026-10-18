@@ -1,19 +1,158 @@
-//! Writer-owned, indexed dependencies. Values and reference edges have separate identities.
-//!
-//! The graph is a disposable acceleration of a named immutable snapshot. A transaction is
-//! advanced before publication; a crash on either side of publication leaves a revision mismatch,
-//! never a graph silently paired with another snapshot. Query readers keep their immutable files.
+//! Typed native dependency indexes over immutable, checked snapshot pages.
+//! Text values and reference edges never participate in a site's logical identity.
 use crate::join::Joined;
 use crate::join_columns::*;
-use crate::store::{Store, digest};
+use crate::snapshot::{Reader, Writer};
+use crate::store::{Store, atomic_json, bounded, decode_ids, digest, encode_ids, section, token};
 use crate::{Result, require};
-use rusqlite::{Connection, OptionalExtension, params};
-use std::collections::{BTreeMap, BTreeSet};
+use serde::{Deserialize, Serialize};
+use std::cell::RefCell;
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::path::PathBuf;
+use std::sync::Arc;
 
-pub(crate) struct Graph {
-    db: Connection,
+const VERSION: u32 = 3;
+const PAGE: usize = 16_384;
+const PAGE_CACHE: usize = 8 * 1024 * 1024;
+const MAX_MOVES: usize = 8192;
+const ABSENT: u32 = u32::MAX;
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct State {
+    version: u32,
     generation: String,
+    revision: String,
+    base: String,
+    moves: BTreeMap<u32, u32>,
+}
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Envelope {
+    state: State,
+    checksum: String,
+}
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Metadata {
+    version: u32,
+    generation: String,
+    count: u32,
+    columns: BTreeMap<String, u32>,
+}
+struct Field {
+    count: usize,
+    pages: Vec<usize>,
+}
+struct Pages {
+    reader: Reader,
+    fields: BTreeMap<String, Field>,
+    cache: HashMap<usize, Arc<[u32]>>,
+    order: VecDeque<usize>,
+    bytes: usize,
+    loads: usize,
+}
+impl Pages {
+    fn open(path: &std::path::Path, generation: &str) -> Result<(Self, u32)> {
+        let mut reader = Reader::open(path)?;
+        require(
+            reader
+                .entries
+                .iter()
+                .find(|e| e.name == "graph.meta")
+                .is_some_and(|e| e.raw <= 1024 * 1024),
+            "Dependency metadata exceeds its bound",
+        )?;
+        let meta: Metadata = serde_json::from_slice(&section(&mut reader, "graph.meta")?)?;
+        require(
+            meta.version == VERSION && meta.generation == generation,
+            "Dependency base generation",
+        )?;
+        require(meta.columns.len() <= 64, "Dependency column count")?;
+        let entries = reader
+            .entries
+            .iter()
+            .enumerate()
+            .map(|(i, e)| (e.name.as_str(), i))
+            .collect::<HashMap<_, _>>();
+        let mut fields = BTreeMap::new();
+        for (name, count) in meta.columns {
+            let count = count as usize;
+            let mut pages = Vec::new();
+            for page in 0..count.div_ceil(PAGE) {
+                let index = *entries
+                    .get(format!("{name}.p{page}").as_str())
+                    .ok_or("Missing dependency page")?;
+                let entry = &reader.entries[index];
+                require(
+                    entry.kind == 2 && entry.count as usize == PAGE.min(count - page * PAGE),
+                    "Dependency page length",
+                )?;
+                pages.push(index);
+            }
+            fields.insert(name, Field { count, pages });
+        }
+        Ok((
+            Self {
+                reader,
+                fields,
+                cache: HashMap::new(),
+                order: VecDeque::new(),
+                bytes: 0,
+                loads: 0,
+            },
+            meta.count,
+        ))
+    }
+    fn count(&self, name: &str) -> Result<usize> {
+        Ok(self
+            .fields
+            .get(name)
+            .ok_or("Missing dependency column")?
+            .count)
+    }
+    fn page(&mut self, index: usize) -> Result<Arc<[u32]>> {
+        if let Some(values) = self.cache.get(&index) {
+            return Ok(Arc::clone(values));
+        }
+        let values: Arc<[u32]> = decode_ids(&self.reader.load(index)?, true)?.into();
+        while self.bytes + values.len() * 4 > PAGE_CACHE {
+            let Some(old) = self.order.pop_front() else {
+                break;
+            };
+            if let Some(old) = self.cache.remove(&old) {
+                self.bytes -= old.len() * 4;
+            }
+        }
+        self.loads += 1;
+        self.bytes += values.len() * 4;
+        self.cache.insert(index, Arc::clone(&values));
+        self.order.push_back(index);
+        Ok(values)
+    }
+    fn get(&mut self, name: &str, row: usize) -> Result<u32> {
+        let field = self.fields.get(name).ok_or("Missing dependency column")?;
+        require(row < field.count, "Dependency row outside column")?;
+        let index = field.pages[row / PAGE];
+        self.page(index)?
+            .get(row % PAGE)
+            .copied()
+            .ok_or_else(|| "Dependency page row".into())
+    }
+    fn range(&mut self, name: &str, begin: usize, end: usize) -> Result<Vec<u32>> {
+        require(begin <= end && end <= self.count(name)?, "Dependency range")?;
+        let mut values = Vec::with_capacity(end - begin);
+        let mut row = begin;
+        while row < end {
+            let index = self.fields[name].pages[row / PAGE];
+            let page = self.page(index)?;
+            let start = row % PAGE;
+            let take = (end - row).min(page.len() - start);
+            values.extend_from_slice(&page[start..start + take]);
+            row += take;
+        }
+        Ok(values)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -26,203 +165,253 @@ pub(crate) struct Route {
     pub source: u32,
     pub eligible: bool,
 }
-
-fn path(store: &Store) -> PathBuf {
-    let view = store.configuration_view_prefix().unwrap_or("");
-    store
-        .directory
-        .join(format!("dependencies-{}.sqlite", digest(view.as_bytes())))
+#[derive(Default)]
+struct Moves {
+    members: BTreeMap<u32, u32>,
+    sources: BTreeMap<u32, BTreeSet<u32>>,
 }
+pub(crate) struct Graph {
+    pages: RefCell<Pages>,
+    moves: RefCell<Moves>,
+    generation: String,
+    base: String,
+    count: u32,
+    rebuilt: bool,
+}
+type Columns = BTreeMap<String, Vec<u32>>;
 
-fn connect(path: &std::path::Path, generation: &str) -> Result<Graph> {
-    let db = Connection::open(path)?;
-    // The enclosing native writer lease serializes graph writers. Full durability is retained;
-    // a revision mismatch can reconstruct derived dependencies, but must not hide IO failures.
-    db.execute_batch("PRAGMA foreign_keys=ON; PRAGMA cache_size=-8192; BEGIN IMMEDIATE;")?;
-    Ok(Graph {
-        db,
-        generation: generation.into(),
-    })
+fn prefix(store: &Store) -> String {
+    format!(
+        "dependencies-{}",
+        digest(store.configuration_view_prefix().unwrap_or("").as_bytes())
+    )
+}
+fn state_path(store: &Store) -> PathBuf {
+    store.directory.join(format!("{}.json", prefix(store)))
+}
+fn valid_base(store: &Store, name: &str) -> bool {
+    name.strip_prefix(&(prefix(store) + "-base-"))
+        .and_then(|s| s.strip_suffix(".snapshot"))
+        .is_some_and(|s| {
+            !s.is_empty() && s.len() <= 96 && s.bytes().all(|c| c.is_ascii_hexdigit() || c == b'-')
+        })
+}
+fn load_state(store: &Store) -> Result<Option<State>> {
+    let path = state_path(store);
+    if !path.try_exists()? {
+        return Ok(None);
+    }
+    let envelope: Envelope = serde_json::from_slice(&bounded(&path, 1024 * 1024)?)?;
+    require(
+        digest(&serde_json::to_vec(&envelope.state)?) == envelope.checksum,
+        "Dependency state checksum",
+    )?;
+    require(
+        valid_base(store, &envelope.state.base),
+        "Dependency base filename",
+    )?;
+    require(
+        envelope.state.moves.len() <= MAX_MOVES,
+        "Dependency move count",
+    )?;
+    Ok(Some(envelope.state))
+}
+fn adjacency(columns: &mut Columns, name: &str, rows: impl IntoIterator<Item = Vec<u32>>) {
+    let mut starts = vec![0];
+    let mut members = Vec::new();
+    for row in rows {
+        members.extend(row);
+        starts.push(members.len() as u32);
+    }
+    columns.insert(format!("{name}.start"), starts);
+    columns.insert(format!("{name}.members"), members);
 }
 
 impl Graph {
     pub(crate) fn open(store: &Store, revision: &str) -> Result<Option<Self>> {
-        let file = path(store);
-        if !file.try_exists()? {
+        let Some(state) = load_state(store)? else {
             return Ok(None);
-        }
+        };
         let generation = store.root["generation"]
             .as_str()
-            .ok_or("graph generation")?;
-        let graph = connect(&file, generation)?;
-        if graph
-            .db
-            .pragma_query_value(None, "user_version", |row| row.get::<_, u32>(0))?
-            != 2
+            .ok_or("Dependency generation")?;
+        if state.version != VERSION || state.generation != generation || state.revision != revision
         {
             return Ok(None);
         }
-        let identity: Option<(String, String)> = graph
-            .db
-            .query_row(
-                "SELECT generation, revision FROM revision WHERE id=1",
-                [],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .optional()?;
-        let generation = store.root["generation"]
-            .as_str()
-            .ok_or("graph generation")?;
-        Ok(identity
-            .filter(|(g, r)| g == generation && r == revision)
-            .map(|_| graph))
+        let (pages, count) = Pages::open(&store.directory.join(&state.base), generation)?;
+        let mut moves = Moves::default();
+        for (member, source) in state.moves {
+            require(member < count, "Dependency move row")?;
+            moves.members.insert(member, source);
+            moves.sources.entry(source).or_default().insert(member);
+        }
+        Ok(Some(Self {
+            pages: RefCell::new(pages),
+            moves: RefCell::new(moves),
+            generation: generation.into(),
+            base: state.base,
+            count,
+            rebuilt: false,
+        }))
     }
 
-    /// Cold construction records physical projection rows separately from the logical site.
-    /// Neither the text value nor the referenced target participates in a site's identity.
     pub(crate) fn rebuild(
         store: &Store,
         joined: &Joined,
-        columns: &[(String, String, Vec<u32>)],
+        query: &[(String, String, Vec<u32>)],
     ) -> Result<Self> {
         let started = std::time::Instant::now();
-        let generation = store.root["generation"]
-            .as_str()
-            .ok_or("graph generation")?;
-        let graph = connect(&path(store), generation)?;
-        graph.db.execute_batch(
-            "DROP TABLE IF EXISTS reference;
-             DROP TABLE IF EXISTS occurrence;
-             DROP TABLE IF EXISTS identity;
-             DROP TABLE IF EXISTS revision;
-             CREATE TABLE IF NOT EXISTS revision(id INTEGER PRIMARY KEY CHECK(id=1), generation TEXT NOT NULL, revision TEXT NOT NULL);
-             CREATE TABLE identity(namespace INTEGER NOT NULL, entry_key INTEGER NOT NULL, line INTEGER NOT NULL,
-               PRIMARY KEY(namespace,entry_key)) WITHOUT ROWID;
-             CREATE TABLE IF NOT EXISTS occurrence(
-               member INTEGER PRIMARY KEY, package INTEGER NOT NULL, object INTEGER NOT NULL,
-               property INTEGER NOT NULL, row_name INTEGER NOT NULL, location INTEGER NOT NULL,
-               ordinal INTEGER NOT NULL, line INTEGER NOT NULL, raw INTEGER NOT NULL,
-               slice INTEGER NOT NULL, place INTEGER NOT NULL, source INTEGER NOT NULL,
-               eligible INTEGER NOT NULL CHECK(eligible IN (0,1)),
-               UNIQUE(package,object,property,row_name,location,ordinal));
-             CREATE TABLE IF NOT EXISTS reference(
-               member INTEGER NOT NULL REFERENCES occurrence(member) ON DELETE CASCADE,
-               kind INTEGER NOT NULL CHECK(kind IN (1,2)), table_id INTEGER NOT NULL,
-               entry_key INTEGER NOT NULL, PRIMARY KEY(member,kind)) WITHOUT ROWID;
-             PRAGMA user_version=2;"
-        )?;
+        let count = joined.order.len();
         let get = |name: &str| {
-            columns
+            query
                 .iter()
                 .find(|(n, _, _)| n == name)
-                .map(|(_, _, values)| values.as_slice())
-                .ok_or_else(|| crate::Error::from(format!("Missing graph input {name}")))
+                .map(|(_, _, v)| v)
+                .ok_or_else(|| crate::Error::from(format!("Missing dependency input {name}")))
         };
-        let count = joined.order.len();
-        let mut lines = vec![u32::MAX; count];
+        let mut columns = Columns::new();
+        let mut lines = vec![ABSENT; count];
+        let mut line_members = Vec::new();
         for (row, group) in joined.groups.iter().enumerate() {
-            for member in &joined.order[group.os..group.oe] {
-                *lines.get_mut(*member as usize).ok_or("graph line member")? = row as u32;
+            let members = joined.order[group.os..group.oe].to_vec();
+            for member in &members {
+                *lines
+                    .get_mut(*member as usize)
+                    .ok_or("Dependency line member")? = row as u32;
             }
+            line_members.push(members);
         }
-        let mut raw = vec![u32::MAX; count];
-        let mut slices = vec![u32::MAX; count];
-        for (kind, routes) in [("raw", &mut raw), ("slice", &mut slices)] {
+        columns.insert("occ.line".into(), lines);
+        adjacency(&mut columns, "line", line_members);
+        for kind in ["raw", "slice"] {
             let starts = get(&format!("query.{kind}.member_start"))?;
             let ends = get(&format!("query.{kind}.member_end"))?;
             let members = get(&format!("query.{kind}.members"))?;
-            require(starts.len() == ends.len(), "graph membership bounds")?;
+            require(starts.len() == ends.len(), "Dependency membership lengths")?;
+            let mut routes = vec![ABSENT; count];
+            let mut groups = Vec::new();
             for (row, (start, end)) in starts.iter().zip(ends).enumerate() {
-                for member in members
+                let selected = members
                     .get(*start as usize..*end as usize)
-                    .ok_or("graph membership range")?
-                {
+                    .ok_or("Dependency member range")?;
+                for member in selected {
                     let slot = routes
                         .get_mut(*member as usize)
-                        .ok_or("graph membership row")?;
-                    require(*slot == u32::MAX, "duplicate graph membership")?;
+                        .ok_or("Dependency member row")?;
+                    require(*slot == ABSENT, "Duplicate dependency membership")?;
                     *slot = row as u32;
                 }
+                groups.push(selected.to_vec());
             }
+            columns.insert(format!("occ.{kind}"), routes);
+            adjacency(&mut columns, kind, groups);
         }
-        let places = get("query.occurrence.places")?;
-        require(places.len() == count, "graph place length")?;
         let c = &joined.packages.occurrence;
-        let mut insert = graph
-            .db
-            .prepare_cached("INSERT INTO occurrence VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)")?;
-        let mut edge = graph
-            .db
-            .prepare_cached("INSERT INTO reference VALUES(?,?,?,?)")?;
-        let mut package = None;
-        let mut ordinals = BTreeMap::new();
-        for member in 0..count {
-            let next = joined.packages.package_row[member];
-            if package != Some(next) {
-                package = Some(next);
-                ordinals.clear();
-            }
+        columns.insert("occ.place".into(), get("query.occurrence.places")?.clone());
+        columns.insert("occ.source".into(), c[O_SOURCE].clone());
+        columns.insert(
+            "occ.eligible".into(),
+            (0..count)
+                .map(|i| u32::from(c[O_IDENTITY][i] == 0 && c[O_KEY][i] != joined.empty))
+                .collect(),
+        );
+        for field in ["line", "raw", "slice", "place", "source", "eligible"] {
             require(
-                lines[member] != u32::MAX && raw[member] != u32::MAX && slices[member] != u32::MAX,
-                "incomplete graph membership",
+                columns[&format!("occ.{field}")].len() == count,
+                "Dependency occurrence length",
             )?;
+        }
+        for field in ["line", "raw", "slice"] {
+            require(
+                !columns[&format!("occ.{field}")].contains(&ABSENT),
+                "Incomplete dependency membership",
+            )?;
+        }
+        // Logical site coordinates exclude text, namespace/key and referenced target.
+        columns.insert(
+            "site.package".into(),
+            joined
+                .packages
+                .package_row
+                .iter()
+                .map(|p| joined.packages.paths[*p as usize])
+                .collect(),
+        );
+        for (name, field) in [
+            ("object", O_OBJECT),
+            ("property", O_PROPERTY),
+            ("row", O_ROW),
+            ("location", O_LOCATION),
+        ] {
+            columns.insert(format!("site.{name}"), c[field].clone());
+        }
+        let mut ordinal = Vec::with_capacity(count);
+        let mut previous_package = None;
+        let mut sites = BTreeMap::new();
+        let mut definitions = vec![ABSENT; count];
+        let mut definition_keys = vec![ABSENT; count];
+        let mut references = BTreeMap::<(u32, u32), Vec<u32>>::new();
+        let mut sources = BTreeMap::<u32, Vec<u32>>::new();
+        for member in 0..count {
+            let package = joined.packages.package_row[member];
+            if previous_package != Some(package) {
+                sites.clear();
+                previous_package = Some(package);
+            }
             let site = (
                 c[O_OBJECT][member],
                 c[O_PROPERTY][member],
                 c[O_ROW][member],
                 c[O_LOCATION][member],
             );
-            let ordinal = ordinals.entry(site).or_insert(0u32);
-            insert.execute(params![
-                member as u32,
-                joined.packages.paths[next as usize],
-                site.0,
-                site.1,
-                site.2,
-                site.3,
-                *ordinal,
-                lines[member],
-                raw[member],
-                slices[member],
-                places[member],
-                c[O_SOURCE][member],
-                c[O_IDENTITY][member] == 0 && c[O_KEY][member] != joined.empty
-            ])?;
-            *ordinal += 1;
+            let next = sites.entry(site).or_insert(0u32);
+            ordinal.push(*next);
+            *next += 1;
+            sources
+                .entry(c[O_SOURCE][member])
+                .or_default()
+                .push(member as u32);
             if c[O_IDENTITY][member] == 1 {
-                // Unresolved targets remain indexed even when no definition exists yet.
-                edge.execute(params![member as u32, 1, c[O_NS][member], c[O_KEY][member]])?;
-            } else if c[O_LOCATION][member] == 2 && c[O_IDENTITY][member] == 0 {
-                edge.execute(params![
-                    member as u32,
-                    2,
-                    c[O_OBJECT][member],
-                    c[O_ROW][member]
-                ])?;
+                references
+                    .entry((c[O_NS][member], c[O_KEY][member]))
+                    .or_default()
+                    .push(member as u32);
+            } else if c[O_LOCATION][member] == 2
+                && c[O_IDENTITY][member] == 0
+                && c[O_KEY][member] != joined.empty
+            {
+                definitions[member] = c[O_OBJECT][member];
+                definition_keys[member] = c[O_ROW][member];
             }
         }
-        drop(insert);
-        drop(edge);
-        let mut identity = graph
-            .db
-            .prepare_cached("INSERT INTO identity VALUES(?,?,?)")?;
-        for row in 0..joined.groups.len() {
-            if joined.resolved(row) {
-                identity.execute(params![
-                    joined.line[crate::join::L_NS][row],
-                    joined.line[crate::join::L_KEY][row],
-                    row as u32
-                ])?;
-            }
-        }
-        drop(identity);
-        graph.db.execute_batch(
-            "CREATE INDEX source_members ON occurrence(source,member);
-             CREATE INDEX raw_members ON occurrence(raw,member);
-             CREATE INDEX line_members ON occurrence(line,member);
-             CREATE INDEX slice_members ON occurrence(slice,member);
-             CREATE INDEX reference_consumers ON reference(table_id,entry_key,kind,member);",
-        )?;
+        columns.insert("site.ordinal".into(), ordinal);
+        columns.insert("occ.def_table".into(), definitions);
+        columns.insert("occ.def_key".into(), definition_keys);
+        columns.insert("source.keys".into(), sources.keys().copied().collect());
+        adjacency(&mut columns, "source", sources.into_values());
+        columns.insert("ref.table".into(), references.keys().map(|k| k.0).collect());
+        columns.insert("ref.key".into(), references.keys().map(|k| k.1).collect());
+        adjacency(&mut columns, "ref", references.into_values());
+        let identities = (0..joined.groups.len())
+            .filter(|row| joined.resolved(*row))
+            .map(|row| {
+                (
+                    (
+                        joined.line[crate::join::L_NS][row],
+                        joined.line[crate::join::L_KEY][row],
+                    ),
+                    row as u32,
+                )
+            })
+            .collect::<BTreeMap<_, _>>();
+        columns.insert(
+            "id.namespace".into(),
+            identities.keys().map(|k| k.0).collect(),
+        );
+        columns.insert("id.key".into(), identities.keys().map(|k| k.1).collect());
+        columns.insert("id.line".into(), identities.into_values().collect());
+        let graph = Self::write(store, count as u32, columns)?;
         crate::join_incremental::note(
             "dependencyGraphBuildSeconds",
             serde_json::json!(started.elapsed().as_secs_f64()),
@@ -230,97 +419,212 @@ impl Graph {
         Ok(graph)
     }
 
-    pub(crate) fn route(&self, member: u32) -> Result<Route> {
-        Ok(self.db.query_row(
-            "SELECT member,line,raw,slice,place,source,eligible FROM occurrence WHERE member=?",
-            [member],
-            route,
-        )?)
-    }
-
-    pub(crate) fn identity_line(&self, namespace: u32, key: u32) -> Result<Option<u32>> {
-        Ok(self
-            .db
-            .query_row(
-                "SELECT line FROM identity WHERE namespace=? AND entry_key=?",
-                params![namespace, key],
-                |r| r.get(0),
-            )
-            .optional()?)
-    }
-
-    pub(crate) fn source_members(&self, source: u32) -> Result<Vec<Route>> {
-        let mut query = self.db.prepare_cached("SELECT member,line,raw,slice,place,source,eligible FROM occurrence WHERE source=? ORDER BY member")?;
-        Ok(query
-            .query_map([source], route)?
-            .collect::<rusqlite::Result<_>>()?)
-    }
-
-    pub(crate) fn members(&self, kind: &str, row: u32) -> Result<Vec<u32>> {
-        let sql = match kind {
-            "line" => "SELECT member FROM occurrence WHERE line=? ORDER BY member",
-            "raw" => "SELECT member FROM occurrence WHERE raw=? ORDER BY member",
-            "slice" => "SELECT member FROM occurrence WHERE slice=? ORDER BY member",
-            _ => return Err("Unknown dependency edge kind".into()),
-        };
-        let mut query = self.db.prepare_cached(sql)?;
-        Ok(query
-            .query_map([row], |r| r.get(0))?
-            .collect::<rusqlite::Result<_>>()?)
-    }
-
-    pub(crate) fn move_source(&self, member: u32, before: u32, after: u32) -> Result<()> {
-        require(
-            self.db.execute(
-                "UPDATE occurrence SET source=? WHERE member=? AND source=?",
-                params![after, member, before],
-            )? == 1,
-            "Source dependency does not match the published snapshot",
-        )
-    }
-
-    /// A definition's consumers are selected by the target edge, never by source equality.
-    pub(crate) fn consumers(&self, member: u32) -> Result<BTreeSet<u32>> {
-        let mut query = self.db.prepare_cached(
-            "SELECT consumer.member FROM reference definition JOIN reference consumer
-             ON definition.table_id=consumer.table_id AND definition.entry_key=consumer.entry_key
-             WHERE definition.member=? AND definition.kind=2 AND consumer.kind=1 ORDER BY consumer.member"
-        )?;
-        Ok(query
-            .query_map([member], |r| r.get(0))?
-            .collect::<rusqlite::Result<_>>()?)
-    }
-
-    pub(crate) fn commit(self, store: &Store, revision: &str) -> Result<()> {
+    fn write(store: &Store, count: u32, columns: Columns) -> Result<Self> {
         let generation = store.root["generation"]
             .as_str()
-            .ok_or("graph generation")?;
+            .ok_or("Dependency generation")?;
+        let base = format!("{}-base-{}.snapshot", prefix(store), token());
+        let mut writer = Writer::new(&store.directory.join(format!("{}.tmp", token())))?;
+        let mut order = Vec::new();
+        let meta = Metadata {
+            version: VERSION,
+            generation: generation.into(),
+            count,
+            columns: columns
+                .iter()
+                .map(|(name, values)| Ok((name.clone(), u32::try_from(values.len())?)))
+                .collect::<Result<_>>()?,
+        };
+        order.push(writer.add("graph.meta", 0, "", &serde_json::to_vec(&meta)?, 1)?);
+        for (name, values) in columns {
+            for (page, values) in values.chunks(PAGE).enumerate() {
+                order.push(writer.add(
+                    &format!("{name}.p{page}"),
+                    2,
+                    "",
+                    &encode_ids(values),
+                    1,
+                )?);
+            }
+        }
+        writer.finish(&store.directory.join(&base), &order)?;
+        let (pages, count) = Pages::open(&store.directory.join(&base), generation)?;
+        Ok(Self {
+            pages: RefCell::new(pages),
+            moves: RefCell::new(Moves::default()),
+            generation: generation.into(),
+            base,
+            count,
+            rebuilt: true,
+        })
+    }
+    fn get(&self, name: &str, row: usize) -> Result<u32> {
+        self.pages.borrow_mut().get(name, row)
+    }
+    fn find_pair(&self, a: &str, b: &str, key: (u32, u32)) -> Result<Option<usize>> {
+        let count = self.pages.borrow().count(a)?;
         require(
-            generation == self.generation,
+            self.pages.borrow().count(b)? == count,
+            "Dependency key lengths",
+        )?;
+        let (mut low, mut high) = (0, count);
+        while low < high {
+            let middle = (low + high) / 2;
+            if (self.get(a, middle)?, self.get(b, middle)?) < key {
+                low = middle + 1;
+            } else {
+                high = middle;
+            }
+        }
+        Ok((low < count && (self.get(a, low)?, self.get(b, low)?) == key).then_some(low))
+    }
+    fn adjacent(&self, name: &str, row: usize) -> Result<Vec<u32>> {
+        let begin = self.get(&format!("{name}.start"), row)? as usize;
+        let end = self.get(&format!("{name}.start"), row + 1)? as usize;
+        self.pages
+            .borrow_mut()
+            .range(&format!("{name}.members"), begin, end)
+    }
+    pub(crate) fn route(&self, member: u32) -> Result<Route> {
+        require(member < self.count, "Dependency occurrence row")?;
+        let row = member as usize;
+        let eligible = self.get("occ.eligible", row)?;
+        require(eligible <= 1, "Dependency eligibility flag")?;
+        let source = self.moves.borrow().members.get(&member).copied();
+        Ok(Route {
+            member,
+            line: self.get("occ.line", row)?,
+            raw: self.get("occ.raw", row)?,
+            slice: self.get("occ.slice", row)?,
+            place: self.get("occ.place", row)?,
+            source: source.unwrap_or(self.get("occ.source", row)?),
+            eligible: eligible == 1,
+        })
+    }
+    pub(crate) fn identity_line(&self, namespace: u32, key: u32) -> Result<Option<u32>> {
+        self.find_pair("id.namespace", "id.key", (namespace, key))?
+            .map(|row| self.get("id.line", row))
+            .transpose()
+    }
+    pub(crate) fn source_members(&self, source: u32) -> Result<Vec<Route>> {
+        let count = self.pages.borrow().count("source.keys")?;
+        let (mut low, mut high) = (0, count);
+        while low < high {
+            let middle = (low + high) / 2;
+            if self.get("source.keys", middle)? < source {
+                low = middle + 1;
+            } else {
+                high = middle;
+            }
+        }
+        let mut selected = BTreeSet::new();
+        if low < count && self.get("source.keys", low)? == source {
+            for member in self.adjacent("source", low)? {
+                if self
+                    .moves
+                    .borrow()
+                    .members
+                    .get(&member)
+                    .copied()
+                    .unwrap_or(source)
+                    == source
+                {
+                    selected.insert(member);
+                }
+            }
+        }
+        if let Some(members) = self.moves.borrow().sources.get(&source) {
+            selected.extend(members);
+        }
+        selected
+            .into_iter()
+            .map(|member| {
+                let route = self.route(member)?;
+                require(route.source == source, "Dependency source posting")?;
+                Ok(route)
+            })
+            .collect()
+    }
+    pub(crate) fn members(&self, kind: &str, row: u32) -> Result<Vec<u32>> {
+        require(
+            matches!(kind, "line" | "raw" | "slice"),
+            "Unknown dependency edge kind",
+        )?;
+        self.adjacent(kind, row as usize)
+    }
+    pub(crate) fn move_source(&self, member: u32, before: u32, after: u32) -> Result<()> {
+        require(
+            self.route(member)?.source == before,
+            "Source dependency does not match the published snapshot",
+        )?;
+        let base = self.get("occ.source", member as usize)?;
+        let mut moves = self.moves.borrow_mut();
+        if let Some(previous) = moves.members.remove(&member)
+            && let Some(rows) = moves.sources.get_mut(&previous)
+        {
+            rows.remove(&member);
+            if rows.is_empty() {
+                moves.sources.remove(&previous);
+            }
+        }
+        if after != base {
+            moves.members.insert(member, after);
+            moves.sources.entry(after).or_default().insert(member);
+        }
+        Ok(())
+    }
+    pub(crate) fn consumers(&self, member: u32) -> Result<BTreeSet<u32>> {
+        let table = self.get("occ.def_table", member as usize)?;
+        let key = self.get("occ.def_key", member as usize)?;
+        if table == ABSENT || key == ABSENT {
+            return Ok(BTreeSet::new());
+        }
+        Ok(
+            match self.find_pair("ref.table", "ref.key", (table, key))? {
+                Some(row) => self.adjacent("ref", row)?.into_iter().collect(),
+                None => BTreeSet::new(),
+            },
+        )
+    }
+    pub(crate) fn commit(self, store: &Store, revision: &str) -> Result<()> {
+        require(
+            store.root["generation"].as_str() == Some(self.generation.as_str()),
             crate::Error::new(
                 crate::ErrorCode::StaleGeneration,
                 "Dependency graph generation changed during the update",
             ),
         )?;
-        self.db.execute(
-            "INSERT OR REPLACE INTO revision VALUES(1,?,?)",
-            params![generation, revision],
+        let moves = self.moves.borrow().members.clone();
+        require(moves.len() <= MAX_MOVES, "Dependency move count")?;
+        let state = State {
+            version: VERSION,
+            generation: self.generation.clone(),
+            revision: revision.into(),
+            base: self.base.clone(),
+            moves,
+        };
+        let checksum = digest(&serde_json::to_vec(&state)?);
+        atomic_json(
+            &state_path(store),
+            &serde_json::to_value(Envelope { state, checksum })?,
         )?;
-        self.db.execute_batch("COMMIT")?;
+        // Only a full graph replacement reclaims old bases. Ordinary edits touch the bounded
+        // delta and state file; they never enumerate the directory or rewrite the base.
+        if self.rebuilt {
+            for entry in std::fs::read_dir(&store.directory)? {
+                let entry = entry?;
+                let name = entry.file_name();
+                if let Some(name) = name.to_str()
+                    && name != self.base
+                    && valid_base(store, name)
+                    && entry.file_type()?.is_file()
+                {
+                    std::fs::remove_file(entry.path())?;
+                }
+            }
+        }
         Ok(())
     }
-}
-
-fn route(row: &rusqlite::Row<'_>) -> rusqlite::Result<Route> {
-    Ok(Route {
-        member: row.get(0)?,
-        line: row.get(1)?,
-        raw: row.get(2)?,
-        slice: row.get(3)?,
-        place: row.get(4)?,
-        source: row.get(5)?,
-        eligible: row.get(6)?,
-    })
 }
 
 #[cfg(test)]
@@ -328,51 +632,7 @@ mod tests {
     use super::*;
     use crate::store::Configuration;
     use serde_json::json;
-
-    fn empty(store: &Store) -> Result<Graph> {
-        let joined = Joined {
-            line: Vec::new(),
-            cultures: Vec::new(),
-            groups: Vec::new(),
-            order: Vec::new(),
-            raw_order: Vec::new(),
-            unit: Vec::new(),
-            next: Vec::new(),
-            package_files: Vec::new(),
-            empty: 0,
-            packages: PackageColumns {
-                names: Vec::new(),
-                starts: Vec::new(),
-                occurrence: std::array::from_fn(|_| Vec::new()),
-                package_row: Vec::new(),
-                paths: Vec::new(),
-                status: Vec::new(),
-                coverage: Vec::new(),
-                relative_paths: Vec::new(),
-                statuses: BTreeMap::new(),
-            },
-            manifest: FileColumns {
-                name: String::new(),
-                columns: std::array::from_fn(|_| Vec::new()),
-                order: Vec::new(),
-                loaded: false,
-                missing: false,
-                has_source: false,
-                prefix: String::new(),
-            },
-            archives: Vec::new(),
-            pos: Vec::new(),
-            strings: Vec::new(),
-            unit_ids: Vec::new(),
-        };
-        let mut columns = vec![("query.occurrence.places".into(), String::new(), Vec::new())];
-        for kind in ["raw", "slice"] {
-            for field in ["member_start", "member_end", "members"] {
-                columns.push((format!("query.{kind}.{field}"), String::new(), Vec::new()));
-            }
-        }
-        Graph::rebuild(store, &joined, &columns)
-    }
+    use std::io::{Read, Seek, SeekFrom, Write};
 
     fn configuration() -> Configuration {
         Configuration {
@@ -383,104 +643,180 @@ mod tests {
             view_prefix: None,
         }
     }
-
-    fn occurrence(graph: &Graph, member: u32, source: u32) -> Result<()> {
-        graph.db.execute(
-            "INSERT INTO occurrence VALUES(?,1,?,3,4,0,0,?, ?, ?,7,?,1)",
-            params![
-                member,
-                member,
-                member + 10,
-                member + 20,
-                member + 30,
-                source
-            ],
-        )?;
-        Ok(())
+    fn source_index(columns: &mut Columns) {
+        let mut sources = BTreeMap::<u32, Vec<u32>>::new();
+        for (row, source) in columns["occ.source"].iter().enumerate() {
+            sources.entry(*source).or_default().push(row as u32);
+        }
+        columns.insert("source.keys".into(), sources.keys().copied().collect());
+        adjacency(columns, "source", sources.into_values());
+    }
+    fn fixture(count: usize) -> Columns {
+        let mut columns = Columns::new();
+        for name in ["occ.line", "occ.raw", "occ.slice", "site.object"] {
+            columns.insert(name.into(), (0..count as u32).collect());
+        }
+        columns.insert(
+            "occ.place".into(),
+            (0..count as u32).map(|n| n % 7).collect(),
+        );
+        columns.insert(
+            "occ.source".into(),
+            (0..count as u32)
+                .map(|n| if n < 5 { 42 } else { 100 + n })
+                .collect(),
+        );
+        columns.insert("occ.eligible".into(), vec![1; count]);
+        columns.insert("occ.def_table".into(), vec![ABSENT; count]);
+        columns.insert("occ.def_key".into(), vec![ABSENT; count]);
+        columns.get_mut("occ.def_table").expect("fixture column")[0..2].copy_from_slice(&[10, 10]);
+        columns.get_mut("occ.def_key").expect("fixture column")[0..2].copy_from_slice(&[20, 21]);
+        for kind in ["line", "raw", "slice"] {
+            adjacency(&mut columns, kind, (0..count as u32).map(|row| vec![row]));
+        }
+        columns.insert("ref.table".into(), vec![10, 10, 10]);
+        columns.insert("ref.key".into(), vec![20, 21, 22]);
+        columns.insert("ref.start".into(), vec![0, 1, 2, 3]);
+        columns.insert("ref.members".into(), vec![2, 3, 4]);
+        columns.insert("id.namespace".into(), vec![10, 10]);
+        columns.insert("id.key".into(), vec![20, 21]);
+        columns.insert("id.line".into(), vec![100, 101]);
+        source_index(&mut columns);
+        columns
     }
 
     #[test]
-    fn source_values_do_not_merge_reference_targets_and_missing_targets_retain_consumers()
-    -> Result<()> {
+    fn text_changes_keep_reference_identity_and_missing_targets_keep_their_consumers() -> Result<()>
+    {
         let config = configuration();
         let store = Store::writer(config.clone())?;
-        let graph = empty(&store)?;
-        for member in 0..5 {
-            occurrence(&graph, member, 42)?;
-        }
-        graph
-            .db
-            .execute_batch("INSERT INTO identity VALUES(10,20,100),(10,21,101)")?;
+        let count = 128;
+        let mut columns = fixture(count);
+        let graph = Graph::write(&store, count as u32, columns.clone())?;
+        assert_eq!(graph.source_members(42)?.len(), 5);
         assert_eq!(graph.identity_line(10, 20)?, Some(100));
         assert_eq!(graph.identity_line(10, 21)?, Some(101));
         assert_eq!(graph.identity_line(10, 22)?, None);
-        graph.db.execute_batch("INSERT INTO reference VALUES(0,2,10,20),(1,2,10,21),(2,1,10,20),(3,1,10,21),(4,1,10,22)")?;
-        assert_eq!(graph.source_members(42)?.len(), 5);
         assert_eq!(graph.consumers(0)?, BTreeSet::from([2]));
         assert_eq!(graph.consumers(1)?, BTreeSet::from([3]));
+        assert!(graph.consumers(127)?.is_empty());
+        let site = graph.get("site.object", 0)?;
         graph.move_source(0, 42, 43)?;
-        assert_eq!(graph.consumers(0)?, BTreeSet::from([2]));
+        assert_eq!(graph.source_members(42)?.len(), 4);
         assert_eq!(graph.source_members(43)?[0].member, 0);
-        // A new definition finds a pre-existing unresolved edge without scanning occurrences.
-        occurrence(&graph, 900_000, 42)?;
-        graph
-            .db
-            .execute("INSERT INTO reference VALUES(900000,2,10,22)", [])?;
-        assert_eq!(graph.consumers(900_000)?, BTreeSet::from([4]));
-        // A retarget with identical text changes dependencies while preserving all source values.
-        graph.db.execute(
-            "UPDATE reference SET entry_key=21 WHERE member=2 AND kind=1",
-            [],
-        )?;
+        assert_eq!(graph.get("site.object", 0)?, site);
+        assert_eq!(graph.consumers(0)?, BTreeSet::from([2]));
+        graph.commit(&store, "revision-1")?;
+        let graph = Graph::open(&store, "revision-1")?.ok_or("Missing committed graph")?;
+        assert_eq!(graph.route(0)?.source, 43);
+        drop(graph);
+        // A reference retarget preserves its text. A new definition finds an existing missing edge.
+        columns.get_mut("occ.source").ok_or("Fixture source")?[0] = 43;
+        columns
+            .get_mut("occ.def_table")
+            .ok_or("Fixture definition")?[127] = 10;
+        columns.get_mut("occ.def_key").ok_or("Fixture definition")?[127] = 22;
+        columns.insert("ref.table".into(), vec![10, 10]);
+        columns.insert("ref.key".into(), vec![21, 22]);
+        columns.insert("ref.start".into(), vec![0, 2, 3]);
+        columns.insert("ref.members".into(), vec![2, 3, 4]);
+        source_index(&mut columns);
+        let graph = Graph::write(&store, count as u32, columns)?;
         assert!(graph.consumers(0)?.is_empty());
         assert_eq!(graph.consumers(1)?, BTreeSet::from([2, 3]));
-        graph.commit(&store, "revision-1")?;
-        let graph = Graph::open(&store, "revision-1")?.ok_or("missing committed graph")?;
-        assert_eq!(graph.route(900_000)?.line, 900_010);
-        assert_eq!(graph.members("raw", 900_020)?, vec![900_000]);
-        let plan: String = graph.db.query_row(
-            "EXPLAIN QUERY PLAN SELECT member FROM occurrence WHERE source=42 ORDER BY member",
-            [],
-            |r| r.get(3),
-        )?;
-        assert!(plan.contains("source_members"), "{plan}");
-        drop(graph);
+        assert_eq!(graph.consumers(127)?, BTreeSet::from([4]));
+        assert_eq!(graph.route(2)?.source, 42);
+        graph.commit(&store, "revision-2")?;
         drop(store);
         std::fs::remove_dir_all(config.cache_root)?;
         Ok(())
     }
 
     #[test]
-    fn uncommitted_edits_roll_back_and_publication_or_generation_mismatches_never_reuse_dependencies()
-    -> Result<()> {
+    fn rollback_and_revision_guards_preserve_the_base_and_undo_removes_the_delta() -> Result<()> {
         let config = configuration();
         let mut store = Store::writer(config.clone())?;
-        let graph = empty(&store)?;
-        occurrence(&graph, 7, 40)?;
+        let graph = Graph::write(&store, 128, fixture(128))?;
+        let base = store.directory.join(&graph.base);
         graph.commit(&store, "revision-1")?;
+        let before = std::fs::read(&base)?;
         {
-            let graph = Graph::open(&store, "revision-1")?.ok_or("missing graph")?;
-            graph.move_source(7, 40, 41)?;
-            assert!(graph.move_source(7, 40, 42).is_err());
-            assert_eq!(graph.route(7)?.source, 41);
+            let graph = Graph::open(&store, "revision-1")?.ok_or("Missing graph")?;
+            graph.move_source(7, 107, 42)?;
+            assert!(graph.move_source(7, 107, 43).is_err());
+            assert_eq!(graph.source_members(42)?.len(), 6);
         }
-        let graph = Graph::open(&store, "revision-1")?.ok_or("missing graph after rollback")?;
-        assert_eq!(graph.route(7)?.source, 40);
-        // Simulate graph commit followed by a failed immutable-root publication.
-        graph.move_source(7, 40, 41)?;
+        let graph = Graph::open(&store, "revision-1")?.ok_or("Missing graph after rollback")?;
+        assert_eq!(graph.route(7)?.source, 107);
+        graph.move_source(7, 107, 42)?;
         graph.commit(&store, "revision-2")?;
+        assert_eq!(std::fs::read(&base)?, before);
         assert!(Graph::open(&store, "revision-1")?.is_none());
-        let changed_generation = Graph::open(&store, "revision-2")?.ok_or("missing graph")?;
+        let graph = Graph::open(&store, "revision-2")?.ok_or("Missing graph")?;
+        graph.move_source(7, 42, 107)?;
+        assert!(graph.moves.borrow().members.is_empty());
+        graph.commit(&store, "revision-3")?;
+        let graph = Graph::open(&store, "revision-3")?.ok_or("Missing graph")?;
         store.root["generation"] = json!("next-generation");
         assert_eq!(
-            changed_generation
-                .commit(&store, "revision-3")
+            graph
+                .commit(&store, "revision-4")
                 .err()
-                .ok_or("expected generation failure")?
+                .ok_or("Expected generation error")?
                 .code,
             crate::ErrorCode::StaleGeneration
         );
-        assert!(Graph::open(&store, "revision-2")?.is_none());
+        assert!(Graph::open(&store, "revision-3")?.is_none());
+        drop(store);
+        std::fs::remove_dir_all(config.cache_root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn dependency_lookups_read_selected_pages_and_check_integrity_when_touched() -> Result<()> {
+        let config = configuration();
+        let store = Store::writer(config.clone())?;
+        let count = PAGE * 3 + 17;
+        let graph = Graph::write(&store, count as u32, fixture(count))?;
+        graph.commit(&store, "revision-1")?;
+        let graph = Graph::open(&store, "revision-1")?.ok_or("Missing graph")?;
+        let last = count as u32 - 1;
+        assert_eq!(graph.route(last)?.member, last);
+        assert_eq!(graph.source_members(42)?.len(), 5);
+        assert_eq!(graph.members("raw", last)?, vec![last]);
+        assert!(
+            graph.pages.borrow().loads < 32,
+            "A point dependency lookup must not hydrate the graph"
+        );
+        assert!(graph.pages.borrow().loads * 2 < graph.pages.borrow().reader.entries.len());
+        let offset = graph
+            .pages
+            .borrow()
+            .reader
+            .entries
+            .iter()
+            .find(|e| e.name == "occ.source.p1")
+            .ok_or("Missing untouched page")?
+            .offset;
+        let mut file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(store.directory.join(&graph.base))?;
+        file.seek(SeekFrom::Start(offset))?;
+        let mut byte = [0];
+        file.read_exact(&mut byte)?;
+        file.seek(SeekFrom::Start(offset))?;
+        file.write_all(&[byte[0] ^ 0xff])?;
+        file.sync_all()?;
+        assert_eq!(graph.route(last)?.member, last);
+        assert!(graph.route(PAGE as u32 + 3).is_err());
+        drop(file);
+        drop(graph);
+        let mut envelope: serde_json::Value =
+            serde_json::from_slice(&bounded(&state_path(&store), 1024 * 1024)?)?;
+        envelope["state"]["revision"] = json!("tampered");
+        atomic_json(&state_path(&store), &envelope)?;
+        assert!(Graph::open(&store, "revision-1").is_err());
         drop(store);
         std::fs::remove_dir_all(config.cache_root)?;
         Ok(())

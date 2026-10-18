@@ -130,6 +130,7 @@ export async function measureGameTextHosts(
 	);
 	if (!selected) throw new Error("Retained package 0 is absent.");
 	let version = "";
+	const packageBytesDelta = task === "refresh-package-size" ? 16 : 0;
 	const builderLayer = forceChangedJoin
 		? Layer.effect(
 				GameTextIndexBuilder,
@@ -153,7 +154,10 @@ export async function measureGameTextHosts(
 				Effect.promise(async () =>
 					(await readGeneratedPackageInventory(records)).map((entry) =>
 						version && entry.path === selected.path
-							? { ...entry, signature: `${selected.signature}:${version}` }
+							? {
+									...entry,
+									signature: `${selected.signature}:${version}${packageBytesDelta ? ":resized" : ""}`
+								}
 							: entry
 					)
 				),
@@ -181,6 +185,7 @@ export async function measureGameTextHosts(
 								event.event === "text_package_record"
 									? {
 											...event,
+											fileBytes: event.fileBytes + packageBytesDelta,
 											occurrences: event.occurrences.map((occurrence, row) =>
 												row === 0
 													? {
@@ -282,6 +287,7 @@ export async function measureGameTextHosts(
 				: "production incremental",
 			readPackages: result.packages.readPackages,
 			packageEditId: version || null,
+			packageBytesDelta: version ? packageBytesDelta : 0,
 			parsedFiles: result.imported.files.filter((file) => file.parsed).length,
 			changedShards: result.packages.changedShards,
 			packageProfile: result.packages.profile,
@@ -604,9 +610,13 @@ export async function measureGameTextHosts(
 				(value) => value
 			);
 		}
-		if (["all", "refresh", "refresh-package", "refresh-po"].includes(task)) {
+		if (
+			["all", "refresh", "refresh-package", "refresh-package-size", "refresh-po"].includes(
+				task
+			)
+		) {
 			const editPackage = task !== "refresh-po";
-			const editPo = task !== "refresh-package";
+			const editPo = ["all", "refresh", "refresh-po"].includes(task);
 			const byte = editPo
 				? await captureBenchmarkByte(
 						join(project, "Content/Localization/Generated/en/Generated.po"),
@@ -633,7 +643,9 @@ export async function measureGameTextHosts(
 				const edit = editPackage
 					? editPo
 						? "one-package-one-po"
-						: "one-package"
+						: packageBytesDelta
+							? "one-package-with-size-change"
+							: "one-package"
 					: "one-po";
 				await measure(`${host}:refresh-${edit}`, refresh, (value) => value);
 				if (host === "cli" && !forceChangedJoin) {

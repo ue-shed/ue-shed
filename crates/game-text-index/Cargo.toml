@@ -15,7 +15,6 @@ icu_collator = "=2.1.1"
 rayon = "1.11"
 zstd = "0.13"
 sha2 = "0.10"
-rusqlite = { version = "=0.37.0", default-features = false, features = ["bundled"] }
 
 [target.'cfg(windows)'.dependencies]
 file-id = "=0.2.3"

@@ -144,7 +144,7 @@ function comparable(value: TextCorpusSearchPage | TextCorpusFocus | null): strin
 	return JSON.stringify(value, (key, field: typeof Schema.Json.Type | undefined) => {
 		if (Array.isArray(field))
 			return ["facts", "unknownReasons", "flags"].includes(key) ? [...field].sort() : field;
-		if (Predicate.isRecord(field))
+		if (Predicate.isObject(field))
 			return Object.fromEntries(
 				Object.entries(field).sort(([left], [right]) => left.localeCompare(right))
 			);

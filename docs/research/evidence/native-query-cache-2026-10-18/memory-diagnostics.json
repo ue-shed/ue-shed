@@ -1,47 +1,18 @@
 {
+	"candidateSourceCommit": "46beb9cae70d10684f1eef50c8dec13d5cf86449",
 	"method": "Separate one-sample diagnostics, not accepted timing runs. Single-reader query diagnostics measure retained native RSS at explicit checkpoints. Finer Workbench process sampling shows old and replacement native readers overlapping during refresh; different samples catch different parts of the overlap. Do not interpret coarse peak differences as retained cache size or claim a memory improvement.",
 	"singleReader": {
 		"baseline": [
 			{
 				"name": "summary",
 				"native": {
-					"WorkingSet64": 359628800,
-					"PrivateMemorySize64": 356225024
+					"WorkingSet64": 359534592,
+					"PrivateMemorySize64": 356118528
 				},
 				"node": {
-					"rss": 124485632,
-					"heapTotal": 72126464,
-					"heapUsed": 41894592,
-					"external": 7038750,
-					"arrayBuffers": 2907247
-				}
-			},
-			{
-				"name": "after queries",
-				"native": {
-					"WorkingSet64": 698925056,
-					"PrivateMemorySize64": 696094720
-				},
-				"node": {
-					"rss": 130887680,
-					"heapTotal": 77758464,
-					"heapUsed": 61728016,
-					"external": 8120141,
-					"arrayBuffers": 3988598
-				}
-			}
-		],
-		"candidate": [
-			{
-				"name": "summary",
-				"native": {
-					"WorkingSet64": 365268992,
-					"PrivateMemorySize64": 362799104
-				},
-				"node": {
-					"rss": 123535360,
-					"heapTotal": 71602176,
-					"heapUsed": 41807560,
+					"rss": 123092992,
+					"heapTotal": 70922240,
+					"heapUsed": 42670528,
 					"external": 7038756,
 					"arrayBuffers": 2907253
 				}
@@ -49,15 +20,45 @@
 			{
 				"name": "after queries",
 				"native": {
-					"WorkingSet64": 704950272,
-					"PrivateMemorySize64": 703012864
+					"WorkingSet64": 698822656,
+					"PrivateMemorySize64": 695984128
 				},
 				"node": {
-					"rss": 130768896,
+					"rss": 130007040,
+					"heapTotal": 77438976,
+					"heapUsed": 62501760,
+					"external": 8120180,
+					"arrayBuffers": 3988637
+				}
+			}
+		],
+		"candidate": [
+			{
+				"name": "summary",
+				"native": {
+					"WorkingSet64": 370753536,
+					"PrivateMemorySize64": 368201728
+				},
+				"node": {
+					"rss": 124223488,
+					"heapTotal": 71602176,
+					"heapUsed": 41821096,
+					"external": 7038756,
+					"arrayBuffers": 2907253
+				}
+			},
+			{
+				"name": "after queries",
+				"native": {
+					"WorkingSet64": 706310144,
+					"PrivateMemorySize64": 704761856
+				},
+				"node": {
+					"rss": 131117056,
 					"heapTotal": 77594624,
-					"heapUsed": 61514000,
-					"external": 8120178,
-					"arrayBuffers": 3988635
+					"heapUsed": 61651000,
+					"external": 8120179,
+					"arrayBuffers": 3988636
 				}
 			}
 		]
@@ -65,43 +66,43 @@
 	"workbenchOverlap": {
 		"baseline": {
 			"stage": "workbench:refresh-no-change",
-			"treeRssBytes": 1576742912,
+			"treeRssBytes": 1572560896,
 			"nativeProcesses": [
 				{
-					"rssBytes": 701308928
+					"rssBytes": 701317120
 				},
 				{
-					"rssBytes": 452386816
+					"rssBytes": 452255744
 				}
 			],
 			"node": {
-				"rss": 298881024,
-				"heapTotal": 185720832,
-				"heapUsed": 127212024,
-				"external": 16368247,
-				"arrayBuffers": 12232524
+				"rss": 296595456,
+				"heapTotal": 184557568,
+				"heapUsed": 123294968,
+				"external": 16312688,
+				"arrayBuffers": 12176925
 			}
 		},
 		"candidate": {
 			"stage": "workbench:refresh-no-change",
-			"treeRssBytes": 1499148288,
+			"treeRssBytes": 1483661312,
 			"nativeProcesses": [
 				{
-					"rssBytes": 707653632
+					"rssBytes": 708456448
 				},
 				{
-					"rssBytes": 365666304
+					"rssBytes": 370966528
 				},
 				{
-					"rssBytes": 8273920
+					"rssBytes": 8298496
 				}
 			],
 			"node": {
-				"rss": 299618304,
-				"heapTotal": 205754368,
-				"heapUsed": 144942496,
-				"external": 16599069,
-				"arrayBuffers": 12463298
+				"rss": 282292224,
+				"heapTotal": 193163264,
+				"heapUsed": 148410376,
+				"external": 19641456,
+				"arrayBuffers": 15505685
 			}
 		}
 	}

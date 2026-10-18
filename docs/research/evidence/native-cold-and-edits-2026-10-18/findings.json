@@ -1,0 +1,48 @@
+{
+	"packageShardDiagnostic": {
+		"input": "package-text.175.ndjson",
+		"packages": 701,
+		"distinctPathStringsLowerBound": 11573,
+		"distinctSourceAndNotesStrings": 2834,
+		"distinctIdentityAndSignatureStrings": 1354,
+		"pathLowerBoundExcludes": [
+			"representation copies",
+			"gap samples",
+			"blueprint JSON",
+			"error JSON"
+		],
+		"nativeBoundedInternThreshold": 8192,
+		"code": [
+			"packages/game-text/src/package-text-layer.ts:435",
+			"crates/game-text-index/src/store.rs:638",
+			"crates/game-text-index/src/store.rs:878",
+			"crates/game-text-index/src/builder.rs:224"
+		],
+		"finding": "A one-package source edit republishes all authored objects and string tables for its shard. Its path domain exceeds the native bounded intern threshold. The fresh writer then materializes the full dictionary HashMap, which is dropped at end. Timings identify publish and end as expensive; their internal allocation and decode shares need dedicated profiling before assigning precise causality."
+	},
+	"remainingCandidates": [
+		{
+			"idea": "Native package replacement preserving old string IDs; intern only changed strings and update affected column ranges.",
+			"purpose": "Avoid the entire-shard JS decode/re-encode and whole-dictionary writer load for a value edit. Keep reference topology changes distinct."
+		},
+		{
+			"idea": "Incremental persisted summary counters and reader reuse on exact unchanged generation/policy.",
+			"purpose": "Reduce reopen/summary latency and overlapping-reader peak RSS while preserving pinned old snapshots and atomic replacement."
+		},
+		{
+			"idea": "Batch page string hydration by dictionary block with a bounded decoded-block cache.",
+			"code": "crates/game-text-index/src/engine_reader.rs:444",
+			"purpose": "Current string() decodes an A64 block for each ID even if its compressed frame is cached; strings() loops string()."
+		},
+		{
+			"idea": "Fuse compatible facet passes and reuse exact matching rowsets for compatible localization aggregates.",
+			"code": "crates/game-text-index/src/engine_search.rs:360",
+			"purpose": "Reduce first-use facets and broad-term counts. Preserve self-excluding facets and scope/policy semantics; do not reuse counts merely because query text has a common prefix."
+		},
+		{
+			"idea": "Persist a byte-sorted ID-to-row order for cursor resolution.",
+			"code": "crates/game-text-index/src/engine_query.rs:159",
+			"purpose": "find_id remains a linear ID scan. Deep cursor profiling is needed; this first-next-page benchmark does not establish its deep-page cost."
+		}
+	]
+}

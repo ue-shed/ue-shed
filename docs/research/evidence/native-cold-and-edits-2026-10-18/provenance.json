@@ -1,0 +1,11 @@
+{
+	"originalTypeScriptCommit": "8631c016d1f87b1d37f7c98327c395c137bf3668",
+	"nativeSha256": "C3AF28FC44D3AD3CCA2B1DD7209FA0796A3EE0CE40C24A9C230BAA2F1456261D",
+	"nativeProductionCommit": "75a12e4f",
+	"nativeCommit": "1b964761403a38f953c67addd7eb48fcaf3674bd",
+	"cases": ["cold", "stable", "size", "po", "mixed"],
+	"method": "Retained 1x inputs; fresh index for every cold run; separate clone of that round's completed cold cache for every write case; serial alternating fresh processes; fixed CPU affinity; default Node heap; filesystem caches left warm; strict worker exits; full rebuild column proof after each CLI update. Harness additions only, no production implementation changes.",
+	"plannedSamplesPerHostPerBackendPerCase": 3,
+	"samplingDecision": "Stopped at 42 completed runs after user challenged unnecessary 60-run matrix. Cold and repeated-query controls have 3 samples per host/backend. CLI edits have 2 samples; Workbench edits have 2 except stable-size package edit, which has 1. Actual sample counts and all ranges are retained.",
+	"poIsolation": "Original PO mtime restored before and after subsequent write runs after inspecting and excluding the timestamp-isolation attempt. All accepted writes begin without rebuilding the join. Each timed stage follows explicit main-thread GC."
+}

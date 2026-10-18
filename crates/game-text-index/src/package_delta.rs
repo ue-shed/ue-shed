@@ -161,9 +161,16 @@ pub(crate) fn publish(
         )?;
     }
     // Compaction remaps every global ID. Complete it before loading any old record columns.
+    // Only active destinations survive compaction. Cached inactive keys may need reauthoring.
     let files = inputs
         .iter()
-        .filter(|input| store.root["layers"].get(&input.key).is_none())
+        .filter(|input| {
+            !store.root["active"].as_object().is_some_and(|active| {
+                active
+                    .values()
+                    .any(|key| key.as_str() == Some(input.key.as_str()))
+            })
+        })
         .map(|input| input.file.as_path())
         .collect::<Vec<_>>();
     let bounded = store.reserve_local_segments(&files, None)?;
@@ -303,4 +310,161 @@ pub(crate) fn publish(
     }
     store.publish_root()?;
     Ok(records)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::snapshot::{Writer, string_block, u32_bytes};
+    use crate::store::{Configuration, dictionary_bytes, token};
+    use std::path::{Path, PathBuf};
+
+    fn input(directory: &Path, path: &str, key: &str, sources: &[String]) -> Result<PathBuf> {
+        let file = directory.join(format!("{key}.snapshot"));
+        let mut writer = Writer::new(&directory.join(format!("{}.payload", token())))?;
+        let mut order = Vec::new();
+        for (domain, values) in [
+            ("paths", vec![path.to_owned()]),
+            ("identity", vec![key.to_owned()]),
+            ("source", sources.to_vec()),
+        ] {
+            // One string per block makes the cached revert require the per-domain path.
+            for (block, value) in values.iter().enumerate() {
+                let index = writer.add(
+                    &format!("{domain}.b{block}"),
+                    4,
+                    domain,
+                    &string_block(std::slice::from_ref(value))?,
+                    1,
+                )?;
+                writer.entries[index].strings = values.len() as u32;
+                order.push(index);
+            }
+            order.push(writer.column(
+                &format!("{domain}.starts"),
+                &(0..values.len() as u32).collect::<Vec<_>>(),
+            )?);
+        }
+        for (name, domain, values) in [
+            ("package.path", "paths", vec![0]),
+            ("package.signature", "identity", vec![0]),
+            (
+                "occurrence.source",
+                "source",
+                (0..sources.len() as u32).collect(),
+            ),
+        ] {
+            let index = writer.add(name, 3, domain, &u32_bytes(&values), 1)?;
+            writer.entries[index].strings = if domain == "source" {
+                sources.len() as u32
+            } else {
+                1
+            };
+            order.push(index);
+        }
+        for (name, values) in [
+            ("package.status", vec![0]),
+            ("package.occurrence_start", vec![0, sources.len() as u32]),
+            ("package.gap_start", vec![0, 0]),
+            ("package.missing_start", vec![0, 0]),
+            ("occurrence.copies", vec![0; sources.len()]),
+            ("gap.reason", vec![]),
+            ("missing.key", vec![]),
+        ] {
+            order.push(writer.column(name, &values)?);
+        }
+        writer.finish(&file, &order)?;
+        Ok(file)
+    }
+
+    #[test]
+    fn mixed_cached_revert_reserves_inputs_evicted_by_compaction() -> Result<()> {
+        let configuration = Configuration {
+            cache_root: crate::test_directory("cached-package-revert"),
+            project_key: "project".into(),
+            target_key: "text".into(),
+            shared_project: false,
+            view_prefix: None,
+        };
+        let mut store = Store::writer(configuration.clone())?;
+        let sources = (0..300)
+            .map(|row| format!("retained-{row}"))
+            .collect::<Vec<_>>();
+        let a = input(&configuration.cache_root, "first", "a", &sources)?;
+        let c = input(&configuration.cache_root, "first", "c", &["current".into()])?;
+        let old = input(&configuration.cache_root, "second", "old", &["old".into()])?;
+        let b = input(&configuration.cache_root, "second", "b", &["new".into()])?;
+        store.publish_local("package-text.0", "a", &a)?;
+        store.publish_local("package-text.0", "c", &c)?;
+        store.publish_local("package-text.1", "old", &old)?;
+        while store.root["segments"].as_array().ok_or("segments")?.len() < 256 {
+            store.intern(
+                "source",
+                &[format!(
+                    "dead-{}",
+                    store.root["segments"].as_array().ok_or("segments")?.len()
+                )],
+            )?;
+        }
+        store.publish_root()?;
+        assert!(store.root["layers"].get("a").is_some());
+        let generation = store.root["generation"].clone();
+        let result = publish(
+            &mut store,
+            &[
+                PackageInput {
+                    name: "package-text.1".into(),
+                    key: "b".into(),
+                    previous_key: "old".into(),
+                    file: b,
+                    rows: vec![-1],
+                },
+                PackageInput {
+                    name: "package-text.0".into(),
+                    key: "a".into(),
+                    previous_key: "c".into(),
+                    file: a,
+                    rows: vec![-1],
+                },
+            ],
+            &[],
+        )?;
+        assert_eq!(result.len(), 2);
+        assert_ne!(store.root["generation"], generation);
+        assert_eq!(store.root["active"]["package-text.0"], "a");
+        assert_eq!(store.root["active"]["package-text.1"], "b");
+        let values = dictionary_bytes(&store.directory, &store.root)?;
+        for (name, expected) in [
+            ("package-text.0", sources),
+            ("package-text.1", vec!["new".into()]),
+        ] {
+            let (mut reader, record) = layer(&store, name)?.ok_or("package layer")?;
+            let ids = column(&mut reader, &record, "occurrence.source")?;
+            assert_eq!(
+                ids.iter()
+                    .map(|id| String::from_utf8(values[*id as usize].clone()))
+                    .collect::<std::result::Result<Vec<_>, _>>()?,
+                expected
+            );
+        }
+        // An already-active destination cannot be evicted and still needs no authored input.
+        publish(
+            &mut store,
+            &[PackageInput {
+                name: "package-text.0".into(),
+                key: "a".into(),
+                previous_key: "a".into(),
+                file: configuration.cache_root.join("not-staged.snapshot"),
+                rows: vec![],
+            }],
+            &[],
+        )?;
+        drop(store);
+        let reopened = Store::writer(configuration.clone())?;
+        assert_eq!(reopened.root["active"]["package-text.0"], "a");
+        assert_eq!(reopened.root["active"]["package-text.1"], "b");
+        drop(reopened);
+        std::fs::remove_dir_all(configuration.cache_root)?;
+        Ok(())
+    }
 }

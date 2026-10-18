@@ -1,6 +1,5 @@
 //! Bounded native search responses, including counts, localization and facets.
 use crate::engine_match::{Projection, checkpoint};
-use crate::engine_places::Places;
 use crate::engine_query::{EngineQuery, mask};
 use crate::engine_types::*;
 use crate::{Result, require};
@@ -30,6 +29,18 @@ fn record(labels: &[&str], values: &[usize]) -> Value {
 
 impl EngineQuery {
     pub(crate) fn search_counts(
+        &mut self,
+        request: &SearchRequest,
+        matched: &[u32],
+        cancelled: &AtomicBool,
+    ) -> Result<Value> {
+        self.cached_metadata(
+            format!("counts:{}", request.matching_key()?),
+            cancelled,
+            |query| query.compute_search_counts(request, matched, cancelled),
+        )
+    }
+    fn compute_search_counts(
         &mut self,
         request: &SearchRequest,
         matched: &[u32],
@@ -145,6 +156,18 @@ impl EngineQuery {
         Ok(result)
     }
     fn localization_counts(
+        &mut self,
+        request: &SearchRequest,
+        matched: &[u32],
+        cancelled: &AtomicBool,
+    ) -> Result<Value> {
+        self.cached_metadata(
+            format!("localization:{}", request.matching_key()?),
+            cancelled,
+            |query| query.compute_localization_counts(request, matched, cancelled),
+        )
+    }
+    fn compute_localization_counts(
         &mut self,
         request: &SearchRequest,
         matched: &[u32],
@@ -285,101 +308,59 @@ impl EngineQuery {
             facets.into_iter().map(|(_, _, value)| value).collect(),
         ))
     }
-    pub fn search(&mut self, request: &SearchRequest, cancelled: &AtomicBool) -> Result<Value> {
-        let matched = self.matching(request, cancelled)?;
-        let p = Projection::open(self, cancelled)?;
-        let places = Places::open(self)?;
-        let localized = request.localization.is_some();
-        let scope = self.culture_scope(request.localization.as_ref())?;
-        let mut listed = Vec::new();
-        let opened = if let (Some(by), Some(opened)) = (request.group, request.open_group.as_ref())
-        {
-            Some(match by {
-                GroupBy::Problem => PROBLEMS
-                    .iter()
-                    .position(|value| value == opened)
-                    .map(|id| id as u32),
-                GroupBy::Origin => {
-                    if opened.is_empty() {
-                        Some(0)
-                    } else {
-                        ORIGINS
-                            .iter()
-                            .position(|value| value == opened)
-                            .map(|id| id as u32 + 1)
+    fn search_metadata(
+        &mut self,
+        request: &SearchRequest,
+        matched: &[u32],
+        cancelled: &AtomicBool,
+    ) -> Result<Value> {
+        self.cached_metadata(
+            format!(
+                "response:{}",
+                serde_json::to_string(&request.without_page())?
+            ),
+            cancelled,
+            |query| query.compute_search_metadata(request, matched, cancelled),
+        )
+    }
+    fn problem_counts(&mut self, request: &SearchRequest, cancelled: &AtomicBool) -> Result<Value> {
+        let request = request.without_filter(FilterField::Problem);
+        self.cached_metadata(
+            format!("problems:{}", request.matching_key()?),
+            cancelled,
+            |query| {
+                let p = Projection::open(query, cancelled)?;
+                let localized = request.localization.is_some();
+                let scope = query.culture_scope(request.localization.as_ref())?;
+                let rows = query.matching(&request, cancelled)?;
+                let mut problems = [0usize; PROBLEMS.len()];
+                for (index, row) in rows.iter().enumerate() {
+                    if index & 255 == 0 {
+                        checkpoint(cancelled)?;
+                    }
+                    let mask = p.row_problem(localized, *row as usize, &scope);
+                    for (bit, count) in problems.iter_mut().enumerate() {
+                        if mask & (1 << bit) != 0 {
+                            *count += 1;
+                        }
                     }
                 }
-                GroupBy::Audience => AUDIENCES
-                    .iter()
-                    .position(|value| value == opened)
-                    .map(|id| id as u32),
-                _ => places
-                    .labels(std::slice::from_ref(opened), false)
-                    .iter()
-                    .next()
-                    .copied(),
-            })
-        } else {
-            None
-        };
-        for (index, row) in matched.iter().enumerate() {
-            if index & 255 == 0 {
-                checkpoint(cancelled)?;
-            }
-            if let Some(opened) = opened
-                && opened
-                    != Some(p.group_key(
-                        &places,
-                        localized,
-                        *row as usize,
-                        &scope,
-                        request.group.ok_or("Missing group.")?,
-                    )?)
-            {
-                continue;
-            }
-            listed.push(*row);
-        }
-        let kind = if localized { "line" } else { "raw" };
-        let cursor = if localized {
-            request.localization_cursor.as_ref()
-        } else {
-            request.cursor.as_ref()
-        };
-        let after = if let Some(cursor) = cursor {
-            let row = self.find_id(kind, cursor)?;
-            row.and_then(|row| listed.iter().position(|value| *value as usize == row))
-                .map_or(0, |index| index + 1)
-        } else {
-            0
-        };
-        let page = &listed[after..listed.len().min(after + request.page_size)];
-        let next = if after + page.len() < listed.len() {
-            page.last()
-                .map(|row| self.packed(kind, *row as usize))
-                .transpose()?
-        } else {
-            None
-        };
+                Ok(record(&PROBLEMS, &problems))
+            },
+        )
+    }
+    fn compute_search_metadata(
+        &mut self,
+        request: &SearchRequest,
+        matched: &[u32],
+        cancelled: &AtomicBool,
+    ) -> Result<Value> {
+        let localized = request.localization.is_some();
         let mut result =
-            json!({"counts":self.search_counts(request,&matched,cancelled)?,"total":matched.len()});
-        let problem_rows =
-            self.matching(&request.without_filter(FilterField::Problem), cancelled)?;
-        let mut problems = [0usize; PROBLEMS.len()];
-        for (index, row) in problem_rows.iter().enumerate() {
-            if index & 255 == 0 {
-                checkpoint(cancelled)?;
-            }
-            let mask = p.row_problem(localized, *row as usize, &scope);
-            for (bit, count) in problems.iter_mut().enumerate() {
-                if mask & (1 << bit) != 0 {
-                    *count += 1;
-                }
-            }
-        }
-        result["problems"] = record(&PROBLEMS, &problems);
+            json!({"counts":self.search_counts(request,matched,cancelled)?,"total":matched.len()});
+        result["problems"] = self.problem_counts(request, cancelled)?;
         if let Some(group) = request.group {
-            let mut groups = self.aggregate(&matched, request, group, false, "", cancelled)?;
+            let mut groups = self.aggregate(matched, request, group, false, "", cancelled)?;
             groups["by"] = serde_json::to_value(group)?;
             result["groups"] = groups;
         }
@@ -414,16 +395,43 @@ impl EngineQuery {
                 }
             }
             if facets.cultures == Some(true) && localized {
-                values["cultures"] = self.culture_facets(request, &matched, cancelled)?;
+                values["cultures"] = self.culture_facets(request, matched, cancelled)?;
             }
             result["facets"] = values;
         }
-        if let Some(files) = self.file_scope(&matched, request, cancelled)? {
+        if let Some(files) = self.file_scope(matched, request, cancelled)? {
             result["fileScope"] = files;
         }
+        if localized {
+            result["localization"] = self.localization_counts(request, matched, cancelled)?;
+        }
+        checkpoint(cancelled)?;
+        Ok(result)
+    }
+    pub fn search(&mut self, request: &SearchRequest, cancelled: &AtomicBool) -> Result<Value> {
+        let matched = self.matching(request, cancelled)?;
+        let listed = self.listed_rows(request, std::sync::Arc::clone(&matched), cancelled)?;
+        let localized = request.localization.is_some();
+        let kind = if localized { "line" } else { "raw" };
+        let cursor = if localized {
+            request.localization_cursor.as_ref()
+        } else {
+            request.cursor.as_ref()
+        };
+        let after = self.after_cursor(kind, &listed, cursor, cancelled)?;
+        let page = &listed[after..listed.len().min(after + request.page_size)];
+        let next = if after + page.len() < listed.len() {
+            page.last()
+                .map(|row| self.packed(kind, *row as usize))
+                .transpose()?
+        } else {
+            None
+        };
+        let mut result = self.search_metadata(request, &matched, cancelled)?;
         let mut units = Vec::new();
         if localized {
-            let mut localization = self.localization_counts(request, &matched, cancelled)?;
+            let p = Projection::open(self, cancelled)?;
+            let mut localization = result["localization"].take();
             let mut lines = Vec::new();
             for row in page {
                 checkpoint(cancelled)?;

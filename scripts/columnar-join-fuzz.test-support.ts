@@ -51,6 +51,7 @@ import { joinMemoryLayer } from "./columnar-join-memory.test-support.ts";
 import { localizationColumnsBuilder } from "../packages/game-text/src/localization-columns.ts";
 import { defaultLocalizationImportLimits } from "../packages/game-text/src/localization-stream.ts";
 import { SharedIndex } from "../packages/game-text/src/shared-index.ts";
+import { snapshotColumnsSource } from "../packages/game-text/src/snapshot-file.ts";
 
 const Entry = Schema.Struct({
 	namespace: Schema.String,
@@ -389,7 +390,8 @@ export async function compareJoinFuzzInput(
 			| import("../packages/game-text/src/localization-view.ts").LocalizationFocus
 			| undefined
 		)[];
-	}>
+	}>,
+	seedDictionary = false
 ): Promise<FuzzDifference[]> {
 	const projectRoot = join(cache, "project");
 	if (persisted) await mkdir(projectRoot, { recursive: true });
@@ -398,6 +400,21 @@ export async function compareJoinFuzzInput(
 		persisted
 			? runJoinIn(projectRoot, cache, "Fuzz", effect)
 			: Effect.runPromise(Effect.scoped(effect).pipe(Effect.provide(memoryLayer)));
+	if (seedDictionary)
+		await run(
+			Effect.gen(function* () {
+				const writer = yield* (yield* SharedIndex).writer();
+				const key = yield* writer.intern("identity", ["K0"]);
+				const empty = yield* writer.intern("identity", [""]);
+				if (key[0] !== 0 || empty[0] !== 1)
+					throw new Error("Shifted dictionary fixture did not retain its intended IDs");
+				yield* writer.publish(
+					"dictionary-seed",
+					"dictionary-seed",
+					snapshotColumnsSource([{ name: "seed", kind: "u32", values: key }])
+				);
+			})
+		);
 	const importMemory = async (
 		name: string,
 		data: Buffer,
@@ -576,6 +593,10 @@ export async function compareJoinFuzzInput(
 		withoutFacets,
 		base,
 		unlocalized,
+		{
+			...unlocalized,
+			filter: [{ field: "namespace", op: "is", values: ["UI"] }]
+		},
 		{ ...base, pageSize: 2 },
 		{ ...base, capability: "read_only" },
 		{ ...base, capability: "source_editable" },
@@ -662,6 +683,38 @@ export async function compareJoinFuzzInput(
 			group: grouped.groups.by,
 			openGroup: grouped.groups.entries[0].key
 		});
+	// Page both projections and revisit warmed requests after other scopes. The event oracle
+	// supplies cursors, so these comparisons also cover display order and cache-key isolation.
+	for (const selection of [base, unlocalized]) {
+		const grouping = (
+			["asset", "folder", "namespace", "origin", "problem", "audience"] as const
+		)[input.seed % 6]!;
+		const groups = oracle.search({ ...selection, group: grouping }).groups;
+		for (const openGroup of [undefined, groups?.entries[0]?.key, "missing-test-group"]) {
+			const pageRequest = {
+				...selection,
+				pageSize: 1,
+				group: grouping
+			};
+			const firstRequest =
+				openGroup === undefined ? pageRequest : { ...pageRequest, openGroup };
+			const page = oracle.search(firstRequest);
+			requests.push(firstRequest);
+			if (page.localization?.nextCursor)
+				requests.push({
+					...firstRequest,
+					pageSize: 2,
+					localizationCursor: page.localization.nextCursor
+				});
+			else if (page.nextCursor)
+				requests.push({
+					...firstRequest,
+					pageSize: 2,
+					cursor: page.nextCursor
+				});
+			requests.push(firstRequest);
+		}
+	}
 	requests.push({
 		...base,
 		localization: {
@@ -686,6 +739,15 @@ export async function compareJoinFuzzInput(
 			joinedInput
 		);
 	} else await run(refreshJoinedTarget(joinedInput));
+	if (seedDictionary)
+		await run(
+			Effect.gen(function* () {
+				const reader = yield* (yield* SharedIndex).open();
+				const values = yield* reader.strings([0, 1]);
+				if (values[0] !== "K0" || values[1] !== "")
+					throw new Error("Shifted dictionary IDs changed during join preparation");
+			})
+		);
 	const actual = await run(
 		Effect.gen(function* () {
 			const joined = yield* openJoinedTarget();
@@ -872,9 +934,17 @@ export async function compareJoinFuzzInput(
 	}
 	for (const [index, request] of requests.entries()) {
 		if (nativeResults)
-			compare("native-engine.search", oracle.search(request), nativeResults.searches[index]);
-		compare("query.search", oracle.search(request), hydrated.search(request));
-		compare("column-query.search", oracle.search(request), actual.query.searches[index]);
+			compare(
+				`native-engine.search.${index}`,
+				oracle.search(request),
+				nativeResults.searches[index]
+			);
+		compare(`query.search.${index}`, oracle.search(request), hydrated.search(request));
+		compare(
+			`column-query.search.${index}`,
+			oracle.search(request),
+			actual.query.searches[index]
+		);
 	}
 	for (const [lineIndex, line] of expected.lines.entries()) {
 		compare(

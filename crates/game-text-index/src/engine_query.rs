@@ -12,6 +12,8 @@ use std::sync::Arc;
 pub struct EngineQuery {
     pub(crate) audience_rules: Vec<String>,
     pub(crate) summary_cache: Option<Value>,
+    pub(crate) metadata_cache: crate::query_cache::QueryCache,
+    pub(crate) row_ranks: HashMap<String, Arc<[u32]>>,
     pub(crate) copy_starts: HashMap<usize, Arc<[usize]>>,
     pub reader: EngineReader,
     pub target: Value,
@@ -122,6 +124,8 @@ impl EngineQuery {
         Ok(Self {
             audience_rules: Vec::new(),
             summary_cache: None,
+            metadata_cache: crate::query_cache::QueryCache::default(),
+            row_ranks: HashMap::new(),
             copy_starts: HashMap::new(),
             reader,
             target,

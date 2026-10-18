@@ -1,0 +1,3518 @@
+[
+	{
+		"sample": "verified-cli-baseline-0.json",
+		"host": "cli",
+		"backend": "baseline",
+		"outcome": "done",
+		"workerExit": {
+			"code": 0,
+			"signal": null
+		},
+		"joinedRebuiltOnOpen": false,
+		"measurements": [
+			{
+				"stage": "cli:warm-open",
+				"seconds": 1.5585846,
+				"eventLoop": {
+					"maximumDelayMs": 75.07709999999997,
+					"p99DelayMs": 24.51559999999995,
+					"utilization": 0.5594836613369576
+				},
+				"peak": {
+					"heapUsed": 133288536,
+					"arrayBuffers": 12192639,
+					"rss": 292421632
+				},
+				"readPackages": 0,
+				"rebuilt": false,
+				"sampledProcessTreePeakBytes": 822480896,
+				"nativeSearchSeconds": []
+			},
+			{
+				"stage": "cli:first-query",
+				"seconds": 0.2452488999999996,
+				"eventLoop": {
+					"maximumDelayMs": 18.609600000000228,
+					"p99DelayMs": 18.609600000000228,
+					"utilization": 0.02267015974609399
+				},
+				"peak": {
+					"heapUsed": 53746520,
+					"arrayBuffers": 2935329,
+					"rss": 271036416
+				},
+				"sha256": "b2f3d5684ab2dd3cde646b7c40c745987fa7a8b29422f8ebd8c26328f71f0cb5",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.2414594]
+			},
+			{
+				"stage": "cli:count",
+				"seconds": 0.06351990000000024,
+				"eventLoop": {
+					"maximumDelayMs": 24.127799999999752,
+					"p99DelayMs": 24.127799999999752,
+					"utilization": 0.04212453643791633
+				},
+				"peak": {
+					"heapUsed": 53665472,
+					"arrayBuffers": 2866297,
+					"rss": 265113600
+				},
+				"sha256": "b2f3d5684ab2dd3cde646b7c40c745987fa7a8b29422f8ebd8c26328f71f0cb5",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0611812]
+			},
+			{
+				"stage": "cli:filter",
+				"seconds": 0.03258159999999998,
+				"eventLoop": {
+					"maximumDelayMs": 15.230199999999968,
+					"p99DelayMs": 15.230199999999968,
+					"utilization": 0.07486135351706949
+				},
+				"peak": {
+					"heapUsed": 53629800,
+					"arrayBuffers": 2845456,
+					"rss": 265334784
+				},
+				"sha256": "81b3adccc43642d235b6df7ae9756349a678079450130955ec657b0cf743f36b",
+				"total": 2830,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0304089]
+			},
+			{
+				"stage": "cli:facet",
+				"seconds": 0.1400931999999998,
+				"eventLoop": {
+					"maximumDelayMs": 15.793899999999667,
+					"p99DelayMs": 15.793899999999667,
+					"utilization": 0.025338303280982157
+				},
+				"peak": {
+					"heapUsed": 53897240,
+					"arrayBuffers": 2883342,
+					"rss": 265408512
+				},
+				"sha256": "5b2b2effcc219992fc643e503927b029e93beb76f6e8e79c348742327e0c06fd",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": null,
+				"nativeSearchSeconds": [0.1372116]
+			},
+			{
+				"stage": "cli:page",
+				"seconds": 0.09326819999999998,
+				"eventLoop": {
+					"maximumDelayMs": 19.844500000000153,
+					"p99DelayMs": 19.844500000000153,
+					"utilization": 0.08319323221295641
+				},
+				"peak": {
+					"heapUsed": 60536840,
+					"arrayBuffers": 3300207,
+					"rss": 266825728
+				},
+				"sha256": "0ba67fe381df7557251af78e5bd0515737c32bb6ccc888b88c18cbab67e7d14b",
+				"total": 583507,
+				"displayed": 50,
+				"lines": 50,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0856289]
+			},
+			{
+				"stage": "cli:facet-repeat",
+				"seconds": 0.14023950000000013,
+				"eventLoop": {
+					"maximumDelayMs": 22.053699999999935,
+					"p99DelayMs": 22.053699999999935,
+					"utilization": 0.02163617175109552
+				},
+				"peak": {
+					"heapUsed": 54850272,
+					"arrayBuffers": 2906990,
+					"rss": 266809344
+				},
+				"sha256": "5b2b2effcc219992fc643e503927b029e93beb76f6e8e79c348742327e0c06fd",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.137881]
+			},
+			{
+				"stage": "cli:page-repeat",
+				"seconds": 0.08271759999999995,
+				"eventLoop": {
+					"maximumDelayMs": 15.78690000000006,
+					"p99DelayMs": 15.78690000000006,
+					"utilization": 0.07911286047336287
+				},
+				"peak": {
+					"heapUsed": 60481168,
+					"arrayBuffers": 3241684,
+					"rss": 265916416
+				},
+				"sha256": "0ba67fe381df7557251af78e5bd0515737c32bb6ccc888b88c18cbab67e7d14b",
+				"total": 583507,
+				"displayed": 50,
+				"lines": 50,
+				"sampledProcessTreePeakBytes": null,
+				"nativeSearchSeconds": [0.0763411]
+			},
+			{
+				"stage": "cli:search",
+				"seconds": 0.19401369999999998,
+				"eventLoop": {
+					"maximumDelayMs": 16.221400000000358,
+					"p99DelayMs": 16.221400000000358,
+					"utilization": 0.016273974260033696
+				},
+				"peak": {
+					"heapUsed": 53762800,
+					"arrayBuffers": 2845667,
+					"rss": 265920512
+				},
+				"sha256": "b2f3d5684ab2dd3cde646b7c40c745987fa7a8b29422f8ebd8c26328f71f0cb5",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 987328512,
+				"nativeSearchSeconds": [0.1919406]
+			},
+			{
+				"stage": "cli:search-repeat",
+				"seconds": 0.06325300000000061,
+				"eventLoop": {
+					"maximumDelayMs": 22.82669999999962,
+					"p99DelayMs": 22.82669999999962,
+					"utilization": 0.03836984284373153
+				},
+				"peak": {
+					"heapUsed": 53768368,
+					"arrayBuffers": 2845558,
+					"rss": 265920512
+				},
+				"sha256": "b2f3d5684ab2dd3cde646b7c40c745987fa7a8b29422f8ebd8c26328f71f0cb5",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0612764]
+			},
+			{
+				"stage": "cli:empty-search",
+				"seconds": 0.1395073999999995,
+				"eventLoop": {
+					"maximumDelayMs": 16.194100000000617,
+					"p99DelayMs": 16.194100000000617,
+					"utilization": 0.018368188092343515
+				},
+				"peak": {
+					"heapUsed": 53671032,
+					"arrayBuffers": 2836513,
+					"rss": 265920512
+				},
+				"sha256": "b2cb9699228458b4661159bc08f90df6636d7ae4975ee751a0c068a25915453e",
+				"total": 0,
+				"displayed": 0,
+				"lines": 0,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.1379007]
+			},
+			{
+				"stage": "cli:empty-search-repeat",
+				"seconds": 0.0019416000000001077,
+				"eventLoop": {
+					"maximumDelayMs": 1.938600000000406,
+					"p99DelayMs": 1.938600000000406,
+					"utilization": 0.6962501286107866
+				},
+				"peak": {
+					"heapUsed": 53659616,
+					"arrayBuffers": 2836513,
+					"rss": 265920512
+				},
+				"sha256": "b2cb9699228458b4661159bc08f90df6636d7ae4975ee751a0c068a25915453e",
+				"total": 0,
+				"displayed": 0,
+				"lines": 0,
+				"sampledProcessTreePeakBytes": null,
+				"nativeSearchSeconds": [0.0006389]
+			},
+			{
+				"stage": "cli:focus",
+				"seconds": 0.0032043000000003302,
+				"eventLoop": {
+					"maximumDelayMs": 3.20259999999962,
+					"p99DelayMs": 3.20259999999962,
+					"utilization": 0.5572788262630078
+				},
+				"peak": {
+					"heapUsed": 53732848,
+					"arrayBuffers": 2846090,
+					"rss": 265920512
+				},
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": []
+			},
+			{
+				"stage": "cli:refresh-no-change",
+				"seconds": 1.6987793000000002,
+				"eventLoop": {
+					"maximumDelayMs": 74.88700000000063,
+					"p99DelayMs": 24.09560000000056,
+					"utilization": 0.5649962685008858
+				},
+				"peak": {
+					"heapUsed": 145066824,
+					"arrayBuffers": 10962575,
+					"rss": 308613120
+				},
+				"readPackages": 0,
+				"rebuilt": false,
+				"sampledProcessTreePeakBytes": 718774272,
+				"nativeSearchSeconds": []
+			},
+			{
+				"stage": "cli:loc-status-command",
+				"seconds": 2.3164046000000007,
+				"eventLoop": {
+					"maximumDelayMs": 346.2667999999994,
+					"p99DelayMs": 67.42730000000029,
+					"utilization": 0.5658418540801446
+				},
+				"peak": {
+					"heapUsed": 185831760,
+					"arrayBuffers": 70743965,
+					"rss": 374505472
+				},
+				"total": 583507,
+				"exitCode": 0,
+				"sampledProcessTreePeakBytes": 1319968768,
+				"nativeSearchSeconds": [0.2710429]
+			}
+		]
+	},
+	{
+		"sample": "verified-cli-baseline-1.json",
+		"host": "cli",
+		"backend": "baseline",
+		"outcome": "done",
+		"workerExit": {
+			"code": 0,
+			"signal": null
+		},
+		"joinedRebuiltOnOpen": false,
+		"measurements": [
+			{
+				"stage": "cli:warm-open",
+				"seconds": 1.5400616000000003,
+				"eventLoop": {
+					"maximumDelayMs": 69.46459999999979,
+					"p99DelayMs": 18.850800000000163,
+					"utilization": 0.5676090963169327
+				},
+				"peak": {
+					"heapUsed": 133520800,
+					"arrayBuffers": 12192647,
+					"rss": 292724736
+				},
+				"readPackages": 0,
+				"rebuilt": false,
+				"sampledProcessTreePeakBytes": 895496192,
+				"nativeSearchSeconds": []
+			},
+			{
+				"stage": "cli:first-query",
+				"seconds": 0.24432110000000012,
+				"eventLoop": {
+					"maximumDelayMs": 19.366500000000087,
+					"p99DelayMs": 19.366500000000087,
+					"utilization": 0.02215580406158011
+				},
+				"peak": {
+					"heapUsed": 53757008,
+					"arrayBuffers": 2935382,
+					"rss": 271347712
+				},
+				"sha256": "b2f3d5684ab2dd3cde646b7c40c745987fa7a8b29422f8ebd8c26328f71f0cb5",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.2406938]
+			},
+			{
+				"stage": "cli:count",
+				"seconds": 0.06347730000000001,
+				"eventLoop": {
+					"maximumDelayMs": 15.255500000000211,
+					"p99DelayMs": 15.255500000000211,
+					"utilization": 0.04483779335519858
+				},
+				"peak": {
+					"heapUsed": 53674328,
+					"arrayBuffers": 2866305,
+					"rss": 265371648
+				},
+				"sha256": "b2f3d5684ab2dd3cde646b7c40c745987fa7a8b29422f8ebd8c26328f71f0cb5",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0610762]
+			},
+			{
+				"stage": "cli:filter",
+				"seconds": 0.03272320000000036,
+				"eventLoop": {
+					"maximumDelayMs": 15.097800000000007,
+					"p99DelayMs": 15.097800000000007,
+					"utilization": 0.07623107369825682
+				},
+				"peak": {
+					"heapUsed": 53664976,
+					"arrayBuffers": 2866203,
+					"rss": 265699328
+				},
+				"sha256": "81b3adccc43642d235b6df7ae9756349a678079450130955ec657b0cf743f36b",
+				"total": 2830,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0305385]
+			},
+			{
+				"stage": "cli:facet",
+				"seconds": 0.14100640000000023,
+				"eventLoop": {
+					"maximumDelayMs": 16.165100000000166,
+					"p99DelayMs": 16.165100000000166,
+					"utilization": 0.02070921362346249
+				},
+				"peak": {
+					"heapUsed": 53906928,
+					"arrayBuffers": 2883350,
+					"rss": 265887744
+				},
+				"sha256": "5b2b2effcc219992fc643e503927b029e93beb76f6e8e79c348742327e0c06fd",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": null,
+				"nativeSearchSeconds": [0.1387275]
+			},
+			{
+				"stage": "cli:page",
+				"seconds": 0.09423250000000007,
+				"eventLoop": {
+					"maximumDelayMs": 19.016799999999876,
+					"p99DelayMs": 19.016799999999876,
+					"utilization": 0.08078967559972583
+				},
+				"peak": {
+					"heapUsed": 60537184,
+					"arrayBuffers": 3300215,
+					"rss": 266948608
+				},
+				"sha256": "0ba67fe381df7557251af78e5bd0515737c32bb6ccc888b88c18cbab67e7d14b",
+				"total": 583507,
+				"displayed": 50,
+				"lines": 50,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0866674]
+			},
+			{
+				"stage": "cli:facet-repeat",
+				"seconds": 0.1400144,
+				"eventLoop": {
+					"maximumDelayMs": 23.297000000000025,
+					"p99DelayMs": 23.297000000000025,
+					"utilization": 0.021908320006904815
+				},
+				"peak": {
+					"heapUsed": 54873664,
+					"arrayBuffers": 2906999,
+					"rss": 266944512
+				},
+				"sha256": "5b2b2effcc219992fc643e503927b029e93beb76f6e8e79c348742327e0c06fd",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.1375766]
+			},
+			{
+				"stage": "cli:page-repeat",
+				"seconds": 0.08345659999999998,
+				"eventLoop": {
+					"maximumDelayMs": 16.0016999999998,
+					"p99DelayMs": 16.0016999999998,
+					"utilization": 0.07777066843292732
+				},
+				"peak": {
+					"heapUsed": 60495224,
+					"arrayBuffers": 3241692,
+					"rss": 266047488
+				},
+				"sha256": "0ba67fe381df7557251af78e5bd0515737c32bb6ccc888b88c18cbab67e7d14b",
+				"total": 583507,
+				"displayed": 50,
+				"lines": 50,
+				"sampledProcessTreePeakBytes": null,
+				"nativeSearchSeconds": [0.0771123]
+			},
+			{
+				"stage": "cli:search",
+				"seconds": 0.1944970999999996,
+				"eventLoop": {
+					"maximumDelayMs": 16.321500000000015,
+					"p99DelayMs": 16.321500000000015,
+					"utilization": 0.015383223220637765
+				},
+				"peak": {
+					"heapUsed": 53768896,
+					"arrayBuffers": 2845566,
+					"rss": 266051584
+				},
+				"sha256": "b2f3d5684ab2dd3cde646b7c40c745987fa7a8b29422f8ebd8c26328f71f0cb5",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 988250112,
+				"nativeSearchSeconds": [0.1926387]
+			},
+			{
+				"stage": "cli:search-repeat",
+				"seconds": 0.06334410000000025,
+				"eventLoop": {
+					"maximumDelayMs": 22.727499999999964,
+					"p99DelayMs": 22.727499999999964,
+					"utilization": 0.036096381233867846
+				},
+				"peak": {
+					"heapUsed": 53799568,
+					"arrayBuffers": 2866305,
+					"rss": 266055680
+				},
+				"sha256": "b2f3d5684ab2dd3cde646b7c40c745987fa7a8b29422f8ebd8c26328f71f0cb5",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0614333]
+			},
+			{
+				"stage": "cli:empty-search",
+				"seconds": 0.1411320000000005,
+				"eventLoop": {
+					"maximumDelayMs": 15.46979999999985,
+					"p99DelayMs": 15.46979999999985,
+					"utilization": 0.0209172676583685
+				},
+				"peak": {
+					"heapUsed": 53676128,
+					"arrayBuffers": 2836521,
+					"rss": 266055680
+				},
+				"sha256": "b2cb9699228458b4661159bc08f90df6636d7ae4975ee751a0c068a25915453e",
+				"total": 0,
+				"displayed": 0,
+				"lines": 0,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.1390996]
+			},
+			{
+				"stage": "cli:empty-search-repeat",
+				"seconds": 0.001772399999999834,
+				"eventLoop": {
+					"maximumDelayMs": 1.7691999999997279,
+					"p99DelayMs": 1.7691999999997279,
+					"utilization": 0.7308951354902935
+				},
+				"peak": {
+					"heapUsed": 53682648,
+					"arrayBuffers": 2848215,
+					"rss": 266059776
+				},
+				"sha256": "b2cb9699228458b4661159bc08f90df6636d7ae4975ee751a0c068a25915453e",
+				"total": 0,
+				"displayed": 0,
+				"lines": 0,
+				"sampledProcessTreePeakBytes": null,
+				"nativeSearchSeconds": [0.0006208]
+			},
+			{
+				"stage": "cli:focus",
+				"seconds": 0.002938699999999699,
+				"eventLoop": {
+					"maximumDelayMs": 2.9358000000001994,
+					"p99DelayMs": 2.9358000000001994,
+					"utilization": 0.5133424099704674
+				},
+				"peak": {
+					"heapUsed": 53725704,
+					"arrayBuffers": 2834405,
+					"rss": 266059776
+				},
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": []
+			},
+			{
+				"stage": "cli:refresh-no-change",
+				"seconds": 1.6972047000000001,
+				"eventLoop": {
+					"maximumDelayMs": 77.43619999999919,
+					"p99DelayMs": 22.6929999999993,
+					"utilization": 0.5640268181941991
+				},
+				"peak": {
+					"heapUsed": 147623040,
+					"arrayBuffers": 11643377,
+					"rss": 304766976
+				},
+				"readPackages": 0,
+				"rebuilt": false,
+				"sampledProcessTreePeakBytes": 719659008,
+				"nativeSearchSeconds": []
+			},
+			{
+				"stage": "cli:loc-status-command",
+				"seconds": 2.295636200000001,
+				"eventLoop": {
+					"maximumDelayMs": 331.2518,
+					"p99DelayMs": 65.66529999999966,
+					"utilization": 0.5665521056272141
+				},
+				"peak": {
+					"heapUsed": 188042512,
+					"arrayBuffers": 70743981,
+					"rss": 373850112
+				},
+				"total": 583507,
+				"exitCode": 0,
+				"sampledProcessTreePeakBytes": 1321222144,
+				"nativeSearchSeconds": [0.2691543]
+			}
+		]
+	},
+	{
+		"sample": "verified-cli-baseline-2.json",
+		"host": "cli",
+		"backend": "baseline",
+		"outcome": "done",
+		"workerExit": {
+			"code": 0,
+			"signal": null
+		},
+		"joinedRebuiltOnOpen": false,
+		"measurements": [
+			{
+				"stage": "cli:warm-open",
+				"seconds": 1.5339335,
+				"eventLoop": {
+					"maximumDelayMs": 67.13400000000001,
+					"p99DelayMs": 21.098399999999856,
+					"utilization": 0.56295690664693
+				},
+				"peak": {
+					"heapUsed": 133083376,
+					"arrayBuffers": 12258175,
+					"rss": 290930688
+				},
+				"readPackages": 0,
+				"rebuilt": false,
+				"sampledProcessTreePeakBytes": 879968256,
+				"nativeSearchSeconds": []
+			},
+			{
+				"stage": "cli:first-query",
+				"seconds": 0.24361180000000013,
+				"eventLoop": {
+					"maximumDelayMs": 16.579400000000078,
+					"p99DelayMs": 16.579400000000078,
+					"utilization": 0.022637226423077195
+				},
+				"peak": {
+					"heapUsed": 53814408,
+					"arrayBuffers": 2935338,
+					"rss": 270184448
+				},
+				"sha256": "b2f3d5684ab2dd3cde646b7c40c745987fa7a8b29422f8ebd8c26328f71f0cb5",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.2398799]
+			},
+			{
+				"stage": "cli:count",
+				"seconds": 0.06367759999999999,
+				"eventLoop": {
+					"maximumDelayMs": 24.122299999999996,
+					"p99DelayMs": 24.122299999999996,
+					"utilization": 0.05150818479199252
+				},
+				"peak": {
+					"heapUsed": 53726464,
+					"arrayBuffers": 2866297,
+					"rss": 265756672
+				},
+				"sha256": "b2f3d5684ab2dd3cde646b7c40c745987fa7a8b29422f8ebd8c26328f71f0cb5",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": null,
+				"nativeSearchSeconds": [0.0612307]
+			},
+			{
+				"stage": "cli:filter",
+				"seconds": 0.03252469999999994,
+				"eventLoop": {
+					"maximumDelayMs": 15.156500000000051,
+					"p99DelayMs": 15.156500000000051,
+					"utilization": 0.07381890068853662
+				},
+				"peak": {
+					"heapUsed": 53718472,
+					"arrayBuffers": 2866194,
+					"rss": 264224768
+				},
+				"sha256": "81b3adccc43642d235b6df7ae9756349a678079450130955ec657b0cf743f36b",
+				"total": 2830,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.030394]
+			},
+			{
+				"stage": "cli:facet",
+				"seconds": 0.14002459999999975,
+				"eventLoop": {
+					"maximumDelayMs": 16.098199999999906,
+					"p99DelayMs": 16.098199999999906,
+					"utilization": 0.02068581852505184
+				},
+				"peak": {
+					"heapUsed": 53965096,
+					"arrayBuffers": 2883342,
+					"rss": 264450048
+				},
+				"sha256": "5b2b2effcc219992fc643e503927b029e93beb76f6e8e79c348742327e0c06fd",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.1377943]
+			},
+			{
+				"stage": "cli:page",
+				"seconds": 0.0939622999999997,
+				"eventLoop": {
+					"maximumDelayMs": 18.79459999999972,
+					"p99DelayMs": 18.79459999999972,
+					"utilization": 0.08879050241045951
+				},
+				"peak": {
+					"heapUsed": 60582096,
+					"arrayBuffers": 3300206,
+					"rss": 265654272
+				},
+				"sha256": "0ba67fe381df7557251af78e5bd0515737c32bb6ccc888b88c18cbab67e7d14b",
+				"total": 583507,
+				"displayed": 50,
+				"lines": 50,
+				"sampledProcessTreePeakBytes": null,
+				"nativeSearchSeconds": [0.086124]
+			},
+			{
+				"stage": "cli:facet-repeat",
+				"seconds": 0.1395046000000002,
+				"eventLoop": {
+					"maximumDelayMs": 21.33710000000019,
+					"p99DelayMs": 21.33710000000019,
+					"utilization": 0.023898665122010814
+				},
+				"peak": {
+					"heapUsed": 54922536,
+					"arrayBuffers": 2906990,
+					"rss": 265641984
+				},
+				"sha256": "5b2b2effcc219992fc643e503927b029e93beb76f6e8e79c348742327e0c06fd",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.1372836]
+			},
+			{
+				"stage": "cli:page-repeat",
+				"seconds": 0.08388000000000011,
+				"eventLoop": {
+					"maximumDelayMs": 24.894199999999728,
+					"p99DelayMs": 24.894199999999728,
+					"utilization": 0.07817777142206267
+				},
+				"peak": {
+					"heapUsed": 60610672,
+					"arrayBuffers": 3300207,
+					"rss": 264810496
+				},
+				"sha256": "0ba67fe381df7557251af78e5bd0515737c32bb6ccc888b88c18cbab67e7d14b",
+				"total": 583507,
+				"displayed": 50,
+				"lines": 50,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0770991]
+			},
+			{
+				"stage": "cli:search",
+				"seconds": 0.1955324999999998,
+				"eventLoop": {
+					"maximumDelayMs": 23.864300000000185,
+					"p99DelayMs": 23.864300000000185,
+					"utilization": 0.014795960347129681
+				},
+				"peak": {
+					"heapUsed": 53831664,
+					"arrayBuffers": 2845558,
+					"rss": 264822784
+				},
+				"sha256": "b2f3d5684ab2dd3cde646b7c40c745987fa7a8b29422f8ebd8c26328f71f0cb5",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 986378240,
+				"nativeSearchSeconds": [0.1936958]
+			},
+			{
+				"stage": "cli:search-repeat",
+				"seconds": 0.06314859999999999,
+				"eventLoop": {
+					"maximumDelayMs": 19.608299999999872,
+					"p99DelayMs": 19.608299999999872,
+					"utilization": 0.035558645238157584
+				},
+				"peak": {
+					"heapUsed": 53839528,
+					"arrayBuffers": 2845558,
+					"rss": 264822784
+				},
+				"sha256": "b2f3d5684ab2dd3cde646b7c40c745987fa7a8b29422f8ebd8c26328f71f0cb5",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": null,
+				"nativeSearchSeconds": [0.0612583]
+			},
+			{
+				"stage": "cli:empty-search",
+				"seconds": 0.1430695999999998,
+				"eventLoop": {
+					"maximumDelayMs": 16.236499999999978,
+					"p99DelayMs": 16.236499999999978,
+					"utilization": 0.019658784564991382
+				},
+				"peak": {
+					"heapUsed": 53738064,
+					"arrayBuffers": 2836513,
+					"rss": 264822784
+				},
+				"sha256": "b2cb9699228458b4661159bc08f90df6636d7ae4975ee751a0c068a25915453e",
+				"total": 0,
+				"displayed": 0,
+				"lines": 0,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.1412846]
+			},
+			{
+				"stage": "cli:empty-search-repeat",
+				"seconds": 0.0019038000000000466,
+				"eventLoop": {
+					"maximumDelayMs": 1.9002000000000407,
+					"p99DelayMs": 1.9002000000000407,
+					"utilization": 0.7147585775403489
+				},
+				"peak": {
+					"heapUsed": 53742872,
+					"arrayBuffers": 2848206,
+					"rss": 264835072
+				},
+				"sha256": "b2cb9699228458b4661159bc08f90df6636d7ae4975ee751a0c068a25915453e",
+				"total": 0,
+				"displayed": 0,
+				"lines": 0,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.000661]
+			},
+			{
+				"stage": "cli:focus",
+				"seconds": 0.0031507000000001424,
+				"eventLoop": {
+					"maximumDelayMs": 3.148400000000038,
+					"p99DelayMs": 3.148400000000038,
+					"utilization": 0.5786934165444673
+				},
+				"peak": {
+					"heapUsed": 53790024,
+					"arrayBuffers": 2834397,
+					"rss": 264835072
+				},
+				"sampledProcessTreePeakBytes": null,
+				"nativeSearchSeconds": []
+			},
+			{
+				"stage": "cli:refresh-no-change",
+				"seconds": 1.6939293000000006,
+				"eventLoop": {
+					"maximumDelayMs": 74.12970000000041,
+					"p99DelayMs": 23.075699999999415,
+					"utilization": 0.5617816298079351
+				},
+				"peak": {
+					"heapUsed": 135705952,
+					"arrayBuffers": 11133299,
+					"rss": 304021504
+				},
+				"readPackages": 0,
+				"rebuilt": false,
+				"sampledProcessTreePeakBytes": 716713984,
+				"nativeSearchSeconds": []
+			},
+			{
+				"stage": "cli:loc-status-command",
+				"seconds": 2.2671799999999993,
+				"eventLoop": {
+					"maximumDelayMs": 329.92269999999917,
+					"p99DelayMs": 70.27160000000003,
+					"utilization": 0.557709790458474
+				},
+				"peak": {
+					"heapUsed": 164808984,
+					"arrayBuffers": 68835605,
+					"rss": 367538176
+				},
+				"total": 583507,
+				"exitCode": 0,
+				"sampledProcessTreePeakBytes": 1306083328,
+				"nativeSearchSeconds": [0.2682093]
+			}
+		]
+	},
+	{
+		"sample": "verified-cli-candidate-0.json",
+		"host": "cli",
+		"backend": "candidate",
+		"outcome": "done",
+		"workerExit": {
+			"code": 0,
+			"signal": null
+		},
+		"joinedRebuiltOnOpen": false,
+		"measurements": [
+			{
+				"stage": "cli:warm-open",
+				"seconds": 1.5757919000000002,
+				"eventLoop": {
+					"maximumDelayMs": 77.05570000000034,
+					"p99DelayMs": 22.459100000000035,
+					"utilization": 0.5547847229434552
+				},
+				"peak": {
+					"heapUsed": 145195576,
+					"arrayBuffers": 12192639,
+					"rss": 301117440
+				},
+				"readPackages": 0,
+				"rebuilt": false,
+				"sampledProcessTreePeakBytes": 821002240,
+				"nativeSearchSeconds": []
+			},
+			{
+				"stage": "cli:first-query",
+				"seconds": 0.23689429999999992,
+				"eventLoop": {
+					"maximumDelayMs": 21.178600000000188,
+					"p99DelayMs": 21.178600000000188,
+					"utilization": 0.022715731276669062
+				},
+				"peak": {
+					"heapUsed": 53756680,
+					"arrayBuffers": 2935350,
+					"rss": 278462464
+				},
+				"sha256": "b2f3d5684ab2dd3cde646b7c40c745987fa7a8b29422f8ebd8c26328f71f0cb5",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.2329822]
+			},
+			{
+				"stage": "cli:count",
+				"seconds": 0.0033451000000000023,
+				"eventLoop": {
+					"maximumDelayMs": 3.3220000000001164,
+					"p99DelayMs": 3.3220000000001164,
+					"utilization": 0.705218744106378
+				},
+				"peak": {
+					"heapUsed": 53673624,
+					"arrayBuffers": 2866405,
+					"rss": 274497536
+				},
+				"sha256": "b2f3d5684ab2dd3cde646b7c40c745987fa7a8b29422f8ebd8c26328f71f0cb5",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": null,
+				"nativeSearchSeconds": [0.0010792]
+			},
+			{
+				"stage": "cli:filter",
+				"seconds": 0.03326270000000022,
+				"eventLoop": {
+					"maximumDelayMs": 15.20739999999978,
+					"p99DelayMs": 15.20739999999978,
+					"utilization": 0.07091940571616707
+				},
+				"peak": {
+					"heapUsed": 53644200,
+					"arrayBuffers": 2845456,
+					"rss": 272633856
+				},
+				"sha256": "81b3adccc43642d235b6df7ae9756349a678079450130955ec657b0cf743f36b",
+				"total": 2830,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0311238]
+			},
+			{
+				"stage": "cli:facet",
+				"seconds": 0.0832219,
+				"eventLoop": {
+					"maximumDelayMs": 15.545900000000074,
+					"p99DelayMs": 15.545900000000074,
+					"utilization": 0.03079206012768927
+				},
+				"peak": {
+					"heapUsed": 53915056,
+					"arrayBuffers": 2883342,
+					"rss": 272695296
+				},
+				"sha256": "5b2b2effcc219992fc643e503927b029e93beb76f6e8e79c348742327e0c06fd",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0809469]
+			},
+			{
+				"stage": "cli:page",
+				"seconds": 0.034559400000000094,
+				"eventLoop": {
+					"maximumDelayMs": 14.557000000000244,
+					"p99DelayMs": 14.557000000000244,
+					"utilization": 0.21580060699236608
+				},
+				"peak": {
+					"heapUsed": 60494272,
+					"arrayBuffers": 3241684,
+					"rss": 273747968
+				},
+				"sha256": "0ba67fe381df7557251af78e5bd0515737c32bb6ccc888b88c18cbab67e7d14b",
+				"total": 583507,
+				"displayed": 50,
+				"lines": 50,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0269844]
+			},
+			{
+				"stage": "cli:facet-repeat",
+				"seconds": 0.004039900000000216,
+				"eventLoop": {
+					"maximumDelayMs": 4.0241000000000895,
+					"p99DelayMs": 4.0241000000000895,
+					"utilization": 0.5266831682120885
+				},
+				"peak": {
+					"heapUsed": 54861472,
+					"arrayBuffers": 2906991,
+					"rss": 274075648
+				},
+				"sha256": "5b2b2effcc219992fc643e503927b029e93beb76f6e8e79c348742327e0c06fd",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": null,
+				"nativeSearchSeconds": [0.0019911]
+			},
+			{
+				"stage": "cli:page-repeat",
+				"seconds": 0.02421349999999984,
+				"eventLoop": {
+					"maximumDelayMs": 18.452099999999973,
+					"p99DelayMs": 18.452099999999973,
+					"utilization": 0.2538128925903427
+				},
+				"peak": {
+					"heapUsed": 60494824,
+					"arrayBuffers": 3241683,
+					"rss": 273199104
+				},
+				"sha256": "0ba67fe381df7557251af78e5bd0515737c32bb6ccc888b88c18cbab67e7d14b",
+				"total": 583507,
+				"displayed": 50,
+				"lines": 50,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.017901]
+			},
+			{
+				"stage": "cli:search",
+				"seconds": 0.18610800000000016,
+				"eventLoop": {
+					"maximumDelayMs": 16.080399999999827,
+					"p99DelayMs": 16.080399999999827,
+					"utilization": 0.014210443738970572
+				},
+				"peak": {
+					"heapUsed": 53766576,
+					"arrayBuffers": 2845558,
+					"rss": 273977344
+				},
+				"sha256": "b2f3d5684ab2dd3cde646b7c40c745987fa7a8b29422f8ebd8c26328f71f0cb5",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.1843775]
+			},
+			{
+				"stage": "cli:search-repeat",
+				"seconds": 0.002479200000000219,
+				"eventLoop": {
+					"maximumDelayMs": 2.4753999999998086,
+					"p99DelayMs": 2.4753999999998086,
+					"utilization": 0.5918153195038494
+				},
+				"peak": {
+					"heapUsed": 53797120,
+					"arrayBuffers": 2866297,
+					"rss": 273977344
+				},
+				"sha256": "b2f3d5684ab2dd3cde646b7c40c745987fa7a8b29422f8ebd8c26328f71f0cb5",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": null,
+				"nativeSearchSeconds": [0.0011164]
+			},
+			{
+				"stage": "cli:empty-search",
+				"seconds": 0.1295396999999998,
+				"eventLoop": {
+					"maximumDelayMs": 24.961699999999837,
+					"p99DelayMs": 24.961699999999837,
+					"utilization": 0.015390517873763476
+				},
+				"peak": {
+					"heapUsed": 53670448,
+					"arrayBuffers": 2836513,
+					"rss": 273985536
+				},
+				"sha256": "b2cb9699228458b4661159bc08f90df6636d7ae4975ee751a0c068a25915453e",
+				"total": 0,
+				"displayed": 0,
+				"lines": 0,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.1279904]
+			},
+			{
+				"stage": "cli:empty-search-repeat",
+				"seconds": 0.0017554999999997562,
+				"eventLoop": {
+					"maximumDelayMs": 1.7519999999999527,
+					"p99DelayMs": 1.7519999999999527,
+					"utilization": 0.7543039557419421
+				},
+				"peak": {
+					"heapUsed": 53677896,
+					"arrayBuffers": 2848207,
+					"rss": 273993728
+				},
+				"sha256": "b2cb9699228458b4661159bc08f90df6636d7ae4975ee751a0c068a25915453e",
+				"total": 0,
+				"displayed": 0,
+				"lines": 0,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0005174]
+			},
+			{
+				"stage": "cli:focus",
+				"seconds": 0.0030943999999999503,
+				"eventLoop": {
+					"maximumDelayMs": 3.0925999999999476,
+					"p99DelayMs": 3.0925999999999476,
+					"utilization": 0.5649827082661201
+				},
+				"peak": {
+					"heapUsed": 53726192,
+					"arrayBuffers": 2834397,
+					"rss": 273997824
+				},
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": []
+			},
+			{
+				"stage": "cli:refresh-no-change",
+				"seconds": 1.7187680999999997,
+				"eventLoop": {
+					"maximumDelayMs": 69.90920000000006,
+					"p99DelayMs": 18.68219999999974,
+					"utilization": 0.5444881934436419
+				},
+				"peak": {
+					"heapUsed": 155143192,
+					"arrayBuffers": 11633583,
+					"rss": 311779328
+				},
+				"readPackages": 0,
+				"rebuilt": false,
+				"sampledProcessTreePeakBytes": 722182144,
+				"nativeSearchSeconds": []
+			},
+			{
+				"stage": "cli:loc-status-command",
+				"seconds": 2.299627600000001,
+				"eventLoop": {
+					"maximumDelayMs": 306.2942000000003,
+					"p99DelayMs": 65.6921999999995,
+					"utilization": 0.549092785126381
+				},
+				"peak": {
+					"heapUsed": 185536400,
+					"arrayBuffers": 76969073,
+					"rss": 380051456
+				},
+				"total": 583507,
+				"exitCode": 0,
+				"sampledProcessTreePeakBytes": 1025208320,
+				"nativeSearchSeconds": [0.2620654]
+			}
+		]
+	},
+	{
+		"sample": "verified-cli-candidate-1.json",
+		"host": "cli",
+		"backend": "candidate",
+		"outcome": "done",
+		"workerExit": {
+			"code": 0,
+			"signal": null
+		},
+		"joinedRebuiltOnOpen": false,
+		"measurements": [
+			{
+				"stage": "cli:warm-open",
+				"seconds": 1.5602167999999998,
+				"eventLoop": {
+					"maximumDelayMs": 75.29530000000022,
+					"p99DelayMs": 23.15009999999984,
+					"utilization": 0.5531472354848274
+				},
+				"peak": {
+					"heapUsed": 134550072,
+					"arrayBuffers": 12258167,
+					"rss": 293142528
+				},
+				"readPackages": 0,
+				"rebuilt": false,
+				"sampledProcessTreePeakBytes": 822669312,
+				"nativeSearchSeconds": []
+			},
+			{
+				"stage": "cli:first-query",
+				"seconds": 0.23568460000000005,
+				"eventLoop": {
+					"maximumDelayMs": 16.31999999999971,
+					"p99DelayMs": 16.31999999999971,
+					"utilization": 0.02227745667554305
+				},
+				"peak": {
+					"heapUsed": 53767416,
+					"arrayBuffers": 2934905,
+					"rss": 272474112
+				},
+				"sha256": "b2f3d5684ab2dd3cde646b7c40c745987fa7a8b29422f8ebd8c26328f71f0cb5",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.2320718]
+			},
+			{
+				"stage": "cli:count",
+				"seconds": 0.0029190999999996166,
+				"eventLoop": {
+					"maximumDelayMs": 2.8995999999997366,
+					"p99DelayMs": 2.8995999999997366,
+					"utilization": 0.6367780639299201
+				},
+				"peak": {
+					"heapUsed": 53672344,
+					"arrayBuffers": 2866289,
+					"rss": 266465280
+				},
+				"sha256": "b2f3d5684ab2dd3cde646b7c40c745987fa7a8b29422f8ebd8c26328f71f0cb5",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0011433]
+			},
+			{
+				"stage": "cli:filter",
+				"seconds": 0.03325789999999961,
+				"eventLoop": {
+					"maximumDelayMs": 15.19549999999981,
+					"p99DelayMs": 15.19549999999981,
+					"utilization": 0.0717760605003867
+				},
+				"peak": {
+					"heapUsed": 53669160,
+					"arrayBuffers": 2866187,
+					"rss": 266670080
+				},
+				"sha256": "81b3adccc43642d235b6df7ae9756349a678079450130955ec657b0cf743f36b",
+				"total": 2830,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0311491]
+			},
+			{
+				"stage": "cli:facet",
+				"seconds": 0.08263749999999982,
+				"eventLoop": {
+					"maximumDelayMs": 15.446699999999964,
+					"p99DelayMs": 15.446699999999964,
+					"utilization": 0.03522336771220731
+				},
+				"peak": {
+					"heapUsed": 53915432,
+					"arrayBuffers": 2883334,
+					"rss": 266682368
+				},
+				"sha256": "5b2b2effcc219992fc643e503927b029e93beb76f6e8e79c348742327e0c06fd",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": null,
+				"nativeSearchSeconds": [0.0801255]
+			},
+			{
+				"stage": "cli:page",
+				"seconds": 0.03489609999999993,
+				"eventLoop": {
+					"maximumDelayMs": 14.813400000000001,
+					"p99DelayMs": 14.813400000000001,
+					"utilization": 0.24667925704645016
+				},
+				"peak": {
+					"heapUsed": 60554552,
+					"arrayBuffers": 3300199,
+					"rss": 267911168
+				},
+				"sha256": "0ba67fe381df7557251af78e5bd0515737c32bb6ccc888b88c18cbab67e7d14b",
+				"total": 583507,
+				"displayed": 50,
+				"lines": 50,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0261583]
+			},
+			{
+				"stage": "cli:facet-repeat",
+				"seconds": 0.00420069999999987,
+				"eventLoop": {
+					"maximumDelayMs": 4.1831999999999425,
+					"p99DelayMs": 4.1831999999999425,
+					"utilization": 0.4883931331584505
+				},
+				"peak": {
+					"heapUsed": 54877024,
+					"arrayBuffers": 2906983,
+					"rss": 266100736
+				},
+				"sha256": "5b2b2effcc219992fc643e503927b029e93beb76f6e8e79c348742327e0c06fd",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0022154]
+			},
+			{
+				"stage": "cli:page-repeat",
+				"seconds": 0.023913600000000316,
+				"eventLoop": {
+					"maximumDelayMs": 17.231900000000223,
+					"p99DelayMs": 17.231900000000223,
+					"utilization": 0.2558729813519934
+				},
+				"peak": {
+					"heapUsed": 60501944,
+					"arrayBuffers": 3241676,
+					"rss": 265945088
+				},
+				"sha256": "0ba67fe381df7557251af78e5bd0515737c32bb6ccc888b88c18cbab67e7d14b",
+				"total": 583507,
+				"displayed": 50,
+				"lines": 50,
+				"sampledProcessTreePeakBytes": null,
+				"nativeSearchSeconds": [0.0176823]
+			},
+			{
+				"stage": "cli:search",
+				"seconds": 0.18536470000000008,
+				"eventLoop": {
+					"maximumDelayMs": 16.02240000000029,
+					"p99DelayMs": 16.02240000000029,
+					"utilization": 0.014051622084108924
+				},
+				"peak": {
+					"heapUsed": 54637152,
+					"arrayBuffers": 2869199,
+					"rss": 265936896
+				},
+				"sha256": "b2f3d5684ab2dd3cde646b7c40c745987fa7a8b29422f8ebd8c26328f71f0cb5",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.1836339]
+			},
+			{
+				"stage": "cli:search-repeat",
+				"seconds": 0.002557699999999841,
+				"eventLoop": {
+					"maximumDelayMs": 2.555000000000291,
+					"p99DelayMs": 2.555000000000291,
+					"utilization": 0.5913499139188443
+				},
+				"peak": {
+					"heapUsed": 53783648,
+					"arrayBuffers": 2845550,
+					"rss": 265101312
+				},
+				"sha256": "b2f3d5684ab2dd3cde646b7c40c745987fa7a8b29422f8ebd8c26328f71f0cb5",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0011723]
+			},
+			{
+				"stage": "cli:empty-search",
+				"seconds": 0.1273624,
+				"eventLoop": {
+					"maximumDelayMs": 24.053800000000138,
+					"p99DelayMs": 24.053800000000138,
+					"utilization": 0.017161848831537055
+				},
+				"peak": {
+					"heapUsed": 53683744,
+					"arrayBuffers": 2836503,
+					"rss": 265101312
+				},
+				"sha256": "b2cb9699228458b4661159bc08f90df6636d7ae4975ee751a0c068a25915453e",
+				"total": 0,
+				"displayed": 0,
+				"lines": 0,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.12572]
+			},
+			{
+				"stage": "cli:empty-search-repeat",
+				"seconds": 0.0017674000000001797,
+				"eventLoop": {
+					"maximumDelayMs": 1.7644000000000233,
+					"p99DelayMs": 1.7644000000000233,
+					"utilization": 0.758843171043105
+				},
+				"peak": {
+					"heapUsed": 53679160,
+					"arrayBuffers": 2836505,
+					"rss": 265101312
+				},
+				"sha256": "b2cb9699228458b4661159bc08f90df6636d7ae4975ee751a0c068a25915453e",
+				"total": 0,
+				"displayed": 0,
+				"lines": 0,
+				"sampledProcessTreePeakBytes": null,
+				"nativeSearchSeconds": [0.0005243]
+			},
+			{
+				"stage": "cli:focus",
+				"seconds": 0.003156100000000151,
+				"eventLoop": {
+					"maximumDelayMs": 3.154199999999946,
+					"p99DelayMs": 3.154199999999946,
+					"utilization": 0.566074200921103
+				},
+				"peak": {
+					"heapUsed": 53739024,
+					"arrayBuffers": 2834389,
+					"rss": 265101312
+				},
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": []
+			},
+			{
+				"stage": "cli:refresh-no-change",
+				"seconds": 1.7153797999999998,
+				"eventLoop": {
+					"maximumDelayMs": 63.033300000000054,
+					"p99DelayMs": 21.310999999999694,
+					"utilization": 0.5423946119533544
+				},
+				"peak": {
+					"heapUsed": 133207632,
+					"arrayBuffers": 9809913,
+					"rss": 301461504
+				},
+				"readPackages": 0,
+				"rebuilt": false,
+				"sampledProcessTreePeakBytes": 714567680,
+				"nativeSearchSeconds": []
+			},
+			{
+				"stage": "cli:loc-status-command",
+				"seconds": 2.3695901000000004,
+				"eventLoop": {
+					"maximumDelayMs": 330.26929999999993,
+					"p99DelayMs": 69.63230000000021,
+					"utilization": 0.5598573491849037
+				},
+				"peak": {
+					"heapUsed": 176349096,
+					"arrayBuffers": 70743949,
+					"rss": 368590848
+				},
+				"total": 583507,
+				"exitCode": 0,
+				"sampledProcessTreePeakBytes": 978907136,
+				"nativeSearchSeconds": [0.2598332]
+			}
+		]
+	},
+	{
+		"sample": "verified-cli-candidate-2.json",
+		"host": "cli",
+		"backend": "candidate",
+		"outcome": "done",
+		"workerExit": {
+			"code": 0,
+			"signal": null
+		},
+		"joinedRebuiltOnOpen": false,
+		"measurements": [
+			{
+				"stage": "cli:warm-open",
+				"seconds": 1.5657751,
+				"eventLoop": {
+					"maximumDelayMs": 72.89850000000024,
+					"p99DelayMs": 21.075399999999945,
+					"utilization": 0.555769154127112
+				},
+				"peak": {
+					"heapUsed": 132970264,
+					"arrayBuffers": 12192639,
+					"rss": 292700160
+				},
+				"readPackages": 0,
+				"rebuilt": false,
+				"sampledProcessTreePeakBytes": 802054144,
+				"nativeSearchSeconds": []
+			},
+			{
+				"stage": "cli:first-query",
+				"seconds": 0.23599400000000015,
+				"eventLoop": {
+					"maximumDelayMs": 23.633500000000367,
+					"p99DelayMs": 23.633500000000367,
+					"utilization": 0.02309648692951556
+				},
+				"peak": {
+					"heapUsed": 53806312,
+					"arrayBuffers": 2935335,
+					"rss": 272220160
+				},
+				"sha256": "b2f3d5684ab2dd3cde646b7c40c745987fa7a8b29422f8ebd8c26328f71f0cb5",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.2319666]
+			},
+			{
+				"stage": "cli:count",
+				"seconds": 0.0029476999999997135,
+				"eventLoop": {
+					"maximumDelayMs": 2.930699999999888,
+					"p99DelayMs": 2.930699999999888,
+					"utilization": 0.6532247117468518
+				},
+				"peak": {
+					"heapUsed": 53699544,
+					"arrayBuffers": 2845558,
+					"rss": 268349440
+				},
+				"sha256": "b2f3d5684ab2dd3cde646b7c40c745987fa7a8b29422f8ebd8c26328f71f0cb5",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": null,
+				"nativeSearchSeconds": [0.0011464]
+			},
+			{
+				"stage": "cli:filter",
+				"seconds": 0.03334659999999985,
+				"eventLoop": {
+					"maximumDelayMs": 15.16000000000031,
+					"p99DelayMs": 15.16000000000031,
+					"utilization": 0.07083546990715324
+				},
+				"peak": {
+					"heapUsed": 53698192,
+					"arrayBuffers": 2845456,
+					"rss": 268386304
+				},
+				"sha256": "81b3adccc43642d235b6df7ae9756349a678079450130955ec657b0cf743f36b",
+				"total": 2830,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0312466]
+			},
+			{
+				"stage": "cli:facet",
+				"seconds": 0.08245600000000013,
+				"eventLoop": {
+					"maximumDelayMs": 18.501800000000003,
+					"p99DelayMs": 18.501800000000003,
+					"utilization": 0.031079499631752387
+				},
+				"peak": {
+					"heapUsed": 53967736,
+					"arrayBuffers": 2883342,
+					"rss": 268419072
+				},
+				"sha256": "5b2b2effcc219992fc643e503927b029e93beb76f6e8e79c348742327e0c06fd",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0802639]
+			},
+			{
+				"stage": "cli:page",
+				"seconds": 0.03594200000000001,
+				"eventLoop": {
+					"maximumDelayMs": 19.403299999999945,
+					"p99DelayMs": 19.403299999999945,
+					"utilization": 0.214828500623493
+				},
+				"peak": {
+					"heapUsed": 60590552,
+					"arrayBuffers": 3241684,
+					"rss": 269332480
+				},
+				"sha256": "0ba67fe381df7557251af78e5bd0515737c32bb6ccc888b88c18cbab67e7d14b",
+				"total": 583507,
+				"displayed": 50,
+				"lines": 50,
+				"sampledProcessTreePeakBytes": null,
+				"nativeSearchSeconds": [0.0280578]
+			},
+			{
+				"stage": "cli:facet-repeat",
+				"seconds": 0.0037399000000000343,
+				"eventLoop": {
+					"maximumDelayMs": 3.7240999999999076,
+					"p99DelayMs": 3.7240999999999076,
+					"utilization": 0.5293472734689331
+				},
+				"peak": {
+					"heapUsed": 54920720,
+					"arrayBuffers": 2906990,
+					"rss": 269324288
+				},
+				"sha256": "5b2b2effcc219992fc643e503927b029e93beb76f6e8e79c348742327e0c06fd",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.001835]
+			},
+			{
+				"stage": "cli:page-repeat",
+				"seconds": 0.02434490000000005,
+				"eventLoop": {
+					"maximumDelayMs": 19.097999999999956,
+					"p99DelayMs": 19.097999999999956,
+					"utilization": 0.25616042799092054
+				},
+				"peak": {
+					"heapUsed": 60544264,
+					"arrayBuffers": 3241684,
+					"rss": 268427264
+				},
+				"sha256": "0ba67fe381df7557251af78e5bd0515737c32bb6ccc888b88c18cbab67e7d14b",
+				"total": 583507,
+				"displayed": 50,
+				"lines": 50,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0178809]
+			},
+			{
+				"stage": "cli:search",
+				"seconds": 0.1892469000000001,
+				"eventLoop": {
+					"maximumDelayMs": 18.46270000000004,
+					"p99DelayMs": 18.46270000000004,
+					"utilization": 0.014967645698513606
+				},
+				"peak": {
+					"heapUsed": 54679624,
+					"arrayBuffers": 2869207,
+					"rss": 267931648
+				},
+				"sha256": "b2f3d5684ab2dd3cde646b7c40c745987fa7a8b29422f8ebd8c26328f71f0cb5",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.1874337]
+			},
+			{
+				"stage": "cli:search-repeat",
+				"seconds": 0.0024737999999997554,
+				"eventLoop": {
+					"maximumDelayMs": 2.46979999999985,
+					"p99DelayMs": 2.46979999999985,
+					"utilization": 0.5956646580348723
+				},
+				"peak": {
+					"heapUsed": 53849408,
+					"arrayBuffers": 2866297,
+					"rss": 267120640
+				},
+				"sha256": "b2f3d5684ab2dd3cde646b7c40c745987fa7a8b29422f8ebd8c26328f71f0cb5",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": null,
+				"nativeSearchSeconds": [0.0011216]
+			},
+			{
+				"stage": "cli:empty-search",
+				"seconds": 0.1266979000000001,
+				"eventLoop": {
+					"maximumDelayMs": 23.403800000000047,
+					"p99DelayMs": 23.403800000000047,
+					"utilization": 0.017007986673402316
+				},
+				"peak": {
+					"heapUsed": 53727120,
+					"arrayBuffers": 2836513,
+					"rss": 267120640
+				},
+				"sha256": "b2cb9699228458b4661159bc08f90df6636d7ae4975ee751a0c068a25915453e",
+				"total": 0,
+				"displayed": 0,
+				"lines": 0,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.1247072]
+			},
+			{
+				"stage": "cli:empty-search-repeat",
+				"seconds": 0.0018332000000000335,
+				"eventLoop": {
+					"maximumDelayMs": 1.8296000000000276,
+					"p99DelayMs": 1.8296000000000276,
+					"utilization": 0.7481723945469737
+				},
+				"peak": {
+					"heapUsed": 53734136,
+					"arrayBuffers": 2848207,
+					"rss": 267120640
+				},
+				"sha256": "b2cb9699228458b4661159bc08f90df6636d7ae4975ee751a0c068a25915453e",
+				"total": 0,
+				"displayed": 0,
+				"lines": 0,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0005575]
+			},
+			{
+				"stage": "cli:focus",
+				"seconds": 0.003054399999999987,
+				"eventLoop": {
+					"maximumDelayMs": 3.050299999999879,
+					"p99DelayMs": 3.050299999999879,
+					"utilization": 0.5920733708694159
+				},
+				"peak": {
+					"heapUsed": 53782280,
+					"arrayBuffers": 2834397,
+					"rss": 267120640
+				},
+				"sampledProcessTreePeakBytes": null,
+				"nativeSearchSeconds": []
+			},
+			{
+				"stage": "cli:refresh-no-change",
+				"seconds": 1.7073003999999996,
+				"eventLoop": {
+					"maximumDelayMs": 72.28069999999934,
+					"p99DelayMs": 23.032500000000255,
+					"utilization": 0.5476783322355818
+				},
+				"peak": {
+					"heapUsed": 141841696,
+					"arrayBuffers": 10962575,
+					"rss": 300212224
+				},
+				"readPackages": 0,
+				"rebuilt": false,
+				"sampledProcessTreePeakBytes": 711950336,
+				"nativeSearchSeconds": []
+			},
+			{
+				"stage": "cli:loc-status-command",
+				"seconds": 2.3552821,
+				"eventLoop": {
+					"maximumDelayMs": 326.53030000000035,
+					"p99DelayMs": 69.04709999999977,
+					"utilization": 0.5586003201734397
+				},
+				"peak": {
+					"heapUsed": 171925232,
+					"arrayBuffers": 70723224,
+					"rss": 376786944
+				},
+				"total": 583507,
+				"exitCode": 0,
+				"sampledProcessTreePeakBytes": 973414400,
+				"nativeSearchSeconds": [0.2633621]
+			}
+		]
+	},
+	{
+		"sample": "verified-workbench-baseline-0.json",
+		"host": "workbench",
+		"backend": "baseline",
+		"outcome": "done",
+		"workerExit": {
+			"code": 0,
+			"signal": null
+		},
+		"joinedRebuiltOnOpen": false,
+		"measurements": [
+			{
+				"stage": "workbench:warm-open",
+				"seconds": 2.2157623999999996,
+				"eventLoop": {
+					"maximumDelayMs": 155.15139999999997,
+					"p99DelayMs": 64.03879999999981,
+					"utilization": 0.5104451649373555
+				},
+				"peak": {
+					"heapUsed": 147789656,
+					"arrayBuffers": 14155156,
+					"rss": 309559296
+				},
+				"lines": 583507,
+				"sampledProcessTreePeakBytes": 701575168,
+				"nativeSearchSeconds": [0.2738261]
+			},
+			{
+				"stage": "workbench:first-query",
+				"seconds": 0.07057630000000018,
+				"eventLoop": {
+					"maximumDelayMs": 19.504100000000108,
+					"p99DelayMs": 19.504100000000108,
+					"utilization": 0.055303581011799906
+				},
+				"peak": {
+					"heapUsed": 60271688,
+					"arrayBuffers": 3182891,
+					"rss": 284667904
+				},
+				"sha256": "b2f3d5684ab2dd3cde646b7c40c745987fa7a8b29422f8ebd8c26328f71f0cb5",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0670316]
+			},
+			{
+				"stage": "workbench:count",
+				"seconds": 0.06301650000000018,
+				"eventLoop": {
+					"maximumDelayMs": 16.424600000000282,
+					"p99DelayMs": 16.424600000000282,
+					"utilization": 0.043155090187376434
+				},
+				"peak": {
+					"heapUsed": 60140856,
+					"arrayBuffers": 2998029,
+					"rss": 278511616
+				},
+				"sha256": "b2f3d5684ab2dd3cde646b7c40c745987fa7a8b29422f8ebd8c26328f71f0cb5",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0605972]
+			},
+			{
+				"stage": "workbench:filter",
+				"seconds": 0.0334692,
+				"eventLoop": {
+					"maximumDelayMs": 19.002500000000055,
+					"p99DelayMs": 19.002500000000055,
+					"utilization": 0.09362040324092614
+				},
+				"peak": {
+					"heapUsed": 60141320,
+					"arrayBuffers": 2977303,
+					"rss": 278781952
+				},
+				"sha256": "81b3adccc43642d235b6df7ae9756349a678079450130955ec657b0cf743f36b",
+				"total": 2830,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": null,
+				"nativeSearchSeconds": [0.0305111]
+			},
+			{
+				"stage": "workbench:facet",
+				"seconds": 0.14042959999999993,
+				"eventLoop": {
+					"maximumDelayMs": 22.327400000000125,
+					"p99DelayMs": 22.327400000000125,
+					"utilization": 0.026532017471136038
+				},
+				"peak": {
+					"heapUsed": 60448560,
+					"arrayBuffers": 3015074,
+					"rss": 278880256
+				},
+				"sha256": "5b2b2effcc219992fc643e503927b029e93beb76f6e8e79c348742327e0c06fd",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 902926336,
+				"nativeSearchSeconds": [0.1372822]
+			},
+			{
+				"stage": "workbench:page",
+				"seconds": 0.09620510000000058,
+				"eventLoop": {
+					"maximumDelayMs": 15.291799999999967,
+					"p99DelayMs": 15.291799999999967,
+					"utilization": 0.09527719880910657
+				},
+				"peak": {
+					"heapUsed": 67018984,
+					"arrayBuffers": 3373416,
+					"rss": 280023040
+				},
+				"sha256": "0ba67fe381df7557251af78e5bd0515737c32bb6ccc888b88c18cbab67e7d14b",
+				"total": 583507,
+				"displayed": 50,
+				"lines": 50,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0873744]
+			},
+			{
+				"stage": "workbench:facet-repeat",
+				"seconds": 0.1421255000000001,
+				"eventLoop": {
+					"maximumDelayMs": 15.919599999999264,
+					"p99DelayMs": 15.919599999999264,
+					"utilization": 0.029021288744511764
+				},
+				"peak": {
+					"heapUsed": 61400392,
+					"arrayBuffers": 3038723,
+					"rss": 280010752
+				},
+				"sha256": "5b2b2effcc219992fc643e503927b029e93beb76f6e8e79c348742327e0c06fd",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.1389969]
+			},
+			{
+				"stage": "workbench:page-repeat",
+				"seconds": 0.08452319999999963,
+				"eventLoop": {
+					"maximumDelayMs": 16.712499999999636,
+					"p99DelayMs": 16.712499999999636,
+					"utilization": 0.08111264132053098
+				},
+				"peak": {
+					"heapUsed": 67039360,
+					"arrayBuffers": 3373416,
+					"rss": 279113728
+				},
+				"sha256": "0ba67fe381df7557251af78e5bd0515737c32bb6ccc888b88c18cbab67e7d14b",
+				"total": 583507,
+				"displayed": 50,
+				"lines": 50,
+				"sampledProcessTreePeakBytes": null,
+				"nativeSearchSeconds": [0.0777631]
+			},
+			{
+				"stage": "workbench:search",
+				"seconds": 0.19577949999999963,
+				"eventLoop": {
+					"maximumDelayMs": 16.150100000000748,
+					"p99DelayMs": 16.150100000000748,
+					"utilization": 0.018210718845774583
+				},
+				"peak": {
+					"heapUsed": 60285984,
+					"arrayBuffers": 2977405,
+					"rss": 279113728
+				},
+				"sha256": "b2f3d5684ab2dd3cde646b7c40c745987fa7a8b29422f8ebd8c26328f71f0cb5",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.1931989]
+			},
+			{
+				"stage": "workbench:search-repeat",
+				"seconds": 0.062269200000000635,
+				"eventLoop": {
+					"maximumDelayMs": 19.493800000000192,
+					"p99DelayMs": 19.493800000000192,
+					"utilization": 0.04314157516448585
+				},
+				"peak": {
+					"heapUsed": 60293272,
+					"arrayBuffers": 2977290,
+					"rss": 279113728
+				},
+				"sha256": "b2f3d5684ab2dd3cde646b7c40c745987fa7a8b29422f8ebd8c26328f71f0cb5",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0598708]
+			},
+			{
+				"stage": "workbench:empty-search",
+				"seconds": 0.1410625999999993,
+				"eventLoop": {
+					"maximumDelayMs": 23.175000000000182,
+					"p99DelayMs": 23.175000000000182,
+					"utilization": 0.019317431842461787
+				},
+				"peak": {
+					"heapUsed": 60198256,
+					"arrayBuffers": 2968245,
+					"rss": 278966272
+				},
+				"sha256": "b2cb9699228458b4661159bc08f90df6636d7ae4975ee751a0c068a25915453e",
+				"total": 0,
+				"displayed": 0,
+				"lines": 0,
+				"sampledProcessTreePeakBytes": null,
+				"nativeSearchSeconds": [0.1388709]
+			},
+			{
+				"stage": "workbench:empty-search-repeat",
+				"seconds": 0.0022075999999997295,
+				"eventLoop": {
+					"maximumDelayMs": 2.2071999999998297,
+					"p99DelayMs": 2.2071999999998297,
+					"utilization": 0.8043665352385005
+				},
+				"peak": {
+					"heapUsed": 60203760,
+					"arrayBuffers": 2979939,
+					"rss": 278966272
+				},
+				"sha256": "b2cb9699228458b4661159bc08f90df6636d7ae4975ee751a0c068a25915453e",
+				"total": 0,
+				"displayed": 0,
+				"lines": 0,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0005302]
+			},
+			{
+				"stage": "workbench:focus",
+				"seconds": 0.003519499999999425,
+				"eventLoop": {
+					"maximumDelayMs": 3.5168000000003303,
+					"p99DelayMs": 3.5168000000003303,
+					"utilization": 0.583650621451483
+				},
+				"peak": {
+					"heapUsed": 60270824,
+					"arrayBuffers": 2966129,
+					"rss": 278974464
+				},
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": []
+			},
+			{
+				"stage": "workbench:refresh-no-change",
+				"seconds": 2.1533553999999993,
+				"eventLoop": {
+					"maximumDelayMs": 76.15610000000015,
+					"p99DelayMs": 22.206100000000333,
+					"utilization": 0.4849410647872997
+				},
+				"peak": {
+					"heapUsed": 162209456,
+					"arrayBuffers": 14702323,
+					"rss": 327852032
+				},
+				"lines": 583507,
+				"sampledProcessTreePeakBytes": 1198469120,
+				"nativeSearchSeconds": [0.2720369]
+			}
+		]
+	},
+	{
+		"sample": "verified-workbench-baseline-1.json",
+		"host": "workbench",
+		"backend": "baseline",
+		"outcome": "done",
+		"workerExit": {
+			"code": 0,
+			"signal": null
+		},
+		"joinedRebuiltOnOpen": false,
+		"measurements": [
+			{
+				"stage": "workbench:warm-open",
+				"seconds": 2.2268414,
+				"eventLoop": {
+					"maximumDelayMs": 157.01700000000005,
+					"p99DelayMs": 70.69849999999997,
+					"utilization": 0.5118846747062684
+				},
+				"peak": {
+					"heapUsed": 149530656,
+					"arrayBuffers": 14796650,
+					"rss": 312049664
+				},
+				"lines": 583507,
+				"sampledProcessTreePeakBytes": 703643648,
+				"nativeSearchSeconds": [0.2713528]
+			},
+			{
+				"stage": "workbench:first-query",
+				"seconds": 0.07257119999999986,
+				"eventLoop": {
+					"maximumDelayMs": 15.429400000000442,
+					"p99DelayMs": 15.429400000000442,
+					"utilization": 0.07038123574649935
+				},
+				"peak": {
+					"heapUsed": 60266624,
+					"arrayBuffers": 3161695,
+					"rss": 285597696
+				},
+				"sha256": "b2f3d5684ab2dd3cde646b7c40c745987fa7a8b29422f8ebd8c26328f71f0cb5",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0678489]
+			},
+			{
+				"stage": "workbench:count",
+				"seconds": 0.06306719999999996,
+				"eventLoop": {
+					"maximumDelayMs": 19.26740000000018,
+					"p99DelayMs": 19.26740000000018,
+					"utilization": 0.04538211138140682
+				},
+				"peak": {
+					"heapUsed": 60158488,
+					"arrayBuffers": 2998143,
+					"rss": 281174016
+				},
+				"sha256": "b2f3d5684ab2dd3cde646b7c40c745987fa7a8b29422f8ebd8c26328f71f0cb5",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0605051]
+			},
+			{
+				"stage": "workbench:filter",
+				"seconds": 0.03309699999999975,
+				"eventLoop": {
+					"maximumDelayMs": 22.2199999999998,
+					"p99DelayMs": 22.2199999999998,
+					"utilization": 0.08554569595245916
+				},
+				"peak": {
+					"heapUsed": 60146920,
+					"arrayBuffers": 2977188,
+					"rss": 281182208
+				},
+				"sha256": "81b3adccc43642d235b6df7ae9756349a678079450130955ec657b0cf743f36b",
+				"total": 2830,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": null,
+				"nativeSearchSeconds": [0.0304402]
+			},
+			{
+				"stage": "workbench:facet",
+				"seconds": 0.1413216000000002,
+				"eventLoop": {
+					"maximumDelayMs": 24.4658000000004,
+					"p99DelayMs": 24.4658000000004,
+					"utilization": 0.026686545093472545
+				},
+				"peak": {
+					"heapUsed": 60480056,
+					"arrayBuffers": 3035711,
+					"rss": 280133632
+				},
+				"sha256": "5b2b2effcc219992fc643e503927b029e93beb76f6e8e79c348742327e0c06fd",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 901943296,
+				"nativeSearchSeconds": [0.1382291]
+			},
+			{
+				"stage": "workbench:page",
+				"seconds": 0.09564919999999984,
+				"eventLoop": {
+					"maximumDelayMs": 16.038700000000063,
+					"p99DelayMs": 16.038700000000063,
+					"utilization": 0.08983905335380493
+				},
+				"peak": {
+					"heapUsed": 67088088,
+					"arrayBuffers": 3431939,
+					"rss": 281567232
+				},
+				"sha256": "0ba67fe381df7557251af78e5bd0515737c32bb6ccc888b88c18cbab67e7d14b",
+				"total": 583507,
+				"displayed": 50,
+				"lines": 50,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0873749]
+			},
+			{
+				"stage": "workbench:facet-repeat",
+				"seconds": 0.14253939999999965,
+				"eventLoop": {
+					"maximumDelayMs": 15.413700000000063,
+					"p99DelayMs": 15.413700000000063,
+					"utilization": 0.027985789289068034
+				},
+				"peak": {
+					"heapUsed": 61407544,
+					"arrayBuffers": 3038723,
+					"rss": 281567232
+				},
+				"sha256": "5b2b2effcc219992fc643e503927b029e93beb76f6e8e79c348742327e0c06fd",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.1395828]
+			},
+			{
+				"stage": "workbench:page-repeat",
+				"seconds": 0.08494380000000001,
+				"eventLoop": {
+					"maximumDelayMs": 24.536599999999453,
+					"p99DelayMs": 24.536599999999453,
+					"utilization": 0.08481064967736587
+				},
+				"peak": {
+					"heapUsed": 67047504,
+					"arrayBuffers": 3373416,
+					"rss": 280801280
+				},
+				"sha256": "0ba67fe381df7557251af78e5bd0515737c32bb6ccc888b88c18cbab67e7d14b",
+				"total": 583507,
+				"displayed": 50,
+				"lines": 50,
+				"sampledProcessTreePeakBytes": null,
+				"nativeSearchSeconds": [0.0778236]
+			},
+			{
+				"stage": "workbench:search",
+				"seconds": 0.19446830000000045,
+				"eventLoop": {
+					"maximumDelayMs": 20.84139999999934,
+					"p99DelayMs": 20.84139999999934,
+					"utilization": 0.01675372371785877
+				},
+				"peak": {
+					"heapUsed": 61151920,
+					"arrayBuffers": 3000939,
+					"rss": 280301568
+				},
+				"sha256": "b2f3d5684ab2dd3cde646b7c40c745987fa7a8b29422f8ebd8c26328f71f0cb5",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.1920247]
+			},
+			{
+				"stage": "workbench:search-repeat",
+				"seconds": 0.06328459999999995,
+				"eventLoop": {
+					"maximumDelayMs": 15.568199999999706,
+					"p99DelayMs": 15.568199999999706,
+					"utilization": 0.04230689007567863
+				},
+				"peak": {
+					"heapUsed": 60302968,
+					"arrayBuffers": 2977290,
+					"rss": 279465984
+				},
+				"sha256": "b2f3d5684ab2dd3cde646b7c40c745987fa7a8b29422f8ebd8c26328f71f0cb5",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0608086]
+			},
+			{
+				"stage": "workbench:empty-search",
+				"seconds": 0.1418118000000004,
+				"eventLoop": {
+					"maximumDelayMs": 18.353900000000067,
+					"p99DelayMs": 18.353900000000067,
+					"utilization": 0.01777263802099393
+				},
+				"peak": {
+					"heapUsed": 60226744,
+					"arrayBuffers": 2988984,
+					"rss": 279470080
+				},
+				"sha256": "b2cb9699228458b4661159bc08f90df6636d7ae4975ee751a0c068a25915453e",
+				"total": 0,
+				"displayed": 0,
+				"lines": 0,
+				"sampledProcessTreePeakBytes": null,
+				"nativeSearchSeconds": [0.1398378]
+			},
+			{
+				"stage": "workbench:empty-search-repeat",
+				"seconds": 0.0022781999999997426,
+				"eventLoop": {
+					"maximumDelayMs": 2.276100000000042,
+					"p99DelayMs": 2.276100000000042,
+					"utilization": 0.8082089549829371
+				},
+				"peak": {
+					"heapUsed": 60214664,
+					"arrayBuffers": 2979939,
+					"rss": 279470080
+				},
+				"sha256": "b2cb9699228458b4661159bc08f90df6636d7ae4975ee751a0c068a25915453e",
+				"total": 0,
+				"displayed": 0,
+				"lines": 0,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0005623]
+			},
+			{
+				"stage": "workbench:focus",
+				"seconds": 0.0035090000000000147,
+				"eventLoop": {
+					"maximumDelayMs": 3.5060999999996056,
+					"p99DelayMs": 3.5060999999996056,
+					"utilization": 0.5310612104351896
+				},
+				"peak": {
+					"heapUsed": 60281336,
+					"arrayBuffers": 2966129,
+					"rss": 279470080
+				},
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": []
+			},
+			{
+				"stage": "workbench:refresh-no-change",
+				"seconds": 2.1593261000000004,
+				"eventLoop": {
+					"maximumDelayMs": 66.8706000000002,
+					"p99DelayMs": 20.948099999999613,
+					"utilization": 0.4845069659393426
+				},
+				"peak": {
+					"heapUsed": 165505608,
+					"arrayBuffers": 15474289,
+					"rss": 326000640
+				},
+				"lines": 583507,
+				"sampledProcessTreePeakBytes": 1178689536,
+				"nativeSearchSeconds": [0.2714836]
+			}
+		]
+	},
+	{
+		"sample": "verified-workbench-baseline-2.json",
+		"host": "workbench",
+		"backend": "baseline",
+		"outcome": "done",
+		"workerExit": {
+			"code": 0,
+			"signal": null
+		},
+		"joinedRebuiltOnOpen": false,
+		"measurements": [
+			{
+				"stage": "workbench:warm-open",
+				"seconds": 2.2251899999999996,
+				"eventLoop": {
+					"maximumDelayMs": 154.45389999999998,
+					"p99DelayMs": 60.42320000000018,
+					"utilization": 0.5127796312553177
+				},
+				"peak": {
+					"heapUsed": 149229024,
+					"arrayBuffers": 14795946,
+					"rss": 312025088
+				},
+				"lines": 583507,
+				"sampledProcessTreePeakBytes": 703246336,
+				"nativeSearchSeconds": [0.2750063]
+			},
+			{
+				"stage": "workbench:first-query",
+				"seconds": 0.07119639999999981,
+				"eventLoop": {
+					"maximumDelayMs": 24.868999999999687,
+					"p99DelayMs": 24.868999999999687,
+					"utilization": 0.057197393747595596
+				},
+				"peak": {
+					"heapUsed": 60260216,
+					"arrayBuffers": 3162165,
+					"rss": 286646272
+				},
+				"sha256": "b2f3d5684ab2dd3cde646b7c40c745987fa7a8b29422f8ebd8c26328f71f0cb5",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": null,
+				"nativeSearchSeconds": [0.0674483]
+			},
+			{
+				"stage": "workbench:count",
+				"seconds": 0.06276560000000017,
+				"eventLoop": {
+					"maximumDelayMs": 19.852300000000014,
+					"p99DelayMs": 19.852300000000014,
+					"utilization": 0.04678844271987041
+				},
+				"peak": {
+					"heapUsed": 60168688,
+					"arrayBuffers": 2998143,
+					"rss": 280313856
+				},
+				"sha256": "b2f3d5684ab2dd3cde646b7c40c745987fa7a8b29422f8ebd8c26328f71f0cb5",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0601431]
+			},
+			{
+				"stage": "workbench:filter",
+				"seconds": 0.03318399999999974,
+				"eventLoop": {
+					"maximumDelayMs": 23.04780000000028,
+					"p99DelayMs": 23.04780000000028,
+					"utilization": 0.09322894532557843
+				},
+				"peak": {
+					"heapUsed": 60155632,
+					"arrayBuffers": 2977188,
+					"rss": 280453120
+				},
+				"sha256": "81b3adccc43642d235b6df7ae9756349a678079450130955ec657b0cf743f36b",
+				"total": 2830,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0303137]
+			},
+			{
+				"stage": "workbench:facet",
+				"seconds": 0.14096109999999998,
+				"eventLoop": {
+					"maximumDelayMs": 24.78580000000011,
+					"p99DelayMs": 24.78580000000011,
+					"utilization": 0.025630512015664242
+				},
+				"peak": {
+					"heapUsed": 60468744,
+					"arrayBuffers": 3015074,
+					"rss": 280485888
+				},
+				"sha256": "5b2b2effcc219992fc643e503927b029e93beb76f6e8e79c348742327e0c06fd",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 903155712,
+				"nativeSearchSeconds": [0.1379892]
+			},
+			{
+				"stage": "workbench:page",
+				"seconds": 0.09605099999999947,
+				"eventLoop": {
+					"maximumDelayMs": 15.330699999999979,
+					"p99DelayMs": 15.330699999999979,
+					"utilization": 0.09711615646486403
+				},
+				"peak": {
+					"heapUsed": 67105192,
+					"arrayBuffers": 3431939,
+					"rss": 281837568
+				},
+				"sha256": "0ba67fe381df7557251af78e5bd0515737c32bb6ccc888b88c18cbab67e7d14b",
+				"total": 583507,
+				"displayed": 50,
+				"lines": 50,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0870864]
+			},
+			{
+				"stage": "workbench:facet-repeat",
+				"seconds": 0.14227399999999943,
+				"eventLoop": {
+					"maximumDelayMs": 24.115600000000086,
+					"p99DelayMs": 24.115600000000086,
+					"utilization": 0.027781858201733678
+				},
+				"peak": {
+					"heapUsed": 61422472,
+					"arrayBuffers": 3038723,
+					"rss": 281821184
+				},
+				"sha256": "5b2b2effcc219992fc643e503927b029e93beb76f6e8e79c348742327e0c06fd",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.1390775]
+			},
+			{
+				"stage": "workbench:page-repeat",
+				"seconds": 0.08498469999999997,
+				"eventLoop": {
+					"maximumDelayMs": 24.314100000000508,
+					"p99DelayMs": 24.314100000000508,
+					"utilization": 0.08373143813464384
+				},
+				"peak": {
+					"heapUsed": 67060552,
+					"arrayBuffers": 3373416,
+					"rss": 280924160
+				},
+				"sha256": "0ba67fe381df7557251af78e5bd0515737c32bb6ccc888b88c18cbab67e7d14b",
+				"total": 583507,
+				"displayed": 50,
+				"lines": 50,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0779159]
+			},
+			{
+				"stage": "workbench:search",
+				"seconds": 0.19479489999999988,
+				"eventLoop": {
+					"maximumDelayMs": 21.65230000000065,
+					"p99DelayMs": 21.65230000000065,
+					"utilization": 0.016674871817707146
+				},
+				"peak": {
+					"heapUsed": 60304208,
+					"arrayBuffers": 2977290,
+					"rss": 280924160
+				},
+				"sha256": "b2f3d5684ab2dd3cde646b7c40c745987fa7a8b29422f8ebd8c26328f71f0cb5",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": null,
+				"nativeSearchSeconds": [0.1925395]
+			},
+			{
+				"stage": "workbench:search-repeat",
+				"seconds": 0.06290160000000014,
+				"eventLoop": {
+					"maximumDelayMs": 15.535399999999754,
+					"p99DelayMs": 15.535399999999754,
+					"utilization": 0.04209902113282424
+				},
+				"peak": {
+					"heapUsed": 60317128,
+					"arrayBuffers": 2977290,
+					"rss": 280928256
+				},
+				"sha256": "b2f3d5684ab2dd3cde646b7c40c745987fa7a8b29422f8ebd8c26328f71f0cb5",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0605891]
+			},
+			{
+				"stage": "workbench:empty-search",
+				"seconds": 0.13754709999999978,
+				"eventLoop": {
+					"maximumDelayMs": 18.54780000000028,
+					"p99DelayMs": 18.54780000000028,
+					"utilization": 0.017340817720601826
+				},
+				"peak": {
+					"heapUsed": 60214896,
+					"arrayBuffers": 2968245,
+					"rss": 280928256
+				},
+				"sha256": "b2cb9699228458b4661159bc08f90df6636d7ae4975ee751a0c068a25915453e",
+				"total": 0,
+				"displayed": 0,
+				"lines": 0,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.1356821]
+			},
+			{
+				"stage": "workbench:empty-search-repeat",
+				"seconds": 0.002077299999999923,
+				"eventLoop": {
+					"maximumDelayMs": 2.0739000000003216,
+					"p99DelayMs": 2.0739000000003216,
+					"utilization": 0.7203524480765641
+				},
+				"peak": {
+					"heapUsed": 60222456,
+					"arrayBuffers": 2979939,
+					"rss": 280928256
+				},
+				"sha256": "b2cb9699228458b4661159bc08f90df6636d7ae4975ee751a0c068a25915453e",
+				"total": 0,
+				"displayed": 0,
+				"lines": 0,
+				"sampledProcessTreePeakBytes": null,
+				"nativeSearchSeconds": [0.0006565]
+			},
+			{
+				"stage": "workbench:focus",
+				"seconds": 0.0034796000000005736,
+				"eventLoop": {
+					"maximumDelayMs": 3.476799999999457,
+					"p99DelayMs": 3.476799999999457,
+					"utilization": 0.635441218965817
+				},
+				"peak": {
+					"heapUsed": 60292280,
+					"arrayBuffers": 2966129,
+					"rss": 280993792
+				},
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": []
+			},
+			{
+				"stage": "workbench:refresh-no-change",
+				"seconds": 2.1541021000000002,
+				"eventLoop": {
+					"maximumDelayMs": 69.1867000000002,
+					"p99DelayMs": 18.519900000000234,
+					"utilization": 0.48750739925165554
+				},
+				"peak": {
+					"heapUsed": 162055704,
+					"arrayBuffers": 14625511,
+					"rss": 324874240
+				},
+				"lines": 583507,
+				"sampledProcessTreePeakBytes": 1218510848,
+				"nativeSearchSeconds": [0.2718384]
+			}
+		]
+	},
+	{
+		"sample": "verified-workbench-candidate-0.json",
+		"host": "workbench",
+		"backend": "candidate",
+		"outcome": "done",
+		"workerExit": {
+			"code": 0,
+			"signal": null
+		},
+		"joinedRebuiltOnOpen": false,
+		"measurements": [
+			{
+				"stage": "workbench:warm-open",
+				"seconds": 2.2400922999999997,
+				"eventLoop": {
+					"maximumDelayMs": 157.50929999999994,
+					"p99DelayMs": 66.66949999999997,
+					"utilization": 0.507746402352562
+				},
+				"peak": {
+					"heapUsed": 150913272,
+					"arrayBuffers": 14456614,
+					"rss": 312008704
+				},
+				"lines": 583507,
+				"sampledProcessTreePeakBytes": 707244032,
+				"nativeSearchSeconds": [0.262187]
+			},
+			{
+				"stage": "workbench:first-query",
+				"seconds": 0.06588929999999982,
+				"eventLoop": {
+					"maximumDelayMs": 23.32529999999997,
+					"p99DelayMs": 23.32529999999997,
+					"utilization": 0.06581421640676542
+				},
+				"peak": {
+					"heapUsed": 60390088,
+					"arrayBuffers": 3182884,
+					"rss": 285454336
+				},
+				"sha256": "b2f3d5684ab2dd3cde646b7c40c745987fa7a8b29422f8ebd8c26328f71f0cb5",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": null,
+				"nativeSearchSeconds": [0.0619204]
+			},
+			{
+				"stage": "workbench:count",
+				"seconds": 0.003055699999999888,
+				"eventLoop": {
+					"maximumDelayMs": 3.0396999999998116,
+					"p99DelayMs": 3.0396999999998116,
+					"utilization": 0.6852858360074446
+				},
+				"peak": {
+					"heapUsed": 60157296,
+					"arrayBuffers": 2998029,
+					"rss": 281702400
+				},
+				"sha256": "b2f3d5684ab2dd3cde646b7c40c745987fa7a8b29422f8ebd8c26328f71f0cb5",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0010617]
+			},
+			{
+				"stage": "workbench:filter",
+				"seconds": 0.03320640000000003,
+				"eventLoop": {
+					"maximumDelayMs": 24.553300000000036,
+					"p99DelayMs": 24.553300000000036,
+					"utilization": 0.08627267924979169
+				},
+				"peak": {
+					"heapUsed": 60145384,
+					"arrayBuffers": 2977188,
+					"rss": 281702400
+				},
+				"sha256": "81b3adccc43642d235b6df7ae9756349a678079450130955ec657b0cf743f36b",
+				"total": 2830,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0305862]
+			},
+			{
+				"stage": "workbench:facet",
+				"seconds": 0.08232529999999998,
+				"eventLoop": {
+					"maximumDelayMs": 15.233000000000175,
+					"p99DelayMs": 15.233000000000175,
+					"utilization": 0.043171698115483895
+				},
+				"peak": {
+					"heapUsed": 60475800,
+					"arrayBuffers": 3035711,
+					"rss": 280109056
+				},
+				"sha256": "5b2b2effcc219992fc643e503927b029e93beb76f6e8e79c348742327e0c06fd",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": null,
+				"nativeSearchSeconds": [0.0792132]
+			},
+			{
+				"stage": "workbench:page",
+				"seconds": 0.03356179999999995,
+				"eventLoop": {
+					"maximumDelayMs": 15.584299999999985,
+					"p99DelayMs": 15.584299999999985,
+					"utilization": 0.2134064394857959
+				},
+				"peak": {
+					"heapUsed": 67026360,
+					"arrayBuffers": 3373416,
+					"rss": 281370624
+				},
+				"sha256": "0ba67fe381df7557251af78e5bd0515737c32bb6ccc888b88c18cbab67e7d14b",
+				"total": 583507,
+				"displayed": 50,
+				"lines": 50,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0262869]
+			},
+			{
+				"stage": "workbench:facet-repeat",
+				"seconds": 0.004625900000000001,
+				"eventLoop": {
+					"maximumDelayMs": 4.608799999999974,
+					"p99DelayMs": 4.608799999999974,
+					"utilization": 0.6070340030396146
+				},
+				"peak": {
+					"heapUsed": 61348240,
+					"arrayBuffers": 3038723,
+					"rss": 281362432
+				},
+				"sha256": "5b2b2effcc219992fc643e503927b029e93beb76f6e8e79c348742327e0c06fd",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 1011392512,
+				"nativeSearchSeconds": [0.0019021]
+			},
+			{
+				"stage": "workbench:page-repeat",
+				"seconds": 0.02493679999999995,
+				"eventLoop": {
+					"maximumDelayMs": 13.507799999999861,
+					"p99DelayMs": 13.507799999999861,
+					"utilization": 0.26404600251861565
+				},
+				"peak": {
+					"heapUsed": 67051928,
+					"arrayBuffers": 3373416,
+					"rss": 280469504
+				},
+				"sha256": "0ba67fe381df7557251af78e5bd0515737c32bb6ccc888b88c18cbab67e7d14b",
+				"total": 583507,
+				"displayed": 50,
+				"lines": 50,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0182451]
+			},
+			{
+				"stage": "workbench:search",
+				"seconds": 0.19321860000000016,
+				"eventLoop": {
+					"maximumDelayMs": 24.23129999999992,
+					"p99DelayMs": 24.23129999999992,
+					"utilization": 0.017669651372753094
+				},
+				"peak": {
+					"heapUsed": 60292824,
+					"arrayBuffers": 2977405,
+					"rss": 280485888
+				},
+				"sha256": "b2f3d5684ab2dd3cde646b7c40c745987fa7a8b29422f8ebd8c26328f71f0cb5",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": null,
+				"nativeSearchSeconds": [0.1909241]
+			},
+			{
+				"stage": "workbench:search-repeat",
+				"seconds": 0.003044699999999466,
+				"eventLoop": {
+					"maximumDelayMs": 3.041599999999562,
+					"p99DelayMs": 3.041599999999562,
+					"utilization": 0.7168249172402493
+				},
+				"peak": {
+					"heapUsed": 60299680,
+					"arrayBuffers": 2977290,
+					"rss": 280485888
+				},
+				"sha256": "b2f3d5684ab2dd3cde646b7c40c745987fa7a8b29422f8ebd8c26328f71f0cb5",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0009674]
+			},
+			{
+				"stage": "workbench:empty-search",
+				"seconds": 0.12795979999999962,
+				"eventLoop": {
+					"maximumDelayMs": 23.95339999999942,
+					"p99DelayMs": 23.95339999999942,
+					"utilization": 0.022528792083613566
+				},
+				"peak": {
+					"heapUsed": 60209216,
+					"arrayBuffers": 2968366,
+					"rss": 280489984
+				},
+				"sha256": "b2cb9699228458b4661159bc08f90df6636d7ae4975ee751a0c068a25915453e",
+				"total": 0,
+				"displayed": 0,
+				"lines": 0,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.1256374]
+			},
+			{
+				"stage": "workbench:empty-search-repeat",
+				"seconds": 0.0022917999999999667,
+				"eventLoop": {
+					"maximumDelayMs": 2.288900000000467,
+					"p99DelayMs": 2.288900000000467,
+					"utilization": 0.7918613279134459
+				},
+				"peak": {
+					"heapUsed": 60202856,
+					"arrayBuffers": 2968245,
+					"rss": 280489984
+				},
+				"sha256": "b2cb9699228458b4661159bc08f90df6636d7ae4975ee751a0c068a25915453e",
+				"total": 0,
+				"displayed": 0,
+				"lines": 0,
+				"sampledProcessTreePeakBytes": null,
+				"nativeSearchSeconds": [0.0005907]
+			},
+			{
+				"stage": "workbench:focus",
+				"seconds": 0.0034849999999996724,
+				"eventLoop": {
+					"maximumDelayMs": 3.48279999999977,
+					"p99DelayMs": 3.48279999999977,
+					"utilization": 0.5765489131337835
+				},
+				"peak": {
+					"heapUsed": 60279920,
+					"arrayBuffers": 2966129,
+					"rss": 280494080
+				},
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": []
+			},
+			{
+				"stage": "workbench:refresh-no-change",
+				"seconds": 2.1691803,
+				"eventLoop": {
+					"maximumDelayMs": 85.34130000000005,
+					"p99DelayMs": 24.67450000000008,
+					"utilization": 0.49101646953749517
+				},
+				"peak": {
+					"heapUsed": 162046448,
+					"arrayBuffers": 14702323,
+					"rss": 326074368
+				},
+				"lines": 583507,
+				"sampledProcessTreePeakBytes": 1455656960,
+				"nativeSearchSeconds": [0.2671018]
+			}
+		]
+	},
+	{
+		"sample": "verified-workbench-candidate-1.json",
+		"host": "workbench",
+		"backend": "candidate",
+		"outcome": "done",
+		"workerExit": {
+			"code": 0,
+			"signal": null
+		},
+		"joinedRebuiltOnOpen": false,
+		"measurements": [
+			{
+				"stage": "workbench:warm-open",
+				"seconds": 2.2476716999999997,
+				"eventLoop": {
+					"maximumDelayMs": 153.471,
+					"p99DelayMs": 62.47389999999996,
+					"utilization": 0.5083126002166016
+				},
+				"peak": {
+					"heapUsed": 149233632,
+					"arrayBuffers": 14795946,
+					"rss": 309850112
+				},
+				"lines": 583507,
+				"sampledProcessTreePeakBytes": 711450624,
+				"nativeSearchSeconds": [0.2635299]
+			},
+			{
+				"stage": "workbench:first-query",
+				"seconds": 0.06633429999999998,
+				"eventLoop": {
+					"maximumDelayMs": 25.000500000000102,
+					"p99DelayMs": 25.000500000000102,
+					"utilization": 0.06542123703080648
+				},
+				"peak": {
+					"heapUsed": 60276560,
+					"arrayBuffers": 3162117,
+					"rss": 283643904
+				},
+				"sha256": "b2f3d5684ab2dd3cde646b7c40c745987fa7a8b29422f8ebd8c26328f71f0cb5",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": null,
+				"nativeSearchSeconds": [0.0623462]
+			},
+			{
+				"stage": "workbench:count",
+				"seconds": 0.003146099999999933,
+				"eventLoop": {
+					"maximumDelayMs": 3.1278000000002066,
+					"p99DelayMs": 3.1278000000002066,
+					"utilization": 0.6911456011484263
+				},
+				"peak": {
+					"heapUsed": 60160280,
+					"arrayBuffers": 2998029,
+					"rss": 277950464
+				},
+				"sha256": "b2f3d5684ab2dd3cde646b7c40c745987fa7a8b29422f8ebd8c26328f71f0cb5",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0010961]
+			},
+			{
+				"stage": "workbench:filter",
+				"seconds": 0.03399260000000004,
+				"eventLoop": {
+					"maximumDelayMs": 15.307999999999993,
+					"p99DelayMs": 15.307999999999993,
+					"utilization": 0.08440660598057734
+				},
+				"peak": {
+					"heapUsed": 60155600,
+					"arrayBuffers": 2977188,
+					"rss": 278253568
+				},
+				"sha256": "81b3adccc43642d235b6df7ae9756349a678079450130955ec657b0cf743f36b",
+				"total": 2830,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0313208]
+			},
+			{
+				"stage": "workbench:facet",
+				"seconds": 0.08235570000000007,
+				"eventLoop": {
+					"maximumDelayMs": 16.202099999999973,
+					"p99DelayMs": 16.202099999999973,
+					"utilization": 0.040044245319661664
+				},
+				"peak": {
+					"heapUsed": 60472920,
+					"arrayBuffers": 3015074,
+					"rss": 278478848
+				},
+				"sha256": "5b2b2effcc219992fc643e503927b029e93beb76f6e8e79c348742327e0c06fd",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": null,
+				"nativeSearchSeconds": [0.0794418]
+			},
+			{
+				"stage": "workbench:page",
+				"seconds": 0.034667599999999764,
+				"eventLoop": {
+					"maximumDelayMs": 15.666099999999915,
+					"p99DelayMs": 15.666099999999915,
+					"utilization": 0.23614124156961366
+				},
+				"peak": {
+					"heapUsed": 67099512,
+					"arrayBuffers": 3431939,
+					"rss": 279797760
+				},
+				"sha256": "0ba67fe381df7557251af78e5bd0515737c32bb6ccc888b88c18cbab67e7d14b",
+				"total": 583507,
+				"displayed": 50,
+				"lines": 50,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0263379]
+			},
+			{
+				"stage": "workbench:facet-repeat",
+				"seconds": 0.0043704000000002454,
+				"eventLoop": {
+					"maximumDelayMs": 4.353299999999763,
+					"p99DelayMs": 4.353299999999763,
+					"utilization": 0.5823627663750929
+				},
+				"peak": {
+					"heapUsed": 61355704,
+					"arrayBuffers": 3038723,
+					"rss": 278061056
+				},
+				"sha256": "5b2b2effcc219992fc643e503927b029e93beb76f6e8e79c348742327e0c06fd",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0018693]
+			},
+			{
+				"stage": "workbench:page-repeat",
+				"seconds": 0.025208300000000235,
+				"eventLoop": {
+					"maximumDelayMs": 16.519999999999982,
+					"p99DelayMs": 16.519999999999982,
+					"utilization": 0.27459847121252606
+				},
+				"peak": {
+					"heapUsed": 67055840,
+					"arrayBuffers": 3373416,
+					"rss": 277762048
+				},
+				"sha256": "0ba67fe381df7557251af78e5bd0515737c32bb6ccc888b88c18cbab67e7d14b",
+				"total": 583507,
+				"displayed": 50,
+				"lines": 50,
+				"sampledProcessTreePeakBytes": 1010122752,
+				"nativeSearchSeconds": [0.0181205]
+			},
+			{
+				"stage": "workbench:search",
+				"seconds": 0.19438450000000057,
+				"eventLoop": {
+					"maximumDelayMs": 15.440399999999954,
+					"p99DelayMs": 15.440399999999954,
+					"utilization": 0.020078668445725745
+				},
+				"peak": {
+					"heapUsed": 61161104,
+					"arrayBuffers": 3000939,
+					"rss": 277778432
+				},
+				"sha256": "b2f3d5684ab2dd3cde646b7c40c745987fa7a8b29422f8ebd8c26328f71f0cb5",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": null,
+				"nativeSearchSeconds": [0.1919134]
+			},
+			{
+				"stage": "workbench:search-repeat",
+				"seconds": 0.00299579999999969,
+				"eventLoop": {
+					"maximumDelayMs": 2.9929000000001906,
+					"p99DelayMs": 2.9929000000001906,
+					"utilization": 0.6861350428676076
+				},
+				"peak": {
+					"heapUsed": 60309752,
+					"arrayBuffers": 2977290,
+					"rss": 276942848
+				},
+				"sha256": "b2f3d5684ab2dd3cde646b7c40c745987fa7a8b29422f8ebd8c26328f71f0cb5",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0010428]
+			},
+			{
+				"stage": "workbench:empty-search",
+				"seconds": 0.13028570000000037,
+				"eventLoop": {
+					"maximumDelayMs": 19.660499999999956,
+					"p99DelayMs": 19.660499999999956,
+					"utilization": 0.021104388285171582
+				},
+				"peak": {
+					"heapUsed": 60218280,
+					"arrayBuffers": 2968245,
+					"rss": 276942848
+				},
+				"sha256": "b2cb9699228458b4661159bc08f90df6636d7ae4975ee751a0c068a25915453e",
+				"total": 0,
+				"displayed": 0,
+				"lines": 0,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.1282671]
+			},
+			{
+				"stage": "workbench:empty-search-repeat",
+				"seconds": 0.002174699999999575,
+				"eventLoop": {
+					"maximumDelayMs": 2.1718999999993684,
+					"p99DelayMs": 2.1718999999993684,
+					"utilization": 0.804331830934295
+				},
+				"peak": {
+					"heapUsed": 60207216,
+					"arrayBuffers": 2968244,
+					"rss": 276942848
+				},
+				"sha256": "b2cb9699228458b4661159bc08f90df6636d7ae4975ee751a0c068a25915453e",
+				"total": 0,
+				"displayed": 0,
+				"lines": 0,
+				"sampledProcessTreePeakBytes": null,
+				"nativeSearchSeconds": [0.000532]
+			},
+			{
+				"stage": "workbench:focus",
+				"seconds": 0.003712199999999939,
+				"eventLoop": {
+					"maximumDelayMs": 3.7119999999995343,
+					"p99DelayMs": 3.7119999999995343,
+					"utilization": 0.5966707967682643
+				},
+				"peak": {
+					"heapUsed": 60303064,
+					"arrayBuffers": 2977822,
+					"rss": 276942848
+				},
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": []
+			},
+			{
+				"stage": "workbench:refresh-no-change",
+				"seconds": 2.1685220000000007,
+				"eventLoop": {
+					"maximumDelayMs": 80.58330000000024,
+					"p99DelayMs": 24.422899999999572,
+					"utilization": 0.48723469786743323
+				},
+				"peak": {
+					"heapUsed": 163592984,
+					"arrayBuffers": 15322831,
+					"rss": 326864896
+				},
+				"lines": 583507,
+				"sampledProcessTreePeakBytes": 1455632384,
+				"nativeSearchSeconds": [0.2642601]
+			}
+		]
+	},
+	{
+		"sample": "verified-workbench-candidate-2.json",
+		"host": "workbench",
+		"backend": "candidate",
+		"outcome": "done",
+		"workerExit": {
+			"code": 0,
+			"signal": null
+		},
+		"joinedRebuiltOnOpen": false,
+		"measurements": [
+			{
+				"stage": "workbench:warm-open",
+				"seconds": 2.2710510000000004,
+				"eventLoop": {
+					"maximumDelayMs": 155.81909999999993,
+					"p99DelayMs": 65.8454999999999,
+					"utilization": 0.5119544133475268
+				},
+				"peak": {
+					"heapUsed": 160115008,
+					"arrayBuffers": 14469076,
+					"rss": 319995904
+				},
+				"lines": 583507,
+				"sampledProcessTreePeakBytes": 711491584,
+				"nativeSearchSeconds": [0.265025]
+			},
+			{
+				"stage": "workbench:first-query",
+				"seconds": 0.06562620000000015,
+				"eventLoop": {
+					"maximumDelayMs": 18.37519999999995,
+					"p99DelayMs": 18.37519999999995,
+					"utilization": 0.052301086293575695
+				},
+				"peak": {
+					"heapUsed": 60275968,
+					"arrayBuffers": 3182881,
+					"rss": 288055296
+				},
+				"sha256": "b2f3d5684ab2dd3cde646b7c40c745987fa7a8b29422f8ebd8c26328f71f0cb5",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0626604]
+			},
+			{
+				"stage": "workbench:count",
+				"seconds": 0.0030073999999999613,
+				"eventLoop": {
+					"maximumDelayMs": 2.993999999999687,
+					"p99DelayMs": 2.993999999999687,
+					"utilization": 0.6648156149918775
+				},
+				"peak": {
+					"heapUsed": 60138288,
+					"arrayBuffers": 2977290,
+					"rss": 288370688
+				},
+				"sha256": "b2f3d5684ab2dd3cde646b7c40c745987fa7a8b29422f8ebd8c26328f71f0cb5",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0010706]
+			},
+			{
+				"stage": "workbench:filter",
+				"seconds": 0.03379640000000018,
+				"eventLoop": {
+					"maximumDelayMs": 20.7190999999998,
+					"p99DelayMs": 20.7190999999998,
+					"utilization": 0.08502951481959876
+				},
+				"peak": {
+					"heapUsed": 60208640,
+					"arrayBuffers": 2998042,
+					"rss": 288378880
+				},
+				"sha256": "81b3adccc43642d235b6df7ae9756349a678079450130955ec657b0cf743f36b",
+				"total": 2830,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": null,
+				"nativeSearchSeconds": [0.0310776]
+			},
+			{
+				"stage": "workbench:facet",
+				"seconds": 0.08260120000000007,
+				"eventLoop": {
+					"maximumDelayMs": 22.213400000000092,
+					"p99DelayMs": 22.213400000000092,
+					"utilization": 0.0452404933357984
+				},
+				"peak": {
+					"heapUsed": 60471712,
+					"arrayBuffers": 3015188,
+					"rss": 288399360
+				},
+				"sha256": "5b2b2effcc219992fc643e503927b029e93beb76f6e8e79c348742327e0c06fd",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0793035]
+			},
+			{
+				"stage": "workbench:page",
+				"seconds": 0.034424600000000284,
+				"eventLoop": {
+					"maximumDelayMs": 20.508800000000065,
+					"p99DelayMs": 20.508800000000065,
+					"utilization": 0.22896221526936059
+				},
+				"peak": {
+					"heapUsed": 67032736,
+					"arrayBuffers": 3373416,
+					"rss": 289411072
+				},
+				"sha256": "0ba67fe381df7557251af78e5bd0515737c32bb6ccc888b88c18cbab67e7d14b",
+				"total": 583507,
+				"displayed": 50,
+				"lines": 50,
+				"sampledProcessTreePeakBytes": 1020461056,
+				"nativeSearchSeconds": [0.0264117]
+			},
+			{
+				"stage": "workbench:facet-repeat",
+				"seconds": 0.005027300000000195,
+				"eventLoop": {
+					"maximumDelayMs": 5.013599999999769,
+					"p99DelayMs": 5.013599999999769,
+					"utilization": 0.5856719507548253
+				},
+				"peak": {
+					"heapUsed": 61356616,
+					"arrayBuffers": 3038722,
+					"rss": 288231424
+				},
+				"sha256": "5b2b2effcc219992fc643e503927b029e93beb76f6e8e79c348742327e0c06fd",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.002153]
+			},
+			{
+				"stage": "workbench:page-repeat",
+				"seconds": 0.02553690000000006,
+				"eventLoop": {
+					"maximumDelayMs": 20.013400000000274,
+					"p99DelayMs": 20.013400000000274,
+					"utilization": 0.265988440289704
+				},
+				"peak": {
+					"heapUsed": 67114024,
+					"arrayBuffers": 3431938,
+					"rss": 287776768
+				},
+				"sha256": "0ba67fe381df7557251af78e5bd0515737c32bb6ccc888b88c18cbab67e7d14b",
+				"total": 583507,
+				"displayed": 50,
+				"lines": 50,
+				"sampledProcessTreePeakBytes": null,
+				"nativeSearchSeconds": [0.0185239]
+			},
+			{
+				"stage": "workbench:search",
+				"seconds": 0.19338599999999997,
+				"eventLoop": {
+					"maximumDelayMs": 16.060699999999997,
+					"p99DelayMs": 16.060699999999997,
+					"utilization": 0.01838028071895408
+				},
+				"peak": {
+					"heapUsed": 61157952,
+					"arrayBuffers": 3000939,
+					"rss": 288112640
+				},
+				"sha256": "b2f3d5684ab2dd3cde646b7c40c745987fa7a8b29422f8ebd8c26328f71f0cb5",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.1910186]
+			},
+			{
+				"stage": "workbench:search-repeat",
+				"seconds": 0.003153400000000147,
+				"eventLoop": {
+					"maximumDelayMs": 3.149500000000444,
+					"p99DelayMs": 3.149500000000444,
+					"utilization": 0.6493560051625458
+				},
+				"peak": {
+					"heapUsed": 60327640,
+					"arrayBuffers": 2998029,
+					"rss": 287219712
+				},
+				"sha256": "b2f3d5684ab2dd3cde646b7c40c745987fa7a8b29422f8ebd8c26328f71f0cb5",
+				"total": 583507,
+				"displayed": 1,
+				"lines": 1,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0012237]
+			},
+			{
+				"stage": "workbench:empty-search",
+				"seconds": 0.13180460000000038,
+				"eventLoop": {
+					"maximumDelayMs": 16.052200000000084,
+					"p99DelayMs": 16.052200000000084,
+					"utilization": 0.021984650138954176
+				},
+				"peak": {
+					"heapUsed": 60239400,
+					"arrayBuffers": 2988984,
+					"rss": 287219712
+				},
+				"sha256": "b2cb9699228458b4661159bc08f90df6636d7ae4975ee751a0c068a25915453e",
+				"total": 0,
+				"displayed": 0,
+				"lines": 0,
+				"sampledProcessTreePeakBytes": null,
+				"nativeSearchSeconds": [0.1295245]
+			},
+			{
+				"stage": "workbench:empty-search-repeat",
+				"seconds": 0.002118499999999585,
+				"eventLoop": {
+					"maximumDelayMs": 2.1176000000004933,
+					"p99DelayMs": 2.1176000000004933,
+					"utilization": 0.8007460219109498
+				},
+				"peak": {
+					"heapUsed": 60208112,
+					"arrayBuffers": 2968245,
+					"rss": 287219712
+				},
+				"sha256": "b2cb9699228458b4661159bc08f90df6636d7ae4975ee751a0c068a25915453e",
+				"total": 0,
+				"displayed": 0,
+				"lines": 0,
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": [0.0005213]
+			},
+			{
+				"stage": "workbench:focus",
+				"seconds": 0.003578899999999521,
+				"eventLoop": {
+					"maximumDelayMs": 3.5771999999997206,
+					"p99DelayMs": 3.5771999999997206,
+					"utilization": 0.5798664466230681
+				},
+				"peak": {
+					"heapUsed": 60300976,
+					"arrayBuffers": 2977823,
+					"rss": 287223808
+				},
+				"sampledProcessTreePeakBytes": 0,
+				"nativeSearchSeconds": []
+			},
+			{
+				"stage": "workbench:refresh-no-change",
+				"seconds": 2.2493544,
+				"eventLoop": {
+					"maximumDelayMs": 85.96759999999995,
+					"p99DelayMs": 20.64799999999923,
+					"utilization": 0.5026450246703357
+				},
+				"peak": {
+					"heapUsed": 159245176,
+					"arrayBuffers": 12610359,
+					"rss": 325918720
+				},
+				"lines": 583507,
+				"sampledProcessTreePeakBytes": 1449480192,
+				"nativeSearchSeconds": [0.2615037]
+			}
+		]
+	}
+]

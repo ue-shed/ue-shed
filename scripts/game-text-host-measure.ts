@@ -532,7 +532,44 @@ export async function measureGameTextHosts(
 				}),
 			pageSummary
 		);
+		await measure(
+			`${host}:facet-repeat`,
+			() =>
+				query({
+					...base,
+					facets: { folder: "", assets: true, origins: true, cultures: true }
+				}),
+			pageSummary
+		);
+		await measure(
+			`${host}:page-repeat`,
+			() =>
+				query({
+					...base,
+					pageSize: 50,
+					...(first!.localization?.nextCursor === undefined
+						? undefined
+						: { localizationCursor: first!.localization.nextCursor })
+				}),
+			pageSummary
+		);
 		await measure(`${host}:search`, () => query({ ...base, query: "mirava" }), pageSummary);
+		await measure(
+			`${host}:search-repeat`,
+			() => query({ ...base, query: "mirava" }),
+			pageSummary
+		);
+		const absentQuery = "__ue_shed_benchmark_absent_source__";
+		await measure(
+			`${host}:empty-search`,
+			() => query({ ...base, query: absentQuery }),
+			pageSummary
+		);
+		await measure(
+			`${host}:empty-search-repeat`,
+			() => query({ ...base, query: absentQuery }),
+			pageSummary
+		);
 		const id = first!.units[0]?.id,
 			lineId = first!.localization?.lines[0]?.id;
 		if (!id || !lineId) throw new Error("Focus fixture absent.");

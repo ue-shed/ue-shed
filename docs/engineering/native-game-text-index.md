@@ -33,6 +33,22 @@ in Rust. Ordinary text focus carries a compact localization preview. `localizati
 `localizationLines` explicitly export complete provenance through scoped files; interactive
 handlers do not hydrate a full line and slice it in JavaScript.
 
+Each immutable native reader caches page-independent search metadata: counts, problems, groups,
+facets, file scope and localization totals. Counts are also shared across requests that differ
+only in grouping or requested facets. This reader-owned cache retains at most 64 entries and
+8 MiB of serialized keys and values; oversized valid requests still execute without being cached.
+Cached values never contain page rows or cursors, and cancellation is checked on cache hits.
+The existing ordered-row cache includes grouped selections and counts its keys in its 32 MiB
+budget. Both caches are discarded when the reader closes; a new snapshot or policy gets a new
+reader, so cached aggregates cannot cross revisions.
+
+Ungrouped pages slice the matching row IDs directly. Group membership is selected once and reused
+within the same row-cache bounds. Cursor lookup uses display-order ranks and binary search,
+including restarting at the first page when a valid cursor is outside the selected rows.
+Each projection's rank vector is prepared lazily on its first cursor request and retains four
+bytes per row. A first predicate, group or facet can still scan its input; subsequent pages do not
+reconstruct the entire result list. Only the requested page is hydrated into authored values.
+
 Each opened model owns its native query process in the caller's scope. Native handles pin files
 and dictionary segments, including sections not yet read, across later publications and
 compaction. A query reader holds no writer lease. Canceling a caller skips its queued read or

@@ -1,0 +1,35 @@
+{
+	"method": "Serial alternating fresh processes; retained 1x inputs; separate prewarmed cache per host; default Node heap; fixed affinity; warm filesystem caches; identical production host harness and requests; no concurrent heavy work",
+	"baselineSha256": "10FDD499DBA3CC9D34B1AC21A3A0A235F4068B08A9AE72F8EA73A8F9FC29C0DA",
+	"candidateCommit": "46beb9cae70d10684f1eef50c8dec13d5cf86449",
+	"candidateSha256": "E01228197024A6B20A2617E2A7C7553132344AAD091534C07CE3907FDAF086D5",
+	"samplesPerBackendPerHost": 3,
+	"baseCommit": "a2039d831e8e6f4fe146f511617fe23589804261",
+	"dataset": {
+		"scale": "1x",
+		"occurrences": 1028205,
+		"localizationKeys": 132606,
+		"textPackages": 16500,
+		"inventoryPackages": 166518,
+		"cultures": 10,
+		"visibleLines": 583507
+	},
+	"scope": "Query reuse and pagination through production CLI and Workbench hosts; warm filesystem caches and existing immutable joined indexes. First predicates/facets can still scan input.",
+	"baseline": "Native graph implementation from #132, not the superseded hybrid or original TypeScript engine.",
+	"supersededSeries": "Earlier query-cache-* and final-* series are excluded. Shared-host caches sometimes rebuilt views; one worker did not report completion. This verified series reruns all 12 accepted samples on the dictionary-content fix, records clean exit codes and validates warm view reuse.",
+	"acceptedFiles": [
+		"verified-cli-baseline-0.json",
+		"verified-cli-baseline-1.json",
+		"verified-cli-baseline-2.json",
+		"verified-cli-candidate-0.json",
+		"verified-cli-candidate-1.json",
+		"verified-cli-candidate-2.json",
+		"verified-workbench-baseline-0.json",
+		"verified-workbench-baseline-1.json",
+		"verified-workbench-baseline-2.json",
+		"verified-workbench-candidate-0.json",
+		"verified-workbench-candidate-1.json",
+		"verified-workbench-candidate-2.json"
+	],
+	"hashParity": "All captured page hashes match by operation across all 12 accepted runs."
+}

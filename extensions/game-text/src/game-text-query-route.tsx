@@ -65,6 +65,7 @@ import { DisplayMenu } from "./game-text-display-menu.js";
 import { FacetsPane } from "./game-text-facets.js";
 import { FolderBrowser } from "./game-text-folder-browser.js";
 import { LinePageHeader, LineProblem, LineProperties } from "./game-text-line-page.js";
+import { GameTextIdRepairs } from "./game-text-id-repairs.js";
 import { createLineNavigation } from "./game-text-line-navigation.js";
 import {
 	FilterMenu,
@@ -1900,6 +1901,22 @@ export function GameTextRoute(props: {
 																		.join(" · ")}
 																</span>
 															</Show>
+															<GameTextIdRepairs
+																focus={current()}
+																detail={localization.detail()}
+																client={props.client}
+																projectKey={projectKey()}
+																target={localization.target()}
+																nativeCulture={
+																	localization.active()?.target
+																		.nativeCulture ?? undefined
+																}
+																edits={edits}
+																busy={
+																	loading() || operations.busy()
+																}
+																onApplied={() => load(true)}
+															/>
 															<TranslationsDetail
 																model={localization}
 																edits={edits}

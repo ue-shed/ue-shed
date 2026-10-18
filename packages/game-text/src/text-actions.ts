@@ -1,78 +1,28 @@
-import {
-	GAME_TEXT_ACTIONS_CONTRACT,
-	GAME_TEXT_ACTIONS_VERSION,
+import type {
 	GameTextActionsRequest,
 	GameTextActionsResult,
-	decodeCompanionCapabilityManifest,
-	type GameTextAction,
-	type GameTextActionEdit,
-	type GameTextActionOutcomeIdentity
+	GameTextAction,
+	GameTextActionEdit,
+	GameTextActionOutcomeIdentity
 } from "@ue-shed/protocol";
 import type { SavedAssetPackageTextRecord, SavedAssetTextOccurrence } from "@ue-shed/unreal-assets";
-import { stripPackageNamespace } from "@ue-shed/localization";
-import { RemoteControlClient, type RemoteControlClientError } from "@ue-shed/unreal-connection";
-import { Effect, Schema } from "effect";
+import { stripPackageNamespace } from "@ue-shed/localization/browser";
 
-/** The capability a running editor advertises when `UEShedGameText` is loaded. */
-export const GAME_TEXT_ACTIONS_CAPABILITY = "game-text.actions.v1";
-const coreObjectPath = "/Script/UEShedCore.Default__UEShedCoreLibrary";
-
-/**
- * Why a Game Text actions call produced no result. A request the plugin rejected or that failed in
- * Unreal is not this error: it is a result with `status` and typed `errors`.
- */
-export class GameTextActionsError extends Schema.TaggedError<GameTextActionsError>()(
-	"GameTextActionsError",
-	{
-		code: Schema.Literals([
-			"invalid_request",
-			"capability_missing",
-			"connection_failed",
-			"invalid_result"
-		]),
-		message: Schema.String,
-		recovery: Schema.String,
-		retrySafe: Schema.Boolean,
-		nextStep: Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]),
-		endpoint: Schema.optionalKey(Schema.String),
-		cause: Schema.optionalKey(Schema.Defect())
-	}
-) {}
-
-/**
- * Explicit editor endpoint and guarded action request. The caller owns project/editor selection
- * and expected saved identity; merely constructing these options neither loads nor writes a
- * package.
- */
-export interface GameTextActionsOptions {
-	/** Remote Control HTTP endpoint of the running editor, for example `http://127.0.0.1:30010`. */
-	readonly endpoint: string;
-	readonly request: GameTextActionsRequest;
-}
-
-/** A request with the contract header and explicit defaults (compile, no save) filled in. */
-export function gameTextActionsRequest(options: {
-	readonly mode: GameTextActionsRequest["mode"];
-	readonly actions: readonly GameTextAction[];
-	readonly compile?: boolean;
-	readonly save?: boolean;
-}): GameTextActionsRequest {
-	return {
-		contract: GAME_TEXT_ACTIONS_CONTRACT,
-		version: GAME_TEXT_ACTIONS_VERSION,
-		mode: options.mode,
-		compile: options.compile ?? true,
-		save: options.save ?? false,
-		actions: options.actions
-	};
-}
+/** Compatibility names for the shared localization editing API. */
+export {
+	LOCALIZATION_TEXT_ACTIONS_CAPABILITY as GAME_TEXT_ACTIONS_CAPABILITY,
+	LocalizationTextActionsError as GameTextActionsError,
+	localizationTextActionsRequest as gameTextActionsRequest,
+	runLocalizationTextActions as runGameTextActions,
+	type LocalizationTextActionsOptions as GameTextActionsOptions
+} from "@ue-shed/localization";
 
 /**
  * One action for a text the saved-package reader found, expecting the id and source it read. The
  * reader reports the namespace as saved, with the package namespace marker (`[...]`); actions use
  * the namespace Gather reports, without it. Only
- * localized asset-property text is editable here: DataTable cells go through authoring, and
- * culture-invariant or String Table text has no key of its own. Keep the owning reader record's
+ * resolved text is mapped here, including table entries/cells and graph pin selectors. References
+ * and unkeyed conversions require an explicit localization action. Keep the owning reader record's
  * packageFile with the occurrence; serialized object paths alone cannot identify copied assets.
  */
 export function gameTextActionForOccurrence(
@@ -81,14 +31,33 @@ export function gameTextActionForOccurrence(
 	edit: GameTextActionEdit,
 	packageFile: string
 ): GameTextAction | undefined {
-	if (occurrence.location.kind !== "asset_property") return undefined;
 	if (occurrence.identity.status !== "resolved") return undefined;
+	const location = occurrence.location;
+	const pin =
+		location.kind === "asset_property"
+			? /^Pins\[(\d+)\]\.DefaultTextValue$/u.exec(location.property_path)
+			: undefined;
 	return {
 		id,
 		place: {
 			packageFile,
-			objectPath: occurrence.location.object_path,
-			propertyPath: occurrence.location.property_path
+			objectPath: location.object_path,
+			propertyPath:
+				location.kind === "string_table_entry"
+					? location.entry_key
+					: location.property_path,
+			...(location.kind === "data_table_cell"
+				? { selector: { kind: "data_table_cell" as const, row: location.row } }
+				: location.kind === "string_table_entry"
+					? {
+							selector: {
+								kind: "string_table_entry" as const,
+								entryKey: location.entry_key
+							}
+						}
+					: pin
+						? { selector: { kind: "graph_pin" as const, index: Number(pin[1]) } }
+						: {})
 		},
 		expected: {
 			namespace: stripPackageNamespace(occurrence.identity.namespace),
@@ -98,109 +67,6 @@ export function gameTextActionForOccurrence(
 		edit
 	};
 }
-
-const decodeRequest = Schema.decodeUnknownEffect(GameTextActionsRequest);
-const decodeResult = Schema.decodeUnknownEffect(GameTextActionsResult);
-
-function connectionFailed(endpoint: string, error: RemoteControlClientError, mutation = false) {
-	const retrySafe = !mutation && error.retrySafe;
-	return new GameTextActionsError({
-		code: "connection_failed",
-		message: `Remote Control call ${error.functionName} to ${endpoint} failed.`,
-		recovery: retrySafe
-			? "Check that the editor is running with Remote Control enabled, then retry."
-			: "Reconcile the editor state and saved files before issuing another mutation; the reply may have been lost.",
-		retrySafe,
-		nextStep: retrySafe ? "retry" : "reconcile",
-		endpoint,
-		cause: error
-	});
-}
-
-/**
- * Sends a Game Text actions request to a running editor with `UEShedGameText` loaded. An apply
- * changes the editor's objects, so it is not retried here: on `connection_failed`, read the text
- * again before sending another request.
- */
-export const runGameTextActions = Effect.fn("game_text.actions.run")(function* (
-	options: GameTextActionsOptions
-) {
-	const endpoint = options.endpoint.replace(/\/+$/u, "");
-	const request = yield* decodeRequest(options.request).pipe(
-		Effect.mapError(
-			(cause) =>
-				new GameTextActionsError({
-					code: "invalid_request",
-					message: "The Game Text actions request does not match the 1.0 contract.",
-					recovery: "Build the request with gameTextActionsRequest and valid actions.",
-					retrySafe: false,
-					nextStep: "fix_input",
-					cause
-				})
-		)
-	);
-	const client = yield* RemoteControlClient;
-	const manifestValue = yield* client
-		.request({
-			endpoint,
-			objectPath: coreObjectPath,
-			functionName: "GetCapabilityManifest",
-			idempotent: true,
-			operation: "game_text.actions.manifest",
-			parameters: {}
-		})
-		.pipe(Effect.mapError((error) => connectionFailed(endpoint, error)));
-	const manifest = yield* decodeCompanionCapabilityManifest(manifestValue).pipe(
-		Effect.mapError(
-			(cause) =>
-				new GameTextActionsError({
-					code: "invalid_result",
-					message: "The editor's capability manifest could not be read.",
-					recovery: "Use matching UE Shed plugin and package versions.",
-					retrySafe: false,
-					nextStep: "escalate",
-					endpoint,
-					cause
-				})
-		)
-	);
-	const objectPath = manifest.gameTextObjectPath;
-	if (!objectPath || !manifest.capabilities.includes(GAME_TEXT_ACTIONS_CAPABILITY)) {
-		return yield* new GameTextActionsError({
-			code: "capability_missing",
-			message: "The running editor does not advertise Game Text actions.",
-			recovery: "Enable the UEShedGameText plugin in the editor, then retry.",
-			retrySafe: false,
-			nextStep: "fix_input",
-			endpoint
-		});
-	}
-	const value = yield* client
-		.request({
-			endpoint,
-			objectPath,
-			functionName: "ApplyTextActions",
-			operation: `game_text.actions.${request.mode}`,
-			parameters: { RequestJson: JSON.stringify(request) }
-		})
-		.pipe(Effect.mapError((error) => connectionFailed(endpoint, error, true)));
-	return yield* decodeResult(value).pipe(
-		Effect.mapError(
-			(cause) =>
-				new GameTextActionsError({
-					code: "invalid_result",
-					message:
-						"The editor returned a Game Text actions result that does not match 1.0.",
-					recovery:
-						"Use matching UE Shed plugin and package versions, then read the text again before retrying.",
-					retrySafe: false,
-					nextStep: "reconcile",
-					endpoint,
-					cause
-				})
-		)
-	);
-});
 
 /** One applied action whose re-read text is not what the editor reported. */
 export interface GameTextActionMismatch {
@@ -251,14 +117,56 @@ export function verifyGameTextActions(
 		if (outcome.status !== "applied") continue;
 		const action = request.actions.find((candidate) => candidate.id === outcome.id);
 		if (!action) continue;
-		const occurrence = occurrences.find(
-			({ file, occurrence: candidate }) =>
-				candidate.location.kind === "asset_property" &&
-				candidate.location.property_path === action.place.propertyPath &&
-				samePackageFile(file, action.place.packageFile) &&
-				packageObjectPath(candidate.location.object_path) ===
+		const occurrence = occurrences.find(({ file, occurrence: candidate }) => {
+			if (
+				!samePackageFile(file, action.place.packageFile) ||
+				packageObjectPath(candidate.location.object_path) !==
 					packageObjectPath(action.place.objectPath)
-		)?.occurrence;
+			)
+				return false;
+			const selector = action.place.selector;
+			if (selector?.kind === "data_table_cell")
+				return (
+					candidate.location.kind === "data_table_cell" &&
+					candidate.location.row === selector.row &&
+					candidate.location.property_path === action.place.propertyPath
+				);
+			if (selector?.kind === "string_table_entry")
+				return (
+					candidate.location.kind === "string_table_entry" &&
+					candidate.location.entry_key ===
+						(action.edit.kind === "copy_string_table_entry"
+							? outcome.after.key
+							: selector.entryKey)
+				);
+			return (
+				candidate.location.kind === "asset_property" &&
+				candidate.location.property_path === action.place.propertyPath
+			);
+		})?.occurrence;
+		if (outcome.after.removed) {
+			if (
+				occurrence === undefined &&
+				records.some(
+					(record) =>
+						samePackageFile(record.path, action.place.packageFile) &&
+						record.status === "complete"
+				)
+			)
+				verified++;
+			else mismatches.push({ actionId: outcome.id, expected: outcome.after });
+			continue;
+		}
+		if (outcome.after.tableId !== undefined) {
+			if (
+				occurrence?.identity.status === "string_table" &&
+				occurrence.identity.table_id === outcome.after.tableId &&
+				occurrence.identity.key === outcome.after.key
+			)
+				verified++;
+			else mismatches.push({ actionId: outcome.id, expected: outcome.after });
+			continue;
+		}
 		const found =
 			occurrence?.identity.status === "resolved"
 				? {

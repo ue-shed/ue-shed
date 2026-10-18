@@ -45,6 +45,73 @@ evidence themselves can convert a parsed document with `projectPOEvidence`.
 
 ## Headless Unreal operations
 
+### Asset text editing and String Table key migration
+
+`runLocalizationTextActions` exposes the optional `UEShedGameText` editor capability directly from
+this package. `localizationTextActionsRequest` builds dry-run or apply requests; apply never retries
+a mutation. The Game Text package retains its existing action names as compatibility exports.
+The base capability is `game-text.actions.v1`. Extended operations require the separately
+advertised `game-text.actions.authoring.v1`, while retaining the 1.0 wire envelope.
+
+Extended places include nested DataTable row cells, writable unconnected Blueprint text input pins
+(stable pin GUID or index), and String Table entries. They can share a batch with ordinary asset
+properties. Composite tables remain read-only: explicitly edit the owning parent table instead.
+`make_localizable` explicitly converts invariant, missing-key or generated text to the caller's
+reviewed literal source and identity. Conversion flattens generated text; it is never automatic.
+`retarget_string_table` retains a table reference and requires an existing destination with matching
+source. Entry source edits preserve metadata and UE 5.8 developer notes. A table namespace change
+requires explicit approval of every entry, because it affects the entire table.
+
+`makeStringTableKeyMigrations(host)` prepares and executes a durable migration recipe. The host
+supplies selected-project authority, durable exclusive storage, config compare/replace, and a
+saved-package reader verifier. Provide `EditorWorldControl` and `RemoteControlClient` layers; the
+workflow pins the project, endpoint and editor session. It does not require Workbench.
+
+```ts
+const workflow = Effect.gen(function* () {
+	const migrations = yield* makeStringTableKeyMigrations(host);
+	const proposal = yield* migrations.prepare({
+		id: migrationId,
+		projectRoot,
+		packageFile,
+		objectPath,
+		tableId,
+		namespace,
+		oldKey,
+		newKey,
+		source,
+		deleteOldEntry: false, // optional; omit this to retain the old entry too
+		references // explicit { id, place } list from the caller's discovery
+	});
+	// Show proposal.preview and the exact config diff for review.
+	return yield* migrations.execute({
+		id: proposal.plan.request.id
+	});
+});
+```
+
+The reviewed workflow copies and saves the entry, persists an Unreal key redirect in
+`Config/DefaultEngine.ini`, migrates and saves supplied references, then activates and verifies the
+redirect. The old entry is retained by default and migration can complete with it present.
+**Delete old entry** is an optional action: set `deleteOldEntry: true` when preparing the proposal
+to include it in the preview and approved execution. If selected, deletion is saved and independently
+verified; otherwise no deletion is attempted. Completion rechecks the new entry,
+references and redirect. The redirect remains for dynamic/code
+lookups and undiscovered references; only use it for a key rename retaining the same text.
+
+Discovery is caller-supplied and cannot prove that dynamic references do not exist. Ship the
+redirect config with the changed packages. Partial phases are recorded before verification;
+claimed migration IDs never replay, including after a lost deletion reply. On failure, inspect the
+journal and reconcile saved/editor state before creating another proposal. Config and package
+writes are separate phases, not one atomic transaction. Hosts own checkout and durable storage.
+Gather/export and translation carry still use the existing localization/PO review workflow; this
+asset migration does not rewrite translation files automatically.
+
+`planStringTableKeyMigration` and `prepareStringTableRedirectConfig` are pure helpers, also exported
+from `@ue-shed/localization/browser`, for hosts building their own review.
+`verifyLocalizationStringTableRedirect` checks runtime resolution or
+activates only a matching redirect already persisted under the connected project's Config folder.
+
 `LocalizationOperations` / `LocalizationOperationsNodeLive` add an optional engine capability.
 `plan(request)` returns version-1 config, argument, step and files-to-write evidence without
 launching or creating a log directory. `run(request)` returns a bounded Effect stream of process

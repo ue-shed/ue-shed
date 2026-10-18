@@ -1,4 +1,5 @@
 #include "UEShedGameTextActions.h"
+#include "UEShedGameTextLibrary.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -17,6 +18,12 @@
 #include "Engine/Blueprint.h"
 #include "Engine/BlueprintGeneratedClass.h"
 #include "Engine/DataTable.h"
+#include "Engine/CompositeDataTable.h"
+#include "EdGraph/EdGraph.h"
+#include "K2Node_CallFunction.h"
+#include "Kismet/KismetSystemLibrary.h"
+#include "Internationalization/StringTable.h"
+#include "Internationalization/StringTableCore.h"
 #include "Engine/SCS_Node.h"
 #include "Engine/SimpleConstructionScript.h"
 #include "GameFramework/Actor.h"
@@ -101,6 +108,15 @@ TSharedRef<FJsonObject> Action(const FString& Id, const FString& ObjectPath, con
 	return Json;
 }
 
+TSharedRef<FJsonObject> WithSelector(const TSharedRef<FJsonObject>& Item, const TCHAR* Kind, const TCHAR* Field, const FString& Value)
+{
+	const TSharedRef<FJsonObject> Selector = MakeShared<FJsonObject>();
+	Selector->SetStringField(TEXT("kind"), Kind);
+	Selector->SetStringField(Field, Value);
+	Item->GetObjectField(TEXT("place"))->SetObjectField(TEXT("selector"), Selector);
+	return Item;
+}
+
 TSharedRef<FJsonObject> EditJson(const TCHAR* Kind, const FString& Namespace = FString(), const FString& Key = FString(),
 	const FString& Source = FString())
 {
@@ -178,6 +194,18 @@ bool FUEShedGameTextObjectPropertiesTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Save the baseline object package"), SaveTestPackage(Package));
 	ON_SCOPE_EXIT { IFileManager::Get().Delete(*PackageFile(Package)); };
 	const FString Path = Notes->GetPathName();
+
+	// Saved fixtures and user-authored data may carry a namespace without a package marker.
+	// Editing an unchanged namespace first is a no-op in the details helper; the subsequent
+	// key-only edit must not silently discard that user namespace.
+	Notes->Fixed[0] = FText::ChangeKey(FTextKey(TEXT("Plain")), FTextKey(TEXT("OldPlain")), FText::FromString(TEXT("Plain source")));
+	const FId Plain = IdOf(Notes->Fixed[0]);
+	TestEqual(TEXT("Unqualified namespace dry run"), Status(Run(TEXT("dry_run"),
+		{ Action(TEXT("plain"), Path, TEXT("Fixed[0]"), Plain, EditJson(TEXT("change_key"), TEXT("Plain"), TEXT("NewPlain"))) })), FString(TEXT("ok")));
+	TestEqual(TEXT("Dry run restores the original stored namespace"), FTextInspector::GetTextId(Notes->Fixed[0]).GetNamespace().ToString(), FString(TEXT("Plain")));
+	TestEqual(TEXT("Unqualified namespace apply"), Status(Run(TEXT("apply"),
+		{ Action(TEXT("plain"), Path, TEXT("Fixed[0]"), Plain, EditJson(TEXT("change_key"), TEXT("Plain"), TEXT("NewPlain"))) })), FString(TEXT("ok")));
+	TestTrue(TEXT("Requested key and namespace survive"), Same(IdOf(Notes->Fixed[0]), { TEXT("Plain"), TEXT("NewPlain"), TEXT("Plain source") }));
 	TestFalse(TEXT("Typed text has a package namespace"), TextNamespaceUtil::GetPackageNamespace(Package).IsEmpty());
 	TestEqual(TEXT("The wire namespace leaves the package namespace out"), IdOf(Notes->Title).Namespace, FString());
 
@@ -296,6 +324,156 @@ bool FUEShedGameTextObjectPropertiesTest::RunTest(const FString& Parameters)
 
 	Notes->ClearFlags(RF_Public | RF_Standalone);
 	Package->SetDirtyFlag(false);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUEShedGameTextAuthoringTest, "UEShed.GameText.Authoring",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FUEShedGameTextAuthoringTest::RunTest(const FString& Parameters)
+{
+	UPackage* Package = TestPackage(TEXT("Authoring"));
+	UUEShedGameTextTestObject* Notes = NewObject<UUEShedGameTextTestObject>(Package, TEXT("Notes"), RF_Public | RF_Standalone | RF_Transactional);
+	UDataTable* Rows = NewObject<UDataTable>(Package, TEXT("Rows"), RF_Public | RF_Standalone | RF_Transactional);
+	Rows->RowStruct = FUEShedGameTextTestRow::StaticStruct();
+	FUEShedGameTextTestRow Row;
+	Type(Package, Row.Info.Caption, TEXT("Nested caption"));
+	Row.Lines.Add(Row.Info.Caption);
+	Row.Labels.Add(TEXT("Door"), Row.Info.Caption);
+	Rows->AddRow(TEXT("Entry"), Row);
+	Type(Package, Notes->Title, TEXT("Ordinary property"));
+	TestTrue(TEXT("Save authored baseline"), SaveTestPackage(Package));
+	ON_SCOPE_EXIT { IFileManager::Get().Delete(*PackageFile(Package)); };
+	auto TableAction = [&](const TCHAR* Id, const TCHAR* Property)
+	{
+		return WithSelector(Action(Id, Rows->GetPathName(), Property, IdOf(Row.Info.Caption), EditJson(TEXT("change_key"), TEXT("UI"), Id)), TEXT("data_table_cell"), TEXT("row"), TEXT("Entry"));
+	};
+	const TArray<TSharedRef<FJsonObject>> Mixed = {
+		TableAction(TEXT("caption"), TEXT("Info.Caption")), TableAction(TEXT("array"), TEXT("Lines[0]")),
+		TableAction(TEXT("map"), TEXT("Labels{0}.value")),
+		Action(TEXT("property"), Notes->GetPathName(), TEXT("Title"), IdOf(Notes->Title), EditJson(TEXT("change_key"), TEXT("UI"), TEXT("Title")))
+	};
+	TestEqual(TEXT("Mixed nested tables/property dry run"), Status(Run(TEXT("dry_run"), Mixed)), FString(TEXT("ok")));
+	TestTrue(TEXT("Dry run restores nested identity"), Same(IdOf(Rows->FindRow<FUEShedGameTextTestRow>(TEXT("Entry"), TEXT("Test"))->Info.Caption), IdOf(Row.Info.Caption)));
+	TestEqual(TEXT("Mixed nested tables/property apply and save"), Status(Run(TEXT("apply"), Mixed, true, true)), FString(TEXT("ok")));
+	TestEqual(TEXT("Nested caption key retained"), IdOf(Rows->FindRow<FUEShedGameTextTestRow>(TEXT("Entry"), TEXT("Test"))->Info.Caption).Key, FString(TEXT("caption")));
+	UCompositeDataTable* Composite = NewObject<UCompositeDataTable>(Package, TEXT("Composite"));
+	Composite->RowStruct = FUEShedGameTextTestRow::StaticStruct();
+	TestEqual(TEXT("Inherited cells require an explicit parent"), FirstErrorCode(Run(TEXT("dry_run"), {
+		WithSelector(Action(TEXT("inherited"), Composite->GetPathName(), TEXT("Info.Caption"), IdOf(Row.Info.Caption), EditJson(TEXT("regenerate_key"))), TEXT("data_table_cell"), TEXT("row"), TEXT("Entry")) })), FString(TEXT("unsupported_place")));
+
+	Notes->Fixed[0] = FText::AsCultureInvariant(TEXT("v1.0"));
+	const TSharedRef<FJsonObject> Localize = Action(TEXT("localize"), Notes->GetPathName(), TEXT("Fixed[0]"), { TEXT(""), TEXT(""), TEXT("v1.0") }, EditJson(TEXT("make_localizable"), TEXT("UI"), TEXT("Version"), TEXT("v1.0")));
+	Localize->GetObjectField(TEXT("expected"))->SetStringField(TEXT("unresolved"), TEXT("culture_invariant"));
+	TestEqual(TEXT("Explicit conversion dry run"), Status(Run(TEXT("dry_run"), { Localize })), FString(TEXT("ok")));
+	TestTrue(TEXT("Invariant flag restored"), Notes->Fixed[0].IsCultureInvariant());
+	TestEqual(TEXT("Explicit conversion apply"), Status(Run(TEXT("apply"), { Localize })), FString(TEXT("ok")));
+	TestFalse(TEXT("Converted text is localizable"), Notes->Fixed[0].IsCultureInvariant());
+
+	UPackage* StringsPackage = TestPackage(TEXT("Strings"));
+	UStringTable* Strings = NewObject<UStringTable>(StringsPackage, TEXT("Strings"), RF_Public | RF_Standalone | RF_Transactional);
+	Strings->GetMutableStringTable()->SetNamespace(TEXT("Menu"));
+#if ENGINE_MAJOR_VERSION > 5 || ENGINE_MINOR_VERSION >= 8
+	Strings->GetMutableStringTable()->SetSourceString(TEXT("Old"), TEXT("Harbor"), TEXT("Translator context"));
+#else
+	Strings->GetMutableStringTable()->SetSourceString(TEXT("Old"), TEXT("Harbor"));
+#endif
+	Strings->GetMutableStringTable()->SetMetaData(TEXT("Old"), TEXT("Comment"), TEXT("Keep metadata"));
+	Notes->Title = FText::FromStringTable(Strings->GetStringTableId(), TEXT("Old"));
+	TestTrue(TEXT("Save String Table baseline"), SaveTestPackage(StringsPackage));
+	ON_SCOPE_EXIT { IFileManager::Get().Delete(*PackageFile(StringsPackage)); };
+	auto EntryAction = [&](const TCHAR* Id, const TSharedRef<FJsonObject>& Edit)
+	{
+		return WithSelector(Action(Id, Strings->GetPathName(), TEXT("Old"), { TEXT("Menu"), TEXT("Old"), TEXT("Harbor") }, Edit), TEXT("string_table_entry"), TEXT("entryKey"), TEXT("Old"));
+	};
+	const TSharedRef<FJsonObject> RetargetEdit = EditJson(TEXT("retarget_string_table"), TEXT(""), TEXT("New"), TEXT("Harbor"));
+	RetargetEdit->SetStringField(TEXT("tableId"), Strings->GetStringTableId().ToString());
+	const TSharedRef<FJsonObject> Retarget = Action(TEXT("retarget"), Notes->GetPathName(), TEXT("Title"), { TEXT(""), TEXT("Old"), TEXT("Harbor") }, RetargetEdit);
+	Retarget->GetObjectField(TEXT("expected"))->SetStringField(TEXT("tableId"), Strings->GetStringTableId().ToString());
+	const TArray<TSharedRef<FJsonObject>> Migration = {
+		EntryAction(TEXT("copy"), EditJson(TEXT("copy_string_table_entry"), TEXT("Menu"), TEXT("New"), TEXT("Harbor"))),
+		Retarget, EntryAction(TEXT("remove"), EditJson(TEXT("remove_string_table_entry")))
+	};
+	const TSharedPtr<FJsonObject> Preview = Run(TEXT("dry_run"), Migration);
+	TestEqual(TEXT("Entry/reference migration dry run"), Status(Preview), FString(TEXT("ok")));
+	FString Source;
+	TestTrue(TEXT("Original entry restored"), Strings->GetStringTable()->GetSourceString(TEXT("Old"), Source));
+	TestFalse(TEXT("Dry run removed the new entry"), Strings->GetStringTable()->GetSourceString(TEXT("New"), Source));
+	TestEqual(TEXT("Entry/reference migration apply"), Status(Run(TEXT("apply"), Migration, true, true)), FString(TEXT("ok")));
+	TestFalse(TEXT("Explicit remove removed the old entry"), Strings->GetStringTable()->GetSourceString(TEXT("Old"), Source));
+	TestTrue(TEXT("New entry saved"), Strings->GetStringTable()->GetSourceString(TEXT("New"), Source));
+	TestEqual(TEXT("Metadata survives the copy"), Strings->GetStringTable()->GetMetaData(TEXT("New"), TEXT("Comment")), FString(TEXT("Keep metadata")));
+#if ENGINE_MAJOR_VERSION > 5 || ENGINE_MINOR_VERSION >= 8
+	TestEqual(TEXT("Developer notes survive the copy"), Strings->GetStringTable()->FindEntry(TEXT("New"))->GetDevNotes(), FString(TEXT("Translator context")));
+#endif
+	FName ReferenceTable; FString ReferenceKey;
+	TestTrue(TEXT("The reference remains a reference"), FTextInspector::GetTableIdAndKey(Notes->Title, ReferenceTable, ReferenceKey));
+	TestEqual(TEXT("Reference migrated to reviewed key"), ReferenceKey, FString(TEXT("New")));
+
+	const FString RedirectFile = FPaths::Combine(FPaths::ProjectConfigDir(), FGuid::NewGuid().ToString(EGuidFormats::Digits) + TEXT(".ini"));
+	const TSharedRef<FJsonObject> RedirectRequest = MakeShared<FJsonObject>();
+	RedirectRequest->SetStringField(TEXT("contract"), TEXT("ue-shed-string-table-redirect"));
+	RedirectRequest->SetStringField(TEXT("version"), TEXT("1.0"));
+	RedirectRequest->SetStringField(TEXT("tableId"), Strings->GetStringTableId().ToString());
+	RedirectRequest->SetStringField(TEXT("oldKey"), TEXT("Old"));
+	RedirectRequest->SetStringField(TEXT("newKey"), TEXT("New"));
+	RedirectRequest->SetStringField(TEXT("source"), TEXT("Harbor"));
+	RedirectRequest->SetBoolField(TEXT("activate"), true);
+	RedirectRequest->SetStringField(TEXT("configFile"), RedirectFile);
+	auto CheckRedirect = [&]()
+	{
+		FString RequestJson, ResultJson;
+		FJsonSerializer::Serialize(RedirectRequest, TJsonWriterFactory<>::Create(&RequestJson));
+		UUEShedGameTextLibrary::VerifyStringTableRedirect(RequestJson, ResultJson);
+		TSharedPtr<FJsonObject> Result;
+		FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(ResultJson), Result);
+		return Result->GetStringField(TEXT("status"));
+	};
+	TestEqual(TEXT("Cannot activate a redirect that was not persisted"), CheckRedirect(), FString(TEXT("inactive")));
+	const FString RedirectConfig = FString::Printf(TEXT("[Core.StringTable]\n+StringTableRedirects=(StringTable=\"%s\",OldKey=\"Old\",NewKey=\"New\")\n"), *Strings->GetStringTableId().ToString());
+	IFileManager::Get().MakeDirectory(*FPaths::GetPath(RedirectFile), true);
+	TestTrue(TEXT("Persist exact redirect"), FFileHelper::SaveStringToFile(RedirectConfig, *RedirectFile));
+	ON_SCOPE_EXIT { IFileManager::Get().Delete(*RedirectFile); };
+	TestEqual(TEXT("Activate persisted redirect after explicit old-entry deletion"), CheckRedirect(), FString(TEXT("active")));
+	RedirectRequest->SetBoolField(TEXT("activate"), false);
+	TestEqual(TEXT("Fresh dynamic references follow the active redirect"), CheckRedirect(), FString(TEXT("active")));
+	RedirectRequest->SetStringField(TEXT("source"), TEXT("Different text"));
+	TestEqual(TEXT("A redirect cannot claim a different semantic source"), CheckRedirect(), FString(TEXT("inactive")));
+
+	const TSharedRef<FJsonObject> NamespaceEdit = EditJson(TEXT("change_string_table_namespace"));
+	NamespaceEdit->SetStringField(TEXT("namespace"), TEXT("NewMenu"));
+	const TSharedRef<FJsonObject> NamespaceAction = WithSelector(Action(TEXT("namespace"), Strings->GetPathName(), TEXT("New"), { TEXT("Menu"), TEXT("New"), TEXT("Harbor") }, NamespaceEdit), TEXT("string_table_entry"), TEXT("entryKey"), TEXT("New"));
+#if ENGINE_MAJOR_VERSION > 5 || ENGINE_MINOR_VERSION >= 8
+	Strings->GetMutableStringTable()->SetSourceString(TEXT("Other"), TEXT("Other"), TEXT(""));
+#else
+	Strings->GetMutableStringTable()->SetSourceString(TEXT("Other"), TEXT("Other"));
+#endif
+	TestEqual(TEXT("Cannot hide table-wide effects"), Status(Run(TEXT("apply"), { NamespaceAction })), FString(TEXT("rejected")));
+	TestEqual(TEXT("Namespace remains unchanged"), Strings->GetStringTable()->GetNamespace(), FString(TEXT("Menu")));
+
+	UPackage* BlueprintPackage = TestPackage(TEXT("Pin"));
+	UBlueprint* Blueprint = FKismetEditorUtilities::CreateBlueprint(AActor::StaticClass(), BlueprintPackage, TEXT("Pin"), BPTYPE_Normal, UBlueprint::StaticClass(), UBlueprintGeneratedClass::StaticClass());
+	UEdGraph* Graph = FBlueprintEditorUtils::CreateNewGraph(Blueprint, TEXT("EventGraph"), UEdGraph::StaticClass(), UEdGraphSchema_K2::StaticClass());
+	FBlueprintEditorUtils::AddUbergraphPage(Blueprint, Graph);
+	UK2Node_CallFunction* Node = NewObject<UK2Node_CallFunction>(Graph);
+	Node->CreateNewGuid();
+	Node->SetFromFunction(UKismetSystemLibrary::StaticClass()->FindFunctionByName(TEXT("PrintText")));
+	Graph->AddNode(Node, false, false); Node->AllocateDefaultPins();
+	UEdGraphPin* Pin = Node->FindPin(TEXT("InText"));
+	Type(BlueprintPackage, Pin->DefaultTextValue, TEXT("Pin text"));
+	FKismetEditorUtilities::CompileBlueprint(Blueprint);
+	TestTrue(TEXT("Save pin baseline"), SaveTestPackage(BlueprintPackage));
+	ON_SCOPE_EXIT { IFileManager::Get().Delete(*PackageFile(BlueprintPackage)); };
+	const TSharedRef<FJsonObject> PinAction = WithSelector(Action(TEXT("pin"), Node->GetPathName(), TEXT("DefaultTextValue"), IdOf(Pin->DefaultTextValue), EditJson(TEXT("change_key"), TEXT("UI"), TEXT("Pin"))), TEXT("graph_pin"), TEXT("pinId"), Pin->PinId.ToString());
+	TestEqual(TEXT("Pin edit keeps its key after compile and save"), Status(Run(TEXT("apply"), { PinAction }, true, true)), FString(TEXT("ok")));
+	TestEqual(TEXT("Pin key matches"), IdOf(Pin->DefaultTextValue).Key, FString(TEXT("Pin")));
+	const TSharedPtr<FJsonObject> PinSelector = PinAction->GetObjectField(TEXT("place"))->GetObjectField(TEXT("selector"));
+	PinSelector->RemoveField(TEXT("pinId"));
+	PinSelector->SetNumberField(TEXT("index"), 0.5);
+	TestEqual(TEXT("Fractional pin indices cannot round to another mutation target"), FirstErrorCode(Run(TEXT("dry_run"), { PinAction })), FString(TEXT("invalid_request")));
+	PinSelector->SetStringField(TEXT("index"), TEXT("0"));
+	TestEqual(TEXT("Pin indices must be JSON numbers"), FirstErrorCode(Run(TEXT("dry_run"), { PinAction })), FString(TEXT("invalid_request")));
+	Package->SetDirtyFlag(false); StringsPackage->SetDirtyFlag(false); BlueprintPackage->SetDirtyFlag(false);
 	return true;
 }
 

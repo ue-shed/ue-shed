@@ -180,6 +180,8 @@ const workbenchRendererApi = {
 			return () =>
 				ipcRenderer.removeListener("game-text:localization:operation-progress", handler);
 		},
+		prepareIdRepair: (request) => ipcRenderer.invoke("game-text:id-repair:prepare", request),
+		applyIdRepair: (id) => ipcRenderer.invoke("game-text:id-repair:apply", id),
 		localizationQualitySearch: (request) =>
 			ipcRenderer.invoke("game-text:localization:quality-search", request),
 		localizationQualityFocus: (request) =>

@@ -260,6 +260,33 @@ const validArgsByChannel = {
 	"asset-audits:textures:preview-offline": ["/Game/Textures/Example"],
 	"asset-audits:textures:preview-offline-batch": [{ objectPaths: ["/Game/Textures/Example"] }],
 	"game-text:configured-scan": [],
+	"game-text:id-repair:prepare": [
+		{
+			projectKey: "C:/FixtureProject",
+			title: "Split text",
+			changes: [
+				{
+					unitId: "unit:1",
+					occurrence: {
+						id: "occurrence:1",
+						packageFile: "Content/Notes.uasset",
+						devNotes: "",
+						source: "Text",
+						identity: { status: "resolved", namespace: "", key: "key" },
+						location: {
+							kind: "asset_property",
+							objectPath: "/Game/Notes.Notes",
+							classPath: "/Script/Game.Notes",
+							propertyPath: "Text"
+						},
+						editCapability: "read_only"
+					},
+					edit: { kind: "change_key", namespace: "", key: "new" }
+				}
+			]
+		}
+	],
+	"game-text:id-repair:apply": ["11111111-1111-4111-8111-111111111111"],
 	"game-text:configured-refresh": [true],
 	"game-text:progress": [],
 	"game-text:investigation-export": [
@@ -660,6 +687,20 @@ const validResultByChannel = {
 	"game-text:investigation-open": { status: "cancelled" },
 	"game-text:search": { status: "not_ready" },
 	"game-text:focus": { status: "not_ready" },
+	"game-text:id-repair:prepare": {
+		status: "unavailable",
+		message: "No editor",
+		recovery: "Connect the selected project.",
+		retrySafe: true,
+		nextStep: "fix_input"
+	},
+	"game-text:id-repair:apply": {
+		status: "unavailable",
+		message: "No editor",
+		recovery: "Connect the selected project.",
+		retrySafe: true,
+		nextStep: "fix_input"
+	},
 	"game-text:quality:choose-rules": { status: "not_ready" },
 	"game-text:localization:quality-search": { status: "not_ready" },
 	"game-text:localization:operation-state": { operations: [], wholeRecipe: false },
@@ -940,9 +981,9 @@ const malformedArgsByChannel = {
 	"map-capture:tile": [{ manifestPath: "", relativePath: "../outside.png" }]
 } satisfies Partial<Record<InvokeChannel, IpcFixtureValue>>;
 
-it("registers exactly 138 invoke channels plus renderer events", () => {
-	expect(invokeChannelNames).toHaveLength(138);
-	expect(new Set(invokeChannelNames).size).toBe(138);
+it("registers exactly 140 invoke channels plus renderer events", () => {
+	expect(invokeChannelNames).toHaveLength(140);
+	expect(new Set(invokeChannelNames).size).toBe(140);
 	expect(invokeChannelNames).toEqual(
 		expect.arrayContaining([
 			"game-text:localization:quality-search",

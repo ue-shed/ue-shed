@@ -122,6 +122,15 @@ running editor, Perforce, `UEShedCore`, or any other UE Shed Unreal plugin.
 “Locate in Unreal” is an optional host enhancement. Keep it outside the audit Module and expose an
 honest unavailable state when the host has no compatible editor-selection capability.
 
+ID repairs are separately enabled. Compose `makeGameTextIdRepairs` from `@ue-shed/game-text/workspace`
+with the host's workspace, selected-project and file hooks, chosen endpoint, and an `editorProject`
+hook that verifies the editor's actual project directory. Supply Remote Control and AssetReader
+services. Expose the schema-validated `prepare` and explicitly approved `apply` methods to the UI;
+retain the proposal and receipt under `Saved/UEShed/GameTextActions`. Never replay a started ID,
+including after a lost reply. Property edits require `UEShedGameText`; top-level DataTable text
+cells use Authoring. Keep manual instructions for unsupported places, and stage translation moves
+only after verified saved-file success. See the [product contract](../../docs/products/game-text.md#fixing-keys-in-assets).
+
 ## Acceptance journey
 
 For localization policy/report adoption, compose `LocalizationEvidenceNodeLive` in the trusted

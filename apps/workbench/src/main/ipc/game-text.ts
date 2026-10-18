@@ -2,11 +2,15 @@ import { Effect } from "effect";
 import { ElectronIpc } from "../adapters/electron-ipc.js";
 import { invokeContracts } from "../ipc-contracts.js";
 import { WorkbenchGameText } from "../services/game-text.js";
+import { WorkbenchGameTextIdRepairs } from "../services/game-text-id-repairs.js";
 import { WorkbenchGameTextOperations } from "../services/game-text-operations.js";
 
 export const register = Effect.gen(function* () {
 	const ipc = yield* ElectronIpc;
 	const gameText = yield* WorkbenchGameText;
+	const idRepairs = yield* WorkbenchGameTextIdRepairs;
+	yield* ipc.register(invokeContracts["game-text:id-repair:prepare"], idRepairs.prepare);
+	yield* ipc.register(invokeContracts["game-text:id-repair:apply"], idRepairs.apply);
 	const operations = yield* WorkbenchGameTextOperations;
 	yield* ipc.register(
 		invokeContracts["game-text:localization:operation-state"],

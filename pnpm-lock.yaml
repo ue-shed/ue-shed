@@ -1014,6 +1014,12 @@ importers:
       '@ue-shed/engine':
         specifier: workspace:0.16.2
         version: link:../engine
+      '@ue-shed/protocol':
+        specifier: workspace:0.16.2
+        version: link:../protocol
+      '@ue-shed/unreal-connection':
+        specifier: workspace:0.16.2
+        version: link:../unreal-connection
     devDependencies:
       '@effect/vitest':
         specifier: 'catalog:'

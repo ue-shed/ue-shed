@@ -36,44 +36,178 @@
 							"maxLength": 4096
 						}
 					]
+				},
+				"selector": {
+					"anyOf": [
+						{
+							"type": "object",
+							"properties": {
+								"kind": {
+									"type": "string",
+									"enum": ["data_table_cell"]
+								},
+								"row": {
+									"type": "string",
+									"allOf": [
+										{
+											"minLength": 1
+										},
+										{
+											"maxLength": 4096
+										}
+									]
+								}
+							},
+							"required": ["kind", "row"],
+							"additionalProperties": false
+						},
+						{
+							"type": "object",
+							"properties": {
+								"kind": {
+									"type": "string",
+									"enum": ["string_table_entry"]
+								},
+								"entryKey": {
+									"type": "string",
+									"allOf": [
+										{
+											"minLength": 1
+										},
+										{
+											"maxLength": 4096
+										}
+									]
+								}
+							},
+							"required": ["kind", "entryKey"],
+							"additionalProperties": false
+						},
+						{
+							"type": "object",
+							"properties": {
+								"kind": {
+									"type": "string",
+									"enum": ["graph_pin"]
+								},
+								"pinId": {
+									"type": "string",
+									"allOf": [
+										{
+											"minLength": 1
+										},
+										{
+											"maxLength": 4096
+										}
+									]
+								}
+							},
+							"required": ["kind", "pinId"],
+							"additionalProperties": false
+						},
+						{
+							"type": "object",
+							"properties": {
+								"kind": {
+									"type": "string",
+									"enum": ["graph_pin"]
+								},
+								"index": {
+									"type": "integer",
+									"allOf": [
+										{
+											"minimum": 0
+										},
+										{
+											"maximum": 2147483647
+										}
+									]
+								}
+							},
+							"required": ["kind", "index"],
+							"additionalProperties": false
+						}
+					]
 				}
 			},
 			"required": ["packageFile", "objectPath", "propertyPath"],
 			"additionalProperties": false
 		},
 		"GameTextActionIdentity": {
-			"type": "object",
-			"properties": {
-				"namespace": {
-					"type": "string",
-					"allOf": [
-						{
-							"maxLength": 4096
-						}
-					]
-				},
-				"key": {
-					"type": "string",
-					"allOf": [
-						{
-							"minLength": 1
+			"anyOf": [
+				{
+					"type": "object",
+					"properties": {
+						"namespace": {
+							"type": "string",
+							"allOf": [
+								{
+									"maxLength": 4096
+								}
+							]
 						},
-						{
-							"maxLength": 4096
+						"key": {
+							"type": "string",
+							"allOf": [
+								{
+									"minLength": 1
+								},
+								{
+									"maxLength": 4096
+								}
+							]
+						},
+						"source": {
+							"type": "string",
+							"allOf": [
+								{
+									"maxLength": 4096
+								}
+							]
+						},
+						"tableId": {
+							"type": "string",
+							"allOf": [
+								{
+									"minLength": 1
+								},
+								{
+									"maxLength": 4096
+								}
+							]
 						}
-					]
+					},
+					"required": ["namespace", "key", "source"],
+					"additionalProperties": false
 				},
-				"source": {
-					"type": "string",
-					"allOf": [
-						{
-							"maxLength": 4096
+				{
+					"type": "object",
+					"properties": {
+						"namespace": {
+							"type": "string",
+							"enum": [""]
+						},
+						"key": {
+							"type": "string",
+							"enum": [""]
+						},
+						"source": {
+							"type": "string",
+							"allOf": [
+								{
+									"maxLength": 4096
+								}
+							]
+						},
+						"unresolved": {
+							"type": "string",
+							"enum": ["culture_invariant", "missing_key", "generated"]
 						}
-					]
+					},
+					"required": ["namespace", "key", "source", "unresolved"],
+					"additionalProperties": false
 				}
-			},
-			"required": ["namespace", "key", "source"],
-			"additionalProperties": false
+			]
 		},
 		"GameTextActionOutcomeIdentity": {
 			"type": "object",
@@ -90,6 +224,17 @@
 				},
 				"source": {
 					"type": "string"
+				},
+				"tableId": {
+					"type": "string"
+				},
+				"unresolved": {
+					"type": "string",
+					"enum": ["culture_invariant", "missing_key", "generated"]
+				},
+				"removed": {
+					"type": "boolean",
+					"enum": [true]
 				}
 			},
 			"required": ["namespace", "source"],

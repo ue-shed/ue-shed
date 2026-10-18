@@ -41,7 +41,9 @@
 	},
 	"dependencies": {
 		"@ue-shed/config-explorer": "workspace:0.16.2",
-		"@ue-shed/engine": "workspace:0.16.2"
+		"@ue-shed/engine": "workspace:0.16.2",
+		"@ue-shed/protocol": "workspace:0.16.2",
+		"@ue-shed/unreal-connection": "workspace:0.16.2"
 	},
 	"devDependencies": {
 		"@effect/vitest": "catalog:",

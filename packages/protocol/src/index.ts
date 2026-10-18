@@ -319,7 +319,9 @@ export {
 	GameTextActionOutcomeIdentity,
 	GameTextActionPlace,
 	GameTextActionsRequest,
-	GameTextActionsResult
+	GameTextActionsResult,
+	StringTableRedirectRequest,
+	StringTableRedirectResult
 } from "./game-text-actions.js";
 export {
 	AutomationCsvContract,

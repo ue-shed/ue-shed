@@ -135,3 +135,10 @@ export {
 export { localizationExitFailure, parseLocalizationProgress } from "./operation-progress.js";
 export { validateUnrealJsonEscapes } from "./unreal-json.js";
 export { localizationError } from "./decode.js";
+export {
+	StringTableKeyMigrationId,
+	StringTableKeyMigrationRequest,
+	StringTableKeyMigrationPlan,
+	planStringTableKeyMigration,
+	prepareStringTableRedirectConfig
+} from "./string-table-migration.js";

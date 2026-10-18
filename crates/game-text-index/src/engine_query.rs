@@ -1,7 +1,8 @@
 //! Native Game Text query execution over one pinned snapshot. JavaScript receives bounded values.
 use crate::engine_reader::EngineReader;
+use crate::engine_text::SourceSearch;
 use crate::engine_types::*;
-use crate::join_policy::{js_space, normalized, trim};
+use crate::join_policy::{normalized, trim};
 use crate::store::Configuration;
 use crate::wtf8::Wtf8Buf;
 use crate::{Result, require};
@@ -26,13 +27,6 @@ pub struct EngineQuery {
     package_names: Vec<String>,
     package_starts: Vec<u32>,
     validated_ids: HashSet<String>,
-}
-
-struct SourceSearch {
-    lookup: Vec<u32>,
-    starts: Arc<[u32]>,
-    bytes: Arc<[u8]>,
-    additions: HashMap<u32, Vec<u8>>,
 }
 
 pub fn audience(mask: u32) -> &'static str {
@@ -515,42 +509,14 @@ impl EngineQuery {
         Ok(result)
     }
 
-    fn prepare_sources(&mut self) -> Result<()> {
-        if self.sources.is_some() {
-            return Ok(());
+    pub(crate) fn prepare_source_search(
+        &mut self,
+        cancelled: &std::sync::atomic::AtomicBool,
+    ) -> Result<()> {
+        crate::engine_match::checkpoint(cancelled)?;
+        if self.sources.is_none() {
+            self.sources = Some(SourceSearch::open(self, cancelled)?);
         }
-        let count = self.reader.dictionary_count()?;
-        let mut lookup = vec![u32::MAX; count];
-        let (starts, bytes) = if self.reader.has_column("query.source.folded") {
-            let ids = self.reader.column("query.source.ids")?;
-            let starts = self.reader.column("query.source.starts")?;
-            let bytes = self.reader.bytes("query.source.folded")?;
-            require(
-                starts.len() == ids.len() + 1
-                    && starts.first() == Some(&0)
-                    && starts
-                        .last()
-                        .is_some_and(|last| *last as usize <= bytes.len())
-                    && starts.windows(2).all(|pair| pair[0] <= pair[1]),
-                "Invalid persisted source search ranges.",
-            )?;
-            for (row, id) in ids.iter().enumerate() {
-                let slot = lookup
-                    .get_mut(*id as usize)
-                    .ok_or("Source ID outside dictionary.")?;
-                require(*slot == u32::MAX, "Duplicate source search ID.")?;
-                *slot = row as u32;
-            }
-            (starts, bytes)
-        } else {
-            (Arc::from([0u32]), Arc::from([]))
-        };
-        self.sources = Some(SourceSearch {
-            lookup,
-            starts,
-            bytes,
-            additions: HashMap::new(),
-        });
         Ok(())
     }
 
@@ -564,76 +530,12 @@ impl EngineQuery {
         if let Some(value) = self.source_matches.get(&lowered) {
             return Ok(Arc::clone(value));
         }
-        self.prepare_sources()?;
-        let terms = trim(&lowered)
-            .split(js_space)
-            .filter(|term| !term.is_empty())
-            .map(|term| Wtf8Buf::from_view(term).into_bytes())
-            .collect::<Vec<_>>();
-        let unit_terms = if terms.iter().any(|term| std::str::from_utf8(term).is_err()) {
-            Some(
-                terms
-                    .iter()
-                    .map(|term| Wtf8Buf::from_bytes(term.clone()).map(|value| value.to_utf16()))
-                    .collect::<Result<Vec<_>>>()?,
-            )
-        } else {
-            None
-        };
-        let ids = self.reader.column("line.source")?;
-        let raw = self.column("raw", "sources")?;
-        let mut matches = vec![0u8; self.reader.dictionary_count()?];
-        for (index, id) in ids.iter().chain(raw.iter()).copied().enumerate() {
-            if index & 255 == 0 {
-                crate::engine_match::checkpoint(cancelled)?;
-            }
-            if matches
-                .get(id as usize)
-                .copied()
-                .ok_or("Source ID outside dictionary.")?
-                != 0
-            {
-                continue;
-            }
-            let sources = self
-                .sources
-                .as_mut()
-                .ok_or("Source search was not opened.")?;
-            let row = sources.lookup[id as usize];
-            if row == u32::MAX && !sources.additions.contains_key(&id) {
-                sources.additions.insert(
-                    id,
-                    Wtf8Buf::from_view(&self.reader.string(id)?.to_lowercase()).into_bytes(),
-                );
-            }
-            let bytes = if row == u32::MAX {
-                sources
-                    .additions
-                    .get(&id)
-                    .ok_or("Missing source addition.")?
-                    .as_slice()
-            } else {
-                sources
-                    .bytes
-                    .get(
-                        sources.starts[row as usize] as usize
-                            ..sources.starts[row as usize + 1] as usize,
-                    )
-                    .ok_or("Invalid source search range.")?
-            };
-            let matched = if let Some(terms) = &unit_terms {
-                let units = Wtf8Buf::from_bytes(bytes.to_vec())?.to_utf16();
-                terms.iter().all(|term| {
-                    term.is_empty() || units.windows(term.len()).any(|value| value == term)
-                })
-            } else {
-                terms.iter().all(|term| {
-                    term.is_empty() || bytes.windows(term.len()).any(|value| value == term)
-                })
-            };
-            matches[id as usize] = if matched { 1 } else { 2 };
-        }
-        let matches: Arc<[u8]> = matches.into();
+        self.prepare_source_search(cancelled)?;
+        let matches = self
+            .sources
+            .as_ref()
+            .ok_or("Source search was not opened.")?
+            .matching(&lowered, cancelled)?;
         if self.source_matches.len() >= 16
             || self
                 .source_matches

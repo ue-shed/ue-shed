@@ -19,6 +19,7 @@ mod engine_query;
 mod engine_reader;
 mod engine_search;
 mod engine_summary;
+mod engine_text;
 mod engine_types;
 pub mod join;
 mod join_columns;

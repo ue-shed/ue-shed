@@ -570,6 +570,25 @@ export async function measureGameTextHosts(
 			() => query({ ...base, query: absentQuery }),
 			pageSummary
 		);
+		// Every term differs from earlier requests: this measures typing and new predicates,
+		// rather than revisiting the exact-match query cache.
+		const distinctQueries = [
+			"m",
+			"mi",
+			"mir",
+			"mira",
+			"mirav",
+			"a",
+			"é",
+			"😀",
+			"mirava archive"
+		];
+		for (const [index, text] of distinctQueries.entries())
+			await measure(
+				`${host}:search-distinct-${index}`,
+				() => query({ ...base, query: text }),
+				(page) => ({ ...pageSummary(page), query: text })
+			);
 		const id = first!.units[0]?.id,
 			lineId = first!.localization?.lines[0]?.id;
 		if (!id || !lineId) throw new Error("Focus fixture absent.");

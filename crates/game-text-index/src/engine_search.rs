@@ -200,22 +200,30 @@ impl EngineQuery {
         let mut key_changed = 0;
         let mut reviewed = false;
         let tracks_review = self.reader.meta["input"]["review"]["target"] == self.target["name"];
+        // Keep each culture's columns hot, and visit set reason bits instead of testing
+        // every possible reason for every culture/row on every new search term.
+        for (ti, ci) in indices.iter().enumerate() {
+            let c = &p.cultures[*ci];
+            for (index, row) in matched.iter().enumerate() {
+                if index & 255 == 0 {
+                    checkpoint(cancelled)?;
+                }
+                let row = *row as usize;
+                let state = c.state[row] as usize;
+                lines[ti][state] += 1;
+                word_counts[ti][state] += u64::from(words[row]);
+                let mut bits = c.reasons[row] & ((1 << REASONS.len()) - 1);
+                while bits != 0 {
+                    reasons[ti][bits.trailing_zeros() as usize] += 1;
+                    bits &= bits - 1;
+                }
+            }
+        }
         for (index, row) in matched.iter().enumerate() {
             if index & 255 == 0 {
                 checkpoint(cancelled)?;
             }
             let row = *row as usize;
-            for (ti, ci) in indices.iter().enumerate() {
-                let c = &p.cultures[*ci];
-                let state = c.state[row] as usize;
-                lines[ti][state] += 1;
-                word_counts[ti][state] += u64::from(words[row]);
-                for (bit, count) in reasons[ti].iter_mut().enumerate() {
-                    if c.reasons[row] & (1 << bit) != 0 {
-                        *count += 1;
-                    }
-                }
-            }
             let mut state_bits = 0;
             let mut review_bits = 0;
             for ci in &scope {

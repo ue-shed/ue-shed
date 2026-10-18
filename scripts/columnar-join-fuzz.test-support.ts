@@ -586,7 +586,20 @@ export async function compareJoinFuzzInput(
 		input.seed % 6
 	]!;
 	const requests: TextCorpusSearchRequest[] = [
-		...(["é", "i\u0307", "ı", "\ud800", "\udfff", "😀"] as const).flatMap((query) => [
+		...(
+			[
+				"é",
+				"i\u0307",
+				"ı",
+				"\ud800",
+				"\udfff",
+				"😀",
+				"Alpha first",
+				"Alpha Alpha",
+				"not-a-source",
+				" \u2028 "
+			] as const
+		).flatMap((query) => [
 			{ ...withoutFacets, query },
 			{ ...unlocalized, query }
 		]),

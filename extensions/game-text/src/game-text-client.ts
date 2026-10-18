@@ -34,6 +34,9 @@ import type {
 } from "@ue-shed/game-text/corpus";
 import type { GameTextRuleDocument } from "@ue-shed/game-text/rules";
 import type {
+	TextIdRepairRequest,
+	TextIdRepairId,
+	TextIdRepairResult,
 	LocalizationSelection,
 	TextCorpusFocusRequest,
 	TextCorpusFocusResult,
@@ -68,6 +71,14 @@ export class GameTextClientError extends Schema.TaggedError<GameTextClientError>
 ) {}
 
 export interface GameTextClientApi {
+	readonly idRepairs?: {
+		readonly prepare: (
+			request: TextIdRepairRequest
+		) => Effect.Effect<TextIdRepairResult, GameTextClientError>;
+		readonly apply: (
+			id: TextIdRepairId
+		) => Effect.Effect<TextIdRepairResult, GameTextClientError>;
+	};
 	readonly operations?: {
 		readonly state: (
 			target: LocalizationSelection["target"]

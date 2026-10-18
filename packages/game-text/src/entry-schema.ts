@@ -164,3 +164,11 @@ export {
 } from "./schema.js";
 
 export { GameTextResponseError, gameTextResponseParser } from "./response-parser.js";
+
+export {
+	TextIdRepairChange,
+	TextIdRepairRequest,
+	TextIdRepairId,
+	TextIdRepairPlan,
+	TextIdRepairResult
+} from "./id-repair-schema.js";

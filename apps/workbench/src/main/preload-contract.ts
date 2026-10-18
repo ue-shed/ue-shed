@@ -67,6 +67,8 @@ export const workbenchInvokeChannels = {
 		previewOfflineBatch: "asset-audits:textures:preview-offline-batch"
 	},
 	gameText: {
+		prepareIdRepair: "game-text:id-repair:prepare",
+		applyIdRepair: "game-text:id-repair:apply",
 		operationState: "game-text:localization:operation-state",
 		operationPlan: "game-text:localization:operation-plan",
 		operationRun: "game-text:localization:operation-run",

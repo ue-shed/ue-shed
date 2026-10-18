@@ -1,0 +1,33 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$defs": {},
+	"type": "object",
+	"properties": {
+		"contract": {
+			"type": "string",
+			"enum": ["ue-shed-string-table-redirect"]
+		},
+		"version": {
+			"type": "string",
+			"enum": ["1.0"]
+		},
+		"status": {
+			"type": "string",
+			"enum": ["active", "inactive", "invalid_request"]
+		},
+		"tableId": {
+			"type": "string"
+		},
+		"key": {
+			"type": "string"
+		},
+		"source": {
+			"type": "string"
+		},
+		"message": {
+			"type": "string"
+		}
+	},
+	"required": ["contract", "version", "status", "tableId", "key", "source", "message"],
+	"additionalProperties": false
+}

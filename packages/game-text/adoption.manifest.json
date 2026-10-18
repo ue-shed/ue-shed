@@ -72,7 +72,12 @@
 	},
 	"capabilities": {
 		"required": ["saved-project", "saved-asset-reader"],
-		"optional": ["locate-occurrence-in-unreal"],
+		"optional": [
+			"locate-occurrence-in-unreal",
+			"game-text.actions.v1",
+			"authoring.apply.v1",
+			"authoring.save.v1"
+		],
 		"notRequired": ["perforce", "running-unreal-editor", "ue-shed-unreal-plugin"]
 	},
 	"conformance": {

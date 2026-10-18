@@ -1,6 +1,16 @@
 // Named exports only. Modules not listed in an entry point are private to the package.
 
 export {
+	textIdRepairSupport,
+	textIdRepairEditLabel,
+	textIdConflictGroups,
+	newTextIdKey,
+	textIdRepairChanges,
+	textIdNamespace,
+	textIdRepairInstructions
+} from "./id-repair.js";
+
+export {
 	type LocalizationCheckLists,
 	type LocalizationLineCheckContext,
 	type LocalizationLineCheckOutput,

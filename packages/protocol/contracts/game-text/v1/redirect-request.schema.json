@@ -1,0 +1,72 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$defs": {},
+	"type": "object",
+	"properties": {
+		"contract": {
+			"type": "string",
+			"enum": ["ue-shed-string-table-redirect"]
+		},
+		"version": {
+			"type": "string",
+			"enum": ["1.0"]
+		},
+		"tableId": {
+			"type": "string",
+			"allOf": [
+				{
+					"minLength": 1
+				},
+				{
+					"maxLength": 4096
+				}
+			]
+		},
+		"oldKey": {
+			"type": "string",
+			"allOf": [
+				{
+					"minLength": 1
+				},
+				{
+					"maxLength": 4096
+				}
+			]
+		},
+		"newKey": {
+			"type": "string",
+			"allOf": [
+				{
+					"minLength": 1
+				},
+				{
+					"maxLength": 4096
+				}
+			]
+		},
+		"source": {
+			"type": "string",
+			"allOf": [
+				{
+					"maxLength": 4096
+				}
+			]
+		},
+		"activate": {
+			"type": "boolean"
+		},
+		"configFile": {
+			"type": "string",
+			"allOf": [
+				{
+					"minLength": 1
+				},
+				{
+					"maxLength": 4096
+				}
+			]
+		}
+	},
+	"required": ["contract", "version", "tableId", "oldKey", "newKey", "source", "activate"],
+	"additionalProperties": false
+}

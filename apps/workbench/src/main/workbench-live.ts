@@ -65,6 +65,7 @@ import { WorkbenchContentObservatoryLive } from "./services/content-observatory.
 import { WorkbenchConfigExplorerLive } from "./services/config-explorer.js";
 import { FixtureHealthLive, FixtureLauncherLive } from "./services/fixture-launcher.js";
 import { WorkbenchGameTextLive } from "./services/game-text.js";
+import { WorkbenchGameTextIdRepairsLive } from "./services/game-text-id-repairs.js";
 import { WorkbenchGameTextOperationsLive } from "./services/game-text-operations.js";
 import { WorkbenchInputAtlasLive } from "./services/input-atlas.js";
 import { WorkbenchMapReviewLive } from "./services/map-review.js";
@@ -237,6 +238,7 @@ function featureLayer(hosts: WorkbenchHosts) {
 		WorkbenchAssetAuditsLive,
 		WorkbenchAssetNavigationLive,
 		WorkbenchGameTextLive,
+		WorkbenchGameTextIdRepairsLive.pipe(Layer.provide(WorkbenchGameTextLive)),
 		WorkbenchGameTextOperationsLive.pipe(
 			Layer.provide(WorkbenchGameTextLive),
 			Layer.provide(LocalizationOperationsNodeLive)

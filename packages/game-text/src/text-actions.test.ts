@@ -130,10 +130,12 @@ describe("Game Text actions API", () => {
 				property_path: "Name"
 			}
 		};
-		for (const text of [invariant, cell])
-			expect(
-				gameTextActionForOccurrence("x", text, { kind: "regenerate_key" }, FILE)
-			).toBeUndefined();
+		expect(
+			gameTextActionForOccurrence("x", invariant, { kind: "regenerate_key" }, FILE)
+		).toBeUndefined();
+		expect(
+			gameTextActionForOccurrence("x", cell, { kind: "regenerate_key" }, FILE)?.place.selector
+		).toEqual({ kind: "data_table_cell", row: "Lantern" });
 	});
 
 	it("checks the capability, then sends the request to the advertised library", async () => {

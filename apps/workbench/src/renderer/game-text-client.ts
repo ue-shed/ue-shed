@@ -32,6 +32,7 @@ import {
 	type TextQualitySearchResult
 } from "@ue-shed/game-text/corpus";
 import {
+	TextIdRepairResult,
 	type LocalizationSelection,
 	parseTextCorpusFocusResult,
 	parseTextCorpusQueryRunResult,
@@ -98,6 +99,20 @@ function invokeRequest<A, HostValue, DecodeError>(
 }
 
 export const gameTextClient: GameTextClientApi = GameTextClient.of({
+	idRepairs: {
+		prepare: (request) =>
+			invokeRequest(
+				"gameText.prepareIdRepair",
+				() => window.ueShed.gameText.prepareIdRepair(request),
+				Schema.decodeUnknownEffect(TextIdRepairResult)
+			),
+		apply: (id) =>
+			invokeRequest(
+				"gameText.applyIdRepair",
+				() => window.ueShed.gameText.applyIdRepair(id),
+				Schema.decodeUnknownEffect(TextIdRepairResult)
+			)
+	},
 	operations: {
 		state: (target) =>
 			invokeRequest(

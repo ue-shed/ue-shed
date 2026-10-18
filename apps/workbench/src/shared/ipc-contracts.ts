@@ -32,6 +32,9 @@ import {
 	LocalizationLinesFileResult
 } from "@ue-shed/game-text/corpus";
 import {
+	TextIdRepairRequest,
+	TextIdRepairId,
+	TextIdRepairResult,
 	GameTextOperationRequest,
 	GameTextOperationPlanResult,
 	GameTextOperationId,
@@ -739,6 +742,16 @@ export const invokeContracts = {
 		channel: "game-text:investigation-open",
 		args: Schema.Tuple([]),
 		result: GameTextInvestigationPresetResult
+	}),
+	"game-text:id-repair:prepare": invoke({
+		channel: "game-text:id-repair:prepare",
+		args: Schema.Tuple([TextIdRepairRequest]),
+		result: TextIdRepairResult
+	}),
+	"game-text:id-repair:apply": invoke({
+		channel: "game-text:id-repair:apply",
+		args: Schema.Tuple([TextIdRepairId]),
+		result: TextIdRepairResult
 	}),
 	"game-text:localization:operation-state": invoke({
 		channel: "game-text:localization:operation-state",

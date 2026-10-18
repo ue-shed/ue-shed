@@ -6,6 +6,13 @@
 #include "Engine/Blueprint.h"
 #include "Engine/BlueprintGeneratedClass.h"
 #include "Engine/DataTable.h"
+#include "Engine/CompositeDataTable.h"
+#include "EdGraph/EdGraphPin.h"
+#include "EdGraph/EdGraphSchema.h"
+#include "EdGraphSchema_K2.h"
+#include "Internationalization/StringTable.h"
+#include "Internationalization/StringTableCore.h"
+#include "Internationalization/StringTableRegistry.h"
 #include "HAL/FileManager.h"
 #include "Internationalization/Text.h"
 #include "Internationalization/TextNamespaceUtil.h"
@@ -22,8 +29,8 @@
 #include "UObject/TextProperty.h"
 #include "UObject/UnrealType.h"
 
-// ADR 0011. Every edit goes through TextNamespaceUtil::EditTextProperty_Direct, the function a
-// details panel uses, so Unreal's own id rules decide which key a text keeps.
+// ADR 0011. TextNamespaceUtil owns both source edits and requested identity resolution, so
+// Unreal's own id rules decide which key a text keeps.
 namespace
 {
 const TCHAR* Contract = TEXT("ue-shed-game-text-actions");
@@ -39,12 +46,16 @@ struct FTextIdentity
 	FString Namespace;
 	FString Key;
 	FString Source;
+	FString TableId;
+	FString Unresolved;
+	bool bRemoved = false;
 
 	bool operator==(const FTextIdentity& Other) const
 	{
 		return Namespace.Equals(Other.Namespace, ESearchCase::CaseSensitive)
 			&& Key.Equals(Other.Key, ESearchCase::CaseSensitive)
-			&& Source.Equals(Other.Source, ESearchCase::CaseSensitive);
+			&& Source.Equals(Other.Source, ESearchCase::CaseSensitive)
+			&& TableId == Other.TableId && Unresolved == Other.Unresolved && bRemoved == Other.bRemoved;
 	}
 };
 
@@ -53,11 +64,22 @@ enum class EEditKind : uint8
 	ChangeKey,
 	RegenerateKey,
 	AdoptKey,
-	ChangeSource
+	ChangeSource,
+	MakeLocalizable,
+	CopyStringTableEntry,
+	RemoveStringTableEntry,
+	ChangeStringTableNamespace,
+	RetargetStringTable
 };
 
 struct FAction
 {
+	FString PlaceKind;
+	FString Row;
+	FString EntryKey;
+	FString PinId;
+	int32 PinIndex = INDEX_NONE;
+	FString TableId;
 	FString Id;
 	FString ObjectPath;
 	FString PackageFile;
@@ -86,6 +108,18 @@ struct FPlace
 	UObject* Object = nullptr;
 	const FTextProperty* Property = nullptr;
 	void* Value = nullptr;
+	UEdGraphPin* Pin = nullptr;
+	UStringTable* StringTable = nullptr;
+	FString EntryKey;
+};
+
+struct FStringEntryState
+{
+	FString Key;
+	FString Source;
+	FString DevNotes;
+	TMap<FName, FString> Metadata;
+	bool bExists = false;
 };
 
 struct FOutcome
@@ -95,6 +129,9 @@ struct FOutcome
 	FText Original;
 	bool bChanged = false;
 	bool bMinted = false;
+	TArray<FStringEntryState> EntriesBefore;
+	FString NamespaceBefore;
+	bool bRestoreNamespace = false;
 };
 
 FError ActionError(const TCHAR* Code, const FString& ActionId, const FString& Message, const TCHAR* Recovery,
@@ -133,6 +170,24 @@ bool ParseEdit(const TSharedPtr<FJsonObject>& Edit, FAction& Action)
 	{
 		Action.Kind = EEditKind::ChangeSource;
 		return ReadString(Edit, TEXT("source"), Action.Source, false);
+	}
+	if (Kind == TEXT("make_localizable") || Kind == TEXT("copy_string_table_entry"))
+	{
+		Action.Kind = Kind == TEXT("make_localizable") ? EEditKind::MakeLocalizable : EEditKind::CopyStringTableEntry;
+		return ReadString(Edit, TEXT("namespace"), Action.Namespace) && ReadString(Edit, TEXT("key"), Action.Key, false)
+			&& ReadString(Edit, TEXT("source"), Action.Source);
+	}
+	if (Kind == TEXT("remove_string_table_entry")) { Action.Kind = EEditKind::RemoveStringTableEntry; return true; }
+	if (Kind == TEXT("change_string_table_namespace"))
+	{
+		Action.Kind = EEditKind::ChangeStringTableNamespace;
+		return ReadString(Edit, TEXT("namespace"), Action.Namespace);
+	}
+	if (Kind == TEXT("retarget_string_table"))
+	{
+		Action.Kind = EEditKind::RetargetStringTable;
+		return ReadString(Edit, TEXT("tableId"), Action.TableId, false) && ReadString(Edit, TEXT("key"), Action.Key, false)
+			&& ReadString(Edit, TEXT("source"), Action.Source);
 	}
 	return false;
 }
@@ -189,14 +244,15 @@ bool ParseSegment(const FString& Segment, FString& Name, int32& Index, TCHAR& Br
  * Walks the saved-package reader's property chain: struct members joined by `.`, fixed and dynamic
  * array elements as `[n]`, and map values as `{n}.value` (the nth pair in the map's order).
  */
-bool ResolveProperty(UObject* Object, const FString& Path, FPlace& Out, bool& bWrongType)
+bool ResolveProperty(UObject* Object, const FString& Path, FPlace& Out, bool& bWrongType,
+	const UStruct* RootType = nullptr, void* RootData = nullptr)
 {
 	bWrongType = false;
 	TArray<FString> Segments;
 	Path.ParseIntoArray(Segments, TEXT("."), false);
 	if (Segments.IsEmpty()) return false;
-	const UStruct* Owner = Object->GetClass();
-	void* OwnerData = Object;
+	const UStruct* Owner = RootType ? RootType : Object->GetClass();
+	void* OwnerData = RootData ? RootData : Object;
 	const FProperty* Current = nullptr;
 	void* CurrentValue = nullptr;
 	for (int32 SegmentIndex = 0; SegmentIndex < Segments.Num(); ++SegmentIndex)
@@ -268,6 +324,8 @@ bool ResolveProperty(UObject* Object, const FString& Path, FPlace& Out, bool& bW
 	Out.Value = CurrentValue;
 	return true;
 }
+
+#include "UEShedGameTextPlaces.inl"
 
 UObject* FindOrLoadObject(const FString& ObjectPath)
 {
@@ -343,7 +401,7 @@ TOptional<FError> BindPackage(FAction& Action)
 }
 
 /** Resolves one action's place, or the error that stops the request. */
-TOptional<FError> Resolve(const FAction& Action, FPlace& Place)
+TOptional<FError> Resolve(const FAction& Action, FPlace& Place, const bool bAfter = false, const bool bRestore = false)
 {
 	UObject* Object = FindPlaceObject(Action.ResolvedObjectPath);
 	if (!Object)
@@ -355,6 +413,46 @@ TOptional<FError> Resolve(const FAction& Action, FPlace& Place)
 	{
 		return ActionError(TEXT("package_mismatch"), Action.Id, TEXT("The resolved object belongs to a different package."),
 			TEXT("Rescan the selected file; do not edit an object in another package."), TEXT("reconcile"));
+	}
+	if (Action.PlaceKind == TEXT("string_table_entry"))
+	{
+		UStringTable* Table = Cast<UStringTable>(Object);
+		const FString EntryKey = bAfter && Action.Kind == EEditKind::CopyStringTableEntry ? Action.Key : Action.EntryKey;
+		FString Source;
+		if (!Table || (!bRestore && !(bAfter && Action.Kind == EEditKind::RemoveStringTableEntry)
+			&& !Table->GetStringTable()->GetSourceString(FTextKey(EntryKey), Source)))
+			return ActionError(TEXT("place_not_found"), Action.Id, TEXT("The String Table entry does not exist."),
+				TEXT("Read the owning table and review its current entry key."), TEXT("reconcile"));
+		Place.Object = Object; Place.StringTable = Table; Place.EntryKey = EntryKey;
+		return {};
+	}
+	if (Action.PlaceKind == TEXT("data_table_cell"))
+	{
+		UDataTable* Table = Cast<UDataTable>(Object);
+		if (!Table || Table->IsA<UCompositeDataTable>())
+			return ActionError(TEXT("unsupported_place"), Action.Id, TEXT("This cell belongs to an inherited or non-DataTable location."),
+				TEXT("Inspect the table's parentTables and explicitly edit the row in its owning parent table."), TEXT("fix_input"));
+		uint8* Row = Table->FindRowUnchecked(FName(Action.Row));
+		bool bWrongType = false;
+		if (!Row || !ResolveProperty(Object, Action.PropertyPath, Place, bWrongType, Table->GetRowStruct(), Row))
+			return ActionError(bWrongType ? TEXT("not_text") : TEXT("place_not_found"), Action.Id,
+				TEXT("The table row/property chain does not resolve to text."), TEXT("Read the table again; retain the explicit row and nested property chain."), TEXT("reconcile"));
+		return {};
+	}
+	if (Action.PlaceKind == TEXT("graph_pin"))
+	{
+		UEdGraphNode* Node = Cast<UEdGraphNode>(Object);
+		UEdGraphPin* Pin = nullptr;
+		FGuid PinId;
+		if (Node && !Action.PinId.IsEmpty() && FGuid::Parse(Action.PinId, PinId))
+			for (UEdGraphPin* Candidate : Node->Pins) if (Candidate && Candidate->PinId == PinId) { Pin = Candidate; break; }
+		if (Node && Action.PinId.IsEmpty() && Node->Pins.IsValidIndex(Action.PinIndex)) Pin = Node->Pins[Action.PinIndex];
+		if (!Pin || Pin->PinType.PinCategory != UEdGraphSchema_K2::PC_Text || Pin->Direction != EGPD_Input
+			|| Pin->LinkedTo.Num() != 0 || Pin->bDefaultValueIsReadOnly)
+			return ActionError(TEXT("unsupported_place"), Action.Id, TEXT("The pin is not an editable, unconnected Text input."),
+				TEXT("Read its pin ID/index and edit an authored Text default."), TEXT("fix_input"));
+		Place.Object = Node; Place.Pin = Pin;
+		return {};
 	}
 	for (const UObject* Outer = Object; Outer; Outer = Outer->GetOuter())
 	{
@@ -386,12 +484,16 @@ TOptional<FError> Resolve(const FAction& Action, FPlace& Place)
 TOptional<FError> CheckExpected(const FAction& Action, const FPlace& Place, FTextIdentity& Current)
 {
 	FString Why;
-	if (!ReadIdentity(Place.Property->GetPropertyValue(Place.Value), Current, Why))
+	if (!ReadPlaceIdentity(Place, Current, Why))
 	{
 		return ActionError(TEXT("read_only_text"), Action.Id,
 			FString::Printf(TEXT("%s on %s holds %s, which has no key to edit."), *Action.PropertyPath, *Action.ObjectPath, *Why),
 			TEXT("Make the text localizable in Unreal first, or leave it out of the request."), TEXT("fix_input"));
 	}
+	if ((!Current.TableId.IsEmpty() && Action.Expected.TableId.IsEmpty())
+		|| (!Current.Unresolved.IsEmpty() && (Action.Expected.Unresolved.IsEmpty() || Action.Kind != EEditKind::MakeLocalizable)))
+		return ActionError(TEXT("read_only_text"), Action.Id, TEXT("This text needs an explicit reference retarget or make_localizable operation."),
+			TEXT("Retain the original text kind and source in the expectation; conversion is never implicit."), TEXT("fix_input"));
 	if (!(Current == Action.Expected))
 	{
 		return ActionError(TEXT("stale_expected"), Action.Id,
@@ -404,26 +506,65 @@ TOptional<FError> CheckExpected(const FAction& Action, const FPlace& Place, FTex
 
 bool Edit(const FPlace& Place, const ETextEditAction EditAction, const FString& Value)
 {
+	if (Place.Pin)
+	{
+		const FText Before = PlaceText(Place);
+		const FTextId Id = FTextInspector::GetTextId(Before);
+		FString Namespace, Key;
+		TextNamespaceUtil::GetTextIdForEdit(Place.Object->GetPackage(), EditAction, Value,
+			Id.GetNamespace().ToString(), Id.GetKey().ToString(), Namespace, Key);
+		return SetPlaceText(Place, FText::ChangeKey(FTextKey(Namespace), FTextKey(Key), FText::FromString(Value)));
+	}
 	return TextNamespaceUtil::EditTextProperty_Direct(Place.Object->GetPackage(), Place.Value, Place.Property, EditAction, Value);
+}
+
+/** Resolve the requested namespace and key together, including a missing package marker. */
+bool EditIdentity(const FPlace& Place, const FString& Namespace, const FString& Key)
+{
+	const FText Text = PlaceText(Place);
+	const FString* Source = FTextInspector::GetSourceString(Text);
+	if (!Source) return false;
+	FString StableNamespace, StableKey;
+	TextNamespaceUtil::GetTextIdForEdit(Place.Object->GetPackage(), ETextEditAction::Namespace,
+		*Source, Namespace, Key, StableNamespace, StableKey);
+	return SetPlaceText(Place, FText::ChangeKey(FTextKey(StableNamespace), FTextKey(StableKey), Text));
 }
 
 /** Applies one edit with Unreal's rules, then checks Unreal kept what the action asked for. */
 TOptional<FError> ApplyEdit(const FAction& Action, const FPlace& Place, FOutcome& Outcome)
 {
+	if (Place.StringTable) return ApplyStringTableEdit(Action, Place, Outcome);
+	Outcome.Original = PlaceText(Place);
+	if ((Action.Kind == EEditKind::CopyStringTableEntry || Action.Kind == EEditKind::RemoveStringTableEntry
+		|| Action.Kind == EEditKind::ChangeStringTableNamespace))
+		return ActionError(TEXT("unsupported_place"), Action.Id, TEXT("This edit requires an explicit String Table entry."),
+			TEXT("Select the owning String Table entry."), TEXT("fix_input"));
 	Place.Object->Modify();
-	Outcome.Original = Place.Property->GetPropertyValue(Place.Value);
 	auto Current = [&Place]()
 	{
 		FTextIdentity Identity;
 		FString Why;
-		ReadIdentity(Place.Property->GetPropertyValue(Place.Value), Identity, Why);
+		ReadPlaceIdentity(Place, Identity, Why);
 		return Identity;
 	};
 	bool bEdited = true;
 	switch (Action.Kind)
 	{
+	case EEditKind::MakeLocalizable:
+		bEdited = !Outcome.Before.Unresolved.IsEmpty() && SetPlaceText(Place, FText::FromString(Action.Source))
+			&& EditIdentity(Place, Action.Namespace, Action.Key);
+		break;
+	case EEditKind::RetargetStringTable:
+	{
+		const FText Reference = FText::FromStringTable(FName(Action.TableId), Action.Key);
+		const FStringTableConstPtr Table = FStringTableRegistry::Get().FindStringTable(FName(Action.TableId));
+		FString Source;
+		bEdited = Table && Table->GetSourceString(FTextKey(Action.Key), Source) && Source == Action.Source
+			&& SetPlaceText(Place, Reference);
+		break;
+	}
 	case EEditKind::RegenerateKey:
-		bEdited = Edit(Place, ETextEditAction::Key, TextNamespaceUtil::GenerateRandomTextKey());
+		bEdited = EditIdentity(Place, Outcome.Before.Namespace, TextNamespaceUtil::GenerateRandomTextKey());
 		Outcome.bMinted = true;
 		break;
 	case EEditKind::ChangeSource:
@@ -433,18 +574,20 @@ TOptional<FError> ApplyEdit(const FAction& Action, const FPlace& Place, FOutcome
 		bEdited = Edit(Place, ETextEditAction::SourceString, Action.Source);
 		[[fallthrough]];
 	case EEditKind::ChangeKey:
-		bEdited = bEdited && Edit(Place, ETextEditAction::Namespace, Action.Namespace)
-			&& Edit(Place, ETextEditAction::Key, Action.Key);
+		bEdited = bEdited && EditIdentity(Place, Action.Namespace, Action.Key);
 		break;
+	default: bEdited = false; break;
 	}
 	Outcome.After = Current();
 	Outcome.bChanged = !(Outcome.After == Outcome.Before);
+	if (Action.Kind == EEditKind::RetargetStringTable && (FName(Outcome.After.TableId) != FName(Action.TableId)
+		|| Outcome.After.Key != Action.Key || Outcome.After.Source != Action.Source)) bEdited = false;
 	if (!bEdited)
 	{
 		return ActionError(TEXT("read_only_text"), Action.Id, TEXT("Unreal refused the text edit."),
 			TEXT("Check the text in Unreal's details panel."), TEXT("escalate"));
 	}
-	const bool bWantsKey = Action.Kind == EEditKind::ChangeKey || Action.Kind == EEditKind::AdoptKey;
+	const bool bWantsKey = Action.Kind == EEditKind::ChangeKey || Action.Kind == EEditKind::AdoptKey || Action.Kind == EEditKind::MakeLocalizable;
 	if (bWantsKey && (!Outcome.After.Namespace.Equals(Action.Namespace, ESearchCase::CaseSensitive)
 		|| !Outcome.After.Key.Equals(Action.Key, ESearchCase::CaseSensitive)))
 	{
@@ -460,6 +603,9 @@ TSharedRef<FJsonObject> IdentityJson(const FTextIdentity& Identity, const bool b
 {
 	const TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
 	Json->SetStringField(TEXT("namespace"), Identity.Namespace);
+	if (!Identity.TableId.IsEmpty()) Json->SetStringField(TEXT("tableId"), Identity.TableId);
+	if (!Identity.Unresolved.IsEmpty()) Json->SetStringField(TEXT("unresolved"), Identity.Unresolved);
+	if (Identity.bRemoved) Json->SetBoolField(TEXT("removed"), true);
 	if (bMinted) Json->SetBoolField(TEXT("minted"), true);
 	else Json->SetStringField(TEXT("key"), Identity.Key);
 	Json->SetStringField(TEXT("source"), Identity.Source);
@@ -516,7 +662,6 @@ public:
 		if (!Root->TryGetArrayField(TEXT("actions"), Items) || Items->IsEmpty() || Items->Num() > MaxActions)
 			return Reject(TEXT("actions must hold 1 to 256 actions."));
 		TSet<FString> Ids;
-		TSet<FString> PlaceKeys;
 		for (const TSharedPtr<FJsonValue>& Item : *Items)
 		{
 			const TSharedPtr<FJsonObject>* Object = nullptr;
@@ -532,15 +677,45 @@ public:
 				|| !ReadString(*Place, TEXT("propertyPath"), Action.PropertyPath, false)
 				|| !(*Object)->TryGetObjectField(TEXT("expected"), Expected)
 				|| !ReadString(*Expected, TEXT("namespace"), Action.Expected.Namespace)
-				|| !ReadString(*Expected, TEXT("key"), Action.Expected.Key, false)
+				|| !ReadString(*Expected, TEXT("key"), Action.Expected.Key)
 				|| !ReadString(*Expected, TEXT("source"), Action.Expected.Source)
 				|| !(*Object)->TryGetObjectField(TEXT("edit"), EditObject) || !ParseEdit(*EditObject, Action))
 				return Reject(TEXT("An action is missing id, place, expected or a valid edit."), Action.Id);
+			if ((*Expected)->HasField(TEXT("unresolved")))
+			{
+				if (!ReadString(*Expected, TEXT("unresolved"), Action.Expected.Unresolved, false)
+					|| !Action.Expected.Namespace.IsEmpty() || !Action.Expected.Key.IsEmpty()
+					|| (Action.Expected.Unresolved != TEXT("culture_invariant") && Action.Expected.Unresolved != TEXT("missing_key") && Action.Expected.Unresolved != TEXT("generated")))
+					return Reject(TEXT("Invalid explicit unkeyed expectation."), Action.Id);
+			}
+			else if (Action.Expected.Key.IsEmpty()) return Reject(TEXT("A localized expectation requires a key."), Action.Id);
+			if ((*Expected)->HasField(TEXT("tableId")) && !ReadString(*Expected, TEXT("tableId"), Action.Expected.TableId, false))
+				return Reject(TEXT("Invalid String Table reference expectation."), Action.Id);
+			if ((*Place)->HasField(TEXT("selector")))
+			{
+				const TSharedPtr<FJsonObject>* Selector = nullptr;
+				if (!(*Place)->TryGetObjectField(TEXT("selector"), Selector) || !ReadString(*Selector, TEXT("kind"), Action.PlaceKind, false))
+					return Reject(TEXT("Invalid authored location selector."), Action.Id);
+				if (Action.PlaceKind == TEXT("data_table_cell"))
+				{ if (!ReadString(*Selector, TEXT("row"), Action.Row, false)) return Reject(TEXT("A table cell needs a row."), Action.Id); }
+				else if (Action.PlaceKind == TEXT("string_table_entry"))
+				{ if (!ReadString(*Selector, TEXT("entryKey"), Action.EntryKey, false)) return Reject(TEXT("A String Table entry needs its key."), Action.Id); }
+				else if (Action.PlaceKind == TEXT("graph_pin"))
+				{
+					const bool bId = (*Selector)->HasField(TEXT("pinId"));
+					const bool bIndex = (*Selector)->HasField(TEXT("index"));
+					double PinNumber = -1;
+					if (bId == bIndex || (bId && !ReadString(*Selector, TEXT("pinId"), Action.PinId, false))
+						|| (bIndex && (!(*Selector)->HasTypedField<EJson::Number>(TEXT("index"))
+							|| !(*Selector)->TryGetNumberField(TEXT("index"), PinNumber) || PinNumber < 0 || PinNumber > MAX_int32
+							|| FMath::FloorToDouble(PinNumber) != PinNumber)))
+						return Reject(TEXT("A graph pin needs exactly one pinId or nonnegative index."), Action.Id);
+					if (bIndex) Action.PinIndex = static_cast<int32>(PinNumber);
+				}
+				else return Reject(TEXT("Unknown authored location kind."), Action.Id);
+			}
 			if (Ids.Contains(Action.Id)) return Reject(TEXT("Action ids must be unique."), Action.Id);
-			const FString PlaceKey = Action.PackageFile + TEXT("\n") + Action.ObjectPath + TEXT("\n") + Action.PropertyPath;
-			if (PlaceKeys.Contains(PlaceKey)) return Reject(TEXT("Each place may appear in one action only."), Action.Id);
 			Ids.Add(Action.Id);
-			PlaceKeys.Add(PlaceKey);
 			Actions.Add(MoveTemp(Action));
 		}
 		return true;
@@ -554,20 +729,39 @@ public:
 		for (int32 Index = 0; Index < Actions.Num(); ++Index)
 		{
 			if (TOptional<FError> Binding = BindPackage(Actions[Index])) Errors.Add(*Binding);
-			else if (ResolvedPlaces.Contains(Actions[Index].ResolvedObjectPath + TEXT("\n") + Actions[Index].PropertyPath))
-			{
-				Reject(TEXT("Each resolved place may appear in one action only."), Actions[Index].Id);
-				return;
-			}
 			else if (TOptional<FError> Error = Resolve(Actions[Index], Places[Index])) Errors.Add(*Error);
-			else if (TOptional<FError> Stale = CheckExpected(Actions[Index], Places[Index], Outcomes[Index].Before))
-				Errors.Add(*Stale);
-			ResolvedPlaces.Add(Actions[Index].ResolvedObjectPath + TEXT("\n") + Actions[Index].PropertyPath);
+			else
+			{
+				const FPlace& Place = Places[Index];
+				const FString Key = Place.StringTable ? FString::Printf(TEXT("%p:%s"), Place.Object,
+					*(Actions[Index].Kind == EEditKind::CopyStringTableEntry ? Actions[Index].Key : Place.EntryKey))
+					: FString::Printf(TEXT("%p"), Place.Pin ? static_cast<void*>(Place.Pin) : Place.Value);
+				if (ResolvedPlaces.Contains(Key)) { Reject(TEXT("Each resolved place may appear in one action only."), Actions[Index].Id); return; }
+				ResolvedPlaces.Add(Key);
+				if (TOptional<FError> Stale = CheckExpected(Actions[Index], Place, Outcomes[Index].Before)) Errors.Add(*Stale);
+			}
 		}
 		if (!Errors.IsEmpty())
 		{
 			Status = TEXT("rejected");
 			return;
+		}
+		// A table namespace belongs to every entry. Never authorize a table-wide change by
+		// showing the caller just one entry: the proposal must enumerate every affected entry.
+		for (int32 Index = 0; Index < Actions.Num(); ++Index)
+		{
+			if (Actions[Index].Kind != EEditKind::ChangeStringTableNamespace || !Places[Index].StringTable) continue;
+			bool bComplete = true;
+			Places[Index].StringTable->GetStringTable()->EnumerateSourceStrings([&](const FString& Key, const FString&)
+			{
+				bool bFound = false;
+				for (int32 Other = 0; Other < Actions.Num(); ++Other)
+					if (Places[Other].StringTable == Places[Index].StringTable && Places[Other].EntryKey == Key
+						&& Actions[Other].Kind == EEditKind::ChangeStringTableNamespace && Actions[Other].Namespace == Actions[Index].Namespace) bFound = true;
+				bComplete = bComplete && bFound;
+				return true;
+			});
+			if (!bComplete) { Reject(TEXT("A namespace change must explicitly review every entry in the String Table."), Actions[Index].Id); return; }
 		}
 		for (const FPlace& Place : Places)
 		{
@@ -623,6 +817,16 @@ public:
 				Place->SetStringField(TEXT("packageFile"), Actions[Index].PackageFile);
 				Place->SetStringField(TEXT("objectPath"), Actions[Index].ObjectPath);
 				Place->SetStringField(TEXT("propertyPath"), Actions[Index].PropertyPath);
+				if (!Actions[Index].PlaceKind.IsEmpty())
+				{
+					const TSharedRef<FJsonObject> Selector = MakeShared<FJsonObject>();
+					Selector->SetStringField(TEXT("kind"), Actions[Index].PlaceKind);
+					if (Actions[Index].PlaceKind == TEXT("data_table_cell")) Selector->SetStringField(TEXT("row"), Actions[Index].Row);
+					else if (Actions[Index].PlaceKind == TEXT("string_table_entry")) Selector->SetStringField(TEXT("entryKey"), Actions[Index].EntryKey);
+					else if (!Actions[Index].PinId.IsEmpty()) Selector->SetStringField(TEXT("pinId"), Actions[Index].PinId);
+					else Selector->SetNumberField(TEXT("index"), Actions[Index].PinIndex);
+					Place->SetObjectField(TEXT("selector"), Selector);
+				}
 				Item->SetObjectField(TEXT("place"), Place);
 				Item->SetObjectField(TEXT("before"), IdentityJson(Outcome.Before));
 				Item->SetObjectField(TEXT("after"), IdentityJson(Outcome.After, Outcome.bMinted && Mode == TEXT("dry_run")));
@@ -688,7 +892,7 @@ private:
 	{
 		for (int32 Index = Applied - 1; Index >= 0; --Index)
 		{
-			Places[Index].Property->SetPropertyValue(Places[Index].Value, Outcomes[Index].Original);
+			RestorePlace(Places[Index], Outcomes[Index]);
 		}
 		for (const TPair<UPackage*, bool>& Entry : DirtyBefore) Entry.Key->SetDirtyFlag(Entry.Value);
 		bRolledBack = true;
@@ -724,8 +928,8 @@ private:
 			FPlace Place;
 			FTextIdentity Now;
 			FString Why;
-			if (Resolve(Actions[Index], Place).IsSet()
-				|| !ReadIdentity(Place.Property->GetPropertyValue(Place.Value), Now, Why) || !(Now == Outcomes[Index].After))
+			if (Resolve(Actions[Index], Place, true).IsSet()
+				|| !ReadAfterIdentity(Actions[Index], Place, Now, Why) || !(Now == Outcomes[Index].After))
 			{
 				Errors.Add(ActionError(TEXT("not_persisted"), Actions[Index].Id,
 					FString::Printf(TEXT("%s on %s did not keep its edit after compiling."), *Actions[Index].PropertyPath,
@@ -743,8 +947,7 @@ private:
 		for (int32 Index = Applied - 1; Index >= 0; --Index)
 		{
 			FPlace Place;
-			if (!Resolve(Actions[Index], Place).IsSet())
-				Place.Property->SetPropertyValue(Place.Value, Outcomes[Index].Original);
+			if (!Resolve(Actions[Index], Place, false, true).IsSet()) RestorePlace(Place, Outcomes[Index]);
 		}
 		bool bRestored = true;
 		for (UBlueprint* Blueprint : Blueprints)
@@ -761,7 +964,7 @@ private:
 			FTextIdentity Current;
 			FString Why;
 			const bool bMatches = !Resolve(Actions[Index], Place).IsSet()
-				&& ReadIdentity(Place.Property->GetPropertyValue(Place.Value), Current, Why)
+				&& ReadPlaceIdentity(Place, Current, Why)
 				&& Current == Outcomes[Index].Before;
 			bRestored = bRestored && bMatches;
 		}

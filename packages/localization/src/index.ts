@@ -155,3 +155,37 @@ export {
 	readLocalizationReview,
 	updateLocalizationReview
 } from "./review-store.js";
+export {
+	LOCALIZATION_TEXT_ACTIONS_CAPABILITY,
+	LOCALIZATION_TEXT_AUTHORING_CAPABILITY,
+	LocalizationTextActionsError,
+	localizationTextActionsRequest,
+	runLocalizationTextActions,
+	verifyLocalizationStringTableRedirect,
+	type LocalizationTextActionsOptions
+} from "./asset-text-actions.js";
+/** Schemas shared with the optional Unreal text editing capability. */
+export {
+	GameTextAction as LocalizationTextAction,
+	GameTextActionEdit as LocalizationTextEdit,
+	GameTextActionPlace as LocalizationTextPlace,
+	GameTextActionsRequest as LocalizationTextActionsRequest,
+	GameTextActionsResult as LocalizationTextActionsResult
+} from "@ue-shed/protocol";
+export {
+	StringTableKeyMigrationRequest,
+	StringTableKeyMigrationId,
+	StringTableKeyMigrationPlan,
+	planStringTableKeyMigration,
+	prepareStringTableRedirectConfig
+} from "./string-table-migration.js";
+export {
+	StringTableKeyMigrationRecord,
+	StringTableKeyMigrationApproval,
+	StringTableKeyMigrationError,
+	StringTableKeyMigrationHost,
+	StringTableKeyMigrations,
+	StringTableKeyMigrationsLive,
+	makeStringTableKeyMigrations,
+	type StringTableKeyMigrationHostApi
+} from "./string-table-migration-runner.js";

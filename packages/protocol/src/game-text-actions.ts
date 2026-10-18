@@ -18,11 +18,22 @@ const NonEmptyField = Schema.NonEmptyString.check(Schema.isMaxLength(4096));
  * A text's id and source as Gather and the saved-package reader report it: the namespace leaves
  * out the package namespace Unreal adds to text inside packages.
  */
-export const GameTextActionIdentity = Schema.Struct({
+const LocalizedActionIdentity = Schema.Struct({
 	namespace: Field,
 	key: NonEmptyField,
-	source: Field
-}).annotate({ identifier: "GameTextActionIdentity" });
+	source: Field,
+	tableId: Schema.optionalKey(NonEmptyField)
+});
+/** Expected authored identity; unkeyed conversion and table references require authoring capability. */
+export const GameTextActionIdentity = Schema.Union([
+	LocalizedActionIdentity,
+	Schema.Struct({
+		namespace: Schema.Literal(""),
+		key: Schema.Literal(""),
+		source: Field,
+		unresolved: Schema.Literals(["culture_invariant", "missing_key", "generated"])
+	})
+]).annotate({ identifier: "GameTextActionIdentity" });
 export type GameTextActionIdentity = typeof GameTextActionIdentity.Type;
 
 /** The scanned package file, serialized object path and reader property chain. */
@@ -30,7 +41,22 @@ export const GameTextActionPlace = Schema.Struct({
 	/** Absolute or relative to the connected editor project; retain the reader record path. */
 	packageFile: NonEmptyField,
 	objectPath: NonEmptyField,
-	propertyPath: NonEmptyField
+	propertyPath: NonEmptyField,
+	/** Additional authored locations require game-text.actions.authoring.v1. */
+	selector: Schema.optionalKey(
+		Schema.Union([
+			Schema.Struct({ kind: Schema.Literal("data_table_cell"), row: NonEmptyField }),
+			Schema.Struct({ kind: Schema.Literal("string_table_entry"), entryKey: NonEmptyField }),
+			Schema.Struct({ kind: Schema.Literal("graph_pin"), pinId: NonEmptyField }),
+			Schema.Struct({
+				kind: Schema.Literal("graph_pin"),
+				index: Schema.Int.check(
+					Schema.isGreaterThanOrEqualTo(0),
+					Schema.isLessThanOrEqualTo(2147483647)
+				)
+			})
+		])
+	)
 }).annotate({ identifier: "GameTextActionPlace" });
 export type GameTextActionPlace = typeof GameTextActionPlace.Type;
 
@@ -44,7 +70,27 @@ export const GameTextActionEdit = Schema.Union([
 		key: NonEmptyField,
 		source: NonEmptyField
 	}),
-	Schema.Struct({ kind: Schema.Literal("change_source"), source: NonEmptyField })
+	Schema.Struct({ kind: Schema.Literal("change_source"), source: NonEmptyField }),
+	Schema.Struct({
+		kind: Schema.Literal("make_localizable"),
+		namespace: Field,
+		key: NonEmptyField,
+		source: Field
+	}),
+	Schema.Struct({
+		kind: Schema.Literal("copy_string_table_entry"),
+		namespace: Field,
+		key: NonEmptyField,
+		source: Field
+	}),
+	Schema.Struct({ kind: Schema.Literal("remove_string_table_entry") }),
+	Schema.Struct({ kind: Schema.Literal("change_string_table_namespace"), namespace: Field }),
+	Schema.Struct({
+		kind: Schema.Literal("retarget_string_table"),
+		tableId: NonEmptyField,
+		key: NonEmptyField,
+		source: Field
+	})
 ]).annotate({ identifier: "GameTextActionEdit" });
 export type GameTextActionEdit = typeof GameTextActionEdit.Type;
 
@@ -115,7 +161,12 @@ export const GameTextActionOutcomeIdentity = Schema.Struct({
 	namespace: Schema.String,
 	key: Schema.optionalKey(Schema.String),
 	minted: Schema.optionalKey(Schema.Literal(true)),
-	source: Schema.String
+	source: Schema.String,
+	tableId: Schema.optionalKey(Schema.String),
+	unresolved: Schema.optionalKey(
+		Schema.Literals(["culture_invariant", "missing_key", "generated"])
+	),
+	removed: Schema.optionalKey(Schema.Literal(true))
 }).annotate({ identifier: "GameTextActionOutcomeIdentity" });
 export type GameTextActionOutcomeIdentity = typeof GameTextActionOutcomeIdentity.Type;
 
@@ -156,3 +207,28 @@ export const GameTextActionsResult = Schema.Struct({
 	errors: Schema.Array(GameTextActionError)
 }).annotate({ identifier: "GameTextActionsResult" });
 export type GameTextActionsResult = typeof GameTextActionsResult.Type;
+
+/** Checks a runtime key redirect, optionally activating an exact redirect already persisted by a host. */
+export const StringTableRedirectRequest = Schema.Struct({
+	contract: Schema.Literal("ue-shed-string-table-redirect"),
+	version: Schema.Literal("1.0"),
+	tableId: NonEmptyField,
+	oldKey: NonEmptyField,
+	newKey: NonEmptyField,
+	source: Field,
+	activate: Schema.Boolean,
+	configFile: Schema.optionalKey(NonEmptyField)
+});
+export type StringTableRedirectRequest = typeof StringTableRedirectRequest.Type;
+
+/** Active requires the exact table, destination key and source; inactive never authorizes deletion. */
+export const StringTableRedirectResult = Schema.Struct({
+	contract: Schema.Literal("ue-shed-string-table-redirect"),
+	version: Schema.Literal("1.0"),
+	status: Schema.Literals(["active", "inactive", "invalid_request"]),
+	tableId: Schema.String,
+	key: Schema.String,
+	source: Schema.String,
+	message: Schema.String
+});
+export type StringTableRedirectResult = typeof StringTableRedirectResult.Type;

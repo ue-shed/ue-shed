@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "UObject/Object.h"
+#include "Engine/DataTable.h"
 #include "UEShedGameTextTestTypes.generated.h"
 
 // Private reflected types for the native automation tests: transient test objects, never project
@@ -13,6 +14,15 @@ struct FUEShedGameTextTestInfo
 
 	UPROPERTY()
 	FText Caption;
+};
+
+USTRUCT()
+struct FUEShedGameTextTestRow : public FTableRowBase
+{
+	GENERATED_BODY()
+	UPROPERTY() FUEShedGameTextTestInfo Info;
+	UPROPERTY() TArray<FText> Lines;
+	UPROPERTY() TMap<FName, FText> Labels;
 };
 
 UCLASS()

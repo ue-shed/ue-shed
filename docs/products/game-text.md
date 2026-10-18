@@ -1154,6 +1154,43 @@ disk now, so a problem already in a touched file counts too.
 
 ### Fixing keys in assets
 
+Workbench's line page offers **Texts under this key** for conflicting sources and **Keys holding
+this text** for duplicate sources. Pick a source to use everywhere, give its places a new key, or
+compare matching keys and explicitly choose one to keep. A merge requires a translation choice
+for each culture with carried text; no surviving key or conflicting translation is selected for
+the user. Existing **Carry translations** handles keys that already changed.
+
+**Check in Unreal** prepares a durable proposal without writing assets. **Apply and save in
+Unreal** approves that proposal's listed places, Blueprint compilation and package saves. Asset
+properties use the optional `UEShedGameText` capability; localized top-level DataTable text cells
+can use the existing Authoring Apply/Save capability. Nested cells, writable graph text pins,
+String Table source edits and mixed table/property proposals use the additional
+`game-text.actions.authoring.v1` capability. String Table key migration uses the shared localization
+API described below; the line repair panel keeps copyable guidance for those key changes.
+The saved corpus's `read_only` property label describes offline authority; only the live
+plugin's dry run establishes whether a property can be edited.
+
+The host-neutral `makeGameTextIdRepairs` workflow in `@ue-shed/game-text/workspace` exposes
+`prepare(TextIdRepairRequest)` and `apply(TextIdRepairId)`. Hosts supply their selected project,
+workspace, file hooks, endpoint and editor-project verification, plus Remote Control and saved
+reader services. Requests retain reviewed unit IDs and occurrence evidence. Proposals and receipts
+live under the selected project's `Saved/UEShed/GameTextActions`; they pin its physical packages,
+endpoint and editor session. The shell retains project ownership throughout.
+
+Applying a proposal creates an exclusive execution claim before mutation. Started proposals are
+never replayed, including after restart, transport loss or partial save. Receipts retain per-place
+outcomes and persistence before the saved-file verification begins. A successful UI result requires
+re-reading every edited package and matching the returned identities and sources. Failed or
+unverified results require reconciling the editor and saved files, then rescanning. Translation
+moves are staged only after verified success; they use the existing PO review/write flow. New keys
+need **Gather and export** before those translations can be written.
+
+The live Showcase acceptance is `pnpm test:unreal-game-text-actions -- --showcase`, with an explicitly
+configured discovered UE 5.7 or UE 5.8 engine. It builds Workbench, repairs a DataTable conflict
+and a widget conflict through the actual renderer and IPC on a disposable fixture copy, captures
+the previews and verified results, then runs the native action/gather acceptance. Run it separately
+on both engine versions.
+
 Key fixes run in Unreal through the separately enabled `UEShedGameText` editor plugin
 ([ADR 0011](../decisions/0011-game-text-actions.md)), over Remote Control or its commandlet. A
 host sends `runGameTextActions` a `ue-shed-game-text-actions` request; each action names a place
@@ -1176,7 +1213,15 @@ retains applied outcomes and generated keys, with separate package persistence s
 reconcile those results before explicitly saving outstanding state through Unreal. Never replay the
 edits as save recovery. After saving, `verifyGameTextActions` compares the reader's re-read with the
 editor's result, binding even serialized original paths to their actual package files.
-DataTable cells keep using Authoring Apply 1.2; graph pins are not action places yet.
+The same operations are available directly as `runLocalizationTextActions` in
+`@ue-shed/localization`. Extended selectors support nested DataTable cells, writable graph text
+pins and String Table entries. `makeStringTableKeyMigrations` reviews copy, reference retargeting,
+persisted Unreal redirect and optional **Delete old entry** together. Migration retains the old
+entry by default and can complete without deleting it. Preparing with `deleteOldEntry: true`
+adds deletion to the preview and approved execution; selected deletion must be saved and verified.
+Dynamic references remain protected by the persisted redirect.
+See the [localization API](../../packages/localization/README.md#asset-text-editing-and-string-table-key-migration)
+for host ports, capability negotiation and recovery.
 
 ### Comparing two copies of a package
 

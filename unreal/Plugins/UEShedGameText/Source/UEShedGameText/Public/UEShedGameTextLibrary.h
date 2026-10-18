@@ -15,4 +15,8 @@ class UESHEDGAMETEXT_API UUEShedGameTextLibrary : public UBlueprintFunctionLibra
 public:
 	UFUNCTION(BlueprintCallable, Category = "UE Shed|Game Text")
 	static void ApplyTextActions(const FString& RequestJson, FString& ResultJson);
+
+	/** Verifies a key redirect; activation requires an exact, already persisted project config entry. */
+	UFUNCTION(BlueprintCallable, Category = "UE Shed|Game Text")
+	static void VerifyStringTableRedirect(const FString& RequestJson, FString& ResultJson);
 };

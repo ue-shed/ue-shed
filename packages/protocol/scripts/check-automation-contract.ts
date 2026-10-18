@@ -16,7 +16,12 @@ import {
 	AuthoringActorReferencesResult
 } from "../src/authoring-actor-references.js";
 import { makeAuthoringJsonSchema } from "../src/authoring.js";
-import { GameTextActionsRequest, GameTextActionsResult } from "../src/game-text-actions.js";
+import {
+	GameTextActionsRequest,
+	GameTextActionsResult,
+	StringTableRedirectRequest,
+	StringTableRedirectResult
+} from "../src/game-text-actions.js";
 
 const contracts = [
 	["automation", "players-request", AutomationPlayersRequest],
@@ -28,7 +33,9 @@ const contracts = [
 	["authoring", "actor-references-request", AuthoringActorReferencesRequest],
 	["authoring", "actor-references-result", AuthoringActorReferencesResult],
 	["game-text", "actions-request", GameTextActionsRequest],
-	["game-text", "actions-result", GameTextActionsResult]
+	["game-text", "actions-result", GameTextActionsResult],
+	["game-text", "redirect-request", StringTableRedirectRequest],
+	["game-text", "redirect-result", StringTableRedirectResult]
 ] as const;
 
 for (const [domain, name, contract] of contracts) {

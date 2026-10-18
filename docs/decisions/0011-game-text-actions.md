@@ -21,6 +21,30 @@ uses to assign an id.
 
 ## Decision
 
+### Localization authoring extension (2026-10-19)
+
+The public `@ue-shed/localization` package now owns transport and reusable text migration services;
+Game Text keeps compatible exports and owns corpus-specific repair UI and saved-reader comparison.
+The `game-text.actions.authoring.v1` capability extends the 1.0 envelope with explicit DataTable row,
+String Table entry and graph-pin selectors, plus guarded conversion, reference retargeting,
+entry copy/removal and whole-table namespace edits. Older plugins are rejected before extended
+requests are sent. Plain top-level DataTable fixes may continue through Authoring Apply 1.2.
+
+String Table renaming is a reviewed migration: copy/save the new entry, persist an Unreal old/new
+key redirect, retarget/save caller-discovered references, then activate and verify the redirect.
+The old entry is retained by default. **Delete old entry** is an optional action selected with
+`deleteOldEntry: true` during preparation; it appears in that proposal's preview and execution.
+When selected, deletion is saved and absence verified before completion. Migration can complete
+without selecting deletion. The redirect remains for dynamic references.
+Unreal applies redirects while loading references, so original references are migrated before
+live activation. Each phase journals outcomes and cannot automatically replay. Writes across
+packages and config are not atomic; failed phases require reconciliation. Discovery cannot prove
+the absence of code/dynamic references. Redirects are only appropriate when source text is retained.
+
+The initial base-capability constraints below remain the compatibility contract for requests
+without the authoring extension. See the [localization API](../../packages/localization/README.md#asset-text-editing-and-string-table-key-migration)
+and [plugin](../../unreal/Plugins/UEShedGameText/README.md) for extended places and host obligations.
+
 Text actions run inside Unreal, in a separately enabled editor plugin, `UEShedGameText`, called over
 stock Remote Control like `UEShedAuthoring`, with a commandlet entry for headless batches. UE Shed
 never writes text into a package itself.
@@ -31,9 +55,9 @@ Each action names one place, the text the caller expects there, and one edit:
 
 | Edit             | Effect                                                                                               | Unreal API                                                   |
 | ---------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| `change_key`     | Give the text the namespace and key the caller names; source stays                                   | `EditTextProperty_Direct` (Namespace, Key)                   |
-| `regenerate_key` | Give the text a new random key; namespace and source stay                                            | `EditTextProperty_Direct` (Key) with `GenerateRandomTextKey` |
-| `adopt_key`      | Make the text the same text as another id: its namespace, key and source                             | `EditTextProperty_Direct` (SourceString, Namespace, Key)     |
+| `change_key`     | Give the text the namespace and key the caller names; source stays                                   | `GetTextIdForEdit` (Namespace), then `FText::ChangeKey`      |
+| `regenerate_key` | Give the text a new random key; namespace and source stay                                            | The same identity edit with `GenerateRandomTextKey`          |
+| `adopt_key`      | Make the text the same text as another id: its namespace, key and source                             | `EditTextProperty_Direct` (SourceString), then identity edit |
 | `change_source`  | Retype the source as a user would; Unreal keeps the key only if no other text in the package uses it | `EditTextProperty_Direct` (SourceString)                     |
 
 A request then compiles each Blueprint that owns an edited place, and saves the edited packages
@@ -44,6 +68,12 @@ Namespaces on the wire are the user namespace, without the package namespace Unr
 packages (`TextNamespaceUtil::StripPackageNamespace`), which is the namespace Unreal's gather and
 the saved-package reader report. The plugin re-applies the package's namespace on write, as the
 editor does.
+
+Namespace and key are proposed together to `GetTextIdForEdit`, then applied with `FText::ChangeKey`.
+This also handles saved text whose namespace has no package marker: a sequential direct Namespace
+edit can return early as unchanged, after which a direct Key edit resets the user namespace while
+repairing the package marker. Native automation covers the plain-namespace case in both preview
+and apply.
 
 ### Places
 

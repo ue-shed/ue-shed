@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
-import { basename, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { Effect, Stream } from "effect";
 import {
 	gameTextActionForOccurrence,
@@ -15,6 +15,7 @@ import {
 	verifyGameTextActions
 } from "../packages/game-text/src/text-actions.ts";
 import { stripPackageNamespace } from "../packages/localization/src/text-namespace.ts";
+import { verifyLocalizationStringTableRedirect } from "../packages/localization/dist/index.js";
 import type { GameTextAction, GameTextActionEdit } from "../packages/protocol/src/index.ts";
 import {
 	assetReaderLayer,
@@ -32,7 +33,8 @@ import {
 	unrealEngineTools,
 	unrealEngineVersion
 } from "./unreal-plugin-host.ts";
-import { unrealRemoteControlLaunchArguments } from "./workbench-tools.ts";
+import { runPnpm, unrealRemoteControlLaunchArguments } from "./workbench-tools.ts";
+import { acceptLocalizationMigration } from "./localization-text-actions-acceptance.ts";
 
 const engineRoot = process.env.UE_SHED_UNREAL_ENGINE_ROOT;
 if (!engineRoot) throw new Error("Set UE_SHED_UNREAL_ENGINE_ROOT to an Unreal 5.7 or 5.8 root.");
@@ -43,10 +45,11 @@ if (version?.label !== "5.7" && version?.label !== "5.8") {
 const tools = unrealEngineTools(engineRoot);
 const fixture = join(repositoryRoot, "fixtures", "unreal-project");
 const run = resolve(
-	process.argv[2] ??
+	process.argv.slice(2).find((argument) => !argument.startsWith("--")) ??
 		join(repositoryRoot, "out", "game-text-actions", `${version.label}-${Date.now()}`)
 );
 // A fresh directory so a stale copy or evidence cannot pass.
+mkdirSync(dirname(run), { recursive: true });
 mkdirSync(run, { recursive: false });
 const project = join(run, "project");
 const projectFile = join(project, "UEShedFixture.uproject");
@@ -54,28 +57,34 @@ const evidenceDirectory = join(run, "evidence");
 const folder = "Content/Fixture/GameTextActions";
 const reader = assetReaderLayer({ executable: ensureUassetExecutable() });
 
+if (process.argv.includes("--showcase")) {
+	// The root command builds public packages first. Bundle those exact outputs into Workbench
+	// so this journey cannot exercise an older main-process service from a previous UI build.
+	runPnpm(["--filter", "@ue-shed/workbench", "build"], process.env);
+}
+
 function log(message: string) {
 	process.stdout.write(`[game-text-actions ${version?.label}] ${message}\n`);
 }
 
-// The fixture editor module is built in the committed fixture (its build output is ignored), then
-// the project is copied with its binaries; generated caches stay behind.
-runProcess(tools.build, [
-	"UEShedFixtureEditor",
-	"Win64",
-	"Development",
-	join(fixture, "UEShedFixture.uproject"),
-	"-NoUBTMakefiles",
-	"-WaitMutex",
-	"-NoHotReloadFromIDE"
-]);
+// Build inside the disposable project too, so an explicit run directory controls all fixture
+// build output and the committed fixture never acquires this run's binaries or caches.
 cpSync(fixture, project, {
 	recursive: true,
 	filter: (source) => {
 		const parts = relative(fixture, source).split(sep);
-		return !["Intermediate", "Saved", "DerivedDataCache"].includes(parts[0] ?? "");
+		return !["Binaries", "Intermediate", "Saved", "DerivedDataCache"].includes(parts[0] ?? "");
 	}
 });
+runProcess(tools.build, [
+	"UEShedFixtureEditor",
+	"Win64",
+	"Development",
+	projectFile,
+	"-NoUBTMakefiles",
+	"-WaitMutex",
+	"-NoHotReloadFromIDE"
+]);
 const descriptors = prepareUnrealPlugins({ engineRoot, projectPath: projectFile, tools });
 
 async function readPackages(files: readonly string[]) {
@@ -290,21 +299,22 @@ const actions = [
 const port = await freePort(30_210);
 const endpoint = `http://127.0.0.1:${port}`;
 log(`launching the editor on ${basename(projectFile)} with Remote Control at ${endpoint}`);
-const editor = spawn(
-	tools.editor,
-	[
-		projectFile,
-		"/Engine/Maps/Templates/Template_Default",
-		...descriptors.map((descriptor) => `-PLUGIN=${descriptor}`),
-		...unrealRemoteControlLaunchArguments(ueShedPluginIds, port),
-		"-unattended",
-		"-nop4",
-		"-nosplash",
-		"-RenderOffscreen",
-		`-abslog=${join(run, "editor.log")}`
-	],
-	{ cwd: project, stdio: "ignore", windowsHide: true }
-);
+const editorArguments = [
+	projectFile,
+	"/Engine/Maps/Templates/Template_Default",
+	...descriptors.map((descriptor) => `-PLUGIN=${descriptor}`),
+	...unrealRemoteControlLaunchArguments(ueShedPluginIds, port),
+	"-unattended",
+	"-nop4",
+	"-nosplash",
+	"-RenderOffscreen",
+	`-abslog=${join(run, "editor.log")}`
+];
+const editor = spawn(tools.editor, editorArguments, {
+	cwd: project,
+	stdio: "ignore",
+	windowsHide: true
+});
 let exited = false;
 editor.once("exit", () => {
 	exited = true;
@@ -359,10 +369,83 @@ async function applyActions() {
 }
 try {
 	await waitForRemoteControl(endpoint, () => !exited);
+	if (process.argv.includes("--showcase")) {
+		log("running the Showcase ID repair journey on the disposable project");
+		runPnpm(
+			[
+				"--filter",
+				"@ue-shed/workbench",
+				"exec",
+				"playwright",
+				"test",
+				"--config",
+				"e2e/playwright.config.ts",
+				"game-text-id-repairs.e2e.ts"
+			],
+			{
+				...process.env,
+				UE_SHED_GAME_TEXT_ID_REPAIRS_TEST: "1",
+				UE_SHED_UNREAL_INTEGRATION: "1",
+				UE_SHED_PROJECT_ROOT: project,
+				UE_SHED_PROJECT_NAME: "UEShedFixture",
+				UE_SHED_REMOTE_CONTROL_ENDPOINT: endpoint,
+				UE_SHED_UASSET_EXECUTABLE: ensureUassetExecutable(),
+				UE_SHED_REMEMBER_PROJECTS: "false",
+				UE_SHED_REPOSITORY_ROOT: repositoryRoot
+			}
+		);
+	}
 	log("Remote Control is up; dry run, then apply with save");
+	await acceptLocalizationMigration({
+		projectRoot: project,
+		endpoint,
+		executable: ensureUassetExecutable()
+	});
+	log("public localization migration completed with the old entry retained by default");
+	await acceptLocalizationMigration({
+		projectRoot: project,
+		endpoint,
+		executable: ensureUassetExecutable(),
+		deleteOldEntry: true
+	});
+	log(
+		"public localization migration verified: persisted redirect, migrated reference, explicit deletion"
+	);
 	result = await applyActions();
 } finally {
 	stopEditor(editor.pid);
+}
+// A fresh process must load the persisted redirect without activation from the migration client.
+const restarted = spawn(tools.editor, editorArguments, {
+	cwd: project,
+	stdio: "ignore",
+	windowsHide: true
+});
+let restartExited = false;
+restarted.once("exit", () => {
+	restartExited = true;
+});
+try {
+	await waitForRemoteControl(endpoint, () => !restartExited);
+	const redirect = await Effect.runPromise(
+		verifyLocalizationStringTableRedirect({
+			endpoint,
+			request: {
+				contract: "ue-shed-string-table-redirect",
+				version: "1.0",
+				tableId: "/Game/Fixture/GameTextActions/Slice2/ST_IdentityTable.ST_IdentityTable",
+				oldKey: "Welcome",
+				newKey: "WelcomeRenamed",
+				source: "Welcome aboard",
+				activate: false
+			}
+		}).pipe(Effect.provide(RemoteControlClientLive))
+	);
+	writeFileSync(join(run, "redirect-after-restart.json"), JSON.stringify(redirect, null, 2));
+	assert.equal(redirect.status, "active", redirect.message);
+	log("fresh editor verified the persisted redirect after old-entry deletion");
+} finally {
+	stopEditor(restarted.pid);
 }
 assert.ok(result);
 assert.equal(result.status, "ok", JSON.stringify(result.errors));

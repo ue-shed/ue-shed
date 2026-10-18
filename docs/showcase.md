@@ -204,6 +204,14 @@ resource or unsaved editor state is wanted. Saved and live preview authority rem
 
 ## Demo 3: Game Text
 
+Open a line with conflicting sources to compare its texts and places. Choose **Use this text
+everywhere** or **Give this text its own key**. Duplicate-source lines offer **Compare matching
+keys**, an explicit surviving-key choice and translation choices. **Check in Unreal** shows the
+live preview; **Apply and save in Unreal** changes supported properties or DataTable cells through
+the separately enabled editor capabilities and verifies the saved files. Translation moves remain
+staged for PO review. Unsupported places offer **Copy steps**. After a failed or indeterminate
+apply, reconcile the editor and saved receipt before rescanning; the proposal cannot be replayed.
+
 Open **Game Text** and choose **Scan project** if it has not been scanned. Game Text reads saved
 DataTables, String Tables and supported asset properties, so Unreal does not need to be running.
 One toolbar holds **Text**, **Quality checks**, the number of lines and assets, the scan time, and

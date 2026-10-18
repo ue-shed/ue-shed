@@ -36,6 +36,7 @@ import { makeWorkbenchConfigExplorerTestLayer } from "../services/config-explore
 import { makeFixtureLauncherTestLayer } from "../services/fixture-launcher.js";
 import { makeWorkbenchGameTextTestLayer } from "../services/game-text.js";
 import { WorkbenchGameTextOperations } from "../services/game-text-operations.js";
+import { WorkbenchGameTextIdRepairs } from "../services/game-text-id-repairs.js";
 import { makeWorkbenchInputAtlasTestLayer } from "../services/input-atlas.js";
 import { makeWorkbenchMapReviewTestLayer, SavedWorldUnavailable } from "../services/map-review.js";
 import { makeWorkbenchMapCaptureTestLayer } from "../services/map-capture.js";
@@ -814,6 +815,27 @@ function buildRegistrationLayer(recorder: Recorder, options: RegistrationOptions
 		assetAudits,
 		assetNavigation,
 		gameText,
+		Layer.succeed(
+			WorkbenchGameTextIdRepairs,
+			WorkbenchGameTextIdRepairs.of({
+				prepare: () =>
+					Effect.succeed({
+						status: "unavailable",
+						message: "No editor",
+						recovery: "Connect Unreal.",
+						retrySafe: true,
+						nextStep: "fix_input"
+					}),
+				apply: () =>
+					Effect.succeed({
+						status: "unavailable",
+						message: "No editor",
+						recovery: "Connect Unreal.",
+						retrySafe: true,
+						nextStep: "fix_input"
+					})
+			})
+		),
 		Layer.succeed(
 			WorkbenchGameTextOperations,
 			WorkbenchGameTextOperations.of({

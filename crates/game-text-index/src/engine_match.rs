@@ -85,6 +85,7 @@ pub(crate) struct Rows {
     pub notes: Column,
     pub audience: Column,
     pub identity: Column,
+    namespace_defined: Vec<bool>,
     pub namespace: Column,
     pub member_start: Column,
     pub member_end: Column,
@@ -99,7 +100,7 @@ pub(crate) struct Rows {
 }
 impl Rows {
     fn open(query: &mut EngineQuery, kind: &str, cancelled: &AtomicBool) -> Result<Self> {
-        let rows = Self {
+        let mut rows = Self {
             visible: query.column(kind, "visible")?,
             signals: query.column(kind, "signals")?,
             origins: query.column(kind, "origins")?,
@@ -107,6 +108,7 @@ impl Rows {
             notes: query.column(kind, "notes")?,
             audience: query.column(kind, "audience")?,
             identity: query.column(kind, "identity")?,
+            namespace_defined: Vec::new(),
             namespace: query.column(kind, "namespace")?,
             member_start: query.column(kind, "member_start")?,
             member_end: query.column(kind, "member_end")?,
@@ -150,6 +152,24 @@ impl Rows {
         ranges(&rows.file_start, &rows.file_end, rows.files.len(), count)?;
         if kind == "raw" {
             permutation(&rows.order, count, cancelled)?;
+        }
+        // Saved resolved/String Table identities with an empty key are presented as unresolved.
+        // Namespace predicates and groups must use that same interpretation, including old joins.
+        let representatives = query.column(kind, "representative")?;
+        length(&representatives, count)?;
+        let keys = (0..query.package_count())
+            .map(|shard| query.package_column(shard, "occurrence.key"))
+            .collect::<Result<Vec<_>>>()?;
+        for (row, member) in representatives.iter().enumerate() {
+            if row & 255 == 0 {
+                checkpoint(cancelled)?;
+            }
+            let (shard, occurrence) = query.package_coordinate(*member as usize)?;
+            let key = keys[shard]
+                .get(occurrence)
+                .ok_or("Namespace occurrence row")?;
+            rows.namespace_defined
+                .push(rows.identity[row] < 2 && *key != 0);
         }
         Ok(rows)
     }
@@ -542,7 +562,7 @@ impl Projection {
             )
         } else {
             let rows = self.rows(kind);
-            (rows.identity[row] < 2, rows.namespace[row])
+            (rows.namespace_defined[row], rows.namespace[row])
         };
         if defined {
             Ok(Some(places.namespace(id)?))
@@ -724,24 +744,22 @@ impl EngineQuery {
     ) -> Result<Arc<[u32]>> {
         request.validate()?;
         checkpoint(cancelled)?;
-        let mut key = request.clone();
-        key.page_size = 1;
-        key.cursor = None;
-        key.localization_cursor = None;
-        key.group = None;
-        key.open_group = None;
-        key.facets = None;
-        let key = serde_json::to_string(&key)?;
+        let key = request.matching_key()?;
         if let Some(rows) = self.matched.get(&key) {
             return Ok(Arc::clone(rows));
         }
         let rows: Arc<[u32]> = self.match_rows(request, cancelled)?.into();
-        let bytes = rows.len().saturating_mul(4);
+        self.remember_matches(key, Arc::clone(&rows));
+        Ok(rows)
+    }
+
+    pub(crate) fn remember_matches(&mut self, key: String, rows: Arc<[u32]>) {
+        let bytes = rows.len().saturating_mul(4).saturating_add(key.len());
         if self.matched.len() >= 16
             || self
                 .matched
-                .values()
-                .map(|rows| rows.len().saturating_mul(4))
+                .iter()
+                .map(|(key, rows)| rows.len().saturating_mul(4).saturating_add(key.len()))
                 .sum::<usize>()
                 .saturating_add(bytes)
                 > 32 * 1024 * 1024
@@ -751,7 +769,6 @@ impl EngineQuery {
         if bytes <= 32 * 1024 * 1024 {
             self.matched.insert(key, Arc::clone(&rows));
         }
-        Ok(rows)
     }
     fn match_rows(&mut self, request: &SearchRequest, cancelled: &AtomicBool) -> Result<Vec<u32>> {
         request.validate()?;

@@ -385,6 +385,22 @@ impl SearchRequest {
         });
         result
     }
+
+    pub(crate) fn without_page(&self) -> Self {
+        let mut result = self.clone();
+        result.page_size = 1;
+        result.cursor = None;
+        result.localization_cursor = None;
+        result.open_group = None;
+        result
+    }
+
+    pub(crate) fn matching_key(&self) -> Result<String> {
+        let mut result = self.without_page();
+        result.group = None;
+        result.facets = None;
+        Ok(serde_json::to_string(&result)?)
+    }
 }
 
 pub fn parse_focus_request(payload: &str) -> Result<FocusRequest> {
@@ -417,6 +433,42 @@ impl FocusRequest {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn cache_keys_ignore_pagination_but_preserve_scope_and_response_shape() -> Result<()> {
+        let request = parse_search_request(
+            r#"{"query":"source","capability":"all","pageSize":1,"localization":{"target":"Game","cultures":["de"]}}"#,
+        )?;
+        let key = request.matching_key()?;
+        let mut page = request.clone();
+        page.page_size = 50;
+        page.localization_cursor = Some("next-line".into());
+        page.group = Some(GroupBy::Asset);
+        page.open_group = Some("Content/Example.uasset".into());
+        page.facets = Some(Facets {
+            assets: Some(true),
+            ..Default::default()
+        });
+        assert_eq!(key, page.matching_key()?);
+        assert_ne!(
+            serde_json::to_string(&request.without_page())?,
+            serde_json::to_string(&page.without_page())?
+        );
+        let mut scope = request.clone();
+        scope
+            .localization
+            .as_mut()
+            .ok_or("Test localization scope")?
+            .cultures = Some(vec!["en".into()]);
+        assert_ne!(key, scope.matching_key()?);
+        scope = request.clone();
+        scope.query = "different".into();
+        assert_ne!(key, scope.matching_key()?);
+        scope = request.clone();
+        scope.without_notes = Some(true);
+        assert_ne!(key, scope.matching_key()?);
+        Ok(())
+    }
 
     #[test]
     fn detail_requests_reject_unknown_null_negative_and_invalid_selection_fields() -> Result<()> {
